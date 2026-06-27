@@ -1,0 +1,40 @@
+# Custom Format based on Visual-Studio style.
+# The tree is formatted with clang-format v21 (Apple clang-format 21.0.0).
+# Option reference: https://clang.llvm.org/docs/ClangFormatStyleOptions.html
+
+# Defaults
+BasedOnStyle: LLVM
+ColumnLimit: 0
+IndentWidth: 4
+TabWidth: 4
+UseTab: Always
+
+# CXX Language
+Language: Cpp
+AccessModifierOffset: -4
+AllowShortIfStatementsOnASingleLine: false
+BreakConstructorInitializers: BeforeComma
+ConstructorInitializerIndentWidth: 4
+BreakBeforeBraces: Allman
+IndentCaseLabels: true
+IndentPPDirectives: AfterHash
+NamespaceIndentation: All
+DerivePointerAlignment: false
+PointerAlignment: Left
+
+# CXX Includes
+SortIncludes: CaseInsensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  # Category 1: The main header corresponding to this source file (e.g., Foo.h inside Foo.cpp)
+  - Regex: '^"([^"]+)\.h"'
+    Priority: 1
+  # Category 2: Project-local headers (using double quotes)
+  - Regex: '^"([^"]+)"'
+    Priority: 2
+  # Category 3: Third-party library headers (e.g., boost, gtest)
+  - Regex: '^<([^"]+)\.h>'
+    Priority: 3
+  # Category 4: Standard Library and System headers (using angle brackets)
+  - Regex: '^<([^>]+)>'
+    Priority: 4
