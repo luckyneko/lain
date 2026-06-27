@@ -210,8 +210,10 @@ it.
 
 - Final names (`flow` / `flowview`, namespace).
 - Exact CPU port type set: closed `std::variant` of known types vs open
-  `std::any`. Closed is faster + viewer-friendly; open is more flexible. Lean
-  closed for v1.
+  `std::any`. Closed is faster + viewer-friendly; open is more flexible.
+  `PortValue` ships **open** (`std::any` CPU arm behind a closed `PortKind` tag)
+  to avoid pinning a type set before real nodes exist — swappable behind the
+  interface. Revisit (lean closed) once the node set is known.
 - `lain::task` is scoped minimal: an executor + the small DAG-build surface
   `flow`'s scheduler needs (a flow that emplaces node-tasks and adds edges), and
   nothing more. Subflows / `tf::Pipeline` stay unexposed until a caller needs

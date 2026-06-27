@@ -50,7 +50,7 @@ endif()
 
 # ---- Libraries (lain::<name>) -----------------------------------------------
 add_subdirectory(libs/task)
-# add_subdirectory(libs/flow)           # the node-graph engine (WORK.md M1)
+add_subdirectory(libs/flow)             # the node-graph engine (WORK.md M1)
 # add_subdirectory(libs/math)           # GLM wrapper, when needed
 
 # ---- Apps (executables) -----------------------------------------------------
