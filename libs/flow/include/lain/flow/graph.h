@@ -8,6 +8,11 @@
 #include <lain/flow/node.h>
 #include <lain/flow/types.h>
 
+namespace lain::task
+{
+	class Executor; // only run(Executor&) names it; full type via <lain/task/task.h>
+}
+
 namespace lain::flow
 {
 	// Owns the nodes and the edges between their ports. Builds the DAG (add /
@@ -45,6 +50,16 @@ namespace lain::flow
 		// construction, so this always covers every node. Cached and recomputed
 		// lazily after a topology change.
 		const std::vector<NodeId>& topoOrder() const;
+
+		// Push: evaluate the whole graph — each node fires once its inputs are
+		// ready — lowering the DAG onto the given lain::task executor, or onto a
+		// shared process executor for the no-arg form.
+		void run(lain::task::Executor& executor);
+		void run();
+
+		// Pull: evaluate just `target`'s upstream subgraph on demand, recomputing
+		// only dirty nodes. The entry point for constant / on-request sources.
+		void evaluate(NodeId target);
 
 	private:
 		bool valid(NodeId id) const { return id < m_nodes.size(); }

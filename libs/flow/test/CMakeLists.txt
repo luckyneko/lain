@@ -5,9 +5,12 @@
 add_executable(test-flow
 	test_portvalue.cpp
 	test_graph.cpp
+	test_scheduler.cpp
 )
 
 target_compile_features(test-flow PRIVATE cxx_std_17)
-target_link_libraries(test-flow PRIVATE lain::flow lain::warnings Catch2::Catch2WithMain)
+# lain::task is linked directly here because the scheduler tests name
+# task::Executor (flow links it only PRIVATEly).
+target_link_libraries(test-flow PRIVATE lain::flow lain::task lain::warnings Catch2::Catch2WithMain)
 
 catch_discover_tests(test-flow TEST_PREFIX "(flow) ")

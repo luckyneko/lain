@@ -38,7 +38,8 @@ namespace lain::flow
 		void clearDirty() { m_dirty = false; }
 
 		// The node's work: read inputs, write outputs. The scheduler calls this in
-		// dependency order (it does not clear dirty() — the scheduler owns that).
+		// dependency order and clears dirty() around the call; an on-request source
+		// can markDirty() itself here to refire on the next pull.
 		virtual void compute() = 0;
 
 		// Optional ImGui inspector hook. Called on the main/render thread only.

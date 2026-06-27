@@ -2,6 +2,10 @@
 
 #include <cstddef>
 
+#include <lain/task/task.h>
+
+#include "scheduler.h"
+
 namespace lain::flow
 {
 	Connection Graph::connect(NodeId from, PortIndex outPort, NodeId to, PortIndex inPort)
@@ -106,5 +110,22 @@ namespace lain::flow
 
 		m_topoValid = true;
 		return m_topo;
+	}
+
+	void Graph::run(lain::task::Executor& executor)
+	{
+		detail::runPush(*this, executor);
+	}
+
+	void Graph::run()
+	{
+		// A process-wide default pool, spun up on first use.
+		static lain::task::Executor shared;
+		detail::runPush(*this, shared);
+	}
+
+	void Graph::evaluate(NodeId target)
+	{
+		detail::runPull(*this, target);
 	}
 }
