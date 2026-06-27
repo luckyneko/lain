@@ -6,16 +6,27 @@ and overrides it where they differ.
 
 ## Handoff status (2026-06-27)
 
-This is a **handoff document**, not a description of existing code. `lain` is a
-collection of small C++17 prototyping libraries. The current focus is a new
-**node-graph engine** (`flow`) plus its ImGui inspector (`flowview`). **No engine
-code exists yet.** The authoritative build plan is **[WORK.md](WORK.md)** — read
-it first; it owns *what* to build and in *what order*. This file owns *how* to
-build it so the result looks native to `lain`.
+`lain` is a collection of small C++17 prototyping libraries. The current focus is
+a **node-graph engine** (`flow`) plus its ImGui inspector (`flowview`). The
+authoritative build plan is **[WORK.md](WORK.md)** — it owns *what* to build and
+in *what order*. This file owns *how* to build it so the result looks native to
+`lain`.
 
-Update this file as architecture solidifies — once `flow` has real code, this
-becomes its standing architecture reference (the role `CLAUDE.md` plays in the
-sibling repos), and per-library docs may split out.
+**M1 progress — engine core + GPU path are built, tested, and committed; the
+viewer is the one piece left:**
+
+- ✅ Build skeleton (umbrella CMake, `lain::task` wrapping Taskflow), `PortValue`,
+  `Port`/`Node`/`Graph` (type-checked + cycle-rejecting), and the `Scheduler`
+  (push `Graph::run` via Taskflow, pull `Graph::evaluate`). All in `libs/flow`.
+- ✅ GPU-port path proven: `lain::flow-example`'s `GradientNode` emits an
+  `acm::Texture` through a port, verified by a headless `[gpu]` test on a real
+  driver (`cmake/addVulkanRuntime.cmake` builds the loader from source).
+- ⬜ **`flowview`** (WORK.md step 5) — the ImGui/archimedes inspector. Not started.
+  Needs GLFW + Dear ImGui + imnodes (FetchContent), the `imgui_impl_vulkan`
+  backend over archimedes' raw handles, and live-driver *visual* verification.
+
+Keep this section current as work lands. Once `flow` is fuller, this file is its
+standing architecture reference (the role `CLAUDE.md` plays in the sibling repos).
 
 ## What `lain` and `flow` are
 
