@@ -1,0 +1,4 @@
+[submodule "extern/archimedes"]
+	path = extern/archimedes
+	url = https://github.com/luckyneko/archimedes.git
+	branch = develop
