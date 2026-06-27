@@ -4,6 +4,7 @@
 
 add_executable(test-flow
 	test_portvalue.cpp
+	test_graph.cpp
 )
 
 target_compile_features(test-flow PRIVATE cxx_std_17)

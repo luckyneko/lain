@@ -3,6 +3,7 @@
 
 add_library(flow STATIC
 	src/portvalue.cpp
+	src/graph.cpp
 )
 add_library(lain::flow ALIAS flow)
 
