@@ -43,6 +43,12 @@ add_subdirectory(extern/archimedes)     # acm:: Vulkan renderer (for flow + flow
 # package, else pinned release; headers re-exposed SYSTEM under strict flags).
 include(addTaskflow)
 
+# The Vulkan loader (built from source) resolves archimedes' vk* symbols for any
+# runnable target that creates a VkInstance — the [gpu] tests and flowview.
+if(LAIN_BUILD_TESTING OR LAIN_BUILD_APPS)
+	include(addVulkanRuntime)
+endif()
+
 if(LAIN_BUILD_TESTING)
 	enable_testing() # must be at the project root for ctest to find tests
 	include(addcatch2)

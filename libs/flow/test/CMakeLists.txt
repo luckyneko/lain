@@ -6,11 +6,20 @@ add_executable(test-flow
 	test_portvalue.cpp
 	test_graph.cpp
 	test_scheduler.cpp
+	test_gpu_node.cpp
 )
 
 target_compile_features(test-flow PRIVATE cxx_std_17)
-# lain::task is linked directly here because the scheduler tests name
-# task::Executor (flow links it only PRIVATEly).
-target_link_libraries(test-flow PRIVATE lain::flow lain::task lain::warnings Catch2::Catch2WithMain)
+# lain::task: the scheduler tests name task::Executor (flow links it PRIVATEly).
+# lain::flow-example + Vulkan::Loader: the [gpu] test creates a real device, so
+# the executable must resolve archimedes' vk* symbols via the loader.
+target_link_libraries(test-flow PRIVATE
+	lain::flow
+	lain::flow-example
+	lain::task
+	lain::warnings
+	Vulkan::Loader
+	Catch2::Catch2WithMain
+)
 
 catch_discover_tests(test-flow TEST_PREFIX "(flow) ")

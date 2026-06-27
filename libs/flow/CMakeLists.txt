@@ -18,6 +18,8 @@ target_link_libraries(flow
 	PRIVATE lain::task lain::warnings
 )
 
+add_subdirectory(example) # shared example nodes (flowview's smoke scene)
+
 if(LAIN_BUILD_TESTING)
 	add_subdirectory(test)
 endif()
