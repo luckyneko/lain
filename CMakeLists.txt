@@ -1,0 +1,59 @@
+cmake_minimum_required(VERSION 3.24) # FetchContent FIND_PACKAGE_ARGS
+
+# Detect top-level vs. bundled-as-a-subproject before our own project() call.
+# Use a lain-specific name, NOT the bare `NOT_SUBPROJECT` the siblings (and
+# Catch2) use internally: that variable leaks into add_subdirectory child scopes,
+# and setting it here would make every bundled sibling think *it* is top-level
+# and switch its tests/testbed/benchmarks on.
+if(NOT DEFINED PROJECT_NAME)
+	set(LAIN_NOT_SUBPROJECT ON)
+endif()
+
+project(lain LANGUAGES CXX VERSION 0.1.0)
+
+# Default build release.
+if(NOT CMAKE_BUILD_TYPE)
+	set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose Release or Debug" FORCE)
+endif()
+
+# Disable building in-source.
+if(CMAKE_BINARY_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+	message(FATAL_ERROR "Building in-source is not supported! Create a build dir and remove ${CMAKE_SOURCE_DIR}/CMakeCache.txt")
+endif()
+
+# Tests and apps only when lain is the top-level project (consumed via
+# add_subdirectory they stay off, matching the siblings).
+option(LAIN_BUILD_TESTING "Build the unit/integration tests" ${LAIN_NOT_SUBPROJECT})
+option(LAIN_BUILD_APPS "Build the runnable apps (flowview)" ${LAIN_NOT_SUBPROJECT})
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
+
+# Shared strict-warning flags for lain's own targets (link PRIVATE; never on a
+# vendored dep). Defines the lain::warnings INTERFACE target.
+include(lainWarnings)
+
+# ---- Vendored / owned dependencies ------------------------------------------
+# Owned lain libs are git submodules under extern/, tracking their develop branch
+# (no tagged releases yet), added via add_subdirectory. Their testbed/testing
+# stays OFF here since lain, not they, is the top-level project.
+add_subdirectory(extern/archimedes)     # acm:: Vulkan renderer (for flow + flowview)
+# add_subdirectory(extern/thorax)       # deferred — no M1 consumer yet
+
+# Third-party deps via cmake/addXXX.cmake FetchContent modules (prefer system
+# package, else pinned release; headers re-exposed SYSTEM under strict flags).
+include(addTaskflow)
+
+if(LAIN_BUILD_TESTING)
+	enable_testing() # must be at the project root for ctest to find tests
+	include(addcatch2)
+endif()
+
+# ---- Libraries (lain::<name>) -----------------------------------------------
+add_subdirectory(libs/task)
+# add_subdirectory(libs/flow)           # the node-graph engine (WORK.md M1)
+# add_subdirectory(libs/math)           # GLM wrapper, when needed
+
+# ---- Apps (executables) -----------------------------------------------------
+if(LAIN_BUILD_APPS)
+	# add_subdirectory(apps/flowview)   # ImGui inspector (needs archimedes + flow)
+endif()
