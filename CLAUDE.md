@@ -4,16 +4,16 @@ Guidance for Claude Code working in this repository. [AGENTS.md](AGENTS.md) hold
 the general working discipline and applies in full; this file is more specific
 and overrides it where they differ.
 
-## Handoff status (2026-06-27)
+## Handoff status (2026-06-28)
 
 `lain` is a collection of small C++17 prototyping libraries. The current focus is
-a **node-graph engine** (`flow`) plus its ImGui inspector (`flowview`). The
-authoritative build plan is **[WORK.md](WORK.md)** — it owns *what* to build and
-in *what order*. This file owns *how* to build it so the result looks native to
-`lain`.
+a **node-graph engine** (`flow`) and the **reusable app stack** that lets it (and
+future apps) run on a live Vulkan driver. The authoritative build plan is
+**[WORK.md](WORK.md)** — it owns *what* to build and in *what order*. This file
+owns *how* to build it so the result looks native to `lain`.
 
-**M1 progress — engine core + GPU path are built, tested, and committed; the
-viewer is the one piece left:**
+**Engine core is built, tested, committed. The remaining M1 work is one decoupling
+refactor of `flow` plus the app stack + viewer:**
 
 - ✅ Build skeleton (umbrella CMake, `lain::task` wrapping Taskflow), `PortValue`,
   `Port`/`Node`/`Graph` (type-checked + cycle-rejecting), and the `Scheduler`
@@ -21,9 +21,17 @@ viewer is the one piece left:**
 - ✅ GPU-port path proven: `lain::flow-example`'s `GradientNode` emits an
   `acm::Texture` through a port, verified by a headless `[gpu]` test on a real
   driver (`cmake/addVulkanRuntime.cmake` builds the loader from source).
-- ⬜ **`flowview`** (WORK.md step 5) — the ImGui/archimedes inspector. Not started.
-  Needs GLFW + Dear ImGui + imnodes (FetchContent), the `imgui_impl_vulkan`
-  backend over archimedes' raw handles, and live-driver *visual* verification.
+- ⬜ **`flow` decouple** — drop archimedes from `flow` core: `PortValue` becomes a
+  thin `std::any` slot; GPU-kind detection moves to consumers (see decision 3).
+- ⬜ **`libs/math`** (`lain::math`) — typed GLM wrapper. Lands first: the ImGui↔GLM
+  bridge depends on it.
+- ⬜ **`libs/app`** (`lain::app`) — GLFW 3.4 + CLI11 reusable app harness:
+  multi-window shared-device runner + input + a `View` plugin (windowed hooks +
+  headless `run()` for cli-mode). Generalizes archimedes' testbed into a library.
+- ⬜ **`libs/gui`** (`lain::gui`) — Dear ImGui + imnodes wrapper over archimedes'
+  raw handles + a `lain::app` window; re-exposes `ImGui::` as `lain::gui::`.
+- ⬜ **`apps/flowview`** — the inspector: a `lain::app` window + `lain::gui` panels,
+  reusing the example graph. Needs live-driver *visual* verification.
 
 Keep this section current as work lands. Once `flow` is fuller, this file is its
 standing architecture reference (the role `CLAUDE.md` plays in the sibling repos).
@@ -33,23 +41,26 @@ standing architecture reference (the role `CLAUDE.md` plays in the sibling repos
 `lain` is a **cumulative set** — an umbrella of small libraries under `libs/`,
 each either owned `lain` code or a thin wrapper giving an external library a
 `lain::` face (`libs/task` → `lain::task` over Taskflow; `libs/math` →
-`lain::math` over GLM, when needed).
+`lain::math` over GLM; `libs/app` → GLFW 3.4 + CLI11; `libs/gui` → Dear ImGui).
 
 `flow` is a fast, threadable node-graph engine: typed-port nodes connect into a
 DAG, the graph evaluates across worker threads, and every intermediate result
-stays inspectable in a live ImGui viewer — including GPU image outputs shown as
-thumbnails with no copy. It **composes** the set; it does not re-implement it:
+stays inspectable. It is **payload-agnostic** — a port carries any copyable value,
+CPU or a GPU handle — so `flow` itself depends on nothing but `lain::task`:
 
 - **Taskflow** (via **`lain::task`**, `libs/task`) — the execution substrate. It
   *is* a task-graph executor with a work-stealing pool, so the push scheduler is
   largely its job; our owned scheduler code just lowers our DAG onto it. We wrap
-  it thin so `flow` sees `lain::task`, never `tf::`.
-- **`archimedes`** (Vulkan renderer, `acm::` handles) — shares one `VkDevice`
-  with the graph so a node's `acm::Texture`/`acm::Buffer` output renders in the
-  viewer zero-copy.
+  it thin so `flow` sees `lain::task`, never `tf::`. This is `flow`'s **only**
+  dependency.
 
-(`multi`, `lain`'s own pool, is **not** a dependency for now — Taskflow replaces
-it. It stays a sibling lib and can return behind the `lain::task` seam later.)
+**`archimedes` is a dependency of `flow`'s *consumers*, not of `flow`.** A GPU node
+(`flow-example`'s `GradientNode`) and the viewer (`lain::gui`/`flowview`) link
+`archimedes` and share one `VkDevice` so an `acm::Texture` output previews
+zero-copy; `flow` just stores the handle in its generic port slot and never names
+`acm::`. (`multi`, `lain`'s own pool, is **not** a dependency for now — Taskflow
+replaces it. It stays a sibling lib and can return behind the `lain::task` seam
+later.)
 
 ## Locked decisions (from planning — do not relitigate without asking)
 
@@ -61,16 +72,31 @@ it. It stays a sibling lib and can return behind the `lain::task` seam later.)
 2. **Taskflow is the substrate (drops `multi` for now).** `libs/task` wraps it;
    `flow`'s scheduler lowers the DAG onto a `tf::Taskflow` run on a `lain::task`
    executor.
-3. **Dual CPU + GPU ports.** A port value holds a plain CPU value **or** a GPU
-   resource (`acm::Texture` / `acm::Buffer`). Graph and renderer share one device.
+3. **`flow` is payload-agnostic (decoupled from archimedes).** A `PortValue` is a
+   thin `std::any` slot holding any copyable value — a CPU payload **or** a GPU
+   handle (`acm::Texture`/`acm::Buffer` are just copyable `shared_ptr` handles), so
+   `flow` core links **only** `lain::task`. "Is this a texture, preview it" is the
+   viewer's job: it compares `PortValue::type()` against `typeid(acm::Texture)` (it
+   already links archimedes). Supersedes the earlier dual-tagged-PortValue plan.
 4. **Hybrid execution.** Taskflow drives the **push** run (node fires when inputs
    ready); we own a **pull** path (`evaluate(NodeId)`) for nodes that don't fit a
    full run — `constant` nodes (compute once, then clean) and on-request sources
    (e.g. a `CameraCapture` that refires each pull).
-5. **Milestone 1 ships the viewer** — engine and inspector land together.
+5. **Milestone 1 ships the viewer** — engine, the reusable app stack
+   (`lain::app`/`lain::gui`/`lain::math`), and the inspector land together.
+6. **App stack: GLFW 3.4 + CLI11; ImGui in a separate `libs/gui`.** GLFW sits
+   behind a `lain::app` seam (SDL3 could swap in later); CLI11 lives inside
+   `lain::app` (only apps consume it). ImGui + imnodes are wrapped in `lain::gui`,
+   kept out of `lain::app` so the harness stays GUI-agnostic. cli-mode runs a graph
+   headless and dumps output.
+7. **`lain::math` wraps GLM with typed names** (`Vec<N,T>`, `Vec2f`/`Vec2i`/…,
+   `Mat4f`). `lain::gui` re-exposes ImGui via `using namespace ImGui` (functions
+   read as `lain::gui::`) and bridges ImGui's global `ImVec2`/`ImVec4` to
+   `lain::math::Vec2f`/`Vec4f` via `IM_VEC{2,4}_CLASS_EXTRA` in an
+   `IMGUI_USER_CONFIG` header.
 
 Names `flow` / `flowview` / namespace `lain::flow` (internals `lain::flow::detail`)
-are placeholders; confirm before the first commit. See WORK.md "Open questions".
+are settled (committed). New libs: `lain::math`, `lain::app`, `lain::gui`.
 
 ## Intended architecture (target — build toward this)
 
@@ -82,9 +108,9 @@ Three layers, public → private, mirroring `multi`'s layering discipline:
 2. **`Node` / `Port` / `PortValue`** — `Node` is an abstract base with a
    polymorphic `compute()`; declares ports in its ctor. `Port` owns a
    **persistent** `PortValue` (overwritten on recompute, never consumed
-   downstream — this is what makes stages inspectable). `PortValue` is a tagged
-   type-erased slot over a closed kind set (CPU payload | `acm::Texture` |
-   `acm::Buffer`) carrying a `std::type_index` for connection checks. A node's
+   downstream — this is what makes stages inspectable). `PortValue` is a thin
+   `std::any` slot carrying a `std::type_index` for connection checks — it holds
+   any copyable payload (CPU value or GPU handle), with no GPU types in `flow`. A node's
    `constant` / on-request character is expressed through `dirty()`: a constant
    clears it after first compute; a `CameraCapture` stays dirty so each pull
    refires.
@@ -108,12 +134,13 @@ Hard contracts:
   thread; `lain::task` workers run `compute()` and funnel GPU submits through
   `acm::Device::deviceMutex()`. Workers never touch ImGui.
 
-`flowview` uses ImGui's **official** `imgui_impl_glfw` + `imgui_impl_vulkan`
-backends driven by `archimedes`' raw handles (`vkInstance`/`vkDevice`/`vkQueue`/
-`getQueueIdx`/`SwapChain::vkRenderPass`/`maxSampleCount`); record ImGui draw data
-inside `acm::Renderer::render(record)`. GPU port previews go through
-`ImGui_ImplVulkan_AddTexture` → `ImGui::Image` (from `Texture::vkImageView` +
-`acm::Sampler`). Do **not** hand-write an ImGui backend.
+`flowview` is a thin `lain::app` client: one window, plus `lain::gui` panels.
+`lain::gui` drives ImGui's **official** `imgui_impl_glfw` + `imgui_impl_vulkan`
+backends from `archimedes`' raw handles (`vkInstance`/`vkDevice`/`vkQueue`/
+`getQueueIdx`/`SwapChain::vkRenderPass`/`maxSampleCount`) and a `lain::app` window,
+and records ImGui draw data inside `acm::Renderer::render(record)`. GPU port
+previews go through `ImGui_ImplVulkan_AddTexture` → `lain::gui::Image` (from
+`Texture::vkImageView` + `acm::Sampler`). Do **not** hand-write an ImGui backend.
 
 ## Conventions to inherit (so new code looks native)
 
@@ -143,23 +170,27 @@ beside this repo) before writing:
 
 ## Where to start
 
-Follow WORK.md "Milestone 1" in order: (1) build skeleton + submodules, (2)
-`PortValue`, (3) `Port`/`Node`/`Graph`, (4) `Scheduler` push+pull, (5) `flowview`,
-(6) tests + example graph. Don't build the backlog (Tier A/B) speculatively.
+The engine core (skeleton, `PortValue`, `Port`/`Node`/`Graph`, `Scheduler`,
+example node + tests) is already built. Follow WORK.md's "Remaining work" in order:
+(1) decouple `flow` from archimedes (`PortValue` → `std::any`), (2) `libs/math`
+(typed GLM), (3) `libs/app` (GLFW + CLI11 harness), (4) `libs/gui` (ImGui + imnodes
+wrapper), (5) `apps/flowview`. Don't build the backlog (Tier A/B) speculatively.
 
-## Build & verify (intended — CMake doesn't exist yet)
+## Build & verify
 
 Out-of-source, standard for `lain`:
 
 ```sh
 git submodule update --init --recursive   # pull extern/ (archimedes; tracks develop)
-cmake -B build                            # FetchContent pulls Taskflow, ImGui, imnodes, ...
+cmake -B build                            # FetchContent pulls Taskflow, GLM, GLFW, CLI11, ImGui, imnodes, ...
 cmake --build build
 ctest --test-dir build --output-on-failure
-./build/flowview                          # launches the inspector on the live driver
+./build/apps/flowview/flowview            # gui-mode: the inspector on the live driver
+./build/apps/flowview/flowview --help     # cli-mode: run a graph headless, dump output
 ```
 
-**M1 is done** when: the library compiles warning-clean under strict flags;
-`ctest` passes; and `flowview` launches against the live driver and renders the
-example graph with a GPU node's texture visible in the inspector. Per AGENTS.md
+**M1 is done** when: every lib compiles warning-clean under strict flags; `ctest`
+passes; a `flowview` cli-mode run evaluates the example graph headless and dumps
+its output; and `flowview` gui-mode launches against the live driver and renders
+the example graph with a GPU node's texture visible in the inspector. Per AGENTS.md
 rule 9 — do not claim the viewer works without having run it.
