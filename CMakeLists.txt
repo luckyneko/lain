@@ -44,10 +44,13 @@ add_subdirectory(extern/archimedes)     # acm:: Vulkan renderer (for flow + flow
 include(addTaskflow)
 include(addGLM)
 
-# The Vulkan loader (built from source) resolves archimedes' vk* symbols for any
-# runnable target that creates a VkInstance — the [gpu] tests and flowview.
+# Vulkan loader for lain's own VkInstance-creating executables (the [gpu] tests,
+# flowview). archimedes owns Vulkan and exposes acm_require_vulkan_runtime()
+# (defined by add_subdirectory above); reusing it keeps the loader version-locked
+# to archimedes' headers — no second pin to skew. Builds the loader cross-platform
+# and pulls MoltenVK on macOS.
 if(LAIN_BUILD_TESTING OR LAIN_BUILD_APPS)
-	include(addVulkanRuntime)
+	acm_require_vulkan_runtime()
 endif()
 
 if(LAIN_BUILD_TESTING)

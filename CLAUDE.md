@@ -20,7 +20,7 @@ refactor of `flow` plus the app stack + viewer:**
   (push `Graph::run` via Taskflow, pull `Graph::evaluate`). All in `libs/flow`.
 - ✅ GPU-port path proven: `lain::flow-example`'s `GradientNode` emits an
   `acm::Texture` through a port, verified by a headless `[gpu]` test on a real
-  driver (`cmake/addVulkanRuntime.cmake` builds the loader from source).
+  driver (archimedes' `acm_require_vulkan_runtime()` builds the loader from source).
 - ✅ **`flow` decouple** — `PortValue` is now a thin `std::any` slot; `flow` core
   links only `lain::task` (archimedes moved to `flow-example`). Verified: warning-
   clean build + all 23 flow tests pass, incl. the live-driver texture round-trip.
