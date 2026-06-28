@@ -27,9 +27,20 @@ refactor of `flow` plus the app stack + viewer:**
 - ✅ **`libs/math`** (`lain::math`) — typed GLM wrapper (generic `Vec<N,T>`/`Mat`/
   `Quat`, per-dim `Vec2/3/4<T>`, named concretes; GLM free fns re-exposed). GLM
   1.0.3 via `cmake/addGLM.cmake` (SYSTEM). Builds warning-clean; 3 tests pass.
-- ⬜ **`libs/app`** (`lain::app`) — GLFW 3.4 + CLI11 reusable app harness:
-  multi-window shared-device runner + input + a `View` plugin (windowed hooks +
-  headless `run()` for cli-mode). Generalizes archimedes' testbed into a library.
+- ✅ **`libs/core`** (`lain::core`) — foundational std-only types. `Time` (monotonic,
+  int64-ns storage, seconds-facing, chrono-interop, `as<>`/`from<>`/`since()`) +
+  `TimeState` lives in `lain::app`. Wall-clock `DateTime` + video `Timecode` deferred
+  (WORK.md Tier C). 5 tests pass.
+- ✅ **`libs/app`** (`lain::app`) — GLFW 3.4 + CLI11 app framework (delegate-based,
+  not a testbed): `Application` owns the instance + lazy shared device + the windows
+  it creates + the single-threaded run loop; `ApplicationDelegate`
+  (`onInit(cli)`/`onStart`/`onUpdate`/`onProcess`/`onStop`/`onShutdown`, where
+  `onProcess` runs once in headless and on demand via `Application::process()` in gui)
+  + `WindowDelegate` (`onInit`/`onRender`/`onResize`/`onShutdown`); `InputState`
+  (decoupled `Key`/`MouseButton` enums) + `TimeState` snapshots; CLI11 re-exposed as
+  `lain::app::cli`. Headless = an app that opens no windows. Gated by
+  `LAIN_BUILD_APPS`; both modes verified on the live driver (headless + cli in ctest,
+  opt-in `[gpu]` window smoke `LAIN_GUI_SMOKE=1`).
 - ⬜ **`libs/gui`** (`lain::gui`) — Dear ImGui + imnodes wrapper over archimedes'
   raw handles + a `lain::app` window; re-exposes `ImGui::` as `lain::gui::`.
 - ⬜ **`apps/flowview`** — the inspector: a `lain::app` window + `lain::gui` panels,
@@ -43,7 +54,8 @@ standing architecture reference (the role `CLAUDE.md` plays in the sibling repos
 `lain` is a **cumulative set** — an umbrella of small libraries under `libs/`,
 each either owned `lain` code or a thin wrapper giving an external library a
 `lain::` face (`libs/task` → `lain::task` over Taskflow; `libs/math` →
-`lain::math` over GLM; `libs/app` → GLFW 3.4 + CLI11; `libs/gui` → Dear ImGui).
+`lain::math` over GLM; `libs/core` → `lain::core` std-only types; `libs/app` →
+GLFW 3.4 + CLI11; `libs/gui` → Dear ImGui).
 
 `flow` is a fast, threadable node-graph engine: typed-port nodes connect into a
 DAG, the graph evaluates across worker threads, and every intermediate result

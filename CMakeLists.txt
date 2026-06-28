@@ -59,11 +59,18 @@ if(LAIN_BUILD_TESTING)
 endif()
 
 # ---- Libraries (lain::<name>) -----------------------------------------------
+add_subdirectory(libs/core)             # foundational std-only types (Time)
 add_subdirectory(libs/math)             # typed GLM wrapper
 add_subdirectory(libs/task)
 add_subdirectory(libs/flow)             # the node-graph engine (WORK.md M1)
 
-# ---- Apps (executables) -----------------------------------------------------
+# ---- App stack + apps -------------------------------------------------------
+# The GUI/windowing libs and their deps (GLFW, CLI11, later ImGui) build only with
+# the app stack, so a headless consumer of lain::flow isn't forced to vendor them.
 if(LAIN_BUILD_APPS)
-	# add_subdirectory(apps/flowview)   # ImGui inspector (needs archimedes + flow)
+	include(addGLFW)
+	include(addCLI11)
+	add_subdirectory(libs/app)            # GLFW + CLI11 app harness
+	# add_subdirectory(libs/gui)          # ImGui + imnodes wrapper (step 8)
+	# add_subdirectory(apps/flowview)     # the inspector (step 9)
 endif()

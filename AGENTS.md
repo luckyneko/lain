@@ -127,6 +127,12 @@ path.
 - **Match surrounding style.** New code should look native. Follow the nearest
   `.clang-format` from the file's directory up to the repo root (Allman braces,
   tabs, no column limit).
+- **C++ structure.** Prefer clear ownership and composition. Use `friend` only
+  when genuinely required (e.g. a pImpl handle's parent-factory) — not as a
+  shortcut around an awkward boundary. Do **not** introduce a `detail` / `details`
+  namespace, nor anonymous `namespace {}` blocks; give internal types and helpers
+  real names in the library's namespace, or use file-local `static` linkage for a
+  single translation unit.
 - **Finish before you start.** If the task is bigger than expected, surface it.
   Do not leave dangling stubs or silent partial work.
 - **Stop after 2–3 failed attempts.** Repeated failure means the premise may be
