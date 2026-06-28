@@ -55,8 +55,8 @@ TEST_CASE("GradientNode emits an uploaded texture on its port", "[flow][gpu]")
 	graph.evaluate(id); // pull: runs compute() — creates + uploads the texture
 
 	const Port& out = graph.node(id).output(0);
-	REQUIRE(out.value().kind() == PortKind::Texture);
-	acm::Texture texture = out.value().texture();
+	REQUIRE(out.value().holds<acm::Texture>());
+	acm::Texture texture = out.value().get<acm::Texture>();
 	REQUIRE(texture.valid());
 
 	// Read the texture back into a host-visible buffer.

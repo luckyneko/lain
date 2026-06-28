@@ -1,6 +1,7 @@
-// Unit tests for lain::flow::PortValue — the dual CPU/GPU port slot. GPU kinds
-// are exercised with null acm:: handles (a default Texture/Buffer is a valid
-// empty handle), so the whole suite runs without a driver.
+// Unit tests for lain::flow::PortValue — the type-erased port slot. flow is
+// payload-agnostic, so a GPU handle is just another copyable value: the suite
+// exercises acm:: handles with null (default-constructed) Texture/Buffer to prove
+// they ride through the generic slot, which needs no driver.
 
 #include <string>
 #include <typeindex>
@@ -11,13 +12,11 @@
 #include <archimedes/acmTexture.h>
 #include <lain/flow/portvalue.h>
 
-using lain::flow::PortKind;
 using lain::flow::PortValue;
 
 TEST_CASE("a default PortValue is empty", "[portvalue]")
 {
 	PortValue v;
-	REQUIRE(v.kind() == PortKind::Empty);
 	REQUIRE(v.empty());
 	REQUIRE(v.type() == std::type_index(typeid(void)));
 }
@@ -27,7 +26,6 @@ TEST_CASE("a CPU value round-trips and reports its type", "[portvalue]")
 	PortValue v;
 	v.set(42);
 
-	REQUIRE(v.kind() == PortKind::Cpu);
 	REQUIRE_FALSE(v.empty());
 	REQUIRE(v.holds<int>());
 	REQUIRE_FALSE(v.holds<float>());
@@ -55,28 +53,28 @@ TEST_CASE("overwriting reuses the one persistent slot", "[portvalue]")
 	REQUIRE(v.type() == std::type_index(typeid(float)));
 }
 
-TEST_CASE("GPU resources select the Texture / Buffer kind", "[portvalue]")
+TEST_CASE("GPU handles ride through the generic slot", "[portvalue]")
 {
 	SECTION("texture")
 	{
 		PortValue v;
-		v.set(acm::Texture{}); // null handle is still a Texture-kind payload
-		REQUIRE(v.kind() == PortKind::Texture);
+		v.set(acm::Texture{}); // a null handle is still a valid acm::Texture payload
+		REQUIRE(v.holds<acm::Texture>());
 		REQUIRE(v.type() == std::type_index(typeid(acm::Texture)));
-		REQUIRE_FALSE(v.texture().valid());
+		REQUIRE_FALSE(v.get<acm::Texture>().valid());
 	}
 
 	SECTION("buffer")
 	{
 		PortValue v;
 		v.set(acm::Buffer{});
-		REQUIRE(v.kind() == PortKind::Buffer);
+		REQUIRE(v.holds<acm::Buffer>());
 		REQUIRE(v.type() == std::type_index(typeid(acm::Buffer)));
-		REQUIRE_FALSE(v.buffer().valid());
+		REQUIRE_FALSE(v.get<acm::Buffer>().valid());
 	}
 }
 
-TEST_CASE("sameType compares kind and payload type", "[portvalue]")
+TEST_CASE("sameType compares the payload type", "[portvalue]")
 {
 	PortValue a;
 	a.set(7);
@@ -89,8 +87,8 @@ TEST_CASE("sameType compares kind and payload type", "[portvalue]")
 	PortValue buf;
 	buf.set(acm::Buffer{});
 
-	REQUIRE(a.sameType(b));        // int vs int
-	REQUIRE_FALSE(a.sameType(f));  // int vs float
+	REQUIRE(a.sameType(b));       // int vs int
+	REQUIRE_FALSE(a.sameType(f)); // int vs float
 	REQUIRE_FALSE(tex.sameType(buf));
 	REQUIRE(tex.sameType(PortValue{ tex })); // Texture vs Texture
 }
@@ -100,7 +98,6 @@ TEST_CASE("clear returns the slot to empty", "[portvalue]")
 	PortValue v;
 	v.set(123);
 	v.clear();
-	REQUIRE(v.kind() == PortKind::Empty);
 	REQUIRE(v.empty());
 }
 

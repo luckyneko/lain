@@ -1,6 +1,6 @@
 # lain::flow tests (Catch2). enable_testing() + addcatch2 are done at the project
-# root. PortValue's GPU kinds use null acm:: handles, so this is a pure unit suite
-# (no driver needed).
+# root. The PortValue/graph/scheduler suites are pure unit (no driver); the [gpu]
+# node test creates a real device and SKIPs when none is present.
 
 add_executable(test-flow
 	test_portvalue.cpp

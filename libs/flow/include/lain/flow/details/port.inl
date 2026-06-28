@@ -1,7 +1,7 @@
 #pragma once
 
 // Template method definitions for lain::flow::Port (see port.h). They forward to
-// the owned PortValue, whose set() overloads pick the CPU or GPU arm.
+// the owned PortValue, which stores the value in its type-erased slot.
 
 namespace lain::flow
 {
