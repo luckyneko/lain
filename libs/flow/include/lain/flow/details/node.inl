@@ -18,4 +18,4 @@ namespace lain::flow
 		m_outputs.push_back(Port(std::move(name), Port::Direction::Output, std::type_index(typeid(T))));
 		return m_outputs.size() - 1;
 	}
-}
+} // namespace lain::flow

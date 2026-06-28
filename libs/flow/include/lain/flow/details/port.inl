@@ -16,4 +16,4 @@ namespace lain::flow
 	{
 		return m_value.get<T>();
 	}
-}
+} // namespace lain::flow

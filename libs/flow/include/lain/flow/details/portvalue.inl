@@ -22,4 +22,4 @@ namespace lain::flow
 	{
 		return std::any_cast<const T&>(m_value);
 	}
-}
+} // namespace lain::flow

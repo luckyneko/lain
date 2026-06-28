@@ -1,12 +1,12 @@
 #pragma once
 
+#include <lain/flow/node.h>
+#include <lain/flow/types.h>
+
 #include <memory>
 #include <type_traits>
 #include <utility>
 #include <vector>
-
-#include <lain/flow/node.h>
-#include <lain/flow/types.h>
 
 namespace lain::task
 {
@@ -71,6 +71,6 @@ namespace lain::flow
 		mutable std::vector<NodeId> m_topo;
 		mutable bool m_topoValid = false;
 	};
-}
+} // namespace lain::flow
 
 #include <lain/flow/details/graph.inl>

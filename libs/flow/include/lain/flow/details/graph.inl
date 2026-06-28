@@ -15,4 +15,4 @@ namespace lain::flow
 		m_topoValid = false;
 		return id;
 	}
-}
+} // namespace lain::flow

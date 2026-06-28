@@ -1,8 +1,8 @@
 #pragma once
 
-#include <cstdint>
-
 #include <lain/core/time.h>
+
+#include <cstdint>
 
 namespace lain::app
 {
@@ -11,7 +11,7 @@ namespace lain::app
 	struct TimeState
 	{
 		lain::core::Time elapsed; // since the loop started (absolute, monotonic)
-		lain::core::Time delta;   // since the previous frame
-		uint64_t frame{ 0 };      // update/frame index
+		lain::core::Time delta;	  // since the previous frame
+		uint64_t frame{0};		  // update/frame index
 	};
-}
+} // namespace lain::app

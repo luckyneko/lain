@@ -50,6 +50,6 @@ namespace lain::flow
 	private:
 		std::any m_value;
 	};
-}
+} // namespace lain::flow
 
 #include <lain/flow/details/portvalue.inl>

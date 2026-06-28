@@ -76,4 +76,4 @@ namespace lain::math
 	using Quatd = glm::dquat;
 
 	using namespace glm; // re-expose GLM's free functions as lain::math
-}
+} // namespace lain::math

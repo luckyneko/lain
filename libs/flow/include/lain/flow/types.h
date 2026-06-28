@@ -18,7 +18,7 @@ namespace lain::flow
 		InvalidNode,  // from / to is not a node in this graph
 		InvalidPort,  // outPort / inPort is out of range
 		TypeMismatch, // the output and input declared types differ
-		InputInUse,   // the input port already has a source (disconnect first)
-		WouldCycle,   // the edge would introduce a cycle
+		InputInUse,	  // the input port already has a source (disconnect first)
+		WouldCycle,	  // the edge would introduce a cycle
 	};
-}
+} // namespace lain::flow

@@ -7,7 +7,9 @@
 namespace lain::flow::example
 {
 	GradientNode::GradientNode(acm::Device device, acm::Extent2D extent)
-	    : Node("Gradient"), m_device(device), m_extent(extent)
+		: Node("Gradient")
+		, m_device(device)
+		, m_extent(extent)
 	{
 		m_out = addOutput<acm::Texture>("texture");
 		m_texture = m_device.createTexture(acm::Format::R8G8B8A8_Unorm, m_extent);
@@ -37,4 +39,4 @@ namespace lain::flow::example
 		m_texture.upload(pixels.data(), pixels.size());
 		output(m_out).set(m_texture);
 	}
-}
+} // namespace lain::flow::example

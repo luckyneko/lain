@@ -1,10 +1,9 @@
 #pragma once
 
-#include <memory>
-
 #include <archimedes/acmForward.h>
-
 #include <lain/app/window.h> // WindowSpec + Window (createWindow return)
+
+#include <memory>
 
 namespace lain::app
 {
@@ -54,4 +53,4 @@ namespace lain::app
 		struct impl;
 		std::unique_ptr<impl> m;
 	};
-}
+} // namespace lain::app

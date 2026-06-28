@@ -1,12 +1,12 @@
 #pragma once
 
+#include <lain/flow/port.h>
+#include <lain/flow/types.h>
+
 #include <string>
 #include <typeindex>
 #include <utility>
 #include <vector>
-
-#include <lain/flow/port.h>
-#include <lain/flow/types.h>
 
 namespace lain::flow
 {
@@ -46,7 +46,10 @@ namespace lain::flow
 		virtual void onInspect() {}
 
 	protected:
-		explicit Node(std::string name) : m_name(std::move(name)) {}
+		explicit Node(std::string name)
+			: m_name(std::move(name))
+		{
+		}
 
 		// Declare a port in the subclass constructor; returns its index, for use
 		// with input() / output() inside compute().
@@ -65,6 +68,6 @@ namespace lain::flow
 		std::vector<Port> m_outputs;
 		bool m_dirty = true;
 	};
-}
+} // namespace lain::flow
 
 #include <lain/flow/details/node.inl>

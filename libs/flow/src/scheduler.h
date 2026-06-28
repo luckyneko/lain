@@ -27,5 +27,5 @@ namespace lain::flow
 		// dirty nodes (constant nodes stay clean after their first compute;
 		// on-request sources re-mark themselves dirty and so refire each pull).
 		void runPull(Graph& graph, NodeId target);
-	}
-}
+	} // namespace detail
+} // namespace lain::flow

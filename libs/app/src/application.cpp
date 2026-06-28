@@ -1,15 +1,12 @@
+#include <archimedes/archimedes.h>
 #include <lain/app/application.h>
-
 #include <lain/app/applicationdelegate.h>
 #include <lain/app/cli.h>
 #include <lain/app/inputstate.h>
 #include <lain/app/timestate.h>
 #include <lain/app/window.h>
 #include <lain/app/windowdelegate.h>
-
 #include <lain/core/time.h>
-
-#include <archimedes/archimedes.h>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -60,23 +57,40 @@ namespace lain::app
 	{
 		switch (k)
 		{
-			case Key::Space: return GLFW_KEY_SPACE;
-			case Key::Enter: return GLFW_KEY_ENTER;
-			case Key::Escape: return GLFW_KEY_ESCAPE;
-			case Key::Tab: return GLFW_KEY_TAB;
-			case Key::Backspace: return GLFW_KEY_BACKSPACE;
-			case Key::Delete: return GLFW_KEY_DELETE;
-			case Key::Left: return GLFW_KEY_LEFT;
-			case Key::Right: return GLFW_KEY_RIGHT;
-			case Key::Up: return GLFW_KEY_UP;
-			case Key::Down: return GLFW_KEY_DOWN;
-			case Key::LeftShift: return GLFW_KEY_LEFT_SHIFT;
-			case Key::RightShift: return GLFW_KEY_RIGHT_SHIFT;
-			case Key::LeftCtrl: return GLFW_KEY_LEFT_CONTROL;
-			case Key::RightCtrl: return GLFW_KEY_RIGHT_CONTROL;
-			case Key::LeftAlt: return GLFW_KEY_LEFT_ALT;
-			case Key::RightAlt: return GLFW_KEY_RIGHT_ALT;
-			default: break;
+			case Key::Space:
+				return GLFW_KEY_SPACE;
+			case Key::Enter:
+				return GLFW_KEY_ENTER;
+			case Key::Escape:
+				return GLFW_KEY_ESCAPE;
+			case Key::Tab:
+				return GLFW_KEY_TAB;
+			case Key::Backspace:
+				return GLFW_KEY_BACKSPACE;
+			case Key::Delete:
+				return GLFW_KEY_DELETE;
+			case Key::Left:
+				return GLFW_KEY_LEFT;
+			case Key::Right:
+				return GLFW_KEY_RIGHT;
+			case Key::Up:
+				return GLFW_KEY_UP;
+			case Key::Down:
+				return GLFW_KEY_DOWN;
+			case Key::LeftShift:
+				return GLFW_KEY_LEFT_SHIFT;
+			case Key::RightShift:
+				return GLFW_KEY_RIGHT_SHIFT;
+			case Key::LeftCtrl:
+				return GLFW_KEY_LEFT_CONTROL;
+			case Key::RightCtrl:
+				return GLFW_KEY_RIGHT_CONTROL;
+			case Key::LeftAlt:
+				return GLFW_KEY_LEFT_ALT;
+			case Key::RightAlt:
+				return GLFW_KEY_RIGHT_ALT;
+			default:
+				break;
 		}
 		if (k >= Key::A && k <= Key::Z)
 			return GLFW_KEY_A + (static_cast<int>(k) - static_cast<int>(Key::A));
@@ -89,10 +103,14 @@ namespace lain::app
 	{
 		switch (b)
 		{
-			case MouseButton::Left: return GLFW_MOUSE_BUTTON_LEFT;
-			case MouseButton::Right: return GLFW_MOUSE_BUTTON_RIGHT;
-			case MouseButton::Middle: return GLFW_MOUSE_BUTTON_MIDDLE;
-			default: return -1;
+			case MouseButton::Left:
+				return GLFW_MOUSE_BUTTON_LEFT;
+			case MouseButton::Right:
+				return GLFW_MOUSE_BUTTON_RIGHT;
+			case MouseButton::Middle:
+				return GLFW_MOUSE_BUTTON_MIDDLE;
+			default:
+				return -1;
 		}
 	}
 
@@ -108,7 +126,8 @@ namespace lain::app
 			{
 				const auto& list = present.getGPUSupport();
 				auto it = std::find_if(list.begin(), list.end(),
-				                       [idx = gpu.index](const acm::GPUSurfaceSupport& s) { return s.gpuIndex == idx; });
+									   [idx = gpu.index](const acm::GPUSurfaceSupport& s)
+									   { return s.gpuIndex == idx; });
 				if (it == list.end() || it->supportedFormats.empty() || it->supportedPresentModes.empty())
 					continue;
 				sup = &*it;
@@ -131,7 +150,8 @@ namespace lain::app
 	{
 		const auto& list = surface.getGPUSupport();
 		auto it = std::find_if(list.begin(), list.end(),
-		                       [gpuIdx](const acm::GPUSurfaceSupport& s) { return s.gpuIndex == gpuIdx; });
+							   [gpuIdx](const acm::GPUSurfaceSupport& s)
+							   { return s.gpuIndex == gpuIdx; });
 		if (it == list.end() || it->supportedFormats.empty() || it->supportedPresentModes.empty())
 			return false;
 		format = it->supportedFormats[0];
@@ -149,27 +169,30 @@ namespace lain::app
 
 	struct Application::impl
 	{
-		explicit impl(ApplicationDelegate& d) : delegate(d) {}
+		explicit impl(ApplicationDelegate& d)
+			: delegate(d)
+		{
+		}
 
 		ApplicationDelegate& delegate;
 		acm::Instance instance;
 		acm::Device device;
-		uint32_t gpuIdx{ 0 };
-		bool glfwReady{ false };
-		bool deviceCreated{ false };
-		bool quit{ false };
+		uint32_t gpuIdx{0};
+		bool glfwReady{false};
+		bool deviceCreated{false};
+		bool quit{false};
 
 		struct Entry
 		{
 			std::unique_ptr<Window> window;
-			WindowDelegate* delegate{ nullptr };
-			acm::Extent2D lastExtent{ 0, 0 };
+			WindowDelegate* delegate{nullptr};
+			acm::Extent2D lastExtent{0, 0};
 		};
 		std::vector<Entry> windows;
 
 		InputState input;
-		lain::math::Vec2f scrollAccum{ 0.0f, 0.0f };
-		bool inputFirst{ true };
+		lain::math::Vec2f scrollAccum{0.0f, 0.0f};
+		bool inputFirst{true};
 
 		void ensureGlfw();
 		void ensureInstance();
@@ -206,7 +229,7 @@ namespace lain::app
 		if (instance.valid())
 			return;
 		useStagedVulkanICD();
-		instance = acm::Instance("lain", acm::Version{ 0, 1, 0, 0 });
+		instance = acm::Instance("lain", acm::Version{0, 1, 0, 0});
 	}
 
 	acm::Device Application::impl::ensureDevice(acm::Surface present)
@@ -258,16 +281,19 @@ namespace lain::app
 		double cx = 0.0, cy = 0.0;
 		glfwGetCursorPos(w, &cx, &cy);
 		const lain::math::Vec2f prev = input.cursor;
-		input.cursor = { static_cast<float>(cx), static_cast<float>(cy) };
-		input.cursorDelta = inputFirst ? lain::math::Vec2f{ 0.0f, 0.0f } : (input.cursor - prev);
+		input.cursor = {static_cast<float>(cx), static_cast<float>(cy)};
+		input.cursorDelta = inputFirst ? lain::math::Vec2f{0.0f, 0.0f} : (input.cursor - prev);
 		input.scroll = scrollAccum;
-		scrollAccum = { 0.0f, 0.0f };
+		scrollAccum = {0.0f, 0.0f};
 		inputFirst = false;
 	}
 
 	// --- Application ------------------------------------------------------------
 
-	Application::Application(ApplicationDelegate& delegate) : m(std::make_unique<impl>(delegate)) {}
+	Application::Application(ApplicationDelegate& delegate)
+		: m(std::make_unique<impl>(delegate))
+	{
+	}
 	Application::~Application() = default;
 
 	Window& Application::createWindow(const WindowSpec& spec, WindowDelegate& delegate)
@@ -308,7 +334,7 @@ namespace lain::app
 		impl& s = *m;
 
 		// onInit: let the delegate register CLI options (CLI11's API), then parse argv.
-		cli::App cliApp{ "lain application" };
+		cli::App cliApp{"lain application"};
 		if (!s.delegate.onInit(*this, cliApp))
 			return 1;
 		try
@@ -399,4 +425,4 @@ namespace lain::app
 	acm::Device Application::device() { return m->ensureDevice(); }
 
 	const InputState& Application::input() const { return m->input; }
-}
+} // namespace lain::app

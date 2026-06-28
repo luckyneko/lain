@@ -8,10 +8,9 @@
 // surface (subflows, tf::Pipeline, ...) is deliberately not re-exposed until a
 // caller needs it. No tf:: type appears in a consumer's translation unit.
 
+#include <taskflow/taskflow.hpp>
 #include <thread>
 #include <utility>
-
-#include <taskflow/taskflow.hpp>
 
 namespace lain::task
 {
@@ -29,7 +28,10 @@ namespace lain::task
 
 	private:
 		friend class Flow;
-		explicit Task(tf::Task task) : m_task(task) {}
+		explicit Task(tf::Task task)
+			: m_task(task)
+		{
+		}
 		tf::Task m_task;
 	};
 
@@ -42,7 +44,7 @@ namespace lain::task
 		template <typename Fn>
 		Task emplace(Fn&& fn)
 		{
-			return Task{ m_flow.emplace(std::forward<Fn>(fn)) };
+			return Task{m_flow.emplace(std::forward<Fn>(fn))};
 		}
 
 	private:
@@ -55,7 +57,7 @@ namespace lain::task
 	{
 	public:
 		explicit Executor(unsigned threads = std::thread::hardware_concurrency())
-		    : m_exec(threads ? threads : 1u)
+			: m_exec(threads ? threads : 1u)
 		{
 		}
 
@@ -65,4 +67,4 @@ namespace lain::task
 	private:
 		tf::Executor m_exec;
 	};
-}
+} // namespace lain::task

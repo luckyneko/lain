@@ -42,8 +42,8 @@ namespace lain::core
 		Time since() const { return now() - *this; }
 
 		// Interval arithmetic (Time behaves as a duration).
-		constexpr Time operator+(Time rhs) const { return Time{ m_ns + rhs.m_ns }; }
-		constexpr Time operator-(Time rhs) const { return Time{ m_ns - rhs.m_ns }; }
+		constexpr Time operator+(Time rhs) const { return Time{m_ns + rhs.m_ns}; }
+		constexpr Time operator-(Time rhs) const { return Time{m_ns - rhs.m_ns}; }
 		Time operator*(double scale) const;
 
 		constexpr bool operator==(Time rhs) const { return m_ns == rhs.m_ns; }
@@ -54,15 +54,18 @@ namespace lain::core
 		constexpr bool operator>=(Time rhs) const { return m_ns >= rhs.m_ns; }
 
 	private:
-		explicit constexpr Time(std::chrono::nanoseconds ns) : m_ns(ns) {}
+		explicit constexpr Time(std::chrono::nanoseconds ns)
+			: m_ns(ns)
+		{
+		}
 
-		std::chrono::nanoseconds m_ns{ 0 }; // signed int64 ns: exact + safe differences
+		std::chrono::nanoseconds m_ns{0}; // signed int64 ns: exact + safe differences
 	};
 
 	template <class Units>
 	Time Time::from(double value)
 	{
-		return Time{ std::chrono::duration_cast<std::chrono::nanoseconds>(Units(value)) };
+		return Time{std::chrono::duration_cast<std::chrono::nanoseconds>(Units(value))};
 	}
 
 	template <class Units>
@@ -70,4 +73,4 @@ namespace lain::core
 	{
 		return Units(m_ns).count(); // target rep is double, so the conversion is exact-typed
 	}
-}
+} // namespace lain::core

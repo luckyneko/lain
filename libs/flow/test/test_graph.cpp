@@ -2,12 +2,11 @@
 // type-checked + cycle-rejecting connect, disconnect, topo order, and the
 // compute() read/write path (driven directly here; the scheduler is step 4).
 
-#include <algorithm>
-#include <typeindex>
-
-#include <catch2/catch_test_macros.hpp>
-
 #include <lain/flow/graph.h>
+
+#include <algorithm>
+#include <catch2/catch_test_macros.hpp>
+#include <typeindex>
 
 using namespace lain::flow;
 
@@ -18,7 +17,12 @@ namespace
 	{
 		int value;
 		PortIndex out;
-		explicit ConstInt(int v) : Node("ConstInt"), value(v) { out = addOutput<int>("value"); }
+		explicit ConstInt(int v)
+			: Node("ConstInt")
+			, value(v)
+		{
+			out = addOutput<int>("value");
+		}
 		void compute() override { output(out).set(value); }
 	};
 
@@ -26,7 +30,8 @@ namespace
 	struct AddInt : Node
 	{
 		PortIndex a, b, sum;
-		AddInt() : Node("Add")
+		AddInt()
+			: Node("Add")
 		{
 			a = addInput<int>("a");
 			b = addInput<int>("b");
@@ -39,7 +44,11 @@ namespace
 	struct SinkFloat : Node
 	{
 		PortIndex in;
-		SinkFloat() : Node("Sink") { in = addInput<float>("x"); }
+		SinkFloat()
+			: Node("Sink")
+		{
+			in = addInput<float>("x");
+		}
 		void compute() override {}
 	};
 
@@ -47,7 +56,7 @@ namespace
 	{
 		return std::find(order.begin(), order.end(), id) - order.begin();
 	}
-}
+} // namespace
 
 TEST_CASE("a node exposes its declared ports", "[graph]")
 {
@@ -72,7 +81,7 @@ TEST_CASE("connect type-checks declared port types", "[graph]")
 	const NodeId add = g.add<AddInt>();
 	const NodeId sink = g.add<SinkFloat>();
 
-	REQUIRE(g.connect(c, 0, add, 0) == Connection::Ok);          // int -> int
+	REQUIRE(g.connect(c, 0, add, 0) == Connection::Ok);			   // int -> int
 	REQUIRE(g.connect(c, 0, sink, 0) == Connection::TypeMismatch); // int -> float
 	REQUIRE(g.edges().size() == 1);
 }

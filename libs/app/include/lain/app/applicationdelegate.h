@@ -37,4 +37,4 @@ namespace lain::app
 		// Final teardown, after windows + device are gone (symmetric to onInit).
 		virtual void onShutdown([[maybe_unused]] Application& app) {}
 	};
-}
+} // namespace lain::app

@@ -16,4 +16,4 @@ namespace lain::flow
 	{
 		m_value.reset();
 	}
-}
+} // namespace lain::flow

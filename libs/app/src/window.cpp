@@ -1,9 +1,8 @@
+#include <archimedes/archimedes.h>
 #include <lain/app/window.h>
 
 #include <cstdint>
 #include <cstdio>
-
-#include <archimedes/archimedes.h>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -13,13 +12,16 @@ namespace lain::app
 	struct Window::impl
 	{
 		WindowSpec spec;
-		GLFWwindow* window{ nullptr };
+		GLFWwindow* window{nullptr};
 		acm::Surface surface;
 		acm::SwapChain swapChain;
 		acm::Renderer renderer;
 	};
 
-	Window::Window() : m(std::make_unique<impl>()) {}
+	Window::Window()
+		: m(std::make_unique<impl>())
+	{
+	}
 	Window::~Window() = default;
 
 	const std::string& Window::title() const { return m->spec.title; }
@@ -63,7 +65,7 @@ namespace lain::app
 	{
 		int w = 0, h = 0;
 		glfwGetFramebufferSize(m->window, &w, &h);
-		return acm::Extent2D{ static_cast<uint32_t>(w), static_cast<uint32_t>(h) };
+		return acm::Extent2D{static_cast<uint32_t>(w), static_cast<uint32_t>(h)};
 	}
 
 	acm::Extent2D Window::extent() const { return m->swapChain.getExtents(); }
@@ -93,4 +95,4 @@ namespace lain::app
 			m->window = nullptr;
 		}
 	}
-}
+} // namespace lain::app

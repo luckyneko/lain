@@ -2,7 +2,6 @@
 
 #include <archimedes/acmForward.h>
 #include <archimedes/acmTypes.h>
-
 #include <lain/app/timestate.h>
 
 namespace lain::app
@@ -31,4 +30,4 @@ namespace lain::app
 		// Release per-window GPU resources before the window/device tear down.
 		virtual void onShutdown([[maybe_unused]] Window& window) {}
 	};
-}
+} // namespace lain::app

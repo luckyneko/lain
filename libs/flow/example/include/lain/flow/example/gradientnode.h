@@ -3,7 +3,6 @@
 #include <archimedes/acmDevice.h>
 #include <archimedes/acmTexture.h>
 #include <archimedes/acmTypes.h>
-
 #include <lain/flow/node.h>
 
 namespace lain::flow::example
@@ -32,4 +31,4 @@ namespace lain::flow::example
 		acm::Texture m_texture; // persistent owned output, re-uploaded each compute
 		PortIndex m_out;
 	};
-}
+} // namespace lain::flow::example

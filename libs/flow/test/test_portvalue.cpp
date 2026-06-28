@@ -3,14 +3,13 @@
 // exercises acm:: handles with null (default-constructed) Texture/Buffer to prove
 // they ride through the generic slot, which needs no driver.
 
-#include <string>
-#include <typeindex>
-
-#include <catch2/catch_test_macros.hpp>
-
 #include <archimedes/acmBuffer.h>
 #include <archimedes/acmTexture.h>
 #include <lain/flow/portvalue.h>
+
+#include <catch2/catch_test_macros.hpp>
+#include <string>
+#include <typeindex>
 
 using lain::flow::PortValue;
 
@@ -34,7 +33,7 @@ TEST_CASE("a CPU value round-trips and reports its type", "[portvalue]")
 
 	SECTION("works for non-trivial types too")
 	{
-		v.set(std::string{ "lain" });
+		v.set(std::string{"lain"});
 		REQUIRE(v.holds<std::string>());
 		REQUIRE(v.get<std::string>() == "lain");
 	}
@@ -87,10 +86,10 @@ TEST_CASE("sameType compares the payload type", "[portvalue]")
 	PortValue buf;
 	buf.set(acm::Buffer{});
 
-	REQUIRE(a.sameType(b));       // int vs int
+	REQUIRE(a.sameType(b));		  // int vs int
 	REQUIRE_FALSE(a.sameType(f)); // int vs float
 	REQUIRE_FALSE(tex.sameType(buf));
-	REQUIRE(tex.sameType(PortValue{ tex })); // Texture vs Texture
+	REQUIRE(tex.sameType(PortValue{tex})); // Texture vs Texture
 }
 
 TEST_CASE("clear returns the slot to empty", "[portvalue]")

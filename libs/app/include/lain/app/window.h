@@ -1,10 +1,10 @@
 #pragma once
 
-#include <memory>
-#include <string>
-
 #include <archimedes/acmForward.h>
 #include <archimedes/acmTypes.h>
+
+#include <memory>
+#include <string>
 
 struct GLFWwindow;
 
@@ -13,14 +13,14 @@ namespace lain::app
 	// One window an Application opens.
 	struct WindowSpec
 	{
-		std::string title{ "lain" };
-		int width{ 1280 };
-		int height{ 720 };
-		int posX{ 120 };
-		int posY{ 160 };
-		bool resizable{ true };
-		bool depth{ true };
-		acm::SampleCount samples{ acm::SampleCount::One };
+		std::string title{"lain"};
+		int width{1280};
+		int height{720};
+		int posX{120};
+		int posY{160};
+		bool resizable{true};
+		bool depth{true};
+		acm::SampleCount samples{acm::SampleCount::One};
 	};
 
 	// A window owned by the Application: a GLFW window + acm::Surface + swapchain +
@@ -62,9 +62,9 @@ namespace lain::app
 		GLFWwindow* glfwHandle() const;
 		acm::Extent2D framebufferExtent() const;
 		void releaseDeviceObjects(); // renderer + swapchain (before device teardown)
-		void releaseSurface();       // surface + GLFW window (after device teardown)
+		void releaseSurface();		 // surface + GLFW window (after device teardown)
 
 		struct impl;
 		std::unique_ptr<impl> m;
 	};
-}
+} // namespace lain::app

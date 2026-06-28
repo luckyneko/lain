@@ -1,10 +1,9 @@
+#include "scheduler.h"
+
 #include <lain/flow/graph.h>
-
-#include <cstddef>
-
 #include <lain/task/task.h>
 
-#include "scheduler.h"
+#include <cstddef>
 
 namespace lain::flow
 {
@@ -31,7 +30,7 @@ namespace lain::flow
 		if (from == to || reaches(to, from))
 			return Connection::WouldCycle;
 
-		m_edges.push_back(Edge{ from, outPort, to, inPort });
+		m_edges.push_back(Edge{from, outPort, to, inPort});
 		m_topoValid = false;
 		return Connection::Ok;
 	}
@@ -128,4 +127,4 @@ namespace lain::flow
 	{
 		detail::runPull(*this, target);
 	}
-}
+} // namespace lain::flow

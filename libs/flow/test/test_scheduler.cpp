@@ -2,10 +2,10 @@
 // CPU nodes, so no driver is needed; the wide-graph case exercises concurrent
 // task execution for correctness.
 
-#include <catch2/catch_test_macros.hpp>
-
 #include <lain/flow/graph.h>
 #include <lain/task/task.h>
+
+#include <catch2/catch_test_macros.hpp>
 
 using namespace lain::flow;
 
@@ -15,14 +15,20 @@ namespace
 	{
 		int value;
 		PortIndex out;
-		explicit ConstInt(int v) : Node("ConstInt"), value(v) { out = addOutput<int>("value"); }
+		explicit ConstInt(int v)
+			: Node("ConstInt")
+			, value(v)
+		{
+			out = addOutput<int>("value");
+		}
 		void compute() override { output(out).set(value); }
 	};
 
 	struct AddInt : Node
 	{
 		PortIndex a, b, sum;
-		AddInt() : Node("Add")
+		AddInt()
+			: Node("Add")
 		{
 			a = addInput<int>("a");
 			b = addInput<int>("b");
@@ -36,7 +42,12 @@ namespace
 	{
 		int& calls;
 		PortIndex out;
-		explicit Counter(int& c) : Node("Counter"), calls(c) { out = addOutput<int>("v"); }
+		explicit Counter(int& c)
+			: Node("Counter")
+			, calls(c)
+		{
+			out = addOutput<int>("v");
+		}
 		void compute() override
 		{
 			++calls;
@@ -49,7 +60,12 @@ namespace
 	{
 		int& calls;
 		PortIndex out;
-		explicit Source(int& c) : Node("Source"), calls(c) { out = addOutput<int>("v"); }
+		explicit Source(int& c)
+			: Node("Source")
+			, calls(c)
+		{
+			out = addOutput<int>("v");
+		}
 		void compute() override
 		{
 			++calls;
@@ -57,7 +73,7 @@ namespace
 			markDirty();
 		}
 	};
-}
+} // namespace
 
 TEST_CASE("push run evaluates the whole graph", "[scheduler]")
 {
@@ -86,7 +102,7 @@ TEST_CASE("push run flows multi-level dependencies", "[scheduler]")
 	g.connect(c1, 0, add, 0);
 	g.connect(c2, 0, add, 1);
 	g.connect(add, 0, add2, 0); // (2+3) ...
-	g.connect(c3, 0, add2, 1);  // ... + 10
+	g.connect(c3, 0, add2, 1);	// ... + 10
 
 	lain::task::Executor executor; // the injected-executor overload
 	g.run(executor);
@@ -101,8 +117,8 @@ TEST_CASE("push run computes independent branches correctly", "[scheduler]")
 	const NodeId b = g.add<ConstInt>(2);
 	const NodeId c = g.add<ConstInt>(3);
 	const NodeId d = g.add<ConstInt>(4);
-	const NodeId ab = g.add<AddInt>();    // a + b
-	const NodeId cd = g.add<AddInt>();    // c + d  (independent of ab)
+	const NodeId ab = g.add<AddInt>();	  // a + b
+	const NodeId cd = g.add<AddInt>();	  // c + d  (independent of ab)
 	const NodeId total = g.add<AddInt>(); // ab + cd
 	g.connect(a, 0, ab, 0);
 	g.connect(b, 0, ab, 1);

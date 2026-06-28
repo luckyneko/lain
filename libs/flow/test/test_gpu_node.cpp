@@ -3,15 +3,13 @@
 // the gradient at known corners. SKIP-aware: no driver / no graphics queue -> the
 // test SKIPs (green) rather than failing, matching archimedes' [gpu] suite.
 
-#include <cstddef>
-#include <cstdint>
-
-#include <catch2/catch_test_macros.hpp>
-
 #include <archimedes/archimedes.h>
-
 #include <lain/flow/example/gradientnode.h>
 #include <lain/flow/graph.h>
+
+#include <catch2/catch_test_macros.hpp>
+#include <cstddef>
+#include <cstdint>
 
 namespace
 {
@@ -30,11 +28,11 @@ namespace
 		}
 		return nullptr;
 	}
-}
+} // namespace
 
 TEST_CASE("GradientNode emits an uploaded texture on its port", "[flow][gpu]")
 {
-	acm::Instance instance("lain-flow-tests", acm::Version{ 0, 1, 0, 0 });
+	acm::Instance instance("lain-flow-tests", acm::Version{0, 1, 0, 0});
 	if (!instance.valid())
 		SKIP("no Vulkan driver available");
 
@@ -50,7 +48,7 @@ TEST_CASE("GradientNode emits an uploaded texture on its port", "[flow][gpu]")
 
 	using namespace lain::flow;
 	Graph graph;
-	const NodeId id = graph.add<example::GradientNode>(device, acm::Extent2D{ kSize, kSize });
+	const NodeId id = graph.add<example::GradientNode>(device, acm::Extent2D{kSize, kSize});
 
 	graph.evaluate(id); // pull: runs compute() — creates + uploads the texture
 
@@ -62,10 +60,10 @@ TEST_CASE("GradientNode emits an uploaded texture on its port", "[flow][gpu]")
 	// Read the texture back into a host-visible buffer.
 	acm::Buffer readback = device.createBuffer(static_cast<std::size_t>(kSize) * kSize * 4, acm::BufferUsage::TransferDst);
 	REQUIRE(readback.valid());
-	device.submitSync([&](acm::CommandBuffer cmd) {
+	device.submitSync([&](acm::CommandBuffer cmd)
+					  {
 		cmd.transitionImage(texture, acm::ImageLayout::ShaderReadOnly, acm::ImageLayout::TransferSrc);
-		cmd.copyTextureToBuffer(texture, readback);
-	});
+		cmd.copyTextureToBuffer(texture, readback); });
 
 	const auto* px = static_cast<const uint8_t*>(readback.map());
 	REQUIRE(px != nullptr);

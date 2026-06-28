@@ -4,7 +4,7 @@ namespace lain::core
 {
 	Time Time::now()
 	{
-		return Time{ std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()) };
+		return Time{std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())};
 	}
 
 	Time Time::operator*(double scale) const
@@ -13,4 +13,4 @@ namespace lain::core
 		// nanosecond rep mid-multiply, then quantize back to exact ns.
 		return from<Seconds>(seconds() * scale);
 	}
-}
+} // namespace lain::core

@@ -1,9 +1,9 @@
 #pragma once
 
+#include <lain/math/types.h>
+
 #include <array>
 #include <cstddef>
-
-#include <lain/math/types.h>
 
 namespace lain::app
 {
@@ -13,12 +13,58 @@ namespace lain::app
 	enum class Key
 	{
 		Unknown = 0,
-		A, B, C, D, E, F, G, H, I, J, K, L, M,
-		N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
-		Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9,
-		Space, Enter, Escape, Tab, Backspace, Delete,
-		Left, Right, Up, Down,
-		LeftShift, RightShift, LeftCtrl, RightCtrl, LeftAlt, RightAlt,
+		A,
+		B,
+		C,
+		D,
+		E,
+		F,
+		G,
+		H,
+		I,
+		J,
+		K,
+		L,
+		M,
+		N,
+		O,
+		P,
+		Q,
+		R,
+		S,
+		T,
+		U,
+		V,
+		W,
+		X,
+		Y,
+		Z,
+		Num0,
+		Num1,
+		Num2,
+		Num3,
+		Num4,
+		Num5,
+		Num6,
+		Num7,
+		Num8,
+		Num9,
+		Space,
+		Enter,
+		Escape,
+		Tab,
+		Backspace,
+		Delete,
+		Left,
+		Right,
+		Up,
+		Down,
+		LeftShift,
+		RightShift,
+		LeftCtrl,
+		RightCtrl,
+		LeftAlt,
+		RightAlt,
 		Count
 	};
 
@@ -37,9 +83,9 @@ namespace lain::app
 	// the arrays directly — no friend needed).
 	struct InputState
 	{
-		lain::math::Vec2f cursor{ 0.0f, 0.0f };
-		lain::math::Vec2f cursorDelta{ 0.0f, 0.0f };
-		lain::math::Vec2f scroll{ 0.0f, 0.0f };
+		lain::math::Vec2f cursor{0.0f, 0.0f};
+		lain::math::Vec2f cursorDelta{0.0f, 0.0f};
+		lain::math::Vec2f scroll{0.0f, 0.0f};
 
 		std::array<bool, static_cast<size_t>(Key::Count)> keys{};
 		std::array<bool, static_cast<size_t>(Key::Count)> prevKeys{};
@@ -70,4 +116,4 @@ namespace lain::app
 			return !buttons[i] && prevButtons[i];
 		}
 	};
-}
+} // namespace lain::app

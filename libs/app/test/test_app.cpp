@@ -4,19 +4,17 @@
 // window on the live driver and is opt-in (LAIN_GUI_SMOKE=1) so GUI-less / driver-
 // less CI stays green.
 
-#include <cstdlib>
-#include <vector>
-
-#include <catch2/catch_test_macros.hpp>
-
 #include <archimedes/archimedes.h>
-
 #include <lain/app/application.h>
 #include <lain/app/applicationdelegate.h>
 #include <lain/app/cli.h>
 #include <lain/app/window.h>
 #include <lain/app/windowdelegate.h>
 #include <lain/flow/graph.h>
+
+#include <catch2/catch_test_macros.hpp>
+#include <cstdlib>
+#include <vector>
 
 using namespace lain;
 
@@ -26,14 +24,20 @@ namespace
 	{
 		int value;
 		flow::PortIndex out;
-		explicit ConstInt(int v) : Node("ConstInt"), value(v) { out = addOutput<int>("value"); }
+		explicit ConstInt(int v)
+			: Node("ConstInt")
+			, value(v)
+		{
+			out = addOutput<int>("value");
+		}
 		void compute() override { output(out).set(value); }
 	};
 
 	struct AddInt : flow::Node
 	{
 		flow::PortIndex a, b, sum;
-		AddInt() : Node("Add")
+		AddInt()
+			: Node("Add")
 		{
 			a = addInput<int>("a");
 			b = addInput<int>("b");
@@ -91,14 +95,14 @@ namespace
 				app.quit();
 		}
 	};
-}
+} // namespace
 
 TEST_CASE("headless: a windowless app runs onProcess and its graph", "[app]")
 {
 	GraphApp delegate;
 	app::Application app(delegate);
 	char arg0[] = "test-app";
-	char* argv[] = { arg0 };
+	char* argv[] = {arg0};
 
 	REQUIRE(app.run(1, argv) == 0);
 	REQUIRE(delegate.result == 5);
@@ -124,7 +128,7 @@ TEST_CASE("cli: the delegate registers options the base app parses", "[app]")
 	char a1[] = "--verbose";
 	char a2[] = "--value";
 	char a3[] = "42";
-	char* argv[] = { a0, a1, a2, a3 };
+	char* argv[] = {a0, a1, a2, a3};
 
 	REQUIRE(app.run(4, argv) == 0);
 	REQUIRE(delegate.verbose);
@@ -139,7 +143,7 @@ TEST_CASE("gui: opens a window and renders frames", "[app][gpu]")
 	SmokeApp delegate;
 	app::Application app(delegate);
 	char arg0[] = "test-app";
-	char* argv[] = { arg0 };
+	char* argv[] = {arg0};
 
 	REQUIRE(app.run(1, argv) == 0);
 }

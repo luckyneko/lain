@@ -1,9 +1,9 @@
 #include "scheduler.h"
 
-#include <vector>
-
 #include <lain/flow/graph.h>
 #include <lain/task/task.h>
+
+#include <vector>
 
 namespace lain::flow::detail
 {
@@ -46,7 +46,7 @@ namespace lain::flow::detail
 				node.compute();
 			}
 		}
-	}
+	} // namespace
 
 	void runPush(Graph& graph, lain::task::Executor& executor)
 	{
@@ -57,12 +57,12 @@ namespace lain::flow::detail
 		tasks.reserve(graph.nodeCount());
 		for (NodeId id = 0; id < graph.nodeCount(); ++id)
 		{
-			tasks.push_back(flow.emplace([&graph, id]() {
+			tasks.push_back(flow.emplace([&graph, id]()
+										 {
 				Node& node = graph.node(id);
 				node.clearDirty(); // an on-request node re-marks itself in compute()
 				populateInputs(graph, id);
-				node.compute();
-			}));
+				node.compute(); }));
 		}
 
 		for (const Graph::Edge& e : graph.edges())
@@ -76,4 +76,4 @@ namespace lain::flow::detail
 		std::vector<bool> visited(graph.nodeCount(), false);
 		evaluate(graph, target, visited);
 	}
-}
+} // namespace lain::flow::detail

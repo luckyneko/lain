@@ -1,10 +1,10 @@
 #pragma once
 
+#include <lain/flow/portvalue.h>
+
 #include <string>
 #include <typeindex>
 #include <utility>
-
-#include <lain/flow/portvalue.h>
 
 namespace lain::flow
 {
@@ -45,7 +45,9 @@ namespace lain::flow
 	private:
 		friend class Node; // only a Node builds its ports
 		Port(std::string name, Direction dir, std::type_index type)
-		    : m_name(std::move(name)), m_dir(dir), m_type(type)
+			: m_name(std::move(name))
+			, m_dir(dir)
+			, m_type(type)
 		{
 		}
 
@@ -54,6 +56,6 @@ namespace lain::flow
 		std::type_index m_type;
 		PortValue m_value;
 	};
-}
+} // namespace lain::flow
 
 #include <lain/flow/details/port.inl>
