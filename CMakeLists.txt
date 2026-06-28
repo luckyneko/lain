@@ -25,12 +25,19 @@ endif()
 # add_subdirectory they stay off, matching the siblings).
 option(LAIN_BUILD_TESTING "Build the unit/integration tests" ${LAIN_NOT_SUBPROJECT})
 option(LAIN_BUILD_APPS "Build the runnable apps (flowview)" ${LAIN_NOT_SUBPROJECT})
+option(LAIN_FORMAT "Provide clang-format format / format-check targets" ${LAIN_NOT_SUBPROJECT})
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 # Shared strict-warning flags for lain's own targets (link PRIVATE; never on a
 # vendored dep). Defines the lain::warnings INTERFACE target.
 include(lainWarnings)
+
+# clang-format `format` / `format-check` targets, over a vendored pinned binary. The
+# set of files is declared in .clang-format-include at the repo root.
+if(LAIN_FORMAT)
+	include(addclangformat)
+endif()
 
 # ---- Vendored / owned dependencies ------------------------------------------
 # Owned lain libs are git submodules under extern/, tracking their develop branch
