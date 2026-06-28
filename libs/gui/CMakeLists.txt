@@ -10,12 +10,17 @@ target_compile_definitions(imgui PUBLIC IMGUI_USER_CONFIG="lain/gui/imconfig_lai
 target_include_directories(imgui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(imgui PUBLIC lain::math)
 
-add_library(gui INTERFACE)
+add_library(gui STATIC
+	src/context.cpp
+)
 add_library(lain::gui ALIAS gui)
 
-target_compile_features(gui INTERFACE cxx_std_17)
-target_include_directories(gui INTERFACE include)
-target_link_libraries(gui INTERFACE imgui lain::app lain::math archimedes)
+target_compile_features(gui PUBLIC cxx_std_17)
+target_include_directories(gui PUBLIC include)
+target_link_libraries(gui
+	PUBLIC imgui lain::app lain::math archimedes
+	PRIVATE lain::warnings
+)
 
 if(LAIN_BUILD_TESTING)
 	add_subdirectory(test)

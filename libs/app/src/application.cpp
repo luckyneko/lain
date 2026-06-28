@@ -424,5 +424,11 @@ namespace lain::app
 
 	acm::Device Application::device() { return m->ensureDevice(); }
 
+	acm::Instance Application::instance()
+	{
+		m->ensureInstance();
+		return m->instance;
+	}
+
 	const InputState& Application::input() const { return m->input; }
 } // namespace lain::app

@@ -46,6 +46,10 @@ namespace lain::app
 		// The shared device, created on demand (for windows or headless compute).
 		acm::Device device();
 
+		// The Vulkan instance (created on demand) — for a GUI backend that needs the
+		// raw VkInstance (e.g. ImGui's Vulkan init).
+		acm::Instance instance();
+
 		// The current input snapshot (also passed to onUpdate).
 		const InputState& input() const;
 

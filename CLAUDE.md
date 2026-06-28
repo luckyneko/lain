@@ -41,8 +41,15 @@ refactor of `flow` plus the app stack + viewer:**
   `lain::app::cli`. Headless = an app that opens no windows. Gated by
   `LAIN_BUILD_APPS`; both modes verified on the live driver (headless + cli in ctest,
   opt-in `[gpu]` window smoke `LAIN_GUI_SMOKE=1`).
-- ⬜ **`libs/gui`** (`lain::gui`) — Dear ImGui + imnodes wrapper over archimedes'
-  raw handles + a `lain::app` window; re-exposes `ImGui::` as `lain::gui::`.
+- ◑ **`libs/gui`** (`lain::gui`) — Dear ImGui 1.92.8 wrapper. `gui.h` re-exposes
+  `ImGui::` as `lain::gui::`; `imconfig_lain.h` bridges `ImVec2/4` ↔ `lain::math
+  Vec2f/4f` (`IM_VEC*_CLASS_EXTRA` via `IMGUI_USER_CONFIG`). `Context` is the
+  per-window seam: `imgui_impl_glfw` on `Window::nativeHandle()` + `imgui_impl_vulkan`
+  on the shared device/swapchain (auto descriptor pool), with `newFrame()` /
+  `render(cmd)` / `image()` (acm::Texture → `lain::gui::Image`). Built warning-clean;
+  re-export + bridge tested. **Runtime (visual) verification lands with flowview.**
+  imnodes (node canvas) deferred — it lags ImGui internals. (`Application::instance()`
+  was added to `lain::app` for ImGui's `VkInstance`.)
 - ⬜ **`apps/flowview`** — the inspector: a `lain::app` window + `lain::gui` panels,
   reusing the example graph. Needs live-driver *visual* verification.
 
