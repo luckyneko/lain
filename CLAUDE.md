@@ -24,8 +24,9 @@ refactor of `flow` plus the app stack + viewer:**
 - ✅ **`flow` decouple** — `PortValue` is now a thin `std::any` slot; `flow` core
   links only `lain::task` (archimedes moved to `flow-example`). Verified: warning-
   clean build + all 23 flow tests pass, incl. the live-driver texture round-trip.
-- ⬜ **`libs/math`** (`lain::math`) — typed GLM wrapper. Lands first: the ImGui↔GLM
-  bridge depends on it.
+- ✅ **`libs/math`** (`lain::math`) — typed GLM wrapper (generic `Vec<N,T>`/`Mat`/
+  `Quat`, per-dim `Vec2/3/4<T>`, named concretes; GLM free fns re-exposed). GLM
+  1.0.3 via `cmake/addGLM.cmake` (SYSTEM). Builds warning-clean; 3 tests pass.
 - ⬜ **`libs/app`** (`lain::app`) — GLFW 3.4 + CLI11 reusable app harness:
   multi-window shared-device runner + input + a `View` plugin (windowed hooks +
   headless `run()` for cli-mode). Generalizes archimedes' testbed into a library.

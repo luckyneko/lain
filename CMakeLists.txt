@@ -42,6 +42,7 @@ add_subdirectory(extern/archimedes)     # acm:: Vulkan renderer (for flow + flow
 # Third-party deps via cmake/addXXX.cmake FetchContent modules (prefer system
 # package, else pinned release; headers re-exposed SYSTEM under strict flags).
 include(addTaskflow)
+include(addGLM)
 
 # The Vulkan loader (built from source) resolves archimedes' vk* symbols for any
 # runnable target that creates a VkInstance — the [gpu] tests and flowview.
@@ -55,9 +56,9 @@ if(LAIN_BUILD_TESTING)
 endif()
 
 # ---- Libraries (lain::<name>) -----------------------------------------------
+add_subdirectory(libs/math)             # typed GLM wrapper
 add_subdirectory(libs/task)
 add_subdirectory(libs/flow)             # the node-graph engine (WORK.md M1)
-# add_subdirectory(libs/math)           # GLM wrapper, when needed
 
 # ---- Apps (executables) -----------------------------------------------------
 if(LAIN_BUILD_APPS)
