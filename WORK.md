@@ -279,6 +279,18 @@ works without running it.
 5. **Node hot-reload** and a node-type plugin registry.
 6. **imgui-node-editor + docking/multi-viewport** upgrade from imnodes.
 
+### Tier C — foundational (when a consumer needs it)
+
+7. **`lain::core::DateTime`** — a wall-clock / calendar time type (Python
+   `datetime`-style) for system-time management: capture now, arithmetic, and
+   parse/format ISO-8601 (`%FT%T%z` for local, `%FT%T` for UTC). Split from
+   `lain::core::Time` (which stays monotonic-only) because calendar/formatting is
+   the `std::chrono` *time_point* side, not durations. Likely first needed when
+   graphs serialize to json (Tier A item 1 — timestamps).
+8. **Video `Timecode` / `Timestamp`** — a frame-rate-aware time type for camera /
+   video data (SMPTE-style timecode, drop-frame, frame ↔ time conversions). Lands
+   when a camera / video node needs it.
+
 ## Open questions
 
 - Final names (`flow` / `flowview`, namespace).
