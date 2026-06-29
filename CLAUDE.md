@@ -50,8 +50,17 @@ refactor of `flow` plus the app stack + viewer:**
   re-export + bridge tested. **Runtime (visual) verification lands with flowview.**
   imnodes (node canvas) deferred — it lags ImGui internals. (`Application::instance()`
   was added to `lain::app` for ImGui's `VkInstance`.)
-- ⬜ **`apps/flowview`** — the inspector: a `lain::app` window + `lain::gui` panels,
-  reusing the example graph. Needs live-driver *visual* verification.
+- ◑ **`apps/flowview`** — the inspector. **cli-mode is built + verified:**
+  `--headless`/`-c` builds the `flow-example` gradient scene via `buildExampleScene`,
+  pulls it (`Graph::evaluate`), and `dumpGraph` writes each node/port in topo order to
+  stdout — CPU values as text, an `acm::Texture` port read back through the shared
+  device to extent + corner pixels (TL/BR rgba). Ran on the live driver: the 64×64
+  gradient dumps `TL=rgba(0,0,128,255) BR=rgba(255,255,128,255)`, matching the `[gpu]`
+  test. Links `lain::app` + `lain::flow-example` + `archimedes` + `Vulkan::Loader`
+  (loader resolves acm's `vk*`). **gui-mode is still a stub** — default (no `--headless`)
+  opens a window that only clears (`FlowviewApp::ClearWindow`); the `lain::gui`
+  inspector + imnodes canvas, and the live-driver *visual* verification, are the
+  remaining work.
 
 Keep this section current as work lands. Once `flow` is fuller, this file is its
 standing architecture reference (the role `CLAUDE.md` plays in the sibling repos).
