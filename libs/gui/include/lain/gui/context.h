@@ -4,6 +4,7 @@
 #include <imgui.h> // ImTextureID
 
 #include <memory>
+#include <string>
 
 namespace lain::app
 {
@@ -27,7 +28,13 @@ namespace lain::gui
 	class Context
 	{
 	public:
-		Context(lain::app::Application& app, lain::app::Window& window);
+		// iniFilename: the ImGui layout-persistence file — loaded on construction and
+		// saved (throttled) while running, so panel positions/sizes survive a restart.
+		// Empty (the default) disables persistence entirely: nothing is read or written,
+		// so no stray imgui.ini appears. A multi-window app passes a distinct name per
+		// window to keep their layouts separate. ImGui holds the pointer (it does not
+		// copy), so the Context keeps the string alive for its lifetime.
+		Context(lain::app::Application& app, lain::app::Window& window, std::string iniFilename = {});
 		~Context();
 		Context(const Context&) = delete;
 		Context& operator=(const Context&) = delete;

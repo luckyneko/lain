@@ -10,15 +10,18 @@
 #include <imgui_impl_vulkan.h>
 
 #include <cstdint>
+#include <string>
+#include <utility>
 
 namespace lain::gui
 {
 	struct Context::impl
 	{
 		ImGuiContext* ctx{nullptr};
+		std::string iniFilename; // kept alive: ImGui stores io.IniFilename by pointer
 	};
 
-	Context::Context(app::Application& app, app::Window& window)
+	Context::Context(app::Application& app, app::Window& window, std::string iniFilename)
 		: m(std::make_unique<impl>())
 	{
 		acm::Device device = app.device();
@@ -27,6 +30,11 @@ namespace lain::gui
 		IMGUI_CHECKVERSION();
 		m->ctx = ImGui::CreateContext();
 		ImGui::StyleColorsDark();
+
+		// Point ImGui at our owned string (or disable persistence when empty). Set
+		// before the first newFrame() so a saved layout loads on boot.
+		m->iniFilename = std::move(iniFilename);
+		ImGui::GetIO().IniFilename = m->iniFilename.empty() ? nullptr : m->iniFilename.c_str();
 
 		ImGui_ImplGlfw_InitForVulkan(static_cast<GLFWwindow*>(window.nativeHandle()), true);
 
