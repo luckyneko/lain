@@ -3,6 +3,7 @@
 #include <archimedes/acmForward.h>
 #include <lain/app/window.h> // WindowSpec + Window (createWindow return)
 
+#include <cassert>
 #include <memory>
 
 namespace lain::app
@@ -49,6 +50,18 @@ namespace lain::app
 		// The Vulkan instance (created on demand) — for a GUI backend that needs the
 		// raw VkInstance (e.g. ImGui's Vulkan init).
 		acm::Instance instance();
+
+		// The application delegate driving this app. getDelegate<T>() hands it back as
+		// the concrete type the app was constructed with — a static_cast (the caller
+		// knows that type from having wired it), guarded by a debug assert. A window
+		// delegate reaches app-level state through window.app().getDelegate<MyApp>().
+		ApplicationDelegate& delegate();
+		template <typename T>
+		T& getDelegate()
+		{
+			assert(dynamic_cast<T*>(&delegate()) != nullptr && "getDelegate<T>: delegate is not a T");
+			return static_cast<T&>(delegate());
+		}
 
 		// The current input snapshot (also passed to onUpdate).
 		const InputState& input() const;

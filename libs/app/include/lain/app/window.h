@@ -10,6 +10,8 @@ struct GLFWwindow;
 
 namespace lain::app
 {
+	class Application;
+
 	// One window an Application opens.
 	struct WindowSpec
 	{
@@ -34,6 +36,10 @@ namespace lain::app
 		Window(const Window&) = delete;
 		Window& operator=(const Window&) = delete;
 
+		// The Application that created and owns this window. Lets a WindowDelegate reach
+		// app-level state from its hooks (e.g. window.app().getDelegate<MyApp>()).
+		Application& app() const;
+
 		const std::string& title() const;
 		acm::Extent2D extent() const; // current swapchain extent
 		bool shouldClose() const;
@@ -54,7 +60,7 @@ namespace lain::app
 	private:
 		friend class Application; // the owning parent-factory builds + drives it
 
-		Window();
+		explicit Window(Application& app);
 
 		bool createSurface(acm::Instance instance, const WindowSpec& spec);
 		acm::Surface surface() const;

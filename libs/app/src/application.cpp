@@ -302,7 +302,7 @@ namespace lain::app
 		s.ensureGlfw();
 		s.ensureInstance();
 
-		std::unique_ptr<Window> window(new Window());
+		std::unique_ptr<Window> window(new Window(*this));
 		if (!window->createSurface(s.instance, spec))
 			fprintf(stderr, "lain::app: window/surface creation failed for '%s'\n", spec.title.c_str());
 
@@ -431,4 +431,6 @@ namespace lain::app
 	}
 
 	const InputState& Application::input() const { return m->input; }
+
+	ApplicationDelegate& Application::delegate() { return m->delegate; }
 } // namespace lain::app

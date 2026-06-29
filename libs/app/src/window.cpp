@@ -11,6 +11,7 @@ namespace lain::app
 {
 	struct Window::impl
 	{
+		Application* app{nullptr};
 		WindowSpec spec;
 		GLFWwindow* window{nullptr};
 		acm::Surface surface;
@@ -18,11 +19,14 @@ namespace lain::app
 		acm::Renderer renderer;
 	};
 
-	Window::Window()
+	Window::Window(Application& app)
 		: m(std::make_unique<impl>())
 	{
+		m->app = &app;
 	}
 	Window::~Window() = default;
+
+	Application& Window::app() const { return *m->app; }
 
 	const std::string& Window::title() const { return m->spec.title; }
 
