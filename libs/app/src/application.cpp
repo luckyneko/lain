@@ -165,7 +165,7 @@ namespace lain::app
 		return true;
 	}
 
-	// --- impl -------------------------------------------------------------------
+	// --- impl (data only) -------------------------------------------------------
 
 	struct Application::impl
 	{
@@ -193,100 +193,7 @@ namespace lain::app
 		InputState input;
 		lain::math::Vec2f scrollAccum{0.0f, 0.0f};
 		bool inputFirst{true};
-
-		void ensureGlfw();
-		void ensureInstance();
-		acm::Device ensureDevice(acm::Surface present = {});
-		void updateInput();
-		static void scrollCallback(GLFWwindow* window, double dx, double dy);
 	};
-
-	void Application::impl::scrollCallback(GLFWwindow* window, double dx, double dy)
-	{
-		auto* s = static_cast<impl*>(glfwGetWindowUserPointer(window));
-		if (s)
-		{
-			s->scrollAccum.x += static_cast<float>(dx);
-			s->scrollAccum.y += static_cast<float>(dy);
-		}
-	}
-
-	void Application::impl::ensureGlfw()
-	{
-		if (glfwReady)
-			return;
-		glfwInitVulkanLoader(reinterpret_cast<PFN_vkGetInstanceProcAddr>(vkGetInstanceProcAddr));
-		if (glfwInit() != GLFW_TRUE || glfwVulkanSupported() != GLFW_TRUE)
-		{
-			fprintf(stderr, "lain::app: GLFW init / Vulkan support failed\n");
-			return;
-		}
-		glfwReady = true;
-	}
-
-	void Application::impl::ensureInstance()
-	{
-		if (instance.valid())
-			return;
-		useStagedVulkanICD();
-		instance = acm::Instance("lain", acm::Version{0, 1, 0, 0});
-	}
-
-	acm::Device Application::impl::ensureDevice(acm::Surface present)
-	{
-		if (deviceCreated)
-			return device;
-		ensureInstance();
-		uint32_t queueIdx = 0;
-		if (!pickDevice(instance, present, gpuIdx, queueIdx))
-		{
-			fprintf(stderr, "lain::app: no suitable GPU / queue found\n");
-			return {};
-		}
-		device = instance.createDevice(instance.getAvailableGPUs()[gpuIdx], queueIdx);
-		deviceCreated = device.valid();
-		return device;
-	}
-
-	void Application::impl::updateInput()
-	{
-		GLFWwindow* w = nullptr;
-		for (auto& e : windows)
-		{
-			GLFWwindow* h = e.window->glfwHandle();
-			if (h && glfwGetWindowAttrib(h, GLFW_FOCUSED))
-			{
-				w = h;
-				break;
-			}
-		}
-		if (!w && !windows.empty())
-			w = windows.front().window->glfwHandle();
-		if (!w)
-			return;
-
-		input.prevKeys = input.keys;
-		for (int ki = 1; ki < static_cast<int>(Key::Count); ++ki)
-		{
-			const int code = glfwKeyCode(static_cast<Key>(ki));
-			input.keys[static_cast<size_t>(ki)] = code != GLFW_KEY_UNKNOWN && glfwGetKey(w, code) == GLFW_PRESS;
-		}
-		input.prevButtons = input.buttons;
-		for (int bi = 0; bi < static_cast<int>(MouseButton::Count); ++bi)
-		{
-			const int code = glfwButtonCode(static_cast<MouseButton>(bi));
-			input.buttons[static_cast<size_t>(bi)] = code >= 0 && glfwGetMouseButton(w, code) == GLFW_PRESS;
-		}
-
-		double cx = 0.0, cy = 0.0;
-		glfwGetCursorPos(w, &cx, &cy);
-		const lain::math::Vec2f prev = input.cursor;
-		input.cursor = {static_cast<float>(cx), static_cast<float>(cy)};
-		input.cursorDelta = inputFirst ? lain::math::Vec2f{0.0f, 0.0f} : (input.cursor - prev);
-		input.scroll = scrollAccum;
-		scrollAccum = {0.0f, 0.0f};
-		inputFirst = false;
-	}
 
 	// --- Application ------------------------------------------------------------
 
@@ -299,14 +206,14 @@ namespace lain::app
 	Window& Application::createWindow(const WindowSpec& spec, WindowDelegate& delegate)
 	{
 		impl& s = *m;
-		s.ensureGlfw();
-		s.ensureInstance();
+		ensureGlfw();
+		ensureInstance();
 
 		std::unique_ptr<Window> window(new Window(*this));
 		if (!window->createSurface(s.instance, spec))
 			fprintf(stderr, "lain::app: window/surface creation failed for '%s'\n", spec.title.c_str());
 
-		s.ensureDevice(window->surface());
+		ensureDevice(window->surface());
 
 		acm::SurfaceFormat format;
 		acm::PresentMode presentMode = acm::PresentMode::Fifo;
@@ -315,8 +222,15 @@ namespace lain::app
 
 		if (GLFWwindow* h = window->glfwHandle())
 		{
-			glfwSetWindowUserPointer(h, &s);
-			glfwSetScrollCallback(h, &impl::scrollCallback);
+			// The scroll callback needs only the accumulator; point the user pointer at it.
+			glfwSetWindowUserPointer(h, &s.scrollAccum);
+			glfwSetScrollCallback(h, [](GLFWwindow* sw, double dx, double dy)
+								  {
+				if (auto* accum = static_cast<lain::math::Vec2f*>(glfwGetWindowUserPointer(sw)))
+				{
+					accum->x += static_cast<float>(dx);
+					accum->y += static_cast<float>(dy);
+				} });
 		}
 
 		delegate.onInit(*window);
@@ -375,7 +289,7 @@ namespace lain::app
 				prevFrame = nowT;
 
 				glfwPollEvents();
-				s.updateInput();
+				updateInput();
 				for (auto& e : s.windows)
 				{
 					const acm::Extent2D fb = e.window->framebufferExtent();
@@ -422,15 +336,99 @@ namespace lain::app
 
 	void Application::quit() { m->quit = true; }
 
-	acm::Device Application::device() { return m->ensureDevice(); }
+	acm::Device Application::device() { return ensureDevice({}); }
 
 	acm::Instance Application::instance()
 	{
-		m->ensureInstance();
+		ensureInstance();
 		return m->instance;
 	}
 
+	ApplicationDelegate& Application::delegate() { return m->delegate; }
+
 	const InputState& Application::input() const { return m->input; }
 
-	ApplicationDelegate& Application::delegate() { return m->delegate; }
+	// --- private helpers --------------------------------------------------------
+
+	void Application::ensureGlfw()
+	{
+		impl& s = *m;
+		if (s.glfwReady)
+			return;
+		glfwInitVulkanLoader(reinterpret_cast<PFN_vkGetInstanceProcAddr>(vkGetInstanceProcAddr));
+		if (glfwInit() != GLFW_TRUE || glfwVulkanSupported() != GLFW_TRUE)
+		{
+			fprintf(stderr, "lain::app: GLFW init / Vulkan support failed\n");
+			return;
+		}
+		s.glfwReady = true;
+	}
+
+	void Application::ensureInstance()
+	{
+		impl& s = *m;
+		if (s.instance.valid())
+			return;
+		useStagedVulkanICD();
+		s.instance = acm::Instance("lain", acm::Version{0, 1, 0, 0});
+	}
+
+	acm::Device Application::ensureDevice(acm::Surface present)
+	{
+		impl& s = *m;
+		if (s.deviceCreated)
+			return s.device;
+		ensureInstance();
+		uint32_t queueIdx = 0;
+		if (!pickDevice(s.instance, present, s.gpuIdx, queueIdx))
+		{
+			fprintf(stderr, "lain::app: no suitable GPU / queue found\n");
+			return {};
+		}
+		s.device = s.instance.createDevice(s.instance.getAvailableGPUs()[s.gpuIdx], queueIdx);
+		s.deviceCreated = s.device.valid();
+		return s.device;
+	}
+
+	void Application::updateInput()
+	{
+		impl& s = *m;
+		GLFWwindow* w = nullptr;
+		for (auto& e : s.windows)
+		{
+			GLFWwindow* h = e.window->glfwHandle();
+			if (h && glfwGetWindowAttrib(h, GLFW_FOCUSED))
+			{
+				w = h;
+				break;
+			}
+		}
+		if (!w && !s.windows.empty())
+			w = s.windows.front().window->glfwHandle();
+		if (!w)
+			return;
+
+		InputState& input = s.input;
+		input.prevKeys = input.keys;
+		for (int ki = 1; ki < static_cast<int>(Key::Count); ++ki)
+		{
+			const int code = glfwKeyCode(static_cast<Key>(ki));
+			input.keys[static_cast<size_t>(ki)] = code != GLFW_KEY_UNKNOWN && glfwGetKey(w, code) == GLFW_PRESS;
+		}
+		input.prevButtons = input.buttons;
+		for (int bi = 0; bi < static_cast<int>(MouseButton::Count); ++bi)
+		{
+			const int code = glfwButtonCode(static_cast<MouseButton>(bi));
+			input.buttons[static_cast<size_t>(bi)] = code >= 0 && glfwGetMouseButton(w, code) == GLFW_PRESS;
+		}
+
+		double cx = 0.0, cy = 0.0;
+		glfwGetCursorPos(w, &cx, &cy);
+		const lain::math::Vec2f prev = input.cursor;
+		input.cursor = {static_cast<float>(cx), static_cast<float>(cy)};
+		input.cursorDelta = s.inputFirst ? lain::math::Vec2f{0.0f, 0.0f} : (input.cursor - prev);
+		input.scroll = s.scrollAccum;
+		s.scrollAccum = {0.0f, 0.0f};
+		s.inputFirst = false;
+	}
 } // namespace lain::app

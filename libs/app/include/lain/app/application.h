@@ -67,6 +67,15 @@ namespace lain::app
 		const InputState& input() const;
 
 	private:
+		// Lazy subsystem bring-up, on demand: GLFW, the Vulkan instance, and the one
+		// shared device (the device picks a GPU/queue that can present to `present`).
+		void ensureGlfw();
+		void ensureInstance();
+		acm::Device ensureDevice(acm::Surface present);
+
+		// Snapshot the focused window's keyboard/mouse into the input state each frame.
+		void updateInput();
+
 		struct impl;
 		std::unique_ptr<impl> m;
 	};
