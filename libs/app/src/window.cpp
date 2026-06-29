@@ -29,6 +29,19 @@ namespace lain::app
 	Application& Window::app() const { return *m->app; }
 
 	const std::string& Window::title() const { return m->spec.title; }
+	acm::Extent2D Window::extent() const { return m->swapChain.getExtents(); }
+	bool Window::shouldClose() const { return m->window && glfwWindowShouldClose(m->window); }
+	void Window::requestClose()
+	{
+		if (m->window)
+			glfwSetWindowShouldClose(m->window, GLFW_TRUE);
+	}
+
+	acm::Renderer Window::renderer() const { return m->renderer; }
+	acm::SwapChain Window::swapChain() const { return m->swapChain; }
+	void* Window::nativeHandle() const { return m->window; }
+
+	// --- private (Application-driven lifecycle) ---------------------------------
 
 	bool Window::createSurface(acm::Instance instance, const WindowSpec& spec)
 	{
@@ -71,18 +84,6 @@ namespace lain::app
 		glfwGetFramebufferSize(m->window, &w, &h);
 		return acm::Extent2D{static_cast<uint32_t>(w), static_cast<uint32_t>(h)};
 	}
-
-	acm::Extent2D Window::extent() const { return m->swapChain.getExtents(); }
-	bool Window::shouldClose() const { return m->window && glfwWindowShouldClose(m->window); }
-	void Window::requestClose()
-	{
-		if (m->window)
-			glfwSetWindowShouldClose(m->window, GLFW_TRUE);
-	}
-
-	acm::Renderer Window::renderer() const { return m->renderer; }
-	acm::SwapChain Window::swapChain() const { return m->swapChain; }
-	void* Window::nativeHandle() const { return m->window; }
 
 	void Window::releaseDeviceObjects()
 	{

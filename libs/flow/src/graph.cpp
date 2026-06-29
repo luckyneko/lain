@@ -49,31 +49,6 @@ namespace lain::flow
 		return false;
 	}
 
-	bool Graph::reaches(NodeId start, NodeId target) const
-	{
-		std::vector<NodeId> stack;
-		stack.push_back(start);
-		std::vector<bool> seen(m_nodes.size(), false);
-
-		while (!stack.empty())
-		{
-			const NodeId n = stack.back();
-			stack.pop_back();
-			if (n == target)
-				return true;
-			if (seen[n])
-				continue;
-			seen[n] = true;
-
-			for (const Edge& e : m_edges)
-			{
-				if (e.from == n && !seen[e.to])
-					stack.push_back(e.to);
-			}
-		}
-		return false;
-	}
-
 	const std::vector<NodeId>& Graph::topoOrder() const
 	{
 		if (m_topoValid)
@@ -126,5 +101,30 @@ namespace lain::flow
 	void Graph::evaluate(NodeId target)
 	{
 		detail::runPull(*this, target);
+	}
+
+	bool Graph::reaches(NodeId start, NodeId target) const
+	{
+		std::vector<NodeId> stack;
+		stack.push_back(start);
+		std::vector<bool> seen(m_nodes.size(), false);
+
+		while (!stack.empty())
+		{
+			const NodeId n = stack.back();
+			stack.pop_back();
+			if (n == target)
+				return true;
+			if (seen[n])
+				continue;
+			seen[n] = true;
+
+			for (const Edge& e : m_edges)
+			{
+				if (e.from == n && !seen[e.to])
+					stack.push_back(e.to);
+			}
+		}
+		return false;
 	}
 } // namespace lain::flow
