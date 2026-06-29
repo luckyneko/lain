@@ -50,6 +50,8 @@ add_subdirectory(extern/archimedes)     # acm:: Vulkan renderer (for flow + flow
 # package, else pinned release; headers re-exposed SYSTEM under strict flags).
 include(addTaskflow)
 include(addGLM)
+include(addfmt)     # {fmt} — formatting for lain::log (and spdlog's external fmt)
+include(addspdlog)  # logging backend behind lain::log (built against addfmt's fmt)
 
 # Vulkan loader for lain's own VkInstance-creating executables (the [gpu] tests,
 # flowview). archimedes owns Vulkan and exposes acm_require_vulkan_runtime()
@@ -66,7 +68,8 @@ if(LAIN_BUILD_TESTING)
 endif()
 
 # ---- Libraries (lain::<name>) -----------------------------------------------
-add_subdirectory(libs/core)             # foundational std-only types (Time)
+add_subdirectory(libs/core)             # foundational std-only types (Time, Version)
+add_subdirectory(libs/log)              # spdlog-backed logging (lain::log)
 add_subdirectory(libs/math)             # typed GLM wrapper
 add_subdirectory(libs/task)
 add_subdirectory(libs/flow)             # the node-graph engine (WORK.md M1)
