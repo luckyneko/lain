@@ -26,5 +26,6 @@ namespace flowview
 		acm::Sampler m_sampler;
 		ImTextureID m_preview{}; // cached texture descriptor (registered once)
 		bool m_havePreview = false;
+		bool m_laidOut = false; // node canvas: seed node positions on the first frame
 	};
 } // namespace flowview

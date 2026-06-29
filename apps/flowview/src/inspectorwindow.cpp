@@ -9,13 +9,24 @@
 #include <lain/flow/node.h>
 #include <lain/flow/port.h>
 #include <lain/gui/gui.h>
+#include <lain/gui/nodes.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace flowview
 {
 	using namespace lain;
+
+	// A pin's editor id, in imnodes' attribute id-space (separate from node + link ids).
+	// node * 1000 + (output ? 500 : 0) + port keeps inputs and outputs distinct; assumes
+	// fewer than 500 ports per direction and node ids well under ~2M — fine for prototyping.
+	static int pinId(flow::NodeId node, bool output, flow::PortIndex port)
+	{
+		return static_cast<int>(node) * 1000 + (output ? 500 : 0) + static_cast<int>(port);
+	}
 
 	// A port's value as inspector text — CPU scalars/strings only. Textures are shown
 	// as a thumbnail by the caller, not here, so this never touches the GPU (no
@@ -49,6 +60,8 @@ namespace flowview
 
 		m_guiCtx->newFrame();
 
+		gui::SetNextWindowPos(ImVec2(20.0f, 20.0f), ImGuiCond_FirstUseEver);
+		gui::SetNextWindowSize(ImVec2(320.0f, 320.0f), ImGuiCond_FirstUseEver);
 		gui::Begin("Inspector");
 		for (const flow::NodeId id : graph.topoOrder())
 		{
@@ -87,6 +100,48 @@ namespace flowview
 				port("out", node.output(i));
 		}
 		gui::End();
+
+		// The node canvas: the graph drawn as imnodes nodes + links (read-only). Node
+		// ids are flow NodeIds; pins use pinId(); links use the edge index.
+		gui::SetNextWindowPos(ImVec2(360.0f, 20.0f), ImGuiCond_FirstUseEver);
+		gui::SetNextWindowSize(ImVec2(880.0f, 600.0f), ImGuiCond_FirstUseEver);
+		gui::Begin("Graph");
+		gui::nodes::BeginNodeEditor();
+		int column = 0;
+		for (const flow::NodeId id : graph.topoOrder())
+		{
+			const flow::Node& node = graph.node(id);
+			if (!m_laidOut)
+				gui::nodes::SetNodeGridSpacePos(static_cast<int>(id), ImVec2(column * 220.0f, 40.0f + (column % 4) * 140.0f));
+
+			gui::nodes::BeginNode(static_cast<int>(id));
+			gui::nodes::BeginNodeTitleBar();
+			gui::Text("[%zu] %s", id, node.name().c_str());
+			gui::nodes::EndNodeTitleBar();
+
+			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
+			{
+				gui::nodes::BeginInputAttribute(pinId(id, false, i));
+				gui::Text("%s", node.input(i).name().c_str());
+				gui::nodes::EndInputAttribute();
+			}
+			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
+			{
+				gui::nodes::BeginOutputAttribute(pinId(id, true, o));
+				gui::Text("%s", node.output(o).name().c_str());
+				gui::nodes::EndOutputAttribute();
+			}
+			gui::nodes::EndNode();
+			++column;
+		}
+
+		const std::vector<flow::Graph::Edge>& edges = graph.edges();
+		for (std::size_t e = 0; e < edges.size(); ++e)
+			gui::nodes::Link(static_cast<int>(e), pinId(edges[e].from, true, edges[e].outPort), pinId(edges[e].to, false, edges[e].inPort));
+
+		gui::nodes::EndNodeEditor();
+		gui::End();
+		m_laidOut = true;
 
 		window.renderer().render([&](acm::CommandBuffer cmd, uint32_t)
 								 { m_guiCtx->render(cmd); });

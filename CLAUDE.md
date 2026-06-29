@@ -48,9 +48,12 @@ refactor of `flow` plus the app stack + viewer:**
   on the shared device/swapchain (auto descriptor pool), with `newFrame()` /
   `render(cmd)` / `image()` (acm::Texture → `lain::gui::Image`). Built warning-clean;
   re-export + bridge tested, and **runtime/visual-verified via flowview** (`Context`
-  drives the inspector window end-to-end on the live driver). imnodes (node canvas)
-  deferred — it lags ImGui internals. (`Application::instance()` was added to
-  `lain::app` for ImGui's `VkInstance`.)
+  drives the inspector window end-to-end on the live driver). **imnodes** (node canvas)
+  is now in too: `nodes.h` aliases it as `lain::gui::nodes`, and `Context` owns the
+  per-window `ImNodesContext` alongside the ImGui one. Pinned to a master commit
+  (`addImnodes.cmake`, built against our `imgui` target) since no imnodes release tracks
+  ImGui 1.92 — that commit branches on `IMGUI_VERSION_NUM >= 19200`. (`Application::instance()`
+  was added to `lain::app` for ImGui's `VkInstance`.)
 - ✅ **`apps/flowview`** — the inspector. Both modes built + verified on the live
   driver. Shared scene: `buildExampleScene` adds `flow-example`'s `GradientNode`; the
   graph is pulled (`Graph::evaluate`). **cli-mode** (`--headless`/`-c`): `dumpGraph`
@@ -62,11 +65,14 @@ refactor of `flow` plus the app stack + viewer:**
   `Context::image` and shown with `gui::Image`). `--frames N` quits after N frames
   (0 = until closed) for a windowed smoke. Verified: the 64×64 gradient dumps
   `TL=rgba(0,0,128,255) BR=rgba(255,255,128,255)` (cli), and the same gradient renders
-  as a live thumbnail in the gui inspector (screenshot-confirmed). Links `lain::app` +
-  `lain::gui` + `lain::flow-example` + `archimedes` + `Vulkan::Loader` (loader resolves
-  acm's `vk*`). This also gives `lain::gui` its runtime/visual verification — `Context`
-  is exercised end-to-end here. **imnodes node-canvas still deferred** (it lags ImGui
-  internals); the inspector is panel-only for now.
+  as a live thumbnail in the gui inspector (screenshot-confirmed). gui-mode also draws a
+  **"Graph" node canvas** (`lain::gui::nodes`/imnodes, read-only): one imnodes node per
+  `flow` node with its ports as pins and edges as links, laid out by topo column on the
+  first frame; node ids are `NodeId`, pins are `pinId(node,dir,port)`, links the edge
+  index. Screenshot-confirmed rendering the gradient node + its `texture` pin. Links
+  `lain::app` + `lain::gui` + `lain::flow-example` + `archimedes` + `Vulkan::Loader`
+  (loader resolves acm's `vk*`). This also gives `lain::gui` its runtime/visual
+  verification — `Context` is exercised end-to-end here.
 
 Keep this section current as work lands. Once `flow` is fuller, this file is its
 standing architecture reference (the role `CLAUDE.md` plays in the sibling repos).
