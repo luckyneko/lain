@@ -3,6 +3,7 @@
 
 add_executable(test-core
 	test_time.cpp
+	test_version.cpp
 )
 
 target_compile_features(test-core PRIVATE cxx_std_17)

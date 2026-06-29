@@ -4,6 +4,7 @@
 
 add_library(core STATIC
 	src/time.cpp
+	src/version.cpp
 )
 add_library(lain::core ALIAS core)
 
