@@ -1,14 +1,12 @@
 #pragma once
 
+#include "inspectorwindow.h"
+
 #include <lain/app/applicationdelegate.h>
-#include <lain/app/windowdelegate.h>
+#include <lain/flow/graph.h>
+#include <lain/flow/types.h>
 
 #include <cstdint>
-
-namespace lain::app
-{
-	class Window;
-}
 
 namespace flowview
 {
@@ -16,24 +14,28 @@ namespace flowview
 	//   --headless : build the example graph, evaluate it, and dump the result to
 	//                stdout (cli-mode); opens no window, so the Application runs
 	//                onProcess once and exits.
-	//   default    : gui-mode — opens a window. The lain::gui inspector panels land
-	//                in the next step; for now the window just clears.
+	//   default    : gui-mode — open a window and show the InspectorWindow: each
+	//                node's ports as text, and an acm::Texture output as a thumbnail.
+	//                (The imnodes node-canvas is deferred — WORK.md step 9.)
 	class FlowviewApp : public lain::app::ApplicationDelegate
 	{
 	public:
 		bool onInit(lain::app::Application& app, lain::app::cli::App& cli) override;
 		bool onStart(lain::app::Application& app) override;
+		void onUpdate(lain::app::Application& app, const lain::app::TimeState& time, const lain::app::InputState& input) override;
 		void onProcess(lain::app::Application& app) override;
+
+		// The gui-mode scene the InspectorWindow reads (reached via
+		// window.app().getDelegate<FlowviewApp>().graph()).
+		const lain::flow::Graph& graph() const { return m_graph; }
 
 	private:
 		bool m_headless = false;
 		std::uint32_t m_size = 64; // example texture extent (size x size)
+		int m_frames = 0;		   // gui-mode: quit after N frames (0 = until closed)
 
-		// gui-mode placeholder: a window that just clears. Replaced by the lain::gui
-		// inspector + node canvas in the next step.
-		class ClearWindow : public lain::app::WindowDelegate
-		{
-			void onRender(lain::app::Window& window, const lain::app::TimeState& time) override;
-		} m_window;
+		lain::flow::Graph m_graph;			  // the gui-mode scene (persists across frames)
+		lain::flow::NodeId m_textureNode = 0; // the GPU source the scene is pulled from
+		InspectorWindow m_window;
 	};
 } // namespace flowview

@@ -8,43 +8,54 @@
 #include <lain/app/window.h>
 #include <lain/flow/graph.h>
 
+#include <cstdint>
 #include <iostream>
 
 namespace flowview
 {
-	bool FlowviewApp::onInit(lain::app::Application&, lain::app::cli::App& cli)
+	using namespace lain;
+
+	bool FlowviewApp::onInit(app::Application&, app::cli::App& cli)
 	{
 		cli.add_flag("--headless,-c", m_headless, "evaluate the example graph and dump its output (no window)");
 		cli.add_option("--size", m_size, "example texture extent (NxN)")->capture_default_str();
+		cli.add_option("--frames", m_frames, "gui-mode: quit after N frames (0 = run until the window closes)")->capture_default_str();
 		return true;
 	}
 
-	bool FlowviewApp::onStart(lain::app::Application& app)
+	bool FlowviewApp::onStart(app::Application& app)
 	{
 		if (m_headless)
 			return true; // open no window -> headless: run() invokes onProcess once
 
-		lain::app::WindowSpec spec;
+		app::WindowSpec spec;
 		spec.title = "flowview";
 		spec.width = 1280;
 		spec.height = 720;
-		app.createWindow(spec, m_window);
+		// The InspectorWindow reaches this delegate (and its graph) via window.app(), so
+		// there is nothing to wire here beyond handing it to the window.
+		app.createWindow(spec, m_window); // creates the shared device; builds the gui Context
+
+		// Device is live now: build + evaluate the smoke scene the inspector reads.
+		m_textureNode = buildExampleScene(m_graph, app.device(), m_size);
+		m_graph.evaluate(m_textureNode); // pull: runs the GPU source's compute()
 		return true;
 	}
 
-	void FlowviewApp::onProcess(lain::app::Application& app)
+	void FlowviewApp::onUpdate(app::Application& app, const app::TimeState& time, const app::InputState&)
+	{
+		if (m_frames > 0 && time.frame >= static_cast<std::uint64_t>(m_frames))
+			app.quit();
+	}
+
+	void FlowviewApp::onProcess(app::Application& app)
 	{
 		acm::Device device = app.device();
 
-		lain::flow::Graph graph;
-		const lain::flow::NodeId textureNode = buildExampleScene(graph, device, m_size);
+		flow::Graph graph;
+		const flow::NodeId textureNode = buildExampleScene(graph, device, m_size);
 		graph.evaluate(textureNode); // pull: runs the GPU source's compute()
 
 		dumpGraph(std::cout, graph, device);
-	}
-
-	void FlowviewApp::ClearWindow::onRender(lain::app::Window& window, const lain::app::TimeState&)
-	{
-		window.renderer().render([](acm::CommandBuffer, uint32_t) {});
 	}
 } // namespace flowview

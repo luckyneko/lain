@@ -7,11 +7,12 @@
 add_executable(flowview
 	src/main.cpp
 	src/flowviewapp.cpp
+	src/inspectorwindow.cpp
 	src/scene.cpp
 	src/dump.cpp
 )
 
 target_compile_features(flowview PRIVATE cxx_std_17)
 target_link_libraries(flowview
-	PRIVATE lain::app lain::flow-example archimedes Vulkan::Loader lain::warnings
+	PRIVATE lain::app lain::gui lain::flow-example archimedes Vulkan::Loader lain::warnings
 )

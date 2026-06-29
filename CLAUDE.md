@@ -41,26 +41,32 @@ refactor of `flow` plus the app stack + viewer:**
   `lain::app::cli`. Headless = an app that opens no windows. Gated by
   `LAIN_BUILD_APPS`; both modes verified on the live driver (headless + cli in ctest,
   opt-in `[gpu]` window smoke `LAIN_GUI_SMOKE=1`).
-- ◑ **`libs/gui`** (`lain::gui`) — Dear ImGui 1.92.8 wrapper. `gui.h` re-exposes
+- ✅ **`libs/gui`** (`lain::gui`) — Dear ImGui 1.92.8 wrapper. `gui.h` re-exposes
   `ImGui::` as `lain::gui::`; `imconfig_lain.h` bridges `ImVec2/4` ↔ `lain::math
   Vec2f/4f` (`IM_VEC*_CLASS_EXTRA` via `IMGUI_USER_CONFIG`). `Context` is the
   per-window seam: `imgui_impl_glfw` on `Window::nativeHandle()` + `imgui_impl_vulkan`
   on the shared device/swapchain (auto descriptor pool), with `newFrame()` /
   `render(cmd)` / `image()` (acm::Texture → `lain::gui::Image`). Built warning-clean;
-  re-export + bridge tested. **Runtime (visual) verification lands with flowview.**
-  imnodes (node canvas) deferred — it lags ImGui internals. (`Application::instance()`
-  was added to `lain::app` for ImGui's `VkInstance`.)
-- ◑ **`apps/flowview`** — the inspector. **cli-mode is built + verified:**
-  `--headless`/`-c` builds the `flow-example` gradient scene via `buildExampleScene`,
-  pulls it (`Graph::evaluate`), and `dumpGraph` writes each node/port in topo order to
-  stdout — CPU values as text, an `acm::Texture` port read back through the shared
-  device to extent + corner pixels (TL/BR rgba). Ran on the live driver: the 64×64
-  gradient dumps `TL=rgba(0,0,128,255) BR=rgba(255,255,128,255)`, matching the `[gpu]`
-  test. Links `lain::app` + `lain::flow-example` + `archimedes` + `Vulkan::Loader`
-  (loader resolves acm's `vk*`). **gui-mode is still a stub** — default (no `--headless`)
-  opens a window that only clears (`FlowviewApp::ClearWindow`); the `lain::gui`
-  inspector + imnodes canvas, and the live-driver *visual* verification, are the
-  remaining work.
+  re-export + bridge tested, and **runtime/visual-verified via flowview** (`Context`
+  drives the inspector window end-to-end on the live driver). imnodes (node canvas)
+  deferred — it lags ImGui internals. (`Application::instance()` was added to
+  `lain::app` for ImGui's `VkInstance`.)
+- ✅ **`apps/flowview`** — the inspector. Both modes built + verified on the live
+  driver. Shared scene: `buildExampleScene` adds `flow-example`'s `GradientNode`; the
+  graph is pulled (`Graph::evaluate`). **cli-mode** (`--headless`/`-c`): `dumpGraph`
+  writes each node/port in topo order to stdout — CPU values as text, an `acm::Texture`
+  port read back through the shared device to extent + corner pixels. **gui-mode**
+  (default): `FlowviewApp::InspectorWindow` (a `WindowDelegate`) owns a `lain::gui::
+  Context` + an `acm::Sampler`, reads the evaluated graph each frame into an ImGui
+  "Inspector" panel (port text; `acm::Texture` output registered once via
+  `Context::image` and shown with `gui::Image`). `--frames N` quits after N frames
+  (0 = until closed) for a windowed smoke. Verified: the 64×64 gradient dumps
+  `TL=rgba(0,0,128,255) BR=rgba(255,255,128,255)` (cli), and the same gradient renders
+  as a live thumbnail in the gui inspector (screenshot-confirmed). Links `lain::app` +
+  `lain::gui` + `lain::flow-example` + `archimedes` + `Vulkan::Loader` (loader resolves
+  acm's `vk*`). This also gives `lain::gui` its runtime/visual verification — `Context`
+  is exercised end-to-end here. **imnodes node-canvas still deferred** (it lags ImGui
+  internals); the inspector is panel-only for now.
 
 Keep this section current as work lands. Once `flow` is fuller, this file is its
 standing architecture reference (the role `CLAUDE.md` plays in the sibling repos).
