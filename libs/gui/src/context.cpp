@@ -8,6 +8,7 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
+#include <imnodes.h>
 
 #include <cstdint>
 #include <string>
@@ -18,6 +19,7 @@ namespace lain::gui
 	struct Context::impl
 	{
 		ImGuiContext* ctx{nullptr};
+		ImNodesContext* nodesCtx{nullptr};
 		std::string iniFilename; // kept alive: ImGui stores io.IniFilename by pointer
 	};
 
@@ -35,6 +37,11 @@ namespace lain::gui
 		// before the first newFrame() so a saved layout loads on boot.
 		m->iniFilename = std::move(iniFilename);
 		ImGui::GetIO().IniFilename = m->iniFilename.empty() ? nullptr : m->iniFilename.c_str();
+
+		// The node canvas (lain::gui::nodes) rides on this window's ImGui context.
+		m->nodesCtx = ImNodes::CreateContext();
+		ImNodes::SetImGuiContext(m->ctx);
+		ImNodes::StyleColorsDark();
 
 		ImGui_ImplGlfw_InitForVulkan(static_cast<GLFWwindow*>(window.nativeHandle()), true);
 
@@ -59,6 +66,7 @@ namespace lain::gui
 	{
 		ImGui_ImplVulkan_Shutdown();
 		ImGui_ImplGlfw_Shutdown();
+		ImNodes::DestroyContext(m->nodesCtx);
 		ImGui::DestroyContext(m->ctx);
 	}
 

@@ -78,7 +78,8 @@ if(LAIN_BUILD_APPS)
 	include(addGLFW)
 	include(addCLI11)
 	include(addImGui)
+	include(addImnodes)
 	add_subdirectory(libs/app)            # GLFW + CLI11 app harness
-	add_subdirectory(libs/gui)            # Dear ImGui wrapper (imnodes canvas later)
+	add_subdirectory(libs/gui)            # Dear ImGui + imnodes wrapper
 	add_subdirectory(apps/flowview)       # the inspector (step 9)
 endif()
