@@ -1,8 +1,8 @@
 #include <archimedes/archimedes.h>
 #include <lain/app/window.h>
+#include <lain/log/log.h>
 
 #include <cstdint>
-#include <cstdio>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -56,7 +56,7 @@ namespace lain::app
 		VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
 		if (glfwCreateWindowSurface(instance.vkInstance(), m->window, nullptr, &vkSurface) != VK_SUCCESS)
 		{
-			fprintf(stderr, "lain::app: glfwCreateWindowSurface failed\n");
+			lain::log::error("glfwCreateWindowSurface failed");
 			glfwDestroyWindow(m->window);
 			m->window = nullptr;
 			return false;

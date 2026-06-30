@@ -1,4 +1,5 @@
 #include <archimedes/archimedes.h>
+#include <lain/app/appinfo.h>
 #include <lain/app/application.h>
 #include <lain/app/applicationdelegate.h>
 #include <lain/app/cli.h>
@@ -7,14 +8,15 @@
 #include <lain/app/window.h>
 #include <lain/app/windowdelegate.h>
 #include <lain/core/time.h>
+#include <lain/log/log.h>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <cstdint>
-#include <cstdio>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #if defined(__APPLE__)
@@ -51,6 +53,15 @@ namespace lain::app
 		if (std::filesystem::exists(icd))
 			setenv("VK_ICD_FILENAMES", icd.string().c_str(), 0);
 #endif
+	}
+
+	// Narrow a semantic Version to acm::Version's uint8 fields (the Vulkan app
+	// version), clamping each component so a large value saturates rather than wraps.
+	static acm::Version toAcmVersion(const lain::core::Version& v)
+	{
+		const auto clamp = [](uint32_t x) -> uint8_t
+		{ return static_cast<uint8_t>(std::min<uint32_t>(x, 255)); };
+		return acm::Version{clamp(v.major()), clamp(v.minor()), clamp(v.patch()), 0};
 	}
 
 	static int glfwKeyCode(Key k)
@@ -169,12 +180,14 @@ namespace lain::app
 
 	struct Application::impl
 	{
-		explicit impl(ApplicationDelegate& d)
+		impl(ApplicationDelegate& d, AppInfo i)
 			: delegate(d)
+			, info(std::move(i))
 		{
 		}
 
 		ApplicationDelegate& delegate;
+		AppInfo info;
 		acm::Instance instance;
 		acm::Device device;
 		uint32_t gpuIdx{0};
@@ -197,8 +210,8 @@ namespace lain::app
 
 	// --- Application ------------------------------------------------------------
 
-	Application::Application(ApplicationDelegate& delegate)
-		: m(std::make_unique<impl>(delegate))
+	Application::Application(ApplicationDelegate& delegate, AppInfo info)
+		: m(std::make_unique<impl>(delegate, std::move(info)))
 	{
 	}
 	Application::~Application() = default;
@@ -211,14 +224,14 @@ namespace lain::app
 
 		std::unique_ptr<Window> window(new Window(*this));
 		if (!window->createSurface(s.instance, spec))
-			fprintf(stderr, "lain::app: window/surface creation failed for '%s'\n", spec.title.c_str());
+			lain::log::error("window/surface creation failed for '{}'", spec.title);
 
 		ensureDevice(window->surface());
 
 		acm::SurfaceFormat format;
 		acm::PresentMode presentMode = acm::PresentMode::Fifo;
 		if (!pickSurfaceFormat(window->surface(), s.gpuIdx, format, presentMode) || !window->createSwapChain(s.device, format, presentMode))
-			fprintf(stderr, "lain::app: swapchain creation failed for '%s'\n", spec.title.c_str());
+			lain::log::error("swapchain creation failed for '{}'", spec.title);
 
 		if (GLFWwindow* h = window->glfwHandle())
 		{
@@ -247,8 +260,10 @@ namespace lain::app
 	{
 		impl& s = *m;
 
-		// onInit: let the delegate register CLI options (CLI11's API), then parse argv.
-		cli::App cliApp{"lain application"};
+		// onInit: name the CLI after the app, wire up --version, let the delegate
+		// register its own options (CLI11's API), then parse argv.
+		cli::App cliApp{s.info.name, s.info.name};
+		cliApp.set_version_flag("--version", s.info.name + " " + s.info.version.toString());
 		if (!s.delegate.onInit(*this, cliApp))
 			return 1;
 		try
@@ -257,8 +272,13 @@ namespace lain::app
 		}
 		catch (const cli::ParseError& e)
 		{
+			// Also the --help / --version exit path: exit() prints them and returns 0.
 			return cliApp.exit(e);
 		}
+
+		// Past the parse (so --version / --help have already printed and exited): a
+		// normal run announces its identity.
+		lain::log::info("{} {}", s.info.name, s.info.version.toString());
 
 		if (!s.delegate.onStart(*this))
 			return 1;
@@ -348,6 +368,8 @@ namespace lain::app
 
 	const InputState& Application::input() const { return m->input; }
 
+	const AppInfo& Application::info() const { return m->info; }
+
 	// --- private helpers --------------------------------------------------------
 
 	void Application::ensureGlfw()
@@ -358,7 +380,7 @@ namespace lain::app
 		glfwInitVulkanLoader(reinterpret_cast<PFN_vkGetInstanceProcAddr>(vkGetInstanceProcAddr));
 		if (glfwInit() != GLFW_TRUE || glfwVulkanSupported() != GLFW_TRUE)
 		{
-			fprintf(stderr, "lain::app: GLFW init / Vulkan support failed\n");
+			lain::log::error("GLFW init / Vulkan support failed");
 			return;
 		}
 		s.glfwReady = true;
@@ -370,7 +392,7 @@ namespace lain::app
 		if (s.instance.valid())
 			return;
 		useStagedVulkanICD();
-		s.instance = acm::Instance("lain", acm::Version{0, 1, 0, 0});
+		s.instance = acm::Instance(s.info.name.c_str(), toAcmVersion(s.info.version));
 	}
 
 	acm::Device Application::ensureDevice(acm::Surface present)
@@ -382,7 +404,7 @@ namespace lain::app
 		uint32_t queueIdx = 0;
 		if (!pickDevice(s.instance, present, s.gpuIdx, queueIdx))
 		{
-			fprintf(stderr, "lain::app: no suitable GPU / queue found\n");
+			lain::log::error("no suitable GPU / queue found");
 			return {};
 		}
 		s.device = s.instance.createDevice(s.instance.getAvailableGPUs()[s.gpuIdx], queueIdx);

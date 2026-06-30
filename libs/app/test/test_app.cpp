@@ -100,7 +100,7 @@ namespace
 TEST_CASE("headless: a windowless app runs onProcess and its graph", "[app]")
 {
 	GraphApp delegate;
-	app::Application app(delegate);
+	app::Application app(delegate, {"test-app", {0, 0, 0}});
 	char arg0[] = "test-app";
 	char* argv[] = {arg0};
 
@@ -123,7 +123,7 @@ TEST_CASE("cli: the delegate registers options the base app parses", "[app]")
 		bool onStart(app::Application&) override { return true; }
 	} delegate;
 
-	app::Application app(delegate);
+	app::Application app(delegate, {"test-app", {0, 0, 0}});
 	char a0[] = "test-app";
 	char a1[] = "--verbose";
 	char a2[] = "--value";
@@ -141,7 +141,7 @@ TEST_CASE("gui: opens a window and renders frames", "[app][gpu]")
 		SKIP("set LAIN_GUI_SMOKE=1 to run the windowed smoke (needs a display + driver)");
 
 	SmokeApp delegate;
-	app::Application app(delegate);
+	app::Application app(delegate, {"test-app", {0, 0, 0}});
 	char arg0[] = "test-app";
 	char* argv[] = {arg0};
 

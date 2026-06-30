@@ -9,6 +9,6 @@
 int main(int argc, char** argv)
 {
 	flowview::FlowviewApp delegate;
-	lain::app::Application app(delegate);
+	lain::app::Application app(delegate, {"flowview", {0, 1, 0}});
 	return app.run(argc, argv);
 }

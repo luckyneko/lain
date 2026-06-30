@@ -1,7 +1,8 @@
 #pragma once
 
 #include <archimedes/acmForward.h>
-#include <lain/app/window.h> // WindowSpec + Window (createWindow return)
+#include <lain/app/appinfo.h>  // AppInfo (name + version identity)
+#include <lain/app/window.h>   // WindowSpec + Window (createWindow return)
 
 #include <cassert>
 #include <memory>
@@ -19,7 +20,9 @@ namespace lain::app
 	class Application
 	{
 	public:
-		explicit Application(ApplicationDelegate& delegate);
+		// `info` names the app (CLI program name + help, the Vulkan instance app name,
+		// the --version string, and the startup log line) and its version.
+		Application(ApplicationDelegate& delegate, AppInfo info);
 		~Application();
 		Application(const Application&) = delete;
 		Application& operator=(const Application&) = delete;
@@ -65,6 +68,9 @@ namespace lain::app
 
 		// The current input snapshot (also passed to onUpdate).
 		const InputState& input() const;
+
+		// The app's identity (name + version), as constructed.
+		const AppInfo& info() const;
 
 	private:
 		// Lazy subsystem bring-up, on demand: GLFW, the Vulkan instance, and the one
