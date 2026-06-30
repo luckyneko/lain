@@ -10,6 +10,7 @@
 #include <ostream>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 namespace flowview
 {
@@ -25,17 +26,18 @@ namespace flowview
 		return s.str();
 	}
 
-	// An acm::Texture port value: extent, plus its top-left / bottom-right pixels
-	// read back through `device` (skipped when there's no device or the readback
-	// can't be set up — the structure of the dump stays the same either way).
-	static std::string textureLabel(const acm::Texture& texture, acm::Device device)
+	// An acm::Texture port value: its type name (from the port), extent, plus its
+	// top-left / bottom-right pixels read back through `device` (skipped when there's
+	// no device or the readback can't be set up — the dump's structure is unchanged
+	// either way).
+	static std::string textureLabel(std::string_view typeName, const acm::Texture& texture, acm::Device device)
 	{
 		if (!texture.valid())
-			return "acm::Texture (invalid)";
+			return std::string(typeName) + " (invalid)";
 
 		const acm::Extent2D extent = texture.getExtent();
 		std::ostringstream s;
-		s << "acm::Texture " << extent.width << 'x' << extent.height;
+		s << typeName << ' ' << extent.width << 'x' << extent.height;
 
 		if (!device.valid() || extent.width == 0 || extent.height == 0)
 			return s.str();
@@ -74,8 +76,8 @@ namespace flowview
 		if (value.holds<std::string>())
 			return value.get<std::string>();
 		if (value.type() == typeid(acm::Texture))
-			return textureLabel(value.get<acm::Texture>(), device);
-		return std::string("<") + value.type().name() + '>';
+			return textureLabel(port.typeName(), value.get<acm::Texture>(), device);
+		return std::string("<") + std::string(port.typeName()) + '>';
 	}
 
 	static void dumpPort(std::ostream& out, const char* tag, const Port& port, acm::Device device)
