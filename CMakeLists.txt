@@ -70,6 +70,7 @@ endif()
 # ---- Libraries (lain::<name>) -----------------------------------------------
 add_subdirectory(libs/core)             # foundational std-only types (Time, Version)
 add_subdirectory(libs/log)              # spdlog-backed logging (lain::log)
+add_subdirectory(libs/string)           # fmt-backed format() + lain-type formatters
 add_subdirectory(libs/math)             # typed GLM wrapper
 add_subdirectory(libs/task)
 add_subdirectory(libs/flow)             # the node-graph engine (WORK.md M1)

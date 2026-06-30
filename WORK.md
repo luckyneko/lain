@@ -121,9 +121,12 @@ from archimedes, then `lain::math` / `lain::app` / `lain::gui` / `flowview` — 
 **Foundational additions (landed, beyond the original M1 steps):**
 `lain::core::Version` (semver-style identity type, sibling to `Time`); **`libs/log`**
 (`lain::log`, a thin spdlog wrapper with a hidden backend + shared external fmt, default
-stderr sink); and an `AppInfo{name, version}` on
-`lain::app::Application` driving the CLI program name, `--version`, the Vulkan instance
-name, and a startup log line. `lain::app` diagnostics now route through `lain::log`.
+stderr sink); **`libs/string`** (`lain::string`, an fmt-backed `format()` plus a generic
+formatter for any type exposing `toString()` — detected via a trait, so `core` stays
+format-unaware); and an `AppInfo{name, version}` on
+`lain::app::Application` driving the CLI program name, `--version` (and reserved
+`-v/--verbose`), the Vulkan instance name, and a startup log line. `lain::app`
+diagnostics now route through `lain::log`.
 
 ### 1. Build skeleton
 

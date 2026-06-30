@@ -31,8 +31,19 @@ refactor of `flow` plus the app stack + viewer:**
   int64-ns storage, seconds-facing, chrono-interop, `as<>`/`from<>`/`since()`) +
   `TimeState` lives in `lain::app`. `Version` (semver-style `major.minor.patch` +
   optional pre-release/build tags, `toString()`/`parse()`, comparison on the numeric
-  triple — tags ignored) for app/library identity. Wall-clock `DateTime` + video
+  triple — tags ignored) for app/library identity (formattable by `lain::string` via
+  its `toString()` — `core` itself stays format-unaware). Wall-clock `DateTime` + video
   `Timecode` deferred (WORK.md Tier C). 11 tests pass.
+- ✅ **`libs/string`** (`lain::string`) — string utilities behind a lain:: face,
+  header-only. `format(fmtStr, args...)` wraps `fmt::format` (C++17 has no
+  `std::format`) with compile-time-checked format strings. A generic `fmt::formatter`
+  for any type exposing `toString()` (detected via a trait, string-convertible return
+  required) renders through it, inheriting `fmt::formatter<std::string>` so
+  width/fill/align specs apply — so a type is formattable just by having `toString()`,
+  no per-type registration, and the fmt dependency stays out of `core`. (Caveat: a type
+  that is both a range/tuple and has `toString()` would be ambiguous with fmt's range
+  formatter; none of lain's are.) Depends only on `fmt::fmt`. 3 tests pass (format, the
+  Version-via-`toString` path, specs).
 - ✅ **`libs/log`** (`lain::log`) — thin wrapper over spdlog. Own `Level` enum +
   `setLevel`/`level`/`log(Level, string_view)` seam + typed front-ends
   (`trace`/`debug`/`info`/`warn`/`error`/`critical`) that format with fmt and funnel
@@ -104,7 +115,8 @@ standing architecture reference (the role `CLAUDE.md` plays in the sibling repos
 each either owned `lain` code or a thin wrapper giving an external library a
 `lain::` face (`libs/task` → `lain::task` over Taskflow; `libs/math` →
 `lain::math` over GLM; `libs/core` → `lain::core` std-only types; `libs/log` →
-`lain::log` over spdlog; `libs/app` → GLFW 3.4 + CLI11; `libs/gui` → Dear ImGui).
+`lain::log` over spdlog; `libs/string` → `lain::string` over fmt; `libs/app` →
+GLFW 3.4 + CLI11; `libs/gui` → Dear ImGui).
 
 `flow` is a fast, threadable node-graph engine: typed-port nodes connect into a
 DAG, the graph evaluates across worker threads, and every intermediate result
