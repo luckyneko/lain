@@ -1,30 +1,15 @@
 #pragma once
 
+#include <lain/meta/traits.h> // lain::meta::has_to_string
+
 #include <fmt/format.h>
 
 #include <string>
 #include <type_traits>
 #include <utility>
 
-namespace lain::string::detail
-{
-	// Detects a type that exposes `toString()` returning something convertible to
-	// std::string. The string-convertible requirement keeps the formatter below from
-	// claiming a type whose `toString()` means something unrelated (or returns void).
-	template <typename T, typename = void>
-	struct has_to_string : std::false_type
-	{
-	};
-
-	template <typename T>
-	struct has_to_string<T, std::void_t<decltype(std::declval<const T&>().toString())>>
-		: std::is_convertible<decltype(std::declval<const T&>().toString()), std::string>
-	{
-	};
-} // namespace lain::string::detail
-
-// A generic fmt formatter for any type exposing `toString()` (see has_to_string): it
-// renders through that and reuses fmt's std::string formatter, so format specs
+// A generic fmt formatter for any type exposing `toString()` (lain::meta::has_to_string):
+// it renders through that and reuses fmt's std::string formatter, so format specs
 // (width / fill / align) still apply. Defined here, not in lain::core, so the fmt
 // dependency stays out of core and a type becomes formattable just by having
 // `toString()` — no per-type registration.
@@ -34,7 +19,7 @@ namespace lain::string::detail
 // *both* a range/tuple — which fmt formats via its own partial specialization — and
 // has `toString()` would make the two ambiguous; none of lain's do.)
 template <typename T>
-struct fmt::formatter<T, char, std::enable_if_t<lain::string::detail::has_to_string<T>::value>>
+struct fmt::formatter<T, char, std::enable_if_t<lain::meta::has_to_string<T>::value>>
 	: fmt::formatter<std::string>
 {
 	auto format(const T& value, fmt::format_context& ctx) const

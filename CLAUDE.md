@@ -37,13 +37,13 @@ refactor of `flow` plus the app stack + viewer:**
 - ✅ **`libs/string`** (`lain::string`) — string utilities behind a lain:: face,
   header-only. `format(fmtStr, args...)` wraps `fmt::format` (C++17 has no
   `std::format`) with compile-time-checked format strings. A generic `fmt::formatter`
-  for any type exposing `toString()` (detected via a trait, string-convertible return
-  required) renders through it, inheriting `fmt::formatter<std::string>` so
-  width/fill/align specs apply — so a type is formattable just by having `toString()`,
-  no per-type registration, and the fmt dependency stays out of `core`. (Caveat: a type
-  that is both a range/tuple and has `toString()` would be ambiguous with fmt's range
-  formatter; none of lain's are.) Depends only on `fmt::fmt`. 3 tests pass (format, the
-  Version-via-`toString` path, specs).
+  for any type exposing `toString()` (detected via `lain::meta::has_to_string`, which
+  requires a string-convertible return) renders through it, inheriting
+  `fmt::formatter<std::string>` so width/fill/align specs apply — so a type is formattable
+  just by having `toString()`, no per-type registration, and the fmt dependency stays out
+  of `core`. (Caveat: a type that is both a range/tuple and has `toString()` would be
+  ambiguous with fmt's range formatter; none of lain's are.) Depends on `fmt::fmt` +
+  `lain::meta`. 3 tests pass (format, the Version-via-`toString` path, specs).
 - ✅ **`libs/meta`** (`lain::meta`) — compile-time introspection behind a lain:: face,
   header-only. Enum reflection over magic_enum 0.9.8 (`cmake/addmagicenum.cmake`, SYSTEM)
   in the `lain::meta::enums` sub-namespace (short names kept clear of the type-level
@@ -59,7 +59,12 @@ refactor of `flow` plus the app stack + viewer:**
   enum): `typeName<T>()` ("lain::core::Version") + `typeNameShort<T>()` ("Version",
   derived by trimming to the last `::` of the full name — nameof's own short-name parser
   misfires on the newest MSVC). Names are human/debug-facing (port labels, logs), not
-  stable serialization keys. (Constexpr type traits intended to join later.) 7 tests pass.
+  stable serialization keys. **Type traits** (`traits.h`, pure std — no magic_enum/nameof)
+  in std::type_traits style (`_v` variants): `has_to_string` (string-returning
+  `toString()`; backs `lain::string`'s formatter) and `has_ostream` (stream insertion
+  operator). `has_ostream` is a detection primitive only — built-ins are stream-able, so
+  gating a *global* fmt formatter on it would be ambiguous with fmt's own formatters; use
+  it surgically. 9 tests pass.
 - ✅ **`libs/log`** (`lain::log`) — thin wrapper over spdlog. Own `Level` enum +
   `setLevel`/`level`/`log(Level, string_view)` seam + typed front-ends
   (`trace`/`debug`/`info`/`warn`/`error`/`critical`) that format with fmt and funnel
