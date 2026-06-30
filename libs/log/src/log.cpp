@@ -1,10 +1,28 @@
 #include <lain/log/log.h>
 
+#include <spdlog/sinks/stdout_color_sinks.h> // declares both stdout_ and stderr_color_mt
 #include <spdlog/spdlog.h>
+
+#include <mutex>
+#include <utility>
 
 namespace lain::log
 {
 	// --- file-local helpers (named static, not an anonymous namespace) ----------
+
+	// Install lain's default logger once, on first use. Diagnostics go to stderr so
+	// they never intermix with a program's stdout (e.g. flowview's cli-mode graph
+	// dump); the _mt sink is mutex-guarded, so flow's worker threads can log safely.
+	static void ensureLogger()
+	{
+		static std::once_flag once;
+		std::call_once(once, []
+					   {
+			spdlog::set_default_logger(spdlog::stderr_color_mt("lain"));
+			// [timestamp] [level] message — level coloured, no logger-name field (a
+			// single default logger makes %n redundant noise).
+			spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v"); });
+	}
 
 	static spdlog::level::level_enum toSpdlog(Level level)
 	{
@@ -55,16 +73,19 @@ namespace lain::log
 
 	void setLevel(Level level)
 	{
+		ensureLogger();
 		spdlog::set_level(toSpdlog(level));
 	}
 
 	Level level()
 	{
+		ensureLogger();
 		return fromSpdlog(spdlog::get_level());
 	}
 
 	void log(Level level, std::string_view message)
 	{
+		ensureLogger();
 		// "{}" + message (not message as the format) so any braces in the already-
 		// formatted text are emitted as data, never reinterpreted as placeholders.
 		spdlog::log(toSpdlog(level), "{}", message);
