@@ -188,6 +188,7 @@ namespace lain::app
 
 		ApplicationDelegate& delegate;
 		AppInfo info;
+		int verbosity{0}; // -v/--verbose count, filled in by run()'s parse
 		acm::Instance instance;
 		acm::Device device;
 		uint32_t gpuIdx{0};
@@ -262,14 +263,23 @@ namespace lain::app
 
 		// onInit: name the CLI after the app, wire up the framework flags (--version,
 		// -v/--verbose), let the delegate register its own options (CLI11's API), then
-		// parse argv. -v/--verbose is reserved by the framework — a delegate must not
-		// re-register it.
+		// parse argv. -v/--verbose and --version are reserved by the framework; a
+		// delegate that re-registers one makes CLI11 throw on construction — caught
+		// here and reported, rather than escaping run() as an uncaught terminate.
 		cli::App cliApp{s.info.name, s.info.name};
-		cliApp.set_version_flag("--version", s.info.name + " " + s.info.version.toString());
-		int verbosity = 0;
-		cliApp.add_flag("-v,--verbose", verbosity, "increase log verbosity (-v: debug, -vv: trace)");
-		if (!s.delegate.onInit(*this, cliApp))
+		try
+		{
+			cliApp.set_version_flag("--version", s.info.name + " " + s.info.version.toString());
+			cliApp.add_flag("-v,--verbose", s.verbosity, "increase log verbosity (-v: debug, -vv: trace)");
+			if (!s.delegate.onInit(*this, cliApp))
+				return 1;
+		}
+		catch (const cli::Error& e)
+		{
+			lain::log::error("CLI setup failed (did a delegate re-register a reserved flag like --verbose or --version?): {}", e.what());
 			return 1;
+		}
+
 		try
 		{
 			cliApp.parse(argc, argv);
@@ -281,9 +291,9 @@ namespace lain::app
 		}
 
 		// Raise the log level from -v before anything logs (-v: debug, -vv+: trace).
-		if (verbosity == 1)
+		if (s.verbosity == 1)
 			lain::log::setLevel(lain::log::Level::Debug);
-		else if (verbosity >= 2)
+		else if (s.verbosity >= 2)
 			lain::log::setLevel(lain::log::Level::Trace);
 
 		// Past the parse (so --version / --help have already printed and exited): a
@@ -379,6 +389,8 @@ namespace lain::app
 	const InputState& Application::input() const { return m->input; }
 
 	const AppInfo& Application::info() const { return m->info; }
+
+	int Application::verbosity() const { return m->verbosity; }
 
 	// --- private helpers --------------------------------------------------------
 

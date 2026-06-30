@@ -148,6 +148,7 @@ TEST_CASE("cli: -v/--verbose raises the log level", "[app][log]")
 		char a0[] = "test-app";
 		char* argv[] = {a0};
 		REQUIRE(app.run(1, argv) == 0);
+		REQUIRE(app.verbosity() == 0);
 		REQUIRE(log::level() == log::Level::Info);
 	}
 	SECTION("-v selects debug")
@@ -156,6 +157,7 @@ TEST_CASE("cli: -v/--verbose raises the log level", "[app][log]")
 		char a1[] = "-v";
 		char* argv[] = {a0, a1};
 		REQUIRE(app.run(2, argv) == 0);
+		REQUIRE(app.verbosity() == 1);
 		REQUIRE(log::level() == log::Level::Debug);
 	}
 	SECTION("-vv selects trace")
@@ -164,10 +166,32 @@ TEST_CASE("cli: -v/--verbose raises the log level", "[app][log]")
 		char a1[] = "-vv";
 		char* argv[] = {a0, a1};
 		REQUIRE(app.run(2, argv) == 0);
+		REQUIRE(app.verbosity() == 2);
 		REQUIRE(log::level() == log::Level::Trace);
 	}
 
 	log::setLevel(log::Level::Info); // restore for other tests
+}
+
+TEST_CASE("cli: re-registering a reserved flag fails gracefully", "[app]")
+{
+	// A delegate that re-registers a framework-reserved flag makes CLI11 throw on
+	// construction; run() must report it and return 1, not terminate.
+	struct BadApp : app::ApplicationDelegate
+	{
+		bool dummy = false;
+		bool onInit(app::Application&, app::cli::App& cli) override
+		{
+			cli.add_flag("--verbose", dummy, "collides with the reserved flag");
+			return true;
+		}
+		bool onStart(app::Application&) override { return true; }
+	} delegate;
+
+	app::Application app(delegate, {"test-app", {0, 0, 0}});
+	char a0[] = "test-app";
+	char* argv[] = {a0};
+	REQUIRE(app.run(1, argv) == 1);
 }
 
 TEST_CASE("gui: opens a window and renders frames", "[app][gpu]")

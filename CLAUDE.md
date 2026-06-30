@@ -55,8 +55,11 @@ refactor of `flow` plus the app stack + viewer:**
   via CLI11's `set_version_flag`, and a normal run logs `"<name> <version>"` (through
   `lain::log`) once past the parse; the `core::Version` is clamped to `acm::Version`'s
   uint8 fields for the instance. `-v`/`--verbose` is a reserved framework flag that
-  raises the log level (`-v` debug, `-vv` trace) before anything logs — a delegate must
-  not re-register it. `lain::app`'s own diagnostics go through `lain::log` (no `fprintf`). Headless = an app that opens no windows. Gated by `LAIN_BUILD_APPS`;
+  raises the log level (`-v` debug, `-vv` trace) before anything logs (the raw count is
+  exposed via `Application::verbosity()`); `--version` is reserved too. A delegate that
+  re-registers a reserved flag is caught (CLI11 throws on construction) and reported via
+  `lain::log::error` + a clean `run()` exit 1, not an uncaught terminate. `lain::app`'s
+  own diagnostics go through `lain::log` (no `fprintf`). Headless = an app that opens no windows. Gated by `LAIN_BUILD_APPS`;
   both modes verified on the live driver (headless + cli in ctest, opt-in `[gpu]` window
   smoke `LAIN_GUI_SMOKE=1`).
 - ✅ **`libs/gui`** (`lain::gui`) — Dear ImGui 1.92.8 wrapper. `gui.h` re-exposes

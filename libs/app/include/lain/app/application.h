@@ -72,6 +72,12 @@ namespace lain::app
 		// The app's identity (name + version), as constructed.
 		const AppInfo& info() const;
 
+		// The -v/--verbose count from the command line (0 = none, 1 = -v, 2 = -vv, …),
+		// valid once argv is parsed (i.e. from onStart onward). run() already maps it
+		// onto the log level; this exposes the raw count for an app that wants to gate
+		// its own behaviour on it.
+		int verbosity() const;
+
 	private:
 		// Lazy subsystem bring-up, on demand: GLFW, the Vulkan instance, and the one
 		// shared device (the device picks a GPU/queue that can present to `present`).
