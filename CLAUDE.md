@@ -4,7 +4,7 @@ Guidance for Claude Code working in this repository. [AGENTS.md](AGENTS.md) hold
 the general working discipline and applies in full; this file is more specific
 and overrides it where they differ.
 
-## Handoff status (2026-06-28)
+## Handoff status (2026-06-30)
 
 `lain` is a collection of small C++17 prototyping libraries. The current focus is
 a **node-graph engine** (`flow`) and the **reusable app stack** that lets it (and
@@ -29,8 +29,20 @@ refactor of `flow` plus the app stack + viewer:**
   1.0.3 via `cmake/addGLM.cmake` (SYSTEM). Builds warning-clean; 3 tests pass.
 - ✅ **`libs/core`** (`lain::core`) — foundational std-only types. `Time` (monotonic,
   int64-ns storage, seconds-facing, chrono-interop, `as<>`/`from<>`/`since()`) +
-  `TimeState` lives in `lain::app`. Wall-clock `DateTime` + video `Timecode` deferred
-  (WORK.md Tier C). 5 tests pass.
+  `TimeState` lives in `lain::app`. `Version` (semver-style `major.minor.patch` +
+  optional pre-release/build tags, `toString()`/`parse()`, comparison on the numeric
+  triple — tags ignored) for app/library identity. Wall-clock `DateTime` + video
+  `Timecode` deferred (WORK.md Tier C). 11 tests pass.
+- ✅ **`libs/log`** (`lain::log`) — thin wrapper over spdlog. Own `Level` enum +
+  `setLevel`/`level`/`log(Level, string_view)` seam + typed front-ends
+  (`trace`/`debug`/`info`/`warn`/`error`/`critical`) that format with fmt and funnel
+  through that seam; spdlog is named only in `log.cpp` (linked PRIVATE), so nothing of
+  the backend leaks past `lain::log`. fmt is PUBLIC (its `format_string` appears in the
+  header — C++17 has no `std::format`); spdlog is built against that shared fmt
+  (`SPDLOG_FMT_EXTERNAL`) so the program links one fmt (`cmake/addfmt.cmake` 10.2.1 +
+  `cmake/addspdlog.cmake` 1.14.1; archimedes does **not** provide spdlog). Default
+  logger is a mutex-guarded **stderr** colour sink (`[time] [level] message`, no
+  logger-name field), so diagnostics never pollute a program's stdout. 3 tests pass.
 - ✅ **`libs/app`** (`lain::app`) — GLFW 3.4 + CLI11 app framework (delegate-based,
   not a testbed): `Application` owns the instance + lazy shared device + the windows
   it creates + the single-threaded run loop; `ApplicationDelegate`
@@ -38,9 +50,14 @@ refactor of `flow` plus the app stack + viewer:**
   `onProcess` runs once in headless and on demand via `Application::process()` in gui)
   + `WindowDelegate` (`onInit`/`onRender`/`onResize`/`onShutdown`); `InputState`
   (decoupled `Key`/`MouseButton` enums) + `TimeState` snapshots; CLI11 re-exposed as
-  `lain::app::cli`. Headless = an app that opens no windows. Gated by
-  `LAIN_BUILD_APPS`; both modes verified on the live driver (headless + cli in ctest,
-  opt-in `[gpu]` window smoke `LAIN_GUI_SMOKE=1`).
+  `lain::app::cli`. Constructed with an `AppInfo{name, version}` (`appinfo.h`): the
+  name drives the CLI program name + the Vulkan instance app name, `--version` is wired
+  via CLI11's `set_version_flag`, and a normal run logs `"<name> <version>"` (through
+  `lain::log`) once past the parse; the `core::Version` is clamped to `acm::Version`'s
+  uint8 fields for the instance. `lain::app`'s own diagnostics go through `lain::log`
+  (no `fprintf`). Headless = an app that opens no windows. Gated by `LAIN_BUILD_APPS`;
+  both modes verified on the live driver (headless + cli in ctest, opt-in `[gpu]` window
+  smoke `LAIN_GUI_SMOKE=1`).
 - ✅ **`libs/gui`** (`lain::gui`) — Dear ImGui 1.92.8 wrapper. `gui.h` re-exposes
   `ImGui::` as `lain::gui::`; `imconfig_lain.h` bridges `ImVec2/4` ↔ `lain::math
   Vec2f/4f` (`IM_VEC*_CLASS_EXTRA` via `IMGUI_USER_CONFIG`). `Context` is the
@@ -82,8 +99,8 @@ standing architecture reference (the role `CLAUDE.md` plays in the sibling repos
 `lain` is a **cumulative set** — an umbrella of small libraries under `libs/`,
 each either owned `lain` code or a thin wrapper giving an external library a
 `lain::` face (`libs/task` → `lain::task` over Taskflow; `libs/math` →
-`lain::math` over GLM; `libs/core` → `lain::core` std-only types; `libs/app` →
-GLFW 3.4 + CLI11; `libs/gui` → Dear ImGui).
+`lain::math` over GLM; `libs/core` → `lain::core` std-only types; `libs/log` →
+`lain::log` over spdlog; `libs/app` → GLFW 3.4 + CLI11; `libs/gui` → Dear ImGui).
 
 `flow` is a fast, threadable node-graph engine: typed-port nodes connect into a
 DAG, the graph evaluates across worker threads, and every intermediate result

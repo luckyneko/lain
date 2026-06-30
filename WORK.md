@@ -118,6 +118,13 @@ GPU node) is built, tested, and committed. The remaining M1 work — decouple `f
 from archimedes, then `lain::math` / `lain::app` / `lain::gui` / `flowview` — is in
 "Remaining work" after the engine steps. Steps 1–4 record what was built.
 
+**Foundational additions (landed, beyond the original M1 steps):**
+`lain::core::Version` (semver-style identity type, sibling to `Time`); **`libs/log`**
+(`lain::log`, a thin spdlog wrapper with a hidden backend + shared external fmt, default
+stderr sink); and an `AppInfo{name, version}` on
+`lain::app::Application` driving the CLI program name, `--version`, the Vulkan instance
+name, and a startup log line. `lain::app` diagnostics now route through `lain::log`.
+
 ### 1. Build skeleton
 
 Umbrella `CMakeLists.txt` aggregating `libs/*`, `apps/*`, and `extern/*`.
