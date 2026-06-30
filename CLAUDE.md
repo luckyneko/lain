@@ -114,7 +114,7 @@ refactor of `flow` plus the app stack + viewer:**
   ImGui 1.92 — that commit branches on `IMGUI_VERSION_NUM >= 19200`. (`Application::instance()`
   was added to `lain::app` for ImGui's `VkInstance`.) `enums.h` adds `enumCombo` — an
   ImGui combo over an enum's values labelled from `lain::meta::enums` (headless-smoke
-  tested; interactive selection is visual).
+  tested, and dogfooded live in flowview's inspector — see below).
 - ✅ **`apps/flowview`** — the inspector. Both modes built + verified on the live
   driver. Shared scene: `buildExampleScene` adds `flow-example`'s `GradientNode`; the
   graph is pulled (`Graph::evaluate`). **cli-mode** (`--headless`/`-c`): `dumpGraph`
@@ -130,10 +130,16 @@ refactor of `flow` plus the app stack + viewer:**
   **"Graph" node canvas** (`lain::gui::nodes`/imnodes, read-only): one imnodes node per
   `flow` node with its ports as pins and edges as links, laid out by topo column on the
   first frame; node ids are `NodeId`, pins are `pinId(node,dir,port)`, links the edge
-  index. Screenshot-confirmed rendering the gradient node + its `texture` pin. Links
-  `lain::app` + `lain::gui` + `lain::flow-example` + `archimedes` + `Vulkan::Loader`
-  (loader resolves acm's `vk*`). This also gives `lain::gui` its runtime/visual
-  verification — `Context` is exercised end-to-end here.
+  index. Screenshot-confirmed rendering the gradient node + its `texture` pin. It also
+  **dogfoods `lain::meta`**: each port is labelled with `Port::typeName()` (captured from
+  `lain::meta::typeName<T>()` at port declaration) on the inspector text and the canvas
+  pins, and a `lain::gui::enumCombo` drives a `PreviewSize` enum that resizes the texture
+  thumbnail (so `enumCombo` gets its live exercise, not just the headless smoke).
+  ImGui sizes/positions here are passed as `lain::math::Vec2f` (the `imconfig_lain.h`
+  bridge converts to `ImVec2`), not raw `ImVec2`. Links `lain::app` + `lain::gui` +
+  `lain::meta` + `lain::flow-example` + `archimedes` + `Vulkan::Loader` (loader resolves
+  acm's `vk*`). This also gives `lain::gui` its runtime/visual verification — `Context`
+  is exercised end-to-end here.
 
 Keep this section current as work lands. Once `flow` is fuller, this file is its
 standing architecture reference (the role `CLAUDE.md` plays in the sibling repos).

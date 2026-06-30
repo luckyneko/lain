@@ -8,6 +8,15 @@
 
 namespace flowview
 {
+	// Thumbnail size for the texture preview, chosen at runtime via a
+	// lain::gui::enumCombo (its labels come from lain::meta::enums).
+	enum class PreviewSize
+	{
+		Small,
+		Medium,
+		Large,
+	};
+
 	// Per-window ImGui inspector. Owns only its GUI resources (the lain::gui Context + a
 	// sampler); it holds no app/graph state. Each hook reaches what it needs from its
 	// Window argument — window.app() for the Application, and
@@ -26,6 +35,7 @@ namespace flowview
 		acm::Sampler m_sampler;
 		ImTextureID m_preview{}; // cached texture descriptor (registered once)
 		bool m_havePreview = false;
-		bool m_laidOut = false; // node canvas: seed node positions on the first frame
+		bool m_laidOut = false;								  // node canvas: seed node positions on the first frame
+		PreviewSize m_previewSize = PreviewSize::Medium; // thumbnail size (enumCombo-driven)
 	};
 } // namespace flowview

@@ -8,6 +8,7 @@
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
 #include <lain/flow/port.h>
+#include <lain/gui/enums.h>
 #include <lain/gui/gui.h>
 #include <lain/gui/nodes.h>
 
@@ -26,6 +27,21 @@ namespace flowview
 	static int pinId(flow::NodeId node, bool output, flow::PortIndex port)
 	{
 		return static_cast<int>(node) * 1000 + (output ? 500 : 0) + static_cast<int>(port);
+	}
+
+	// Thumbnail side length (pixels) for each preview size.
+	static float previewExtent(PreviewSize size)
+	{
+		switch (size)
+		{
+			case PreviewSize::Small:
+				return 96.0f;
+			case PreviewSize::Medium:
+				return 192.0f;
+			case PreviewSize::Large:
+				return 320.0f;
+		}
+		return 192.0f;
 	}
 
 	// A port's value as inspector text — CPU scalars/strings only. Textures are shown
@@ -60,9 +76,10 @@ namespace flowview
 
 		m_guiCtx->newFrame();
 
-		gui::SetNextWindowPos(ImVec2(20.0f, 20.0f), ImGuiCond_FirstUseEver);
-		gui::SetNextWindowSize(ImVec2(320.0f, 320.0f), ImGuiCond_FirstUseEver);
+		gui::SetNextWindowPos(math::Vec2f{20.0f, 20.0f}, ImGuiCond_FirstUseEver);
+		gui::SetNextWindowSize(math::Vec2f{320.0f, 320.0f}, ImGuiCond_FirstUseEver);
 		gui::Begin("Inspector");
+		gui::enumCombo("Preview size", m_previewSize); // labels from lain::meta::enums
 		for (const flow::NodeId id : graph.topoOrder())
 		{
 			const flow::Node& node = graph.node(id);
@@ -79,14 +96,17 @@ namespace flowview
 				{
 					const acm::Texture& texture = p.value().get<acm::Texture>();
 					const acm::Extent2D extent = texture.getExtent();
-					gui::Text("    %s %s: acm::Texture %ux%u", tag, p.name().c_str(), extent.width, extent.height);
+					gui::Text("    %s %s: %s %ux%u", tag, p.name().c_str(), std::string(p.typeName()).c_str(), extent.width, extent.height);
 					if (!m_havePreview && texture.valid())
 					{
 						m_preview = m_guiCtx->image(texture, m_sampler);
 						m_havePreview = true;
 					}
 					if (m_havePreview)
-						gui::Image(m_preview, ImVec2(192.0f, 192.0f));
+					{
+						const float side = previewExtent(m_previewSize);
+						gui::Image(m_preview, math::Vec2f{side, side});
+					}
 				}
 				else
 				{
@@ -103,8 +123,8 @@ namespace flowview
 
 		// The node canvas: the graph drawn as imnodes nodes + links (read-only). Node
 		// ids are flow NodeIds; pins use pinId(); links use the edge index.
-		gui::SetNextWindowPos(ImVec2(360.0f, 20.0f), ImGuiCond_FirstUseEver);
-		gui::SetNextWindowSize(ImVec2(880.0f, 600.0f), ImGuiCond_FirstUseEver);
+		gui::SetNextWindowPos(math::Vec2f{360.0f, 20.0f}, ImGuiCond_FirstUseEver);
+		gui::SetNextWindowSize(math::Vec2f{880.0f, 600.0f}, ImGuiCond_FirstUseEver);
 		gui::Begin("Graph");
 		gui::nodes::BeginNodeEditor();
 		int column = 0;
@@ -112,7 +132,7 @@ namespace flowview
 		{
 			const flow::Node& node = graph.node(id);
 			if (!m_laidOut)
-				gui::nodes::SetNodeGridSpacePos(static_cast<int>(id), ImVec2(column * 220.0f, 40.0f + (column % 4) * 140.0f));
+				gui::nodes::SetNodeGridSpacePos(static_cast<int>(id), math::Vec2f{column * 220.0f, 40.0f + (column % 4) * 140.0f});
 
 			gui::nodes::BeginNode(static_cast<int>(id));
 			gui::nodes::BeginNodeTitleBar();
@@ -121,14 +141,16 @@ namespace flowview
 
 			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
 			{
+				const flow::Port& in = node.input(i);
 				gui::nodes::BeginInputAttribute(pinId(id, false, i));
-				gui::Text("%s", node.input(i).name().c_str());
+				gui::Text("%s : %s", in.name().c_str(), std::string(in.typeName()).c_str());
 				gui::nodes::EndInputAttribute();
 			}
 			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
 			{
+				const flow::Port& out = node.output(o);
 				gui::nodes::BeginOutputAttribute(pinId(id, true, o));
-				gui::Text("%s", node.output(o).name().c_str());
+				gui::Text("%s : %s", out.name().c_str(), std::string(out.typeName()).c_str());
 				gui::nodes::EndOutputAttribute();
 			}
 			gui::nodes::EndNode();
