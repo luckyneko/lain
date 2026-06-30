@@ -57,13 +57,18 @@ refactor of `flow` plus the app stack + viewer:**
   option (`cli.add_option(...)->transform(cli::CheckedTransformer(enums::nameValueMap<E>(),
   cli::ignore_case))` — no special wrapper) and backs `lain::gui::enumCombo`. magic_enum
   sees only enumerators in [-128, 128] by default — fine for lain's small enums, but a
-  large-valued flag enum needs the range customized. **typeName** (`typenames.h`, over
-  nameof 0.10.5, `cmake/addnameof.cmake`) sits directly in `lain::meta` (type-level, not
-  enum): `typeName<T>()` ("lain::core::Version") + `typeNameShort<T>()` ("Version",
-  derived by trimming to the last `::` of the full name — nameof's own short-name parser
-  misfires on the newest MSVC). Names are human/debug-facing (port labels, logs), not
-  stable serialization keys — `flow`'s `Port` captures `typeName<T>()` at declaration so
-  the inspector reads `Port::typeName()` directly (no runtime type_index → name lookup). **Type traits** (`traits.h`, pure std — no magic_enum/nameof)
+  large-valued flag enum needs the range customized. **typeName** (`typenames.h`) sits
+  directly in `lain::meta` (type-level, not enum): `typeName<T>()` ("lain::core::Version")
+  + `typeNameShort<T>()` ("Version", trimmed to the last `::`). It's an **owned parse** of
+  the compiler's signature intrinsic (`__FUNCSIG__` / `__PRETTY_FUNCTION__`) — no external
+  dep — using a void-probe to measure the type's window in the signature, plus a leading
+  `class`/`struct`/`enum` keyword strip (MSVC spells class types "class X"). A clean
+  `string_view` into static storage on every compiler, no RTTI/demangling. (We dropped
+  nameof: we used one of its functions, the technique is ~15 lines, and it lagged the
+  newest MSVC — see the void-probe in `typenames.h`.) Names are human/debug-facing (port
+  labels, logs), not stable serialization keys — `flow`'s `Port` captures `typeName<T>()`
+  at declaration so the inspector and the cli dump read `Port::typeName()` directly (no
+  runtime type_index → name lookup). **Type traits** (`traits.h`, pure std — no magic_enum/nameof)
   in std::type_traits style (`_v` variants): `has_to_string` (string-returning
   `toString()`; backs `lain::string`'s formatter) and `has_ostream` (stream insertion
   operator). `has_ostream` is a detection primitive only — built-ins are stream-able, so

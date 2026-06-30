@@ -129,9 +129,10 @@ formatter for any type exposing `toString()` — detected via a trait, so `core`
 format-unaware); **`libs/meta`** (`lain::meta`, enum reflection over magic_enum in the
 `lain::meta::enums` sub-namespace — `name`/`fromString`/`values`/`entries`/`nameValueMap`
 — feeding an idiomatic CLI11 enum option and an ImGui enum-combo in `lain::gui`, plus
-`typeName`/`typeNameShort` over nameof and constexpr type traits (`has_to_string`,
-`has_ostream`) in `lain::meta` — `lain::string`'s formatter now uses
-`lain::meta::has_to_string`); and an `AppInfo{name, version}` on
+`typeName`/`typeNameShort` (an owned parse of the compiler signature intrinsic — no
+external dep) and constexpr type traits (`has_to_string`, `has_ostream`) in `lain::meta`
+— `lain::string`'s formatter now uses `lain::meta::has_to_string`); and an
+`AppInfo{name, version}` on
 `lain::app::Application` driving the CLI program name, `--version` (and reserved
 `-v/--verbose`), the Vulkan instance name, and a startup log line. `lain::app`
 diagnostics now route through `lain::log`.
