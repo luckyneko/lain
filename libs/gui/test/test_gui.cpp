@@ -3,6 +3,7 @@
 // ImGui context / window needed — GetVersion is a constant and the conversions are
 // pure. The windowed Context seam is verified by flowview.
 
+#include <lain/gui/enums.h>
 #include <lain/gui/gui.h>
 #include <lain/math/types.h>
 
@@ -36,4 +37,35 @@ TEST_CASE("ImVec4 bridges to lain::math::Vec4f both ways", "[gui]")
 	const lain::math::Vec4f back = im;
 	REQUIRE(back.x == 1.0f);
 	REQUIRE(back.w == 4.0f);
+}
+
+TEST_CASE("enumCombo builds headlessly over an enum", "[gui]")
+{
+	// A real (CPU-only) ImGui frame: no backend / GPU, just enough state for NewFrame.
+	// The combo stays closed (no interaction), so it reports no change and leaves the
+	// value alone — this smokes the integration; interactive selection is visual.
+	enum class Pick
+	{
+		A,
+		B,
+		C,
+	};
+
+	ImGuiContext* ctx = ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO();
+	io.DisplaySize = ImVec2(200.0f, 200.0f);
+	io.DeltaTime = 1.0f / 60.0f;
+	unsigned char* pixels = nullptr;
+	int width = 0, height = 0;
+	io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height); // build the atlas so NewFrame's assert passes
+
+	ImGui::NewFrame();
+	Pick pick = Pick::B;
+	const bool changed = lain::gui::enumCombo("pick", pick);
+	ImGui::Render(); // finalize draw data (CPU only)
+
+	REQUIRE_FALSE(changed);
+	REQUIRE(pick == Pick::B);
+
+	ImGui::DestroyContext(ctx);
 }

@@ -12,6 +12,7 @@
 #include <lain/app/windowdelegate.h>
 #include <lain/flow/graph.h>
 #include <lain/log/log.h>
+#include <lain/meta/enums.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
@@ -171,6 +172,51 @@ TEST_CASE("cli: -v/--verbose raises the log level", "[app][log]")
 	}
 
 	log::setLevel(log::Level::Info); // restore for other tests
+}
+
+TEST_CASE("cli: an enum option is validated from the enum's names", "[app]")
+{
+	enum class Mode
+	{
+		Off,
+		Fast,
+		Slow,
+	};
+
+	// The idiomatic CLI11 pattern, built from lain::meta::enums::nameValueMap — no
+	// special-case wrapper, just add_option(...)->transform(CheckedTransformer(...)).
+	struct EnumApp : app::ApplicationDelegate
+	{
+		Mode mode = Mode::Off;
+		bool onInit(app::Application&, app::cli::App& cli) override
+		{
+			cli.add_option("--mode", mode, "run mode")
+				->transform(app::cli::CheckedTransformer(meta::enums::nameValueMap<Mode>(), app::cli::ignore_case));
+			return true;
+		}
+		bool onStart(app::Application&) override { return true; }
+	} delegate;
+
+	app::Application app(delegate, {"test-app", {0, 0, 0}});
+
+	SECTION("a valid name (case-insensitive) maps to its enumerator")
+	{
+		char a0[] = "test-app";
+		char a1[] = "--mode";
+		char a2[] = "fast"; // lower-case still matches Fast
+		char* argv[] = {a0, a1, a2};
+		REQUIRE(app.run(3, argv) == 0);
+		REQUIRE(delegate.mode == Mode::Fast);
+	}
+	SECTION("an unknown value is rejected by the parse")
+	{
+		char a0[] = "test-app";
+		char a1[] = "--mode";
+		char a2[] = "sideways";
+		char* argv[] = {a0, a1, a2};
+		REQUIRE(app.run(3, argv) != 0); // CLI11 validation failure -> non-zero exit
+		REQUIRE(delegate.mode == Mode::Off);
+	}
 }
 
 TEST_CASE("cli: re-registering a reserved flag fails gracefully", "[app]")

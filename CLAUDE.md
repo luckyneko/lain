@@ -44,6 +44,18 @@ refactor of `flow` plus the app stack + viewer:**
   that is both a range/tuple and has `toString()` would be ambiguous with fmt's range
   formatter; none of lain's are.) Depends only on `fmt::fmt`. 3 tests pass (format, the
   Version-via-`toString` path, specs).
+- ✅ **`libs/meta`** (`lain::meta`) — compile-time introspection behind a lain:: face,
+  header-only. Enum reflection over magic_enum 0.9.8 (`cmake/addmagicenum.cmake`, SYSTEM)
+  in the `lain::meta::enums` sub-namespace (short names kept clear of the type-level
+  introspection to come): `name` / `fromString` (case-sensitive or -insensitive) /
+  `count` / `values` / `names` / `entries`, plus `nameValueMap` (a name→value
+  `std::map`); magic_enum is named nowhere past `lain::meta::enums`, and every function
+  is enum-only (`static_assert`). The map is the idiomatic building block for a CLI
+  option (`cli.add_option(...)->transform(cli::CheckedTransformer(enums::nameValueMap<E>(),
+  cli::ignore_case))` — no special wrapper) and backs `lain::gui::enumCombo`. (`typeName`
+  + constexpr type traits intended to join `lain::meta` later.) 4 tests pass. magic_enum
+  sees only enumerators in [-128, 128] by default — fine for lain's small enums, but a
+  large-valued flag enum needs the range customized.
 - ✅ **`libs/log`** (`lain::log`) — thin wrapper over spdlog. Own `Level` enum +
   `setLevel`/`level`/`log(Level, string_view)` seam + typed front-ends
   (`trace`/`debug`/`info`/`warn`/`error`/`critical`) that format with fmt and funnel
@@ -70,7 +82,9 @@ refactor of `flow` plus the app stack + viewer:**
   exposed via `Application::verbosity()`); `--version` is reserved too. A delegate that
   re-registers a reserved flag is caught (CLI11 throws on construction) and reported via
   `lain::log::error` + a clean `run()` exit 1, not an uncaught terminate. `lain::app`'s
-  own diagnostics go through `lain::log` (no `fprintf`). Headless = an app that opens no windows. Gated by `LAIN_BUILD_APPS`;
+  own diagnostics go through `lain::log` (no `fprintf`). (An enum-valued CLI option is
+  the plain CLI11 `add_option(...)->transform(...)` fed by `lain::meta::enums::nameValueMap`
+  — no app-side wrapper.) Headless = an app that opens no windows. Gated by `LAIN_BUILD_APPS`;
   both modes verified on the live driver (headless + cli in ctest, opt-in `[gpu]` window
   smoke `LAIN_GUI_SMOKE=1`).
 - ✅ **`libs/gui`** (`lain::gui`) — Dear ImGui 1.92.8 wrapper. `gui.h` re-exposes
@@ -85,7 +99,9 @@ refactor of `flow` plus the app stack + viewer:**
   per-window `ImNodesContext` alongside the ImGui one. Pinned to a master commit
   (`addImnodes.cmake`, built against our `imgui` target) since no imnodes release tracks
   ImGui 1.92 — that commit branches on `IMGUI_VERSION_NUM >= 19200`. (`Application::instance()`
-  was added to `lain::app` for ImGui's `VkInstance`.)
+  was added to `lain::app` for ImGui's `VkInstance`.) `enums.h` adds `enumCombo` — an
+  ImGui combo over an enum's values labelled from `lain::meta::enums` (headless-smoke
+  tested; interactive selection is visual).
 - ✅ **`apps/flowview`** — the inspector. Both modes built + verified on the live
   driver. Shared scene: `buildExampleScene` adds `flow-example`'s `GradientNode`; the
   graph is pulled (`Graph::evaluate`). **cli-mode** (`--headless`/`-c`): `dumpGraph`
@@ -115,8 +131,8 @@ standing architecture reference (the role `CLAUDE.md` plays in the sibling repos
 each either owned `lain` code or a thin wrapper giving an external library a
 `lain::` face (`libs/task` → `lain::task` over Taskflow; `libs/math` →
 `lain::math` over GLM; `libs/core` → `lain::core` std-only types; `libs/log` →
-`lain::log` over spdlog; `libs/string` → `lain::string` over fmt; `libs/app` →
-GLFW 3.4 + CLI11; `libs/gui` → Dear ImGui).
+`lain::log` over spdlog; `libs/string` → `lain::string` over fmt; `libs/meta` →
+`lain::meta` over magic_enum; `libs/app` → GLFW 3.4 + CLI11; `libs/gui` → Dear ImGui).
 
 `flow` is a fast, threadable node-graph engine: typed-port nodes connect into a
 DAG, the graph evaluates across worker threads, and every intermediate result

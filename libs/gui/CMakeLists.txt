@@ -17,7 +17,7 @@ add_library(lain::gui ALIAS gui)
 target_compile_features(gui PUBLIC cxx_std_17)
 target_include_directories(gui PUBLIC include)
 target_link_libraries(gui
-	PUBLIC imgui imnodes lain::app lain::math archimedes
+	PUBLIC imgui imnodes lain::app lain::math lain::meta archimedes
 	PRIVATE lain::warnings
 )
 

@@ -15,6 +15,7 @@ target_link_libraries(test-app PRIVATE
 	lain::app
 	lain::flow
 	lain::log
+	lain::meta
 	Vulkan::Loader
 	lain::warnings
 	Catch2::Catch2WithMain
