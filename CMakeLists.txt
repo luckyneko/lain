@@ -53,6 +53,7 @@ include(addGLM)
 include(addfmt)        # {fmt} — formatting for lain::log (and spdlog's external fmt)
 include(addspdlog)     # logging backend behind lain::log (built against addfmt's fmt)
 include(addmagicenum)  # enum reflection behind lain::meta
+include(addnameof)     # type-name reflection behind lain::meta
 
 # Vulkan loader for lain's own VkInstance-creating executables (the [gpu] tests,
 # flowview). archimedes owns Vulkan and exposes acm_require_vulkan_runtime()

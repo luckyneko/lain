@@ -125,8 +125,9 @@ stderr sink); **`libs/string`** (`lain::string`, an fmt-backed `format()` plus a
 formatter for any type exposing `toString()` — detected via a trait, so `core` stays
 format-unaware); **`libs/meta`** (`lain::meta`, enum reflection over magic_enum in the
 `lain::meta::enums` sub-namespace — `name`/`fromString`/`values`/`entries`/`nameValueMap`
-— feeding an idiomatic CLI11 enum option and an ImGui enum-combo in `lain::gui`;
-`typeName` + type traits to follow); and an `AppInfo{name, version}` on
+— feeding an idiomatic CLI11 enum option and an ImGui enum-combo in `lain::gui`, plus
+`typeName`/`typeNameShort` over nameof in `lain::meta`; constexpr type traits to follow);
+and an `AppInfo{name, version}` on
 `lain::app::Application` driving the CLI program name, `--version` (and reserved
 `-v/--verbose`), the Vulkan instance name, and a startup log line. `lain::app`
 diagnostics now route through `lain::log`.

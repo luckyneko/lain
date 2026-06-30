@@ -52,10 +52,14 @@ refactor of `flow` plus the app stack + viewer:**
   `std::map`); magic_enum is named nowhere past `lain::meta::enums`, and every function
   is enum-only (`static_assert`). The map is the idiomatic building block for a CLI
   option (`cli.add_option(...)->transform(cli::CheckedTransformer(enums::nameValueMap<E>(),
-  cli::ignore_case))` — no special wrapper) and backs `lain::gui::enumCombo`. (`typeName`
-  + constexpr type traits intended to join `lain::meta` later.) 4 tests pass. magic_enum
+  cli::ignore_case))` — no special wrapper) and backs `lain::gui::enumCombo`. magic_enum
   sees only enumerators in [-128, 128] by default — fine for lain's small enums, but a
-  large-valued flag enum needs the range customized.
+  large-valued flag enum needs the range customized. **typeName** (`typenames.h`, over
+  nameof 0.10.5, `cmake/addnameof.cmake`) sits directly in `lain::meta` (type-level, not
+  enum): `typeName<T>()` ("lain::core::Version") + `typeNameShort<T>()` ("Version",
+  derived by trimming to the last `::` of the full name — nameof's own short-name parser
+  misfires on the newest MSVC). Names are human/debug-facing (port labels, logs), not
+  stable serialization keys. (Constexpr type traits intended to join later.) 7 tests pass.
 - ✅ **`libs/log`** (`lain::log`) — thin wrapper over spdlog. Own `Level` enum +
   `setLevel`/`level`/`log(Level, string_view)` seam + typed front-ends
   (`trace`/`debug`/`info`/`warn`/`error`/`critical`) that format with fmt and funnel
