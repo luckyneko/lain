@@ -20,7 +20,9 @@ each either owned `lain` code or a thin wrapper that gives an external library a
   executor. It is the execution substrate: it *is* a DAG scheduler with a
   work-stealing executor, so the push side of evaluation is largely its job, not
   ours. We wrap it thin so the rest of the set sees `lain::task`, never `tf::`.
-  This is `flow`'s **only** dependency.
+  Alongside it `flow` links only **`lain::meta`** (a `Port` captures
+  `lain::meta::typeName<T>()` for inspector pin labels) — both featherweight, no
+  GPU/UI coupling.
 
 `flow` itself is **payload-agnostic and GPU-free** — a port carries any copyable
 value — so the GPU/UI pieces live in `flow`'s *consumers*, not in `flow`:
@@ -55,7 +57,8 @@ same `lain::task` seam; see Decisions.)
 3. **`flow` is payload-agnostic (decoupled from archimedes).** A `PortValue` is a
    thin `std::any` slot carrying any copyable value — a CPU payload or a GPU handle
    (`acm::Texture`/`acm::Buffer` are just copyable `shared_ptr` handles), so `flow`
-   core links only `lain::task`. "Is this a texture, preview it" is the viewer's
+   names no GPU types and links only `lain::task` + `lain::meta`. "Is this a texture,
+   preview it" is the viewer's
    job: it compares `PortValue::type()` against `typeid(acm::Texture)` (it already
    links archimedes). Supersedes the earlier dual-tagged-PortValue plan.
 4. **Hybrid execution.** Taskflow's executor drives a **push** run (every node
@@ -216,8 +219,9 @@ Drop the `acm::Texture`/`acm::Buffer` arms from `PortValue`: `m_value` becomes a
 plain `std::any` (empty when value-less). `set<T>` / `holds<T>` / `get<T>` /
 `type()` / `clear()` collapse onto it; `PortKind` / `texture()` / `buffer()` are
 removed. Update `flow-example`'s `GradientNode` to `set<acm::Texture>` and the
-`[gpu]` test to `get<acm::Texture>`. After this `libs/flow` links only
-`lain::task`; archimedes moves to `flow-example`, `lain::gui`, and `flowview`.
+`[gpu]` test to `get<acm::Texture>`. After this `libs/flow` names no GPU types
+(links `lain::task` + `lain::meta`, both featherweight); archimedes moves to
+`flow-example`, `lain::gui`, and `flowview`.
 
 ### 6. `libs/math` — typed GLM wrapper
 

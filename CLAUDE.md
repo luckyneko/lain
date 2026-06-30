@@ -22,8 +22,11 @@ refactor of `flow` plus the app stack + viewer:**
   `acm::Texture` through a port, verified by a headless `[gpu]` test on a real
   driver (archimedes' `acm_require_vulkan_runtime()` builds the loader from source).
 - ✅ **`flow` decouple** — `PortValue` is now a thin `std::any` slot; `flow` core
-  links only `lain::task` (archimedes moved to `flow-example`). Verified: warning-
-  clean build + all 23 flow tests pass, incl. the live-driver texture round-trip.
+  names no GPU types and links only `lain::task` + `lain::meta` (archimedes moved to
+  `flow-example`). A `Port` also captures `lain::meta::typeName<T>()` at declaration
+  (`Port::typeName()` — a `string_view` into static storage), so the inspector can label
+  pins by type. Verified: warning-clean build + all flow tests pass, incl. the
+  live-driver texture round-trip.
 - ✅ **`libs/math`** (`lain::math`) — typed GLM wrapper (generic `Vec<N,T>`/`Mat`/
   `Quat`, per-dim `Vec2/3/4<T>`, named concretes; GLM free fns re-exposed). GLM
   1.0.3 via `cmake/addGLM.cmake` (SYSTEM). Builds warning-clean; 3 tests pass.
@@ -59,7 +62,8 @@ refactor of `flow` plus the app stack + viewer:**
   enum): `typeName<T>()` ("lain::core::Version") + `typeNameShort<T>()` ("Version",
   derived by trimming to the last `::` of the full name — nameof's own short-name parser
   misfires on the newest MSVC). Names are human/debug-facing (port labels, logs), not
-  stable serialization keys. **Type traits** (`traits.h`, pure std — no magic_enum/nameof)
+  stable serialization keys — `flow`'s `Port` captures `typeName<T>()` at declaration so
+  the inspector reads `Port::typeName()` directly (no runtime type_index → name lookup). **Type traits** (`traits.h`, pure std — no magic_enum/nameof)
   in std::type_traits style (`_v` variants): `has_to_string` (string-returning
   `toString()`; backs `lain::string`'s formatter) and `has_ostream` (stream insertion
   operator). `has_ostream` is a detection primitive only — built-ins are stream-able, so
@@ -146,13 +150,16 @@ each either owned `lain` code or a thin wrapper giving an external library a
 `flow` is a fast, threadable node-graph engine: typed-port nodes connect into a
 DAG, the graph evaluates across worker threads, and every intermediate result
 stays inspectable. It is **payload-agnostic** — a port carries any copyable value,
-CPU or a GPU handle — so `flow` itself depends on nothing but `lain::task`:
+CPU or a GPU handle — so `flow` pulls in no GPU/UI deps; it links only two
+featherweight libs:
 
 - **Taskflow** (via **`lain::task`**, `libs/task`) — the execution substrate. It
   *is* a task-graph executor with a work-stealing pool, so the push scheduler is
   largely its job; our owned scheduler code just lowers our DAG onto it. We wrap
-  it thin so `flow` sees `lain::task`, never `tf::`. This is `flow`'s **only**
-  dependency.
+  it thin so `flow` sees `lain::task`, never `tf::`.
+- **`lain::meta`** (`libs/meta`) — a `Port` captures `lain::meta::typeName<T>()` at
+  declaration so the inspector can label pins by type. Compile-time, header-only — no
+  GPU/UI coupling, in keeping with `flow`'s minimalism.
 
 **`archimedes` is a dependency of `flow`'s *consumers*, not of `flow`.** A GPU node
 (`flow-example`'s `GradientNode`) and the viewer (`lain::gui`/`flowview`) link
@@ -175,9 +182,10 @@ later.)
 3. **`flow` is payload-agnostic (decoupled from archimedes).** A `PortValue` is a
    thin `std::any` slot holding any copyable value — a CPU payload **or** a GPU
    handle (`acm::Texture`/`acm::Buffer` are just copyable `shared_ptr` handles), so
-   `flow` core links **only** `lain::task`. "Is this a texture, preview it" is the
-   viewer's job: it compares `PortValue::type()` against `typeid(acm::Texture)` (it
-   already links archimedes). Supersedes the earlier dual-tagged-PortValue plan.
+   `flow` names no GPU types and links only `lain::task` + `lain::meta` (both
+   featherweight; the latter for `Port::typeName()`). "Is this a texture, preview it"
+   is the viewer's job: it compares `PortValue::type()` against `typeid(acm::Texture)`
+   (it already links archimedes). Supersedes the earlier dual-tagged-PortValue plan.
 4. **Hybrid execution.** Taskflow drives the **push** run (node fires when inputs
    ready); we own a **pull** path (`evaluate(NodeId)`) for nodes that don't fit a
    full run — `constant` nodes (compute once, then clean) and on-request sources

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+#include <string>
 #include <typeindex>
 
 using namespace lain::flow;
@@ -69,6 +70,7 @@ TEST_CASE("a node exposes its declared ports", "[graph]")
 	REQUIRE(n.outputCount() == 1);
 	REQUIRE(n.input(0).name() == "a");
 	REQUIRE(n.input(0).type() == std::type_index(typeid(int)));
+	REQUIRE(std::string(n.input(0).typeName()) == "int"); // captured from lain::meta::typeName<int>()
 	REQUIRE(n.output(0).name() == "sum");
 	REQUIRE(n.id() == add);
 	REQUIRE(n.dirty()); // freshly added nodes are dirty

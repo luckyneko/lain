@@ -3,6 +3,7 @@
 #include <lain/flow/portvalue.h>
 
 #include <string>
+#include <string_view>
 #include <typeindex>
 #include <utility>
 
@@ -28,6 +29,11 @@ namespace lain::flow
 		// against (independent of whether a value has been produced yet).
 		std::type_index type() const { return m_type; }
 
+		// A human-readable name for the declared type, captured from
+		// lain::meta::typeName<T>() at declaration (a string_view into static storage).
+		// For display/debug — the inspector labels pins with it.
+		std::string_view typeName() const { return m_typeName; }
+
 		// True once a value has been produced into this port (i.e. not empty).
 		bool ready() const { return !m_value.empty(); }
 
@@ -44,16 +50,18 @@ namespace lain::flow
 
 	private:
 		friend class Node; // only a Node builds its ports
-		Port(std::string name, Direction dir, std::type_index type)
+		Port(std::string name, Direction dir, std::type_index type, std::string_view typeName)
 			: m_name(std::move(name))
 			, m_dir(dir)
 			, m_type(type)
+			, m_typeName(typeName)
 		{
 		}
 
 		std::string m_name;
 		Direction m_dir;
 		std::type_index m_type;
+		std::string_view m_typeName;
 		PortValue m_value;
 	};
 } // namespace lain::flow
