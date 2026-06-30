@@ -260,10 +260,14 @@ namespace lain::app
 	{
 		impl& s = *m;
 
-		// onInit: name the CLI after the app, wire up --version, let the delegate
-		// register its own options (CLI11's API), then parse argv.
+		// onInit: name the CLI after the app, wire up the framework flags (--version,
+		// -v/--verbose), let the delegate register its own options (CLI11's API), then
+		// parse argv. -v/--verbose is reserved by the framework — a delegate must not
+		// re-register it.
 		cli::App cliApp{s.info.name, s.info.name};
 		cliApp.set_version_flag("--version", s.info.name + " " + s.info.version.toString());
+		int verbosity = 0;
+		cliApp.add_flag("-v,--verbose", verbosity, "increase log verbosity (-v: debug, -vv: trace)");
 		if (!s.delegate.onInit(*this, cliApp))
 			return 1;
 		try
@@ -275,6 +279,12 @@ namespace lain::app
 			// Also the --help / --version exit path: exit() prints them and returns 0.
 			return cliApp.exit(e);
 		}
+
+		// Raise the log level from -v before anything logs (-v: debug, -vv+: trace).
+		if (verbosity == 1)
+			lain::log::setLevel(lain::log::Level::Debug);
+		else if (verbosity >= 2)
+			lain::log::setLevel(lain::log::Level::Trace);
 
 		// Past the parse (so --version / --help have already printed and exited): a
 		// normal run announces its identity.

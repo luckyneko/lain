@@ -14,6 +14,7 @@ target_compile_definitions(test-app PRIVATE $<$<CXX_COMPILER_ID:MSVC>:_CRT_SECUR
 target_link_libraries(test-app PRIVATE
 	lain::app
 	lain::flow
+	lain::log
 	Vulkan::Loader
 	lain::warnings
 	Catch2::Catch2WithMain

@@ -11,6 +11,7 @@
 #include <lain/app/window.h>
 #include <lain/app/windowdelegate.h>
 #include <lain/flow/graph.h>
+#include <lain/log/log.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
@@ -112,11 +113,11 @@ TEST_CASE("cli: the delegate registers options the base app parses", "[app]")
 {
 	struct FlagApp : app::ApplicationDelegate
 	{
-		bool verbose = false;
+		bool flag = false;
 		int value = 0;
 		bool onInit(app::Application&, app::cli::App& cli) override
 		{
-			cli.add_flag("--verbose", verbose, "verbose output");
+			cli.add_flag("--flag", flag, "an example flag");
 			cli.add_option("--value", value, "a value");
 			return true;
 		}
@@ -125,14 +126,48 @@ TEST_CASE("cli: the delegate registers options the base app parses", "[app]")
 
 	app::Application app(delegate, {"test-app", {0, 0, 0}});
 	char a0[] = "test-app";
-	char a1[] = "--verbose";
+	char a1[] = "--flag";
 	char a2[] = "--value";
 	char a3[] = "42";
 	char* argv[] = {a0, a1, a2, a3};
 
 	REQUIRE(app.run(4, argv) == 0);
-	REQUIRE(delegate.verbose);
+	REQUIRE(delegate.flag);
 	REQUIRE(delegate.value == 42);
+}
+
+TEST_CASE("cli: -v/--verbose raises the log level", "[app][log]")
+{
+	GraphApp delegate; // headless; we only care that run() applies the flag
+	app::Application app(delegate, {"test-app", {0, 0, 0}});
+
+	log::setLevel(log::Level::Info); // known starting point
+
+	SECTION("no flag leaves the level untouched")
+	{
+		char a0[] = "test-app";
+		char* argv[] = {a0};
+		REQUIRE(app.run(1, argv) == 0);
+		REQUIRE(log::level() == log::Level::Info);
+	}
+	SECTION("-v selects debug")
+	{
+		char a0[] = "test-app";
+		char a1[] = "-v";
+		char* argv[] = {a0, a1};
+		REQUIRE(app.run(2, argv) == 0);
+		REQUIRE(log::level() == log::Level::Debug);
+	}
+	SECTION("-vv selects trace")
+	{
+		char a0[] = "test-app";
+		char a1[] = "-vv";
+		char* argv[] = {a0, a1};
+		REQUIRE(app.run(2, argv) == 0);
+		REQUIRE(log::level() == log::Level::Trace);
+	}
+
+	log::setLevel(log::Level::Info); // restore for other tests
 }
 
 TEST_CASE("gui: opens a window and renders frames", "[app][gpu]")
