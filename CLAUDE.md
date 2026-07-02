@@ -182,8 +182,8 @@ refactor of `flow` plus the app stack + viewer:**
   `ImGuiFocusedFlags_RootAndChildWindows` (imnodes runs in a child window), and the canvas
   is drawn + edited *before* the inspector panel so a deletion never leaves a freed texture
   on screen. Verified: warning-clean; 71 tests; add / delete / detach / reconnect confirmed
-  live. (Known gap: a deleted node's cached preview descriptor lingers — `lain::gui` has no
-  `RemoveTexture` yet; bounded, never drawn.)
+  live. A deleted node's preview descriptor is reclaimed via `lain::gui::Context::releaseImage`
+  (the inspector prunes its cache to the views still held by live ports after each edit).
 
 Keep this section current as work lands. Once `flow` is fuller, this file is its
 standing architecture reference (the role `CLAUDE.md` plays in the sibling repos).

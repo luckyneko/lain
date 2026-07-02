@@ -306,8 +306,8 @@ The viewer became an editor. Landed in order:
    inspector previews every texture port via a register-once `VkImageView`→`ImTextureID`
    cache.
 
-Remaining preview polish (a `lain::gui` `RemoveTexture` so a deleted node's descriptor is
-reclaimed) is deferred — the leak is bounded and never drawn.
+Preview descriptors for deleted nodes are reclaimed via `lain::gui::Context::releaseImage`
+(the inspector prunes its texture cache after each edit).
 
 ## Backlog (deferred — don't build speculatively)
 
