@@ -303,16 +303,23 @@ works without running it.
    streaming becomes real.
 5. **Node hot-reload** and a node-type plugin registry.
 6. **imgui-node-editor + docking/multi-viewport** upgrade from imnodes.
+7. **Type-owned factory keys.** `lain::core::Factory<Base>` keys on an explicit
+   string today (stable across compilers / class renames — unlike
+   `meta::typeName<T>()`, which is display-only). A future refinement: let a type own
+   its stable key via a `static constexpr` member (e.g. `T::factoryKey()`), enforced
+   by a trait, so `registerType<T>()` reads it and the key can't drift from the type.
+   Caveat to resolve first: a type constructible under two different `Base` factories
+   can't have one canonical key — so the key may need to be per-(Base,T), not per-T.
 
 ### Tier C — foundational (when a consumer needs it)
 
-7. **`lain::core::DateTime`** — a wall-clock / calendar time type (Python
+8. **`lain::core::DateTime`** — a wall-clock / calendar time type (Python
    `datetime`-style) for system-time management: capture now, arithmetic, and
    parse/format ISO-8601 (`%FT%T%z` for local, `%FT%T` for UTC). Split from
    `lain::core::Time` (which stays monotonic-only) because calendar/formatting is
    the `std::chrono` *time_point* side, not durations. Likely first needed when
    graphs serialize to json (Tier A item 1 — timestamps).
-8. **Video `Timecode` / `Timestamp`** — a frame-rate-aware time type for camera /
+9. **Video `Timecode` / `Timestamp`** — a frame-rate-aware time type for camera /
    video data (SMPTE-style timecode, drop-frame, frame ↔ time conversions). Lands
    when a camera / video node needs it.
 
