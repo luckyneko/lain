@@ -61,4 +61,13 @@ namespace flowview
 
 		dumpGraph(std::cout, graph, device);
 	}
+
+	void FlowviewApp::reevaluate()
+	{
+		// A topology edit doesn't dirty nodes, so force a full recompute through the
+		// current wiring, then pull the sink.
+		for (const flow::NodeId id : m_graph.topoOrder())
+			m_graph.node(id).markDirty();
+		m_scheduler.evaluate(m_graph, m_textureNode);
+	}
 } // namespace flowview

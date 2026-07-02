@@ -29,6 +29,66 @@ namespace flowview
 		return static_cast<int>(node.value()) * 1000 + (output ? 500 : 0) + static_cast<int>(port);
 	}
 
+	// Inverse of pinId(): decode an imnodes attribute id back to the (node, direction,
+	// port) it stands for — used when a dragged link reports its endpoint pins.
+	struct DecodedPin
+	{
+		flow::NodeId node;
+		bool output;
+		flow::PortIndex port;
+	};
+
+	static DecodedPin decodePin(int attr)
+	{
+		const int rem = attr % 1000;
+		const bool output = rem >= 500;
+		return DecodedPin{
+			flow::NodeId{static_cast<std::uint64_t>(attr / 1000)},
+			output,
+			static_cast<flow::PortIndex>(output ? rem - 500 : rem)};
+	}
+
+	// A link was dragged between two pins: wire the output into the input. connect()
+	// rejects a bad drag (same-direction pins, type mismatch, cycle, or an input
+	// already in use), so a rejected drag simply doesn't stick. Returns whether an
+	// edge was added.
+	static bool tryConnect(flow::Graph& graph, int startAttr, int endAttr)
+	{
+		const DecodedPin a = decodePin(startAttr);
+		const DecodedPin b = decodePin(endAttr);
+		if (a.output == b.output)
+			return false; // need exactly one output and one input
+		const DecodedPin& out = a.output ? a : b;
+		const DecodedPin& in = a.output ? b : a;
+		return graph.connect(out.node, out.port, in.node, in.port) == flow::Connection::Ok;
+	}
+
+	// Disconnect every currently-selected link (Delete key). imnodes link ids are edge
+	// indices; resolve them to edges *before* mutating, since disconnecting shifts the
+	// indices. Returns whether any edge was removed.
+	static bool deleteSelectedLinks(flow::Graph& graph)
+	{
+		const int selected = gui::nodes::NumSelectedLinks();
+		if (selected <= 0)
+			return false;
+
+		std::vector<int> linkIds(static_cast<std::size_t>(selected));
+		gui::nodes::GetSelectedLinks(linkIds.data());
+
+		const std::vector<flow::Graph::Edge>& edges = graph.edges();
+		std::vector<flow::Graph::Edge> toRemove;
+		for (const int id : linkIds)
+		{
+			if (id >= 0 && static_cast<std::size_t>(id) < edges.size())
+				toRemove.push_back(edges[static_cast<std::size_t>(id)]);
+		}
+
+		bool removed = false;
+		for (const flow::Graph::Edge& e : toRemove)
+			removed |= graph.disconnect(e.to, e.inPort);
+		return removed;
+	}
+
 	// Thumbnail side length (pixels) for each preview size.
 	static float previewExtent(PreviewSize size)
 	{
@@ -72,7 +132,8 @@ namespace flowview
 
 	void InspectorWindow::onRender(app::Window& window, const app::TimeState&)
 	{
-		const flow::Graph& graph = window.app().getDelegate<FlowviewApp>().graph();
+		FlowviewApp& appDelegate = window.app().getDelegate<FlowviewApp>();
+		flow::Graph& graph = appDelegate.graph(); // mutated by the canvas below
 
 		m_guiCtx->newFrame();
 
@@ -162,8 +223,23 @@ namespace flowview
 			gui::nodes::Link(static_cast<int>(e), pinId(edges[e].from, true, edges[e].outPort), pinId(edges[e].to, false, edges[e].inPort));
 
 		gui::nodes::EndNodeEditor();
+
+		// Canvas editing (must query imnodes after EndNodeEditor): a dragged link
+		// connects its output->input; Delete removes the selected link(s).
+		bool edited = false;
+		int startAttr = 0;
+		int endAttr = 0;
+		if (gui::nodes::IsLinkCreated(&startAttr, &endAttr))
+			edited |= tryConnect(graph, startAttr, endAttr);
+		if (gui::IsWindowFocused() && gui::IsKeyPressed(ImGuiKey_Delete))
+			edited |= deleteSelectedLinks(graph);
+
 		gui::End();
 		m_laidOut = true;
+
+		// A topology edit changes what should flow; re-run the scene before rendering.
+		if (edited)
+			appDelegate.reevaluate();
 
 		window.renderer().render([&](acm::CommandBuffer cmd, uint32_t)
 								 { m_guiCtx->render(cmd); });

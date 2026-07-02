@@ -31,6 +31,11 @@ namespace flowview
 		// The gui-mode scene the InspectorWindow reads (reached via
 		// window.app().getDelegate<FlowviewApp>().graph()).
 		const lain::flow::Graph& graph() const { return m_graph; }
+		lain::flow::Graph& graph() { return m_graph; } // the canvas edits it in place
+
+		// Re-run the scene after a canvas edit: dirty every node and pull the sink, so
+		// data flows through the current wiring. Called from the render thread.
+		void reevaluate();
 
 	private:
 		bool m_headless = false;
