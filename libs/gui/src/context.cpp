@@ -88,4 +88,9 @@ namespace lain::gui
 		VkDescriptorSet set = ImGui_ImplVulkan_AddTexture(sampler.vkSampler(), texture.vkImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		return reinterpret_cast<ImTextureID>(set);
 	}
+
+	void Context::releaseImage(ImTextureID id)
+	{
+		ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(id));
+	}
 } // namespace lain::gui

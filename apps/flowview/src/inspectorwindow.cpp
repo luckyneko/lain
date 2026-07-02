@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -170,6 +171,40 @@ namespace flowview
 		return m_previews.emplace(view, m_guiCtx->image(texture, m_sampler)).first->second;
 	}
 
+	void InspectorWindow::prunePreviews(const flow::Graph& graph)
+	{
+		// Collect the image views still held by a live port (an output, or a downstream
+		// input that kept its last value). Anything cached but no longer present is a
+		// texture that's gone — release its descriptor back to the pool.
+		std::set<VkImageView> live;
+		for (const flow::NodeId id : graph.topoOrder())
+		{
+			const flow::Node& node = graph.node(id);
+			const auto collect = [&](const flow::Port& p)
+			{
+				if (p.ready() && p.type() == typeid(acm::Texture))
+					live.insert(p.value().get<acm::Texture>().vkImageView());
+			};
+			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
+				collect(node.input(i));
+			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
+				collect(node.output(o));
+		}
+
+		for (auto it = m_previews.begin(); it != m_previews.end();)
+		{
+			if (live.count(it->first) == 0)
+			{
+				m_guiCtx->releaseImage(it->second);
+				it = m_previews.erase(it);
+			}
+			else
+			{
+				++it;
+			}
+		}
+	}
+
 	void InspectorWindow::onRender(app::Window& window, const app::TimeState&)
 	{
 		FlowviewApp& appDelegate = window.app().getDelegate<FlowviewApp>();
@@ -281,11 +316,14 @@ namespace flowview
 		gui::End();
 		m_laidOut = true;
 
-		// A topology edit changes what should flow; re-run the scene. The preview cache
-		// is keyed by texture, so it needs no reset — the panel below simply looks up
-		// whatever textures the current (post-edit) nodes carry.
+		// A topology edit changes what should flow; re-run the scene, then reclaim any
+		// preview descriptors whose texture is now gone. The cache is keyed by texture,
+		// so the panel below just looks up whatever the current nodes carry.
 		if (edited)
+		{
 			appDelegate.reevaluate();
+			prunePreviews(graph);
+		}
 
 		// The inspector panel — reads the (now post-edit) graph.
 		gui::SetNextWindowPos(math::Vec2f{20.0f, 20.0f}, ImGuiCond_FirstUseEver);

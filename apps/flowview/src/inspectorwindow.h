@@ -10,6 +10,11 @@
 #include <map>
 #include <memory>
 
+namespace lain::flow
+{
+	class Graph;
+}
+
 namespace flowview
 {
 	// Thumbnail size for the texture preview, chosen at runtime via a
@@ -36,9 +41,12 @@ namespace flowview
 
 	private:
 		// Register a GPU texture for preview, caching by its image view so each texture
-		// is registered once (Context::image has no removal — re-registering per frame /
-		// per edit would leak descriptors). Returns the ImGui id to draw with.
+		// is registered once. Returns the ImGui id to draw with.
 		ImTextureID previewFor(const acm::Texture& texture);
+
+		// Release cached previews whose texture is no longer held by any live port
+		// (e.g. after a node deletion), reclaiming their descriptors. Called on edits.
+		void prunePreviews(const lain::flow::Graph& graph);
 
 		std::unique_ptr<lain::gui::Context> m_guiCtx;
 		acm::Sampler m_sampler;

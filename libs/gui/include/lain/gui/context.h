@@ -50,6 +50,11 @@ namespace lain::gui
 		// The texture must be in SHADER_READ_ONLY layout (an uploaded acm::Texture is).
 		ImTextureID image(acm::Texture texture, acm::Sampler sampler);
 
+		// Release an id from image(), returning its descriptor to the pool; the id must
+		// not be used afterwards. Not needed at teardown (the backend frees the whole
+		// pool then) — use it to reclaim descriptors for textures no longer shown.
+		void releaseImage(ImTextureID id);
+
 	private:
 		struct impl;
 		std::unique_ptr<impl> m;
