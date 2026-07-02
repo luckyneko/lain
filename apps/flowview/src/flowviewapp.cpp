@@ -64,10 +64,9 @@ namespace flowview
 
 	void FlowviewApp::reevaluate()
 	{
-		// A topology edit doesn't dirty nodes, so force a full recompute through the
-		// current wiring, then pull the sink.
-		for (const flow::NodeId id : m_graph.topoOrder())
-			m_graph.node(id).markDirty();
-		m_scheduler.evaluate(m_graph, m_textureNode);
+		// A full topo-order run (not a pull of one target) recomputes the whole graph
+		// through its current wiring — correct no matter which nodes/edges were edited,
+		// including deletion of whatever used to be the pulled sink.
+		m_scheduler.run(m_graph);
 	}
 } // namespace flowview

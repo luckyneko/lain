@@ -33,8 +33,11 @@ namespace flowview
 		const lain::flow::Graph& graph() const { return m_graph; }
 		lain::flow::Graph& graph() { return m_graph; } // the canvas edits it in place
 
-		// Re-run the scene after a canvas edit: dirty every node and pull the sink, so
-		// data flows through the current wiring. Called from the render thread.
+		// The node-type palette the canvas' add menu draws from.
+		const lain::core::Factory<lain::flow::Node>& nodeFactory() const { return m_nodeFactory; }
+
+		// Re-run the scene after a canvas edit so data flows through the current
+		// wiring. Called from the render thread.
 		void reevaluate();
 
 	private:
