@@ -26,7 +26,7 @@ namespace flowview
 	// fewer than 500 ports per direction and node ids well under ~2M — fine for prototyping.
 	static int pinId(flow::NodeId node, bool output, flow::PortIndex port)
 	{
-		return static_cast<int>(node) * 1000 + (output ? 500 : 0) + static_cast<int>(port);
+		return static_cast<int>(node.value()) * 1000 + (output ? 500 : 0) + static_cast<int>(port);
 	}
 
 	// Thumbnail side length (pixels) for each preview size.
@@ -83,7 +83,7 @@ namespace flowview
 		for (const flow::NodeId id : graph.topoOrder())
 		{
 			const flow::Node& node = graph.node(id);
-			gui::Text("[%zu] %s", id, node.name().c_str());
+			gui::Text("[%llu] %s", static_cast<unsigned long long>(id.value()), node.name().c_str());
 
 			auto port = [&](const char* tag, const flow::Port& p)
 			{
@@ -132,11 +132,11 @@ namespace flowview
 		{
 			const flow::Node& node = graph.node(id);
 			if (!m_laidOut)
-				gui::nodes::SetNodeGridSpacePos(static_cast<int>(id), math::Vec2f{column * 220.0f, 40.0f + (column % 4) * 140.0f});
+				gui::nodes::SetNodeGridSpacePos(static_cast<int>(id.value()), math::Vec2f{column * 220.0f, 40.0f + (column % 4) * 140.0f});
 
-			gui::nodes::BeginNode(static_cast<int>(id));
+			gui::nodes::BeginNode(static_cast<int>(id.value()));
 			gui::nodes::BeginNodeTitleBar();
-			gui::Text("[%zu] %s", id, node.name().c_str());
+			gui::Text("[%llu] %s", static_cast<unsigned long long>(id.value()), node.name().c_str());
 			gui::nodes::EndNodeTitleBar();
 
 			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)

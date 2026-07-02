@@ -4,6 +4,8 @@
 #include <lain/task/task.h>
 
 #include <cstddef>
+#include <map>
+#include <set>
 
 namespace lain::flow
 {
@@ -12,8 +14,8 @@ namespace lain::flow
 		if (!valid(from) || !valid(to))
 			return Connection::InvalidNode;
 
-		Node& source = *m_nodes[from];
-		Node& target = *m_nodes[to];
+		Node& source = node(from);
+		Node& target = node(to);
 		if (outPort >= source.outputCount() || inPort >= target.inputCount())
 			return Connection::InvalidPort;
 
@@ -54,17 +56,20 @@ namespace lain::flow
 		if (m_topoValid)
 			return m_topo;
 
-		// Kahn's algorithm. The graph is acyclic by construction, so every node
+		// Kahn's algorithm over the id-keyed node set (ids aren't contiguous, so
+		// indegree is a map, not a vector). Acyclic by construction, so every node
 		// drains and m_topo ends up covering all of them.
-		std::vector<std::size_t> indegree(m_nodes.size(), 0);
+		std::map<NodeId, std::size_t> indegree;
+		for (const auto& entry : m_nodes)
+			indegree[entry.first] = 0;
 		for (const Edge& e : m_edges)
 			++indegree[e.to];
 
 		std::vector<NodeId> ready;
-		for (NodeId i = 0; i < m_nodes.size(); ++i)
+		for (const auto& entry : indegree) // ascending id -> deterministic seeding
 		{
-			if (indegree[i] == 0)
-				ready.push_back(i);
+			if (entry.second == 0)
+				ready.push_back(entry.first);
 		}
 
 		m_topo.clear();
@@ -107,7 +112,7 @@ namespace lain::flow
 	{
 		std::vector<NodeId> stack;
 		stack.push_back(start);
-		std::vector<bool> seen(m_nodes.size(), false);
+		std::set<NodeId> seen;
 
 		while (!stack.empty())
 		{
@@ -115,13 +120,13 @@ namespace lain::flow
 			stack.pop_back();
 			if (n == target)
 				return true;
-			if (seen[n])
+			if (seen.count(n) != 0)
 				continue;
-			seen[n] = true;
+			seen.insert(n);
 
 			for (const Edge& e : m_edges)
 			{
-				if (e.from == n && !seen[e.to])
+				if (e.from == n && seen.count(e.to) == 0)
 					stack.push_back(e.to);
 			}
 		}

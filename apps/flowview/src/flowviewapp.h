@@ -35,7 +35,7 @@ namespace flowview
 		int m_frames = 0;		   // gui-mode: quit after N frames (0 = until closed)
 
 		lain::flow::Graph m_graph;			  // the gui-mode scene (persists across frames)
-		lain::flow::NodeId m_textureNode = 0; // the GPU source the scene is pulled from
+		lain::flow::NodeId m_textureNode{}; // the GPU source the scene is pulled from
 		InspectorWindow m_window;
 	};
 } // namespace flowview

@@ -63,7 +63,7 @@ namespace lain::flow
 		friend class Graph; // assigns the id when the node is added
 		void setId(NodeId id) { m_id = id; }
 
-		NodeId m_id = 0;
+		NodeId m_id{}; // reserved sentinel until the Graph assigns a real id
 		std::string m_name;
 		std::vector<Port> m_inputs;
 		std::vector<Port> m_outputs;

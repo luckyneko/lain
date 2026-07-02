@@ -3,6 +3,8 @@
 #include <lain/flow/node.h>
 #include <lain/flow/types.h>
 
+#include <cstddef>
+#include <map>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -25,9 +27,9 @@ namespace lain::flow
 		template <typename T, typename... Args>
 		NodeId add(Args&&... args);
 
-		NodeId nodeCount() const { return m_nodes.size(); }
-		Node& node(NodeId id) { return *m_nodes[id]; }
-		const Node& node(NodeId id) const { return *m_nodes[id]; }
+		std::size_t nodeCount() const { return m_nodes.size(); }
+		Node& node(NodeId id) { return *m_nodes.at(id); }
+		const Node& node(NodeId id) const { return *m_nodes.at(id); }
 
 		// Connect an output to an input. Type-checked (declared types must match),
 		// single-source (an input takes one edge), and cycle-rejecting — so the
@@ -62,11 +64,15 @@ namespace lain::flow
 		void evaluate(NodeId target);
 
 	private:
-		bool valid(NodeId id) const { return id < m_nodes.size(); }
+		bool valid(NodeId id) const { return m_nodes.count(id) != 0; }
 		// Is `target` reachable from `start` by following edges (start included)?
 		bool reaches(NodeId start, NodeId target) const;
 
-		std::vector<std::unique_ptr<Node>> m_nodes;
+		// Nodes keyed by id, not stored by position — an id outlives the removal of
+		// other nodes. Ordered (by the monotonic counter, i.e. insertion order) so
+		// iteration and topo order stay deterministic.
+		std::map<NodeId, std::unique_ptr<Node>> m_nodes;
+		NodeId m_nextId{1}; // 0 is the reserved sentinel; real ids start at 1
 		std::vector<Edge> m_edges;
 		mutable std::vector<NodeId> m_topo;
 		mutable bool m_topoValid = false;

@@ -95,7 +95,7 @@ namespace flowview
 		for (const NodeId id : graph.topoOrder())
 		{
 			const Node& node = graph.node(id);
-			out << '[' << id << "] " << node.name() << '\n';
+			out << '[' << id.value() << "] " << node.name() << '\n';
 			for (PortIndex i = 0; i < node.inputCount(); ++i)
 				dumpPort(out, "  in  ", node.input(i), device);
 			for (PortIndex i = 0; i < node.outputCount(); ++i)

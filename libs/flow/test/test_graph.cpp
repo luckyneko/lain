@@ -94,7 +94,7 @@ TEST_CASE("connect rejects invalid nodes and ports", "[graph]")
 	const NodeId c = g.add<ConstInt>(1);
 	const NodeId add = g.add<AddInt>();
 
-	REQUIRE(g.connect(99, 0, add, 0) == Connection::InvalidNode);
+	REQUIRE(g.connect(NodeId{99}, 0, add, 0) == Connection::InvalidNode);
 	REQUIRE(g.connect(c, 5, add, 0) == Connection::InvalidPort);
 	REQUIRE(g.connect(c, 0, add, 9) == Connection::InvalidPort);
 }
