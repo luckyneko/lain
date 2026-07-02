@@ -11,9 +11,9 @@
 #include <lain/app/window.h>
 #include <lain/app/windowdelegate.h>
 #include <lain/flow/graph.h>
+#include <lain/flow/scheduler.h>
 #include <lain/log/log.h>
 #include <lain/meta/enums.h>
-#include <lain/task/task.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
@@ -64,8 +64,7 @@ namespace
 			const flow::NodeId add = g.add<AddInt>();
 			g.connect(c1, 0, add, 0);
 			g.connect(c2, 0, add, 1);
-			lain::task::Executor executor;
-			g.run(executor);
+			flow::SerialScheduler{}.run(g);
 			result = g.node(add).output(0).get<int>();
 		}
 	};

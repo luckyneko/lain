@@ -1,5 +1,4 @@
 #include <lain/flow/graph.h>
-#include <lain/flow/scheduler.h>
 
 #include <cstddef>
 #include <map>
@@ -87,16 +86,6 @@ namespace lain::flow
 
 		m_topoValid = true;
 		return m_topo;
-	}
-
-	void Graph::run(lain::task::Executor& executor)
-	{
-		ParallelScheduler{executor}.run(*this); // transitional: delegates to the scheduler layer
-	}
-
-	void Graph::evaluate(NodeId target)
-	{
-		SerialScheduler{}.evaluate(*this, target); // transitional: delegates to the scheduler layer
 	}
 
 	bool Graph::reaches(NodeId start, NodeId target) const

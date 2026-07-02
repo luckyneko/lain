@@ -38,7 +38,7 @@ namespace flowview
 
 		// Device is live now: build + evaluate the smoke scene the inspector reads.
 		m_textureNode = buildExampleScene(m_graph, app.device(), m_size);
-		m_graph.evaluate(m_textureNode); // pull: runs the GPU source's compute()
+		m_scheduler.evaluate(m_graph, m_textureNode); // pull: runs the GPU source's compute()
 		return true;
 	}
 
@@ -54,7 +54,7 @@ namespace flowview
 
 		flow::Graph graph;
 		const flow::NodeId textureNode = buildExampleScene(graph, device, m_size);
-		graph.evaluate(textureNode); // pull: runs the GPU source's compute()
+		m_scheduler.evaluate(graph, textureNode); // pull: runs the GPU source's compute()
 
 		dumpGraph(std::cout, graph, device);
 	}

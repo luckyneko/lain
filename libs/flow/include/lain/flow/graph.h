@@ -10,16 +10,12 @@
 #include <utility>
 #include <vector>
 
-namespace lain::task
-{
-	class Executor; // only run(Executor&) names it; full type via <lain/task/task.h>
-}
-
 namespace lain::flow
 {
-	// Owns the nodes and the edges between their ports. Builds the DAG (add /
-	// connect / disconnect) and exposes a dependency-respecting order; the
-	// scheduler (step 4) lowers that onto lain::task to actually run it.
+	// Owns the nodes and the edges between their ports: a pure data model. Builds
+	// the DAG (add / connect / disconnect) and exposes a dependency-respecting
+	// order. It does not execute — a Scheduler (see scheduler.h) consumes a Graph
+	// and evaluates it (push run, or pull of one node's upstream).
 	class Graph
 	{
 	public:
@@ -52,15 +48,6 @@ namespace lain::flow
 		// construction, so this always covers every node. Cached and recomputed
 		// lazily after a topology change.
 		const std::vector<NodeId>& topoOrder() const;
-
-		// Push: evaluate the whole graph — each node fires once its inputs are
-		// ready — lowering the DAG onto the given lain::task executor (caller-owned,
-		// so worker count and lifetime stay explicit).
-		void run(lain::task::Executor& executor);
-
-		// Pull: evaluate just `target`'s upstream subgraph on demand, recomputing
-		// only dirty nodes. The entry point for constant / on-request sources.
-		void evaluate(NodeId target);
 
 	private:
 		bool valid(NodeId id) const { return m_nodes.count(id) != 0; }

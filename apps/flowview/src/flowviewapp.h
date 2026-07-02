@@ -4,6 +4,7 @@
 
 #include <lain/app/applicationdelegate.h>
 #include <lain/flow/graph.h>
+#include <lain/flow/scheduler.h>
 #include <lain/flow/types.h>
 
 #include <cstdint>
@@ -36,6 +37,7 @@ namespace flowview
 
 		lain::flow::Graph m_graph;			  // the gui-mode scene (persists across frames)
 		lain::flow::NodeId m_textureNode{}; // the GPU source the scene is pulled from
+		lain::flow::SerialScheduler m_scheduler; // pull-evaluates the scene (no threads needed)
 		InspectorWindow m_window;
 	};
 } // namespace flowview

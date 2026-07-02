@@ -6,6 +6,7 @@
 #include <archimedes/archimedes.h>
 #include <lain/flow/example/gradientnode.h>
 #include <lain/flow/graph.h>
+#include <lain/flow/scheduler.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>
@@ -50,7 +51,7 @@ TEST_CASE("GradientNode emits an uploaded texture on its port", "[flow][gpu]")
 	Graph graph;
 	const NodeId id = graph.add<example::GradientNode>(device, acm::Extent2D{kSize, kSize});
 
-	graph.evaluate(id); // pull: runs compute() — creates + uploads the texture
+	SerialScheduler{}.evaluate(graph, id); // pull: runs compute() — creates + uploads the texture
 
 	const Port& out = graph.node(id).output(0);
 	REQUIRE(out.value().holds<acm::Texture>());

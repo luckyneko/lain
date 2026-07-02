@@ -16,7 +16,6 @@ target_link_libraries(test-app PRIVATE
 	lain::flow
 	lain::log
 	lain::meta
-	lain::task # the headless graph test injects its own executor into Graph::run
 	Vulkan::Loader
 	lain::warnings
 	Catch2::Catch2WithMain

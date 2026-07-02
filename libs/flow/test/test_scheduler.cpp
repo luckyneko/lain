@@ -1,8 +1,9 @@
-// Tests for the scheduler — Graph::run (push) and Graph::evaluate (pull). Pure
-// CPU nodes, so no driver is needed; the wide-graph case exercises concurrent
-// task execution for correctness.
+// Tests for the scheduler — the full push run (serial, and the Taskflow-backed
+// parallel one) and the pull evaluate. Pure CPU nodes, so no driver is needed; the
+// wide-graph case exercises concurrent task execution for correctness.
 
 #include <lain/flow/graph.h>
+#include <lain/flow/scheduler.h>
 #include <lain/task/task.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -85,11 +86,26 @@ TEST_CASE("push run evaluates the whole graph", "[scheduler]")
 	REQUIRE(g.connect(c2, 0, add, 1) == Connection::Ok);
 
 	lain::task::Executor executor;
-	g.run(executor);
+	ParallelScheduler{executor}.run(g);
 
 	REQUIRE(g.node(add).output(0).get<int>() == 5);
 	REQUIRE_FALSE(g.node(add).dirty()); // scheduler cleared it
 	REQUIRE_FALSE(g.node(c1).dirty());
+}
+
+TEST_CASE("serial run evaluates the whole graph in one pass", "[scheduler]")
+{
+	Graph g;
+	const NodeId c1 = g.add<ConstInt>(2);
+	const NodeId c2 = g.add<ConstInt>(3);
+	const NodeId add = g.add<AddInt>();
+	g.connect(c1, 0, add, 0);
+	g.connect(c2, 0, add, 1);
+
+	SerialScheduler{}.run(g);
+
+	REQUIRE(g.node(add).output(0).get<int>() == 5);
+	REQUIRE_FALSE(g.node(add).dirty());
 }
 
 TEST_CASE("push run flows multi-level dependencies", "[scheduler]")
@@ -105,8 +121,8 @@ TEST_CASE("push run flows multi-level dependencies", "[scheduler]")
 	g.connect(add, 0, add2, 0); // (2+3) ...
 	g.connect(c3, 0, add2, 1);	// ... + 10
 
-	lain::task::Executor executor; // the injected-executor overload
-	g.run(executor);
+	lain::task::Executor executor;
+	ParallelScheduler{executor}.run(g);
 
 	REQUIRE(g.node(add2).output(0).get<int>() == 15);
 }
@@ -129,7 +145,7 @@ TEST_CASE("push run computes independent branches correctly", "[scheduler]")
 	g.connect(cd, 0, total, 1);
 
 	lain::task::Executor executor;
-	g.run(executor);
+	ParallelScheduler{executor}.run(g);
 
 	REQUIRE(g.node(total).output(0).get<int>() == 10);
 }
@@ -144,7 +160,8 @@ TEST_CASE("pull evaluates only the target's upstream", "[scheduler]")
 	g.connect(c1, 0, add, 0);
 	g.connect(c2, 0, add, 1);
 
-	g.evaluate(add);
+	SerialScheduler sched;
+	sched.evaluate(g, add);
 
 	REQUIRE(g.node(add).output(0).get<int>() == 10);
 	REQUIRE_FALSE(g.node(add).dirty());
@@ -157,16 +174,17 @@ TEST_CASE("pull recomputes only dirty nodes", "[scheduler]")
 	int calls = 0;
 	Graph g;
 	const NodeId n = g.add<Counter>(calls);
+	SerialScheduler sched;
 
-	g.evaluate(n);
+	sched.evaluate(g, n);
 	REQUIRE(calls == 1);
 	REQUIRE(g.node(n).output(0).get<int>() == 1);
 
-	g.evaluate(n);
+	sched.evaluate(g, n);
 	REQUIRE(calls == 1); // clean -> skipped (the constant case)
 
 	g.node(n).markDirty();
-	g.evaluate(n);
+	sched.evaluate(g, n);
 	REQUIRE(calls == 2); // dirty again -> recomputed
 }
 
@@ -175,11 +193,12 @@ TEST_CASE("pull refires an on-request source every time", "[scheduler]")
 	int calls = 0;
 	Graph g;
 	const NodeId s = g.add<Source>(calls);
+	SerialScheduler sched;
 
-	g.evaluate(s);
+	sched.evaluate(g, s);
 	REQUIRE(calls == 1);
-	g.evaluate(s);
+	sched.evaluate(g, s);
 	REQUIRE(calls == 2); // stayed dirty -> refired
-	g.evaluate(s);
+	sched.evaluate(g, s);
 	REQUIRE(calls == 3);
 }
