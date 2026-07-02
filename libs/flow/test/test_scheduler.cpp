@@ -84,7 +84,8 @@ TEST_CASE("push run evaluates the whole graph", "[scheduler]")
 	REQUIRE(g.connect(c1, 0, add, 0) == Connection::Ok);
 	REQUIRE(g.connect(c2, 0, add, 1) == Connection::Ok);
 
-	g.run();
+	lain::task::Executor executor;
+	g.run(executor);
 
 	REQUIRE(g.node(add).output(0).get<int>() == 5);
 	REQUIRE_FALSE(g.node(add).dirty()); // scheduler cleared it
@@ -127,7 +128,8 @@ TEST_CASE("push run computes independent branches correctly", "[scheduler]")
 	g.connect(ab, 0, total, 0);
 	g.connect(cd, 0, total, 1);
 
-	g.run();
+	lain::task::Executor executor;
+	g.run(executor);
 
 	REQUIRE(g.node(total).output(0).get<int>() == 10);
 }

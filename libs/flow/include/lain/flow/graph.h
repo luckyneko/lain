@@ -54,10 +54,9 @@ namespace lain::flow
 		const std::vector<NodeId>& topoOrder() const;
 
 		// Push: evaluate the whole graph — each node fires once its inputs are
-		// ready — lowering the DAG onto the given lain::task executor, or onto a
-		// shared process executor for the no-arg form.
+		// ready — lowering the DAG onto the given lain::task executor (caller-owned,
+		// so worker count and lifetime stay explicit).
 		void run(lain::task::Executor& executor);
-		void run();
 
 		// Pull: evaluate just `target`'s upstream subgraph on demand, recomputing
 		// only dirty nodes. The entry point for constant / on-request sources.

@@ -96,13 +96,6 @@ namespace lain::flow
 		detail::runPush(*this, executor);
 	}
 
-	void Graph::run()
-	{
-		// A process-wide default pool, spun up on first use.
-		static lain::task::Executor shared;
-		detail::runPush(*this, shared);
-	}
-
 	void Graph::evaluate(NodeId target)
 	{
 		detail::runPull(*this, target);
