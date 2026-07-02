@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+#include <memory>
 #include <string>
 #include <typeindex>
 
@@ -167,4 +168,40 @@ TEST_CASE("dirty flag toggles", "[graph]")
 	REQUIRE_FALSE(g.node(c).dirty());
 	g.node(c).markDirty();
 	REQUIRE(g.node(c).dirty());
+}
+
+TEST_CASE("add adopts an already-constructed node", "[graph]")
+{
+	Graph g;
+	const NodeId id = g.add(std::make_unique<AddInt>()); // the factory path
+
+	REQUIRE(g.nodeCount() == 1);
+	REQUIRE(g.node(id).name() == "Add");
+	REQUIRE(g.node(id).id() == id); // the graph stamped the id on the adopted node
+}
+
+TEST_CASE("removeNode drops the node and its edges, leaving other ids valid", "[graph]")
+{
+	Graph g;
+	const NodeId c1 = g.add<ConstInt>(1);
+	const NodeId c2 = g.add<ConstInt>(2);
+	const NodeId add = g.add<AddInt>();
+	REQUIRE(g.connect(c1, 0, add, 0) == Connection::Ok);
+	REQUIRE(g.connect(c2, 0, add, 1) == Connection::Ok);
+
+	REQUIRE(g.removeNode(c1)); // remove a source
+	REQUIRE(g.nodeCount() == 2);
+	REQUIRE(g.edges().size() == 1);		   // the c1 -> add edge went with it
+	REQUIRE(g.edges().front().from == c2); // the c2 -> add edge survives
+
+	// The surviving nodes keep their ids, and topo order no longer mentions c1.
+	REQUIRE(g.node(c2).name() == "ConstInt");
+	REQUIRE(g.node(add).name() == "Add");
+	const std::vector<NodeId>& order = g.topoOrder();
+	REQUIRE(order.size() == 2);
+	REQUIRE(std::find(order.begin(), order.end(), c1) == order.end());
+
+	// The freed input can take a new source; removing an absent node is a no-op.
+	REQUIRE(g.connect(c2, 0, add, 0) == Connection::Ok);
+	REQUIRE_FALSE(g.removeNode(c1));
 }

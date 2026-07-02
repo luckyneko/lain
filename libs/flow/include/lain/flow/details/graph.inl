@@ -8,12 +8,6 @@ namespace lain::flow
 	NodeId Graph::add(Args&&... args)
 	{
 		static_assert(std::is_base_of<Node, T>::value, "T must derive from lain::flow::Node");
-		const NodeId id = m_nextId;
-		m_nextId = NodeId{m_nextId.value() + 1};
-		auto created = std::make_unique<T>(std::forward<Args>(args)...);
-		created->setId(id); // Graph is a friend of Node
-		m_nodes.emplace(id, std::move(created));
-		m_topoValid = false;
-		return id;
+		return add(std::make_unique<T>(std::forward<Args>(args)...)); // the adopt overload assigns the id
 	}
 } // namespace lain::flow

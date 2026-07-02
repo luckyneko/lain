@@ -23,6 +23,14 @@ namespace lain::flow
 		template <typename T, typename... Args>
 		NodeId add(Args&&... args);
 
+		// Adopt an already-constructed node (e.g. produced by a factory); returns its
+		// id. The type-erased entry point the template add<T> forwards to.
+		NodeId add(std::unique_ptr<Node> node);
+
+		// Remove a node and every edge touching it (in or out); returns whether it
+		// existed. Other nodes keep their ids — ids are handles, not positions.
+		bool removeNode(NodeId id);
+
 		std::size_t nodeCount() const { return m_nodes.size(); }
 		Node& node(NodeId id) { return *m_nodes.at(id); }
 		const Node& node(NodeId id) const { return *m_nodes.at(id); }

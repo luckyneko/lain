@@ -1,11 +1,39 @@
 #include <lain/flow/graph.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <map>
 #include <set>
+#include <utility>
 
 namespace lain::flow
 {
+	NodeId Graph::add(std::unique_ptr<Node> node)
+	{
+		const NodeId id = m_nextId;
+		m_nextId = NodeId{m_nextId.value() + 1};
+		node->setId(id); // Graph is a friend of Node
+		m_nodes.emplace(id, std::move(node));
+		m_topoValid = false;
+		return id;
+	}
+
+	bool Graph::removeNode(NodeId id)
+	{
+		const auto it = m_nodes.find(id);
+		if (it == m_nodes.end())
+			return false;
+
+		// Drop every edge that touches the node, in either direction. A downstream
+		// input keeps its last-copied value (as with disconnect) until re-evaluated.
+		m_edges.erase(std::remove_if(m_edges.begin(), m_edges.end(),
+									 [id](const Edge& e) { return e.from == id || e.to == id; }),
+					  m_edges.end());
+		m_nodes.erase(it);
+		m_topoValid = false;
+		return true;
+	}
+
 	Connection Graph::connect(NodeId from, PortIndex outPort, NodeId to, PortIndex inPort)
 	{
 		if (!valid(from) || !valid(to))
