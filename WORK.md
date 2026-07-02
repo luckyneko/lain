@@ -285,6 +285,30 @@ Every lib compiles warning-clean under strict flags; `ctest` passes; a `flowview
 graph with a GPU node's texture visible in the inspector. Do not claim the viewer
 works without running it.
 
+## Milestone 2 — interactive graph editing (done)
+
+The viewer became an editor. Landed in order:
+
+1. **Opaque `NodeId` + id-keyed storage** — `NodeId` is a monotonic `uint64` handle
+   (not a list index), nodes live in a `std::map<NodeId, unique_ptr<Node>>`, so an id
+   survives other nodes' removal. (Also drove a scheduler reshape — see step 4 / the
+   `CLAUDE.md` handoff.)
+2. **`Graph::removeNode` + `add(unique_ptr<Node>)` adopt overload** — the node lifecycle
+   editing needs; the template `add<T>` forwards to the adopt overload.
+3. **`lain::core::Factory<Base>`** — a generic string-keyed registry (the node palette /
+   future deserialiser seam). Keys are explicit strings, not `meta::typeName<T>()` (see
+   Backlog Tier B item 7 for a type-owned-key refinement).
+4. **`flow-example::TintNode`** — a connectable `acm::Texture` transform (readback → tint
+   → re-upload), so a graph edge carries data; the smoke scene is `gradient → tint`.
+5. **flowview editable canvas** — a `Factory<flow::Node>` palette (right-click add), drag
+   to connect (replace on an occupied input), drag-off to detach/move a link, Delete to
+   remove selected nodes/links; a `SerialScheduler` re-runs the graph per edit. The
+   inspector previews every texture port via a register-once `VkImageView`→`ImTextureID`
+   cache.
+
+Remaining preview polish (a `lain::gui` `RemoveTexture` so a deleted node's descriptor is
+reclaimed) is deferred — the leak is bounded and never drawn.
+
 ## Backlog (deferred — don't build speculatively)
 
 ### Tier A — when a real graph demands it

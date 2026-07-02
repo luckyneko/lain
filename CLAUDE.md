@@ -37,7 +37,11 @@ refactor of `flow` plus the app stack + viewer:**
   optional pre-release/build tags, `toString()`/`parse()`, comparison on the numeric
   triple — tags ignored) for app/library identity (formattable by `lain::string` via
   its `toString()` — `core` itself stays format-unaware). Wall-clock `DateTime` + video
-  `Timecode` deferred (WORK.md Tier C). 11 tests pass.
+  `Timecode` deferred (WORK.md Tier C). **`Factory<Base>`** (`factory.h`, header-only)
+  is a generic string-keyed registry — `registerType`/`create`/`keys`, plus a typed
+  `registerType<T>(key, args...)` that synthesises the creator with construction context
+  captured in the closure; keys stay explicit strings (not `typeName<T>()`, which is
+  display-only). 16 tests pass.
 - ✅ **`libs/string`** (`lain::string`) — string utilities behind a lain:: face,
   header-only. `format(fmtStr, args...)` wraps `fmt::format` (C++17 has no
   `std::format`) with compile-time-checked format strings. A generic `fmt::formatter`
@@ -128,12 +132,13 @@ refactor of `flow` plus the app stack + viewer:**
   port read back through the shared device to extent + corner pixels. **gui-mode**
   (default): `FlowviewApp::InspectorWindow` (a `WindowDelegate`) owns a `lain::gui::
   Context` + an `acm::Sampler`, reads the evaluated graph each frame into an ImGui
-  "Inspector" panel (port text; `acm::Texture` output registered once via
-  `Context::image` and shown with `gui::Image`). `--frames N` quits after N frames
+  "Inspector" panel (port text; each `acm::Texture` port previewed via a
+  `Context::image` cache — see the interactive-editing bullet below). `--frames N` quits after N frames
   (0 = until closed) for a windowed smoke. Verified: the 64×64 gradient dumps
   `TL=rgba(0,0,128,255) BR=rgba(255,255,128,255)` (cli), and the same gradient renders
   as a live thumbnail in the gui inspector (screenshot-confirmed). gui-mode also draws a
-  **"Graph" node canvas** (`lain::gui::nodes`/imnodes, read-only): one imnodes node per
+  **"Graph" node canvas** (`lain::gui::nodes`/imnodes; read-only as first built, now
+  editable — see the interactive-editing bullet below): one imnodes node per
   `flow` node with its ports as pins and edges as links, laid out by topo column on the
   first frame; node ids are `NodeId`, pins are `pinId(node,dir,port)`, links the edge
   index. Screenshot-confirmed rendering the gradient node + its `texture` pin. It also
@@ -160,6 +165,25 @@ refactor of `flow` plus the app stack + viewer:**
   the old hidden process-wide static pool is gone). `flow` still links `lain::task`
   PRIVATE (only `ParallelScheduler` names it; the header forward-declares `Executor`).
   Verified: warning-clean; 63 tests pass; flowview both modes still render the gradient.
+- ✅ **Interactive graph editing** (2026-07-02) — the viewer became an editor.
+  **Engine:** `Graph` gained `removeNode` (drops the node + its incident edges) and an
+  `add(std::unique_ptr<Node>)` adopt overload (the template `add<T>` forwards to it) — the
+  node lifecycle editing needs now that ids are stable handles. **`flow-example`** adds
+  **`TintNode`** (`acm::Texture` in→out: CPU readback → tint → re-upload) so an edge
+  actually carries data; the smoke scene is now `gradient → tint`, and a `[gpu]` test
+  round-trips it through the edge. **flowview** owns a `lain::core::Factory<flow::Node>`
+  (`registerExampleNodes`, keys `"gradient"`/`"tint"`) and its canvas is editable:
+  drag to connect (replacing an occupied input), drag a link off a pin to detach/move
+  (imnodes `EnableLinkDetachWithDragClick` + `IsLinkDestroyed`), Delete to remove selected
+  nodes/links, right-click for the add-node palette; a `SerialScheduler` re-runs the graph
+  after each edit. The inspector previews **every** texture port via a
+  `VkImageView`→`ImTextureID` cache (register-once — `Context::image` has no removal).
+  Interaction gotchas that bit us and are now handled: focus/hover checks use
+  `ImGuiFocusedFlags_RootAndChildWindows` (imnodes runs in a child window), and the canvas
+  is drawn + edited *before* the inspector panel so a deletion never leaves a freed texture
+  on screen. Verified: warning-clean; 71 tests; add / delete / detach / reconnect confirmed
+  live. (Known gap: a deleted node's cached preview descriptor lingers — `lain::gui` has no
+  `RemoveTexture` yet; bounded, never drawn.)
 
 Keep this section current as work lands. Once `flow` is fuller, this file is its
 standing architecture reference (the role `CLAUDE.md` plays in the sibling repos).
