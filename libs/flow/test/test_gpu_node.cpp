@@ -5,6 +5,7 @@
 
 #include <archimedes/archimedes.h>
 #include <lain/flow/example/gradientnode.h>
+#include <lain/flow/example/tintnode.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/scheduler.h>
 
@@ -81,4 +82,56 @@ TEST_CASE("GradientNode emits an uploaded texture on its port", "[flow][gpu]")
 	CHECK(px[last + 0] == 255);
 	CHECK(px[last + 1] == 255);
 	CHECK(px[last + 2] == 128);
+}
+
+TEST_CASE("a texture flows through an edge: gradient -> tint", "[flow][gpu]")
+{
+	acm::Instance instance("lain-flow-tests", acm::Version{0, 1, 0, 0});
+	if (!instance.valid())
+		SKIP("no Vulkan driver available");
+
+	uint32_t queueIdx = 0;
+	const acm::GPU* gpu = selectGraphicsGpu(instance, queueIdx);
+	if (!gpu)
+		SKIP("no graphics-capable queue family");
+
+	acm::Device device = instance.createDevice(*gpu, queueIdx);
+	REQUIRE(device.valid());
+
+	constexpr uint32_t kSize = 64;
+
+	using namespace lain::flow;
+	Graph graph;
+	const NodeId gradient = graph.add<example::GradientNode>(device, acm::Extent2D{kSize, kSize});
+	const NodeId tint = graph.add<example::TintNode>(device, 1.0f, 0.5f, 0.5f); // keep R, halve G/B
+	REQUIRE(graph.connect(gradient, 0, tint, 0) == Connection::Ok);
+
+	SerialScheduler{}.evaluate(graph, tint); // pulls gradient upstream, then tint
+
+	const Port& out = graph.node(tint).output(0);
+	REQUIRE(out.value().holds<acm::Texture>());
+	acm::Texture texture = out.value().get<acm::Texture>();
+	REQUIRE(texture.valid());
+
+	acm::Buffer readback = device.createBuffer(static_cast<std::size_t>(kSize) * kSize * 4, acm::BufferUsage::TransferDst);
+	REQUIRE(readback.valid());
+	device.submitSync([&](acm::CommandBuffer cmd)
+					  {
+		cmd.transitionImage(texture, acm::ImageLayout::ShaderReadOnly, acm::ImageLayout::TransferSrc);
+		cmd.copyTextureToBuffer(texture, readback); });
+
+	const auto* px = static_cast<const uint8_t*>(readback.map());
+	REQUIRE(px != nullptr);
+
+	// Gradient TL=(0,0,128), BR=(255,255,128). Tint (1.0, 0.5, 0.5) keeps R, halves G/B:
+	// TL -> (0, 0, 64), BR -> (255, 127, 64). Alpha preserved at 255.
+	CHECK(px[0] == 0);
+	CHECK(px[1] == 0);
+	CHECK(px[2] == 64);
+	CHECK(px[3] == 255);
+
+	const std::size_t last = (static_cast<std::size_t>(kSize) * kSize - 1) * 4;
+	CHECK(px[last + 0] == 255);
+	CHECK(px[last + 1] == 127); // 255 * 0.5 = 127.5 -> 127
+	CHECK(px[last + 2] == 64);	// 128 * 0.5 = 64
 }

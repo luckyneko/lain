@@ -5,6 +5,7 @@
 
 add_library(flow-example STATIC
 	src/gradientnode.cpp
+	src/tintnode.cpp
 )
 add_library(lain::flow-example ALIAS flow-example)
 
