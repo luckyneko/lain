@@ -3,7 +3,9 @@
 #include "inspectorwindow.h"
 
 #include <lain/app/applicationdelegate.h>
+#include <lain/core/factory.h>
 #include <lain/flow/graph.h>
+#include <lain/flow/node.h>
 #include <lain/flow/scheduler.h>
 #include <lain/flow/types.h>
 
@@ -38,6 +40,7 @@ namespace flowview
 		lain::flow::Graph m_graph;			  // the gui-mode scene (persists across frames)
 		lain::flow::NodeId m_textureNode{}; // the GPU source the scene is pulled from
 		lain::flow::SerialScheduler m_scheduler; // pull-evaluates the scene (no threads needed)
+		lain::core::Factory<lain::flow::Node> m_nodeFactory; // node-type palette (populated once the device is live)
 		InspectorWindow m_window;
 	};
 } // namespace flowview

@@ -36,8 +36,10 @@ namespace flowview
 		// there is nothing to wire here beyond handing it to the window.
 		app.createWindow(spec, m_window); // creates the shared device; builds the gui Context
 
-		// Device is live now: build + evaluate the smoke scene the inspector reads.
-		m_textureNode = buildExampleScene(m_graph, app.device(), m_size);
+		// Device is live now: populate the node palette, then build + evaluate the
+		// smoke scene the inspector reads.
+		registerExampleNodes(m_nodeFactory, app.device(), m_size);
+		m_textureNode = buildExampleScene(m_graph, m_nodeFactory);
 		m_scheduler.evaluate(m_graph, m_textureNode); // pull: runs the GPU source's compute()
 		return true;
 	}
@@ -52,8 +54,9 @@ namespace flowview
 	{
 		acm::Device device = app.device();
 
+		registerExampleNodes(m_nodeFactory, device, m_size);
 		flow::Graph graph;
-		const flow::NodeId textureNode = buildExampleScene(graph, device, m_size);
+		const flow::NodeId textureNode = buildExampleScene(graph, m_nodeFactory);
 		m_scheduler.evaluate(graph, textureNode); // pull: runs the GPU source's compute()
 
 		dumpGraph(std::cout, graph, device);
