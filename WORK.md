@@ -171,35 +171,40 @@ a `PortKind` tag; the "decouple" step removes them so `flow` has no GPU dependen
   `id()`/`name()`. `constant` and on-request sources express their behaviour
   through `dirty()` (a constant clears it after first compute; a `CameraCapture`
   stays dirty so each pull refires).
-- `Graph` — owns nodes (`add<T>(...)`), `connect(from,out,to,in)` with
-  type-check + cycle rejection, `disconnect`. Holds the edge list and computed
-  topo order.
+- `Graph` — owns nodes (`add<T>(...)`, keyed by an opaque `NodeId`: a monotonic
+  `uint64` handle, not a list index, so an id survives other nodes' removal),
+  `connect(from,out,to,in)` with type-check + cycle rejection, `disconnect`. Holds
+  the edge list and computed topo order. A pure data model — it does not execute
+  (see step 4).
 
 Contract that makes it threadable: a node reads only its inputs and writes only
 its own outputs — no shared mutable state. Stated in the `Node` docs and
 enforced by review, not the type system.
 
-### 4. Scheduler — lower the DAG onto Taskflow
+### 4. Scheduler — the execution layer over a Graph
 
-`Scheduler` (`detail/scheduler.*`) is the seam between our `Graph` and
-`lain::task`. Taskflow already owns the push scheduling that `multi` would have
-made us write by hand, so this layer is thin:
+The `Scheduler` (public, `scheduler.h`) consumes a `Graph` and evaluates it, so
+execution never lives on the data model. An abstract base exposes the varying full
+push `run(Graph&)` plus the shared, serial pull `evaluate(Graph&, NodeId)`; two
+concrete backends implement `run`:
 
-- **Push.** Lower the `Graph` to a `tf::Taskflow`: one task per node (its body
-  calls `Node::compute()`), edges become `task.precede(...)`. Hand it to the
-  `lain::task` executor and `run(...).wait()` once. The executor seeds in-degree-0
-  nodes and dispatches successors as predecessors finish — work-stealing across
-  threads. Rebuild the taskflow when topology changes; reuse it across runs
-  otherwise.
-- **Pull.** `evaluate(NodeId)` is our own code (Taskflow is push-oriented): walk
-  dependencies, recompute only `dirty()` upstream nodes, then run the target.
-  Same `Node::compute()` path. This is the constant / on-request (`CameraCapture`)
-  entry point.
+- **`SerialScheduler`.** One topo-order pass (per node: `clearDirty` → populate
+  inputs from edges → `Node::compute()`). No execution dependency, so it is the
+  natural choice for cli / headless runs and tests.
+- **`ParallelScheduler`.** Lowers the `Graph` to a `tf::Taskflow`: one task per node
+  (its body calls `Node::compute()`), edges become `task.precede(...)`. Runs it to
+  completion on an **injected, caller-owned** `lain::task` executor — which seeds
+  in-degree-0 nodes and dispatches successors as predecessors finish (work-stealing
+  across threads). Taskflow already owns this push scheduling that `multi` would have
+  made us write by hand, so this stays thin.
+- **Pull (shared, on the base).** `evaluate(Graph&, NodeId)` is our own code
+  (Taskflow is push-oriented): walk dependencies, recompute only `dirty()` upstream
+  nodes, then run the target — same `Node::compute()` path. This is the constant /
+  on-request (`CameraCapture`) entry point, and is serial for either backend.
 
-The scheduler takes an injected `lain::task` executor so a graph can target an
-isolated pool; default to a shared process executor. Workers must not block on
-nested graph runs — dispatch from the executor's join, never recursively from
-inside a node body.
+The caller owns the executor (so worker count and lifetime stay explicit) — there is
+no default or hidden process-wide pool. Workers must not block on nested graph runs —
+dispatch from the executor's join, never recursively from inside a node body.
 
 ### Engine tests + example graph  (built)
 

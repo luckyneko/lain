@@ -17,7 +17,8 @@ refactor of `flow` plus the app stack + viewer:**
 
 - ✅ Build skeleton (umbrella CMake, `lain::task` wrapping Taskflow), `PortValue`,
   `Port`/`Node`/`Graph` (type-checked + cycle-rejecting), and the `Scheduler`
-  (push `Graph::run` via Taskflow, pull `Graph::evaluate`). All in `libs/flow`.
+  (push run via Taskflow, pull evaluate — reshaped since; see the execution bullet below).
+  All in `libs/flow`.
 - ✅ GPU-port path proven: `lain::flow-example`'s `GradientNode` emits an
   `acm::Texture` through a port, verified by a headless `[gpu]` test on a real
   driver (archimedes' `acm_require_vulkan_runtime()` builds the loader from source).
@@ -145,6 +146,20 @@ refactor of `flow` plus the app stack + viewer:**
   `lain::meta` + `lain::flow-example` + `archimedes` + `Vulkan::Loader` (loader resolves
   acm's `vk*`). This also gives `lain::gui` its runtime/visual verification — `Context`
   is exercised end-to-end here.
+- ✅ **`flow` identity + execution reshape** (2026-07-02) — two structural changes to
+  the engine core. (1) **`NodeId` is an opaque handle** (`types.h`): a strong type over
+  a monotonic `uint64` counter (fixed width for stable serialisation; 0 is the reserved
+  sentinel, real ids from 1), and `Graph` stores nodes in a `std::map<NodeId,
+  unique_ptr<Node>>` keyed by id — so an id outlives the removal of other nodes (it is
+  *not* a list index). `std::hash<NodeId>` provided for unordered use. (2) **`Graph` is
+  now pure data** — `run`/`evaluate` moved *off* it into a public `Scheduler` layer
+  (`scheduler.h`): abstract `Scheduler` (virtual `run(Graph&)` push + shared non-virtual
+  `evaluate(Graph&, NodeId)` pull), `SerialScheduler` (single-threaded topo pass, no
+  execution deps — used by flowview + the headless/cli paths + most tests), and
+  `ParallelScheduler` (lowers onto an **injected, caller-owned** `lain::task::Executor`;
+  the old hidden process-wide static pool is gone). `flow` still links `lain::task`
+  PRIVATE (only `ParallelScheduler` names it; the header forward-declares `Executor`).
+  Verified: warning-clean; 63 tests pass; flowview both modes still render the gradient.
 
 Keep this section current as work lands. Once `flow` is fuller, this file is its
 standing architecture reference (the role `CLAUDE.md` plays in the sibling repos).
@@ -221,9 +236,10 @@ are settled (committed). New libs: `lain::math`, `lain::app`, `lain::gui`.
 
 Three layers, public → private, mirroring `multi`'s layering discipline:
 
-1. **`Graph`** — owns nodes (`add<T>(...)`), `connect`/`disconnect` with
-   type-checking + cycle rejection, holds the edge list + topo order, and the
-   `run()` (push) / `evaluate(NodeId)` (pull) entry points.
+1. **`Graph`** — a pure data model: owns nodes (`add<T>(...)`, keyed by opaque
+   `NodeId`), `connect`/`disconnect` with type-checking + cycle rejection, holds the
+   edge list + topo order. It does **not** execute — a `Scheduler` (layer 3) consumes
+   it.
 2. **`Node` / `Port` / `PortValue`** — `Node` is an abstract base with a
    polymorphic `compute()`; declares ports in its ctor. `Port` owns a
    **persistent** `PortValue` (overwritten on recompute, never consumed
@@ -233,13 +249,15 @@ Three layers, public → private, mirroring `multi`'s layering discipline:
    `constant` / on-request character is expressed through `dirty()`: a constant
    clears it after first compute; a `CameraCapture` stays dirty so each pull
    refires.
-3. **`Scheduler`** (`detail/`) — the seam between `Graph` and `lain::task`.
-   Taskflow owns the push scheduling, so this is thin. Push: lower the `Graph` to
-   a `tf::Taskflow` (one task per node calling `compute()`, edges become
-   `precede`), `run(...).wait()` once on the injected `lain::task` executor;
-   rebuild only when topology changes. Pull: `evaluate(NodeId)` is our code
-   (Taskflow is push-oriented) — walk upstream, recompute only `dirty()` nodes,
-   run the target.
+3. **`Scheduler`** (public, `scheduler.h`) — consumes a `Graph` and evaluates it;
+   this is where execution lives, not on `Graph`. An abstract base exposes the
+   varying full push `run(Graph&)` plus the shared, serial pull `evaluate(Graph&,
+   NodeId)` (recompute only `dirty()` upstream — the constant / on-request path).
+   Two backends: `SerialScheduler` (one topo-order pass, no execution deps) and
+   `ParallelScheduler` (lowers to a `tf::Taskflow` — one task per node calling
+   `compute()`, edges become `precede` — and runs it to completion on an
+   **injected, caller-owned** `lain::task` executor; no default/hidden pool).
+   Taskflow owns the push scheduling, so `ParallelScheduler` stays thin.
 
 Hard contracts:
 
