@@ -1,9 +1,13 @@
 #pragma once
 
+#include <archimedes/acmForward.h>
 #include <archimedes/acmSampler.h>
 #include <lain/app/windowdelegate.h>
 #include <lain/gui/context.h>
 
+#include <vulkan/vulkan.h> // VkImageView — the preview-cache key
+
+#include <map>
 #include <memory>
 
 namespace flowview
@@ -31,11 +35,15 @@ namespace flowview
 		void onShutdown(lain::app::Window& window) override;
 
 	private:
+		// Register a GPU texture for preview, caching by its image view so each texture
+		// is registered once (Context::image has no removal — re-registering per frame /
+		// per edit would leak descriptors). Returns the ImGui id to draw with.
+		ImTextureID previewFor(const acm::Texture& texture);
+
 		std::unique_ptr<lain::gui::Context> m_guiCtx;
 		acm::Sampler m_sampler;
-		ImTextureID m_preview{}; // cached texture descriptor (registered once)
-		bool m_havePreview = false;
-		bool m_laidOut = false;								  // node canvas: seed node positions on the first frame
+		std::map<VkImageView, ImTextureID> m_previews;	 // texture view -> cached descriptor
+		bool m_laidOut = false;							 // node canvas: seed node positions on the first frame
 		PreviewSize m_previewSize = PreviewSize::Medium; // thumbnail size (enumCombo-driven)
 	};
 } // namespace flowview

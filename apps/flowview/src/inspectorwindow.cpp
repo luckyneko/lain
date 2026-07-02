@@ -158,6 +158,18 @@ namespace flowview
 		return true;
 	}
 
+	ImTextureID InspectorWindow::previewFor(const acm::Texture& texture)
+	{
+		const VkImageView view = texture.vkImageView();
+		const auto it = m_previews.find(view);
+		if (it != m_previews.end())
+			return it->second;
+		// A node reuses its texture (stable view) across recomputes, so this registers
+		// once per texture and is reused thereafter. A deleted node's entry lingers but
+		// is never drawn (we only look up currently-live textures) — see onShutdown.
+		return m_previews.emplace(view, m_guiCtx->image(texture, m_sampler)).first->second;
+	}
+
 	void InspectorWindow::onRender(app::Window& window, const app::TimeState&)
 	{
 		FlowviewApp& appDelegate = window.app().getDelegate<FlowviewApp>();
@@ -269,14 +281,11 @@ namespace flowview
 		gui::End();
 		m_laidOut = true;
 
-		// A topology edit changes what should flow and may have freed the previewed
-		// texture: re-run the scene, and drop the cached preview so the panel below
-		// re-registers it from a currently-live node.
+		// A topology edit changes what should flow; re-run the scene. The preview cache
+		// is keyed by texture, so it needs no reset — the panel below simply looks up
+		// whatever textures the current (post-edit) nodes carry.
 		if (edited)
-		{
-			m_havePreview = false;
 			appDelegate.reevaluate();
-		}
 
 		// The inspector panel — reads the (now post-edit) graph.
 		gui::SetNextWindowPos(math::Vec2f{20.0f, 20.0f}, ImGuiCond_FirstUseEver);
@@ -300,15 +309,10 @@ namespace flowview
 					const acm::Texture& texture = p.value().get<acm::Texture>();
 					const acm::Extent2D extent = texture.getExtent();
 					gui::Text("    %s %s: %s %ux%u", tag, p.name().c_str(), std::string(p.typeName()).c_str(), extent.width, extent.height);
-					if (!m_havePreview && texture.valid())
-					{
-						m_preview = m_guiCtx->image(texture, m_sampler);
-						m_havePreview = true;
-					}
-					if (m_havePreview)
+					if (texture.valid())
 					{
 						const float side = previewExtent(m_previewSize);
-						gui::Image(m_preview, math::Vec2f{side, side});
+						gui::Image(previewFor(texture), math::Vec2f{side, side}); // each texture port previews its own current texture
 					}
 				}
 				else
@@ -330,8 +334,8 @@ namespace flowview
 
 	void InspectorWindow::onShutdown(app::Window&)
 	{
-		m_guiCtx.reset(); // destroy the ImGui backends before the device tears down
-		m_sampler = {};	  // drop the sampler handle
-		m_havePreview = false;
+		m_guiCtx.reset();  // destroy the ImGui backends before the device tears down
+		m_sampler = {};	   // drop the sampler handle
+		m_previews.clear(); // ids are freed with the backend's descriptor pool above
 	}
 } // namespace flowview
