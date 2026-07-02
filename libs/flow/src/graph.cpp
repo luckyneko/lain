@@ -1,7 +1,5 @@
-#include "scheduler.h"
-
 #include <lain/flow/graph.h>
-#include <lain/task/task.h>
+#include <lain/flow/scheduler.h>
 
 #include <cstddef>
 #include <map>
@@ -93,12 +91,12 @@ namespace lain::flow
 
 	void Graph::run(lain::task::Executor& executor)
 	{
-		detail::runPush(*this, executor);
+		ParallelScheduler{executor}.run(*this); // transitional: delegates to the scheduler layer
 	}
 
 	void Graph::evaluate(NodeId target)
 	{
-		detail::runPull(*this, target);
+		SerialScheduler{}.evaluate(*this, target); // transitional: delegates to the scheduler layer
 	}
 
 	bool Graph::reaches(NodeId start, NodeId target) const

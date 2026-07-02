@@ -1,19 +1,27 @@
-#include "scheduler.h"
-
 #include <lain/flow/graph.h>
+#include <lain/flow/scheduler.h>
 #include <lain/task/task.h>
 
 #include <map>
 #include <set>
 
-namespace lain::flow::detail
+namespace lain::flow
 {
-	// Copy each connected upstream output into this node's matching input. The
-	// value is copied, never moved — the source port keeps it, which is what
-	// leaves every stage inspectable after a run. Writing only this node's own
-	// inputs (and reading already-finished predecessors' outputs) is what makes
-	// the push tasks safe to run concurrently.
-	static void populateInputs(Graph& graph, NodeId id)
+	//=========================================================================
+	// Scheduler
+	//=========================================================================
+	void Scheduler::evaluate(Graph& graph, NodeId target)
+	{
+		std::set<NodeId> visited;
+		evaluateUpstream(graph, target, visited);
+	}
+
+	// Copy each connected upstream output into `id`'s matching input, in place. The
+	// value is copied, never moved — the source port keeps it, which is what leaves
+	// every stage inspectable after a run. Writing only this node's own inputs (and
+	// reading already-finished predecessors' outputs) is what makes the push tasks
+	// safe to run concurrently.
+	void Scheduler::populateInputs(Graph& graph, NodeId id)
 	{
 		Node& target = graph.node(id);
 		for (const Graph::Edge& e : graph.edges())
@@ -23,9 +31,9 @@ namespace lain::flow::detail
 		}
 	}
 
-	// Depth-first pull. dirty() is cleared *before* compute() so an on-request
-	// node can markDirty() itself inside compute() and stay dirty for next pull.
-	static void evaluate(Graph& graph, NodeId id, std::set<NodeId>& visited)
+	// Depth-first pull. dirty() is cleared *before* compute() so an on-request node
+	// can markDirty() itself inside compute() and stay dirty for the next pull.
+	void Scheduler::evaluateUpstream(Graph& graph, NodeId id, std::set<NodeId>& visited)
 	{
 		if (visited.count(id) != 0)
 			return;
@@ -34,7 +42,7 @@ namespace lain::flow::detail
 		for (const Graph::Edge& e : graph.edges())
 		{
 			if (e.to == id)
-				evaluate(graph, e.from, visited);
+				evaluateUpstream(graph, e.from, visited);
 		}
 
 		Node& node = graph.node(id);
@@ -46,7 +54,31 @@ namespace lain::flow::detail
 		}
 	}
 
-	void runPush(Graph& graph, lain::task::Executor& executor)
+	//=========================================================================
+	// SerialScheduler
+	//=========================================================================
+	void SerialScheduler::run(Graph& graph)
+	{
+		// topoOrder() is sources-first, so a single pass finds every node's inputs
+		// already produced by the time it computes.
+		for (const NodeId id : graph.topoOrder())
+		{
+			Node& node = graph.node(id);
+			node.clearDirty(); // an on-request node re-marks itself in compute()
+			populateInputs(graph, id);
+			node.compute();
+		}
+	}
+
+	//=========================================================================
+	// ParallelScheduler
+	//=========================================================================
+	ParallelScheduler::ParallelScheduler(lain::task::Executor& executor)
+		: m_executor(executor)
+	{
+	}
+
+	void ParallelScheduler::run(Graph& graph)
 	{
 		lain::task::Flow flow;
 
@@ -55,7 +87,7 @@ namespace lain::flow::detail
 		std::map<NodeId, lain::task::Task> tasks;
 		for (const NodeId id : graph.topoOrder())
 		{
-			tasks.emplace(id, flow.emplace([&graph, id]()
+			tasks.emplace(id, flow.emplace([this, &graph, id]()
 										   {
 				Node& node = graph.node(id);
 				node.clearDirty(); // an on-request node re-marks itself in compute()
@@ -66,12 +98,6 @@ namespace lain::flow::detail
 		for (const Graph::Edge& e : graph.edges())
 			tasks.at(e.from).precede(tasks.at(e.to));
 
-		executor.run(flow);
+		m_executor.run(flow); // blocks until every task finishes
 	}
-
-	void runPull(Graph& graph, NodeId target)
-	{
-		std::set<NodeId> visited;
-		evaluate(graph, target, visited);
-	}
-} // namespace lain::flow::detail
+} // namespace lain::flow

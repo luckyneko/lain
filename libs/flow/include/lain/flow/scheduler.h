@@ -1,0 +1,71 @@
+#pragma once
+
+// The execution layer for lain::flow. A Scheduler consumes a Graph and evaluates it,
+// so the Graph itself stays a pure data model (nodes + edges + topo) with no notion
+// of *how* it runs. Two run strategies share one pull path:
+//   - SerialScheduler   — single-threaded topo-order run; needs no execution deps.
+//   - ParallelScheduler — lowers the DAG onto an injected (caller-owned) lain::task
+//                         executor for work-stealing parallelism.
+// The pull path — evaluate(), recompute one node's dirty upstream on demand — is
+// identical for both, so it lives on the base; only the full run() varies.
+
+#include <lain/flow/types.h>
+
+#include <set>
+
+namespace lain::task
+{
+	class Executor; // named only by ParallelScheduler; full type via <lain/task/task.h>
+}
+
+namespace lain::flow
+{
+	class Graph;
+
+	// Abstract execution strategy. run() is the varying full-graph push; evaluate()
+	// is the shared, serial pull.
+	class Scheduler
+	{
+	public:
+		virtual ~Scheduler() = default;
+
+		// Push: evaluate the whole graph — each node fires once its inputs are ready.
+		virtual void run(Graph& graph) = 0;
+
+		// Pull: evaluate just `target`'s upstream subgraph on demand, recomputing only
+		// dirty nodes (a constant stays clean after its first compute; an on-request
+		// source re-marks itself and so refires each pull). Serial for either strategy.
+		void evaluate(Graph& graph, NodeId target);
+
+	protected:
+		// Copy each connected upstream output into `id`'s matching input, in place —
+		// the source keeps its value, which is what leaves every stage inspectable.
+		// Shared by both run strategies and the pull walk.
+		void populateInputs(Graph& graph, NodeId id);
+
+	private:
+		// Depth-first pull helper: recompute `id`'s dirty upstream, then `id` itself.
+		void evaluateUpstream(Graph& graph, NodeId id, std::set<NodeId>& visited);
+	};
+
+	// Single-threaded: one topo-order pass over the graph. No execution dependency,
+	// so it's the natural choice for cli / headless runs and tests.
+	class SerialScheduler : public Scheduler
+	{
+	public:
+		void run(Graph& graph) override;
+	};
+
+	// Parallel: lowers the DAG onto the injected lain::task executor (one task per
+	// node, edges as precedences) and runs it to completion. The caller owns the
+	// executor, so worker count and lifetime stay explicit.
+	class ParallelScheduler : public Scheduler
+	{
+	public:
+		explicit ParallelScheduler(lain::task::Executor& executor);
+		void run(Graph& graph) override;
+
+	private:
+		lain::task::Executor& m_executor;
+	};
+} // namespace lain::flow
