@@ -5,6 +5,7 @@
 #include <archimedes/archimedes.h>
 #include <lain/app/application.h>
 #include <lain/app/window.h>
+#include <lain/flow/edit.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
 #include <lain/flow/port.h>
@@ -49,10 +50,11 @@ namespace flowview
 			static_cast<flow::PortIndex>(output ? rem - 500 : rem)};
 	}
 
-	// A link was dragged between two pins: wire the output into the input. connect()
-	// rejects a bad drag (same-direction pins, type mismatch, cycle, or an input
-	// already in use), so a rejected drag simply doesn't stick. Returns whether an
-	// edge was added.
+	// A link was dragged between two pins: orient them (one output, one input) and ask
+	// the edit layer to wire it, replacing whatever fed the input. flow::edit rejects a
+	// bad drag (type mismatch, cycle) and, on rejection, leaves the existing edge intact
+	// — so a bad drag onto an occupied input no longer destroys its wire. Returns
+	// whether an edge was made.
 	static bool tryConnect(flow::Graph& graph, int startAttr, int endAttr)
 	{
 		const DecodedPin a = decodePin(startAttr);
@@ -61,61 +63,44 @@ namespace flowview
 			return false; // need exactly one output and one input
 		const DecodedPin& out = a.output ? a : b;
 		const DecodedPin& in = a.output ? b : a;
-
-		flow::Connection result = graph.connect(out.node, out.port, in.node, in.port);
-		if (result == flow::Connection::InputInUse)
-		{
-			// Dragging onto an occupied input replaces its source. connect() checks the
-			// port type before InputInUse, so the type already matched — freeing the
-			// input and retrying only risks a cycle rejection, which just no-ops.
-			graph.disconnect(in.node, in.port);
-			result = graph.connect(out.node, out.port, in.node, in.port);
-		}
-		return result == flow::Connection::Ok;
+		return flow::edit::connectReplacing(graph, out.node, out.port, in.node, in.port);
 	}
 
-	// Disconnect every currently-selected link (Delete key). imnodes link ids are edge
-	// indices; resolve them to edges *before* mutating, since disconnecting shifts the
-	// indices. Returns whether any edge was removed.
-	static bool deleteSelectedLinks(flow::Graph& graph)
+	// The currently-selected links as edges (Delete key). imnodes link ids are edge
+	// indices, so resolve them to Edge values here, before any mutation — flow::edit
+	// then removes by stable identity, never by shifting index.
+	static std::vector<flow::Graph::Edge> selectedEdges(const flow::Graph& graph)
 	{
+		std::vector<flow::Graph::Edge> out;
 		const int selected = gui::nodes::NumSelectedLinks();
 		if (selected <= 0)
-			return false;
+			return out;
 
 		std::vector<int> linkIds(static_cast<std::size_t>(selected));
 		gui::nodes::GetSelectedLinks(linkIds.data());
-
 		const std::vector<flow::Graph::Edge>& edges = graph.edges();
-		std::vector<flow::Graph::Edge> toRemove;
 		for (const int id : linkIds)
 		{
 			if (id >= 0 && static_cast<std::size_t>(id) < edges.size())
-				toRemove.push_back(edges[static_cast<std::size_t>(id)]);
+				out.push_back(edges[static_cast<std::size_t>(id)]);
 		}
-
-		bool removed = false;
-		for (const flow::Graph::Edge& e : toRemove)
-			removed |= graph.disconnect(e.to, e.inPort);
-		return removed;
+		return out;
 	}
 
-	// Remove every currently-selected node (Delete key). imnodes node ids are the int
-	// cast of NodeId; removeNode also drops the node's incident edges. Returns whether
-	// any node was removed.
-	static bool deleteSelectedNodes(flow::Graph& graph)
+	// The currently-selected nodes as ids (Delete key). imnodes node ids are the int
+	// cast of NodeId.
+	static std::vector<flow::NodeId> selectedNodes()
 	{
+		std::vector<flow::NodeId> out;
 		const int selected = gui::nodes::NumSelectedNodes();
 		if (selected <= 0)
-			return false;
+			return out;
 
 		std::vector<int> nodeIds(static_cast<std::size_t>(selected));
 		gui::nodes::GetSelectedNodes(nodeIds.data());
-
-		bool removed = false;
 		for (const int id : nodeIds)
-			removed |= graph.removeNode(flow::NodeId{static_cast<std::uint64_t>(id)});
-		return removed;
+			out.push_back(flow::NodeId{static_cast<std::uint64_t>(id)});
+		return out;
 	}
 
 	// Thumbnail side length (pixels) for each preview size.
@@ -275,7 +260,7 @@ namespace flowview
 		if (gui::nodes::IsLinkDestroyed(&destroyedLink) && destroyedLink >= 0 && static_cast<std::size_t>(destroyedLink) < edges.size())
 		{
 			const flow::Graph::Edge e = edges[static_cast<std::size_t>(destroyedLink)];
-			edited |= graph.disconnect(e.to, e.inPort);
+			edited |= flow::edit::disconnect(graph, e.to, e.inPort);
 		}
 		int startAttr = 0;
 		int endAttr = 0;
@@ -283,9 +268,10 @@ namespace flowview
 			edited |= tryConnect(graph, startAttr, endAttr);
 		if (canvasActive && gui::IsKeyPressed(ImGuiKey_Delete))
 		{
-			const bool linksRemoved = deleteSelectedLinks(graph);
-			const bool nodesRemoved = deleteSelectedNodes(graph);
-			if (linksRemoved || nodesRemoved)
+			// Resolve the selection to stable values first, then delete in one edit.
+			const std::vector<flow::Graph::Edge> edgesToRemove = selectedEdges(graph);
+			const std::vector<flow::NodeId> nodesToRemove = selectedNodes();
+			if (flow::edit::remove(graph, nodesToRemove, edgesToRemove))
 			{
 				// Drop imnodes' now-stale selection: link ids are edge indices, which
 				// shift once an edge is removed, so a leftover selection could later
@@ -306,7 +292,7 @@ namespace flowview
 			{
 				if (gui::MenuItem(key.c_str()))
 				{
-					const flow::NodeId id = graph.add(appDelegate.nodeFactory().create(key));
+					const flow::NodeId id = flow::edit::addNode(graph, appDelegate.nodeFactory().create(key));
 					gui::nodes::SetNodeScreenSpacePos(static_cast<int>(id.value()), math::Vec2f{mouse.x, mouse.y});
 					edited = true;
 				}
@@ -372,8 +358,8 @@ namespace flowview
 
 	void InspectorWindow::onShutdown(app::Window&)
 	{
-		m_guiCtx.reset();  // destroy the ImGui backends before the device tears down
-		m_sampler = {};	   // drop the sampler handle
+		m_guiCtx.reset();	// destroy the ImGui backends before the device tears down
+		m_sampler = {};		// drop the sampler handle
 		m_previews.clear(); // ids are freed with the backend's descriptor pool above
 	}
 } // namespace flowview

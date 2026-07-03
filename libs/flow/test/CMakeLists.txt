@@ -6,6 +6,7 @@ add_executable(test-flow
 	test_portvalue.cpp
 	test_graph.cpp
 	test_scheduler.cpp
+	test_edit.cpp
 	test_gpu_node.cpp
 )
 
