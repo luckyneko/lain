@@ -53,3 +53,28 @@ never by driving a live GUI.
 `flow` names no GPU/UI types. A **PortValue** is a type-erased slot (`std::any`)
 carrying any copyable payload — a CPU value or a GPU handle (`acm::Texture`). A
 consumer that cares compares `type()` against `typeid(...)`. See `CLAUDE.md`.
+
+## Value display — two purposes, two seams
+
+Rendering a port's value splits by *purpose*; don't conflate them.
+
+- **Text** *(cli dump, debug, inspector labels)* — **`meta::toString<T>(const T&)`**
+  (`lain::meta`, fmt-free): best-effort stringify — `bool`→true/false, a member
+  `toString()`, else an ostream operator, else the type name. Unlike
+  `lain::string::format` (which needs a *formattable* type), it always produces
+  something. A type opts into a nice text form just by exposing `toString()` — there
+  is **no central `holds<int>/holds<float>/…` ladder**.
+
+- **PortType** *(the per-type flyweight)* — `flow`'s **`PortType`** (`porttype.h`)
+  bundles a declared type's reflective facts — `type_index`, human `typeName`, and a
+  `describe(PortValue)` bridge over `meta::toString` — into **one static instance per
+  type**. A `Port` holds a single `const PortType*` (not a copy of each fact), captured
+  at `addInput/addOutput<T>`. `Port::type()` / `typeName()` / `describe()` forward
+  through it. This is **the extension point for per-type facilities**: a new one becomes
+  a field on `PortType`, never another functor on every `Port`.
+
+- **GUI view** *(deferred)* — showing a value richly (a texture *thumbnail*, not the
+  string `"acm::Texture 64x64"`) is a **separate, larger seam**: a registry of viewers
+  keyed by type, living in `lain::gui` or the app. Not built yet. Today each adapter
+  keeps its own texture branch (cli reads back pixels, the inspector draws a thumbnail)
+  and falls through to `Port::describe()` for everything else.

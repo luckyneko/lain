@@ -1,5 +1,6 @@
 #pragma once
 
+#include <lain/flow/porttype.h> // PortType — the per-type reflective flyweight
 #include <lain/flow/portvalue.h>
 
 #include <string>
@@ -27,15 +28,23 @@ namespace lain::flow
 
 		// The declared type, fixed at declaration — what connect() type-checks
 		// against (independent of whether a value has been produced yet).
-		std::type_index type() const { return m_type; }
+		std::type_index type() const { return m_type->index; }
 
-		// A human-readable name for the declared type, captured from
-		// lain::meta::typeName<T>() at declaration (a string_view into static storage).
-		// For display/debug — the inspector labels pins with it.
-		std::string_view typeName() const { return m_typeName; }
+		// A human-readable name for the declared type (meta::typeName<T>, a string_view
+		// into static storage). For display/debug — the inspector labels pins with it.
+		std::string_view typeName() const { return m_type->name; }
 
 		// True once a value has been produced into this port (i.e. not empty).
 		bool ready() const { return !m_value.empty(); }
+
+		// This port's current value as a human-readable string: "(empty)" when unset, the
+		// value via meta::toString (its toString() / ostream, else its type name). The
+		// renderer comes from the port's PortType flyweight, captured from the declared
+		// type T at addInput/addOutput<T> — so a type-erased value is described with no
+		// central type ladder; a new type displays itself just by exposing toString().
+		// For text/debug (cli dump, inspector labels); a richer GUI view of a value (e.g.
+		// a texture thumbnail) is a separate, per-medium concern.
+		std::string describe() const { return m_type->describe(m_value); }
 
 		template <typename T>
 		void set(T value);
@@ -50,18 +59,16 @@ namespace lain::flow
 
 	private:
 		friend class Node; // only a Node builds its ports
-		Port(std::string name, Direction dir, std::type_index type, std::string_view typeName)
+		Port(std::string name, Direction dir, const PortType& type)
 			: m_name(std::move(name))
 			, m_dir(dir)
-			, m_type(type)
-			, m_typeName(typeName)
+			, m_type(&type)
 		{
 		}
 
 		std::string m_name;
 		Direction m_dir;
-		std::type_index m_type;
-		std::string_view m_typeName;
+		const PortType* m_type; // the declared type's shared reflective flyweight
 		PortValue m_value;
 	};
 } // namespace lain::flow

@@ -118,25 +118,6 @@ namespace flowview
 		return 192.0f;
 	}
 
-	// A port's value as inspector text — CPU scalars/strings only. Textures are shown
-	// as a thumbnail by the caller, not here, so this never touches the GPU (no
-	// readback, no layout change every frame).
-	static std::string cpuLabel(const flow::Port& port)
-	{
-		const flow::PortValue& value = port.value();
-		if (value.holds<int>())
-			return std::to_string(value.get<int>());
-		if (value.holds<float>())
-			return std::to_string(value.get<float>());
-		if (value.holds<double>())
-			return std::to_string(value.get<double>());
-		if (value.holds<bool>())
-			return value.get<bool>() ? "true" : "false";
-		if (value.holds<std::string>())
-			return value.get<std::string>();
-		return std::string("<") + value.type().name() + '>';
-	}
-
 	bool InspectorWindow::onInit(app::Window& window)
 	{
 		m_guiCtx = std::make_unique<gui::Context>(window.app(), window);
@@ -323,12 +304,10 @@ namespace flowview
 
 			auto port = [&](const char* tag, const flow::Port& p)
 			{
-				if (!p.ready())
-				{
-					gui::Text("    %s %s: (empty)", tag, p.name().c_str());
-					return;
-				}
-				if (p.type() == typeid(acm::Texture))
+				// A ready texture port shows extent + a live thumbnail (the GUI-specific
+				// view); everything else — CPU values and the empty slot — is text via the
+				// shared Port::describe() pathway.
+				if (p.ready() && p.type() == typeid(acm::Texture))
 				{
 					const acm::Texture& texture = p.value().get<acm::Texture>();
 					const acm::Extent2D extent = texture.getExtent();
@@ -338,11 +317,9 @@ namespace flowview
 						const float side = previewExtent(m_previewSize);
 						gui::Image(previewFor(texture), math::Vec2f{side, side}); // each texture port previews its own current texture
 					}
+					return;
 				}
-				else
-				{
-					gui::Text("    %s %s: %s", tag, p.name().c_str(), cpuLabel(p).c_str());
-				}
+				gui::Text("    %s %s: %s", tag, p.name().c_str(), p.describe().c_str());
 			};
 
 			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)

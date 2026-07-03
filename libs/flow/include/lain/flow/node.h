@@ -2,7 +2,6 @@
 
 #include <lain/flow/port.h>
 #include <lain/flow/types.h>
-#include <lain/meta/typenames.h> // typeName<T>() captured per port
 
 #include <string>
 #include <typeindex>

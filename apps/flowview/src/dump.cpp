@@ -60,33 +60,20 @@ namespace flowview
 		return s.str();
 	}
 
-	// A port's current value rendered as text. Covers the common CPU scalar types
-	// and acm::Texture; anything else falls back to its type name.
+	// A port's current value rendered as text. An acm::Texture reads back its corner
+	// pixels (cli-only, device-dependent); everything else — CPU values, the empty slot,
+	// and unrenderable types — goes through Port::describe() (the shared meta::toString
+	// pathway), so this adapter owns only the texture-specific branch.
 	static std::string valueLabel(const Port& port, acm::Device device)
 	{
-		const PortValue& value = port.value();
-		if (value.holds<int>())
-			return std::to_string(value.get<int>());
-		if (value.holds<float>())
-			return std::to_string(value.get<float>());
-		if (value.holds<double>())
-			return std::to_string(value.get<double>());
-		if (value.holds<bool>())
-			return value.get<bool>() ? "true" : "false";
-		if (value.holds<std::string>())
-			return value.get<std::string>();
-		if (value.type() == typeid(acm::Texture))
-			return textureLabel(port.typeName(), value.get<acm::Texture>(), device);
-		return std::string("<") + std::string(port.typeName()) + '>';
+		if (port.ready() && port.type() == typeid(acm::Texture))
+			return textureLabel(port.typeName(), port.value().get<acm::Texture>(), device);
+		return port.describe();
 	}
 
 	static void dumpPort(std::ostream& out, const char* tag, const Port& port, acm::Device device)
 	{
-		out << tag << port.name() << ": ";
-		if (!port.ready())
-			out << "(empty)\n";
-		else
-			out << valueLabel(port, device) << '\n';
+		out << tag << port.name() << ": " << valueLabel(port, device) << '\n';
 	}
 
 	void dumpGraph(std::ostream& out, const Graph& graph, acm::Device device)
