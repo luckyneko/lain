@@ -1,6 +1,7 @@
 #pragma once
 
-#include <lain/gui/gui.h> // ImGui re-exposed as lain::gui::
+#include "lain/gui/gui.h" // ImGui re-exposed as lain::gui::
+
 #include <lain/meta/enums.h>
 
 #include <string>

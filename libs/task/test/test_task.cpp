@@ -2,7 +2,7 @@
 // honours dependency edges, and runs it to completion on the executor. This is
 // the surface flow's scheduler will lower a node-graph onto.
 
-#include <lain/task/task.h>
+#include "lain/task/task.h"
 
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <lain/meta/traits.h>	 // has_to_string / has_ostream
-#include <lain/meta/typenames.h> // typeName<T>() — the fallback
+#include "lain/meta/traits.h"	 // has_to_string / has_ostream
+#include "lain/meta/typenames.h" // typeName<T>() — the fallback
 
 #include <sstream>
 #include <string>

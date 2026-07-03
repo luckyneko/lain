@@ -2,7 +2,7 @@
 // type-checked + cycle-rejecting connect, disconnect, topo order, and the
 // compute() read/write path (driven directly here; the scheduler is step 4).
 
-#include <lain/flow/graph.h>
+#include "lain/flow/graph.h"
 
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>

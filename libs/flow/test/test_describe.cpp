@@ -3,8 +3,8 @@
 // slot. The ladder itself is covered by (meta) test_tostring; here we confirm a Port
 // renders its type-erased value through it. GPU-free.
 
-#include <lain/flow/graph.h>
-#include <lain/flow/node.h>
+#include "lain/flow/graph.h"
+#include "lain/flow/node.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <string>

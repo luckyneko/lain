@@ -4,12 +4,13 @@
 // window on the live driver and is opt-in (LAIN_GUI_SMOKE=1) so GUI-less / driver-
 // less CI stays green.
 
+#include "lain/app/application.h"
+#include "lain/app/applicationdelegate.h"
+#include "lain/app/cli.h"
+#include "lain/app/window.h"
+#include "lain/app/windowdelegate.h"
+
 #include <archimedes/archimedes.h>
-#include <lain/app/application.h>
-#include <lain/app/applicationdelegate.h>
-#include <lain/app/cli.h>
-#include <lain/app/window.h>
-#include <lain/app/windowdelegate.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/scheduler.h>
 #include <lain/log/log.h>

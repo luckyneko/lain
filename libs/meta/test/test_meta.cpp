@@ -1,6 +1,6 @@
 // Unit tests for lain::meta::enums reflection. Pure std, no driver.
 
-#include <lain/meta/enums.h>
+#include "lain/meta/enums.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <map>

@@ -1,4 +1,4 @@
-#include <lain/log/log.h>
+#include "lain/log/log.h"
 
 #include <spdlog/sinks/stdout_color_sinks.h> // declares both stdout_ and stderr_color_mt
 #include <spdlog/spdlog.h>

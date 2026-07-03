@@ -2,7 +2,7 @@
 // behavioral ops that prove GLM's free functions are reachable as lain::math. No
 // driver, no GLM internals beyond the public types.
 
-#include <lain/math/types.h>
+#include "lain/math/types.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

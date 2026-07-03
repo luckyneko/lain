@@ -9,7 +9,7 @@
 // The pull path — evaluate(), recompute one node's dirty upstream on demand — is
 // identical for both, so it lives on the base; only the full run() varies.
 
-#include <lain/flow/types.h>
+#include "lain/flow/types.h"
 
 #include <set>
 

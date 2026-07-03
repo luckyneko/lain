@@ -1,4 +1,4 @@
-#include <lain/flow/example/gradientnode.h>
+#include "lain/flow/example/gradientnode.h"
 
 #include <cstddef>
 #include <cstdint>

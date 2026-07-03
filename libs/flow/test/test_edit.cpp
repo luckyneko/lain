@@ -3,10 +3,9 @@
 // surface is exercised without a driver: this is the point of extracting it from the
 // ImGui frame.
 
+#include "lain/flow/edit.h"
+#include "lain/flow/graph.h"
 #include "testnodes.h"
-
-#include <lain/flow/edit.h>
-#include <lain/flow/graph.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <vector>

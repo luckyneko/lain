@@ -1,8 +1,9 @@
 #pragma once
 
+#include "lain/app/timestate.h"
+
 #include <archimedes/acmForward.h>
 #include <archimedes/acmTypes.h>
-#include <lain/app/timestate.h>
 
 namespace lain::app
 {

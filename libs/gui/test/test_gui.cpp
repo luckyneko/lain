@@ -3,8 +3,9 @@
 // ImGui context / window needed — GetVersion is a constant and the conversions are
 // pure. The windowed Context seam is verified by flowview.
 
-#include <lain/gui/enums.h>
-#include <lain/gui/gui.h>
+#include "lain/gui/enums.h"
+#include "lain/gui/gui.h"
+
 #include <lain/math/types.h>
 
 #include <catch2/catch_test_macros.hpp>

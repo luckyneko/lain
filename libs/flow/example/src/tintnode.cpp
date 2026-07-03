@@ -1,4 +1,4 @@
-#include <lain/flow/example/tintnode.h>
+#include "lain/flow/example/tintnode.h"
 
 #include <archimedes/archimedes.h>
 
@@ -40,7 +40,7 @@ namespace lain::flow::example
 		if (!readback.valid())
 			return;
 		m_device.submitSync([&](acm::CommandBuffer cmd)
-							 {
+							{
 			cmd.transitionImage(src, acm::ImageLayout::ShaderReadOnly, acm::ImageLayout::TransferSrc);
 			cmd.copyTextureToBuffer(src, readback);
 			cmd.transitionImage(src, acm::ImageLayout::TransferSrc, acm::ImageLayout::ShaderReadOnly); });

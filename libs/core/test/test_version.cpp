@@ -1,7 +1,7 @@
 // Unit tests for lain::core::Version. Pure std, no driver. Covers construction,
 // toString/parse round-trips, malformed input, and triple-only comparison.
 
-#include <lain/core/version.h>
+#include "lain/core/version.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -69,8 +69,8 @@ TEST_CASE("parse rejects malformed input", "[version]")
 	REQUIRE_FALSE(Version::parse("1.2.3.4").has_value());
 	REQUIRE_FALSE(Version::parse("1.x.0").has_value());
 	REQUIRE_FALSE(Version::parse("1..3").has_value());
-	REQUIRE_FALSE(Version::parse("1.2.3-").has_value());   // empty pre-release
-	REQUIRE_FALSE(Version::parse("1.2.3+").has_value());   // empty build
+	REQUIRE_FALSE(Version::parse("1.2.3-").has_value());		 // empty pre-release
+	REQUIRE_FALSE(Version::parse("1.2.3+").has_value());		 // empty build
 	REQUIRE_FALSE(Version::parse("4294967296.0.0").has_value()); // > UINT32_MAX
 }
 

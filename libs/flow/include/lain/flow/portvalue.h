@@ -52,4 +52,4 @@ namespace lain::flow
 	};
 } // namespace lain::flow
 
-#include <lain/flow/details/portvalue.inl>
+#include "lain/flow/details/portvalue.inl"

@@ -3,7 +3,7 @@
 // including that the emit seam treats braces in formatted text as data. Output goes
 // to the console (ctest captures it); no spdlog is named here.
 
-#include <lain/log/log.h>
+#include "lain/log/log.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <string>

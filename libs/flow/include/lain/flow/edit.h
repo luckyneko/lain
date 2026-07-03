@@ -8,7 +8,7 @@
 // selection, cursor) into these calls, so the edit logic is tested against a plain
 // Graph with no GUI in the loop (see test/test_edit.cpp).
 
-#include <lain/flow/graph.h> // Graph, Graph::Edge, NodeId, PortIndex, Connection
+#include "lain/flow/graph.h" // Graph, Graph::Edge, NodeId, PortIndex, Connection
 
 namespace lain::flow::edit
 {

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <lain/flow/porttype.h> // PortType — the per-type reflective flyweight
-#include <lain/flow/portvalue.h>
+#include "lain/flow/porttype.h" // PortType — the per-type reflective flyweight
+#include "lain/flow/portvalue.h"
 
 #include <string>
 #include <string_view>
@@ -73,4 +73,4 @@ namespace lain::flow
 	};
 } // namespace lain::flow
 
-#include <lain/flow/details/port.inl>
+#include "lain/flow/details/port.inl"

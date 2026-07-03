@@ -1,5 +1,7 @@
-#include <lain/flow/graph.h>
-#include <lain/flow/scheduler.h>
+#include "lain/flow/scheduler.h"
+
+#include "lain/flow/graph.h"
+
 #include <lain/task/task.h>
 
 #include <map>

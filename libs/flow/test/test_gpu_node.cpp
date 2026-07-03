@@ -3,11 +3,12 @@
 // the gradient at known corners. SKIP-aware: no driver / no graphics queue -> the
 // test SKIPs (green) rather than failing, matching archimedes' [gpu] suite.
 
+#include "lain/flow/graph.h"
+#include "lain/flow/scheduler.h"
+
 #include <archimedes/archimedes.h>
 #include <lain/flow/example/gradientnode.h>
 #include <lain/flow/example/tintnode.h>
-#include <lain/flow/graph.h>
-#include <lain/flow/scheduler.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>

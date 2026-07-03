@@ -1,5 +1,6 @@
+#include "lain/app/window.h"
+
 #include <archimedes/archimedes.h>
-#include <lain/app/window.h>
 #include <lain/log/log.h>
 
 #include <cstdint>

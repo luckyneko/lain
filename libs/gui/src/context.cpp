@@ -1,7 +1,8 @@
+#include "lain/gui/context.h"
+
 #include <archimedes/archimedes.h>
 #include <lain/app/application.h>
 #include <lain/app/window.h>
-#include <lain/gui/context.h>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>

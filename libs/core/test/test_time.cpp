@@ -1,7 +1,7 @@
 // Unit tests for lain::core::Time. Exact (int64-ns) storage with a seconds-facing
 // API; no driver, no sleeps (monotonicity is checked across a little busywork).
 
-#include <lain/core/time.h>
+#include "lain/core/time.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

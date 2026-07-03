@@ -1,4 +1,4 @@
-#include <lain/flow/graph.h>
+#include "lain/flow/graph.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -27,7 +27,8 @@ namespace lain::flow
 		// Drop every edge that touches the node, in either direction. A downstream
 		// input keeps its last-copied value (as with disconnect) until re-evaluated.
 		m_edges.erase(std::remove_if(m_edges.begin(), m_edges.end(),
-									 [id](const Edge& e) { return e.from == id || e.to == id; }),
+									 [id](const Edge& e)
+									 { return e.from == id || e.to == id; }),
 					  m_edges.end());
 		m_nodes.erase(it);
 		m_topoValid = false;

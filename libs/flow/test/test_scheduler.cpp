@@ -2,8 +2,9 @@
 // parallel one) and the pull evaluate. Pure CPU nodes, so no driver is needed; the
 // wide-graph case exercises concurrent task execution for correctness.
 
-#include <lain/flow/graph.h>
-#include <lain/flow/scheduler.h>
+#include "lain/flow/graph.h"
+#include "lain/flow/scheduler.h"
+
 #include <lain/task/task.h>
 
 #include <catch2/catch_test_macros.hpp>

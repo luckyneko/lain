@@ -1,7 +1,7 @@
 // Unit tests for lain::meta::toString — the best-effort, fmt-free stringify: bool ->
 // true/false, a member toString(), an ostream operator, else the type name.
 
-#include <lain/meta/tostring.h>
+#include "lain/meta/tostring.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <ostream>

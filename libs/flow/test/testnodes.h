@@ -4,7 +4,7 @@
 // two-input adder, and a float sink (for provoking type mismatches). Kept in a named
 // namespace so both the graph and edit suites can share them without a copy.
 
-#include <lain/flow/node.h>
+#include "lain/flow/node.h"
 
 namespace lain::flow::test
 {

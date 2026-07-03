@@ -1,8 +1,9 @@
 #pragma once
 
+#include "lain/app/appinfo.h" // AppInfo (name + version identity)
+#include "lain/app/window.h"  // WindowSpec + Window (createWindow return)
+
 #include <archimedes/acmForward.h>
-#include <lain/app/appinfo.h>  // AppInfo (name + version identity)
-#include <lain/app/window.h>   // WindowSpec + Window (createWindow return)
 
 #include <cassert>
 #include <memory>

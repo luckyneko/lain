@@ -1,12 +1,14 @@
+#include "lain/app/application.h"
+
+#include "lain/app/appinfo.h"
+#include "lain/app/applicationdelegate.h"
+#include "lain/app/cli.h"
+#include "lain/app/inputstate.h"
+#include "lain/app/timestate.h"
+#include "lain/app/window.h"
+#include "lain/app/windowdelegate.h"
+
 #include <archimedes/archimedes.h>
-#include <lain/app/appinfo.h>
-#include <lain/app/application.h>
-#include <lain/app/applicationdelegate.h>
-#include <lain/app/cli.h>
-#include <lain/app/inputstate.h>
-#include <lain/app/timestate.h>
-#include <lain/app/window.h>
-#include <lain/app/windowdelegate.h>
 #include <lain/core/time.h>
 #include <lain/log/log.h>
 

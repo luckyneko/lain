@@ -1,6 +1,7 @@
 #pragma once
 
-#include <lain/flow/portvalue.h>
+#include "lain/flow/portvalue.h"
+
 #include <lain/meta/tostring.h>	 // meta::toString — the value->string bridge
 #include <lain/meta/typenames.h> // meta::typeName — the human type name
 
@@ -31,4 +32,4 @@ namespace lain::flow
 	const PortType& portType();
 } // namespace lain::flow
 
-#include <lain/flow/details/porttype.inl>
+#include "lain/flow/details/porttype.inl"

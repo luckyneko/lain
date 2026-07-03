@@ -55,4 +55,4 @@ namespace lain::core
 	};
 } // namespace lain::core
 
-#include <lain/core/details/factory.inl>
+#include "lain/core/details/factory.inl"

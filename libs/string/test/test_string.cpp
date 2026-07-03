@@ -2,7 +2,7 @@
 // renders a lain type (Version) through its toString() — including that fmt's format
 // specs still apply via the inherited std::string formatter.
 
-#include <lain/string/format.h>
+#include "lain/string/format.h"
 
 #include <lain/core/version.h>
 

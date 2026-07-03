@@ -1,7 +1,7 @@
 #pragma once
 
-#include <lain/flow/node.h>
-#include <lain/flow/types.h>
+#include "lain/flow/node.h"
+#include "lain/flow/types.h"
 
 #include <cstddef>
 #include <map>
@@ -73,4 +73,4 @@ namespace lain::flow
 	};
 } // namespace lain::flow
 
-#include <lain/flow/details/graph.inl>
+#include "lain/flow/details/graph.inl"

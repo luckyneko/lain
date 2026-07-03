@@ -1,7 +1,7 @@
 // Unit tests for lain::meta type traits. Compile-time checks (STATIC_REQUIRE), so the
 // trait declarations below need no definitions.
 
-#include <lain/meta/traits.h>
+#include "lain/meta/traits.h"
 
 #include <lain/core/version.h>
 

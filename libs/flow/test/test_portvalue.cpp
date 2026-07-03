@@ -3,9 +3,10 @@
 // exercises acm:: handles with null (default-constructed) Texture/Buffer to prove
 // they ride through the generic slot, which needs no driver.
 
+#include "lain/flow/portvalue.h"
+
 #include <archimedes/acmBuffer.h>
 #include <archimedes/acmTexture.h>
-#include <lain/flow/portvalue.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <string>

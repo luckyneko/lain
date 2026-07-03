@@ -1,7 +1,7 @@
 #pragma once
 
-#include <lain/flow/port.h>
-#include <lain/flow/types.h>
+#include "lain/flow/port.h"
+#include "lain/flow/types.h"
 
 #include <string>
 #include <typeindex>
@@ -70,4 +70,4 @@ namespace lain::flow
 	};
 } // namespace lain::flow
 
-#include <lain/flow/details/node.inl>
+#include "lain/flow/details/node.inl"
