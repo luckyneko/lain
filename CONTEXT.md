@@ -78,3 +78,30 @@ Rendering a port's value splits by *purpose*; don't conflate them.
   keyed by type, living in `lain::gui` or the app. Not built yet. Today each adapter
   keeps its own texture branch (cli reads back pixels, the inspector draws a thumbnail)
   and falls through to `Port::describe()` for everything else.
+
+## Color & display — the non-encoding swapchain
+
+Everything drawn to a swapchain image writes **display-ready sRGB bytes**: the stored
+value is already sRGB-encoded and presentation-ready. The swapchain render pass is
+**non-encoding** — the driver does *not* apply the linear→sRGB transfer function on store
+— so each producer encodes for itself.
+
+- **GUI** emits its native, already-sRGB colors as-is. This is why a **non-encoding**
+  swapchain is required: an auto-encoding (sRGB-format) framebuffer would encode ImGui's
+  sRGB colors a *second* time → **GUI washout** (the too-bright/pale symptom that motivated
+  this model). See [ADR-0002](docs/adr/0002-non-encoding-swapchain-for-gui-color.md).
+- **General rendering** (non-GUI, typically linear-lit — e.g. a future 3D `flow` node)
+  must **encode in-shader** to display-ready sRGB before writing. It gives up the hardware
+  auto-encode by design, in exchange for GUI and general content sharing one swapchain pass
+  (which also sidesteps the MoltenVK mutable-format two-pass flicker bug,
+  [MoltenVK#2261](https://github.com/KhronosGroup/MoltenVK/issues/2261)).
+
+**Surface-agnostic GUI correctness** is the invariant that the GUI is pixel-correct
+whatever swapchain format acm selects. It is met by **preferring a non-encoding
+(UNORM-format) surface** — now archimedes' *default* `SurfacePreferences` (BGRA then RGBA,
+`SrgbNonlinear`), so `lain::app` inherits it with no code of its own. The swapchain stores
+raw bytes while its colorspace stays `SrgbNonlinear`, so the compositor still reads them as
+sRGB. The fallback for a driver that
+offers *only* an sRGB surface is a **UNORM alias view** (a UNORM-format view of the sRGB
+image via `VK_KHR_swapchain_mutable_format`, rendered through with no encoding) — designed,
+not yet built (dormant on MoltenVK, which offers a UNORM surface).
