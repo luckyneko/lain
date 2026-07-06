@@ -21,49 +21,22 @@
 #include <utility>
 #include <vector>
 
-#if defined(__APPLE__)
-#	include <cstdlib>
-#	include <filesystem>
-#	include <mach-o/dyld.h>
-#	include <string>
-#	include <system_error>
-#endif
-
 namespace lain::app
 {
 	using lain::core::Time;
 
 	// --- file-local helpers (named static, not an anonymous namespace) ----------
 
-	// Direct-launch convenience on macOS: point the loader at the staged MoltenVK
-	// ICD unless the caller already set one. A no-op elsewhere.
-	static void useStagedVulkanICD()
-	{
-#if defined(__APPLE__)
-		if (std::getenv("VK_ICD_FILENAMES"))
-			return;
-		uint32_t size = 0;
-		_NSGetExecutablePath(nullptr, &size);
-		std::string buf(size, '\0');
-		if (_NSGetExecutablePath(buf.data(), &size) != 0)
-			return;
-		std::error_code ec;
-		const std::filesystem::path exe = std::filesystem::canonical(buf.c_str(), ec);
-		if (ec)
-			return;
-		const std::filesystem::path icd = exe.parent_path() / "vulkan" / "MoltenVK_icd.json";
-		if (std::filesystem::exists(icd))
-			setenv("VK_ICD_FILENAMES", icd.string().c_str(), 0);
-#endif
-	}
-
-	// Narrow a semantic Version to acm::Version's uint8 fields (the Vulkan app
-	// version), clamping each component so a large value saturates rather than wraps.
+	// Narrow a semantic Version to acm::Version's fields (the Vulkan app version:
+	// major/minor are uint8, patch is uint16), clamping each component so a large
+	// value saturates rather than wraps.
 	static acm::Version toAcmVersion(const lain::core::Version& v)
 	{
-		const auto clamp = [](uint32_t x) -> uint8_t
+		const auto clamp8 = [](uint32_t x) -> uint8_t
 		{ return static_cast<uint8_t>(std::min<uint32_t>(x, 255)); };
-		return acm::Version{clamp(v.major()), clamp(v.minor()), clamp(v.patch()), 0};
+		const auto clamp16 = [](uint32_t x) -> uint16_t
+		{ return static_cast<uint16_t>(std::min<uint32_t>(x, 65535)); };
+		return acm::Version{clamp8(v.major()), clamp8(v.minor()), clamp16(v.patch())};
 	}
 
 	static int glfwKeyCode(Key k)
@@ -127,56 +100,11 @@ namespace lain::app
 		}
 	}
 
-	// Pick a GPU + graphics queue family; if `present` is a valid surface, require
-	// that family to present to it.
-	static bool pickDevice(acm::Instance instance, acm::Surface present, uint32_t& gpuIdx, uint32_t& queueIdx)
-	{
-		const bool needPresent = present.valid();
-		for (const acm::GPU& gpu : instance.getAvailableGPUs())
-		{
-			const acm::GPUSurfaceSupport* sup = nullptr;
-			if (needPresent)
-			{
-				const auto& list = present.getGPUSupport();
-				auto it = std::find_if(list.begin(), list.end(),
-									   [idx = gpu.index](const acm::GPUSurfaceSupport& s)
-									   { return s.gpuIndex == idx; });
-				if (it == list.end() || it->supportedFormats.empty() || it->supportedPresentModes.empty())
-					continue;
-				sup = &*it;
-			}
-			for (const acm::GPUQueueFamily& qf : gpu.queueFamilies)
-			{
-				if (!qf.supportsGraphics)
-					continue;
-				if (needPresent && (qf.index >= sup->queueFamilySupportsPresent.size() || !sup->queueFamilySupportsPresent[qf.index]))
-					continue;
-				gpuIdx = gpu.index;
-				queueIdx = qf.index;
-				return true;
-			}
-		}
-		return false;
-	}
-
-	static bool pickSurfaceFormat(acm::Surface surface, uint32_t gpuIdx, acm::SurfaceFormat& format, acm::PresentMode& presentMode)
-	{
-		const auto& list = surface.getGPUSupport();
-		auto it = std::find_if(list.begin(), list.end(),
-							   [gpuIdx](const acm::GPUSurfaceSupport& s)
-							   { return s.gpuIndex == gpuIdx; });
-		if (it == list.end() || it->supportedFormats.empty() || it->supportedPresentModes.empty())
-			return false;
-		format = it->supportedFormats[0];
-		presentMode = it->supportedPresentModes[0];
-		for (acm::PresentMode pm : it->supportedPresentModes)
-			if (pm == acm::PresentMode::Fifo) // vsync — cap to the refresh rate
-			{
-				presentMode = pm;
-				break;
-			}
-		return true;
-	}
+	// Device + surface selection is now acm's job: Instance::graphicsOptions() reports
+	// graphics-capable (deviceIndex, queueFamily) options, and Instance::surfaceOptions
+	// (surface) filters those to queues that can present to the surface and attaches the
+	// ranked format / present mode / capabilities (SurfacePreferences default to SRGB +
+	// FIFO first). ensureDevice() / createWindow() consume front() of those directly.
 
 	// --- impl (data only) -------------------------------------------------------
 
@@ -193,7 +121,6 @@ namespace lain::app
 		int verbosity{0}; // -v/--verbose count, filled in by run()'s parse
 		acm::Instance instance;
 		acm::Device device;
-		uint32_t gpuIdx{0};
 		bool glfwReady{false};
 		bool deviceCreated{false};
 		bool quit{false};
@@ -231,9 +158,10 @@ namespace lain::app
 
 		ensureDevice(window->surface());
 
-		acm::SurfaceFormat format;
-		acm::PresentMode presentMode = acm::PresentMode::Fifo;
-		if (!pickSurfaceFormat(window->surface(), s.gpuIdx, format, presentMode) || !window->createSwapChain(s.device, format, presentMode))
+		// The same ranked options acm used to pick the device also carry the swapchain's
+		// format / present mode / capabilities; front() is the best per SurfacePreferences.
+		const std::vector<acm::SurfaceOption> options = s.instance.surfaceOptions(window->surface());
+		if (options.empty() || !window->createSwapChain(s.device, options.front()))
 			lain::log::error("swapchain creation failed for '{}'", spec.title);
 
 		if (GLFWwindow* h = window->glfwHandle())
@@ -378,9 +306,9 @@ namespace lain::app
 
 	void Application::quit() { m->quit = true; }
 
-	acm::Device Application::device() { return ensureDevice({}); }
+	acm::Device& Application::device() { return ensureDevice({}); }
 
-	acm::Instance Application::instance()
+	acm::Instance& Application::instance()
 	{
 		ensureInstance();
 		return m->instance;
@@ -401,6 +329,10 @@ namespace lain::app
 		impl& s = *m;
 		if (s.glfwReady)
 			return;
+		// Point the loader at the staged ICD BEFORE glfwVulkanSupported(), which triggers
+		// GLFW's one-time Vulkan/surface-extension probe. If the ICD isn't set yet, GLFW
+		// caches "no metal surface" and every later glfwCreateWindowSurface fails.
+		acm::useStagedVulkanRuntime();
 		glfwInitVulkanLoader(reinterpret_cast<PFN_vkGetInstanceProcAddr>(vkGetInstanceProcAddr));
 		if (glfwInit() != GLFW_TRUE || glfwVulkanSupported() != GLFW_TRUE)
 		{
@@ -415,23 +347,44 @@ namespace lain::app
 		impl& s = *m;
 		if (s.instance.valid())
 			return;
-		useStagedVulkanICD();
+		acm::useStagedVulkanRuntime();
 		s.instance = acm::Instance(s.info.name.c_str(), toAcmVersion(s.info.version));
+		if (!s.instance.valid())
+			lain::log::error("Vulkan instance creation failed — no driver/ICD found (macOS: the MoltenVK ICD must be staged next to the binary via acm_stage_vulkan_runtime)");
 	}
 
-	acm::Device Application::ensureDevice(acm::Surface present)
+	acm::Device& Application::ensureDevice(const acm::Surface& present)
 	{
 		impl& s = *m;
 		if (s.deviceCreated)
 			return s.device;
 		ensureInstance();
-		uint32_t queueIdx = 0;
-		if (!pickDevice(s.instance, present, s.gpuIdx, queueIdx))
+
+		// A window needs a device+queue that can present to its surface; a headless app
+		// just needs any graphics queue. acm ranks both, so front() is the pick.
+		acm::DeviceOption option;
+		if (present.valid())
 		{
-			lain::log::error("no suitable GPU / queue found");
-			return {};
+			const std::vector<acm::SurfaceOption> options = s.instance.surfaceOptions(present);
+			if (options.empty())
+			{
+				lain::log::error("no GPU / queue can present to the window surface");
+				return s.device;
+			}
+			option = options.front().device;
 		}
-		s.device = s.instance.createDevice(s.instance.getAvailableGPUs()[s.gpuIdx], queueIdx);
+		else
+		{
+			const std::vector<acm::DeviceOption> options = s.instance.graphicsOptions();
+			if (options.empty())
+			{
+				lain::log::error("no graphics-capable GPU / queue found");
+				return s.device;
+			}
+			option = options.front();
+		}
+
+		s.device = s.instance.createDevice(option);
 		s.deviceCreated = s.device.valid();
 		return s.device;
 	}

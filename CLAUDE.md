@@ -12,6 +12,39 @@ future apps) run on a live Vulkan driver. The authoritative build plan is
 **[WORK.md](WORK.md)** — it owns *what* to build and in *what order*. This file
 owns *how* to build it so the result looks native to `lain`.
 
+### Update 2026-07-05 — archimedes bumped to `develop` tip; gui parked
+
+`extern/archimedes` was moved from the old `feature/old_attempt` commit to `develop`
+tip (`bfa118d`): the **handle-style refactor** + **Vulkan 1.3** baseline. What this
+changed for lain (repair-only — behaviour unchanged where gui isn't involved):
+
+- **`acm::Instance` / `acm::Device` are now move-only owning roots** (copy deleted),
+  where they used to be copyable handles. `Application::device()` / `instance()` now
+  return **references**; the example nodes hold the shared device by reference (passed
+  through the node factory via `std::ref`).
+- **Device/surface selection is acm's now.** The old `getAvailableGPUs()` /
+  `GPUSurfaceSupport` enumeration is gone; `lain::app` uses
+  `Instance::graphicsOptions()` (headless) / `surfaceOptions(surface)` (windowed) +
+  `createDevice(option)` + `createSwapChain(surface, option, SwapChainConfig{...})`.
+- **Getter renames** throughout (`vkInstance`→`vulkanInstance`, `createSurface`→
+  `createVulkanSurface`, `Texture::getExtent`→`extent`, `SwapChain::getExtents`→
+  `extent`, …). `acm::Version` dropped to 3 fields (`patch` is `uint16`).
+- **`lain::gui` + flowview gui-mode: restored via the acm interop seam.** archimedes
+  sealed the raw Vulkan handles ImGui's backend needs, so they were briefly parked
+  behind a `LAIN_ENABLE_GUI` gate; that gate is now removed. archimedes exposes the
+  handles through a single opt-in `acm::interop` header (`acmVulkanInterop.h`, mainline
+  acm stays Vulkan-free), `lain::gui`'s `context.cpp` drives ImGui via `acm::interop` +
+  **dynamic rendering** (no `VkRenderPass`; the swapchain color format feeds
+  `PipelineRenderingCreateInfo`), and gui-mode is verified opening / rendering / exiting
+  cleanly on the live driver. flowview builds its gui-mode window unconditionally again.
+  See **[docs/adr/0001](docs/adr/0001-gui-parked-pending-acm-interop-seam.md)** (resolved)
+  for the history.
+
+Verified this session: warning-clean strict build of every lib+app; `ctest` 85/85
+(the `[gpu]`/window tests SKIP — the sandbox has no Metal access); `flowview
+--headless` dumps the `gradient → tint` graph. The live-driver GPU round-trip and (once
+the seam lands) gui-mode remain to be eyeballed on a Metal-capable session.
+
 **Engine core is built, tested, committed. The remaining M1 work is one decoupling
 refactor of `flow` plus the app stack + viewer:**
 

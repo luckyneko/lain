@@ -1,7 +1,7 @@
 #pragma once
 
 #include <archimedes/acmForward.h>
-#include <imgui.h> // ImTextureID
+#include <lain/gui/texture.h> // gui::Texture (returned by upload)
 
 #include <memory>
 #include <string>
@@ -12,11 +12,17 @@ namespace lain::app
 	class Window;
 } // namespace lain::app
 
+namespace lain::image
+{
+	class Image;
+}
+
 namespace lain::gui
 {
 	// The ImGui integration seam for one window: owns the ImGui context and the
-	// GLFW + Vulkan backends (bound to the window's native handle + the shared device
-	// / swapchain render pass). A WindowDelegate composes one — newFrame() at the top
+	// GLFW + Vulkan backends (bound to the window's native handle + the shared device /
+	// swapchain, via acm::interop + dynamic rendering). A WindowDelegate composes one —
+	// newFrame() at the top
 	// of a frame, build UI with lain::gui::, then render() inside the window's
 	// renderer record callback:
 	//
@@ -46,14 +52,12 @@ namespace lain::gui
 		// inside acm::Renderer::render's record callback (the render pass is begun).
 		void render(acm::CommandBuffer cmd);
 
-		// Register a GPU texture for display, returning an id for lain::gui::Image.
-		// The texture must be in SHADER_READ_ONLY layout (an uploaded acm::Texture is).
-		ImTextureID image(acm::Texture texture, acm::Sampler sampler);
-
-		// Release an id from image(), returning its descriptor to the pool; the id must
-		// not be used afterwards. Not needed at teardown (the backend frees the whole
-		// pool then) — use it to reclaim descriptors for textures no longer shown.
-		void releaseImage(ImTextureID id);
+		// Allocate a GPU texture sized to `image` (via this Context's shared device), upload
+		// its pixels, and register it for display — the app-facing preview path, with no
+		// VkImageView or ImTextureID leaking out. Returns an invalid handle for an empty or
+		// unsupported-format image. To refresh an existing texture in place, prefer
+		// gui::Texture::upload(); recreate here only on first sight or a resize.
+		Texture createTexture(const lain::image::Image& image);
 
 	private:
 		struct impl;

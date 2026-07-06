@@ -1,34 +1,32 @@
 #pragma once
 
-#include <archimedes/acmDevice.h>
-#include <archimedes/acmTexture.h>
-#include <archimedes/acmTypes.h>
 #include <lain/flow/node.h>
+#include <lain/image/image.h>
+
+#include <cstdint>
 
 namespace lain::flow::example
 {
-	// A GPU source node: fills an owned acm::Texture with a procedural RGBA
-	// gradient and emits it on its output port. The simplest node on the GPU-port
-	// path — it proves a graph can carry an acm::Texture end to end (for the viewer
-	// to preview zero-copy) and doubles as flowview's smoke scene.
+	// A CPU source node: fills a lain::image::Image with a procedural RGBA gradient and
+	// emits it on its output port. The simplest node — it proves a graph carries an image
+	// payload end to end (the viewer previews it) and doubles as flowview's smoke scene.
 	//
-	// Pixels are CPU-generated and uploaded here only because the environment has
-	// no shader compiler; a compute-shader variant has the same shape (hold a
-	// Device, write a Texture) and can drop in once SPIR-V is available.
+	// Pixels are CPU-generated: this node needs no GPU device. A future GPU/compute variant
+	// (writing an acm::Texture through a ComputePipeline) would take an injected device
+	// context at compute() time rather than owning a device.
 	class GradientNode : public Node
 	{
 	public:
-		GradientNode(acm::Device device, acm::Extent2D extent);
+		GradientNode(std::uint32_t width, std::uint32_t height);
 
-		// Index of the acm::Texture output port.
-		PortIndex texturePort() const { return m_out; }
+		// Index of the lain::image::Image output port.
+		PortIndex imagePort() const { return m_out; }
 
 		void compute() override;
 
 	private:
-		acm::Device m_device;
-		acm::Extent2D m_extent;
-		acm::Texture m_texture; // persistent owned output, re-uploaded each compute
+		std::uint32_t m_width;
+		std::uint32_t m_height;
 		PortIndex m_out;
 	};
 } // namespace lain::flow::example

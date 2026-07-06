@@ -1,6 +1,6 @@
-# lain::flow tests (Catch2). enable_testing() + addcatch2 are done at the project
-# root. The PortValue/graph/scheduler suites are pure unit (no driver); the [gpu]
-# node test creates a real device and SKIPs when none is present.
+# lain::flow tests (Catch2). enable_testing() + addcatch2 are done at the project root.
+# All pure unit — no driver, no SKIP: the example nodes are CPU now (lain::image::Image),
+# and test_portvalue only needs null acm:: handles to prove the payload-agnostic slot.
 
 add_executable(test-flow
 	test_portvalue.cpp
@@ -8,17 +8,19 @@ add_executable(test-flow
 	test_scheduler.cpp
 	test_edit.cpp
 	test_describe.cpp
-	test_gpu_node.cpp
+	test_nodes.cpp
 )
 
 target_compile_features(test-flow PRIVATE cxx_std_17)
 # lain::task: the scheduler tests name task::Executor (flow links it PRIVATEly).
-# lain::flow-example + Vulkan::Loader: the [gpu] test creates a real device, so
-# the executable must resolve archimedes' vk* symbols via the loader.
+# lain::flow-example: the example-node tests (pure CPU, pull in lain::image transitively).
+# archimedes + Vulkan::Loader: test_portvalue names null acm::Texture/Buffer to prove a GPU
+# handle rides the payload-agnostic slot (the loader resolves archimedes' vk* at link).
 target_link_libraries(test-flow PRIVATE
 	lain::flow
 	lain::flow-example
 	lain::task
+	archimedes
 	lain::warnings
 	Vulkan::Loader
 	Catch2::Catch2WithMain

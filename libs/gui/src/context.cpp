@@ -1,8 +1,10 @@
 #include "lain/gui/context.h"
 
+#include <archimedes/acmVulkanInterop.h>
 #include <archimedes/archimedes.h>
 #include <lain/app/application.h>
 #include <lain/app/window.h>
+#include <lain/image/image.h>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -21,14 +23,17 @@ namespace lain::gui
 	{
 		ImGuiContext* ctx{nullptr};
 		ImNodesContext* nodesCtx{nullptr};
-		std::string iniFilename; // kept alive: ImGui stores io.IniFilename by pointer
+		std::string iniFilename;					 // kept alive: ImGui stores io.IniFilename by pointer
+		VkFormat colorFormat{VK_FORMAT_UNDEFINED};	 // kept alive: imgui holds pColorAttachmentFormats by pointer
+		acm::Device* device{nullptr};				 // the shared device, for upload()
 	};
 
 	Context::Context(app::Application& app, app::Window& window, std::string iniFilename)
 		: m(std::make_unique<impl>())
 	{
-		acm::Device device = app.device();
-		acm::Instance instance = app.instance();
+		acm::Device& device = app.device();
+		acm::Instance& instance = app.instance();
+		m->device = &device;
 
 		IMGUI_CHECKVERSION();
 		m->ctx = ImGui::CreateContext();
@@ -46,20 +51,29 @@ namespace lain::gui
 
 		ImGui_ImplGlfw_InitForVulkan(static_cast<GLFWwindow*>(window.nativeHandle()), true);
 
-		const uint32_t images = static_cast<uint32_t>(window.swapChain().getRenderTargetCount());
+		const uint32_t images = static_cast<uint32_t>(window.swapChain().renderTargetCount());
+
+		// archimedes renders through dynamic rendering (there is no VkRenderPass): imgui
+		// builds its pipeline from the swapchain's color format instead. imgui keeps the
+		// format array by pointer, so it lives in impl for the Context's lifetime.
+		m->colorFormat = acm::interop::colorFormat(window.swapChain());
 
 		ImGui_ImplVulkan_InitInfo info{};
-		info.ApiVersion = VK_API_VERSION_1_0;
-		info.Instance = instance.vkInstance();
-		info.PhysicalDevice = device.getGPU().device;
-		info.Device = device.vkDevice();
-		info.QueueFamily = device.getQueueIdx();
-		info.Queue = device.vkQueue();
+		info.ApiVersion = VK_API_VERSION_1_3;
+		info.Instance = acm::interop::instance(instance);
+		info.PhysicalDevice = acm::interop::physicalDevice(device);
+		info.Device = acm::interop::device(device);
+		info.QueueFamily = device.queueFamily();
+		info.Queue = acm::interop::queue(device);
 		info.DescriptorPoolSize = 64; // > 0 -> the backend creates + owns its pool
 		info.MinImageCount = 2;
 		info.ImageCount = images < 2 ? 2 : images;
-		info.PipelineInfoMain.RenderPass = window.swapChain().vkRenderPass();
+		info.UseDynamicRendering = true;
+		info.PipelineInfoMain.RenderPass = VK_NULL_HANDLE;
 		info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT; // inspector window is single-sampled
+		info.PipelineInfoMain.PipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
+		info.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
+		info.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &m->colorFormat;
 		ImGui_ImplVulkan_Init(&info);
 	}
 
@@ -81,17 +95,39 @@ namespace lain::gui
 	void Context::render(acm::CommandBuffer cmd)
 	{
 		ImGui::Render();
-		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd.vkCommandBuffer());
+		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), acm::interop::commandBuffer(cmd));
 	}
 
-	ImTextureID Context::image(acm::Texture texture, acm::Sampler sampler)
+	// --- createTexture (CPU image -> drawable gui::Texture) ---------------------
+
+	// The acm texture format an image::Format samples as. Only RGBA8 has a direct GPU
+	// mapping today; a format needing conversion first (YUV/LAB -> RGBA via a future
+	// image::convert()) has no entry, so createTexture returns an invalid Texture. (This
+	// bridge — and image<->texture readback — belongs in a future lain::graphics layer once
+	// non-gui consumers appear; named static here for now.)
+	static bool toAcmFormat(image::Format format, acm::Format& out)
 	{
-		VkDescriptorSet set = ImGui_ImplVulkan_AddTexture(sampler.vkSampler(), texture.vkImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-		return reinterpret_cast<ImTextureID>(set);
+		switch (format)
+		{
+			case image::Format::RGBA8:
+				out = acm::Format::R8G8B8A8_Unorm;
+				return true;
+		}
+		return false;
 	}
 
-	void Context::releaseImage(ImTextureID id)
+	Texture Context::createTexture(const lain::image::Image& img)
 	{
-		ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(id));
+		acm::Format format{};
+		if (m->device == nullptr || !img.valid() || !toAcmFormat(img.format(), format))
+			return {};
+
+		acm::Texture texture = m->device->createTexture(format, acm::Extent2D{static_cast<std::uint32_t>(img.width()), static_cast<std::uint32_t>(img.height())});
+		if (!texture.valid())
+			return {};
+		texture.upload(img.bytes().data(), img.bytes().size());
+
+		VkDescriptorSet set = ImGui_ImplVulkan_AddTexture(acm::interop::imageView(texture), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		return Texture(std::move(texture), reinterpret_cast<ImTextureID>(set), img.format());
 	}
 } // namespace lain::gui

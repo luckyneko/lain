@@ -1,5 +1,6 @@
 #include "lain/app/window.h"
 
+#include <archimedes/acmVulkanInterop.h>
 #include <archimedes/archimedes.h>
 #include <lain/log/log.h>
 
@@ -30,7 +31,7 @@ namespace lain::app
 	Application& Window::app() const { return *m->app; }
 
 	const std::string& Window::title() const { return m->spec.title; }
-	acm::Extent2D Window::extent() const { return m->swapChain.getExtents(); }
+	acm::Extent2D Window::extent() const { return m->swapChain.extent(); }
 	bool Window::shouldClose() const { return m->window && glfwWindowShouldClose(m->window); }
 	void Window::requestClose()
 	{
@@ -44,8 +45,16 @@ namespace lain::app
 
 	// --- private (Application-driven lifecycle) ---------------------------------
 
-	bool Window::createSurface(acm::Instance instance, const WindowSpec& spec)
+	bool Window::createSurface(acm::Instance& instance, const WindowSpec& spec)
 	{
+		if (!instance.valid())
+		{
+			// Guard glfwCreateWindowSurface, which asserts on a null VkInstance. A clean
+			// error here beats a raw GLFW assert when the Vulkan instance never came up.
+			lain::log::error("cannot create a window surface: the Vulkan instance is invalid (no driver/ICD?)");
+			return false;
+		}
+
 		m->spec = spec;
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHint(GLFW_RESIZABLE, spec.resizable ? GLFW_TRUE : GLFW_FALSE);
@@ -55,22 +64,23 @@ namespace lain::app
 		glfwSetWindowPos(m->window, spec.posX, spec.posY);
 
 		VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
-		if (glfwCreateWindowSurface(instance.vkInstance(), m->window, nullptr, &vkSurface) != VK_SUCCESS)
+		const VkResult surfaceResult = glfwCreateWindowSurface(acm::interop::instance(instance), m->window, nullptr, &vkSurface);
+		if (surfaceResult != VK_SUCCESS)
 		{
-			lain::log::error("glfwCreateWindowSurface failed");
+			lain::log::error("glfwCreateWindowSurface failed (VkResult {})", static_cast<int>(surfaceResult));
 			glfwDestroyWindow(m->window);
 			m->window = nullptr;
 			return false;
 		}
-		m->surface = instance.createSurface(vkSurface);
+		m->surface = acm::interop::createSurface(instance, vkSurface);
 		return m->surface.valid();
 	}
 
 	acm::Surface Window::surface() const { return m->surface; }
 
-	bool Window::createSwapChain(acm::Device device, acm::SurfaceFormat format, acm::PresentMode presentMode)
+	bool Window::createSwapChain(acm::Device& device, const acm::SurfaceOption& option)
 	{
-		m->swapChain = device.createSwapChain(m->surface, format, presentMode, framebufferExtent(), m->spec.depth, m->spec.samples);
+		m->swapChain = device.createSwapChain(m->surface, option, acm::SwapChainConfig{framebufferExtent(), m->spec.depth, m->spec.samples});
 		if (!m->swapChain.valid())
 			return false;
 		m->renderer = device.createRenderer(m->swapChain);

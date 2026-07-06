@@ -49,11 +49,14 @@ namespace lain::app
 		void quit();
 
 		// The shared device, created on demand (for windows or headless compute).
-		acm::Device device();
+		// Returned by reference: acm::Device is a move-only owning root, so the app
+		// holds the one instance and hands out access to it.
+		acm::Device& device();
 
 		// The Vulkan instance (created on demand) — for a GUI backend that needs the
-		// raw VkInstance (e.g. ImGui's Vulkan init).
-		acm::Instance instance();
+		// raw VkInstance (e.g. ImGui's Vulkan init). By reference for the same reason
+		// as device(): acm::Instance is a move-only owning root.
+		acm::Instance& instance();
 
 		// The application delegate driving this app. getDelegate<T>() hands it back as
 		// the concrete type the app was constructed with — a static_cast (the caller
@@ -84,7 +87,7 @@ namespace lain::app
 		// shared device (the device picks a GPU/queue that can present to `present`).
 		void ensureGlfw();
 		void ensureInstance();
-		acm::Device ensureDevice(acm::Surface present);
+		acm::Device& ensureDevice(const acm::Surface& present);
 
 		// Snapshot the focused window's keyboard/mouse into the input state each frame.
 		void updateInput();

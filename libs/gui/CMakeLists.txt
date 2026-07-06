@@ -11,6 +11,7 @@ target_link_libraries(imgui PUBLIC lain::math)
 
 add_library(gui STATIC
 	src/context.cpp
+	src/texture.cpp
 )
 add_library(lain::gui ALIAS gui)
 
@@ -18,7 +19,7 @@ target_compile_features(gui PUBLIC cxx_std_17)
 target_include_directories(gui PUBLIC include)
 target_link_libraries(gui
 	PUBLIC imgui imnodes lain::app lain::math lain::meta archimedes
-	PRIVATE lain::warnings
+	PRIVATE lain::image lain::warnings
 )
 
 if(LAIN_BUILD_TESTING)

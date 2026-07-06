@@ -1,12 +1,10 @@
 #pragma once
 
-#include <archimedes/acmForward.h>
-#include <archimedes/acmSampler.h>
 #include <lain/app/windowdelegate.h>
+#include <lain/flow/types.h> // PortIndex
 #include <lain/gui/context.h>
 
-#include <vulkan/vulkan.h> // VkImageView — the preview-cache key
-
+#include <cstdint>
 #include <map>
 #include <memory>
 
@@ -17,8 +15,8 @@ namespace lain::flow
 
 namespace flowview
 {
-	// Thumbnail size for the texture preview, chosen at runtime via a
-	// lain::gui::enumCombo (its labels come from lain::meta::enums).
+	// Thumbnail size for the image preview, chosen at runtime via a lain::gui::enumCombo
+	// (its labels come from lain::meta::enums).
 	enum class PreviewSize
 	{
 		Small,
@@ -26,12 +24,32 @@ namespace flowview
 		Large,
 	};
 
-	// Per-window ImGui inspector. Owns only its GUI resources (the lain::gui Context + a
-	// sampler); it holds no app/graph state. Each hook reaches what it needs from its
-	// Window argument — window.app() for the Application, and
+	// Identifies one port's preview by its stable logical position (node + direction +
+	// index) — a key that survives recomputes but not node deletion. No GPU/ImGui types.
+	struct PinKey
+	{
+		std::uint64_t node;
+		bool output;
+		lain::flow::PortIndex port;
+
+		bool operator<(const PinKey& o) const
+		{
+			if (node != o.node)
+				return node < o.node;
+			if (output != o.output)
+				return output < o.output;
+			return port < o.port;
+		}
+	};
+
+	// Per-window ImGui inspector. Owns only its GUI resources (the lain::gui Context + the
+	// per-port preview cache); it holds no app/graph state. Each hook reaches what it needs
+	// from its Window argument — window.app() for the Application, and
 	// window.app().getDelegate<FlowviewApp>().graph() for the scene it draws. The panel
-	// shows each node's ports as text and an acm::Texture output as a live thumbnail.
-	// ImGui is single-threaded — every call here is on the main/render thread.
+	// shows each node's ports as text and a lain::image::Image output as a live thumbnail.
+	// The Vulkan/ImGui plumbing of that thumbnail lives in lain::gui — this adapter only
+	// holds gui::Texture handles keyed by pin. ImGui is single-threaded — every call here
+	// is on the main/render thread.
 	class InspectorWindow : public lain::app::WindowDelegate
 	{
 	public:
@@ -40,17 +58,15 @@ namespace flowview
 		void onShutdown(lain::app::Window& window) override;
 
 	private:
-		// Register a GPU texture for preview, caching by its image view so each texture
-		// is registered once. Returns the ImGui id to draw with.
-		ImTextureID previewFor(const acm::Texture& texture);
-
-		// Release cached previews whose texture is no longer held by any live port
-		// (e.g. after a node deletion), reclaiming their descriptors. Called on edits.
-		void prunePreviews(const lain::flow::Graph& graph);
+		// Upsert a preview per ready image port (upload in place when the size/format
+		// matches, else recreate) and prune previews whose port is gone. Runs only when the
+		// scene may have changed (first frame + after an edit) — acm::Texture::upload is a
+		// synchronous submit, so it must not run every frame.
+		void refreshPreviews(const lain::flow::Graph& graph);
 
 		std::unique_ptr<lain::gui::Context> m_guiCtx;
-		acm::Sampler m_sampler;
-		std::map<VkImageView, ImTextureID> m_previews;	 // texture view -> cached descriptor
+		std::map<PinKey, lain::gui::Texture> m_previews; // one uploaded thumbnail per image port
+		bool m_previewsDirty = true;					 // rebuild previews on the next frame (init + after edits)
 		bool m_laidOut = false;							 // node canvas: seed node positions on the first frame
 		PreviewSize m_previewSize = PreviewSize::Medium; // thumbnail size (enumCombo-driven)
 	};

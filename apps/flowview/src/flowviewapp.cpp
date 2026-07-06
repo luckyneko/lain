@@ -3,13 +3,13 @@
 #include "dump.h"
 #include "scene.h"
 
-#include <archimedes/archimedes.h>
 #include <lain/app/application.h>
 #include <lain/app/window.h>
 #include <lain/flow/graph.h>
 
 #include <cstdint>
 #include <iostream>
+#include <memory>
 
 namespace flowview
 {
@@ -36,11 +36,12 @@ namespace flowview
 		// there is nothing to wire here beyond handing it to the window.
 		app.createWindow(spec, m_window); // creates the shared device; builds the gui Context
 
-		// Device is live now: populate the node palette, then build + evaluate the
-		// smoke scene the inspector reads.
-		registerExampleNodes(m_nodeFactory, app.device(), m_size);
-		m_textureNode = buildExampleScene(m_graph, m_nodeFactory);
-		m_scheduler.evaluate(m_graph, m_textureNode); // pull: runs the GPU source's compute()
+		// Populate the node palette, then build + evaluate the smoke scene the inspector
+		// reads. The nodes are pure CPU, so no device is threaded through here.
+		registerExampleNodes(m_nodeFactory, m_size);
+		m_graph = std::make_unique<flow::Graph>();
+		m_textureNode = buildExampleScene(*m_graph, m_nodeFactory);
+		m_scheduler.evaluate(*m_graph, m_textureNode); // pull: runs the source's compute()
 		return true;
 	}
 
@@ -50,16 +51,25 @@ namespace flowview
 			app.quit();
 	}
 
-	void FlowviewApp::onProcess(app::Application& app)
+	void FlowviewApp::onProcess(app::Application&)
 	{
-		acm::Device device = app.device();
-
-		registerExampleNodes(m_nodeFactory, device, m_size);
+		// cli-mode: a local graph, evaluated and dumped. Pure CPU — no device needed.
+		registerExampleNodes(m_nodeFactory, m_size);
 		flow::Graph graph;
 		const flow::NodeId textureNode = buildExampleScene(graph, m_nodeFactory);
-		m_scheduler.evaluate(graph, textureNode); // pull: runs the GPU source's compute()
+		m_scheduler.evaluate(graph, textureNode); // pull: runs the source's compute()
 
-		dumpGraph(std::cout, graph, device);
+		dumpGraph(std::cout, graph);
+	}
+
+	void FlowviewApp::onStop(app::Application&)
+	{
+		// Release the gui-mode scene before the app tears the device down. Today's nodes
+		// hold only CPU images (so the unique_ptr could just self-destruct later), but a
+		// future node that owns GPU buffers must release them while the device is alive —
+		// onStop runs before device teardown, so resetting here keeps that safe. Headless
+		// mode uses a local graph, so m_graph is null here and this is a no-op.
+		m_graph.reset();
 	}
 
 	void FlowviewApp::reevaluate()
@@ -67,6 +77,6 @@ namespace flowview
 		// A full topo-order run (not a pull of one target) recomputes the whole graph
 		// through its current wiring — correct no matter which nodes/edges were edited,
 		// including deletion of whatever used to be the pulled sink.
-		m_scheduler.run(m_graph);
+		m_scheduler.run(*m_graph);
 	}
 } // namespace flowview

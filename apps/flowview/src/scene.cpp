@@ -1,6 +1,5 @@
 #include "scene.h"
 
-#include <archimedes/acmTypes.h>
 #include <lain/flow/example/gradientnode.h>
 #include <lain/flow/example/tintnode.h>
 #include <lain/flow/graph.h>
@@ -14,13 +13,12 @@ namespace flowview
 	static constexpr const char* kGradientKey = "gradient";
 	static constexpr const char* kTintKey = "tint";
 
-	void registerExampleNodes(core::Factory<flow::Node>& factory, acm::Device device, std::uint32_t size)
+	void registerExampleNodes(core::Factory<flow::Node>& factory, std::uint32_t size)
 	{
-		const acm::Extent2D extent{size, size};
-		// Construction context is captured (by copy) in each creator; every create()
-		// builds a fresh node from it.
-		factory.registerType<flow::example::GradientNode>(kGradientKey, device, extent);
-		factory.registerType<flow::example::TintNode>(kTintKey, device, 1.0f, 0.5f, 0.5f); // keep R, halve G/B
+		// The nodes are pure CPU (they produce/consume a lain::image::Image), so each
+		// creator captures only plain construction values — no device, no std::ref.
+		factory.registerType<flow::example::GradientNode>(kGradientKey, size, size);
+		factory.registerType<flow::example::TintNode>(kTintKey, 1.0f, 0.5f, 0.5f); // keep R, halve G/B
 	}
 
 	flow::NodeId buildExampleScene(flow::Graph& graph, const core::Factory<flow::Node>& factory)

@@ -12,6 +12,7 @@
 #include <lain/gui/enums.h>
 #include <lain/gui/gui.h>
 #include <lain/gui/nodes.h>
+#include <lain/image/image.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -121,53 +122,41 @@ namespace flowview
 	bool InspectorWindow::onInit(app::Window& window)
 	{
 		m_guiCtx = std::make_unique<gui::Context>(window.app(), window);
-		m_sampler = window.app().device().createSampler();
 		return true;
 	}
 
-	ImTextureID InspectorWindow::previewFor(const acm::Texture& texture)
+	void InspectorWindow::refreshPreviews(const flow::Graph& graph)
 	{
-		const VkImageView view = texture.vkImageView();
-		const auto it = m_previews.find(view);
-		if (it != m_previews.end())
-			return it->second;
-		// A node reuses its texture (stable view) across recomputes, so this registers
-		// once per texture and is reused thereafter. A deleted node's entry lingers but
-		// is never drawn (we only look up currently-live textures) — see onShutdown.
-		return m_previews.emplace(view, m_guiCtx->image(texture, m_sampler)).first->second;
-	}
-
-	void InspectorWindow::prunePreviews(const flow::Graph& graph)
-	{
-		// Collect the image views still held by a live port (an output, or a downstream
-		// input that kept its last value). Anything cached but no longer present is a
-		// texture that's gone — release its descriptor back to the pool.
-		std::set<VkImageView> live;
+		std::set<PinKey> live;
+		const auto refresh = [&](flow::NodeId id, const flow::Port& p, bool output, flow::PortIndex index)
+		{
+			if (!p.ready() || p.type() != typeid(image::Image))
+				return;
+			const image::Image& img = p.value().get<image::Image>();
+			if (!img.valid())
+				return;
+			const PinKey key{id.value(), output, index};
+			live.insert(key);
+			gui::Texture& tex = m_previews[key];	// default-empty on first sight
+			if (!tex.upload(img))					// re-upload in place when size/format fits...
+				tex = m_guiCtx->createTexture(img); // ...else first-time or resized -> reallocate
+		};
 		for (const flow::NodeId id : graph.topoOrder())
 		{
 			const flow::Node& node = graph.node(id);
-			const auto collect = [&](const flow::Port& p)
-			{
-				if (p.ready() && p.type() == typeid(acm::Texture))
-					live.insert(p.value().get<acm::Texture>().vkImageView());
-			};
 			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
-				collect(node.input(i));
+				refresh(id, node.input(i), false, i);
 			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
-				collect(node.output(o));
+				refresh(id, node.output(o), true, o);
 		}
-
+		// Drop previews whose pin is gone (or no longer a ready image); the erased
+		// gui::Texture reclaims its descriptor.
 		for (auto it = m_previews.begin(); it != m_previews.end();)
 		{
 			if (live.count(it->first) == 0)
-			{
-				m_guiCtx->releaseImage(it->second);
 				it = m_previews.erase(it);
-			}
 			else
-			{
 				++it;
-			}
 		}
 	}
 
@@ -283,13 +272,20 @@ namespace flowview
 		gui::End();
 		m_laidOut = true;
 
-		// A topology edit changes what should flow; re-run the scene, then reclaim any
-		// preview descriptors whose texture is now gone. The cache is keyed by texture,
-		// so the panel below just looks up whatever the current nodes carry.
+		// A topology edit re-runs the scene, so the previews need refreshing (recomputed
+		// images, added/removed ports). Mark them dirty; refreshPreviews below upserts in
+		// place where it can. (Deferred, not per-frame — acm::Texture::upload is a stalling
+		// synchronous submit.)
 		if (edited)
 		{
 			appDelegate.reevaluate();
-			prunePreviews(graph);
+			m_previewsDirty = true;
+		}
+
+		if (m_previewsDirty)
+		{
+			refreshPreviews(graph);
+			m_previewsDirty = false;
 		}
 
 		// The inspector panel — reads the (now post-edit) graph.
@@ -302,20 +298,21 @@ namespace flowview
 			const flow::Node& node = graph.node(id);
 			gui::Text("[%llu] %s", static_cast<unsigned long long>(id.value()), node.name().c_str());
 
-			auto port = [&](const char* tag, const flow::Port& p)
+			auto port = [&](const char* tag, const flow::Port& p, bool output, flow::PortIndex index)
 			{
-				// A ready texture port shows extent + a live thumbnail (the GUI-specific
-				// view); everything else — CPU values and the empty slot — is text via the
-				// shared Port::describe() pathway.
-				if (p.ready() && p.type() == typeid(acm::Texture))
+				// A ready image port shows extent + its thumbnail (uploaded + cached by
+				// refreshPreviews, keyed by pin); everything else — CPU values and the empty
+				// slot — is text via the shared Port::describe() pathway.
+				if (p.ready() && p.type() == typeid(image::Image))
 				{
-					const acm::Texture& texture = p.value().get<acm::Texture>();
-					const acm::Extent2D extent = texture.getExtent();
-					gui::Text("    %s %s: %s %ux%u", tag, p.name().c_str(), std::string(p.typeName()).c_str(), extent.width, extent.height);
-					if (texture.valid())
+					const image::Image& img = p.value().get<image::Image>();
+					gui::Text("    %s %s: %s %dx%d", tag, p.name().c_str(), std::string(p.typeName()).c_str(), img.width(), img.height());
+					const PinKey key{id.value(), output, index};
+					const auto it = m_previews.find(key);
+					if (it != m_previews.end() && it->second.valid())
 					{
 						const float side = previewExtent(m_previewSize);
-						gui::Image(previewFor(texture), math::Vec2f{side, side}); // each texture port previews its own current texture
+						gui::Image(it->second, math::Vec2f{side, side}); // Texture -> ImTextureRef implicitly
 					}
 					return;
 				}
@@ -323,9 +320,9 @@ namespace flowview
 			};
 
 			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
-				port("in ", node.input(i));
+				port("in ", node.input(i), false, i);
 			for (flow::PortIndex i = 0; i < node.outputCount(); ++i)
-				port("out", node.output(i));
+				port("out", node.output(i), true, i);
 		}
 		gui::End();
 
@@ -335,8 +332,7 @@ namespace flowview
 
 	void InspectorWindow::onShutdown(app::Window&)
 	{
-		m_guiCtx.reset();	// destroy the ImGui backends before the device tears down
-		m_sampler = {};		// drop the sampler handle
-		m_previews.clear(); // ids are freed with the backend's descriptor pool above
+		m_previews.clear(); // release the preview descriptors while the ImGui backend lives
+		m_guiCtx.reset();	// then destroy the backend, before the device tears down
 	}
 } // namespace flowview

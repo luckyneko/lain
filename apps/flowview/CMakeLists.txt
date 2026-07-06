@@ -1,9 +1,8 @@
-# flowview — the lain::flow inspector. A thin lain::app client over lain::gui (panels
-# land next step). Links lain::flow-example for the smoke scene and archimedes for the
-# GPU texture readback the cli-mode dump performs. Vulkan::Loader resolves
-# archimedes' vk* symbols for the executable. cli-mode (--headless) needs no window;
-# gui-mode opens one.
-
+# flowview — the lain::flow inspector. A thin lain::app client over lain::gui. Links
+# lain::flow-example for the smoke scene and archimedes for the GPU texture readback the
+# cli-mode dump performs. Vulkan::Loader resolves archimedes' vk* symbols for the
+# executable. gui-mode (default) opens a window with the inspector; cli-mode (--headless)
+# needs no window and dumps the graph.
 add_executable(flowview
 	src/main.cpp
 	src/flowviewapp.cpp
@@ -16,3 +15,9 @@ target_compile_features(flowview PRIVATE cxx_std_17)
 target_link_libraries(flowview
 	PRIVATE lain::app lain::core lain::gui lain::flow-example archimedes Vulkan::Loader lain::warnings
 )
+
+# Stage the vendored MoltenVK ICD next to the binary (macOS; no-op elsewhere) so
+# acm::useStagedVulkanRuntime() finds it and acm::Instance creation succeeds without a
+# system Vulkan install or a hand-set VK_ICD_FILENAMES. Without this the loader finds no
+# driver, the instance is invalid, and gui-mode trips GLFW's null-instance assert.
+acm_stage_vulkan_runtime(flowview)

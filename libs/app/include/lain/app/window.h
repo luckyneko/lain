@@ -1,5 +1,6 @@
 #pragma once
 
+#include <archimedes/acmDeviceInfo.h> // acm::SurfaceOption (createSwapChain arg)
 #include <archimedes/acmForward.h>
 #include <archimedes/acmTypes.h>
 
@@ -46,10 +47,12 @@ namespace lain::app
 		void requestClose();
 
 		// The window's renderer — record + present a frame from WindowDelegate::onRender:
-		//   window.renderer().render([&](acm::CommandBuffer cmd, uint32_t frame){ ... });
+		//   window.renderer().render([&](acm::CommandBuffer& cmd, uint32_t frame){ ... });
+		// The record callback runs inside acm's dynamic-rendering scope for the current
+		// swapchain image.
 		acm::Renderer renderer() const;
-		// The swapchain — for the render pass during pipeline creation, use
-		// window.swapChain().vkRenderPass().
+		// The swapchain — its extent(), format(), and per-image render targets. acm
+		// renders through dynamic rendering, so there is no VkRenderPass to fetch.
 		acm::SwapChain swapChain() const;
 
 		// The native window handle (a GLFWwindow*), for a GUI backend that must bind to
@@ -62,9 +65,9 @@ namespace lain::app
 
 		explicit Window(Application& app);
 
-		bool createSurface(acm::Instance instance, const WindowSpec& spec);
+		bool createSurface(acm::Instance& instance, const WindowSpec& spec);
 		acm::Surface surface() const;
-		bool createSwapChain(acm::Device device, acm::SurfaceFormat format, acm::PresentMode presentMode);
+		bool createSwapChain(acm::Device& device, const acm::SurfaceOption& option);
 		GLFWwindow* glfwHandle() const;
 		acm::Extent2D framebufferExtent() const;
 		void releaseDeviceObjects(); // renderer + swapchain (before device teardown)

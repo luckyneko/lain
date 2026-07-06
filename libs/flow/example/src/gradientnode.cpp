@@ -2,41 +2,37 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <vector>
+#include <utility>
 
 namespace lain::flow::example
 {
-	GradientNode::GradientNode(acm::Device device, acm::Extent2D extent)
+	GradientNode::GradientNode(std::uint32_t width, std::uint32_t height)
 		: Node("Gradient")
-		, m_device(device)
-		, m_extent(extent)
+		, m_width(width)
+		, m_height(height)
 	{
-		m_out = addOutput<acm::Texture>("texture");
-		m_texture = m_device.createTexture(acm::Format::R8G8B8A8_Unorm, m_extent);
+		m_out = addOutput<image::Image>("image");
 	}
 
 	void GradientNode::compute()
 	{
-		const uint32_t w = m_extent.width;
-		const uint32_t h = m_extent.height;
+		image::Image img(m_width, m_height, image::Format::RGBA8);
+		auto& px = img.bytes();
 
-		// R ramps across X, G ramps down Y, B constant — a pattern a readback (or
-		// the inspector) can check at a known pixel. R8G8B8A8_Unorm memory order
-		// is [R, G, B, A].
-		std::vector<uint8_t> pixels(static_cast<std::size_t>(w) * h * 4);
-		for (uint32_t y = 0; y < h; ++y)
+		// R ramps across X, G ramps down Y, B constant — a pattern a readback (or the
+		// inspector) can check at a known pixel. RGBA8 byte order is [R, G, B, A].
+		for (std::uint32_t y = 0; y < m_height; ++y)
 		{
-			for (uint32_t x = 0; x < w; ++x)
+			for (std::uint32_t x = 0; x < m_width; ++x)
 			{
-				const std::size_t i = (static_cast<std::size_t>(y) * w + x) * 4;
-				pixels[i + 0] = static_cast<uint8_t>(w > 1 ? x * 255 / (w - 1) : 0);
-				pixels[i + 1] = static_cast<uint8_t>(h > 1 ? y * 255 / (h - 1) : 0);
-				pixels[i + 2] = 128;
-				pixels[i + 3] = 255;
+				const std::size_t i = (static_cast<std::size_t>(y) * m_width + x) * 4;
+				px[i + 0] = static_cast<std::uint8_t>(m_width > 1 ? x * 255 / (m_width - 1) : 0);
+				px[i + 1] = static_cast<std::uint8_t>(m_height > 1 ? y * 255 / (m_height - 1) : 0);
+				px[i + 2] = 128;
+				px[i + 3] = 255;
 			}
 		}
 
-		m_texture.upload(pixels.data(), pixels.size());
-		output(m_out).set(m_texture);
+		output(m_out).set(std::move(img));
 	}
 } // namespace lain::flow::example

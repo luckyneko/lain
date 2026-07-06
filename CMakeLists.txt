@@ -74,6 +74,7 @@ add_subdirectory(libs/log)              # spdlog-backed logging (lain::log)
 add_subdirectory(libs/string)           # fmt-backed format() + lain-type formatters
 add_subdirectory(libs/meta)             # enum reflection (magic_enum) — lain::meta
 add_subdirectory(libs/math)             # typed GLM wrapper
+add_subdirectory(libs/image)            # CPU raster + pixel formats (lain::image)
 add_subdirectory(libs/task)
 add_subdirectory(libs/flow)             # the node-graph engine (WORK.md M1)
 

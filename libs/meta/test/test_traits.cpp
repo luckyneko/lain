@@ -19,7 +19,10 @@ namespace
 	struct Streamy
 	{
 	};
-	std::ostream& operator<<(std::ostream&, const Streamy&); // declared only
+	// Declared only — has_ostream inspects it in an unevaluated context, so it is never
+	// odr-used; [[maybe_unused]] silences clang's -Wunneeded-internal-declaration for this
+	// internal-linkage operator (pre-existing, unrelated to the archimedes update).
+	[[maybe_unused]] std::ostream& operator<<(std::ostream&, const Streamy&);
 
 	struct Plain
 	{

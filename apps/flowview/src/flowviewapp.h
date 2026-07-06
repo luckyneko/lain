@@ -10,6 +10,7 @@
 #include <lain/flow/types.h>
 
 #include <cstdint>
+#include <memory>
 
 namespace flowview
 {
@@ -27,11 +28,13 @@ namespace flowview
 		bool onStart(lain::app::Application& app) override;
 		void onUpdate(lain::app::Application& app, const lain::app::TimeState& time, const lain::app::InputState& input) override;
 		void onProcess(lain::app::Application& app) override;
+		void onStop(lain::app::Application& app) override;
 
 		// The gui-mode scene the InspectorWindow reads (reached via
-		// window.app().getDelegate<FlowviewApp>().graph()).
-		const lain::flow::Graph& graph() const { return m_graph; }
-		lain::flow::Graph& graph() { return m_graph; } // the canvas edits it in place
+		// window.app().getDelegate<FlowviewApp>().graph()). Valid in gui-mode (built in
+		// onStart, released in onStop).
+		const lain::flow::Graph& graph() const { return *m_graph; }
+		lain::flow::Graph& graph() { return *m_graph; } // the canvas edits it in place
 
 		// The node-type palette the canvas' add menu draws from.
 		const lain::core::Factory<lain::flow::Node>& nodeFactory() const { return m_nodeFactory; }
@@ -45,10 +48,12 @@ namespace flowview
 		std::uint32_t m_size = 64; // example texture extent (size x size)
 		int m_frames = 0;		   // gui-mode: quit after N frames (0 = until closed)
 
-		lain::flow::Graph m_graph;			  // the gui-mode scene (persists across frames)
-		lain::flow::NodeId m_textureNode{}; // the GPU source the scene is pulled from
+		// The gui-mode scene, held by unique_ptr so onStop can release it (and its
+		// node-owned payloads) explicitly, before the window/device teardown.
+		std::unique_ptr<lain::flow::Graph> m_graph;
+		lain::flow::NodeId m_textureNode{};		 // the source the scene is pulled from
 		lain::flow::SerialScheduler m_scheduler; // pull-evaluates the scene (no threads needed)
-		lain::core::Factory<lain::flow::Node> m_nodeFactory; // node-type palette (populated once the device is live)
-		InspectorWindow m_window;
+		lain::core::Factory<lain::flow::Node> m_nodeFactory; // node-type palette
+		InspectorWindow m_window;							 // gui-mode inspector
 	};
 } // namespace flowview

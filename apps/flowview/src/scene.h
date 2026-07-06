@@ -1,6 +1,5 @@
 #pragma once
 
-#include <archimedes/acmForward.h>
 #include <lain/core/factory.h>
 #include <lain/flow/node.h>
 #include <lain/flow/types.h>
@@ -18,7 +17,7 @@ namespace flowview
 	// GradientNode, keyed "gradient"), with the device + extent captured in each
 	// creator's closure. This is the palette the editor will draw from; for now it
 	// also backs the smoke scene below. Call once the device is live.
-	void registerExampleNodes(lain::core::Factory<lain::flow::Node>& factory, acm::Device device, std::uint32_t size);
+	void registerExampleNodes(lain::core::Factory<lain::flow::Node>& factory, std::uint32_t size);
 
 	// Build flowview's smoke scene into `graph`: create the GradientNode from
 	// `factory` (which must have been populated by registerExampleNodes) and adopt it.
