@@ -34,8 +34,8 @@ namespace lain::flow::example
 		};
 
 		image::Image out(src.width(), src.height(), src.pixelFormat());
-		const auto& in = src.bytes();
-		auto& px = out.bytes();
+		const auto* in = src.data();
+		auto* px = out.data();
 		const std::size_t count = src.pixelCount();
 		for (std::size_t i = 0; i < count; ++i)
 		{

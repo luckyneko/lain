@@ -55,7 +55,7 @@ namespace lain::gui
 		if (static_cast<int>(extent.width) != image.width() || static_cast<int>(extent.height) != image.height())
 			return false;
 
-		m_texture.upload(image.bytes().data(), image.bytes().size()); // self-contained: no device
+		m_texture.upload(image.data(), image.byteSize()); // self-contained: no device
 		return true;
 	}
 } // namespace lain::gui

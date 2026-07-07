@@ -17,7 +17,7 @@ namespace lain::flow::example
 	void GradientNode::compute()
 	{
 		image::Image img(m_width, m_height, image::PixelFormat::RGBA8);
-		auto& px = img.bytes();
+		auto* px = img.data();
 
 		// R ramps across X, G ramps down Y, B constant — a pattern a readback (or the
 		// inspector) can check at a known pixel. RGBA8 byte order is [R, G, B, A].

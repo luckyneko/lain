@@ -10,14 +10,13 @@
 #include <ostream>
 #include <sstream>
 #include <string>
-#include <vector>
 
 namespace flowview
 {
 	using namespace lain::flow;
 
 	// One pixel of an RGBA8 buffer as "rgba(r,g,b,a)". Byte order is [R, G, B, A].
-	static std::string pixel(const std::vector<std::uint8_t>& px, std::size_t texel)
+	static std::string pixel(const std::uint8_t* px, std::size_t texel)
 	{
 		const std::size_t i = texel * 4;
 		std::ostringstream s;
@@ -34,7 +33,7 @@ namespace flowview
 		std::ostringstream s;
 		s << img.toString();
 		const std::size_t count = img.pixelCount();
-		s << " TL=" << pixel(img.bytes(), 0) << " BR=" << pixel(img.bytes(), count - 1);
+		s << " TL=" << pixel(img.data(), 0) << " BR=" << pixel(img.data(), count - 1);
 		return s.str();
 	}
 

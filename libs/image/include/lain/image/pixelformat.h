@@ -1,5 +1,8 @@
 #pragma once
 
+#include <lain/meta/typelist.h> // meta::TypeList — the ChannelType -> storage-type table
+
+#include <cstddef>
 #include <cstdint>
 
 namespace lain::image
@@ -42,6 +45,14 @@ namespace lain::image
 		RGBA32F,
 	};
 
+	namespace detail
+	{
+		// The C++ storage type of each ChannelType, indexed by the enum's value — the one
+		// source for both a Color's channel type (color.h) and a format's byte size below.
+		// Order must match the ChannelType enum (guarded by a static_assert in image.cpp).
+		using channelTypes = lain::meta::TypeList<std::uint8_t, std::uint16_t, float>;
+	} // namespace detail
+
 	// A format's reflective facts, derived from its two axes. Unlike flow's PortType
 	// flyweight (referenced by pointer, so it needs a stable address), a descriptor is
 	// pure derivable data with no identity — so it is a plain constexpr value returned by
@@ -67,18 +78,9 @@ namespace lain::image
 			return 0;
 		}
 
-		constexpr std::uint8_t bytesPerChannel() const // 1 (U8), 2 (U16), 4 (F32)
+		constexpr std::uint8_t bytesPerChannel() const // sizeof the channel's storage type
 		{
-			switch (channelType)
-			{
-				case ChannelType::U8:
-					return 1;
-				case ChannelType::U16:
-					return 2;
-				case ChannelType::F32:
-					return 4;
-			}
-			return 0;
+			return static_cast<std::uint8_t>(detail::channelTypes::sizeAt(static_cast<std::size_t>(channelType)));
 		}
 
 		constexpr std::uint32_t bytesPerPixel() const

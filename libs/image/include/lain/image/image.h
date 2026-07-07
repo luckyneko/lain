@@ -12,12 +12,17 @@
 
 namespace lain::image
 {
+	template <typename C>
+	class ImageView; // non-owning typed view (view.h)
+	template <typename C>
+	class ConstImageView;
+
 	// A CPU-side owned raster: extent + PixelFormat + tightly-packed bytes, plus two
 	// tracked semantic tags — ColorSpace (the encoding of the values) and AlphaMode
 	// (whether color is premultiplied). The lightweight, archimedes/UI-agnostic image
 	// foundation: it names no GPU/UI types, so it rides a flow port like any copyable
 	// payload. Typed pixel iteration comes from a non-owning ImageView<C> over these bytes
-	// (see view.h); Image stays the single owner.
+	// (see imageview.h); Image stays the single owner.
 	//
 	// The tags are declarative, not derived: a fresh Image is ColorSpace::Unspecified /
 	// AlphaMode::Unspecified until a producer or a conversion sets them. Space/alpha-
@@ -41,13 +46,21 @@ namespace lain::image
 		void setColorSpace(ColorSpace colorSpace) { m_colorSpace = colorSpace; }
 		void setAlphaMode(AlphaMode alphaMode) { m_alphaMode = alphaMode; }
 
-		// Tightly-packed pixel bytes (size() == byteSize()). NOTE: the vector type is not
-		// meant to be part of the durable contract — a future pooled/mimalloc allocator will
-		// route allocation through here; new code should prefer data()/byteSize().
-		const std::vector<std::uint8_t>& bytes() const { return m_bytes; }
-		std::vector<std::uint8_t>& bytes() { return m_bytes; }
+		// The tightly-packed pixel bytes (byteSize() of them). The storage type is kept
+		// private on purpose — a future pooled/mimalloc allocator will route allocation
+		// through here without touching callers — so access is via the raw pointer + size,
+		// not the underlying container. Typed pixel access is Image::as<C>() (imageview.h).
 		const std::uint8_t* data() const { return m_bytes.data(); }
 		std::uint8_t* data() { return m_bytes.data(); }
+
+		// A typed, non-owning view of these bytes as Color C, for pixel-wise iteration.
+		// The runtime PixelFormat must match C::format (asserts; returns an invalid view in
+		// release). Defined in imageview.h — include it to use. See image::visit (traverse.h) to
+		// dispatch on the runtime format without naming C.
+		template <typename C>
+		ImageView<C> as();
+		template <typename C>
+		ConstImageView<C> as() const;
 
 		bool valid() const { return m_extent.x > 0 && m_extent.y > 0 && !m_bytes.empty(); }
 		std::size_t pixelCount() const { return static_cast<std::size_t>(m_extent.x) * m_extent.y; }

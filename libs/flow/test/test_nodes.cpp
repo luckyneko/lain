@@ -20,7 +20,7 @@ struct Rgba
 // The (r,g,b,a) at a texel index into an RGBA8 image.
 static Rgba pixel(const lain::image::Image& img, std::size_t texel)
 {
-	const auto& px = img.bytes();
+	const auto* px = img.data();
 	return {px[texel * 4 + 0], px[texel * 4 + 1], px[texel * 4 + 2], px[texel * 4 + 3]};
 }
 

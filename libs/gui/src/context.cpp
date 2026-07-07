@@ -126,7 +126,7 @@ namespace lain::gui
 		acm::Texture texture = m->device->createTexture(format, acm::Extent2D{static_cast<std::uint32_t>(img.width()), static_cast<std::uint32_t>(img.height())});
 		if (!texture.valid())
 			return {};
-		texture.upload(img.bytes().data(), img.bytes().size());
+		texture.upload(img.data(), img.byteSize());
 
 		VkDescriptorSet set = ImGui_ImplVulkan_AddTexture(acm::interop::imageView(texture), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		return Texture(std::move(texture), reinterpret_cast<ImTextureID>(set), img.pixelFormat());

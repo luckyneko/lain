@@ -2,6 +2,10 @@
 
 add_executable(test-image
 	test_image.cpp
+	test_color.cpp
+	test_colormath.cpp
+	test_imageview.cpp
+	test_traverse.cpp
 )
 
 target_compile_features(test-image PRIVATE cxx_std_17)
