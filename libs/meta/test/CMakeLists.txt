@@ -5,6 +5,7 @@ add_executable(test-meta
 	test_typenames.cpp
 	test_traits.cpp
 	test_tostring.cpp
+	test_typelist.cpp
 )
 
 target_compile_features(test-meta PRIVATE cxx_std_17)
