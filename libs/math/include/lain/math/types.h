@@ -18,6 +18,7 @@
 namespace lain::math
 {
 	// --- generic core ---
+	using length_t = glm::length_t; // vector dimension / component index
 	template <glm::length_t N, typename T>
 	using Vec = glm::vec<N, T>;
 	template <glm::length_t C, glm::length_t R, typename T>
