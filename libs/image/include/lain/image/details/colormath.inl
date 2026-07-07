@@ -55,7 +55,7 @@ namespace lain::image
 		using T = typename Color<F>::value_type;
 		constexpr auto N = descriptor(F).channelCount();
 		Color<F> out{};
-		for (glm::length_t i = 0; i < N; ++i)
+		for (math::length_t i = 0; i < N; ++i)
 		{
 			if constexpr (std::is_floating_point_v<T>)
 			{
@@ -128,6 +128,20 @@ namespace lain::image
 				out[3] = detail::fromUnit<U>(a);
 			}
 			return out;
+		}
+	}
+
+	template <typename View, typename Fn>
+	void mapColorChannels(View view, Fn fn)
+	{
+		using C = std::remove_reference_t<decltype(view(0, 0))>;
+		using T = typename C::value_type;
+		constexpr auto channels = descriptor(C::format).channelCount();
+		constexpr math::length_t colorChannels = descriptor(C::format).hasAlpha() ? channels - 1 : channels;
+		for (auto& px : view)
+		{
+			for (math::length_t i = 0; i < colorChannels; ++i)
+				px[i] = detail::fromUnit<T>(fn(detail::toUnit<T>(px[i])));
 		}
 	}
 } // namespace lain::image

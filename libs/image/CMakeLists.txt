@@ -7,6 +7,7 @@
 add_library(image STATIC
 	src/image.cpp
 	src/convert.cpp
+	src/operations.cpp
 )
 add_library(lain::image ALIAS image)
 

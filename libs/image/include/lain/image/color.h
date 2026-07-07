@@ -14,7 +14,7 @@ namespace lain::image
 	// list that gives a format its byte size.
 	template <PixelFormat F>
 	using ColorBase = lain::math::Vec<
-		static_cast<glm::length_t>(descriptor(F).channelCount()),
+		static_cast<math::length_t>(descriptor(F).channelCount()),
 		detail::channelTypes::template at<static_cast<std::size_t>(descriptor(F).channelType)>>;
 
 	// A pixel value of a given PixelFormat, as a distinct strong type over its math::Vec.

@@ -6,7 +6,6 @@
 #include <lain/log/log.h>	 // log::ensure — the assert + log precondition guard
 #include <lain/meta/enums.h> // enums::name for diagnostics
 
-#include <cmath>
 #include <type_traits>
 
 namespace lain::image
@@ -15,39 +14,25 @@ namespace lain::image
 
 	static float srgbToLinear(float c)
 	{
-		return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
+		return c <= 0.04045f ? c / 12.92f : math::pow((c + 0.055f) / 1.055f, 2.4f);
 	}
 	static float linearToSrgb(float c)
 	{
-		return c <= 0.0031308f ? c * 12.92f : 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f;
+		return c <= 0.0031308f ? c * 12.92f : 1.055f * math::pow(c, 1.0f / 2.4f) - 0.055f;
 	}
 
-	// Apply a unit-[0,1] transfer function to a pixel's color channels — every channel but a
-	// trailing alpha (which is linear and left as-is).
-	template <typename View, typename Fn>
-	static void mapColorChannels(View view, Fn fn)
-	{
-		using C = std::remove_reference_t<decltype(view(0, 0))>;
-		using T = typename C::value_type;
-		constexpr auto channels = descriptor(C::format).channelCount();
-		constexpr glm::length_t colorChannels = descriptor(C::format).hasAlpha() ? channels - 1 : channels;
-		for (auto& px : view)
-		{
-			for (glm::length_t i = 0; i < colorChannels; ++i)
-				px[i] = detail::fromUnit<T>(fn(detail::toUnit<T>(px[i])));
-		}
-	}
+	// mapColorChannels (the per-pixel-channel transfer applied below) lives in colormath.h.
 
 	template <typename View>
 	static void premultiplyView(View view)
 	{
 		using C = std::remove_reference_t<decltype(view(0, 0))>;
 		using T = typename C::value_type;
-		constexpr glm::length_t ch = descriptor(C::format).channelCount();
+		constexpr math::length_t ch = descriptor(C::format).channelCount();
 		for (auto& px : view)
 		{
 			const float a = detail::toUnit<T>(px[ch - 1]);
-			for (glm::length_t i = 0; i < ch - 1; ++i)
+			for (math::length_t i = 0; i < ch - 1; ++i)
 				px[i] = detail::fromUnit<T>(detail::toUnit<T>(px[i]) * a);
 		}
 	}
@@ -57,13 +42,13 @@ namespace lain::image
 	{
 		using C = std::remove_reference_t<decltype(view(0, 0))>;
 		using T = typename C::value_type;
-		constexpr glm::length_t ch = descriptor(C::format).channelCount();
+		constexpr math::length_t ch = descriptor(C::format).channelCount();
 		for (auto& px : view)
 		{
 			const float a = detail::toUnit<T>(px[ch - 1]);
 			if (a > 0.0f)
 			{
-				for (glm::length_t i = 0; i < ch - 1; ++i)
+				for (math::length_t i = 0; i < ch - 1; ++i)
 					px[i] = detail::fromUnit<T>(detail::toUnit<T>(px[i]) / a);
 			}
 		}
