@@ -105,3 +105,41 @@ sRGB. The fallback for a driver that
 offers *only* an sRGB surface is a **UNORM alias view** (a UNORM-format view of the sRGB
 image via `VK_KHR_swapchain_mutable_format`, rendered through with no encoding) — designed,
 not yet built (dormant on MoltenVK, which offers a UNORM surface).
+
+## The `image` library — CPU rasters, typed and tracked
+
+`lain::image` is the CPU-side raster foundation. It names no GPU/UI types, so an **Image**
+rides a `flow` port like any payload. Vocabulary, three axes kept apart:
+
+- **PixelFormat** — a pixel's byte layout: **ColorModel** (the channel set + order —
+  `Gray`/`RGB`/`RGBA`) × **ChannelType** (per-channel storage — `U8`/`U16`/`F32`). The
+  primary runtime handle. Its **PixelFormatDescriptor** is the per-format fact-bundle
+  (channel count, bytes-per-pixel, has-alpha), looked up from the format.
+- **Color** — a pixel *value* of a given PixelFormat: N channels of T, a strong type over a
+  `math::Vec`. It is **layout-neutral** — *which* channel is which is the PixelFormat's
+  business, not the Color's.
+- **Image** *(the single owner)* — extent + PixelFormat + a byte buffer, plus the two tracked
+  tags below. It is the sole owner of its pixels; **ImageView** is a non-owning, typed,
+  strided view *over* an Image's bytes (obtained via `as<Color>()`) — the "iterate over
+  pixels, not bytes" surface. Views never own.
+- **ColorSpace** *(tracked, enforced)* — the transfer/encoding axis (`Unspecified`/`Linear`/
+  `sRGB`), a property of the Image, **separate from PixelFormat** (sRGB and linear share a
+  byte layout but not a meaning). **AlphaMode** *(tracked, enforced)* — whether color is
+  premultiplied by alpha (`Unspecified`/`Straight`/`Premultiplied`), meaningful only for
+  alpha-bearing formats. Both default `Unspecified` (be explicit).
+- **No implicit conversion.** Nothing auto-converts space or alpha (a round trip sheds
+  accuracy). The one verb **`convert`** is overloaded on its *target* — `convert(img,
+  PixelFormat | ColorSpace | AlphaMode)` — and is direction-agnostic (converting to the value
+  the Image is already in is a no-op). See [ADR-0003](docs/adr/0003-tracked-enforced-colorspace-alphamode.md).
+
+### Op-class enforcement
+
+An operation's space/alpha requirement follows its **class**, and a violation is loud
+(`log::ensure`: assert in debug, log + invalid Image in release) — never a silent wrong result:
+
+- **Value-blending / cross-pixel** (`convolve`, `sharpen`, `resize`, arbitrary `rotate`,
+  `RGB→Gray` luminance) — require **`Linear`** and, for alpha formats, **`Premultiplied`**
+  (blending in sRGB or with straight alpha is wrong).
+- **Nonlinear per-pixel tone** (`gamma`, `contrast`) — require **`Straight`** (a nonlinear
+  curve on premultiplied color is wrong).
+- **Pixel-rearranging / linear-scale** (`crop`, `rotate90`, `brightness`, `clamp`) — agnostic.
