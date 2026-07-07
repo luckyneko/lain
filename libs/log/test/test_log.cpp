@@ -47,3 +47,19 @@ TEST_CASE("the emit seam treats braces in the message as data", "[log]")
 	REQUIRE_NOTHROW(lain::log::log(Level::Info, payload));
 	REQUIRE_NOTHROW(lain::log::log(Level::Warn, "preformatted via the seam"));
 }
+
+TEST_CASE("ensure passes through a true condition", "[log]")
+{
+	// A satisfied precondition returns true and logs nothing (in any build).
+	REQUIRE(lain::log::ensure(true, "should not be logged {}", 1));
+	REQUIRE(lain::log::ensure(2 + 2 == 4, "arithmetic still works"));
+}
+
+#ifdef NDEBUG
+TEST_CASE("ensure logs and returns false on a violation (release)", "[log]")
+{
+	// In a release build the assert is a no-op, so ensure logs the error and returns false
+	// for the caller to bail on. (In a debug build this aborts, so the case is NDEBUG-only.)
+	REQUIRE_FALSE(lain::log::ensure(false, "expected failure {}", 42));
+}
+#endif

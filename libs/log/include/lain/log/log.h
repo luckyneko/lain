@@ -2,6 +2,7 @@
 
 #include <fmt/format.h>
 
+#include <cassert>
 #include <string_view>
 #include <utility>
 
@@ -72,5 +73,21 @@ namespace lain::log
 	void critical(fmt::format_string<Args...> format, Args&&... args)
 	{
 		log(Level::Critical, fmt::format(format, std::forward<Args>(args)...));
+	}
+
+	// A checked precondition: returns `cond`, and when it is false logs an error (the rich,
+	// formatted detail) then asserts. So a violation aborts loudly in a debug build; in a
+	// release build (NDEBUG) it logs and returns false, letting the caller bail. Branch on
+	// it: `if (!log::ensure(cond, "...")) return {};`. (Unlike an assert macro it cannot
+	// stringify the expression — the formatted message carries the detail instead.)
+	template <typename... Args>
+	bool ensure(bool cond, fmt::format_string<Args...> format, Args&&... args)
+	{
+		if (!cond)
+		{
+			error(format, std::forward<Args>(args)...);
+			assert(false && "lain::log::ensure failed — see the logged error");
+		}
+		return cond;
 	}
 } // namespace lain::log
