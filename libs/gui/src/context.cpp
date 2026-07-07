@@ -100,26 +100,27 @@ namespace lain::gui
 
 	// --- createTexture (CPU image -> drawable gui::Texture) ---------------------
 
-	// The acm texture format an image::Format samples as. Only RGBA8 has a direct GPU
-	// mapping today; a format needing conversion first (YUV/LAB -> RGBA via a future
-	// image::convert()) has no entry, so createTexture returns an invalid Texture. (This
-	// bridge — and image<->texture readback — belongs in a future lain::graphics layer once
-	// non-gui consumers appear; named static here for now.)
-	static bool toAcmFormat(image::Format format, acm::Format& out)
+	// The acm texture format an image::PixelFormat samples as. Only RGBA8 has a direct GPU
+	// mapping today; a format needing conversion first (YUV/LAB -> RGBA via image::convert())
+	// has no entry, so createTexture returns an invalid Texture. (This bridge — and
+	// image<->texture readback — belongs in a future lain::graphics layer once non-gui
+	// consumers appear; named static here for now.)
+	static bool toAcmFormat(image::PixelFormat format, acm::Format& out)
 	{
 		switch (format)
 		{
-			case image::Format::RGBA8:
+			case image::PixelFormat::RGBA8:
 				out = acm::Format::R8G8B8A8_Unorm;
 				return true;
+			default:
+				return false;
 		}
-		return false;
 	}
 
 	Texture Context::createTexture(const lain::image::Image& img)
 	{
 		acm::Format format{};
-		if (m->device == nullptr || !img.valid() || !toAcmFormat(img.format(), format))
+		if (m->device == nullptr || !img.valid() || !toAcmFormat(img.pixelFormat(), format))
 			return {};
 
 		acm::Texture texture = m->device->createTexture(format, acm::Extent2D{static_cast<std::uint32_t>(img.width()), static_cast<std::uint32_t>(img.height())});
@@ -128,6 +129,6 @@ namespace lain::gui
 		texture.upload(img.bytes().data(), img.bytes().size());
 
 		VkDescriptorSet set = ImGui_ImplVulkan_AddTexture(acm::interop::imageView(texture), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-		return Texture(std::move(texture), reinterpret_cast<ImTextureID>(set), img.format());
+		return Texture(std::move(texture), reinterpret_cast<ImTextureID>(set), img.pixelFormat());
 	}
 } // namespace lain::gui

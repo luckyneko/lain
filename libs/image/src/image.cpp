@@ -4,19 +4,16 @@
 
 namespace lain::image
 {
-	std::uint32_t Image::bytesPerPixel(Format format)
+	std::uint32_t Image::bytesPerPixel(PixelFormat format)
 	{
-		switch (format)
-		{
-			case Format::RGBA8:
-				return 4;
-		}
-		return 0;
+		return image::descriptor(format).bytesPerPixel();
 	}
 
-	Image::Image(int width, int height, Format format)
+	Image::Image(int width, int height, PixelFormat format, ColorSpace colorSpace, AlphaMode alphaMode)
 		: m_extent(width, height)
 		, m_format(format)
+		, m_colorSpace(colorSpace)
+		, m_alphaMode(alphaMode)
 		, m_bytes((width > 0 && height > 0) ? static_cast<std::size_t>(width) * height * bytesPerPixel(format) : 0, 0)
 	{
 	}

@@ -10,7 +10,7 @@
 
 namespace lain::gui
 {
-	Texture::Texture(acm::Texture texture, ImTextureID id, lain::image::Format format)
+	Texture::Texture(acm::Texture texture, ImTextureID id, lain::image::PixelFormat format)
 		: m_texture(std::move(texture))
 		, m_id(id)
 		, m_format(format)
@@ -49,7 +49,7 @@ namespace lain::gui
 	{
 		// Reuse only when this texture already matches the image's size + format; otherwise
 		// the caller recreates via Context::createTexture().
-		if (!valid() || !image.valid() || image.format() != m_format)
+		if (!valid() || !image.valid() || image.pixelFormat() != m_format)
 			return false;
 		const acm::Extent2D extent = m_texture.extent();
 		if (static_cast<int>(extent.width) != image.width() || static_cast<int>(extent.height) != image.height())

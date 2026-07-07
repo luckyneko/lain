@@ -33,7 +33,7 @@ namespace lain::flow::example
 			return static_cast<std::uint8_t>(scaled > 255.0f ? 255.0f : scaled);
 		};
 
-		image::Image out(src.width(), src.height(), src.format());
+		image::Image out(src.width(), src.height(), src.pixelFormat());
 		const auto& in = src.bytes();
 		auto& px = out.bytes();
 		const std::size_t count = src.pixelCount();

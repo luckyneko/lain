@@ -16,7 +16,7 @@ namespace lain::flow::example
 
 	void GradientNode::compute()
 	{
-		image::Image img(m_width, m_height, image::Format::RGBA8);
+		image::Image img(m_width, m_height, image::PixelFormat::RGBA8);
 		auto& px = img.bytes();
 
 		// R ramps across X, G ramps down Y, B constant — a pattern a readback (or the

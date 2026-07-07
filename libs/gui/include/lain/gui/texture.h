@@ -5,7 +5,7 @@
 
 namespace lain::image
 {
-	enum class Format;
+	enum class PixelFormat;
 	class Image;
 } // namespace lain::image
 
@@ -45,10 +45,10 @@ namespace lain::gui
 
 	private:
 		friend class Context;
-		Texture(acm::Texture texture, ImTextureID id, lain::image::Format format);
+		Texture(acm::Texture texture, ImTextureID id, lain::image::PixelFormat format);
 
-		acm::Texture m_texture;			   // keeps the uploaded texture alive while it is shown
-		ImTextureID m_id{};				   // the ImGui descriptor
-		lain::image::Format m_format{};	   // source format, for the in-place-reuse check
+		acm::Texture m_texture;				 // keeps the uploaded texture alive while it is shown
+		ImTextureID m_id{};					 // the ImGui descriptor
+		lain::image::PixelFormat m_format{}; // source format, for the in-place-reuse check
 	};
 } // namespace lain::gui
