@@ -6,6 +6,7 @@ add_executable(test-image
 	test_colormath.cpp
 	test_imageview.cpp
 	test_traverse.cpp
+	test_convert.cpp
 )
 
 target_compile_features(test-image PRIVATE cxx_std_17)

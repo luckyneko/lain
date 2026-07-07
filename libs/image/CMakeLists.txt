@@ -6,6 +6,7 @@
 
 add_library(image STATIC
 	src/image.cpp
+	src/convert.cpp
 )
 add_library(lain::image ALIAS image)
 
@@ -14,6 +15,7 @@ target_include_directories(image PUBLIC include)
 target_link_libraries(image
 	PUBLIC lain::math				# math::Vec2i in the public extent()
 	PUBLIC lain::meta				# meta::TypeList in pixelformat.h/color.h (public headers)
+	PRIVATE lain::log				# enforcement diagnostics (convert.cpp / enforce.cpp)
 	PRIVATE lain::warnings
 )
 

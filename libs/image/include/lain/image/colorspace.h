@@ -5,7 +5,7 @@ namespace lain::image
 	// The transfer / encoding a pixel's values carry — the color-space axis, tracked on an
 	// Image and *enforced* by space-sensitive ops. Deliberately SEPARATE from PixelFormat
 	// (which is layout only): sRGB and linear share a byte layout but not a meaning.
-	// Conversions are always explicit (image::toLinear / toSRGB) and update the tag — no op
+	// Conversions are always explicit (image::convert(img, ColorSpace)) and update the tag — no op
 	// auto-converts (round trips shed accuracy). Values name unambiguous standards; a
 	// custom/parametric curve is an op argument (image::gamma), never tracked here. Default
 	// is Unspecified: be explicit before a space-sensitive op, or it asserts.
@@ -18,7 +18,7 @@ namespace lain::image
 
 	// Whether an alpha-bearing pixel's color channels are premultiplied by alpha. Tracked
 	// on an Image and enforced by alpha-sensitive ops; meaningful only for formats that
-	// carry an alpha channel. Explicit image::premultiply / unpremultiply update the tag.
+	// carry an alpha channel. Explicit image::convert(img, AlphaMode) updates the tag.
 	// Default Unspecified — be explicit.
 	enum class AlphaMode
 	{
