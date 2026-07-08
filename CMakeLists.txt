@@ -70,6 +70,7 @@ endif()
 
 # ---- Libraries (lain::<name>) -----------------------------------------------
 add_subdirectory(libs/core)             # foundational std-only types (Time, Version)
+add_subdirectory(libs/memory)           # Buffer + aligned alloc seam (std-only, WORK.md M3)
 add_subdirectory(libs/log)              # spdlog-backed logging (lain::log)
 add_subdirectory(libs/string)           # fmt-backed format() + lain-type formatters
 add_subdirectory(libs/meta)             # enum reflection (magic_enum) — lain::meta
