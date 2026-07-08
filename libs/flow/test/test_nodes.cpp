@@ -8,6 +8,7 @@
 #include <lain/flow/example/gradientnode.h>
 #include <lain/flow/example/loadimagenode.h>
 #include <lain/flow/example/tintnode.h>
+#include <lain/flow/paramtypes.h>
 #include <lain/image/image.h>
 #include <lain/io/image/load.h>
 #include <lain/io/image/reader.h>
@@ -183,4 +184,25 @@ TEST_CASE("LoadImageNode emits an invalid image when the file can't be read", "[
 	const Port& out = graph.node(id).output(0);
 	REQUIRE(out.value().holds<lain::image::Image>());
 	REQUIRE_FALSE(out.value().get<lain::image::Image>().valid());
+}
+
+TEST_CASE("LoadImageNode's path is an editable FilePath param", "[flow]")
+{
+	using namespace lain::flow;
+	lain::io::image::readerRegistry().registerType<FakeReader>("fake");
+	const TempFile file("fake", {1, 2, 3});
+
+	Graph graph;
+	const NodeId id = graph.add<example::LoadImageNode>(); // empty default path
+	SerialScheduler{}.evaluate(graph, id);
+	REQUIRE_FALSE(graph.node(id).output(0).value().get<lain::image::Image>().valid());
+
+	// The adapter edits the path param (its only param) then marks the node dirty so the
+	// pull re-runs it — a clean node is skipped by evaluate (this is the edit contract).
+	graph.node(id).param(0).set<FilePath>(FilePath(file.path()));
+	graph.node(id).markDirty();
+	SerialScheduler{}.evaluate(graph, id);
+	const lain::image::Image& img = graph.node(id).output(0).value().get<lain::image::Image>();
+	REQUIRE(img.valid());
+	REQUIRE(img.width() == 3); // FakeReader makes a (byte-count)x1 image
 }
