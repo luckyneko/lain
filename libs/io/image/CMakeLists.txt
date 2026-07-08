@@ -6,6 +6,7 @@
 
 add_library(io-image STATIC
 	src/load.cpp
+	src/save.cpp
 )
 add_library(lain::io::image ALIAS io-image)
 

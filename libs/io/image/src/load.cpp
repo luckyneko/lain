@@ -1,31 +1,14 @@
 #include "lain/io/image/load.h"
 
+#include "formatkey.h" // formatKeyFromUri (shared with save.cpp)
+
 #include <lain/io/read.h>
 #include <lain/log/log.h>
 
-#include <algorithm>
-#include <cctype>
-#include <filesystem>
 #include <string>
 
 namespace lain::io::image
 {
-	// --- file-local helpers (named static, not an anonymous namespace) ----------
-
-	// The lowercase format key for a uri: its file extension without the leading dot,
-	// or empty when there is none. path::extension reads the last component's extension,
-	// so a scheme prefix ("file://dir/x.PNG") is harmless and the result here is "png".
-	static std::string formatKeyFromUri(std::string_view uri)
-	{
-		std::string ext = std::filesystem::path(uri).extension().string();
-		if (!ext.empty() && ext.front() == '.')
-			ext.erase(ext.begin());
-		std::transform(ext.begin(), ext.end(), ext.begin(),
-					   [](unsigned char c)
-					   { return static_cast<char>(std::tolower(c)); });
-		return ext;
-	}
-
 	lain::core::Factory<ImageReader>& readerRegistry()
 	{
 		static lain::core::Factory<ImageReader> registry;
