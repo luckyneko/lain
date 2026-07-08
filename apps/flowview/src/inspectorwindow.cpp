@@ -122,6 +122,7 @@ namespace flowview
 	bool InspectorWindow::onInit(app::Window& window)
 	{
 		m_guiCtx = std::make_unique<gui::Context>(window.app(), window);
+		registerBuiltinParamEditors(m_paramEditors);
 		return true;
 	}
 
@@ -293,10 +294,18 @@ namespace flowview
 		gui::SetNextWindowSize(math::Vec2f{320.0f, 320.0f}, ImGuiCond_FirstUseEver);
 		gui::Begin("Inspector");
 		gui::enumCombo("Preview size", m_previewSize); // labels from lain::meta::enums
+		bool paramEdited = false;
 		for (const flow::NodeId id : graph.topoOrder())
 		{
-			const flow::Node& node = graph.node(id);
+			flow::Node& node = graph.node(id); // non-const: params are edited below
 			gui::Text("[%llu] %s", static_cast<unsigned long long>(id.value()), node.name().c_str());
+
+			// Editable params, chosen by type via the registry (file field, drags, colour
+			// swatch). PushID(node) so same-named params on different nodes don't collide.
+			gui::PushID(static_cast<int>(id.value()));
+			for (flow::PortIndex pi = 0; pi < node.paramCount(); ++pi)
+				paramEdited |= m_paramEditors.render(node.param(pi));
+			gui::PopID();
 
 			auto port = [&](const char* tag, const flow::Port& p, bool output, flow::PortIndex index)
 			{
@@ -325,6 +334,14 @@ namespace flowview
 				port("out", node.output(i), true, i);
 		}
 		gui::End();
+
+		// A param edit re-runs the scene (a full run recomputes every node) and marks the
+		// previews for refresh next frame — the same path a canvas edit takes.
+		if (paramEdited)
+		{
+			appDelegate.reevaluate();
+			m_previewsDirty = true;
+		}
 
 		window.renderer().render([&](acm::CommandBuffer cmd, uint32_t)
 								 { m_guiCtx->render(cmd); });

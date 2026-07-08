@@ -7,6 +7,7 @@ add_executable(flowview
 	src/main.cpp
 	src/flowviewapp.cpp
 	src/inspectorwindow.cpp
+	src/parameditors.cpp
 	src/scene.cpp
 	src/dump.cpp
 )

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "parameditors.h"
+
 #include <lain/app/windowdelegate.h>
 #include <lain/flow/types.h> // PortIndex
 #include <lain/gui/context.h>
@@ -65,6 +67,7 @@ namespace flowview
 		void refreshPreviews(const lain::flow::Graph& graph);
 
 		std::unique_ptr<lain::gui::Context> m_guiCtx;
+		ParamEditors m_paramEditors;					 // type-keyed param editors (registered in onInit)
 		std::map<PinKey, lain::gui::Texture> m_previews; // one uploaded thumbnail per image port
 		bool m_previewsDirty = true;					 // rebuild previews on the next frame (init + after edits)
 		bool m_laidOut = false;							 // node canvas: seed node positions on the first frame
