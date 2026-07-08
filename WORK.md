@@ -377,9 +377,12 @@ CPU image *for display only*; not a node/compute op), and needs the live driver 
 `Image`'s internal `std::vector` → `Buffer` swap is an internal follow-on (callers use
 `data()`/`size()`), not a blocker.
 
-**Deferred behind these seams:** `remote`/`s3` IO schemes; `lain::io::video` / `audio` +
-`Timecode` (Tier C item 9); the memory pool/arena + `BufferView`/`SharedBuffer`; magic-byte
-format sniffing (extension-keyed for now); thorax adoption.
+**Deferred behind these seams:** `remote`/`s3` IO schemes; a **`Stream` transport** — an
+incremental/seekable read (chunked, possibly mmap-/socket-backed) peer to `read` for video and
+large/network assets, since `read → Buffer` is a whole-asset slurp that video can't use;
+`lain::io::video` / `audio` + `Timecode` (Tier C item 9); the memory pool/arena +
+`BufferView`/`SharedBuffer`; magic-byte format sniffing (extension-keyed for now); thorax
+adoption.
 
 ## Backlog (deferred — don't build speculatively)
 

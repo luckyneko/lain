@@ -170,7 +170,9 @@ both sit behind service-shaped seams. See [ADR-0004](docs/adr/0004-static-linkin
 
 - **IO scheme** — a **byte-transport backend keyed by URI scheme** (`local` now; `remote`/`s3`
   later). `lain::io::read(uri) → Buffer` dispatches to one. **Media-agnostic** — `io` never
-  decodes; it only moves bytes.
+  decodes; it only moves bytes. `read` is a **whole-asset** read (the resource in one `Buffer`); a
+  streaming **Stream** transport (incremental/seekable, for video and large/network assets) is a
+  deferred peer to `read`, not a change to it. _Avoid_: loader (that's a Reader).
 
 - **Reader** / **Writer** — a **Reader** decodes a `Buffer` of one format into a typed asset; a
   **Writer** encodes the asset back to bytes. One per format, holding both directions (they share
