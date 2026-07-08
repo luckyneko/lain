@@ -16,7 +16,11 @@ option(LAIN_IO_IMAGE_TIFF "Build the TIFF image codec plugin (libtiff)" ON)
 if(LAIN_IO_IMAGE_TIFF)
 	add_subdirectory(tiff)
 endif()
-# the jpeg satellite joins here later (WORK.md M3).
+
+option(LAIN_IO_IMAGE_JPEG "Build the JPEG image codec plugin (stb_image)" ON)
+if(LAIN_IO_IMAGE_JPEG)
+	add_subdirectory(jpeg)
+endif()
 
 # Turn the discovered codec list into the aggregator's #includes and registerCodec()
 # calls. Each entry is both the link target and the namespace: "lain::io::image::png" ->

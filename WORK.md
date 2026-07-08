@@ -335,10 +335,12 @@ and the "Loading" section of `CONTEXT.md`):
   need *real* codecs because stb can't honor the `U16` `ChannelType`, and both FetchContent
   cleanly (libpng + zlib, libtiff), so they prove the plugin + aggregator machinery on cooperative
   libs. **libjpeg-turbo refuses `add_subdirectory`** (it hard-errors, demanding
-  `ExternalProject_Add`), so jpeg comes last and its integration is an open decision:
-  `ExternalProject_Add(libjpeg-turbo)` (from source, more machinery) **vs** stb_image just for jpeg
-  (trivial to vendor, and jpeg is 8-bit so the U16 objection doesn't apply — only quality/perf is
-  lower). Prebuilt binaries rejected (cross-platform×arch fights from-source reproducibility).
+  `ExternalProject_Add`), so jpeg came last and uses **stb_image** (resolved): jpeg is 8-bit so
+  the U16 objection doesn't apply, and stb vendors trivially (single header, no build system)
+  where turbojpeg would need the repo's only `ExternalProject_Add`. Speed/quality is below
+  turbojpeg but adequate; a turbojpeg swap can replace `JpegReader` behind the same seam if ever
+  needed (turbojpeg does support 16-bit in lossless mode — niche). Prebuilt binaries rejected
+  (cross-platform×arch fights from-source reproducibility).
 - **Codec format policy: documented lossless expansion, honest tags.** A reader PRESERVES any
   source format lain represents natively (RGB/RGBA/Gray/**GrayAlpha** at 8/16-bit — GrayAlpha was
   added to `lain::image` for this) and never silently changes it. Formats lain can't hold are
