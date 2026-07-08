@@ -51,8 +51,8 @@ namespace flowview
 		// The gui-mode scene, held by unique_ptr so onStop can release it (and its
 		// node-owned payloads) explicitly, before the window/device teardown.
 		std::unique_ptr<lain::flow::Graph> m_graph;
-		lain::flow::NodeId m_textureNode{};		 // the source the scene is pulled from
-		lain::flow::SerialScheduler m_scheduler; // pull-evaluates the scene (no threads needed)
+		lain::flow::NodeId m_textureNode{};					 // the source the scene is pulled from
+		lain::flow::SerialScheduler m_scheduler;			 // pull-evaluates the scene (no threads needed)
 		lain::core::Factory<lain::flow::Node> m_nodeFactory; // node-type palette
 		InspectorWindow m_window;							 // gui-mode inspector
 	};

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <magic_enum/magic_enum.hpp>
-
 #include <map>
 #include <optional>
 #include <string>

@@ -21,7 +21,7 @@ namespace flowview
 		// creator captures only plain construction values — no device, no std::ref.
 		factory.registerType<flow::example::GradientNode>(kGradientKey, size, size);
 		factory.registerType<flow::example::TintNode>(kTintKey, 1.0f, 0.5f, 0.5f); // keep R, halve G/B
-		factory.registerType<flow::example::BlurNode>(kBlurKey, 2, 1.5f);		  // soft 5x5 Gaussian
+		factory.registerType<flow::example::BlurNode>(kBlurKey, 2, 1.5f);		   // soft 5x5 Gaussian
 	}
 
 	flow::NodeId buildExampleScene(flow::Graph& graph, const core::Factory<flow::Node>& factory)

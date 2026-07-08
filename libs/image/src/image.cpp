@@ -10,9 +10,9 @@ namespace lain::image
 	// guarded reorder-proof at their definitions). Checked here, the one TU where magic_enum
 	// is already in scope, so the widely-included headers stay magic_enum-free.
 	static_assert(detail::channelTypes::size == lain::meta::enums::count<ChannelType>(),
-		"channelTypes must have one entry per ChannelType");
+				  "channelTypes must have one entry per ChannelType");
 	static_assert(detail::colorList::size == lain::meta::enums::count<PixelFormat>(),
-		"colorList must have one Color per PixelFormat");
+				  "colorList must have one Color per PixelFormat");
 
 	std::uint32_t Image::bytesPerPixel(PixelFormat format)
 	{

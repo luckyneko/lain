@@ -34,13 +34,15 @@ namespace lain::image
 	void visit(Image& img, F&& fn)
 	{
 		detail::colorList::visitAt(static_cast<std::size_t>(img.pixelFormat()),
-			[&](auto tag) { fn(img.as<typename decltype(tag)::type>()); });
+								   [&](auto tag)
+								   { fn(img.as<typename decltype(tag)::type>()); });
 	}
 
 	template <typename F>
 	void visit(const Image& img, F&& fn)
 	{
 		detail::colorList::visitAt(static_cast<std::size_t>(img.pixelFormat()),
-			[&](auto tag) { fn(img.as<typename decltype(tag)::type>()); });
+								   [&](auto tag)
+								   { fn(img.as<typename decltype(tag)::type>()); });
 	}
 } // namespace lain::image

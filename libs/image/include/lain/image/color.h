@@ -33,9 +33,12 @@ namespace lain::image
 	struct Color : ColorBase<F>
 	{
 		using Base = ColorBase<F>;
-		using Base::Base;							// inherit GLM's constructors
-		constexpr Color() = default;				// ...and keep a trivial default
-		constexpr Color(const Base& v) : Base(v) {} // re-wrap a GLM op result
+		using Base::Base;			 // inherit GLM's constructors
+		constexpr Color() = default; // ...and keep a trivial default
+		constexpr Color(const Base& v)
+			: Base(v)
+		{
+		} // re-wrap a GLM op result
 
 		static constexpr PixelFormat format = F; // the format this Color realizes
 	};

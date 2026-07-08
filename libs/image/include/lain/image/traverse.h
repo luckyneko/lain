@@ -1,7 +1,7 @@
 #pragma once
 
-#include "lain/image/color.h" // Color typedefs (the visit dispatch table) + Image::as<C>
-#include "lain/image/imageview.h"  // ImageView / ConstImageView
+#include "lain/image/color.h"	  // Color typedefs (the visit dispatch table) + Image::as<C>
+#include "lain/image/imageview.h" // ImageView / ConstImageView
 
 #include <algorithm>
 #include <cstddef>

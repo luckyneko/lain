@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lain/image/image.h"		   // Image (the single owner these view; Image::as<C> in imageview.inl)
+#include "lain/image/image.h"		  // Image (the single owner these view; Image::as<C> in imageview.inl)
 #include "lain/image/pixeliterator.h" // PixelIterator — begin()/end()
 
 #include <cstddef>

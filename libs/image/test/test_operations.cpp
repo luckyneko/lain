@@ -50,7 +50,7 @@ TEST_CASE("gamma applies a power curve and unsets the color space", "[ops]")
 	const Image out = gamma(img, 2.0f);
 	REQUIRE(out.colorSpace() == ColorSpace::Unspecified);
 	const ColorRGBf p = out.as<ColorRGBf>()(0, 0);
-	REQUIRE(p.r == Approx(0.25f));   // 0.5^2
+	REQUIRE(p.r == Approx(0.25f));	 // 0.5^2
 	REQUIRE(p.g == Approx(0.0625f)); // 0.25^2
 }
 
@@ -75,8 +75,8 @@ TEST_CASE("gaussianKernel is normalized and symmetric", "[ops]")
 	for (const float w : k.weights)
 		sum += w;
 	REQUIRE(sum == Approx(1.0f));
-	REQUIRE(k.at(-1, 0) == Approx(k.at(1, 0)));  // symmetric
-	REQUIRE(k.at(0, 0) > k.at(1, 0));			 // center heaviest
+	REQUIRE(k.at(-1, 0) == Approx(k.at(1, 0))); // symmetric
+	REQUIRE(k.at(0, 0) > k.at(1, 0));			// center heaviest
 }
 
 TEST_CASE("convolve with an identity kernel is a no-op", "[ops]")
@@ -143,7 +143,7 @@ TEST_CASE("crop extracts a sub-region", "[ops]")
 	const Image c = crop(img, 1, 1, 2, 2);
 	REQUIRE(c.width() == 2);
 	REQUIRE(c.height() == 2);
-	REQUIRE(c.as<ColorGray8>()(0, 0)[0] == 5);  // src (1,1) = 1*4+1
+	REQUIRE(c.as<ColorGray8>()(0, 0)[0] == 5);	// src (1,1) = 1*4+1
 	REQUIRE(c.as<ColorGray8>()(1, 1)[0] == 10); // src (2,2) = 2*4+2
 }
 

@@ -23,9 +23,9 @@ namespace lain::gui
 	{
 		ImGuiContext* ctx{nullptr};
 		ImNodesContext* nodesCtx{nullptr};
-		std::string iniFilename;					 // kept alive: ImGui stores io.IniFilename by pointer
-		VkFormat colorFormat{VK_FORMAT_UNDEFINED};	 // kept alive: imgui holds pColorAttachmentFormats by pointer
-		acm::Device* device{nullptr};				 // the shared device, for upload()
+		std::string iniFilename;				   // kept alive: ImGui stores io.IniFilename by pointer
+		VkFormat colorFormat{VK_FORMAT_UNDEFINED}; // kept alive: imgui holds pColorAttachmentFormats by pointer
+		acm::Device* device{nullptr};			   // the shared device, for upload()
 	};
 
 	Context::Context(app::Application& app, app::Window& window, std::string iniFilename)

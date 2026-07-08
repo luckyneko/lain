@@ -1,8 +1,7 @@
 #pragma once
 
-#include <lain/meta/traits.h> // lain::meta::has_to_string
-
 #include <fmt/format.h>
+#include <lain/meta/traits.h> // lain::meta::has_to_string
 
 #include <string>
 #include <type_traits>

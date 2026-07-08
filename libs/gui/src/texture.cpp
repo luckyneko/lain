@@ -1,10 +1,8 @@
 #include "lain/gui/texture.h"
 
-#include <lain/image/image.h>
-
-#include <vulkan/vulkan.h> // VkDescriptorSet — the ImGui descriptor behind an ImTextureID
-
 #include <imgui_impl_vulkan.h>
+#include <lain/image/image.h>
+#include <vulkan/vulkan.h> // VkDescriptorSet — the ImGui descriptor behind an ImTextureID
 
 #include <utility>
 

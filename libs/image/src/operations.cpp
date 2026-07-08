@@ -23,11 +23,11 @@ namespace lain::image
 	static bool ensureBlendable(const Image& src, const char* op)
 	{
 		return lain::log::ensure(src.colorSpace() == ColorSpace::Linear,
-				   "image::{} is a value-blending op and requires ColorSpace::Linear (got {})",
-				   op, lain::meta::enums::name(src.colorSpace()))
-			&& lain::log::ensure(alphaOk(src, AlphaMode::Premultiplied),
-				   "image::{} blends alpha and requires AlphaMode::Premultiplied (got {})",
-				   op, lain::meta::enums::name(src.alphaMode()));
+								 "image::{} is a value-blending op and requires ColorSpace::Linear (got {})",
+								 op, lain::meta::enums::name(src.colorSpace())) &&
+			   lain::log::ensure(alphaOk(src, AlphaMode::Premultiplied),
+								 "image::{} blends alpha and requires AlphaMode::Premultiplied (got {})",
+								 op, lain::meta::enums::name(src.alphaMode()));
 	}
 
 	static int clampInt(int v, int lo, int hi)
@@ -108,7 +108,8 @@ namespace lain::image
 			return {};
 		Image dst = src;
 		visit(dst, [factor](auto v)
-			{ mapColorChannels(v, [factor](float c) { return c * factor; }); });
+			  { mapColorChannels(v, [factor](float c)
+								 { return c * factor; }); });
 		return dst;
 	}
 
@@ -117,12 +118,13 @@ namespace lain::image
 		if (!src.valid())
 			return {};
 		if (!lain::log::ensure(alphaOk(src, AlphaMode::Straight),
-				"image::contrast requires AlphaMode::Straight (got {})",
-				lain::meta::enums::name(src.alphaMode())))
+							   "image::contrast requires AlphaMode::Straight (got {})",
+							   lain::meta::enums::name(src.alphaMode())))
 			return {};
 		Image dst = src;
 		visit(dst, [factor](auto v)
-			{ mapColorChannels(v, [factor](float c) { return (c - 0.5f) * factor + 0.5f; }); });
+			  { mapColorChannels(v, [factor](float c)
+								 { return (c - 0.5f) * factor + 0.5f; }); });
 		return dst;
 	}
 
@@ -131,13 +133,14 @@ namespace lain::image
 		if (!src.valid())
 			return {};
 		if (!lain::log::ensure(alphaOk(src, AlphaMode::Straight),
-				"image::gamma requires AlphaMode::Straight (got {})",
-				lain::meta::enums::name(src.alphaMode())))
+							   "image::gamma requires AlphaMode::Straight (got {})",
+							   lain::meta::enums::name(src.alphaMode())))
 			return {};
 		Image dst = src;
 		dst.setColorSpace(ColorSpace::Unspecified); // a custom gamma is not a named standard
 		visit(dst, [exponent](auto v)
-			{ mapColorChannels(v, [exponent](float c) { return math::pow(c, exponent); }); });
+			  { mapColorChannels(v, [exponent](float c)
+								 { return math::pow(c, exponent); }); });
 		return dst;
 	}
 
@@ -147,7 +150,7 @@ namespace lain::image
 			return {};
 		Image dst = src;
 		visit(dst, [lo, hi](auto v)
-			{
+			  {
 				using C = std::remove_reference_t<decltype(v(0, 0))>;
 				using T = typename C::value_type;
 				constexpr math::length_t ch = descriptor(C::format).channelCount();
@@ -158,8 +161,7 @@ namespace lain::image
 						const float c = detail::toUnit<T>(px[i]);
 						px[i] = detail::fromUnit<T>(c < lo ? lo : (c > hi ? hi : c));
 					}
-				}
-			});
+				} });
 		return dst;
 	}
 
@@ -173,7 +175,7 @@ namespace lain::image
 			return {};
 		Image dst(src.width(), src.height(), src.pixelFormat(), src.colorSpace(), src.alphaMode());
 		visit(src, [&](auto sv)
-			{
+			  {
 				using C = std::remove_const_t<std::remove_reference_t<decltype(sv(0, 0))>>;
 				using T = typename C::value_type;
 				constexpr math::length_t ch = descriptor(C::format).channelCount();
@@ -201,8 +203,7 @@ namespace lain::image
 						for (math::length_t c = 0; c < ch; ++c)
 							dp[c] = detail::fromUnit<T>(acc[c]);
 					}
-				}
-			});
+				} });
 		return dst;
 	}
 
@@ -222,7 +223,7 @@ namespace lain::image
 			return {};
 		Image dst(extent.x, extent.y, src.pixelFormat(), src.colorSpace(), src.alphaMode());
 		visit(src, [&](auto sv)
-			{
+			  {
 				using C = std::remove_const_t<std::remove_reference_t<decltype(sv(0, 0))>>;
 				auto dv = dst.as<C>();
 				const float sxScale = static_cast<float>(sv.width()) / extent.x;
@@ -231,8 +232,7 @@ namespace lain::image
 				{
 					for (int x = 0; x < extent.x; ++x)
 						dv(x, y) = samplePixel(sv, (x + 0.5f) * sxScale, (y + 0.5f) * syScale, interp);
-				}
-			});
+				} });
 		return dst;
 	}
 
@@ -243,12 +243,12 @@ namespace lain::image
 		if (!src.valid())
 			return {};
 		if (!lain::log::ensure(x >= 0 && y >= 0 && w > 0 && h > 0 && x + w <= src.width() && y + h <= src.height(),
-				"image::crop rect ({},{} {}x{}) is out of bounds for a {}x{} image",
-				x, y, w, h, src.width(), src.height()))
+							   "image::crop rect ({},{} {}x{}) is out of bounds for a {}x{} image",
+							   x, y, w, h, src.width(), src.height()))
 			return {};
 		Image dst(w, h, src.pixelFormat(), src.colorSpace(), src.alphaMode());
 		visit(src, [&](auto sv)
-			{
+			  {
 				using C = std::remove_const_t<std::remove_reference_t<decltype(sv(0, 0))>>;
 				auto dv = dst.as<C>();
 				const auto window = sv.subview(x, y, w, h);
@@ -256,8 +256,7 @@ namespace lain::image
 				{
 					for (int xx = 0; xx < w; ++xx)
 						dv(xx, yy) = window(xx, yy);
-				}
-			});
+				} });
 		return dst;
 	}
 
@@ -273,7 +272,7 @@ namespace lain::image
 		const int dh = swap ? src.width() : src.height();
 		Image dst(dw, dh, src.pixelFormat(), src.colorSpace(), src.alphaMode());
 		visit(src, [&](auto sv)
-			{
+			  {
 				using C = std::remove_const_t<std::remove_reference_t<decltype(sv(0, 0))>>;
 				auto dv = dst.as<C>();
 				const int w = sv.width();
@@ -301,8 +300,7 @@ namespace lain::image
 						}
 						dv(nx, ny) = sv(x, y);
 					}
-				}
-			});
+				} });
 		return dst;
 	}
 
@@ -320,7 +318,7 @@ namespace lain::image
 		const int dh = static_cast<int>(math::ceil(math::abs(sw * sn) + math::abs(sh * cs)));
 		Image dst(dw, dh, src.pixelFormat(), src.colorSpace(), src.alphaMode()); // zero-filled outside
 		visit(src, [&](auto sv)
-			{
+			  {
 				using C = std::remove_const_t<std::remove_reference_t<decltype(sv(0, 0))>>;
 				auto dv = dst.as<C>();
 				const float scx = sw * 0.5f;
@@ -338,8 +336,7 @@ namespace lain::image
 						if (sxf >= 0.0f && sxf < sw && syf >= 0.0f && syf < sh)
 							dv(x, y) = samplePixel(sv, sxf, syf, interp);
 					}
-				}
-			});
+				} });
 		return dst;
 	}
 } // namespace lain::image

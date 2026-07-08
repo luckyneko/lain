@@ -3,7 +3,6 @@
 #include "lain/meta/typelist.h"
 
 #include <catch2/catch_test_macros.hpp>
-
 #include <cstdint>
 #include <type_traits>
 
@@ -39,7 +38,7 @@ TEST_CASE("visitAt dispatches a runtime index to the compile-time type", "[typel
 	{
 		std::size_t seen = 0;
 		List::visitAt(i, [&](auto tag)
-			{ seen = sizeof(typename decltype(tag)::type); });
+					  { seen = sizeof(typename decltype(tag)::type); });
 		REQUIRE(seen == List::sizeAt(i));
 	}
 }
@@ -48,6 +47,6 @@ TEST_CASE("visitAt selects exactly the matching type", "[typelist]")
 {
 	bool isFloat = false;
 	List::visitAt(2, [&](auto tag)
-		{ isFloat = std::is_same_v<typename decltype(tag)::type, float>; });
+				  { isFloat = std::is_same_v<typename decltype(tag)::type, float>; });
 	REQUIRE(isFloat);
 }

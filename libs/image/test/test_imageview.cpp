@@ -4,7 +4,6 @@
 #include "lain/image/imageview.h"
 
 #include <catch2/catch_test_macros.hpp>
-
 #include <cstdint>
 
 using namespace lain::image;

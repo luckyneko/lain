@@ -16,7 +16,8 @@ namespace lain::core
 	bool Factory<Base>::registerType(std::string key, Args&&... args)
 	{
 		static_assert(std::is_base_of<Base, T>::value, "T must derive from Base");
-		return registerType(std::move(key), [args...]() { return std::make_unique<T>(args...); });
+		return registerType(std::move(key), [args...]()
+							{ return std::make_unique<T>(args...); });
 	}
 
 	template <typename Base>

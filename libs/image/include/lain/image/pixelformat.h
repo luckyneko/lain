@@ -60,9 +60,9 @@ namespace lain::image
 	// per format, so a new format is one line in descriptor().
 	struct PixelFormatDescriptor
 	{
-		PixelFormat format;		  // the format this describes
-		ColorModel model;		  // channel set + order
-		ChannelType channelType;  // per-channel storage
+		PixelFormat format;		 // the format this describes
+		ColorModel model;		 // channel set + order
+		ChannelType channelType; // per-channel storage
 
 		constexpr std::uint8_t channelCount() const // 1 (Gray), 3 (RGB), 4 (RGBA)
 		{

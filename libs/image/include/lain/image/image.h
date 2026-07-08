@@ -32,7 +32,7 @@ namespace lain::image
 	public:
 		Image() = default;
 		Image(int width, int height, PixelFormat format = PixelFormat::RGBA8,
-			ColorSpace colorSpace = ColorSpace::Unspecified, AlphaMode alphaMode = AlphaMode::Unspecified);
+			  ColorSpace colorSpace = ColorSpace::Unspecified, AlphaMode alphaMode = AlphaMode::Unspecified);
 
 		lain::math::Vec2i extent() const { return m_extent; }
 		int width() const { return m_extent.x; }

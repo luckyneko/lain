@@ -66,8 +66,8 @@ namespace lain::image
 		if (toGray && src.descriptor().channelCount() >= 3)
 		{
 			if (!lain::log::ensure(src.colorSpace() == ColorSpace::Linear,
-					"image::convert to Gray uses luminance and requires ColorSpace::Linear (got {})",
-					lain::meta::enums::name(src.colorSpace())))
+								   "image::convert to Gray uses luminance and requires ColorSpace::Linear (got {})",
+								   lain::meta::enums::name(src.colorSpace())))
 				return {};
 		}
 
@@ -78,13 +78,10 @@ namespace lain::image
 
 		Image dst(src.width(), src.height(), dstFormat, src.colorSpace(), dstAlpha);
 		visit(src, [&](auto sv)
-			{
-				visit(dst, [&](auto dv)
-					{
+			  { visit(dst, [&](auto dv)
+					  {
 						using DstC = std::remove_reference_t<decltype(dv(0, 0))>;
-						transform(sv, dv, [](const auto& p) { return convert<DstC>(p); });
-					});
-			});
+						transform(sv, dv, [](const auto& p) { return convert<DstC>(p); }); }); });
 		return dst;
 	}
 
@@ -95,13 +92,13 @@ namespace lain::image
 		if (!src.valid())
 			return {};
 		if (!lain::log::ensure(dstSpace != ColorSpace::Unspecified,
-				"image::convert target ColorSpace must not be Unspecified"))
+							   "image::convert target ColorSpace must not be Unspecified"))
 			return {};
 
 		const ColorSpace srcSpace = src.colorSpace();
 		if (!lain::log::ensure(srcSpace != ColorSpace::Unspecified,
-				"image::convert to {} needs a known source ColorSpace",
-				lain::meta::enums::name(dstSpace)))
+							   "image::convert to {} needs a known source ColorSpace",
+							   lain::meta::enums::name(dstSpace)))
 			return {};
 
 		if (srcSpace == dstSpace) // already there
@@ -110,11 +107,13 @@ namespace lain::image
 		Image dst = src;
 		dst.setColorSpace(dstSpace);
 		if (srcSpace == ColorSpace::sRGB && dstSpace == ColorSpace::Linear)
-			visit(dst, [](auto v) { mapColorChannels(v, srgbToLinear); });
+			visit(dst, [](auto v)
+				  { mapColorChannels(v, srgbToLinear); });
 		else if (srcSpace == ColorSpace::Linear && dstSpace == ColorSpace::sRGB)
-			visit(dst, [](auto v) { mapColorChannels(v, linearToSrgb); });
+			visit(dst, [](auto v)
+				  { mapColorChannels(v, linearToSrgb); });
 		else if (!lain::log::ensure(false, "image::convert between {} and {} is not supported",
-					 lain::meta::enums::name(srcSpace), lain::meta::enums::name(dstSpace)))
+									lain::meta::enums::name(srcSpace), lain::meta::enums::name(dstSpace)))
 			return {};
 		return dst;
 	}
@@ -128,13 +127,13 @@ namespace lain::image
 		if (!src.descriptor().hasAlpha()) // no alpha channel -> nothing to do
 			return src;
 		if (!lain::log::ensure(dstAlpha != AlphaMode::Unspecified,
-				"image::convert target AlphaMode must not be Unspecified"))
+							   "image::convert target AlphaMode must not be Unspecified"))
 			return {};
 
 		const AlphaMode srcAlpha = src.alphaMode();
 		if (!lain::log::ensure(srcAlpha != AlphaMode::Unspecified,
-				"image::convert to {} needs a known source AlphaMode",
-				lain::meta::enums::name(dstAlpha)))
+							   "image::convert to {} needs a known source AlphaMode",
+							   lain::meta::enums::name(dstAlpha)))
 			return {};
 
 		if (srcAlpha == dstAlpha) // already there
@@ -143,9 +142,11 @@ namespace lain::image
 		Image dst = src;
 		dst.setAlphaMode(dstAlpha);
 		if (dstAlpha == AlphaMode::Premultiplied)
-			visit(dst, [](auto v) { premultiplyView(v); });
+			visit(dst, [](auto v)
+				  { premultiplyView(v); });
 		else
-			visit(dst, [](auto v) { unpremultiplyView(v); });
+			visit(dst, [](auto v)
+				  { unpremultiplyView(v); });
 		return dst;
 	}
 } // namespace lain::image
