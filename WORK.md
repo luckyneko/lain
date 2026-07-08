@@ -377,6 +377,18 @@ CPU image *for display only*; not a node/compute op), and needs the live driver 
 `Image`'s internal `std::vector` → `Buffer` swap is an internal follow-on (callers use
 `data()`/`size()`), not a blocker.
 
+**Write path — a dedicated pass after reads.** M3's consumer only *loads*, so the read vertical
+(memory → io → io::image → codec plugins → `LoadImageNode`) lands first. Writing is the symmetric
+pass, taken up once an `ImageWriteNode` gives it a caller: `io::write(uri, Buffer)` + an
+`ImageWriter` interface + a `Factory<ImageWriter>` registry + a `save(uri, Image)` facade +
+per-codec encoders (added to each *existing* plugin — the codec dep + target are already there, so
+only the encode code is new; encode is a separate API surface from decode regardless of timing).
+Deferring it keeps the milestone honest for a modest re-entry cost. The `ImageWriteNode` also
+surfaces a **flow-level** question worth its own design pass — how a node carries fixed **config
+settings** (jpeg quality, png compression). The example nodes take these as constructor args today
+(`BlurNode(2, 1.5f)`), but a general surface to expose / edit / serialise node parameters is
+unbuilt; grill it when the write node needs it, not inside a codec commit.
+
 **Deferred behind these seams:** `remote`/`s3` IO schemes; a **`Stream` transport** — an
 incremental/seekable read (chunked, possibly mmap-/socket-backed) peer to `read` for video and
 large/network assets, since `read → Buffer` is a whole-asset slurp that video can't use;
