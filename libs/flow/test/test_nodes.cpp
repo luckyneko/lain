@@ -6,12 +6,19 @@
 
 #include <lain/flow/example/blurnode.h>
 #include <lain/flow/example/gradientnode.h>
+#include <lain/flow/example/loadimagenode.h>
 #include <lain/flow/example/tintnode.h>
 #include <lain/image/image.h>
+#include <lain/io/image/load.h>
+#include <lain/io/image/reader.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <vector>
 
 struct Rgba
 {
@@ -110,4 +117,70 @@ TEST_CASE("BlurNode runs the op catalog through an edge: gradient -> blur", "[fl
 	CHECK(br.r < 255);
 	CHECK(br.r > 245);
 	CHECK(br.a == 255);
+}
+
+// A fake image reader for the LoadImageNode tests: decodes to a 1-row RGBA8 image whose
+// width is the input byte count, so the node's success path can be checked without pulling
+// a real codec into the flow tests. Registered under a private extension.
+class FakeReader : public lain::io::image::ImageReader
+{
+public:
+	lain::image::Image decode(const lain::memory::Buffer& bytes) const override
+	{
+		return lain::image::Image(static_cast<int>(bytes.size()), 1, lain::image::PixelFormat::RGBA8);
+	}
+};
+
+// Writes bytes to a uniquely-named temp file (given extension) and removes it on destruction.
+class TempFile
+{
+public:
+	TempFile(const std::string& extension, const std::vector<std::uint8_t>& bytes)
+	{
+		static int counter = 0;
+		m_path = std::filesystem::temp_directory_path() /
+				 ("lain_loadnode_" + std::to_string(counter++) + "." + extension);
+		std::ofstream out(m_path, std::ios::binary | std::ios::trunc);
+		out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+	}
+	~TempFile()
+	{
+		std::error_code ec;
+		std::filesystem::remove(m_path, ec);
+	}
+	TempFile(const TempFile&) = delete;
+	TempFile& operator=(const TempFile&) = delete;
+	std::string path() const { return m_path.string(); }
+
+private:
+	std::filesystem::path m_path;
+};
+
+TEST_CASE("LoadImageNode loads a file and emits the decoded image", "[flow]")
+{
+	using namespace lain::flow;
+	lain::io::image::readerRegistry().registerType<FakeReader>("fake");
+	const TempFile file("fake", {1, 2, 3, 4, 5}); // 5 bytes -> FakeReader makes a 5x1 image
+
+	Graph graph;
+	const NodeId id = graph.add<example::LoadImageNode>(file.path());
+	SerialScheduler{}.evaluate(graph, id);
+
+	const Port& out = graph.node(id).output(0);
+	REQUIRE(out.value().holds<lain::image::Image>());
+	const lain::image::Image& img = out.value().get<lain::image::Image>();
+	REQUIRE(img.valid());
+	REQUIRE(img.width() == 5);
+}
+
+TEST_CASE("LoadImageNode emits an invalid image when the file can't be read", "[flow]")
+{
+	using namespace lain::flow;
+	Graph graph;
+	const NodeId id = graph.add<example::LoadImageNode>("/no/such/file.fake");
+	SerialScheduler{}.evaluate(graph, id);
+
+	const Port& out = graph.node(id).output(0);
+	REQUIRE(out.value().holds<lain::image::Image>());
+	REQUIRE_FALSE(out.value().get<lain::image::Image>().valid());
 }

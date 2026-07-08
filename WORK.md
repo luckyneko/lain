@@ -309,7 +309,13 @@ The viewer became an editor. Landed in order:
 Preview descriptors for deleted nodes are reclaimed via `lain::gui::Context::releaseImage`
 (the inspector prunes its texture cache after each edit).
 
-## Milestone 3 — file loading (planned)
+## Milestone 3 — file loading
+
+**Status:** the **read vertical is done and cli-verified** — `lain::memory` (Buffer) → `lain::io`
+(`read → Buffer`) → `lain::io::image` (reader registry + `load` facade) → the **png / tiff / jpeg**
+codec plugins (build-discovered aggregator) → `flow-example::LoadImageNode`. `flowview --headless
+--image <file>` loads a real PNG/JPEG/TIFF through the node and dumps its extent + format + corner
+pixels. Remaining: the gui-mode thumbnail follow-on, then the write pass (see below).
 
 **Driving consumer:** a `flow` node that loads a *real* image file off disk and shows it in
 `flowview` — the first source that isn't synthetic. That one goal is what pulls FileIO and an

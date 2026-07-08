@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <ostream>
 #include <sstream>
 #include <string>
@@ -15,17 +16,47 @@ namespace flowview
 {
 	using namespace lain::flow;
 
-	// One pixel of an RGBA8 buffer as "rgba(r,g,b,a)". Byte order is [R, G, B, A].
-	static std::string pixel(const std::uint8_t* px, std::size_t texel)
+	// One texel of any PixelFormat as "(c0,c1,...)", read per the format's descriptor —
+	// U8 as an int, U16 as its value, F32 as a float — so a loaded RGB8/Gray16/etc. image
+	// dumps correctly, not just the RGBA8 the gradient scene produces.
+	static std::string pixel(const lain::image::Image& img, std::size_t texel)
 	{
-		const std::size_t i = texel * 4;
+		const auto desc = img.descriptor();
+		const std::uint8_t* base = img.data() + texel * desc.bytesPerPixel();
 		std::ostringstream s;
-		s << "rgba(" << int(px[i]) << ',' << int(px[i + 1]) << ',' << int(px[i + 2]) << ',' << int(px[i + 3]) << ')';
+		s << '(';
+		for (int c = 0; c < desc.channelCount(); ++c)
+		{
+			if (c != 0)
+				s << ',';
+			const std::uint8_t* p = base + static_cast<std::size_t>(c) * desc.bytesPerChannel();
+			switch (desc.channelType)
+			{
+				case lain::image::ChannelType::U8:
+					s << int(*p);
+					break;
+				case lain::image::ChannelType::U16:
+				{
+					std::uint16_t v;
+					std::memcpy(&v, p, sizeof(v));
+					s << v;
+					break;
+				}
+				case lain::image::ChannelType::F32:
+				{
+					float v;
+					std::memcpy(&v, p, sizeof(v));
+					s << v;
+					break;
+				}
+			}
+		}
+		s << ')';
 		return s.str();
 	}
 
-	// A lain::image::Image port value: its extent (via toString) plus its top-left /
-	// bottom-right pixels, read straight from the CPU buffer — no device.
+	// A lain::image::Image port value: its extent + format (via toString) plus its top-left
+	// / bottom-right pixels, read straight from the CPU buffer — no device.
 	static std::string imageLabel(const lain::image::Image& img)
 	{
 		if (!img.valid())
@@ -33,7 +64,7 @@ namespace flowview
 		std::ostringstream s;
 		s << img.toString();
 		const std::size_t count = img.pixelCount();
-		s << " TL=" << pixel(img.data(), 0) << " BR=" << pixel(img.data(), count - 1);
+		s << " TL=" << pixel(img, 0) << " BR=" << pixel(img, count - 1);
 		return s.str();
 	}
 

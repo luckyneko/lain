@@ -7,6 +7,7 @@ add_library(flow-example STATIC
 	src/gradientnode.cpp
 	src/tintnode.cpp
 	src/blurnode.cpp
+	src/loadimagenode.cpp
 )
 add_library(lain::flow-example ALIAS flow-example)
 
@@ -14,5 +15,5 @@ target_compile_features(flow-example PUBLIC cxx_std_17)
 target_include_directories(flow-example PUBLIC include)
 target_link_libraries(flow-example
 	PUBLIC lain::flow lain::image
-	PRIVATE lain::warnings
+	PRIVATE lain::io::image lain::warnings # LoadImageNode uses io::image::load (impl only)
 )

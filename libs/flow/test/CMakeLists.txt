@@ -19,6 +19,7 @@ target_compile_features(test-flow PRIVATE cxx_std_17)
 target_link_libraries(test-flow PRIVATE
 	lain::flow
 	lain::flow-example
+	lain::io::image # the LoadImageNode tests register a fake reader / call readerRegistry()
 	lain::task
 	archimedes
 	lain::warnings

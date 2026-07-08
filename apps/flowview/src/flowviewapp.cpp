@@ -5,7 +5,9 @@
 
 #include <lain/app/application.h>
 #include <lain/app/window.h>
+#include <lain/flow/example/loadimagenode.h>
 #include <lain/flow/graph.h>
+#include <lain/io/image/codecs.h>
 
 #include <cstdint>
 #include <iostream>
@@ -20,6 +22,7 @@ namespace flowview
 		cli.add_flag("--headless,-c", m_headless, "evaluate the example graph and dump its output (no window)");
 		cli.add_option("--size", m_size, "example texture extent (NxN)")->capture_default_str();
 		cli.add_option("--frames", m_frames, "gui-mode: quit after N frames (0 = run until the window closes)")->capture_default_str();
+		cli.add_option("--image", m_imagePath, "cli-mode: load this image file through a LoadImageNode and dump it");
 		return true;
 	}
 
@@ -54,11 +57,24 @@ namespace flowview
 	void FlowviewApp::onProcess(app::Application&)
 	{
 		// cli-mode: a local graph, evaluated and dumped. Pure CPU — no device needed.
-		registerExampleNodes(m_nodeFactory, m_size);
 		flow::Graph graph;
-		const flow::NodeId textureNode = buildExampleScene(graph, m_nodeFactory);
-		m_scheduler.evaluate(graph, textureNode); // pull: runs the source's compute()
+		flow::NodeId sink{};
 
+		if (!m_imagePath.empty())
+		{
+			// Load a real file through a LoadImageNode — the M3 file -> node -> output proof.
+			// The reader registry must be populated first (the node just calls load()).
+			lain::io::image::registerImageCodecs();
+			sink = graph.add(std::make_unique<flow::example::LoadImageNode>(m_imagePath));
+		}
+		else
+		{
+			// Default smoke scene: gradient -> tint -> blur.
+			registerExampleNodes(m_nodeFactory, m_size);
+			sink = buildExampleScene(graph, m_nodeFactory);
+		}
+
+		m_scheduler.evaluate(graph, sink); // pull: runs the source's compute()
 		dumpGraph(std::cout, graph);
 	}
 

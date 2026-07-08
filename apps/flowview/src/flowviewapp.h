@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 
 namespace flowview
 {
@@ -47,6 +48,7 @@ namespace flowview
 		bool m_headless = false;
 		std::uint32_t m_size = 64; // example texture extent (size x size)
 		int m_frames = 0;		   // gui-mode: quit after N frames (0 = until closed)
+		std::string m_imagePath;   // cli-mode: if set, load this file via a LoadImageNode
 
 		// The gui-mode scene, held by unique_ptr so onStop can release it (and its
 		// node-owned payloads) explicitly, before the window/device teardown.
