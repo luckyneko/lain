@@ -48,6 +48,34 @@ resolution, placement — and no graph-mutation policy. The editing layer is the
 **test surface**: edit logic is tested against a plain Graph with GPU-free nodes,
 never by driving a live GUI.
 
+## Node parameters — configuration, distinct from dataflow
+
+- **Param** — a **named, typed, non-connectable configuration value** on a Node (a
+  `LoadImageNode`'s path, a `BlurNode`'s radius), **distinct from a Port** (which is dataflow,
+  edge-driven). A Node declares params in its ctor (`addParam<T>(name, default)`) and reads them
+  in `compute()` (`param<T>(idx)`) — the same shape as `addInput` / `input().get<T>()`. Params
+  reuse **PortValue**'s typed-`std::any` slot, so a param and a port share one internal value
+  machinery: **promoting a param to a connectable input is a definition change, not a data change**
+  — that is how `flow` gets "drive a config from the graph" (wire a `ConstantFloatNode` to the
+  promoted input) without a second concept or an editable-pin model. `flow` stays **UI-free**: a
+  param is pure data; the **adapter** (flowview) renders an editor for it (the vestigial
+  `Node::onInspect` ImGui hook is removed — a node never names `lain::gui`). _Avoid_: property,
+  setting, attribute, field (for the concept).
+
+- **Param editor** *(the adapter's rendering)* — the **widget is chosen by the param's type**, not
+  by metadata: a small closed set (`string`→text, **`FilePath`**→file-picker, `int`/`float`→drag,
+  `bool`→checkbox, **`Choice`**=int+labels→combo). Richer widgets are richer *types* — `Range<T>`
+  for a bounded slider, a `Color` type for a swatch — never a hints/flags system. Enum params
+  flatten to a `Choice` (labels filled from `meta::enums` at declaration), so the adapter never
+  needs the concrete enum type. The type→widget mapping is a **type-keyed editor registry** in the
+  adapter (same shape as the reader registry / the deferred texture "GUI view" seam): built-ins
+  registered once by flowview, a custom param type is a `registerParamEditor<T>` registration, not
+  a core edit. The param helper types (`FilePath`, `Choice`, `Range<T>`) live in **`flow`** for now
+  (pure data, UI-free), promotable to `core`/`io` if a non-node caller wants them. Editing a param
+  writes its slot, then `markDirty` + re-evaluate (all main-thread). **Deferred:** a read-only
+  ("Debug") param *kind* — display-only, orthogonal to the type — slots in later without disturbing
+  this.
+
 ## Payload-agnostic
 
 `flow` names no GPU/UI types. A **PortValue** is a type-erased slot (`std::any`)

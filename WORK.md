@@ -410,11 +410,24 @@ pass, taken up once an `ImageWriteNode` gives it a caller: `io::write(uri, Buffe
 `ImageWriter` interface + a `Factory<ImageWriter>` registry + a `save(uri, Image)` facade +
 per-codec encoders (added to each *existing* plugin — the codec dep + target are already there, so
 only the encode code is new; encode is a separate API surface from decode regardless of timing).
-Deferring it keeps the milestone honest for a modest re-entry cost. The `ImageWriteNode` also
-surfaces a **flow-level** question worth its own design pass — how a node carries fixed **config
-settings** (jpeg quality, png compression). The example nodes take these as constructor args today
-(`BlurNode(2, 1.5f)`), but a general surface to expose / edit / serialise node parameters is
-unbuilt; grill it when the write node needs it, not inside a codec commit.
+Deferring it keeps the milestone honest for a modest re-entry cost. The `ImageWriteNode` needs the
+**node-parameter** surface below (an output path + quality are params), so that lands first.
+
+**M3 follow-on plan (2 → 1 → node-config → 3).** After the read vertical:
+- ✅ **Step 2 — `Image` → `memory::Buffer`** (done): aligned, alloc-seam-backed, pool-ready storage;
+  `Image` stays copyable via a hand-written deep copy.
+- **Node parameters** (designed — [ADR-0005](docs/adr/0005-node-parameters-distinct-typed-slots.md),
+  `CONTEXT.md`): params are distinct, non-connectable, typed `PortValue`-style slots
+  (`addParam<T>` / `param<T>`); widgets chosen by type via an adapter-side editor registry
+  (`FilePath`/`Choice`/`Range<T>` helper types in `flow`); `Node::onInspect` removed. Needed *now*
+  to set `LoadImageNode`'s path in the gui, and a prerequisite for `ImageWriteNode`.
+- **flowview gui pass** (one Metal-verified batch): the CPU-image **thumbnail** (step 1) +
+  **node-param editing** (properties panel) + a **persistent palette add-panel** (left-click node
+  types from `Factory::keys()`; right-click kept secondary — a MacBook trackpad handles right-click
+  poorly). Keyboard-search add deferred.
+- **Step 3 — the write pass**, now unblocked (write seam + per-codec encoders + `ImageWriteNode`).
+
+**Deferred:** a read-only ("Debug") param kind; graph serialization of params (Tier A item 1).
 
 **Deferred behind these seams:** `remote`/`s3` IO schemes; a **`Stream` transport** — an
 incremental/seekable read (chunked, possibly mmap-/socket-backed) peer to `read` for video and
