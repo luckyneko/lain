@@ -143,3 +143,56 @@ An operation's space/alpha requirement follows its **class**, and a violation is
 - **Nonlinear per-pixel tone** (`gamma`, `contrast`) — require **`Straight`** (a nonlinear
   curve on premultiplied color is wrong).
 - **Pixel-rearranging / linear-scale** (`crop`, `rotate90`, `brightness`, `clamp`) — agnostic.
+
+## Loading — bytes in, decoded assets out
+
+The path that turns a file into an in-memory asset, split by concern so no one library
+becomes a junk drawer. Transport (getting bytes) is separate from codec (decoding them), and
+both sit behind service-shaped seams. See [ADR-0004](docs/adr/0004-static-linking-service-shaped-seams-over-thorax.md).
+
+- **Service-shaped seam** *(the convention)* — a subsystem exposed as a **namespace of free
+  functions over a hidden singleton** (the `lain::log` shape), so an internal singleton or a
+  future `thorax::service` can back it interchangeably with no caller change. `lain`'s answer to
+  anything that would otherwise be a **floating global**. _Avoid_: manager object, service class
+  (on the public surface).
+
+- **Buffer** *(the owned byte region)* — an **aligned, fixed-size, single-owner** block of bytes,
+  in `lain::memory`. Defined by its **refusals** as much as its contents: no `resize`, no byte
+  `operator[]`, alignment guaranteed — the affordances a `std::vector<uint8_t>` wrongly exposes.
+  Move-only for now; a non-owning slice (**BufferView**) and a refcounted share (**SharedBuffer**)
+  are later derivations. _Avoid_: Block (marv's name), Bytes, blob, `vector<uint8_t>` as a stand-in.
+
+- **Allocation seam** — the `memory::alloc(size, align)` / `dealloc(ptr, size, align)` free
+  functions a **Buffer** routes every allocation through. The **sized, aligned** shape keeps it
+  pool-ready: the backing is plain aligned allocation today and a recycling pool drops in behind
+  it unchanged. The *manager* (mimalloc / marv / custom pool) is a backend chosen by profiling,
+  not a type in any signature.
+
+- **IO scheme** — a **byte-transport backend keyed by URI scheme** (`local` now; `remote`/`s3`
+  later). `lain::io::read(uri) → Buffer` dispatches to one. **Media-agnostic** — `io` never
+  decodes; it only moves bytes.
+
+- **Reader** / **Writer** — a **Reader** decodes a `Buffer` of one format into a typed asset; a
+  **Writer** encodes the asset back to bytes. One per format, holding both directions (they share
+  a codec dependency): `JpegReader` + `JpegWriter`. _Avoid_: loader, importer, decoder-only.
+
+- **Reader registry** — the per-media `core::Factory<Reader>` keyed by format (a
+  `Factory<ImageReader>` behind `lain::io::image`). A **codec plugin** attaches to it by
+  **explicit registration** — a `registerCodec(registry)` call, never self-registering static-init
+  (the linker strips an unreferenced static lib). The *enabled* codecs are collected by the build
+  into a generated **`registerImageCodecs`** aggregator the app calls once, the way
+  `flowview::registerExampleNodes` seeds the node palette.
+
+- **`lain::io` vs `lain::io::image`** *(transport vs codec seam)* — `lain::io` (`libs/io`) is the
+  media-agnostic transport (`read → Buffer`, scheme dispatch), **codec-dependency-free**.
+  `lain::io::image` (`libs/io/image`) is the **codec-free seam** for one medium: the
+  `Reader`/`Writer` interface + the registry + the `load`/`save` facade. Video/audio arrive as
+  peer seams (`lain::io::video` / `lain::io::audio`).
+
+- **Codec plugin** — a **swappable per-format implementation** (`lain::io::image::jpeg`), a
+  separate satellite target living under a top-level **`plugins/`** root (peer to `libs/`/`apps/`,
+  as in `thorax`), *not* buried among the interfaces. It depends on the `lain::io::image` seam +
+  its third-party codec (fetched via `cmake/addXXX.cmake`); the dependency never inverts. Static
+  today, a `thorax` DSO tomorrow behind the same `registerCodec` seam. A format is enabled/disabled
+  by an opt-out CMake `option`, so a consumer pulls only the codecs it asked for. _Avoid_: reader
+  lib, backend, importer.

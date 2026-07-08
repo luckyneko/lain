@@ -309,6 +309,78 @@ The viewer became an editor. Landed in order:
 Preview descriptors for deleted nodes are reclaimed via `lain::gui::Context::releaseImage`
 (the inspector prunes its texture cache after each edit).
 
+## Milestone 3 — file loading (planned)
+
+**Driving consumer:** a `flow` node that loads a *real* image file off disk and shows it in
+`flowview` — the first source that isn't synthetic. That one goal is what pulls FileIO and an
+image codec into existence for a real reason; nothing else is built ahead of it.
+
+**Locked decisions** (see [ADR-0004](docs/adr/0004-static-linking-service-shaped-seams-over-thorax.md)
+and the "Loading" section of `CONTEXT.md`):
+
+- **thorax deferred; static linking now.** Keep `core::Factory<Base>` as the registration seam
+  so a `thorax::service` can back it later. The one or two things that truly need runtime loading
+  (camera drivers) can `dlopen` directly, without the framework. Revisit only if `lain` starts
+  *distributing binaries* to machines with library sets it didn't build on.
+- **Service-shaped seams** (free functions over a hidden singleton, the `lain::log` shape) for
+  every new subsystem, so each stays thorax-swappable with no caller change.
+- **Payload is `Buffer`, not `std::vector<uint8_t>`** — aligned, fixed-size, non-resizable, no
+  byte indexing (its refusals are the point). The *type* lands now; the allocator *engine* is
+  deferred behind a `memory::alloc/dealloc` seam.
+- **Memory manager deferred**, chosen by profiling (mimalloc-as-global-malloc first — one CMake
+  line, zero code — then a pool behind the seam if churn is measured; marv is a candidate
+  backend, not a from-scratch rebuild).
+- **Transport is separate from codec.** `lain::io` moves bytes and names no format; per-media
+  loaders decode. Real codecs over stb (stb can't honor the `U16` `ChannelType`): **turbojpeg →
+  png → tiff**.
+- **Codecs are plugins, and live like plugins.** The `lain::io::image` interface + `Factory` +
+  facade is the codec-free **seam** and stays in `libs/`; each format is a **separate satellite
+  target** (`JpegReader` + `JpegWriter` together) under a top-level **`plugins/`** root (peer to
+  `libs/`/`apps/`, matching `thorax`'s own layout) so the swappable parts don't get lost among the
+  interfaces. Dependency inverts: a codec depends on the interface, never the reverse.
+- **Registration is explicit and build-determined.** No self-registering static-init (the linker
+  strips it). Each codec exposes `registerCodec(registry)`; the build collects the *enabled*
+  codecs into a generated `lain::io::image::codecs` aggregator emitting one
+  `registerImageCodecs(registry)`, which the app calls once (mirroring `registerExampleNodes`).
+  Membership is discovered from a global CMake list, so a new `plugins/io/image/<fmt>/` folder
+  joins the group with no edits elsewhere; `if(TARGET lain::io::image::<fmt>)` is available for
+  finer per-codec control.
+- **Third-party codecs via `cmake/addXXX.cmake` FetchContent**, not `find_package` (house
+  convention). The per-codec guard is therefore an **opt-out `option`**, not an availability probe
+  (sources are always fetchable — "absent" means "disabled"). png/tiff pull transitive deps
+  (zlib; tiff optionally jpeg) resolved in the `addXXX.cmake` chain, as `archimedes` does.
+
+**Build order** (each a small static lib behind a service-shaped seam; each strict-clean,
+standalone + as a subdirectory):
+
+1. **`lain::memory`** (`libs/memory`) — the minimal `Buffer` only: aligned, fixed-size,
+   move-only, `data()`/`size()`, no `resize`, no `operator[]`. It allocates through
+   `memory::alloc(size, align = 64)` / `dealloc(ptr, size, align)` (sized + aligned so a pool is
+   a drop-in); v1 backing is `std::aligned_alloc` / aligned `operator new`. **No pool/arena yet.**
+2. **`lain::io`** (`libs/io`) — `io::read(uri) → memory::Buffer`, the FileIO front seam;
+   `local` scheme only, dispatch behind it for `remote`/`s3` later. **Codec-dependency-free.**
+3. **`lain::io::image`** (`libs/io/image`) — the codec-free seam: the `ImageReader`/`ImageWriter`
+   interface, a hidden `core::Factory<ImageReader>`, and the `io::image::load(uri) → image::Image`
+   facade. **No third-party codec deps.**
+4. **First codec plugin** (`plugins/io/image/jpeg` → `lain::io::image::jpeg`) + the generated
+   `lain::io::image::codecs` aggregator — **turbojpeg** first, then `png`, `tiff` as further
+   satellites. Each depends on the `lain::io::image` interface + its fetched codec; codec deps
+   never reach core `io`.
+5. **`LoadImageNode`** in `flow-example` — emits a **CPU `image::Image`** through a port (no GPU:
+   `acm` upload waits for Compute Nodes). `flowview` **cli-mode** dumps the loaded image (extent +
+   corner pixels) — the true file→node→output proof, no driver needed.
+
+**Verify M3:** every lib strict-clean; `ctest` passes; `flowview --headless` loads a real image
+file through `LoadImageNode` and dumps it. The **gui-mode thumbnail** of a CPU `image::Image` port
+is a **follow-on** — it realizes the deferred "GUI view" seam (a per-type viewer that uploads the
+CPU image *for display only*; not a node/compute op), and needs the live driver (AGENTS rule 9).
+`Image`'s internal `std::vector` → `Buffer` swap is an internal follow-on (callers use
+`data()`/`size()`), not a blocker.
+
+**Deferred behind these seams:** `remote`/`s3` IO schemes; `lain::io::video` / `audio` +
+`Timecode` (Tier C item 9); the memory pool/arena + `BufferView`/`SharedBuffer`; magic-byte
+format sniffing (extension-keyed for now); thorax adoption.
+
 ## Backlog (deferred — don't build speculatively)
 
 ### Tier A — when a real graph demands it
@@ -360,5 +432,8 @@ Preview descriptors for deleted nodes are reclaimed via `lain::gui::Context::rel
   them.
 - Resolved for now: the `archimedes` submodule tracks `develop` (no tagged
   release exists; its real code isn't on `master`), and Taskflow FetchContent
-  pins `v3.7.0`. Revisit if either gains a release worth pinning. `thorax` isn't
-  vendored yet — added when something consumes it.
+  pins `v3.7.0`. Revisit if either gains a release worth pinning.
+- **thorax: resolved — deferred, static linking with service-shaped seams**
+  ([ADR-0004](docs/adr/0004-static-linking-service-shaped-seams-over-thorax.md)). Not vendored;
+  `core::Factory<Base>` is the seam a plugin backs later. Reopen only if `lain` starts
+  distributing binaries that need runtime-optional heavy deps.
