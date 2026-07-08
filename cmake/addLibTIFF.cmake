@@ -39,7 +39,7 @@ set(ZLIB_LIBRARY zlibstatic CACHE STRING "libtiff: fetched zlib target" FORCE)
 
 FetchContent_Declare(libtiff
 	URL          "https://${LIBTIFF_FILE}"
-	DOWNLOAD_DIR "${CMAKE_SOURCE_DIR}/.cache/fetch/libtiff-${LIBTIFF_VER}"
+	DOWNLOAD_DIR "${CMAKE_SOURCE_DIR}/.cache/fetch/${LIBTIFF_FILE}"
 )
 FetchContent_MakeAvailable(libtiff)
 
