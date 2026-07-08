@@ -26,6 +26,11 @@ namespace lain::flow::example
 		// them (sRGB, opaque -> Straight), then blur *correctly*: convolve() is a value-
 		// blending op and requires Linear + Premultiplied, so convert in, blur, convert back.
 		image::Image in = src;
+		// A loaded image may be RGB8/Gray8; normalise to RGBA8 so the premultiply step below
+		// operates on a real alpha channel (else it would treat the last colour channel as
+		// alpha). The gradient is already RGBA8, so the smoke scene is unchanged.
+		if (in.pixelFormat() != image::PixelFormat::RGBA8)
+			in = image::convert(in, image::PixelFormat::RGBA8);
 		in.setColorSpace(image::ColorSpace::sRGB);
 		in.setAlphaMode(image::AlphaMode::Straight);
 

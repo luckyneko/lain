@@ -111,6 +111,25 @@ TEST_CASE("editing a TintNode param changes its output", "[flow]")
 	CHECK(pixel(graph.node(tint).output(0).value().get<lain::image::Image>(), 0).b == 64);
 }
 
+TEST_CASE("transform nodes handle a non-RGBA8 input (e.g. a loaded RGB8 image)", "[flow]")
+{
+	using namespace lain::flow;
+	// An RGB8 image — 3 bytes/pixel, like a decoded JPEG. A node that assumes RGBA8 would
+	// index past the buffer and crash; both must normalise first.
+	const lain::image::Image rgb(4, 4, lain::image::PixelFormat::RGB8, lain::image::ColorSpace::sRGB);
+
+	example::TintNode tint(1.0f, 0.5f, 0.5f);
+	tint.input(0).set<lain::image::Image>(rgb);
+	tint.compute(); // must not overrun the RGB8 buffer
+	REQUIRE(tint.output(0).value().get<lain::image::Image>().valid());
+	REQUIRE(tint.output(0).value().get<lain::image::Image>().pixelFormat() == lain::image::PixelFormat::RGBA8);
+
+	example::BlurNode blur(1, 1.0f);
+	blur.input(0).set<lain::image::Image>(rgb);
+	blur.compute();
+	REQUIRE(blur.output(0).value().get<lain::image::Image>().valid());
+}
+
 TEST_CASE("BlurNode runs the op catalog through an edge: gradient -> blur", "[flow]")
 {
 	constexpr int kSize = 64;

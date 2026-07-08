@@ -49,42 +49,45 @@ namespace flowview
 		return false;
 	}
 
-	// A char-buffer InputText (no imgui_stdlib dependency); the value is small config text.
-	static bool textField(const char* label, const std::string& current, std::string& out)
+	// A char-buffer InputText (no imgui_stdlib dependency). Sets `changedNow` and copies the
+	// buffer into `out` on any per-frame change, so the caller can persist the text live (the
+	// buffer is re-seeded from the param each frame, so an un-persisted keystroke would be
+	// lost). Returns true only when editing FINISHED — Enter or focus loss — which is the
+	// recompute trigger, so a file-loading param doesn't reopen the file every character.
+	static bool textField(const char* label, const std::string& current, std::string& out, bool& changedNow)
 	{
 		char buffer[512];
 		std::snprintf(buffer, sizeof(buffer), "%s", current.c_str());
-		if (gui::InputText(label, buffer, sizeof(buffer)))
-		{
+		gui::InputText(label, buffer, sizeof(buffer));
+		changedNow = std::string(buffer) != current;
+		if (changedNow)
 			out = buffer;
-			return true;
-		}
-		return false;
+		return gui::IsItemDeactivatedAfterEdit();
 	}
 
 	static bool editString(flow::Param& param)
 	{
 		std::string edited;
-		if (textField(param.name().c_str(), param.get<std::string>(), edited))
-		{
-			param.set<std::string>(std::move(edited));
-			return true;
-		}
-		return false;
+		bool changed = false;
+		const bool committed = textField(param.name().c_str(), param.get<std::string>(), edited, changed);
+		if (changed)
+			param.set<std::string>(std::move(edited)); // persist live so the text isn't lost
+		return committed;							   // recompute only on commit
 	}
 
 	static bool editPath(flow::Param& param)
 	{
-		// A plain path text field for now — type/paste the path. A "Browse…" dialog is a
-		// deferred enhancement (needs a file-dialog dep); the path TYPE keeps its own editor
-		// so the dialog slots in here without touching any node (ADR-0005).
+		// A plain path text field for now — type/paste the path, then Enter or click away to
+		// load (committing per keystroke would reopen the file each character). A "Browse…"
+		// dialog is a deferred enhancement; the path TYPE keeps its own editor so it slots in
+		// here without touching any node (ADR-0005).
 		std::string edited;
-		if (textField(param.name().c_str(), param.get<std::filesystem::path>().string(), edited))
-		{
+		bool changed = false;
+		const bool committed =
+			textField(param.name().c_str(), param.get<std::filesystem::path>().string(), edited, changed);
+		if (changed)
 			param.set<std::filesystem::path>(std::filesystem::path(std::move(edited)));
-			return true;
-		}
-		return false;
+		return committed;
 	}
 
 	static bool editColorRGBf(flow::Param& param)

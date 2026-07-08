@@ -1,6 +1,7 @@
 #include "lain/flow/example/tintnode.h"
 
-#include <lain/image/color.h> // image::ColorRGBf — the tint param type
+#include <lain/image/color.h>	// image::ColorRGBf — the tint param type
+#include <lain/image/convert.h> // normalise a loaded image to RGBA8
 
 #include <cstddef>
 #include <cstdint>
@@ -24,9 +25,15 @@ namespace lain::flow::example
 		if (!input(m_in).ready())
 			return;
 
-		const image::Image& src = input(m_in).get<image::Image>();
+		image::Image src = input(m_in).get<image::Image>();
 		if (!src.valid())
 			return;
+
+		// The per-pixel loop below assumes RGBA8 (4 bytes/px); a loaded image may be RGB8 /
+		// Gray8 / 16-bit, so normalise first — indexing i*4+3 on an RGB8 buffer overruns it.
+		// (The gradient is already RGBA8, so the smoke scene is unchanged.)
+		if (src.pixelFormat() != image::PixelFormat::RGBA8)
+			src = image::convert(src, image::PixelFormat::RGBA8);
 
 		// out = clamp(in * factor), alpha preserved. RGBA8 byte order is [R, G, B, A].
 		const auto tint = [](std::uint8_t v, float f) -> std::uint8_t
