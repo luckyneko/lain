@@ -80,6 +80,9 @@ add_subdirectory(libs/io)               # transport seam: read(uri) -> Buffer (W
 add_subdirectory(libs/task)
 add_subdirectory(libs/flow)             # the node-graph engine (WORK.md M1)
 
+# ---- Plugins (swappable satellites: lain::io::image::<fmt> codecs) ----------
+add_subdirectory(plugins)
+
 # ---- App stack + apps -------------------------------------------------------
 # The GUI/windowing libs and their deps (GLFW, CLI11, later ImGui) build only with
 # the app stack, so a headless consumer of lain::flow isn't forced to vendor them.

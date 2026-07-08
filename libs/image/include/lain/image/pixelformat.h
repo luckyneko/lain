@@ -12,9 +12,10 @@ namespace lain::image
 	// now; planar / subsampled models (YUV) and reordered layouts (BGRA) arrive later.
 	enum class ColorModel
 	{
-		Gray, // single luminance channel
-		RGB,  // red, green, blue
-		RGBA, // red, green, blue, alpha
+		Gray,	   // single luminance channel
+		GrayAlpha, // luminance + alpha
+		RGB,	   // red, green, blue
+		RGBA,	   // red, green, blue, alpha
 	};
 
 	// The per-channel storage type. The *numeric* axis of a PixelFormat (paired with
@@ -43,6 +44,11 @@ namespace lain::image
 		RGBA8,
 		RGBA16,
 		RGBA32F,
+		// Appended (not grouped with Gray) so existing enum values are unshifted; the
+		// colorList in traverse.inl mirrors this order.
+		GrayAlpha8,
+		GrayAlpha16,
+		GrayAlpha32F,
 	};
 
 	namespace detail
@@ -70,6 +76,8 @@ namespace lain::image
 			{
 				case ColorModel::Gray:
 					return 1;
+				case ColorModel::GrayAlpha:
+					return 2;
 				case ColorModel::RGB:
 					return 3;
 				case ColorModel::RGBA:
@@ -88,7 +96,7 @@ namespace lain::image
 			return static_cast<std::uint32_t>(channelCount()) * bytesPerChannel();
 		}
 
-		constexpr bool hasAlpha() const { return model == ColorModel::RGBA; }
+		constexpr bool hasAlpha() const { return model == ColorModel::RGBA || model == ColorModel::GrayAlpha; }
 	};
 
 	// The descriptor for a format — a single constexpr mapping enum -> {model, channelType}.
@@ -114,6 +122,12 @@ namespace lain::image
 				return {format, ColorModel::RGBA, ChannelType::U16};
 			case PixelFormat::RGBA32F:
 				return {format, ColorModel::RGBA, ChannelType::F32};
+			case PixelFormat::GrayAlpha8:
+				return {format, ColorModel::GrayAlpha, ChannelType::U8};
+			case PixelFormat::GrayAlpha16:
+				return {format, ColorModel::GrayAlpha, ChannelType::U16};
+			case PixelFormat::GrayAlpha32F:
+				return {format, ColorModel::GrayAlpha, ChannelType::F32};
 		}
 		return {format, ColorModel::RGBA, ChannelType::U8}; // unreachable: all formats handled
 	}

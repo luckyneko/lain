@@ -53,6 +53,9 @@ namespace lain::image
 	using ColorRGBA8 = Color<PixelFormat::RGBA8>;
 	using ColorRGBA16 = Color<PixelFormat::RGBA16>;
 	using ColorRGBAf = Color<PixelFormat::RGBA32F>;
+	using ColorGrayAlpha8 = Color<PixelFormat::GrayAlpha8>;
+	using ColorGrayAlpha16 = Color<PixelFormat::GrayAlpha16>;
+	using ColorGrayAlphaf = Color<PixelFormat::GrayAlpha32F>;
 
 	// A Color's format / channel count / channel type come straight from the type: the
 	// format is the template parameter (Color<F>::format), and the channel count and channel

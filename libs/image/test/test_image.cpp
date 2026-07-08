@@ -92,6 +92,13 @@ TEST_CASE("PixelFormat descriptor reports model, channel type and sizes", "[imag
 	REQUIRE(rgb32f.bytesPerChannel() == 4u);
 	REQUIRE(rgb32f.bytesPerPixel() == 12u);
 	REQUIRE_FALSE(rgb32f.hasAlpha());
+
+	const auto grayAlpha8 = lain::image::descriptor(PixelFormat::GrayAlpha8);
+	REQUIRE(grayAlpha8.model == ColorModel::GrayAlpha);
+	REQUIRE(grayAlpha8.channelType == ChannelType::U8);
+	REQUIRE(grayAlpha8.channelCount() == 2u);
+	REQUIRE(grayAlpha8.bytesPerPixel() == 2u);
+	REQUIRE(grayAlpha8.hasAlpha());
 }
 
 TEST_CASE("descriptor() is usable in a constexpr context", "[image]")

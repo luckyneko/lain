@@ -112,9 +112,11 @@ not yet built (dormant on MoltenVK, which offers a UNORM surface).
 rides a `flow` port like any payload. Vocabulary, three axes kept apart:
 
 - **PixelFormat** — a pixel's byte layout: **ColorModel** (the channel set + order —
-  `Gray`/`RGB`/`RGBA`) × **ChannelType** (per-channel storage — `U8`/`U16`/`F32`). The
+  `Gray`/`GrayAlpha`/`RGB`/`RGBA`) × **ChannelType** (per-channel storage — `U8`/`U16`/`F32`). The
   primary runtime handle. Its **PixelFormatDescriptor** is the per-format fact-bundle
-  (channel count, bytes-per-pixel, has-alpha), looked up from the format.
+  (channel count, bytes-per-pixel, has-alpha), looked up from the format. Formats a codec meets
+  that lain can't represent (indexed, sub-byte, colourkey, non-sRGB/ICC space) are expanded
+  losslessly by the reader, never silently — see [WORK.md](WORK.md) M3.
 - **Color** — a pixel *value* of a given PixelFormat: N channels of T, a strong type over a
   `math::Vec`. It is **layout-neutral** — *which* channel is which is the PixelFormat's
   business, not the Color's.

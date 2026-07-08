@@ -43,8 +43,8 @@ namespace lain::image
 	{
 		using T = typename Color<F>::value_type;
 		constexpr auto N = descriptor(F).channelCount();
-		if constexpr (N == 1)
-			return detail::toUnit<T>(c[0]);
+		if constexpr (N == 1 || N == 2)
+			return detail::toUnit<T>(c[0]); // Gray / GrayAlpha: channel 0 is the luminance
 		else
 			return 0.2126f * detail::toUnit<T>(c[0]) + 0.7152f * detail::toUnit<T>(c[1]) + 0.0722f * detail::toUnit<T>(c[2]);
 	}
@@ -93,6 +93,12 @@ namespace lain::image
 				r = g = b = u;
 				a = 1.0f;
 			}
+			else if constexpr (N == 2)
+			{
+				const float u = detail::toUnit<T>(src[0]); // GrayAlpha: luminance + alpha
+				r = g = b = u;
+				a = detail::toUnit<T>(src[1]);
+			}
 			else if constexpr (N == 3)
 			{
 				r = detail::toUnit<T>(src[0]);
@@ -113,6 +119,11 @@ namespace lain::image
 			if constexpr (M == 1)
 			{
 				out[0] = detail::fromUnit<U>(0.2126f * r + 0.7152f * g + 0.0722f * b);
+			}
+			else if constexpr (M == 2)
+			{
+				out[0] = detail::fromUnit<U>(0.2126f * r + 0.7152f * g + 0.0722f * b); // GrayAlpha: luminance + alpha
+				out[1] = detail::fromUnit<U>(a);
 			}
 			else if constexpr (M == 3)
 			{

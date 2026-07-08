@@ -331,8 +331,23 @@ and the "Loading" section of `CONTEXT.md`):
   line, zero code — then a pool behind the seam if churn is measured; marv is a candidate
   backend, not a from-scratch rebuild).
 - **Transport is separate from codec.** `lain::io` moves bytes and names no format; per-media
-  loaders decode. Real codecs over stb (stb can't honor the `U16` `ChannelType`): **turbojpeg →
-  png → tiff**.
+  loaders decode. Order **png → tiff → jpeg** (reordered from the original jpeg-first): png/tiff
+  need *real* codecs because stb can't honor the `U16` `ChannelType`, and both FetchContent
+  cleanly (libpng + zlib, libtiff), so they prove the plugin + aggregator machinery on cooperative
+  libs. **libjpeg-turbo refuses `add_subdirectory`** (it hard-errors, demanding
+  `ExternalProject_Add`), so jpeg comes last and its integration is an open decision:
+  `ExternalProject_Add(libjpeg-turbo)` (from source, more machinery) **vs** stb_image just for jpeg
+  (trivial to vendor, and jpeg is 8-bit so the U16 objection doesn't apply — only quality/perf is
+  lower). Prebuilt binaries rejected (cross-platform×arch fights from-source reproducibility).
+- **Codec format policy: documented lossless expansion, honest tags.** A reader PRESERVES any
+  source format lain represents natively (RGB/RGBA/Gray/**GrayAlpha** at 8/16-bit — GrayAlpha was
+  added to `lain::image` for this) and never silently changes it. Formats lain can't hold are
+  expanded *losslessly in pixel value* — as the reader's documented contract, not a silent surprise
+  — and `ColorSpace` is read from the file, `Unspecified` when untagged (never guessed). **lain
+  format gaps still filled by expansion** (candidates to add as native formats later): indexed /
+  palette color; sub-byte channel depths (1/2/4-bit); colourkey transparency (tRNS, vs. a full
+  alpha channel); and colour spaces beyond `Unspecified`/`Linear`/`sRGB` (arbitrary gamma, ICC
+  profiles, non-sRGB primaries — currently collapsed to `Unspecified`).
 - **Codecs are plugins, and live like plugins.** The `lain::io::image` interface + `Factory` +
   facade is the codec-free **seam** and stays in `libs/`; each format is a **separate satellite
   target** (`JpegReader` + `JpegWriter` together) under a top-level **`plugins/`** root (peer to
@@ -362,10 +377,11 @@ standalone + as a subdirectory):
 3. **`lain::io::image`** (`libs/io/image`) — the codec-free seam: the `ImageReader`/`ImageWriter`
    interface, a hidden `core::Factory<ImageReader>`, and the `io::image::load(uri) → image::Image`
    facade. **No third-party codec deps.**
-4. **First codec plugin** (`plugins/io/image/jpeg` → `lain::io::image::jpeg`) + the generated
-   `lain::io::image::codecs` aggregator — **turbojpeg** first, then `png`, `tiff` as further
-   satellites. Each depends on the `lain::io::image` interface + its fetched codec; codec deps
-   never reach core `io`.
+4. **First codec plugin** (`plugins/io/image/png` → `lain::io::image::png`, via `addLibPNG.cmake`
+   + `addZlib.cmake`) + the generated `lain::io::image::codecs` aggregator. Then `tiff`, then
+   `jpeg` (its own integration decision — see the codec bullet above) as further satellites. Each
+   depends on the `lain::io::image` interface + its fetched codec; codec deps never reach core
+   `io`. png first validates the **U16** round-trip and the aggregator on a FetchContent-clean lib.
 5. **`LoadImageNode`** in `flow-example` — emits a **CPU `image::Image`** through a port (no GPU:
    `acm` upload waits for Compute Nodes). `flowview` **cli-mode** dumps the loaded image (extent +
    corner pixels) — the true file→node→output proof, no driver needed.

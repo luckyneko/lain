@@ -4,3 +4,4 @@
 # formatting) and build/ are intentionally absent.
 libs
 apps
+plugins

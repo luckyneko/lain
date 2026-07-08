@@ -18,7 +18,8 @@ namespace lain::image
 		using colorList = lain::meta::TypeList<
 			ColorGray8, ColorGray16, ColorGrayf,
 			ColorRGB8, ColorRGB16, ColorRGBf,
-			ColorRGBA8, ColorRGBA16, ColorRGBAf>;
+			ColorRGBA8, ColorRGBA16, ColorRGBAf,
+			ColorGrayAlpha8, ColorGrayAlpha16, ColorGrayAlphaf>;
 
 		template <std::size_t... Is>
 		constexpr bool colorListMatchesFormats(std::index_sequence<Is...>)

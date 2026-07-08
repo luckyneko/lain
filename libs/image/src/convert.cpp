@@ -61,8 +61,9 @@ namespace lain::image
 		if (!src.valid())
 			return {};
 
-		// A reduction to Gray uses Rec709 luminance, which is only meaningful in linear light.
-		const bool toGray = descriptor(dstFormat).model == ColorModel::Gray;
+		// A reduction to Gray / GrayAlpha uses Rec709 luminance, only meaningful in linear light.
+		const ColorModel dstModel = descriptor(dstFormat).model;
+		const bool toGray = dstModel == ColorModel::Gray || dstModel == ColorModel::GrayAlpha;
 		if (toGray && src.descriptor().channelCount() >= 3)
 		{
 			if (!lain::log::ensure(src.colorSpace() == ColorSpace::Linear,

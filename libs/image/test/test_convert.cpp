@@ -51,6 +51,32 @@ TEST_CASE("convert RGB->Gray uses luminance (in linear space)", "[convert]")
 	REQUIRE(gray.as<ColorGray8>()(0, 0)[0] == 255); // white -> full luminance
 }
 
+TEST_CASE("convert GrayAlpha<->RGBA maps luminance and carries alpha", "[convert]")
+{
+	// GrayAlpha -> RGBA replicates the gray channel to RGB and keeps alpha.
+	Image ga(1, 1, PixelFormat::GrayAlpha8, ColorSpace::Linear, AlphaMode::Straight);
+	ga.as<ColorGrayAlpha8>()(0, 0) = ColorGrayAlpha8(128, 200);
+
+	const Image rgba = convert(ga, PixelFormat::RGBA8);
+	REQUIRE(rgba.pixelFormat() == PixelFormat::RGBA8);
+	const ColorRGBA8 p = rgba.as<ColorRGBA8>()(0, 0);
+	REQUIRE(p.r == 128);
+	REQUIRE(p.g == 128);
+	REQUIRE(p.b == 128);
+	REQUIRE(p.a == 200);
+
+	// RGB -> GrayAlpha computes luminance (linear-only) and an opaque Straight alpha.
+	Image rgb(1, 1, PixelFormat::RGB8, ColorSpace::Linear);
+	rgb.as<ColorRGB8>()(0, 0) = ColorRGB8(255, 255, 255);
+
+	const Image out = convert(rgb, PixelFormat::GrayAlpha8);
+	REQUIRE(out.pixelFormat() == PixelFormat::GrayAlpha8);
+	REQUIRE(out.alphaMode() == AlphaMode::Straight);
+	const ColorGrayAlpha8 g = out.as<ColorGrayAlpha8>()(0, 0);
+	REQUIRE(g[0] == 255); // white -> full luminance
+	REQUIRE(g[1] == 255); // opaque
+}
+
 TEST_CASE("convert between color spaces round-trips and flips the tag", "[convert]")
 {
 	Image s(1, 1, PixelFormat::RGB32F, ColorSpace::sRGB);
