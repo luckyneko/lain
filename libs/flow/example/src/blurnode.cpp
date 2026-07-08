@@ -7,9 +7,9 @@ namespace lain::flow::example
 {
 	BlurNode::BlurNode(int radius, float sigma)
 		: Node("Blur")
-		, m_radius(radius)
-		, m_sigma(sigma)
 	{
+		m_radius = addParam<int>("radius", radius);
+		m_sigma = addParam<float>("sigma", sigma);
 		m_in = addInput<image::Image>("image");
 		m_out = addOutput<image::Image>("image");
 	}
@@ -31,7 +31,8 @@ namespace lain::flow::example
 
 		const image::Image linear = image::convert(in, image::ColorSpace::Linear);
 		const image::Image premul = image::convert(linear, image::AlphaMode::Premultiplied);
-		const image::Image blurred = image::convolve(premul, image::gaussianKernel(m_radius, m_sigma));
+		const image::Image blurred =
+			image::convolve(premul, image::gaussianKernel(param(m_radius).get<int>(), param(m_sigma).get<float>()));
 		const image::Image straight = image::convert(blurred, image::AlphaMode::Straight);
 
 		output(m_out).set(image::convert(straight, image::ColorSpace::sRGB));

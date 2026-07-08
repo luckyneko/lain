@@ -12,8 +12,9 @@ namespace lain::flow::example
 	class TintNode : public Node
 	{
 	public:
-		// tintR/G/B are per-channel multipliers (e.g. 1.0, 0.5, 0.5 keeps red, halves
-		// green and blue). Values above 1 are clamped at 255 per channel.
+		// tintR/G/B are per-channel multipliers in [0, 1] (e.g. 1.0, 0.5, 0.5 keeps red,
+		// halves green and blue) — they seed a single editable "tint" Color param, which
+		// the gui renders as a colour swatch.
 		TintNode(float tintR, float tintG, float tintB);
 
 		// Index of the lain::image::Image input / output ports.
@@ -23,9 +24,7 @@ namespace lain::flow::example
 		void compute() override;
 
 	private:
-		float m_tintR;
-		float m_tintG;
-		float m_tintB;
+		PortIndex m_tint; // "tint" param (image::ColorRGBf) — per-channel RGB multiplier
 		PortIndex m_in;
 		PortIndex m_out;
 	};

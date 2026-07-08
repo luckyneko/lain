@@ -7,10 +7,11 @@
 
 namespace lain::flow::example
 {
-	// A CPU source node: loads an image file from a FilePath param (via lain::io::image::load)
-	// and emits the decoded lain::image::Image on its output port. The first node to bring a
-	// *real* file into a graph — flowview's cli-mode loads one and dumps the result, and its
-	// path is editable in the gui (a FilePath param renders as a file picker; see ADR-0005).
+	// A CPU source node: loads an image file from a std::filesystem::path param (via
+	// lain::io::image::load) and emits the decoded lain::image::Image on its output port. The
+	// first node to bring a *real* file into a graph — flowview's cli-mode loads one and dumps
+	// the result, and its path is editable in the gui (a path param renders as a file picker,
+	// distinct from a plain string's text field; see ADR-0005).
 	//
 	// The ctor uri seeds the param's default (so `flowview --image` and the cli still work);
 	// a palette-added node starts with an empty path, set in the gui. The reader registry must

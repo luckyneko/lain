@@ -63,18 +63,16 @@ never by driving a live GUI.
   setting, attribute, field (for the concept).
 
 - **Param editor** *(the adapter's rendering)* — the **widget is chosen by the param's type**, not
-  by metadata: a small closed set (`string`→text, **`FilePath`**→file-picker, `int`/`float`→drag,
-  `bool`→checkbox, **`Choice`**=int+labels→combo). Richer widgets are richer *types* — `Range<T>`
-  for a bounded slider, a `Color` type for a swatch — never a hints/flags system. Enum params
-  flatten to a `Choice` (labels filled from `meta::enums` at declaration), so the adapter never
-  needs the concrete enum type. The type→widget mapping is a **type-keyed editor registry** in the
+  by metadata, and we **prefer an existing type, inventing one only where none fits**:
+  `string`→text, **`std::filesystem::path`**→file-picker, **`image::ColorRGBf`**→colour swatch,
+  `int`/`float`→drag, `bool`→checkbox. A bespoke helper type appears only where no standard type
+  carries the meaning — **`Choice`** (int + labels, for enums; labels from `meta::enums` so the
+  adapter never needs the concrete enum) and **`Range<T>`** (value + bounds, a slider) — and those
+  live in `flow` (pure data). The type→widget mapping is a **type-keyed editor registry** in the
   adapter (same shape as the reader registry / the deferred texture "GUI view" seam): built-ins
-  registered once by flowview, a custom param type is a `registerParamEditor<T>` registration, not
-  a core edit. The param helper types (`FilePath`, `Choice`, `Range<T>`) live in **`flow`** for now
-  (pure data, UI-free), promotable to `core`/`io` if a non-node caller wants them. Editing a param
-  writes its slot, then `markDirty` + re-evaluate (all main-thread). **Deferred:** a read-only
-  ("Debug") param *kind* — display-only, orthogonal to the type — slots in later without disturbing
-  this.
+  registered once by flowview, a custom type is a `registerParamEditor<T>` registration, not a core
+  edit. Editing a param writes its slot, then `markDirty` + re-evaluate (all main-thread).
+  **Deferred:** a read-only ("Debug") param *kind* — display-only, orthogonal to the type.
 
 ## Payload-agnostic
 

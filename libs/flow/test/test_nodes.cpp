@@ -8,7 +8,7 @@
 #include <lain/flow/example/gradientnode.h>
 #include <lain/flow/example/loadimagenode.h>
 #include <lain/flow/example/tintnode.h>
-#include <lain/flow/paramtypes.h>
+#include <lain/image/color.h> // image::ColorRGBf (the tint param type, in tests)
 #include <lain/image/image.h>
 #include <lain/io/image/load.h>
 #include <lain/io/image/reader.h>
@@ -91,6 +91,24 @@ TEST_CASE("an image flows through an edge: gradient -> tint", "[flow]")
 	CHECK(br.r == 255);
 	CHECK(br.g == 127); // 255 * 0.5 = 127.5 -> 127
 	CHECK(br.b == 64);	// 128 * 0.5 = 64
+}
+
+TEST_CASE("editing a TintNode param changes its output", "[flow]")
+{
+	using namespace lain::flow;
+	Graph graph;
+	const NodeId gradient = graph.add<example::GradientNode>(2, 2);
+	const NodeId tint = graph.add<example::TintNode>(1.0f, 1.0f, 1.0f); // identity
+	REQUIRE(graph.connect(gradient, 0, tint, 0) == Connection::Ok);
+
+	SerialScheduler{}.evaluate(graph, tint);
+	CHECK(pixel(graph.node(tint).output(0).value().get<lain::image::Image>(), 0).b == 128); // gradient blue, unchanged
+
+	// Edit the single "tint" ColorRGBf param (halve blue), then dirty + re-eval.
+	graph.node(tint).param(0).set<lain::image::ColorRGBf>(lain::image::ColorRGBf(1.0f, 1.0f, 0.5f));
+	graph.node(tint).markDirty();
+	SerialScheduler{}.evaluate(graph, tint);
+	CHECK(pixel(graph.node(tint).output(0).value().get<lain::image::Image>(), 0).b == 64);
 }
 
 TEST_CASE("BlurNode runs the op catalog through an edge: gradient -> blur", "[flow]")
@@ -186,7 +204,7 @@ TEST_CASE("LoadImageNode emits an invalid image when the file can't be read", "[
 	REQUIRE_FALSE(out.value().get<lain::image::Image>().valid());
 }
 
-TEST_CASE("LoadImageNode's path is an editable FilePath param", "[flow]")
+TEST_CASE("LoadImageNode's path is an editable filesystem::path param", "[flow]")
 {
 	using namespace lain::flow;
 	lain::io::image::readerRegistry().registerType<FakeReader>("fake");
@@ -199,7 +217,7 @@ TEST_CASE("LoadImageNode's path is an editable FilePath param", "[flow]")
 
 	// The adapter edits the path param (its only param) then marks the node dirty so the
 	// pull re-runs it — a clean node is skipped by evaluate (this is the edit contract).
-	graph.node(id).param(0).set<FilePath>(FilePath(file.path()));
+	graph.node(id).param(0).set<std::filesystem::path>(std::filesystem::path(file.path()));
 	graph.node(id).markDirty();
 	SerialScheduler{}.evaluate(graph, id);
 	const lain::image::Image& img = graph.node(id).output(0).value().get<lain::image::Image>();

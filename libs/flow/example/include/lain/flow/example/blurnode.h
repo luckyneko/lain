@@ -13,7 +13,8 @@ namespace lain::flow::example
 	class BlurNode : public Node
 	{
 	public:
-		// radius/sigma of the Gaussian kernel (e.g. 2 / 1.5 gives a soft 5x5 blur).
+		// radius/sigma of the Gaussian kernel (e.g. 2 / 1.5 gives a soft 5x5 blur) — the
+		// ctor args seed editable params of the same name.
 		explicit BlurNode(int radius = 2, float sigma = 1.5f);
 
 		// Index of the lain::image::Image input / output ports.
@@ -23,8 +24,8 @@ namespace lain::flow::example
 		void compute() override;
 
 	private:
-		int m_radius;
-		float m_sigma;
+		PortIndex m_radius; // "radius" param (int)
+		PortIndex m_sigma;	// "sigma" param (float)
 		PortIndex m_in;
 		PortIndex m_out;
 	};

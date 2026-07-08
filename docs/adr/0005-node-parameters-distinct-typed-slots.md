@@ -25,11 +25,14 @@ because params and ports share one internal value machinery.
 - **Params reuse `PortValue`'s typed `std::any` slot.** One value-erasure mechanism for both, so
   **promoting a param to a connectable input is a definition change, not a data change** — that is
   how a config becomes graph-driven (wire a constant/source node), rather than an editable-pin model.
-- **The editor widget is chosen by the param's TYPE**, never by metadata/hints — a closed set
-  (`string`→text, `FilePath`→file-picker, `int`/`float`→drag, `bool`→checkbox, `Choice`=int+labels
-  →combo). Richer widgets are richer *types* (`Range<T>` slider, a `Color` swatch). Enum params
-  flatten to a `Choice` (labels from `meta::enums` at declaration), so the adapter never needs the
-  concrete enum type. The helper types live in `flow` for now (pure data), promotable to `core`/`io`.
+- **The editor widget is chosen by the param's TYPE**, never by metadata/hints — and we **prefer
+  an existing type, inventing a bespoke one only where none fits**: `std::string`→text,
+  `std::filesystem::path`→file-picker, `image::ColorRGBf`→colour swatch, `int`/`float`→drag,
+  `bool`→checkbox. Only where no standard type carries the meaning do we add one — `Choice` (an int
+  + label list, for enums, filled from `meta::enums` at declaration so the adapter never needs the
+  concrete enum) and `Range<T>` (a value + bounds, for a bounded slider). Such bespoke helper types
+  live in `flow` (pure data). `flow` core never names these — only nodes (`flow-example`) do, and
+  it already links `image`; `std::filesystem::path` is std.
 - **The type→widget mapping is a type-keyed editor registry in the adapter** (the reader-registry /
   "GUI view" shape): built-ins registered once by flowview, a custom type is a
   `registerParamEditor<T>` registration. `flow` stays UI-free; `Node::onInspect` (a vestigial ImGui
@@ -50,13 +53,14 @@ because params and ports share one internal value machinery.
   second type-erasure system (member pointers) with gui↔internals lifetime coupling, versus reusing
   the `PortValue` slot the codebase already has.
 - **Metadata/hints-driven widgets** (`isPath` flag, `min`/`max`, enum value-map on each param).
-  Rejected: a parallel hints system when the *type* can carry the intent (`FilePath`, `Range<T>`,
-  `Choice`) — one rule ("the type says what it is") instead of two.
+  Rejected: a parallel hints system when the *type* can carry the intent (`std::filesystem::path`, `image::ColorRGBf`,
+  `Range<T>`, `Choice`) — one rule ("the type says what it is") instead of two.
 
 ## Consequences
 
-- **`flow` gains a small param surface + helper value types** (`FilePath`, `Choice`, `Range<T>`),
-  all UI-free data; flowview gains a param **editor registry** and a **palette + params panel**.
+- **`flow` gains a small param surface**; params use existing types (`std::filesystem::path`,
+  `image::ColorRGBf`, scalars) where they fit, and a bespoke `Choice`/`Range<T>` only where none
+  does. flowview gains a param **editor registry** and a **palette + params panel**.
 - **A read-only ("Debug") param *kind*** (display-only, orthogonal to the type) is deferred — it
   slots in without disturbing this.
 - **Serialization-friendly**: a typed slot with a `type_index` is already the thing a graph
