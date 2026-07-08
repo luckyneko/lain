@@ -53,7 +53,7 @@ never by driving a live GUI.
 - **Param** — a **named, typed, non-connectable configuration value** on a Node (a
   `LoadImageNode`'s path, a `BlurNode`'s radius), **distinct from a Port** (which is dataflow,
   edge-driven). A Node declares params in its ctor (`addParam<T>(name, default)`) and reads them
-  in `compute()` (`param<T>(idx)`) — the same shape as `addInput` / `input().get<T>()`. Params
+  in `compute()` (`param(idx).get<T>()`) — the same shape as `addInput` / `input().get<T>()`. Params
   reuse **PortValue**'s typed-`std::any` slot, so a param and a port share one internal value
   machinery: **promoting a param to a connectable input is a definition change, not a data change**
   — that is how `flow` gets "drive a config from the graph" (wire a `ConstantFloatNode` to the

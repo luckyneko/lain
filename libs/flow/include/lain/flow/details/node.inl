@@ -18,4 +18,13 @@ namespace lain::flow
 		m_outputs.push_back(Port(std::move(name), Port::Direction::Output, portType<T>()));
 		return m_outputs.size() - 1;
 	}
+
+	template <typename T>
+	PortIndex Node::addParam(std::string name, T defaultValue)
+	{
+		Param p(std::move(name), portType<T>());
+		p.set<T>(std::move(defaultValue));
+		m_params.push_back(std::move(p));
+		return m_params.size() - 1;
+	}
 } // namespace lain::flow

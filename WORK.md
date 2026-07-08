@@ -418,7 +418,7 @@ Deferring it keeps the milestone honest for a modest re-entry cost. The `ImageWr
   `Image` stays copyable via a hand-written deep copy.
 - **Node parameters** (designed — [ADR-0005](docs/adr/0005-node-parameters-distinct-typed-slots.md),
   `CONTEXT.md`): params are distinct, non-connectable, typed `PortValue`-style slots
-  (`addParam<T>` / `param<T>`); widgets chosen by type via an adapter-side editor registry
+  (`addParam<T>` / `param(idx).get<T>()`); widgets chosen by type via an adapter-side editor registry
   (`FilePath`/`Choice`/`Range<T>` helper types in `flow`); `Node::onInspect` removed. Needed *now*
   to set `LoadImageNode`'s path in the gui, and a prerequisite for `ImageWriteNode`.
 - **flowview gui pass** (one Metal-verified batch): the CPU-image **thumbnail** (step 1) +

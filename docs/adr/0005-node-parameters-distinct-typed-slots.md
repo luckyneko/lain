@@ -20,7 +20,7 @@ because params and ports share one internal value machinery.
 ## Decision
 
 - **Params are distinct from ports and non-connectable.** Config, not dataflow. A node declares
-  `m_x = addParam<T>("name", default)` in its ctor and reads `param<T>(m_x)` in `compute()` — the
+  `m_x = addParam<T>("name", default)` in its ctor and reads `param(m_x).get<T>()` in `compute()` — the
   same shape as `addInput` / `input().get<T>()`.
 - **Params reuse `PortValue`'s typed `std::any` slot.** One value-erasure mechanism for both, so
   **promoting a param to a connectable input is a definition change, not a data change** — that is

@@ -9,6 +9,7 @@ add_executable(test-flow
 	test_edit.cpp
 	test_describe.cpp
 	test_nodes.cpp
+	test_params.cpp
 )
 
 target_compile_features(test-flow PRIVATE cxx_std_17)
