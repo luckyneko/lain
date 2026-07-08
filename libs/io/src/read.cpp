@@ -1,5 +1,7 @@
 #include "lain/io/read.h"
 
+#include "scheme.h" // parseUri / isLocalScheme (shared with write.cpp)
+
 #include <lain/log/log.h>
 
 #include <cstddef>
@@ -11,22 +13,6 @@
 namespace lain::io
 {
 	// --- file-local helpers (named static, not an anonymous namespace) ----------
-
-	// The scheme + remainder of a URI. A bare path (no "://") parses as the local
-	// scheme with the whole string as the remainder.
-	struct ParsedUri
-	{
-		std::string_view scheme;
-		std::string_view rest;
-	};
-
-	static ParsedUri parseUri(std::string_view uri)
-	{
-		const auto sep = uri.find("://");
-		if (sep == std::string_view::npos)
-			return {"local", uri};
-		return {uri.substr(0, sep), uri.substr(sep + 3)};
-	}
 
 	// Read an entire local file into a Buffer, or nullopt (reason logged) on failure.
 	static std::optional<memory::Buffer> readLocal(const std::filesystem::path& path)
@@ -71,7 +57,7 @@ namespace lain::io
 	std::optional<memory::Buffer> read(std::string_view uri)
 	{
 		const ParsedUri parsed = parseUri(uri);
-		if (parsed.scheme == "local" || parsed.scheme == "file")
+		if (isLocalScheme(parsed.scheme))
 			return readLocal(std::filesystem::path(parsed.rest));
 
 		log::warn("io::read: unsupported scheme '{}' in uri: {}", std::string(parsed.scheme), std::string(uri));

@@ -5,6 +5,7 @@
 
 add_library(io STATIC
 	src/read.cpp
+	src/write.cpp
 )
 add_library(lain::io ALIAS io)
 
