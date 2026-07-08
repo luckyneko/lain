@@ -9,6 +9,7 @@
 #include <lain/image/image.h>
 #include <lain/io/image/load.h>
 #include <lain/io/image/png/register.h>
+#include <lain/io/image/save.h>
 #include <lain/memory/buffer.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -116,4 +117,59 @@ TEST_CASE("PngReader rejects non-PNG bytes", "[io-image-png]")
 	lain::io::image::png::registerCodec();
 	const unsigned char garbage[] = {'n', 'o', 't', ' ', 'a', ' ', 'p', 'n', 'g'};
 	REQUIRE_FALSE(lain::io::image::decode("png", bufferFrom(garbage, sizeof(garbage))).has_value());
+}
+
+// A test image with a recognisable per-byte ramp, for the writer round-trips below.
+static lain::image::Image rampImage(int w, int h, PixelFormat format)
+{
+	lain::image::Image image(w, h, format, ColorSpace::sRGB, AlphaMode::Straight);
+	std::uint8_t* px = image.data();
+	for (std::size_t i = 0; i < image.byteSize(); ++i)
+		px[i] = static_cast<std::uint8_t>(i * 7 + 1);
+	return image;
+}
+
+TEST_CASE("PngWriter round-trips an 8-bit RGBA image losslessly", "[io-image-png]")
+{
+	lain::io::image::png::registerCodec(); // registers the reader + writer
+	const lain::image::Image original = rampImage(3, 2, PixelFormat::RGBA8);
+
+	const auto encoded = lain::io::image::encode("png", original);
+	REQUIRE(encoded.has_value());
+
+	const auto decoded = lain::io::image::decode("png", *encoded);
+	REQUIRE(decoded.has_value());
+	REQUIRE(decoded->width() == 3);
+	REQUIRE(decoded->height() == 2);
+	REQUIRE(decoded->pixelFormat() == PixelFormat::RGBA8);
+	for (std::size_t i = 0; i < original.byteSize(); ++i)
+		REQUIRE(decoded->data()[i] == original.data()[i]); // PNG is lossless
+}
+
+TEST_CASE("PngWriter round-trips a 16-bit RGB image (U16 write + swap)", "[io-image-png]")
+{
+	lain::io::image::png::registerCodec();
+	const lain::image::Image original = rampImage(2, 2, PixelFormat::RGB16);
+
+	const auto encoded = lain::io::image::encode("png", original);
+	REQUIRE(encoded.has_value());
+
+	// encode must not mutate the input — the row pointers alias it, and libpng only reads
+	// them on write (this is what lets us skip the pixel copy).
+	for (std::size_t i = 0; i < original.byteSize(); ++i)
+		REQUIRE(original.data()[i] == static_cast<std::uint8_t>(i * 7 + 1));
+
+	const auto decoded = lain::io::image::decode("png", *encoded);
+	REQUIRE(decoded.has_value());
+	REQUIRE(decoded->pixelFormat() == PixelFormat::RGB16);
+	const auto* out16 = reinterpret_cast<const std::uint16_t*>(decoded->data());
+	const auto* in16 = reinterpret_cast<const std::uint16_t*>(original.data());
+	for (std::size_t i = 0; i < original.byteSize() / 2; ++i)
+		REQUIRE(out16[i] == in16[i]); // full 16-bit values survive
+}
+
+TEST_CASE("PngWriter rejects a float format PNG can't store", "[io-image-png]")
+{
+	lain::io::image::png::registerCodec();
+	REQUIRE_FALSE(lain::io::image::encode("png", rampImage(2, 2, PixelFormat::RGB32F)).has_value());
 }

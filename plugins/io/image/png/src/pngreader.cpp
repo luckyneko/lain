@@ -193,8 +193,13 @@ namespace lain::io::image::png
 		}
 	};
 
+	// Defined in pngwriter.cpp (same plugin); registered together so the codec's reader and
+	// writer arrive as a pair.
+	void registerPngWriter();
+
 	void registerCodec()
 	{
 		readerRegistry().registerType<PngReader>("png");
+		registerPngWriter();
 	}
 } // namespace lain::io::image::png

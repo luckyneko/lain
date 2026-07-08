@@ -7,6 +7,7 @@ include(addLibPNG) # PNG::png (fetches libpng + zlib on demand)
 
 add_library(io-image-png STATIC
 	src/pngreader.cpp
+	src/pngwriter.cpp
 )
 add_library(lain::io::image::png ALIAS io-image-png)
 
