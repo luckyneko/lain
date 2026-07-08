@@ -71,6 +71,7 @@ namespace flowview
 		std::map<PinKey, lain::gui::Texture> m_previews; // one uploaded thumbnail per image port
 		bool m_previewsDirty = true;					 // rebuild previews on the next frame (init + after edits)
 		bool m_laidOut = false;							 // node canvas: seed node positions on the first frame
+		int m_addCounter = 0;							 // palette-added nodes cascade their position
 		PreviewSize m_previewSize = PreviewSize::Medium; // thumbnail size (enumCombo-driven)
 	};
 } // namespace flowview

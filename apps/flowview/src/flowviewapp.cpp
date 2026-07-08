@@ -39,8 +39,9 @@ namespace flowview
 		// there is nothing to wire here beyond handing it to the window.
 		app.createWindow(spec, m_window); // creates the shared device; builds the gui Context
 
-		// Populate the node palette, then build + evaluate the smoke scene the inspector
-		// reads. The nodes are pure CPU, so no device is threaded through here.
+		// Populate the node palette + the image codecs (so a palette-added LoadImageNode can
+		// decode), then build + evaluate the smoke scene. The nodes are pure CPU.
+		lain::io::image::registerImageCodecs();
 		registerExampleNodes(m_nodeFactory, m_size);
 		m_graph = std::make_unique<flow::Graph>();
 		m_textureNode = buildExampleScene(*m_graph, m_nodeFactory);

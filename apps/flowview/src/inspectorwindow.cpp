@@ -273,6 +273,25 @@ namespace flowview
 		gui::End();
 		m_laidOut = true;
 
+		// Persistent node palette: a left-click list of the factory's node types — trackpad-
+		// native, where the right-click add menu above (kept as a secondary) is awkward on a
+		// MacBook. A new node cascades its grid position so successive adds don't stack.
+		gui::SetNextWindowPos(math::Vec2f{20.0f, 360.0f}, ImGuiCond_FirstUseEver);
+		gui::SetNextWindowSize(math::Vec2f{320.0f, 230.0f}, ImGuiCond_FirstUseEver);
+		gui::Begin("Nodes");
+		for (const std::string& key : appDelegate.nodeFactory().keys())
+		{
+			if (gui::Button(key.c_str()))
+			{
+				const flow::NodeId newId = flow::edit::addNode(graph, appDelegate.nodeFactory().create(key));
+				const float offset = 40.0f + static_cast<float>(m_addCounter % 6) * 28.0f;
+				gui::nodes::SetNodeGridSpacePos(static_cast<int>(newId.value()), math::Vec2f{offset, offset});
+				++m_addCounter;
+				edited = true;
+			}
+		}
+		gui::End();
+
 		// A topology edit re-runs the scene, so the previews need refreshing (recomputed
 		// images, added/removed ports). Mark them dirty; refreshPreviews below upserts in
 		// place where it can. (Deferred, not per-frame — acm::Texture::upload is a stalling

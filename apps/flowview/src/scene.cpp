@@ -2,6 +2,7 @@
 
 #include <lain/flow/example/blurnode.h>
 #include <lain/flow/example/gradientnode.h>
+#include <lain/flow/example/loadimagenode.h>
 #include <lain/flow/example/tintnode.h>
 #include <lain/flow/graph.h>
 
@@ -14,6 +15,7 @@ namespace flowview
 	static constexpr const char* kGradientKey = "gradient";
 	static constexpr const char* kTintKey = "tint";
 	static constexpr const char* kBlurKey = "blur";
+	static constexpr const char* kLoadImageKey = "loadimage";
 
 	void registerExampleNodes(core::Factory<flow::Node>& factory, std::uint32_t size)
 	{
@@ -22,6 +24,7 @@ namespace flowview
 		factory.registerType<flow::example::GradientNode>(kGradientKey, size, size);
 		factory.registerType<flow::example::TintNode>(kTintKey, 1.0f, 0.5f, 0.5f); // keep R, halve G/B
 		factory.registerType<flow::example::BlurNode>(kBlurKey, 2, 1.5f);		   // soft 5x5 Gaussian
+		factory.registerType<flow::example::LoadImageNode>(kLoadImageKey);		   // empty path -> set in the gui
 	}
 
 	flow::NodeId buildExampleScene(flow::Graph& graph, const core::Factory<flow::Node>& factory)
