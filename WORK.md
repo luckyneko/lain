@@ -347,7 +347,10 @@ and the "Loading" section of `CONTEXT.md`):
   format gaps still filled by expansion** (candidates to add as native formats later): indexed /
   palette color; sub-byte channel depths (1/2/4-bit); colourkey transparency (tRNS, vs. a full
   alpha channel); and colour spaces beyond `Unspecified`/`Linear`/`sRGB` (arbitrary gamma, ICC
-  profiles, non-sRGB primaries — currently collapsed to `Unspecified`).
+  profiles, non-sRGB primaries — currently collapsed to `Unspecified`). A codec may instead
+  **reject** a layout it can't represent faithfully rather than expand it — the TIFF reader
+  rejects tiled / planar / float / palette / exotic-photometric loudly (logged, invalid Image);
+  either way the response is loud, never a silent wrong result.
 - **Codecs are plugins, and live like plugins.** The `lain::io::image` interface + `Factory` +
   facade is the codec-free **seam** and stays in `libs/`; each format is a **separate satellite
   target** (`JpegReader` + `JpegWriter` together) under a top-level **`plugins/`** root (peer to
@@ -410,7 +413,9 @@ incremental/seekable read (chunked, possibly mmap-/socket-backed) peer to `read`
 large/network assets, since `read → Buffer` is a whole-asset slurp that video can't use;
 `lain::io::video` / `audio` + `Timecode` (Tier C item 9); the memory pool/arena +
 `BufferView`/`SharedBuffer`; magic-byte format sniffing (extension-keyed for now); thorax
-adoption.
+adoption. **TIFF reader breadth ("one day", not now):** float sample format → `F32` Images
+(intermediary/HDR files — lain already has the `*32F` formats), `CIELab`/`YCbCr` photometrics
+(need a colour conversion), and tiled / planar / multi-page (currently rejected / first-page).
 
 ## Backlog (deferred — don't build speculatively)
 

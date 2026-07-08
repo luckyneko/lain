@@ -10,6 +10,7 @@
 TEST_CASE("registerImageCodecs registers the built-in codecs", "[io-image-codecs]")
 {
 	lain::io::image::registerImageCodecs();
-	// PNG ships enabled by default (LAIN_IO_IMAGE_PNG); the aggregator must have wired it.
+	// PNG and TIFF ship enabled by default; the aggregator must have wired both.
 	REQUIRE(lain::io::image::readerRegistry().contains("png"));
+	REQUIRE(lain::io::image::readerRegistry().contains("tiff"));
 }
