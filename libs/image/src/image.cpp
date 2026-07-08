@@ -4,6 +4,8 @@
 
 #include <lain/meta/enums.h>
 
+#include <cstring> // memset / memcpy for the pixel buffer
+
 namespace lain::image
 {
 	// The two enum-indexed type tables must cover their whole enum (their internal order is
@@ -24,8 +26,38 @@ namespace lain::image
 		, m_format(format)
 		, m_colorSpace(colorSpace)
 		, m_alphaMode(alphaMode)
-		, m_bytes((width > 0 && height > 0) ? static_cast<std::size_t>(width) * height * bytesPerPixel(format) : 0, 0)
+		, m_bytes((width > 0 && height > 0) ? static_cast<std::size_t>(width) * height * bytesPerPixel(format) : 0)
 	{
+		// Zero the pixels — the previous std::vector storage was value-initialised, and some
+		// callers rely on a fresh Image being cleared. (Buffer itself leaves bytes untouched.)
+		if (!m_bytes.empty())
+			std::memset(m_bytes.data(), 0, m_bytes.size());
+	}
+
+	Image::Image(const Image& other)
+		: m_extent(other.m_extent)
+		, m_format(other.m_format)
+		, m_colorSpace(other.m_colorSpace)
+		, m_alphaMode(other.m_alphaMode)
+		, m_bytes(other.m_bytes.size())
+	{
+		if (!m_bytes.empty())
+			std::memcpy(m_bytes.data(), other.m_bytes.data(), m_bytes.size());
+	}
+
+	Image& Image::operator=(const Image& other)
+	{
+		if (this != &other)
+		{
+			m_extent = other.m_extent;
+			m_format = other.m_format;
+			m_colorSpace = other.m_colorSpace;
+			m_alphaMode = other.m_alphaMode;
+			m_bytes = memory::Buffer(other.m_bytes.size());
+			if (!m_bytes.empty())
+				std::memcpy(m_bytes.data(), other.m_bytes.data(), m_bytes.size());
+		}
+		return *this;
 	}
 
 	std::string Image::toString() const

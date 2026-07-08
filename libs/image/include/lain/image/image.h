@@ -3,12 +3,12 @@
 #include "lain/image/colorspace.h"	// ColorSpace, AlphaMode (tracked tags)
 #include "lain/image/pixelformat.h" // PixelFormat + info() descriptor
 
-#include <lain/math/types.h> // math::Vec2i (extent)
+#include <lain/math/types.h>	// math::Vec2i (extent)
+#include <lain/memory/buffer.h> // memory::Buffer (the pixel storage)
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
-#include <vector>
 
 namespace lain::image
 {
@@ -34,6 +34,16 @@ namespace lain::image
 		Image(int width, int height, PixelFormat format = PixelFormat::RGBA8,
 			  ColorSpace colorSpace = ColorSpace::Unspecified, AlphaMode alphaMode = AlphaMode::Unspecified);
 
+		// Image stays COPYABLE — it rides flow's std::any PortValue (which requires copyable)
+		// and convert()/ops return it by value. Its storage (memory::Buffer) is move-only, so
+		// the copy is a hand-written deep copy (a fresh Buffer + a byte copy); the move is the
+		// natural Buffer move.
+		Image(const Image& other);
+		Image& operator=(const Image& other);
+		Image(Image&&) noexcept = default;
+		Image& operator=(Image&&) noexcept = default;
+		~Image() = default;
+
 		lain::math::Vec2i extent() const { return m_extent; }
 		int width() const { return m_extent.x; }
 		int height() const { return m_extent.y; }
@@ -46,12 +56,13 @@ namespace lain::image
 		void setColorSpace(ColorSpace colorSpace) { m_colorSpace = colorSpace; }
 		void setAlphaMode(AlphaMode alphaMode) { m_alphaMode = alphaMode; }
 
-		// The tightly-packed pixel bytes (byteSize() of them). The storage type is kept
-		// private on purpose — a future pooled/mimalloc allocator will route allocation
-		// through here without touching callers — so access is via the raw pointer + size,
-		// not the underlying container. Typed pixel access is Image::as<C>() (imageview.h).
-		const std::uint8_t* data() const { return m_bytes.data(); }
-		std::uint8_t* data() { return m_bytes.data(); }
+		// The tightly-packed pixel bytes (byteSize() of them). Storage is a memory::Buffer
+		// (aligned, routed through the memory::alloc seam, so a future pool serves Image for
+		// free); access is the raw pointer + size, not the container, so that stays swappable.
+		// The Buffer holds std::byte; callers get uint8_t here — the reinterpret lives once
+		// here rather than at every call site. Typed pixel access is Image::as<C>() (imageview.h).
+		const std::uint8_t* data() const { return reinterpret_cast<const std::uint8_t*>(m_bytes.data()); }
+		std::uint8_t* data() { return reinterpret_cast<std::uint8_t*>(m_bytes.data()); }
 
 		// A typed, non-owning view of these bytes as Color C, for pixel-wise iteration.
 		// The runtime PixelFormat must match C::format (asserts; returns an invalid view in
@@ -76,6 +87,6 @@ namespace lain::image
 		PixelFormat m_format{PixelFormat::RGBA8};
 		ColorSpace m_colorSpace{ColorSpace::Unspecified};
 		AlphaMode m_alphaMode{AlphaMode::Unspecified};
-		std::vector<std::uint8_t> m_bytes;
+		lain::memory::Buffer m_bytes;
 	};
 } // namespace lain::image

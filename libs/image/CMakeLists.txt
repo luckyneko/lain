@@ -16,6 +16,7 @@ target_include_directories(image PUBLIC include)
 target_link_libraries(image
 	PUBLIC lain::math				# math::Vec2i in the public extent()
 	PUBLIC lain::meta				# meta::TypeList in pixelformat.h/color.h (public headers)
+	PUBLIC lain::memory				# memory::Buffer is Image's storage (image.h)
 	PRIVATE lain::log				# enforcement diagnostics (convert.cpp / enforce.cpp)
 	PRIVATE lain::warnings
 )
