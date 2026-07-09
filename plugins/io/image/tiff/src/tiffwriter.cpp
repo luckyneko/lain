@@ -96,6 +96,12 @@ namespace lain::io::image::tiff
 	class TiffWriter : public ImageWriter
 	{
 	public:
+		bool canEncode(const lain::image::Image& image) const override
+		{
+			// This writer stores 8/16-bit integer Gray/GrayAlpha/RGB/RGBA (float is deferred).
+			return image.valid() && image.descriptor().channelType != lain::image::ChannelType::F32;
+		}
+
 		std::optional<memory::Buffer> encode(const lain::image::Image& image) const override
 		{
 			if (!image.valid())

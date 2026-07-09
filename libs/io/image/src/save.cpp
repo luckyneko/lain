@@ -25,6 +25,13 @@ namespace lain::io::image
 			return std::nullopt;
 		}
 
+		if (!writer->canEncode(image))
+		{
+			log::warn("io::image::encode: the '{}' codec cannot encode {} without loss; convert it first", key,
+					  image.toString());
+			return std::nullopt;
+		}
+
 		auto bytes = writer->encode(image);
 		if (!bytes)
 		{

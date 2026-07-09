@@ -1,8 +1,9 @@
-# Provides the stb::image target — the stb_image single-header decoder behind the
-# lain::io::image::jpeg codec plugin. stb has no CMake build; FetchContent just populates
-# the source, and the implementation is compiled here in its own TU (stb_image_impl.c, JPEG
-# only) with warnings OFF, so stb's noisy code never meets lain's strict flags. The header
-# is re-exposed SYSTEM for consumers (declarations only — they don't define the impl).
+# Provides the stb::image target — the stb_image decoder + stb_image_write encoder (single
+# headers) behind the lain::io::image::jpeg codec plugin. stb has no CMake build; FetchContent
+# just populates the source, and the implementations are compiled here in their own TU
+# (stb_image_impl.cpp, JPEG only) with warnings OFF, so stb's noisy code never meets lain's
+# strict flags. The headers are re-exposed SYSTEM for consumers (declarations only — they don't
+# define the impl).
 #
 # Included by the jpeg plugin's CMakeLists; guarded so a second include is a no-op.
 

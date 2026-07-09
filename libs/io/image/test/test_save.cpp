@@ -30,6 +30,8 @@ using lain::io::image::writerRegistry;
 class FakeWriter : public ImageWriter
 {
 public:
+	bool canEncode(const lain::image::Image& image) const override { return image.valid(); }
+
 	std::optional<lain::memory::Buffer> encode(const lain::image::Image& image) const override
 	{
 		if (!image.valid())

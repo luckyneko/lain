@@ -21,8 +21,15 @@ namespace lain::io::image
 	public:
 		virtual ~ImageWriter() = default;
 
-		// Encode `image` to format bytes, or std::nullopt on failure (an input the format
-		// can't represent, or an encode error). The save() facade logs a nullopt result.
+		// Whether this writer can encode `image` WITHOUT LOSS — the format natively represents
+		// its pixel format, channel count, and bit depth. A codec must NOT silently degrade an
+		// input it can't hold (JPEG has no alpha; PNG has no float): it reports false here, and
+		// the seam rejects loudly, leaving any lossy conversion (e.g. dropping alpha) to the
+		// caller's explicit convert(). The precondition for encode().
+		virtual bool canEncode(const lain::image::Image& image) const = 0;
+
+		// Encode `image` to format bytes, or std::nullopt on an encode error. Precondition:
+		// canEncode(image) is true (the seam checks it first). The save() facade logs a nullopt.
 		virtual std::optional<memory::Buffer> encode(const lain::image::Image& image) const = 0;
 	};
 } // namespace lain::io::image

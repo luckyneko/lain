@@ -8,6 +8,7 @@
 #include <lain/image/image.h>
 #include <lain/io/image/jpeg/register.h>
 #include <lain/io/image/load.h>
+#include <lain/io/image/save.h>
 #include <lain/memory/buffer.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -71,4 +72,50 @@ TEST_CASE("JpegReader rejects non-JPEG bytes", "[io-image-jpeg]")
 	lain::io::image::jpeg::registerCodec();
 	const unsigned char garbage[] = {'n', 'o', 't', ' ', 'j', 'p', 'e', 'g'};
 	REQUIRE_FALSE(lain::io::image::decode("jpg", bufferFrom(garbage, sizeof(garbage))).has_value());
+}
+
+// A solid-colour image — JPEG is lossy, but a flat colour round-trips within a small
+// tolerance (no block-edge ringing to worry about).
+static lain::image::Image solid(int w, int h, PixelFormat format, std::uint8_t value)
+{
+	lain::image::Image image(w, h, format, ColorSpace::sRGB);
+	std::uint8_t* px = image.data();
+	for (std::size_t i = 0; i < image.byteSize(); ++i)
+		px[i] = value;
+	return image;
+}
+
+TEST_CASE("JpegWriter round-trips an RGB8 image (lossy, within tolerance)", "[io-image-jpeg]")
+{
+	lain::io::image::jpeg::registerCodec(); // registers the reader + writer
+	const lain::image::Image original = solid(16, 16, PixelFormat::RGB8, 137);
+
+	const auto encoded = lain::io::image::encode("jpg", original);
+	REQUIRE(encoded.has_value());
+
+	const auto decoded = lain::io::image::decode("jpg", *encoded);
+	REQUIRE(decoded.has_value());
+	REQUIRE(decoded->pixelFormat() == PixelFormat::RGB8);
+	const std::uint8_t* px = decoded->data();
+	const std::size_t centre = (8 * 16 + 8) * 3;
+	REQUIRE(near(px[centre + 0], 137));
+	REQUIRE(near(px[centre + 1], 137));
+	REQUIRE(near(px[centre + 2], 137));
+}
+
+TEST_CASE("JpegWriter rejects an alpha-bearing image rather than dropping alpha", "[io-image-jpeg]")
+{
+	// JPEG has no alpha; the writer must NOT silently discard it — encode fails loudly, and
+	// the caller drops alpha explicitly (convert to RGB8) if that's what they want.
+	lain::io::image::jpeg::registerCodec();
+	REQUIRE_FALSE(lain::io::image::encode("jpg", solid(16, 16, PixelFormat::RGBA8, 90)).has_value());
+
+	// The explicit form works: an RGB8 (alpha already dropped by the caller) encodes.
+	REQUIRE(lain::io::image::encode("jpg", solid(16, 16, PixelFormat::RGB8, 90)).has_value());
+}
+
+TEST_CASE("JpegWriter rejects a 16-bit image (JPEG is 8-bit)", "[io-image-jpeg]")
+{
+	lain::io::image::jpeg::registerCodec();
+	REQUIRE_FALSE(lain::io::image::encode("jpg", solid(4, 4, PixelFormat::RGB16, 1)).has_value());
 }

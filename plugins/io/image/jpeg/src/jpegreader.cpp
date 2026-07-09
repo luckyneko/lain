@@ -63,9 +63,14 @@ namespace lain::io::image::jpeg
 		}
 	};
 
+	// Defined in jpegwriter.cpp (same plugin); registered together so the codec's reader and
+	// writer arrive as a pair.
+	void registerJpegWriter();
+
 	void registerCodec()
 	{
 		readerRegistry().registerType<JpegReader>("jpg");
 		readerRegistry().registerType<JpegReader>("jpeg");
+		registerJpegWriter();
 	}
 } // namespace lain::io::image::jpeg

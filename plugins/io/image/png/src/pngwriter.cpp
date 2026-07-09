@@ -131,6 +131,12 @@ namespace lain::io::image::png
 	class PngWriter : public ImageWriter
 	{
 	public:
+		bool canEncode(const lain::image::Image& image) const override
+		{
+			// PNG stores 8/16-bit Gray/GrayAlpha/RGB/RGBA — every lain format except float.
+			return image.valid() && image.descriptor().channelType != lain::image::ChannelType::F32;
+		}
+
 		std::optional<memory::Buffer> encode(const lain::image::Image& image) const override
 		{
 			if (!image.valid())
