@@ -202,11 +202,16 @@ namespace lain::io::image::tiff
 		}
 	};
 
+	// Defined in tiffwriter.cpp (same plugin); registered together so the codec's reader and
+	// writer arrive as a pair.
+	void registerTiffWriter();
+
 	void registerCodec()
 	{
 		TIFFSetErrorHandler(&tiffMessageToLog);
 		TIFFSetWarningHandler(&tiffMessageToLog);
 		readerRegistry().registerType<TiffReader>("tiff");
 		readerRegistry().registerType<TiffReader>("tif");
+		registerTiffWriter();
 	}
 } // namespace lain::io::image::tiff

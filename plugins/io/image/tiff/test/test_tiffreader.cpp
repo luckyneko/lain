@@ -7,6 +7,7 @@
 
 #include <lain/image/image.h>
 #include <lain/io/image/load.h>
+#include <lain/io/image/save.h>
 #include <lain/io/image/tiff/register.h>
 #include <lain/memory/buffer.h>
 
@@ -92,4 +93,55 @@ TEST_CASE("TiffReader rejects non-TIFF bytes", "[io-image-tiff]")
 	lain::io::image::tiff::registerCodec();
 	const unsigned char garbage[] = {'n', 'o', 't', ' ', 'a', ' ', 't', 'i', 'f', 'f'};
 	REQUIRE_FALSE(lain::io::image::decode("tiff", bufferFrom(garbage, sizeof(garbage))).has_value());
+}
+
+// A test image with a recognisable per-byte ramp, for the writer round-trips below.
+static lain::image::Image rampImage(int w, int h, PixelFormat format, AlphaMode alpha = AlphaMode::Unspecified)
+{
+	lain::image::Image image(w, h, format, ColorSpace::Unspecified, alpha);
+	std::uint8_t* px = image.data();
+	for (std::size_t i = 0; i < image.byteSize(); ++i)
+		px[i] = static_cast<std::uint8_t>(i * 5 + 3);
+	return image;
+}
+
+TEST_CASE("TiffWriter round-trips an 8-bit RGBA image losslessly (LZW)", "[io-image-tiff]")
+{
+	lain::io::image::tiff::registerCodec(); // registers the reader + writer
+	const lain::image::Image original = rampImage(3, 2, PixelFormat::RGBA8, AlphaMode::Straight);
+
+	const auto encoded = lain::io::image::encode("tiff", original);
+	REQUIRE(encoded.has_value());
+
+	const auto decoded = lain::io::image::decode("tiff", *encoded);
+	REQUIRE(decoded.has_value());
+	REQUIRE(decoded->width() == 3);
+	REQUIRE(decoded->height() == 2);
+	REQUIRE(decoded->pixelFormat() == PixelFormat::RGBA8);
+	REQUIRE(decoded->alphaMode() == AlphaMode::Straight); // carried via ExtraSamples
+	for (std::size_t i = 0; i < original.byteSize(); ++i)
+		REQUIRE(decoded->data()[i] == original.data()[i]); // LZW is lossless
+}
+
+TEST_CASE("TiffWriter round-trips a 16-bit RGB image (U16, libtiff byte order)", "[io-image-tiff]")
+{
+	lain::io::image::tiff::registerCodec();
+	const lain::image::Image original = rampImage(2, 2, PixelFormat::RGB16);
+
+	const auto encoded = lain::io::image::encode("tiff", original);
+	REQUIRE(encoded.has_value());
+
+	const auto decoded = lain::io::image::decode("tiff", *encoded);
+	REQUIRE(decoded.has_value());
+	REQUIRE(decoded->pixelFormat() == PixelFormat::RGB16);
+	const auto* out16 = reinterpret_cast<const std::uint16_t*>(decoded->data());
+	const auto* in16 = reinterpret_cast<const std::uint16_t*>(original.data());
+	for (std::size_t i = 0; i < original.byteSize() / 2; ++i)
+		REQUIRE(out16[i] == in16[i]); // full 16-bit values survive
+}
+
+TEST_CASE("TiffWriter rejects a float format this writer won't store", "[io-image-tiff]")
+{
+	lain::io::image::tiff::registerCodec();
+	REQUIRE_FALSE(lain::io::image::encode("tiff", rampImage(2, 2, PixelFormat::RGB32F)).has_value());
 }
