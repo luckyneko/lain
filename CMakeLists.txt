@@ -91,6 +91,7 @@ if(LAIN_BUILD_APPS)
 	include(addCLI11)
 	include(addImGui)
 	include(addImnodes)
+	include(addPortableFileDialogs)
 	add_subdirectory(libs/app)            # GLFW + CLI11 app harness
 	add_subdirectory(libs/gui)            # Dear ImGui + imnodes wrapper
 	add_subdirectory(apps/flowview)       # the inspector (step 9)

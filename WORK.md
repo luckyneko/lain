@@ -315,7 +315,10 @@ Preview descriptors for deleted nodes are reclaimed via `lain::gui::Context::rel
 (`read → Buffer`) → `lain::io::image` (reader registry + `load` facade) → the **png / tiff / jpeg**
 codec plugins (build-discovered aggregator) → `flow-example::LoadImageNode`. `flowview --headless
 --image <file>` loads a real PNG/JPEG/TIFF through the node and dumps its extent + format + corner
-pixels. Remaining: the gui-mode thumbnail follow-on, then the write pass (see below).
+pixels. The **write library is also done** — `io::write` + the `ImageWriter` seam (`save` facade +
+`canEncode`) + png / tiff / jpeg encoders (see the write pass below). Remaining to close M3: an
+**interim save consumer** in flowview + the gui-mode thumbnail follow-on. The `ImageWriteNode` is
+**superseded** — see the M4 reframe below.
 
 **Driving consumer:** a `flow` node that loads a *real* image file off disk and shows it in
 `flowview` — the first source that isn't synthetic. That one goal is what pulls FileIO and an
@@ -425,7 +428,19 @@ Deferring it keeps the milestone honest for a modest re-entry cost. The `ImageWr
   **node-param editing** (properties panel) + a **persistent palette add-panel** (left-click node
   types from `Factory::keys()`; right-click kept secondary — a MacBook trackpad handles right-click
   poorly). Keyboard-search add deferred.
-- **Step 3 — the write pass**, now unblocked (write seam + per-codec encoders + `ImageWriteNode`).
+- ✅ **Step 3 — the write library** (done): `io::write(uri, Buffer)` + the codec-free `ImageWriter`
+  seam (`save(uri, Image)` facade) + **png / tiff / jpeg** encoders. Encoders **reject rather than
+  degrade**: `ImageWriter::canEncode(image)` gates the seam so a lossy silent conversion never
+  happens (JPEG refuses alpha / 16-bit; png/tiff refuse float) — the caller converts explicitly
+  (ADR-0003). Config knobs (png level / tiff compression / jpeg quality) use fixed defaults; a
+  config mechanism is **deferred** (the three surfaces are heterogeneous — decide with a real
+  caller, i.e. the M4 output binding).
+- **Step 4 — interim save consumer.** `ImageWriteNode` was the planned caller, but it's the **wrong
+  model** (see M4): a save *node* is a side-effecting sink in a pure-compute engine, and "output to
+  one file" reads oddly in a gui. Instead, saving is a **host action on an image port** — a flowview
+  "Save…" affordance on an `image::Image` output → `io::image::save`. This ties up the write
+  library with a real end-to-end consumer *and* is **forward-compatible**: it is precisely the M4
+  gui host's "display the output, write it on Save/Record" binding. This is what closes M3.
 
 **Deferred:** a read-only ("Debug") param kind; graph serialization of params (Tier A item 1).
 
@@ -437,6 +452,46 @@ large/network assets, since `read → Buffer` is a whole-asset slurp that video 
 adoption. **TIFF reader breadth ("one day", not now):** float sample format → `F32` Images
 (intermediary/HDR files — lain already has the `*32F` formats), `CIELab`/`YCbCr` photometrics
 (need a colour conversion), and tiled / planar / multi-page (currently rejected / first-page).
+
+## Milestone 4 — pipeline I/O: graph boundary + host binding (rough plan)
+
+**Not yet designed — a rough sketch, captured so M3 closes cleanly. Grill + ADR before building.**
+
+`flow`'s reason for being is a **volumetric reconstruction pipeline**: N streams of frames (images)
+→ voxels, live (real-time) and offline (cli). That reframes I/O away from per-file load/save
+*nodes* toward a **graph with a declared boundary interface that a host binds**:
+
+- **Graph interface (boundary ports)** — a Graph declares typed **inputs** (what it needs, e.g. "N
+  image streams") and **outputs** (what it produces, e.g. "voxel volume"); internal nodes wire
+  between them. This *is* the pipeline's signature.
+- **Host binding** — the host supplies inputs and consumes outputs, differently per host:
+  - **gui**: inputs ← a **live** stream *or* a **static** image (two input modes); outputs →
+    displayed, and **written only on Save/Record** (the interim flowview "Save…" action is exactly
+    this output binding, arriving early).
+  - **cli**: inputs ← files parsed/synced from args into the input slots; outputs → a real **write**
+    step. A cli run reads the graph's input list to know what to ask for, and its output list to
+    know what to write.
+- **Group node = subgraph** — a node that contains its own nodes and exposes selected inner ports as
+  its own. The **top-level Graph is the outermost group**; boundary ports are its interface. One
+  mechanism at every level.
+
+**Boundary representation (leaning A, not locked):** boundary ports are **designated Input/Output
+nodes** inside the graph (Blender group style) — a `GroupInput` node whose *output* pins are the
+graph's inputs, a `GroupOutput` node whose *input* pins are its outputs; the host enumerates them to
+bind. Reuses the existing node/port machinery and unifies with group nodes for free (vs. a second
+port system living on the `Graph` object).
+
+**Key engine gap this exposes — dynamic ports.** Ports are declared in a `Node`'s ctor and fixed for
+life today. N synced inputs means an Input node must **add/remove ports at runtime**, which needs:
+(1) runtime port mutation (`addPort`/`removePort` post-construction), (2) edge cleanup on removal
+(as `removeNode` already does for incident edges), (3) gui affordances ("+"/"–" on the node). This
+is the first real M4 build item.
+
+**Also implicates** (each its own effort): the deferred **`Stream` transport** (video / live
+frames, incremental vs. `read`'s whole-asset slurp); **multi-stream sync** (temporal alignment of N
+streams); and a **live / real-time execution** model (Taskflow `tf::Pipeline`, Tier B item 4). The
+**side-effecting-sink** concept a true write-in-graph node would need is deferred with it — the host
+binding sidesteps it for now.
 
 ## Backlog (deferred — don't build speculatively)
 
