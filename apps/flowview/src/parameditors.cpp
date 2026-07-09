@@ -1,6 +1,7 @@
 #include "parameditors.h"
 
 #include <lain/flow/param.h>
+#include <lain/gui/dialogs.h>
 #include <lain/gui/gui.h>
 #include <lain/image/color.h>
 
@@ -77,17 +78,38 @@ namespace flowview
 
 	static bool editPath(flow::Param& param)
 	{
-		// A plain path text field for now — type/paste the path, then Enter or click away to
-		// load (committing per keystroke would reopen the file each character). A "Browse…"
-		// dialog is a deferred enhancement; the path TYPE keeps its own editor so it slots in
-		// here without touching any node (ADR-0005).
+		// A text field (type/paste, commit on Enter or focus loss — committing per keystroke would
+		// reopen the file each character) beside a Browse… button that opens the native picker.
+		// The path TYPE owns this editor, so it slots in without touching any node (ADR-0005).
 		std::string edited;
 		bool changed = false;
 		const bool committed =
 			textField(param.name().c_str(), param.get<std::filesystem::path>().string(), edited, changed);
 		if (changed)
 			param.set<std::filesystem::path>(std::filesystem::path(std::move(edited)));
-		return committed;
+
+		// Picking a file commits immediately (the same recompute trigger as finishing a text edit).
+		// Image filters here because the only path param today is an image input; a per-param
+		// filter hint is a future refinement if a non-image path param appears (ADR-0005).
+		bool browsed = false;
+		gui::PushID(param.name().c_str());
+		gui::SameLine();
+		if (gui::Button("Browse..."))
+		{
+			// The dialog wants a starting DIRECTORY, so drop the filename from the current path
+			// (passing a file path breaks the macOS backend — it resolves it as a folder).
+			const std::filesystem::path current = param.get<std::filesystem::path>();
+			const std::filesystem::path startDir = current.has_filename() ? current.parent_path() : current;
+			const auto picked =
+				gui::openFile("Open image", startDir, {{"Images", {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff"}}});
+			if (picked)
+			{
+				param.set<std::filesystem::path>(*picked);
+				browsed = true;
+			}
+		}
+		gui::PopID();
+		return committed || browsed;
 	}
 
 	static bool editColorRGBf(flow::Param& param)

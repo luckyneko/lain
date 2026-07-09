@@ -30,23 +30,43 @@ namespace lain::gui
 		return out;
 	}
 
+	// Session memory of the directory the last dialog resolved to — shared by open + save (the
+	// single "recent folder" users expect), so a dialog with no explicit defaultDir resumes where
+	// the user last was. Not persisted across runs (that needs a settings store — deferred).
+	static std::filesystem::path& lastDir()
+	{
+		static std::filesystem::path dir;
+		return dir;
+	}
+
 	std::optional<std::filesystem::path> openFile(const std::string& title,
-												  const std::filesystem::path& defaultPath,
+												  const std::filesystem::path& defaultDir,
 												  const std::vector<FileFilter>& filters)
 	{
-		const std::vector<std::string> result = pfd::open_file(title, defaultPath.string(), toPfdFilters(filters)).result();
+		const std::filesystem::path start = defaultDir.empty() ? lastDir() : defaultDir;
+		const std::vector<std::string> result = pfd::open_file(title, start.string(), toPfdFilters(filters)).result();
 		if (result.empty())
 			return std::nullopt;
-		return std::filesystem::path(result.front());
+		const std::filesystem::path picked(result.front());
+		lastDir() = picked.parent_path();
+		return picked;
 	}
 
 	std::optional<std::filesystem::path> saveFile(const std::string& title,
-												  const std::filesystem::path& defaultPath,
+												  const std::filesystem::path& defaultDir,
 												  const std::vector<FileFilter>& filters)
 	{
-		const std::string result = pfd::save_file(title, defaultPath.string(), toPfdFilters(filters)).result();
+		const std::filesystem::path start = defaultDir.empty() ? lastDir() : defaultDir;
+		const std::string result = pfd::save_file(title, start.string(), toPfdFilters(filters)).result();
 		if (result.empty())
 			return std::nullopt;
-		return std::filesystem::path(result);
+		const std::filesystem::path picked(result);
+		lastDir() = picked.parent_path();
+		return picked;
+	}
+
+	void message(const std::string& title, const std::string& text, bool error)
+	{
+		pfd::message(title, text, pfd::choice::ok, error ? pfd::icon::error : pfd::icon::info).result();
 	}
 } // namespace lain::gui

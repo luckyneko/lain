@@ -14,8 +14,8 @@ add_executable(flowview
 
 target_compile_features(flowview PRIVATE cxx_std_17)
 target_link_libraries(flowview
-	PRIVATE lain::app lain::core lain::gui lain::flow-example lain::io::image::codecs
-			archimedes Vulkan::Loader lain::warnings
+	PRIVATE lain::app lain::core lain::gui lain::flow-example lain::io::image lain::io::image::codecs
+			lain::log archimedes Vulkan::Loader lain::warnings
 )
 
 # Stage the vendored MoltenVK ICD next to the binary (macOS; no-op elsewhere) so

@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <string>
 
 namespace lain::flow
 {
@@ -73,5 +74,10 @@ namespace flowview
 		bool m_laidOut = false;							 // node canvas: seed node positions on the first frame
 		int m_addCounter = 0;							 // palette-added nodes cascade their position
 		PreviewSize m_previewSize = PreviewSize::Medium; // thumbnail size (enumCombo-driven)
+
+		// The chosen save format per image output pin (the inline dropdown's selection), by format
+		// key ("png" / "jpg" / …). Robust to the savable list changing — an entry not (or no
+		// longer) in a port's list falls back to that list's first format.
+		std::map<PinKey, std::string> m_saveFormat;
 	};
 } // namespace flowview

@@ -17,6 +17,13 @@ namespace lain::io::image
 	// counterpart of readerRegistry().
 	lain::core::Factory<ImageWriter>& writerRegistry();
 
+	// Whether the writer for `formatKey` can encode `image` WITHOUT loss (false if no writer is
+	// registered for the key, or the writer would have to degrade the image — e.g. JPEG can't
+	// hold alpha or 16-bit). A quiet predicate (no logging): the honest pre-check a caller runs
+	// before offering "Save as <format>", so it can guide a convert instead of hitting encode's
+	// loud rejection. encode()/save() enforce the same check.
+	[[nodiscard]] bool canEncode(std::string_view formatKey, const lain::image::Image& image);
+
 	// Encode `image` to `formatKey` bytes in memory. std::nullopt if no writer is registered
 	// for the key or the writer fails (reason logged). For bytes you want in a Buffer rather
 	// than a file; save() is the to-uri path.

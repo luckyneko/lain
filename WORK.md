@@ -316,9 +316,10 @@ Preview descriptors for deleted nodes are reclaimed via `lain::gui::Context::rel
 codec plugins (build-discovered aggregator) → `flow-example::LoadImageNode`. `flowview --headless
 --image <file>` loads a real PNG/JPEG/TIFF through the node and dumps its extent + format + corner
 pixels. The **write library is also done** — `io::write` + the `ImageWriter` seam (`save` facade +
-`canEncode`) + png / tiff / jpeg encoders (see the write pass below). Remaining to close M3: an
-**interim save consumer** in flowview + the gui-mode thumbnail follow-on. The `ImageWriteNode` is
-**superseded** — see the M4 reframe below.
+`canEncode`) + png / tiff / jpeg encoders (see the write pass below) — and so is its **interim save
+consumer**: flowview saves any image output through a native file dialog (Mac-verified). The M3
+write pass is **complete**; the `ImageWriteNode` is **superseded** — see the M4 reframe below. The
+gui-mode thumbnail follow-on is the only M3 loose end.
 
 **Driving consumer:** a `flow` node that loads a *real* image file off disk and shows it in
 `flowview` — the first source that isn't synthetic. That one goal is what pulls FileIO and an
@@ -435,12 +436,16 @@ Deferring it keeps the milestone honest for a modest re-entry cost. The `ImageWr
   (ADR-0003). Config knobs (png level / tiff compression / jpeg quality) use fixed defaults; a
   config mechanism is **deferred** (the three surfaces are heterogeneous — decide with a real
   caller, i.e. the M4 output binding).
-- **Step 4 — interim save consumer.** `ImageWriteNode` was the planned caller, but it's the **wrong
-  model** (see M4): a save *node* is a side-effecting sink in a pure-compute engine, and "output to
-  one file" reads oddly in a gui. Instead, saving is a **host action on an image port** — a flowview
-  "Save…" affordance on an `image::Image` output → `io::image::save`. This ties up the write
-  library with a real end-to-end consumer *and* is **forward-compatible**: it is precisely the M4
-  gui host's "display the output, write it on Save/Record" binding. This is what closes M3.
+- ✅ **Step 4 — interim save consumer** (done, Mac-verified). `ImageWriteNode` was the planned
+  caller, but it's the **wrong model** (see M4): a save *node* is a side-effecting sink in a
+  pure-compute engine, and "output to one file" reads oddly in a gui. Instead, saving is a **host
+  action on an image port** — flowview shows, under each image *output*, an inline format dropdown
+  (only formats that `canEncode` the image losslessly, per-pin) + a **Save…** button →
+  `gui::saveFile` (native panel) → `io::image::save`. The dialog seam (`lain::gui`, over
+  portable-file-dialogs; **Browse…** retired the LoadImageNode path field too) remembers the last
+  folder within the session. This ties up the write library with a real end-to-end consumer *and*
+  is **forward-compatible**: it is precisely the M4 gui host's "display the output, write it on
+  Save/Record" binding.
 
 **Deferred:** a read-only ("Debug") param kind; graph serialization of params (Tier A item 1).
 

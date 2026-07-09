@@ -15,6 +15,12 @@ namespace lain::io::image
 		return registry;
 	}
 
+	bool canEncode(std::string_view formatKey, const lain::image::Image& image)
+	{
+		const auto writer = writerRegistry().create(std::string(formatKey));
+		return writer && writer->canEncode(image);
+	}
+
 	std::optional<memory::Buffer> encode(std::string_view formatKey, const lain::image::Image& image)
 	{
 		const std::string key(formatKey);
