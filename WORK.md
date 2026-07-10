@@ -561,7 +561,14 @@ make the N-pin ergonomics concrete.
    --input <path> --output <path>` binds the boundary via `io::image::load` → `setValue`, runs,
    dumps, then `save`s the output boundary — the write library's caller. A default gradient stands
    in for an unbound input (bare `--headless` + gui-mode until the panel). `dumpGraph` stays.
-3. **gui Interface panel.** The Inputs & Outputs panel above, in flowview. Mac-verified.
+3. ✅ **gui Interface panel** (built, Mac-verified). A dedicated "Interface" window driven by
+   `Graph::boundaryInputs()/outputs()` — Inputs (name/type, bound thumbnail, **Bind file…** →
+   `openFile`→`load`→`setValue`→`reevaluate`) + Outputs (name/type, result thumbnail, the
+   format-dropdown **Save…**). The save controls are a shared `renderImageSave` reused by the
+   inspector's output ports. (UI polish deferred to a later pass once more features land.)
+
+**Vertical (a) is complete** — the boundary model works end-to-end in both hosts (cli round-trip +
+gui bind/save), on the pin-centric multi-port seam shaped so (b)'s dynamic ports slot in unchanged.
 
 **Also implicates** (each its own effort): the deferred **`Stream` transport** (video / live
 frames, incremental vs. `read`'s whole-asset slurp); **multi-stream sync** (temporal alignment of N

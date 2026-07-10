@@ -14,6 +14,7 @@
 #include <lain/gui/gui.h>
 #include <lain/gui/nodes.h>
 #include <lain/image/image.h>
+#include <lain/io/image/load.h>
 #include <lain/io/image/save.h>
 #include <lain/log/log.h>
 
@@ -192,6 +193,111 @@ namespace flowview
 				it = m_previews.erase(it);
 			else
 				++it;
+		}
+	}
+
+	void InspectorWindow::renderImageSave(const PinKey& key, const image::Image& img)
+	{
+		const std::vector<std::string> formats = savableFormats(img);
+		if (formats.empty())
+		{
+			// Nothing can store this image losslessly (e.g. RGBA/float with only JPEG); an
+			// explicit convert is the fix, not a silent degrade (ADR-0003).
+			gui::TextDisabled("(no lossless format — convert first)");
+			return;
+		}
+		// The chosen format for this pin, defaulting to (and falling back to) the first savable
+		// when unset or no longer offered.
+		std::string& sel = m_saveFormat[key];
+		if (std::find(formats.begin(), formats.end(), sel) == formats.end())
+			sel = formats.front();
+		gui::SetNextItemWidth(80.0f);
+		if (gui::BeginCombo("##fmt", sel.c_str()))
+		{
+			for (const std::string& f : formats)
+				if (gui::Selectable(f.c_str(), f == sel))
+					sel = f;
+			gui::EndCombo();
+		}
+		gui::SameLine();
+		if (gui::Button("Save..."))
+			saveImage(img, sel);
+	}
+
+	void InspectorWindow::renderInterfacePanel(FlowviewApp& appDelegate)
+	{
+		flow::Graph& graph = appDelegate.graph();
+		const float side = previewExtent(m_previewSize);
+		bool bound = false;
+
+		gui::SetNextWindowPos(math::Vec2f{940.0f, 20.0f}, ImGuiCond_FirstUseEver);
+		gui::SetNextWindowSize(math::Vec2f{320.0f, 480.0f}, ImGuiCond_FirstUseEver);
+		gui::Begin("Interface");
+
+		// Inputs: each boundary pin, its bound thumbnail (if any), and a Bind file… button.
+		gui::TextUnformatted("Inputs");
+		gui::Separator();
+		const auto inputs = graph.boundaryInputs();
+		for (std::size_t i = 0; i < inputs.size(); ++i)
+		{
+			const flow::BoundaryInput& in = inputs[i];
+			gui::PushID(static_cast<int>(i));
+			gui::Text("%s : %s", in.name().c_str(), std::string(in.node->output(in.pin).typeName()).c_str());
+
+			const PinKey key{in.node->id().value(), true, in.pin};
+			const auto it = m_previews.find(key);
+			if (it != m_previews.end() && it->second.valid())
+				gui::Image(it->second, math::Vec2f{side, side});
+
+			if (in.type() == typeid(image::Image) && gui::Button("Bind file..."))
+			{
+				if (const auto path = gui::openFile("Open image", {},
+													{{"Images", {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff"}}}))
+				{
+					if (auto image = io::image::load(path->string()))
+					{
+						flow::PortValue v;
+						v.set<image::Image>(std::move(*image));
+						in.setValue(std::move(v));
+						bound = true;
+					}
+					else
+					{
+						gui::message("Load failed", "Could not load: " + path->string(), true);
+					}
+				}
+			}
+			gui::PopID();
+		}
+
+		// Outputs: each boundary pin, its result thumbnail, and the format-dropdown Save….
+		gui::Spacing();
+		gui::TextUnformatted("Outputs");
+		gui::Separator();
+		const auto outputs = graph.boundaryOutputs();
+		for (std::size_t i = 0; i < outputs.size(); ++i)
+		{
+			const flow::BoundaryOutput& out = outputs[i];
+			gui::PushID(1000 + static_cast<int>(i)); // distinct id space from the inputs above
+			gui::Text("%s : %s", out.name().c_str(), std::string(out.node->input(out.pin).typeName()).c_str());
+
+			const PinKey key{out.node->id().value(), false, out.pin};
+			const auto it = m_previews.find(key);
+			if (it != m_previews.end() && it->second.valid())
+				gui::Image(it->second, math::Vec2f{side, side});
+
+			if (out.value().holds<image::Image>())
+				renderImageSave(key, out.value().get<image::Image>());
+			gui::PopID();
+		}
+		gui::End();
+
+		// Binding an input re-runs the graph (same path as a param/canvas edit) and refreshes
+		// previews next frame.
+		if (bound)
+		{
+			appDelegate.reevaluate();
+			m_previewsDirty = true;
 		}
 	}
 
@@ -379,32 +485,7 @@ namespace flowview
 					if (output) // outputs are the results you'd export; inputs are just what was fed in
 					{
 						gui::PushID(pinId(id, output, index));
-						const std::vector<std::string> formats = savableFormats(img);
-						if (formats.empty())
-						{
-							// Nothing can store this image losslessly (e.g. RGBA/float with only JPEG);
-							// an explicit convert is the fix, not a silent degrade (ADR-0003).
-							gui::TextDisabled("    (no lossless format — convert first)");
-						}
-						else
-						{
-							// The chosen format for this pin, defaulting to (and falling back to) the
-							// first savable when unset or no longer offered.
-							std::string& sel = m_saveFormat[PinKey{id.value(), output, index}];
-							if (std::find(formats.begin(), formats.end(), sel) == formats.end())
-								sel = formats.front();
-							gui::SetNextItemWidth(80.0f);
-							if (gui::BeginCombo("##fmt", sel.c_str()))
-							{
-								for (const std::string& f : formats)
-									if (gui::Selectable(f.c_str(), f == sel))
-										sel = f;
-								gui::EndCombo();
-							}
-							gui::SameLine();
-							if (gui::Button("Save..."))
-								saveImage(img, sel);
-						}
+						renderImageSave(PinKey{id.value(), output, index}, img);
 						gui::PopID();
 					}
 					return;
@@ -426,6 +507,9 @@ namespace flowview
 			appDelegate.reevaluate();
 			m_previewsDirty = true;
 		}
+
+		// The graph's I/O boundary — the host-binding surface (bind inputs, save outputs).
+		renderInterfacePanel(appDelegate);
 
 		window.renderer().render([&](acm::CommandBuffer cmd, uint32_t)
 								 { m_guiCtx->render(cmd); });

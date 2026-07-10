@@ -25,8 +25,8 @@ namespace flowview
 	// (populated by registerExampleNodes). Shared by both modes.
 	void buildExampleScene(lain::flow::Graph& graph, const lain::core::Factory<lain::flow::Node>& factory);
 
-	// Bind the graph's first boundary input to a generated `size`x`size` gradient image,
-	// so gui-mode shows a result before the user picks a file. A stopgap standing in for
-	// the Interface panel's file-bind (WORK.md M4 vertical a, commit 3).
+	// Bind the graph's first boundary input to a generated `size`x`size` gradient image, so a
+	// fresh gui-mode / bare `--headless` shows a result on launch; the Interface panel (gui) or
+	// --input (cli) rebinds it to a real file.
 	void bindDefaultInput(lain::flow::Graph& graph, std::uint32_t size);
 } // namespace flowview
