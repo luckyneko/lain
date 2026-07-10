@@ -79,6 +79,13 @@ namespace lain::flow
 		std::vector<BoundaryInput> boundaryInputs();
 		std::vector<BoundaryOutput> boundaryOutputs();
 
+		// The graph's single boundary input / output node (or nullptr if none) — for a host that
+		// edits the interface (the ± add/remove pins), where the flat pin lists above are for a
+		// host that just binds. A graph has one of each (Blender-style: one Group Input, one Group
+		// Output, each with N pins); if several exist the first is returned. Keeps the RTTI here.
+		GroupInputNode* boundaryInputNode();
+		GroupOutputNode* boundaryOutputNode();
+
 	private:
 		bool valid(NodeId id) const { return m_nodes.count(id) != 0; }
 		// Is `target` reachable from `start` by following edges (start included)?

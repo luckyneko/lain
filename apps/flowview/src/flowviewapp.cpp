@@ -7,6 +7,7 @@
 #include <lain/app/window.h>
 #include <lain/flow/boundary.h>
 #include <lain/flow/graph.h>
+#include <lain/flow/porttyperegistry.h>
 #include <lain/flow/portvalue.h>
 #include <lain/image/image.h>
 #include <lain/io/image/codecs.h>
@@ -51,6 +52,7 @@ namespace flowview
 		// the Interface panel), and run it. The nodes are pure CPU.
 		lain::io::image::registerImageCodecs();
 		registerExampleNodes(m_nodeFactory, m_size);
+		flow::registerPortType<image::Image>("Image"); // the boundary ± add-pin menu draws from this
 		m_graph = std::make_unique<flow::Graph>();
 		buildExampleScene(*m_graph, m_nodeFactory);
 		bindDefaultInput(*m_graph, m_size);

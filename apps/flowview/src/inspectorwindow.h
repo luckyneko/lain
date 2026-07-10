@@ -82,6 +82,10 @@ namespace flowview
 		// the Interface panel's outputs. `key` scopes the per-pin remembered format choice.
 		void renderImageSave(const PinKey& key, const lain::image::Image& img);
 
+		// The "Remove pin?" confirm modal (opened by a "×"); runs edit::removePort on confirm.
+		// Returns whether a pin was removed this frame.
+		bool renderRemoveConfirm(lain::flow::Graph& graph);
+
 		std::unique_ptr<lain::gui::Context> m_guiCtx;
 		ParamEditors m_paramEditors;					 // type-keyed param editors (registered in onInit)
 		std::map<PinKey, lain::gui::Texture> m_previews; // one uploaded thumbnail per image port
@@ -94,5 +98,12 @@ namespace flowview
 		// key ("png" / "jpg" / …). Robust to the savable list changing — an entry not (or no
 		// longer) in a port's list falls back to that list's first format.
 		std::map<PinKey, std::string> m_saveFormat;
+
+		// Remove-pin confirmation: the pin a "×" targeted, its name + incident-link count, and
+		// whether the confirm modal is pending (opened on a clean id stack after the panel).
+		bool m_removeRequested = false;
+		lain::flow::PortAddress m_removeTarget;
+		std::string m_removeName;
+		int m_removeLinks = 0;
 	};
 } // namespace flowview

@@ -562,11 +562,20 @@ add/remove (and reorder later), so:
    PortAddresses; `connect`/`disconnect`/`populateInputs`/scheduler/`edit`/`dump`/imnodes pin
    encoding/boundary handles move `PortIndex` → `PortId`; `add*`/`addBoundary` return `PortId`. **No
    behaviour change** — a standalone commit kept fully green on the pure rename.
-2. **Mutation engine** — the runtime add/remove mechanism (grilled; design below), tested
-   driver-free with a test dynamic node.
-3. **Port-type registry + boundary nodes go dynamic** — the registry seam + app registration;
-   `GroupInputNode`/`GroupOutputNode` become `DynamicPortsNode`s; `Port::setName` for rename.
-4. **gui** — Interface-panel ± (type menu, editable boundary names, remove-confirm). Mac-verified.
+2. ✅ **Mutation engine** — `DynamicPortsNode` + `addDynamicPort<T>` + `Node` raw erase +
+   `Graph::removePort` primitive (refuses a connected pin) + `edit::removePort`. Driver-free tests
+   incl. the mid-pin-removal proof.
+3. ✅ **Port-type registry + boundary nodes go dynamic** — `registerPortType<T>`; `GroupInputNode`/
+   `GroupOutputNode` are `DynamicPortsNode`s (`addBoundary` routes through `addDynamicPort`);
+   `edit::addPort`; `Port::setName`.
+4. ✅ **gui** (Mac-verified) — the Interface panel is node-grouped: per-pin editable name + bind/save
+   + a "×" with a "Remove 'name'? N link(s)" confirm, and a per-node "+ add pin" (registry type menu
+   filtered by `acceptsPortType`). `Graph::boundaryInputNode()`/`boundaryOutputNode()` (single —
+   one Group Input, one Group Output).
+
+**Vertical (b) is complete** — dynamic ports work end-to-end: add / rename / remove typed boundary
+pins in the gui, on stable `PortId`s so a mid-list removal never corrupts sibling edges. Deferred as
+planned: Merge / fan-in port, reorder, cli named-binding.
 
 **Mutation design (grilled, settled):**
 - **`DynamicPortsNode`** marker base (the gui `dynamic_cast`s to show ±): `dynamicSide()` (which side

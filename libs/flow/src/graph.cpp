@@ -208,4 +208,20 @@ namespace lain::flow
 		}
 		return out;
 	}
+
+	GroupInputNode* Graph::boundaryInputNode()
+	{
+		for (auto& entry : m_nodes)
+			if (auto* node = dynamic_cast<GroupInputNode*>(entry.second.get()))
+				return node;
+		return nullptr;
+	}
+
+	GroupOutputNode* Graph::boundaryOutputNode()
+	{
+		for (auto& entry : m_nodes)
+			if (auto* node = dynamic_cast<GroupOutputNode*>(entry.second.get()))
+				return node;
+		return nullptr;
+	}
 } // namespace lain::flow
