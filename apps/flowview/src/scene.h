@@ -13,16 +13,20 @@ namespace lain::flow
 
 namespace flowview
 {
-	// Register flow-example's node types into `factory` (currently just the
-	// GradientNode, keyed "gradient"), with the device + extent captured in each
-	// creator's closure. This is the palette the editor will draw from; for now it
-	// also backs the smoke scene below. Call once the device is live.
+	// Register flow-example's node types into `factory` (gradient / tint / blur /
+	// loadimage), with construction values captured in each creator's closure. This is
+	// the palette the editor draws from. Call once the device is live.
 	void registerExampleNodes(lain::core::Factory<lain::flow::Node>& factory, std::uint32_t size);
 
-	// Build flowview's smoke scene into `graph`: create the GradientNode from
-	// `factory` (which must have been populated by registerExampleNodes) and adopt it.
-	// A GPU source emitting a `size`x`size` acm::Texture. Shared by both modes —
-	// cli-mode evaluates it and dumps the result, gui-mode previews it. Returns the id
-	// of the texture-producing node.
-	lain::flow::NodeId buildExampleScene(lain::flow::Graph& graph, const lain::core::Factory<lain::flow::Node>& factory);
+	// Build flowview's smoke scene into `graph` on the M4 boundary model: a host-bound
+	// GroupInputNode ("source") -> tint -> blur -> GroupOutputNode ("result"). The graph
+	// declares its interface (one image in, one image out); the host binds it — cli from
+	// --input/--output, gui from the Interface panel. tint/blur come from `factory`
+	// (populated by registerExampleNodes). Shared by both modes.
+	void buildExampleScene(lain::flow::Graph& graph, const lain::core::Factory<lain::flow::Node>& factory);
+
+	// Bind the graph's first boundary input to a generated `size`x`size` gradient image,
+	// so gui-mode shows a result before the user picks a file. A stopgap standing in for
+	// the Interface panel's file-bind (WORK.md M4 vertical a, commit 3).
+	void bindDefaultInput(lain::flow::Graph& graph, std::uint32_t size);
 } // namespace flowview

@@ -16,12 +16,13 @@
 namespace flowview
 {
 	// flowview's application delegate. Two modes, selected by CLI:
-	//   --headless : build the example graph, evaluate it, and dump the result to
-	//                stdout (cli-mode); opens no window, so the Application runs
+	//   --headless : cli-mode — build the boundary example graph, bind its input from
+	//                --input (if given), run it, dump the graph, and write its output to
+	//                --output (if given). Opens no window, so the Application runs
 	//                onProcess once and exits.
-	//   default    : gui-mode — open a window and show the InspectorWindow: each
-	//                node's ports as text, and an acm::Texture output as a thumbnail.
-	//                (The imnodes node-canvas is deferred — WORK.md step 9.)
+	//   default    : gui-mode — open a window and show the InspectorWindow (ports as text,
+	//                image outputs as thumbnails) + the node canvas. The graph's input is
+	//                bound to a default gradient until the Interface panel (next commit).
 	class FlowviewApp : public lain::app::ApplicationDelegate
 	{
 	public:
@@ -46,15 +47,15 @@ namespace flowview
 
 	private:
 		bool m_headless = false;
-		std::uint32_t m_size = 64; // example texture extent (size x size)
+		std::uint32_t m_size = 64; // default gradient extent (size x size)
 		int m_frames = 0;		   // gui-mode: quit after N frames (0 = until closed)
-		std::string m_imagePath;   // cli-mode: if set, load this file via a LoadImageNode
+		std::string m_inputPath;   // cli-mode: bind the graph's input boundary to this image
+		std::string m_outputPath;  // cli-mode: write the graph's output boundary to this path
 
 		// The gui-mode scene, held by unique_ptr so onStop can release it (and its
 		// node-owned payloads) explicitly, before the window/device teardown.
 		std::unique_ptr<lain::flow::Graph> m_graph;
-		lain::flow::NodeId m_textureNode{};					 // the source the scene is pulled from
-		lain::flow::SerialScheduler m_scheduler;			 // pull-evaluates the scene (no threads needed)
+		lain::flow::SerialScheduler m_scheduler;			 // runs the scene (no threads needed)
 		lain::core::Factory<lain::flow::Node> m_nodeFactory; // node-type palette
 		InspectorWindow m_window;							 // gui-mode inspector
 	};

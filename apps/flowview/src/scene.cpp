@@ -1,10 +1,12 @@
 #include "scene.h"
 
+#include <lain/flow/boundary.h>
 #include <lain/flow/example/blurnode.h>
 #include <lain/flow/example/gradientnode.h>
 #include <lain/flow/example/loadimagenode.h>
 #include <lain/flow/example/tintnode.h>
 #include <lain/flow/graph.h>
+#include <lain/image/image.h>
 
 namespace flowview
 {
@@ -27,16 +29,35 @@ namespace flowview
 		factory.registerType<flow::example::LoadImageNode>(kLoadImageKey);		   // empty path -> set in the gui
 	}
 
-	flow::NodeId buildExampleScene(flow::Graph& graph, const core::Factory<flow::Node>& factory)
+	void buildExampleScene(flow::Graph& graph, const core::Factory<flow::Node>& factory)
 	{
-		// A tiny pipeline: gradient source -> tint transform -> Gaussian blur. Every node's
-		// image ports are index 0, so each edge is type-compatible by construction. The blur
-		// dogfoods lain::image's operation catalog (convolve) end-to-end through the graph.
-		const flow::NodeId gradient = graph.add(factory.create(kGradientKey));
+		// The M4 boundary pipeline: a host-bound image input -> tint -> Gaussian blur -> a
+		// readable image output. Every node's image ports are index 0, so each edge is
+		// type-compatible by construction; the blur dogfoods lain::image's operation catalog
+		// (convolve) end-to-end. The host binds "source" and reads "result".
+		const flow::NodeId in = graph.add<flow::GroupInputNode>();
+		static_cast<flow::GroupInputNode&>(graph.node(in)).addBoundary<image::Image>("source");
 		const flow::NodeId tint = graph.add(factory.create(kTintKey));
 		const flow::NodeId blur = graph.add(factory.create(kBlurKey));
-		graph.connect(gradient, 0, tint, 0);
+		const flow::NodeId out = graph.add<flow::GroupOutputNode>();
+		static_cast<flow::GroupOutputNode&>(graph.node(out)).addBoundary<image::Image>("result");
+
+		graph.connect(in, 0, tint, 0);
 		graph.connect(tint, 0, blur, 0);
-		return blur; // pull target = the sink; evaluating it pulls the whole chain upstream
+		graph.connect(blur, 0, out, 0);
+	}
+
+	void bindDefaultInput(flow::Graph& graph, std::uint32_t size)
+	{
+		const auto inputs = graph.boundaryInputs();
+		if (inputs.empty())
+			return;
+
+		// Generate a gradient image the way the old scene's source did, and inject it as the
+		// default binding — so gui-mode has something to show until the Interface panel lands.
+		flow::example::GradientNode gradient(size, size);
+		gradient.compute();
+		if (gradient.output(0).ready())
+			inputs[0].setValue(gradient.output(0).value());
 	}
 } // namespace flowview

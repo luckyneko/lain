@@ -556,10 +556,11 @@ make the N-pin ergonomics concrete.
    node with two differently-typed pins; re-bind refires; unbound → empty; enumeration flattens +
    excludes ordinary nodes. Fixed pins (no dynamic ports). In **flow core** (payload-agnostic,
    structural — core's first node facility).
-2. **Example scene reshape + cli.** `buildExampleScene` becomes a `GroupInputNode` (one image pin)
-   → (existing process nodes) → `GroupOutputNode` (one image pin). flowview `--headless --input
-   <path> --output <path>` binds the sole boundary pin, runs, writes. cli test: real image
-   round-trips through the boundary. `dumpGraph` stays.
+2. ✅ **Example scene reshape + cli** (built, cli-verified). `buildExampleScene` is
+   `GroupInputNode("source")` → tint → blur → `GroupOutputNode("result")`. flowview `--headless
+   --input <path> --output <path>` binds the boundary via `io::image::load` → `setValue`, runs,
+   dumps, then `save`s the output boundary — the write library's caller. A default gradient stands
+   in for an unbound input (bare `--headless` + gui-mode until the panel). `dumpGraph` stays.
 3. **gui Interface panel.** The Inputs & Outputs panel above, in flowview. Mac-verified.
 
 **Also implicates** (each its own effort): the deferred **`Stream` transport** (video / live

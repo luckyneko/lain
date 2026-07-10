@@ -5,13 +5,19 @@
 
 #include <lain/app/application.h>
 #include <lain/app/window.h>
-#include <lain/flow/example/loadimagenode.h>
+#include <lain/flow/boundary.h>
 #include <lain/flow/graph.h>
+#include <lain/flow/portvalue.h>
+#include <lain/image/image.h>
 #include <lain/io/image/codecs.h>
+#include <lain/io/image/load.h>
+#include <lain/io/image/save.h>
+#include <lain/log/log.h>
 
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <utility>
 
 namespace flowview
 {
@@ -19,10 +25,11 @@ namespace flowview
 
 	bool FlowviewApp::onInit(app::Application&, app::cli::App& cli)
 	{
-		cli.add_flag("--headless,-c", m_headless, "evaluate the example graph and dump its output (no window)");
-		cli.add_option("--size", m_size, "example texture extent (NxN)")->capture_default_str();
+		cli.add_flag("--headless,-c", m_headless, "run the example graph and dump its output (no window)");
+		cli.add_option("--size", m_size, "default gradient extent (NxN)")->capture_default_str();
 		cli.add_option("--frames", m_frames, "gui-mode: quit after N frames (0 = run until the window closes)")->capture_default_str();
-		cli.add_option("--image", m_imagePath, "cli-mode: load this image file through a LoadImageNode and dump it");
+		cli.add_option("--input", m_inputPath, "cli-mode: bind the graph's input boundary to this image file");
+		cli.add_option("--output", m_outputPath, "cli-mode: write the graph's output boundary to this path");
 		return true;
 	}
 
@@ -40,12 +47,14 @@ namespace flowview
 		app.createWindow(spec, m_window); // creates the shared device; builds the gui Context
 
 		// Populate the node palette + the image codecs (so a palette-added LoadImageNode can
-		// decode), then build + evaluate the smoke scene. The nodes are pure CPU.
+		// decode), then build the boundary scene, bind its input to a default gradient (until
+		// the Interface panel), and run it. The nodes are pure CPU.
 		lain::io::image::registerImageCodecs();
 		registerExampleNodes(m_nodeFactory, m_size);
 		m_graph = std::make_unique<flow::Graph>();
-		m_textureNode = buildExampleScene(*m_graph, m_nodeFactory);
-		m_scheduler.evaluate(*m_graph, m_textureNode); // pull: runs the source's compute()
+		buildExampleScene(*m_graph, m_nodeFactory);
+		bindDefaultInput(*m_graph, m_size);
+		m_scheduler.run(*m_graph);
 		return true;
 	}
 
@@ -57,26 +66,54 @@ namespace flowview
 
 	void FlowviewApp::onProcess(app::Application&)
 	{
-		// cli-mode: a local graph, evaluated and dumped. Pure CPU — no device needed.
-		flow::Graph graph;
-		flow::NodeId sink{};
+		// cli-mode: build the boundary scene, bind its input from --input, run, dump, then
+		// write its output to --output — the host-binds-the-boundary path, headless. Pure CPU,
+		// no device. This is the write library's caller: io::image::load in, save out.
+		lain::io::image::registerImageCodecs();
+		registerExampleNodes(m_nodeFactory, m_size);
 
-		if (!m_imagePath.empty())
+		flow::Graph graph;
+		buildExampleScene(graph, m_nodeFactory);
+
+		// Bind the graph's input boundary: --input loads a real file, else a default gradient
+		// stands in so a bare `--headless` still produces something to dump.
+		if (!m_inputPath.empty())
 		{
-			// Load a real file through a LoadImageNode — the M3 file -> node -> output proof.
-			// The reader registry must be populated first (the node just calls load()).
-			lain::io::image::registerImageCodecs();
-			sink = graph.add(std::make_unique<flow::example::LoadImageNode>(m_imagePath));
+			if (auto image = lain::io::image::load(m_inputPath))
+			{
+				flow::PortValue v;
+				v.set<image::Image>(std::move(*image));
+				const auto inputs = graph.boundaryInputs();
+				if (!inputs.empty())
+					inputs[0].setValue(std::move(v));
+			}
+			else
+				log::error("flowview: could not load --input image: {}", m_inputPath);
 		}
 		else
 		{
-			// Default smoke scene: gradient -> tint -> blur.
-			registerExampleNodes(m_nodeFactory, m_size);
-			sink = buildExampleScene(graph, m_nodeFactory);
+			bindDefaultInput(graph, m_size);
 		}
 
-		m_scheduler.evaluate(graph, sink); // pull: runs the source's compute()
+		m_scheduler.run(graph);
 		dumpGraph(std::cout, graph);
+
+		// Write the graph's output boundary to --output (the "proper write step").
+		if (!m_outputPath.empty())
+		{
+			const auto outputs = graph.boundaryOutputs();
+			if (!outputs.empty() && outputs[0].value().holds<image::Image>())
+			{
+				if (lain::io::image::save(m_outputPath, outputs[0].value().get<image::Image>()))
+					log::info("flowview: wrote output to {}", m_outputPath);
+				else
+					log::error("flowview: could not write --output: {}", m_outputPath);
+			}
+			else
+			{
+				log::error("flowview: no image at the output boundary to write");
+			}
+		}
 	}
 
 	void FlowviewApp::onStop(app::Application&)
