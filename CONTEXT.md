@@ -129,8 +129,14 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   that accepts **many** edges and aggregates them (N connections into one pin). Distinct
   from a vector-valued port (one edge, collection payload) and from dynamic ports (N
   pins). Deferred — it breaks the **single-source invariant** (`connect` reports
-  `InputInUse`; `populateInputs` copies one upstream), a large separate feature. A `Merge`
-  node's *natural* form, which is why `Merge` is not the dynamic-ports driver.
+  `InputInUse`; `populateInputs` copies one upstream), *and* an unordered set of edges →
+  an ordered `T[N]` is ambiguous / reshuffles on reconnect. **Not needed:** "N inputs →
+  `T[N]`" is instead a **node reading its dynamic pins** as a collection (a `Merge`), which
+  keeps stable pin order + single-source edges and reuses the vertical-b engine.
+- **Output fan-out** — the single-source rule guards **inputs only**; an **output already
+  feeds many inputs** (each copies the persistent value). No engine work — the one gap was
+  the canvas (the link-detach flag must be scoped to input pins, else an output drag moves
+  its link instead of starting a new one).
 - **Merge / Split** — the bridge between arity shapes: **Merge** gathers many single
   values → a vector-valued port; **Split** takes a vector-valued port → many. (Merge as
   N *dynamic pins* is a strawman for the fan-in port above; deferred with it.)

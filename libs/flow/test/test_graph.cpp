@@ -3,6 +3,7 @@
 // compute() read/write path (driven directly here; the scheduler is step 4).
 
 #include "lain/flow/graph.h"
+#include "lain/flow/scheduler.h"
 
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
@@ -113,6 +114,23 @@ TEST_CASE("an input takes a single source until disconnected", "[graph]")
 	REQUIRE(g.disconnect(add, 0));
 	REQUIRE_FALSE(g.disconnect(add, 0)); // nothing left to remove
 	REQUIRE(g.connect(c2, 0, add, 0) == Connection::Ok);
+}
+
+TEST_CASE("an output fans out to many inputs (only inputs are single-source)", "[graph]")
+{
+	// The single-source rule guards inputs, not outputs: one output may feed several inputs,
+	// each copying the (persistent) value. Here one source drives both inputs of an adder
+	// (9 + 9 = 18) — proving the output carries two edges. This locks in the gui fan-out.
+	Graph g;
+	const NodeId c = g.add<ConstInt>(9);
+	const NodeId add = g.add<AddInt>();
+
+	REQUIRE(g.connect(c, 0, add, 0) == Connection::Ok);
+	REQUIRE(g.connect(c, 0, add, 1) == Connection::Ok); // same output, second consumer: fine
+	REQUIRE(g.edges().size() == 2);
+
+	SerialScheduler().run(g);
+	REQUIRE(g.node(add).output(0).get<int>() == 18);
 }
 
 TEST_CASE("connect rejects cycles", "[graph]")

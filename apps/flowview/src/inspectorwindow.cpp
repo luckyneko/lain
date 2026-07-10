@@ -427,10 +427,11 @@ namespace flowview
 		gui::SetNextWindowPos(math::Vec2f{360.0f, 20.0f}, ImGuiCond_FirstUseEver);
 		gui::SetNextWindowSize(math::Vec2f{880.0f, 600.0f}, ImGuiCond_FirstUseEver);
 		gui::Begin("Graph");
-		// Let a link be detached by click-dragging it off a pin: drop it in empty space
-		// to remove it, or on another pin to move it (both surface via IsLinkDestroyed /
-		// IsLinkCreated after EndNodeEditor).
-		gui::nodes::PushAttributeFlag(ImNodesAttributeFlags_EnableLinkDetachWithDragClick);
+		// Link detach (click-drag a link off a pin to remove/move it) is enabled on INPUT pins
+		// only — see the per-node loop. Leaving OUTPUT pins without the flag lets a drag *from* an
+		// output start a NEW link, so one output fans out to many inputs (an input, being
+		// single-source, is where detach-to-move belongs). Detaches/reattaches surface via
+		// IsLinkDestroyed / IsLinkCreated after EndNodeEditor.
 		gui::nodes::BeginNodeEditor();
 		int column = 0;
 		for (const flow::NodeId id : graph.topoOrder())
@@ -444,6 +445,8 @@ namespace flowview
 			gui::Text("[%llu] %s", static_cast<unsigned long long>(id.value()), node.name().c_str());
 			gui::nodes::EndNodeTitleBar();
 
+			// Detach flag on inputs only (so an output drag creates a new link -> fan-out).
+			gui::nodes::PushAttributeFlag(ImNodesAttributeFlags_EnableLinkDetachWithDragClick);
 			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
 			{
 				const flow::Port& in = node.input(i);
@@ -451,6 +454,7 @@ namespace flowview
 				gui::Text("%s : %s", in.name().c_str(), std::string(in.typeName()).c_str());
 				gui::nodes::EndInputAttribute();
 			}
+			gui::nodes::PopAttributeFlag();
 			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
 			{
 				const flow::Port& out = node.output(o);
@@ -468,7 +472,6 @@ namespace flowview
 							 pinId(edges[e].to.node, false, edges[e].to.port));
 
 		gui::nodes::EndNodeEditor();
-		gui::nodes::PopAttributeFlag();
 
 		// Canvas editing (must query imnodes after EndNodeEditor): a detached or dragged
 		// link disconnects/connects; Delete removes the selected links + nodes; a
