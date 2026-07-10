@@ -41,4 +41,9 @@ namespace lain::flow::edit
 	// route to Graph::add on the same seam; placement is the adapter's job. Returns the
 	// new node's id.
 	NodeId addNode(Graph& graph, std::unique_ptr<Node> node);
+
+	// Remove a dynamic port safely (the "×" gesture): disconnect every edge touching it (an
+	// output may feed several inputs; an input has one source), then remove the now-free port via
+	// the Graph::removePort primitive. Returns whether the port was removed.
+	bool removePort(Graph& graph, PortAddress port);
 } // namespace lain::flow::edit

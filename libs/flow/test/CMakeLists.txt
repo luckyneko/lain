@@ -11,6 +11,7 @@ add_executable(test-flow
 	test_nodes.cpp
 	test_params.cpp
 	test_boundary.cpp
+	test_dynamicports.cpp
 )
 
 target_compile_features(test-flow PRIVATE cxx_std_17)

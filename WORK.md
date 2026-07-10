@@ -562,13 +562,31 @@ add/remove (and reorder later), so:
    PortAddresses; `connect`/`disconnect`/`populateInputs`/scheduler/`edit`/`dump`/imnodes pin
    encoding/boundary handles move `PortIndex` → `PortId`; `add*`/`addBoundary` return `PortId`. **No
    behaviour change** — a standalone commit kept fully green on the pure rename.
-2. **Runtime mutation API** — add/remove a pin post-construction + edge cleanup on removal (a
-   `Graph::removePort` primitive mirroring `removeNode`), behind the `edit` seam. *Still to grill:*
-   the opt-in model (a `DynamicPortsNode` marker? the gui shows ± only there), pin auto-naming, and
-   the input-exposure rethink flagged in (a).
-3. **Driver + gui** — a concrete dynamic node (a `Merge`: variadic image pins → `vector<image>`
-   output, exercising *both* arity concepts; and/or `GroupInputNode` growing to N pins) + the gui ±
-   affordance. Reorder deferred.
+2. **Mutation engine** — the runtime add/remove mechanism (grilled; design below), tested
+   driver-free with a test dynamic node.
+3. **Port-type registry + boundary nodes go dynamic** — the registry seam + app registration;
+   `GroupInputNode`/`GroupOutputNode` become `DynamicPortsNode`s; `Port::setName` for rename.
+4. **gui** — Interface-panel ± (type menu, editable boundary names, remove-confirm). Mac-verified.
+
+**Mutation design (grilled, settled):**
+- **`DynamicPortsNode`** marker base (the gui `dynamic_cast`s to show ±): `dynamicSide()` (which side
+  grows), `acceptsPortType(key)` (default: all — a swappable predicate), `addDynamicPort<T>(name)`
+  (adds on the dynamic side). Opt-in, so fixed nodes are unaffected.
+- **`Graph::removePort(PortAddress)`** — a *primitive* that **refuses if the port has incident
+  edges** (keeps the no-dangling-edge invariant total, like `connect` refusing a cycle); the node's
+  raw port-erase is Graph-friend. **`edit::addPort` / `edit::removePort`** are the *safe gestures*
+  (removePort disconnects incident edges, then the primitive).
+- **Port-type registry** (see CONTEXT.md "Port arity") — `registerPortType<T>(name)`, app-registered;
+  the ± menu is its keys filtered by `acceptsPortType`. No hardcoded pipeline types.
+- **Driver = the Boundary nodes, not Merge.** `GroupInputNode`/`GroupOutputNode` become
+  `DynamicPortsNode`s — the genuine, irreducible dynamic-ports case (Merge's natural form is the
+  deferred **fan-in / multi-connectable port**; building Merge-via-N-pins is a strawman for it).
+  Pins auto-named (`input0`…); boundary pins additionally **renameable** (`Port::setName` + an
+  editable field — edges reference `PortId`, so a rename touches only the display string).
+- **gui:** the Interface panel gains a per-node **"+"** (registry type menu) and a per-pin **"×"**
+  that **always confirms** ("Remove 'name'? N link(s)"), then `edit::removePort`.
+- **Deferred:** Merge / fan-in port; port **reorder**; cli **named-binding** (`--input cam=foo.png`,
+  a post-serialization concern).
 
 **Build order (vertical a)** — three commits, each strict-clean + tested:
 1. ✅ **flow core — the boundary seam** (built, tested). `GroupInputNode` / `GroupOutputNode`

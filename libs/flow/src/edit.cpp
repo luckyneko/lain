@@ -4,6 +4,7 @@
 
 #include <optional>
 #include <utility>
+#include <vector>
 
 namespace lain::flow::edit
 {
@@ -79,5 +80,21 @@ namespace lain::flow::edit
 	NodeId addNode(Graph& graph, std::unique_ptr<Node> node)
 	{
 		return graph.add(std::move(node));
+	}
+
+	bool removePort(Graph& graph, PortAddress port)
+	{
+		// Collect the inputs to free first — an edge touches `port` as its source (feeding a
+		// downstream input) or as its own input, and disconnecting shifts the edge list.
+		std::vector<PortAddress> toDisconnect;
+		for (const Graph::Edge& e : graph.edges())
+		{
+			if (e.from == port || e.to == port)
+				toDisconnect.push_back(e.to);
+		}
+		for (const PortAddress& input : toDisconnect)
+			graph.disconnect(input);
+
+		return graph.removePort(port);
 	}
 } // namespace lain::flow::edit

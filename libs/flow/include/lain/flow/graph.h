@@ -52,6 +52,12 @@ namespace lain::flow
 		bool disconnect(PortAddress input);
 		bool disconnect(NodeId to, PortIndex inPort); // index convenience (resolves now)
 
+		// Remove a dynamic port. A *primitive*: it REFUSES (returns false) if any edge still
+		// touches the port, keeping the no-dangling-edge invariant total — the safe gesture
+		// edit::removePort disconnects the incident edges first. Returns whether the port was
+		// removed.
+		bool removePort(PortAddress port);
+
 		// A directed edge: an output PortAddress feeding an input PortAddress. Addressed by
 		// stable PortId, never PortIndex, so it survives dynamic-port mutation.
 		struct Edge

@@ -125,8 +125,23 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   This is the engine feature (M4 vertical b). Use when you gather N *separate* upstream
   sources (a `GroupInputNode`'s N graph inputs; a `Merge` node). _Avoid_: "N inputs" as
   a phrase — say which of these you mean.
-- **Merge / Split** — the bridge between the two: **Merge** takes variadic pins →
-  a vector-valued port; **Split** takes a vector-valued port → variadic pins.
+- **Multi-connectable port** *(fan-in; deferred)* — a **third** shape: *one* input pin
+  that accepts **many** edges and aggregates them (N connections into one pin). Distinct
+  from a vector-valued port (one edge, collection payload) and from dynamic ports (N
+  pins). Deferred — it breaks the **single-source invariant** (`connect` reports
+  `InputInUse`; `populateInputs` copies one upstream), a large separate feature. A `Merge`
+  node's *natural* form, which is why `Merge` is not the dynamic-ports driver.
+- **Merge / Split** — the bridge between arity shapes: **Merge** gathers many single
+  values → a vector-valued port; **Split** takes a vector-valued port → many. (Merge as
+  N *dynamic pins* is a strawman for the fan-in port above; deferred with it.)
+
+- **Port-type registry** *(M4 b)* — the addable **port types** for dynamic ports, keyed by
+  a display name (lain's Factory idiom, as for the node palette / codecs). `registerPortType<T>("Image")`
+  captures `T` in a creator closure `(DynamicPortsNode&, name) → node.addDynamicPort<T>(name)`,
+  so **flow core names no payload type** — the app registers `image::Image` / a future
+  `Voxel`. A dynamic node's "+" menu is the registry's keys **filtered by the node's
+  `acceptsPortType`** (a `Merge` takes only `Image`; a `GroupInputNode` takes any). No
+  hardcoded set of pipeline types.
 
 - **PortId** *(M4 b)* — an **opaque, stable per-port handle** (the port-level analogue
   of `NodeId`, scoped within its node), so an edge and a `BoundaryInput` handle survive a

@@ -101,6 +101,21 @@ namespace lain::flow
 		return disconnect(PortAddress{to, target.input(inPort).id()});
 	}
 
+	bool Graph::removePort(PortAddress port)
+	{
+		if (!valid(port.node))
+			return false;
+
+		// Refuse while any edge still touches the port (as a source feeding downstream, or as its
+		// own input) — removing it would orphan that edge. edit::removePort clears them first.
+		for (const Edge& e : m_edges)
+		{
+			if (e.from == port || e.to == port)
+				return false;
+		}
+		return node(port.node).removePort(port.port);
+	}
+
 	const std::vector<NodeId>& Graph::topoOrder() const
 	{
 		if (m_topoValid)

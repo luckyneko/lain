@@ -77,8 +77,28 @@ namespace lain::flow
 		PortIndex addParam(std::string name, T defaultValue);
 
 	private:
-		friend class Graph; // assigns the id when the node is added
+		friend class Graph; // assigns the id when the node is added, and removes ports
 		void setId(NodeId id) { m_id = id; }
+
+		// Erase a port by id (raw — no edge check). Graph::removePort enforces the
+		// no-dangling-edge invariant *before* calling this, so it is Graph-only. Returns whether
+		// a port was found + erased; other ports keep their ids (the vector compacts).
+		bool removePort(PortId id)
+		{
+			for (auto it = m_inputs.begin(); it != m_inputs.end(); ++it)
+				if (it->id() == id)
+				{
+					m_inputs.erase(it);
+					return true;
+				}
+			for (auto it = m_outputs.begin(); it != m_outputs.end(); ++it)
+				if (it->id() == id)
+				{
+					m_outputs.erase(it);
+					return true;
+				}
+			return false;
+		}
 
 		// Mint the next stable PortId (addInput / addOutput call this). Defined in node.inl.
 		PortId nextPortId();
