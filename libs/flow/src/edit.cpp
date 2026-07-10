@@ -7,38 +7,56 @@
 
 namespace lain::flow::edit
 {
-	// The edge currently feeding (to, inPort), if any. An input takes a single source,
-	// so at most one edge matches.
-	static std::optional<Graph::Edge> findEdgeInto(const Graph& graph, NodeId to, PortIndex inPort)
+	// The edge currently feeding `input`, if any. An input takes a single source, so at
+	// most one edge matches.
+	static std::optional<Graph::Edge> findEdgeInto(const Graph& graph, PortAddress input)
 	{
 		for (const Graph::Edge& e : graph.edges())
 		{
-			if (e.to == to && e.inPort == inPort)
+			if (e.to == input)
 				return e;
 		}
 		return std::nullopt;
 	}
 
-	bool connectReplacing(Graph& graph, NodeId from, PortIndex outPort, NodeId to, PortIndex inPort)
+	bool connectReplacing(Graph& graph, PortAddress from, PortAddress to)
 	{
 		// Free input: a plain connect suffices.
-		const std::optional<Graph::Edge> existing = findEdgeInto(graph, to, inPort);
+		const std::optional<Graph::Edge> existing = findEdgeInto(graph, to);
 		if (!existing)
-			return graph.connect(from, outPort, to, inPort) == Connection::Ok;
+			return graph.connect(from, to) == Connection::Ok;
 
 		// Occupied input: free it, then try the new edge. Removing an edge *into* `to`
 		// can't change what `to` reaches, so the cycle verdict is the same as it would
 		// have been with the old edge still present.
-		graph.disconnect(to, inPort);
-		if (graph.connect(from, outPort, to, inPort) == Connection::Ok)
+		graph.disconnect(to);
+		if (graph.connect(from, to) == Connection::Ok)
 			return true;
 
 		// Rejected — restore the original edge so a failed replace is a no-op, not a
 		// silent delete. The restore always succeeds: the input is free again, the type
 		// still matches, and re-adding an edge that was acyclic before (nothing else
 		// changed) stays acyclic.
-		graph.connect(existing->from, existing->outPort, to, inPort);
+		graph.connect(existing->from, to);
 		return false;
+	}
+
+	bool connectReplacing(Graph& graph, NodeId from, PortIndex outPort, NodeId to, PortIndex inPort)
+	{
+		// Resolve the positions to stable addresses; bail (no-op) if either is out of range.
+		if (!graph.contains(from) || !graph.contains(to))
+			return false;
+		Node& source = graph.node(from);
+		Node& target = graph.node(to);
+		if (outPort >= source.outputCount() || inPort >= target.inputCount())
+			return false;
+		return connectReplacing(graph, PortAddress{from, source.output(outPort).id()},
+								PortAddress{to, target.input(inPort).id()});
+	}
+
+	bool disconnect(Graph& graph, PortAddress input)
+	{
+		return graph.disconnect(input);
 	}
 
 	bool disconnect(Graph& graph, NodeId to, PortIndex inPort)
@@ -52,7 +70,7 @@ namespace lain::flow::edit
 		// Edges first (by stable destination), then nodes. removeNode drops a node's
 		// incident edges too, so a co-selected edge on a removed node just no-ops here.
 		for (const Graph::Edge& e : edges)
-			removed |= graph.disconnect(e.to, e.inPort);
+			removed |= graph.disconnect(e.to);
 		for (const NodeId n : nodes)
 			removed |= graph.removeNode(n);
 		return removed;

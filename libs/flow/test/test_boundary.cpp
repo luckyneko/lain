@@ -21,9 +21,9 @@ TEST_CASE("a host-set input pin crosses to an output pin through a run", "[flow]
 	const NodeId out = g.add<GroupOutputNode>();
 	auto& gin = static_cast<GroupInputNode&>(g.node(in));
 	auto& gout = static_cast<GroupOutputNode&>(g.node(out));
-	const PortIndex src = gin.addBoundary<int>("source");
-	const PortIndex res = gout.addBoundary<int>("result");
-	REQUIRE(g.connect(in, src, out, res) == Connection::Ok);
+	const PortId src = gin.addBoundary<int>("source");
+	const PortId res = gout.addBoundary<int>("result");
+	REQUIRE(g.connect(in, 0, out, 0) == Connection::Ok); // first output -> first input
 
 	// The generic host path: build a type-erased PortValue and inject it into the pin.
 	PortValue v;
@@ -45,12 +45,12 @@ TEST_CASE("one node carries several independently-typed, independently-bound pin
 	const NodeId out = g.add<GroupOutputNode>();
 	auto& gin = static_cast<GroupInputNode&>(g.node(in));
 	auto& gout = static_cast<GroupOutputNode&>(g.node(out));
-	const PortIndex pi = gin.addBoundary<int>("count");
-	const PortIndex pf = gin.addBoundary<float>("scale");
-	const PortIndex oi = gout.addBoundary<int>("count");
-	const PortIndex of = gout.addBoundary<float>("scale");
-	REQUIRE(g.connect(in, pi, out, oi) == Connection::Ok);
-	REQUIRE(g.connect(in, pf, out, of) == Connection::Ok);
+	const PortId pi = gin.addBoundary<int>("count");
+	const PortId pf = gin.addBoundary<float>("scale");
+	const PortId oi = gout.addBoundary<int>("count");
+	const PortId of = gout.addBoundary<float>("scale");
+	REQUIRE(g.connect(in, 0, out, 0) == Connection::Ok); // int pins (index 0)
+	REQUIRE(g.connect(in, 1, out, 1) == Connection::Ok); // float pins (index 1)
 
 	PortValue vi;
 	vi.set<int>(3);
@@ -75,11 +75,11 @@ TEST_CASE("a boundary value flows through an intermediate compute node", "[flow]
 	const NodeId out = g.add<GroupOutputNode>();
 	auto& gin = static_cast<GroupInputNode&>(g.node(in));
 	auto& gout = static_cast<GroupOutputNode&>(g.node(out));
-	const PortIndex src = gin.addBoundary<int>("source");
-	const PortIndex res = gout.addBoundary<int>("result");
-	REQUIRE(g.connect(in, src, add, 0) == Connection::Ok);
+	const PortId src = gin.addBoundary<int>("source");
+	const PortId res = gout.addBoundary<int>("result");
+	REQUIRE(g.connect(in, 0, add, 0) == Connection::Ok);
 	REQUIRE(g.connect(k, 0, add, 1) == Connection::Ok);
-	REQUIRE(g.connect(add, 0, out, res) == Connection::Ok);
+	REQUIRE(g.connect(add, 0, out, 0) == Connection::Ok);
 
 	PortValue v;
 	v.set<int>(5);
@@ -96,9 +96,9 @@ TEST_CASE("re-binding an input pin refires it on the next run", "[flow][boundary
 	const NodeId out = g.add<GroupOutputNode>();
 	auto& gin = static_cast<GroupInputNode&>(g.node(in));
 	auto& gout = static_cast<GroupOutputNode&>(g.node(out));
-	const PortIndex src = gin.addBoundary<int>("source");
-	const PortIndex res = gout.addBoundary<int>("result");
-	REQUIRE(g.connect(in, src, out, res) == Connection::Ok);
+	const PortId src = gin.addBoundary<int>("source");
+	const PortId res = gout.addBoundary<int>("result");
+	REQUIRE(g.connect(in, 0, out, 0) == Connection::Ok);
 
 	PortValue a;
 	a.set<int>(1);
@@ -120,9 +120,9 @@ TEST_CASE("an unbound input pin delivers an empty value", "[flow][boundary]")
 	const NodeId out = g.add<GroupOutputNode>();
 	auto& gin = static_cast<GroupInputNode&>(g.node(in));
 	auto& gout = static_cast<GroupOutputNode&>(g.node(out));
-	const PortIndex src = gin.addBoundary<int>("source");
-	const PortIndex res = gout.addBoundary<int>("result");
-	REQUIRE(g.connect(in, src, out, res) == Connection::Ok);
+	gin.addBoundary<int>("source"); // added but never bound
+	const PortId res = gout.addBoundary<int>("result");
+	REQUIRE(g.connect(in, 0, out, 0) == Connection::Ok);
 
 	SerialScheduler().run(g); // never setValue'd
 	REQUIRE(gout.value(res).empty());

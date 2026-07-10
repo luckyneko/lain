@@ -8,25 +8,27 @@
 // selection, cursor) into these calls, so the edit logic is tested against a plain
 // Graph with no GUI in the loop (see test/test_edit.cpp).
 
-#include "lain/flow/graph.h" // Graph, Graph::Edge, NodeId, PortIndex, Connection
+#include "lain/flow/graph.h" // Graph, Graph::Edge, NodeId, PortAddress, Connection
 
 namespace lain::flow::edit
 {
-	// Connect (from, outPort) -> (to, inPort), replacing whatever currently feeds the
-	// input. Atomic: if the new edge is rejected (type mismatch, cycle, invalid
-	// node/port), the existing edge is left untouched. Returns whether the input ends
-	// up fed by (from, outPort).
+	// Connect output `from` -> input `to`, replacing whatever currently feeds the input.
+	// Atomic: if the new edge is rejected (type mismatch, cycle, invalid node/port), the
+	// existing edge is left untouched. Returns whether the input ends up fed by `from`.
 	//
 	// Why atomic matters: Graph::connect reports InputInUse *before* WouldCycle, so a
 	// naive disconnect-then-connect can drop the old edge and then fail the cycle
 	// check, leaving the input empty. This captures the original and restores it on
 	// failure instead.
+	bool connectReplacing(Graph& graph, PortAddress from, PortAddress to);
+	// Index convenience (resolves the positions to addresses now, like Graph::connect).
 	bool connectReplacing(Graph& graph, NodeId from, PortIndex outPort, NodeId to, PortIndex inPort);
 
-	// Remove the edge feeding (to, inPort), if any (the detach gesture). A thin route
-	// to Graph::disconnect, kept so every mutation crosses one seam. Returns whether an
-	// edge was removed.
-	bool disconnect(Graph& graph, NodeId to, PortIndex inPort);
+	// Remove the edge feeding `input`, if any (the detach gesture). A thin route to
+	// Graph::disconnect, kept so every mutation crosses one seam. Returns whether an edge
+	// was removed.
+	bool disconnect(Graph& graph, PortAddress input);
+	bool disconnect(Graph& graph, NodeId to, PortIndex inPort); // index convenience
 
 	// Delete a selection in one gesture: remove every node in `nodes` and every edge in
 	// `edges`. Edges are identified by value (their stable destination), never by list

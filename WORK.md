@@ -539,14 +539,36 @@ swaps in dynamic-port nodes **without changing the seam, cli, or gui**.
   play/pause (live inputs, (b)), a re-run. It is a *persistent* surface (independent of canvas
   selection — which matters given the planned "inspector shows only the selected node" change).
 
-**Key engine gap this exposes — dynamic ports (the (b) item, not (a)).** Ports are declared in a
-`Node`'s ctor and fixed for life today. N synced inputs means an Input node must **add/remove ports
-at runtime**, which needs: (1) runtime port mutation (`addPort`/`removePort` post-construction),
-(2) edge cleanup on removal (as `removeNode` does for incident edges), (3) gui affordances
-("+"/"–" on the node). Deferred to vertical (b); the (a) seam is shaped so it slots in unchanged.
-**Revisit at (b):** how a host *sets/exposes* inputs (the current `setValue(pin, PortValue)` +
-`BoundaryInput` handle) is not fully settled — re-examine the input-exposure API when dynamic ports
-make the N-pin ergonomics concrete.
+### Vertical (b) — dynamic ports (grilled; identity settled, mutation API next)
+
+Ports are declared in a `Node`'s ctor and fixed for life today, and **edges reference ports by
+`PortIndex`** — so removing a middle pin shifts every higher index and silently corrupts edges +
+`BoundaryInput` handles. Two concepts were hiding in "N inputs" and must stay apart (see CONTEXT.md
+"Port arity"): a **vector-valued port** (`Port<std::vector<T>>`, one pin, aggregate payload — needs
+*no* engine work) vs **dynamic ports** (variadic pins — the feature here). The driver wants *arbitrary*
+add/remove (and reorder later), so:
+
+- **LOCKED: stable `PortId` + `PortAddress`.** `PortId` is an opaque per-node handle (the port-level
+  `NodeId`; `0` sentinel). `PortAddress {NodeId, PortId}` is the durable address of a port — the unit
+  edges and handles reference, and the serialization primitive. An `Edge` becomes two PortAddresses
+  `{from, to}`; a `PortIndex` is demoted to a positional *iteration cursor* only.
+- **Storage:** keep the ordered `std::vector<Port>` (compact, display-ordered, reorderable by
+  permuting), each `Port` carrying its `PortId`; `portById(PortId)` resolves by scan (few ports).
+  Removal compacts, reorder permutes — ids ride along, so edges (holding ids) are untouched, exactly
+  as `Graph` treats `NodeId`. `GroupInputNode`'s `m_bound` moves to `map<PortId, PortValue>`.
+
+**Build order (b):**
+1. **`PortId` / `PortAddress` refactor** — the "NodeId-ification of ports": `Edge` → two
+   PortAddresses; `connect`/`disconnect`/`populateInputs`/scheduler/`edit`/`dump`/imnodes pin
+   encoding/boundary handles move `PortIndex` → `PortId`; `add*`/`addBoundary` return `PortId`. **No
+   behaviour change** — a standalone commit kept fully green on the pure rename.
+2. **Runtime mutation API** — add/remove a pin post-construction + edge cleanup on removal (a
+   `Graph::removePort` primitive mirroring `removeNode`), behind the `edit` seam. *Still to grill:*
+   the opt-in model (a `DynamicPortsNode` marker? the gui shows ± only there), pin auto-naming, and
+   the input-exposure rethink flagged in (a).
+3. **Driver + gui** — a concrete dynamic node (a `Merge`: variadic image pins → `vector<image>`
+   output, exercising *both* arity concepts; and/or `GroupInputNode` growing to N pins) + the gui ±
+   affordance. Reorder deferred.
 
 **Build order (vertical a)** — three commits, each strict-clean + tested:
 1. ✅ **flow core — the boundary seam** (built, tested). `GroupInputNode` / `GroupOutputNode`
@@ -581,7 +603,10 @@ binding sidesteps it for now.
 ### Tier A — when a real graph demands it
 
 1. **Graph serialization** (json save/load + viewer round-trip). Needed once
-   graphs outlive a session; trivial to slot onto `Graph`.
+   graphs outlive a session, and the prerequisite for a proper cli `run` mode.
+   **Sequenced after M4** — it has broad impact on the graph model (boundary nodes,
+   dynamic ports, per-node config), so it should land once that model is settled,
+   not before. No longer "trivial to slot on".
 2. **Conditional / gated nodes** — a node suppresses downstream eval. A scheduler
    extension (skip successors); the one piece a pure push DAG can't express.
 3. **Incremental re-eval** — dirty-propagation so a single input change reruns

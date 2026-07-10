@@ -34,6 +34,14 @@ namespace lain::flow
 		Port& output(PortIndex i) { return m_outputs[i]; }
 		const Port& output(PortIndex i) const { return m_outputs[i]; }
 
+		// Resolve a port by its stable PortId (what edges reference), or nullptr if it is not
+		// found — a linear scan (a node has few ports). Direction-scoped, so an edge's `from`
+		// resolves through findOutput and its `to` through findInput.
+		Port* findInput(PortId id) { return findPort(m_inputs, id); }
+		const Port* findInput(PortId id) const { return findPort(m_inputs, id); }
+		Port* findOutput(PortId id) { return findPort(m_outputs, id); }
+		const Port* findOutput(PortId id) const { return findPort(m_outputs, id); }
+
 		// Configuration values — distinct from ports (see Param). The adapter iterates
 		// these to render editors and writes edits back; compute() reads them via
 		// param(i).get<T>(). Non-connectable; the scheduler never touches them.
@@ -72,7 +80,22 @@ namespace lain::flow
 		friend class Graph; // assigns the id when the node is added
 		void setId(NodeId id) { m_id = id; }
 
-		NodeId m_id{}; // reserved sentinel until the Graph assigns a real id
+		// Mint the next stable PortId (addInput / addOutput call this). Defined in node.inl.
+		PortId nextPortId();
+
+		// Linear scan for a port by id (a node has few ports). Static so the const and non-const
+		// find* share one body.
+		template <typename Ports>
+		static auto findPort(Ports& ports, PortId id) -> decltype(&ports[0])
+		{
+			for (auto& p : ports)
+				if (p.id() == id)
+					return &p;
+			return nullptr;
+		}
+
+		NodeId m_id{};			// reserved sentinel until the Graph assigns a real id
+		PortId m_nextPortId{1}; // per-node port id counter; 0 is the reserved sentinel
 		std::string m_name;
 		std::vector<Port> m_inputs;
 		std::vector<Port> m_outputs;

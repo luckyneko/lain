@@ -39,7 +39,7 @@ namespace flowview
 	{
 		std::uint64_t node;
 		bool output;
-		lain::flow::PortIndex port;
+		lain::flow::PortId port; // stable id, so a preview survives sibling pins changing
 
 		bool operator<(const PinKey& o) const
 		{

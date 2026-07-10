@@ -2,6 +2,7 @@
 
 #include "lain/flow/porttype.h" // PortType — the per-type reflective flyweight
 #include "lain/flow/portvalue.h"
+#include "lain/flow/types.h" // PortId
 
 #include <string>
 #include <string_view>
@@ -25,6 +26,11 @@ namespace lain::flow
 
 		const std::string& name() const { return m_name; }
 		Direction direction() const { return m_dir; }
+
+		// The port's stable identity within its node (assigned by the owning Node). Edges and
+		// boundary handles reference this, so it survives the port being reordered/renumbered —
+		// unlike its index.
+		PortId id() const { return m_id; }
 
 		// The declared type, fixed at declaration — what connect() type-checks
 		// against (independent of whether a value has been produced yet).
@@ -58,17 +64,19 @@ namespace lain::flow
 		void clear() { m_value.clear(); }
 
 	private:
-		friend class Node; // only a Node builds its ports
-		Port(std::string name, Direction dir, const PortType& type)
+		friend class Node; // only a Node builds its ports (and assigns the id)
+		Port(std::string name, Direction dir, const PortType& type, PortId id)
 			: m_name(std::move(name))
 			, m_dir(dir)
 			, m_type(&type)
+			, m_id(id)
 		{
 		}
 
 		std::string m_name;
 		Direction m_dir;
 		const PortType* m_type; // the declared type's shared reflective flyweight
+		PortId m_id;			// stable identity within the owning node
 		PortValue m_value;
 	};
 } // namespace lain::flow

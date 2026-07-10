@@ -28,8 +28,8 @@ namespace lain::flow
 		Node& target = graph.node(id);
 		for (const Graph::Edge& e : graph.edges())
 		{
-			if (e.to == id)
-				target.input(e.inPort).value() = graph.node(e.from).output(e.outPort).value();
+			if (e.to.node == id)
+				target.findInput(e.to.port)->value() = graph.node(e.from.node).findOutput(e.from.port)->value();
 		}
 	}
 
@@ -43,8 +43,8 @@ namespace lain::flow
 
 		for (const Graph::Edge& e : graph.edges())
 		{
-			if (e.to == id)
-				evaluateUpstream(graph, e.from, visited);
+			if (e.to.node == id)
+				evaluateUpstream(graph, e.from.node, visited);
 		}
 
 		Node& node = graph.node(id);
@@ -98,7 +98,7 @@ namespace lain::flow
 		}
 
 		for (const Graph::Edge& e : graph.edges())
-			tasks.at(e.from).precede(tasks.at(e.to));
+			tasks.at(e.from.node).precede(tasks.at(e.to.node));
 
 		m_executor.run(flow); // blocks until every task finishes
 	}

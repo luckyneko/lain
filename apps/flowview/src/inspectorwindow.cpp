@@ -31,11 +31,13 @@ namespace flowview
 	using namespace lain;
 
 	// A pin's editor id, in imnodes' attribute id-space (separate from node + link ids).
-	// node * 1000 + (output ? 500 : 0) + port keeps inputs and outputs distinct; assumes
+	// node * 1000 + (output ? 500 : 0) + PortId keeps inputs and outputs distinct; assumes
 	// fewer than 500 ports per direction and node ids well under ~2M — fine for prototyping.
-	static int pinId(flow::NodeId node, bool output, flow::PortIndex port)
+	// Encodes the port's stable PortId (not its index), so a pin's editor id survives sibling
+	// pins being added/removed.
+	static int pinId(flow::NodeId node, bool output, flow::PortId port)
 	{
-		return static_cast<int>(node.value()) * 1000 + (output ? 500 : 0) + static_cast<int>(port);
+		return static_cast<int>(node.value()) * 1000 + (output ? 500 : 0) + static_cast<int>(port.value());
 	}
 
 	// Inverse of pinId(): decode an imnodes attribute id back to the (node, direction,
@@ -44,7 +46,7 @@ namespace flowview
 	{
 		flow::NodeId node;
 		bool output;
-		flow::PortIndex port;
+		flow::PortId port;
 	};
 
 	static DecodedPin decodePin(int attr)
@@ -54,7 +56,7 @@ namespace flowview
 		return DecodedPin{
 			flow::NodeId{static_cast<std::uint64_t>(attr / 1000)},
 			output,
-			static_cast<flow::PortIndex>(output ? rem - 500 : rem)};
+			flow::PortId{static_cast<std::uint32_t>(output ? rem - 500 : rem)}};
 	}
 
 	// A link was dragged between two pins: orient them (one output, one input) and ask
@@ -70,7 +72,8 @@ namespace flowview
 			return false; // need exactly one output and one input
 		const DecodedPin& out = a.output ? a : b;
 		const DecodedPin& in = a.output ? b : a;
-		return flow::edit::connectReplacing(graph, out.node, out.port, in.node, in.port);
+		return flow::edit::connectReplacing(graph, flow::PortAddress{out.node, out.port},
+											flow::PortAddress{in.node, in.port});
 	}
 
 	// The currently-selected links as edges (Delete key). imnodes link ids are edge
@@ -164,14 +167,14 @@ namespace flowview
 	void InspectorWindow::refreshPreviews(const flow::Graph& graph)
 	{
 		std::set<PinKey> live;
-		const auto refresh = [&](flow::NodeId id, const flow::Port& p, bool output, flow::PortIndex index)
+		const auto refresh = [&](flow::NodeId id, const flow::Port& p, bool output)
 		{
 			if (!p.ready() || p.type() != typeid(image::Image))
 				return;
 			const image::Image& img = p.value().get<image::Image>();
 			if (!img.valid())
 				return;
-			const PinKey key{id.value(), output, index};
+			const PinKey key{id.value(), output, p.id()};
 			live.insert(key);
 			gui::Texture& tex = m_previews[key];	// default-empty on first sight
 			if (!tex.upload(img))					// re-upload in place when size/format fits...
@@ -181,9 +184,9 @@ namespace flowview
 		{
 			const flow::Node& node = graph.node(id);
 			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
-				refresh(id, node.input(i), false, i);
+				refresh(id, node.input(i), false);
 			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
-				refresh(id, node.output(o), true, o);
+				refresh(id, node.output(o), true);
 		}
 		// Drop previews whose pin is gone (or no longer a ready image); the erased
 		// gui::Texture reclaims its descriptor.
@@ -242,7 +245,7 @@ namespace flowview
 		{
 			const flow::BoundaryInput& in = inputs[i];
 			gui::PushID(static_cast<int>(i));
-			gui::Text("%s : %s", in.name().c_str(), std::string(in.node->output(in.pin).typeName()).c_str());
+			gui::Text("%s : %s", in.name().c_str(), std::string(in.node->findOutput(in.pin)->typeName()).c_str());
 
 			const PinKey key{in.node->id().value(), true, in.pin};
 			const auto it = m_previews.find(key);
@@ -279,7 +282,7 @@ namespace flowview
 		{
 			const flow::BoundaryOutput& out = outputs[i];
 			gui::PushID(1000 + static_cast<int>(i)); // distinct id space from the inputs above
-			gui::Text("%s : %s", out.name().c_str(), std::string(out.node->input(out.pin).typeName()).c_str());
+			gui::Text("%s : %s", out.name().c_str(), std::string(out.node->findInput(out.pin)->typeName()).c_str());
 
 			const PinKey key{out.node->id().value(), false, out.pin};
 			const auto it = m_previews.find(key);
@@ -334,14 +337,14 @@ namespace flowview
 			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
 			{
 				const flow::Port& in = node.input(i);
-				gui::nodes::BeginInputAttribute(pinId(id, false, i));
+				gui::nodes::BeginInputAttribute(pinId(id, false, in.id()));
 				gui::Text("%s : %s", in.name().c_str(), std::string(in.typeName()).c_str());
 				gui::nodes::EndInputAttribute();
 			}
 			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
 			{
 				const flow::Port& out = node.output(o);
-				gui::nodes::BeginOutputAttribute(pinId(id, true, o));
+				gui::nodes::BeginOutputAttribute(pinId(id, true, out.id()));
 				gui::Text("%s : %s", out.name().c_str(), std::string(out.typeName()).c_str());
 				gui::nodes::EndOutputAttribute();
 			}
@@ -351,7 +354,8 @@ namespace flowview
 
 		const std::vector<flow::Graph::Edge>& edges = graph.edges();
 		for (std::size_t e = 0; e < edges.size(); ++e)
-			gui::nodes::Link(static_cast<int>(e), pinId(edges[e].from, true, edges[e].outPort), pinId(edges[e].to, false, edges[e].inPort));
+			gui::nodes::Link(static_cast<int>(e), pinId(edges[e].from.node, true, edges[e].from.port),
+							 pinId(edges[e].to.node, false, edges[e].to.port));
 
 		gui::nodes::EndNodeEditor();
 		gui::nodes::PopAttributeFlag();
@@ -371,7 +375,7 @@ namespace flowview
 		if (gui::nodes::IsLinkDestroyed(&destroyedLink) && destroyedLink >= 0 && static_cast<std::size_t>(destroyedLink) < edges.size())
 		{
 			const flow::Graph::Edge e = edges[static_cast<std::size_t>(destroyedLink)];
-			edited |= flow::edit::disconnect(graph, e.to, e.inPort);
+			edited |= flow::edit::disconnect(graph, e.to);
 		}
 		int startAttr = 0;
 		int endAttr = 0;
@@ -466,16 +470,16 @@ namespace flowview
 				paramEdited |= m_paramEditors.render(node.param(pi));
 			gui::PopID();
 
-			auto port = [&](const char* tag, const flow::Port& p, bool output, flow::PortIndex index)
+			auto port = [&](const char* tag, const flow::Port& p, bool output)
 			{
 				// A ready image port shows extent + its thumbnail (uploaded + cached by
-				// refreshPreviews, keyed by pin); everything else — CPU values and the empty
-				// slot — is text via the shared Port::describe() pathway.
+				// refreshPreviews, keyed by the port's stable id); everything else — CPU values
+				// and the empty slot — is text via the shared Port::describe() pathway.
 				if (p.ready() && p.type() == typeid(image::Image))
 				{
 					const image::Image& img = p.value().get<image::Image>();
 					gui::Text("    %s %s: %s %dx%d", tag, p.name().c_str(), std::string(p.typeName()).c_str(), img.width(), img.height());
-					const PinKey key{id.value(), output, index};
+					const PinKey key{id.value(), output, p.id()};
 					const auto it = m_previews.find(key);
 					if (it != m_previews.end() && it->second.valid())
 					{
@@ -484,8 +488,8 @@ namespace flowview
 					}
 					if (output) // outputs are the results you'd export; inputs are just what was fed in
 					{
-						gui::PushID(pinId(id, output, index));
-						renderImageSave(PinKey{id.value(), output, index}, img);
+						gui::PushID(pinId(id, output, p.id()));
+						renderImageSave(key, img);
 						gui::PopID();
 					}
 					return;
@@ -494,9 +498,9 @@ namespace flowview
 			};
 
 			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
-				port("in ", node.input(i), false, i);
+				port("in ", node.input(i), false);
 			for (flow::PortIndex i = 0; i < node.outputCount(); ++i)
-				port("out", node.output(i), true, i);
+				port("out", node.output(i), true);
 		}
 		gui::End();
 

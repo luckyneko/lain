@@ -5,17 +5,25 @@
 
 namespace lain::flow
 {
+	// Mint the next stable PortId for a port this node is declaring.
+	inline PortId Node::nextPortId()
+	{
+		const PortId id = m_nextPortId;
+		m_nextPortId = PortId{m_nextPortId.value() + 1};
+		return id;
+	}
+
 	template <typename T>
 	PortIndex Node::addInput(std::string name)
 	{
-		m_inputs.push_back(Port(std::move(name), Port::Direction::Input, portType<T>()));
+		m_inputs.push_back(Port(std::move(name), Port::Direction::Input, portType<T>(), nextPortId()));
 		return m_inputs.size() - 1;
 	}
 
 	template <typename T>
 	PortIndex Node::addOutput(std::string name)
 	{
-		m_outputs.push_back(Port(std::move(name), Port::Direction::Output, portType<T>()));
+		m_outputs.push_back(Port(std::move(name), Port::Direction::Output, portType<T>(), nextPortId()));
 		return m_outputs.size() - 1;
 	}
 

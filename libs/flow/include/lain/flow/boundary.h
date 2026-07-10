@@ -16,11 +16,12 @@
 
 #include "lain/flow/node.h"
 #include "lain/flow/portvalue.h"
+#include "lain/flow/types.h" // PortId
 
+#include <map>
 #include <string>
 #include <typeindex>
 #include <utility>
-#include <vector>
 
 namespace lain::flow
 {
@@ -35,20 +36,22 @@ namespace lain::flow
 		{
 		}
 
-		// Declare a bindable input pin of type T; returns its index (== its output port index).
+		// Declare a bindable input pin of type T; returns its stable PortId. (A dynamic add in
+		// vertical b calls this at runtime; the returned PortId is how the host then binds it.)
 		template <typename T>
-		PortIndex addBoundary(std::string name)
+		PortId addBoundary(std::string name)
 		{
-			m_bound.emplace_back();
-			return addOutput<T>(std::move(name));
+			const PortId id = output(addOutput<T>(std::move(name))).id();
+			m_bound[id]; // default-construct the pin's (empty) bound slot
+			return id;
 		}
 
-		PortIndex boundaryCount() const { return m_bound.size(); }
+		PortIndex boundaryCount() const { return outputCount(); }
 
 		// Inject the value for `pin`; published to that output on the next compute(). Marks
 		// dirty so a pull re-fires it, after which it stays constant until the next setValue (a
 		// live input in vertical b simply stays dirty). The payload type must match the pin's.
-		void setValue(PortIndex pin, PortValue value)
+		void setValue(PortId pin, PortValue value)
 		{
 			m_bound[pin] = std::move(value);
 			markDirty();
@@ -57,12 +60,13 @@ namespace lain::flow
 		// Publish each pin's host-injected value (a type-erased copy) to its output port.
 		void compute() override
 		{
-			for (PortIndex i = 0; i < m_bound.size(); ++i)
-				output(i).value() = m_bound[i];
+			for (const auto& [id, value] : m_bound)
+				if (Port* p = findOutput(id))
+					p->value() = value;
 		}
 
 	private:
-		std::vector<PortValue> m_bound; // per-pin host-injected value, republished each compute()
+		std::map<PortId, PortValue> m_bound; // per-pin host-injected value, republished each compute()
 	};
 
 	// A graph OUTPUT boundary: one or more pins whose delivered value the host reads after a
@@ -75,42 +79,48 @@ namespace lain::flow
 		{
 		}
 
-		// Declare a graph-output pin of type T; returns its index (== its input port index).
+		// Declare a graph-output pin of type T; returns its stable PortId.
 		template <typename T>
-		PortIndex addBoundary(std::string name)
+		PortId addBoundary(std::string name)
 		{
-			return addInput<T>(std::move(name));
+			return input(addInput<T>(std::move(name))).id();
 		}
 
 		PortIndex boundaryCount() const { return inputCount(); }
 
 		// The value delivered to `pin` (its input's current value). Empty until the graph has
-		// run with a producer wired in.
-		const PortValue& value(PortIndex pin) const { return input(pin).value(); }
+		// run with a producer wired in (or if `pin` is unknown).
+		const PortValue& value(PortId pin) const
+		{
+			static const PortValue empty;
+			const Port* p = findInput(pin);
+			return p ? p->value() : empty;
+		}
 
 		void compute() override {} // passthrough — the scheduler populated the inputs
 	};
 
-	// A bindable graph input: a named, typed pin on a GroupInputNode. The host binds through
-	// this (name / type / setValue) without knowing which node — or how many — host the pins.
+	// A bindable graph input: a named, typed pin (addressed by its stable PortId) on a
+	// GroupInputNode. The host binds through this (name / type / setValue) without knowing which
+	// node — or how many — host the pins, and it survives sibling pins being added/removed.
 	struct BoundaryInput
 	{
 		GroupInputNode* node;
-		PortIndex pin;
+		PortId pin;
 
-		const std::string& name() const { return node->output(pin).name(); }
-		std::type_index type() const { return node->output(pin).type(); }
+		const std::string& name() const { return node->findOutput(pin)->name(); }
+		std::type_index type() const { return node->findOutput(pin)->type(); }
 		void setValue(PortValue value) const { node->setValue(pin, std::move(value)); }
 	};
 
-	// A readable graph output: a named, typed pin on a GroupOutputNode.
+	// A readable graph output: a named, typed pin (by stable PortId) on a GroupOutputNode.
 	struct BoundaryOutput
 	{
 		GroupOutputNode* node;
-		PortIndex pin;
+		PortId pin;
 
-		const std::string& name() const { return node->input(pin).name(); }
-		std::type_index type() const { return node->input(pin).type(); }
+		const std::string& name() const { return node->findInput(pin)->name(); }
+		std::type_index type() const { return node->findInput(pin)->type(); }
 		const PortValue& value() const { return node->value(pin); }
 	};
 } // namespace lain::flow

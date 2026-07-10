@@ -33,23 +33,31 @@ namespace lain::flow
 		bool removeNode(NodeId id);
 
 		std::size_t nodeCount() const { return m_nodes.size(); }
+		bool contains(NodeId id) const { return m_nodes.count(id) != 0; }
 		Node& node(NodeId id) { return *m_nodes.at(id); }
 		const Node& node(NodeId id) const { return *m_nodes.at(id); }
 
 		// Connect an output to an input. Type-checked (declared types must match),
 		// single-source (an input takes one edge), and cycle-rejecting — so the
-		// graph stays acyclic by construction.
+		// graph stays acyclic by construction. The edge stores the ports' stable
+		// PortAddresses, so it survives the ports being reordered/renumbered.
+		Connection connect(PortAddress from, PortAddress to);
+
+		// Index convenience: connect the from-node's `outPort`-th output to the to-node's
+		// `inPort`-th input. Resolves the indices to PortAddresses *now* (the edge stores the
+		// stable ids, never the indices), so it is safe for building fixed graphs / tests.
 		Connection connect(NodeId from, PortIndex outPort, NodeId to, PortIndex inPort);
 
-		// Remove the edge feeding (to, inPort), if any; returns whether one was removed.
-		bool disconnect(NodeId to, PortIndex inPort);
+		// Remove the edge feeding `input`, if any; returns whether one was removed.
+		bool disconnect(PortAddress input);
+		bool disconnect(NodeId to, PortIndex inPort); // index convenience (resolves now)
 
+		// A directed edge: an output PortAddress feeding an input PortAddress. Addressed by
+		// stable PortId, never PortIndex, so it survives dynamic-port mutation.
 		struct Edge
 		{
-			NodeId from;
-			PortIndex outPort;
-			NodeId to;
-			PortIndex inPort;
+			PortAddress from;
+			PortAddress to;
 		};
 		const std::vector<Edge>& edges() const { return m_edges; }
 

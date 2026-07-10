@@ -112,6 +112,33 @@ outputs. (M4 — being built; the vocabulary is settled, the mechanics are in
   selected inner ports as its own via the *same* boundary mechanism; the top-level
   graph is the outermost group. One mechanism at every level.
 
+## Port arity — one value, a collection, or many pins
+
+Three distinct shapes; keep them apart (conflating the first two is a design trap).
+
+- **Vector-valued port** — *one* pin whose value is a **collection**
+  (`Port<std::vector<image::Image>>`): one connection, aggregate payload. Needs **no
+  engine support** — `PortValue` is `std::any`, so a port already carries a
+  `std::vector<T>`. Use when the *data* is a collection (a `CombineImages` op).
+- **Dynamic ports** *(a.k.a. variadic pins)* — a node with a **runtime-variable number
+  of single-value pins**: N connections, N pins, added/removed/reordered at runtime.
+  This is the engine feature (M4 vertical b). Use when you gather N *separate* upstream
+  sources (a `GroupInputNode`'s N graph inputs; a `Merge` node). _Avoid_: "N inputs" as
+  a phrase — say which of these you mean.
+- **Merge / Split** — the bridge between the two: **Merge** takes variadic pins →
+  a vector-valued port; **Split** takes a vector-valued port → variadic pins.
+
+- **PortId** *(M4 b)* — an **opaque, stable per-port handle** (the port-level analogue
+  of `NodeId`, scoped within its node), so an edge and a `BoundaryInput` handle survive a
+  pin being added/removed/**reordered** — the port's identity is not its position. A
+  `PortIndex` is only a positional cursor for *iterating* a node's ports, never a durable
+  reference.
+- **PortAddress** *(M4 b)* — the conglomerate **`{NodeId, PortId}`**: the durable address
+  of one port on one node. The unit edges and handles reference (an **Edge** is two
+  PortAddresses, `{from, to}`), and the serialization primitive (a connections array of
+  `{from, to}`). Holds **no direction** — an edge implies it by position, a lone address
+  derives it from `Port::direction()`. Has `==` + `std::hash` so it keys selection / lookup.
+
 ## Value display — two purposes, two seams
 
 Rendering a port's value splits by *purpose*; don't conflate them.

@@ -16,9 +16,10 @@ using namespace lain::flow::test;
 // The edge feeding (to, inPort), or nullptr when the input is free.
 static const Graph::Edge* edgeInto(const Graph& g, NodeId to, PortIndex inPort)
 {
+	const PortAddress input{to, g.node(to).input(inPort).id()};
 	for (const Graph::Edge& e : g.edges())
 	{
-		if (e.to == to && e.inPort == inPort)
+		if (e.to == input)
 			return &e;
 	}
 	return nullptr;
@@ -33,7 +34,7 @@ TEST_CASE("connectReplacing connects a free input", "[edit]")
 	REQUIRE(edit::connectReplacing(g, c, 0, add, 0));
 	REQUIRE(g.edges().size() == 1);
 	REQUIRE(edgeInto(g, add, 0) != nullptr);
-	REQUIRE(edgeInto(g, add, 0)->from == c);
+	REQUIRE(edgeInto(g, add, 0)->from.node == c);
 }
 
 TEST_CASE("connectReplacing replaces an occupied input", "[edit]")
@@ -46,7 +47,7 @@ TEST_CASE("connectReplacing replaces an occupied input", "[edit]")
 
 	REQUIRE(edit::connectReplacing(g, c2, 0, add, 0)); // drag c2 onto the occupied input
 	REQUIRE(g.edges().size() == 1);					   // still single-source
-	REQUIRE(edgeInto(g, add, 0)->from == c2);		   // now fed by c2, not c1
+	REQUIRE(edgeInto(g, add, 0)->from.node == c2);	   // now fed by c2, not c1
 }
 
 TEST_CASE("connectReplacing preserves the original edge when the replacement would cycle", "[edit]")
@@ -64,7 +65,7 @@ TEST_CASE("connectReplacing preserves the original edge when the replacement wou
 	REQUIRE_FALSE(edit::connectReplacing(g, c, 0, b, 0)); // C -> B would cycle: rejected
 	REQUIRE(g.edges().size() == 2);						  // nothing added or lost
 	REQUIRE(edgeInto(g, b, 0) != nullptr);
-	REQUIRE(edgeInto(g, b, 0)->from == a); // A -> B restored, not left empty
+	REQUIRE(edgeInto(g, b, 0)->from.node == a); // A -> B restored, not left empty
 }
 
 TEST_CASE("connectReplacing rejects a type mismatch without touching the graph", "[edit]")
@@ -99,8 +100,8 @@ TEST_CASE("remove deletes selected nodes and their incident edges", "[edit]")
 
 	REQUIRE(edit::remove(g, {c1}, {}));
 	REQUIRE(g.nodeCount() == 2);
-	REQUIRE(g.edges().size() == 1);		   // c1 -> add went with c1
-	REQUIRE(g.edges().front().from == c2); // c2 -> add survives
+	REQUIRE(g.edges().size() == 1);				// c1 -> add went with c1
+	REQUIRE(g.edges().front().from.node == c2); // c2 -> add survives
 }
 
 TEST_CASE("remove deletes selected edges, leaving nodes in place", "[edit]")
@@ -127,11 +128,11 @@ TEST_CASE("remove tolerates an edge co-selected with the node it touches", "[edi
 
 	// Delete c1 *and* the c1 -> add edge together: removeNode already drops the edge, so
 	// the explicit disconnect is a harmless no-op — no double-remove, no crash.
-	const std::vector<Graph::Edge> edges = {Graph::Edge{c1, 0, add, 0}};
+	const std::vector<Graph::Edge> edges = {g.edges().front()}; // the c1 -> add edge
 	REQUIRE(edit::remove(g, {c1}, edges));
 	REQUIRE(g.nodeCount() == 2);
 	REQUIRE(g.edges().size() == 1);
-	REQUIRE(g.edges().front().from == c2);
+	REQUIRE(g.edges().front().from.node == c2);
 }
 
 TEST_CASE("remove of an empty selection changes nothing", "[edit]")

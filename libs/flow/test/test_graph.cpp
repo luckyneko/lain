@@ -191,8 +191,8 @@ TEST_CASE("removeNode drops the node and its edges, leaving other ids valid", "[
 
 	REQUIRE(g.removeNode(c1)); // remove a source
 	REQUIRE(g.nodeCount() == 2);
-	REQUIRE(g.edges().size() == 1);		   // the c1 -> add edge went with it
-	REQUIRE(g.edges().front().from == c2); // the c2 -> add edge survives
+	REQUIRE(g.edges().size() == 1);				// the c1 -> add edge went with it
+	REQUIRE(g.edges().front().from.node == c2); // the c2 -> add edge survives
 
 	// The surviving nodes keep their ids, and topo order no longer mentions c1.
 	REQUIRE(g.node(c2).name() == "ConstInt");

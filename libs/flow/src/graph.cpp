@@ -28,11 +28,39 @@ namespace lain::flow
 		// input keeps its last-copied value (as with disconnect) until re-evaluated.
 		m_edges.erase(std::remove_if(m_edges.begin(), m_edges.end(),
 									 [id](const Edge& e)
-									 { return e.from == id || e.to == id; }),
+									 { return e.from.node == id || e.to.node == id; }),
 					  m_edges.end());
 		m_nodes.erase(it);
 		m_topoValid = false;
 		return true;
+	}
+
+	Connection Graph::connect(PortAddress from, PortAddress to)
+	{
+		if (!valid(from.node) || !valid(to.node))
+			return Connection::InvalidNode;
+
+		const Port* out = node(from.node).findOutput(from.port);
+		const Port* in = node(to.node).findInput(to.port);
+		if (out == nullptr || in == nullptr)
+			return Connection::InvalidPort;
+
+		if (out->type() != in->type())
+			return Connection::TypeMismatch;
+
+		for (const Edge& e : m_edges)
+		{
+			if (e.to == to)
+				return Connection::InputInUse;
+		}
+
+		// Adding from -> to closes a cycle iff `from` is already reachable from `to`.
+		if (from.node == to.node || reaches(to.node, from.node))
+			return Connection::WouldCycle;
+
+		m_edges.push_back(Edge{from, to});
+		m_topoValid = false;
+		return Connection::Ok;
 	}
 
 	Connection Graph::connect(NodeId from, PortIndex outPort, NodeId to, PortIndex inPort)
@@ -45,29 +73,15 @@ namespace lain::flow
 		if (outPort >= source.outputCount() || inPort >= target.inputCount())
 			return Connection::InvalidPort;
 
-		if (source.output(outPort).type() != target.input(inPort).type())
-			return Connection::TypeMismatch;
-
-		for (const Edge& e : m_edges)
-		{
-			if (e.to == to && e.inPort == inPort)
-				return Connection::InputInUse;
-		}
-
-		// Adding from -> to closes a cycle iff `from` is already reachable from `to`.
-		if (from == to || reaches(to, from))
-			return Connection::WouldCycle;
-
-		m_edges.push_back(Edge{from, outPort, to, inPort});
-		m_topoValid = false;
-		return Connection::Ok;
+		// Resolve the positions to stable addresses now; the edge stores the ids, not the indices.
+		return connect(PortAddress{from, source.output(outPort).id()}, PortAddress{to, target.input(inPort).id()});
 	}
 
-	bool Graph::disconnect(NodeId to, PortIndex inPort)
+	bool Graph::disconnect(PortAddress input)
 	{
 		for (auto it = m_edges.begin(); it != m_edges.end(); ++it)
 		{
-			if (it->to == to && it->inPort == inPort)
+			if (it->to == input)
 			{
 				m_edges.erase(it);
 				m_topoValid = false;
@@ -75,6 +89,16 @@ namespace lain::flow
 			}
 		}
 		return false;
+	}
+
+	bool Graph::disconnect(NodeId to, PortIndex inPort)
+	{
+		if (!valid(to))
+			return false;
+		Node& target = node(to);
+		if (inPort >= target.inputCount())
+			return false;
+		return disconnect(PortAddress{to, target.input(inPort).id()});
 	}
 
 	const std::vector<NodeId>& Graph::topoOrder() const
@@ -89,7 +113,7 @@ namespace lain::flow
 		for (const auto& entry : m_nodes)
 			indegree[entry.first] = 0;
 		for (const Edge& e : m_edges)
-			++indegree[e.to];
+			++indegree[e.to.node];
 
 		std::vector<NodeId> ready;
 		for (const auto& entry : indegree) // ascending id -> deterministic seeding
@@ -108,8 +132,8 @@ namespace lain::flow
 
 			for (const Edge& e : m_edges)
 			{
-				if (e.from == n && --indegree[e.to] == 0)
-					ready.push_back(e.to);
+				if (e.from.node == n && --indegree[e.to.node] == 0)
+					ready.push_back(e.to.node);
 			}
 		}
 
@@ -135,8 +159,8 @@ namespace lain::flow
 
 			for (const Edge& e : m_edges)
 			{
-				if (e.from == n && seen.count(e.to) == 0)
-					stack.push_back(e.to);
+				if (e.from.node == n && seen.count(e.to.node) == 0)
+					stack.push_back(e.to.node);
 			}
 		}
 		return false;
@@ -149,8 +173,8 @@ namespace lain::flow
 		{
 			if (auto* node = dynamic_cast<GroupInputNode*>(entry.second.get()))
 			{
-				for (PortIndex pin = 0; pin < node->boundaryCount(); ++pin)
-					out.push_back(BoundaryInput{node, pin});
+				for (PortIndex i = 0; i < node->outputCount(); ++i) // a GroupInput's outputs are the graph's inputs
+					out.push_back(BoundaryInput{node, node->output(i).id()});
 			}
 		}
 		return out;
@@ -163,8 +187,8 @@ namespace lain::flow
 		{
 			if (auto* node = dynamic_cast<GroupOutputNode*>(entry.second.get()))
 			{
-				for (PortIndex pin = 0; pin < node->boundaryCount(); ++pin)
-					out.push_back(BoundaryOutput{node, pin});
+				for (PortIndex i = 0; i < node->inputCount(); ++i) // a GroupOutput's inputs are the graph's outputs
+					out.push_back(BoundaryOutput{node, node->input(i).id()});
 			}
 		}
 		return out;
