@@ -80,6 +80,38 @@ never by driving a live GUI.
 carrying any copyable payload — a CPU value or a GPU handle (`acm::Texture`). A
 consumer that cares compares `type()` against `typeid(...)`. See `CLAUDE.md`.
 
+## Graph boundary & host binding — the pipeline I/O model
+
+How a graph gets its inputs and yields its outputs, without load/save *nodes*. A
+graph declares an **interface**; a **host** supplies the inputs and consumes the
+outputs. (M4 — being built; the vocabulary is settled, the mechanics are in
+`WORK.md`.)
+
+- **Boundary node** — a node that *is* part of the graph's interface, distinct from
+  an internal compute node, and realised *as a node* (not as ports on the `Graph`). A
+  **`GroupInputNode`** publishes host-supplied values into the graph; a
+  **`GroupOutputNode`** exposes values for the host to read. Blender-group naming — and,
+  like Blender, **one node holds many pins**: a graph's whole interface is these two
+  nodes, not 2N. Pins are individually typed (`addBoundary<T>` per pin), so a fixed set
+  of differently-typed pins needs no dynamic ports. _Avoid_: source/sink node (those are
+  internal nodes that happen to have no input/output; a boundary node is specifically the
+  *interface*).
+- **Bindable input / output** — the unit a host actually binds: a **named, typed pin**
+  on a boundary node (a **`BoundaryInput`** / **`BoundaryOutput`** handle), *not* the
+  node. `Graph::boundaryInputs()` / `boundaryOutputs()` flatten every boundary node's
+  pins into one list, so a host binds pins without caring how many nodes host them.
+- **Host** — whatever drives a graph and binds its boundary: **gui** (flowview —
+  input from a file-pick or a live source, output displayed / saved on demand) or
+  **cli** (input from args, output written). The graph is the same; only the binding
+  differs. The host binds through the seam (enumerate boundaries → `setValue` each
+  input → run → read each output `value()`), so it never names a concrete node type.
+- **Boundary name** — the stable string that addresses one boundary (`"source"`,
+  `"result"`) so a host can bind the right one (a cli arg → an input, an output → a
+  file). Distinct from a node's display `name()`.
+- **Group node / subgraph** *(deferred)* — a node containing its own graph, exposing
+  selected inner ports as its own via the *same* boundary mechanism; the top-level
+  graph is the outermost group. One mechanism at every level.
+
 ## Value display — two purposes, two seams
 
 Rendering a port's value splits by *purpose*; don't conflate them.

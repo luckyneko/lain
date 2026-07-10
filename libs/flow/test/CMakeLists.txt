@@ -10,6 +10,7 @@ add_executable(test-flow
 	test_describe.cpp
 	test_nodes.cpp
 	test_params.cpp
+	test_boundary.cpp
 )
 
 target_compile_features(test-flow PRIVATE cxx_std_17)

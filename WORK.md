@@ -480,17 +480,87 @@ adoption. **TIFF reader breadth ("one day", not now):** float sample format → 
   its own. The **top-level Graph is the outermost group**; boundary ports are its interface. One
   mechanism at every level.
 
-**Boundary representation (leaning A, not locked):** boundary ports are **designated Input/Output
-nodes** inside the graph (Blender group style) — a `GroupInput` node whose *output* pins are the
-graph's inputs, a `GroupOutput` node whose *input* pins are its outputs; the host enumerates them to
-bind. Reuses the existing node/port machinery and unifies with group nodes for free (vs. a second
-port system living on the `Graph` object).
+**Boundary representation — LOCKED: A.** Boundary ports are **designated Input/Output nodes** inside
+the graph (Blender group style) — a `GroupInput` node whose *output* pins are the graph's inputs, a
+`GroupOutput` node whose *input* pins are its outputs; the host enumerates them to bind. Reuses the
+existing node/port machinery and unifies with group nodes for free (vs. a second port system living
+on the `Graph` object).
 
-**Key engine gap this exposes — dynamic ports.** Ports are declared in a `Node`'s ctor and fixed for
-life today. N synced inputs means an Input node must **add/remove ports at runtime**, which needs:
-(1) runtime port mutation (`addPort`/`removePort` post-construction), (2) edge cleanup on removal
-(as `removeNode` already does for incident edges), (3) gui affordances ("+"/"–" on the node). This
-is the first real M4 build item.
+**First vertical — LOCKED: (a) static single-I/O boundary.** One host-bound image input, one output;
+gui binds the input by file-pick + displays/saves the output, a minimal cli binds an input path arg
++ writes the output path. Proves the core new idea — a graph declares a boundary interface, cli vs
+gui bind it differently — reusing the image load/save library. The **host-binding mechanism is a
+loop over a boundary node's pins, so it generalizes 1→N for free**: dynamic ports (the N-input case)
+layer on next with no rework of the binding / cli / gui. Streams, sync, real-time, nested groups all
+deferred past this vertical.
+
+**Seam design (LOCKED for vertical a) — a generic, payload-agnostic boundary seam, not typed
+app nodes.** "Generic" has two independent axes: *type*-genericity (the boundary carries any `T`) is
+handled at **compile time** by templates — no dynamic ports; *count/runtime-typing* (variable pin
+count, runtime-chosen type) is dynamic ports, i.e. **(b)**. The seam is axis-independent (it's the
+enumerate + bind contract), so (a) uses it with fixed single-port templated nodes, and (b) later
+swaps in dynamic-port nodes **without changing the seam, cli, or gui**.
+
+- **Single node, multiple pins (Blender model), not one node per pin.** flow's ports are
+  individually typed (`addOutput<T>` per pin), so *one* node declares a fixed set of
+  differently-typed pins at construction — **no dynamic ports, no runtime-typed ports** (those are
+  only for *runtime* add/remove, i.e. (b)). So a graph's whole interface is two nodes, and N image
+  streams later are one Input node with N pins, not N nodes.
+- **flow core** gains two concrete nodes: `GroupInputNode` (`addBoundary<T>(name)` declares a
+  host-bound output pin; holds a per-pin `std::vector<PortValue>`; `setValue(pin, PortValue)`;
+  `compute()` publishes each pin's value) and `GroupOutputNode` (`addBoundary<T>(name)` declares an
+  input pin; `compute()` no-op; `value(pin)` returns its input's value). All crossing is through the
+  type-erased `PortValue`, so core names no payload type. (Core's first concrete *node facility*,
+  justified: boundary nodes are graph *structure*.)
+- **Pin-centric seam.** A bindable input/output is a **pin**, not a node: `BoundaryInput` /
+  `BoundaryOutput` handles (`{node, pin}` with `name()` / `type()` / `setValue()` or `value()`).
+  `Graph::boundaryInputs()` / `boundaryOutputs()` **flatten** every boundary node's pins into one
+  list — the RTTI/`dynamic_cast` lives here, and the host binds pins without caring how many nodes
+  host them.
+- **Value crossing.** Input: host `setValue(pin, ...)` stores the value + `markDirty()`; `compute()`
+  publishes it, then it is **constant until re-set** (the Node docs' "constant clears dirty, re-set
+  refires" pattern; a live streaming input in (b) simply stays dirty). Output: after the run, host
+  reads `value(pin)`. The host loops the flat pin lists — *setValue each input → run → read each
+  output* — identical for 1 or N pins, images now or voxels later.
+
+**Host consumers (a).** The graph is still built in code (`buildExampleScene`) — graph
+*serialization* is deferred (Tier A) — so neither host runs an arbitrary graph file yet.
+- **cli** = extend flowview's existing **`--headless`**, kept deliberately *testy*: `--input <path>`
+  → `io::image::load` → `setValue` the sole boundary input → run → read the sole output `value()` →
+  `io::image::save` to `--output <path>`. `dumpGraph` stays for inspection. A proper **`run` mode**
+  (arbitrary serialized graphs + cli helpers to *list* a graph's inputs/outputs, named-arg binding
+  `source=foo.png`) waits for serialization — don't build it until the data structure is solid.
+- **gui** = a dedicated **"Interface" panel** (Inputs & Outputs), driven by
+  `Graph::boundaryInputs()/outputs()` — the *same enumeration loop the cli runs*. Inputs: name,
+  type, **Bind file…** (`openFile` → `io::image::load` → `setValue` → `reevaluate`). Outputs: name,
+  type, thumbnail, **Save…** (reads `value()` → the format-dropdown save flow). The boundary nodes
+  still appear in the canvas/inspector as nodes; this panel is the host-binding surface, and the
+  natural home for **boundary-only controls** that don't fit a normal node — save (outputs),
+  play/pause (live inputs, (b)), a re-run. It is a *persistent* surface (independent of canvas
+  selection — which matters given the planned "inspector shows only the selected node" change).
+
+**Key engine gap this exposes — dynamic ports (the (b) item, not (a)).** Ports are declared in a
+`Node`'s ctor and fixed for life today. N synced inputs means an Input node must **add/remove ports
+at runtime**, which needs: (1) runtime port mutation (`addPort`/`removePort` post-construction),
+(2) edge cleanup on removal (as `removeNode` does for incident edges), (3) gui affordances
+("+"/"–" on the node). Deferred to vertical (b); the (a) seam is shaped so it slots in unchanged.
+**Revisit at (b):** how a host *sets/exposes* inputs (the current `setValue(pin, PortValue)` +
+`BoundaryInput` handle) is not fully settled — re-examine the input-exposure API when dynamic ports
+make the N-pin ergonomics concrete.
+
+**Build order (vertical a)** — three commits, each strict-clean + tested:
+1. ✅ **flow core — the boundary seam** (built, tested). `GroupInputNode` / `GroupOutputNode`
+   (multi-pin, `addBoundary<T>`) + the pin-centric `BoundaryInput` / `BoundaryOutput` handles +
+   `Graph::boundaryInputs()` / `boundaryOutputs()` (flatten pins). Tested **driver-free** on trivial
+   payloads (`int`/`float`): `setValue` → run (SerialScheduler) → downstream → `value()`; a single
+   node with two differently-typed pins; re-bind refires; unbound → empty; enumeration flattens +
+   excludes ordinary nodes. Fixed pins (no dynamic ports). In **flow core** (payload-agnostic,
+   structural — core's first node facility).
+2. **Example scene reshape + cli.** `buildExampleScene` becomes a `GroupInputNode` (one image pin)
+   → (existing process nodes) → `GroupOutputNode` (one image pin). flowview `--headless --input
+   <path> --output <path>` binds the sole boundary pin, runs, writes. cli test: real image
+   round-trips through the boundary. `dumpGraph` stays.
+3. **gui Interface panel.** The Inputs & Outputs panel above, in flowview. Mac-verified.
 
 **Also implicates** (each its own effort): the deferred **`Stream` transport** (video / live
 frames, incremental vs. `read`'s whole-asset slurp); **multi-stream sync** (temporal alignment of N

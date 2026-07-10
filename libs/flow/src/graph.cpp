@@ -1,4 +1,4 @@
-#include "lain/flow/graph.h"
+#include "lain/flow/graph.h" // includes boundary.h (GroupInput/OutputNode, BoundaryInput/Output)
 
 #include <algorithm>
 #include <cstddef>
@@ -140,5 +140,33 @@ namespace lain::flow
 			}
 		}
 		return false;
+	}
+
+	std::vector<BoundaryInput> Graph::boundaryInputs()
+	{
+		std::vector<BoundaryInput> out;
+		for (auto& entry : m_nodes)
+		{
+			if (auto* node = dynamic_cast<GroupInputNode*>(entry.second.get()))
+			{
+				for (PortIndex pin = 0; pin < node->boundaryCount(); ++pin)
+					out.push_back(BoundaryInput{node, pin});
+			}
+		}
+		return out;
+	}
+
+	std::vector<BoundaryOutput> Graph::boundaryOutputs()
+	{
+		std::vector<BoundaryOutput> out;
+		for (auto& entry : m_nodes)
+		{
+			if (auto* node = dynamic_cast<GroupOutputNode*>(entry.second.get()))
+			{
+				for (PortIndex pin = 0; pin < node->boundaryCount(); ++pin)
+					out.push_back(BoundaryOutput{node, pin});
+			}
+		}
+		return out;
 	}
 } // namespace lain::flow

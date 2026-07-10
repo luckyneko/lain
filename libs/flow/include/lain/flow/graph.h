@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lain/flow/boundary.h" // BoundaryInput / BoundaryOutput — the enumerated pin handles
 #include "lain/flow/node.h"
 #include "lain/flow/types.h"
 
@@ -56,6 +57,13 @@ namespace lain::flow
 		// construction, so this always covers every node. Cached and recomputed
 		// lazily after a topology change.
 		const std::vector<NodeId>& topoOrder() const;
+
+		// The graph's I/O boundary — a flat list of bindable pins across every boundary node
+		// (see boundary.h). A host loops these to setValue each input, run, then read each
+		// output's value(); the RTTI to find the nodes lives here, not scattered across cli +
+		// gui. Node insertion order then pin order, so the interface list is stable.
+		std::vector<BoundaryInput> boundaryInputs();
+		std::vector<BoundaryOutput> boundaryOutputs();
 
 	private:
 		bool valid(NodeId id) const { return m_nodes.count(id) != 0; }
