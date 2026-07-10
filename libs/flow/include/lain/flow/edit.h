@@ -42,6 +42,11 @@ namespace lain::flow::edit
 	// new node's id.
 	NodeId addNode(Graph& graph, std::unique_ptr<Node> node);
 
+	// Add a dynamic pin of the registered port type `typeKey` to `node` (the "+" gesture): a
+	// route through the port-type registry, on the mutation seam. Returns the new PortId, or a
+	// null PortId if `node` isn't a DynamicPortsNode or `typeKey` isn't registered.
+	PortId addPort(Graph& graph, NodeId node, const std::string& typeKey, std::string name);
+
 	// Remove a dynamic port safely (the "×" gesture): disconnect every edge touching it (an
 	// output may feed several inputs; an input has one source), then remove the now-free port via
 	// the Graph::removePort primitive. Returns whether the port was removed.

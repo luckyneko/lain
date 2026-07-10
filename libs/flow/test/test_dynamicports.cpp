@@ -7,9 +7,12 @@
 #include "lain/flow/dynamicports.h"
 #include "lain/flow/edit.h"
 #include "lain/flow/graph.h"
+#include "lain/flow/porttyperegistry.h"
 #include "testnodes.h" // ConstInt — an int source to wire into a dynamic pin
 
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+#include <string>
 
 using namespace lain::flow;
 
@@ -109,4 +112,70 @@ TEST_CASE("removing a middle pin leaves the others' ids and edges intact", "[flo
 	}
 	REQUIRE(toP0);
 	REQUIRE(toP2);
+}
+
+TEST_CASE("the port-type registry adds a pin of a registered type", "[flow][dynamic]")
+{
+	registerPortType<int>("int"); // the app registers image::Image etc. the same way
+	REQUIRE(portTypeRegistered("int"));
+	const auto keys = portTypeKeys();
+	REQUIRE(std::find(keys.begin(), keys.end(), "int") != keys.end());
+
+	Graph g;
+	const NodeId n = g.add<DynInts>();
+	auto& dyn = static_cast<DynInts&>(g.node(n));
+
+	const PortId id = addPortOfType(dyn, "int", "x");
+	REQUIRE(id != PortId{});
+	REQUIRE(dyn.inputCount() == 1);
+	REQUIRE(dyn.findInput(id)->type() == std::type_index(typeid(int)));
+
+	// An unregistered key adds nothing.
+	REQUIRE(addPortOfType(dyn, "nope", "y") == PortId{});
+	REQUIRE(dyn.inputCount() == 1);
+}
+
+TEST_CASE("edit::addPort routes through the registry on the mutation seam", "[flow][dynamic]")
+{
+	registerPortType<int>("int");
+	Graph g;
+	const NodeId n = g.add<DynInts>();
+	const NodeId fixed = g.add<test::ConstInt>(1); // not a DynamicPortsNode
+
+	REQUIRE(edit::addPort(g, n, "int", "x") != PortId{});
+	REQUIRE(g.node(n).inputCount() == 1);
+	REQUIRE(edit::addPort(g, fixed, "int", "x") == PortId{}); // fixed node -> refused
+}
+
+TEST_CASE("setName renames a pin without disturbing its edge", "[flow][dynamic]")
+{
+	Graph g;
+	const NodeId c = g.add<test::ConstInt>(5);
+	const NodeId n = g.add<DynInts>();
+	auto& dyn = static_cast<DynInts&>(g.node(n));
+	const PortId pin = dyn.addDynamicPort<int>("in0");
+	REQUIRE(g.connect(c, 0, n, 0) == Connection::Ok);
+
+	dyn.findInput(pin)->setName("renamed");
+	REQUIRE(dyn.findInput(pin)->name() == "renamed");
+	REQUIRE(g.edges().size() == 1); // the edge (addressed by PortId) is untouched
+	REQUIRE(g.edges().front().to == PortAddress{n, pin});
+}
+
+TEST_CASE("acceptsPortType narrows the addable types", "[flow][dynamic]")
+{
+	struct ImagesOnly : DynamicPortsNode
+	{
+		ImagesOnly()
+			: DynamicPortsNode("ImagesOnly")
+		{
+		}
+		Port::Direction dynamicSide() const override { return Port::Direction::Input; }
+		bool acceptsPortType(const std::string& key) const override { return key == "Image"; }
+		void compute() override {}
+	};
+
+	ImagesOnly node;
+	REQUIRE(node.acceptsPortType("Image"));
+	REQUIRE_FALSE(node.acceptsPortType("int"));
 }

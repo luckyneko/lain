@@ -1,6 +1,8 @@
 #include "lain/flow/edit.h"
 
+#include "lain/flow/dynamicports.h"
 #include "lain/flow/node.h"
+#include "lain/flow/porttyperegistry.h"
 
 #include <optional>
 #include <utility>
@@ -80,6 +82,16 @@ namespace lain::flow::edit
 	NodeId addNode(Graph& graph, std::unique_ptr<Node> node)
 	{
 		return graph.add(std::move(node));
+	}
+
+	PortId addPort(Graph& graph, NodeId node, const std::string& typeKey, std::string name)
+	{
+		if (!graph.contains(node))
+			return PortId{};
+		auto* dynamic = dynamic_cast<DynamicPortsNode*>(&graph.node(node));
+		if (dynamic == nullptr)
+			return PortId{};
+		return addPortOfType(*dynamic, typeKey, std::move(name));
 	}
 
 	bool removePort(Graph& graph, PortAddress port)

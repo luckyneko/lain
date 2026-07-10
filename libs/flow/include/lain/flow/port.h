@@ -27,6 +27,10 @@ namespace lain::flow
 		const std::string& name() const { return m_name; }
 		Direction direction() const { return m_dir; }
 
+		// Rename the port — display only. Edges and boundary handles reference the PortId, so a
+		// rename touches nothing structural (used for editable boundary-pin names).
+		void setName(std::string name) { m_name = std::move(name); }
+
 		// The port's stable identity within its node (assigned by the owning Node). Edges and
 		// boundary handles reference this, so it survives the port being reordered/renumbered —
 		// unlike its index.

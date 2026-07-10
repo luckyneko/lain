@@ -8,6 +8,7 @@ add_library(flow STATIC
 	src/graph.cpp
 	src/scheduler.cpp
 	src/edit.cpp
+	src/porttyperegistry.cpp
 )
 add_library(lain::flow ALIAS flow)
 

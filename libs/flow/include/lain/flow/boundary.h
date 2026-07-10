@@ -14,6 +14,7 @@
 // host them. All crossing is through the type-erased PortValue; flow core names no payload
 // type.
 
+#include "lain/flow/dynamicports.h" // DynamicPortsNode — boundary nodes have dynamic pins
 #include "lain/flow/node.h"
 #include "lain/flow/portvalue.h"
 #include "lain/flow/types.h" // PortId
@@ -28,22 +29,24 @@ namespace lain::flow
 	// A graph INPUT boundary: one or more host-bound output pins. The host injects each pin's
 	// value (setValue); compute() publishes it to that pin. Add pins at construction with
 	// addBoundary<T> — each is an ordinary typed output port, so pins may differ in type.
-	class GroupInputNode : public Node
+	class GroupInputNode : public DynamicPortsNode
 	{
 	public:
 		GroupInputNode()
-			: Node("GroupInput")
+			: DynamicPortsNode("GroupInput")
 		{
 		}
 
-		// Declare a bindable input pin of type T; returns its stable PortId. (A dynamic add in
-		// vertical b calls this at runtime; the returned PortId is how the host then binds it.)
+		// A GroupInput's graph-inputs are its OUTPUT pins, so that's the side that grows.
+		Port::Direction dynamicSide() const override { return Port::Direction::Output; }
+
+		// Declare a bindable input pin of type T; returns its stable PortId. Routes through
+		// addDynamicPort so a construction-time pin and a runtime-added pin are the same path
+		// (both get a bound slot via onDynamicPortAdded).
 		template <typename T>
 		PortId addBoundary(std::string name)
 		{
-			const PortId id = output(addOutput<T>(std::move(name))).id();
-			m_bound[id]; // default-construct the pin's (empty) bound slot
-			return id;
+			return addDynamicPort<T>(std::move(name));
 		}
 
 		PortIndex boundaryCount() const { return outputCount(); }
@@ -65,25 +68,32 @@ namespace lain::flow
 					p->value() = value;
 		}
 
+	protected:
+		// A new pin (construction-time or runtime) gets an empty bound slot to inject into later.
+		void onDynamicPortAdded(PortId id) override { m_bound[id]; }
+
 	private:
 		std::map<PortId, PortValue> m_bound; // per-pin host-injected value, republished each compute()
 	};
 
 	// A graph OUTPUT boundary: one or more pins whose delivered value the host reads after a
 	// run. Add pins at construction with addBoundary<T>; compute() is a passthrough.
-	class GroupOutputNode : public Node
+	class GroupOutputNode : public DynamicPortsNode
 	{
 	public:
 		GroupOutputNode()
-			: Node("GroupOutput")
+			: DynamicPortsNode("GroupOutput")
 		{
 		}
+
+		// A GroupOutput's graph-outputs are its INPUT pins, so that's the side that grows.
+		Port::Direction dynamicSide() const override { return Port::Direction::Input; }
 
 		// Declare a graph-output pin of type T; returns its stable PortId.
 		template <typename T>
 		PortId addBoundary(std::string name)
 		{
-			return input(addInput<T>(std::move(name))).id();
+			return addDynamicPort<T>(std::move(name));
 		}
 
 		PortIndex boundaryCount() const { return inputCount(); }
