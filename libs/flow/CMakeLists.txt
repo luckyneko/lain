@@ -23,7 +23,8 @@ target_link_libraries(flow
 	PRIVATE lain::task lain::warnings
 )
 
-add_subdirectory(example) # shared example nodes (flowview's smoke scene)
+add_subdirectory(example)	# shared example nodes (flowview's smoke scene)
+add_subdirectory(serialize) # Graph <-> data::Value (WORK.md Tier A #1); separate target, links lain::data
 
 if(LAIN_BUILD_TESTING)
 	add_subdirectory(test)
