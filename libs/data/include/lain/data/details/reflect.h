@@ -10,6 +10,7 @@
 #include "lain/data/value.h"
 
 #include <lain/meta/enums.h>
+#include <lain/meta/traits.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -17,38 +18,21 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <string_view>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace lain::data::detail
 {
 	// --- category traits for the dispatch ladders ---
+	// The structural std-shape traits (is_optional / is_vector / is_variant) live in lain::meta;
+	// only the serialization-policy trait below is data's own.
 
-	template <typename T>
-	struct is_optional : std::false_type
-	{
-	};
-	template <typename U>
-	struct is_optional<std::optional<U>> : std::true_type
-	{
-	};
-	template <typename T>
-	inline constexpr bool is_optional_v = is_optional<T>::value;
-
-	template <typename T>
-	struct is_vector : std::false_type
-	{
-	};
-	template <typename U, typename A>
-	struct is_vector<std::vector<U, A>> : std::true_type
-	{
-	};
-	template <typename T>
-	inline constexpr bool is_vector_v = is_vector<T>::value;
-
-	// A std::string-keyed map serializes as an Object; a map with any other key type does not
-	// (an Object's keys are strings). Non-string-keyed maps are a later arm (Array of pairs).
+	// A std::string-keyed map serializes as an Object; a map with any other key type does not (an
+	// Object's keys are strings). Not a pure type trait — it encodes data's Object-key policy —
+	// so it stays here, not in lain::meta. Non-string-keyed maps are a later arm (Array of pairs).
 	template <typename T>
 	struct is_string_map : std::false_type
 	{
@@ -59,6 +43,43 @@ namespace lain::data::detail
 	};
 	template <typename T>
 	inline constexpr bool is_string_map_v = is_string_map<T>::value;
+
+	// The stable key for variant arm A, via the ADL customization point (variantArmKey lives in
+	// A's namespace, or LAIN_SERIALIZE_VARIANT_ARM defines it). A missing overload is a compile
+	// error — every arm must declare a key.
+	template <typename A>
+	constexpr std::string_view armKey()
+	{
+		return variantArmKey(VariantArm<A>{});
+	}
+
+	// Forward decl: the read ladder (defined below), needed by the variant helpers + its own recursion.
+	template <typename T>
+	bool readValue(const Value& v, T& out);
+
+	// Variant read: try alternative I — if its key matches and its value reads, set out.
+	template <typename V, std::size_t I>
+	bool tryVariantArm(std::string_view key, const Value& val, V& out)
+	{
+		using A = std::variant_alternative_t<I, V>;
+		if (armKey<A>() == key)
+		{
+			A tmp{};
+			if (readValue(val, tmp))
+			{
+				out = std::move(tmp);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Fold over the alternatives, short-circuiting on the first key match that reads cleanly.
+	template <typename V, std::size_t... Is>
+	bool readVariant(std::string_view key, const Value& val, V& out, std::index_sequence<Is...>)
+	{
+		return (tryVariantArm<V, Is>(key, val, out) || ...);
+	}
 
 	// The serialize() customization point, either shape. has_free_serialize's unqualified call is
 	// found by ADL at instantiation (the user's serialize lives in their type's namespace); member
@@ -124,7 +145,7 @@ namespace lain::data::detail
 			return Value(value.generic_string()); // portable forward-slash form
 		else if constexpr (std::is_same_v<U, std::vector<std::byte>>)
 			return Value(value); // Bytes
-		else if constexpr (is_optional_v<U>)
+		else if constexpr (meta::is_optional_v<U>)
 			return value ? writeValue(*value) : Value();
 		else if constexpr (is_string_map_v<U>)
 		{
@@ -133,12 +154,27 @@ namespace lain::data::detail
 				out.set(key, writeValue(mapped));
 			return out;
 		}
-		else if constexpr (is_vector_v<U>)
+		else if constexpr (meta::is_vector_v<U>)
 		{
 			Value out = Value::array();
 			for (const auto& e : value)
 				out.push(writeValue(e));
 			return out;
+		}
+		else if constexpr (meta::is_variant_v<U>)
+		{
+			// { "type": <arm key>, "value": <serialized arm> } — the tag is what lets a read pick
+			// the arm back. Same idiom as a polymorphic node's factory key.
+			return std::visit(
+				[](const auto& arm) -> Value
+				{
+					using A = std::remove_cv_t<std::remove_reference_t<decltype(arm)>>;
+					Value out = Value::object();
+					out.set("type", Value(std::string(armKey<A>())));
+					out.set("value", writeValue(arm));
+					return out;
+				},
+				value);
 		}
 		else if constexpr (has_serialize_v<U>)
 		{
@@ -282,7 +318,7 @@ namespace lain::data::detail
 			}
 			return false;
 		}
-		else if constexpr (is_optional_v<U>)
+		else if constexpr (meta::is_optional_v<U>)
 		{
 			typename U::value_type tmp{};
 			if (readValue(v, tmp))
@@ -310,7 +346,7 @@ namespace lain::data::detail
 			out = std::move(tmp);
 			return true;
 		}
-		else if constexpr (is_vector_v<U>)
+		else if constexpr (meta::is_vector_v<U>)
 		{
 			const Value::Array* arr = v.asArray();
 			if (!arr)
@@ -327,6 +363,19 @@ namespace lain::data::detail
 			}
 			out = std::move(tmp);
 			return true;
+		}
+		else if constexpr (meta::is_variant_v<U>)
+		{
+			if (v.type() != Value::Type::Object)
+				return false;
+			const Value* typeV = v.find("type");
+			const Value* valueV = v.find("value");
+			if (!typeV || !valueV)
+				return false;
+			const std::string* key = typeV->asString();
+			if (!key)
+				return false;
+			return readVariant(*key, *valueV, out, std::make_index_sequence<std::variant_size_v<U>>{});
 		}
 		else if constexpr (has_serialize_v<U>)
 		{

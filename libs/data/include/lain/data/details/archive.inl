@@ -13,7 +13,7 @@ namespace lain::data
 	template <typename T>
 	Archive& Archive::member(std::string_view key, T& value)
 	{
-		if constexpr (detail::is_optional_v<T>)
+		if constexpr (meta::is_optional_v<T>)
 		{
 			if (saving())
 			{

@@ -4,13 +4,15 @@
 
 #include <string_view>
 
-// lain::data::Archive — the direction-agnostic visitor a type's serialize() writes against.
-// Concrete (not a template) so `serialize(Archive&, T&)` is one plain signature; member<T> is
-// the templated per-field binder. Constructed by toValue / fromValue (data.h) — a serialize
-// body only ever calls member().
+// lain::data — the reflection CUSTOMIZATION SURFACE: the two hooks a type-author touches to
+// control how it maps to/from a Value. Include this header to WRITE the mapping; include data.h to
+// CALL the toValue / fromValue facade.
 //
-// A serialize() author includes THIS header (they need only the Archive); a caller of the
-// toValue / fromValue facade includes data.h. See data.h for the serialize() contract.
+//   * Archive — the direction-agnostic visitor a member-based serialize() writes against.
+//     Concrete (not a template) so `serialize(Archive&, T&)` is one plain signature; member<T> is
+//     the templated per-field binder. Constructed by toValue / fromValue — a serialize body only
+//     ever calls member().
+//   * VariantArm — the hook for a std::variant's per-arm discriminator (see below).
 namespace lain::data
 {
 	class Archive
@@ -24,8 +26,16 @@ namespace lain::data
 
 		// Built by toValue (Save, over the Object being built) / fromValue (Load, over the
 		// Object being read). Public so the facade can construct one; not meant for direct use.
-		Archive(Mode mode, Value* out) noexcept : m_mode(mode), m_out(out) {}
-		Archive(Mode mode, const Value* in) noexcept : m_mode(mode), m_in(in) {}
+		Archive(Mode mode, Value* out) noexcept
+			: m_mode(mode)
+			, m_out(out)
+		{
+		}
+		Archive(Mode mode, const Value* in) noexcept
+			: m_mode(mode)
+			, m_in(in)
+		{
+		}
 
 		Mode mode() const noexcept { return m_mode; }
 		bool saving() const noexcept { return m_mode == Mode::Save; }
@@ -42,6 +52,14 @@ namespace lain::data
 		Mode m_mode;
 		Value* m_out = nullptr;		 // Save target (an Object)
 		const Value* m_in = nullptr; // Load source (an Object)
+	};
+
+	// The tagged-variant customization hook. A user provides `variantArmKey(VariantArm<T>)` — ADL-found
+	// via T's namespace, or written with LAIN_SERIALIZE_VARIANT_ARM(T, "key") — returning the stable
+	// string key for variant arm T. Deliberately not meta::typeName (display-only, unstable). See data.h.
+	template <typename T>
+	struct VariantArm
+	{
 	};
 } // namespace lain::data
 

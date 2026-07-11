@@ -1,9 +1,12 @@
 #pragma once
 
+#include <optional>
 #include <ostream>
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <variant>
+#include <vector>
 
 // Constexpr type-traits for lain::meta — capability detection for generic code, in
 // std::type_traits style (snake_case + a _v variable). Pure std: no magic_enum / nameof,
@@ -46,4 +49,40 @@ namespace lain::meta
 
 	template <typename T>
 	inline constexpr bool has_ostream_v = has_ostream<T>::value;
+
+	// Structural "is a specialization of std::X" traits (std::type_traits style). Generic — not
+	// tied to any one consumer (lain::data's serialization dispatch is the first). Add more std-shape
+	// traits here as a real consumer appears.
+	template <typename T>
+	struct is_optional : std::false_type
+	{
+	};
+	template <typename U>
+	struct is_optional<std::optional<U>> : std::true_type
+	{
+	};
+	template <typename T>
+	inline constexpr bool is_optional_v = is_optional<T>::value;
+
+	template <typename T>
+	struct is_vector : std::false_type
+	{
+	};
+	template <typename U, typename A>
+	struct is_vector<std::vector<U, A>> : std::true_type
+	{
+	};
+	template <typename T>
+	inline constexpr bool is_vector_v = is_vector<T>::value;
+
+	template <typename T>
+	struct is_variant : std::false_type
+	{
+	};
+	template <typename... Ts>
+	struct is_variant<std::variant<Ts...>> : std::true_type
+	{
+	};
+	template <typename T>
+	inline constexpr bool is_variant_v = is_variant<T>::value;
 } // namespace lain::meta

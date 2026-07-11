@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lain/data/archive.h"
+#include "lain/data/macros.h"
 #include "lain/data/value.h"
 
 #include <optional>
@@ -23,8 +24,13 @@
 //
 // Include this header to CALL the facade; include archive.h alone to WRITE a serialize().
 //
-// Deferred (next slice): enum-as-name (meta::enums), tagged variant, member Bytes, std::map, and
-// the LAIN_SERIALIZE(T, fields...) macro that expands to exactly the visitor above.
+// Supported without a serialize(): arithmetic/bool/enum (as its name)/std::string/
+// std::filesystem::path/std::vector/std::optional/std::map<std::string,V>/std::variant (tagged)/
+// raw bytes (std::vector<std::byte>). One-liner declarations (macros.h): LAIN_SERIALIZE(T,
+// fields...), LAIN_SERIALIZE_INTRUSIVE(...), LAIN_SERIALIZE_VARIANT_ARM(Arm, "key").
+//
+// Deferred: the memory::Buffer <-> Bytes bridge, untagged variant (try-each-arm), non-string-keyed
+// maps, and the Value <-> bytes codecs (lain::io::data — json first).
 namespace lain::data
 {
 	// Reflect a C++ value into a Value tree. Handles arithmetic / bool / std::string, std::vector,
