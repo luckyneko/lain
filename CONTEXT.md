@@ -154,11 +154,12 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   pin being added/removed/**reordered** — the port's identity is not its position. A
   `PortIndex` is only a positional cursor for *iterating* a node's ports, never a durable
   reference.
-- **PortAddress** *(M4 b)* — the conglomerate **`{NodeId, PortId}`**: the durable address
-  of one port on one node. The unit edges and handles reference (an **Edge** is two
-  PortAddresses, `{from, to}`), and the serialization primitive (a connections array of
-  `{from, to}`). Holds **no direction** — an edge implies it by position, a lone address
-  derives it from `Port::direction()`. Has `==` + `std::hash` so it keys selection / lookup.
+- **PortAddress** *(M4 b)* — the conglomerate **`{NodeId, PortId}`**: the durable **in-memory**
+  address of one port on one node. The unit edges and handles reference (an **Edge** is two
+  PortAddresses, `{from, to}`). Holds **no direction** — an edge implies it by position, a lone
+  address derives it from `Port::direction()`. Has `==` + `std::hash` so it keys selection / lookup.
+  (The **on-disk** edge form addresses ports by *name*, not PortId — see `flow::serialize`'s
+  name-addressed edges; PortAddress is the runtime primitive it resolves to.)
 
 ## Value display — two purposes, two seams
 
@@ -306,3 +307,144 @@ both sit behind service-shaped seams. See [ADR-0004](docs/adr/0004-static-linkin
   today, a `thorax` DSO tomorrow behind the same `registerCodec` seam. A format is enabled/disabled
   by an opt-out CMake `option`, so a consumer pulls only the codecs it asked for. _Avoid_: reader
   lib, backend, importer.
+
+## The `data` library — serialization DOM + reflection
+
+`lain::data` is the format-neutral serialization core: a value tree every transport pivots
+through, plus the reflection that maps a C++ type to and from it. **Two hops** — `T ↔ Value`
+(reflection) then `Value ↔ bytes-in-format` (codec, in `lain::io::data`) — so one type
+declaration serves json today and websocket / yaml / xml later. (Graph serialization is the
+first customer; the spine is general but built Graph-driven, json-first — see WORK.md Tier A.)
+
+- **Value** *(the DOM)* — the owned, format-neutral document node: a recursive variant over
+  `Null / Bool / Int64 / UInt64 / Double / String / Bytes / Array / Object`, with **Object
+  insertion-ordered** (deterministic, diff-friendly output). It is the IR of *serialization*
+  the way **Image** is the IR of *pixels* — a codec produces/consumes it, never the concrete
+  C++ type. Numbers are the **widened-canonical** set (every narrow int/float rides losslessly
+  in `Int64`/`UInt64`/`Double`; the narrowing happens in the typed read, not the DOM). **Bytes
+  is a first-class node** (raw bytes), so binary transports carry them raw and **Base64 is a
+  per-text-format encoding**, never in the DOM. _Avoid_: DataBlock, Block, blob, json (as the
+  DOM type name), document, node (flow::Node's word).
+
+- **The type is the schema** *(principle)* — there is **no separate validation layer**.
+  Format-safety *is* a typed `fromValue<T>` succeeding: it fails on a shape/type mismatch,
+  `optional<T>` tolerates an absent key, `variant` rejects an unknown arm, a narrow int
+  range-checks. Machine-generated files need layout + type checks and nothing heavier.
+
+  **Serialization vs reflection** *(the honest split)* — "serialization" is strictly the
+  `Value → bytes` step (`io::data` — json/yaml/binary). `T ↔ Value` is **reflection into the
+  DOM**, format-neutral, no bytes: hence the `toValue`/`fromValue` verbs. The word `serialize`
+  survives only as the **customization-point** name (`serialize(Archive&, T&)` — cereal's term;
+  the Archive *could* stream) and as **`flow::serialize`**, the graph operation-layer (a verb-named
+  companion to `flow::edit`, exposing `toValue`/`fromValue` for a Graph). Transport (`bytes ↔
+  file/socket`) is `io::read`/`write`. Three verbs, three layers; none overclaims a format.
+
+- **Archive** *(the visitor)* — the direction-agnostic target a type's `serialize` writes
+  against; `ar.member("radius", n.radius)` names each field **once** and serves **both** save
+  and load (the Archive carries the direction). This is the "simpler than nlohmann" lever (one
+  function, one key string, no drift — vs. nlohmann's paired `to_json`/`from_json` that repeat
+  every key), and the **seam** a future streaming/binary backend slots behind without touching
+  any `serialize`. The typed facade over it is `data::toValue(const T&) → Value` /
+  `data::fromValue<T>(const Value&) → optional<T>` — Value-facing verbs, deliberately **not**
+  `write`/`read` (those imply bytes; reflection emits a tree, not a format). _Avoid_: serializer,
+  stream (as the type name), write/read (for the T↔Value facade).
+
+- **serialize** *(the customization point)* — a free (ADL-found) or member
+  `serialize(Archive&, T&)` declaring a type's mapping; **layered** — a compound type composes
+  from its members' `serialize`, and supporting a new type is one thin overload. The library
+  ships `serialize` for the std containers (`vector`/`array`→Array, string-keyed `map`→Object,
+  `optional`→present-or-absent, `pair`/`tuple`) and `memory::Buffer`→Bytes. A **member**
+  `serialize` (preferred over the free one, detected by a `has_member_serialize` trait) is the
+  **private-member** escape hatch; the encouraged path is a free function over a plain data
+  struct kept separate from functional classes. **`LAIN_SERIALIZE(T, fields...)`** is a thin
+  macro *wrapper* over the visitor (field-name = JSON key), never the only route. Full
+  no-mention reflection waits on C++26 (P2996); the visitor API is forward-compatible with it.
+
+- **Enum-as-name** — an enum serializes as its `meta::enums` name string (underlying-int
+  fallback if unnamed) — human-readable, refactor-stable; `fromValue<E>` maps back by name.
+
+- **Tagged variant** — a `variant` serializes with a **stable-string discriminator**
+  (`{ "type": <key>, "value": … }`), the *same idiom* as a polymorphic node's `core::Factory`
+  key — deliberately **not** `meta::typeName` (display-only, unstable). **Untagged variant**
+  (try each arm in declaration order, first clean read wins) is **deferred**; it relies on reads
+  being **pure / rollback-safe** (no mutation on a failed read — a property v1 reads hold
+  anyway), so it slots in later with no rework.
+
+- **lain::io::data** *(the codec seam)* — bytes ↔ Value for one format, mirroring
+  `lain::io::image`: a `DataReader`/`DataWriter` interface, a `core::Factory` registry keyed by
+  format (`"json"`), a `load`/`save` facade, and per-format **codec plugins** under
+  `plugins/io/data/<fmt>` that own the third-party parser (nlohmann for json, ryml for yaml,
+  pugixml for xml) — **nlohmann is the json codec's private dep, never `Value`**. json-first;
+  other formats land as-needed.
+
+## Graph serialization — `flow::serialize`
+
+Saving / loading a Graph, built on `lain::data`. A **separate target** (`libs/flow/serialize`,
+`lain::flow::serialize`) depending on `flow` + `data` — a verb-named operation-layer companion to
+`flow::edit`, kept *out* of `flow` core by the **boundary rule**: *a concern lives in `flow` core
+iff it stays payload-agnostic; the moment it must name a concrete payload type or an external format
+(as serialization must), it lives outside.* Free functions `toValue(const Graph&, ctx) → Value` /
+`fromValue(const Value&, ctx) → LoadResult`.
+
+- **The recipe, not the cooked data** *(the governing principle)* — serialization stores a graph's
+  **structure** (node `kind` + params + dynamic pins + edges), **never** computed port values or
+  host-bound boundary values. The graph re-runs to reproduce them: a GPU/`acm::Texture` port value
+  never serializes, and a `GroupInputNode`'s host-injected values never serialize (the host re-binds
+  each run).
+
+- **kind** — a node's `core::Factory<Node>` key (the stable string that reconstructs its type), the
+  tag every serialized node carries; distinct from the display `name()`. A **variant** discriminator
+  is the *same idiom* — a stable-string-keyed registry. _Avoid_: type, class (for the node's factory
+  key, in the file).
+
+- **Node-id remap** — load mints **fresh** NodeIds via `Graph::add` and rewrites edges through a
+  `savedId → newId` table (returned, so an adapter re-keys its metadata). Deterministic and
+  **canonical** (assigned in file order), so a no-edit round-trip is idempotent. Needs **no new Graph
+  API** and *is* the **subgraph-paste** primitive (paste-into-existing must remap to dodge id
+  collisions) — load and paste are one mechanism. Chosen over id **preservation** (which would need
+  an insert-with-id seam + brittle ctor-order coupling).
+
+- **Name-addressed edges** — the on-disk edge references `{ node-id, port-name }`, resolved to a
+  `PortAddress` on load. A port **name** is a stable string key (per the versioning contract): it
+  survives a node's port-declaration order being refactored, and lets dynamic pins reconnect by name
+  with no PortId persistence. Requires **port-name uniqueness within a direction**, enforced at the
+  add seam (static ports → `log::ensure` author-contract; dynamic pins / boundary renames → a checked
+  reject). `PortAddress {NodeId, PortId}` stays the **in-memory** edge primitive; name-addressing is
+  only the on-disk form.
+
+- **Value-serializer registry** — the app-populated table keyed by a `PortValue`'s `type_index`,
+  holding a stable **type-key** + a `toValue`/`fromValue` pair (closures capturing `T`, the
+  `core::Factory::registerType<T>` idiom). Round-trips **params** (and any future savable
+  `PortValue`); the node's *declared* param type is authoritative on read ("the type is the schema"),
+  the stored key a cross-check. Distinct from the **port-type registry**, which recreates dynamic
+  *pins* — a dynamic pin serializes its **type**, never its value.
+
+- **Dynamic-pin serialization** — a `DynamicPortsNode` (incl. both boundary nodes) additionally
+  serializes its dynamic-side pins as `{ name, portTypeKey }` (**direction implied by
+  `dynamicSide()`**), replayed on load via the **port-type registry** (which gains a `type_index →
+  key` reverse lookup for save). A plain node serializes no ports — they're implied by its `kind`.
+  **Contract:** a `DynamicPortsNode`'s factory form has an **empty dynamic side** (all dynamic pins
+  are serialized + replayed), so no double-add.
+
+- **`editor` section** — a separate, **adapter-owned** part of the document keyed by node-id that
+  `flow::serialize` **round-trips as an opaque `Value`** and never interprets: node position, color,
+  size, collapsed-state, comments. Keeps `flow::serialize` GUI-free (placement is the adapter's job)
+  in one file; a headless load ignores it.
+
+- **version** — a document-root **integer** (monotonic, *not* `core::Version` semver), bumped on an
+  incompatible encoding change; migration is a version-switch on read, a **too-new** version is a
+  fatal load. The deeper compat contract is the **stability of the string keys** (`kind`, value
+  type-keys, port names) + tolerant reads (unknown param/pin skipped) — soft forward-compat for free.
+  Per-node-type schema versioning is deferred.
+
+- **Canonical file** — a file `flow::serialize` wrote round-trips **byte-identically** (ordered
+  `Object`, canonical id remap, container-preserved edge/param order, round-trippable numbers). A
+  non-canonical (hand-edited) file **normalizes on first save**, then is stable.
+
+- **LoadResult / LoadIssue** — `fromValue` returns `{ Graph graph; std::vector<LoadIssue> issues; }`
+  (`clean()` == no issues), **best-effort**: an unknown `kind` / port-type / param or a rejected edge
+  is skipped + recorded, not fatal — and because the graph is rebuilt through `Graph`'s primitives, a
+  partial load is still an **invariant-valid** Graph. Each issue is **both** logged (`lain::log`) and
+  returned (a GUI shows them and treats `!clean()` as failure; a cli refuses on an `Error`);
+  `Severity` is `Warning` / `Error`. The engine reports, the host decides. `flow::loadGraph(uri, ctx)`
+  funnels codec + semantic failures into one `LoadResult`.
