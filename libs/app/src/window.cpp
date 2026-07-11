@@ -72,7 +72,7 @@ namespace lain::app
 			m->window = nullptr;
 			return false;
 		}
-		m->surface = acm::interop::createSurface(instance, vkSurface);
+		m->surface = acm::interop::adoptSurface(instance, vkSurface);
 		return m->surface.valid();
 	}
 

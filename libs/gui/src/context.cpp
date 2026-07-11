@@ -87,7 +87,13 @@ namespace lain::gui
 
 	void Context::newFrame()
 	{
-		ImGui_ImplVulkan_NewFrame();
+		// ImGui's Vulkan backend lazily uploads pending font/texture atlases inside
+		// NewFrame, and that upload submits to and waits on the device queue. Run it
+		// under archimedes' queue mutex (via interop::withQueue) so a worker-thread GPU
+		// submit can't race it once the graph evaluates in parallel. withQueue only errors
+		// on an invalid device / null callback — neither is possible here (this is the
+		// device we initialised ImGui against), so the returned Error is discarded.
+		(void)acm::interop::withQueue(*m->device, [](VkQueue) { ImGui_ImplVulkan_NewFrame(); });
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 	}

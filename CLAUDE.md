@@ -45,6 +45,47 @@ Verified this session: warning-clean strict build of every lib+app; `ctest` 85/8
 --headless` dumps the `gradient → tint` graph. The live-driver GPU round-trip and (once
 the seam lands) gui-mode remain to be eyeballed on a Metal-capable session.
 
+### Update 2026-07-11 — archimedes bumped to `develop` tip (`61a890f`); gui adopts `interop::withQueue`
+
+`extern/archimedes` moved to `develop` tip (`61a890f`): device feature negotiation,
+pipeline/surface config presets, and an interop polish pass. Only one breaking change
+touched lain; the rest are additive and noted here as knobs available when we want them.
+
+- **`interop::createSurface` → `adoptSurface`** (breaking — the only compile break).
+  Same ownership contract: the `VkSurfaceKHR` moves to acm, lain keeps the native GLFW
+  window alive. `libs/app/src/window.cpp` adopts the GLFW surface through the new name.
+- **`interop::withQueue(device, work)` (new — adopted).** archimedes now asks that any
+  *external* backend which submits to / waits on the device queue run under its queue
+  mutex via `withQueue`, rather than reaching for `deviceMutex()`. `lain::gui`'s
+  `Context::newFrame` now wraps `ImGui_ImplVulkan_NewFrame` (ImGui lazily uploads
+  font/texture atlases there, which submits + waits) in `withQueue`, future-proofing the
+  viewer for the day a `ParallelScheduler` worker funnels a GPU submit while the main
+  thread is mid-`newFrame`. `withQueue` errors only on an invalid device / null callback
+  (impossible at that site), so the returned `acm::Error` is discarded with a comment.
+- **`SurfacePreferences` presets + empty-means-unranked (behaviour note, no lain change).**
+  A default-constructed `SurfacePreferences{}` now means "no ranking preference"; the old
+  populated sRGB/FIFO defaults live behind `SurfacePreferences::Default()` (plus
+  `::HardwareSrgb()` / `::LowLatency()`). lain is unaffected because `application.cpp`
+  calls `surfaceOptions(surface)` with no preferences, and that overload applies
+  `Default()` internally — same UNORM+FIFO ranking as before. If we ever hand-build a
+  `SurfacePreferences{}` expecting the old defaults, call a preset explicitly. (Available
+  knob: `HardwareSrgb` is the clean switch if flowview goes linear-lit.)
+- **`DeviceConfig` feature negotiation (new — additive, not used).** `createDevice(option,
+  DeviceConfig{})` gains required-vs-optional `DeviceFeatures` (`fillModeNonSolid`,
+  `wideLines`, `samplerAnisotropy`, `sampleRateShading`); `DeviceInfo::features` reports
+  availability, `Device::enabledFeatures()` reports what got turned on. `lain::app` uses
+  the default (enable-everything-supported), so behaviour is unchanged — a future knob if
+  the app needs to hard-require or query a feature.
+- **`PipelineConfig` presets (new — not used).** `Default/Mesh3D/Sprite2D/Wireframe`. lain
+  builds no acm pipelines directly (gui rides ImGui's backend), so no impact; handy for a
+  future `lain::graphics` layer.
+
+Verified this session: warning-clean strict build of every lib+app; `ctest` 228/228 (the
+window/`[gpu]` tests SKIP — no Metal in the sandbox); `flowview --headless` round-trips
+the `GroupInput → Tint → Blur → GroupOutput` graph. gui-mode's `withQueue`-wrapped
+`newFrame` runs only on a live driver and was **not** exercised here — it needs an eyeball
+on a Metal-capable session, same standing gap as the rest of gui-mode.
+
 **Engine core is built, tested, committed. The remaining M1 work is one decoupling
 refactor of `flow` plus the app stack + viewer:**
 
