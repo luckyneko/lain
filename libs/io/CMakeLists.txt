@@ -16,9 +16,10 @@ target_link_libraries(io
 	PRIVATE lain::log lain::warnings
 )
 
-# The per-media codec-loader seams nest under io (lain::io::image, later ::video /
-# ::audio). Codec-free themselves; codec plugins live under plugins/io/<media>.
+# The per-media codec-loader seams nest under io (lain::io::image, lain::io::data, later
+# ::video / ::audio). Codec-free themselves; codec plugins live under plugins/io/<media>.
 add_subdirectory(image)
+add_subdirectory(data)
 
 if(LAIN_BUILD_TESTING)
 	add_subdirectory(test)

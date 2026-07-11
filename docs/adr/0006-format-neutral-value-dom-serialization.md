@@ -52,3 +52,12 @@ serialization is a **separate `flow::serialize` layer** over this, never in `flo
   not every format's full expressiveness.
 - **A new `libs/data` + `libs/io/data` + `plugins/io/data/json`** land together, on the exact
   `image` / `io::image` / `plugins/io/image` template — so the shape is already familiar in the tree.
+- **A text codec can't preserve every DOM distinction; that's the codec's business, not the DOM's.**
+  Concretely, **JSON has no signed/unsigned distinction**, so the json codec normalises a **positive
+  `Int` to `UInt`** on read (nlohmann classifies a non-negative integer as unsigned). This is
+  *harmless*: the typed read (`fromValue<int>`) cross-accepts either arm, and the emitted **text is
+  stable/idempotent** — but DOM-exact `back == value` does not hold for a positive `Int` through
+  JSON (it does for a negative `Int`, a `UInt`, and every other arm). Likewise a **Bytes** node rides
+  JSON as a Base64 **string** and reads back as a `String` (JSON has no byte type). A future binary
+  codec (CBOR/MessagePack) preserves both distinctions exactly — which is the point of keeping the
+  DOM richer than any one format.
