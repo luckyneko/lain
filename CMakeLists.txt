@@ -77,6 +77,7 @@ add_subdirectory(libs/meta)             # enum reflection (magic_enum) — lain:
 add_subdirectory(libs/math)             # typed GLM wrapper
 add_subdirectory(libs/image)            # CPU raster + pixel formats (lain::image)
 add_subdirectory(libs/io)               # transport seam: read(uri) -> Buffer (WORK.md M3)
+add_subdirectory(libs/data)             # serialization DOM (Value) + reflection (WORK.md Tier A #1)
 add_subdirectory(libs/task)
 add_subdirectory(libs/flow)             # the node-graph engine (WORK.md M1)
 
