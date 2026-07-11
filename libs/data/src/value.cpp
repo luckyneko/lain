@@ -18,6 +18,7 @@ namespace lain::data
 			case Type::UInt: return "uint";
 			case Type::Double: return "double";
 			case Type::String: return "string";
+			case Type::Bytes: return "bytes";
 			case Type::Array: return "array";
 			case Type::Object: return "object";
 		}
@@ -62,6 +63,11 @@ namespace lain::data
 	const std::string* Value::asString() const
 	{
 		return std::get_if<std::string>(&m_data);
+	}
+
+	const std::vector<std::byte>* Value::asBytes() const
+	{
+		return std::get_if<std::vector<std::byte>>(&m_data);
 	}
 
 	const Value::Array* Value::asArray() const

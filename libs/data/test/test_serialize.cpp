@@ -5,7 +5,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -113,4 +116,66 @@ TEST_CASE("the type is the schema — a mismatch is nullopt, not a coerced value
 	// range check: 300 does not fit a std::uint8_t
 	REQUIRE_FALSE(fromValue<std::uint8_t>(Value(300)).has_value());
 	REQUIRE(fromValue<std::uint8_t>(Value(200)) == std::uint8_t{200});
+}
+
+namespace demo
+{
+	enum class Blend
+	{
+		Normal,
+		Add,
+		Multiply,
+	};
+
+	struct Style
+	{
+		Blend blend = Blend::Normal;
+		std::filesystem::path source;
+		std::map<std::string, int> counts;
+	};
+
+	void serialize(lain::data::Archive& ar, Style& s)
+	{
+		ar.member("blend", s.blend).member("source", s.source).member("counts", s.counts);
+	}
+} // namespace demo
+
+TEST_CASE("an enum round-trips as its name, not its integer", "[serialize]")
+{
+	REQUIRE(toValue(demo::Blend::Multiply) == Value("Multiply"));
+	REQUIRE(fromValue<demo::Blend>(Value("Add")).value() == demo::Blend::Add);
+	REQUIRE_FALSE(fromValue<demo::Blend>(Value("Nonsense")).has_value());
+}
+
+TEST_CASE("std::filesystem::path and a string-keyed map round-trip", "[serialize]")
+{
+	demo::Style s;
+	s.blend = demo::Blend::Add;
+	s.source = std::filesystem::path("assets/tex.png");
+	s.counts = {{"a", 1}, {"b", 2}};
+
+	Value v = toValue(s);
+	REQUIRE(v.find("source")->asString() != nullptr);
+	REQUIRE(*v.find("source")->asString() == "assets/tex.png"); // portable forward slashes
+	REQUIRE(v.find("counts")->type() == Value::Type::Object);	// map -> Object
+
+	auto r = fromValue<demo::Style>(v);
+	REQUIRE(r.has_value());
+	REQUIRE(r->blend == demo::Blend::Add);
+	REQUIRE(r->source == std::filesystem::path("assets/tex.png"));
+	REQUIRE(r->counts.at("a") == 1);
+	REQUIRE(r->counts.at("b") == 2);
+}
+
+TEST_CASE("raw bytes round-trip through the Bytes arm, not as an Array", "[serialize]")
+{
+	std::vector<std::byte> bytes{std::byte{0x00}, std::byte{0xFF}, std::byte{0x7F}};
+
+	Value v = toValue(bytes);
+	REQUIRE(v.type() == Value::Type::Bytes);
+	REQUIRE(v.asArray() == nullptr); // Bytes is not an Array of ints
+
+	auto r = fromValue<std::vector<std::byte>>(v);
+	REQUIRE(r.has_value());
+	REQUIRE((*r == bytes)); // parens: don't let Catch stringify std::byte (no StringMaker for it)
 }

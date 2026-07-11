@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -34,6 +35,7 @@ namespace lain::data
 			UInt,	// unsigned, stored as uint64
 			Double,
 			String,
+			Bytes, // raw bytes; a codec encodes them (Base64 for a text format), never Value
 			Array,
 			Object,
 		};
@@ -50,6 +52,7 @@ namespace lain::data
 		Value(bool b) : m_data(b) {}		   //
 		Value(const char* s) : m_data(std::string(s)) {}
 		Value(std::string s) : m_data(std::move(s)) {}
+		Value(std::vector<std::byte> b) : m_data(std::move(b)) {} // Bytes
 		Value(Array a) : m_data(std::move(a)) {}
 		Value(Object o) : m_data(std::move(o)) {}
 
@@ -79,6 +82,7 @@ namespace lain::data
 		bool isNull() const noexcept { return type() == Type::Null; }
 		bool isBool() const noexcept { return type() == Type::Bool; }
 		bool isString() const noexcept { return type() == Type::String; }
+		bool isBytes() const noexcept { return type() == Type::Bytes; }
 		bool isArray() const noexcept { return type() == Type::Array; }
 		bool isObject() const noexcept { return type() == Type::Object; }
 		bool isNumber() const noexcept
@@ -96,6 +100,7 @@ namespace lain::data
 		std::optional<std::uint64_t> asUInt64() const;
 		std::optional<double> asDouble() const;
 		const std::string* asString() const;
+		const std::vector<std::byte>* asBytes() const;
 
 		const Array* asArray() const;
 		Array* asArray();
@@ -115,6 +120,6 @@ namespace lain::data
 		bool operator!=(const Value& other) const { return !(*this == other); }
 
 	private:
-		std::variant<std::monostate, bool, std::int64_t, std::uint64_t, double, std::string, Array, Object> m_data;
+		std::variant<std::monostate, bool, std::int64_t, std::uint64_t, double, std::string, std::vector<std::byte>, Array, Object> m_data;
 	};
 } // namespace lain::data
