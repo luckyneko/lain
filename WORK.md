@@ -629,54 +629,30 @@ binding sidesteps it for now.
 
 ### Tier A — when a real graph demands it
 
-1. **Graph serialization** (json save/load + viewer round-trip). Needed once
-   graphs outlive a session, and the prerequisite for a proper cli `run` mode.
-   **Sequenced after M4** — it has broad impact on the graph model (boundary nodes,
-   dynamic ports, per-node config), so it should land once that model is settled,
-   not before. No longer "trivial to slot on". **Design settled** (grilled
-   2026-07-11) — see the `data` + `flow::serialize` sections of
-   [CONTEXT.md](CONTEXT.md) and [ADR-0006](docs/adr/0006-format-neutral-value-dom-serialization.md).
+1. ✅ **Graph serialization — BUILT and live-verified** (2026-07-12; grilled + designed
+   2026-07-11). The whole spine — `C++ type ⇄ data::Value ⇄ JSON on disk ⇄ data::Value ⇄
+   Graph` — is in and idempotent. See the **2026-07-12 update in [CLAUDE.md](CLAUDE.md)** for the
+   full landing notes, the `data` + `flow::serialize` sections of [CONTEXT.md](CONTEXT.md) for the
+   model, and [ADR-0006](docs/adr/0006-format-neutral-value-dom-serialization.md) for the
+   format-neutral-DOM decision. What landed: `libs/data` (Value DOM + reflection + macros +
+   variant), `libs/io/data` + `plugins/io/data/json` (the codec seam), `libs/flow/serialize` (the
+   graph walk — `ValueCodecs`, name-addressed edges, canonical id remap, dynamic-pin replay, the
+   opaque `editor` section, best-effort `LoadResult`), the flow-core additions it needed
+   (`hasPortNamed` + port-name uniqueness, `portTypeKey` reverse lookup, `Factory::keyOf`,
+   `Graph::nodeIds`), and flowview (`graphio`, cli `--save-graph`/`--load-graph`, gui Save…/Load…
+   with canvas layout). `ctest` 273/273; headless round-trip is byte-idempotent; gui Save/Load
+   eyeballed on the live Metal driver.
 
-   The shape: a **format-neutral `Value` DOM** + a `serialize(Archive&, T&)` reflection
-   layer (`toValue`/`fromValue`) — two hops (`T ↔ Value` reflection, then `Value ↔ bytes`
-   codec), so one type declaration serves json now and websocket/yaml/xml later. Graph
-   serialization is a **separate `flow::serialize` target** over `flow`'s public API (the
-   payload-agnostic *boundary rule*), never in `flow` core. Save the **recipe** (node `kind`
-   + params + dynamic pins + edges), never computed port values or host-bound boundary values.
+   **Notable deviations from the plan:** static-port uniqueness uses a plain `<cassert>` assert (not
+   `log::ensure`) so `flow` core stays log-free; the id remap isn't exposed as a raw table — instead
+   `fromValue` re-keys the `editor` blob onto the loaded ids in `LoadResult.editor`; the
+   `loadGraph`/`saveGraph` facade lives in flowview (`graphio`, app-level), not `flow::serialize`.
 
-   **Build order:**
-
-   1. **`libs/data`** (`lain::data`) — the **`Value`** DOM (recursive variant over
-      `Null / Bool / Int64 / UInt64 / Double / String / Bytes / Array / Object`, ordered
-      Object), the **`Archive`** visitor + `serialize` customization point (free ADL or member,
-      `has_member_serialize` trait), the `toValue`/`fromValue<T>` facade, `LAIN_SERIALIZE(T,
-      fields...)` macro wrapper, enum-as-name via `meta::enums`, tagged variant, and shipped
-      `serialize` overloads for the std containers + `memory::Buffer`→Bytes. "The type is the
-      schema" — no separate validation layer; reads are pure / rollback-safe.
-   2. **`libs/io/data`** (`lain::io::data`) + **`plugins/io/data/json`** — the codec seam
-      (`DataReader`/`DataWriter` over `Value`, `core::Factory` registry keyed by `"json"`,
-      `load`/`save` facade), mirroring `io::image`; json codec owns nlohmann privately, emits
-      round-trippable numbers, Base64-encodes Bytes nodes. yaml/xml are as-needed peers.
-   3. **`libs/flow/serialize`** (`lain::flow::serialize`) — `toValue(Graph)` / `fromValue →
-      LoadResult`, the app-populated **value-serializer registry** (`type_index → {typeKey,
-      toValue, fromValue}`) for params, **name-addressed edges**, **deterministic canonical
-      node-id remap** (returns the `savedId→newId` table; doubles as subgraph-paste),
-      **dynamic-pin replay** via the port-type registry, the opaque adapter-owned **`editor`**
-      section, document-root integer **`version`**, and **best-effort load** returning
-      `LoadResult { Graph; vector<LoadIssue> }` (logged *and* returned; too-new version = fatal).
-      `flow::loadGraph(uri, ctx)` funnels codec + semantic failures into one `LoadResult`.
-   4. **Three small `flow` engine additions** the above needs: (a) **port-name uniqueness**
-      enforced at the add seam (static → `log::ensure`; dynamic/boundary-rename → checked reject);
-      (b) a **`type_index → key` reverse lookup** on the port-type registry (to label live dynamic
-      pins on save); (c) pin the **empty-dynamic-side-on-construction** contract for
-      `DynamicPortsNode`.
-   5. **flowview save/load** — native file dialog → `flow::loadGraph` / save; write the canvas
-      layout into the `editor` section; surface a non-`clean()` load as a failure-with-issues
-      panel. Then the cli `run` mode (arbitrary serialized graphs + list/bind inputs) can land.
-
-   **Deferred (designed-for):** untagged variant (relies on the pure-read property), yaml/xml/binary
-   codecs, per-node-type schema versioning, C++26-reflection auto-`serialize`. `core::DateTime`
-   (Tier C #8) is **not** pulled in — `version` is a plain int, no timestamps in the doc.
+   **Remaining refinement:** a proper cli **`run` mode** (list a graph's boundary inputs/outputs,
+   bind by name like `source=foo.png`); `--load-graph` already loads + runs arbitrary graphs
+   headless. **Deferred (designed-for):** untagged variant, yaml/xml/binary codecs, per-node-type
+   schema versioning, C++26-reflection auto-`serialize`. `core::DateTime` (Tier C #8) is **not**
+   pulled in — `version` is a plain int, no timestamps.
 2. **Conditional / gated nodes** — a node suppresses downstream eval. A scheduler
    extension (skip successors); the one piece a pure push DAG can't express.
 3. **Incremental re-eval** — dirty-propagation so a single input change reruns

@@ -86,6 +86,48 @@ the `GroupInput → Tint → Blur → GroupOutput` graph. gui-mode's `withQueue`
 `newFrame` runs only on a live driver and was **not** exercised here — it needs an eyeball
 on a Metal-capable session, same standing gap as the rest of gui-mode.
 
+### Update 2026-07-12 — graph serialization built (data + io::data + flow::serialize + flowview)
+
+**Tier A #1 (graph serialization) is built and live-verified** — the whole spine, grilled
+2026-07-11 (see the `data` + `flow::serialize` sections of [CONTEXT.md](CONTEXT.md) and
+[ADR-0006](docs/adr/0006-format-neutral-value-dom-serialization.md)): `C++ type ⇄ data::Value ⇄
+JSON on disk ⇄ data::Value ⇄ Graph`.
+
+- **`libs/data`** (`lain::data`) — the format-neutral **`Value`** DOM + the `toValue`/`fromValue`
+  reflection over a single `serialize(Archive&, T&)` visitor. Distinct number arms, ordered Object,
+  a Bytes arm; enum-as-name (`meta::enums`), `std::filesystem::path`, `std::map<string,V>`, tagged
+  `std::variant`, and the `LAIN_SERIALIZE` / `_INTRUSIVE` / `_VARIANT_ARM` macros. "The type is the
+  schema" — no validation layer. Split by owner: `value.h` / `archive.h` (customization surface) /
+  `data.h` (facade) + `details/reflect.h` engine. The structural std-shape traits (`is_optional` /
+  `is_vector` / `is_variant`) live in `lain::meta::traits`.
+- **`libs/io/data`** (`lain::io::data`) + **`plugins/io/data/json`** — the parser-free codec seam
+  (Reader/Writer over `Value`, `core::Factory` registries, `load`/`save`), mirroring `io::image`;
+  the json codec owns `nlohmann::ordered_json` privately (order-preserving → diff-clean/idempotent),
+  Base64s a Bytes node. **Known JSON property** (in ADR-0006): a positive `Int` normalises to `UInt`
+  on read (JSON has no signedness) — harmless, typed reads cross-accept, text is stable.
+- **`libs/flow/serialize`** (`lain::flow::serialize`) — a **separate target** over `flow`'s public
+  API + `data` (the payload-agnostic boundary rule keeps it out of core). `toValue(graph, factory,
+  codecs, editor)` / `fromValue → LoadResult`; the app-populated **`ValueCodecs`** for params,
+  **name-addressed edges**, **canonical node-id remap** (fresh ids → doubles as paste),
+  **dynamic-pin replay** via the port-type registry, the opaque adapter-owned **`editor`** section
+  (re-keyed onto the loaded ids in `LoadResult.editor`), a document `version` (too-new = fatal), and
+  best-effort **`LoadResult { graph, issues }`** (each issue logged *and* returned).
+- **flow-core additions** for the walk: `Node::hasPortNamed` + port-name uniqueness (static asserts
+  via plain `<cassert>` — flow stays log-free, a deviation from the planned `log::ensure`; dynamic
+  adds reject), `portTypeKey(type_index)` reverse lookup, `core::Factory::keyOf` (node→kind on save),
+  `Graph::nodeIds()` (stable enumeration), and the empty-dynamic-side contract documented on
+  `DynamicPortsNode`.
+- **flowview** — `graphio.{h,cpp}` (`sceneCodecs`, a `serialize(Archive&, image::ColorRGBf&)` bridge
+  in `lain::image`, `saveGraph`/`loadGraph`); cli `--save-graph`/`--load-graph`; and gui **Save…/Load…**
+  on the canvas with node positions round-tripped through the `editor` section.
+
+Verified: warning-clean strict build; `ctest` **273/273**; `flowview --headless --save-graph … ⇒
+--load-graph … --save-graph …` is **byte-idempotent** on the real scene; and gui-mode Save/Load was
+**eyeballed on the live Metal driver** (positions restored, result renders) — the one part that
+needed a Metal session. **Remaining Tier A #1 refinement:** a proper cli `run` mode (list a graph's
+boundary inputs/outputs, bind by name like `source=foo.png`); `--load-graph` already loads + runs
+arbitrary graphs headless.
+
 **Engine core is built, tested, committed. The remaining M1 work is one decoupling
 refactor of `flow` plus the app stack + viewer:**
 
