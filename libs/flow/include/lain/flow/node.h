@@ -42,6 +42,20 @@ namespace lain::flow
 		Port* findOutput(PortId id) { return findPort(m_outputs, id); }
 		const Port* findOutput(PortId id) const { return findPort(m_outputs, id); }
 
+		// Whether a port in `direction` already carries `name`. Backs the port-name-uniqueness
+		// invariant that name-addressed serialization relies on: addInput/addOutput assert on a
+		// duplicate (an author bug), addDynamicPort rejects one, and the editing layer guards a
+		// boundary-pin rename with it. Uniqueness is per-direction (an input and an output may share
+		// a name — an edge's from/to imply which).
+		bool hasPortNamed(Port::Direction direction, const std::string& name) const
+		{
+			const std::vector<Port>& ports = (direction == Port::Direction::Input) ? m_inputs : m_outputs;
+			for (const Port& port : ports)
+				if (port.name() == name)
+					return true;
+			return false;
+		}
+
 		// Configuration values — distinct from ports (see Param). The adapter iterates
 		// these to render editors and writes edits back; compute() reads them via
 		// param(i).get<T>(). Non-connectable; the scheduler never touches them.

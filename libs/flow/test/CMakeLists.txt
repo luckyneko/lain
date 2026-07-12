@@ -12,6 +12,7 @@ add_executable(test-flow
 	test_params.cpp
 	test_boundary.cpp
 	test_dynamicports.cpp
+	test_serialize_support.cpp
 )
 
 target_compile_features(test-flow PRIVATE cxx_std_17)

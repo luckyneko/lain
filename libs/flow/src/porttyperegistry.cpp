@@ -1,6 +1,7 @@
 #include "lain/flow/porttyperegistry.h"
 
 #include <map>
+#include <typeindex>
 #include <utility>
 
 namespace lain::flow
@@ -12,9 +13,24 @@ namespace lain::flow
 		return instance;
 	}
 
-	void registerPortType(std::string key, PortTypeCreator creator)
+	// The reverse table: a registered value type's type_index -> its key. Populated only by the
+	// typed registerPortType<T> form, so a serializer can name a live pin's type on save.
+	static std::map<std::type_index, std::string>& keyByType()
 	{
+		static std::map<std::type_index, std::string> instance;
+		return instance;
+	}
+
+	void registerPortType(std::string key, std::type_index type, PortTypeCreator creator)
+	{
+		keyByType()[type] = key; // record the reverse before key is moved into the forward table
 		registry()[std::move(key)] = std::move(creator);
+	}
+
+	std::string portTypeKey(std::type_index type)
+	{
+		const auto it = keyByType().find(type);
+		return it == keyByType().end() ? std::string{} : it->second;
 	}
 
 	std::vector<std::string> portTypeKeys()

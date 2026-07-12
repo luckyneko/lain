@@ -9,6 +9,12 @@
 // (Graph::removePort, which refuses a still-connected pin) orchestrated by the *safe gesture*
 // edit::removePort (disconnect incident edges, then the primitive) — the primitive/policy split
 // the rest of flow uses.
+//
+// Serialization contract: a DynamicPortsNode's FACTORY-constructed form (what the node factory
+// builds) has an EMPTY dynamic side — every dynamic-side pin is added at runtime and serialized /
+// replayed on load. A subclass ctor must not pre-add pins on dynamicSide() (a GroupInputNode's
+// construction-time boundaries go through the same runtime addDynamicPort path, so they serialize
+// like any other), else load would double-add.
 
 #include "lain/flow/node.h"
 #include "lain/flow/port.h"
@@ -36,6 +42,12 @@ namespace lain::flow
 		template <typename T>
 		PortId addDynamicPort(std::string name)
 		{
+			// Reject a duplicate name on the dynamic side (returns a null PortId) — name-addressed
+			// serialization needs pins uniquely named, and a runtime pin's name may be user-supplied,
+			// so it rejects gracefully rather than asserting like a static port.
+			if (hasPortNamed(dynamicSide(), name))
+				return PortId{};
+
 			const PortId id = dynamicSide() == Port::Direction::Output ? output(addOutput<T>(std::move(name))).id()
 																	   : input(addInput<T>(std::move(name))).id();
 			onDynamicPortAdded(id);
