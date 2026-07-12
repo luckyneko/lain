@@ -668,8 +668,18 @@ binding sidesteps it for now.
    `Gate` suppresses by `clear()`ing its output — **"skip" is just absence-of-value**, no separate port
    state. Composes with incremental for free (a gate flip is dirty → the closure resurrects/suppresses
    the subtree). The framing that shapes it: gate **upstream** to save work, don't select downstream.
-   3 tests. **Remaining:** the concrete generic **`Gate` / `Select` / `Merge`** nodes (slice 2), and
-   host surfacing — an empty boundary output = "no output this run", don't write it (slice 3, flowview).
+   3 tests. **Concrete nodes BUILT** (slice 2): payload-generic, header-only templates in flow core
+   (`flow/nodes/`) — **`ConstantNode<T>`** (a value source; its value is a **serialisable Param**, so it
+   round-trips through save/load and the inspector renders a type-editor for it; feeds a Gate's bool
+   `enable` / a Select's int `selector`), **`GateNode<T>`** (the upstream suppressor — passes `value`
+   when `enable`, else clears), **`MergeNode<T>`** (rejoin: forwards the first live of two Optional
+   branches), **`SelectNode<T>`** (mux by an int selector). 4 tests wire an if/else (two gates → merge)
+   + a select. **Remaining:** (a) **variadic Merge/Select via dynamic ports** — the fixed 2-way forms are
+   composable (`merge(merge(a,b),c)`) but the natural node is N-way: `MergeNode<T> : DynamicPortsNode`
+   (N branch inputs, ± UI); `SelectNode<T>` = a **param** selector + N dynamic branches (a static control
+   pin on the dynamic input side would break the empty-dynamic-side serialise contract, so the selector
+   moves to a param) + port-type registration + a flowview palette entry. (b) host surfacing — an empty
+   boundary output = "no output this run", don't write it (slice 3, flowview).
 3. ✅ **Incremental re-eval — BUILT** (2026-07-12). `Scheduler::run` is now dirty-driven: a
    shared `runOrder(graph)` returns the **dirty closure** (every dirty node + everything downstream
    of one) in topo order, and both `SerialScheduler` and `ParallelScheduler` recompute only that —
