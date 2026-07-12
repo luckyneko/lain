@@ -18,8 +18,10 @@ namespace lain::flow
 	template <typename T>
 	PortIndex Node::addInput(std::string name)
 	{
-		// A duplicate static-port name is an author bug (it makes name-addressed edges ambiguous) —
-		// caught in debug. A runtime pin, whose name may be user-supplied, rejects instead (addDynamicPort).
+		// An invalid or duplicate static-port name is an author bug (a bad name breaks cli/edge
+		// addressing; a duplicate makes name-addressed edges ambiguous) — caught in debug. A runtime
+		// pin, whose name may be user-supplied, rejects instead (addDynamicPort).
+		assert(validPortName(name) && "flow::Node: port name must be a letter then alphanumeric/underscore");
 		assert(!hasPortNamed(Port::Direction::Input, name) && "flow::Node: duplicate input port name");
 		m_inputs.push_back(Port(std::move(name), Port::Direction::Input, portType<T>(), nextPortId()));
 		return m_inputs.size() - 1;
@@ -28,6 +30,7 @@ namespace lain::flow
 	template <typename T>
 	PortIndex Node::addOutput(std::string name)
 	{
+		assert(validPortName(name) && "flow::Node: port name must be a letter then alphanumeric/underscore");
 		assert(!hasPortNamed(Port::Direction::Output, name) && "flow::Node: duplicate output port name");
 		m_outputs.push_back(Port(std::move(name), Port::Direction::Output, portType<T>(), nextPortId()));
 		return m_outputs.size() - 1;

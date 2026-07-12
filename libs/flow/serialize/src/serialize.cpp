@@ -41,8 +41,10 @@ namespace lain::flow::serialize
 	static Param* findParamByName(Node& node, const std::string& name)
 	{
 		for (PortIndex i = 0; i < node.paramCount(); ++i)
+		{
 			if (node.param(i).name() == name)
 				return &node.param(i);
+		}
 		return nullptr;
 	}
 
@@ -57,8 +59,10 @@ namespace lain::flow::serialize
 
 		data::Value params = data::Value::array();
 		for (PortIndex i = 0; i < node.paramCount(); ++i)
+		{
 			if (auto p = paramToValue(node.param(i), codecs))
 				params.push(std::move(*p));
+		}
 		if (const data::Value::Array* arr = params.asArray(); arr && !arr->empty())
 			out.set("params", std::move(params));
 

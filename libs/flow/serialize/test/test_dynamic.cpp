@@ -51,8 +51,10 @@ static Factory<Node> boundaryFactory()
 static const Node* nodeNamed(const Graph& graph, const std::string& name)
 {
 	for (const NodeId id : graph.nodeIds())
+	{
 		if (graph.node(id).name() == name)
 			return &graph.node(id);
+	}
 	return nullptr;
 }
 

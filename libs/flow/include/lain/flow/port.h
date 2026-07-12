@@ -4,6 +4,7 @@
 #include "lain/flow/portvalue.h"
 #include "lain/flow/types.h" // PortId
 
+#include <cctype>
 #include <string>
 #include <string_view>
 #include <typeindex>
@@ -11,6 +12,22 @@
 
 namespace lain::flow
 {
+	// A port name must be an identifier: a LETTER, then any letters / digits / underscores. Names
+	// double as stable identifiers (edges + cli flags address boundary pins by name — `--source`),
+	// so a leading digit or underscore (`--2x`, `--_x`) is disallowed. Enforced at the add seams:
+	// addInput/addOutput assert it (an author bug), addDynamicPort + a boundary rename reject it.
+	inline bool validPortName(std::string_view name)
+	{
+		if (name.empty() || std::isalpha(static_cast<unsigned char>(name.front())) == 0)
+			return false;
+		for (const char c : name)
+		{
+			if (std::isalnum(static_cast<unsigned char>(c)) == 0 && c != '_')
+				return false;
+		}
+		return true;
+	}
+
 	// A named, typed slot on a node. A Port carries its declared (static) type for
 	// connection checking and owns a persistent PortValue — the runtime payload,
 	// overwritten in place on recompute and left intact for the inspector to read.

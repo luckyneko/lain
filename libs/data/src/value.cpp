@@ -97,11 +97,13 @@ namespace lain::data
 
 		Object& obj = std::get<Object>(m_data);
 		for (auto& entry : obj)
+		{
 			if (entry.first == key)
 			{
 				entry.second = std::move(value);
 				return entry.second;
 			}
+		}
 
 		obj.emplace_back(std::move(key), std::move(value));
 		return obj.back().second;
@@ -114,8 +116,10 @@ namespace lain::data
 			return nullptr;
 
 		for (const auto& entry : *obj)
+		{
 			if (entry.first == key)
 				return &entry.second;
+		}
 		return nullptr;
 	}
 

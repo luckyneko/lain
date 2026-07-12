@@ -51,8 +51,10 @@ namespace lain::flow
 		{
 			const std::vector<Port>& ports = (direction == Port::Direction::Input) ? m_inputs : m_outputs;
 			for (const Port& port : ports)
+			{
 				if (port.name() == name)
 					return true;
+			}
 			return false;
 		}
 

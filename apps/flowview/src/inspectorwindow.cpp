@@ -250,8 +250,8 @@ namespace flowview
 		std::snprintf(buffer, sizeof(buffer), "%s", pin.name().c_str());
 		gui::SetNextItemWidth(110.0f);
 		gui::InputText("##name", buffer, sizeof(buffer));
-		if (gui::IsItemDeactivatedAfterEdit())
-			pin.setName(buffer);
+		if (gui::IsItemDeactivatedAfterEdit() && flow::validPortName(buffer))
+			pin.setName(buffer); // an invalid name is refused — the field reverts to the current name next frame
 	}
 
 	// The per-node "+" : a menu of the registered port types the node accepts (filtered by

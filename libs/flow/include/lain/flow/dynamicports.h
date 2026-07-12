@@ -42,10 +42,11 @@ namespace lain::flow
 		template <typename T>
 		PortId addDynamicPort(std::string name)
 		{
-			// Reject a duplicate name on the dynamic side (returns a null PortId) — name-addressed
-			// serialization needs pins uniquely named, and a runtime pin's name may be user-supplied,
-			// so it rejects gracefully rather than asserting like a static port.
-			if (hasPortNamed(dynamicSide(), name))
+			// Reject an invalid or duplicate name on the dynamic side (returns a null PortId): a
+			// runtime pin's name may be user-supplied, so it rejects gracefully rather than asserting
+			// like a static port. Name-addressed serialization + cli flags need pins validly + uniquely
+			// named.
+			if (!validPortName(name) || hasPortNamed(dynamicSide(), name))
 				return PortId{};
 
 			const PortId id = dynamicSide() == Port::Direction::Output ? output(addOutput<T>(std::move(name))).id()
