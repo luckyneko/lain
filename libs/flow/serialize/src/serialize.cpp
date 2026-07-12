@@ -1,12 +1,15 @@
 #include "lain/flow/serialize/serialize.h"
 
+#include <lain/flow/porttyperegistry.h> // addPortOfType / portTypeKey (+ DynamicPortsNode)
 #include <lain/log/log.h>
 #include <lain/meta/enums.h>
 
+#include <charconv>
 #include <cstdint>
 #include <map>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <utility>
 
 namespace lain::flow::serialize
@@ -59,10 +62,33 @@ namespace lain::flow::serialize
 		if (const data::Value::Array* arr = params.asArray(); arr && !arr->empty())
 			out.set("params", std::move(params));
 
+		// Dynamic pins: a DynamicPortsNode's runtime pins on its dynamic side, each { name, type }
+		// (type = its port-type key). Direction is implied by dynamicSide(), so it isn't stored. A
+		// factory-fresh node has none, so on load these are replayed with no double-add.
+		if (const auto* dynamic = dynamic_cast<const DynamicPortsNode*>(&node))
+		{
+			const Port::Direction side = dynamic->dynamicSide();
+			const PortIndex count = (side == Port::Direction::Input) ? node.inputCount() : node.outputCount();
+			data::Value pins = data::Value::array();
+			for (PortIndex i = 0; i < count; ++i)
+			{
+				const Port& pin = (side == Port::Direction::Input) ? node.input(i) : node.output(i);
+				const std::string typeKey = portTypeKey(pin.type());
+				if (typeKey.empty())
+					continue; // unregistered port type — can't name it; skip (best-effort)
+				data::Value pinV = data::Value::object();
+				pinV.set("name", data::Value(pin.name()));
+				pinV.set("type", data::Value(typeKey));
+				pins.push(std::move(pinV));
+			}
+			if (const data::Value::Array* arr = pins.asArray(); arr && !arr->empty())
+				out.set("dynamicPins", std::move(pins));
+		}
+
 		return out;
 	}
 
-	data::Value toValue(const Graph& graph, const core::Factory<Node>& factory, const ValueCodecs& codecs)
+	data::Value toValue(const Graph& graph, const core::Factory<Node>& factory, const ValueCodecs& codecs, const EditorData& editor)
 	{
 		// Assign dense, canonical file ids (1..N) in id order — so a file we write is canonical and
 		// round-trips byte-identically.
@@ -106,10 +132,22 @@ namespace lain::flow::serialize
 			edges.push(std::move(e));
 		}
 
+		// Editor section: the adapter's per-node blobs, keyed by FILE id (so it survives the load
+		// remap). Only nodes that were serialised (in fileId) and have a non-null blob appear.
+		data::Value editorSection = data::Value::object();
+		for (const auto& [liveId, fid] : fileId)
+		{
+			const auto it = editor.find(liveId);
+			if (it != editor.end() && !it->second.isNull())
+				editorSection.set(std::to_string(fid), it->second);
+		}
+
 		data::Value document = data::Value::object();
 		document.set("version", data::Value(kFormatVersion));
 		document.set("nodes", std::move(nodes));
 		document.set("edges", std::move(edges));
+		if (const data::Value::Object* obj = editorSection.asObject(); obj && !obj->empty())
+			document.set("editor", std::move(editorSection));
 		return document;
 	}
 
@@ -219,9 +257,38 @@ namespace lain::flow::serialize
 
 				const NodeId liveId = result.graph.add(std::move(node));
 				remap[*fileId] = liveId;
+				Node& created = result.graph.node(liveId);
+
+				// Replay dynamic pins BEFORE edges, so an edge addressing one resolves.
+				if (const data::Value* pins = nodeV.find("dynamicPins"))
+				{
+					auto* dynamic = dynamic_cast<DynamicPortsNode*>(&created);
+					const data::Value::Array* arr = pins->asArray();
+					if (dynamic && arr)
+					{
+						for (const data::Value& pinV : *arr)
+						{
+							const data::Value* nameV = pinV.find("name");
+							const data::Value* typeV = pinV.find("type");
+							const std::string* pinName = nameV ? nameV->asString() : nullptr;
+							const std::string* typeKey = typeV ? typeV->asString() : nullptr;
+							if (!pinName || !typeKey)
+							{
+								warn("dynamic pin missing name or type — skipped");
+								continue;
+							}
+							if (addPortOfType(*dynamic, *typeKey, *pinName) == PortId{})
+								warn("dynamic pin \"" + *pinName + "\" (type \"" + *typeKey + "\") could not be added — skipped");
+						}
+					}
+					else if (!dynamic)
+					{
+						warn("node \"" + created.name() + "\" has dynamicPins but is not a dynamic-ports node — ignored");
+					}
+				}
 
 				if (const data::Value* params = nodeV.find("params"))
-					readParams(result.graph.node(liveId), *params, codecs, result.issues);
+					readParams(created, *params, codecs, result.issues);
 			}
 		}
 
@@ -242,6 +309,23 @@ namespace lain::flow::serialize
 
 				if (const Connection outcome = result.graph.connect(*from, *to); outcome != Connection::Ok)
 					warn("edge rejected (" + std::string(meta::enums::name(outcome)) + ") — skipped");
+			}
+		}
+
+		// Editor section: re-key each file-id blob to its fresh live NodeId (via the remap) so the
+		// adapter applies it directly. A blob for a node that was skipped is dropped.
+		if (const data::Value* editorSection = document.find("editor"))
+		{
+			if (const data::Value::Object* obj = editorSection->asObject())
+			{
+				for (const auto& [key, blob] : *obj)
+				{
+					std::int64_t fileId = 0;
+					if (std::from_chars(key.data(), key.data() + key.size(), fileId).ec != std::errc{})
+						continue; // a non-numeric editor key — ignore
+					if (const auto live = remap.find(fileId); live != remap.end())
+						result.editor[live->second] = blob;
+				}
 			}
 		}
 

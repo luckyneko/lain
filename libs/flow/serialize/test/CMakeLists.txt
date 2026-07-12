@@ -4,6 +4,7 @@
 add_executable(test-flow-serialize
 	test_params.cpp
 	test_graph.cpp
+	test_dynamic.cpp
 )
 
 target_compile_features(test-flow-serialize PRIVATE cxx_std_17)

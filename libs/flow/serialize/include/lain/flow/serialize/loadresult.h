@@ -1,7 +1,9 @@
 #pragma once
 
+#include <lain/data/value.h>
 #include <lain/flow/graph.h>
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -23,13 +25,22 @@ namespace lain::flow::serialize
 		std::string message;
 	};
 
-	// The outcome of loading a Graph: a best-effort Graph plus what went wrong. clean() == a full,
-	// issue-free load. A partial load is still an INVARIANT-VALID Graph (it is rebuilt through
-	// Graph's primitives), just possibly incomplete — the engine reports, the host decides policy.
+	// Per-node opaque editor metadata (canvas position, colour, collapsed-state, ...) owned by the
+	// ADAPTER and round-tripped by flow::serialize without interpretation. Keyed by NodeId: the
+	// adapter passes its live-id map to toValue, and fromValue hands it back re-keyed (through the
+	// file-id remap) to the FRESH loaded ids — so the adapter applies it directly, never seeing a
+	// file id.
+	using EditorData = std::map<NodeId, data::Value>;
+
+	// The outcome of loading a Graph: a best-effort Graph plus what went wrong + the re-keyed editor
+	// metadata. clean() == a full, issue-free load. A partial load is still an INVARIANT-VALID Graph
+	// (it is rebuilt through Graph's primitives), just possibly incomplete — the engine reports, the
+	// host decides policy.
 	struct LoadResult
 	{
 		Graph graph;
 		std::vector<LoadIssue> issues;
+		EditorData editor; // adapter metadata, re-keyed to this graph's node ids
 
 		bool clean() const { return issues.empty(); }
 	};
