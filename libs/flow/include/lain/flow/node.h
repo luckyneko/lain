@@ -81,9 +81,12 @@ namespace lain::flow
 		}
 
 		// Declare a port in the subclass constructor; returns its index, for use
-		// with input() / output() inside compute().
+		// with input() / output() inside compute(). `presence` (input only) declares whether a value
+		// on this input is Required for the node to be ready (the default) or Optional — an empty
+		// Optional input does not suppress the node, for a Select/Merge branch its compute() checks
+		// for presence and picks a live one (ADR-0007).
 		template <typename T>
-		PortIndex addInput(std::string name);
+		PortIndex addInput(std::string name, Presence presence = Presence::Required);
 		template <typename T>
 		PortIndex addOutput(std::string name);
 

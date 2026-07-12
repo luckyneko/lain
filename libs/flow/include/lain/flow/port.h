@@ -84,21 +84,39 @@ namespace lain::flow
 		PortValue& value() { return m_value; }
 		void clear() { m_value.clear(); }
 
+		// Conditional / gated eval (WORK.md Tier A #2, ADR-0007). A node is READY (computes) iff all
+		// its REQUIRED inputs carry a value; otherwise the scheduler clears its outputs, and that
+		// emptiness suppresses downstream. `required()` (input ports) is that gate: a Required input
+		// (the default) must have a value; an Optional one need not — a Select/Merge branch, which its
+		// compute() checks for presence and picks a live one. A Gate suppresses simply by clear()ing
+		// its output. So "skip" is just absence-of-value; there is no separate skipped state.
+		bool required() const { return m_required; }
+
 	private:
 		friend class Node; // only a Node builds its ports (and assigns the id)
-		Port(std::string name, Direction dir, const PortType& type, PortId id)
+		Port(std::string name, Direction dir, const PortType& type, PortId id, bool required = true)
 			: m_name(std::move(name))
 			, m_dir(dir)
 			, m_type(&type)
 			, m_id(id)
+			, m_required(required)
 		{
 		}
 
 		std::string m_name;
 		Direction m_dir;
-		const PortType* m_type; // the declared type's shared reflective flyweight
-		PortId m_id;			// stable identity within the owning node
-		PortValue m_value;
+		const PortType* m_type;	  // the declared type's shared reflective flyweight
+		PortId m_id;			  // stable identity within the owning node
+		PortValue m_value;		  //
+		bool m_required = true;	  // input only: an empty Required input keeps the node from being ready
+	};
+
+	// Whether an input must carry a value for its node to be ready (see Port::required). On outputs
+	// it is meaningless (a node's readiness is gated by what it consumes) — addOutput takes no such flag.
+	enum class Presence
+	{
+		Required, // default: an empty value on this input suppresses the node
+		Optional, // the node can run without it (a Select/Merge branch) — compute() checks presence
 	};
 } // namespace lain::flow
 

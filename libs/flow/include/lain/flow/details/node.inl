@@ -16,14 +16,14 @@ namespace lain::flow
 	}
 
 	template <typename T>
-	PortIndex Node::addInput(std::string name)
+	PortIndex Node::addInput(std::string name, Presence presence)
 	{
 		// An invalid or duplicate static-port name is an author bug (a bad name breaks cli/edge
 		// addressing; a duplicate makes name-addressed edges ambiguous) — caught in debug. A runtime
 		// pin, whose name may be user-supplied, rejects instead (addDynamicPort).
 		assert(validPortName(name) && "flow::Node: port name must be a letter then alphanumeric/underscore");
 		assert(!hasPortNamed(Port::Direction::Input, name) && "flow::Node: duplicate input port name");
-		m_inputs.push_back(Port(std::move(name), Port::Direction::Input, portType<T>(), nextPortId()));
+		m_inputs.push_back(Port(std::move(name), Port::Direction::Input, portType<T>(), nextPortId(), presence == Presence::Required));
 		return m_inputs.size() - 1;
 	}
 

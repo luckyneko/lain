@@ -51,6 +51,12 @@ namespace lain::flow
 		// Shared by both run strategies and the pull walk.
 		void populateInputs(Graph& graph, NodeId id);
 
+		// Evaluate one node: clear dirty, populate inputs, then either run compute() (READY — every
+		// required input has a value) or SUPPRESS it (a required input is empty → clear its outputs,
+		// don't compute). The single "execute a node" primitive, so both run strategies and the pull
+		// walk handle conditional eval identically (ADR-0007).
+		void runNode(Graph& graph, NodeId id);
+
 	private:
 		// Depth-first pull helper: recompute `id`'s dirty upstream, then `id` itself.
 		void evaluateUpstream(Graph& graph, NodeId id, std::set<NodeId>& visited);

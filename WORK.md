@@ -659,8 +659,17 @@ binding sidesteps it for now.
    versioning, C++26-reflection auto-`serialize`, and the scalar/video **boundary loader** (only
    image inputs bind from the cli today; `ValueCodecs` is the seam for scalars). `core::DateTime`
    (Tier C #8) is **not** pulled in — `version` is a plain int, no timestamps.
-2. **Conditional / gated nodes** — a node suppresses downstream eval. A scheduler
-   extension (skip successors); the one piece a pure push DAG can't express.
+2. **Conditional / gated nodes** — a node suppresses downstream eval; the one piece a pure push DAG
+   can't express. **Mechanism BUILT** (2026-07-12, [ADR-0007](docs/adr/0007-conditional-eval-via-input-readiness.md)):
+   modelled as **input readiness** — a node computes iff every **Required** input has a value; else
+   `Scheduler::runNode` clears its outputs and doesn't compute, and that emptiness propagates. Per-input
+   **`Presence { Required, Optional }`** (`addInput<T>(name, Presence::Optional)`); an Optional input
+   (a `Select`/`Merge` branch) doesn't block, so `compute()` checks `ready()` and picks a live one. A
+   `Gate` suppresses by `clear()`ing its output — **"skip" is just absence-of-value**, no separate port
+   state. Composes with incremental for free (a gate flip is dirty → the closure resurrects/suppresses
+   the subtree). The framing that shapes it: gate **upstream** to save work, don't select downstream.
+   3 tests. **Remaining:** the concrete generic **`Gate` / `Select` / `Merge`** nodes (slice 2), and
+   host surfacing — an empty boundary output = "no output this run", don't write it (slice 3, flowview).
 3. ✅ **Incremental re-eval — BUILT** (2026-07-12). `Scheduler::run` is now dirty-driven: a
    shared `runOrder(graph)` returns the **dirty closure** (every dirty node + everything downstream
    of one) in topo order, and both `SerialScheduler` and `ParallelScheduler` recompute only that —

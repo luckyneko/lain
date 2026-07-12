@@ -65,10 +65,49 @@ namespace lain::flow
 	void Scheduler::populateInputs(Graph& graph, NodeId id)
 	{
 		Node& target = graph.node(id);
+		// Reset inputs first, so an input with NO current edge (never connected, disconnected, or its
+		// source node removed) is empty — the readiness gate then treats them all alike.
+		for (PortIndex i = 0; i < target.inputCount(); ++i)
+			target.input(i).clear();
 		for (const Graph::Edge& e : graph.edges())
 		{
 			if (e.to.node == id)
 				target.findInput(e.to.port)->value() = graph.node(e.from.node).findOutput(e.from.port)->value();
+		}
+	}
+
+	// The single "execute a node" primitive (see scheduler.h) — used by both run strategies and the
+	// pull walk so readiness (conditional eval) is handled everywhere.
+	void Scheduler::runNode(Graph& graph, NodeId id)
+	{
+		Node& node = graph.node(id);
+		node.clearDirty(); // before compute — an on-request node re-marks itself to refire next run
+		populateInputs(graph, id);
+
+		// Conditional eval (ADR-0007): a node is READY iff every REQUIRED input carries a value. If a
+		// required input is empty (unconnected, or its upstream produced nothing / was itself
+		// suppressed), the node does not compute — its outputs are cleared, and that emptiness
+		// suppresses downstream. An empty OPTIONAL input (a Select/Merge branch) does not block; compute()
+		// checks presence itself. A Gate suppresses by clear()ing its output — "skip" is just no value.
+		bool ready = true;
+		for (PortIndex i = 0; i < node.inputCount(); ++i)
+		{
+			const Port& in = node.input(i);
+			if (in.required() && in.value().empty())
+			{
+				ready = false;
+				break;
+			}
+		}
+
+		if (ready)
+		{
+			node.compute();
+		}
+		else
+		{
+			for (PortIndex o = 0; o < node.outputCount(); ++o)
+				node.output(o).clear();
 		}
 	}
 
@@ -86,13 +125,8 @@ namespace lain::flow
 				evaluateUpstream(graph, e.from.node, visited);
 		}
 
-		Node& node = graph.node(id);
-		if (node.dirty())
-		{
-			node.clearDirty();
-			populateInputs(graph, id);
-			node.compute();
-		}
+		if (graph.node(id).dirty())
+			runNode(graph, id);
 	}
 
 	//=========================================================================
@@ -103,12 +137,7 @@ namespace lain::flow
 		// Recompute only the dirty closure (incremental); a clean node not downstream of a dirty one
 		// keeps its cached value. topoOrder within the closure means each node's inputs are ready.
 		for (const NodeId id : runOrder(graph))
-		{
-			Node& node = graph.node(id);
-			node.clearDirty(); // before compute — an on-request node re-marks itself to refire next run
-			populateInputs(graph, id);
-			node.compute();
-		}
+			runNode(graph, id);
 	}
 
 	//=========================================================================
@@ -130,14 +159,8 @@ namespace lain::flow
 		// One task per selected node, keyed by id — ids aren't contiguous, so a map, not a vector.
 		std::map<NodeId, lain::task::Task> tasks;
 		for (const NodeId id : order)
-		{
 			tasks.emplace(id, flow.emplace([this, &graph, id]()
-										   {
-				Node& node = graph.node(id);
-				node.clearDirty(); // an on-request node re-marks itself in compute()
-				populateInputs(graph, id);
-				node.compute(); }));
-		}
+										   { runNode(graph, id); }));
 
 		// Precede only among selected nodes: a clean predecessor already holds its value, so a task
 		// needn't wait on it (and it has no task to wait on).

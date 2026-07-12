@@ -103,19 +103,19 @@ TEST_CASE("connect marks the downstream node dirty (not the source)", "[flow][in
 	const NodeId k = graph.add<CountingRelay>();
 
 	SerialScheduler scheduler;
-	scheduler.run(graph); // both run once, then clean
+	scheduler.run(graph); // source runs; the relay's required input is unconnected -> not ready
 	auto& src = static_cast<CountingSource&>(graph.node(s));
 	auto& sink = static_cast<CountingRelay&>(graph.node(k));
 	REQUIRE(src.computes == 1);
-	REQUIRE(sink.computes == 1);
+	REQUIRE(sink.computes == 0); // empty required input -> suppressed (readiness model)
 
-	REQUIRE(graph.connect(s, 0, k, 0) == Connection::Ok); // marks k dirty
+	REQUIRE(graph.connect(s, 0, k, 0) == Connection::Ok); // marks k dirty; it now has an input source
 	scheduler.run(graph);
-	REQUIRE(sink.computes == 2); // recomputed with the new input
+	REQUIRE(sink.computes == 1); // recomputed — now ready
 	REQUIRE(src.computes == 1);	 // the (clean) source was skipped
 }
 
-TEST_CASE("disconnect and removeNode mark the affected downstream dirty", "[flow][incremental]")
+TEST_CASE("disconnect and removeNode re-evaluate (and suppress) the affected downstream", "[flow][incremental]")
 {
 	Graph graph;
 	const NodeId s = graph.add<CountingSource>();
@@ -125,18 +125,23 @@ TEST_CASE("disconnect and removeNode mark the affected downstream dirty", "[flow
 	graph.connect(m, 0, k, 0);
 
 	SerialScheduler scheduler;
-	scheduler.run(graph);
-	auto& mid = static_cast<CountingRelay&>(graph.node(m));
-	auto& sink = static_cast<CountingRelay&>(graph.node(k));
+	scheduler.run(graph); // all connected -> all compute -> all produce
+	REQUIRE(graph.node(m).output(0).ready());
+	REQUIRE(graph.node(k).output(0).ready());
 
-	graph.disconnect(m, 0); // m loses its source -> m dirty; sink is downstream of m
+	graph.disconnect(m, 0); // m loses its source -> m dirty; m + downstream k re-evaluate, now not ready
 	scheduler.run(graph);
-	REQUIRE(mid.computes == 2);
-	REQUIRE(sink.computes == 2);
+	REQUIRE_FALSE(graph.node(m).output(0).ready()); // suppressed: required input empty -> output cleared
+	REQUIRE_FALSE(graph.node(k).output(0).ready()); // suppression propagated downstream
 
-	graph.removeNode(m); // k loses its input source -> k dirty
+	// reconnect so k has an input again, then removing m must re-suppress k
+	graph.connect(s, 0, m, 0);
 	scheduler.run(graph);
-	REQUIRE(sink.computes == 3);
+	REQUIRE(graph.node(k).output(0).ready());
+
+	graph.removeNode(m); // k loses its input source -> k dirty -> not ready
+	scheduler.run(graph);
+	REQUIRE_FALSE(graph.node(k).output(0).ready());
 }
 
 TEST_CASE("the parallel scheduler is incremental too", "[flow][incremental]")
