@@ -652,8 +652,12 @@ namespace flowview
 			// Editable params, chosen by type via the registry (file field, drags, colour
 			// swatch). PushID(node) so same-named params on different nodes don't collide.
 			gui::PushID(static_cast<int>(id.value()));
+			bool nodeEdited = false;
 			for (flow::PortIndex pi = 0; pi < node.paramCount(); ++pi)
-				paramEdited |= m_paramEditors.render(node.param(pi));
+				nodeEdited |= m_paramEditors.render(node.param(pi));
+			if (nodeEdited)
+				node.markDirty(); // a param edit -> incremental re-eval recomputes this node + downstream
+			paramEdited |= nodeEdited;
 			gui::PopID();
 
 			auto port = [&](const char* tag, const flow::Port& p, bool output)

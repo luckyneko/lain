@@ -661,8 +661,14 @@ binding sidesteps it for now.
    (Tier C #8) is **not** pulled in — `version` is a plain int, no timestamps.
 2. **Conditional / gated nodes** — a node suppresses downstream eval. A scheduler
    extension (skip successors); the one piece a pure push DAG can't express.
-3. **Incremental re-eval** — dirty-propagation so a single input change reruns
-   only the affected subgraph (the pull path is half of this already).
+3. ✅ **Incremental re-eval — BUILT** (2026-07-12). `Scheduler::run` is now dirty-driven: a
+   shared `runOrder(graph)` returns the **dirty closure** (every dirty node + everything downstream
+   of one) in topo order, and both `SerialScheduler` and `ParallelScheduler` recompute only that —
+   a clean node keeps its cached (persistent) `PortValue`. A fresh graph runs fully (all nodes start
+   dirty); **`Graph::markAllDirty()`** forces a full refresh. `Graph`'s structural mutations
+   (`connect`/`disconnect`/`removeNode`/`removePort`) mark the affected downstream node dirty, and
+   flowview marks a node dirty on a param edit (`GroupInputNode::setValue` already did on bind), so
+   incremental is correct by construction. Tested with compute-counting nodes; full suite 279/279.
 
 ### Tier B — speculative / large
 

@@ -32,6 +32,13 @@ namespace lain::flow
 		// existed. Other nodes keep their ids — ids are handles, not positions.
 		bool removeNode(NodeId id);
 
+		// Mark every node dirty so the next Scheduler::run recomputes the whole graph — the
+		// "force a full refresh" over the normal incremental run (which recomputes only dirty nodes
+		// + their downstream). The structural mutations here (connect / disconnect / removeNode /
+		// removePort) already mark the affected downstream node dirty; this is for a caller that
+		// wants everything recomputed regardless.
+		void markAllDirty();
+
 		std::size_t nodeCount() const { return m_nodes.size(); }
 		bool contains(NodeId id) const { return m_nodes.count(id) != 0; }
 

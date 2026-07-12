@@ -33,6 +33,14 @@ namespace lain::flow
 		if (it == m_nodes.end())
 			return false;
 
+		// A downstream consumer loses an input source when this node goes — mark each dirty before
+		// the edges are dropped, so incremental re-eval recomputes them.
+		for (const Edge& e : m_edges)
+		{
+			if (e.from.node == id && e.to.node != id)
+				node(e.to.node).markDirty();
+		}
+
 		// Drop every edge that touches the node, in either direction. A downstream
 		// input keeps its last-copied value (as with disconnect) until re-evaluated.
 		m_edges.erase(std::remove_if(m_edges.begin(), m_edges.end(),
@@ -42,6 +50,12 @@ namespace lain::flow
 		m_nodes.erase(it);
 		m_topoValid = false;
 		return true;
+	}
+
+	void Graph::markAllDirty()
+	{
+		for (auto& entry : m_nodes)
+			entry.second->markDirty();
 	}
 
 	Connection Graph::connect(PortAddress from, PortAddress to)
@@ -69,6 +83,7 @@ namespace lain::flow
 
 		m_edges.push_back(Edge{from, to});
 		m_topoValid = false;
+		node(to.node).markDirty(); // the downstream node gained an input source — recompute it
 		return Connection::Ok;
 	}
 
@@ -94,6 +109,7 @@ namespace lain::flow
 			{
 				m_edges.erase(it);
 				m_topoValid = false;
+				node(input.node).markDirty(); // lost its source — recompute (input now empty)
 				return true;
 			}
 		}
@@ -122,7 +138,10 @@ namespace lain::flow
 			if (e.from == port || e.to == port)
 				return false;
 		}
-		return node(port.node).removePort(port.port);
+		if (!node(port.node).removePort(port.port))
+			return false;
+		node(port.node).markDirty(); // the node's port set changed — recompute
+		return true;
 	}
 
 	const std::vector<NodeId>& Graph::topoOrder() const

@@ -12,6 +12,7 @@
 #include "lain/flow/types.h"
 
 #include <set>
+#include <vector>
 
 namespace lain::task
 {
@@ -38,6 +39,13 @@ namespace lain::flow
 		void evaluate(Graph& graph, NodeId target);
 
 	protected:
+		// The nodes run() must recompute, in topo order: the DIRTY CLOSURE — every dirty node plus
+		// everything downstream of one (a node whose input source recomputes must recompute too).
+		// A clean node not downstream of any dirty node is skipped and keeps its cached value — this
+		// is incremental re-eval. A fresh graph (all nodes dirty) yields every node; Graph::markAllDirty
+		// forces that. Shared by both run strategies so they skip identically.
+		std::vector<NodeId> runOrder(Graph& graph);
+
 		// Copy each connected upstream output into `id`'s matching input, in place —
 		// the source keeps its value, which is what leaves every stage inspectable.
 		// Shared by both run strategies and the pull walk.
