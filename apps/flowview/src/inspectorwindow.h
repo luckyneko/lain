@@ -3,7 +3,8 @@
 #include "parameditors.h"
 
 #include <lain/app/windowdelegate.h>
-#include <lain/flow/types.h> // PortIndex
+#include <lain/flow/serialize/loadresult.h> // EditorData + Graph (complete, for the m_loadedGraph member)
+#include <lain/flow/types.h>				 // PortIndex
 #include <lain/gui/context.h>
 
 #include <cstdint>
@@ -105,5 +106,12 @@ namespace flowview
 		lain::flow::PortAddress m_removeTarget;
 		std::string m_removeName;
 		int m_removeLinks = 0;
+
+		// Pending Load: applied at the END of onRender (after every panel drew with the current
+		// graph), so replacing the app's graph never dangles the in-flight `graph` reference. The
+		// loaded canvas layout is re-applied on the next frame's position-seed pass.
+		bool m_loadRequested = false;
+		std::unique_ptr<lain::flow::Graph> m_loadedGraph;
+		lain::flow::serialize::EditorData m_pendingLayout;
 	};
 } // namespace flowview

@@ -158,4 +158,11 @@ namespace flowview
 		// including deletion of whatever used to be the pulled sink.
 		m_scheduler.run(*m_graph);
 	}
+
+	void FlowviewApp::replaceGraph(std::unique_ptr<flow::Graph> graph)
+	{
+		m_graph = std::move(graph);
+		bindDefaultInput(*m_graph, m_size); // a loaded scene has no bound input — show a gradient until rebound
+		m_scheduler.run(*m_graph);
+	}
 } // namespace flowview

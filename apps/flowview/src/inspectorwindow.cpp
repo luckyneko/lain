@@ -1,8 +1,10 @@
 #include "inspectorwindow.h"
 
 #include "flowviewapp.h"
+#include "graphio.h"
 
 #include <archimedes/archimedes.h>
+#include <lain/data/value.h>
 #include <lain/app/application.h>
 #include <lain/app/window.h>
 #include <lain/flow/boundary.h>
@@ -414,6 +416,37 @@ namespace flowview
 		}
 	}
 
+	// The canvas layout as EditorData: each node's grid-space position as { x, y }. Round-tripped
+	// through the document's "editor" section, which flow::serialize treats opaquely.
+	static flow::serialize::EditorData collectLayout(const flow::Graph& graph)
+	{
+		flow::serialize::EditorData layout;
+		for (const flow::NodeId id : graph.nodeIds())
+		{
+			const ImVec2 pos = gui::nodes::GetNodeGridSpacePos(static_cast<int>(id.value()));
+			data::Value blob = data::Value::object();
+			blob.set("x", data::Value(static_cast<double>(pos.x)));
+			blob.set("y", data::Value(static_cast<double>(pos.y)));
+			layout[id] = std::move(blob);
+		}
+		return layout;
+	}
+
+	// Apply a saved position to node `id` if `layout` has one; returns whether it did (so the caller
+	// falls back to the default column layout otherwise).
+	static bool applyLayout(const flow::serialize::EditorData& layout, flow::NodeId id)
+	{
+		const auto it = layout.find(id);
+		if (it == layout.end())
+			return false;
+		const data::Value* x = it->second.find("x");
+		const data::Value* y = it->second.find("y");
+		gui::nodes::SetNodeGridSpacePos(static_cast<int>(id.value()),
+										math::Vec2f{static_cast<float>(x ? x->asDouble().value_or(0.0) : 0.0),
+													static_cast<float>(y ? y->asDouble().value_or(0.0) : 0.0)});
+		return true;
+	}
+
 	void InspectorWindow::onRender(app::Window& window, const app::TimeState&)
 	{
 		FlowviewApp& appDelegate = window.app().getDelegate<FlowviewApp>();
@@ -427,17 +460,55 @@ namespace flowview
 		gui::SetNextWindowPos(math::Vec2f{360.0f, 20.0f}, ImGuiCond_FirstUseEver);
 		gui::SetNextWindowSize(math::Vec2f{880.0f, 600.0f}, ImGuiCond_FirstUseEver);
 		gui::Begin("Graph");
+
+		// Save / Load the whole scene as JSON (recipe + canvas layout). Native dialogs block the
+		// render thread — the same pattern as the per-output Save… below.
+		if (gui::Button("Save…"))
+		{
+			if (const auto path = gui::saveFile("Save graph", {}, {{"json", {"*.json"}}}))
+			{
+				std::filesystem::path file = *path;
+				file.replace_extension("json"); // force .json (the codec is keyed off the extension)
+				if (!saveGraph(file.string(), graph, appDelegate.nodeFactory(), collectLayout(graph)))
+					gui::message("Save failed", "Could not write " + file.string(), true);
+			}
+		}
+		gui::SameLine();
+		if (gui::Button("Load…"))
+		{
+			// "All files" fallback: pfd 0.1.0's macOS picker can grey out everything under a lone
+			// restrictive filter, so offer an escape hatch alongside the JSON one.
+			if (const auto path = gui::openFile("Load graph", {}, {{"JSON graph", {"*.json"}}, {"All files", {"*"}}}))
+			{
+				flow::serialize::LoadResult result = loadGraph(path->string(), appDelegate.nodeFactory());
+				if (!result.clean())
+				{
+					std::string summary;
+					for (const auto& issue : result.issues)
+						summary += "• " + issue.message + "\n";
+					gui::message("Graph loaded with issues", summary, true);
+				}
+				if (result.graph.nodeCount() > 0) // replace the scene — deferred to end of frame
+				{
+					m_loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
+					m_pendingLayout = std::move(result.editor);
+					m_loadRequested = true;
+				}
+			}
+		}
+
 		// Link detach (click-drag a link off a pin to remove/move it) is enabled on INPUT pins
 		// only — see the per-node loop. Leaving OUTPUT pins without the flag lets a drag *from* an
 		// output start a NEW link, so one output fans out to many inputs (an input, being
 		// single-source, is where detach-to-move belongs). Detaches/reattaches surface via
 		// IsLinkDestroyed / IsLinkCreated after EndNodeEditor.
 		gui::nodes::BeginNodeEditor();
+		const bool seedPositions = !m_laidOut; // captured before the loop: this is a position-seed frame
 		int column = 0;
 		for (const flow::NodeId id : graph.topoOrder())
 		{
 			const flow::Node& node = graph.node(id);
-			if (!m_laidOut)
+			if (seedPositions && !applyLayout(m_pendingLayout, id)) // a loaded layout wins over the default columns
 				gui::nodes::SetNodeGridSpacePos(static_cast<int>(id.value()), math::Vec2f{column * 220.0f, 40.0f + (column % 4) * 140.0f});
 
 			gui::nodes::BeginNode(static_cast<int>(id.value()));
@@ -529,6 +600,8 @@ namespace flowview
 		}
 		gui::End();
 		m_laidOut = true;
+		if (seedPositions)
+			m_pendingLayout.clear(); // only clear after the frame that actually consumed it (not the Load frame)
 
 		// Persistent node palette: a left-click list of the factory's node types — trackpad-
 		// native, where the right-click add menu above (kept as a secondary) is awkward on a
@@ -627,6 +700,20 @@ namespace flowview
 
 		// The graph's I/O boundary — the host-binding surface (bind inputs, save outputs).
 		renderInterfacePanel(appDelegate);
+
+		// Apply a pending Load now — every panel has drawn with the current graph, so swapping it
+		// here (not at the button) can't dangle the `graph` reference used above. Next frame re-seeds
+		// positions from the loaded layout.
+		if (m_loadRequested)
+		{
+			appDelegate.replaceGraph(std::move(m_loadedGraph));
+			m_loadRequested = false;
+			m_laidOut = false;
+			m_previews.clear(); // the old graph's cached thumbnails are gone
+			m_previewsDirty = true;
+			gui::nodes::ClearNodeSelection();
+			gui::nodes::ClearLinkSelection();
+		}
 
 		window.renderer().render([&](acm::CommandBuffer cmd, uint32_t)
 								 { m_guiCtx->render(cmd); });

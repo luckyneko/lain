@@ -45,6 +45,10 @@ namespace flowview
 		// wiring. Called from the render thread.
 		void reevaluate();
 
+		// Replace the gui-mode scene with a freshly loaded graph (from the canvas Load…), bind its
+		// input to a default gradient so it shows a result, and run it. Called from the render thread.
+		void replaceGraph(std::unique_ptr<lain::flow::Graph> graph);
+
 	private:
 		bool m_headless = false;
 		std::uint32_t m_size = 64; // default gradient extent (size x size)
