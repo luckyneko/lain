@@ -118,15 +118,20 @@ JSON on disk ⇄ data::Value ⇄ Graph`.
   `Graph::nodeIds()` (stable enumeration), and the empty-dynamic-side contract documented on
   `DynamicPortsNode`.
 - **flowview** — `graphio.{h,cpp}` (`sceneCodecs`, a `serialize(Archive&, image::ColorRGBf&)` bridge
-  in `lain::image`, `saveGraph`/`loadGraph`); cli `--save-graph`/`--load-graph`; and gui **Save…/Load…**
-  on the canvas with node positions round-tripped through the `editor` section.
+  in `lain::image`, `saveGraph`/`loadGraph`); gui **Save…/Load…** on the canvas with node positions
+  round-tripped through the `editor` section; and the headless **`run` / `list` subcommands**
+  (`runmode.{h,cpp}`) — `list [--graph f]` prints a graph's boundary interface (`--<name> : <type>`),
+  `run [--graph f] [--save f] [--<boundary> <value> …]` loads/builds, binds boundary inputs by name
+  (image → load the path; other types not cli-bindable yet), runs, dumps, writes bound outputs.
+  `--graph` is an option so `allow_extras` carries the `--<boundary>` bindings unambiguously; port
+  names are identifiers (`validPortName`) so they double as flags.
 
-Verified: warning-clean strict build; `ctest` **273/273**; `flowview --headless --save-graph … ⇒
---load-graph … --save-graph …` is **byte-idempotent** on the real scene; and gui-mode Save/Load was
-**eyeballed on the live Metal driver** (positions restored, result renders) — the one part that
-needed a Metal session. **Remaining Tier A #1 refinement:** a proper cli `run` mode (list a graph's
-boundary inputs/outputs, bind by name like `source=foo.png`); `--load-graph` already loads + runs
-arbitrary graphs headless.
+Verified: warning-clean strict build; `ctest` **275/275**; the headless save ⇒ load ⇒ save round-trip
+is **byte-idempotent** on the real scene; the `run`/`list` subcommands were **exercised live**
+(bind an input from a file → it flows source→tint→blur→result in the dump); and gui-mode Save/Load was
+**eyeballed on the live Metal driver** (positions restored, result renders) — the one part that needed
+a Metal session. **Tier A #1 is complete.** Only designed-for follow-ons remain (untagged variant,
+yaml/binary codecs, the `memory::Buffer` bridge, the scalar/video boundary loader).
 
 **Engine core is built, tested, committed. The remaining M1 work is one decoupling
 refactor of `flow` plus the app stack + viewer:**

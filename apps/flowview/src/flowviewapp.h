@@ -3,6 +3,7 @@
 #include "inspectorwindow.h"
 
 #include <lain/app/applicationdelegate.h>
+#include <lain/app/cli.h>
 #include <lain/core/factory.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
@@ -50,13 +51,15 @@ namespace flowview
 		void replaceGraph(std::unique_ptr<lain::flow::Graph> graph);
 
 	private:
-		bool m_headless = false;
-		std::uint32_t m_size = 64; // default gradient extent (size x size)
+		std::uint32_t m_size = 64; // example gradient extent (size x size)
 		int m_frames = 0;		   // gui-mode: quit after N frames (0 = until closed)
-		std::string m_inputPath;	 // cli-mode: bind the graph's input boundary to this image
-		std::string m_outputPath;	 // cli-mode: write the graph's output boundary to this path
-		std::string m_loadGraphPath; // cli-mode: load the scene from this JSON graph (else build the example)
-		std::string m_saveGraphPath; // cli-mode: serialize the scene to this JSON graph
+		std::string m_graphPath;   // run/list: the graph JSON (empty -> the built-in example scene)
+		std::string m_savePath;	   // run --save: serialize the graph here
+
+		// The headless subcommands. Their pointers stay valid through Application::run() (the cli::App
+		// outlives onStart/onProcess), so ->parsed()/->remaining() drive the headless dispatch.
+		lain::app::cli::App* m_runCmd = nullptr;
+		lain::app::cli::App* m_listCmd = nullptr;
 
 		// The gui-mode scene, held by unique_ptr so onStop can release it (and its
 		// node-owned payloads) explicitly, before the window/device teardown.

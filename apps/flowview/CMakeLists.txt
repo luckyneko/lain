@@ -10,6 +10,7 @@ add_executable(flowview
 	src/parameditors.cpp
 	src/scene.cpp
 	src/graphio.cpp
+	src/runmode.cpp
 	src/dump.cpp
 )
 

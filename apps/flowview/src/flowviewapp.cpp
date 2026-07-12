@@ -1,25 +1,16 @@
 #include "flowviewapp.h"
 
-#include "dump.h"
 #include "graphio.h"
+#include "runmode.h"
 #include "scene.h"
 
 #include <lain/app/application.h>
 #include <lain/app/window.h>
-#include <lain/flow/boundary.h>
 #include <lain/flow/graph.h>
-#include <lain/flow/porttyperegistry.h>
-#include <lain/flow/portvalue.h>
-#include <lain/image/image.h>
 #include <lain/io/image/codecs.h>
-#include <lain/io/image/load.h>
-#include <lain/io/image/save.h>
-#include <lain/log/log.h>
 
 #include <cstdint>
-#include <iostream>
 #include <memory>
-#include <utility>
 
 namespace flowview
 {
@@ -27,20 +18,30 @@ namespace flowview
 
 	bool FlowviewApp::onInit(app::Application&, app::cli::App& cli)
 	{
-		cli.add_flag("--headless,-c", m_headless, "run the example graph and dump its output (no window)");
-		cli.add_option("--size", m_size, "default gradient extent (NxN)")->capture_default_str();
+		cli.add_option("--size", m_size, "example gradient extent (NxN)")->capture_default_str();
 		cli.add_option("--frames", m_frames, "gui-mode: quit after N frames (0 = run until the window closes)")->capture_default_str();
-		cli.add_option("--input", m_inputPath, "cli-mode: bind the graph's input boundary to this image file");
-		cli.add_option("--output", m_outputPath, "cli-mode: write the graph's output boundary to this path");
-		cli.add_option("--load-graph", m_loadGraphPath, "cli-mode: load the scene from this JSON graph (else the example)");
-		cli.add_option("--save-graph", m_saveGraphPath, "cli-mode: serialize the scene to this JSON graph");
+
+		// Headless subcommands. `run`'s boundary bindings arrive as extras (--<name> <value>) — the
+		// graph's interface isn't known until it's loaded, so they can't be registered up front;
+		// `list` prints exactly those flag names.
+		// --graph is an OPTION, not a positional: with allow_extras below, a bare positional would
+		// greedily swallow a boundary flag's value (`run --result out.png` -> graph "out.png"). An
+		// option can't, so the pretty --<boundary> <value> bindings stay unambiguous.
+		m_runCmd = cli.add_subcommand("run", "headless: load a graph (or the example), bind its boundary inputs from --<name> <value>, run it, dump it, write bound outputs");
+		m_runCmd->add_option("--graph,-g", m_graphPath, "graph JSON file (omit for the built-in example)");
+		m_runCmd->add_option("--save", m_savePath, "also serialize the graph to this JSON path");
+		m_runCmd->allow_extras(); // --<boundary> <value> pairs, matched to the loaded graph
+
+		m_listCmd = cli.add_subcommand("list", "headless: print a graph's boundary inputs/outputs (the --<name> flags `run` accepts)");
+		m_listCmd->add_option("--graph,-g", m_graphPath, "graph JSON file (omit for the built-in example)");
+
 		return true;
 	}
 
 	bool FlowviewApp::onStart(app::Application& app)
 	{
-		if (m_headless)
-			return true; // open no window -> headless: run() invokes onProcess once
+		if (m_runCmd->parsed() || m_listCmd->parsed())
+			return true; // a headless subcommand: open no window -> run() invokes onProcess once
 
 		app::WindowSpec spec;
 		spec.title = "flowview";
@@ -71,74 +72,21 @@ namespace flowview
 
 	void FlowviewApp::onProcess(app::Application&)
 	{
-		// cli-mode: build (or load) the boundary scene, bind its input from --input, run, dump,
-		// then write its output to --output — the host-binds-the-boundary path, headless. Pure
-		// CPU, no device. This is the write library's caller: io::image::load in, save out.
+		// Headless dispatch for the run/list subcommands. Pure CPU, no device. (onProcess can also
+		// be reached via Application::process() in gui-mode — a no-op here without a subcommand.)
+		if (!m_runCmd->parsed() && !m_listCmd->parsed())
+			return;
+
 		lain::io::image::registerImageCodecs();
 		registerExampleNodes(m_nodeFactory, m_size);
 		registerSceneSerialization();
 
-		flow::Graph graph;
-		if (!m_loadGraphPath.empty())
+		if (m_listCmd->parsed())
 		{
-			auto result = loadGraph(m_loadGraphPath, m_nodeFactory);
-			if (!result.clean())
-				log::warn("flowview: graph loaded with {} issue(s)", result.issues.size());
-			graph = std::move(result.graph);
+			listGraph(m_graphPath, m_nodeFactory);
+			return;
 		}
-		else
-		{
-			buildExampleScene(graph, m_nodeFactory);
-		}
-
-		// Bind the graph's input boundary: --input loads a real file, else a default gradient
-		// stands in so a bare `--headless` still produces something to dump.
-		if (!m_inputPath.empty())
-		{
-			if (auto image = lain::io::image::load(m_inputPath))
-			{
-				flow::PortValue v;
-				v.set<image::Image>(std::move(*image));
-				const auto inputs = graph.boundaryInputs();
-				if (!inputs.empty())
-					inputs[0].setValue(std::move(v));
-			}
-			else
-				log::error("flowview: could not load --input image: {}", m_inputPath);
-		}
-		else
-		{
-			bindDefaultInput(graph, m_size);
-		}
-
-		m_scheduler.run(graph);
-		dumpGraph(std::cout, graph);
-
-		// Serialize the scene (recipe: kinds + params + dynamic pins + edges) to --save-graph.
-		if (!m_saveGraphPath.empty())
-		{
-			if (saveGraph(m_saveGraphPath, graph, m_nodeFactory))
-				log::info("flowview: wrote graph to {}", m_saveGraphPath);
-			else
-				log::error("flowview: could not write graph to {}", m_saveGraphPath);
-		}
-
-		// Write the graph's output boundary to --output (the "proper write step").
-		if (!m_outputPath.empty())
-		{
-			const auto outputs = graph.boundaryOutputs();
-			if (!outputs.empty() && outputs[0].value().holds<image::Image>())
-			{
-				if (lain::io::image::save(m_outputPath, outputs[0].value().get<image::Image>()))
-					log::info("flowview: wrote output to {}", m_outputPath);
-				else
-					log::error("flowview: could not write --output: {}", m_outputPath);
-			}
-			else
-			{
-				log::error("flowview: no image at the output boundary to write");
-			}
-		}
+		runGraph(m_graphPath, m_savePath, m_runCmd->remaining(), m_nodeFactory, m_size);
 	}
 
 	void FlowviewApp::onStop(app::Application&)

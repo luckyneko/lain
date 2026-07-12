@@ -119,6 +119,7 @@ namespace lain::flow
 		PortId pin;
 
 		const std::string& name() const { return node->findOutput(pin)->name(); }
+		std::string_view typeName() const { return node->findOutput(pin)->typeName(); }
 		std::type_index type() const { return node->findOutput(pin)->type(); }
 		void setValue(PortValue value) const { node->setValue(pin, std::move(value)); }
 	};
@@ -130,6 +131,7 @@ namespace lain::flow
 		PortId pin;
 
 		const std::string& name() const { return node->findInput(pin)->name(); }
+		std::string_view typeName() const { return node->findInput(pin)->typeName(); }
 		std::type_index type() const { return node->findInput(pin)->type(); }
 		const PortValue& value() const { return node->value(pin); }
 	};

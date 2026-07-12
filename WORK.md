@@ -638,21 +638,27 @@ binding sidesteps it for now.
    variant), `libs/io/data` + `plugins/io/data/json` (the codec seam), `libs/flow/serialize` (the
    graph walk — `ValueCodecs`, name-addressed edges, canonical id remap, dynamic-pin replay, the
    opaque `editor` section, best-effort `LoadResult`), the flow-core additions it needed
-   (`hasPortNamed` + port-name uniqueness, `portTypeKey` reverse lookup, `Factory::keyOf`,
-   `Graph::nodeIds`), and flowview (`graphio`, cli `--save-graph`/`--load-graph`, gui Save…/Load…
-   with canvas layout). `ctest` 273/273; headless round-trip is byte-idempotent; gui Save/Load
-   eyeballed on the live Metal driver.
+   (`hasPortNamed` + port-name uniqueness + `validPortName`, `portTypeKey` reverse lookup,
+   `Factory::keyOf`, `Graph::nodeIds`), and flowview (`graphio`, gui Save…/Load… with canvas layout,
+   and the headless **`run` / `list` subcommands**). `ctest` 275/275; headless round-trip is
+   byte-idempotent; gui Save/Load eyeballed on the live Metal driver; `run`/`list` exercised live.
+
+   **The cli `run` mode is done:** `flowview list [--graph <path>]` prints a graph's boundary
+   inputs/outputs (`--<name> : <type>`), and `flowview run [--graph <path>] [--save <path>]
+   [--<boundary> <value> …]` loads (or builds the example), binds boundary inputs by name (image
+   boundaries load the path; other types not cli-bindable yet), runs, dumps, writes bound outputs.
+   `--graph` is an option (not a positional) so `allow_extras` can carry the `--<boundary> value`
+   bindings unambiguously. Port names are now identifiers (`validPortName`), so they work as flags.
 
    **Notable deviations from the plan:** static-port uniqueness uses a plain `<cassert>` assert (not
    `log::ensure`) so `flow` core stays log-free; the id remap isn't exposed as a raw table — instead
    `fromValue` re-keys the `editor` blob onto the loaded ids in `LoadResult.editor`; the
    `loadGraph`/`saveGraph` facade lives in flowview (`graphio`, app-level), not `flow::serialize`.
 
-   **Remaining refinement:** a proper cli **`run` mode** (list a graph's boundary inputs/outputs,
-   bind by name like `source=foo.png`); `--load-graph` already loads + runs arbitrary graphs
-   headless. **Deferred (designed-for):** untagged variant, yaml/xml/binary codecs, per-node-type
-   schema versioning, C++26-reflection auto-`serialize`. `core::DateTime` (Tier C #8) is **not**
-   pulled in — `version` is a plain int, no timestamps.
+   **Deferred (designed-for):** untagged variant, yaml/xml/binary codecs, per-node-type schema
+   versioning, C++26-reflection auto-`serialize`, and the scalar/video **boundary loader** (only
+   image inputs bind from the cli today; `ValueCodecs` is the seam for scalars). `core::DateTime`
+   (Tier C #8) is **not** pulled in — `version` is a plain int, no timestamps.
 2. **Conditional / gated nodes** — a node suppresses downstream eval. A scheduler
    extension (skip successors); the one piece a pure push DAG can't express.
 3. **Incremental re-eval** — dirty-propagation so a single input change reruns
