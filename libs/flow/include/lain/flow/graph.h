@@ -34,6 +34,10 @@ namespace lain::flow
 
 		std::size_t nodeCount() const { return m_nodes.size(); }
 		bool contains(NodeId id) const { return m_nodes.count(id) != 0; }
+
+		// Every node id, in ascending id order — a stable enumeration of all nodes (unlike
+		// topoOrder, which is dependency order). The order a serializer walks nodes in.
+		std::vector<NodeId> nodeIds() const;
 		Node& node(NodeId id) { return *m_nodes.at(id); }
 		const Node& node(NodeId id) const { return *m_nodes.at(id); }
 

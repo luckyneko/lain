@@ -18,6 +18,15 @@ namespace lain::flow
 		return id;
 	}
 
+	std::vector<NodeId> Graph::nodeIds() const
+	{
+		std::vector<NodeId> ids;
+		ids.reserve(m_nodes.size());
+		for (const auto& entry : m_nodes) // m_nodes is ordered by NodeId, so this is id-ascending
+			ids.push_back(entry.first);
+		return ids;
+	}
+
 	bool Graph::removeNode(NodeId id)
 	{
 		const auto it = m_nodes.find(id);

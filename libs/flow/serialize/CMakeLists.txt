@@ -5,14 +5,15 @@
 
 add_library(flow-serialize STATIC
 	src/valuecodecs.cpp
+	src/serialize.cpp
 )
 add_library(lain::flow::serialize ALIAS flow-serialize)
 
 target_compile_features(flow-serialize PUBLIC cxx_std_17)
 target_include_directories(flow-serialize PUBLIC include)
 target_link_libraries(flow-serialize
-	PUBLIC lain::flow lain::data
-	PRIVATE lain::warnings
+	PUBLIC lain::flow lain::data lain::core # core::Factory<Node> is in the public toValue/fromValue signature
+	PRIVATE lain::log lain::warnings		# the load path logs each issue as it records it
 )
 
 if(LAIN_BUILD_TESTING)

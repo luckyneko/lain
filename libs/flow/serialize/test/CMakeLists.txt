@@ -3,9 +3,16 @@
 
 add_executable(test-flow-serialize
 	test_params.cpp
+	test_graph.cpp
 )
 
 target_compile_features(test-flow-serialize PRIVATE cxx_std_17)
-target_link_libraries(test-flow-serialize PRIVATE lain::flow::serialize lain::warnings Catch2::Catch2WithMain)
+# lain::io::data::json: the pipeline test round-trips a graph through real JSON bytes.
+target_link_libraries(test-flow-serialize PRIVATE
+	lain::flow::serialize
+	lain::io::data::json
+	lain::warnings
+	Catch2::Catch2WithMain
+)
 
 catch_discover_tests(test-flow-serialize TEST_PREFIX "(flow-serialize) ")

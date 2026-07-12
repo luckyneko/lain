@@ -16,8 +16,16 @@ namespace lain::core
 	bool Factory<Base>::registerType(std::string key, Args&&... args)
 	{
 		static_assert(std::is_base_of<Base, T>::value, "T must derive from Base");
+		m_keys[std::type_index(typeid(T))] = key; // reverse (copy before key is moved below)
 		return registerType(std::move(key), [args...]()
 							{ return std::make_unique<T>(args...); });
+	}
+
+	template <typename Base>
+	std::string Factory<Base>::keyFor(std::type_index type) const
+	{
+		const auto it = m_keys.find(type);
+		return it != m_keys.end() ? it->second : std::string{};
 	}
 
 	template <typename Base>

@@ -6,6 +6,8 @@
 #include <memory>
 #include <string>
 #include <type_traits>
+#include <typeindex>
+#include <typeinfo>
 #include <utility>
 #include <vector>
 
@@ -50,8 +52,16 @@ namespace lain::core
 		// The registered keys, alphabetical — for building a palette / menu.
 		std::vector<std::string> keys() const;
 
+		// The key a type T was registered under, or empty if T was not registered via the typed
+		// registerType<T> form (the string-creator form leaves the type opaque). The reverse of
+		// create(): lets a serializer name a live object by its registration key. Requires Base be
+		// polymorphic for keyOf to see the dynamic type.
+		std::string keyFor(std::type_index type) const;
+		std::string keyOf(const Base& object) const { return keyFor(std::type_index(typeid(object))); }
+
 	private:
 		std::map<std::string, Creator> m_creators;
+		std::map<std::type_index, std::string> m_keys; // reverse: type -> key (typed registerType only)
 	};
 } // namespace lain::core
 
