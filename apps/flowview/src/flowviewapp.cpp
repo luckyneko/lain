@@ -1,6 +1,7 @@
 #include "flowviewapp.h"
 
 #include "dump.h"
+#include "graphio.h"
 #include "scene.h"
 
 #include <lain/app/application.h>
@@ -31,6 +32,8 @@ namespace flowview
 		cli.add_option("--frames", m_frames, "gui-mode: quit after N frames (0 = run until the window closes)")->capture_default_str();
 		cli.add_option("--input", m_inputPath, "cli-mode: bind the graph's input boundary to this image file");
 		cli.add_option("--output", m_outputPath, "cli-mode: write the graph's output boundary to this path");
+		cli.add_option("--load-graph", m_loadGraphPath, "cli-mode: load the scene from this JSON graph (else the example)");
+		cli.add_option("--save-graph", m_saveGraphPath, "cli-mode: serialize the scene to this JSON graph");
 		return true;
 	}
 
@@ -52,7 +55,7 @@ namespace flowview
 		// the Interface panel), and run it. The nodes are pure CPU.
 		lain::io::image::registerImageCodecs();
 		registerExampleNodes(m_nodeFactory, m_size);
-		flow::registerPortType<image::Image>("Image"); // the boundary ± add-pin menu draws from this
+		registerSceneSerialization(); // image::Image port type (the boundary ± menu) + json codec
 		m_graph = std::make_unique<flow::Graph>();
 		buildExampleScene(*m_graph, m_nodeFactory);
 		bindDefaultInput(*m_graph, m_size);
@@ -68,14 +71,25 @@ namespace flowview
 
 	void FlowviewApp::onProcess(app::Application&)
 	{
-		// cli-mode: build the boundary scene, bind its input from --input, run, dump, then
-		// write its output to --output — the host-binds-the-boundary path, headless. Pure CPU,
-		// no device. This is the write library's caller: io::image::load in, save out.
+		// cli-mode: build (or load) the boundary scene, bind its input from --input, run, dump,
+		// then write its output to --output — the host-binds-the-boundary path, headless. Pure
+		// CPU, no device. This is the write library's caller: io::image::load in, save out.
 		lain::io::image::registerImageCodecs();
 		registerExampleNodes(m_nodeFactory, m_size);
+		registerSceneSerialization();
 
 		flow::Graph graph;
-		buildExampleScene(graph, m_nodeFactory);
+		if (!m_loadGraphPath.empty())
+		{
+			auto result = loadGraph(m_loadGraphPath, m_nodeFactory);
+			if (!result.clean())
+				log::warn("flowview: graph loaded with {} issue(s)", result.issues.size());
+			graph = std::move(result.graph);
+		}
+		else
+		{
+			buildExampleScene(graph, m_nodeFactory);
+		}
 
 		// Bind the graph's input boundary: --input loads a real file, else a default gradient
 		// stands in so a bare `--headless` still produces something to dump.
@@ -99,6 +113,15 @@ namespace flowview
 
 		m_scheduler.run(graph);
 		dumpGraph(std::cout, graph);
+
+		// Serialize the scene (recipe: kinds + params + dynamic pins + edges) to --save-graph.
+		if (!m_saveGraphPath.empty())
+		{
+			if (saveGraph(m_saveGraphPath, graph, m_nodeFactory))
+				log::info("flowview: wrote graph to {}", m_saveGraphPath);
+			else
+				log::error("flowview: could not write graph to {}", m_saveGraphPath);
+		}
 
 		// Write the graph's output boundary to --output (the "proper write step").
 		if (!m_outputPath.empty())

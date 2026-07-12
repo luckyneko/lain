@@ -18,6 +18,8 @@ namespace flowview
 	static constexpr const char* kTintKey = "tint";
 	static constexpr const char* kBlurKey = "blur";
 	static constexpr const char* kLoadImageKey = "loadimage";
+	static constexpr const char* kGroupInputKey = "groupInput";
+	static constexpr const char* kGroupOutputKey = "groupOutput";
 
 	void registerExampleNodes(core::Factory<flow::Node>& factory, std::uint32_t size)
 	{
@@ -27,6 +29,11 @@ namespace flowview
 		factory.registerType<flow::example::TintNode>(kTintKey, 1.0f, 0.5f, 0.5f); // keep R, halve G/B
 		factory.registerType<flow::example::BlurNode>(kBlurKey, 2, 1.5f);		   // soft 5x5 Gaussian
 		factory.registerType<flow::example::LoadImageNode>(kLoadImageKey);		   // empty path -> set in the gui
+
+		// The boundary nodes are added to the scene directly (not via the palette), but they must be
+		// in the factory too so serialization can name them (keyOf) and recreate them on load.
+		factory.registerType<flow::GroupInputNode>(kGroupInputKey);
+		factory.registerType<flow::GroupOutputNode>(kGroupOutputKey);
 	}
 
 	void buildExampleScene(flow::Graph& graph, const core::Factory<flow::Node>& factory)

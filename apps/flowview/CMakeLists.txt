@@ -9,12 +9,14 @@ add_executable(flowview
 	src/inspectorwindow.cpp
 	src/parameditors.cpp
 	src/scene.cpp
+	src/graphio.cpp
 	src/dump.cpp
 )
 
 target_compile_features(flowview PRIVATE cxx_std_17)
 target_link_libraries(flowview
 	PRIVATE lain::app lain::core lain::gui lain::flow-example lain::io::image lain::io::image::codecs
+			lain::flow::serialize lain::io::data::codecs # graph <-> data::Value <-> json
 			lain::log archimedes Vulkan::Loader lain::warnings
 )
 
