@@ -57,6 +57,17 @@ namespace lain::image
 	using ColorGrayAlpha16 = Color<PixelFormat::GrayAlpha16>;
 	using ColorGrayAlphaf = Color<PixelFormat::GrayAlpha32F>;
 
+	// A colour in the HSV model — hue in degrees [0,360), saturation + value in [0,1]. Distinct from
+	// the pixel-format Color<F> family: HSV is a colour *model*, not a byte layout, so it can't be a
+	// Color<F> (which is 1:1 with a PixelFormat). A plain struct; image::toRGB (colormath.h) converts
+	// it to an RGB Color. Handy for generating / adjusting colours by hue (e.g. a stable per-key tint).
+	struct ColorHSVf
+	{
+		float h = 0.0f; // hue, degrees [0, 360)
+		float s = 0.0f; // saturation [0, 1]
+		float v = 0.0f; // value / brightness [0, 1]
+	};
+
 	// A Color's format / channel count / channel type come straight from the type: the
 	// format is the template parameter (Color<F>::format), and the channel count and channel
 	// storage type are the descriptor's channelCount() and GLM's value_type. So there is no

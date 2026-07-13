@@ -69,6 +69,20 @@ namespace lain::flow
 		void markDirty() { m_dirty = true; }
 		void clearDirty() { m_dirty = false; }
 
+		// Whether this node is READY to compute: every REQUIRED input carries a value (ADR-0007).
+		// Node-local — it inspects only this node's own input ports. The scheduler gates compute() on
+		// it (an unready node is skipped and its outputs cleared, suppressing downstream); a viewer
+		// reads it post-run to tell which nodes activated (the dimmed ones did not).
+		bool ready() const
+		{
+			for (const Port& in : m_inputs)
+			{
+				if (in.required() && in.value().empty())
+					return false;
+			}
+			return true;
+		}
+
 		// The node's work: read inputs, write outputs. The scheduler calls this in
 		// dependency order and clears dirty() around the call; an on-request source
 		// can markDirty() itself here to refire on the next pull.

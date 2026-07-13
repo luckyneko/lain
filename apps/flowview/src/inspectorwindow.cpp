@@ -14,6 +14,7 @@
 #include <lain/flow/node.h>
 #include <lain/flow/port.h>
 #include <lain/flow/porttyperegistry.h>
+#include <lain/gui/color.h> // gui::packColor (image::ColorRGBA8 -> ImU32)
 #include <lain/gui/dialogs.h>
 #include <lain/gui/enums.h>
 #include <lain/gui/gui.h>
@@ -168,6 +169,7 @@ namespace flowview
 	{
 		m_guiCtx = std::make_unique<gui::Context>(window.app(), window);
 		registerBuiltinParamEditors(m_paramEditors);
+		registerBuiltinCanvasStyle(m_canvasStyle);
 		return true;
 	}
 
@@ -537,15 +539,61 @@ namespace flowview
 		// boundary nodes are grown from the Interface panel, but the same affordance works on-canvas too.
 		std::vector<std::pair<flow::NodeId, std::string>> pinAdds;
 		int column = 0;
+		// Which inputs have an incoming edge -> a filled pin (hollow = unconnected). Keyed by
+		// (node, port) values so no PortAddress ordering is needed.
+		std::set<std::pair<std::uint64_t, std::uint32_t>> connectedInputs;
+		for (const flow::Graph::Edge& e : graph.edges())
+			connectedInputs.insert({e.to.node.value(), e.to.port.value()});
+
 		for (const flow::NodeId id : graph.topoOrder())
 		{
 			const flow::Node& node = graph.node(id);
 			if (seedPositions && !applyLayout(m_pendingLayout, id)) // a loaded layout wins over the default columns
 				gui::nodes::SetNodeGridSpacePos(static_cast<int>(id.value()), math::Vec2f{column * 220.0f, 40.0f + (column % 4) * 140.0f});
 
+			// State (dim) trumps identity (category colour): an inactive node — one the run skipped
+			// because a Required input was empty (ADR-0007) — is fully muted; an active one wears its
+			// kind's title colour. Push counted so the pop matches whichever branch ran.
+			const bool active = node.ready(); // an unready node (a Required input empty) was skipped -> dim
+			int nodeColoursPushed = 0;
+			const auto pushNodeColour = [&](ImNodesCol slot, const image::ColorRGBA8& colour)
+			{
+				gui::nodes::PushColorStyle(slot, gui::packColor(colour)); // pack at the imnodes boundary
+				++nodeColoursPushed;
+			};
+			if (active)
+			{
+				const image::ColorRGBA8 title = m_canvasStyle.nodeTitle(appDelegate.nodeFactory().keyOf(node));
+				pushNodeColour(ImNodesCol_TitleBar, title);
+				pushNodeColour(ImNodesCol_TitleBarHovered, title);
+				pushNodeColour(ImNodesCol_TitleBarSelected, title);
+			}
+			else
+			{
+				const image::ColorRGBA8 mutedTitle = m_canvasStyle.mutedTitle();
+				const image::ColorRGBA8 mutedBg = m_canvasStyle.mutedBackground();
+				pushNodeColour(ImNodesCol_TitleBar, mutedTitle);
+				pushNodeColour(ImNodesCol_TitleBarHovered, mutedTitle);
+				pushNodeColour(ImNodesCol_TitleBarSelected, mutedTitle);
+				pushNodeColour(ImNodesCol_NodeBackground, mutedBg);
+				pushNodeColour(ImNodesCol_NodeBackgroundHovered, mutedBg);
+				pushNodeColour(ImNodesCol_NodeBackgroundSelected, mutedBg);
+			}
+
+			// A STABLE content-column width from label text (title + pin names). Right-aligning outputs
+			// to the node's *rendered* width feeds back — the indent widens the node, which widens next
+			// frame's indent → runaway growth; a text-derived width is fixed per frame.
+			char titleText[128];
+			std::snprintf(titleText, sizeof(titleText), "[%llu] %s", static_cast<unsigned long long>(id.value()), node.name().c_str());
+			float labelColumn = gui::CalcTextSize(titleText).x;
+			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
+				labelColumn = std::max(labelColumn, gui::CalcTextSize(node.input(i).name().c_str()).x);
+			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
+				labelColumn = std::max(labelColumn, gui::CalcTextSize(node.output(o).name().c_str()).x);
+
 			gui::nodes::BeginNode(static_cast<int>(id.value()));
 			gui::nodes::BeginNodeTitleBar();
-			gui::Text("[%llu] %s", static_cast<unsigned long long>(id.value()), node.name().c_str());
+			gui::TextUnformatted(titleText);
 			gui::nodes::EndNodeTitleBar();
 
 			// Detach flag on inputs only (so an output drag creates a new link -> fan-out).
@@ -553,9 +601,16 @@ namespace flowview
 			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
 			{
 				const flow::Port& in = node.input(i);
-				gui::nodes::BeginInputAttribute(pinId(id, false, in.id()));
-				gui::Text("%s : %s", in.name().c_str(), std::string(in.typeName()).c_str());
+				// Fill = connected, hollow = unconnected; colour = type (muted on an inactive node). The
+				// pin's type is read from its colour + hover tooltip, so the label is just the name.
+				const ImNodesPinShape shape = connectedInputs.count({id.value(), in.id().value()}) != 0
+												  ? ImNodesPinShape_CircleFilled
+												  : ImNodesPinShape_Circle;
+				gui::nodes::PushColorStyle(ImNodesCol_Pin, gui::packColor(active ? m_canvasStyle.portColor(in.type(), in.typeName()) : m_canvasStyle.mutedPin()));
+				gui::nodes::BeginInputAttribute(pinId(id, false, in.id()), shape);
+				gui::TextUnformatted(in.name().c_str());
 				gui::nodes::EndInputAttribute();
+				gui::nodes::PopColorStyle();
 			}
 			gui::nodes::PopAttributeFlag();
 			// A dynamic node that grows its INPUT side gets its ± below the inputs.
@@ -565,21 +620,42 @@ namespace flowview
 			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
 			{
 				const flow::Port& out = node.output(o);
-				gui::nodes::BeginOutputAttribute(pinId(id, true, out.id()));
-				gui::Text("%s : %s", out.name().c_str(), std::string(out.typeName()).c_str());
+				// Fill = produced a value this run, hollow = empty (a suppressed node's outputs).
+				const ImNodesPinShape shape = out.ready() ? ImNodesPinShape_CircleFilled : ImNodesPinShape_Circle;
+				gui::nodes::PushColorStyle(ImNodesCol_Pin, gui::packColor(active ? m_canvasStyle.portColor(out.type(), out.typeName()) : m_canvasStyle.mutedPin()));
+				gui::nodes::BeginOutputAttribute(pinId(id, true, out.id()), shape);
+				// Right-align the label to the node's stable content column so it sits by the right-edge pin.
+				const float pad = labelColumn - gui::CalcTextSize(out.name().c_str()).x;
+				if (pad > 0.0f)
+					gui::Indent(pad);
+				gui::TextUnformatted(out.name().c_str());
+				if (pad > 0.0f)
+					gui::Unindent(pad);
 				gui::nodes::EndOutputAttribute();
+				gui::nodes::PopColorStyle();
 			}
 			// ... and one that grows its OUTPUT side gets its ± below the outputs.
 			if (dynamic != nullptr && dynamic->dynamicSide() == flow::Port::Direction::Output)
 				renderCanvasAddPin(*dynamic, id, pinAdds);
 			gui::nodes::EndNode();
+
+			for (int k = 0; k < nodeColoursPushed; ++k)
+				gui::nodes::PopColorStyle();
 			++column;
 		}
 
+		// Links carry their source pin's type colour, muted when the source produced nothing (a dead
+		// edge downstream of a suppressed node).
 		const std::vector<flow::Graph::Edge>& edges = graph.edges();
 		for (std::size_t e = 0; e < edges.size(); ++e)
-			gui::nodes::Link(static_cast<int>(e), pinId(edges[e].from.node, true, edges[e].from.port),
-							 pinId(edges[e].to.node, false, edges[e].to.port));
+		{
+			const flow::Graph::Edge& edge = edges[e];
+			const flow::Port* src = graph.node(edge.from.node).findOutput(edge.from.port);
+			const bool edgeActive = (src != nullptr) && src->ready();
+			gui::nodes::PushColorStyle(ImNodesCol_Link, gui::packColor(edgeActive ? m_canvasStyle.portColor(src->type(), src->typeName()) : m_canvasStyle.mutedLink()));
+			gui::nodes::Link(static_cast<int>(e), pinId(edge.from.node, true, edge.from.port), pinId(edge.to.node, false, edge.to.port));
+			gui::nodes::PopColorStyle();
+		}
 
 		gui::nodes::EndNodeEditor();
 

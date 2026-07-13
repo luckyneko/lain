@@ -625,6 +625,48 @@ streams); and a **live / real-time execution** model (Taskflow `tf::Pipeline`, T
 **side-effecting-sink** concept a true write-in-graph node would need is deferred with it — the host
 binding sidesteps it for now.
 
+## flowview UI pass (grilled 2026-07-13)
+
+A readability + usability pass on the viewer, grilled into three slices (A/B/C) plus later passes.
+New module **`canvasstyle.{h,cpp}`** owns just the palette: a `CanvasStyle` with a `type_index → colour`
+port palette (+ hash-of-typeName fallback) and a `factory-key → colour` node-title palette (categories
+emergent from shared colour, no `Category` enum) + the muted tones. Two supporting pieces landed in their
+proper homes, not as viewer free functions: **readiness is `flow::Node::ready()`** (every Required input
+carries a value — ADR-0007), a node-local member the **scheduler** gates on *and* the viewer reads
+post-run for the dim (one definition, no duplication); and the colour pack is
+**`lain::gui::packColor(image::ColorRGBA8) → ImU32`** (`gui/color.h`, the GUI seam to the toolkit's
+packed-colour form — `gui` already depends on `image`, now PUBLIC). The palette speaks `image::ColorRGBA8`
+**end-to-end**; the ImU32 is produced only by `gui::packColor` at the **imnodes boundary** (the draw
+loop's `PushColorStyle` calls) — no colour converted in a middle layer (imnodes' colour API is a raw
+ImU32, so no `ImVec2`-style struct hook for auto-conversion). The hash fallback uses a **new reusable
+`image::ColorHSVf` + a `convert()` overload** (HSV→RGB) added to `lain::image`. The future theme.json /
+colour editor loads into this.
+
+- ✅ **Slice A — readability BUILT** (2026-07-13, canvas-only → **not yet eyeballed on live Metal**).
+  Inactive node (a Required input empty) → whole node muted (title+bg); dead edge (source output empty)
+  → muted link. Pins + links coloured by value type (Image=blue, Int/Float=green, Bool=purple,
+  String=amber; hash fallback otherwise). Node titles tinted by kind (source/filter/control/boundary).
+  Pin **shape = presence** (all circles): input filled=wired / hollow=unconnected, output filled=produced
+  / hollow=empty; type colour always kept. Inline `: type` text **dropped** (pin shows name only); outputs
+  **right-aligned** to the node width (`GetNodeDimensions`). Precedence: inactive-mute > identity colour
+  (the drag-incompatible mute lands in slice C). Full suite 287/287; headless unaffected.
+- **Slice B — selection-driven inspector** (next): show each `selectedNodes()` node's params + port
+  values + previews, stacked; zero selection → hint; preview-size control pinned at top; replaces the
+  all-nodes dump. Interface panel untouched.
+- **Slice C — interaction feedback**: active grey-out during a link drag (mute non-compatible pins via
+  `IsLinkStarted` tracking); pin tooltips on `IsPinHovered` (full type + `describe()` value); missing-
+  required stays emergent (dim node + hollow pins), actionable validation deferred to the issues panel.
+
+**Parked for later passes:** a "Graph Issues" log panel (active-node-with-unread-outputs, load
+warnings, type-mismatch history, missing-required validation) · user-configurable / theme.json colours
+(the registries are the load target) · pin **shape** encodes presence (square=required, circle=optional,
+triangle=conditional — deferred: mostly-required → mostly-square is visually sharp) · a **menu bar**
+(save / load / add-node, plus settings + undo/redo) · the **window-interaction** pass (whole-layout
+purpose, incl. the Interface↔Inspector merge) · a **`lain::gui::nodes` wrapper pass** — front the raw
+`Im*` surface the `namespace nodes = ImNodes` alias leaks (`ImNodesCol_*`, `ImNodesPinShape_*`,
+`PushColorStyle(ImU32)`, attribute flags) with lain-typed calls, so a client passes lain colours/enums
+and never touches ImU32 — which retires `gui::packColor` from flowview's call sites.
+
 ## Backlog (deferred — don't build speculatively)
 
 ### Tier A — when a real graph demands it

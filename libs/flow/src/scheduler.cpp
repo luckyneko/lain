@@ -84,23 +84,13 @@ namespace lain::flow
 		node.clearDirty(); // before compute — an on-request node re-marks itself to refire next run
 		populateInputs(graph, id);
 
-		// Conditional eval (ADR-0007): a node is READY iff every REQUIRED input carries a value. If a
-		// required input is empty (unconnected, or its upstream produced nothing / was itself
-		// suppressed), the node does not compute — its outputs are cleared, and that emptiness
-		// suppresses downstream. An empty OPTIONAL input (a Select/Merge branch) does not block; compute()
-		// checks presence itself. A Gate suppresses by clear()ing its output — "skip" is just no value.
-		bool ready = true;
-		for (PortIndex i = 0; i < node.inputCount(); ++i)
-		{
-			const Port& in = node.input(i);
-			if (in.required() && in.value().empty())
-			{
-				ready = false;
-				break;
-			}
-		}
-
-		if (ready)
+		// Conditional eval (ADR-0007): a node computes iff it is READY — every REQUIRED input carries a
+		// value (Node::ready()). If a required input is empty (unconnected, or its upstream produced
+		// nothing / was itself suppressed), the node does not compute — its outputs are cleared, and
+		// that emptiness suppresses downstream. An empty OPTIONAL input (a Select/Merge branch) does not
+		// block; compute() checks presence itself. A Gate suppresses by clear()ing its output — "skip"
+		// is just no value.
+		if (node.ready())
 		{
 			node.compute();
 		}

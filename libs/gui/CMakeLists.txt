@@ -19,8 +19,10 @@ add_library(lain::gui ALIAS gui)
 target_compile_features(gui PUBLIC cxx_std_17)
 target_include_directories(gui PUBLIC include)
 target_link_libraries(gui
-	PUBLIC imgui imnodes lain::app lain::math lain::meta archimedes
-	PRIVATE lain::image lain::warnings pfd::pfd
+	# lain::image is PUBLIC: gui's headers speak image types (texture.h uploads an image::Image,
+	# color.h packs an image::ColorRGBA8), so a consumer needs image on its include path.
+	PUBLIC imgui imnodes lain::app lain::math lain::meta lain::image archimedes
+	PRIVATE lain::warnings pfd::pfd
 )
 
 if(LAIN_BUILD_TESTING)

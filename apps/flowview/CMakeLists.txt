@@ -12,6 +12,7 @@ add_executable(flowview
 	src/graphio.cpp
 	src/runmode.cpp
 	src/clibinders.cpp
+	src/canvasstyle.cpp
 	src/dump.cpp
 )
 

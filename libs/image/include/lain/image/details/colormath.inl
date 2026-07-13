@@ -3,6 +3,7 @@
 // Template definitions for the color-value algorithms (see colormath.h): channel-value
 // normalization across base types, luminance, saturate, and the Color -> Color convert.
 
+#include <cmath>
 #include <limits>
 #include <type_traits>
 
@@ -140,6 +141,31 @@ namespace lain::image
 			}
 			return out;
 		}
+	}
+
+	template <typename Dst>
+	Dst convert(const ColorHSVf& hsv)
+	{
+		float h = std::fmod(hsv.h, 360.0f);
+		if (h < 0.0f)
+			h += 360.0f;
+		const float s = hsv.s < 0.0f ? 0.0f : (hsv.s > 1.0f ? 1.0f : hsv.s);
+		const float v = hsv.v < 0.0f ? 0.0f : (hsv.v > 1.0f ? 1.0f : hsv.v);
+
+		// Standard HSV -> RGB: chroma c, second-largest component x, and the match m added to all.
+		const float c = v * s;
+		const float x = c * (1.0f - std::fabs(std::fmod(h / 60.0f, 2.0f) - 1.0f));
+		const float m = v - c;
+		float r = 0.0f;
+		float g = 0.0f;
+		float b = 0.0f;
+		if (h < 60.0f) { r = c; g = x; }
+		else if (h < 120.0f) { r = x; g = c; }
+		else if (h < 180.0f) { g = c; b = x; }
+		else if (h < 240.0f) { g = x; b = c; }
+		else if (h < 300.0f) { r = x; b = c; }
+		else { r = c; b = x; }
+		return convert<Dst>(ColorRGBf(r + m, g + m, b + m));
 	}
 
 	template <typename View, typename Fn>

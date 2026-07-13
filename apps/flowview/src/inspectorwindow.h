@@ -1,5 +1,6 @@
 #pragma once
 
+#include "canvasstyle.h"
 #include "parameditors.h"
 
 #include <lain/app/windowdelegate.h>
@@ -89,6 +90,7 @@ namespace flowview
 
 		std::unique_ptr<lain::gui::Context> m_guiCtx;
 		ParamEditors m_paramEditors;					 // type-keyed param editors (registered in onInit)
+		CanvasStyle m_canvasStyle;						 // canvas colours + dim state (registered in onInit)
 		std::map<PinKey, lain::gui::Texture> m_previews; // one uploaded thumbnail per image port
 		bool m_previewsDirty = true;					 // rebuild previews on the next frame (init + after edits)
 		bool m_laidOut = false;							 // node canvas: seed node positions on the first frame

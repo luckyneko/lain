@@ -79,3 +79,34 @@ TEST_CASE("saturate clamps float channels to [0,1]", "[colormath]")
 	REQUIRE(c.b == Approx(0.5f));
 	REQUIRE(c.a == Approx(1.0f));
 }
+
+TEST_CASE("convert maps HSV to RGB", "[colormath]")
+{
+	// Primary/secondary hues at full saturation & value.
+	const ColorRGBf red = convert(ColorHSVf{0.0f, 1.0f, 1.0f});
+	REQUIRE(red.r == Approx(1.0f));
+	REQUIRE(red.g == Approx(0.0f));
+	REQUIRE(red.b == Approx(0.0f));
+
+	const ColorRGBf green = convert(ColorHSVf{120.0f, 1.0f, 1.0f});
+	REQUIRE(green.r == Approx(0.0f));
+	REQUIRE(green.g == Approx(1.0f));
+	REQUIRE(green.b == Approx(0.0f));
+
+	const ColorRGBf blue = convert(ColorHSVf{240.0f, 1.0f, 1.0f});
+	REQUIRE(blue.b == Approx(1.0f));
+	REQUIRE(blue.r == Approx(0.0f));
+
+	// Saturation 0 -> greyscale at `value`, regardless of hue; hue wraps mod 360.
+	const ColorRGBf grey = convert(ColorHSVf{200.0f, 0.0f, 0.5f});
+	REQUIRE(grey.r == Approx(0.5f));
+	REQUIRE(grey.g == Approx(0.5f));
+	REQUIRE(grey.b == Approx(0.5f));
+	REQUIRE(convert(ColorHSVf{360.0f, 1.0f, 1.0f}).r == Approx(1.0f)); // 360 wraps to red
+
+	// Dst override lands directly in 0-255 RGBA bytes (alpha opaque).
+	const ColorRGBA8 red8 = convert<ColorRGBA8>(ColorHSVf{0.0f, 1.0f, 1.0f});
+	REQUIRE(int(red8.r) == 255);
+	REQUIRE(int(red8.g) == 0);
+	REQUIRE(int(red8.a) == 255);
+}
