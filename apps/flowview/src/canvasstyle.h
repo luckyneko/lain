@@ -35,6 +35,10 @@ namespace flowview
 		lain::image::ColorRGBA8 mutedPin() const { return m_mutedPin; }
 		lain::image::ColorRGBA8 mutedLink() const { return m_mutedLink; }
 
+		// The title-bar accent a SELECTED node wears (pushed as ImNodesCol_TitleBarSelected) — a bright
+		// tone distinct from every kind colour, so selection reads at a glance.
+		lain::image::ColorRGBA8 selection() const { return m_selection; }
+
 	private:
 		std::map<std::type_index, lain::image::ColorRGBA8> m_portColours;
 		std::map<std::string, lain::image::ColorRGBA8> m_nodeColours;
@@ -43,6 +47,7 @@ namespace flowview
 		lain::image::ColorRGBA8 m_mutedBackground;
 		lain::image::ColorRGBA8 m_mutedPin;
 		lain::image::ColorRGBA8 m_mutedLink;
+		lain::image::ColorRGBA8 m_selection;
 	};
 
 	// Populate the built-in palette: the payload + scalar port colours and the node-kind title colours.

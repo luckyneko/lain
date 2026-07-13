@@ -650,9 +650,11 @@ colour editor loads into this.
   / hollow=empty; type colour always kept. Inline `: type` text **dropped** (pin shows name only); outputs
   **right-aligned** to the node width (`GetNodeDimensions`). Precedence: inactive-mute > identity colour
   (the drag-incompatible mute lands in slice C). Full suite 287/287; headless unaffected.
-- **Slice B — selection-driven inspector** (next): show each `selectedNodes()` node's params + port
-  values + previews, stacked; zero selection → hint; preview-size control pinned at top; replaces the
-  all-nodes dump. Interface panel untouched.
+- ✅ **Slice B — selection-driven inspector BUILT** (2026-07-13, canvas-only → live eyeball pending).
+  The Inspector panel shows only the node(s) selected on the canvas (`selectedNodes()`), stacked and
+  walked in topo order for a stable layout, each with its params + port values + previews; nothing
+  selected → a "Select a node…" hint; the preview-size combo stays pinned at the top. Replaces the
+  all-nodes dump. The Interface panel is untouched (its merge is the window-interaction pass).
 - **Slice C — interaction feedback**: active grey-out during a link drag (mute non-compatible pins via
   `IsLinkStarted` tracking); pin tooltips on `IsPinHovered` (full type + `describe()` value); missing-
   required stays emergent (dim node + hollow pins), actionable validation deferred to the issues panel.
@@ -661,8 +663,10 @@ colour editor loads into this.
 warnings, type-mismatch history, missing-required validation) · user-configurable / theme.json colours
 (the registries are the load target) · pin **shape** encodes presence (square=required, circle=optional,
 triangle=conditional — deferred: mostly-required → mostly-square is visually sharp) · a **menu bar**
-(save / load / add-node, plus settings + undo/redo) · the **window-interaction** pass (whole-layout
-purpose, incl. the Interface↔Inspector merge) · a **`lain::gui::nodes` wrapper pass** — front the raw
+(save / load / add-node, plus settings + undo/redo) · **editable node names** — a user-set title per
+node (the boundary-pin rename already shows the pattern), which would let the `[id]` prefix drop from
+node headers (it's there today only to disambiguate two same-named nodes) · the **window-interaction**
+pass (whole-layout purpose, incl. the Interface↔Inspector merge) · a **`lain::gui::nodes` wrapper pass** — front the raw
 `Im*` surface the `namespace nodes = ImNodes` alias leaks (`ImNodesCol_*`, `ImNodesPinShape_*`,
 `PushColorStyle(ImU32)`, attribute flags) with lain-typed calls, so a client passes lain colours/enums
 and never touches ImU32 — which retires `gui::packColor` from flowview's call sites.

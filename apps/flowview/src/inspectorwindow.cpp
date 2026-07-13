@@ -566,7 +566,7 @@ namespace flowview
 				const image::ColorRGBA8 title = m_canvasStyle.nodeTitle(appDelegate.nodeFactory().keyOf(node));
 				pushNodeColour(ImNodesCol_TitleBar, title);
 				pushNodeColour(ImNodesCol_TitleBarHovered, title);
-				pushNodeColour(ImNodesCol_TitleBarSelected, title);
+				pushNodeColour(ImNodesCol_TitleBarSelected, m_canvasStyle.selection()); // selected -> accent
 			}
 			else
 			{
@@ -574,7 +574,7 @@ namespace flowview
 				const image::ColorRGBA8 mutedBg = m_canvasStyle.mutedBackground();
 				pushNodeColour(ImNodesCol_TitleBar, mutedTitle);
 				pushNodeColour(ImNodesCol_TitleBarHovered, mutedTitle);
-				pushNodeColour(ImNodesCol_TitleBarSelected, mutedTitle);
+				pushNodeColour(ImNodesCol_TitleBarSelected, m_canvasStyle.selection()); // selected -> accent
 				pushNodeColour(ImNodesCol_NodeBackground, mutedBg);
 				pushNodeColour(ImNodesCol_NodeBackgroundHovered, mutedBg);
 				pushNodeColour(ImNodesCol_NodeBackgroundSelected, mutedBg);
@@ -584,7 +584,7 @@ namespace flowview
 			// to the node's *rendered* width feeds back — the indent widens the node, which widens next
 			// frame's indent → runaway growth; a text-derived width is fixed per frame.
 			char titleText[128];
-			std::snprintf(titleText, sizeof(titleText), "[%llu] %s", static_cast<unsigned long long>(id.value()), node.name().c_str());
+			std::snprintf(titleText, sizeof(titleText), "%s [%llu]", node.name().c_str(), static_cast<unsigned long long>(id.value()));
 			float labelColumn = gui::CalcTextSize(titleText).x;
 			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
 				labelColumn = std::max(labelColumn, gui::CalcTextSize(node.input(i).name().c_str()).x);
@@ -769,11 +769,26 @@ namespace flowview
 		gui::SetNextWindowSize(math::Vec2f{320.0f, 320.0f}, ImGuiCond_FirstUseEver);
 		gui::Begin("Inspector");
 		gui::enumCombo("Preview size", m_previewSize); // labels from lain::meta::enums
+
+		// Selection-driven: inspect only the node(s) selected on the canvas (stacked, walked in topo
+		// order for a stable top-to-bottom layout), not the whole graph. Nothing selected -> a hint.
+		// (The Interface panel is the separate host-binding surface.)
+		const std::vector<flow::NodeId> selection = selectedNodes();
+		if (selection.empty())
+			gui::TextDisabled("Select a node on the canvas to inspect it.");
+
 		bool paramEdited = false;
 		for (const flow::NodeId id : graph.topoOrder())
 		{
+			if (std::find(selection.begin(), selection.end(), id) == selection.end())
+				continue; // only the selected nodes
+
 			flow::Node& node = graph.node(id); // non-const: params are edited below
-			gui::Text("[%llu] %s", static_cast<unsigned long long>(id.value()), node.name().c_str());
+			// An obvious titled section per selected node (name prominent; the id disambiguates two
+			// same-named nodes until editable node names land).
+			char header[128];
+			std::snprintf(header, sizeof(header), "%s [%llu]", node.name().c_str(), static_cast<unsigned long long>(id.value()));
+			gui::SeparatorText(header);
 
 			// Editable params, chosen by type via the registry (file field, drags, colour
 			// swatch). PushID(node) so same-named params on different nodes don't collide.
