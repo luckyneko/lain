@@ -1,22 +1,21 @@
 #include "runmode.h"
 
+#include "clibinders.h"
 #include "dump.h"
 #include "graphio.h"
 #include "scene.h"
 
 #include <lain/flow/boundary.h>
 #include <lain/flow/graph.h>
-#include <lain/flow/portvalue.h>
 #include <lain/flow/scheduler.h>
 #include <lain/image/image.h>
-#include <lain/io/image/load.h>
 #include <lain/io/image/save.h>
 #include <lain/log/log.h>
 
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <set>
-#include <typeinfo>
 #include <utility>
 
 namespace flowview
@@ -83,34 +82,24 @@ namespace flowview
 		}
 	}
 
-	// Bind one boundary input from a cli value. Image boundaries load the path; other types aren't
-	// cli-bindable yet (the app-side type switch grows a loader when scalar/video boundaries land).
-	static void bindBoundaryInput(const flow::BoundaryInput& in, const std::string& value)
+	// Bind one boundary input from a cli value via the type's registered binder (scalars + image). A
+	// failed parse and an unbindable type are distinct diagnostics.
+	static void bindBoundaryInput(const flow::BoundaryInput& in, const std::string& value, const BoundaryBinders& binders)
 	{
-		if (in.type() == typeid(image::Image))
-		{
-			if (auto image = io::image::load(value))
-			{
-				flow::PortValue slot;
-				slot.set<image::Image>(std::move(*image));
-				in.setValue(std::move(slot));
-			}
-			else
-			{
-				log::error("flowview: could not load image for --{}: {}", in.name(), value);
-			}
-		}
+		if (auto bound = binders.bind(in.type(), value))
+			in.setValue(std::move(*bound));
+		else if (binders.has(in.type()))
+			log::error("flowview: could not parse '{}' for --{} as {}", value, in.name(), in.typeName());
 		else
-		{
-			log::error("flowview: --{} has a non-image type; only image inputs bind from the cli for now", in.name());
-		}
+			log::error("flowview: --{} has type {}, which is not cli-bindable", in.name(), in.typeName());
 	}
 
 	// --- subcommands ----------------------------------------------------------
 
 	int runGraph(const std::string& graphPath, const std::string& savePath,
 				 const std::vector<std::string>& bindings,
-				 const core::Factory<flow::Node>& factory, std::uint32_t exampleSize)
+				 const core::Factory<flow::Node>& factory, const BoundaryBinders& binders,
+				 std::uint32_t exampleSize)
 	{
 		flow::Graph graph;
 		if (!buildOrLoad(graph, graphPath, factory))
@@ -126,7 +115,7 @@ namespace flowview
 			const auto arg = args.find(in.name());
 			if (arg != args.end())
 			{
-				bindBoundaryInput(in, arg->second);
+				bindBoundaryInput(in, arg->second, binders);
 				args.erase(arg);
 			}
 			else if (graphPath.empty())
@@ -164,7 +153,17 @@ namespace flowview
 			}
 			else
 			{
-				log::error("flowview: output --{} is not an image", out.name());
+				// A scalar / text output: write its value as text (symmetric with an image to a file).
+				std::ofstream file(arg->second);
+				if (file)
+				{
+					file << out.describe() << '\n';
+					log::info("flowview: wrote --{} to {}", out.name(), arg->second);
+				}
+				else
+				{
+					log::error("flowview: could not write --{} to {}", out.name(), arg->second);
+				}
 			}
 			args.erase(arg);
 		}
@@ -182,7 +181,7 @@ namespace flowview
 		return 0;
 	}
 
-	int listGraph(const std::string& graphPath, const core::Factory<flow::Node>& factory)
+	int listGraph(const std::string& graphPath, const core::Factory<flow::Node>& factory, const BoundaryBinders& binders)
 	{
 		flow::Graph graph;
 		if (!buildOrLoad(graph, graphPath, factory))
@@ -191,7 +190,12 @@ namespace flowview
 		warnBoundaryCollisions(graph);
 		std::cout << "inputs:\n";
 		for (const flow::BoundaryInput& in : graph.boundaryInputs())
-			std::cout << "  --" << in.name() << " : " << in.typeName() << "\n";
+		{
+			std::cout << "  --" << in.name() << " : " << in.typeName();
+			if (!binders.has(in.type()))
+				std::cout << "  (not cli-bindable)";
+			std::cout << "\n";
+		}
 		std::cout << "outputs:\n";
 		for (const flow::BoundaryOutput& out : graph.boundaryOutputs())
 			std::cout << "  --" << out.name() << " : " << out.typeName() << "\n";

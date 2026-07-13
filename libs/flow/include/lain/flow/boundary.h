@@ -134,5 +134,10 @@ namespace lain::flow
 		std::string_view typeName() const { return node->findInput(pin)->typeName(); }
 		std::type_index type() const { return node->findInput(pin)->type(); }
 		const PortValue& value() const { return node->value(pin); }
+
+		// The delivered value as human-readable text (Port::describe — the shared meta::toString
+		// pathway): "(empty)" when nothing was produced, else the value. A host writes this to capture
+		// a scalar/text output the way it saves an image output to a file.
+		std::string describe() const { return node->findInput(pin)->describe(); }
 	};
 } // namespace lain::flow

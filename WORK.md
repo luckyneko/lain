@@ -644,11 +644,21 @@ binding sidesteps it for now.
    byte-idempotent; gui Save/Load eyeballed on the live Metal driver; `run`/`list` exercised live.
 
    **The cli `run` mode is done:** `flowview list [--graph <path>]` prints a graph's boundary
-   inputs/outputs (`--<name> : <type>`), and `flowview run [--graph <path>] [--save <path>]
-   [--<boundary> <value> …]` loads (or builds the example), binds boundary inputs by name (image
-   boundaries load the path; other types not cli-bindable yet), runs, dumps, writes bound outputs.
-   `--graph` is an option (not a positional) so `allow_extras` can carry the `--<boundary> value`
-   bindings unambiguously. Port names are now identifiers (`validPortName`), so they work as flags.
+   inputs/outputs (`--<name> : <type>`, marking any input with no cli binder), and `flowview run
+   [--graph <path>] [--save <path>] [--<boundary> <value> …]` loads (or builds the example), binds
+   boundary inputs by name, runs, dumps, writes bound outputs. `--graph` is an option (not a positional)
+   so `allow_extras` can carry the `--<boundary> value` bindings unambiguously. Port names are now
+   identifiers (`validPortName`), so they work as flags.
+
+   **Scalar boundary binding BUILT** (2026-07-13). Boundaries are no longer image-only: `int` / `float`
+   / `bool` / `string` are registered **port types** (so they're creatable in the gui Interface panel's
+   ± menu and round-trip through save/load) *and* have cli binders. The **`BoundaryBinders`** seam
+   (`clibinders.{h,cpp}` — a `type_index → (string → PortValue)` registry) is the "cli medium" for a
+   type, parallel to `ParamEditors` (gui) and `ValueCodecs` (disk); flow core still names no payload
+   type. `run --<input> <value>` parses by the pin's type (a failed parse and an unbindable type are
+   distinct errors); an image **output** writes a file, a scalar output writes its `describe()` text
+   (new `BoundaryOutput::describe()`), a suppressed output writes nothing. Verified headless: an
+   int/string/bool passthrough graph binds and writes its outputs; the image scene is unchanged.
 
    **Notable deviations from the plan:** static-port uniqueness uses a plain `<cassert>` assert (not
    `log::ensure`) so `flow` core stays log-free; the id remap isn't exposed as a raw table — instead
@@ -656,9 +666,10 @@ binding sidesteps it for now.
    `loadGraph`/`saveGraph` facade lives in flowview (`graphio`, app-level), not `flow::serialize`.
 
    **Deferred (designed-for):** untagged variant, yaml/xml/binary codecs, per-node-type schema
-   versioning, C++26-reflection auto-`serialize`, and the scalar/video **boundary loader** (only
-   image inputs bind from the cli today; `ValueCodecs` is the seam for scalars). `core::DateTime`
-   (Tier C #8) is **not** pulled in — `version` is a plain int, no timestamps.
+   versioning, C++26-reflection auto-`serialize`, and the **video** boundary loader (scalars + image
+   bind from the cli now — see "Scalar boundary binding" above; a frame/timecode-shaped boundary is the
+   remaining case). `core::DateTime` (Tier C #8) is **not** pulled in — `version` is a plain int, no
+   timestamps.
 2. **Conditional / gated nodes** — a node suppresses downstream eval; the one piece a pure push DAG
    can't express. **Mechanism BUILT** (2026-07-12, [ADR-0007](docs/adr/0007-conditional-eval-via-input-readiness.md)):
    modelled as **input readiness** — a node computes iff every **Required** input has a value; else

@@ -80,13 +80,15 @@ namespace flowview
 		lain::io::image::registerImageCodecs();
 		registerExampleNodes(m_nodeFactory, m_size);
 		registerSceneSerialization();
+		BoundaryBinders binders;
+		registerBoundaryBinders(binders);
 
 		if (m_listCmd->parsed())
 		{
-			listGraph(m_graphPath, m_nodeFactory);
+			listGraph(m_graphPath, m_nodeFactory, binders);
 			return;
 		}
-		runGraph(m_graphPath, m_savePath, m_runCmd->remaining(), m_nodeFactory, m_size);
+		runGraph(m_graphPath, m_savePath, m_runCmd->remaining(), m_nodeFactory, binders, m_size);
 	}
 
 	void FlowviewApp::onStop(app::Application&)

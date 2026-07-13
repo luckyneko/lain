@@ -40,8 +40,15 @@ namespace flowview
 
 	void registerSceneSerialization()
 	{
-		flow::registerPortType<image::Image>("Image"); // boundary pins (image::Image) replay through this
-		io::data::registerDataCodecs();				   // json (Value <-> bytes)
+		// Addable port types = what a dynamic pin (a boundary pin, a Merge/Select branch) can be. The
+		// scene payload plus the scalars, so a graph's boundary interface can carry numbers/flags/text
+		// (bindable from the cli via BoundaryBinders), not just images.
+		flow::registerPortType<image::Image>("Image");
+		flow::registerPortType<int>("Int");
+		flow::registerPortType<float>("Float");
+		flow::registerPortType<bool>("Bool");
+		flow::registerPortType<std::string>("String");
+		io::data::registerDataCodecs(); // json (Value <-> bytes)
 	}
 
 	bool saveGraph(const std::string& uri, const flow::Graph& graph,
