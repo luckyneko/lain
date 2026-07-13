@@ -30,6 +30,7 @@
 #include <filesystem>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace flowview
@@ -284,6 +285,25 @@ namespace flowview
 		return added;
 	}
 
+	// A dynamic node drawn on the CANVAS gets a small "+ <type>" per accepted port type (a
+	// homogeneous Merge/Select shows one; a multi-type node one each). A click records a deferred add
+	// — applied after EndNodeEditor. Takes the node const + only appends to `pinAdds`, so it is safe to
+	// call mid-draw (the graph mutation happens later). PushID(node) keeps same-labelled buttons on
+	// different nodes distinct.
+	static void renderCanvasAddPin(const flow::DynamicPortsNode& node, flow::NodeId id,
+								   std::vector<std::pair<flow::NodeId, std::string>>& pinAdds)
+	{
+		gui::PushID(static_cast<int>(id.value()));
+		for (const std::string& key : flow::portTypeKeys())
+		{
+			if (!node.acceptsPortType(key))
+				continue;
+			if (gui::SmallButton(("+ " + key).c_str()))
+				pinAdds.emplace_back(id, key);
+		}
+		gui::PopID();
+	}
+
 	bool InspectorWindow::renderRemoveConfirm(flow::Graph& graph)
 	{
 		if (m_removeRequested)
@@ -504,6 +524,10 @@ namespace flowview
 		// IsLinkDestroyed / IsLinkCreated after EndNodeEditor.
 		gui::nodes::BeginNodeEditor();
 		const bool seedPositions = !m_laidOut; // captured before the loop: this is a position-seed frame
+		// Canvas ± requests, applied after EndNodeEditor so the graph isn't mutated mid-draw (node id +
+		// the picked port-type key). A palette-placed dynamic node (Merge/Select) grows its branches here;
+		// boundary nodes are grown from the Interface panel, but the same affordance works on-canvas too.
+		std::vector<std::pair<flow::NodeId, std::string>> pinAdds;
 		int column = 0;
 		for (const flow::NodeId id : graph.topoOrder())
 		{
@@ -526,6 +550,10 @@ namespace flowview
 				gui::nodes::EndInputAttribute();
 			}
 			gui::nodes::PopAttributeFlag();
+			// A dynamic node that grows its INPUT side gets its ± below the inputs.
+			const auto* dynamic = dynamic_cast<const flow::DynamicPortsNode*>(&node);
+			if (dynamic != nullptr && dynamic->dynamicSide() == flow::Port::Direction::Input)
+				renderCanvasAddPin(*dynamic, id, pinAdds);
 			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
 			{
 				const flow::Port& out = node.output(o);
@@ -533,6 +561,9 @@ namespace flowview
 				gui::Text("%s : %s", out.name().c_str(), std::string(out.typeName()).c_str());
 				gui::nodes::EndOutputAttribute();
 			}
+			// ... and one that grows its OUTPUT side gets its ± below the outputs.
+			if (dynamic != nullptr && dynamic->dynamicSide() == flow::Port::Direction::Output)
+				renderCanvasAddPin(*dynamic, id, pinAdds);
 			gui::nodes::EndNode();
 			++column;
 		}
@@ -553,6 +584,17 @@ namespace flowview
 		const bool canvasActive = gui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
 
 		bool edited = false;
+		// Apply the canvas ± requests collected during the node draw (auto-named `<prefix><count>` on
+		// the growing side), now that the graph can be mutated safely.
+		for (const auto& [nodeId, key] : pinAdds)
+		{
+			const flow::DynamicPortsNode& dyn = static_cast<flow::DynamicPortsNode&>(graph.node(nodeId));
+			const bool onOutput = dyn.dynamicSide() == flow::Port::Direction::Output;
+			const std::size_t count = onOutput ? dyn.outputCount() : dyn.inputCount();
+			const std::string name = std::string(onOutput ? "out" : "in") + std::to_string(count);
+			if (flow::edit::addPort(graph, nodeId, key, name) != flow::PortId{})
+				edited = true;
+		}
 		// A detached link (dropped in empty space, or the "off" side of a move). Handle
 		// it before IsLinkCreated so a move frees the input before the reattach lands.
 		int destroyedLink = 0;

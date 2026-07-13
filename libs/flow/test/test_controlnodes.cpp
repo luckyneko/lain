@@ -52,7 +52,7 @@ TEST_CASE("Gate passes its value when enabled and suppresses when not", "[flow][
 	REQUIRE_FALSE(graph.node(gate).output(0).ready()); // suppressed — no value produced
 }
 
-TEST_CASE("Merge forwards the live branch (if/else via two gates)", "[flow][nodes]")
+TEST_CASE("Merge forwards the first live of its variadic branches (if/else via two gates)", "[flow][nodes]")
 {
 	Graph graph;
 	const NodeId enA = graph.add<ConstantNode<bool>>(false); // branch a gated off
@@ -62,40 +62,52 @@ TEST_CASE("Merge forwards the live branch (if/else via two gates)", "[flow][node
 	const NodeId ga = graph.add<GateNode<int>>();
 	const NodeId gb = graph.add<GateNode<int>>();
 	const NodeId merge = graph.add<MergeNode<int>>();
+	// The merge is empty at construction (the dynamic-side contract) — add its branches at runtime.
+	auto& mergeNode = static_cast<MergeNode<int>&>(graph.node(merge));
+	mergeNode.addDynamicPort<int>("a");
+	mergeNode.addDynamicPort<int>("b");
 	graph.connect(enA, 0, ga, 0);
 	graph.connect(va, 0, ga, 1);
 	graph.connect(enB, 0, gb, 0);
 	graph.connect(vb, 0, gb, 1);
-	graph.connect(ga, 0, merge, 0); // a (optional) — empty (gated off)
-	graph.connect(gb, 0, merge, 1); // b (optional) — 7
+	graph.connect(ga, 0, merge, 0); // branch a (optional) — empty (gated off)
+	graph.connect(gb, 0, merge, 1); // branch b (optional) — 7
 
 	SerialScheduler scheduler;
 	scheduler.run(graph);
 	REQUIRE(graph.node(merge).output(0).get<int>() == 7); // picked the live branch b
 
-	// flip the condition: a on, b off -> merge now forwards a
+	// flip the condition: a on, b off -> merge now forwards a (first live branch)
 	static_cast<ConstantNode<bool>&>(graph.node(enA)).setValue(true);
 	static_cast<ConstantNode<bool>&>(graph.node(enB)).setValue(false);
 	scheduler.run(graph);
 	REQUIRE(graph.node(merge).output(0).get<int>() == 3);
 }
 
-TEST_CASE("Select routes by its integer selector", "[flow][nodes]")
+TEST_CASE("Select routes among its variadic branches by a connectable selector input", "[flow][nodes]")
 {
 	Graph graph;
-	const NodeId sel = graph.add<ConstantNode<int>>(0);
+	const NodeId sel = graph.add<ConstantNode<int>>(0); // the selector, driven by a ConstantNode
 	const NodeId va = graph.add<ConstantNode<int>>(10);
 	const NodeId vb = graph.add<ConstantNode<int>>(20);
 	const NodeId select = graph.add<SelectNode<int>>();
-	graph.connect(sel, 0, select, 0);
-	graph.connect(va, 0, select, 1);
-	graph.connect(vb, 0, select, 2);
+	auto& selectNode = static_cast<SelectNode<int>&>(graph.node(select));
+	selectNode.addDynamicPort<int>("a"); // branch 0 (input 1 — the selector is input 0)
+	selectNode.addDynamicPort<int>("b"); // branch 1 (input 2)
+	graph.connect(sel, 0, select, 0);	 // -> selector input
+	graph.connect(va, 0, select, 1);	 // -> branch a
+	graph.connect(vb, 0, select, 2);	 // -> branch b
 
 	SerialScheduler scheduler;
 	scheduler.run(graph);
-	REQUIRE(graph.node(select).output(0).get<int>() == 10); // selector 0 -> a
+	REQUIRE(graph.node(select).output(0).get<int>() == 10); // selector 0 -> branch a
 
 	static_cast<ConstantNode<int>&>(graph.node(sel)).setValue(1);
 	scheduler.run(graph);
-	REQUIRE(graph.node(select).output(0).get<int>() == 20); // selector 1 -> b
+	REQUIRE(graph.node(select).output(0).get<int>() == 20); // selector 1 -> branch b
+
+	// selector out of range -> no output (nothing to route)
+	static_cast<ConstantNode<int>&>(graph.node(sel)).setValue(5);
+	scheduler.run(graph);
+	REQUIRE_FALSE(graph.node(select).output(0).ready());
 }

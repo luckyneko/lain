@@ -674,12 +674,28 @@ binding sidesteps it for now.
    `enable` / a Select's int `selector`), **`GateNode<T>`** (the upstream suppressor — passes `value`
    when `enable`, else clears), **`MergeNode<T>`** (rejoin: forwards the first live of two Optional
    branches), **`SelectNode<T>`** (mux by an int selector). 4 tests wire an if/else (two gates → merge)
-   + a select. **Remaining:** (a) **variadic Merge/Select via dynamic ports** — the fixed 2-way forms are
-   composable (`merge(merge(a,b),c)`) but the natural node is N-way: `MergeNode<T> : DynamicPortsNode`
-   (N branch inputs, ± UI); `SelectNode<T>` = a **param** selector + N dynamic branches (a static control
-   pin on the dynamic input side would break the empty-dynamic-side serialise contract, so the selector
-   moves to a param) + port-type registration + a flowview palette entry. (b) host surfacing — an empty
-   boundary output = "no output this run", don't write it (slice 3, flowview).
+   + a select. **Variadic Merge/Select via dynamic ports BUILT** (2026-07-13): `MergeNode<T>` and
+   `SelectNode<T>` are now `DynamicPortsNode`s — N homogeneous branch inputs (`acceptsPortType` narrows
+   the "+" menu to T's registered key), empty at construction per the dynamic-side contract. Both flip
+   each new branch to **Optional** in `onDynamicPortAdded` (the registry creator adds Required pins, and
+   `Port::setRequired` makes the flip stick however the pin arrived — menu / `addDynamicPort` /
+   serialize-replay), so a gated-off branch never blocks readiness. Merge forwards the **first live**
+   branch; Select routes by an int **`selector` input** — a *connectable* pin (wire a `ConstantNode<int>`
+   for a fixed choice, or any int producer for data-driven routing), Optional so an unconnected selector
+   defaults to branch 0. The selector is a **static** input declared in the ctor, sitting among the
+   dynamic branches on the input side; `compute()` routes over the dynamic pins only (skips the static
+   selector). **Static-vs-dynamic pin distinction** (`Port::isDynamic`, set by `addDynamicPort`):
+   serialization replays **only** the dynamic pins, so the ctor-declared selector is rebuilt on load and
+   never double-added — even when the selector's type (`int`) is itself a registered port type. A
+   flow-serialize test proves exactly that (a Select with an int selector + int branches under a
+   registered `"Int"` type reloads with the selector present, not duplicated). **flowview**: `gate` /
+   `merge` / `select` (over `image::Image`) plus `constInt` / `constBool` (scalar sources to drive
+   `enable` / `selector`; `bool` added to `sceneCodecs`) are palette entries, and the canvas grows a
+   dynamic node's branches via a per-node **"+ <type>" ±** (deferred-applied after `EndNodeEditor`; the
+   boundary Interface panel keeps its own ±). GUI-tested live: **select** driven by a constInt routes;
+   **gate**/**merge** exercised (merge needs a gate + constBool to feed it). The canvas ± + the
+   gate/merge wiring want a fuller live eyeball — standing gui-mode gap. **Remaining:** host surfacing —
+   an empty boundary output = "no output this run", don't write it (slice 3, flowview).
 3. ✅ **Incremental re-eval — BUILT** (2026-07-12). `Scheduler::run` is now dirty-driven: a
    shared `runOrder(graph)` returns the **dirty closure** (every dirty node + everything downstream
    of one) in topo order, and both `SerialScheduler` and `ParallelScheduler` recompute only that —

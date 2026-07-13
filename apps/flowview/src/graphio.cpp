@@ -30,7 +30,8 @@ namespace flowview
 	flow::serialize::ValueCodecs sceneCodecs()
 	{
 		flow::serialize::ValueCodecs codecs;
-		codecs.registerType<int>("int");
+		codecs.registerType<bool>("bool"); // ConstantNode<bool> (a Gate's enable source)
+		codecs.registerType<int>("int");   // ConstantNode<int> (a Select's selector source)
 		codecs.registerType<float>("float");
 		codecs.registerType<std::filesystem::path>("path");
 		codecs.registerType<image::ColorRGBf>("color");

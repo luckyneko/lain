@@ -66,9 +66,11 @@ namespace lain::flow::serialize
 		if (const data::Value::Array* arr = params.asArray(); arr && !arr->empty())
 			out.set("params", std::move(params));
 
-		// Dynamic pins: a DynamicPortsNode's runtime pins on its dynamic side, each { name, type }
-		// (type = its port-type key). Direction is implied by dynamicSide(), so it isn't stored. A
-		// factory-fresh node has none, so on load these are replayed with no double-add.
+		// Dynamic pins: a DynamicPortsNode's runtime pins (addDynamicPort) on its dynamic side, each
+		// { name, type } (type = its port-type key). Direction is implied by dynamicSide(), so it isn't
+		// stored. Only the pins added at runtime are replayed — a STATIC pin the node declares in its
+		// ctor on the dynamic side (a Select's `selector` input) is rebuilt by the ctor on load, so it
+		// is skipped here (Port::isDynamic), else it would double-add.
 		if (const auto* dynamic = dynamic_cast<const DynamicPortsNode*>(&node))
 		{
 			const Port::Direction side = dynamic->dynamicSide();
@@ -77,6 +79,8 @@ namespace lain::flow::serialize
 			for (PortIndex i = 0; i < count; ++i)
 			{
 				const Port& pin = (side == Port::Direction::Input) ? node.input(i) : node.output(i);
+				if (!pin.isDynamic())
+					continue; // static pin declared in the node's ctor — reconstructed on load, not replayed
 				const std::string typeKey = portTypeKey(pin.type());
 				if (typeKey.empty())
 					continue; // unregistered port type — can't name it; skip (best-effort)

@@ -6,6 +6,10 @@
 #include <lain/flow/example/loadimagenode.h>
 #include <lain/flow/example/tintnode.h>
 #include <lain/flow/graph.h>
+#include <lain/flow/nodes/constant.h> // ConstantNode — sources to drive the control nodes
+#include <lain/flow/nodes/gate.h>	  // control nodes over the scene payload (image::Image)
+#include <lain/flow/nodes/merge.h>
+#include <lain/flow/nodes/select.h>
 #include <lain/image/image.h>
 
 namespace flowview
@@ -18,6 +22,11 @@ namespace flowview
 	static constexpr const char* kTintKey = "tint";
 	static constexpr const char* kBlurKey = "blur";
 	static constexpr const char* kLoadImageKey = "loadimage";
+	static constexpr const char* kGateKey = "gate";
+	static constexpr const char* kMergeKey = "merge";
+	static constexpr const char* kSelectKey = "select";
+	static constexpr const char* kConstIntKey = "constInt";
+	static constexpr const char* kConstBoolKey = "constBool";
 	static constexpr const char* kGroupInputKey = "groupInput";
 	static constexpr const char* kGroupOutputKey = "groupOutput";
 
@@ -29,6 +38,18 @@ namespace flowview
 		factory.registerType<flow::example::TintNode>(kTintKey, 1.0f, 0.5f, 0.5f); // keep R, halve G/B
 		factory.registerType<flow::example::BlurNode>(kBlurKey, 2, 1.5f);		   // soft 5x5 Gaussian
 		factory.registerType<flow::example::LoadImageNode>(kLoadImageKey);		   // empty path -> set in the gui
+
+		// Control nodes over the scene payload. Gate passes its image when enabled (else suppresses
+		// downstream); the variadic Merge/Select are empty at construction — the canvas ± grows their
+		// image branches (the "Image" port type, registered in registerSceneSerialization).
+		factory.registerType<flow::GateNode<image::Image>>(kGateKey);
+		factory.registerType<flow::MergeNode<image::Image>>(kMergeKey);
+		factory.registerType<flow::SelectNode<image::Image>>(kSelectKey);
+
+		// Scalar sources to drive the control nodes: a bool for a Gate's `enable`, an int for a
+		// Select's `selector`. Their value is a param the inspector edits (checkbox / drag).
+		factory.registerType<flow::ConstantNode<int>>(kConstIntKey);
+		factory.registerType<flow::ConstantNode<bool>>(kConstBoolKey);
 
 		// The boundary nodes are added to the scene directly (not via the palette), but they must be
 		// in the factory too so serialization can name them (keyOf) and recreate them on load.

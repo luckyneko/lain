@@ -92,6 +92,20 @@ namespace lain::flow
 		// its output. So "skip" is just absence-of-value; there is no separate skipped state.
 		bool required() const { return m_required; }
 
+		// Change this input's presence after construction. A dynamic node whose branches must be
+		// Optional (a variadic Merge / Select) flips each pin here in onDynamicPortAdded, since the
+		// port-type registry's creator adds Required pins — so a branch is Optional however it was
+		// added (the "+" menu, addDynamicPort, or serialize-replay). Public for the same reason
+		// setName is: friendship isn't inherited, so a Node *subclass* needs the mutator.
+		void setRequired(bool required) { m_required = required; }
+
+		// Whether this pin was added at RUNTIME (DynamicPortsNode::addDynamicPort) rather than declared
+		// in the node's constructor. Serialization replays only the dynamic pins — a STATIC pin a node
+		// declares in its ctor on the dynamic side (a Select's `selector` input among its dynamic
+		// branches) is rebuilt by the ctor on load, so it must not be replayed (else it double-adds).
+		bool isDynamic() const { return m_dynamic; }
+		void markDynamic() { m_dynamic = true; } // set by addDynamicPort (public — friendship isn't inherited)
+
 	private:
 		friend class Node; // only a Node builds its ports (and assigns the id)
 		Port(std::string name, Direction dir, const PortType& type, PortId id, bool required = true)
@@ -109,6 +123,7 @@ namespace lain::flow
 		PortId m_id;			  // stable identity within the owning node
 		PortValue m_value;		  //
 		bool m_required = true;	  // input only: an empty Required input keeps the node from being ready
+		bool m_dynamic = false;	  // added at runtime via addDynamicPort (vs declared in the node's ctor)
 	};
 
 	// Whether an input must carry a value for its node to be ready (see Port::required). On outputs

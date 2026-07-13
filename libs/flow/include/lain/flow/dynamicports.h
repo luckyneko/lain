@@ -49,8 +49,10 @@ namespace lain::flow
 			if (!validPortName(name) || hasPortNamed(dynamicSide(), name))
 				return PortId{};
 
-			const PortId id = dynamicSide() == Port::Direction::Output ? output(addOutput<T>(std::move(name))).id()
-																	   : input(addInput<T>(std::move(name))).id();
+			Port& pin = dynamicSide() == Port::Direction::Output ? output(addOutput<T>(std::move(name)))
+																 : input(addInput<T>(std::move(name)));
+			pin.markDynamic(); // so serialization replays it (and not a static ctor-declared sibling pin)
+			const PortId id = pin.id();
 			onDynamicPortAdded(id);
 			return id;
 		}
