@@ -149,7 +149,13 @@ namespace flowview
 			const auto arg = args.find(out.name());
 			if (arg == args.end())
 				continue;
-			if (out.value().holds<image::Image>())
+			if (out.value().empty())
+			{
+				// Its producer was gated off / suppressed (conditional eval, ADR-0007): no value this
+				// run. A legitimate outcome, not an error — report it and write nothing.
+				log::info("flowview: --{} produced no output this run — nothing written", out.name());
+			}
+			else if (out.value().holds<image::Image>())
 			{
 				if (io::image::save(arg->second, out.value().get<image::Image>()))
 					log::info("flowview: wrote --{} to {}", out.name(), arg->second);

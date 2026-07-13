@@ -409,12 +409,20 @@ namespace flowview
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
 
 				const PinKey key{node->id().value(), false, pin.id()};
-				const auto it = m_previews.find(key);
-				if (it != m_previews.end() && it->second.valid())
-					gui::Image(it->second, math::Vec2f{side, side});
-
-				if (pin.value().holds<image::Image>())
-					renderImageSave(key, pin.value().get<image::Image>());
+				if (pin.value().empty())
+				{
+					// The producer was gated off / suppressed (conditional eval) — no value this run.
+					// refreshPreviews already dropped any stale thumbnail; say so rather than show blank.
+					gui::TextDisabled("(no output this run)");
+				}
+				else
+				{
+					const auto it = m_previews.find(key);
+					if (it != m_previews.end() && it->second.valid())
+						gui::Image(it->second, math::Vec2f{side, side});
+					if (pin.value().holds<image::Image>())
+						renderImageSave(key, pin.value().get<image::Image>());
+				}
 				gui::SameLine();
 				if (gui::Button("x"))
 					requestRemove(node->id(), pin);

@@ -694,8 +694,16 @@ binding sidesteps it for now.
    dynamic node's branches via a per-node **"+ <type>" ±** (deferred-applied after `EndNodeEditor`; the
    boundary Interface panel keeps its own ±). GUI-tested live: **select** driven by a constInt routes;
    **gate**/**merge** exercised (merge needs a gate + constBool to feed it). The canvas ± + the
-   gate/merge wiring want a fuller live eyeball — standing gui-mode gap. **Remaining:** host surfacing —
-   an empty boundary output = "no output this run", don't write it (slice 3, flowview).
+   gate/merge wiring want a fuller live eyeball — standing gui-mode gap. **Host surfacing (slice 3)
+   BUILT** (2026-07-13): a suppressed boundary output (its producer gated off — an empty `PortValue`) is
+   now a first-class "no output this run", not an error. The `run` subcommand reports it (`log::info`)
+   and **writes nothing** — distinct from the "output isn't an image" type error (verified headless:
+   the example scene run with its `source` unbound suppresses `result`, logs "no output this run", and
+   no file is written; binding a real image writes it as before). The gui Interface panel shows a dim
+   `(no output this run)` for an empty output pin (`refreshPreviews` already drops the stale thumbnail).
+   **Remaining (later UI pass):** dim / recolour the *skipped* nodes + edges on the canvas so a glance
+   shows what didn't activate this run (the engine already knows — a node whose outputs are all empty
+   after a run was suppressed). #2 is otherwise complete.
 3. ✅ **Incremental re-eval — BUILT** (2026-07-12). `Scheduler::run` is now dirty-driven: a
    shared `runOrder(graph)` returns the **dirty closure** (every dirty node + everything downstream
    of one) in topo order, and both `SerialScheduler` and `ParallelScheduler` recompute only that —
