@@ -121,6 +121,18 @@ namespace flowview
 		return out;
 	}
 
+	// A node by id, or nullptr if it isn't in the graph — for a decoded hovered/dragged pin, whose node
+	// may have been deleted earlier this frame (graph.node() would throw). O(nodes), fine off the hot path.
+	static const flow::Node* findNode(const flow::Graph& graph, flow::NodeId id)
+	{
+		for (const flow::NodeId nid : graph.nodeIds())
+		{
+			if (nid == id)
+				return &graph.node(id);
+		}
+		return nullptr;
+	}
+
 	// Thumbnail side length (pixels) for each preview size.
 	static float previewExtent(PreviewSize size)
 	{
@@ -539,11 +551,17 @@ namespace flowview
 		// boundary nodes are grown from the Interface panel, but the same affordance works on-canvas too.
 		std::vector<std::pair<flow::NodeId, std::string>> pinAdds;
 		int column = 0;
-		// Which inputs have an incoming edge -> a filled pin (hollow = unconnected). Keyed by
-		// (node, port) values so no PortAddress ordering is needed.
-		std::set<std::pair<std::uint64_t, std::uint32_t>> connectedInputs;
-		for (const flow::Graph::Edge& e : graph.edges())
-			connectedInputs.insert({e.to.node.value(), e.to.port.value()});
+
+		// Whether a pin renders muted. A pin ALWAYS shows its type colour otherwise — the node's dim
+		// title/background and its muted dead links carry the inactive state, so muting the pins too
+		// would only hide the type you need to wire an incomplete node. The one exception is a link
+		// drag: mute every pin that isn't a valid drop target (opposite direction + same type).
+		const auto pinMuted = [&](bool pinIsOutput, std::type_index type)
+		{
+			if (m_linkDragActive)
+				return !(pinIsOutput != m_linkDragFromOutput && type == m_linkDragType);
+			return false;
+		};
 
 		for (const flow::NodeId id : graph.topoOrder())
 		{
@@ -601,12 +619,11 @@ namespace flowview
 			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
 			{
 				const flow::Port& in = node.input(i);
-				// Fill = connected, hollow = unconnected; colour = type (muted on an inactive node). The
-				// pin's type is read from its colour + hover tooltip, so the label is just the name.
-				const ImNodesPinShape shape = connectedInputs.count({id.value(), in.id().value()}) != 0
-												  ? ImNodesPinShape_CircleFilled
-												  : ImNodesPinShape_Circle;
-				gui::nodes::PushColorStyle(ImNodesCol_Pin, gui::packColor(active ? m_canvasStyle.portColor(in.type(), in.typeName()) : m_canvasStyle.mutedPin()));
+				// Fill = carries a value, hollow = empty (unconnected, or upstream produced nothing) —
+				// connectedness is read from the wire. Colour = type always (its label is just the name;
+				// type + value are in the hover tooltip).
+				const ImNodesPinShape shape = in.ready() ? ImNodesPinShape_CircleFilled : ImNodesPinShape_Circle;
+				gui::nodes::PushColorStyle(ImNodesCol_Pin, gui::packColor(pinMuted(false, in.type()) ? m_canvasStyle.mutedPin() : m_canvasStyle.portColor(in.type(), in.typeName())));
 				gui::nodes::BeginInputAttribute(pinId(id, false, in.id()), shape);
 				gui::TextUnformatted(in.name().c_str());
 				gui::nodes::EndInputAttribute();
@@ -620,9 +637,10 @@ namespace flowview
 			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
 			{
 				const flow::Port& out = node.output(o);
-				// Fill = produced a value this run, hollow = empty (a suppressed node's outputs).
+				// Fill = produced a value this run, hollow = empty (a suppressed node's outputs) — same
+				// value-presence rule as inputs.
 				const ImNodesPinShape shape = out.ready() ? ImNodesPinShape_CircleFilled : ImNodesPinShape_Circle;
-				gui::nodes::PushColorStyle(ImNodesCol_Pin, gui::packColor(active ? m_canvasStyle.portColor(out.type(), out.typeName()) : m_canvasStyle.mutedPin()));
+				gui::nodes::PushColorStyle(ImNodesCol_Pin, gui::packColor(pinMuted(true, out.type()) ? m_canvasStyle.mutedPin() : m_canvasStyle.portColor(out.type(), out.typeName())));
 				gui::nodes::BeginOutputAttribute(pinId(id, true, out.id()), shape);
 				// Right-align the label to the node's stable content column so it sits by the right-edge pin.
 				const float pad = labelColumn - gui::CalcTextSize(out.name().c_str()).x;
@@ -690,7 +708,49 @@ namespace flowview
 		int startAttr = 0;
 		int endAttr = 0;
 		if (gui::nodes::IsLinkCreated(&startAttr, &endAttr))
+		{
 			edited |= tryConnect(graph, startAttr, endAttr);
+			m_linkDragActive = false; // the drag ended by forming a link
+		}
+
+		// Link-drag feedback: capture the source pin's direction + type on drag start (greys the
+		// non-compatible pins from the next frame), and clear it when the drag ends.
+		int dragAttr = 0;
+		if (gui::nodes::IsLinkStarted(&dragAttr))
+		{
+			const DecodedPin d = decodePin(dragAttr);
+			if (const flow::Node* n = findNode(graph, d.node))
+			{
+				const flow::Port* p = d.output ? n->findOutput(d.port) : n->findInput(d.port);
+				if (p != nullptr)
+				{
+					m_linkDragActive = true;
+					m_linkDragFromOutput = d.output;
+					m_linkDragType = p->type();
+				}
+			}
+		}
+		if (m_linkDragActive && !gui::IsMouseDown(ImGuiMouseButton_Left))
+			m_linkDragActive = false; // mouse released -> the drag is over (connected, dropped, or cancelled)
+
+		// Pin tooltip: hovering a pin shows its full type + current value (the terse canvas label is
+		// just the name). Its node may have been deleted this frame, so look it up guarded.
+		int hoveredAttr = 0;
+		if (gui::nodes::IsPinHovered(&hoveredAttr))
+		{
+			const DecodedPin d = decodePin(hoveredAttr);
+			if (const flow::Node* n = findNode(graph, d.node))
+			{
+				const flow::Port* p = d.output ? n->findOutput(d.port) : n->findInput(d.port);
+				if (p != nullptr)
+				{
+					gui::BeginTooltip();
+					gui::Text("%s : %s", p->name().c_str(), std::string(p->typeName()).c_str());
+					gui::TextUnformatted(("= " + p->describe()).c_str());
+					gui::EndTooltip();
+				}
+			}
+		}
 		if (canvasActive && gui::IsKeyPressed(ImGuiKey_Delete))
 		{
 			// Resolve the selection to stable values first, then delete in one edit.

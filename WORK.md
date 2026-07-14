@@ -646,18 +646,29 @@ colour editor loads into this.
   Inactive node (a Required input empty) → whole node muted (title+bg); dead edge (source output empty)
   → muted link. Pins + links coloured by value type (Image=blue, Int/Float=green, Bool=purple,
   String=amber; hash fallback otherwise). Node titles tinted by kind (source/filter/control/boundary).
-  Pin **shape = presence** (all circles): input filled=wired / hollow=unconnected, output filled=produced
-  / hollow=empty; type colour always kept. Inline `: type` text **dropped** (pin shows name only); outputs
-  **right-aligned** to the node width (`GetNodeDimensions`). Precedence: inactive-mute > identity colour
-  (the drag-incompatible mute lands in slice C). Full suite 287/287; headless unaffected.
+  Pin **shape = value-presence** (all circles), the same rule both directions: filled = carries a value,
+  hollow = empty (an input's upstream produced nothing / it's unconnected; a suppressed node's outputs) —
+  connectedness is read from the wire, not the fill. Pins **always show their type colour** (the dim lives
+  on the node title/background + muted dead links, *not* the pins — muting them would hide the type you
+  need to wire an incomplete node; refined 2026-07-14 after eyeballing). Inline `: type` text **dropped**
+  (pin shows name only); outputs **right-aligned** to a stable text-derived column width (a rendered-width
+  target fed back → runaway node growth). Precedence for a pin: the only mute is the drag-incompatible one
+  (slice C). Full suite 287/287; headless unaffected.
 - ✅ **Slice B — selection-driven inspector BUILT** (2026-07-13, canvas-only → live eyeball pending).
   The Inspector panel shows only the node(s) selected on the canvas (`selectedNodes()`), stacked and
   walked in topo order for a stable layout, each with its params + port values + previews; nothing
   selected → a "Select a node…" hint; the preview-size combo stays pinned at the top. Replaces the
   all-nodes dump. The Interface panel is untouched (its merge is the window-interaction pass).
-- **Slice C — interaction feedback**: active grey-out during a link drag (mute non-compatible pins via
-  `IsLinkStarted` tracking); pin tooltips on `IsPinHovered` (full type + `describe()` value); missing-
-  required stays emergent (dim node + hollow pins), actionable validation deferred to the issues panel.
+- ✅ **Slice C — interaction feedback BUILT** (2026-07-13, canvas-only → live eyeball pending). During a
+  link drag, every pin that isn't a compatible drop target (opposite direction + same type) greys out —
+  the drag source is captured on `IsLinkStarted` (after `EndNodeEditor`) and consumed by the next frame's
+  pin draw (so the grey shows one frame in, invisible mid-drag), cleared on mouse-release. This is the
+  only thing that mutes a pin (an inactive node no longer greys its pins — see slice A). Pin **tooltips**
+  on `IsPinHovered` show the full type +
+  current value (`describe()`), recovering the detail the terse name-only labels dropped. Missing-required
+  stays **emergent** (a dim node with hollow input pins — slice A), with actionable validation deferred to
+  the "Graph Issues" panel. A guarded `findNode` protects the decoded hovered/dragged pin against a node
+  deleted the same frame. **The A/B/C readability + usability pass is complete.**
 
 **Parked for later passes:** a "Graph Issues" log panel (active-node-with-unread-outputs, load
 warnings, type-mismatch history, missing-required validation) · user-configurable / theme.json colours

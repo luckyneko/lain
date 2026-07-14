@@ -12,6 +12,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <typeindex>
 
 namespace lain::flow
 {
@@ -95,6 +96,13 @@ namespace flowview
 		bool m_previewsDirty = true;					 // rebuild previews on the next frame (init + after edits)
 		bool m_laidOut = false;							 // node canvas: seed node positions on the first frame
 		int m_addCounter = 0;							 // palette-added nodes cascade their position
+
+		// Link-drag feedback (slice C): while a link is dragged, grey every pin that isn't a compatible
+		// drop target (opposite direction + same type). Captured on IsLinkStarted (after EndNodeEditor),
+		// consumed by the NEXT frame's pin draw — so the grey shows one frame in, invisible mid-drag.
+		bool m_linkDragActive = false;
+		bool m_linkDragFromOutput = false;					// the drag source's direction
+		std::type_index m_linkDragType{typeid(void)};		// ...and its value type (compatible = same)
 		PreviewSize m_previewSize = PreviewSize::Medium; // thumbnail size (enumCombo-driven)
 
 		// The chosen save format per image output pin (the inline dropdown's selection), by format
