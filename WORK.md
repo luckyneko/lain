@@ -669,12 +669,31 @@ colour editor loads into this.
   stays **emergent** (a dim node with hollow input pins — slice A), with actionable validation deferred to
   the "Graph Issues" panel. A guarded `findNode` protects the decoded hovered/dragged pin against a node
   deleted the same frame. **The A/B/C readability + usability pass is complete.**
+- ✅ **Menu bar BUILT** (2026-07-14, canvas-only → live eyeball pending). An in-app `BeginMainMenuBar`
+  (not a native platform menu — that'd be per-OS Cocoa/Win32 outside ImGui+GLFW): **File** (New / Open... /
+  Save / Save As... / Quit) tracking a remembered current path (plain Save writes it, Save As sets it, New
+  clears it); **Add ▸ category ▸ kind** grouped by a new viewer-side `scene::nodeCatalog()` (Sources /
+  Filters / Control — boundary nodes are deliberately **not** addable, being a one-each-per-graph fixture;
+  the right-click + Nodes panel source the same catalog). Shortcuts are **displayed and wired** via
+  `Shortcut()` + `RouteGlobal`, using **`ImGuiMod_Ctrl` always** (ImGui remaps it to Cmd on macOS — an
+  explicit `ImGuiMod_Super` does NOT match, the bug in the first cut). **New defaults to a blank
+  Input/Output graph** (`buildNewScene` — one empty GroupInput + GroupOutput, laid out Input-left /
+  Output-right), also the fresh-gui-session default; the example is opt-in via **`--example`**. **New
+  guards unsaved changes** with a Save/Discard/Cancel modal (a `m_dirty` flag set on any edit, cleared on
+  save/load/new). Menu labels use ASCII `...` (the default ImGui font has no `…`/`•` glyph → they'd render
+  `?`). Settings menu skipped (not needed yet).
 
-**Parked for later passes:** a "Graph Issues" log panel (active-node-with-unread-outputs, load
+**Parked for later passes:** **boundary input value editors** — set a graph input's value in the gui by
+type (image via file picker [exists], scalars via drag / checkbox / text), reusing the `ParamEditors`
+registry against the boundary's `PortValue` (needs a `BoundaryInput` value getter) — the immediate next
+step · a "Graph Issues" log panel (active-node-with-unread-outputs, load
 warnings, type-mismatch history, missing-required validation) · user-configurable / theme.json colours
 (the registries are the load target) · pin **shape** encodes presence (square=required, circle=optional,
-triangle=conditional — deferred: mostly-required → mostly-square is visually sharp) · a **menu bar**
-(save / load / add-node, plus settings + undo/redo) · **editable node names** — a user-set title per
+triangle=conditional — deferred: mostly-required → mostly-square is visually sharp) · **undo/redo** —
+snapshot-based (reuses serialize: a snapshot is Save-to-RAM, restore is Load-from-RAM), hooks the single
+end-of-frame `edited` flag; the one wrinkle is coalescing continuous param-drag edits (snapshot on
+`IsItemDeactivatedAfterEdit`, not every frame) · **remember the last-opened graph** and re-open it on the
+next launch (a small recent-file / session state, low priority) · **editable node names** — a user-set title per
 node (the boundary-pin rename already shows the pattern), which would let the `[id]` prefix drop from
 node headers (it's there today only to disambiguate two same-named nodes) · the **window-interaction**
 pass (whole-layout purpose, incl. the Interface↔Inspector merge) · a **`lain::gui::nodes` wrapper pass** — front the raw

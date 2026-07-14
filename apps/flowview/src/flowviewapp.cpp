@@ -20,6 +20,7 @@ namespace flowview
 	{
 		cli.add_option("--size", m_size, "example gradient extent (NxN)")->capture_default_str();
 		cli.add_option("--frames", m_frames, "gui-mode: quit after N frames (0 = run until the window closes)")->capture_default_str();
+		cli.add_flag("--example", m_useExample, "gui: start from the example scene instead of a blank Input/Output graph");
 
 		// Headless subcommands. `run`'s boundary bindings arrive as extras (--<name> <value>) — the
 		// graph's interface isn't known until it's loaded, so they can't be registered up front;
@@ -51,15 +52,22 @@ namespace flowview
 		// there is nothing to wire here beyond handing it to the window.
 		app.createWindow(spec, m_window); // creates the shared device; builds the gui Context
 
-		// Populate the node palette + the image codecs (so a palette-added LoadImageNode can
-		// decode), then build the boundary scene, bind its input to a default gradient (until
-		// the Interface panel), and run it. The nodes are pure CPU.
+		// Populate the node palette + the image codecs (so a palette-added LoadImageNode can decode),
+		// then build the starting scene and run it. Default is a blank Input/Output graph; --example
+		// loads the demo pipeline (source -> tint -> blur) with its input bound to a gradient. CPU nodes.
 		lain::io::image::registerImageCodecs();
 		registerExampleNodes(m_nodeFactory, m_size);
 		registerSceneSerialization(); // image::Image port type (the boundary ± menu) + json codec
 		m_graph = std::make_unique<flow::Graph>();
-		buildExampleScene(*m_graph, m_nodeFactory);
-		bindDefaultInput(*m_graph, m_size);
+		if (m_useExample)
+		{
+			buildExampleScene(*m_graph, m_nodeFactory);
+			bindDefaultInput(*m_graph, m_size);
+		}
+		else
+		{
+			buildNewScene(*m_graph);
+		}
 		m_scheduler.run(*m_graph);
 		return true;
 	}

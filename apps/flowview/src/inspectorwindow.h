@@ -9,6 +9,7 @@
 #include <lain/gui/context.h>
 
 #include <cstdint>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <string>
@@ -17,6 +18,11 @@
 namespace lain::flow
 {
 	class Graph;
+}
+
+namespace lain::app
+{
+	class Application; // File ▸ Quit
 }
 
 namespace lain::image
@@ -76,6 +82,22 @@ namespace flowview
 		// synchronous submit, so it must not run every frame.
 		void refreshPreviews(const lain::flow::Graph& graph);
 
+		// The application menu bar (File: New/Open/Save/Save As/Quit; Add ▸ category ▸ kind), drawn once
+		// per frame at the viewport top, plus the global Cmd/Ctrl shortcuts. Menu edits feed the shared
+		// `edited` flag so the scene re-runs like any edit.
+		void renderMenuBar(lain::flow::Graph& graph, FlowviewApp& appDelegate, lain::app::Application& app, bool& edited);
+		// File actions (shared by the menu items + the shortcuts). New clears to an empty graph; Open
+		// defers the graph swap to end-of-frame (m_loadRequested) like every graph replacement; Save
+		// writes to the remembered path (m_currentPath), falling back to Save As when none is set yet.
+		void newGraph();
+		void openGraphDialog(FlowviewApp& appDelegate);
+		void saveToCurrentPath(const lain::flow::Graph& graph, FlowviewApp& appDelegate);
+		void saveAsDialog(const lain::flow::Graph& graph, FlowviewApp& appDelegate);
+		// New guards against silent data loss: if there are unsaved changes it opens a Save/Discard/Cancel
+		// modal (renderNewConfirm) instead of clearing straight away; otherwise it clears immediately.
+		void requestNew();
+		void renderNewConfirm(lain::flow::Graph& graph, FlowviewApp& appDelegate);
+
 		// The graph's I/O boundary as a panel (Inputs: Bind file…; Outputs: thumbnail +
 		// Save…), driven by Graph::boundaryInputs()/outputs() — the same seam the cli binds
 		// through. The host-binding surface, separate from the per-node inspector.
@@ -123,5 +145,11 @@ namespace flowview
 		bool m_loadRequested = false;
 		std::unique_ptr<lain::flow::Graph> m_loadedGraph;
 		lain::flow::serialize::EditorData m_pendingLayout;
+
+		// The file the graph was last saved-to / opened-from — plain Save writes here (no dialog); empty
+		// until a Save As / Open sets it, and cleared by New.
+		std::filesystem::path m_currentPath;
+		bool m_dirty = false;	  // unsaved changes since the last save / load / new (drives the New guard)
+		bool m_confirmNew = false; // open the unsaved-changes modal next frame (requestNew set it)
 	};
 } // namespace flowview

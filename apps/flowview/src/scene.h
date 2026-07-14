@@ -5,6 +5,8 @@
 #include <lain/flow/types.h>
 
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace lain::flow
 {
@@ -13,6 +15,16 @@ namespace lain::flow
 
 namespace flowview
 {
+	// A category grouping of node kinds (factory keys) for the Add menu, in display order. App-side
+	// presentation metadata — flow has no category concept; this mirrors the canvasstyle colour grouping
+	// (a future "node catalog" could unify category + colour + display name per kind in one place).
+	struct NodeCategory
+	{
+		std::string name;
+		std::vector<std::string> keys;
+	};
+	const std::vector<NodeCategory>& nodeCatalog();
+
 	// Register flow-example's node types into `factory` (gradient / tint / blur /
 	// loadimage), with construction values captured in each creator's closure. This is
 	// the palette the editor draws from. Call once the device is live.
@@ -24,6 +36,11 @@ namespace flowview
 	// --input/--output, gui from the Interface panel. tint/blur come from `factory`
 	// (populated by registerExampleNodes). Shared by both modes.
 	void buildExampleScene(lain::flow::Graph& graph, const lain::core::Factory<lain::flow::Node>& factory);
+
+	// A blank starting document: one GroupInputNode + one GroupOutputNode, each with NO boundary pins —
+	// grow the interface from the Interface panel's ±. The default for a fresh gui session and File ▸ New
+	// (the example scene is opt-in via --example).
+	void buildNewScene(lain::flow::Graph& graph);
 
 	// Bind the graph's first boundary input to a generated `size`x`size` gradient image, so a
 	// fresh gui-mode / bare `--headless` shows a result on launch; the Interface panel (gui) or

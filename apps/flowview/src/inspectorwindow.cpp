@@ -2,6 +2,7 @@
 
 #include "flowviewapp.h"
 #include "graphio.h"
+#include "scene.h" // nodeCatalog (the Add menu's category grouping)
 
 #include <archimedes/archimedes.h>
 #include <lain/data/value.h>
@@ -489,6 +490,178 @@ namespace flowview
 		return true;
 	}
 
+	void InspectorWindow::newGraph()
+	{
+		// A blank document — one empty Input + one empty Output node. Deferred to end of frame like
+		// every graph swap.
+		auto blank = std::make_unique<flow::Graph>();
+		buildNewScene(*blank);
+		m_loadedGraph = std::move(blank);
+		m_pendingLayout.clear();
+		m_loadRequested = true;
+		m_currentPath.clear(); // an untitled document
+		m_dirty = false;
+	}
+
+	void InspectorWindow::requestNew()
+	{
+		if (m_dirty)
+			m_confirmNew = true; // unsaved changes -> ask first (renderNewConfirm opens the modal)
+		else
+			newGraph();
+	}
+
+	void InspectorWindow::renderNewConfirm(flow::Graph& graph, FlowviewApp& appDelegate)
+	{
+		if (m_confirmNew)
+		{
+			gui::OpenPopup("Unsaved changes");
+			m_confirmNew = false;
+		}
+		if (gui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		{
+			gui::TextUnformatted("Discard the current graph? Unsaved changes will be lost.");
+			if (gui::Button("Save"))
+			{
+				saveToCurrentPath(graph, appDelegate); // may prompt for a path if untitled
+				newGraph();
+				gui::CloseCurrentPopup();
+			}
+			gui::SameLine();
+			if (gui::Button("Discard"))
+			{
+				newGraph();
+				gui::CloseCurrentPopup();
+			}
+			gui::SameLine();
+			if (gui::Button("Cancel"))
+				gui::CloseCurrentPopup();
+			gui::EndPopup();
+		}
+	}
+
+	void InspectorWindow::openGraphDialog(FlowviewApp& appDelegate)
+	{
+		// "All files" fallback: pfd 0.1.0's macOS picker can grey out everything under a lone
+		// restrictive filter, so offer an escape hatch alongside the JSON one.
+		const auto path = gui::openFile("Open graph", {}, {{"JSON graph", {"*.json"}}, {"All files", {"*"}}});
+		if (!path)
+			return;
+		flow::serialize::LoadResult result = loadGraph(path->string(), appDelegate.nodeFactory());
+		if (!result.clean())
+		{
+			std::string summary;
+			for (const auto& issue : result.issues)
+				summary += "- " + issue.message + "\n";
+			gui::message("Graph loaded with issues", summary, true);
+		}
+		if (result.graph.nodeCount() > 0) // replace the scene — deferred to end of frame
+		{
+			m_loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
+			m_pendingLayout = std::move(result.editor);
+			m_loadRequested = true;
+			m_currentPath = *path; // remember for plain Save
+			m_dirty = false;
+		}
+	}
+
+	void InspectorWindow::saveToCurrentPath(const flow::Graph& graph, FlowviewApp& appDelegate)
+	{
+		if (m_currentPath.empty())
+		{
+			saveAsDialog(graph, appDelegate); // no file yet -> prompt for one
+			return;
+		}
+		if (saveGraph(m_currentPath.string(), graph, appDelegate.nodeFactory(), collectLayout(graph)))
+			m_dirty = false;
+		else
+			gui::message("Save failed", "Could not write " + m_currentPath.string(), true);
+	}
+
+	void InspectorWindow::saveAsDialog(const flow::Graph& graph, FlowviewApp& appDelegate)
+	{
+		// Native dialogs block the render thread — the same pattern as the per-output Save… below.
+		const auto path = gui::saveFile("Save graph", {}, {{"json", {"*.json"}}});
+		if (!path)
+			return;
+		std::filesystem::path file = *path;
+		file.replace_extension("json"); // force .json (the codec is keyed off the extension)
+		if (saveGraph(file.string(), graph, appDelegate.nodeFactory(), collectLayout(graph)))
+		{
+			m_currentPath = file; // remember for plain Save
+			m_dirty = false;
+		}
+		else
+		{
+			gui::message("Save failed", "Could not write " + file.string(), true);
+		}
+	}
+
+	void InspectorWindow::renderMenuBar(flow::Graph& graph, FlowviewApp& appDelegate, app::Application& app, bool& edited)
+	{
+		// Cmd on macOS, Ctrl elsewhere — for both the displayed shortcut text and the wired key chord.
+		const bool mac = gui::GetIO().ConfigMacOSXBehaviors;
+		const std::string m = mac ? "Cmd+" : "Ctrl+";
+
+		if (gui::BeginMainMenuBar())
+		{
+			if (gui::BeginMenu("File"))
+			{
+				if (gui::MenuItem("New", (m + "N").c_str()))
+					requestNew();
+				if (gui::MenuItem("Open...", (m + "O").c_str()))
+					openGraphDialog(appDelegate);
+				if (gui::MenuItem("Save", (m + "S").c_str()))
+					saveToCurrentPath(graph, appDelegate);
+				if (gui::MenuItem("Save As...", (m + "Shift+S").c_str()))
+					saveAsDialog(graph, appDelegate);
+				gui::Separator();
+				if (gui::MenuItem("Quit", (m + "Q").c_str()))
+					app.quit();
+				gui::EndMenu();
+			}
+			if (gui::BeginMenu("Add"))
+			{
+				// Grouped by category (nodeCatalog); each item cascades its grid position so successive
+				// adds don't stack. A menu route to the palette, alongside the canvas right-click + panel.
+				for (const NodeCategory& category : nodeCatalog())
+				{
+					if (gui::BeginMenu(category.name.c_str()))
+					{
+						for (const std::string& key : category.keys)
+						{
+							if (gui::MenuItem(key.c_str()))
+							{
+								const flow::NodeId newId = flow::edit::addNode(graph, appDelegate.nodeFactory().create(key));
+								const float offset = 40.0f + static_cast<float>(m_addCounter % 6) * 28.0f;
+								gui::nodes::SetNodeGridSpacePos(static_cast<int>(newId.value()), math::Vec2f{offset, offset});
+								++m_addCounter;
+								edited = true;
+							}
+						}
+						gui::EndMenu();
+					}
+				}
+				gui::EndMenu();
+			}
+			gui::EndMainMenuBar();
+		}
+
+		// Global shortcuts via Shortcut()+RouteGlobal (fires regardless of focus). Always use
+		// ImGuiMod_Ctrl: ImGui remaps it to Cmd on macOS (ConfigMacOSXBehaviors), so an explicit
+		// ImGuiMod_Super would NOT match. Mods match exactly, so Ctrl+Shift+S and Ctrl+S don't collide.
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_N, ImGuiInputFlags_RouteGlobal))
+			requestNew();
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_O, ImGuiInputFlags_RouteGlobal))
+			openGraphDialog(appDelegate);
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))
+			saveAsDialog(graph, appDelegate);
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))
+			saveToCurrentPath(graph, appDelegate);
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Q, ImGuiInputFlags_RouteGlobal))
+			app.quit();
+	}
+
 	void InspectorWindow::onRender(app::Window& window, const app::TimeState&)
 	{
 		FlowviewApp& appDelegate = window.app().getDelegate<FlowviewApp>();
@@ -503,42 +676,6 @@ namespace flowview
 		gui::SetNextWindowSize(math::Vec2f{880.0f, 600.0f}, ImGuiCond_FirstUseEver);
 		gui::Begin("Graph");
 
-		// Save / Load the whole scene as JSON (recipe + canvas layout). Native dialogs block the
-		// render thread — the same pattern as the per-output Save… below.
-		if (gui::Button("Save…"))
-		{
-			if (const auto path = gui::saveFile("Save graph", {}, {{"json", {"*.json"}}}))
-			{
-				std::filesystem::path file = *path;
-				file.replace_extension("json"); // force .json (the codec is keyed off the extension)
-				if (!saveGraph(file.string(), graph, appDelegate.nodeFactory(), collectLayout(graph)))
-					gui::message("Save failed", "Could not write " + file.string(), true);
-			}
-		}
-		gui::SameLine();
-		if (gui::Button("Load…"))
-		{
-			// "All files" fallback: pfd 0.1.0's macOS picker can grey out everything under a lone
-			// restrictive filter, so offer an escape hatch alongside the JSON one.
-			if (const auto path = gui::openFile("Load graph", {}, {{"JSON graph", {"*.json"}}, {"All files", {"*"}}}))
-			{
-				flow::serialize::LoadResult result = loadGraph(path->string(), appDelegate.nodeFactory());
-				if (!result.clean())
-				{
-					std::string summary;
-					for (const auto& issue : result.issues)
-						summary += "• " + issue.message + "\n";
-					gui::message("Graph loaded with issues", summary, true);
-				}
-				if (result.graph.nodeCount() > 0) // replace the scene — deferred to end of frame
-				{
-					m_loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
-					m_pendingLayout = std::move(result.editor);
-					m_loadRequested = true;
-				}
-			}
-		}
-
 		// Link detach (click-drag a link off a pin to remove/move it) is enabled on INPUT pins
 		// only — see the per-node loop. Leaving OUTPUT pins without the flag lets a drag *from* an
 		// output start a NEW link, so one output fans out to many inputs (an input, being
@@ -550,7 +687,12 @@ namespace flowview
 		// the picked port-type key). A palette-placed dynamic node (Merge/Select) grows its branches here;
 		// boundary nodes are grown from the Interface panel, but the same affordance works on-canvas too.
 		std::vector<std::pair<flow::NodeId, std::string>> pinAdds;
-		int column = 0;
+
+		// Default layout (seed only): Input node leftmost, Output node rightmost, everything else in a
+		// row between — so a fresh graph reads left-to-right. Can't key off topoOrder *position*: its
+		// LIFO drain can order Output before Input among edgeless nodes.
+		const int lastColumn = static_cast<int>(graph.topoOrder().size()) - 1;
+		int middleColumn = 0; // next column for a non-boundary node
 
 		// Whether a pin renders muted. A pin ALWAYS shows its type colour otherwise — the node's dim
 		// title/background and its muted dead links carry the inactive state, so muting the pins too
@@ -566,8 +708,19 @@ namespace flowview
 		for (const flow::NodeId id : graph.topoOrder())
 		{
 			const flow::Node& node = graph.node(id);
-			if (seedPositions && !applyLayout(m_pendingLayout, id)) // a loaded layout wins over the default columns
-				gui::nodes::SetNodeGridSpacePos(static_cast<int>(id.value()), math::Vec2f{column * 220.0f, 40.0f + (column % 4) * 140.0f});
+			// Default layout by role (a loaded layout wins over it): Input -> leftmost, Output ->
+			// rightmost, others fill the columns between.
+			if (seedPositions && !applyLayout(m_pendingLayout, id))
+			{
+				int col = 1 + middleColumn;
+				if (dynamic_cast<const flow::GroupInputNode*>(&node) != nullptr)
+					col = 0;
+				else if (dynamic_cast<const flow::GroupOutputNode*>(&node) != nullptr)
+					col = lastColumn;
+				else
+					++middleColumn;
+				gui::nodes::SetNodeGridSpacePos(static_cast<int>(id.value()), math::Vec2f{60.0f + col * 240.0f, 200.0f});
+			}
 
 			// State (dim) trumps identity (category colour): an inactive node — one the run skipped
 			// because a Required input was empty (ADR-0007) — is fully muted; an active one wears its
@@ -659,7 +812,6 @@ namespace flowview
 
 			for (int k = 0; k < nodeColoursPushed; ++k)
 				gui::nodes::PopColorStyle();
-			++column;
 		}
 
 		// Links carry their source pin's type colour, muted when the source produced nothing (a dead
@@ -773,13 +925,16 @@ namespace flowview
 		if (gui::BeginPopup("addNode"))
 		{
 			const ImVec2 mouse = gui::GetMousePosOnOpeningCurrentPopup();
-			for (const std::string& key : appDelegate.nodeFactory().keys())
+			for (const NodeCategory& cat : nodeCatalog()) // catalog, not factory.keys() -> excludes boundary
 			{
-				if (gui::MenuItem(key.c_str()))
+				for (const std::string& key : cat.keys)
 				{
-					const flow::NodeId id = flow::edit::addNode(graph, appDelegate.nodeFactory().create(key));
-					gui::nodes::SetNodeScreenSpacePos(static_cast<int>(id.value()), math::Vec2f{mouse.x, mouse.y});
-					edited = true;
+					if (gui::MenuItem(key.c_str()))
+					{
+						const flow::NodeId id = flow::edit::addNode(graph, appDelegate.nodeFactory().create(key));
+						gui::nodes::SetNodeScreenSpacePos(static_cast<int>(id.value()), math::Vec2f{mouse.x, mouse.y});
+						edited = true;
+					}
 				}
 			}
 			gui::EndPopup();
@@ -792,18 +947,25 @@ namespace flowview
 		// Persistent node palette: a left-click list of the factory's node types — trackpad-
 		// native, where the right-click add menu above (kept as a secondary) is awkward on a
 		// MacBook. A new node cascades its grid position so successive adds don't stack.
+		// The application menu bar (viewport-top; ImGui places it there regardless of call order).
+		// Drawn where `edited` is live so a menu Add Node re-runs the scene like any edit.
+		renderMenuBar(graph, appDelegate, window.app(), edited);
+
 		gui::SetNextWindowPos(math::Vec2f{20.0f, 360.0f}, ImGuiCond_FirstUseEver);
 		gui::SetNextWindowSize(math::Vec2f{320.0f, 230.0f}, ImGuiCond_FirstUseEver);
 		gui::Begin("Nodes");
-		for (const std::string& key : appDelegate.nodeFactory().keys())
+		for (const NodeCategory& cat : nodeCatalog()) // catalog, not factory.keys() -> excludes boundary
 		{
-			if (gui::Button(key.c_str()))
+			for (const std::string& key : cat.keys)
 			{
-				const flow::NodeId newId = flow::edit::addNode(graph, appDelegate.nodeFactory().create(key));
-				const float offset = 40.0f + static_cast<float>(m_addCounter % 6) * 28.0f;
-				gui::nodes::SetNodeGridSpacePos(static_cast<int>(newId.value()), math::Vec2f{offset, offset});
-				++m_addCounter;
-				edited = true;
+				if (gui::Button(key.c_str()))
+				{
+					const flow::NodeId newId = flow::edit::addNode(graph, appDelegate.nodeFactory().create(key));
+					const float offset = 40.0f + static_cast<float>(m_addCounter % 6) * 28.0f;
+					gui::nodes::SetNodeGridSpacePos(static_cast<int>(newId.value()), math::Vec2f{offset, offset});
+					++m_addCounter;
+					edited = true;
+				}
 			}
 		}
 		gui::End();
@@ -816,6 +978,7 @@ namespace flowview
 		{
 			appDelegate.reevaluate();
 			m_previewsDirty = true;
+			m_dirty = true; // a topology edit -> unsaved changes
 		}
 
 		if (m_previewsDirty)
@@ -901,10 +1064,14 @@ namespace flowview
 		{
 			appDelegate.reevaluate();
 			m_previewsDirty = true;
+			m_dirty = true; // a param edit -> unsaved changes
 		}
 
 		// The graph's I/O boundary — the host-binding surface (bind inputs, save outputs).
 		renderInterfacePanel(appDelegate);
+
+		// The unsaved-changes guard for New (opened by requestNew when m_dirty).
+		renderNewConfirm(graph, appDelegate);
 
 		// Apply a pending Load now — every panel has drawn with the current graph, so swapping it
 		// here (not at the button) can't dangle the `graph` reference used above. Next frame re-seeds

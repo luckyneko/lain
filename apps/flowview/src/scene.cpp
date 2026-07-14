@@ -30,6 +30,20 @@ namespace flowview
 	static constexpr const char* kGroupInputKey = "groupInput";
 	static constexpr const char* kGroupOutputKey = "groupOutput";
 
+	const std::vector<NodeCategory>& nodeCatalog()
+	{
+		// The palette-addable kinds, grouped by role (mirrors the canvasstyle title colours). Keys must
+		// match the registrations below. Boundary nodes (GroupInput/GroupOutput) are intentionally NOT
+		// here: they're a one-each-per-graph fixture that comes with a New graph and is grown from the
+		// Interface panel, not added like an ordinary node.
+		static const std::vector<NodeCategory> catalog = {
+			{"Sources", {kGradientKey, kLoadImageKey, kConstIntKey, kConstBoolKey}},
+			{"Filters", {kTintKey, kBlurKey}},
+			{"Control", {kGateKey, kMergeKey, kSelectKey}},
+		};
+		return catalog;
+	}
+
 	void registerExampleNodes(core::Factory<flow::Node>& factory, std::uint32_t size)
 	{
 		// The nodes are pure CPU (they produce/consume a lain::image::Image), so each
@@ -73,6 +87,15 @@ namespace flowview
 		graph.connect(in, 0, tint, 0);
 		graph.connect(tint, 0, blur, 0);
 		graph.connect(blur, 0, out, 0);
+	}
+
+	void buildNewScene(flow::Graph& graph)
+	{
+		// The blank document: just the two boundary nodes, no pins. The user grows the interface (and
+		// adds filters between) from there. They're added directly (like the example's boundary nodes),
+		// but must also be in the factory so save/load can name them (registerExampleNodes covers that).
+		graph.add<flow::GroupInputNode>();
+		graph.add<flow::GroupOutputNode>();
 	}
 
 	void bindDefaultInput(flow::Graph& graph, std::uint32_t size)
