@@ -381,22 +381,37 @@ namespace flowview
 				if (it != m_previews.end() && it->second.valid())
 					gui::Image(it->second, math::Vec2f{side, side});
 
-				if (pin.type() == typeid(image::Image) && gui::Button("Bind file..."))
+				if (pin.type() == typeid(image::Image))
 				{
-					if (const auto path = gui::openFile("Open image", {},
-														{{"Images", {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff"}}}))
+					if (gui::Button("Bind file..."))
 					{
-						if (auto image = io::image::load(path->string()))
+						if (const auto path = gui::openFile("Open image", {},
+															{{"Images", {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff"}}}))
 						{
-							flow::PortValue v;
-							v.set<image::Image>(std::move(*image));
-							node->setValue(pin.id(), std::move(v));
-							changed = true;
+							if (auto image = io::image::load(path->string()))
+							{
+								flow::PortValue v;
+								v.set<image::Image>(std::move(*image));
+								node->setValue(pin.id(), std::move(v));
+								changed = true;
+							}
+							else
+							{
+								gui::message("Load failed", "Could not load: " + path->string(), true);
+							}
 						}
-						else
-						{
-							gui::message("Load failed", "Could not load: " + path->string(), true);
-						}
+					}
+				}
+				else
+				{
+					// A scalar boundary input: edit its value by type via the shared registry. Read the
+					// currently-published value (pin.value() == the bound value after a run), edit a copy,
+					// and setValue on change (which updates the bound slot + marks the node dirty).
+					flow::PortValue current = pin.value();
+					if (m_paramEditors.render("##value", pin.type(), current))
+					{
+						node->setValue(pin.id(), std::move(current));
+						changed = true;
 					}
 				}
 				gui::SameLine();
@@ -451,11 +466,14 @@ namespace flowview
 		changed |= renderRemoveConfirm(graph);
 
 		// An add / remove / bind re-runs the graph (as a param/canvas edit does) and refreshes
-		// previews next frame.
+		// previews next frame. It also counts as an unsaved change so New guards it — a bound image is
+		// loaded data worth not losing silently (values aren't in the saved document, but the guard
+		// still protects them from an accidental New).
 		if (changed)
 		{
 			appDelegate.reevaluate();
 			m_previewsDirty = true;
+			m_dirty = true;
 		}
 	}
 
@@ -1018,7 +1036,10 @@ namespace flowview
 			gui::PushID(static_cast<int>(id.value()));
 			bool nodeEdited = false;
 			for (flow::PortIndex pi = 0; pi < node.paramCount(); ++pi)
-				nodeEdited |= m_paramEditors.render(node.param(pi));
+			{
+				flow::Param& p = node.param(pi);
+				nodeEdited |= m_paramEditors.render(p.name(), p.type(), p.value());
+			}
 			if (nodeEdited)
 				node.markDirty(); // a param edit -> incremental re-eval recomputes this node + downstream
 			paramEdited |= nodeEdited;

@@ -1,6 +1,7 @@
 #include "lain/gui/texture.h"
 
 #include <imgui_impl_vulkan.h>
+#include <lain/image/convert.h> // normalise to RGBA8 (a gui::Texture is always RGBA8)
 #include <lain/image/image.h>
 #include <vulkan/vulkan.h> // VkDescriptorSet — the ImGui descriptor behind an ImTextureID
 
@@ -45,9 +46,16 @@ namespace lain::gui
 
 	bool Texture::upload(const lain::image::Image& image)
 	{
+		if (!valid() || !image.valid())
+			return false;
+		// A gui::Texture is always RGBA8, so normalise the source the same way createTexture does before
+		// reusing in place (else a loaded RGB / Gray file would never match m_format and re-upload).
+		// (Fully qualified: the parameter `image` shadows the lain::image namespace.)
+		if (image.pixelFormat() != lain::image::PixelFormat::RGBA8)
+			return upload(lain::image::convert(image, lain::image::PixelFormat::RGBA8));
 		// Reuse only when this texture already matches the image's size + format; otherwise
 		// the caller recreates via Context::createTexture().
-		if (!valid() || !image.valid() || image.pixelFormat() != m_format)
+		if (image.pixelFormat() != m_format)
 			return false;
 		const acm::Extent2D extent = m_texture.extent();
 		if (static_cast<int>(extent.width) != image.width() || static_cast<int>(extent.height) != image.height())

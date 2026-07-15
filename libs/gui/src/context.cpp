@@ -4,6 +4,7 @@
 #include <archimedes/archimedes.h>
 #include <lain/app/application.h>
 #include <lain/app/window.h>
+#include <lain/image/convert.h> // normalise any image to RGBA8 (the bridge's sampled format)
 #include <lain/image/image.h>
 
 #define GLFW_INCLUDE_VULKAN
@@ -106,35 +107,24 @@ namespace lain::gui
 
 	// --- createTexture (CPU image -> drawable gui::Texture) ---------------------
 
-	// The acm texture format an image::PixelFormat samples as. Only RGBA8 has a direct GPU
-	// mapping today; a format needing conversion first (YUV/LAB -> RGBA via image::convert())
-	// has no entry, so createTexture returns an invalid Texture. (This bridge — and
-	// image<->texture readback — belongs in a future lain::graphics layer once non-gui
-	// consumers appear; named static here for now.)
-	static bool toAcmFormat(image::PixelFormat format, acm::Format& out)
-	{
-		switch (format)
-		{
-			case image::PixelFormat::RGBA8:
-				out = acm::Format::R8G8B8A8_Unorm;
-				return true;
-			default:
-				return false;
-		}
-	}
-
 	Texture Context::createTexture(const lain::image::Image& img)
 	{
-		acm::Format format{};
-		if (m->device == nullptr || !img.valid() || !toAcmFormat(img.pixelFormat(), format))
+		if (m->device == nullptr || !img.valid())
 			return {};
 
-		acm::Texture texture = m->device->createTexture(format, acm::Extent2D{static_cast<std::uint32_t>(img.width()), static_cast<std::uint32_t>(img.height())});
+		// A gui::Texture is always RGBA8 — the format the bridge samples. Any other image (a loaded
+		// RGB / Gray file, a 16-bit / float source) is normalised here (via image::convert), so any
+		// valid image is drawable. Already-RGBA8 takes the direct path below with no copy. (Preview-grade
+		// 8-bit is fine; a future lain::graphics layer can widen the format set for non-gui consumers.)
+		if (img.pixelFormat() != image::PixelFormat::RGBA8)
+			return createTexture(image::convert(img, image::PixelFormat::RGBA8));
+
+		acm::Texture texture = m->device->createTexture(acm::Format::R8G8B8A8_Unorm, acm::Extent2D{static_cast<std::uint32_t>(img.width()), static_cast<std::uint32_t>(img.height())});
 		if (!texture.valid())
 			return {};
 		texture.upload(img.data(), img.byteSize());
 
 		VkDescriptorSet set = ImGui_ImplVulkan_AddTexture(acm::interop::imageView(texture), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-		return Texture(std::move(texture), reinterpret_cast<ImTextureID>(set), img.pixelFormat());
+		return Texture(std::move(texture), reinterpret_cast<ImTextureID>(set), image::PixelFormat::RGBA8);
 	}
 } // namespace lain::gui

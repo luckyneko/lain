@@ -1,6 +1,6 @@
 #include "parameditors.h"
 
-#include <lain/flow/param.h>
+#include <lain/flow/portvalue.h>
 #include <lain/gui/dialogs.h>
 #include <lain/gui/gui.h>
 #include <lain/image/color.h>
@@ -15,36 +15,43 @@ namespace flowview
 {
 	using namespace lain;
 
+	// The slot's current T, or a default when it's empty (a boundary input not yet set edits from there).
+	template <typename T>
+	static T currentOr(const flow::PortValue& value, T fallback = T{})
+	{
+		return value.holds<T>() ? value.get<T>() : fallback;
+	}
+
 	// --- built-in editors (named static; each draws + writes, returns edited) -----------
 
-	static bool editInt(flow::Param& param)
+	static bool editInt(const std::string& label, flow::PortValue& value)
 	{
-		int value = param.get<int>();
-		if (gui::DragInt(param.name().c_str(), &value))
+		int v = currentOr<int>(value);
+		if (gui::DragInt(label.c_str(), &v))
 		{
-			param.set<int>(value);
+			value.set<int>(v);
 			return true;
 		}
 		return false;
 	}
 
-	static bool editFloat(flow::Param& param)
+	static bool editFloat(const std::string& label, flow::PortValue& value)
 	{
-		float value = param.get<float>();
-		if (gui::DragFloat(param.name().c_str(), &value, 0.01f))
+		float v = currentOr<float>(value);
+		if (gui::DragFloat(label.c_str(), &v, 0.01f))
 		{
-			param.set<float>(value);
+			value.set<float>(v);
 			return true;
 		}
 		return false;
 	}
 
-	static bool editBool(flow::Param& param)
+	static bool editBool(const std::string& label, flow::PortValue& value)
 	{
-		bool value = param.get<bool>();
-		if (gui::Checkbox(param.name().c_str(), &value))
+		bool v = currentOr<bool>(value);
+		if (gui::Checkbox(label.c_str(), &v))
 		{
-			param.set<bool>(value);
+			value.set<bool>(v);
 			return true;
 		}
 		return false;
@@ -52,9 +59,9 @@ namespace flowview
 
 	// A char-buffer InputText (no imgui_stdlib dependency). Sets `changedNow` and copies the
 	// buffer into `out` on any per-frame change, so the caller can persist the text live (the
-	// buffer is re-seeded from the param each frame, so an un-persisted keystroke would be
+	// buffer is re-seeded from the value each frame, so an un-persisted keystroke would be
 	// lost). Returns true only when editing FINISHED — Enter or focus loss — which is the
-	// recompute trigger, so a file-loading param doesn't reopen the file every character.
+	// recompute trigger, so a file-loading value doesn't reopen the file every character.
 	static bool textField(const char* label, const std::string& current, std::string& out, bool& changedNow)
 	{
 		char buffer[512];
@@ -66,45 +73,44 @@ namespace flowview
 		return gui::IsItemDeactivatedAfterEdit();
 	}
 
-	static bool editString(flow::Param& param)
+	static bool editString(const std::string& label, flow::PortValue& value)
 	{
 		std::string edited;
 		bool changed = false;
-		const bool committed = textField(param.name().c_str(), param.get<std::string>(), edited, changed);
+		const bool committed = textField(label.c_str(), currentOr<std::string>(value), edited, changed);
 		if (changed)
-			param.set<std::string>(std::move(edited)); // persist live so the text isn't lost
-		return committed;							   // recompute only on commit
+			value.set<std::string>(std::move(edited)); // persist live so the text isn't lost
+		return committed;								// recompute only on commit
 	}
 
-	static bool editPath(flow::Param& param)
+	static bool editPath(const std::string& label, flow::PortValue& value)
 	{
 		// A text field (type/paste, commit on Enter or focus loss — committing per keystroke would
 		// reopen the file each character) beside a Browse… button that opens the native picker.
 		// The path TYPE owns this editor, so it slots in without touching any node (ADR-0005).
 		std::string edited;
 		bool changed = false;
-		const bool committed =
-			textField(param.name().c_str(), param.get<std::filesystem::path>().string(), edited, changed);
+		const bool committed = textField(label.c_str(), currentOr<std::filesystem::path>(value).string(), edited, changed);
 		if (changed)
-			param.set<std::filesystem::path>(std::filesystem::path(std::move(edited)));
+			value.set<std::filesystem::path>(std::filesystem::path(std::move(edited)));
 
 		// Picking a file commits immediately (the same recompute trigger as finishing a text edit).
-		// Image filters here because the only path param today is an image input; a per-param
-		// filter hint is a future refinement if a non-image path param appears (ADR-0005).
+		// Image filters here because the only path value today is an image input; a per-value filter
+		// hint is a future refinement if a non-image path value appears (ADR-0005).
 		bool browsed = false;
-		gui::PushID(param.name().c_str());
+		gui::PushID(label.c_str());
 		gui::SameLine();
 		if (gui::Button("Browse..."))
 		{
 			// The dialog wants a starting DIRECTORY, so drop the filename from the current path
 			// (passing a file path breaks the macOS backend — it resolves it as a folder).
-			const std::filesystem::path current = param.get<std::filesystem::path>();
+			const std::filesystem::path current = currentOr<std::filesystem::path>(value);
 			const std::filesystem::path startDir = current.has_filename() ? current.parent_path() : current;
 			const auto picked =
 				gui::openFile("Open image", startDir, {{"Images", {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff"}}});
 			if (picked)
 			{
-				param.set<std::filesystem::path>(*picked);
+				value.set<std::filesystem::path>(*picked);
 				browsed = true;
 			}
 		}
@@ -112,13 +118,13 @@ namespace flowview
 		return committed || browsed;
 	}
 
-	static bool editColorRGBf(flow::Param& param)
+	static bool editColorRGBf(const std::string& label, flow::PortValue& value)
 	{
-		const image::ColorRGBf color = param.get<image::ColorRGBf>();
+		const image::ColorRGBf color = currentOr<image::ColorRGBf>(value);
 		float rgb[3] = {color.r, color.g, color.b};
-		if (gui::ColorEdit3(param.name().c_str(), rgb))
+		if (gui::ColorEdit3(label.c_str(), rgb))
 		{
-			param.set<image::ColorRGBf>(image::ColorRGBf(rgb[0], rgb[1], rgb[2]));
+			value.set<image::ColorRGBf>(image::ColorRGBf(rgb[0], rgb[1], rgb[2]));
 			return true;
 		}
 		return false;
@@ -131,14 +137,13 @@ namespace flowview
 		m_editors[type] = std::move(editor);
 	}
 
-	bool ParamEditors::render(flow::Param& param) const
+	bool ParamEditors::render(const std::string& label, std::type_index type, flow::PortValue& value) const
 	{
-		const auto it = m_editors.find(param.type());
+		const auto it = m_editors.find(type);
 		if (it != m_editors.end())
-			return it->second(param);
+			return it->second(label, value);
 
-		// No editor for this type: show it read-only (the describe() text pathway).
-		gui::Text("%s: %s", param.name().c_str(), param.describe().c_str());
+		gui::Text("%s (no editor)", label.c_str()); // unregistered type: read-only note
 		return false;
 	}
 

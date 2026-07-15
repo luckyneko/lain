@@ -682,11 +682,19 @@ colour editor loads into this.
   guards unsaved changes** with a Save/Discard/Cancel modal (a `m_dirty` flag set on any edit, cleared on
   save/load/new). Menu labels use ASCII `...` (the default ImGui font has no `…`/`•` glyph → they'd render
   `?`). Settings menu skipped (not needed yet).
+- ✅ **Boundary input value editors BUILT** (2026-07-14, canvas-only → live eyeball pending). You can now
+  set a graph input's value in the gui by type: image inputs keep the **Bind file...** picker, and every
+  other type gets a type editor (int → drag, float → drag, bool → checkbox, string → text, path → field +
+  Browse). `ParamEditors` was generalised from `render(Param&)` to **`render(label, type, PortValue&)`** —
+  a bare value slot — so it now serves node params **and** boundary inputs from one registry (an empty
+  slot edits from the type's default). The Interface panel reads the boundary's currently-published value
+  (`pin.value()`), edits a copy, and `setValue`s on change; the edit marks the graph dirty so New guards
+  a bound image (loaded data) from silent loss. **Preview format fix:** `lain::gui`'s texture bridge
+  sampled RGBA8 only, so a loaded RGB/Gray file (or a direct copy of it) previewed blank while a
+  node-computed RGBA8 image worked; `Context::createTexture` + `Texture::upload` now **normalise any
+  image to RGBA8** (`image::convert`), so a `gui::Texture` is always drawable — robust for every consumer.
 
-**Parked for later passes:** **boundary input value editors** — set a graph input's value in the gui by
-type (image via file picker [exists], scalars via drag / checkbox / text), reusing the `ParamEditors`
-registry against the boundary's `PortValue` (needs a `BoundaryInput` value getter) — the immediate next
-step · a "Graph Issues" log panel (active-node-with-unread-outputs, load
+**Parked for later passes:** a "Graph Issues" log panel (active-node-with-unread-outputs, load
 warnings, type-mismatch history, missing-required validation) · user-configurable / theme.json colours
 (the registries are the load target) · pin **shape** encodes presence (square=required, circle=optional,
 triangle=conditional — deferred: mostly-required → mostly-square is visually sharp) · **undo/redo** —
