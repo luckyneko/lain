@@ -479,46 +479,6 @@ namespace flowview
 		return true;
 	}
 
-	void MainWindow::renderPreview(const flow::Graph& graph)
-	{
-		if (!m_ctx.previewTarget)
-		{
-			gui::TextDisabled("Click an asset thumbnail to preview it here.");
-			return;
-		}
-
-		// Resolve the targeted port; drop the target if its node/port is gone or no longer a ready image.
-		const PinKey key = *m_ctx.previewTarget;
-		const flow::Node* node = findNode(graph, flow::NodeId{key.node});
-		const flow::Port* port = node != nullptr ? (key.output ? node->findOutput(key.port) : node->findInput(key.port)) : nullptr;
-		const gui::Texture* tex = m_previews.find(key);
-		if (node == nullptr || port == nullptr || !port->ready() || port->type() != typeid(image::Image) || tex == nullptr)
-		{
-			m_ctx.previewTarget.reset();
-			gui::TextDisabled("(the previewed asset is no longer available)");
-			return;
-		}
-
-		// Header: what you are looking at (which node's which pin, and the image size). ASCII only —
-		// the default font has no fancy separators.
-		const image::Image& img = port->value().get<image::Image>();
-		gui::Text("%s [%llu]  |  %s : %s  (%dx%d)", node->name().c_str(), static_cast<unsigned long long>(key.node),
-				  port->name().c_str(), std::string(port->typeName()).c_str(), img.width(), img.height());
-		gui::Separator();
-
-		// Fit-to-pane, preserving aspect, centred horizontally. (Zoom/pan is a future refinement.)
-		const ImVec2 avail = gui::GetContentRegionAvail();
-		const float imgW = static_cast<float>(img.width());
-		const float imgH = static_cast<float>(img.height());
-		if (avail.x <= 0.0f || avail.y <= 0.0f || imgW <= 0.0f || imgH <= 0.0f)
-			return;
-		const float scale = std::min(avail.x / imgW, avail.y / imgH);
-		const float w = imgW * scale;
-		const float h = imgH * scale;
-		gui::SetCursorPosX(gui::GetCursorPosX() + std::max(0.0f, (avail.x - w) * 0.5f));
-		gui::Image(*tex, math::Vec2f{w, h});
-	}
-
 	// Stamp the default dock arrangement (via the gui docking seam). Right column (Inspector/Nodes over
 	// Interface) full-height; the left splits Graph/Preview over Issues on its own ratio — so the two
 	// columns' horizontal splitters are independent. Window names must match the panels' gui::Begin.
@@ -983,16 +943,8 @@ namespace flowview
 		// The graph's I/O boundary — the host-binding surface (bind inputs, save outputs).
 		renderInterfacePanel(appDelegate);
 
-		// Preview + Issues panels — docked but empty for now (slice 1); filled in slices 2 and 3. They
-		// must exist as windows so the default layout can dock them.
-		if (m_ctx.activatePreview)
-		{
-			gui::activateWindowTab("Preview"); // flip the Graph/Preview tab group to Preview
-			m_ctx.activatePreview = false;
-		}
-		gui::Begin("Preview");
-		renderPreview(graph);
-		gui::End();
+		// Preview + Issues panels — docked windows the default layout tiles alongside the Graph.
+		m_preview.draw(m_ctx, graph, m_previews);
 		m_issues.draw(m_ctx, graph);
 
 		// The unsaved-changes guard for New (opened by requestNew when m_ctx.dirty).

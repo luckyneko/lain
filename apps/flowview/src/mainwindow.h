@@ -4,6 +4,7 @@
 #include "canvasstyle.h"
 #include "panes/issuespane.h"
 #include "panes/menubar.h"
+#include "panes/previewpane.h"
 #include "parameditors.h"
 #include "pinkey.h"
 #include "previewcache.h"
@@ -65,16 +66,13 @@ namespace flowview
 		// Returns whether a pin was removed this frame.
 		bool renderRemoveConfirm(lain::flow::Graph& graph);
 
-		// The Preview pane (tabbed with the Graph): the asset that was last clicked (a thumbnail
-		// anywhere) shown fit-to-pane; a hint when nothing is targeted or the source is gone.
-		void renderPreview(const lain::flow::Graph& graph);
-
 		std::unique_ptr<lain::gui::Context> m_guiCtx;
 		ParamEditors m_paramEditors; // type-keyed param editors (registered in onInit)
 		CanvasStyle m_canvasStyle;	 // canvas colours + dim state (registered in onInit)
 		PreviewCache m_previews;	 // one uploaded thumbnail per image port
 		MenuBarPane m_menuBar;		 // File / Add / View menu + shortcuts (its own pane)
 		IssuesPane m_issues;		 // the Issues panel (validation + load issues)
+		PreviewPane m_preview;		 // the Preview panel (clicked asset, full-size)
 		bool m_laidOut = false;		 // node canvas: seed node positions on the first frame
 
 		// Link-drag feedback (slice C): while a link is dragged, grey every pin that isn't a compatible
