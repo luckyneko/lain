@@ -76,15 +76,16 @@ namespace flowview
 		}
 	};
 
-	// Per-window ImGui inspector. Owns only its GUI resources (the lain::gui Context + the
-	// per-port preview cache); it holds no app/graph state. Each hook reaches what it needs
+	// The app's main window: it drives every pane (Graph canvas, Inspector, Interface, Preview,
+	// Issues, menu bar) inside one docking layout. Owns its GUI resources (the lain::gui Context +
+	// the per-port preview cache); it holds no app/graph state. Each hook reaches what it needs
 	// from its Window argument — window.app() for the Application, and
-	// window.app().getDelegate<FlowviewApp>().graph() for the scene it draws. The panel
-	// shows each node's ports as text and a lain::image::Image output as a live thumbnail.
-	// The Vulkan/ImGui plumbing of that thumbnail lives in lain::gui — this adapter only
-	// holds gui::Texture handles keyed by pin. ImGui is single-threaded — every call here
-	// is on the main/render thread.
-	class InspectorWindow : public lain::app::WindowDelegate
+	// window.app().getDelegate<FlowviewApp>().graph() for the scene it draws. The Inspector pane
+	// shows each node's ports as text and a lain::image::Image output as a live thumbnail. The
+	// Vulkan/ImGui plumbing of that thumbnail lives in lain::gui — this adapter only holds
+	// gui::Texture handles keyed by pin. ImGui is single-threaded — every call here is on the
+	// main/render thread.
+	class MainWindow : public lain::app::WindowDelegate
 	{
 	public:
 		bool onInit(lain::app::Window& window) override;

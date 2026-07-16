@@ -37,6 +37,6 @@ namespace flowview
 	};
 
 	// Register the built-in editors (int, float, bool, std::string, std::filesystem::path,
-	// image::ColorRGBf). Called once by the InspectorWindow.
+	// image::ColorRGBf). Called once by the MainWindow.
 	void registerBuiltinParamEditors(ParamEditors& editors);
 } // namespace flowview

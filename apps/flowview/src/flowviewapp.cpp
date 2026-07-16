@@ -49,7 +49,7 @@ namespace flowview
 		spec.title = "flowview";
 		spec.width = 1280;
 		spec.height = 720;
-		// The InspectorWindow reaches this delegate (and its graph) via window.app(), so
+		// The MainWindow reaches this delegate (and its graph) via window.app(), so
 		// there is nothing to wire here beyond handing it to the window.
 		app.createWindow(spec, m_window); // creates the shared device; builds the gui Context
 

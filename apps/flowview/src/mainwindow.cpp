@@ -1,4 +1,4 @@
-#include "inspectorwindow.h"
+#include "mainwindow.h"
 
 #include "flowviewapp.h"
 #include "graphio.h"
@@ -180,7 +180,7 @@ namespace flowview
 			gui::message("Save failed", "Couldn't write the file: " + out.string(), true);
 	}
 
-	bool InspectorWindow::onInit(app::Window& window)
+	bool MainWindow::onInit(app::Window& window)
 	{
 		// Dock layout persists to ~/.flowview/imgui.ini. Seed the default arrangement on first run (no
 		// saved ini) or when --reset-layout is given; otherwise the saved layout is restored.
@@ -200,7 +200,7 @@ namespace flowview
 		return true;
 	}
 
-	void InspectorWindow::refreshPreviews(const flow::Graph& graph)
+	void MainWindow::refreshPreviews(const flow::Graph& graph)
 	{
 		std::set<PinKey> live;
 		const auto refresh = [&](flow::NodeId id, const flow::Port& p, bool output)
@@ -235,7 +235,7 @@ namespace flowview
 		}
 	}
 
-	void InspectorWindow::renderImageSave(const PinKey& key, const image::Image& img)
+	void MainWindow::renderImageSave(const PinKey& key, const image::Image& img)
 	{
 		const std::vector<std::string> formats = savableFormats(img);
 		if (formats.empty())
@@ -333,7 +333,7 @@ namespace flowview
 		gui::PopID();
 	}
 
-	bool InspectorWindow::renderRemoveConfirm(flow::Graph& graph)
+	bool MainWindow::renderRemoveConfirm(flow::Graph& graph)
 	{
 		if (m_removeRequested)
 		{
@@ -357,7 +357,7 @@ namespace flowview
 		return removed;
 	}
 
-	void InspectorWindow::renderInterfacePanel(FlowviewApp& appDelegate)
+	void MainWindow::renderInterfacePanel(FlowviewApp& appDelegate)
 	{
 		flow::Graph& graph = appDelegate.graph();
 		const float side = previewExtent(m_previewSize);
@@ -531,7 +531,7 @@ namespace flowview
 		return true;
 	}
 
-	void InspectorWindow::newGraph()
+	void MainWindow::newGraph()
 	{
 		// A blank document — one empty Input + one empty Output node. Deferred to end of frame like
 		// every graph swap.
@@ -545,7 +545,7 @@ namespace flowview
 		m_loadIssues.clear();
 	}
 
-	void InspectorWindow::requestNew()
+	void MainWindow::requestNew()
 	{
 		if (m_dirty)
 			m_confirmNew = true; // unsaved changes -> ask first (renderNewConfirm opens the modal)
@@ -553,7 +553,7 @@ namespace flowview
 			newGraph();
 	}
 
-	void InspectorWindow::renderNewConfirm(flow::Graph& graph, FlowviewApp& appDelegate)
+	void MainWindow::renderNewConfirm(flow::Graph& graph, FlowviewApp& appDelegate)
 	{
 		if (m_confirmNew)
 		{
@@ -582,7 +582,7 @@ namespace flowview
 		}
 	}
 
-	void InspectorWindow::openGraphDialog(FlowviewApp& appDelegate)
+	void MainWindow::openGraphDialog(FlowviewApp& appDelegate)
 	{
 		// "All files" fallback: pfd 0.1.0's macOS picker can grey out everything under a lone
 		// restrictive filter, so offer an escape hatch alongside the JSON one.
@@ -608,7 +608,7 @@ namespace flowview
 		}
 	}
 
-	void InspectorWindow::saveToCurrentPath(const flow::Graph& graph, FlowviewApp& appDelegate)
+	void MainWindow::saveToCurrentPath(const flow::Graph& graph, FlowviewApp& appDelegate)
 	{
 		if (m_currentPath.empty())
 		{
@@ -621,7 +621,7 @@ namespace flowview
 			gui::message("Save failed", "Could not write " + m_currentPath.string(), true);
 	}
 
-	void InspectorWindow::saveAsDialog(const flow::Graph& graph, FlowviewApp& appDelegate)
+	void MainWindow::saveAsDialog(const flow::Graph& graph, FlowviewApp& appDelegate)
 	{
 		// Native dialogs block the render thread — the same pattern as the per-output Save… below.
 		const auto path = gui::saveFile("Save graph", {}, {{"json", {"*.json"}}});
@@ -640,7 +640,7 @@ namespace flowview
 		}
 	}
 
-	void InspectorWindow::renderMenuBar(flow::Graph& graph, FlowviewApp& appDelegate, app::Application& app, bool& edited)
+	void MainWindow::renderMenuBar(flow::Graph& graph, FlowviewApp& appDelegate, app::Application& app, bool& edited)
 	{
 		// Cmd on macOS, Ctrl elsewhere — for both the displayed shortcut text and the wired key chord.
 		const bool mac = gui::GetIO().ConfigMacOSXBehaviors;
@@ -755,7 +755,7 @@ namespace flowview
 		return issues;
 	}
 
-	void InspectorWindow::locateNode(flow::NodeId id)
+	void MainWindow::locateNode(flow::NodeId id)
 	{
 		gui::nodes::ClearNodeSelection();
 		gui::nodes::SelectNode(static_cast<int>(id.value()));
@@ -763,7 +763,7 @@ namespace flowview
 		gui::activateWindowTab("Graph"); // bring the canvas forward so the located node is visible
 	}
 
-	void InspectorWindow::renderIssues(const flow::Graph& graph)
+	void MainWindow::renderIssues(const flow::Graph& graph)
 	{
 		const auto severityColour = [](Issue::Severity s) -> image::ColorRGBA8
 		{
@@ -811,7 +811,7 @@ namespace flowview
 			gui::TextDisabled("No issues.");
 	}
 
-	void InspectorWindow::renderPreview(const flow::Graph& graph)
+	void MainWindow::renderPreview(const flow::Graph& graph)
 	{
 		if (!m_previewTarget)
 		{
@@ -870,7 +870,7 @@ namespace flowview
 		gui::dockFinish(dock);
 	}
 
-	void InspectorWindow::onRender(app::Window& window, const app::TimeState&)
+	void MainWindow::onRender(app::Window& window, const app::TimeState&)
 	{
 		FlowviewApp& appDelegate = window.app().getDelegate<FlowviewApp>();
 		flow::Graph& graph = appDelegate.graph(); // mutated by the canvas below
@@ -1361,7 +1361,7 @@ namespace flowview
 								 { m_guiCtx->render(cmd); });
 	}
 
-	void InspectorWindow::onShutdown(app::Window&)
+	void MainWindow::onShutdown(app::Window&)
 	{
 		m_previews.clear(); // release the preview descriptors while the ImGui backend lives
 		m_guiCtx.reset();	// then destroy the backend, before the device tears down

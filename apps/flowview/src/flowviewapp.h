@@ -1,6 +1,6 @@
 #pragma once
 
-#include "inspectorwindow.h"
+#include "mainwindow.h"
 
 #include <lain/app/applicationdelegate.h>
 #include <lain/app/cli.h>
@@ -21,7 +21,7 @@ namespace flowview
 	//                --input (if given), run it, dump the graph, and write its output to
 	//                --output (if given). Opens no window, so the Application runs
 	//                onProcess once and exits.
-	//   default    : gui-mode — open a window and show the InspectorWindow (ports as text,
+	//   default    : gui-mode — open a window and show the MainWindow (ports as text,
 	//                image outputs as thumbnails) + the node canvas. The graph's input is
 	//                bound to a default gradient until the Interface panel (next commit).
 	class FlowviewApp : public lain::app::ApplicationDelegate
@@ -33,7 +33,7 @@ namespace flowview
 		void onProcess(lain::app::Application& app) override;
 		void onStop(lain::app::Application& app) override;
 
-		// The gui-mode scene the InspectorWindow reads (reached via
+		// The gui-mode scene the MainWindow reads (reached via
 		// window.app().getDelegate<FlowviewApp>().graph()). Valid in gui-mode (built in
 		// onStart, released in onStop).
 		const lain::flow::Graph& graph() const { return *m_graph; }
@@ -71,6 +71,6 @@ namespace flowview
 		std::unique_ptr<lain::flow::Graph> m_graph;
 		lain::flow::SerialScheduler m_scheduler;			 // runs the scene (no threads needed)
 		lain::core::Factory<lain::flow::Node> m_nodeFactory; // node-type palette
-		InspectorWindow m_window;							 // gui-mode inspector
+		MainWindow m_window;							 // gui-mode inspector
 	};
 } // namespace flowview
