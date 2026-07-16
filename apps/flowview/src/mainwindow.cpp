@@ -200,41 +200,6 @@ namespace flowview
 		return true;
 	}
 
-	void MainWindow::refreshPreviews(const flow::Graph& graph)
-	{
-		std::set<PinKey> live;
-		const auto refresh = [&](flow::NodeId id, const flow::Port& p, bool output)
-		{
-			if (!p.ready() || p.type() != typeid(image::Image))
-				return;
-			const image::Image& img = p.value().get<image::Image>();
-			if (!img.valid())
-				return;
-			const PinKey key{id.value(), output, p.id()};
-			live.insert(key);
-			gui::Texture& tex = m_previews[key];	// default-empty on first sight
-			if (!tex.upload(img))					// re-upload in place when size/format fits...
-				tex = m_guiCtx->createTexture(img); // ...else first-time or resized -> reallocate
-		};
-		for (const flow::NodeId id : graph.topoOrder())
-		{
-			const flow::Node& node = graph.node(id);
-			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
-				refresh(id, node.input(i), false);
-			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
-				refresh(id, node.output(o), true);
-		}
-		// Drop previews whose pin is gone (or no longer a ready image); the erased
-		// gui::Texture reclaims its descriptor.
-		for (auto it = m_previews.begin(); it != m_previews.end();)
-		{
-			if (live.count(it->first) == 0)
-				it = m_previews.erase(it);
-			else
-				++it;
-		}
-	}
-
 	void MainWindow::renderImageSave(const PinKey& key, const image::Image& img)
 	{
 		const std::vector<std::string> formats = savableFormats(img);
@@ -391,10 +356,9 @@ namespace flowview
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
 
 				const PinKey key{node->id().value(), true, pin.id()};
-				const auto it = m_previews.find(key);
-				if (it != m_previews.end() && it->second.valid())
+				if (const gui::Texture* tex = m_previews.find(key))
 				{
-					gui::Image(it->second, math::Vec2f{side, side});
+					gui::Image(*tex, math::Vec2f{side, side});
 					if (gui::IsItemClicked())
 						previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 				}
@@ -460,15 +424,14 @@ namespace flowview
 				if (pin.value().empty())
 				{
 					// The producer was gated off / suppressed (conditional eval) — no value this run.
-					// refreshPreviews already dropped any stale thumbnail; say so rather than show blank.
+					// the preview cache already dropped any stale thumbnail; say so rather than show blank.
 					gui::TextDisabled("(no output this run)");
 				}
 				else
 				{
-					const auto it = m_previews.find(key);
-					if (it != m_previews.end() && it->second.valid())
+					if (const gui::Texture* tex = m_previews.find(key))
 					{
-						gui::Image(it->second, math::Vec2f{side, side});
+						gui::Image(*tex, math::Vec2f{side, side});
 						if (gui::IsItemClicked())
 							previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 					}
@@ -494,7 +457,7 @@ namespace flowview
 		if (changed)
 		{
 			appDelegate.reevaluate();
-			m_previewsDirty = true;
+			m_previews.markDirty();
 			m_dirty = true;
 			m_loadIssues.clear(); // load issues are stale once the graph changes
 		}
@@ -823,8 +786,8 @@ namespace flowview
 		const PinKey key = *m_previewTarget;
 		const flow::Node* node = findNode(graph, flow::NodeId{key.node});
 		const flow::Port* port = node != nullptr ? (key.output ? node->findOutput(key.port) : node->findInput(key.port)) : nullptr;
-		const auto it = m_previews.find(key);
-		if (node == nullptr || port == nullptr || !port->ready() || port->type() != typeid(image::Image) || it == m_previews.end() || !it->second.valid())
+		const gui::Texture* tex = m_previews.find(key);
+		if (node == nullptr || port == nullptr || !port->ready() || port->type() != typeid(image::Image) || tex == nullptr)
 		{
 			m_previewTarget.reset();
 			gui::TextDisabled("(the previewed asset is no longer available)");
@@ -848,7 +811,7 @@ namespace flowview
 		const float w = imgW * scale;
 		const float h = imgH * scale;
 		gui::SetCursorPosX(gui::GetCursorPosX() + std::max(0.0f, (avail.x - w) * 0.5f));
-		gui::Image(it->second, math::Vec2f{w, h});
+		gui::Image(*tex, math::Vec2f{w, h});
 	}
 
 	// Stamp the default dock arrangement (via the gui docking seam). Right column (Inspector/Nodes over
@@ -1212,22 +1175,18 @@ namespace flowview
 		gui::End();
 
 		// A topology edit re-runs the scene, so the previews need refreshing (recomputed
-		// images, added/removed ports). Mark them dirty; refreshPreviews below upserts in
+		// images, added/removed ports). Mark them dirty; refreshIfDirty below upserts in
 		// place where it can. (Deferred, not per-frame — acm::Texture::upload is a stalling
 		// synchronous submit.)
 		if (edited)
 		{
 			appDelegate.reevaluate();
-			m_previewsDirty = true;
+			m_previews.markDirty();
 			m_dirty = true; // a topology edit -> unsaved changes
 			m_loadIssues.clear();
 		}
 
-		if (m_previewsDirty)
-		{
-			refreshPreviews(graph);
-			m_previewsDirty = false;
-		}
+		m_previews.refreshIfDirty(graph, *m_guiCtx);
 
 		// The inspector panel — reads the (now post-edit) graph.
 		gui::SetNextWindowPos(math::Vec2f{20.0f, 20.0f}, ImGuiCond_FirstUseEver);
@@ -1279,19 +1238,18 @@ namespace flowview
 
 			auto port = [&](const char* tag, const flow::Port& p, bool output)
 			{
-				// A ready image port shows extent + its thumbnail (uploaded + cached by
-				// refreshPreviews, keyed by the port's stable id); everything else — CPU values
+				// A ready image port shows extent + its thumbnail (uploaded + cached by the
+				// preview cache, keyed by the port's stable id); everything else — CPU values
 				// and the empty slot — is text via the shared Port::describe() pathway.
 				if (p.ready() && p.type() == typeid(image::Image))
 				{
 					const image::Image& img = p.value().get<image::Image>();
 					gui::Text("    %s %s: %s %dx%d", tag, p.name().c_str(), std::string(p.typeName()).c_str(), img.width(), img.height());
 					const PinKey key{id.value(), output, p.id()};
-					const auto it = m_previews.find(key);
-					if (it != m_previews.end() && it->second.valid())
+					if (const gui::Texture* tex = m_previews.find(key))
 					{
 						const float side = previewExtent(m_previewSize);
-						gui::Image(it->second, math::Vec2f{side, side}); // Texture -> ImTextureRef implicitly
+						gui::Image(*tex, math::Vec2f{side, side}); // Texture -> ImTextureRef implicitly
 						if (gui::IsItemClicked())
 							previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 					}
@@ -1318,7 +1276,7 @@ namespace flowview
 		if (paramEdited)
 		{
 			appDelegate.reevaluate();
-			m_previewsDirty = true;
+			m_previews.markDirty();
 			m_dirty = true; // a param edit -> unsaved changes
 			m_loadIssues.clear();
 		}
@@ -1352,7 +1310,7 @@ namespace flowview
 			m_loadRequested = false;
 			m_laidOut = false;
 			m_previews.clear(); // the old graph's cached thumbnails are gone
-			m_previewsDirty = true;
+			m_previews.markDirty();
 			gui::nodes::ClearNodeSelection();
 			gui::nodes::ClearLinkSelection();
 		}

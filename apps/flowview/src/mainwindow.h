@@ -2,6 +2,8 @@
 
 #include "canvasstyle.h"
 #include "parameditors.h"
+#include "pinkey.h"
+#include "previewcache.h"
 
 #include <lain/app/windowdelegate.h>
 #include <lain/flow/serialize/loadresult.h> // EditorData + Graph (complete, for the m_loadedGraph member)
@@ -58,23 +60,6 @@ namespace flowview
 		Large,
 	};
 
-	// Identifies one port's preview by its stable logical position (node + direction +
-	// index) — a key that survives recomputes but not node deletion. No GPU/ImGui types.
-	struct PinKey
-	{
-		std::uint64_t node;
-		bool output;
-		lain::flow::PortId port; // stable id, so a preview survives sibling pins changing
-
-		bool operator<(const PinKey& o) const
-		{
-			if (node != o.node)
-				return node < o.node;
-			if (output != o.output)
-				return output < o.output;
-			return port < o.port;
-		}
-	};
 
 	// The app's main window: it drives every pane (Graph canvas, Inspector, Interface, Preview,
 	// Issues, menu bar) inside one docking layout. Owns its GUI resources (the lain::gui Context +
@@ -93,12 +78,6 @@ namespace flowview
 		void onShutdown(lain::app::Window& window) override;
 
 	private:
-		// Upsert a preview per ready image port (upload in place when the size/format
-		// matches, else recreate) and prune previews whose port is gone. Runs only when the
-		// scene may have changed (first frame + after an edit) — acm::Texture::upload is a
-		// synchronous submit, so it must not run every frame.
-		void refreshPreviews(const lain::flow::Graph& graph);
-
 		// The application menu bar (File: New/Open/Save/Save As/Quit; Add ▸ category ▸ kind), drawn once
 		// per frame at the viewport top, plus the global Cmd/Ctrl shortcuts. Menu edits feed the shared
 		// `edited` flag so the scene re-runs like any edit.
@@ -146,12 +125,11 @@ namespace flowview
 		void locateNode(lain::flow::NodeId id);
 
 		std::unique_ptr<lain::gui::Context> m_guiCtx;
-		ParamEditors m_paramEditors;					 // type-keyed param editors (registered in onInit)
-		CanvasStyle m_canvasStyle;						 // canvas colours + dim state (registered in onInit)
-		std::map<PinKey, lain::gui::Texture> m_previews; // one uploaded thumbnail per image port
-		bool m_previewsDirty = true;					 // rebuild previews on the next frame (init + after edits)
-		bool m_laidOut = false;							 // node canvas: seed node positions on the first frame
-		int m_addCounter = 0;							 // palette-added nodes cascade their position
+		ParamEditors m_paramEditors; // type-keyed param editors (registered in onInit)
+		CanvasStyle m_canvasStyle;	 // canvas colours + dim state (registered in onInit)
+		PreviewCache m_previews;	 // one uploaded thumbnail per image port
+		bool m_laidOut = false;		 // node canvas: seed node positions on the first frame
+		int m_addCounter = 0;		 // palette-added nodes cascade their position
 
 		// Link-drag feedback (slice C): while a link is dragged, grey every pin that isn't a compatible
 		// drop target (opposite direction + same type). Captured on IsLinkStarted (after EndNodeEditor),
