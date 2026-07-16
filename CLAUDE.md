@@ -251,7 +251,9 @@ refactor of `flow` plus the app stack + viewer:**
   graph is pulled (`Graph::evaluate`). **cli-mode** (`--headless`/`-c`): `dumpGraph`
   writes each node/port in topo order to stdout — CPU values as text, an `acm::Texture`
   port read back through the shared device to extent + corner pixels. **gui-mode**
-  (default): `FlowviewApp::InspectorWindow` (a `WindowDelegate`) owns a `lain::gui::
+  (default): flowview's `MainWindow` (a `WindowDelegate`; originally `InspectorWindow`, since
+  split into one pane per file under `apps/flowview/src/panes/` over a shared `AppContext` — see
+  [ADR-0008](docs/adr/0008-flowview-pane-architecture.md)) owns a `lain::gui::
   Context` + an `acm::Sampler`, reads the evaluated graph each frame into an ImGui
   "Inspector" panel (port text; each `acm::Texture` port previewed via a
   `Context::image` cache — see the interactive-editing bullet below). `--frames N` quits after N frames

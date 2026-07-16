@@ -14,6 +14,7 @@ add_executable(flowview
 	src/panes/previewpane.cpp
 	src/panes/interfacepane.cpp
 	src/panes/inspectorpane.cpp
+	src/panes/graphpane.cpp
 	src/panes/imagesave.cpp
 	src/panes/canvasids.cpp
 	src/parameditors.cpp

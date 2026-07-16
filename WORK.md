@@ -744,10 +744,17 @@ the centre (independent splits). Built in 3 slices.
   real zoom would need the **imgui-node-editor migration** (Tier B #6). **The window/panel layout pass is
   complete.**
 
-**Parked for later passes:** **split `inspectorwindow.{h,cpp}` per-pane + rename** (needs discussion) —
-it has grown well past an "inspector": it's really the app's main window driving every pane (Graph canvas,
-Inspector, Interface, Preview, Issues, menu bar, docking). Worth splitting a `.h/.cpp` per pane and
-renaming the delegate `MainWindow`; a structural refactor, its own step · user-configurable / theme.json
+**The pane-split refactor is complete** ([ADR-0008](docs/adr/0008-flowview-pane-architecture.md);
+`inspectorwindow.{h,cpp}` → `mainwindow.{h,cpp}` + `src/panes/*`):
+the 1369-line delegate became a ~130-line `MainWindow` that orchestrates one pane per file — `MenuBarPane`,
+`IssuesPane`, `PreviewPane`, `InterfacePane`, `InspectorPane`, `GraphPane` — over a shared `AppContext` model
+(graph-adjacent metadata + cross-pane signals + document/pending-load state), a `PreviewCache` (the per-pin
+thumbnail cache), and small shared helpers (`pinkey.h`, `panes/canvasids.{h,cpp}` = `pinId`/`selectedNodes`,
+`panes/imagesave.{h,cpp}` = the format+Save widget). Each pane is a plain struct with a `draw(...refs...)`
+called explicitly from `onRender`; the window owns the GUI resources (gui `Context`, `PreviewCache`,
+`ParamEditors`) and hands panes references. Behaviour unchanged; built warning-clean, `ctest` 289/289.
+
+**Parked for later passes:** user-configurable / theme.json
 colours (the registries are the load target) · pin **shape** encodes presence (square=required, circle=optional,
 triangle=conditional — deferred: mostly-required → mostly-square is visually sharp) · **undo/redo** —
 snapshot-based (reuses serialize: a snapshot is Save-to-RAM, restore is Load-from-RAM), hooks the single
