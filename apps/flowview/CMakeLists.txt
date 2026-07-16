@@ -9,6 +9,7 @@ add_executable(flowview
 	src/mainwindow.cpp
 	src/appcontext.cpp
 	src/previewcache.cpp
+	src/panes/menubar.cpp
 	src/parameditors.cpp
 	src/scene.cpp
 	src/graphio.cpp

@@ -51,8 +51,14 @@ namespace flowview
 		// MainWindow::onInit (stable for the window's life); null before then.
 		FlowviewApp* app = nullptr;
 
+		// Add a catalog node (`key`) to the graph and cascade its grid position so successive adds
+		// don't stack; returns its id. Shared by the menu-bar Add and the Nodes palette (both add from
+		// the catalog list). The caller sets `edited` so the scene re-runs.
+		lain::flow::NodeId addCatalogNode(const std::string& key);
+
 		// --- Graph-adjacent metadata (extra data sitting alongside the graph) ---
 		PreviewSize previewSize = PreviewSize::Medium; // thumbnail size (enumCombo-driven)
+		int addCounter = 0; // palette-added nodes cascade their grid position (menu Add + Nodes palette)
 		// The chosen save format per image output pin (the inline dropdown's selection), by format key
 		// ("png" / "jpg" / …). Robust to the savable list changing — an entry not (or no longer) in a
 		// port's list falls back to that list's first format.
