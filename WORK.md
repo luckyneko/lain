@@ -728,7 +728,21 @@ the centre (independent splits). Built in 3 slices.
   shows a **header** (which node's which pin + image size — a future version may float it over the image),
   then the image **fit-to-pane** (aspect-preserving, centred); it resolves the target each frame and clears
   to a hint if the source port/node is gone. Zoom/pan is a future refinement (the `lain::app` viewer).
-- **Slice 3 — Issues panel + validation + click-to-locate + boundary-suppression + drop the load modal.**
+- ✅ **Slice 3 — Issues panel + validation BUILT** (2026-07-16, canvas-only → live eyeball pending). The
+  Issues panel is a **live validation** view: **missing-required inputs** (⚠, a Required input with no
+  incoming edge) and **unused outputs** (ℹ, an active node's output with no outgoing edge) recomputed
+  from the graph each frame; **load issues** (from Open, mapped from `LoadResult`, persist until the graph
+  is next edited — the **load modal is retired**); and a **transient rejected-connect** row (⚠, ~4 s frame
+  countdown) surfacing the previously-silent `tryConnect` failure. Each row is **click-to-locate**:
+  select the node + **centre it** on the canvas (deferred `EditorContextResetPanning` computed from the
+  node's drawn pos/size + the canvas size — `EditorContextMoveToNode` parks it top-right, not centred) +
+  `activateWindowTab("Graph")`. Severity drives the row colour. **Boundary nodes are suppressed from the
+  Inspector** (a selected GroupInput/GroupOutput shows an "edit in the Interface panel" hint).
+  **Canvas navigation** (raised by the locate work): a bottom-right **MiniMap** (overview +
+  click-to-navigate) and **Alt+left-drag panning** (`EmulateThreeButtonMouse`, trackpad-friendly vs
+  imnodes' middle-mouse default). imnodes has **no zoom** — the mitigation is minimap + pan + centre;
+  real zoom would need the **imgui-node-editor migration** (Tier B #6). **The window/panel layout pass is
+  complete.**
 
 **Parked for later passes:** **split `inspectorwindow.{h,cpp}` per-pane + rename** (needs discussion) —
 it has grown well past an "inspector": it's really the app's main window driving every pane (Graph canvas,

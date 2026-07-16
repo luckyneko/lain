@@ -15,6 +15,7 @@
 #include <optional>
 #include <string>
 #include <typeindex>
+#include <vector>
 
 namespace lain::flow
 {
@@ -34,6 +35,20 @@ namespace lain::image
 namespace flowview
 {
 	class FlowviewApp; // the delegate whose graph the Interface panel binds
+
+	// A row in the Issues panel — a validation problem, with an optional node to locate on click.
+	struct Issue
+	{
+		enum class Severity
+		{
+			Info,	 // a heads-up (an unused output)
+			Warning, // something's wrong (a required input unconnected, a rejected connect)
+			Error,	 // a structural loss (a load error)
+		};
+		Severity severity = Severity::Warning;
+		std::string message;
+		lain::flow::NodeId node; // default (sentinel) = not locatable
+	};
 	// Thumbnail size for the image preview, chosen at runtime via a lain::gui::enumCombo
 	// (its labels come from lain::meta::enums).
 	enum class PreviewSize
@@ -123,6 +138,12 @@ namespace flowview
 			m_activatePreview = true;
 		}
 
+		// The Issues panel: live validation of the current graph (recomputed each frame) plus persisted
+		// load issues and a transient rejected-connect, each row click-to-locate.
+		void renderIssues(const lain::flow::Graph& graph);
+		// Select + frame a node on the canvas (from an Issue row) and bring the Graph tab to front.
+		void locateNode(lain::flow::NodeId id);
+
 		std::unique_ptr<lain::gui::Context> m_guiCtx;
 		ParamEditors m_paramEditors;					 // type-keyed param editors (registered in onInit)
 		CanvasStyle m_canvasStyle;						 // canvas colours + dim state (registered in onInit)
@@ -173,5 +194,16 @@ namespace flowview
 		// brings the Preview tab to front on the frame a thumbnail is clicked.
 		std::optional<PinKey> m_previewTarget;
 		bool m_activatePreview = false;
+
+		// Issues panel state: load issues persist until the graph is edited; a rejected connect is a
+		// transient row that fades after a few seconds (frame countdown). Live validation isn't stored —
+		// it's recomputed from the graph each frame.
+		std::vector<Issue> m_loadIssues;
+		std::optional<Issue> m_recentIssue;
+		int m_recentIssueFrames = 0;
+
+		// A node to centre on the canvas (from a click-to-locate); applied on the next Graph draw, which
+		// is where its drawn position + size are known.
+		std::optional<lain::flow::NodeId> m_locateTarget;
 	};
 } // namespace flowview

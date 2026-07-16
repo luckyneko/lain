@@ -193,6 +193,10 @@ namespace flowview
 		m_guiCtx = std::make_unique<gui::Context>(window.app(), window, guiConfig);
 		registerBuiltinParamEditors(m_paramEditors);
 		registerBuiltinCanvasStyle(m_canvasStyle);
+
+		// Trackpad-friendly canvas panning: Alt + left-drag pans (imnodes' default pan is middle-mouse,
+		// awkward on a laptop). The gui Context created the imnodes context this reads.
+		gui::nodes::GetIO().EmulateThreeButtonMouse.Modifier = &gui::GetIO().KeyAlt;
 		return true;
 	}
 
@@ -492,6 +496,7 @@ namespace flowview
 			appDelegate.reevaluate();
 			m_previewsDirty = true;
 			m_dirty = true;
+			m_loadIssues.clear(); // load issues are stale once the graph changes
 		}
 	}
 
@@ -537,6 +542,7 @@ namespace flowview
 		m_loadRequested = true;
 		m_currentPath.clear(); // an untitled document
 		m_dirty = false;
+		m_loadIssues.clear();
 	}
 
 	void InspectorWindow::requestNew()
@@ -584,12 +590,13 @@ namespace flowview
 		if (!path)
 			return;
 		flow::serialize::LoadResult result = loadGraph(path->string(), appDelegate.nodeFactory());
-		if (!result.clean())
+		// Surface load problems in the Issues panel (not a modal) — they persist until the graph is
+		// next edited. Map the serialize severity onto the panel's.
+		m_loadIssues.clear();
+		for (const flow::serialize::LoadIssue& issue : result.issues)
 		{
-			std::string summary;
-			for (const auto& issue : result.issues)
-				summary += "- " + issue.message + "\n";
-			gui::message("Graph loaded with issues", summary, true);
+			const Issue::Severity sev = issue.severity == flow::serialize::Severity::Error ? Issue::Severity::Error : Issue::Severity::Warning;
+			m_loadIssues.push_back({sev, "load: " + issue.message, {}});
 		}
 		if (result.graph.nodeCount() > 0) // replace the scene — deferred to end of frame
 		{
@@ -704,6 +711,106 @@ namespace flowview
 			app.quit();
 	}
 
+	// Live validation of the current graph: a required input with no incoming edge (can't run), and an
+	// active node's output with no outgoing edge (a dead end). Recomputed each frame — cheap at
+	// prototyping scale, and self-clearing as the graph is fixed.
+	static std::vector<Issue> collectIssues(const flow::Graph& graph)
+	{
+		std::vector<Issue> issues;
+		std::set<std::pair<std::uint64_t, std::uint32_t>> connectedIn;
+		std::set<std::pair<std::uint64_t, std::uint32_t>> connectedOut;
+		for (const flow::Graph::Edge& e : graph.edges())
+		{
+			connectedIn.insert({e.to.node.value(), e.to.port.value()});
+			connectedOut.insert({e.from.node.value(), e.from.port.value()});
+		}
+		char buf[192];
+		for (const flow::NodeId id : graph.topoOrder())
+		{
+			const flow::Node& node = graph.node(id);
+			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
+			{
+				const flow::Port& in = node.input(i);
+				if (in.required() && connectedIn.count({id.value(), in.id().value()}) == 0)
+				{
+					std::snprintf(buf, sizeof(buf), "%s [%llu]: required input '%s' is not connected",
+								  node.name().c_str(), static_cast<unsigned long long>(id.value()), in.name().c_str());
+					issues.push_back({Issue::Severity::Warning, buf, id});
+				}
+			}
+			if (node.ready())
+			{
+				for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
+				{
+					const flow::Port& out = node.output(o);
+					if (connectedOut.count({id.value(), out.id().value()}) == 0)
+					{
+						std::snprintf(buf, sizeof(buf), "%s [%llu]: output '%s' is unused",
+									  node.name().c_str(), static_cast<unsigned long long>(id.value()), out.name().c_str());
+						issues.push_back({Issue::Severity::Info, buf, id});
+					}
+				}
+			}
+		}
+		return issues;
+	}
+
+	void InspectorWindow::locateNode(flow::NodeId id)
+	{
+		gui::nodes::ClearNodeSelection();
+		gui::nodes::SelectNode(static_cast<int>(id.value()));
+		m_locateTarget = id;			 // centred on the next Graph draw (needs the node's drawn size)
+		gui::activateWindowTab("Graph"); // bring the canvas forward so the located node is visible
+	}
+
+	void InspectorWindow::renderIssues(const flow::Graph& graph)
+	{
+		const auto severityColour = [](Issue::Severity s) -> image::ColorRGBA8
+		{
+			switch (s)
+			{
+				case Issue::Severity::Info:
+					return image::ColorRGBA8(150, 150, 160, 255);
+				case Issue::Severity::Warning:
+					return image::ColorRGBA8(230, 180, 60, 255);
+				case Issue::Severity::Error:
+					return image::ColorRGBA8(230, 90, 80, 255);
+			}
+			return image::ColorRGBA8(200, 200, 200, 255);
+		};
+		int idx = 0;
+		const auto row = [&](const Issue& issue)
+		{
+			gui::PushID(idx++); // duplicate messages would otherwise share a Selectable id
+			gui::PushStyleColor(ImGuiCol_Text, gui::packColor(severityColour(issue.severity)));
+			if (gui::Selectable(issue.message.c_str()) && issue.node != flow::NodeId{})
+				locateNode(issue.node);
+			gui::PopStyleColor();
+			gui::PopID();
+		};
+
+		bool any = false;
+		if (m_recentIssueFrames > 0 && m_recentIssue)
+		{
+			row(*m_recentIssue);
+			--m_recentIssueFrames; // transient: fade after a few seconds
+			any = true;
+		}
+		for (const Issue& issue : m_loadIssues)
+		{
+			row(issue);
+			any = true;
+		}
+		const std::vector<Issue> derived = collectIssues(graph);
+		for (const Issue& issue : derived)
+		{
+			row(issue);
+			any = true;
+		}
+		if (!any)
+			gui::TextDisabled("No issues.");
+	}
+
 	void InspectorWindow::renderPreview(const flow::Graph& graph)
 	{
 		if (!m_previewTarget)
@@ -786,6 +893,7 @@ namespace flowview
 		gui::SetNextWindowPos(math::Vec2f{360.0f, 20.0f}, ImGuiCond_FirstUseEver);
 		gui::SetNextWindowSize(math::Vec2f{880.0f, 600.0f}, ImGuiCond_FirstUseEver);
 		gui::Begin("Graph");
+		const ImVec2 canvasSize = gui::GetContentRegionAvail(); // captured before the editor: to centre a located node
 
 		// Link detach (click-drag a link off a pin to remove/move it) is enabled on INPUT pins
 		// only — see the per-node loop. Leaving OUTPUT pins without the flag lets a drag *from* an
@@ -938,7 +1046,23 @@ namespace flowview
 			gui::nodes::PopColorStyle();
 		}
 
+		// A minimap (bottom-right) — an overview + click-to-navigate, so nodes panned off-screen aren't
+		// lost (imnodes has no zoom; a minimap + panning is the mitigation until an imgui-node-editor
+		// migration would add zoom).
+		gui::nodes::MiniMap(0.18f, ImNodesMiniMapLocation_BottomRight);
 		gui::nodes::EndNodeEditor();
+
+		// Centre a located node (from an Issue click): pan so it sits at the canvas centre. Done here —
+		// the node's grid position + size are only known once it has been drawn.
+		if (m_locateTarget)
+		{
+			const int nid = static_cast<int>(m_locateTarget->value());
+			const ImVec2 nodePos = gui::nodes::GetNodeGridSpacePos(nid);
+			const ImVec2 nodeSize = gui::nodes::GetNodeDimensions(nid);
+			gui::nodes::EditorContextResetPanning(ImVec2(canvasSize.x * 0.5f - (nodePos.x + nodeSize.x * 0.5f),
+													 canvasSize.y * 0.5f - (nodePos.y + nodeSize.y * 0.5f)));
+			m_locateTarget.reset();
+		}
 
 		// Canvas editing (must query imnodes after EndNodeEditor): a detached or dragged
 		// link disconnects/connects; Delete removes the selected links + nodes; a
@@ -972,7 +1096,13 @@ namespace flowview
 		int endAttr = 0;
 		if (gui::nodes::IsLinkCreated(&startAttr, &endAttr))
 		{
-			edited |= tryConnect(graph, startAttr, endAttr);
+			if (tryConnect(graph, startAttr, endAttr))
+				edited = true;
+			else // surface the silent rejection as a transient Issue
+			{
+				m_recentIssue = Issue{Issue::Severity::Warning, "Rejected connection: incompatible types or a cycle", {}};
+				m_recentIssueFrames = 240; // ~4 s at 60fps
+			}
 			m_linkDragActive = false; // the drag ended by forming a link
 		}
 
@@ -1090,6 +1220,7 @@ namespace flowview
 			appDelegate.reevaluate();
 			m_previewsDirty = true;
 			m_dirty = true; // a topology edit -> unsaved changes
+			m_loadIssues.clear();
 		}
 
 		if (m_previewsDirty)
@@ -1123,6 +1254,14 @@ namespace flowview
 			char header[128];
 			std::snprintf(header, sizeof(header), "%s [%llu]", node.name().c_str(), static_cast<unsigned long long>(id.value()));
 			gui::SeparatorText(header);
+
+			// Boundary nodes are edited in the Interface panel (their whole-graph I/O view), not here —
+			// no point duplicating their pins in the per-node Inspector.
+			if (dynamic_cast<const flow::GroupInputNode*>(&node) != nullptr || dynamic_cast<const flow::GroupOutputNode*>(&node) != nullptr)
+			{
+				gui::TextDisabled("Boundary node - edit its pins in the Interface panel.");
+				continue;
+			}
 
 			// Editable params, chosen by type via the registry (file field, drags, colour
 			// swatch). PushID(node) so same-named params on different nodes don't collide.
@@ -1181,6 +1320,7 @@ namespace flowview
 			appDelegate.reevaluate();
 			m_previewsDirty = true;
 			m_dirty = true; // a param edit -> unsaved changes
+			m_loadIssues.clear();
 		}
 
 		// The graph's I/O boundary — the host-binding surface (bind inputs, save outputs).
@@ -1196,8 +1336,8 @@ namespace flowview
 		gui::Begin("Preview");
 		renderPreview(graph);
 		gui::End();
-		gui::Begin("Issues");
-		gui::TextDisabled("No issues."); // slice 3
+		if (gui::Begin("Issues"))
+			renderIssues(graph);
 		gui::End();
 
 		// The unsaved-changes guard for New (opened by requestNew when m_dirty).
