@@ -2,6 +2,7 @@
 
 #include "appcontext.h"
 #include "canvasstyle.h"
+#include "panes/inspectorpane.h"
 #include "panes/interfacepane.h"
 #include "panes/issuespane.h"
 #include "panes/menubar.h"
@@ -43,6 +44,7 @@ namespace flowview
 		MenuBarPane m_menuBar;		 // File / Add / View menu + shortcuts (its own pane)
 		IssuesPane m_issues;		 // the Issues panel (validation + load issues)
 		PreviewPane m_preview;		 // the Preview panel (clicked asset, full-size)
+		InspectorPane m_inspector;	 // the per-node Inspector (params + ports)
 		InterfacePane m_interface;	 // the Interface panel (graph I/O boundary)
 		bool m_laidOut = false;		 // node canvas: seed node positions on the first frame
 

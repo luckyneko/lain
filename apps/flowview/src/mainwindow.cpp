@@ -1,7 +1,7 @@
 #include "mainwindow.h"
 
 #include "flowviewapp.h"
-#include "panes/imagesave.h" // the shared image-save widget (Inspector output ports)
+#include "panes/canvasids.h" // pinId + selectedNodes (shared canvas id helpers)
 #include "scene.h"			 // nodeCatalog (the Add menu's category grouping)
 
 #include <archimedes/archimedes.h>
@@ -16,13 +16,11 @@
 #include <lain/flow/port.h>
 #include <lain/flow/porttyperegistry.h>
 #include <lain/gui/color.h> // gui::packColor (image::ColorRGBA8 -> ImU32)
-#include <lain/gui/dock.h>	// the docking seam (no imgui_internal in the app)
-#include <lain/gui/enums.h>
+#include <lain/gui/dock.h> // the docking seam (no imgui_internal in the app)
 #include <lain/gui/gui.h>
 #include <lain/gui/nodes.h>
 #include <lain/image/image.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -34,16 +32,6 @@
 namespace flowview
 {
 	using namespace lain;
-
-	// A pin's editor id, in imnodes' attribute id-space (separate from node + link ids).
-	// node * 1000 + (output ? 500 : 0) + PortId keeps inputs and outputs distinct; assumes
-	// fewer than 500 ports per direction and node ids well under ~2M — fine for prototyping.
-	// Encodes the port's stable PortId (not its index), so a pin's editor id survives sibling
-	// pins being added/removed.
-	static int pinId(flow::NodeId node, bool output, flow::PortId port)
-	{
-		return static_cast<int>(node.value()) * 1000 + (output ? 500 : 0) + static_cast<int>(port.value());
-	}
 
 	// Inverse of pinId(): decode an imnodes attribute id back to the (node, direction,
 	// port) it stands for — used when a dragged link reports its endpoint pins.
@@ -99,22 +87,6 @@ namespace flowview
 			if (id >= 0 && static_cast<std::size_t>(id) < edges.size())
 				out.push_back(edges[static_cast<std::size_t>(id)]);
 		}
-		return out;
-	}
-
-	// The currently-selected nodes as ids (Delete key). imnodes node ids are the int
-	// cast of NodeId.
-	static std::vector<flow::NodeId> selectedNodes()
-	{
-		std::vector<flow::NodeId> out;
-		const int selected = gui::nodes::NumSelectedNodes();
-		if (selected <= 0)
-			return out;
-
-		std::vector<int> nodeIds(static_cast<std::size_t>(selected));
-		gui::nodes::GetSelectedNodes(nodeIds.data());
-		for (const int id : nodeIds)
-			out.push_back(flow::NodeId{static_cast<std::uint64_t>(id)});
 		return out;
 	}
 
@@ -555,98 +527,8 @@ namespace flowview
 
 		m_previews.refreshIfDirty(graph, *m_guiCtx);
 
-		// The inspector panel — reads the (now post-edit) graph.
-		gui::SetNextWindowPos(math::Vec2f{20.0f, 20.0f}, ImGuiCond_FirstUseEver);
-		gui::SetNextWindowSize(math::Vec2f{320.0f, 320.0f}, ImGuiCond_FirstUseEver);
-		gui::Begin("Inspector");
-		gui::enumCombo("Preview size", m_ctx.previewSize); // labels from lain::meta::enums
-
-		// Selection-driven: inspect only the node(s) selected on the canvas (stacked, walked in topo
-		// order for a stable top-to-bottom layout), not the whole graph. Nothing selected -> a hint.
-		// (The Interface panel is the separate host-binding surface.)
-		const std::vector<flow::NodeId> selection = selectedNodes();
-		if (selection.empty())
-			gui::TextDisabled("Select a node on the canvas to inspect it.");
-
-		bool paramEdited = false;
-		for (const flow::NodeId id : graph.topoOrder())
-		{
-			if (std::find(selection.begin(), selection.end(), id) == selection.end())
-				continue; // only the selected nodes
-
-			flow::Node& node = graph.node(id); // non-const: params are edited below
-			// An obvious titled section per selected node (name prominent; the id disambiguates two
-			// same-named nodes until editable node names land).
-			char header[128];
-			std::snprintf(header, sizeof(header), "%s [%llu]", node.name().c_str(), static_cast<unsigned long long>(id.value()));
-			gui::SeparatorText(header);
-
-			// Boundary nodes are edited in the Interface panel (their whole-graph I/O view), not here —
-			// no point duplicating their pins in the per-node Inspector.
-			if (dynamic_cast<const flow::GroupInputNode*>(&node) != nullptr || dynamic_cast<const flow::GroupOutputNode*>(&node) != nullptr)
-			{
-				gui::TextDisabled("Boundary node - edit its pins in the Interface panel.");
-				continue;
-			}
-
-			// Editable params, chosen by type via the registry (file field, drags, colour
-			// swatch). PushID(node) so same-named params on different nodes don't collide.
-			gui::PushID(static_cast<int>(id.value()));
-			bool nodeEdited = false;
-			for (flow::PortIndex pi = 0; pi < node.paramCount(); ++pi)
-			{
-				flow::Param& p = node.param(pi);
-				nodeEdited |= m_paramEditors.render(p.name(), p.type(), p.value());
-			}
-			if (nodeEdited)
-				node.markDirty(); // a param edit -> incremental re-eval recomputes this node + downstream
-			paramEdited |= nodeEdited;
-			gui::PopID();
-
-			auto port = [&](const char* tag, const flow::Port& p, bool output)
-			{
-				// A ready image port shows extent + its thumbnail (uploaded + cached by the
-				// preview cache, keyed by the port's stable id); everything else — CPU values
-				// and the empty slot — is text via the shared Port::describe() pathway.
-				if (p.ready() && p.type() == typeid(image::Image))
-				{
-					const image::Image& img = p.value().get<image::Image>();
-					gui::Text("    %s %s: %s %dx%d", tag, p.name().c_str(), std::string(p.typeName()).c_str(), img.width(), img.height());
-					const PinKey key{id.value(), output, p.id()};
-					if (const gui::Texture* tex = m_previews.find(key))
-					{
-						const float side = previewExtent(m_ctx.previewSize);
-						gui::Image(*tex, math::Vec2f{side, side}); // Texture -> ImTextureRef implicitly
-						if (gui::IsItemClicked())
-							m_ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
-					}
-					if (output) // outputs are the results you'd export; inputs are just what was fed in
-					{
-						gui::PushID(pinId(id, output, p.id()));
-						renderImageSave(m_ctx, key, img);
-						gui::PopID();
-					}
-					return;
-				}
-				gui::Text("    %s %s: %s", tag, p.name().c_str(), p.describe().c_str());
-			};
-
-			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
-				port("in ", node.input(i), false);
-			for (flow::PortIndex i = 0; i < node.outputCount(); ++i)
-				port("out", node.output(i), true);
-		}
-		gui::End();
-
-		// A param edit re-runs the scene (a full run recomputes every node) and marks the
-		// previews for refresh next frame — the same path a canvas edit takes.
-		if (paramEdited)
-		{
-			appDelegate.reevaluate();
-			m_previews.markDirty();
-			m_ctx.dirty = true; // a param edit -> unsaved changes
-			m_ctx.loadIssues.clear();
-		}
+		// The per-node Inspector — reads (and param-edits) the now post-edit graph.
+		m_inspector.draw(m_ctx, graph, m_previews, m_paramEditors);
 
 		// The graph's I/O boundary — the host-binding surface (bind inputs, save outputs).
 		m_interface.draw(m_ctx, graph, m_previews, m_paramEditors);
