@@ -151,5 +151,10 @@ namespace flowview
 		std::filesystem::path m_currentPath;
 		bool m_dirty = false;	  // unsaved changes since the last save / load / new (drives the New guard)
 		bool m_confirmNew = false; // open the unsaved-changes modal next frame (requestNew set it)
+
+		// Docking: seed the default dock layout on the next frame (first run / --reset-layout), and the
+		// View ▸ Reset Layout request. Both re-stamp the default (gui::dock*); a saved ~/.flowview/imgui.ini wins.
+		bool m_seedLayout = false;
+		bool m_resetLayout = false;
 	};
 } // namespace flowview

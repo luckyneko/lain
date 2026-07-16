@@ -30,17 +30,27 @@ namespace lain::gui
 	//   lain::gui::Begin("Inspector"); ...; lain::gui::End();
 	//   window.renderer().render([&](acm::CommandBuffer cmd, uint32_t) { ctx.render(cmd); });
 	//
+	// Construction options — a struct so each is named at the call site (rather than a bare trailing
+	// bool with no meaning on its own).
+	struct ContextConfig
+	{
+		// The ImGui layout-persistence file — loaded on construction and saved (throttled) while
+		// running, so panel positions/sizes survive a restart. Empty (the default) disables persistence
+		// entirely: nothing is read or written, so no stray imgui.ini appears. A multi-window app gives
+		// each window a distinct name. ImGui holds the pointer (it does not copy), so the Context keeps
+		// the string alive for its lifetime.
+		std::string iniFilename;
+		// Opt in to ImGui docking (ConfigFlags_DockingEnable) — the host then hosts a DockSpace and
+		// windows tile with splitters. Off by default so a fixed-layout gui client isn't given docking
+		// behaviour it didn't ask for. (Multi-viewport stays off regardless.)
+		bool docking = false;
+	};
+
 	// All calls are main-thread only (ImGui is single-threaded).
 	class Context
 	{
 	public:
-		// iniFilename: the ImGui layout-persistence file — loaded on construction and
-		// saved (throttled) while running, so panel positions/sizes survive a restart.
-		// Empty (the default) disables persistence entirely: nothing is read or written,
-		// so no stray imgui.ini appears. A multi-window app passes a distinct name per
-		// window to keep their layouts separate. ImGui holds the pointer (it does not
-		// copy), so the Context keeps the string alive for its lifetime.
-		Context(lain::app::Application& app, lain::app::Window& window, std::string iniFilename = {});
+		Context(lain::app::Application& app, lain::app::Window& window, ContextConfig config = {});
 		~Context();
 		Context(const Context&) = delete;
 		Context& operator=(const Context&) = delete;

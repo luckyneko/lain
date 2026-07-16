@@ -9,8 +9,11 @@
 
 include(FetchContent)
 
-set(IMGUI_VER "1.92.8" CACHE STRING "Vendored Dear ImGui version")
-set(IMGUI_FILE "github.com/ocornut/imgui/archive/refs/tags/v${IMGUI_VER}.tar.gz")
+# The DOCKING branch (superset of the release: adds DockSpace / DockBuilder + multi-viewport; lain
+# uses docking, multi-viewport is deferred). Docking isn't in the tagged releases, so it's tracked as
+# a branch — pinned by commit for reproducibility (like the submodules), not the moving branch tip.
+set(IMGUI_REF "docking" CACHE STRING "Dear ImGui docking-branch commit or ref (pin a commit for repro)")
+set(IMGUI_FILE "github.com/ocornut/imgui/archive/${IMGUI_REF}.tar.gz")
 
 FetchContent_Declare(imgui
 	URL          "https://${IMGUI_FILE}"

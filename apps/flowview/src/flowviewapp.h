@@ -42,6 +42,9 @@ namespace flowview
 		// The node-type palette the canvas' add menu draws from.
 		const lain::core::Factory<lain::flow::Node>& nodeFactory() const { return m_nodeFactory; }
 
+		// --reset-layout: start from the default dock layout, ignoring any saved one (recovery hatch).
+		bool resetLayout() const { return m_resetLayout; }
+
 		// Re-run the scene after a canvas edit so data flows through the current
 		// wiring. Called from the render thread.
 		void reevaluate();
@@ -54,6 +57,7 @@ namespace flowview
 		std::uint32_t m_size = 64; // example gradient extent (size x size)
 		int m_frames = 0;		   // gui-mode: quit after N frames (0 = until closed)
 		bool m_useExample = false; // gui: --example starts from the example scene, else a blank graph
+		bool m_resetLayout = false; // gui: --reset-layout ignores the saved dock layout
 		std::string m_graphPath;   // run/list: the graph JSON (empty -> the built-in example scene)
 		std::string m_savePath;	   // run --save: serialize the graph here
 

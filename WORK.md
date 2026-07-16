@@ -694,8 +694,37 @@ colour editor loads into this.
   node-computed RGBA8 image worked; `Context::createTexture` + `Texture::upload` now **normalise any
   image to RGBA8** (`image::convert`), so a `gui::Texture` is always drawable — robust for every consumer.
 
-**Parked for later passes:** a "Graph Issues" log panel (active-node-with-unread-outputs, load
-warnings, type-mismatch history, missing-required validation) · user-configurable / theme.json colours
+### Window/panel layout pass (grilled 2026-07-16)
+
+Docking + a Preview pane + an Issues panel, so panels tile with draggable splitters (no more Interface
+panel lost behind the Graph). Grilled design: **docking-only** (multi-viewport deferred — the real
+"pop-out" is a future `lain::app` multi-window for rich viewers like a 3D Voxel or zoom/pan image, not
+ImGui viewports); Interface + Inspector stay **separate**, both docked (boundary nodes suppressed from
+the Inspector); a **Preview** pane tabbed with the Graph (click an asset thumbnail → it opens full-size
+there); an **Issues** panel = live validation (missing-required ⚠, unread-output ℹ, rejected-connect ⚠
+transient, load-issue ⚠/⛔), rows click-to-locate (`SelectNode` + `EditorContextMoveToNode`). Default
+layout: Graph/Preview tabs centre, Inspector/Nodes tabs right-top, Interface right-bottom, Issues under
+the centre (independent splits). Built in 3 slices.
+
+- ✅ **Slice 1 — docking infra BUILT** (2026-07-16, canvas-only → live eyeball pending). **ImGui switched
+  to the `docking` branch** (release tarball → `github.com/ocornut/imgui/archive/docking.tar.gz`, now
+  `1.92.9 WIP` with `DockSpace`/`DockBuilder`; the release branch has no docking) — build + `ctest`
+  clean on it (289/289). *(Reproducibility TODO: pin `IMGUI_REF` to a resolved commit, like the
+  submodules, instead of the moving branch tip.)* The DockBuilder API (ImGui-**internal**) is fronted by
+  a new **`lain::gui` docking seam** (`gui/dock.{h,cpp}`: `DockNode` / `DockDir` / `dockSpaceOverViewport`
+  / `dockReset` / `dockSplit` / `dockWindow` / `dockFinish`) so flowview never includes `imgui_internal`.
+  `lain::core` gains **`configDir("flowview")`** → `<home>/.flowview` (created on demand) built on
+  **`homeDir()`** + **`core::envVar`** (new `core/platform.h`, MSVC-safe env read via `_dupenv_s`).
+  `gui::Context` now takes a **`ContextConfig{ iniFilename, docking }`** struct (named fields, no opaque
+  trailing bool). flowview submits the dockspace, stamps the default layout on first run (no
+  `~/.flowview/imgui.ini`) or reset — saved layouts win — with **View ▸ Reset Layout** and a
+  **`--reset-layout`** flag as recovery. Stub **Preview** + **Issues** panels exist (empty) so the layout
+  docks them; filled in slices 2/3.
+- **Slice 2 — Preview pane + click-to-preview** (next): thumbnails become clickable → set Preview target
+  + activate the Preview tab; fit-to-pane; clears if the source is gone.
+- **Slice 3 — Issues panel + validation + click-to-locate + boundary-suppression + drop the load modal.**
+
+**Parked for later passes:** user-configurable / theme.json colours
 (the registries are the load target) · pin **shape** encodes presence (square=required, circle=optional,
 triangle=conditional — deferred: mostly-required → mostly-square is visually sharp) · **undo/redo** —
 snapshot-based (reuses serialize: a snapshot is Save-to-RAM, restore is Load-from-RAM), hooks the single

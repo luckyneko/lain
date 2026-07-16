@@ -5,6 +5,7 @@ add_executable(test-core
 	test_factory.cpp
 	test_time.cpp
 	test_version.cpp
+	test_paths.cpp
 )
 
 target_compile_features(test-core PRIVATE cxx_std_17)

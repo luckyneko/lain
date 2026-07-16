@@ -29,7 +29,7 @@ namespace lain::gui
 		acm::Device* device{nullptr};			   // the shared device, for upload()
 	};
 
-	Context::Context(app::Application& app, app::Window& window, std::string iniFilename)
+	Context::Context(app::Application& app, app::Window& window, ContextConfig config)
 		: m(std::make_unique<impl>())
 	{
 		acm::Device& device = app.device();
@@ -40,9 +40,12 @@ namespace lain::gui
 		m->ctx = ImGui::CreateContext();
 		ImGui::StyleColorsDark();
 
+		if (config.docking)
+			ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable; // tiled, splittered panels
+
 		// Point ImGui at our owned string (or disable persistence when empty). Set
 		// before the first newFrame() so a saved layout loads on boot.
-		m->iniFilename = std::move(iniFilename);
+		m->iniFilename = std::move(config.iniFilename);
 		ImGui::GetIO().IniFilename = m->iniFilename.empty() ? nullptr : m->iniFilename.c_str();
 
 		// The node canvas (lain::gui::nodes) rides on this window's ImGui context.

@@ -8,6 +8,7 @@
 #include <lain/data/value.h>
 #include <lain/app/application.h>
 #include <lain/app/window.h>
+#include <lain/core/paths.h> // core::configDir (~/.flowview for the layout ini)
 #include <lain/flow/boundary.h>
 #include <lain/flow/dynamicports.h>
 #include <lain/flow/edit.h>
@@ -17,6 +18,7 @@
 #include <lain/flow/porttyperegistry.h>
 #include <lain/gui/color.h> // gui::packColor (image::ColorRGBA8 -> ImU32)
 #include <lain/gui/dialogs.h>
+#include <lain/gui/dock.h> // the docking seam (no imgui_internal in the app)
 #include <lain/gui/enums.h>
 #include <lain/gui/gui.h>
 #include <lain/gui/nodes.h>
@@ -180,7 +182,15 @@ namespace flowview
 
 	bool InspectorWindow::onInit(app::Window& window)
 	{
-		m_guiCtx = std::make_unique<gui::Context>(window.app(), window);
+		// Dock layout persists to ~/.flowview/imgui.ini. Seed the default arrangement on first run (no
+		// saved ini) or when --reset-layout is given; otherwise the saved layout is restored.
+		FlowviewApp& appDelegate = window.app().getDelegate<FlowviewApp>();
+		const std::filesystem::path iniPath = core::configDir("flowview") / "imgui.ini";
+		m_seedLayout = appDelegate.resetLayout() || !std::filesystem::exists(iniPath);
+		gui::ContextConfig guiConfig;
+		guiConfig.iniFilename = iniPath.string();
+		guiConfig.docking = true;
+		m_guiCtx = std::make_unique<gui::Context>(window.app(), window, guiConfig);
 		registerBuiltinParamEditors(m_paramEditors);
 		registerBuiltinCanvasStyle(m_canvasStyle);
 		return true;
@@ -662,6 +672,12 @@ namespace flowview
 				}
 				gui::EndMenu();
 			}
+			if (gui::BeginMenu("View"))
+			{
+				if (gui::MenuItem("Reset Layout"))
+					m_resetLayout = true; // re-stamps the default dock layout next frame
+				gui::EndMenu();
+			}
 			gui::EndMainMenuBar();
 		}
 
@@ -680,12 +696,41 @@ namespace flowview
 			app.quit();
 	}
 
+	// Stamp the default dock arrangement (via the gui docking seam). Right column (Inspector/Nodes over
+	// Interface) full-height; the left splits Graph/Preview over Issues on its own ratio — so the two
+	// columns' horizontal splitters are independent. Window names must match the panels' gui::Begin.
+	static void buildDefaultLayout(gui::DockNode dock)
+	{
+		gui::dockReset(dock);
+		const auto [rightCol, leftCol] = gui::dockSplit(dock, gui::DockDir::Right, 0.28f); // right column, full height
+		const auto [issues, graphArea] = gui::dockSplit(leftCol, gui::DockDir::Down, 0.22f); // Issues under Graph/Preview
+		const auto [ioArea, inspectorArea] = gui::dockSplit(rightCol, gui::DockDir::Down, 0.5f); // Interface under Inspector/Nodes
+
+		gui::dockWindow(graphArea, "Graph");
+		gui::dockWindow(graphArea, "Preview"); // tab with Graph
+		gui::dockWindow(issues, "Issues");
+		gui::dockWindow(inspectorArea, "Inspector");
+		gui::dockWindow(inspectorArea, "Nodes"); // tab with Inspector
+		gui::dockWindow(ioArea, "Interface");
+		gui::dockFinish(dock);
+	}
+
 	void InspectorWindow::onRender(app::Window& window, const app::TimeState&)
 	{
 		FlowviewApp& appDelegate = window.app().getDelegate<FlowviewApp>();
 		flow::Graph& graph = appDelegate.graph(); // mutated by the canvas below
 
 		m_guiCtx->newFrame();
+
+		// A full-viewport dockspace (below the menu bar) so the panels tile with draggable splitters and
+		// can't get lost behind the Graph. On first run / reset, stamp the default arrangement.
+		const gui::DockNode dock = gui::dockSpaceOverViewport();
+		if (m_seedLayout || m_resetLayout)
+		{
+			buildDefaultLayout(dock);
+			m_seedLayout = false;
+			m_resetLayout = false;
+		}
 
 		// The node canvas is drawn (and edited) BEFORE the inspector panel, so a node
 		// deletion takes effect before the panel reads the graph and re-registers its
@@ -1090,6 +1135,15 @@ namespace flowview
 
 		// The graph's I/O boundary — the host-binding surface (bind inputs, save outputs).
 		renderInterfacePanel(appDelegate);
+
+		// Preview + Issues panels — docked but empty for now (slice 1); filled in slices 2 and 3. They
+		// must exist as windows so the default layout can dock them.
+		gui::Begin("Preview");
+		gui::TextDisabled("Click an asset thumbnail to preview it here."); // slice 2
+		gui::End();
+		gui::Begin("Issues");
+		gui::TextDisabled("No issues."); // slice 3
+		gui::End();
 
 		// The unsaved-changes guard for New (opened by requestNew when m_dirty).
 		renderNewConfirm(graph, appDelegate);

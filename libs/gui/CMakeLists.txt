@@ -12,6 +12,7 @@ target_link_libraries(imgui PUBLIC lain::math)
 add_library(gui STATIC
 	src/context.cpp
 	src/dialogs.cpp
+	src/dock.cpp
 	src/texture.cpp
 )
 add_library(lain::gui ALIAS gui)

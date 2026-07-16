@@ -5,6 +5,8 @@
 add_library(core STATIC
 	src/time.cpp
 	src/version.cpp
+	src/paths.cpp
+	src/platform.cpp
 )
 add_library(lain::core ALIAS core)
 
