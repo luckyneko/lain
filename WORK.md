@@ -720,12 +720,21 @@ the centre (independent splits). Built in 3 slices.
   `~/.flowview/imgui.ini`) or reset — saved layouts win — with **View ▸ Reset Layout** and a
   **`--reset-layout`** flag as recovery. Stub **Preview** + **Issues** panels exist (empty) so the layout
   docks them; filled in slices 2/3.
-- **Slice 2 — Preview pane + click-to-preview** (next): thumbnails become clickable → set Preview target
-  + activate the Preview tab; fit-to-pane; clears if the source is gone.
+- ✅ **Slice 2 — Preview pane + click-to-preview BUILT** (2026-07-16, canvas-only → live eyeball pending).
+  Every image thumbnail (Inspector ports + Interface inputs/outputs) is now clickable → routes that asset
+  (by stable `PinKey`) to the **Preview** pane and flips the Graph/Preview tab group to it. Tab activation
+  is a new gui seam **`gui::activateWindowTab`** driving the dock tab bar's `NextSelectedTabId` — reliable
+  for a docked background tab where `SetWindowFocus`/`SetNextWindowFocus` did *not* switch it. The Preview
+  shows a **header** (which node's which pin + image size — a future version may float it over the image),
+  then the image **fit-to-pane** (aspect-preserving, centred); it resolves the target each frame and clears
+  to a hint if the source port/node is gone. Zoom/pan is a future refinement (the `lain::app` viewer).
 - **Slice 3 — Issues panel + validation + click-to-locate + boundary-suppression + drop the load modal.**
 
-**Parked for later passes:** user-configurable / theme.json colours
-(the registries are the load target) · pin **shape** encodes presence (square=required, circle=optional,
+**Parked for later passes:** **split `inspectorwindow.{h,cpp}` per-pane + rename** (needs discussion) —
+it has grown well past an "inspector": it's really the app's main window driving every pane (Graph canvas,
+Inspector, Interface, Preview, Issues, menu bar, docking). Worth splitting a `.h/.cpp` per pane and
+renaming the delegate `MainWindow`; a structural refactor, its own step · user-configurable / theme.json
+colours (the registries are the load target) · pin **shape** encodes presence (square=required, circle=optional,
 triangle=conditional — deferred: mostly-required → mostly-square is visually sharp) · **undo/redo** —
 snapshot-based (reuses serialize: a snapshot is Save-to-RAM, restore is Load-from-RAM), hooks the single
 end-of-frame `edited` flag; the one wrinkle is coalescing continuous param-drag edits (snapshot on

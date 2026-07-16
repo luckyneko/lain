@@ -38,4 +38,10 @@ namespace lain::gui
 	DockSplit dockSplit(DockNode node, DockDir dir, float fraction);
 	void dockWindow(DockNode node, const char* windowName);
 	void dockFinish(DockNode dockspace);
+
+	// Bring a docked window's tab to the front — programmatic tab activation (e.g. routing an asset to
+	// a Preview pane). Drives the tab bar's own selection (NextSelectedTabId), which is more reliable
+	// than SetWindowFocus for a docked background tab. No-op if the window isn't found; plain focus if
+	// it isn't docked in a tab bar.
+	void activateWindowTab(const char* windowName);
 } // namespace lain::gui

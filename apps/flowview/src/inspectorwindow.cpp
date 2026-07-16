@@ -389,7 +389,11 @@ namespace flowview
 				const PinKey key{node->id().value(), true, pin.id()};
 				const auto it = m_previews.find(key);
 				if (it != m_previews.end() && it->second.valid())
+				{
 					gui::Image(it->second, math::Vec2f{side, side});
+					if (gui::IsItemClicked())
+						previewAsset(key); // click a thumbnail -> full-size in the Preview pane
+				}
 
 				if (pin.type() == typeid(image::Image))
 				{
@@ -459,7 +463,11 @@ namespace flowview
 				{
 					const auto it = m_previews.find(key);
 					if (it != m_previews.end() && it->second.valid())
+					{
 						gui::Image(it->second, math::Vec2f{side, side});
+						if (gui::IsItemClicked())
+							previewAsset(key); // click a thumbnail -> full-size in the Preview pane
+					}
 					if (pin.value().holds<image::Image>())
 						renderImageSave(key, pin.value().get<image::Image>());
 				}
@@ -694,6 +702,46 @@ namespace flowview
 			saveToCurrentPath(graph, appDelegate);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Q, ImGuiInputFlags_RouteGlobal))
 			app.quit();
+	}
+
+	void InspectorWindow::renderPreview(const flow::Graph& graph)
+	{
+		if (!m_previewTarget)
+		{
+			gui::TextDisabled("Click an asset thumbnail to preview it here.");
+			return;
+		}
+
+		// Resolve the targeted port; drop the target if its node/port is gone or no longer a ready image.
+		const PinKey key = *m_previewTarget;
+		const flow::Node* node = findNode(graph, flow::NodeId{key.node});
+		const flow::Port* port = node != nullptr ? (key.output ? node->findOutput(key.port) : node->findInput(key.port)) : nullptr;
+		const auto it = m_previews.find(key);
+		if (node == nullptr || port == nullptr || !port->ready() || port->type() != typeid(image::Image) || it == m_previews.end() || !it->second.valid())
+		{
+			m_previewTarget.reset();
+			gui::TextDisabled("(the previewed asset is no longer available)");
+			return;
+		}
+
+		// Header: what you are looking at (which node's which pin, and the image size). ASCII only —
+		// the default font has no fancy separators.
+		const image::Image& img = port->value().get<image::Image>();
+		gui::Text("%s [%llu]  |  %s : %s  (%dx%d)", node->name().c_str(), static_cast<unsigned long long>(key.node),
+				  port->name().c_str(), std::string(port->typeName()).c_str(), img.width(), img.height());
+		gui::Separator();
+
+		// Fit-to-pane, preserving aspect, centred horizontally. (Zoom/pan is a future refinement.)
+		const ImVec2 avail = gui::GetContentRegionAvail();
+		const float imgW = static_cast<float>(img.width());
+		const float imgH = static_cast<float>(img.height());
+		if (avail.x <= 0.0f || avail.y <= 0.0f || imgW <= 0.0f || imgH <= 0.0f)
+			return;
+		const float scale = std::min(avail.x / imgW, avail.y / imgH);
+		const float w = imgW * scale;
+		const float h = imgH * scale;
+		gui::SetCursorPosX(gui::GetCursorPosX() + std::max(0.0f, (avail.x - w) * 0.5f));
+		gui::Image(it->second, math::Vec2f{w, h});
 	}
 
 	// Stamp the default dock arrangement (via the gui docking seam). Right column (Inspector/Nodes over
@@ -1105,6 +1153,8 @@ namespace flowview
 					{
 						const float side = previewExtent(m_previewSize);
 						gui::Image(it->second, math::Vec2f{side, side}); // Texture -> ImTextureRef implicitly
+						if (gui::IsItemClicked())
+							previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 					}
 					if (output) // outputs are the results you'd export; inputs are just what was fed in
 					{
@@ -1138,8 +1188,13 @@ namespace flowview
 
 		// Preview + Issues panels — docked but empty for now (slice 1); filled in slices 2 and 3. They
 		// must exist as windows so the default layout can dock them.
+		if (m_activatePreview)
+		{
+			gui::activateWindowTab("Preview"); // flip the Graph/Preview tab group to Preview
+			m_activatePreview = false;
+		}
 		gui::Begin("Preview");
-		gui::TextDisabled("Click an asset thumbnail to preview it here."); // slice 2
+		renderPreview(graph);
 		gui::End();
 		gui::Begin("Issues");
 		gui::TextDisabled("No issues."); // slice 3

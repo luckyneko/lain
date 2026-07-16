@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <typeindex>
 
@@ -111,6 +112,17 @@ namespace flowview
 		// Returns whether a pin was removed this frame.
 		bool renderRemoveConfirm(lain::flow::Graph& graph);
 
+		// The Preview pane (tabbed with the Graph): the asset that was last clicked (a thumbnail
+		// anywhere) shown fit-to-pane; a hint when nothing is targeted or the source is gone.
+		void renderPreview(const lain::flow::Graph& graph);
+		// Route an asset (an image port) to the Preview pane and bring its tab to front. Called from a
+		// clicked thumbnail in the Inspector / Interface.
+		void previewAsset(const PinKey& key)
+		{
+			m_previewTarget = key;
+			m_activatePreview = true;
+		}
+
 		std::unique_ptr<lain::gui::Context> m_guiCtx;
 		ParamEditors m_paramEditors;					 // type-keyed param editors (registered in onInit)
 		CanvasStyle m_canvasStyle;						 // canvas colours + dim state (registered in onInit)
@@ -156,5 +168,10 @@ namespace flowview
 		// View ▸ Reset Layout request. Both re-stamp the default (gui::dock*); a saved ~/.flowview/imgui.ini wins.
 		bool m_seedLayout = false;
 		bool m_resetLayout = false;
+
+		// The asset shown in the Preview pane (an image port, by stable key), or none. m_activatePreview
+		// brings the Preview tab to front on the frame a thumbnail is clicked.
+		std::optional<PinKey> m_previewTarget;
+		bool m_activatePreview = false;
 	};
 } // namespace flowview
