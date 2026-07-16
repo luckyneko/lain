@@ -12,6 +12,8 @@ add_executable(flowview
 	src/panes/menubar.cpp
 	src/panes/issuespane.cpp
 	src/panes/previewpane.cpp
+	src/panes/interfacepane.cpp
+	src/panes/imagesave.cpp
 	src/parameditors.cpp
 	src/scene.cpp
 	src/graphio.cpp

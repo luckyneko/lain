@@ -12,6 +12,20 @@ namespace flowview
 {
 	using namespace lain;
 
+	float previewExtent(PreviewSize size)
+	{
+		switch (size)
+		{
+			case PreviewSize::Small:
+				return 96.0f;
+			case PreviewSize::Medium:
+				return 192.0f;
+			case PreviewSize::Large:
+				return 320.0f;
+		}
+		return 192.0f;
+	}
+
 	void AppContext::locateNode(flow::NodeId id)
 	{
 		gui::nodes::ClearNodeSelection();

@@ -39,6 +39,9 @@ namespace flowview
 		Large,
 	};
 
+	// Thumbnail side length (pixels) for a preview size. Shared by the Inspector + Interface panes.
+	float previewExtent(PreviewSize size);
+
 	// The shared model the panes read and write — graph-adjacent metadata plus the cross-pane
 	// signals (one pane sets a request, another consumes it) and the document / pending-load
 	// state. Deliberately plain data + trivial setters: it is not a manager, just the "chairs"

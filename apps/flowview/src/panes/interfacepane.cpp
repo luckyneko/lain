@@ -1,0 +1,244 @@
+#include "interfacepane.h"
+
+#include "../appcontext.h"
+#include "../flowviewapp.h" // ctx.app->reevaluate()
+#include "../parameditors.h"
+#include "../previewcache.h"
+#include "imagesave.h"
+
+#include <lain/flow/boundary.h> // GroupInputNode / GroupOutputNode
+#include <lain/flow/dynamicports.h>
+#include <lain/flow/edit.h>
+#include <lain/flow/graph.h>
+#include <lain/flow/node.h>
+#include <lain/flow/port.h>
+#include <lain/flow/porttyperegistry.h> // portTypeKeys
+#include <lain/gui/dialogs.h>
+#include <lain/gui/gui.h>
+#include <lain/image/image.h>
+#include <lain/io/image/load.h>
+#include <lain/math/types.h>
+
+#include <cstdio>
+#include <string>
+#include <vector>
+
+namespace flowview
+{
+	using namespace lain;
+
+	// Number of edges touching a port (its incident links) — shown in the remove confirmation.
+	static int linkCount(const flow::Graph& graph, flow::PortAddress port)
+	{
+		int n = 0;
+		for (const flow::Graph::Edge& e : graph.edges())
+			if (e.from == port || e.to == port)
+				++n;
+		return n;
+	}
+
+	// An editable pin-name field (commits on Enter / focus loss) — boundary pins are user-named.
+	static void renderPinName(flow::Port& pin)
+	{
+		char buffer[128];
+		std::snprintf(buffer, sizeof(buffer), "%s", pin.name().c_str());
+		gui::SetNextItemWidth(110.0f);
+		gui::InputText("##name", buffer, sizeof(buffer));
+		if (gui::IsItemDeactivatedAfterEdit() && flow::validPortName(buffer))
+			pin.setName(buffer); // an invalid name is refused — the field reverts to the current name next frame
+	}
+
+	// The per-node "+" : a menu of the registered port types the node accepts (filtered by
+	// acceptsPortType); picking one adds a pin via the edit seam, auto-named `<prefix><count>`.
+	static bool renderAddPin(flow::Graph& graph, flow::DynamicPortsNode& node, const char* prefix)
+	{
+		bool added = false;
+		if (gui::Button("+ add pin"))
+			gui::OpenPopup("addPin");
+		if (gui::BeginPopup("addPin"))
+		{
+			bool any = false;
+			for (const std::string& key : flow::portTypeKeys())
+			{
+				if (!node.acceptsPortType(key))
+					continue;
+				any = true;
+				if (gui::MenuItem(key.c_str()))
+				{
+					const std::size_t count = node.dynamicSide() == flow::Port::Direction::Output ? node.outputCount()
+																								  : node.inputCount();
+					flow::edit::addPort(graph, node.id(), key, std::string(prefix) + std::to_string(count));
+					added = true;
+				}
+			}
+			if (!any)
+				gui::TextDisabled("(no registered types)");
+			gui::EndPopup();
+		}
+		return added;
+	}
+
+	bool InterfacePane::renderRemoveConfirm(flow::Graph& graph)
+	{
+		if (m_removeRequested)
+		{
+			gui::OpenPopup("Remove pin");
+			m_removeRequested = false;
+		}
+		bool removed = false;
+		if (gui::BeginPopupModal("Remove pin", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		{
+			gui::Text("Remove '%s'?  It has %d link(s).", m_removeName.c_str(), m_removeLinks);
+			if (gui::Button("Remove"))
+			{
+				removed = flow::edit::removePort(graph, m_removeTarget);
+				gui::CloseCurrentPopup();
+			}
+			gui::SameLine();
+			if (gui::Button("Cancel"))
+				gui::CloseCurrentPopup();
+			gui::EndPopup();
+		}
+		return removed;
+	}
+
+	void InterfacePane::draw(AppContext& ctx, flow::Graph& graph, PreviewCache& previews, const ParamEditors& editors)
+	{
+		const float side = previewExtent(ctx.previewSize);
+		bool changed = false;
+
+		// Request the remove-confirm for `pin` on `node` (opened after the panel, clean id stack).
+		const auto requestRemove = [&](flow::NodeId node, const flow::Port& pin)
+		{
+			m_removeTarget = flow::PortAddress{node, pin.id()};
+			m_removeName = pin.name();
+			m_removeLinks = linkCount(graph, m_removeTarget);
+			m_removeRequested = true;
+		};
+
+		gui::SetNextWindowPos(math::Vec2f{940.0f, 20.0f}, ImGuiCond_FirstUseEver);
+		gui::SetNextWindowSize(math::Vec2f{320.0f, 520.0f}, ImGuiCond_FirstUseEver);
+		gui::Begin("Interface");
+
+		// Inputs: per GroupInput node, each pin (editable name, bound thumbnail, Bind…, ×) + a "+".
+		gui::TextUnformatted("Inputs");
+		gui::Separator();
+		if (flow::GroupInputNode* node = graph.boundaryInputNode())
+		{
+			gui::PushID(static_cast<int>(node->id().value()));
+			for (flow::PortIndex i = 0; i < node->outputCount(); ++i)
+			{
+				flow::Port& pin = node->output(i);
+				gui::PushID(static_cast<int>(pin.id().value()));
+				renderPinName(pin);
+				gui::SameLine();
+				gui::Text(": %s", std::string(pin.typeName()).c_str());
+
+				const PinKey key{node->id().value(), true, pin.id()};
+				if (const gui::Texture* tex = previews.find(key))
+				{
+					gui::Image(*tex, math::Vec2f{side, side});
+					if (gui::IsItemClicked())
+						ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
+				}
+
+				if (pin.type() == typeid(image::Image))
+				{
+					if (gui::Button("Bind file..."))
+					{
+						if (const auto path = gui::openFile("Open image", {},
+															{{"Images", {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff"}}}))
+						{
+							if (auto image = io::image::load(path->string()))
+							{
+								flow::PortValue v;
+								v.set<image::Image>(std::move(*image));
+								node->setValue(pin.id(), std::move(v));
+								changed = true;
+							}
+							else
+							{
+								gui::message("Load failed", "Could not load: " + path->string(), true);
+							}
+						}
+					}
+				}
+				else
+				{
+					// A scalar boundary input: edit its value by type via the shared registry. Read the
+					// currently-published value (pin.value() == the bound value after a run), edit a copy,
+					// and setValue on change (which updates the bound slot + marks the node dirty).
+					flow::PortValue current = pin.value();
+					if (editors.render("##value", pin.type(), current))
+					{
+						node->setValue(pin.id(), std::move(current));
+						changed = true;
+					}
+				}
+				gui::SameLine();
+				if (gui::Button("x"))
+					requestRemove(node->id(), pin);
+				gui::PopID();
+			}
+			changed |= renderAddPin(graph, *node, "input");
+			gui::PopID();
+		}
+
+		// Outputs: per GroupOutput node, each pin (editable name, result thumbnail, Save…, ×) + "+".
+		gui::Spacing();
+		gui::TextUnformatted("Outputs");
+		gui::Separator();
+		if (flow::GroupOutputNode* node = graph.boundaryOutputNode())
+		{
+			gui::PushID(static_cast<int>(node->id().value()));
+			for (flow::PortIndex i = 0; i < node->inputCount(); ++i)
+			{
+				flow::Port& pin = node->input(i);
+				gui::PushID(static_cast<int>(pin.id().value()));
+				renderPinName(pin);
+				gui::SameLine();
+				gui::Text(": %s", std::string(pin.typeName()).c_str());
+
+				const PinKey key{node->id().value(), false, pin.id()};
+				if (pin.value().empty())
+				{
+					// The producer was gated off / suppressed (conditional eval) — no value this run.
+					// the preview cache already dropped any stale thumbnail; say so rather than show blank.
+					gui::TextDisabled("(no output this run)");
+				}
+				else
+				{
+					if (const gui::Texture* tex = previews.find(key))
+					{
+						gui::Image(*tex, math::Vec2f{side, side});
+						if (gui::IsItemClicked())
+							ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
+					}
+					if (pin.value().holds<image::Image>())
+						renderImageSave(ctx, key, pin.value().get<image::Image>());
+				}
+				gui::SameLine();
+				if (gui::Button("x"))
+					requestRemove(node->id(), pin);
+				gui::PopID();
+			}
+			changed |= renderAddPin(graph, *node, "output");
+			gui::PopID();
+		}
+		gui::End();
+
+		changed |= renderRemoveConfirm(graph);
+
+		// An add / remove / bind re-runs the graph (as a param/canvas edit does) and refreshes
+		// previews next frame. It also counts as an unsaved change so New guards it — a bound image is
+		// loaded data worth not losing silently (values aren't in the saved document, but the guard
+		// still protects them from an accidental New).
+		if (changed)
+		{
+			ctx.app->reevaluate();
+			previews.markDirty();
+			ctx.dirty = true;
+			ctx.loadIssues.clear(); // load issues are stale once the graph changes
+		}
+	}
+} // namespace flowview

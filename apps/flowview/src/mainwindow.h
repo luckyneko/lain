@@ -2,35 +2,18 @@
 
 #include "appcontext.h"
 #include "canvasstyle.h"
+#include "panes/interfacepane.h"
 #include "panes/issuespane.h"
 #include "panes/menubar.h"
 #include "panes/previewpane.h"
 #include "parameditors.h"
-#include "pinkey.h"
 #include "previewcache.h"
 
 #include <lain/app/windowdelegate.h>
-#include <lain/flow/types.h> // PortIndex, PortAddress
 #include <lain/gui/context.h>
 
 #include <memory>
-#include <string>
 #include <typeindex>
-
-namespace lain::flow
-{
-	class Graph;
-}
-
-namespace lain::app
-{
-	class Application; // File ▸ Quit
-}
-
-namespace lain::image
-{
-	class Image;
-}
 
 namespace flowview
 {
@@ -53,19 +36,6 @@ namespace flowview
 		void onShutdown(lain::app::Window& window) override;
 
 	private:
-		// The graph's I/O boundary as a panel (Inputs: Bind file…; Outputs: thumbnail +
-		// Save…), driven by Graph::boundaryInputs()/outputs() — the same seam the cli binds
-		// through. The host-binding surface, separate from the per-node inspector.
-		void renderInterfacePanel(FlowviewApp& appDelegate);
-
-		// The format dropdown + Save… for one image, shared by the inspector's output ports and
-		// the Interface panel's outputs. `key` scopes the per-pin remembered format choice.
-		void renderImageSave(const PinKey& key, const lain::image::Image& img);
-
-		// The "Remove pin?" confirm modal (opened by a "×"); runs edit::removePort on confirm.
-		// Returns whether a pin was removed this frame.
-		bool renderRemoveConfirm(lain::flow::Graph& graph);
-
 		std::unique_ptr<lain::gui::Context> m_guiCtx;
 		ParamEditors m_paramEditors; // type-keyed param editors (registered in onInit)
 		CanvasStyle m_canvasStyle;	 // canvas colours + dim state (registered in onInit)
@@ -73,6 +43,7 @@ namespace flowview
 		MenuBarPane m_menuBar;		 // File / Add / View menu + shortcuts (its own pane)
 		IssuesPane m_issues;		 // the Issues panel (validation + load issues)
 		PreviewPane m_preview;		 // the Preview panel (clicked asset, full-size)
+		InterfacePane m_interface;	 // the Interface panel (graph I/O boundary)
 		bool m_laidOut = false;		 // node canvas: seed node positions on the first frame
 
 		// Link-drag feedback (slice C): while a link is dragged, grey every pin that isn't a compatible
@@ -81,13 +52,6 @@ namespace flowview
 		bool m_linkDragActive = false;
 		bool m_linkDragFromOutput = false;			  // the drag source's direction
 		std::type_index m_linkDragType{typeid(void)}; // ...and its value type (compatible = same)
-
-		// Remove-pin confirmation: the pin a "×" targeted, its name + incident-link count, and
-		// whether the confirm modal is pending (opened on a clean id stack after the panel).
-		bool m_removeRequested = false;
-		lain::flow::PortAddress m_removeTarget;
-		std::string m_removeName;
-		int m_removeLinks = 0;
 
 		// Docking: seed the default dock layout on the next frame (first run / --reset-layout), and the
 		// View ▸ Reset Layout request. Both re-stamp the default (gui::dock*); a saved ~/.flowview/imgui.ini wins.

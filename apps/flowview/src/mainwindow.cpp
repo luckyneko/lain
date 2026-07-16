@@ -1,14 +1,14 @@
 #include "mainwindow.h"
 
 #include "flowviewapp.h"
-#include "scene.h" // nodeCatalog (the Add menu's category grouping)
+#include "panes/imagesave.h" // the shared image-save widget (Inspector output ports)
+#include "scene.h"			 // nodeCatalog (the Add menu's category grouping)
 
 #include <archimedes/archimedes.h>
 #include <lain/data/value.h>
 #include <lain/app/application.h>
 #include <lain/app/window.h>
 #include <lain/core/paths.h> // core::configDir (~/.flowview for the layout ini)
-#include <lain/flow/boundary.h>
 #include <lain/flow/dynamicports.h>
 #include <lain/flow/edit.h>
 #include <lain/flow/graph.h>
@@ -16,15 +16,11 @@
 #include <lain/flow/port.h>
 #include <lain/flow/porttyperegistry.h>
 #include <lain/gui/color.h> // gui::packColor (image::ColorRGBA8 -> ImU32)
-#include <lain/gui/dialogs.h>
-#include <lain/gui/dock.h> // the docking seam (no imgui_internal in the app)
+#include <lain/gui/dock.h>	// the docking seam (no imgui_internal in the app)
 #include <lain/gui/enums.h>
 #include <lain/gui/gui.h>
 #include <lain/gui/nodes.h>
 #include <lain/image/image.h>
-#include <lain/io/image/load.h>
-#include <lain/io/image/save.h>
-#include <lain/log/log.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -134,50 +130,6 @@ namespace flowview
 		return nullptr;
 	}
 
-	// Thumbnail side length (pixels) for each preview size.
-	static float previewExtent(PreviewSize size)
-	{
-		switch (size)
-		{
-			case PreviewSize::Small:
-				return 96.0f;
-			case PreviewSize::Medium:
-				return 192.0f;
-			case PreviewSize::Large:
-				return 320.0f;
-		}
-		return 192.0f;
-	}
-
-	// The registered write formats that can encode `img` WITHOUT loss — the writer keys
-	// (alphabetical) filtered by io::image::canEncode. This is the format dropdown's contents, so a
-	// format that would degrade the image (JPEG + alpha, any + float) simply isn't offered.
-	static std::vector<std::string> savableFormats(const image::Image& img)
-	{
-		std::vector<std::string> out;
-		for (const std::string& key : io::image::writerRegistry().keys())
-			if (io::image::canEncode(key, img))
-				out.push_back(key);
-		return out;
-	}
-
-	// Write `img` as `key` (a savable format from the dropdown): pick where + name via the native
-	// dialog, force the chosen format's extension (the dropdown is authoritative), and save. img is
-	// read synchronously while the (blocking) dialog holds the main thread, so the port ref stays
-	// valid. Success logs the path; a write failure raises an alert.
-	static void saveImage(const image::Image& img, const std::string& key)
-	{
-		const auto path = gui::saveFile("Save image", {}, {{key, {"*." + key}}});
-		if (!path)
-			return; // cancelled
-		std::filesystem::path out = *path;
-		out.replace_extension(key);
-		if (io::image::save(out.string(), img))
-			log::info("flowview: saved image to {}", out.string());
-		else
-			gui::message("Save failed", "Couldn't write the file: " + out.string(), true);
-	}
-
 	bool MainWindow::onInit(app::Window& window)
 	{
 		// Dock layout persists to ~/.flowview/imgui.ini. Seed the default arrangement on first run (no
@@ -199,85 +151,6 @@ namespace flowview
 		return true;
 	}
 
-	void MainWindow::renderImageSave(const PinKey& key, const image::Image& img)
-	{
-		const std::vector<std::string> formats = savableFormats(img);
-		if (formats.empty())
-		{
-			// Nothing can store this image losslessly (e.g. RGBA/float with only JPEG); an
-			// explicit convert is the fix, not a silent degrade (ADR-0003).
-			gui::TextDisabled("(no lossless format — convert first)");
-			return;
-		}
-		// The chosen format for this pin, defaulting to (and falling back to) the first savable
-		// when unset or no longer offered.
-		std::string& sel = m_ctx.saveFormat[key];
-		if (std::find(formats.begin(), formats.end(), sel) == formats.end())
-			sel = formats.front();
-		gui::SetNextItemWidth(80.0f);
-		if (gui::BeginCombo("##fmt", sel.c_str()))
-		{
-			for (const std::string& f : formats)
-				if (gui::Selectable(f.c_str(), f == sel))
-					sel = f;
-			gui::EndCombo();
-		}
-		gui::SameLine();
-		if (gui::Button("Save..."))
-			saveImage(img, sel);
-	}
-
-	// Number of edges touching a port (its incident links) — shown in the remove confirmation.
-	static int linkCount(const flow::Graph& graph, flow::PortAddress port)
-	{
-		int n = 0;
-		for (const flow::Graph::Edge& e : graph.edges())
-			if (e.from == port || e.to == port)
-				++n;
-		return n;
-	}
-
-	// An editable pin-name field (commits on Enter / focus loss) — boundary pins are user-named.
-	static void renderPinName(flow::Port& pin)
-	{
-		char buffer[128];
-		std::snprintf(buffer, sizeof(buffer), "%s", pin.name().c_str());
-		gui::SetNextItemWidth(110.0f);
-		gui::InputText("##name", buffer, sizeof(buffer));
-		if (gui::IsItemDeactivatedAfterEdit() && flow::validPortName(buffer))
-			pin.setName(buffer); // an invalid name is refused — the field reverts to the current name next frame
-	}
-
-	// The per-node "+" : a menu of the registered port types the node accepts (filtered by
-	// acceptsPortType); picking one adds a pin via the edit seam, auto-named `<prefix><count>`.
-	static bool renderAddPin(flow::Graph& graph, flow::DynamicPortsNode& node, const char* prefix)
-	{
-		bool added = false;
-		if (gui::Button("+ add pin"))
-			gui::OpenPopup("addPin");
-		if (gui::BeginPopup("addPin"))
-		{
-			bool any = false;
-			for (const std::string& key : flow::portTypeKeys())
-			{
-				if (!node.acceptsPortType(key))
-					continue;
-				any = true;
-				if (gui::MenuItem(key.c_str()))
-				{
-					const std::size_t count = node.dynamicSide() == flow::Port::Direction::Output ? node.outputCount()
-																								  : node.inputCount();
-					flow::edit::addPort(graph, node.id(), key, std::string(prefix) + std::to_string(count));
-					added = true;
-				}
-			}
-			if (!any)
-				gui::TextDisabled("(no registered types)");
-			gui::EndPopup();
-		}
-		return added;
-	}
-
 	// A dynamic node drawn on the CANVAS gets a small "+ <type>" per accepted port type (a
 	// homogeneous Merge/Select shows one; a multi-type node one each). A click records a deferred add
 	// — applied after EndNodeEditor. Takes the node const + only appends to `pinAdds`, so it is safe to
@@ -295,171 +168,6 @@ namespace flowview
 				pinAdds.emplace_back(id, key);
 		}
 		gui::PopID();
-	}
-
-	bool MainWindow::renderRemoveConfirm(flow::Graph& graph)
-	{
-		if (m_removeRequested)
-		{
-			gui::OpenPopup("Remove pin");
-			m_removeRequested = false;
-		}
-		bool removed = false;
-		if (gui::BeginPopupModal("Remove pin", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-		{
-			gui::Text("Remove '%s'?  It has %d link(s).", m_removeName.c_str(), m_removeLinks);
-			if (gui::Button("Remove"))
-			{
-				removed = flow::edit::removePort(graph, m_removeTarget);
-				gui::CloseCurrentPopup();
-			}
-			gui::SameLine();
-			if (gui::Button("Cancel"))
-				gui::CloseCurrentPopup();
-			gui::EndPopup();
-		}
-		return removed;
-	}
-
-	void MainWindow::renderInterfacePanel(FlowviewApp& appDelegate)
-	{
-		flow::Graph& graph = appDelegate.graph();
-		const float side = previewExtent(m_ctx.previewSize);
-		bool changed = false;
-
-		// Request the remove-confirm for `pin` on `node` (opened after the panel, clean id stack).
-		const auto requestRemove = [&](flow::NodeId node, const flow::Port& pin)
-		{
-			m_removeTarget = flow::PortAddress{node, pin.id()};
-			m_removeName = pin.name();
-			m_removeLinks = linkCount(graph, m_removeTarget);
-			m_removeRequested = true;
-		};
-
-		gui::SetNextWindowPos(math::Vec2f{940.0f, 20.0f}, ImGuiCond_FirstUseEver);
-		gui::SetNextWindowSize(math::Vec2f{320.0f, 520.0f}, ImGuiCond_FirstUseEver);
-		gui::Begin("Interface");
-
-		// Inputs: per GroupInput node, each pin (editable name, bound thumbnail, Bind…, ×) + a "+".
-		gui::TextUnformatted("Inputs");
-		gui::Separator();
-		if (flow::GroupInputNode* node = graph.boundaryInputNode())
-		{
-			gui::PushID(static_cast<int>(node->id().value()));
-			for (flow::PortIndex i = 0; i < node->outputCount(); ++i)
-			{
-				flow::Port& pin = node->output(i);
-				gui::PushID(static_cast<int>(pin.id().value()));
-				renderPinName(pin);
-				gui::SameLine();
-				gui::Text(": %s", std::string(pin.typeName()).c_str());
-
-				const PinKey key{node->id().value(), true, pin.id()};
-				if (const gui::Texture* tex = m_previews.find(key))
-				{
-					gui::Image(*tex, math::Vec2f{side, side});
-					if (gui::IsItemClicked())
-						m_ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
-				}
-
-				if (pin.type() == typeid(image::Image))
-				{
-					if (gui::Button("Bind file..."))
-					{
-						if (const auto path = gui::openFile("Open image", {},
-															{{"Images", {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff"}}}))
-						{
-							if (auto image = io::image::load(path->string()))
-							{
-								flow::PortValue v;
-								v.set<image::Image>(std::move(*image));
-								node->setValue(pin.id(), std::move(v));
-								changed = true;
-							}
-							else
-							{
-								gui::message("Load failed", "Could not load: " + path->string(), true);
-							}
-						}
-					}
-				}
-				else
-				{
-					// A scalar boundary input: edit its value by type via the shared registry. Read the
-					// currently-published value (pin.value() == the bound value after a run), edit a copy,
-					// and setValue on change (which updates the bound slot + marks the node dirty).
-					flow::PortValue current = pin.value();
-					if (m_paramEditors.render("##value", pin.type(), current))
-					{
-						node->setValue(pin.id(), std::move(current));
-						changed = true;
-					}
-				}
-				gui::SameLine();
-				if (gui::Button("x"))
-					requestRemove(node->id(), pin);
-				gui::PopID();
-			}
-			changed |= renderAddPin(graph, *node, "input");
-			gui::PopID();
-		}
-
-		// Outputs: per GroupOutput node, each pin (editable name, result thumbnail, Save…, ×) + "+".
-		gui::Spacing();
-		gui::TextUnformatted("Outputs");
-		gui::Separator();
-		if (flow::GroupOutputNode* node = graph.boundaryOutputNode())
-		{
-			gui::PushID(static_cast<int>(node->id().value()));
-			for (flow::PortIndex i = 0; i < node->inputCount(); ++i)
-			{
-				flow::Port& pin = node->input(i);
-				gui::PushID(static_cast<int>(pin.id().value()));
-				renderPinName(pin);
-				gui::SameLine();
-				gui::Text(": %s", std::string(pin.typeName()).c_str());
-
-				const PinKey key{node->id().value(), false, pin.id()};
-				if (pin.value().empty())
-				{
-					// The producer was gated off / suppressed (conditional eval) — no value this run.
-					// the preview cache already dropped any stale thumbnail; say so rather than show blank.
-					gui::TextDisabled("(no output this run)");
-				}
-				else
-				{
-					if (const gui::Texture* tex = m_previews.find(key))
-					{
-						gui::Image(*tex, math::Vec2f{side, side});
-						if (gui::IsItemClicked())
-							m_ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
-					}
-					if (pin.value().holds<image::Image>())
-						renderImageSave(key, pin.value().get<image::Image>());
-				}
-				gui::SameLine();
-				if (gui::Button("x"))
-					requestRemove(node->id(), pin);
-				gui::PopID();
-			}
-			changed |= renderAddPin(graph, *node, "output");
-			gui::PopID();
-		}
-		gui::End();
-
-		changed |= renderRemoveConfirm(graph);
-
-		// An add / remove / bind re-runs the graph (as a param/canvas edit does) and refreshes
-		// previews next frame. It also counts as an unsaved change so New guards it — a bound image is
-		// loaded data worth not losing silently (values aren't in the saved document, but the guard
-		// still protects them from an accidental New).
-		if (changed)
-		{
-			appDelegate.reevaluate();
-			m_previews.markDirty();
-			m_ctx.dirty = true;
-			m_ctx.loadIssues.clear(); // load issues are stale once the graph changes
-		}
 	}
 
 	// The canvas layout as EditorData: each node's grid-space position as { x, y }. Round-tripped
@@ -915,7 +623,7 @@ namespace flowview
 					if (output) // outputs are the results you'd export; inputs are just what was fed in
 					{
 						gui::PushID(pinId(id, output, p.id()));
-						renderImageSave(key, img);
+						renderImageSave(m_ctx, key, img);
 						gui::PopID();
 					}
 					return;
@@ -941,7 +649,7 @@ namespace flowview
 		}
 
 		// The graph's I/O boundary — the host-binding surface (bind inputs, save outputs).
-		renderInterfacePanel(appDelegate);
+		m_interface.draw(m_ctx, graph, m_previews, m_paramEditors);
 
 		// Preview + Issues panels — docked windows the default layout tiles alongside the Graph.
 		m_preview.draw(m_ctx, graph, m_previews);
