@@ -185,6 +185,7 @@ namespace flowview
 		// Dock layout persists to ~/.flowview/imgui.ini. Seed the default arrangement on first run (no
 		// saved ini) or when --reset-layout is given; otherwise the saved layout is restored.
 		FlowviewApp& appDelegate = window.app().getDelegate<FlowviewApp>();
+		m_ctx.app = &appDelegate; // the shared model reaches the graph / palette / re-run hooks through this
 		const std::filesystem::path iniPath = core::configDir("flowview") / "imgui.ini";
 		m_seedLayout = appDelegate.resetLayout() || !std::filesystem::exists(iniPath);
 		gui::ContextConfig guiConfig;
@@ -212,7 +213,7 @@ namespace flowview
 		}
 		// The chosen format for this pin, defaulting to (and falling back to) the first savable
 		// when unset or no longer offered.
-		std::string& sel = m_saveFormat[key];
+		std::string& sel = m_ctx.saveFormat[key];
 		if (std::find(formats.begin(), formats.end(), sel) == formats.end())
 			sel = formats.front();
 		gui::SetNextItemWidth(80.0f);
@@ -325,7 +326,7 @@ namespace flowview
 	void MainWindow::renderInterfacePanel(FlowviewApp& appDelegate)
 	{
 		flow::Graph& graph = appDelegate.graph();
-		const float side = previewExtent(m_previewSize);
+		const float side = previewExtent(m_ctx.previewSize);
 		bool changed = false;
 
 		// Request the remove-confirm for `pin` on `node` (opened after the panel, clean id stack).
@@ -360,7 +361,7 @@ namespace flowview
 				{
 					gui::Image(*tex, math::Vec2f{side, side});
 					if (gui::IsItemClicked())
-						previewAsset(key); // click a thumbnail -> full-size in the Preview pane
+						m_ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 				}
 
 				if (pin.type() == typeid(image::Image))
@@ -433,7 +434,7 @@ namespace flowview
 					{
 						gui::Image(*tex, math::Vec2f{side, side});
 						if (gui::IsItemClicked())
-							previewAsset(key); // click a thumbnail -> full-size in the Preview pane
+							m_ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 					}
 					if (pin.value().holds<image::Image>())
 						renderImageSave(key, pin.value().get<image::Image>());
@@ -458,8 +459,8 @@ namespace flowview
 		{
 			appDelegate.reevaluate();
 			m_previews.markDirty();
-			m_dirty = true;
-			m_loadIssues.clear(); // load issues are stale once the graph changes
+			m_ctx.dirty = true;
+			m_ctx.loadIssues.clear(); // load issues are stale once the graph changes
 		}
 	}
 
@@ -500,28 +501,28 @@ namespace flowview
 		// every graph swap.
 		auto blank = std::make_unique<flow::Graph>();
 		buildNewScene(*blank);
-		m_loadedGraph = std::move(blank);
-		m_pendingLayout.clear();
-		m_loadRequested = true;
-		m_currentPath.clear(); // an untitled document
-		m_dirty = false;
-		m_loadIssues.clear();
+		m_ctx.loadedGraph = std::move(blank);
+		m_ctx.pendingLayout.clear();
+		m_ctx.loadRequested = true;
+		m_ctx.currentPath.clear(); // an untitled document
+		m_ctx.dirty = false;
+		m_ctx.loadIssues.clear();
 	}
 
 	void MainWindow::requestNew()
 	{
-		if (m_dirty)
-			m_confirmNew = true; // unsaved changes -> ask first (renderNewConfirm opens the modal)
+		if (m_ctx.dirty)
+			m_ctx.confirmNew = true; // unsaved changes -> ask first (renderNewConfirm opens the modal)
 		else
 			newGraph();
 	}
 
 	void MainWindow::renderNewConfirm(flow::Graph& graph, FlowviewApp& appDelegate)
 	{
-		if (m_confirmNew)
+		if (m_ctx.confirmNew)
 		{
 			gui::OpenPopup("Unsaved changes");
-			m_confirmNew = false;
+			m_ctx.confirmNew = false;
 		}
 		if (gui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
 		{
@@ -555,33 +556,33 @@ namespace flowview
 		flow::serialize::LoadResult result = loadGraph(path->string(), appDelegate.nodeFactory());
 		// Surface load problems in the Issues panel (not a modal) — they persist until the graph is
 		// next edited. Map the serialize severity onto the panel's.
-		m_loadIssues.clear();
+		m_ctx.loadIssues.clear();
 		for (const flow::serialize::LoadIssue& issue : result.issues)
 		{
 			const Issue::Severity sev = issue.severity == flow::serialize::Severity::Error ? Issue::Severity::Error : Issue::Severity::Warning;
-			m_loadIssues.push_back({sev, "load: " + issue.message, {}});
+			m_ctx.loadIssues.push_back({sev, "load: " + issue.message, {}});
 		}
 		if (result.graph.nodeCount() > 0) // replace the scene — deferred to end of frame
 		{
-			m_loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
-			m_pendingLayout = std::move(result.editor);
-			m_loadRequested = true;
-			m_currentPath = *path; // remember for plain Save
-			m_dirty = false;
+			m_ctx.loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
+			m_ctx.pendingLayout = std::move(result.editor);
+			m_ctx.loadRequested = true;
+			m_ctx.currentPath = *path; // remember for plain Save
+			m_ctx.dirty = false;
 		}
 	}
 
 	void MainWindow::saveToCurrentPath(const flow::Graph& graph, FlowviewApp& appDelegate)
 	{
-		if (m_currentPath.empty())
+		if (m_ctx.currentPath.empty())
 		{
 			saveAsDialog(graph, appDelegate); // no file yet -> prompt for one
 			return;
 		}
-		if (saveGraph(m_currentPath.string(), graph, appDelegate.nodeFactory(), collectLayout(graph)))
-			m_dirty = false;
+		if (saveGraph(m_ctx.currentPath.string(), graph, appDelegate.nodeFactory(), collectLayout(graph)))
+			m_ctx.dirty = false;
 		else
-			gui::message("Save failed", "Could not write " + m_currentPath.string(), true);
+			gui::message("Save failed", "Could not write " + m_ctx.currentPath.string(), true);
 	}
 
 	void MainWindow::saveAsDialog(const flow::Graph& graph, FlowviewApp& appDelegate)
@@ -594,8 +595,8 @@ namespace flowview
 		file.replace_extension("json"); // force .json (the codec is keyed off the extension)
 		if (saveGraph(file.string(), graph, appDelegate.nodeFactory(), collectLayout(graph)))
 		{
-			m_currentPath = file; // remember for plain Save
-			m_dirty = false;
+			m_ctx.currentPath = file; // remember for plain Save
+			m_ctx.dirty = false;
 		}
 		else
 		{
@@ -718,14 +719,6 @@ namespace flowview
 		return issues;
 	}
 
-	void MainWindow::locateNode(flow::NodeId id)
-	{
-		gui::nodes::ClearNodeSelection();
-		gui::nodes::SelectNode(static_cast<int>(id.value()));
-		m_locateTarget = id;			 // centred on the next Graph draw (needs the node's drawn size)
-		gui::activateWindowTab("Graph"); // bring the canvas forward so the located node is visible
-	}
-
 	void MainWindow::renderIssues(const flow::Graph& graph)
 	{
 		const auto severityColour = [](Issue::Severity s) -> image::ColorRGBA8
@@ -747,19 +740,19 @@ namespace flowview
 			gui::PushID(idx++); // duplicate messages would otherwise share a Selectable id
 			gui::PushStyleColor(ImGuiCol_Text, gui::packColor(severityColour(issue.severity)));
 			if (gui::Selectable(issue.message.c_str()) && issue.node != flow::NodeId{})
-				locateNode(issue.node);
+				m_ctx.locateNode(issue.node);
 			gui::PopStyleColor();
 			gui::PopID();
 		};
 
 		bool any = false;
-		if (m_recentIssueFrames > 0 && m_recentIssue)
+		if (m_ctx.recentIssueFrames > 0 && m_ctx.recentIssue)
 		{
-			row(*m_recentIssue);
-			--m_recentIssueFrames; // transient: fade after a few seconds
+			row(*m_ctx.recentIssue);
+			--m_ctx.recentIssueFrames; // transient: fade after a few seconds
 			any = true;
 		}
-		for (const Issue& issue : m_loadIssues)
+		for (const Issue& issue : m_ctx.loadIssues)
 		{
 			row(issue);
 			any = true;
@@ -776,20 +769,20 @@ namespace flowview
 
 	void MainWindow::renderPreview(const flow::Graph& graph)
 	{
-		if (!m_previewTarget)
+		if (!m_ctx.previewTarget)
 		{
 			gui::TextDisabled("Click an asset thumbnail to preview it here.");
 			return;
 		}
 
 		// Resolve the targeted port; drop the target if its node/port is gone or no longer a ready image.
-		const PinKey key = *m_previewTarget;
+		const PinKey key = *m_ctx.previewTarget;
 		const flow::Node* node = findNode(graph, flow::NodeId{key.node});
 		const flow::Port* port = node != nullptr ? (key.output ? node->findOutput(key.port) : node->findInput(key.port)) : nullptr;
 		const gui::Texture* tex = m_previews.find(key);
 		if (node == nullptr || port == nullptr || !port->ready() || port->type() != typeid(image::Image) || tex == nullptr)
 		{
-			m_previewTarget.reset();
+			m_ctx.previewTarget.reset();
 			gui::TextDisabled("(the previewed asset is no longer available)");
 			return;
 		}
@@ -892,7 +885,7 @@ namespace flowview
 			const flow::Node& node = graph.node(id);
 			// Default layout by role (a loaded layout wins over it): Input -> leftmost, Output ->
 			// rightmost, others fill the columns between.
-			if (seedPositions && !applyLayout(m_pendingLayout, id))
+			if (seedPositions && !applyLayout(m_ctx.pendingLayout, id))
 			{
 				int col = 1 + middleColumn;
 				if (dynamic_cast<const flow::GroupInputNode*>(&node) != nullptr)
@@ -1017,14 +1010,14 @@ namespace flowview
 
 		// Centre a located node (from an Issue click): pan so it sits at the canvas centre. Done here —
 		// the node's grid position + size are only known once it has been drawn.
-		if (m_locateTarget)
+		if (m_ctx.locateTarget)
 		{
-			const int nid = static_cast<int>(m_locateTarget->value());
+			const int nid = static_cast<int>(m_ctx.locateTarget->value());
 			const ImVec2 nodePos = gui::nodes::GetNodeGridSpacePos(nid);
 			const ImVec2 nodeSize = gui::nodes::GetNodeDimensions(nid);
 			gui::nodes::EditorContextResetPanning(ImVec2(canvasSize.x * 0.5f - (nodePos.x + nodeSize.x * 0.5f),
 													 canvasSize.y * 0.5f - (nodePos.y + nodeSize.y * 0.5f)));
-			m_locateTarget.reset();
+			m_ctx.locateTarget.reset();
 		}
 
 		// Canvas editing (must query imnodes after EndNodeEditor): a detached or dragged
@@ -1061,11 +1054,8 @@ namespace flowview
 		{
 			if (tryConnect(graph, startAttr, endAttr))
 				edited = true;
-			else // surface the silent rejection as a transient Issue
-			{
-				m_recentIssue = Issue{Issue::Severity::Warning, "Rejected connection: incompatible types or a cycle", {}};
-				m_recentIssueFrames = 240; // ~4 s at 60fps
-			}
+			else
+				m_ctx.noteRejectedConnect(); // surface the silent rejection as a transient Issue
 			m_linkDragActive = false; // the drag ended by forming a link
 		}
 
@@ -1146,7 +1136,7 @@ namespace flowview
 		gui::End();
 		m_laidOut = true;
 		if (seedPositions)
-			m_pendingLayout.clear(); // only clear after the frame that actually consumed it (not the Load frame)
+			m_ctx.pendingLayout.clear(); // only clear after the frame that actually consumed it (not the Load frame)
 
 		// Persistent node palette: a left-click list of the factory's node types — trackpad-
 		// native, where the right-click add menu above (kept as a secondary) is awkward on a
@@ -1182,8 +1172,8 @@ namespace flowview
 		{
 			appDelegate.reevaluate();
 			m_previews.markDirty();
-			m_dirty = true; // a topology edit -> unsaved changes
-			m_loadIssues.clear();
+			m_ctx.dirty = true; // a topology edit -> unsaved changes
+			m_ctx.loadIssues.clear();
 		}
 
 		m_previews.refreshIfDirty(graph, *m_guiCtx);
@@ -1192,7 +1182,7 @@ namespace flowview
 		gui::SetNextWindowPos(math::Vec2f{20.0f, 20.0f}, ImGuiCond_FirstUseEver);
 		gui::SetNextWindowSize(math::Vec2f{320.0f, 320.0f}, ImGuiCond_FirstUseEver);
 		gui::Begin("Inspector");
-		gui::enumCombo("Preview size", m_previewSize); // labels from lain::meta::enums
+		gui::enumCombo("Preview size", m_ctx.previewSize); // labels from lain::meta::enums
 
 		// Selection-driven: inspect only the node(s) selected on the canvas (stacked, walked in topo
 		// order for a stable top-to-bottom layout), not the whole graph. Nothing selected -> a hint.
@@ -1248,10 +1238,10 @@ namespace flowview
 					const PinKey key{id.value(), output, p.id()};
 					if (const gui::Texture* tex = m_previews.find(key))
 					{
-						const float side = previewExtent(m_previewSize);
+						const float side = previewExtent(m_ctx.previewSize);
 						gui::Image(*tex, math::Vec2f{side, side}); // Texture -> ImTextureRef implicitly
 						if (gui::IsItemClicked())
-							previewAsset(key); // click a thumbnail -> full-size in the Preview pane
+							m_ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 					}
 					if (output) // outputs are the results you'd export; inputs are just what was fed in
 					{
@@ -1277,8 +1267,8 @@ namespace flowview
 		{
 			appDelegate.reevaluate();
 			m_previews.markDirty();
-			m_dirty = true; // a param edit -> unsaved changes
-			m_loadIssues.clear();
+			m_ctx.dirty = true; // a param edit -> unsaved changes
+			m_ctx.loadIssues.clear();
 		}
 
 		// The graph's I/O boundary — the host-binding surface (bind inputs, save outputs).
@@ -1286,10 +1276,10 @@ namespace flowview
 
 		// Preview + Issues panels — docked but empty for now (slice 1); filled in slices 2 and 3. They
 		// must exist as windows so the default layout can dock them.
-		if (m_activatePreview)
+		if (m_ctx.activatePreview)
 		{
 			gui::activateWindowTab("Preview"); // flip the Graph/Preview tab group to Preview
-			m_activatePreview = false;
+			m_ctx.activatePreview = false;
 		}
 		gui::Begin("Preview");
 		renderPreview(graph);
@@ -1298,16 +1288,16 @@ namespace flowview
 			renderIssues(graph);
 		gui::End();
 
-		// The unsaved-changes guard for New (opened by requestNew when m_dirty).
+		// The unsaved-changes guard for New (opened by requestNew when m_ctx.dirty).
 		renderNewConfirm(graph, appDelegate);
 
 		// Apply a pending Load now — every panel has drawn with the current graph, so swapping it
 		// here (not at the button) can't dangle the `graph` reference used above. Next frame re-seeds
 		// positions from the loaded layout.
-		if (m_loadRequested)
+		if (m_ctx.loadRequested)
 		{
-			appDelegate.replaceGraph(std::move(m_loadedGraph));
-			m_loadRequested = false;
+			appDelegate.replaceGraph(std::move(m_ctx.loadedGraph));
+			m_ctx.loadRequested = false;
 			m_laidOut = false;
 			m_previews.clear(); // the old graph's cached thumbnails are gone
 			m_previews.markDirty();
