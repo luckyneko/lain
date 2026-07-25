@@ -5,14 +5,14 @@
 #include "../graphio.h" // loadGraph / saveGraph
 #include "../scene.h"	 // nodeCatalog (the Add menu grouping) + buildNewScene
 #include "../session.h" // noteGraphPath / saveSession (Open Recent + reopen-on-launch)
+#include "canvasids.h"	 // collectLayout (canvas positions for the saved editor section)
 
 #include <lain/app/application.h>
-#include <lain/data/value.h>
+#include <lain/data/value.h> // Value (undo/redo snapshot restored via applyRestore)
 #include <lain/flow/graph.h>
 #include <lain/flow/serialize/loadresult.h>
 #include <lain/gui/dialogs.h>
 #include <lain/gui/gui.h>
-#include <lain/gui/nodes.h>
 #include <lain/math/types.h>
 
 #include <cstddef>
@@ -25,22 +25,6 @@ namespace flowview
 {
 	using namespace lain;
 
-	// The current canvas positions as an EditorData blob (node id -> {x,y}) for serialization. Reads
-	// imnodes grid-space positions, so it must run while the canvas' node ids are live.
-	static flow::serialize::EditorData collectLayout(const flow::Graph& graph)
-	{
-		flow::serialize::EditorData layout;
-		for (const flow::NodeId id : graph.nodeIds())
-		{
-			const ImVec2 pos = gui::nodes::GetNodeGridSpacePos(static_cast<int>(id.value()));
-			data::Value blob = data::Value::object();
-			blob.set("x", data::Value(static_cast<double>(pos.x)));
-			blob.set("y", data::Value(static_cast<double>(pos.y)));
-			layout[id] = std::move(blob);
-		}
-		return layout;
-	}
-
 	void MenuBarPane::newGraph(AppContext& ctx)
 	{
 		// A blank document — one empty Input + one empty Output node. Deferred to end of frame like
@@ -50,7 +34,8 @@ namespace flowview
 		ctx.loadedGraph = std::move(blank);
 		ctx.pendingLayout.clear();
 		ctx.loadRequested = true;
-		ctx.currentPath.clear(); // an untitled document
+		ctx.pendingBaseline = snapshotGraph(*ctx.loadedGraph, ctx.app->nodeFactory()); // reset undo history to the blank doc
+		ctx.currentPath.clear();													   // an untitled document
 		ctx.dirty = false;
 		ctx.loadIssues.clear();
 		ctx.session.lastGraph.clear(); // nothing to reopen next launch (the recents keep their history)
@@ -153,11 +138,38 @@ namespace flowview
 		ctx.loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
 		ctx.pendingLayout = std::move(result.editor);
 		ctx.loadRequested = true;
+		// Baseline the undo history to the loaded document (via the same snapshot path push() uses, so
+		// the first edit's snapshot compares cleanly). Opening resets history — undo doesn't cross it.
+		ctx.pendingBaseline = snapshotGraph(*ctx.loadedGraph, ctx.app->nodeFactory(), ctx.pendingLayout);
 		ctx.currentPath = path; // remember for plain Save
 		ctx.dirty = false;
 		noteGraphPath(ctx.session, path); // now the document to reopen + the head of Open Recent
 		saveSession(ctx.session);
 		return true;
+	}
+
+	void MenuBarPane::undo(AppContext& ctx)
+	{
+		if (ctx.undo.canUndo())
+			applyRestore(ctx, ctx.undo.undo());
+	}
+
+	void MenuBarPane::redo(AppContext& ctx)
+	{
+		if (ctx.undo.canRedo())
+			applyRestore(ctx, ctx.undo.redo());
+	}
+
+	void MenuBarPane::applyRestore(AppContext& ctx, const data::Value& state)
+	{
+		// Rebuild from the snapshot and route it through the same deferred-swap path as a load — but
+		// with NO pendingBaseline, so the swap handler keeps the history (the cursor already moved).
+		flow::serialize::LoadResult result = restoreGraph(state, ctx.app->nodeFactory());
+		ctx.loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
+		ctx.pendingLayout = std::move(result.editor);
+		ctx.loadRequested = true;
+		ctx.dirty = true; // a restored state differs from what's on disk (in general)
+		ctx.loadIssues.clear();
 	}
 
 	void MenuBarPane::openGraphDialog(AppContext& ctx)
@@ -264,6 +276,14 @@ namespace flowview
 					app.quit();
 				gui::EndMenu();
 			}
+			if (gui::BeginMenu("Edit"))
+			{
+				if (gui::MenuItem("Undo", (m + "Z").c_str(), false, ctx.undo.canUndo()))
+					undo(ctx);
+				if (gui::MenuItem("Redo", (m + "Shift+Z").c_str(), false, ctx.undo.canRedo()))
+					redo(ctx);
+				gui::EndMenu();
+			}
 			if (gui::BeginMenu("Add"))
 			{
 				// Grouped by category (nodeCatalog); each item cascades its grid position so successive
@@ -301,6 +321,11 @@ namespace flowview
 			requestNew(ctx);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_O, ImGuiInputFlags_RouteGlobal))
 			requestOpen(ctx);
+		// Undo / redo: Ctrl+Z and Ctrl+Shift+Z (mods match exactly, so the two don't collide).
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
+			undo(ctx);
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
+			redo(ctx);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))
 			saveAsDialog(ctx, graph);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))

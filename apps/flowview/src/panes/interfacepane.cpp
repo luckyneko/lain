@@ -239,22 +239,23 @@ namespace flowview
 
 		changed |= renderRemoveConfirm(graph);
 
-		// An add / remove / bind re-runs the graph (as a param/canvas edit does) and refreshes
-		// previews next frame. It also counts as an unsaved change so New guards it — a bound image is
-		// loaded data worth not losing silently (values aren't in the saved document, but the guard
-		// still protects them from an accidental New).
+		// An add / remove / bind re-runs the graph (as a param/canvas edit does) and refreshes previews
+		// next frame. markChanged arms the guard AND requests an undo snapshot — but a bind changes only
+		// the (non-serialized) bound value, so its snapshot equals the current one and the undo stack
+		// ignores it; a pin add/remove does change the document and records a step. Either way New is
+		// guarded — a bound image is loaded data worth not losing silently.
 		if (changed)
 		{
 			ctx.app->reevaluate();
 			previews.markDirty();
-			ctx.dirty = true;
+			ctx.markChanged();
 			ctx.loadIssues.clear(); // load issues are stale once the graph changes
 		}
 		// A pin rename changes no value, so it needs neither a re-run nor a preview refresh — but the
-		// name IS part of the saved document (edges are addressed by it), so it must arm the guard.
+		// name IS part of the saved document (edges are addressed by it), so mark it (guard + undo).
 		if (renamed)
 		{
-			ctx.dirty = true;
+			ctx.markChanged();
 			ctx.loadIssues.clear();
 		}
 	}

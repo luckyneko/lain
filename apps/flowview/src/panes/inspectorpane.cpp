@@ -135,14 +135,14 @@ namespace flowview
 		{
 			ctx.app->reevaluate();
 			previews.markDirty();
-			ctx.dirty = true; // a param edit -> unsaved changes
+			ctx.markChanged(); // a param edit -> unsaved changes + an undo snapshot
 			ctx.loadIssues.clear();
 		}
 		// A rename changes no value, so it needs neither a re-run nor a preview refresh — but it IS part
-		// of the saved document, so it must arm the unsaved-changes guard (same as a boundary-pin rename).
+		// of the saved document, so it must mark the change (guard + undo), same as a boundary-pin rename.
 		if (renamed)
 		{
-			ctx.dirty = true;
+			ctx.markChanged();
 			ctx.loadIssues.clear();
 		}
 	}

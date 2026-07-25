@@ -164,6 +164,23 @@ On top of that, four small items landed (see WORK.md for the detail):
   `ready()`-driven dim plus the scheduler clearing an unready node's outputs already produces exactly
   that, including muted dead links. #2 is complete.
 
+### Update 2026-07-25 — undo/redo
+
+(The prior text-surface cleanup — flowview display strings → `lain::string::format`, the `char[]`
+`InputText` sites → ImGui's `imgui_stdlib` `std::string` overload, no `snprintf` left — landed with the
+2026-07-23 flowview commit; see WORK.md's "Text-surface cleanup" section.)
+
+**Undo / redo** (`apps/flowview/src/undo.{h,cpp}`, `UndoStack`) — snapshot-based, reusing the serialize
+spine: a snapshot is `graphio::snapshotGraph` (= the Save document, in RAM), a restore is `restoreGraph`
+fed through the existing deferred-load swap. Edits route through `AppContext::markChanged()`;
+`MainWindow` snapshots at end of frame only when `!gui::IsAnyItemActive()`, so a param/colour **drag
+coalesces to one step**. `push()` skips a snapshot equal to the current one, so a **bound-value-only
+edit records nothing** (bind values aren't serialized). A `pendingBaseline` distinguishes a New/Open
+swap (**resets** history) from an Undo/Redo swap (keeps it). **Edit menu + Ctrl+Z / Ctrl+Shift+Z.**
+Defaults: node *moves* not undoable, Open resets the stack. First app-level unit tests
+(`apps/flowview/test`, 8 cases over the real `undo.cpp`); `ctest` **297/297**. The interactive
+restore/coalesce/redo-truncate behaviour still needs a live eyeball.
+
 **Engine core is built, tested, committed. The remaining M1 work is one decoupling
 refactor of `flow` plus the app stack + viewer:**
 

@@ -1,9 +1,12 @@
 #include "canvasids.h"
 
+#include <lain/data/value.h>
+#include <lain/flow/graph.h>
 #include <lain/gui/nodes.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace flowview
 {
@@ -26,5 +29,19 @@ namespace flowview
 		for (const int id : nodeIds)
 			out.push_back(flow::NodeId{static_cast<std::uint64_t>(id)});
 		return out;
+	}
+
+	flow::serialize::EditorData collectLayout(const flow::Graph& graph)
+	{
+		flow::serialize::EditorData layout;
+		for (const flow::NodeId id : graph.nodeIds())
+		{
+			const ImVec2 pos = gui::nodes::GetNodeGridSpacePos(static_cast<int>(id.value()));
+			data::Value blob = data::Value::object();
+			blob.set("x", data::Value(static_cast<double>(pos.x)));
+			blob.set("y", data::Value(static_cast<double>(pos.y)));
+			layout[id] = std::move(blob);
+		}
+		return layout;
 	}
 } // namespace flowview

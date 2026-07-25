@@ -69,4 +69,15 @@ namespace flowview
 		}
 		return flow::serialize::fromValue(*document, factory, sceneCodecs());
 	}
+
+	data::Value snapshotGraph(const flow::Graph& graph, const core::Factory<flow::Node>& factory,
+							  const flow::serialize::EditorData& editor)
+	{
+		return flow::serialize::toValue(graph, factory, sceneCodecs(), editor);
+	}
+
+	flow::serialize::LoadResult restoreGraph(const data::Value& document, const core::Factory<flow::Node>& factory)
+	{
+		return flow::serialize::fromValue(document, factory, sceneCodecs());
+	}
 } // namespace flowview

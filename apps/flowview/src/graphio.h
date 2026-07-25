@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lain/core/factory.h>
+#include <lain/data/value.h>
 #include <lain/flow/node.h>
 #include <lain/flow/serialize/loadresult.h>
 #include <lain/flow/serialize/valuecodecs.h>
@@ -37,4 +38,20 @@ namespace flowview
 	// returned LoadResult (which then carries an empty graph).
 	lain::flow::serialize::LoadResult loadGraph(const std::string& uri,
 												const lain::core::Factory<lain::flow::Node>& factory);
+
+	// Serialize `graph` (+ its canvas `editor` layout) to a data::Value — the same document Save
+	// writes, but kept in RAM. The undo history is a stack of these (Save-to-RAM); a restore feeds
+	// one back through restoreGraph (Load-from-RAM). Uses sceneCodecs(), so it captures exactly what
+	// the on-disk format does — structure, params, node/pin names, dynamic pins, layout — and no
+	// runtime-only state (bound boundary values), which is why two snapshots differing only in a bind
+	// compare equal.
+	lain::data::Value snapshotGraph(const lain::flow::Graph& graph,
+									const lain::core::Factory<lain::flow::Node>& factory,
+									const lain::flow::serialize::EditorData& editor = {});
+
+	// Rebuild a graph from a snapshot (or any document Value) — fromValue with sceneCodecs(). A
+	// snapshot came from snapshotGraph, so the result is normally clean; any issues ride in the
+	// LoadResult as usual.
+	lain::flow::serialize::LoadResult restoreGraph(const lain::data::Value& document,
+												   const lain::core::Factory<lain::flow::Node>& factory);
 } // namespace flowview

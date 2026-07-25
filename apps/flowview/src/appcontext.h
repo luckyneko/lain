@@ -2,7 +2,9 @@
 
 #include "pinkey.h"
 #include "session.h" // what persists between runs (last graph, recents, dialog folder)
+#include "undo.h"	// UndoStack (the graph-document history)
 
+#include <lain/data/value.h>				 // Value (pendingBaseline)
 #include <lain/flow/serialize/loadresult.h> // EditorData (a value member) + Graph (loadedGraph target)
 #include <lain/flow/types.h>				// NodeId
 
@@ -125,11 +127,32 @@ namespace flowview
 		std::optional<PendingSwap> pendingSwap; // what to do once confirmed
 		bool confirmSwap = false;				// open the modal next frame (the request* helpers set it)
 
+		// Mark that the graph document changed this frame (any topology / param / name edit). Sets the
+		// unsaved-changes flag AND asks for an undo snapshot; the snapshot is deferred to end of frame
+		// and only taken once no widget is active (so a param drag coalesces into one history entry).
+		void markChanged()
+		{
+			dirty = true;
+			pendingSnapshot = true;
+		}
+
+		// --- Undo / redo ---
+		// The graph-document history (snapshot per committed edit). MainWindow drives it: it pushes a
+		// snapshot at end of frame when pendingSnapshot is set and no widget is active, and restores a
+		// state through the pending-load path below on Undo/Redo.
+		UndoStack undo;
+		bool pendingSnapshot = false; // an edit is awaiting its end-of-frame snapshot (coalesces drags)
+
 		// Pending Load: applied at the END of onRender (after every panel drew with the current graph),
 		// so replacing the app's graph never dangles the in-flight `graph` reference. The loaded canvas
-		// layout is re-applied on the next frame's position-seed pass.
+		// layout is re-applied on the next frame's position-seed pass. An Undo/Redo restore reuses this
+		// same path (loadedGraph + pendingLayout + loadRequested).
 		bool loadRequested = false;
 		std::unique_ptr<lain::flow::Graph> loadedGraph;
 		lain::flow::serialize::EditorData pendingLayout;
+		// Set alongside a New/Open swap (not an Undo/Redo restore): the freshly-established document to
+		// re-baseline the undo history with once the swap is applied. Its presence is what tells the
+		// swap handler "this is a new document → reset history" vs "this is a restore → keep history".
+		std::optional<lain::data::Value> pendingBaseline;
 	};
 } // namespace flowview

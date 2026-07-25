@@ -1,7 +1,9 @@
 #include "mainwindow.h"
 
 #include "flowviewapp.h"
-#include "session.h" // loadSession / saveSession (reopen the last graph, restore the dialog folder)
+#include "graphio.h"		// snapshotGraph (undo snapshots)
+#include "panes/canvasids.h" // collectLayout (canvas positions for a snapshot)
+#include "session.h"		// loadSession / saveSession (reopen the last graph, restore the dialog folder)
 
 #include <archimedes/archimedes.h>
 #include <lain/app/application.h>
@@ -10,6 +12,7 @@
 #include <lain/flow/graph.h>
 #include <lain/gui/dialogs.h> // lastDirectory / setLastDirectory (the persisted dialog folder)
 #include <lain/gui/dock.h>	  // the docking seam (no imgui_internal in the app)
+#include <lain/gui/gui.h>	  // IsAnyItemActive (coalesce a drag into one undo snapshot)
 
 #include <cstdint>
 #include <filesystem>
@@ -101,7 +104,7 @@ namespace flowview
 		{
 			appDelegate.reevaluate();
 			m_previews.markDirty();
-			m_ctx.dirty = true; // a topology edit -> unsaved changes
+			m_ctx.markChanged(); // a topology edit -> unsaved changes + an undo snapshot
 			m_ctx.loadIssues.clear();
 		}
 
@@ -120,9 +123,27 @@ namespace flowview
 		// The unsaved-changes guard for New (opened by requestNew when m_ctx.dirty).
 		m_menuBar.drawConfirmModal(m_ctx, graph);
 
-		// Apply a pending Load now — every panel has drawn with the current graph, so swapping it
-		// here (not at the button) can't dangle the `graph` reference used above. Next frame re-seeds
-		// positions from the loaded layout.
+		// A snapshot of the current document (structure + params + names + layout), computed only when
+		// needed — reads live imnodes positions, so it must run after the canvas drew (here).
+		const auto snapshotNow = [&]()
+		{
+			const flow::Graph& g = appDelegate.graph();
+			return snapshotGraph(g, appDelegate.nodeFactory(), collectLayout(g));
+		};
+
+		// Record an undo step for a committed edit — but only once no widget is active, so a param
+		// drag (which markChanged()s every frame) coalesces into a single history entry on release.
+		// push() ignores a snapshot equal to the current one, so a bound-value-only edit (not in the
+		// document) records nothing. Done BEFORE the swap below, so it captures the pre-swap graph.
+		if (m_ctx.pendingSnapshot && !gui::IsAnyItemActive())
+		{
+			m_ctx.undo.push(snapshotNow());
+			m_ctx.pendingSnapshot = false;
+		}
+
+		// Apply a pending Load / Undo-Redo restore now — every panel has drawn with the current graph,
+		// so swapping it here (not at the button) can't dangle the `graph` reference used above. Next
+		// frame re-seeds positions from the loaded layout.
 		if (m_ctx.loadRequested)
 		{
 			appDelegate.replaceGraph(std::move(m_ctx.loadedGraph));
@@ -130,7 +151,21 @@ namespace flowview
 			m_previews.clear(); // the old graph's cached thumbnails are gone
 			m_previews.markDirty();
 			m_canvas.onGraphReplaced(); // re-seed positions next frame + drop stale canvas selection
+
+			// A New/Open carries a fresh baseline (the swap resets the history — undo doesn't cross it);
+			// an Undo/Redo restore carries none, so the existing history (its cursor already moved) stands.
+			if (m_ctx.pendingBaseline)
+			{
+				m_ctx.undo.reset(std::move(*m_ctx.pendingBaseline));
+				m_ctx.pendingBaseline.reset();
+			}
+			m_ctx.pendingSnapshot = false; // the swap itself is never an undoable edit
 		}
+
+		// Baseline the startup graph the first time round (nothing New/Open'd to seed the history).
+		// Positions were seeded during this frame's canvas draw, so the layout is already live.
+		if (!m_ctx.undo.hasBaseline())
+			m_ctx.undo.reset(snapshotNow());
 
 		window.renderer().render([&](acm::CommandBuffer cmd, uint32_t)
 								 { m_guiCtx->render(cmd); });

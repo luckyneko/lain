@@ -867,12 +867,48 @@ After this, flowview has **no `snprintf`** — CPU text is `lain::string::format
 `std::string`, and ImGui's own `Text("%s", …)` variadics (its API, not ours) stay as they are.
 `ctest` 290/290; both gui modes smoke-run clean.
 
+### Undo / redo (2026-07-25)
+
+Snapshot-based history, reusing the serialization spine — a snapshot is Save-to-RAM, a restore is
+Load-from-RAM. New **`undo.{h,cpp}`** (`UndoStack`): a `std::vector<data::Value>` of document states
+with a cursor, `reset`/`push`/`undo`/`redo`, bounded to `maxDepth` (100). Driver-free and unit-tested
+(new **`apps/flowview/test`** target — 8 cases over the real `undo.cpp`, the app's first unit tests).
+
+- **Snapshot = `graphio::snapshotGraph`** (`toValue` with `sceneCodecs()` + `collectLayout`), the same
+  document Save writes — so it captures structure / params / node+pin names / dynamic pins / layout,
+  and **nothing runtime-only** (bound boundary values aren't serialized). `push()` ignores a snapshot
+  equal to the current one, so a bind-only edit records no history step (its document is unchanged).
+- **Restore reuses the deferred-load path.** `MenuBarPane::undo/redo` rebuild via `restoreGraph`
+  (`fromValue`) and feed the existing `loadedGraph`/`pendingLayout`/`loadRequested` swap — the one place
+  the graph is replaced safely (after all panes drew). A **`pendingBaseline`** on `AppContext`
+  distinguishes the two swap kinds: a New/Open carries one (→ the swap **resets** the history: undo
+  doesn't cross a document change, per the locked default), an Undo/Redo carries none (→ history kept,
+  cursor already moved).
+- **Coalescing without per-editor plumbing.** Edits route through a new `AppContext::markChanged()`
+  (dirty + a `pendingSnapshot` flag); `MainWindow` snapshots at end of frame only when
+  `pendingSnapshot && !gui::IsAnyItemActive()` — so a continuous param/colour **drag** (which marks
+  changed every frame) collapses to a single history entry on release, and live preview during the drag
+  is untouched. This is the cheap alternative to threading a `committed` signal through every editor.
+- **Baselining.** The startup graph baselines lazily on the first frame (positions live after the
+  canvas draws); New/Open baseline from their document `Value` (timing-independent — a freshly swapped
+  graph's imnodes positions aren't seeded until the next frame, so a `collectLayout` baseline there
+  would be wrong).
+- **Wiring:** an **Edit menu** (Undo/Redo, greyed by `canUndo`/`canRedo`) + **Ctrl+Z / Ctrl+Shift+Z**
+  (mods match exactly, no collision). `collectLayout` moved from a menubar static to the shared
+  `panes/canvasids` (Save + snapshot both use it).
+
+**Defaults (as agreed):** node *moves* are **not** undoable (a pure reposition fires no edit signal;
+snapshots still record positions, so undo/redo of a real edit restores layout); **Open resets** the
+stack; drag coalescing via `IsAnyItemActive`.
+
+`ctest` 297/297 (8 new); snapshot format stays byte-idempotent with Save; both gui modes smoke-run.
+**The interactive behaviour — Ctrl+Z restoring, a drag coalescing to one step, edit-after-undo
+truncating the redo tail — needs a live eyeball** (no test harness at the gui layer).
+
 **Parked for later passes:** user-configurable / theme.json
 colours (the registries are the load target) · pin **shape** encodes presence (square=required, circle=optional,
-triangle=conditional — deferred: mostly-required → mostly-square is visually sharp) · **undo/redo** —
-snapshot-based (reuses serialize: a snapshot is Save-to-RAM, restore is Load-from-RAM), hooks the single
-end-of-frame `edited` flag; the one wrinkle is coalescing continuous param-drag edits (snapshot on
-`IsItemDeactivatedAfterEdit`, not every frame) · the **window-interaction**
+triangle=conditional — deferred: mostly-required → mostly-square is visually sharp) · **node-move undo**
+(snapshot on an imnodes position-delta, coalesced on drag release) · the **window-interaction**
 pass (whole-layout purpose, incl. the Interface↔Inspector merge) · a **`lain::gui::nodes` wrapper pass** — front the raw
 `Im*` surface the `namespace nodes = ImNodes` alias leaks (`ImNodesCol_*`, `ImNodesPinShape_*`,
 `PushColorStyle(ImU32)`, attribute flags) with lain-typed calls, so a client passes lain colours/enums

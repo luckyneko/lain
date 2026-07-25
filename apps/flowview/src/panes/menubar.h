@@ -2,6 +2,11 @@
 
 #include <filesystem>
 
+namespace lain::data
+{
+	class Value; // an undo/redo snapshot to restore (applyRestore)
+}
+
 namespace lain::flow
 {
 	class Graph;
@@ -57,5 +62,12 @@ namespace flowview
 		void openGraphDialog(AppContext& ctx);
 		bool saveToCurrentPath(AppContext& ctx, const lain::flow::Graph& graph);
 		bool saveAsDialog(AppContext& ctx, const lain::flow::Graph& graph);
+
+		// Undo / redo (Edit menu + Ctrl+Z / Ctrl+Shift+Z). Each pulls a document state from the undo
+		// history and restores it through the same deferred-swap path as a load; applyRestore does the
+		// swap setup without a pendingBaseline, so the history (its cursor already moved) is preserved.
+		void undo(AppContext& ctx);
+		void redo(AppContext& ctx);
+		void applyRestore(AppContext& ctx, const lain::data::Value& state);
 	};
 } // namespace flowview

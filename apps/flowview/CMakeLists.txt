@@ -9,6 +9,7 @@ add_executable(flowview
 	src/mainwindow.cpp
 	src/appcontext.cpp
 	src/session.cpp
+	src/undo.cpp
 	src/previewcache.cpp
 	src/panes/menubar.cpp
 	src/panes/issuespane.cpp
@@ -39,3 +40,8 @@ target_link_libraries(flowview
 # system Vulkan install or a hand-set VK_ICD_FILENAMES. Without this the loader finds no
 # driver, the instance is invalid, and gui-mode trips GLFW's null-instance assert.
 acm_stage_vulkan_runtime(flowview)
+
+# Driver-free unit tests for the app's testable internals (the undo history).
+if(LAIN_BUILD_TESTING)
+	add_subdirectory(test)
+endif()
