@@ -10,9 +10,11 @@
 include(FetchContent)
 
 # The DOCKING branch (superset of the release: adds DockSpace / DockBuilder + multi-viewport; lain
-# uses docking, multi-viewport is deferred). Docking isn't in the tagged releases, so it's tracked as
-# a branch — pinned by commit for reproducibility (like the submodules), not the moving branch tip.
-set(IMGUI_REF "docking" CACHE STRING "Dear ImGui docking-branch commit or ref (pin a commit for repro)")
+# uses docking, multi-viewport is deferred). Docking isn't in the tagged releases, so it is tracked as
+# a branch — and therefore pinned by commit (like imnodes and the submodules), never by the moving
+# branch tip, so a fresh clone builds the same ImGui this was developed and verified against. The
+# pinned commit is 1.92.9 WIP (IMGUI_VERSION_NUM 19285); bump it deliberately, not incidentally.
+set(IMGUI_REF "162ce49af203d581e58f6989d161653cc8c1ce9c" CACHE STRING "Vendored Dear ImGui docking-branch commit")
 set(IMGUI_FILE "github.com/ocornut/imgui/archive/${IMGUI_REF}.tar.gz")
 
 FetchContent_Declare(imgui
