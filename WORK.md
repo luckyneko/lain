@@ -627,6 +627,11 @@ binding sidesteps it for now.
 
 ## flowview UI pass (grilled 2026-07-13)
 
+> **Live-verified 2026-07-23.** Everything from here through the window/panel layout pass and the
+> pane-split refactor had been built and suite-tested but never driven on the Metal driver; that
+> backlog was cleared in one session by the repo owner exercising the gui. The per-slice markers below
+> are dated accordingly.
+
 A readability + usability pass on the viewer, grilled into three slices (A/B/C) plus later passes.
 New module **`canvasstyle.{h,cpp}`** owns just the palette: a `CanvasStyle` with a `type_index → colour`
 port palette (+ hash-of-typeName fallback) and a `factory-key → colour` node-title palette (categories
@@ -642,7 +647,7 @@ ImU32, so no `ImVec2`-style struct hook for auto-conversion). The hash fallback 
 `image::ColorHSVf` + a `convert()` overload** (HSV→RGB) added to `lain::image`. The future theme.json /
 colour editor loads into this.
 
-- ✅ **Slice A — readability BUILT** (2026-07-13, canvas-only → **not yet eyeballed on live Metal**).
+- ✅ **Slice A — readability BUILT** (2026-07-13, live-verified 2026-07-23).
   Inactive node (a Required input empty) → whole node muted (title+bg); dead edge (source output empty)
   → muted link. Pins + links coloured by value type (Image=blue, Int/Float=green, Bool=purple,
   String=amber; hash fallback otherwise). Node titles tinted by kind (source/filter/control/boundary).
@@ -654,12 +659,12 @@ colour editor loads into this.
   (pin shows name only); outputs **right-aligned** to a stable text-derived column width (a rendered-width
   target fed back → runaway node growth). Precedence for a pin: the only mute is the drag-incompatible one
   (slice C). Full suite 287/287; headless unaffected.
-- ✅ **Slice B — selection-driven inspector BUILT** (2026-07-13, canvas-only → live eyeball pending).
+- ✅ **Slice B — selection-driven inspector BUILT** (2026-07-13, live-verified 2026-07-23).
   The Inspector panel shows only the node(s) selected on the canvas (`selectedNodes()`), stacked and
   walked in topo order for a stable layout, each with its params + port values + previews; nothing
   selected → a "Select a node…" hint; the preview-size combo stays pinned at the top. Replaces the
   all-nodes dump. The Interface panel is untouched (its merge is the window-interaction pass).
-- ✅ **Slice C — interaction feedback BUILT** (2026-07-13, canvas-only → live eyeball pending). During a
+- ✅ **Slice C — interaction feedback BUILT** (2026-07-13, live-verified 2026-07-23). During a
   link drag, every pin that isn't a compatible drop target (opposite direction + same type) greys out —
   the drag source is captured on `IsLinkStarted` (after `EndNodeEditor`) and consumed by the next frame's
   pin draw (so the grey shows one frame in, invisible mid-drag), cleared on mouse-release. This is the
@@ -669,7 +674,7 @@ colour editor loads into this.
   stays **emergent** (a dim node with hollow input pins — slice A), with actionable validation deferred to
   the "Graph Issues" panel. A guarded `findNode` protects the decoded hovered/dragged pin against a node
   deleted the same frame. **The A/B/C readability + usability pass is complete.**
-- ✅ **Menu bar BUILT** (2026-07-14, canvas-only → live eyeball pending). An in-app `BeginMainMenuBar`
+- ✅ **Menu bar BUILT** (2026-07-14, live-verified 2026-07-23). An in-app `BeginMainMenuBar`
   (not a native platform menu — that'd be per-OS Cocoa/Win32 outside ImGui+GLFW): **File** (New / Open... /
   Save / Save As... / Quit) tracking a remembered current path (plain Save writes it, Save As sets it, New
   clears it); **Add ▸ category ▸ kind** grouped by a new viewer-side `scene::nodeCatalog()` (Sources /
@@ -682,7 +687,7 @@ colour editor loads into this.
   guards unsaved changes** with a Save/Discard/Cancel modal (a `m_dirty` flag set on any edit, cleared on
   save/load/new). Menu labels use ASCII `...` (the default ImGui font has no `…`/`•` glyph → they'd render
   `?`). Settings menu skipped (not needed yet).
-- ✅ **Boundary input value editors BUILT** (2026-07-14, canvas-only → live eyeball pending). You can now
+- ✅ **Boundary input value editors BUILT** (2026-07-14, live-verified 2026-07-23). You can now
   set a graph input's value in the gui by type: image inputs keep the **Bind file...** picker, and every
   other type gets a type editor (int → drag, float → drag, bool → checkbox, string → text, path → field +
   Browse). `ParamEditors` was generalised from `render(Param&)` to **`render(label, type, PortValue&)`** —
@@ -706,11 +711,14 @@ transient, load-issue ⚠/⛔), rows click-to-locate (`SelectNode` + `EditorCont
 layout: Graph/Preview tabs centre, Inspector/Nodes tabs right-top, Interface right-bottom, Issues under
 the centre (independent splits). Built in 3 slices.
 
-- ✅ **Slice 1 — docking infra BUILT** (2026-07-16, canvas-only → live eyeball pending). **ImGui switched
+- ✅ **Slice 1 — docking infra BUILT** (2026-07-16, live-verified 2026-07-23). **ImGui switched
   to the `docking` branch** (release tarball → `github.com/ocornut/imgui/archive/docking.tar.gz`, now
   `1.92.9 WIP` with `DockSpace`/`DockBuilder`; the release branch has no docking) — build + `ctest`
-  clean on it (289/289). *(Reproducibility TODO: pin `IMGUI_REF` to a resolved commit, like the
-  submodules, instead of the moving branch tip.)* The DockBuilder API (ImGui-**internal**) is fronted by
+  clean on it (289/289). *(Reproducibility: **resolved 2026-07-23** — `IMGUI_REF` is pinned to commit
+  `162ce49` (the 1.92.9 WIP this was developed against), like imnodes and the submodules, instead of the
+  moving branch tip. Note `IMGUI_REF` is a CMake **cache** variable: an existing build dir keeps its old
+  value until reconfigured with `-DIMGUI_REF=…`, so bumping the pin needs that or a fresh build dir.)*
+  The DockBuilder API (ImGui-**internal**) is fronted by
   a new **`lain::gui` docking seam** (`gui/dock.{h,cpp}`: `DockNode` / `DockDir` / `dockSpaceOverViewport`
   / `dockReset` / `dockSplit` / `dockWindow` / `dockFinish`) so flowview never includes `imgui_internal`.
   `lain::core` gains **`configDir("flowview")`** → `<home>/.flowview` (created on demand) built on
@@ -720,7 +728,7 @@ the centre (independent splits). Built in 3 slices.
   `~/.flowview/imgui.ini`) or reset — saved layouts win — with **View ▸ Reset Layout** and a
   **`--reset-layout`** flag as recovery. Stub **Preview** + **Issues** panels exist (empty) so the layout
   docks them; filled in slices 2/3.
-- ✅ **Slice 2 — Preview pane + click-to-preview BUILT** (2026-07-16, canvas-only → live eyeball pending).
+- ✅ **Slice 2 — Preview pane + click-to-preview BUILT** (2026-07-16, live-verified 2026-07-23).
   Every image thumbnail (Inspector ports + Interface inputs/outputs) is now clickable → routes that asset
   (by stable `PinKey`) to the **Preview** pane and flips the Graph/Preview tab group to it. Tab activation
   is a new gui seam **`gui::activateWindowTab`** driving the dock tab bar's `NextSelectedTabId` — reliable
@@ -728,7 +736,7 @@ the centre (independent splits). Built in 3 slices.
   shows a **header** (which node's which pin + image size — a future version may float it over the image),
   then the image **fit-to-pane** (aspect-preserving, centred); it resolves the target each frame and clears
   to a hint if the source port/node is gone. Zoom/pan is a future refinement (the `lain::app` viewer).
-- ✅ **Slice 3 — Issues panel + validation BUILT** (2026-07-16, canvas-only → live eyeball pending). The
+- ✅ **Slice 3 — Issues panel + validation BUILT** (2026-07-16, live-verified 2026-07-23). The
   Issues panel is a **live validation** view: **missing-required inputs** (⚠, a Required input with no
   incoming edge) and **unused outputs** (ℹ, an active node's output with no outgoing edge) recomputed
   from the graph each frame; **load issues** (from Open, mapped from `LoadResult`, persist until the graph
@@ -855,9 +863,15 @@ and never touches ImU32 — which retires `gui::packColor` from flowview's call 
    the example scene run with its `source` unbound suppresses `result`, logs "no output this run", and
    no file is written; binding a real image writes it as before). The gui Interface panel shows a dim
    `(no output this run)` for an empty output pin (`refreshPreviews` already drops the stale thumbnail).
-   **Remaining (later UI pass):** dim / recolour the *skipped* nodes + edges on the canvas so a glance
-   shows what didn't activate this run (the engine already knows — a node whose outputs are all empty
-   after a run was suppressed). #2 is otherwise complete.
+   **Canvas surfacing — already covered (checked 2026-07-23), not outstanding work.** This was listed as
+   "remaining: dim the skipped nodes + edges", but the UI pass's **slice A** delivered exactly that from
+   the other direction, so no further code is wanted: a suppressed node is precisely one that isn't
+   `Node::ready()` (a Required input empty), which is what the canvas dims; and because
+   `Scheduler::runNode` **clears an unready node's outputs**, the emptiness propagates — so its outgoing
+   links mute too (a link is muted when its source port carries no value), and so does the next node
+   down. One deliberate non-case: a `Gate` that ran with `enable=false` is *not* dimmed, because it did
+   activate — it chose to suppress. What stopped is the flow, and that is exactly what its muted output
+   link shows. **#2 is complete.**
 3. ✅ **Incremental re-eval — BUILT** (2026-07-12). `Scheduler::run` is now dirty-driven: a
    shared `runOrder(graph)` returns the **dirty closure** (every dirty node + everything downstream
    of one) in topo order, and both `SerialScheduler` and `ParallelScheduler` recompute only that —
