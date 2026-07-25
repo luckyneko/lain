@@ -45,6 +45,10 @@ namespace flowview
 		// --reset-layout: start from the default dock layout, ignoring any saved one (recovery hatch).
 		bool resetLayout() const { return m_resetLayout; }
 
+		// --example: start from the demo scene. An explicit ask, so it also suppresses reopening the
+		// graph the last session had open.
+		bool useExample() const { return m_useExample; }
+
 		// Re-run the scene after a canvas edit so data flows through the current
 		// wiring. Called from the render thread.
 		void reevaluate();

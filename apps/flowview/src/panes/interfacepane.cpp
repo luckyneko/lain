@@ -19,8 +19,8 @@
 #include <lain/io/image/load.h>
 #include <lain/math/types.h>
 
-#include <cstdio>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace flowview
@@ -38,14 +38,23 @@ namespace flowview
 	}
 
 	// An editable pin-name field (commits on Enter / focus loss) — boundary pins are user-named.
-	static void renderPinName(flow::Port& pin)
+	// Returns whether the pin was actually renamed.
+	//
+	// A new name must be a valid port name AND unused on this side of the node: serialization
+	// addresses edges by port name, so two pins sharing one would make an edge ambiguous on load
+	// (addDynamicPort enforces the same rule at creation — a rename must not be the way around it).
+	// A refused name is simply not applied, and the field reverts to the current one next frame.
+	static bool renderPinName(const flow::Node& node, flow::Port& pin)
 	{
-		char buffer[128];
-		std::snprintf(buffer, sizeof(buffer), "%s", pin.name().c_str());
+		std::string name = pin.name();
 		gui::SetNextItemWidth(110.0f);
-		gui::InputText("##name", buffer, sizeof(buffer));
-		if (gui::IsItemDeactivatedAfterEdit() && flow::validPortName(buffer))
-			pin.setName(buffer); // an invalid name is refused — the field reverts to the current name next frame
+		gui::InputText("##name", &name);
+		if (!gui::IsItemDeactivatedAfterEdit() || name == pin.name())
+			return false;
+		if (!flow::validPortName(name) || node.hasPortNamed(pin.direction(), name))
+			return false;
+		pin.setName(std::move(name));
+		return true;
 	}
 
 	// The per-node "+" : a menu of the registered port types the node accepts (filtered by
@@ -106,6 +115,7 @@ namespace flowview
 	{
 		const float side = previewExtent(ctx.previewSize);
 		bool changed = false;
+		bool renamed = false; // a pin rename: a document change, but no recompute (see below)
 
 		// Request the remove-confirm for `pin` on `node` (opened after the panel, clean id stack).
 		const auto requestRemove = [&](flow::NodeId node, const flow::Port& pin)
@@ -130,7 +140,7 @@ namespace flowview
 			{
 				flow::Port& pin = node->output(i);
 				gui::PushID(static_cast<int>(pin.id().value()));
-				renderPinName(pin);
+				renamed |= renderPinName(*node, pin);
 				gui::SameLine();
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
 
@@ -195,7 +205,7 @@ namespace flowview
 			{
 				flow::Port& pin = node->input(i);
 				gui::PushID(static_cast<int>(pin.id().value()));
-				renderPinName(pin);
+				renamed |= renderPinName(*node, pin);
 				gui::SameLine();
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
 
@@ -239,6 +249,13 @@ namespace flowview
 			previews.markDirty();
 			ctx.dirty = true;
 			ctx.loadIssues.clear(); // load issues are stale once the graph changes
+		}
+		// A pin rename changes no value, so it needs neither a re-run nor a preview refresh — but the
+		// name IS part of the saved document (edges are addressed by it), so it must arm the guard.
+		if (renamed)
+		{
+			ctx.dirty = true;
+			ctx.loadIssues.clear();
 		}
 	}
 } // namespace flowview

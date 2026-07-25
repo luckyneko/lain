@@ -23,7 +23,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <string>
 #include <typeindex>
 #include <utility>
@@ -236,8 +235,10 @@ namespace flowview
 			// A STABLE content-column width from label text (title + pin names). Right-aligning outputs
 			// to the node's *rendered* width feeds back — the indent widens the node, which widens next
 			// frame's indent → runaway growth; a text-derived width is fixed per frame.
-			char titleText[128];
-			std::snprintf(titleText, sizeof(titleText), "%s [%llu]", node.name().c_str(), static_cast<unsigned long long>(id.value()));
+			// The title is the node's name alone: names are user-editable (Inspector ▸ Name) and the
+			// palette gives each added node a unique one, so the old "[id]" disambiguator is noise here.
+			// The id still shows in the Inspector header (and the cli dump) when you need it.
+			const char* titleText = node.name().c_str();
 			float labelColumn = gui::CalcTextSize(titleText).x;
 			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
 				labelColumn = std::max(labelColumn, gui::CalcTextSize(node.input(i).name().c_str()).x);

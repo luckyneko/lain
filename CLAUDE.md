@@ -133,6 +133,37 @@ is **byte-idempotent** on the real scene; the `run`/`list` subcommands were **ex
 a Metal session. **Tier A #1 is complete.** Only designed-for follow-ons remain (untagged variant,
 yaml/binary codecs, the `memory::Buffer` bridge, the scalar/video boundary loader).
 
+### Update 2026-07-23 — gui backlog live-verified; ImGui pinned; session state + editable node names
+
+The accumulated "built but never driven on Metal" gui work (the whole flowview UI pass, the
+window/panel layout pass, and the pane-split refactor) was **eyeballed on the live driver by the repo
+owner** — WORK.md's per-slice markers now read *live-verified 2026-07-23* instead of *eyeball pending*.
+On top of that, four small items landed (see WORK.md for the detail):
+
+- **`IMGUI_REF` is pinned to a commit** (`162ce49`, the 1.92.9 WIP everything was developed against).
+  `cmake/addImGui.cmake` had claimed a commit pin while actually tracking the moving `docking` branch
+  tip. Note it is a CMake **cache** variable: an existing build dir keeps its old value until
+  reconfigured with `-DIMGUI_REF=…`.
+- **Session state** (`apps/flowview/src/session.{h,cpp}`) — `~/.flowview/session.json` (beside the dock
+  layout's `imgui.ini`), holding the last graph (reopened at launch, `--example` suppresses), an
+  **Open Recent** list, and the **file-dialog folder**, which now persists across runs via new
+  `lain::gui::lastDirectory()` / `setLastDirectory()` (the dialog seam owns the folder; *where settings
+  live* stays the app's business). It round-trips through `data`/`io::data` — flowview's own settings
+  dogfood the graph-serialization spine. Convenience state: a missing/malformed file never errors.
+- **Editable node names** — `flow::Node::setName` (display only, like `Port::setName`; `NodeId` remains
+  identity), the serializer now *reads* the stored `name` back, and the Inspector grows a **Name**
+  field. The `[id]` prefix drops from the canvas title (the Inspector header keeps it); new palette
+  nodes get uniquified names ("tint", "tint 2", …) so the canvas stays readable without it.
+- **Document-guard + rename correctness.** **Open... / Open Recent are now guarded** like New (both
+  replace the graph destructively; only New asked), through one `PendingSwap` request path with a
+  single `performSwap`; a **cancelled Save panel now cancels the swap** instead of discarding the graph;
+  both rename paths **mark the document dirty**; and a **boundary-pin rename is checked for uniqueness**
+  (`hasPortNamed`, as `node.h` already documented) — edges are serialized *by port name*, so a duplicate
+  made an edge ambiguous on load.
+- **Doc correction:** Tier A #2's "remaining: dim the skipped nodes/edges" was **stale** — slice A's
+  `ready()`-driven dim plus the scheduler clearing an unready node's outputs already produces exactly
+  that, including muted dead links. #2 is complete.
+
 **Engine core is built, tested, committed. The remaining M1 work is one decoupling
 refactor of `flow` plus the app stack + viewer:**
 
@@ -238,7 +269,11 @@ refactor of `flow` plus the app stack + viewer:**
   on the shared device/swapchain (auto descriptor pool), with `newFrame()` /
   `render(cmd)` / `image()` (acm::Texture → `lain::gui::Image`). Built warning-clean;
   re-export + bridge tested, and **runtime/visual-verified via flowview** (`Context`
-  drives the inspector window end-to-end on the live driver). **imnodes** (node canvas)
+  drives the inspector window end-to-end on the live driver). `gui.h` also pulls in ImGui's
+  official **`imgui_stdlib`** (`misc/cpp`, compiled into the `imgui` target — ships in the
+  tarball, no extra dep); its overloads land in `namespace ImGui`, so the using-directive
+  surfaces `lain::gui::InputText(label, std::string*)` — a std::string-native text field with
+  no caller-managed `char[]` edit buffer (which also capped/truncated long input). **imnodes** (node canvas)
   is now in too: `nodes.h` aliases it as `lain::gui::nodes`, and `Context` owns the
   per-window `ImNodesContext` alongside the ImGui one. Pinned to a master commit
   (`addImnodes.cmake`, built against our `imgui` target) since no imnodes release tracks

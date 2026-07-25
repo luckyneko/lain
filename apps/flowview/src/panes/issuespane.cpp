@@ -8,9 +8,9 @@
 #include <lain/gui/color.h> // gui::packColor (image::ColorRGBA8 -> ImU32)
 #include <lain/gui/gui.h>
 #include <lain/image/color.h>
+#include <lain/string/format.h>
 
 #include <cstdint>
-#include <cstdio>
 #include <set>
 #include <utility>
 #include <vector>
@@ -32,7 +32,6 @@ namespace flowview
 			connectedIn.insert({e.to.node.value(), e.to.port.value()});
 			connectedOut.insert({e.from.node.value(), e.from.port.value()});
 		}
-		char buf[192];
 		for (const flow::NodeId id : graph.topoOrder())
 		{
 			const flow::Node& node = graph.node(id);
@@ -41,9 +40,9 @@ namespace flowview
 				const flow::Port& in = node.input(i);
 				if (in.required() && connectedIn.count({id.value(), in.id().value()}) == 0)
 				{
-					std::snprintf(buf, sizeof(buf), "%s [%llu]: required input '%s' is not connected",
-								  node.name().c_str(), static_cast<unsigned long long>(id.value()), in.name().c_str());
-					issues.push_back({Issue::Severity::Warning, buf, id});
+					issues.push_back({Issue::Severity::Warning,
+									  string::format("{} [{}]: required input '{}' is not connected", node.name(), id.value(), in.name()),
+									  id});
 				}
 			}
 			if (node.ready())
@@ -53,9 +52,9 @@ namespace flowview
 					const flow::Port& out = node.output(o);
 					if (connectedOut.count({id.value(), out.id().value()}) == 0)
 					{
-						std::snprintf(buf, sizeof(buf), "%s [%llu]: output '%s' is unused",
-									  node.name().c_str(), static_cast<unsigned long long>(id.value()), out.name().c_str());
-						issues.push_back({Issue::Severity::Info, buf, id});
+						issues.push_back({Issue::Severity::Info,
+										  string::format("{} [{}]: output '{}' is unused", node.name(), id.value(), out.name()),
+										  id});
 					}
 				}
 			}

@@ -28,6 +28,11 @@ add_library(imgui STATIC
 	"${imgui_SOURCE_DIR}/imgui_draw.cpp"
 	"${imgui_SOURCE_DIR}/imgui_tables.cpp"
 	"${imgui_SOURCE_DIR}/imgui_widgets.cpp"
+	# The official std::string wrappers for InputText (misc/cpp) — ships in the tarball, no extra
+	# dependency. It adds its overloads into namespace ImGui, so lain::gui's using-directive surfaces
+	# them, giving a std::string-native text surface (no fixed char[] edit buffers). Public facility
+	# only (ImGuiInputTextFlags_CallbackResize) — no imgui_internal.
+	"${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp"
 	"${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp"
 	"${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp"
 )

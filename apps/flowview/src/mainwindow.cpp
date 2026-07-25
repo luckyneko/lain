@@ -1,13 +1,15 @@
 #include "mainwindow.h"
 
 #include "flowviewapp.h"
+#include "session.h" // loadSession / saveSession (reopen the last graph, restore the dialog folder)
 
 #include <archimedes/archimedes.h>
 #include <lain/app/application.h>
 #include <lain/app/window.h>
 #include <lain/core/paths.h> // core::configDir (~/.flowview for the layout ini)
 #include <lain/flow/graph.h>
-#include <lain/gui/dock.h> // the docking seam (no imgui_internal in the app)
+#include <lain/gui/dialogs.h> // lastDirectory / setLastDirectory (the persisted dialog folder)
+#include <lain/gui/dock.h>	  // the docking seam (no imgui_internal in the app)
 
 #include <cstdint>
 #include <filesystem>
@@ -32,6 +34,15 @@ namespace flowview
 		m_guiCtx = std::make_unique<gui::Context>(window.app(), window, guiConfig);
 		registerBuiltinParamEditors(m_paramEditors);
 		m_canvas.init(); // canvas colour style + Alt-drag panning (needs the imnodes context above)
+
+		// What carried over from the last run: put the file dialogs back where they were, and reopen the
+		// graph that was open — the load is deferred to the end of the first frame like every graph swap,
+		// so the blank scene FlowviewApp built stands in until then (and stays, if the file is gone).
+		// --example asks for the demo scene explicitly, so it wins over the restore.
+		m_ctx.session = loadSession();
+		gui::setLastDirectory(m_ctx.session.lastDialogDir);
+		if (!appDelegate.useExample() && !m_ctx.session.lastGraph.empty())
+			m_menuBar.openGraphPath(m_ctx, m_ctx.session.lastGraph);
 		return true;
 	}
 
@@ -127,6 +138,12 @@ namespace flowview
 
 	void MainWindow::onShutdown(app::Window&)
 	{
+		// Persist the dialog folder as it ended up — every dialog (graph, image bind, image save) feeds
+		// the one gui-side "last folder", so this is the only place that needs to read it. The document
+		// and recents were already written as they changed, so a crash loses at most this.
+		m_ctx.session.lastDialogDir = gui::lastDirectory();
+		saveSession(m_ctx.session);
+
 		m_previews.clear(); // release the preview descriptors while the ImGui backend lives
 		m_guiCtx.reset();	// then destroy the backend, before the device tears down
 	}

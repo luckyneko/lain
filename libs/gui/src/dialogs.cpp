@@ -32,7 +32,7 @@ namespace lain::gui
 
 	// Session memory of the directory the last dialog resolved to — shared by open + save (the
 	// single "recent folder" users expect), so a dialog with no explicit defaultDir resumes where
-	// the user last was. Not persisted across runs (that needs a settings store — deferred).
+	// the user last was. Persisting it across runs is the app's call, through the accessors below.
 	static std::filesystem::path& lastDir()
 	{
 		static std::filesystem::path dir;
@@ -63,6 +63,16 @@ namespace lain::gui
 		const std::filesystem::path picked(result);
 		lastDir() = picked.parent_path();
 		return picked;
+	}
+
+	std::filesystem::path lastDirectory()
+	{
+		return lastDir();
+	}
+
+	void setLastDirectory(std::filesystem::path dir)
+	{
+		lastDir() = std::move(dir);
 	}
 
 	void message(const std::string& title, const std::string& text, bool error)

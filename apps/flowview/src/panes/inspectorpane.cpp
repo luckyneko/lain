@@ -16,10 +16,11 @@
 #include <lain/gui/gui.h>
 #include <lain/image/image.h>
 #include <lain/math/types.h>
+#include <lain/string/format.h>
 
 #include <algorithm>
-#include <cstdio>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace flowview
@@ -29,6 +30,7 @@ namespace flowview
 	void InspectorPane::draw(AppContext& ctx, flow::Graph& graph, PreviewCache& previews, const ParamEditors& editors)
 	{
 		bool paramEdited = false;
+		bool renamed = false; // a title edit: a document change, but no recompute (see below)
 
 		gui::SetNextWindowPos(math::Vec2f{20.0f, 20.0f}, ImGuiCond_FirstUseEver);
 		gui::SetNextWindowSize(math::Vec2f{320.0f, 320.0f}, ImGuiCond_FirstUseEver);
@@ -48,12 +50,12 @@ namespace flowview
 				if (std::find(selection.begin(), selection.end(), id) == selection.end())
 					continue; // only the selected nodes
 
-				flow::Node& node = graph.node(id); // non-const: params are edited below
-				// An obvious titled section per selected node (name prominent; the id disambiguates two
-				// same-named nodes until editable node names land).
-				char header[128];
-				std::snprintf(header, sizeof(header), "%s [%llu]", node.name().c_str(), static_cast<unsigned long long>(id.value()));
-				gui::SeparatorText(header);
+				flow::Node& node = graph.node(id); // non-const: the title + params are edited below
+				// An obvious titled section per selected node. The id stays in the Inspector header (the
+				// detail surface — it's what the cli dump and any log line names) even though the canvas
+				// title now shows the user's name alone.
+				const std::string header = string::format("{} [{}]", node.name(), id.value());
+				gui::SeparatorText(header.c_str());
 
 				// Boundary nodes are edited in the Interface panel (their whole-graph I/O view), not here —
 				// no point duplicating their pins in the per-node Inspector.
@@ -66,6 +68,20 @@ namespace flowview
 				// Editable params, chosen by type via the registry (file field, drags, colour
 				// swatch). PushID(node) so same-named params on different nodes don't collide.
 				gui::PushID(static_cast<int>(id.value()));
+
+				// The node's title: user-editable, defaulting to the name its type gave it. Committed on
+				// Enter / focus loss (the pin-rename idiom) and only when it actually changed, so holding
+				// focus doesn't churn. Display only — nothing addresses a node by name — so it needs no
+				// re-run, just the unsaved-changes mark (the name is serialized with the graph). A blank
+				// entry is refused: the field reverts to the current name on the next frame.
+				std::string nodeName = node.name();
+				gui::InputText("Name", &nodeName); // (its per-keystroke return is not the commit signal)
+				if (gui::IsItemDeactivatedAfterEdit() && !nodeName.empty() && nodeName != node.name())
+				{
+					node.setName(std::move(nodeName));
+					renamed = true;
+				}
+
 				bool nodeEdited = false;
 				for (flow::PortIndex pi = 0; pi < node.paramCount(); ++pi)
 				{
@@ -120,6 +136,13 @@ namespace flowview
 			ctx.app->reevaluate();
 			previews.markDirty();
 			ctx.dirty = true; // a param edit -> unsaved changes
+			ctx.loadIssues.clear();
+		}
+		// A rename changes no value, so it needs neither a re-run nor a preview refresh — but it IS part
+		// of the saved document, so it must arm the unsaved-changes guard (same as a boundary-pin rename).
+		if (renamed)
+		{
+			ctx.dirty = true;
 			ctx.loadIssues.clear();
 		}
 	}

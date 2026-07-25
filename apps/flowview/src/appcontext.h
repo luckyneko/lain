@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pinkey.h"
+#include "session.h" // what persists between runs (last graph, recents, dialog folder)
 
 #include <lain/flow/serialize/loadresult.h> // EditorData (a value member) + Graph (loadedGraph target)
 #include <lain/flow/types.h>				// NodeId
@@ -28,6 +29,21 @@ namespace flowview
 		Severity severity = Severity::Warning;
 		std::string message;
 		lain::flow::NodeId node; // default (sentinel) = not locatable
+	};
+
+	// Replacing the open document — the two ways to do it, both DESTRUCTIVE (New throws the graph away,
+	// Open replaces it), so both go through the unsaved-changes guard rather than only New.
+	enum class DocumentSwap
+	{
+		New,
+		Open,
+	};
+
+	// A requested swap, held while the guard modal is up.
+	struct PendingSwap
+	{
+		DocumentSwap kind = DocumentSwap::New;
+		std::filesystem::path path; // Open only: the file to open; empty means "ask with the file dialog"
 	};
 
 	// Thumbnail size for the image preview, chosen at runtime via a lain::gui::enumCombo
@@ -99,8 +115,15 @@ namespace flowview
 		// The file the graph was last saved-to / opened-from — plain Save writes here (no dialog); empty
 		// until a Save As / Open sets it, and cleared by New.
 		std::filesystem::path currentPath;
-		bool dirty = false;		 // unsaved changes since the last save / load / new (drives the New guard)
-		bool confirmNew = false; // open the unsaved-changes modal next frame (requestNew set it)
+		// What carries over to the next run: the document to reopen, the Open Recent list, and where the
+		// file dialogs should start. Loaded by MainWindow at startup, updated by the menu bar on every
+		// Open / Save, and written back on shutdown.
+		Session session;
+		bool dirty = false; // unsaved changes since the last save / load / new (drives the discard guard)
+		// A swap the user asked for while there were unsaved changes: it waits here until the guard
+		// modal resolves it (Save / Discard / Cancel).
+		std::optional<PendingSwap> pendingSwap; // what to do once confirmed
+		bool confirmSwap = false;				// open the modal next frame (the request* helpers set it)
 
 		// Pending Load: applied at the END of onRender (after every panel drew with the current graph),
 		// so replacing the app's graph never dangles the in-flight `graph` reference. The loaded canvas

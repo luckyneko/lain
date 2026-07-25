@@ -8,6 +8,10 @@
 // texture preview — is lain::gui::Context (context.h).
 
 #include <imgui.h>
+// The official std::string InputText wrappers (misc/cpp). They add overloads into namespace ImGui,
+// so the using-directive below surfaces lain::gui::InputText(label, std::string*) for free — a
+// std::string-native text surface, no caller-managed char[] edit buffer (which would also truncate).
+#include <misc/cpp/imgui_stdlib.h>
 
 namespace lain::gui
 {

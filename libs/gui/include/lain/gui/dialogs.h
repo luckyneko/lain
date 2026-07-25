@@ -6,7 +6,9 @@
 // Win32), so they look native on each OS. Blocking calls — invoke from the main thread.
 //
 // The seam remembers the last directory used within the session (shared by open + save), so a
-// call with an empty defaultDir resumes where the user last was. It is not persisted across runs.
+// call with an empty defaultDir resumes where the user last was. Persisting that across runs is
+// the *application's* job (it owns where its settings live): read lastDirectory() when saving your
+// settings and hand it back through setLastDirectory() at startup — see flowview's session store.
 
 #include <filesystem>
 #include <optional>
@@ -36,6 +38,12 @@ namespace lain::gui
 	std::optional<std::filesystem::path> saveFile(const std::string& title,
 												  const std::filesystem::path& defaultDir = {},
 												  const std::vector<FileFilter>& filters = {});
+
+	// The directory the last dialog resolved to this session — empty until one has been used. The
+	// pair an app persists to make its dialogs resume across runs (set it once at startup, before
+	// the first dialog; a dialog called with an explicit defaultDir still wins over it).
+	std::filesystem::path lastDirectory();
+	void setLastDirectory(std::filesystem::path dir);
 
 	// Native message box with a single OK button (the third of the pfd trio, for surfacing an
 	// error or notice the user must acknowledge). `error` picks the error icon over the info one.

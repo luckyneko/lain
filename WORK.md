@@ -760,17 +760,119 @@ the 1369-line delegate became a ~130-line `MainWindow` that orchestrates one pan
 thumbnail cache), and small shared helpers (`pinkey.h`, `panes/canvasids.{h,cpp}` = `pinId`/`selectedNodes`,
 `panes/imagesave.{h,cpp}` = the format+Save widget). Each pane is a plain struct with a `draw(...refs...)`
 called explicitly from `onRender`; the window owns the GUI resources (gui `Context`, `PreviewCache`,
-`ParamEditors`) and hands panes references. Behaviour unchanged; built warning-clean, `ctest` 289/289.
+`ParamEditors`) and hands panes references. Behaviour unchanged; built warning-clean, `ctest` 289/289,
+and **live-verified 2026-07-23** (the refactor's whole point being that nothing changed on screen).
+
+### Session state — reopen the last graph, Open Recent, persistent dialog folder (2026-07-23)
+
+The document-app conveniences, built on the serialization spine that was already there. New
+**`session.{h,cpp}`** in flowview owns a `Session { lastGraph, recentGraphs, lastDialogDir }` persisted as
+**`~/.flowview/session.json`** (`core::configDir`, beside the layout's `imgui.ini`) through `data::toValue` /
+`fromValue` + `io::data` — i.e. flowview dogfoods its own `LAIN_SERIALIZE` + json codec for its settings,
+not just for graphs. It is **convenience state, not document data**: a missing / unreadable / malformed
+file is never an error, every field falls back to its default (data's `member()` is tolerant of absent
+keys, so the file is forward-compatible), and writes are best-effort + logged, never surfaced.
+
+- **Reopen on launch.** `MainWindow::onInit` restores the last graph through the *same*
+  `MenuBarPane::openGraphPath` the menu uses (deferred end-of-frame swap, canvas layout replay, load
+  issues into the Issues panel — one load path, no parallel implementation). A file that has since
+  vanished logs once, is pruned from `lastGraph` + the recents, and leaves the blank scene standing.
+  **`--example` suppresses the restore** (an explicit ask for the demo scene wins).
+- **File ▸ Open Recent** — up to `maxRecentGraphs` (10) entries, most-recent-first, deduplicated, greyed
+  out when empty, with a **Clear Menu** item. Labels are filenames (full path on hover); an index
+  `PushID` keeps two same-named files in different folders distinct. Open *and* Save both record.
+- **Dialog folder persists across runs.** `lain::gui`'s dialog seam already remembered the last folder
+  within a session; it now exposes **`lastDirectory()` / `setLastDirectory()`** so an app can persist it
+  (the seam itself stays settings-free — where settings live is the app's business). flowview restores it
+  at startup and writes it back on shutdown, so *every* dialog (graph open/save, image bind, image save)
+  resumes where the last session ended.
+- **Registration order:** `FlowviewApp::onStart` now registers the node factory + codecs **before**
+  `createWindow`, since the window's restore needs both.
+
+Verified on the live driver via `--frames` runs, reading the written `session.json` back: a seeded
+`lastGraph` is reopened (proved by it appearing in the recents, which only a successful load writes), a
+vanished one is pruned without disturbing the rest, a malformed file and a wrong-shaped root both start
+clean (the latter warns). `ctest` 289/289.
+
+### Editable node names (2026-07-23)
+
+A node's title is now the user's to set, defaulting to the name its type gives it — the boundary-pin
+rename pattern, one level up.
+
+- **flow core: `Node::setName`** — display only, documented as such alongside `Port::setName`. A node's
+  identity is its `NodeId` (edges, handles, and the editor layout all reference that); nothing addresses
+  a node by name, and core imposes no uniqueness.
+- **Serialization now reads the name back.** `nodeToValue` already wrote `"name"` as informational —
+  a load applies it (absent / blank leaves the constructor's name), so a title survives a round-trip.
+  The node is still rebuilt from its `kind`, never its name. Save→load→save stays byte-idempotent.
+- **flowview: Inspector ▸ Name** — an `InputText` on the selected node, committed on Enter / focus loss
+  (`IsItemDeactivatedAfterEdit` — the field's per-keystroke return is *not* the commit signal) and only
+  when the text actually changed; blank is refused. A rename arms the unsaved-changes guard but
+  triggers **no re-run** and no preview refresh: it changes no value.
+- **The `[id]` prefix drops from the canvas title** (as the parked note intended), leaving the user's
+  name alone; the Inspector header keeps `name [id]`, since that is the detail surface and the id is
+  what the cli dump names. To keep the canvas readable without it, the palette **uniquifies a new
+  node's name** ("tint", "tint 2", …) in `AppContext::addCatalogNode` — the *viewer's* readability
+  policy, not a core rule. A user rename may still collide; that's their call.
+- **Boundary nodes are excluded** (they're a fixture, edited in the Interface panel) — consistent with
+  the Inspector already declining to show their pins.
+
+`ctest` 290/290 (a new flow-serialize case renames a node and proves it comes back renamed while an
+untouched sibling keeps its ctor name); verified through flowview's own load path (a hand-renamed
+`scene.json` dumps as `[2] warm tint`) and both gui modes smoke-run clean. **Typing in the field itself
+is the one part that wants a live eyeball.**
+
+### Document guard + rename correctness (2026-07-23)
+
+Three gaps the two features above brought into view, all in the "an edit is a document change" family.
+
+- **Open is guarded like New.** Only New asked before discarding unsaved work; **Open... and Open
+  Recent replace the graph just as destructively** and did it silently. Both now funnel through one
+  request path: `AppContext` carries a **`PendingSwap { DocumentSwap kind, path }`** (New, or Open with
+  a path — empty meaning "ask with the dialog"), `requestNew`/`requestOpen` → `requestSwap` decide
+  whether the guard is needed, and **`performSwap`** is the single place a swap is carried out. Adding a
+  third destructive action later means one more `DocumentSwap` arm, not another parallel guard.
+  (The startup session-restore calls `openGraphPath` directly and is deliberately unguarded — a
+  just-launched document has nothing to lose.)
+- **A cancelled save no longer discards the graph.** The modal's **Save** ran `saveToCurrentPath` and
+  then swapped regardless — so cancelling the Save-As panel (or a failed write) threw the work away,
+  the exact outcome the guard exists to prevent. `saveToCurrentPath` / `saveAsDialog` now **return
+  whether the save happened**, and an unsaved Save cancels the whole swap (the macOS convention).
+- **Renaming is a document change, and a boundary-pin rename is now guarded for uniqueness.** Neither
+  rename path marked the document dirty (so a rename could be lost silently); both now do, without a
+  re-run — a name changes no value. And `renderPinName` checked `validPortName` but **not** uniqueness,
+  though `node.h` documents that "the editing layer guards a boundary-pin rename with `hasPortNamed`"
+  and `addDynamicPort` enforces it at creation. Since **serialization addresses edges by port name**,
+  renaming a pin onto its sibling's name made an edge ambiguous on load. The rename now applies only
+  when the name is valid *and* unused on that side of the node.
+
+### Text-surface cleanup: lain::string::format + imgui_stdlib (2026-07-25)
+
+Retiring the last hand-rolled string plumbing in flowview, which was two different jobs wearing one
+`snprintf` face:
+
+- **Display strings → `lain::string::format`.** The Issues-panel messages (`char[192]`) and the
+  Inspector node header now format through `lain::string::format` — compile-time-checked format
+  strings, no fixed buffer (the `char[192]` could truncate a long node+port name), and the manual
+  `static_cast<unsigned long long>` for `%llu` is gone (`{}` takes a `uint64` directly). flowview now
+  links `lain::string` and dogfoods it.
+- **Edit buffers → `imgui_stdlib`.** The three `char[]`-backed `InputText` sites (string/path params,
+  boundary-pin rename, node-name rename) use ImGui's official **`std::string` overload**
+  (`misc/cpp/imgui_stdlib.cpp`, now compiled into the `imgui` target — ships in the tarball, no new
+  dep; surfaced through `lain::gui` because its overloads land in `namespace ImGui`). This removes the
+  fixed 128/512-char caps (a long name silently truncated on edit) and collapses each site's
+  seed-scratch-compare-copy dance to a local `std::string`. See the `lain::gui` bullet in CLAUDE.md.
+
+After this, flowview has **no `snprintf`** — CPU text is `lain::string::format`, edit fields are
+`std::string`, and ImGui's own `Text("%s", …)` variadics (its API, not ours) stay as they are.
+`ctest` 290/290; both gui modes smoke-run clean.
 
 **Parked for later passes:** user-configurable / theme.json
 colours (the registries are the load target) · pin **shape** encodes presence (square=required, circle=optional,
 triangle=conditional — deferred: mostly-required → mostly-square is visually sharp) · **undo/redo** —
 snapshot-based (reuses serialize: a snapshot is Save-to-RAM, restore is Load-from-RAM), hooks the single
 end-of-frame `edited` flag; the one wrinkle is coalescing continuous param-drag edits (snapshot on
-`IsItemDeactivatedAfterEdit`, not every frame) · **remember the last-opened graph** and re-open it on the
-next launch (a small recent-file / session state, low priority) · **editable node names** — a user-set title per
-node (the boundary-pin rename already shows the pattern), which would let the `[id]` prefix drop from
-node headers (it's there today only to disambiguate two same-named nodes) · the **window-interaction**
+`IsItemDeactivatedAfterEdit`, not every frame) · the **window-interaction**
 pass (whole-layout purpose, incl. the Interface↔Inspector merge) · a **`lain::gui::nodes` wrapper pass** — front the raw
 `Im*` surface the `namespace nodes = ImNodes` alias leaks (`ImNodesCol_*`, `ImNodesPinShape_*`,
 `PushColorStyle(ImU32)`, attribute flags) with lain-typed calls, so a client passes lain colours/enums

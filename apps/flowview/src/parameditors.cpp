@@ -5,7 +5,6 @@
 #include <lain/gui/gui.h>
 #include <lain/image/color.h>
 
-#include <cstdio>
 #include <filesystem>
 #include <string>
 #include <typeindex>
@@ -57,19 +56,18 @@ namespace flowview
 		return false;
 	}
 
-	// A char-buffer InputText (no imgui_stdlib dependency). Sets `changedNow` and copies the
-	// buffer into `out` on any per-frame change, so the caller can persist the text live (the
-	// buffer is re-seeded from the value each frame, so an un-persisted keystroke would be
-	// lost). Returns true only when editing FINISHED — Enter or focus loss — which is the
-	// recompute trigger, so a file-loading value doesn't reopen the file every character.
+	// A std::string InputText (the imgui_stdlib overload — no fixed edit buffer, so no length cap).
+	// Sets `changedNow` and copies the edit into `out` on any per-frame change, so the caller can
+	// persist the text live (the edit buffer is local, so an un-persisted keystroke would be lost).
+	// Returns true only when editing FINISHED — Enter or focus loss — which is the recompute trigger,
+	// so a file-loading value doesn't reopen the file every character.
 	static bool textField(const char* label, const std::string& current, std::string& out, bool& changedNow)
 	{
-		char buffer[512];
-		std::snprintf(buffer, sizeof(buffer), "%s", current.c_str());
-		gui::InputText(label, buffer, sizeof(buffer));
-		changedNow = std::string(buffer) != current;
+		std::string edit = current;
+		gui::InputText(label, &edit);
+		changedNow = edit != current;
 		if (changedNow)
-			out = buffer;
+			out = std::move(edit);
 		return gui::IsItemDeactivatedAfterEdit();
 	}
 

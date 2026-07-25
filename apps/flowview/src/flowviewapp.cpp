@@ -45,6 +45,13 @@ namespace flowview
 		if (m_runCmd->parsed() || m_listCmd->parsed())
 			return true; // a headless subcommand: open no window -> run() invokes onProcess once
 
+		// Populate the node palette + the image codecs (so a palette-added LoadImageNode can decode) and
+		// the serialization surfaces BEFORE the window: MainWindow::onInit reopens the last session's
+		// graph, which needs the node factory and the json codec already registered.
+		lain::io::image::registerImageCodecs();
+		registerExampleNodes(m_nodeFactory, m_size);
+		registerSceneSerialization(); // image::Image port type (the boundary ± menu) + json codec
+
 		app::WindowSpec spec;
 		spec.title = "flowview";
 		spec.width = 1280;
@@ -53,12 +60,9 @@ namespace flowview
 		// there is nothing to wire here beyond handing it to the window.
 		app.createWindow(spec, m_window); // creates the shared device; builds the gui Context
 
-		// Populate the node palette + the image codecs (so a palette-added LoadImageNode can decode),
-		// then build the starting scene and run it. Default is a blank Input/Output graph; --example
-		// loads the demo pipeline (source -> tint -> blur) with its input bound to a gradient. CPU nodes.
-		lain::io::image::registerImageCodecs();
-		registerExampleNodes(m_nodeFactory, m_size);
-		registerSceneSerialization(); // image::Image port type (the boundary ± menu) + json codec
+		// The starting scene: a blank Input/Output graph, or the demo pipeline (source -> tint -> blur)
+		// with its input bound to a gradient under --example. CPU nodes. A restored session graph
+		// replaces this at the end of the first frame.
 		m_graph = std::make_unique<flow::Graph>();
 		if (m_useExample)
 		{

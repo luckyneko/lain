@@ -4,6 +4,7 @@
 #include "../flowviewapp.h"
 #include "../graphio.h" // loadGraph / saveGraph
 #include "../scene.h"	 // nodeCatalog (the Add menu grouping) + buildNewScene
+#include "../session.h" // noteGraphPath / saveSession (Open Recent + reopen-on-launch)
 
 #include <lain/app/application.h>
 #include <lain/data/value.h>
@@ -14,9 +15,11 @@
 #include <lain/gui/nodes.h>
 #include <lain/math/types.h>
 
+#include <cstddef>
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace flowview
 {
@@ -50,43 +53,111 @@ namespace flowview
 		ctx.currentPath.clear(); // an untitled document
 		ctx.dirty = false;
 		ctx.loadIssues.clear();
+		ctx.session.lastGraph.clear(); // nothing to reopen next launch (the recents keep their history)
+		saveSession(ctx.session);
+	}
+
+	// Ask for a document swap, guarding unsaved work. Both entry points funnel here so New and Open
+	// can't diverge: with nothing unsaved the swap happens now, otherwise it waits for the modal.
+	void MenuBarPane::requestSwap(AppContext& ctx, PendingSwap swap)
+	{
+		if (!ctx.dirty)
+		{
+			performSwap(ctx, swap);
+			return;
+		}
+		ctx.pendingSwap = std::move(swap);
+		ctx.confirmSwap = true; // drawConfirmModal opens the modal next time it runs
 	}
 
 	void MenuBarPane::requestNew(AppContext& ctx)
 	{
-		if (ctx.dirty)
-			ctx.confirmNew = true; // unsaved changes -> ask first (drawConfirmModal opens the modal)
-		else
+		requestSwap(ctx, {DocumentSwap::New, {}});
+	}
+
+	void MenuBarPane::requestOpen(AppContext& ctx, const std::filesystem::path& path)
+	{
+		requestSwap(ctx, {DocumentSwap::Open, path});
+	}
+
+	void MenuBarPane::performSwap(AppContext& ctx, const PendingSwap& swap)
+	{
+		if (swap.kind == DocumentSwap::New)
 			newGraph(ctx);
+		else if (swap.path.empty())
+			openGraphDialog(ctx); // Open... — pick the file now
+		else
+			openGraphPath(ctx, swap.path); // Open Recent — the file is already known
 	}
 
 	void MenuBarPane::drawConfirmModal(AppContext& ctx, flow::Graph& graph)
 	{
-		if (ctx.confirmNew)
+		if (ctx.confirmSwap)
 		{
 			gui::OpenPopup("Unsaved changes");
-			ctx.confirmNew = false;
+			ctx.confirmSwap = false; // the request is consumed; ctx.pendingSwap carries the action
 		}
 		if (gui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
 		{
-			gui::TextUnformatted("Discard the current graph? Unsaved changes will be lost.");
-			if (gui::Button("Save"))
+			// Escape closes the modal without resolving; the stale pendingSwap is harmless (nothing
+			// reads it outside this block, and the next request overwrites it).
+			const PendingSwap swap = ctx.pendingSwap.value_or(PendingSwap{});
+			gui::TextUnformatted(swap.kind == DocumentSwap::New
+									 ? "Discard the current graph? Unsaved changes will be lost."
+									 : "Open another graph? Unsaved changes to the current one will be lost.");
+			const auto resolve = [&](bool save)
 			{
-				saveToCurrentPath(ctx, graph); // may prompt for a path if untitled
-				newGraph(ctx);
+				// Save may prompt for a path if the document is untitled. Cancelling that panel — or a
+				// failed write — cancels the whole swap: never discard work the user just asked to keep.
+				const bool proceed = !save || saveToCurrentPath(ctx, graph);
+				ctx.pendingSwap.reset();
 				gui::CloseCurrentPopup();
-			}
+				if (proceed)
+					performSwap(ctx, swap); // last: an Open... prompts with a native dialog
+			};
+
+			if (gui::Button("Save"))
+				resolve(true);
 			gui::SameLine();
 			if (gui::Button("Discard"))
-			{
-				newGraph(ctx);
-				gui::CloseCurrentPopup();
-			}
+				resolve(false);
 			gui::SameLine();
 			if (gui::Button("Cancel"))
+			{
+				ctx.pendingSwap.reset();
 				gui::CloseCurrentPopup();
+			}
 			gui::EndPopup();
 		}
+	}
+
+	bool MenuBarPane::openGraphPath(AppContext& ctx, const std::filesystem::path& path)
+	{
+		flow::serialize::LoadResult result = loadGraph(path.string(), ctx.app->nodeFactory());
+		// Surface load problems in the Issues panel (not a modal) — they persist until the graph is
+		// next edited. Map the serialize severity onto the panel's.
+		ctx.loadIssues.clear();
+		for (const flow::serialize::LoadIssue& issue : result.issues)
+		{
+			const Issue::Severity sev = issue.severity == flow::serialize::Severity::Error ? Issue::Severity::Error : Issue::Severity::Warning;
+			ctx.loadIssues.push_back({sev, "load: " + issue.message, {}});
+		}
+		if (result.graph.nodeCount() == 0) // nothing loaded — the issues above say why; keep the current scene
+		{
+			forgetGraphPath(ctx.session, path); // a moved/deleted file shouldn't linger in Open Recent
+			saveSession(ctx.session);
+			return false;
+		}
+
+		// Replace the scene — deferred to end of frame.
+		ctx.loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
+		ctx.pendingLayout = std::move(result.editor);
+		ctx.loadRequested = true;
+		ctx.currentPath = path; // remember for plain Save
+		ctx.dirty = false;
+		noteGraphPath(ctx.session, path); // now the document to reopen + the head of Open Recent
+		saveSession(ctx.session);
+		return true;
 	}
 
 	void MenuBarPane::openGraphDialog(AppContext& ctx)
@@ -96,55 +167,77 @@ namespace flowview
 		const auto path = gui::openFile("Open graph", {}, {{"JSON graph", {"*.json"}}, {"All files", {"*"}}});
 		if (!path)
 			return;
-		flow::serialize::LoadResult result = loadGraph(path->string(), ctx.app->nodeFactory());
-		// Surface load problems in the Issues panel (not a modal) — they persist until the graph is
-		// next edited. Map the serialize severity onto the panel's.
-		ctx.loadIssues.clear();
-		for (const flow::serialize::LoadIssue& issue : result.issues)
+		openGraphPath(ctx, *path);
+	}
+
+	void MenuBarPane::drawOpenRecent(AppContext& ctx)
+	{
+		const std::vector<std::filesystem::path>& recent = ctx.session.recentGraphs;
+		if (!gui::BeginMenu("Open Recent", !recent.empty())) // greyed out with no history
+			return;
+
+		// Act after the menu closes: opening prunes the list on failure, so the loop must not be
+		// iterating it. The label is the filename (paths are too wide for a menu) with the full path
+		// as a tooltip; the index PushID keeps two same-named files in different folders distinct.
+		std::filesystem::path chosen;
+		for (std::size_t i = 0; i < recent.size(); ++i)
 		{
-			const Issue::Severity sev = issue.severity == flow::serialize::Severity::Error ? Issue::Severity::Error : Issue::Severity::Warning;
-			ctx.loadIssues.push_back({sev, "load: " + issue.message, {}});
+			gui::PushID(static_cast<int>(i));
+			if (gui::MenuItem(recent[i].filename().string().c_str()))
+				chosen = recent[i];
+			if (gui::IsItemHovered())
+				gui::SetTooltip("%s", recent[i].string().c_str());
+			gui::PopID();
 		}
-		if (result.graph.nodeCount() > 0) // replace the scene — deferred to end of frame
+		gui::Separator();
+		const bool clear = gui::MenuItem("Clear Menu");
+		gui::EndMenu();
+
+		if (clear)
 		{
-			ctx.loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
-			ctx.pendingLayout = std::move(result.editor);
-			ctx.loadRequested = true;
-			ctx.currentPath = *path; // remember for plain Save
-			ctx.dirty = false;
+			ctx.session.recentGraphs.clear();
+			saveSession(ctx.session);
+		}
+		else if (!chosen.empty())
+		{
+			requestOpen(ctx, chosen); // guarded like Open... — replacing the graph discards unsaved work
 		}
 	}
 
-	void MenuBarPane::saveToCurrentPath(AppContext& ctx, const flow::Graph& graph)
+	bool MenuBarPane::saveToCurrentPath(AppContext& ctx, const flow::Graph& graph)
 	{
 		if (ctx.currentPath.empty())
-		{
-			saveAsDialog(ctx, graph); // no file yet -> prompt for one
-			return;
-		}
+			return saveAsDialog(ctx, graph); // no file yet -> prompt for one
+
 		if (saveGraph(ctx.currentPath.string(), graph, ctx.app->nodeFactory(), collectLayout(graph)))
+		{
 			ctx.dirty = false;
-		else
-			gui::message("Save failed", "Could not write " + ctx.currentPath.string(), true);
+			noteGraphPath(ctx.session, ctx.currentPath); // saving makes it the current document too
+			saveSession(ctx.session);
+			return true;
+		}
+		gui::message("Save failed", "Could not write " + ctx.currentPath.string(), true);
+		return false;
 	}
 
-	void MenuBarPane::saveAsDialog(AppContext& ctx, const flow::Graph& graph)
+	bool MenuBarPane::saveAsDialog(AppContext& ctx, const flow::Graph& graph)
 	{
 		// Native dialogs block the render thread — the same pattern as the per-output Save… below.
 		const auto path = gui::saveFile("Save graph", {}, {{"json", {"*.json"}}});
 		if (!path)
-			return;
+			return false; // cancelled — the caller must treat this as "not saved"
 		std::filesystem::path file = *path;
 		file.replace_extension("json"); // force .json (the codec is keyed off the extension)
-		if (saveGraph(file.string(), graph, ctx.app->nodeFactory(), collectLayout(graph)))
-		{
-			ctx.currentPath = file; // remember for plain Save
-			ctx.dirty = false;
-		}
-		else
+		if (!saveGraph(file.string(), graph, ctx.app->nodeFactory(), collectLayout(graph)))
 		{
 			gui::message("Save failed", "Could not write " + file.string(), true);
+			return false;
 		}
+		ctx.currentPath = file; // remember for plain Save
+		ctx.dirty = false;
+		noteGraphPath(ctx.session, file);
+		saveSession(ctx.session);
+		return true;
 	}
 
 	void MenuBarPane::draw(AppContext& ctx, flow::Graph& graph, app::Application& app, bool& edited, bool& resetLayout)
@@ -160,7 +253,8 @@ namespace flowview
 				if (gui::MenuItem("New", (m + "N").c_str()))
 					requestNew(ctx);
 				if (gui::MenuItem("Open...", (m + "O").c_str()))
-					openGraphDialog(ctx);
+					requestOpen(ctx);
+				drawOpenRecent(ctx);
 				if (gui::MenuItem("Save", (m + "S").c_str()))
 					saveToCurrentPath(ctx, graph);
 				if (gui::MenuItem("Save As...", (m + "Shift+S").c_str()))
@@ -206,7 +300,7 @@ namespace flowview
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_N, ImGuiInputFlags_RouteGlobal))
 			requestNew(ctx);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_O, ImGuiInputFlags_RouteGlobal))
-			openGraphDialog(ctx);
+			requestOpen(ctx);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))
 			saveAsDialog(ctx, graph);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))

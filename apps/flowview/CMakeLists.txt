@@ -8,6 +8,7 @@ add_executable(flowview
 	src/flowviewapp.cpp
 	src/mainwindow.cpp
 	src/appcontext.cpp
+	src/session.cpp
 	src/previewcache.cpp
 	src/panes/menubar.cpp
 	src/panes/issuespane.cpp
@@ -30,7 +31,7 @@ target_compile_features(flowview PRIVATE cxx_std_17)
 target_link_libraries(flowview
 	PRIVATE lain::app lain::core lain::gui lain::flow-example lain::io::image lain::io::image::codecs
 			lain::flow::serialize lain::io::data::codecs # graph <-> data::Value <-> json
-			lain::log archimedes Vulkan::Loader lain::warnings
+			lain::string lain::log archimedes Vulkan::Loader lain::warnings
 )
 
 # Stage the vendored MoltenVK ICD next to the binary (macOS; no-op elsewhere) so
