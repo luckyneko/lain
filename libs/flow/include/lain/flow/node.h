@@ -27,6 +27,12 @@ namespace lain::flow
 		NodeId id() const { return m_id; }
 		const std::string& name() const { return m_name; }
 
+		// Rename the node — display only, like Port::setName. A node's identity is its NodeId: edges,
+		// handles and the editor's layout all reference that, and nothing addresses a node by name (a
+		// name need not even be unique — an adapter that wants uniqueness imposes it). Serialization
+		// persists the name, so a user-chosen title survives a save/load round-trip.
+		void setName(std::string name) { m_name = std::move(name); }
+
 		PortIndex inputCount() const { return m_inputs.size(); }
 		PortIndex outputCount() const { return m_outputs.size(); }
 		Port& input(PortIndex i) { return m_inputs[i]; }

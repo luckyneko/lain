@@ -113,6 +113,27 @@ TEST_CASE("a graph round-trips through data::Value (structure + params + edges)"
 	REQUIRE(sink->param(0).get<float>() == 9.0f);
 }
 
+TEST_CASE("a user-renamed node keeps its title across a round-trip", "[flow-serialize]")
+{
+	const Factory<Node> factory = nodeFactory();
+	const ValueCodecs codecs = valueCodecs();
+	Graph graph = sampleGraph();
+	// A node's title is user-editable (Node::setName) — the factory kind, not the name, is what
+	// rebuilds it on load, so the renamed node must come back renamed rather than as "Source".
+	for (const NodeId id : graph.nodeIds())
+	{
+		if (graph.node(id).name() == "Source")
+			graph.node(id).setName("warm source");
+	}
+
+	const LoadResult result = fromValue(toValue(graph, factory, codecs), factory, codecs);
+	REQUIRE(result.clean());
+	REQUIRE(nodeNamed(result.graph, "warm source") != nullptr);
+	REQUIRE(nodeNamed(result.graph, "Source") == nullptr);
+	REQUIRE(nodeNamed(result.graph, "warm source")->param(0).get<int>() == 42); // still the same node
+	REQUIRE(nodeNamed(result.graph, "Sink") != nullptr);					   // an unrenamed node keeps its ctor name
+}
+
 TEST_CASE("a graph survives Graph -> Value -> JSON -> Value -> Graph", "[flow-serialize]")
 {
 	lain::io::data::json::registerCodec();

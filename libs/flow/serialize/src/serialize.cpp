@@ -55,7 +55,7 @@ namespace lain::flow::serialize
 		data::Value out = data::Value::object();
 		out.set("id", data::Value(fileId));
 		out.set("kind", data::Value(kind));
-		out.set("name", data::Value(node.name())); // informational (node names are fixed by type)
+		out.set("name", data::Value(node.name())); // the node's title — user-editable, so it round-trips
 
 		data::Value params = data::Value::array();
 		for (PortIndex i = 0; i < node.paramCount(); ++i)
@@ -266,6 +266,14 @@ namespace lain::flow::serialize
 				const NodeId liveId = result.graph.add(std::move(node));
 				remap[*fileId] = liveId;
 				Node& created = result.graph.node(liveId);
+
+				// A user-chosen title (Node::setName) — display only, so an absent/blank one simply
+				// leaves the name the node's constructor gave it.
+				if (const data::Value* nameV = nodeV.find("name"))
+				{
+					if (const std::string* name = nameV->asString(); name && !name->empty())
+						created.setName(*name);
+				}
 
 				// Replay dynamic pins BEFORE edges, so an edge addressing one resolves.
 				if (const data::Value* pins = nodeV.find("dynamicPins"))
