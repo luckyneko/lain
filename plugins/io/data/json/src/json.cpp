@@ -7,11 +7,10 @@
 #include <lain/io/data/writer.h>
 #include <lain/memory/buffer.h>
 
-#include <nlohmann/json.hpp>
-
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <vector>
@@ -69,13 +68,20 @@ namespace lain::io::data::json
 		using Type = lain::data::Value::Type;
 		switch (value.type())
 		{
-			case Type::Null: return nullptr;
-			case Type::Bool: return *value.asBool();
-			case Type::Int: return *value.asInt64();
-			case Type::UInt: return *value.asUInt64();
-			case Type::Double: return *value.asDouble();
-			case Type::String: return *value.asString();
-			case Type::Bytes: return base64Encode(*value.asBytes());
+			case Type::Null:
+				return nullptr;
+			case Type::Bool:
+				return *value.asBool();
+			case Type::Int:
+				return *value.asInt64();
+			case Type::UInt:
+				return *value.asUInt64();
+			case Type::Double:
+				return *value.asDouble();
+			case Type::String:
+				return *value.asString();
+			case Type::Bytes:
+				return base64Encode(*value.asBytes());
 			case Type::Array:
 			{
 				Json out = Json::array();

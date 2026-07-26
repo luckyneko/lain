@@ -5,9 +5,8 @@
 // converts them — the same role imconfig_lain.h's ImVec2/ImVec4 bridge plays for vectors, but ImU32 is
 // a primitive with no class-extra hook, so it needs an explicit function.
 
+#include <imgui.h>			  // IM_COL32, ImU32
 #include <lain/image/color.h> // ColorRGBA8
-
-#include <imgui.h> // IM_COL32, ImU32
 
 namespace lain::gui
 {

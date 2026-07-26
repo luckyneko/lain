@@ -12,15 +12,24 @@ namespace lain::data
 	{
 		switch (type())
 		{
-			case Type::Null: return "null";
-			case Type::Bool: return "bool";
-			case Type::Int: return "int";
-			case Type::UInt: return "uint";
-			case Type::Double: return "double";
-			case Type::String: return "string";
-			case Type::Bytes: return "bytes";
-			case Type::Array: return "array";
-			case Type::Object: return "object";
+			case Type::Null:
+				return "null";
+			case Type::Bool:
+				return "bool";
+			case Type::Int:
+				return "int";
+			case Type::UInt:
+				return "uint";
+			case Type::Double:
+				return "double";
+			case Type::String:
+				return "string";
+			case Type::Bytes:
+				return "bytes";
+			case Type::Array:
+				return "array";
+			case Type::Object:
+				return "object";
 		}
 		return "?";
 	}

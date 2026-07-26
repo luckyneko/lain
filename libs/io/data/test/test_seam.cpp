@@ -8,7 +8,6 @@
 #include "lain/io/data/writer.h"
 
 #include <catch2/catch_test_macros.hpp>
-
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -116,7 +115,7 @@ TEST_CASE("save then load round-trips through a file keyed by extension", "[io-d
 	registerFake("fake");
 	const TempPath file("fake");
 
-	REQUIRE(save(file.path(), Value(1)));				 // FakeWriter -> 5 bytes on disk
+	REQUIRE(save(file.path(), Value(1))); // FakeWriter -> 5 bytes on disk
 	REQUIRE(std::filesystem::file_size(file.path()) == 5);
 
 	const auto v = load(file.path()); // FakeReader keyed off ".fake" -> { size: 5 }

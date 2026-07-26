@@ -151,8 +151,8 @@ TEST_CASE("an optional input does not block; the node picks a live branch", "[fl
 	REQUIRE(graph.connect(ga, 0, sel, 0) == Connection::Ok); // -> "a" (optional)
 	REQUIRE(graph.connect(gb, 0, sel, 1) == Connection::Ok); // -> "b" (optional)
 
-	static_cast<TestGate&>(graph.node(ga)).pass = false; // branch a produces nothing
-	auto& gateB = static_cast<TestGate&>(graph.node(gb));	// branch b lives
+	static_cast<TestGate&>(graph.node(ga)).pass = false;  // branch a produces nothing
+	auto& gateB = static_cast<TestGate&>(graph.node(gb)); // branch b lives
 	gateB.pass = true;
 	gateB.value = 7;
 

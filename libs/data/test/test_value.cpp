@@ -3,7 +3,6 @@
 #include "lain/data/value.h"
 
 #include <catch2/catch_test_macros.hpp>
-
 #include <cstdint>
 
 using lain::data::Value;
@@ -13,8 +12,8 @@ TEST_CASE("scalars carry their distinct arm", "[value]")
 	REQUIRE(Value().type() == Value::Type::Null);
 	REQUIRE(Value(nullptr).type() == Value::Type::Null);
 	REQUIRE(Value(true).type() == Value::Type::Bool);
-	REQUIRE(Value(42).type() == Value::Type::Int);					   // signed int -> Int
-	REQUIRE(Value(std::uint64_t{42}).type() == Value::Type::UInt);	   // unsigned -> UInt
+	REQUIRE(Value(42).type() == Value::Type::Int);				   // signed int -> Int
+	REQUIRE(Value(std::uint64_t{42}).type() == Value::Type::UInt); // unsigned -> UInt
 	REQUIRE(Value(3.5).type() == Value::Type::Double);
 	REQUIRE(Value("hi").type() == Value::Type::String);
 

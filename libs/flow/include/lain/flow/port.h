@@ -119,11 +119,11 @@ namespace lain::flow
 
 		std::string m_name;
 		Direction m_dir;
-		const PortType* m_type;	  // the declared type's shared reflective flyweight
-		PortId m_id;			  // stable identity within the owning node
-		PortValue m_value;		  //
-		bool m_required = true;	  // input only: an empty Required input keeps the node from being ready
-		bool m_dynamic = false;	  // added at runtime via addDynamicPort (vs declared in the node's ctor)
+		const PortType* m_type; // the declared type's shared reflective flyweight
+		PortId m_id;			// stable identity within the owning node
+		PortValue m_value;		//
+		bool m_required = true; // input only: an empty Required input keeps the node from being ready
+		bool m_dynamic = false; // added at runtime via addDynamicPort (vs declared in the node's ctor)
 	};
 
 	// Whether an input must carry a value for its node to be ready (see Port::required). On outputs

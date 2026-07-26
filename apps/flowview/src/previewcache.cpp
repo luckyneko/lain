@@ -27,9 +27,9 @@ namespace flowview
 				return;
 			const PinKey key{id.value(), output, p.id()};
 			live.insert(key);
-			gui::Texture& tex = m_textures[key];  // default-empty on first sight
-			if (!tex.upload(img))				  // re-upload in place when size/format fits...
-				tex = ctx.createTexture(img);	  // ...else first-time or resized -> reallocate
+			gui::Texture& tex = m_textures[key]; // default-empty on first sight
+			if (!tex.upload(img))				 // re-upload in place when size/format fits...
+				tex = ctx.createTexture(img);	 // ...else first-time or resized -> reallocate
 		};
 		for (const flow::NodeId id : graph.topoOrder())
 		{

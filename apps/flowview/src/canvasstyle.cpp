@@ -52,17 +52,17 @@ namespace flowview
 		// Port (value) colours — the scene payload + the scalars. Keyed by C++ type, so a pin carrying
 		// image::Image / int / … resolves regardless of how it was declared.
 		style.addPortColor(typeid(image::Image), image::ColorRGBA8(80, 140, 235, 255)); // blue
-		style.addPortColor(typeid(int), image::ColorRGBA8(95, 190, 95, 255));		   // green
-		style.addPortColor(typeid(float), image::ColorRGBA8(90, 195, 150, 255));		   // teal-green
-		style.addPortColor(typeid(bool), image::ColorRGBA8(180, 120, 225, 255));		   // purple
-		style.addPortColor(typeid(std::string), image::ColorRGBA8(230, 175, 80, 255));  // amber
+		style.addPortColor(typeid(int), image::ColorRGBA8(95, 190, 95, 255));			// green
+		style.addPortColor(typeid(float), image::ColorRGBA8(90, 195, 150, 255));		// teal-green
+		style.addPortColor(typeid(bool), image::ColorRGBA8(180, 120, 225, 255));		// purple
+		style.addPortColor(typeid(std::string), image::ColorRGBA8(230, 175, 80, 255));	// amber
 
 		// Node title colours by factory kind — categories are emergent from shared colour (no Category
 		// enum). These keys must match scene.cpp's registrations.
-		const image::ColorRGBA8 source(46, 86, 120, 255);	// sources: emit a value
-		const image::ColorRGBA8 filter(38, 104, 104, 255);	// filters: transform a value
-		const image::ColorRGBA8 control(86, 58, 124, 255);	// control flow: gate / merge / select
-		const image::ColorRGBA8 boundary(74, 74, 86, 255);	// the graph's I/O
+		const image::ColorRGBA8 source(46, 86, 120, 255);  // sources: emit a value
+		const image::ColorRGBA8 filter(38, 104, 104, 255); // filters: transform a value
+		const image::ColorRGBA8 control(86, 58, 124, 255); // control flow: gate / merge / select
+		const image::ColorRGBA8 boundary(74, 74, 86, 255); // the graph's I/O
 		style.addNodeColor("gradient", source);
 		style.addNodeColor("loadimage", source);
 		style.addNodeColor("constInt", source);

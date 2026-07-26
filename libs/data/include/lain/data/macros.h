@@ -24,13 +24,13 @@
 // Count the variadic args (1..32) by shifting them past a fixed marker list.
 #define LAIN_DATA_DETAIL_NARG(...) LAIN_DATA_DETAIL_EXPAND(LAIN_DATA_DETAIL_NARG_(__VA_ARGS__, LAIN_DATA_DETAIL_RSEQ_N()))
 #define LAIN_DATA_DETAIL_NARG_(...) LAIN_DATA_DETAIL_EXPAND(LAIN_DATA_DETAIL_ARG_N(__VA_ARGS__))
-#define LAIN_DATA_DETAIL_ARG_N( \
-	_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, \
+#define LAIN_DATA_DETAIL_ARG_N(                                                             \
+	_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16,                  \
 	_17, _18, _19, _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _30, _31, _32, N, ...) \
 	N
-#define LAIN_DATA_DETAIL_RSEQ_N() \
+#define LAIN_DATA_DETAIL_RSEQ_N()                                   \
 	32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, \
-	16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0
+		16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0
 
 // Apply macro m to each field. Each FE_n emits m(x) then recurses on the rest.
 #define LAIN_DATA_DETAIL_FE_1(m, x) m(x)
@@ -73,16 +73,16 @@
 #define LAIN_DATA_DETAIL_MEMBER_THIS(f) ar.member(#f, this->f);
 
 // A free serialize(): field name = JSON key. Invoke at the type's namespace scope.
-#define LAIN_SERIALIZE(Type, ...) \
-	inline void serialize(::lain::data::Archive& ar, Type& v) \
-	{ \
+#define LAIN_SERIALIZE(Type, ...)                                       \
+	inline void serialize(::lain::data::Archive& ar, Type& v)           \
+	{                                                                   \
 		LAIN_DATA_DETAIL_FOR_EACH(LAIN_DATA_DETAIL_MEMBER, __VA_ARGS__) \
 	}
 
 // A member serialize() — the private-member escape hatch. Invoke inside the class body.
-#define LAIN_SERIALIZE_INTRUSIVE(...) \
-	void serialize(::lain::data::Archive& ar) \
-	{ \
+#define LAIN_SERIALIZE_INTRUSIVE(...)                                        \
+	void serialize(::lain::data::Archive& ar)                                \
+	{                                                                        \
 		LAIN_DATA_DETAIL_FOR_EACH(LAIN_DATA_DETAIL_MEMBER_THIS, __VA_ARGS__) \
 	}
 

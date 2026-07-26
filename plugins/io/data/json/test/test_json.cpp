@@ -8,7 +8,6 @@
 #include <lain/io/data/save.h>
 
 #include <catch2/catch_test_macros.hpp>
-
 #include <cstring>
 #include <filesystem>
 #include <optional>
@@ -38,9 +37,9 @@ static Value sampleValue()
 {
 	Value v = Value::object();
 	v.set("name", Value("lain"));
-	v.set("id", Value(std::uint64_t{42}));	// UInt
-	v.set("delta", Value(-7));				// Int (negative stays Int)
-	v.set("ratio", Value(0.5));				// Double
+	v.set("id", Value(std::uint64_t{42})); // UInt
+	v.set("delta", Value(-7));			   // Int (negative stays Int)
+	v.set("ratio", Value(0.5));			   // Double
 	v.set("on", Value(true));
 	v.set("nothing", Value());
 	Value list = Value::array();

@@ -159,12 +159,36 @@ namespace lain::image
 		float r = 0.0f;
 		float g = 0.0f;
 		float b = 0.0f;
-		if (h < 60.0f) { r = c; g = x; }
-		else if (h < 120.0f) { r = x; g = c; }
-		else if (h < 180.0f) { g = c; b = x; }
-		else if (h < 240.0f) { g = x; b = c; }
-		else if (h < 300.0f) { r = x; b = c; }
-		else { r = c; b = x; }
+		if (h < 60.0f)
+		{
+			r = c;
+			g = x;
+		}
+		else if (h < 120.0f)
+		{
+			r = x;
+			g = c;
+		}
+		else if (h < 180.0f)
+		{
+			g = c;
+			b = x;
+		}
+		else if (h < 240.0f)
+		{
+			g = x;
+			b = c;
+		}
+		else if (h < 300.0f)
+		{
+			r = x;
+			b = c;
+		}
+		else
+		{
+			r = c;
+			b = x;
+		}
 		return convert<Dst>(ColorRGBf(r + m, g + m, b + m));
 	}
 

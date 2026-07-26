@@ -97,7 +97,8 @@ namespace lain::gui
 		// submit can't race it once the graph evaluates in parallel. withQueue only errors
 		// on an invalid device / null callback — neither is possible here (this is the
 		// device we initialised ImGui against), so the returned Error is discarded.
-		(void)acm::interop::withQueue(*m->device, [](VkQueue) { ImGui_ImplVulkan_NewFrame(); });
+		(void)acm::interop::withQueue(*m->device, [](VkQueue)
+									  { ImGui_ImplVulkan_NewFrame(); });
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 	}

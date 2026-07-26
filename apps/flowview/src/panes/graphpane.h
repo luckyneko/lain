@@ -34,7 +34,7 @@ namespace flowview
 		void onGraphReplaced();
 
 	private:
-		CanvasStyle m_style; // canvas colours + dim state (registered in init)
+		CanvasStyle m_style;	// canvas colours + dim state (registered in init)
 		bool m_laidOut = false; // seed node positions on the first frame (and after a Load)
 
 		// Link-drag feedback: while a link is dragged, grey every pin that isn't a compatible drop target

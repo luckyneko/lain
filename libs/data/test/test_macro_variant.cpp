@@ -3,7 +3,6 @@
 #include "lain/data/data.h"
 
 #include <catch2/catch_test_macros.hpp>
-
 #include <variant>
 
 using lain::data::fromValue;
@@ -25,7 +24,11 @@ namespace demo
 	{
 	public:
 		Secret() = default;
-		Secret(int a, int b) : m_a(a), m_b(b) {}
+		Secret(int a, int b)
+			: m_a(a)
+			, m_b(b)
+		{
+		}
 		int a() const { return m_a; }
 		int b() const { return m_b; }
 
@@ -80,8 +83,8 @@ TEST_CASE("a tagged variant round-trips through {type, value}", "[variant]")
 	demo::Shape s = demo::Circle{2.5};
 	Value v = toValue(s);
 	REQUIRE(v.find("type")->asString() != nullptr);
-	REQUIRE(*v.find("type")->asString() == "circle");			// the stable arm key
-	REQUIRE(v.find("value")->find("r")->asDouble() == 2.5);		// the arm, serialized nested
+	REQUIRE(*v.find("type")->asString() == "circle");		// the stable arm key
+	REQUIRE(v.find("value")->find("r")->asDouble() == 2.5); // the arm, serialized nested
 
 	auto r = fromValue<demo::Shape>(v);
 	REQUIRE(r.has_value());

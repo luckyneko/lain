@@ -31,8 +31,8 @@ namespace lain::data
 		{
 			Null,
 			Bool,
-			Int,	// signed, stored as int64
-			UInt,	// unsigned, stored as uint64
+			Int,  // signed, stored as int64
+			UInt, // unsigned, stored as uint64
 			Double,
 			String,
 			Bytes, // raw bytes; a codec encodes them (Base64 for a text format), never Value
@@ -47,14 +47,32 @@ namespace lain::data
 		// complete). Access an entry as .first (key) / .second (value).
 		using Object = std::vector<std::pair<std::string, Value>>;
 
-		Value() noexcept = default;			   // Null (monostate)
-		Value(std::nullptr_t) noexcept {}	   // Null
-		Value(bool b) : m_data(b) {}		   //
-		Value(const char* s) : m_data(std::string(s)) {}
-		Value(std::string s) : m_data(std::move(s)) {}
-		Value(std::vector<std::byte> b) : m_data(std::move(b)) {} // Bytes
-		Value(Array a) : m_data(std::move(a)) {}
-		Value(Object o) : m_data(std::move(o)) {}
+		Value() noexcept = default;		  // Null (monostate)
+		Value(std::nullptr_t) noexcept {} // Null
+		Value(bool b)
+			: m_data(b)
+		{
+		} //
+		Value(const char* s)
+			: m_data(std::string(s))
+		{
+		}
+		Value(std::string s)
+			: m_data(std::move(s))
+		{
+		}
+		Value(std::vector<std::byte> b)
+			: m_data(std::move(b))
+		{
+		} // Bytes
+		Value(Array a)
+			: m_data(std::move(a))
+		{
+		}
+		Value(Object o)
+			: m_data(std::move(o))
+		{
+		}
 
 		// Any integral (bar bool) → Int/UInt by signedness; any floating → Double. One pair of
 		// templated ctors so Value(42) / Value(id.value()) / Value(3.5f) all land losslessly.

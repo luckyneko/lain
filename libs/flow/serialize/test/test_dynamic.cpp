@@ -13,7 +13,6 @@
 #include <lain/flow/porttyperegistry.h>
 
 #include <catch2/catch_test_macros.hpp>
-
 #include <string>
 
 using lain::core::Factory;
@@ -23,10 +22,10 @@ using lain::flow::Graph;
 using lain::flow::GroupInputNode;
 using lain::flow::MergeNode;
 using lain::flow::Node;
-using lain::flow::SelectNode;
 using lain::flow::NodeId;
 using lain::flow::Port;
 using lain::flow::PortId;
+using lain::flow::SelectNode;
 using lain::flow::serialize::EditorData;
 using lain::flow::serialize::fromValue;
 using lain::flow::serialize::LoadResult;
