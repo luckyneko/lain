@@ -2,8 +2,8 @@
 
 #include "../appcontext.h"
 #include "../flowviewapp.h" // ctx.app->nodeFactory()
-#include "../scene.h"		 // nodeCatalog + NodeCategory
-#include "canvasids.h"		 // pinId + selectedNodes
+#include "../scene.h"		// nodeCatalog + NodeCategory
+#include "canvasids.h"		// pinId + selectedNodes
 
 #include <lain/data/value.h>
 #include <lain/flow/boundary.h> // GroupInputNode / GroupOutputNode
@@ -324,7 +324,7 @@ namespace flowview
 			const ImVec2 nodePos = gui::nodes::GetNodeGridSpacePos(nid);
 			const ImVec2 nodeSize = gui::nodes::GetNodeDimensions(nid);
 			gui::nodes::EditorContextResetPanning(ImVec2(canvasSize.x * 0.5f - (nodePos.x + nodeSize.x * 0.5f),
-													 canvasSize.y * 0.5f - (nodePos.y + nodeSize.y * 0.5f)));
+														 canvasSize.y * 0.5f - (nodePos.y + nodeSize.y * 0.5f)));
 			ctx.locateTarget.reset();
 		}
 

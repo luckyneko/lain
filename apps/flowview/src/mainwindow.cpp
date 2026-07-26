@@ -1,9 +1,9 @@
 #include "mainwindow.h"
 
 #include "flowviewapp.h"
-#include "graphio.h"		// snapshotGraph (undo snapshots)
+#include "graphio.h"		 // snapshotGraph (undo snapshots)
 #include "panes/canvasids.h" // collectLayout (canvas positions for a snapshot)
-#include "session.h"		// loadSession / saveSession (reopen the last graph, restore the dialog folder)
+#include "session.h"		 // loadSession / saveSession (reopen the last graph, restore the dialog folder)
 
 #include <archimedes/archimedes.h>
 #include <lain/app/application.h>
@@ -55,8 +55,8 @@ namespace flowview
 	static void buildDefaultLayout(gui::DockNode dock)
 	{
 		gui::dockReset(dock);
-		const auto [rightCol, leftCol] = gui::dockSplit(dock, gui::DockDir::Right, 0.28f); // right column, full height
-		const auto [issues, graphArea] = gui::dockSplit(leftCol, gui::DockDir::Down, 0.22f); // Issues under Graph/Preview
+		const auto [rightCol, leftCol] = gui::dockSplit(dock, gui::DockDir::Right, 0.28f);		 // right column, full height
+		const auto [issues, graphArea] = gui::dockSplit(leftCol, gui::DockDir::Down, 0.22f);	 // Issues under Graph/Preview
 		const auto [ioArea, inspectorArea] = gui::dockSplit(rightCol, gui::DockDir::Down, 0.5f); // Interface under Inspector/Nodes
 
 		gui::dockWindow(graphArea, "Graph");

@@ -3,9 +3,9 @@
 #include "../appcontext.h"
 #include "../flowviewapp.h"
 #include "../graphio.h" // loadGraph / saveGraph
-#include "../scene.h"	 // nodeCatalog (the Add menu grouping) + buildNewScene
+#include "../scene.h"	// nodeCatalog (the Add menu grouping) + buildNewScene
 #include "../session.h" // noteGraphPath / saveSession (Open Recent + reopen-on-launch)
-#include "canvasids.h"	 // collectLayout (canvas positions for the saved editor section)
+#include "canvasids.h"	// collectLayout (canvas positions for the saved editor section)
 
 #include <lain/app/application.h>
 #include <lain/data/value.h> // Value (undo/redo snapshot restored via applyRestore)

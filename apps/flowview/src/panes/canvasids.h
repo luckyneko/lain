@@ -1,7 +1,7 @@
 #pragma once
 
 #include <lain/flow/serialize/loadresult.h> // EditorData (collectLayout's return)
-#include <lain/flow/types.h>				   // NodeId, PortId
+#include <lain/flow/types.h>				// NodeId, PortId
 
 #include <vector>
 

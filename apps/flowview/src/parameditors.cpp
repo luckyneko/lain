@@ -78,7 +78,7 @@ namespace flowview
 		const bool committed = textField(label.c_str(), currentOr<std::string>(value), edited, changed);
 		if (changed)
 			value.set<std::string>(std::move(edited)); // persist live so the text isn't lost
-		return committed;								// recompute only on commit
+		return committed;							   // recompute only on commit
 	}
 
 	static bool editPath(const std::string& label, flow::PortValue& value)

@@ -13,7 +13,6 @@
 #include <lain/io/data/save.h>
 
 #include <catch2/catch_test_macros.hpp>
-
 #include <cstdint>
 #include <string>
 
@@ -109,7 +108,7 @@ TEST_CASE("a graph round-trips through data::Value (structure + params + edges)"
 	const Node* sink = nodeNamed(result.graph, "Sink");
 	REQUIRE(source != nullptr);
 	REQUIRE(sink != nullptr);
-	REQUIRE(source->param(0).get<int>() == 42);	  // params restored
+	REQUIRE(source->param(0).get<int>() == 42); // params restored
 	REQUIRE(sink->param(0).get<float>() == 9.0f);
 }
 
@@ -131,7 +130,7 @@ TEST_CASE("a user-renamed node keeps its title across a round-trip", "[flow-seri
 	REQUIRE(nodeNamed(result.graph, "warm source") != nullptr);
 	REQUIRE(nodeNamed(result.graph, "Source") == nullptr);
 	REQUIRE(nodeNamed(result.graph, "warm source")->param(0).get<int>() == 42); // still the same node
-	REQUIRE(nodeNamed(result.graph, "Sink") != nullptr);					   // an unrenamed node keeps its ctor name
+	REQUIRE(nodeNamed(result.graph, "Sink") != nullptr);						// an unrenamed node keeps its ctor name
 }
 
 TEST_CASE("a graph survives Graph -> Value -> JSON -> Value -> Graph", "[flow-serialize]")

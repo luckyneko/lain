@@ -58,12 +58,12 @@ namespace flowview
 		void replaceGraph(std::unique_ptr<lain::flow::Graph> graph);
 
 	private:
-		std::uint32_t m_size = 64; // example gradient extent (size x size)
-		int m_frames = 0;		   // gui-mode: quit after N frames (0 = until closed)
-		bool m_useExample = false; // gui: --example starts from the example scene, else a blank graph
+		std::uint32_t m_size = 64;	// example gradient extent (size x size)
+		int m_frames = 0;			// gui-mode: quit after N frames (0 = until closed)
+		bool m_useExample = false;	// gui: --example starts from the example scene, else a blank graph
 		bool m_resetLayout = false; // gui: --reset-layout ignores the saved dock layout
-		std::string m_graphPath;   // run/list: the graph JSON (empty -> the built-in example scene)
-		std::string m_savePath;	   // run --save: serialize the graph here
+		std::string m_graphPath;	// run/list: the graph JSON (empty -> the built-in example scene)
+		std::string m_savePath;		// run --save: serialize the graph here
 
 		// The headless subcommands. Their pointers stay valid through Application::run() (the cli::App
 		// outlives onStart/onProcess), so ->parsed()/->remaining() drive the headless dispatch.
@@ -75,6 +75,6 @@ namespace flowview
 		std::unique_ptr<lain::flow::Graph> m_graph;
 		lain::flow::SerialScheduler m_scheduler;			 // runs the scene (no threads needed)
 		lain::core::Factory<lain::flow::Node> m_nodeFactory; // node-type palette
-		MainWindow m_window;							 // gui-mode inspector
+		MainWindow m_window;								 // gui-mode inspector
 	};
 } // namespace flowview

@@ -2,9 +2,9 @@
 
 #include "pinkey.h"
 #include "session.h" // what persists between runs (last graph, recents, dialog folder)
-#include "undo.h"	// UndoStack (the graph-document history)
+#include "undo.h"	 // UndoStack (the graph-document history)
 
-#include <lain/data/value.h>				 // Value (pendingBaseline)
+#include <lain/data/value.h>				// Value (pendingBaseline)
 #include <lain/flow/serialize/loadresult.h> // EditorData (a value member) + Graph (loadedGraph target)
 #include <lain/flow/types.h>				// NodeId
 
@@ -79,7 +79,7 @@ namespace flowview
 
 		// --- Graph-adjacent metadata (extra data sitting alongside the graph) ---
 		PreviewSize previewSize = PreviewSize::Medium; // thumbnail size (enumCombo-driven)
-		int addCounter = 0; // palette-added nodes cascade their grid position (menu Add + Nodes palette)
+		int addCounter = 0;							   // palette-added nodes cascade their grid position (menu Add + Nodes palette)
 		// The chosen save format per image output pin (the inline dropdown's selection), by format key
 		// ("png" / "jpg" / …). Robust to the savable list changing — an entry not (or no longer) in a
 		// port's list falls back to that list's first format.
