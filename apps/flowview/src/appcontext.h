@@ -8,6 +8,7 @@
 #include <lain/flow/serialize/loadresult.h> // EditorData (a value member) + Graph (loadedGraph target)
 #include <lain/flow/types.h>				// NodeId
 
+#include <cstddef>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -154,5 +155,11 @@ namespace flowview
 		// re-baseline the undo history with once the swap is applied. Its presence is what tells the
 		// swap handler "this is a new document → reset history" vs "this is a restore → keep history".
 		std::optional<lain::data::Value> pendingBaseline;
+		// Nodes to re-select after an Undo/Redo swap, as ORDINALS into the graph's node enumeration
+		// (nodeIds()) — a restore remaps every NodeId, so the old ids can't be reused, but the ordinal
+		// is stable for a structure-preserving edit (e.g. a param drag). Captured before the restore,
+		// applied after the swap re-seeds; without it a param undo would drop the canvas selection (and
+		// so the selection-driven Inspector). Empty on New/Open, which clear the selection instead.
+		std::vector<std::size_t> pendingReselect;
 	};
 } // namespace flowview

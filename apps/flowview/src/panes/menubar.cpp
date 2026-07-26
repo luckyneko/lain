@@ -162,6 +162,30 @@ namespace flowview
 
 	void MenuBarPane::applyRestore(AppContext& ctx, const data::Value& state)
 	{
+		// Capture the current canvas selection as ORDINALS into the graph's node enumeration, before
+		// the swap. A restore remaps every NodeId, so the old ids are useless afterwards, but the
+		// ordinal is stable for a structure-preserving edit — so a param-drag undo keeps the node
+		// selected (and the Inspector showing it) instead of dropping to nothing. (nodeIds() and the
+		// restored graph's enumeration share an order — both ascend by insertion — so ordinal k is the
+		// same logical node on both sides.)
+		ctx.pendingReselect.clear();
+		const std::vector<flow::NodeId> selected = selectedNodes();
+		if (!selected.empty())
+		{
+			const std::vector<flow::NodeId> ids = ctx.app->graph().nodeIds();
+			for (const flow::NodeId sel : selected)
+			{
+				for (std::size_t i = 0; i < ids.size(); ++i)
+				{
+					if (ids[i] == sel)
+					{
+						ctx.pendingReselect.push_back(i);
+						break;
+					}
+				}
+			}
+		}
+
 		// Rebuild from the snapshot and route it through the same deferred-swap path as a load — but
 		// with NO pendingBaseline, so the swap handler keeps the history (the cursor already moved).
 		flow::serialize::LoadResult result = restoreGraph(state, ctx.app->nodeFactory());

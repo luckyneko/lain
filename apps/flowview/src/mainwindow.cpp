@@ -12,13 +12,16 @@
 #include <lain/gui/dialogs.h> // lastDirectory / setLastDirectory (the persisted dialog folder)
 #include <lain/gui/dock.h>	  // the docking seam (no imgui_internal in the app)
 #include <lain/gui/gui.h>	  // IsAnyItemActive (coalesce a drag into one undo snapshot)
+#include <lain/gui/nodes.h>	  // SelectNode (re-select after an undo/redo restore)
 
 #include <archimedes/archimedes.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace flowview
 {
@@ -160,6 +163,20 @@ namespace flowview
 				m_ctx.undo.reset(std::move(*m_ctx.pendingBaseline));
 				m_ctx.pendingBaseline.reset();
 			}
+			else
+			{
+				// An Undo/Redo restore: re-select the nodes that were selected before it (by ordinal,
+				// mapped onto the remapped ids), so a param-drag undo doesn't drop the selection — and
+				// the selection-driven Inspector keeps showing the node. onGraphReplaced cleared the
+				// selection just above; this puts it back.
+				const std::vector<flow::NodeId> ids = appDelegate.graph().nodeIds();
+				for (const std::size_t ordinal : m_ctx.pendingReselect)
+				{
+					if (ordinal < ids.size())
+						gui::nodes::SelectNode(static_cast<int>(ids[ordinal].value()));
+				}
+			}
+			m_ctx.pendingReselect.clear();
 			m_ctx.pendingSnapshot = false; // the swap itself is never an undoable edit
 		}
 
