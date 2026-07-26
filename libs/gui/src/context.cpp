@@ -1,11 +1,12 @@
 #include "lain/gui/context.h"
 
-#include <archimedes/acmVulkanInterop.h>
-#include <archimedes/archimedes.h>
 #include <lain/app/application.h>
 #include <lain/app/window.h>
 #include <lain/image/convert.h> // normalise any image to RGBA8 (the bridge's sampled format)
 #include <lain/image/image.h>
+
+#include <archimedes/acmVulkanInterop.h>
+#include <archimedes/archimedes.h>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>

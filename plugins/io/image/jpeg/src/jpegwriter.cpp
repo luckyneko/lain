@@ -4,6 +4,7 @@
 #include <lain/image/image.h>
 #include <lain/image/pixelformat.h>
 #include <lain/memory/buffer.h>
+
 #include <stb_image_write.h> // declarations only; the impl is compiled in addStb's TU
 
 #include <cstddef>

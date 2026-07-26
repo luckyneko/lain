@@ -6,6 +6,7 @@
 #include "lain/log/log.h"
 
 #include <catch2/catch_test_macros.hpp>
+
 #include <string>
 
 using lain::log::Level;

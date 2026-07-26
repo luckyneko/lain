@@ -1,6 +1,7 @@
 #include "lain/core/paths.h"
 
 #include <catch2/catch_test_macros.hpp>
+
 #include <filesystem>
 
 using lain::core::configDir;

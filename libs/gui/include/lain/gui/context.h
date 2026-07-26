@@ -1,7 +1,8 @@
 #pragma once
 
-#include <archimedes/acmForward.h>
 #include <lain/gui/texture.h> // gui::Texture (returned by upload)
+
+#include <archimedes/acmForward.h>
 
 #include <memory>
 #include <string>

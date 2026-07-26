@@ -32,9 +32,15 @@ IncludeCategories:
   # Category 2: Project-local headers (using double quotes)
   - Regex: '^"([^"]+)"'
     Priority: 2
-  # Category 3: Third-party library headers (e.g., boost, gtest)
-  - Regex: '^<([^"]+)\.h>'
+  # Category 3: Second-party — lain's own <lain/...> libraries. Listed before the general
+  # third-party rule below because a lain header also matches it, and the first match wins.
+  - Regex: '^<lain/'
     Priority: 3
-  # Category 4: Standard Library and System headers (using angle brackets)
-  - Regex: '^<([^>]+)>'
+  # Category 4: Third-party library headers — angle includes with a header extension (.h/.hpp):
+  # archimedes, imgui, fmt, png/tiff/stb, catch2 (.hpp), … The extension is what separates these
+  # from the standard library, whose headers are extensionless (<vector>, <cstddef>).
+  - Regex: '^<([^"]+)\.(h|hpp)>'
     Priority: 4
+  # Category 5: Standard Library and System headers — extensionless angle includes (<vector>, …)
+  - Regex: '^<([^>]+)>'
+    Priority: 5

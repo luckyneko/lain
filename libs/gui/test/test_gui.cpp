@@ -9,6 +9,7 @@
 #include <lain/math/types.h>
 
 #include <catch2/catch_test_macros.hpp>
+
 #include <string>
 
 TEST_CASE("ImGui is re-exposed under lain::gui", "[gui]")

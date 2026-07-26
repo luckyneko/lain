@@ -1,8 +1,9 @@
 #include "lain/gui/texture.h"
 
-#include <imgui_impl_vulkan.h>
 #include <lain/image/convert.h> // normalise to RGBA8 (a gui::Texture is always RGBA8)
 #include <lain/image/image.h>
+
+#include <imgui_impl_vulkan.h>
 #include <vulkan/vulkan.h> // VkDescriptorSet — the ImGui descriptor behind an ImTextureID
 
 #include <utility>

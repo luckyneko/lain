@@ -8,9 +8,10 @@
 #include "lain/app/window.h"
 #include "lain/app/windowdelegate.h"
 
-#include <archimedes/archimedes.h>
 #include <lain/core/time.h>
 #include <lain/log/log.h>
+
+#include <archimedes/archimedes.h>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>

@@ -10,8 +10,9 @@
 #include "lain/flow/porttyperegistry.h"
 #include "testnodes.h" // ConstInt — an int source to wire into a dynamic pin
 
-#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
 #include <string>
 
 using namespace lain::flow;

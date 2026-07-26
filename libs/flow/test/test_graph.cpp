@@ -5,8 +5,9 @@
 #include "lain/flow/graph.h"
 #include "lain/flow/scheduler.h"
 
-#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <typeindex>

@@ -7,10 +7,11 @@
 #include <lain/io/data/writer.h>
 #include <lain/memory/buffer.h>
 
+#include <nlohmann/json.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <vector>

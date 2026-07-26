@@ -10,6 +10,7 @@
 #include "testnodes.h" // AddInt — a compute node to route a boundary value through
 
 #include <catch2/catch_test_macros.hpp>
+
 #include <typeindex>
 
 using namespace lain::flow;

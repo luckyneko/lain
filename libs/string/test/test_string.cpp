@@ -7,6 +7,7 @@
 #include <lain/core/version.h>
 
 #include <catch2/catch_test_macros.hpp>
+
 #include <string>
 
 using lain::core::Version;

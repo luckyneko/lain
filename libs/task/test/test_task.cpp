@@ -4,8 +4,9 @@
 
 #include "lain/task/task.h"
 
-#include <atomic>
 #include <catch2/catch_test_macros.hpp>
+
+#include <atomic>
 #include <vector>
 
 TEST_CASE("lain::task runs a flow and honours edges", "[task]")

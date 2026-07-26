@@ -13,6 +13,7 @@
 #include <lain/flow/porttyperegistry.h>
 
 #include <catch2/catch_test_macros.hpp>
+
 #include <string>
 
 using lain::core::Factory;

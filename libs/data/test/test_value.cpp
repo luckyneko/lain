@@ -3,6 +3,7 @@
 #include "lain/data/value.h"
 
 #include <catch2/catch_test_macros.hpp>
+
 #include <cstdint>
 
 using lain::data::Value;

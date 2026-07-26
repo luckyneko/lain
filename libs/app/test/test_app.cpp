@@ -10,13 +10,14 @@
 #include "lain/app/window.h"
 #include "lain/app/windowdelegate.h"
 
-#include <archimedes/archimedes.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/scheduler.h>
 #include <lain/log/log.h>
 #include <lain/meta/enums.h>
 
+#include <archimedes/archimedes.h>
 #include <catch2/catch_test_macros.hpp>
+
 #include <cstdlib>
 #include <vector>
 

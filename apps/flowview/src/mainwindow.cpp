@@ -5,7 +5,6 @@
 #include "panes/canvasids.h" // collectLayout (canvas positions for a snapshot)
 #include "session.h"		 // loadSession / saveSession (reopen the last graph, restore the dialog folder)
 
-#include <archimedes/archimedes.h>
 #include <lain/app/application.h>
 #include <lain/app/window.h>
 #include <lain/core/paths.h> // core::configDir (~/.flowview for the layout ini)
@@ -13,6 +12,8 @@
 #include <lain/gui/dialogs.h> // lastDirectory / setLastDirectory (the persisted dialog folder)
 #include <lain/gui/dock.h>	  // the docking seam (no imgui_internal in the app)
 #include <lain/gui/gui.h>	  // IsAnyItemActive (coalesce a drag into one undo snapshot)
+
+#include <archimedes/archimedes.h>
 
 #include <cstdint>
 #include <filesystem>
