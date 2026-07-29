@@ -152,12 +152,12 @@ TEST_CASE("the editor section round-trips opaquely, re-keyed to loaded ids", "[f
 
 	const LoadResult result = fromValue(doc, factory, codecs);
 	REQUIRE(result.clean());
-	REQUIRE(result.editor.size() == 1);
+	REQUIRE(result.editor.nodes.size() == 1);
 
 	// Locate the node by name, not by position: the graph's own boundary pair holds the first ids.
 	const Node* loadedSink = nodeNamed(result.graph, "Sink");
 	REQUIRE(loadedSink != nullptr);
 	const NodeId loadedId = loadedSink->id();
-	REQUIRE(result.editor.count(loadedId) == 1); // re-keyed to it
-	REQUIRE(result.editor.at(loadedId).find("x")->asDouble() == 10.0);
+	REQUIRE(result.editor.nodes.count(loadedId) == 1); // re-keyed to it
+	REQUIRE(result.editor.nodes.at(loadedId).find("x")->asDouble() == 10.0);
 }

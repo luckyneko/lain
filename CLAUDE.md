@@ -186,14 +186,31 @@ that **keeps the canvas selection across an undo/redo** (selected nodes captured
 `nodeIds()` — stable across the load's fresh-id remap — and re-selected after the swap; New/Open still
 clear, since they carry a `pendingBaseline`).
 
-### Update 2026-07-29 — M5 (group nodes) designed; slices 1–4 built
+### Update 2026-07-29 — M5 (group nodes) designed; slices 1–5 built
 
 **Group nodes / subgraphs were grilled and designed** — see the new **Milestone 5** section in
 [WORK.md](WORK.md), **[ADR-0009](docs/adr/0009-group-nodes-flattened-into-one-execution-plan.md)**
 (the scheduler flattens all nesting into one execution plan; `Node::innerGraph()`; virtual `dirty()`),
 **[ADR-0010](docs/adr/0010-inline-vs-linked-groups-no-prefab-overrides.md)** (inline vs linked groups,
 the interface cache, links are recipe references and never runtime shares, overrides deferred), and
-the vocabulary added to [CONTEXT.md](CONTEXT.md). Four of six slices are built:
+the vocabulary added to [CONTEXT.md](CONTEXT.md). Five of six slices are built — only the
+flowview navigation/palette slice remains, so groups are complete in the engine but not yet reachable
+from the UI:
+
+**Slice 5 — nested serialization.** The format splits as designed: a **body** is `{nodes, edges,
+editor}`, a **document** is a body plus `{version}`; `toValue`/`fromValue` are thin wrappers over
+recursive `bodyToValue`/`loadBody`. An inline group embeds a body under `"graph"`; a linked group
+writes `"source"` + `"interface"`. **A group's own ports are never stored** — `edit::syncGroupPorts`
+re-derives them from the rebuilt inner boundary *before* that level's edges resolve, which is what lets
+the parent's name-addressed edges land. The **`TemplateResolver`** (`source → {key, document}`) is
+injected since core does no file I/O, and having **no** resolver is a legitimate mode: every linked
+group then loads unresolved from its interface cache (what `flowview list` wants). An unresolved link
+rebuilds its cached pins onto the inner boundary nodes and mirrors them outward, so a placeholder is a
+real graph with the right face — and re-saving it is **byte-lossless**, making a broken link repairable
+rather than destructive. Rectification diffs the cache against the resolved template and reports a
+vanished or retyped pin. `LoadResult::editor` is now an **`EditorTree {nodes, groups}`** (an implicit
+conversion from `EditorData` kept every save-side call site unchanged). `ctest` **326/326**; the cycle
+guard was verified by deletion — a self-linking template **SIGSEGVs** without it.
 
 **Slice 4 — `edit::syncGroupPorts`.** Reconciles a group's outer ports against its inner boundary
 pins (**remove → rename → add**, so a name freed in the pass is reusable), returning

@@ -32,6 +32,27 @@ namespace lain::flow::serialize
 	// file id.
 	using EditorData = std::map<NodeId, data::Value>;
 
+	// Editor metadata for a whole NESTED graph: this graph's per-node blobs, plus a subtree per group
+	// node for the graph it contains. It mirrors the graph's own nesting, so the load's fresh-id
+	// remap recurses exactly as the load does, and a host descending into a group walks down `groups`
+	// to find that level's layout.
+	//
+	// A flat EditorData converts implicitly: a graph with no groups is a tree with no subtrees, so
+	// every caller that has only root-level layout keeps working unchanged.
+	struct EditorTree
+	{
+		EditorData nodes;					 // this graph's per-node blobs
+		std::map<NodeId, EditorTree> groups; // per group node, its inner graph's tree
+
+		EditorTree() = default;
+		EditorTree(EditorData nodes) // NOLINT(google-explicit-constructor) — a flat layout IS a tree
+			: nodes(std::move(nodes))
+		{
+		}
+
+		bool empty() const { return nodes.empty() && groups.empty(); }
+	};
+
 	// The outcome of loading a Graph: a best-effort Graph plus what went wrong + the re-keyed editor
 	// metadata. clean() == a full, issue-free load. A partial load is still an INVARIANT-VALID Graph
 	// (it is rebuilt through Graph's primitives), just possibly incomplete — the engine reports, the
@@ -40,7 +61,7 @@ namespace lain::flow::serialize
 	{
 		Graph graph;
 		std::vector<LoadIssue> issues;
-		EditorData editor; // adapter metadata, re-keyed to this graph's node ids
+		EditorTree editor; // adapter metadata, re-keyed to this graph's node ids, nesting included
 
 		bool clean() const { return issues.empty(); }
 	};

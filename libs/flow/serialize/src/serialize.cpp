@@ -1,5 +1,7 @@
 #include "lain/flow/serialize/serialize.h"
 
+#include <lain/flow/edit.h>				// syncGroupPorts — a loaded group re-derives its ports
+#include <lain/flow/group.h>			// GroupNode / LinkedGroupNode — the recursion's subject
 #include <lain/flow/porttyperegistry.h> // addPortOfType / portTypeKey (+ DynamicPortsNode)
 #include <lain/log/log.h>
 #include <lain/meta/enums.h>
@@ -8,9 +10,11 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 namespace lain::flow::serialize
 {
@@ -50,7 +54,53 @@ namespace lain::flow::serialize
 
 	// --- save -----------------------------------------------------------------
 
-	static data::Value nodeToValue(const Node& node, std::int64_t fileId, const std::string& kind, const ValueCodecs& codecs)
+	static data::Value bodyToValue(const Graph& graph, const core::Factory<Node>& factory, const ValueCodecs& codecs, const EditorTree& editor);
+
+	// A linked group's interface cache, taken from the LIVE inner boundary at save time (so what we
+	// record is what this parent actually last saw), falling back to the node's stored cache when the
+	// link is unresolved — otherwise saving an unresolved link would erase the very cache that lets
+	// it be repaired.
+	static data::Value interfaceToValue(const LinkedGroupNode& linked)
+	{
+		const auto pinsOf = [](const std::vector<PinSpec>& specs)
+		{
+			data::Value arr = data::Value::array();
+			for (const PinSpec& spec : specs)
+			{
+				data::Value pin = data::Value::object();
+				pin.set("name", data::Value(spec.name));
+				pin.set("type", data::Value(spec.typeKey));
+				arr.push(std::move(pin));
+			}
+			return arr;
+		};
+
+		std::vector<PinSpec> inputs;
+		std::vector<PinSpec> outputs;
+		if (linked.resolved())
+		{
+			const Graph& inner = linked.inner();
+			const GroupInputNode& boundaryIn = const_cast<Graph&>(inner).boundaryInputNode();
+			for (PortIndex i = 0; i < boundaryIn.outputCount(); ++i)
+				inputs.push_back(PinSpec{boundaryIn.output(i).name(), portTypeKey(boundaryIn.output(i).type())});
+			const GroupOutputNode& boundaryOut = const_cast<Graph&>(inner).boundaryOutputNode();
+			for (PortIndex i = 0; i < boundaryOut.inputCount(); ++i)
+				outputs.push_back(PinSpec{boundaryOut.input(i).name(), portTypeKey(boundaryOut.input(i).type())});
+		}
+		else
+		{
+			inputs = linked.cachedInputs();
+			outputs = linked.cachedOutputs();
+		}
+
+		data::Value out = data::Value::object();
+		out.set("inputs", pinsOf(inputs));
+		out.set("outputs", pinsOf(outputs));
+		return out;
+	}
+
+	static data::Value nodeToValue(const Node& node, std::int64_t fileId, const std::string& kind, const ValueCodecs& codecs,
+								   const core::Factory<Node>& factory, const EditorTree* subtree)
 	{
 		data::Value out = data::Value::object();
 		out.set("id", data::Value(fileId));
@@ -93,10 +143,25 @@ namespace lain::flow::serialize
 				out.set("dynamicPins", std::move(pins));
 		}
 
+		// A group node. Its OWN ports are never stored: they are derived from the inner boundary and
+		// re-created by edit::syncGroupPorts on load, so storing them would be a second source of
+		// truth. A LINKED group stores where its recipe lives plus the interface cache; an INLINE one
+		// stores the recipe itself, as a nested body — the same shape as the document root.
+		if (const auto* linked = dynamic_cast<const LinkedGroupNode*>(&node))
+		{
+			out.set("source", data::Value(linked->source()));
+			out.set("interface", interfaceToValue(*linked));
+		}
+		else if (const auto* group = dynamic_cast<const GroupNode*>(&node))
+		{
+			static const EditorTree empty;
+			out.set("graph", bodyToValue(group->inner(), factory, codecs, subtree ? *subtree : empty));
+		}
+
 		return out;
 	}
 
-	data::Value toValue(const Graph& graph, const core::Factory<Node>& factory, const ValueCodecs& codecs, const EditorData& editor)
+	static data::Value bodyToValue(const Graph& graph, const core::Factory<Node>& factory, const ValueCodecs& codecs, const EditorTree& editor)
 	{
 		// Assign dense, canonical file ids (1..N) in id order — so a file we write is canonical and
 		// round-trips byte-identically.
@@ -111,7 +176,8 @@ namespace lain::flow::serialize
 			if (kind.empty())
 				continue; // unregistered node type — can't name it; skip (best-effort save)
 			fileId[id] = next;
-			nodes.push(nodeToValue(node, next, kind, codecs));
+			const auto subtree = editor.groups.find(id);
+			nodes.push(nodeToValue(node, next, kind, codecs, factory, subtree == editor.groups.end() ? nullptr : &subtree->second));
 			++next;
 		}
 
@@ -145,17 +211,31 @@ namespace lain::flow::serialize
 		data::Value editorSection = data::Value::object();
 		for (const auto& [liveId, fid] : fileId)
 		{
-			const auto it = editor.find(liveId);
-			if (it != editor.end() && !it->second.isNull())
+			const auto it = editor.nodes.find(liveId);
+			if (it != editor.nodes.end() && !it->second.isNull())
 				editorSection.set(std::to_string(fid), it->second);
 		}
 
+		data::Value body = data::Value::object();
+		body.set("nodes", std::move(nodes));
+		body.set("edges", std::move(edges));
+		if (const data::Value::Object* obj = editorSection.asObject(); obj && !obj->empty())
+			body.set("editor", std::move(editorSection));
+		return body;
+	}
+
+	data::Value toValue(const Graph& graph, const core::Factory<Node>& factory, const ValueCodecs& codecs, const EditorTree& editor)
+	{
+		// A document is a body plus the format version. `version` is set first so it leads the file
+		// (the json codec preserves insertion order, which is what keeps a save diff-clean).
 		data::Value document = data::Value::object();
 		document.set("version", data::Value(kFormatVersion));
-		document.set("nodes", std::move(nodes));
-		document.set("edges", std::move(edges));
-		if (const data::Value::Object* obj = editorSection.asObject(); obj && !obj->empty())
-			document.set("editor", std::move(editorSection));
+		data::Value body = bodyToValue(graph, factory, codecs, editor);
+		if (const data::Value::Object* obj = body.asObject())
+		{
+			for (const auto& [key, value] : *obj)
+				document.set(key, value);
+		}
 		return document;
 	}
 
@@ -212,33 +292,180 @@ namespace lain::flow::serialize
 		return PortAddress{live->second, port->id()};
 	}
 
-	LoadResult fromValue(const data::Value& document, const core::Factory<Node>& factory, const ValueCodecs& codecs)
+	// Everything a load needs that is the same at every level of nesting. Passed by reference down
+	// the recursion so issues accumulate in one list and the cycle guard is shared.
+	struct LoadContext
 	{
-		LoadResult result;
-		const auto error = [&](std::string msg)
+		const core::Factory<Node>& factory;
+		const ValueCodecs& codecs;
+		const TemplateResolver& resolver;
+		std::vector<LoadIssue>& issues;
+		std::set<std::string> resolving; // canonical template keys currently being loaded
+
+		void error(std::string msg)
 		{
 			log::error("flow::serialize: {}", msg);
-			result.issues.push_back({Severity::Error, std::move(msg)});
-		};
-		const auto warn = [&](std::string msg)
+			issues.push_back({Severity::Error, std::move(msg)});
+		}
+		void warn(std::string msg)
 		{
 			log::warn("flow::serialize: {}", msg);
-			result.issues.push_back({Severity::Warning, std::move(msg)});
+			issues.push_back({Severity::Warning, std::move(msg)});
+		}
+	};
+
+	static void loadBody(const data::Value& body, Graph& graph, EditorTree& editor, LoadContext& ctx);
+
+	// The pins a linked group's template actually exposes, as PinSpecs — what the cached interface is
+	// rectified against.
+	static void currentInterface(Graph& inner, std::vector<PinSpec>& inputs, std::vector<PinSpec>& outputs)
+	{
+		GroupInputNode& boundaryIn = inner.boundaryInputNode();
+		for (PortIndex i = 0; i < boundaryIn.outputCount(); ++i)
+			inputs.push_back(PinSpec{boundaryIn.output(i).name(), portTypeKey(boundaryIn.output(i).type())});
+		GroupOutputNode& boundaryOut = inner.boundaryOutputNode();
+		for (PortIndex i = 0; i < boundaryOut.inputCount(); ++i)
+			outputs.push_back(PinSpec{boundaryOut.input(i).name(), portTypeKey(boundaryOut.input(i).type())});
+	}
+
+	// Read a stored { inputs:[{name,type}], outputs:[...] } interface cache.
+	static void readInterface(const data::Value& stored, std::vector<PinSpec>& inputs, std::vector<PinSpec>& outputs)
+	{
+		const auto readPins = [](const data::Value* arrV, std::vector<PinSpec>& out)
+		{
+			const data::Value::Array* arr = arrV ? arrV->asArray() : nullptr;
+			if (!arr)
+				return;
+			for (const data::Value& pin : *arr)
+			{
+				const data::Value* nameV = pin.find("name");
+				const data::Value* typeV = pin.find("type");
+				const std::string* name = nameV ? nameV->asString() : nullptr;
+				const std::string* type = typeV ? typeV->asString() : nullptr;
+				if (name && type)
+					out.push_back(PinSpec{*name, *type});
+			}
 		};
+		readPins(stored.find("inputs"), inputs);
+		readPins(stored.find("outputs"), outputs);
+	}
+
+	// Compare what the parent last saw against what the template now offers, and REPORT the
+	// differences. A pin that vanished or changed type will cost the parent an edge (edges are
+	// addressed by port name), so the user is told rather than left to discover missing wiring.
+	static void rectify(const std::string& source, const std::vector<PinSpec>& cached, const std::vector<PinSpec>& current,
+						const char* side, LoadContext& ctx)
+	{
+		for (const PinSpec& was : cached)
+		{
+			const auto now = std::find_if(current.begin(), current.end(), [&](const PinSpec& p)
+										  { return p.name == was.name; });
+			if (now == current.end())
+			{
+				ctx.warn("template \"" + source + "\": " + side + " \"" + was.name + "\" no longer exists — connections to it are dropped");
+			}
+			else if (now->typeKey != was.typeKey)
+			{
+				ctx.warn("template \"" + source + "\": " + side + " \"" + was.name + "\" changed type (" + was.typeKey + " -> " + now->typeKey + ")");
+			}
+		}
+	}
+
+	// Rebuild a linked group: resolve its template, load that document into the inner graph, and
+	// rectify against the cache. When the template cannot be resolved — missing file, no resolver, or
+	// a recursive link — the group loads as an UNRESOLVED PLACEHOLDER whose pins come from the cache,
+	// so the parent's wiring survives and saving is lossless.
+	static void loadLinkedGroup(LinkedGroupNode& linked, const data::Value& nodeV, LoadContext& ctx)
+	{
+		const data::Value* sourceV = nodeV.find("source");
+		const std::string* source = sourceV ? sourceV->asString() : nullptr;
+		linked.setSource(source ? *source : std::string{});
+
+		std::vector<PinSpec> cachedIn;
+		std::vector<PinSpec> cachedOut;
+		if (const data::Value* interfaceV = nodeV.find("interface"))
+			readInterface(*interfaceV, cachedIn, cachedOut);
+		linked.setCachedInterface(cachedIn, cachedOut);
+
+		std::optional<ResolvedTemplate> resolved;
+		if (source && !source->empty() && ctx.resolver)
+			resolved = ctx.resolver(*source);
+
+		if (resolved && ctx.resolving.count(resolved->key) != 0)
+		{
+			ctx.error("recursive template \"" + *source + "\" — the link is not followed");
+			resolved.reset();
+		}
+
+		if (!resolved)
+		{
+			// Unresolved: rebuild the interface from the cache so the parent's edges still land.
+			// The pins go on the inner boundary nodes (which are DynamicPortsNodes), and
+			// syncGroupPorts mirrors them outward — so a placeholder is a real, empty graph with the
+			// right face, not a special case downstream.
+			if (source && !source->empty())
+				ctx.warn("template \"" + *source + "\" could not be resolved — the group loads unresolved from its cached interface");
+			for (const PinSpec& pin : cachedIn)
+			{
+				if (addPortOfType(linked.inner().boundaryInputNode(), pin.typeKey, pin.name) == PortId{})
+					ctx.warn("unresolved template pin \"" + pin.name + "\" (type \"" + pin.typeKey + "\") could not be rebuilt");
+			}
+			for (const PinSpec& pin : cachedOut)
+			{
+				if (addPortOfType(linked.inner().boundaryOutputNode(), pin.typeKey, pin.name) == PortId{})
+					ctx.warn("unresolved template pin \"" + pin.name + "\" (type \"" + pin.typeKey + "\") could not be rebuilt");
+			}
+			linked.setResolved(false);
+			return;
+		}
+
+		ctx.resolving.insert(resolved->key);
+		EditorTree ignored; // a template's own layout belongs to that document, not to this parent
+		loadBody(resolved->document, linked.inner(), ignored, ctx);
+		ctx.resolving.erase(resolved->key);
+		linked.setResolved(true);
+
+		std::vector<PinSpec> currentIn;
+		std::vector<PinSpec> currentOut;
+		currentInterface(linked.inner(), currentIn, currentOut);
+		rectify(linked.source(), cachedIn, currentIn, "input", ctx);
+		rectify(linked.source(), cachedOut, currentOut, "output", ctx);
+	}
+
+	LoadResult fromValue(const data::Value& document, const core::Factory<Node>& factory, const ValueCodecs& codecs,
+						 const TemplateResolver& resolver)
+	{
+		LoadResult result;
+		LoadContext ctx{factory, codecs, resolver, result.issues, {}};
 
 		// Version gate: a too-new document can't be half-understood -> fatal (empty graph).
 		if (const data::Value* versionV = document.find("version"))
 		{
 			if (const auto version = asInteger(*versionV); version && *version > kFormatVersion)
 			{
-				error("document version " + std::to_string(*version) + " is newer than supported " + std::to_string(kFormatVersion));
+				ctx.error("document version " + std::to_string(*version) + " is newer than supported " + std::to_string(kFormatVersion));
 				return result;
 			}
 		}
 		else
 		{
-			warn("document has no version field — assuming current");
+			ctx.warn("document has no version field — assuming current");
 		}
+
+		loadBody(document, result.graph, result.editor, ctx);
+		return result;
+	}
+
+	// One level of the load: nodes (recursing into groups), then edges, then the editor blobs.
+	// `graph` is filled in place, so a group's inner graph loads through the same path as the root.
+	void loadBody(const data::Value& document, Graph& graph, EditorTree& editor, LoadContext& ctx)
+	{
+		const auto error = [&](std::string msg)
+		{ ctx.error(std::move(msg)); };
+		const auto warn = [&](std::string msg)
+		{ ctx.warn(std::move(msg)); };
+		const core::Factory<Node>& factory = ctx.factory;
+		const ValueCodecs& codecs = ctx.codecs;
 
 		// Nodes: create by kind (fresh ids), read params. Build the fileId -> live NodeId remap.
 		std::map<std::int64_t, NodeId> remap;
@@ -276,18 +503,18 @@ namespace lain::flow::serialize
 					if (adoptedInput)
 						warn("document has a second GroupInput — merged into the graph's own");
 					adoptedInput = true;
-					liveId = result.graph.boundaryInputNode().id();
+					liveId = graph.boundaryInputNode().id();
 				}
 				else if (dynamic_cast<const GroupOutputNode*>(node.get()) != nullptr)
 				{
 					if (adoptedOutput)
 						warn("document has a second GroupOutput — merged into the graph's own");
 					adoptedOutput = true;
-					liveId = result.graph.boundaryOutputNode().id();
+					liveId = graph.boundaryOutputNode().id();
 				}
 				else
 				{
-					liveId = result.graph.add(std::move(node));
+					liveId = graph.add(std::move(node));
 				}
 
 				if (liveId == NodeId{})
@@ -296,7 +523,7 @@ namespace lain::flow::serialize
 					continue;
 				}
 				remap[*fileId] = liveId;
-				Node& created = result.graph.node(liveId);
+				Node& created = graph.node(liveId);
 
 				// A user-chosen title (Node::setName) — display only, so an absent/blank one simply
 				// leaves the name the node's constructor gave it.
@@ -335,7 +562,22 @@ namespace lain::flow::serialize
 				}
 
 				if (const data::Value* params = nodeV.find("params"))
-					readParams(created, *params, codecs, result.issues);
+					readParams(created, *params, codecs, ctx.issues);
+
+				// A group node: rebuild what it CONTAINS, then re-derive its own ports from that
+				// inner boundary. Both happen before this level's edges are resolved below, which is
+				// what lets an edge addressing one of the group's ports by name find it.
+				if (auto* linked = dynamic_cast<LinkedGroupNode*>(&created))
+				{
+					loadLinkedGroup(*linked, nodeV, ctx);
+				}
+				else if (auto* group = dynamic_cast<GroupNode*>(&created))
+				{
+					if (const data::Value* innerBody = nodeV.find("graph"))
+						loadBody(*innerBody, group->inner(), editor.groups[liveId], ctx);
+				}
+				if (created.innerGraph() != nullptr)
+					edit::syncGroupPorts(graph, liveId);
 			}
 		}
 
@@ -346,15 +588,15 @@ namespace lain::flow::serialize
 			{
 				const data::Value* fromRef = edgeV.find("from");
 				const data::Value* toRef = edgeV.find("to");
-				const auto from = fromRef ? resolveEndpoint(*fromRef, Port::Direction::Output, result.graph, remap) : std::nullopt;
-				const auto to = toRef ? resolveEndpoint(*toRef, Port::Direction::Input, result.graph, remap) : std::nullopt;
+				const auto from = fromRef ? resolveEndpoint(*fromRef, Port::Direction::Output, graph, remap) : std::nullopt;
+				const auto to = toRef ? resolveEndpoint(*toRef, Port::Direction::Input, graph, remap) : std::nullopt;
 				if (!from || !to)
 				{
 					warn("edge endpoint could not be resolved — skipped");
 					continue;
 				}
 
-				if (const Connection outcome = result.graph.connect(*from, *to); outcome != Connection::Ok)
+				if (const Connection outcome = graph.connect(*from, *to); outcome != Connection::Ok)
 					warn("edge rejected (" + std::string(meta::enums::name(outcome)) + ") — skipped");
 			}
 		}
@@ -371,11 +613,9 @@ namespace lain::flow::serialize
 					if (std::from_chars(key.data(), key.data() + key.size(), fileId).ec != std::errc{})
 						continue; // a non-numeric editor key — ignore
 					if (const auto live = remap.find(fileId); live != remap.end())
-						result.editor[live->second] = blob;
+						editor.nodes[live->second] = blob;
 				}
 			}
 		}
-
-		return result;
 	}
 } // namespace lain::flow::serialize

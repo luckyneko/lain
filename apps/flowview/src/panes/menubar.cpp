@@ -134,7 +134,7 @@ namespace flowview
 
 		// Replace the scene — deferred to end of frame.
 		ctx.loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
-		ctx.pendingLayout = std::move(result.editor);
+		ctx.pendingLayout = std::move(result.editor.nodes);
 		ctx.loadRequested = true;
 		// Baseline the undo history to the loaded document (via the same snapshot path push() uses, so
 		// the first edit's snapshot compares cleanly). Opening resets history — undo doesn't cross it.
@@ -188,7 +188,7 @@ namespace flowview
 		// with NO pendingBaseline, so the swap handler keeps the history (the cursor already moved).
 		flow::serialize::LoadResult result = restoreGraph(state, ctx.app->nodeFactory());
 		ctx.loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
-		ctx.pendingLayout = std::move(result.editor);
+		ctx.pendingLayout = std::move(result.editor.nodes);
 		ctx.loadRequested = true;
 		ctx.dirty = true; // a restored state differs from what's on disk (in general)
 		ctx.loadIssues.clear();

@@ -1106,10 +1106,35 @@ byte-idempotent.
    and the id-collision crossing). Sabotaging sync's direction resolution is caught by the
    idempotence assertion — the scheduler's own resolution is what the crossing test guards, so the
    two paths have separate guards.
-5. **`flow::serialize` — recursion, resolver, cycle guard, `EditorTree`**; inline body + linked
-   source/interface-cache; rectification against the cache on load, each difference a `LoadIssue`.
-   (Boundary-node reuse — the one place the invariant and the loader fight — **already landed in
-   slice 2**, which forced it.)
+5. ✅ **`flow::serialize` — recursion, resolver, cycle guard, `EditorTree`** (2026-07-29). The format
+   splits as designed: a **body** is `{nodes, edges, editor}`, a **document** is a body plus
+   `{version}`. `toValue`/`fromValue` are thin wrappers over `bodyToValue`/`loadBody`, which recurse.
+   An inline group embeds a body under `"graph"`; a linked group writes `"source"` + `"interface"`.
+   `LoadContext` carries factory/codecs/resolver/issues plus the in-flight canonical keys down the
+   recursion. (Boundary-node reuse landed early, in slice 2, which forced it.)
+
+   - **A group's own ports are never serialized.** They are re-derived by `edit::syncGroupPorts` from
+     the rebuilt inner boundary, *before* the level's edges resolve — which is exactly what lets the
+     parent's name-addressed edges land again. One source of truth, not two.
+   - **`TemplateResolver`** = `source → optional<ResolvedTemplate{key, document}>`, injected because
+     core does no file I/O. **No resolver is a legitimate mode, not an error**: every linked group
+     then loads unresolved from its cache — which is what `flowview list` wants.
+   - **Unresolved is a first-class state.** The cached pins are rebuilt onto the inner *boundary
+     nodes* (they are `DynamicPortsNode`s) and mirrored outward by sync, so a placeholder is a real
+     empty graph with the right face rather than a special case downstream. A test proves re-saving
+     an unresolved link is **byte-lossless**, so a broken link is repairable rather than destructive.
+   - **Rectification** diffs the cache against the resolved template and reports a vanished or
+     retyped pin as a `LoadIssue` — the user is told, instead of finding wiring missing later.
+   - **`EditorTree { nodes, groups }`** replaces the flat `EditorData` on `LoadResult`, re-keyed
+     recursively. An implicit `EditorData → EditorTree` conversion kept every save-side call site
+     unchanged; only two flowview lines and three test lines needed `.nodes`.
+
+   Verified: warning-clean; format-clean; `ctest` **326/326** (+6 in `flow/serialize/test/test_group.cpp`:
+   inline round-trip + byte-idempotence, two-level nesting, the nested editor tree, linked-with-resolver
+   running the template's interior, unresolved-keeps-its-face-and-wiring + lossless re-save, rectification
+   reporting, and the recursion refusal). **The cycle guard was verified by removing it: a self-linking
+   template SIGSEGVs** (unbounded recursion), so the guard is load-bearing, not decorative. Flat
+   documents are byte-identical to before — the real scene's `run` / `list` / idempotence are unchanged.
 6. **flowview — navigation + the two palette entries.** Active-graph path + breadcrumb + Back; retarget
    every pane; `Add ▸ Group` (empty inner graph = one GroupInput + one GroupOutput, i.e. `buildNewScene`)
    and `Add ▸ Linked Group…` (file dialog → resolver); read-only affordance + unresolved-link state on
