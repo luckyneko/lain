@@ -19,6 +19,12 @@ apart: logic that belongs to one must not swell another.
 
 - **Scheduler** *(execution layer)* — consumes a Graph and evaluates it (push
   `run`, pull `evaluate`). Execution lives here, never on Graph. See `scheduler.h`.
+  - **Execution plan** — what a Scheduler builds before running: an ordered list of
+    **steps** with dependencies between them, expanded across *every* level of group
+    nesting at once, so a nested graph runs as one flat DAG and never as a nested run
+    (ADR-0009). Both `run` (dirty-closure) and `evaluate` (upstream-cone) build one.
+  - **Dirty closure** — the nodes a `run` must recompute: every dirty node plus everything
+    downstream of one. A group node counts as dirty if anything inside it is.
 
 - **edit** *(editing layer)* — `lain::flow::edit`, a **stateless free-function
   module** over Graph (`edit.h`), peer to Scheduler. Owns editor **policy and
@@ -106,6 +112,11 @@ outputs. (M4 — being built; the vocabulary is settled, the mechanics are in
   of differently-typed pins needs no dynamic ports. _Avoid_: source/sink node (those are
   internal nodes that happen to have no input/output; a boundary node is specifically the
   *interface*).
+  **Invariant: every Graph has exactly one of each.** None would leave the graph with no path
+  in or out; several would be confusing and redundant, since one boundary node already grows
+  dynamic pins. So `Graph` creates the pair on construction, refuses to remove either, and
+  refuses a second — a totality guarantee like acyclicity, not an editor policy. Callers may
+  rely on `boundaryInputNode()` / `boundaryOutputNode()` being non-null.
 - **Bindable input / output** — the unit a host actually binds: a **named, typed pin**
   on a boundary node (a **`BoundaryInput`** / **`BoundaryOutput`** handle), *not* the
   node. `Graph::boundaryInputs()` / `boundaryOutputs()` flatten every boundary node's
@@ -118,9 +129,38 @@ outputs. (M4 — being built; the vocabulary is settled, the mechanics are in
 - **Boundary name** — the stable string that addresses one boundary (`"source"`,
   `"result"`) so a host can bind the right one (a cli arg → an input, an output → a
   file). Distinct from a node's display `name()`.
-- **Group node / subgraph** *(deferred)* — a node containing its own graph, exposing
+- **Group node / subgraph** *(being designed)* — a node containing its own graph, exposing
   selected inner ports as its own via the *same* boundary mechanism; the top-level
   graph is the outermost group. One mechanism at every level.
+- **Inner graph** — the live `Graph` a group node owns. **Always per-node**: two group nodes
+  never share one, because a `Port` holds a persistent value, so sharing would make two
+  instances stomp each other's intermediates. A shared *recipe* is a template reference, never
+  a shared running graph.
+- **Inline group** — a group whose recipe is stored **inside the parent document**. Editable in
+  place; it is part of the parent, so its edits mark the parent dirty and ride the parent's undo
+  history.
+- **Linked group** — a group whose recipe lives in its own document (its **template**), referenced
+  by path. **Read-only in place**: it is exactly what the template says, so a template edit
+  propagates to every linked group that loads it, with no per-instance diff. Per-instance variation
+  is expressed by **exposing the varying value as a boundary pin**, not by overriding inner values.
+  _Avoid_: "instance group" — "instance" stays the ordinary English word.
+- **Template** — the standalone document a linked group is built from. An ordinary graph document;
+  nothing marks it as a template but the fact that something links it.
+- **Interface cache** — the linked group's pin names + types, recorded in the **parent** document
+  beside the template path. Subordinate to the template (which always wins when present); it exists
+  so a missing template degrades to a repairable placeholder with its wiring intact, and so a
+  changed interface can be *diffed* and reported rather than silently dropping edges.
+- **Active graph** — the graph the host's panes are currently pointed at, identified by a
+  **path** of group nodes descended from the root. A host has one; descending into a group
+  retargets the canvas, Inspector, Preview and Issues panes together. **Host binding is
+  root-only** — below the root, a `GroupInputNode`'s values are driven by the parent's edges,
+  so the Interface pane there edits the group's *interface* rather than binding it.
+- **Rectification** — reconciling a linked group against its template on load: pins added,
+  removed, or retyped since the parent was saved are diffed against the **interface cache** and
+  reported, rather than quietly dropping the parent's edges.
+- **Override** *(deferred — prefab-style)* — per-instance divergence from a template's recipe.
+  Deliberately not built: parameterising via boundary pins covers the cases, and overrides need a
+  template-stable address for an inner node plus conflict rules.
 
 ## Port arity — one value, a collection, or many pins
 

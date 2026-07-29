@@ -14,6 +14,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <string>
 
 using lain::core::Factory;
@@ -32,6 +33,10 @@ using lain::flow::serialize::fromValue;
 using lain::flow::serialize::LoadResult;
 using lain::flow::serialize::toValue;
 using lain::flow::serialize::ValueCodecs;
+
+// Every Graph is born with its boundary pair (one GroupInput + one GroupOutput), so nodeCount()
+// is that many more than the nodes a test added itself.
+static constexpr std::size_t kBoundaryNodes = 2;
 
 class IntSink : public Node
 {
@@ -69,9 +74,9 @@ TEST_CASE("dynamic boundary pins replay and edges reconnect by name", "[flow-ser
 	const ValueCodecs codecs;
 
 	Graph graph;
-	const NodeId group = graph.add<GroupInputNode>();
+	GroupInputNode& groupNode = graph.boundaryInputNode(); // the graph's own — added ones are refused
+	const NodeId group = groupNode.id();
 	const NodeId sink = graph.add<IntSink>();
-	auto& groupNode = static_cast<GroupInputNode&>(graph.node(group));
 	const PortId pin = groupNode.addBoundary<int>("a"); // a runtime output pin "a"
 	REQUIRE(pin != PortId{});
 	REQUIRE(graph.connect({group, pin}, {sink, graph.node(sink).input(0).id()}) == Connection::Ok);
@@ -80,7 +85,7 @@ TEST_CASE("dynamic boundary pins replay and edges reconnect by name", "[flow-ser
 
 	const LoadResult result = fromValue(doc, factory, codecs);
 	REQUIRE(result.clean());
-	REQUIRE(result.graph.nodeCount() == 2);
+	REQUIRE(result.graph.nodeCount() == kBoundaryNodes + 1);
 	REQUIRE(result.graph.edges().size() == 1); // the edge reconnected by pin name
 
 	const Node* loadedGroup = nodeNamed(result.graph, "GroupInput");
@@ -112,7 +117,7 @@ TEST_CASE("variadic Merge/Select round-trip: dynamic branches replay, the static
 
 	const LoadResult result = fromValue(doc, factory, codecs);
 	REQUIRE(result.clean());
-	REQUIRE(result.graph.nodeCount() == 2);
+	REQUIRE(result.graph.nodeCount() == kBoundaryNodes + 2);
 
 	const Node* loadedMerge = nodeNamed(result.graph, "Merge");
 	REQUIRE(loadedMerge != nullptr);
@@ -149,7 +154,10 @@ TEST_CASE("the editor section round-trips opaquely, re-keyed to loaded ids", "[f
 	REQUIRE(result.clean());
 	REQUIRE(result.editor.size() == 1);
 
-	const NodeId loadedId = result.graph.nodeIds().front(); // the one node's fresh id
-	REQUIRE(result.editor.count(loadedId) == 1);			// re-keyed to it
+	// Locate the node by name, not by position: the graph's own boundary pair holds the first ids.
+	const Node* loadedSink = nodeNamed(result.graph, "Sink");
+	REQUIRE(loadedSink != nullptr);
+	const NodeId loadedId = loadedSink->id();
+	REQUIRE(result.editor.count(loadedId) == 1); // re-keyed to it
 	REQUIRE(result.editor.at(loadedId).find("x")->asDouble() == 10.0);
 }

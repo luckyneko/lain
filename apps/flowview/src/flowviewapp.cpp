@@ -69,10 +69,8 @@ namespace flowview
 			buildExampleScene(*m_graph, m_nodeFactory);
 			bindDefaultInput(*m_graph, m_size);
 		}
-		else
-		{
-			buildNewScene(*m_graph);
-		}
+		// else: a blank document needs no building — a fresh Graph is already one empty Input +
+		// one empty Output node, and the user grows the interface from the Interface panel's ±.
 		m_scheduler.run(*m_graph);
 		return true;
 	}

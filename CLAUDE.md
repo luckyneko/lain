@@ -186,7 +186,28 @@ that **keeps the canvas selection across an undo/redo** (selected nodes captured
 `nodeIds()` — stable across the load's fresh-id remap — and re-selected after the swap; New/Open still
 clear, since they carry a `pendingBaseline`).
 
-### Update 2026-07-29 — `PortValue` payloads are shared + immutable
+### Update 2026-07-29 — M5 (group nodes) designed; slices 1–2 built
+
+**Group nodes / subgraphs were grilled and designed** — see the new **Milestone 5** section in
+[WORK.md](WORK.md), **[ADR-0009](docs/adr/0009-group-nodes-flattened-into-one-execution-plan.md)**
+(the scheduler flattens all nesting into one execution plan; `Node::innerGraph()`; virtual `dirty()`),
+**[ADR-0010](docs/adr/0010-inline-vs-linked-groups-no-prefab-overrides.md)** (inline vs linked groups,
+the interface cache, links are recipe references and never runtime shares, overrides deferred), and
+the vocabulary added to [CONTEXT.md](CONTEXT.md). Two of six slices are built:
+
+**Slice 2 — the group seam + the boundary-pair invariant.** New **`flow/group.h`**: `GroupNode` owns
+an inner `Graph` and answers the new `Node::innerGraph()`; `LinkedGroupNode` is a thin subclass adding
+the template `source()` + the `PinSpec` interface cache. `Node::dirty()` is virtual so a group is dirty
+when anything inside it is (recursing through nesting). **Every `Graph` is now born with exactly one
+`GroupInputNode` + one `GroupOutputNode`** — `removeNode` refuses either, `add` refuses a second, and
+`boundaryInputNode()`/`boundaryOutputNode()` return **references**, which retired both the RTTI scans
+and every null check. That invariant forced the loader-reuse rule up from slice 5: `fromValue`
+**adopts** a document's boundary pair onto the graph's own rather than adding duplicates. `ctest`
+**306/306**; a loaded example scene holds 4 nodes, not 6; round-trip still byte-idempotent.
+Not yet built: port mirroring is declared but `edit::syncGroupPorts` is slice 4, and the scheduler does
+not expand groups yet (slice 3), so a group node is inert for now.
+
+### Slice 1 — `PortValue` payloads are shared + immutable
 
 `Scheduler::populateInputs` copies a `PortValue` **per edge, per run**, and an `image::Image` copy is a
 **deep pixel copy** — so every edge of every graph was paying a full payload copy on every run. The slot

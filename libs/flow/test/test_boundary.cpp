@@ -18,10 +18,10 @@ using namespace lain::flow;
 TEST_CASE("a host-set input pin crosses to an output pin through a run", "[flow][boundary]")
 {
 	Graph g;
-	const NodeId in = g.add<GroupInputNode>();
-	const NodeId out = g.add<GroupOutputNode>();
-	auto& gin = static_cast<GroupInputNode&>(g.node(in));
-	auto& gout = static_cast<GroupOutputNode&>(g.node(out));
+	GroupInputNode& gin = g.boundaryInputNode(); // every Graph is born with its boundary pair
+	GroupOutputNode& gout = g.boundaryOutputNode();
+	const NodeId in = gin.id();
+	const NodeId out = gout.id();
 	const PortId src = gin.addBoundary<int>("source");
 	const PortId res = gout.addBoundary<int>("result");
 	REQUIRE(g.connect(in, 0, out, 0) == Connection::Ok); // first output -> first input
@@ -42,10 +42,10 @@ TEST_CASE("one node carries several independently-typed, independently-bound pin
 	// A single GroupInputNode with two pins of different types, each bound + read back — the
 	// point of the multi-port shape (pins differ in type with no dynamic/runtime-typed ports).
 	Graph g;
-	const NodeId in = g.add<GroupInputNode>();
-	const NodeId out = g.add<GroupOutputNode>();
-	auto& gin = static_cast<GroupInputNode&>(g.node(in));
-	auto& gout = static_cast<GroupOutputNode&>(g.node(out));
+	GroupInputNode& gin = g.boundaryInputNode(); // every Graph is born with its boundary pair
+	GroupOutputNode& gout = g.boundaryOutputNode();
+	const NodeId in = gin.id();
+	const NodeId out = gout.id();
 	const PortId pi = gin.addBoundary<int>("count");
 	const PortId pf = gin.addBoundary<float>("scale");
 	const PortId oi = gout.addBoundary<int>("count");
@@ -70,12 +70,12 @@ TEST_CASE("a boundary value flows through an intermediate compute node", "[flow]
 	// GroupInput -> AddInt(+ a constant) -> GroupOutput: the value drives real computation,
 	// not a straight passthrough.
 	Graph g;
-	const NodeId in = g.add<GroupInputNode>();
+	GroupInputNode& gin = g.boundaryInputNode();
+	GroupOutputNode& gout = g.boundaryOutputNode();
+	const NodeId in = gin.id();
+	const NodeId out = gout.id();
 	const NodeId k = g.add<test::ConstInt>(100);
 	const NodeId add = g.add<test::AddInt>();
-	const NodeId out = g.add<GroupOutputNode>();
-	auto& gin = static_cast<GroupInputNode&>(g.node(in));
-	auto& gout = static_cast<GroupOutputNode&>(g.node(out));
 	const PortId src = gin.addBoundary<int>("source");
 	const PortId res = gout.addBoundary<int>("result");
 	REQUIRE(g.connect(in, 0, add, 0) == Connection::Ok);
@@ -93,10 +93,10 @@ TEST_CASE("a boundary value flows through an intermediate compute node", "[flow]
 TEST_CASE("re-binding an input pin refires it on the next run", "[flow][boundary]")
 {
 	Graph g;
-	const NodeId in = g.add<GroupInputNode>();
-	const NodeId out = g.add<GroupOutputNode>();
-	auto& gin = static_cast<GroupInputNode&>(g.node(in));
-	auto& gout = static_cast<GroupOutputNode&>(g.node(out));
+	GroupInputNode& gin = g.boundaryInputNode(); // every Graph is born with its boundary pair
+	GroupOutputNode& gout = g.boundaryOutputNode();
+	const NodeId in = gin.id();
+	const NodeId out = gout.id();
 	const PortId src = gin.addBoundary<int>("source");
 	const PortId res = gout.addBoundary<int>("result");
 	REQUIRE(g.connect(in, 0, out, 0) == Connection::Ok);
@@ -117,10 +117,10 @@ TEST_CASE("re-binding an input pin refires it on the next run", "[flow][boundary
 TEST_CASE("an unbound input pin delivers an empty value", "[flow][boundary]")
 {
 	Graph g;
-	const NodeId in = g.add<GroupInputNode>();
-	const NodeId out = g.add<GroupOutputNode>();
-	auto& gin = static_cast<GroupInputNode&>(g.node(in));
-	auto& gout = static_cast<GroupOutputNode&>(g.node(out));
+	GroupInputNode& gin = g.boundaryInputNode(); // every Graph is born with its boundary pair
+	GroupOutputNode& gout = g.boundaryOutputNode();
+	const NodeId in = gin.id();
+	const NodeId out = gout.id();
 	gin.addBoundary<int>("source"); // added but never bound
 	const PortId res = gout.addBoundary<int>("result");
 	REQUIRE(g.connect(in, 0, out, 0) == Connection::Ok);
@@ -132,11 +132,10 @@ TEST_CASE("an unbound input pin delivers an empty value", "[flow][boundary]")
 TEST_CASE("Graph flattens boundary pins with name and type", "[flow][boundary]")
 {
 	Graph g;
-	const NodeId in = g.add<GroupInputNode>();
+	GroupInputNode& gin = g.boundaryInputNode();
+	GroupOutputNode& gout = g.boundaryOutputNode();
+	const NodeId in = gin.id();
 	g.add<test::ConstInt>(0); // an ordinary node — not a boundary, must be excluded
-	const NodeId out = g.add<GroupOutputNode>();
-	auto& gin = static_cast<GroupInputNode&>(g.node(in));
-	auto& gout = static_cast<GroupOutputNode&>(g.node(out));
 	gin.addBoundary<int>("count");
 	gin.addBoundary<float>("scale");
 	gout.addBoundary<int>("result");
@@ -156,4 +155,48 @@ TEST_CASE("Graph flattens boundary pins with name and type", "[flow][boundary]")
 	v.set<int>(9);
 	inputs[0].setValue(std::move(v));
 	REQUIRE(static_cast<GroupInputNode&>(g.node(in)).boundaryCount() == 2);
+}
+
+TEST_CASE("every Graph is born with exactly one boundary node of each kind", "[flow][boundary]")
+{
+	Graph g;
+	REQUIRE(g.nodeCount() == 2); // the pair, and nothing else
+	REQUIRE(g.boundaryInputs().empty());
+	REQUIRE(g.boundaryOutputs().empty()); // present, but pinless
+
+	// The accessors resolve to real, distinct nodes — no null check needed anywhere.
+	REQUIRE(g.boundaryInputNode().id() != NodeId{});
+	REQUIRE(g.boundaryOutputNode().id() != NodeId{});
+	REQUIRE(g.boundaryInputNode().id() != g.boundaryOutputNode().id());
+}
+
+TEST_CASE("the boundary pair cannot be removed or duplicated", "[flow][boundary]")
+{
+	Graph g;
+	const NodeId in = g.boundaryInputNode().id();
+	const NodeId out = g.boundaryOutputNode().id();
+
+	SECTION("removeNode refuses either — a graph never loses its way in or out")
+	{
+		REQUIRE_FALSE(g.removeNode(in));
+		REQUIRE_FALSE(g.removeNode(out));
+		REQUIRE(g.nodeCount() == 2);
+		REQUIRE(g.boundaryInputNode().id() == in); // still the same node, still reachable
+	}
+
+	SECTION("add refuses a second of either kind")
+	{
+		REQUIRE(g.add<GroupInputNode>() == NodeId{});
+		REQUIRE(g.add<GroupOutputNode>() == NodeId{});
+		REQUIRE(g.nodeCount() == 2);
+	}
+
+	SECTION("an ordinary node is still added and removed freely")
+	{
+		const NodeId k = g.add<test::ConstInt>(1);
+		REQUIRE(k != NodeId{});
+		REQUIRE(g.nodeCount() == 3);
+		REQUIRE(g.removeNode(k));
+		REQUIRE(g.nodeCount() == 2);
+	}
 }

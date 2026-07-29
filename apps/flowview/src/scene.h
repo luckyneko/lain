@@ -37,11 +37,6 @@ namespace flowview
 	// (populated by registerExampleNodes). Shared by both modes.
 	void buildExampleScene(lain::flow::Graph& graph, const lain::core::Factory<lain::flow::Node>& factory);
 
-	// A blank starting document: one GroupInputNode + one GroupOutputNode, each with NO boundary pins —
-	// grow the interface from the Interface panel's ±. The default for a fresh gui session and File ▸ New
-	// (the example scene is opt-in via --example).
-	void buildNewScene(lain::flow::Graph& graph);
-
 	// Bind the graph's first boundary input to a generated `size`x`size` gradient image, so a
 	// fresh gui-mode / bare `--headless` shows a result on launch; the Interface panel (gui) or
 	// --input (cli) rebinds it to a real file.

@@ -9,10 +9,15 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <vector>
 
 using namespace lain::flow;
 using namespace lain::flow::test;
+
+// Every Graph is born with its boundary pair (one GroupInput + one GroupOutput), so nodeCount()
+// is that many more than the nodes a test added itself.
+static constexpr std::size_t kBoundaryNodes = 2;
 
 // The edge feeding (to, inPort), or nullptr when the input is free.
 static const Graph::Edge* edgeInto(const Graph& g, NodeId to, PortIndex inPort)
@@ -100,7 +105,7 @@ TEST_CASE("remove deletes selected nodes and their incident edges", "[edit]")
 	REQUIRE(g.connect(c2, 0, add, 1) == Connection::Ok);
 
 	REQUIRE(edit::remove(g, {c1}, {}));
-	REQUIRE(g.nodeCount() == 2);
+	REQUIRE(g.nodeCount() == kBoundaryNodes + 2);
 	REQUIRE(g.edges().size() == 1);				// c1 -> add went with c1
 	REQUIRE(g.edges().front().from.node == c2); // c2 -> add survives
 }
@@ -115,7 +120,7 @@ TEST_CASE("remove deletes selected edges, leaving nodes in place", "[edit]")
 	const std::vector<Graph::Edge> edges = g.edges(); // resolve before mutating
 	REQUIRE(edit::remove(g, {}, edges));
 	REQUIRE(g.edges().empty());
-	REQUIRE(g.nodeCount() == 2); // both nodes remain
+	REQUIRE(g.nodeCount() == kBoundaryNodes + 2); // both nodes remain
 }
 
 TEST_CASE("remove tolerates an edge co-selected with the node it touches", "[edit]")
@@ -131,7 +136,7 @@ TEST_CASE("remove tolerates an edge co-selected with the node it touches", "[edi
 	// the explicit disconnect is a harmless no-op — no double-remove, no crash.
 	const std::vector<Graph::Edge> edges = {g.edges().front()}; // the c1 -> add edge
 	REQUIRE(edit::remove(g, {c1}, edges));
-	REQUIRE(g.nodeCount() == 2);
+	REQUIRE(g.nodeCount() == kBoundaryNodes + 2);
 	REQUIRE(g.edges().size() == 1);
 	REQUIRE(g.edges().front().from.node == c2);
 }
@@ -141,7 +146,7 @@ TEST_CASE("remove of an empty selection changes nothing", "[edit]")
 	Graph g;
 	g.add<ConstInt>(1);
 	REQUIRE_FALSE(edit::remove(g, {}, {}));
-	REQUIRE(g.nodeCount() == 1);
+	REQUIRE(g.nodeCount() == kBoundaryNodes + 1);
 }
 
 TEST_CASE("disconnect removes a single edge", "[edit]")
@@ -160,7 +165,7 @@ TEST_CASE("addNode adopts a constructed node and returns its id", "[edit]")
 {
 	Graph g;
 	const NodeId id = edit::addNode(g, std::make_unique<AddInt>());
-	REQUIRE(g.nodeCount() == 1);
+	REQUIRE(g.nodeCount() == kBoundaryNodes + 1);
 	REQUIRE(g.node(id).name() == "Add");
 	REQUIRE(g.node(id).id() == id);
 }

@@ -8,11 +8,16 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <typeindex>
 
 using namespace lain::flow;
+
+// Every Graph is born with its boundary pair (one GroupInput + one GroupOutput), so nodeCount()
+// is that many more than the nodes a test added itself.
+static constexpr std::size_t kBoundaryNodes = 2;
 
 namespace
 {
@@ -155,7 +160,7 @@ TEST_CASE("topoOrder places sources before dependents", "[graph]")
 	REQUIRE(g.connect(c2, 0, add, 1) == Connection::Ok);
 
 	const std::vector<NodeId>& order = g.topoOrder();
-	REQUIRE(order.size() == 3);
+	REQUIRE(order.size() == kBoundaryNodes + 3); // topo covers every node, the boundary pair included
 	REQUIRE(indexOf(order, add) > indexOf(order, c1));
 	REQUIRE(indexOf(order, add) > indexOf(order, c2));
 }
@@ -194,7 +199,7 @@ TEST_CASE("add adopts an already-constructed node", "[graph]")
 	Graph g;
 	const NodeId id = g.add(std::make_unique<AddInt>()); // the factory path
 
-	REQUIRE(g.nodeCount() == 1);
+	REQUIRE(g.nodeCount() == kBoundaryNodes + 1);
 	REQUIRE(g.node(id).name() == "Add");
 	REQUIRE(g.node(id).id() == id); // the graph stamped the id on the adopted node
 }
@@ -209,7 +214,7 @@ TEST_CASE("removeNode drops the node and its edges, leaving other ids valid", "[
 	REQUIRE(g.connect(c2, 0, add, 1) == Connection::Ok);
 
 	REQUIRE(g.removeNode(c1)); // remove a source
-	REQUIRE(g.nodeCount() == 2);
+	REQUIRE(g.nodeCount() == kBoundaryNodes + 2);
 	REQUIRE(g.edges().size() == 1);				// the c1 -> add edge went with it
 	REQUIRE(g.edges().front().from.node == c2); // the c2 -> add edge survives
 
@@ -217,7 +222,7 @@ TEST_CASE("removeNode drops the node and its edges, leaving other ids valid", "[
 	REQUIRE(g.node(c2).name() == "ConstInt");
 	REQUIRE(g.node(add).name() == "Add");
 	const std::vector<NodeId>& order = g.topoOrder();
-	REQUIRE(order.size() == 2);
+	REQUIRE(order.size() == kBoundaryNodes + 2);
 	REQUIRE(std::find(order.begin(), order.end(), c1) == order.end());
 
 	// The freed input can take a new source; removing an absent node is a no-op.

@@ -242,6 +242,8 @@ namespace lain::flow::serialize
 
 		// Nodes: create by kind (fresh ids), read params. Build the fileId -> live NodeId remap.
 		std::map<std::int64_t, NodeId> remap;
+		bool adoptedInput = false; // the document's boundary pair maps onto the graph's own (below)
+		bool adoptedOutput = false;
 		if (const data::Value* nodes = document.find("nodes"); nodes && nodes->asArray())
 		{
 			for (const data::Value& nodeV : *nodes->asArray())
@@ -263,7 +265,36 @@ namespace lain::flow::serialize
 					continue;
 				}
 
-				const NodeId liveId = result.graph.add(std::move(node));
+				// Boundary nodes are ADOPTED, not added. Every Graph is constructed with exactly one
+				// GroupInputNode + one GroupOutputNode (the interface invariant), so the document's
+				// pair maps onto the pair that already exists — the graph's is pinless, so the
+				// document's dynamic pins replay onto it exactly as they would onto a fresh node.
+				// Adding would be refused, and this node's edges would be lost with it.
+				NodeId liveId;
+				if (dynamic_cast<const GroupInputNode*>(node.get()) != nullptr)
+				{
+					if (adoptedInput)
+						warn("document has a second GroupInput — merged into the graph's own");
+					adoptedInput = true;
+					liveId = result.graph.boundaryInputNode().id();
+				}
+				else if (dynamic_cast<const GroupOutputNode*>(node.get()) != nullptr)
+				{
+					if (adoptedOutput)
+						warn("document has a second GroupOutput — merged into the graph's own");
+					adoptedOutput = true;
+					liveId = result.graph.boundaryOutputNode().id();
+				}
+				else
+				{
+					liveId = result.graph.add(std::move(node));
+				}
+
+				if (liveId == NodeId{})
+				{
+					error("node of kind \"" + *kind + "\" was refused by the graph — node and its edges skipped");
+					continue;
+				}
 				remap[*fileId] = liveId;
 				Node& created = result.graph.node(liveId);
 

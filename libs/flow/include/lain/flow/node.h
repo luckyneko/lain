@@ -11,6 +11,8 @@
 
 namespace lain::flow
 {
+	class Graph; // a node may CONTAIN one (see innerGraph) — the group-node seam
+
 	// Abstract base for a graph node. A subclass declares its ports in its
 	// constructor (addInput / addOutput) and implements compute().
 	//
@@ -71,9 +73,20 @@ namespace lain::flow
 		Param& param(PortIndex i) { return m_params[i]; }
 		const Param& param(PortIndex i) const { return m_params[i]; }
 
-		bool dirty() const { return m_dirty; }
+		// Whether this node needs recomputing. VIRTUAL because a node that contains a graph (a group
+		// node) is dirty when anything *inside* it is: otherwise an edit made inside a group would
+		// never reach the outer dirty closure, and the group would keep serving a stale result.
+		virtual bool dirty() const { return m_dirty; }
 		void markDirty() { m_dirty = true; }
 		void clearDirty() { m_dirty = false; }
+
+		// The graph this node CONTAINS, or nullptr for an ordinary node. The scheduler asks this of
+		// every node while building its execution plan and expands the whole nesting tree into one
+		// flat plan (ADR-0009) — so it asks the structural question it actually has ("do you contain
+		// a graph?") rather than dynamic_cast-ing for a class identity it doesn't otherwise care
+		// about, and a future graph-containing node needs no scheduler change.
+		virtual Graph* innerGraph() { return nullptr; }
+		const Graph* innerGraph() const { return const_cast<Node*>(this)->innerGraph(); }
 
 		// Whether this node is READY to compute: every REQUIRED input carries a value (ADR-0007).
 		// Node-local — it inspects only this node's own input ports. The scheduler gates compute() on

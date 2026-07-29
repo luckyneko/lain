@@ -11,6 +11,7 @@ add_executable(test-flow
 	test_nodes.cpp
 	test_params.cpp
 	test_boundary.cpp
+	test_group.cpp
 	test_dynamicports.cpp
 	test_serialize_support.cpp
 	test_incremental.cpp

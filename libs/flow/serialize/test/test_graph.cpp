@@ -14,6 +14,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -28,6 +29,10 @@ using lain::flow::serialize::LoadResult;
 using lain::flow::serialize::Severity;
 using lain::flow::serialize::toValue;
 using lain::flow::serialize::ValueCodecs;
+
+// Every Graph is born with its boundary pair (one GroupInput + one GroupOutput), so nodeCount()
+// is that many more than the nodes a test added itself.
+static constexpr std::size_t kBoundaryNodes = 2;
 
 class SourceNode : public Node
 {
@@ -102,7 +107,7 @@ TEST_CASE("a graph round-trips through data::Value (structure + params + edges)"
 
 	const LoadResult result = fromValue(doc, factory, codecs);
 	REQUIRE(result.clean());
-	REQUIRE(result.graph.nodeCount() == 2);
+	REQUIRE(result.graph.nodeCount() == kBoundaryNodes + 2);
 	REQUIRE(result.graph.edges().size() == 1);
 
 	const Node* source = nodeNamed(result.graph, "Source");
@@ -149,7 +154,7 @@ TEST_CASE("a graph survives Graph -> Value -> JSON -> Value -> Graph", "[flow-se
 
 	const LoadResult result = fromValue(*back, factory, codecs);
 	REQUIRE(result.clean()); // Int/UInt tolerance: node ids + the seed survive the JSON collapse
-	REQUIRE(result.graph.nodeCount() == 2);
+	REQUIRE(result.graph.nodeCount() == kBoundaryNodes + 2);
 	REQUIRE(result.graph.edges().size() == 1);
 	REQUIRE(nodeNamed(result.graph, "Source")->param(0).get<int>() == 42);
 }
@@ -166,7 +171,7 @@ TEST_CASE("a too-new document version is a fatal load", "[flow-serialize]")
 
 	const LoadResult result = fromValue(doc, factory, codecs);
 	REQUIRE_FALSE(result.clean());
-	REQUIRE(result.graph.nodeCount() == 0);
+	REQUIRE(result.graph.nodeCount() == kBoundaryNodes + 0);
 	REQUIRE(result.issues.front().severity == Severity::Error);
 }
 
@@ -188,5 +193,5 @@ TEST_CASE("an unknown node kind is skipped with an Error issue", "[flow-serializ
 
 	const LoadResult result = fromValue(doc, factory, codecs);
 	REQUIRE_FALSE(result.clean());
-	REQUIRE(result.graph.nodeCount() == 0);
+	REQUIRE(result.graph.nodeCount() == kBoundaryNodes + 0);
 }

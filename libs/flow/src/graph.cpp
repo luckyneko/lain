@@ -8,7 +8,15 @@
 
 namespace lain::flow
 {
-	NodeId Graph::add(std::unique_ptr<Node> node)
+	Graph::Graph()
+	{
+		// The interface pair (see graph.h). Minted through the private adopt path, not add(), which
+		// refuses exactly these types once the pair exists.
+		m_boundaryIn = adopt(std::make_unique<GroupInputNode>());
+		m_boundaryOut = adopt(std::make_unique<GroupOutputNode>());
+	}
+
+	NodeId Graph::adopt(std::unique_ptr<Node> node)
 	{
 		const NodeId id = m_nextId;
 		m_nextId = NodeId{m_nextId.value() + 1};
@@ -16,6 +24,22 @@ namespace lain::flow
 		m_nodes.emplace(id, std::move(node));
 		m_topoValid = false;
 		return id;
+	}
+
+	NodeId Graph::add(std::unique_ptr<Node> node)
+	{
+		if (!node)
+			return NodeId{};
+
+		// The graph already owns its interface pair, so a second of either is refused rather than
+		// silently accepted and ignored by boundaryInputNode() / boundaryOutputNode(). A loader
+		// rebuilding a saved graph adopts the existing pair instead of adding the document's.
+		if (dynamic_cast<const GroupInputNode*>(node.get()) != nullptr && m_boundaryIn != NodeId{})
+			return NodeId{};
+		if (dynamic_cast<const GroupOutputNode*>(node.get()) != nullptr && m_boundaryOut != NodeId{})
+			return NodeId{};
+
+		return adopt(std::move(node));
 	}
 
 	std::vector<NodeId> Graph::nodeIds() const
@@ -29,6 +53,12 @@ namespace lain::flow
 
 	bool Graph::removeNode(NodeId id)
 	{
+		// The interface pair is not removable — see the Graph constructor. Refusing here (rather
+		// than in the editing layer) keeps the invariant total: no gesture, loader or paste path can
+		// leave a graph without a way in or out.
+		if (isBoundary(id))
+			return false;
+
 		const auto it = m_nodes.find(id);
 		if (it == m_nodes.end())
 			return false;
@@ -209,47 +239,33 @@ namespace lain::flow
 		return false;
 	}
 
+	// The pin lists and the node accessors all resolve through the invariant pair, so the RTTI scan
+	// these used to do is gone: there is exactly one node of each kind, and its id is known.
 	std::vector<BoundaryInput> Graph::boundaryInputs()
 	{
+		GroupInputNode& node = boundaryInputNode();
 		std::vector<BoundaryInput> out;
-		for (auto& entry : m_nodes)
-		{
-			if (auto* node = dynamic_cast<GroupInputNode*>(entry.second.get()))
-			{
-				for (PortIndex i = 0; i < node->outputCount(); ++i) // a GroupInput's outputs are the graph's inputs
-					out.push_back(BoundaryInput{node, node->output(i).id()});
-			}
-		}
+		for (PortIndex i = 0; i < node.outputCount(); ++i) // a GroupInput's outputs are the graph's inputs
+			out.push_back(BoundaryInput{&node, node.output(i).id()});
 		return out;
 	}
 
 	std::vector<BoundaryOutput> Graph::boundaryOutputs()
 	{
+		GroupOutputNode& node = boundaryOutputNode();
 		std::vector<BoundaryOutput> out;
-		for (auto& entry : m_nodes)
-		{
-			if (auto* node = dynamic_cast<GroupOutputNode*>(entry.second.get()))
-			{
-				for (PortIndex i = 0; i < node->inputCount(); ++i) // a GroupOutput's inputs are the graph's outputs
-					out.push_back(BoundaryOutput{node, node->input(i).id()});
-			}
-		}
+		for (PortIndex i = 0; i < node.inputCount(); ++i) // a GroupOutput's inputs are the graph's outputs
+			out.push_back(BoundaryOutput{&node, node.input(i).id()});
 		return out;
 	}
 
-	GroupInputNode* Graph::boundaryInputNode()
+	GroupInputNode& Graph::boundaryInputNode()
 	{
-		for (auto& entry : m_nodes)
-			if (auto* node = dynamic_cast<GroupInputNode*>(entry.second.get()))
-				return node;
-		return nullptr;
+		return static_cast<GroupInputNode&>(node(m_boundaryIn));
 	}
 
-	GroupOutputNode* Graph::boundaryOutputNode()
+	GroupOutputNode& Graph::boundaryOutputNode()
 	{
-		for (auto& entry : m_nodes)
-			if (auto* node = dynamic_cast<GroupOutputNode*>(entry.second.get()))
-				return node;
-		return nullptr;
+		return static_cast<GroupOutputNode&>(node(m_boundaryOut));
 	}
 } // namespace lain::flow

@@ -27,11 +27,9 @@ namespace flowview
 
 	void MenuBarPane::newGraph(AppContext& ctx)
 	{
-		// A blank document — one empty Input + one empty Output node. Deferred to end of frame like
-		// every graph swap.
-		auto blank = std::make_unique<flow::Graph>();
-		buildNewScene(*blank);
-		ctx.loadedGraph = std::move(blank);
+		// A blank document — a fresh Graph is already one empty Input + one empty Output node.
+		// Deferred to end of frame like every graph swap.
+		ctx.loadedGraph = std::make_unique<flow::Graph>();
 		ctx.pendingLayout.clear();
 		ctx.loadRequested = true;
 		ctx.pendingBaseline = snapshotGraph(*ctx.loadedGraph, ctx.app->nodeFactory()); // reset undo history to the blank doc

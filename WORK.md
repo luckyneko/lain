@@ -943,6 +943,139 @@ and the pack happens only at the imnodes boundary. What remains is the *typed su
 still a bare `namespace nodes = ImNodes;`, and `panes/graphpane.cpp` still names `ImNodesCol_*` (lines
 ~219–232), `ImNodesPinShape*` (~261, ~278), and `ImNodesAttributeFlags_*` (~254) directly.
 
+## Milestone 5 — group nodes / subgraphs (grilled 2026-07-29)
+
+A **group node** contains its own graph and exposes selected inner ports as its own, through the
+*same* boundary mechanism the top-level graph uses — "the top-level Graph is the outermost group",
+made real. Two kinds: an **inline group** (recipe stored in the parent document, editable in place)
+and a **linked group** (recipe in an external **template** document, read-only in place, rebuilt
+from the template on every load). Design locked in **[ADR-0009](docs/adr/0009-group-nodes-flattened-into-one-execution-plan.md)**
+(execution) and **[ADR-0010](docs/adr/0010-inline-vs-linked-groups-no-prefab-overrides.md)**
+(document model); vocabulary in [CONTEXT.md](CONTEXT.md).
+
+**The decisions, in one place:**
+
+- **Execution: the scheduler flattens.** One **execution plan** spans every nesting level — steps
+  (`{Graph*, NodeId}` + a group **entry**/**exit** step pair) with step-index dependencies.
+  `SerialScheduler` walks it; `ParallelScheduler` emplaces a task per step + a `precede` per plan
+  edge. No nested runs, no subflows, so it needs nothing beyond `lain::task`'s existing
+  `emplace`/`precede`/`run` — and survives the planned Taskflow → `multi` swap untouched.
+  `evaluate` builds a plan too (upstream-cone mode), so there is **one** expansion mechanism and
+  `GroupNode::compute()` is a no-op.
+- **`Node` gains `virtual Graph* innerGraph()`** (null by default) — the scheduler asks the
+  structural question, not an RTTI identity question, and it's on the hot path. `Node::dirty()`
+  becomes virtual (a group is dirty if anything inside it is). The entry step **gates its publish**
+  (`own dirty || an outer predecessor ran`), else an inner param edit would destroy inner
+  incrementality.
+- **Ports mirror inner boundary pins by identity, not name** — the group holds real `Port`s plus an
+  `outerPortId → innerPortId` map, so an inner pin *rename* keeps the outer wiring. Reconciliation is
+  **`edit::syncGroupPorts(Graph& parent, NodeId group)`**, not a node-local method: a vanished pin may
+  have a wired outer port, and `Graph::removePort` refuses connected pins by design — so the gesture
+  disconnects first, exactly like `edit::removePort`.
+- **A link is a recipe reference, never a runtime share** — every group owns its own inner `Graph`
+  (a `Port` holds a persistent value; sharing would race under the flat plan).
+- **Format:** a **graph body** is `{nodes, edges, editor}`; a **document** is `{version, <body>}`.
+  Inline embeds a body under `"graph"`; linked writes `"source"` (relative to the parent document) +
+  an **interface cache** `{inputs:[{name,type}], outputs:[…]}`. `flow::serialize` recurses (RTTI
+  there — the question really is *which kind*), takes an injected `source → {canonical key, document}`
+  **resolver** (core does no I/O), and refuses recursive templates by canonical key.
+  `LoadResult::editor` becomes an `EditorTree { EditorData nodes; map<NodeId, EditorTree> groups; }`.
+  Document `version` stays 1 — the encoding is unchanged and an unknown kind already degrades.
+- **Navigation is uniform:** double-click descends into *either* kind; the host tracks an **active
+  graph** path (as *ordinals* into `nodeIds()`, since an undo restore remaps every id — the same fix
+  the selection-preservation change used) with a breadcrumb and Back. A linked group is navigable and
+  inspectable but **read-only**; an explicit **Edit Template…** does the guarded document swap (parent
+  on a return stack) and states its blast radius. Inline edits mark the parent dirty and ride the
+  parent's undo history for free — an inline body is part of the parent snapshot.
+
+### Prerequisite slice — shared, immutable `PortValue` payloads ✅ (2026-07-29)
+
+`image::Image`'s copy is a **deep pixel copy** and `populateInputs` copies a `PortValue` **per edge,
+per run** — so a 10-node image chain did 10 full image copies per run, and a group boundary would
+multiply it (~4 in, ~3 out, vs 1 for a plain edge). Fixed first, as a standalone no-behaviour-change
+commit (the shape of the `PortId` rename commit).
+
+**What landed:** the slot stores `std::shared_ptr<const void>` + a `std::type_index` (rather than a
+`std::any` holding a `shared_ptr<const T>` — one indirection instead of two; the shared_ptr keeps `T`'s
+deleter, the type_index restores the identity `shared_ptr<void>` loses). `set<T>` moves the value into
+a fresh shared const allocation and **rebinds** the slot, so an earlier copy keeps the old payload and
+a recompute never disturbs a value someone else is reading. `get<T>()` still returns `const T&` and
+still throws `std::bad_any_cast` on a mismatch — the exception type is *deliberately* retained from the
+`std::any` era so the documented contract and every caller are unchanged. Zero call-site changes across
+`flow`, `flow-example`, `flow::serialize` and flowview: every existing use was already a const read, and
+`TintNode`'s `image::Image src = input(m_in).get<image::Image>()` still takes its deliberate copy.
+
+**Verified:** warning-clean strict build; `ctest` **299/299**; two new guards — a `PortValue`-level test
+that copies/assignment/vector-fill share one payload address and that `set` rebinds, and a
+scheduler-level test that a fan-out graph run twice performs **zero** payload copies and that each
+consumer's input is *the producer's own object*. Headless `run` still flows source→tint→blur→result with
+each stage's value distinct (proving no shared payload is mutated through), and save→load→save is still
+byte-idempotent.
+
+### Build order
+
+1. **`PortValue` shared payloads** (above) — standalone, green on the existing suite + a copy-counting
+   test.
+2. ✅ **flow core — the group seam** (2026-07-29). `flow/group.h`: `GroupNode` / `LinkedGroupNode`
+   (a thin subclass — the kinds differ only in what they serialize and whether in-place editing is
+   refused, so port mirroring / plan expansion / dirty propagation are written once), the
+   outer↔inner `PortId` map, and the interface cache as `PinSpec {name, typeKey}` lists (typeKey is
+   a port-type-registry key — already core — so an unresolved link builds real placeholder pins).
+   `Node::innerGraph()` (virtual, null by default) + virtual `Node::dirty()`.
+   **Boundary-pair invariant**: `Graph`'s constructor mints one `GroupInputNode` + one
+   `GroupOutputNode` through a private `adopt()`, `removeNode` refuses either, `add` refuses a
+   second (returning the null `NodeId`, as `addDynamicPort` does), and `boundaryInputNode()` /
+   `boundaryOutputNode()` now return **references** — which also retired the RTTI scan in all four
+   boundary accessors (the ids are cached members) and the null checks in `interfacepane.cpp`.
+   `buildNewScene` was **deleted** rather than left as a no-op: a fresh `Graph` *is* a blank
+   document, and a do-nothing builder callers must remember to call would imply otherwise.
+
+   **The loader-reuse rule moved here from slice 5** — it isn't optional once the invariant exists.
+   Boundary nodes are factory-registered and appear in documents as ordinary nodes, so `fromValue`
+   now **adopts** a document's `groupInput`/`groupOutput` onto the graph's existing pair (the pair is
+   pinless, so the document's dynamic pins replay onto it exactly as onto a fresh node) instead of
+   adding a duplicate that `add` would refuse — which would have dropped every edge touching it. A
+   second of either kind in one document warns and merges.
+
+   Verified: warning-clean; format-clean; `ctest` **306/306** (+7: the invariant's refusals, and
+   `test_group.cpp` over ownership / non-sharing / dirty propagation incl. a nested group / the id
+   map surviving a rename / the linked variant's source + cache). Headless `run` still flows
+   source→tint→blur→result, `list` reports the boundary, and save→load→save is byte-idempotent with
+   the loaded graph holding **4** nodes, not 6. Churn was as predicted: `nodeCount()`/`topoOrder`
+   assertions now read `kBoundaryNodes + N`, and tests that added their own boundary nodes use
+   `graph.boundaryInputNode()`.
+3. **Scheduler — the execution plan.** `runOrder` → `buildPlan` with recursive expansion + entry/exit
+   steps + publish gating; both schedulers lowered onto it; `evaluate` on an upstream-cone plan.
+   Driver-free tests: nested run correctness, incremental across levels, suppression crossing a
+   boundary (ADR-0007 for free), and **serial/parallel equivalence** over a nested graph.
+4. **`edit::syncGroupPorts`** — reconcile outer ports against inner boundary pins, disconnecting
+   incident outer edges for dropped pins and reporting them.
+5. **`flow::serialize` — recursion, resolver, cycle guard, `EditorTree`**; inline body + linked
+   source/interface-cache; rectification against the cache on load, each difference a `LoadIssue`.
+   (Boundary-node reuse — the one place the invariant and the loader fight — **already landed in
+   slice 2**, which forced it.)
+6. **flowview — navigation + the two palette entries.** Active-graph path + breadcrumb + Back; retarget
+   every pane; `Add ▸ Group` (empty inner graph = one GroupInput + one GroupOutput, i.e. `buildNewScene`)
+   and `Add ▸ Linked Group…` (file dialog → resolver); read-only affordance + unresolved-link state on
+   the canvas; `Edit Template…` through the existing `PendingSwap` guard with a return stack; Issues
+   rows for rectification. Interface pane below the root edits the interface and hides **Bind file…**.
+
+### Deferred (designed, not built)
+
+- **`Group Selected`** — move a selection into a new inner graph, computing the **cut-set**: each
+  distinct *outer output port* feeding the selection → **one** boundary input pin (dedupe by source
+  `PortAddress`, so a fan-out doesn't spray duplicate pins); each distinct *inner output port* feeding
+  outside → **one** boundary output pin; pin names derived from the mirrored port and uniquified via
+  `hasPortNamed`; group placed at the selection centroid; moved nodes' editor metadata migrates into
+  the inner body; **refuse if the selection contains a boundary node** (grouping the graph's own
+  interface would leave the document with no interface).
+- **`Ungroup`** (splice inner nodes into the parent with fresh ids, resolving each boundary pin back to
+  direct edges), **`Save as Template`** (inline → linked), **`Make Local`** (linked → inline).
+- **Prefab overrides** — per-instance divergence from a template. Needs a template-stable inner-node
+  address + conflict rules; ADR-0010 explains why parameterising via boundary pins is preferred.
+- **Plan caching** across runs; **file-watch** on templates (manual *Reload linked groups* first);
+  a **registered node-serializer seam** if third-party structural node kinds ever appear.
+
 ## Backlog (deferred — don't build speculatively)
 
 ### Tier A — when a real graph demands it

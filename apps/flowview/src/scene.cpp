@@ -77,25 +77,20 @@ namespace flowview
 		// readable image output. Every node's image ports are index 0, so each edge is
 		// type-compatible by construction; the blur dogfoods lain::image's operation catalog
 		// (convolve) end-to-end. The host binds "source" and reads "result".
-		const flow::NodeId in = graph.add<flow::GroupInputNode>();
-		static_cast<flow::GroupInputNode&>(graph.node(in)).addBoundary<image::Image>("source");
+		// The boundary pair already exists (every Graph is born with its interface) — the scene only
+		// gives it pins.
+		flow::GroupInputNode& inNode = graph.boundaryInputNode();
+		flow::GroupOutputNode& outNode = graph.boundaryOutputNode();
+		inNode.addBoundary<image::Image>("source");
+		outNode.addBoundary<image::Image>("result");
+		const flow::NodeId in = inNode.id();
+		const flow::NodeId out = outNode.id();
 		const flow::NodeId tint = graph.add(factory.create(kTintKey));
 		const flow::NodeId blur = graph.add(factory.create(kBlurKey));
-		const flow::NodeId out = graph.add<flow::GroupOutputNode>();
-		static_cast<flow::GroupOutputNode&>(graph.node(out)).addBoundary<image::Image>("result");
 
 		graph.connect(in, 0, tint, 0);
 		graph.connect(tint, 0, blur, 0);
 		graph.connect(blur, 0, out, 0);
-	}
-
-	void buildNewScene(flow::Graph& graph)
-	{
-		// The blank document: just the two boundary nodes, no pins. The user grows the interface (and
-		// adds filters between) from there. They're added directly (like the example's boundary nodes),
-		// but must also be in the factory so save/load can name them (registerExampleNodes covers that).
-		graph.add<flow::GroupInputNode>();
-		graph.add<flow::GroupOutputNode>();
 	}
 
 	void bindDefaultInput(flow::Graph& graph, std::uint32_t size)

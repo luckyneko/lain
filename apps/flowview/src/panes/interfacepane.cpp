@@ -133,8 +133,9 @@ namespace flowview
 		// Inputs: per GroupInput node, each pin (editable name, bound thumbnail, Bind…, ×) + a "+".
 		gui::TextUnformatted("Inputs");
 		gui::Separator();
-		if (flow::GroupInputNode* node = graph.boundaryInputNode())
 		{
+			// No null check: the boundary pair is a Graph invariant. The block scopes the ID push.
+			flow::GroupInputNode* const node = &graph.boundaryInputNode();
 			gui::PushID(static_cast<int>(node->id().value()));
 			for (flow::PortIndex i = 0; i < node->outputCount(); ++i)
 			{
@@ -198,8 +199,9 @@ namespace flowview
 		gui::Spacing();
 		gui::TextUnformatted("Outputs");
 		gui::Separator();
-		if (flow::GroupOutputNode* node = graph.boundaryOutputNode())
 		{
+			// No null check: the boundary pair is a Graph invariant. The block scopes the ID push.
+			flow::GroupOutputNode* const node = &graph.boundaryOutputNode();
 			gui::PushID(static_cast<int>(node->id().value()));
 			for (flow::PortIndex i = 0; i < node->inputCount(); ++i)
 			{
