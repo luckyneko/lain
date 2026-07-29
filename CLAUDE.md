@@ -44,6 +44,7 @@ Verified this session: warning-clean strict build of every lib+app; `ctest` 85/8
 (the `[gpu]`/window tests SKIP — the sandbox has no Metal access); `flowview
 --headless` dumps the `gradient → tint` graph. The live-driver GPU round-trip and (once
 the seam lands) gui-mode remain to be eyeballed on a Metal-capable session.
+*(**Superseded** — that eyeball happened; see the 2026-07-23 update below.)*
 
 ### Update 2026-07-11 — archimedes bumped to `develop` tip (`61a890f`); gui adopts `interop::withQueue`
 
@@ -85,6 +86,7 @@ window/`[gpu]` tests SKIP — no Metal in the sandbox); `flowview --headless` ro
 the `GroupInput → Tint → Blur → GroupOutput` graph. gui-mode's `withQueue`-wrapped
 `newFrame` runs only on a live driver and was **not** exercised here — it needs an eyeball
 on a Metal-capable session, same standing gap as the rest of gui-mode.
+*(**Superseded** — that eyeball happened; see the 2026-07-23 update below.)*
 
 ### Update 2026-07-12 — graph serialization built (data + io::data + flow::serialize + flowview)
 
@@ -179,7 +181,26 @@ edit records nothing** (bind values aren't serialized). A `pendingBaseline` dist
 swap (**resets** history) from an Undo/Redo swap (keeps it). **Edit menu + Ctrl+Z / Ctrl+Shift+Z.**
 Defaults: node *moves* not undoable, Open resets the stack. First app-level unit tests
 (`apps/flowview/test`, 8 cases over the real `undo.cpp`); `ctest` **297/297**. The interactive
-restore/coalesce/redo-truncate behaviour still needs a live eyeball.
+restore/coalesce/redo-truncate behaviour was **live-verified 2026-07-26**, along with the follow-up fix
+that **keeps the canvas selection across an undo/redo** (selected nodes captured as ordinals into
+`nodeIds()` — stable across the load's fresh-id remap — and re-selected after the swap; New/Open still
+clear, since they carry a `pendingBaseline`).
+
+### Update 2026-07-29 — `PortValue` payloads are shared + immutable
+
+`Scheduler::populateInputs` copies a `PortValue` **per edge, per run**, and an `image::Image` copy is a
+**deep pixel copy** — so every edge of every graph was paying a full payload copy on every run. The slot
+now stores `std::shared_ptr<const void>` + `std::type_index` (one indirection, and the shared_ptr keeps
+`T`'s deleter while the type_index restores the identity `shared_ptr<void>` loses). `set<T>` moves the
+value into a shared const allocation and **rebinds** the slot, so an earlier copy keeps the old payload
+and a recompute never disturbs a value another slot is still reading; `get<T>()` still returns
+`const T&` and still throws `std::bad_any_cast` on a mismatch (the exception type deliberately retained
+from the `std::any` era). Safe because nothing mutates in place — a node that wants to modify a value
+copies it out (`TintNode`'s `image::Image src = input(m_in).get<image::Image>()`), which is now the only
+deep copy paid, by the node that asked for it. **No call site changed.** `ctest` **299/299** (+2 guards:
+one proving copies share a payload *address*, one proving a fan-out graph run twice performs zero payload
+copies); headless `run` still flows source→tint→blur→result with each stage distinct, and save→load→save
+is still byte-idempotent.
 
 **Engine core is built, tested, committed. The remaining M1 work is one decoupling
 refactor of `flow` plus the app stack + viewer:**
@@ -443,8 +464,9 @@ Three layers, public → private, mirroring `multi`'s layering discipline:
    polymorphic `compute()`; declares ports in its ctor. `Port` owns a
    **persistent** `PortValue` (overwritten on recompute, never consumed
    downstream — this is what makes stages inspectable). `PortValue` is a thin
-   `std::any` slot carrying a `std::type_index` for connection checks — it holds
-   any copyable payload (CPU value or GPU handle), with no GPU types in `flow`. A node's
+   type-erased slot carrying a `std::type_index` for connection checks — it holds
+   any payload (CPU value or GPU handle), with no GPU types in `flow`, and holds it
+   **shared + immutable** so a per-edge copy is a refcount bump. A node's
    `constant` / on-request character is expressed through `dirty()`: a constant
    clears it after first compute; a `CameraCapture` stays dirty so each pull
    refires.

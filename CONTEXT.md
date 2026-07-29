@@ -54,7 +54,7 @@ never by driving a live GUI.
   `LoadImageNode`'s path, a `BlurNode`'s radius), **distinct from a Port** (which is dataflow,
   edge-driven). A Node declares params in its ctor (`addParam<T>(name, default)`) and reads them
   in `compute()` (`param(idx).get<T>()`) — the same shape as `addInput` / `input().get<T>()`. Params
-  reuse **PortValue**'s typed-`std::any` slot, so a param and a port share one internal value
+  reuse **PortValue**'s typed, type-erased slot, so a param and a port share one internal value
   machinery: **promoting a param to a connectable input is a definition change, not a data change**
   — that is how `flow` gets "drive a config from the graph" (wire a `ConstantFloatNode` to the
   promoted input) without a second concept or an editable-pin model. `flow` stays **UI-free**: a
@@ -76,9 +76,19 @@ never by driving a live GUI.
 
 ## Payload-agnostic
 
-`flow` names no GPU/UI types. A **PortValue** is a type-erased slot (`std::any`)
-carrying any copyable payload — a CPU value or a GPU handle (`acm::Texture`). A
-consumer that cares compares `type()` against `typeid(...)`. See `CLAUDE.md`.
+`flow` names no GPU/UI types. A **PortValue** is a type-erased slot carrying any
+payload — a CPU value or a GPU handle (`acm::Texture`). A consumer that cares
+compares `type()` against `typeid(...)`. See `CLAUDE.md`.
+
+The payload is **shared and immutable**: `set()` moves the value into a shared const
+allocation, so copying a `PortValue` is a refcount bump, never a payload copy. This is
+load-bearing rather than an optimisation — the scheduler copies a `PortValue` **per edge,
+per run**, and payloads are large (an `image::Image` copy is a deep pixel copy). It is safe
+because nothing mutates a value in place: `get()` hands out a `const&`, a node writes only
+its own outputs, and `set()` *rebinds* the slot rather than writing through the pointer, so
+a recompute never disturbs a payload another slot is still reading. A node that wants to
+modify a value copies it out (`image::Image src = input(i).get<image::Image>()`), which is
+the one place a deep copy is paid — deliberately, by the node that needs it.
 
 ## Graph boundary & host binding — the pipeline I/O model
 
@@ -118,8 +128,9 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 
 - **Vector-valued port** — *one* pin whose value is a **collection**
   (`Port<std::vector<image::Image>>`): one connection, aggregate payload. Needs **no
-  engine support** — `PortValue` is `std::any`, so a port already carries a
-  `std::vector<T>`. Use when the *data* is a collection (a `CombineImages` op).
+  engine support** — a `PortValue` holds any payload, so a port already carries a
+  `std::vector<T>` (and shares it, rather than copying it per edge). Use when the *data*
+  is a collection (a `CombineImages` op).
 - **Dynamic ports** *(a.k.a. variadic pins)* — a node with a **runtime-variable number
   of single-value pins**: N connections, N pins, added/removed/reordered at runtime.
   This is the engine feature (M4 vertical b). Use when you gather N *separate* upstream

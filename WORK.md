@@ -558,7 +558,7 @@ add/remove (and reorder later), so:
   as `Graph` treats `NodeId`. `GroupInputNode`'s `m_bound` moves to `map<PortId, PortValue>`.
 
 **Build order (b):**
-1. **`PortId` / `PortAddress` refactor** — the "NodeId-ification of ports": `Edge` → two
+1. ✅ **`PortId` / `PortAddress` refactor** — the "NodeId-ification of ports": `Edge` → two
    PortAddresses; `connect`/`disconnect`/`populateInputs`/scheduler/`edit`/`dump`/imnodes pin
    encoding/boundary handles move `PortIndex` → `PortId`; `add*`/`addBoundary` return `PortId`. **No
    behaviour change** — a standalone commit kept fully green on the pure rename.
@@ -819,8 +819,8 @@ rename pattern, one level up.
 
 `ctest` 290/290 (a new flow-serialize case renames a node and proves it comes back renamed while an
 untouched sibling keeps its ctor name); verified through flowview's own load path (a hand-renamed
-`scene.json` dumps as `[2] warm tint`) and both gui modes smoke-run clean. **Typing in the field itself
-is the one part that wants a live eyeball.**
+`scene.json` dumps as `[2] warm tint`) and both gui modes smoke-run clean. Typing in the Name field
+itself — the one part with no test coverage — was **live-verified 2026-07-26**.
 
 ### Document guard + rename correctness (2026-07-23)
 
@@ -902,17 +902,46 @@ snapshots still record positions, so undo/redo of a real edit restores layout); 
 stack; drag coalescing via `IsAnyItemActive`.
 
 `ctest` 297/297 (8 new); snapshot format stays byte-idempotent with Save; both gui modes smoke-run.
-**The interactive behaviour — Ctrl+Z restoring, a drag coalescing to one step, edit-after-undo
-truncating the redo tail — needs a live eyeball** (no test harness at the gui layer).
+**Live-verified 2026-07-26** — the interactive behaviour (Ctrl+Z restoring, a drag coalescing to one
+step, edit-after-undo truncating the redo tail) was eyeballed on the live driver; there is no test
+harness at the gui layer, so this was the only way to confirm it.
+
+**Selection survives a restore** (fix, 2026-07-26). A restore rebuilds the graph via `fromValue`, which
+mints fresh `NodeId`s, and the swap's `onGraphReplaced()` clears the imnodes selection — so a param-drag
+undo left the just-edited node deselected and the selection-driven Inspector empty. The selected nodes
+are now captured **as ordinals into `nodeIds()`** before the restore (stable across the id remap: both
+the current and restored graphs enumerate in insertion order) and re-selected after the swap. For a
+structure-preserving edit the ordinal maps back to the same node exactly; New/Open still clear the
+selection (they carry a `pendingBaseline`, which distinguishes the two swap kinds).
 
 **Parked for later passes:** user-configurable / theme.json
 colours (the registries are the load target) · pin **shape** encodes presence (square=required, circle=optional,
 triangle=conditional — deferred: mostly-required → mostly-square is visually sharp) · **node-move undo**
-(snapshot on an imnodes position-delta, coalesced on drag release) · the **window-interaction**
-pass (whole-layout purpose, incl. the Interface↔Inspector merge) · a **`lain::gui::nodes` wrapper pass** — front the raw
-`Im*` surface the `namespace nodes = ImNodes` alias leaks (`ImNodesCol_*`, `ImNodesPinShape_*`,
-`PushColorStyle(ImU32)`, attribute flags) with lain-typed calls, so a client passes lain colours/enums
-and never touches ImU32 — which retires `gui::packColor` from flowview's call sites.
+(snapshot on an imnodes position-delta, coalesced on drag release) · the **window-interaction pass**
+and a **`lain::gui::nodes` wrapper pass**, both described below.
+
+**Window-interaction pass** *(placeholder — not grilled; scope is what has been deferred into it)*. The
+window/panel **layout** pass settled *where* panes live (docking, splitters, tab groups, the default
+layout, reset/recovery). The **interaction** pass is the sequel about *whole-layout purpose* — what each
+pane is for and how panes hand off to each other, so the set reads as one app rather than six
+independently-grown panels. Deferred into it so far:
+- the **Interface↔Inspector merge** (deferred at UI-pass slice B, and again at the layout pass's
+  "Interface + Inspector stay separate, both docked"). The tell that it is unresolved: slice 3 suppresses
+  boundary nodes from the Inspector, so selecting a GroupInput shows an "edit in the Interface panel"
+  hint that bounces the user to another pane.
+- the **Preview header** floating over the image rather than sitting above it (layout slice 2).
+- **Preview zoom/pan**, and pane **pop-out** — both deferred to a future `lain::app` **multi-window**
+  rich viewer (a 3D voxel view, a zoom/pan image view), explicitly *not* ImGui multi-viewport.
+Needs its own grill before building, as the layout pass got.
+
+**`lain::gui::nodes` wrapper pass** — front the raw `Im*` surface the `namespace nodes = ImNodes` alias
+leaks (`ImNodesCol_*`, `ImNodesPinShape_*`, `PushColorStyle(ImU32)`, attribute flags) with lain-typed
+calls, so a client passes lain colours/enums and never touches `ImU32` — which retires `gui::packColor`
+from flowview's call sites. **Not to be confused with the colour discipline, which is done:**
+`gui::packColor(image::ColorRGBA8) → ImU32` exists, the palette speaks `image::ColorRGBA8` end-to-end,
+and the pack happens only at the imnodes boundary. What remains is the *typed surface* — `nodes.h` is
+still a bare `namespace nodes = ImNodes;`, and `panes/graphpane.cpp` still names `ImNodesCol_*` (lines
+~219–232), `ImNodesPinShape*` (~261, ~278), and `ImNodesAttributeFlags_*` (~254) directly.
 
 ## Backlog (deferred — don't build speculatively)
 
@@ -993,8 +1022,9 @@ and never touches ImU32 — which retires `gui::packColor` from flowview's call 
    `enable` / `selector`; `bool` added to `sceneCodecs`) are palette entries, and the canvas grows a
    dynamic node's branches via a per-node **"+ <type>" ±** (deferred-applied after `EndNodeEditor`; the
    boundary Interface panel keeps its own ±). GUI-tested live: **select** driven by a constInt routes;
-   **gate**/**merge** exercised (merge needs a gate + constBool to feed it). The canvas ± + the
-   gate/merge wiring want a fuller live eyeball — standing gui-mode gap. **Host surfacing (slice 3)
+   **gate**/**merge** exercised (merge needs a gate + constBool to feed it). The canvas ± and the
+   gate/merge wiring got their fuller eyeball — **live-verified 2026-07-26**; no gui-mode gap remains
+   here. **Host surfacing (slice 3)
    BUILT** (2026-07-13): a suppressed boundary output (its producer gated off — an empty `PortValue`) is
    now a first-class "no output this run", not an error. The `run` subcommand reports it (`log::info`)
    and **writes nothing** — distinct from the "output isn't an image" type error (verified headless:
@@ -1049,10 +1079,11 @@ and never touches ImU32 — which retires `gui::packColor` from flowview's call 
 ## Open questions
 
 - Final names (`flow` / `flowview`, namespace).
-- Port type set: **resolved** — `PortValue` is a plain open `std::any` (no
-  `PortKind` tag, no GPU arms), keeping `flow` payload-agnostic and dependency-free.
-  Could lean to a closed `std::variant` later for speed once the node set is known,
-  but only if profiling a real graph shows the type-erasure cost matters.
+- Port type set: **resolved** — `PortValue` is an open type-erased slot (no `PortKind`
+  tag, no GPU arms), keeping `flow` payload-agnostic and dependency-free. Since 2026-07-29
+  it stores the payload **shared + immutable** (`shared_ptr<const void>` + `type_index`), so
+  the per-edge copy is a refcount bump. Could lean to a closed `std::variant` later for speed
+  once the node set is known, but only if profiling a real graph shows the erasure cost matters.
 - `lain::task` is scoped minimal: an executor + the small DAG-build surface
   `flow`'s scheduler needs (a flow that emplaces node-tasks and adds edges), and
   nothing more. Subflows / `tf::Pipeline` stay unexposed until a caller needs

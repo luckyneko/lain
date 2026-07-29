@@ -75,6 +75,52 @@ namespace
 			markDirty();
 		}
 	};
+
+	// A payload whose copies are VISIBLE, for the per-edge-copy guard below.
+	struct Tracked
+	{
+		static int copies;
+		Tracked() = default;
+		Tracked(const Tracked&) { ++copies; }
+		Tracked& operator=(const Tracked&)
+		{
+			++copies;
+			return *this;
+		}
+		Tracked(Tracked&&) = default;
+		Tracked& operator=(Tracked&&) = default;
+	};
+	int Tracked::copies = 0;
+
+	struct MakeTracked : Node
+	{
+		PortIndex out;
+		MakeTracked()
+			: Node("MakeTracked")
+		{
+			out = addOutput<Tracked>("v");
+		}
+		void compute() override { output(out).set(Tracked{}); }
+	};
+
+	// Reads its input by const reference (the ordinary shape for a node that inspects a
+	// payload without modifying it) and publishes an unrelated result.
+	struct ReadTracked : Node
+	{
+		PortIndex in, out;
+		ReadTracked()
+			: Node("ReadTracked")
+		{
+			in = addInput<Tracked>("in");
+			out = addOutput<int>("seen");
+		}
+		void compute() override
+		{
+			const Tracked& seen = input(in).get<Tracked>();
+			(void)seen;
+			output(out).set(1);
+		}
+	};
 } // namespace
 
 TEST_CASE("push run evaluates the whole graph", "[scheduler]")
@@ -202,4 +248,29 @@ TEST_CASE("pull refires an on-request source every time", "[scheduler]")
 	REQUIRE(calls == 2); // stayed dirty -> refired
 	sched.evaluate(g, s);
 	REQUIRE(calls == 3);
+}
+
+TEST_CASE("populateInputs shares a payload rather than copying it", "[scheduler][portvalue]")
+{
+	Tracked::copies = 0;
+
+	Graph g;
+	const NodeId src = g.add<MakeTracked>();
+	const NodeId a = g.add<ReadTracked>();
+	const NodeId b = g.add<ReadTracked>(); // fan-out: two edges off one output
+
+	REQUIRE(g.connect(src, 0, a, 0) == Connection::Ok);
+	REQUIRE(g.connect(src, 0, b, 0) == Connection::Ok);
+
+	SerialScheduler sched;
+	sched.run(g);
+	g.markAllDirty();
+	sched.run(g); // a second full run: a copying slot charges per edge, per run
+
+	REQUIRE(Tracked::copies == 0);
+	REQUIRE(g.node(a).output(0).get<int>() == 1);
+	REQUIRE(g.node(b).output(0).get<int>() == 1);
+	// The consumers read the producer's payload itself, not a duplicate of it.
+	REQUIRE(&g.node(a).input(0).get<Tracked>() == &g.node(src).output(0).get<Tracked>());
+	REQUIRE(&g.node(b).input(0).get<Tracked>() == &g.node(src).output(0).get<Tracked>());
 }

@@ -11,8 +11,30 @@
 
 #include <string>
 #include <typeindex>
+#include <vector>
 
 using lain::flow::PortValue;
+
+namespace
+{
+	// A payload whose copies are VISIBLE. It stands in for the real payloads (an image::Image
+	// copy is a deep pixel copy), and the scheduler copies a PortValue per edge per run — so a
+	// slot that copied its payload would charge that on every edge of every graph, every run.
+	struct Tracked
+	{
+		static int copies;
+		Tracked() = default;
+		Tracked(const Tracked&) { ++copies; }
+		Tracked& operator=(const Tracked&)
+		{
+			++copies;
+			return *this;
+		}
+		Tracked(Tracked&&) = default;
+		Tracked& operator=(Tracked&&) = default;
+	};
+	int Tracked::copies = 0;
+} // namespace
 
 TEST_CASE("a default PortValue is empty", "[portvalue]")
 {
@@ -112,4 +134,33 @@ TEST_CASE("PortValue copies carry the payload", "[portvalue]")
 
 	v.set(100); // mutating the original leaves the copy untouched
 	REQUIRE(copy.get<int>() == 99);
+}
+
+TEST_CASE("the payload is shared, never copied", "[portvalue]")
+{
+	Tracked::copies = 0;
+
+	PortValue v;
+	v.set(Tracked{}); // moved into the shared allocation — not copied
+
+	PortValue copy = v;
+	PortValue assigned;
+	assigned = v;
+	const std::vector<PortValue> many(8, v);
+
+	REQUIRE(Tracked::copies == 0);
+	REQUIRE(copy.holds<Tracked>());
+	// Not merely equal — literally the same object, shared by every slot.
+	REQUIRE(&copy.get<Tracked>() == &v.get<Tracked>());
+	REQUIRE(&assigned.get<Tracked>() == &v.get<Tracked>());
+	REQUIRE(&many.front().get<Tracked>() == &v.get<Tracked>());
+
+	SECTION("set REBINDS the slot, so an existing copy's payload is untouched")
+	{
+		const Tracked* const original = &copy.get<Tracked>();
+		v.set(Tracked{});
+		REQUIRE(&copy.get<Tracked>() == original); // the copy still reads the old payload
+		REQUIRE(&v.get<Tracked>() != original);	   // the overwritten slot points somewhere new
+		REQUIRE(Tracked::copies == 0);
+	}
 }
