@@ -515,7 +515,19 @@ beside this repo) before writing:
   FetchContent module patterned on `archimedes`.
 - **Style.** `.clang-format` is already present (Allman braces, tabs width 4, no
   column limit, left pointer alignment). Format on save; run clang-format on
-  touched files.
+  touched files. **Do not go hunting for a `clang-format` on PATH** — the repo
+  vendors a *pinned* one (`cmake/addclangformat.cmake`, FetchContent'd like any
+  other dep, cached under `.cache/fetch/`), because clang-format output drifts
+  between versions and the pin is what makes the check a meaningful gate. Use the
+  targets, whose file set is `.clang-format-include`:
+
+  ```sh
+  cmake --build build --target format         # rewrite sources in place
+  cmake --build build --target format-check   # dry-run, non-zero on diff (CI gate)
+  ```
+
+  Neither is part of `ALL`, so a normal build never reformats. Override the binary
+  with `-DLAIN_CLANG_FORMAT=/path/to/clang-format` if you must.
 - **Strict build.** `/WX /W4` (MSVC), `-Werror -Wall -Wextra` (else).
   Out-of-source enforced. Standalone-vs-subdirectory option gating like the
   siblings (`FLOW_BUILD_TESTING` etc., default ON top-level, OFF as subdir).
