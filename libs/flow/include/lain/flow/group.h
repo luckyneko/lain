@@ -59,7 +59,7 @@ namespace lain::flow
 		// The inner boundary pin an outer port mirrors, or the null PortId if unmapped. Identity is
 		// the PortId pair, NOT the name: renaming an inner pin must keep the outer wiring, which is
 		// the whole reason ports carry stable ids. edit::syncGroupPorts maintains this mapping.
-		PortId innerPin(PortId outer) const
+		PortId innerPin(PortId outer) const override
 		{
 			const auto it = m_outerToInner.find(outer);
 			return it == m_outerToInner.end() ? PortId{} : it->second;
@@ -67,6 +67,29 @@ namespace lain::flow
 		void mapPort(PortId outer, PortId inner) { m_outerToInner[outer] = inner; }
 		void unmapPort(PortId outer) { m_outerToInner.erase(outer); }
 		const std::map<PortId, PortId>& portMap() const { return m_outerToInner; }
+
+		// Expose an inner boundary pin as one of this node's own ports, recording the mapping —
+		// the PRIMITIVE the mirroring is built from. edit::syncGroupPorts is the GESTURE over it:
+		// it reconciles the whole port set against the inner interface and disconnects the parent's
+		// edges for pins that vanished (which needs the parent Graph, so it cannot live here).
+		// `presence` matches an ordinary input's, so a group can hold optional inputs like any node.
+		template <typename T>
+		PortId exposeInput(std::string name, PortId innerPin, Presence presence = Presence::Required)
+		{
+			const PortIndex index = addInput<T>(std::move(name), presence);
+			const PortId outer = input(index).id();
+			mapPort(outer, innerPin);
+			return outer;
+		}
+
+		template <typename T>
+		PortId exposeOutput(std::string name, PortId innerPin)
+		{
+			const PortIndex index = addOutput<T>(std::move(name));
+			const PortId outer = output(index).id();
+			mapPort(outer, innerPin);
+			return outer;
+		}
 
 		// Never called: the scheduler expands a group into its inner steps plus an entry/exit step
 		// pair, so a group is never executed AS a node (ADR-0009). Kept as a no-op rather than an

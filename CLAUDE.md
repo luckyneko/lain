@@ -186,14 +186,30 @@ that **keeps the canvas selection across an undo/redo** (selected nodes captured
 `nodeIds()` — stable across the load's fresh-id remap — and re-selected after the swap; New/Open still
 clear, since they carry a `pendingBaseline`).
 
-### Update 2026-07-29 — M5 (group nodes) designed; slices 1–2 built
+### Update 2026-07-29 — M5 (group nodes) designed; slices 1–3 built
 
 **Group nodes / subgraphs were grilled and designed** — see the new **Milestone 5** section in
 [WORK.md](WORK.md), **[ADR-0009](docs/adr/0009-group-nodes-flattened-into-one-execution-plan.md)**
 (the scheduler flattens all nesting into one execution plan; `Node::innerGraph()`; virtual `dirty()`),
 **[ADR-0010](docs/adr/0010-inline-vs-linked-groups-no-prefab-overrides.md)** (inline vs linked groups,
 the interface cache, links are recipe references and never runtime shares, overrides deferred), and
-the vocabulary added to [CONTEXT.md](CONTEXT.md). Two of six slices are built:
+the vocabulary added to [CONTEXT.md](CONTEXT.md). Three of six slices are built:
+
+**Slice 3 — the execution plan.** `Scheduler` now plans before it runs: a `Plan` is a
+dependency-ordered list of `Step`s (`Node` / `GroupEntry` / `GroupExit`, each carrying the `Graph*`
+it belongs to) plus step-index edges, built by an `expand()` that recurses through anything
+answering `Node::innerGraph()`. **A group is never run as a node** — it becomes *entry → its inner
+graph's steps → exit*, so a nested graph is one flat DAG: `SerialScheduler` walks the steps,
+`ParallelScheduler` emplaces a task per step and a `precede` per edge across every level at once,
+and no scheduler is ever invoked from inside a task. `evaluate` plans the dirty upstream cone
+through the same mechanism, so there is one expansion, not two. Suppression crosses a boundary with
+**no new machinery** exactly as ADR-0009 predicted (an unready group publishes empty, ADR-0007's
+readiness gate does the rest). Two subtleties earned their own tests by being deliberately broken
+first: **publish gating** (`Node::selfDirty()` — republish only when the group's *inputs* changed,
+else an inner edit re-runs the whole inner graph) and **pre-marking the inner boundary dirty at plan
+time** (else a re-bind serves a stale value). `Node::innerPin()` joins `innerGraph()` as the second
+half of the structural seam, so the boundary steps need no cast to a concrete group class.
+`ctest` **312/312**; `[group]` run 100× for races.
 
 **Slice 2 — the group seam + the boundary-pair invariant.** New **`flow/group.h`**: `GroupNode` owns
 an inner `Graph` and answers the new `Node::innerGraph()`; `LinkedGroupNode` is a thin subclass adding
@@ -204,8 +220,8 @@ when anything inside it is (recursing through nesting). **Every `Graph` is now b
 and every null check. That invariant forced the loader-reuse rule up from slice 5: `fromValue`
 **adopts** a document's boundary pair onto the graph's own rather than adding duplicates. `ctest`
 **306/306**; a loaded example scene holds 4 nodes, not 6; round-trip still byte-idempotent.
-Not yet built: port mirroring is declared but `edit::syncGroupPorts` is slice 4, and the scheduler does
-not expand groups yet (slice 3), so a group node is inert for now.
+(Port mirroring is declared here; `GroupNode::exposeInput/exposeOutput<T>` — the primitive slice 4's
+`edit::syncGroupPorts` gesture builds on — arrived with slice 3.)
 
 ### Slice 1 — `PortValue` payloads are shared + immutable
 

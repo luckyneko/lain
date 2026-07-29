@@ -6,12 +6,19 @@
 //   - SerialScheduler   — single-threaded topo-order run; needs no execution deps.
 //   - ParallelScheduler — lowers the DAG onto an injected (caller-owned) lain::task
 //                         executor for work-stealing parallelism.
-// The pull path — evaluate(), recompute one node's dirty upstream on demand — is
-// identical for both, so it lives on the base; only the full run() varies.
+//
+// Both go through one EXECUTION PLAN (ADR-0009). A plan is a dependency-ordered list of
+// steps covering EVERY level of group nesting at once: a node that contains a graph is not
+// run as a node, it is *expanded* into an entry step, its inner graph's own steps, and an
+// exit step. So a nested graph runs as one flat DAG — no scheduler is ever invoked from
+// inside a task, and inner nodes of two sibling groups interleave freely on the pool.
+// run() plans the dirty closure; evaluate() plans the dirty upstream cone of one node.
 
 #include "lain/flow/types.h"
 
+#include <cstddef>
 #include <set>
+#include <utility>
 #include <vector>
 
 namespace lain::task
@@ -39,39 +46,81 @@ namespace lain::flow
 		void evaluate(Graph& graph, NodeId target);
 
 	protected:
-		// The nodes run() must recompute, in topo order: the DIRTY CLOSURE — every dirty node plus
-		// everything downstream of one (a node whose input source recomputes must recompute too).
-		// A clean node not downstream of any dirty node is skipped and keeps its cached value — this
-		// is incremental re-eval. A fresh graph (all nodes dirty) yields every node; Graph::markAllDirty
-		// forces that. Shared by both run strategies so they skip identically.
-		std::vector<NodeId> runOrder(Graph& graph);
+		// One unit of work. A Node step runs a node; the two Group steps cross a group's
+		// boundary — see enterGroup / exitGroup.
+		struct Step
+		{
+			enum class Kind
+			{
+				Node,		// run graph->node(node)
+				GroupEntry, // copy the group's outer inputs into its inner GroupInputNode
+				GroupExit,	// copy its inner GroupOutputNode's values out to its outer outputs
+			};
 
-		// Copy each connected upstream output into `id`'s matching input, in place —
-		// the source keeps its value, which is what leaves every stage inspectable.
-		// Shared by both run strategies and the pull walk.
-		void populateInputs(Graph& graph, NodeId id);
+			Kind kind = Kind::Node;
+			Graph* graph = nullptr; // the graph `node` lives in — NOT necessarily the top-level one
+			NodeId node;			// the node to run, or the group whose boundary is being crossed
+			bool publish = false;	// GroupEntry only: whether the inputs actually need republishing
+		};
+
+		// A whole nested graph flattened into one task DAG: steps in a valid serial order, plus
+		// the dependency edges a parallel lowering needs (indices into `steps`).
+		struct Plan
+		{
+			std::vector<Step> steps;
+			std::vector<std::pair<std::size_t, std::size_t>> edges; // (predecessor, successor)
+		};
+
+		// The plan for a full run: the DIRTY CLOSURE at every level — every dirty node plus
+		// everything downstream of one, with each group expanded in place.
+		Plan buildRunPlan(Graph& graph);
+
+		// The plan for a pull: the dirty nodes in `target`'s upstream cone. Deliberately NOT the
+		// dirty closure — a clean node keeps its cached value even if something upstream recomputes,
+		// which is the long-standing pull semantic.
+		Plan buildEvalPlan(Graph& graph, NodeId target);
+
+		// Execute one step. The single dispatch point, so both strategies handle groups identically.
+		void runStep(const Step& step);
 
 		// Evaluate one node: clear dirty, populate inputs, then either run compute() (READY — every
 		// required input has a value) or SUPPRESS it (a required input is empty → clear its outputs,
-		// don't compute). The single "execute a node" primitive, so both run strategies and the pull
-		// walk handle conditional eval identically (ADR-0007).
+		// don't compute). ADR-0007.
 		void runNode(Graph& graph, NodeId id);
 
+		// Copy each connected upstream output into `id`'s matching input, in place —
+		// the source keeps its value, which is what leaves every stage inspectable.
+		void populateInputs(Graph& graph, NodeId id);
+
 	private:
-		// Depth-first pull helper: recompute `id`'s dirty upstream, then `id` itself.
-		void evaluateUpstream(Graph& graph, NodeId id, std::set<NodeId>& visited);
+		// The nodes a run must recompute at ONE level, in topo order: the dirty closure.
+		std::vector<NodeId> runOrder(Graph& graph);
+
+		// Emit `order`'s nodes (already topo-ordered and selected) into `plan`, recursing into any
+		// node that contains a graph, and wire this level's edges between the resulting steps.
+		void expand(Graph& graph, const std::vector<NodeId>& order, Plan& plan);
+
+		// Publish the group's outer input values into its inner GroupInputNode (when `publish`),
+		// after populating those outer inputs from the parent graph.
+		void enterGroup(Graph& graph, NodeId id, bool publish);
+
+		// Copy the group's inner GroupOutputNode values out to its own output ports.
+		void exitGroup(Graph& graph, NodeId id);
+
+		// Collect `id` and everything transitively feeding it into `cone`.
+		void collectUpstream(Graph& graph, NodeId id, std::set<NodeId>& cone);
 	};
 
-	// Single-threaded: one topo-order pass over the graph. No execution dependency,
-	// so it's the natural choice for cli / headless runs and tests.
+	// Single-threaded: walks the execution plan in order. No execution dependency, so it's
+	// the natural choice for cli / headless runs and tests.
 	class SerialScheduler : public Scheduler
 	{
 	public:
 		void run(Graph& graph) override;
 	};
 
-	// Parallel: lowers the DAG onto the injected lain::task executor (one task per
-	// node, edges as precedences) and runs it to completion. The caller owns the
+	// Parallel: lowers the execution plan onto the injected lain::task executor (one task
+	// per step, one precedence per plan edge) and runs it to completion. The caller owns the
 	// executor, so worker count and lifetime stay explicit.
 	class ParallelScheduler : public Scheduler
 	{

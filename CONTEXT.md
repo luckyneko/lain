@@ -23,6 +23,10 @@ apart: logic that belongs to one must not swell another.
     **steps** with dependencies between them, expanded across *every* level of group
     nesting at once, so a nested graph runs as one flat DAG and never as a nested run
     (ADR-0009). Both `run` (dirty-closure) and `evaluate` (upstream-cone) build one.
+  - **Entry / exit step** — the two **boundary steps** a group expands into, around its inner
+    graph's own steps: the entry hands the group's outer input values to its inner
+    `GroupInputNode`, the exit publishes its inner `GroupOutputNode`'s values onto the group's
+    outer output ports. A group is never *run as a node*; these steps are what a group "does".
   - **Dirty closure** — the nodes a `run` must recompute: every dirty node plus everything
     downstream of one. A group node counts as dirty if anything inside it is.
 

@@ -1044,10 +1044,40 @@ byte-idempotent.
    the loaded graph holding **4** nodes, not 6. Churn was as predicted: `nodeCount()`/`topoOrder`
    assertions now read `kBoundaryNodes + N`, and tests that added their own boundary nodes use
    `graph.boundaryInputNode()`.
-3. **Scheduler — the execution plan.** `runOrder` → `buildPlan` with recursive expansion + entry/exit
-   steps + publish gating; both schedulers lowered onto it; `evaluate` on an upstream-cone plan.
-   Driver-free tests: nested run correctness, incremental across levels, suppression crossing a
-   boundary (ADR-0007 for free), and **serial/parallel equivalence** over a nested graph.
+3. ✅ **Scheduler — the execution plan** (2026-07-29). A `Plan` is `{steps, edges}`: a `Step` is
+   `Node` / `GroupEntry` / `GroupExit`, each carrying the `Graph*` it belongs to, and edges are
+   step-index pairs. `expand()` flattens one level and recurses through anything answering
+   `Node::innerGraph()`, so a group becomes *entry → its inner graph's steps → exit*; the level's
+   own edges are then wired between each node's **consuming end** (entry, for a group) and
+   **producing end** (exit). `SerialScheduler` walks `plan.steps` (already a valid serial order —
+   every dependency points backwards); `ParallelScheduler` emplaces a task per step and a `precede`
+   per edge, across **every level at once**. `buildRunPlan` = the dirty closure; `buildEvalPlan` =
+   the dirty *upstream cone* (deliberately not a closure — that is the long-standing pull
+   semantic), so `evaluate` crosses groups through the same one mechanism.
+
+   Two subtleties, both proven load-bearing by deliberately breaking them and watching a test fail:
+   - **Publish gating.** The entry step republishes into the inner boundary only when the group's
+     inputs can have changed (`selfDirty()`, or an outer predecessor was selected). Without it, an
+     edit inside a group re-ran the *whole* inner graph (`fedByBoundary == 2`, want 1) — inner
+     incrementality gone. `Node::selfDirty()` was added to keep "my own flag" apart from the
+     virtual aggregate `dirty()`.
+   - **Pre-marking the inner boundary dirty at plan time.** When publishing, the inner
+     `GroupInputNode` must be marked dirty *before* the inner closure is computed, or it is planned
+     out and the published values land on a node that never republishes them — a re-bind then
+     silently served the stale result (`105`, want `107`).
+
+   `Node::innerPin(PortId)` joins `innerGraph()` as the second half of the structural seam, so the
+   entry/exit steps map outer ports to inner pins **without casting to a concrete group class** —
+   which is what keeps ADR-0009's "a future graph-containing node needs no scheduler change" true.
+   `GroupNode::exposeInput/exposeOutput<T>` are the mirroring **primitive** (slice 4's
+   `edit::syncGroupPorts` is the gesture over them).
+
+   Verified: warning-clean; format-clean; `ctest` **312/312** (+6 in `test_nestedrun.cpp`: value
+   crossing in/out + re-bind, two-level nesting, **serial/parallel equivalence** over sibling
+   groups, suppression crossing the boundary with no extra machinery, the publish-gate incremental
+   cases, and the pull path crossing a group). The `[group]` tests ran **100×** with zero failures
+   to shake out ordering races. Flat graphs are unchanged: the whole pre-existing suite passes and
+   the headless `run` / idempotence checks are identical.
 4. **`edit::syncGroupPorts`** — reconcile outer ports against inner boundary pins, disconnecting
    incident outer edges for dropped pins and reporting them.
 5. **`flow::serialize` — recursion, resolver, cycle guard, `EditorTree`**; inline body + linked

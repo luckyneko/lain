@@ -80,6 +80,12 @@ namespace lain::flow
 		void markDirty() { m_dirty = true; }
 		void clearDirty() { m_dirty = false; }
 
+		// This node's OWN dirty flag, ignoring anything it contains. The scheduler needs the two
+		// apart: a group whose only dirt is inside it must be re-planned, but its inputs have not
+		// changed, so republishing them into the inner boundary would needlessly dirty the whole
+		// inner graph and destroy inner incrementality.
+		bool selfDirty() const { return m_dirty; }
+
 		// The graph this node CONTAINS, or nullptr for an ordinary node. The scheduler asks this of
 		// every node while building its execution plan and expands the whole nesting tree into one
 		// flat plan (ADR-0009) — so it asks the structural question it actually has ("do you contain
@@ -87,6 +93,13 @@ namespace lain::flow
 		// about, and a future graph-containing node needs no scheduler change.
 		virtual Graph* innerGraph() { return nullptr; }
 		const Graph* innerGraph() const { return const_cast<Node*>(this)->innerGraph(); }
+
+		// The inner boundary pin that this node's port `outer` mirrors, or the null PortId.
+		// Meaningful only alongside innerGraph(): the two together ARE the group seam the scheduler
+		// drives — expand the contained graph, and know which inner pin each outer port crosses to.
+		// Keeping it here (rather than casting to a concrete group class) is what lets a future
+		// graph-containing node work with no scheduler change.
+		virtual PortId innerPin(PortId /*outer*/) const { return PortId{}; }
 
 		// Whether this node is READY to compute: every REQUIRED input carries a value (ADR-0007).
 		// Node-local — it inspects only this node's own input ports. The scheduler gates compute() on
