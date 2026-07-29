@@ -1078,8 +1078,34 @@ byte-idempotent.
    cases, and the pull path crossing a group). The `[group]` tests ran **100×** with zero failures
    to shake out ordering races. Flat graphs are unchanged: the whole pre-existing suite passes and
    the headless `run` / idempotence checks are identical.
-4. **`edit::syncGroupPorts`** — reconcile outer ports against inner boundary pins, disconnecting
-   incident outer edges for dropped pins and reporting them.
+4. ✅ **`edit::syncGroupPorts`** (2026-07-29) — reconcile a group's outer ports against its inner
+   boundary pins, in the order **remove → rename → add** (so a name freed by a removal or a rename
+   is available to a new pin in the same pass). Returns a `GroupSync {added, removed, renamed,
+   disconnected}`; `disconnected` is the count a host must surface — those are the *parent's* edges
+   a vanished pin took with it. Identity is the outer↔inner `PortId` map, so a renamed inner pin
+   keeps its outer port **and its wiring** and is merely retitled.
+
+   **Mirroring needs no port-type registry and no `T`.** A `Port`'s type is a shared `PortType`
+   flyweight, so `Node::addInputLike/addOutputLike(name, const PortType&)` + `Port::portType()` copy
+   the pointer and `GroupNode::exposePort(side, innerPin)` mirrors *any* type — including one
+   registered nowhere. That is the right rule: a group's ports are **derived**, not user-chosen, so
+   they must not be limited to the registered set the way an addable dynamic pin is. (This retired
+   the worry that `GroupNode` would have to become a `DynamicPortsNode` — it can't, since
+   `dynamicSide()` names one side and a group grows both.)
+
+   **Hazard found and pinned down:** a `PortId` is minted **per node**, so the inner GroupInput's
+   first pin and the inner GroupOutput's first pin are *both* `PortId{1}`. The map's key (an outer
+   id) is unique, but its **value is not** — a value is only meaningful together with the outer
+   port's *direction*, which says which boundary node to resolve it against. Every reader does that
+   (the scheduler's entry/exit steps, sync's `innerPinFor`), and a test now wires an inner graph
+   **crossed** (a→q, b→p) so a mix-up shows up as swapped values instead of passing by luck.
+
+   Verified: warning-clean; format-clean; `ctest` **320/320** (+8 in `test_groupsync.cpp`: mirroring
+   name+type, idempotence, rename-keeps-wiring, removal reporting the two edges it cut, same-name
+   replacement, end-to-end run through a synced group, no-op on a non-group, an unregistered type,
+   and the id-collision crossing). Sabotaging sync's direction resolution is caught by the
+   idempotence assertion — the scheduler's own resolution is what the crossing test guards, so the
+   two paths have separate guards.
 5. **`flow::serialize` — recursion, resolver, cycle guard, `EditorTree`**; inline body + linked
    source/interface-cache; rectification against the cache on load, each difference a `LoadIssue`.
    (Boundary-node reuse — the one place the invariant and the loader fight — **already landed in

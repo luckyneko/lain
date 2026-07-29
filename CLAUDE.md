@@ -186,14 +186,26 @@ that **keeps the canvas selection across an undo/redo** (selected nodes captured
 `nodeIds()` — stable across the load's fresh-id remap — and re-selected after the swap; New/Open still
 clear, since they carry a `pendingBaseline`).
 
-### Update 2026-07-29 — M5 (group nodes) designed; slices 1–3 built
+### Update 2026-07-29 — M5 (group nodes) designed; slices 1–4 built
 
 **Group nodes / subgraphs were grilled and designed** — see the new **Milestone 5** section in
 [WORK.md](WORK.md), **[ADR-0009](docs/adr/0009-group-nodes-flattened-into-one-execution-plan.md)**
 (the scheduler flattens all nesting into one execution plan; `Node::innerGraph()`; virtual `dirty()`),
 **[ADR-0010](docs/adr/0010-inline-vs-linked-groups-no-prefab-overrides.md)** (inline vs linked groups,
 the interface cache, links are recipe references and never runtime shares, overrides deferred), and
-the vocabulary added to [CONTEXT.md](CONTEXT.md). Three of six slices are built:
+the vocabulary added to [CONTEXT.md](CONTEXT.md). Four of six slices are built:
+
+**Slice 4 — `edit::syncGroupPorts`.** Reconciles a group's outer ports against its inner boundary
+pins (**remove → rename → add**, so a name freed in the pass is reusable), returning
+`GroupSync {added, removed, renamed, disconnected}` — the last being the *parent's* edges a vanished
+pin took with it, which a host must surface. A renamed inner pin keeps its outer port and its wiring;
+only the label moves. Mirroring needs **no `T` and no port-type registry**: a `Port`'s type is a shared
+`PortType` flyweight, so `Node::addInputLike/addOutputLike` + `Port::portType()` mirror *any* type,
+including one registered nowhere — correct, because a group's ports are derived rather than
+user-chosen. A hazard surfaced here and is now pinned by a test: `PortId`s are minted **per node**, so
+an inner GroupInput pin and an inner GroupOutput pin can share an id — the map's value is only
+meaningful with the outer port's *direction*, and a test wires the inner graph crossed so a mix-up
+shows as swapped values. `ctest` **320/320**.
 
 **Slice 3 — the execution plan.** `Scheduler` now plans before it runs: a `Plan` is a
 dependency-ordered list of `Step`s (`Node` / `GroupEntry` / `GroupExit`, each carrying the `Graph*`

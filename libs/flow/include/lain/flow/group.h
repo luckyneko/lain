@@ -66,6 +66,14 @@ namespace lain::flow
 		}
 		void mapPort(PortId outer, PortId inner) { m_outerToInner[outer] = inner; }
 		void unmapPort(PortId outer) { m_outerToInner.erase(outer); }
+
+		// The whole mapping. NOTE the asymmetry: the KEY is unique (an outer PortId is unique across
+		// both of this node's sides), but the VALUE is not — a PortId is minted per NODE, so the
+		// inner GroupInput's first pin and the inner GroupOutput's first pin are BOTH PortId{1}.
+		// A value is therefore only meaningful together with the outer port's DIRECTION, which says
+		// which boundary node to resolve it against: an outer input against the GroupInput, an outer
+		// output against the GroupOutput. Every reader here does that (the scheduler's entry/exit
+		// steps, edit::syncGroupPorts), and a test pins it down by wiring an inner graph crossed.
 		const std::map<PortId, PortId>& portMap() const { return m_outerToInner; }
 
 		// Expose an inner boundary pin as one of this node's own ports, recording the mapping —
@@ -88,6 +96,20 @@ namespace lain::flow
 			const PortIndex index = addOutput<T>(std::move(name));
 			const PortId outer = output(index).id();
 			mapPort(outer, innerPin);
+			return outer;
+		}
+
+		// Mirror an inner boundary pin as one of this node's own ports — same type, same name — with
+		// no compile-time T, since the pin already carries the PortType flyweight. This is what
+		// edit::syncGroupPorts calls: reconciliation runs over a live interface whose types are only
+		// known at runtime. `outerSide` is THIS node's side: an inner GroupInput pin (an inner
+		// *output*) becomes one of this node's inputs, and vice versa.
+		PortId exposePort(Port::Direction outerSide, const Port& innerPin, Presence presence = Presence::Required)
+		{
+			const PortId outer = (outerSide == Port::Direction::Input)
+									 ? input(addInputLike(innerPin.name(), innerPin.portType(), presence)).id()
+									 : output(addOutputLike(innerPin.name(), innerPin.portType())).id();
+			mapPort(outer, innerPin.id());
 			return outer;
 		}
 

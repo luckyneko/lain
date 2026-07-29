@@ -61,6 +61,12 @@ namespace lain::flow
 		// into static storage). For display/debug — the inspector labels pins with it.
 		std::string_view typeName() const { return m_type->name; }
 
+		// The declared type's reflective flyweight itself — for MIRRORING this port's type onto
+		// another node without knowing T (Node::addInputLike / addOutputLike, which is how a group
+		// derives its ports from its inner boundary pins). One shared instance per type, so passing
+		// it around is just a pointer copy.
+		const PortType& portType() const { return *m_type; }
+
 		// True once a value has been produced into this port (i.e. not empty).
 		bool ready() const { return !m_value.empty(); }
 

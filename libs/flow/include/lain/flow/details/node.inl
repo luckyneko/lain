@@ -36,6 +36,24 @@ namespace lain::flow
 		return m_outputs.size() - 1;
 	}
 
+	// The type-erased twins of addInput / addOutput (see node.h): same asserts, same id minting —
+	// only the PortType comes from a caller-supplied flyweight rather than portType<T>().
+	inline PortIndex Node::addInputLike(std::string name, const PortType& type, Presence presence)
+	{
+		assert(validPortName(name) && "flow::Node: port name must be a letter then alphanumeric/underscore");
+		assert(!hasPortNamed(Port::Direction::Input, name) && "flow::Node: duplicate input port name");
+		m_inputs.push_back(Port(std::move(name), Port::Direction::Input, type, nextPortId(), presence == Presence::Required));
+		return m_inputs.size() - 1;
+	}
+
+	inline PortIndex Node::addOutputLike(std::string name, const PortType& type)
+	{
+		assert(validPortName(name) && "flow::Node: port name must be a letter then alphanumeric/underscore");
+		assert(!hasPortNamed(Port::Direction::Output, name) && "flow::Node: duplicate output port name");
+		m_outputs.push_back(Port(std::move(name), Port::Direction::Output, type, nextPortId()));
+		return m_outputs.size() - 1;
+	}
+
 	template <typename T>
 	PortIndex Node::addParam(std::string name, T defaultValue)
 	{

@@ -136,6 +136,15 @@ namespace lain::flow
 		template <typename T>
 		PortIndex addOutput(std::string name);
 
+		// Declare a port MIRRORING an existing port's declared type, with no compile-time T. A
+		// port's type is a shared PortType flyweight, so a node that DERIVES its interface from
+		// another node's ports — a group mirroring its inner boundary pins — copies that flyweight
+		// instead of needing the type. Which means it mirrors ANY type, including one no registry
+		// knows about: a group's ports are derived, not user-chosen, so they must not be limited to
+		// the registered set the way an addable dynamic pin is.
+		PortIndex addInputLike(std::string name, const PortType& type, Presence presence = Presence::Required);
+		PortIndex addOutputLike(std::string name, const PortType& type);
+
 		// Declare a configuration param, seeded with `defaultValue`. Read it in compute()
 		// via param(i).get<T>(); the adapter edits it via param(i).set<T>().
 		template <typename T>

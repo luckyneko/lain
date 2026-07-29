@@ -51,4 +51,32 @@ namespace lain::flow::edit
 	// output may feed several inputs; an input has one source), then remove the now-free port via
 	// the Graph::removePort primitive. Returns whether the port was removed.
 	bool removePort(Graph& graph, PortAddress port);
+
+	// What a syncGroupPorts pass changed. `disconnected` is the one a host must SURFACE: those are
+	// the parent's edges that a pin disappearing from the group's interface took with it.
+	struct GroupSync
+	{
+		int added = 0;		  // outer ports created for new inner boundary pins
+		int removed = 0;	  // outer ports dropped because their inner pin is gone
+		int renamed = 0;	  // outer ports retitled to match a renamed inner pin
+		int disconnected = 0; // parent edges cut by those removals
+
+		bool changed() const { return added != 0 || removed != 0 || renamed != 0; }
+	};
+
+	// Reconcile a group node's own ports against its inner graph's boundary pins — the GESTURE
+	// over GroupNode::exposePort. A group's interface IS its inner graph's boundary, so this runs
+	// after anything that could have changed it (editing the inner interface, loading, relinking a
+	// template).
+	//
+	// Identity is the outer<->inner PortId mapping, never the name: a renamed inner pin keeps its
+	// outer port and its wiring, and is merely retitled. A pin that VANISHED takes its outer port
+	// with it — and because that port may still be wired in the parent, the removal goes through
+	// edit::removePort (disconnect, then the refusing primitive), which is exactly why this is a
+	// gesture in the editing layer and not a method on the node: only the parent Graph can cut
+	// those edges.
+	//
+	// Order is remove -> rename -> add, so a name freed by a removal or a rename is available to a
+	// new pin in the same pass. A node that contains no graph is a no-op.
+	GroupSync syncGroupPorts(Graph& parent, NodeId group);
 } // namespace lain::flow::edit

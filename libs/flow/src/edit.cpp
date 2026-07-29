@@ -1,10 +1,12 @@
 #include "lain/flow/edit.h"
 
 #include "lain/flow/dynamicports.h"
+#include "lain/flow/group.h" // GroupNode — syncGroupPorts reconciles its mirrored ports
 #include "lain/flow/node.h"
 #include "lain/flow/porttyperegistry.h"
 
 #include <optional>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -108,5 +110,119 @@ namespace lain::flow::edit
 			graph.disconnect(input);
 
 		return graph.removePort(port);
+	}
+
+	// How many parent edges touch `port` — what a removal is about to cut. Reported so a host can
+	// tell the user which wiring a vanished pin took with it, rather than silently dropping it.
+	static int edgeCount(const Graph& graph, PortAddress port)
+	{
+		int count = 0;
+		for (const Graph::Edge& e : graph.edges())
+		{
+			if (e.from == port || e.to == port)
+				++count;
+		}
+		return count;
+	}
+
+	// The inner boundary pin a group's outer port should mirror, or nullptr if that pin is gone.
+	// Direction-scoped: an outer INPUT mirrors a pin on the inner GroupInput (whose pins are its
+	// outputs), an outer OUTPUT a pin on the inner GroupOutput.
+	static const Port* innerPinFor(Graph& inner, Port::Direction outerSide, PortId pin)
+	{
+		return (outerSide == Port::Direction::Input) ? inner.boundaryInputNode().findOutput(pin)
+													 : inner.boundaryOutputNode().findInput(pin);
+	}
+
+	GroupSync syncGroupPorts(Graph& parent, NodeId group)
+	{
+		GroupSync sync;
+		if (!parent.contains(group))
+			return sync;
+		auto* node = dynamic_cast<GroupNode*>(&parent.node(group));
+		if (node == nullptr)
+			return sync; // not a group — nothing to reconcile
+		Graph& inner = node->inner();
+
+		// --- 1. Remove outer ports whose inner pin is gone -------------------------------------
+		// Collected first: removing mutates the port list, and a dropped port may still be wired in
+		// the parent, so each removal goes through edit::removePort (disconnect, then the primitive).
+		std::vector<PortAddress> stale;
+		for (const auto& [outer, innerId] : node->portMap())
+		{
+			const Port* outerPort = node->findInput(outer);
+			Port::Direction side = Port::Direction::Input;
+			if (outerPort == nullptr)
+			{
+				outerPort = node->findOutput(outer);
+				side = Port::Direction::Output;
+			}
+			if (outerPort == nullptr)
+			{
+				stale.push_back(PortAddress{group, outer}); // mapped, but the port itself is gone
+				continue;
+			}
+			if (innerPinFor(inner, side, innerId) == nullptr)
+				stale.push_back(PortAddress{group, outer});
+		}
+		for (const PortAddress& address : stale)
+		{
+			sync.disconnected += edgeCount(parent, address);
+			if (removePort(parent, address))
+				++sync.removed;
+			node->unmapPort(address.port);
+		}
+
+		// --- 2. Retitle surviving ports to match their (possibly renamed) inner pin -------------
+		// A rename is display-only on both sides: the mapping is by PortId, so the wiring is
+		// untouched and only the label moves.
+		for (const auto& [outer, innerId] : node->portMap())
+		{
+			Port* outerPort = node->findInput(outer);
+			Port::Direction side = Port::Direction::Input;
+			if (outerPort == nullptr)
+			{
+				outerPort = node->findOutput(outer);
+				side = Port::Direction::Output;
+			}
+			const Port* pin = outerPort ? innerPinFor(inner, side, innerId) : nullptr;
+			if (pin != nullptr && pin->name() != outerPort->name())
+			{
+				outerPort->setName(pin->name());
+				++sync.renamed;
+			}
+		}
+
+		// --- 3. Add an outer port for every inner pin not yet mirrored --------------------------
+		// Last, so a name freed by a removal or a rename above is available here.
+		std::set<PortId> mirrored;
+		for (const auto& entry : node->portMap())
+			mirrored.insert(entry.second);
+
+		GroupInputNode& boundaryIn = inner.boundaryInputNode();
+		for (PortIndex i = 0; i < boundaryIn.outputCount(); ++i)
+		{
+			const Port& pin = boundaryIn.output(i);
+			if (mirrored.count(pin.id()) == 0)
+			{
+				node->exposePort(Port::Direction::Input, pin);
+				++sync.added;
+			}
+		}
+
+		GroupOutputNode& boundaryOut = inner.boundaryOutputNode();
+		for (PortIndex i = 0; i < boundaryOut.inputCount(); ++i)
+		{
+			const Port& pin = boundaryOut.input(i);
+			if (mirrored.count(pin.id()) == 0)
+			{
+				node->exposePort(Port::Direction::Output, pin);
+				++sync.added;
+			}
+		}
+
+		if (sync.changed())
+			parent.node(group).markDirty(); // its interface moved — re-run it
+		return sync;
 	}
 } // namespace lain::flow::edit
