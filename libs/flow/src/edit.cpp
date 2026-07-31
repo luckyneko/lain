@@ -195,15 +195,26 @@ namespace lain::flow::edit
 
 		// --- 3. Add an outer port for every inner pin not yet mirrored --------------------------
 		// Last, so a name freed by a removal or a rename above is available here.
-		std::set<PortId> mirrored;
-		for (const auto& entry : node->portMap())
-			mirrored.insert(entry.second);
+		//
+		// The "already mirrored" sets are PER DIRECTION, and that is not a detail: a PortId is minted
+		// per NODE, so the inner GroupInput's first pin and the inner GroupOutput's first pin are BOTH
+		// PortId{1}. One shared set would let an input's mapping mask the same-numbered output pin, so
+		// the output port would silently never be created — which is exactly what a single set did.
+		std::set<PortId> mirroredInputs;
+		std::set<PortId> mirroredOutputs;
+		for (const auto& [outer, innerId] : node->portMap())
+		{
+			if (node->findInput(outer) != nullptr)
+				mirroredInputs.insert(innerId);
+			else if (node->findOutput(outer) != nullptr)
+				mirroredOutputs.insert(innerId);
+		}
 
 		GroupInputNode& boundaryIn = inner.boundaryInputNode();
 		for (PortIndex i = 0; i < boundaryIn.outputCount(); ++i)
 		{
 			const Port& pin = boundaryIn.output(i);
-			if (mirrored.count(pin.id()) == 0)
+			if (mirroredInputs.count(pin.id()) == 0)
 			{
 				node->exposePort(Port::Direction::Input, pin);
 				++sync.added;
@@ -214,7 +225,7 @@ namespace lain::flow::edit
 		for (PortIndex i = 0; i < boundaryOut.inputCount(); ++i)
 		{
 			const Port& pin = boundaryOut.input(i);
-			if (mirrored.count(pin.id()) == 0)
+			if (mirroredOutputs.count(pin.id()) == 0)
 			{
 				node->exposePort(Port::Direction::Output, pin);
 				++sync.added;

@@ -8,6 +8,7 @@ add_executable(flowview
 	src/flowviewapp.cpp
 	src/mainwindow.cpp
 	src/appcontext.cpp
+	src/groupnav.cpp
 	src/session.cpp
 	src/undo.cpp
 	src/previewcache.cpp

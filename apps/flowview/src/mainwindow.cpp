@@ -75,7 +75,35 @@ namespace flowview
 	void MainWindow::onRender(app::Window& window, const app::TimeState&)
 	{
 		FlowviewApp& appDelegate = window.app().getDelegate<FlowviewApp>();
-		flow::Graph& graph = appDelegate.graph(); // mutated by the canvas below
+
+		// Consume a navigation requested LAST frame (a breadcrumb click, a double-click descent) before
+		// resolving the path, so the canvas seeds positions for the level it is about to draw. Doing
+		// this inside the canvas would consume a flag raised during its own draw — seeding the level
+		// being left, and leaving the one being entered to inherit stale positions by node id.
+		if (m_ctx.pathChanged)
+		{
+			m_canvas.onNavigated();
+			m_ctx.pathChanged = false;
+
+			// Drop the previews with it. Not merely tidiness: a PinKey is {node id, direction, port
+			// id} with NO level in it, and node ids repeat across levels — so a stale entry from the
+			// level we just left can be found by a same-numbered pin here, and the panes would show
+			// another graph's image as if it were this one's. Only one level is ever on screen, so
+			// keeping the other's textures buys nothing and risks exactly that.
+			m_previews.clear();
+			m_previews.markDirty();
+			m_ctx.previewTarget.reset(); // the asset being previewed belonged to that other level
+		}
+
+		// The ACTIVE graph — the root, or whatever group the user has descended into. Resolved once
+		// here and handed to every pane, so navigating retargets the canvas, Inspector, Preview and
+		// Issues together. resolvePath truncates a path that no longer resolves, so a group deleted
+		// from under us degrades to its parent rather than dangling.
+		flow::Graph& graph = resolvePath(appDelegate.graph(), m_ctx.activePath); // mutated by the canvas below
+		// The path the panes are about to draw with. Captured now because a pane may NAVIGATE during
+		// this frame (a double-click descends), and the positions collected at the end of the frame
+		// belong to the level that was actually on screen — not to the one we are moving to.
+		const GraphPath drawnPath = m_ctx.activePath;
 
 		m_guiCtx->newFrame();
 
@@ -106,7 +134,7 @@ namespace flowview
 		// synchronous submit.)
 		if (edited)
 		{
-			appDelegate.reevaluate();
+			appDelegate.reevaluate(); // always runs the ROOT: the plan expands groups, so one run covers every level
 			m_previews.markDirty();
 			m_ctx.markChanged(); // a topology edit -> unsaved changes + an undo snapshot
 			m_ctx.loadIssues.clear();
@@ -127,13 +155,26 @@ namespace flowview
 		// The unsaved-changes guard for New (opened by requestNew when m_ctx.dirty).
 		m_menuBar.drawConfirmModal(m_ctx, graph);
 
-		// A snapshot of the current document (structure + params + names + layout), computed only when
-		// needed — reads live imnodes positions, so it must run after the canvas drew (here).
-		const auto snapshotNow = [&]()
+		// A group's ports mirror its interior, so re-derive them for every group we are inside — the
+		// Interface panel's ± and renames act on the INNER boundary, and nothing else would carry that
+		// out to the group's own face (or to the parent's edges into it). Done after the panes drew, so
+		// this frame's edits are included; idempotent, so a quiet frame costs a pin walk.
+		if (!drawnPath.empty() && syncPathGroups(appDelegate.graph(), drawnPath))
 		{
-			const flow::Graph& g = appDelegate.graph();
-			return snapshotGraph(g, appDelegate.nodeFactory(), collectLayout(g));
-		};
+			appDelegate.reevaluate();
+			m_previews.markDirty();
+		}
+
+		// Capture THIS level's positions into the layout tree, now that the canvas has drawn them.
+		// imnodes only knows about the level on screen, so every other level keeps the positions
+		// captured when it was last shown — which is why the tree is kept here rather than read from
+		// imnodes on demand.
+		layoutAt(m_ctx.layout, drawnPath).nodes = collectLayout(graph);
+
+		// A snapshot of the current document (structure + params + names + layout), computed only when
+		// needed. The graph is always the ROOT — a snapshot is the whole document, not the level in view.
+		const auto snapshotNow = [&]()
+		{ return snapshotGraph(appDelegate.graph(), appDelegate.nodeFactory(), m_ctx.layout); };
 
 		// Record an undo step for a committed edit — but only once no widget is active, so a param
 		// drag (which markChanged()s every frame) coalesces into a single history entry on release.
@@ -155,6 +196,19 @@ namespace flowview
 			m_previews.clear(); // the old graph's cached thumbnails are gone
 			m_previews.markDirty();
 			m_canvas.onGraphReplaced(); // re-seed positions next frame + drop stale canvas selection
+			m_ctx.layout = std::move(m_ctx.pendingLayout);
+			m_ctx.pendingLayout = {};
+
+			// Where to point the panes afterwards. A swap remaps every NodeId, so a path of ids can't
+			// simply carry over — but an UNDO should leave the user where they were, looking at what
+			// they just undid, not eject them to the root. pendingPath (ordinals, captured before the
+			// restore) is how the same level is found again in the rebuilt graph; New/Open carry none,
+			// because there the document itself changed and the root is the honest place to land.
+			// Assigned directly rather than through navigateTo: onGraphReplaced has already asked for
+			// the re-seed and cleared the selection, and raising pathChanged would clear the selection
+			// AGAIN next frame — wiping the reselect applied just below.
+			m_ctx.activePath = m_ctx.pendingPath ? pathFromOrdinals(appDelegate.graph(), *m_ctx.pendingPath) : GraphPath{};
+			m_ctx.pendingPath.reset();
 
 			// A New/Open carries a fresh baseline (the swap resets the history — undo doesn't cross it);
 			// an Undo/Redo restore carries none, so the existing history (its cursor already moved) stands.
@@ -169,7 +223,10 @@ namespace flowview
 				// mapped onto the remapped ids), so a param-drag undo doesn't drop the selection — and
 				// the selection-driven Inspector keeps showing the node. onGraphReplaced cleared the
 				// selection just above; this puts it back.
-				const std::vector<flow::NodeId> ids = appDelegate.graph().nodeIds();
+				// Ordinals into the ACTIVE graph — the level the selection was made on, which is where
+				// the path above has just returned us. (Against the root they would resolve to whatever
+				// node happened to share a number, since ids repeat across levels.)
+				const std::vector<flow::NodeId> ids = resolvePath(appDelegate.graph(), m_ctx.activePath).nodeIds();
 				for (const std::size_t ordinal : m_ctx.pendingReselect)
 				{
 					if (ordinal < ids.size())

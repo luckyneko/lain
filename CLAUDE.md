@@ -186,16 +186,76 @@ that **keeps the canvas selection across an undo/redo** (selected nodes captured
 `nodeIds()` — stable across the load's fresh-id remap — and re-selected after the swap; New/Open still
 clear, since they carry a `pendingBaseline`).
 
-### Update 2026-07-29 — M5 (group nodes) designed; slices 1–5 built
+### Update 2026-07-29 — M5 (group nodes) designed and built (slices 1–6; gui-mode needs an eyeball)
 
 **Group nodes / subgraphs were grilled and designed** — see the new **Milestone 5** section in
 [WORK.md](WORK.md), **[ADR-0009](docs/adr/0009-group-nodes-flattened-into-one-execution-plan.md)**
 (the scheduler flattens all nesting into one execution plan; `Node::innerGraph()`; virtual `dirty()`),
 **[ADR-0010](docs/adr/0010-inline-vs-linked-groups-no-prefab-overrides.md)** (inline vs linked groups,
 the interface cache, links are recipe references and never runtime shares, overrides deferred), and
-the vocabulary added to [CONTEXT.md](CONTEXT.md). Five of six slices are built — only the
-flowview navigation/palette slice remains, so groups are complete in the engine but not yet reachable
-from the UI:
+the vocabulary added to [CONTEXT.md](CONTEXT.md). **All six slices are built.** Groups execute, sync,
+persist, and are reachable from the UI — but see the gui caveat on slice 6:
+
+**Slice 6 — flowview navigation.** New `groupnav.{h,cpp}`: a `GraphPath` of descended group nodes, a
+tolerant `resolvePath` (a stale path degrades to an ancestor rather than dangling), `breadcrumb`,
+`editableAt`, and the `EditorTree` subtree accessors. `MainWindow` resolves the **active graph** once
+and hands it to every pane, so descending retargets canvas + Inspector + Interface + Preview + Issues
+together. The canvas gains a breadcrumb + Back, **double-click to descend** (same gesture for both
+kinds), a `[linked - read only]` marker, and per-gesture mutation gating so read-only affordances keep
+working inside a linked group. `Add ▸ Groups ▸ group`, `Add ▸ Linked Group…` (template path stored
+relative to the document, resolved immediately), `Group ▸ Edit Template…` through the existing guarded
+swap. Interface pane below the root edits the interface and hides binding. Canvas layout is now an
+`EditorTree` in `AppContext` — imnodes only knows the level on screen, and **ids repeat across levels**,
+so every navigation re-seeds positions and clears the selection. Verified headlessly end-to-end: a
+linked group resolves, runs, and delivers through the parent boundary; a missing template loads
+unresolved and re-saves byte-losslessly; a recursive one is refused. Two bugs the first live click exposed, both fixed: `Add ▸ Group` **crashed** on ImGui's
+"SetCursorPos used to extend boundaries" assert, because a fresh group is the first node kind with
+**zero pins** and imnodes needs the body to submit *something* (the pinless boundary nodes only escaped
+it via their `±` buttons) — the canvas now draws a placeholder for any pin-less node, guarded by a new
+**headless imnodes test** in `libs/gui/test` (ImGui + imnodes need no backend, so a real frame runs
+in-suite); and `syncGroupPorts` was only called when *adding* a linked group, so editing a group's
+interface from inside would never have reached its outer ports — `groupnav::syncPathGroups` now
+reconciles every group on the active path each frame. A third live bug: adding an input *and* an output pin inside a group left the
+**output port missing**, because `syncGroupPorts`'s "already mirrored" set was direction-agnostic and
+the two boundary nodes both start at `PortId{1}` — the very collision documented on `portMap()` one
+slice earlier. Sets are now per direction. The suite missed it because every test added its pins before
+a single sync; the bug needs a sync *between* adds, which is the interactive ordering the per-frame sync
+produces, and there is now a test in that shape. A fourth: a node inside a group jumped to the *group's* position when navigating by
+breadcrumb, because `GraphPane::draw` consumed `pathChanged` in the same frame the breadcrumb raised it
+— seeding the level being left and leaving the level being entered un-seeded, so it inherited imnodes
+state by node id. `MainWindow` now consumes it at the start of a frame, before the path resolves.
+`apps/flowview/test/test_groupnav.cpp` (9 cases) now covers the navigation model. A sixth:
+`Add ▸ Linked Group…` / `Group ▸ Edit Template…` were implemented but **never called** — the edit
+adding the menu items silently no-op'd, and an out-of-line member definition does not warn as unused,
+so the feature compiled and linked while being unreachable. Reviewing that dead code before it ran
+found a real bug: `editTemplate` looked its node up in the **root**, but a link can be nested — and
+since ids restart per `Graph`, that lookup silently found a *different* node rather than failing.
+`enclosingLinkedGroup` now returns the node itself. A seventh, and the worst: **Save wrote the VIEW,
+not the document** — `MenuBarPane` gets the active graph, so saving while inside a group overwrote the
+file with just that group's interior (data loss). Save now always writes the root graph + the whole
+layout tree. An eighth: a linked group's nodes sat in default columns because the template's `editor`
+section was discarded on load; it now travels with the template. The **return stack** ADR-0010 called
+for is now in (`Group ▸ Return to <file>` + a breadcrumb button), so `Edit Template…` is a round trip
+rather than a one-way door — and since returning re-opens the parent, every linked group re-resolves,
+which is what makes a template edit reach all instances. `Add ▸ Linked Group…` also dropped the
+template's layout (the load path kept it), so a fresh group sat in default columns until a reload —
+the third bug of the form *two paths do the same job, one got updated*, and a sign the app-side and
+serialize-side halves of "resolve a template" want collapsing into one routine. Previews also showed
+the WRONG level's images inside a group — `PinKey` has no level in it and navigation never marked the
+cache dirty, so inner pins resolved against root-built entries (a colliding key returned another
+graph's image, a non-colliding one nothing); navigation now clears the cache and the preview target.
+The breadcrumb bar was then reworked to carry document identity too — `parent.json < boof.json * /
+denoise`, where `<` precedes a document (a guarded swap) and `/` a graph level (a free view change),
+the first crumb naming the document (`Untitled` + `*` when dirty) instead of `root`, and a right-aligned
+`Edit <template>` button whose tooltip states the blast radius. The `Group` menu is retired: both its
+actions were contextual and now live in the strip.
+`[linked - read only]` then left the breadcrumb for a muted canvas watermark plus a transient message
+when an edit is actually attempted — and closing that loop exposed a hole: read-only was enforced ONLY
+on the canvas, so the Interface pane's ± / rename and the Inspector's param edits were silently lost on
+save inside a linked group. Both now use `BeginDisabled(!editable)`.
+**Slice 6 was live-driven by the repo owner throughout (2026-07-29 → 07-31), each fix exercised as it
+landed — which is where all ten bugs came from; the engine slices produced none. Unconfirmed only: the
+watermark's restyle and the read-only node-layout change, both made after the last report.**
 
 **Slice 5 — nested serialization.** The format splits as designed: a **body** is `{nodes, edges,
 editor}`, a **document** is a body plus `{version}`; `toValue`/`fromValue` are thin wrappers over

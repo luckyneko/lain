@@ -2,6 +2,7 @@
 
 #include "../appcontext.h"
 #include "../flowviewapp.h" // ctx.app->reevaluate()
+#include "../groupnav.h"	// editableAt — a linked group's interface belongs to its template
 #include "../parameditors.h"
 #include "../previewcache.h"
 #include "imagesave.h"
@@ -130,6 +131,19 @@ namespace flowview
 		gui::SetNextWindowSize(math::Vec2f{320.0f, 520.0f}, ImGuiCond_FirstUseEver);
 		gui::Begin("Interface");
 
+		// At the root this is the host-binding surface; inside a group it is the group's own port
+		// list — same pins, same ± and rename, but nothing to bind.
+		const bool atRoot = ctx.activePath.empty();
+		// Inside a LINKED group these pins belong to the template, so shaping them here would be an
+		// edit the parent document cannot store (it keeps only the source path + the cached interface)
+		// — it would be carried to the group's face by the per-frame sync and then silently lost on
+		// save. Disabled rather than hidden: you can still read the interface, which is the point of
+		// being able to look inside at all.
+		const bool editable = editableAt(ctx.app->graph(), ctx.activePath);
+		if (!atRoot)
+			gui::TextUnformatted(editable ? "Group interface (this group's ports)"
+										  : "Group interface (linked - read only)");
+
 		// Inputs: per GroupInput node, each pin (editable name, bound thumbnail, Bind…, ×) + a "+".
 		gui::TextUnformatted("Inputs");
 		gui::Separator();
@@ -141,7 +155,9 @@ namespace flowview
 			{
 				flow::Port& pin = node->output(i);
 				gui::PushID(static_cast<int>(pin.id().value()));
+				gui::BeginDisabled(!editable);
 				renamed |= renderPinName(*node, pin);
+				gui::EndDisabled();
 				gui::SameLine();
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
 
@@ -153,7 +169,16 @@ namespace flowview
 						ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 				}
 
-				if (pin.type() == typeid(image::Image))
+				// Host binding is ROOT-ONLY — BOTH arms below bind, so the gate wraps them together.
+				// Inside a group this pin's value is driven by the parent's edges (the plan's entry step
+				// overwrites it every run), so a bound value would be silently discarded. Below the root
+				// this panel edits the INTERFACE — names and ± pins, which is how a group's own ports are
+				// shaped — and does not bind it.
+				if (!atRoot)
+				{
+					// nothing to bind here
+				}
+				else if (pin.type() == typeid(image::Image))
 				{
 					if (gui::Button("Bind file..."))
 					{
@@ -187,11 +212,15 @@ namespace flowview
 					}
 				}
 				gui::SameLine();
+				gui::BeginDisabled(!editable);
 				if (gui::Button("x"))
 					requestRemove(node->id(), pin);
+				gui::EndDisabled();
 				gui::PopID();
 			}
+			gui::BeginDisabled(!editable);
 			changed |= renderAddPin(graph, *node, "input");
+			gui::EndDisabled();
 			gui::PopID();
 		}
 
@@ -207,7 +236,9 @@ namespace flowview
 			{
 				flow::Port& pin = node->input(i);
 				gui::PushID(static_cast<int>(pin.id().value()));
+				gui::BeginDisabled(!editable);
 				renamed |= renderPinName(*node, pin);
+				gui::EndDisabled();
 				gui::SameLine();
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
 
@@ -230,11 +261,15 @@ namespace flowview
 						renderImageSave(ctx, key, pin.value().get<image::Image>());
 				}
 				gui::SameLine();
+				gui::BeginDisabled(!editable);
 				if (gui::Button("x"))
 					requestRemove(node->id(), pin);
+				gui::EndDisabled();
 				gui::PopID();
 			}
+			gui::BeginDisabled(!editable);
 			changed |= renderAddPin(graph, *node, "output");
+			gui::EndDisabled();
 			gui::PopID();
 		}
 		gui::End();

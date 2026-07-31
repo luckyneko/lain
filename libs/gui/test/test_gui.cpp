@@ -5,6 +5,7 @@
 
 #include "lain/gui/enums.h"
 #include "lain/gui/gui.h"
+#include "lain/gui/nodes.h"
 
 #include <lain/math/types.h>
 
@@ -70,4 +71,49 @@ TEST_CASE("enumCombo builds headlessly over an enum", "[gui]")
 	REQUIRE(pick == Pick::B);
 
 	ImGui::DestroyContext(ctx);
+}
+
+TEST_CASE("an imnodes node with an empty body is still drawable", "[gui][nodes]")
+{
+	// Regression guard. imnodes positions a node's CONTENT with ImGui::SetCursorPos, and ImGui
+	// asserts ("Code uses SetCursorPos()/SetCursorScreenPos() to extend window/parent boundaries")
+	// when the body then submits no item at all. flowview hit this the moment group nodes arrived:
+	// a freshly added group has NO pins — its ports mirror an inner boundary that starts empty — and
+	// unlike the boundary nodes it has no "+" buttons to accidentally satisfy the rule. The canvas
+	// submits a placeholder for any pin-less node; this pins that rule down with no driver in sight.
+	//
+	// The assertion is ImGui's own: if the placeholder below is removed, this test aborts rather than
+	// failing politely — which is exactly the signal wanted, since that is what the app would do.
+	ImGuiContext* imguiCtx = ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO();
+	io.DisplaySize = ImVec2(640.0f, 480.0f);
+	io.DeltaTime = 1.0f / 60.0f;
+	unsigned char* pixels = nullptr;
+	int width = 0, height = 0;
+	io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+	io.Fonts->SetTexID(static_cast<ImTextureID>(1)); // imnodes draws, so the atlas needs an id
+
+	ImNodesContext* nodesCtx = lain::gui::nodes::CreateContext();
+
+	// Two frames: freshly-created state can carry the first one regardless.
+	for (int frame = 0; frame < 2; ++frame)
+	{
+		ImGui::NewFrame();
+		ImGui::Begin("Graph");
+		lain::gui::nodes::BeginNodeEditor();
+		lain::gui::nodes::BeginNode(1);
+		lain::gui::nodes::BeginNodeTitleBar();
+		ImGui::TextUnformatted("Group");
+		lain::gui::nodes::EndNodeTitleBar();
+		ImGui::TextDisabled("(empty - double-click)"); // the placeholder the canvas submits
+		lain::gui::nodes::EndNode();
+		lain::gui::nodes::EndNodeEditor();
+		ImGui::End();
+		ImGui::Render();
+	}
+
+	SUCCEED("a pin-less node drew without tripping ImGui's cursor-bounds assert");
+
+	lain::gui::nodes::DestroyContext(nodesCtx);
+	ImGui::DestroyContext(imguiCtx);
 }

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <lain/flow/group.h>
+#include <lain/flow/types.h>
+
 #include <filesystem>
 
 namespace lain::data
@@ -44,6 +47,16 @@ namespace flowview
 		bool openGraphPath(AppContext& ctx, const std::filesystem::path& path);
 
 	private:
+		// Add ▸ Linked Group... — pick a template, add a LinkedGroupNode pointed at it (path stored
+		// relative to the current document), resolve it immediately so it arrives with its interior and
+		// its ports, and report any load issues. Returns whether a node was added.
+		bool addLinkedGroup(AppContext& ctx);
+
+		// Group ▸ Edit Template... — open the enclosing linked group's template AS THE DOCUMENT, through
+		// the same guarded destructive swap as Open. Editing a template changes every linked group built
+		// from it, which is why it is a deliberate act rather than editing in place.
+		void editTemplate(AppContext& ctx, const lain::flow::LinkedGroupNode& linked);
+
 		// File ▸ Open Recent — the persisted recent-graph list (+ Clear Menu), greyed out when empty.
 		void drawOpenRecent(AppContext& ctx);
 
@@ -57,11 +70,20 @@ namespace flowview
 		void newGraph(AppContext& ctx);
 		void requestNew(AppContext& ctx);
 		void requestOpen(AppContext& ctx, const std::filesystem::path& path = {}); // empty -> the Open... dialog
+
+		// Go back to returnStack[index] — the document Edit Template… was invoked from — through the
+		// same guard, since the template may have unsaved edits of its own. Everything from `index` on
+		// is consumed, so an outer crumb unwinds several templates at once.
+		void returnToDocument(AppContext& ctx, std::size_t index);
 		void requestSwap(AppContext& ctx, PendingSwap swap);
 		void performSwap(AppContext& ctx, const PendingSwap& swap);
 		void openGraphDialog(AppContext& ctx);
-		bool saveToCurrentPath(AppContext& ctx, const lain::flow::Graph& graph);
-		bool saveAsDialog(AppContext& ctx, const lain::flow::Graph& graph);
+		// Save writes the DOCUMENT — the root graph and every level's layout — never the graph the
+		// panes happen to be pointed at. `activeGraph` is passed only so the level on screen can have
+		// its positions refreshed into the layout tree first.
+		const lain::flow::Graph& documentToSave(AppContext& ctx, const lain::flow::Graph& activeGraph);
+		bool saveToCurrentPath(AppContext& ctx, const lain::flow::Graph& activeGraph);
+		bool saveAsDialog(AppContext& ctx, const lain::flow::Graph& activeGraph);
 
 		// Undo / redo (Edit menu + Ctrl+Z / Ctrl+Shift+Z). Each pulls a document state from the undo
 		// history and restores it through the same deferred-swap path as a load; applyRestore does the

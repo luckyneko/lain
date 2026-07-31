@@ -2,6 +2,7 @@
 
 #include "../appcontext.h"
 #include "../flowviewapp.h" // ctx.app->reevaluate()
+#include "../groupnav.h"	// editableAt — a linked group's nodes belong to its template
 #include "../parameditors.h"
 #include "../previewcache.h"
 #include "canvasids.h" // selectedNodes + pinId
@@ -29,6 +30,8 @@ namespace flowview
 
 	void InspectorPane::draw(AppContext& ctx, flow::Graph& graph, PreviewCache& previews, const ParamEditors& editors)
 	{
+		// Whether the graph on screen may be edited at all (false inside a linked group — see below).
+		const bool editable = editableAt(ctx.app->graph(), ctx.activePath);
 		bool paramEdited = false;
 		bool renamed = false; // a title edit: a document change, but no recompute (see below)
 
@@ -69,6 +72,12 @@ namespace flowview
 				// swatch). PushID(node) so same-named params on different nodes don't collide.
 				gui::PushID(static_cast<int>(id.value()));
 
+				// Inside a LINKED group, a node's name and params belong to the template: the parent
+				// document stores only the source path + cached interface, so an edit here would be
+				// carried into the group and then silently lost on save. Disabled, not hidden — reading
+				// a template's params is exactly why you are allowed to look inside one.
+				gui::BeginDisabled(!editable);
+
 				// The node's title: user-editable, defaulting to the name its type gave it. Committed on
 				// Enter / focus loss (the pin-rename idiom) and only when it actually changed, so holding
 				// focus doesn't churn. Display only — nothing addresses a node by name — so it needs no
@@ -91,6 +100,7 @@ namespace flowview
 				if (nodeEdited)
 					node.markDirty(); // a param edit -> incremental re-eval recomputes this node + downstream
 				paramEdited |= nodeEdited;
+				gui::EndDisabled();
 				gui::PopID();
 
 				auto port = [&](const char* tag, const flow::Port& p, bool output)

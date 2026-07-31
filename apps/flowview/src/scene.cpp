@@ -6,6 +6,7 @@
 #include <lain/flow/example/loadimagenode.h>
 #include <lain/flow/example/tintnode.h>
 #include <lain/flow/graph.h>
+#include <lain/flow/group.h>
 #include <lain/flow/nodes/constant.h> // ConstantNode — sources to drive the control nodes
 #include <lain/flow/nodes/gate.h>	  // control nodes over the scene payload (image::Image)
 #include <lain/flow/nodes/merge.h>
@@ -29,6 +30,8 @@ namespace flowview
 	static constexpr const char* kConstBoolKey = "constBool";
 	static constexpr const char* kGroupInputKey = "groupInput";
 	static constexpr const char* kGroupOutputKey = "groupOutput";
+	static constexpr const char* kGroupKey = "group";
+	static constexpr const char* kLinkedGroupKey = "linkedGroup";
 
 	const std::vector<NodeCategory>& nodeCatalog()
 	{
@@ -40,6 +43,10 @@ namespace flowview
 			{"Sources", {kGradientKey, kLoadImageKey, kConstIntKey, kConstBoolKey}},
 			{"Filters", {kTintKey, kBlurKey}},
 			{"Control", {kGateKey, kMergeKey, kSelectKey}},
+			// A group is added empty (its inner graph is born with its own boundary pair) and grown by
+			// descending into it. A LINKED group needs a template chosen first, so the menu bar adds it
+			// through a file dialog rather than from this list.
+			{"Groups", {kGroupKey}},
 		};
 		return catalog;
 	}
@@ -69,6 +76,11 @@ namespace flowview
 		// in the factory too so serialization can name them (keyOf) and recreate them on load.
 		factory.registerType<flow::GroupInputNode>(kGroupInputKey);
 		factory.registerType<flow::GroupOutputNode>(kGroupOutputKey);
+
+		// Group nodes. Both must be in the factory for serialization to name them; only the inline one
+		// is palette-addable (a linked group is created by picking its template).
+		factory.registerType<flow::GroupNode>(kGroupKey);
+		factory.registerType<flow::LinkedGroupNode>(kLinkedGroupKey);
 	}
 
 	void buildExampleScene(flow::Graph& graph, const core::Factory<flow::Node>& factory)

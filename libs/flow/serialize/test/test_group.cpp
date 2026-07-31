@@ -366,3 +366,50 @@ TEST_CASE("a template that links itself is refused, not followed forever", "[flo
 	}
 	REQUIRE(refused);
 }
+
+TEST_CASE("a linked group shows its template's own node layout", "[flow-serialize][group]")
+{
+	// Reported: nodes inside a linked group sat in default columns instead of where the template put
+	// them. The template's `editor` section was being discarded on load. It should come with it — the
+	// group is read-only, so the template author's arrangement is simply the truthful view, and there
+	// is no divergence to manage.
+	const Factory<Node> factory = groupFactory();
+	const ValueCodecs codecs = intCodecs();
+
+	// A template with a deliberate, non-default layout.
+	Graph templateGraph;
+	buildAdderInterior(templateGraph, 100);
+	const NodeId inner = templateGraph.nodeIds().back(); // the AddNode
+	Value placed = Value::object();
+	placed.set("x", Value(275.0));
+	placed.set("y", Value(26.0));
+	EditorTree templateLayout;
+	templateLayout.nodes[inner] = placed;
+	const Value templateDoc = toValue(templateGraph, factory, codecs, templateLayout);
+	REQUIRE(templateDoc.find("editor") != nullptr);
+
+	// A parent linking it, carrying NO layout of its own for the group's interior.
+	Graph source;
+	const NodeId group = source.add<LinkedGroupNode>();
+	auto& linked = static_cast<LinkedGroupNode&>(source.node(group));
+	linked.setSource("subs/adder.json");
+	buildAdderInterior(linked.inner(), 100);
+	linked.setResolved(true);
+	const Value doc = toValue(source, factory, codecs);
+
+	const TemplateResolver resolver = [&](const std::string&) -> std::optional<ResolvedTemplate>
+	{ return ResolvedTemplate{"/abs/subs/adder.json", templateDoc}; };
+
+	const LoadResult result = fromValue(doc, factory, codecs, resolver);
+	REQUIRE(result.clean());
+
+	// The group's subtree carries the template's positions, keyed to the freshly loaded inner ids.
+	const NodeId loadedGroup = result.graph.nodeIds().back();
+	REQUIRE(result.graph.node(loadedGroup).innerGraph() != nullptr);
+	REQUIRE(result.editor.groups.count(loadedGroup) == 1);
+
+	const EditorTree& subtree = result.editor.groups.at(loadedGroup);
+	REQUIRE(subtree.nodes.size() == 1);
+	REQUIRE(subtree.nodes.begin()->second.find("x")->asDouble() == 275.0);
+	REQUIRE(subtree.nodes.begin()->second.find("y")->asDouble() == 26.0);
+}

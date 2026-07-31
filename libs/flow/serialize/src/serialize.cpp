@@ -375,7 +375,7 @@ namespace lain::flow::serialize
 	// rectify against the cache. When the template cannot be resolved — missing file, no resolver, or
 	// a recursive link — the group loads as an UNRESOLVED PLACEHOLDER whose pins come from the cache,
 	// so the parent's wiring survives and saving is lossless.
-	static void loadLinkedGroup(LinkedGroupNode& linked, const data::Value& nodeV, LoadContext& ctx)
+	static void loadLinkedGroup(LinkedGroupNode& linked, const data::Value& nodeV, EditorTree& editor, LoadContext& ctx)
 	{
 		const data::Value* sourceV = nodeV.find("source");
 		const std::string* source = sourceV ? sourceV->asString() : nullptr;
@@ -420,8 +420,11 @@ namespace lain::flow::serialize
 		}
 
 		ctx.resolving.insert(resolved->key);
-		EditorTree ignored; // a template's own layout belongs to that document, not to this parent
-		loadBody(resolved->document, linked.inner(), ignored, ctx);
+		// The template's OWN layout comes with it: a linked group is read-only, so showing anything
+		// other than the arrangement the template author made would be a worse view of it — and there
+		// is no divergence to worry about, because nothing here can edit it. It lands in this group's
+		// subtree of the parent's layout, so an unresolved link still remembers where things sat.
+		loadBody(resolved->document, linked.inner(), editor, ctx);
 		ctx.resolving.erase(resolved->key);
 		linked.setResolved(true);
 
@@ -569,7 +572,7 @@ namespace lain::flow::serialize
 				// what lets an edge addressing one of the group's ports by name find it.
 				if (auto* linked = dynamic_cast<LinkedGroupNode*>(&created))
 				{
-					loadLinkedGroup(*linked, nodeV, ctx);
+					loadLinkedGroup(*linked, nodeV, editor.groups[liveId], ctx);
 				}
 				else if (auto* group = dynamic_cast<GroupNode*>(&created))
 				{

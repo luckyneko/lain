@@ -2,14 +2,17 @@
 
 #include "../appcontext.h"
 #include "../flowviewapp.h"
-#include "../graphio.h" // loadGraph / saveGraph
-#include "../scene.h"	// nodeCatalog (the Add menu grouping) + buildNewScene
-#include "../session.h" // noteGraphPath / saveSession (Open Recent + reopen-on-launch)
-#include "canvasids.h"	// collectLayout (canvas positions for the saved editor section)
+#include "../graphio.h"	 // loadGraph / saveGraph
+#include "../groupnav.h" // enclosingLinkedGroup (Edit Template...)
+#include "../scene.h"	 // nodeCatalog (the Add menu grouping) + buildNewScene
+#include "../session.h"	 // noteGraphPath / saveSession (Open Recent + reopen-on-launch)
+#include "canvasids.h"	 // collectLayout (canvas positions for the saved editor section)
 
 #include <lain/app/application.h>
 #include <lain/data/value.h> // Value (undo/redo snapshot restored via applyRestore)
+#include <lain/flow/edit.h>
 #include <lain/flow/graph.h>
+#include <lain/flow/group.h>
 #include <lain/flow/serialize/loadresult.h>
 #include <lain/gui/dialogs.h>
 #include <lain/gui/gui.h>
@@ -19,6 +22,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace flowview
@@ -30,12 +34,14 @@ namespace flowview
 		// A blank document — a fresh Graph is already one empty Input + one empty Output node.
 		// Deferred to end of frame like every graph swap.
 		ctx.loadedGraph = std::make_unique<flow::Graph>();
-		ctx.pendingLayout.clear();
+		ctx.pendingLayout = {};
+		ctx.pendingPath.reset(); // a New lands at the root, even if an undo was requested first this frame
 		ctx.loadRequested = true;
 		ctx.pendingBaseline = snapshotGraph(*ctx.loadedGraph, ctx.app->nodeFactory()); // reset undo history to the blank doc
 		ctx.currentPath.clear();													   // an untitled document
 		ctx.dirty = false;
 		ctx.loadIssues.clear();
+		ctx.returnStack.clear();	   // a new document is a new lineage — nothing to go back to
 		ctx.session.lastGraph.clear(); // nothing to reopen next launch (the recents keep their history)
 		saveSession(ctx.session);
 	}
@@ -55,16 +61,55 @@ namespace flowview
 
 	void MenuBarPane::requestNew(AppContext& ctx)
 	{
-		requestSwap(ctx, {DocumentSwap::New, {}});
+		requestSwap(ctx, {DocumentSwap::New, {}, false, std::nullopt});
 	}
 
 	void MenuBarPane::requestOpen(AppContext& ctx, const std::filesystem::path& path)
 	{
-		requestSwap(ctx, {DocumentSwap::Open, path});
+		requestSwap(ctx, {DocumentSwap::Open, path, false, std::nullopt});
+	}
+
+	void MenuBarPane::returnToDocument(AppContext& ctx, std::size_t index)
+	{
+		if (index >= ctx.returnStack.size())
+			return;
+		// Guarded like any Open — the template may have unsaved edits, which is exactly the work a
+		// one-way trip would have thrown away. Everything from `index` on is consumed, so clicking an
+		// outer document crumb unwinds several templates at once.
+		requestSwap(ctx, {DocumentSwap::Open, ctx.returnStack[index], false, index});
 	}
 
 	void MenuBarPane::performSwap(AppContext& ctx, const PendingSwap& swap)
 	{
+		// Maintain the return stack HERE, where the swap actually happens: by now the guard has been
+		// resolved, so a document that was untitled when Edit Template… was clicked has a path if the
+		// user chose Save — and a cancelled guard never reaches this point at all.
+		if (swap.returnDepth)
+		{
+			if (*swap.returnDepth < ctx.returnStack.size())
+				ctx.returnStack.resize(*swap.returnDepth);
+		}
+		else if (swap.pushReturn)
+		{
+			if (ctx.currentPath.empty())
+			{
+				// An untitled document has no file to come back to, so this really is one-way. Say so
+				// rather than opening the template and leaving the user to discover there is no route
+				// back (the guard offered a Save a moment ago, which would have given it a path).
+				ctx.loadIssues.push_back({Issue::Severity::Warning,
+										  "the graph was never saved, so there is no document to return to",
+										  {}});
+			}
+			else
+			{
+				ctx.returnStack.push_back(ctx.currentPath);
+			}
+		}
+		else if (swap.kind == DocumentSwap::Open)
+		{
+			ctx.returnStack.clear(); // an unrelated Open leaves the lineage — nothing to go back to
+		}
+
 		if (swap.kind == DocumentSwap::New)
 			newGraph(ctx);
 		else if (swap.path.empty())
@@ -134,7 +179,8 @@ namespace flowview
 
 		// Replace the scene — deferred to end of frame.
 		ctx.loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
-		ctx.pendingLayout = std::move(result.editor.nodes);
+		ctx.pendingLayout = std::move(result.editor);
+		ctx.pendingPath.reset(); // a different document — the root is the honest place to land
 		ctx.loadRequested = true;
 		// Baseline the undo history to the loaded document (via the same snapshot path push() uses, so
 		// the first edit's snapshot compares cleanly). Opening resets history — undo doesn't cross it.
@@ -144,6 +190,70 @@ namespace flowview
 		noteGraphPath(ctx.session, path); // now the document to reopen + the head of Open Recent
 		saveSession(ctx.session);
 		return true;
+	}
+
+	bool MenuBarPane::addLinkedGroup(AppContext& ctx)
+	{
+		const auto picked = gui::openFile("Choose a template graph", gui::lastDirectory(),
+										  {{"Graph JSON", {"*.json"}}, {"All files", {"*"}}});
+		if (!picked)
+			return false;
+
+		const flow::NodeId id = ctx.addCatalogNode("linkedGroup"); // lands in the ACTIVE graph, and is refused inside a link
+		if (id == flow::NodeId{})
+			return false;
+		flow::Graph& graph = resolvePath(ctx.app->graph(), ctx.activePath);
+
+		auto& linked = static_cast<flow::LinkedGroupNode&>(graph.node(id));
+
+		// Store the path RELATIVE to the current document when we have one, so the pair travels
+		// together; an untitled document has no anchor yet, so an absolute path is the honest choice
+		// until it is saved.
+		const std::filesystem::path chosen = *picked;
+		const std::filesystem::path base = ctx.currentPath.parent_path();
+		std::error_code ec;
+		const std::filesystem::path stored = base.empty() ? chosen : std::filesystem::relative(chosen, base, ec);
+		linked.setSource((ec || stored.empty() ? chosen : stored).generic_string());
+
+		// Resolve it now so the node arrives with its interior and its ports, rather than as a
+		// placeholder the user has to reload to see.
+		flow::serialize::LoadResult loaded = loadGraph(chosen.string(), ctx.app->nodeFactory());
+		for (const flow::serialize::LoadIssue& issue : loaded.issues)
+		{
+			const Issue::Severity sev = issue.severity == flow::serialize::Severity::Error ? Issue::Severity::Error : Issue::Severity::Warning;
+			ctx.loadIssues.push_back({sev, "template: " + issue.message, {}});
+		}
+		if (loaded.graph.nodeCount() != 0)
+		{
+			linked.inner() = std::move(loaded.graph);
+			linked.setResolved(true);
+
+			// The template's OWN layout comes with it, into this group's subtree — otherwise the
+			// interior would sit in default columns until the document was saved and reopened, at which
+			// point the load path (which does carry it) would appear to "discover" the positions. Same
+			// rule as loading a document: a linked group is read-only, so the template author's
+			// arrangement is the truthful view of it.
+			GraphPath groupPath = ctx.activePath;
+			groupPath.push_back(id);
+			layoutAt(ctx.layout, groupPath) = std::move(loaded.editor);
+		}
+		flow::edit::syncGroupPorts(graph, id);
+		return true;
+	}
+
+	void MenuBarPane::editTemplate(AppContext& ctx, const flow::LinkedGroupNode& linked)
+	{
+		if (linked.source().empty())
+			return;
+
+		// `source` is relative to the document that stores it, and the OUTERMOST link on the path is
+		// always stored in the open document — which is why enclosingLinkedGroup returns that one.
+		const std::filesystem::path base = ctx.currentPath.parent_path();
+		const std::filesystem::path target = base.empty() ? std::filesystem::path(linked.source()) : base / linked.source();
+
+		// The same guarded destructive swap as Open — unsaved work is protected — but flagged to
+		// remember where we came from, so this is a round trip and not a one-way door.
+		requestSwap(ctx, {DocumentSwap::Open, target, true, std::nullopt});
 	}
 
 	void MenuBarPane::undo(AppContext& ctx)
@@ -166,11 +276,19 @@ namespace flowview
 		// selected (and the Inspector showing it) instead of dropping to nothing. (nodeIds() and the
 		// restored graph's enumeration share an order — both ascend by insertion — so ordinal k is the
 		// same logical node on both sides.)
+		// Stay where the user is: record the active path as ordinals so the restore can return to the
+		// SAME group rather than dumping them at the root, away from the edit they just undid.
+		ctx.pendingPath = pathOrdinals(ctx.app->graph(), ctx.activePath);
+
 		ctx.pendingReselect.clear();
 		const std::vector<flow::NodeId> selected = selectedNodes();
 		if (!selected.empty())
 		{
-			const std::vector<flow::NodeId> ids = ctx.app->graph().nodeIds();
+			// Ordinals into the ACTIVE graph, not the root: the canvas selection holds the ids of the
+			// level on screen, and ids REPEAT across levels — matching them against the root's list
+			// would silently resolve to whichever root node happened to share a number.
+			flow::Graph& activeGraph = resolvePath(ctx.app->graph(), ctx.activePath);
+			const std::vector<flow::NodeId> ids = activeGraph.nodeIds();
 			for (const flow::NodeId sel : selected)
 			{
 				for (std::size_t i = 0; i < ids.size(); ++i)
@@ -188,7 +306,9 @@ namespace flowview
 		// with NO pendingBaseline, so the swap handler keeps the history (the cursor already moved).
 		flow::serialize::LoadResult result = restoreGraph(state, ctx.app->nodeFactory());
 		ctx.loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
-		ctx.pendingLayout = std::move(result.editor.nodes);
+		ctx.pendingLayout = std::move(result.editor); // the WHOLE tree: inner levels keep their layout too
+		// NOTE: pendingPath was set at the top of this function and must survive — it is what keeps an
+		// undo from ejecting the user to the root. (New/Open clear it; a restore deliberately does not.)
 		ctx.loadRequested = true;
 		ctx.dirty = true; // a restored state differs from what's on disk (in general)
 		ctx.loadIssues.clear();
@@ -238,12 +358,23 @@ namespace flowview
 		}
 	}
 
-	bool MenuBarPane::saveToCurrentPath(AppContext& ctx, const flow::Graph& graph)
+	// Bring the layout tree up to date for the level currently on screen, then hand back the DOCUMENT
+	// to write. Saving is a document operation, never a view one: the panes are pointed at the active
+	// graph, but the file is always the whole root graph plus every level's positions. (Writing the
+	// active graph would overwrite the document with just the group you happened to be inside.)
+	const flow::Graph& MenuBarPane::documentToSave(AppContext& ctx, const flow::Graph& activeGraph)
+	{
+		layoutAt(ctx.layout, ctx.activePath).nodes = collectLayout(activeGraph);
+		return ctx.app->graph();
+	}
+
+	bool MenuBarPane::saveToCurrentPath(AppContext& ctx, const flow::Graph& activeGraph)
 	{
 		if (ctx.currentPath.empty())
-			return saveAsDialog(ctx, graph); // no file yet -> prompt for one
+			return saveAsDialog(ctx, activeGraph); // no file yet -> prompt for one
 
-		if (saveGraph(ctx.currentPath.string(), graph, ctx.app->nodeFactory(), collectLayout(graph)))
+		const flow::Graph& document = documentToSave(ctx, activeGraph);
+		if (saveGraph(ctx.currentPath.string(), document, ctx.app->nodeFactory(), ctx.layout))
 		{
 			ctx.dirty = false;
 			noteGraphPath(ctx.session, ctx.currentPath); // saving makes it the current document too
@@ -254,7 +385,7 @@ namespace flowview
 		return false;
 	}
 
-	bool MenuBarPane::saveAsDialog(AppContext& ctx, const flow::Graph& graph)
+	bool MenuBarPane::saveAsDialog(AppContext& ctx, const flow::Graph& activeGraph)
 	{
 		// Native dialogs block the render thread — the same pattern as the per-output Save… below.
 		const auto path = gui::saveFile("Save graph", {}, {{"json", {"*.json"}}});
@@ -262,7 +393,8 @@ namespace flowview
 			return false; // cancelled — the caller must treat this as "not saved"
 		std::filesystem::path file = *path;
 		file.replace_extension("json"); // force .json (the codec is keyed off the extension)
-		if (!saveGraph(file.string(), graph, ctx.app->nodeFactory(), collectLayout(graph)))
+		const flow::Graph& document = documentToSave(ctx, activeGraph);
+		if (!saveGraph(file.string(), document, ctx.app->nodeFactory(), ctx.layout))
 		{
 			gui::message("Save failed", "Could not write " + file.string(), true);
 			return false;
@@ -279,6 +411,21 @@ namespace flowview
 		// Cmd on macOS, Ctrl elsewhere — for both the displayed shortcut text and the wired key chord.
 		const bool mac = gui::GetIO().ConfigMacOSXBehaviors;
 		const std::string m = mac ? "Cmd+" : "Ctrl+";
+
+		// The breadcrumb's document crumbs and its Edit button route here: document swaps belong to the
+		// menu bar, and the canvas draws earlier in the frame.
+		if (ctx.returnRequest)
+		{
+			const std::size_t index = *ctx.returnRequest;
+			ctx.returnRequest.reset();
+			returnToDocument(ctx, index);
+		}
+		if (ctx.editTemplateRequested)
+		{
+			ctx.editTemplateRequested = false;
+			if (flow::LinkedGroupNode* linked = enclosingLinkedGroup(ctx.app->graph(), ctx.activePath))
+				editTemplate(ctx, *linked);
+		}
 
 		if (gui::BeginMainMenuBar())
 		{
@@ -316,15 +463,20 @@ namespace flowview
 					{
 						for (const std::string& key : category.keys)
 						{
+							// addCatalogNode refuses inside a linked group (and lands in the ACTIVE graph),
+							// so respect its answer rather than assuming an edit happened.
 							if (gui::MenuItem(key.c_str()))
-							{
-								ctx.addCatalogNode(key);
-								edited = true;
-							}
+								edited |= ctx.addCatalogNode(key) != flow::NodeId{};
 						}
 						gui::EndMenu();
 					}
 				}
+
+				// A LINKED group is not in the catalog: it needs its template picked first, so it
+				// arrives through a file dialog rather than off a list.
+				gui::Separator();
+				if (gui::MenuItem("Linked Group..."))
+					edited |= addLinkedGroup(ctx);
 				gui::EndMenu();
 			}
 			if (gui::BeginMenu("View"))

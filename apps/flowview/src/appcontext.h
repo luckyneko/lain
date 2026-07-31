@@ -1,5 +1,6 @@
 #pragma once
 
+#include "groupnav.h" // GraphPath — which graph the panes are pointed at
 #include "pinkey.h"
 #include "session.h" // what persists between runs (last graph, recents, dialog folder)
 #include "undo.h"	 // UndoStack (the graph-document history)
@@ -47,6 +48,14 @@ namespace flowview
 	{
 		DocumentSwap kind = DocumentSwap::New;
 		std::filesystem::path path; // Open only: the file to open; empty means "ask with the file dialog"
+
+		// The return stack (Edit Template… and its way back). Applied when the swap is CARRIED OUT,
+		// not when it is requested, so a cancelled guard leaves the stack untouched — and so a Save
+		// answered in the guard has already given an untitled document a path to return to.
+		bool pushReturn = false; // remember the document being left
+		// This swap IS a return: the size the return stack should have once it lands. A depth rather
+		// than a flag so the breadcrumb can jump back several documents at once, not just one.
+		std::optional<std::size_t> returnDepth;
 	};
 
 	// Thumbnail size for the image preview, chosen at runtime via a lain::gui::enumCombo
@@ -77,6 +86,32 @@ namespace flowview
 		// don't stack; returns its id. Shared by the menu-bar Add and the Nodes palette (both add from
 		// the catalog list). The caller sets `edited` so the scene re-runs.
 		lain::flow::NodeId addCatalogNode(const std::string& key);
+
+		// --- Navigation (which graph the panes are pointed at) ---
+		// The path of group nodes descended from the root; empty = the root graph. MainWindow
+		// resolves it once per frame and hands every pane the graph it names, so descending retargets
+		// the canvas, Inspector, Preview and Issues together.
+		GraphPath activePath;
+		// Set when the path changed this frame: the canvas must re-seed positions (imnodes keys node
+		// state by the int of a NodeId, and ids REPEAT across levels, so an inner node would otherwise
+		// inherit a same-numbered root node's position) and clear its selection.
+		bool pathChanged = false;
+		void navigateTo(GraphPath path)
+		{
+			activePath = std::move(path);
+			pathChanged = true;
+		}
+		void descendInto(lain::flow::NodeId group)
+		{
+			activePath.push_back(group);
+			pathChanged = true;
+		}
+
+		// Canvas layout for the WHOLE nesting tree, not just the level on screen: imnodes only knows
+		// positions for what it is currently drawing, so each level's positions are captured here as
+		// it is shown and kept while other levels are displayed. Save and the undo snapshot read this
+		// rather than imnodes directly.
+		lain::flow::serialize::EditorTree layout;
 
 		// --- Graph-adjacent metadata (extra data sitting alongside the graph) ---
 		PreviewSize previewSize = PreviewSize::Medium; // thumbnail size (enumCombo-driven)
@@ -114,6 +149,23 @@ namespace flowview
 			recentIssueFrames = 240; // ~4 s at 60fps
 		}
 
+		// An edit gesture inside a linked group. Fired when the user actually TRIES something, because
+		// a refusal that just does nothing reads as a bug — the passive marker on the canvas says the
+		// state, this says why the thing you just did had no effect.
+		void noteReadOnlyEdit()
+		{
+			recentIssue = Issue{Issue::Severity::Info, "This group is linked - edit its template to change it", {}};
+			recentIssueFrames = 240;
+		}
+
+		// Documents to come back to, innermost last — pushed by Edit Template…, popped by the return.
+		// A stack rather than a single slot because a template may itself link one.
+		std::vector<std::filesystem::path> returnStack;
+		// The breadcrumb's document crumbs, consumed by the menu bar (which owns document swaps) later
+		// in the same frame. `returnRequest` is the index in returnStack to go back to.
+		std::optional<std::size_t> returnRequest;
+		bool editTemplateRequested = false;
+
 		// --- Document + pending load ---
 		// The file the graph was last saved-to / opened-from — plain Save writes here (no dialog); empty
 		// until a Save As / Open sets it, and cleared by New.
@@ -150,7 +202,10 @@ namespace flowview
 		// same path (loadedGraph + pendingLayout + loadRequested).
 		bool loadRequested = false;
 		std::unique_ptr<lain::flow::Graph> loadedGraph;
-		lain::flow::serialize::EditorData pendingLayout;
+		// The whole tree's layout, since a loaded document carries positions for every level. Applying
+		// it also resets the active path to the root: a swap remaps every NodeId, so any path into the
+		// old graph is meaningless.
+		lain::flow::serialize::EditorTree pendingLayout;
 		// Set alongside a New/Open swap (not an Undo/Redo restore): the freshly-established document to
 		// re-baseline the undo history with once the swap is applied. Its presence is what tells the
 		// swap handler "this is a new document → reset history" vs "this is a restore → keep history".
@@ -161,5 +216,10 @@ namespace flowview
 		// applied after the swap re-seeds; without it a param undo would drop the canvas selection (and
 		// so the selection-driven Inspector). Empty on New/Open, which clear the selection instead.
 		std::vector<std::size_t> pendingReselect;
+		// The active path to restore after an Undo/Redo swap, as ORDINALS (see groupnav::pathOrdinals)
+		// — a restore remaps every NodeId, so the path can't be carried as ids. Absent on New/Open,
+		// which go back to the root because the document itself changed. Without this, undoing an edit
+		// made INSIDE a group threw the user back out to the root, away from what they just undid.
+		std::optional<std::vector<std::size_t>> pendingPath;
 	};
 } // namespace flowview

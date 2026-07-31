@@ -52,10 +52,30 @@ namespace flowview
 	}
 
 	bool saveGraph(const std::string& uri, const flow::Graph& graph,
-				   const core::Factory<flow::Node>& factory, const flow::serialize::EditorData& editor)
+				   const core::Factory<flow::Node>& factory, const flow::serialize::EditorTree& editor)
 	{
 		const data::Value document = flow::serialize::toValue(graph, factory, sceneCodecs(), editor);
 		return io::data::save(uri, document);
+	}
+
+	flow::serialize::TemplateResolver templateResolver(const std::filesystem::path& documentDir)
+	{
+		// A linked group's `source` is stored RELATIVE to the document that names it, so a project
+		// folder can be moved or shared whole. Resolution is the app's job — flow core does no file
+		// I/O — and the CANONICAL key it returns is what the recursion guard compares, so two
+		// spellings of one file (./sub.json vs sub.json) must collapse to the same key.
+		return [documentDir](const std::string& source) -> std::optional<flow::serialize::ResolvedTemplate>
+		{
+			std::error_code ec;
+			const std::filesystem::path full = documentDir.empty() ? std::filesystem::path(source) : documentDir / source;
+			const std::filesystem::path canonical = std::filesystem::weakly_canonical(full, ec);
+			const std::filesystem::path resolved = ec ? full : canonical;
+
+			const auto document = io::data::load(resolved.string());
+			if (!document)
+				return std::nullopt; // io::data::load logged it; serialize turns this into an issue
+			return flow::serialize::ResolvedTemplate{resolved.string(), *document};
+		};
 	}
 
 	flow::serialize::LoadResult loadGraph(const std::string& uri, const core::Factory<flow::Node>& factory)
@@ -67,11 +87,13 @@ namespace flowview
 			result.issues.push_back({flow::serialize::Severity::Error, "could not read graph file: " + uri});
 			return result;
 		}
-		return flow::serialize::fromValue(*document, factory, sceneCodecs());
+		// Linked groups resolve against the folder holding THIS document.
+		return flow::serialize::fromValue(*document, factory, sceneCodecs(),
+										  templateResolver(std::filesystem::path(uri).parent_path()));
 	}
 
 	data::Value snapshotGraph(const flow::Graph& graph, const core::Factory<flow::Node>& factory,
-							  const flow::serialize::EditorData& editor)
+							  const flow::serialize::EditorTree& editor)
 	{
 		return flow::serialize::toValue(graph, factory, sceneCodecs(), editor);
 	}

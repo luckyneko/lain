@@ -4,8 +4,10 @@
 #include <lain/data/value.h>
 #include <lain/flow/node.h>
 #include <lain/flow/serialize/loadresult.h>
+#include <lain/flow/serialize/serialize.h>
 #include <lain/flow/serialize/valuecodecs.h>
 
+#include <filesystem>
 #include <string>
 
 namespace lain::flow
@@ -32,7 +34,12 @@ namespace flowview
 	// encode failure (logged).
 	bool saveGraph(const std::string& uri, const lain::flow::Graph& graph,
 				   const lain::core::Factory<lain::flow::Node>& factory,
-				   const lain::flow::serialize::EditorData& editor = {});
+				   const lain::flow::serialize::EditorTree& editor = {});
+
+	// The template resolver a load uses for LINKED groups: `source` is read relative to
+	// `documentDir` (so a project folder stays portable) and canonicalised, since that canonical path
+	// is the key the recursion guard compares. Exposed for callers that load a document themselves.
+	lain::flow::serialize::TemplateResolver templateResolver(const std::filesystem::path& documentDir);
 
 	// Load a graph from JSON at `uri`. Best-effort: an unreadable file is a fatal Error in the
 	// returned LoadResult (which then carries an empty graph).
@@ -47,7 +54,7 @@ namespace flowview
 	// compare equal.
 	lain::data::Value snapshotGraph(const lain::flow::Graph& graph,
 									const lain::core::Factory<lain::flow::Node>& factory,
-									const lain::flow::serialize::EditorData& editor = {});
+									const lain::flow::serialize::EditorTree& editor = {});
 
 	// Rebuild a graph from a snapshot (or any document Value) — fromValue with sceneCodecs(). A
 	// snapshot came from snapshotGraph, so the result is normally clean; any issues ride in the

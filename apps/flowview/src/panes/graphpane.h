@@ -33,6 +33,10 @@ namespace flowview
 		// imnodes' now-stale node/link selection. Called by MainWindow's deferred-load swap.
 		void onGraphReplaced();
 
+		// The active graph CHANGED (a descend, a breadcrumb, a Back). Call at the start of a frame,
+		// before the path is resolved — see the definition for why it cannot live inside draw().
+		void onNavigated();
+
 	private:
 		CanvasStyle m_style;	// canvas colours + dim state (registered in init)
 		bool m_laidOut = false; // seed node positions on the first frame (and after a Load)

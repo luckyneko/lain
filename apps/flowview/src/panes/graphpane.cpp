@@ -2,6 +2,7 @@
 
 #include "../appcontext.h"
 #include "../flowviewapp.h" // ctx.app->nodeFactory()
+#include "../groupnav.h"	// breadcrumb / descend / editability
 #include "../scene.h"		// nodeCatalog + NodeCategory
 #include "canvasids.h"		// pinId + selectedNodes
 
@@ -106,18 +107,24 @@ namespace flowview
 	// — applied after EndNodeEditor. Takes the node const + only appends to `pinAdds`, so it is safe to
 	// call mid-draw (the graph mutation happens later). PushID(node) keeps same-labelled buttons on
 	// different nodes distinct.
-	static void renderCanvasAddPin(const flow::DynamicPortsNode& node, flow::NodeId id,
+	// Returns whether it submitted any widget — the caller needs to know, because a node whose body
+	// submits NOTHING trips ImGui's "SetCursorPos used to extend boundaries" assert (imnodes positions
+	// the body with SetCursorPos, and an empty group has no item to grow it).
+	static bool renderCanvasAddPin(const flow::DynamicPortsNode& node, flow::NodeId id,
 								   std::vector<std::pair<flow::NodeId, std::string>>& pinAdds)
 	{
+		bool drew = false;
 		gui::PushID(static_cast<int>(id.value()));
 		for (const std::string& key : flow::portTypeKeys())
 		{
 			if (!node.acceptsPortType(key))
 				continue;
+			drew = true;
 			if (gui::SmallButton(("+ " + key).c_str()))
 				pinAdds.emplace_back(id, key);
 		}
 		gui::PopID();
+		return drew;
 	}
 
 	// Apply a saved position to node `id` if `layout` has one; returns whether it did (so the caller
@@ -143,6 +150,21 @@ namespace flowview
 		gui::nodes::GetIO().EmulateThreeButtonMouse.Modifier = &gui::GetIO().KeyAlt;
 	}
 
+	void GraphPane::onNavigated()
+	{
+		// Re-seed positions and drop the selection. Both are REQUIRED, not tidiness: imnodes keys node
+		// state by the int of a NodeId and ids REPEAT across levels, so an un-seeded inner node inherits
+		// the position (and selection) of the same-numbered node at the level we came from.
+		//
+		// The window drives this at the START of a frame, before the path is resolved — never the
+		// canvas itself, because a navigation can be requested DURING the canvas draw (a breadcrumb
+		// click, a double-click descent). Consuming it here would seed the level being left and leave
+		// the level being entered un-seeded, which is exactly that inherited-position bug.
+		m_laidOut = false;
+		gui::nodes::ClearNodeSelection();
+		gui::nodes::ClearLinkSelection();
+	}
+
 	void GraphPane::onGraphReplaced()
 	{
 		m_laidOut = false; // re-seed positions from the loaded layout next frame
@@ -155,7 +177,80 @@ namespace flowview
 		gui::SetNextWindowPos(math::Vec2f{360.0f, 20.0f}, ImGuiCond_FirstUseEver);
 		gui::SetNextWindowSize(math::Vec2f{880.0f, 600.0f}, ImGuiCond_FirstUseEver);
 		gui::Begin("Graph");
+
+		// Breadcrumb: where we are in the nesting, and the way back out. Drawn before the editor so it
+		// sits above the canvas rather than floating over it.
+		flow::Graph& rootGraph = ctx.app->graph();
+		const bool editable = editableAt(rootGraph, ctx.activePath);
+		{
+			// The bar reads as one lineage, but its two halves cost very different things — so they get
+			// different separators. "<" precedes a DOCUMENT crumb: that document is not loaded, and
+			// clicking it is a swap that may prompt to save. "/" precedes a graph level WITHIN the open
+			// document: already in memory, so clicking it is just a view change.
+			//   parent.json < boof.json * / denoise / sharpen                              [Edit ...]
+			// (ASCII "<" rather than a nicer glyph: the default ImGui font's range stops at U+00FF.)
+			for (std::size_t i = 0; i < ctx.returnStack.size(); ++i)
+			{
+				gui::PushID(static_cast<int>(100 + i));
+				if (gui::SmallButton(ctx.returnStack[i].filename().string().c_str()))
+					ctx.returnRequest = i; // the menu bar owns document swaps; it consumes this
+				gui::PopID();
+				gui::SameLine();
+				gui::TextUnformatted("<");
+				gui::SameLine();
+			}
+
+			// The first graph crumb names the DOCUMENT, not "root": which file this is was otherwise
+			// shown nowhere, and the dirty marker rides along with it.
+			const std::vector<Crumb> crumbs = breadcrumb(rootGraph, ctx.activePath);
+			const std::string document = (ctx.currentPath.empty() ? std::string("Untitled") : ctx.currentPath.filename().string()) + (ctx.dirty ? " *" : "");
+			for (std::size_t i = 0; i < crumbs.size(); ++i)
+			{
+				if (i != 0)
+				{
+					gui::SameLine();
+					gui::TextUnformatted("/");
+					gui::SameLine();
+				}
+				gui::PushID(static_cast<int>(i));
+				const std::string& label = (i == 0) ? document : crumbs[i].label;
+				const bool here = (i + 1 == crumbs.size());
+				if (here)
+					gui::TextUnformatted(label.c_str()); // the level in view isn't a link
+				else if (gui::SmallButton(label.c_str()))
+					ctx.navigateTo(GraphPath(ctx.activePath.begin(), ctx.activePath.begin() + static_cast<std::ptrdiff_t>(crumbs[i].depth)));
+				gui::PopID();
+			}
+			// (The read-only STATE is shown on the canvas itself — see the overlay after the editor —
+			// rather than here: this strip is about where you are, not what you may do, and it has no
+			// width to spare next to the Edit button.)
+
+			// The way to change it, right-aligned on the same line: the marker states the
+			// constraint, the button offers the way out of it. Named for the file, since "edit what?"
+			// is not obvious several levels deep.
+			if (const flow::LinkedGroupNode* linked = enclosingLinkedGroup(rootGraph, ctx.activePath))
+			{
+				const std::string label = "Edit " + std::filesystem::path(linked->source()).filename().string();
+				const float width = gui::CalcTextSize(label.c_str()).x + gui::GetStyle().FramePadding.x * 4.0f;
+				const float avail = gui::GetWindowContentRegionMax().x;
+				gui::SameLine();
+				if (avail - width > gui::GetCursorPosX()) // only right-align when it actually fits
+					gui::SetCursorPosX(avail - width);
+				if (gui::SmallButton(label.c_str()))
+					ctx.editTemplateRequested = true;
+				if (gui::IsItemHovered())
+				{
+					// The blast radius, stated before the click: editing a template changes every group
+					// built from it, which is the whole reason this is a deliberate gesture.
+					const int uses = countLinkedInstances(rootGraph, linked->source());
+					gui::SetTooltip("Edit %s as the document.\nUsed by %d linked group(s) here.",
+									linked->source().c_str(), uses);
+				}
+			}
+		}
+
 		const ImVec2 canvasSize = gui::GetContentRegionAvail(); // captured before the editor: to centre a located node
+		const ImVec2 canvasOrigin = gui::GetCursorScreenPos();	// ... and where it starts, for the read-only overlay
 
 		// Link detach (click-drag a link off a pin to remove/move it) is enabled on INPUT pins
 		// only — see the per-node loop. Leaving OUTPUT pins without the flag lets a drag *from* an
@@ -172,6 +267,11 @@ namespace flowview
 		// Default layout (seed only): Input node leftmost, Output node rightmost, everything else in a
 		// row between — so a fresh graph reads left-to-right. Can't key off topoOrder *position*: its
 		// LIFO drain can order Output before Input among edgeless nodes.
+		// This level's stored positions (a loaded document's, or those captured when it was last shown).
+		static const flow::serialize::EditorData kNoLayout;
+		const flow::serialize::EditorTree* levelTree = findLayoutAt(ctx.layout, ctx.activePath);
+		const flow::serialize::EditorData& levelLayout = levelTree ? levelTree->nodes : kNoLayout;
+
 		const int lastColumn = static_cast<int>(graph.topoOrder().size()) - 1;
 		int middleColumn = 0; // next column for a non-boundary node
 
@@ -191,7 +291,7 @@ namespace flowview
 			const flow::Node& node = graph.node(id);
 			// Default layout by role (a loaded layout wins over it): Input -> leftmost, Output ->
 			// rightmost, others fill the columns between.
-			if (seedPositions && !applyLayout(ctx.pendingLayout, id))
+			if (seedPositions && !applyLayout(levelLayout, id))
 			{
 				int col = 1 + middleColumn;
 				if (dynamic_cast<const flow::GroupInputNode*>(&node) != nullptr)
@@ -245,6 +345,18 @@ namespace flowview
 			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
 				labelColumn = std::max(labelColumn, gui::CalcTextSize(node.output(o).name().c_str()).x);
 
+			// LAYOUT is part of a linked group's read-only-ness. imnodes drags nodes itself, entirely
+			// outside our edit gestures, so gating those never touched it — and a drag here would be
+			// captured into the parent document only to be overwritten by the template's own positions
+			// on the next load. Set every frame: editability changes as the user navigates.
+			gui::nodes::SetNodeDraggable(static_cast<int>(id.value()), editable);
+
+			// A node body must submit at least one item: imnodes sets the content origin with
+			// SetCursorPos, and ImGui asserts on an empty group that moved the cursor past the parent
+			// bounds. Most nodes have pins; a freshly added GROUP has none (its ports mirror an inner
+			// boundary that starts empty), so it needs the placeholder below.
+			bool bodyItems = node.inputCount() != 0 || node.outputCount() != 0;
+
 			gui::nodes::BeginNode(static_cast<int>(id.value()));
 			gui::nodes::BeginNodeTitleBar();
 			gui::TextUnformatted(titleText);
@@ -269,7 +381,7 @@ namespace flowview
 			// A dynamic node that grows its INPUT side gets its ± below the inputs.
 			const auto* dynamic = dynamic_cast<const flow::DynamicPortsNode*>(&node);
 			if (dynamic != nullptr && dynamic->dynamicSide() == flow::Port::Direction::Input)
-				renderCanvasAddPin(*dynamic, id, pinAdds);
+				bodyItems |= renderCanvasAddPin(*dynamic, id, pinAdds);
 			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
 			{
 				const flow::Port& out = node.output(o);
@@ -290,7 +402,18 @@ namespace flowview
 			}
 			// ... and one that grows its OUTPUT side gets its ± below the outputs.
 			if (dynamic != nullptr && dynamic->dynamicSide() == flow::Port::Direction::Output)
-				renderCanvasAddPin(*dynamic, id, pinAdds);
+				bodyItems |= renderCanvasAddPin(*dynamic, id, pinAdds);
+
+			// Nothing was submitted: give the body an item (required — see above) and, for a group,
+			// say what to do about it. A group with no pins isn't broken, it is just empty: its ports
+			// mirror an inner boundary the user grows after descending into it.
+			if (!bodyItems)
+			{
+				if (node.innerGraph() != nullptr)
+					gui::TextDisabled("(empty - double-click)");
+				else
+					gui::TextDisabled("(no pins)");
+			}
 			gui::nodes::EndNode();
 
 			for (int k = 0; k < nodeColoursPushed; ++k)
@@ -316,6 +439,21 @@ namespace flowview
 		gui::nodes::MiniMap(0.18f, ImNodesMiniMapLocation_BottomRight);
 		gui::nodes::EndNodeEditor();
 
+		// Read-only watermark, bottom-left of the canvas: the state belongs where the gestures happen,
+		// not in the breadcrumb. Muted, so it reads as chrome rather than as an error — the transient
+		// message below is what speaks up when someone actually tries to edit. Deliberately NOT a
+		// background tint: canvasstyle already uses dimming to mean "this node did not run".
+		if (!editable)
+		{
+			// Scaled well above body text: at the default 13px in a background tone this was invisible.
+			// The AddText overload taking an explicit font size is what allows that without a second
+			// font — the default atlas is a bitmap, so ~1.8x is about as far as it stays crisp.
+			const char* mark = "LINKED - READ ONLY";
+			const float size = gui::GetFontSize() * 1.8f;
+			const math::Vec2f at{canvasOrigin.x + 12.0f, canvasOrigin.y + canvasSize.y - size - 10.0f};
+			gui::GetWindowDrawList()->AddText(gui::GetFont(), size, at, gui::packColor(m_style.readOnlyMark()), mark);
+		}
+
 		// Centre a located node (from an Issue click): pan so it sits at the canvas centre. Done here —
 		// the node's grid position + size are only known once it has been drawn.
 		if (ctx.locateTarget)
@@ -336,9 +474,34 @@ namespace flowview
 		// that moves focus to the outer window.
 		const bool canvasActive = gui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
 
+		// Double-click a group to go inside it. The SAME gesture for both kinds — a linked group is
+		// navigable and inspectable, it just can't be edited in place — so there is one way in, not
+		// two. Its live intermediates are already computed (the run's plan covers every level), so
+		// looking inside costs nothing.
+		int hoveredNode = 0;
+		const bool overNode = canvasActive && gui::nodes::IsNodeHovered(&hoveredNode);
+		if (overNode && gui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+		{
+			const flow::NodeId target{static_cast<std::uint64_t>(hoveredNode)};
+			if (graph.contains(target) && graph.node(target).innerGraph() != nullptr)
+				ctx.descendInto(target);
+		}
+
+		// A drag that SetNodeDraggable just refused. Alt+drag is the canvas pan (see init), so it is
+		// excluded — panning is a view action and stays available in a read-only graph.
+		if (!editable && overNode && gui::IsMouseDragging(ImGuiMouseButton_Left) && !gui::GetIO().KeyAlt)
+			ctx.noteReadOnlyEdit();
+
+		// Below a linked group the recipe belongs to its template, so every MUTATING gesture is off
+		// (the breadcrumb says why, and the menu bar offers "Edit Template..." to change it
+		// deliberately). Gated per gesture rather than as one block, so the read-only affordances —
+		// hovering a pin for its value, following links — keep working: looking inside a linked group
+		// is the whole point of letting you navigate into it.
 		// Apply the canvas ± requests collected during the node draw (auto-named `<prefix><count>` on
 		// the growing side), now that the graph can be mutated safely.
-		for (const auto& [nodeId, key] : pinAdds)
+		if (!editable && !pinAdds.empty())
+			ctx.noteReadOnlyEdit();
+		for (const auto& [nodeId, key] : (editable ? pinAdds : std::vector<std::pair<flow::NodeId, std::string>>{}))
 		{
 			const flow::DynamicPortsNode& dyn = static_cast<flow::DynamicPortsNode&>(graph.node(nodeId));
 			const bool onOutput = dyn.dynamicSide() == flow::Port::Direction::Output;
@@ -350,16 +513,27 @@ namespace flowview
 		// A detached link (dropped in empty space, or the "off" side of a move). Handle
 		// it before IsLinkCreated so a move frees the input before the reattach lands.
 		int destroyedLink = 0;
+		// Query imnodes regardless of editability — it holds this state until asked, and a stale answer
+		// would surface on the next graph that IS editable.
 		if (gui::nodes::IsLinkDestroyed(&destroyedLink) && destroyedLink >= 0 && static_cast<std::size_t>(destroyedLink) < edges.size())
 		{
-			const flow::Graph::Edge e = edges[static_cast<std::size_t>(destroyedLink)];
-			edited |= flow::edit::disconnect(graph, e.to);
+			if (editable)
+			{
+				const flow::Graph::Edge e = edges[static_cast<std::size_t>(destroyedLink)];
+				edited |= flow::edit::disconnect(graph, e.to);
+			}
+			else
+			{
+				ctx.noteReadOnlyEdit();
+			}
 		}
 		int startAttr = 0;
 		int endAttr = 0;
 		if (gui::nodes::IsLinkCreated(&startAttr, &endAttr))
 		{
-			if (tryConnect(graph, startAttr, endAttr))
+			if (!editable)
+				ctx.noteReadOnlyEdit();
+			else if (tryConnect(graph, startAttr, endAttr))
 				edited = true;
 			else
 				ctx.noteRejectedConnect(); // surface the silent rejection as a transient Issue
@@ -404,7 +578,9 @@ namespace flowview
 				}
 			}
 		}
-		if (canvasActive && gui::IsKeyPressed(ImGuiKey_Delete))
+		if (!editable && canvasActive && gui::IsKeyPressed(ImGuiKey_Delete) && !selectedNodes().empty())
+			ctx.noteReadOnlyEdit();
+		if (editable && canvasActive && gui::IsKeyPressed(ImGuiKey_Delete))
 		{
 			// Resolve the selection to stable values first, then delete in one edit.
 			const std::vector<flow::Graph::Edge> edgesToRemove = selectedEdges(graph);
@@ -422,7 +598,12 @@ namespace flowview
 		// Right-click empty canvas -> add-node palette (the imnodes color_node_editor
 		// pattern: focus + editor hover + mouse release).
 		if (canvasActive && gui::nodes::IsEditorHovered() && gui::IsMouseReleased(ImGuiMouseButton_Right))
-			gui::OpenPopup("addNode");
+		{
+			if (editable)
+				gui::OpenPopup("addNode");
+			else
+				ctx.noteReadOnlyEdit(); // the add menu would have nowhere to put a node
+		}
 		if (gui::BeginPopup("addNode"))
 		{
 			const ImVec2 mouse = gui::GetMousePosOnOpeningCurrentPopup();
@@ -442,8 +623,6 @@ namespace flowview
 		}
 		gui::End();
 		m_laidOut = true;
-		if (seedPositions)
-			ctx.pendingLayout.clear(); // only clear after the frame that actually consumed it (not the Load frame)
 
 		// Persistent node palette: a left-click list of the factory's node types — trackpad-native,
 		// where the right-click add menu above (kept as a secondary) is awkward on a MacBook. A new node
@@ -455,11 +634,10 @@ namespace flowview
 		{
 			for (const std::string& key : cat.keys)
 			{
+				// addCatalogNode refuses inside a linked group and lands in the ACTIVE graph, so the
+				// palette needs no rule of its own — it just respects the answer.
 				if (gui::Button(key.c_str()))
-				{
-					ctx.addCatalogNode(key);
-					edited = true;
-				}
+					edited |= ctx.addCatalogNode(key) != flow::NodeId{};
 			}
 		}
 		gui::End();

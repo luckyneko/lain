@@ -17,7 +17,8 @@ namespace flowview
 		, m_mutedBackground(34, 34, 38, 255)
 		, m_mutedPin(96, 96, 102, 255)
 		, m_mutedLink(70, 70, 78, 255)
-		, m_selection(120, 190, 255, 255) // bright sky blue — the selected-node title accent
+		, m_selection(120, 190, 255, 255)	// bright sky blue — the selected-node title accent
+		, m_readOnlyMark(214, 168, 84, 210) // amber, foreground-weight: legible chrome, not an error
 	{
 	}
 

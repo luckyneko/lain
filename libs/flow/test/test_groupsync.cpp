@@ -277,3 +277,65 @@ TEST_CASE("inner pins with COLLIDING ids on opposite sides never cross", "[flow]
 	REQUIRE(g.boundaryOutputNode().value(yp).get<int>() == 22); // b (22) -> p
 	REQUIRE(g.boundaryOutputNode().value(yq).get<int>() == 11); // a (11) -> q
 }
+
+TEST_CASE("pins added one at a time, syncing between, all reach the outer node", "[flow][group][edit]")
+{
+	// The INTERACTIVE ordering, which is what the host actually produces: it syncs every frame, so a
+	// sync lands BETWEEN each pin the user adds. The earlier tests all added their pins first and
+	// synced once, which hid a real bug — with a single shared "already mirrored" set, the input's
+	// inner PortId{1} masked the output's inner PortId{1} (ids are minted per NODE, so both boundary
+	// nodes start at 1) and the output port silently never appeared.
+	Graph g;
+	const NodeId id = addPassGroup(g);
+	GroupNode& group = groupAt(g, id);
+
+	// 1. Add an input pin, then sync (as a frame would).
+	group.inner().boundaryInputNode().addBoundary<int>("in");
+	REQUIRE(edit::syncGroupPorts(g, id).added == 1);
+	REQUIRE(g.node(id).inputCount() == 1);
+	REQUIRE(g.node(id).outputCount() == 0);
+
+	// 2. Add an output pin, then sync again. Its inner id collides with the input pin's.
+	const PortId outPin = group.inner().boundaryOutputNode().addBoundary<int>("out");
+	REQUIRE(outPin == group.inner().boundaryInputNode().output(0).id()); // the collision, made explicit
+
+	REQUIRE(edit::syncGroupPorts(g, id).added == 1);
+	REQUIRE(g.node(id).inputCount() == 1);
+	REQUIRE(g.node(id).outputCount() == 1); // the port that used to go missing
+
+	SECTION("and the group then actually carries a value through both ports")
+	{
+		// The user's next move: wire the group up and expect data to cross. Inside, pass the input
+		// straight to the output; outside, feed it from the root boundary and read the result.
+		Graph& inner = group.inner();
+		const NodeId bIn = inner.boundaryInputNode().id();
+		const NodeId bOut = inner.boundaryOutputNode().id();
+		REQUIRE(inner.connect({bIn, inner.boundaryInputNode().output(0).id()},
+							  {bOut, inner.boundaryOutputNode().input(0).id()}) == Connection::Ok);
+
+		const PortId x = g.boundaryInputNode().addBoundary<int>("x");
+		const PortId y = g.boundaryOutputNode().addBoundary<int>("y");
+		REQUIRE(g.connect({g.boundaryInputNode().id(), x}, {id, g.node(id).input(0).id()}) == Connection::Ok);
+		REQUIRE(g.connect({id, g.node(id).output(0).id()}, {g.boundaryOutputNode().id(), y}) == Connection::Ok);
+
+		PortValue v;
+		v.set<int>(42);
+		g.boundaryInputNode().setValue(x, std::move(v));
+		SerialScheduler().run(g);
+
+		REQUIRE(g.boundaryOutputNode().value(y).holds<int>());
+		REQUIRE(g.boundaryOutputNode().value(y).get<int>() == 42);
+	}
+
+	SECTION("and it keeps working as more pins arrive on both sides")
+	{
+		group.inner().boundaryInputNode().addBoundary<float>("in2");
+		REQUIRE(edit::syncGroupPorts(g, id).added == 1);
+		group.inner().boundaryOutputNode().addBoundary<float>("out2");
+		REQUIRE(edit::syncGroupPorts(g, id).added == 1);
+
+		REQUIRE(g.node(id).inputCount() == 2);
+		REQUIRE(g.node(id).outputCount() == 2);
+		REQUIRE_FALSE(edit::syncGroupPorts(g, id).changed()); // and it settles
+	}
+}

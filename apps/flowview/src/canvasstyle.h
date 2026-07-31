@@ -39,6 +39,11 @@ namespace flowview
 		// tone distinct from every kind colour, so selection reads at a glance.
 		lain::image::ColorRGBA8 selection() const { return m_selection; }
 
+		// The canvas' read-only watermark. A FOREGROUND tone, unlike the muted* colours above — those
+		// are backgrounds (mutedTitle is near-black, and reads as nothing at all when used as text).
+		// Amber rather than red: this is a restriction, not an error.
+		lain::image::ColorRGBA8 readOnlyMark() const { return m_readOnlyMark; }
+
 	private:
 		std::map<std::type_index, lain::image::ColorRGBA8> m_portColours;
 		std::map<std::string, lain::image::ColorRGBA8> m_nodeColours;
@@ -48,6 +53,7 @@ namespace flowview
 		lain::image::ColorRGBA8 m_mutedPin;
 		lain::image::ColorRGBA8 m_mutedLink;
 		lain::image::ColorRGBA8 m_selection;
+		lain::image::ColorRGBA8 m_readOnlyMark;
 	};
 
 	// Populate the built-in palette: the payload + scalar port colours and the node-kind title colours.

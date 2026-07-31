@@ -1,6 +1,7 @@
 #include "appcontext.h"
 
 #include "flowviewapp.h" // app->graph() / app->nodeFactory()
+#include "groupnav.h"	 // the active graph an add lands in
 
 #include <lain/flow/edit.h> // edit::addNode
 #include <lain/flow/graph.h>
@@ -70,8 +71,14 @@ namespace flowview
 
 	flow::NodeId AppContext::addCatalogNode(const std::string& key)
 	{
-		flow::Graph& graph = app->graph();
+		// Adds land in the ACTIVE graph — the level the user is looking at — not the root. And nothing
+		// is added inside a linked group: its recipe belongs to its template (Group > Edit Template...).
+		if (!editableAt(app->graph(), activePath))
+			return flow::NodeId{};
+		flow::Graph& graph = resolvePath(app->graph(), activePath);
 		const flow::NodeId id = flow::edit::addNode(graph, app->nodeFactory().create(key));
+		if (id == flow::NodeId{})
+			return id;
 		uniquifyName(graph, graph.node(id));
 		const float offset = 40.0f + static_cast<float>(addCounter % 6) * 28.0f;
 		gui::nodes::SetNodeGridSpacePos(static_cast<int>(id.value()), math::Vec2f{offset, offset});
