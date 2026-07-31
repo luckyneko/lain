@@ -12,14 +12,22 @@
 #include <lain/math/types.h>
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 namespace flowview
 {
 	using namespace lain;
 
+	// Zoom bounds. The floor is min(fit, 1.0) so ACTUAL SIZE is always reachable: for an image larger
+	// than the pane, fit is below 1 and 1:1 is a zoom in; for one smaller, fit magnifies it and zooming
+	// out bottoms out at 1:1. Either way you can never zoom out past "fit or actual, whichever is
+	// smaller", and 1:1 is always somewhere on the slider.
+	static constexpr float kMaxZoom = 16.0f;
+	static constexpr float kWheelStep = 1.15f;
+
 	// The Preview window contents (no Begin/End — the caller owns those). Early-returns freely.
-	static void drawPreviewContents(AppContext& ctx, const flow::Graph& graph, const PreviewCache& previews)
+	void PreviewPane::drawContents(AppContext& ctx, const flow::Graph& graph, const PreviewCache& previews)
 	{
 		if (!ctx.previewTarget)
 		{
@@ -47,17 +55,93 @@ namespace flowview
 				  port->name().c_str(), std::string(port->typeName()).c_str(), img.width(), img.height());
 		gui::Separator();
 
-		// Fit-to-pane, preserving aspect, centred horizontally. (Zoom/pan is a future refinement.)
-		const ImVec2 avail = gui::GetContentRegionAvail();
-		const float imgW = static_cast<float>(img.width());
-		const float imgH = static_cast<float>(img.height());
-		if (avail.x <= 0.0f || avail.y <= 0.0f || imgW <= 0.0f || imgH <= 0.0f)
+		// A different asset gets a fresh view: its size (and so its fit) has nothing to do with the
+		// last one's.
+		if (m_shownKey != key)
+		{
+			m_shownKey = key;
+			m_fitMode = true;
+		}
+
+		// Reserve the toolbar's height up front so the image area — and therefore the fit scale — is
+		// known BEFORE the toolbar draws. Otherwise the percentage it reports would lag a frame behind
+		// the size it describes.
+		const math::Vec2f avail = gui::GetContentRegionAvail();
+		const math::Vec2f area{avail.x, avail.y - gui::GetFrameHeightWithSpacing()};
+		if (area.x <= 0.0f || area.y <= 0.0f)
 			return;
-		const float scale = std::min(avail.x / imgW, avail.y / imgH);
-		const float w = imgW * scale;
-		const float h = imgH * scale;
-		gui::SetCursorPosX(gui::GetCursorPosX() + std::max(0.0f, (avail.x - w) * 0.5f));
-		gui::Image(*tex, math::Vec2f{w, h});
+
+		const math::Vec2f fitted = previewFit(img.extent(), area); // the same fit the thumbnails use
+		if (fitted.x <= 0.0f)
+			return;
+		const float fitScale = fitted.x / static_cast<float>(img.width());
+		const float minZoom = std::min(fitScale, 1.0f);
+		if (m_fitMode)
+			m_zoom = fitScale;
+		m_zoom = std::clamp(m_zoom, minZoom, kMaxZoom);
+
+		// The image lives in a child so it is clipped and scrollable. NoScrollWithMouse keeps the wheel
+		// for zooming; panning is a drag, which is the image-viewer convention (the graph canvas uses
+		// Alt+drag because a plain drag there means box-select — here nothing else wants it).
+		gui::BeginChild("view", area, 0, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+		{
+			const math::Vec2f draw{static_cast<float>(img.width()) * m_zoom, static_cast<float>(img.height()) * m_zoom};
+			// Centre whatever axis has room to spare; the other is scrolled.
+			const math::Vec2f slack = gui::GetContentRegionAvail();
+			gui::SetCursorPos(math::Vec2f{gui::GetCursorPosX() + std::max(0.0f, (slack.x - draw.x) * 0.5f),
+										  gui::GetCursorPosY() + std::max(0.0f, (slack.y - draw.y) * 0.5f)});
+			gui::Image(*tex, draw);
+
+			const bool overView = gui::IsWindowHovered();
+			if (overView && gui::IsMouseDragging(ImGuiMouseButton_Left))
+			{
+				const ImVec2 delta = gui::GetIO().MouseDelta;
+				gui::SetScrollX(gui::GetScrollX() - delta.x);
+				gui::SetScrollY(gui::GetScrollY() - delta.y);
+			}
+			if (const float wheel = gui::GetIO().MouseWheel; overView && wheel != 0.0f)
+			{
+				// Anchor the zoom on the cursor: the pixel under the pointer stays under it. Without
+				// this, zooming in walks the view away from whatever you were looking at.
+				const float previous = m_zoom;
+				m_zoom = std::clamp(m_zoom * std::pow(kWheelStep, wheel), minZoom, kMaxZoom);
+				m_fitMode = false;
+				const ImVec2 local{gui::GetMousePos().x - gui::GetWindowPos().x, gui::GetMousePos().y - gui::GetWindowPos().y};
+				const float ratio = m_zoom / previous;
+				gui::SetScrollX((gui::GetScrollX() + local.x) * ratio - local.x);
+				gui::SetScrollY((gui::GetScrollY() + local.y) * ratio - local.y);
+			}
+		}
+		gui::EndChild();
+
+		// Toolbar, BELOW the image: the header already carries node/port/dimensions, so putting the
+		// controls under the content keeps it to one row of chrome before you see anything — and a
+		// full-width slider along the bottom reads as a scrubber, which is what it is. (Its height was
+		// reserved out of `area` above, so this is a reorder, not a re-layout.) The two zooms worth
+		// naming, then a free one; the slider is LOGARITHMIC because zoom is multiplicative and a
+		// linear one spends most of its travel in the high end. An edit here lands on the NEXT frame's
+		// image, which is invisible during a continuous drag.
+		if (gui::Button("Fit"))
+		{
+			m_fitMode = true;
+			m_zoom = fitScale;
+		}
+		gui::SameLine();
+		if (gui::Button("1:1"))
+		{
+			m_fitMode = false;
+			m_zoom = 1.0f;
+		}
+		gui::SameLine();
+		gui::SetNextItemWidth(-1.0f);
+		// Driven in PERCENT, because the slider's format prints the raw value — a zoom of 1.0 through
+		// a "%%" format would read as "1%".
+		float percent = m_zoom * 100.0f;
+		if (gui::SliderFloat("##zoom", &percent, minZoom * 100.0f, kMaxZoom * 100.0f, "%.0f%%", ImGuiSliderFlags_Logarithmic))
+		{
+			m_zoom = percent / 100.0f;
+			m_fitMode = false;
+		}
 	}
 
 	void PreviewPane::draw(AppContext& ctx, const flow::Graph& graph, const PreviewCache& previews)
@@ -68,7 +152,7 @@ namespace flowview
 			ctx.activatePreview = false;
 		}
 		if (gui::Begin("Preview"))
-			drawPreviewContents(ctx, graph, previews);
+			drawContents(ctx, graph, previews);
 		gui::End();
 	}
 } // namespace flowview

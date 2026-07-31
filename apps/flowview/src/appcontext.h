@@ -8,6 +8,7 @@
 #include <lain/data/value.h>				// Value (pendingBaseline)
 #include <lain/flow/serialize/loadresult.h> // EditorData (a value member) + Graph (loadedGraph target)
 #include <lain/flow/types.h>				// NodeId
+#include <lain/math/types.h>				// Vec2f / Vec2i (preview sizing)
 
 #include <cstddef>
 #include <filesystem>
@@ -58,17 +59,20 @@ namespace flowview
 		std::optional<std::size_t> returnDepth;
 	};
 
-	// Thumbnail size for the image preview, chosen at runtime via a lain::gui::enumCombo
-	// (its labels come from lain::meta::enums).
-	enum class PreviewSize
-	{
-		Small,
-		Medium,
-		Large,
-	};
+	// The tallest a list thumbnail is drawn. A HEIGHT cap is what bounds the size in practice —
+	// width follows from the aspect ratio for anything but a panoramic image, which the pane's own
+	// width then catches.
+	inline constexpr float kThumbnailMaxHeight = 160.0f;
 
-	// Thumbnail side length (pixels) for a preview size. Shared by the Inspector + Interface panes.
-	float previewExtent(PreviewSize size);
+	// Fit `extent` inside `box`, preserving aspect ratio; the size to draw at. The one place that
+	// arithmetic lives — a list thumbnail and the Preview pane's fit-to-pane are the same operation
+	// with a different box. Scales UP as well as down, so a small image still fills a list row and the
+	// rows keep an even rhythm. Zero extent or box yields zero.
+	lain::math::Vec2f previewFit(lain::math::Vec2i extent, lain::math::Vec2f box);
+
+	// The box a LIST thumbnail fits into: the current pane's remaining width, capped in height. Call
+	// while the target pane is current.
+	lain::math::Vec2f thumbnailBox();
 
 	// The shared model the panes read and write — graph-adjacent metadata plus the cross-pane
 	// signals (one pane sets a request, another consumes it) and the document / pending-load
@@ -114,8 +118,7 @@ namespace flowview
 		lain::flow::serialize::EditorTree layout;
 
 		// --- Graph-adjacent metadata (extra data sitting alongside the graph) ---
-		PreviewSize previewSize = PreviewSize::Medium; // thumbnail size (enumCombo-driven)
-		int addCounter = 0;							   // palette-added nodes cascade their grid position (menu Add + Nodes palette)
+		int addCounter = 0; // palette-added nodes cascade their grid position (menu Add + Nodes palette)
 		// The chosen save format per image output pin (the inline dropdown's selection), by format key
 		// ("png" / "jpg" / …). Robust to the savable list changing — an entry not (or no longer) in a
 		// port's list falls back to that list's first format.

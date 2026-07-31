@@ -17,7 +17,7 @@
 
 namespace flowview
 {
-	// FlowviewApp, Issue, PreviewSize, and the AppContext shared model live in appcontext.h.
+	// FlowviewApp, Issue, and the AppContext shared model live in appcontext.h.
 
 	// The app's main window: it drives every pane (Graph canvas, Inspector, Interface, Preview,
 	// Issues, menu bar) inside one docking layout. Owns its GUI resources (the lain::gui Context +

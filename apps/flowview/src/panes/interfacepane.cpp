@@ -114,7 +114,6 @@ namespace flowview
 
 	void InterfacePane::draw(AppContext& ctx, flow::Graph& graph, PreviewCache& previews, const ParamEditors& editors)
 	{
-		const float side = previewExtent(ctx.previewSize);
 		bool changed = false;
 		bool renamed = false; // a pin rename: a document change, but no recompute (see below)
 
@@ -162,9 +161,9 @@ namespace flowview
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
 
 				const PinKey key{node->id().value(), true, pin.id()};
-				if (const gui::Texture* tex = previews.find(key))
+				if (const gui::Texture* tex = previews.find(key); tex && pin.value().holds<image::Image>())
 				{
-					gui::Image(*tex, math::Vec2f{side, side});
+					gui::Image(*tex, previewFit(pin.value().get<image::Image>().extent(), thumbnailBox()));
 					if (gui::IsItemClicked())
 						ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 				}
@@ -251,9 +250,9 @@ namespace flowview
 				}
 				else
 				{
-					if (const gui::Texture* tex = previews.find(key))
+					if (const gui::Texture* tex = previews.find(key); tex && pin.value().holds<image::Image>())
 					{
-						gui::Image(*tex, math::Vec2f{side, side});
+						gui::Image(*tex, previewFit(pin.value().get<image::Image>().extent(), thumbnailBox()));
 						if (gui::IsItemClicked())
 							ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 					}

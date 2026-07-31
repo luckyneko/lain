@@ -16,6 +16,9 @@ namespace flowview
 		bool output;
 		lain::flow::PortId port; // stable id, so a preview survives sibling pins changing
 
+		bool operator==(const PinKey& o) const { return node == o.node && output == o.output && port == o.port; }
+		bool operator!=(const PinKey& o) const { return !(*this == o); }
+
 		bool operator<(const PinKey& o) const
 		{
 			if (node != o.node)

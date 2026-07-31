@@ -13,7 +13,6 @@
 #include <lain/flow/node.h>
 #include <lain/flow/param.h>
 #include <lain/flow/port.h>
-#include <lain/gui/enums.h> // enumCombo
 #include <lain/gui/gui.h>
 #include <lain/image/image.h>
 #include <lain/math/types.h>
@@ -39,7 +38,6 @@ namespace flowview
 		gui::SetNextWindowSize(math::Vec2f{320.0f, 320.0f}, ImGuiCond_FirstUseEver);
 		if (gui::Begin("Inspector"))
 		{
-			gui::enumCombo("Preview size", ctx.previewSize); // labels from lain::meta::enums
 
 			// Selection-driven: inspect only the node(s) selected on the canvas (stacked, walked in topo
 			// order for a stable top-to-bottom layout), not the whole graph. Nothing selected -> a hint.
@@ -115,8 +113,9 @@ namespace flowview
 						const PinKey key{id.value(), output, p.id()};
 						if (const gui::Texture* tex = previews.find(key))
 						{
-							const float side = previewExtent(ctx.previewSize);
-							gui::Image(*tex, math::Vec2f{side, side}); // Texture -> ImTextureRef implicitly
+							// Fits the pane's width, capped in height, aspect preserved — no size
+							// setting: the Preview pane is where you go for a proper look.
+							gui::Image(*tex, previewFit(img.extent(), thumbnailBox())); // Texture -> ImTextureRef implicitly
 							if (gui::IsItemClicked())
 								ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 						}

@@ -186,6 +186,27 @@ that **keeps the canvas selection across an undo/redo** (selected nodes captured
 `nodeIds()` — stable across the load's fresh-id remap — and re-selected after the swap; New/Open still
 clear, since they carry a `pendingBaseline`).
 
+### Update 2026-07-31 — preview pass: self-sizing thumbnails, zoom/pan in the Preview pane
+
+A small flowview UI pass, **live-verified by the repo owner**. The Inspector's **Preview size**
+dropdown is gone: thumbnails now fit the pane they sit in via one shared
+`previewFit(extent, box)` (`appcontext`), the box being `{pane width, 160px}` — a height cap bounds
+the size, width follows from the aspect ratio, and the pane width catches a panoramic image. That
+also **fixed a long-standing distortion**: the Inspector and Interface drew `gui::Image(tex, {side,
+side})`, squashing every non-square image into a square; only the Preview pane preserved aspect, and
+its hand-rolled fit is now the shared helper. `PreviewSize` / `previewExtent` /
+`AppContext::previewSize` are gone with it — and with them `enumCombo`'s only live exercise, which
+was a deliberate trade (UI shouldn't be kept alive to dogfood an API).
+
+The **Preview pane gained zoom + pan**, which WORK.md had deferred to a future multi-window viewer;
+doing it in-pane is cheap and doesn't preclude that. `minZoom = min(fitScale, 1.0)` so actual size is
+always reachable from either direction (max 16x); **Fit is a mode**, re-fitting on resize until the
+user zooms deliberately, and reset when the previewed asset changes. The image sits in a child window
+so ImGui owns clipping/scrolling, panning is a drag translated to `SetScroll*`, `NoScrollWithMouse`
+keeps the wheel for zoom, and **wheel zoom is cursor-anchored**. Toolbar (`Fit` / `1:1` / a
+logarithmic percent slider) sits **below** the image, where the convention puts it. Known limit: the
+texture keeps the app's sampler, so past 1:1 magnification is filtered rather than blocky.
+
 ### Update 2026-07-29 — M5 (group nodes) designed and built (slices 1–6; gui-mode needs an eyeball)
 
 **Group nodes / subgraphs were grilled and designed** — see the new **Milestone 5** section in
@@ -444,7 +465,8 @@ refactor of `flow` plus the app stack + viewer:**
   ImGui 1.92 — that commit branches on `IMGUI_VERSION_NUM >= 19200`. (`Application::instance()`
   was added to `lain::app` for ImGui's `VkInstance`.) `enums.h` adds `enumCombo` — an
   ImGui combo over an enum's values labelled from `lain::meta::enums` (headless-smoke
-  tested, and dogfooded live in flowview's inspector — see below).
+  tested; it had a live exercise in flowview's inspector until 2026-07-31, when the
+  preview-size dropdown it drove was retired — see the 2026-07-31 update).
 - ✅ **`apps/flowview`** — the inspector. Both modes built + verified on the live
   driver. Shared scene: `buildExampleScene` adds `flow-example`'s `GradientNode`; the
   graph is pulled (`Graph::evaluate`). **cli-mode** (`--headless`/`-c`): `dumpGraph`
@@ -466,8 +488,8 @@ refactor of `flow` plus the app stack + viewer:**
   index. Screenshot-confirmed rendering the gradient node + its `texture` pin. It also
   **dogfoods `lain::meta`**: each port is labelled with `Port::typeName()` (captured from
   `lain::meta::typeName<T>()` at port declaration) on the inspector text and the canvas
-  pins, and a `lain::gui::enumCombo` drives a `PreviewSize` enum that resizes the texture
-  thumbnail (so `enumCombo` gets its live exercise, not just the headless smoke).
+  pins. (A `lain::gui::enumCombo` also drove a `PreviewSize` enum here; retired 2026-07-31
+  when thumbnails became self-sizing, taking `enumCombo`'s only live exercise with it.)
   ImGui sizes/positions here are passed as `lain::math::Vec2f` (the `imconfig_lain.h`
   bridge converts to `ImVec2`), not raw `ImVec2`. Links `lain::app` + `lain::gui` +
   `lain::meta` + `lain::flow-example` + `archimedes` + `Vulkan::Loader` (loader resolves

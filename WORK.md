@@ -930,8 +930,10 @@ independently-grown panels. Deferred into it so far:
   boundary nodes from the Inspector, so selecting a GroupInput shows an "edit in the Interface panel"
   hint that bounces the user to another pane.
 - the **Preview header** floating over the image rather than sitting above it (layout slice 2).
-- **Preview zoom/pan**, and pane **pop-out** — both deferred to a future `lain::app` **multi-window**
-  rich viewer (a 3D voxel view, a zoom/pan image view), explicitly *not* ImGui multi-viewport.
+- ~~**Preview zoom/pan**~~ — built in-pane 2026-07-31 (see "Preview sizing" below); doing it here does
+  not preclude the rich viewer, it just meant the pane stopped being a fixed fit-to-size view. Pane
+  **pop-out** remains deferred to a future `lain::app` **multi-window** rich viewer (a 3D voxel view),
+  explicitly *not* ImGui multi-viewport.
 Needs its own grill before building, as the layout pass got.
 
 **`lain::gui::nodes` wrapper pass** — front the raw `Im*` surface the `namespace nodes = ImNodes` alias
@@ -1389,6 +1391,50 @@ byte-idempotent.
    **Only the last two changes are unconfirmed:** the watermark's new tone + size
    (`CanvasStyle::readOnlyMark`, ~1.8x), and making node LAYOUT read-only
    (`SetNodeDraggable` + its transient message).
+
+### Preview sizing — thumbnails fit their pane (2026-07-31, live-verified)
+
+The Inspector's **Preview size** dropdown is gone: with a Preview pane doing the full-size view, a
+three-step thumbnail setting was redundant configuration. Thumbnails now fit the pane they are in.
+
+- **A single `previewFit(extent, box)`** (appcontext) is the one place the arithmetic lives — a list
+  thumbnail and the Preview pane's fit-to-pane are the same operation with a different box. The list
+  box is `{pane width, kThumbnailMaxHeight}`: a **height** cap bounds the size in practice, and width
+  follows from the aspect ratio except for a panoramic image, which the pane width then catches.
+- **It fixes a long-standing distortion.** The Inspector and Interface drew `gui::Image(tex, {side,
+  side})` — every non-square image was squashed into a square. Only the Preview pane preserved aspect,
+  and its hand-rolled fit is now the shared helper.
+- Scales **up** as well as down, so a small image still fills a list row and the rows keep an even
+  rhythm (a `min(scale, 1.0)` away if that reads worse than it sounds).
+- Removed with it: `PreviewSize`, `previewExtent`, `AppContext::previewSize`. Nothing persisted it.
+  **Note:** this was the only *live* use of `lain::gui::enumCombo` — the rest is a headless smoke test
+  — so the `lain::meta::enums` dogfooding goes with it. Deliberate: UI shouldn't be kept alive to
+  exercise an API.
+
+**Zoom / pan in the Preview pane** (2026-07-31, live-verified). The pane was a fixed fit-to-size view;
+it now opens at fit and zooms.
+
+- **`minZoom = min(fitScale, 1.0)`**, so ACTUAL SIZE is always reachable: an image larger than the pane
+  fits below 1 and 1:1 is a zoom *in*; a smaller one is magnified by fit and zooming *out* bottoms out
+  at 1:1. You can never zoom out past "fit or actual, whichever is smaller". Max 16x.
+- **Fit is a MODE, not a value** — while it holds, the view re-fits as the pane resizes; it releases the
+  moment the user zooms deliberately, and the `Fit` button re-enters it. Changing the previewed asset
+  resets to fit (a 12x zoom means nothing on a different image).
+- **The image lives in a child window** with scrollbars, so ImGui handles clipping, scroll range and the
+  scrollbar affordance; panning is a drag translated into `SetScroll*`, and `NoScrollWithMouse` keeps
+  the wheel for zoom. **Wheel zoom is anchored on the cursor** — without that, zooming in walks the view
+  off whatever you were looking at.
+- Toolbar **below the image**: `Fit`, `1:1`, and a **logarithmic** percent slider (zoom is
+  multiplicative; a linear slider spends most of its travel in the high end). Under the content because
+  the header already carries node/port/dimensions — one row of chrome before you see anything instead of
+  two — and a full-width slider along the bottom reads as a scrubber. Its height is reserved out of the
+  image area *before* either draws, so the placement is a reorder rather than a re-layout, and the
+  percentage describes the area it is reporting on rather than lagging a frame. (A slider edit lands on
+  the next frame's image; invisible during a continuous drag.)
+- Pan is a plain left-drag, unlike the graph canvas' Alt+drag — there a plain drag is box-select, here
+  nothing else wants it.
+- **Known limit:** the texture keeps the app's sampler, so past 1:1 the magnification is filtered rather
+  than blocky. Crisp pixel-peeping would need a nearest-sampled descriptor — a separate piece.
 
 ### Deferred (designed, not built)
 
