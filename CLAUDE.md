@@ -186,6 +186,30 @@ that **keeps the canvas selection across an undo/redo** (selected nodes captured
 `nodeIds()` — stable across the load's fresh-id remap — and re-selected after the swap; New/Open still
 clear, since they carry a `pendingBaseline`).
 
+### Update 2026-08-01 — M6 designed: definition & evaluation (nothing built yet)
+
+A `GraphId` was added to fix a preview-cache bug, then **reverted** on review: it patched an ambiguous
+key by adding a scoping field, and put process-unique runtime identity into core's vocabulary to serve
+a UI concern. The pushback — *"this feels like you are trying too hard to avoid anything having a
+unique identifier… perhaps a symptom of keeping structure/data mixed with live state"* — was right, and
+grilling it produced a milestone rather than a patch. **Nothing is built; see WORK.md's Milestone 6.**
+
+- **[ADR-0011](docs/adr/0011-node-identity-is-a-uuid.md)** — `NodeId` wraps a `core::Uuid` (RFC 9562
+  **v7**), minted at creation; `PortId` stays a per-node counter. v7 rather than v4 so
+  `nodeIds()`'s documented "ascending id == insertion order" survives. UUID rather than 64-bit random
+  because there is no coordination-free 64-bit standard (that space is Snowflake-style *coordinated*)
+  and the savings do not survive the scale. **Load preserves identity; paste mints it** — which is what
+  retires undo's positional ordinals.
+- **[ADR-0012](docs/adr/0012-definition-and-evaluation.md)** — per-run state moves off the structure
+  into a host-owned `Evaluation` tree; `compute()` takes its context (parallel map makes an implicit
+  one a data race); staleness is a per-node version comparison, *pulled* by evaluations rather than
+  pushed by edits; runs are named by coordinate, not by minted id. **Supersedes ADR-0010's "a link
+  references a recipe, never a runtime share"** — that constraint was a consequence of the mixing, so N
+  linked groups can now share one definition, which is what makes a template edit propagate live.
+
+The four id-collision bugs of the previous week were all one cause: ids are unique only *within* their
+container, and group nodes made "within a container" stop being the whole world.
+
 ### Update 2026-07-31 — preview pass: self-sizing thumbnails, zoom/pan in the Preview pane
 
 A small flowview UI pass, **live-verified by the repo owner**. The Inspector's **Preview size**

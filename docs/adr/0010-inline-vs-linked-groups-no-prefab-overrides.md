@@ -1,8 +1,16 @@
 # Subgraph reuse: inline vs linked groups, with no prefab overrides
 
 ---
-Status: accepted
+Status: accepted; the sharing constraint superseded by ADR-0012
 ---
+
+> **Revisit (2026-08-01).** The rule below that "a link references a recipe, never a running graph"
+> was argued on correctness — a `Port` holds a persistent value, so two instances sharing one inner
+> graph would stomp each other's intermediates. That was true, and it was a consequence of `flow`
+> mixing structure with per-run state. **[ADR-0012](0012-definition-and-evaluation.md)** removes the
+> mixing, so N linked groups *can* share one definition, each with its own evaluation — which is what
+> makes a template edit reach every instance live rather than on reload. Everything else here (inline
+> vs linked, the interface cache, read-only-in-place, overrides deferred) stands unchanged.
 
 A subgraph's *recipe* can live in the parent document or in its own file, and the second raises the
 prefab question: if many nodes are built from one template, may an instance diverge from it, and how

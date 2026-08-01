@@ -1452,6 +1452,69 @@ it now opens at fit and zooms.
 - **Plan caching** across runs; **file-watch** on templates (manual *Reload linked groups* first);
   a **registered node-serializer seam** if third-party structural node kinds ever appear.
 
+## Milestone 6 — definition & evaluation (grilled 2026-07-31 → 08-01)
+
+**Designed, not started.** `flow` currently keeps a graph's *recipe* and its *run state* in the same
+objects: `Port` owns a `PortValue`, `Node` owns `m_dirty`. Three pressures converged on that —
+identity that kept needing composition, undo that needed positional ordinals, and a target workload
+(N video streams through one subgraph; a Loop node) that the model cannot express at all. Decisions in
+**[ADR-0011](docs/adr/0011-node-identity-is-a-uuid.md)** (identity) and
+**[ADR-0012](docs/adr/0012-definition-and-evaluation.md)** (the split); vocabulary in
+[CONTEXT.md](CONTEXT.md).
+
+**What it is, in one line each:**
+
+- A **definition** is the recipe (kinds, params, edges, declarations); an **evaluation** is the values
+  from running it once. `run(definition, eval)`.
+- An `Evaluation` is a **value the host owns**, so retention is ownership — cli drops it, gui keeps a
+  bounded pool. No retention policy type.
+- An `Evaluation` is a **tree**; a run is named by an **`EvalPath`** coordinate (`{NodeId, index}`
+  steps), because a map runs its subgraph once per element.
+- **`compute()` takes its evaluation context.** Parallel map means anything stored on the node is
+  shared across concurrent runs of it.
+- **Staleness is a version comparison** — per-node version on the definition vs what the evaluation
+  computed. Invalidation is *pulled*, never *pushed*: an edit cannot reach host-owned evaluations, and
+  must not cost anything per stream.
+- **`NodeId` wraps a `core::Uuid` (v7)**, minted at creation. `PortId` stays a per-node counter.
+  **Load preserves identity; paste mints it.**
+
+### Build order
+
+Each step stands alone and leaves the suite green.
+
+1. **`core::Uuid` + `NodeId`.** New std-only `Uuid` in `lain::core` (generate v7, parse *any*
+   well-formed UUID, format canonical, compare, hash). `NodeId` wraps one. Serialize as a string; drop
+   the canonical `1..N` renumbering; `fromValue` **preserves** ids and re-mints + reports a duplicate.
+   Retire `pathOrdinals` / `pendingReselect` (a restore now preserves identity). **Adds a dense
+   per-frame index table for imnodes**, which takes `int` node ids — needed by any scheme that stops
+   ids being small, so it lands here.
+2. **`Evaluation` + the `compute()` contract.** The big mechanical one: values move off `Port`, ~41
+   `compute()` sites rewritten (`input(i)` → `e.get<T>(i)`, `output(i).set(v)` → `e.set(i, v)`), the
+   scheduler threads an evaluation, `GroupInputNode::m_bound` moves into it, and the boundary seam
+   (`BoundaryInput::setValue`, cli binders, Interface panel) gains an evaluation parameter. Params do
+   **not** move — they are recipe.
+3. **Version-based staleness.** `m_dirty` → per-node version on the definition + `computedAt` on the
+   evaluation; the same call sites that `markDirty()` today bump instead. `runOrder`'s closure logic is
+   unchanged — only its predicate. Evaluations shed stale values when they notice a mismatch.
+4. **Host-side keys and panes.** `PinKey` → `{EvalPath, NodeId, PortId}`; preview cache, Inspector,
+   Interface, Preview pane, `saveFormat` follow. The clear-on-navigation scoping becomes a memory
+   choice rather than a correctness one.
+
+**Hold the leftover group GUI work until at least step 4** — it lives in the panes this changes, and
+doing it twice is how the last four bugs happened.
+
+### Not in this milestone
+
+- **SplitGroup and Loop themselves.** M6 makes them expressible; building them is separate, and their
+  open questions (map index stability, loop carry, suppression across a map, how ADR-0009's plan lowers
+  a map) need a concrete feature in front of them.
+- **Shared definitions for linked groups.** M6 makes it *possible* — ADR-0010's sharing constraint
+  falls — and it is what would make a template edit propagate live rather than on reload. Worth doing,
+  but on its own merits.
+- **In-run liveness release.** M6 bounds retention *after* a run, not the peak *during* one. Releasing
+  a value once every consumer has read it is separable, and cheap to add later precisely because
+  `PortValue` payloads are already shared and immutable.
+
 ## Backlog (deferred — don't build speculatively)
 
 ### Tier A — when a real graph demands it

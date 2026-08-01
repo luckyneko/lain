@@ -209,6 +209,37 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   pin being added/removed/**reordered** — the port's identity is not its position. A
   `PortIndex` is only a positional cursor for *iterating* a node's ports, never a durable
   reference.
+## Definition and evaluation — the recipe apart from its runs
+
+*(M6 — designed, not yet built. [ADR-0012](docs/adr/0012-definition-and-evaluation.md).)*
+
+- **Definition** — a graph as a **recipe**: node kinds, params, edges, port declarations, names.
+  Everything that serializes. What `toValue` already calls "the RECIPE".
+- **Evaluation** — the values produced by **running** a definition once. A value the *host* owns, so
+  retention is ownership: a cli run drops it after reading the boundary outputs; a gui keeps one
+  because the Inspector reads it. One definition can have many — a `SplitGroup` runs its subgraph once
+  per stream, a `Loop` once per iteration, and N linked groups share a definition with an evaluation
+  each. _Avoid_: "instance" for this — an evaluation is a *run*, and "instance" is already the ordinary
+  English word used around linked groups.
+- **EvalPath** — which run, as a **coordinate**: a sequence of `{NodeId, index}` steps down the
+  evaluation tree ("element 3 of the map in group X"). Composed of things that already exist, so
+  nothing is minted, and it names the same *place* across runs — a preview pinned to it follows the
+  position and shows the newest values, rather than going stale against a historical run.
+- **Version** *(per node, on the definition)* — bumped wherever `markDirty()` is called today. An
+  evaluation records the version it computed each node at, and staleness is the comparison. Invalidation
+  is therefore **pulled** by an evaluation when it next runs, never **pushed** by an edit — an edit
+  cannot reach the evaluations, and must not cost anything per stream.
+
+- **Uuid** *(`lain::core`)* — a unique-at-creation identifier: RFC 9562 **v7**, minted with no
+  coordination, because two people editing on two laptops have no coordinator. A **`NodeId`** wraps
+  one ([ADR-0011](docs/adr/0011-node-identity-is-a-uuid.md)); `PortId` stays a per-node counter,
+  since `{NodeId, PortId}` is globally unique once `NodeId` is. Generation is v7, **parsing accepts any
+  well-formed UUID** — the id is opaque to us, and a hand-pasted `uuidgen` v4 must simply work.
+- **Load vs paste** — the distinction stable ids make possible, and which today's remapping blurs.
+  **Load preserves identity** (the nodes come back as themselves, which is what lets undo drop its
+  positional ordinals); **paste mints new identity** (a copy is a different recipe that happens to be
+  identical).
+
 - **PortAddress** *(M4 b)* — the conglomerate **`{NodeId, PortId}`**: the durable **in-memory**
   address of one port on one node. The unit edges and handles reference (an **Edge** is two
   PortAddresses, `{from, to}`). Holds **no direction** — an edge implies it by position, a lone
