@@ -29,7 +29,8 @@ serialization is a **separate `flow::serialize` layer** over this, never in `flo
   drift-prone.
 - **Inspectable + diff-clean + idempotent.** A `Value` is a live tree (debuggable, transformable),
   an **ordered** DOM with distinct `Int64` / `UInt64` / `Double` gives byte-stable, VCS-friendly
-  output, and a file we wrote round-trips byte-identically.
+  output, and a file we wrote round-trips byte-identically. The live tree is also the schema-migration
+  boundary: an old DOM can be transformed to the current shape before functional objects exist.
 - **`flow` stays payload-agnostic.** The `Archive` is a **seam**: a future streaming / binary
   backend drops in behind the *same* `serialize` functions if profiling ever demands it.
 

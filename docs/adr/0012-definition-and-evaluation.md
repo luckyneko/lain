@@ -1,4 +1,4 @@
-# Definition and evaluation — a graph's recipe apart from its runs
+# Definition and evaluation — a graph's recipe apart from its runtime state
 
 ---
 Status: accepted
@@ -20,23 +20,81 @@ definition, N evaluations.**
 
 ## Decision
 
-**Per-run state moves off the structure into an `Evaluation`.**
+**Runtime state moves off the structure into an `Evaluation`.**
 
-- **Values and per-run bookkeeping live in the `Evaluation`**, not on `Port`/`Node`. The definition is
+- **Values and evaluation bookkeeping live in the `Evaluation`**, not on `Port`/`Node`. The definition is
   structure: node kinds, params, edges, port declarations, names.
-- **An `Evaluation` is a value the host owns**, passed to the scheduler: `run(definition, eval)`.
-  Retention is therefore *ownership*, not policy — the cli extracts its boundary outputs and drops the
-  evaluation; the gui keeps one because the Inspector reads it, and a bounded pool is simply "how many
-  do I retain". No policy enum, no per-port retention flags, no engine-side budget.
-- **An `Evaluation` is a tree.** It holds this graph's values plus **named children**: one per group
-  node, N per map element. A run is named by an `EvalPath` — a sequence of `{NodeId, index}` steps —
-  which is a **coordinate composed of things that already exist**, not a minted id.
-- **`compute()` receives its evaluation context.** A node can no longer write through
-  `output(i).set(v)`; it is handed a per-node view of the evaluation.
+- **An `Evaluation` is one graph's runtime state** — its values and bookkeeping — owned by the host
+  and passed repeatedly to the scheduler: `run(const Graph& definition, Evaluation& evaluation)`.
+  Re-running *updates* it; it is not a snapshot of one execution. Retention is therefore *ownership*,
+  not policy — the cli extracts its boundary outputs and drops the evaluation; the gui keeps updating
+  one because the Inspector reads it, and a bounded pool is simply how many it retains. No policy
+  enum, no per-port retention flags, no engine-side budget.
+- **A host owns a definition and its Evaluation together.** An Evaluation spans in-place edits of its
+  definition — that is where version comparison earns its incrementality — but never transfers to a
+  *reconstructed* Graph, even one whose node UUIDs match, because per-node versions are runtime
+  counters that restart from zero. The rule is **ownership, not vigilance**: a host holds the two as
+  one replaceable unit, so New/Open/undo-redo replace both or neither and no path can pair an old
+  evaluation with a new definition. `Evaluation{graph}` records its definition and `prepare` compares
+  it — a guard rail that catches a mispaired call in practice, though not a definition rebuilt at a
+  recycled address. Retained document/UI identity such as `CanvasIds` is a separate concern.
+- **An `Evaluation` is a tree.** It holds this graph's values plus **named children**: one child
+  Evaluation per group node, N per map element. One is located by an `EvalPath` — a sequence of
+  `{NodeId, index}` steps — a **coordinate composed of things that already exist**, not a minted id.
+  Reusing the path reaches that Evaluation's newest values after each scheduler invocation.
+- **Execution is read-only over the definition.** The scheduler consumes a `const Graph&`, and
+  `Node::compute(NodeEvaluation&) const` receives a per-node view of the evaluation. A node can no
+  longer write through a definition `Port` or mutate itself to request another run; all run mutation,
+  including an on-request source rearming itself, goes through that view into the evaluation. `const`
+  here carries its full weight: **a `const Graph&` is concurrently readable**, so the definition holds
+  no lazy caches — `topoOrder()` is recomputed by the mutators, not on first query.
+- **Preparation precedes dispatch.** `Evaluation` is the deep owner of values, readiness,
+  `computedAt`, recompute requests and boundary bindings. Before scheduling work, the coordinator
+  calls `evaluation.prepare(definition)`: it creates or prunes graph-shaped storage and stabilises it.
+  Worker tasks receive a non-owning `NodeEvaluation&` for an already-existing node; they never lazily
+  insert into shared containers. The invariant is *no worker task grows shared evaluation storage; a
+  coordinator does* — which for graph-shaped children (everything M6 builds) means one pass before
+  dispatch. A **data-dependent** child count cannot be known that early, so where a map prepares its
+  children is settled together with how the plan lowers one (see *Deliberately unsettled*).
+- **One Evaluation has one scheduler invocation at a time.** Scheduling the same `Evaluation`
+  concurrently is invalid. Scheduler entry takes a non-blocking RAII run lease; if it is already
+  leased the call immediately throws `std::logic_error`, and unwinding releases the lease. It never
+  waits on a mutex, which could turn accidental recursive use into a deadlock. Distinct Evaluations —
+  including two over the *same* definition — are independent and may execute concurrently. Each task
+  reads and writes only its assigned node view.
 - **Staleness is a version comparison.** The definition carries a per-node version, bumped exactly
-  where `markDirty()` is called today; an evaluation records the version it computed each node at.
-  `needsRecompute(n) = localDirty(n) || def.version(n) != eval.computedAt(n)`. When an evaluation
-  notices a mismatch it **drops the stale values**.
+  when its recipe changes; an evaluation records the version it computed each node at.
+  `needsRecompute(n) = recomputeRequested(n) || def.version(n) != eval.computedAt(n)`. A boundary
+  rebind, group-entry publication, or on-request rearm sets the evaluation-local recompute request;
+  it does not change the definition version. When an evaluation notices a version mismatch it
+  **drops the stale values**.
+- **Recipe mutation and versioning are one operation.** Mutable `Param&` is not exposed to hosts.
+  `Node::setParam(index, value)` validates and commits a parameter value, then advances that Node's
+  definition version; failure changes neither. GUI editors and deserializers edit/decode a copy and
+  commit through this seam, and concrete recipe setters use it. Graph topology/port primitives bump
+  the affected node internally. `setName` remains display-only and does not force computation. There
+  is no public "mutate, then remember to bump" protocol.
+- **Force refresh is an Evaluation operation.** `requestRecompute(node)` demands one node (the
+  ordinary closure carries it downstream); `requestRecomputeAll()` demands that Evaluation's prepared
+  subtree. A host reaches a nested one through `EvalPath`. One verb spans both surfaces —
+  `NodeEvaluation::requestRecompute()` is the same concept from inside `compute` — so runtime demand
+  reads the same wherever it appears. `Graph::markAllDirty()` disappears: it cannot express which of
+  several evaluations to refresh. Constructing a fresh Evaluation is the stronger operation that
+  forgets all retained state.
+- **Boundary handles describe; Evaluation binds and reads.** `Graph::boundaryInputs()` /
+  `boundaryOutputs()` are const and return immutable recipe handles carrying `PortAddress`, name and
+  declared type. A host calls `evaluation.bind(input, value)`, runs the scheduler, then
+  `evaluation.value(output)`. Binding stores the value and requests recompute of that Evaluation's
+  boundary input. Group entry uses the same operation against its child Evaluation; boundary Nodes
+  hold no bound or delivered runtime value.
+- **Readiness follows the values.** ADR-0007's gate is *"every Required input carries a value"* — a
+  join of declaration (`Port::required()`) and runtime (is it empty?), so it belongs to the side that
+  owns values and already knows its definition: `evaluation.ready(node)` for hosts,
+  `nodeEvaluation.ready()` inside compute. Port-level presence is `hasValue(PortAddress)` /
+  `hasValue(PortId)`, which also retires a name collision — today `Port::ready()` means *has a value*
+  while `Node::ready()` means *all required inputs do*. Rendering a value as text stays a `PortType`
+  capability (`describe`) applied to an evaluation value, so a type still describes itself with no
+  central ladder.
 
 ## Why
 
@@ -47,6 +105,32 @@ the scheduler to avoid. A `thread_local` would hide it rather than fix it, and w
 one evaluation spanned two tasks. Passing the context explicitly is not the tasteful option; it is the
 only one that survives the target workload.
 
+**Const execution makes that boundary enforceable.** Passing a context while leaving `Graph` and
+`Node::compute` mutable would express the split by convention while still permitting a node to write
+shared run state into the definition. A const definition plus const compute makes the evaluation the
+only ordinary destination for runtime writes; definition edits remain explicit operations outside a
+run.
+
+**`const` has to mean *concurrently readable*, or it means nothing here.** N evaluations over one
+definition is the whole point, and this ADR permits them to run at once — so the const-ness of the
+definition is a threading claim, not just a mutation claim. `Graph::topoOrder()` today is a lazy cache
+into `mutable` members, which two concurrent runs would rebuild simultaneously after an edit: a data
+race that a `const&` signature would advertise as safe. Making the mutators maintain the order turns
+the promise into a property. Editing is human-paced and runs are hot, so the cost lands in the right
+place — and stating the rule matters more than the fix, because the next lazy cache added to a
+definition would reopen it silently.
+
+**Preparation makes the parallel boundary enforceable.** A const definition does not make a mutable
+evaluation container safe if worker tasks can concurrently grow maps or vectors. Performing all
+structural reconciliation before dispatch gives tasks stable references and keeps allocation,
+pruning and child creation on the coordinator side. Parallelism then operates over disjoint
+prepared state rather than depending on container implementation details.
+
+**Reusing one Evaluation fails rather than races or blocks.** A documented precondition alone would leave a
+release build with a data race, while a blocking mutex would hide the caller error and can deadlock on
+recursive scheduler entry. A non-blocking run lease makes the invalid use deterministic, preserves
+parallelism across independent Evaluations, and releases correctly when node computation throws.
+
 **Invalidation must be pulled, not pushed.** Evaluations are host-owned, so the definition has no list
 of them — deliberately. An edit therefore *cannot* walk them to set flags or drop data; it can only
 bump a version and let each evaluation notice when it next runs. This also keeps an edit O(1) in the
@@ -54,8 +138,10 @@ number of evaluations, which matters when there is one per video stream.
 
 **Per-node versions, not a definition-wide one.** A single counter would make any edit invalidate every
 evaluation wholly, so tweaking a blur radius would recompute every node of every stream. Per-node
-versions preserve the dirty-closure incrementality built in Tier A #3 exactly — `runOrder` is unchanged;
-only the predicate it asks is different.
+versions preserve the closure incrementality built in Tier A #3. The propagation algorithm remains,
+but its signature and predicate become evaluation-aware: `runOrder(definition, evaluation)` asks the
+matching Evaluation, and a group recursively asks its child rather than scanning mutable state on the
+inner definition.
 
 **Versions rather than "absence means stale".** Deriving staleness from missing values is appealing —
 one source of truth, no flag to drift — but it breaks two existing designs. ADR-0007 relies on a
@@ -67,27 +153,105 @@ flag in disguise. Versions also keep "evicted for memory" and "invalidated by an
 distinguishable, without which a gui pool evicting a preview would silently force recomputation of a
 result that was still valid.
 
+**Ownership, not a pointer, keeps versions meaningful.** Per-node versions are runtime counters, not
+serialized history. A graph reconstructed by load or undo can carry the same UUIDs over different
+recipes while its counters restart at values an old Evaluation has already recorded — so reusing that
+Evaluation would declare changed nodes clean. The fix is structural: a host that owns the definition
+and its Evaluation as one unit cannot produce the mispairing, and needs no `GraphId` or global
+revision registry to avoid it. The `prepare`-time comparison of the recorded definition is worth
+having as a cheap guard rail, but it is *address* identity — it cannot distinguish a definition
+rebuilt where the old one stood, so it must not be mistaken for the mechanism. This is the same
+lesson as ADR-0011: a discriminator bolted onto an ambiguous key is weaker than removing the
+ambiguity.
+
 **Coordinates rather than minted run ids.** A minted `EvaluationId` would be process-unique runtime
 identity in core again — the thing ADR-0011 rejects. It is also wrong for a live viewer: a preview
 pinned to run #47 goes stale the instant run #48 happens. A coordinate keeps pointing at *"element 3
-of the map in group X"* and shows the newest values there, which is what an inspector wants.
+of the map in group X"* and shows whatever that Evaluation holds now, which is what an inspector
+wants. A historical snapshot of one execution, if a caller ever needs one, is a different concept.
 
 ## Consequences
 
 - **The `compute()` contract changes at ~41 sites** (about ten production nodes, the rest test
-  fixtures). Mechanical — `input(i)` → `e.get<T>(i)`, `output(i).set(v)` → `e.set(i, v)` — with no
-  logic changes, and best done as its own commit with the suite green either side. **Params do not
-  move**: a param is serialized, so it is recipe, and `param(i).get<T>()` is untouched.
-- **`GroupInputNode::m_bound` moves into the evaluation.** Bound values are per-run — that is the
-  point, since each stream binds its own input — so the boundary seam (`BoundaryInput::setValue`, the
-  cli binders, the Interface panel) gains an evaluation parameter.
+  fixtures). `compute()` becomes `compute(NodeEvaluation&) const`, and fixed-port nodes retain named
+  `PortId` members returned by `addInput` / `addOutput`: `evaluation.input(m_image)` and
+  `evaluation.output(m_result)`. A literal positional index is not a compute-time address; live port
+  reorder would retarget it. `PortIndex` remains only for deliberate ordered iteration (such as a
+  dynamic Select's branches), resolving each iterated definition port's id into the Evaluation.
+  **Params do not move**: a param is serialized recipe, and the const node still reads it through its
+  captured parameter index.
+- **`Port` becomes pure declaration** — `{id, name, direction, PortType, presence}`. `value()`,
+  `set` / `get` / `holds`, `ready()` and `describe()` all leave it, so the type that most obviously
+  mixed recipe with run state stops doing so, and the mixing cannot creep back in through a
+  convenience accessor. `PortType` keeps `describe`, since rendering a value is a property of the
+  declared type, not of the value's storage.
+- **Parameter access becomes const/read plus atomic commit.** `ParamIndex` names the positional
+  declaration cursor; `Node::param(index) const` inspects and `Node::setParam(index, value)` performs
+  the type-checked mutation plus definition-version bump, returning `bool` (as `removeNode` /
+  `disconnect` / `removePort` do) and changing neither on failure. The Inspector's ParamEditor and
+  `flow::serialize` decode into a temporary `PortValue` and commit through the same Node operation;
+  direct mutable `Param&` access is removed. Params keep positional indices rather than gaining
+  `PortId`-style handles because nothing declares one dynamically and the on-disk key is the name.
+- **Static declaration helpers finish the PortId contract.** `addInput`, `addOutput`, `addInputLike`
+  and `addOutputLike` return the minted `PortId`, matching dynamic/boundary declarations. Definition
+  access by `PortIndex` remains for iteration; durable access and NodeEvaluation use `PortId`. Port
+  names remain the on-disk edge schema, so constructor or live display reordering changes neither
+  compute binding nor serialized connections.
+- **The scheduler prepares before either backend runs.** Serial and parallel execution share the same
+  `Evaluation::prepare(const Graph&)` path, which checks the recorded definition. The parallel backend
+  captures stable per-node views; no task calls `operator[]`, resizes evaluation storage or creates a
+  child. Hosts inspect the owning `Evaluation` through `EvalPath` + `PortAddress`, while
+  `NodeEvaluation` remains the narrow execution capability passed only to compute. `Evaluation` is a
+  move-only value in `flow` core (`evaluation.h`) — it needs `PortValue` and nothing else.
+- **`Graph::topoOrder()` stops being lazy.** The mutators (`add` / `removeNode` / `connect` /
+  `disconnect` / `removePort`) maintain the order, so the accessor is a plain const read of
+  non-`mutable` state and two concurrent runs cannot rebuild it at once. Seeding switches from map
+  order to the new insertion-order vector — with UUID keys, map order is arbitrary, and topo order
+  drives the canvas's default column layout as well as serial execution order.
+- **Scheduler entry owns a run lease.** Both `run` and pull `evaluate` acquire the Evaluation's
+  non-blocking RAII lease before preparation and throw `std::logic_error` if it is already held. A
+  production-path concurrency test blocks one real scheduler invocation inside a test node, verifies
+  a second invocation on the same Evaluation fails immediately, then releases the first; a separate
+  Evaluation over the same Graph remains runnable.
+- **The permitted concurrency is tested, not just promised.** *"Distinct Evaluations over one
+  definition may run at once"* is the milestone's headline claim, and the first thing it broke was the
+  lazy topo cache. Beside the readable sequential isolation test, N Evaluations run **simultaneously**
+  over one `const Graph` on the parallel scheduler's executor, repeated in the style of `[group]`'s
+  100× race sweep, asserting values and recompute requests never cross. That is what keeps the const
+  rule above from decaying back into a signature.
+- **Every plan step names both halves.** The flattened-plan address becomes
+  `{const Graph*, Evaluation*, NodeId}`. A group selected because only its child is stale expands
+  without republishing unchanged inputs; a local group change or selected outer predecessor sets a
+  recompute request on that child Evaluation's boundary input. `Node::dirty`, `selfDirty` and the
+  recursive `GroupNode::dirty` override disappear.
+- **On-request rearming becomes evaluation-local.** A source calls the per-node evaluation view's
+  recompute-request operation instead of `Node::markDirty()`, so running one stream cannot make every
+  other evaluation of the shared definition refire.
+- **The old dirty verbs split by meaning.** Definition mutations advance the affected node version;
+  runtime refresh is `requestRecompute` — `Evaluation::requestRecompute` / `requestRecomputeAll` for a
+  host, `NodeEvaluation::requestRecompute` from inside compute. There is no `Graph::markAllDirty` and
+  no runtime request that mutates a definition version.
+- **Graph replacement replaces runtime state.** A host that owns the two together gets this for free:
+  replacing the definition — New, Open, undo/redo restoration — replaces the Evaluation with it.
+  UUID-preserving host keys and CanvasIds may remain; computed values and version observations do not
+  cross that boundary. So identity preservation buys *editor* continuity (path, selection, canvas ids,
+  undo without ordinals), never evaluation continuity: a load or undo recomputes from scratch, exactly
+  as it does today. Reusing an evaluation across a document reload is a separate question, and one
+  UUID identity makes askable for the first time.
+- **The boundary API follows the runtime owner.** `GroupInputNode::m_bound`,
+  `BoundaryInput::setValue` and `GroupOutputNode::value` disappear. `BoundaryInput` /
+  `BoundaryOutput` are immutable definition handles; `Evaluation::bind(input, value)` and
+  `Evaluation::value(output)` are the host operations. CLI, Interface and group entry all use that
+  same production path, so there is no node-local binding cache beside the Evaluation.
 - **`PinKey` becomes `{EvalPath, NodeId, PortId}`.** Same arity as today, but every field is a real
-  axis — *which run*, *which node*, *which port* — rather than a field papering over scoping.
+  axis — *which evaluation*, *which node*, *which port* — rather than a field papering over scoping.
 - **ADR-0010's "a link references a recipe, never a runtime share" no longer holds.** That was argued
   on correctness — *"a `Port` holds a persistent value, so two instances sharing one inner graph would
   stomp each other's intermediates"* — and it was a consequence of exactly the mixing removed here.
-  With values in evaluations, **N linked groups can share one definition**, which is what makes a
-  template edit propagate to every instance live rather than on reload.
+  With values in evaluations, **N linked groups can safely share one definition**. M6 proves that
+  capability by running one real Graph through independent Evaluations (including the parallel
+  scheduler), but does not change LinkedGroupNode ownership. A later vertical introduces shared
+  template-definition caching/ownership, reload propagation and file-watch policy together.
 - **Inspectability becomes a retention decision.** *"Every intermediate result stays inspectable"* was
   free when a port held one value; across N evaluations it is N× memory, and these are images. It is
   now bounded by who holds evaluations and how many.
@@ -111,4 +275,8 @@ imagined requirements.
 - How suppression (ADR-0007) crosses a map — does an unready element suppress the whole map or just
   its own child?
 - How the execution plan (ADR-0009) lowers a map: N children expanded into one flat plan, or a
-  nested-but-joined shape.
+  nested-but-joined shape — **and with it, where a map prepares its children.** These are one
+  question, not two: a map's arity comes from a collection computed *during* the run, so its child
+  Evaluations cannot exist when the plan is built. Whatever shape the plan takes decides where the
+  second coordinator point sits. The invariant that must survive either answer is the one stated
+  above — a coordinator grows evaluation storage, never a worker task.

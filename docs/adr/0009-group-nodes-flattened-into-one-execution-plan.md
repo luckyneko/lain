@@ -4,6 +4,11 @@
 Status: accepted
 ---
 
+> **Revisit (2026-08-01).** [ADR-0012](0012-definition-and-evaluation.md) keeps the flattening but
+> separates definition from runtime state. A step is consequently addressed by
+> `{const Graph*, Evaluation*, NodeId}`, not `{Graph*, NodeId}`; staleness and boundary publication
+> are read/written in that Evaluation. The topology of the flat plan is unchanged.
+
 A **group node** contains its own `Graph` and exposes selected inner ports as its own — the
 subgraph mechanism, with the top-level graph as the outermost group. The question is *who runs
 the inner graph*. Three shapes were live:
@@ -21,25 +26,29 @@ one thread — a group is exactly where the parallel work will live.
 **The `Scheduler` expands the whole nesting tree into a single, flat execution plan.**
 
 - A **plan** is a topologically ordered list of **steps** with step-index dependency edges. A step
-  is either "run node `{Graph*, NodeId}`" or one of a group's two boundary steps: an **entry step**
-  (copy the group's outer input port values into its inner `GroupInputNode`) and an **exit step**
-  (copy the inner `GroupOutputNode`'s delivered values out to the group's outer output ports).
-  Expansion recurses, so a plan spans every level at once.
+  is either "run node `{const Graph*, Evaluation*, NodeId}`" or one of a group's two boundary steps:
+  an **entry step** (copy the group's outer evaluated inputs into its child evaluation's
+  `GroupInputNode`) and an **exit step** (copy the child evaluation's `GroupOutputNode` values to the
+  group's evaluated outputs). Expansion recurses through matching definition/evaluation children, so
+  a plan spans every level at once. Two steps may name the same shared definition with different
+  Evaluation pointers.
 - `SerialScheduler` walks the plan in order. `ParallelScheduler` emplaces one task per step and one
   `precede` per plan edge. **Nothing is nested at runtime** — one flat task DAG, N levels deep.
-- **Both `run()` and `evaluate()` build plans** (dirty-closure mode and upstream-cone mode). There is
+- **Both `run()` and `evaluate()` build plans** (stale-closure mode and upstream-cone mode). There is
   one expansion mechanism, so `GroupNode::compute()` is a documented no-op — a group is never
   executed as a node.
 - **`Node` gains `virtual Graph* innerGraph()`** (null by default). The scheduler asks the structural
   question it actually has — *does this node contain a graph?* — rather than `dynamic_cast`-ing for a
   class identity. (`flow::serialize` keeps RTTI: there the question really is *which kind is this*.)
-- **`Node::dirty()` becomes virtual.** A group is dirty if its own flag is set *or* anything inside it
-  is, recursively — otherwise an edit inside a collapsed group would never reach the outer dirty
-  closure.
-- **The entry step gates its publish.** Publishing into the inner `GroupInputNode` marks it dirty,
-  which would re-run the whole inner graph; so it publishes only when the group's inputs can have
-  changed (`group.dirty()` own-flag, or an outer predecessor was selected into the run). Both are known
-  at plan-build time. Without this gate, any inner param edit destroys inner incrementality.
+- **Planning is evaluation-aware.** `runOrder(definition, evaluation)` selects a group when the group
+  itself needs recompute or anything in its matching child Evaluation does, recursively — otherwise an
+  edit inside a collapsed group would never reach the outer closure. `Node::dirty()` and
+  `GroupNode::dirty()` disappear with runtime state on the definition.
+- **The entry step gates its publish.** Republishing into the child boundary would request a run of
+  the inner input path, so entry does it only when the group itself or an outer predecessor changed.
+  A group selected solely because an inner node is stale still expands, but does not republish
+  unchanged inputs. The request goes to that child Evaluation's boundary input, never to the inner
+  definition.
 
 ## Why
 
@@ -63,8 +72,9 @@ one thread — a group is exactly where the parallel work will live.
 
 ## Consequences
 
-- **The plan is rebuilt every run** — a recursive walk plus a dirty scan, the same order of work as
-  today's `runOrder`. Caching a plan across runs is a deferred optimisation, not a requirement.
+- **The plan is rebuilt every scheduler invocation** — a recursive walk plus an evaluation-staleness
+  scan, the same order of work as the original `runOrder`. Caching a plan is a deferred optimisation,
+  not a requirement.
 - **A suppressed group's inner *sources* still fire** (a node with no required inputs is always ready).
   Harmless recompute; noted so it isn't mistaken for a bug.
 - **Crossing a boundary costs `PortValue` copies** (~4 in, ~3 out, against 1 for a plain edge). This is

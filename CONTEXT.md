@@ -22,13 +22,15 @@ apart: logic that belongs to one must not swell another.
   - **Execution plan** — what a Scheduler builds before running: an ordered list of
     **steps** with dependencies between them, expanded across *every* level of group
     nesting at once, so a nested graph runs as one flat DAG and never as a nested run
-    (ADR-0009). Both `run` (dirty-closure) and `evaluate` (upstream-cone) build one.
+    (ADR-0009). A step is addressed by `{const Graph*, Evaluation*, NodeId}` — which node, and in
+    which Evaluation. Both `run` (stale-closure) and `evaluate` (upstream-cone) build one.
   - **Entry / exit step** — the two **boundary steps** a group expands into, around its inner
     graph's own steps: the entry hands the group's outer input values to its inner
     `GroupInputNode`, the exit publishes its inner `GroupOutputNode`'s values onto the group's
     outer output ports. A group is never *run as a node*; these steps are what a group "does".
-  - **Dirty closure** — the nodes a `run` must recompute: every dirty node plus everything
-    downstream of one. A group node counts as dirty if anything inside it is.
+  - **Stale closure** — the nodes a `run` must recompute: every node the matching Evaluation says
+    needs recompute, plus everything downstream of one. A group is selected if it needs recompute
+    itself or anything in its child Evaluation does. _Avoid_: dirty closure once M6 lands.
 
 - **edit** *(editing layer)* — `lain::flow::edit`, a **stateless free-function
   module** over Graph (`edit.h`), peer to Scheduler. Owns editor **policy and
@@ -53,17 +55,20 @@ apart: logic that belongs to one must not swell another.
 
 A front-end (e.g. flowview's imnodes canvas) is an **adapter**: it decodes its own
 input (pins, selection, cursor, key gestures) into calls on `edit::` and `Graph`.
-It owns everything GUI — `pinId`/`decodePin`, gesture detection, selection
-resolution, placement — and no graph-mutation policy. The editing layer is the
-**test surface**: edit logic is tested against a plain Graph with GPU-free nodes,
+It owns everything GUI — canvas-id translation, gesture detection, selection
+resolution, placement — and no graph-mutation policy. Under M6 the arithmetic
+`pinId`/`decodePin` pair is replaced by the document-lifetime `CanvasIds` adapter. The editing layer
+is the **test surface**: edit logic is tested against a plain Graph with GPU-free nodes,
 never by driving a live GUI.
 
 ## Node parameters — configuration, distinct from dataflow
 
 - **Param** — a **named, typed, non-connectable configuration value** on a Node (a
   `LoadImageNode`'s path, a `BlurNode`'s radius), **distinct from a Port** (which is dataflow,
-  edge-driven). A Node declares params in its ctor (`addParam<T>(name, default)`) and reads them
-  in `compute()` (`param(idx).get<T>()`) — the same shape as `addInput` / `input().get<T>()`. Params
+  edge-driven). A Node declares params in its ctor (`addParam<T>(name, default)`), retains the returned
+  `ParamIndex`, and reads them in const `compute()` (`param(m_radius).get<T>()`). Hosts receive const
+  Params; `Node::setParam(index, value)` type-checks, commits and advances the definition version as
+  one operation, so invalidation cannot be forgotten. Params
   reuse **PortValue**'s typed, type-erased slot, so a param and a port share one internal value
   machinery: **promoting a param to a connectable input is a definition change, not a data change**
   — that is how `flow` gets "drive a config from the graph" (wire a `ConstantFloatNode` to the
@@ -81,7 +86,8 @@ never by driving a live GUI.
   live in `flow` (pure data). The type→widget mapping is a **type-keyed editor registry** in the
   adapter (same shape as the reader registry / the deferred texture "GUI view" seam): built-ins
   registered once by flowview, a custom type is a `registerParamEditor<T>` registration, not a core
-  edit. Editing a param writes its slot, then `markDirty` + re-evaluate (all main-thread).
+  edit. An editor commits through `Node::setParam` — which writes and invalidates as one operation —
+  then re-evaluates (all main-thread).
   **Deferred:** a read-only ("Debug") param *kind* — display-only, orthogonal to the type.
 
 ## Payload-agnostic
@@ -95,9 +101,9 @@ allocation, so copying a `PortValue` is a refcount bump, never a payload copy. T
 load-bearing rather than an optimisation — the scheduler copies a `PortValue` **per edge,
 per run**, and payloads are large (an `image::Image` copy is a deep pixel copy). It is safe
 because nothing mutates a value in place: `get()` hands out a `const&`, a node writes only
-its own outputs, and `set()` *rebinds* the slot rather than writing through the pointer, so
+its own evaluated outputs, and `set()` *rebinds* the slot rather than writing through the pointer, so
 a recompute never disturbs a payload another slot is still reading. A node that wants to
-modify a value copies it out (`image::Image src = input(i).get<image::Image>()`), which is
+modify a value copies it out (`image::Image src = evaluation.input(m_image).get<image::Image>()`), which is
 the one place a deep copy is paid — deliberately, by the node that needs it.
 
 ## Graph boundary & host binding — the pipeline I/O model
@@ -206,39 +212,86 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 
 - **PortId** *(M4 b)* — an **opaque, stable per-port handle** (the port-level analogue
   of `NodeId`, scoped within its node), so an edge and a `BoundaryInput` handle survive a
-  pin being added/removed/**reordered** — the port's identity is not its position. A
-  `PortIndex` is only a positional cursor for *iterating* a node's ports, never a durable
-  reference.
-## Definition and evaluation — the recipe apart from its runs
+  pin being added/removed/**reordered** — the port's identity is not its position. A fixed-port node
+  retains named `PortId` members returned by `addInput` / `addOutput` and uses them through
+  `NodeEvaluation`; a `PortIndex` is only a positional cursor for *iterating* a node's ports, never a
+  compute-time or durable reference. Dynamic nodes may deliberately iterate an ordered pin collection,
+  resolving each iterated Port's id into the Evaluation.
+## Definition and evaluation — the recipe apart from its runtime state
 
 *(M6 — designed, not yet built. [ADR-0012](docs/adr/0012-definition-and-evaluation.md).)*
 
 - **Definition** — a graph as a **recipe**: node kinds, params, edges, port declarations, names.
-  Everything that serializes. What `toValue` already calls "the RECIPE".
-- **Evaluation** — the values produced by **running** a definition once. A value the *host* owns, so
-  retention is ownership: a cli run drops it after reading the boundary outputs; a gui keeps one
-  because the Inspector reads it. One definition can have many — a `SplitGroup` runs its subgraph once
-  per stream, a `Loop` once per iteration, and N linked groups share a definition with an evaluation
-  each. _Avoid_: "instance" for this — an evaluation is a *run*, and "instance" is already the ordinary
-  English word used around linked groups.
-- **EvalPath** — which run, as a **coordinate**: a sequence of `{NodeId, index}` steps down the
-  evaluation tree ("element 3 of the map in group X"). Composed of things that already exist, so
-  nothing is minted, and it names the same *place* across runs — a preview pinned to it follows the
-  position and shows the newest values, rather than going stale against a historical run.
-- **Version** *(per node, on the definition)* — bumped wherever `markDirty()` is called today. An
+  Represented by `Graph`; execution treats it as const, and only explicit edits change it. Everything
+  that serializes. What `toValue` already calls "the RECIPE".
+- **Evaluation** — one graph's **runtime state**: its values and bookkeeping, plus one child
+  Evaluation per contained group (N per map element), so it is a tree mirroring the definition's
+  nesting. The host owns it and passes it to each scheduler invocation, which *updates* it — it is not
+  a snapshot of one run. A cli creates and drops one; a gui retains one; a `SplitGroup` retains one
+  child per stream. A host owns it **together with** the definition it belongs to, as one replaceable
+  unit: in-place edits keep it, while a rebuilt Graph (load, New, undo) gets a new one even when node
+  UUIDs match, because per-node Versions restart. Before dispatch, `prepare(definition)` creates,
+  prunes and stabilises its storage. Scheduler entry holds a non-blocking **run lease**: reusing one
+  Evaluation concurrently or recursively throws `std::logic_error` immediately, while distinct
+  Evaluations — including two over the same definition — may run concurrently; the RAII lease releases
+  on unwinding. _Avoid_: run, result, instance, slot, lazy worker-side insertion.
+- **EvalPath** — which Evaluation, as a **coordinate**: a sequence of `{NodeId, index}` steps down the
+  evaluation tree ("element 3 of the map in group X"). It names the same place across scheduler
+  invocations, so a preview pinned to it shows that Evaluation's newest values. _Avoid_: run id.
+- **Node evaluation** — the view handed to `Node::compute` for one node in one Evaluation. Compute is
+  const over the definition; it reads this node's evaluated inputs, writes its evaluated outputs, and
+  may request another computation here, never by mutating the Node. A narrow non-owning capability
+  over storage prepared before dispatch — not a public container, and not host inspection API.
+- **Readiness** — ADR-0007's gate, *"every Required input carries a value"*: a join of declaration
+  (`Port::required()`) and runtime, so it belongs to the Evaluation, which owns values and knows its
+  definition. `evaluation.ready(node)` for hosts, `nodeEvaluation.ready()` inside compute; port-level
+  presence is `hasValue`. _Avoid_: `Port::ready()` (which meant *has a value*) and `Node::ready()`
+  (which meant *all required inputs do*) — one name for two concepts.
+- **Version** *(per node, on the definition)* — bumped only when that node's recipe changes. An
   evaluation records the version it computed each node at, and staleness is the comparison. Invalidation
   is therefore **pulled** by an evaluation when it next runs, never **pushed** by an edit — an edit
   cannot reach the evaluations, and must not cost anything per stream.
+- **Recompute request** *(per node, on one evaluation)* — runtime demand to compute that node again
+  without changing its definition: a boundary rebind, group-entry publication, or on-request source
+  rearm. It affects only that evaluation; a recipe edit uses the definition's Version instead. One
+  verb everywhere: `Evaluation::requestRecompute(node)` targets one node and ordinary closure
+  propagation carries it downstream, `requestRecomputeAll()` targets the prepared subtree at an
+  EvalPath, and `NodeEvaluation::requestRecompute()` is the same concept from inside compute. A fresh
+  Evaluation forgets all retained state. _Avoid_: `Graph::markAllDirty`, bumping a definition version
+  to force one evaluation, a second verb for the host surface.
+- **Boundary handle** — immutable definition metadata for one graph input or output: its
+  `PortAddress`, name and declared type. It carries no Node pointer with mutable values and performs no
+  binding itself. Hosts call `evaluation.bind(BoundaryInput, value)` and
+  `evaluation.value(BoundaryOutput)`; group entry uses the same bind operation on its child Evaluation.
+  _Avoid_: `BoundaryInput::setValue`, `GroupInputNode::m_bound`, `GroupOutputNode::value`.
 
 - **Uuid** *(`lain::core`)* — a unique-at-creation identifier: RFC 9562 **v7**, minted with no
   coordination, because two people editing on two laptops have no coordinator. A **`NodeId`** wraps
   one ([ADR-0011](docs/adr/0011-node-identity-is-a-uuid.md)); `PortId` stays a per-node counter,
   since `{NodeId, PortId}` is globally unique once `NodeId` is. Generation is v7, **parsing accepts any
   well-formed UUID** — the id is opaque to us, and a hand-pasted `uuidgen` v4 must simply work.
+- **Node order** — insertion order stored explicitly by `Graph`, separately from id-keyed lookup and
+  from topological execution order. `nodeIds()` exposes it; add appends, remove erases, and the JSON
+  `nodes` array persists it. Topological order seeds from it. UUID comparison never defines any of
+  these three.
+- **Canvas id** *(flowview adapter)* — an opaque `int` required by imnodes, assigned bidirectionally
+  from a durable `NodeId`, `PortAddress`, or edge (an edge being its destination `PortAddress`, since
+  inputs are single-source) by the document-lifetime **`CanvasIds`** in `AppContext`. Allocation is
+  monotonic and never recycled, so one int names one object for as long as the document lives — a
+  dense per-frame table would let a deletion shift later nodes onto ids imnodes holds other state for.
+  The mapping survives edits, graph navigation and UUID-preserving undo/redo, resets when document
+  identity changes, and never serializes. It removes *cross-level id collisions*, not the
+  per-navigation position re-seed and selection clear, which guard hazards inside imnodes itself.
+  _Avoid_: casts from NodeId, arithmetic pin encoding, edge-vector indices, per-frame dense remapping.
 - **Load vs paste** — the distinction stable ids make possible, and which today's remapping blurs.
   **Load preserves identity** (the nodes come back as themselves, which is what lets undo drop its
   positional ordinals); **paste mints new identity** (a copy is a different recipe that happens to be
   identical).
+- **Identity admission** — the only point a Node receives its immutable NodeId. Ordinary
+  `Graph::add(node)` mints; v2 load uses `add(node, requestedId)`. Because every Graph is born with its
+  boundary pair, the loader stages headers and passes their saved UUIDs to `Graph{BoundaryIds}` before
+  replaying the boundary definitions. No admitted node is re-keyed; a second boundary is reported and
+  skipped, and a *missing* one is minted and reported — the pair is an invariant, not a payload.
 
 - **PortAddress** *(M4 b)* — the conglomerate **`{NodeId, PortId}`**: the durable **in-memory**
   address of one port on one node. The unit edges and handles reference (an **Edge** is two
@@ -483,12 +536,11 @@ iff it stays payload-agnostic; the moment it must name a concrete payload type o
   is the *same idiom* — a stable-string-keyed registry. _Avoid_: type, class (for the node's factory
   key, in the file).
 
-- **Node-id remap** — load mints **fresh** NodeIds via `Graph::add` and rewrites edges through a
-  `savedId → newId` table (returned, so an adapter re-keys its metadata). Deterministic and
-  **canonical** (assigned in file order), so a no-edit round-trip is idempotent. Needs **no new Graph
-  API** and *is* the **subgraph-paste** primitive (paste-into-existing must remap to dodge id
-  collisions) — load and paste are one mechanism. Chosen over id **preservation** (which would need
-  an insert-with-id seam + brittle ctor-order coupling).
+- **Identity restoration / copy remap** — two distinct operations. A v2 document load restores its
+  UUIDs; paste or copy mints fresh UUIDs and rewrites edges/editor metadata through an old→new table.
+  A v1 document has only graph-local numeric ids, so its migration mints UUIDs in each `nodes` array's
+  order and rewrites that body's references before the v2 loader sees it. _Avoid_: one `fromValue`
+  remap policy serving both load and copy.
 
 - **Name-addressed edges** — the on-disk edge references `{ node-id, port-name }`, resolved to a
   `PortAddress` on load. A port **name** is a stable string key (per the versioning contract): it
@@ -518,14 +570,18 @@ iff it stays payload-agnostic; the moment it must name a concrete payload type o
   in one file; a headless load ignores it.
 
 - **version** — a document-root **integer** (monotonic, *not* `core::Version` semver), bumped on an
-  incompatible encoding change; migration is a version-switch on read, a **too-new** version is a
-  fatal load. The deeper compat contract is the **stability of the string keys** (`kind`, value
-  type-keys, port names) + tolerant reads (unknown param/pin skipped) — soft forward-compat for free.
-  Per-node-type schema versioning is deferred.
+  incompatible encoding change. The public loader migrates an old `Value` DOM one version at a time,
+  then invokes the **single current graph decoder**; writers emit only the current version. Inline
+  bodies inherit and migrate with their containing document, while every linked template is a
+  document and enters the router independently. Unsupported, missing or too-new versions are fatal.
+  The deeper compat contract is the **stability of the string keys** (`kind`, value type-keys, port
+  names) + tolerant reads (unknown param/pin skipped) — soft forward-compat for free. Per-node-type
+  schema versioning is deferred.
 
 - **Canonical file** — a file `flow::serialize` wrote round-trips **byte-identically** (ordered
-  `Object`, canonical id remap, container-preserved edge/param order, round-trippable numbers). A
-  non-canonical (hand-edited) file **normalizes on first save**, then is stable.
+  `Object`, preserved UUIDs and node-array order, container-preserved edge/param order,
+  round-trippable numbers). A non-canonical or migrated file **normalizes on first save**, then is
+  stable.
 
 - **LoadResult / LoadIssue** — `fromValue` returns `{ Graph graph; std::vector<LoadIssue> issues; }`
   (`clean()` == no issues), **best-effort**: an unknown `kind` / port-type / param or a rejected edge

@@ -7,10 +7,12 @@ Status: accepted; the sharing constraint superseded by ADR-0012
 > **Revisit (2026-08-01).** The rule below that "a link references a recipe, never a running graph"
 > was argued on correctness — a `Port` holds a persistent value, so two instances sharing one inner
 > graph would stomp each other's intermediates. That was true, and it was a consequence of `flow`
-> mixing structure with per-run state. **[ADR-0012](0012-definition-and-evaluation.md)** removes the
-> mixing, so N linked groups *can* share one definition, each with its own evaluation — which is what
-> makes a template edit reach every instance live rather than on reload. Everything else here (inline
-> vs linked, the interface cache, read-only-in-place, overrides deferred) stands unchanged.
+> mixing structure with evaluation state. **[ADR-0012](0012-definition-and-evaluation.md)** removes the
+> mixing, so N linked groups *can* share one definition, each with its own evaluation. M6 enables and
+> scheduler-tests that capability but deliberately leaves LinkedGroupNode owning its current copy; a
+> later vertical must land shared template ownership, caching, reload propagation and file-watch
+> policy together. Everything else here (inline vs linked, the interface cache, read-only-in-place,
+> overrides deferred) stands unchanged.
 
 A subgraph's *recipe* can live in the parent document or in its own file, and the second raises the
 prefab question: if many nodes are built from one template, may an instance diverge from it, and how
@@ -85,12 +87,12 @@ recursion is held inside `flow::serialize` so it can refuse a **recursive templa
 - **Overrides, if ever built,** add an `"overrides"` key beside `"source"` — but they first need a
   template-stable address for an inner node and rules for an override targeting a node the template
   deleted. Nothing here forecloses them.
-- **The loader must *reuse* the boundary pair, not add it.** Boundary nodes are factory-registered
-  (`"groupInput"` / `"groupOutput"`) and appear in documents as ordinary nodes — so with the graph
-  auto-creating a pair, `fromValue` would otherwise produce duplicates. Rule: on meeting a boundary
-  kind, route it onto the graph's **existing** node (replaying its dynamic pins onto that node) and
-  point the file-id → live-id remap at the existing id. This is the one place the invariant and the
-  serializer actively fight, so it is stated rather than left to be rediscovered.
+- **The loader must construct and replay the boundary pair, not add or re-key it.** Boundary nodes are
+  factory-registered (`"groupInput"` / `"groupOutput"`) and appear in documents as ordinary nodes.
+  Under schema v2 the loader stages node headers, uses the first valid pair's saved UUIDs to construct
+  `Graph{BoundaryIds}`, then replays dynamic pins and other stored definition onto those existing
+  nodes. A second boundary is reported and skipped. This keeps the one-pair invariant, UUID
+  preservation and immutable-after-admission identity true together.
 - **A fresh `Graph` has `nodeCount() == 2`**, which churns the existing node-count assertions, and
   `buildNewScene`'s explicit pair-add becomes redundant. `Graph` also gains a compile-time dependency
   on the concrete boundary node types (already core, so no boundary-rule violation) — it is no longer

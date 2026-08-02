@@ -560,8 +560,11 @@ add/remove (and reorder later), so:
 **Build order (b):**
 1. ✅ **`PortId` / `PortAddress` refactor** — the "NodeId-ification of ports": `Edge` → two
    PortAddresses; `connect`/`disconnect`/`populateInputs`/scheduler/`edit`/`dump`/imnodes pin
-   encoding/boundary handles move `PortIndex` → `PortId`; `add*`/`addBoundary` return `PortId`. **No
-   behaviour change** — a standalone commit kept fully green on the pure rename.
+   encoding/boundary handles move `PortIndex` → `PortId`; dynamic/boundary add paths return `PortId`.
+   **Known gap found during M6 grilling:** the protected static `addInput` / `addOutput` / `add*Like`
+   helpers still return `PortIndex`, so fixed nodes retain positions despite the iteration-only
+   contract. **M6 step 2** closes it, in the same pure-rename shape as this slice. **No behaviour
+   change** — a standalone commit kept fully green on the original edge/handle refactor.
 2. ✅ **Mutation engine** — `DynamicPortsNode` + `addDynamicPort<T>` + `Node` raw erase +
    `Graph::removePort` primitive (refuses a connected pin) + `edit::removePort`. Driver-free tests
    incl. the mid-pin-removal proof.
@@ -1464,14 +1467,27 @@ identity that kept needing composition, undo that needed positional ordinals, an
 
 **What it is, in one line each:**
 
-- A **definition** is the recipe (kinds, params, edges, declarations); an **evaluation** is the values
-  from running it once. `run(definition, eval)`.
-- An `Evaluation` is a **value the host owns**, so retention is ownership — cli drops it, gui keeps a
-  bounded pool. No retention policy type.
-- An `Evaluation` is a **tree**; a run is named by an **`EvalPath`** coordinate (`{NodeId, index}`
-  steps), because a map runs its subgraph once per element.
-- **`compute()` takes its evaluation context.** Parallel map means anything stored on the node is
-  shared across concurrent runs of it.
+- A **definition** is the recipe (kinds, params, edges, declarations); an **evaluation** is one
+  graph's runtime state — its values and bookkeeping. `run(const Graph& definition,
+  Evaluation& evaluation)` updates it.
+- An `Evaluation` is a **value the host owns**, so retention is ownership — cli drops it after its
+  invocation, gui keeps updating one, and a bounded pool is simply how many it retains. No retention
+  policy type.
+- **A host owns a definition and its Evaluation as one replaceable unit.** An Evaluation survives
+  in-place versioned edits; load/New/undo replaces both together, because per-node versions restart on
+  a rebuilt Graph. Matching UUIDs preserve document/UI identity, never runtime version observations.
+- An `Evaluation` is a **tree**; one is located by an **`EvalPath`** coordinate (`{NodeId, index}`
+  steps), because a map retains one child per element. It is not a historical run id.
+- **`compute(NodeEvaluation&) const` takes its evaluation context.** The scheduler reads a
+  `const Graph&`; parallel map means anything mutable stored on the node would be shared across
+  concurrent runs of it, so all run mutation goes into the evaluation. `const` means **concurrently
+  readable**, so the definition keeps no lazy caches. `Port` is left as pure declaration — readiness
+  and value description follow the values out of it.
+- **Preparation precedes dispatch.** `Evaluation::prepare(definition)` creates/prunes and stabilises
+  graph-shaped storage on the coordinator thread. Tasks receive disjoint, already-existing
+  `NodeEvaluation` views. The invariant: *a coordinator grows evaluation storage, a worker task never
+  does.* One Evaluation cannot be scheduled twice at once; distinct ones — including two over the same
+  definition — may run concurrently.
 - **Staleness is a version comparison** — per-node version on the definition vs what the evaluation
   computed. Invalidation is *pulled*, never *pushed*: an edit cannot reach host-owned evaluations, and
   must not cost anything per stream.
@@ -1484,23 +1500,106 @@ Each step stands alone and leaves the suite green.
 
 1. **`core::Uuid` + `NodeId`.** New std-only `Uuid` in `lain::core` (generate v7, parse *any*
    well-formed UUID, format canonical, compare, hash). `NodeId` wraps one. Serialize as a string; drop
-   the canonical `1..N` renumbering; `fromValue` **preserves** ids and re-mints + reports a duplicate.
-   Retire `pathOrdinals` / `pendingReselect` (a restore now preserves identity). **Adds a dense
-   per-frame index table for imnodes**, which takes `int` node ids — needed by any scheme that stops
-   ids being small, so it lands here.
-2. **`Evaluation` + the `compute()` contract.** The big mechanical one: values move off `Port`, ~41
-   `compute()` sites rewritten (`input(i)` → `e.get<T>(i)`, `output(i).set(v)` → `e.set(i, v)`), the
-   scheduler threads an evaluation, `GroupInputNode::m_bound` moves into it, and the boundary seam
-   (`BoundaryInput::setValue`, cli binders, Interface panel) gains an evaluation parameter. Params do
-   **not** move — they are recipe.
-3. **Version-based staleness.** `m_dirty` → per-node version on the definition + `computedAt` on the
-   evaluation; the same call sites that `markDirty()` today bump instead. `runOrder`'s closure logic is
-   unchanged — only its predicate. Evaluations shed stale values when they notice a mismatch.
-4. **Host-side keys and panes.** `PinKey` → `{EvalPath, NodeId, PortId}`; preview cache, Inspector,
+   the canonical `1..N` renumbering; document load **preserves** ids while paste/copy mints fresh ones,
+   and a duplicate is re-minted + reported. This is schema **v2**. The public loader routes documents
+   by version; a private `version1.cpp` migrates the old numeric-id `Value` DOM to v2 — nodes, edge
+   endpoints, and editor keys in both halves of the `EditorTree` (node layout *and* group subtrees),
+   recursively through inline bodies — then the sole v2 graph decoder runs.
+   `toValue` writes only v2. Linked template documents enter the same router instead of bypassing the
+   version gate. Fixed v1 fixtures prove migration; deleting v1 later means deleting that translation
+   unit, its dispatch case and fixtures.
+   Keep ids immutable after admission. The v2 decoder stages `{id, kind, node DOM}` headers, takes the
+   first valid GroupInput/GroupOutput UUIDs, constructs `Graph{BoundaryIds}`, replays their definitions,
+   then calls `add(node, requestedId)` for remaining nodes in array order; the ordinary overload mints.
+   Duplicate later ids are re-minted + reported, while a second boundary is reported and skipped — no
+   post-insertion re-key and no ambiguous merge into the canonical pair. A document missing either
+   boundary node mints that id and reports an issue rather than failing: the pair is a graph invariant.
+   Keep identity lookup and ordering separate: the existing id-keyed owner gains an explicit
+   insertion-order `vector<NodeId>`; `nodeIds()` returns that order, and the JSON `nodes` array restores
+   it without a second order field. Topological order stays independent but must now *seed* from that
+   vector — map order was ascending-integer and becomes arbitrary, and topo order drives both serial
+   execution and the canvas's default columns. Retire `pathOrdinals` /
+   ordinal `pendingReselect` (a restore now preserves identity). Replace every imnodes encoding at once
+   with a document-lifetime **`CanvasIds`** owned by `AppContext`: bidirectional, monotonically
+   allocated `int`s, never recycled, so one int names one object for the document's life. It keys
+   `NodeId`, `PortAddress` and edges — an edge needs no new identity, being its destination
+   `PortAddress` (inputs are single-source). It survives edits, navigation and UUID-preserving
+   undo/redo, and resets only for New/Open/document replacement. This replaces node
+   casts, `pinId` / `decodePin`, edge-index link ids, selection, locate and layout calls through the
+   production canvas path; canvas ids never enter JSON. **Keep the per-navigation position re-seed and
+   selection clear**: imnodes destroys an unsubmitted node's data and frees selection pool indices
+   without pruning them, so those hazards sit below the id layer and unique ids do not address them.
+2. **Static declarations return `PortId`** — the gap M4b slice 1 left. `addInput` / `addOutput` /
+   `addInputLike` / `addOutputLike` return the minted id instead of a position, each fixed node stores
+   named `PortId` members, and `input(PortId)` / `output(PortId)` join the index accessors (a strong
+   type beside `size_t`, so the overloads are unambiguous). `PortIndex` is left to deliberate ordered
+   iteration. A pure rename, green throughout — the same shape as the slice that opened the gap, and
+   lifted out of the vertical because it touches every node class while interacting with nothing else
+   in it.
+3. **`Node::setParam` — one seam for recipe mutation.** `param(index) const` inspects;
+   `setParam(ParamIndex, value)` type-checks, commits and (from step 4) bumps the version as one
+   operation, returning `bool` and changing nothing on failure. Mutable `Param&` leaves the public
+   surface: the Inspector's ParamEditor, `flow::serialize`'s `readParams`, and concrete setters such
+   as `ConstantNode::setValue` all decode into a temporary `PortValue` and commit through it. Green
+   either side (the bump is still `markDirty` here), independently valuable, and also lifted because
+   it is a wide mechanical sweep with no dependency on constness or on where values live.
+4. **`Evaluation` + const compute + staleness — one vertical.** Values move off `Port`; ~41
+   sites become `compute(NodeEvaluation&) const`, addressing ports through the ids from step 2:
+   `evaluation.input(m_image)` / `evaluation.output(m_result)`. `Port` is left as pure declaration —
+   `{id, name, direction, PortType, presence}` — so `value()`, `set`/`get`/`holds`, `ready()` and
+   `describe()` all leave it. Readiness follows the values: `evaluation.ready(node)` /
+   `nodeEvaluation.ready()` for ADR-0007's gate, `hasValue(PortAddress)` / `hasValue(PortId)` for port
+   presence (retiring `Port::ready()`-means-one-thing / `Node::ready()`-means-another), and `describe`
+   stays a `PortType` capability applied to an evaluation value. That reaches the canvas too — node
+   dimming, pin shapes and link activity in `graphpane` all read readiness. The scheduler becomes
+   `run(const Graph&, Evaluation&)`, and `const` means concurrently readable: `topoOrder()` stops being
+   a lazy `mutable` cache and is maintained by the mutators, or two evaluations racing after an edit
+   corrupt it. In the same change,
+   `m_dirty` becomes a per-node definition version + evaluation-side `computedAt` and recompute
+   request: recipe edits bump the version, while boundary rebinds, group-entry publication and
+   on-request rearming affect only that evaluation. Boundary handles become immutable recipe metadata
+   (`PortAddress`, name, type); remove `GroupInputNode::m_bound`, `BoundaryInput::setValue` and
+   `GroupOutputNode::value`. CLI/Interface hosts and group entry use the same
+   `evaluation.bind(input, value)` path, and outputs read through `evaluation.value(output)`; all
+   value-reading panes, dump and tests follow it. Params do **not** move — they are recipe, and
+   step 3's `setParam` now bumps the version instead of marking dirty. Keeping the rest together
+   avoids exposing a multi-evaluation interface while dirtiness is still shared on the definition, and
+   avoids sweeping for `const` twice. Both schedulers call the same `Evaluation::prepare(const Graph&)`
+   before dispatch; it reconciles/prunes storage and returns stable per-node views, so worker tasks
+   never insert, resize or create children. `Evaluation` is a move-only value in core
+   (`flow/evaluation.h` — it needs only `PortValue`). Tests
+   cover the concurrency contract through the production scheduler path: entry acquires a non-blocking
+   RAII Evaluation run lease and throws `std::logic_error` immediately if already held; a blocking test
+   node holds the first run while the second is rejected, then verifies unwinding/release. Never wait
+   on a mutex for the same Evaluation; distinct ones over the same Graph remain concurrent.
+   The flat `Step` address becomes `{const Graph*, Evaluation*, NodeId}` and `runOrder` takes both;
+   recursive group staleness follows the matching child Evaluation. A group selected only for stale
+   interior work does not republish its inputs; a local group change or selected outer predecessor
+   requests recompute on that child's boundary input. Remove `dirty()`, `selfDirty()` and the group
+   override rather than leaving a second invalidation path on the definition. Remove
+   `Graph::markAllDirty`: `Evaluation::requestRecompute(node)` forces one node and its downstream
+   closure, `requestRecomputeAll()` forces the prepared subtree at an EvalPath, and constructing a
+   fresh Evaluation is the explicit full-state reset. One verb spans both surfaces —
+   `NodeEvaluation::requestRecompute` is the same concept from inside compute. Migrate every existing
+   `markDirty` call by meaning: recipe edit to a version bump, boundary/group/on-request runtime demand
+   to the matching evaluation request. Make the pairing structural rather than remembered — every host
+   owns its definition and Evaluation as **one replaceable unit**, so `FlowviewApp::replaceGraph` and
+   the cli load swap both or neither; `Evaluation{graph}` records its definition and `prepare` compares
+   it as a guard rail, which catches a mispaired call but cannot see a Graph rebuilt at a recycled
+   address. Graph primitives bump versions internally, `setName` stays computation-neutral, and no
+   public caller mutates then separately bumps.
+   Prove the target isolation through production code: run one Graph with two Evaluations through
+   SerialScheduler and ParallelScheduler, with different boundary bindings and on-request state, and
+   assert their values/recompute requests never cross. Then prove the *permitted* concurrency the same
+   way — N Evaluations running **simultaneously** over one `const Graph` on the executor, repeated in
+   the style of `[group]`'s 100× sweep. Without it the milestone's headline contract ships unchecked
+   and the `topoOrder` fix has no regression guard. This validates safe definition sharing without
+   introducing a test-only evaluator or pulling linked-template ownership into M6.
+5. **Host-side keys and paths.** `PinKey` → `{EvalPath, NodeId, PortId}`; preview cache, Inspector,
    Interface, Preview pane, `saveFormat` follow. The clear-on-navigation scoping becomes a memory
    choice rather than a correctness one.
 
-**Hold the leftover group GUI work until at least step 4** — it lives in the panes this changes, and
+**Hold the leftover group GUI work until at least step 5** — it lives in the panes this changes, and
 doing it twice is how the last four bugs happened.
 
 ### Not in this milestone
@@ -1508,9 +1607,10 @@ doing it twice is how the last four bugs happened.
 - **SplitGroup and Loop themselves.** M6 makes them expressible; building them is separate, and their
   open questions (map index stability, loop carry, suppression across a map, how ADR-0009's plan lowers
   a map) need a concrete feature in front of them.
-- **Shared definitions for linked groups.** M6 makes it *possible* — ADR-0010's sharing constraint
-  falls — and it is what would make a template edit propagate live rather than on reload. Worth doing,
-  but on its own merits.
+- **Shared definitions for linked groups.** M6 makes and scheduler-tests it as *safe* — ADR-0010's
+  sharing constraint falls — but LinkedGroupNode keeps its copied inner Graph in this milestone.
+  Shared template ownership/cache, reload propagation and file-watch policy form one later vertical;
+  do not imply template edits propagate live until that lands.
 - **In-run liveness release.** M6 bounds retention *after* a run, not the peak *during* one. Releasing
   a value once every consumer has read it is separable, and cheap to add later precisely because
   `PortValue` payloads are already shared and immutable.

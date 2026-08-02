@@ -195,17 +195,40 @@ unique identifier… perhaps a symptom of keeping structure/data mixed with live
 grilling it produced a milestone rather than a patch. **Nothing is built; see WORK.md's Milestone 6.**
 
 - **[ADR-0011](docs/adr/0011-node-identity-is-a-uuid.md)** — `NodeId` wraps a `core::Uuid` (RFC 9562
-  **v7**), minted at creation; `PortId` stays a per-node counter. v7 rather than v4 so
-  `nodeIds()`'s documented "ascending id == insertion order" survives. UUID rather than 64-bit random
-  because there is no coordination-free 64-bit standard (that space is Snowflake-style *coordinated*)
-  and the savings do not survive the scale. **Load preserves identity; paste mints it** — which is what
-  retires undo's positional ordinals.
-- **[ADR-0012](docs/adr/0012-definition-and-evaluation.md)** — per-run state moves off the structure
+  **v7**), minted at creation; `PortId` stays a per-node counter. UUID rather than 64-bit random because
+  there is no coordination-free 64-bit standard (that space is Snowflake-style *coordinated*) and the
+  savings do not survive the scale. UUID comparison is **not** graph order: `Graph` retains an explicit
+  insertion-order vector alongside its id-keyed owner, and the JSON `nodes` array carries that order.
+  **Load preserves identity; paste mints it** — which is what retires undo's positional ordinals.
+  UUID strings make the graph document schema **v2**: one private v1 `Value`→v2 `Value` migrator feeds
+  the sole v2 graph decoder, including recursively migrated inline bodies; each linked template enters
+  that document-version router independently. Removing v1 later deletes its migrator, dispatch case
+  and fixtures, not a second loader. flowview's imnodes boundary becomes a document-lifetime
+  **`CanvasIds`** in `AppContext`, mapping nodes, pins and edges (an edge *is* its destination
+  `PortAddress`) bidirectionally to monotonically allocated, never-recycled `int`s, so one int names
+  one object for the document's life. It persists through navigation and UUID-preserving undo/redo and
+  resets only when document identity changes; no canvas integer is serialized. It fixes **cross-level
+  id collisions only** — the per-navigation position re-seed and selection clear stay, because imnodes
+  destroys an unsubmitted node's data and frees selection pool indices without pruning them.
+  Node identity is immutable after admission: the loader stages headers, constructs
+  `Graph{BoundaryIds}` with the first valid saved boundary pair (minting + reporting either the
+  document lacks), replays those definitions, then adopts other nodes through `add(node, requestedId)`
+  in array order; ordinary add mints.
+- **[ADR-0012](docs/adr/0012-definition-and-evaluation.md)** — runtime state moves off the structure
   into a host-owned `Evaluation` tree; `compute()` takes its context (parallel map makes an implicit
   one a data race); staleness is a per-node version comparison, *pulled* by evaluations rather than
-  pushed by edits; runs are named by coordinate, not by minted id. **Supersedes ADR-0010's "a link
-  references a recipe, never a runtime share"** — that constraint was a consequence of the mixing, so N
-  linked groups can now share one definition, which is what makes a template edit propagate live.
+  pushed by edits; an Evaluation is located by coordinate, not by minted id. A host owns a definition
+  and its Evaluation as **one replaceable unit** — that, not a pointer compare, is what stops a
+  rebuilt Graph's restarted version counters being read against old observations. And `const Graph&`
+  now means *concurrently readable*, so `topoOrder()` stops being a lazy `mutable` cache. **Supersedes
+  ADR-0010's "a link references a recipe, never a runtime share"** — that constraint was a consequence
+  of the mixing, so one definition can safely back N Evaluations. M6 proves that through the real
+  schedulers, including N Evaluations running *simultaneously* over one definition, but does **not**
+  yet change LinkedGroupNode's copied-inner-Graph ownership; shared template ownership/caching, reload
+  propagation and file watching remain a later vertical.
+  ADR-0009's flat plan remains, but each step is now addressed by
+  `{const Graph*, Evaluation*, NodeId}`; group staleness and boundary publication follow the matching
+  child Evaluation rather than `Node::dirty()` on the definition.
 
 The four id-collision bugs of the previous week were all one cause: ids are unique only *within* their
 container, and group nodes made "within a container" stop being the whole world.
@@ -630,22 +653,40 @@ Three layers, public → private, mirroring `multi`'s layering discipline:
 
 1. **`Graph`** — a pure data model: owns nodes (`add<T>(...)`, keyed by opaque
    `NodeId`), `connect`/`disconnect` with type-checking + cycle rejection, holds the
-   edge list + topo order. It does **not** execute — a `Scheduler` (layer 3) consumes
-   it.
-2. **`Node` / `Port` / `PortValue`** — `Node` is an abstract base with a
-   polymorphic `compute()`; declares ports in its ctor. `Port` owns a
-   **persistent** `PortValue` (overwritten on recompute, never consumed
-   downstream — this is what makes stages inspectable). `PortValue` is a thin
-   type-erased slot carrying a `std::type_index` for connection checks — it holds
-   any payload (CPU value or GPU handle), with no GPU types in `flow`, and holds it
-   **shared + immutable** so a per-edge copy is a refcount bump. A node's
-   `constant` / on-request character is expressed through `dirty()`: a constant
-   clears it after first compute; a `CameraCapture` stays dirty so each pull
-   refires.
-3. **`Scheduler`** (public, `scheduler.h`) — consumes a `Graph` and evaluates it;
-   this is where execution lives, not on `Graph`. An abstract base exposes the
-   varying full push `run(Graph&)` plus the shared, serial pull `evaluate(Graph&,
-   NodeId)` (recompute only `dirty()` upstream — the constant / on-request path).
+   edge list, insertion order and topo order. It does **not** execute — a `Scheduler`
+   (layer 3) consumes it. It holds no lazy caches: a `const Graph&` is concurrently
+   readable, so the mutators maintain the topo order rather than rebuilding it on
+   first query.
+2. **`Node` / `Port` / `Evaluation` / `PortValue`** — `Node` is an abstract base
+   with a polymorphic `compute(NodeEvaluation&) const`; it and `Port` declare the
+   recipe, while `Evaluation` owns one graph's runtime state — values and
+   bookkeeping — across scheduler invocations. `Port` is pure declaration
+   (`{id, name, direction, PortType, presence}`); readiness and value description
+   follow the values into the Evaluation (`evaluation.ready(node)`, `hasValue`,
+   `PortType::describe`).
+   `PortValue` is the shared, immutable type-erased payload slot, so copying a
+   value across an edge is a refcount bump. A node reads and writes only through
+   its per-node evaluation view; an on-request source rearms that evaluation, not
+   the shared definition. `Evaluation::prepare(const Graph&)` creates/prunes and
+   stabilises storage before dispatch; compute never grows shared containers.
+   Fixed-port nodes retain named `PortId`s returned by their declaration methods
+   and use `evaluation.input(id)` / `output(id)`; `PortIndex` is iteration-only.
+   Force refresh is likewise evaluation-local, under one verb:
+   `requestRecompute(node)` / `requestRecomputeAll()`; `Graph::markAllDirty()` is
+   removed, and a fresh Evaluation is the full reset.
+   A host owns a definition and its Evaluation as **one replaceable unit**, so a
+   load/undo Graph replacement replaces both; `Evaluation{graph}` records its
+   definition and `prepare` compares it as a guard rail, not as the mechanism.
+   Boundary handles are immutable recipe metadata; hosts and group-entry steps use
+   `evaluation.bind(input, value)` / `evaluation.value(output)`. Boundary Nodes
+   retain no bound or delivered runtime cache.
+   Parameter mutation is `Node::setParam(ParamIndex, value)`: type-check, commit and
+   definition-version bump as one operation. Hosts/serializers receive no mutable
+   `Param&`; `setName` remains display-only and computation-neutral.
+3. **`Scheduler`** (public, `scheduler.h`) — consumes a const definition and a
+   host-owned evaluation; this is where execution lives, not on `Graph`. An
+   abstract base exposes the varying full push `run(const Graph&, Evaluation&)`
+   plus the shared, serial pull `evaluate(const Graph&, Evaluation&, NodeId)`.
    Two backends: `SerialScheduler` (one topo-order pass, no execution deps) and
    `ParallelScheduler` (lowers to a `tf::Taskflow` — one task per node calling
    `compute()`, edges become `precede` — and runs it to completion on an
@@ -654,9 +695,25 @@ Three layers, public → private, mirroring `multi`'s layering discipline:
 
 Hard contracts:
 
-- **A node reads only its inputs, writes only its own outputs.** No shared
-  mutable state — this is what makes parallel eval safe. State it in `Node`'s
-  docs.
+- **A node reads only its evaluated inputs, writes only its own evaluated outputs.**
+  Execution receives a `const Graph&`, and `compute(NodeEvaluation&) const` puts
+  every runtime write in the host-owned Evaluation. No shared mutable definition
+  state — this is what makes parallel evaluation safe. `const` here means
+  **concurrently readable**, not merely unmodified: no `mutable` caches on a
+  definition, or two evaluations racing after an edit corrupt one.
+- **A coordinator grows Evaluation storage; a worker task never does.** For
+  graph-shaped children that means one `prepare` pass before dispatch. A task
+  receives a stable `NodeEvaluation&` and never inserts/resizes. (A data-dependent
+  child count — a future map — cannot be prepared that early; where its second
+  coordinator point sits is settled with how the plan lowers a map, ADR-0012.)
+- **Reusing one Evaluation rejects immediately.** Scheduler entry takes a
+  non-blocking RAII Evaluation lease and throws `std::logic_error` if already
+  held; it never waits, and unwinding releases it. Distinct Evaluations remain
+  concurrent even over the same definition — and that is tested, not assumed.
+- **A plan step names definition and evaluation.** `{const Graph*, Evaluation*,
+  NodeId}` is the runtime address; the same shared definition may appear with
+  several Evaluation pointers. Recursive group staleness follows the matching
+  child Evaluation, and entry republishes only into the selected child's boundary.
 - **Fire-and-join only.** A node body never blocks on a nested graph run; the
   scheduler dispatches from the executor's join, not from inside a task. (Blocking
   a worker on work that needs that same worker is the classic pool deadlock.)
