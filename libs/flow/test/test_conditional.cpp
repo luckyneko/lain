@@ -37,7 +37,7 @@ public:
 	int value = 0;
 
 private:
-	lain::flow::PortIndex m_out = 0;
+	lain::flow::PortId m_out;
 };
 
 // A passthrough with a REQUIRED input — counts computes, so a test can see it get suppressed.
@@ -58,8 +58,8 @@ public:
 	int computes = 0;
 
 private:
-	lain::flow::PortIndex m_in = 0;
-	lain::flow::PortIndex m_out = 0;
+	lain::flow::PortId m_in;
+	lain::flow::PortId m_out;
 };
 
 // A select with two OPTIONAL branch inputs — outputs the first one that has a value, else nothing.
@@ -84,9 +84,9 @@ public:
 	}
 
 private:
-	lain::flow::PortIndex m_a = 0;
-	lain::flow::PortIndex m_b = 0;
-	lain::flow::PortIndex m_out = 0;
+	lain::flow::PortId m_a;
+	lain::flow::PortId m_b;
+	lain::flow::PortId m_out;
 };
 
 TEST_CASE("an empty required input suppresses the node, and that propagates", "[flow][conditional]")

@@ -84,8 +84,7 @@ namespace lain::flow
 		template <typename T>
 		PortId exposeInput(std::string name, PortId innerPin, Presence presence = Presence::Required)
 		{
-			const PortIndex index = addInput<T>(std::move(name), presence);
-			const PortId outer = input(index).id();
+			const PortId outer = addInput<T>(std::move(name), presence);
 			mapPort(outer, innerPin);
 			return outer;
 		}
@@ -93,8 +92,7 @@ namespace lain::flow
 		template <typename T>
 		PortId exposeOutput(std::string name, PortId innerPin)
 		{
-			const PortIndex index = addOutput<T>(std::move(name));
-			const PortId outer = output(index).id();
+			const PortId outer = addOutput<T>(std::move(name));
 			mapPort(outer, innerPin);
 			return outer;
 		}
@@ -107,8 +105,8 @@ namespace lain::flow
 		PortId exposePort(Port::Direction outerSide, const Port& innerPin, Presence presence = Presence::Required)
 		{
 			const PortId outer = (outerSide == Port::Direction::Input)
-									 ? input(addInputLike(innerPin.name(), innerPin.portType(), presence)).id()
-									 : output(addOutputLike(innerPin.name(), innerPin.portType())).id();
+									 ? addInputLike(innerPin.name(), innerPin.portType(), presence)
+									 : addOutputLike(innerPin.name(), innerPin.portType());
 			mapPort(outer, innerPin.id());
 			return outer;
 		}

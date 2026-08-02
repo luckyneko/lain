@@ -28,7 +28,7 @@ namespace
 	struct ConstInt : flow::Node
 	{
 		int value;
-		flow::PortIndex out;
+		flow::PortId out;
 		explicit ConstInt(int v)
 			: Node("ConstInt")
 			, value(v)
@@ -40,7 +40,7 @@ namespace
 
 	struct AddInt : flow::Node
 	{
-		flow::PortIndex a, b, sum;
+		flow::PortId a, b, sum;
 		AddInt()
 			: Node("Add")
 		{

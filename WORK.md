@@ -563,7 +563,8 @@ add/remove (and reorder later), so:
    encoding/boundary handles move `PortIndex` → `PortId`; dynamic/boundary add paths return `PortId`.
    **Known gap found during M6 grilling:** the protected static `addInput` / `addOutput` / `add*Like`
    helpers still return `PortIndex`, so fixed nodes retain positions despite the iteration-only
-   contract. **M6 step 2** closes it, in the same pure-rename shape as this slice. **No behaviour
+   contract. **M6 step 2** closed it, and retired the `PortIndex` alias itself — a position is now a
+   plain `std::size_t`, so nothing invites storing one. **No behaviour
    change** — a standalone commit kept fully green on the original edge/handle refactor.
 2. ✅ **Mutation engine** — `DynamicPortsNode` + `addDynamicPort<T>` + `Node` raw erase +
    `Graph::removePort` primitive (refuses a connected pin) + `edit::removePort`. Driver-free tests
@@ -1564,15 +1565,40 @@ Each step stands alone and leaves the suite green.
      re-saves as a stable v2. **Not exercised: gui-mode** — the canvas, Inspector, Interface and
      Preview all changed id plumbing, and undo/redo's reselect + path restore changed mechanism.
      That needs a Metal session.
-2. **Static declarations return `PortId`** — the gap M4b slice 1 left. `addInput` / `addOutput` /
-   `addInputLike` / `addOutputLike` return the minted id instead of a position, each fixed node stores
-   named `PortId` members, and `input(PortId)` / `output(PortId)` join the index accessors (a strong
-   type beside `size_t`, so the overloads are unambiguous). `PortIndex` is left to deliberate ordered
-   iteration. A pure rename, green throughout — the same shape as the slice that opened the gap, and
-   lifted out of the vertical because it touches every node class while interacting with nothing else
-   in it.
-3. **`Node::setParam` — one seam for recipe mutation.** `param(index) const` inspects;
-   `setParam(ParamIndex, value)` type-checks, commits and (from step 4) bumps the version as one
+2. ✅ **Every declaration returns a `PortId`; `PortIndex` is retired — BUILT** (2026-08-02). The gap
+   M4b slice 1 left, widened on review. `addInput` / `addOutput` / `addInputLike` / `addOutputLike`
+   return the minted id instead of a position, each fixed node stores named `PortId` members, and
+   `input(PortId)` / `output(PortId)` join the index accessors (a strong type beside `size_t`, so the
+   overloads are unambiguous). Lifted out of the vertical because it touches every node class while
+   interacting with nothing else in it.
+
+   **Two decisions taken during the slice, both widening the plan:**
+   - **Params get a `PortId` too.** The plan (and ADR-0012) had params keeping positional indices,
+     on the grounds that nothing declares one dynamically and the on-disk key is the name. That
+     argument only holds while params *can't* become dynamic — and future-proofing it cost one field
+     on `Param`. `addParam` now returns a `PortId`, `param(PortId)` / `findParam(PortId)` join the
+     positional accessors, and step 3's seam becomes `setParam(PortId, value)`. ADR-0012's bullet is
+     amended in place with the reasoning.
+   - **`PortIndex` is deleted, not renamed to `ParamIndex`.** With every durable handle a `PortId`,
+     what was left was a *position*, used for three unrelated jobs — a count (`inputCount`), an
+     iteration cursor, and (formerly) a param address. A plain `std::size_t` says all of that, and
+     naming the type was what invited storing one. `grep PortIndex` over `libs/` and `apps/` now
+     returns nothing.
+
+   **Also as built:** the by-identity accessors are unchecked like the index ones (a node's named
+   PortId always names a thing that node declared), asserting in debug through a shared
+   `Node::checked` — flow core stays log-free. Ports and params draw from **one per-node counter**, so
+   a param id can never equal a port id on that node: handing one to `input()` finds nothing rather
+   than silently finding the wrong port, and a test pins that down. `DynamicPortsNode::addDynamicPort`
+   and `GroupNode::exposeInput` / `exposeOutput` / `exposePort` each lost their
+   declare-then-look-the-index-back-up dance. `flow-example`'s `imagePort()` / `inputPort()` were
+   **deleted** — nothing in the tree called them, and an unexercised accessor is how a nested
+   `Edit Template…` stayed broken through a whole slice.
+   `ctest` **377/377**; a new `[dynamic]` test contrasts the two accessors directly (remove the first
+   of three pins: `input(id)` still names its port, the same position now names a different one), and
+   two new `[param]` tests cover id addressing and the shared counter.
+3. **`Node::setParam` — one seam for recipe mutation.** `param(id) const` inspects;
+   `setParam(PortId, value)` type-checks, commits and (from step 4) bumps the version as one
    operation, returning `bool` and changing nothing on failure. Mutable `Param&` leaves the public
    surface: the Inspector's ParamEditor, `flow::serialize`'s `readParams`, and concrete setters such
    as `ConstantNode::setValue` all decode into a temporary `PortValue` and commit through it. Green

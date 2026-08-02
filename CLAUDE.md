@@ -186,6 +186,42 @@ that **keeps the canvas selection across an undo/redo** (selected nodes captured
 `nodeIds()` — stable across the load's fresh-id remap — and re-selected after the swap; New/Open still
 clear, since they carry a `pendingBaseline`).
 
+### Update 2026-08-02 — M6 step 2 built: every declaration returns a `PortId`; `PortIndex` retired
+
+The gap M4b slice 1 left, closed and then widened on review. `addInput` / `addOutput` /
+`addInputLike` / `addOutputLike` return the minted **`PortId`** instead of a position; every fixed
+node stores named `PortId` members; and `input(PortId)` / `output(PortId)` / `param(PortId)` join the
+positional accessors. `ctest` **377/377**, warning-clean, `format-check` clean, headless round-trip
+still byte-identical. Purely a rename — no gui-mode surface changed, so nothing new is waiting on a
+Metal session beyond step 1's.
+
+- **A param is a declaration too, so it gets an id.** The plan (and ADR-0012) had params keeping
+  positional indices, because nothing declares one dynamically and the on-disk key is the name — an
+  argument that only holds while params *can't* become dynamic. Future-proofing it cost one field on
+  `Param`, so `addParam` now returns a `PortId` and step 3's seam becomes `setParam(PortId, value)`.
+  ADR-0012's bullet is amended in place with the reasoning.
+- **Ports and params draw from ONE per-node counter**, so a param id can never equal a port id on
+  that node. That is what keeps the shared handle type safe: passing a param id to `input()` finds
+  nothing rather than silently finding the wrong port. A `[param]` test pins it down.
+- **`PortIndex` is deleted, not renamed to `ParamIndex`.** Once every durable handle is a `PortId`,
+  what remained was a *position*, doing three unrelated jobs — a count (`inputCount`), an iteration
+  cursor, and a param address. `std::size_t` says all of that, and naming the type was what invited
+  storing one. `grep PortIndex` over `libs/` and `apps/` returns nothing.
+- The by-identity accessors are **unchecked**, like the positional ones: a node's named PortId always
+  names something that node declared, so a miss is a programming error, asserted in debug through a
+  shared `Node::checked` (flow core stays log-free). `findInput` / `findOutput` / `findParam` remain
+  the answer when the id came from elsewhere and may be stale.
+- `PortId` being a distinct type is what keeps the overload sets unambiguous — `input(0)` still
+  resolves to the positional accessor.
+- `DynamicPortsNode::addDynamicPort` and `GroupNode::exposeInput` / `exposeOutput` / `exposePort`
+  each lost their declare-then-look-the-index-back-up dance.
+- `flow-example`'s `imagePort()` / `inputPort()` were **deleted**, not converted: nothing in the tree
+  called them, and an unexercised accessor is how a nested `Edit Template…` stayed broken through a
+  whole slice (M5 update, bug six).
+- New tests: a `[dynamic]` case contrasting the accessors (remove the first of three pins — `input(id)`
+  still names its port, the same position now names a different one), plus two `[param]` cases for id
+  addressing and the shared counter.
+
 ### Update 2026-08-02 — M6 step 1 built: `core::Uuid`, UUID `NodeId`, schema v2, `CanvasIds`
 
 **Milestone 6 step 1 is built** (see WORK.md for the landing notes and the three deviations). Node
@@ -724,7 +760,7 @@ Three layers, public → private, mirroring `multi`'s layering discipline:
    the shared definition. `Evaluation::prepare(const Graph&)` creates/prunes and
    stabilises storage before dispatch; compute never grows shared containers.
    Fixed-port nodes retain named `PortId`s returned by their declaration methods
-   and use `evaluation.input(id)` / `output(id)`; `PortIndex` is iteration-only.
+   and use `evaluation.input(id)` / `output(id)`; a position is iteration-only.
    Force refresh is likewise evaluation-local, under one verb:
    `requestRecompute(node)` / `requestRecomputeAll()`; `Graph::markAllDirty()` is
    removed, and a fresh Evaluation is the full reset.
@@ -734,7 +770,7 @@ Three layers, public → private, mirroring `multi`'s layering discipline:
    Boundary handles are immutable recipe metadata; hosts and group-entry steps use
    `evaluation.bind(input, value)` / `evaluation.value(output)`. Boundary Nodes
    retain no bound or delivered runtime cache.
-   Parameter mutation is `Node::setParam(ParamIndex, value)`: type-check, commit and
+   Parameter mutation is `Node::setParam(PortId, value)`: type-check, commit and
    definition-version bump as one operation. Hosts/serializers receive no mutable
    `Param&`; `setName` remains display-only and computation-neutral.
 3. **`Scheduler`** (public, `scheduler.h`) — consumes a const definition and a

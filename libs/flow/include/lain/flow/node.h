@@ -35,20 +35,36 @@ namespace lain::flow
 		// persists the name, so a user-chosen title survives a save/load round-trip.
 		void setName(std::string name) { m_name = std::move(name); }
 
-		PortIndex inputCount() const { return m_inputs.size(); }
-		PortIndex outputCount() const { return m_outputs.size(); }
-		Port& input(PortIndex i) { return m_inputs[i]; }
-		const Port& input(PortIndex i) const { return m_inputs[i]; }
-		Port& output(PortIndex i) { return m_outputs[i]; }
-		const Port& output(PortIndex i) const { return m_outputs[i]; }
+		std::size_t inputCount() const { return m_inputs.size(); }
+		std::size_t outputCount() const { return m_outputs.size(); }
+
+		// By POSITION — for deliberate ordered iteration (walking every pin in declaration order:
+		// the inspector, serialization, a boundary pin list). A position is a cursor, not a
+		// reference: it moves when sibling ports are added or removed, so it is never stored.
+		Port& input(std::size_t i) { return m_inputs[i]; }
+		const Port& input(std::size_t i) const { return m_inputs[i]; }
+		Port& output(std::size_t i) { return m_outputs[i]; }
+		const Port& output(std::size_t i) const { return m_outputs[i]; }
+
+		// By IDENTITY — how a node reaches its OWN ports, using the ids its declarations returned
+		// (`output(m_result).set(...)`). Unchecked, like the index accessors: a node's named PortId
+		// always names a port of that node, so a miss is a programming error, caught by assert in
+		// debug. Reach for findInput / findOutput when the id came from elsewhere and may be stale.
+		//
+		// PortId is a distinct type rather than an integer, so these never collide with the index
+		// overloads above.
+		Port& input(PortId id) { return *checked(findInput(id)); }
+		const Port& input(PortId id) const { return *checked(findInput(id)); }
+		Port& output(PortId id) { return *checked(findOutput(id)); }
+		const Port& output(PortId id) const { return *checked(findOutput(id)); }
 
 		// Resolve a port by its stable PortId (what edges reference), or nullptr if it is not
 		// found — a linear scan (a node has few ports). Direction-scoped, so an edge's `from`
 		// resolves through findOutput and its `to` through findInput.
-		Port* findInput(PortId id) { return findPort(m_inputs, id); }
-		const Port* findInput(PortId id) const { return findPort(m_inputs, id); }
-		Port* findOutput(PortId id) { return findPort(m_outputs, id); }
-		const Port* findOutput(PortId id) const { return findPort(m_outputs, id); }
+		Port* findInput(PortId id) { return findDeclared(m_inputs, id); }
+		const Port* findInput(PortId id) const { return findDeclared(m_inputs, id); }
+		Port* findOutput(PortId id) { return findDeclared(m_outputs, id); }
+		const Port* findOutput(PortId id) const { return findDeclared(m_outputs, id); }
 
 		// Whether a port in `direction` already carries `name`. Backs the port-name-uniqueness
 		// invariant that name-addressed serialization relies on: addInput/addOutput assert on a
@@ -66,12 +82,22 @@ namespace lain::flow
 			return false;
 		}
 
-		// Configuration values — distinct from ports (see Param). The adapter iterates
-		// these to render editors and writes edits back; compute() reads them via
-		// param(i).get<T>(). Non-connectable; the scheduler never touches them.
-		PortIndex paramCount() const { return m_params.size(); }
-		Param& param(PortIndex i) { return m_params[i]; }
-		const Param& param(PortIndex i) const { return m_params[i]; }
+		// Configuration values — distinct from ports (see Param). The adapter iterates these to
+		// render editors and writes edits back; compute() reads them via param(m_radius).get<T>().
+		// Non-connectable; the scheduler never touches them.
+		//
+		// Addressed the same two ways ports are, for the same reasons: by POSITION to iterate them
+		// in declaration order, by IDENTITY for a node's own stored handles.
+		std::size_t paramCount() const { return m_params.size(); }
+		Param& param(std::size_t i) { return m_params[i]; }
+		const Param& param(std::size_t i) const { return m_params[i]; }
+		Param& param(PortId id) { return *checked(findParam(id)); }
+		const Param& param(PortId id) const { return *checked(findParam(id)); }
+
+		// Resolve a param by its stable PortId, or nullptr — the param twin of findInput /
+		// findOutput, for an id that came from elsewhere and may be stale.
+		Param* findParam(PortId id) { return findDeclared(m_params, id); }
+		const Param* findParam(PortId id) const { return findDeclared(m_params, id); }
 
 		// Whether this node needs recomputing. VIRTUAL because a node that contains a graph (a group
 		// node) is dirty when anything *inside* it is: otherwise an edit made inside a group would
@@ -126,15 +152,17 @@ namespace lain::flow
 		{
 		}
 
-		// Declare a port in the subclass constructor; returns its index, for use
-		// with input() / output() inside compute(). `presence` (input only) declares whether a value
-		// on this input is Required for the node to be ready (the default) or Optional — an empty
-		// Optional input does not suppress the node, for a Select/Merge branch its compute() checks
-		// for presence and picks a live one (ADR-0007).
+		// Declare a port in the subclass constructor; returns its stable PortId, which the node
+		// keeps as a named member and passes to input() / output() inside compute(). An ID, not a
+		// position: a node that later grows or loses a dynamic pin would see a stored index shift
+		// under it, and the id is also what an edge and a boundary handle reference. `presence`
+		// (input only) declares whether a value on this input is Required for the node to be ready
+		// (the default) or Optional — an empty Optional input does not suppress the node, for a
+		// Select/Merge branch its compute() checks for presence and picks a live one (ADR-0007).
 		template <typename T>
-		PortIndex addInput(std::string name, Presence presence = Presence::Required);
+		PortId addInput(std::string name, Presence presence = Presence::Required);
 		template <typename T>
-		PortIndex addOutput(std::string name);
+		PortId addOutput(std::string name);
 
 		// Declare a port MIRRORING an existing port's declared type, with no compile-time T. A
 		// port's type is a shared PortType flyweight, so a node that DERIVES its interface from
@@ -142,13 +170,14 @@ namespace lain::flow
 		// instead of needing the type. Which means it mirrors ANY type, including one no registry
 		// knows about: a group's ports are derived, not user-chosen, so they must not be limited to
 		// the registered set the way an addable dynamic pin is.
-		PortIndex addInputLike(std::string name, const PortType& type, Presence presence = Presence::Required);
-		PortIndex addOutputLike(std::string name, const PortType& type);
+		PortId addInputLike(std::string name, const PortType& type, Presence presence = Presence::Required);
+		PortId addOutputLike(std::string name, const PortType& type);
 
-		// Declare a configuration param, seeded with `defaultValue`. Read it in compute()
-		// via param(i).get<T>(); the adapter edits it via param(i).set<T>().
+		// Declare a configuration param, seeded with `defaultValue`; returns its stable PortId, the
+		// same handle shape a port declaration returns. Read it in compute() via
+		// param(m_radius).get<T>(); the adapter edits it via param(i).set<T>() while iterating.
 		template <typename T>
-		PortIndex addParam(std::string name, T defaultValue);
+		PortId addParam(std::string name, T defaultValue);
 
 	private:
 		friend class Graph; // assigns the id when the node is added, and removes ports
@@ -177,19 +206,26 @@ namespace lain::flow
 		// Mint the next stable PortId (addInput / addOutput call this). Defined in node.inl.
 		PortId nextPortId();
 
-		// Linear scan for a port by id (a node has few ports). Static so the const and non-const
-		// find* share one body.
-		template <typename Ports>
-		static auto findPort(Ports& ports, PortId id) -> decltype(&ports[0])
+		// Linear scan for a declared thing — a port or a param — by id (a node has few of each).
+		// Static so the const and non-const find* share one body.
+		template <typename Declared>
+		static auto findDeclared(Declared& list, PortId id) -> decltype(&list[0])
 		{
-			for (auto& p : ports)
-				if (p.id() == id)
-					return &p;
+			for (auto& d : list)
+				if (d.id() == id)
+					return &d;
 			return nullptr;
 		}
 
+		// Assert a find* hit, for the by-identity accessors: they are reached with a node's own
+		// declared ids, so a miss is a programming error rather than a case to handle. Defined in
+		// node.inl, where <cassert> is already included (flow core stays log-free).
+		template <typename D>
+		static D* checked(D* declared);
+
 		NodeId m_id{};			// reserved sentinel until the Graph assigns a real id
-		PortId m_nextPortId{1}; // per-node port id counter; 0 is the reserved sentinel
+		PortId m_nextPortId{1}; // per-node counter for EVERY declaration (ports and params alike),
+								// so the two can never collide; 0 is the reserved sentinel
 		std::string m_name;
 		std::vector<Port> m_inputs;
 		std::vector<Port> m_outputs;

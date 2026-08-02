@@ -46,7 +46,7 @@ namespace lain::flow::edit
 		return false;
 	}
 
-	bool connectReplacing(Graph& graph, NodeId from, PortIndex outPort, NodeId to, PortIndex inPort)
+	bool connectReplacing(Graph& graph, NodeId from, std::size_t outPort, NodeId to, std::size_t inPort)
 	{
 		// Resolve the positions to stable addresses; bail (no-op) if either is out of range.
 		if (!graph.contains(from) || !graph.contains(to))
@@ -64,7 +64,7 @@ namespace lain::flow::edit
 		return graph.disconnect(input);
 	}
 
-	bool disconnect(Graph& graph, NodeId to, PortIndex inPort)
+	bool disconnect(Graph& graph, NodeId to, std::size_t inPort)
 	{
 		return graph.disconnect(to, inPort);
 	}
@@ -211,7 +211,7 @@ namespace lain::flow::edit
 		}
 
 		GroupInputNode& boundaryIn = inner.boundaryInputNode();
-		for (PortIndex i = 0; i < boundaryIn.outputCount(); ++i)
+		for (std::size_t i = 0; i < boundaryIn.outputCount(); ++i)
 		{
 			const Port& pin = boundaryIn.output(i);
 			if (mirroredInputs.count(pin.id()) == 0)
@@ -222,7 +222,7 @@ namespace lain::flow::edit
 		}
 
 		GroupOutputNode& boundaryOut = inner.boundaryOutputNode();
-		for (PortIndex i = 0; i < boundaryOut.inputCount(); ++i)
+		for (std::size_t i = 0; i < boundaryOut.inputCount(); ++i)
 		{
 			const Port& pin = boundaryOut.input(i);
 			if (mirroredOutputs.count(pin.id()) == 0)

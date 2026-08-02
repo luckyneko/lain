@@ -38,7 +38,7 @@ namespace flowview
 			// A row names the node by title plus a truncated id — enough to tell two same-titled
 			// nodes apart, where the full uuid would bury the message.
 			const std::string label = id.shortString();
-			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
+			for (std::size_t i = 0; i < node.inputCount(); ++i)
 			{
 				const flow::Port& in = node.input(i);
 				if (in.required() && connectedIn.count({id, in.id()}) == 0)
@@ -50,7 +50,7 @@ namespace flowview
 			}
 			if (node.ready())
 			{
-				for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
+				for (std::size_t o = 0; o < node.outputCount(); ++o)
 				{
 					const flow::Port& out = node.output(o);
 					if (connectedOut.count({id, out.id()}) == 0)

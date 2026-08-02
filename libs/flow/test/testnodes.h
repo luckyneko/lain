@@ -12,7 +12,7 @@ namespace lain::flow::test
 	struct ConstInt : Node
 	{
 		int value;
-		PortIndex out;
+		PortId out;
 		explicit ConstInt(int v)
 			: Node("ConstInt")
 			, value(v)
@@ -25,7 +25,7 @@ namespace lain::flow::test
 	// Two int inputs -> their sum.
 	struct AddInt : Node
 	{
-		PortIndex a, b, sum;
+		PortId a, b, sum;
 		AddInt()
 			: Node("Add")
 		{
@@ -39,7 +39,7 @@ namespace lain::flow::test
 	// One float input — used to provoke a type mismatch against an int output.
 	struct SinkFloat : Node
 	{
-		PortIndex in;
+		PortId in;
 		SinkFloat()
 			: Node("Sink")
 		{

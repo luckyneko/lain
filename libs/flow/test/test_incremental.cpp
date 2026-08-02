@@ -34,7 +34,7 @@ public:
 	int value = 1;
 
 private:
-	lain::flow::PortIndex m_out = 0;
+	lain::flow::PortId m_out;
 };
 
 // A passthrough that counts its computes (so a test can see whether it re-ran).
@@ -55,8 +55,8 @@ public:
 	int computes = 0;
 
 private:
-	lain::flow::PortIndex m_in = 0;
-	lain::flow::PortIndex m_out = 0;
+	lain::flow::PortId m_in;
+	lain::flow::PortId m_out;
 };
 
 TEST_CASE("run recomputes only the dirty closure, skipping clean nodes", "[flow][incremental]")

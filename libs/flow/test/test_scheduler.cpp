@@ -16,7 +16,7 @@ namespace
 	struct ConstInt : Node
 	{
 		int value;
-		PortIndex out;
+		PortId out;
 		explicit ConstInt(int v)
 			: Node("ConstInt")
 			, value(v)
@@ -28,7 +28,7 @@ namespace
 
 	struct AddInt : Node
 	{
-		PortIndex a, b, sum;
+		PortId a, b, sum;
 		AddInt()
 			: Node("Add")
 		{
@@ -43,7 +43,7 @@ namespace
 	struct Counter : Node
 	{
 		int& calls;
-		PortIndex out;
+		PortId out;
 		explicit Counter(int& c)
 			: Node("Counter")
 			, calls(c)
@@ -61,7 +61,7 @@ namespace
 	struct Source : Node
 	{
 		int& calls;
-		PortIndex out;
+		PortId out;
 		explicit Source(int& c)
 			: Node("Source")
 			, calls(c)
@@ -94,7 +94,7 @@ namespace
 
 	struct MakeTracked : Node
 	{
-		PortIndex out;
+		PortId out;
 		MakeTracked()
 			: Node("MakeTracked")
 		{
@@ -107,7 +107,7 @@ namespace
 	// payload without modifying it) and publishes an unrelated result.
 	struct ReadTracked : Node
 	{
-		PortIndex in, out;
+		PortId in, out;
 		ReadTracked()
 			: Node("ReadTracked")
 		{

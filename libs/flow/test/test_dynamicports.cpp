@@ -29,7 +29,34 @@ namespace
 		Port::Direction dynamicSide() const override { return Port::Direction::Input; }
 		void compute() override {}
 	};
+
 } // namespace
+
+TEST_CASE("input(PortId) follows a port; input(std::size_t) follows a position", "[flow][dynamic]")
+{
+	// Why a port declaration hands back an ID rather than a position, and why the two accessors are
+	// different overloads: a node stores what its ctor returned and reads through it in compute(),
+	// so that handle has to survive the node's own port list being reshaped underneath it.
+	Graph g;
+	const NodeId n = g.add<DynInts>();
+	auto& node = static_cast<DynInts&>(g.node(n));
+
+	const PortId in0 = node.addDynamicPort<int>("in0");
+	node.addDynamicPort<int>("in1");
+	const PortId in2 = node.addDynamicPort<int>("in2");
+
+	const std::size_t position = 1; // in1's position, before anything moves
+	REQUIRE(node.input(position).name() == "in1");
+	REQUIRE(node.input(in2).name() == "in2");
+
+	// Drop the FIRST pin: the vector compacts, so every later port's position shifts down by one.
+	REQUIRE(edit::removePort(g, PortAddress{n, in0}));
+	REQUIRE(node.inputCount() == 2);
+
+	REQUIRE(node.input(in2).name() == "in2"); // by identity: still the same port
+	REQUIRE(node.input(in2).id() == in2);
+	REQUIRE(node.input(position).name() == "in2"); // by position: now a DIFFERENT port
+}
 
 TEST_CASE("dynamic pins are added at runtime with distinct stable ids", "[flow][dynamic]")
 {

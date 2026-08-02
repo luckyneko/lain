@@ -2,6 +2,7 @@
 
 #include "lain/flow/porttype.h" // PortType — the per-type reflective flyweight (shared with Port)
 #include "lain/flow/portvalue.h"
+#include "lain/flow/types.h" // PortId
 
 #include <string>
 #include <string_view>
@@ -25,6 +26,12 @@ namespace lain::flow
 	{
 	public:
 		const std::string& name() const { return m_name; }
+
+		// This param's stable identity within its node (assigned by the owning Node at addParam),
+		// drawn from the same per-node counter as its ports — so a node stores what its declaration
+		// returned and reads it back through param(PortId), rather than holding a position that a
+		// future dynamic param could shift.
+		PortId id() const { return m_id; }
 
 		// The declared type — what the adapter's editor registry dispatches on.
 		std::type_index type() const { return m_type->index; }
@@ -52,14 +59,16 @@ namespace lain::flow
 
 	private:
 		friend class Node; // only a Node builds its params
-		Param(std::string name, const PortType& type)
+		Param(std::string name, const PortType& type, PortId id)
 			: m_name(std::move(name))
 			, m_type(&type)
+			, m_id(id)
 		{
 		}
 
 		std::string m_name;
 		const PortType* m_type; // the declared type's shared reflective flyweight
+		PortId m_id;			// stable within its node, from the same counter as the ports'
 		PortValue m_value;		// seeded with the default at addParam<T>
 	};
 } // namespace lain::flow

@@ -91,7 +91,7 @@ namespace flowview
 				}
 
 				bool nodeEdited = false;
-				for (flow::PortIndex pi = 0; pi < node.paramCount(); ++pi)
+				for (std::size_t pi = 0; pi < node.paramCount(); ++pi)
 				{
 					flow::Param& p = node.param(pi);
 					nodeEdited |= editors.render(p.name(), p.type(), p.value());
@@ -131,9 +131,9 @@ namespace flowview
 					gui::Text("    %s %s: %s", tag, p.name().c_str(), p.describe().c_str());
 				};
 
-				for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
+				for (std::size_t i = 0; i < node.inputCount(); ++i)
 					port("in ", node.input(i), false);
-				for (flow::PortIndex i = 0; i < node.outputCount(); ++i)
+				for (std::size_t i = 0; i < node.outputCount(); ++i)
 					port("out", node.output(i), true);
 			}
 		}

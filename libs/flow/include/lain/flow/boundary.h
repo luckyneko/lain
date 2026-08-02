@@ -49,7 +49,7 @@ namespace lain::flow
 			return addDynamicPort<T>(std::move(name));
 		}
 
-		PortIndex boundaryCount() const { return outputCount(); }
+		std::size_t boundaryCount() const { return outputCount(); }
 
 		// Inject the value for `pin`; published to that output on the next compute(). Marks
 		// dirty so a pull re-fires it, after which it stays constant until the next setValue (a
@@ -96,7 +96,7 @@ namespace lain::flow
 			return addDynamicPort<T>(std::move(name));
 		}
 
-		PortIndex boundaryCount() const { return inputCount(); }
+		std::size_t boundaryCount() const { return inputCount(); }
 
 		// The value delivered to `pin` (its input's current value). Empty until the graph has
 		// run with a producer wired in (or if `pin` is unknown).

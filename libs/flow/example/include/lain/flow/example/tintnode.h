@@ -17,15 +17,11 @@ namespace lain::flow::example
 		// the gui renders as a colour swatch.
 		TintNode(float tintR, float tintG, float tintB);
 
-		// Index of the lain::image::Image input / output ports.
-		PortIndex inputPort() const { return m_in; }
-		PortIndex imagePort() const { return m_out; }
-
 		void compute() override;
 
 	private:
-		PortIndex m_tint; // "tint" param (image::ColorRGBf) — per-channel RGB multiplier
-		PortIndex m_in;
-		PortIndex m_out;
+		PortId m_tint; // "tint" param (image::ColorRGBf) — per-channel RGB multiplier
+		PortId m_in;
+		PortId m_out;
 	};
 } // namespace lain::flow::example

@@ -46,7 +46,7 @@ namespace lain::flow
 			// The branches are the dynamic input pins, in add order; route to the sel-th (the static
 			// selector pin is skipped, so its position among the inputs doesn't shift the indexing).
 			int branchIndex = 0;
-			for (PortIndex i = 0; i < inputCount(); ++i)
+			for (std::size_t i = 0; i < inputCount(); ++i)
 			{
 				const Port& in = input(i);
 				if (!in.isDynamic())
@@ -74,7 +74,7 @@ namespace lain::flow
 		}
 
 	private:
-		PortIndex m_selector = 0; // the "selector" input index
-		PortIndex m_out = 0;
+		PortId m_selector; // the static "selector" input — not one of the dynamic branches
+		PortId m_out;
 	};
 } // namespace lain::flow

@@ -222,7 +222,7 @@ namespace lain::flow
 		Node& target = graph.node(id);
 		// Reset inputs first, so an input with NO current edge (never connected, disconnected, or its
 		// source node removed) is empty — the readiness gate then treats them all alike.
-		for (PortIndex i = 0; i < target.inputCount(); ++i)
+		for (std::size_t i = 0; i < target.inputCount(); ++i)
 			target.input(i).clear();
 		for (const Graph::Edge& e : graph.edges())
 		{
@@ -251,7 +251,7 @@ namespace lain::flow
 		}
 		else
 		{
-			for (PortIndex o = 0; o < node.outputCount(); ++o)
+			for (std::size_t o = 0; o < node.outputCount(); ++o)
 				node.output(o).clear();
 		}
 	}
@@ -273,7 +273,7 @@ namespace lain::flow
 
 		Graph* inner = node.innerGraph();
 		GroupInputNode& boundary = inner->boundaryInputNode();
-		for (PortIndex i = 0; i < node.inputCount(); ++i)
+		for (std::size_t i = 0; i < node.inputCount(); ++i)
 		{
 			const Port& outer = node.input(i);
 			const PortId pin = node.innerPin(outer.id());
@@ -291,7 +291,7 @@ namespace lain::flow
 		Node& node = graph.node(id);
 		Graph* inner = node.innerGraph();
 		GroupOutputNode& boundary = inner->boundaryOutputNode();
-		for (PortIndex i = 0; i < node.outputCount(); ++i)
+		for (std::size_t i = 0; i < node.outputCount(); ++i)
 		{
 			Port& outer = node.output(i);
 			const PortId pin = node.innerPin(outer.id());

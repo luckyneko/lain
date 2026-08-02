@@ -20,7 +20,7 @@ using namespace lain::flow::test;
 static constexpr std::size_t kBoundaryNodes = 2;
 
 // The edge feeding (to, inPort), or nullptr when the input is free.
-static const Graph::Edge* edgeInto(const Graph& g, NodeId to, PortIndex inPort)
+static const Graph::Edge* edgeInto(const Graph& g, NodeId to, std::size_t inPort)
 {
 	const PortAddress input{to, g.node(to).input(inPort).id()};
 	for (const Graph::Edge& e : g.edges())

@@ -22,13 +22,13 @@ namespace lain::flow::edit
 	// failure instead.
 	bool connectReplacing(Graph& graph, PortAddress from, PortAddress to);
 	// Index convenience (resolves the positions to addresses now, like Graph::connect).
-	bool connectReplacing(Graph& graph, NodeId from, PortIndex outPort, NodeId to, PortIndex inPort);
+	bool connectReplacing(Graph& graph, NodeId from, std::size_t outPort, NodeId to, std::size_t inPort);
 
 	// Remove the edge feeding `input`, if any (the detach gesture). A thin route to
 	// Graph::disconnect, kept so every mutation crosses one seam. Returns whether an edge
 	// was removed.
 	bool disconnect(Graph& graph, PortAddress input);
-	bool disconnect(Graph& graph, NodeId to, PortIndex inPort); // index convenience
+	bool disconnect(Graph& graph, NodeId to, std::size_t inPort); // index convenience
 
 	// Delete a selection in one gesture: remove every node in `nodes` and every edge in
 	// `edges`. Edges are identified by value (their stable destination), never by list

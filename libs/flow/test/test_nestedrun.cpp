@@ -20,7 +20,7 @@ namespace
 	struct CountingPass : Node
 	{
 		int& calls;
-		PortIndex in, out;
+		PortId in, out;
 		explicit CountingPass(int& c)
 			: Node("CountingPass")
 			, calls(c)

@@ -25,7 +25,7 @@ namespace
 	struct ConstInt : Node
 	{
 		int value;
-		PortIndex out;
+		PortId out;
 		explicit ConstInt(int v)
 			: Node("ConstInt")
 			, value(v)
@@ -38,7 +38,7 @@ namespace
 	// Two int inputs -> their sum.
 	struct AddInt : Node
 	{
-		PortIndex a, b, sum;
+		PortId a, b, sum;
 		AddInt()
 			: Node("Add")
 		{
@@ -52,7 +52,7 @@ namespace
 	// One float input — used to provoke a type mismatch against an int output.
 	struct SinkFloat : Node
 	{
-		PortIndex in;
+		PortId in;
 		SinkFloat()
 			: Node("Sink")
 		{

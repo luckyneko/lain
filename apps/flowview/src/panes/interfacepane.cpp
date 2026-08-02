@@ -150,7 +150,7 @@ namespace flowview
 			// No null check: the boundary pair is a Graph invariant. The block scopes the ID push.
 			flow::GroupInputNode* const node = &graph.boundaryInputNode();
 			gui::PushID(ctx.canvas.node(node->id()));
-			for (flow::PortIndex i = 0; i < node->outputCount(); ++i)
+			for (std::size_t i = 0; i < node->outputCount(); ++i)
 			{
 				flow::Port& pin = node->output(i);
 				gui::PushID(static_cast<int>(pin.id().value()));
@@ -231,7 +231,7 @@ namespace flowview
 			// No null check: the boundary pair is a Graph invariant. The block scopes the ID push.
 			flow::GroupOutputNode* const node = &graph.boundaryOutputNode();
 			gui::PushID(ctx.canvas.node(node->id()));
-			for (flow::PortIndex i = 0; i < node->inputCount(); ++i)
+			for (std::size_t i = 0; i < node->inputCount(); ++i)
 			{
 				flow::Port& pin = node->input(i);
 				gui::PushID(static_cast<int>(pin.id().value()));

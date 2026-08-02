@@ -32,7 +32,7 @@ namespace lain::flow
 		}
 
 	private:
-		PortIndex m_value = 0; // the "value" param's index
-		PortIndex m_out = 0;
+		PortId m_value; // the "value" param
+		PortId m_out;
 	};
 } // namespace lain::flow

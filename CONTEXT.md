@@ -66,8 +66,9 @@ never by driving a live GUI.
 - **Param** — a **named, typed, non-connectable configuration value** on a Node (a
   `LoadImageNode`'s path, a `BlurNode`'s radius), **distinct from a Port** (which is dataflow,
   edge-driven). A Node declares params in its ctor (`addParam<T>(name, default)`), retains the returned
-  `ParamIndex`, and reads them in const `compute()` (`param(m_radius).get<T>()`). Hosts receive const
-  Params; `Node::setParam(index, value)` type-checks, commits and advances the definition version as
+  **`PortId`** — the same declaration handle a port gets, from the same per-node counter — and reads
+  them in const `compute()` (`param(m_radius).get<T>()`). Hosts receive const
+  Params; `Node::setParam(id, value)` type-checks, commits and advances the definition version as
   one operation, so invalidation cannot be forgotten. Params
   reuse **PortValue**'s typed, type-erased slot, so a param and a port share one internal value
   machinery: **promoting a param to a connectable input is a definition change, not a data change**
@@ -210,13 +211,22 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   `acceptsPortType`** (a `Merge` takes only `Image`; a `GroupInputNode` takes any). No
   hardcoded set of pipeline types.
 
-- **PortId** *(M4 b)* — an **opaque, stable per-port handle** (the port-level analogue
-  of `NodeId`, scoped within its node), so an edge and a `BoundaryInput` handle survive a
-  pin being added/removed/**reordered** — the port's identity is not its position. A fixed-port node
-  retains named `PortId` members returned by `addInput` / `addOutput` and uses them through
-  `NodeEvaluation`; a `PortIndex` is only a positional cursor for *iterating* a node's ports, never a
-  compute-time or durable reference. Dynamic nodes may deliberately iterate an ordered pin collection,
-  resolving each iterated Port's id into the Evaluation.
+- **PortId** *(M4 b; widened M6 step 2)* — an **opaque, stable handle on one thing a node DECLARES**
+  (the declaration-level analogue of `NodeId`, scoped within its node), so an edge and a
+  `BoundaryInput` handle survive a pin being added/removed/**reordered** — identity is not position.
+  It addresses **ports and params alike**: both are declarations, both are stored by the node and read
+  back through the by-identity accessors `input(PortId)` / `output(PortId)` / `param(PortId)` (and,
+  from M6 step 4, through `NodeEvaluation`). Every declaration draws from **one per-node counter**, so
+  a param id can never equal a port id on that node — passing one where the other belongs finds
+  nothing rather than silently finding the wrong thing. (The *name* is historical; read it as
+  "declaration id". Renaming it would churn `PortAddress`, the edge format and three ADRs for no
+  behavioural gain.)
+- **Position** — a plain `std::size_t` into a node's port or param list, for **deliberate ordered
+  iteration** only (the inspector, serialization, a boundary pin list, a dynamic Select's branches).
+  Never stored, never durable: it moves when the list compacts. There is deliberately **no named index
+  type** — the retired `PortIndex` alias existed only to be stored, which is the mistake the
+  declaration-id contract exists to prevent. _Avoid_: `PortIndex`, `ParamIndex`, a stored position.
+
 ## Definition and evaluation — the recipe apart from its runtime state
 
 *(M6 — designed, not yet built. [ADR-0012](docs/adr/0012-definition-and-evaluation.md).)*

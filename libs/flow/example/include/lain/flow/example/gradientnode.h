@@ -19,14 +19,11 @@ namespace lain::flow::example
 	public:
 		GradientNode(std::uint32_t width, std::uint32_t height);
 
-		// Index of the lain::image::Image output port.
-		PortIndex imagePort() const { return m_out; }
-
 		void compute() override;
 
 	private:
 		std::uint32_t m_width;
 		std::uint32_t m_height;
-		PortIndex m_out;
+		PortId m_out;
 	};
 } // namespace lain::flow::example

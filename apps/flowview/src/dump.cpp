@@ -92,9 +92,9 @@ namespace flowview
 			const Node& node = graph.node(id);
 			// A truncated id keeps the dump scannable; the full uuid is in the document.
 			out << '[' << id.shortString() << "] " << node.name() << '\n';
-			for (PortIndex i = 0; i < node.inputCount(); ++i)
+			for (std::size_t i = 0; i < node.inputCount(); ++i)
 				dumpPort(out, "  in  ", node.input(i));
-			for (PortIndex i = 0; i < node.outputCount(); ++i)
+			for (std::size_t i = 0; i < node.outputCount(); ++i)
 				dumpPort(out, "  out ", node.output(i));
 		}
 	}

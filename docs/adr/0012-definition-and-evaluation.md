@@ -176,25 +176,33 @@ wants. A historical snapshot of one execution, if a caller ever needs one, is a 
   fixtures). `compute()` becomes `compute(NodeEvaluation&) const`, and fixed-port nodes retain named
   `PortId` members returned by `addInput` / `addOutput`: `evaluation.input(m_image)` and
   `evaluation.output(m_result)`. A literal positional index is not a compute-time address; live port
-  reorder would retarget it. `PortIndex` remains only for deliberate ordered iteration (such as a
-  dynamic Select's branches), resolving each iterated definition port's id into the Evaluation.
-  **Params do not move**: a param is serialized recipe, and the const node still reads it through its
-  captured parameter index.
+  reorder would retarget it. A positional index remains only for deliberate ordered iteration (such
+  as a dynamic Select's branches), resolving each iterated definition port's id into the Evaluation.
+  **Params do not move**: a param is serialized recipe, and the const node still reads it through the
+  handle its declaration returned.
 - **`Port` becomes pure declaration** — `{id, name, direction, PortType, presence}`. `value()`,
   `set` / `get` / `holds`, `ready()` and `describe()` all leave it, so the type that most obviously
   mixed recipe with run state stops doing so, and the mixing cannot creep back in through a
   convenience accessor. `PortType` keeps `describe`, since rendering a value is a property of the
   declared type, not of the value's storage.
-- **Parameter access becomes const/read plus atomic commit.** `ParamIndex` names the positional
-  declaration cursor; `Node::param(index) const` inspects and `Node::setParam(index, value)` performs
+- **Parameter access becomes const/read plus atomic commit.** `Node::param(id) const` inspects and
+  `Node::setParam(id, value)` performs
   the type-checked mutation plus definition-version bump, returning `bool` (as `removeNode` /
   `disconnect` / `removePort` do) and changing neither on failure. The Inspector's ParamEditor and
   `flow::serialize` decode into a temporary `PortValue` and commit through the same Node operation;
-  direct mutable `Param&` access is removed. Params keep positional indices rather than gaining
-  `PortId`-style handles because nothing declares one dynamically and the on-disk key is the name.
+  direct mutable `Param&` access is removed.
+
+  **Revised 2026-08-02, while building step 2.** This originally read "params keep positional indices
+  rather than gaining `PortId`-style handles because nothing declares one dynamically and the on-disk
+  key is the name" — and named a `ParamIndex` type for the cursor. Both are dropped. A param is now
+  declared with a `PortId` from the node's one declaration counter, so `setParam` takes that id: the
+  argument for indices only held while params can never be declared dynamically, and buying that
+  future-proofing cost one field on `Param`. Positional access stays for iteration, as a plain
+  `std::size_t` — the `PortIndex` alias is retired rather than renamed, because naming a *position*
+  invited storing one, which is the mistake the whole contract exists to prevent.
 - **Static declaration helpers finish the PortId contract.** `addInput`, `addOutput`, `addInputLike`
   and `addOutputLike` return the minted `PortId`, matching dynamic/boundary declarations. Definition
-  access by `PortIndex` remains for iteration; durable access and NodeEvaluation use `PortId`. Port
+  access by position remains for iteration; durable access and NodeEvaluation use `PortId`. Port
   names remain the on-disk edge schema, so constructor or live display reordering changes neither
   compute binding nor serialized connections.
 - **The scheduler prepares before either backend runs.** Serial and parallel execution share the same

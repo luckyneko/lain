@@ -64,7 +64,7 @@ TEST_CASE("params round-trip through the registry (declared type authoritative)"
 	source.param(2).set<int>(42);
 
 	std::vector<Value> stored;
-	for (lain::flow::PortIndex i = 0; i < source.paramCount(); ++i)
+	for (std::size_t i = 0; i < source.paramCount(); ++i)
 		stored.push_back(*paramToValue(source.param(i), codecs));
 
 	ParamNode target; // fresh defaults; the stored values overwrite them

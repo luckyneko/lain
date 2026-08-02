@@ -31,8 +31,8 @@ namespace
 
 	const Port* findPortNamed(const Node& node, Port::Direction dir, const std::string& name)
 	{
-		const PortIndex count = (dir == Port::Direction::Input) ? node.inputCount() : node.outputCount();
-		for (PortIndex i = 0; i < count; ++i)
+		const std::size_t count = (dir == Port::Direction::Input) ? node.inputCount() : node.outputCount();
+		for (std::size_t i = 0; i < count; ++i)
 		{
 			const Port& p = (dir == Port::Direction::Input) ? node.input(i) : node.output(i);
 			if (p.name() == name)

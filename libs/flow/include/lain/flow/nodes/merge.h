@@ -34,7 +34,7 @@ namespace lain::flow
 
 		void compute() override
 		{
-			for (PortIndex i = 0; i < inputCount(); ++i)
+			for (std::size_t i = 0; i < inputCount(); ++i)
 			{
 				const Port& branch = input(i);
 				if (branch.ready())
@@ -57,6 +57,6 @@ namespace lain::flow
 		}
 
 	private:
-		PortIndex m_out = 0;
+		PortId m_out;
 	};
 } // namespace lain::flow

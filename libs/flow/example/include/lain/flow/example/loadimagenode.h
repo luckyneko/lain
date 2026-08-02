@@ -23,13 +23,10 @@ namespace lain::flow::example
 	public:
 		explicit LoadImageNode(std::string uri = {});
 
-		// Index of the lain::image::Image output port.
-		PortIndex imagePort() const { return m_out; }
-
 		void compute() override;
 
 	private:
-		PortIndex m_path;
-		PortIndex m_out;
+		PortId m_path; // "path" param (std::filesystem::path)
+		PortId m_out;
 	};
 } // namespace lain::flow::example

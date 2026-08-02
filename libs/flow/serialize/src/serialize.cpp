@@ -34,8 +34,8 @@ namespace lain::flow::serialize
 
 	static const Port* findPortByName(const Node& node, Port::Direction direction, const std::string& name)
 	{
-		const PortIndex count = (direction == Port::Direction::Input) ? node.inputCount() : node.outputCount();
-		for (PortIndex i = 0; i < count; ++i)
+		const std::size_t count = (direction == Port::Direction::Input) ? node.inputCount() : node.outputCount();
+		for (std::size_t i = 0; i < count; ++i)
 		{
 			const Port& port = (direction == Port::Direction::Input) ? node.input(i) : node.output(i);
 			if (port.name() == name)
@@ -46,7 +46,7 @@ namespace lain::flow::serialize
 
 	static Param* findParamByName(Node& node, const std::string& name)
 	{
-		for (PortIndex i = 0; i < node.paramCount(); ++i)
+		for (std::size_t i = 0; i < node.paramCount(); ++i)
 		{
 			if (node.param(i).name() == name)
 				return &node.param(i);
@@ -83,10 +83,10 @@ namespace lain::flow::serialize
 		{
 			const Graph& inner = linked.inner();
 			const GroupInputNode& boundaryIn = const_cast<Graph&>(inner).boundaryInputNode();
-			for (PortIndex i = 0; i < boundaryIn.outputCount(); ++i)
+			for (std::size_t i = 0; i < boundaryIn.outputCount(); ++i)
 				inputs.push_back(PinSpec{boundaryIn.output(i).name(), portTypeKey(boundaryIn.output(i).type())});
 			const GroupOutputNode& boundaryOut = const_cast<Graph&>(inner).boundaryOutputNode();
-			for (PortIndex i = 0; i < boundaryOut.inputCount(); ++i)
+			for (std::size_t i = 0; i < boundaryOut.inputCount(); ++i)
 				outputs.push_back(PinSpec{boundaryOut.input(i).name(), portTypeKey(boundaryOut.input(i).type())});
 		}
 		else
@@ -114,7 +114,7 @@ namespace lain::flow::serialize
 		out.set("name", data::Value(node.name())); // the node's title — user-editable, so it round-trips
 
 		data::Value params = data::Value::array();
-		for (PortIndex i = 0; i < node.paramCount(); ++i)
+		for (std::size_t i = 0; i < node.paramCount(); ++i)
 		{
 			if (auto p = paramToValue(node.param(i), codecs))
 				params.push(std::move(*p));
@@ -130,9 +130,9 @@ namespace lain::flow::serialize
 		if (const auto* dynamic = dynamic_cast<const DynamicPortsNode*>(&node))
 		{
 			const Port::Direction side = dynamic->dynamicSide();
-			const PortIndex count = (side == Port::Direction::Input) ? node.inputCount() : node.outputCount();
+			const std::size_t count = (side == Port::Direction::Input) ? node.inputCount() : node.outputCount();
 			data::Value pins = data::Value::array();
-			for (PortIndex i = 0; i < count; ++i)
+			for (std::size_t i = 0; i < count; ++i)
 			{
 				const Port& pin = (side == Port::Direction::Input) ? node.input(i) : node.output(i);
 				if (!pin.isDynamic())
@@ -345,10 +345,10 @@ namespace lain::flow::serialize
 	static void currentInterface(Graph& inner, std::vector<PinSpec>& inputs, std::vector<PinSpec>& outputs)
 	{
 		GroupInputNode& boundaryIn = inner.boundaryInputNode();
-		for (PortIndex i = 0; i < boundaryIn.outputCount(); ++i)
+		for (std::size_t i = 0; i < boundaryIn.outputCount(); ++i)
 			inputs.push_back(PinSpec{boundaryIn.output(i).name(), portTypeKey(boundaryIn.output(i).type())});
 		GroupOutputNode& boundaryOut = inner.boundaryOutputNode();
-		for (PortIndex i = 0; i < boundaryOut.inputCount(); ++i)
+		for (std::size_t i = 0; i < boundaryOut.inputCount(); ++i)
 			outputs.push_back(PinSpec{boundaryOut.input(i).name(), portTypeKey(boundaryOut.input(i).type())});
 	}
 

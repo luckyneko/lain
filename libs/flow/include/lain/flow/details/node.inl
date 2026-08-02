@@ -15,51 +15,65 @@ namespace lain::flow
 		return id;
 	}
 
+	template <typename D>
+	D* Node::checked(D* declared)
+	{
+		assert(declared != nullptr && "flow::Node: no port or param with that PortId on this node");
+		return declared;
+	}
+
 	template <typename T>
-	PortIndex Node::addInput(std::string name, Presence presence)
+	PortId Node::addInput(std::string name, Presence presence)
 	{
 		// An invalid or duplicate static-port name is an author bug (a bad name breaks cli/edge
 		// addressing; a duplicate makes name-addressed edges ambiguous) — caught in debug. A runtime
 		// pin, whose name may be user-supplied, rejects instead (addDynamicPort).
 		assert(validPortName(name) && "flow::Node: port name must be a letter then alphanumeric/underscore");
 		assert(!hasPortNamed(Port::Direction::Input, name) && "flow::Node: duplicate input port name");
-		m_inputs.push_back(Port(std::move(name), Port::Direction::Input, portType<T>(), nextPortId(), presence == Presence::Required));
-		return m_inputs.size() - 1;
+		const PortId id = nextPortId();
+		m_inputs.push_back(Port(std::move(name), Port::Direction::Input, portType<T>(), id, presence == Presence::Required));
+		return id;
 	}
 
 	template <typename T>
-	PortIndex Node::addOutput(std::string name)
+	PortId Node::addOutput(std::string name)
 	{
 		assert(validPortName(name) && "flow::Node: port name must be a letter then alphanumeric/underscore");
 		assert(!hasPortNamed(Port::Direction::Output, name) && "flow::Node: duplicate output port name");
-		m_outputs.push_back(Port(std::move(name), Port::Direction::Output, portType<T>(), nextPortId()));
-		return m_outputs.size() - 1;
+		const PortId id = nextPortId();
+		m_outputs.push_back(Port(std::move(name), Port::Direction::Output, portType<T>(), id));
+		return id;
 	}
 
 	// The type-erased twins of addInput / addOutput (see node.h): same asserts, same id minting —
 	// only the PortType comes from a caller-supplied flyweight rather than portType<T>().
-	inline PortIndex Node::addInputLike(std::string name, const PortType& type, Presence presence)
+	inline PortId Node::addInputLike(std::string name, const PortType& type, Presence presence)
 	{
 		assert(validPortName(name) && "flow::Node: port name must be a letter then alphanumeric/underscore");
 		assert(!hasPortNamed(Port::Direction::Input, name) && "flow::Node: duplicate input port name");
-		m_inputs.push_back(Port(std::move(name), Port::Direction::Input, type, nextPortId(), presence == Presence::Required));
-		return m_inputs.size() - 1;
+		const PortId id = nextPortId();
+		m_inputs.push_back(Port(std::move(name), Port::Direction::Input, type, id, presence == Presence::Required));
+		return id;
 	}
 
-	inline PortIndex Node::addOutputLike(std::string name, const PortType& type)
+	inline PortId Node::addOutputLike(std::string name, const PortType& type)
 	{
 		assert(validPortName(name) && "flow::Node: port name must be a letter then alphanumeric/underscore");
 		assert(!hasPortNamed(Port::Direction::Output, name) && "flow::Node: duplicate output port name");
-		m_outputs.push_back(Port(std::move(name), Port::Direction::Output, type, nextPortId()));
-		return m_outputs.size() - 1;
+		const PortId id = nextPortId();
+		m_outputs.push_back(Port(std::move(name), Port::Direction::Output, type, id));
+		return id;
 	}
 
 	template <typename T>
-	PortIndex Node::addParam(std::string name, T defaultValue)
+	PortId Node::addParam(std::string name, T defaultValue)
 	{
-		Param p(std::move(name), portType<T>());
+		// From the SAME counter the ports draw on, so no param id ever equals a port id on this
+		// node — passing one to input() / output() finds nothing rather than the wrong thing.
+		const PortId id = nextPortId();
+		Param p(std::move(name), portType<T>(), id);
 		p.set<T>(std::move(defaultValue));
 		m_params.push_back(std::move(p));
-		return m_params.size() - 1;
+		return id;
 	}
 } // namespace lain::flow

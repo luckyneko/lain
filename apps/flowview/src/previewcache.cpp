@@ -34,9 +34,9 @@ namespace flowview
 		for (const flow::NodeId id : graph.topoOrder())
 		{
 			const flow::Node& node = graph.node(id);
-			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
+			for (std::size_t i = 0; i < node.inputCount(); ++i)
 				refresh(id, node.input(i), false);
-			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
+			for (std::size_t o = 0; o < node.outputCount(); ++o)
 				refresh(id, node.output(o), true);
 		}
 		// Drop previews whose pin is gone (or no longer a ready image); the erased

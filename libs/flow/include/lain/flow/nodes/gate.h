@@ -31,8 +31,8 @@ namespace lain::flow
 		}
 
 	private:
-		PortIndex m_enable = 0;
-		PortIndex m_value = 0;
-		PortIndex m_out = 0;
+		PortId m_enable;
+		PortId m_value;
+		PortId m_out;
 	};
 } // namespace lain::flow

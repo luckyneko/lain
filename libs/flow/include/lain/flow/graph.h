@@ -92,11 +92,11 @@ namespace lain::flow
 		// Index convenience: connect the from-node's `outPort`-th output to the to-node's
 		// `inPort`-th input. Resolves the indices to PortAddresses *now* (the edge stores the
 		// stable ids, never the indices), so it is safe for building fixed graphs / tests.
-		Connection connect(NodeId from, PortIndex outPort, NodeId to, PortIndex inPort);
+		Connection connect(NodeId from, std::size_t outPort, NodeId to, std::size_t inPort);
 
 		// Remove the edge feeding `input`, if any; returns whether one was removed.
 		bool disconnect(PortAddress input);
-		bool disconnect(NodeId to, PortIndex inPort); // index convenience (resolves now)
+		bool disconnect(NodeId to, std::size_t inPort); // index convenience (resolves now)
 
 		// Remove a dynamic port. A *primitive*: it REFUSES (returns false) if any edge still
 		// touches the port, keeping the no-dangling-edge invariant total — the safe gesture
@@ -105,7 +105,7 @@ namespace lain::flow
 		bool removePort(PortAddress port);
 
 		// A directed edge: an output PortAddress feeding an input PortAddress. Addressed by
-		// stable PortId, never PortIndex, so it survives dynamic-port mutation.
+		// stable PortId, never std::size_t, so it survives dynamic-port mutation.
 		struct Edge
 		{
 			PortAddress from;

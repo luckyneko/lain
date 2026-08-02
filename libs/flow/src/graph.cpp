@@ -131,7 +131,7 @@ namespace lain::flow
 		return Connection::Ok;
 	}
 
-	Connection Graph::connect(NodeId from, PortIndex outPort, NodeId to, PortIndex inPort)
+	Connection Graph::connect(NodeId from, std::size_t outPort, NodeId to, std::size_t inPort)
 	{
 		if (!valid(from) || !valid(to))
 			return Connection::InvalidNode;
@@ -160,7 +160,7 @@ namespace lain::flow
 		return false;
 	}
 
-	bool Graph::disconnect(NodeId to, PortIndex inPort)
+	bool Graph::disconnect(NodeId to, std::size_t inPort)
 	{
 		if (!valid(to))
 			return false;
@@ -262,7 +262,7 @@ namespace lain::flow
 	{
 		GroupInputNode& node = boundaryInputNode();
 		std::vector<BoundaryInput> out;
-		for (PortIndex i = 0; i < node.outputCount(); ++i) // a GroupInput's outputs are the graph's inputs
+		for (std::size_t i = 0; i < node.outputCount(); ++i) // a GroupInput's outputs are the graph's inputs
 			out.push_back(BoundaryInput{&node, node.output(i).id()});
 		return out;
 	}
@@ -271,7 +271,7 @@ namespace lain::flow
 	{
 		GroupOutputNode& node = boundaryOutputNode();
 		std::vector<BoundaryOutput> out;
-		for (PortIndex i = 0; i < node.inputCount(); ++i) // a GroupOutput's inputs are the graph's outputs
+		for (std::size_t i = 0; i < node.inputCount(); ++i) // a GroupOutput's inputs are the graph's outputs
 			out.push_back(BoundaryOutput{&node, node.input(i).id()});
 		return out;
 	}

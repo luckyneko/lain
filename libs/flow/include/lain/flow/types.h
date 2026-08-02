@@ -47,18 +47,23 @@ namespace lain::flow
 		core::Uuid m_uuid; // nil until minted or restored
 	};
 
-	// A port's index within its node's input or output list (direction is implied
-	// by which accessor — input() / output() — it is used with). A PortIndex is only a
-	// positional *cursor* for iterating a node's ports — never a durable reference: a
-	// port that is added/removed/reordered keeps its PortId but not its index.
-	using PortIndex = std::size_t;
-
-	// A port's stable identity within its node — the port-level analogue of NodeId. A
-	// port keeps its PortId when sibling ports are added, removed, or reordered, so an
-	// edge (and a boundary handle) survives dynamic-port mutation. Scoped per node — {NodeId,
-	// PortId} is globally unique the moment the NodeId is, which is why only NodeId needed to
-	// become a uuid — so a 32-bit counter is ample; 0 is the reserved "no port" sentinel, real ids
-	// start at 1.
+	// The stable identity of one thing a node DECLARES — a port or a param. It survives siblings
+	// being added, removed or reordered, so an edge (and a boundary handle) outlives dynamic-port
+	// mutation, and a node's stored handles keep naming what they named. Every declaration on a node
+	// draws from one counter, so a port id and a param id are never equal within a node: handing one
+	// where the other belongs finds nothing rather than silently finding the wrong thing.
+	//
+	// (The name is historical — ports needed identity first. It addresses params too, so read it as
+	// "declaration id"; renaming it would churn PortAddress, the edge format and three ADRs for no
+	// behavioural gain.)
+	//
+	// Scoped per node — {NodeId, PortId} is globally unique the moment the NodeId is, which is why
+	// only NodeId needed to become a uuid — so a 32-bit counter is ample; 0 is the reserved "no
+	// port" sentinel, real ids start at 1.
+	//
+	// There is deliberately no index TYPE beside this. A position into a node's port or param list
+	// is a plain std::size_t: it is a cursor for ordered iteration, never a reference, and giving it
+	// a name of its own only invited it to be stored.
 	class PortId
 	{
 	public:

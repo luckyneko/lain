@@ -326,9 +326,9 @@ namespace flowview
 			// The id still shows in the Inspector header (and the cli dump) when you need it.
 			const char* titleText = node.name().c_str();
 			float labelColumn = gui::CalcTextSize(titleText).x;
-			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
+			for (std::size_t i = 0; i < node.inputCount(); ++i)
 				labelColumn = std::max(labelColumn, gui::CalcTextSize(node.input(i).name().c_str()).x);
-			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
+			for (std::size_t o = 0; o < node.outputCount(); ++o)
 				labelColumn = std::max(labelColumn, gui::CalcTextSize(node.output(o).name().c_str()).x);
 
 			// LAYOUT is part of a linked group's read-only-ness. imnodes drags nodes itself, entirely
@@ -350,7 +350,7 @@ namespace flowview
 
 			// Detach flag on inputs only (so an output drag creates a new link -> fan-out).
 			gui::nodes::PushAttributeFlag(ImNodesAttributeFlags_EnableLinkDetachWithDragClick);
-			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
+			for (std::size_t i = 0; i < node.inputCount(); ++i)
 			{
 				const flow::Port& in = node.input(i);
 				// Fill = carries a value, hollow = empty (unconnected, or upstream produced nothing) —
@@ -368,7 +368,7 @@ namespace flowview
 			const auto* dynamic = dynamic_cast<const flow::DynamicPortsNode*>(&node);
 			if (dynamic != nullptr && dynamic->dynamicSide() == flow::Port::Direction::Input)
 				bodyItems |= renderCanvasAddPin(*dynamic, id, canvasId, pinAdds);
-			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
+			for (std::size_t o = 0; o < node.outputCount(); ++o)
 			{
 				const flow::Port& out = node.output(o);
 				// Fill = produced a value this run, hollow = empty (a suppressed node's outputs) — same
