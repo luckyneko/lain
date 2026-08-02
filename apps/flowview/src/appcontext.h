@@ -1,6 +1,7 @@
 #pragma once
 
-#include "groupnav.h" // GraphPath — which graph the panes are pointed at
+#include "canvasids.h" // the imnodes int <-> NodeId/PortAddress mapping (document-lifetime)
+#include "groupnav.h"  // GraphPath — which graph the panes are pointed at
 #include "pinkey.h"
 #include "session.h" // what persists between runs (last graph, recents, dialog folder)
 #include "undo.h"	 // UndoStack (the graph-document history)
@@ -91,14 +92,18 @@ namespace flowview
 		// the catalog list). The caller sets `edited` so the scene re-runs.
 		lain::flow::NodeId addCatalogNode(const std::string& key);
 
+		// The imnodes id boundary for the open document (see CanvasIds). Owned here because it must
+		// outlive every pane and every edit: it resets when DOCUMENT identity changes, nothing less.
+		CanvasIds canvas;
+
 		// --- Navigation (which graph the panes are pointed at) ---
 		// The path of group nodes descended from the root; empty = the root graph. MainWindow
 		// resolves it once per frame and hands every pane the graph it names, so descending retargets
 		// the canvas, Inspector, Preview and Issues together.
 		GraphPath activePath;
-		// Set when the path changed this frame: the canvas must re-seed positions (imnodes keys node
-		// state by the int of a NodeId, and ids REPEAT across levels, so an inner node would otherwise
-		// inherit a same-numbered root node's position) and clear its selection.
+		// Set when the path changed this frame: the canvas must re-seed positions and clear its
+		// selection. Still REQUIRED with unique canvas ids — imnodes destroys a node's data the first
+		// frame it is not submitted, and frees selection-pool indices without pruning them (ADR-0011).
 		bool pathChanged = false;
 		void navigateTo(GraphPath path)
 		{
@@ -213,16 +218,16 @@ namespace flowview
 		// re-baseline the undo history with once the swap is applied. Its presence is what tells the
 		// swap handler "this is a new document → reset history" vs "this is a restore → keep history".
 		std::optional<lain::data::Value> pendingBaseline;
-		// Nodes to re-select after an Undo/Redo swap, as ORDINALS into the graph's node enumeration
-		// (nodeIds()) — a restore remaps every NodeId, so the old ids can't be reused, but the ordinal
-		// is stable for a structure-preserving edit (e.g. a param drag). Captured before the restore,
-		// applied after the swap re-seeds; without it a param undo would drop the canvas selection (and
-		// so the selection-driven Inspector). Empty on New/Open, which clear the selection instead.
-		std::vector<std::size_t> pendingReselect;
-		// The active path to restore after an Undo/Redo swap, as ORDINALS (see groupnav::pathOrdinals)
-		// — a restore remaps every NodeId, so the path can't be carried as ids. Absent on New/Open,
-		// which go back to the root because the document itself changed. Without this, undoing an edit
-		// made INSIDE a group threw the user back out to the root, away from what they just undid.
-		std::optional<std::vector<std::size_t>> pendingPath;
+		// Nodes to re-select after an Undo/Redo swap. Plain ids: a restore rebuilds the graph from a
+		// document, and a document RESTORES identity (ADR-0011), so the ids on the far side are the
+		// same ones. Captured before the restore, applied after the swap re-seeds; without it a param
+		// undo would drop the canvas selection (and so the selection-driven Inspector). Empty on
+		// New/Open, which clear the selection instead.
+		std::vector<lain::flow::NodeId> pendingReselect;
+		// The active path to restore after an Undo/Redo swap — also plain ids, for the same reason.
+		// Absent on New/Open, which go back to the root because the document itself changed. Without
+		// this, undoing an edit made INSIDE a group threw the user back out to the root, away from
+		// what they just undid.
+		std::optional<GraphPath> pendingPath;
 	};
 } // namespace flowview

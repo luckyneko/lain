@@ -149,7 +149,7 @@ namespace flowview
 		{
 			// No null check: the boundary pair is a Graph invariant. The block scopes the ID push.
 			flow::GroupInputNode* const node = &graph.boundaryInputNode();
-			gui::PushID(static_cast<int>(node->id().value()));
+			gui::PushID(ctx.canvas.node(node->id()));
 			for (flow::PortIndex i = 0; i < node->outputCount(); ++i)
 			{
 				flow::Port& pin = node->output(i);
@@ -160,7 +160,7 @@ namespace flowview
 				gui::SameLine();
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
 
-				const PinKey key{node->id().value(), true, pin.id()};
+				const PinKey key{node->id(), true, pin.id()};
 				if (const gui::Texture* tex = previews.find(key); tex && pin.value().holds<image::Image>())
 				{
 					gui::Image(*tex, previewFit(pin.value().get<image::Image>().extent(), thumbnailBox()));
@@ -230,7 +230,7 @@ namespace flowview
 		{
 			// No null check: the boundary pair is a Graph invariant. The block scopes the ID push.
 			flow::GroupOutputNode* const node = &graph.boundaryOutputNode();
-			gui::PushID(static_cast<int>(node->id().value()));
+			gui::PushID(ctx.canvas.node(node->id()));
 			for (flow::PortIndex i = 0; i < node->inputCount(); ++i)
 			{
 				flow::Port& pin = node->input(i);
@@ -241,7 +241,7 @@ namespace flowview
 				gui::SameLine();
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
 
-				const PinKey key{node->id().value(), false, pin.id()};
+				const PinKey key{node->id(), false, pin.id()};
 				if (pin.value().empty())
 				{
 					// The producer was gated off / suppressed (conditional eval) — no value this run.

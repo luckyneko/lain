@@ -90,8 +90,8 @@ TEST_CASE("connectReplacing rejects invalid nodes and ports", "[edit]")
 	const NodeId c = g.add<ConstInt>(1);
 	const NodeId add = g.add<AddInt>();
 
-	REQUIRE_FALSE(edit::connectReplacing(g, NodeId{99}, 0, add, 0)); // no such source
-	REQUIRE_FALSE(edit::connectReplacing(g, c, 5, add, 0));			 // out-of-range output
+	REQUIRE_FALSE(edit::connectReplacing(g, NodeId::generate(), 0, add, 0)); // no such source
+	REQUIRE_FALSE(edit::connectReplacing(g, c, 5, add, 0));					 // out-of-range output
 	REQUIRE(g.edges().empty());
 }
 

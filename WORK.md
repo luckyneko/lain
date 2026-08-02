@@ -1498,7 +1498,8 @@ identity that kept needing composition, undo that needed positional ordinals, an
 
 Each step stands alone and leaves the suite green.
 
-1. **`core::Uuid` + `NodeId`.** New std-only `Uuid` in `lain::core` (generate v7, parse *any*
+1. ✅ **`core::Uuid` + `NodeId` — BUILT** (2026-08-02; gui-mode needs an eyeball, see the note after
+   this step). New std-only `Uuid` in `lain::core` (generate v7, parse *any*
    well-formed UUID, format canonical, compare, hash). `NodeId` wraps one. Serialize as a string; drop
    the canonical `1..N` renumbering; document load **preserves** ids while paste/copy mints fresh ones,
    and a duplicate is re-minted + reported. This is schema **v2**. The public loader routes documents
@@ -1529,6 +1530,40 @@ Each step stands alone and leaves the suite green.
    production canvas path; canvas ids never enter JSON. **Keep the per-navigation position re-seed and
    selection clear**: imnodes destroys an unsubmitted node's data and frees selection pool indices
    without pruning them, so those hazards sit below the id layer and unique ids do not address them.
+
+   **What landed, and the three places it deviates from the plan above:**
+   - `libs/core/uuid.{h,cpp}` + 10 tests; `flow` now links `lain::core` PUBLIC (types.h names
+     `core::Uuid`). `Graph` gains `BoundaryIds`, `add(node, requestedId)`, a private `usableId`
+     (one rule for "null means mint" and "a duplicate is re-minted"), and `m_order`; `nodeIds()`
+     returns that vector by const reference. `topoOrder` seeds from it, which reproduces the old
+     ascending-counter order exactly rather than merely being deterministic.
+   - `flow::serialize` splits into a **version router** (`loadDocument`) over the sole v2 body
+     decoder (`loadBody`), which now **returns** a Graph instead of filling one — a graph's boundary
+     ids are fixed at construction, so an inline group's inner graph is move-assigned from the load
+     rather than re-keyed. `src/version1.{h,cpp}` is the private DOM migrator.
+   - **Deviation 1 — `IdPolicy`.** The plan says "paste mints", without naming today's paste. It is
+     the **linked template**: one file may back several linked groups in one document, so a resolved
+     template is loaded with `IdPolicy::Mint` and everything else with `Preserve`. Without it,
+     ADR-0011's "a duplicate is a certainty whenever one file is loaded twice" is exactly what
+     flowview does on every load of a document with two links to one template.
+   - **Deviation 2 — a missing `version` is fatal**, matching CONTEXT.md rather than the previous
+     warn-and-assume-current. Guessing "current" reads a v1 file as v2, finds no node whose id is a
+     string, drops every one — and a subsequent save writes that empty result over the original.
+   - **Deviation 3 — `Uuid::shortString()` truncates from the TAIL**, not the head the ADR's
+     `[019fbafb…]` illustration implied. Caught by running the cli dump: a v7 id leads with a
+     millisecond timestamp, so all four nodes of the example scene printed as `[019fc0ab...]`. The
+     trailing 32 bits are pure randomness. ADR-0011's consequence bullet is corrected.
+   - flowview: `src/canvasids.{h,cpp}` (`CanvasIds`, 6 driver-free tests over the production class)
+     + `panes/canvasstate.{h,cpp}` (the imnodes-reading half, renamed from `panes/canvasids`).
+     `pinId`/`decodePin`/edge-index link ids/`NodeId`-to-`int` casts are gone; `groupnav`'s
+     `pathOrdinals`/`pathFromOrdinals` are deleted and `pendingReselect`/`pendingPath` carry plain
+     ids. `CanvasIds::reset()` hangs off `pendingBaseline`, which *is* "document identity changed".
+   - Verified: warning-clean strict build, `format-check` clean, `ctest` **374/374**; the headless
+     save ⇒ load ⇒ save round-trip is still **byte-idempotent** *and* now preserves node ids; a
+     hand-written v1 document migrates with its params, names, edges and editor blobs intact and
+     re-saves as a stable v2. **Not exercised: gui-mode** — the canvas, Inspector, Interface and
+     Preview all changed id plumbing, and undo/redo's reselect + path restore changed mechanism.
+     That needs a Metal session.
 2. **Static declarations return `PortId`** — the gap M4b slice 1 left. `addInput` / `addOutput` /
    `addInputLike` / `addOutputLike` return the minted id instead of a position, each fixed node stores
    named `PortId` members, and `input(PortId)` / `output(PortId)` join the index accessors (a strong

@@ -20,8 +20,6 @@ using flowview::enclosingLinkedGroup;
 using flowview::findLayoutAt;
 using flowview::GraphPath;
 using flowview::layoutAt;
-using flowview::pathFromOrdinals;
-using flowview::pathOrdinals;
 using flowview::resolvePath;
 using flowview::syncPathGroups;
 
@@ -83,7 +81,7 @@ TEST_CASE("a stale path degrades to the deepest level that still resolves", "[gr
 
 	SECTION("an id from another graph truncates immediately")
 	{
-		GraphPath path{NodeId{9999}};
+		GraphPath path{NodeId::generate()};
 		REQUIRE(&resolvePath(root, path) == &root);
 		REQUIRE(path.empty());
 	}
@@ -136,11 +134,12 @@ TEST_CASE("a linked group nested inside an inline group is still found", "[group
 	Graph& mid = static_cast<GroupNode&>(root.node(outer)).inner();
 	const NodeId linked = addGroup<LinkedGroupNode>(mid, "linked"); // ...holding the link
 
-	// The trap, made explicit: root.contains(linked) is TRUE. Ids restart per Graph, so the nested
-	// link's id collides with the wrapper's at the root — an id-based lookup there does not come up
-	// empty, it silently finds a DIFFERENT node. Returning the node itself is what avoids that.
-	REQUIRE(root.contains(linked));
-	REQUIRE(&root.node(linked) != &mid.node(linked));
+	// The trap, made explicit: the nested link is NOT in the root, so an id-based lookup there fails.
+	// It used to fail silently and find a different node, because ids restarted per Graph; a uuid
+	// makes it an honest miss (ADR-0011). Either way an id alone does not say which graph to look in,
+	// which is why this returns the node itself.
+	REQUIRE_FALSE(root.contains(linked));
+	REQUIRE(mid.contains(linked));
 
 	REQUIRE(enclosingLinkedGroup(root, GraphPath{outer, linked}) == &mid.node(linked));
 	REQUIRE_FALSE(editableAt(root, GraphPath{outer, linked}));
@@ -149,12 +148,13 @@ TEST_CASE("a linked group nested inside an inline group is still found", "[group
 
 TEST_CASE("layout is stored and found per level", "[groupnav]")
 {
-	// Why this matters: imnodes only knows the level on screen, and node ids REPEAT across levels, so
-	// each level's positions must be kept apart — otherwise a node inherits the position of the
-	// same-numbered node at another level.
+	// Why this matters: imnodes only knows the level on screen, so each level's positions have to be
+	// kept apart and restored as it is shown. Node ids no longer repeat across levels (ADR-0011), so
+	// the same id at two levels is now a stress case rather than a real document — but it is still the
+	// sharpest way to show that the tree keys by LEVEL and the two levels do not share one map.
 	lain::flow::serialize::EditorTree tree;
-	const NodeId group{3};
-	const NodeId node{3}; // deliberately the SAME id, one level down
+	const NodeId group = NodeId::generate();
+	const NodeId node = group; // deliberately the SAME id, one level down
 
 	lain::data::Value rootBlob = lain::data::Value::object();
 	rootBlob.set("x", lain::data::Value(10.0));
@@ -173,13 +173,14 @@ TEST_CASE("layout is stored and found per level", "[groupnav]")
 
 	SECTION("an unvisited level simply has no stored layout")
 	{
-		REQUIRE(findLayoutAt(tree, GraphPath{NodeId{7}}) == nullptr);
+		REQUIRE(findLayoutAt(tree, GraphPath{NodeId::generate()}) == nullptr);
 	}
 
 	SECTION("layoutAt creates a level on demand, so a first visit can record into it")
 	{
-		layoutAt(tree, GraphPath{NodeId{7}}).nodes[NodeId{1}] = rootBlob;
-		REQUIRE(findLayoutAt(tree, GraphPath{NodeId{7}}) != nullptr);
+		const NodeId unvisited = NodeId::generate();
+		layoutAt(tree, GraphPath{unvisited}).nodes[NodeId::generate()] = rootBlob;
+		REQUIRE(findLayoutAt(tree, GraphPath{unvisited}) != nullptr);
 	}
 }
 
@@ -201,58 +202,4 @@ TEST_CASE("syncing the active path carries an inner interface out to the group's
 	REQUIRE(root.node(group).outputCount() == 1);
 
 	REQUIRE_FALSE(syncPathGroups(root, GraphPath{group})); // settles: a quiet frame reports no change
-}
-
-TEST_CASE("a path survives the id remap a document restore performs", "[groupnav]")
-{
-	// The undo/redo case. A restore rebuilds the graph with FRESH NodeIds, so the active path cannot
-	// be carried as ids — it goes as ordinals. To prove that actually works, the two graphs below are
-	// structurally identical but have DIFFERENT ids for the same logical group: `before` churns a node
-	// first, so its id counter has moved on. If ordinals were secretly agreeing with ids, this fails.
-	Graph before;
-	const NodeId churn = before.add<GroupNode>(); // added...
-	REQUIRE(before.removeNode(churn));			  // ...and dropped, so the next id is higher
-	const NodeId groupBefore = addGroup<GroupNode>(before, "denoise");
-
-	Graph after;
-	const NodeId groupAfter = addGroup<GroupNode>(after, "denoise");
-
-	REQUIRE(groupBefore != groupAfter); // genuinely different ids for the same logical node
-
-	const std::vector<std::size_t> ordinals = pathOrdinals(before, GraphPath{groupBefore});
-	REQUIRE(ordinals.size() == 1);
-
-	const GraphPath restored = pathFromOrdinals(after, ordinals);
-	REQUIRE(restored.size() == 1);
-	REQUIRE(restored[0] == groupAfter); // landed on the same logical group, not the same number
-
-	SECTION("nested paths convert too")
-	{
-		Graph& innerBefore = static_cast<GroupNode&>(before.node(groupBefore)).inner();
-		const NodeId nestedBefore = addGroup<GroupNode>(innerBefore, "sharpen");
-		Graph& innerAfter = static_cast<GroupNode&>(after.node(groupAfter)).inner();
-		const NodeId nestedAfter = addGroup<GroupNode>(innerAfter, "sharpen");
-
-		const GraphPath deep = pathFromOrdinals(after, pathOrdinals(before, GraphPath{groupBefore, nestedBefore}));
-		REQUIRE(deep.size() == 2);
-		REQUIRE(deep[0] == groupAfter);
-		REQUIRE(deep[1] == nestedAfter);
-	}
-
-	SECTION("a group the restored document no longer has stops the walk at its parent")
-	{
-		// Undoing the very edit that CREATED the group: the restored document has no group at that
-		// ordinal, so the user lands on the level above rather than on a dangling path.
-		Graph without; // just the boundary pair — no group at all
-		REQUIRE(pathFromOrdinals(without, ordinals).empty());
-	}
-
-	SECTION("an ordinal naming a non-group stops the walk too")
-	{
-		Graph plain;
-		plain.add<GroupNode>(); // ordinal 2 IS a group here...
-		const std::vector<std::size_t> deepOrdinals{2, 0};
-		const GraphPath path = pathFromOrdinals(plain, deepOrdinals);
-		REQUIRE(path.size() == 1); // ...but ordinal 0 inside it is the boundary node, which contains nothing
-	}
 }

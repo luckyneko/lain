@@ -102,7 +102,7 @@ TEST_CASE("connect rejects invalid nodes and ports", "[graph]")
 	const NodeId c = g.add<ConstInt>(1);
 	const NodeId add = g.add<AddInt>();
 
-	REQUIRE(g.connect(NodeId{99}, 0, add, 0) == Connection::InvalidNode);
+	REQUIRE(g.connect(NodeId::generate(), 0, add, 0) == Connection::InvalidNode); // an id no node here holds
 	REQUIRE(g.connect(c, 5, add, 0) == Connection::InvalidPort);
 	REQUIRE(g.connect(c, 0, add, 9) == Connection::InvalidPort);
 }
@@ -228,4 +228,124 @@ TEST_CASE("removeNode drops the node and its edges, leaving other ids valid", "[
 	// The freed input can take a new source; removing an absent node is a no-op.
 	REQUIRE(g.connect(c2, 0, add, 0) == Connection::Ok);
 	REQUIRE_FALSE(g.removeNode(c1));
+}
+
+// --- identity (ADR-0011) ----------------------------------------------------
+
+TEST_CASE("every added node gets a fresh, non-null identity", "[graph][identity]")
+{
+	Graph g;
+	const NodeId a = g.add<ConstInt>(1);
+	const NodeId b = g.add<ConstInt>(2);
+
+	REQUIRE(a != NodeId{}); // the null NodeId is the "no node" sentinel, never minted
+	REQUIRE(b != NodeId{});
+	REQUIRE(a != b);
+	// Ids are unique across GRAPHS too — that is the whole point of a uuid over a per-graph
+	// counter, since a group node makes every group own a Graph.
+	Graph other;
+	REQUIRE(other.add<ConstInt>(1) != a);
+	REQUIRE(other.boundaryInputNode().id() != g.boundaryInputNode().id());
+}
+
+TEST_CASE("nodeIds is insertion order, independent of id order", "[graph][identity]")
+{
+	Graph g;
+	const NodeId a = g.add<ConstInt>(1);
+	const NodeId b = g.add<ConstInt>(2);
+	const NodeId c = g.add<ConstInt>(3);
+
+	// The boundary pair is inserted first (it is a construction invariant), then the three adds in
+	// the order they were made. A uuid comparison would say something arbitrary about a/b/c.
+	const std::vector<NodeId> expected{g.boundaryInputNode().id(), g.boundaryOutputNode().id(), a, b, c};
+	REQUIRE(g.nodeIds() == expected);
+
+	REQUIRE(g.removeNode(b)); // removal closes the gap, leaving the rest in order
+	REQUIRE(g.nodeIds() == std::vector<NodeId>{g.boundaryInputNode().id(), g.boundaryOutputNode().id(), a, c});
+}
+
+TEST_CASE("topoOrder is deterministic across rebuilds of the same graph", "[graph][identity]")
+{
+	// Seeded from insertion order rather than from the id-keyed map — otherwise two builds of the
+	// same graph would order their edgeless nodes differently, and topo order drives serial
+	// execution and the canvas's default columns.
+	const auto build = [](Graph& g)
+	{
+		const NodeId c1 = g.add<ConstInt>(2);
+		const NodeId c2 = g.add<ConstInt>(3);
+		const NodeId add = g.add<AddInt>();
+		REQUIRE(g.connect(c1, 0, add, 0) == Connection::Ok);
+		REQUIRE(g.connect(c2, 0, add, 1) == Connection::Ok);
+	};
+
+	Graph first;
+	Graph second;
+	build(first);
+	build(second);
+
+	// Compare by POSITION-IN-INSERTION-ORDER: the two graphs' ids differ (each mints its own), so
+	// what must match is the shape of the order, not the values.
+	const auto shape = [](const Graph& g)
+	{
+		std::vector<std::ptrdiff_t> positions;
+		for (const NodeId id : g.topoOrder())
+			positions.push_back(indexOf(g.nodeIds(), id));
+		return positions;
+	};
+	REQUIRE(shape(first) == shape(second));
+}
+
+TEST_CASE("a requested identity is restored, a duplicate is re-minted", "[graph][identity]")
+{
+	Graph g;
+	const NodeId wanted = NodeId::generate();
+
+	// The loader path: a saved node comes back AS ITSELF.
+	const NodeId restored = g.add(std::make_unique<ConstInt>(1), wanted);
+	REQUIRE(restored == wanted);
+	REQUIRE(g.node(wanted).name() == "ConstInt");
+
+	// Asking for it a second time never overwrites the owner: the newcomer is re-minted, and the
+	// caller sees that by comparing the returned id with the one it asked for.
+	const NodeId clash = g.add(std::make_unique<ConstInt>(2), wanted);
+	REQUIRE(clash != NodeId{});
+	REQUIRE(clash != wanted);
+	g.node(wanted).compute();
+	REQUIRE(g.node(wanted).output(0).get<int>() == 1); // still the FIRST node, not the newcomer
+	REQUIRE(g.nodeCount() == kBoundaryNodes + 2);
+
+	// A null request mints, exactly as the plain add() overload does.
+	const NodeId minted = g.add(std::make_unique<ConstInt>(3), NodeId{});
+	REQUIRE(minted != NodeId{});
+}
+
+TEST_CASE("the boundary pair can be born with saved ids", "[graph][identity]")
+{
+	const NodeId in = NodeId::generate();
+	const NodeId out = NodeId::generate();
+	Graph g{BoundaryIds{in, out}};
+
+	REQUIRE(g.boundaryInputNode().id() == in);
+	REQUIRE(g.boundaryOutputNode().id() == out);
+	REQUIRE(g.nodeIds() == std::vector<NodeId>{in, out}); // still first, still in that order
+
+	// Construction is TOTAL: a document that names neither boundary node, or names one twice,
+	// still opens — the missing/clashing id is minted.
+	Graph none{BoundaryIds{}};
+	REQUIRE(none.boundaryInputNode().id() != NodeId{});
+	REQUIRE(none.boundaryOutputNode().id() != NodeId{});
+	REQUIRE(none.boundaryInputNode().id() != none.boundaryOutputNode().id());
+
+	Graph doubled{BoundaryIds{in, in}};
+	REQUIRE(doubled.boundaryInputNode().id() == in);
+	REQUIRE(doubled.boundaryOutputNode().id() != in);
+}
+
+TEST_CASE("add still refuses a second boundary node, whatever id is requested", "[graph][identity]")
+{
+	Graph g;
+	REQUIRE(g.add(std::make_unique<GroupInputNode>(), NodeId::generate()) == NodeId{});
+	REQUIRE(g.add(std::make_unique<GroupOutputNode>(), NodeId::generate()) == NodeId{});
+	REQUIRE(g.nodeCount() == kBoundaryNodes);
+	REQUIRE(g.nodeIds().size() == kBoundaryNodes); // the refusal leaves the order vector alone too
 }

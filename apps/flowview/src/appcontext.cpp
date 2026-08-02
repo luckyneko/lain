@@ -39,7 +39,7 @@ namespace flowview
 	void AppContext::locateNode(flow::NodeId id)
 	{
 		gui::nodes::ClearNodeSelection();
-		gui::nodes::SelectNode(static_cast<int>(id.value()));
+		gui::nodes::SelectNode(canvas.node(id));
 		locateTarget = id;				 // centred on the next Graph draw (needs the node's drawn size)
 		gui::activateWindowTab("Graph"); // bring the canvas forward so the located node is visible
 	}
@@ -87,7 +87,7 @@ namespace flowview
 			return id;
 		uniquifyName(graph, graph.node(id));
 		const float offset = 40.0f + static_cast<float>(addCounter % 6) * 28.0f;
-		gui::nodes::SetNodeGridSpacePos(static_cast<int>(id.value()), math::Vec2f{offset, offset});
+		gui::nodes::SetNodeGridSpacePos(canvas.node(id), math::Vec2f{offset, offset});
 		++addCounter;
 		return id;
 	}

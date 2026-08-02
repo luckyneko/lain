@@ -5,8 +5,8 @@
 #include "../groupnav.h"	// editableAt — a linked group's nodes belong to its template
 #include "../parameditors.h"
 #include "../previewcache.h"
-#include "canvasids.h" // selectedNodes + pinId
-#include "imagesave.h" // renderImageSave
+#include "canvasstate.h" // selectedNodes
+#include "imagesave.h"	 // renderImageSave
 
 #include <lain/flow/boundary.h> // GroupInputNode / GroupOutputNode (dynamic_cast)
 #include <lain/flow/graph.h>
@@ -42,7 +42,7 @@ namespace flowview
 			// Selection-driven: inspect only the node(s) selected on the canvas (stacked, walked in topo
 			// order for a stable top-to-bottom layout), not the whole graph. Nothing selected -> a hint.
 			// (The Interface panel is the separate host-binding surface.)
-			const std::vector<flow::NodeId> selection = selectedNodes();
+			const std::vector<flow::NodeId> selection = selectedNodes(ctx.canvas);
 			if (selection.empty())
 				gui::TextDisabled("Select a node on the canvas to inspect it.");
 
@@ -54,8 +54,9 @@ namespace flowview
 				flow::Node& node = graph.node(id); // non-const: the title + params are edited below
 				// An obvious titled section per selected node. The id stays in the Inspector header (the
 				// detail surface — it's what the cli dump and any log line names) even though the canvas
-				// title now shows the user's name alone.
-				const std::string header = string::format("{} [{}]", node.name(), id.value());
+				// title shows the user's name alone. Truncated: a full uuid would swamp the header, and
+				// the tail is enough to tell two nodes apart or match a dump line.
+				const std::string header = string::format("{} [{}]", node.name(), id.shortString());
 				gui::SeparatorText(header.c_str());
 
 				// Boundary nodes are edited in the Interface panel (their whole-graph I/O view), not here —
@@ -68,7 +69,7 @@ namespace flowview
 
 				// Editable params, chosen by type via the registry (file field, drags, colour
 				// swatch). PushID(node) so same-named params on different nodes don't collide.
-				gui::PushID(static_cast<int>(id.value()));
+				gui::PushID(ctx.canvas.node(id));
 
 				// Inside a LINKED group, a node's name and params belong to the template: the parent
 				// document stores only the source path + cached interface, so an edit here would be
@@ -110,7 +111,7 @@ namespace flowview
 					{
 						const image::Image& img = p.value().get<image::Image>();
 						gui::Text("    %s %s: %s %dx%d", tag, p.name().c_str(), std::string(p.typeName()).c_str(), img.width(), img.height());
-						const PinKey key{id.value(), output, p.id()};
+						const PinKey key{id, output, p.id()};
 						if (const gui::Texture* tex = previews.find(key))
 						{
 							// Fits the pane's width, capped in height, aspect preserved — no size
@@ -121,7 +122,7 @@ namespace flowview
 						}
 						if (output) // outputs are the results you'd export; inputs are just what was fed in
 						{
-							gui::PushID(pinId(id, output, p.id()));
+							gui::PushID(ctx.canvas.pin({id, p.id()}, output));
 							renderImageSave(ctx, key, img);
 							gui::PopID();
 						}

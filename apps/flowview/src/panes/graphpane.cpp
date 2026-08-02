@@ -4,7 +4,7 @@
 #include "../flowviewapp.h" // ctx.app->nodeFactory()
 #include "../groupnav.h"	// breadcrumb / descend / editability
 #include "../scene.h"		// nodeCatalog + NodeCategory
-#include "canvasids.h"		// pinId + selectedNodes
+#include "canvasstate.h"	// selectedNodes
 
 #include <lain/data/value.h>
 #include <lain/flow/boundary.h> // GroupInputNode / GroupOutputNode
@@ -23,7 +23,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <string>
 #include <typeindex>
 #include <utility>
@@ -33,23 +32,17 @@ namespace flowview
 {
 	using namespace lain;
 
-	// Inverse of pinId(): decode an imnodes attribute id back to the (node, direction,
-	// port) it stands for — used when a dragged link reports its endpoint pins.
-	struct DecodedPin
+	// The port an imnodes attribute id stands for, or nullptr — for a hovered/dragged pin, whose node
+	// may have been deleted earlier this frame (and whose canvas id may predate this document).
+	static const flow::Port* findPin(const flow::Graph& graph, const CanvasIds& ids, int attr, bool* isOutput = nullptr)
 	{
-		flow::NodeId node;
-		bool output;
-		flow::PortId port;
-	};
-
-	static DecodedPin decodePin(int attr)
-	{
-		const int rem = attr % 1000;
-		const bool output = rem >= 500;
-		return DecodedPin{
-			flow::NodeId{static_cast<std::uint64_t>(attr / 1000)},
-			output,
-			flow::PortId{static_cast<std::uint32_t>(output ? rem - 500 : rem)}};
+		const auto pin = ids.toPin(attr);
+		if (!pin || !graph.contains(pin->address.node))
+			return nullptr;
+		if (isOutput != nullptr)
+			*isOutput = pin->output;
+		const flow::Node& node = graph.node(pin->address.node);
+		return pin->output ? node.findOutput(pin->address.port) : node.findInput(pin->address.port);
 	}
 
 	// A link was dragged between two pins: orient them (one output, one input) and ask
@@ -57,22 +50,20 @@ namespace flowview
 	// bad drag (type mismatch, cycle) and, on rejection, leaves the existing edge intact
 	// — so a bad drag onto an occupied input no longer destroys its wire. Returns
 	// whether an edge was made.
-	static bool tryConnect(flow::Graph& graph, int startAttr, int endAttr)
+	static bool tryConnect(flow::Graph& graph, const CanvasIds& ids, int startAttr, int endAttr)
 	{
-		const DecodedPin a = decodePin(startAttr);
-		const DecodedPin b = decodePin(endAttr);
-		if (a.output == b.output)
-			return false; // need exactly one output and one input
-		const DecodedPin& out = a.output ? a : b;
-		const DecodedPin& in = a.output ? b : a;
-		return flow::edit::connectReplacing(graph, flow::PortAddress{out.node, out.port},
-											flow::PortAddress{in.node, in.port});
+		const auto a = ids.toPin(startAttr);
+		const auto b = ids.toPin(endAttr);
+		if (!a || !b || a->output == b->output)
+			return false; // need exactly one output and one input, both known to this document
+		return flow::edit::connectReplacing(graph, a->output ? a->address : b->address,
+											a->output ? b->address : a->address);
 	}
 
-	// The currently-selected links as edges (Delete key). imnodes link ids are edge
-	// indices, so resolve them to Edge values here, before any mutation — flow::edit
-	// then removes by stable identity, never by shifting index.
-	static std::vector<flow::Graph::Edge> selectedEdges(const flow::Graph& graph)
+	// The currently-selected links as edges (Delete key). A link's canvas id names the input it
+	// feeds, so resolve to the live Edge values here, before any mutation — flow::edit then removes
+	// by stable identity.
+	static std::vector<flow::Graph::Edge> selectedEdges(const flow::Graph& graph, const CanvasIds& ids)
 	{
 		std::vector<flow::Graph::Edge> out;
 		const int selected = gui::nodes::NumSelectedLinks();
@@ -81,25 +72,18 @@ namespace flowview
 
 		std::vector<int> linkIds(static_cast<std::size_t>(selected));
 		gui::nodes::GetSelectedLinks(linkIds.data());
-		const std::vector<flow::Graph::Edge>& edges = graph.edges();
-		for (const int id : linkIds)
+		for (const int canvasId : linkIds)
 		{
-			if (id >= 0 && static_cast<std::size_t>(id) < edges.size())
-				out.push_back(edges[static_cast<std::size_t>(id)]);
+			const auto destination = ids.toLink(canvasId);
+			if (!destination)
+				continue;
+			for (const flow::Graph::Edge& edge : graph.edges())
+			{
+				if (edge.to == *destination)
+					out.push_back(edge);
+			}
 		}
 		return out;
-	}
-
-	// A node by id, or nullptr if it isn't in the graph — for a decoded hovered/dragged pin, whose node
-	// may have been deleted earlier this frame (graph.node() would throw). O(nodes), fine off the hot path.
-	static const flow::Node* findNode(const flow::Graph& graph, flow::NodeId id)
-	{
-		for (const flow::NodeId nid : graph.nodeIds())
-		{
-			if (nid == id)
-				return &graph.node(id);
-		}
-		return nullptr;
 	}
 
 	// A dynamic node drawn on the CANVAS gets a small "+ <type>" per accepted port type (a
@@ -110,11 +94,11 @@ namespace flowview
 	// Returns whether it submitted any widget — the caller needs to know, because a node whose body
 	// submits NOTHING trips ImGui's "SetCursorPos used to extend boundaries" assert (imnodes positions
 	// the body with SetCursorPos, and an empty group has no item to grow it).
-	static bool renderCanvasAddPin(const flow::DynamicPortsNode& node, flow::NodeId id,
+	static bool renderCanvasAddPin(const flow::DynamicPortsNode& node, flow::NodeId id, int canvasId,
 								   std::vector<std::pair<flow::NodeId, std::string>>& pinAdds)
 	{
 		bool drew = false;
-		gui::PushID(static_cast<int>(id.value()));
+		gui::PushID(canvasId);
 		for (const std::string& key : flow::portTypeKeys())
 		{
 			if (!node.acceptsPortType(key))
@@ -129,14 +113,14 @@ namespace flowview
 
 	// Apply a saved position to node `id` if `layout` has one; returns whether it did (so the caller
 	// falls back to the default column layout otherwise).
-	static bool applyLayout(const flow::serialize::EditorData& layout, flow::NodeId id)
+	static bool applyLayout(const flow::serialize::EditorData& layout, flow::NodeId id, int canvasId)
 	{
 		const auto it = layout.find(id);
 		if (it == layout.end())
 			return false;
 		const data::Value* x = it->second.find("x");
 		const data::Value* y = it->second.find("y");
-		gui::nodes::SetNodeGridSpacePos(static_cast<int>(id.value()),
+		gui::nodes::SetNodeGridSpacePos(canvasId,
 										math::Vec2f{static_cast<float>(x ? x->asDouble().value_or(0.0) : 0.0),
 													static_cast<float>(y ? y->asDouble().value_or(0.0) : 0.0)});
 		return true;
@@ -152,9 +136,10 @@ namespace flowview
 
 	void GraphPane::onNavigated()
 	{
-		// Re-seed positions and drop the selection. Both are REQUIRED, not tidiness: imnodes keys node
-		// state by the int of a NodeId and ids REPEAT across levels, so an un-seeded inner node inherits
-		// the position (and selection) of the same-numbered node at the level we came from.
+		// Re-seed positions and drop the selection. Both are REQUIRED, not tidiness, and unique canvas
+		// ids do NOT retire them: imnodes destroys a node's data the first frame it is not submitted,
+		// so descending discards the level we came from regardless of what its int was; and the
+		// selection is stored as pool indices that the same pass frees without pruning.
 		//
 		// The window drives this at the START of a frame, before the path is resolved — never the
 		// canvas itself, because a navigation can be requested DURING the canvas draw (a breadcrumb
@@ -289,9 +274,10 @@ namespace flowview
 		for (const flow::NodeId id : graph.topoOrder())
 		{
 			const flow::Node& node = graph.node(id);
+			const int canvasId = ctx.canvas.node(id);
 			// Default layout by role (a loaded layout wins over it): Input -> leftmost, Output ->
 			// rightmost, others fill the columns between.
-			if (seedPositions && !applyLayout(levelLayout, id))
+			if (seedPositions && !applyLayout(levelLayout, id, canvasId))
 			{
 				int col = 1 + middleColumn;
 				if (dynamic_cast<const flow::GroupInputNode*>(&node) != nullptr)
@@ -300,7 +286,7 @@ namespace flowview
 					col = lastColumn;
 				else
 					++middleColumn;
-				gui::nodes::SetNodeGridSpacePos(static_cast<int>(id.value()), math::Vec2f{60.0f + col * 240.0f, 200.0f});
+				gui::nodes::SetNodeGridSpacePos(canvasId, math::Vec2f{60.0f + col * 240.0f, 200.0f});
 			}
 
 			// State (dim) trumps identity (category colour): an inactive node — one the run skipped
@@ -349,7 +335,7 @@ namespace flowview
 			// outside our edit gestures, so gating those never touched it — and a drag here would be
 			// captured into the parent document only to be overwritten by the template's own positions
 			// on the next load. Set every frame: editability changes as the user navigates.
-			gui::nodes::SetNodeDraggable(static_cast<int>(id.value()), editable);
+			gui::nodes::SetNodeDraggable(canvasId, editable);
 
 			// A node body must submit at least one item: imnodes sets the content origin with
 			// SetCursorPos, and ImGui asserts on an empty group that moved the cursor past the parent
@@ -357,7 +343,7 @@ namespace flowview
 			// boundary that starts empty), so it needs the placeholder below.
 			bool bodyItems = node.inputCount() != 0 || node.outputCount() != 0;
 
-			gui::nodes::BeginNode(static_cast<int>(id.value()));
+			gui::nodes::BeginNode(canvasId);
 			gui::nodes::BeginNodeTitleBar();
 			gui::TextUnformatted(titleText);
 			gui::nodes::EndNodeTitleBar();
@@ -372,7 +358,7 @@ namespace flowview
 				// type + value are in the hover tooltip).
 				const ImNodesPinShape shape = in.ready() ? ImNodesPinShape_CircleFilled : ImNodesPinShape_Circle;
 				gui::nodes::PushColorStyle(ImNodesCol_Pin, gui::packColor(pinMuted(false, in.type()) ? m_style.mutedPin() : m_style.portColor(in.type(), in.typeName())));
-				gui::nodes::BeginInputAttribute(pinId(id, false, in.id()), shape);
+				gui::nodes::BeginInputAttribute(ctx.canvas.pin({id, in.id()}, false), shape);
 				gui::TextUnformatted(in.name().c_str());
 				gui::nodes::EndInputAttribute();
 				gui::nodes::PopColorStyle();
@@ -381,7 +367,7 @@ namespace flowview
 			// A dynamic node that grows its INPUT side gets its ± below the inputs.
 			const auto* dynamic = dynamic_cast<const flow::DynamicPortsNode*>(&node);
 			if (dynamic != nullptr && dynamic->dynamicSide() == flow::Port::Direction::Input)
-				bodyItems |= renderCanvasAddPin(*dynamic, id, pinAdds);
+				bodyItems |= renderCanvasAddPin(*dynamic, id, canvasId, pinAdds);
 			for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
 			{
 				const flow::Port& out = node.output(o);
@@ -389,7 +375,7 @@ namespace flowview
 				// value-presence rule as inputs.
 				const ImNodesPinShape shape = out.ready() ? ImNodesPinShape_CircleFilled : ImNodesPinShape_Circle;
 				gui::nodes::PushColorStyle(ImNodesCol_Pin, gui::packColor(pinMuted(true, out.type()) ? m_style.mutedPin() : m_style.portColor(out.type(), out.typeName())));
-				gui::nodes::BeginOutputAttribute(pinId(id, true, out.id()), shape);
+				gui::nodes::BeginOutputAttribute(ctx.canvas.pin({id, out.id()}, true), shape);
 				// Right-align the label to the node's stable content column so it sits by the right-edge pin.
 				const float pad = labelColumn - gui::CalcTextSize(out.name().c_str()).x;
 				if (pad > 0.0f)
@@ -402,7 +388,7 @@ namespace flowview
 			}
 			// ... and one that grows its OUTPUT side gets its ± below the outputs.
 			if (dynamic != nullptr && dynamic->dynamicSide() == flow::Port::Direction::Output)
-				bodyItems |= renderCanvasAddPin(*dynamic, id, pinAdds);
+				bodyItems |= renderCanvasAddPin(*dynamic, id, canvasId, pinAdds);
 
 			// Nothing was submitted: give the body an item (required — see above) and, for a group,
 			// say what to do about it. A group with no pins isn't broken, it is just empty: its ports
@@ -421,15 +407,14 @@ namespace flowview
 		}
 
 		// Links carry their source pin's type colour, muted when the source produced nothing (a dead
-		// edge downstream of a suppressed node).
-		const std::vector<flow::Graph::Edge>& edges = graph.edges();
-		for (std::size_t e = 0; e < edges.size(); ++e)
+		// edge downstream of a suppressed node). A link's canvas id comes from the input it feeds —
+		// an edge needs no identity of its own, since an input takes a single source.
+		for (const flow::Graph::Edge& edge : graph.edges())
 		{
-			const flow::Graph::Edge& edge = edges[e];
 			const flow::Port* src = graph.node(edge.from.node).findOutput(edge.from.port);
 			const bool edgeActive = (src != nullptr) && src->ready();
 			gui::nodes::PushColorStyle(ImNodesCol_Link, gui::packColor(edgeActive ? m_style.portColor(src->type(), src->typeName()) : m_style.mutedLink()));
-			gui::nodes::Link(static_cast<int>(e), pinId(edge.from.node, true, edge.from.port), pinId(edge.to.node, false, edge.to.port));
+			gui::nodes::Link(ctx.canvas.link(edge.to), ctx.canvas.pin(edge.from, true), ctx.canvas.pin(edge.to, false));
 			gui::nodes::PopColorStyle();
 		}
 
@@ -458,7 +443,7 @@ namespace flowview
 		// the node's grid position + size are only known once it has been drawn.
 		if (ctx.locateTarget)
 		{
-			const int nid = static_cast<int>(ctx.locateTarget->value());
+			const int nid = ctx.canvas.node(*ctx.locateTarget);
 			const ImVec2 nodePos = gui::nodes::GetNodeGridSpacePos(nid);
 			const ImVec2 nodeSize = gui::nodes::GetNodeDimensions(nid);
 			gui::nodes::EditorContextResetPanning(ImVec2(canvasSize.x * 0.5f - (nodePos.x + nodeSize.x * 0.5f),
@@ -482,9 +467,9 @@ namespace flowview
 		const bool overNode = canvasActive && gui::nodes::IsNodeHovered(&hoveredNode);
 		if (overNode && gui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
 		{
-			const flow::NodeId target{static_cast<std::uint64_t>(hoveredNode)};
-			if (graph.contains(target) && graph.node(target).innerGraph() != nullptr)
-				ctx.descendInto(target);
+			const auto target = ctx.canvas.toNode(hoveredNode);
+			if (target && graph.contains(*target) && graph.node(*target).innerGraph() != nullptr)
+				ctx.descendInto(*target);
 		}
 
 		// A drag that SetNodeDraggable just refused. Alt+drag is the canvas pan (see init), so it is
@@ -515,12 +500,16 @@ namespace flowview
 		int destroyedLink = 0;
 		// Query imnodes regardless of editability — it holds this state until asked, and a stale answer
 		// would surface on the next graph that IS editable.
-		if (gui::nodes::IsLinkDestroyed(&destroyedLink) && destroyedLink >= 0 && static_cast<std::size_t>(destroyedLink) < edges.size())
+		if (gui::nodes::IsLinkDestroyed(&destroyedLink))
 		{
-			if (editable)
+			const auto destination = ctx.canvas.toLink(destroyedLink);
+			if (!destination)
 			{
-				const flow::Graph::Edge e = edges[static_cast<std::size_t>(destroyedLink)];
-				edited |= flow::edit::disconnect(graph, e.to);
+				// Not ours (or from a document since closed) — nothing to disconnect.
+			}
+			else if (editable)
+			{
+				edited |= flow::edit::disconnect(graph, *destination);
 			}
 			else
 			{
@@ -533,7 +522,7 @@ namespace flowview
 		{
 			if (!editable)
 				ctx.noteReadOnlyEdit();
-			else if (tryConnect(graph, startAttr, endAttr))
+			else if (tryConnect(graph, ctx.canvas, startAttr, endAttr))
 				edited = true;
 			else
 				ctx.noteRejectedConnect(); // surface the silent rejection as a transient Issue
@@ -545,16 +534,12 @@ namespace flowview
 		int dragAttr = 0;
 		if (gui::nodes::IsLinkStarted(&dragAttr))
 		{
-			const DecodedPin d = decodePin(dragAttr);
-			if (const flow::Node* n = findNode(graph, d.node))
+			bool fromOutput = false;
+			if (const flow::Port* p = findPin(graph, ctx.canvas, dragAttr, &fromOutput))
 			{
-				const flow::Port* p = d.output ? n->findOutput(d.port) : n->findInput(d.port);
-				if (p != nullptr)
-				{
-					m_linkDragActive = true;
-					m_linkDragFromOutput = d.output;
-					m_linkDragType = p->type();
-				}
+				m_linkDragActive = true;
+				m_linkDragFromOutput = fromOutput;
+				m_linkDragType = p->type();
 			}
 		}
 		if (m_linkDragActive && !gui::IsMouseDown(ImGuiMouseButton_Left))
@@ -565,31 +550,26 @@ namespace flowview
 		int hoveredAttr = 0;
 		if (gui::nodes::IsPinHovered(&hoveredAttr))
 		{
-			const DecodedPin d = decodePin(hoveredAttr);
-			if (const flow::Node* n = findNode(graph, d.node))
+			if (const flow::Port* p = findPin(graph, ctx.canvas, hoveredAttr))
 			{
-				const flow::Port* p = d.output ? n->findOutput(d.port) : n->findInput(d.port);
-				if (p != nullptr)
-				{
-					gui::BeginTooltip();
-					gui::Text("%s : %s", p->name().c_str(), std::string(p->typeName()).c_str());
-					gui::TextUnformatted(("= " + p->describe()).c_str());
-					gui::EndTooltip();
-				}
+				gui::BeginTooltip();
+				gui::Text("%s : %s", p->name().c_str(), std::string(p->typeName()).c_str());
+				gui::TextUnformatted(("= " + p->describe()).c_str());
+				gui::EndTooltip();
 			}
 		}
-		if (!editable && canvasActive && gui::IsKeyPressed(ImGuiKey_Delete) && !selectedNodes().empty())
+		if (!editable && canvasActive && gui::IsKeyPressed(ImGuiKey_Delete) && !selectedNodes(ctx.canvas).empty())
 			ctx.noteReadOnlyEdit();
 		if (editable && canvasActive && gui::IsKeyPressed(ImGuiKey_Delete))
 		{
 			// Resolve the selection to stable values first, then delete in one edit.
-			const std::vector<flow::Graph::Edge> edgesToRemove = selectedEdges(graph);
-			const std::vector<flow::NodeId> nodesToRemove = selectedNodes();
+			const std::vector<flow::Graph::Edge> edgesToRemove = selectedEdges(graph, ctx.canvas);
+			const std::vector<flow::NodeId> nodesToRemove = selectedNodes(ctx.canvas);
 			if (flow::edit::remove(graph, nodesToRemove, edgesToRemove))
 			{
-				// Drop imnodes' now-stale selection: link ids are edge indices, which
-				// shift once an edge is removed, so a leftover selection could later
-				// resolve to the wrong edge.
+				// Drop imnodes' now-stale selection. Its ids resolve to nothing once the objects are
+				// gone (they are never recycled), but imnodes stores a selection as POOL INDICES,
+				// which it frees without pruning — so a leftover entry can later name another node.
 				gui::nodes::ClearLinkSelection();
 				gui::nodes::ClearNodeSelection();
 				edited = true;
@@ -614,7 +594,7 @@ namespace flowview
 					if (gui::MenuItem(key.c_str()))
 					{
 						const flow::NodeId id = flow::edit::addNode(graph, ctx.app->nodeFactory().create(key));
-						gui::nodes::SetNodeScreenSpacePos(static_cast<int>(id.value()), math::Vec2f{mouse.x, mouse.y});
+						gui::nodes::SetNodeScreenSpacePos(ctx.canvas.node(id), math::Vec2f{mouse.x, mouse.y});
 						edited = true;
 					}
 				}

@@ -6,7 +6,7 @@
 #include "../groupnav.h" // enclosingLinkedGroup (Edit Template...)
 #include "../scene.h"	 // nodeCatalog (the Add menu grouping) + buildNewScene
 #include "../session.h"	 // noteGraphPath / saveSession (Open Recent + reopen-on-launch)
-#include "canvasids.h"	 // collectLayout (canvas positions for the saved editor section)
+#include "canvasstate.h" // collectLayout (canvas positions for the saved editor section)
 
 #include <lain/app/application.h>
 #include <lain/data/value.h> // Value (undo/redo snapshot restored via applyRestore)
@@ -270,37 +270,13 @@ namespace flowview
 
 	void MenuBarPane::applyRestore(AppContext& ctx, const data::Value& state)
 	{
-		// Capture the current canvas selection as ORDINALS into the graph's node enumeration, before
-		// the swap. A restore remaps every NodeId, so the old ids are useless afterwards, but the
-		// ordinal is stable for a structure-preserving edit — so a param-drag undo keeps the node
-		// selected (and the Inspector showing it) instead of dropping to nothing. (nodeIds() and the
-		// restored graph's enumeration share an order — both ascend by insertion — so ordinal k is the
-		// same logical node on both sides.)
-		// Stay where the user is: record the active path as ordinals so the restore can return to the
-		// SAME group rather than dumping them at the root, away from the edit they just undid.
-		ctx.pendingPath = pathOrdinals(ctx.app->graph(), ctx.activePath);
-
-		ctx.pendingReselect.clear();
-		const std::vector<flow::NodeId> selected = selectedNodes();
-		if (!selected.empty())
-		{
-			// Ordinals into the ACTIVE graph, not the root: the canvas selection holds the ids of the
-			// level on screen, and ids REPEAT across levels — matching them against the root's list
-			// would silently resolve to whichever root node happened to share a number.
-			flow::Graph& activeGraph = resolvePath(ctx.app->graph(), ctx.activePath);
-			const std::vector<flow::NodeId> ids = activeGraph.nodeIds();
-			for (const flow::NodeId sel : selected)
-			{
-				for (std::size_t i = 0; i < ids.size(); ++i)
-				{
-					if (ids[i] == sel)
-					{
-						ctx.pendingReselect.push_back(i);
-						break;
-					}
-				}
-			}
-		}
+		// Where the user is, and what they had selected — both carried as plain NodeIds. A restore
+		// rebuilds the graph from a document, and a document RESTORES identity (ADR-0011), so the ids
+		// mean the same thing on the far side. That keeps a param-drag undo from dropping the canvas
+		// selection (and with it the selection-driven Inspector), and keeps an undo made INSIDE a
+		// group from ejecting the user to the root, away from the edit they just undid.
+		ctx.pendingPath = ctx.activePath;
+		ctx.pendingReselect = selectedNodes(ctx.canvas);
 
 		// Rebuild from the snapshot and route it through the same deferred-swap path as a load — but
 		// with NO pendingBaseline, so the swap handler keeps the history (the cursor already moved).
@@ -364,7 +340,7 @@ namespace flowview
 	// active graph would overwrite the document with just the group you happened to be inside.)
 	const flow::Graph& MenuBarPane::documentToSave(AppContext& ctx, const flow::Graph& activeGraph)
 	{
-		layoutAt(ctx.layout, ctx.activePath).nodes = collectLayout(activeGraph);
+		layoutAt(ctx.layout, ctx.activePath).nodes = collectLayout(ctx.canvas, activeGraph);
 		return ctx.app->graph();
 	}
 

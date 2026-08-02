@@ -15,11 +15,13 @@ add_library(lain::flow ALIAS flow)
 target_compile_features(flow PUBLIC cxx_std_17)
 target_include_directories(flow PUBLIC include)
 # lain::meta is PUBLIC: node.inl (a header consumers compile when they declare ports)
-# calls lain::meta::typeName<T>(). lain::task is PRIVATE: only the scheduler / Graph
-# .cpp use it; graph.h merely forward-declares task::Executor. No GPU dependency — a
-# node that emits an acm:: handle (and the viewer that previews it) links archimedes.
+# calls lain::meta::typeName<T>(). lain::core is PUBLIC too: types.h names core::Uuid, which
+# IS a NodeId (ADR-0011) — core is std-only, so this adds no dependency weight. lain::task is
+# PRIVATE: only the scheduler / Graph .cpp use it; graph.h merely forward-declares
+# task::Executor. No GPU dependency — a node that emits an acm:: handle (and the viewer that
+# previews it) links archimedes.
 target_link_libraries(flow
-	PUBLIC lain::meta
+	PUBLIC lain::meta lain::core
 	PRIVATE lain::task lain::warnings
 )
 

@@ -13,6 +13,17 @@
 
 namespace lain::flow
 {
+	// The identities of a graph's invariant boundary pair. Handed to the Graph constructor by a
+	// LOADER, so the pair is *born* with the ids the document recorded rather than being re-keyed
+	// afterwards — a NodeId is immutable once its node is admitted (ADR-0011). A null id (or a
+	// second use of the same one) is minted instead, so construction is total: a hand-written or
+	// truncated document that names neither boundary node must still open.
+	struct BoundaryIds
+	{
+		NodeId input;
+		NodeId output;
+	};
+
 	// Owns the nodes and the edges between their ports: a pure data model. Builds
 	// the DAG (add / connect / disconnect) and exposes a dependency-respecting
 	// order. It does not execute — a Scheduler (see scheduler.h) consumes a Graph
@@ -24,19 +35,28 @@ namespace lain::flow
 		// GroupOutputNode, both pinless. A graph with no boundary pair would have no path in or
 		// out, and several would be redundant (one boundary node already grows dynamic pins) — so
 		// the pair is an invariant of the data model, like acyclicity, not editor policy. It is
-		// created here, removeNode refuses to drop either, and add refuses a second.
+		// created here, removeNode refuses to drop either, and add refuses a second. This mints the
+		// pair's ids; the BoundaryIds overload restores saved ones.
 		Graph();
+		explicit Graph(BoundaryIds boundary);
 
 		// Construct a node of type T (must derive from Node) in place; returns its id (or the null
 		// NodeId if the add was refused — see the type-erased overload).
 		template <typename T, typename... Args>
 		NodeId add(Args&&... args);
 
-		// Adopt an already-constructed node (e.g. produced by a factory); returns its
-		// id. The type-erased entry point the template add<T> forwards to. REFUSES (returning the
-		// null NodeId) a second GroupInputNode / GroupOutputNode — the graph already has its pair,
-		// and a loader rebuilding a saved graph adopts that pair rather than adding to it.
+		// Adopt an already-constructed node (e.g. produced by a factory), MINTING its identity;
+		// returns its id. The type-erased entry point the template add<T> forwards to. REFUSES
+		// (returning the null NodeId) a second GroupInputNode / GroupOutputNode — the graph already
+		// has its pair, and a loader rebuilding a saved graph adopts that pair rather than adding
+		// to it.
 		NodeId add(std::unique_ptr<Node> node);
+
+		// Adopt a node with a REQUESTED identity — how a loader restores a saved node *as itself*.
+		// Returns the id actually given, which differs from `requestedId` when that id was null or
+		// already taken: identity is never overwritten, so a duplicate is re-minted and the caller
+		// (which compares the two) reports it. Refuses a second boundary node exactly as above.
+		NodeId add(std::unique_ptr<Node> node, NodeId requestedId);
 
 		// Remove a node and every edge touching it (in or out); returns whether it
 		// existed. Other nodes keep their ids — ids are handles, not positions. REFUSES (returning
@@ -54,9 +74,12 @@ namespace lain::flow
 		std::size_t nodeCount() const { return m_nodes.size(); }
 		bool contains(NodeId id) const { return m_nodes.count(id) != 0; }
 
-		// Every node id, in ascending id order — a stable enumeration of all nodes (unlike
-		// topoOrder, which is dependency order). The order a serializer walks nodes in.
-		std::vector<NodeId> nodeIds() const;
+		// Every node id, in INSERTION order — a stable enumeration of all nodes (unlike topoOrder,
+		// which is dependency order). Kept explicitly, because a uuid's ordering is not a graph
+		// order (see NodeId): the id-keyed map is for lookup, this vector is for order. The order a
+		// serializer walks nodes in, and the order the JSON `nodes` array restores. Invalidated by
+		// add / removeNode, like any container reference.
+		const std::vector<NodeId>& nodeIds() const { return m_order; }
 		Node& node(NodeId id) { return *m_nodes.at(id); }
 		const Node& node(NodeId id) const { return *m_nodes.at(id); }
 
@@ -115,16 +138,22 @@ namespace lain::flow
 		bool reaches(NodeId start, NodeId target) const;
 		// Is `id` one of the two boundary nodes? (Backs the removeNode refusal.)
 		bool isBoundary(NodeId id) const { return id == m_boundaryIn || id == m_boundaryOut; }
-		// Take ownership unconditionally, minting the id — what add() does once it has approved the
-		// node, and the only way the constructor can seat the pair that add() would refuse.
-		NodeId adopt(std::unique_ptr<Node> node);
+		// `requested` if it is usable (non-null and not already taken), else a freshly minted id.
+		// The one place identity is decided, so "null means mint" and "a duplicate is re-minted"
+		// are the same rule for the constructor and for both add() overloads.
+		NodeId usableId(NodeId requested) const;
+		// Take ownership unconditionally at `id` — what add() does once it has approved the node,
+		// and the only way the constructor can seat the pair that add() would refuse.
+		NodeId adopt(std::unique_ptr<Node> node, NodeId id);
 
 		// Nodes keyed by id, not stored by position — an id outlives the removal of
-		// other nodes. Ordered (by the monotonic counter, i.e. insertion order) so
-		// iteration and topo order stay deterministic.
+		// other nodes. Ordered so lookup is logarithmic; iteration order is a uuid order, which
+		// means nothing, so anything order-sensitive reads m_order below.
 		std::map<NodeId, std::unique_ptr<Node>> m_nodes;
-		NodeId m_nextId{1}; // 0 is the reserved sentinel; real ids start at 1
-		// The interface pair, minted by the constructor. Held as ids so the accessors are a lookup
+		// Insertion order, maintained alongside the keyed owner: identity lookup and node order are
+		// separate concerns, and a uuid supplies only the first (ADR-0011).
+		std::vector<NodeId> m_order;
+		// The interface pair, seated by the constructor. Held as ids so the accessors are a lookup
 		// rather than an RTTI scan. (A moved-from Graph keeps these ids with no nodes behind them —
 		// as for any moved-from object, only destruction and assignment are valid on it.)
 		NodeId m_boundaryIn;

@@ -22,6 +22,7 @@ using lain::data::Value;
 using lain::flow::Connection;
 using lain::flow::Graph;
 using lain::flow::GroupInputNode;
+using lain::flow::GroupOutputNode;
 using lain::flow::MergeNode;
 using lain::flow::Node;
 using lain::flow::NodeId;
@@ -49,10 +50,13 @@ public:
 	void compute() override {}
 };
 
+// The boundary PAIR is registered because every Graph has one: a factory that cannot name a node
+// writes a document without it, which the loader then reports as a missing interface.
 static Factory<Node> boundaryFactory()
 {
 	Factory<Node> factory;
 	factory.registerType<GroupInputNode>("groupInput");
+	factory.registerType<GroupOutputNode>("groupOutput");
 	factory.registerType<IntSink>("sink");
 	return factory;
 }
@@ -100,6 +104,8 @@ TEST_CASE("variadic Merge/Select round-trip: dynamic branches replay, the static
 	// double-add it on load. Port::isDynamic is what keeps the static selector out of the replay.
 	lain::flow::registerPortType<int>("Int");
 	Factory<Node> factory;
+	factory.registerType<GroupInputNode>("groupInput");
+	factory.registerType<GroupOutputNode>("groupOutput");
 	factory.registerType<MergeNode<int>>("merge");
 	factory.registerType<SelectNode<int>>("select");
 	const ValueCodecs codecs;

@@ -186,13 +186,67 @@ that **keeps the canvas selection across an undo/redo** (selected nodes captured
 `nodeIds()` — stable across the load's fresh-id remap — and re-selected after the swap; New/Open still
 clear, since they carry a `pendingBaseline`).
 
+### Update 2026-08-02 — M6 step 1 built: `core::Uuid`, UUID `NodeId`, schema v2, `CanvasIds`
+
+**Milestone 6 step 1 is built** (see WORK.md for the landing notes and the three deviations). Node
+identity is now a UUID, the graph document is schema **v2**, and flowview's imnodes boundary is a
+document-lifetime mapping. `ctest` **374/374**, warning-clean, `format-check` clean. **gui-mode has
+not been driven** — every pane's id plumbing changed, so it needs a Metal session.
+
+- **`libs/core/uuid.h`** (`lain::core::Uuid`) — std-only RFC 9562 **v7**: `generate`, a deliberately
+  liberal `parse` (32 hex, either case, hyphens tolerated, no version/variant policing — a pasted
+  `uuidgen` v4 must simply work), canonical `toString`, `shortString`, comparison, `std::hash`.
+  `shortString()` truncates from the **tail**: v7 leads with a millisecond timestamp, so a whole
+  graph's ids share their prefix — the cli dump printed all four example nodes as `[019fc0ab...]`
+  before this was caught. ADR-0011's `[019fbafb…]` illustration is corrected accordingly.
+- **`flow::NodeId` wraps a `Uuid`**, minted at admission and immutable after. `PortId` stays a
+  per-node counter, since `{NodeId, PortId}` is globally unique once `NodeId` is. `flow` now links
+  `lain::core` PUBLIC. `Graph` keeps **insertion order** in its own `vector<NodeId>` beside the
+  id-keyed owner (a uuid order means nothing); `nodeIds()` returns it, and `topoOrder` seeds from it
+  — which reproduces the old ascending-counter order exactly, not merely a deterministic one.
+  New: `Graph{BoundaryIds}` (the invariant pair born with a document's saved ids) and
+  `add(node, requestedId)`; one private `usableId` makes "null means mint" and "a duplicate is
+  re-minted" the same rule, so identity is never overwritten.
+- **Schema v2.** `toValue` writes the node's real uuid — **the canonical `1..N` renumbering on save
+  is gone**, so a node keeps its identity across saves and a diff shows what changed. `fromValue`
+  became a **version router** over the sole v2 body decoder, with a private, deletable-whole
+  `serialize/src/version1.{h,cpp}` migrating a v1 `Value` DOM (ids, edge endpoints, editor keys,
+  recursively through inline bodies, a fresh id map per body). A linked template enters the router
+  independently, so a v1 template under a v2 parent still opens. The body decoder now **returns** a
+  Graph rather than filling one — boundary ids are fixed at construction, so an inline group's inner
+  graph is move-assigned from the load rather than re-keyed. A missing `version` is now **fatal**
+  (guessing "current" on a v1 file drops every node, and a save then writes that over the original).
+- **`IdPolicy::Preserve` / `Mint`** — the plan's "load preserves, paste mints", with today's paste
+  named: a **linked template**. One file may back several linked groups in one document, so a
+  resolved template is instantiated with fresh ids. Nothing is lost — a linked group's interior is
+  never written to the parent, only its source path and interface cache.
+- **flowview `CanvasIds`** (`src/canvasids.{h,cpp}`, owned by `AppContext`) — bidirectional,
+  monotonically allocated, never-recycled `int`s for `NodeId`, pins (`PortAddress` + direction, since
+  a node's first input and first output are both `PortId{1}`) and edges (an edge *is* its destination
+  `PortAddress`). `pinId` / `decodePin` / edge-index link ids / `NodeId`→`int` casts are all gone;
+  `panes/canvasids` became `panes/canvasstate` (the imnodes-reading half). It resets only when
+  DOCUMENT identity changes, which is exactly `pendingBaseline`. **The per-navigation position
+  re-seed and selection clear stay** — imnodes destroys an unsubmitted node's data and frees
+  selection-pool indices without pruning them, hazards below the id layer.
+- **Undo's positional identity is retired.** A restore preserves ids, so `groupnav::pathOrdinals` /
+  `pathFromOrdinals` are deleted and `pendingReselect` / `pendingPath` carry plain ids.
+- Verified headlessly: save ⇒ load ⇒ save is still **byte-idempotent** *and* now preserves ids; a
+  hand-written v1 document migrates with params, names, edges and editor blobs intact and re-saves as
+  a stable v2. Two flowview test files are new (`test_canvasids.cpp`) or reworked (`test_groupnav.cpp`
+  lost its ordinal case), plus `libs/core/test/test_uuid.cpp` and
+  `libs/flow/serialize/test/test_identity.cpp`.
+- **Known, accepted:** `restoreGraph` (undo/redo) still passes no `TemplateResolver`, so undoing in a
+  document containing a linked group leaves that group unresolved. Pre-existing, unrelated to
+  identity, and it wants the document directory — worth fixing when step 5 touches these panes.
+
 ### Update 2026-08-01 — M6 designed: definition & evaluation (nothing built yet)
 
 A `GraphId` was added to fix a preview-cache bug, then **reverted** on review: it patched an ambiguous
 key by adding a scoping field, and put process-unique runtime identity into core's vocabulary to serve
 a UI concern. The pushback — *"this feels like you are trying too hard to avoid anything having a
 unique identifier… perhaps a symptom of keeping structure/data mixed with live state"* — was right, and
-grilling it produced a milestone rather than a patch. **Nothing is built; see WORK.md's Milestone 6.**
+grilling it produced a milestone rather than a patch. **See WORK.md's Milestone 6** — this section is
+the design; step 1 has since been built (see the 2026-08-02 update above).
 
 - **[ADR-0011](docs/adr/0011-node-identity-is-a-uuid.md)** — `NodeId` wraps a `core::Uuid` (RFC 9562
   **v7**), minted at creation; `PortId` stays a per-node counter. UUID rather than 64-bit random because

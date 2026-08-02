@@ -65,16 +65,6 @@ namespace flowview
 	// syncGroupPorts is idempotent and proportional to the pin count, so a no-op pass costs nothing.
 	bool syncPathGroups(lain::flow::Graph& root, const GraphPath& path);
 
-	// The active path expressed as ORDINALS into each level's node enumeration, and back again. A
-	// document restore (undo/redo) rebuilds the graph with FRESH NodeIds, so a path of ids is
-	// meaningless afterwards — but the ordinal is stable across a structure-preserving edit, because
-	// both the old and new graphs enumerate in insertion order. This is the same trick the canvas
-	// selection uses, applied one level at a time so it works at any depth.
-	std::vector<std::size_t> pathOrdinals(lain::flow::Graph& root, const GraphPath& path);
-	// Tolerant, like resolvePath: an ordinal that is out of range, or names a node that is no longer a
-	// group, ends the walk — so a restore that really did remove the group lands on its parent.
-	GraphPath pathFromOrdinals(lain::flow::Graph& root, const std::vector<std::size_t>& ordinals);
-
 	// How many linked groups anywhere in `root` (at any depth) are built from `source` — the blast
 	// radius of editing that template, which the Edit affordance states before you commit to it.
 	int countLinkedInstances(lain::flow::Graph& root, const std::string& source);

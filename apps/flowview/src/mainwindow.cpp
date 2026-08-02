@@ -1,9 +1,9 @@
 #include "mainwindow.h"
 
 #include "flowviewapp.h"
-#include "graphio.h"		 // snapshotGraph (undo snapshots)
-#include "panes/canvasids.h" // collectLayout (canvas positions for a snapshot)
-#include "session.h"		 // loadSession / saveSession (reopen the last graph, restore the dialog folder)
+#include "graphio.h"		   // snapshotGraph (undo snapshots)
+#include "panes/canvasstate.h" // collectLayout (canvas positions for a snapshot)
+#include "session.h"		   // loadSession / saveSession (reopen the last graph, restore the dialog folder)
 
 #include <lain/app/application.h>
 #include <lain/app/window.h>
@@ -169,7 +169,7 @@ namespace flowview
 		// imnodes only knows about the level on screen, so every other level keeps the positions
 		// captured when it was last shown — which is why the tree is kept here rather than read from
 		// imnodes on demand.
-		layoutAt(m_ctx.layout, drawnPath).nodes = collectLayout(graph);
+		layoutAt(m_ctx.layout, drawnPath).nodes = collectLayout(m_ctx.canvas, graph);
 
 		// A snapshot of the current document (structure + params + names + layout), computed only when
 		// needed. The graph is always the ROOT — a snapshot is the whole document, not the level in view.
@@ -199,38 +199,42 @@ namespace flowview
 			m_ctx.layout = std::move(m_ctx.pendingLayout);
 			m_ctx.pendingLayout = {};
 
-			// Where to point the panes afterwards. A swap remaps every NodeId, so a path of ids can't
-			// simply carry over — but an UNDO should leave the user where they were, looking at what
-			// they just undid, not eject them to the root. pendingPath (ordinals, captured before the
-			// restore) is how the same level is found again in the rebuilt graph; New/Open carry none,
-			// because there the document itself changed and the root is the honest place to land.
+			// Where to point the panes afterwards. An UNDO should leave the user where they were,
+			// looking at what they just undid, not eject them to the root — and since a restore
+			// preserves node ids, the path it captured still names the same groups. resolvePath is
+			// tolerant, so an undo that really did remove the group lands on its parent. New/Open
+			// carry no path, because there the document itself changed and the root is the honest
+			// place to land.
 			// Assigned directly rather than through navigateTo: onGraphReplaced has already asked for
 			// the re-seed and cleared the selection, and raising pathChanged would clear the selection
 			// AGAIN next frame — wiping the reselect applied just below.
-			m_ctx.activePath = m_ctx.pendingPath ? pathFromOrdinals(appDelegate.graph(), *m_ctx.pendingPath) : GraphPath{};
+			m_ctx.activePath = m_ctx.pendingPath.value_or(GraphPath{});
 			m_ctx.pendingPath.reset();
 
 			// A New/Open carries a fresh baseline (the swap resets the history — undo doesn't cross it);
 			// an Undo/Redo restore carries none, so the existing history (its cursor already moved) stands.
+			// The baseline's presence is also exactly "document identity changed", which is the one
+			// thing that retires the canvas id mapping: an edit, a navigation and an identity-preserving
+			// restore must all KEEP it, or imnodes' per-object state would scatter.
 			if (m_ctx.pendingBaseline)
 			{
+				m_ctx.canvas.reset();
 				m_ctx.undo.reset(std::move(*m_ctx.pendingBaseline));
 				m_ctx.pendingBaseline.reset();
 			}
 			else
 			{
-				// An Undo/Redo restore: re-select the nodes that were selected before it (by ordinal,
-				// mapped onto the remapped ids), so a param-drag undo doesn't drop the selection — and
-				// the selection-driven Inspector keeps showing the node. onGraphReplaced cleared the
-				// selection just above; this puts it back.
-				// Ordinals into the ACTIVE graph — the level the selection was made on, which is where
-				// the path above has just returned us. (Against the root they would resolve to whatever
-				// node happened to share a number, since ids repeat across levels.)
-				const std::vector<flow::NodeId> ids = resolvePath(appDelegate.graph(), m_ctx.activePath).nodeIds();
-				for (const std::size_t ordinal : m_ctx.pendingReselect)
+				// An Undo/Redo restore: re-select the nodes that were selected before it, so a
+				// param-drag undo doesn't drop the selection — and the selection-driven Inspector keeps
+				// showing the node. onGraphReplaced cleared the selection just above; this puts it back.
+				// The ids came through the restore unchanged, so a node that survived the edit is
+				// re-selected and one that did not is simply absent. resolvePath also truncates a
+				// path whose group the undo removed, so the panes land on its parent.
+				flow::Graph& active = resolvePath(appDelegate.graph(), m_ctx.activePath);
+				for (const flow::NodeId id : m_ctx.pendingReselect)
 				{
-					if (ordinal < ids.size())
-						gui::nodes::SelectNode(static_cast<int>(ids[ordinal].value()));
+					if (active.contains(id))
+						gui::nodes::SelectNode(m_ctx.canvas.node(id));
 				}
 			}
 			m_ctx.pendingReselect.clear();

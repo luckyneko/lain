@@ -1,18 +1,20 @@
 #include "lain/flow/serialize/serialize.h"
 
+#include "version1.h" // the v1 -> v2 DOM migrator (private; deletable whole when v1 goes)
+
+#include <lain/core/uuid.h>				// parsing a node's stored identity
 #include <lain/flow/edit.h>				// syncGroupPorts — a loaded group re-derives its ports
 #include <lain/flow/group.h>			// GroupNode / LinkedGroupNode — the recursion's subject
 #include <lain/flow/porttyperegistry.h> // addPortOfType / portTypeKey (+ DynamicPortsNode)
 #include <lain/log/log.h>
 #include <lain/meta/enums.h>
 
-#include <charconv>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
-#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -99,11 +101,15 @@ namespace lain::flow::serialize
 		return out;
 	}
 
-	static data::Value nodeToValue(const Node& node, std::int64_t fileId, const std::string& kind, const ValueCodecs& codecs,
+	static data::Value nodeToValue(const Node& node, const std::string& kind, const ValueCodecs& codecs,
 								   const core::Factory<Node>& factory, const EditorTree* subtree)
 	{
 		data::Value out = data::Value::object();
-		out.set("id", data::Value(fileId));
+		// The node's REAL identity, canonical lowercase (ADR-0011). No renumbering on save, so a
+		// node keeps its id across saves and a diff shows what actually changed. A string rather
+		// than a number because 128 bits do not survive a JavaScript-based reader, and 36
+		// characters read better in a diff than a 19-digit decimal would.
+		out.set("id", data::Value(node.id().toString()));
 		out.set("kind", data::Value(kind));
 		out.set("name", data::Value(node.name())); // the node's title — user-editable, so it round-trips
 
@@ -163,10 +169,11 @@ namespace lain::flow::serialize
 
 	static data::Value bodyToValue(const Graph& graph, const core::Factory<Node>& factory, const ValueCodecs& codecs, const EditorTree& editor)
 	{
-		// Assign dense, canonical file ids (1..N) in id order — so a file we write is canonical and
-		// round-trips byte-identically.
-		std::map<NodeId, std::int64_t> fileId;
-		std::int64_t next = 1;
+		// Walked in the graph's INSERTION order, and the array carries that order — which is why no
+		// separate `order` field is needed and why a pasted id sorting oddly among the others has no
+		// effect on the document. `serialized` is the set that made it into the file, so an edge or
+		// editor blob whose node was skipped is skipped with it.
+		std::set<NodeId> serialized;
 
 		data::Value nodes = data::Value::array();
 		for (const NodeId id : graph.nodeIds())
@@ -175,18 +182,15 @@ namespace lain::flow::serialize
 			const std::string kind = factory.keyOf(node);
 			if (kind.empty())
 				continue; // unregistered node type — can't name it; skip (best-effort save)
-			fileId[id] = next;
+			serialized.insert(id);
 			const auto subtree = editor.groups.find(id);
-			nodes.push(nodeToValue(node, next, kind, codecs, factory, subtree == editor.groups.end() ? nullptr : &subtree->second));
-			++next;
+			nodes.push(nodeToValue(node, kind, codecs, factory, subtree == editor.groups.end() ? nullptr : &subtree->second));
 		}
 
 		data::Value edges = data::Value::array();
 		for (const Graph::Edge& edge : graph.edges())
 		{
-			const auto from = fileId.find(edge.from.node);
-			const auto to = fileId.find(edge.to.node);
-			if (from == fileId.end() || to == fileId.end())
+			if (serialized.count(edge.from.node) == 0 || serialized.count(edge.to.node) == 0)
 				continue; // an endpoint node was skipped
 			const Port* fromPort = graph.node(edge.from.node).findOutput(edge.from.port);
 			const Port* toPort = graph.node(edge.to.node).findInput(edge.to.port);
@@ -194,10 +198,10 @@ namespace lain::flow::serialize
 				continue;
 
 			data::Value fromRef = data::Value::object();
-			fromRef.set("node", data::Value(from->second));
+			fromRef.set("node", data::Value(edge.from.node.toString()));
 			fromRef.set("port", data::Value(fromPort->name()));
 			data::Value toRef = data::Value::object();
-			toRef.set("node", data::Value(to->second));
+			toRef.set("node", data::Value(edge.to.node.toString()));
 			toRef.set("port", data::Value(toPort->name()));
 
 			data::Value e = data::Value::object();
@@ -206,14 +210,17 @@ namespace lain::flow::serialize
 			edges.push(std::move(e));
 		}
 
-		// Editor section: the adapter's per-node blobs, keyed by FILE id (so it survives the load
-		// remap). Only nodes that were serialised (in fileId) and have a non-null blob appear.
+		// Editor section: the adapter's per-node blobs, keyed by the node's id — the same key the
+		// nodes array uses, so a load hands them straight back. Only nodes that were serialised and
+		// have a non-null blob appear. Emitted in node order, so the section is diff-clean.
 		data::Value editorSection = data::Value::object();
-		for (const auto& [liveId, fid] : fileId)
+		for (const NodeId id : graph.nodeIds())
 		{
-			const auto it = editor.nodes.find(liveId);
+			if (serialized.count(id) == 0)
+				continue;
+			const auto it = editor.nodes.find(id);
 			if (it != editor.nodes.end() && !it->second.isNull())
-				editorSection.set(std::to_string(fid), it->second);
+				editorSection.set(id.toString(), it->second);
 		}
 
 		data::Value body = data::Value::object();
@@ -271,18 +278,25 @@ namespace lain::flow::serialize
 		}
 	}
 
-	// Resolve a `{ node, port }` reference (fileId + port name) to a live PortAddress, or nullopt.
+	// The id AS WRITTEN in the document mapped to the id the node actually got. Almost always the
+	// same string, since load preserves identity — but not when a boundary node was adopted onto the
+	// graph's own pair, when a duplicate was re-minted, when the id was unreadable, or when the body
+	// is a template being INSTANTIATED as a copy. Keyed by the raw text so a hand-written document
+	// that names its nodes "a" / "b" still wires up.
+	using IdRemap = std::map<std::string, NodeId>;
+
+	// Resolve a `{ node, port }` reference (node id + port name) to a live PortAddress, or nullopt.
 	static std::optional<PortAddress> resolveEndpoint(const data::Value& ref, Port::Direction direction,
-													  Graph& graph, const std::map<std::int64_t, NodeId>& remap)
+													  Graph& graph, const IdRemap& remap)
 	{
 		const data::Value* nodeRef = ref.find("node");
 		const data::Value* portRef = ref.find("port");
-		const auto fileId = nodeRef ? asInteger(*nodeRef) : std::nullopt;
+		const std::string* nodeId = nodeRef ? nodeRef->asString() : nullptr;
 		const std::string* portName = portRef ? portRef->asString() : nullptr;
-		if (!fileId || !portName)
+		if (!nodeId || !portName)
 			return std::nullopt;
 
-		const auto live = remap.find(*fileId);
+		const auto live = remap.find(*nodeId);
 		if (live == remap.end())
 			return std::nullopt; // the referenced node was skipped
 
@@ -314,7 +328,17 @@ namespace lain::flow::serialize
 		}
 	};
 
-	static void loadBody(const data::Value& body, Graph& graph, EditorTree& editor, LoadContext& ctx);
+	// What a body does with the ids it reads (ADR-0011: "load preserves identity; paste mints it").
+	enum class IdPolicy
+	{
+		Preserve, // OPENING a document: its nodes come back as themselves, so undo, the active path
+				  // and the canvas selection survive a rebuild
+		Mint, // INSTANTIATING a template as a copy: the same file may back several linked groups
+			  // in one document, and preserving would make that a guaranteed duplicate
+	};
+
+	static Graph loadBody(const data::Value& body, EditorTree& editor, LoadContext& ctx, IdPolicy policy);
+	static Graph loadDocument(const data::Value& document, EditorTree& editor, LoadContext& ctx, IdPolicy policy);
 
 	// The pins a linked group's template actually exposes, as PinSpecs — what the cached interface is
 	// rectified against.
@@ -424,7 +448,13 @@ namespace lain::flow::serialize
 		// other than the arrangement the template author made would be a worse view of it — and there
 		// is no divergence to worry about, because nothing here can edit it. It lands in this group's
 		// subtree of the parent's layout, so an unresolved link still remembers where things sat.
-		loadBody(resolved->document, linked.inner(), editor, ctx);
+		//
+		// A template is a DOCUMENT in its own right, so it enters the version router rather than the
+		// body decoder — a v1 template linked from a v2 parent must still open. And its nodes are
+		// INSTANTIATED, not restored: one template may back several linked groups in one document,
+		// so preserving its ids would make a duplicate certain rather than unlikely. Nothing is lost
+		// — a linked group's interior is never written to the parent, only its source + interface.
+		linked.inner() = loadDocument(resolved->document, editor, ctx, IdPolicy::Mint);
 		ctx.resolving.erase(resolved->key);
 		linked.setResolved(true);
 
@@ -440,28 +470,66 @@ namespace lain::flow::serialize
 	{
 		LoadResult result;
 		LoadContext ctx{factory, codecs, resolver, result.issues, {}};
-
-		// Version gate: a too-new document can't be half-understood -> fatal (empty graph).
-		if (const data::Value* versionV = document.find("version"))
-		{
-			if (const auto version = asInteger(*versionV); version && *version > kFormatVersion)
-			{
-				ctx.error("document version " + std::to_string(*version) + " is newer than supported " + std::to_string(kFormatVersion));
-				return result;
-			}
-		}
-		else
-		{
-			ctx.warn("document has no version field — assuming current");
-		}
-
-		loadBody(document, result.graph, result.editor, ctx);
+		result.graph = loadDocument(document, result.editor, ctx, IdPolicy::Preserve);
 		return result;
 	}
 
+	// The VERSION ROUTER: every document — the root and each linked template — enters here, and
+	// exactly one decoder (the current one) ever runs. An older format is handled by translating its
+	// data::Value into the current shape first, so support for it is a self-contained translation
+	// unit that can later be deleted whole rather than a second loader to keep working.
+	Graph loadDocument(const data::Value& document, EditorTree& editor, LoadContext& ctx, IdPolicy policy)
+	{
+		const data::Value* versionV = document.find("version");
+		const auto version = versionV ? asInteger(*versionV) : std::nullopt;
+
+		if (!version)
+		{
+			// Fatal, not a guess. Assuming the current format would read a version-1 file as v2,
+			// find no node whose id is a string, drop every one of them — and then a save would
+			// write that empty result back over the original. A document that does not say what it
+			// is cannot be safely interpreted; one line of JSON fixes a hand-written file.
+			ctx.error("document has no version field — refusing to guess its format");
+			return Graph{};
+		}
+		if (*version == kFormatVersion)
+			return loadBody(document, editor, ctx, policy);
+		if (*version > kFormatVersion)
+		{
+			// A format from the future can't be half-understood — refusing beats loading a
+			// plausible-looking subset and then saving it back over the original.
+			ctx.error("document version " + std::to_string(*version) + " is newer than supported " + std::to_string(kFormatVersion));
+			return Graph{};
+		}
+		if (*version == 1)
+		{
+			ctx.warn("document is version 1 (numeric node ids) — migrated on load; save it to store version " + std::to_string(kFormatVersion) + " identities");
+			return loadBody(detail::migrateVersion1(document), editor, ctx, policy);
+		}
+
+		ctx.error("document version " + std::to_string(*version) + " is not a format this build knows");
+		return Graph{};
+	}
+
+	// One node's header, staged before the Graph exists. Identity is decided at CONSTRUCTION — a
+	// NodeId is immutable once its node is admitted (ADR-0011) — so the boundary pair's saved ids
+	// must be known before the graph they belong to is built. Staging also creates each node, since
+	// "is this the boundary input?" is a question about the class, not about the kind string.
+	struct StagedNode
+	{
+		const data::Value* dom = nullptr; // the node object, re-read once the node is seated
+		std::unique_ptr<Node> node;
+		std::string kind;
+		std::string idText; // the id AS WRITTEN — the remap key edges and editor blobs use
+		NodeId requested;	// parsed and non-nil, else null: "mint one and say so"
+		bool boundaryIn = false;
+		bool boundaryOut = false;
+	};
+
 	// One level of the load: nodes (recursing into groups), then edges, then the editor blobs.
-	// `graph` is filled in place, so a group's inner graph loads through the same path as the root.
-	void loadBody(const data::Value& document, Graph& graph, EditorTree& editor, LoadContext& ctx)
+	// Returns the graph rather than filling one, because its boundary pair is born with the
+	// document's ids — a group's inner graph is move-assigned from this, exactly as the root is.
+	Graph loadBody(const data::Value& document, EditorTree& editor, LoadContext& ctx, IdPolicy policy)
 	{
 		const auto error = [&](std::string msg)
 		{ ctx.error(std::move(msg)); };
@@ -470,19 +538,17 @@ namespace lain::flow::serialize
 		const core::Factory<Node>& factory = ctx.factory;
 		const ValueCodecs& codecs = ctx.codecs;
 
-		// Nodes: create by kind (fresh ids), read params. Build the fileId -> live NodeId remap.
-		std::map<std::int64_t, NodeId> remap;
-		bool adoptedInput = false; // the document's boundary pair maps onto the graph's own (below)
-		bool adoptedOutput = false;
+		// --- stage: read every node header and create the node, deciding nothing yet ---
+		std::vector<StagedNode> staged;
 		if (const data::Value* nodes = document.find("nodes"); nodes && nodes->asArray())
 		{
 			for (const data::Value& nodeV : *nodes->asArray())
 			{
 				const data::Value* idV = nodeV.find("id");
 				const data::Value* kindV = nodeV.find("kind");
-				const auto fileId = idV ? asInteger(*idV) : std::nullopt;
+				const std::string* idText = idV ? idV->asString() : nullptr;
 				const std::string* kind = kindV ? kindV->asString() : nullptr;
-				if (!fileId || !kind)
+				if (!idText || !kind)
 				{
 					warn("node missing id or kind — skipped");
 					continue;
@@ -495,96 +561,166 @@ namespace lain::flow::serialize
 					continue;
 				}
 
-				// Boundary nodes are ADOPTED, not added. Every Graph is constructed with exactly one
-				// GroupInputNode + one GroupOutputNode (the interface invariant), so the document's
-				// pair maps onto the pair that already exists — the graph's is pinless, so the
-				// document's dynamic pins replay onto it exactly as they would onto a fresh node.
-				// Adding would be refused, and this node's edges would be lost with it.
-				NodeId liveId;
-				if (dynamic_cast<const GroupInputNode*>(node.get()) != nullptr)
-				{
-					if (adoptedInput)
-						warn("document has a second GroupInput — merged into the graph's own");
-					adoptedInput = true;
-					liveId = graph.boundaryInputNode().id();
-				}
-				else if (dynamic_cast<const GroupOutputNode*>(node.get()) != nullptr)
-				{
-					if (adoptedOutput)
-						warn("document has a second GroupOutput — merged into the graph's own");
-					adoptedOutput = true;
-					liveId = graph.boundaryOutputNode().id();
-				}
+				StagedNode entry;
+				entry.dom = &nodeV;
+				entry.kind = *kind;
+				entry.idText = *idText;
+				// The nil uuid and unreadable text amount to the same thing — the document names no
+				// identity — so one is minted and the reader is told which case it was. Edges still
+				// resolve either way: the remap is keyed by the text as written, not by a uuid.
+				const auto uuid = core::Uuid::parse(*idText);
+				if (uuid && !uuid->isNil())
+					entry.requested = NodeId{*uuid};
+				else if (uuid)
+					warn("node id is the nil uuid — a fresh identity is minted for it");
 				else
-				{
-					liveId = graph.add(std::move(node));
-				}
-
-				if (liveId == NodeId{})
-				{
-					error("node of kind \"" + *kind + "\" was refused by the graph — node and its edges skipped");
-					continue;
-				}
-				remap[*fileId] = liveId;
-				Node& created = graph.node(liveId);
-
-				// A user-chosen title (Node::setName) — display only, so an absent/blank one simply
-				// leaves the name the node's constructor gave it.
-				if (const data::Value* nameV = nodeV.find("name"))
-				{
-					if (const std::string* name = nameV->asString(); name && !name->empty())
-						created.setName(*name);
-				}
-
-				// Replay dynamic pins BEFORE edges, so an edge addressing one resolves.
-				if (const data::Value* pins = nodeV.find("dynamicPins"))
-				{
-					auto* dynamic = dynamic_cast<DynamicPortsNode*>(&created);
-					const data::Value::Array* arr = pins->asArray();
-					if (dynamic && arr)
-					{
-						for (const data::Value& pinV : *arr)
-						{
-							const data::Value* nameV = pinV.find("name");
-							const data::Value* typeV = pinV.find("type");
-							const std::string* pinName = nameV ? nameV->asString() : nullptr;
-							const std::string* typeKey = typeV ? typeV->asString() : nullptr;
-							if (!pinName || !typeKey)
-							{
-								warn("dynamic pin missing name or type — skipped");
-								continue;
-							}
-							if (addPortOfType(*dynamic, *typeKey, *pinName) == PortId{})
-								warn("dynamic pin \"" + *pinName + "\" (type \"" + *typeKey + "\") could not be added — skipped");
-						}
-					}
-					else if (!dynamic)
-					{
-						warn("node \"" + created.name() + "\" has dynamicPins but is not a dynamic-ports node — ignored");
-					}
-				}
-
-				if (const data::Value* params = nodeV.find("params"))
-					readParams(created, *params, codecs, ctx.issues);
-
-				// A group node: rebuild what it CONTAINS, then re-derive its own ports from that
-				// inner boundary. Both happen before this level's edges are resolved below, which is
-				// what lets an edge addressing one of the group's ports by name find it.
-				if (auto* linked = dynamic_cast<LinkedGroupNode*>(&created))
-				{
-					loadLinkedGroup(*linked, nodeV, editor.groups[liveId], ctx);
-				}
-				else if (auto* group = dynamic_cast<GroupNode*>(&created))
-				{
-					if (const data::Value* innerBody = nodeV.find("graph"))
-						loadBody(*innerBody, group->inner(), editor.groups[liveId], ctx);
-				}
-				if (created.innerGraph() != nullptr)
-					edit::syncGroupPorts(graph, liveId);
+					warn("node id \"" + *idText + "\" is not a uuid — a fresh identity is minted for it");
+				entry.boundaryIn = dynamic_cast<const GroupInputNode*>(node.get()) != nullptr;
+				entry.boundaryOut = dynamic_cast<const GroupOutputNode*>(node.get()) != nullptr;
+				entry.node = std::move(node);
+				staged.push_back(std::move(entry));
 			}
 		}
 
-		// Edges: resolve endpoints by fileId + port name, reconnect through Graph::connect.
+		// The FIRST valid boundary id of each side seats the pair. A document that names neither
+		// (hand-written, truncated) is not an error: the pair is a graph invariant, so the missing
+		// id is minted and reported, and the file still opens.
+		BoundaryIds boundary;
+		bool adoptedInput = false;
+		bool adoptedOutput = false;
+		for (const StagedNode& entry : staged)
+		{
+			if (entry.boundaryIn && !adoptedInput)
+			{
+				boundary.input = entry.requested;
+				adoptedInput = true;
+			}
+			else if (entry.boundaryOut && !adoptedOutput)
+			{
+				boundary.output = entry.requested;
+				adoptedOutput = true;
+			}
+		}
+		if (!adoptedInput)
+			warn("document has no GroupInput node — the graph's own is used (its interface pair is an invariant)");
+		if (!adoptedOutput)
+			warn("document has no GroupOutput node — the graph's own is used (its interface pair is an invariant)");
+
+		// A COPY keeps none of the document's identities: see IdPolicy.
+		Graph graph = (policy == IdPolicy::Preserve) ? Graph{boundary} : Graph{};
+
+		// --- adopt: seat each staged node, in array order, and replay its definition ---
+		IdRemap remap;
+		bool seatedInput = false;
+		bool seatedOutput = false;
+		for (StagedNode& entry : staged)
+		{
+			// Boundary nodes are ADOPTED onto the pair the graph was born with, not added. Their
+			// ids are already the document's (above), the graph's are pinless, so the document's
+			// dynamic pins replay onto them exactly as onto a fresh node. Adding would be refused,
+			// and this node's edges lost with it. A SECOND of either is reported and skipped rather
+			// than merged, which would silently give two documents' pins to one node.
+			NodeId liveId;
+			if (entry.boundaryIn)
+			{
+				if (seatedInput)
+				{
+					warn("document has a second GroupInput — skipped (a graph has exactly one)");
+					continue;
+				}
+				seatedInput = true;
+				liveId = graph.boundaryInputNode().id();
+			}
+			else if (entry.boundaryOut)
+			{
+				if (seatedOutput)
+				{
+					warn("document has a second GroupOutput — skipped (a graph has exactly one)");
+					continue;
+				}
+				seatedOutput = true;
+				liveId = graph.boundaryOutputNode().id();
+			}
+			else if (policy == IdPolicy::Preserve)
+			{
+				liveId = graph.add(std::move(entry.node), entry.requested);
+				// add() never overwrites an owner, so a document naming one id twice costs the
+				// second node its identity, not the first node its existence.
+				if (entry.requested != NodeId{} && liveId != entry.requested)
+					warn("duplicate node id " + entry.idText + " — the second node was given a fresh identity");
+			}
+			else
+			{
+				liveId = graph.add(std::move(entry.node));
+			}
+
+			if (liveId == NodeId{})
+			{
+				error("node of kind \"" + entry.kind + "\" was refused by the graph — node and its edges skipped");
+				continue;
+			}
+			remap[entry.idText] = liveId;
+			const data::Value& nodeV = *entry.dom;
+			Node& created = graph.node(liveId);
+
+			// A user-chosen title (Node::setName) — display only, so an absent/blank one simply
+			// leaves the name the node's constructor gave it.
+			if (const data::Value* nameV = nodeV.find("name"))
+			{
+				if (const std::string* name = nameV->asString(); name && !name->empty())
+					created.setName(*name);
+			}
+
+			// Replay dynamic pins BEFORE edges, so an edge addressing one resolves.
+			if (const data::Value* pins = nodeV.find("dynamicPins"))
+			{
+				auto* dynamic = dynamic_cast<DynamicPortsNode*>(&created);
+				const data::Value::Array* arr = pins->asArray();
+				if (dynamic && arr)
+				{
+					for (const data::Value& pinV : *arr)
+					{
+						const data::Value* nameV = pinV.find("name");
+						const data::Value* typeV = pinV.find("type");
+						const std::string* pinName = nameV ? nameV->asString() : nullptr;
+						const std::string* typeKey = typeV ? typeV->asString() : nullptr;
+						if (!pinName || !typeKey)
+						{
+							warn("dynamic pin missing name or type — skipped");
+							continue;
+						}
+						if (addPortOfType(*dynamic, *typeKey, *pinName) == PortId{})
+							warn("dynamic pin \"" + *pinName + "\" (type \"" + *typeKey + "\") could not be added — skipped");
+					}
+				}
+				else if (!dynamic)
+				{
+					warn("node \"" + created.name() + "\" has dynamicPins but is not a dynamic-ports node — ignored");
+				}
+			}
+
+			if (const data::Value* params = nodeV.find("params"))
+				readParams(created, *params, codecs, ctx.issues);
+
+			// A group node: rebuild what it CONTAINS, then re-derive its own ports from that
+			// inner boundary. Both happen before this level's edges are resolved below, which is
+			// what lets an edge addressing one of the group's ports by name find it.
+			if (auto* linked = dynamic_cast<LinkedGroupNode*>(&created))
+			{
+				loadLinkedGroup(*linked, nodeV, editor.groups[liveId], ctx);
+			}
+			else if (auto* group = dynamic_cast<GroupNode*>(&created))
+			{
+				// An INLINE group's body is part of THIS document, so it inherits the id policy
+				// (and, having no version of its own, never re-enters the router).
+				if (const data::Value* innerBody = nodeV.find("graph"))
+					group->inner() = loadBody(*innerBody, editor.groups[liveId], ctx, policy);
+			}
+			if (created.innerGraph() != nullptr)
+				edit::syncGroupPorts(graph, liveId);
+		}
+
+		// Edges: resolve endpoints by node id + port name, reconnect through Graph::connect.
 		if (const data::Value* edges = document.find("edges"); edges && edges->asArray())
 		{
 			for (const data::Value& edgeV : *edges->asArray())
@@ -604,21 +740,20 @@ namespace lain::flow::serialize
 			}
 		}
 
-		// Editor section: re-key each file-id blob to its fresh live NodeId (via the remap) so the
-		// adapter applies it directly. A blob for a node that was skipped is dropped.
+		// Editor section: each blob is keyed by the node id as written, so the remap hands it to the
+		// live node — usually the same id, but not when it was adopted, re-minted or instantiated.
+		// A blob for a node that was skipped is dropped.
 		if (const data::Value* editorSection = document.find("editor"))
 		{
 			if (const data::Value::Object* obj = editorSection->asObject())
 			{
 				for (const auto& [key, blob] : *obj)
 				{
-					std::int64_t fileId = 0;
-					if (std::from_chars(key.data(), key.data() + key.size(), fileId).ec != std::errc{})
-						continue; // a non-numeric editor key — ignore
-					if (const auto live = remap.find(fileId); live != remap.end())
+					if (const auto live = remap.find(key); live != remap.end())
 						editor.nodes[live->second] = blob;
 				}
 			}
 		}
+		return graph;
 	}
 } // namespace lain::flow::serialize

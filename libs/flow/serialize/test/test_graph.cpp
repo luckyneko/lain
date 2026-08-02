@@ -6,6 +6,7 @@
 
 #include <lain/core/factory.h>
 #include <lain/data/value.h>
+#include <lain/flow/boundary.h> // GroupInputNode / GroupOutputNode — the factory registers the pair
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
 #include <lain/io/data/json/register.h>
@@ -61,6 +62,11 @@ public:
 static Factory<Node> nodeFactory()
 {
 	Factory<Node> factory;
+	// The boundary pair is registered because every Graph HAS one: a factory that cannot name it
+	// writes a document with no interface, which the loader then reports. Matching production here
+	// also means these round-trips carry the pair's identity, not just the added nodes'.
+	factory.registerType<lain::flow::GroupInputNode>("groupInput");
+	factory.registerType<lain::flow::GroupOutputNode>("groupOutput");
 	factory.registerType<SourceNode>("source");
 	factory.registerType<SinkNode>("sink");
 	return factory;

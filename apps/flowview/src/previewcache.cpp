@@ -25,7 +25,7 @@ namespace flowview
 			const image::Image& img = p.value().get<image::Image>();
 			if (!img.valid())
 				return;
-			const PinKey key{id.value(), output, p.id()};
+			const PinKey key{id, output, p.id()};
 			live.insert(key);
 			gui::Texture& tex = m_textures[key]; // default-empty on first sight
 			if (!tex.upload(img))				 // re-upload in place when size/format fits...

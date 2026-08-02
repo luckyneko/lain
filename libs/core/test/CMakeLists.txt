@@ -6,6 +6,7 @@ add_executable(test-core
 	test_time.cpp
 	test_version.cpp
 	test_paths.cpp
+	test_uuid.cpp
 )
 
 target_compile_features(test-core PRIVATE cxx_std_17)

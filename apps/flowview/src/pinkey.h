@@ -1,18 +1,20 @@
 #pragma once
 
-#include <lain/flow/types.h> // PortId
-
-#include <cstdint>
+#include <lain/flow/types.h> // NodeId, PortId
 
 namespace flowview
 {
-	// Identifies one port's preview by its stable logical position (node + direction +
-	// index) — a key that survives recomputes but not node deletion. No GPU/ImGui types.
-	// Shared across panes (Inspector / Interface / Preview) and the preview cache, so it
-	// lives on its own rather than inside any one of them.
+	// Identifies one port's preview by its stable logical position (node + direction + port) — a key
+	// that survives recomputes but not node deletion. No GPU/ImGui types. Shared across panes
+	// (Inspector / Interface / Preview) and the preview cache, so it lives on its own rather than
+	// inside any one of them.
+	//
+	// It carries no LEVEL: nothing here says which graph of a nested document the pin belongs to.
+	// That is why the host clears the preview cache on navigation — see MainWindow. (M6 step 5 gives
+	// it an EvalPath, at which point the clear becomes a memory choice rather than a correctness one.)
 	struct PinKey
 	{
-		std::uint64_t node;
+		lain::flow::NodeId node;
 		bool output;
 		lain::flow::PortId port; // stable id, so a preview survives sibling pins changing
 

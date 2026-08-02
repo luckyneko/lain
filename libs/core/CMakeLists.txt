@@ -1,5 +1,6 @@
 # lain::core — foundational, dependency-free types and utilities (std-only).
-# Holds Time now; a wall-clock DateTime and a video Timecode are deferred (WORK.md).
+# Holds Time, Version, Uuid, Factory and the path/platform helpers; a wall-clock DateTime
+# and a video Timecode are deferred (WORK.md).
 # No lain or third-party deps, so any library above may build on it.
 
 add_library(core STATIC
@@ -7,6 +8,7 @@ add_library(core STATIC
 	src/version.cpp
 	src/paths.cpp
 	src/platform.cpp
+	src/uuid.cpp
 )
 add_library(lain::core ALIAS core)
 

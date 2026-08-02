@@ -111,8 +111,10 @@ insertion order explicitly instead.
   exactly the reasoning that would delete these two calls.
 - **The canonical `1..N` renumbering on save goes away.** Files carry real ids, so a node keeps its
   identity across saves rather than being renumbered — better for diffs, at the cost of bigger files.
-- **`[3] Tint` becomes `[019fbafb…] Tint`** in the cli dump and Inspector header; a truncated prefix
-  keeps it scannable.
+- **`[3] Tint` becomes `[…0f2a8e55] Tint`** in the cli dump and Inspector header; a truncated id keeps
+  it scannable. The **tail**, not the prefix this originally said: a v7 id leads with a millisecond
+  timestamp, so every node of one graph shares its first characters and a prefix renders them all
+  alike. The last 32 bits are pure randomness (`core::Uuid::shortString`).
 - **Undo's positional identity retires.** `pathOrdinals` and `pendingReselect` exist only because a
   load mints fresh ids. A restore now preserves them, so the active path and canvas selection travel
   as ids.

@@ -88,47 +88,6 @@ namespace flowview
 		return count;
 	}
 
-	std::vector<std::size_t> pathOrdinals(flow::Graph& root, const GraphPath& path)
-	{
-		std::vector<std::size_t> ordinals;
-		flow::Graph* current = &root;
-		for (const flow::NodeId step : path)
-		{
-			if (!current->contains(step))
-				break;
-			const std::vector<flow::NodeId> ids = current->nodeIds();
-			const auto it = std::find(ids.begin(), ids.end(), step);
-			if (it == ids.end())
-				break;
-			ordinals.push_back(static_cast<std::size_t>(std::distance(ids.begin(), it)));
-
-			flow::Graph* inner = current->node(step).innerGraph();
-			if (inner == nullptr)
-				break;
-			current = inner;
-		}
-		return ordinals;
-	}
-
-	GraphPath pathFromOrdinals(flow::Graph& root, const std::vector<std::size_t>& ordinals)
-	{
-		GraphPath path;
-		flow::Graph* current = &root;
-		for (const std::size_t ordinal : ordinals)
-		{
-			const std::vector<flow::NodeId> ids = current->nodeIds();
-			if (ordinal >= ids.size())
-				break;
-			const flow::NodeId step = ids[ordinal];
-			flow::Graph* inner = current->node(step).innerGraph();
-			if (inner == nullptr)
-				break; // the restored document has something else here — stop at this level
-			path.push_back(step);
-			current = inner;
-		}
-		return path;
-	}
-
 	bool syncPathGroups(flow::Graph& root, const GraphPath& path)
 	{
 		bool changed = false;

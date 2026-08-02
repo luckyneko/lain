@@ -10,9 +10,8 @@
 #include <lain/image/color.h>
 #include <lain/string/format.h>
 
-#include <cstdint>
-#include <set>
-#include <utility>
+#include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace flowview
@@ -25,23 +24,27 @@ namespace flowview
 	static std::vector<Issue> collectIssues(const flow::Graph& graph)
 	{
 		std::vector<Issue> issues;
-		std::set<std::pair<std::uint64_t, std::uint32_t>> connectedIn;
-		std::set<std::pair<std::uint64_t, std::uint32_t>> connectedOut;
+		// The ports an edge touches, by their durable addresses — the same key an edge stores.
+		std::unordered_set<flow::PortAddress> connectedIn;
+		std::unordered_set<flow::PortAddress> connectedOut;
 		for (const flow::Graph::Edge& e : graph.edges())
 		{
-			connectedIn.insert({e.to.node.value(), e.to.port.value()});
-			connectedOut.insert({e.from.node.value(), e.from.port.value()});
+			connectedIn.insert(e.to);
+			connectedOut.insert(e.from);
 		}
 		for (const flow::NodeId id : graph.topoOrder())
 		{
 			const flow::Node& node = graph.node(id);
+			// A row names the node by title plus a truncated id — enough to tell two same-titled
+			// nodes apart, where the full uuid would bury the message.
+			const std::string label = id.shortString();
 			for (flow::PortIndex i = 0; i < node.inputCount(); ++i)
 			{
 				const flow::Port& in = node.input(i);
-				if (in.required() && connectedIn.count({id.value(), in.id().value()}) == 0)
+				if (in.required() && connectedIn.count({id, in.id()}) == 0)
 				{
 					issues.push_back({Issue::Severity::Warning,
-									  string::format("{} [{}]: required input '{}' is not connected", node.name(), id.value(), in.name()),
+									  string::format("{} [{}]: required input '{}' is not connected", node.name(), label, in.name()),
 									  id});
 				}
 			}
@@ -50,10 +53,10 @@ namespace flowview
 				for (flow::PortIndex o = 0; o < node.outputCount(); ++o)
 				{
 					const flow::Port& out = node.output(o);
-					if (connectedOut.count({id.value(), out.id().value()}) == 0)
+					if (connectedOut.count({id, out.id()}) == 0)
 					{
 						issues.push_back({Issue::Severity::Info,
-										  string::format("{} [{}]: output '{}' is unused", node.name(), id.value(), out.name()),
+										  string::format("{} [{}]: output '{}' is unused", node.name(), label, out.name()),
 										  id});
 					}
 				}

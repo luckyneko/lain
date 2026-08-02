@@ -6,6 +6,7 @@
 add_library(flow-serialize STATIC
 	src/valuecodecs.cpp
 	src/serialize.cpp
+	src/version1.cpp # the v1 -> v2 DOM migrator; delete this line with the format
 )
 add_library(lain::flow::serialize ALIAS flow-serialize)
 

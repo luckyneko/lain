@@ -9,24 +9,46 @@
 namespace lain::flow
 {
 	Graph::Graph()
+		: Graph(BoundaryIds{}) // both null -> both minted
 	{
-		// The interface pair (see graph.h). Minted through the private adopt path, not add(), which
-		// refuses exactly these types once the pair exists.
-		m_boundaryIn = adopt(std::make_unique<GroupInputNode>());
-		m_boundaryOut = adopt(std::make_unique<GroupOutputNode>());
 	}
 
-	NodeId Graph::adopt(std::unique_ptr<Node> node)
+	Graph::Graph(BoundaryIds boundary)
 	{
-		const NodeId id = m_nextId;
-		m_nextId = NodeId{m_nextId.value() + 1};
+		// The interface pair (see graph.h). Seated through the private adopt path, not add(), which
+		// refuses exactly these types once the pair exists. usableId mints what the caller did not
+		// supply, so a loader's missing / duplicated boundary id costs the pair nothing.
+		m_boundaryIn = adopt(std::make_unique<GroupInputNode>(), usableId(boundary.input));
+		m_boundaryOut = adopt(std::make_unique<GroupOutputNode>(), usableId(boundary.output));
+	}
+
+	NodeId Graph::usableId(NodeId requested) const
+	{
+		if (requested != NodeId{} && m_nodes.count(requested) == 0)
+			return requested;
+		// Mint. The loop is for completeness rather than for a case anyone will hit — a fresh uuid
+		// colliding with one of this graph's is ~10^-8 at best — but it makes admission total.
+		NodeId minted = NodeId::generate();
+		while (m_nodes.count(minted) != 0)
+			minted = NodeId::generate();
+		return minted;
+	}
+
+	NodeId Graph::adopt(std::unique_ptr<Node> node, NodeId id)
+	{
 		node->setId(id); // Graph is a friend of Node
 		m_nodes.emplace(id, std::move(node));
+		m_order.push_back(id); // lookup order and node order are separate — see nodeIds()
 		m_topoValid = false;
 		return id;
 	}
 
 	NodeId Graph::add(std::unique_ptr<Node> node)
+	{
+		return add(std::move(node), NodeId{}); // null requested id -> minted
+	}
+
+	NodeId Graph::add(std::unique_ptr<Node> node, NodeId requestedId)
 	{
 		if (!node)
 			return NodeId{};
@@ -39,16 +61,7 @@ namespace lain::flow
 		if (dynamic_cast<const GroupOutputNode*>(node.get()) != nullptr && m_boundaryOut != NodeId{})
 			return NodeId{};
 
-		return adopt(std::move(node));
-	}
-
-	std::vector<NodeId> Graph::nodeIds() const
-	{
-		std::vector<NodeId> ids;
-		ids.reserve(m_nodes.size());
-		for (const auto& entry : m_nodes) // m_nodes is ordered by NodeId, so this is id-ascending
-			ids.push_back(entry.first);
-		return ids;
+		return adopt(std::move(node), usableId(requestedId));
 	}
 
 	bool Graph::removeNode(NodeId id)
@@ -78,6 +91,7 @@ namespace lain::flow
 									 { return e.from.node == id || e.to.node == id; }),
 					  m_edges.end());
 		m_nodes.erase(it);
+		m_order.erase(std::remove(m_order.begin(), m_order.end(), id), m_order.end());
 		m_topoValid = false;
 		return true;
 	}
@@ -188,11 +202,14 @@ namespace lain::flow
 		for (const Edge& e : m_edges)
 			++indegree[e.to.node];
 
+		// Seed from INSERTION order, not from the map: a uuid's order is arbitrary, and topo order
+		// is not cosmetic — it drives serial execution and the canvas's default column layout, so
+		// the same graph must produce the same order every time it is built.
 		std::vector<NodeId> ready;
-		for (const auto& entry : indegree) // ascending id -> deterministic seeding
+		for (const NodeId id : m_order)
 		{
-			if (entry.second == 0)
-				ready.push_back(entry.first);
+			if (indegree[id] == 0)
+				ready.push_back(id);
 		}
 
 		m_topo.clear();

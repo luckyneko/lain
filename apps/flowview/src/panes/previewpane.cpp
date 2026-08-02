@@ -37,8 +37,7 @@ namespace flowview
 
 		// Resolve the targeted port; drop the target if its node/port is gone or no longer a ready image.
 		const PinKey key = *ctx.previewTarget;
-		const flow::NodeId nid{key.node};
-		const flow::Node* node = graph.contains(nid) ? &graph.node(nid) : nullptr;
+		const flow::Node* node = graph.contains(key.node) ? &graph.node(key.node) : nullptr;
 		const flow::Port* port = node != nullptr ? (key.output ? node->findOutput(key.port) : node->findInput(key.port)) : nullptr;
 		const gui::Texture* tex = previews.find(key);
 		if (node == nullptr || port == nullptr || !port->ready() || port->type() != typeid(image::Image) || tex == nullptr)
@@ -51,7 +50,7 @@ namespace flowview
 		// Header: what you are looking at (which node's which pin, and the image size). ASCII only —
 		// the default font has no fancy separators.
 		const image::Image& img = port->value().get<image::Image>();
-		gui::Text("%s [%llu]  |  %s : %s  (%dx%d)", node->name().c_str(), static_cast<unsigned long long>(key.node),
+		gui::Text("%s [%s]  |  %s : %s  (%dx%d)", node->name().c_str(), key.node.shortString().c_str(),
 				  port->name().c_str(), std::string(port->typeName()).c_str(), img.width(), img.height());
 		gui::Separator();
 

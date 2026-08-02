@@ -45,7 +45,13 @@ namespace lain::flow::serialize
 
 	// The document schema version at the root. Bumped only on an incompatible ENCODING change; a
 	// document with a newer version fails to load (a format from the future can't be half-understood).
-	inline constexpr std::int64_t kFormatVersion = 1;
+	// An OLDER one is migrated: fromValue routes a whole document by this field, a private migrator
+	// rewrites its data::Value into the current shape, and the sole decoder then loads that — so
+	// dropping an old version later deletes a translation unit, not a second loader.
+	//
+	//   1 — node ids were per-body integers, renumbered 1..N on every save.
+	//   2 — node ids are uuid strings, preserved across saves (ADR-0011).
+	inline constexpr std::int64_t kFormatVersion = 2;
 
 	// Serialize a graph to a data::Value document { version, nodes, edges, editor }. A node whose type
 	// is not registered in `factory` (no kind), a param whose type has no `codecs` entry, or a dynamic
@@ -54,11 +60,16 @@ namespace lain::flow::serialize
 	// metadata (keyed by live NodeId), embedded under "editor" keyed by file id; pass {} for none.
 	[[nodiscard]] data::Value toValue(const Graph& graph, const core::Factory<Node>& factory, const ValueCodecs& codecs, const EditorTree& editor = {});
 
-	// Rebuild a graph from a document, best-effort. Nodes are created via `factory` (by kind) with
-	// FRESH ids (the file's ids are remapped — so this doubles as subgraph paste), params read via
-	// `codecs`, edges reconnected by port name. Returns the Graph + issues; a too-new version yields
-	// an empty graph + a fatal Error. Accepts a Value straight from toValue or one decoded from JSON
-	// (a positive Int may arrive as UInt — both are read).
+	// Rebuild a graph from a document, best-effort. Nodes are created via `factory` (by kind) and
+	// RESTORED AS THEMSELVES — a load preserves the ids the file recorded, which is what lets undo,
+	// the host's active path and a canvas selection survive a rebuild. Params are read via `codecs`,
+	// edges reconnected by port name. Returns the Graph + issues; a known older version is migrated
+	// (see kFormatVersion), while a missing, unknown or too-new one yields an empty graph + a fatal
+	// Error rather than a guess. Accepts a Value straight from toValue or one decoded from JSON.
+	//
+	// A node whose id is missing, nil or unreadable is given a fresh one and reported; so is the
+	// second node to claim an id already taken — identity is never overwritten. A document lacking
+	// either boundary node gets that one minted, since the pair is a Graph invariant.
 	//
 	// A group node's inner graph is rebuilt recursively — from the embedded body (inline) or from the
 	// document `resolver` returns (linked) — and its own ports are then re-derived by
@@ -66,6 +77,12 @@ namespace lain::flow::serialize
 	// interface: a pin the template no longer has, or one whose type changed, is reported as an issue
 	// rather than quietly taking the parent's edges with it. A template that (transitively) links
 	// itself is refused by canonical key.
+	//
+	// A template's nodes are the one exception to identity preservation: they are INSTANTIATED with
+	// fresh ids, because one template may back several linked groups in one document and preserving
+	// would make a duplicate certain. Nothing is lost — a linked group's interior is never written
+	// to the parent, only its source path and its interface cache. The template is a document in its
+	// own right, so it enters the version router independently of the parent's version.
 	[[nodiscard]] LoadResult fromValue(const data::Value& document, const core::Factory<Node>& factory, const ValueCodecs& codecs,
 									   const TemplateResolver& resolver = {});
 } // namespace lain::flow::serialize

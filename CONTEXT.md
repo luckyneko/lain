@@ -270,6 +270,8 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   one ([ADR-0011](docs/adr/0011-node-identity-is-a-uuid.md)); `PortId` stays a per-node counter,
   since `{NodeId, PortId}` is globally unique once `NodeId` is. Generation is v7, **parsing accepts any
   well-formed UUID** — the id is opaque to us, and a hand-pasted `uuidgen` v4 must simply work.
+  `shortString()` is the display form and truncates from the **tail**: v7 leads with a millisecond
+  timestamp, so a whole graph's ids share their prefix and only the trailing random bits distinguish.
 - **Node order** — insertion order stored explicitly by `Graph`, separately from id-keyed lookup and
   from topological execution order. `nodeIds()` exposes it; add appends, remove erases, and the JSON
   `nodes` array persists it. Topological order seeds from it. UUID comparison never defines any of
@@ -283,10 +285,12 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   identity changes, and never serializes. It removes *cross-level id collisions*, not the
   per-navigation position re-seed and selection clear, which guard hazards inside imnodes itself.
   _Avoid_: casts from NodeId, arithmetic pin encoding, edge-vector indices, per-frame dense remapping.
-- **Load vs paste** — the distinction stable ids make possible, and which today's remapping blurs.
-  **Load preserves identity** (the nodes come back as themselves, which is what lets undo drop its
-  positional ordinals); **paste mints new identity** (a copy is a different recipe that happens to be
-  identical).
+- **Load vs paste** — the distinction stable ids make possible. **Load preserves identity** (the
+  nodes come back as themselves, which is what let undo drop its positional ordinals); **paste mints
+  new identity** (a copy is a different recipe that happens to be identical). The live instance of
+  "paste" is a **linked template**: one file may back several linked groups in one document, so a
+  resolved template is instantiated with fresh ids rather than restored. Nothing is lost, because a
+  linked group's interior is never written to the parent — only its source path and interface cache.
 - **Identity admission** — the only point a Node receives its immutable NodeId. Ordinary
   `Graph::add(node)` mints; v2 load uses `add(node, requestedId)`. Because every Graph is born with its
   boundary pair, the loader stages headers and passes their saved UUIDs to `Graph{BoundaryIds}` before
