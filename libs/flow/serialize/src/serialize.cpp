@@ -82,10 +82,10 @@ namespace lain::flow::serialize
 		if (linked.resolved())
 		{
 			const Graph& inner = linked.inner();
-			const GroupInputNode& boundaryIn = const_cast<Graph&>(inner).boundaryInputNode();
+			const GroupInputNode& boundaryIn = inner.boundaryInputNode();
 			for (std::size_t i = 0; i < boundaryIn.outputCount(); ++i)
 				inputs.push_back(PinSpec{boundaryIn.output(i).name(), portTypeKey(boundaryIn.output(i).type())});
-			const GroupOutputNode& boundaryOut = const_cast<Graph&>(inner).boundaryOutputNode();
+			const GroupOutputNode& boundaryOut = inner.boundaryOutputNode();
 			for (std::size_t i = 0; i < boundaryOut.inputCount(); ++i)
 				outputs.push_back(PinSpec{boundaryOut.input(i).name(), portTypeKey(boundaryOut.input(i).type())});
 		}
@@ -342,12 +342,12 @@ namespace lain::flow::serialize
 
 	// The pins a linked group's template actually exposes, as PinSpecs — what the cached interface is
 	// rectified against.
-	static void currentInterface(Graph& inner, std::vector<PinSpec>& inputs, std::vector<PinSpec>& outputs)
+	static void currentInterface(const Graph& inner, std::vector<PinSpec>& inputs, std::vector<PinSpec>& outputs)
 	{
-		GroupInputNode& boundaryIn = inner.boundaryInputNode();
+		const GroupInputNode& boundaryIn = inner.boundaryInputNode();
 		for (std::size_t i = 0; i < boundaryIn.outputCount(); ++i)
 			inputs.push_back(PinSpec{boundaryIn.output(i).name(), portTypeKey(boundaryIn.output(i).type())});
-		GroupOutputNode& boundaryOut = inner.boundaryOutputNode();
+		const GroupOutputNode& boundaryOut = inner.boundaryOutputNode();
 		for (std::size_t i = 0; i < boundaryOut.inputCount(); ++i)
 			outputs.push_back(PinSpec{boundaryOut.input(i).name(), portTypeKey(boundaryOut.input(i).type())});
 	}

@@ -98,8 +98,12 @@ namespace flowview
 		return flow::serialize::toValue(graph, factory, sceneCodecs(), editor);
 	}
 
-	flow::serialize::LoadResult restoreGraph(const data::Value& document, const core::Factory<flow::Node>& factory)
+	flow::serialize::LoadResult restoreGraph(const data::Value& document, const core::Factory<flow::Node>& factory,
+											 const std::filesystem::path& documentDir)
 	{
-		return flow::serialize::fromValue(document, factory, sceneCodecs());
+		// Same resolver a file load uses (see restoreGraph's header note): a snapshot stores a linked
+		// group as source + interface cache, exactly as the file does, so restoring one has to follow
+		// the link the same way or the group comes back as an empty placeholder.
+		return flow::serialize::fromValue(document, factory, sceneCodecs(), templateResolver(documentDir));
 	}
 } // namespace flowview

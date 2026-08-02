@@ -59,6 +59,15 @@ namespace flowview
 	// Rebuild a graph from a snapshot (or any document Value) — fromValue with sceneCodecs(). A
 	// snapshot came from snapshotGraph, so the result is normally clean; any issues ride in the
 	// LoadResult as usual.
+	//
+	// `documentDir` is the folder the snapshot's document lives in, and LINKED GROUPS need it: their
+	// `source` is stored relative to that document, so without it every linked group restores as an
+	// unresolved placeholder — its interior empties and it stops producing output. Required rather
+	// than defaulted, because that is exactly the bug an easy default invited (an undo silently
+	// emptied every linked group). Pass the parent of the open document's path; empty is legitimate
+	// for an untitled document, where a relative source simply resolves against the working
+	// directory, and an absolute one is unaffected either way.
 	lain::flow::serialize::LoadResult restoreGraph(const lain::data::Value& document,
-												   const lain::core::Factory<lain::flow::Node>& factory);
+												   const lain::core::Factory<lain::flow::Node>& factory,
+												   const std::filesystem::path& documentDir);
 } // namespace flowview

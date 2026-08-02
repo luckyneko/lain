@@ -130,7 +130,7 @@ TEST_CASE("a load restores nodes as themselves", "[flow-serialize][identity]")
 	const NodeId boundaryIn = graph.boundaryInputNode().id();
 	const NodeId boundaryOut = graph.boundaryOutputNode().id();
 
-	LoadResult result = fromValue(toValue(graph, factory, intCodecs()), factory, intCodecs());
+	const LoadResult result = fromValue(toValue(graph, factory, intCodecs()), factory, intCodecs());
 	REQUIRE(result.clean());
 
 	// Every id survives — including the boundary pair's, which the loader seats at construction.
@@ -155,12 +155,12 @@ TEST_CASE("a load preserves identity through nesting", "[flow-serialize][identit
 	const NodeId innerConst = group.inner().add<ConstNode>();
 	const NodeId innerBoundary = group.inner().boundaryOutputNode().id();
 
-	LoadResult result = fromValue(toValue(graph, factory, intCodecs()), factory, intCodecs());
+	const LoadResult result = fromValue(toValue(graph, factory, intCodecs()), factory, intCodecs());
 	REQUIRE(result.clean());
 	REQUIRE(result.graph.contains(groupId));
 
 	// An inline group's body is part of this document, so its nodes come back as themselves too.
-	auto& loaded = static_cast<GroupNode&>(result.graph.node(groupId));
+	const auto& loaded = static_cast<const GroupNode&>(result.graph.node(groupId));
 	REQUIRE(loaded.inner().contains(innerConst));
 	REQUIRE(loaded.inner().boundaryOutputNode().id() == innerBoundary);
 }
@@ -267,7 +267,7 @@ TEST_CASE("a document with no boundary node mints one and reports it", "[flow-se
 	document.set("nodes", Value::array());
 	document.set("edges", Value::array());
 
-	LoadResult result = fromValue(document, factory, intCodecs());
+	const LoadResult result = fromValue(document, factory, intCodecs());
 	REQUIRE_FALSE(result.clean()); // the pair is a graph invariant, so its absence is worth saying
 	// ... but the file still OPENS: a truncated or hand-written document is not a fatal one.
 	REQUIRE(result.graph.nodeCount() == 2);
@@ -292,7 +292,7 @@ TEST_CASE("a second boundary node is reported and skipped, never merged", "[flow
 	nodes.push(duplicate);
 	document.set("nodes", nodes);
 
-	LoadResult result = fromValue(document, factory, intCodecs());
+	const LoadResult result = fromValue(document, factory, intCodecs());
 	REQUIRE_FALSE(result.clean());
 	REQUIRE(result.graph.nodeCount() == 2);											  // the pair, and only the pair
 	REQUIRE(result.graph.boundaryInputNode().id() == graph.boundaryInputNode().id()); // the FIRST id won
@@ -320,7 +320,7 @@ TEST_CASE("two linked groups from one template hold distinct node identities", "
 	const TemplateResolver resolver = [&](const std::string& source) -> std::optional<ResolvedTemplate>
 	{ return ResolvedTemplate{source, templateDocument}; };
 
-	LoadResult result = fromValue(parentDocument, factory, intCodecs(), resolver);
+	const LoadResult result = fromValue(parentDocument, factory, intCodecs(), resolver);
 	REQUIRE(result.clean());
 
 	std::vector<NodeId> instantiated;

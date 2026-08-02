@@ -280,7 +280,8 @@ namespace flowview
 
 		// Rebuild from the snapshot and route it through the same deferred-swap path as a load — but
 		// with NO pendingBaseline, so the swap handler keeps the history (the cursor already moved).
-		flow::serialize::LoadResult result = restoreGraph(state, ctx.app->nodeFactory());
+		// The document's own folder, so a linked group's relative `source` resolves as it did on load.
+		flow::serialize::LoadResult result = restoreGraph(state, ctx.app->nodeFactory(), ctx.currentPath.parent_path());
 		ctx.loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
 		ctx.pendingLayout = std::move(result.editor); // the WHOLE tree: inner levels keep their layout too
 		// NOTE: pendingPath was set at the top of this function and must survive — it is what keeps an

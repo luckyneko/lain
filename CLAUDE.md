@@ -271,9 +271,20 @@ not been driven** — every pane's id plumbing changed, so it needs a Metal sess
   a stable v2. Two flowview test files are new (`test_canvasids.cpp`) or reworked (`test_groupnav.cpp`
   lost its ordinal case), plus `libs/core/test/test_uuid.cpp` and
   `libs/flow/serialize/test/test_identity.cpp`.
-- **Known, accepted:** `restoreGraph` (undo/redo) still passes no `TemplateResolver`, so undoing in a
-  document containing a linked group leaves that group unresolved. Pre-existing, unrelated to
-  identity, and it wants the document directory — worth fixing when step 5 touches these panes.
+- **Found here, FIXED separately (2026-08-02):** `restoreGraph` (the undo/redo path) passed no
+  `TemplateResolver`, so undoing in a document containing a linked group rebuilt it as an unresolved
+  placeholder — the interior emptied and the group stopped producing output. Pre-existing and
+  unrelated to identity. `restoreGraph` now takes the document directory as a **required** parameter
+  (a defaulted one is exactly what invited the omission) and builds the same resolver `loadGraph`
+  uses; `applyRestore` passes `ctx.currentPath.parent_path()`. Nothing warned about it because
+  loading unresolved is a legitimate mode — it is what a headless `flowview list` wants — so the
+  regression test lives in the new `apps/flowview/test/test_graphio.cpp`, which compiles the real
+  `graphio.cpp` and round-trips a snapshot against a template on disk. Verified by reintroducing the
+  bug and watching the test fail. Landed with it: **`Graph::boundaryInputNode` / `boundaryOutputNode`
+  gain const overloads**, which deleted the `const_cast<Graph&>` in `flow::serialize`'s
+  `interfaceToValue` — reading a graph's interface is a const operation, and under ADR-0012 (where
+  `const Graph&` comes to mean *concurrently readable*) casting past it is the wrong habit to leave
+  lying around.
 
 ### Update 2026-08-01 — M6 designed: definition & evaluation (nothing built yet)
 

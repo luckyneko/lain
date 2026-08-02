@@ -285,4 +285,14 @@ namespace lain::flow
 	{
 		return static_cast<GroupOutputNode&>(node(m_boundaryOut));
 	}
+
+	const GroupInputNode& Graph::boundaryInputNode() const
+	{
+		return static_cast<const GroupInputNode&>(node(m_boundaryIn));
+	}
+
+	const GroupOutputNode& Graph::boundaryOutputNode() const
+	{
+		return static_cast<const GroupOutputNode&>(node(m_boundaryOut));
+	}
 } // namespace lain::flow

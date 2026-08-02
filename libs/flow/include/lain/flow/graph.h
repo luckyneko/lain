@@ -129,8 +129,15 @@ namespace lain::flow
 		// add/remove pins), where the flat pin lists above are for a host that just binds. Returned
 		// by reference, never null: the pair is a construction invariant (see the constructor), so
 		// there is always exactly one of each and no caller needs a null check.
+		//
+		// The const overloads matter beyond tidiness: READING a graph's interface (serializing a
+		// linked group's pins, listing a boundary) is a const operation, and without them every such
+		// reader had to const_cast its way in — which under ADR-0012, where `const Graph&` comes to
+		// mean *concurrently readable*, is exactly the wrong habit to leave lying around.
 		GroupInputNode& boundaryInputNode();
 		GroupOutputNode& boundaryOutputNode();
+		const GroupInputNode& boundaryInputNode() const;
+		const GroupOutputNode& boundaryOutputNode() const;
 
 	private:
 		bool valid(NodeId id) const { return m_nodes.count(id) != 0; }
