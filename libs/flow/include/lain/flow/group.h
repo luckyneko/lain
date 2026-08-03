@@ -42,19 +42,10 @@ namespace lain::flow
 		// The scheduler's structural question (see Node::innerGraph): yes, expand me.
 		Graph* innerGraph() override { return &m_inner; }
 
-		// Dirty when this node is, OR when anything inside it is. The inner walk recurses naturally
-		// through nested groups, since an inner group answers this same way.
-		bool dirty() const override
-		{
-			if (Node::dirty())
-				return true;
-			for (const NodeId id : m_inner.nodeIds())
-			{
-				if (m_inner.node(id).dirty())
-					return true;
-			}
-			return false;
-		}
+		// (There is no `dirty()` override any more. A group used to report itself dirty when anything
+		// inside it was — a walk over mutable state on the inner definition. Staleness is now a
+		// per-node version compared against ONE evaluation's record, so "is anything inside stale?"
+		// is a question about the group's CHILD Evaluation, and the scheduler asks it there.)
 
 		// The inner boundary pin an outer port mirrors, or the null PortId if unmapped. Identity is
 		// the PortId pair, NOT the name: renaming an inner pin must keep the outer wiring, which is
@@ -114,7 +105,7 @@ namespace lain::flow
 		// Never called: the scheduler expands a group into its inner steps plus an entry/exit step
 		// pair, so a group is never executed AS a node (ADR-0009). Kept as a no-op rather than an
 		// assert because a group is a perfectly valid inert node outside a scheduler.
-		void compute() override {}
+		void compute(NodeEvaluation&) const override {}
 
 	protected:
 		explicit GroupNode(std::string name)

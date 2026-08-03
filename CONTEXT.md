@@ -231,7 +231,9 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 
 ## Definition and evaluation — the recipe apart from its runtime state
 
-*(M6 — designed, not yet built. [ADR-0012](docs/adr/0012-definition-and-evaluation.md).)*
+*(M6 step 4 — BUILT. [ADR-0012](docs/adr/0012-definition-and-evaluation.md). **EvalPath** below is the
+one term still ahead of the code: an Evaluation is already a tree and a child is already reached by
+`{group NodeId}`, but the host-side coordinate type arrives with step 5.)*
 
 - **Definition** — a graph as a **recipe**: node kinds, params, edges, port declarations, names.
   Represented by `Graph`; execution treats it as const, and only explicit edits change it. Everything
@@ -272,9 +274,12 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   Evaluation forgets all retained state. _Avoid_: `Graph::markAllDirty`, bumping a definition version
   to force one evaluation, a second verb for the host surface.
 - **Boundary handle** — immutable definition metadata for one graph input or output: its
-  `PortAddress`, name and declared type. It carries no Node pointer with mutable values and performs no
-  binding itself. Hosts call `evaluation.bind(BoundaryInput, value)` and
-  `evaluation.value(BoundaryOutput)`; group entry uses the same bind operation on its child Evaluation.
+  `PortAddress`, name and declared type. One type, **`BoundaryPin`** (`BoundaryInput` /
+  `BoundaryOutput` are aliases of it): they differed only in which node pointer they wrapped, and as
+  pure metadata there is nothing left to tell apart. It carries no Node pointer with mutable values
+  and performs no binding itself. Hosts call `evaluation.bind(BoundaryInput, value)` and
+  `evaluation.value(BoundaryOutput)`; group entry uses the same bind operation on its child
+  Evaluation — a graph's interface and a group's interface are one mechanism.
   _Avoid_: `BoundaryInput::setValue`, `GroupInputNode::m_bound`, `GroupOutputNode::value`.
 
 - **Uuid** *(`lain::core`)* — a unique-at-creation identifier: RFC 9562 **v7**, minted with no

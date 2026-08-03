@@ -1,8 +1,16 @@
 #pragma once
 
-// The execution layer for lain::flow. A Scheduler consumes a Graph and evaluates it,
-// so the Graph itself stays a pure data model (nodes + edges + topo) with no notion
-// of *how* it runs. Two run strategies share one pull path:
+// The execution layer for lain::flow. A Scheduler consumes a DEFINITION and updates an
+// EVALUATION — `run(const Graph& definition, Evaluation& evaluation)` — so the Graph stays a pure
+// data model with no notion of *how* it runs and no runtime state of its own (ADR-0012).
+//
+// The definition is `const`, and that means CONCURRENTLY READABLE: several evaluations may run over
+// one definition at the same time (N video streams through one subgraph). What keeps that safe is
+// that every runtime write lands in the evaluation passed in, and that the coordinator prepares all
+// evaluation storage before dispatching any task. Reusing ONE evaluation concurrently is a caller
+// error and fails immediately — see the run lease in evaluation.h.
+//
+// Two run strategies share one pull path:
 //   - SerialScheduler   — single-threaded topo-order run; needs no execution deps.
 //   - ParallelScheduler — lowers the DAG onto an injected (caller-owned) lain::task
 //                         executor for work-stealing parallelism.
@@ -14,6 +22,7 @@
 // inside a task, and inner nodes of two sibling groups interleave freely on the pool.
 // run() plans the dirty closure; evaluate() plans the dirty upstream cone of one node.
 
+#include "lain/flow/evaluation.h" // Session holds an Evaluation::RunLease by value
 #include "lain/flow/types.h"
 
 #include <cstddef>
@@ -37,30 +46,52 @@ namespace lain::flow
 	public:
 		virtual ~Scheduler() = default;
 
-		// Push: evaluate the whole graph — each node fires once its inputs are ready.
-		virtual void run(Graph& graph) = 0;
+		// Push: evaluate the whole graph into `evaluation` — each node fires once its inputs are
+		// ready. Throws std::logic_error if `evaluation` is already being scheduled (see the run
+		// lease); distinct evaluations, including two over this same definition, run concurrently.
+		virtual void run(const Graph& definition, Evaluation& evaluation) = 0;
 
-		// Pull: evaluate just `target`'s upstream subgraph on demand, recomputing only
-		// dirty nodes (a constant stays clean after its first compute; an on-request
-		// source re-marks itself and so refires each pull). Serial for either strategy.
-		void evaluate(Graph& graph, NodeId target);
+		// Pull: evaluate just `target`'s upstream subgraph on demand, recomputing only the nodes
+		// that need it (a constant stays computed after its first run; an on-request source requests
+		// its own recompute and so refires each pull). Serial for either strategy.
+		void evaluate(const Graph& definition, Evaluation& evaluation, NodeId target);
 
 	protected:
-		// One unit of work. A Node step runs a node; the two Group steps cross a group's
-		// boundary — see enterGroup / exitGroup.
+		// The entry ritual EVERY scheduler invocation performs, as one RAII object so a backend
+		// cannot do half of it: take the evaluation's non-blocking run lease (which throws
+		// std::logic_error at once if that evaluation is already being scheduled), then prepare its
+		// storage against the definition. After this, every node and every declared port has its
+		// slot, so a worker task only reads and writes entries that already exist.
+		class Session
+		{
+		public:
+			Session(const Graph& definition, Evaluation& evaluation)
+				: m_lease(evaluation)
+			{
+				evaluation.prepare(definition);
+			}
+
+		private:
+			Evaluation::RunLease m_lease; // released when the run unwinds, however it unwinds
+		};
+
+		// One unit of work, addressed by DEFINITION plus EVALUATION plus node — the same shared
+		// definition may appear in a plan several times with different evaluation pointers (a map
+		// runs one subgraph N ways), so neither alone names the work.
 		struct Step
 		{
 			enum class Kind
 			{
-				Node,		// run graph->node(node)
-				GroupEntry, // copy the group's outer inputs into its inner GroupInputNode
-				GroupExit,	// copy its inner GroupOutputNode's values out to its outer outputs
+				Node,		// run definition->node(node) into *evaluation
+				GroupEntry, // publish the group's outer inputs into its child evaluation's boundary
+				GroupExit,	// copy the child's delivered outputs out onto the group's own output ports
 			};
 
 			Kind kind = Kind::Node;
-			Graph* graph = nullptr; // the graph `node` lives in — NOT necessarily the top-level one
-			NodeId node;			// the node to run, or the group whose boundary is being crossed
-			bool publish = false;	// GroupEntry only: whether the inputs actually need republishing
+			const Graph* definition = nullptr; // the graph `node` lives in — NOT necessarily the top level
+			Evaluation* evaluation = nullptr;  // the evaluation THAT graph's values live in
+			NodeId node;					   // the node to run, or the group whose boundary is being crossed
+			bool publish = false;			   // GroupEntry only: whether the inputs actually need republishing
 		};
 
 		// A whole nested graph flattened into one task DAG: steps in a valid serial order, plus
@@ -71,44 +102,52 @@ namespace lain::flow
 			std::vector<std::pair<std::size_t, std::size_t>> edges; // (predecessor, successor)
 		};
 
-		// The plan for a full run: the DIRTY CLOSURE at every level — every dirty node plus
-		// everything downstream of one, with each group expanded in place.
-		Plan buildRunPlan(Graph& graph);
+		// The plan for a full run: the STALE CLOSURE at every level — every node the evaluation says
+		// needs recomputing plus everything downstream of one, with each group expanded in place.
+		Plan buildRunPlan(const Graph& definition, Evaluation& evaluation);
 
-		// The plan for a pull: the dirty nodes in `target`'s upstream cone. Deliberately NOT the
-		// dirty closure — a clean node keeps its cached value even if something upstream recomputes,
-		// which is the long-standing pull semantic.
-		Plan buildEvalPlan(Graph& graph, NodeId target);
+		// The plan for a pull: the stale nodes in `target`'s upstream cone. Deliberately NOT the
+		// closure — a node that does not need recomputing keeps its value even if something upstream
+		// does, which is the long-standing pull semantic.
+		Plan buildEvalPlan(const Graph& definition, Evaluation& evaluation, NodeId target);
 
 		// Execute one step. The single dispatch point, so both strategies handle groups identically.
 		void runStep(const Step& step);
 
-		// Evaluate one node: clear dirty, populate inputs, then either run compute() (READY — every
-		// required input has a value) or SUPPRESS it (a required input is empty → clear its outputs,
-		// don't compute). ADR-0007.
-		void runNode(Graph& graph, NodeId id);
+		// Evaluate one node: populate its inputs, then either compute() (READY — every required
+		// input has a value) or SUPPRESS it (a required input is empty → clear its outputs, don't
+		// compute), and record the definition version it was computed at. ADR-0007.
+		void runNode(const Graph& definition, Evaluation& evaluation, NodeId id);
 
-		// Copy each connected upstream output into `id`'s matching input, in place —
-		// the source keeps its value, which is what leaves every stage inspectable.
-		void populateInputs(Graph& graph, NodeId id);
+		// Copy each connected upstream output into `id`'s matching input. The value is SHARED, not
+		// deep-copied — the source keeps it, which is what leaves every stage inspectable.
+		void populateInputs(const Graph& definition, Evaluation& evaluation, NodeId id);
 
 	private:
-		// The nodes a run must recompute at ONE level, in topo order: the dirty closure.
-		std::vector<NodeId> runOrder(Graph& graph);
+		// The nodes a run must recompute at ONE level, in topo order: the stale closure. Takes both,
+		// because staleness is a comparison BETWEEN them — the definition's per-node version against
+		// what this evaluation recorded.
+		std::vector<NodeId> runOrder(const Graph& definition, Evaluation& evaluation);
+
+		// Whether `id` is stale in `evaluation`, INCLUDING anything inside it if it contains a graph
+		// — the recursive question a group used to answer with a virtual dirty() over mutable state
+		// on its inner definition. It is now asked of the matching child Evaluation.
+		static bool stale(const Graph& definition, Evaluation& evaluation, NodeId id);
 
 		// Emit `order`'s nodes (already topo-ordered and selected) into `plan`, recursing into any
 		// node that contains a graph, and wire this level's edges between the resulting steps.
-		void expand(Graph& graph, const std::vector<NodeId>& order, Plan& plan);
+		void expand(const Graph& definition, Evaluation& evaluation, const std::vector<NodeId>& order, Plan& plan);
 
-		// Publish the group's outer input values into its inner GroupInputNode (when `publish`),
-		// after populating those outer inputs from the parent graph.
-		void enterGroup(Graph& graph, NodeId id, bool publish);
+		// Publish the group's outer input values into its CHILD evaluation's boundary input (when
+		// `publish`), after populating those outer inputs from the parent graph.
+		void enterGroup(const Graph& definition, Evaluation& evaluation, NodeId id, bool publish);
 
-		// Copy the group's inner GroupOutputNode values out to its own output ports.
-		void exitGroup(Graph& graph, NodeId id);
+		// Copy the child evaluation's delivered boundary-output values out onto the group's own
+		// output ports in the parent evaluation.
+		void exitGroup(const Graph& definition, Evaluation& evaluation, NodeId id);
 
 		// Collect `id` and everything transitively feeding it into `cone`.
-		void collectUpstream(Graph& graph, NodeId id, std::set<NodeId>& cone);
+		static void collectUpstream(const Graph& definition, NodeId id, std::set<NodeId>& cone);
 	};
 
 	// Single-threaded: walks the execution plan in order. No execution dependency, so it's
@@ -116,7 +155,7 @@ namespace lain::flow
 	class SerialScheduler : public Scheduler
 	{
 	public:
-		void run(Graph& graph) override;
+		void run(const Graph& definition, Evaluation& evaluation) override;
 	};
 
 	// Parallel: lowers the execution plan onto the injected lain::task executor (one task
@@ -126,7 +165,7 @@ namespace lain::flow
 	{
 	public:
 		explicit ParallelScheduler(lain::task::Executor& executor);
-		void run(Graph& graph) override;
+		void run(const Graph& definition, Evaluation& evaluation) override;
 
 	private:
 		lain::task::Executor& m_executor;

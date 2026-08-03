@@ -1,10 +1,13 @@
-// Unit tests for Port::describe() — the flow side of the value-display pathway: the
-// PortType flyweight's type-erasure bridge over lain::meta::toString, plus the empty
-// slot. The ladder itself is covered by (meta) test_tostring; here we confirm a Port
-// renders its type-erased value through it. GPU-free.
+// Unit tests for Evaluation::describe() — the flow side of the value-display pathway: the PortType
+// flyweight's type-erasure bridge over lain::meta::toString, plus the empty slot. The ladder itself
+// is covered by (meta) test_tostring; here we confirm an evaluation value renders through it.
+// (It used to be Port::describe; the value moved to the Evaluation, and rendering followed it while
+// staying a property of the declared type.) GPU-free.
 
+#include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
 #include "lain/flow/node.h"
+#include "lain/flow/scheduler.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -27,45 +30,53 @@ namespace lain::flow::test
 	// One output per display path: ostream scalar, bool, string, member toString, opaque.
 	struct DescribeNode : Node
 	{
+		PortId i, b, s, st, op;
 		DescribeNode()
 			: Node("Describe")
 		{
-			addOutput<int>("i");
-			addOutput<bool>("b");
-			addOutput<std::string>("s");
-			addOutput<Stamped>("st");
-			addOutput<Opaque>("op");
+			i = addOutput<int>("i");
+			b = addOutput<bool>("b");
+			s = addOutput<std::string>("s");
+			st = addOutput<Stamped>("st");
+			op = addOutput<Opaque>("op");
 		}
-		void compute() override
+		void compute(NodeEvaluation& evaluation) const override
 		{
-			output(0).set(42);
-			output(1).set(true);
-			output(2).set(std::string("hi"));
-			output(3).set(Stamped{});
-			output(4).set(Opaque{7});
+			evaluation.output(i).set(42);
+			evaluation.output(b).set(true);
+			evaluation.output(s).set(std::string("hi"));
+			evaluation.output(st).set(Stamped{});
+			evaluation.output(op).set(Opaque{7});
 		}
 	};
 } // namespace lain::flow::test
 
 using namespace lain::flow::test;
 
-TEST_CASE("Port::describe renders an unset port as empty", "[describe]")
+TEST_CASE("describe renders an unset port as empty", "[describe]")
 {
 	Graph g;
 	const NodeId n = g.add<DescribeNode>();
-	REQUIRE(g.node(n).output(0).describe() == "(empty)"); // before compute: no value
+	Evaluation e{g};
+	REQUIRE(e.describe(PortAddress{n, g.node(n).output(0).id()}) == "(empty)"); // nothing has run
 }
 
-TEST_CASE("Port::describe bridges a type-erased value through meta::toString", "[describe]")
+TEST_CASE("describe bridges a type-erased value through meta::toString", "[describe]")
 {
+	// Rendering follows the VALUE into the Evaluation, but stays the declared TYPE's capability
+	// (PortType::describe) — so a type still describes itself with no central ladder.
 	Graph g;
 	const NodeId n = g.add<DescribeNode>();
-	g.node(n).compute();
-	const Node& node = g.node(n);
+	Evaluation e{g};
+	SerialScheduler{}.run(g, e);
 
-	REQUIRE(node.output(0).describe() == "42");								// int via ostream
-	REQUIRE(node.output(1).describe() == "true");							// bool special-case
-	REQUIRE(node.output(2).describe() == "hi");								// std::string via ostream
-	REQUIRE(node.output(3).describe() == "stamped!");						// member toString()
-	REQUIRE(node.output(4).describe().find("Opaque") != std::string::npos); // fallback
+	const auto& node = static_cast<const DescribeNode&>(g.node(n));
+	const auto described = [&](PortId port)
+	{ return e.describe(PortAddress{n, port}); };
+
+	REQUIRE(described(node.i) == "42");								 // int via ostream
+	REQUIRE(described(node.b) == "true");							 // bool special-case
+	REQUIRE(described(node.s) == "hi");								 // std::string via ostream
+	REQUIRE(described(node.st) == "stamped!");						 // member toString()
+	REQUIRE(described(node.op).find("Opaque") != std::string::npos); // fallback
 }

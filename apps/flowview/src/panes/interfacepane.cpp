@@ -10,6 +10,7 @@
 #include <lain/flow/boundary.h> // GroupInputNode / GroupOutputNode
 #include <lain/flow/dynamicports.h>
 #include <lain/flow/edit.h>
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
 #include <lain/flow/port.h>
@@ -112,7 +113,8 @@ namespace flowview
 		return removed;
 	}
 
-	void InterfacePane::draw(AppContext& ctx, flow::Graph& graph, PreviewCache& previews, const ParamEditors& editors)
+	void InterfacePane::draw(AppContext& ctx, flow::Graph& graph, flow::Evaluation& evaluation, PreviewCache& previews,
+							 const ParamEditors& editors)
 	{
 		bool changed = false;
 		bool renamed = false; // a pin rename: a document change, but no recompute (see below)
@@ -161,9 +163,11 @@ namespace flowview
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
 
 				const PinKey key{node->id(), true, pin.id()};
-				if (const gui::Texture* tex = previews.find(key); tex && pin.value().holds<image::Image>())
+				const flow::PortAddress address{node->id(), pin.id()};
+				const flow::PortValue& bound = evaluation.value(address);
+				if (const gui::Texture* tex = previews.find(key); tex && bound.holds<image::Image>())
 				{
-					gui::Image(*tex, previewFit(pin.value().get<image::Image>().extent(), thumbnailBox()));
+					gui::Image(*tex, previewFit(bound.get<image::Image>().extent(), thumbnailBox()));
 					if (gui::IsItemClicked())
 						ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 				}
@@ -188,7 +192,7 @@ namespace flowview
 							{
 								flow::PortValue v;
 								v.set<image::Image>(std::move(*image));
-								node->setValue(pin.id(), std::move(v));
+								evaluation.bind(address, std::move(v));
 								changed = true;
 							}
 							else
@@ -201,12 +205,12 @@ namespace flowview
 				else
 				{
 					// A scalar boundary input: edit its value by type via the shared registry. Read the
-					// currently-published value (pin.value() == the bound value after a run), edit a copy,
-					// and setValue on change (which updates the bound slot + marks the node dirty).
-					flow::PortValue current = pin.value();
+					// currently bound value from the EVALUATION, edit a detached copy, and bind on
+					// change (which stores it and requests the boundary node's recompute).
+					flow::PortValue current = bound;
 					if (editors.render("##value", pin.type(), current))
 					{
-						node->setValue(pin.id(), std::move(current));
+						evaluation.bind(address, std::move(current));
 						changed = true;
 					}
 				}
@@ -242,7 +246,8 @@ namespace flowview
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
 
 				const PinKey key{node->id(), false, pin.id()};
-				if (pin.value().empty())
+				const flow::PortValue& delivered = evaluation.value(flow::PortAddress{node->id(), pin.id()});
+				if (delivered.empty())
 				{
 					// The producer was gated off / suppressed (conditional eval) — no value this run.
 					// the preview cache already dropped any stale thumbnail; say so rather than show blank.
@@ -250,14 +255,14 @@ namespace flowview
 				}
 				else
 				{
-					if (const gui::Texture* tex = previews.find(key); tex && pin.value().holds<image::Image>())
+					if (const gui::Texture* tex = previews.find(key); tex && delivered.holds<image::Image>())
 					{
-						gui::Image(*tex, previewFit(pin.value().get<image::Image>().extent(), thumbnailBox()));
+						gui::Image(*tex, previewFit(delivered.get<image::Image>().extent(), thumbnailBox()));
 						if (gui::IsItemClicked())
 							ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 					}
-					if (pin.value().holds<image::Image>())
-						renderImageSave(ctx, key, pin.value().get<image::Image>());
+					if (delivered.holds<image::Image>())
+						renderImageSave(ctx, key, delivered.get<image::Image>());
 				}
 				gui::SameLine();
 				gui::BeginDisabled(!editable);

@@ -12,23 +12,23 @@
 // / BoundaryOutput handle), and Graph::boundaryInputs / boundaryOutputs flatten every
 // boundary node's pins into one list — so a host binds inputs without caring how many nodes
 // host them. All crossing is through the type-erased PortValue; flow core names no payload
-// type.
+// type. The VALUES themselves live in the Evaluation, not on these nodes (ADR-0012) — which is what
+// lets one definition serve several differently-bound evaluations at once.
 
 #include "lain/flow/dynamicports.h" // DynamicPortsNode — boundary nodes have dynamic pins
 #include "lain/flow/node.h"
-#include "lain/flow/portvalue.h"
-#include "lain/flow/types.h" // PortId
+#include "lain/flow/types.h" // PortId / PortAddress
 
-#include <map>
 #include <string>
+#include <string_view>
 #include <typeindex>
 #include <utility>
 
 namespace lain::flow
 {
-	// A graph INPUT boundary: one or more host-bound output pins. The host injects each pin's
-	// value (setValue); compute() publishes it to that pin. Add pins at construction with
-	// addBoundary<T> — each is an ordinary typed output port, so pins may differ in type.
+	// A graph INPUT boundary: one or more host-bound output pins. The host supplies each pin's value
+	// through the Evaluation (evaluation.bind); this node declares the pins and carries nothing.
+	// Add pins with addBoundary<T> — each is an ordinary typed output port, so pins may differ in type.
 	class GroupInputNode : public DynamicPortsNode
 	{
 	public:
@@ -40,9 +40,7 @@ namespace lain::flow
 		// A GroupInput's graph-inputs are its OUTPUT pins, so that's the side that grows.
 		Port::Direction dynamicSide() const override { return Port::Direction::Output; }
 
-		// Declare a bindable input pin of type T; returns its stable PortId. Routes through
-		// addDynamicPort so a construction-time pin and a runtime-added pin are the same path
-		// (both get a bound slot via onDynamicPortAdded).
+		// Declare a bindable input pin of type T; returns its stable PortId.
 		template <typename T>
 		PortId addBoundary(std::string name)
 		{
@@ -51,29 +49,14 @@ namespace lain::flow
 
 		std::size_t boundaryCount() const { return outputCount(); }
 
-		// Inject the value for `pin`; published to that output on the next compute(). Marks
-		// dirty so a pull re-fires it, after which it stays constant until the next setValue (a
-		// live input in vertical b simply stays dirty). The payload type must match the pin's.
-		void setValue(PortId pin, PortValue value)
-		{
-			m_bound[pin] = std::move(value);
-			markDirty();
-		}
-
-		// Publish each pin's host-injected value (a type-erased copy) to its output port.
-		void compute() override
-		{
-			for (const auto& [id, value] : m_bound)
-				if (Port* p = findOutput(id))
-					p->value() = value;
-		}
-
-	protected:
-		// A new pin (construction-time or runtime) gets an empty bound slot to inject into later.
-		void onDynamicPortAdded(PortId id) override { m_bound[id]; }
-
-	private:
-		std::map<PortId, PortValue> m_bound; // per-pin host-injected value, republished each compute()
+		// Nothing to compute: a graph input's value is BOUND, not produced, and a bound value is
+		// runtime state — so it lives in the Evaluation, as this pin's output value there
+		// (Evaluation::bind writes it). The node is still a real step in the plan, because
+		// everything downstream depends on it and its recompute request is what carries a rebind
+		// into the run; it simply carries what the host supplied. (ADR-0012 — this node held an
+		// m_bound map before, which made one definition unable to serve two differently-bound
+		// evaluations.)
+		void compute(NodeEvaluation&) const override {}
 	};
 
 	// A graph OUTPUT boundary: one or more pins whose delivered value the host reads after a
@@ -98,46 +81,28 @@ namespace lain::flow
 
 		std::size_t boundaryCount() const { return inputCount(); }
 
-		// The value delivered to `pin` (its input's current value). Empty until the graph has
-		// run with a producer wired in (or if `pin` is unknown).
-		const PortValue& value(PortId pin) const
-		{
-			static const PortValue empty;
-			const Port* p = findInput(pin);
-			return p ? p->value() : empty;
-		}
-
-		void compute() override {} // passthrough — the scheduler populated the inputs
+		// Passthrough — the scheduler populated the inputs, and the host reads them from the
+		// Evaluation (evaluation.value(output)). The delivered value is runtime, so it is not held
+		// here either.
+		void compute(NodeEvaluation&) const override {}
 	};
 
-	// A bindable graph input: a named, typed pin (addressed by its stable PortId) on a
-	// GroupInputNode. The host binds through this (name / type / setValue) without knowing which
-	// node — or how many — host the pins, and it survives sibling pins being added/removed.
-	struct BoundaryInput
+	// A bindable graph input / readable graph output: IMMUTABLE RECIPE METADATA describing one pin —
+	// where it is, what it is called, and what type it carries. A host enumerates these from the
+	// definition (Graph::boundaryInputs / boundaryOutputs, both const) and then binds and reads
+	// through an Evaluation: `evaluation.bind(input, value)`, run, `evaluation.value(output)`.
+	//
+	// They deliberately carry no way to read or write a value. A bound value and a delivered value
+	// are RUNTIME — one definition may be driven by several evaluations at once, each bound
+	// differently — so a handle that could set one would be a handle to the wrong thing (ADR-0012).
+	struct BoundaryPin
 	{
-		GroupInputNode* node;
-		PortId pin;
-
-		const std::string& name() const { return node->findOutput(pin)->name(); }
-		std::string_view typeName() const { return node->findOutput(pin)->typeName(); }
-		std::type_index type() const { return node->findOutput(pin)->type(); }
-		void setValue(PortValue value) const { node->setValue(pin, std::move(value)); }
+		PortAddress port;		   // which pin, on which boundary node
+		std::string name;		   // the pin's name: the cli flag, the Interface label, the on-disk edge key
+		std::type_index type;	   // declared payload type — what a binder or codec dispatches on
+		std::string_view typeName; // that type, human-readable (meta::typeName)
 	};
 
-	// A readable graph output: a named, typed pin (by stable PortId) on a GroupOutputNode.
-	struct BoundaryOutput
-	{
-		GroupOutputNode* node;
-		PortId pin;
-
-		const std::string& name() const { return node->findInput(pin)->name(); }
-		std::string_view typeName() const { return node->findInput(pin)->typeName(); }
-		std::type_index type() const { return node->findInput(pin)->type(); }
-		const PortValue& value() const { return node->value(pin); }
-
-		// The delivered value as human-readable text (Port::describe — the shared meta::toString
-		// pathway): "(empty)" when nothing was produced, else the value. A host writes this to capture
-		// a scalar/text output the way it saves an image output to a file.
-		std::string describe() const { return node->findInput(pin)->describe(); }
-	};
+	using BoundaryInput = BoundaryPin;
+	using BoundaryOutput = BoundaryPin;
 } // namespace lain::flow

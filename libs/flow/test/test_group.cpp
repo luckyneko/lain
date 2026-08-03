@@ -3,8 +3,10 @@
 // is proven here is ownership, the structural innerGraph() question the scheduler will ask, dirty
 // propagation across the boundary, and the linked variant's source + interface cache.
 
+#include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
 #include "lain/flow/group.h"
+#include "lain/flow/scheduler.h"
 #include "testnodes.h" // ConstInt — an ordinary node to put inside a group
 
 #include <catch2/catch_test_macros.hpp>
@@ -36,48 +38,56 @@ TEST_CASE("two groups never share an inner graph", "[flow][group]")
 	REQUIRE(b.inner().nodeCount() == 2); // untouched
 }
 
-TEST_CASE("a group is dirty when anything inside it is", "[flow][group]")
+TEST_CASE("a group is stale when anything inside it is", "[flow][group]")
 {
-	GroupNode group;
-	const NodeId inner = group.inner().add<test::ConstInt>(1);
+	// A group used to answer this with a virtual dirty() that walked mutable flags on its inner
+	// definition. Staleness is now a per-node version compared against ONE evaluation's record, so
+	// the recursive question is asked of the group's CHILD Evaluation — which is what lets two
+	// evaluations of one definition disagree about whether the same group needs re-running.
+	Graph graph;
+	const NodeId groupId = graph.add<GroupNode>();
+	auto& group = static_cast<GroupNode&>(graph.node(groupId));
+	const NodeId innerId = group.inner().add<test::ConstInt>(1);
 
-	group.clearDirty();
-	REQUIRE(group.dirty()); // the freshly added inner node is dirty, so the group is
+	Evaluation evaluation{graph};
+	SerialScheduler{}.run(graph, evaluation);
+	REQUIRE_FALSE(evaluation.needsRecompute(groupId));
+	REQUIRE_FALSE(evaluation.child(groupId).needsRecompute(innerId));
 
-	// Clear the whole inner graph, and the group goes clean.
-	for (const NodeId id : group.inner().nodeIds())
-		group.inner().node(id).clearDirty();
-	REQUIRE_FALSE(group.dirty());
-
-	SECTION("an edit inside reaches the outer dirty state")
+	SECTION("an edit inside reaches the outer run")
 	{
-		group.inner().node(inner).markDirty();
-		REQUIRE(group.dirty());
-	}
-
-	SECTION("the group's own dirty flag still counts on its own")
-	{
-		group.markDirty();
-		REQUIRE(group.dirty());
+		// Demand the inner node; the outer plan must pull the group back in, which it can only do
+		// by asking the child evaluation.
+		evaluation.child(groupId).requestRecompute(innerId);
+		SerialScheduler{}.run(graph, evaluation);
+		REQUIRE_FALSE(evaluation.child(groupId).needsRecompute(innerId)); // it ran
 	}
 
 	SECTION("it recurses through nested groups")
 	{
-		// A group inside a group: the innermost edit must surface at the outermost node.
-		GroupNode outer;
+		Graph outerGraph;
+		const NodeId outerId = outerGraph.add<GroupNode>();
+		auto& outer = static_cast<GroupNode&>(outerGraph.node(outerId));
 		const NodeId nestedId = outer.inner().add<GroupNode>();
 		auto& nested = static_cast<GroupNode&>(outer.inner().node(nestedId));
 		const NodeId deep = nested.inner().add<test::ConstInt>(2);
 
-		outer.clearDirty();
-		for (const NodeId id : outer.inner().nodeIds())
-			outer.inner().node(id).clearDirty();
-		for (const NodeId id : nested.inner().nodeIds())
-			nested.inner().node(id).clearDirty();
-		REQUIRE_FALSE(outer.dirty());
+		Evaluation e{outerGraph};
+		SerialScheduler{}.run(outerGraph, e);
+		REQUIRE_FALSE(e.child(outerId).child(nestedId).needsRecompute(deep));
 
-		nested.inner().node(deep).markDirty();
-		REQUIRE(outer.dirty());
+		e.child(outerId).child(nestedId).requestRecompute(deep);
+		SerialScheduler{}.run(outerGraph, e); // the innermost demand surfaces at the outermost plan
+		REQUIRE_FALSE(e.child(outerId).child(nestedId).needsRecompute(deep));
+	}
+
+	SECTION("two evaluations of one definition disagree independently")
+	{
+		Evaluation other{graph};
+		SerialScheduler{}.run(graph, other);
+
+		evaluation.child(groupId).requestRecompute(innerId);
+		REQUIRE_FALSE(other.child(groupId).needsRecompute(innerId)); // the demand is evaluation-local
 	}
 }
 

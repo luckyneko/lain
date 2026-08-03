@@ -1499,8 +1499,7 @@ identity that kept needing composition, undo that needed positional ordinals, an
 
 Each step stands alone and leaves the suite green.
 
-1. ✅ **`core::Uuid` + `NodeId` — BUILT** (2026-08-02; gui-mode needs an eyeball, see the note after
-   this step). New std-only `Uuid` in `lain::core` (generate v7, parse *any*
+1. ✅ **`core::Uuid` + `NodeId` — BUILT** (2026-08-02; **live-verified 2026-08-03**). New std-only `Uuid` in `lain::core` (generate v7, parse *any*
    well-formed UUID, format canonical, compare, hash). `NodeId` wraps one. Serialize as a string; drop
    the canonical `1..N` renumbering; document load **preserves** ids while paste/copy mints fresh ones,
    and a duplicate is re-minted + reported. This is schema **v2**. The public loader routes documents
@@ -1620,7 +1619,8 @@ Each step stands alone and leaves the suite green.
    `ctest` **384/384**, with four new `[param]` cases: the declared-type check (and that a refusal
    changes nothing *and* does not dirty the node), rejection of an id that names no param — including
    a *port's* id — the atomic commit-and-invalidate, and the type-erased overload.
-4. **`Evaluation` + const compute + staleness — one vertical.** Values move off `Port`; ~41
+4. ✅ **`Evaluation` + const compute + staleness — one vertical — BUILT** (2026-08-03;
+   **live-verified 2026-08-03**). Values move off `Port`; ~41
    sites become `compute(NodeEvaluation&) const`, addressing ports through the ids from step 2:
    `evaluation.input(m_image)` / `evaluation.output(m_result)`. `Port` is left as pure declaration —
    `{id, name, direction, PortType, presence}` — so `value()`, `set`/`get`/`holds`, `ready()` and
@@ -1672,6 +1672,46 @@ Each step stands alone and leaves the suite green.
    the style of `[group]`'s 100× sweep. Without it the milestone's headline contract ships unchecked
    and the `topoOrder` fix has no regression guard. This validates safe definition sharing without
    introducing a test-only evaluator or pulling linked-template ownership into M6.
+
+   **As built.** `flow/evaluation.h` holds `Evaluation` (move-only, in core, needing only `PortValue`)
+   and `NodeEvaluation`, the per-node view `compute(NodeEvaluation&) const` receives. Everything
+   landed as planned; the notes below are where reality added detail.
+   - **A bound value IS the boundary pin's output value in the evaluation.** `GroupInputNode::compute`
+     became a no-op that carries what was bound rather than republishing from an `m_bound` map. That
+     is what deleted the map, `setValue` and `GroupOutputNode::value` in one move, and it made group
+     entry literally the same operation a host performs — `enterGroup` calls `child.bind(...)`.
+   - **`BoundaryInput` / `BoundaryOutput` collapsed into one `BoundaryPin`** carrying
+     `{PortAddress, name, type, typeName}` as plain fields. They were separate only because they
+     wrapped different node pointers; as pure recipe metadata there is nothing to tell apart.
+   - **The version bookkeeping is two halves, in this order**: clear the recompute request BEFORE
+     `compute()` so an on-request source that rearms itself keeps its new request, and record
+     `computedAt` AFTER it so a `compute()` that **throws** stays stale and is retried rather than
+     being remembered as done. Found by the lease test, which expected the second run to throw again
+     and got silence. A *suppressed* node still records — ADR-0007 relies on clean-and-empty together.
+   - **`Scheduler::Session`** is the entry ritual as one RAII object (take the lease, then prepare),
+     because `RunLease` is private to `Evaluation` and friendship is not inherited — so a backend
+     cannot do half of it.
+   - **`resolveEvaluation`** joins `resolvePath` in flowview's `groupnav`: an Evaluation is a tree
+     with one child per group node, so the same `GraphPath` walks it, and `MainWindow` hands every
+     pane a definition and its values in step.
+   - `Graph::bumpNodeVersion` is public for the editing layer (`edit::syncGroupPorts` re-derives a
+     group's ports in a way no single primitive covers). Documented as *not* a general invalidate
+     hook: a caller that changed nothing must not call it.
+   - **Known cost, accepted:** `prepare` rebuilds its node and port maps on every run rather than
+     detecting that nothing changed. Correct and O(nodes); a graph revision counter would make it
+     O(1) in the common case, and is the obvious follow-up if a large graph ever feels it.
+   - `ctest` **394/394**, the flow suite repeated 5x clean; the new `[evaluation]` file drives the
+     PRODUCTION schedulers for: two evaluations keeping values apart, keeping recompute requests
+     apart, an on-request source rearming only its own, an edit invalidating both without touching
+     either, **8 evaluations running simultaneously over one `const Graph`, 100x**, the parallel
+     scheduler keeping two apart, the run lease refusing a second concurrent run and releasing on
+     both normal and throwing unwind, the definition-mismatch guard rail, and `prepare` keeping
+     surviving values. Headless round-trip still byte-identical; the reporter's v1 + linked-group
+     document still migrates and computes.
+   - **gui-mode live-verified by the repo owner 2026-08-03** — every value-reading pane changed where
+     it reads from, the canvas's dimming / pin shapes / link activity now come from `evaluation`, and
+     the Interface pane binds through it, so that was the slice's real risk. No bugs came out of it.
+
 5. **Host-side keys and paths.** `PinKey` → `{EvalPath, NodeId, PortId}`; preview cache, Inspector,
    Interface, Preview pane, `saveFormat` follow. The clear-on-navigation scoping becomes a memory
    choice rather than a correctness one.

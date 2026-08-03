@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lain/flow/dynamicports.h"
+#include "lain/flow/evaluation.h"
 #include "lain/flow/porttyperegistry.h" // portTypeKey — homogeneous "+" filter
 
 #include <typeindex>
@@ -40,9 +41,10 @@ namespace lain::flow
 			return key == portTypeKey(std::type_index(typeid(T)));
 		}
 
-		void compute() override
+		void compute(NodeEvaluation& evaluation) const override
 		{
-			const int sel = input(m_selector).ready() ? input(m_selector).template get<int>() : 0;
+			const PortValue& selector = evaluation.input(m_selector);
+			const int sel = selector.empty() ? 0 : selector.template get<int>();
 			// The branches are the dynamic input pins, in add order; route to the sel-th (the static
 			// selector pin is skipped, so its position among the inputs doesn't shift the indexing).
 			int branchIndex = 0;
@@ -53,15 +55,16 @@ namespace lain::flow
 					continue; // the selector, not a branch
 				if (branchIndex == sel)
 				{
-					if (in.ready())
-						output(m_out).template set<T>(in.template get<T>());
+					const PortValue& branch = evaluation.input(in.id());
+					if (!branch.empty())
+						evaluation.output(m_out).template set<T>(branch.template get<T>());
 					else
-						output(m_out).clear();
+						evaluation.output(m_out).clear();
 					return;
 				}
 				++branchIndex;
 			}
-			output(m_out).clear(); // selector out of range (or negative) — nothing to route
+			evaluation.output(m_out).clear(); // selector out of range (or negative) — nothing to route
 		}
 
 	protected:

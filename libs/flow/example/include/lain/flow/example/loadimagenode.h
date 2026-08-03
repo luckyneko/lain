@@ -1,5 +1,6 @@
 #pragma once
 
+#include <lain/flow/evaluation.h>
 #include <lain/flow/node.h>
 #include <lain/image/image.h>
 
@@ -23,7 +24,7 @@ namespace lain::flow::example
 	public:
 		explicit LoadImageNode(std::string uri = {});
 
-		void compute() override;
+		void compute(NodeEvaluation& evaluation) const override;
 
 	private:
 		PortId m_path; // "path" param (std::filesystem::path)

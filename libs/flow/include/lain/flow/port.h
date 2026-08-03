@@ -1,8 +1,7 @@
 #pragma once
 
 #include "lain/flow/porttype.h" // PortType — the per-type reflective flyweight
-#include "lain/flow/portvalue.h"
-#include "lain/flow/types.h" // PortId
+#include "lain/flow/types.h"	// PortId
 
 #include <cctype>
 #include <string>
@@ -28,10 +27,10 @@ namespace lain::flow
 		return true;
 	}
 
-	// A named, typed slot on a node. A Port carries its declared (static) type for
-	// connection checking and owns a persistent PortValue — the runtime payload,
-	// overwritten in place on recompute and left intact for the inspector to read.
-	// Created only by its owning Node (addInput / addOutput).
+	// A named, typed DECLARATION on a node: {id, name, direction, PortType, presence}. Pure recipe —
+	// it carries no value. A port's runtime payload lives in the Evaluation that produced it
+	// (ADR-0012), because one definition may be run by several evaluations at once and a value on the
+	// declaration would be shared between them. Created only by its owning Node (addInput/addOutput).
 	class Port
 	{
 	public:
@@ -67,28 +66,10 @@ namespace lain::flow
 		// it around is just a pointer copy.
 		const PortType& portType() const { return *m_type; }
 
-		// True once a value has been produced into this port (i.e. not empty).
-		bool ready() const { return !m_value.empty(); }
-
-		// This port's current value as a human-readable string: "(empty)" when unset, the
-		// value via meta::toString (its toString() / ostream, else its type name). The
-		// renderer comes from the port's PortType flyweight, captured from the declared
-		// type T at addInput/addOutput<T> — so a type-erased value is described with no
-		// central type ladder; a new type displays itself just by exposing toString().
-		// For text/debug (cli dump, inspector labels); a richer GUI view of a value (e.g.
-		// a texture thumbnail) is a separate, per-medium concern.
-		std::string describe() const { return m_type->describe(m_value); }
-
-		template <typename T>
-		void set(T value);
-		template <typename T>
-		const T& get() const;
-		template <typename T>
-		bool holds() const { return m_value.holds<T>(); }
-
-		const PortValue& value() const { return m_value; }
-		PortValue& value() { return m_value; }
-		void clear() { m_value.clear(); }
+		// (Value presence and text rendering used to live here — `ready()` and `describe()`. They
+		// followed the values into the Evaluation: `evaluation.hasValue(port)` and
+		// `evaluation.describe(port)`. That also retired a name collision, where Port::ready() meant
+		// "has a value" and Node::ready() meant "all required inputs do".)
 
 		// Conditional / gated eval (WORK.md Tier A #2, ADR-0007). A node is READY (computes) iff all
 		// its REQUIRED inputs carry a value; otherwise the scheduler clears its outputs, and that
@@ -127,7 +108,6 @@ namespace lain::flow
 		Direction m_dir;
 		const PortType* m_type; // the declared type's shared reflective flyweight
 		PortId m_id;			// stable identity within the owning node
-		PortValue m_value;		//
 		bool m_required = true; // input only: an empty Required input keeps the node from being ready
 		bool m_dynamic = false; // added at runtime via addDynamicPort (vs declared in the node's ctor)
 	};
@@ -140,5 +120,3 @@ namespace lain::flow
 		Optional, // the node can run without it (a Select/Merge branch) — compute() checks presence
 	};
 } // namespace lain::flow
-
-#include "lain/flow/details/port.inl"

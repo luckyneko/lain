@@ -4,6 +4,7 @@
 #include "lain/flow/port.h"
 #include "lain/flow/types.h"
 
+#include <cstdint>
 #include <string>
 #include <typeindex>
 #include <utility>
@@ -11,16 +12,19 @@
 
 namespace lain::flow
 {
-	class Graph; // a node may CONTAIN one (see innerGraph) — the group-node seam
+	class Graph;		  // a node may CONTAIN one (see innerGraph) — the group-node seam
+	class NodeEvaluation; // the per-node runtime view compute() is handed (evaluation.h)
 
-	// Abstract base for a graph node. A subclass declares its ports in its
-	// constructor (addInput / addOutput) and implements compute().
+	// Abstract base for a graph node — a DEFINITION: what it is, what ports and params it declares,
+	// what it computes. It holds no runtime state at all; values and bookkeeping live in an
+	// Evaluation (ADR-0012).
 	//
-	// Threading contract: compute() reads only this node's inputs and writes only
-	// this node's outputs — no shared mutable state. That isolation is what lets
-	// the scheduler run independent nodes on different threads. A `constant` node
-	// clears dirty() after its first compute; an on-request source (e.g. a camera
-	// capture) stays dirty so each pull refires it.
+	// Threading contract: compute() is CONST and reads/writes only through the NodeEvaluation it is
+	// given — its own inputs and its own outputs. That is what lets the scheduler run independent
+	// nodes on different threads, and what lets one definition be run by several evaluations at once
+	// (N video streams through one subgraph). An on-request source (a camera capture) rearms itself
+	// with `evaluation.requestRecompute()`, which demands work of THAT evaluation and says nothing
+	// about the recipe.
 	class Node
 	{
 	public:
@@ -118,18 +122,17 @@ namespace lain::flow
 		template <typename T>
 		bool setParam(PortId id, T value);
 
-		// Whether this node needs recomputing. VIRTUAL because a node that contains a graph (a group
-		// node) is dirty when anything *inside* it is: otherwise an edit made inside a group would
-		// never reach the outer dirty closure, and the group would keep serving a stale result.
-		virtual bool dirty() const { return m_dirty; }
-		void markDirty() { m_dirty = true; }
-		void clearDirty() { m_dirty = false; }
-
-		// This node's OWN dirty flag, ignoring anything it contains. The scheduler needs the two
-		// apart: a group whose only dirt is inside it must be re-planned, but its inputs have not
-		// changed, so republishing them into the inner boundary would needlessly dirty the whole
-		// inner graph and destroy inner incrementality.
-		bool selfDirty() const { return m_dirty; }
+		// This node's RECIPE VERSION: bumped exactly when its definition changes (a param committed
+		// through setParam, a structural edit by one of Graph's primitives). Starts at 1, so it never
+		// equals a freshly prepared Evaluation's `computedAt` of 0.
+		//
+		// This is how invalidation reaches evaluations WITHOUT the definition knowing about them.
+		// A definition holds no list of its evaluations — deliberately, since they are host-owned —
+		// so an edit cannot walk them to drop values. It bumps this, and each evaluation notices the
+		// mismatch when it next runs: invalidation is PULLED, never pushed, and an edit costs O(1)
+		// however many streams are running. (This replaced a single `m_dirty` bool, which could only
+		// describe one run's staleness and so could not serve two evaluations at once.)
+		std::uint64_t version() const { return m_version; }
 
 		// The graph this node CONTAINS, or nullptr for an ordinary node. The scheduler asks this of
 		// every node while building its execution plan and expands the whole nesting tree into one
@@ -146,24 +149,15 @@ namespace lain::flow
 		// graph-containing node work with no scheduler change.
 		virtual PortId innerPin(PortId /*outer*/) const { return PortId{}; }
 
-		// Whether this node is READY to compute: every REQUIRED input carries a value (ADR-0007).
-		// Node-local — it inspects only this node's own input ports. The scheduler gates compute() on
-		// it (an unready node is skipped and its outputs cleared, suppressing downstream); a viewer
-		// reads it post-run to tell which nodes activated (the dimmed ones did not).
-		bool ready() const
-		{
-			for (const Port& in : m_inputs)
-			{
-				if (in.required() && in.value().empty())
-					return false;
-			}
-			return true;
-		}
+		// (Readiness — "every REQUIRED input carries a value", ADR-0007 — followed the values into
+		// the Evaluation: `evaluation.ready(id)` for a host, `nodeEvaluation.ready()` inside compute.
+		// It is a join of declaration and runtime, so it belongs to the side that owns the values.)
 
-		// The node's work: read inputs, write outputs. The scheduler calls this in
-		// dependency order and clears dirty() around the call; an on-request source
-		// can markDirty() itself here to refire on the next pull.
-		virtual void compute() = 0;
+		// The node's work: read this node's inputs, write this node's outputs, both through
+		// `evaluation`. CONST: a node may not write to its own definition, which is what makes it
+		// safe for several evaluations to run one definition at once. The scheduler calls this in
+		// dependency order, only when the node is ready (see above).
+		virtual void compute(NodeEvaluation& evaluation) const = 0;
 
 	protected:
 		explicit Node(std::string name)
@@ -199,8 +193,14 @@ namespace lain::flow
 		PortId addParam(std::string name, T defaultValue);
 
 	private:
-		friend class Graph; // assigns the id when the node is added, and removes ports
+		friend class Graph; // assigns the id when the node is added, removes ports, and bumps versions
+
 		void setId(NodeId id) { m_id = id; }
+
+		// Record that this node's recipe changed. Private, and reached only through the operations
+		// that actually change it — setParam here, Graph's structural primitives there — so there is
+		// no public "mutate, then remember to bump" protocol to forget half of.
+		void bumpVersion() { ++m_version; }
 
 		// Erase a port by id (raw — no edge check). Graph::removePort enforces the
 		// no-dangling-edge invariant *before* calling this, so it is Graph-only. Returns whether
@@ -249,7 +249,9 @@ namespace lain::flow
 		std::vector<Port> m_inputs;
 		std::vector<Port> m_outputs;
 		std::vector<Param> m_params;
-		bool m_dirty = true;
+		// Starts at 1, not 0: a freshly prepared Evaluation records `computedAt = 0`, so a node is
+		// stale until something actually computes it.
+		std::uint64_t m_version = 1;
 	};
 } // namespace lain::flow
 

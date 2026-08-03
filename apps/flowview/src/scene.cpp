@@ -1,6 +1,7 @@
 #include "scene.h"
 
 #include <lain/flow/boundary.h>
+#include <lain/flow/evaluation.h>
 #include <lain/flow/example/blurnode.h>
 #include <lain/flow/example/gradientnode.h>
 #include <lain/flow/example/loadimagenode.h>
@@ -11,6 +12,7 @@
 #include <lain/flow/nodes/gate.h>	  // control nodes over the scene payload (image::Image)
 #include <lain/flow/nodes/merge.h>
 #include <lain/flow/nodes/select.h>
+#include <lain/flow/scheduler.h>
 #include <lain/image/image.h>
 
 namespace flowview
@@ -105,17 +107,23 @@ namespace flowview
 		graph.connect(blur, 0, out, 0);
 	}
 
-	void bindDefaultInput(flow::Graph& graph, std::uint32_t size)
+	void bindDefaultInput(flow::Graph& graph, flow::Evaluation& evaluation, std::uint32_t size)
 	{
 		const auto inputs = graph.boundaryInputs();
 		if (inputs.empty())
 			return;
 
-		// Generate a gradient image the way the old scene's source did, and inject it as the
-		// default binding — so gui-mode has something to show until the Interface panel lands.
-		flow::example::GradientNode gradient(size, size);
-		gradient.compute();
-		if (gradient.output(0).ready())
-			inputs[0].setValue(gradient.output(0).value());
+		// Generate a gradient image the way the old scene's source did, and bind it as the default
+		// — so gui-mode has something to show until the user binds a file. The generator is run in a
+		// throwaway graph of its own: a node's values live in an evaluation now, so producing one
+		// outside a run means giving it one.
+		flow::Graph scratch;
+		const flow::NodeId id = scratch.add<flow::example::GradientNode>(size, size);
+		flow::Evaluation scratchEval{scratch};
+		flow::SerialScheduler{}.run(scratch, scratchEval);
+
+		const flow::PortAddress produced{id, scratch.node(id).output(0).id()};
+		if (!scratchEval.value(produced).empty())
+			evaluation.bind(inputs[0], scratchEval.value(produced));
 	}
 } // namespace flowview

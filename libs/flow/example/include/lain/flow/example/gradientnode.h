@@ -1,5 +1,6 @@
 #pragma once
 
+#include <lain/flow/evaluation.h>
 #include <lain/flow/node.h>
 #include <lain/image/image.h>
 
@@ -19,7 +20,7 @@ namespace lain::flow::example
 	public:
 		GradientNode(std::uint32_t width, std::uint32_t height);
 
-		void compute() override;
+		void compute(NodeEvaluation& evaluation) const override;
 
 	private:
 		std::uint32_t m_width;

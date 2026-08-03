@@ -64,13 +64,6 @@ namespace lain::flow
 		// group's inner graph, silently drop every edge the parent had wired to it.
 		bool removeNode(NodeId id);
 
-		// Mark every node dirty so the next Scheduler::run recomputes the whole graph — the
-		// "force a full refresh" over the normal incremental run (which recomputes only dirty nodes
-		// + their downstream). The structural mutations here (connect / disconnect / removeNode /
-		// removePort) already mark the affected downstream node dirty; this is for a caller that
-		// wants everything recomputed regardless.
-		void markAllDirty();
-
 		std::size_t nodeCount() const { return m_nodes.size(); }
 		bool contains(NodeId id) const { return m_nodes.count(id) != 0; }
 
@@ -98,6 +91,13 @@ namespace lain::flow
 		bool disconnect(PortAddress input);
 		bool disconnect(NodeId to, std::size_t inPort); // index convenience (resolves now)
 
+		// Record that `id`'s recipe changed, so every Evaluation recomputes it on its next run. The
+		// primitives here call it themselves; it is public for the editing layer, which composes
+		// gestures that change a node's shape in ways no single primitive covers (edit::syncGroupPorts
+		// re-deriving a group's ports from its interior). Not a general "invalidate" hook — a caller
+		// that changes nothing must not call it, since a version bump costs every evaluation a re-run.
+		void bumpNodeVersion(NodeId id) { bump(id); }
+
 		// Remove a dynamic port. A *primitive*: it REFUSES (returns false) if any edge still
 		// touches the port, keeping the no-dangling-edge invariant total — the safe gesture
 		// edit::removePort disconnects the incident edges first. Returns whether the port was
@@ -113,17 +113,25 @@ namespace lain::flow
 		};
 		const std::vector<Edge>& edges() const { return m_edges; }
 
-		// Nodes in a dependency-respecting order (sources first). Acyclic by
-		// construction, so this always covers every node. Cached and recomputed
-		// lazily after a topology change.
-		const std::vector<NodeId>& topoOrder() const;
+		// Nodes in a dependency-respecting order (sources first). Acyclic by construction, so this
+		// always covers every node.
+		//
+		// Maintained by the mutators, NOT computed lazily on first query. That is a threading claim,
+		// not tidiness: a `const Graph&` must be CONCURRENTLY READABLE (ADR-0012), because N
+		// evaluations may run over one definition at once — and a lazy cache into mutable members is
+		// exactly what two of them would rebuild simultaneously after an edit, while the `const&`
+		// signature advertised safety. Editing is human-paced and runs are hot, so the cost lands in
+		// the right place.
+		const std::vector<NodeId>& topoOrder() const { return m_topo; }
 
-		// The graph's I/O boundary — a flat list of bindable pins across every boundary node
-		// (see boundary.h). A host loops these to setValue each input, run, then read each
-		// output's value(); the RTTI to find the nodes lives here, not scattered across cli +
-		// gui. Node insertion order then pin order, so the interface list is stable.
-		std::vector<BoundaryInput> boundaryInputs();
-		std::vector<BoundaryOutput> boundaryOutputs();
+		// The graph's I/O boundary — a flat list of pins across every boundary node (see boundary.h),
+		// as immutable RECIPE metadata: where each pin is, its name, its declared type. A host loops
+		// these, binds each input through its Evaluation, runs, then reads each output from the same
+		// Evaluation. Const, because describing an interface changes nothing — and because the values
+		// these used to reach are not on the definition any more. Node order then pin order, so the
+		// list is stable.
+		std::vector<BoundaryInput> boundaryInputs() const;
+		std::vector<BoundaryOutput> boundaryOutputs() const;
 
 		// The graph's boundary input / output node — for a host that EDITS the interface (the ±
 		// add/remove pins), where the flat pin lists above are for a host that just binds. Returned
@@ -152,6 +160,10 @@ namespace lain::flow
 		// Take ownership unconditionally at `id` — what add() does once it has approved the node,
 		// and the only way the constructor can seat the pair that add() would refuse.
 		NodeId adopt(std::unique_ptr<Node> node, NodeId id);
+		// Recompute the dependency order. Called by every mutator that changes nodes or edges.
+		void rebuildTopoOrder();
+		// Record that `id`'s recipe changed, so evaluations recompute it (Node::version).
+		void bump(NodeId id);
 
 		// Nodes keyed by id, not stored by position — an id outlives the removal of
 		// other nodes. Ordered so lookup is logarithmic; iteration order is a uuid order, which
@@ -166,8 +178,9 @@ namespace lain::flow
 		NodeId m_boundaryIn;
 		NodeId m_boundaryOut;
 		std::vector<Edge> m_edges;
-		mutable std::vector<NodeId> m_topo;
-		mutable bool m_topoValid = false;
+		// Rebuilt by rebuildTopoOrder() whenever nodes or edges change — never lazily, so reading it
+		// through a const Graph& is safe from several threads at once.
+		std::vector<NodeId> m_topo;
 	};
 } // namespace lain::flow
 

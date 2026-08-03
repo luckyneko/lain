@@ -8,6 +8,7 @@
 #include <lain/app/application.h>
 #include <lain/app/window.h>
 #include <lain/core/paths.h> // core::configDir (~/.flowview for the layout ini)
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/gui/dialogs.h> // lastDirectory / setLastDirectory (the persisted dialog folder)
 #include <lain/gui/dock.h>	  // the docking seam (no imgui_internal in the app)
@@ -100,6 +101,9 @@ namespace flowview
 		// Issues together. resolvePath truncates a path that no longer resolves, so a group deleted
 		// from under us degrades to its parent rather than dangling.
 		flow::Graph& graph = resolvePath(appDelegate.graph(), m_ctx.activePath); // mutated by the canvas below
+		// ... and the runtime state that belongs to it. An Evaluation is a tree with one child per
+		// group node, so the SAME path walks it — every pane gets a definition and its values in step.
+		flow::Evaluation& evaluation = resolveEvaluation(appDelegate.evaluation(), m_ctx.activePath);
 		// The path the panes are about to draw with. Captured now because a pane may NAVIGATE during
 		// this frame (a double-click descends), and the positions collected at the end of the frame
 		// belong to the level that was actually on screen — not to the one we are moving to.
@@ -122,7 +126,7 @@ namespace flowview
 		// texture preview — the panel never references a just-freed node's texture. All its
 		// edits accumulate into `edited`, alongside the menu-bar Add below.
 		bool edited = false;
-		m_canvas.draw(m_ctx, graph, edited);
+		m_canvas.draw(m_ctx, graph, evaluation, edited);
 
 		// The application menu bar (viewport-top; ImGui places it there regardless of call order). Its
 		// Add feeds the same `edited` flag as the canvas, so a menu Add Node re-runs the scene like any edit.
@@ -140,17 +144,17 @@ namespace flowview
 			m_ctx.loadIssues.clear();
 		}
 
-		m_previews.refreshIfDirty(graph, *m_guiCtx);
+		m_previews.refreshIfDirty(graph, evaluation, *m_guiCtx);
 
 		// The per-node Inspector — reads (and param-edits) the now post-edit graph.
-		m_inspector.draw(m_ctx, graph, m_previews, m_paramEditors);
+		m_inspector.draw(m_ctx, graph, evaluation, m_previews, m_paramEditors);
 
 		// The graph's I/O boundary — the host-binding surface (bind inputs, save outputs).
-		m_interface.draw(m_ctx, graph, m_previews, m_paramEditors);
+		m_interface.draw(m_ctx, graph, evaluation, m_previews, m_paramEditors);
 
 		// Preview + Issues panels — docked windows the default layout tiles alongside the Graph.
-		m_preview.draw(m_ctx, graph, m_previews);
-		m_issues.draw(m_ctx, graph);
+		m_preview.draw(m_ctx, graph, evaluation, m_previews);
+		m_issues.draw(m_ctx, graph, evaluation);
 
 		// The unsaved-changes guard for New (opened by requestNew when m_ctx.dirty).
 		m_menuBar.drawConfirmModal(m_ctx, graph);

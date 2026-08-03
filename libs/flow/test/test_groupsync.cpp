@@ -4,6 +4,7 @@
 // the parent's edges into them.
 
 #include "lain/flow/edit.h"
+#include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
 #include "lain/flow/group.h"
 #include "lain/flow/scheduler.h"
@@ -189,12 +190,13 @@ TEST_CASE("a synced group runs end to end", "[flow][group][edit][scheduler]")
 	REQUIRE(g.connect({g.boundaryInputNode().id(), x}, {id, g.node(id).input(0).id()}) == Connection::Ok);
 	REQUIRE(g.connect({id, g.node(id).output(0).id()}, {g.boundaryOutputNode().id(), y}) == Connection::Ok);
 
+	Evaluation e{g};
 	PortValue v;
 	v.set<int>(5);
-	g.boundaryInputNode().setValue(x, std::move(v));
-	SerialScheduler().run(g);
+	e.bind(PortAddress{g.boundaryInputNode().id(), x}, std::move(v));
+	SerialScheduler().run(g, e);
 
-	REQUIRE(g.boundaryOutputNode().value(y).get<int>() == 105);
+	REQUIRE(e.value(PortAddress{g.boundaryOutputNode().id(), y}).get<int>() == 105);
 }
 
 TEST_CASE("sync is a no-op on a node that contains no graph", "[flow][group][edit]")
@@ -265,17 +267,18 @@ TEST_CASE("inner pins with COLLIDING ids on opposite sides never cross", "[flow]
 	REQUIRE(g.connect({id, findPortNamed(g.node(id), Port::Direction::Output, "p")->id()}, {sink, yp}) == Connection::Ok);
 	REQUIRE(g.connect({id, findPortNamed(g.node(id), Port::Direction::Output, "q")->id()}, {sink, yq}) == Connection::Ok);
 
+	Evaluation e{g};
 	PortValue v1;
 	v1.set<int>(11);
 	PortValue v2;
 	v2.set<int>(22);
-	g.boundaryInputNode().setValue(x1, std::move(v1));
-	g.boundaryInputNode().setValue(x2, std::move(v2));
+	e.bind(PortAddress{g.boundaryInputNode().id(), x1}, std::move(v1));
+	e.bind(PortAddress{g.boundaryInputNode().id(), x2}, std::move(v2));
 
-	SerialScheduler().run(g);
+	SerialScheduler().run(g, e);
 
-	REQUIRE(g.boundaryOutputNode().value(yp).get<int>() == 22); // b (22) -> p
-	REQUIRE(g.boundaryOutputNode().value(yq).get<int>() == 11); // a (11) -> q
+	REQUIRE(e.value(PortAddress{g.boundaryOutputNode().id(), yp}).get<int>() == 22); // b (22) -> p
+	REQUIRE(e.value(PortAddress{g.boundaryOutputNode().id(), yq}).get<int>() == 11); // a (11) -> q
 }
 
 TEST_CASE("pins added one at a time, syncing between, all reach the outer node", "[flow][group][edit]")
@@ -318,13 +321,14 @@ TEST_CASE("pins added one at a time, syncing between, all reach the outer node",
 		REQUIRE(g.connect({g.boundaryInputNode().id(), x}, {id, g.node(id).input(0).id()}) == Connection::Ok);
 		REQUIRE(g.connect({id, g.node(id).output(0).id()}, {g.boundaryOutputNode().id(), y}) == Connection::Ok);
 
+		Evaluation e{g};
 		PortValue v;
 		v.set<int>(42);
-		g.boundaryInputNode().setValue(x, std::move(v));
-		SerialScheduler().run(g);
+		e.bind(PortAddress{g.boundaryInputNode().id(), x}, std::move(v));
+		SerialScheduler().run(g, e);
 
-		REQUIRE(g.boundaryOutputNode().value(y).holds<int>());
-		REQUIRE(g.boundaryOutputNode().value(y).get<int>() == 42);
+		REQUIRE(e.value(PortAddress{g.boundaryOutputNode().id(), y}).holds<int>());
+		REQUIRE(e.value(PortAddress{g.boundaryOutputNode().id(), y}).get<int>() == 42);
 	}
 
 	SECTION("and it keeps working as more pins arrive on both sides")

@@ -2,6 +2,7 @@
 // type-checked + cycle-rejecting connect, disconnect, topo order, and the
 // compute() read/write path (driven directly here; the scheduler is step 4).
 
+#include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
 #include "lain/flow/scheduler.h"
 
@@ -9,6 +10,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <typeindex>
@@ -32,7 +34,7 @@ namespace
 		{
 			out = addOutput<int>("value");
 		}
-		void compute() override { output(out).set(value); }
+		void compute(NodeEvaluation& evaluation) const override { evaluation.output(out).set(value); }
 	};
 
 	// Two int inputs -> their sum.
@@ -46,7 +48,10 @@ namespace
 			b = addInput<int>("b");
 			sum = addOutput<int>("sum");
 		}
-		void compute() override { output(sum).set(input(a).get<int>() + input(b).get<int>()); }
+		void compute(NodeEvaluation& evaluation) const override
+		{
+			evaluation.output(sum).set(evaluation.input(a).get<int>() + evaluation.input(b).get<int>());
+		}
 	};
 
 	// One float input — used to provoke a type mismatch against an int output.
@@ -58,7 +63,7 @@ namespace
 		{
 			in = addInput<float>("x");
 		}
-		void compute() override {}
+		void compute(NodeEvaluation&) const override {}
 	};
 
 	std::ptrdiff_t indexOf(const std::vector<NodeId>& order, NodeId id)
@@ -81,7 +86,7 @@ TEST_CASE("a node exposes its declared ports", "[graph]")
 	REQUIRE(std::string(n.input(0).typeName()) == "int"); // captured from lain::meta::typeName<int>()
 	REQUIRE(n.output(0).name() == "sum");
 	REQUIRE(n.id() == add);
-	REQUIRE(n.dirty()); // freshly added nodes are dirty
+	REQUIRE(n.version() != 0); // a live recipe version; a fresh Evaluation records 0, so it is stale
 }
 
 TEST_CASE("connect type-checks declared port types", "[graph]")
@@ -135,8 +140,9 @@ TEST_CASE("an output fans out to many inputs (only inputs are single-source)", "
 	REQUIRE(g.connect(c, 0, add, 1) == Connection::Ok); // same output, second consumer: fine
 	REQUIRE(g.edges().size() == 2);
 
-	SerialScheduler().run(g);
-	REQUIRE(g.node(add).output(0).get<int>() == 18);
+	Evaluation e{g};
+	SerialScheduler().run(g, e);
+	REQUIRE(e.value(PortAddress{add, g.node(add).output(0).id()}).get<int>() == 18);
 }
 
 TEST_CASE("connect rejects cycles", "[graph]")
@@ -167,31 +173,54 @@ TEST_CASE("topoOrder places sources before dependents", "[graph]")
 
 TEST_CASE("compute reads inputs and writes outputs", "[graph]")
 {
+	// compute() is const and reads/writes through the evaluation it is handed — so driving one
+	// directly means building the view, which is what the scheduler does for it.
 	Graph g;
 	const NodeId c = g.add<ConstInt>(42);
+	Evaluation e{g};
 
-	REQUIRE_FALSE(g.node(c).output(0).ready());
-	g.node(c).compute();
-	REQUIRE(g.node(c).output(0).ready());
-	REQUIRE(g.node(c).output(0).get<int>() == 42);
+	const PortAddress constOut{c, g.node(c).output(0).id()};
+	REQUIRE(e.value(constOut).empty());
+	NodeEvaluation constView = e.node(c);
+	g.node(c).compute(constView);
+	REQUIRE_FALSE(e.value(constOut).empty());
+	REQUIRE(e.value(constOut).get<int>() == 42);
 
+	// A node that CONSUMES needs its inputs populated, which is the scheduler's job — so this half
+	// goes through a run rather than pretending to be one.
+	const NodeId other = g.add<ConstInt>(40);
 	const NodeId add = g.add<AddInt>();
-	g.node(add).input(0).set(2); // the scheduler will populate these from edges; here we drive directly
-	g.node(add).input(1).set(40);
-	g.node(add).compute();
-	REQUIRE(g.node(add).output(0).get<int>() == 42);
+	REQUIRE(g.connect(c, 0, add, 0) == Connection::Ok);
+	REQUIRE(g.connect(other, 0, add, 1) == Connection::Ok);
+	SerialScheduler().run(g, e);
+	REQUIRE(e.value(PortAddress{add, g.node(add).output(0).id()}).get<int>() == 82);
 }
 
-TEST_CASE("dirty flag toggles", "[graph]")
+TEST_CASE("staleness is a version comparison, not a flag on the node", "[graph]")
 {
+	// A definition carries a per-node VERSION; an evaluation records what it computed each node at.
+	// That is what lets one definition serve several evaluations — a single shared dirty bool could
+	// only ever describe one of them.
 	Graph g;
 	const NodeId c = g.add<ConstInt>(1);
+	Evaluation e{g};
 
-	REQUIRE(g.node(c).dirty());
-	g.node(c).clearDirty();
-	REQUIRE_FALSE(g.node(c).dirty());
-	g.node(c).markDirty();
-	REQUIRE(g.node(c).dirty());
+	REQUIRE(e.needsRecompute(c)); // a fresh evaluation has computed nothing
+	SerialScheduler().run(g, e);
+	REQUIRE_FALSE(e.needsRecompute(c)); // now at the definition's version
+
+	// A recipe edit bumps the node's version. (Which edits bump is covered in [param] and by the
+	// structural primitives; what matters here is the COMPARISON.)
+	const std::uint64_t before = g.node(c).version();
+	g.bumpNodeVersion(c);
+	REQUIRE(g.node(c).version() != before);
+	REQUIRE(e.needsRecompute(c)); // ... and every evaluation notices, without the edit touching them
+
+	// A second evaluation of the same definition is independent.
+	Evaluation other{g};
+	SerialScheduler().run(g, other);
+	REQUIRE_FALSE(other.needsRecompute(c));
+	REQUIRE(e.needsRecompute(c)); // still stale — the other run said nothing about this one
 }
 
 TEST_CASE("add adopts an already-constructed node", "[graph]")
@@ -310,8 +339,9 @@ TEST_CASE("a requested identity is restored, a duplicate is re-minted", "[graph]
 	const NodeId clash = g.add(std::make_unique<ConstInt>(2), wanted);
 	REQUIRE(clash != NodeId{});
 	REQUIRE(clash != wanted);
-	g.node(wanted).compute();
-	REQUIRE(g.node(wanted).output(0).get<int>() == 1); // still the FIRST node, not the newcomer
+	Evaluation e{g};
+	SerialScheduler().run(g, e);
+	REQUIRE(e.value(PortAddress{wanted, g.node(wanted).output(0).id()}).get<int>() == 1); // the FIRST node
 	REQUIRE(g.nodeCount() == kBoundaryNodes + 2);
 
 	// A null request mints, exactly as the plain add() overload does.

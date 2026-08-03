@@ -6,6 +6,7 @@
 
 #include "lain/flow/dynamicports.h"
 #include "lain/flow/edit.h"
+#include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
 #include "lain/flow/porttyperegistry.h"
 #include "testnodes.h" // ConstInt — an int source to wire into a dynamic pin
@@ -27,7 +28,7 @@ namespace
 		{
 		}
 		Port::Direction dynamicSide() const override { return Port::Direction::Input; }
-		void compute() override {}
+		void compute(NodeEvaluation&) const override {}
 	};
 
 } // namespace
@@ -200,7 +201,7 @@ TEST_CASE("acceptsPortType narrows the addable types", "[flow][dynamic]")
 		}
 		Port::Direction dynamicSide() const override { return Port::Direction::Input; }
 		bool acceptsPortType(const std::string& key) const override { return key == "Image"; }
-		void compute() override {}
+		void compute(NodeEvaluation&) const override {}
 	};
 
 	ImagesOnly node;

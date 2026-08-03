@@ -19,13 +19,13 @@ namespace lain::flow::example
 		m_out = addOutput<image::Image>("image");
 	}
 
-	void TintNode::compute()
+	void TintNode::compute(NodeEvaluation& evaluation) const
 	{
 		// No upstream image yet -> nothing to emit (leave the output slot as it was).
-		if (!input(m_in).ready())
+		if (evaluation.input(m_in).empty())
 			return;
 
-		image::Image src = input(m_in).get<image::Image>();
+		image::Image src = evaluation.input(m_in).get<image::Image>();
 		if (!src.valid())
 			return;
 
@@ -56,6 +56,6 @@ namespace lain::flow::example
 			px[i * 4 + 3] = in[i * 4 + 3];
 		}
 
-		output(m_out).set(std::move(out));
+		evaluation.output(m_out).set(std::move(out));
 	}
 } // namespace lain::flow::example

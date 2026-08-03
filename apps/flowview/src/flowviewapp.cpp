@@ -65,13 +65,13 @@ namespace flowview
 		// replaces this at the end of the first frame.
 		m_graph = std::make_unique<flow::Graph>();
 		if (m_useExample)
-		{
 			buildExampleScene(*m_graph, m_nodeFactory);
-			bindDefaultInput(*m_graph, m_size);
-		}
 		// else: a blank document needs no building — a fresh Graph is already one empty Input +
 		// one empty Output node, and the user grows the interface from the Interface panel's ±.
-		m_scheduler.run(*m_graph);
+		m_evaluation = flow::Evaluation{*m_graph};
+		if (m_useExample)
+			bindDefaultInput(*m_graph, m_evaluation, m_size);
+		m_scheduler.run(*m_graph, m_evaluation);
 		return true;
 	}
 
@@ -109,6 +109,10 @@ namespace flowview
 		// future node that owns GPU buffers must release them while the device is alive —
 		// onStop runs before device teardown, so resetting here keeps that safe. Headless
 		// mode uses a local graph, so m_graph is null here and this is a no-op.
+		//
+		// The evaluation goes FIRST and with it: it is where the payloads actually live now, and it
+		// holds a pointer to the definition it belongs to.
+		m_evaluation = flow::Evaluation{};
 		m_graph.reset();
 	}
 
@@ -117,13 +121,17 @@ namespace flowview
 		// A full topo-order run (not a pull of one target) recomputes the whole graph
 		// through its current wiring — correct no matter which nodes/edges were edited,
 		// including deletion of whatever used to be the pulled sink.
-		m_scheduler.run(*m_graph);
+		m_scheduler.run(*m_graph, m_evaluation);
 	}
 
 	void FlowviewApp::replaceGraph(std::unique_ptr<flow::Graph> graph)
 	{
+		// BOTH or neither: a new definition gets a new evaluation, because the old one's recorded
+		// per-node versions belong to a graph that no longer exists (ADR-0012). Making the swap
+		// atomic here is what makes the pairing structural rather than something to remember.
 		m_graph = std::move(graph);
-		bindDefaultInput(*m_graph, m_size); // a loaded scene has no bound input — show a gradient until rebound
-		m_scheduler.run(*m_graph);
+		m_evaluation = flow::Evaluation{*m_graph};
+		bindDefaultInput(*m_graph, m_evaluation, m_size); // a loaded scene has nothing bound — show a gradient
+		m_scheduler.run(*m_graph, m_evaluation);
 	}
 } // namespace flowview

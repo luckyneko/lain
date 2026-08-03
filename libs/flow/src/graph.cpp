@@ -39,7 +39,7 @@ namespace lain::flow
 		node->setId(id); // Graph is a friend of Node
 		m_nodes.emplace(id, std::move(node));
 		m_order.push_back(id); // lookup order and node order are separate — see nodeIds()
-		m_topoValid = false;
+		rebuildTopoOrder();
 		return id;
 	}
 
@@ -64,6 +64,12 @@ namespace lain::flow
 		return adopt(std::move(node), usableId(requestedId));
 	}
 
+	void Graph::bump(NodeId id)
+	{
+		if (const auto it = m_nodes.find(id); it != m_nodes.end())
+			it->second->bumpVersion(); // Graph is a friend of Node
+	}
+
 	bool Graph::removeNode(NodeId id)
 	{
 		// The interface pair is not removable — see the Graph constructor. Refusing here (rather
@@ -76,12 +82,12 @@ namespace lain::flow
 		if (it == m_nodes.end())
 			return false;
 
-		// A downstream consumer loses an input source when this node goes — mark each dirty before
-		// the edges are dropped, so incremental re-eval recomputes them.
+		// A downstream consumer loses an input source when this node goes — its recipe changed, so
+		// bump it before the edges are dropped and every evaluation will recompute it.
 		for (const Edge& e : m_edges)
 		{
 			if (e.from.node == id && e.to.node != id)
-				node(e.to.node).markDirty();
+				bump(e.to.node);
 		}
 
 		// Drop every edge that touches the node, in either direction. A downstream
@@ -92,14 +98,8 @@ namespace lain::flow
 					  m_edges.end());
 		m_nodes.erase(it);
 		m_order.erase(std::remove(m_order.begin(), m_order.end(), id), m_order.end());
-		m_topoValid = false;
+		rebuildTopoOrder();
 		return true;
-	}
-
-	void Graph::markAllDirty()
-	{
-		for (auto& entry : m_nodes)
-			entry.second->markDirty();
 	}
 
 	Connection Graph::connect(PortAddress from, PortAddress to)
@@ -126,8 +126,8 @@ namespace lain::flow
 			return Connection::WouldCycle;
 
 		m_edges.push_back(Edge{from, to});
-		m_topoValid = false;
-		node(to.node).markDirty(); // the downstream node gained an input source — recompute it
+		rebuildTopoOrder();
+		bump(to.node); // the downstream node gained an input source — its recipe changed
 		return Connection::Ok;
 	}
 
@@ -152,8 +152,8 @@ namespace lain::flow
 			if (it->to == input)
 			{
 				m_edges.erase(it);
-				m_topoValid = false;
-				node(input.node).markDirty(); // lost its source — recompute (input now empty)
+				rebuildTopoOrder();
+				bump(input.node); // lost its source — its recipe changed (that input is now unfed)
 				return true;
 			}
 		}
@@ -184,15 +184,12 @@ namespace lain::flow
 		}
 		if (!node(port.node).removePort(port.port))
 			return false;
-		node(port.node).markDirty(); // the node's port set changed — recompute
+		bump(port.node); // the node's port set changed
 		return true;
 	}
 
-	const std::vector<NodeId>& Graph::topoOrder() const
+	void Graph::rebuildTopoOrder()
 	{
-		if (m_topoValid)
-			return m_topo;
-
 		// Kahn's algorithm over the id-keyed node set (ids aren't contiguous, so
 		// indegree is a map, not a vector). Acyclic by construction, so every node
 		// drains and m_topo ends up covering all of them.
@@ -226,9 +223,6 @@ namespace lain::flow
 					ready.push_back(e.to.node);
 			}
 		}
-
-		m_topoValid = true;
-		return m_topo;
 	}
 
 	bool Graph::reaches(NodeId start, NodeId target) const
@@ -258,21 +252,27 @@ namespace lain::flow
 
 	// The pin lists and the node accessors all resolve through the invariant pair, so the RTTI scan
 	// these used to do is gone: there is exactly one node of each kind, and its id is known.
-	std::vector<BoundaryInput> Graph::boundaryInputs()
+	std::vector<BoundaryInput> Graph::boundaryInputs() const
 	{
-		GroupInputNode& node = boundaryInputNode();
+		const GroupInputNode& node = boundaryInputNode();
 		std::vector<BoundaryInput> out;
 		for (std::size_t i = 0; i < node.outputCount(); ++i) // a GroupInput's outputs are the graph's inputs
-			out.push_back(BoundaryInput{&node, node.output(i).id()});
+		{
+			const Port& pin = node.output(i);
+			out.push_back(BoundaryPin{PortAddress{node.id(), pin.id()}, pin.name(), pin.type(), pin.typeName()});
+		}
 		return out;
 	}
 
-	std::vector<BoundaryOutput> Graph::boundaryOutputs()
+	std::vector<BoundaryOutput> Graph::boundaryOutputs() const
 	{
-		GroupOutputNode& node = boundaryOutputNode();
+		const GroupOutputNode& node = boundaryOutputNode();
 		std::vector<BoundaryOutput> out;
 		for (std::size_t i = 0; i < node.inputCount(); ++i) // a GroupOutput's inputs are the graph's outputs
-			out.push_back(BoundaryOutput{&node, node.input(i).id()});
+		{
+			const Port& pin = node.input(i);
+			out.push_back(BoundaryPin{PortAddress{node.id(), pin.id()}, pin.name(), pin.type(), pin.typeName()});
+		}
 		return out;
 	}
 

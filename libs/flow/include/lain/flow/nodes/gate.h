@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lain/flow/evaluation.h"
 #include "lain/flow/node.h"
 
 namespace lain::flow
@@ -22,12 +23,12 @@ namespace lain::flow
 			m_out = addOutput<T>("out");
 		}
 
-		void compute() override
+		void compute(NodeEvaluation& evaluation) const override
 		{
-			if (input(m_enable).template get<bool>())
-				output(m_out).template set<T>(input(m_value).template get<T>());
+			if (evaluation.input(m_enable).template get<bool>())
+				evaluation.output(m_out).template set<T>(evaluation.input(m_value).template get<T>());
 			else
-				output(m_out).clear(); // suppress — downstream sees no value
+				evaluation.output(m_out).clear(); // suppress — downstream sees no value
 		}
 
 	private:

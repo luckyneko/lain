@@ -6,8 +6,9 @@
 
 namespace lain::flow
 {
+	class Evaluation;
 	class Graph;
-}
+} // namespace lain::flow
 
 namespace flowview
 {
@@ -24,7 +25,8 @@ namespace flowview
 		// Draws the "Interface" window (owns its Begin/End) + the remove-pin confirm modal. Mutates the
 		// graph (bind / add / remove pins) and, on a change, re-runs the scene via ctx.app and refreshes
 		// the previews.
-		void draw(AppContext& ctx, lain::flow::Graph& graph, PreviewCache& previews, const ParamEditors& editors);
+		void draw(AppContext& ctx, lain::flow::Graph& graph, lain::flow::Evaluation& evaluation, PreviewCache& previews,
+				  const ParamEditors& editors);
 
 	private:
 		// The "Remove pin?" confirm modal (opened by a "×"); runs edit::removePort on confirm. Returns

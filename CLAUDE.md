@@ -186,6 +186,63 @@ that **keeps the canvas selection across an undo/redo** (selected nodes captured
 `nodeIds()` — stable across the load's fresh-id remap — and re-selected after the swap; New/Open still
 clear, since they carry a `pendingBaseline`).
 
+### Update 2026-08-03 — M6 step 4 built: `Evaluation` — the recipe apart from its runtime state
+
+**The milestone's centre of gravity.** A `Graph` was simultaneously a document, an evaluation cache
+and dirty bookkeeping; now it is only the first. Runtime state lives in a host-owned `Evaluation`, and
+the scheduler takes both: `run(const Graph& definition, Evaluation& evaluation)`. `ctest` **394/394**
+(the flow suite repeated 5x clean), warning-clean, `format-check` clean, headless round-trip still
+byte-identical, and **gui-mode live-verified by the repo owner 2026-08-03** — every value-reading pane
+changed where it reads from, so that was the slice's real risk; it produced no bugs. See WORK.md
+step 4 for the full landing notes.
+
+- **`libs/flow/evaluation.h`** — `Evaluation` (move-only, core-only, needs just `PortValue`) owns
+  per-node values, `computedAt` versions, recompute requests, boundary bindings, and one child
+  Evaluation per group node. `NodeEvaluation` is the per-node view `compute(NodeEvaluation&) const`
+  gets: its own inputs (read-only) and its own outputs, and nothing else.
+- **`Port` is pure declaration** — `{id, name, direction, PortType, presence}`. `value()`,
+  `set`/`get`/`holds`, `ready()` and `describe()` all left, taking `details/port.inl` with them.
+  Readiness followed the values (`evaluation.ready(node)` / `nodeEvaluation.ready()`, and
+  `hasValue(PortAddress)` for port presence), which also retired the collision where `Port::ready()`
+  meant *has a value* and `Node::ready()` meant *all required inputs do*. Rendering stayed a
+  `PortType` capability, applied to an evaluation value: `evaluation.describe(port)`.
+- **Staleness is a per-node version comparison**, not a shared `m_dirty` bool — a bool could only ever
+  describe one run, so it could not serve two evaluations. `Node::version()` is bumped by `setParam`
+  and by Graph's structural primitives; an evaluation records what it computed each node at.
+  **Invalidation is PULLED**: the definition holds no list of its evaluations, so an edit cannot walk
+  them — it bumps a version and each notices when it next runs, which keeps an edit O(1) in the number
+  of streams. `dirty()` / `selfDirty()` / the group override / `Graph::markAllDirty` are all gone;
+  `Evaluation::requestRecompute(node)` and `requestRecomputeAll()` replace the last, addressed to ONE
+  evaluation rather than to a definition that cannot know which to refresh.
+- **`const Graph&` now means CONCURRENTLY READABLE**, so `topoOrder()` stopped being a lazy `mutable`
+  cache and is rebuilt by the mutators. Two runs after an edit would otherwise have rebuilt it at
+  once, behind a signature advertising safety.
+- **A bound value IS the boundary pin's output value in the evaluation.** `GroupInputNode::compute`
+  became a no-op carrying what was bound, which deleted `m_bound`, `setValue` and
+  `GroupOutputNode::value` together — and made group entry literally the host's operation
+  (`enterGroup` calls `child.bind(...)`). `BoundaryInput`/`BoundaryOutput` collapsed into one
+  `BoundaryPin` of `{PortAddress, name, type, typeName}`: pure recipe metadata, with no way to touch
+  a value.
+- **The version bookkeeping is two halves, in this order** — clear the recompute request BEFORE
+  `compute()` (so an on-request source that rearms itself keeps its new request), record `computedAt`
+  AFTER it (so a `compute()` that **throws** stays stale and is retried, not remembered as done). The
+  lease test caught the original single-step version. A *suppressed* node still records: ADR-0007
+  relies on clean-and-empty together, so a stable-off subtree drops out of future closures.
+- **One evaluation runs once at a time.** Scheduler entry takes a non-blocking RAII lease and throws
+  `std::logic_error` immediately if it is held — a mutex would hide the caller error and can deadlock
+  on recursive entry. `Scheduler::Session` bundles the lease with `prepare` so a backend cannot do
+  half the ritual.
+- **A host owns a definition and its Evaluation as one replaceable unit.** `FlowviewApp::replaceGraph`
+  swaps both or neither; `runmode` creates both together. `prepare` compares the recorded definition
+  as a guard rail — address identity, so it catches a mispaired call but not a Graph rebuilt where the
+  old one stood, which is why ownership is the mechanism.
+- **`resolveEvaluation`** joins `resolvePath` in `groupnav`: an Evaluation is a tree with one child
+  per group node, so the same `GraphPath` walks it and every pane gets a definition and its values in
+  step.
+- **Known cost, accepted:** `prepare` rebuilds its node/port maps every run rather than noticing that
+  nothing changed. A graph revision counter would make the common case O(1); worth doing if a large
+  graph ever feels it.
+
 ### Update 2026-08-02 — M6 step 3 built: `Node::setParam` is the one recipe-mutation seam
 
 A param is **recipe**, so changing one is a document edit that must invalidate its node — and while
@@ -256,8 +313,10 @@ Metal session beyond step 1's.
 
 **Milestone 6 step 1 is built** (see WORK.md for the landing notes and the three deviations). Node
 identity is now a UUID, the graph document is schema **v2**, and flowview's imnodes boundary is a
-document-lifetime mapping. `ctest` **374/374**, warning-clean, `format-check` clean. **gui-mode has
-not been driven** — every pane's id plumbing changed, so it needs a Metal session.
+document-lifetime mapping. `ctest` **374/374**, warning-clean, `format-check` clean, and **gui-mode
+live-verified by the repo owner 2026-08-03** — every pane's id plumbing changed, so that was the
+slice's real risk. It produced one bug, fixed separately: undo left a linked group unresolved (see the
+note at the end of this section).
 
 - **`libs/core/uuid.h`** (`lain::core::Uuid`) — std-only RFC 9562 **v7**: `generate`, a deliberately
   liberal `parse` (32 hex, either case, hyphens tolerated, no version/variant policing — a pasted

@@ -1,6 +1,7 @@
 // Unit: the example nodes produce/consume a lain::image::Image through the graph's pull
 // path, and an edge carries an image between them. Pure CPU — no device, no [gpu] SKIP.
 
+#include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
 #include "lain/flow/scheduler.h"
 
@@ -42,11 +43,12 @@ TEST_CASE("GradientNode emits an RGBA gradient image on its port", "[flow]")
 	Graph graph;
 	const NodeId id = graph.add<example::GradientNode>(kSize, kSize);
 
-	SerialScheduler{}.evaluate(graph, id); // pull: runs compute() — fills the image
+	Evaluation e{graph};
+	SerialScheduler{}.evaluate(graph, e, id); // pull: runs compute() — fills the image
 
-	const Port& out = graph.node(id).output(0);
-	REQUIRE(out.value().holds<lain::image::Image>());
-	const lain::image::Image& img = out.value().get<lain::image::Image>();
+	const lain::flow::PortValue& out = e.value(PortAddress{id, graph.node(id).output(0).id()});
+	REQUIRE(out.holds<lain::image::Image>());
+	const lain::image::Image& img = out.get<lain::image::Image>();
 	REQUIRE(img.width() == kSize);
 	REQUIRE(img.height() == kSize);
 
@@ -74,11 +76,12 @@ TEST_CASE("an image flows through an edge: gradient -> tint", "[flow]")
 	const NodeId tint = graph.add<example::TintNode>(1.0f, 0.5f, 0.5f); // keep R, halve G/B
 	REQUIRE(graph.connect(gradient, 0, tint, 0) == Connection::Ok);
 
-	SerialScheduler{}.evaluate(graph, tint); // pulls gradient upstream, then tint
+	Evaluation e{graph};
+	SerialScheduler{}.evaluate(graph, e, tint); // pulls gradient upstream, then tint
 
-	const Port& out = graph.node(tint).output(0);
-	REQUIRE(out.value().holds<lain::image::Image>());
-	const lain::image::Image& img = out.value().get<lain::image::Image>();
+	const lain::flow::PortValue& out = e.value(PortAddress{tint, graph.node(tint).output(0).id()});
+	REQUIRE(out.holds<lain::image::Image>());
+	const lain::image::Image& img = out.get<lain::image::Image>();
 
 	// Gradient TL=(0,0,128), BR=(255,255,128). Tint (1.0, 0.5, 0.5) keeps R, halves G/B:
 	// TL -> (0, 0, 64), BR -> (255, 127, 64). Alpha preserved at 255.
@@ -102,15 +105,16 @@ TEST_CASE("editing a TintNode param changes its output", "[flow]")
 	const NodeId tint = graph.add<example::TintNode>(1.0f, 1.0f, 1.0f); // identity
 	REQUIRE(graph.connect(gradient, 0, tint, 0) == Connection::Ok);
 
-	SerialScheduler{}.evaluate(graph, tint);
-	CHECK(pixel(graph.node(tint).output(0).value().get<lain::image::Image>(), 0).b == 128); // gradient blue, unchanged
+	Evaluation e{graph};
+	SerialScheduler{}.evaluate(graph, e, tint);
+	CHECK(pixel(e.value(PortAddress{tint, graph.node(tint).output(0).id()}).get<lain::image::Image>(), 0).b == 128); // gradient blue, unchanged
 
 	// Edit the single "tint" ColorRGBf param (halve blue), then re-eval. No markDirty: setParam
 	// commits and invalidates as one operation, which is the whole point of the seam.
 	lain::flow::Node& tintNode = graph.node(tint);
 	REQUIRE(tintNode.setParam(tintNode.param(0).id(), lain::image::ColorRGBf(1.0f, 1.0f, 0.5f)));
-	SerialScheduler{}.evaluate(graph, tint);
-	CHECK(pixel(graph.node(tint).output(0).value().get<lain::image::Image>(), 0).b == 64);
+	SerialScheduler{}.evaluate(graph, e, tint); // the same evaluation notices the version bump
+	CHECK(pixel(e.value(PortAddress{tint, graph.node(tint).output(0).id()}).get<lain::image::Image>(), 0).b == 64);
 }
 
 TEST_CASE("transform nodes handle a non-RGBA8 input (e.g. a loaded RGB8 image)", "[flow]")
@@ -120,16 +124,29 @@ TEST_CASE("transform nodes handle a non-RGBA8 input (e.g. a loaded RGB8 image)",
 	// index past the buffer and crash; both must normalise first.
 	const lain::image::Image rgb(4, 4, lain::image::PixelFormat::RGB8, lain::image::ColorSpace::sRGB);
 
-	example::TintNode tint(1.0f, 0.5f, 0.5f);
-	tint.input(0).set<lain::image::Image>(rgb);
-	tint.compute(); // must not overrun the RGB8 buffer
-	REQUIRE(tint.output(0).value().get<lain::image::Image>().valid());
-	REQUIRE(tint.output(0).value().get<lain::image::Image>().pixelFormat() == lain::image::PixelFormat::RGBA8);
+	// Driven through a graph rather than by hand: a node's values live in an evaluation now, so
+	// feeding one means binding at the boundary and letting the scheduler populate its input.
+	const auto through = [&rgb](Graph& graph, NodeId id)
+	{
+		GroupInputNode& boundary = graph.boundaryInputNode();
+		const PortId pin = boundary.addBoundary<lain::image::Image>("source");
+		REQUIRE(graph.connect(PortAddress{boundary.id(), pin}, PortAddress{id, graph.node(id).input(0).id()}) == Connection::Ok);
 
-	example::BlurNode blur(1, 1.0f);
-	blur.input(0).set<lain::image::Image>(rgb);
-	blur.compute();
-	REQUIRE(blur.output(0).value().get<lain::image::Image>().valid());
+		Evaluation e{graph};
+		PortValue v;
+		v.set<lain::image::Image>(rgb);
+		e.bind(PortAddress{boundary.id(), pin}, std::move(v));
+		SerialScheduler{}.evaluate(graph, e, id);
+		return e.value(PortAddress{id, graph.node(id).output(0).id()}).get<lain::image::Image>();
+	};
+
+	Graph tintGraph;
+	const lain::image::Image tinted = through(tintGraph, tintGraph.add<example::TintNode>(1.0f, 0.5f, 0.5f));
+	REQUIRE(tinted.valid()); // must not have overrun the RGB8 buffer
+	REQUIRE(tinted.pixelFormat() == lain::image::PixelFormat::RGBA8);
+
+	Graph blurGraph;
+	REQUIRE(through(blurGraph, blurGraph.add<example::BlurNode>(1, 1.0f)).valid());
 }
 
 TEST_CASE("BlurNode runs the op catalog through an edge: gradient -> blur", "[flow]")
@@ -142,11 +159,12 @@ TEST_CASE("BlurNode runs the op catalog through an edge: gradient -> blur", "[fl
 	const NodeId blur = graph.add<example::BlurNode>(2, 1.5f);
 	REQUIRE(graph.connect(gradient, 0, blur, 0) == Connection::Ok);
 
-	SerialScheduler{}.evaluate(graph, blur); // pulls gradient upstream, then blurs
+	Evaluation e{graph};
+	SerialScheduler{}.evaluate(graph, e, blur); // pulls gradient upstream, then blurs
 
-	const Port& out = graph.node(blur).output(0);
-	REQUIRE(out.value().holds<lain::image::Image>());
-	const lain::image::Image& img = out.value().get<lain::image::Image>();
+	const lain::flow::PortValue& out = e.value(PortAddress{blur, graph.node(blur).output(0).id()});
+	REQUIRE(out.holds<lain::image::Image>());
+	const lain::image::Image& img = out.get<lain::image::Image>();
 	REQUIRE(img.width() == kSize);
 	REQUIRE(img.height() == kSize);
 
@@ -204,11 +222,12 @@ TEST_CASE("LoadImageNode loads a file and emits the decoded image", "[flow]")
 
 	Graph graph;
 	const NodeId id = graph.add<example::LoadImageNode>(file.path());
-	SerialScheduler{}.evaluate(graph, id);
+	Evaluation e{graph};
+	SerialScheduler{}.evaluate(graph, e, id);
 
-	const Port& out = graph.node(id).output(0);
-	REQUIRE(out.value().holds<lain::image::Image>());
-	const lain::image::Image& img = out.value().get<lain::image::Image>();
+	const lain::flow::PortValue& out = e.value(PortAddress{id, graph.node(id).output(0).id()});
+	REQUIRE(out.holds<lain::image::Image>());
+	const lain::image::Image& img = out.get<lain::image::Image>();
 	REQUIRE(img.valid());
 	REQUIRE(img.width() == 5);
 }
@@ -218,11 +237,12 @@ TEST_CASE("LoadImageNode emits an invalid image when the file can't be read", "[
 	using namespace lain::flow;
 	Graph graph;
 	const NodeId id = graph.add<example::LoadImageNode>("/no/such/file.fake");
-	SerialScheduler{}.evaluate(graph, id);
+	Evaluation e{graph};
+	SerialScheduler{}.evaluate(graph, e, id);
 
-	const Port& out = graph.node(id).output(0);
-	REQUIRE(out.value().holds<lain::image::Image>());
-	REQUIRE_FALSE(out.value().get<lain::image::Image>().valid());
+	const PortValue& out = e.value(PortAddress{id, graph.node(id).output(0).id()});
+	REQUIRE(out.holds<lain::image::Image>());
+	REQUIRE_FALSE(out.get<lain::image::Image>().valid());
 }
 
 TEST_CASE("LoadImageNode's path is an editable filesystem::path param", "[flow]")
@@ -233,15 +253,16 @@ TEST_CASE("LoadImageNode's path is an editable filesystem::path param", "[flow]"
 
 	Graph graph;
 	const NodeId id = graph.add<example::LoadImageNode>(); // empty default path
-	SerialScheduler{}.evaluate(graph, id);
-	REQUIRE_FALSE(graph.node(id).output(0).value().get<lain::image::Image>().valid());
+	Evaluation e{graph};
+	SerialScheduler{}.evaluate(graph, e, id);
+	REQUIRE_FALSE(e.value(PortAddress{id, graph.node(id).output(0).id()}).get<lain::image::Image>().valid());
 
 	// The adapter edits the path param (its only param); setParam invalidates the node as part of
 	// the write, so the pull re-runs it — a clean node is skipped by evaluate (the edit contract).
 	lain::flow::Node& loader = graph.node(id);
 	REQUIRE(loader.setParam(loader.param(0).id(), std::filesystem::path(file.path())));
-	SerialScheduler{}.evaluate(graph, id);
-	const lain::image::Image& img = graph.node(id).output(0).value().get<lain::image::Image>();
+	SerialScheduler{}.evaluate(graph, e, id); // the same evaluation notices the version bump
+	const lain::image::Image& img = e.value(PortAddress{id, graph.node(id).output(0).id()}).get<lain::image::Image>();
 	REQUIRE(img.valid());
 	REQUIRE(img.width() == 3); // FakeReader makes a (byte-count)x1 image
 }

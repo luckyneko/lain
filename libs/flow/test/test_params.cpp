@@ -2,6 +2,7 @@
 // read in compute() through the PortId the declaration returned, and edited by the adapter while
 // iterating by position. Pure CPU, no device.
 
+#include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
 #include "lain/flow/node.h"
 #include "lain/flow/portvalue.h"
@@ -31,9 +32,9 @@ public:
 		m_out = addOutput<int>("readCount");
 	}
 
-	void compute() override
+	void compute(NodeEvaluation& evaluation) const override
 	{
-		output(m_out).set<int>(param(m_count).get<int>()); // read a param like a real node
+		evaluation.output(m_out).set<int>(param(m_count).get<int>()); // read a param like a real node
 	}
 
 	// Exposed so a test can check what the declarations handed back (a node would normally keep
@@ -68,8 +69,9 @@ TEST_CASE("compute reads a param's default value", "[param]")
 {
 	Graph graph;
 	const NodeId id = graph.add<ConfigNode>();
-	SerialScheduler{}.evaluate(graph, id);
-	REQUIRE(graph.node(id).output(0).get<int>() == 3);
+	Evaluation e{graph};
+	SerialScheduler{}.evaluate(graph, e, id);
+	REQUIRE(e.value(PortAddress{id, graph.node(id).output(0).id()}).get<int>() == 3);
 }
 
 TEST_CASE("editing a param changes what compute reads", "[param]")
@@ -79,8 +81,9 @@ TEST_CASE("editing a param changes what compute reads", "[param]")
 
 	Node& node = graph.node(id);
 	REQUIRE(node.setParam(node.param(0).id(), 7)); // the adapter edits through the one seam
-	SerialScheduler{}.evaluate(graph, id);
-	REQUIRE(graph.node(id).output(0).get<int>() == 7);
+	Evaluation e{graph};
+	SerialScheduler{}.evaluate(graph, e, id);
+	REQUIRE(e.value(PortAddress{id, node.output(0).id()}).get<int>() == 7);
 }
 
 TEST_CASE("a param describes its value as text", "[param]")
@@ -162,22 +165,25 @@ TEST_CASE("setParam commits and invalidates as ONE operation", "[param]")
 	Graph graph;
 	const NodeId id = graph.add<ConfigNode>();
 	Node& node = graph.node(id);
+	Evaluation e{graph};
+	const PortAddress out{id, node.output(0).id()};
 
-	SerialScheduler{}.evaluate(graph, id);
-	REQUIRE(node.output(0).get<int>() == 3);
-	REQUIRE_FALSE(node.dirty()); // the run cleared it
+	SerialScheduler{}.evaluate(graph, e, id);
+	REQUIRE(e.value(out).get<int>() == 3);
+	REQUIRE_FALSE(e.needsRecompute(id)); // the run recorded it at the definition's version
 
 	REQUIRE(node.setParam(node.param(0).id(), 12));
-	REQUIRE(node.dirty()); // ... and the edit dirtied it again, with no separate markDirty
+	REQUIRE(e.needsRecompute(id)); // ... and the edit bumped that version, with no separate call
 
-	SerialScheduler{}.evaluate(graph, id);
-	REQUIRE(node.output(0).get<int>() == 12);
+	SerialScheduler{}.evaluate(graph, e, id);
+	REQUIRE(e.value(out).get<int>() == 12);
 
-	// A REFUSED edit must not dirty the node either — it changed nothing, so there is nothing to
-	// recompute, and a spurious dirty would silently cost a re-run of the downstream cone.
-	node.clearDirty();
+	// A REFUSED edit must not bump the version either — it changed nothing, so there is nothing to
+	// recompute, and a spurious bump would silently cost every evaluation a re-run of the cone.
+	const std::uint64_t version = node.version();
 	REQUIRE_FALSE(node.setParam(node.param(0).id(), 1.5f));
-	REQUIRE_FALSE(node.dirty());
+	REQUIRE(node.version() == version);
+	REQUIRE_FALSE(e.needsRecompute(id));
 }
 
 TEST_CASE("an already type-erased value commits through the same seam", "[param]")

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lain/flow/dynamicports.h"
+#include "lain/flow/evaluation.h"
 #include "lain/flow/porttyperegistry.h" // portTypeKey — homogeneous "+" filter
 
 #include <typeindex>
@@ -32,18 +33,18 @@ namespace lain::flow
 			return key == portTypeKey(std::type_index(typeid(T)));
 		}
 
-		void compute() override
+		void compute(NodeEvaluation& evaluation) const override
 		{
 			for (std::size_t i = 0; i < inputCount(); ++i)
 			{
-				const Port& branch = input(i);
-				if (branch.ready())
+				const PortValue& branch = evaluation.input(input(i).id());
+				if (!branch.empty())
 				{
-					output(m_out).template set<T>(branch.template get<T>());
+					evaluation.output(m_out).template set<T>(branch.template get<T>());
 					return; // first live branch wins
 				}
 			}
-			output(m_out).clear(); // no live branch — produce nothing (suppresses downstream)
+			evaluation.output(m_out).clear(); // no live branch — produce nothing (suppresses downstream)
 		}
 
 	protected:

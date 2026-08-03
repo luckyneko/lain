@@ -2,8 +2,9 @@
 
 namespace lain::flow
 {
+	class Evaluation;
 	class Graph;
-}
+} // namespace lain::flow
 
 namespace flowview
 {
@@ -16,6 +17,6 @@ namespace flowview
 	{
 		// Draws the "Issues" window (owns its Begin/End). ctx is mutable — the transient
 		// rejected-connect row counts down here, and a clicked row calls ctx.locateNode.
-		void draw(AppContext& ctx, const lain::flow::Graph& graph);
+		void draw(AppContext& ctx, const lain::flow::Graph& graph, const lain::flow::Evaluation& evaluation);
 	};
 } // namespace flowview

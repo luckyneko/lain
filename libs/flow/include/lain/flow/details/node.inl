@@ -76,7 +76,7 @@ namespace lain::flow
 			return false;
 
 		param->m_value = std::move(value); // Node is Param's friend — this is the only writer
-		markDirty();					   // write and invalidate as ONE operation (a version bump, from M6 step 4)
+		bumpVersion();					   // write and invalidate as ONE operation
 		return true;
 	}
 

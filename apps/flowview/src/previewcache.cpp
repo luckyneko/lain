@@ -1,5 +1,6 @@
 #include "previewcache.h"
 
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
 #include <lain/flow/port.h>
@@ -11,7 +12,7 @@ namespace flowview
 {
 	using namespace lain;
 
-	void PreviewCache::refreshIfDirty(const flow::Graph& graph, gui::Context& ctx)
+	void PreviewCache::refreshIfDirty(const flow::Graph& graph, const flow::Evaluation& evaluation, gui::Context& ctx)
 	{
 		if (!m_dirty)
 			return;
@@ -20,9 +21,10 @@ namespace flowview
 		std::set<PinKey> live;
 		const auto refresh = [&](flow::NodeId id, const flow::Port& p, bool output)
 		{
-			if (!p.ready() || p.type() != typeid(image::Image))
+			const flow::PortValue& value = evaluation.value(flow::PortAddress{id, p.id()});
+			if (value.empty() || p.type() != typeid(image::Image))
 				return;
-			const image::Image& img = p.value().get<image::Image>();
+			const image::Image& img = value.get<image::Image>();
 			if (!img.valid())
 				return;
 			const PinKey key{id, output, p.id()};

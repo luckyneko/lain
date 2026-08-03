@@ -1,5 +1,6 @@
 #pragma once
 
+#include <lain/flow/evaluation.h>
 #include <lain/flow/node.h>
 #include <lain/image/image.h>
 
@@ -17,7 +18,7 @@ namespace lain::flow::example
 		// the gui renders as a colour swatch.
 		TintNode(float tintR, float tintG, float tintB);
 
-		void compute() override;
+		void compute(NodeEvaluation& evaluation) const override;
 
 	private:
 		PortId m_tint; // "tint" param (image::ColorRGBf) — per-channel RGB multiplier

@@ -5,6 +5,7 @@
 // Multi-pin is exercised directly; a single-pin graph is the vertical-a case.
 
 #include "lain/flow/boundary.h"
+#include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
 #include "lain/flow/scheduler.h"
 #include "testnodes.h" // AddInt — a compute node to route a boundary value through
@@ -26,15 +27,17 @@ TEST_CASE("a host-set input pin crosses to an output pin through a run", "[flow]
 	const PortId res = gout.addBoundary<int>("result");
 	REQUIRE(g.connect(in, 0, out, 0) == Connection::Ok); // first output -> first input
 
-	// The generic host path: build a type-erased PortValue and inject it into the pin.
+	// The generic host path: build a type-erased PortValue and bind it into the EVALUATION. The
+	// boundary node holds no value — which is what lets two evaluations of one graph differ.
+	Evaluation e{g};
 	PortValue v;
 	v.set<int>(42);
-	gin.setValue(src, std::move(v));
+	e.bind(PortAddress{in, src}, std::move(v));
 
-	SerialScheduler().run(g);
+	SerialScheduler().run(g, e);
 
-	REQUIRE(gout.value(res).holds<int>());
-	REQUIRE(gout.value(res).get<int>() == 42);
+	REQUIRE(e.value(PortAddress{out, res}).holds<int>());
+	REQUIRE(e.value(PortAddress{out, res}).get<int>() == 42);
 }
 
 TEST_CASE("one node carries several independently-typed, independently-bound pins", "[flow][boundary]")
@@ -53,16 +56,17 @@ TEST_CASE("one node carries several independently-typed, independently-bound pin
 	REQUIRE(g.connect(in, 0, out, 0) == Connection::Ok); // int pins (index 0)
 	REQUIRE(g.connect(in, 1, out, 1) == Connection::Ok); // float pins (index 1)
 
+	Evaluation e{g};
 	PortValue vi;
 	vi.set<int>(3);
 	PortValue vf;
 	vf.set<float>(1.5f);
-	gin.setValue(pi, std::move(vi));
-	gin.setValue(pf, std::move(vf));
+	e.bind(PortAddress{in, pi}, std::move(vi));
+	e.bind(PortAddress{in, pf}, std::move(vf));
 
-	SerialScheduler().run(g);
-	REQUIRE(gout.value(oi).get<int>() == 3);
-	REQUIRE(gout.value(of).get<float>() == 1.5f);
+	SerialScheduler().run(g, e);
+	REQUIRE(e.value(PortAddress{out, oi}).get<int>() == 3);
+	REQUIRE(e.value(PortAddress{out, of}).get<float>() == 1.5f);
 }
 
 TEST_CASE("a boundary value flows through an intermediate compute node", "[flow][boundary]")
@@ -82,12 +86,13 @@ TEST_CASE("a boundary value flows through an intermediate compute node", "[flow]
 	REQUIRE(g.connect(k, 0, add, 1) == Connection::Ok);
 	REQUIRE(g.connect(add, 0, out, 0) == Connection::Ok);
 
+	Evaluation e{g};
 	PortValue v;
 	v.set<int>(5);
-	gin.setValue(src, std::move(v));
+	e.bind(PortAddress{in, src}, std::move(v));
 
-	SerialScheduler().run(g);
-	REQUIRE(gout.value(res).get<int>() == 105);
+	SerialScheduler().run(g, e);
+	REQUIRE(e.value(PortAddress{out, res}).get<int>() == 105);
 }
 
 TEST_CASE("re-binding an input pin refires it on the next run", "[flow][boundary]")
@@ -101,17 +106,18 @@ TEST_CASE("re-binding an input pin refires it on the next run", "[flow][boundary
 	const PortId res = gout.addBoundary<int>("result");
 	REQUIRE(g.connect(in, 0, out, 0) == Connection::Ok);
 
+	Evaluation e{g};
 	PortValue a;
 	a.set<int>(1);
-	gin.setValue(src, std::move(a));
-	SerialScheduler().run(g);
-	REQUIRE(gout.value(res).get<int>() == 1);
+	e.bind(PortAddress{in, src}, std::move(a));
+	SerialScheduler().run(g, e);
+	REQUIRE(e.value(PortAddress{out, res}).get<int>() == 1);
 
 	PortValue b;
 	b.set<int>(7);
-	gin.setValue(src, std::move(b)); // marks dirty -> republished
-	SerialScheduler().run(g);
-	REQUIRE(gout.value(res).get<int>() == 7);
+	e.bind(PortAddress{in, src}, std::move(b)); // marks dirty -> republished
+	SerialScheduler().run(g, e);
+	REQUIRE(e.value(PortAddress{out, res}).get<int>() == 7);
 }
 
 TEST_CASE("an unbound input pin delivers an empty value", "[flow][boundary]")
@@ -125,8 +131,9 @@ TEST_CASE("an unbound input pin delivers an empty value", "[flow][boundary]")
 	const PortId res = gout.addBoundary<int>("result");
 	REQUIRE(g.connect(in, 0, out, 0) == Connection::Ok);
 
-	SerialScheduler().run(g); // never setValue'd
-	REQUIRE(gout.value(res).empty());
+	Evaluation e{g};
+	SerialScheduler().run(g, e); // never bound
+	REQUIRE(e.value(PortAddress{out, res}).empty());
 }
 
 TEST_CASE("Graph flattens boundary pins with name and type", "[flow][boundary]")
@@ -144,16 +151,19 @@ TEST_CASE("Graph flattens boundary pins with name and type", "[flow][boundary]")
 	const auto outputs = g.boundaryOutputs();
 	REQUIRE(inputs.size() == 2); // both pins of the one input node, flattened
 	REQUIRE(outputs.size() == 1);
-	REQUIRE(inputs[0].name() == "count");
-	REQUIRE(inputs[0].type() == std::type_index(typeid(int)));
-	REQUIRE(inputs[1].name() == "scale");
-	REQUIRE(inputs[1].type() == std::type_index(typeid(float)));
-	REQUIRE(outputs[0].name() == "result");
+	REQUIRE(inputs[0].name == "count");
+	REQUIRE(inputs[0].type == std::type_index(typeid(int)));
+	REQUIRE(inputs[1].name == "scale");
+	REQUIRE(inputs[1].type == std::type_index(typeid(float)));
+	REQUIRE(outputs[0].name == "result");
 
-	// The handle binds without touching the node directly.
+	// A handle is pure recipe metadata — it describes the pin and carries no value. Binding is an
+	// EVALUATION operation, which is what the handle is passed to.
+	Evaluation e{g};
 	PortValue v;
 	v.set<int>(9);
-	inputs[0].setValue(std::move(v));
+	e.bind(inputs[0], std::move(v));
+	REQUIRE(e.value(inputs[0].port).get<int>() == 9);
 	REQUIRE(static_cast<GroupInputNode&>(g.node(in)).boundaryCount() == 2);
 }
 

@@ -233,7 +233,7 @@ namespace lain::flow::edit
 		}
 
 		if (sync.changed())
-			parent.node(group).markDirty(); // its interface moved — re-run it
+			parent.bumpNodeVersion(group); // its interface moved — a recipe change, so every evaluation re-runs it
 		return sync;
 	}
 } // namespace lain::flow::edit

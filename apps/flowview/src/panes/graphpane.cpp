@@ -10,6 +10,7 @@
 #include <lain/flow/boundary.h> // GroupInputNode / GroupOutputNode
 #include <lain/flow/dynamicports.h>
 #include <lain/flow/edit.h>
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
 #include <lain/flow/port.h>
@@ -157,7 +158,7 @@ namespace flowview
 		gui::nodes::ClearLinkSelection();
 	}
 
-	void GraphPane::draw(AppContext& ctx, flow::Graph& graph, bool& edited)
+	void GraphPane::draw(AppContext& ctx, flow::Graph& graph, const flow::Evaluation& evaluation, bool& edited)
 	{
 		gui::SetNextWindowPos(math::Vec2f{360.0f, 20.0f}, ImGuiCond_FirstUseEver);
 		gui::SetNextWindowSize(math::Vec2f{880.0f, 600.0f}, ImGuiCond_FirstUseEver);
@@ -292,7 +293,7 @@ namespace flowview
 			// State (dim) trumps identity (category colour): an inactive node — one the run skipped
 			// because a Required input was empty (ADR-0007) — is fully muted; an active one wears its
 			// kind's title colour. Push counted so the pop matches whichever branch ran.
-			const bool active = node.ready(); // an unready node (a Required input empty) was skipped -> dim
+			const bool active = evaluation.ready(id); // an unready node (a Required input empty) was skipped -> dim
 			int nodeColoursPushed = 0;
 			const auto pushNodeColour = [&](ImNodesCol slot, const image::ColorRGBA8& colour)
 			{
@@ -356,7 +357,7 @@ namespace flowview
 				// Fill = carries a value, hollow = empty (unconnected, or upstream produced nothing) —
 				// connectedness is read from the wire. Colour = type always (its label is just the name;
 				// type + value are in the hover tooltip).
-				const ImNodesPinShape shape = in.ready() ? ImNodesPinShape_CircleFilled : ImNodesPinShape_Circle;
+				const ImNodesPinShape shape = evaluation.hasValue({id, in.id()}) ? ImNodesPinShape_CircleFilled : ImNodesPinShape_Circle;
 				gui::nodes::PushColorStyle(ImNodesCol_Pin, gui::packColor(pinMuted(false, in.type()) ? m_style.mutedPin() : m_style.portColor(in.type(), in.typeName())));
 				gui::nodes::BeginInputAttribute(ctx.canvas.pin({id, in.id()}, false), shape);
 				gui::TextUnformatted(in.name().c_str());
@@ -373,7 +374,7 @@ namespace flowview
 				const flow::Port& out = node.output(o);
 				// Fill = produced a value this run, hollow = empty (a suppressed node's outputs) — same
 				// value-presence rule as inputs.
-				const ImNodesPinShape shape = out.ready() ? ImNodesPinShape_CircleFilled : ImNodesPinShape_Circle;
+				const ImNodesPinShape shape = evaluation.hasValue({id, out.id()}) ? ImNodesPinShape_CircleFilled : ImNodesPinShape_Circle;
 				gui::nodes::PushColorStyle(ImNodesCol_Pin, gui::packColor(pinMuted(true, out.type()) ? m_style.mutedPin() : m_style.portColor(out.type(), out.typeName())));
 				gui::nodes::BeginOutputAttribute(ctx.canvas.pin({id, out.id()}, true), shape);
 				// Right-align the label to the node's stable content column so it sits by the right-edge pin.
@@ -412,7 +413,7 @@ namespace flowview
 		for (const flow::Graph::Edge& edge : graph.edges())
 		{
 			const flow::Port* src = graph.node(edge.from.node).findOutput(edge.from.port);
-			const bool edgeActive = (src != nullptr) && src->ready();
+			const bool edgeActive = (src != nullptr) && evaluation.hasValue(edge.from);
 			gui::nodes::PushColorStyle(ImNodesCol_Link, gui::packColor(edgeActive ? m_style.portColor(src->type(), src->typeName()) : m_style.mutedLink()));
 			gui::nodes::Link(ctx.canvas.link(edge.to), ctx.canvas.pin(edge.from, true), ctx.canvas.pin(edge.to, false));
 			gui::nodes::PopColorStyle();
@@ -550,11 +551,13 @@ namespace flowview
 		int hoveredAttr = 0;
 		if (gui::nodes::IsPinHovered(&hoveredAttr))
 		{
+			// The declaration says name and type; the evaluation says what is actually on it.
+			const auto pin = ctx.canvas.toPin(hoveredAttr);
 			if (const flow::Port* p = findPin(graph, ctx.canvas, hoveredAttr))
 			{
 				gui::BeginTooltip();
 				gui::Text("%s : %s", p->name().c_str(), std::string(p->typeName()).c_str());
-				gui::TextUnformatted(("= " + p->describe()).c_str());
+				gui::TextUnformatted(("= " + evaluation.describe(pin->address)).c_str());
 				gui::EndTooltip();
 			}
 		}

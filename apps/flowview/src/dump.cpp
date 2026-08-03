@@ -1,5 +1,6 @@
 #include "dump.h"
 
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
 #include <lain/flow/port.h>
@@ -68,23 +69,24 @@ namespace flowview
 		return s.str();
 	}
 
-	// A port's current value rendered as text. A lain::image::Image shows its corner
-	// pixels; everything else — CPU values, the empty slot, and unrenderable types — goes
-	// through Port::describe() (the shared meta::toString pathway), so this adapter owns
-	// only the image-specific branch.
-	static std::string valueLabel(const Port& port)
+	// A port's current value rendered as text. A lain::image::Image shows its corner pixels;
+	// everything else — CPU values, the empty slot, and unrenderable types — goes through
+	// Evaluation::describe (the shared meta::toString pathway), so this adapter owns only the
+	// image-specific branch.
+	static std::string valueLabel(const Evaluation& evaluation, PortAddress address, const Port& port)
 	{
-		if (port.ready() && port.type() == typeid(lain::image::Image))
-			return imageLabel(port.value().get<lain::image::Image>());
-		return port.describe();
+		const PortValue& value = evaluation.value(address);
+		if (!value.empty() && port.type() == typeid(lain::image::Image))
+			return imageLabel(value.get<lain::image::Image>());
+		return evaluation.describe(address);
 	}
 
-	static void dumpPort(std::ostream& out, const char* tag, const Port& port)
+	static void dumpPort(std::ostream& out, const char* tag, const Evaluation& evaluation, NodeId node, const Port& port)
 	{
-		out << tag << port.name() << ": " << valueLabel(port) << '\n';
+		out << tag << port.name() << ": " << valueLabel(evaluation, PortAddress{node, port.id()}, port) << '\n';
 	}
 
-	void dumpGraph(std::ostream& out, const Graph& graph)
+	void dumpGraph(std::ostream& out, const Graph& graph, const Evaluation& evaluation)
 	{
 		out << "graph: " << graph.nodeCount() << " node(s)\n";
 		for (const NodeId id : graph.topoOrder())
@@ -93,9 +95,9 @@ namespace flowview
 			// A truncated id keeps the dump scannable; the full uuid is in the document.
 			out << '[' << id.shortString() << "] " << node.name() << '\n';
 			for (std::size_t i = 0; i < node.inputCount(); ++i)
-				dumpPort(out, "  in  ", node.input(i));
+				dumpPort(out, "  in  ", evaluation, id, node.input(i));
 			for (std::size_t i = 0; i < node.outputCount(); ++i)
-				dumpPort(out, "  out ", node.output(i));
+				dumpPort(out, "  out ", evaluation, id, node.output(i));
 		}
 	}
 } // namespace flowview

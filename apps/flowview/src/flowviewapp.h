@@ -5,6 +5,7 @@
 #include <lain/app/applicationdelegate.h>
 #include <lain/app/cli.h>
 #include <lain/core/factory.h>
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
 #include <lain/flow/scheduler.h>
@@ -38,6 +39,16 @@ namespace flowview
 		// onStart, released in onStop).
 		const lain::flow::Graph& graph() const { return *m_graph; }
 		lain::flow::Graph& graph() { return *m_graph; } // the canvas edits it in place
+
+		// The scene's RUNTIME STATE: every port value the last run produced, plus what is bound at
+		// the boundary. Every pane reads values through this — the definition holds none (ADR-0012).
+		//
+		// The definition and this are ONE REPLACEABLE UNIT, which is the whole pairing rule: an
+		// evaluation spans in-place edits of its graph but never transfers to a rebuilt one, because
+		// per-node versions restart from zero. replaceGraph swaps both together, so no path here can
+		// produce the mispairing.
+		const lain::flow::Evaluation& evaluation() const { return m_evaluation; }
+		lain::flow::Evaluation& evaluation() { return m_evaluation; }
 
 		// The node-type palette the canvas' add menu draws from.
 		const lain::core::Factory<lain::flow::Node>& nodeFactory() const { return m_nodeFactory; }
@@ -73,6 +84,7 @@ namespace flowview
 		// The gui-mode scene, held by unique_ptr so onStop can release it (and its
 		// node-owned payloads) explicitly, before the window/device teardown.
 		std::unique_ptr<lain::flow::Graph> m_graph;
+		lain::flow::Evaluation m_evaluation;				 // its runtime state — replaced WITH it, never apart
 		lain::flow::SerialScheduler m_scheduler;			 // runs the scene (no threads needed)
 		lain::core::Factory<lain::flow::Node> m_nodeFactory; // node-type palette
 		MainWindow m_window;								 // gui-mode inspector

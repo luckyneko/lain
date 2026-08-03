@@ -2,6 +2,7 @@
 // the readiness mechanism (ADR-0007). A Gate suppresses downstream when off; a Merge/Select forwards
 // a live branch past a gated-off (empty) one.
 
+#include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
 #include "lain/flow/nodes/constant.h"
 #include "lain/flow/nodes/gate.h"
@@ -24,13 +25,14 @@ TEST_CASE("Constant emits its value and re-emits on change", "[flow][nodes]")
 	Graph graph;
 	const NodeId c = graph.add<ConstantNode<int>>(42);
 
+	lain::flow::Evaluation e{graph};
 	SerialScheduler scheduler;
-	scheduler.run(graph);
-	REQUIRE(graph.node(c).output(0).get<int>() == 42);
+	scheduler.run(graph, e);
+	REQUIRE(e.value(lain::flow::PortAddress{c, graph.node(c).output(0).id()}).get<int>() == 42);
 
 	static_cast<ConstantNode<int>&>(graph.node(c)).setValue(7);
-	scheduler.run(graph);
-	REQUIRE(graph.node(c).output(0).get<int>() == 7);
+	scheduler.run(graph, e);
+	REQUIRE(e.value(lain::flow::PortAddress{c, graph.node(c).output(0).id()}).get<int>() == 7);
 }
 
 TEST_CASE("Gate passes its value when enabled and suppresses when not", "[flow][nodes]")
@@ -42,14 +44,15 @@ TEST_CASE("Gate passes its value when enabled and suppresses when not", "[flow][
 	graph.connect(enable, 0, gate, 0); // -> enable
 	graph.connect(value, 0, gate, 1);  // -> value
 
+	lain::flow::Evaluation e{graph};
 	SerialScheduler scheduler;
-	scheduler.run(graph);
-	REQUIRE(graph.node(gate).output(0).ready());
-	REQUIRE(graph.node(gate).output(0).get<int>() == 5);
+	scheduler.run(graph, e);
+	REQUIRE_FALSE(e.value(lain::flow::PortAddress{gate, graph.node(gate).output(0).id()}).empty());
+	REQUIRE(e.value(lain::flow::PortAddress{gate, graph.node(gate).output(0).id()}).get<int>() == 5);
 
 	static_cast<ConstantNode<bool>&>(graph.node(enable)).setValue(false);
-	scheduler.run(graph);
-	REQUIRE_FALSE(graph.node(gate).output(0).ready()); // suppressed — no value produced
+	scheduler.run(graph, e);
+	REQUIRE(e.value(lain::flow::PortAddress{gate, graph.node(gate).output(0).id()}).empty()); // suppressed — no value produced
 }
 
 TEST_CASE("Merge forwards the first live of its variadic branches (if/else via two gates)", "[flow][nodes]")
@@ -73,15 +76,16 @@ TEST_CASE("Merge forwards the first live of its variadic branches (if/else via t
 	graph.connect(ga, 0, merge, 0); // branch a (optional) — empty (gated off)
 	graph.connect(gb, 0, merge, 1); // branch b (optional) — 7
 
+	lain::flow::Evaluation e{graph};
 	SerialScheduler scheduler;
-	scheduler.run(graph);
-	REQUIRE(graph.node(merge).output(0).get<int>() == 7); // picked the live branch b
+	scheduler.run(graph, e);
+	REQUIRE(e.value(lain::flow::PortAddress{merge, graph.node(merge).output(0).id()}).get<int>() == 7); // picked the live branch b
 
 	// flip the condition: a on, b off -> merge now forwards a (first live branch)
 	static_cast<ConstantNode<bool>&>(graph.node(enA)).setValue(true);
 	static_cast<ConstantNode<bool>&>(graph.node(enB)).setValue(false);
-	scheduler.run(graph);
-	REQUIRE(graph.node(merge).output(0).get<int>() == 3);
+	scheduler.run(graph, e);
+	REQUIRE(e.value(lain::flow::PortAddress{merge, graph.node(merge).output(0).id()}).get<int>() == 3);
 }
 
 TEST_CASE("Select routes among its variadic branches by a connectable selector input", "[flow][nodes]")
@@ -98,16 +102,17 @@ TEST_CASE("Select routes among its variadic branches by a connectable selector i
 	graph.connect(va, 0, select, 1);	 // -> branch a
 	graph.connect(vb, 0, select, 2);	 // -> branch b
 
+	lain::flow::Evaluation e{graph};
 	SerialScheduler scheduler;
-	scheduler.run(graph);
-	REQUIRE(graph.node(select).output(0).get<int>() == 10); // selector 0 -> branch a
+	scheduler.run(graph, e);
+	REQUIRE(e.value(lain::flow::PortAddress{select, graph.node(select).output(0).id()}).get<int>() == 10); // selector 0 -> branch a
 
 	static_cast<ConstantNode<int>&>(graph.node(sel)).setValue(1);
-	scheduler.run(graph);
-	REQUIRE(graph.node(select).output(0).get<int>() == 20); // selector 1 -> branch b
+	scheduler.run(graph, e);
+	REQUIRE(e.value(lain::flow::PortAddress{select, graph.node(select).output(0).id()}).get<int>() == 20); // selector 1 -> branch b
 
 	// selector out of range -> no output (nothing to route)
 	static_cast<ConstantNode<int>&>(graph.node(sel)).setValue(5);
-	scheduler.run(graph);
-	REQUIRE_FALSE(graph.node(select).output(0).ready());
+	scheduler.run(graph, e);
+	REQUIRE(e.value(lain::flow::PortAddress{select, graph.node(select).output(0).id()}).empty());
 }

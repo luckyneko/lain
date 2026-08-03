@@ -3,6 +3,7 @@
 // graph's own steps, exit step), so a nested graph runs as a single DAG with nothing nested at
 // runtime. Driver-free: the payload is int, so nesting is proven without any GPU/image type.
 
+#include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
 #include "lain/flow/group.h"
 #include "lain/flow/scheduler.h"
@@ -28,10 +29,10 @@ namespace
 			in = addInput<int>("in");
 			out = addOutput<int>("out");
 		}
-		void compute() override
+		void compute(NodeEvaluation& evaluation) const override
 		{
 			++calls;
-			output(out).set(input(in).get<int>());
+			evaluation.output(out).set(evaluation.input(in).get<int>());
 		}
 	};
 
@@ -69,11 +70,13 @@ namespace
 		return {x, y};
 	}
 
-	void bind(Graph& g, PortId pin, int value)
+	// Binding is an EVALUATION operation now: the boundary node holds no value, which is what lets
+	// two evaluations of one graph be driven differently.
+	void bind(Graph& g, Evaluation& e, PortId pin, int value)
 	{
 		PortValue v;
 		v.set<int>(value);
-		g.boundaryInputNode().setValue(pin, std::move(v));
+		e.bind(PortAddress{g.boundaryInputNode().id(), pin}, std::move(v));
 	}
 } // namespace
 
@@ -82,24 +85,25 @@ TEST_CASE("a value crosses into a group, through its inner graph, and back out",
 	Graph g;
 	const NodeId group = addAdderGroup(g, 100);
 	const auto [x, y] = wireThroughBoundary(g, group);
-	bind(g, x, 5);
+	Evaluation e{g};
+	bind(g, e, x, 5);
 
-	SerialScheduler().run(g);
+	SerialScheduler().run(g, e);
 
-	REQUIRE(g.boundaryOutputNode().value(y).holds<int>());
-	REQUIRE(g.boundaryOutputNode().value(y).get<int>() == 105);
+	REQUIRE(e.value(PortAddress{g.boundaryOutputNode().id(), y}).holds<int>());
+	REQUIRE(e.value(PortAddress{g.boundaryOutputNode().id(), y}).get<int>() == 105);
 
 	SECTION("re-binding flows a new value through the group")
 	{
-		bind(g, x, 7);
-		SerialScheduler().run(g);
-		REQUIRE(g.boundaryOutputNode().value(y).get<int>() == 107);
+		bind(g, e, x, 7);
+		SerialScheduler().run(g, e);
+		REQUIRE(e.value(PortAddress{g.boundaryOutputNode().id(), y}).get<int>() == 107);
 	}
 
 	SECTION("the group's own outer port carries the result too")
 	{
 		// The parent reads a group exactly like any other node — its outputs are real ports.
-		REQUIRE(g.node(group).output(0).get<int>() == 105);
+		REQUIRE(e.value(PortAddress{group, g.node(group).output(0).id()}).get<int>() == 105);
 	}
 }
 
@@ -129,10 +133,11 @@ TEST_CASE("nesting goes arbitrarily deep", "[flow][group][scheduler]")
 	outerGroup.exposeOutput<int>("out", midOutPin);
 
 	const auto [x, y] = wireThroughBoundary(g, outer);
-	bind(g, x, 1);
+	Evaluation e{g};
+	bind(g, e, x, 1);
 
-	SerialScheduler().run(g);
-	REQUIRE(g.boundaryOutputNode().value(y).get<int>() == 111); // 1 + 10 + 100
+	SerialScheduler().run(g, e);
+	REQUIRE(e.value(PortAddress{g.boundaryOutputNode().id(), y}).get<int>() == 111); // 1 + 10 + 100
 }
 
 TEST_CASE("serial and parallel agree over a nested graph", "[flow][group][scheduler]")
@@ -150,25 +155,34 @@ TEST_CASE("serial and parallel agree over a nested graph", "[flow][group][schedu
 		REQUIRE(g.connect({g.boundaryInputNode().id(), x}, {b, g.node(b).input(0).id()}) == Connection::Ok);
 		REQUIRE(g.connect({a, g.node(a).output(0).id()}, {g.boundaryOutputNode().id(), ya}) == Connection::Ok);
 		REQUIRE(g.connect({b, g.node(b).output(0).id()}, {g.boundaryOutputNode().id(), yb}) == Connection::Ok);
+		return std::pair<PortId, PortId>{ya, yb};
+	};
+	const auto feed = [](Graph& g, Evaluation& e, PortId pin)
+	{
 		PortValue v;
 		v.set<int>(1);
-		g.boundaryInputNode().setValue(x, std::move(v));
-		return std::pair<PortId, PortId>{ya, yb};
+		e.bind(PortAddress{g.boundaryInputNode().id(), pin}, std::move(v));
 	};
 
 	Graph serial;
 	const auto [sa, sb] = build(serial);
-	SerialScheduler().run(serial);
+	Evaluation serialEval{serial};
+	feed(serial, serialEval, serial.boundaryInputs().front().port.port);
+	SerialScheduler().run(serial, serialEval);
 
 	Graph parallel;
 	const auto [pa, pb] = build(parallel);
+	Evaluation parallelEval{parallel};
+	feed(parallel, parallelEval, parallel.boundaryInputs().front().port.port);
 	lain::task::Executor executor;
-	ParallelScheduler{executor}.run(parallel);
+	ParallelScheduler{executor}.run(parallel, parallelEval);
 
-	REQUIRE(serial.boundaryOutputNode().value(sa).get<int>() == 11);
-	REQUIRE(serial.boundaryOutputNode().value(sb).get<int>() == 21);
-	REQUIRE(parallel.boundaryOutputNode().value(pa).get<int>() == serial.boundaryOutputNode().value(sa).get<int>());
-	REQUIRE(parallel.boundaryOutputNode().value(pb).get<int>() == serial.boundaryOutputNode().value(sb).get<int>());
+	const auto out = [](Graph& g, Evaluation& e, PortId pin)
+	{ return e.value(PortAddress{g.boundaryOutputNode().id(), pin}).get<int>(); };
+	REQUIRE(out(serial, serialEval, sa) == 11);
+	REQUIRE(out(serial, serialEval, sb) == 21);
+	REQUIRE(out(parallel, parallelEval, pa) == out(serial, serialEval, sa));
+	REQUIRE(out(parallel, parallelEval, pb) == out(serial, serialEval, sb));
 }
 
 TEST_CASE("suppression crosses a group boundary with no extra machinery", "[flow][group][scheduler]")
@@ -182,10 +196,11 @@ TEST_CASE("suppression crosses a group boundary with no extra machinery", "[flow
 	REQUIRE(g.connect({group, g.node(group).output(0).id()}, {g.boundaryOutputNode().id(), y}) == Connection::Ok);
 	// The group's input is left unconnected, so it is never ready.
 
-	SerialScheduler().run(g);
+	Evaluation e{g};
+	SerialScheduler().run(g, e);
 
-	REQUIRE(g.node(group).output(0).value().empty()); // nothing produced
-	REQUIRE(g.boundaryOutputNode().value(y).empty()); // and nothing delivered downstream
+	REQUIRE(e.value(PortAddress{group, g.node(group).output(0).id()}).empty()); // nothing produced
+	REQUIRE(e.value(PortAddress{g.boundaryOutputNode().id(), y}).empty());		// and nothing delivered downstream
 
 	SECTION("the suppression is visible inside the group too")
 	{
@@ -195,7 +210,7 @@ TEST_CASE("suppression crosses a group boundary with no extra machinery", "[flow
 		{
 			if (inner.node(id).name() == "Add")
 			{
-				REQUIRE_FALSE(inner.node(id).ready()); // its required input never got a value
+				REQUIRE_FALSE(e.child(group).ready(id)); // its required input never got a value
 				sawSuppressedAdder = true;
 			}
 		}
@@ -232,38 +247,41 @@ TEST_CASE("an edit inside a group re-runs only that group's dirty closure", "[fl
 	groupNode.exposeInput<int>("in", inPin);
 	groupNode.exposeOutput<int>("out", outPin);
 	const auto [x, y] = wireThroughBoundary(g, group);
-	bind(g, x, 5);
+	Evaluation e{g};
+	bind(g, e, x, 5);
 
 	SerialScheduler sched;
-	sched.run(g);
+	sched.run(g, e);
 	REQUIRE(fedByBoundary == 1);
 	REQUIRE(independent == 1);
-	REQUIRE(g.boundaryOutputNode().value(y).get<int>() == 5);
+	REQUIRE(e.value(PortAddress{g.boundaryOutputNode().id(), y}).get<int>() == 5);
 
 	SECTION("a clean graph re-runs nothing")
 	{
-		sched.run(g);
+		sched.run(g, e);
 		REQUIRE(fedByBoundary == 1);
 		REQUIRE(independent == 1);
 	}
 
 	SECTION("dirtying an inner node re-runs it WITHOUT republishing the group's inputs")
 	{
-		inner.node(other).markDirty();
-		REQUIRE(g.node(group).dirty()); // the inner dirt surfaces on the group
+		// Demand the inner node in the group's CHILD evaluation — that is where inner staleness
+		// lives now, and the outer plan reaches it by asking the child rather than by walking flags
+		// on the inner definition.
+		e.child(group).requestRecompute(other);
 
-		sched.run(g);
+		sched.run(g, e);
 		REQUIRE(independent == 2);	 // the dirty inner chain recomputed
 		REQUIRE(fedByBoundary == 1); // the boundary-fed chain did NOT — inputs never republished
 	}
 
 	SECTION("changing the group's input DOES republish, re-running the boundary-fed chain")
 	{
-		bind(g, x, 9);
-		sched.run(g);
+		bind(g, e, x, 9);
+		sched.run(g, e);
 		REQUIRE(fedByBoundary == 2);
 		REQUIRE(independent == 1); // and only that chain
-		REQUIRE(g.boundaryOutputNode().value(y).get<int>() == 9);
+		REQUIRE(e.value(PortAddress{g.boundaryOutputNode().id(), y}).get<int>() == 9);
 	}
 }
 
@@ -272,9 +290,10 @@ TEST_CASE("the pull path crosses a group too", "[flow][group][scheduler]")
 	Graph g;
 	const NodeId group = addAdderGroup(g, 100);
 	const auto [x, y] = wireThroughBoundary(g, group);
-	bind(g, x, 5);
+	Evaluation e{g};
+	bind(g, e, x, 5);
 
 	// evaluate() plans the dirty upstream cone of its target — through the group, same as run().
-	SerialScheduler().evaluate(g, g.boundaryOutputNode().id());
-	REQUIRE(g.boundaryOutputNode().value(y).get<int>() == 105);
+	SerialScheduler().evaluate(g, e, g.boundaryOutputNode().id());
+	REQUIRE(e.value(PortAddress{g.boundaryOutputNode().id(), y}).get<int>() == 105);
 }

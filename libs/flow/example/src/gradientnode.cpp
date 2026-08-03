@@ -14,7 +14,7 @@ namespace lain::flow::example
 		m_out = addOutput<image::Image>("image");
 	}
 
-	void GradientNode::compute()
+	void GradientNode::compute(NodeEvaluation& evaluation) const
 	{
 		image::Image img(m_width, m_height, image::PixelFormat::RGBA8);
 		auto* px = img.data();
@@ -33,6 +33,6 @@ namespace lain::flow::example
 			}
 		}
 
-		output(m_out).set(std::move(img));
+		evaluation.output(m_out).set(std::move(img));
 	}
 } // namespace lain::flow::example

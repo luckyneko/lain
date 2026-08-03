@@ -9,6 +9,7 @@
 #include "imagesave.h"	 // renderImageSave
 
 #include <lain/flow/boundary.h> // GroupInputNode / GroupOutputNode (dynamic_cast)
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
 #include <lain/flow/param.h>
@@ -28,7 +29,8 @@ namespace flowview
 {
 	using namespace lain;
 
-	void InspectorPane::draw(AppContext& ctx, flow::Graph& graph, PreviewCache& previews, const ParamEditors& editors)
+	void InspectorPane::draw(AppContext& ctx, flow::Graph& graph, flow::Evaluation& evaluation, PreviewCache& previews,
+							 const ParamEditors& editors)
 	{
 		// Whether the graph on screen may be edited at all (false inside a linked group — see below).
 		const bool editable = editableAt(ctx.app->graph(), ctx.activePath);
@@ -112,12 +114,14 @@ namespace flowview
 
 				auto port = [&](const char* tag, const flow::Port& p, bool output)
 				{
-					// A ready image port shows extent + its thumbnail (uploaded + cached by the
-					// preview cache, keyed by the port's stable id); everything else — CPU values
-					// and the empty slot — is text via the shared Port::describe() pathway.
-					if (p.ready() && p.type() == typeid(image::Image))
+					// An image port carrying a value shows extent + its thumbnail (uploaded + cached
+					// by the preview cache, keyed by the port's stable id); everything else — CPU
+					// values and the empty slot — is text via the shared describe() pathway. The
+					// value comes from the EVALUATION; the port only declares its type.
+					const flow::PortValue& value = evaluation.value(flow::PortAddress{id, p.id()});
+					if (!value.empty() && p.type() == typeid(image::Image))
 					{
-						const image::Image& img = p.value().get<image::Image>();
+						const image::Image& img = value.get<image::Image>();
 						gui::Text("    %s %s: %s %dx%d", tag, p.name().c_str(), std::string(p.typeName()).c_str(), img.width(), img.height());
 						const PinKey key{id, output, p.id()};
 						if (const gui::Texture* tex = previews.find(key))
@@ -136,7 +140,7 @@ namespace flowview
 						}
 						return;
 					}
-					gui::Text("    %s %s: %s", tag, p.name().c_str(), p.describe().c_str());
+					gui::Text("    %s %s: %s", tag, p.name().c_str(), evaluation.describe(flow::PortAddress{id, p.id()}).c_str());
 				};
 
 				for (std::size_t i = 0; i < node.inputCount(); ++i)

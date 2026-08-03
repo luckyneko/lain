@@ -4,6 +4,7 @@
 #include "lain/flow/serialize/valuecodecs.h"
 
 #include <lain/data/value.h>
+#include <lain/flow/evaluation.h>
 #include <lain/flow/node.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -30,7 +31,7 @@ public:
 		addParam<int>("count", 5);
 	}
 
-	void compute() override {}
+	void compute(lain::flow::NodeEvaluation&) const override {}
 };
 
 static ValueCodecs builtinCodecs()

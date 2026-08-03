@@ -10,8 +10,9 @@
 
 namespace lain::flow
 {
+	class Evaluation;
 	class Graph;
-}
+} // namespace lain::flow
 
 namespace flowview
 {
@@ -40,5 +41,5 @@ namespace flowview
 	// Bind the graph's first boundary input to a generated `size`x`size` gradient image, so a
 	// fresh gui-mode / bare `--headless` shows a result on launch; the Interface panel (gui) or
 	// --input (cli) rebinds it to a real file.
-	void bindDefaultInput(lain::flow::Graph& graph, std::uint32_t size);
+	void bindDefaultInput(lain::flow::Graph& graph, lain::flow::Evaluation& evaluation, std::uint32_t size);
 } // namespace flowview

@@ -4,12 +4,16 @@
 // branch) doesn't block, so its compute() picks a live one. "Skip" is just absence-of-value.
 // Exercises the mechanism with test nodes; the concrete Gate/Select/Merge nodes are a later slice.
 
+#include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
 #include "lain/flow/node.h"
 #include "lain/flow/port.h" // Presence
 #include "lain/flow/scheduler.h"
+#include "testnodes.h" // test::output — positional value lookup
 
 #include <catch2/catch_test_macros.hpp>
+
+#include <atomic>
 
 using lain::flow::Connection;
 using lain::flow::Graph;
@@ -26,12 +30,12 @@ public:
 	{
 		m_out = addOutput<int>("out");
 	}
-	void compute() override
+	void compute(lain::flow::NodeEvaluation& evaluation) const override
 	{
 		if (pass)
-			output(m_out).set<int>(value);
+			evaluation.output(m_out).set<int>(value);
 		else
-			output(m_out).clear();
+			evaluation.output(m_out).clear();
 	}
 	bool pass = true;
 	int value = 0;
@@ -50,12 +54,12 @@ public:
 		m_in = addInput<int>("in"); // Required (default): an empty input keeps the node from being ready
 		m_out = addOutput<int>("out");
 	}
-	void compute() override
+	void compute(lain::flow::NodeEvaluation& evaluation) const override
 	{
 		++computes; // reached only when the required input has a value
-		output(m_out).set<int>(input(m_in).get<int>());
+		evaluation.output(m_out).set<int>(evaluation.input(m_in).get<int>());
 	}
-	int computes = 0;
+	mutable std::atomic<int> computes{0}; // a test probe — compute() is const (see test_incremental)
 
 private:
 	lain::flow::PortId m_in;
@@ -73,14 +77,14 @@ public:
 		m_b = addInput<int>("b", Presence::Optional);
 		m_out = addOutput<int>("out");
 	}
-	void compute() override
+	void compute(lain::flow::NodeEvaluation& evaluation) const override
 	{
-		if (input(m_a).ready())
-			output(m_out).set<int>(input(m_a).get<int>());
-		else if (input(m_b).ready())
-			output(m_out).set<int>(input(m_b).get<int>());
+		if (!evaluation.input(m_a).empty())
+			evaluation.output(m_out).set<int>(evaluation.input(m_a).get<int>());
+		else if (!evaluation.input(m_b).empty())
+			evaluation.output(m_out).set<int>(evaluation.input(m_b).get<int>());
 		else
-			output(m_out).clear();
+			evaluation.output(m_out).clear();
 	}
 
 private:
@@ -104,13 +108,14 @@ TEST_CASE("an empty required input suppresses the node, and that propagates", "[
 	gate.pass = false; // produce no value
 	gate.value = 5;
 
+	lain::flow::Evaluation evaluation{graph};
 	SerialScheduler scheduler;
-	scheduler.run(graph);
+	scheduler.run(graph, evaluation);
 
 	REQUIRE(relay.computes == 0); // required input empty -> not ready -> never computed
 	REQUIRE(sink.computes == 0);
-	REQUIRE_FALSE(graph.node(r).output(0).ready()); // its outputs were cleared
-	REQUIRE_FALSE(graph.node(k).output(0).ready());
+	REQUIRE(lain::flow::test::output(graph, evaluation, r, 0).empty()); // its outputs were cleared
+	REQUIRE(lain::flow::test::output(graph, evaluation, k, 0).empty());
 }
 
 TEST_CASE("giving the gate a value resurrects the suppressed subtree", "[flow][conditional]")
@@ -128,18 +133,22 @@ TEST_CASE("giving the gate a value resurrects the suppressed subtree", "[flow][c
 	gate.pass = false;
 	gate.value = 5;
 
+	lain::flow::Evaluation evaluation{graph};
 	SerialScheduler scheduler;
-	scheduler.run(graph); // suppressed
+	scheduler.run(graph, evaluation); // suppressed
 	REQUIRE(relay.computes == 0);
 
 	gate.pass = true;
-	graph.node(g).markDirty();
-	scheduler.run(graph); // gate dirty -> closure pulls the subtree back in -> now ready
+	// `pass` is a bare member of this test node, not a param, so nothing bumped the definition
+	// version — the test says what it means directly. A real node carries such state as a param, and
+	// setParam bumps for it.
+	evaluation.requestRecompute(g);
+	scheduler.run(graph, evaluation); // gate stale -> closure pulls the subtree back in -> now ready
 
 	REQUIRE(relay.computes == 1);
 	REQUIRE(sink.computes == 1);
-	REQUIRE(graph.node(r).output(0).ready());
-	REQUIRE(graph.node(k).output(0).get<int>() == 5); // the value flowed all the way through
+	REQUIRE_FALSE(lain::flow::test::output(graph, evaluation, r, 0).empty());
+	REQUIRE(lain::flow::test::output(graph, evaluation, k, 0).get<int>() == 5); // the value flowed all the way through
 }
 
 TEST_CASE("an optional input does not block; the node picks a live branch", "[flow][conditional]")
@@ -156,9 +165,10 @@ TEST_CASE("an optional input does not block; the node picks a live branch", "[fl
 	gateB.pass = true;
 	gateB.value = 7;
 
+	lain::flow::Evaluation evaluation{graph};
 	SerialScheduler scheduler;
-	scheduler.run(graph);
+	scheduler.run(graph, evaluation);
 
-	REQUIRE(graph.node(sel).output(0).ready());			// Select computed (an empty optional didn't block)
-	REQUIRE(graph.node(sel).output(0).get<int>() == 7); // picked the live branch b
+	REQUIRE_FALSE(lain::flow::test::output(graph, evaluation, sel, 0).empty());	  // computed (an empty optional didn't block)
+	REQUIRE(lain::flow::test::output(graph, evaluation, sel, 0).get<int>() == 7); // picked the live branch b
 }

@@ -5,6 +5,7 @@
 
 add_library(flow STATIC
 	src/portvalue.cpp
+	src/evaluation.cpp
 	src/graph.cpp
 	src/scheduler.cpp
 	src/edit.cpp

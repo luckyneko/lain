@@ -4,8 +4,9 @@
 
 namespace lain::flow
 {
+	class Evaluation;
 	class Graph;
-}
+} // namespace lain::flow
 
 namespace flowview
 {
@@ -13,5 +14,5 @@ namespace flowview
 	// `out` — the cli-mode output. CPU port values print as text; a lain::image::Image
 	// output reports its extent + corner pixels, read straight from the CPU buffer (which
 	// proves the node actually ran). No device needed — the nodes are pure CPU.
-	void dumpGraph(std::ostream& out, const lain::flow::Graph& graph);
+	void dumpGraph(std::ostream& out, const lain::flow::Graph& graph, const lain::flow::Evaluation& evaluation);
 } // namespace flowview

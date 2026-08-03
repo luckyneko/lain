@@ -17,7 +17,7 @@ namespace lain::flow::example
 		m_out = addOutput<image::Image>("image");
 	}
 
-	void LoadImageNode::compute()
+	void LoadImageNode::compute(NodeEvaluation& evaluation) const
 	{
 		// Read the path param the way a real node reads config; the gui edits this same slot.
 		const std::string path = param(m_path).get<std::filesystem::path>().string();
@@ -25,6 +25,6 @@ namespace lain::flow::example
 		// io::image::load reads the bytes and dispatches to the reader for the uri's
 		// extension; nullopt (missing/unknown/bad) becomes an invalid Image on the port.
 		auto loaded = lain::io::image::load(path);
-		output(m_out).set(loaded ? std::move(*loaded) : image::Image{});
+		evaluation.output(m_out).set(loaded ? std::move(*loaded) : image::Image{});
 	}
 } // namespace lain::flow::example

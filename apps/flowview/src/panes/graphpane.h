@@ -6,8 +6,9 @@
 
 namespace lain::flow
 {
+	class Evaluation;
 	class Graph;
-}
+} // namespace lain::flow
 
 namespace flowview
 {
@@ -27,7 +28,7 @@ namespace flowview
 		// Draw + edit the canvas and the Nodes palette. Sets `edited` when a node/edge/pin changed, so the
 		// caller re-runs the scene and refreshes previews. Reads ctx.pendingLayout (position seed),
 		// ctx.locateTarget (centre), and adds via ctx.addCatalogNode / ctx.app->nodeFactory().
-		void draw(AppContext& ctx, lain::flow::Graph& graph, bool& edited);
+		void draw(AppContext& ctx, lain::flow::Graph& graph, const lain::flow::Evaluation& evaluation, bool& edited);
 
 		// Reset the canvas after the graph was replaced (a Load): re-seed positions next frame and drop
 		// imnodes' now-stale node/link selection. Called by MainWindow's deferred-load swap.

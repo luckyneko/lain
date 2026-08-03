@@ -4,7 +4,11 @@
 // two-input adder, and a float sink (for provoking type mismatches). Kept in a named
 // namespace so both the graph and edit suites can share them without a copy.
 
+#include "lain/flow/evaluation.h"
+#include "lain/flow/graph.h"
 #include "lain/flow/node.h"
+
+#include <cstddef>
 
 namespace lain::flow::test
 {
@@ -19,7 +23,7 @@ namespace lain::flow::test
 		{
 			out = addOutput<int>("value");
 		}
-		void compute() override { output(out).set(value); }
+		void compute(NodeEvaluation& evaluation) const override { evaluation.output(out).set(value); }
 	};
 
 	// Two int inputs -> their sum.
@@ -33,7 +37,10 @@ namespace lain::flow::test
 			b = addInput<int>("b");
 			sum = addOutput<int>("sum");
 		}
-		void compute() override { output(sum).set(input(a).get<int>() + input(b).get<int>()); }
+		void compute(NodeEvaluation& evaluation) const override
+		{
+			evaluation.output(sum).set(evaluation.input(a).get<int>() + evaluation.input(b).get<int>());
+		}
 	};
 
 	// One float input — used to provoke a type mismatch against an int output.
@@ -45,6 +52,20 @@ namespace lain::flow::test
 		{
 			in = addInput<float>("x");
 		}
-		void compute() override {}
+		void compute(NodeEvaluation&) const override {}
 	};
+
+	// Positional value lookup, for tests that build a fixed graph and know its ports by declaration
+	// order — which is exactly what a position is for. Production code addresses a port by the PortId
+	// its declaration returned; a test writing `output(g, e, n, 0)` is saying "the first output",
+	// which is what it means.
+	inline const PortValue& output(const Graph& graph, const Evaluation& evaluation, NodeId node, std::size_t index)
+	{
+		return evaluation.value(PortAddress{node, graph.node(node).output(index).id()});
+	}
+
+	inline const PortValue& input(const Graph& graph, const Evaluation& evaluation, NodeId node, std::size_t index)
+	{
+		return evaluation.value(PortAddress{node, graph.node(node).input(index).id()});
+	}
 } // namespace lain::flow::test

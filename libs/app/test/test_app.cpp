@@ -10,6 +10,7 @@
 #include "lain/app/window.h"
 #include "lain/app/windowdelegate.h"
 
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/scheduler.h>
 #include <lain/log/log.h>
@@ -35,7 +36,7 @@ namespace
 		{
 			out = addOutput<int>("value");
 		}
-		void compute() override { output(out).set(value); }
+		void compute(flow::NodeEvaluation& evaluation) const override { evaluation.output(out).set(value); }
 	};
 
 	struct AddInt : flow::Node
@@ -48,7 +49,10 @@ namespace
 			b = addInput<int>("b");
 			sum = addOutput<int>("sum");
 		}
-		void compute() override { output(sum).set(input(a).get<int>() + input(b).get<int>()); }
+		void compute(flow::NodeEvaluation& evaluation) const override
+		{
+			evaluation.output(sum).set(evaluation.input(a).get<int>() + evaluation.input(b).get<int>());
+		}
 	};
 
 	// Headless delegate: opens no windows, so run() invokes onProcess once.
@@ -66,8 +70,9 @@ namespace
 			const flow::NodeId add = g.add<AddInt>();
 			g.connect(c1, 0, add, 0);
 			g.connect(c2, 0, add, 1);
-			flow::SerialScheduler{}.run(g);
-			result = g.node(add).output(0).get<int>();
+			flow::Evaluation e{g};
+			flow::SerialScheduler{}.run(g, e);
+			result = e.value(flow::PortAddress{add, g.node(add).output(0).id()}).get<int>();
 		}
 	};
 

@@ -6,6 +6,7 @@
 #include <lain/core/factory.h>
 #include <lain/data/value.h>
 #include <lain/flow/boundary.h>
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
 #include <lain/flow/nodes/merge.h>
@@ -47,7 +48,7 @@ public:
 	{
 		addInput<int>("in");
 	}
-	void compute() override {}
+	void compute(lain::flow::NodeEvaluation&) const override {}
 };
 
 // The boundary PAIR is registered because every Graph has one: a factory that cannot name a node

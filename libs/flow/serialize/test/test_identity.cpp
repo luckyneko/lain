@@ -9,6 +9,7 @@
 #include <lain/core/uuid.h>
 #include <lain/data/value.h>
 #include <lain/flow/boundary.h>
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/group.h>
 #include <lain/flow/node.h>
@@ -41,7 +42,10 @@ namespace
 			addParam<int>("value", 0);
 			addOutput<int>("out");
 		}
-		void compute() override { output(0).set(param(0).get<int>()); }
+		void compute(NodeEvaluation& evaluation) const override
+		{
+			evaluation.output(output(0).id()).set(param(0).get<int>());
+		}
 	};
 
 	class SinkNode : public Node
@@ -52,7 +56,7 @@ namespace
 		{
 			addInput<int>("in");
 		}
-		void compute() override {}
+		void compute(lain::flow::NodeEvaluation&) const override {}
 	};
 
 	Factory<Node> identityFactory()

@@ -7,6 +7,7 @@
 #include <lain/core/factory.h>
 #include <lain/data/value.h>
 #include <lain/flow/boundary.h> // GroupInputNode / GroupOutputNode — the factory registers the pair
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
 #include <lain/io/data/json/register.h>
@@ -44,7 +45,10 @@ public:
 		addOutput<int>("out");
 		addParam<int>("seed", 7);
 	}
-	void compute() override { output(0).set<int>(param(0).get<int>()); }
+	void compute(lain::flow::NodeEvaluation& evaluation) const override
+	{
+		evaluation.output(output(0).id()).set<int>(param(0).get<int>());
+	}
 };
 
 class SinkNode : public Node
@@ -56,7 +60,7 @@ public:
 		addInput<int>("in");
 		addParam<float>("scale", 1.5f);
 	}
-	void compute() override {}
+	void compute(lain::flow::NodeEvaluation&) const override {}
 };
 
 static Factory<Node> nodeFactory()

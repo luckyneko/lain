@@ -3,6 +3,7 @@
 #include "../appcontext.h"
 #include "../previewcache.h"
 
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
 #include <lain/flow/port.h>
@@ -27,7 +28,7 @@ namespace flowview
 	static constexpr float kWheelStep = 1.15f;
 
 	// The Preview window contents (no Begin/End — the caller owns those). Early-returns freely.
-	void PreviewPane::drawContents(AppContext& ctx, const flow::Graph& graph, const PreviewCache& previews)
+	void PreviewPane::drawContents(AppContext& ctx, const flow::Graph& graph, const flow::Evaluation& evaluation, const PreviewCache& previews)
 	{
 		if (!ctx.previewTarget)
 		{
@@ -40,7 +41,10 @@ namespace flowview
 		const flow::Node* node = graph.contains(key.node) ? &graph.node(key.node) : nullptr;
 		const flow::Port* port = node != nullptr ? (key.output ? node->findOutput(key.port) : node->findInput(key.port)) : nullptr;
 		const gui::Texture* tex = previews.find(key);
-		if (node == nullptr || port == nullptr || !port->ready() || port->type() != typeid(image::Image) || tex == nullptr)
+		const flow::PortValue& value = (node != nullptr && port != nullptr)
+										   ? evaluation.value(flow::PortAddress{key.node, key.port})
+										   : flow::PortValue{};
+		if (node == nullptr || port == nullptr || value.empty() || port->type() != typeid(image::Image) || tex == nullptr)
 		{
 			ctx.previewTarget.reset();
 			gui::TextDisabled("(the previewed asset is no longer available)");
@@ -49,7 +53,7 @@ namespace flowview
 
 		// Header: what you are looking at (which node's which pin, and the image size). ASCII only —
 		// the default font has no fancy separators.
-		const image::Image& img = port->value().get<image::Image>();
+		const image::Image& img = value.get<image::Image>();
 		gui::Text("%s [%s]  |  %s : %s  (%dx%d)", node->name().c_str(), key.node.shortString().c_str(),
 				  port->name().c_str(), std::string(port->typeName()).c_str(), img.width(), img.height());
 		gui::Separator();
@@ -143,7 +147,7 @@ namespace flowview
 		}
 	}
 
-	void PreviewPane::draw(AppContext& ctx, const flow::Graph& graph, const PreviewCache& previews)
+	void PreviewPane::draw(AppContext& ctx, const flow::Graph& graph, const flow::Evaluation& evaluation, const PreviewCache& previews)
 	{
 		if (ctx.activatePreview)
 		{
@@ -151,7 +155,7 @@ namespace flowview
 			ctx.activatePreview = false;
 		}
 		if (gui::Begin("Preview"))
-			drawContents(ctx, graph, previews);
+			drawContents(ctx, graph, evaluation, previews);
 		gui::End();
 	}
 } // namespace flowview

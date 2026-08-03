@@ -19,6 +19,7 @@
 
 namespace lain::flow
 {
+	class Evaluation;
 	class Graph;
 	class LinkedGroupNode;
 } // namespace lain::flow
@@ -34,6 +35,12 @@ namespace flowview
 	// path degrades to an ancestor rather than dangling. Pass `path` by reference to have it
 	// truncated to what actually resolved.
 	lain::flow::Graph& resolvePath(lain::flow::Graph& root, GraphPath& path);
+
+	// The matching RUNTIME state for that graph: an Evaluation is a tree with one child per group
+	// node, so the same path walks it. Tolerant in the same way — a step with no child Evaluation
+	// stops the walk — so the two resolutions agree even mid-edit. Call it with the path
+	// resolvePath already truncated, and the panes get a definition and its values in step.
+	lain::flow::Evaluation& resolveEvaluation(lain::flow::Evaluation& root, const GraphPath& path);
 
 	// One breadcrumb entry: the label to show and the path depth clicking it navigates to.
 	struct Crumb

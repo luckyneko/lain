@@ -2,8 +2,9 @@
 
 namespace lain::flow
 {
+	class Evaluation;
 	class Graph;
-}
+} // namespace lain::flow
 
 namespace flowview
 {
@@ -19,6 +20,7 @@ namespace flowview
 	{
 		// Draws the "Inspector" window (owns its Begin/End). Mutates the graph (param edits) and, on a
 		// change, re-runs the scene via ctx.app and refreshes the previews.
-		void draw(AppContext& ctx, lain::flow::Graph& graph, PreviewCache& previews, const ParamEditors& editors);
+		void draw(AppContext& ctx, lain::flow::Graph& graph, lain::flow::Evaluation& evaluation, PreviewCache& previews,
+				  const ParamEditors& editors);
 	};
 } // namespace flowview

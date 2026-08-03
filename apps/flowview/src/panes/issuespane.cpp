@@ -2,6 +2,7 @@
 
 #include "../appcontext.h"
 
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
 #include <lain/flow/port.h>
@@ -21,7 +22,7 @@ namespace flowview
 	// Live validation of the current graph: a required input with no incoming edge (can't run), and an
 	// active node's output with no outgoing edge (a dead end). Recomputed each frame — cheap at
 	// prototyping scale, and self-clearing as the graph is fixed.
-	static std::vector<Issue> collectIssues(const flow::Graph& graph)
+	static std::vector<Issue> collectIssues(const flow::Graph& graph, const flow::Evaluation& evaluation)
 	{
 		std::vector<Issue> issues;
 		// The ports an edge touches, by their durable addresses — the same key an edge stores.
@@ -48,7 +49,7 @@ namespace flowview
 									  id});
 				}
 			}
-			if (node.ready())
+			if (evaluation.ready(id))
 			{
 				for (std::size_t o = 0; o < node.outputCount(); ++o)
 				{
@@ -65,7 +66,7 @@ namespace flowview
 		return issues;
 	}
 
-	void IssuesPane::draw(AppContext& ctx, const flow::Graph& graph)
+	void IssuesPane::draw(AppContext& ctx, const flow::Graph& graph, const flow::Evaluation& evaluation)
 	{
 		if (gui::Begin("Issues"))
 		{
@@ -105,7 +106,7 @@ namespace flowview
 				row(issue);
 				any = true;
 			}
-			const std::vector<Issue> derived = collectIssues(graph);
+			const std::vector<Issue> derived = collectIssues(graph, evaluation);
 			for (const Issue& issue : derived)
 			{
 				row(issue);

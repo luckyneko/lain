@@ -1,5 +1,6 @@
 #pragma once
 
+#include <lain/flow/evaluation.h>
 #include <lain/flow/node.h>
 #include <lain/image/image.h>
 
@@ -17,7 +18,7 @@ namespace lain::flow::example
 		// ctor args seed editable params of the same name.
 		explicit BlurNode(int radius = 2, float sigma = 1.5f);
 
-		void compute() override;
+		void compute(NodeEvaluation& evaluation) const override;
 
 	private:
 		PortId m_radius; // "radius" param (int)

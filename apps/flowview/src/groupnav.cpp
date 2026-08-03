@@ -1,6 +1,7 @@
 #include "groupnav.h"
 
 #include <lain/flow/edit.h>
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/group.h>
 #include <lain/flow/node.h>
@@ -27,6 +28,18 @@ namespace flowview
 			++resolved;
 		}
 		path.resize(resolved); // drop whatever didn't resolve, so the path and the graph agree
+		return *current;
+	}
+
+	flow::Evaluation& resolveEvaluation(flow::Evaluation& root, const GraphPath& path)
+	{
+		flow::Evaluation* current = &root;
+		for (const flow::NodeId step : path)
+		{
+			if (!current->hasChild(step))
+				break; // no child prepared for this group (yet) — stop where the values actually are
+			current = &current->child(step);
+		}
 		return *current;
 	}
 

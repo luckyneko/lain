@@ -6,8 +6,9 @@
 
 namespace lain::flow
 {
+	class Evaluation;
 	class Graph;
-}
+} // namespace lain::flow
 
 namespace flowview
 {
@@ -22,12 +23,12 @@ namespace flowview
 		// Draws the "Preview" window (owns its Begin/End) and, on the frame a thumbnail was clicked,
 		// brings the Preview tab forward. ctx is mutable — it consumes the activate signal and drops a
 		// stale target.
-		void draw(AppContext& ctx, const lain::flow::Graph& graph, const PreviewCache& previews);
+		void draw(AppContext& ctx, const lain::flow::Graph& graph, const lain::flow::Evaluation& evaluation, const PreviewCache& previews);
 
 	private:
 		// The window's contents (the caller owns Begin/End). A member now, not a free function: it
 		// reads and writes the view state below.
-		void drawContents(AppContext& ctx, const lain::flow::Graph& graph, const PreviewCache& previews);
+		void drawContents(AppContext& ctx, const lain::flow::Graph& graph, const lain::flow::Evaluation& evaluation, const PreviewCache& previews);
 
 		// View state. `fitMode` is a MODE, not a zoom value: while it holds, the view re-fits as the
 		// pane is resized, and it releases the moment the user zooms deliberately (Fit re-enters it).

@@ -14,11 +14,11 @@ namespace lain::flow::example
 		m_out = addOutput<image::Image>("image");
 	}
 
-	void BlurNode::compute()
+	void BlurNode::compute(NodeEvaluation& evaluation) const
 	{
-		if (!input(m_in).ready())
+		if (evaluation.input(m_in).empty())
 			return;
-		const image::Image& src = input(m_in).get<image::Image>();
+		const image::Image& src = evaluation.input(m_in).get<image::Image>();
 		if (!src.valid())
 			return;
 
@@ -40,6 +40,6 @@ namespace lain::flow::example
 			image::convolve(premul, image::gaussianKernel(param(m_radius).get<int>(), param(m_sigma).get<float>()));
 		const image::Image straight = image::convert(blurred, image::AlphaMode::Straight);
 
-		output(m_out).set(image::convert(straight, image::ColorSpace::sRGB));
+		evaluation.output(m_out).set(image::convert(straight, image::ColorSpace::sRGB));
 	}
 } // namespace lain::flow::example

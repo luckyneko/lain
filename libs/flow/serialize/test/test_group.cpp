@@ -9,6 +9,7 @@
 #include <lain/data/value.h>
 #include <lain/flow/boundary.h>
 #include <lain/flow/edit.h>
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/group.h>
 #include <lain/flow/node.h>
@@ -37,7 +38,10 @@ namespace
 			addParam<int>("value", 0);
 			addOutput<int>("out");
 		}
-		void compute() override { output(0).set(param(0).get<int>()); }
+		void compute(NodeEvaluation& evaluation) const override
+		{
+			evaluation.output(output(0).id()).set(param(0).get<int>());
+		}
 	};
 
 	// Adds its input to a param.
@@ -51,7 +55,10 @@ namespace
 			addInput<int>("in");
 			addOutput<int>("out");
 		}
-		void compute() override { output(0).set(input(0).get<int>() + param(0).get<int>()); }
+		void compute(NodeEvaluation& evaluation) const override
+		{
+			evaluation.output(output(0).id()).set(evaluation.input(input(0).id()).get<int>() + param(0).get<int>());
+		}
 	};
 
 	Factory<Node> groupFactory()
@@ -109,11 +116,12 @@ namespace
 
 	int runAndRead(Graph& g)
 	{
-		SerialScheduler().run(g);
+		Evaluation evaluation{g};
+		SerialScheduler().run(g, evaluation);
 		const std::vector<BoundaryOutput> outputs = g.boundaryOutputs();
 		REQUIRE(outputs.size() == 1);
-		REQUIRE(outputs[0].value().holds<int>());
-		return outputs[0].value().get<int>();
+		REQUIRE(evaluation.value(outputs[0]).holds<int>());
+		return evaluation.value(outputs[0]).get<int>();
 	}
 } // namespace
 
