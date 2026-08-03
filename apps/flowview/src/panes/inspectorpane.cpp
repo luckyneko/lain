@@ -13,6 +13,7 @@
 #include <lain/flow/node.h>
 #include <lain/flow/param.h>
 #include <lain/flow/port.h>
+#include <lain/flow/portvalue.h>
 #include <lain/gui/gui.h>
 #include <lain/image/image.h>
 #include <lain/math/types.h>
@@ -93,11 +94,18 @@ namespace flowview
 				bool nodeEdited = false;
 				for (std::size_t pi = 0; pi < node.paramCount(); ++pi)
 				{
-					flow::Param& p = node.param(pi);
-					nodeEdited |= editors.render(p.name(), p.type(), p.value());
+					// The editor works on a DETACHED copy of the value, which is then committed
+					// through the node. A PortValue copy is a refcount bump (the payload is shared
+					// and immutable), and `set` rebinds rather than writing through, so an
+					// in-progress edit cannot disturb the live param — only a successful commit
+					// does. setParam invalidates as part of the write, so there is no markDirty to
+					// forget here.
+					const flow::Param& p = node.param(pi);
+					const flow::PortId id = p.id();
+					flow::PortValue edited = p.value();
+					if (editors.render(p.name(), p.type(), edited))
+						nodeEdited |= node.setParam(id, std::move(edited));
 				}
-				if (nodeEdited)
-					node.markDirty(); // a param edit -> incremental re-eval recomputes this node + downstream
 				paramEdited |= nodeEdited;
 				gui::EndDisabled();
 				gui::PopID();

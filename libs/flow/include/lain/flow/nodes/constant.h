@@ -25,11 +25,10 @@ namespace lain::flow
 		void compute() override { output(m_out).template set<T>(param(m_value).template get<T>()); }
 
 		const T& value() const { return param(m_value).template get<T>(); }
-		void setValue(T value)
-		{
-			param(m_value).template set<T>(std::move(value));
-			markDirty(); // re-emit (and recompute downstream) on the next run
-		}
+		// Commits through the node's own param seam, which invalidates as part of the write — so
+		// this re-emits (and recomputes downstream) on the next run with no separate markDirty to
+		// forget.
+		void setValue(T value) { setParam(m_value, std::move(value)); }
 
 	private:
 		PortId m_value; // the "value" param

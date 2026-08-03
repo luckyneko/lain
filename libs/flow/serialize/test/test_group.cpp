@@ -86,7 +86,8 @@ namespace
 		const PortId outPin = inner.boundaryOutputNode().addBoundary<int>("out");
 
 		const NodeId add = inner.add<AddNode>();
-		inner.node(add).param(0).set<int>(amount);
+		Node& addNode = inner.node(add);
+		addNode.setParam(addNode.param(0).id(), amount);
 		REQUIRE(inner.connect({bIn, inPin}, {add, inner.node(add).input(0).id()}) == Connection::Ok);
 		REQUIRE(inner.connect({add, inner.node(add).output(0).id()}, {bOut, outPin}) == Connection::Ok);
 	}
@@ -96,7 +97,8 @@ namespace
 	NodeId buildParent(Graph& g, NodeId group, int seed)
 	{
 		const NodeId konst = g.add<ConstNode>();
-		g.node(konst).param(0).set<int>(seed);
+		Node& konstNode = g.node(konst);
+		konstNode.setParam(konstNode.param(0).id(), seed);
 		const PortId y = g.boundaryOutputNode().addBoundary<int>("y");
 
 		REQUIRE(edit::syncGroupPorts(g, group).added == 2);

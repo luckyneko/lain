@@ -55,10 +55,15 @@ namespace lain::flow::serialize
 	// codec key — a cross-check; the param's DECLARED type is authoritative on read.
 	[[nodiscard]] std::optional<data::Value> paramToValue(const Param& param, const ValueCodecs& codecs);
 
-	// Read a stored param Value's "value" into `param`, dispatching on the param's DECLARED type
-	// ("the type is the schema"). False if the type has no codec, the "value" key is absent, or the
-	// value doesn't read cleanly.
-	[[nodiscard]] bool paramFromValue(Param& param, const data::Value& stored, const ValueCodecs& codecs);
+	// Decode a stored param Value's "value" AS THE PARAM'S DECLARED TYPE ("the type is the schema"),
+	// returning it as a detached PortValue — or nullopt if that type has no codec, the "value" key is
+	// absent, or the value doesn't read cleanly.
+	//
+	// It hands back a value rather than writing into the Param because a param is recipe: committing
+	// one is Node::setParam's job, so that the write and the node's invalidation stay a single
+	// operation. Symmetric with paramToValue, which likewise takes a const Param.
+	[[nodiscard]] std::optional<PortValue> paramFromValue(const Param& param, const data::Value& stored,
+														  const ValueCodecs& codecs);
 } // namespace lain::flow::serialize
 
 #include "lain/flow/serialize/details/valuecodecs.inl"

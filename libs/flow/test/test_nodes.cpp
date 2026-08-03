@@ -105,9 +105,10 @@ TEST_CASE("editing a TintNode param changes its output", "[flow]")
 	SerialScheduler{}.evaluate(graph, tint);
 	CHECK(pixel(graph.node(tint).output(0).value().get<lain::image::Image>(), 0).b == 128); // gradient blue, unchanged
 
-	// Edit the single "tint" ColorRGBf param (halve blue), then dirty + re-eval.
-	graph.node(tint).param(0).set<lain::image::ColorRGBf>(lain::image::ColorRGBf(1.0f, 1.0f, 0.5f));
-	graph.node(tint).markDirty();
+	// Edit the single "tint" ColorRGBf param (halve blue), then re-eval. No markDirty: setParam
+	// commits and invalidates as one operation, which is the whole point of the seam.
+	lain::flow::Node& tintNode = graph.node(tint);
+	REQUIRE(tintNode.setParam(tintNode.param(0).id(), lain::image::ColorRGBf(1.0f, 1.0f, 0.5f)));
 	SerialScheduler{}.evaluate(graph, tint);
 	CHECK(pixel(graph.node(tint).output(0).value().get<lain::image::Image>(), 0).b == 64);
 }
@@ -235,10 +236,10 @@ TEST_CASE("LoadImageNode's path is an editable filesystem::path param", "[flow]"
 	SerialScheduler{}.evaluate(graph, id);
 	REQUIRE_FALSE(graph.node(id).output(0).value().get<lain::image::Image>().valid());
 
-	// The adapter edits the path param (its only param) then marks the node dirty so the
-	// pull re-runs it — a clean node is skipped by evaluate (this is the edit contract).
-	graph.node(id).param(0).set<std::filesystem::path>(std::filesystem::path(file.path()));
-	graph.node(id).markDirty();
+	// The adapter edits the path param (its only param); setParam invalidates the node as part of
+	// the write, so the pull re-runs it — a clean node is skipped by evaluate (the edit contract).
+	lain::flow::Node& loader = graph.node(id);
+	REQUIRE(loader.setParam(loader.param(0).id(), std::filesystem::path(file.path())));
 	SerialScheduler{}.evaluate(graph, id);
 	const lain::image::Image& img = graph.node(id).output(0).value().get<lain::image::Image>();
 	REQUIRE(img.valid());

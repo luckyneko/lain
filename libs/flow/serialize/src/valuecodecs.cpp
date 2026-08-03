@@ -21,16 +21,19 @@ namespace lain::flow::serialize
 		return out;
 	}
 
-	bool paramFromValue(Param& param, const data::Value& stored, const ValueCodecs& codecs)
+	std::optional<PortValue> paramFromValue(const Param& param, const data::Value& stored, const ValueCodecs& codecs)
 	{
 		const ValueCodec* codec = codecs.find(param.type());
 		if (!codec)
-			return false;
+			return std::nullopt;
 
 		const data::Value* value = stored.find("value");
 		if (!value)
-			return false;
+			return std::nullopt;
 
-		return codec->fromValue(*value, param.value());
+		PortValue decoded;
+		if (!codec->fromValue(*value, decoded))
+			return std::nullopt;
+		return decoded;
 	}
 } // namespace lain::flow::serialize

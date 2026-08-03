@@ -44,7 +44,7 @@ namespace lain::flow::serialize
 		return nullptr;
 	}
 
-	static Param* findParamByName(Node& node, const std::string& name)
+	static const Param* findParamByName(const Node& node, const std::string& name)
 	{
 		for (std::size_t i = 0; i < node.paramCount(); ++i)
 		{
@@ -261,7 +261,7 @@ namespace lain::flow::serialize
 			if (!name)
 				continue; // a param with no name — nothing to bind it to
 
-			Param* param = findParamByName(node, *name);
+			const Param* param = findParamByName(node, *name);
 			if (!param)
 			{
 				const std::string msg = "unknown param \"" + *name + "\" on node \"" + node.name() + "\" — skipped";
@@ -269,7 +269,12 @@ namespace lain::flow::serialize
 				issues.push_back({Severity::Warning, msg});
 				continue;
 			}
-			if (!paramFromValue(*param, stored, codecs))
+			// Decode first, then commit through the node — which type-checks and invalidates as one
+			// operation. A value that will not decode leaves the param at its declared default,
+			// which is the same best-effort outcome as before.
+			const PortId id = param->id();
+			auto decoded = paramFromValue(*param, stored, codecs);
+			if (!decoded || !node.setParam(id, std::move(*decoded)))
 			{
 				const std::string msg = "param \"" + *name + "\" on node \"" + node.name() + "\" failed to read — left at default";
 				log::warn("flow::serialize: {}", msg);

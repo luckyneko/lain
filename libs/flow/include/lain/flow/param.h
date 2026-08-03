@@ -42,10 +42,11 @@ namespace lain::flow
 		// The current value as text (via the PortType flyweight's meta::toString bridge).
 		std::string describe() const { return m_type->describe(m_value); }
 
-		// Read the value (compute()) / write it (the adapter, on an edit). set<T>() must use
-		// the declared type; get<T>() throws std::bad_any_cast on a type mismatch.
-		template <typename T>
-		void set(T value);
+		// Read the value. get<T>() throws std::bad_any_cast on a type mismatch.
+		//
+		// There is no write side here, deliberately. A param is recipe, so changing one must
+		// invalidate its node — which only the node can do. Writes go through
+		// Node::setParam(id, value), which type-checks, commits and invalidates as one operation.
 		template <typename T>
 		const T& get() const;
 		template <typename T>
@@ -55,10 +56,13 @@ namespace lain::flow
 		}
 
 		const PortValue& value() const { return m_value; }
-		PortValue& value() { return m_value; }
 
 	private:
-		friend class Node; // only a Node builds its params
+		friend class Node; // only a Node builds its params — and only a Node writes one
+
+		// Seed the declared default (addParam). Not part of the public surface: see the note above.
+		template <typename T>
+		void set(T value);
 		Param(std::string name, const PortType& type, PortId id)
 			: m_name(std::move(name))
 			, m_type(&type)

@@ -86,8 +86,10 @@ static Graph sampleGraph()
 	Graph graph;
 	const NodeId source = graph.add<SourceNode>();
 	const NodeId sink = graph.add<SinkNode>();
-	graph.node(source).param(0).set<int>(42);
-	graph.node(sink).param(0).set<float>(9.0f);
+	Node& sourceNode = graph.node(source);
+	Node& sinkNode = graph.node(sink);
+	sourceNode.setParam(sourceNode.param(0).id(), 42);
+	sinkNode.setParam(sinkNode.param(0).id(), 9.0f);
 	REQUIRE(graph.connect(source, 0, sink, 0) == Connection::Ok);
 	return graph;
 }

@@ -82,22 +82,41 @@ namespace lain::flow
 			return false;
 		}
 
-		// Configuration values — distinct from ports (see Param). The adapter iterates these to
-		// render editors and writes edits back; compute() reads them via param(m_radius).get<T>().
-		// Non-connectable; the scheduler never touches them.
+		// Configuration values — distinct from ports (see Param). Non-connectable; the scheduler
+		// never touches them. compute() reads them via param(m_radius).get<T>().
 		//
-		// Addressed the same two ways ports are, for the same reasons: by POSITION to iterate them
-		// in declaration order, by IDENTITY for a node's own stored handles.
+		// READ-ONLY to everyone but the node itself. A param is RECIPE, so changing one is a
+		// document edit that must invalidate the node — and the only way to guarantee that is to
+		// make the write and the invalidation one operation (setParam, below). Handing out a
+		// mutable Param& made "mutate, then remember to markDirty" the caller's job, in three
+		// different call sites; forgetting it left the graph serving a stale result.
+		//
+		// Addressed the same two ways ports are: by POSITION to iterate them in declaration order,
+		// by IDENTITY for a node's own stored handles.
 		std::size_t paramCount() const { return m_params.size(); }
-		Param& param(std::size_t i) { return m_params[i]; }
 		const Param& param(std::size_t i) const { return m_params[i]; }
-		Param& param(PortId id) { return *checked(findParam(id)); }
 		const Param& param(PortId id) const { return *checked(findParam(id)); }
 
 		// Resolve a param by its stable PortId, or nullptr — the param twin of findInput /
 		// findOutput, for an id that came from elsewhere and may be stale.
-		Param* findParam(PortId id) { return findDeclared(m_params, id); }
 		const Param* findParam(PortId id) const { return findDeclared(m_params, id); }
+
+		// THE seam for changing a param: type-check, commit and invalidate as one operation.
+		// Returns false — changing nothing at all — when `id` names no param of this node or when
+		// `value`'s payload type is not the param's DECLARED type ("the type is the schema"; an
+		// empty value is likewise refused, since a param always holds one). The bool result follows
+		// removeNode / disconnect / removePort: a primitive reports, it does not decide.
+		//
+		// Callers that hold a typed value use the template below; callers holding an already
+		// type-erased one — a decoded document value, a value an editor widget just wrote — pass
+		// the PortValue straight through.
+		bool setParam(PortId id, PortValue value);
+
+		// Typed convenience: builds the PortValue and commits through the same seam, so a caller
+		// with a compile-time T does not spell out the erasure. The non-template overload above
+		// still wins for an actual PortValue argument.
+		template <typename T>
+		bool setParam(PortId id, T value);
 
 		// Whether this node needs recomputing. VIRTUAL because a node that contains a graph (a group
 		// node) is dirty when anything *inside* it is: otherwise an edit made inside a group would

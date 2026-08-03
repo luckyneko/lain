@@ -68,8 +68,10 @@ never by driving a live GUI.
   edge-driven). A Node declares params in its ctor (`addParam<T>(name, default)`), retains the returned
   **`PortId`** — the same declaration handle a port gets, from the same per-node counter — and reads
   them in const `compute()` (`param(m_radius).get<T>()`). Hosts receive const
-  Params; `Node::setParam(id, value)` type-checks, commits and advances the definition version as
-  one operation, so invalidation cannot be forgotten. Params
+  Params; **`Node::setParam(id, value)` is the only writer** — it type-checks against the DECLARED
+  type, commits, and invalidates as one operation, so invalidation cannot be forgotten (it marks the
+  node dirty today; from M6 step 4 it advances the definition version). It returns `bool` and changes
+  nothing on failure, including the dirty flag. Params
   reuse **PortValue**'s typed, type-erased slot, so a param and a port share one internal value
   machinery: **promoting a param to a connectable input is a definition change, not a data change**
   — that is how `flow` gets "drive a config from the graph" (wire a `ConstantFloatNode` to the

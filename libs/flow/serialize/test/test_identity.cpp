@@ -125,7 +125,7 @@ TEST_CASE("a load restores nodes as themselves", "[flow-serialize][identity]")
 	Graph graph;
 	const NodeId source = graph.add<ConstNode>();
 	const NodeId sink = graph.add<SinkNode>();
-	graph.node(source).param(0).set<int>(11);
+	graph.node(source).setParam(graph.node(source).param(0).id(), 11);
 	REQUIRE(graph.connect(source, 0, sink, 0) == Connection::Ok);
 	const NodeId boundaryIn = graph.boundaryInputNode().id();
 	const NodeId boundaryOut = graph.boundaryOutputNode().id();
@@ -192,8 +192,8 @@ TEST_CASE("a document naming one id twice keeps the first node and re-mints the 
 	Graph graph;
 	const NodeId first = graph.add<ConstNode>();
 	const NodeId second = graph.add<ConstNode>();
-	graph.node(first).param(0).set<int>(1);
-	graph.node(second).param(0).set<int>(2);
+	graph.node(first).setParam(graph.node(first).param(0).id(), 1);
+	graph.node(second).setParam(graph.node(second).param(0).id(), 2);
 
 	// Forge the collision the way a hand-edited (or badly merged) file would.
 	Value document = toValue(graph, factory, intCodecs());

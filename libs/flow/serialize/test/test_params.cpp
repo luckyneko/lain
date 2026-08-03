@@ -59,17 +59,23 @@ TEST_CASE("params round-trip through the registry (declared type authoritative)"
 	const ValueCodecs codecs = builtinCodecs();
 
 	ParamNode source;
-	source.param(0).set<float>(9.5f);
-	source.param(1).set<std::string>("out.png");
-	source.param(2).set<int>(42);
+	source.setParam(source.param(0).id(), 9.5f);
+	source.setParam(source.param(1).id(), std::string("out.png"));
+	source.setParam(source.param(2).id(), 42);
 
 	std::vector<Value> stored;
 	for (std::size_t i = 0; i < source.paramCount(); ++i)
 		stored.push_back(*paramToValue(source.param(i), codecs));
 
+	// Decode, then COMMIT through the node — paramFromValue hands back a detached value precisely
+	// so that writing it stays Node::setParam's job (decode alone changes nothing).
 	ParamNode target; // fresh defaults; the stored values overwrite them
 	for (std::size_t i = 0; i < stored.size(); ++i)
-		REQUIRE(paramFromValue(target.param(i), stored[i], codecs));
+	{
+		const auto decoded = paramFromValue(target.param(i), stored[i], codecs);
+		REQUIRE(decoded);
+		REQUIRE(target.setParam(target.param(i).id(), *decoded));
+	}
 
 	REQUIRE(target.param(0).get<float>() == 9.5f);
 	REQUIRE(target.param(1).get<std::string>() == "out.png");

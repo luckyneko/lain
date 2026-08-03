@@ -1597,13 +1597,29 @@ Each step stands alone and leaves the suite green.
    `ctest` **377/377**; a new `[dynamic]` test contrasts the two accessors directly (remove the first
    of three pins: `input(id)` still names its port, the same position now names a different one), and
    two new `[param]` tests cover id addressing and the shared counter.
-3. **`Node::setParam` — one seam for recipe mutation.** `param(id) const` inspects;
-   `setParam(PortId, value)` type-checks, commits and (from step 4) bumps the version as one
+3. ✅ **`Node::setParam` — one seam for recipe mutation — BUILT** (2026-08-02). `param(id) const`
+   inspects; `setParam(PortId, value)` type-checks, commits and (from step 4) bumps the version as one
    operation, returning `bool` and changing nothing on failure. Mutable `Param&` leaves the public
    surface: the Inspector's ParamEditor, `flow::serialize`'s `readParams`, and concrete setters such
    as `ConstantNode::setValue` all decode into a temporary `PortValue` and commit through it. Green
    either side (the bump is still `markDirty` here), independently valuable, and also lifted because
    it is a wide mechanical sweep with no dependency on constness or on where values live.
+
+   **As built:** `Param`'s write side is now `Node`-only — `set<T>` is private (it seeds the declared
+   default from `addParam`) and the non-const `value()` is gone, so the seam cannot be routed around.
+   `setParam` has two overloads: the type-erased `(PortId, PortValue)` primary for callers holding a
+   runtime-typed value (the decoder, the Inspector), and a `template <typename T>` convenience that
+   builds the erasure for a caller with a compile-time type (`ConstantNode::setValue`, tests). An
+   empty `PortValue` is refused rather than treated as "clear the param": a param always holds a
+   value. **`paramFromValue` changed shape** to match — it now takes a `const Param&` and returns
+   `std::optional<PortValue>` rather than writing into the param, so decoding and committing are
+   visibly separate and the commit goes through the node; `paramToValue` was already const-taking, so
+   the pair is symmetric. The Inspector edits a **detached copy** of the value and commits only on
+   change, which is free because a `PortValue` copy is a refcount bump. `markDirty` disappeared from
+   three call sites (Inspector, `ConstantNode::setValue`, two node tests) — that is the point.
+   `ctest` **384/384**, with four new `[param]` cases: the declared-type check (and that a refusal
+   changes nothing *and* does not dirty the node), rejection of an id that names no param — including
+   a *port's* id — the atomic commit-and-invalidate, and the type-erased overload.
 4. **`Evaluation` + const compute + staleness — one vertical.** Values move off `Port`; ~41
    sites become `compute(NodeEvaluation&) const`, addressing ports through the ids from step 2:
    `evaluation.input(m_image)` / `evaluation.output(m_result)`. `Port` is left as pure declaration —

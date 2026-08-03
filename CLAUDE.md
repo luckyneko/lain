@@ -186,6 +186,36 @@ that **keeps the canvas selection across an undo/redo** (selected nodes captured
 `nodeIds()` — stable across the load's fresh-id remap — and re-selected after the swap; New/Open still
 clear, since they carry a `pendingBaseline`).
 
+### Update 2026-08-02 — M6 step 3 built: `Node::setParam` is the one recipe-mutation seam
+
+A param is **recipe**, so changing one is a document edit that must invalidate its node — and while
+the write and the invalidation were separate calls, remembering the second was the caller's job in
+three places. `Node::setParam(PortId, value)` now type-checks, commits and invalidates as one
+operation, returning `bool` and changing nothing on failure. `ctest` **384/384**, warning-clean,
+`format-check` clean, headless round-trip still byte-identical.
+
+- **Mutable `Param&` is gone from the public surface.** `param()` returns const only; `Param::set<T>`
+  is private (it seeds the declared default from `addParam`) and the non-const `value()` is removed,
+  so the seam cannot be routed around. `grep 'Param& '` over the tree finds only `const Param&`.
+- **Two overloads.** The type-erased `(PortId, PortValue)` is the primary, for a caller holding a
+  runtime-typed value — a decoded document value, a value an editor widget just wrote. A
+  `template <typename T>` convenience builds the erasure for a caller with a compile-time type
+  (`ConstantNode::setValue`, tests). The non-template still wins for an actual `PortValue` argument.
+- **"The type is the schema" is enforced here.** A value whose payload type is not the param's
+  *declared* type is refused rather than quietly retyping the param; so is an empty one, since a
+  param always holds a value. A refusal changes nothing **and does not dirty the node** — a spurious
+  dirty would cost a re-run of the whole downstream cone.
+- **`paramFromValue` changed shape**: `(const Param&, Value, codecs) -> std::optional<PortValue>`
+  instead of writing into the param. Decoding and committing are now visibly separate, and the commit
+  goes through the node. `paramToValue` already took a `const Param&`, so the pair is symmetric. A
+  serialize test caught the exact hazard this creates — it decoded and never committed, and the
+  round-trip assertion failed.
+- **The Inspector edits a detached copy** and commits only on change. Free, because a `PortValue`
+  copy is a refcount bump and `set` rebinds rather than writing through — so an in-progress edit
+  cannot disturb the live param; only a successful commit does.
+- `markDirty` disappeared from three call sites (the Inspector, `ConstantNode::setValue`, two node
+  tests whose comments described the old two-step contract). That is the point of the change.
+
 ### Update 2026-08-02 — M6 step 2 built: every declaration returns a `PortId`; `PortIndex` retired
 
 The gap M4b slice 1 left, closed and then widened on review. `addInput` / `addOutput` /

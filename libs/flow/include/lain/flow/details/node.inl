@@ -65,6 +65,29 @@ namespace lain::flow
 		return id;
 	}
 
+	inline bool Node::setParam(PortId id, PortValue value)
+	{
+		Param* param = findDeclared(m_params, id);
+		if (param == nullptr)
+			return false;
+		// "The type is the schema": the param's DECLARED type is authoritative, so a value of any
+		// other type (or none) is refused rather than quietly retyping the param.
+		if (value.empty() || value.type() != param->type())
+			return false;
+
+		param->m_value = std::move(value); // Node is Param's friend — this is the only writer
+		markDirty();					   // write and invalidate as ONE operation (a version bump, from M6 step 4)
+		return true;
+	}
+
+	template <typename T>
+	bool Node::setParam(PortId id, T value)
+	{
+		PortValue erased;
+		erased.set<T>(std::move(value));
+		return setParam(id, std::move(erased));
+	}
+
 	template <typename T>
 	PortId Node::addParam(std::string name, T defaultValue)
 	{
