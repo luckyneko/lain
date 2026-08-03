@@ -12,14 +12,15 @@ namespace flowview
 {
 	using namespace lain;
 
-	void PreviewCache::refreshIfDirty(const flow::Graph& graph, const flow::Evaluation& evaluation, gui::Context& ctx)
+	void PreviewCache::refreshIfDirty(const GraphPath& path, const flow::Graph& graph,
+									  const flow::Evaluation& evaluation, gui::Context& ctx)
 	{
 		if (!m_dirty)
 			return;
 		m_dirty = false;
 
 		std::set<PinKey> live;
-		const auto refresh = [&](flow::NodeId id, const flow::Port& p, bool output)
+		const auto refresh = [&](flow::NodeId id, const flow::Port& p)
 		{
 			const flow::PortValue& value = evaluation.value(flow::PortAddress{id, p.id()});
 			if (value.empty() || p.type() != typeid(image::Image))
@@ -27,7 +28,7 @@ namespace flowview
 			const image::Image& img = value.get<image::Image>();
 			if (!img.valid())
 				return;
-			const PinKey key{id, output, p.id()};
+			const PinKey key{path, flow::PortAddress{id, p.id()}};
 			live.insert(key);
 			gui::Texture& tex = m_textures[key]; // default-empty on first sight
 			if (!tex.upload(img))				 // re-upload in place when size/format fits...
@@ -37,9 +38,9 @@ namespace flowview
 		{
 			const flow::Node& node = graph.node(id);
 			for (std::size_t i = 0; i < node.inputCount(); ++i)
-				refresh(id, node.input(i), false);
+				refresh(id, node.input(i));
 			for (std::size_t o = 0; o < node.outputCount(); ++o)
-				refresh(id, node.output(o), true);
+				refresh(id, node.output(o));
 		}
 		// Drop previews whose pin is gone (or no longer a ready image); the erased
 		// gui::Texture reclaims its descriptor.

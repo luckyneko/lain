@@ -186,6 +186,31 @@ that **keeps the canvas selection across an undo/redo** (selected nodes captured
 `nodeIds()` — stable across the load's fresh-id remap — and re-selected after the swap; New/Open still
 clear, since they carry a `pendingBaseline`).
 
+### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
+
+The last step of Milestone 6. `PinKey` — the key the preview cache, Inspector, Interface, Preview
+pane and `saveFormat` all share — became `{GraphPath path, PortAddress port}`: *which evaluation,
+which node, which port*, three real axes instead of a key that said less than it meant.
+`ctest` **398/398**, warning-clean, `format-check` clean. **gui-mode needs an eyeball** (the panes
+that build these keys all changed).
+
+- **Why it matters even though node ids are already unique.** ADR-0011 stopped ids repeating across
+  *levels*, which is what caused M5's bug nine (previews showing another level's images). But two
+  **evaluations of one definition** — the target workload, N streams through one subgraph — have the
+  same node and port ids *by design*. So the level belongs in the key however unique NodeIds get.
+- **The direction bool is gone.** A `PortId` is minted per node across both sides (step 2), so a
+  `PortAddress` names one port unambiguously and the flag was redundant.
+- **`EvalPath` is spelled `GraphPath`.** A group has exactly one child Evaluation, so the graph walk
+  and the evaluation walk are the same sequence of group NodeIds; a parallel alias for an identical
+  type would be two names for one thing. A **map node** (one child per element) is what makes them
+  differ — noted in `pinkey.h` so the absence reads as a decision rather than an oversight.
+- **Behaviour is deliberately unchanged.** The cache still holds only the level on screen and still
+  clears on navigation — but as an explicit MEMORY choice (a texture per image port per visited
+  level, for a cache only one level reads), not as the thing standing between the user and a wrong
+  image. Retaining every level is now available; it would want `refreshIfDirty` to walk all levels
+  rather than prune everything outside the active one.
+- The hold on leftover group GUI work is **lifted**: it was waiting for these panes to settle.
+
 ### Update 2026-08-03 — M6 step 4 built: `Evaluation` — the recipe apart from its runtime state
 
 **The milestone's centre of gravity.** A `Graph` was simultaneously a document, an evaluation cache

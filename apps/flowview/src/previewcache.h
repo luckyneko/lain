@@ -31,7 +31,10 @@ namespace flowview
 		// Rebuild the cache from the graph iff it was marked dirty: upsert a thumbnail per ready
 		// image port (upload in place when the size/format matches, else reallocate via `ctx`) and
 		// prune thumbnails whose port is gone (the erased gui::Texture reclaims its descriptor).
-		void refreshIfDirty(const lain::flow::Graph& graph, const lain::flow::Evaluation& evaluation, lain::gui::Context& ctx);
+		// `path` is the level `graph` sits at — it goes into every key this builds, so entries from
+		// two levels (or two evaluations of one definition) can never be mistaken for each other.
+		void refreshIfDirty(const GraphPath& path, const lain::flow::Graph& graph,
+							const lain::flow::Evaluation& evaluation, lain::gui::Context& ctx);
 
 		// The valid thumbnail for `key`, or nullptr when there is none (missing or not yet
 		// uploaded) — folds the "found and valid" check the panes all repeat.

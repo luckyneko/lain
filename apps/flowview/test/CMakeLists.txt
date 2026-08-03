@@ -7,6 +7,7 @@ add_executable(test-flowview
 	test_groupnav.cpp
 	test_canvasids.cpp
 	test_graphio.cpp
+	test_pinkey.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/undo.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/groupnav.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/canvasids.cpp"

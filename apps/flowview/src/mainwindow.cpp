@@ -86,11 +86,12 @@ namespace flowview
 			m_canvas.onNavigated();
 			m_ctx.pathChanged = false;
 
-			// Drop the previews with it. Not merely tidiness: a PinKey is {node id, direction, port
-			// id} with NO level in it, and node ids repeat across levels — so a stale entry from the
-			// level we just left can be found by a same-numbered pin here, and the panes would show
-			// another graph's image as if it were this one's. Only one level is ever on screen, so
-			// keeping the other's textures buys nothing and risks exactly that.
+			// Drop the previews with it — now a deliberate MEMORY choice, not a correctness one. A
+			// PinKey carries its level (M6 step 5), so a stale entry from the level we just left can
+			// no longer be found by a pin here; keeping them would simply hold a texture per image
+			// port per visited level for a cache only one level ever reads. (Retaining them is the
+			// other reasonable choice, and is now available: it would want refreshIfDirty to walk
+			// every level rather than prune everything outside the active one.)
 			m_previews.clear();
 			m_previews.markDirty();
 			m_ctx.previewTarget.reset(); // the asset being previewed belonged to that other level
@@ -144,7 +145,7 @@ namespace flowview
 			m_ctx.loadIssues.clear();
 		}
 
-		m_previews.refreshIfDirty(graph, evaluation, *m_guiCtx);
+		m_previews.refreshIfDirty(drawnPath, graph, evaluation, *m_guiCtx);
 
 		// The per-node Inspector — reads (and param-edits) the now post-edit graph.
 		m_inspector.draw(m_ctx, graph, evaluation, m_previews, m_paramEditors);

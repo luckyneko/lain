@@ -38,12 +38,17 @@ namespace flowview
 
 		// Resolve the targeted port; drop the target if its node/port is gone or no longer a ready image.
 		const PinKey key = *ctx.previewTarget;
-		const flow::Node* node = graph.contains(key.node) ? &graph.node(key.node) : nullptr;
-		const flow::Port* port = node != nullptr ? (key.output ? node->findOutput(key.port) : node->findInput(key.port)) : nullptr;
+		// Resolved against the level the KEY names, not merely the level on screen — the key now says
+		// which. This pane only ever holds the active graph, so a target from elsewhere simply does
+		// not resolve and is dropped below; what changed is that it can no longer resolve to the
+		// WRONG pin by sharing ids with one here.
+		const bool sameLevel = key.path == ctx.activePath;
+		const flow::Node* node = (sameLevel && graph.contains(key.port.node)) ? &graph.node(key.port.node) : nullptr;
+		const flow::Port* port = node != nullptr ? node->findOutput(key.port.port) : nullptr;
+		if (node != nullptr && port == nullptr)
+			port = node->findInput(key.port.port);
 		const gui::Texture* tex = previews.find(key);
-		const flow::PortValue& value = (node != nullptr && port != nullptr)
-										   ? evaluation.value(flow::PortAddress{key.node, key.port})
-										   : flow::PortValue{};
+		const flow::PortValue& value = (node != nullptr && port != nullptr) ? evaluation.value(key.port) : flow::PortValue{};
 		if (node == nullptr || port == nullptr || value.empty() || port->type() != typeid(image::Image) || tex == nullptr)
 		{
 			ctx.previewTarget.reset();
@@ -54,7 +59,7 @@ namespace flowview
 		// Header: what you are looking at (which node's which pin, and the image size). ASCII only —
 		// the default font has no fancy separators.
 		const image::Image& img = value.get<image::Image>();
-		gui::Text("%s [%s]  |  %s : %s  (%dx%d)", node->name().c_str(), key.node.shortString().c_str(),
+		gui::Text("%s [%s]  |  %s : %s  (%dx%d)", node->name().c_str(), key.port.node.shortString().c_str(),
 				  port->name().c_str(), std::string(port->typeName()).c_str(), img.width(), img.height());
 		gui::Separator();
 

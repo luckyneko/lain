@@ -1712,12 +1712,34 @@ Each step stands alone and leaves the suite green.
      it reads from, the canvas's dimming / pin shapes / link activity now come from `evaluation`, and
      the Interface pane binds through it, so that was the slice's real risk. No bugs came out of it.
 
-5. **Host-side keys and paths.** `PinKey` → `{EvalPath, NodeId, PortId}`; preview cache, Inspector,
+5. ✅ **Host-side keys and paths — BUILT** (2026-08-03; gui-mode needs an eyeball). `PinKey` →
+   `{EvalPath, NodeId, PortId}`; preview cache, Inspector,
    Interface, Preview pane, `saveFormat` follow. The clear-on-navigation scoping becomes a memory
    choice rather than a correctness one.
 
-**Hold the leftover group GUI work until at least step 5** — it lives in the panes this changes, and
-doing it twice is how the last four bugs happened.
+   **As built:** `PinKey` is `{GraphPath path, PortAddress port}` — the same three axes (which
+   evaluation, which node, which port) in two fields, because a `PortAddress` already *is*
+   `{NodeId, PortId}`. Two deviations worth naming:
+   - **The direction bool is gone**, not carried through. A `PortId` is minted per NODE across both
+     sides (step 2), so a `PortAddress` names one port unambiguously and the flag was saying nothing.
+   - **`EvalPath` is spelled `GraphPath`, not introduced as its own type.** Today a group has exactly
+     one child Evaluation, so the graph walk and the evaluation walk are the same sequence of group
+     NodeIds; a parallel alias for an identical type would be two names for one thing. A **map node**
+     (one child per element) is what makes them differ, and is where an `EvalPath` of its own earns
+     its keep — recorded here and in `pinkey.h` so the next reader knows why it is absent.
+
+   **Behaviour is deliberately unchanged.** The cache still holds only the level on screen, and the
+   clear on navigation stays — but as an explicit memory choice (a texture per image port per visited
+   level, for a cache only one level reads), no longer as the thing standing between the user and
+   M5's bug nine. Retaining every level is now *available*: it would want `refreshIfDirty` to walk all
+   levels rather than prune everything outside the active one. Four `[pinkey]` tests pin the
+   invariant, including the case that actually motivates it — two evaluations of ONE definition share
+   node and port ids by design, so the level has to be in the key however unique NodeIds become.
+   `ctest` **398/398**.
+
+**The hold on leftover group GUI work is lifted** — it was held until step 5 because it lives in the
+panes steps 4 and 5 rewrote, and doing it twice is how the last four bugs happened. Those panes are
+now settled.
 
 ### Not in this milestone
 

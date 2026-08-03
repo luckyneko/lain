@@ -123,7 +123,7 @@ namespace flowview
 					{
 						const image::Image& img = value.get<image::Image>();
 						gui::Text("    %s %s: %s %dx%d", tag, p.name().c_str(), std::string(p.typeName()).c_str(), img.width(), img.height());
-						const PinKey key{id, output, p.id()};
+						const PinKey key{ctx.activePath, flow::PortAddress{id, p.id()}};
 						if (const gui::Texture* tex = previews.find(key))
 						{
 							// Fits the pane's width, capped in height, aspect preserved — no size

@@ -162,8 +162,8 @@ namespace flowview
 				gui::SameLine();
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
 
-				const PinKey key{node->id(), true, pin.id()};
 				const flow::PortAddress address{node->id(), pin.id()};
+				const PinKey key{ctx.activePath, address};
 				const flow::PortValue& bound = evaluation.value(address);
 				if (const gui::Texture* tex = previews.find(key); tex && bound.holds<image::Image>())
 				{
@@ -245,8 +245,8 @@ namespace flowview
 				gui::SameLine();
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
 
-				const PinKey key{node->id(), false, pin.id()};
-				const flow::PortValue& delivered = evaluation.value(flow::PortAddress{node->id(), pin.id()});
+				const PinKey key{ctx.activePath, flow::PortAddress{node->id(), pin.id()}};
+				const flow::PortValue& delivered = evaluation.value(key.port);
 				if (delivered.empty())
 				{
 					// The producer was gated off / suppressed (conditional eval) — no value this run.

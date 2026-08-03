@@ -231,9 +231,7 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 
 ## Definition and evaluation — the recipe apart from its runtime state
 
-*(M6 step 4 — BUILT. [ADR-0012](docs/adr/0012-definition-and-evaluation.md). **EvalPath** below is the
-one term still ahead of the code: an Evaluation is already a tree and a child is already reached by
-`{group NodeId}`, but the host-side coordinate type arrives with step 5.)*
+*(M6 — BUILT. [ADR-0012](docs/adr/0012-definition-and-evaluation.md).)*
 
 - **Definition** — a graph as a **recipe**: node kinds, params, edges, port declarations, names.
   Represented by `Graph`; execution treats it as const, and only explicit edits change it. Everything
@@ -252,6 +250,10 @@ one term still ahead of the code: an Evaluation is already a tree and a child is
 - **EvalPath** — which Evaluation, as a **coordinate**: a sequence of `{NodeId, index}` steps down the
   evaluation tree ("element 3 of the map in group X"). It names the same place across scheduler
   invocations, so a preview pinned to it shows that Evaluation's newest values. _Avoid_: run id.
+  **Today it is spelled `GraphPath`** — a sequence of group NodeIds — because a group has exactly one
+  child, so the graph walk and the evaluation walk are the same, and a parallel alias for an identical
+  type would be two names for one thing. A **map node** is what makes the two differ and what earns
+  the `{NodeId, index}` step; that is the change this term is waiting on, not an oversight.
 - **Node evaluation** — the view handed to `Node::compute` for one node in one Evaluation. Compute is
   const over the definition; it reads this node's evaluated inputs, writes its evaluated outputs, and
   may request another computation here, never by mutating the Node. A narrow non-owning capability
