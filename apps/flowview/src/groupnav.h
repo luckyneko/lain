@@ -30,11 +30,25 @@ namespace flowview
 	// Empty means the root graph itself.
 	using GraphPath = std::vector<lain::flow::NodeId>;
 
-	// Resolve `path` against `root`, returning the graph it names. TOLERANT: a step that is missing
-	// or no longer a group stops the walk and returns the deepest graph that did resolve, so a stale
-	// path degrades to an ancestor rather than dangling. Pass `path` by reference to have it
-	// truncated to what actually resolved.
-	lain::flow::Graph& resolvePath(lain::flow::Graph& root, GraphPath& path);
+	// Resolve `path` against `root`, returning the graph it names — for READING (navigation, drawing,
+	// previews, validation). TOLERANT: a step that is missing or no longer a group stops the walk and
+	// returns the deepest graph that did resolve, so a stale path degrades to an ancestor rather than
+	// dangling. Pass `path` by reference to have it truncated to what actually resolved.
+	//
+	// Const, because a contained graph is a definition and may be shared (ADR-0013). Descending into a
+	// LINKED group is deliberately still allowed — inspecting a template's live intermediates is the
+	// point of being able to look inside one; what you cannot do is edit it, which is what the
+	// separate resolution below expresses.
+	const lain::flow::Graph& resolvePath(const lain::flow::Graph& root, GraphPath& path);
+
+	// The same walk, for EDITING: the graph `path` names, or nullptr when any step of it crosses into
+	// a linked group — whose recipe belongs to its template, not to this document.
+	//
+	// Two functions rather than one plus an `editableAt` check, because "may I edit this?" and "hand
+	// me something I can edit" are the same question, and answering it twice is how a pane forgets
+	// (M5's bugs three and ten: the Interface pane's ± and the Inspector's params were silently lost
+	// on save inside a linked group). Here a pane that has no mutable graph cannot mutate one.
+	lain::flow::Graph* resolveEditable(lain::flow::Graph& root, const GraphPath& path);
 
 	// The matching RUNTIME state for that graph: an Evaluation is a tree with one child per group
 	// node, so the same path walks it. Tolerant in the same way — a step with no child Evaluation
@@ -50,11 +64,7 @@ namespace flowview
 	};
 
 	// The breadcrumb for `path`: "root" plus each descended group's display name.
-	std::vector<Crumb> breadcrumb(lain::flow::Graph& root, const GraphPath& path);
-
-	// Whether the graph at `path` may be EDITED. False inside a linked group (and inside anything
-	// nested within one): its recipe belongs to its template.
-	bool editableAt(lain::flow::Graph& root, const GraphPath& path);
+	std::vector<Crumb> breadcrumb(const lain::flow::Graph& root, const GraphPath& path);
 
 	// The enclosing LINKED group, or nullptr if there is none — what "Edit Template…" acts on, and
 	// what the canvas names when it explains why editing is off. Returns the OUTERMOST linked group on
@@ -63,7 +73,7 @@ namespace flowview
 	//
 	// Returns the NODE, not its id, deliberately: the group can sit at any depth (inside an inline
 	// group, say), so an id alone would send the caller looking in the wrong graph for it.
-	lain::flow::LinkedGroupNode* enclosingLinkedGroup(lain::flow::Graph& root, const GraphPath& path);
+	const lain::flow::LinkedGroupNode* enclosingLinkedGroup(const lain::flow::Graph& root, const GraphPath& path);
 
 	// Re-derive the outer ports of every group along `path` from its own inner boundary, and report
 	// whether anything moved. A group's ports mirror its interior, and that interior can be changed
@@ -74,7 +84,7 @@ namespace flowview
 
 	// How many linked groups anywhere in `root` (at any depth) are built from `source` — the blast
 	// radius of editing that template, which the Edit affordance states before you commit to it.
-	int countLinkedInstances(lain::flow::Graph& root, const std::string& source);
+	int countLinkedInstances(const lain::flow::Graph& root, const std::string& source);
 
 	// The layout subtree for `path`, creating empty levels as needed — so the canvas reads and writes
 	// positions for the level it is actually showing, and other levels keep theirs.

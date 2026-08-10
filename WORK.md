@@ -1787,16 +1787,23 @@ milestone makes it real. Decisions in
 
 Each step stands alone and leaves the suite green.
 
-1. **Hierarchy + constness — a pure refactor, no behaviour change.** Abstract `GroupNode` gains the
-   mirroring and a pure-virtual `innerGraph()`; `InlineGroupNode` owns the `Graph` and keeps the
-   mutable `inner()`; `LinkedGroupNode` keeps its own `Graph` for now, behind the same accessor.
-   `Node::innerGraph()` returns `const Graph*` — the engine (scheduler, `Evaluation`) already only
-   uses it that way, and `edit::syncGroupPorts` already only reads the interior. flowview splits
-   `resolvePath` into a **const read resolution** (navigation, panes, previews) and a **mutable edit
-   resolution that stops at a linked group**; pane signatures take a `const Graph&` plus, where they
-   edit, a nullable mutable one. Only three production sites cast to `GroupNode`
-   (`edit::syncGroupPorts`, serialize's inline branch, the factory registration), so the churn is
-   mostly tests. The factory key `"group"` is unchanged, so no document is affected.
+1. ✅ **Hierarchy + constness — a pure refactor, no behaviour change.** *(built 2026-08-10; gui-mode
+   eyeball pending.)* Abstract `GroupNode` holds the mirroring and a pure-virtual `innerGraph()`;
+   `InlineGroupNode` owns the `Graph` and is the only kind with a mutable `inner()`;
+   `LinkedGroupNode` keeps its own `Graph` for now but exposes **no** mutable accessor at all — a
+   loader establishes its interior through `adoptInterior(Graph)`, which is the seam slice 2's
+   `shared_ptr<const Graph>` slides into without touching a caller. `Node::innerGraph()` returns
+   `const Graph*` (the non-const overload is gone) — the engine already only used it that way, and
+   `edit::syncGroupPorts` already only read the interior. flowview split `resolvePath` into a **const
+   read resolution** and **`resolveEditable`**, a mutable one that returns `nullptr` at a linked
+   group; `editableAt` is **deleted**, because "may I edit here?" is now answered by whether there is
+   a graph to edit *through*. Panes take `const Graph& graph` plus a nullable `Graph* editable` and
+   derive their disabled state from the pointer — the Inspector reads a node through the const graph
+   and writes through the editable one, the Interface pane draws each pin name from the read side and
+   commits through the write side. `MenuBarPane` takes only the const graph: Save writes the root, and
+   `Add ▸ Linked Group…` resolves its own level. The factory key `"group"` is unchanged, so no
+   document is affected. `ctest` **398/398**, warning-clean, format-check clean; headless `run` still
+   flows the example graph and a real linked-group document still resolves and runs.
 2. **The cache — the substance.** `TemplateCache` in `flow::serialize`, owned by the host and passed
    into `fromValue`; `loadLinkedGroup` consults it before building. Resolution order is **cache →
    cycle guard → build → cache**, so a partially built template is never stored and a self-link is

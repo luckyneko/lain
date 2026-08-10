@@ -40,8 +40,8 @@ namespace
 	// with "in" / "out" exposed as the group's own ports. Returns its id in `parent`.
 	NodeId addAdderGroup(Graph& parent, int k)
 	{
-		const NodeId id = parent.add<GroupNode>();
-		auto& group = static_cast<GroupNode&>(parent.node(id));
+		const NodeId id = parent.add<InlineGroupNode>();
+		auto& group = static_cast<InlineGroupNode&>(parent.node(id));
 		Graph& inner = group.inner();
 
 		const NodeId innerIn = inner.boundaryInputNode().id();
@@ -111,8 +111,8 @@ TEST_CASE("nesting goes arbitrarily deep", "[flow][group][scheduler]")
 {
 	// outer group { inner group { +10 } , then +100 } — two levels, both expanded into one plan.
 	Graph g;
-	const NodeId outer = g.add<GroupNode>();
-	auto& outerGroup = static_cast<GroupNode&>(g.node(outer));
+	const NodeId outer = g.add<InlineGroupNode>();
+	auto& outerGroup = static_cast<InlineGroupNode&>(g.node(outer));
 	Graph& mid = outerGroup.inner();
 
 	const NodeId midIn = mid.boundaryInputNode().id();
@@ -204,7 +204,7 @@ TEST_CASE("suppression crosses a group boundary with no extra machinery", "[flow
 
 	SECTION("the suppression is visible inside the group too")
 	{
-		Graph& inner = static_cast<GroupNode&>(g.node(group)).inner();
+		Graph& inner = static_cast<InlineGroupNode&>(g.node(group)).inner();
 		bool sawSuppressedAdder = false;
 		for (const NodeId id : inner.nodeIds())
 		{
@@ -227,8 +227,8 @@ TEST_CASE("an edit inside a group re-runs only that group's dirty closure", "[fl
 	int independent = 0;   // a chain that does not touch the boundary
 
 	Graph g;
-	const NodeId group = g.add<GroupNode>();
-	auto& groupNode = static_cast<GroupNode&>(g.node(group));
+	const NodeId group = g.add<InlineGroupNode>();
+	auto& groupNode = static_cast<InlineGroupNode&>(g.node(group));
 	Graph& inner = groupNode.inner();
 
 	const NodeId innerIn = inner.boundaryInputNode().id();

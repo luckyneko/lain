@@ -1,18 +1,23 @@
 #pragma once
 
 // Group nodes — a node that CONTAINS a graph and exposes selected inner ports as its own, via the
-// *same* boundary mechanism the top level uses (the top-level Graph is the outermost group). Two
-// kinds, differing only in where the recipe is stored and whether it may be edited in place:
+// *same* boundary mechanism the top level uses (the top-level Graph is the outermost group).
 //
-//   GroupNode        — INLINE: the recipe is saved inside the parent document, editable in place.
+//   GroupNode        — the ABSTRACT base: the port mirroring, and the structural question of which
+//                      graph is inside. Says nothing about where that graph comes from or who owns it.
+//   InlineGroupNode  — INLINE: the recipe is saved inside the parent document. It owns its Graph, and
+//                      is the only kind with MUTABLE access to an interior (`inner()`).
 //   LinkedGroupNode  — LINKED: the recipe lives in its own document (its TEMPLATE), referenced by
-//                      path, read-only in place. A link references a RECIPE, never a running graph
-//                      — every group owns its own inner Graph, because a Port holds a persistent
-//                      value and sharing one would make two instances stomp each other's
-//                      intermediates (concurrently, under the flattened plan).
+//                      path, read-only in place.
+//
+// Read-only-in-place is a property of the TYPE, not a rule each caller remembers: `Node::innerGraph()`
+// is const for everyone, and only the inline kind hands out a mutable interior. That matters because
+// a linked group's interior is about to be SHARED between instances (M7 / ADR-0013), where a stray
+// mutation through one instance would reach all of them.
 //
 // See ADR-0009 (the scheduler flattens all nesting into one execution plan, so compute() here is
-// never called) and ADR-0010 (inline vs linked, the interface cache, why overrides are deferred).
+// never called), ADR-0010 (inline vs linked, the interface cache, why overrides are deferred) and
+// ADR-0013 (shared template definitions).
 
 #include "lain/flow/graph.h"
 #include "lain/flow/node.h"
@@ -25,22 +30,16 @@
 
 namespace lain::flow
 {
-	// An INLINE group: owns its inner graph, and its own ports mirror that graph's boundary pins —
-	// this node's inputs are the inner GroupInputNode's output pins, its outputs the inner
-	// GroupOutputNode's input pins.
+	// The shared half of a group node: its ports MIRROR the boundary pins of whatever graph it
+	// contains — this node's inputs are the inner GroupInputNode's output pins, its outputs the inner
+	// GroupOutputNode's input pins. Abstract, because where the contained graph comes from is exactly
+	// what distinguishes the two kinds.
 	class GroupNode : public Node
 	{
 	public:
-		GroupNode()
-			: GroupNode("Group")
-		{
-		}
-
-		Graph& inner() { return m_inner; }
-		const Graph& inner() const { return m_inner; }
-
-		// The scheduler's structural question (see Node::innerGraph): yes, expand me.
-		Graph* innerGraph() override { return &m_inner; }
+		// The graph this node contains — CONST for everyone (see the file header). A mutable interior
+		// is InlineGroupNode's alone.
+		const Graph* innerGraph() const override = 0;
 
 		// (There is no `dirty()` override any more. A group used to report itself dirty when anything
 		// inside it was — a walk over mutable state on the inner definition. Staleness is now a
@@ -114,8 +113,30 @@ namespace lain::flow
 		}
 
 	private:
-		Graph m_inner; // born with its own boundary pair — the group's interface
 		std::map<PortId, PortId> m_outerToInner;
+	};
+
+	// An INLINE group: the recipe is stored inside the parent document, so this node OWNS its inner
+	// graph and is the only group kind that hands out a mutable one. Its edits mark the parent dirty
+	// and ride the parent's undo history, because an inline subgraph is literally part of the parent
+	// document the undo snapshot already captures.
+	class InlineGroupNode : public GroupNode
+	{
+	public:
+		InlineGroupNode()
+			: GroupNode("Group")
+		{
+		}
+
+		// The mutable interior — the thing that makes this kind different. The loader builds into it,
+		// and the host edits through it.
+		Graph& inner() { return m_inner; }
+		const Graph& inner() const { return m_inner; }
+
+		const Graph* innerGraph() const override { return &m_inner; }
+
+	private:
+		Graph m_inner; // born with its own boundary pair — the group's interface
 	};
 
 	// One pin of a linked group's cached interface: enough to rebuild the port without the template.
@@ -127,9 +148,10 @@ namespace lain::flow
 		std::string typeKey;
 	};
 
-	// A LINKED group: the same inner graph and port mirroring, plus where the recipe came from.
-	// Read-only in place — enforced by the editing layer / host, since a template edit changes every
-	// linked group built from it and so must be an explicit act, not a side effect of clicking in.
+	// A LINKED group: the same port mirroring, plus where the recipe came from. Read-only in place —
+	// and now by CONSTRUCTION rather than by the host remembering: there is no mutable accessor to
+	// this node's interior at all. A template edit changes every linked group built from it, so it
+	// must be an explicit act (Edit Template…), not a side effect of clicking in.
 	class LinkedGroupNode : public GroupNode
 	{
 	public:
@@ -137,6 +159,14 @@ namespace lain::flow
 			: GroupNode("Linked Group")
 		{
 		}
+
+		const Graph* innerGraph() const override { return &m_inner; }
+
+		// Establish this group's interior — what a LOADER does once, not an edit. A whole graph moves
+		// in; there is deliberately no way to reach in and change the one that is already there.
+		// (M7 slice 2 replaces the owned Graph with a shared_ptr<const Graph> from the template cache;
+		// this is the seam that absorbs that, so callers do not change again.)
+		void adoptInterior(Graph interior) { m_inner = std::move(interior); }
 
 		// The template's path AS WRITTEN in the parent document — relative to that document, so a
 		// project folder stays portable. Resolving it to a document is the host's job (flow core
@@ -163,6 +193,9 @@ namespace lain::flow
 		void setResolved(bool resolved) { m_resolved = resolved; }
 
 	private:
+		// Owned for now. M7 slice 2 makes this a shared_ptr<const Graph> pointing at the template
+		// cache, so N instances of one template share one definition (ADR-0013).
+		Graph m_inner;
 		std::string m_source;
 		std::vector<PinSpec> m_cachedInputs;
 		std::vector<PinSpec> m_cachedOutputs;

@@ -106,8 +106,8 @@ TEST_CASE("restoreGraph resolves a linked group's template", "[graphio]")
 	const LinkedGroupNode* link = onlyLink(restored.graph);
 	REQUIRE(link != nullptr);
 	REQUIRE(link->resolved()); // ... and comes back resolved, not as an empty placeholder
-	REQUIRE(link->inner().boundaryInputNode().outputCount() == 1);
-	REQUIRE(link->inner().boundaryOutputNode().inputCount() == 1);
+	REQUIRE(link->innerGraph()->boundaryInputNode().outputCount() == 1);
+	REQUIRE(link->innerGraph()->boundaryOutputNode().inputCount() == 1);
 	REQUIRE(link->inputCount() == 1); // the group's own mirrored ports survive with it
 	REQUIRE(link->outputCount() == 1);
 }

@@ -139,8 +139,13 @@ namespace lain::flow
 		// flat plan (ADR-0009) — so it asks the structural question it actually has ("do you contain
 		// a graph?") rather than dynamic_cast-ing for a class identity it doesn't otherwise care
 		// about, and a future graph-containing node needs no scheduler change.
-		virtual Graph* innerGraph() { return nullptr; }
-		const Graph* innerGraph() const { return const_cast<Node*>(this)->innerGraph(); }
+		//
+		// CONST, deliberately: a contained graph is a DEFINITION, and a definition read through here
+		// may be shared between several nodes (a template backing N linked groups — ADR-0013). Mutable
+		// access to an interior belongs to the one kind that owns one outright, InlineGroupNode::inner,
+		// which is what makes "a linked group is read-only in place" a property of the type rather
+		// than a rule every caller has to remember.
+		virtual const Graph* innerGraph() const { return nullptr; }
 
 		// The inner boundary pin that this node's port `outer` mirrors, or the null PortId.
 		// Meaningful only alongside innerGraph(): the two together ARE the group seam the scheduler

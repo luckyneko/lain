@@ -128,7 +128,7 @@ namespace lain::flow::edit
 	// The inner boundary pin a group's outer port should mirror, or nullptr if that pin is gone.
 	// Direction-scoped: an outer INPUT mirrors a pin on the inner GroupInput (whose pins are its
 	// outputs), an outer OUTPUT a pin on the inner GroupOutput.
-	static const Port* innerPinFor(Graph& inner, Port::Direction outerSide, PortId pin)
+	static const Port* innerPinFor(const Graph& inner, Port::Direction outerSide, PortId pin)
 	{
 		return (outerSide == Port::Direction::Input) ? inner.boundaryInputNode().findOutput(pin)
 													 : inner.boundaryOutputNode().findInput(pin);
@@ -142,7 +142,10 @@ namespace lain::flow::edit
 		auto* node = dynamic_cast<GroupNode*>(&parent.node(group));
 		if (node == nullptr)
 			return sync; // not a group — nothing to reconcile
-		Graph& inner = node->inner();
+		// Read-only: reconciliation reads the inner boundary and writes only the group's OWN outer
+		// ports and the parent's edges. That is why this works on a linked group whose interior is a
+		// shared definition (ADR-0013).
+		const Graph& inner = *node->innerGraph();
 
 		// --- 1. Remove outer ports whose inner pin is gone -------------------------------------
 		// Collected first: removing mutates the port list, and a dropped port may still be wired in
@@ -210,7 +213,7 @@ namespace lain::flow::edit
 				mirroredOutputs.insert(innerId);
 		}
 
-		GroupInputNode& boundaryIn = inner.boundaryInputNode();
+		const GroupInputNode& boundaryIn = inner.boundaryInputNode();
 		for (std::size_t i = 0; i < boundaryIn.outputCount(); ++i)
 		{
 			const Port& pin = boundaryIn.output(i);
@@ -221,7 +224,7 @@ namespace lain::flow::edit
 			}
 		}
 
-		GroupOutputNode& boundaryOut = inner.boundaryOutputNode();
+		const GroupOutputNode& boundaryOut = inner.boundaryOutputNode();
 		for (std::size_t i = 0; i < boundaryOut.inputCount(); ++i)
 		{
 			const Port& pin = boundaryOut.input(i);

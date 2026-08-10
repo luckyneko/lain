@@ -22,12 +22,12 @@ namespace
 	// exist on the boundary define the whole interface.
 	NodeId addPassGroup(Graph& parent)
 	{
-		return parent.add<GroupNode>();
+		return parent.add<InlineGroupNode>();
 	}
 
-	GroupNode& groupAt(Graph& g, NodeId id)
+	InlineGroupNode& groupAt(Graph& g, NodeId id)
 	{
-		return static_cast<GroupNode&>(g.node(id));
+		return static_cast<InlineGroupNode&>(g.node(id));
 	}
 
 	const Port* findPortNamed(const Node& node, Port::Direction dir, const std::string& name)
@@ -47,7 +47,7 @@ TEST_CASE("sync mirrors the inner boundary pins onto the group's own ports", "[f
 {
 	Graph g;
 	const NodeId id = addPassGroup(g);
-	GroupNode& group = groupAt(g, id);
+	InlineGroupNode& group = groupAt(g, id);
 
 	REQUIRE(g.node(id).inputCount() == 0); // a fresh group exposes nothing
 	REQUIRE(g.node(id).outputCount() == 0);
@@ -89,7 +89,7 @@ TEST_CASE("an inner pin rename retitles the outer port and KEEPS its wiring", "[
 	// The point of mapping by PortId: a rename is display-only, so the parent's edge survives.
 	Graph g;
 	const NodeId id = addPassGroup(g);
-	GroupNode& group = groupAt(g, id);
+	InlineGroupNode& group = groupAt(g, id);
 	const PortId inPin = group.inner().boundaryInputNode().addBoundary<int>("source");
 	edit::syncGroupPorts(g, id);
 
@@ -114,7 +114,7 @@ TEST_CASE("a removed inner pin drops the outer port and reports the edges it cut
 	// and only the parent Graph can cut those edges (Graph::removePort refuses a connected pin).
 	Graph g;
 	const NodeId id = addPassGroup(g);
-	GroupNode& group = groupAt(g, id);
+	InlineGroupNode& group = groupAt(g, id);
 	const PortId outPin = group.inner().boundaryOutputNode().addBoundary<int>("result");
 	edit::syncGroupPorts(g, id);
 
@@ -144,7 +144,7 @@ TEST_CASE("sync survives a pin being replaced by one of the same name", "[flow][
 	// new port from colliding with the old one's name.
 	Graph g;
 	const NodeId id = addPassGroup(g);
-	GroupNode& group = groupAt(g, id);
+	InlineGroupNode& group = groupAt(g, id);
 	GroupInputNode& boundary = group.inner().boundaryInputNode();
 
 	const PortId first = boundary.addBoundary<int>("value");
@@ -172,7 +172,7 @@ TEST_CASE("a synced group runs end to end", "[flow][group][edit][scheduler]")
 	// sync, connect, run.
 	Graph g;
 	const NodeId id = addPassGroup(g);
-	GroupNode& group = groupAt(g, id);
+	InlineGroupNode& group = groupAt(g, id);
 	Graph& inner = group.inner();
 
 	const PortId inPin = inner.boundaryInputNode().addBoundary<int>("in");
@@ -222,7 +222,7 @@ TEST_CASE("sync mirrors a type no port-type registry knows", "[flow][group][edit
 
 	Graph g;
 	const NodeId id = addPassGroup(g);
-	GroupNode& group = groupAt(g, id);
+	InlineGroupNode& group = groupAt(g, id);
 	group.inner().boundaryInputNode().addBoundary<Unregistered>("odd");
 
 	REQUIRE(edit::syncGroupPorts(g, id).added == 1);
@@ -238,7 +238,7 @@ TEST_CASE("inner pins with COLLIDING ids on opposite sides never cross", "[flow]
 	// crossed (a -> q, b -> p) so any mix-up shows up as swapped values rather than passing by luck.
 	Graph g;
 	const NodeId id = addPassGroup(g);
-	GroupNode& group = groupAt(g, id);
+	InlineGroupNode& group = groupAt(g, id);
 	Graph& inner = group.inner();
 	GroupInputNode& bIn = inner.boundaryInputNode();
 	GroupOutputNode& bOut = inner.boundaryOutputNode();
@@ -290,7 +290,7 @@ TEST_CASE("pins added one at a time, syncing between, all reach the outer node",
 	// nodes start at 1) and the output port silently never appeared.
 	Graph g;
 	const NodeId id = addPassGroup(g);
-	GroupNode& group = groupAt(g, id);
+	InlineGroupNode& group = groupAt(g, id);
 
 	// 1. Add an input pin, then sync (as a frame would).
 	group.inner().boundaryInputNode().addBoundary<int>("in");

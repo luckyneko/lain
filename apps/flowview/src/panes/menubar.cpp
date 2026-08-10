@@ -118,7 +118,7 @@ namespace flowview
 			openGraphPath(ctx, swap.path); // Open Recent — the file is already known
 	}
 
-	void MenuBarPane::drawConfirmModal(AppContext& ctx, flow::Graph& graph)
+	void MenuBarPane::drawConfirmModal(AppContext& ctx, const flow::Graph& graph)
 	{
 		if (ctx.confirmSwap)
 		{
@@ -202,7 +202,8 @@ namespace flowview
 		const flow::NodeId id = ctx.addCatalogNode("linkedGroup"); // lands in the ACTIVE graph, and is refused inside a link
 		if (id == flow::NodeId{})
 			return false;
-		flow::Graph& graph = resolvePath(ctx.app->graph(), ctx.activePath);
+		// addCatalogNode only succeeds where the graph is editable, so this cannot be null here.
+		flow::Graph& graph = *resolveEditable(ctx.app->graph(), ctx.activePath);
 
 		auto& linked = static_cast<flow::LinkedGroupNode&>(graph.node(id));
 
@@ -225,7 +226,7 @@ namespace flowview
 		}
 		if (loaded.graph.nodeCount() != 0)
 		{
-			linked.inner() = std::move(loaded.graph);
+			linked.adoptInterior(std::move(loaded.graph));
 			linked.setResolved(true);
 
 			// The template's OWN layout comes with it, into this group's subtree — otherwise the
@@ -383,7 +384,8 @@ namespace flowview
 		return true;
 	}
 
-	void MenuBarPane::draw(AppContext& ctx, flow::Graph& graph, app::Application& app, bool& edited, bool& resetLayout)
+	void MenuBarPane::draw(AppContext& ctx, const flow::Graph& graph, app::Application& app, bool& edited,
+						   bool& resetLayout)
 	{
 		// Cmd on macOS, Ctrl elsewhere — for both the displayed shortcut text and the wired key chord.
 		const bool mac = gui::GetIO().ConfigMacOSXBehaviors;
@@ -400,7 +402,7 @@ namespace flowview
 		if (ctx.editTemplateRequested)
 		{
 			ctx.editTemplateRequested = false;
-			if (flow::LinkedGroupNode* linked = enclosingLinkedGroup(ctx.app->graph(), ctx.activePath))
+			if (const flow::LinkedGroupNode* linked = enclosingLinkedGroup(ctx.app->graph(), ctx.activePath))
 				editTemplate(ctx, *linked);
 		}
 

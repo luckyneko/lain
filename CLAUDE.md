@@ -217,6 +217,18 @@ CONTEXT.md. **Nothing is built.**
   only safe because M6 step 5 put the level in `PinKey`, since two instances now have identical inner
   node ids by construction.
 - Three slices: (1) hierarchy + constness, a pure refactor; (2) the cache; (3) the reload gesture.
+
+**Slice 1 is built (2026-08-10).** The hierarchy split landed as designed, with one addition: since
+read-only-in-place is now the *type's* job, `LinkedGroupNode` exposes no mutable interior at all —
+a loader establishes one through **`adoptInterior(Graph)`**, the seam slice 2's
+`shared_ptr<const Graph>` replaces without touching a caller. `Node::innerGraph()` is const-only.
+flowview's `resolvePath` split into a const read resolution and **`resolveEditable`** (nullptr at a
+linked group), and **`editableAt` is deleted**: a pane derives "may I edit?" from *having something
+to edit through*, so the check can no longer be forgotten — which is what M5's bugs three and ten
+were. Panes take `const Graph&` + a nullable `Graph*`; `MenuBarPane` takes only the const graph
+(Save writes the root, and `Add ▸ Linked Group…` resolves its own level). `ctest` **398/398**,
+warning-clean, format-check clean; headless `run` unchanged and a real linked-group document still
+resolves + runs. **gui-mode not yet eyeballed for this slice.**
 - Still out: file watching, prefab overrides, in-place template editing.
 
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)

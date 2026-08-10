@@ -101,7 +101,13 @@ namespace flowview
 		// here and handed to every pane, so navigating retargets the canvas, Inspector, Preview and
 		// Issues together. resolvePath truncates a path that no longer resolves, so a group deleted
 		// from under us degrades to its parent rather than dangling.
-		flow::Graph& graph = resolvePath(appDelegate.graph(), m_ctx.activePath); // mutated by the canvas below
+		// Two resolutions, because they answer different questions. `graph` is what every pane READS
+		// — it resolves into a linked group too, since inspecting a template's live intermediates is
+		// the point of being able to look inside one. `editable` is what a pane may CHANGE, and is
+		// null below a linked group, whose recipe belongs to its template. A pane that cannot edit
+		// simply has no mutable graph to edit through (ADR-0013).
+		const flow::Graph& graph = resolvePath(appDelegate.graph(), m_ctx.activePath);
+		flow::Graph* editable = resolveEditable(appDelegate.graph(), m_ctx.activePath);
 		// ... and the runtime state that belongs to it. An Evaluation is a tree with one child per
 		// group node, so the SAME path walks it — every pane gets a definition and its values in step.
 		flow::Evaluation& evaluation = resolveEvaluation(appDelegate.evaluation(), m_ctx.activePath);
@@ -127,7 +133,7 @@ namespace flowview
 		// texture preview — the panel never references a just-freed node's texture. All its
 		// edits accumulate into `edited`, alongside the menu-bar Add below.
 		bool edited = false;
-		m_canvas.draw(m_ctx, graph, evaluation, edited);
+		m_canvas.draw(m_ctx, graph, editable, evaluation, edited);
 
 		// The application menu bar (viewport-top; ImGui places it there regardless of call order). Its
 		// Add feeds the same `edited` flag as the canvas, so a menu Add Node re-runs the scene like any edit.
@@ -148,10 +154,10 @@ namespace flowview
 		m_previews.refreshIfDirty(drawnPath, graph, evaluation, *m_guiCtx);
 
 		// The per-node Inspector — reads (and param-edits) the now post-edit graph.
-		m_inspector.draw(m_ctx, graph, evaluation, m_previews, m_paramEditors);
+		m_inspector.draw(m_ctx, graph, editable, evaluation, m_previews, m_paramEditors);
 
 		// The graph's I/O boundary — the host-binding surface (bind inputs, save outputs).
-		m_interface.draw(m_ctx, graph, evaluation, m_previews, m_paramEditors);
+		m_interface.draw(m_ctx, graph, editable, evaluation, m_previews, m_paramEditors);
 
 		// Preview + Issues panels — docked windows the default layout tiles alongside the Graph.
 		m_preview.draw(m_ctx, graph, evaluation, m_previews);
@@ -235,7 +241,7 @@ namespace flowview
 				// The ids came through the restore unchanged, so a node that survived the edit is
 				// re-selected and one that did not is simply absent. resolvePath also truncates a
 				// path whose group the undo removed, so the panes land on its parent.
-				flow::Graph& active = resolvePath(appDelegate.graph(), m_ctx.activePath);
+				const flow::Graph& active = resolvePath(appDelegate.graph(), m_ctx.activePath);
 				for (const flow::NodeId id : m_ctx.pendingReselect)
 				{
 					if (active.contains(id))

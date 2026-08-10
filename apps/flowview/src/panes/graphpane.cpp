@@ -158,7 +158,8 @@ namespace flowview
 		gui::nodes::ClearLinkSelection();
 	}
 
-	void GraphPane::draw(AppContext& ctx, flow::Graph& graph, const flow::Evaluation& evaluation, bool& edited)
+	void GraphPane::draw(AppContext& ctx, const flow::Graph& graph, flow::Graph* editableGraph,
+						 const flow::Evaluation& evaluation, bool& edited)
 	{
 		gui::SetNextWindowPos(math::Vec2f{360.0f, 20.0f}, ImGuiCond_FirstUseEver);
 		gui::SetNextWindowSize(math::Vec2f{880.0f, 600.0f}, ImGuiCond_FirstUseEver);
@@ -166,8 +167,9 @@ namespace flowview
 
 		// Breadcrumb: where we are in the nesting, and the way back out. Drawn before the editor so it
 		// sits above the canvas rather than floating over it.
-		flow::Graph& rootGraph = ctx.app->graph();
-		const bool editable = editableAt(rootGraph, ctx.activePath);
+		const flow::Graph& rootGraph = ctx.app->graph();
+		// One source for "may I edit this?": having something to edit through.
+		const bool editable = editableGraph != nullptr;
 		{
 			// The bar reads as one lineage, but its two halves cost very different things — so they get
 			// different separators. "<" precedes a DOCUMENT crumb: that document is not loaded, and
@@ -489,11 +491,11 @@ namespace flowview
 			ctx.noteReadOnlyEdit();
 		for (const auto& [nodeId, key] : (editable ? pinAdds : std::vector<std::pair<flow::NodeId, std::string>>{}))
 		{
-			const flow::DynamicPortsNode& dyn = static_cast<flow::DynamicPortsNode&>(graph.node(nodeId));
+			const flow::DynamicPortsNode& dyn = static_cast<const flow::DynamicPortsNode&>(graph.node(nodeId));
 			const bool onOutput = dyn.dynamicSide() == flow::Port::Direction::Output;
 			const std::size_t count = onOutput ? dyn.outputCount() : dyn.inputCount();
 			const std::string name = std::string(onOutput ? "out" : "in") + std::to_string(count);
-			if (flow::edit::addPort(graph, nodeId, key, name) != flow::PortId{})
+			if (flow::edit::addPort(*editableGraph, nodeId, key, name) != flow::PortId{})
 				edited = true;
 		}
 		// A detached link (dropped in empty space, or the "off" side of a move). Handle
@@ -510,7 +512,7 @@ namespace flowview
 			}
 			else if (editable)
 			{
-				edited |= flow::edit::disconnect(graph, *destination);
+				edited |= flow::edit::disconnect(*editableGraph, *destination);
 			}
 			else
 			{
@@ -523,7 +525,7 @@ namespace flowview
 		{
 			if (!editable)
 				ctx.noteReadOnlyEdit();
-			else if (tryConnect(graph, ctx.canvas, startAttr, endAttr))
+			else if (tryConnect(*editableGraph, ctx.canvas, startAttr, endAttr))
 				edited = true;
 			else
 				ctx.noteRejectedConnect(); // surface the silent rejection as a transient Issue
@@ -568,7 +570,7 @@ namespace flowview
 			// Resolve the selection to stable values first, then delete in one edit.
 			const std::vector<flow::Graph::Edge> edgesToRemove = selectedEdges(graph, ctx.canvas);
 			const std::vector<flow::NodeId> nodesToRemove = selectedNodes(ctx.canvas);
-			if (flow::edit::remove(graph, nodesToRemove, edgesToRemove))
+			if (flow::edit::remove(*editableGraph, nodesToRemove, edgesToRemove))
 			{
 				// Drop imnodes' now-stale selection. Its ids resolve to nothing once the objects are
 				// gone (they are never recycled), but imnodes stores a selection as POOL INDICES,
@@ -587,7 +589,10 @@ namespace flowview
 			else
 				ctx.noteReadOnlyEdit(); // the add menu would have nowhere to put a node
 		}
-		if (gui::BeginPopup("addNode"))
+		// `editable` short-circuits, so the palette is not even submitted without a graph to add to —
+		// ImGui closes an open popup whose Begin stops being called, which is the right outcome if the
+		// user navigates into a linked group while it is up.
+		if (editable && gui::BeginPopup("addNode"))
 		{
 			const ImVec2 mouse = gui::GetMousePosOnOpeningCurrentPopup();
 			for (const NodeCategory& cat : nodeCatalog()) // catalog, not factory.keys() -> excludes boundary
@@ -596,7 +601,7 @@ namespace flowview
 				{
 					if (gui::MenuItem(key.c_str()))
 					{
-						const flow::NodeId id = flow::edit::addNode(graph, ctx.app->nodeFactory().create(key));
+						const flow::NodeId id = flow::edit::addNode(*editableGraph, ctx.app->nodeFactory().create(key));
 						gui::nodes::SetNodeScreenSpacePos(ctx.canvas.node(id), math::Vec2f{mouse.x, mouse.y});
 						edited = true;
 					}

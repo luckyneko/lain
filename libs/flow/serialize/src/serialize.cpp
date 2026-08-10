@@ -81,7 +81,7 @@ namespace lain::flow::serialize
 		std::vector<PinSpec> outputs;
 		if (linked.resolved())
 		{
-			const Graph& inner = linked.inner();
+			const Graph& inner = *linked.innerGraph();
 			const GroupInputNode& boundaryIn = inner.boundaryInputNode();
 			for (std::size_t i = 0; i < boundaryIn.outputCount(); ++i)
 				inputs.push_back(PinSpec{boundaryIn.output(i).name(), portTypeKey(boundaryIn.output(i).type())});
@@ -158,7 +158,7 @@ namespace lain::flow::serialize
 			out.set("source", data::Value(linked->source()));
 			out.set("interface", interfaceToValue(*linked));
 		}
-		else if (const auto* group = dynamic_cast<const GroupNode*>(&node))
+		else if (const auto* group = dynamic_cast<const InlineGroupNode*>(&node))
 		{
 			static const EditorTree empty;
 			out.set("graph", bodyToValue(group->inner(), factory, codecs, subtree ? *subtree : empty));
@@ -431,19 +431,22 @@ namespace lain::flow::serialize
 			// Unresolved: rebuild the interface from the cache so the parent's edges still land.
 			// The pins go on the inner boundary nodes (which are DynamicPortsNodes), and
 			// syncGroupPorts mirrors them outward — so a placeholder is a real, empty graph with the
-			// right face, not a special case downstream.
+			// right face, not a special case downstream. Built here and handed over whole: a linked
+			// group's interior is established, never edited in place (ADR-0013).
 			if (source && !source->empty())
 				ctx.warn("template \"" + *source + "\" could not be resolved — the group loads unresolved from its cached interface");
+			Graph placeholder;
 			for (const PinSpec& pin : cachedIn)
 			{
-				if (addPortOfType(linked.inner().boundaryInputNode(), pin.typeKey, pin.name) == PortId{})
+				if (addPortOfType(placeholder.boundaryInputNode(), pin.typeKey, pin.name) == PortId{})
 					ctx.warn("unresolved template pin \"" + pin.name + "\" (type \"" + pin.typeKey + "\") could not be rebuilt");
 			}
 			for (const PinSpec& pin : cachedOut)
 			{
-				if (addPortOfType(linked.inner().boundaryOutputNode(), pin.typeKey, pin.name) == PortId{})
+				if (addPortOfType(placeholder.boundaryOutputNode(), pin.typeKey, pin.name) == PortId{})
 					ctx.warn("unresolved template pin \"" + pin.name + "\" (type \"" + pin.typeKey + "\") could not be rebuilt");
 			}
+			linked.adoptInterior(std::move(placeholder));
 			linked.setResolved(false);
 			return;
 		}
@@ -459,13 +462,13 @@ namespace lain::flow::serialize
 		// INSTANTIATED, not restored: one template may back several linked groups in one document,
 		// so preserving its ids would make a duplicate certain rather than unlikely. Nothing is lost
 		// — a linked group's interior is never written to the parent, only its source + interface.
-		linked.inner() = loadDocument(resolved->document, editor, ctx, IdPolicy::Mint);
+		linked.adoptInterior(loadDocument(resolved->document, editor, ctx, IdPolicy::Mint));
 		ctx.resolving.erase(resolved->key);
 		linked.setResolved(true);
 
 		std::vector<PinSpec> currentIn;
 		std::vector<PinSpec> currentOut;
-		currentInterface(linked.inner(), currentIn, currentOut);
+		currentInterface(*linked.innerGraph(), currentIn, currentOut);
 		rectify(linked.source(), cachedIn, currentIn, "input", ctx);
 		rectify(linked.source(), cachedOut, currentOut, "output", ctx);
 	}
@@ -714,7 +717,7 @@ namespace lain::flow::serialize
 			{
 				loadLinkedGroup(*linked, nodeV, editor.groups[liveId], ctx);
 			}
-			else if (auto* group = dynamic_cast<GroupNode*>(&created))
+			else if (auto* group = dynamic_cast<InlineGroupNode*>(&created))
 			{
 				// An INLINE group's body is part of THIS document, so it inherits the id policy
 				// (and, having no version of its own, never re-enters the router).

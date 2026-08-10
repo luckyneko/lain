@@ -65,7 +65,7 @@ namespace
 		Factory<Node> factory;
 		factory.registerType<GroupInputNode>("groupInput");
 		factory.registerType<GroupOutputNode>("groupOutput");
-		factory.registerType<GroupNode>("group");
+		factory.registerType<InlineGroupNode>("group");
 		factory.registerType<LinkedGroupNode>("linkedGroup");
 		factory.registerType<ConstNode>("const");
 		factory.registerType<SinkNode>("sink");
@@ -154,8 +154,8 @@ TEST_CASE("a load preserves identity through nesting", "[flow-serialize][identit
 {
 	const Factory<Node> factory = identityFactory();
 	Graph graph;
-	const NodeId groupId = graph.add<GroupNode>();
-	auto& group = static_cast<GroupNode&>(graph.node(groupId));
+	const NodeId groupId = graph.add<InlineGroupNode>();
+	auto& group = static_cast<InlineGroupNode&>(graph.node(groupId));
 	const NodeId innerConst = group.inner().add<ConstNode>();
 	const NodeId innerBoundary = group.inner().boundaryOutputNode().id();
 
@@ -164,7 +164,7 @@ TEST_CASE("a load preserves identity through nesting", "[flow-serialize][identit
 	REQUIRE(result.graph.contains(groupId));
 
 	// An inline group's body is part of this document, so its nodes come back as themselves too.
-	const auto& loaded = static_cast<const GroupNode&>(result.graph.node(groupId));
+	const auto& loaded = static_cast<const InlineGroupNode&>(result.graph.node(groupId));
 	REQUIRE(loaded.inner().contains(innerConst));
 	REQUIRE(loaded.inner().boundaryOutputNode().id() == innerBoundary);
 }
@@ -503,8 +503,8 @@ TEST_CASE("a version-1 template linked from a current document is migrated on it
 	const LoadResult result = fromValue(parentDocument, factory, intCodecs(), resolver);
 	const auto& linked = static_cast<const LinkedGroupNode&>(result.graph.node(linkId));
 	REQUIRE(linked.resolved());
-	REQUIRE(nodeNamed(linked.inner(), "Const") != nullptr);
-	REQUIRE(nodeNamed(linked.inner(), "Const")->param(0).get<int>() == 5);
+	REQUIRE(nodeNamed(*linked.innerGraph(), "Const") != nullptr);
+	REQUIRE(nodeNamed(*linked.innerGraph(), "Const")->param(0).get<int>() == 5);
 }
 
 TEST_CASE("an unknown older version is refused rather than half-read", "[flow-serialize][identity]")

@@ -78,10 +78,12 @@ namespace flowview
 	flow::NodeId AppContext::addCatalogNode(const std::string& key)
 	{
 		// Adds land in the ACTIVE graph — the level the user is looking at — not the root. And nothing
-		// is added inside a linked group: its recipe belongs to its template (Group > Edit Template...).
-		if (!editableAt(app->graph(), activePath))
+		// is added inside a linked group: its recipe belongs to its template (Edit Template...). That
+		// refusal is now the resolution itself — there is no editable graph to add to.
+		flow::Graph* editable = resolveEditable(app->graph(), activePath);
+		if (editable == nullptr)
 			return flow::NodeId{};
-		flow::Graph& graph = resolvePath(app->graph(), activePath);
+		flow::Graph& graph = *editable;
 		const flow::NodeId id = flow::edit::addNode(graph, app->nodeFactory().create(key));
 		if (id == flow::NodeId{})
 			return id;

@@ -46,22 +46,24 @@ namespace flowview
 	// addresses edges by port name, so two pins sharing one would make an edge ambiguous on load
 	// (addDynamicPort enforces the same rule at creation — a rename must not be the way around it).
 	// A refused name is simply not applied, and the field reverts to the current one next frame.
-	static bool renderPinName(const flow::Node& node, flow::Port& pin)
+	// The field is drawn from the READ side and committed through the WRITE side, which is null inside
+	// a linked group — so the name is always legible there, and never editable.
+	static bool renderPinName(const flow::Node& node, const flow::Port& pin, flow::Port* writable)
 	{
 		std::string name = pin.name();
 		gui::SetNextItemWidth(110.0f);
 		gui::InputText("##name", &name);
-		if (!gui::IsItemDeactivatedAfterEdit() || name == pin.name())
+		if (writable == nullptr || !gui::IsItemDeactivatedAfterEdit() || name == pin.name())
 			return false;
 		if (!flow::validPortName(name) || node.hasPortNamed(pin.direction(), name))
 			return false;
-		pin.setName(std::move(name));
+		writable->setName(std::move(name));
 		return true;
 	}
 
 	// The per-node "+" : a menu of the registered port types the node accepts (filtered by
 	// acceptsPortType); picking one adds a pin via the edit seam, auto-named `<prefix><count>`.
-	static bool renderAddPin(flow::Graph& graph, flow::DynamicPortsNode& node, const char* prefix)
+	static bool renderAddPin(flow::Graph* editable, const flow::DynamicPortsNode& node, const char* prefix)
 	{
 		bool added = false;
 		if (gui::Button("+ add pin"))
@@ -78,8 +80,11 @@ namespace flowview
 				{
 					const std::size_t count = node.dynamicSide() == flow::Port::Direction::Output ? node.outputCount()
 																								  : node.inputCount();
-					flow::edit::addPort(graph, node.id(), key, std::string(prefix) + std::to_string(count));
-					added = true;
+					if (editable != nullptr)
+					{
+						flow::edit::addPort(*editable, node.id(), key, std::string(prefix) + std::to_string(count));
+						added = true;
+					}
 				}
 			}
 			if (!any)
@@ -89,7 +94,7 @@ namespace flowview
 		return added;
 	}
 
-	bool InterfacePane::renderRemoveConfirm(flow::Graph& graph)
+	bool InterfacePane::renderRemoveConfirm(flow::Graph* editable)
 	{
 		if (m_removeRequested)
 		{
@@ -102,7 +107,7 @@ namespace flowview
 			gui::Text("Remove '%s'?  It has %d link(s).", m_removeName.c_str(), m_removeLinks);
 			if (gui::Button("Remove"))
 			{
-				removed = flow::edit::removePort(graph, m_removeTarget);
+				removed = editable != nullptr && flow::edit::removePort(*editable, m_removeTarget);
 				gui::CloseCurrentPopup();
 			}
 			gui::SameLine();
@@ -113,8 +118,8 @@ namespace flowview
 		return removed;
 	}
 
-	void InterfacePane::draw(AppContext& ctx, flow::Graph& graph, flow::Evaluation& evaluation, PreviewCache& previews,
-							 const ParamEditors& editors)
+	void InterfacePane::draw(AppContext& ctx, const flow::Graph& graph, flow::Graph* editableGraph,
+							 flow::Evaluation& evaluation, PreviewCache& previews, const ParamEditors& editors)
 	{
 		bool changed = false;
 		bool renamed = false; // a pin rename: a document change, but no recompute (see below)
@@ -140,7 +145,7 @@ namespace flowview
 		// — it would be carried to the group's face by the per-frame sync and then silently lost on
 		// save. Disabled rather than hidden: you can still read the interface, which is the point of
 		// being able to look inside at all.
-		const bool editable = editableAt(ctx.app->graph(), ctx.activePath);
+		const bool editable = editableGraph != nullptr;
 		if (!atRoot)
 			gui::TextUnformatted(editable ? "Group interface (this group's ports)"
 										  : "Group interface (linked - read only)");
@@ -150,19 +155,20 @@ namespace flowview
 		gui::Separator();
 		{
 			// No null check: the boundary pair is a Graph invariant. The block scopes the ID push.
-			flow::GroupInputNode* const node = &graph.boundaryInputNode();
-			gui::PushID(ctx.canvas.node(node->id()));
-			for (std::size_t i = 0; i < node->outputCount(); ++i)
+			const flow::GroupInputNode& node = graph.boundaryInputNode();
+			flow::GroupInputNode* const writable = editable ? &editableGraph->boundaryInputNode() : nullptr;
+			gui::PushID(ctx.canvas.node(node.id()));
+			for (std::size_t i = 0; i < node.outputCount(); ++i)
 			{
-				flow::Port& pin = node->output(i);
+				const flow::Port& pin = node.output(i);
 				gui::PushID(static_cast<int>(pin.id().value()));
 				gui::BeginDisabled(!editable);
-				renamed |= renderPinName(*node, pin);
+				renamed |= renderPinName(node, pin, writable != nullptr ? &writable->output(i) : nullptr);
 				gui::EndDisabled();
 				gui::SameLine();
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
 
-				const flow::PortAddress address{node->id(), pin.id()};
+				const flow::PortAddress address{node.id(), pin.id()};
 				const PinKey key{ctx.activePath, address};
 				const flow::PortValue& bound = evaluation.value(address);
 				if (const gui::Texture* tex = previews.find(key); tex && bound.holds<image::Image>())
@@ -217,12 +223,12 @@ namespace flowview
 				gui::SameLine();
 				gui::BeginDisabled(!editable);
 				if (gui::Button("x"))
-					requestRemove(node->id(), pin);
+					requestRemove(node.id(), pin);
 				gui::EndDisabled();
 				gui::PopID();
 			}
 			gui::BeginDisabled(!editable);
-			changed |= renderAddPin(graph, *node, "input");
+			changed |= renderAddPin(editableGraph, node, "input");
 			gui::EndDisabled();
 			gui::PopID();
 		}
@@ -233,19 +239,20 @@ namespace flowview
 		gui::Separator();
 		{
 			// No null check: the boundary pair is a Graph invariant. The block scopes the ID push.
-			flow::GroupOutputNode* const node = &graph.boundaryOutputNode();
-			gui::PushID(ctx.canvas.node(node->id()));
-			for (std::size_t i = 0; i < node->inputCount(); ++i)
+			const flow::GroupOutputNode& node = graph.boundaryOutputNode();
+			flow::GroupOutputNode* const writable = editable ? &editableGraph->boundaryOutputNode() : nullptr;
+			gui::PushID(ctx.canvas.node(node.id()));
+			for (std::size_t i = 0; i < node.inputCount(); ++i)
 			{
-				flow::Port& pin = node->input(i);
+				const flow::Port& pin = node.input(i);
 				gui::PushID(static_cast<int>(pin.id().value()));
 				gui::BeginDisabled(!editable);
-				renamed |= renderPinName(*node, pin);
+				renamed |= renderPinName(node, pin, writable != nullptr ? &writable->input(i) : nullptr);
 				gui::EndDisabled();
 				gui::SameLine();
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
 
-				const PinKey key{ctx.activePath, flow::PortAddress{node->id(), pin.id()}};
+				const PinKey key{ctx.activePath, flow::PortAddress{node.id(), pin.id()}};
 				const flow::PortValue& delivered = evaluation.value(key.port);
 				if (delivered.empty())
 				{
@@ -267,18 +274,18 @@ namespace flowview
 				gui::SameLine();
 				gui::BeginDisabled(!editable);
 				if (gui::Button("x"))
-					requestRemove(node->id(), pin);
+					requestRemove(node.id(), pin);
 				gui::EndDisabled();
 				gui::PopID();
 			}
 			gui::BeginDisabled(!editable);
-			changed |= renderAddPin(graph, *node, "output");
+			changed |= renderAddPin(editableGraph, node, "output");
 			gui::EndDisabled();
 			gui::PopID();
 		}
 		gui::End();
 
-		changed |= renderRemoveConfirm(graph);
+		changed |= renderRemoveConfirm(editableGraph);
 
 		// An add / remove / bind re-runs the graph (as a param/canvas edit does) and refreshes previews
 		// next frame. markChanged arms the guard AND requests an undo snapshot — but a bind changes only

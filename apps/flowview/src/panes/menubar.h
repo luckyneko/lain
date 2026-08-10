@@ -33,12 +33,13 @@ namespace flowview
 	{
 		// The menu bar + global shortcuts. An Add creates a node and sets `edited` so the scene
 		// re-runs like any edit; View ▸ Reset Layout raises `resetLayout`. Call early in the frame.
-		void draw(AppContext& ctx, lain::flow::Graph& graph, lain::app::Application& app, bool& edited, bool& resetLayout);
+		void draw(AppContext& ctx, const lain::flow::Graph& graph, lain::app::Application& app, bool& edited,
+				  bool& resetLayout);
 
 		// The unsaved-changes confirm modal (opened by New / Open when the document is dirty), which
 		// carries out the swap once resolved. Call LATE — after every panel drew — so the modal sits on
 		// a clean id stack.
-		void drawConfirmModal(AppContext& ctx, lain::flow::Graph& graph);
+		void drawConfirmModal(AppContext& ctx, const lain::flow::Graph& graph);
 
 		// Load `path` into the scene (deferred to end-of-frame like every graph swap), recording it as
 		// the current document + the head of Open Recent. Returns false if nothing loaded — the reason

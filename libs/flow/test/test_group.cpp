@@ -15,7 +15,7 @@ using namespace lain::flow;
 
 TEST_CASE("a group owns an inner graph, which is born with its own interface", "[flow][group]")
 {
-	GroupNode group;
+	InlineGroupNode group;
 	REQUIRE(group.inner().nodeCount() == 2); // the inner boundary pair — the group's own interface
 
 	// The structural question the scheduler asks every node (it never dynamic_casts for this).
@@ -29,8 +29,8 @@ TEST_CASE("two groups never share an inner graph", "[flow][group]")
 {
 	// A link references a RECIPE, never a running graph: a Port holds a persistent value, so a
 	// shared inner graph would have two instances stomping each other's intermediates.
-	GroupNode a;
-	GroupNode b;
+	InlineGroupNode a;
+	InlineGroupNode b;
 	REQUIRE(a.innerGraph() != b.innerGraph());
 
 	a.inner().add<test::ConstInt>(1);
@@ -45,8 +45,8 @@ TEST_CASE("a group is stale when anything inside it is", "[flow][group]")
 	// the recursive question is asked of the group's CHILD Evaluation — which is what lets two
 	// evaluations of one definition disagree about whether the same group needs re-running.
 	Graph graph;
-	const NodeId groupId = graph.add<GroupNode>();
-	auto& group = static_cast<GroupNode&>(graph.node(groupId));
+	const NodeId groupId = graph.add<InlineGroupNode>();
+	auto& group = static_cast<InlineGroupNode&>(graph.node(groupId));
 	const NodeId innerId = group.inner().add<test::ConstInt>(1);
 
 	Evaluation evaluation{graph};
@@ -66,10 +66,10 @@ TEST_CASE("a group is stale when anything inside it is", "[flow][group]")
 	SECTION("it recurses through nested groups")
 	{
 		Graph outerGraph;
-		const NodeId outerId = outerGraph.add<GroupNode>();
-		auto& outer = static_cast<GroupNode&>(outerGraph.node(outerId));
-		const NodeId nestedId = outer.inner().add<GroupNode>();
-		auto& nested = static_cast<GroupNode&>(outer.inner().node(nestedId));
+		const NodeId outerId = outerGraph.add<InlineGroupNode>();
+		auto& outer = static_cast<InlineGroupNode&>(outerGraph.node(outerId));
+		const NodeId nestedId = outer.inner().add<InlineGroupNode>();
+		auto& nested = static_cast<InlineGroupNode&>(outer.inner().node(nestedId));
 		const NodeId deep = nested.inner().add<test::ConstInt>(2);
 
 		Evaluation e{outerGraph};
@@ -94,7 +94,7 @@ TEST_CASE("a group is stale when anything inside it is", "[flow][group]")
 TEST_CASE("a group maps its outer ports to inner boundary pins by id", "[flow][group]")
 {
 	// Identity is the PortId pair, not the name — renaming an inner pin must keep the outer wiring.
-	GroupNode group;
+	InlineGroupNode group;
 	const PortId innerPin = group.inner().boundaryInputNode().addBoundary<int>("source");
 	const PortId outerPin{7}; // stands in for the port edit::syncGroupPorts will create
 

@@ -29,11 +29,12 @@ namespace flowview
 {
 	using namespace lain;
 
-	void InspectorPane::draw(AppContext& ctx, flow::Graph& graph, flow::Evaluation& evaluation, PreviewCache& previews,
-							 const ParamEditors& editors)
+	void InspectorPane::draw(AppContext& ctx, const flow::Graph& graph, flow::Graph* editableGraph,
+							 flow::Evaluation& evaluation, PreviewCache& previews, const ParamEditors& editors)
 	{
-		// Whether the graph on screen may be edited at all (false inside a linked group — see below).
-		const bool editable = editableAt(ctx.app->graph(), ctx.activePath);
+		// Whether the graph on screen may be edited at all: false inside a linked group, and expressed
+		// by there being nothing to edit through rather than by a separate check.
+		const bool editable = editableGraph != nullptr;
 		bool paramEdited = false;
 		bool renamed = false; // a title edit: a document change, but no recompute (see below)
 
@@ -54,7 +55,10 @@ namespace flowview
 				if (std::find(selection.begin(), selection.end(), id) == selection.end())
 					continue; // only the selected nodes
 
-				flow::Node& node = graph.node(id); // non-const: the title + params are edited below
+				// Read through the const graph; WRITE through the editable one, which is null inside a
+				// linked group — so a param or name edit there has nowhere to land by construction.
+				const flow::Node& node = graph.node(id);
+				flow::Node* writable = editable ? &editableGraph->node(id) : nullptr;
 				// An obvious titled section per selected node. The id stays in the Inspector header (the
 				// detail surface — it's what the cli dump and any log line names) even though the canvas
 				// title shows the user's name alone. Truncated: a full uuid would swamp the header, and
@@ -87,9 +91,9 @@ namespace flowview
 				// entry is refused: the field reverts to the current name on the next frame.
 				std::string nodeName = node.name();
 				gui::InputText("Name", &nodeName); // (its per-keystroke return is not the commit signal)
-				if (gui::IsItemDeactivatedAfterEdit() && !nodeName.empty() && nodeName != node.name())
+				if (writable != nullptr && gui::IsItemDeactivatedAfterEdit() && !nodeName.empty() && nodeName != node.name())
 				{
-					node.setName(std::move(nodeName));
+					writable->setName(std::move(nodeName));
 					renamed = true;
 				}
 
@@ -105,8 +109,8 @@ namespace flowview
 					const flow::Param& p = node.param(pi);
 					const flow::PortId id = p.id();
 					flow::PortValue edited = p.value();
-					if (editors.render(p.name(), p.type(), edited))
-						nodeEdited |= node.setParam(id, std::move(edited));
+					if (editors.render(p.name(), p.type(), edited) && writable != nullptr)
+						nodeEdited |= writable->setParam(id, std::move(edited));
 				}
 				paramEdited |= nodeEdited;
 				gui::EndDisabled();

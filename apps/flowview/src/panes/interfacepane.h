@@ -25,13 +25,13 @@ namespace flowview
 		// Draws the "Interface" window (owns its Begin/End) + the remove-pin confirm modal. Mutates the
 		// graph (bind / add / remove pins) and, on a change, re-runs the scene via ctx.app and refreshes
 		// the previews.
-		void draw(AppContext& ctx, lain::flow::Graph& graph, lain::flow::Evaluation& evaluation, PreviewCache& previews,
-				  const ParamEditors& editors);
+		void draw(AppContext& ctx, const lain::flow::Graph& graph, lain::flow::Graph* editable,
+				  lain::flow::Evaluation& evaluation, PreviewCache& previews, const ParamEditors& editors);
 
 	private:
 		// The "Remove pin?" confirm modal (opened by a "×"); runs edit::removePort on confirm. Returns
 		// whether a pin was removed this frame. Drawn after the panel, on a clean id stack.
-		bool renderRemoveConfirm(lain::flow::Graph& graph);
+		bool renderRemoveConfirm(lain::flow::Graph* editable);
 
 		// Remove-pin confirmation: the pin a "×" targeted, its name + incident-link count, and whether
 		// the confirm modal is pending (opened on a clean id stack after the panel).

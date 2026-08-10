@@ -70,7 +70,7 @@ namespace
 		Factory<Node> factory;
 		factory.registerType<GroupInputNode>("groupInput");
 		factory.registerType<GroupOutputNode>("groupOutput");
-		factory.registerType<GroupNode>("group");
+		factory.registerType<InlineGroupNode>("group");
 		factory.registerType<LinkedGroupNode>("linkedGroup");
 		factory.registerType<ConstNode>("const");
 		factory.registerType<AddNode>("add");
@@ -131,8 +131,8 @@ TEST_CASE("an inline group round-trips its whole interior", "[flow-serialize][gr
 	const ValueCodecs codecs = intCodecs();
 
 	Graph source;
-	const NodeId group = source.add<GroupNode>();
-	buildAdderInterior(static_cast<GroupNode&>(source.node(group)).inner(), 100);
+	const NodeId group = source.add<InlineGroupNode>();
+	buildAdderInterior(static_cast<InlineGroupNode&>(source.node(group)).inner(), 100);
 	buildParent(source, group, 5);
 	REQUIRE(runAndRead(source) == 105);
 
@@ -183,12 +183,12 @@ TEST_CASE("nesting goes several levels deep through the format", "[flow-serializ
 	const ValueCodecs codecs = intCodecs();
 
 	Graph source;
-	const NodeId outer = source.add<GroupNode>();
-	Graph& mid = static_cast<GroupNode&>(source.node(outer)).inner();
+	const NodeId outer = source.add<InlineGroupNode>();
+	Graph& mid = static_cast<InlineGroupNode&>(source.node(outer)).inner();
 
 	// mid: in -> [inner group +10] -> out
-	const NodeId inner = mid.add<GroupNode>();
-	buildAdderInterior(static_cast<GroupNode&>(mid.node(inner)).inner(), 10);
+	const NodeId inner = mid.add<InlineGroupNode>();
+	buildAdderInterior(static_cast<InlineGroupNode&>(mid.node(inner)).inner(), 10);
 	REQUIRE(edit::syncGroupPorts(mid, inner).added == 2);
 
 	const PortId midIn = mid.boundaryInputNode().addBoundary<int>("in");
@@ -214,8 +214,8 @@ TEST_CASE("the editor section nests alongside the graph", "[flow-serialize][grou
 	const ValueCodecs codecs = intCodecs();
 
 	Graph source;
-	const NodeId group = source.add<GroupNode>();
-	Graph& inner = static_cast<GroupNode&>(source.node(group)).inner();
+	const NodeId group = source.add<InlineGroupNode>();
+	Graph& inner = static_cast<InlineGroupNode&>(source.node(group)).inner();
 	buildAdderInterior(inner, 100);
 	buildParent(source, group, 5);
 
@@ -263,7 +263,11 @@ TEST_CASE("a linked group loads its template through the resolver", "[flow-seria
 	const NodeId group = source.add<LinkedGroupNode>();
 	auto& linked = static_cast<LinkedGroupNode&>(source.node(group));
 	linked.setSource("subs/adder.json");
-	buildAdderInterior(linked.inner(), 100); // stand-in for "already resolved" while building
+	// Stand-in for "already resolved" while building: a link's interior is adopted whole, never built
+	// through the node — that is ADR-0013's read-only-in-place rule stated by the type.
+	Graph interior;
+	buildAdderInterior(interior, 100);
+	linked.adoptInterior(std::move(interior));
 	linked.setResolved(true);
 	buildParent(source, group, 5);
 
@@ -325,7 +329,9 @@ TEST_CASE("a changed template is rectified against the cache and reported", "[fl
 	const NodeId group = source.add<LinkedGroupNode>();
 	auto& linked = static_cast<LinkedGroupNode&>(source.node(group));
 	linked.setSource("subs/adder.json");
-	buildAdderInterior(linked.inner(), 100);
+	Graph interior;
+	buildAdderInterior(interior, 100);
+	linked.adoptInterior(std::move(interior));
 	linked.setResolved(true);
 	buildParent(source, group, 5);
 	const Value doc = toValue(source, factory, codecs);
@@ -403,7 +409,9 @@ TEST_CASE("a linked group shows its template's own node layout", "[flow-serializ
 	const NodeId group = source.add<LinkedGroupNode>();
 	auto& linked = static_cast<LinkedGroupNode&>(source.node(group));
 	linked.setSource("subs/adder.json");
-	buildAdderInterior(linked.inner(), 100);
+	Graph interior;
+	buildAdderInterior(interior, 100);
+	linked.adoptInterior(std::move(interior));
 	linked.setResolved(true);
 	const Value doc = toValue(source, factory, codecs);
 

@@ -13,15 +13,15 @@ namespace flowview
 {
 	using namespace lain;
 
-	flow::Graph& resolvePath(flow::Graph& root, GraphPath& path)
+	const flow::Graph& resolvePath(const flow::Graph& root, GraphPath& path)
 	{
-		flow::Graph* current = &root;
+		const flow::Graph* current = &root;
 		std::size_t resolved = 0;
 		for (const flow::NodeId step : path)
 		{
 			if (!current->contains(step))
 				break;
-			flow::Graph* inner = current->node(step).innerGraph();
+			const flow::Graph* inner = current->node(step).innerGraph();
 			if (inner == nullptr)
 				break; // the node is still there but no longer contains a graph
 			current = inner;
@@ -29,6 +29,23 @@ namespace flowview
 		}
 		path.resize(resolved); // drop whatever didn't resolve, so the path and the graph agree
 		return *current;
+	}
+
+	flow::Graph* resolveEditable(flow::Graph& root, const GraphPath& path)
+	{
+		flow::Graph* current = &root;
+		for (const flow::NodeId step : path)
+		{
+			if (!current->contains(step))
+				return nullptr;
+			// Only an INLINE group hands out a mutable interior — which is the whole point: a linked
+			// group has no such accessor, so the walk simply cannot continue into one.
+			auto* group = dynamic_cast<flow::InlineGroupNode*>(&current->node(step));
+			if (group == nullptr)
+				return nullptr;
+			current = &group->inner();
+		}
+		return current;
 	}
 
 	flow::Evaluation& resolveEvaluation(flow::Evaluation& root, const GraphPath& path)
@@ -43,18 +60,18 @@ namespace flowview
 		return *current;
 	}
 
-	std::vector<Crumb> breadcrumb(flow::Graph& root, const GraphPath& path)
+	std::vector<Crumb> breadcrumb(const flow::Graph& root, const GraphPath& path)
 	{
 		std::vector<Crumb> crumbs;
 		crumbs.push_back(Crumb{"root", 0});
 
-		flow::Graph* current = &root;
+		const flow::Graph* current = &root;
 		for (std::size_t i = 0; i < path.size(); ++i)
 		{
 			if (!current->contains(path[i]))
 				break;
-			flow::Node& node = current->node(path[i]);
-			flow::Graph* inner = node.innerGraph();
+			const flow::Node& node = current->node(path[i]);
+			const flow::Graph* inner = node.innerGraph();
 			if (inner == nullptr)
 				break;
 			crumbs.push_back(Crumb{node.name(), i + 1});
@@ -63,39 +80,34 @@ namespace flowview
 		return crumbs;
 	}
 
-	flow::LinkedGroupNode* enclosingLinkedGroup(flow::Graph& root, const GraphPath& path)
+	const flow::LinkedGroupNode* enclosingLinkedGroup(const flow::Graph& root, const GraphPath& path)
 	{
-		flow::Graph* current = &root;
+		const flow::Graph* current = &root;
 		for (const flow::NodeId step : path)
 		{
 			if (!current->contains(step))
 				break;
-			flow::Node& node = current->node(step);
-			flow::Graph* inner = node.innerGraph();
+			const flow::Node& node = current->node(step);
+			const flow::Graph* inner = node.innerGraph();
 			if (inner == nullptr)
 				break;
 			// The OUTERMOST link wins: everything below it belongs to that template.
-			if (auto* linked = dynamic_cast<flow::LinkedGroupNode*>(&node))
+			if (const auto* linked = dynamic_cast<const flow::LinkedGroupNode*>(&node))
 				return linked;
 			current = inner;
 		}
 		return nullptr;
 	}
 
-	bool editableAt(flow::Graph& root, const GraphPath& path)
-	{
-		return enclosingLinkedGroup(root, path) == nullptr;
-	}
-
-	int countLinkedInstances(flow::Graph& root, const std::string& source)
+	int countLinkedInstances(const flow::Graph& root, const std::string& source)
 	{
 		int count = 0;
 		for (const flow::NodeId id : root.nodeIds())
 		{
-			flow::Node& node = root.node(id);
+			const flow::Node& node = root.node(id);
 			if (const auto* linked = dynamic_cast<const flow::LinkedGroupNode*>(&node); linked && linked->source() == source)
 				++count;
-			if (flow::Graph* inner = node.innerGraph())
+			if (const flow::Graph* inner = node.innerGraph())
 				count += countLinkedInstances(*inner, source); // a template may be used inside a group too
 		}
 		return count;
@@ -109,12 +121,16 @@ namespace flowview
 		{
 			if (!parent->contains(step))
 				break;
-			flow::Graph* inner = parent->node(step).innerGraph();
-			if (inner == nullptr)
+			// Only descend through EDITABLE levels. Syncing a group that lives inside a linked group
+			// would re-derive ports in the TEMPLATE's graph — harmless while every instance held its
+			// own copy, wrong the moment that graph is shared (ADR-0013). A template's internal
+			// mirroring was settled when the template itself was loaded.
+			auto* group = dynamic_cast<flow::InlineGroupNode*>(&parent->node(step));
+			if (group == nullptr)
 				break;
 			// Sync the group IN its parent — only the parent can disconnect edges a dropped pin frees.
 			changed |= flow::edit::syncGroupPorts(*parent, step).changed();
-			parent = inner;
+			parent = &group->inner();
 		}
 		return changed;
 	}

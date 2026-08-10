@@ -81,7 +81,7 @@ namespace flowview
 
 		// Group nodes. Both must be in the factory for serialization to name them; only the inline one
 		// is palette-addable (a linked group is created by picking its template).
-		factory.registerType<flow::GroupNode>(kGroupKey);
+		factory.registerType<flow::InlineGroupNode>(kGroupKey);
 		factory.registerType<flow::LinkedGroupNode>(kLinkedGroupKey);
 	}
 

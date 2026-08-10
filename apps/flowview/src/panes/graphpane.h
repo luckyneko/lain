@@ -28,7 +28,10 @@ namespace flowview
 		// Draw + edit the canvas and the Nodes palette. Sets `edited` when a node/edge/pin changed, so the
 		// caller re-runs the scene and refreshes previews. Reads ctx.pendingLayout (position seed),
 		// ctx.locateTarget (centre), and adds via ctx.addCatalogNode / ctx.app->nodeFactory().
-		void draw(AppContext& ctx, lain::flow::Graph& graph, const lain::flow::Evaluation& evaluation, bool& edited);
+		// `graph` is what the canvas DRAWS; `editable` is what it may CHANGE, and is null inside a linked
+		// group. A gesture that mutates needs the second, so it cannot be forgotten (ADR-0013).
+		void draw(AppContext& ctx, const lain::flow::Graph& graph, lain::flow::Graph* editable,
+				  const lain::flow::Evaluation& evaluation, bool& edited);
 
 		// Reset the canvas after the graph was replaced (a Load): re-seed positions next frame and drop
 		// imnodes' now-stale node/link selection. Called by MainWindow's deferred-load swap.
