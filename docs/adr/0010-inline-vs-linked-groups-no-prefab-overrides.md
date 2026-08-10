@@ -1,7 +1,7 @@
 # Subgraph reuse: inline vs linked groups, with no prefab overrides
 
 ---
-Status: accepted; the sharing constraint superseded by ADR-0012
+Status: accepted; the sharing constraint superseded by ADR-0012, the ownership model settled by ADR-0013
 ---
 
 > **Revisit (2026-08-01).** The rule below that "a link references a recipe, never a running graph"

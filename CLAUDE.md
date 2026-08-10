@@ -186,13 +186,46 @@ that **keeps the canvas selection across an undo/redo** (selected nodes captured
 `nodeIds()` — stable across the load's fresh-id remap — and re-selected after the swap; New/Open still
 clear, since they carry a `pendingBaseline`).
 
+### Update 2026-08-10 — M7 designed: shared template definitions (nothing built yet)
+
+M6 removed the reason every linked group owned a private copy of its template, and proved N
+evaluations over one `const Graph` safe — but left `LinkedGroupNode` copying. **Milestone 7** makes
+the sharing real. Grilled 2026-08-10; decisions in
+**[ADR-0013](docs/adr/0013-shared-template-definitions.md)**, build order in WORK.md, vocabulary in
+CONTEXT.md. **Nothing is built.**
+
+- **One definition per template**, in a host-owned **`TemplateCache`** (canonical path →
+  `{shared_ptr<const Graph>, EditorTree}` — the layout travels with it, or a linked group's nodes land
+  in default columns again). The TYPE is `flow::serialize`'s, so the recursive load and the self-link
+  cycle guard stay where they work; the INSTANCE is the host's, which is the only side that sees the
+  events that invalidate it.
+- **`Node::innerGraph()` becomes `const`,** and the group types split to say why: abstract
+  `GroupNode` (mirroring), `InlineGroupNode` (owns a `Graph`, mutable `inner()`), `LinkedGroupNode`
+  (`shared_ptr<const Graph>`). Read-only-in-place stops being a `bool` every pane must remember —
+  which is what M5's bugs three and ten were — and becomes something the type refuses. It also brings
+  the code onto ADR-0010's own *inline/linked* vocabulary.
+- **A template edit REPLACES the definition, never mutates it.** That is what keeps ADR-0012's "a
+  `const Graph&` is concurrently readable" true once a definition is genuinely shared: there is no
+  window where one is both read and written, rather than a guard around one.
+- **Reload is snapshot → invalidate → restore**, through the loader that already exists. Patching
+  instances in place would be a second implementation of what the loader does — the shape that
+  produced M5's bugs six and eight.
+- **Saving a document invalidates its own path — required, not a nicety.** `Edit Template… → Save →
+  Return` works today *because* the return re-reads the file; a stale cache would break it.
+- **`IdPolicy::Mint` is deleted.** It existed only because loading one template twice made duplicate
+  ids certain. Sharing removes the duplication instead of compensating for it — and the decision is
+  only safe because M6 step 5 put the level in `PinKey`, since two instances now have identical inner
+  node ids by construction.
+- Three slices: (1) hierarchy + constness, a pure refactor; (2) the cache; (3) the reload gesture.
+- Still out: file watching, prefab overrides, in-place template editing.
+
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
 
 The last step of Milestone 6. `PinKey` — the key the preview cache, Inspector, Interface, Preview
 pane and `saveFormat` all share — became `{GraphPath path, PortAddress port}`: *which evaluation,
 which node, which port*, three real axes instead of a key that said less than it meant.
-`ctest` **398/398**, warning-clean, `format-check` clean. **gui-mode needs an eyeball** (the panes
-that build these keys all changed).
+`ctest` **398/398**, warning-clean, `format-check` clean, and **gui-mode live-verified by the repo
+owner 2026-08-10** (the panes that build these keys all changed). **M6 is complete.**
 
 - **Why it matters even though node ids are already unique.** ADR-0011 stopped ids repeating across
   *levels*, which is what caused M5's bug nine (previews showing another level's images). But two

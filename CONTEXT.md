@@ -142,19 +142,36 @@ outputs. (M4 — being built; the vocabulary is settled, the mechanics are in
 - **Boundary name** — the stable string that addresses one boundary (`"source"`,
   `"result"`) so a host can bind the right one (a cli arg → an input, an output → a
   file). Distinct from a node's display `name()`.
-- **Group node / subgraph** *(being designed)* — a node containing its own graph, exposing
-  selected inner ports as its own via the *same* boundary mechanism; the top-level
-  graph is the outermost group. One mechanism at every level.
-- **Inner graph** — the live `Graph` a group node owns. **Always per-node**: two group nodes
-  never share one, because a `Port` holds a persistent value, so sharing would make two
-  instances stomp each other's intermediates. A shared *recipe* is a template reference, never
-  a shared running graph.
+- **Group node / subgraph** — a node containing a graph, exposing selected inner ports as its own via
+  the *same* boundary mechanism; the top-level graph is the outermost group. One mechanism at every
+  level. In code it is an abstract **`GroupNode`** holding the port mirroring, with two concrete
+  kinds below it (M7).
+- **Inner graph** — the `Graph` a group node contains, reached through `Node::innerGraph()`, which is
+  **const**: a contained graph is a definition, and mutable access to one belongs to the *inline* kind
+  alone. (It used to be per-node always, because a `Port` held a persistent value and sharing would
+  have made two instances stomp each other's intermediates. ADR-0012 moved values into an
+  `Evaluation`, so that constraint is gone — see **shared definition**.)
+- **Shared definition** *(M7)* — one `Graph` backing N linked groups, each with its own child
+  `Evaluation`. Instances hold `shared_ptr<const Graph>`; a template edit **replaces** the definition
+  rather than mutating it, which is what keeps "a `const Graph&` is concurrently readable" true once
+  a definition is genuinely shared. Two instances therefore have **identical inner node ids** by
+  construction — safe because a `PinKey` carries its level and each instance's child Evaluation is
+  keyed by the group node's id in the parent. _Avoid_: patching instances in place; per-instance
+  copies of one template.
+- **Template cache** *(M7)* — canonical template path → `{shared_ptr<const Graph>, EditorTree}`. Its
+  TYPE belongs to `flow::serialize` (loading and the self-link cycle guard live there); the INSTANCE
+  belongs to the host, which is the only side that can see the events that invalidate it — a save, a
+  reload gesture. Resolution order is **cache → cycle guard → build → cache**, so a partially built
+  template is never stored. A definition containing an unresolved link is **not** cached, so a
+  missing-then-created template heals with no gesture. It resets on document *identity* change, the
+  same discriminator `CanvasIds` uses, so it survives edits and undo/redo.
 - **Inline group** — a group whose recipe is stored **inside the parent document**. Editable in
   place; it is part of the parent, so its edits mark the parent dirty and ride the parent's undo
   history.
 - **Linked group** — a group whose recipe lives in its own document (its **template**), referenced
-  by path. **Read-only in place**: it is exactly what the template says, so a template edit
-  propagates to every linked group that loads it, with no per-instance diff. Per-instance variation
+  by path. **Read-only in place** — enforced by the type from M7, not by a flag each pane checks: it
+  is exactly what the template says, so a template edit propagates to every linked group that loads
+  it, with no per-instance diff. Per-instance variation
   is expressed by **exposing the varying value as a boundary pin**, not by overriding inner values.
   _Avoid_: "instance group" — "instance" stays the ordinary English word.
 - **Template** — the standalone document a linked group is built from. An ordinary graph document;

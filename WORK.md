@@ -1712,7 +1712,7 @@ Each step stands alone and leaves the suite green.
      it reads from, the canvas's dimming / pin shapes / link activity now come from `evaluation`, and
      the Interface pane binds through it, so that was the slice's real risk. No bugs came out of it.
 
-5. ✅ **Host-side keys and paths — BUILT** (2026-08-03; gui-mode needs an eyeball). `PinKey` →
+5. ✅ **Host-side keys and paths — BUILT** (2026-08-03; **live-verified 2026-08-10**). `PinKey` →
    `{EvalPath, NodeId, PortId}`; preview cache, Inspector,
    Interface, Preview pane, `saveFormat` follow. The clear-on-navigation scoping becomes a memory
    choice rather than a correctness one.
@@ -1748,11 +1748,81 @@ now settled.
   a map) need a concrete feature in front of them.
 - **Shared definitions for linked groups.** M6 makes and scheduler-tests it as *safe* — ADR-0010's
   sharing constraint falls — but LinkedGroupNode keeps its copied inner Graph in this milestone.
-  Shared template ownership/cache, reload propagation and file-watch policy form one later vertical;
-  do not imply template edits propagate live until that lands.
+  Shared template ownership/cache and reload propagation are **Milestone 7** (grilled 2026-08-10,
+  [ADR-0013](docs/adr/0013-shared-template-definitions.md)); file watching stayed out of that too. Do
+  not imply template edits propagate live until M7 lands.
 - **In-run liveness release.** M6 bounds retention *after* a run, not the peak *during* one. Releasing
   a value once every consumer has read it is separable, and cheap to add later precisely because
   `PortValue` payloads are already shared and immutable.
+
+## Milestone 7 — shared template definitions (grilled 2026-08-10)
+
+**Designed, not started.** M6 removed the reason every linked group owned a private copy of its
+template: with values in an `Evaluation`, N instances can share one `const Graph`. M6 proved that
+capability through the real schedulers but deliberately left `LinkedGroupNode` copying. This
+milestone makes it real. Decisions in
+**[ADR-0013](docs/adr/0013-shared-template-definitions.md)**; vocabulary in [CONTEXT.md](CONTEXT.md).
+
+**What it is, in one line each:**
+
+- One **definition per template**, held by a host-owned **`TemplateCache`** (canonical path →
+  `{shared_ptr<const Graph>, EditorTree}`); instances hold the shared pointer.
+- **`Node::innerGraph()` becomes `const`.** Mutable access to a contained graph belongs to the
+  *inline* kind alone, so "a linked group is read-only in place" stops being a `bool` every pane must
+  remember and becomes something the type refuses.
+- The group types split to say that: abstract **`GroupNode`** (mirroring + pure-virtual
+  `innerGraph()`), **`InlineGroupNode`** (owns a `Graph`, mutable `inner()`), **`LinkedGroupNode`**
+  (holds `shared_ptr<const Graph>`) — which also brings the code onto ADR-0010's own *inline/linked*
+  vocabulary.
+- A template edit **replaces** the cached definition; it never mutates it. That is what keeps
+  ADR-0012's "a `const Graph&` is concurrently readable" true once a definition is genuinely shared.
+- **Reload is snapshot → invalidate → restore**, through the loader that already exists — not a
+  second in-place patch path, which is the shape that produced M5's bugs six and eight.
+- **Saving a document invalidates its own path.** Required, not a nicety: `Edit Template… → Save →
+  Return` works today because the return re-reads the file.
+- **`IdPolicy::Mint` is deleted.** It existed only because loading one template twice made duplicate
+  ids certain; one definition means one set of ids.
+
+### Build order
+
+Each step stands alone and leaves the suite green.
+
+1. **Hierarchy + constness — a pure refactor, no behaviour change.** Abstract `GroupNode` gains the
+   mirroring and a pure-virtual `innerGraph()`; `InlineGroupNode` owns the `Graph` and keeps the
+   mutable `inner()`; `LinkedGroupNode` keeps its own `Graph` for now, behind the same accessor.
+   `Node::innerGraph()` returns `const Graph*` — the engine (scheduler, `Evaluation`) already only
+   uses it that way, and `edit::syncGroupPorts` already only reads the interior. flowview splits
+   `resolvePath` into a **const read resolution** (navigation, panes, previews) and a **mutable edit
+   resolution that stops at a linked group**; pane signatures take a `const Graph&` plus, where they
+   edit, a nullable mutable one. Only three production sites cast to `GroupNode`
+   (`edit::syncGroupPorts`, serialize's inline branch, the factory registration), so the churn is
+   mostly tests. The factory key `"group"` is unchanged, so no document is affected.
+2. **The cache — the substance.** `TemplateCache` in `flow::serialize`, owned by the host and passed
+   into `fromValue`; `loadLinkedGroup` consults it before building. Resolution order is **cache →
+   cycle guard → build → cache**, so a partially built template is never stored and a self-link is
+   still refused. A definition whose interior contains an unresolved link is **not** cached, so a
+   missing-then-created template heals without a gesture. `LinkedGroupNode` holds
+   `shared_ptr<const Graph>`; an unresolved link owns its placeholder graph alone behind the same
+   pointer. `IdPolicy::Mint` and its branch go. The cache resets on document identity change, on the
+   same `pendingBaseline` discriminator `CanvasIds` uses — so it survives edits and undo/redo, which
+   is what keeps a template's inner ids (and therefore preview keys and canvas ints) stable across an
+   undo. Proven through the production loader: two instances of one template share a definition by
+   pointer identity, evaluate independently, and a broken template is not cached.
+3. **Reload.** `Reload linked groups` drops the whole cache and rebuilds via
+   snapshot → invalidate → restore; saving any document drops that path's entry. Reload pushes **no**
+   undo entry (undo cannot restore the previous template — every restore re-resolves against the
+   current cache) and marks the document dirty only when the rebuilt document differs, which is the
+   comparison `UndoStack::push` already performs.
+
+### Not in this milestone
+
+- **File watching.** An external edit needs the explicit gesture. A watcher is a new dependency (or a
+  poll) and would make definition swaps happen at arbitrary times rather than at a user gesture.
+- **Prefab overrides / per-instance divergence.** ADR-0010's reasoning is unchanged, and sharing
+  strengthens it: a template is one definition for every instance, and parameterising is what boundary
+  pins are for.
+- **In-place template editing.** `Edit Template…` stays the explicit act. Sharing raises the stakes of
+  a template edit rather than lowering them, and step 1's const accessor is what enforces it.
 
 ## Backlog (deferred — don't build speculatively)
 
