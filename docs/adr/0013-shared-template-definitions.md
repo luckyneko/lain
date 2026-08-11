@@ -28,7 +28,10 @@ a template edit REPLACES the cached definition rather than mutating it.**
   cycle guard remain where they already work; ownership and invalidation stay with the host, which is
   the only side that knows about files and about document lifetime. Resolution order is **cache, then
   cycle guard, then build, then cache** — a partially built template is never cached, so a genuine
-  link cycle is still refused rather than half-stored.
+  link cycle is still refused rather than half-stored. (*Amended during slice 2:* the injected
+  resolver runs one step earlier than this reads, because the canonical key IS the resolver's answer —
+  `flow` must not interpret a `source` string itself. So a template file is still read once per
+  instance; what the cache shares is the BUILD, which is what the ordering above protects.)
 - **The layout travels with the definition.** A cache entry holds the template's `EditorTree` beside
   its `Graph`, because loading a template produces both and an instance needs the arrangement its
   author made. (Discarding it is how a linked group's nodes once landed in default columns.)
@@ -104,6 +107,11 @@ instance, and sharing raises the stakes. The const-only accessor now enforces wh
   This is safe only because `PinKey` carries its level (M6 step 5) and each instance has its own child
   `Evaluation` keyed by the *group node's* id in the parent. Without step 5 this decision would have
   reintroduced the preview-crossing bug it superseded.
+- **Resolving one linked group is one routine, shared by the loader and the host.** `resolveLinkedGroup`
+  takes a node whose `source` is already set and does what a document load does for each link it reads
+  — same resolver, cycle guard, cache participation, rectification and layout. `Add ▸ Linked Group…`
+  used to load the template as a standalone document instead, which was already how a freshly added
+  group lost the template's layout, and would now have given it a private copy of a shared definition.
 - **flowview's `resolvePath` splits in two**: a const resolution for reading (navigation, panes,
   previews) and a mutable one for editing that stops at a linked group. Pane signatures take a
   `const Graph&` plus, where they edit, a nullable mutable one.

@@ -303,8 +303,12 @@ TEST_CASE("a second boundary node is reported and skipped, never merged", "[flow
 	REQUIRE(result.graph.boundaryInputNode().outputCount() == 1);					  // the duplicate's pins were not merged in
 }
 
-TEST_CASE("two linked groups from one template hold distinct node identities", "[flow-serialize][identity]")
+TEST_CASE("two linked groups from one template share one definition", "[flow-serialize][identity]")
 {
+	// This case used to assert the OPPOSITE — that the two instances held distinct node ids, because
+	// each loaded the file separately and IdPolicy::Mint existed to stop the duplication being
+	// certain. Sharing removes the duplication at its source instead of compensating for it
+	// (ADR-0013): one file, one definition, one set of ids, N evaluations.
 	const Factory<Node> factory = identityFactory();
 
 	// The template: a Const inside, saved as its own document.
@@ -324,24 +328,58 @@ TEST_CASE("two linked groups from one template hold distinct node identities", "
 	const TemplateResolver resolver = [&](const std::string& source) -> std::optional<ResolvedTemplate>
 	{ return ResolvedTemplate{source, templateDocument}; };
 
-	const LoadResult result = fromValue(parentDocument, factory, intCodecs(), resolver);
-	REQUIRE(result.clean());
-
-	std::vector<NodeId> instantiated;
-	for (const NodeId id : result.graph.nodeIds())
+	// Collect the two linked groups of a loaded parent, in graph order.
+	const auto linksOf = [](const Graph& graph)
 	{
-		const Graph* inner = result.graph.node(id).innerGraph();
-		if (inner == nullptr)
-			continue;
-		const Node* inside = nodeNamed(*inner, "Const");
+		std::vector<const LinkedGroupNode*> links;
+		for (const NodeId id : graph.nodeIds())
+		{
+			if (const auto* linked = dynamic_cast<const LinkedGroupNode*>(&graph.node(id)))
+				links.push_back(linked);
+		}
+		return links;
+	};
+
+	SECTION("with a cache, both instances hold the SAME definition")
+	{
+		TemplateCache cache;
+		const LoadResult result = fromValue(parentDocument, factory, intCodecs(), resolver, &cache);
+		REQUIRE(result.clean());
+
+		const std::vector<const LinkedGroupNode*> links = linksOf(result.graph);
+		REQUIRE(links.size() == 2);
+		// Pointer identity, not equality: two equal copies would pass any structural comparison while
+		// still being two definitions, which is exactly what this milestone removes.
+		REQUIRE(links[0]->definition() == links[1]->definition());
+		REQUIRE(links[0]->innerGraph() == links[1]->innerGraph());
+		REQUIRE(cache.size() == 1);
+
+		// The template's own identities came through untouched — a shared definition IS the template,
+		// so there is nothing left to renumber.
+		const Node* inside = nodeNamed(*links[0]->innerGraph(), "Const");
 		REQUIRE(inside != nullptr);
-		instantiated.push_back(inside->id());
+		REQUIRE(inside->id() == templateConst);
 	}
-	REQUIRE(instantiated.size() == 2);
-	// A template is INSTANTIATED, not restored: loading one file twice must not produce the same
-	// id twice, which is the one case where a duplicate would be a certainty rather than a chance.
-	REQUIRE(instantiated[0] != instantiated[1]);
-	REQUIRE(instantiated[0] != templateConst);
+
+	SECTION("without a cache each instance builds its own equal copy")
+	{
+		// Still legitimate — a one-shot headless load, a test. The two interiors are separate graphs
+		// holding the same ids, which is safe because an id need only be unique WITHIN a graph and
+		// each instance's values live in its own child Evaluation.
+		const LoadResult result = fromValue(parentDocument, factory, intCodecs(), resolver);
+		REQUIRE(result.clean());
+
+		const std::vector<const LinkedGroupNode*> links = linksOf(result.graph);
+		REQUIRE(links.size() == 2);
+		REQUIRE(links[0]->definition() != links[1]->definition());
+
+		const Node* first = nodeNamed(*links[0]->innerGraph(), "Const");
+		const Node* second = nodeNamed(*links[1]->innerGraph(), "Const");
+		REQUIRE(first != nullptr);
+		REQUIRE(second != nullptr);
+		REQUIRE(first->id() == second->id()); // identity is preserved, so both are the template's
+		REQUIRE(first->id() == templateConst);
+	}
 }
 
 // --- the version router + the v1 migration ----------------------------------

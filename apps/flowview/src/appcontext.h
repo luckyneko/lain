@@ -6,10 +6,11 @@
 #include "session.h" // what persists between runs (last graph, recents, dialog folder)
 #include "undo.h"	 // UndoStack (the graph-document history)
 
-#include <lain/data/value.h>				// Value (pendingBaseline)
-#include <lain/flow/serialize/loadresult.h> // EditorData (a value member) + Graph (loadedGraph target)
-#include <lain/flow/types.h>				// NodeId
-#include <lain/math/types.h>				// Vec2f / Vec2i (preview sizing)
+#include <lain/data/value.h>				   // Value (pendingBaseline)
+#include <lain/flow/serialize/loadresult.h>	   // EditorData (a value member) + Graph (loadedGraph target)
+#include <lain/flow/serialize/templatecache.h> // TemplateCache — one definition per template file
+#include <lain/flow/types.h>				   // NodeId
+#include <lain/math/types.h>				   // Vec2f / Vec2i (preview sizing)
 
 #include <cstddef>
 #include <filesystem>
@@ -95,6 +96,14 @@ namespace flowview
 		// The imnodes id boundary for the open document (see CanvasIds). Owned here because it must
 		// outlive every pane and every edit: it resets when DOCUMENT identity changes, nothing less.
 		CanvasIds canvas;
+
+		// One definition per template file, shared by every linked group built from it (ADR-0013).
+		// Owned here for the same reason as `canvas`: it spans edits and undo/redo — which is what
+		// keeps a template's inner node ids, and so its preview keys and canvas ints, steady across
+		// one — and is cleared only when the DOCUMENT changes (performSwap), so opening a document
+		// re-reads its templates from disk. flow owns the type; the host owns the instance and the
+		// question of when an entry is wrong.
+		lain::flow::serialize::TemplateCache templates;
 
 		// --- Navigation (which graph the panes are pointed at) ---
 		// The path of group nodes descended from the root; empty = the root graph. MainWindow

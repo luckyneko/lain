@@ -11,9 +11,12 @@ add_executable(test-flow-serialize
 
 target_compile_features(test-flow-serialize PRIVATE cxx_std_17)
 # lain::io::data::json: the pipeline test round-trips a graph through real JSON bytes.
+# lain::task: the shared-definition case runs two instances of one template through the
+# ParallelScheduler, which needs a caller-owned executor (flow links task PRIVATE).
 target_link_libraries(test-flow-serialize PRIVATE
 	lain::flow::serialize
 	lain::io::data::json
+	lain::task
 	lain::warnings
 	Catch2::Catch2WithMain
 )

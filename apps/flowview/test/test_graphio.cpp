@@ -71,7 +71,7 @@ namespace
 		// Resolve it once through the normal load path, so the fixture starts from the same state the
 		// app is in when the user hits undo: a RESOLVED linked group.
 		const lain::data::Value document = flowview::snapshotGraph(parent, factory);
-		LoadResult loaded = flowview::restoreGraph(document, factory, dir);
+		LoadResult loaded = flowview::restoreGraph(document, factory, dir, nullptr);
 		REQUIRE(loaded.clean());
 		return std::move(loaded.graph);
 	}
@@ -100,7 +100,7 @@ TEST_CASE("restoreGraph resolves a linked group's template", "[graphio]")
 	REQUIRE(onlyLink(parent)->resolved()); // the fixture starts resolved, as the app does
 
 	// Snapshot and restore, exactly as Undo does.
-	LoadResult restored = flowview::restoreGraph(flowview::snapshotGraph(parent, factory), factory, dir);
+	LoadResult restored = flowview::restoreGraph(flowview::snapshotGraph(parent, factory), factory, dir, nullptr);
 	REQUIRE(restored.clean());
 
 	const LinkedGroupNode* link = onlyLink(restored.graph);
@@ -123,7 +123,7 @@ TEST_CASE("restoreGraph resolves a template named by an absolute path", "[graphi
 
 	Graph parent = parentLinking(templatePath.string(), factory, {});
 
-	LoadResult restored = flowview::restoreGraph(flowview::snapshotGraph(parent, factory), factory, {});
+	LoadResult restored = flowview::restoreGraph(flowview::snapshotGraph(parent, factory), factory, {}, nullptr);
 	REQUIRE(onlyLink(restored.graph) != nullptr);
 	REQUIRE(onlyLink(restored.graph)->resolved());
 }
@@ -143,11 +143,37 @@ TEST_CASE("a template that cannot be found still restores as a repairable placeh
 	std::error_code ec;
 	std::filesystem::remove(dir / "template.json", ec); // the template goes away under us
 
-	LoadResult restored = flowview::restoreGraph(snapshot, factory, dir);
+	// No cache: with one, the deleted template would still resolve from the entry the first load
+	// stored, which is the documented cost of having no file watching.
+	LoadResult restored = flowview::restoreGraph(snapshot, factory, dir, nullptr);
 	REQUIRE_FALSE(restored.clean()); // reported...
 	const LinkedGroupNode* link = onlyLink(restored.graph);
 	REQUIRE(link != nullptr);
 	REQUIRE_FALSE(link->resolved());
 	REQUIRE(link->inputCount() == 1); // ... but the face is rebuilt from the cache, so edges still land
 	REQUIRE(link->outputCount() == 1);
+}
+
+TEST_CASE("an undo restore keeps the template definition it already had", "[graphio]")
+{
+	// Why the host's cache survives undo/redo while it is cleared on New/Open: a restore rebuilds the
+	// document, so without the cache the template would be rebuilt too and its inner nodes would come
+	// back with... the same ids (a load preserves identity), but as a DIFFERENT definition — and every
+	// instance would drift apart again. Keeping it is what makes an undo a no-op for a template.
+	const std::filesystem::path dir = scratchDir("undo-cache");
+	const Factory<Node> factory = ioFactory();
+	writeTemplate(factory, dir / "template.json");
+
+	lain::flow::serialize::TemplateCache cache;
+	Graph parent = parentLinking("template.json", factory, dir);
+	const lain::data::Value snapshot = flowview::snapshotGraph(parent, factory);
+
+	LoadResult first = flowview::restoreGraph(snapshot, factory, dir, &cache);
+	REQUIRE(first.clean());
+	REQUIRE(cache.size() == 1);
+	const std::shared_ptr<const Graph> definition = onlyLink(first.graph)->definition();
+
+	LoadResult second = flowview::restoreGraph(snapshot, factory, dir, &cache); // undo, then redo
+	REQUIRE(second.clean());
+	REQUIRE(onlyLink(second.graph)->definition() == definition);
 }

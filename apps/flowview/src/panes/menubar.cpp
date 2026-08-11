@@ -110,6 +110,11 @@ namespace flowview
 			ctx.returnStack.clear(); // an unrelated Open leaves the lineage — nothing to go back to
 		}
 
+		// A different document: re-read its templates from disk rather than serving whatever the last
+		// one resolved. This is also what makes Edit Template... -> Save -> Return show the edit — the
+		// return re-opens the parent, and the parent must not be handed the pre-edit definition.
+		ctx.templates.clear();
+
 		if (swap.kind == DocumentSwap::New)
 			newGraph(ctx);
 		else if (swap.path.empty())
@@ -161,7 +166,7 @@ namespace flowview
 
 	bool MenuBarPane::openGraphPath(AppContext& ctx, const std::filesystem::path& path)
 	{
-		flow::serialize::LoadResult result = loadGraph(path.string(), ctx.app->nodeFactory());
+		flow::serialize::LoadResult result = loadGraph(path.string(), ctx.app->nodeFactory(), &ctx.templates);
 		// Surface load problems in the Issues panel (not a modal) — they persist until the graph is
 		// next edited. Map the serialize severity onto the panel's.
 		ctx.loadIssues.clear();
@@ -216,28 +221,25 @@ namespace flowview
 		const std::filesystem::path stored = base.empty() ? chosen : std::filesystem::relative(chosen, base, ec);
 		linked.setSource((ec || stored.empty() ? chosen : stored).generic_string());
 
-		// Resolve it now so the node arrives with its interior and its ports, rather than as a
-		// placeholder the user has to reload to see.
-		flow::serialize::LoadResult loaded = loadGraph(chosen.string(), ctx.app->nodeFactory());
-		for (const flow::serialize::LoadIssue& issue : loaded.issues)
+		// Resolve it now, so the node arrives with its interior and its ports rather than as a
+		// placeholder the user has to reload to see — and through the LOADER's own routine, not a
+		// second one that happens to do the same thing. This gesture used to load the template as a
+		// standalone document, which meant it kept its own copy of a definition every other instance
+		// shares, and (before that was noticed) dropped the template's layout that the load path
+		// carried. The template's layout lands in this group's subtree of the parent's.
+		const flow::serialize::ResolveResult resolved =
+			flow::serialize::resolveLinkedGroup(linked, ctx.app->nodeFactory(), sceneCodecs(),
+												templateResolver(base), &ctx.templates);
+		for (const flow::serialize::LoadIssue& issue : resolved.issues)
 		{
 			const Issue::Severity sev = issue.severity == flow::serialize::Severity::Error ? Issue::Severity::Error : Issue::Severity::Warning;
 			ctx.loadIssues.push_back({sev, "template: " + issue.message, {}});
 		}
-		if (loaded.graph.nodeCount() != 0)
-		{
-			linked.adoptInterior(std::move(loaded.graph));
-			linked.setResolved(true);
 
-			// The template's OWN layout comes with it, into this group's subtree — otherwise the
-			// interior would sit in default columns until the document was saved and reopened, at which
-			// point the load path (which does carry it) would appear to "discover" the positions. Same
-			// rule as loading a document: a linked group is read-only, so the template author's
-			// arrangement is the truthful view of it.
-			GraphPath groupPath = ctx.activePath;
-			groupPath.push_back(id);
-			layoutAt(ctx.layout, groupPath) = std::move(loaded.editor);
-		}
+		GraphPath groupPath = ctx.activePath;
+		groupPath.push_back(id);
+		layoutAt(ctx.layout, groupPath) = resolved.editor;
+
 		flow::edit::syncGroupPorts(graph, id);
 		return true;
 	}
@@ -282,7 +284,10 @@ namespace flowview
 		// Rebuild from the snapshot and route it through the same deferred-swap path as a load — but
 		// with NO pendingBaseline, so the swap handler keeps the history (the cursor already moved).
 		// The document's own folder, so a linked group's relative `source` resolves as it did on load.
-		flow::serialize::LoadResult result = restoreGraph(state, ctx.app->nodeFactory(), ctx.currentPath.parent_path());
+		// The cache is NOT cleared here: an undo is not a document change, and keeping it is what
+		// holds a template's inner ids — and the preview keys and canvas ints built on them — steady.
+		flow::serialize::LoadResult result = restoreGraph(state, ctx.app->nodeFactory(), ctx.currentPath.parent_path(),
+														  &ctx.templates);
 		ctx.loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
 		ctx.pendingLayout = std::move(result.editor); // the WHOLE tree: inner levels keep their layout too
 		// NOTE: pendingPath was set at the top of this function and must survive — it is what keeps an

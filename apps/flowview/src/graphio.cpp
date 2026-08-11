@@ -78,7 +78,8 @@ namespace flowview
 		};
 	}
 
-	flow::serialize::LoadResult loadGraph(const std::string& uri, const core::Factory<flow::Node>& factory)
+	flow::serialize::LoadResult loadGraph(const std::string& uri, const core::Factory<flow::Node>& factory,
+										  flow::serialize::TemplateCache* cache)
 	{
 		const auto document = io::data::load(uri);
 		if (!document)
@@ -89,7 +90,7 @@ namespace flowview
 		}
 		// Linked groups resolve against the folder holding THIS document.
 		return flow::serialize::fromValue(*document, factory, sceneCodecs(),
-										  templateResolver(std::filesystem::path(uri).parent_path()));
+										  templateResolver(std::filesystem::path(uri).parent_path()), cache);
 	}
 
 	data::Value snapshotGraph(const flow::Graph& graph, const core::Factory<flow::Node>& factory,
@@ -99,11 +100,11 @@ namespace flowview
 	}
 
 	flow::serialize::LoadResult restoreGraph(const data::Value& document, const core::Factory<flow::Node>& factory,
-											 const std::filesystem::path& documentDir)
+											 const std::filesystem::path& documentDir, flow::serialize::TemplateCache* cache)
 	{
 		// Same resolver a file load uses (see restoreGraph's header note): a snapshot stores a linked
 		// group as source + interface cache, exactly as the file does, so restoring one has to follow
 		// the link the same way or the group comes back as an empty placeholder.
-		return flow::serialize::fromValue(document, factory, sceneCodecs(), templateResolver(documentDir));
+		return flow::serialize::fromValue(document, factory, sceneCodecs(), templateResolver(documentDir), cache);
 	}
 } // namespace flowview

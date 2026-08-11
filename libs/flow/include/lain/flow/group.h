@@ -24,6 +24,7 @@
 #include "lain/flow/types.h"
 
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -157,16 +158,29 @@ namespace lain::flow
 	public:
 		LinkedGroupNode()
 			: GroupNode("Linked Group")
+			, m_inner(std::make_shared<const Graph>()) // never null: every group HAS an interior
 		{
 		}
 
-		const Graph* innerGraph() const override { return &m_inner; }
+		const Graph* innerGraph() const override { return m_inner.get(); }
 
-		// Establish this group's interior — what a LOADER does once, not an edit. A whole graph moves
-		// in; there is deliberately no way to reach in and change the one that is already there.
-		// (M7 slice 2 replaces the owned Graph with a shared_ptr<const Graph> from the template cache;
-		// this is the seam that absorbs that, so callers do not change again.)
-		void adoptInterior(Graph interior) { m_inner = std::move(interior); }
+		// The definition itself, for a caller that needs to SHARE it rather than read it — the loader
+		// handing one template to a second instance, and a test asserting that two instances really do
+		// hold one graph rather than two equal ones.
+		const std::shared_ptr<const Graph>& definition() const { return m_inner; }
+
+		// Establish this group's interior — what a LOADER does once, not an edit. There is deliberately
+		// no way to reach in and change the one already there: a definition may back N instances
+		// (ADR-0013), so a mutation through any of them would reach all of them.
+		void adoptInterior(std::shared_ptr<const Graph> interior)
+		{
+			if (interior) // a null would break "a group always has an interior" for every reader
+				m_inner = std::move(interior);
+		}
+
+		// The same, for an interior this group does NOT share: an unresolved placeholder, or a
+		// template loaded with no cache in play. It becomes shareable simply by being held this way.
+		void adoptInterior(Graph interior) { m_inner = std::make_shared<const Graph>(std::move(interior)); }
 
 		// The template's path AS WRITTEN in the parent document — relative to that document, so a
 		// project folder stays portable. Resolving it to a document is the host's job (flow core
@@ -193,9 +207,10 @@ namespace lain::flow
 		void setResolved(bool resolved) { m_resolved = resolved; }
 
 	private:
-		// Owned for now. M7 slice 2 makes this a shared_ptr<const Graph> pointing at the template
-		// cache, so N instances of one template share one definition (ADR-0013).
-		Graph m_inner;
+		// SHARED: one definition backs every instance of a template (ADR-0013). Const, so the sharing
+		// needs no lock — a template edit REPLACES a definition rather than writing into one, which is
+		// what keeps ADR-0012's "a const Graph& is concurrently readable" true here.
+		std::shared_ptr<const Graph> m_inner;
 		std::string m_source;
 		std::vector<PinSpec> m_cachedInputs;
 		std::vector<PinSpec> m_cachedOutputs;

@@ -318,6 +318,7 @@ namespace lain::flow::serialize
 		const core::Factory<Node>& factory;
 		const ValueCodecs& codecs;
 		const TemplateResolver& resolver;
+		TemplateCache* cache; // nullable: no cache means every instance builds its own copy
 		std::vector<LoadIssue>& issues;
 		std::set<std::string> resolving; // canonical template keys currently being loaded
 
@@ -333,17 +334,14 @@ namespace lain::flow::serialize
 		}
 	};
 
-	// What a body does with the ids it reads (ADR-0011: "load preserves identity; paste mints it").
-	enum class IdPolicy
-	{
-		Preserve, // OPENING a document: its nodes come back as themselves, so undo, the active path
-				  // and the canvas selection survive a rebuild
-		Mint, // INSTANTIATING a template as a copy: the same file may back several linked groups
-			  // in one document, and preserving would make that a guaranteed duplicate
-	};
-
-	static Graph loadBody(const data::Value& body, EditorTree& editor, LoadContext& ctx, IdPolicy policy);
-	static Graph loadDocument(const data::Value& document, EditorTree& editor, LoadContext& ctx, IdPolicy policy);
+	// A LOAD ALWAYS PRESERVES IDENTITY — there is no minting arm any more. It existed because one
+	// template file loaded twice in a document produced duplicate ids, which sharing removes at the
+	// source: two instances of a template hold the SAME definition, so there is one set of ids, not
+	// two identical ones (ADR-0013). Without a cache two instances do hold separate equal copies, and
+	// that is still fine: ids need only be unique WITHIN a graph, and each instance's values live in
+	// its own child Evaluation keyed by the group node's id in the parent.
+	static Graph loadBody(const data::Value& body, EditorTree& editor, LoadContext& ctx);
+	static Graph loadDocument(const data::Value& document, EditorTree& editor, LoadContext& ctx);
 
 	// The pins a linked group's template actually exposes, as PinSpecs — what the cached interface is
 	// rectified against.
@@ -400,29 +398,57 @@ namespace lain::flow::serialize
 		}
 	}
 
+	// Whether anything in `graph` (at any depth) is a linked group that failed to resolve. A definition
+	// in that state is REPAIRABLE — the missing template may appear at any moment — so it is deliberately
+	// not cached, and heals on the next load rather than needing a gesture.
+	static bool hasUnresolvedLink(const Graph& graph)
+	{
+		for (const NodeId id : graph.nodeIds())
+		{
+			const Node& node = graph.node(id);
+			if (const auto* linked = dynamic_cast<const LinkedGroupNode*>(&node); linked && !linked->resolved())
+				return true;
+			if (const Graph* inner = node.innerGraph(); inner && hasUnresolvedLink(*inner))
+				return true;
+		}
+		return false;
+	}
+
+	// Report what changed between the interface the parent cached and the one the template now offers.
+	// Both paths that end with a resolved template run this — the cache hit and the fresh build — since
+	// the cache says nothing about what THIS parent last saw.
+	static void rectifyAgainst(const LinkedGroupNode& linked, const std::vector<PinSpec>& cachedIn,
+							   const std::vector<PinSpec>& cachedOut, LoadContext& ctx)
+	{
+		std::vector<PinSpec> currentIn;
+		std::vector<PinSpec> currentOut;
+		currentInterface(*linked.innerGraph(), currentIn, currentOut);
+		rectify(linked.source(), cachedIn, currentIn, "input", ctx);
+		rectify(linked.source(), cachedOut, currentOut, "output", ctx);
+	}
+
 	// Rebuild a linked group: resolve its template, load that document into the inner graph, and
 	// rectify against the cache. When the template cannot be resolved — missing file, no resolver, or
 	// a recursive link — the group loads as an UNRESOLVED PLACEHOLDER whose pins come from the cache,
 	// so the parent's wiring survives and saving is lossless.
-	static void loadLinkedGroup(LinkedGroupNode& linked, const data::Value& nodeV, EditorTree& editor, LoadContext& ctx)
+	// Resolve a linked group whose `source` and cached interface are ALREADY set on the node: find its
+	// template, establish the interior, and rectify. Everything after reading the DOM — which is why it
+	// is separate. A host adding a linked group interactively has a node in exactly this state and no
+	// document to read, and must resolve it the SAME way, or the two halves drift (which is how a
+	// freshly added group once lost its layout while the load path kept it).
+	static void resolveLinked(LinkedGroupNode& linked, EditorTree& editor, LoadContext& ctx)
 	{
-		const data::Value* sourceV = nodeV.find("source");
-		const std::string* source = sourceV ? sourceV->asString() : nullptr;
-		linked.setSource(source ? *source : std::string{});
-
-		std::vector<PinSpec> cachedIn;
-		std::vector<PinSpec> cachedOut;
-		if (const data::Value* interfaceV = nodeV.find("interface"))
-			readInterface(*interfaceV, cachedIn, cachedOut);
-		linked.setCachedInterface(cachedIn, cachedOut);
+		const std::string& source = linked.source();
+		const std::vector<PinSpec> cachedIn = linked.cachedInputs();
+		const std::vector<PinSpec> cachedOut = linked.cachedOutputs();
 
 		std::optional<ResolvedTemplate> resolved;
-		if (source && !source->empty() && ctx.resolver)
-			resolved = ctx.resolver(*source);
+		if (!source.empty() && ctx.resolver)
+			resolved = ctx.resolver(source);
 
 		if (resolved && ctx.resolving.count(resolved->key) != 0)
 		{
-			ctx.error("recursive template \"" + *source + "\" — the link is not followed");
+			ctx.error("recursive template \"" + source + "\" — the link is not followed");
 			resolved.reset();
 		}
 
@@ -433,8 +459,8 @@ namespace lain::flow::serialize
 			// syncGroupPorts mirrors them outward — so a placeholder is a real, empty graph with the
 			// right face, not a special case downstream. Built here and handed over whole: a linked
 			// group's interior is established, never edited in place (ADR-0013).
-			if (source && !source->empty())
-				ctx.warn("template \"" + *source + "\" could not be resolved — the group loads unresolved from its cached interface");
+			if (!source.empty())
+				ctx.warn("template \"" + source + "\" could not be resolved — the group loads unresolved from its cached interface");
 			Graph placeholder;
 			for (const PinSpec& pin : cachedIn)
 			{
@@ -451,6 +477,26 @@ namespace lain::flow::serialize
 			return;
 		}
 
+		// Already loaded in this document (or an earlier one the host has not invalidated since)? Then
+		// this instance SHARES that definition rather than building a second copy of it (ADR-0013) —
+		// which is the whole point: N instances of one template, one recipe, N Evaluations.
+		//
+		// Consulted before the BUILD, which is what the ordering protects: a partially built template
+		// is never in here, so a link cycle is still refused below rather than half-served from cache.
+		// (The resolver has already read the file by this point, because the canonical key is its
+		// answer, not something flow can derive from a `source` string it must not interpret.)
+		if (ctx.cache)
+		{
+			if (const TemplateCache::Entry* hit = ctx.cache->find(resolved->key))
+			{
+				linked.adoptInterior(hit->definition);
+				editor = hit->editor; // the template's layout travels with its definition
+				linked.setResolved(true);
+				rectifyAgainst(linked, cachedIn, cachedOut, ctx);
+				return;
+			}
+		}
+
 		ctx.resolving.insert(resolved->key);
 		// The template's OWN layout comes with it: a linked group is read-only, so showing anything
 		// other than the arrangement the template author made would be a worse view of it — and there
@@ -458,27 +504,53 @@ namespace lain::flow::serialize
 		// subtree of the parent's layout, so an unresolved link still remembers where things sat.
 		//
 		// A template is a DOCUMENT in its own right, so it enters the version router rather than the
-		// body decoder — a v1 template linked from a v2 parent must still open. And its nodes are
-		// INSTANTIATED, not restored: one template may back several linked groups in one document,
-		// so preserving its ids would make a duplicate certain rather than unlikely. Nothing is lost
-		// — a linked group's interior is never written to the parent, only its source + interface.
-		linked.adoptInterior(loadDocument(resolved->document, editor, ctx, IdPolicy::Mint));
+		// body decoder — a v1 template linked from a v2 parent must still open.
+		linked.adoptInterior(loadDocument(resolved->document, editor, ctx));
 		ctx.resolving.erase(resolved->key);
 		linked.setResolved(true);
 
-		std::vector<PinSpec> currentIn;
-		std::vector<PinSpec> currentOut;
-		currentInterface(*linked.innerGraph(), currentIn, currentOut);
-		rectify(linked.source(), cachedIn, currentIn, "input", ctx);
-		rectify(linked.source(), cachedOut, currentOut, "output", ctx);
+		// Cache it — but ONLY if it is whole. A definition holding an unresolved link is a repairable
+		// failure, and caching one would freeze it: the missing file could appear a second later and
+		// every subsequent instance would still get the broken copy until someone reloaded. Structural,
+		// not a reading of issue severities, because the issue list is the whole document's.
+		if (ctx.cache && !hasUnresolvedLink(*linked.innerGraph()))
+			ctx.cache->store(resolved->key, TemplateCache::Entry{linked.definition(), editor});
+
+		rectifyAgainst(linked, cachedIn, cachedOut, ctx);
+	}
+
+	// Rebuild a linked group from its stored node: read `source` + the interface cache off the DOM,
+	// then resolve exactly as any other caller does.
+	static void loadLinkedGroup(LinkedGroupNode& linked, const data::Value& nodeV, EditorTree& editor, LoadContext& ctx)
+	{
+		const data::Value* sourceV = nodeV.find("source");
+		const std::string* source = sourceV ? sourceV->asString() : nullptr;
+		linked.setSource(source ? *source : std::string{});
+
+		std::vector<PinSpec> cachedIn;
+		std::vector<PinSpec> cachedOut;
+		if (const data::Value* interfaceV = nodeV.find("interface"))
+			readInterface(*interfaceV, cachedIn, cachedOut);
+		linked.setCachedInterface(std::move(cachedIn), std::move(cachedOut));
+
+		resolveLinked(linked, editor, ctx);
+	}
+
+	ResolveResult resolveLinkedGroup(LinkedGroupNode& linked, const core::Factory<Node>& factory, const ValueCodecs& codecs,
+									 const TemplateResolver& resolver, TemplateCache* cache)
+	{
+		ResolveResult result;
+		LoadContext ctx{factory, codecs, resolver, cache, result.issues, {}};
+		resolveLinked(linked, result.editor, ctx);
+		return result;
 	}
 
 	LoadResult fromValue(const data::Value& document, const core::Factory<Node>& factory, const ValueCodecs& codecs,
-						 const TemplateResolver& resolver)
+						 const TemplateResolver& resolver, TemplateCache* cache)
 	{
 		LoadResult result;
-		LoadContext ctx{factory, codecs, resolver, result.issues, {}};
-		result.graph = loadDocument(document, result.editor, ctx, IdPolicy::Preserve);
+		LoadContext ctx{factory, codecs, resolver, cache, result.issues, {}};
+		result.graph = loadDocument(document, result.editor, ctx);
 		return result;
 	}
 
@@ -486,7 +558,7 @@ namespace lain::flow::serialize
 	// exactly one decoder (the current one) ever runs. An older format is handled by translating its
 	// data::Value into the current shape first, so support for it is a self-contained translation
 	// unit that can later be deleted whole rather than a second loader to keep working.
-	Graph loadDocument(const data::Value& document, EditorTree& editor, LoadContext& ctx, IdPolicy policy)
+	Graph loadDocument(const data::Value& document, EditorTree& editor, LoadContext& ctx)
 	{
 		const data::Value* versionV = document.find("version");
 		const auto version = versionV ? asInteger(*versionV) : std::nullopt;
@@ -501,7 +573,7 @@ namespace lain::flow::serialize
 			return Graph{};
 		}
 		if (*version == kFormatVersion)
-			return loadBody(document, editor, ctx, policy);
+			return loadBody(document, editor, ctx);
 		if (*version > kFormatVersion)
 		{
 			// A format from the future can't be half-understood — refusing beats loading a
@@ -512,7 +584,7 @@ namespace lain::flow::serialize
 		if (*version == 1)
 		{
 			ctx.warn("document is version 1 (numeric node ids) — migrated on load; save it to store version " + std::to_string(kFormatVersion) + " identities");
-			return loadBody(detail::migrateVersion1(document), editor, ctx, policy);
+			return loadBody(detail::migrateVersion1(document), editor, ctx);
 		}
 
 		ctx.error("document version " + std::to_string(*version) + " is not a format this build knows");
@@ -537,7 +609,7 @@ namespace lain::flow::serialize
 	// One level of the load: nodes (recursing into groups), then edges, then the editor blobs.
 	// Returns the graph rather than filling one, because its boundary pair is born with the
 	// document's ids — a group's inner graph is move-assigned from this, exactly as the root is.
-	Graph loadBody(const data::Value& document, EditorTree& editor, LoadContext& ctx, IdPolicy policy)
+	Graph loadBody(const data::Value& document, EditorTree& editor, LoadContext& ctx)
 	{
 		const auto error = [&](std::string msg)
 		{ ctx.error(std::move(msg)); };
@@ -614,8 +686,9 @@ namespace lain::flow::serialize
 		if (!adoptedOutput)
 			warn("document has no GroupOutput node — the graph's own is used (its interface pair is an invariant)");
 
-		// A COPY keeps none of the document's identities: see IdPolicy.
-		Graph graph = (policy == IdPolicy::Preserve) ? Graph{boundary} : Graph{};
+		// Born with the document's own boundary pair: node identity is immutable after admission, so
+		// the pair cannot be re-keyed afterwards.
+		Graph graph{boundary};
 
 		// --- adopt: seat each staged node, in array order, and replay its definition ---
 		IdRemap remap;
@@ -649,17 +722,13 @@ namespace lain::flow::serialize
 				seatedOutput = true;
 				liveId = graph.boundaryOutputNode().id();
 			}
-			else if (policy == IdPolicy::Preserve)
+			else
 			{
 				liveId = graph.add(std::move(entry.node), entry.requested);
 				// add() never overwrites an owner, so a document naming one id twice costs the
 				// second node its identity, not the first node its existence.
 				if (entry.requested != NodeId{} && liveId != entry.requested)
 					warn("duplicate node id " + entry.idText + " — the second node was given a fresh identity");
-			}
-			else
-			{
-				liveId = graph.add(std::move(entry.node));
 			}
 
 			if (liveId == NodeId{})
@@ -719,10 +788,10 @@ namespace lain::flow::serialize
 			}
 			else if (auto* group = dynamic_cast<InlineGroupNode*>(&created))
 			{
-				// An INLINE group's body is part of THIS document, so it inherits the id policy
-				// (and, having no version of its own, never re-enters the router).
+				// An INLINE group's body is part of THIS document (and, having no version of its own,
+				// never re-enters the router).
 				if (const data::Value* innerBody = nodeV.find("graph"))
-					group->inner() = loadBody(*innerBody, editor.groups[liveId], ctx, policy);
+					group->inner() = loadBody(*innerBody, editor.groups[liveId], ctx);
 			}
 			if (created.innerGraph() != nullptr)
 				edit::syncGroupPorts(graph, liveId);

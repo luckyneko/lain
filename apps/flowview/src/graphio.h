@@ -43,8 +43,14 @@ namespace flowview
 
 	// Load a graph from JSON at `uri`. Best-effort: an unreadable file is a fatal Error in the
 	// returned LoadResult (which then carries an empty graph).
+	//
+	// `cache` is the host's template cache — what makes several linked groups on one file share a
+	// single definition (ADR-0013). Required rather than defaulted: omitting it is silent, and what it
+	// silently costs is the whole point of having one. Pass nullptr where there is genuinely no host
+	// to own a cache, and mean it.
 	lain::flow::serialize::LoadResult loadGraph(const std::string& uri,
-												const lain::core::Factory<lain::flow::Node>& factory);
+												const lain::core::Factory<lain::flow::Node>& factory,
+												lain::flow::serialize::TemplateCache* cache);
 
 	// Serialize `graph` (+ its canvas `editor` layout) to a data::Value — the same document Save
 	// writes, but kept in RAM. The undo history is a stack of these (Save-to-RAM); a restore feeds
@@ -67,7 +73,12 @@ namespace flowview
 	// emptied every linked group). Pass the parent of the open document's path; empty is legitimate
 	// for an untitled document, where a relative source simply resolves against the working
 	// directory, and an absolute one is unaffected either way.
+	//
+	// `cache` is the host's template cache, as for loadGraph. A restore deliberately does NOT reset it:
+	// an undo is not a document change, and keeping it is what holds a template's inner node ids — and
+	// therefore preview keys and canvas ints — steady across one.
 	lain::flow::serialize::LoadResult restoreGraph(const lain::data::Value& document,
 												   const lain::core::Factory<lain::flow::Node>& factory,
-												   const std::filesystem::path& documentDir);
+												   const std::filesystem::path& documentDir,
+												   lain::flow::serialize::TemplateCache* cache);
 } // namespace flowview

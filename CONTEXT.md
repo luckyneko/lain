@@ -162,7 +162,9 @@ outputs. (M4 — being built; the vocabulary is settled, the mechanics are in
   TYPE belongs to `flow::serialize` (loading and the self-link cycle guard live there); the INSTANCE
   belongs to the host, which is the only side that can see the events that invalidate it — a save, a
   reload gesture. Resolution order is **cache → cycle guard → build → cache**, so a partially built
-  template is never stored. A definition containing an unresolved link is **not** cached, so a
+  template is never stored; the injected resolver runs one step ahead of the lookup, since the
+  canonical key is what it returns, so the FILE is still read per instance and the BUILD is what is
+  shared. A definition containing an unresolved link is **not** cached, so a
   missing-then-created template heals with no gesture. It resets on document *identity* change, the
   same discriminator `CanvasIds` uses, so it survives edits and undo/redo.
 - **Inline group** — a group whose recipe is stored **inside the parent document**. Editable in

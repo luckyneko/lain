@@ -1787,8 +1787,8 @@ milestone makes it real. Decisions in
 
 Each step stands alone and leaves the suite green.
 
-1. ✅ **Hierarchy + constness — a pure refactor, no behaviour change.** *(built 2026-08-10; gui-mode
-   eyeball pending.)* Abstract `GroupNode` holds the mirroring and a pure-virtual `innerGraph()`;
+1. ✅ **Hierarchy + constness — a pure refactor, no behaviour change.** *(built 2026-08-10;
+   gui-mode live-verified 2026-08-10.)* Abstract `GroupNode` holds the mirroring and a pure-virtual `innerGraph()`;
    `InlineGroupNode` owns the `Graph` and is the only kind with a mutable `inner()`;
    `LinkedGroupNode` keeps its own `Graph` for now but exposes **no** mutable accessor at all — a
    loader establishes its interior through `adoptInterior(Graph)`, which is the seam slice 2's
@@ -1804,17 +1804,31 @@ Each step stands alone and leaves the suite green.
    `Add ▸ Linked Group…` resolves its own level. The factory key `"group"` is unchanged, so no
    document is affected. `ctest` **398/398**, warning-clean, format-check clean; headless `run` still
    flows the example graph and a real linked-group document still resolves and runs.
-2. **The cache — the substance.** `TemplateCache` in `flow::serialize`, owned by the host and passed
-   into `fromValue`; `loadLinkedGroup` consults it before building. Resolution order is **cache →
-   cycle guard → build → cache**, so a partially built template is never stored and a self-link is
-   still refused. A definition whose interior contains an unresolved link is **not** cached, so a
-   missing-then-created template heals without a gesture. `LinkedGroupNode` holds
-   `shared_ptr<const Graph>`; an unresolved link owns its placeholder graph alone behind the same
-   pointer. `IdPolicy::Mint` and its branch go. The cache resets on document identity change, on the
-   same `pendingBaseline` discriminator `CanvasIds` uses — so it survives edits and undo/redo, which
-   is what keeps a template's inner ids (and therefore preview keys and canvas ints) stable across an
-   undo. Proven through the production loader: two instances of one template share a definition by
-   pointer identity, evaluate independently, and a broken template is not cached.
+2. ✅ **The cache — the substance.** *(built 2026-08-10; gui-mode live-verified 2026-08-11.)* `TemplateCache`
+   lives in `flow::serialize` and is owned by the host (`AppContext::templates`, beside `CanvasIds`
+   and reset on the same document-identity event — `performSwap`, so opening a document re-reads its
+   templates while an edit or an undo keeps them). `LinkedGroupNode` holds `shared_ptr<const Graph>`
+   and exposes `definition()`; an unresolved link owns its placeholder alone behind the same pointer,
+   so `innerGraph()` is uniform. A definition whose interior holds an unresolved link is **not**
+   cached (a structural walk, not a reading of issue severities), so a missing-then-created template
+   heals with no gesture. **`IdPolicy` is deleted whole** — a load always preserves identity now, and
+   without a cache two instances simply hold separate equal copies, which is safe because ids need only
+   be unique *within* a graph.
+   - **Deviation from the ADR's stated ordering, amended there:** the injected resolver runs before
+     the cache lookup, because the canonical key is the resolver's answer and `flow` must not
+     interpret a `source` path itself. The file is therefore still read per instance; the cache shares
+     the BUILD, which is what "never cache a partially built template" was protecting.
+   - **Addition:** `serialize::resolveLinkedGroup` — resolving ONE link (source already set) is now a
+     public routine the loader and the host share. `Add ▸ Linked Group…` had its own copy of that job,
+     which is how it once dropped the template's layout, and would now have handed the added instance a
+     private copy of a shared definition. The M5 note asking for these two halves to collapse is
+     discharged.
+   - Verified: `ctest` **404/404** (6 new: shared-by-pointer + independent parallel runs ×50, layout
+     travels with a cached entry, a template holding a broken link is not cached, a self-link is still
+     refused with nothing stored, invalidate → rebuild, and an undo keeping its definition);
+     warning-clean; format-check clean. Live headless: a hand-built document with **two linked groups
+     on one template** resolves, mirrors both faces, and pushes two DIFFERENT images through the one
+     shared definition to two distinct results; save ⇒ load ⇒ save stays byte-identical.
 3. **Reload.** `Reload linked groups` drops the whole cache and rebuilds via
    snapshot → invalidate → restore; saving any document drops that path's entry. Reload pushes **no**
    undo entry (undo cannot restore the previous template — every restore re-resolves against the

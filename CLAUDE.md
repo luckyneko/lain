@@ -228,7 +228,28 @@ to edit through*, so the check can no longer be forgotten — which is what M5's
 were. Panes take `const Graph&` + a nullable `Graph*`; `MenuBarPane` takes only the const graph
 (Save writes the root, and `Add ▸ Linked Group…` resolves its own level). `ctest` **398/398**,
 warning-clean, format-check clean; headless `run` unchanged and a real linked-group document still
-resolves + runs. **gui-mode not yet eyeballed for this slice.**
+resolves + runs. **gui-mode live-verified 2026-08-10.**
+
+**Slice 2 is built (2026-08-10).** `TemplateCache` (canonical path → `{shared_ptr<const Graph>,
+EditorTree}`) lives in `flow::serialize`; the host owns the instance (`AppContext::templates`, beside
+`CanvasIds`, cleared in `performSwap` — so a document swap re-reads templates from disk while an edit
+or an undo keeps them, which is what holds a template's inner ids steady). `LinkedGroupNode` holds
+`shared_ptr<const Graph>` + `definition()`; an unresolved link owns its placeholder alone behind the
+same pointer. A definition containing an unresolved link is **not** cached (a structural walk), so a
+missing-then-created template heals with no gesture. **`IdPolicy` is deleted whole** — a load always
+preserves identity, and cacheless loading just yields separate equal copies, which is safe because ids
+need only be unique *within* a graph. `ctest` **404/404**, warning-clean, format-check clean.
+- **Two deliberate deviations, both written up.** (1) The injected resolver runs *before* the cache
+  lookup — the canonical key is the resolver's answer, and flow must not interpret a `source` path —
+  so a template file is still read per instance and what the cache shares is the BUILD; ADR-0013's
+  ordering bullet is amended in place with the reasoning. (2) New public
+  **`serialize::resolveLinkedGroup`**: resolving one link (source already set) is now ONE routine the
+  loader and the host share. `Add ▸ Linked Group…` had its own copy — which is how it once dropped the
+  template's layout, and would now have given the added instance a private copy of a shared
+  definition. That discharges the M5 note asking for the two halves to be collapsed.
+- Live headless proof: a document with **two linked groups on one template** resolves, mirrors both
+  faces, and pushes two *different* images through the one shared definition to two distinct results;
+  save ⇒ load ⇒ save still byte-identical. **gui-mode live-verified 2026-08-11.**
 - Still out: file watching, prefab overrides, in-place template editing.
 
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)

@@ -1,17 +1,20 @@
 #pragma once
 
 #include "lain/flow/serialize/loadresult.h"
+#include "lain/flow/serialize/templatecache.h"
 #include "lain/flow/serialize/valuecodecs.h"
 
 #include <lain/core/factory.h>
 #include <lain/data/value.h>
 #include <lain/flow/graph.h>
+#include <lain/flow/group.h> // LinkedGroupNode — resolveLinkedGroup's subject
 #include <lain/flow/node.h>
 
 #include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 // Graph <-> data::Value — the graph walk (WORK.md Tier A #1). Serializes a graph's RECIPE (node
 // kinds + params + name-addressed edges), never computed port values: the graph re-runs to
@@ -78,11 +81,48 @@ namespace lain::flow::serialize
 	// rather than quietly taking the parent's edges with it. A template that (transitively) links
 	// itself is refused by canonical key.
 	//
-	// A template's nodes are the one exception to identity preservation: they are INSTANTIATED with
-	// fresh ids, because one template may back several linked groups in one document and preserving
-	// would make a duplicate certain. Nothing is lost — a linked group's interior is never written
-	// to the parent, only its source path and its interface cache. The template is a document in its
-	// own right, so it enters the version router independently of the parent's version.
+	// A template is a document in its own right, so it enters the version router independently of the
+	// parent's version — a v1 template linked from a v2 parent still opens.
+	//
+	// `cache` is the host's TemplateCache, and is what makes several linked groups built from one file
+	// SHARE a single definition rather than each owning a copy (ADR-0013). It is consulted by canonical
+	// key before a template is built, and a freshly built one is stored — unless it holds an unresolved
+	// link of its own, which is a repairable state that must not be frozen. Passing none is a
+	// legitimate mode (a one-shot headless load, a test): every instance then builds its own equal
+	// copy, which is safe because node ids need only be unique WITHIN a graph and each instance's
+	// values live in its own child Evaluation.
 	[[nodiscard]] LoadResult fromValue(const data::Value& document, const core::Factory<Node>& factory, const ValueCodecs& codecs,
-									   const TemplateResolver& resolver = {});
+									   const TemplateResolver& resolver = {}, TemplateCache* cache = nullptr);
+
+	// What resolving ONE linked group produced: the template's own layout (for that group's subtree of
+	// the host's EditorTree) and whatever went wrong.
+	struct ResolveResult
+	{
+		EditorTree editor;
+		std::vector<LoadIssue> issues;
+
+		bool clean() const
+		{
+			for (const LoadIssue& issue : issues)
+			{
+				if (issue.severity == Severity::Error)
+					return false;
+			}
+			return true;
+		}
+	};
+
+	// Resolve a single linked group whose `source` (and, optionally, cached interface) is already set —
+	// the interactive "add a linked group pointing at this file" gesture. Identical in every respect to
+	// what a document load does for each link it reads, because it IS that routine: same resolver, same
+	// cycle guard, same cache participation, same rectification, same layout.
+	//
+	// It exists so a host does not hand-roll a second resolve path. That shape is what left a freshly
+	// added linked group in default columns while the load path carried the template's layout, and it
+	// would now also leave the added instance holding a private copy of a definition every other
+	// instance shares. The caller still re-derives the group's outer ports (edit::syncGroupPorts),
+	// exactly as it does after a load, since that needs the PARENT graph.
+	[[nodiscard]] ResolveResult resolveLinkedGroup(LinkedGroupNode& linked, const core::Factory<Node>& factory,
+												   const ValueCodecs& codecs, const TemplateResolver& resolver,
+												   TemplateCache* cache);
 } // namespace lain::flow::serialize

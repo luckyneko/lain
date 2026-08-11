@@ -34,7 +34,10 @@ namespace flowview
 			buildExampleScene(graph, factory);
 			return true;
 		}
-		flow::serialize::LoadResult result = loadGraph(graphPath, factory);
+		// A cache for this one load: a headless run never re-opens a document, but a graph that links
+		// one template several times still gets one definition instead of N copies of it.
+		flow::serialize::TemplateCache templates;
+		flow::serialize::LoadResult result = loadGraph(graphPath, factory, &templates);
 		if (result.graph.nodeCount() == 0)
 		{
 			log::error("flowview: nothing loaded from {}", graphPath);
