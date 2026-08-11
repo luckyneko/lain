@@ -113,6 +113,19 @@ namespace flowview
 		return count;
 	}
 
+	bool hasLinkedGroups(const flow::Graph& root)
+	{
+		for (const flow::NodeId id : root.nodeIds())
+		{
+			const flow::Node& node = root.node(id);
+			if (dynamic_cast<const flow::LinkedGroupNode*>(&node) != nullptr)
+				return true;
+			if (const flow::Graph* inner = node.innerGraph(); inner && hasLinkedGroups(*inner))
+				return true; // a link can sit inside an inline group, or inside another template
+		}
+		return false;
+	}
+
 	bool syncPathGroups(flow::Graph& root, const GraphPath& path)
 	{
 		bool changed = false;

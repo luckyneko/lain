@@ -58,6 +58,15 @@ namespace flowview
 		return io::data::save(uri, document);
 	}
 
+	std::string templateKey(const std::filesystem::path& path)
+	{
+		// weakly_canonical, not canonical: the file need not exist (a link to a template that is not
+		// there yet still has a stable key, which is what lets it heal when the file appears).
+		std::error_code ec;
+		const std::filesystem::path canonical = std::filesystem::weakly_canonical(path, ec);
+		return (ec ? path : canonical).string();
+	}
+
 	flow::serialize::TemplateResolver templateResolver(const std::filesystem::path& documentDir)
 	{
 		// A linked group's `source` is stored RELATIVE to the document that names it, so a project
@@ -66,15 +75,13 @@ namespace flowview
 		// spellings of one file (./sub.json vs sub.json) must collapse to the same key.
 		return [documentDir](const std::string& source) -> std::optional<flow::serialize::ResolvedTemplate>
 		{
-			std::error_code ec;
 			const std::filesystem::path full = documentDir.empty() ? std::filesystem::path(source) : documentDir / source;
-			const std::filesystem::path canonical = std::filesystem::weakly_canonical(full, ec);
-			const std::filesystem::path resolved = ec ? full : canonical;
+			const std::string key = templateKey(full);
 
-			const auto document = io::data::load(resolved.string());
+			const auto document = io::data::load(key);
 			if (!document)
 				return std::nullopt; // io::data::load logged it; serialize turns this into an issue
-			return flow::serialize::ResolvedTemplate{resolved.string(), *document};
+			return flow::serialize::ResolvedTemplate{key, *document};
 		};
 	}
 

@@ -51,11 +51,12 @@ namespace
 		return dir;
 	}
 
-	// A template document with one input pin and one output pin, written to `dir/name`.
-	void writeTemplate(const Factory<Node>& factory, const std::filesystem::path& path)
+	// A template document with `inputs` input pins and one output pin, written to `path`.
+	void writeTemplate(const Factory<Node>& factory, const std::filesystem::path& path, int inputs = 1)
 	{
 		Graph templateGraph;
-		templateGraph.boundaryInputNode().addBoundary<lain::image::Image>("source");
+		for (int i = 0; i < inputs; ++i)
+			templateGraph.boundaryInputNode().addBoundary<lain::image::Image>("source" + std::to_string(i));
 		templateGraph.boundaryOutputNode().addBoundary<lain::image::Image>("result");
 		REQUIRE(flowview::saveGraph(path.string(), templateGraph, factory));
 	}
@@ -176,4 +177,68 @@ TEST_CASE("an undo restore keeps the template definition it already had", "[grap
 	LoadResult second = flowview::restoreGraph(snapshot, factory, dir, &cache); // undo, then redo
 	REQUIRE(second.clean());
 	REQUIRE(onlyLink(second.graph)->definition() == definition);
+}
+
+// --- the template cache's keys and its invalidation (M7 slice 3) -------------
+
+TEST_CASE("one file has one template key, however it is spelled", "[graphio]")
+{
+	// The cache is keyed on this, and so is the cycle guard. A key computed two ways is a key that
+	// eventually disagrees with itself — and the failure is SILENT: an invalidation that misses just
+	// keeps serving the definition it was asked to drop.
+	const std::filesystem::path dir = scratchDir("keys");
+	const Factory<Node> factory = ioFactory();
+	writeTemplate(factory, dir / "template.json");
+
+	const std::string direct = flowview::templateKey(dir / "template.json");
+	REQUIRE(flowview::templateKey(dir / "sub" / ".." / "template.json") == direct);
+	REQUIRE(flowview::templateKey(dir / "./template.json") == direct);
+
+	// ... and it is the key the RESOLVER reports, which is what makes save-invalidation land on the
+	// entry a load created.
+	const auto resolved = flowview::templateResolver(dir)("./template.json");
+	REQUIRE(resolved.has_value());
+	REQUIRE(resolved->key == direct);
+}
+
+TEST_CASE("invalidating a template's key is what makes an edit to it visible", "[graphio]")
+{
+	// The mechanism behind BOTH of slice 3's triggers: Reload Linked Groups (clear the cache) and
+	// saving a document (drop that path's entry, so Edit Template... -> Save -> Return shows the edit).
+	// Without the drop the cache keeps serving the pre-edit definition — which is the behaviour being
+	// pinned here, not merely the fix.
+	const std::filesystem::path dir = scratchDir("invalidate");
+	const Factory<Node> factory = ioFactory();
+	const std::filesystem::path templatePath = dir / "template.json";
+	writeTemplate(factory, templatePath, 1);
+
+	lain::flow::serialize::TemplateCache cache;
+	Graph parent = parentLinking("template.json", factory, dir);
+	const lain::data::Value document = flowview::snapshotGraph(parent, factory);
+	REQUIRE(flowview::restoreGraph(document, factory, dir, &cache).clean());
+
+	// The template gains a pin, out from under the running app.
+	writeTemplate(factory, templatePath, 2);
+
+	SECTION("a stale entry keeps serving the old definition")
+	{
+		const LoadResult again = flowview::restoreGraph(document, factory, dir, &cache);
+		REQUIRE(onlyLink(again.graph)->innerGraph()->boundaryInputNode().outputCount() == 1);
+	}
+
+	SECTION("dropping that one key picks the edit up")
+	{
+		cache.invalidate(flowview::templateKey(templatePath));
+		const LoadResult again = flowview::restoreGraph(document, factory, dir, &cache);
+		const LinkedGroupNode* link = onlyLink(again.graph);
+		REQUIRE(link->innerGraph()->boundaryInputNode().outputCount() == 2);
+		REQUIRE(link->inputCount() == 2); // ... and the group's own face followed it
+	}
+
+	SECTION("clearing the whole cache does too — the reload gesture")
+	{
+		cache.clear();
+		const LoadResult again = flowview::restoreGraph(document, factory, dir, &cache);
+		REQUIRE(onlyLink(again.graph)->innerGraph()->boundaryInputNode().outputCount() == 2);
+	}
 }

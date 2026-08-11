@@ -36,9 +36,15 @@ namespace flowview
 				   const lain::core::Factory<lain::flow::Node>& factory,
 				   const lain::flow::serialize::EditorTree& editor = {});
 
+	// The canonical key one template file is known by: the cycle guard compares it, and the
+	// TemplateCache is keyed on it. ONE function, because a key that is computed two ways is a key
+	// that eventually disagrees with itself — and a disagreement here is silent (an invalidation that
+	// misses simply keeps serving the old definition).
+	std::string templateKey(const std::filesystem::path& path);
+
 	// The template resolver a load uses for LINKED groups: `source` is read relative to
-	// `documentDir` (so a project folder stays portable) and canonicalised, since that canonical path
-	// is the key the recursion guard compares. Exposed for callers that load a document themselves.
+	// `documentDir` (so a project folder stays portable) and canonicalised through templateKey.
+	// Exposed for callers that load a document themselves.
 	lain::flow::serialize::TemplateResolver templateResolver(const std::filesystem::path& documentDir);
 
 	// Load a graph from JSON at `uri`. Best-effort: an unreadable file is a fatal Error in the

@@ -68,6 +68,12 @@ namespace flowview
 		// are asked for through the guard — request* records the intent, performSwap is what actually
 		// carries it out, once there is nothing to lose or the modal has been resolved. Save reports
 		// whether it happened, so a cancelled save panel cancels the swap instead of discarding work.
+		// File ▸ Reload Linked Groups — drop every cached template definition and rebuild the document
+		// through snapshot -> invalidate -> restore, so each linked group re-resolves from disk. For
+		// edits made outside the app; there is no file watching. Pushes no undo entry, and marks the
+		// document dirty only if the rebuilt document actually differs.
+		void reloadTemplates(AppContext& ctx, const lain::flow::Graph& activeGraph);
+
 		void newGraph(AppContext& ctx);
 		void requestNew(AppContext& ctx);
 		void requestOpen(AppContext& ctx, const std::filesystem::path& path = {}); // empty -> the Open... dialog

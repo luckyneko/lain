@@ -250,6 +250,30 @@ need only be unique *within* a graph. `ctest` **404/404**, warning-clean, format
 - Live headless proof: a document with **two linked groups on one template** resolves, mirrors both
   faces, and pushes two *different* images through the one shared definition to two distinct results;
   save ⇒ load ⇒ save still byte-identical. **gui-mode live-verified 2026-08-11.**
+**Slice 3 is built (2026-08-11) — M7 is COMPLETE.** **File ▸ Reload
+Linked Groups** clears the cache and rebuilds the document through **snapshot → invalidate → restore**,
+the loader that already exists rather than a second in-place patch path. It keeps the user where they
+are (active path + selection, like an undo), pushes **no** undo entry, and marks the document dirty
+only when the rebuilt document actually differs — a `data::Value` compare of the before/after
+snapshots, so a template edit that leaves its interface alone claims no unsaved work. The item is
+greyed out when the document links nothing (`groupnav::hasLinkedGroups`, recursive — a link most often
+sits inside an inline group).
+
+- **Saving any document drops that path's cache entry** (Save *and* Save As). Required, not tidiness:
+  `Edit Template… → Save → Return` works because the return re-reads the file.
+- **One canonical key, one function** — `graphio::templateKey` (weakly_canonical, so a not-yet-existing
+  template still has a stable key) serves the resolver *and* save-invalidation. A key computed two ways
+  eventually disagrees with itself, and the failure is silent: an invalidation that misses simply keeps
+  serving the definition it was told to drop. A test pins the two together.
+- **Accepted consequence, in the code:** after a reload that changed the document, the undo cursor is
+  still the pre-reload state, so the next edit's undo steps past the reload too. The graph that returns
+  is the same (ports re-derive from disk) with a stale interface cache, which rectification reports.
+  Recording the reloaded document would tidy that at the cost of making reload look undoable, which it
+  cannot be.
+- `ctest` **407/407**. New: one file has one key however spelled (and it is the key the resolver
+  reports); a stale entry demonstrably keeps serving the old definition, while dropping that key or
+  clearing the cache picks the edit up, group face and all; `hasLinkedGroups` finds a nested link.
+  **gui-mode live-verified 2026-08-11 — M7 is COMPLETE.**
 - Still out: file watching, prefab overrides, in-place template editing.
 
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)

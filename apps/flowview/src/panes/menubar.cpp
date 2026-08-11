@@ -259,6 +259,50 @@ namespace flowview
 		requestSwap(ctx, {DocumentSwap::Open, target, true, std::nullopt});
 	}
 
+	void MenuBarPane::reloadTemplates(AppContext& ctx, const flow::Graph& activeGraph)
+	{
+		// SNAPSHOT -> INVALIDATE -> RESTORE, through the loader that already exists. Patching each
+		// instance in place (swap the pointer, re-sync the ports, rectify the interface cache) would be
+		// a second implementation of what the loader does — the shape that produced M5's bugs six and
+		// eight — for a rebuild of a document that is small by construction and is already what undo
+		// runs on every edit (ADR-0013).
+		const data::Value before = snapshotGraph(documentToSave(ctx, activeGraph), ctx.app->nodeFactory(), ctx.layout);
+		ctx.templates.clear();
+
+		flow::serialize::LoadResult result = restoreGraph(before, ctx.app->nodeFactory(),
+														  ctx.currentPath.parent_path(), &ctx.templates);
+		ctx.loadIssues.clear();
+		for (const flow::serialize::LoadIssue& issue : result.issues)
+		{
+			const Issue::Severity sev = issue.severity == flow::serialize::Severity::Error ? Issue::Severity::Error : Issue::Severity::Warning;
+			ctx.loadIssues.push_back({sev, "reload: " + issue.message, {}});
+		}
+
+		// Dirty only if the DOCUMENT actually changed. A template edit that leaves its interface alone
+		// changes nothing this document stores, so nothing here should claim there is unsaved work; one
+		// that adds or drops a pin rewrites the interface cache, and does.
+		const data::Value after = snapshotGraph(result.graph, ctx.app->nodeFactory(), result.editor);
+		if (after != before)
+			ctx.dirty = true;
+
+		// Stay where the user is, keeping their selection — a reload is a refresh, not a navigation.
+		ctx.pendingPath = ctx.activePath;
+		ctx.pendingReselect = selectedNodes(ctx.canvas);
+		ctx.loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
+		ctx.pendingLayout = std::move(result.editor);
+		ctx.loadRequested = true;
+		// No pendingBaseline and no undo push: a reload is not an edit, and undo could not take you back
+		// past one anyway — every restore re-resolves against the CURRENT cache, so an older document
+		// would simply come back with the newer templates.
+		//
+		// Known consequence, accepted (ADR-0013): when a reload DID change the document, the history's
+		// current state is still the pre-reload one, so the next edit's undo steps back past the reload
+		// too. What comes back is the same graph — its ports are re-derived from the templates on disk —
+		// with a stale interface cache, which rectification then reports. Recording the reloaded
+		// document here would tidy that at the cost of making the reload look like an undoable step,
+		// which is exactly what it cannot be.
+	}
+
 	void MenuBarPane::undo(AppContext& ctx)
 	{
 		if (ctx.undo.canUndo())
@@ -359,6 +403,11 @@ namespace flowview
 		const flow::Graph& document = documentToSave(ctx, activeGraph);
 		if (saveGraph(ctx.currentPath.string(), document, ctx.app->nodeFactory(), ctx.layout))
 		{
+			// This file may be somebody's template — including, one Return away, this document's own
+			// parent. REQUIRED, not tidiness: Edit Template... -> Save -> Return works because the
+			// return re-reads the file, and a cache entry holding the pre-edit definition would
+			// quietly serve it instead.
+			ctx.templates.invalidate(templateKey(ctx.currentPath));
 			ctx.dirty = false;
 			noteGraphPath(ctx.session, ctx.currentPath); // saving makes it the current document too
 			saveSession(ctx.session);
@@ -382,7 +431,8 @@ namespace flowview
 			gui::message("Save failed", "Could not write " + file.string(), true);
 			return false;
 		}
-		ctx.currentPath = file; // remember for plain Save
+		ctx.templates.invalidate(templateKey(file)); // as for Save: the file written may be a template
+		ctx.currentPath = file;						 // remember for plain Save
 		ctx.dirty = false;
 		noteGraphPath(ctx.session, file);
 		saveSession(ctx.session);

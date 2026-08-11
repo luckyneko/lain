@@ -20,6 +20,7 @@ using flowview::Crumb;
 using flowview::enclosingLinkedGroup;
 using flowview::findLayoutAt;
 using flowview::GraphPath;
+using flowview::hasLinkedGroups;
 using flowview::layoutAt;
 using flowview::resolveEditable;
 using flowview::resolvePath;
@@ -216,4 +217,20 @@ TEST_CASE("syncing the active path carries an inner interface out to the group's
 	REQUIRE(root.node(group).outputCount() == 1);
 
 	REQUIRE_FALSE(syncPathGroups(root, GraphPath{group})); // settles: a quiet frame reports no change
+}
+
+TEST_CASE("a document knows whether it links anything, at any depth", "[groupnav]")
+{
+	// What gates Reload Linked Groups: an item that is always enabled says nothing about whether it
+	// has work to do. The nesting matters — a link is most often INSIDE an inline group, and a scan of
+	// the root alone would report a document with one as having none.
+	Graph root;
+	REQUIRE_FALSE(hasLinkedGroups(root));
+
+	const NodeId wrapper = addGroup<InlineGroupNode>(root, "wrapper");
+	REQUIRE_FALSE(hasLinkedGroups(root)); // an inline group is not a link
+
+	Graph& inner = static_cast<InlineGroupNode&>(root.node(wrapper)).inner();
+	addGroup<LinkedGroupNode>(inner, "linked");
+	REQUIRE(hasLinkedGroups(root));
 }

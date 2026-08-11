@@ -1749,15 +1749,16 @@ now settled.
 - **Shared definitions for linked groups.** M6 makes and scheduler-tests it as *safe* — ADR-0010's
   sharing constraint falls — but LinkedGroupNode keeps its copied inner Graph in this milestone.
   Shared template ownership/cache and reload propagation are **Milestone 7** (grilled 2026-08-10,
-  [ADR-0013](docs/adr/0013-shared-template-definitions.md)); file watching stayed out of that too. Do
-  not imply template edits propagate live until M7 lands.
+  [ADR-0013](docs/adr/0013-shared-template-definitions.md)), **now built**; file watching stayed out of
+  that too, so a template edit made outside the app reaches the document through the explicit
+  Reload gesture (or a save + reopen), never live.
 - **In-run liveness release.** M6 bounds retention *after* a run, not the peak *during* one. Releasing
   a value once every consumer has read it is separable, and cheap to add later precisely because
   `PortValue` payloads are already shared and immutable.
 
-## Milestone 7 — shared template definitions (grilled 2026-08-10)
+## Milestone 7 — shared template definitions (grilled 2026-08-10, **COMPLETE** 2026-08-11)
 
-**Designed, not started.** M6 removed the reason every linked group owned a private copy of its
+**All three slices built and live-verified.** M6 removed the reason every linked group owned a private copy of its
 template: with values in an `Evaluation`, N instances can share one `const Graph`. M6 proved that
 capability through the real schedulers but deliberately left `LinkedGroupNode` copying. This
 milestone makes it real. Decisions in
@@ -1829,11 +1830,30 @@ Each step stands alone and leaves the suite green.
      warning-clean; format-check clean. Live headless: a hand-built document with **two linked groups
      on one template** resolves, mirrors both faces, and pushes two DIFFERENT images through the one
      shared definition to two distinct results; save ⇒ load ⇒ save stays byte-identical.
-3. **Reload.** `Reload linked groups` drops the whole cache and rebuilds via
-   snapshot → invalidate → restore; saving any document drops that path's entry. Reload pushes **no**
-   undo entry (undo cannot restore the previous template — every restore re-resolves against the
-   current cache) and marks the document dirty only when the rebuilt document differs, which is the
-   comparison `UndoStack::push` already performs.
+3. ✅ **Reload.** *(built 2026-08-11; gui-mode live-verified 2026-08-11.)* **File ▸ Reload Linked Groups**
+   clears the cache and rebuilds the document through snapshot → invalidate → restore — the loader
+   that already exists, not a second in-place patch path. It keeps the user where they are (active
+   path + canvas selection, like an undo), reports its issues into the Issues panel, pushes **no** undo
+   entry, and marks the document dirty only when the rebuilt document actually differs (a `data::Value`
+   comparison of the before/after snapshots — a template edit that leaves its interface alone changes
+   nothing this document stores). The item is greyed out when the document links nothing
+   (`groupnav::hasLinkedGroups`, which recurses — a link most often sits inside an inline group).
+   - **Saving any document drops that path's cache entry**, in both Save and Save As. Required, not
+     tidiness: `Edit Template… → Save → Return` works because the return re-reads the file.
+   - **One canonical key, one function.** `graphio::templateKey` (weakly_canonical, so a not-yet-existing
+     template still has a stable key) is used by the resolver *and* by save-invalidation. A key computed
+     two ways eventually disagrees with itself, and the failure is silent — an invalidation that misses
+     simply keeps serving the definition it was told to drop.
+   - **Accepted consequence, noted in the code:** after a reload that changed the document, the undo
+     cursor still sits on the pre-reload state, so the next edit's undo steps past the reload as well.
+     What returns is the same graph (ports are re-derived from the templates on disk) with a stale
+     interface cache, which rectification reports. Recording the reloaded document would tidy that at
+     the cost of making the reload look like an undoable step, which it cannot be.
+   - Verified: `ctest` **407/407** — one file has one key however spelled (and it is the key the
+     resolver reports); a stale entry demonstrably keeps serving the old definition, while dropping
+     that one key (Save) or clearing the cache (Reload) picks the edit up, group face and all; and
+     `hasLinkedGroups` finds a link nested inside an inline group. The gesture itself needs the
+     window — its pieces are what the tests pin down.
 
 ### Not in this milestone
 

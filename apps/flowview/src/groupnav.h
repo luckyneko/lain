@@ -86,6 +86,12 @@ namespace flowview
 	// radius of editing that template, which the Edit affordance states before you commit to it.
 	int countLinkedInstances(const lain::flow::Graph& root, const std::string& source);
 
+	// Whether `root` contains any linked group at all (at any depth) — what Reload Linked Groups has
+	// to work on. Separate from countLinkedInstances rather than an "empty source means any" flag on
+	// it: the two questions are different, and one function answering both by argument value is how a
+	// caller ends up asking the wrong one.
+	bool hasLinkedGroups(const lain::flow::Graph& root);
+
 	// The layout subtree for `path`, creating empty levels as needed — so the canvas reads and writes
 	// positions for the level it is actually showing, and other levels keep theirs.
 	lain::flow::serialize::EditorTree& layoutAt(lain::flow::serialize::EditorTree& root, const GraphPath& path);
