@@ -319,7 +319,9 @@ pixels. The **write library is also done** — `io::write` + the `ImageWriter` s
 `canEncode`) + png / tiff / jpeg encoders (see the write pass below) — and so is its **interim save
 consumer**: flowview saves any image output through a native file dialog (Mac-verified). The M3
 write pass is **complete**; the `ImageWriteNode` is **superseded** — see the M4 reframe below. The
-gui-mode thumbnail follow-on is the only M3 loose end.
+gui-mode thumbnail follow-on is **also done** (closed 2026-07-14 by the RGBA8 normalisation fix in
+`lain::gui`'s texture bridge — a CPU `image::Image` port previews through `PreviewCache` like any
+other): **M3 has no loose ends.**
 
 **Driving consumer:** a `flow` node that loads a *real* image file off disk and shows it in
 `flowview` — the first source that isn't synthetic. That one goal is what pulls FileIO and an
@@ -579,7 +581,8 @@ add/remove (and reorder later), so:
 
 **Vertical (b) is complete** — dynamic ports work end-to-end: add / rename / remove typed boundary
 pins in the gui, on stable `PortId`s so a mid-list removal never corrupts sibling edges. Deferred as
-planned: Merge / fan-in port, reorder, cli named-binding.
+planned: Merge / fan-in port and port reorder. (**cli named-binding was deferred here but has since
+landed** — Tier A #1's `run` subcommand binds boundary inputs by name, `--<boundary> <value>`.)
 
 **Mutation design (grilled, settled):**
 - **`DynamicPortsNode`** marker base (the gui `dynamic_cast`s to show ±): `dynamicSide()` (which side
@@ -598,8 +601,8 @@ planned: Merge / fan-in port, reorder, cli named-binding.
   editable field — edges reference `PortId`, so a rename touches only the display string).
 - **gui:** the Interface panel gains a per-node **"+"** (registry type menu) and a per-pin **"×"**
   that **always confirms** ("Remove 'name'? N link(s)"), then `edit::removePort`.
-- **Deferred:** Merge / fan-in port; port **reorder**; cli **named-binding** (`--input cam=foo.png`,
-  a post-serialization concern).
+- **Deferred:** Merge / fan-in port; port **reorder**. (cli **named-binding** was listed here too;
+  it landed with Tier A #1's `run` subcommand — `run --<boundary> <value>`, keyed on the pin name.)
 
 **Build order (vertical a)** — three commits, each strict-clean + tested:
 1. ✅ **flow core — the boundary seam** (built, tested). `GroupInputNode` / `GroupOutputNode`
@@ -1318,10 +1321,11 @@ byte-idempotent.
    dirty, and drops `previewTarget` — done at the START of the frame, before `newFrame()`, which is
    also the safest point to release descriptors (no draw data references them yet).
 
-   **Residual, not fixed:** `ctx.saveFormat` is also keyed by `PinKey` and persists across navigation,
-   so a same-numbered pin at another level can inherit a format choice. Cosmetic — the dropdown falls
-   back when the stored format isn't in that port's list — but if a third cross-level `PinKey` consumer
-   appears, the key should gain a level rather than relying on "only one level is cached at a time".
+   **Residual — SINCE FIXED by M6 step 5.** `ctx.saveFormat` was also keyed by `PinKey` and persisted
+   across navigation, so a same-numbered pin at another level could inherit a format choice. The note
+   said the key should gain a level rather than relying on "only one level is cached at a time"; that
+   is exactly what M6 step 5 did — `PinKey` is now `{GraphPath path, PortAddress port}`, and
+   `saveFormat` is keyed by it like every other consumer.
 
    **Breadcrumb bar reworked** (2026-07-31) — navigation and document identity now live in one strip,
    and the `Group` menu is retired:
@@ -1392,9 +1396,10 @@ byte-idempotent.
    right-aligned `Edit <template>` button, the return stack and the disabled Interface / Inspector
    controls were all in use before the watermark was reported as too pale.
 
-   **Only the last two changes are unconfirmed:** the watermark's new tone + size
-   (`CanvasStyle::readOnlyMark`, ~1.8x), and making node LAYOUT read-only
-   (`SetNodeDraggable` + its transient message).
+   **The last two changes — the watermark's new tone + size (`CanvasStyle::readOnlyMark`, ~1.8x) and
+   making node LAYOUT read-only (`SetNodeDraggable` + its transient message) — were confirmed
+   2026-08-11.** With that, **every gui item in slice 6 is live-verified** and nothing from the M5 pass
+   is outstanding.
 
 ### Preview sizing — thumbnails fit their pane (2026-07-31, live-verified)
 
@@ -1442,15 +1447,8 @@ it now opens at fit and zooms.
 
 ### Deferred (designed, not built)
 
-- **`Group Selected`** — move a selection into a new inner graph, computing the **cut-set**: each
-  distinct *outer output port* feeding the selection → **one** boundary input pin (dedupe by source
-  `PortAddress`, so a fan-out doesn't spray duplicate pins); each distinct *inner output port* feeding
-  outside → **one** boundary output pin; pin names derived from the mirrored port and uniquified via
-  `hasPortNamed`; group placed at the selection centroid; moved nodes' editor metadata migrates into
-  the inner body; **refuse if the selection contains a boundary node** (grouping the graph's own
-  interface would leave the document with no interface).
-- **`Ungroup`** (splice inner nodes into the parent with fresh ids, resolving each boundary pin back to
-  direct edges), **`Save as Template`** (inline → linked), **`Make Local`** (linked → inline).
+- ✅ **`Group Selected`** / **`Ungroup`** / **`Save as Template`** / **`Make Local`** — designed here,
+  **built 2026-08-11**; see "Group authoring gestures" after Milestone 7 for the landing notes.
 - **Prefab overrides** — per-instance divergence from a template. Needs a template-stable inner-node
   address + conflict rules; ADR-0010 explains why parameterising via boundary pins is preferred.
 - **Plan caching** across runs; **file-watch** on templates (manual *Reload linked groups* first);
@@ -1865,6 +1863,96 @@ Each step stands alone and leaves the suite green.
 - **In-place template editing.** `Edit Template…` stays the explicit act. Sharing raises the stakes of
   a template edit rather than lowering them, and step 1's const accessor is what enforces it.
 
+## Group authoring gestures (built + live-verified 2026-08-11)
+
+The four gestures M5 designed and deferred. The hold on them was lifted at M6 step 5 (they live in the
+panes steps 4 and 5 rewrote), and M7 settled what a linked group's interior *is* — which is what makes
+two of them expressible at all. Building a nested pipeline by hand was the friction they remove:
+authoring a subgraph meant writing a separate document and pointing a link at it.
+
+**The shape: flow does the surgery, the host does the canvas, the files and the layout.** Every graph
+operation here is a `flow::edit` free function over a plain `Graph`, tested without a window (25 cases);
+flowview's half is reading the selection, carrying positions across the change, and touching the disk.
+
+- **`Graph::extract(NodeId) -> unique_ptr<Node>`** — the primitive both directions needed and neither
+  had: removing a node while keeping it. `removeNode` is now this with the result dropped, so there is
+  one removal, not two. **The node keeps its NodeId**, which is safe only because ADR-0011 made that a
+  uuid — globally unique rather than unique within its graph — so identity survives the move and every
+  host-side key built on it (layout entry, canvas int, preview key) still points at the right node.
+- **`edit::groupSelected`** computes the cut-set exactly as designed: one boundary pin per distinct
+  *source port* (a fan-out becomes one pin carrying one value, not a pin per consumer), names taken
+  from the mirrored port and uniquified with `_2` (port names are identifiers — they double as cli
+  flags and as the on-disk edge key), internal edges moved verbatim, outer wiring re-formed through
+  the group.
+- **Two refusals beyond the designed one**, both found by asking what a cut-set can contain:
+  - **`WouldCycle`.** Contracting a selection a value LEAVES and RE-ENTERS needs the group to run both
+    before and after the nodes in between. The graph was and stays acyclic — it is the contraction that
+    is impossible. Without the check `Graph::connect` would refuse those edges one at a time, leaving a
+    group built and silently unwired.
+    Detected by walking forward from everything the selection feeds and asking whether it comes back.
+  - **`UnnamedPinType`.** A boundary pin is replayed on load through its **port-type registry key**,
+    and the serializer *skips a dynamic pin it cannot name* — so grouping across an unregistered type
+    would give a group that works perfectly until saved and comes back missing that pin and every edge
+    through it. Refusing is the same call the image encoders make: reject rather than degrade.
+  - Every refusal is **atomic and checked up front**, before the first node moves. A half-formed group
+    is not something a user can undo their way out of by hand.
+- **`edit::ungroup`** is the inverse, resolving each boundary pin back to the direct edges it stood for
+  (whatever fed the outer input now feeds every inner consumer of the matching pin, and so on). Inner
+  nodes keep their ids here too. **Refuses a linked group** — its interior is the template's definition,
+  shared with every other instance (ADR-0013), so there is nothing here this document owns to splice;
+  Make Local first. Contrary to the M5 sketch it does **not** mint fresh ids: with uuids there is
+  nothing to avoid colliding with, and preserving them is what keeps the canvas steady.
+- **`edit::replaceGroup`** is the half Save as Template and Make Local share: swap what backs a group,
+  keeping the group. **The replacement keeps the original NodeId** — not an optimisation but the honest
+  answer, since from the document's point of view this is the same group, differently backed. Parent
+  edges are carried across by **pin name** (the replacement's PortIds are its own, and both kinds derive
+  their names from the same inner boundary); a pin the new interface lacks is **reported** in `dropped`
+  rather than silently lost.
+- **`Save as Template`** writes the interior out as a document, invalidates that path in the template
+  cache (same rule as Save — an invalidation that is skipped keeps serving what it was told to drop),
+  then re-points the group at it through `serialize::resolveLinkedGroup` — so the instance shares the
+  cached definition with every other one built from that file, including ones added later.
+- **`Make Local`** reads the template **from disk** rather than copying the definition in memory. That
+  is the honest meaning of the gesture, and also the only way: a definition is a `shared_ptr<const
+  Graph>` precisely so no instance can reach in and take it. Loaded with **no cache** — what is being
+  built is a private body, not another sharer.
+- **Layout migration is pure data, and lives in `groupnav`** (which owns the layout tree) rather than
+  beside the gestures, so it is unit-tested in the driver-free flowview suite. `descendLayout` /
+  `ascendLayout` move entries between levels under unchanged keys; `liftedPositions` translates a
+  group's contents so their centre of mass lands on where the group sat — verbatim inner coordinates
+  would fling them to a corner of the canvas, since an inner graph's grid space starts near the origin.
+  Splitting them out was not tidiness: **a layout mistake here is silent** — a node whose entry did not
+  travel just appears in a default column, which reads as a bug in something else entirely. It earned
+  its keep immediately, catching a **nesting bug in the first cut**: a moved node may itself be a
+  GROUP, and only its own position was travelling, so grouping a group (or ungrouping one that held
+  one) discarded everything below it. Both functions now carry the whole subtree.
+- **Wiring:** the **Edit menu** (Group Selected `Ctrl+G`, Ungroup `Ctrl+Shift+G`, Save Group as
+  Template…, Make Group Local), each greyed by its own availability query, plus the two shortcuts. Not a
+  Group menu: that one was retired in M5 precisely because a menu greyed out almost always is the worse
+  discovery path. All four act on the canvas selection and resolve their own level, as
+  `Add ▸ Linked Group…` does. A refusal reports through the transient-issue row (new generic
+  `AppContext::noteMessage`, which `noteRejectedConnect` / `noteReadOnlyEdit` now go through) — a
+  gesture that silently does nothing reads as a bug.
+
+**Verified:** `ctest` **430/430** (+23), warning-clean, format-check clean, headless `run --example`
+unchanged. The suite proves what matters rather than what is easy: most cases run the graph through the
+**production SerialScheduler before and after** and compare values, because a cut-set wired plausibly
+but wrongly passes a structural check. The integration case is in `flow-serialize`: a group *made by
+groupSelected* round-trips through the document, re-runs to the same value, re-saves **byte-identically**,
+and ungroups back to the original — which is the one property no unit test of `edit::` can reach, and
+exactly what `UnnamedPinType` exists to protect.
+
+**gui-mode live-verified by the repo owner 2026-08-11**, which was the real risk: every gesture reaches
+the canvas, and all ten of M5's bugs came from gui seams headless verification cannot touch (imnodes'
+assert contract, frame ordering, a rule applied in one pane and not its neighbours). This time the
+engine-side split held — no bugs came out of it.
+
+**Also fixed here (P0):** **`File ▸ Reload Linked Groups` had no menu item.** M7 slice 3 built
+`reloadTemplates` and `hasLinkedGroups`, tested both, and never added the `MenuItem` — so the gesture
+compiled, linked and was unreachable. Exactly M5's bug six ("an out-of-line member definition does not
+warn as unused, so the feature compiled and linked while being unreachable"), and it says the *reviewing
+dead code before it runs* habit is worth keeping: `grep` for a call site is what found it.
+
 ## Backlog (deferred — don't build speculatively)
 
 ### Tier A — when a real graph demands it
@@ -2000,7 +2088,9 @@ Each step stands alone and leaves the suite green.
 
 ## Open questions
 
-- Final names (`flow` / `flowview`, namespace).
+- ~~Final names (`flow` / `flowview`, namespace).~~ **Resolved** — settled and committed; see the
+  Decisions section (engine `lain::flow` / `libs/flow`, viewer `flowview` / `apps/flowview`,
+  internals `lain::flow::detail`).
 - Port type set: **resolved** — `PortValue` is an open type-erased slot (no `PortKind`
   tag, no GPU arms), keeping `flow` payload-agnostic and dependency-free. Since 2026-07-29
   it stores the payload **shared + immutable** (`shared_ptr<const void>` + `type_index`), so

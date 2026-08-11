@@ -72,15 +72,22 @@ namespace lain::flow
 
 	bool Graph::removeNode(NodeId id)
 	{
+		// One implementation, two uses: removing a node and moving one out differ only in whether
+		// the caller wants what comes back.
+		return extract(id) != nullptr;
+	}
+
+	std::unique_ptr<Node> Graph::extract(NodeId id)
+	{
 		// The interface pair is not removable — see the Graph constructor. Refusing here (rather
 		// than in the editing layer) keeps the invariant total: no gesture, loader or paste path can
 		// leave a graph without a way in or out.
 		if (isBoundary(id))
-			return false;
+			return nullptr;
 
 		const auto it = m_nodes.find(id);
 		if (it == m_nodes.end())
-			return false;
+			return nullptr;
 
 		// A downstream consumer loses an input source when this node goes — its recipe changed, so
 		// bump it before the edges are dropped and every evaluation will recompute it.
@@ -96,10 +103,11 @@ namespace lain::flow
 									 [id](const Edge& e)
 									 { return e.from.node == id || e.to.node == id; }),
 					  m_edges.end());
+		std::unique_ptr<Node> node = std::move(it->second);
 		m_nodes.erase(it);
 		m_order.erase(std::remove(m_order.begin(), m_order.end(), id), m_order.end());
 		rebuildTopoOrder();
-		return true;
+		return node;
 	}
 
 	Connection Graph::connect(PortAddress from, PortAddress to)

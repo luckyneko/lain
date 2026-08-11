@@ -12,6 +12,7 @@
 
 #include <lain/flow/serialize/loadresult.h> // EditorTree — layout mirrors the nesting
 #include <lain/flow/types.h>
+#include <lain/math/types.h> // Vec2f — canvas positions, for the layout migration below
 
 #include <cstddef>
 #include <string>
@@ -96,4 +97,31 @@ namespace flowview
 	// positions for the level it is actually showing, and other levels keep theirs.
 	lain::flow::serialize::EditorTree& layoutAt(lain::flow::serialize::EditorTree& root, const GraphPath& path);
 	const lain::flow::serialize::EditorTree* findLayoutAt(const lain::flow::serialize::EditorTree& root, const GraphPath& path);
+
+	// --- Layout migration: keeping positions when nodes change level -----------------------------
+	// The pure-data half of the group gestures, here rather than beside them because this is where
+	// the layout tree is understood — and because a mistake in it is SILENT: a node whose entry did
+	// not travel simply appears in a default column, which reads as a bug in something else entirely.
+
+	// Move the entries for `moved` out of `parent` and into the subtree for `group` — Group Selected's
+	// layout half. The nodes keep their ids across the move (Graph::extract), so the entries move
+	// under the same keys; a node with no entry is skipped rather than given a placeholder. A moved
+	// node that is ITSELF a group takes its whole subtree along, since nesting is arbitrarily deep.
+	void descendLayout(lain::flow::serialize::EditorTree& parent, lain::flow::NodeId group,
+					   const std::vector<lain::flow::NodeId>& moved);
+
+	// The reverse, for Ungroup: lift the subtrees of `moved` out of `group`'s level into `parent`, then
+	// drop what is left of that level. Positions are NOT moved here — those have to be translated onto
+	// where the group sat, which is liftedPositions' job and which their nested contents do not need.
+	void ascendLayout(lain::flow::serialize::EditorTree& parent, lain::flow::NodeId group,
+					  const std::vector<lain::flow::NodeId>& moved);
+
+	// Where each of `moved` should land when a group sitting at `groupPos` is opened up: their
+	// arrangement from inside the group, translated so its centre of mass falls on the group's own
+	// position. Verbatim inner coordinates would not do — an inner graph's grid space starts near the
+	// origin, so the lifted nodes would fly off to a corner of a canvas the user is not looking at.
+	// A node with no recorded inner position falls back to `groupPos`.
+	std::vector<lain::math::Vec2f> liftedPositions(const lain::flow::serialize::EditorData& innerLayout,
+												   const std::vector<lain::flow::NodeId>& moved,
+												   lain::math::Vec2f groupPos);
 } // namespace flowview

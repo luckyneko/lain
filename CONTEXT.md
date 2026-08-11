@@ -193,6 +193,20 @@ outputs. (M4 — being built; the vocabulary is settled, the mechanics are in
 - **Override** *(deferred — prefab-style)* — per-instance divergence from a template's recipe.
   Deliberately not built: parameterising via boundary pins covers the cases, and overrides need a
   template-stable address for an inner node plus conflict rules.
+- **Cut-set** — the wiring that crosses a selection's edge, and therefore the interface a group made
+  from that selection must have. Deduplicated by **source port**, not by edge: one producer feeding
+  three selected inputs is one boundary pin carrying one value, not three pins carrying copies of it.
+  Computing it is what `edit::groupSelected` does; `edit::ungroup` resolves each pin back to the
+  direct edges it stood for. A selection a value **leaves and re-enters** has no cut-set — contracting
+  it would need the group to run both before and after the nodes in between — and is refused; the
+  graph itself is acyclic either way.
+- **Moving a node between levels** — `Graph::extract` hands ownership over and the receiving graph
+  adopts it **under the same NodeId**. Sound only because a NodeId is a uuid (ADR-0011): globally
+  unique rather than unique within its graph, so identity is a property of the node and not of where
+  it currently lives. That is what lets a host's per-node metadata — layout entry, canvas int, preview
+  key — follow a node up or down a level by the key it already has.
+  _Note_: this is why grouping is not a copy-and-delete. A rebuild through the serializer would mint
+  nothing new (a load preserves identity) but would also lose anything the recipe does not capture.
 
 ## Port arity — one value, a collection, or many pins
 

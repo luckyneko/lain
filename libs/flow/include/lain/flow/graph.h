@@ -64,6 +64,21 @@ namespace lain::flow
 		// group's inner graph, silently drop every edge the parent had wired to it.
 		bool removeNode(NodeId id);
 
+		// The same removal, handing back OWNERSHIP of the node so it can be re-seated in another
+		// Graph — what moving a node between nesting levels needs (edit::groupSelected lowering a
+		// selection into a new group, edit::ungroup lifting one back out). Returns nullptr for an
+		// unknown id or either boundary node, which is removeNode's refusal exactly; removeNode is
+		// this, with the node dropped rather than returned.
+		//
+		// Incident edges go the same way they do in removeNode: the node is leaving this graph
+		// either way, and a caller that means to re-create wiring elsewhere captured it first.
+		//
+		// The node KEEPS its NodeId, and the receiving `add(node, requestedId)` restores it. That is
+		// safe only because a NodeId is a uuid (ADR-0011) — globally unique rather than unique within
+		// its graph — so a node carries its identity across a move, and the editor layout, preview
+		// keys and canvas ints built on that id all survive it.
+		std::unique_ptr<Node> extract(NodeId id);
+
 		std::size_t nodeCount() const { return m_nodes.size(); }
 		bool contains(NodeId id) const { return m_nodes.count(id) != 0; }
 

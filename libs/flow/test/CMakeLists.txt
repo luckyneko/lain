@@ -15,6 +15,7 @@ add_executable(test-flow
 	test_group.cpp
 	test_nestedrun.cpp
 	test_groupsync.cpp
+	test_groupedit.cpp
 	test_dynamicports.cpp
 	test_serialize_support.cpp
 	test_incremental.cpp

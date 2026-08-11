@@ -676,3 +676,49 @@ TEST_CASE("an invalidated template is rebuilt on the next load", "[flow-serializ
 	REQUIRE(firstDefinition.use_count() >= 1);							   // and the old one is still alive
 	REQUIRE(runAndRead(afterward.graph) == 105);
 }
+
+TEST_CASE("a group MADE by groupSelected round-trips through the document", "[flow-serialize][group]")
+{
+	// The property the whole gesture stands on, and the one no unit test of edit:: can reach: a group
+	// built from a cut-set has boundary pins that were created at RUNTIME, so they survive only if
+	// they serialize as dynamic pins and replay on load. If they did not, the group would work
+	// perfectly until saved and come back with no interface and no wiring — which is precisely what
+	// GroupRefusal::UnnamedPinType exists to prevent, and this is the case where it holds.
+	registerPortType<int>("Int");
+	const Factory<Node> factory = groupFactory();
+	const ValueCodecs codecs = intCodecs();
+
+	// const(5) -> add(+100) -> the graph's own output. Then group the middle node.
+	Graph source;
+	const NodeId konst = source.add<ConstNode>();
+	Node& konstNode = source.node(konst);
+	konstNode.setParam(konstNode.param(0).id(), 5);
+	const NodeId add = source.add<AddNode>();
+	Node& addNode = source.node(add);
+	addNode.setParam(addNode.param(0).id(), 100);
+	const PortId y = source.boundaryOutputNode().addBoundary<int>("y");
+	REQUIRE(source.connect({konst, source.node(konst).output(0).id()}, {add, source.node(add).input(0).id()}) == Connection::Ok);
+	REQUIRE(source.connect({add, source.node(add).output(0).id()}, {source.boundaryOutputNode().id(), y}) == Connection::Ok);
+	REQUIRE(runAndRead(source) == 105);
+
+	const edit::GroupResult grouped = edit::groupSelected(source, {add});
+	REQUIRE(grouped.ok());
+	REQUIRE(runAndRead(source) == 105); // grouping is a refactor of the document, not of the result
+
+	const Value doc = toValue(source, factory, codecs);
+	LoadResult loaded = fromValue(doc, factory, codecs);
+	REQUIRE(loaded.clean());
+	REQUIRE(runAndRead(loaded.graph) == 105);				// the cut-set's pins came back, and so did the wiring
+	REQUIRE(toValue(loaded.graph, factory, codecs) == doc); // and re-saving is byte-idempotent
+
+	// Ungrouping the reloaded document puts it back exactly as it started.
+	NodeId reloadedGroup;
+	for (const NodeId id : loaded.graph.nodeIds())
+	{
+		if (dynamic_cast<const InlineGroupNode*>(&loaded.graph.node(id)) != nullptr)
+			reloadedGroup = id;
+	}
+	REQUIRE(reloadedGroup != NodeId{});
+	REQUIRE(edit::ungroup(loaded.graph, reloadedGroup).ok());
+	REQUIRE(runAndRead(loaded.graph) == 105);
+}

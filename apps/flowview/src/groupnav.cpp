@@ -1,5 +1,6 @@
 #include "groupnav.h"
 
+#include <lain/data/value.h> // the opaque per-node editor blob (x / y)
 #include <lain/flow/edit.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <vector>
 
 namespace flowview
 {
@@ -167,5 +169,87 @@ namespace flowview
 			current = &it->second;
 		}
 		return current;
+	}
+
+	void descendLayout(flow::serialize::EditorTree& parent, flow::NodeId group,
+					   const std::vector<flow::NodeId>& moved)
+	{
+		flow::serialize::EditorTree& inner = parent.groups[group];
+		for (const flow::NodeId id : moved)
+		{
+			if (const auto it = parent.nodes.find(id); it != parent.nodes.end())
+			{
+				inner.nodes[id] = it->second;
+				parent.nodes.erase(it);
+			}
+			// A moved node may ITSELF be a group, and its own subtree has to travel with it — a graph
+			// is nested arbitrarily deep, so moving only this level's positions would leave everything
+			// inside a grouped group in default columns the next time it is opened.
+			if (const auto it = parent.groups.find(id); it != parent.groups.end())
+			{
+				inner.groups[id] = std::move(it->second);
+				parent.groups.erase(it);
+			}
+		}
+	}
+
+	void ascendLayout(flow::serialize::EditorTree& parent, flow::NodeId group,
+					  const std::vector<flow::NodeId>& moved)
+	{
+		const auto groupIt = parent.groups.find(group);
+		if (groupIt == parent.groups.end())
+			return;
+		// The mirror of descendLayout's second half. Their POSITIONS are not moved here — those have to
+		// be translated onto the group's own spot (liftedPositions), which their nested contents do not.
+		for (const flow::NodeId id : moved)
+		{
+			const auto it = groupIt->second.groups.find(id);
+			if (it != groupIt->second.groups.end())
+				parent.groups[id] = std::move(it->second); // std::map: inserting keeps groupIt valid
+		}
+		parent.groups.erase(group); // the group is gone, and with it the level it described
+	}
+
+	// A layout blob's position, or `fallback` when it has none — the record shape ("x" / "y" in an
+	// opaque data::Value) and the missing case, in one place.
+	static math::Vec2f layoutPos(const flow::serialize::EditorData& layout, flow::NodeId id, math::Vec2f fallback)
+	{
+		const auto it = layout.find(id);
+		if (it == layout.end())
+			return fallback;
+		const data::Value* x = it->second.find("x");
+		const data::Value* y = it->second.find("y");
+		if (x == nullptr || y == nullptr)
+			return fallback;
+		return math::Vec2f{static_cast<float>(x->asDouble().value_or(fallback.x)),
+						   static_cast<float>(y->asDouble().value_or(fallback.y))};
+	}
+
+	std::vector<math::Vec2f> liftedPositions(const flow::serialize::EditorData& innerLayout,
+											 const std::vector<flow::NodeId>& moved, math::Vec2f groupPos)
+	{
+		std::vector<math::Vec2f> positions;
+		positions.reserve(moved.size());
+		for (const flow::NodeId id : moved)
+			positions.push_back(layoutPos(innerLayout, id, groupPos));
+		if (positions.empty())
+			return positions;
+
+		// Translate by the difference of the two centres of mass, which moves the whole arrangement
+		// onto the group without disturbing how the nodes sit relative to each other.
+		math::Vec2f sum{0.0f, 0.0f};
+		for (const math::Vec2f& p : positions)
+		{
+			sum.x += p.x;
+			sum.y += p.y;
+		}
+		const float n = static_cast<float>(positions.size());
+		const math::Vec2f delta{groupPos.x - sum.x / n, groupPos.y - sum.y / n};
+		for (math::Vec2f& p : positions)
+		{
+			p.x += delta.x;
+			p.y += delta.y;
+		}
+		return positions;
 	}
 } // namespace flowview

@@ -276,6 +276,49 @@ sits inside an inline group).
   **gui-mode live-verified 2026-08-11 — M7 is COMPLETE.**
 - Still out: file watching, prefab overrides, in-place template editing.
 
+### Update 2026-08-11 — group authoring gestures built (Group / Ungroup / Save as Template / Make Local)
+
+The four gestures M5 designed and deferred, whose hold M6 step 5 lifted. See WORK.md's "Group authoring
+gestures" for the full landing notes. `ctest` **430/430**, warning-clean, format-check clean; headless
+`run --example` unchanged; **gui-mode live-verified by the repo owner 2026-08-11** — every gesture
+reaches the canvas, which is where all ten of M5's bugs lived, and this time it produced none.
+
+- **`Graph::extract(NodeId) -> unique_ptr<Node>`** — removing a node while keeping it, the primitive
+  both directions needed. `removeNode` is now this with the result dropped. The node **keeps its
+  NodeId**, safe only because ADR-0011 made that a uuid: identity survives a move between graphs, so
+  layout entries, canvas ints and preview keys all keep pointing at the right node.
+- **`edit::groupSelected`** computes the cut-set (one pin per distinct SOURCE port, so a fan-out is one
+  pin carrying one value; names from the mirrored port, uniquified `_2` since port names are
+  identifiers). Two refusals beyond the designed boundary-node one, both atomic and checked before the
+  first node moves: **`WouldCycle`** (a value that leaves the selection and re-enters — the contraction
+  is impossible, not the graph) and **`UnnamedPinType`** (a crossing type with no port-type registry
+  key: the serializer skips a dynamic pin it cannot name, so the group would work until saved and come
+  back missing that pin and its wiring — reject rather than degrade, as the image encoders do).
+- **`edit::ungroup`** resolves each boundary pin back to the direct edges it stood for. Refuses a
+  LINKED group (its interior is the template's, shared with every instance). Contrary to the M5 sketch
+  it does **not** mint fresh ids — with uuids there is nothing to avoid colliding with.
+- **`edit::replaceGroup`** is what Save as Template and Make Local share: swap what backs a group,
+  keeping the group **and its NodeId** (from the document's point of view it is the same group,
+  differently backed). Parent edges carry across by **pin name**; a pin the new interface lacks is
+  reported in `dropped`, not silently lost.
+- **Make Local reads the template from disk**, not from the shared definition in memory — the honest
+  meaning of the gesture, and the only way, since a definition is a `shared_ptr<const Graph>` precisely
+  so no instance can take it. Loaded with **no cache**: a private body is not another sharer.
+- **Layout migration lives in `groupnav`** (`descendLayout` / `ascendLayout` / `liftedPositions`), not
+  beside the gestures, so it is unit-tested driver-free. Lifted nodes are translated so their centre of
+  mass lands on where the group sat; verbatim inner coordinates would fling them off-canvas. Split out
+  because a layout mistake here is **silent** — a node whose entry did not travel just lands in a
+  default column — and that paid off at once: a moved node may itself be a GROUP, and the first cut
+  carried only its position, so grouping a group discarded everything below it.
+- **Wiring:** the **Edit menu** + `Ctrl+G` / `Ctrl+Shift+G`, each greyed by its own availability query.
+  Not a Group menu — M5 retired that one because a menu greyed out almost always is the worse discovery
+  path. New generic `AppContext::noteMessage` carries refusals to the transient row.
+- **Found and fixed here:** **`File ▸ Reload Linked Groups` had no menu item.** M7 slice 3 built and
+  tested `reloadTemplates` + `hasLinkedGroups` but never added the `MenuItem`, so the gesture compiled,
+  linked, and was unreachable — M5's bug six exactly. Also corrected four stale claims in WORK.md (M3's
+  "only loose end", the `saveFormat` residual M6 step 5 fixed, cli named-binding, and the settled names
+  question), and dated M5 slice 6's last two unconfirmed gui items — **no gui work is now unverified**.
+
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
 
 The last step of Milestone 6. `PinKey` — the key the preview cache, Inspector, Interface, Preview
@@ -627,8 +670,9 @@ when an edit is actually attempted — and closing that loop exposed a hole: rea
 on the canvas, so the Interface pane's ± / rename and the Inspector's param edits were silently lost on
 save inside a linked group. Both now use `BeginDisabled(!editable)`.
 **Slice 6 was live-driven by the repo owner throughout (2026-07-29 → 07-31), each fix exercised as it
-landed — which is where all ten bugs came from; the engine slices produced none. Unconfirmed only: the
-watermark's restyle and the read-only node-layout change, both made after the last report.**
+landed — which is where all ten bugs came from; the engine slices produced none. The two changes made
+after the last report — the watermark's restyle and the read-only node-layout change — were confirmed
+2026-08-11, so slice 6 is fully live-verified.**
 
 **Slice 5 — nested serialization.** The format splits as designed: a **body** is `{nodes, edges,
 editor}`, a **document** is a body plus `{version}`; `toValue`/`fromValue` are thin wrappers over

@@ -2,11 +2,12 @@
 
 #include "../appcontext.h"
 #include "../flowviewapp.h"
-#include "../graphio.h"	 // loadGraph / saveGraph
-#include "../groupnav.h" // enclosingLinkedGroup (Edit Template...)
-#include "../scene.h"	 // nodeCatalog (the Add menu grouping) + buildNewScene
-#include "../session.h"	 // noteGraphPath / saveSession (Open Recent + reopen-on-launch)
-#include "canvasstate.h" // collectLayout (canvas positions for the saved editor section)
+#include "../graphio.h"	  // loadGraph / saveGraph
+#include "../groupedit.h" // the group-authoring gestures (Edit menu)
+#include "../groupnav.h"  // enclosingLinkedGroup (Edit Template...)
+#include "../scene.h"	  // nodeCatalog (the Add menu grouping) + buildNewScene
+#include "../session.h"	  // noteGraphPath / saveSession (Open Recent + reopen-on-launch)
+#include "canvasstate.h"  // collectLayout (canvas positions for the saved editor section)
 
 #include <lain/app/application.h>
 #include <lain/data/value.h> // Value (undo/redo snapshot restored via applyRestore)
@@ -475,6 +476,12 @@ namespace flowview
 				if (gui::MenuItem("Save As...", (m + "Shift+S").c_str()))
 					saveAsDialog(ctx, graph);
 				gui::Separator();
+				// Enabled only when there is something to reload, and asked of the ROOT: the reload
+				// rebuilds the whole document, and a link most often sits inside an inline group, so a
+				// question about the active level would grey the item out exactly where it is needed.
+				if (gui::MenuItem("Reload Linked Groups", nullptr, false, hasLinkedGroups(ctx.app->graph())))
+					reloadTemplates(ctx, graph);
+				gui::Separator();
 				if (gui::MenuItem("Quit", (m + "Q").c_str()))
 					app.quit();
 				gui::EndMenu();
@@ -485,6 +492,19 @@ namespace flowview
 					undo(ctx);
 				if (gui::MenuItem("Redo", (m + "Shift+Z").c_str(), false, ctx.undo.canRedo()))
 					redo(ctx);
+				gui::Separator();
+				// The group-authoring gestures. All four act on the CANVAS SELECTION, so they live
+				// here beside Undo/Redo rather than in a menu of their own — the retired Group menu
+				// was greyed out almost always, which made it the worse discovery path.
+				if (gui::MenuItem("Group Selected", (m + "G").c_str(), false, canGroupSelection(ctx, graph)))
+					edited |= groupSelection(ctx, graph);
+				if (gui::MenuItem("Ungroup", (m + "Shift+G").c_str(), false, canUngroupSelection(ctx, graph)))
+					edited |= ungroupSelection(ctx, graph);
+				gui::Separator();
+				if (gui::MenuItem("Save Group as Template...", nullptr, false, canUngroupSelection(ctx, graph)))
+					edited |= saveAsTemplate(ctx, graph);
+				if (gui::MenuItem("Make Group Local", nullptr, false, canMakeLocalSelection(ctx, graph)))
+					edited |= makeLocal(ctx, graph);
 				gui::EndMenu();
 			}
 			if (gui::BeginMenu("Add"))
@@ -534,6 +554,12 @@ namespace flowview
 			undo(ctx);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
 			redo(ctx);
+		// Group / ungroup. Guarded by the same availability the menu items use, so a shortcut pressed
+		// with nothing selected reports why rather than silently doing nothing.
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_G, ImGuiInputFlags_RouteGlobal))
+			edited |= ungroupSelection(ctx, graph);
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_G, ImGuiInputFlags_RouteGlobal))
+			edited |= groupSelection(ctx, graph);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))
 			saveAsDialog(ctx, graph);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))

@@ -160,10 +160,19 @@ namespace flowview
 		std::vector<Issue> loadIssues;
 		std::optional<Issue> recentIssue;
 		int recentIssueFrames = 0;
+
+		// A transient row, worded by the caller. Every gesture that can REFUSE reports through here:
+		// an action that silently does nothing reads as a bug, and the reason is usually specific
+		// enough ("a value leaves this selection and comes back") that a fixed message could not say it.
+		void noteMessage(Issue::Severity severity, std::string message)
+		{
+			recentIssue = Issue{severity, std::move(message), {}};
+			recentIssueFrames = 240; // ~4 s at 60fps
+		}
+
 		void noteRejectedConnect()
 		{
-			recentIssue = Issue{Issue::Severity::Warning, "Rejected connection: incompatible types or a cycle", {}};
-			recentIssueFrames = 240; // ~4 s at 60fps
+			noteMessage(Issue::Severity::Warning, "Rejected connection: incompatible types or a cycle");
 		}
 
 		// An edit gesture inside a linked group. Fired when the user actually TRIES something, because
@@ -171,8 +180,7 @@ namespace flowview
 		// state, this says why the thing you just did had no effect.
 		void noteReadOnlyEdit()
 		{
-			recentIssue = Issue{Issue::Severity::Info, "This group is linked - edit its template to change it", {}};
-			recentIssueFrames = 240;
+			noteMessage(Issue::Severity::Info, "This group is linked - edit its template to change it");
 		}
 
 		// Documents to come back to, innermost last — pushed by Edit Template…, popped by the return.
