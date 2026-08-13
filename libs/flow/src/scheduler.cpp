@@ -216,14 +216,63 @@ namespace lain::flow
 	//=========================================================================
 	// Scheduler — execution
 	//=========================================================================
-	void Scheduler::evaluate(const Graph& definition, Evaluation& evaluation, NodeId target)
+	void Scheduler::run(const Graph& definition, Evaluation& evaluation)
 	{
 		// One evaluation runs once at a time: the lease throws immediately rather than waiting, so an
-		// accidental reuse is a deterministic error instead of a race or a deadlock. Preparation
-		// happens with it, so all storage exists before any step touches it.
+		// accidental reuse is a deterministic error instead of a race or a deadlock. It is held for
+		// the WHOLE invocation, every stage of it, so staging changes nothing about the contract.
+		// Preparation happens with it, so all storage exists before any step touches it.
 		const Session session(definition, evaluation);
+		runStages(definition, evaluation, Mode::Push, NodeId{});
+	}
 
-		const Plan plan = buildEvalPlan(definition, evaluation, target);
+	void Scheduler::evaluate(const Graph& definition, Evaluation& evaluation, NodeId target)
+	{
+		const Session session(definition, evaluation);
+		runStages(definition, evaluation, Mode::Pull, target);
+	}
+
+	// The staging loop (ADR-0014). A map's arity comes from a collection computed during the run, so
+	// expansion can leave it as a FRONTIER and the loop plans again once the stage that computes its
+	// input has finished. Preparing those children happens HERE — between stages, on this thread —
+	// which is what keeps ADR-0012's "a coordinator grows evaluation storage, a worker task never
+	// does" literally true rather than merely intended.
+	//
+	// A graph with no map raises no frontier, so the loop runs exactly one stage and builds exactly
+	// one plan: the cost and the behaviour of a single-plan run, unchanged.
+	void Scheduler::runStages(const Graph& definition, Evaluation& evaluation, Mode mode, NodeId target)
+	{
+		while (true)
+		{
+			const Plan plan = (mode == Mode::Push)
+								  ? buildRunPlan(definition, evaluation)
+								  : buildEvalPlan(definition, evaluation, target);
+
+			if (plan.steps.empty())
+				break;
+
+			// The one thing the strategies differ in — except the pull path, which is serial for
+			// either of them by design (see evaluate()).
+			if (mode == Mode::Push)
+				executePlan(plan);
+			else
+				runSteps(plan);
+
+			// Nothing was deferred, so this stage was the whole run. Checking the frontiers rather
+			// than re-planning to discover there is nothing left is what keeps a mapless run at one
+			// plan build.
+			if (plan.frontiers.empty())
+				break;
+
+			// (Slice 4: prepare each frontier's child evaluations here, now that the stage just
+			// executed has produced the collection whose size gives their count.)
+		}
+	}
+
+	void Scheduler::runSteps(const Plan& plan)
+	{
+		// The plan is already in a valid serial order — every dependency points backwards — so the
+		// walk needs no further ordering work.
 		for (const Step& step : plan.steps)
 			runStep(step);
 	}
@@ -356,15 +405,9 @@ namespace lain::flow
 	//=========================================================================
 	// SerialScheduler
 	//=========================================================================
-	void SerialScheduler::run(const Graph& definition, Evaluation& evaluation)
+	void SerialScheduler::executePlan(const Plan& plan)
 	{
-		const Session session(definition, evaluation);
-
-		// The plan is already in a valid serial order — every dependency points backwards — so the
-		// walk needs no further ordering work.
-		const Plan plan = buildRunPlan(definition, evaluation);
-		for (const Step& step : plan.steps)
-			runStep(step);
+		runSteps(plan);
 	}
 
 	//=========================================================================
@@ -375,17 +418,15 @@ namespace lain::flow
 	{
 	}
 
-	void ParallelScheduler::run(const Graph& definition, Evaluation& evaluation)
+	// Every node's and every port's storage exists before a single task starts (the Session prepared
+	// it, and any later stage's storage is created between stages), so a worker only reads and writes
+	// entries that are already there — no task grows a shared container.
+	//
+	// One task per plan step, one precedence per plan edge — across EVERY level of nesting at once,
+	// so inner nodes of two sibling groups interleave freely and nothing is nested at runtime (no
+	// scheduler ever runs from inside a task).
+	void ParallelScheduler::executePlan(const Plan& plan)
 	{
-		// Every node's and every port's storage exists before a single task starts, so a worker only
-		// reads and writes entries that are already there — no task grows a shared container.
-		const Session session(definition, evaluation);
-
-		// One task per plan step, one precedence per plan edge — across EVERY level of nesting at
-		// once, so inner nodes of two sibling groups interleave freely and nothing is nested at
-		// runtime (no scheduler ever runs from inside a task).
-		const Plan plan = buildRunPlan(definition, evaluation);
-
 		lain::task::Flow flow;
 		std::vector<lain::task::Task> tasks;
 		tasks.reserve(plan.steps.size());

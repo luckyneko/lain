@@ -2023,9 +2023,29 @@ and `PortId` changes green, and the shape that makes a regression unambiguous.
      instead of alias fails the zero-copy test on the address comparison; making it non-owning fails
      the outlives test by reading freed memory (`820706605` where `20` was expected) — deterministically,
      in both of its sections.
-2. **Staged planning, with zero frontiers.** `run` / `evaluate` become the plan → execute → re-plan
-   loop, with no node yet able to raise a frontier, so **behaviour is identical** and the whole
-   existing suite is the regression test. The run lease moves to span all stages.
+2. ✅ **Staged planning, with zero frontiers — BUILT** (2026-08-13). `run` / `evaluate` are now the
+   plan → execute → re-plan loop, with nothing yet able to raise a frontier, so **behaviour is
+   identical** and the whole existing suite is the regression test. `ctest` **444/444** (+1),
+   warning-clean, format-check clean, headless `run --example` unchanged.
+   - **`run` moved to the base and stopped being virtual.** The staging loop, the run lease and all
+     planning are shared; a strategy now overrides only **`executePlan(const Plan&)`** — one stage,
+     already built and ordered. So a backend never plans, never takes the lease and never decides
+     when the run is over, which is the same reasoning that made `Session` one RAII object rather
+     than a ritual each backend performs. Nothing held a `Scheduler&`, and only the two backends
+     subclass it, so this changed no call site.
+   - **`Plan` gained `frontiers`** — the deferred maps, addressed `{definition, evaluation, node}`
+     exactly as a `Step` is, and for the same reason. Always empty until slice 4.
+   - **The loop terminates on "nothing was deferred", NOT on "the next plan is empty"**, and that
+     distinction is the whole slice. A mapless run must build exactly ONE plan, or every run pays a
+     second full planning walk to discover there is nothing left to do — and worse, an on-request
+     source re-arms itself inside `compute()`, so a freshly built plan is *never* empty and the
+     invocation would never return.
+   - **A new `[staging]` test pins that down** over both strategies: one `run()` fires a self-rearming
+     source exactly once and leaves it armed for the next. Sabotage-verified — swapping the
+     termination rule for the naive one makes it hang rather than fail, which is exactly the failure
+     it exists to prevent.
+   - `runSteps(plan)` is the extracted serial walk, shared by `SerialScheduler::executePlan` and by
+     the pull path (serial for either strategy, as before).
 3. **`Evaluation`: N children per node.** The child container becomes N-per-node, `EvalPath` /
    `GraphPath` steps gain an index, and every existing group resolves at index 0. Mechanical; suite
    green throughout.

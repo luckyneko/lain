@@ -325,7 +325,7 @@ M6 split definition from evaluation so one definition could back N evaluations; 
 real for linked groups. **Neither has ever had the caller both were built for** — running one subgraph
 once per element of a collection. **Milestone 8** brings it. Grilled 2026-08-11; decisions in
 **[ADR-0014](docs/adr/0014-map-nodes-staged-planning.md)**, build order in WORK.md, vocabulary in
-CONTEXT.md. **Slice 1 of 6 is built** (see the end of this section). It settles all four questions
+CONTEXT.md. **Slices 1–2 of 6 are built** (see the end of this section). It settles all four questions
 ADR-0012 listed as *deliberately unsettled*, which it could only do once a concrete caller fixed them.
 
 - **First vertical: a folder of images, listed in-graph** (`listDir → map(load → tint) → combine`).
@@ -381,6 +381,24 @@ warning-clean, format-check clean, headless `run --example` unchanged.
   on its address comparison; making it non-owning fails the outlives test by reading freed memory,
   deterministically in both sections. The second is the one that matters: without the aliasing
   constructor, a child reading element 3 after the producer rebinds is a use-after-free.
+
+**Slice 2 is built (2026-08-13).** `run` / `evaluate` are the plan → execute → re-plan loop, with
+nothing yet able to raise a frontier — so behaviour is identical and the existing suite is the
+regression test. `ctest` **444/444** (+1), warning-clean, format-check clean, headless unchanged.
+- **`run` moved to the base and stopped being virtual.** A strategy now overrides only
+  `executePlan(const Plan&)` — one stage, already built and ordered — so the staging loop, the run
+  lease and all planning live in one place. A backend never plans, never takes the lease and never
+  decides when the run is over. Nothing held a `Scheduler&` and only the two backends subclass it, so
+  no call site changed.
+- **The loop terminates on "nothing was DEFERRED", not on "the next plan is empty",** and that is the
+  whole slice. A mapless run must build exactly one plan, or every run pays a second planning walk to
+  learn there is nothing left — and an on-request source re-arms itself inside `compute()`, so a
+  freshly built plan is *never* empty and the invocation would never return. A new `[staging]` test
+  pins it over both strategies; sabotaging the rule makes it **hang**, which is precisely the failure
+  it exists to prevent.
+- `Plan::frontiers` (deferred maps, addressed `{definition, evaluation, node}` like a `Step`) is the
+  signal, empty until slice 4; `runSteps` is the extracted serial walk shared by `SerialScheduler`
+  and the pull path.
 
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
 

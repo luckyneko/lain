@@ -269,6 +269,46 @@ TEST_CASE("pull refires an on-request source every time", "[scheduler]")
 	REQUIRE(e.needsRecompute(s)); // still armed here, untouched by the other run
 }
 
+TEST_CASE("one run is one stage, even with a self-rearming source", "[scheduler][staging]")
+{
+	// The staging loop (ADR-0014) plans, executes, and plans AGAIN only when the stage deferred
+	// something — never merely because more work now looks stale. Terminating on "the next plan is
+	// empty" instead would be catastrophic exactly here: an on-request source re-arms itself inside
+	// compute(), so a freshly built plan is never empty and the invocation would never return.
+	//
+	// So a source must fire exactly ONCE per run and stay armed for the NEXT one, which is also what
+	// keeps a gui's per-frame run from spinning on a camera capture.
+	int calls = 0;
+	Graph g;
+	const NodeId s = g.add<Source>(calls);
+	Evaluation e{g};
+
+	SECTION("serial")
+	{
+		SerialScheduler sched;
+		sched.run(g, e);
+		REQUIRE(calls == 1);
+		REQUIRE(e.needsRecompute(s)); // armed for the next run, not for another stage of this one
+
+		sched.run(g, e);
+		REQUIRE(calls == 2);
+	}
+
+	SECTION("parallel")
+	{
+		// Both strategies share the one staging loop and differ only in executePlan, so the
+		// termination rule cannot drift between them — this pins that down.
+		lain::task::Executor executor;
+		ParallelScheduler sched{executor};
+		sched.run(g, e);
+		REQUIRE(calls == 1);
+		REQUIRE(e.needsRecompute(s));
+
+		sched.run(g, e);
+		REQUIRE(calls == 2);
+	}
+}
+
 TEST_CASE("populateInputs shares a payload rather than copying it", "[scheduler][portvalue]")
 {
 	Tracked::copies = 0;

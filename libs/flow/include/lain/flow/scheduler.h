@@ -21,6 +21,15 @@
 // exit step. So a nested graph runs as one flat DAG — no scheduler is ever invoked from
 // inside a task, and inner nodes of two sibling groups interleave freely on the pool.
 // run() plans the dirty closure; evaluate() plans the dirty upstream cone of one node.
+//
+// One invocation may build SEVERAL plans, in STAGES (ADR-0014). A map node's arity comes from a
+// collection computed during the run, so it cannot be expanded when the first plan is built: it is
+// left as a FRONTIER, along with everything downstream of it, and the loop plans again once the
+// stage that computes its input has finished. Each stage is still exactly the flat DAG described
+// above — nothing is nested at runtime, and the substrate still needs only emplace/precede/run —
+// and the gap BETWEEN stages is where a map's child evaluations are created, on the coordinator
+// thread, which is what keeps "a worker task never grows evaluation storage" true (ADR-0012).
+// A graph with no map raises no frontier and so runs in exactly one stage, as it always has.
 
 #include "lain/flow/evaluation.h" // Session holds an Evaluation::RunLease by value
 #include "lain/flow/types.h"
@@ -39,8 +48,9 @@ namespace lain::flow
 {
 	class Graph;
 
-	// Abstract execution strategy. run() is the varying full-graph push; evaluate()
-	// is the shared, serial pull.
+	// Abstract execution strategy. Both entry points are shared: a strategy differs only in how it
+	// executes ONE stage's plan (executePlan), so the staging loop, the run lease and the planning
+	// live in one place rather than being re-performed by each backend.
 	class Scheduler
 	{
 	public:
@@ -49,7 +59,7 @@ namespace lain::flow
 		// Push: evaluate the whole graph into `evaluation` — each node fires once its inputs are
 		// ready. Throws std::logic_error if `evaluation` is already being scheduled (see the run
 		// lease); distinct evaluations, including two over this same definition, run concurrently.
-		virtual void run(const Graph& definition, Evaluation& evaluation) = 0;
+		void run(const Graph& definition, Evaluation& evaluation);
 
 		// Pull: evaluate just `target`'s upstream subgraph on demand, recomputing only the nodes
 		// that need it (a constant stays computed after its first run; an on-request source requests
@@ -94,12 +104,31 @@ namespace lain::flow
 			bool publish = false;			   // GroupEntry only: whether the inputs actually need republishing
 		};
 
+		// A node that could not be expanded when this stage was planned, because its arity is only
+		// known once the run has produced its input — a map (ADR-0014). It and everything downstream
+		// of it are left out of the stage; the loop prepares its children and plans again.
+		//
+		// Addressed exactly like a Step, and for the same reason: one shared definition may be
+		// mapped in several evaluations at once, so neither half names the work alone.
+		struct Frontier
+		{
+			const Graph* definition = nullptr;
+			Evaluation* evaluation = nullptr;
+			NodeId node;
+		};
+
 		// A whole nested graph flattened into one task DAG: steps in a valid serial order, plus
 		// the dependency edges a parallel lowering needs (indices into `steps`).
 		struct Plan
 		{
 			std::vector<Step> steps;
 			std::vector<std::pair<std::size_t, std::size_t>> edges; // (predecessor, successor)
+
+			// What this stage deferred. EMPTY means the stage covered the whole run, which is the
+			// case for every graph that contains no map — so the staging loop stops after one pass
+			// and costs exactly what a single-plan run always did. It is what tells the loop to plan
+			// again without having to speculatively re-plan to find out.
+			std::vector<Frontier> frontiers;
 		};
 
 		// The plan for a full run: the STALE CLOSURE at every level — every node the evaluation says
@@ -110,6 +139,16 @@ namespace lain::flow
 		// closure — a node that does not need recomputing keeps its value even if something upstream
 		// does, which is the long-standing pull semantic.
 		Plan buildEvalPlan(const Graph& definition, Evaluation& evaluation, NodeId target);
+
+		// Execute ONE stage's plan — the only thing the two strategies do differently. It is handed a
+		// complete, already-ordered plan, so a backend never plans, never takes the lease and never
+		// decides when the run is over.
+		virtual void executePlan(const Plan& plan) = 0;
+
+		// Walk a stage's steps in order. The plan is already a valid serial order — every dependency
+		// points backwards — so this needs no further ordering work. Used by SerialScheduler, and by
+		// the pull path for either strategy.
+		void runSteps(const Plan& plan);
 
 		// Execute one step. The single dispatch point, so both strategies handle groups identically.
 		void runStep(const Step& step);
@@ -124,6 +163,19 @@ namespace lain::flow
 		void populateInputs(const Graph& definition, Evaluation& evaluation, NodeId id);
 
 	private:
+		// Which plan each stage builds. The two entry points differ in this and in whether a stage
+		// may be executed in parallel — everything else about staging is identical, and writing the
+		// loop twice is how two paths that do one job drift apart.
+		enum class Mode
+		{
+			Push, // run(): the stale closure, executed through executePlan
+			Pull, // evaluate(): the stale upstream cone, always walked serially
+		};
+
+		// The staging loop (ADR-0014): plan, execute, prepare what the stage revealed, plan again.
+		// Preparation happens HERE, between stages, on the coordinator thread — never inside a task.
+		void runStages(const Graph& definition, Evaluation& evaluation, Mode mode, NodeId target);
+
 		// The nodes a run must recompute at ONE level, in topo order: the stale closure. Takes both,
 		// because staleness is a comparison BETWEEN them — the definition's per-node version against
 		// what this evaluation recorded.
@@ -150,22 +202,24 @@ namespace lain::flow
 		static void collectUpstream(const Graph& definition, NodeId id, std::set<NodeId>& cone);
 	};
 
-	// Single-threaded: walks the execution plan in order. No execution dependency, so it's
+	// Single-threaded: walks each stage's plan in order. No execution dependency, so it's
 	// the natural choice for cli / headless runs and tests.
 	class SerialScheduler : public Scheduler
 	{
-	public:
-		void run(const Graph& definition, Evaluation& evaluation) override;
+	protected:
+		void executePlan(const Plan& plan) override;
 	};
 
-	// Parallel: lowers the execution plan onto the injected lain::task executor (one task
+	// Parallel: lowers each stage's plan onto the injected lain::task executor (one task
 	// per step, one precedence per plan edge) and runs it to completion. The caller owns the
 	// executor, so worker count and lifetime stay explicit.
 	class ParallelScheduler : public Scheduler
 	{
 	public:
 		explicit ParallelScheduler(lain::task::Executor& executor);
-		void run(const Graph& definition, Evaluation& evaluation) override;
+
+	protected:
+		void executePlan(const Plan& plan) override;
 
 	private:
 		lain::task::Executor& m_executor;
