@@ -4,6 +4,7 @@
 
 add_executable(test-flow
 	test_portvalue.cpp
+	test_collection.cpp
 	test_evaluation.cpp
 	test_graph.cpp
 	test_scheduler.cpp

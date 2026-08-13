@@ -51,6 +51,21 @@ namespace lain::flow
 		template <typename T>
 		const T& get() const;
 
+		// A slot that ALIASES a subobject of another slot's payload: it shares `owner`'s
+		// allocation — so the payload cannot be freed while this slot lives, even if `owner`
+		// is itself cleared or rebound — but reads `member` out of it as a T. Copies nothing.
+		//
+		// This is what lets one element of a collection be handed to a consumer without copying
+		// it out (ADR-0014): splitting a std::vector<image::Image> across N children costs N
+		// refcount bumps rather than N deep pixel copies.
+		//
+		// PRECONDITION: `member` is a subobject of the payload `owner` holds. Aliasing anything
+		// else yields a slot that keeps the wrong allocation alive while pointing at something
+		// that may not outlive it. An empty `owner` yields an empty slot (there is no allocation
+		// to share), which is why callers can pass a suppressed value through without checking.
+		template <typename T>
+		static PortValue alias(const PortValue& owner, const T& member);
+
 		bool empty() const { return m_value == nullptr; }
 
 		// type_index of the held payload, or typeid(void) when empty. Drives

@@ -75,6 +75,24 @@ namespace lain::meta
 	template <typename T>
 	inline constexpr bool is_vector_v = is_vector<T>::value;
 
+	// What is INSIDE a std::vector — `void` for anything that isn't one. The other half of
+	// is_vector: a consumer that has detected a vector almost always needs to name its element
+	// type next, and deriving that separately at each site is how the two drift apart.
+	// (lain::flow's collection capability is the first caller: it splits a vector<E> value into
+	// Es for a map node's children, and gathers Es back into a vector<E>.)
+	template <typename T>
+	struct vector_element
+	{
+		using type = void;
+	};
+	template <typename U, typename A>
+	struct vector_element<std::vector<U, A>>
+	{
+		using type = U;
+	};
+	template <typename T>
+	using vector_element_t = typename vector_element<T>::type;
+
 	template <typename T>
 	struct is_variant : std::false_type
 	{

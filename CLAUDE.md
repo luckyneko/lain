@@ -325,8 +325,8 @@ M6 split definition from evaluation so one definition could back N evaluations; 
 real for linked groups. **Neither has ever had the caller both were built for** — running one subgraph
 once per element of a collection. **Milestone 8** brings it. Grilled 2026-08-11; decisions in
 **[ADR-0014](docs/adr/0014-map-nodes-staged-planning.md)**, build order in WORK.md, vocabulary in
-CONTEXT.md. **Nothing is built.** It settles all four questions ADR-0012 listed as *deliberately
-unsettled*, which it could only do once a concrete caller fixed them.
+CONTEXT.md. **Slice 1 of 6 is built** (see the end of this section). It settles all four questions
+ADR-0012 listed as *deliberately unsettled*, which it could only do once a concrete caller fixed them.
 
 - **First vertical: a folder of images, listed in-graph** (`listDir → map(load → tint) → combine`).
   Runnable headless on the existing `io::image`, and the smallest caller that still makes arity
@@ -362,6 +362,25 @@ unsettled*, which it could only do once a concrete caller fixed them.
 - Six slices, the two structural refactors landing as **no-behaviour-change** commits before the map
   exists: (1) the `PortType` capability, (2) staged planning with zero frontiers, (3) N children per
   node, (4) `MapNode` + the map steps, (5) serialization, (6) flowview + the example nodes.
+
+**Slice 1 is built (2026-08-11).** The capability landed as designed — `element` / `size` / `at` /
+`gather` filled by `if constexpr (meta::is_vector_v<T>)`, plus `PortValue::alias` over `shared_ptr`'s
+aliasing constructor. Core only: no scheduler, node or serializer changed. `ctest` **443/443** (+13),
+warning-clean, format-check clean, headless `run --example` unchanged.
+- **`meta::vector_element_t`** joined `is_vector`, which had only answered half the question. Its
+  header invites exactly this ("add traits here as a real consumer appears"); flow is the consumer.
+- **A proxy container has no element to alias** — found while building, not in the ADR.
+  `std::vector<bool>` packs bits, so `operator[]` yields a value and aliasing it would dangle. `at`
+  branches on `std::is_reference_v<decltype(items[index])>` and copies for a proxy: general rather
+  than a `vector<bool>` special case, and cheap. Refusing the type would have surprised whoever first
+  registers a per-element flag list.
+- **`gather` decides nothing** — a hole or a mistyped element yields an empty result, and what that
+  *means* stays the map's call in slice 4. `gather({})` is an empty **vector**, not an empty slot, so
+  "no elements" stays distinguishable from "no collection".
+- **Both load-bearing properties are sabotage-verified.** Making `alias` copy fails the zero-copy test
+  on its address comparison; making it non-owning fails the outlives test by reading freed memory,
+  deterministically in both sections. The second is the one that matters: without the aliasing
+  constructor, a child reading element 3 after the producer rebinds is a use-after-free.
 
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
 

@@ -1995,10 +1995,34 @@ Each slice stands alone and leaves the suite green. The two structural refactors
 **no-behaviour-change** commits *before* the map exists — the shape that kept the shared-`PortValue`
 and `PortId` changes green, and the shape that makes a regression unambiguous.
 
-1. **`PortType` collection capability.** `element` / `size` / `at` / `gather`, the `is_vector_v`
-   detection, and `PortValue`'s aliasing construction. Core only, no scheduler involvement, tested
-   driver-free: an aliased element shares the parent's payload *address*, a gather round-trips, a
-   non-collection type reports null capability. Nothing else changes.
+1. ✅ **`PortType` collection capability — BUILT** (2026-08-11). `element` / `size` / `at` / `gather`
+   beside `describe`, filled by `if constexpr (meta::is_vector_v<T>)` through the same per-type
+   function-pointer bridge, plus `PortValue::alias`. Core only — no scheduler, no node, no serializer
+   touched. `ctest` **443/443** (+13), warning-clean, format-check clean, headless `run --example`
+   unchanged.
+   - **`meta::vector_element_t` was added** beside `is_vector`, which had only ever answered half the
+     question — a consumer that detects a vector needs to name its element type next, and deriving
+     that at each site is how the two drift apart. traits.h explicitly invites this ("add traits here
+     as a real consumer appears"), and there is now one.
+   - **`PortValue::alias(owner, member)`** is the static factory that makes the split free:
+     `shared_ptr`'s aliasing constructor, so an element shares the collection's control block while
+     pointing at a subobject of it. Public, with the precondition documented, because the per-type
+     bridge in `details/porttype.inl` is not a friend.
+   - **Found while building: a proxy container has no element to alias.** `std::vector<bool>` packs
+     bits, so `operator[]` yields a *value*; aliasing it would take the address of a temporary and
+     dangle. `at` now branches on `std::is_reference_v<decltype(items[index])>` and copies for a
+     proxy — general rather than a `vector<bool>` special case, and cheap, since a container is only
+     ever a proxy for something small. Refusing the type instead would have been a nasty surprise for
+     whoever first registers a per-element flag list. A test covers it.
+   - **`gather` reports a hole mechanically, and decides nothing.** An empty or wrongly-typed element
+     yields an empty result; what a hole *means* (ADR-0014 has the map suppress its whole output and
+     name the offending element) stays the map's decision in slice 4. `gather({})` is deliberately an
+     empty *vector*, not an empty slot — the N == 0 rule, so a caller can tell "no elements" from
+     "no collection".
+   - **Both load-bearing properties were sabotage-verified**, not just asserted. Making `alias` copy
+     instead of alias fails the zero-copy test on the address comparison; making it non-owning fails
+     the outlives test by reading freed memory (`820706605` where `20` was expected) — deterministically,
+     in both of its sections.
 2. **Staged planning, with zero frontiers.** `run` / `evaluate` become the plan → execute → re-plan
    loop, with no node yet able to raise a frontier, so **behaviour is identical** and the whole
    existing suite is the regression test. The run lease moves to span all stages.
