@@ -1953,6 +1953,82 @@ compiled, linked and was unreachable. Exactly M5's bug six ("an out-of-line memb
 warn as unused, so the feature compiled and linked while being unreachable"), and it says the *reviewing
 dead code before it runs* habit is worth keeping: `grep` for a call site is what found it.
 
+## Milestone 8 — map nodes (grilled 2026-08-11)
+
+**Designed, not started.** M6 split definition from evaluation so one definition could back N
+evaluations, and M7 made that sharing real for linked groups — but the thing both were built for has
+never been expressible: **running one subgraph once per element of a collection**. ADR-0012 named four
+questions and deliberately refused to guess at them without a caller. This milestone brings one.
+Decisions in **[ADR-0014](docs/adr/0014-map-nodes-staged-planning.md)**; vocabulary in
+[CONTEXT.md](CONTEXT.md).
+
+**First vertical — LOCKED: a folder of images, listed in-graph.** `listDir` emits a
+`std::vector<path>` → a map runs `load → tint` per element → `combine` folds the results to one
+result. Runnable headless on the existing `io::image` with no new transport, and it is the *smallest*
+caller that still makes arity **data-dependent** — the collection is computed by a node during the
+run — which is the fact every decision below turns on.
+
+**What it is, in one line each:**
+
+- **A collection is read through a `PortType` capability**, not a payload type flow knows:
+  `element` / `size` / `at` / `gather` beside `describe`, filled by `meta::traits::is_vector_v`. The
+  payload stays a natural `std::vector<T>`.
+- **Element access is zero-copy** — `at()` uses `shared_ptr`'s aliasing constructor to point at
+  element *i* of the producer's own vector. The **gather** cannot alias, and costs N element copies.
+- **The plan stops at a frontier and the run re-plans.** `run()` becomes plan → execute → prepare the
+  now-known children → plan again, until a stage plans nothing. Each stage is one flat DAG, so
+  `lain::task` is untouched and ADR-0009's "no new substrate surface" holds. **The gap between stages
+  is the second coordinator point** ADR-0012 left open.
+- **A child is identified by position**, so `EvalPath` finally becomes the `{NodeId, index}` sequence
+  ADR-0012 wrote and a group is simply index 0.
+- **An input splits or broadcasts according to its own declared type** — `vector<T>` against an inner
+  `T` splits, `T` against `T` broadcasts. No flag, nothing stored; the declaration *is* the mode.
+- **A hole suppresses the whole output** (a `vector<Image>` has no hole, and shortening it would break
+  the positional correspondence). `N == 0` is different: empty in, empty vector out, which is a value.
+- **`MapNode` is a third `GroupNode` subclass, inline only.** A linked map is deferred.
+- **A map serializes its interface** — unlike a group, whose ports are re-derived, because a map's
+  mirroring is under-determined by exactly one bit per input pin.
+
+### Build order
+
+Each slice stands alone and leaves the suite green. The two structural refactors land as
+**no-behaviour-change** commits *before* the map exists — the shape that kept the shared-`PortValue`
+and `PortId` changes green, and the shape that makes a regression unambiguous.
+
+1. **`PortType` collection capability.** `element` / `size` / `at` / `gather`, the `is_vector_v`
+   detection, and `PortValue`'s aliasing construction. Core only, no scheduler involvement, tested
+   driver-free: an aliased element shares the parent's payload *address*, a gather round-trips, a
+   non-collection type reports null capability. Nothing else changes.
+2. **Staged planning, with zero frontiers.** `run` / `evaluate` become the plan → execute → re-plan
+   loop, with no node yet able to raise a frontier, so **behaviour is identical** and the whole
+   existing suite is the regression test. The run lease moves to span all stages.
+3. **`Evaluation`: N children per node.** The child container becomes N-per-node, `EvalPath` /
+   `GraphPath` steps gain an index, and every existing group resolves at index 0. Mechanical; suite
+   green throughout.
+4. **`MapNode` + the map steps — the substance.** The class, lifted mirroring, the entry step's
+   split/broadcast decision, the per-element children, the exit step's gather, and the suppression /
+   ragged / `N == 0` rules. Driven through the **production schedulers** with a serial/parallel
+   equivalence case repeated in the style of `[group]`'s 100× sweep, since a map is where concurrent
+   evaluations of one definition finally happen for real.
+5. **Serialization.** The stored `interface` block, load-time reconciliation against the rebuilt inner
+   boundary through the existing rectification pass, and byte-idempotence of the round trip.
+6. **flowview + the example nodes.** The breadcrumb element stepper, `PinKey` / `resolvePath` /
+   `resolveEvaluation` carrying an index, Issues rows that navigate to a failed element,
+   `Add ▸ Map`, and `flow-example`'s `listDir` / `combine` — plus the headless `run` proof over a real
+   folder. **This is the slice that needs a live driver**: M5's ten bugs all lived in exactly this
+   surface.
+
+### Not in this milestone
+
+- **Loop.** A map's children are independent by construction; a loop's are not. Its carry question is
+  still ADR-0012's and still has no caller.
+- **A linked map** (one shared template mapped over N streams) — what the video workload will want,
+  deferred until it exists to shape the interface reconciliation.
+- **The `Collection` payload**, keyed elements, and a multi-value cli binder for a collection boundary
+  input — all named in ADR-0014 as the escapes from the accepted costs, none built.
+- **Per-element incrementality**, which the natural-vector payload makes unavailable: any change
+  rebuilds the whole vector, so all N children recompute.
+
 ## Backlog (deferred — don't build speculatively)
 
 ### Tier A — when a real graph demands it

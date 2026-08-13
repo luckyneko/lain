@@ -213,10 +213,16 @@ outputs. (M4 — being built; the vocabulary is settled, the mechanics are in
 Three distinct shapes; keep them apart (conflating the first two is a design trap).
 
 - **Vector-valued port** — *one* pin whose value is a **collection**
-  (`Port<std::vector<image::Image>>`): one connection, aggregate payload. Needs **no
-  engine support** — a `PortValue` holds any payload, so a port already carries a
+  (`Port<std::vector<image::Image>>`): one connection, aggregate payload. Needs no engine
+  support to **carry** — a `PortValue` holds any payload, so a port already carries a
   `std::vector<T>` (and shares it, rather than copying it per edge). Use when the *data*
-  is a collection (a `CombineImages` op).
+  is a collection (a `CombineImages` op). Looking **inside** one is a separate capability,
+  added for the map node (M8, [ADR-0014](docs/adr/0014-map-nodes-staged-planning.md)): a
+  `PortType` carries `element` / `size` / `at` / `gather` beside `describe`, filled from
+  `meta::traits::is_vector_v`, so the engine can split a collection across N children
+  without core naming a payload type. `at()` **aliases** — it shares the producer's
+  payload and points at element *i* — so splitting copies nothing; `gather` cannot, and
+  costs N element copies.
 - **Dynamic ports** *(a.k.a. variadic pins)* — a node with a **runtime-variable number
   of single-value pins**: N connections, N pins, added/removed/reordered at runtime.
   This is the engine feature (M4 vertical b). Use when you gather N *separate* upstream
@@ -283,10 +289,31 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 - **EvalPath** — which Evaluation, as a **coordinate**: a sequence of `{NodeId, index}` steps down the
   evaluation tree ("element 3 of the map in group X"). It names the same place across scheduler
   invocations, so a preview pinned to it shows that Evaluation's newest values. _Avoid_: run id.
-  **Today it is spelled `GraphPath`** — a sequence of group NodeIds — because a group has exactly one
-  child, so the graph walk and the evaluation walk are the same, and a parallel alias for an identical
-  type would be two names for one thing. A **map node** is what makes the two differ and what earns
-  the `{NodeId, index}` step; that is the change this term is waiting on, not an oversight.
+  It was spelled `GraphPath` — a bare sequence of group NodeIds — for as long as a group had exactly
+  one child, which made the graph walk and the evaluation walk the same sequence. **The map node is
+  what makes them differ** (M8): a step becomes `{NodeId, index}`, where a group is simply index 0 and
+  a map's index selects the element. The index is **positional** — position is the only identity a
+  `std::vector` has — so a reordered collection rebinds each child and recomputes it rather than
+  following it. It is also what the viewer navigates by: descending into a map defaults to element 0
+  and the breadcrumb edits the index.
+- **Map node** *(M8 — [ADR-0014](docs/adr/0014-map-nodes-staged-planning.md))* — a group whose
+  interior runs **once per element** of a collection: `MapNode` beside `InlineGroupNode` /
+  `LinkedGroupNode`, owning its `Graph` and mirroring each inner pin **lifted**. An input pin
+  **splits** or **broadcasts** according to its own declared type (`vector<T>` against an inner `T`
+  splits; `T` against `T` broadcasts) — nothing is stored, the declaration is the mode. Outputs always
+  gather, and a single suppressed element clears the whole output, because a `std::vector<T>` has no
+  hole and a shortened one would silently break the positional correspondence. Unlike a group, a map
+  **serializes its interface**: its mirroring is under-determined by one bit per input pin, so the
+  ports cannot be re-derived. _Avoid_: SplitGroup (the working name in ADR-0012, retired — a map does
+  not split a *group*).
+- **Stage / frontier** *(M8)* — a map's arity comes from a value computed **during** the run, so the
+  plan cannot be complete before it starts. `expand()` refuses to descend into a map whose arity is
+  unknown — that map is a **frontier**, and everything downstream of it is left out of this **stage**.
+  `run()` loops: plan, execute the stage flat, prepare the children now that N is known, plan again.
+  The gap between stages is the **second coordinator point** ADR-0012 left open, so *"a coordinator
+  grows evaluation storage, a worker task never does"* survives intact, and each stage is still the
+  one flat DAG both backends already run. _Avoid_: subflow, nested run, a per-map join barrier —
+  independent siblings still plan into the current stage.
 - **Node evaluation** — the view handed to `Node::compute` for one node in one Evaluation. Compute is
   const over the definition; it reads this node's evaluated inputs, writes its evaluated outputs, and
   may request another computation here, never by mutating the Node. A narrow non-owning capability

@@ -319,6 +319,50 @@ reaches the canvas, which is where all ten of M5's bugs lived, and this time it 
   "only loose end", the `saveFormat` residual M6 step 5 fixed, cli named-binding, and the settled names
   question), and dated M5 slice 6's last two unconfirmed gui items — **no gui work is now unverified**.
 
+### Update 2026-08-11 — M8 designed: map nodes (nothing built yet)
+
+M6 split definition from evaluation so one definition could back N evaluations; M7 made that sharing
+real for linked groups. **Neither has ever had the caller both were built for** — running one subgraph
+once per element of a collection. **Milestone 8** brings it. Grilled 2026-08-11; decisions in
+**[ADR-0014](docs/adr/0014-map-nodes-staged-planning.md)**, build order in WORK.md, vocabulary in
+CONTEXT.md. **Nothing is built.** It settles all four questions ADR-0012 listed as *deliberately
+unsettled*, which it could only do once a concrete caller fixed them.
+
+- **First vertical: a folder of images, listed in-graph** (`listDir → map(load → tint) → combine`).
+  Runnable headless on the existing `io::image`, and the smallest caller that still makes arity
+  **data-dependent** — the collection is computed by a node *during* the run, which is the fact every
+  decision turns on.
+- **A collection is read through a `PortType` capability**, not a payload type flow knows: `element` /
+  `size` / `at` / `gather` beside `describe`, filled from `meta::traits::is_vector_v` through the same
+  per-type function-pointer bridge. `at()` uses `shared_ptr`'s **aliasing constructor**, so splitting a
+  vector across N children copies nothing; `gather` cannot alias and costs N element copies.
+- **The scheduler plans in STAGES.** `expand()` refuses to descend into a map whose arity is unknown —
+  that map is a **frontier** — and `run()` loops plan → execute → prepare the now-known children →
+  plan again. Each stage is still one flat DAG, so `lain::task` is untouched and ADR-0009's "no new
+  substrate surface" holds; **the gap between stages is the second coordinator point** ADR-0012 left
+  open, which keeps *"a worker task never grows evaluation storage"* literally true. A Taskflow
+  subflow would have broken both rules at once.
+- **`EvalPath` finally becomes `{NodeId, index}`** — the change CONTEXT.md has been holding a note for.
+  A group is index 0; a map's index is **positional**, because position is the only identity a
+  `std::vector` has. That reaches every flowview pane through `PinKey`, and the breadcrumb gains an
+  element stepper.
+- **Split vs broadcast is the port's own declared type** (`vector<T>` against an inner `T` splits, `T`
+  against `T` broadcasts) — no flag, nothing stored. The same move M7 slice 1 made when it deleted
+  `editableAt`: a remembered bool can disagree with what it describes.
+- **One suppressed element clears the whole output.** A `std::vector<T>` has no hole, and gathering
+  the survivors into a shorter vector would silently break the positional correspondence between input
+  and output. `N == 0` is different — empty in, empty vector out, which is a value.
+- **A map serializes its interface**, unlike a group whose ports are re-derived: its mirroring is
+  under-determined by exactly one bit per input pin, so M5's "a group's own ports are never stored"
+  does not extend to it. Reconciled on load by the rectification pass linked groups already use.
+- **Accepted costs, all named in the ADR:** per-element incrementality is unavailable (any change
+  rebuilds the whole vector, so all N children recompute), child state is retained per element, and
+  the gather copies. The escape from the first two is the `Collection` payload behind the same
+  `size`/`at`/`gather` interface — which is why that seam is an interface rather than a type.
+- Six slices, the two structural refactors landing as **no-behaviour-change** commits before the map
+  exists: (1) the `PortType` capability, (2) staged planning with zero frontiers, (3) N children per
+  node, (4) `MapNode` + the map steps, (5) serialization, (6) flowview + the example nodes.
+
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
 
 The last step of Milestone 6. `PinKey` — the key the preview cache, Inspector, Interface, Preview

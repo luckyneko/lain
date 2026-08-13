@@ -8,6 +8,12 @@ Status: accepted
 > separates definition from runtime state. A step is consequently addressed by
 > `{const Graph*, Evaluation*, NodeId}`, not `{Graph*, NodeId}`; staleness and boundary publication
 > are read/written in that Evaluation. The topology of the flat plan is unchanged.
+>
+> **Revisit (2026-08-11).** [ADR-0014](0014-map-nodes-staged-planning.md) keeps every rule here and
+> adds one: a **map**'s arity is only known mid-run, so *one invocation builds several plans*.
+> `expand()` stops at a map of unknown arity and the run re-plans after executing what it has. Each
+> **stage** is still exactly the flat DAG described below, still needs only `emplace`/`precede`/`run`,
+> and still nests nothing at runtime — which is precisely why staging was chosen over a subflow.
 
 A **group node** contains its own `Graph` and exposes selected inner ports as its own — the
 subgraph mechanism, with the top-level graph as the outermost group. The question is *who runs

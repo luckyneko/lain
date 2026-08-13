@@ -276,6 +276,13 @@ wants. A historical snapshot of one execution, if a caller ever needs one, is a 
 These need a concrete SplitGroup or Loop in front of them; guessing produces a mechanism fitted to
 imagined requirements.
 
+> **Settled for the map case (2026-08-11) by [ADR-0014](0014-map-nodes-staged-planning.md)**, once a
+> concrete caller existed — a folder of images listed in-graph. In short: the child index is
+> **positional**; an unready element suppresses the **whole** map output; and the plan lowers a map by
+> **staging** — `expand()` stops at a map of unknown arity and the run re-plans, so the second
+> coordinator point is the gap between stages and the invariant below survives unchanged. **Loop
+> remains unsettled**: a map's children are independent by construction, a loop's are not.
+
 - Whether a map's child index is positional or something stabler. If the input collection reorders
   between runs, *"element 3"* follows the position, not the stream, and a pinned preview quietly
   changes subject.
