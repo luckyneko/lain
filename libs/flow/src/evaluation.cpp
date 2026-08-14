@@ -120,7 +120,7 @@ namespace lain::flow
 
 		// Nodes: create what is new, keep what survived, drop what went (its values go with it).
 		std::map<NodeId, NodeState> nodes;
-		std::map<NodeId, std::unique_ptr<Evaluation>> children;
+		std::map<NodeId, std::vector<std::unique_ptr<Evaluation>>> children;
 		for (const NodeId id : definition.nodeIds())
 		{
 			const Node& node = definition.node(id);
@@ -129,21 +129,34 @@ namespace lain::flow
 			prepareNode(state, node);
 			nodes.emplace(id, std::move(state));
 
-			// One child per graph-containing node, prepared recursively — so the whole tree is
+			// Children of a graph-containing node, prepared recursively — so the whole tree is
 			// stable before any task runs, at every level.
+			//
+			// prepare deliberately does NOT impose a COUNT. It keeps however many are already there
+			// and guarantees at least one, because a map's count is data-dependent: it is set
+			// between stages once the collection has been computed (ADR-0014), while prepare runs at
+			// the top of every invocation. Forcing a count here would reset a map's N children — and
+			// with them every element's retained values — on each run.
 			if (const Graph* inner = node.innerGraph())
 			{
-				const auto existingChild = m_children.find(id);
-				std::unique_ptr<Evaluation> child = (existingChild == m_children.end())
-														? std::make_unique<Evaluation>()
-														: std::move(existingChild->second);
-				// A group whose inner Graph was REPLACED (a linked template re-resolved) gets a
-				// fresh child: the old one's per-node versions belong to a definition that no longer
-				// exists, which is the same mispairing prepare guards against above.
-				if (child->m_definition != nullptr && child->m_definition != inner)
-					child = std::make_unique<Evaluation>();
-				child->prepare(*inner);
-				children.emplace(id, std::move(child));
+				const auto existingChildren = m_children.find(id);
+				std::vector<std::unique_ptr<Evaluation>> kept =
+					(existingChildren == m_children.end())
+						? std::vector<std::unique_ptr<Evaluation>>{}
+						: std::move(existingChildren->second);
+				if (kept.empty())
+					kept.push_back(std::make_unique<Evaluation>());
+
+				for (std::unique_ptr<Evaluation>& child : kept)
+				{
+					// A group whose inner Graph was REPLACED (a linked template re-resolved) gets a
+					// fresh child: the old one's per-node versions belong to a definition that no
+					// longer exists, which is the same mispairing prepare guards against above.
+					if (child->m_definition != nullptr && child->m_definition != inner)
+						child = std::make_unique<Evaluation>();
+					child->prepare(*inner);
+				}
+				children.emplace(id, std::move(kept));
 			}
 		}
 		m_nodes = std::move(nodes);
@@ -234,7 +247,10 @@ namespace lain::flow
 		for (auto& entry : m_nodes)
 			entry.second.recomputeRequested = true;
 		for (auto& entry : m_children)
-			entry.second->requestRecomputeAll();
+		{
+			for (std::unique_ptr<Evaluation>& child : entry.second)
+				child->requestRecomputeAll();
+		}
 	}
 
 	void Evaluation::bind(PortAddress input, PortValue value)
@@ -283,18 +299,26 @@ namespace lain::flow
 			state->computedAt = version;
 	}
 
-	Evaluation& Evaluation::child(NodeId group)
+	std::size_t Evaluation::childCount(NodeId group) const
 	{
 		const auto it = m_children.find(group);
-		assert(it != m_children.end() && "flow::Evaluation: no child Evaluation for that group node");
-		return *it->second;
+		return it == m_children.end() ? 0 : it->second.size();
 	}
 
-	const Evaluation& Evaluation::child(NodeId group) const
+	Evaluation& Evaluation::child(NodeId group, std::size_t index)
 	{
 		const auto it = m_children.find(group);
 		assert(it != m_children.end() && "flow::Evaluation: no child Evaluation for that group node");
-		return *it->second;
+		assert(index < it->second.size() && "flow::Evaluation: no child Evaluation at that index");
+		return *it->second[index];
+	}
+
+	const Evaluation& Evaluation::child(NodeId group, std::size_t index) const
+	{
+		const auto it = m_children.find(group);
+		assert(it != m_children.end() && "flow::Evaluation: no child Evaluation for that group node");
+		assert(index < it->second.size() && "flow::Evaluation: no child Evaluation at that index");
+		return *it->second[index];
 	}
 
 	//=========================================================================

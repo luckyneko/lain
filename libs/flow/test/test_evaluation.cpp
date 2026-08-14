@@ -10,6 +10,7 @@
 
 #include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
+#include "lain/flow/group.h"
 #include "lain/flow/scheduler.h"
 #include "testnodes.h"
 
@@ -372,4 +373,64 @@ TEST_CASE("prepare keeps surviving ports' values and drops the rest", "[flow][ev
 	evaluation.prepare(graph);
 	REQUIRE_FALSE(evaluation.contains(added));
 	REQUIRE(outputOf(graph, evaluation, p.out) == 5);
+}
+
+TEST_CASE("children are addressed by node AND index", "[flow][evaluation][children]")
+{
+	// A node that contains a graph has one child Evaluation per EVALUATION of it: exactly one for a
+	// group, one per element for a map (ADR-0014). That is why a child is addressed by {node,
+	// index} rather than by node alone — two evaluations of one definition share node ids by
+	// design, so the node alone cannot name which of them is meant.
+	Graph graph;
+	const NodeId groupId = graph.add<InlineGroupNode>();
+	auto& group = static_cast<InlineGroupNode&>(graph.node(groupId));
+	const NodeId innerId = group.inner().add<test::ConstInt>(7);
+	const NodeId plainId = graph.add<test::ConstInt>(1);
+
+	Evaluation evaluation{graph};
+	SerialScheduler{}.run(graph, evaluation);
+
+	// An ordinary node has no evaluation of its own — there is nothing inside it to evaluate.
+	REQUIRE(evaluation.childCount(plainId) == 0);
+	REQUIRE_FALSE(evaluation.hasChild(plainId));
+
+	// A group is exactly one, and nothing past it.
+	REQUIRE(evaluation.childCount(groupId) == 1);
+	REQUIRE(evaluation.hasChild(groupId));
+	REQUIRE(evaluation.hasChild(groupId, 0));
+	REQUIRE_FALSE(evaluation.hasChild(groupId, 1));
+
+	// The default index IS index 0, which is what leaves every existing group call site reading
+	// unchanged through this container change.
+	REQUIRE(&evaluation.child(groupId) == &evaluation.child(groupId, 0));
+	REQUIRE(test::output(group.inner(), evaluation.child(groupId, 0), innerId, 0).get<int>() == 7);
+}
+
+TEST_CASE("prepare keeps a node's existing children rather than imposing a count", "[flow][evaluation][children]")
+{
+	// prepare runs at the top of EVERY invocation, so a rule of "give a graph-containing node one
+	// child" would reset a map's N children — and every element's retained values and versions with
+	// them — on each run. It therefore keeps whatever is already there and guarantees at least one;
+	// a map's count is set BETWEEN STAGES, once the collection that determines it exists (ADR-0014).
+	//
+	// With no map yet, the observable form of that rule is inner incrementality: a group's child
+	// must survive a second run intact, so nothing inside it recomputes.
+	std::atomic<int> calls{0};
+	Graph graph;
+	const NodeId groupId = graph.add<InlineGroupNode>();
+	auto& group = static_cast<InlineGroupNode&>(graph.node(groupId));
+	const NodeId src = group.inner().add<test::ConstInt>(7);
+	const NodeId pass = group.inner().add<CountingPass>(calls);
+	REQUIRE(group.inner().connect(src, 0, pass, 0) == Connection::Ok);
+
+	SerialScheduler sched;
+	Evaluation evaluation{graph};
+	sched.run(graph, evaluation);
+	REQUIRE(calls == 1);
+	REQUIRE(test::output(group.inner(), evaluation.child(groupId), pass, 0).get<int>() == 7);
+
+	sched.run(graph, evaluation); // prepare runs again, over an evaluation that already has a child
+	REQUIRE(calls == 1);		  // a fresh child would have made everything inside stale
+	REQUIRE(evaluation.childCount(groupId) == 1);
+	REQUIRE(test::output(group.inner(), evaluation.child(groupId), pass, 0).get<int>() == 7);
 }

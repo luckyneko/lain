@@ -325,7 +325,7 @@ M6 split definition from evaluation so one definition could back N evaluations; 
 real for linked groups. **Neither has ever had the caller both were built for** — running one subgraph
 once per element of a collection. **Milestone 8** brings it. Grilled 2026-08-11; decisions in
 **[ADR-0014](docs/adr/0014-map-nodes-staged-planning.md)**, build order in WORK.md, vocabulary in
-CONTEXT.md. **Slices 1–2 of 6 are built** (see the end of this section). It settles all four questions
+CONTEXT.md. **Slices 1–3 of 6 are built** (see the end of this section). It settles all four questions
 ADR-0012 listed as *deliberately unsettled*, which it could only do once a concrete caller fixed them.
 
 - **First vertical: a folder of images, listed in-graph** (`listDir → map(load → tint) → combine`).
@@ -399,6 +399,25 @@ regression test. `ctest` **444/444** (+1), warning-clean, format-check clean, he
 - `Plan::frontiers` (deferred maps, addressed `{definition, evaluation, node}` like a `Step`) is the
   signal, empty until slice 4; `runSteps` is the extracted serial walk shared by `SerialScheduler`
   and the pull path.
+
+**Slice 3 is built (2026-08-13).** `Evaluation`'s children are now `map<NodeId,
+vector<unique_ptr<Evaluation>>>`, addressed by *which node* **and** *which evaluation of it* —
+`child(node, index = 0)`, `hasChild(node, index = 0)`, plus `childCount(node)`. A group is index 0.
+`ctest` **446/446** (+2), warning-clean, format-check clean, headless unchanged.
+- **All 25 call sites changed by zero lines**, which is what the default index buys.
+- **`prepare` does NOT impose a count** — it keeps what is there and guarantees at least one. The one
+  non-rename in the slice, and load-bearing: `prepare` runs at the top of every invocation, so
+  "one child per graph-containing node" would reset a map's N children, and every element's retained
+  values with them, on each run. Sabotage-verified — imposing a count makes a group's interior
+  recompute on the second run, i.e. inner incrementality gone.
+- Children are held indirectly because an `Evaluation` must not move when the vector grows: the
+  scheduler holds child pointers in plan steps for a whole invocation, and slice 4 grows that vector
+  between stages.
+- **Deviation: `GraphPath` did not gain its index here**, as the plan said — it moves to slice 6.
+  `child()` defaulting to 0 means flowview resolves unchanged, so the index has no caller until the
+  element stepper varies it; adding it now would thread an always-zero field through `PinKey`, the
+  layout tree and the breadcrumb, across the surface that produced M5's ten bugs, for nothing
+  observable.
 
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
 

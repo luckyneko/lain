@@ -172,12 +172,23 @@ namespace lain::flow
 		// overload just spells the intent at the host boundary.)
 		const PortValue& value(const BoundaryPin& output) const;
 
-		// --- children (one per group node) -------------------------------------
-		// The child Evaluation for a group node, created by prepare(). Asserts if `group` names no
-		// prepared child — a group's child exists for as long as the group does.
-		Evaluation& child(NodeId group);
-		const Evaluation& child(NodeId group) const;
-		bool hasChild(NodeId group) const { return m_children.count(group) != 0; }
+		// --- children (N per graph-containing node) -----------------------------
+		// A node that contains a graph has one child Evaluation per EVALUATION OF IT: exactly one
+		// for a group, and one per element for a map (ADR-0014), which is why a child is addressed
+		// by {node, index} rather than by node alone. A group is simply index 0, so every existing
+		// caller reads unchanged.
+		//
+		// Asserts if there is no child there — a group's child exists for as long as the group does,
+		// and a map's for as long as its element does.
+		Evaluation& child(NodeId group, std::size_t index = 0);
+		const Evaluation& child(NodeId group, std::size_t index = 0) const;
+
+		// Whether there is a child at that index. With the default it answers "does this node have a
+		// child evaluation at all?", which is what the scheduler asks before expanding into one.
+		bool hasChild(NodeId group, std::size_t index = 0) const { return index < childCount(group); }
+
+		// How many evaluations this node has: 0 for an ordinary node, 1 for a group, N for a map.
+		std::size_t childCount(NodeId group) const;
 
 	private:
 		friend class NodeEvaluation;
@@ -234,7 +245,10 @@ namespace lain::flow
 
 		const Graph* m_definition = nullptr;
 		std::map<NodeId, NodeState> m_nodes;
-		std::map<NodeId, std::unique_ptr<Evaluation>> m_children; // one per group node
+		// One entry per graph-containing node, holding ONE evaluation for a group and N for a map.
+		// Indirect, because an Evaluation must not move when the vector grows: the scheduler holds
+		// child pointers in plan steps across a whole invocation.
+		std::map<NodeId, std::vector<std::unique_ptr<Evaluation>>> m_children;
 		// Held for the duration of a scheduler invocation. A plain bool guarded by the fact that only
 		// the coordinator thread takes it — a worker task never enters the scheduler (fire-and-join).
 		bool m_running = false;

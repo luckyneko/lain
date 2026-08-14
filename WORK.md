@@ -2046,9 +2046,29 @@ and `PortId` changes green, and the shape that makes a regression unambiguous.
      it exists to prevent.
    - `runSteps(plan)` is the extracted serial walk, shared by `SerialScheduler::executePlan` and by
      the pull path (serial for either strategy, as before).
-3. **`Evaluation`: N children per node.** The child container becomes N-per-node, `EvalPath` /
-   `GraphPath` steps gain an index, and every existing group resolves at index 0. Mechanical; suite
-   green throughout.
+3. ✅ **`Evaluation`: N children per node — BUILT** (2026-08-13). The child container is
+   `map<NodeId, vector<unique_ptr<Evaluation>>>`; `child(node, index = 0)`, `hasChild(node, index = 0)`
+   and a new `childCount(node)` address a child by *which node* **and** *which evaluation of it*.
+   A group is index 0. `ctest` **446/446** (+2), warning-clean, format-check clean, headless
+   `run --example` unchanged.
+   - **All 25 call sites changed by zero lines.** The default index is what does that — a group's
+     `child(id)` still reads as it did, in the scheduler, the tests and flowview's `groupnav`.
+   - **`prepare` deliberately does NOT impose a count.** It keeps however many children are already
+     there and guarantees at least one. This is the one part that is not a rename, and it matters:
+     `prepare` runs at the top of *every* invocation, so "give a graph-containing node one child"
+     would reset a map's N children — and every element's retained values and versions — on each
+     run. A map's count is set between stages instead, once the collection that determines it
+     exists. Sabotage-verified: imposing a count makes a group's interior recompute on the second
+     run (`calls == 2`, want 1), which is inner incrementality gone.
+   - **Children are held indirectly** (`unique_ptr` in a vector) because an `Evaluation` must not
+     move when the vector grows: the scheduler holds child pointers in plan steps for a whole
+     invocation, and slice 4 grows that vector between stages.
+   - **Deviation — `GraphPath` did NOT gain an index here**, as this step originally said; it moves
+     to slice 6. Because `child()` defaults to index 0, flowview resolves unchanged, so an index on
+     `GraphPath` has no caller until the element stepper varies it. Adding one now would thread an
+     always-zero field through `PinKey`, the layout tree, the breadcrumb and `resolvePath` — a wide
+     sweep across the surface that produced M5's bugs, in exchange for nothing observable. It lands
+     in slice 6 beside the first thing that reads it.
 4. **`MapNode` + the map steps — the substance.** The class, lifted mirroring, the entry step's
    split/broadcast decision, the per-element children, the exit step's gather, and the suppression /
    ragged / `N == 0` rules. Driven through the **production schedulers** with a serial/parallel
@@ -2056,11 +2076,13 @@ and `PortId` changes green, and the shape that makes a regression unambiguous.
    evaluations of one definition finally happen for real.
 5. **Serialization.** The stored `interface` block, load-time reconciliation against the rebuilt inner
    boundary through the existing rectification pass, and byte-idempotence of the round trip.
-6. **flowview + the example nodes.** The breadcrumb element stepper, `PinKey` / `resolvePath` /
-   `resolveEvaluation` carrying an index, Issues rows that navigate to a failed element,
-   `Add ▸ Map`, and `flow-example`'s `listDir` / `combine` — plus the headless `run` proof over a real
-   folder. **This is the slice that needs a live driver**: M5's ten bugs all lived in exactly this
-   surface.
+6. **flowview + the example nodes.** `GraphPath` gains its `{NodeId, index}` step (deferred from
+   slice 3 — this is where it first has a caller), carried through `PinKey` / `resolvePath` /
+   `resolveEvaluation` and the layout tree; the breadcrumb element stepper; Issues rows that navigate
+   to a failed element; `Add ▸ Map`; and `flow-example`'s `listDir` / `combine` — plus the headless
+   `run` proof over a real folder. **This is the slice that needs a live driver**: M5's ten bugs all
+   lived in exactly this surface. Consider splitting the `GraphPath` widening into its own
+   no-behaviour-change commit ahead of the UI, for the reason slice 2 exists.
 
 ### Not in this milestone
 
