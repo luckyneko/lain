@@ -4,6 +4,7 @@
 #include <lain/flow/node.h>
 #include <lain/image/image.h>
 
+#include <filesystem>
 #include <string>
 
 namespace lain::flow::example
@@ -19,6 +20,10 @@ namespace lain::flow::example
 	// be populated (io::image::registerImageCodecs, or a single codec's registerCodec) before
 	// compute() runs — that is the app's job, not the node's. A load failure (missing file,
 	// unknown format, decode error) leaves an invalid Image on the port; load logs the reason.
+	// The `path` INPUT is how a map drives this node: a param is per-node configuration and every
+	// element of a map shares one definition, so a per-element path has to arrive as a value. It is
+	// Optional and takes precedence over the param when it carries one — the same shape as a Select's
+	// `selector` (wire it for data-driven loading, leave it unconnected for a fixed file).
 	class LoadImageNode : public Node
 	{
 	public:
@@ -27,7 +32,8 @@ namespace lain::flow::example
 		void compute(NodeEvaluation& evaluation) const override;
 
 	private:
-		PortId m_path; // "path" param (std::filesystem::path)
+		PortId m_pathIn; // optional std::filesystem::path input — overrides the param when present
+		PortId m_path;	 // "path" param (std::filesystem::path)
 		PortId m_out;
 	};
 } // namespace lain::flow::example

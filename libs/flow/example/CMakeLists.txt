@@ -8,6 +8,8 @@ add_library(flow-example STATIC
 	src/tintnode.cpp
 	src/blurnode.cpp
 	src/loadimagenode.cpp
+	src/listdirnode.cpp
+	src/combinenode.cpp
 )
 add_library(lain::flow-example ALIAS flow-example)
 
@@ -15,5 +17,8 @@ target_compile_features(flow-example PUBLIC cxx_std_17)
 target_include_directories(flow-example PUBLIC include)
 target_link_libraries(flow-example
 	PUBLIC lain::flow lain::image
-	PRIVATE lain::io::image lain::warnings # LoadImageNode uses io::image::load (impl only)
+	# LoadImageNode uses io::image::load (impl only); CombineNode says WHY it refused a ragged
+	# collection — flow CORE stays log-free, but an example node is app-adjacent and a silent
+	# refusal reads as a bug.
+	PRIVATE lain::io::image lain::log lain::warnings
 )

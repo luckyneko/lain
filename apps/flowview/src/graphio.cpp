@@ -48,6 +48,14 @@ namespace flowview
 		flow::registerPortType<float>("Float");
 		flow::registerPortType<bool>("Bool");
 		flow::registerPortType<std::string>("String");
+		flow::registerPortType<std::filesystem::path>("Path");
+
+		// COLLECTION types (M8). Registering a list form is what makes its element MAPPABLE — a
+		// PortType knows its element type but nothing can walk that backwards, so a map lifts an
+		// inner pin through this registry (ADR-0014). It is also what lets a collection pin name its
+		// type on disk, which a map's stored interface needs.
+		flow::registerPortType<std::vector<image::Image>>("ListOfImage");
+		flow::registerPortType<std::vector<std::filesystem::path>>("ListOfPath");
 		io::data::registerDataCodecs(); // json (Value <-> bytes)
 	}
 

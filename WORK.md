@@ -2144,8 +2144,34 @@ and `PortId` changes green, and the shape that makes a regression unambiguous.
        interior. Getting that wrong would give each element its own canvas positions.
      - `GraphPath` is runtime-only (the session persists file paths, not this), so nothing on disk
        changed.
-   - **6b — the example nodes + the headless proof:** `flow-example`'s `listDir` / `combine`, and
-     `flowview run` over a real folder. Driver-free, and the milestone's actual end-to-end claim.
+   - ✅ **6b — the example nodes + the headless proof — BUILT** (2026-08-14). `flow-example` gains
+     **`ListDirNode`** (a directory → one `std::vector<path>`, sorted, so element *i* means the same
+     file twice running) and **`CombineNode`** (N images → their pixelwise mean). `ctest` **464/464**
+     (+3), warning-clean, format-check clean. **The milestone's end-to-end claim is now proven**:
+     `flowview run` over a real folder lists 2 files, maps `LoadImage` over them and averages to
+     `(40+80)/2 = 60`, through the production save/load facade.
+     - **`ListDir` is what makes the arity genuinely data-dependent** — nothing can know how many
+       files a folder holds until it runs, which is the fact the whole staging design rests on. A
+       missing folder yields NO value (suppression) while an empty one yields an empty list (a
+       value); the difference is the same one ADR-0014 draws for `N == 0`.
+     - **`LoadImageNode` gained an Optional `path` INPUT** that overrides its param. A param is
+       per-node configuration and every element of a map shares one definition, so a per-element path
+       has to arrive as a value — the same shape as a Select's connectable `selector`.
+     - **`CombineNode` is an ORDINARY node**: it takes one vector-valued input and needed no engine
+       support at all, which is exactly what CONTEXT.md's "Port arity" always said. Only looking
+       *inside* a collection from the engine ever needed anything new.
+     - **A collection now describes itself as "3 items"** rather than falling back to its bare type
+       name. Small, but it is what the Inspector, the pin tooltips and the cli dump show for *every*
+       port a map has, and the type label already says what the type is.
+     - **A REAL BUG, found only by this end-to-end scene:** on a later run where only the *input*
+       changed, a map whose new arity is **zero** was never selected in the next stage, so its exit
+       step never ran and it kept serving the collection it gathered last time. `prepareMap` had
+       assumed a recompute request was "still standing" — true on the first run of a fresh
+       evaluation, false afterwards. Every unit test had masked it by dirtying everything
+       (`requestRecomputeAll`) or running once; with elements left, binding them drags the map in as
+       stale through the recursive check, so **only the drop to zero exposes it**. `prepareMap` now
+       requests the map's recompute explicitly. Regression test added at that exact shape, and
+       sabotage-verified.
    - **6c — the gui:** the breadcrumb element stepper, Issues rows that navigate to a failed element,
      `Add ▸ Map`. **This is the part that needs a live driver** — M5's ten bugs all lived in exactly
      this surface.

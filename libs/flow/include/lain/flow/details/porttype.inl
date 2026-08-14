@@ -6,6 +6,7 @@
 
 #include <lain/meta/traits.h> // is_vector_v / vector_element_t — what makes a type a collection
 
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -23,6 +24,20 @@ namespace lain::flow
 			if (value.empty())
 				return "(empty)";
 			return lain::meta::toString(value.get<T>());
+		}
+
+		// PortType::describe for a collection T. meta::toString has no arm for a vector, so it would
+		// fall back to the bare type name — which says nothing a pin's type label does not already
+		// say, and would be what the Inspector, the pin tooltips and the cli dump showed for EVERY
+		// port a map has. The COUNT is the fact worth reporting, and it is the one a reader of a
+		// collection actually wants.
+		template <typename T>
+		std::string describeCollection(const PortValue& value)
+		{
+			if (value.empty())
+				return "(empty)";
+			const std::size_t count = value.get<T>().size();
+			return std::to_string(count) + (count == 1 ? " item" : " items");
 		}
 
 		// PortType::size for a collection T. An EMPTY slot has no elements rather than being an
@@ -101,7 +116,7 @@ namespace lain::flow
 			static const PortType info{
 				std::type_index(typeid(T)),
 				lain::meta::typeName<T>(),
-				&detail::describePortValue<T>,
+				&detail::describeCollection<T>,
 				&portType<lain::meta::vector_element_t<T>>(),
 				&detail::collectionSize<T>,
 				&detail::collectionAt<T>,

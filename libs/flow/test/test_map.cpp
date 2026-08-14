@@ -412,6 +412,43 @@ TEST_CASE("a map does not re-run its producer across stages", "[flow][map]")
 	REQUIRE(evaluation.value(PortAddress{f.map, f.resultOut}).get<Ints>() == expected);
 }
 
+TEST_CASE("a later run where only the input changed still re-gathers", "[flow][map]")
+{
+	// The bug the end-to-end folder scene found, reduced. On the FIRST run of a fresh evaluation the
+	// map carries a recompute request, so the stage after it is deferred selects it and its exit step
+	// gathers. On a LATER run there is no such request — it went clean in the previous run's exit —
+	// and by the second stage its producer is clean too, so nothing would select it: the map would
+	// quietly keep serving the collection it gathered last time.
+	//
+	// Every earlier map test missed this by dirtying everything (requestRecomputeAll) or by running
+	// once. Preparation therefore REQUESTS the map's recompute, rather than assuming one is standing.
+	registerMapTypes();
+	Graph graph;
+	const MapFixture f = buildMap<AddOne>(graph);
+	const NodeId source = graph.add<MakeInts>(Ints{1, 2, 3});
+	REQUIRE(graph.connect(source, 0, f.map, 0) == Connection::Ok);
+
+	Evaluation evaluation{graph};
+	SerialScheduler sched;
+	sched.run(graph, evaluation);
+	const Ints first{2, 3, 4};
+	REQUIRE(evaluation.value(PortAddress{f.map, f.resultOut}).get<Ints>() == first);
+
+	// Change ONLY the producer, and to an EMPTY collection — the map itself is untouched, which is
+	// the realistic case (the folder was emptied). Emptiness is what makes this the failing shape:
+	// with elements left, binding them requests their boundary's recompute and the map is dragged in
+	// as stale through the recursive check; with NO children there is nothing to be stale, so
+	// without an explicit request nothing selects the map at all.
+	static_cast<MakeInts&>(graph.node(source)).values = Ints{};
+	evaluation.requestRecompute(source);
+	sched.run(graph, evaluation);
+
+	REQUIRE(evaluation.childCount(f.map) == 0);
+	const PortValue& result = evaluation.value(PortAddress{f.map, f.resultOut});
+	REQUIRE_FALSE(result.empty());		 // an empty collection is a value...
+	REQUIRE(result.get<Ints>().empty()); // ...and NOT last run's three elements
+}
+
 TEST_CASE("a map inside a map costs one more stage and nothing else", "[flow][map]")
 {
 	// ADR-0014 claims nesting falls out of staging rather than needing anything: the outer map is

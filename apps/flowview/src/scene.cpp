@@ -3,7 +3,9 @@
 #include <lain/flow/boundary.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/example/blurnode.h>
+#include <lain/flow/example/combinenode.h>
 #include <lain/flow/example/gradientnode.h>
+#include <lain/flow/example/listdirnode.h>
 #include <lain/flow/example/loadimagenode.h>
 #include <lain/flow/example/tintnode.h>
 #include <lain/flow/graph.h>
@@ -32,7 +34,10 @@ namespace flowview
 	static constexpr const char* kConstBoolKey = "constBool";
 	static constexpr const char* kGroupInputKey = "groupInput";
 	static constexpr const char* kGroupOutputKey = "groupOutput";
+	static constexpr const char* kListDirKey = "listDir";
+	static constexpr const char* kCombineKey = "combine";
 	static constexpr const char* kGroupKey = "group";
+	static constexpr const char* kMapKey = "map";
 	static constexpr const char* kLinkedGroupKey = "linkedGroup";
 
 	const std::vector<NodeCategory>& nodeCatalog()
@@ -42,8 +47,8 @@ namespace flowview
 		// here: they're a one-each-per-graph fixture that comes with a New graph and is grown from the
 		// Interface panel, not added like an ordinary node.
 		static const std::vector<NodeCategory> catalog = {
-			{"Sources", {kGradientKey, kLoadImageKey, kConstIntKey, kConstBoolKey}},
-			{"Filters", {kTintKey, kBlurKey}},
+			{"Sources", {kGradientKey, kLoadImageKey, kListDirKey, kConstIntKey, kConstBoolKey}},
+			{"Filters", {kTintKey, kBlurKey, kCombineKey}},
 			{"Control", {kGateKey, kMergeKey, kSelectKey}},
 			// A group is added empty (its inner graph is born with its own boundary pair) and grown by
 			// descending into it. A LINKED group needs a template chosen first, so the menu bar adds it
@@ -61,6 +66,12 @@ namespace flowview
 		factory.registerType<flow::example::TintNode>(kTintKey, 1.0f, 0.5f, 0.5f); // keep R, halve G/B
 		factory.registerType<flow::example::BlurNode>(kBlurKey, 2, 1.5f);		   // soft 5x5 Gaussian
 		factory.registerType<flow::example::LoadImageNode>(kLoadImageKey);		   // empty path -> set in the gui
+
+		// The two ends of a MAP (M8): a collection source, and the reduce that consumes one.
+		// ListDir is what makes a map's arity data-dependent — nothing can know how many files a
+		// folder holds until it has run, which is why the scheduler plans in stages.
+		factory.registerType<flow::example::ListDirNode>(kListDirKey);
+		factory.registerType<flow::example::CombineNode>(kCombineKey);
 
 		// Control nodes over the scene payload. Gate passes its image when enabled (else suppresses
 		// downstream); the variadic Merge/Select are empty at construction — the canvas ± grows their
@@ -83,6 +94,7 @@ namespace flowview
 		// is palette-addable (a linked group is created by picking its template).
 		factory.registerType<flow::InlineGroupNode>(kGroupKey);
 		factory.registerType<flow::LinkedGroupNode>(kLinkedGroupKey);
+		factory.registerType<flow::MapNode>(kMapKey);
 	}
 
 	void buildExampleScene(flow::Graph& graph, const core::Factory<flow::Node>& factory)

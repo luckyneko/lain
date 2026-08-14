@@ -176,8 +176,8 @@ namespace lain::flow
 			// computes its input has run.
 			//
 			// The `prepared` check is what makes the SECOND stage expand it instead of deferring it
-			// again: preparation deliberately leaves the map's recompute request standing, so that it
-			// (and everything downstream) is still selected when the plan is rebuilt.
+			// again; preparation also REQUESTS this map's recompute, so that it — and everything
+			// downstream of it — is still selected when the plan is rebuilt.
 			if (isMap)
 			{
 				if (publish && !alreadyPrepared(id))
@@ -541,6 +541,14 @@ namespace lain::flow
 
 		// Its inputs are only now available: the stage that computed them has just finished.
 		populateInputs(definition, evaluation, id);
+
+		// The next stage must SELECT this map, or its exit step never runs and it keeps serving the
+		// collection it gathered last time. Requesting it here rather than assuming a request is
+		// already standing: on the first run of a fresh evaluation there is one, but on a later run
+		// where only the INPUT changed the map went clean in the previous run's exit — and by the
+		// next stage its producer is clean too, so nothing else would select it. (exitMap clears
+		// this again, which is what stops it recurring.)
+		evaluation.requestRecompute(id);
 
 		const std::optional<std::size_t> arity = mapArity(definition, evaluation, id);
 		if (!arity.has_value())

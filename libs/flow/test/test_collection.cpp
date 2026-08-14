@@ -292,7 +292,18 @@ TEST_CASE("describe still works for a collection type", "[collection]")
 	PortValue empty;
 	REQUIRE(type.describe(empty) == "(empty)");
 
+	// And it reports the COUNT, not the bare type name: a pin's type label already says what the
+	// type is, so "3 items" is the only fact left worth showing — which is what the Inspector, the
+	// pin tooltips and the cli dump display for every port a map has.
 	PortValue value;
 	value.set(std::vector<int>{1, 2});
-	REQUIRE_FALSE(type.describe(value).empty());
+	REQUIRE(type.describe(value) == "2 items");
+
+	PortValue one;
+	one.set(std::vector<int>{7});
+	REQUIRE(type.describe(one) == "1 item");
+
+	PortValue none;
+	none.set(std::vector<int>{});
+	REQUIRE(type.describe(none) == "0 items");
 }

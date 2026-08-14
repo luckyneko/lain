@@ -479,6 +479,29 @@ clean, headless unchanged.
   each element its own canvas positions.
 - `GraphPath` is runtime-only (the session persists file paths, not this), so nothing on disk changed.
 
+**Slice 6b is built (2026-08-14) — the milestone's end-to-end claim is PROVEN.** `flow-example` gains
+`ListDirNode` (a directory → one sorted `std::vector<path>`) and `CombineNode` (N images → their
+pixelwise mean), and `flowview run` over a real folder lists the files, maps `LoadImage` over them and
+averages — through the production save/load facade. `ctest` **464/464** (+3), warning-clean,
+format-check clean.
+- **`ListDir` is what makes arity genuinely data-dependent**, which is the fact the whole staging
+  design rests on. A missing folder yields no value (suppression); an empty one yields an empty list
+  (a value) — ADR-0014's `N == 0` distinction, arriving from the other end.
+- **`LoadImageNode` gained an Optional `path` input** overriding its param: a param is per-node
+  configuration and every element of a map shares one definition, so a per-element path must arrive
+  as a value. Same shape as a Select's connectable `selector`.
+- **`CombineNode` needed no engine support** — it just declares a vector-valued input, exactly as
+  CONTEXT.md's "Port arity" always said. Only looking *inside* a collection ever needed anything new.
+- A collection now describes itself as **"3 items"** instead of its bare type name — what the
+  Inspector, tooltips and cli dump show for every port a map has.
+- **A real bug, found only by the end-to-end scene:** on a later run where only the INPUT changed, a
+  map whose new arity is **zero** was never selected in the next stage, so its exit never ran and it
+  kept serving last run's collection. `prepareMap` assumed a recompute request was still standing —
+  true on a fresh evaluation, false afterwards. With elements left, binding them drags the map in as
+  stale through the recursive check, so **only the drop to zero exposes it**; every unit test had
+  masked it by dirtying everything or running once. Now requested explicitly, with a regression test
+  at that exact shape.
+
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
 
 The last step of Milestone 6. `PinKey` — the key the preview cache, Inspector, Interface, Preview
