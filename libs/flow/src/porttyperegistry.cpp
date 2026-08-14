@@ -21,10 +21,31 @@ namespace lain::flow
 		return instance;
 	}
 
+	// element type_index -> the registered collection type holding it. The reverse of
+	// PortType::element, which cannot be derived: naming std::vector<T> needs T at compile time, and
+	// a mirroring pass has only a runtime type. See listTypeFor.
+	static std::map<std::type_index, const PortType*>& listByElement()
+	{
+		static std::map<std::type_index, const PortType*> instance;
+		return instance;
+	}
+
 	void registerPortType(std::string key, std::type_index type, PortTypeCreator creator)
 	{
 		keyByType()[type] = key; // record the reverse before key is moved into the forward table
 		registry()[std::move(key)] = std::move(creator);
+	}
+
+	void registerListType(std::type_index element, const PortType* list)
+	{
+		if (list != nullptr)
+			listByElement()[element] = list;
+	}
+
+	const PortType* listTypeFor(std::type_index element)
+	{
+		const auto it = listByElement().find(element);
+		return it == listByElement().end() ? nullptr : it->second;
 	}
 
 	std::string portTypeKey(std::type_index type)

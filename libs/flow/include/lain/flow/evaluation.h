@@ -190,6 +190,15 @@ namespace lain::flow
 		// How many evaluations this node has: 0 for an ordinary node, 1 for a group, N for a map.
 		std::size_t childCount(NodeId group) const;
 
+		// Set how many evaluations a node has — a MAP's arity, which is known only once the run has
+		// produced the collection that determines it (ADR-0014). Growing adds fresh children;
+		// shrinking drops the tail, and everything those elements had computed with it.
+		//
+		// THE COORDINATOR CALLS THIS, between stages. A worker task must never reach it: growing the
+		// child vector is exactly the shared-container growth that would make the parallel path
+		// unsafe, which is why arity is settled before any of the next stage's tasks start.
+		void setChildCount(NodeId node, std::size_t count);
+
 	private:
 		friend class NodeEvaluation;
 		friend class Scheduler; // the run lease, computedAt bookkeeping and input population

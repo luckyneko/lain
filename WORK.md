@@ -2069,11 +2069,43 @@ and `PortId` changes green, and the shape that makes a regression unambiguous.
      always-zero field through `PinKey`, the layout tree, the breadcrumb and `resolvePath` — a wide
      sweep across the surface that produced M5's bugs, in exchange for nothing observable. It lands
      in slice 6 beside the first thing that reads it.
-4. **`MapNode` + the map steps — the substance.** The class, lifted mirroring, the entry step's
-   split/broadcast decision, the per-element children, the exit step's gather, and the suppression /
-   ragged / `N == 0` rules. Driven through the **production schedulers** with a serial/parallel
-   equivalence case repeated in the style of `[group]`'s 100× sweep, since a map is where concurrent
-   evaluations of one definition finally happen for real.
+4. ✅ **`MapNode` + the map steps — BUILT** (2026-08-14). The class, lifted mirroring, the
+   split/broadcast decision, per-element children sized between stages, the gathering exit, and the
+   suppression / ragged / `N == 0` rules. `ctest` **456/456** (+10), warning-clean, format-check
+   clean, headless `run --example` unchanged. Everything is driven through the **production
+   schedulers**, serial and parallel, because a plan wired plausibly but wrongly still passes a
+   structural assertion.
+   - **The structural seam gained its third question: `Node::evaluatesPerElement()`.** The scheduler
+     asks the fact, not the class — ADR-0009's rule, and the first draft of this slice broke it with
+     a `dynamic_cast<MapNode*>` before it was corrected.
+   - **Addition the ADR did not anticipate: lifting needs the port-type REGISTRY.** A `PortType`
+     knows its element type, but nothing can walk that backwards — naming `std::vector<T>` needs `T`
+     at compile time, and mirroring has only a runtime type. So `registerPortType<std::vector<T>>`
+     now also records itself as the list form of `T`, and `listTypeFor(element)` is what `MapNode`
+     lifts through. **A type is mappable exactly when its list form is registered**, which ADR-0014
+     already required for a collection pin to serialize. A type without one is refused rather than
+     silently mirrored un-lifted.
+   - **`GroupNode::exposePort` became virtual**, so `edit::syncGroupPorts` needs no idea which kind
+     it is reconciling — one mirroring gesture, two faces.
+   - **There is no MapEntry step.** Binding happens where the children are sized: between stages, on
+     the coordinator thread. A map's plan is therefore N × its interior's steps plus a `MapExit`,
+     and a map is never *consumed* within a stage it is expanded in (it would have been deferred if
+     a predecessor were running), so it needs no consuming end.
+   - **A map is deferred exactly when a group would republish** — `needsRecompute || a selected
+     predecessor` — and additionally only if it has not already been prepared this invocation. The
+     first half keeps the incremental case at ONE stage (an edit inside a map re-runs neither the
+     producer nor the binding); the second half is what makes the loop terminate.
+   - **`exitMap` re-asks whether the map could run**, rather than remembering it. That is what keeps
+     zero children unambiguous: an **empty collection** gathers to an empty vector (a value), while a
+     map that could not determine an arity produces nothing at all.
+   - **`prepare` gives a map no default child**, since 0 is a legitimate count for it — the reason
+     slice 3's "keep what is there" rule was written that way.
+   - **Four sabotages, all caught:** disabling split detection breaks 7 of 9; never deferring breaks
+     the same 7; making `gather` skip holes breaks the hole rule; and dropping the already-prepared
+     guard **hangs** — a map defers itself forever.
+   - **Nested maps verified rather than assumed.** A map inside a map delivers `{{2,3},{11}}` from
+     `{{1,2},{10}}`, and each row is its own evaluation of the inner map with its own element count
+     — which is precisely why a frontier is addressed `{definition, evaluation, node}`.
 5. **Serialization.** The stored `interface` block, load-time reconciliation against the rebuilt inner
    boundary through the existing rectification pass, and byte-idempotence of the round trip.
 6. **flowview + the example nodes.** `GraphPath` gains its `{NodeId, index}` step (deferred from

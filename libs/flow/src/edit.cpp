@@ -223,8 +223,10 @@ namespace lain::flow::edit
 			const Port& pin = boundaryIn.output(i);
 			if (mirroredInputs.count(pin.id()) == 0)
 			{
-				node->exposePort(Port::Direction::Input, pin);
-				++sync.added;
+				// A map refuses a pin whose type has no registered collection form, and adds
+				// nothing — so count what was actually mirrored, not what was attempted.
+				if (node->exposePort(Port::Direction::Input, pin) != PortId{})
+					++sync.added;
 			}
 		}
 
@@ -234,8 +236,8 @@ namespace lain::flow::edit
 			const Port& pin = boundaryOut.input(i);
 			if (mirroredOutputs.count(pin.id()) == 0)
 			{
-				node->exposePort(Port::Direction::Output, pin);
-				++sync.added;
+				if (node->exposePort(Port::Direction::Output, pin) != PortId{})
+					++sync.added;
 			}
 		}
 

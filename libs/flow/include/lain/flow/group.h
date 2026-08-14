@@ -93,7 +93,11 @@ namespace lain::flow
 		// edit::syncGroupPorts calls: reconciliation runs over a live interface whose types are only
 		// known at runtime. `outerSide` is THIS node's side: an inner GroupInput pin (an inner
 		// *output*) becomes one of this node's inputs, and vice versa.
-		PortId exposePort(Port::Direction outerSide, const Port& innerPin, Presence presence = Presence::Required)
+		//
+		// VIRTUAL because a map mirrors the same pins LIFTED (T becomes vector<T>) — so one
+		// reconciliation gesture serves both kinds and edit::syncGroupPorts needs no idea which it
+		// is holding. Returns the null PortId if the pin cannot be mirrored.
+		virtual PortId exposePort(Port::Direction outerSide, const Port& innerPin, Presence presence = Presence::Required)
 		{
 			const PortId outer = (outerSide == Port::Direction::Input)
 									 ? addInputLike(innerPin.name(), innerPin.portType(), presence)
@@ -138,6 +142,50 @@ namespace lain::flow
 
 	private:
 		Graph m_inner; // born with its own boundary pair — the group's interface
+	};
+
+	// A MAP: a group whose interior is evaluated once per ELEMENT of a collection, rather than once
+	// (ADR-0014). It owns its inner Graph exactly as an inline group does — a linked map (one shared
+	// template mapped over N streams) is deferred until the video workload asks for it.
+	//
+	// The difference is entirely in the FACE it presents. Where a group mirrors an inner pin of type
+	// T as a port of type T, a map mirrors it LIFTED, as vector<T>: its `files` input takes the whole
+	// collection and its `out` output delivers one per element. The scheduler then reads each outer
+	// port's declared type to decide what to do with it, so nothing about the mode is stored:
+	//
+	//     outer vector<T> against an inner T  -> SPLIT     (element i goes to child i)
+	//     outer T         against an inner T  -> BROADCAST (the same value goes to every child)
+	//     outputs                             -> GATHER    (always)
+	//
+	// Broadcast is therefore expressed by declaring the port un-lifted, which edit::syncGroupPorts
+	// preserves: mirroring is by PortId, so an already-mapped pin is never re-typed.
+	class MapNode : public GroupNode
+	{
+	public:
+		MapNode()
+			: GroupNode("Map")
+		{
+		}
+
+		Graph& inner() { return m_inner; }
+		const Graph& inner() const { return m_inner; }
+		const Graph* innerGraph() const override { return &m_inner; }
+
+		// The structural fact that makes this a map: its interior is evaluated once per element,
+		// so it has N child evaluations rather than one, sized between stages.
+		bool evaluatesPerElement() const override { return true; }
+
+		// Mirror an inner pin LIFTED — an inner T becomes an outer vector<T>, which is what makes
+		// this node a map rather than a group.
+		//
+		// Returns the null PortId when T has no registered list form, and adds nothing: a map cannot
+		// carry a type it has no collection for, and inventing one at runtime is impossible (naming
+		// std::vector<T> needs T at compile time). Refusing is the same call the encoders and
+		// edit::groupSelected's UnnamedPinType make — degrade nothing, leave it visibly absent.
+		PortId exposePort(Port::Direction outerSide, const Port& innerPin, Presence presence = Presence::Required) override;
+
+	private:
+		Graph m_inner; // born with its own boundary pair — the interface each element is evaluated over
 	};
 
 	// One pin of a linked group's cached interface: enough to rebuild the port without the template.

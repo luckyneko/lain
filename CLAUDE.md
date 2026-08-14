@@ -325,8 +325,9 @@ M6 split definition from evaluation so one definition could back N evaluations; 
 real for linked groups. **Neither has ever had the caller both were built for** — running one subgraph
 once per element of a collection. **Milestone 8** brings it. Grilled 2026-08-11; decisions in
 **[ADR-0014](docs/adr/0014-map-nodes-staged-planning.md)**, build order in WORK.md, vocabulary in
-CONTEXT.md. **Slices 1–3 of 6 are built** (see the end of this section). It settles all four questions
-ADR-0012 listed as *deliberately unsettled*, which it could only do once a concrete caller fixed them.
+CONTEXT.md. **Slices 1–4 of 6 are built** (see the end of this section) — **maps run**. It settles all
+four questions ADR-0012 listed as *deliberately unsettled*, which it could only do once a concrete
+caller fixed them.
 
 - **First vertical: a folder of images, listed in-graph** (`listDir → map(load → tint) → combine`).
   Runnable headless on the existing `io::image`, and the smallest caller that still makes arity
@@ -418,6 +419,34 @@ vector<unique_ptr<Evaluation>>>`, addressed by *which node* **and** *which evalu
   element stepper varies it; adding it now would thread an always-zero field through `PinKey`, the
   layout tree and the breadcrumb, across the surface that produced M5's ten bugs, for nothing
   observable.
+
+**Slice 4 is built (2026-08-14) — MAPS RUN.** `MapNode` beside `InlineGroupNode` / `LinkedGroupNode`,
+lifted mirroring, per-element children sized between stages, the gathering exit, and the suppression /
+ragged / `N == 0` rules — all driven through the production schedulers, serial and parallel.
+`ctest` **456/456** (+10), warning-clean, format-check clean, headless unchanged.
+- **`Node::evaluatesPerElement()`** is the structural seam's third question, beside `innerGraph()` and
+  `innerPin()`. The scheduler asks the fact, not the class: the first draft used
+  `dynamic_cast<MapNode*>` and was corrected, since ADR-0009's whole point is that a future
+  graph-containing node needs no scheduler change.
+- **Lifting needs the port-type REGISTRY — an addition the ADR did not anticipate.** A `PortType`
+  knows its element type, but nothing walks that backwards (naming `std::vector<T>` needs `T` at
+  compile time, and mirroring has only a runtime type). `registerPortType<std::vector<T>>` now also
+  records itself as `T`'s list form, and `listTypeFor` is what `MapNode::exposePort` lifts through.
+  **A type is mappable exactly when its list form is registered** — already required by ADR-0014 for
+  a collection pin to serialize. An unregistered one is refused, not silently mirrored un-lifted.
+- **`GroupNode::exposePort` is virtual**, so `edit::syncGroupPorts` needs no idea which kind it holds.
+- **There is no MapEntry step.** Binding happens where the children are sized — between stages, on the
+  coordinator thread — so a map's plan is N × its interior plus a `MapExit`. A map is never consumed
+  within a stage it is expanded in, because it would have been deferred if a predecessor were running.
+- **A map defers exactly when a group would republish**, plus "not already prepared this invocation".
+  The first half keeps an edit *inside* a map at one stage; the second is what terminates the loop.
+- **`exitMap` re-asks whether the map could run** instead of remembering: that is what keeps zero
+  children unambiguous — an empty collection gathers to an empty vector (a value), an undeterminable
+  arity produces nothing.
+- **Four sabotages, all caught**, one of them by hanging (dropping the prepared guard makes a map
+  defer forever). **Nested maps tested, not assumed** — each row is its own evaluation of the inner
+  map with its own element count, which is why a frontier is addressed `{definition, evaluation,
+  node}`.
 
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
 

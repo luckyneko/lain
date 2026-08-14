@@ -14,6 +14,7 @@ add_executable(test-flow
 	test_params.cpp
 	test_boundary.cpp
 	test_group.cpp
+	test_map.cpp
 	test_nestedrun.cpp
 	test_groupsync.cpp
 	test_groupedit.cpp

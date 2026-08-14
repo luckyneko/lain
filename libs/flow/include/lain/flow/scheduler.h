@@ -35,6 +35,7 @@
 #include "lain/flow/types.h"
 
 #include <cstddef>
+#include <optional>
 #include <set>
 #include <utility>
 #include <vector>
@@ -47,6 +48,8 @@ namespace lain::task
 namespace lain::flow
 {
 	class Graph;
+	class Node;
+	class Port;
 
 	// Abstract execution strategy. Both entry points are shared: a strategy differs only in how it
 	// executes ONE stage's plan (executePlan), so the staging loop, the run lease and the planning
@@ -95,6 +98,7 @@ namespace lain::flow
 				Node,		// run definition->node(node) into *evaluation
 				GroupEntry, // publish the group's outer inputs into its child evaluation's boundary
 				GroupExit,	// copy the child's delivered outputs out onto the group's own output ports
+				MapExit,	// GATHER every child's delivered outputs into one collection per port
 			};
 
 			Kind kind = Kind::Node;
@@ -131,14 +135,23 @@ namespace lain::flow
 			std::vector<Frontier> frontiers;
 		};
 
+		// The maps already prepared during THIS invocation. Passed down rather than held on the
+		// Scheduler, because one Scheduler may be running two evaluations at once — a member would
+		// be shared mutable state on an object whose whole contract is that it has none.
+		//
+		// It is also what guarantees the staging loop terminates: a map is deferred at most once per
+		// invocation, so the number of stages is bounded by the number of maps.
+		using PreparedMaps = std::vector<Frontier>;
+
 		// The plan for a full run: the STALE CLOSURE at every level — every node the evaluation says
-		// needs recomputing plus everything downstream of one, with each group expanded in place.
-		Plan buildRunPlan(const Graph& definition, Evaluation& evaluation);
+		// needs recomputing plus everything downstream of one, with each group expanded in place and
+		// each not-yet-prepared map left as a frontier.
+		Plan buildRunPlan(const Graph& definition, Evaluation& evaluation, const PreparedMaps& prepared);
 
 		// The plan for a pull: the stale nodes in `target`'s upstream cone. Deliberately NOT the
 		// closure — a node that does not need recomputing keeps its value even if something upstream
 		// does, which is the long-standing pull semantic.
-		Plan buildEvalPlan(const Graph& definition, Evaluation& evaluation, NodeId target);
+		Plan buildEvalPlan(const Graph& definition, Evaluation& evaluation, NodeId target, const PreparedMaps& prepared);
 
 		// Execute ONE stage's plan — the only thing the two strategies do differently. It is handed a
 		// complete, already-ordered plan, so a backend never plans, never takes the lease and never
@@ -187,8 +200,30 @@ namespace lain::flow
 		static bool stale(const Graph& definition, Evaluation& evaluation, NodeId id);
 
 		// Emit `order`'s nodes (already topo-ordered and selected) into `plan`, recursing into any
-		// node that contains a graph, and wire this level's edges between the resulting steps.
-		void expand(const Graph& definition, Evaluation& evaluation, const std::vector<NodeId>& order, Plan& plan);
+		// node that contains a graph, and wire this level's edges between the resulting steps. A map
+		// whose input may still change in this stage is recorded in `plan.frontiers` instead, along
+		// with everything downstream of it.
+		void expand(const Graph& definition, Evaluation& evaluation, const std::vector<NodeId>& order, Plan& plan,
+					const PreparedMaps& prepared);
+
+		// Size and fill a deferred map's children, now that the stage which computes its input has
+		// finished: populate its own inputs, read the arity from its split inputs, create/prune one
+		// child Evaluation per element, and bind each child's boundary — SPLIT inputs by element,
+		// BROADCAST inputs whole. Runs on the coordinator thread, between stages, which is what keeps
+		// "a worker task never grows evaluation storage" true (ADR-0012).
+		//
+		// A map that cannot produce elements — an unready input, ragged split lengths, or no split
+		// input at all — is left with NO children and its outputs cleared, which suppresses
+		// downstream through ADR-0007's ordinary emptiness rule.
+		void prepareMap(const Frontier& frontier);
+
+		// How many elements a map will evaluate, or nullopt when it cannot be determined (see above).
+		// Reads the map's already-populated inputs in `evaluation`.
+		std::optional<std::size_t> mapArity(const Graph& definition, Evaluation& evaluation, NodeId id);
+
+		// Whether an outer port SPLITS its value across the children: its declared type is a
+		// collection whose element type is the inner pin's. Anything else broadcasts.
+		static bool splits(const Node& node, const Port& outer);
 
 		// Publish the group's outer input values into its CHILD evaluation's boundary input (when
 		// `publish`), after populating those outer inputs from the parent graph.
@@ -197,6 +232,12 @@ namespace lain::flow
 		// Copy the child evaluation's delivered boundary-output values out onto the group's own
 		// output ports in the parent evaluation.
 		void exitGroup(const Graph& definition, Evaluation& evaluation, NodeId id);
+
+		// Crossing out of a MAP: gather every child's delivered value for each output port into one
+		// collection. A child that delivered nothing is a HOLE, and a hole clears the whole output —
+		// a std::vector<T> cannot hold one, and quietly shortening it would break the positional
+		// correspondence between the input collection and the output (ADR-0014).
+		void exitMap(const Graph& definition, Evaluation& evaluation, NodeId id);
 
 		// Collect `id` and everything transitively feeding it into `cone`.
 		static void collectUpstream(const Graph& definition, NodeId id, std::set<NodeId>& cone);

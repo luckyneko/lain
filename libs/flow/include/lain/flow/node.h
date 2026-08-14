@@ -154,6 +154,15 @@ namespace lain::flow
 		// graph-containing node work with no scheduler change.
 		virtual PortId innerPin(PortId /*outer*/) const { return PortId{}; }
 
+		// Whether this node evaluates its contained graph ONCE PER ELEMENT of a collection — a map
+		// (ADR-0014) — rather than once. The third and last part of the structural seam, and asked
+		// for the same reason as the two above: the scheduler needs the fact, not the class, so a
+		// future per-element node needs no scheduler change.
+		//
+		// It is what makes a node's children plural: one evaluation per element rather than one
+		// full stop, sized between stages because the collection is only computed during the run.
+		virtual bool evaluatesPerElement() const { return false; }
+
 		// (Readiness — "every REQUIRED input carries a value", ADR-0007 — followed the values into
 		// the Evaluation: `evaluation.ready(id)` for a host, `nodeEvaluation.ready()` inside compute.
 		// It is a join of declaration and runtime, so it belongs to the side that owns the values.)

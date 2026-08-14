@@ -2,10 +2,12 @@
 
 #include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h" // Graph + the boundary nodes a group step crosses through
+#include "lain/flow/group.h" // MapNode — the scheduler asks whether a node maps, not which class it is
 
 #include <lain/task/task.h>
 
 #include <map>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -83,9 +85,11 @@ namespace lain::flow
 	//
 	// A plain node becomes one step that both consumes (populateInputs) and produces. A group
 	// becomes THREE parts — entry, its inner graph's steps, exit — so its consuming end is the
-	// entry step and its producing end is the exit step. Wiring this level's edges between those
-	// ends is what stitches the levels into a single DAG.
-	void Scheduler::expand(const Graph& definition, Evaluation& evaluation, const std::vector<NodeId>& order, Plan& plan)
+	// entry step and its producing end is the exit step. A MAP becomes its children's steps plus a
+	// gathering exit, or is deferred to the next stage. Wiring this level's edges between those ends
+	// is what stitches the levels into a single DAG.
+	void Scheduler::expand(const Graph& definition, Evaluation& evaluation, const std::vector<NodeId>& order, Plan& plan,
+						   const PreparedMaps& prepared)
 	{
 		// Where a node's value is consumed and where it becomes available: the same step for a
 		// plain node, entry and exit for a group.
@@ -97,19 +101,55 @@ namespace lain::flow
 		std::map<NodeId, Ends> ends;
 		const std::set<NodeId> selected(order.begin(), order.end());
 
+		// Nodes left out of this stage: a deferred map, and then everything reachable downstream of
+		// one. `order` is topo, so a node's predecessors are already decided when it is reached —
+		// the same shape runOrder uses to grow the stale closure.
+		std::set<NodeId> deferred;
+
+		// Has this map already been prepared during this invocation? That is what bounds the staging
+		// loop: a map is deferred at most once, so the stage count cannot exceed the number of maps.
+		const auto alreadyPrepared = [&](NodeId id)
+		{
+			for (const Frontier& f : prepared)
+			{
+				if (f.definition == &definition && f.evaluation == &evaluation && f.node == id)
+					return true;
+			}
+			return false;
+		};
+
 		for (const NodeId id : order)
 		{
 			const Node& node = definition.node(id);
 			const Graph* inner = node.innerGraph();
-			if (inner == nullptr || !evaluation.hasChild(id))
+
+			// Anything fed by a deferred map waits for the stage that map is expanded in.
+			bool downstreamOfDeferred = false;
+			for (const Graph::Edge& e : definition.edges())
+			{
+				if (e.to.node == id && deferred.count(e.from.node) != 0)
+				{
+					downstreamOfDeferred = true;
+					break;
+				}
+			}
+			if (downstreamOfDeferred)
+			{
+				deferred.insert(id);
+				continue;
+			}
+
+			// A map is recognised BEFORE the no-child case below: it legitimately has zero children
+			// (an empty collection, or one that could not be determined), and running it as an
+			// ordinary node would silently do nothing instead of gathering.
+			const bool isMap = node.evaluatesPerElement() && inner != nullptr;
+			if (inner == nullptr || (!isMap && !evaluation.hasChild(id)))
 			{
 				const std::size_t step = plan.steps.size();
 				plan.steps.push_back(Step{Step::Kind::Node, &definition, &evaluation, id, false});
 				ends[id] = Ends{step, step};
 				continue;
 			}
-
-			Evaluation& child = evaluation.child(id);
 
 			// Republish this group's inputs only when they can actually have changed: the group node
 			// itself needs recomputing (a structural edit touched it), or an upstream node is being
@@ -129,6 +169,52 @@ namespace lain::flow
 				}
 			}
 
+			// A MAP is expanded once its children are known to match its input. That is exactly the
+			// condition a group republishes under, read the other way round: if this map's input can
+			// still change in this stage, its arity can too, so neither its child count nor their
+			// bindings can be trusted yet — defer it, and let the loop prepare it once the stage that
+			// computes its input has run.
+			//
+			// The `prepared` check is what makes the SECOND stage expand it instead of deferring it
+			// again: preparation deliberately leaves the map's recompute request standing, so that it
+			// (and everything downstream) is still selected when the plan is rebuilt.
+			if (isMap)
+			{
+				if (publish && !alreadyPrepared(id))
+				{
+					deferred.insert(id);
+					plan.frontiers.push_back(Frontier{&definition, &evaluation, id});
+					continue;
+				}
+
+				// N children, all sharing one definition — the target workload, finally literal.
+				const std::size_t count = evaluation.childCount(id);
+				const std::size_t begin = plan.steps.size();
+				for (std::size_t i = 0; i < count; ++i)
+					expand(*inner, evaluation.child(id, i), runOrder(*inner, evaluation.child(id, i)), plan, prepared);
+				const std::size_t end = plan.steps.size();
+
+				const std::size_t exit = plan.steps.size();
+				plan.steps.push_back(Step{Step::Kind::MapExit, &definition, &evaluation, id, false});
+
+				// Every element's inner GroupOutput must be delivered before the gather reads it.
+				for (std::size_t i = begin; i < end; ++i)
+				{
+					const Step& step = plan.steps[i];
+					if (step.definition == inner && step.kind == Step::Kind::Node && step.node == inner->boundaryOutputNode().id())
+						plan.edges.emplace_back(i, exit);
+				}
+
+				// A map is never consumed within a stage it is expanded in — it would have been
+				// deferred if a predecessor were running — so the consuming end is never read. Both
+				// ends name the exit, which is the step that genuinely produces its outputs.
+				ends[id] = Ends{exit, exit};
+				continue;
+			}
+
+			// A group from here down: exactly one child evaluation, which is index 0.
+			Evaluation& child = evaluation.child(id);
+
 			// New values are coming, so the inner boundary must recompute — ask the CHILD evaluation
 			// before planning the inner level, or the closure below would leave the boundary out and
 			// the published values would sit in a node that never carries them onward.
@@ -139,7 +225,7 @@ namespace lain::flow
 			plan.steps.push_back(Step{Step::Kind::GroupEntry, &definition, &evaluation, id, publish});
 
 			const std::size_t innerBegin = plan.steps.size();
-			expand(*inner, child, runOrder(*inner, child), plan);
+			expand(*inner, child, runOrder(*inner, child), plan, prepared);
 			const std::size_t innerEnd = plan.steps.size();
 
 			const std::size_t exit = plan.steps.size();
@@ -176,14 +262,15 @@ namespace lain::flow
 		}
 	}
 
-	Scheduler::Plan Scheduler::buildRunPlan(const Graph& definition, Evaluation& evaluation)
+	Scheduler::Plan Scheduler::buildRunPlan(const Graph& definition, Evaluation& evaluation, const PreparedMaps& prepared)
 	{
 		Plan plan;
-		expand(definition, evaluation, runOrder(definition, evaluation), plan);
+		expand(definition, evaluation, runOrder(definition, evaluation), plan, prepared);
 		return plan;
 	}
 
-	Scheduler::Plan Scheduler::buildEvalPlan(const Graph& definition, Evaluation& evaluation, NodeId target)
+	Scheduler::Plan Scheduler::buildEvalPlan(const Graph& definition, Evaluation& evaluation, NodeId target,
+											 const PreparedMaps& prepared)
 	{
 		std::set<NodeId> cone;
 		collectUpstream(definition, target, cone);
@@ -198,7 +285,7 @@ namespace lain::flow
 		}
 
 		Plan plan;
-		expand(definition, evaluation, order, plan);
+		expand(definition, evaluation, order, plan, prepared);
 		return plan;
 	}
 
@@ -242,13 +329,17 @@ namespace lain::flow
 	// one plan: the cost and the behaviour of a single-plan run, unchanged.
 	void Scheduler::runStages(const Graph& definition, Evaluation& evaluation, Mode mode, NodeId target)
 	{
+		// Every map prepared so far in this invocation. A map is deferred at most once, so this also
+		// bounds the loop: at most one stage per map, plus the final one.
+		PreparedMaps prepared;
+
 		while (true)
 		{
 			const Plan plan = (mode == Mode::Push)
-								  ? buildRunPlan(definition, evaluation)
-								  : buildEvalPlan(definition, evaluation, target);
+								  ? buildRunPlan(definition, evaluation, prepared)
+								  : buildEvalPlan(definition, evaluation, target, prepared);
 
-			if (plan.steps.empty())
+			if (plan.steps.empty() && plan.frontiers.empty())
 				break;
 
 			// The one thing the strategies differ in — except the pull path, which is serial for
@@ -260,12 +351,19 @@ namespace lain::flow
 
 			// Nothing was deferred, so this stage was the whole run. Checking the frontiers rather
 			// than re-planning to discover there is nothing left is what keeps a mapless run at one
-			// plan build.
+			// plan build — and what stops a self-rearming source from looping forever.
 			if (plan.frontiers.empty())
 				break;
 
-			// (Slice 4: prepare each frontier's child evaluations here, now that the stage just
-			// executed has produced the collection whose size gives their count.)
+			// The stage just executed produced the collections these maps map over, so their arity
+			// is knowable now and was not before. Sizing and binding their children happens HERE, on
+			// the coordinator thread between stages: it is the second coordinator point ADR-0012 left
+			// open, and it is what keeps "a worker task never grows evaluation storage" true.
+			for (const Frontier& frontier : plan.frontiers)
+			{
+				prepareMap(frontier);
+				prepared.push_back(frontier);
+			}
 		}
 	}
 
@@ -289,6 +387,9 @@ namespace lain::flow
 				break;
 			case Step::Kind::GroupExit:
 				exitGroup(*step.definition, *step.evaluation, step.node);
+				break;
+			case Step::Kind::MapExit:
+				exitMap(*step.definition, *step.evaluation, step.node);
 				break;
 		}
 	}
@@ -378,6 +479,143 @@ namespace lain::flow
 			if (pin != PortId{})
 				child.bind(PortAddress{boundary, pin}, evaluation.value(PortAddress{id, outer.id()}));
 		}
+	}
+
+	//=========================================================================
+	// Scheduler — maps
+	//=========================================================================
+
+	// SPLIT or BROADCAST, read off the declaration alone (ADR-0014): an outer port whose type is a
+	// collection of the inner pin's type hands element i to child i; anything else hands the same
+	// value to every child. Nothing about the mode is stored, so nothing can disagree with the port.
+	bool Scheduler::splits(const Node& node, const Port& outer)
+	{
+		const PortType* collection = outer.portType().element == nullptr ? nullptr : &outer.portType();
+		if (collection == nullptr)
+			return false;
+
+		// It must be a collection OF THIS PIN's type: a vector<T> outer port against a vector<T>
+		// inner pin is a broadcast of a whole collection, not a split of it.
+		const Graph* inner = node.innerGraph();
+		const PortId pin = node.innerPin(outer.id());
+		if (inner == nullptr || pin == PortId{})
+			return false;
+		const Port* innerPin = inner->boundaryInputNode().findOutput(pin);
+		return innerPin != nullptr && collection->element->index == innerPin->type();
+	}
+
+	// How many elements this map will evaluate: the common length of its SPLIT inputs.
+	//
+	// nullopt means it cannot run at all, and each reason is a refusal rather than a guess — ragged
+	// lengths would silently drop elements, and a map with nothing to iterate is a wiring mistake
+	// that an empty result would hide. An empty collection is NOT this case: zero is an answer.
+	std::optional<std::size_t> Scheduler::mapArity(const Graph& definition, Evaluation& evaluation, NodeId id)
+	{
+		const Node& node = definition.node(id);
+		if (!evaluation.ready(id))
+			return std::nullopt; // a required input carries no value (ADR-0007), so nothing to map
+
+		std::optional<std::size_t> arity;
+		for (std::size_t i = 0; i < node.inputCount(); ++i)
+		{
+			const Port& outer = node.input(i);
+			if (!splits(node, outer))
+				continue;
+			const PortValue& value = evaluation.value(PortAddress{id, outer.id()});
+			const std::size_t length = outer.portType().size(value);
+			if (arity.has_value() && *arity != length)
+				return std::nullopt; // ragged: two collections that must correspond, do not
+			arity = length;
+		}
+		return arity; // nullopt here means NO split input at all — nothing says how many to run
+	}
+
+	// Size and fill a deferred map's children, between stages and on the coordinator thread.
+	void Scheduler::prepareMap(const Frontier& frontier)
+	{
+		const Graph& definition = *frontier.definition;
+		Evaluation& evaluation = *frontier.evaluation;
+		const NodeId id = frontier.node;
+		const Node& node = definition.node(id);
+		const Graph* inner = node.innerGraph();
+
+		// Its inputs are only now available: the stage that computed them has just finished.
+		populateInputs(definition, evaluation, id);
+
+		const std::optional<std::size_t> arity = mapArity(definition, evaluation, id);
+		if (!arity.has_value())
+		{
+			// Nothing to map: keep NO children. The exit step asks the same question again and
+			// clears the outputs, so the decision lives in exactly one place — and zero children
+			// must NOT be read here as "an empty collection", which is a different answer.
+			evaluation.setChildCount(id, 0);
+			return;
+		}
+
+		evaluation.setChildCount(id, *arity);
+
+		// Bind each child's boundary from the map's own inputs: element i of a split, the whole
+		// value of a broadcast. This is the same evaluation.bind() a host performs at the root and a
+		// group entry performs into its child — one mechanism, N times.
+		const NodeId boundary = inner->boundaryInputNode().id();
+		for (std::size_t element = 0; element < *arity; ++element)
+		{
+			Evaluation& child = evaluation.child(id, element);
+			child.prepare(*inner);
+			for (std::size_t i = 0; i < node.inputCount(); ++i)
+			{
+				const Port& outer = node.input(i);
+				const PortId pin = node.innerPin(outer.id());
+				if (pin == PortId{})
+					continue;
+				const PortValue& whole = evaluation.value(PortAddress{id, outer.id()});
+				child.bind(PortAddress{boundary, pin},
+						   splits(node, outer) ? outer.portType().at(whole, element) : whole);
+			}
+		}
+	}
+
+	// Crossing OUT of a MAP: one collection per output port, gathered from every child.
+	void Scheduler::exitMap(const Graph& definition, Evaluation& evaluation, NodeId id)
+	{
+		const Node& node = definition.node(id);
+		const Graph* inner = node.innerGraph();
+		const NodeId boundary = inner->boundaryOutputNode().id();
+		const std::size_t count = evaluation.childCount(id);
+		NodeEvaluation view = evaluation.node(id);
+
+		// "Could this map run at all?" is asked HERE, not remembered from preparation — one rule in
+		// one place. It also keeps zero children unambiguous: an EMPTY COLLECTION gathers to an empty
+		// vector (a value), while a map that could not determine an arity produces nothing at all.
+		const bool runnable = mapArity(definition, evaluation, id).has_value();
+
+		for (std::size_t o = 0; o < node.outputCount(); ++o)
+		{
+			const Port& outer = node.output(o);
+			const PortId pin = node.innerPin(outer.id());
+			if (!runnable || pin == PortId{} || outer.portType().gather == nullptr)
+			{
+				view.output(outer.id()).clear();
+				continue;
+			}
+
+			std::vector<PortValue> elements;
+			elements.reserve(count);
+			for (std::size_t element = 0; element < count; ++element)
+				elements.push_back(evaluation.child(id, element).value(PortAddress{boundary, pin}));
+
+			// gather() reports a hole by returning nothing, and that clears the whole output: a
+			// std::vector<T> cannot hold a hole, and gathering only the survivors would break the
+			// positional correspondence between the input collection and this one (ADR-0014). Which
+			// element failed is readable from the child evaluations, so nothing needs reporting here
+			// — which is just as well, since flow core is log-free.
+			view.output(outer.id()) = outer.portType().gather(elements);
+		}
+
+		// The map's own work IS this crossing, so it goes clean here — the two halves in the order
+		// runNode uses, for the same reasons.
+		evaluation.clearRecomputeRequest(id);
+		evaluation.markComputed(id, node.version());
 	}
 
 	// Crossing OUT of a group: publish what the child evaluation delivered to its inner

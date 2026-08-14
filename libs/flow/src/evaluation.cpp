@@ -144,7 +144,11 @@ namespace lain::flow
 					(existingChildren == m_children.end())
 						? std::vector<std::unique_ptr<Evaluation>>{}
 						: std::move(existingChildren->second);
-				if (kept.empty())
+				// A group is always exactly one evaluation, so give it its one. A MAP's count is the
+				// length of a collection this run has not computed yet, so leave it alone entirely —
+				// including at zero, which is a legitimate answer (an empty collection) and must not
+				// be quietly turned into one spurious child.
+				if (kept.empty() && !node.evaluatesPerElement())
 					kept.push_back(std::make_unique<Evaluation>());
 
 				for (std::unique_ptr<Evaluation>& child : kept)
@@ -303,6 +307,15 @@ namespace lain::flow
 	{
 		const auto it = m_children.find(group);
 		return it == m_children.end() ? 0 : it->second.size();
+	}
+
+	void Evaluation::setChildCount(NodeId node, std::size_t count)
+	{
+		std::vector<std::unique_ptr<Evaluation>>& children = m_children[node];
+		if (count < children.size())
+			children.resize(count); // dropping the tail drops those elements' retained values
+		while (children.size() < count)
+			children.push_back(std::make_unique<Evaluation>());
 	}
 
 	Evaluation& Evaluation::child(NodeId group, std::size_t index)
