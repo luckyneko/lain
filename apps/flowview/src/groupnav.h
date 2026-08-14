@@ -27,9 +27,31 @@ namespace lain::flow
 
 namespace flowview
 {
-	// The path from the root to the active graph: the group node descended through at each level.
+	// One step down the path: which graph-containing node was descended through, and WHICH
+	// EVALUATION OF IT. A group has exactly one, so its element is always 0; a MAP has one per
+	// element, and the element is what the breadcrumb's stepper picks (ADR-0014).
+	//
+	// This is the `{NodeId, index}` step ADR-0012 called an EvalPath and CONTEXT.md has been holding
+	// a note for: until maps existed a group's graph walk and evaluation walk were the same sequence,
+	// so a bare NodeId said everything. A map is what makes them differ.
+	struct PathStep
+	{
+		lain::flow::NodeId node;
+		std::size_t element = 0;
+
+		bool operator==(const PathStep& other) const { return node == other.node && element == other.element; }
+		bool operator!=(const PathStep& other) const { return !(*this == other); }
+		bool operator<(const PathStep& other) const
+		{
+			if (node != other.node)
+				return node < other.node;
+			return element < other.element;
+		}
+	};
+
+	// The path from the root to the active graph: the step descended through at each level.
 	// Empty means the root graph itself.
-	using GraphPath = std::vector<lain::flow::NodeId>;
+	using GraphPath = std::vector<PathStep>;
 
 	// Resolve `path` against `root`, returning the graph it names — for READING (navigation, drawing,
 	// previews, validation). TOLERANT: a step that is missing or no longer a group stops the walk and

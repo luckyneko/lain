@@ -465,6 +465,20 @@ turn every broadcast back into a split. `ctest` **460/460** (+4), warning-clean,
   back lifted would fail to reconnect and suppress the map), save ⇒ load ⇒ save is byte-identical, and
   ignoring the stored interface fails 3 of 4 cases.
 
+**Slice 6a is built (2026-08-14)** — the last slice is three commits (the mechanical widening, the
+driver-free proof, then the gui), as WORK.md recommended. A path step is now
+`PathStep {NodeId node; std::size_t element = 0;}`: the `{NodeId, index}` step ADR-0012 named and
+CONTEXT.md had been holding a note for. Everything resolves at element 0, so behaviour is unchanged
+and the existing suite is the regression test. `ctest` **461/461** (+1), warning-clean, format-check
+clean, headless unchanged.
+- Deferred from slice 3 so it would land beside its first caller: 16 files touch `GraphPath`, and
+  mixing that sweep with the UI is what slice 2 exists to avoid.
+- **Only the EVALUATION walk uses the element.** The graph walk reaches one definition however many
+  elements run over it, and the **layout tree stays keyed by node alone** — an arrangement describes
+  the definition, and every element of a map shares one interior. Keying layout per element would give
+  each element its own canvas positions.
+- `GraphPath` is runtime-only (the session persists file paths, not this), so nothing on disk changed.
+
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
 
 The last step of Milestone 6. `PinKey` — the key the preview cache, Inspector, Interface, Preview

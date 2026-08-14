@@ -7,6 +7,7 @@
 
 #include <lain/data/value.h>
 #include <lain/flow/edit.h>
+#include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/group.h>
 #include <lain/flow/node.h>
@@ -27,7 +28,9 @@ using flowview::GraphPath;
 using flowview::hasLinkedGroups;
 using flowview::layoutAt;
 using flowview::liftedPositions;
+using flowview::PathStep;
 using flowview::resolveEditable;
+using flowview::resolveEvaluation;
 using flowview::resolvePath;
 using flowview::syncPathGroups;
 
@@ -77,7 +80,7 @@ TEST_CASE("a path resolves down through nested groups", "[groupnav]")
 	const NodeId inner = addGroup<InlineGroupNode>(mid, "inner");
 	Graph& deep = static_cast<InlineGroupNode&>(mid.node(inner)).inner();
 
-	GraphPath path{outer, inner};
+	GraphPath path{{outer}, {inner}};
 	REQUIRE(&resolvePath(root, path) == &deep);
 	REQUIRE(path.size() == 2); // fully resolved, so nothing was truncated
 }
@@ -93,21 +96,21 @@ TEST_CASE("a stale path degrades to the deepest level that still resolves", "[gr
 	SECTION("a removed step truncates the path there")
 	{
 		REQUIRE(mid.removeNode(inner));
-		GraphPath path{outer, inner};
+		GraphPath path{{outer}, {inner}};
 		REQUIRE(&resolvePath(root, path) == &mid); // stopped at the parent
 		REQUIRE(path.size() == 1);
 	}
 
 	SECTION("a step that is not a group truncates too")
 	{
-		GraphPath path{outer, root.boundaryInputNode().id()}; // a real node, but it contains no graph
+		GraphPath path{{outer}, {root.boundaryInputNode().id()}}; // a real node, but it contains no graph
 		REQUIRE(&resolvePath(root, path) == &static_cast<InlineGroupNode&>(root.node(outer)).inner());
 		REQUIRE(path.size() == 1);
 	}
 
 	SECTION("an id from another graph truncates immediately")
 	{
-		GraphPath path{NodeId::generate()};
+		GraphPath path{{NodeId::generate()}};
 		REQUIRE(&resolvePath(root, path) == &root);
 		REQUIRE(path.empty());
 	}
@@ -120,7 +123,7 @@ TEST_CASE("the breadcrumb names each level and where clicking it lands", "[group
 	Graph& mid = static_cast<InlineGroupNode&>(root.node(outer)).inner();
 	const NodeId inner = addGroup<InlineGroupNode>(mid, "sharpen");
 
-	const std::vector<Crumb> crumbs = breadcrumb(root, GraphPath{outer, inner});
+	const std::vector<Crumb> crumbs = breadcrumb(root, GraphPath{{outer}, {inner}});
 	REQUIRE(crumbs.size() == 3);
 	REQUIRE(crumbs[0].label == "root");
 	REQUIRE(crumbs[0].depth == 0); // clicking it returns to the root
@@ -145,21 +148,21 @@ TEST_CASE("editing stops at a linked group, and stays off below it", "[groupnav]
 	const NodeId nestedInLink = addGroup<InlineGroupNode>(interior, "nested");
 	static_cast<LinkedGroupNode&>(root.node(linked)).adoptInterior(std::move(interior));
 
-	REQUIRE(resolveEditable(root, GraphPath{}) == &root);						// the root document
-	REQUIRE(resolveEditable(root, GraphPath{inlineGroup}) != nullptr);			// editable in place
-	REQUIRE(resolveEditable(root, GraphPath{linked}) == nullptr);				// the link is not
-	REQUIRE(resolveEditable(root, GraphPath{linked, nestedInLink}) == nullptr); // nor anything below it
+	REQUIRE(resolveEditable(root, GraphPath{}) == &root);							// the root document
+	REQUIRE(resolveEditable(root, GraphPath{{inlineGroup}}) != nullptr);			// editable in place
+	REQUIRE(resolveEditable(root, GraphPath{{linked}}) == nullptr);					// the link is not
+	REQUIRE(resolveEditable(root, GraphPath{{linked}, {nestedInLink}}) == nullptr); // nor anything below it
 
 	// Reading still descends all the way: looking inside a template is the point of being able to
 	// navigate into one at all.
-	GraphPath deep{linked, nestedInLink};
+	GraphPath deep{{linked}, {nestedInLink}};
 	REQUIRE(resolvePath(root, deep).nodeCount() == 2); // the nested group's own boundary pair
 	REQUIRE(deep.size() == 2);						   // ... and nothing was truncated
 
 	// "Edit Template..." acts on the OUTERMOST link — that is the template owning everything below,
 	// and the only one whose stored `source` is relative to the open document.
-	REQUIRE(enclosingLinkedGroup(root, GraphPath{linked, nestedInLink}) == &root.node(linked));
-	REQUIRE(enclosingLinkedGroup(root, GraphPath{inlineGroup}) == nullptr);
+	REQUIRE(enclosingLinkedGroup(root, GraphPath{{linked}, {nestedInLink}}) == &root.node(linked));
+	REQUIRE(enclosingLinkedGroup(root, GraphPath{{inlineGroup}}) == nullptr);
 }
 
 TEST_CASE("a linked group nested inside an inline group is still found", "[groupnav]")
@@ -179,9 +182,9 @@ TEST_CASE("a linked group nested inside an inline group is still found", "[group
 	REQUIRE_FALSE(root.contains(linked));
 	REQUIRE(mid.contains(linked));
 
-	REQUIRE(enclosingLinkedGroup(root, GraphPath{outer, linked}) == &mid.node(linked));
-	REQUIRE(resolveEditable(root, GraphPath{outer, linked}) == nullptr);
-	REQUIRE(resolveEditable(root, GraphPath{outer}) == &mid); // the wrapper itself is still editable
+	REQUIRE(enclosingLinkedGroup(root, GraphPath{{outer}, {linked}}) == &mid.node(linked));
+	REQUIRE(resolveEditable(root, GraphPath{{outer}, {linked}}) == nullptr);
+	REQUIRE(resolveEditable(root, GraphPath{{outer}}) == &mid); // the wrapper itself is still editable
 }
 
 TEST_CASE("layout is stored and found per level", "[groupnav]")
@@ -200,10 +203,10 @@ TEST_CASE("layout is stored and found per level", "[groupnav]")
 	innerBlob.set("x", lain::data::Value(99.0));
 
 	layoutAt(tree, GraphPath{}).nodes[group] = rootBlob;
-	layoutAt(tree, GraphPath{group}).nodes[node] = innerBlob;
+	layoutAt(tree, GraphPath{{group}}).nodes[node] = innerBlob;
 
 	const auto* rootLevel = findLayoutAt(tree, GraphPath{});
-	const auto* innerLevel = findLayoutAt(tree, GraphPath{group});
+	const auto* innerLevel = findLayoutAt(tree, GraphPath{{group}});
 	REQUIRE(rootLevel != nullptr);
 	REQUIRE(innerLevel != nullptr);
 	REQUIRE(rootLevel->nodes.at(group).find("x")->asDouble() == 10.0);
@@ -211,14 +214,14 @@ TEST_CASE("layout is stored and found per level", "[groupnav]")
 
 	SECTION("an unvisited level simply has no stored layout")
 	{
-		REQUIRE(findLayoutAt(tree, GraphPath{NodeId::generate()}) == nullptr);
+		REQUIRE(findLayoutAt(tree, GraphPath{{NodeId::generate()}}) == nullptr);
 	}
 
 	SECTION("layoutAt creates a level on demand, so a first visit can record into it")
 	{
 		const NodeId unvisited = NodeId::generate();
-		layoutAt(tree, GraphPath{unvisited}).nodes[NodeId::generate()] = rootBlob;
-		REQUIRE(findLayoutAt(tree, GraphPath{unvisited}) != nullptr);
+		layoutAt(tree, GraphPath{{unvisited}}).nodes[NodeId::generate()] = rootBlob;
+		REQUIRE(findLayoutAt(tree, GraphPath{{unvisited}}) != nullptr);
 	}
 }
 
@@ -231,15 +234,15 @@ TEST_CASE("syncing the active path carries an inner interface out to the group's
 	Graph& inner = static_cast<InlineGroupNode&>(root.node(group)).inner();
 
 	inner.boundaryInputNode().addBoundary<int>("in");
-	REQUIRE(syncPathGroups(root, GraphPath{group}));
+	REQUIRE(syncPathGroups(root, GraphPath{{group}}));
 	REQUIRE(root.node(group).inputCount() == 1);
 
 	// The second pin lands on the OTHER side, whose inner PortId collides with the first's.
 	inner.boundaryOutputNode().addBoundary<int>("out");
-	REQUIRE(syncPathGroups(root, GraphPath{group}));
+	REQUIRE(syncPathGroups(root, GraphPath{{group}}));
 	REQUIRE(root.node(group).outputCount() == 1);
 
-	REQUIRE_FALSE(syncPathGroups(root, GraphPath{group})); // settles: a quiet frame reports no change
+	REQUIRE_FALSE(syncPathGroups(root, GraphPath{{group}})); // settles: a quiet frame reports no change
 }
 
 TEST_CASE("a document knows whether it links anything, at any depth", "[groupnav]")
@@ -356,4 +359,37 @@ TEST_CASE("layout migration carries a nested group's whole subtree", "[groupnav]
 	ascendLayout(level, outer, {nested});
 	REQUIRE(level.groups.count(outer) == 0);
 	REQUIRE(at(level.groups.at(nested).nodes, deep) == std::make_pair(77.0, 88.0));
+}
+
+TEST_CASE("a path step selects WHICH evaluation, not just which node", "[groupnav]")
+{
+	// Until maps existed, a group's graph walk and its evaluation walk were the same sequence of
+	// node ids, so a bare NodeId said everything a path needed to. A MAP has one child Evaluation
+	// per element (ADR-0014), so the step carries the element too — and the evaluation walk is the
+	// only one where it matters: the graph walk still reaches ONE definition however many elements
+	// are being evaluated over it.
+	Graph root;
+	const NodeId group = root.add<InlineGroupNode>();
+	Evaluation evaluation{root};
+
+	// Stand in for a map's N children directly. What is under test here is the WALK; sizing them
+	// from a collection is the scheduler's job and is covered against the real thing in libs/flow.
+	evaluation.setChildCount(group, 3);
+	REQUIRE(evaluation.childCount(group) == 3);
+
+	REQUIRE(&resolveEvaluation(evaluation, GraphPath{{group, 0}}) == &evaluation.child(group, 0));
+	REQUIRE(&resolveEvaluation(evaluation, GraphPath{{group, 2}}) == &evaluation.child(group, 2));
+	// Not merely equal — a different element is a different Evaluation, which is what keeps two
+	// streams' values apart.
+	REQUIRE(&evaluation.child(group, 0) != &evaluation.child(group, 2));
+
+	SECTION("an element that is not there stops the walk, like any other stale step")
+	{
+		REQUIRE(&resolveEvaluation(evaluation, GraphPath{{group, 9}}) == &evaluation);
+	}
+
+	SECTION("the default element is 0, so every existing path still resolves")
+	{
+		REQUIRE(&resolveEvaluation(evaluation, GraphPath{{group}}) == &evaluation.child(group, 0));
+	}
 }

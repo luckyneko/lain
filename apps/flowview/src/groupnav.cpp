@@ -19,11 +19,11 @@ namespace flowview
 	{
 		const flow::Graph* current = &root;
 		std::size_t resolved = 0;
-		for (const flow::NodeId step : path)
+		for (const PathStep& step : path)
 		{
-			if (!current->contains(step))
+			if (!current->contains(step.node))
 				break;
-			const flow::Graph* inner = current->node(step).innerGraph();
+			const flow::Graph* inner = current->node(step.node).innerGraph();
 			if (inner == nullptr)
 				break; // the node is still there but no longer contains a graph
 			current = inner;
@@ -36,13 +36,13 @@ namespace flowview
 	flow::Graph* resolveEditable(flow::Graph& root, const GraphPath& path)
 	{
 		flow::Graph* current = &root;
-		for (const flow::NodeId step : path)
+		for (const PathStep& step : path)
 		{
-			if (!current->contains(step))
+			if (!current->contains(step.node))
 				return nullptr;
 			// Only an INLINE group hands out a mutable interior — which is the whole point: a linked
 			// group has no such accessor, so the walk simply cannot continue into one.
-			auto* group = dynamic_cast<flow::InlineGroupNode*>(&current->node(step));
+			auto* group = dynamic_cast<flow::InlineGroupNode*>(&current->node(step.node));
 			if (group == nullptr)
 				return nullptr;
 			current = &group->inner();
@@ -53,11 +53,13 @@ namespace flowview
 	flow::Evaluation& resolveEvaluation(flow::Evaluation& root, const GraphPath& path)
 	{
 		flow::Evaluation* current = &root;
-		for (const flow::NodeId step : path)
+		for (const PathStep& step : path)
 		{
-			if (!current->hasChild(step))
-				break; // no child prepared for this group (yet) — stop where the values actually are
-			current = &current->child(step);
+			// The element is what makes this walk differ from the graph walk: a group has exactly
+			// one child, a MAP one per element, and this is where the breadcrumb's choice lands.
+			if (!current->hasChild(step.node, step.element))
+				break; // no child prepared there (yet) — stop where the values actually are
+			current = &current->child(step.node, step.element);
 		}
 		return *current;
 	}
@@ -70,9 +72,9 @@ namespace flowview
 		const flow::Graph* current = &root;
 		for (std::size_t i = 0; i < path.size(); ++i)
 		{
-			if (!current->contains(path[i]))
+			if (!current->contains(path[i].node))
 				break;
-			const flow::Node& node = current->node(path[i]);
+			const flow::Node& node = current->node(path[i].node);
 			const flow::Graph* inner = node.innerGraph();
 			if (inner == nullptr)
 				break;
@@ -85,11 +87,11 @@ namespace flowview
 	const flow::LinkedGroupNode* enclosingLinkedGroup(const flow::Graph& root, const GraphPath& path)
 	{
 		const flow::Graph* current = &root;
-		for (const flow::NodeId step : path)
+		for (const PathStep& step : path)
 		{
-			if (!current->contains(step))
+			if (!current->contains(step.node))
 				break;
-			const flow::Node& node = current->node(step);
+			const flow::Node& node = current->node(step.node);
 			const flow::Graph* inner = node.innerGraph();
 			if (inner == nullptr)
 				break;
@@ -132,19 +134,19 @@ namespace flowview
 	{
 		bool changed = false;
 		flow::Graph* parent = &root;
-		for (const flow::NodeId step : path)
+		for (const PathStep& step : path)
 		{
-			if (!parent->contains(step))
+			if (!parent->contains(step.node))
 				break;
 			// Only descend through EDITABLE levels. Syncing a group that lives inside a linked group
 			// would re-derive ports in the TEMPLATE's graph — harmless while every instance held its
 			// own copy, wrong the moment that graph is shared (ADR-0013). A template's internal
 			// mirroring was settled when the template itself was loaded.
-			auto* group = dynamic_cast<flow::InlineGroupNode*>(&parent->node(step));
+			auto* group = dynamic_cast<flow::InlineGroupNode*>(&parent->node(step.node));
 			if (group == nullptr)
 				break;
 			// Sync the group IN its parent — only the parent can disconnect edges a dropped pin frees.
-			changed |= flow::edit::syncGroupPorts(*parent, step).changed();
+			changed |= flow::edit::syncGroupPorts(*parent, step.node).changed();
 			parent = &group->inner();
 		}
 		return changed;
@@ -153,17 +155,19 @@ namespace flowview
 	flow::serialize::EditorTree& layoutAt(flow::serialize::EditorTree& root, const GraphPath& path)
 	{
 		flow::serialize::EditorTree* current = &root;
-		for (const flow::NodeId step : path)
-			current = &current->groups[step]; // default-constructs the level if it is new
+		// Keyed by NODE alone, deliberately: a layout describes the DEFINITION, and every element of
+		// a map shares one interior and so one arrangement. Only values differ per element.
+		for (const PathStep& step : path)
+			current = &current->groups[step.node]; // default-constructs the level if it is new
 		return *current;
 	}
 
 	const flow::serialize::EditorTree* findLayoutAt(const flow::serialize::EditorTree& root, const GraphPath& path)
 	{
 		const flow::serialize::EditorTree* current = &root;
-		for (const flow::NodeId step : path)
+		for (const PathStep& step : path)
 		{
-			const auto it = current->groups.find(step);
+			const auto it = current->groups.find(step.node);
 			if (it == current->groups.end())
 				return nullptr;
 			current = &it->second;

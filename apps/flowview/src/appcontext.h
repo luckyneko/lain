@@ -121,7 +121,7 @@ namespace flowview
 		}
 		void descendInto(lain::flow::NodeId group)
 		{
-			activePath.push_back(group);
+			activePath.push_back(PathStep{group, 0}); // descending always lands on the first element
 			pathChanged = true;
 		}
 

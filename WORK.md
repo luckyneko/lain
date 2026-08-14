@@ -2129,13 +2129,26 @@ and `PortId` changes green, and the shape that makes a regression unambiguous.
      (best-effort, by design), which made the first round-trip read `{1,2,3}` instead of
      `{101,102,103}` — the offset had fallen back to its declared default. Worth noting because the
      failure looked exactly like a broken broadcast.
-6. **flowview + the example nodes.** `GraphPath` gains its `{NodeId, index}` step (deferred from
-   slice 3 — this is where it first has a caller), carried through `PinKey` / `resolvePath` /
-   `resolveEvaluation` and the layout tree; the breadcrumb element stepper; Issues rows that navigate
-   to a failed element; `Add ▸ Map`; and `flow-example`'s `listDir` / `combine` — plus the headless
-   `run` proof over a real folder. **This is the slice that needs a live driver**: M5's ten bugs all
-   lived in exactly this surface. Consider splitting the `GraphPath` widening into its own
-   no-behaviour-change commit ahead of the UI, for the reason slice 2 exists.
+6. **flowview + the example nodes.** Split into three commits, as the note here recommended — the
+   mechanical widening first, then the driver-free proof, then the gui.
+   - ✅ **6a — `GraphPath` carries its element — BUILT** (2026-08-14). A path step is now
+     `PathStep {NodeId node; std::size_t element = 0;}`, the `{NodeId, index}` step ADR-0012 named
+     and CONTEXT.md had been holding a note for. Everything resolves at element 0, so **behaviour is
+     unchanged** and the existing suite is the regression test. `ctest` **461/461** (+1),
+     warning-clean, format-check clean, headless unchanged.
+     - Deferred from slice 3 precisely so it would land beside its first caller; 16 files touch
+       `GraphPath`, and mixing that sweep with the UI is what slice 2 exists to avoid.
+     - **Only the EVALUATION walk uses the element.** The graph walk still reaches one definition
+       however many elements are being evaluated over it, and the **layout tree stays keyed by node
+       alone** — an arrangement describes the definition, and every element of a map shares one
+       interior. Getting that wrong would give each element its own canvas positions.
+     - `GraphPath` is runtime-only (the session persists file paths, not this), so nothing on disk
+       changed.
+   - **6b — the example nodes + the headless proof:** `flow-example`'s `listDir` / `combine`, and
+     `flowview run` over a real folder. Driver-free, and the milestone's actual end-to-end claim.
+   - **6c — the gui:** the breadcrumb element stepper, Issues rows that navigate to a failed element,
+     `Add ▸ Map`. **This is the part that needs a live driver** — M5's ten bugs all lived in exactly
+     this surface.
 
 ### Not in this milestone
 

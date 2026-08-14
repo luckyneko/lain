@@ -238,7 +238,7 @@ namespace flowview
 		}
 
 		GraphPath groupPath = ctx.activePath;
-		groupPath.push_back(id);
+		groupPath.push_back(PathStep{id, 0});
 		layoutAt(ctx.layout, groupPath) = resolved.editor;
 
 		flow::edit::syncGroupPorts(graph, id);

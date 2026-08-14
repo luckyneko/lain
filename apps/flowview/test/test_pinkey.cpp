@@ -28,7 +28,7 @@ TEST_CASE("a pin on two levels is two keys", "[pinkey]")
 	const NodeId group = NodeId::generate();
 
 	const PinKey atRoot{GraphPath{}, port};
-	const PinKey inGroup{GraphPath{group}, port};
+	const PinKey inGroup{GraphPath{{group}}, port};
 
 	REQUIRE(atRoot != inGroup);
 	REQUIRE((atRoot < inGroup || inGroup < atRoot)); // strictly ordered, so a map keeps them apart
@@ -44,7 +44,7 @@ TEST_CASE("a pin on two levels is two keys", "[pinkey]")
 TEST_CASE("the same pin at the same level is one key", "[pinkey]")
 {
 	const PortAddress port{NodeId::generate(), PortId{3}};
-	const GraphPath path{NodeId::generate(), NodeId::generate()};
+	const GraphPath path{{NodeId::generate()}, {NodeId::generate()}};
 
 	REQUIRE(PinKey{path, port} == PinKey{path, port});
 	REQUIRE_FALSE(PinKey{path, port} < PinKey{path, port}); // irreflexive, as std::map needs
@@ -78,5 +78,5 @@ TEST_CASE("keys sort by level first", "[pinkey]")
 	const NodeId group = NodeId::generate();
 
 	// A HIGHER port address at the root still sorts before a LOWER one inside a group.
-	REQUIRE(PinKey{GraphPath{}, high} < PinKey{GraphPath{group}, low});
+	REQUIRE(PinKey{GraphPath{}, high} < PinKey{GraphPath{{group}}, low});
 }
