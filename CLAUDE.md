@@ -325,9 +325,9 @@ M6 split definition from evaluation so one definition could back N evaluations; 
 real for linked groups. **Neither has ever had the caller both were built for** — running one subgraph
 once per element of a collection. **Milestone 8** brings it. Grilled 2026-08-11; decisions in
 **[ADR-0014](docs/adr/0014-map-nodes-staged-planning.md)**, build order in WORK.md, vocabulary in
-CONTEXT.md. **Slices 1–4 of 6 are built** (see the end of this section) — **maps run**. It settles all
-four questions ADR-0012 listed as *deliberately unsettled*, which it could only do once a concrete
-caller fixed them.
+CONTEXT.md. **Slices 1–5 of 6 are built** (see the end of this section) — **maps run and persist**;
+only the flowview slice remains. It settles all four questions ADR-0012 listed as *deliberately
+unsettled*, which it could only do once a concrete caller fixed them.
 
 - **First vertical: a folder of images, listed in-graph** (`listDir → map(load → tint) → combine`).
   Runnable headless on the existing `io::image`, and the smallest caller that still makes arity
@@ -447,6 +447,23 @@ ragged / `N == 0` rules — all driven through the production schedulers, serial
   defer forever). **Nested maps tested, not assumed** — each row is its own evaluation of the inner
   map with its own element count, which is why a frontier is addressed `{definition, evaluation,
   node}`.
+
+**Slice 5 is built (2026-08-14).** A map writes its recipe as a nested body like an inline group,
+**plus its own `interface`** — the one group kind whose ports are stored, because M5's "a group's
+ports are re-derived" rule is under-determined by one bit per input pin, and derivation alone would
+turn every broadcast back into a split. `ctest` **460/460** (+4), warning-clean, format-check clean.
+- **The stored thing is the port's TYPE, not a flag.** On load the stored key is compared against the
+  inner pin's own key and its list form's — the pin's type means broadcast, the list type means split
+  — so no second field can disagree with the port it describes.
+- **Restoration runs BEFORE `syncGroupPorts`**, which is the whole mechanism: sync mirrors by
+  `PortId`, so a restored pin is left alone while a pin that appeared since is added at the default.
+  The document wins, the interior fills the gaps.
+- **Rectified like a linked group's cache:** a stored port whose pin has vanished is dropped *and
+  reported*; a type matching neither form is re-mirrored at the default and reported. A bad entry
+  costs its own port, not the node. A document with no `interface` mirrors at the default.
+- Verified on **values**, not structure: the round-trip runs to the same result (a broadcast that came
+  back lifted would fail to reconnect and suppress the map), save ⇒ load ⇒ save is byte-identical, and
+  ignoring the stored interface fails 3 of 4 cases.
 
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
 

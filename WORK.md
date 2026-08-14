@@ -2106,8 +2106,29 @@ and `PortId` changes green, and the shape that makes a regression unambiguous.
    - **Nested maps verified rather than assumed.** A map inside a map delivers `{{2,3},{11}}` from
      `{{1,2},{10}}`, and each row is its own evaluation of the inner map with its own element count
      — which is precisely why a frontier is addressed `{definition, evaluation, node}`.
-5. **Serialization.** The stored `interface` block, load-time reconciliation against the rebuilt inner
-   boundary through the existing rectification pass, and byte-idempotence of the round trip.
+5. ✅ **Serialization — BUILT** (2026-08-14). A map writes its recipe as a nested body like an inline
+   group, **plus its own `interface`** — the one group kind whose ports are stored, because mirroring
+   is under-determined by one bit per input pin and derivation alone would turn every broadcast back
+   into a split. `ctest` **460/460** (+4), warning-clean, format-check clean, headless unchanged.
+   - **What is stored is the port's TYPE, not a flag.** On load the stored key is compared against
+     the inner pin's own key and its list form's: the pin's type means broadcast, the list type means
+     split. So there is no second field that can fall out of step with the port it describes — the
+     rule ADR-0014 chose, carried onto disk unchanged.
+   - **Restoration runs BEFORE `edit::syncGroupPorts`**, and that ordering is the mechanism: sync
+     mirrors by `PortId`, so a pin already restored here is left alone, while a pin that has appeared
+     since is added by sync at the default. What the document said wins; what the interior now offers
+     fills the gaps; neither silently overrides the other.
+   - **Rectification, as linked groups get it:** a stored port whose pin has vanished is dropped and
+     *reported*; a stored type that matches neither form is re-mirrored at the default and reported.
+     A bad entry costs its own port, never the node.
+   - **A document with no `interface` mirrors at the default**, so a hand-written one still opens.
+   - Verified: round-trip **runs to the same values** (the honest check — had the broadcast come back
+     lifted, its edge would have failed to reconnect and the map would have suppressed), save ⇒ load
+     ⇒ save is **byte-identical**, and ignoring the stored interface fails 3 of the 4 cases.
+   - **Found by the tests, in the tests:** an empty `ValueCodecs` silently skips a param on save
+     (best-effort, by design), which made the first round-trip read `{1,2,3}` instead of
+     `{101,102,103}` — the offset had fallen back to its declared default. Worth noting because the
+     failure looked exactly like a broken broadcast.
 6. **flowview + the example nodes.** `GraphPath` gains its `{NodeId, index}` step (deferred from
    slice 3 — this is where it first has a caller), carried through `PinKey` / `resolvePath` /
    `resolveEvaluation` and the layout tree; the breadcrumb element stepper; Issues rows that navigate

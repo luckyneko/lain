@@ -6,6 +6,7 @@ add_executable(test-flow-serialize
 	test_graph.cpp
 	test_dynamic.cpp
 	test_group.cpp
+	test_map.cpp
 	test_identity.cpp
 )
 

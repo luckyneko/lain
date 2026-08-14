@@ -184,6 +184,16 @@ namespace lain::flow
 		// edit::groupSelected's UnnamedPinType make — degrade nothing, leave it visibly absent.
 		PortId exposePort(Port::Direction outerSide, const Port& innerPin, Presence presence = Presence::Required) override;
 
+		// Mirror an inner pin UN-LIFTED — same type in, same type out — so the one value reaches
+		// every element instead of being split across them. This is the BROADCAST half of the choice
+		// ADR-0014 encodes in the port's own declared type, and the reason it needs a name of its own
+		// is that it must be reachable deliberately: the loader restoring a stored interface, and a
+		// host's "broadcast this pin" gesture, both ask for exactly this.
+		PortId exposeBroadcast(Port::Direction outerSide, const Port& innerPin, Presence presence = Presence::Required)
+		{
+			return GroupNode::exposePort(outerSide, innerPin, presence);
+		}
+
 	private:
 		Graph m_inner; // born with its own boundary pair — the interface each element is evaluated over
 	};

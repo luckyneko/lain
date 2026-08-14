@@ -101,6 +101,34 @@ namespace lain::flow::serialize
 		return out;
 	}
 
+	// A MAP's own outer ports — the one group kind whose ports ARE stored, because they cannot be
+	// fully derived (ADR-0014). Mirroring lifts an inner pin of type T to vector<T>, but an input may
+	// instead be declared un-lifted to broadcast, and nothing in the inner boundary says which the
+	// author chose. What is written is the port's TYPE, not a flag: the type IS the mode, so there is
+	// no second field to fall out of step with the port it describes.
+	static data::Value mapInterfaceToValue(const MapNode& map)
+	{
+		const auto pinsOf = [](const Node& node, Port::Direction side)
+		{
+			data::Value arr = data::Value::array();
+			const std::size_t count = (side == Port::Direction::Input) ? node.inputCount() : node.outputCount();
+			for (std::size_t i = 0; i < count; ++i)
+			{
+				const Port& port = (side == Port::Direction::Input) ? node.input(i) : node.output(i);
+				data::Value pin = data::Value::object();
+				pin.set("name", data::Value(port.name()));
+				pin.set("type", data::Value(portTypeKey(port.type())));
+				arr.push(std::move(pin));
+			}
+			return arr;
+		};
+
+		data::Value out = data::Value::object();
+		out.set("inputs", pinsOf(map, Port::Direction::Input));
+		out.set("outputs", pinsOf(map, Port::Direction::Output));
+		return out;
+	}
+
 	static data::Value nodeToValue(const Node& node, const std::string& kind, const ValueCodecs& codecs,
 								   const core::Factory<Node>& factory, const EditorTree* subtree)
 	{
@@ -157,6 +185,15 @@ namespace lain::flow::serialize
 		{
 			out.set("source", data::Value(linked->source()));
 			out.set("interface", interfaceToValue(*linked));
+		}
+		else if (const auto* map = dynamic_cast<const MapNode*>(&node))
+		{
+			// A map stores its recipe like an inline group AND its own interface, which is the one
+			// exception to the rule above: its ports carry the split/broadcast choice, and that
+			// cannot be re-derived from the inner boundary alone.
+			static const EditorTree empty;
+			out.set("graph", bodyToValue(map->inner(), factory, codecs, subtree ? *subtree : empty));
+			out.set("interface", mapInterfaceToValue(*map));
 		}
 		else if (const auto* group = dynamic_cast<const InlineGroupNode*>(&node))
 		{
@@ -412,6 +449,75 @@ namespace lain::flow::serialize
 				return true;
 		}
 		return false;
+	}
+
+	// Restore a MAP's own outer ports from the interface the document stored, so the author's
+	// split/broadcast choice survives a round-trip (ADR-0014).
+	//
+	// This runs BEFORE edit::syncGroupPorts, and that ordering is what makes it work: sync mirrors by
+	// PortId, so a pin already mapped here is left alone, while a pin that has appeared since is
+	// added by sync at the default — lifted. So "what the document said" wins, "what the interior
+	// now offers" fills the gaps, and neither silently overrides the other.
+	static void loadMapInterface(MapNode& map, const data::Value* interfaceV, LoadContext& ctx)
+	{
+		if (interfaceV == nullptr)
+			return; // no stored interface: every pin mirrors at the default
+
+		const Graph& inner = *map.innerGraph();
+		const auto restore = [&](const char* section, Port::Direction outerSide)
+		{
+			const data::Value* arr = interfaceV->find(section);
+			if (arr == nullptr || arr->asArray() == nullptr)
+				return;
+
+			for (const data::Value& pinV : *arr->asArray())
+			{
+				const data::Value* nameV = pinV.find("name");
+				const data::Value* typeV = pinV.find("type");
+				if (nameV == nullptr || nameV->asString() == nullptr)
+					continue;
+				const std::string name = *nameV->asString();
+				const std::string storedKey = (typeV && typeV->asString()) ? *typeV->asString() : std::string{};
+
+				// The inner pin this port mirrored, matched by NAME — the only durable link across a
+				// document, since a PortId is minted per load.
+				// Matched by NAME — the only durable link between a stored port and a rebuilt pin,
+				// since a PortId is minted per load. An outer INPUT mirrors an OUTPUT of the inner
+				// GroupInputNode, and vice versa.
+				const Port* pin = (outerSide == Port::Direction::Input)
+									  ? findPortByName(inner.boundaryInputNode(), Port::Direction::Output, name)
+									  : findPortByName(inner.boundaryOutputNode(), Port::Direction::Input, name);
+				if (pin == nullptr)
+				{
+					ctx.warn("map port \"" + name + "\" has no matching pin inside — dropped");
+					continue;
+				}
+
+				// The stored TYPE is the mode. An outer port of the pin's own type broadcasts; the
+				// pin's list form splits. Anything else — a type that has since changed — falls back
+				// to the default rather than guessing, and says so.
+				const std::string elementKey = portTypeKey(pin->type());
+				if (!storedKey.empty() && storedKey == elementKey)
+				{
+					map.exposeBroadcast(outerSide, *pin);
+					continue;
+				}
+
+				const PortType* list = listTypeFor(pin->type());
+				const std::string listKey = (list != nullptr) ? portTypeKey(list->index) : std::string{};
+				if (storedKey.empty() || storedKey == listKey)
+				{
+					map.exposePort(outerSide, *pin); // the default: lifted
+					continue;
+				}
+
+				ctx.warn("map port \"" + name + "\" was stored as \"" + storedKey + "\" but its pin is now \"" + elementKey + "\" — remirrored");
+				map.exposePort(outerSide, *pin);
+			}
+		};
+
+		restore("inputs", Port::Direction::Input);
+		restore("outputs", Port::Direction::Output);
 	}
 
 	// Report what changed between the interface the parent cached and the one the template now offers.
@@ -785,6 +891,15 @@ namespace lain::flow::serialize
 			if (auto* linked = dynamic_cast<LinkedGroupNode*>(&created))
 			{
 				loadLinkedGroup(*linked, nodeV, editor.groups[liveId], ctx);
+			}
+			else if (auto* map = dynamic_cast<MapNode*>(&created))
+			{
+				// A map's body is part of THIS document, like an inline group's — and then its own
+				// ports are restored from the stored interface, since they carry a choice the inner
+				// boundary cannot express. syncGroupPorts below fills in anything new.
+				if (const data::Value* innerBody = nodeV.find("graph"))
+					map->inner() = loadBody(*innerBody, editor.groups[liveId], ctx);
+				loadMapInterface(*map, nodeV.find("interface"), ctx);
 			}
 			else if (auto* group = dynamic_cast<InlineGroupNode*>(&created))
 			{
