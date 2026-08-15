@@ -319,17 +319,19 @@ reaches the canvas, which is where all ten of M5's bugs lived, and this time it 
   "only loose end", the `saveFormat` residual M6 step 5 fixed, cli named-binding, and the settled names
   question), and dated M5 slice 6's last two unconfirmed gui items — **no gui work is now unverified**.
 
-### Update 2026-08-11 — M8 designed: map nodes (nothing built yet)
+### Update 2026-08-15 — M8 COMPLETE: map nodes (designed 2026-08-11, built + live-verified)
 
 M6 split definition from evaluation so one definition could back N evaluations; M7 made that sharing
 real for linked groups. **Neither has ever had the caller both were built for** — running one subgraph
 once per element of a collection. **Milestone 8** brings it. Grilled 2026-08-11; decisions in
 **[ADR-0014](docs/adr/0014-map-nodes-staged-planning.md)**, build order in WORK.md, vocabulary in
-CONTEXT.md. **All six slices are built** (see the end of this section) — **maps run, persist, and are
-reachable from the UI**. Everything below the gui is verified; **slice 6c has not been eyeballed on a
-live driver** (no Metal in this sandbox), and that surface is where all ten of M5's bugs lived. It
-settles all four questions ADR-0012 listed as *deliberately unsettled*, which it could only do once a
-concrete caller fixed them.
+CONTEXT.md. **M8 is COMPLETE (2026-08-15)** — all six slices built, and **gui-mode live-verified by
+the repo owner**: maps run, persist, and are reachable from the UI. It settles all four questions
+ADR-0012 listed as *deliberately unsettled*, which it could only do once a concrete caller fixed them.
+`ctest` **472/472**, warning-clean, format-check clean.
+
+Both bugs the milestone produced came from the **gui seam**, none from the engine — the same
+distribution M5 saw, and the reason that surface is driven rather than assumed.
 
 - **First vertical: a folder of images, listed in-graph** (`listDir → map(load → tint) → combine`).
   Runnable headless on the existing `io::image`, and the smallest caller that still makes arity
@@ -557,8 +559,30 @@ format-check clean.
   suppressing (ADR-0007). No new noun: CONTEXT.md already listed "setting" among the words to avoid
   for this family. The Inspector shows *"driven by input"* where the editor would be while a pin is
   wired.
-- **Standing gap:** the stepper, the Issues navigation, `Add ▸ Map` and editing inside a map still
-  want more live driving. That surface produced all ten of M5's bugs while the engine slices produced
+- **Live-verified 2026-08-15**: `Add ▸ Map`, descending, building a map's interior, the element
+  stepper, Issues rows navigating to a failed element, the folder picker, and the Inspector's
+  *driven by input*. No further gui-mode work is outstanding for M8.
+- **`GateNode`'s `enable` now defaults to true** (2026-08-15). An unwired gate is TRANSPARENT rather
+  than a dead end — before defaults existed it was a plain required input, so a gate dropped on the
+  canvas was never ready and suppressed everything downstream until something fed it, which read as
+  broken. `value` deliberately has no default: it is the data, and one would let a gate emit a value
+  nothing gave it. **Changes an existing document**: a saved graph with an unwired gate now passes
+  through rather than suppressing — accepted, since such a gate could do nothing useful before.
+  **`SelectNode`'s `selector` became `Default{0}`** in the same pass, moving "unwired means branch 0"
+  out of a `compute()` presence check into the declaration — and changing one case for the better: a
+  wired-but-suppressed selector now suppresses rather than quietly routing to branch 0.
+- **`BlurNode`'s `radius`/`sigma` became defaulted inputs** (+ `constFloat` in the palette to drive
+  `sigma`). **The data input now declares FIRST**: an input's position is how tests and hand-built
+  graphs address it, so declaring settings first silently retargeted `connect(src, 0, blur, 0)` onto
+  `radius` — caught by the suite. Documents were never at risk (edges serialize by port NAME).
+- **Param audit (2026-08-15).** Four params existed in production nodes; two converted (Blur's).
+  **`ConstantNode::value` stays a param permanently** — a Constant's job is to BE a source, and an
+  input would make it a pass-through needing a source of its own. **`TintNode::tint` stays for now
+  for a concrete reason**: `image::ColorRGBf` is not a registered port type, so the pin could not be
+  wired by anything and would be dead; it wants `registerPortType<ColorRGBf>` plus a colour Constant
+  first. **Merge/Select branch pins keep `setRequired(false)`** and must — a Merge forwards the first
+  LIVE branch, so defaults on all of them would defeat it. The rule: convert when the value plausibly
+  varies per element AND something can drive it; each conversion costs a pin on the canvas. That surface produced all ten of M5's bugs while the engine slices produced
   none, and has now produced its first here — expect more there rather than in the engine.
 
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)

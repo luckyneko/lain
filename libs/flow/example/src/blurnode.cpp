@@ -8,9 +8,17 @@ namespace lain::flow::example
 	BlurNode::BlurNode(int radius, float sigma)
 		: Node("Blur")
 	{
-		m_radius = addParam<int>("radius", radius);
-		m_sigma = addParam<float>("sigma", sigma);
+		// The DATA input leads, and the settings follow it. That ordering is not cosmetic: an input's
+		// position is how tests and hand-built graphs address it (`connect(src, 0, blur, 0)`), so
+		// declaring the settings first would silently retarget every such edge onto `radius`.
+		// Serialized documents are unaffected either way — edges are addressed by port NAME.
 		m_in = addInput<image::Image>("image");
+		// Inputs WITH DEFAULTS, not plain params: a blur strength that varies per element is exactly
+		// what a map wants to express (soften each frame a little more than the last, say), and a
+		// param cannot do that — every element evaluates one definition. Unwired, they behave as
+		// before, so an existing document loads and runs identically.
+		m_radius = addInput<int>("radius", Default{radius});
+		m_sigma = addInput<float>("sigma", Default{sigma});
 		m_out = addOutput<image::Image>("image");
 	}
 
@@ -37,7 +45,7 @@ namespace lain::flow::example
 		const image::Image linear = image::convert(in, image::ColorSpace::Linear);
 		const image::Image premul = image::convert(linear, image::AlphaMode::Premultiplied);
 		const image::Image blurred =
-			image::convolve(premul, image::gaussianKernel(param(m_radius).get<int>(), param(m_sigma).get<float>()));
+			image::convolve(premul, image::gaussianKernel(evaluation.input(m_radius).get<int>(), evaluation.input(m_sigma).get<float>()));
 		const image::Image straight = image::convert(blurred, image::AlphaMode::Straight);
 
 		evaluation.output(m_out).set(image::convert(straight, image::ColorSpace::sRGB));

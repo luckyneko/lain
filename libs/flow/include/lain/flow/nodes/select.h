@@ -28,7 +28,7 @@ namespace lain::flow
 		SelectNode()
 			: DynamicPortsNode("Select")
 		{
-			m_selector = addInput<int>("selector", Presence::Optional); // unconnected -> default branch 0
+			m_selector = addInput<int>("selector", Default{0}); // unwired -> branch 0
 			m_out = addOutput<T>("out");
 		}
 
@@ -43,8 +43,11 @@ namespace lain::flow
 
 		void compute(NodeEvaluation& evaluation) const override
 		{
-			const PortValue& selector = evaluation.input(m_selector);
-			const int sel = selector.empty() ? 0 : selector.template get<int>();
+			// Unwired, the slot carries the declared default, so there is no presence check here. And
+			// if the selector IS wired to something that produced nothing, this node is not ready and
+			// compute never runs — a suppressed selector suppresses, rather than quietly routing to
+			// branch 0 as an Optional input used to.
+			const int sel = evaluation.input(m_selector).template get<int>();
 			// The branches are the dynamic input pins, in add order; route to the sel-th (the static
 			// selector pin is skipped, so its position among the inputs doesn't shift the indexing).
 			int branchIndex = 0;

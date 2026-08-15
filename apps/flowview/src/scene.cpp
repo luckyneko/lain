@@ -32,6 +32,7 @@ namespace flowview
 	static constexpr const char* kSelectKey = "select";
 	static constexpr const char* kConstIntKey = "constInt";
 	static constexpr const char* kConstBoolKey = "constBool";
+	static constexpr const char* kConstFloatKey = "constFloat";
 	static constexpr const char* kConstPathKey = "constPath";
 	static constexpr const char* kConstStringKey = "constString";
 	static constexpr const char* kGroupInputKey = "groupInput";
@@ -49,7 +50,7 @@ namespace flowview
 		// here: they're a one-each-per-graph fixture that comes with a New graph and is grown from the
 		// Interface panel, not added like an ordinary node.
 		static const std::vector<NodeCategory> catalog = {
-			{"Sources", {kGradientKey, kLoadImageKey, kListDirKey, kConstIntKey, kConstBoolKey, kConstPathKey, kConstStringKey}},
+			{"Sources", {kGradientKey, kLoadImageKey, kListDirKey, kConstIntKey, kConstBoolKey, kConstFloatKey, kConstPathKey, kConstStringKey}},
 			{"Filters", {kTintKey, kBlurKey, kCombineKey}},
 			{"Control", {kGateKey, kMergeKey, kSelectKey}},
 			// A group is added empty (its inner graph is born with its own boundary pair) and grown by
@@ -93,6 +94,7 @@ namespace flowview
 		// example/setting.h): a folder for ListDir, an extension filter for it. Wiring one is how a
 		// setting becomes part of the graph — drivable from a boundary input, and visible on the
 		// canvas — instead of being buried in a node's inspector.
+		factory.registerType<flow::ConstantNode<float>>(kConstFloatKey); // drives a Blur's sigma
 		factory.registerType<flow::ConstantNode<std::filesystem::path>>(kConstPathKey);
 		factory.registerType<flow::ConstantNode<std::string>>(kConstStringKey);
 

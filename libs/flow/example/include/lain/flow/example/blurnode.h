@@ -21,8 +21,10 @@ namespace lain::flow::example
 		void compute(NodeEvaluation& evaluation) const override;
 
 	private:
-		PortId m_radius; // "radius" param (int)
-		PortId m_sigma;	 // "sigma" param (float)
+		// Inputs with defaults (Node::addInput): configured on the node when unwired, driven by the
+		// graph when wired — which is how a blur strength varies per element of a map.
+		PortId m_radius; // int
+		PortId m_sigma;	 // float
 		PortId m_in;
 		PortId m_out;
 	};

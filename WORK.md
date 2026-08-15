@@ -1953,9 +1953,9 @@ compiled, linked and was unreachable. Exactly M5's bug six ("an out-of-line memb
 warn as unused, so the feature compiled and linked while being unreachable"), and it says the *reviewing
 dead code before it runs* habit is worth keeping: `grep` for a call site is what found it.
 
-## Milestone 8 — map nodes (grilled 2026-08-11)
+## Milestone 8 — map nodes (grilled 2026-08-11, **COMPLETE** 2026-08-15)
 
-**Designed, not started.** M6 split definition from evaluation so one definition could back N
+**All six slices built and live-verified.** M6 split definition from evaluation so one definition could back N
 evaluations, and M7 made that sharing real for linked groups — but the thing both were built for has
 never been expressible: **running one subgraph once per element of a collection**. ADR-0012 named four
 questions and deliberately refused to guess at them without a caller. This milestone brings one.
@@ -2172,7 +2172,8 @@ and `PortId` changes green, and the shape that makes a regression unambiguous.
        stale through the recursive check, so **only the drop to zero exposes it**. `prepareMap` now
        requests the map's recompute explicitly. Regression test added at that exact shape, and
        sabotage-verified.
-   - ⚠️ **6c — the gui — BUILT** (2026-08-14; **gui-mode NOT eyeballed — no Metal in this sandbox**).
+   - ✅ **6c — the gui — BUILT** (2026-08-14; **gui-mode live-verified by the repo owner 2026-08-15**,
+     together with the two fixes below and the input-default work that followed).
      `ctest` **466/466** (+2), warning-clean, format-check clean, both headless paths unchanged.
      - **Found first, and it would have made `Add ▸ Map` useless:** `resolveEditable` and
        `syncPathGroups` both `dynamic_cast<InlineGroupNode*>` to mean "owns a mutable interior". A
@@ -2272,10 +2273,58 @@ cannot be a param at all, while the same node outside a map still wants a config
   wired, since editing a value that has no effect is worse than not offering it.
 - `LoadImage::path` and both of `ListDir`'s settings converted; `flow/example/setting.h` deleted.
 
-**M8 is complete pending further live-driver work.** Everything below the gui is verified; slice 6c's
-surface — the stepper, the Issues navigation, `Add ▸ Map`, and editing inside a map — is exactly the
-surface that produced all ten of M5's bugs, and has now produced its first. Expect more there rather
-than in the engine.
+### Milestone 8 is COMPLETE (2026-08-15)
+
+All six slices built, and **gui-mode live-verified by the repo owner**: `Add ▸ Map`, descending into
+one, building its interior, the breadcrumb element stepper, Issues rows navigating to a failed
+element, the folder picker, and the Inspector's *driven by input*. The engine slices produced no bugs;
+both live bugs came from the gui seam, which is the same distribution M5 saw (ten there, none in the
+engine) and the reason that surface gets driven rather than assumed.
+
+`ctest` **472/472**, warning-clean, format-check clean; `flowview run` over a real folder lists files,
+maps `LoadImage` across them and averages to the expected pixel; save ⇒ load ⇒ save byte-identical.
+
+**Landed with it, after the milestone proper:**
+
+- **Input defaults** (below) — `addInput<T>(name, Default{value})`, amending ADR-0005.
+- **`GateNode`'s `enable` now defaults to true.** An unwired gate is TRANSPARENT rather than a dead
+  end: before defaults existed `enable` was a plain required input, so a gate dropped on the canvas
+  was never ready and suppressed everything downstream until you found a `Constant<bool>` to feed it —
+  it read as broken. Flipping the default in the inspector keeps a gate off with nothing attached, and
+  a wired `enable` still wins. `value` deliberately has NO default: it is the data flowing through,
+  and inventing one would let a gate produce a value nothing gave it. Sabotage-verified. **This does
+  change an existing document**: a saved graph with an unwired gate now passes through instead of
+  suppressing — accepted, since such a gate could not do anything else useful before.
+- **`SelectNode`'s `selector` is now `Default{0}`**, which moves "unwired means branch 0" out of
+  `compute()`'s presence check and into the declaration. One behaviour DID change, in the right
+  direction: an Optional selector wired to something that produced nothing quietly fell back to
+  branch 0, where a defaulted one leaves the node unready — so a suppressed selector suppresses,
+  exactly as the Gate does.
+- **`BlurNode`'s `radius` and `sigma` became defaulted inputs too**, and `constFloat` joined the
+  palette so `sigma` has a driver. A blur strength that varies per element is what a map wants to
+  express, and a param cannot do it. **The data input was moved to declare FIRST** — that is not
+  cosmetic: an input's position is how tests and hand-built graphs address it, so declaring the
+  settings first silently retargeted `connect(src, 0, blur, 0)` onto `radius`, which is how the suite
+  caught it. Serialized documents were never at risk (edges are addressed by port NAME), and the
+  example graph still produces a byte-identical blur.
+
+**The full param audit** (asked 2026-08-15): four params existed in production nodes. **Two are now
+defaulted inputs** (`BlurNode`'s `radius` and `sigma`); the other two stay params, for different
+reasons; and one Optional input (`SelectNode`'s `selector`) was converted alongside them:
+- **`ConstantNode<T>::value` stays a param, permanently.** A Constant's whole job is to BE a source;
+  giving it an input would make it a pass-through that needs a source of its own.
+- **`TintNode`'s `tint` (`image::ColorRGBf`) stays a param FOR NOW**, and the reason is concrete
+  rather than aesthetic: `ColorRGBf` is not a registered port type, so a `tint` pin could not be
+  wired by anything — no `ConstantNode<ColorRGBf>` exists, and it could not even be created as a
+  boundary pin. It would be a dead pin. Converting it wants
+  `registerPortType<image::ColorRGBf>("Color")` plus a colour Constant first; then it is a one-line
+  change and per-element tinting works.
+- **`MergeNode` / `SelectNode` branch pins keep `setRequired(false)`** and must: a Merge forwards the
+  first LIVE branch, so a default on every branch would make them all live and defeat the node.
+
+The rule that came out of it: **make a param a defaulted input when the value plausibly varies per
+element or wants graph control — and when something can actually drive it.** It is not free; each one
+adds a pin to the canvas.
 
 ### Not in this milestone
 

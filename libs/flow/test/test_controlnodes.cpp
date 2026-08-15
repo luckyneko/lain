@@ -9,14 +9,19 @@
 #include "lain/flow/nodes/merge.h"
 #include "lain/flow/nodes/select.h"
 #include "lain/flow/scheduler.h"
+#include "testnodes.h"
 
 #include <catch2/catch_test_macros.hpp>
 
+using lain::flow::Connection;
 using lain::flow::ConstantNode;
+using lain::flow::Evaluation;
 using lain::flow::GateNode;
 using lain::flow::Graph;
 using lain::flow::MergeNode;
+using lain::flow::Node;
 using lain::flow::NodeId;
+using lain::flow::Param;
 using lain::flow::SelectNode;
 using lain::flow::SerialScheduler;
 
@@ -115,4 +120,74 @@ TEST_CASE("Select routes among its variadic branches by a connectable selector i
 	static_cast<ConstantNode<int>&>(graph.node(sel)).setValue(5);
 	scheduler.run(graph, e);
 	REQUIRE(e.value(lain::flow::PortAddress{select, graph.node(select).output(0).id()}).empty());
+}
+
+TEST_CASE("an unwired Gate passes its value through", "[flow][nodes][default]")
+{
+	// `enable` defaults to true, so a gate dropped on the canvas with nothing attached is
+	// TRANSPARENT rather than a dead end. Before input defaults it was a plain required input: an
+	// unwired gate was never ready, so it suppressed everything downstream and read as broken until
+	// you found a Constant<bool> to feed it.
+	Graph graph;
+	const NodeId source = graph.add<ConstantNode<int>>(42);
+	const NodeId gate = graph.add<GateNode<int>>();
+	REQUIRE(graph.connect(source, 0, gate, 1) == Connection::Ok); // -> value; `enable` left unwired
+
+	Evaluation evaluation{graph};
+	SerialScheduler{}.run(graph, evaluation);
+
+	REQUIRE(evaluation.ready(gate));
+	REQUIRE(lain::flow::test::output(graph, evaluation, gate, 0).get<int>() == 42);
+
+	SECTION("and the default can be flipped to keep it off with nothing attached")
+	{
+		Node& node = graph.node(gate);
+		const Param* fallback = node.defaultOf(node.input(0).id()); // `enable`
+		REQUIRE(fallback != nullptr);
+		REQUIRE(node.setParam<bool>(fallback->id(), false));
+
+		SerialScheduler{}.run(graph, evaluation);
+		REQUIRE(lain::flow::test::output(graph, evaluation, gate, 0).empty()); // suppressed, as an off gate should
+	}
+
+	SECTION("a wired enable still wins over the default")
+	{
+		const NodeId enable = graph.add<ConstantNode<bool>>(false);
+		REQUIRE(graph.connect(enable, 0, gate, 0) == Connection::Ok);
+
+		SerialScheduler{}.run(graph, evaluation);
+		REQUIRE(lain::flow::test::output(graph, evaluation, gate, 0).empty());
+	}
+}
+
+TEST_CASE("an unwired Select routes branch 0, and a suppressed selector suppresses", "[flow][nodes][default]")
+{
+	// `selector` was an Optional input with a presence check in compute(); it is now an input with a
+	// default, which says the same thing in the declaration instead of in the body. The behaviour
+	// that CHANGED is the wired-but-empty case: an Optional selector quietly fell back to branch 0,
+	// where a defaulted one leaves the node unready, so a suppressed selector suppresses — the same
+	// rule the Gate follows, and the reason a defaulted input stays Required.
+	Graph graph;
+	const NodeId a = graph.add<ConstantNode<int>>(10);
+	const NodeId b = graph.add<ConstantNode<int>>(20);
+	const NodeId select = graph.add<SelectNode<int>>();
+	auto& node = static_cast<SelectNode<int>&>(graph.node(select));
+	const lain::flow::PortId branchA = node.addDynamicPort<int>("a");
+	const lain::flow::PortId branchB = node.addDynamicPort<int>("b");
+	REQUIRE(graph.connect(lain::flow::PortAddress{a, graph.node(a).output(0).id()},
+						  lain::flow::PortAddress{select, branchA}) == Connection::Ok);
+	REQUIRE(graph.connect(lain::flow::PortAddress{b, graph.node(b).output(0).id()},
+						  lain::flow::PortAddress{select, branchB}) == Connection::Ok);
+
+	Evaluation evaluation{graph};
+	SerialScheduler{}.run(graph, evaluation);
+	REQUIRE(lain::flow::test::output(graph, evaluation, select, 0).get<int>() == 10); // unwired -> branch 0
+
+	SECTION("a wired selector picks its branch")
+	{
+		const NodeId sel = graph.add<ConstantNode<int>>(1);
+		REQUIRE(graph.connect(sel, 0, select, 0) == Connection::Ok); // input 0 is `selector`
+		SerialScheduler{}.run(graph, evaluation);
+		REQUIRE(lain::flow::test::output(graph, evaluation, select, 0).get<int>() == 20);
+	}
 }
