@@ -2248,6 +2248,30 @@ it then read `activePath[0]` of an empty vector.
   one, and a stray `.txt` beside the images breaks the map until a wired `.png` filter excludes it —
   which is the same failure the round-trip fixture hit when a document sat beside its images.
 
+**Input defaults — a node setting that is configured OR wired** (2026-08-15, prompted by review of the
+`ListDir` fix). The hand-rolled `setting.h` helper that fix introduced was the symptom: a node wanting
+both spellings declared a param and an Optional input of the same name and reconciled them by hand, in
+three places that had to agree. It is now one declaration in core, **`addInput<T>(name,
+Default{value})`**, with `Node::defaultOf(port)` pairing the two halves — amending
+[ADR-0005](docs/adr/0005-node-parameters-distinct-typed-slots.md) in place, with the reason maps
+supply: every element of a map evaluates ONE definition, so a setting that must differ per element
+cannot be a param at all, while the same node outside a map still wants a configured value.
+
+- **The default IS a param underneath**, because "editable and serialized" is exactly what a Param is.
+  So it round-trips, the inspector edits it through the ordinary `setParam` seam, and **existing
+  documents load unchanged** — the param keeps its name. Verified against the map document saved
+  before the change.
+- **It seeds an input with NO INCOMING EDGE, and such an input stays REQUIRED.** That pairing is the
+  whole safety of the feature: if a default filled any empty slot, a Gate turned off upstream would
+  feed the node its default instead of suppressing it, silently undoing ADR-0007. Sabotage-verified —
+  the "fill any empty slot" version fails the readiness assertion.
+- Chosen over a third noun (`addSetting`) or a connectable param, because it adds no vocabulary: the
+  concept is *an input with a default*, which is the model people arrive with from Blender. CONTEXT.md
+  had already listed **"setting"** among the words to avoid for this family, which settled the name.
+- The gui follows: the Inspector shows **"driven by input"** in place of the editor while the pin is
+  wired, since editing a value that has no effect is worse than not offering it.
+- `LoadImage::path` and both of `ListDir`'s settings converted; `flow/example/setting.h` deleted.
+
 **M8 is complete pending further live-driver work.** Everything below the gui is verified; slice 6c's
 surface — the stepper, the Issues navigation, `Add ▸ Map`, and editing inside a map — is exactly the
 surface that produced all ten of M5's bugs, and has now produced its first. Expect more there rather

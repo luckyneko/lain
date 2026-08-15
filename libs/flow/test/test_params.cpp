@@ -7,6 +7,7 @@
 #include "lain/flow/node.h"
 #include "lain/flow/portvalue.h"
 #include "lain/flow/scheduler.h"
+#include "testnodes.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -198,4 +199,101 @@ TEST_CASE("an already type-erased value commits through the same seam", "[param]
 
 	// The caller's copy still holds the payload — a commit shares it, never consumes it.
 	REQUIRE(value.get<float>() == 2.5f);
+}
+
+namespace
+{
+	// One input, declared WITH A DEFAULT — the shape a node uses for a setting that may be either
+	// configured on the node or driven by the graph.
+	struct Defaulted : Node
+	{
+		PortId in, out;
+		explicit Defaulted(int fallback = 7)
+			: Node("Defaulted")
+		{
+			in = addInput<int>("value", Default{fallback});
+			out = addOutput<int>("out");
+		}
+		void compute(NodeEvaluation& evaluation) const override
+		{
+			// Read as an ordinary input: unconnected, the slot carries the default, so there is
+			// nothing to check for here.
+			evaluation.output(out).set(evaluation.input(in).get<int>());
+		}
+	};
+
+	// Produces nothing at all — a Gate turned off, in miniature.
+	struct Suppressor : Node
+	{
+		PortId out;
+		Suppressor()
+			: Node("Suppressor")
+		{
+			out = addOutput<int>("out");
+		}
+		void compute(NodeEvaluation& evaluation) const override { evaluation.output(out).clear(); }
+	};
+} // namespace
+
+TEST_CASE("an unconnected input carries its declared default", "[param][default]")
+{
+	Graph graph;
+	const NodeId id = graph.add<Defaulted>(7);
+	Evaluation evaluation{graph};
+	SerialScheduler{}.run(graph, evaluation);
+
+	REQUIRE(test::output(graph, evaluation, id, 0).get<int>() == 7);
+
+	SECTION("and the default is a param, so editing it re-runs the node")
+	{
+		// Which is the point of it being a Param and not a bare member: it serializes, the inspector
+		// edits it through the ordinary setParam seam, and that seam invalidates.
+		Node& node = graph.node(id);
+		const Param* fallback = node.defaultOf(node.input(0).id());
+		REQUIRE(fallback != nullptr);
+		REQUIRE(node.setParam<int>(fallback->id(), 12));
+
+		SerialScheduler{}.run(graph, evaluation);
+		REQUIRE(test::output(graph, evaluation, id, 0).get<int>() == 12);
+	}
+
+	SECTION("an ordinary input has no default")
+	{
+		Graph plain;
+		const NodeId sink = plain.add<test::AddInt>();
+		REQUIRE(plain.node(sink).defaultOf(plain.node(sink).input(0).id()) == nullptr);
+	}
+}
+
+TEST_CASE("a wired value overrides the default", "[param][default]")
+{
+	Graph graph;
+	const NodeId source = graph.add<test::ConstInt>(99);
+	const NodeId id = graph.add<Defaulted>(7);
+	REQUIRE(graph.connect(source, 0, id, 0) == Connection::Ok);
+
+	Evaluation evaluation{graph};
+	SerialScheduler{}.run(graph, evaluation);
+	REQUIRE(test::output(graph, evaluation, id, 0).get<int>() == 99);
+}
+
+TEST_CASE("a default never stands in for a suppressed upstream", "[param][default]")
+{
+	// THE safety rule, and the reason a defaulted input stays REQUIRED rather than Optional. If the
+	// default filled any empty slot, then wiring a gate that is off would feed the node its default
+	// instead of suppressing it — a default quietly undoing conditional evaluation (ADR-0007).
+	//
+	// So the default seeds an input with NO INCOMING EDGE. Connected and producing nothing means
+	// exactly that: no value, the node is not ready, and the suppression propagates.
+	Graph graph;
+	const NodeId gate = graph.add<Suppressor>();
+	const NodeId id = graph.add<Defaulted>(7);
+	REQUIRE(graph.connect(gate, 0, id, 0) == Connection::Ok);
+
+	Evaluation evaluation{graph};
+	SerialScheduler{}.run(graph, evaluation);
+
+	REQUIRE_FALSE(evaluation.ready(id));											  // not ready: its required input is empty
+	REQUIRE(test::output(graph, evaluation, id, 0).empty());						  // so it produced nothing...
+	REQUIRE(evaluation.value(PortAddress{id, graph.node(id).input(0).id()}).empty()); // ...and was NOT defaulted
 }

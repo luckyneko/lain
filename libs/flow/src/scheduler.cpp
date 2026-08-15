@@ -404,8 +404,21 @@ namespace lain::flow
 
 		// Reset inputs first, so an input with NO current edge (never connected, disconnected, or its
 		// source node removed) is empty — the readiness gate then treats them all alike.
+		//
+		// ...except an input declared WITH A DEFAULT, which is seeded with it instead. Only here, and
+		// only because the slot is about to be overwritten by an edge if there is one: the default
+		// fills an UNCONNECTED input, never a connected one that produced nothing. That distinction
+		// is the whole safety of the feature — a Gate turned off upstream must suppress this node,
+		// not be quietly replaced by its default (ADR-0007).
 		for (std::size_t i = 0; i < target.inputCount(); ++i)
-			evaluation.inputSlot(id, target.input(i).id()).clear();
+		{
+			const Port& port = target.input(i);
+			PortValue& slot = evaluation.inputSlot(id, port.id());
+			if (const Param* fallback = target.defaultOf(port.id()))
+				slot = fallback->value();
+			else
+				slot.clear();
+		}
 		for (const Graph::Edge& e : definition.edges())
 		{
 			if (e.to.node == id)

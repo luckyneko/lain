@@ -22,6 +22,20 @@ namespace lain::flow
 	// connectable input port later is a definition change, not a data change (that is how a
 	// config becomes graph-driven — wire a constant node to the promoted input). flow stays
 	// UI-free: a Param is pure data; the adapter (flowview) chooses an editor by type().
+	// The DEFAULT for an input port, as its declaration's second argument: a tag wrapper, so
+	// `addInput<T>(name, Default{value})` cannot be confused with `addInput<T>(name, Presence)`.
+	// See Node::addInput for what a default means and when it applies.
+	template <typename T>
+	struct Default
+	{
+		T value;
+	};
+
+	// C++17 does not deduce an aggregate's template arguments without one of these (aggregate CTAD
+	// is C++20), and `Default{value}` at a declaration site is the whole point of the wrapper.
+	template <typename T>
+	Default(T) -> Default<T>;
+
 	class Param
 	{
 	public:

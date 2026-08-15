@@ -5,6 +5,7 @@
 #include "lain/flow/types.h"
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <typeindex>
 #include <utility>
@@ -105,6 +106,16 @@ namespace lain::flow
 		// findOutput, for an id that came from elsewhere and may be stale.
 		const Param* findParam(PortId id) const { return findDeclared(m_params, id); }
 
+		// The param holding `input`'s DEFAULT, or nullptr if it has none (most inputs). Public
+		// because two outsiders need it: the scheduler seeds an unconnected slot from it, and an
+		// inspector edits it — through setParam, like any param — to change the value a disconnected
+		// pin carries. See addInput(name, Default{...}) for what a default means and when it applies.
+		const Param* defaultOf(PortId input) const
+		{
+			const auto it = m_defaults.find(input);
+			return it == m_defaults.end() ? nullptr : findParam(it->second);
+		}
+
 		// THE seam for changing a param: type-check, commit and invalidate as one operation.
 		// Returns false — changing nothing at all — when `id` names no param of this node or when
 		// `value`'s payload type is not the param's DECLARED type ("the type is the schema"; an
@@ -191,6 +202,27 @@ namespace lain::flow
 		template <typename T>
 		PortId addOutput(std::string name);
 
+		// Declare an input WITH A DEFAULT: a value the node supplies for itself when nothing is
+		// wired to it, and which the graph overrides by wiring something in.
+		//
+		// WHY THIS EXISTS. A param is per-node configuration, and every element of a map evaluates
+		// ONE definition (ADR-0014) — so anything that must differ per element cannot be a param, it
+		// has to arrive as a value. Before this, a node wanting both spellings declared a param and
+		// an Optional input of the same name and reconciled them by hand, in three places that had
+		// to agree.
+		//
+		// The default IS a param underneath — "editable and serialized" is exactly what a Param is —
+		// so it round-trips and the inspector edits it as before. What the caller holds is the PORT
+		// id; `defaultOf(port)` finds the param behind it.
+		//
+		// IT SEEDS ONLY AN UNCONNECTED INPUT, and the port stays REQUIRED. That combination is what
+		// keeps a default from swallowing suppression: wire a Gate that is off, and the input is
+		// empty rather than defaulted, the node is not ready (ADR-0007), and the gate propagates as
+		// it should. Unconnected, the slot always carries the default — so compute() may read it
+		// without checking.
+		template <typename T>
+		PortId addInput(std::string name, Default<T> fallback);
+
 		// Declare a port MIRRORING an existing port's declared type, with no compile-time T. A
 		// port's type is a shared PortType flyweight, so a node that DERIVES its interface from
 		// another node's ports — a group mirroring its inner boundary pins — copies that flyweight
@@ -255,6 +287,9 @@ namespace lain::flow
 		// node.inl, where <cassert> is already included (flow core stays log-free).
 		template <typename D>
 		static D* checked(D* declared);
+
+		// input PortId -> the PortId of the param holding its default. Empty for most nodes.
+		std::map<PortId, PortId> m_defaults;
 
 		NodeId m_id{};			// reserved sentinel until the Graph assigns a real id
 		PortId m_nextPortId{1}; // per-node counter for EVERY declaration (ports and params alike),

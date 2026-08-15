@@ -29,14 +29,12 @@ namespace lain::flow::example
 		void compute(NodeEvaluation& evaluation) const override;
 
 	private:
-		// Both settings are also INPUT PINS, Optional and overriding their params (see setting.h):
-		// wire a boundary input or a Constant node to drive them from the graph, or leave them
-		// unconnected and set them in the inspector. Without the pins the folder could only ever be
-		// configured per node, which a map cannot use — every element shares one definition.
-		PortId m_dirIn;	   // optional std::filesystem::path input
-		PortId m_filterIn; // optional std::string input
-		PortId m_dir;	   // "directory" param (std::filesystem::path)
-		PortId m_filter;   // "extension" param — "" lists everything
-		PortId m_out;	   // std::vector<std::filesystem::path>
+		// Inputs WITH DEFAULTS (Node::addInput(name, Default{…})): wire a boundary input or a Constant
+		// node to drive them from the graph, or leave them unconnected and set them in the inspector.
+		// Configuration alone would not do — every element of a map shares one definition, so a folder
+		// that must vary has to arrive as a value.
+		PortId m_dir;	 // std::filesystem::path — the folder to list
+		PortId m_filter; // std::string — "" lists everything
+		PortId m_out;	 // std::vector<std::filesystem::path>
 	};
 } // namespace lain::flow::example

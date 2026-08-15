@@ -36,6 +36,22 @@ namespace lain::flow
 	}
 
 	template <typename T>
+	PortId Node::addInput(std::string name, Default<T> fallback)
+	{
+		// REQUIRED, deliberately: see Node::addInput's contract. A defaulted input that were Optional
+		// would let a connected-but-suppressed upstream reach compute() as an empty slot, and the
+		// node would read it expecting the default to be there.
+		const PortId port = addInput<T>(name, Presence::Required);
+		// The param carries the same NAME as the port. They live in separate namespaces (params are
+		// serialized in their own array, ports are addressed per direction), and sharing the name is
+		// what makes an existing document — written when these were two hand-declared halves — load
+		// unchanged.
+		const PortId param = addParam<T>(std::move(name), std::move(fallback.value));
+		m_defaults[port] = param;
+		return port;
+	}
+
+	template <typename T>
 	PortId Node::addOutput(std::string name)
 	{
 		assert(validPortName(name) && "flow::Node: port name must be a letter then alphanumeric/underscore");

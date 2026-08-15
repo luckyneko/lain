@@ -20,10 +20,10 @@ namespace lain::flow::example
 	// be populated (io::image::registerImageCodecs, or a single codec's registerCodec) before
 	// compute() runs — that is the app's job, not the node's. A load failure (missing file,
 	// unknown format, decode error) leaves an invalid Image on the port; load logs the reason.
-	// The `path` INPUT is how a map drives this node: a param is per-node configuration and every
-	// element of a map shares one definition, so a per-element path has to arrive as a value. It is
-	// Optional and takes precedence over the param when it carries one — the same shape as a Select's
-	// `selector` (wire it for data-driven loading, leave it unconnected for a fixed file).
+	// `path` is an INPUT WITH A DEFAULT (Node::addInput), which is how a map drives this node:
+	// configuration alone would not do, because every element of a map shares one definition, so a
+	// per-element path has to arrive as a value. Unconnected, it loads the file it is configured
+	// with, so an existing scene behaves exactly as before.
 	class LoadImageNode : public Node
 	{
 	public:

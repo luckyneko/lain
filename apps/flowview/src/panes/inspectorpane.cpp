@@ -21,6 +21,7 @@
 #include <lain/string/format.h>
 
 #include <algorithm>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -97,6 +98,27 @@ namespace flowview
 					renamed = true;
 				}
 
+				// The params that back a DEFAULTED INPUT, and whether that input is currently wired.
+				// A default is editable only while nothing drives it — the value is what the pin
+				// carries when disconnected, so offering an editor for it beside a live wire would
+				// invite editing a number that has no effect.
+				std::map<flow::PortId, bool> drivenDefault;
+				for (std::size_t i = 0; i < node.inputCount(); ++i)
+				{
+					const flow::Port& in = node.input(i);
+					const flow::Param* fallback = node.defaultOf(in.id());
+					if (fallback == nullptr)
+						continue;
+					const flow::PortAddress address{id, in.id()};
+					bool wired = false;
+					for (const flow::Graph::Edge& e : graph.edges())
+					{
+						if (e.to == address)
+							wired = true;
+					}
+					drivenDefault[fallback->id()] = wired;
+				}
+
 				bool nodeEdited = false;
 				for (std::size_t pi = 0; pi < node.paramCount(); ++pi)
 				{
@@ -107,10 +129,18 @@ namespace flowview
 					// does. setParam invalidates as part of the write, so there is no markDirty to
 					// forget here.
 					const flow::Param& p = node.param(pi);
-					const flow::PortId id = p.id();
+					const flow::PortId paramId = p.id();
+					const auto driven = drivenDefault.find(paramId);
+					if (driven != drivenDefault.end() && driven->second)
+					{
+						// Driven by a wire: say so where the editor would have been, so the value's
+						// absence reads as "the graph supplies this" rather than as a missing widget.
+						gui::TextDisabled("%s: driven by input", p.name().c_str());
+						continue;
+					}
 					flow::PortValue edited = p.value();
 					if (editors.render(p.name(), p.type(), edited) && writable != nullptr)
-						nodeEdited |= writable->setParam(id, std::move(edited));
+						nodeEdited |= writable->setParam(paramId, std::move(edited));
 				}
 				paramEdited |= nodeEdited;
 				gui::EndDisabled();

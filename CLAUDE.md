@@ -546,6 +546,17 @@ format-check clean.
   be driven by the graph, and "which folder" is exactly what a caller supplies from outside. The rule
   is stated once in **`flow/example/setting.h`** (*wired wins, unconnected the param stands*), shared
   with `LoadImage::path`.
+- **Input defaults (2026-08-15)** — the `setting.h` helper the ListDir fix introduced was a symptom:
+  a node wanting both spellings declared a param and an Optional input of the same name and reconciled
+  them by hand in three places. Now one declaration in core, **`addInput<T>(name, Default{value})`**,
+  with `Node::defaultOf(port)` pairing the halves — **amending ADR-0005 in place** with the reason
+  maps supply (one definition, N evaluations, so a per-element setting cannot be a param). The default
+  IS a param underneath, so it serializes and **existing documents load unchanged**. It seeds an input
+  with **no incoming edge**, and such an input stays **Required** — sabotage-verified, because a
+  default that filled any empty slot would let a Gate turned off be replaced by it instead of
+  suppressing (ADR-0007). No new noun: CONTEXT.md already listed "setting" among the words to avoid
+  for this family. The Inspector shows *"driven by input"* where the editor would be while a pin is
+  wired.
 - **Standing gap:** the stepper, the Issues navigation, `Add ▸ Map` and editing inside a map still
   want more live driving. That surface produced all ten of M5's bugs while the engine slices produced
   none, and has now produced its first here — expect more there rather than in the engine.

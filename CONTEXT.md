@@ -75,7 +75,9 @@ never by driving a live GUI.
   reuse **PortValue**'s typed, type-erased slot, so a param and a port share one internal value
   machinery: **promoting a param to a connectable input is a definition change, not a data change**
   — that is how `flow` gets "drive a config from the graph" (wire a `ConstantFloatNode` to the
-  promoted input) without a second concept or an editable-pin model. `flow` stays **UI-free**: a
+  promoted input) without a second concept or an editable-pin model. **From M8 a node need not choose
+  once**: an input may name a param as its DEFAULT (see *Input default* below), which is what a map
+  forced — but a param itself is still non-connectable. `flow` stays **UI-free**: a
   param is pure data; the **adapter** (flowview) renders an editor for it (the vestigial
   `Node::onInspect` ImGui hook is removed — a node never names `lain::gui`). _Avoid_: property,
   setting, attribute, field (for the concept).
@@ -92,6 +94,18 @@ never by driving a live GUI.
   edit. An editor commits through `Node::setParam` — which writes and invalidates as one operation —
   then re-evaluates (all main-thread).
   **Deferred:** a read-only ("Debug") param *kind* — display-only, orthogonal to the type.
+
+- **Input default** *(M8 — amends [ADR-0005](docs/adr/0005-node-parameters-distinct-typed-slots.md))* —
+  a value a node supplies for one of its own inputs when nothing is wired to it, declared as
+  `addInput<T>(name, Default{value})`. The default IS a param underneath (that is what "editable and
+  serialized" means here), so it round-trips and an inspector edits it through `setParam` like any
+  other; what the node holds is the PORT id, and `defaultOf(port)` finds the param behind it.
+  A setting that must differ per element of a **map** cannot be a param — one definition, N
+  evaluations — so this is what lets one node be both configurable and graph-driven. It seeds an
+  input with **no incoming edge only**, and such an input stays **Required**: a connected upstream
+  that produced nothing leaves the slot empty, so suppression still propagates rather than being
+  papered over by a default. _Avoid_: "optional input with a fallback" (an Optional defaulted input
+  would let a suppressed upstream reach `compute()` as an empty slot).
 
 ## Payload-agnostic
 

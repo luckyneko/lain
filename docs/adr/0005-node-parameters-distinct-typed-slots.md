@@ -25,6 +25,21 @@ because params and ports share one internal value machinery.
 - **Params reuse `PortValue`'s typed `std::any` slot.** One value-erasure mechanism for both, so
   **promoting a param to a connectable input is a definition change, not a data change** — that is
   how a config becomes graph-driven (wire a constant/source node), rather than an editable-pin model.
+
+  **Amended 2026-08-15 (M8).** "Promoting is a definition change" assumed the node's author picks one
+  or the other, once. The **map node** broke that assumption: every element of a map evaluates ONE
+  definition (ADR-0014), so a setting that must differ per element cannot be a param at all — while
+  the same node, used outside a map, still wants a configured value with no wiring. Both, from one
+  declaration, is now a first-class shape: **`addInput<T>(name, Default{value})`** declares an input
+  and the param holding its default together, and `Node::defaultOf(port)` pairs them.
+
+  The param is still non-connectable and still the only editable, serialized half; what changed is
+  that a port may name one as its fallback. Two rules keep it honest: the default seeds an input with
+  **no incoming edge** (never one whose upstream produced nothing, or a Gate turned off would be
+  silently replaced by a default instead of suppressing — ADR-0007), and such an input therefore
+  stays **Required**, so a connected-but-empty upstream still fails the readiness gate. The editor is
+  still chosen by type; an inspector simply shows no editor while the pin is wired, because the value
+  would have no effect.
 - **The editor widget is chosen by the param's TYPE**, never by metadata/hints — and we **prefer
   an existing type, inventing a bespoke one only where none fits**: `std::string`→text,
   `std::filesystem::path`→file-picker, `image::ColorRGBf`→colour swatch, `int`/`float`→drag,
