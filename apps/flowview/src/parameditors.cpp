@@ -92,21 +92,40 @@ namespace flowview
 		if (changed)
 			value.set<std::filesystem::path>(std::filesystem::path(std::move(edited)));
 
-		// Picking a file commits immediately (the same recompute trigger as finishing a text edit).
-		// Image filters here because the only path value today is an image input; a per-value filter
-		// hint is a future refinement if a non-image path value appears (ADR-0005).
+		// Picking commits immediately (the same recompute trigger as finishing a text edit).
+		//
+		// BOTH pick modes are offered, because a std::filesystem::path is legitimately either: an
+		// image to load, or a folder to list. Nothing in the type says which, and the editor is
+		// handed only (label, type, value) — so rather than guess, it lets the user say. The image
+		// filter on "File..." stays a DEFAULT for the common case; a per-value filter hint is still
+		// the refinement ADR-0005 named, and would replace both of these with one button that knows
+		// what it is picking.
 		bool browsed = false;
 		gui::PushID(label.c_str());
+
+		// The dialog wants a starting DIRECTORY, so drop the filename from the current path (passing
+		// a file path breaks the macOS backend — it resolves it as a folder).
+		const std::filesystem::path current = currentOr<std::filesystem::path>(value);
+		const std::filesystem::path startDir = current.has_filename() ? current.parent_path() : current;
+
 		gui::SameLine();
-		if (gui::Button("Browse..."))
+		if (gui::Button("File..."))
 		{
-			// The dialog wants a starting DIRECTORY, so drop the filename from the current path
-			// (passing a file path breaks the macOS backend — it resolves it as a folder).
-			const std::filesystem::path current = currentOr<std::filesystem::path>(value);
-			const std::filesystem::path startDir = current.has_filename() ? current.parent_path() : current;
 			const auto picked =
 				gui::openFile("Open image", startDir, {{"Images", {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff"}}});
 			if (picked)
+			{
+				value.set<std::filesystem::path>(*picked);
+				browsed = true;
+			}
+		}
+
+		gui::SameLine();
+		if (gui::Button("Folder..."))
+		{
+			// A folder value has no filename to drop, so it opens at ITSELF when it already names one.
+			const std::filesystem::path folderStart = current.empty() ? startDir : current;
+			if (const auto picked = gui::selectFolder("Select folder", folderStart))
 			{
 				value.set<std::filesystem::path>(*picked);
 				browsed = true;

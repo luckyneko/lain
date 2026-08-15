@@ -21,6 +21,7 @@
 #include <lain/gui/nodes.h>
 #include <lain/image/image.h>
 #include <lain/math/types.h>
+#include <lain/string/format.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -170,6 +171,17 @@ namespace flowview
 		const flow::Graph& rootGraph = ctx.app->graph();
 		// One source for "may I edit this?": having something to edit through.
 		const bool editable = editableGraph != nullptr;
+
+		// The active path AS IT WAS when this frame's graph was resolved. Read it, never ctx's copy,
+		// for the rest of the draw: a breadcrumb click calls navigateTo MID-DRAW, so ctx.activePath
+		// can change while this function is still drawing the level it was called for.
+		//
+		// That is not a cosmetic risk. The crumbs are computed once from the path, and every later
+		// crumb is drawn against it — so clicking the document crumb (which empties the path) and then
+		// reaching a map crumb behind it indexed element 0 of nothing, and segfaulted. It is the same
+		// lesson MainWindow already learned one level up, where a navigation requested during a draw
+		// is consumed at the START of the next frame rather than in the middle of this one.
+		const GraphPath path = ctx.activePath;
 		{
 			// The bar reads as one lineage, but its two halves cost very different things — so they get
 			// different separators. "<" precedes a DOCUMENT crumb: that document is not loaded, and
@@ -190,7 +202,7 @@ namespace flowview
 
 			// The first graph crumb names the DOCUMENT, not "root": which file this is was otherwise
 			// shown nowhere, and the dirty marker rides along with it.
-			const std::vector<Crumb> crumbs = breadcrumb(rootGraph, ctx.activePath);
+			const std::vector<Crumb> crumbs = breadcrumb(rootGraph, path);
 			const std::string document = (ctx.currentPath.empty() ? std::string("Untitled") : ctx.currentPath.filename().string()) + (ctx.dirty ? " *" : "");
 			for (std::size_t i = 0; i < crumbs.size(); ++i)
 			{
@@ -206,7 +218,45 @@ namespace flowview
 				if (here)
 					gui::TextUnformatted(label.c_str()); // the level in view isn't a link
 				else if (gui::SmallButton(label.c_str()))
-					ctx.navigateTo(GraphPath(ctx.activePath.begin(), ctx.activePath.begin() + static_cast<std::ptrdiff_t>(crumbs[i].depth)));
+					ctx.navigateTo(GraphPath(path.begin(), path.begin() + static_cast<std::ptrdiff_t>(crumbs[i].depth)));
+
+				// A MAP crumb carries which ELEMENT you are looking at, because its level has one
+				// evaluation per element and the canvas can only show one at a time. The path already
+				// holds the choice (PathStep::element), so this only renders and edits it.
+				//
+				// It earns its keep when an element FAILS: one hole clears the whole map's output
+				// (ADR-0014), so the way to find out which element broke is to go and look at it —
+				// and the Issues row for that element navigates straight here.
+				if (crumbs[i].perElement && crumbs[i].depth >= 1)
+				{
+					const std::size_t step = crumbs[i].depth - 1;
+					const std::size_t count = step < ctx.pathElementCounts.size() ? ctx.pathElementCounts[step] : 0;
+					const std::size_t element = path[step].element;
+
+					const auto stepTo = [&](std::size_t target)
+					{
+						GraphPath moved = path;
+						moved[step].element = target;
+						ctx.navigateTo(std::move(moved)); // the levels below stay: same definition
+					};
+
+					gui::SameLine();
+					gui::BeginDisabled(element == 0);
+					if (gui::SmallButton("<"))
+						stepTo(element - 1);
+					gui::EndDisabled();
+
+					gui::SameLine();
+					// 1-based for reading, 0-based underneath — the label is for a person, the index
+					// addresses an evaluation.
+					gui::TextUnformatted(string::format("[{}/{}]", element + 1, count).c_str());
+
+					gui::SameLine();
+					gui::BeginDisabled(count == 0 || element + 1 >= count);
+					if (gui::SmallButton(">"))
+						stepTo(element + 1);
+					gui::EndDisabled();
+				}
 				gui::PopID();
 			}
 			// (The read-only STATE is shown on the canvas itself — see the overlay after the editor —
@@ -216,7 +266,7 @@ namespace flowview
 			// The way to change it, right-aligned on the same line: the marker states the
 			// constraint, the button offers the way out of it. Named for the file, since "edit what?"
 			// is not obvious several levels deep.
-			if (const flow::LinkedGroupNode* linked = enclosingLinkedGroup(rootGraph, ctx.activePath))
+			if (const flow::LinkedGroupNode* linked = enclosingLinkedGroup(rootGraph, path))
 			{
 				const std::string label = "Edit " + std::filesystem::path(linked->source()).filename().string();
 				const float width = gui::CalcTextSize(label.c_str()).x + gui::GetStyle().FramePadding.x * 4.0f;
@@ -257,7 +307,7 @@ namespace flowview
 		// LIFO drain can order Output before Input among edgeless nodes.
 		// This level's stored positions (a loaded document's, or those captured when it was last shown).
 		static const flow::serialize::EditorData kNoLayout;
-		const flow::serialize::EditorTree* levelTree = findLayoutAt(ctx.layout, ctx.activePath);
+		const flow::serialize::EditorTree* levelTree = findLayoutAt(ctx.layout, path);
 		const flow::serialize::EditorData& levelLayout = levelTree ? levelTree->nodes : kNoLayout;
 
 		const int lastColumn = static_cast<int>(graph.topoOrder().size()) - 1;

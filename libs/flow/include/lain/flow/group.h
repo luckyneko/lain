@@ -5,15 +5,17 @@
 //
 //   GroupNode        — the ABSTRACT base: the port mirroring, and the structural question of which
 //                      graph is inside. Says nothing about where that graph comes from or who owns it.
-//   InlineGroupNode  — INLINE: the recipe is saved inside the parent document. It owns its Graph, and
-//                      is the only kind with MUTABLE access to an interior (`inner()`).
+//   InlineGroupNode  — INLINE: the recipe is saved inside the parent document, and it owns its Graph.
 //   LinkedGroupNode  — LINKED: the recipe lives in its own document (its TEMPLATE), referenced by
 //                      path, read-only in place.
+//   MapNode          — a group whose interior is evaluated once per ELEMENT of a collection, so its
+//                      face is LIFTED (an inner T becomes an outer vector<T>). Owns its Graph.
 //
 // Read-only-in-place is a property of the TYPE, not a rule each caller remembers: `Node::innerGraph()`
-// is const for everyone, and only the inline kind hands out a mutable interior. That matters because
-// a linked group's interior is about to be SHARED between instances (M7 / ADR-0013), where a stray
-// mutation through one instance would reach all of them.
+// is const for everyone, and a kind hands out a mutable interior only if that interior is its own —
+// which `editableInner()` answers, so a host never tests for a concrete class. That matters because a
+// linked group's interior is SHARED between instances (M7 / ADR-0013), where a stray mutation through
+// one instance would reach all of them.
 //
 // See ADR-0009 (the scheduler flattens all nesting into one execution plan, so compute() here is
 // never called), ADR-0010 (inline vs linked, the interface cache, why overrides are deferred) and
@@ -39,8 +41,19 @@ namespace lain::flow
 	{
 	public:
 		// The graph this node contains — CONST for everyone (see the file header). A mutable interior
-		// is InlineGroupNode's alone.
+		// belongs only to the kinds that OWN one.
 		const Graph* innerGraph() const override = 0;
+
+		// The contained graph as something a host may EDIT, or nullptr when this kind's interior is
+		// not its own to hand out — which is exactly the linked case, whose recipe belongs to its
+		// template and is shared with every other instance (ADR-0013).
+		//
+		// A virtual rather than a `dynamic_cast<InlineGroupNode*>` at each call site, for the reason
+		// ADR-0009 gives about innerGraph(): a host asking "may I edit through this?" wants the FACT,
+		// not the class. When the map arrived it was a second kind that owns its interior, and every
+		// site that had cast for the class silently answered "read-only" for it — a map you could
+		// descend into and never build. The next such kind needs no host change.
+		virtual Graph* editableInner() { return nullptr; }
 
 		// (There is no `dirty()` override any more. A group used to report itself dirty when anything
 		// inside it was — a walk over mutable state on the inner definition. Staleness is now a
@@ -139,6 +152,7 @@ namespace lain::flow
 		const Graph& inner() const { return m_inner; }
 
 		const Graph* innerGraph() const override { return &m_inner; }
+		Graph* editableInner() override { return &m_inner; }
 
 	private:
 		Graph m_inner; // born with its own boundary pair — the group's interface
@@ -170,6 +184,10 @@ namespace lain::flow
 		Graph& inner() { return m_inner; }
 		const Graph& inner() const { return m_inner; }
 		const Graph* innerGraph() const override { return &m_inner; }
+
+		// A map OWNS its interior, like an inline group — so a host may edit through it. (A linked
+		// map, whose body would come from a shared template, is deferred; see the class header.)
+		Graph* editableInner() override { return &m_inner; }
 
 		// The structural fact that makes this a map: its interior is evaluated once per element,
 		// so it has N child evaluations rather than one, sized between stages.

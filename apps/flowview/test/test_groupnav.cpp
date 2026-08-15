@@ -11,6 +11,7 @@
 #include <lain/flow/graph.h>
 #include <lain/flow/group.h>
 #include <lain/flow/node.h>
+#include <lain/flow/porttyperegistry.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -28,6 +29,7 @@ using flowview::GraphPath;
 using flowview::hasLinkedGroups;
 using flowview::layoutAt;
 using flowview::liftedPositions;
+using flowview::pathElementCounts;
 using flowview::PathStep;
 using flowview::resolveEditable;
 using flowview::resolveEvaluation;
@@ -392,4 +394,100 @@ TEST_CASE("a path step selects WHICH evaluation, not just which node", "[groupna
 	{
 		REQUIRE(&resolveEvaluation(evaluation, GraphPath{{group}}) == &evaluation.child(group, 0));
 	}
+}
+
+TEST_CASE("a map crumb reports that it is per-element, and how many", "[groupnav]")
+{
+	// The breadcrumb's element stepper needs two facts from two different owners: the DEFINITION
+	// says a step is per-element (a map), and the EVALUATION says how many elements there turned out
+	// to be. Neither can answer the other — a map's arity is not in the recipe at all — which is why
+	// these are two functions rather than one.
+	Graph root;
+	const NodeId group = root.add<InlineGroupNode>();
+	const NodeId map = root.add<MapNode>();
+	Evaluation evaluation{root};
+	evaluation.setChildCount(map, 4);
+
+	const std::vector<Crumb> viaGroup = breadcrumb(root, GraphPath{{group}});
+	REQUIRE(viaGroup.size() == 2);
+	REQUIRE_FALSE(viaGroup[1].perElement); // an ordinary group has exactly one evaluation
+
+	const std::vector<Crumb> viaMap = breadcrumb(root, GraphPath{{map}});
+	REQUIRE(viaMap.size() == 2);
+	REQUIRE(viaMap[1].perElement);
+
+	const std::vector<std::size_t> counts = pathElementCounts(evaluation, GraphPath{{map, 2}});
+	REQUIRE(counts.size() == 1);
+	REQUIRE(counts[0] == 4); // how far the stepper may go
+
+	SECTION("a step with nothing prepared reports zero rather than guessing")
+	{
+		Evaluation fresh{root};
+		const std::vector<std::size_t> none = pathElementCounts(fresh, GraphPath{{map, 0}});
+		REQUIRE(none.size() == 1);
+		REQUIRE(none[0] == 0); // a map has no children until a run has sized it
+	}
+}
+
+TEST_CASE("a map's interior is editable, a linked group's is not", "[groupnav]")
+{
+	// resolveEditable asks the NODE whether its interior is its own to hand out, rather than testing
+	// for InlineGroupNode. When the map arrived it became a second kind that owns one, and a class
+	// test would have made it silently read-only — a map you could descend into and never build.
+	Graph root;
+	const NodeId group = root.add<InlineGroupNode>();
+	const NodeId map = root.add<MapNode>();
+	const NodeId linked = root.add<LinkedGroupNode>();
+
+	REQUIRE(resolveEditable(root, GraphPath{{group}}) != nullptr);
+	REQUIRE(resolveEditable(root, GraphPath{{map}}) != nullptr);
+	REQUIRE(resolveEditable(root, GraphPath{{linked}}) == nullptr);
+
+	// And the per-frame reconciliation descends into a map too, so editing its interface from the
+	// inside reaches its outer ports (M5's bug three, in its map-shaped form).
+	// A map can only mirror a pin whose LIST form is registered — that is how it lifts an inner T to
+	// an outer vector<T> at runtime (ADR-0014). Without it the pin is refused rather than silently
+	// mirrored un-lifted, which is what this registration makes visible.
+	registerPortType<std::vector<int>>("ListOfInt");
+
+	auto& inner = static_cast<MapNode&>(root.node(map)).inner();
+	inner.boundaryInputNode().addBoundary<int>("item");
+	REQUIRE(syncPathGroups(root, GraphPath{{map}}));
+	REQUIRE(root.node(map).inputCount() == 1);
+}
+
+TEST_CASE("every crumb's depth indexes the path it was built from", "[groupnav]")
+{
+	// The breadcrumb's element stepper turns a crumb's depth into a path index (`depth - 1`) to read
+	// which element that map is showing. This pins down that the arithmetic is always in range —
+	// a crumb never claims a depth the path does not have, and a per-element crumb is never the root.
+	//
+	// The OTHER half of that crash was not arithmetic: the strip read the LIVE path while drawing
+	// crumbs computed from it, and a crumb click replaces the path mid-loop — so clicking the
+	// document crumb emptied the path and the map crumb behind it indexed element 0 of nothing. That
+	// is fixed by drawing the whole strip from one snapshot, which no unit test can express; it lives
+	// in GraphPane::draw and needs the window.
+	registerPortType<std::vector<int>>("ListOfInt");
+	Graph root;
+	const NodeId group = root.add<InlineGroupNode>();
+	auto& groupInner = static_cast<InlineGroupNode&>(root.node(group)).inner();
+	const NodeId map = groupInner.add<MapNode>();
+
+	const GraphPath path{{group}, {map, 2}};
+	const std::vector<Crumb> crumbs = breadcrumb(root, path);
+	REQUIRE(crumbs.size() == 3); // document, group, map
+
+	for (const Crumb& crumb : crumbs)
+	{
+		REQUIRE(crumb.depth <= path.size()); // never names a step the path does not have
+		if (crumb.perElement)
+			REQUIRE(crumb.depth >= 1); // the root is not an element of anything
+	}
+
+	// And the counts line up with the same indexing, so the two are read together safely.
+	Evaluation evaluation{root};
+	const std::vector<std::size_t> counts = pathElementCounts(evaluation, path);
+	REQUIRE(counts.size() == path.size());
+	REQUIRE(crumbs.back().perElement);
+	REQUIRE(crumbs.back().depth - 1 < counts.size());
 }

@@ -97,9 +97,8 @@ namespace flowview
 				// An untitled document has no file to come back to, so this really is one-way. Say so
 				// rather than opening the template and leaving the user to discover there is no route
 				// back (the guard offered a Save a moment ago, which would have given it a path).
-				ctx.loadIssues.push_back({Issue::Severity::Warning,
-										  "the graph was never saved, so there is no document to return to",
-										  {}});
+				ctx.loadIssues.push_back(Issue::note(Issue::Severity::Warning,
+													 "the graph was never saved, so there is no document to return to"));
 			}
 			else
 			{
@@ -174,7 +173,7 @@ namespace flowview
 		for (const flow::serialize::LoadIssue& issue : result.issues)
 		{
 			const Issue::Severity sev = issue.severity == flow::serialize::Severity::Error ? Issue::Severity::Error : Issue::Severity::Warning;
-			ctx.loadIssues.push_back({sev, "load: " + issue.message, {}});
+			ctx.loadIssues.push_back(Issue::note(sev, "load: " + issue.message));
 		}
 		if (result.graph.nodeCount() == 0) // nothing loaded — the issues above say why; keep the current scene
 		{
@@ -234,7 +233,7 @@ namespace flowview
 		for (const flow::serialize::LoadIssue& issue : resolved.issues)
 		{
 			const Issue::Severity sev = issue.severity == flow::serialize::Severity::Error ? Issue::Severity::Error : Issue::Severity::Warning;
-			ctx.loadIssues.push_back({sev, "template: " + issue.message, {}});
+			ctx.loadIssues.push_back(Issue::note(sev, "template: " + issue.message));
 		}
 
 		GraphPath groupPath = ctx.activePath;
@@ -276,7 +275,7 @@ namespace flowview
 		for (const flow::serialize::LoadIssue& issue : result.issues)
 		{
 			const Issue::Severity sev = issue.severity == flow::serialize::Severity::Error ? Issue::Severity::Error : Issue::Severity::Warning;
-			ctx.loadIssues.push_back({sev, "reload: " + issue.message, {}});
+			ctx.loadIssues.push_back(Issue::note(sev, "reload: " + issue.message));
 		}
 
 		// Dirty only if the DOCUMENT actually changed. A template edit that leaves its interface alone
@@ -392,7 +391,11 @@ namespace flowview
 	// active graph would overwrite the document with just the group you happened to be inside.)
 	const flow::Graph& MenuBarPane::documentToSave(AppContext& ctx, const flow::Graph& activeGraph)
 	{
-		layoutAt(ctx.layout, ctx.activePath).nodes = collectLayout(ctx.canvas, activeGraph);
+		// The DRAWN path, not the active one: the canvas may have navigated earlier this frame, and
+		// `activeGraph` is the level that was actually on screen. Keying this by activePath files one
+		// level's positions under another's — the same mistake, one frame later, that MainWindow's own
+		// end-of-frame capture already learned to avoid.
+		layoutAt(ctx.layout, ctx.drawnPath).nodes = collectLayout(ctx.canvas, activeGraph);
 		return ctx.app->graph();
 	}
 

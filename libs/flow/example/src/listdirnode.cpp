@@ -1,5 +1,7 @@
 #include "lain/flow/example/listdirnode.h"
 
+#include "lain/flow/example/setting.h"
+
 #include <algorithm>
 #include <system_error>
 #include <utility>
@@ -12,13 +14,16 @@ namespace lain::flow::example
 		// A path param, so the adapter offers a picker rather than a text field (ADR-0005).
 		m_dir = addParam<std::filesystem::path>("directory", std::filesystem::path(std::move(directory)));
 		m_filter = addParam<std::string>("extension", std::string{});
+		m_dirIn = addInput<std::filesystem::path>("directory", Presence::Optional);
+		m_filterIn = addInput<std::string>("extension", Presence::Optional);
 		m_out = addOutput<std::vector<std::filesystem::path>>("files");
 	}
 
 	void ListDirNode::compute(NodeEvaluation& evaluation) const
 	{
-		const std::filesystem::path dir = param(m_dir).get<std::filesystem::path>();
-		const std::string filter = param(m_filter).get<std::string>();
+		// Wired wins over configured, for both — the one rule, from setting.h.
+		const std::filesystem::path dir = setting<std::filesystem::path>(*this, evaluation, m_dirIn, m_dir);
+		const std::string filter = setting<std::string>(*this, evaluation, m_filterIn, m_filter);
 
 		// A missing or unreadable directory yields NO VALUE rather than an empty list, and the
 		// difference matters: an empty list is a legitimate answer that maps to an empty result,

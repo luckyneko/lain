@@ -83,11 +83,20 @@ namespace flowview
 	struct Crumb
 	{
 		std::string label;
-		std::size_t depth; // path length once this crumb is chosen (0 = root)
+		std::size_t depth;		 // path length once this crumb is chosen (0 = root)
+		bool perElement = false; // this crumb is a MAP: it has one evaluation per element
 	};
 
 	// The breadcrumb for `path`: "root" plus each descended group's display name.
 	std::vector<Crumb> breadcrumb(const lain::flow::Graph& root, const GraphPath& path);
+
+	// How many child evaluations each step of `path` currently has — 1 for a group, N for a map, and
+	// 0 for a step whose children do not exist yet (nothing has run). Same length as `path`.
+	//
+	// Separate from breadcrumb() because the two answers come from different owners: the DEFINITION
+	// says whether a step is per-element, the EVALUATION says how many elements there turned out to
+	// be. Asking one for the other is what a map makes impossible — its arity is not in the recipe.
+	std::vector<std::size_t> pathElementCounts(const lain::flow::Evaluation& root, const GraphPath& path);
 
 	// The enclosing LINKED group, or nullptr if there is none — what "Edit Template…" acts on, and
 	// what the canvas names when it explains why editing is off. Returns the OUTERMOST linked group on

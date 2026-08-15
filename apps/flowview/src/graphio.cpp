@@ -33,6 +33,7 @@ namespace flowview
 		codecs.registerType<bool>("bool"); // ConstantNode<bool> (a Gate's enable source)
 		codecs.registerType<int>("int");   // ConstantNode<int> (a Select's selector source)
 		codecs.registerType<float>("float");
+		codecs.registerType<std::string>("string"); // ConstantNode<std::string> (a ListDir extension)
 		codecs.registerType<std::filesystem::path>("path");
 		codecs.registerType<image::ColorRGBf>("color");
 		return codecs;

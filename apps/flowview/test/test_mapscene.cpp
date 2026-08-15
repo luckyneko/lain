@@ -18,6 +18,7 @@
 #include <lain/flow/example/loadimagenode.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/group.h>
+#include <lain/flow/nodes/constant.h>
 #include <lain/flow/scheduler.h>
 #include <lain/image/image.h>
 #include <lain/io/image/codecs.h>
@@ -50,6 +51,8 @@ namespace
 		factory.registerType<example::ListDirNode>("listDir");
 		factory.registerType<example::LoadImageNode>("loadimage");
 		factory.registerType<example::CombineNode>("combine");
+		factory.registerType<ConstantNode<std::filesystem::path>>("constPath");
+		factory.registerType<ConstantNode<std::string>>("constString");
 		return factory;
 	}
 
@@ -224,5 +227,62 @@ TEST_CASE("a map scene survives save and load and runs the same", "[flowview][ma
 			return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 		};
 		REQUIRE(readAll(document) == readAll(again));
+	}
+}
+
+TEST_CASE("a wired directory beats the configured one", "[flowview][map]")
+{
+	// The folder is a SETTING with two ways in: a param you set in the inspector, and an input pin
+	// you wire. The pin exists because a param is per-node configuration and cannot be driven by the
+	// graph — from a boundary input the cli binds, or from a Constant node — and "which folder" is
+	// exactly the thing a caller wants to supply from outside.
+	//
+	// The rule is the one in example/setting.h: wired wins, unconnected the param stands.
+	const Factory<Node> factory = sceneFactory();
+	const std::filesystem::path real = scratchDir("wired");
+	writeGrey(real / "a.png", 40);
+	writeGrey(real / "b.png", 80);
+	const std::filesystem::path decoy = scratchDir("wired-decoy"); // deliberately empty
+
+	// The node is CONFIGURED with the empty folder...
+	Graph graph = buildMapScene(decoy);
+
+	NodeId listId;
+	for (const NodeId id : graph.nodeIds())
+	{
+		if (graph.node(id).name() == "ListDir")
+			listId = id;
+	}
+	REQUIRE(listId != NodeId{});
+
+	{
+		// ...and nothing to list means no value at all, so the whole pipeline suppresses.
+		Evaluation evaluation{graph};
+		SerialScheduler{}.run(graph, evaluation);
+		REQUIRE(evaluation.value(graph.boundaryOutputs().front()).empty());
+	}
+
+	// ...then WIRED to the real one, which wins.
+	const NodeId source = graph.add<ConstantNode<std::filesystem::path>>(real);
+	REQUIRE(graph.connect(source, 0, listId, 0) == Connection::Ok); // input 0 is `directory`
+
+	Evaluation evaluation{graph};
+	SerialScheduler{}.run(graph, evaluation);
+	REQUIRE(resultLevel(graph, evaluation) == 60); // (40+80)/2 — it listed the wired folder
+
+	SECTION("and the extension filter is wired the same way")
+	{
+		// A second file kind in the folder would otherwise be handed to LoadImage, which cannot
+		// decode it — the failure mode the round-trip fixture hit when a document sat beside the
+		// images.
+		std::ofstream(real / "notes.txt") << "not an image";
+		evaluation.requestRecomputeAll();
+		SerialScheduler{}.run(graph, evaluation);
+		REQUIRE(evaluation.value(graph.boundaryOutputs().front()).empty()); // the .txt broke the map
+
+		const NodeId ext = graph.add<ConstantNode<std::string>>(std::string{".png"});
+		REQUIRE(graph.connect(ext, 0, listId, 1) == Connection::Ok); // input 1 is `extension`
+		SerialScheduler{}.run(graph, evaluation);
+		REQUIRE(resultLevel(graph, evaluation) == 60); // filtered back down to the two images
 	}
 }

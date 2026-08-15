@@ -289,7 +289,7 @@ namespace flowview
 		{
 			const Issue::Severity sev = issue.severity == flow::serialize::Severity::Error ? Issue::Severity::Error
 																						   : Issue::Severity::Warning;
-			ctx.loadIssues.push_back({sev, "template: " + issue.message, {}});
+			ctx.loadIssues.push_back(Issue::note(sev, "template: " + issue.message));
 		}
 
 		const math::Vec2f where = nodePos(ctx, group);
@@ -349,7 +349,7 @@ namespace flowview
 		{
 			ctx.noteMessage(Issue::Severity::Error, "Could not read the template " + target.string());
 			for (const flow::serialize::LoadIssue& issue : loaded.issues)
-				ctx.loadIssues.push_back({Issue::Severity::Error, "template: " + issue.message, {}});
+				ctx.loadIssues.push_back(Issue::note(Issue::Severity::Error, "template: " + issue.message));
 			return false;
 		}
 

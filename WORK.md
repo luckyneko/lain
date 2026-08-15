@@ -2172,9 +2172,86 @@ and `PortId` changes green, and the shape that makes a regression unambiguous.
        stale through the recursive check, so **only the drop to zero exposes it**. `prepareMap` now
        requests the map's recompute explicitly. Regression test added at that exact shape, and
        sabotage-verified.
-   - **6c — the gui:** the breadcrumb element stepper, Issues rows that navigate to a failed element,
-     `Add ▸ Map`. **This is the part that needs a live driver** — M5's ten bugs all lived in exactly
-     this surface.
+   - ⚠️ **6c — the gui — BUILT** (2026-08-14; **gui-mode NOT eyeballed — no Metal in this sandbox**).
+     `ctest` **466/466** (+2), warning-clean, format-check clean, both headless paths unchanged.
+     - **Found first, and it would have made `Add ▸ Map` useless:** `resolveEditable` and
+       `syncPathGroups` both `dynamic_cast<InlineGroupNode*>` to mean "owns a mutable interior". A
+       map owns one too but is not an inline group, so **every pane would have been read-only inside
+       a map** — a map you could add, descend into, and never build — and an interface edit inside one
+       would never have reached its outer ports. That is M5's bug three in map-shaped form, and it
+       gets the structural answer rather than a third cast: **`GroupNode::editableInner()`**, a
+       virtual the host asks instead of testing for a class. The next kind that owns an interior needs
+       no host change.
+     - **`Add ▸ Groups ▸ map`** — added empty and grown by descending, exactly like a group.
+     - **The breadcrumb carries an element stepper** on a map crumb: `< [3/12] >`. The path already
+       held the choice (`PathStep::element`), so this only renders and edits it. Two facts from two
+       owners: `Crumb::perElement` (the DEFINITION says it is a map) and `groupnav::pathElementCounts`
+       (the EVALUATION says how many) — a map's arity is not in the recipe, so neither can answer the
+       other. `MainWindow` fills the counts, being the one place holding the root evaluation.
+     - **An Issues row for a map's hole, that navigates to it.** One element producing nothing clears
+       the whole output, so the panel now says *"3 of 12 elements produced no 'image' — the whole
+       output is cleared (first: element 2)"* and clicking it descends to that element. **One row per
+       output, not per failed element**: a systematically broken folder would bury the panel under a
+       row per file.
+     - **`Issue` grew NAMED CONSTRUCTORS, and its general one went private.** Adding a fourth field to
+       a plain aggregate made six positional `{…, {}, {}}` sites across four files, which was the
+       symptom rather than the problem: an Issue has exactly three shapes — **`note`** (nothing to
+       point at; seven of the ten sites), **`at`** (a node on this level), **`inside`** (another level,
+       a map's failed element). The last two are ALTERNATIVES, and as an aggregate a caller could set
+       both and have the node silently ignored. Now they cannot: the shapes are named, the general
+       constructor is private, and adding a field touches no call site. `locatable()` replaces the
+       `node != NodeId{}` check the click guard used, which was already the wrong question once a row
+       could point at a level instead.
+     - The engine reports no element index itself — flow core stays log-free and has no channel — but
+       the child evaluations are right there, so the host simply looks.
+
+**First live bug — a SEGFAULT leaving a map via the breadcrumb** (reported and fixed 2026-08-14).
+Make a map, descend, add pins inside, click the document crumb to go back: crash. The strip computes
+its crumbs from `ctx.activePath` once, then draws each one — but a crumb click calls `navigateTo`,
+which **replaces the path mid-loop**. Clicking the document crumb empties it, and the map crumb behind
+it then read `activePath[0]` of an empty vector.
+
+- The stepper was the first thing in that loop to READthe live path rather than only slice it on
+  click, which is why the pattern had never bitten: two crumbs cannot be clicked in one frame.
+- Fixed structurally rather than with a bounds check: **`GraphPane::draw` snapshots the path once**
+  and draws the entire strip — crumbs, stepper, `Edit <template>` button, layout seeding — from that.
+  The pane can no longer read navigation state it may itself have changed. It is the same lesson
+  `MainWindow` already learned one level up, where a navigation requested during a draw is consumed at
+  the *start* of the next frame.
+- **Found while auditing for the same shape: `MenuBarPane::documentToSave` captured the canvas layout
+  into `ctx.activePath`** while `MainWindow`'s end-of-frame capture correctly used the drawn path —
+  two paths doing one job, one updated. Navigating and saving in the same frame would have filed one
+  level's node positions under another level's key. `drawnPath` is now on `AppContext` as the single
+  answer to "which level is on screen", and both captures read it.
+
+**Second live report — `ListDir` could not pick a folder, and its settings were params only**
+(2026-08-14). Both fixed, and the first was worse than reported:
+
+- **The path param editor hard-coded an IMAGE filter**, with a comment already admitting it — *"the
+  only path value today is an image input; a per-value filter hint is a future refinement if a
+  non-image path value appears (ADR-0005)"*. One had now appeared. A `std::filesystem::path` is
+  legitimately either a file or a folder and nothing in the type says which, so the editor now offers
+  **both `File...` and `Folder...`** rather than guessing. New **`gui::selectFolder`** in the dialog
+  seam (pfd had `select_folder`; lain never exposed it), which remembers the folder ITSELF as the next
+  start directory rather than its parent. The per-value hint ADR-0005 named is still the real
+  refinement — it would replace both buttons with one that knows what it is picking.
+- **`ListDir`'s `directory` and `extension` are now INPUT PINS too**, Optional and overriding their
+  params. A param is per-node configuration and cannot be driven by the graph; "which folder" is
+  exactly what a caller wants to supply from a boundary input or a Constant node. **`constPath` and
+  `constString` joined the palette** (and a `string` codec joined `sceneCodecs`) so there is something
+  to wire — without them the request had no driver.
+- **The rule is now stated once**, in `flow/example/setting.h`: *wired wins, unconnected the param
+  stands* — the Select-`selector` convention, shared by `LoadImage::path` and both of `ListDir`'s. It
+  lives in flow-example rather than core: it is a node-authoring convenience over two accessors core
+  already has.
+- Tested end-to-end: a node configured with an empty folder and wired to a real one lists the WIRED
+  one, and a stray `.txt` beside the images breaks the map until a wired `.png` filter excludes it —
+  which is the same failure the round-trip fixture hit when a document sat beside its images.
+
+**M8 is complete pending further live-driver work.** Everything below the gui is verified; slice 6c's
+surface — the stepper, the Issues navigation, `Add ▸ Map`, and editing inside a map — is exactly the
+surface that produced all ten of M5's bugs, and has now produced its first. Expect more there rather
+than in the engine.
 
 ### Not in this milestone
 

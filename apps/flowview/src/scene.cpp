@@ -32,6 +32,8 @@ namespace flowview
 	static constexpr const char* kSelectKey = "select";
 	static constexpr const char* kConstIntKey = "constInt";
 	static constexpr const char* kConstBoolKey = "constBool";
+	static constexpr const char* kConstPathKey = "constPath";
+	static constexpr const char* kConstStringKey = "constString";
 	static constexpr const char* kGroupInputKey = "groupInput";
 	static constexpr const char* kGroupOutputKey = "groupOutput";
 	static constexpr const char* kListDirKey = "listDir";
@@ -47,13 +49,15 @@ namespace flowview
 		// here: they're a one-each-per-graph fixture that comes with a New graph and is grown from the
 		// Interface panel, not added like an ordinary node.
 		static const std::vector<NodeCategory> catalog = {
-			{"Sources", {kGradientKey, kLoadImageKey, kListDirKey, kConstIntKey, kConstBoolKey}},
+			{"Sources", {kGradientKey, kLoadImageKey, kListDirKey, kConstIntKey, kConstBoolKey, kConstPathKey, kConstStringKey}},
 			{"Filters", {kTintKey, kBlurKey, kCombineKey}},
 			{"Control", {kGateKey, kMergeKey, kSelectKey}},
 			// A group is added empty (its inner graph is born with its own boundary pair) and grown by
-			// descending into it. A LINKED group needs a template chosen first, so the menu bar adds it
+			// descending into it, and a MAP the same way — the difference is only that a map's face is
+			// lifted, so its `files` input takes the whole collection its interior is written against
+			// one element of. A LINKED group needs a template chosen first, so the menu bar adds it
 			// through a file dialog rather than from this list.
-			{"Groups", {kGroupKey}},
+			{"Groups", {kGroupKey, kMapKey}},
 		};
 		return catalog;
 	}
@@ -84,6 +88,13 @@ namespace flowview
 		// Select's `selector`. Their value is a param the inspector edits (checkbox / drag).
 		factory.registerType<flow::ConstantNode<int>>(kConstIntKey);
 		factory.registerType<flow::ConstantNode<bool>>(kConstBoolKey);
+
+		// Sources for the settings a node exposes as INPUTS rather than only params (see
+		// example/setting.h): a folder for ListDir, an extension filter for it. Wiring one is how a
+		// setting becomes part of the graph — drivable from a boundary input, and visible on the
+		// canvas — instead of being buried in a node's inspector.
+		factory.registerType<flow::ConstantNode<std::filesystem::path>>(kConstPathKey);
+		factory.registerType<flow::ConstantNode<std::string>>(kConstStringKey);
 
 		// The boundary nodes are added to the scene directly (not via the palette), but they must be
 		// in the factory too so serialization can name them (keyOf) and recreate them on load.

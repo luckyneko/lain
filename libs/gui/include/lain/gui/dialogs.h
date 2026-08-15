@@ -39,6 +39,15 @@ namespace lain::gui
 												  const std::filesystem::path& defaultDir = {},
 												  const std::vector<FileFilter>& filters = {});
 
+	// Native "select folder" dialog — the third pick mode, for a value that names a DIRECTORY rather
+	// than a file (a folder to list, an output directory). Blocks; returns the chosen directory, or
+	// std::nullopt on cancel. `defaultDir` is where it opens.
+	//
+	// Separate from openFile because the two cannot be one call: a file dialog will not return a
+	// folder, and a folder dialog takes no filters. A caller that wants either offers both.
+	std::optional<std::filesystem::path> selectFolder(const std::string& title,
+													  const std::filesystem::path& defaultDir = {});
+
 	// The directory the last dialog resolved to this session — empty until one has been used. The
 	// pair an app persists to make its dialogs resume across runs (set it once at startup, before
 	// the first dialog; a dialog called with an explicit defaultDir still wins over it).

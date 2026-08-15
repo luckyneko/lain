@@ -24,18 +24,59 @@ namespace flowview
 {
 	class FlowviewApp; // the app delegate: the graph, node palette, and re-run/replace hooks
 
-	// A row in the Issues panel — a validation problem, with an optional node to locate on click.
-	struct Issue
+	// A row in the Issues panel: a problem, and — for the ones that have one — somewhere to go and
+	// look at it. There are exactly three kinds of row, and they are made by the three NAMED
+	// constructors below rather than by filling fields in:
+	//
+	//   note   — nothing to point at (a load failure, a transient refusal). Seven of the ten sites.
+	//   at     — a node on the level the issue was found on. Click selects and centres it.
+	//   inside — another LEVEL: a map's failed element, which clicking descends into.
+	//
+	// The last two are ALTERNATIVES, and naming them is what keeps that true. As a plain aggregate
+	// this was `{severity, message, node, path}`, which let a caller set both and have the node
+	// silently ignored — and made every one of the seven message-only sites carry two `{}` tails
+	// that said nothing. The general constructor is private so those shapes cannot be written.
+	class Issue
 	{
+	public:
 		enum class Severity
 		{
 			Info,	 // a heads-up (an unused output)
 			Warning, // something's wrong (a required input unconnected, a rejected connect)
 			Error,	 // a structural loss (a load error)
 		};
+
+		static Issue note(Severity severity, std::string message)
+		{
+			return Issue(severity, std::move(message), {}, {});
+		}
+
+		static Issue at(Severity severity, std::string message, lain::flow::NodeId node)
+		{
+			return Issue(severity, std::move(message), node, {});
+		}
+
+		static Issue inside(Severity severity, std::string message, GraphPath level)
+		{
+			return Issue(severity, std::move(message), {}, std::move(level));
+		}
+
 		Severity severity = Severity::Warning;
 		std::string message;
-		lain::flow::NodeId node; // default (sentinel) = not locatable
+		lain::flow::NodeId node; // set by `at`: the node to select and centre
+		GraphPath navigateTo;	 // set by `inside`: the level to descend into
+
+		// Whether the row leads anywhere — which is what makes it worth clicking.
+		bool locatable() const { return node != lain::flow::NodeId{} || !navigateTo.empty(); }
+
+	private:
+		Issue(Severity s, std::string m, lain::flow::NodeId n, GraphPath p)
+			: severity(s)
+			, message(std::move(m))
+			, node(n)
+			, navigateTo(std::move(p))
+		{
+		}
 	};
 
 	// Replacing the open document — the two ways to do it, both DESTRUCTIVE (New throws the graph away,
@@ -110,6 +151,20 @@ namespace flowview
 		// resolves it once per frame and hands every pane the graph it names, so descending retargets
 		// the canvas, Inspector, Preview and Issues together.
 		GraphPath activePath;
+
+		// The path the panes are DRAWING this frame — captured by MainWindow once the graph is
+		// resolved, and the only honest answer to "which level is on screen" from inside a draw.
+		// activePath is a REQUEST that a pane may change mid-frame (a breadcrumb click, a double-click
+		// descent), so anything writing per-level state during the draw — the canvas layout capture
+		// above all — must key it by this, or it files the level it is looking at under the level it
+		// is moving to.
+		GraphPath drawnPath;
+
+		// How many evaluations each step of activePath currently has — 1 for a group, N for a map.
+		// Filled by MainWindow each frame, because it is the one place that holds the ROOT evaluation
+		// (a pane is handed only the active one). The breadcrumb's element stepper reads it to know
+		// how far it may step.
+		std::vector<std::size_t> pathElementCounts;
 		// Set when the path changed this frame: the canvas must re-seed positions and clear its
 		// selection. Still REQUIRED with unique canvas ids — imnodes destroys a node's data the first
 		// frame it is not submitted, and frees selection-pool indices without pruning them (ADR-0011).
@@ -166,7 +221,7 @@ namespace flowview
 		// enough ("a value leaves this selection and comes back") that a fixed message could not say it.
 		void noteMessage(Issue::Severity severity, std::string message)
 		{
-			recentIssue = Issue{severity, std::move(message), {}};
+			recentIssue = Issue::note(severity, std::move(message));
 			recentIssueFrames = 240; // ~4 s at 60fps
 		}
 

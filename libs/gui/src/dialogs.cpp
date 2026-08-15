@@ -52,6 +52,19 @@ namespace lain::gui
 		return picked;
 	}
 
+	std::optional<std::filesystem::path> selectFolder(const std::string& title, const std::filesystem::path& defaultDir)
+	{
+		const std::filesystem::path start = defaultDir.empty() ? lastDir() : defaultDir;
+		const std::string result = pfd::select_folder(title, start.string()).result();
+		if (result.empty())
+			return std::nullopt;
+		const std::filesystem::path picked(result);
+		// The folder ITSELF is where the next dialog should open, not its parent — unlike a picked
+		// file, whose directory is the interesting part.
+		lastDir() = picked;
+		return picked;
+	}
+
 	std::optional<std::filesystem::path> saveFile(const std::string& title,
 												  const std::filesystem::path& defaultDir,
 												  const std::vector<FileFilter>& filters)

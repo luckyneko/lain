@@ -40,12 +40,15 @@ namespace flowview
 		{
 			if (!current->contains(step.node))
 				return nullptr;
-			// Only an INLINE group hands out a mutable interior — which is the whole point: a linked
-			// group has no such accessor, so the walk simply cannot continue into one.
-			auto* group = dynamic_cast<flow::InlineGroupNode*>(&current->node(step.node));
-			if (group == nullptr)
+			// Ask the node whether its interior is its own to hand out, rather than testing for one
+			// concrete class: a linked group's is its template's and it returns nullptr, while an
+			// inline group AND a map both own theirs. Casting for the class here is what would make a
+			// map silently read-only.
+			auto* group = dynamic_cast<flow::GroupNode*>(&current->node(step.node));
+			flow::Graph* editable = group != nullptr ? group->editableInner() : nullptr;
+			if (editable == nullptr)
 				return nullptr;
-			current = &group->inner();
+			current = editable;
 		}
 		return current;
 	}
@@ -78,10 +81,26 @@ namespace flowview
 			const flow::Graph* inner = node.innerGraph();
 			if (inner == nullptr)
 				break;
-			crumbs.push_back(Crumb{node.name(), i + 1});
+			crumbs.push_back(Crumb{node.name(), i + 1, node.evaluatesPerElement()});
 			current = inner;
 		}
 		return crumbs;
+	}
+
+	std::vector<std::size_t> pathElementCounts(const flow::Evaluation& root, const GraphPath& path)
+	{
+		std::vector<std::size_t> counts;
+		counts.reserve(path.size());
+		const flow::Evaluation* current = &root;
+		for (const PathStep& step : path)
+		{
+			counts.push_back(current->childCount(step.node));
+			if (!current->hasChild(step.node, step.element))
+				break; // nothing prepared there yet; the remaining steps have no count to report
+			current = &current->child(step.node, step.element);
+		}
+		counts.resize(path.size(), 0); // pad, so callers can index by step without checking
+		return counts;
 	}
 
 	const flow::LinkedGroupNode* enclosingLinkedGroup(const flow::Graph& root, const GraphPath& path)
@@ -142,12 +161,13 @@ namespace flowview
 			// would re-derive ports in the TEMPLATE's graph — harmless while every instance held its
 			// own copy, wrong the moment that graph is shared (ADR-0013). A template's internal
 			// mirroring was settled when the template itself was loaded.
-			auto* group = dynamic_cast<flow::InlineGroupNode*>(&parent->node(step.node));
-			if (group == nullptr)
+			auto* group = dynamic_cast<flow::GroupNode*>(&parent->node(step.node));
+			flow::Graph* editable = group != nullptr ? group->editableInner() : nullptr;
+			if (editable == nullptr)
 				break;
 			// Sync the group IN its parent — only the parent can disconnect edges a dropped pin frees.
 			changed |= flow::edit::syncGroupPorts(*parent, step.node).changed();
-			parent = &group->inner();
+			parent = editable;
 		}
 		return changed;
 	}

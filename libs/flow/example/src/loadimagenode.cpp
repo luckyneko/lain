@@ -1,5 +1,7 @@
 #include "lain/flow/example/loadimagenode.h"
 
+#include "lain/flow/example/setting.h"
+
 #include <lain/io/image/load.h>
 
 #include <filesystem>
@@ -22,13 +24,9 @@ namespace lain::flow::example
 
 	void LoadImageNode::compute(NodeEvaluation& evaluation) const
 	{
-		// A connected path wins over the param: the param is this node's own configuration, while a
-		// wired value is what the graph is asking for right now (a map's element, say). Unconnected,
-		// the input is empty and the param stands — which keeps every existing scene working.
-		const PortValue& wired = evaluation.input(m_pathIn);
-		const std::string path = wired.holds<std::filesystem::path>()
-									 ? wired.get<std::filesystem::path>().string()
-									 : param(m_path).get<std::filesystem::path>().string();
+		// Wired wins over configured — the one rule, from setting.h. Unconnected, the param stands,
+		// which keeps every existing scene working.
+		const std::string path = setting<std::filesystem::path>(*this, evaluation, m_pathIn, m_path).string();
 
 		// io::image::load reads the bytes and dispatches to the reader for the uri's
 		// extension; nullopt (missing/unknown/bad) becomes an invalid Image on the port.

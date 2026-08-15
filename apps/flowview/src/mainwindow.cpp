@@ -111,10 +111,14 @@ namespace flowview
 		// ... and the runtime state that belongs to it. An Evaluation is a tree with one child per
 		// group node, so the SAME path walks it — every pane gets a definition and its values in step.
 		flow::Evaluation& evaluation = resolveEvaluation(appDelegate.evaluation(), m_ctx.activePath);
+		// The element counts belong to the ROOT evaluation, which only this function holds — a pane
+		// receives the ACTIVE one and could not count the levels above it.
+		m_ctx.pathElementCounts = pathElementCounts(appDelegate.evaluation(), m_ctx.activePath);
 		// The path the panes are about to draw with. Captured now because a pane may NAVIGATE during
 		// this frame (a double-click descends), and the positions collected at the end of the frame
 		// belong to the level that was actually on screen — not to the one we are moving to.
-		const GraphPath drawnPath = m_ctx.activePath;
+		m_ctx.drawnPath = m_ctx.activePath;
+		const GraphPath& drawnPath = m_ctx.drawnPath;
 
 		m_guiCtx->newFrame();
 

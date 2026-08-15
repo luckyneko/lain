@@ -325,9 +325,11 @@ M6 split definition from evaluation so one definition could back N evaluations; 
 real for linked groups. **Neither has ever had the caller both were built for** — running one subgraph
 once per element of a collection. **Milestone 8** brings it. Grilled 2026-08-11; decisions in
 **[ADR-0014](docs/adr/0014-map-nodes-staged-planning.md)**, build order in WORK.md, vocabulary in
-CONTEXT.md. **Slices 1–5 of 6 are built** (see the end of this section) — **maps run and persist**;
-only the flowview slice remains. It settles all four questions ADR-0012 listed as *deliberately
-unsettled*, which it could only do once a concrete caller fixed them.
+CONTEXT.md. **All six slices are built** (see the end of this section) — **maps run, persist, and are
+reachable from the UI**. Everything below the gui is verified; **slice 6c has not been eyeballed on a
+live driver** (no Metal in this sandbox), and that surface is where all ten of M5's bugs lived. It
+settles all four questions ADR-0012 listed as *deliberately unsettled*, which it could only do once a
+concrete caller fixed them.
 
 - **First vertical: a folder of images, listed in-graph** (`listDir → map(load → tint) → combine`).
   Runnable headless on the existing `io::image`, and the smallest caller that still makes arity
@@ -501,6 +503,52 @@ format-check clean.
   stale through the recursive check, so **only the drop to zero exposes it**; every unit test had
   masked it by dirtying everything or running once. Now requested explicitly, with a regression test
   at that exact shape.
+
+**Slice 6c is built (2026-08-14) — gui-mode NOT eyeballed, no Metal in this sandbox.** `ctest`
+**466/466** (+2), warning-clean, format-check clean, both headless paths unchanged.
+- **Found first, and it would have made `Add ▸ Map` useless:** `resolveEditable` and `syncPathGroups`
+  both `dynamic_cast<InlineGroupNode*>` to mean "owns a mutable interior". A map owns one but is not
+  an inline group, so **every pane would have been read-only inside a map** — one you could add,
+  descend into, and never build — and an interface edit inside one would never have reached its outer
+  ports. M5's bug three, map-shaped. Answered structurally with **`GroupNode::editableInner()`**, a
+  virtual the host asks instead of testing for a class.
+- **`Add ▸ Groups ▸ map`**; **a breadcrumb element stepper** (`< [3/12] >`) on a map crumb, reading
+  `Crumb::perElement` (the definition says it is a map) and `groupnav::pathElementCounts` (the
+  evaluation says how many) — two owners, because a map's arity is not in the recipe; and **an Issues
+  row for a hole that navigates to the failed element** ("3 of 12 elements produced no 'image' — the
+  whole output is cleared (first: element 2)"). One row per output, not per element, so a broken
+  folder cannot bury the panel.
+- **`Issue` grew named constructors and lost its public one.** Adding a fourth field to a plain
+  aggregate produced six positional `{…, {}, {}}` sites across four files — the symptom, not the
+  problem. An Issue has three shapes: `note` (nothing to point at — seven of ten sites), `at` (a node
+  on this level), `inside` (another level: a map's failed element). The last two are ALTERNATIVES, and
+  as an aggregate a caller could set both and have the node silently ignored; now that shape cannot be
+  written, and the next field touches no call site.
+- **First live bug — a SEGFAULT leaving a map via the breadcrumb** (2026-08-14). The strip computes
+  its crumbs from `ctx.activePath`, then draws them — but a crumb click calls `navigateTo`, which
+  **replaces the path mid-loop**. Clicking the document crumb empties it, and the map crumb behind it
+  read `activePath[0]` of an empty vector. The stepper was the first code in that loop to READ the
+  live path rather than only slice it on click, which is why the pattern had never bitten. Fixed
+  structurally: **`GraphPane::draw` snapshots the path once** and draws the whole strip from it, so a
+  pane cannot read navigation state it may itself have changed — the lesson `MainWindow` already
+  learned one level up.
+- **Found auditing for the same shape:** `MenuBarPane::documentToSave` captured the canvas layout into
+  `ctx.activePath` while `MainWindow` correctly used the drawn path — two paths doing one job.
+  Navigating and saving in one frame would file one level's positions under another's key.
+  **`AppContext::drawnPath`** is now the single answer to "which level is on screen".
+- **Second live report — `ListDir` could not pick a folder, and its settings were params only.** The
+  path editor **hard-coded an image filter**, with a comment already admitting the gap ("a per-value
+  filter hint is a future refinement if a non-image path value appears"); a `std::filesystem::path` is
+  legitimately a file OR a folder and the type does not say which, so it now offers **both `File...`
+  and `Folder...`**. New **`gui::selectFolder`** (pfd had it, lain never exposed it). `ListDir`'s
+  `directory` and `extension` became **Optional input pins** overriding their params, with
+  **`constPath` / `constString`** added to the palette so there is something to wire — a param cannot
+  be driven by the graph, and "which folder" is exactly what a caller supplies from outside. The rule
+  is stated once in **`flow/example/setting.h`** (*wired wins, unconnected the param stands*), shared
+  with `LoadImage::path`.
+- **Standing gap:** the stepper, the Issues navigation, `Add ▸ Map` and editing inside a map still
+  want more live driving. That surface produced all ten of M5's bugs while the engine slices produced
+  none, and has now produced its first here — expect more there rather than in the engine.
 
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
 
