@@ -123,6 +123,333 @@ a recompute never disturbs a payload another slot is still reading. A node that 
 modify a value copies it out (`image::Image src = evaluation.input(m_image).get<image::Image>()`), which is
 the one place a deep copy is paid — deliberately, by the node that needs it.
 
+## Camera geometry — evidence before reconstruction
+
+- **Axis convention** — the orientation and handedness assigned to coordinate axes, independent of
+  origin, scale, or any particular camera model. Convention names state axis directions explicitly,
+  and conversions are basis changes rather than camera operations. _Avoid_: coordinate system when
+  origin or scale is not included, OpenCV convention, OpenGL convention.
+- **Rigid transform** — a rotation and translation that maps points between named coordinate frames
+  without scale, shear, or projective terms. The math value provides composition, inversion, and
+  matrix conversion; domain field names state its direction. _Avoid_: transform matrix for rigid
+  geometry, unnamed pose.
+- **Camera frame** — the fixed `XRightYDownZForward` axis convention used by all camera calibration
+  and registration interfaces. Other conventions are converted explicitly at system boundaries
+  rather than stored as metadata on each camera value. _Avoid_: implicit graphics frame, per-result
+  camera convention.
+- **Camera calibration** — estimating a camera's intrinsic projection and lens distortion without
+  placing the camera in a shared spatial frame. Its reusable result is a camera model. _Avoid_:
+  registration, pose estimation, extrinsic calibration.
+- **Camera registration** — estimating the extrinsic transforms that locate multiple calibrated
+  cameras in a common coordinate frame, using known boards or targetless scene evidence. Its result
+  describes camera-to-frame relationships rather than changing the cameras' intrinsic models.
+  _Avoid_: calibration when only extrinsics are estimated, image registration.
+- **Fixed camera registration** — batch camera registration under the assumption that every camera
+  remains stationary throughout the registration dataset, producing one extrinsic transform per
+  camera relative to a registration reference. _Avoid_: tracking, trajectory, dynamic registration.
+- **Registration reference** — the camera assigned the identity transform to remove the arbitrary
+  coordinate freedom in fixed camera registration. It gives relative extrinsics a reproducible basis
+  but does not claim to be a meaningful world origin or orientation. A request may select it
+  explicitly or ask for deterministic automatic selection; the report always records the chosen
+  camera. _Avoid_: world anchor, world frame, central camera.
+- **Registered camera transform** — the rigid `referenceFromCamera` transform that maps camera-local
+  coordinates into the registration-reference frame. Registration stores this direction only; its
+  `cameraFromReference` inverse is derived. Its translation has physical units only when the
+  registration report carries metric scale evidence; otherwise all translations share one explicit
+  arbitrary global scale. _Avoid_: extrinsic matrix without a named direction, camera transform,
+  metre translation without metric evidence.
+- **Registration scale status** — whether registered camera translations are metric or share an
+  unresolved arbitrary global scale. Scale-ambiguous registration may be geometrically usable, but
+  metric reconstruction requires separate metric scale evidence. _Avoid_: normalized metres,
+  approximate metric scale without evidence.
+- **Registration dataset** — the calibrated cameras and grouped observations used by one fixed-camera
+  registration attempt. It is finite and preserves camera identity, capture association, and timing
+  evidence. _Avoid_: independent camera streams when cross-camera observations must correspond.
+- **Scene-feature observation** — compact image-space evidence for one repeatable point in an ordinary
+  scene, retaining camera, frame, and pixel identity plus justified uncertainty and matching evidence
+  when available. It does not own the source image and is distinct from an observation of a known
+  board feature. _Avoid_: keypoint when provenance and uncertainty are part of the contract, board
+  observation.
+- **Feature track** — a backend-neutral association of scene-feature observations believed to depict
+  the same predominantly static scene point across frames or cameras. Accepted tracks are shared
+  evidence for targetless calibration, registration, validation, tests, and debug visualization;
+  rejection and ambiguity remain visible in the producing report. _Avoid_: feature match when the
+  association spans more than one pair, reconstructed landmark before geometry has been estimated.
+- **Feature-track extraction** — the shared preprocessing operation that converts a frame sequence
+  into accepted feature tracks and a report covering detection, description, matching, track
+  construction, geometric verification, rejection, and reproducibility. Targetless methods consume
+  its evidence rather than defining separate feature front ends. _Avoid_: targetless calibration when
+  only evidence was extracted, Ceres feature matching.
+- **Camera observation graph** — the automatically inferred graph whose vertices are cameras and whose
+  edges are supported by accepted shared observations. Initial targetless registration requires this
+  graph to be connected through accepted feature-track overlap; declared camera-pair relationships are
+  hints at most, not evidence. _Avoid_: user-provided overlap graph, camera topology.
+- **Targetless registration** — fixed camera registration inferred from ordinary scene features using
+  shared feature tracks, synchronized capture groups, immutable camera models, connected field-of-view
+  overlap, and predominantly static scene structure. Dynamic observations are rejected as outliers;
+  without separate metric evidence, the result remains globally scale-ambiguous. _Avoid_:
+  unsynchronized registration, calibration-free registration, method-owned feature matching.
+- **Registration report** — the result of fixed camera registration, successful or failed, containing
+  the chosen registration reference, registered camera transforms when the whole camera graph is
+  connected, registration fitness, scale status, and diagnostics for observations, residuals, and
+  disconnected components. Partial component transforms are diagnostic rather than an authoritative
+  registration. _Avoid_: extrinsics list, partial registration.
+- **Registration fitness** — the method-independent verdict that a registration is rejected,
+  exploratory, or ready based on connectivity, global refinement, geometric coverage, held-out
+  residuals, consistency, and stability. Board and targetless diagnostics remain method-specific;
+  comparing methods requires the same independent validation evidence. _Avoid_: board RMS as overall
+  registration quality, targetless inlier ratio as overall registration quality.
+- **Global registration refinement** — joint reprojection optimization of all registered camera
+  transforms and the method-specific latent geometry while holding the registration reference fixed:
+  board poses for board registration or scene landmarks induced by accepted feature tracks for
+  targetless registration. A successful fixed-camera registration uses all accepted observations
+  globally rather than returning chained pairwise estimates. _Avoid_: pairwise refinement, transform
+  averaging, board-only global refinement.
+- **Observation-noise model** — the explicit pixel-domain uncertainty used to weight reprojection
+  evidence when a feature has no justified measured covariance. It is paired with a recorded robust
+  loss so outliers have bounded influence; detector response remains diagnostic rather than silently
+  changing residual weight. _Avoid_: detector confidence as uncertainty, implicit corner weight.
+- **Large-rig registration** — fixed-camera registration whose public data model and algorithms do
+  not impose a small compile-time limit on camera count, capture-group count, image resolution, or
+  observation count. The initial design target includes roughly 100 cameras and 4,000 capture groups
+  with source images up to 8K. Actual capacity remains constrained by available compute and memory.
+  _Avoid_: unlimited registration, fixed-size camera mask, small-rig mode.
+- **Registration camera model** — an immutable calibrated camera model supplied to fixed-camera
+  registration. Registration estimates extrinsics and observation poses without adjusting intrinsics
+  or distortion; incompatible applicability fails registration, while unknown applicability requires
+  explicit request policy and remains visible in the report. Evidence of intrinsic mismatch is
+  diagnostic evidence for recalibration. _Avoid_: refined intrinsics, registration calibration.
+- **Capture group** — at most one frame from each participating camera associated with one capture
+  instant for shared registration evidence. Cameras may be absent from a group; a
+  registration-evidence group contains at least two cameras, and groups collectively need enough
+  overlap to connect the registration dataset. A moving board or dynamic scene content requires
+  frames within a group to satisfy a declared synchronization tolerance. _Avoid_: board-pose group,
+  frame batch, synchronized video.
+- **Capture grouping** — a preprocessing operation that constructs capture groups from camera IDs,
+  timestamps, and an explicit synchronization tolerance. Registration accepts its output or capture
+  groups supplied directly by the host; it does not infer capture association itself. A grouping
+  result accepts a uniquely nearest frame per camera and reports rejected frames, observed skew, and
+  ambiguous candidates rather than resolving ties through input order. Group discovery is symmetric
+  across cameras, with no designated timeline camera, and every accepted group's full timestamp span
+  satisfies the tolerance. Each accepted frame belongs to at most one capture group. _Avoid_:
+  registration synchronization, implicit timestamp matching, reference-camera grouping, overlapping
+  capture groups.
+  The grouping objective first maximizes useful multi-camera groups, then camera participation, then
+  minimizes timestamp skew; it does not inspect image content or maximize raw frame consumption.
+  Output is independent of input order: frames are canonically ordered by timestamp, camera identity,
+  and frame identity, group identity derives from selected frame identities, and duplicate frame
+  identities are invalid input.
+- **Clock domain** — the identity of the time basis shared by comparable capture timestamps. A normal
+  registration dataset uses one clock domain; automatic grouping rejects mixed or unknown domains
+  unless timestamps have first been mapped into a common domain. _Avoid_: timestamp source when it
+  does not establish comparability.
+- **Temporal alignment estimation** — a separate future capability that estimates inter-camera timing
+  offsets from shared dynamic evidence. It is not a fallback for missing timestamps or static scenes,
+  where timing may be unobservable. _Avoid_: automatic capture grouping, synchronization guess.
+- **World frame alignment** — a separate pass that rebases completed relative camera registration
+  into a meaningful spatial frame using evidence such as a detected floor plane, a chosen central
+  floor origin, a known board, or control points. Failure leaves the registration-reference frame
+  valid and unchanged. _Avoid_: registration anchor, absolute extrinsics.
+- **Camera pose tracking** — the separate future capability that estimates a time-indexed camera
+  trajectory and handles temporal continuity, loss, and relocalization. _Avoid_: fixed camera
+  registration, calibration.
+- **Length** — a physical-distance quantity with explicit unit construction and conversion. Camera
+  geometry uses it for board dimensions and other metric evidence instead of unitless scalar values;
+  equivalent quantities have one canonical identity, while input or display units are metadata.
+  _Avoid_: size, distance, or raw numeric values when physical units are part of the contract.
+- **Measurement** — an observed value paired with optional hard lower and upper bounds on its possible
+  true value. Missing bounds mean unknown uncertainty and are not equivalent to equal bounds;
+  probabilistic uncertainty and provenance remain separate concepts. _Avoid_: confidence interval,
+  standard deviation, exact value for a bounded physical observation.
+- **Calibration preflight** — the batch phase that prepares and calibrates a camera before a
+  reconstruction graph consumes its model. It operates on a completed calibration dataset rather
+  than accumulating hidden history as ordinary frames pass through the graph. _Avoid_: calibration
+  pipeline when referring to the reconstruction graph itself.
+- **Frame sequence** — a finite, ordered source of camera frames supplied to calibration preflight.
+  It exposes frame metadata without decoding every image and permits selected frames to be decoded
+  and revisited by durable frame identity under a bounded cache policy. Random access is repeatable,
+  though its seek cost may depend on the underlying media, and concurrent decode requests are safe
+  even when an implementation serializes access internally. Decoded images own their pixels and
+  remain valid after cache eviction. A live capture becomes a frame sequence only after the host
+  establishes its end. _Avoid_: stream when the source must be bounded, video when stored video is
+  only one possible source, in-memory frame array, forward-only decoder.
+- **Capture manifest** — the serialized description of one finite multi-camera capture, including its
+  identity, clock domain, and ordered camera-sequence definitions. The loader resolves it into a
+  capture dataset and uses it as the authority for joining media and assigning durable identities.
+  Relative media URIs resolve against the manifest URI rather than the process working directory, so
+  a manifest and its media tree remain portable together. _Avoid_: capture metadata file, stream list.
+- **Camera-sequence definition** — the ordered media segments that form one logical camera timeline
+  and optional identity or timing overrides for those segments. The media loader owns probing and
+  mapping source frames into the resolved timeline. _Avoid_: stream definition, camera file list.
+- **Media segment** — one video range, image-sequence pattern, or other bounded media source that
+  contributes frames to a camera-sequence definition and has a stable identity within that definition.
+  _Avoid_: stream when referring to source description rather than incremental transport.
+- **Capture dataset** — the resolved runtime capture containing camera identities, finite frame
+  sequences, timing evidence, and source provenance produced from a capture manifest. _Avoid_:
+  capture manifest, registration dataset.
+- **Camera identity** — the durable opaque identity assigned by the loader to one physical or logical
+  capture source and preserved through calibration, grouping, registration, serialization, and
+  reports. It is distinct from a mutable path or display label. _Avoid_: camera index, filename.
+- **Frame identity** — the loader-assigned opaque identity of one frame within its camera source,
+  stable across repeated processing and paired with camera identity for global uniqueness. It is not
+  inferred from container position or timestamp. _Avoid_: frame index when decoding order is not the
+  durable identity.
+- **Calibration dataset** — a finite set of selected camera views and their provenance used by one
+  calibration attempt. Its views are chosen for usable evidence and geometric diversity, rather than
+  as a fixed percentage of the source frames. _Avoid_: calibration images, key frames.
+- **Calibration method** — the graph-boundary policy selecting board, targetless, or board-then-
+  targetless calibration. The selected method governs both view-selection evidence and the
+  calibration attempt while all methods yield the same calibration report. Fallback methods run in
+  priority order and stop at the first attempt that meets the requested reconstruction fitness;
+  evaluating every successful method is comparison, not fallback. _Avoid_: calibration type.
+- **Calibration attempt** — the result and evidence produced by one calibration method within a
+  request. A fallback report retains every attempt made and fails only after all configured methods
+  have failed to meet the requested reconstruction fitness. _Avoid_: fallback result when referring
+  to the individual method outcome.
+- **Calibration request** — the graph-boundary description of a calibration attempt: its method,
+  method-specific evidence specifications or priors, and reconstruction-fitness acceptance criteria.
+  Invalid or missing evidence required by the selected method yields a failed calibration report.
+  _Avoid_: calibration options, method input.
+- **Imported-model policy** — how externally supplied camera intrinsics participate in a calibration
+  request: ignored for independent estimation, used only as an initial estimate, or held immutable
+  and validated against the calibration dataset. The selected policy and model provenance remain
+  visible in the report. _Avoid_: automatic factory calibration, hidden intrinsic prior.
+- **Board specification** — the exact identity of the known calibration board: target family, feature
+  pattern, physical-board instance, and measured dimensions with uncertainty. Board-capable methods
+  require it because detected image features alone do not establish known-target metric evidence;
+  shorthand presets name explicitly versioned specifications rather than implicit defaults. _Avoid_:
+  board settings, pattern size, default board.
+- **Board pattern** — the reusable feature layout of a calibration target, including its family,
+  identifiers, relative geometry, and layout convention. Its deterministic fingerprint is shared by
+  physical boards produced from the same pattern. _Avoid_: board instance, printed board.
+- **Board rendering** — a deterministic raster and machine-readable description generated from one
+  board pattern for inspection, testing, or printing. It proves pattern identity but does not prove
+  the physical dimensions produced by a printer. _Avoid_: calibrated board, scale-accurate print.
+- **Board instance** — one physical realization of a board pattern, identified separately and paired
+  with its measured dimensions and uncertainty. Two board instances may share a pattern while having
+  different physical measurements. _Avoid_: board pattern, board file.
+- **ChArUco board** — a calibration board combining uniquely identified ArUco markers with
+  chessboard-corner geometry, allowing useful observations when only part of the board is visible.
+  Its board specification includes the marker dictionary, layout, and physical square and marker
+  dimensions. _Avoid_: checkerboard, generic tagged board.
+- **Board observation** — backend-neutral image-space evidence that a particular board pattern was
+  observed in a particular source frame, including identified board features, their measured image
+  positions, optional justified pixel uncertainty, and detection evidence. Detector diagnostics are
+  not treated as statistical uncertainty. It identifies but does not contain its source image; debug
+  visualization resolves that image separately. Calibration, registration, tests, and debug
+  visualization use the same observation so displayed evidence matches what was processed. _Avoid_:
+  OpenCV corners, detected board image, calibration sample, inferred confidence.
+- **Board-detection report** — the result of attempting to find a specified board in one source
+  frame, whether detection succeeded, was incomplete, or failed. It carries the usable board
+  observation when one exists plus rejection reasons and diagnostic evidence used by view selection,
+  tests, and debug visualization. Its requested diagnostic detail is summary or detailed; detailed
+  evidence may describe rejected feature candidates but neither level retains source pixels. _Avoid_:
+  optional board observation, detection bool.
+- **Detection scale policy** — the requested image scale used to find board features, including
+  native-resolution detection. It affects processing cost and potentially detection accuracy, but
+  never changes the source-image coordinate system of a board observation. The detection report
+  records the requested policy, actual transform, and native-resolution refinement status so results
+  can be compared reproducibly. Downsampled detection normally refines accepted features against
+  native-resolution pixels; this refinement is independently configurable for controlled comparison.
+  _Avoid_: hidden resize, observation scale.
+- **Calibration view selection** — finding a compact calibration dataset within a larger frame
+  sequence by rejecting unusable views and maximizing method-specific evidence and geometric
+  diversity. _Avoid_: generic key-frame extraction, percentage sampling.
+- **Board calibration** — camera calibration from a known physical target, such as a checkerboard,
+  ChArUco board, or AprilTag grid. Known feature correspondences constrain intrinsics and lens
+  distortion; measured board dimensions additionally establish physical scale for estimated target
+  poses and derived geometry. _Avoid_: checkerboard calibration when the target type is not
+  specifically a checkerboard, metric intrinsics.
+- **Targetless calibration** — camera calibration inferred from shared feature tracks extracted from
+  ordinary images or video without a known calibration target; it may estimate intrinsics and
+  distortion, but its trust depends on sufficient motion, scene geometry, observability, priors, and
+  independent validation. _Avoid_: automatic calibration, uncalibrated calibration, method-owned
+  feature matching.
+- **Camera model** — the shared description of a calibrated camera: image size, intrinsics,
+  distortion model, and uncertainty when known. Board and targetless calibration use the same camera
+  model; the calibration report carries how trustworthy it is. A multi-imager device or one imager
+  exposed through different image geometries may require multiple camera models. It is an immutable,
+  validated value; malformed imported parameters and invalid solver candidates do not become camera
+  models. _Avoid_: board camera model, targetless camera model, device calibration, unchecked camera
+  parameters.
+- **Distortion direction** — which mapping a distortion model and its coefficients define between
+  ideal normalized coordinates and observed image coordinates. Forward and inverse Brown-Conrady
+  models are distinct even when their coefficient sets have the same shape; projection and
+  unprojection behavior follow the declared model rather than coefficient count. _Avoid_: Brown
+  coefficients, interchangeable inverse distortion.
+- **Built-in distortion models** — the closed initial set of exact camera distortion conventions:
+  no distortion, Brown-Conrady 5, Inverse Brown-Conrady 5, Modified Brown-Conrady 5, Rational
+  Brown-Conrady 8, and Kannala-Brandt 4. Each name identifies a formula, coefficient order, and
+  distortion direction rather than only a coefficient count. _Avoid_: generic distortion vector,
+  custom distortion plugin.
+- **Projection status** — the explicit outcome of projecting or unprojecting through a camera model,
+  distinguishing success from points behind the camera, coordinates outside a model's mathematical
+  domain, and failure of an iterative mapping to converge. Failed operations do not communicate
+  through NaN values or ordinary exceptions. _Avoid_: valid bool when the failure kind matters,
+  finite result as proof of success.
+- **Image containment** — whether a successfully projected pixel lies within the camera model's image
+  rectangle. It is separate from projection validity: an off-image coordinate may be mathematically
+  valid and useful to optimization even though it is not visible in the current image geometry.
+  _Avoid_: out-of-bounds projection failure, visible when only bounds were tested.
+- **Camera-model policy** — the requested lens family and the rule for choosing distortion-model
+  complexity. Lens family is explicit by default; automatic selection is opt-in and compares a small
+  family-compatible candidate set using held-out evidence and parameter stability. _Avoid_: auto
+  distortion when the candidate family and validation rule are unspecified.
+- **Camera-model capability** — a declared operation supported for a particular camera-model variant,
+  such as projection, unprojection, calibration estimation, or import from external metadata.
+  Representing and applying a model does not imply that every calibration backend can estimate its
+  coefficients. _Avoid_: supported distortion model without naming the operation.
+- **Camera-model stability** — the requirement that one camera model applies throughout a calibration
+  frame sequence. Evidence of changing zoom, focus, stabilization crop, resolution, or other effective
+  intrinsics fails the request; the report may identify suspected change points for diagnosis.
+  _Avoid_: variable calibration when no time-varying model is produced.
+- **Camera-model uncertainty** — justified uncertainty attached to intrinsic or distortion parameters
+  when it has been estimated. It may be unknown and is never represented as zero merely because a
+  backend did not compute covariance. Calibration stability is separate evidence and remains required
+  for a reconstruction-ready verdict. _Avoid_: missing uncertainty as exact, solver covariance as
+  guaranteed physical accuracy.
+- **Camera-model applicability** — the capture conditions under which a calibrated camera model may be
+  reused, including image geometry, crop, orientation, lens setting, and camera identity when known.
+  Calibration fitness describes the estimate itself; applicability determines whether it is suitable
+  for different footage. Its assessment is compatible, incompatible, or unknown; unknown requires an
+  explicit downstream policy rather than inheriting validated trust. _Avoid_: camera match, same
+  camera when settings may differ.
+- **Calibration report** — the quality-bearing result of a calibration attempt, successful or failed:
+  the estimated camera model when one exists, raw diagnostics, and a reconstruction-fitness verdict.
+  Raw statistics retain the evidence behind the verdict but are comparable across calibration methods
+  only when they measure the same validation evidence. It always includes structured held-out and
+  deterministic-resampling sections; each contains evidence or an unavailable status with a reason
+  when failure prevented computation. Parameter standard deviations or covariance remain optional and
+  are identified as unavailable when not computed. _Avoid_: quality score when the result needs
+  multiple diagnostics, confidence when no uncertainty model exists.
+- **Reproducibility record** — report provenance sufficient to repeat a calibration or registration
+  attempt: canonical input identities, backend and version, solver configuration, random seed, and
+  execution policy. Normal execution promises reproducibility within stated numeric tolerances;
+  deterministic-debug execution uses seeded, canonical, single-threaded processing where supported.
+  _Avoid_: deterministic result when bit-identical floating-point output is not guaranteed.
+- **Reconstruction fitness** — the primary task-specific verdict describing whether a calibration is
+  rejected, exploratory, or ready for reconstruction. It summarizes explicit acceptance criteria
+  without replacing the calibration report's raw evidence, claiming metric scene scale, or implying
+  that independent validation has run. Cross-resolution criteria emphasize normalized or angular
+  ray error, held-out evidence, coverage, and parameter stability while retaining raw pixel error for
+  diagnosis. Criteria come from a named versioned profile with optional explicit overrides. _Avoid_:
+  accuracy, quality, validated calibration, metric-ready calibration, universal RMS threshold.
+- **Calibration validation** — an offline assessment of a camera model against a paired validation
+  dataset, producing evidence without controlling whether downstream processing continues. Validation
+  is separate from calibration; a host or larger service decides whether its result is advisory or a
+  gate. _Avoid_: calibration fitness, successful calibration.
+- **Factory-model comparison** — diagnostic comparison between an imported manufacturer camera model
+  and an independently estimated or validated model. Manufacturer parameters are not ground truth;
+  readiness is determined from held-out geometric evidence and stability rather than agreement with
+  the factory values alone. _Avoid_: factory ground truth, manufacturer accuracy test.
+- **Validation dataset** — observations paired with a camera model for offline validation and kept
+  independent of the observations used to estimate that model. _Avoid_: calibration dataset when the
+  same evidence was used for fitting.
+- **Metric scale evidence** — evidence that can anchor a reconstruction to physical units, such as a
+  known target, known camera baseline, or scene control points. It is reported separately from
+  calibration fitness because valid camera intrinsics alone do not resolve monocular scene scale.
+  _Avoid_: metric calibration, guaranteed metric measurement.
+
 ## Graph boundary & host binding — the pipeline I/O model
 
 How a graph gets its inputs and yields its outputs, without load/save *nodes*. A

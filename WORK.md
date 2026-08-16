@@ -2337,6 +2337,128 @@ adds a pin to the canvas.
 - **Per-element incrementality**, which the natural-vector payload makes unavailable: any change
   rebuilds the whole vector, so all N children recompute.
 
+## Milestone 9 — camera calibration and fixed registration (grilled 2026-08-14 to 08-15)
+
+Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
+[ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
+contracts are [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md), and the registration
+solver decision is [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md).
+
+This milestone adds standalone camera libraries first and thin flow adapters second. Camera geometry,
+board detection, calibration, validation, and registration remain usable without `lain::flow`; node
+tests call the same production operations as direct library consumers. Optional third-party-backed
+implementations follow the existing repository split: lain-owned contracts under `libs/`, adapters
+that directly include or link OpenCV or Ceres under `plugins/`. No third-party type crosses a
+lain-owned interface.
+
+The current flow architecture reinforces the batch design. A calibration or registration node is a
+stateless definition; one `Evaluation` supplies a finite request and receives a report. Shared,
+immutable `PortValue` payloads make sequence handles and reports cheap to fan out. The vector-backed
+`MapNode` is not the production video-ingestion mechanism: materializing thousands of decoded 8K
+frames as `std::vector<image::Image>` would violate the bounded-memory requirement. A finite, lazy
+`FrameSequence` remains the input seam, with its loader and persistence design deliberately deferred
+to a separate grill.
+
+### Prerequisite and review notes
+
+**Do not begin this milestone until the Video + Sequence loading/saving milestone is complete.** That
+work owns the finite lazy `FrameSequence`, random access, frame identity, capture metadata, and the
+production path from files or video into calibration. Camera work may define the evidence it needs
+from a sequence, but must consume the sequence contract established by that earlier milestone rather
+than inventing a temporary loader or observation-only node path.
+
+The 2026-08-16 review also left these requirements and decisions visible before implementation:
+
+- **Eigen is an approved scoped exception.** Eigen's MPL-2.0 file-level copyleft is acceptable for the
+  optional Ceres-backed registration implementation without changing lain's MIT license. External
+  distributions preserve notices, identify the corresponding source, and publish modifications to
+  covered Eigen files under MPL-2.0. Builds define `EIGEN_MPL2_ONLY`, and the root `README.md` keeps
+  Eigen and every other third-party license visible so replacement candidates can be audited later.
+- **Targetless methods consume shared feature tracks.** A shared `lain::camera::feature` contract owns
+  backend-neutral observations, tracks, track sets, and extraction reports. Optional producers own
+  feature detection and description, matching, track construction, geometric verification, and
+  initialization evidence. Targetless calibration and registration consume that same evidence and do
+  not grow separate front ends; high-level frame-sequence operations delegate to the shared producer.
+- **Registration vocabulary supports both methods.** A capture group is an associated capture
+  instant or evidence group, not inherently a set of frames observing one board pose. Global
+  refinement optimizes camera transforms plus method-specific latent geometry: board poses for board
+  registration, or scene landmarks/tracks for targetless registration. `CONTEXT.md` carries these
+  method-neutral definitions.
+- **Metric claims distinguish camera calibration from scene scale.** Intrinsics are expressed in
+  pixels and lens coefficients do not become metric because board dimensions are known. Known board
+  dimensions establish translation and reconstruction scale; targetless intrinsic reliability
+  instead depends on motion, scene geometry, priors, and observability. A single unconstrained image
+  is not a generally identifiable intrinsics-and-distortion calibration input.
+- **Flow adapters include the current persistence and host contracts.** Register stable node factory
+  keys, dynamic/boundary port types, codecs for serialized params or defaults, host binders, and
+  flowview catalog entries. Disabled camera plugins neither register unavailable node kinds nor fetch
+  third-party dependencies, and saved graphs fail clearly when a required optional implementation is
+  absent.
+- **Fallback needs an explicit graph shape.** Gate targetless work upstream from a board-result
+  fitness predicate, then combine attempt reports separately from selecting the accepted camera model.
+  The final report retains every attempted path, including a failed board attempt; a downstream
+  `SelectNode` alone neither short-circuits work nor preserves that history.
+- **Projection math has one production implementation.** Public checked projection/unprojection and
+  Ceres residual evaluation share scalar-generic model kernels, or use one explicitly tested Jacobian
+  adapter per model. The Ceres plugin must not copy distortion formulas into a second implementation,
+  including iterative inverse-model behavior.
+- **Unavailable evidence is represented, not fabricated.** A failed calibration report always has a
+  validation/stability section, but held-out and deterministic-resampling results may be `Unavailable`
+  with a structured reason when failure occurs before they can be computed. A ready verdict still
+  requires the configured evidence.
+- **Stage 1 needs a concrete board-measurement value.** Board dimensions retain optional hard bounds
+  without committing to a generic `Measurement<T>` template. The initial board-local representation
+  should leave a clean generalization path when a second measured-quantity caller exists.
+- **Dependency footprint is an acceptance criterion.** OpenCV and Ceres camera plugins are opt-in;
+  an all-disabled configure performs no dependency fetch. Record exact versions, enabled modules,
+  transitive licenses, configure/build time, and representative static and dynamic binary sizes so
+  dependency containment is measured rather than inferred from target boundaries.
+- **The D455 fixture records capture provenance.** Store RGB stream profile, resolution and format,
+  device/firmware identity where available, and librealsense/backend versions. Compare different
+  distortion variants by their pixel/ray mappings on shared evidence rather than by coefficient
+  differences between incompatible parameterizations.
+
+### Build order
+
+1. **Foundational camera geometry + ChArUco calibration.** Add `core::Length`; the agreed rigid
+   transform and axis-convention conversions in `lain::math`; immutable validated camera models;
+   the closed distortion-model set; projection, unprojection, containment, applicability, and
+   structured failure results. Add board pattern/instance/specification values, deterministic
+   ChArUco rendering and fingerprints, backend-neutral observations and detection reports, view
+   selection, calibration reports, validation, and reconstruction-fitness profiles. The optional
+   OpenCV adapter owns ChArUco detection and estimation. Prove the direct production path with
+   formula-level synthetic tests, a compact committed D455 RGB fixture, and an external hashed
+   extended dataset. Do not expose targetless or fallback stubs.
+2. **Fixed-camera board registration.** Add explicit capture-group input values, observation-graph
+   diagnostics, `referenceFromCamera` results, registration scale status, fitness, and reports. Use
+   the optional private Ceres adapter for one sparse global-refinement path, with SuiteSparse disabled
+   by default. Exercise connected, partial, ambiguous, and disconnected synthetic rigs plus the
+   target scale of roughly 100 cameras and 4,000 capture groups without fixed camera/group limits.
+3. **Targetless registration with known intrinsics.** Reuse immutable camera models, capture groups,
+   registration reports, shared feature-track extraction, and Ceres refinement. Accepted tracks
+   establish overlap, initial relative geometry, and scene landmarks before Ceres begins; absent
+   metric evidence remains explicitly scale-ambiguous. Compare board and targetless registration only
+   on shared held-out evidence.
+4. **Targetless calibration + graph fallback.** Add targetless intrinsics/distortion estimation only
+   after the shared feature-track evidence and validation path can meet the report contract. Then
+   expose the graph method input and ordered board-then-targetless fallback, retaining every attempted
+   report and short-circuiting on the first result that satisfies the selected fitness profile.
+
+Each slice lands through the closest real caller: geometry and board interfaces directly, optional
+adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
+failed reports as ordinary results, deterministic-debug execution, downsampling versus native
+refinement, imported-model policies, held-out validation, and dependency-disabled builds. No slice
+lands with copied solver/detector logic or a second production path.
+
+### Not in this milestone
+
+- Video/image-sequence loading, capture-manifest persistence, and temporal grouping I/O details.
+- Joint intrinsic/extrinsic optimization, multi-board calibration, or mutable intrinsics during
+  registration.
+- Moving-camera pose tracking, temporal-alignment estimation, and world-frame alignment.
+- A generic `Measurement<T>` uncertainty template without a second concrete caller.
+- Runtime-defined distortion-model plugins or SuiteSparse-enabled Ceres builds.
+
 ## Backlog (deferred — don't build speculatively)
 
 ### Tier A — when a real graph demands it
