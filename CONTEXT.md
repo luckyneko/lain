@@ -265,13 +265,10 @@ the one place a deep copy is paid — deliberately, by the node that needs it.
   reconstruction graph consumes its model. It operates on a completed calibration dataset rather
   than accumulating hidden history as ordinary frames pass through the graph. _Avoid_: calibration
   pipeline when referring to the reconstruction graph itself.
-- **Frame sequence** — a finite, ordered source of camera frames supplied to calibration preflight.
-  It exposes frame metadata without decoding every image and permits selected frames to be decoded
-  and revisited by durable frame identity under a bounded cache policy. Random access is repeatable,
-  though its seek cost may depend on the underlying media, and concurrent decode requests are safe
-  even when an implementation serializes access internally. Decoded images own their pixels and
-  remain valid after cache eviction. A live capture becomes a frame sequence only after the host
-  establishes its end. _Avoid_: stream when the source must be bounded, video when stored video is
+- **Frame sequence** — the finite, ordered, lazily decoded footage supplied to calibration preflight.
+  Defined in full under *Frame sequences* below; calibration adds only that a **live capture becomes a
+  frame sequence once the host establishes its end**, since calibration preflight is a batch phase over
+  a completed dataset. _Avoid_: stream when the source must be bounded, video when stored video is
   only one possible source, in-memory frame array, forward-only decoder.
 - **Capture manifest** — the serialized description of one finite multi-camera capture, including its
   identity, clock domain, and ordered camera-sequence definitions. The loader resolves it into a
@@ -795,8 +792,12 @@ rides a `flow` port like any payload. Vocabulary, three axes kept apart:
   strided view *over* an Image's bytes (obtained via `as<Color>()`) — the "iterate over
   pixels, not bytes" surface. Views never own.
 - **ColorSpace** *(tracked, enforced)* — the transfer/encoding axis (`Unspecified`/`Linear`/
-  `sRGB`), a property of the Image, **separate from PixelFormat** (sRGB and linear share a
-  byte layout but not a meaning). **AlphaMode** *(tracked, enforced)* — whether color is
+  `sRGB`/**`BT709`**), a property of the Image, **separate from PixelFormat** (sRGB and linear share a
+  byte layout but not a meaning). `BT709` arrived with video (M10): it shares sRGB's primaries and
+  differs only in transfer, so tagging decoded footage `sRGB` would be a silent ~5–10% error in every
+  blend, while tagging it `Unspecified` would make it unprocessable under op-class enforcement.
+  BT.601, BT.2020 and the HDR transfers (PQ/HLG) are **reported and refused**, not relabelled — they
+  need different primaries or a real HDR model. **AlphaMode** *(tracked, enforced)* — whether color is
   premultiplied by alpha (`Unspecified`/`Straight`/`Premultiplied`), meaningful only for
   alpha-bearing formats. Both default `Unspecified` (be explicit).
 - **No implicit conversion.** Nothing auto-converts space or alpha (a round trip sheds
@@ -842,9 +843,17 @@ both sit behind service-shaped seams. See [ADR-0004](docs/adr/0004-static-linkin
 
 - **IO scheme** — a **byte-transport backend keyed by URI scheme** (`local` now; `remote`/`s3`
   later). `lain::io::read(uri) → Buffer` dispatches to one. **Media-agnostic** — `io` never
-  decodes; it only moves bytes. `read` is a **whole-asset** read (the resource in one `Buffer`); a
-  streaming **Stream** transport (incremental/seekable, for video and large/network assets) is a
-  deferred peer to `read`, not a change to it. _Avoid_: loader (that's a Reader).
+  decodes; it only moves bytes. `read` is a **whole-asset** read (the resource in one `Buffer`).
+  _Avoid_: loader (that's a Reader).
+
+- **Stream** *(M10)* — the **incremental, seekable** transport: a peer to `read`, not a change to it,
+  for video and other assets a whole-asset slurp cannot serve. Dispatched by scheme exactly as `read`
+  is. Its refusals are what matter: it **never hands out an OS handle**, it **owns its uri and logical
+  position** so it can transparently reopen and re-seek, **every operation may fail** rather than only
+  open, and **acquisition is separate from construction**. Those four together are what let a future
+  LRU **handle pool** — a service-shaped seam behind `lain::io` — become a pure backend swap, which a
+  multi-segment frame sequence will eventually need. _Avoid_: exposing a file descriptor, a Stream
+  that is only valid while its handle is.
 
 - **Reader** / **Writer** — a **Reader** decodes a `Buffer` of one format into a typed asset; a
   **Writer** encodes the asset back to bytes. One per format, holding both directions (they share
@@ -870,6 +879,101 @@ both sit behind service-shaped seams. See [ADR-0004](docs/adr/0004-static-linkin
   today, a `thorax` DSO tomorrow behind the same `registerCodec` seam. A format is enabled/disabled
   by an opt-out CMake `option`, so a consumer pulls only the codecs it asked for. _Avoid_: reader
   lib, backend, importer.
+
+## Frame sequences — finite lazy footage, medium-neutral
+
+*(M10 — [ADR-0018](docs/adr/0018-frame-sequences-and-host-driven-rendering.md).)* `lain::media` owns
+these and depends on **no `io` at all**; each medium's opener lives in that medium's own io seam
+(`io::image::openSequence`, `io::video::open`), so the medium-neutral library never depends on every
+medium.
+
+- **Frame sequence** — a **finite, ordered list of frame references over one or more frame sources**.
+  Not a handle to a file and not a chain of wrapping decoders: **every sequence operation is a list
+  operation** — clip slices, concat appends, reverse reverses, a selection is an arbitrary subset —
+  and exactly one class decodes. It exposes frame metadata without decoding every image; random access
+  is repeatable, though seek cost depends on the media; concurrent decode requests are safe **even
+  when an implementation serializes access internally** (one decoder behind a mutex today, a pool
+  later, with no caller change). Decoded images own their pixels and stay valid after cache eviction.
+  _Avoid_: stream when the source must be bounded, video when video is only one possible medium,
+  in-memory frame array, forward-only decoder, a per-verb source wrapper.
+
+- **Frame source** — one bounded thing frames come from: a video file, an image-sequence pattern.
+  Identified by its **canonical uri**, holds the open `Stream` and the ring cache, and is what a
+  handle pool would pool. Several in one sequence is the normal case — that is `CONTEXT.md`'s
+  **media segment** / **camera-sequence definition** realised, and it is why one timeline can span
+  several video files, or a video file and a folder of stills.
+
+- **Frame table** — the per-source record built **at open**: one entry per frame with its offset,
+  presentation timestamp and keyframe flag, read from the container's index when it has one and
+  demux-scanned (without decoding) when it does not. It is what makes the promises true — the count
+  is exact, "frame 412" means frame 412 on every platform and run, a GOP can be decoded forward
+  instead of re-seeking, and **variable frame rate is free** because frames are ordinal and only the
+  timestamps are irregular. _Avoid_: index (the word is spent — see *Position*), estimated duration,
+  frame count from a duration × rate calculation.
+
+- **Position vs frame identity** — two numbers, equal only for an unclipped source. **Position** is
+  where a frame sits in *this* sequence (`at(i)`, a map element, the timeline); **frame identity** is
+  which frame of which source it *is*, and survives clipping, concatenation and selection. A clip
+  re-bases position and preserves identity. Anything that **reports** a frame — an issue, a
+  calibration report, a manifest — names the identity; anything ordinal uses the position.
+
+- **FrameRef** — the port-visible provenance value: `{canonical source uri, ordinal, timestamp}`. A
+  **name you can look up**, never a back-pointer — a ref holding a pointer to its sequence would pin
+  a decoder, its handle and its cache for as long as any evaluation retains any decoded frame. The
+  source uri rather than a minted id, because a minted id changes every run and would make a saved
+  manifest meaningless (the same rule `graphio::templateKey` applies: one file has one key however
+  spelled). _Avoid_: a `Frame` aggregate, an index into one sequence's private source list.
+
+- **Frame spec** — the sequence's single declared `{extent, PixelFormat, ColorSpace, AlphaMode,
+  nominal rate}`. **A sequence is homogeneous**: composing a source whose frames do not match is
+  refused *at the point of composition*, because the only way a consumer could cope is by converting,
+  and a conversion chosen downstream on a frame it did not know would differ is exactly the silent
+  lossy conversion that is forbidden. Camera-model stability already required this guarantee. Also
+  what lets an encoder be opened before the first frame arrives, and what `describe()` renders
+  (`"500 frames · 3840×2160 · RGB8 · BT709 · 29.97 fps"`).
+
+- **Selection, not edit** *(the governing rule for sequence-valued outputs)* — a frame reference names
+  a source and an ordinal, and a frame a graph **computed** has no source. So a `FrameSequence` output
+  can express clip / reorder / concat / subset and **structurally cannot** carry processed pixels —
+  no rule to police, and the useful case (a node group choosing frames by a metric, i.e. **calibration
+  view selection**) works. Carrying processed frames would need a graph-backed source whose decode
+  re-enters the scheduler, which is the fire-and-join deadlock. _Avoid_: a lazy "computed sequence",
+  a sequence output from a processing group.
+
+- **Frame position pin** *(`FramePosition`)* — the distinct port type naming a position in a frame
+  sequence, and the input a host varies to drive a render. A distinct type rather than an `int`
+  because that is what lets the cli find the loop counter with no naming convention, lets `list`
+  report a graph as renderable, and lets an editor render a timeline **by type** (ADR-0005's rule,
+  and its test for invention: *invent one only where none fits*). _Avoid_: a pin named `frame` by
+  convention, `FrameIdx` (nothing else here abbreviates, and *index* is a spent word).
+
+- **Render** — running a graph **once per frame** over a range, the host binding the frame position
+  each time and handing each result `Image` to an encoder. A render is a **fold, not a map**: it
+  produces a file, not a collection, so a map would materialise a collection nobody wanted (see
+  ADR-0018 for the arithmetic). The host owns the loop and **retains one Evaluation across the whole
+  range**, which is what keeps the decoder warm and sequential. _Avoid_: a save/sink node, an ambient
+  time cursor, a map over a long frame range.
+
+- **Frame sweep** *(the cli surface)* — `run` accepting a **range** where it accepts a value, so the
+  loop is a modifier on the one binding path rather than a second subcommand duplicating it. An
+  `Image` output plus a video uri encodes across iterations; plus a `####` pattern writes numbered
+  stills; a `FrameSequence` output writes a **manifest** (`data::toValue` over the sequence — a
+  selection's honest artifact is *these frames of that source*, not pixels). Range defaults to the
+  single bound sequence's full length.
+
+- **Missing-frame policy** — what a render does when the graph suppresses a frame. It belongs to the
+  **host loop, not the writer**, which only encodes what it is handed. Default **stop**: finalise
+  what exists, report the ordinal, exit non-zero — a truncated video is visibly truncated, whereas a
+  silently shortened one has destroyed the input↔output frame correspondence with nothing downstream
+  able to tell. **Skip** is opt-in. Note the asymmetry: numbered stills *can* represent a hole (a
+  visible gap in the numbering), a video cannot and must close up. _Avoid_: writing a black frame.
+
+- **Video reader / writer** — the `lain::io::video` seam, mirroring `io::image`'s registry and plugin
+  idiom. The **writer breaks the parallel deliberately**: an encoder is open-push-finalise and its
+  file is invalid until finalised, so it is a **stateful handle** (`openWriter` / `write` / `finish`,
+  `finish()` explicit and status-returning because a trailer write can fail and a destructor has
+  nowhere to report), with a one-shot `save(uri, sequence)` facade over it for transcoding.
+  _Avoid_: `encode(vector<Image>) → Buffer`, a writer whose destructor is the commit.
 
 ## The `data` library — serialization DOM + reflection
 

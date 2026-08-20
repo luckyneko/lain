@@ -451,10 +451,11 @@ Deferring it keeps the milestone honest for a modest re-entry cost. The `ImageWr
 
 **Deferred:** a read-only ("Debug") param kind; graph serialization of params (Tier A item 1).
 
-**Deferred behind these seams:** `remote`/`s3` IO schemes; a **`Stream` transport** — an
-incremental/seekable read (chunked, possibly mmap-/socket-backed) peer to `read` for video and
-large/network assets, since `read → Buffer` is a whole-asset slurp that video can't use;
-`lain::io::video` / `audio` + `Timecode` (Tier C item 9); the memory pool/arena +
+**Deferred behind these seams:** `remote`/`s3` IO schemes; ~~a **`Stream` transport**~~ and
+~~`lain::io::video`~~ — **both claimed by Milestone 10**, which is the caller that unblocks them
+(`read → Buffer` is a whole-asset slurp that video can't use); `lain::io::audio` + `Timecode`
+(Tier C item 9 — M10 needs neither, since a frame is addressed by ordinal and carries a plain
+timestamp); the memory pool/arena +
 `BufferView`/`SharedBuffer`; magic-byte format sniffing (extension-keyed for now); thorax
 adoption. **TIFF reader breadth ("one day", not now):** float sample format → `F32` Images
 (intermediary/HDR files — lain already has the `*32F` formats), `CIELab`/`YCbCr` photometrics
@@ -2361,11 +2362,12 @@ to a separate grill.
 
 ### Prerequisite and review notes
 
-**Do not begin this milestone until the Video + Sequence loading/saving milestone is complete.** That
-work owns the finite lazy `FrameSequence`, random access, frame identity, capture metadata, and the
-production path from files or video into calibration. Camera work may define the evidence it needs
-from a sequence, but must consume the sequence contract established by that earlier milestone rather
-than inventing a temporary loader or observation-only node path.
+**Do not begin this milestone until Milestone 10 is complete** — it is numbered after M9 but built
+**before** it. M10 owns the finite lazy `FrameSequence`, random access, frame identity, the frame
+spec's homogeneity guarantee, and the production path from files or video into calibration. Camera
+work may define the evidence it needs from a sequence, but must consume the sequence contract
+established there rather than inventing a temporary loader or observation-only node path. Capture
+manifests and capture datasets remain M9's (M10 explicitly excludes them).
 
 The 2026-08-16 review also left these requirements and decisions visible before implementation:
 
@@ -2459,6 +2461,86 @@ lands with copied solver/detector logic or a second production path.
 - A generic `Measurement<T>` uncertainty template without a second concrete caller.
 - Runtime-defined distortion-model plugins or SuiteSparse-enabled Ceres builds.
 
+## Milestone 10 — video + frame sequences (grilled 2026-08-19)
+
+**Numbered after M9, built before it** — M9's prerequisite note points here. Domain vocabulary is in
+[CONTEXT.md](CONTEXT.md) under *Frame sequences*; the model is
+[ADR-0018](docs/adr/0018-frame-sequences-and-host-driven-rendering.md), the codec backend and its
+licence exception are [ADR-0019](docs/adr/0019-ffmpeg-lgpl-for-video-codec-support.md) (with
+[ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md) amended). **Nothing is
+built.**
+
+The ask was "load and save video the way images already load and save". The parallel holds at the
+registry / plugin / facade level and **breaks in exactly two places**, which is most of the design:
+
+- **Transport.** `io::read` is a whole-asset slurp and `ImageReader::decode` takes the whole `Buffer`.
+  A lazy sequence must hold something open, so this milestone builds the **`Stream`** transport WORK.md
+  has had queued for precisely this reason. Skipping it would mean either slurping the file or putting
+  `fstream` calls inside a codec plugin, collapsing ADR-0004's transport/codec split.
+- **Writing.** An encoder is open-push-finalise and its file is invalid until finalised, so the writer
+  is a stateful handle, not `encode(asset) → Buffer`.
+
+Everything else follows from one structural choice: **a frame sequence is a list of frame references
+over sources**, which makes clip/concat/select list operations, makes multi-file timelines free, and
+makes it structurally impossible for a processing graph to emit a sequence — so a graph is a per-frame
+function and the **host owns the frame loop**.
+
+### The shape
+
+```
+--video src.mp4 ──► video : FrameSequence ─► ClipSequence ─► FrameAt ─► …graph… ─► result : Image
+startFrame ────────────────────────────────────►│              ▲
+endFrame ──────────────────────────────────────►│              │
+                                    frame : FramePosition ─────┘   (host-bound, once per iteration)
+```
+
+`flowview run --video src.mp4 --frame 0-499 --result out.mp4` binds the sequence through
+`BoundaryBinders` exactly as `--image` already binds an `Image`, then sweeps. Memory is **one frame**
+at any range length; `OpenVideo` is upstream of nothing that changes between iterations, so the
+decoder stays warm and sequential — provided the sweep **retains one `Evaluation` across the range**.
+
+### Build order
+
+1. **`lain::media` + the image-sequence source.** `FrameSequence`, `FrameSource`, `FrameRef`,
+   `FrameSpec`, the frame table, clip/concat/select, homogeneity validation, the fixed ring cache,
+   `io::image::openSequence`. **No new third-party dependency.** Driver-free tests.
+2. **`flow` integration.** `registerPortType<FrameSequence>`, the `FramePosition` type,
+   `OpenSequenceNode` / `FrameAtNode` / `ClipSequenceNode`, `describe()`, `ValueCodecs`,
+   `BoundaryBinders`, `serialize(Archive&, FrameSequence&)` for the manifest, and the `run` sweep.
+   **End-to-end proof, still dependency-free:** a folder of stills swept to `out.####.png` in bounded
+   memory — every decision in the milestone exercised before FFmpeg or `Stream` exist.
+3. **`Stream` transport** in `lain::io`. Local scheme; handle-pool-ready interface (never hands out an
+   OS handle, owns its uri and logical position, every operation may fail, acquisition separate from
+   construction).
+4. **`ColorSpace += BT709`** against `lain::image`, its own small commit — it touches an enforced enum.
+5. **`io::video` seam + FFmpeg read plugin.** Frame table at open, decode, YUV→RGB and range expansion,
+   BT709 tagging, refusal of BT.601/BT.2020/HDR. Found-not-fetched, opt-in, configure fails on a
+   GPL-configured FFmpeg. Now `--video src.mp4` works.
+6. **Video write.** `VideoWriter` seam, FFmpeg writer over platform encoders (never x264/x265),
+   `openWriter`/`write`/`finish`, the render loop's encoder, the `--on-missing-frame stop|skip` policy.
+7. **flowview.** The deferred **GUI view** registry lands here with two customers at once
+   (`FrameSequence` → a player, `Image` → the currently-hardcoded thumbnail branch), plus the Preview
+   pane's transport. Last, because in this repo the gui is where the bugs are (M5's ten, M8's two).
+
+Slices 1–2 are a complete, useful, dependency-free vertical: if the FFmpeg integration turns messy,
+that still ships a bounded-memory sibling to `ListDir → map(LoadImage)`.
+
+### Not in this milestone
+
+- **Capture manifests and capture datasets** — M9's, built on this contract.
+- **A driving timeline in the gui.** Slice 7 is an *inspection* player on a sequence pin; a transport
+  that binds a `FramePosition` boundary input and re-runs the graph is the follow-on. `FramePosition`
+  being a distinct type is what keeps it a one-widget change.
+- **A handle pool.** The `Stream` interface is specified so it is a pure backend swap; nothing builds
+  it until many-source timelines make it hurt.
+- **A decoder pool**, and with it parallel decode. One decoder behind a mutex; the contract was
+  worded to permit the swap.
+- **BT.601 / BT.2020 / PQ / HLG**, U16 decode output, and audio.
+- **Realtime playback of processed output** — that is the streaming pipeline (Tier B #4). Playback
+  here is best-effort: advance, rebind, re-run.
+- **A linked map over N streams**, per-element incrementality, and keyed elements — still ADR-0014's,
+  still waiting on the workload.
+
 ## Backlog (deferred — don't build speculatively)
 
 ### Tier A — when a real graph demands it
@@ -2500,10 +2582,10 @@ lands with copied solver/detector logic or a second production path.
    `loadGraph`/`saveGraph` facade lives in flowview (`graphio`, app-level), not `flow::serialize`.
 
    **Deferred (designed-for):** untagged variant, yaml/xml/binary codecs, per-node-type schema
-   versioning, C++26-reflection auto-`serialize`, and the **video** boundary loader (scalars + image
-   bind from the cli now — see "Scalar boundary binding" above; a frame/timecode-shaped boundary is the
-   remaining case). `core::DateTime` (Tier C #8) is **not** pulled in — `version` is a plain int, no
-   timestamps.
+   versioning, C++26-reflection auto-`serialize`, and ~~the **video** boundary loader~~ — **claimed by
+   Milestone 10**, which binds `--video <uri>` to a `FrameSequence` through the same `BoundaryBinders`
+   seam `--image` already uses, and sweeps a `FramePosition` input. `core::DateTime` (Tier C #8) is
+   **not** pulled in — `version` is a plain int, no timestamps.
 2. **Conditional / gated nodes** — a node suppresses downstream eval; the one piece a pure push DAG
    can't express. **Mechanism BUILT** (2026-07-12, [ADR-0007](docs/adr/0007-conditional-eval-via-input-readiness.md)):
    modelled as **input readiness** — a node computes iff every **Required** input has a value; else

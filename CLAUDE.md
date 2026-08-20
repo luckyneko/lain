@@ -585,6 +585,64 @@ format-check clean.
   varies per element AND something can drive it; each conversion costs a pin on the canvas. That surface produced all ten of M5's bugs while the engine slices produced
   none, and has now produced its first here — expect more there rather than in the engine.
 
+### Update 2026-08-19 — M10 designed: video + frame sequences (nothing built yet)
+
+The ask was "load and save video the way images already load and save". Grilled 2026-08-19; decisions
+in **[ADR-0018](docs/adr/0018-frame-sequences-and-host-driven-rendering.md)** (the model) and
+**[ADR-0019](docs/adr/0019-ffmpeg-lgpl-for-video-codec-support.md)** (the backend + licence
+exception, with ADR-0015 amended), build order in WORK.md's **Milestone 10**, vocabulary in
+CONTEXT.md's new *Frame sequences* section. **Numbered after M9 but built before it** — M9's
+prerequisite note already pointed here. **Nothing is built.**
+
+- **The image parallel holds at the registry/plugin/facade level and breaks in exactly two places**,
+  which is most of the design. Transport: `io::read` is a whole-asset slurp and `ImageReader::decode`
+  takes the whole `Buffer`, so M10 builds the **`Stream`** transport WORK.md has had queued for
+  precisely this reason. Writing: an encoder is open-push-finalise and its file is invalid until
+  finalised, so the writer is a **stateful handle**, not `encode(asset) → Buffer`.
+- **A `FrameSequence` is a LIST of frame references over one or more sources**, not a decoder chain.
+  Clip/concat/select become list operations with exactly one class decoding, and a multi-file timeline
+  is free — which is CONTEXT.md's *media segment* / *camera-sequence definition* realised rather than
+  a new concept. **Position and frame identity separate**: a clip re-bases the first and preserves
+  the second.
+- **A processing graph structurally CANNOT output a `FrameSequence`.** A frame ref names a source and
+  a computed frame has no source — so sequence outputs are limited to *selection* (which is exactly
+  **calibration view selection**) with no rule to police. Carrying processed frames would need a
+  graph-backed source whose decode re-enters the scheduler: the fire-and-join deadlock.
+- **The host owns the frame loop; a render is a FOLD, not a map.** A map over 500 frames at 4K is
+  ~16 GB gathered plus ~50 GB retained per-element interior (ADR-0014's own recorded costs; M9's
+  prerequisite note reached this independently). The frame position arrives as an **ordinary boundary
+  input** — M4 binding, ADR-0012 recompute, incremental eval, unchanged. An ambient time cursor was
+  rejected: it breaks *"a node reads only its evaluated inputs"*, needs a per-node time-varying flag
+  that can disagree with what the node reads (M7/M8 both deleted exactly that shape), and has no
+  answer inside a map. **The map stays right for small-N analysis** — calibration's selected views,
+  feature tracks.
+- **`FramePosition` is a distinct port type**, so the cli finds the loop counter with no naming
+  convention and an editor can render a timeline *by type* (ADR-0005's rule). Deliberately **not**
+  `FrameIdx`: nothing here abbreviates, and *index* is a spent word (CONTEXT.md's *Position*).
+- **No decoded unit aggregate.** `FrameAt` emits `image : Image` + `frame : FrameRef` on separate
+  pins. The tempting `Image + intrinsics` pairing is refused by the glossary itself — camera-model
+  stability says one model applies *throughout a sequence*, so that value belongs to the sequence.
+  `FrameRef` is `{canonical uri, ordinal, timestamp}`: a **name you look up**, never a back-pointer
+  that would pin a decoder for as long as any evaluation holds any frame.
+- **A sequence is homogeneous (one frame spec, mismatches refused at composition), frame-tabled at
+  open** (container index, else a decode-free demux scan → exact count, exact seek, VFR for free,
+  deterministic identity), and **lazily decoded behind a mutex with a fixed ring**, blocking. The
+  cache/pool wording in CONTEXT.md was already written to permit the later swap.
+- **`ColorSpace` gains `BT709`**; BT.601/BT.2020/HDR are **reported and refused**, not relabelled.
+  Tagging footage `sRGB` is a silent error in every blend; `Unspecified` makes it unprocessable under
+  op-class enforcement. Governing principle the owner set: **no silent lossy conversion; codec loss
+  is expected.**
+- **FFmpeg, LGPL configuration only, found-not-fetched, opt-in** — and **enforced**: configure fails
+  if the linked library reports `--enable-gpl`/`--enable-nonfree`, since a GPL-configured build
+  relicenses the combined work whether or not a GPL codec is called. Delivery codecs use **platform
+  hardware encoders through FFmpeg's wrappers** (LGPL-safe); never x264/x265. Platform-native backends
+  were rejected mainly because **frame-accurate seek differs per backend**, and "frame 412" must mean
+  frame 412 everywhere.
+- **Slices 1–2 (`lain::media` + the image-sequence source, then the flow integration) are a complete
+  dependency-free vertical** — a folder of stills swept to `out.####.png` in bounded memory exercises
+  every decision before FFmpeg or `Stream` exist. flowview is last, and lands the deferred **GUI view**
+  registry with two customers (`FrameSequence` → player, `Image` → the hardcoded thumbnail branch).
+
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
 
 The last step of Milestone 6. `PinKey` — the key the preview cache, Inspector, Interface, Preview

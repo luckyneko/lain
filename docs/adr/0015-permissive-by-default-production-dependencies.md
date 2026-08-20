@@ -12,6 +12,13 @@ the license of lain-owned files. Builds define `EIGEN_MPL2_ONLY`; distribution p
 notices, identifies how recipients can obtain the corresponding Eigen source, and makes any
 modifications to MPL-covered Eigen files available under MPL-2.0.
 
+FFmpeg is the second approved exception, recorded in
+[ADR-0019](0019-ffmpeg-lgpl-for-video-codec-support.md). Its LGPL-2.1 licence is accepted only for
+the optional video codec plugin, only in an LGPL configuration, and the build **fails** when the
+linked library reports `--enable-gpl` or `--enable-nonfree` in its configure string. The enforcement
+matters more than the permission: a GPL-configured FFmpeg relicenses the combined work whether or not
+a GPL codec is ever called, which is exactly the silent introduction this policy exists to prevent.
+
 ## Consequences
 
 Third-party dependencies remain optional or private behind lain-owned interfaces where practical.

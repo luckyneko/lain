@@ -5,9 +5,11 @@ A set of C++ libraries used to rapidly prototype ideas.
 
 Third-party dependencies default to permissive licenses. A non-permissive dependency requires an
 explicit, scoped exception under
-[ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md). Eigen is currently the
-only approved exception. Keeping the inventory here makes dependency cost and replacement candidates
-visible without exposing third-party types through lain-owned interfaces.
+[ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md). Eigen (MPL-2.0, camera
+registration) and FFmpeg (LGPL-2.1, video codecs — see
+[ADR-0019](docs/adr/0019-ffmpeg-lgpl-for-video-codec-support.md)) are the approved exceptions.
+Keeping the inventory here makes dependency cost and replacement candidates visible without exposing
+third-party types through lain-owned interfaces.
 
 Versions marked **current** are pinned by the repository's CMake modules unless a compatible system
 package satisfies the target. Versions marked **planned** are approved for the camera work but are
@@ -42,6 +44,7 @@ each upstream source or binary package; those remain authoritative for redistrib
 | [Ceres Solver](https://github.com/ceres-solver/ceres-solver) | planned, version/config TBD | [BSD-3-Clause] | Registration refinement plugin |
 | [Eigen](https://gitlab.com/libeigen/eigen) | planned, version TBD; approved exception | [MPL-2.0] | Ceres linear algebra, with `EIGEN_MPL2_ONLY` |
 | [Abseil](https://github.com/abseil/abseil-cpp) | planned, version TBD | [Apache-2.0] | Ceres dependency |
+| [FFmpeg](https://github.com/FFmpeg/FFmpeg) | planned, version/configure string TBD; approved exception | [LGPL-2.1-or-later] | Video codec plugin, LGPL configuration only (no `--enable-gpl`/`--enable-nonfree`, no x264/x265) |
 
 Platform SDKs, GPU drivers, and operating-system utilities invoked by a dependency are not
 redistributed by this repository and are not included in the table. Any newly enabled optional
@@ -51,6 +54,7 @@ module or transitive library updates this inventory in the same change that intr
 [BSD-3-Clause]: https://spdx.org/licenses/BSD-3-Clause.html
 [BSL-1.0]: https://spdx.org/licenses/BSL-1.0.html
 [libpng-2.0]: https://spdx.org/licenses/libpng-2.0.html
+[LGPL-2.1-or-later]: https://spdx.org/licenses/LGPL-2.1-or-later.html
 [libtiff]: https://spdx.org/licenses/libtiff.html
 [LLVM-exception]: https://spdx.org/licenses/LLVM-exception.html
 [MIT]: https://spdx.org/licenses/MIT.html
