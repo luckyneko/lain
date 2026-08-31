@@ -2542,9 +2542,7 @@ decoder stays warm and sequential — provided the sweep **retains one `Evaluati
      by **availability**, never by a hardcoded name.
 1. **`lain::media` + the image-sequence source.** `FrameSequence`, `FrameSource`, `FrameRef`,
    `FrameSpec`, the frame table, clip/concat/select, homogeneity validation, the fixed ring cache,
-   `io::image::openSequence`. **No new third-party dependency.** Driver-free tests. Correct
-   CONTEXT.md's *frame source* entry as this lands: an image-sequence source holds **no** `Stream`,
-   it reads each still through `io::read`; holding one is the video source's business.
+   `io::image::openSequence`. **No new third-party dependency.** Driver-free tests.
 2. **`flow` integration.** `registerPortType<FrameSequence>`, the `FramePosition` type
    (`Default{0}`, so a sequence graph renders something the moment it is opened), `FrameAtNode` /
    `ClipSequenceNode`, `describe()`, `ValueCodecs`, `BoundaryBinders`,
@@ -2632,6 +2630,55 @@ with it on (473 + 3), warning-clean, format-check clean; the default build is un
 - **No aggregator in `plugins/io/video` yet.** The image side generates one because it has three
   codecs to wire into a registry; video has one plugin and, until slice 5, no registry to wire it
   into. It arrives with the reader that needs it, rather than as an empty mechanism.
+
+**Slice 1 is built (2026-08-31).** `lain::media` (`FrameRate`, `FrameSpec`, `FrameRef`,
+`FrameSource`, `FrameSequence`, the five list operations) plus `io::image::openSequence` — a folder
+or a `####` pattern of stills opened as a real sequence. No new third-party dependency; the media
+tests use a synthetic source and the opener tests a fake reader over real temp files, both following
+the idiom `test_load.cpp` already set. `ctest` **506/506** (+30), warning-clean, format-check clean.
+
+- **`log::ensure` is the wrong tool for every refusal in this library, and that is worth carrying
+  forward.** It is a PRECONDITION helper: it logs *and asserts*, so a violation aborts in a debug
+  build. But nothing media refuses is a broken invariant — a graph binds a frame position past the
+  end, a folder holds one stray odd-sized still, two real files disagree about their spec. ADR-0018
+  fixes the answer as "an invalid Image", and a debug abort is not that. Every refusal here is a
+  logged return instead. `lain::image` uses `ensure` correctly for op-class enforcement, which
+  genuinely *is* a programming error; the two look alike and are not.
+- **The rate is the one axis of a spec that tolerates absence.** Geometry and both colour tags must
+  agree exactly, but an unspecified rate adopts the other side's — which is precisely what makes
+  ADR-0018's promise that a sequence can span "a video file and a folder of stills" true rather
+  than a refusal, since stills genuinely declare no rate. Two *different* declared rates are still
+  refused: reconciling them is a retime, and no composition should decide that silently.
+- **No public `FrameTable` type.** CONTEXT.md describes the table as a per-source record of offset,
+  timestamp and keyframe flag — but two of those three are video-shaped and mean nothing for a
+  folder of stills, and inventing the type before its only real implementation exists would fix its
+  field set from the wrong end. The *interface* is what the table exists to provide: `frameCount()`
+  and `frame(ordinal)`. Slice 5 builds a real one privately behind them.
+- **`clip` clamps; `concat` and `select` can fail — and the asymmetry has a reason.** clip, reverse
+  and stride only ever drop or reorder entries that were already admitted, so they cannot introduce
+  a spec mismatch and are total. The other two can: one adds sources, the other names positions.
+  Every verb still routes through one `FrameSequence::of`, so admission — the range check and the
+  unification — happens in exactly one place rather than once per verb.
+- **`lain::io::canonicalUri` is the one canonicalisation in the tree — and collapsing the second
+  one into it was the first thing review caught.** A `FrameRef` names its source by uri and nothing
+  else, so two spellings of one path must produce one string or two references to one frame stop
+  comparing equal. `graphio::templateKey` was already applying that rule with its own copy of
+  `weakly_canonical`, so this slice both introduced `canonicalUri` **and** rewrote `templateKey` as
+  a call to it: the concept keeps its name and its four call sites, the rule has one implementation.
+  Letting the image and video openers each grow a third version is the exact shape this repo keeps
+  catching — a key computed two ways eventually disagrees with itself, and the failure is silent (an
+  invalidation that misses simply keeps serving the definition it was told to drop). `canonicalUri`
+  has its own tests now rather than only indirect cover through the sequence opener.
+- **A decode failure is deliberately not cached**, so one transient error is not remembered for the
+  life of the source; re-reading is cheap next to being permanently wrong. And the ring is a ring
+  rather than an LRU: for the sequential reader this whole design is built around, every eviction
+  policy agrees, so an LRU would cost a data structure to serve a difference nothing can observe.
+- **Found by a failing test: `core::Time` quantises to nanoseconds**, so a frame timestamp at
+  1/24 s lands within a nanosecond of exact rather than on it. Harmless, and the reason the RATE is
+  rational — the exact value lives there, and a timestamp derived from it is a convenience.
+- CONTEXT.md's *frame source* entry is corrected: the ring cache and its lock are in the shared
+  base, but what a source holds **open** is per medium — an image-sequence source holds nothing but
+  paths, since a still is read whole by `io::read`.
 
 ### Not in this milestone
 

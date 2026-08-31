@@ -5,6 +5,7 @@
 add_executable(test-io-image
 	test_load.cpp
 	test_save.cpp
+	test_sequence.cpp
 )
 
 target_compile_features(test-io-image PRIVATE cxx_std_17)

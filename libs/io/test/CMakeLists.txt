@@ -4,6 +4,7 @@
 add_executable(test-io
 	test_read.cpp
 	test_write.cpp
+	test_uri.cpp
 )
 
 target_compile_features(test-io PRIVATE cxx_std_17)

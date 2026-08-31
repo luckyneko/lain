@@ -649,8 +649,8 @@ prerequisite note already pointed here. **Nothing is built.**
 **tier-verified LGPL shared** FFmpeg archives for `macos-arm64` / `linux-x86_64` / `linux-arm64` /
 `windows-x86_64`, each with a `MANIFEST.txt` stating tier, full configure string and
 corresponding-source url. That changes three things in M10's plan and nothing in its model. Build
-order in WORK.md; amendments in ADR-0019, ADR-0018 and ADR-0004. **Slice 0 is built
-(2026-08-31); slices 1–7 are not.**
+order in WORK.md; amendments in ADR-0019, ADR-0018 and ADR-0004. **Slices 0 and 1 are built
+(2026-08-31); slices 2–7 are not.**
 
 - **Fetched, not found — so ADR-0019's ordering risk is retired.** The objection was to building
   *autotools*, not to fetching; a release **archive** fits the `cmake/addXXX.cmake` FetchContent
@@ -690,6 +690,22 @@ order in WORK.md; amendments in ADR-0019, ADR-0018 and ADR-0004. **Slice 0 is bu
   later"`, which *contains* `"GPL version"`, so only a **prefix** test separates the five strings it
   can return. Known limitation, recorded in WORK.md: the notice is build-level, so `flowview
   --licenses` names FFmpeg before flowview links it (true from slice 5).
+- **Slice 1 built 2026-08-31 — `lain::media` + `io::image::openSequence`.** The frame-sequence
+  model (`FrameRate`, `FrameSpec`, `FrameRef`, `FrameSource`, `FrameSequence`, and clip / concat /
+  reverse / stride / select), plus a folder or `####` pattern of stills opened as a real sequence.
+  No new third-party dependency. `ctest` **506/506** (+30). Three things worth carrying forward:
+  **`log::ensure` is a PRECONDITION helper that debug-aborts**, so it is wrong for every refusal in
+  media — a graph binding a position past the end, a folder holding one stray odd-sized still — all
+  of which are data, not broken invariants, and all of which ADR-0018 answers with an invalid Image;
+  `lain::image` uses `ensure` correctly for op-class enforcement, and the two look alike.
+  **The rate is the one spec axis that tolerates absence** (geometry and colour tags must match
+  exactly; an unspecified rate adopts the other side's), which is what makes ADR-0018's "a video
+  file and a folder of stills" true rather than a refusal. And **`lain::io::canonicalUri` was
+  hoisted out ahead of its second caller**, because a FrameRef names its source by uri alone, so
+  two spellings must give one string — the `graphio::templateKey` rule, kept to one function before
+  the image and video openers could each grow their own. No public `FrameTable` type yet: offset
+  and keyframe are video-shaped, so slice 5 builds one privately behind `frameCount()` /
+  `frame(ordinal)`.
 - **Verified against the published artifacts, not assumed.** Delivery encoding is genuinely
   platform-conditional (macOS videotoolbox; Windows Media Foundation + NVENC; Linux VAAPI /
   V4L2-M2M / NVENC), while **decoding is uniform** — so slice 6 selects an encoder by availability,

@@ -898,10 +898,13 @@ medium.
   in-memory frame array, forward-only decoder, a per-verb source wrapper.
 
 - **Frame source** — one bounded thing frames come from: a video file, an image-sequence pattern.
-  Identified by its **canonical uri**, holds the open `Stream` and the ring cache, and is what a
-  handle pool would pool. Several in one sequence is the normal case — that is `CONTEXT.md`'s
-  **media segment** / **camera-sequence definition** realised, and it is why one timeline can span
-  several video files, or a video file and a folder of stills.
+  Identified by its **canonical uri**, and the only class that decodes. Several in one sequence is
+  the normal case — that is `CONTEXT.md`'s **media segment** / **camera-sequence definition**
+  realised, and it is why one timeline can span several video files, or a video file and a folder
+  of stills. Every source holds the ring cache and the lock around it, in the shared base; what a
+  source holds *open* is per medium — a video source holds a `Stream` and is what a handle pool
+  would pool, while an image-sequence source holds nothing but a list of paths, since a still is
+  read whole by `io::read` and only a container that must be seeked into needs anything kept open.
 
 - **Frame table** — the per-source record built **at open**: one entry per frame with its offset,
   presentation timestamp and keyframe flag, read from the container's index when it has one and

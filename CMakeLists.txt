@@ -76,6 +76,7 @@ add_subdirectory(libs/string)           # fmt-backed format() + lain-type format
 add_subdirectory(libs/meta)             # enum reflection (magic_enum) — lain::meta
 add_subdirectory(libs/math)             # typed GLM wrapper
 add_subdirectory(libs/image)            # CPU raster + pixel formats (lain::image)
+add_subdirectory(libs/media)            # frame sequences: finite lazy footage (WORK.md M10)
 add_subdirectory(libs/io)               # transport seam: read(uri) -> Buffer (WORK.md M3)
 add_subdirectory(libs/data)             # serialization DOM (Value) + reflection (WORK.md Tier A #1)
 add_subdirectory(libs/task)

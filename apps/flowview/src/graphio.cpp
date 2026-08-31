@@ -9,6 +9,7 @@
 #include <lain/io/data/codecs.h> // registerDataCodecs
 #include <lain/io/data/load.h>
 #include <lain/io/data/save.h>
+#include <lain/io/uri.h>
 
 #include <filesystem>
 
@@ -69,11 +70,13 @@ namespace flowview
 
 	std::string templateKey(const std::filesystem::path& path)
 	{
-		// weakly_canonical, not canonical: the file need not exist (a link to a template that is not
-		// there yet still has a stable key, which is what lets it heal when the file appears).
-		std::error_code ec;
-		const std::filesystem::path canonical = std::filesystem::weakly_canonical(path, ec);
-		return (ec ? path : canonical).string();
+		// ONE canonicalisation in the tree. io::canonicalUri owns the rule (weakly_canonical, so a
+		// template that does not exist yet still has a stable key, which is what lets a broken link
+		// heal when the file appears); this names the CONCEPT — a template's cache key — and is what
+		// the four call sites read. A key computed two ways eventually disagrees with itself, and
+		// the failure is silent: an invalidation that misses simply keeps serving the definition it
+		// was told to drop.
+		return lain::io::canonicalUri(path.string());
 	}
 
 	flow::serialize::TemplateResolver templateResolver(const std::filesystem::path& documentDir)
