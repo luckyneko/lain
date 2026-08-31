@@ -2527,11 +2527,14 @@ decoder stays warm and sequential — provided the sweep **retains one `Evaluati
      for anything staged, and an explicit DLL copy on Windows, which has no rpath.
    - **The LGPL obligations are discharged here, not deferred.** The module copies the archive's
      `COPYING.LGPLv2.1` / `LICENSE.md` / `CREDITS` / `MANIFEST.txt` into the build tree beside the
-     binaries; a `THIRD-PARTY.md` records version, tier, configure string and corresponding-source
-     url, **checked against the fetched manifest at configure time** so it cannot silently go stale;
-     and `lain::app` grows `--licenses` beside the `--version` it already owns. Notices,
+     binaries, and `lain::app` grows `--licenses` beside the `--version` it already owns. Notices,
      corresponding source, relinking and prominent notice — all four, at the point the dependency
-     enters rather than at some future packaging story.
+     enters rather than at some future packaging story. The notice text is **generated from the
+     fetched manifest**, not transcribed into a checked-in file: a transcription is a second copy of
+     facts that already exist, and its failure mode is silent — it goes on naming the old version
+     after a bump, which is worse than useless for a licence claim. The README's table stays the
+     human-facing inventory (ADR-0015); a second one would be the *two paths doing one job* shape
+     this repo keeps catching.
    - **The platform encoder reality, for slice 6 to consume.** Decoding is uniform (`h264`, `hevc`,
      `vp8`, `vp9`, `av1`, `prores`, `dnxhd`, `ffv1`, `mjpeg`) and so is archival encoding
      (`prores`, `ffv1`, `mjpeg`). **Delivery** encoding is per-platform — videotoolbox on macOS,
@@ -2596,6 +2599,39 @@ Slices 1–2 remain a complete, useful, dependency-free vertical: if the FFmpeg 
 messy, that still ships a bounded-memory sibling to `ListDir → map(LoadImage)`. Slice 0 is
 independent of both and can land in either order — it is sequenced first only because it is now the
 cheapest way to retire the last unknown in the back half.
+
+**Slice 0 is built (2026-08-31).** `cmake/addFFmpeg.cmake` fetches the hash-pinned archive for the
+host platform and defines imported SHARED `FFmpeg::avutil / avcodec / avformat / swscale /
+swresample`; `plugins/io/video/ffmpeg` is the plugin the reader lands in, carrying for now only the
+licence probe and its `[video]` test. `LAIN_IO_VIDEO_FFMPEG` defaults **OFF**. `ctest` **476/476**
+with it on (473 + 3), warning-clean, format-check clean; the default build is unchanged.
+
+- **The gate is sabotage-verified, all three refusals.** A manifest carrying `--enable-gpl`, one
+  carrying `--enable-nonfree`, and one declaring a tier other than `lgpl` each fail configure with
+  the reason named. A root with **no** manifest — a system FFmpeg — warns loudly instead of passing
+  quietly, because establishing its tier would mean executing it, which cross-compiling forbids;
+  the `[video]` test is then the only gate and says so.
+- **The runtime test caught a trap in itself, which is why it is worth having.** `avutil_license()`
+  returns one of five fixed strings, and the obvious `find("GPL version") == npos` check FAILS on a
+  perfectly good library: `"LGPL version 2.1 or later"` contains `"GPL version"` one character in.
+  A **prefix** test is the only form that separates the five. Anyone would write the substring
+  version; it now carries the reason it is wrong.
+- **No manual rpath was needed on macOS/Linux, and that is proven rather than assumed.** CMake
+  derives a consumer's build-tree RPATH from the directories of the shared libraries it links, so
+  the imported targets are enough. The proof is that the `[video]` test *runs at all* — an
+  executable that cannot resolve `@rpath/libavutil.60.dylib` does not launch. Windows has no rpath
+  equivalent, so `lain_ffmpeg_stage_runtime(target)` copies every DLL in the archive (the `av*` set
+  **and** the MinGW runtime closure shipped beside them) next to the executable; it is a no-op
+  elsewhere, so a caller writes it unconditionally.
+- **Known limitation, recorded rather than left to be found: the notice is build-level, not
+  per-binary.** With the plugin enabled, `flowview --licenses` prints the FFmpeg notice although
+  flowview does not yet link FFmpeg — that becomes true at slice 5, when the reader is wired in. A
+  per-target notice would need every target to declare its own, which `lain::app` cannot know for
+  its consumers; revisit only if lain ever ships a binary that deliberately excludes an enabled
+  dependency.
+- **No aggregator in `plugins/io/video` yet.** The image side generates one because it has three
+  codecs to wire into a registry; video has one plugin and, until slice 5, no registry to wire it
+  into. It arrives with the reader that needs it, rather than as an empty mechanism.
 
 ### Not in this milestone
 

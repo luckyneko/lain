@@ -5,9 +5,16 @@
 # CLI11 (re-exposed as lain::app::cli) are public; GLFW is private (no glfw symbol
 # leaks past lain::app).
 
+# The third-party notice text --licenses prints, assembled from whatever dependencies this
+# build actually contains. Generated here rather than checked in, so it cannot go stale
+# about a version or claim a dependency that was not built (cmake/lainNotices.cmake).
+include(lainNotices)
+lain_generate_notices(LAIN_NOTICES_SOURCE)
+
 add_library(app STATIC
 	src/application.cpp
 	src/window.cpp
+	"${LAIN_NOTICES_SOURCE}"
 )
 add_library(lain::app ALIAS app)
 

@@ -16,6 +16,15 @@ package satisfies the target. Versions marked **planned** are approved for the c
 not part of the build yet. This inventory does not replace the license and notice files shipped by
 each upstream source or binary package; those remain authoritative for redistribution.
 
+FFmpeg is **opt-in** (`-DLAIN_IO_VIDEO_FFMPEG=ON`, off by default) and is the one dependency lain
+links **dynamically** — LGPL's relinking requirement is satisfied by dynamic linking alone, whereas a
+static build would additionally owe consumers relinkable object files. `cmake/addFFmpeg.cmake`
+**fails configure** if the archive it fetched reports `--enable-gpl` or `--enable-nonfree`, since
+such a build relicenses the combined work whether or not a GPL codec is ever called; a `[video]`
+runtime test asks the linked library the same questions independently. A build with it enabled
+stages FFmpeg's licence texts and build manifest into `third-party/ffmpeg/`, and any `lain::app`
+binary prints the required notice with `--licenses`.
+
 | Dependency | Version/status | License | Scope |
 | --- | --- | --- | --- |
 | [Taskflow](https://github.com/taskflow/taskflow) | 3.7.0, current | [MIT] | `lain::task` executor |
@@ -44,7 +53,7 @@ each upstream source or binary package; those remain authoritative for redistrib
 | [Ceres Solver](https://github.com/ceres-solver/ceres-solver) | planned, version/config TBD | [BSD-3-Clause] | Registration refinement plugin |
 | [Eigen](https://gitlab.com/libeigen/eigen) | planned, version TBD; approved exception | [MPL-2.0] | Ceres linear algebra, with `EIGEN_MPL2_ONLY` |
 | [Abseil](https://github.com/abseil/abseil-cpp) | planned, version TBD | [Apache-2.0] | Ceres dependency |
-| [FFmpeg](https://github.com/FFmpeg/FFmpeg) | planned, version/configure string TBD; approved exception | [LGPL-2.1-or-later] | Video codec plugin, LGPL configuration only (no `--enable-gpl`/`--enable-nonfree`, no x264/x265) |
+| [FFmpeg](https://github.com/FFmpeg/FFmpeg) | 8.1.2, `lgpl` tier, **shared**, opt-in; approved exception | [LGPL-2.1-or-later] | Video codec plugin, LGPL configuration only (no `--enable-gpl`/`--enable-nonfree`, no x264/x265); [prebuilt](https://github.com/luckyneko/ffmpeg-prebuilt), hash-pinned, tier verified at configure time |
 
 Platform SDKs, GPU drivers, and operating-system utilities invoked by a dependency are not
 redistributed by this repository and are not included in the table. Any newly enabled optional

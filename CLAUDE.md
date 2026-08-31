@@ -649,7 +649,8 @@ prerequisite note already pointed here. **Nothing is built.**
 **tier-verified LGPL shared** FFmpeg archives for `macos-arm64` / `linux-x86_64` / `linux-arm64` /
 `windows-x86_64`, each with a `MANIFEST.txt` stating tier, full configure string and
 corresponding-source url. That changes three things in M10's plan and nothing in its model. Build
-order in WORK.md; amendments in ADR-0019, ADR-0018 and ADR-0004. **Still nothing built.**
+order in WORK.md; amendments in ADR-0019, ADR-0018 and ADR-0004. **Slice 0 is built
+(2026-08-31); slices 1–7 are not.**
 
 - **Fetched, not found — so ADR-0019's ordering risk is retired.** The objection was to building
   *autotools*, not to fetching; a release **archive** fits the `cmake/addXXX.cmake` FetchContent
@@ -677,6 +678,18 @@ order in WORK.md; amendments in ADR-0019, ADR-0018 and ADR-0004. **Still nothing
   BT.1886 2.4 EOTF, and no OOTF. And since real footage very often carries **no colour tags at all**,
   the BT.601/2020/HDR refusal applies to **explicitly tagged** material only; unspecified is treated
   as BT709 with a log line, rather than guessed as BT.601 by frame size and rejected.
+- **Slice 0 built 2026-08-31.** `cmake/addFFmpeg.cmake` (hash-pinned fetch + imported SHARED
+  targets), `plugins/io/video/ffmpeg` (the licence probe today, the reader at slice 5), the
+  generated `--licenses` notice, staged licence texts, README row. `LAIN_IO_VIDEO_FFMPEG` defaults
+  **OFF**; `ctest` **476/476** with it on. The configure gate is **sabotage-verified** on all three
+  refusals, and a manifest-less root warns rather than passing quietly. Two things worth carrying
+  forward: **CMake derives the build rpath from linked imported shared libraries**, so macOS/Linux
+  needed no manual rpath — proven by the test running at all, since an executable that cannot
+  resolve `@rpath/libavutil` does not launch (Windows still needs an explicit DLL copy); and the
+  licence test **caught a trap in itself** — `avutil_license()` returns `"LGPL version 2.1 or
+  later"`, which *contains* `"GPL version"`, so only a **prefix** test separates the five strings it
+  can return. Known limitation, recorded in WORK.md: the notice is build-level, so `flowview
+  --licenses` names FFmpeg before flowview links it (true from slice 5).
 - **Verified against the published artifacts, not assumed.** Delivery encoding is genuinely
   platform-conditional (macOS videotoolbox; Windows Media Foundation + NVENC; Linux VAAPI /
   V4L2-M2M / NVENC), while **decoding is uniform** — so slice 6 selects an encoder by availability,

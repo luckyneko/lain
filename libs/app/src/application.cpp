@@ -4,6 +4,7 @@
 #include "lain/app/applicationdelegate.h"
 #include "lain/app/cli.h"
 #include "lain/app/inputstate.h"
+#include "lain/app/notices.h"
 #include "lain/app/timestate.h"
 #include "lain/app/window.h"
 #include "lain/app/windowdelegate.h"
@@ -18,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <iostream>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -193,14 +195,16 @@ namespace lain::app
 		impl& s = *m;
 
 		// onInit: name the CLI after the app, wire up the framework flags (--version,
-		// -v/--verbose), let the delegate register its own options (CLI11's API), then
-		// parse argv. -v/--verbose and --version are reserved by the framework; a
-		// delegate that re-registers one makes CLI11 throw on construction — caught
-		// here and reported, rather than escaping run() as an uncaught terminate.
+		// --licenses, -v/--verbose), let the delegate register its own options (CLI11's
+		// API), then parse argv. All three are reserved by the framework; a delegate that
+		// re-registers one makes CLI11 throw on construction — caught here and reported,
+		// rather than escaping run() as an uncaught terminate.
 		cli::App cliApp{s.info.name, s.info.name};
+		bool showLicenses = false;
 		try
 		{
 			cliApp.set_version_flag("--version", s.info.name + " " + s.info.version.toString());
+			cliApp.add_flag("--licenses", showLicenses, "print third-party licence notices and exit");
 			cliApp.add_flag("-v,--verbose", s.verbosity, "increase log verbosity (-v: debug, -vv: trace)");
 			if (!s.delegate.onInit(*this, cliApp))
 				return 1;
@@ -219,6 +223,20 @@ namespace lain::app
 		{
 			// Also the --help / --version exit path: exit() prints them and returns 0.
 			return cliApp.exit(e);
+		}
+
+		// --licenses is an exit path like --version, and it goes to STDOUT rather than the
+		// log: it is the program's answer, not a diagnostic, so it must survive a redirect
+		// and must not be filtered by a log level. A binary with no obliging dependency
+		// still answers, rather than printing nothing and looking broken.
+		if (showLicenses)
+		{
+			const std::string_view notices = thirdPartyNotices();
+			if (notices.empty())
+				std::cout << s.info.name << " has no third-party licence notices to report.\n";
+			else
+				std::cout << notices << std::flush;
+			return 0;
 		}
 
 		// Raise the log level from -v before anything logs (-v: debug, -vv+: trace).
