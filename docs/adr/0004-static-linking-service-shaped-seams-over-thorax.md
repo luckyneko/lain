@@ -27,6 +27,19 @@ of going multi-DSO, not a pre-existing pain that adopting `thorax` relieves.
 
 - **Static linking; one binary.** No DSO boundary, so `spdlog`'s logger, Taskflow's executor,
   and every `Factory` are single instances with no fragmentation to reconcile.
+
+  **Amended 2026-08-31 (M10).** FFmpeg is the first and so far only exception, and the reason is
+  **licensing, not convenience**: LGPL-2.1's relinking requirement is satisfied by dynamic linking
+  on its own, while a static build additionally owes consumers relinkable object files — which is
+  why [ADR-0019](0019-ffmpeg-lgpl-for-video-codec-support.md)'s prebuilt artifacts are published
+  shared-only. This ADR's actual concern is untouched: the fragmentation it guards against is
+  lain's own global state crossing a DSO boundary, and no lain type, logger, executor or `Factory`
+  crosses this one — no FFmpeg type crosses a lain-owned interface either, so the boundary carries
+  nothing but C. The costs are ordinary and local to `addFFmpeg.cmake`: a build-tree rpath so tests
+  can load the libraries, `@executable_path/../lib` / `$ORIGIN/../lib` for anything staged, and an
+  explicit DLL copy on Windows, which has no rpath. Everything else still links statically, and
+  "one binary plus the libraries one dependency is legally obliged to ship separately" is not a
+  step toward `thorax`.
 - **Service-shaped seams are the convention.** Anything that would otherwise be a floating
   global is exposed as free functions over a hidden singleton (as `lain::log` already is):
   `memory::alloc`/`dealloc` fronting the allocator, `io::read` fronting scheme dispatch, and a

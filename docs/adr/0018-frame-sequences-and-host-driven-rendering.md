@@ -116,7 +116,9 @@ rather than `FrameIdx` because nothing in this codebase abbreviates (`PortId`, `
 entry records that the retired `PortIndex` alias *"existed only to be stored, which is the mistake
 the declaration-id contract exists to prevent"*.
 
-**The loop retains one `Evaluation` across the whole range.** `OpenVideo` is upstream of nothing that
+**The loop retains one `Evaluation` across the whole range.** The node that opened the sequence
+(`openSequence` — one medium-neutral node over an opener registry, settled 2026-08-31; see
+[ADR-0019](0019-ffmpeg-lgpl-for-video-codec-support.md)) is upstream of nothing that
 changed between iterations, so it does not recompute and its sequence value persists — open handle,
 ring cache and decoder position intact, which makes sequential access the decoder's best case. A
 fresh Evaluation per frame would reopen and cold-seek every iteration.
@@ -191,6 +193,23 @@ existing values force a choice between a silent lie and making video frames unpr
 op-class enforcement requires `Linear` for any cross-pixel operation. BT.601, BT.2020 and HDR
 transfers are **reported and refused** rather than relabelled: they need different primaries or a
 real HDR story, and mislabelled footage is a wrong answer in a calibration report.
+
+**Settled 2026-08-31, two open details.** *Which* BT.709 curve, first: the name covers both the
+**Rec.709 OETF** (the camera-side encoding in the spec — a linear slope near black, then a 0.45
+power) and the **BT.1886 EOTF** (the display-side pure 2.4 gamma standardised later, because Rec.709
+never specified the display end). They differ by the ~1.2 system gamma, so the choice is visible:
+pick wrong and video sits noticeably lighter or darker than sRGB stills in the same graph.
+`convert(img, Linear)` applies the **inverse Rec.709 OETF** — it is the curve the encoder actually
+applied, it is what "Rec709 to linear" means in Nuke and OCIO's basic configs, and it inverts
+exactly, so decode → Linear → BT709 → encode round-trips. lain applies **no OOTF** and does no
+display rendering; BT.1886 viewing sits on the same shelf as HDR.
+
+Second, and found by probing real files rather than reasoning: encoded footage very often carries
+**no colour tags at all** (`color_space=unknown`, `color_transfer=unknown`). FFmpeg's convention is
+to guess BT.601 for SD frame sizes, which under the refusal rule above would reject perfectly
+ordinary material for a tag it never carried. So the refusal applies to **explicitly tagged**
+BT.601 / BT.2020 / PQ / HLG only; unspecified is treated as BT709 with a log line. That is a guess
+either way, and this one is right for everything modern while the alternative is loud and wrong.
 
 Per-element incrementality, keyed elements, a linked map over N streams, realtime playback of
 processed output, and the capture manifest and capture dataset remain outside this decision.

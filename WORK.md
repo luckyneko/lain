@@ -2501,29 +2501,101 @@ decoder stays warm and sequential — provided the sweep **retains one `Evaluati
 
 ### Build order
 
+> **Revised 2026-08-31 — FFmpeg is now fetched, not found.**
+> [`luckyneko/ffmpeg-prebuilt`](https://github.com/luckyneko/ffmpeg-prebuilt) publishes
+> **tier-verified LGPL** FFmpeg archives (shared, `macos-arm64` / `linux-x86_64` / `linux-arm64` /
+> `windows-x86_64`), each carrying a `MANIFEST.txt` that states its tier, full configure string and
+> corresponding-source url. A release archive **does** fit the `cmake/addXXX.cmake` FetchContent
+> idiom — the reason ADR-0019 chose *located* was that autotools does not — so the dependency risk
+> that milestone was ordered around is retired, and **slice 0 is new and lands first**. Slices 1–7
+> are unchanged in substance. Amended in place: ADR-0019 (fetched-not-found, the manifest gate, the
+> opener registry) and ADR-0004 (lain's first shared-linked dependency).
+
+0. **FFmpeg lands, with nothing depending on it yet.** `cmake/addFFmpeg.cmake` fetches the pinned
+   archive for the host platform (`URL` + `URL_HASH` from the release's `SHA256SUMS`, cached under
+   `.cache/fetch/` like every other module) and defines imported **SHARED**
+   `FFmpeg::avformat / avcodec / avutil / swscale`. `LAIN_IO_VIDEO` defaults **OFF**; an
+   all-disabled configure resolves nothing.
+   - **The tier gate parses `MANIFEST.txt`.** ADR-0019 specified a runtime `avutil_configuration()`
+     check; the manifest states the same facts as text, so the gate becomes a configure-time parse
+     that executes nothing and therefore survives cross-compiling, which a `try_run` never could.
+     The compiled probe stays as lain's permanent `[video]` **runtime** test — belt and braces, and
+     the only cover for a system FFmpeg someone points `LAIN_FFMPEG_ROOT` at.
+   - **lain's first shared-linked dependency** (ADR-0004 amendment). LGPL's relinking requirement is
+     satisfied by dynamic linking alone, which is why the archives are shared-only. Costs: a
+     build-tree rpath so `ctest` can load the libraries, `@executable_path/../lib` / `$ORIGIN/../lib`
+     for anything staged, and an explicit DLL copy on Windows, which has no rpath.
+   - **The LGPL obligations are discharged here, not deferred.** The module copies the archive's
+     `COPYING.LGPLv2.1` / `LICENSE.md` / `CREDITS` / `MANIFEST.txt` into the build tree beside the
+     binaries; a `THIRD-PARTY.md` records version, tier, configure string and corresponding-source
+     url, **checked against the fetched manifest at configure time** so it cannot silently go stale;
+     and `lain::app` grows `--licenses` beside the `--version` it already owns. Notices,
+     corresponding source, relinking and prominent notice — all four, at the point the dependency
+     enters rather than at some future packaging story.
+   - **The platform encoder reality, for slice 6 to consume.** Decoding is uniform (`h264`, `hevc`,
+     `vp8`, `vp9`, `av1`, `prores`, `dnxhd`, `ffv1`, `mjpeg`) and so is archival encoding
+     (`prores`, `ffv1`, `mjpeg`). **Delivery** encoding is per-platform — videotoolbox on macOS,
+     Media Foundation and NVENC on Windows, VAAPI / V4L2-M2M / NVENC on Linux — so slice 6 selects
+     by **availability**, never by a hardcoded name.
 1. **`lain::media` + the image-sequence source.** `FrameSequence`, `FrameSource`, `FrameRef`,
    `FrameSpec`, the frame table, clip/concat/select, homogeneity validation, the fixed ring cache,
-   `io::image::openSequence`. **No new third-party dependency.** Driver-free tests.
-2. **`flow` integration.** `registerPortType<FrameSequence>`, the `FramePosition` type,
-   `OpenSequenceNode` / `FrameAtNode` / `ClipSequenceNode`, `describe()`, `ValueCodecs`,
-   `BoundaryBinders`, `serialize(Archive&, FrameSequence&)` for the manifest, and the `run` sweep.
+   `io::image::openSequence`. **No new third-party dependency.** Driver-free tests. Correct
+   CONTEXT.md's *frame source* entry as this lands: an image-sequence source holds **no** `Stream`,
+   it reads each still through `io::read`; holding one is the video source's business.
+2. **`flow` integration.** `registerPortType<FrameSequence>`, the `FramePosition` type
+   (`Default{0}`, so a sequence graph renders something the moment it is opened), `FrameAtNode` /
+   `ClipSequenceNode`, `describe()`, `ValueCodecs`, `BoundaryBinders`,
+   `serialize(Archive&, FrameSequence&)` for the manifest, and the `run` sweep — the range, the
+   `####` numbered output, `--on-missing-frame stop|skip`, and one retained `Evaluation` across it.
    **End-to-end proof, still dependency-free:** a folder of stills swept to `out.####.png` in bounded
    memory — every decision in the milestone exercised before FFmpeg or `Stream` exist.
+   - **One `openSequence` node over an opener registry**, not a node kind per medium. This settles a
+     disagreement already in the docs (this build order said `OpenSequenceNode`; the shape diagram
+     and ADR-0018's prose said `OpenVideo`) in favour of the registry, and amends ADR-0019's
+     unknown-`kind` consequence. It mirrors `io::image::load`'s extension-keyed dispatch, it means a
+     document does not change node vocabulary when its footage goes from stills to mp4, and with
+     video disabled it reports *"no opener for .mp4"* instead of dropping the node **and its edges**
+     as an unknown kind. The registry lives in a small **`libs/io/media`** facade — `media` depends
+     on no `io`, so the dispatcher cannot live there; each medium seam registers into it and the app
+     calls `registerSequenceOpeners()` beside `registerImageCodecs()`.
 3. **`Stream` transport** in `lain::io`. Local scheme; handle-pool-ready interface (never hands out an
    OS handle, owns its uri and logical position, every operation may fail, acquisition separate from
-   construction).
-4. **`ColorSpace += BT709`** against `lain::image`, its own small commit — it touches an enforced enum.
-5. **`io::video` seam + FFmpeg read plugin.** Frame table at open, decode, YUV→RGB and range expansion,
-   BT709 tagging, refusal of BT.601/BT.2020/HDR. Found-not-fetched, opt-in, configure fails on a
-   GPL-configured FFmpeg. Now `--video src.mp4` works.
-6. **Video write.** `VideoWriter` seam, FFmpeg writer over platform encoders (never x264/x265),
-   `openWriter`/`write`/`finish`, the render loop's encoder, the `--on-missing-frame stop|skip` policy.
+   construction). The prebuilt FFmpeg is `--disable-network`, so libavformat **cannot** open
+   `http(s)://` at all — which makes this seam more load-bearing than ADR-0018 argued, not less: a
+   future `s3://` scheme reaches the decoder through lain's transport or not at all.
+4. **`ColorSpace += BT709`** against `lain::image`, its own small commit — it touches an enforced
+   enum, and it is more than an enumerator: `convert(src, ColorSpace)` is a pairwise dispatch needing
+   BT709↔Linear (sRGB↔BT709 composes through Linear), the transfer function in `colormath.h`, and
+   the op-class enforcement path. Two decisions, both recorded in ADR-0018: the curve is the
+   **inverse Rec.709 OETF**, and **untagged** footage is treated as BT709 with a log line rather than
+   guessed as BT.601 by frame size.
+5. **`io::video` seam + FFmpeg read plugin.** `libs/io/video` (the registry seam) +
+   `plugins/io/video/ffmpeg` + a generated `registerVideoCodecs()` aggregator, mirroring
+   `plugins/io/image`. A custom `AVIOContext` over slice 3's `Stream` — not `avformat_open_input(url)`
+   — so ADR-0004's transport/codec split holds and no `fstream` enters a codec plugin. Frame table
+   from the container index, else a decode-free demux scan of packet pts / position / keyframe flag.
+   Decode + `swscale` YUV→RGB8 with range expansion (`PixelFormat` has no planar or subsampled model,
+   so RGB8 is the right plugin boundary). BT709 tagging; **explicitly tagged** BT.601 / BT.2020 /
+   PQ / HLG reported and refused. Fixture: a tiny embedded byte array like `pngfixtures.h` — a
+   64×48 multi-GOP clip is ~9 KB, and generating one at test time would only work on macOS anyway,
+   since the other targets have no H.264 encoder. Now `--video src.mp4` works.
+6. **Video write.** `VideoWriter` handle seam (`openWriter` / `write` / `finish`, `finish()` explicit
+   and status-returning), the FFmpeg writer, the one-shot `save(uri, sequence)` facade, the render
+   loop's encoder, and the `--on-missing-frame stop|skip` policy. Encoder selection is by
+   availability against slice 0's table: a delivery codec where the platform provides one, archival
+   ProRes / FFV1 / MJPEG everywhere, and an honest refusal naming what is missing rather than a
+   silent fallback. **Never x264/x265** — they are not in the archive and enabling them would
+   relicense the combined work.
 7. **flowview.** The deferred **GUI view** registry lands here with two customers at once
    (`FrameSequence` → a player, `Image` → the currently-hardcoded thumbnail branch), plus the Preview
-   pane's transport. Last, because in this repo the gui is where the bugs are (M5's ten, M8's two).
+   pane's transport, the palette entries, and a `FramePosition` boundary editor in the Interface pane
+   — small, but without it a sequence graph cannot be driven in the gui at all. Last, because in this
+   repo the gui is where the bugs are (M5's ten, M8's two).
 
-Slices 1–2 are a complete, useful, dependency-free vertical: if the FFmpeg integration turns messy,
-that still ships a bounded-memory sibling to `ListDir → map(LoadImage)`.
+Slices 1–2 remain a complete, useful, dependency-free vertical: if the FFmpeg integration turns
+messy, that still ships a bounded-memory sibling to `ListDir → map(LoadImage)`. Slice 0 is
+independent of both and can land in either order — it is sequenced first only because it is now the
+cheapest way to retire the last unknown in the back half.
 
 ### Not in this milestone
 
@@ -2535,7 +2607,12 @@ that still ships a bounded-memory sibling to `ListDir → map(LoadImage)`.
   it until many-source timelines make it hurt.
 - **A decoder pool**, and with it parallel decode. One decoder behind a mutex; the contract was
   worded to permit the swap.
-- **BT.601 / BT.2020 / PQ / HLG**, U16 decode output, and audio.
+- **BT.601 / BT.2020 / PQ / HLG**, U16 decode output, and audio. **BT.1886 display rendering** too:
+  slice 4 converts with the Rec.709 OETF and applies no OOTF, which is a processing decision, not a
+  viewing one.
+- **Device capture.** The prebuilt FFmpeg is `--disable-avdevice`, so there is no camera or
+  microphone input. A live source is the streaming pipeline's problem (Tier B #4), and CONTEXT.md
+  already says a live capture becomes a frame sequence only once the host establishes its end.
 - **Realtime playback of processed output** — that is the streaming pipeline (Tier B #4). Playback
   here is best-effort: advance, rebind, re-run.
 - **A linked map over N streams**, per-element incrementality, and keyed elements — still ADR-0014's,

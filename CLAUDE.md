@@ -643,6 +643,47 @@ prerequisite note already pointed here. **Nothing is built.**
   every decision before FFmpeg or `Stream` exist. flowview is last, and lands the deferred **GUI view**
   registry with two customers (`FrameSequence` → player, `Image` → the hardcoded thumbnail branch).
 
+### Update 2026-08-31 — M10 build order revised: FFmpeg is fetched, and slice 0 is new
+
+[`luckyneko/ffmpeg-prebuilt`](https://github.com/luckyneko/ffmpeg-prebuilt) now publishes
+**tier-verified LGPL shared** FFmpeg archives for `macos-arm64` / `linux-x86_64` / `linux-arm64` /
+`windows-x86_64`, each with a `MANIFEST.txt` stating tier, full configure string and
+corresponding-source url. That changes three things in M10's plan and nothing in its model. Build
+order in WORK.md; amendments in ADR-0019, ADR-0018 and ADR-0004. **Still nothing built.**
+
+- **Fetched, not found — so ADR-0019's ordering risk is retired.** The objection was to building
+  *autotools*, not to fetching; a release **archive** fits the `cmake/addXXX.cmake` FetchContent
+  idiom exactly. The macOS gap that ADR flagged as "should be confirmed early" is why the prebuilt
+  repo exists, and is now closed. **New slice 0** lands `addFFmpeg.cmake` with nothing depending on
+  it yet: it is now the cheapest way to retire the last unknown in the back half.
+- **The tier gate parses `MANIFEST.txt` instead of a `try_run`** — it executes nothing, so it works
+  when cross-compiling, which is exactly when a consumer can least inspect what it linked. The
+  compiled probe survives as a permanent `[video]` **runtime** test, and as the only cover for a
+  system FFmpeg someone points `LAIN_FFMPEG_ROOT` at.
+- **lain's first shared-linked dependency** (ADR-0004 amended). LGPL relinking is satisfied by
+  dynamic linking alone; a static tier would additionally owe relinkable object files. Nothing of
+  lain's crosses the boundary, so the ADR's fragmentation concern is untouched — the costs are an
+  rpath, and a DLL copy on Windows. **The LGPL obligations are discharged in slice 0, not deferred
+  to a packaging story lain does not have:** notices staged beside the binaries, a `THIRD-PARTY.md`
+  checked against the fetched manifest at configure time so it cannot go stale, and `--licenses` on
+  `lain::app` beside the `--version` it already owns.
+- **One `openSequence` node over an opener registry**, settling a disagreement already in the docs
+  (WORK.md said `OpenSequenceNode`, ADR-0018's prose said `OpenVideo`). Disabling video must remove
+  a *capability*, not a graph's vocabulary: an unknown `kind` drops the node **and its edges**, so a
+  video document would come back structurally damaged on a build without the plugin. The registry
+  is a small `libs/io/media` facade, since `lain::media` depends on no `io`.
+- **Two colour details settled in ADR-0018.** `convert(img, Linear)` applies the **inverse Rec.709
+  OETF** (the curve the encoder applied; what "Rec709 to linear" means in Nuke/OCIO) — not the
+  BT.1886 2.4 EOTF, and no OOTF. And since real footage very often carries **no colour tags at all**,
+  the BT.601/2020/HDR refusal applies to **explicitly tagged** material only; unspecified is treated
+  as BT709 with a log line, rather than guessed as BT.601 by frame size and rejected.
+- **Verified against the published artifacts, not assumed.** Delivery encoding is genuinely
+  platform-conditional (macOS videotoolbox; Windows Media Foundation + NVENC; Linux VAAPI /
+  V4L2-M2M / NVENC), while **decoding is uniform** — so slice 6 selects an encoder by availability,
+  never by a hardcoded name. Also: the prebuilt is `--disable-network`, which makes the `Stream`
+  seam *more* load-bearing than ADR-0018 argued, since a future `s3://` reaches the decoder through
+  lain's transport or not at all.
+
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
 
 The last step of Milestone 6. `PinKey` — the key the preview cache, Inspector, Interface, Preview

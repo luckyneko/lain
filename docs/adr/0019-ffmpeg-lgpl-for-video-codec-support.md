@@ -1,7 +1,8 @@
 # FFmpeg (LGPL configuration) for video codec support
 
 Video decoding and encoding are provided by one optional FFmpeg-backed codec plugin behind the
-lain-owned `lain::io::video` seam. FFmpeg is **found, not fetched**, must be an **LGPL
+lain-owned `lain::io::video` seam. FFmpeg is **fetched from a pinned, tier-verified prebuilt
+archive** (amended 2026-08-31; originally *found, not fetched* — see below), must be an **LGPL
 configuration**, and no FFmpeg type crosses a lain-owned interface. Its LGPL-2.1 licence is the
 second approved, scoped exception to the permissive-by-default dependency policy of
 [ADR-0015](0015-permissive-by-default-production-dependencies.md).
@@ -12,6 +13,28 @@ LGPL-safe because the encoding happens in the operating system. Archival encodin
 native ProRes, FFV1 and MJPEG encoders. **libx264 and libx265 are never enabled**: they are GPL, and
 linking a build configured with them relicenses the whole distribution regardless of which encoder is
 called.
+
+**Amended 2026-08-31 — fetched, not found.**
+[`luckyneko/ffmpeg-prebuilt`](https://github.com/luckyneko/ffmpeg-prebuilt) now publishes
+tier-verified LGPL shared archives for `macos-arm64`, `linux-x86_64`, `linux-arm64` and
+`windows-x86_64`, each carrying upstream's licence texts, an `INVENTORY.txt` of every codec, and a
+`MANIFEST.txt` stating tier, full configure string and corresponding-source url. A release **archive**
+fits the `cmake/addXXX.cmake` FetchContent idiom perfectly — the objection below was to building
+*autotools*, not to fetching — so `addFFmpeg.cmake` fetches a pinned, hash-checked archive by
+default, and `LAIN_FFMPEG_ROOT` points at a system install for anyone who wants one. That path is
+subject to the same tier gate; nothing is trusted for being local. The macOS worry recorded at the
+end of this ADR is thereby retired.
+
+The **delivery encoders actually available** are narrower than the sentence above implies, and were
+established by reading the shipped inventories rather than assumed: every one of these backends is
+`[autodetect]` in FFmpeg's configure, so a hermetic `--disable-autodetect` build ships only what its
+configure line names. As of `ffmpeg-8.1.2-lgpl` that is `h264_videotoolbox` / `hevc_videotoolbox` on
+macOS, `h264_mf` / `hevc_mf` / `h264_nvenc` / `hevc_nvenc` on Windows, and `h264_vaapi` /
+`h264_v4l2m2m` / `h264_nvenc` / `hevc_nvenc` on Linux. NVENC compiles against NVIDIA's MIT-licensed
+headers and `dlopen()`s the driver at run time, so it links nothing restrictive and needs no
+`--enable-nonfree` — that requirement belongs to libnpp and the CUDA SDK filters. **Decoding is
+uniform** across every target, as is archival encoding, so only the delivery-write path is
+platform-conditional, and the writer selects by availability rather than by a hardcoded name.
 
 ## Why not the alternatives
 
@@ -42,12 +65,32 @@ configuration**, and records the exact string in the dependency inventory. This 
 of guard as `EIGEN_MPL2_ONLY`: a policy the build enforces rather than one a future contributor must
 remember.
 
+**Amended 2026-08-31 — the gate reads the manifest; the runtime check stays as a test.** A prebuilt
+archive states its tier, full configure string and corresponding source **as text**, so the
+configure-time gate parses `MANIFEST.txt` and executes nothing. That matters beyond convenience: a
+`try_run` against `avutil_configuration()` cannot run when cross-compiling, which is precisely when a
+consumer is least able to inspect what it linked. The compiled probe does not disappear — it becomes
+a permanent `[video]` **runtime** test asserting the linked library agrees, which is belt and braces
+for the fetched path and the only cover for a `LAIN_FFMPEG_ROOT` install. Two independent things must
+now be wrong at once for a GPL-configured FFmpeg to reach a build, which is the same rule the
+publishing repository applies to its own artifacts.
+
 ## Consequences
 
 The plugin is opt-in, and an all-disabled configure performs no dependency resolution — the rule
 already agreed for the OpenCV and Ceres camera plugins. When video is disabled the video node kinds
 are not registered, and a saved graph referencing one produces an unknown-`kind` `LoadIssue` through
 the existing best-effort load rather than failing opaquely.
+
+**Amended 2026-08-31 — there are no video node kinds; there is one `openSequence` node over an
+opener registry.** Disabling video should remove a *capability*, not a graph's vocabulary. An
+unknown `kind` drops the node **and every edge attached to it**, so a document authored with video
+would come back structurally damaged on a build without the plugin, and re-saving it would make that
+permanent. With one medium-neutral node the document loads intact and reports *"no opener for
+`.mp4`"* when run — which is both more informative and exactly how `io::image::load` already behaves
+for a format whose codec was not compiled in. The registry lives in a small `libs/io/media` facade
+(`lain::media` depends on no `io`, so the dispatcher cannot live there); each medium seam registers
+into it, and the app calls `registerSequenceOpeners()` beside `registerImageCodecs()`.
 
 Distribution preserves FFmpeg's notices, identifies how recipients obtain the corresponding source,
 permits relinking (satisfied by dynamic linking), and publishes any modifications to FFmpeg itself
@@ -58,6 +101,13 @@ and enabled components replace that planned status when the integration lands.
 FFmpeg is autotools and does not fit the `cmake/addXXX.cmake` FetchContent idiom, so it is located
 rather than built by the repository. macOS is the platform least served by ready LGPL artifacts and
 should be confirmed early, since it is the primary development target.
+
+**Superseded 2026-08-31 by the amendment above.** The premise was right and the conclusion no longer
+follows: nothing needs to *build* autotools to *fetch* an archive. The macOS gap this paragraph
+identified was real — it is why `ffmpeg-prebuilt` exists — and it is now closed for `arm64`. There
+is deliberately no `macos-x86_64` artifact: GitHub has retired the `macos-13` image and drops macOS
+Intel entirely in August 2027, so `addFFmpeg.cmake` fails there with a clear message rather than
+requesting a url that does not exist.
 
 Because the dependency is optional and lands after the medium-neutral sequence work, the first
 `FrameSequence` backend is an **image sequence** built on the existing image codecs. That vertical
