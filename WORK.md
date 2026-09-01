@@ -2563,6 +2563,11 @@ decoder stays warm and sequential — provided the sweep **retains one `Evaluati
    construction). The prebuilt FFmpeg is `--disable-network`, so libavformat **cannot** open
    `http(s)://` at all — which makes this seam more load-bearing than ADR-0018 argued, not less: a
    future `s3://` scheme reaches the decoder through lain's transport or not at all.
+   - **Both directions, and `read`/`write` ride them** (settled 2026-09-01, before building). The
+     write side was implicitly slice 6's, but slice 6's muxer needs an AVIO write callback for the
+     same ADR-0004 reason the reader needs a read one, and reimplementing `io::write` over it gives
+     it a production caller immediately — which also means one local backend per scheme rather than
+     two implementations of "get bytes from a uri" that can drift.
 4. **`ColorSpace += BT709`** against `lain::image`, its own small commit — it touches an enforced
    enum, and it is more than an enumerator: `convert(src, ColorSpace)` is a pairwise dispatch needing
    BT709↔Linear (sRGB↔BT709 composes through Linear), the transfer function in `colormath.h`, and
@@ -2787,6 +2792,107 @@ unchanged.
   argued about position that *"writing down something derivable lets the two disagree"*. The
   document now round-trips as data, which the hand-built writer could not support, and its wire
   shape is pinned by a test because a manifest is read by things outside this program.
+
+**Slice 3 is built (2026-09-01).** `lain::io::Stream` — the incremental, seekable transport — with
+`ReadStream` / `WriteStream` over one local backend, and `io::read` / `io::write` reimplemented as the
+whole-asset use of it. `ctest` **549/549** (+15), warning-clean, format-check clean; the slice-2 sweep
+was re-driven through the real binary and its four output frames are byte-identical to their four
+inputs, in order — every read landed on the right file and every write produced the right bytes
+through the rewritten transport.
+
+- **The backend hook is POSITIONAL, and that is the whole design.** `onRead(at, dst, n)` /
+  `onWrite(at, src, n)` are handed the absolute position rather than tracking one, because the BASE
+  owns the logical position. That makes refusal 2 — *transparently reopen and re-seek* — structural
+  rather than a rule each backend has to remember, which is what lets a pooled handle be evicted
+  between two reads with nothing above noticing. It also makes a seek free: it touches no backend at
+  all, so a released stream stays released through one. Sabotaging it (the backend trusting its own
+  physical position) fails the release-and-resume test **and** two seek tests.
+- **`read` / `write` ride the stream, so a scheme has ONE backend.** WORK.md's slice text called the
+  Stream a peer of `read`; it is a peer in the *interface* and the implementation underneath, which
+  deleted `readLocal` / `writeLocal` and gave the slice a production caller three slices before its
+  intended one. `test_read.cpp` / `test_write.cpp` and the whole image/data codec suite became its
+  regression proof, unmodified — every file lain reads or writes now goes through it.
+- **Both directions landed here rather than the write side waiting for slice 6** (settled with the
+  repo owner). The muxer's AVIO **write** callback needs a transport for exactly ADR-0004's reason the
+  reader's does, and `io::write` supplies the caller now, so the write side is not mechanism sitting
+  unused. What its consumer would have pinned is pinned here anyway: a muxer **seeks back to patch its
+  header**, so a WriteStream is seekable and is emphatically not an append-only sink.
+- **A write re-acquire must NOT truncate — the one silent data-loss failure in the slice.** The first
+  open creates/truncates (that is `createStream`'s contract, the same one `io::write` documents); every
+  re-acquire after a `release()` opens `in|out`, which both preserves what was written and is what lets
+  a positioned write land back over earlier bytes. Sabotage-verified: giving the re-acquire
+  `std::ios::trunc` silently loses everything before the release, and the test catches it.
+- **`finish()` is explicit and status-returning**, per ADR-0018 — *a failure in a destructor has
+  nowhere to go* — and idempotent in the base. Letting a write stream go unfinished still flushes and
+  closes it, so no bytes are lost; what is lost is the report, which is the honest division and is
+  pinned by its own test rather than left as a comment.
+- **Filling a read request is enforced at the seam, not promised by each backend.** `ReadStream::read`
+  loops `onRead`, so a transport that can only return what one packet gave it cannot push its
+  partiality onto every caller. EOF and failure stay distinct — a short count is the end, `nullopt` is
+  a broken transport — because a decoder that reads a lost handle as a clean end truncates the asset
+  and reports success.
+- **No `flush()` and no scheme registry.** `finish()` covers the only real need, and one member is not
+  a registry — the same judgement slice 0 made about a `plugins/io/video` aggregator and slice 2 about
+  the opener facade. `openStream` / `createStream` branch on `isLocalScheme` exactly as `read` / `write`
+  always have.
+- `uri()` is `io::canonicalUri` of what was asked for, because a stream that reopens by a *relative*
+  path is one `chdir` from silently touching a different file — and slice 5's `FrameRef` names its
+  source by that same canonical string.
+- **`io::localPath(uri)` is new, and it fixed a latent bug rather than only tidying two copies.**
+  Turning a uri into a path is a one-liner — strip the scheme, keep the rest — which is exactly why
+  it kept being written by hand, and the copies had already drifted: `io::image::openSequence` built
+  a `fs::path` out of the **whole** uri, so `s3://bucket/frames` became a RELATIVE directory named
+  `s3:` and the opener asked the working directory about it, reporting "neither a directory nor a
+  pattern" for a resource whose real problem was that it is not local. It now returns
+  `std::optional<std::filesystem::path>` — nullopt for a non-local scheme — so a caller that cannot
+  serve a remote resource has to *say* so. Both refusals are pinned by tests.
+  The scheme is now asked about in exactly one place: `openStream` / `createStream` treat "localPath
+  gave me nothing" AS the unsupported-scheme branch, rather than testing `isLocalScheme` separately
+  and converting afterwards.
+- **Deliberately NOT done here: a `Uri` type.** The pressure is real and recorded — see the note
+  below — but the change wanted is a core type reaching `FrameRef`, and it is better shaped against
+  slice 5's opener as a third consumer than against two.
+
+#### Queued: `core::Uri` — an identity, not a path algebra (raised 2026-09-01, build after slice 5)
+
+A uri is a bare `std::string` everywhere it matters — `io::read` / `write` / `openStream`,
+`media::FrameRef::source`, `FrameSource::uri()`, `graphio::templateKey` — and slice 3 added the
+second hand-written uri→path conversion before collapsing both into `io::localPath`. The type is
+worth having. **The survey that produced this note also rules out the obvious shape**, and that is
+the part worth keeping, because it is what someone would otherwise "fix" later:
+
+- **It must NOT be an RFC 3986 parser, and not a `std::filesystem::path` for schemes.** Two of
+  lain's own strings collide with the standard head-on. `shot.####.png` is not a valid URI
+  reference — `#` is the fragment delimiter, so a conforming parser reads path `shot.` + fragment
+  `###.png`, and `io::numberField` scans for exactly that run for both the sequence opener and the
+  render sweep; percent-encoding it to `%23` fixes the parse and wrecks the human-readable identity
+  strings in a manifest. And `C:\footage\clip.mp4` parses as **scheme `C`**, on a platform lain
+  ships. The current `://` test is immune to both by construction. Keep the opaque scheme/rest
+  split; the type's job is to stop a uri being pasted into a `fs::path`, not to model the web.
+- **Its home is `lain::core`, not `lain::io`.** The most valuable site is `media::FrameRef::source`,
+  and `lain::media` links no `io` by rule. Canonicalisation touches the filesystem, so it stays in
+  `io` (`io::canonicalise(Uri) -> Uri`). `lain::core` already names `std::filesystem` in `paths.h`,
+  so a local-only `path()` accessor fits its std-only rule.
+- **No path algebra on it.** Every `parent_path` / `relative` / `filename` in the tree operates on a
+  genuinely local path, and none of those verbs means anything for a scheme with no implementation —
+  the registry-with-one-member rule, applied to methods. `path()` plus `fs::path` covers every
+  current caller.
+- **What it does not buy, stated up front:** canonical-ness stays a discipline rule. The version
+  that makes "a key computed two ways" *unrepresentable* is a distinct `CanonicalUri` only
+  `io::canonicalise` can mint, which costs a cross-library friend or a token type for a rule that
+  has five call sites and one historical miss (`templateKey`, already collapsed). Reach for it if a
+  second miss appears.
+- **Cheaper than it looks:** `ManifestFrame` already flattens `source` to a `std::string`, so
+  typing `FrameRef::source` costs one `toString()` in `manifestOf` — no serialize arm, no wire
+  change.
+- **Timing:** after slice 5, as its own commit. Slice 5 adds the video opener and the `AVIOContext`
+  — the third real consumer of "a name you open" — and a cross-cutting rename touching `read` /
+  `write` / `openSequence` / `FrameRef` / `templateKey` should not interleave with the FFmpeg
+  unknowns. It wants a short ADR when it lands, carrying the two collisions above.
+- Still uncollapsed until then, and the reason it is *not* urgent: `graphio::loadGraph` does
+  `std::filesystem::path(uri).parent_path()` on its document argument. flowview's documents come
+  from a file dialog, the session file or `--graph`, so they are local by construction — it is the
+  same shape as the bug slice 3 fixed, without the exposure.
 
 ### Not in this milestone
 

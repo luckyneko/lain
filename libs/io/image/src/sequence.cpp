@@ -11,6 +11,7 @@
 #include <cctype>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -137,7 +138,17 @@ namespace lain::io::image
 	std::optional<lain::media::FrameSequence> openSequence(std::string_view uri, lain::media::FrameRate rate)
 	{
 		const std::string canonical = lain::io::canonicalUri(uri);
-		const fs::path path{canonical};
+		const std::optional<fs::path> local = lain::io::localPath(canonical);
+		if (!local)
+		{
+			// A still sequence is read frame-by-frame with io::read, which serves the local
+			// scheme only. Saying so is the point of asking: building a path out of the whole
+			// uri instead would make "s3:" a relative directory name and report the wrong
+			// reason for the wrong thing.
+			lain::log::error("io::image: {} is not a local path — only local stills open as a sequence", canonical);
+			return std::nullopt;
+		}
+		const fs::path& path = *local;
 
 		std::error_code error;
 		const bool isDirectory = fs::is_directory(path, error);

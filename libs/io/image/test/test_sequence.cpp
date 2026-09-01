@@ -255,3 +255,13 @@ TEST_CASE("a uri that is neither a directory nor a pattern is refused", "[io::im
 	// A single still is a load(), not a sequence — saying so beats quietly returning one frame.
 	CHECK_FALSE(openSequence((dir.path() / (std::string("a.") + extension)).string()).has_value());
 }
+
+TEST_CASE("a remote uri is refused as not local, not as not-a-directory", "[io::image][sequence]")
+{
+	// Before io::localPath existed this built fs::path{"s3://bucket/frames"} — a RELATIVE path
+	// named "s3:" — and then asked the working directory about it, so the answer depended on
+	// where the process happened to be standing and the reason reported was the wrong one.
+	// io::read serves the local scheme only, so a still sequence can too, and it says which.
+	CHECK_FALSE(openSequence("s3://bucket/frames").has_value());
+	CHECK_FALSE(openSequence("https://example.com/shot.####.png").has_value());
+}

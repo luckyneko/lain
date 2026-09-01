@@ -4,6 +4,7 @@
 add_executable(test-io
 	test_read.cpp
 	test_write.cpp
+	test_stream.cpp
 	test_uri.cpp
 )
 

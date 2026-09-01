@@ -848,14 +848,23 @@ both sit behind service-shaped seams. See [ADR-0004](docs/adr/0004-static-linkin
   decodes; it only moves bytes. `read` is a **whole-asset** read (the resource in one `Buffer`).
   _Avoid_: loader (that's a Reader).
 
-- **Stream** *(M10)* — the **incremental, seekable** transport: a peer to `read`, not a change to it,
-  for video and other assets a whole-asset slurp cannot serve. Dispatched by scheme exactly as `read`
-  is. Its refusals are what matter: it **never hands out an OS handle**, it **owns its uri and logical
+- **Stream** — the **incremental, seekable** transport, for video and the other assets a whole-asset
+  slurp cannot serve. Dispatched by scheme exactly as `read` is, and equally media-agnostic. A
+  **ReadStream** pulls bytes; a **WriteStream** is open-push-**finish**, because an encoder's file is
+  not valid until finalised and a failure in a destructor has nowhere to go. It is a peer of `read` in
+  the *interface* and its **implementation underneath**: `read` and `write` are the whole-asset use of
+  a stream (open, size, fill / create, push, finish), so one scheme has one backend rather than two
+  that can drift.
+  Its refusals are what matter: it **never hands out an OS handle**, it **owns its uri and logical
   position** so it can transparently reopen and re-seek, **every operation may fail** rather than only
-  open, and **acquisition is separate from construction**. Those four together are what let a future
-  LRU **handle pool** — a service-shaped seam behind `lain::io` — become a pure backend swap, which a
-  multi-segment frame sequence will eventually need. _Avoid_: exposing a file descriptor, a Stream
-  that is only valid while its handle is.
+  open, and **acquisition is separate from construction** (which is about the handle's LIFETIME, not
+  about deferring validation — an open still reports a missing file). Those four together are what let
+  a future LRU **handle pool** — a service-shaped seam behind `lain::io` — become a pure backend swap,
+  which a multi-segment frame sequence will eventually need; the backend hook is *positional* for the
+  same reason, so a re-acquired handle needs no memory of where the last one had got to. A Stream is
+  not thread-safe: its owner serialises, the way a **frame source** already holds the lock around its
+  decoder. _Avoid_: exposing a file descriptor, a Stream that is only valid while its handle is, an
+  append-only write sink (a muxer seeks back to patch its header).
 
 - **Reader** / **Writer** — a **Reader** decodes a `Buffer` of one format into a typed asset; a
   **Writer** encodes the asset back to bytes. One per format, holding both directions (they share

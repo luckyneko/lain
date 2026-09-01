@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -24,6 +26,21 @@ namespace lain::io
 	// Returns `uri` unchanged if the filesystem refuses to answer, which is the honest fallback:
 	// a worse key beats no key.
 	[[nodiscard]] std::string canonicalUri(std::string_view uri);
+
+	// The local filesystem path `uri` names, or nullopt when it names something that is not on
+	// the local filesystem (a remote scheme).
+	//
+	// THE conversion from a uri to a path, in one place. Written by hand it is a one-liner —
+	// strip the scheme, keep the rest — which is exactly why it kept being written by hand, and
+	// why the copies disagreed: one of them skipped the strip entirely and built a path straight
+	// out of the whole uri, which is correct for every uri that has no scheme and quietly wrong
+	// for every uri that has one. Returning an optional is the point: a caller that cannot serve
+	// a remote resource has to SAY so, rather than construct a relative path called "s3:" and
+	// carry on.
+	//
+	// It is the naming rule's other half, and it lives beside it for the same reason canonicalUri
+	// and numberField do: a spelling decided in two places eventually disagrees with itself.
+	[[nodiscard]] std::optional<std::filesystem::path> localPath(std::string_view uri);
 
 	// Where the number sits in a ####-numbered sequence pattern ("shot.####.png"). `width` is 0
 	// when there is no run of '#' at all.

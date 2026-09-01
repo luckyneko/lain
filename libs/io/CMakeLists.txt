@@ -1,11 +1,15 @@
-# lain::io — the transport front seam: read(uri) -> memory::Buffer. Media-agnostic;
-# it moves bytes and never decodes (codecs live in lain::io::image et al., WORK.md
-# M3). Only the local/file scheme is served today; remote/s3 dispatch behind read()
-# later. Depends on lain::memory (Buffer in the API) + lain::log (failure reasons).
+# lain::io — the transport front seam. Two shapes over one backend per scheme: the
+# whole-asset read(uri) -> memory::Buffer / write(uri, bytes), and the incremental,
+# seekable Stream a video container needs (WORK.md M10). Media-agnostic; it moves
+# bytes and never decodes (codecs live in lain::io::image et al., WORK.md M3). Only
+# the local/file scheme is served today; remote/s3 dispatch behind the same entry
+# points later. Depends on lain::memory (Buffer in the API) + lain::log (reasons).
 
 add_library(io STATIC
 	src/read.cpp
 	src/write.cpp
+	src/stream.cpp
+	src/localstream.cpp
 	src/uri.cpp
 )
 add_library(lain::io ALIAS io)

@@ -1,66 +1,44 @@
 #include "lain/io/read.h"
 
-#include "scheme.h" // parseUri / isLocalScheme (shared with write.cpp)
+#include "lain/io/stream.h"
 
 #include <lain/log/log.h>
 
 #include <cstddef>
-#include <filesystem>
-#include <fstream>
-#include <ios>
+#include <cstdint>
+#include <memory>
+#include <optional>
 #include <string>
 
 namespace lain::io
 {
-	// --- file-local helpers (named static, not an anonymous namespace) ----------
-
-	// Read an entire local file into a Buffer, or nullopt (reason logged) on failure.
-	static std::optional<memory::Buffer> readLocal(const std::filesystem::path& path)
+	std::optional<memory::Buffer> read(std::string_view uri)
 	{
-		std::error_code ec;
-		if (!std::filesystem::is_regular_file(path, ec))
+		// The whole-asset read is the incremental one used once: open, size, fill. Scheme
+		// dispatch, the local backend and the failure reporting all live in openStream, so
+		// there is exactly one implementation of "get bytes from a uri" per scheme.
+		const std::unique_ptr<ReadStream> stream = openStream(uri);
+		if (!stream)
+			return std::nullopt; // reason logged by openStream
+
+		const std::optional<std::uint64_t> size = stream->size();
+		if (!size)
 		{
-			log::warn("io::read: not a readable file: {}", path.string());
+			log::error("io::read: cannot determine size: {}", std::string(uri));
 			return std::nullopt;
 		}
 
-		// ate: open positioned at the end so tellg() yields the size in one seek.
-		std::ifstream file(path, std::ios::binary | std::ios::ate);
-		if (!file)
+		memory::Buffer buffer{static_cast<std::size_t>(*size)};
+		if (*size > 0)
 		{
-			log::warn("io::read: cannot open: {}", path.string());
-			return std::nullopt;
-		}
-
-		const std::streamoff end = file.tellg();
-		if (end < 0)
-		{
-			log::error("io::read: cannot determine size: {}", path.string());
-			return std::nullopt;
-		}
-
-		const auto size = static_cast<std::size_t>(end);
-		memory::Buffer buffer{size};
-		if (size > 0)
-		{
-			file.seekg(0);
-			file.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(size));
-			if (static_cast<std::size_t>(file.gcount()) != size)
+			const std::optional<std::size_t> got = stream->read(buffer.data(), buffer.size());
+			if (!got || *got != buffer.size())
 			{
-				log::error("io::read: short read ({} of {} bytes): {}", file.gcount(), size, path.string());
+				log::error("io::read: short read ({} of {} bytes): {}",
+						   got.value_or(0), buffer.size(), std::string(uri));
 				return std::nullopt;
 			}
 		}
 		return buffer;
-	}
-
-	std::optional<memory::Buffer> read(std::string_view uri)
-	{
-		const ParsedUri parsed = parseUri(uri);
-		if (isLocalScheme(parsed.scheme))
-			return readLocal(std::filesystem::path(parsed.rest));
-
-		log::warn("io::read: unsupported scheme '{}' in uri: {}", std::string(parsed.scheme), std::string(uri));
-		return std::nullopt;
 	}
 } // namespace lain::io

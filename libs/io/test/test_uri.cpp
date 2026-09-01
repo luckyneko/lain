@@ -16,6 +16,7 @@
 namespace fs = std::filesystem;
 
 using lain::io::canonicalUri;
+using lain::io::localPath;
 
 namespace
 {
@@ -82,4 +83,41 @@ TEST_CASE("a non-local scheme is returned unchanged", "[io][uri]")
 	// normalisation now would be a rule with no implementation behind it.
 	CHECK(canonicalUri("s3://bucket/key/../key/frame.png") == "s3://bucket/key/../key/frame.png");
 	CHECK(canonicalUri("https://example.com/a/./b") == "https://example.com/a/./b");
+}
+
+TEST_CASE("localPath strips the scheme off a local uri", "[io][uri]")
+{
+	// The conversion that used to be written by hand at each call site: file:// and a bare path
+	// name the same file, and only one of the two spellings survived being pasted into a
+	// filesystem constructor.
+	const auto bare = localPath("/footage/take1.mp4");
+	REQUIRE(bare.has_value());
+	CHECK(*bare == fs::path{"/footage/take1.mp4"});
+
+	CHECK(localPath("file:///footage/take1.mp4") == bare);
+	CHECK(localPath("local:///footage/take1.mp4") == bare);
+}
+
+TEST_CASE("localPath refuses a remote uri rather than making a path of it", "[io][uri]")
+{
+	// The failure this exists to stop: fs::path{"s3://bucket/key"} is a perfectly good RELATIVE
+	// path named "s3:", so a caller that skipped the strip looked for a directory of that name in
+	// the working directory and reported whatever it found there. An optional makes the caller
+	// say what a remote resource means to it.
+	CHECK_FALSE(localPath("s3://bucket/key/frame.png").has_value());
+	CHECK_FALSE(localPath("https://example.com/clip.mp4").has_value());
+}
+
+TEST_CASE("localPath and canonicalUri compose", "[io][uri]")
+{
+	// How every caller uses them: canonicalise for the NAME, then ask for the path to open. A
+	// canonical local uri is a bare path, and a canonical remote one is still remote — so the
+	// pair round-trips without either step having to know what the other did.
+	const TempTree tree;
+	const std::string canonical = canonicalUri((tree.dir() / "sub" / ".." / "file.txt").string());
+	const auto path = localPath(canonical);
+	REQUIRE(path.has_value());
+	CHECK(fs::exists(*path));
+
+	CHECK_FALSE(localPath(canonicalUri("s3://bucket/key")).has_value());
 }

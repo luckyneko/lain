@@ -3,6 +3,7 @@
 #include "scheme.h"
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <system_error>
 
@@ -23,6 +24,14 @@ namespace lain::io
 		if (error)
 			return std::string{uri};
 		return canonical.string();
+	}
+
+	std::optional<std::filesystem::path> localPath(std::string_view uri)
+	{
+		const ParsedUri parsed = parseUri(uri);
+		if (!isLocalScheme(parsed.scheme))
+			return std::nullopt;
+		return std::filesystem::path{parsed.rest};
 	}
 
 	NumberField numberField(std::string_view pattern)

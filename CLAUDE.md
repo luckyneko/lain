@@ -650,7 +650,8 @@ prerequisite note already pointed here. **Nothing is built.**
 `windows-x86_64`, each with a `MANIFEST.txt` stating tier, full configure string and
 corresponding-source url. That changes three things in M10's plan and nothing in its model. Build
 order in WORK.md; amendments in ADR-0019, ADR-0018 and ADR-0004. **Slices 0, 1 and 2 are built
-(2026-08-31) — the milestone's central claim is proven end to end; slices 3–7 are not.**
+(2026-08-31) and slice 3 on 2026-09-01 — the milestone's central claim is proven end to end; slices
+4–7 are not.**
 
 - **Fetched, not found — so ADR-0019's ordering risk is retired.** The objection was to building
   *autotools*, not to fetching; a release **archive** fits the `cmake/addXXX.cmake` FetchContent
@@ -755,6 +756,50 @@ order in WORK.md; amendments in ADR-0019, ADR-0018 and ADR-0004. **Slices 0, 1 a
   never by a hardcoded name. Also: the prebuilt is `--disable-network`, which makes the `Stream`
   seam *more* load-bearing than ADR-0018 argued, since a future `s3://` reaches the decoder through
   lain's transport or not at all.
+
+### Update 2026-09-01 — M10 slice 3 built: the `Stream` transport
+
+`lain::io::Stream` — the **incremental, seekable** transport a lazy frame sequence needs, since
+`read(uri) → Buffer` is a whole-asset slurp. `ReadStream` / `WriteStream` over one local backend
+(`libs/io/src/localstream.{h,cpp}`, private like `scheme.h`), and **`io::read` / `io::write`
+reimplemented as the whole-asset use of it** — so a scheme has one backend, not two that can drift,
+and the slice is on the production path three slices before its intended consumer (slice 5's
+`AVIOContext`). `ctest` **549/549** (+15), warning-clean, format-check clean; slice 2's sweep
+re-driven through the real binary with its four outputs byte-identical to their four inputs, in order.
+
+- **The backend hook is POSITIONAL** — `onRead(at, …)` / `onWrite(at, …)` are handed the absolute
+  position because the BASE owns the logical one. That makes *"transparently reopen and re-seek"*
+  structural rather than a rule each backend remembers, which is what lets a future LRU **handle pool**
+  evict between two reads with nothing above noticing; a seek touches no backend at all, so a released
+  stream stays released through one. Sabotage-verified: a backend trusting its own physical position
+  fails the release-and-resume test and two seek tests.
+- **The write direction landed here, not at slice 6** (settled with the repo owner). Slice 6's muxer
+  needs an AVIO *write* callback for exactly ADR-0004's reason the reader needs a read one, and
+  `io::write` gives it a caller now. What its consumer would have pinned is pinned anyway: a muxer
+  **seeks back to patch its header**, so a `WriteStream` is seekable and not an append-only sink.
+- **A write re-acquire must NOT truncate** — the one silent data-loss failure in the slice, and
+  sabotage-verified. `createStream` creates/truncates once (`io::write`'s own contract); every
+  re-acquire after `release()` opens `in|out`, which is also what lets a positioned write land back
+  over earlier bytes.
+- **`finish()` is explicit and status-returning** (ADR-0018: a failure in a destructor has nowhere to
+  go) and idempotent; an unfinished stream still flushes and closes, so it loses the *report*, not the
+  bytes — pinned by its own test rather than left as a comment. **EOF and failure stay distinct** for
+  the same reason: a decoder that reads a lost handle as a clean end truncates the asset and reports
+  success.
+- No `flush()`, no scheme registry — one member is not a registry (slice 0's aggregator, slice 2's
+  opener facade, same judgement). `uri()` is `io::canonicalUri`, because a stream that reopens by a
+  relative path is one `chdir` from a different file.
+- **`io::localPath(uri)` — one conversion, and it fixed a latent bug.** Turning a uri into a path is
+  a one-liner, which is why it kept being written by hand; the copies had already drifted, and
+  `openSequence` built its `fs::path` from the **whole** uri, so `s3://bucket/frames` became a
+  relative directory named `s3:` that the opener asked the working directory about. It returns
+  `std::optional<std::filesystem::path>`, so a caller that cannot serve a remote resource has to say
+  so, and `openStream` / `createStream` now treat "no local path" AS the unsupported-scheme branch
+  rather than deciding the same thing twice.
+- **Queued, not built: `core::Uri`** (WORK.md M10, *Queued: `core::Uri`*). It must **not** be an RFC
+  3986 parser — `shot.####.png` is a fragment to a conforming one and `C:\clip.mp4` is scheme `C` —
+  its home is `core` (because `media::FrameRef` needs it and media links no io), and it carries no
+  path algebra. After slice 5, with an ADR.
 
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
 
