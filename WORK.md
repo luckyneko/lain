@@ -2550,15 +2550,14 @@ decoder stays warm and sequential — provided the sweep **retains one `Evaluati
    `####` numbered output, `--on-missing-frame stop|skip`, and one retained `Evaluation` across it.
    **End-to-end proof, still dependency-free:** a folder of stills swept to `out.####.png` in bounded
    memory — every decision in the milestone exercised before FFmpeg or `Stream` exist.
-   - **One `openSequence` node over an opener registry**, not a node kind per medium. This settles a
+   - **One `openSequence` node over an opener seam**, not a node kind per medium. This settles a
      disagreement already in the docs (this build order said `OpenSequenceNode`; the shape diagram
-     and ADR-0018's prose said `OpenVideo`) in favour of the registry, and amends ADR-0019's
+     and ADR-0018's prose said `OpenVideo`) in favour of the seam, and amends ADR-0019's
      unknown-`kind` consequence. It mirrors `io::image::load`'s extension-keyed dispatch, it means a
      document does not change node vocabulary when its footage goes from stills to mp4, and with
      video disabled it reports *"no opener for .mp4"* instead of dropping the node **and its edges**
-     as an unknown kind. The registry lives in a small **`libs/io/media`** facade — `media` depends
-     on no `io`, so the dispatcher cannot live there; each medium seam registers into it and the app
-     calls `registerSequenceOpeners()` beside `registerImageCodecs()`.
+     as an unknown kind. It lives one level above the per-medium seams — `media` depends on no `io`,
+     so the dispatcher cannot live there.
 3. **`Stream` transport** in `lain::io`. Local scheme; handle-pool-ready interface (never hands out an
    OS handle, owns its uri and logical position, every operation may fail, acquisition separate from
    construction). The prebuilt FFmpeg is `--disable-network`, so libavformat **cannot** open
@@ -2679,6 +2678,115 @@ the idiom `test_load.cpp` already set. `ctest` **506/506** (+30), warning-clean,
 - CONTEXT.md's *frame source* entry is corrected: the ring cache and its lock are in the shared
   base, but what a source holds **open** is per medium — an image-sequence source holds nothing but
   paths, since a still is read whole by `io::read`.
+
+**Slice 2 is built (2026-08-31) — THE MILESTONE'S CENTRAL CLAIM IS PROVEN.** `FramePosition`,
+`lain::io::sequence`, the three nodes (`OpenSequence` / `FrameAt` / `ClipSequence`), the port types,
+the codec, the binders, the manifest writer, and the `run` sweep. A folder of stills renders to
+`out.####.png` in bounded memory through the production binary, with the missing-frame policy and
+its exit codes exercised by hand. `ctest` **526/526** (+17), warning-clean, format-check clean.
+
+- **The opener seam is `lain::io::sequence`, not `lain::io::media`.** Inside a namespace called
+  `media`, the name `media` resolves to *itself* and shadows `lain::media` at every mention — so the
+  facade would have had to spell `lain::media::FrameSequence` in full, everywhere, forever. Renaming
+  it costs nothing and removes the trap.
+- **A thin facade now, the registry at slice 5** (settled with the repo owner). `io::sequence::open`
+  is today a direct call through to `io::image::openSequence`; slice 5 replaces the body with the
+  extension-keyed registry when video supplies the second registrant. Every call site is already
+  right, and no registry-with-one-member exists in the meantime — the same judgement slice 0 made
+  about `plugins/io/video` having no aggregator.
+- **`FramePosition` is a struct, and it had to be.** Every registry that makes a payload type
+  first-class — port types, value codecs, cli binders, param editors — is keyed by
+  `std::type_index`, so `using FramePosition = std::size_t` would have been indistinguishable from a
+  plain count in all four at once.
+- **There is deliberately no `serialize(Archive&, FrameSequence&)`.** A sequence's entries hold
+  `shared_ptr<const FrameSource>`, which `data`'s reflection has no arm for, and `Archive` is
+  direction-agnostic — so providing one would make `data::fromValue<FrameSequence>` *compile* and
+  silently yield an empty sequence. Instead `sequenceManifest()` builds the document one way only,
+  which makes the asymmetry structural rather than a rule someone has to remember. Each frame
+  carries its own source uri rather than an index into a source list, per CONTEXT.md's *FrameRef*.
+- **The natural name for a frame-position pin is `frame`, and `--frame` is the range option.** That
+  collision turns out not to matter, and the reason is the design working: the sweep finds the pin
+  **by type**, so its name is never typed. `--frame 5` is a one-frame range, which is also the only
+  way to set a position from the cli — there is no second spelling to keep in step.
+  `warnBoundaryCollisions` now reports a pin that shadows any of `run`'s own options, since such a
+  pin is unreachable and was silently so.
+- **A `####` field is required only when the range visits more than one frame.** Writing every frame
+  to one path would exit reporting success having destroyed the input↔output correspondence; one
+  frame to one path is unambiguous, and demanding a pattern there would be ceremony.
+- **An invalid image counts as a missing frame.** Only a cleared output is suppression in flow's
+  sense, but a position past the end of a sequence yields an *invalid* `Image`, and treating that as
+  a write error would report the wrong cause and bypass `--on-missing-frame` entirely — leaving the
+  policy unreachable for the case that most obviously needs it.
+- **`onProcess` now RETURNS its status, and `Application::exit(code)` is the gui counterpart.** The
+  stop policy requires a non-zero exit, and `onProcess` was `void` with its return discarded. The
+  first attempt added `setExitCode`, arguing that changing a public virtual cost more than it was
+  worth — **review overturned that, correctly**: only 2 of 6 delegates override `onProcess` (the
+  rest inherit the default), and a one-shot work routine returning its own status is the shape that
+  cannot be forgotten. `Application::quit()` already existed, so `exit(code)` is that same request
+  with a reason, and `quit()` is now `exit(0)` — one mechanism, no third channel.
+- **Two more "one rule, one function" collapses, both found while building.**
+  `io::numberField` / `io::substituteNumber` hoist the `####` rule out of the image opener, because
+  a sweep that substituted differently from how the reader matches would write files it could not
+  read back. And `io::image::formatKeyOf` is now public so the sweep's `canEncode` preflight asks
+  exactly the question `save()` will ask, instead of deriving the key a second way.
+- **Fixed here, and slice 2 is what would have exposed it:** `bindDefaultInput` bound `inputs[0]`
+  whatever pin it was asked about, and `Evaluation::bind` does no type checking — so the moment a
+  graph gained a second boundary input, an unbound frame position would have re-bound the *image*
+  pin with a gradient and nothing would have complained. It now takes the pin and refuses a
+  non-image one.
+- **The node kinds are in the factory but not the catalog.** Serialization names a node by its
+  factory key, so the entries are needed regardless; the gui's Add menu is slice 7, the same order
+  M8 used when the map node ran headless a slice before it was reachable from a menu.
+- **Accepted cost, stated rather than claimed around:** `Evaluation::bind` marks the
+  `GroupInputNode`, not the individual pin, so every node fed by *any* boundary pin recomputes each
+  frame — not only the frame-position cone. Harmless for ADR-0018's shape, since a `FrameSequence`
+  copy is a refcount bump sharing its source and ring cache, but it is not "only the changed cone
+  recomputes" and should not be described that way until measured.
+
+**Slice 2 review pass (2026-09-01).** Four design objections, all upheld, and in two cases the
+repo's own documents already said so. `ctest` **534/534**, warning-clean, format-check clean; the
+end-to-end sweep, both missing-frame policies and their exit codes re-driven through the real binary
+unchanged.
+
+- **`--frame` is a TYPED option: `core::Range`.** It was a `std::string` the app parsed three layers
+  later. `core::Range {first, last, step}` carries its own literal form — `12` / `0-499` / `0-499x2`
+  — the way `core::Version` already carries `1.4.0-rc.2`, and provides CLI11's `lexical_cast` hook so
+  `cli.add_option("--frame", range)` simply works. **core names nothing of CLI11 to do it**: the hook
+  is a plain signature found by ADL, the same shape `meta::enums` gives an enum option. A malformed
+  range is now refused *by the parser*, before a graph is loaded, so the syntax has one home and
+  cannot drift — the sweep test's "a range that is not one" case disappeared because the type makes
+  it unrepresentable at that layer.
+- **`Range` needed the name, so the planned slider helper is renamed `Bounded<T>`** (CONTEXT.md). It
+  is not built, so this was a glossary edit; "range" most naturally means a span you iterate, and a
+  slider's value is a bounded scalar.
+- **Built and backed out: `media::select(sequence, Range)`.** It looked like the overload that would
+  make the type earn its place beyond the cli — and it makes `select(seq, {1, 10, 2})` **ambiguous**,
+  since three braced integers read equally as three positions or one strided range. A compile error
+  rather than a silent misread, but a papercut on an existing call for an operation with *no
+  production caller*. Reverted. The trigger for revisiting is a caller: M9's calibration view
+  selection is the obvious one, and `selectRange` is the name that avoids the clash.
+- **The manifest moved to a new `libs/media/serialize` target** and became declarative. It was in
+  flowview building `data::Value` by hand, which contradicted ADR-0018's own words —
+  *"`data::toValue` over the sequence through the existing reflection and codec spine, **not a
+  bespoke writer**"*. Almost all of it was domain knowledge; the app keeps only when to write one,
+  where, and in what codec. Follows the `flow::serialize` precedent exactly, so **`lain::media` still
+  links no `data`**, as no foundational library in the set does.
+- **What resisted reflection, and why the fix is not a bridge.** `FrameSpec::extent` is a
+  `math::Vec2i`, a pure alias for `glm::ivec2` — ADL associates `glm`, so a `LAIN_SERIALIZE` in
+  `lain::math` **compiles and is never found**, while one in `namespace glm` is global to the
+  program and collides with the next target that wants it. It is flattened to `width`/`height` in
+  `FrameSpec`'s own `serialize` instead. `FrameRef::timestamp` is a `core::Time` whose only accessor
+  returns by value, and `Archive::member` needs an lvalue to write through on load — hence a small
+  `ManifestFrame` carrying seconds. Everything else is `LAIN_SERIALIZE`.
+- **A namespace cannot share a name with a function in the same scope.** `FrameSpec`'s `serialize`
+  must be in `lain::media` for ADL, so the documents live in `lain::media` too and only the *target*
+  is `lain::media::serialize` — precedented by `lain::io::image::codecs`, whose functions live in
+  `lain::io::image`. Both traps are now recorded in CONTEXT.md as the boundary rule's corollary,
+  after appearing in three `.cpp` comments and no document.
+- **The manifest lost its `frameCount` key.** It is `frames.size()`, and this slice had already
+  argued about position that *"writing down something derivable lets the two disagree"*. The
+  document now round-trips as data, which the hand-built writer could not support, and its wire
+  shape is pinned by a test because a manifest is read by things outside this program.
 
 ### Not in this milestone
 

@@ -10,6 +10,9 @@
 #include <lain/io/data/load.h>
 #include <lain/io/data/save.h>
 #include <lain/io/uri.h>
+#include <lain/media/frameposition.h>
+#include <lain/media/frameref.h>
+#include <lain/media/framesequence.h>
 
 #include <filesystem>
 
@@ -24,6 +27,18 @@ namespace lain::image
 	}
 } // namespace lain::image
 
+// media::FramePosition's serialize() — here for the same reason as the one above: it names both
+// the type (media) and the archive (data), and lain::media stays data-free so a graph's serializer
+// is not a dependency of the sequence model. A FramePosition IS serialized, because FrameAtNode
+// declares it as an input default and a default is a param underneath.
+//
+// FrameSpec's and FrameRate's bridges are NOT here — they live in lain::media::serialize, the
+// target that already names both sides, beside the manifest that needs them.
+namespace lain::media
+{
+	LAIN_SERIALIZE(FramePosition, value)
+} // namespace lain::media
+
 namespace flowview
 {
 	using namespace lain;
@@ -37,6 +52,7 @@ namespace flowview
 		codecs.registerType<std::string>("string"); // ConstantNode<std::string> (a ListDir extension)
 		codecs.registerType<std::filesystem::path>("path");
 		codecs.registerType<image::ColorRGBf>("color");
+		codecs.registerType<media::FramePosition>("framePosition"); // FrameAt's position default
 		return codecs;
 	}
 
@@ -51,6 +67,13 @@ namespace flowview
 		flow::registerPortType<bool>("Bool");
 		flow::registerPortType<std::string>("String");
 		flow::registerPortType<std::filesystem::path>("Path");
+
+		// The frame-sequence vocabulary (M10). All three are registered because an unregistered
+		// type's boundary pin cannot be NAMED on save — it is skipped, taking its wiring with it —
+		// and a sweep binds a FrameSequence and a FramePosition at exactly that boundary.
+		flow::registerPortType<media::FrameSequence>("FrameSequence");
+		flow::registerPortType<media::FrameRef>("FrameRef");
+		flow::registerPortType<media::FramePosition>("FramePosition");
 
 		// COLLECTION types (M8). Registering a list form is what makes its element MAPPABLE — a
 		// PortType knows its element type but nothing can walk that backwards, so a map lifts an

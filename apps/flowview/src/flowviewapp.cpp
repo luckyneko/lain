@@ -32,6 +32,20 @@ namespace flowview
 		m_runCmd = cli.add_subcommand("run", "headless: load a graph (or the example), bind its boundary inputs from --<name> <value>, run it, dump it, write bound outputs");
 		m_runCmd->add_option("--graph,-g", m_graphPath, "graph JSON file (omit for the built-in example)");
 		m_runCmd->add_option("--save", m_savePath, "also serialize the graph to this JSON path");
+
+		// A RANGE where a binding takes a value, so the loop is a modifier on the one binding path
+		// rather than a second subcommand duplicating the whole interface. Note --frames (no `s` on
+		// this one) is a different, gui-only option on the root app: a frame cap, not a range.
+		//
+		// TYPED, not a string this app parses later: core::Range provides CLI11's lexical_cast hook,
+		// so a malformed range is rejected by the parser with the rest of the command line — before
+		// a graph is loaded — and there is no second place where the syntax could drift.
+		m_runCmd->add_option("--frame", m_frameRange,
+							 "render a range instead of a single run: 12 | 0-499 | 0-499x2 (needs a FramePosition input)");
+		m_runCmd->add_option("--on-missing-frame", m_onMissingFrame,
+							 "what a render does when a frame produces nothing: stop (default) | skip")
+			->check(app::cli::IsMember({"stop", "skip"}));
+
 		m_runCmd->allow_extras(); // --<boundary> <value> pairs, matched to the loaded graph
 
 		m_listCmd = cli.add_subcommand("list", "headless: print a graph's boundary inputs/outputs (the --<name> flags `run` accepts)");
@@ -70,7 +84,8 @@ namespace flowview
 		// one empty Output node, and the user grows the interface from the Interface panel's ±.
 		m_evaluation = flow::Evaluation{*m_graph};
 		if (m_useExample)
-			bindDefaultInput(*m_graph, m_evaluation, m_size);
+			for (const flow::BoundaryInput& in : m_graph->boundaryInputs())
+				bindDefaultInput(in, m_evaluation, m_size);
 		m_scheduler.run(*m_graph, m_evaluation);
 		return true;
 	}
@@ -81,12 +96,12 @@ namespace flowview
 			app.quit();
 	}
 
-	void FlowviewApp::onProcess(app::Application&)
+	int FlowviewApp::onProcess(app::Application&)
 	{
 		// Headless dispatch for the run/list subcommands. Pure CPU, no device. (onProcess can also
 		// be reached via Application::process() in gui-mode — a no-op here without a subcommand.)
 		if (!m_runCmd->parsed() && !m_listCmd->parsed())
-			return;
+			return 0;
 
 		lain::io::image::registerImageCodecs();
 		registerExampleNodes(m_nodeFactory, m_size);
@@ -94,12 +109,22 @@ namespace flowview
 		BoundaryBinders binders;
 		registerBoundaryBinders(binders);
 
+		// The returned status is the point: a render that stopped on a missing frame must be
+		// distinguishable from a complete one by a caller that only sees the process exit code.
 		if (m_listCmd->parsed())
-		{
-			listGraph(m_graphPath, m_nodeFactory, binders);
-			return;
-		}
-		runGraph(m_graphPath, m_savePath, m_runCmd->remaining(), m_nodeFactory, binders, m_size);
+			return listGraph(m_graphPath, m_nodeFactory, binders);
+
+		RunOptions options;
+		options.graphPath = m_graphPath;
+		options.savePath = m_savePath;
+		// Presence, not emptiness: CLI11 knows whether the option was given, and "--frame 0" is a
+		// real one-frame render that an empty-vs-not check on a value would lose.
+		if (m_runCmd->count("--frame") > 0)
+			options.frameRange = m_frameRange;
+		options.skipMissingFrames = m_onMissingFrame == "skip";
+		options.bindings = m_runCmd->remaining();
+		options.exampleSize = m_size;
+		return runGraph(options, m_nodeFactory, binders);
 	}
 
 	void FlowviewApp::onStop(app::Application&)
@@ -131,7 +156,9 @@ namespace flowview
 		// atomic here is what makes the pairing structural rather than something to remember.
 		m_graph = std::move(graph);
 		m_evaluation = flow::Evaluation{*m_graph};
-		bindDefaultInput(*m_graph, m_evaluation, m_size); // a loaded scene has nothing bound — show a gradient
+		// A loaded scene has nothing bound — show a gradient on every image input it has.
+		for (const flow::BoundaryInput& in : m_graph->boundaryInputs())
+			bindDefaultInput(in, m_evaluation, m_size);
 		m_scheduler.run(*m_graph, m_evaluation);
 	}
 } // namespace flowview

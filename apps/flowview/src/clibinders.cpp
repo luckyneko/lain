@@ -2,6 +2,9 @@
 
 #include <lain/image/image.h>
 #include <lain/io/image/load.h>
+#include <lain/io/sequence/open.h>
+#include <lain/media/frameposition.h>
+#include <lain/media/framesequence.h>
 
 #include <cctype>
 #include <cstddef>
@@ -105,6 +108,42 @@ namespace flowview
 		return pv;
 	}
 
+	// A frame sequence binds by OPENING the uri, the way an image binds by loading one — a folder
+	// of stills, a ####-numbered pattern, or (once slice 5 lands) a video file, dispatched by
+	// io::sequence::open so the cli names no medium.
+	static std::optional<flow::PortValue> bindFrameSequence(const std::string& s)
+	{
+		auto sequence = io::sequence::open(s);
+		if (!sequence)
+			return std::nullopt;
+		flow::PortValue pv;
+		pv.set<media::FrameSequence>(std::move(*sequence));
+		return pv;
+	}
+
+	// A single position, for binding one frame without a sweep. The RANGE form (`0-499`) is the
+	// sweep's business and is parsed by framerange.h: a binder answers "what value is this string",
+	// and a range is not one value.
+	static std::optional<flow::PortValue> bindFramePosition(const std::string& s)
+	{
+		std::size_t consumed = 0;
+		unsigned long long parsed = 0;
+		try
+		{
+			parsed = std::stoull(s, &consumed);
+		}
+		catch (const std::exception&)
+		{
+			return std::nullopt;
+		}
+		if (consumed != s.size()) // trailing junk, as the scalar binders above also refuse
+			return std::nullopt;
+
+		flow::PortValue pv;
+		pv.set<media::FramePosition>(media::FramePosition{static_cast<std::size_t>(parsed)});
+		return pv;
+	}
+
 	void registerBoundaryBinders(BoundaryBinders& binders)
 	{
 		binders.add(typeid(int), &bindInt);
@@ -112,5 +151,7 @@ namespace flowview
 		binders.add(typeid(bool), &bindBool);
 		binders.add(typeid(std::string), &bindString);
 		binders.add(typeid(image::Image), &bindImage);
+		binders.add(typeid(media::FrameSequence), &bindFrameSequence);
+		binders.add(typeid(media::FramePosition), &bindFramePosition);
 	}
 } // namespace flowview

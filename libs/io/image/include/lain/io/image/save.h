@@ -7,6 +7,7 @@
 #include <lain/memory/buffer.h>
 
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace lain::io::image
@@ -23,6 +24,15 @@ namespace lain::io::image
 	// before offering "Save as <format>", so it can guide a convert instead of hitting encode's
 	// loud rejection. encode()/save() enforce the same check.
 	[[nodiscard]] bool canEncode(std::string_view formatKey, const lain::image::Image& image);
+
+	// The format key save() will derive from `uri` — its extension, lowercased, without the dot;
+	// empty when it has none.
+	//
+	// Public so a caller can ask the question save() is about to ask. A render sweep needs exactly
+	// that: check canEncode ONCE against the first frame, rather than discovering on every one of
+	// 500 frames that the format cannot hold the image. Deriving the key a second way in the caller
+	// would let the preflight and the write disagree about what format a path names.
+	[[nodiscard]] std::string formatKeyOf(std::string_view uri);
 
 	// Encode `image` to `formatKey` bytes in memory. std::nullopt if no writer is registered
 	// for the key or the writer fails (reason logged). For bytes you want in a Buffer rather

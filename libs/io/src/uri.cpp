@@ -3,6 +3,7 @@
 #include "scheme.h"
 
 #include <filesystem>
+#include <string>
 #include <system_error>
 
 namespace lain::io
@@ -22,5 +23,36 @@ namespace lain::io
 		if (error)
 			return std::string{uri};
 		return canonical.string();
+	}
+
+	NumberField numberField(std::string_view pattern)
+	{
+		const std::size_t start = pattern.find('#');
+		if (start == std::string_view::npos)
+			return {};
+
+		std::size_t end = start;
+		while (end < pattern.size() && pattern[end] == '#')
+			++end;
+		return NumberField{start, end - start};
+	}
+
+	std::string substituteNumber(std::string_view pattern, unsigned long long number)
+	{
+		const NumberField field = numberField(pattern);
+		if (!field.found())
+			return std::string{pattern};
+
+		std::string digits = std::to_string(number);
+		// Pad up to the field's width, but never truncate past it: "####" at frame 10000 widens to
+		// five digits rather than losing one. numberField's matcher accepts any run of digits, so a
+		// widened name is still found when the sequence is read back.
+		if (digits.size() < field.width)
+			digits.insert(digits.begin(), field.width - digits.size(), '0');
+
+		std::string out{pattern.substr(0, field.offset)};
+		out += digits;
+		out += pattern.substr(field.offset + field.width);
+		return out;
 	}
 } // namespace lain::io

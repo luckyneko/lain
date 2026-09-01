@@ -48,4 +48,5 @@ namespace lain::media
 	// a map with one suppressed element clear its whole output (ADR-0014).
 	[[nodiscard]] std::optional<FrameSequence> select(const FrameSequence& sequence,
 													  const std::vector<std::size_t>& positions);
+
 } // namespace lain::media

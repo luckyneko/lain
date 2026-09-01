@@ -3,10 +3,13 @@
 #include <lain/flow/boundary.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/example/blurnode.h>
+#include <lain/flow/example/clipsequencenode.h>
 #include <lain/flow/example/combinenode.h>
+#include <lain/flow/example/frameatnode.h>
 #include <lain/flow/example/gradientnode.h>
 #include <lain/flow/example/listdirnode.h>
 #include <lain/flow/example/loadimagenode.h>
+#include <lain/flow/example/opensequencenode.h>
 #include <lain/flow/example/tintnode.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/group.h>
@@ -39,6 +42,15 @@ namespace flowview
 	static constexpr const char* kGroupOutputKey = "groupOutput";
 	static constexpr const char* kListDirKey = "listDir";
 	static constexpr const char* kCombineKey = "combine";
+
+	// The frame-sequence kinds (M10). Registered in the FACTORY but deliberately not in the
+	// catalog yet: the catalog is the gui's Add menu, and M10 puts flowview's gui work in its own
+	// slice — the same order M8 used, where the map node ran headless a slice before it was
+	// reachable from a menu. The factory entries are needed regardless, because serialization names
+	// a node by its factory key on save.
+	static constexpr const char* kOpenSequenceKey = "openSequence";
+	static constexpr const char* kFrameAtKey = "frameAt";
+	static constexpr const char* kClipSequenceKey = "clipSequence";
 	static constexpr const char* kGroupKey = "group";
 	static constexpr const char* kMapKey = "map";
 	static constexpr const char* kLinkedGroupKey = "linkedGroup";
@@ -77,6 +89,9 @@ namespace flowview
 		// folder holds until it has run, which is why the scheduler plans in stages.
 		factory.registerType<flow::example::ListDirNode>(kListDirKey);
 		factory.registerType<flow::example::CombineNode>(kCombineKey);
+		factory.registerType<flow::example::OpenSequenceNode>(kOpenSequenceKey);
+		factory.registerType<flow::example::FrameAtNode>(kFrameAtKey);
+		factory.registerType<flow::example::ClipSequenceNode>(kClipSequenceKey);
 
 		// Control nodes over the scene payload. Gate passes its image when enabled (else suppresses
 		// downstream); the variadic Merge/Select are empty at construction — the canvas ± grows their
@@ -91,7 +106,7 @@ namespace flowview
 		factory.registerType<flow::ConstantNode<bool>>(kConstBoolKey);
 
 		// Sources for the settings a node exposes as INPUTS rather than only params (see
-		// example/setting.h): a folder for ListDir, an extension filter for it. Wiring one is how a
+		// the input-default mechanism (flow::Default)): a folder for ListDir, an extension filter for it. Wiring one is how a
 		// setting becomes part of the graph — drivable from a boundary input, and visible on the
 		// canvas — instead of being buried in a node's inspector.
 		factory.registerType<flow::ConstantNode<float>>(kConstFloatKey); // drives a Blur's sigma
@@ -132,11 +147,16 @@ namespace flowview
 		graph.connect(blur, 0, out, 0);
 	}
 
-	void bindDefaultInput(flow::Graph& graph, flow::Evaluation& evaluation, std::uint32_t size)
+	bool bindDefaultInput(const flow::BoundaryInput& pin, flow::Evaluation& evaluation, std::uint32_t size)
 	{
-		const auto inputs = graph.boundaryInputs();
-		if (inputs.empty())
-			return;
+		// The pin is checked, and this is not defensive tidiness: Evaluation::bind does NO type
+		// checking, so binding a gradient onto a pin of another type installs a wrongly-typed value
+		// that nothing complains about until a node reads it. This used to bind inputs[0] whatever
+		// was asked for, which was harmless only while every graph had exactly one boundary input —
+		// the moment a sweep adds a FramePosition pin, an unbound frame would have re-bound the
+		// image.
+		if (pin.type != typeid(image::Image))
+			return false;
 
 		// Generate a gradient image the way the old scene's source did, and bind it as the default
 		// — so gui-mode has something to show until the user binds a file. The generator is run in a
@@ -148,7 +168,10 @@ namespace flowview
 		flow::SerialScheduler{}.run(scratch, scratchEval);
 
 		const flow::PortAddress produced{id, scratch.node(id).output(0).id()};
-		if (!scratchEval.value(produced).empty())
-			evaluation.bind(inputs[0], scratchEval.value(produced));
+		if (scratchEval.value(produced).empty())
+			return false;
+
+		evaluation.bind(pin, scratchEval.value(produced));
+		return true;
 	}
 } // namespace flowview

@@ -21,6 +21,7 @@ target_link_libraries(io
 # ::video / ::audio). Codec-free themselves; codec plugins live under plugins/io/<media>.
 add_subdirectory(image)
 add_subdirectory(data)
+add_subdirectory(sequence) # the medium-neutral frame-sequence opener over them (WORK.md M10)
 
 if(LAIN_BUILD_TESTING)
 	add_subdirectory(test)

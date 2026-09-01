@@ -10,6 +10,7 @@
 #include "lain/app/window.h"
 #include "lain/app/windowdelegate.h"
 
+#include <lain/core/range.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/scheduler.h>
@@ -62,7 +63,7 @@ namespace
 
 		bool onStart(app::Application&) override { return true; } // no windows -> headless
 
-		void onProcess(app::Application&) override
+		int onProcess(app::Application&) override
 		{
 			flow::Graph g;
 			const flow::NodeId c1 = g.add<ConstInt>(2);
@@ -73,6 +74,7 @@ namespace
 			flow::Evaluation e{g};
 			flow::SerialScheduler{}.run(g, e);
 			result = e.value(flow::PortAddress{add, g.node(add).output(0).id()}).get<int>();
+			return 0;
 		}
 	};
 
@@ -259,4 +261,74 @@ TEST_CASE("gui: opens a window and renders frames", "[app][gpu]")
 	char* argv[] = {arg0};
 
 	REQUIRE(app.run(1, argv) == 0);
+}
+
+TEST_CASE("headless: onProcess's status is the process's exit code", "[app]")
+{
+	// The whole reason the hook returns a status: a caller who sees only the exit code must be able
+	// to tell a run that did its work from one that failed partway (a render stopped on a missing
+	// frame, say). Aborting from onStart already returns 1; this covers failing after the work
+	// began.
+	struct FailingApp : app::ApplicationDelegate
+	{
+		int status = 0;
+		bool onStart(app::Application&) override { return true; } // no windows -> headless
+		int onProcess(app::Application&) override { return status; }
+	} delegate;
+
+	char arg0[] = "test-app";
+	char* argv[] = {arg0};
+
+	SECTION("success reports 0")
+	{
+		delegate.status = 0;
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		REQUIRE(app.run(1, argv) == 0);
+	}
+	SECTION("a failure reaches the caller")
+	{
+		delegate.status = 3;
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		REQUIRE(app.run(1, argv) == 3);
+	}
+}
+
+TEST_CASE("cli: a custom option type converts through its own lexical_cast", "[app]")
+{
+	// core::Range is a TYPED option, the same way an enum is: the value type carries its own
+	// literal form and CLI11 finds the conversion by ADL, so the app registers the option and
+	// nothing stages a string to be parsed somewhere else later.
+	struct RangeApp : app::ApplicationDelegate
+	{
+		lain::core::Range range;
+		bool onInit(app::Application&, app::cli::App& cli) override
+		{
+			cli.add_option("--frame", range, "a frame range");
+			return true;
+		}
+		bool onStart(app::Application&) override { return true; }
+	} delegate;
+
+	app::Application app(delegate, {"test-app", {0, 0, 0}});
+
+	SECTION("a well-formed range parses into the value")
+	{
+		char a0[] = "test-app";
+		char a1[] = "--frame";
+		char a2[] = "0-9x3";
+		char* argv[] = {a0, a1, a2};
+		REQUIRE(app.run(3, argv) == 0);
+		REQUIRE(delegate.range == lain::core::Range{0, 9, 3});
+	}
+	SECTION("a malformed one is refused by the PARSE, before any work begins")
+	{
+		// This is what the typed option buys over a std::string member: the command line rejects
+		// "10-2" itself, so no later layer has to re-check it and none can disagree about the
+		// syntax.
+		char a0[] = "test-app";
+		char a1[] = "--frame";
+		char a2[] = "10-2"; // reversed
+		char* argv[] = {a0, a1, a2};
+		REQUIRE(app.run(3, argv) != 0);
+	}
 }

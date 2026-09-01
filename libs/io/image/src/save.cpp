@@ -68,4 +68,8 @@ namespace lain::io::image
 
 		return io::write(uri, *bytes);
 	}
+	std::string formatKeyOf(std::string_view uri)
+	{
+		return formatKeyFromUri(uri);
+	}
 } // namespace lain::io::image

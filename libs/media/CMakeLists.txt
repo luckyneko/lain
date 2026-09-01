@@ -8,6 +8,7 @@
 
 add_library(media STATIC
 	src/framespec.cpp
+	src/frameposition.cpp
 	src/frameref.cpp
 	src/framesource.cpp
 	src/framesequence.cpp
@@ -24,6 +25,10 @@ target_link_libraries(media
 	PRIVATE lain::string			# toString formatting
 	PRIVATE lain::warnings
 )
+
+# The documents describing what this library models. A separate target because serialization must
+# name lain::data, and media itself stays data-free (the flow / flow::serialize split, applied here).
+add_subdirectory(serialize)
 
 if(LAIN_BUILD_TESTING)
 	add_subdirectory(test)

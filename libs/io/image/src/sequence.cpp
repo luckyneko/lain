@@ -59,18 +59,6 @@ namespace lain::io::image
 		return !key.empty() && readerRegistry().contains(key);
 	}
 
-	// The '#' run in a pattern, as {offset, length}; length 0 when there is none.
-	static std::pair<std::size_t, std::size_t> hashRun(const std::string& text)
-	{
-		const std::size_t start = text.find('#');
-		if (start == std::string::npos)
-			return {0, 0};
-		std::size_t end = start;
-		while (end < text.size() && text[end] == '#')
-			++end;
-		return {start, end - start};
-	}
-
 	// One matched still: its path, and the number that orders it.
 	struct Numbered
 	{
@@ -84,9 +72,12 @@ namespace lain::io::image
 	static std::vector<std::string> filesMatchingPattern(const fs::path& pattern)
 	{
 		const std::string name = pattern.filename().string();
-		const auto [start, length] = hashRun(name);
-		const std::string prefix = name.substr(0, start);
-		const std::string suffix = name.substr(start + length);
+		// io::numberField, not a local copy: the render sweep substitutes into these patterns
+		// through io::substituteNumber, and a matcher that disagreed with the substituter would
+		// mean what a sweep writes cannot be read back.
+		const lain::io::NumberField field = lain::io::numberField(name);
+		const std::string prefix = name.substr(0, field.offset);
+		const std::string suffix = name.substr(field.offset + field.width);
 
 		const fs::path directory = pattern.has_parent_path() ? pattern.parent_path() : fs::path{"."};
 
@@ -150,8 +141,7 @@ namespace lain::io::image
 
 		std::error_code error;
 		const bool isDirectory = fs::is_directory(path, error);
-		const auto [start, length] = hashRun(canonical);
-		const bool isPattern = length > 0;
+		const bool isPattern = lain::io::numberField(canonical).found();
 
 		if (!isDirectory && !isPattern)
 		{

@@ -649,8 +649,8 @@ prerequisite note already pointed here. **Nothing is built.**
 **tier-verified LGPL shared** FFmpeg archives for `macos-arm64` / `linux-x86_64` / `linux-arm64` /
 `windows-x86_64`, each with a `MANIFEST.txt` stating tier, full configure string and
 corresponding-source url. That changes three things in M10's plan and nothing in its model. Build
-order in WORK.md; amendments in ADR-0019, ADR-0018 and ADR-0004. **Slices 0 and 1 are built
-(2026-08-31); slices 2–7 are not.**
+order in WORK.md; amendments in ADR-0019, ADR-0018 and ADR-0004. **Slices 0, 1 and 2 are built
+(2026-08-31) — the milestone's central claim is proven end to end; slices 3–7 are not.**
 
 - **Fetched, not found — so ADR-0019's ordering risk is retired.** The objection was to building
   *autotools*, not to fetching; a release **archive** fits the `cmake/addXXX.cmake` FetchContent
@@ -706,6 +706,49 @@ order in WORK.md; amendments in ADR-0019, ADR-0018 and ADR-0004. **Slices 0 and 
   the image and video openers could each grow their own. No public `FrameTable` type yet: offset
   and keyframe are video-shaped, so slice 5 builds one privately behind `frameCount()` /
   `frame(ordinal)`.
+- **Slice 2 built 2026-08-31 — a folder of stills renders to `out.####.png` in bounded memory.**
+  `FramePosition`, `lain::io::sequence` (the opener seam), `OpenSequence` / `FrameAt` /
+  `ClipSequence`, the port types + codec + binders, the manifest writer, and the `run` sweep with
+  `--frame` and `--on-missing-frame`. `ctest` **526/526**; the sweep, the stop policy (exit 1, four
+  of six frames) and skip (exit 0, a visible gap) were driven through the real binary. Carry
+  forward: **the seam is `lain::io::sequence`, not `io::media`**, because inside a namespace called
+  `media` that name shadows `lain::media` everywhere; **a thin facade now, the registry at slice 5**
+  (the repo owner's call), so no registry-with-one-member exists; **`FramePosition` must be a
+  struct**, since every payload registry is `type_index`-keyed and an alias for `std::size_t` would
+  collide in all four at once; and **there is deliberately no `serialize(Archive&, FrameSequence&)`**
+  — `Archive` is direction-agnostic, so one would make `fromValue` compile and silently yield an
+  empty sequence, hence a one-way `sequenceManifest()` instead.
+- **Two hazards the slice exposed and fixed.** `bindDefaultInput` bound `inputs[0]` whatever pin it
+  was asked about, and `Evaluation::bind` type-checks nothing — so a second boundary input would
+  have let an unbound frame position silently re-bind the image pin. And `--frame` collides with the
+  natural name for a frame-position pin; it does not matter, because **the sweep finds the pin by
+  TYPE** — which is the entire reason ADR-0018 made `FramePosition` distinct. `--frame 5` is a
+  one-frame range, and is the only cli spelling for a position.
+- **New in `lain::app`: `onProcess` returns its status, and `Application::exit(code)`.** The stop
+  policy needs a non-zero exit. The first attempt added `setExitCode` and argued that changing a
+  public virtual cost more than it was worth; **review overturned that** — only 2 of 6 delegates
+  override `onProcess`, and a one-shot work routine returning its own status cannot be forgotten.
+  `quit()` already existed, so `exit(code)` is that request with a reason and `quit()` is now
+  `exit(0)`.
+- **Accepted cost, not claimed around:** `bind` marks the `GroupInputNode`, not the pin, so every
+  node fed by *any* boundary pin recomputes each frame — harmless for this shape (a `FrameSequence`
+  copy is a refcount bump), but it is not "only the changed cone recomputes" until measured.
+- **Slice 2 review pass (2026-09-01), four objections upheld.** `ctest` **534/534**; the sweep and
+  both missing-frame policies re-driven through the real binary unchanged. **`--frame` is now a
+  typed option** — `core::Range` carries its own literal form the way `core::Version` does and
+  provides CLI11's `lexical_cast` hook, so core names nothing of CLI11 yet a malformed range is
+  refused *by the parser* before a graph loads. `Range` needed the name, so the planned param-editor
+  slider is renamed **`Bounded<T>`** in CONTEXT.md. **The manifest moved to a new
+  `libs/media/serialize` target and became declarative** (`LAIN_SERIALIZE`), which is what ADR-0018
+  asked for all along — *"not a bespoke writer"* — with `lain::media` still linking no `data`.
+- **Three traps worth carrying forward, now in CONTEXT.md as the boundary rule's corollary.** A
+  `serialize` for `math::Vec2i` written in `lain::math` **compiles and is never found**, because
+  `Vec2i` is a `using` alias for `glm::ivec2` and ADL associates `glm`; one in `namespace glm` is
+  global to the program instead. A **namespace cannot share a name with a function in the same
+  scope**, so `lain::media` keeps the `serialize()` free function and only the TARGET is
+  `lain::media::serialize` (as `lain::io::image::codecs` already does). And **`media::select(seq,
+  Range)` was built and backed out**: it makes `select(seq, {1, 10, 2})` ambiguous, for an operation
+  with no production caller.
 - **Verified against the published artifacts, not assumed.** Delivery encoding is genuinely
   platform-conditional (macOS videotoolbox; Windows Media Foundation + NVENC; Linux VAAPI /
   V4L2-M2M / NVENC), while **decoding is uniform** — so slice 6 selects an encoder by availability,

@@ -29,7 +29,14 @@ namespace lain::app
 		// The work routine — graph evaluation / processing, kept separate from the
 		// frame. Invoked once by run() in headless-mode; in gui-mode it runs only when
 		// something calls Application::process() (e.g. a "Run" button), never polled.
-		virtual void onProcess([[maybe_unused]] Application& app) {}
+		//
+		// Returns a process exit status: 0 for success, non-zero when the work itself
+		// failed. In headless mode that becomes run()'s return value, which is the only
+		// way a caller who sees just the exit status can tell a complete result from a
+		// truncated one. In gui-mode Application::process() hands it back to whatever
+		// asked for the work; a delegate that wants to END the run reports through
+		// Application::exit(code) instead.
+		virtual int onProcess([[maybe_unused]] Application& app) { return 0; }
 
 		// App stopping: release app-wide resources before windows/device tear down.
 		virtual void onStop([[maybe_unused]] Application& app) {}

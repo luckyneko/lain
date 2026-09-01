@@ -5,6 +5,7 @@
 #include <lain/app/applicationdelegate.h>
 #include <lain/app/cli.h>
 #include <lain/core/factory.h>
+#include <lain/core/range.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
@@ -31,7 +32,7 @@ namespace flowview
 		bool onInit(lain::app::Application& app, lain::app::cli::App& cli) override;
 		bool onStart(lain::app::Application& app) override;
 		void onUpdate(lain::app::Application& app, const lain::app::TimeState& time, const lain::app::InputState& input) override;
-		void onProcess(lain::app::Application& app) override;
+		int onProcess(lain::app::Application& app) override;
 		void onStop(lain::app::Application& app) override;
 
 		// The gui-mode scene the MainWindow reads (reached via
@@ -69,12 +70,14 @@ namespace flowview
 		void replaceGraph(std::unique_ptr<lain::flow::Graph> graph);
 
 	private:
-		std::uint32_t m_size = 64;	// example gradient extent (size x size)
-		int m_frames = 0;			// gui-mode: quit after N frames (0 = until closed)
-		bool m_useExample = false;	// gui: --example starts from the example scene, else a blank graph
-		bool m_resetLayout = false; // gui: --reset-layout ignores the saved dock layout
-		std::string m_graphPath;	// run/list: the graph JSON (empty -> the built-in example scene)
-		std::string m_savePath;		// run --save: serialize the graph here
+		std::uint32_t m_size = 64;			   // example gradient extent (size x size)
+		int m_frames = 0;					   // gui-mode: quit after N frames (0 = until closed)
+		bool m_useExample = false;			   // gui: --example starts from the example scene, else a blank graph
+		bool m_resetLayout = false;			   // gui: --reset-layout ignores the saved dock layout
+		std::string m_graphPath;			   // run/list: the graph JSON (empty -> the built-in example scene)
+		std::string m_savePath;				   // run --save: serialize the graph here
+		lain::core::Range m_frameRange;		   // run --frame: a render over these frames (a TYPED option)
+		std::string m_onMissingFrame = "stop"; // run --on-missing-frame: stop | skip
 
 		// The headless subcommands. Their pointers stay valid through Application::run() (the cli::App
 		// outlives onStart/onProcess), so ->parsed()/->remaining() drive the headless dispatch.

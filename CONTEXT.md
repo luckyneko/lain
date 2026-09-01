@@ -87,8 +87,10 @@ never by driving a live GUI.
   `string`→text, **`std::filesystem::path`**→file-picker, **`image::ColorRGBf`**→colour swatch,
   `int`/`float`→drag, `bool`→checkbox. A bespoke helper type appears only where no standard type
   carries the meaning — **`Choice`** (int + labels, for enums; labels from `meta::enums` so the
-  adapter never needs the concrete enum) and **`Range<T>`** (value + bounds, a slider) — and those
-  live in `flow` (pure data). The type→widget mapping is a **type-keyed editor registry** in the
+  adapter never needs the concrete enum) and **`Bounded<T>`** (value + min/max, a slider) — and those
+  live in `flow` (pure data). *(Spelled `Bounded`, not `Range`: **`core::Range`** is an inclusive
+  first/last/step span you iterate, which is what the word most naturally means; a slider's value is
+  a bounded scalar, not a span.)* The type→widget mapping is a **type-keyed editor registry** in the
   adapter (same shape as the reader registry / the deferred texture "GUI view" seam): built-ins
   registered once by flowview, a custom type is a `registerParamEditor<T>` registration, not a core
   edit. An editor commits through `Node::setParam` — which writes and invalidates as one operation —
@@ -977,6 +979,27 @@ medium.
   `finish()` explicit and status-returning because a trailer write can fail and a destructor has
   nowhere to report), with a one-shot `save(uri, sequence)` facade over it for transcoding.
   _Avoid_: `encode(vector<Image>) → Buffer`, a writer whose destructor is the commit.
+
+## Where a serialize() bridge lives
+
+*(The corollary of the boundary rule, written down after it appeared in three `.cpp` comments and
+no document.)* A `serialize(Archive&, T&)` must be found by **ADL on `T`**, so it belongs to `T`'s
+namespace — but the TARGET it is compiled into is a choice, and the rule is: **the lowest target
+that already names both the type and the archive**. A foundational library stays `data`-free (no
+`libs/*` foundational target links `lain::data`), so the bridge lives one level out, in the
+`<lib>/serialize` companion — `lain::flow::serialize` for graphs, `lain::media::serialize` for frame
+sequences.
+
+Two traps this rule exists to avoid, both met in M10:
+
+- **An alias has no namespace of its own.** `math::Vec2i` is a `using` for `glm::ivec2`, so ADL
+  associates `glm`; a bridge written in `lain::math` **compiles and is never found**. One written in
+  `namespace glm` is found, and is then global to the program, so the next target wanting it
+  collides. Flatten such a field at the struct that owns it instead.
+- **A namespace cannot share a name with a function in the same scope.** `lain::media` needs a
+  `serialize()` free function, so its documents live in `lain::media` and only the *target* is
+  called `lain::media::serialize` — the way `lain::io::image::codecs` is a target whose functions
+  live in `lain::io::image`.
 
 ## The `data` library — serialization DOM + reflection
 

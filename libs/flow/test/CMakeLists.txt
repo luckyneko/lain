@@ -11,6 +11,7 @@ add_executable(test-flow
 	test_edit.cpp
 	test_describe.cpp
 	test_nodes.cpp
+	test_sequencenodes.cpp
 	test_params.cpp
 	test_boundary.cpp
 	test_group.cpp

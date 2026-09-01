@@ -5,6 +5,7 @@ add_executable(test-core
 	test_factory.cpp
 	test_time.cpp
 	test_version.cpp
+	test_range.cpp
 	test_paths.cpp
 	test_uuid.cpp
 )

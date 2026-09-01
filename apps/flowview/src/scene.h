@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lain/core/factory.h>
+#include <lain/flow/boundary.h> // BoundaryInput in bindDefaultInput
 #include <lain/flow/node.h>
 #include <lain/flow/types.h>
 
@@ -41,5 +42,10 @@ namespace flowview
 	// Bind the graph's first boundary input to a generated `size`x`size` gradient image, so a
 	// fresh gui-mode / bare `--headless` shows a result on launch; the Interface panel (gui) or
 	// --input (cli) rebinds it to a real file.
-	void bindDefaultInput(lain::flow::Graph& graph, lain::flow::Evaluation& evaluation, std::uint32_t size);
+	// Bind `pin` with a freshly generated gradient — the stand-in that gives an unbound graph
+	// something to show. Returns false and binds NOTHING if the pin is not image-typed, because
+	// Evaluation::bind does no type checking and a wrongly-typed bound value is invisible until a
+	// node reads it.
+	bool bindDefaultInput(const lain::flow::BoundaryInput& pin, lain::flow::Evaluation& evaluation,
+						  std::uint32_t size);
 } // namespace flowview

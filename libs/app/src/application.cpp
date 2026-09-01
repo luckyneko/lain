@@ -122,6 +122,7 @@ namespace lain::app
 		ApplicationDelegate& delegate;
 		AppInfo info;
 		int verbosity{0}; // -v/--verbose count, filled in by run()'s parse
+		int exitCode{0};  // what run() returns; a delegate sets it when its own work fails
 		acm::Instance instance;
 		acm::Device device;
 		bool glfwReady{false};
@@ -254,7 +255,9 @@ namespace lain::app
 
 		if (s.windows.empty())
 		{
-			process(); // headless: run the work routine once
+			// Headless: the work routine runs once and its status IS the process's. A caller who
+			// sees only the exit code must be able to tell a complete run from a failed one.
+			s.exitCode = process();
 		}
 		else
 		{
@@ -318,12 +321,16 @@ namespace lain::app
 		}
 
 		s.delegate.onShutdown(*this);
-		return 0;
+
+		// Teardown happens either way; what the process reports is whatever the delegate's own work
+		// concluded (0 unless it said otherwise). A headless run that stopped early must be able to
+		// say so — see setExitCode.
+		return s.exitCode;
 	}
 
-	void Application::process() { m->delegate.onProcess(*this); }
+	int Application::process() { return m->delegate.onProcess(*this); }
 
-	void Application::quit() { m->quit = true; }
+	void Application::quit() { exit(0); }
 
 	acm::Device& Application::device() { return ensureDevice({}); }
 
@@ -340,6 +347,12 @@ namespace lain::app
 	const AppInfo& Application::info() const { return m->info; }
 
 	int Application::verbosity() const { return m->verbosity; }
+
+	void Application::exit(int code)
+	{
+		m->exitCode = code;
+		m->quit = true;
+	}
 
 	// --- private helpers --------------------------------------------------------
 
