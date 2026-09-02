@@ -3,4 +3,8 @@
 .cache/
 .claude/
 .vscode/
-build*
+# Anchored to the repository root, and it has to be: an unanchored "build*" matches ANY path
+# component, which silently swallowed plugins/io/video/ffmpeg/src/build.cpp — the licence probe —
+# so it was never committed with the plugin that lists it (M10 slice 0, found 2026-09-02). `git add`
+# skips an ignored file without a word, so the loss is invisible until a fresh clone fails to build.
+/build*/
