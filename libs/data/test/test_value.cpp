@@ -35,7 +35,10 @@ TEST_CASE("scalar extraction is pure and typed", "[value]")
 	REQUIRE(Value(2.5).asDouble() == 2.5);
 	REQUIRE_FALSE(Value(2.5).asInt64().has_value());
 
-	const std::string* s = Value("text").asString();
+	// asString returns a pointer INTO the Value, so the Value has to outlive it — reading
+	// through one taken off a temporary is a use-after-free, which is what this line used to be.
+	const Value text("text");
+	const std::string* s = text.asString();
 	REQUIRE(s != nullptr);
 	REQUIRE(*s == "text");
 }

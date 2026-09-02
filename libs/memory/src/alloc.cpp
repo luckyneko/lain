@@ -7,8 +7,11 @@ namespace lain::memory
 {
 	// --- file-local helpers (named static, not an anonymous namespace) ----------
 
-	// A non-zero power of two is the requirement for an over-aligned new/delete.
-	static bool isPowerOfTwo(std::size_t v)
+	// A non-zero power of two is the requirement for an over-aligned new/delete. Its only
+	// callers are the asserts below, so NDEBUG compiles every use away and leaves the
+	// definition unused — which -Werror,-Wunused-function then rejects. maybe_unused states
+	// that rather than dropping the check or hiding it behind an #ifdef.
+	[[maybe_unused]] static bool isPowerOfTwo(std::size_t v)
 	{
 		return v != 0 && (v & (v - 1)) == 0;
 	}
