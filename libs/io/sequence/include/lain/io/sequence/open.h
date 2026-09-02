@@ -46,13 +46,4 @@ namespace lain::io::sequence
 	// answers structurally rather than by name. There is exactly one; registering a second
 	// replaces it.
 	void registerDefaultOpener(Opener opener);
-
-	// Wire the built-in media into the registry: the video seam under each of its container
-	// extensions, the image seam as the default. The app's single sequence-wiring point, beside
-	// registerImageCodecs() and registerVideoCodecs() — and distinct from them, because those wire
-	// CODECS into a medium while this wires MEDIA into the dispatcher.
-	//
-	// Call it before io::sequence::open(); with nothing registered, open() has nothing to dispatch
-	// to and says so.
-	void registerSequenceOpeners();
 } // namespace lain::io::sequence

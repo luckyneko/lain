@@ -1,13 +1,16 @@
-#include "lain/io/sequence/open.h"
+#include "lain/io/sequence/openers.h"
+
+#include "lain/io/sequence/open.h" // registerOpener / registerDefaultOpener
 
 #include <lain/io/image/sequence.h>
 #include <lain/io/video/open.h>
 
 #include <string>
 
-// The only translation unit in this library that names a medium. open.cpp holds the registry and
-// depends on nothing but the registry's own vocabulary, which is what lets a medium outside this
-// tree register itself without an edit here.
+// The only translation unit in this library that names a medium — which is exactly why it is its
+// own file with its own header, rather than a few lines added to the registry's. open.cpp depends
+// on nothing but the registry's own vocabulary, and that is what lets a medium outside this tree
+// register itself without an edit here.
 
 namespace lain::io::sequence
 {

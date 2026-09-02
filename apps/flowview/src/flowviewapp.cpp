@@ -8,7 +8,7 @@
 #include <lain/app/window.h>
 #include <lain/flow/graph.h>
 #include <lain/io/image/codecs.h>
-#include <lain/io/sequence/open.h>
+#include <lain/io/sequence/openers.h>
 #include <lain/io/video/codecs.h>
 
 #include <cstdint>

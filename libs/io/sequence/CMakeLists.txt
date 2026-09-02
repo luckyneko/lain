@@ -4,9 +4,9 @@
 # It is a level above io::image / io::video rather than inside lain::media, because media depends
 # on no io: a medium-neutral library that knew how to open things would depend on every medium.
 #
-# The split between the two sources is deliberate: open.cpp is the registry and names no medium,
-# openers.cpp is the wiring and names both. Only the second has to change when a medium is added,
-# and a medium outside this tree needs neither.
+# The split between the two sources is deliberate, and each has its own header: open.h/open.cpp are
+# the registry and name no medium, openers.h/openers.cpp are the wiring and name both. Only the
+# second pair has to change when a medium is added, and a medium outside this tree needs neither.
 
 add_library(io-sequence STATIC
 	src/open.cpp

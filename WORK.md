@@ -2978,9 +2978,12 @@ default (video-off) configuration builds and passes with it.
   sequence's. So video registers claims and stills are the default, which is also the honest error
   path: `openSequence` already says *"neither a directory nor a ####-numbered pattern"* for anything
   it cannot take.
-- **The registry lives in `open.cpp` and the wiring in `openers.cpp`** — the only translation unit in
-  the library that names a medium. Adding a medium touches the second file; a medium outside this
-  tree touches neither. `registerSequenceOpeners()` is the app's single wiring point, beside
+- **The registry lives in `open.h`/`open.cpp` and the wiring in `openers.h`/`openers.cpp`** — the
+  only translation unit in the library that names a medium. Adding a medium touches the second pair;
+  a medium outside this tree touches neither. (**Corrected 2026-09-02:** `registerSequenceOpeners`
+  was first declared in `open.h` while living in `openers.cpp`, which is a function hiding in a file
+  that does not carry its name. One header, one translation unit — and here it also puts the seam's
+  only dependency-bearing function out of the header that exists to have none.) `registerSequenceOpeners()` is the app's single wiring point, beside
   `registerImageCodecs()` and `registerVideoCodecs()`, and it is deliberately separate from them:
   those wire CODECS into a medium, this wires MEDIA into the dispatcher.
 - **`VideoSource` is in the seam, not the plugin.** A plugin implements `VideoReader` and nothing

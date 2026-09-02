@@ -13,7 +13,7 @@
 #include <lain/flow/scheduler.h>
 #include <lain/io/image/load.h>
 #include <lain/io/image/reader.h>
-#include <lain/io/sequence/open.h>
+#include <lain/io/sequence/openers.h>
 #include <lain/media/frameposition.h>
 #include <lain/media/framesequence.h>
 

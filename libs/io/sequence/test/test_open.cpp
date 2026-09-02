@@ -6,6 +6,7 @@
 // wiring — is proved separately, by the io::image and io::video seams' own tests.
 
 #include "lain/io/sequence/open.h"
+#include "lain/io/sequence/openers.h"
 
 #include <catch2/catch_test_macros.hpp>
 
