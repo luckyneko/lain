@@ -1,4 +1,4 @@
-#include "lain/io/image/tiff/register.h"
+#include "tiffreader.h"
 
 #include <lain/image/image.h>
 #include <lain/io/image/load.h>	  // readerRegistry
@@ -203,16 +203,14 @@ namespace lain::io::image::tiff
 		}
 	};
 
-	// Defined in tiffwriter.cpp (same plugin); registered together so the codec's reader and
-	// writer arrive as a pair.
-	void registerTiffWriter();
-
-	void registerCodec()
+	void registerTiffReader()
 	{
+		// The handlers are libtiff-GLOBAL, not per-reader, so they are installed once here rather
+		// than on each decode — and they live in this file because that is where the handler they
+		// install does.
 		TIFFSetErrorHandler(&tiffMessageToLog);
 		TIFFSetWarningHandler(&tiffMessageToLog);
 		readerRegistry().registerType<TiffReader>("tiff");
 		readerRegistry().registerType<TiffReader>("tif");
-		registerTiffWriter();
 	}
 } // namespace lain::io::image::tiff

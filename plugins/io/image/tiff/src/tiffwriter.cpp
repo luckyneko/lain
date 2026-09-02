@@ -1,3 +1,5 @@
+#include "tiffwriter.h"
+
 #include "lain/io/image/save.h" // ImageWriter, writerRegistry
 #include "lain/io/image/writer.h"
 
@@ -161,8 +163,6 @@ namespace lain::io::image::tiff
 		}
 	};
 
-	// Register the TIFF writer into the writer registry. Called by registerCodec (tiffreader.cpp)
-	// so the codec's reader + writer register together.
 	void registerTiffWriter()
 	{
 		writerRegistry().registerType<TiffWriter>("tiff");

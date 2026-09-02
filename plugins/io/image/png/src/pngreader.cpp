@@ -1,4 +1,4 @@
-#include "lain/io/image/png/register.h"
+#include "pngreader.h"
 
 #include <lain/image/image.h>
 #include <lain/io/image/load.h>	  // readerRegistry
@@ -194,13 +194,8 @@ namespace lain::io::image::png
 		}
 	};
 
-	// Defined in pngwriter.cpp (same plugin); registered together so the codec's reader and
-	// writer arrive as a pair.
-	void registerPngWriter();
-
-	void registerCodec()
+	void registerPngReader()
 	{
 		readerRegistry().registerType<PngReader>("png");
-		registerPngWriter();
 	}
 } // namespace lain::io::image::png

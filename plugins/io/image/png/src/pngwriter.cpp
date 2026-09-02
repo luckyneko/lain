@@ -1,3 +1,5 @@
+#include "pngwriter.h"
+
 #include "lain/io/image/save.h" // ImageWriter, writerRegistry
 #include "lain/io/image/writer.h"
 
@@ -153,8 +155,6 @@ namespace lain::io::image::png
 		}
 	};
 
-	// Register the PNG writer into the writer registry. Called by registerCodec (pngreader.cpp)
-	// so a plugin's reader + writer register together.
 	void registerPngWriter()
 	{
 		writerRegistry().registerType<PngWriter>("png");

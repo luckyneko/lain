@@ -7,6 +7,7 @@ include(addLibTIFF) # TIFF::tiff (fetches libtiff + zlib on demand)
 add_library(io-image-tiff STATIC
 	src/tiffreader.cpp
 	src/tiffwriter.cpp
+	src/register.cpp
 )
 add_library(lain::io::image::tiff ALIAS io-image-tiff)
 

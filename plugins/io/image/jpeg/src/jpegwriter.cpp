@@ -1,3 +1,5 @@
+#include "jpegwriter.h"
+
 #include "lain/io/image/save.h" // ImageWriter, writerRegistry
 #include "lain/io/image/writer.h"
 
@@ -70,8 +72,6 @@ namespace lain::io::image::jpeg
 		}
 	};
 
-	// Register the JPEG writer into the writer registry. Called by registerCodec (jpegreader.cpp)
-	// so the codec's reader + writer register together.
 	void registerJpegWriter()
 	{
 		writerRegistry().registerType<JpegWriter>("jpg");

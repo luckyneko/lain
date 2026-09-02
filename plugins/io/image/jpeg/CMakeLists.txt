@@ -10,6 +10,7 @@ include(addStb) # stb::image (fetches stb, compiles its impl in a non-strict TU)
 add_library(io-image-jpeg STATIC
 	src/jpegreader.cpp
 	src/jpegwriter.cpp
+	src/register.cpp
 )
 add_library(lain::io::image::jpeg ALIAS io-image-jpeg)
 

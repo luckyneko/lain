@@ -377,6 +377,14 @@ and the "Loading" section of `CONTEXT.md`):
   Membership is discovered from a global CMake list, so a new `plugins/io/image/<fmt>/` folder
   joins the group with no edits elsewhere; `if(TARGET lain::io::image::<fmt>)` is available for
   finer per-codec control.
+  - **Layout corrected 2026-09-02 (repo owner):** each codec's `registerCodec()` used to sit at the
+    bottom of `<fmt>reader.cpp`, with the writer's registration reached through a hand-written
+    forward declaration across translation units. **One header, one translation unit** — so
+    `register.h` is now implemented by `register.cpp`, and `<fmt>reader.h` / `<fmt>writer.h` declare
+    the single thing their own `.cpp` exports (its registration; the codec classes stay private to
+    their TU, since nothing constructs them elsewhere). The cross-TU forward declarations are gone,
+    and each half owns the format keys it claims. Behaviour is unchanged. The same defect had been
+    copied into the FFmpeg plugin and `io::sequence`, and was fixed there first.
 - **Third-party codecs via `cmake/addXXX.cmake` FetchContent**, not `find_package` (house
   convention). The per-codec guard is therefore an **opt-out `option`**, not an availability probe
   (sources are always fetchable — "absent" means "disabled"). png/tiff pull transitive deps
