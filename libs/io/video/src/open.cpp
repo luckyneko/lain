@@ -65,6 +65,14 @@ namespace lain::io::video
 			std::unique_ptr<VideoReader> reader = readerRegistry().create(backend);
 			if (reader && reader->open(std::move(stream), rate))
 			{
+				// What the file turned out to be, said once, where a person can see it. The
+				// container and the codec are separate facts about one file and neither is in its
+				// name — a "clip.mp4" is as likely to hold prores as h264 — so a reader that could
+				// not report both would leave the distinction invisible in the one place it costs
+				// nothing to state.
+				lain::log::info("io::video: opened {} — {}/{}, {}, {} frames", canonical, reader->container(),
+								reader->codec(), reader->spec().toString(), reader->frameCount());
+
 				return lain::media::FrameSequence::over(
 					std::make_shared<VideoSource>(canonical, std::move(reader)));
 			}

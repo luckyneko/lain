@@ -23,7 +23,10 @@ static build would additionally owe consumers relinkable object files. `cmake/ad
 such a build relicenses the combined work whether or not a GPL codec is ever called; a `[video]`
 runtime test asks the linked library the same questions independently. A build with it enabled
 stages FFmpeg's licence texts and build manifest into `third-party/ffmpeg/`, and any `lain::app`
-binary prints the required notice with `--licenses`.
+binary prints the required notice with `--licenses`. What it buys is **reading video**: with the
+plugin on, a frame sequence can be opened from an mp4/mov/mkv the same way a folder of stills is
+(`lain::io::video`, WORK.md M10 slice 5). Without it the seam is still built, so a document naming
+a video keeps its nodes and edges and reports a missing capability when run.
 
 | Dependency | Version/status | License | Scope |
 | --- | --- | --- | --- |
@@ -53,7 +56,7 @@ binary prints the required notice with `--licenses`.
 | [Ceres Solver](https://github.com/ceres-solver/ceres-solver) | planned, version/config TBD | [BSD-3-Clause] | Registration refinement plugin |
 | [Eigen](https://gitlab.com/libeigen/eigen) | planned, version TBD; approved exception | [MPL-2.0] | Ceres linear algebra, with `EIGEN_MPL2_ONLY` |
 | [Abseil](https://github.com/abseil/abseil-cpp) | planned, version TBD | [Apache-2.0] | Ceres dependency |
-| [FFmpeg](https://github.com/FFmpeg/FFmpeg) | 8.1.2, `lgpl` tier, **shared**, opt-in; approved exception | [LGPL-2.1-or-later] | Video codec plugin, LGPL configuration only (no `--enable-gpl`/`--enable-nonfree`, no x264/x265); [prebuilt](https://github.com/luckyneko/ffmpeg-prebuilt), hash-pinned, tier verified at configure time |
+| [FFmpeg](https://github.com/FFmpeg/FFmpeg) | 8.1.2, `lgpl` tier, **shared**, opt-in; approved exception | [LGPL-2.1-or-later] | Video decoding behind `lain::io::video` (demux, seek, decode to RGB8), LGPL configuration only (no `--enable-gpl`/`--enable-nonfree`, no x264/x265); [prebuilt](https://github.com/luckyneko/ffmpeg-prebuilt), hash-pinned, tier verified at configure time |
 
 Platform SDKs, GPU drivers, and operating-system utilities invoked by a dependency are not
 redistributed by this repository and are not included in the table. Any newly enabled optional

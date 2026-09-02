@@ -135,7 +135,17 @@ material are refused and reported.
 
 **Indexed at open.** The container's own index is used when present; otherwise the source is
 demux-scanned without decoding, recording per frame its offset, presentation timestamp and keyframe
-flag. That is what makes the promises true: the sequence is genuinely finite, "frame 412" means frame
+flag.
+
+> **Amended 2026-09-02, on building it (M10 slice 5b).** The first clause does not hold and the
+> second is what actually happens, always. A container's index holds **keyframe entries only**, so
+> it can say where to start decoding but never what frame 412 is — the question this whole section
+> rests on. So the table is *always* built by the decode-free scan, and the index is used for seek
+> points alone. Two further facts the implementation settled: the table must be sorted into
+> **display order**, because with B-frames the packets do not arrive in it and a table left in
+> arrival order hands back a different image than the one asked for (a wrong answer, not an error);
+> and the cost is one sequential read of the container's packet headers at open, which is the price
+> of the exactness promised here. That is what makes the promises true: the sequence is genuinely finite, "frame 412" means frame
 412 on every platform and every run, the ring cache can decode a GOP forward instead of re-seeking,
 variable frame rate is handled because frames are ordinal and only timestamps are irregular, and the
 identities are deterministic. The cost is one decode-free scan for indexless containers; for MP4 and

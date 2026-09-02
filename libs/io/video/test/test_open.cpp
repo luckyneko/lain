@@ -61,6 +61,9 @@ namespace
 		const lain::media::FrameSpec& spec() const override { return m_spec; }
 		std::size_t frameCount() const override { return fakeFrameCount; }
 
+		const std::string& container() const override { return m_container; }
+		const std::string& codec() const override { return m_codec; }
+
 		lain::core::Time timestamp(std::size_t ordinal) const override
 		{
 			// Deliberately NOT rate x ordinal: the base class's default is that, so a test can only
@@ -83,6 +86,10 @@ namespace
 	private:
 		std::unique_ptr<lain::io::ReadStream> m_stream;
 		lain::media::FrameSpec m_spec;
+		// Two facts about one file, which is the whole reason they are reported rather than
+		// dispatched on: neither is derivable from the other, and neither is in the file's name.
+		std::string m_container{"fakecontainer"};
+		std::string m_codec{"fakecodec"};
 	};
 
 	// A uniquely-named temp file holding one byte, removed on destruction.
@@ -138,6 +145,16 @@ TEST_CASE("a registered reader opens a uri as a sequence", "[io::video]")
 	// compare equal however the path was spelled (media::FrameRef).
 	CHECK(sequence->frame(0).source == lain::io::canonicalUri(file.string()));
 	CHECK(sequence->frame(3).ordinal == 3);
+}
+
+TEST_CASE("a reader names the container and the codec it found", "[io::video]")
+{
+	// Reported facts, not structure — the seam's answer to a video file having two aspects. They
+	// are exercised here (and consumed by open()'s log line) rather than left as an accessor
+	// nothing calls, which is how an unused member stays quietly broken.
+	FakeReader reader;
+	CHECK(reader.container() == "fakecontainer");
+	CHECK(reader.codec() == "fakecodec");
 }
 
 TEST_CASE("a reader that refuses the container is reported, not delivered empty", "[io::video]")

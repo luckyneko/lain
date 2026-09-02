@@ -918,12 +918,16 @@ medium.
   read whole by `io::read` and only a container that must be seeked into needs anything kept open.
 
 - **Frame table** — the per-source record built **at open**: one entry per frame with its offset,
-  presentation timestamp and keyframe flag, read from the container's index when it has one and
-  demux-scanned (without decoding) when it does not. It is what makes the promises true — the count
-  is exact, "frame 412" means frame 412 on every platform and run, a GOP can be decoded forward
-  instead of re-seeking, and **variable frame rate is free** because frames are ordinal and only the
-  timestamps are irregular. _Avoid_: index (the word is spent — see *Position*), estimated duration,
-  frame count from a duration × rate calculation.
+  presentation timestamp and keyframe flag, produced by a **decode-free demux scan** of every packet.
+  It is what makes the promises true — the count is exact, "frame 412" means frame 412 on every
+  platform and run, a GOP can be decoded forward instead of re-seeking, and **variable frame rate is
+  free** because frames are ordinal and only the timestamps are irregular. **Corrected 2026-09-02
+  (M10 slice 5b):** this entry used to say the container's own index was read *instead* where one
+  exists. It cannot be — a container index holds **keyframe entries only**, so it answers "where do
+  I start decoding" and never "what is frame 412". The index is used for seek points; the table is
+  always scanned. The table is also in **display order**, which for material with B-frames is not
+  the order the packets arrive in. _Avoid_: index (the word is spent — see *Position*), estimated
+  duration, frame count from a duration × rate calculation, a table left in demux order.
 
 - **Position vs frame identity** — two numbers, equal only for an unclipped source. **Position** is
   where a frame sits in *this* sequence (`at(i)`, a map element, the timeline); **frame identity** is

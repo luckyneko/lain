@@ -276,6 +276,45 @@ sits inside an inline group).
   **gui-mode live-verified 2026-08-11 — M7 is COMPLETE.**
 - Still out: file watching, prefab overrides, in-place template editing.
 
+### Update 2026-09-02 — M10 slice 5b built: the FFmpeg reader (**slice 5 COMPLETE**)
+
+`FFmpegVideoReader` in `plugins/io/video/ffmpeg` — a custom `AVIOContext` over slice 3's `Stream`
+(so no `fstream` enters a codec plugin, ADR-0004), the demux-scanned frame table, keyframe seek +
+pts matching, `swscale` to RGB8 with range expansion, and the colour policy. **`--video src.mp4`
+works**: a real mp4 sweeps to `out.####.png` through the production binary. `ctest` **589/589**
+(+15) with video on, **578/578** in the default configuration, warning-clean, format-check clean.
+See WORK.md M10 for the full landing notes.
+
+- **A container's index is KEYFRAME-ONLY, so the frame table is always demux-scanned.** ADR-0018
+  and CONTEXT.md both said the index was read "when present" with the scan as a fallback — not
+  achievable: an index answers *where do I start decoding*, never *what is frame 412*. Both are
+  corrected in place; the index keeps the one job it is good for (seek points). Cost, stated rather
+  than found later: one sequential header-only read at open.
+- **The table is sorted into DISPLAY order — the slice's sharpest edge.** With B-frames the packets
+  arrive pts 0, 1536, 512, 1024 … so a table left in arrival order answers `image(1)` with the frame
+  stored second: a **wrong image, not an error**. Sabotage-verified, and the reason a second fixture
+  (MPEG-4 `-bf 2`, since videotoolbox will not emit B-frames) exists at all.
+- **A seek matches by PTS, never by counting** — after seeking to a keyframe the decoder hands back
+  earlier frames, reordered. Sequential access never seeks (`m_nextOrdinal`), and a failed decode
+  resets that to *nowhere* rather than trusting a decoder whose position is unknown.
+- **Sabotage found a weak test and it was replaced.** "Random access equals sequential" opened a
+  fresh sequence and asked for frame 7 — which decodes forward and never seeks, so it passed with
+  seeking removed entirely. It now reads frame 11 first, forcing a backwards seek past the ring, and
+  compares byte for byte.
+- **The colour rule refuses at OPEN, and examines all three axes.** Not theoretical: the PQ fixture
+  came out of the encoder with its **matrix** tag surviving and its transfer stripped, so a policy
+  reading only the transfer would have accepted BT.2020 as BT709. An explicit **sRGB transfer is
+  believed**; untagged is BT709 **with a log line**.
+- **`container()` / `codec()` landed with their consumer** — `io::video` logs *"opened clip.mp4 —
+  mov,mp4,m4a,3gp,3g2,mj2/h264, 64x48 RGB8 BT709 · 24 fps, 12 frames"*. The container/codec
+  distinction as **data**, per this session's decision; an accessor with no caller is how an
+  unreachable feature stays unreachable.
+- **Live proof:** 12 frames rendered from an mp4, the stills tracking the fixture's per-frame
+  colour, and **the file opened exactly once for the whole range** — ADR-0018's "one Evaluation
+  keeps the decoder warm", observed. And in a video-OFF build the same document still lists its full
+  interface and reports *"this build has no video codec plugin"* when run: capability, not
+  vocabulary.
+
 ### Update 2026-09-02 — M10 slice 5a built: the `io::video` seam + the opener registry
 
 Slice 5 lands as **two commits** — the seam and the registry first (testable in the *default*,

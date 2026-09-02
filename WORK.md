@@ -2634,6 +2634,13 @@ with it on (473 + 3), warning-clean, format-check clean; the default build is un
 - **No aggregator in `plugins/io/video` yet.** The image side generates one because it has three
   codecs to wire into a registry; video has one plugin and, until slice 5, no registry to wire it
   into. It arrives with the reader that needs it, rather than as an empty mechanism.
+- **Found 2026-09-02, while committing slice 5b: the licence probe's SOURCE was never committed.**
+  `.gitignore` carried an unanchored `build*`, which matches any path COMPONENT — so
+  `plugins/io/video/ffmpeg/src/build.cpp` and its header were silently ignored, and slice 0
+  committed the plugin's CMakeLists and its test without the two files they name. A fresh clone
+  would have failed to configure with the plugin enabled. `git add` skips an ignored file without a
+  word, which is what made it invisible for two days; the pattern is now `/build*/`, anchored to the
+  repository root and matching directories only, and the files are in.
 
 **Slice 1 is built (2026-08-31).** `lain::media` (`FrameRate`, `FrameSpec`, `FrameRef`,
 `FrameSource`, `FrameSequence`, the five list operations) plus `io::image::openSequence` — a folder
@@ -2997,6 +3004,60 @@ default (video-off) configuration builds and passes with it.
   build's behaviour — no codec, an honest refusal — cannot share a process with a test that registers
   a fake one, and the alternative was a rule about the order Catch2 runs cases in. One case, one
   binary, no ordering to remember.
+
+**Slice 5b is built (2026-09-02) — `--video src.mp4` WORKS, and M10 slice 5 is COMPLETE.**
+`FFmpegVideoReader` in `plugins/io/video/ffmpeg`: a custom `AVIOContext` over slice 3's `Stream`,
+the demux-scanned frame table, keyframe seek + pts matching, `swscale` to RGB8 with range
+expansion, and the colour policy. `ctest` **589/589** (+15), warning-clean, format-check clean, and
+a real mp4 swept to `out.####.png` through the production binary.
+
+- **The container index is KEYFRAME-ONLY, so the frame table is always demux-scanned.** ADR-0018
+  and CONTEXT.md both said the index was read "when present" and the scan was the fallback; that is
+  not achievable. An index answers *where do I start decoding*, never *what is frame 412* — the
+  question the whole model rests on. Both documents are corrected in place, and the index keeps the
+  one job it is good for: seek points. **Cost, stated rather than discovered later:** one sequential
+  read of the container's packet headers at open. Nothing is decoded in it.
+- **The table is sorted into DISPLAY order, and that is the slice's sharpest edge.** With B-frames
+  the packets arrive pts 0, 1536, 512, 1024, 3072 … so a table left in arrival order answers
+  `image(1)` with the frame stored second — a **wrong image, not an error**, which no exception and
+  no eyeball would catch. Sabotage-verified: removing the `stable_sort` fails the B-frame case and
+  nothing else, which is exactly why that second fixture exists.
+- **A seek matches by PTS, never by counting.** After seeking to a keyframe the decoder hands back
+  frames before the target, and with B-frames it reorders them; counting would land on whichever
+  frame happened to be third. `m_nextOrdinal` keeps sequential access — the render loop's whole
+  pattern — from seeking at all, and a failed decode resets it to *nowhere* rather than trusting a
+  decoder whose position is unknown.
+- **A weak test was found by sabotage and replaced.** "Random access equals sequential access"
+  originally opened a fresh sequence and asked for frame 7 — which decodes *forward* from the start
+  and never seeks, so it passed with seeking removed entirely. It now decodes frame 11 first, so
+  reaching 7 must seek backwards past the ring, and compares **byte for byte**: a seek that landed
+  on the wrong keyframe or forgot to flush produces a plausible image that differs.
+- **The colour rule is a pure function refusing at OPEN**, so a mislabelled frame never reaches a
+  graph. All three axes are examined, not just the transfer — and that is not theoretical: the PQ
+  fixture came out of the encoder with its **matrix** tag surviving into the container and its
+  transfer stripped, so a policy reading only the transfer would have accepted BT.2020 material as
+  BT709. An explicit **sRGB transfer is believed** (`ColorSpace::sRGB`) rather than flattened to
+  BT709: lain has that space exactly, and believing an explicit tag is the same rule the refusals
+  follow. Untagged is BT709 **with a log line** — the guess is said out loud.
+- **`VideoReader::container()` / `codec()` landed with their consumer**, not before it: `io::video`
+  logs *"opened clip.mp4 — mov,mp4,m4a,3gp,3g2,mj2/h264, 64x48 RGB8 BT709 · 24 fps, 12 frames"*.
+  That is this session's container/codec discussion arriving as **data**: two facts about one file,
+  neither derivable from the other, neither in its name — and an accessor with no caller is how an
+  unreachable feature stays unreachable (M5's bug six).
+- **Fixtures are embedded bytes, and there are three** because one could not carry the properties:
+  h264/mp4 (three GOPs, the realistic case), MPEG-4 part 2 with `-bf 2` (display order ≠ demux
+  order, which videotoolbox will not produce), and a one-frame PQ/BT.2020 clip. The prebuilt is
+  `--disable-avdevice`, so there is **no lavfi/testsrc** to draw from: the frames are written as raw
+  RGB24 by a python snippet recorded in the header and piped through the encoder. Each frame is a
+  FLAT colour — these codecs are lossy, so a frame identity that survives encoding has to be a large
+  uniform area rather than a marker pixel.
+- **Live proof through the real binary:** a 12-frame mp4 rendered to `out.0000.png` … `out.0011.png`
+  with the rendered stills tracking the fixture's per-frame colour, and **the file opened exactly
+  once for the whole range** — ADR-0018's "one Evaluation across the render keeps the decoder warm",
+  observed rather than asserted.
+- **Also true now: slice 0's `--licenses` limitation is discharged.** flowview links the video
+  aggregator, which links the plugin, which links FFmpeg — so the notice it prints names a
+  dependency the binary actually has. (5a made that true; 5b is what makes it *useful*.)
 
 #### Queued: `core::Uri` — an identity, not a path algebra (raised 2026-09-01, build after slice 5)
 

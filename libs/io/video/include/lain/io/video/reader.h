@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 
 namespace lain::io::video
 {
@@ -48,6 +49,14 @@ namespace lain::io::video
 
 		// The declared shape of every frame, established at open and never re-derived.
 		virtual const lain::media::FrameSpec& spec() const = 0;
+
+		// What this file actually turned out to be: the CONTAINER that muxed it ("mov,mp4,m4a" —
+		// FFmpeg names a demuxer family) and the CODEC that encoded the frames ("h264"). Reported,
+		// not dispatched on: this is where the two aspects of a video file surface, since they are
+		// deliberately not two registries and two interfaces (see open.h). Established at open;
+		// empty when the backend cannot say.
+		virtual const std::string& container() const = 0;
+		virtual const std::string& codec() const = 0;
 
 		// Exact, because the source is indexed at open rather than estimated from a duration.
 		virtual std::size_t frameCount() const = 0;
