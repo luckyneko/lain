@@ -35,6 +35,7 @@ target_link_libraries(test-flow PRIVATE
 	lain::flow
 	lain::flow-example
 	lain::io::image # the LoadImageNode tests register a fake reader / call readerRegistry()
+	lain::io::sequence # the sequence-node tests wire the opener registry (registerSequenceOpeners)
 	lain::task
 	archimedes
 	lain::warnings

@@ -2,6 +2,8 @@
 
 #include "scheme.h"
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -32,6 +34,17 @@ namespace lain::io
 		if (!isLocalScheme(parsed.scheme))
 			return std::nullopt;
 		return std::filesystem::path{parsed.rest};
+	}
+
+	std::string extensionKey(std::string_view uri)
+	{
+		std::string ext = std::filesystem::path(uri).extension().string();
+		if (!ext.empty() && ext.front() == '.')
+			ext.erase(ext.begin());
+		std::transform(ext.begin(), ext.end(), ext.begin(),
+					   [](unsigned char c)
+					   { return static_cast<char>(std::tolower(c)); });
+		return ext;
 	}
 
 	NumberField numberField(std::string_view pattern)

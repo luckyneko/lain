@@ -8,6 +8,8 @@
 #include <lain/app/window.h>
 #include <lain/flow/graph.h>
 #include <lain/io/image/codecs.h>
+#include <lain/io/sequence/open.h>
+#include <lain/io/video/codecs.h>
 
 #include <cstdint>
 #include <memory>
@@ -63,6 +65,8 @@ namespace flowview
 		// the serialization surfaces BEFORE the window: MainWindow::onInit reopens the last session's
 		// graph, which needs the node factory and the json codec already registered.
 		lain::io::image::registerImageCodecs();
+		lain::io::video::registerVideoCodecs();		   // no-op unless a video codec plugin is built
+		lain::io::sequence::registerSequenceOpeners(); // which media OpenSequence can dispatch to
 		registerExampleNodes(m_nodeFactory, m_size);
 		registerSceneSerialization(); // image::Image port type (the boundary ± menu) + json codec
 
@@ -104,6 +108,8 @@ namespace flowview
 			return 0;
 
 		lain::io::image::registerImageCodecs();
+		lain::io::video::registerVideoCodecs();
+		lain::io::sequence::registerSequenceOpeners();
 		registerExampleNodes(m_nodeFactory, m_size);
 		registerSceneSerialization();
 		BoundaryBinders binders;

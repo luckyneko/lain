@@ -276,6 +276,55 @@ sits inside an inline group).
   **gui-mode live-verified 2026-08-11 — M7 is COMPLETE.**
 - Still out: file watching, prefab overrides, in-place template editing.
 
+### Update 2026-09-02 — M10 slice 5a built: the `io::video` seam + the opener registry
+
+Slice 5 lands as **two commits** — the seam and the registry first (testable in the *default*,
+video-off build), the FFmpeg reader second. **5a is built.** `lain::io::video` (the codec-free seam:
+`VideoReader`, the reader registry, the container-extension claim, `VideoSource`, `open()`), the
+extension-keyed `io::sequence` registry, the generated `registerVideoCodecs()` aggregator, and the
+`io::extensionKey` hoist. `ctest` **574/574** (+14), warning-clean, format-check clean, and the
+default configuration builds and passes with it. See WORK.md M10 for the full landing notes.
+
+- **The seam is unconditional; only the CODEC is opt-in** — which is what makes ADR-0019's amendment
+  true rather than aspirational. With no plugin, `.mp4` still routes to a video opener and reports a
+  missing **capability**, instead of falling to the still opener to be told it is not a directory.
+  So `registerVideoCodecs()` registering nothing, correctly, is the default build's whole video
+  story, and the aggregator test asserts the count in **both** configurations.
+- **The container-extension list lives in the SEAM, not the plugin.** A list owned by the plugin
+  disappears with it, taking `.mp4`'s meaning along — the vocabulary loss arriving by another door.
+  What a file is *called* is a claim about which **medium** it belongs to, and that claim survives
+  having no codec.
+- **The video reader registry is keyed by BACKEND NAME, not format** — the one place this seam
+  deliberately does not mirror `io::image`. An image codec claims a format; a demuxer claims a family
+  and identifies containers by **content**, so an extension key would be a second, worse answer to a
+  question FFmpeg already answers better.
+- **Container and codec stay ONE interface, and not because FFmpeg does both.** A video file has two
+  aspects — the container (mp4/mov/mkv) and the codec (h264/prores/vp9) — but the obvious split
+  (`Demuxer → Packet`, `Decoder(Packet) → Image`) cuts through the middle of one thing: a demuxer's
+  output is **not** codec-neutral (AVCC in an MP4 vs Annex-B in a TS — the reason FFmpeg needs a
+  bitstream filter), and "decode frame 412" is one algorithm spanning demuxer knowledge and decoder
+  state. The distinction surfaces as reported facts and, at the writer, as options. WORK.md M10
+  records the trigger to revisit: the day lain owns a demuxer, or a second backend covers a disjoint
+  set — and `Packet` is the type it would have to build first.
+- **Dispatch is by extension with one default, and the asymmetry is load-bearing.** Video is
+  addressed by name; the image medium is addressed **structurally** (a folder has no extension;
+  `shot.####.png`'s extension names the still format, not the sequence's). The registry lives in
+  `open.cpp` and the wiring in `openers.cpp` — the only file naming a medium — so the media seams do
+  not know the dispatcher exists and the dependency stays acyclic.
+- **`VideoSource` is in the seam, not the plugin**: a plugin implements `VideoReader` and nothing
+  else, since the ring, the lock, the range check and spec enforcement are `media::FrameSource`'s.
+  Its `timestampOf` override is what makes VFR free, pinned by a test reporting timestamps **no rate
+  could produce** — the base's default is rate × ordinal, so rate-derived values could not tell the
+  two apart. And **`VideoReader::open` takes an open `ReadStream`, never a uri**: ADR-0004's split
+  made structural, since a plugin that is never given a name cannot open a file.
+- **`io::extensionKey` hoisted into `lain::io`, collapsing TWO copies.** `io::image` and `io::data`
+  each had a private `formatkey.h`, the second explaining it was duplicated *"so neither seam depends
+  on the other"* — a reason already expired, since both link `lain::io`. Three seams now ask this
+  question (a codec key, a container claim, a medium dispatch), and a format decided in three places
+  disagrees about `clip.MP4` silently: the wrong opener, or none.
+- **A `core::Factory` only grows**, so the empty-registry case got its own tiny executable rather
+  than a rule about the order Catch2 runs cases in.
+
 ### Update 2026-08-11 — group authoring gestures built (Group / Ungroup / Save as Template / Make Local)
 
 The four gestures M5 designed and deferred, whose hold M6 step 5 lifted. See WORK.md's "Group authoring

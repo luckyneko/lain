@@ -92,6 +92,44 @@ for a format whose codec was not compiled in. The registry lives in a small `lib
 (`lain::media` depends on no `io`, so the dispatcher cannot live there); each medium seam registers
 into it, and the app calls `registerSequenceOpeners()` beside `registerImageCodecs()`.
 
+**Built 2026-09-02 (M10 slice 5a), with three corrections to that sentence.** The facade is
+`lain::io::sequence`, not `io::media` — inside a namespace called `media` the name shadows
+`lain::media` at every mention (settled at slice 2). The wiring runs the other way round: the
+media seams do not know the dispatcher exists, and `io::sequence`'s own `openers.cpp` — the one
+translation unit in that library naming a medium — registers them, which keeps the dependency
+acyclic and leaves the registry itself medium-free for anything registering from outside this
+tree. And dispatch is **by extension with one default**: video claims container extensions by
+name, while the image medium is the default because it is addressed *structurally* (a folder has
+no extension, and `shot.####.png`'s extension names the still format rather than the sequence's).
+
+The consequence above only holds because **the seam `lain::io::video` is built unconditionally
+while its codec plugin is not.** The container-extension claim therefore lives in the seam, so
+`.mp4` still means *video* in a build with no video codec and is refused with that reason. Had
+the claim lived in the plugin it would have vanished with it, and an `.mp4` would have fallen
+through to the still opener to be told it is not a directory — the vocabulary loss this amendment
+exists to prevent, arriving by another door. Note also that the video **reader** registry is keyed
+by *backend* name rather than by format, unlike `io::image`'s: a demuxer identifies containers by
+content, so an extension key there would be a second, worse answer to a question it already
+answers.
+
+**Backend, not codec — and container and codec stay one interface.** A video file has two aspects,
+a **container** (mp4, mov, mkv) and a **codec** (h264, prores, vp9), and `"ffmpeg"` is neither: it
+is one implementation covering both, as a platform-native alternative would be. Decomposing the
+reader into `Demuxer -> Packet` and `Decoder(Packet) -> Image` was considered and rejected, and not
+for the weak reason that one library happens to do both. A demuxer's output is **not**
+codec-neutral — the same H.264 stream leaves an MP4 as length-prefixed AVCC with its parameter sets
+in the container's `extradata` and a TS as in-band Annex-B, which is why FFmpeg needs a bitstream
+filter between them — so that seam is wrong until lain models bitstream filters too, and its
+wrongness would be found by a file rather than by a compiler. "Decode frame 412" is also one
+algorithm across both halves: seek to the preceding keyframe (demuxer), flush, decode forward
+matching by pts (decoder). The distinction is real and appears as **reported facts** (the reader
+names the container and codec it found) and, for the writer, as **options** — the codec chosen by
+availability while the container follows the extension. Revisit the split when lain owns a demuxer
+of its own and wants a standard codec to decode its packets, or when a second backend covers a
+disjoint set; `Packet` is the type that would have to exist first. The dependency keeps being
+called "the video codec plugin" throughout this ADR, the README and `LAIN_IO_VIDEO_FFMPEG`, which
+is what it is; *backend* is what the registry chooses between.
+
 Distribution preserves FFmpeg's notices, identifies how recipients obtain the corresponding source,
 permits relinking (satisfied by dynamic linking), and publishes any modifications to FFmpeg itself
 under LGPL. This does not change lain's MIT licence or the licence of lain-owned files. The root

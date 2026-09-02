@@ -1,7 +1,6 @@
 #include "lain/io/data/save.h"
 
-#include "formatkey.h" // formatKeyFromUri (shared with load.cpp)
-
+#include <lain/io/uri.h>
 #include <lain/io/write.h>
 #include <lain/log/log.h>
 
@@ -36,7 +35,7 @@ namespace lain::io::data
 
 	bool save(std::string_view uri, const lain::data::Value& value)
 	{
-		const std::string key = formatKeyFromUri(uri);
+		const std::string key = lain::io::extensionKey(uri);
 		if (key.empty())
 		{
 			log::warn("io::data::save: no file extension to select a writer: {}", std::string(uri));

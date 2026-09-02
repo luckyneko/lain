@@ -1,8 +1,7 @@
 #include "lain/io/image/load.h"
 
-#include "formatkey.h" // formatKeyFromUri (shared with save.cpp)
-
 #include <lain/io/read.h>
+#include <lain/io/uri.h>
 #include <lain/log/log.h>
 
 #include <string>
@@ -36,7 +35,7 @@ namespace lain::io::image
 
 	std::optional<lain::image::Image> load(std::string_view uri)
 	{
-		const std::string key = formatKeyFromUri(uri);
+		const std::string key = lain::io::extensionKey(uri);
 		if (key.empty())
 		{
 			log::warn("io::image::load: no file extension to select a reader: {}", std::string(uri));

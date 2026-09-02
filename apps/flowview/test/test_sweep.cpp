@@ -20,6 +20,8 @@
 #include <lain/io/image/codecs.h>
 #include <lain/io/image/load.h>
 #include <lain/io/image/save.h>
+#include <lain/io/sequence/open.h>
+#include <lain/io/video/codecs.h>
 #include <lain/media/frameposition.h>
 #include <lain/media/framesequence.h>
 
@@ -42,6 +44,8 @@ namespace
 		static const bool once = []
 		{
 			io::image::registerImageCodecs();
+			io::video::registerVideoCodecs();
+			io::sequence::registerSequenceOpeners();
 			flowview::registerSceneSerialization();
 			return true;
 		}();

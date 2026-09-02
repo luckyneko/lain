@@ -989,6 +989,18 @@ medium.
   nowhere to report), with a one-shot `save(uri, sequence)` facade over it for transcoding.
   _Avoid_: `encode(vector<Image>) → Buffer`, a writer whose destructor is the commit.
 
+- **Container / codec / backend** — three words, kept distinct because video is the first medium
+  where they are not the same thing. A **container** (mp4, mov, mkv) muxes streams and is what a
+  file's *name* claims; a **codec** (h264, prores, vp9) encoded the frames and is established from
+  the *bytes*; a **backend** ("ffmpeg", later a platform-native one) is an implementation covering
+  both. `io::video`'s reader registry is keyed by **backend**, `videoExtensions()` is a **container**
+  claim, and a reader *reports* the container and codec it found. They are deliberately **not** two
+  registries over `Demuxer → Packet` and `Decoder(Packet) → Image`: a demuxer's output is not
+  codec-neutral (AVCC in an MP4 against Annex-B in a TS), and "decode frame 412" is one algorithm
+  spanning demuxer knowledge and decoder state — see WORK.md M10 for the full reasoning and the
+  trigger to revisit. _Avoid_: calling a backend a codec, keying a video registry by extension,
+  a `Packet` type built before a demuxer of our own needs one.
+
 ## Where a serialize() bridge lives
 
 *(The corollary of the boundary rule, written down after it appeared in three `.cpp` comments and

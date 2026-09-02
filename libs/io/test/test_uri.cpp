@@ -1,4 +1,4 @@
-// Unit tests for io::canonicalUri — the one function that decides a resource's name.
+// Unit tests for the uri naming rules — canonicalUri, localPath and extensionKey.
 //
 // It is worth its own tests because identity is built on it: a media::FrameRef names its source by
 // uri and nothing else, and flowview's templateKey caches template definitions by it. Two spellings
@@ -16,6 +16,7 @@
 namespace fs = std::filesystem;
 
 using lain::io::canonicalUri;
+using lain::io::extensionKey;
 using lain::io::localPath;
 
 namespace
@@ -120,4 +121,28 @@ TEST_CASE("localPath and canonicalUri compose", "[io][uri]")
 	CHECK(fs::exists(*path));
 
 	CHECK_FALSE(localPath(canonicalUri("s3://bucket/key")).has_value());
+}
+
+TEST_CASE("extensionKey lowercases and drops the dot", "[io][uri]")
+{
+	CHECK(extensionKey("/footage/take1.MP4") == "mp4");
+	CHECK(extensionKey("shot.0001.PnG") == "png");
+
+	// A scheme prefix is harmless: extension() reads the LAST component, so a "file://" or an
+	// "s3://" uri keys the same as the bare path — which matters because io::sequence picks a
+	// MEDIUM by this string and io::image picks a codec by it.
+	CHECK(extensionKey("file:///footage/take1.mov") == "mov");
+	CHECK(extensionKey("s3://bucket/take1.mov") == "mov");
+}
+
+TEST_CASE("a name with no extension keys as empty, which is an answer", "[io][uri]")
+{
+	// Not a failure: a DIRECTORY of stills is addressed structurally rather than by format, and
+	// io::sequence's default opener is exactly what "unclaimed by any extension" routes to.
+	CHECK(extensionKey("/footage/take1").empty());
+	CHECK(extensionKey("").empty());
+
+	// A dotfile is a name, not an extension — std::filesystem's rule, inherited deliberately
+	// rather than second-guessed.
+	CHECK(extensionKey("/footage/.hidden").empty());
 }

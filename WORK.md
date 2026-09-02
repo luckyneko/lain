@@ -2910,6 +2910,94 @@ warning-clean, format-check clean.
   throwaway Release build with the warning downgraded, and pass; the alloc.cpp fix is a one-liner
   for its own commit.
 
+**Slice 5a is built (2026-09-02)** — the slice is two commits (the seam and the registry, then the
+FFmpeg reader), because 5a is testable in the DEFAULT build and reviewing it apart from the FFmpeg
+unknowns is the 6a/6b/6c shape that worked in M8. `lain::io::video` (the codec-free seam:
+`VideoReader`, the reader registry, the container-extension claim, `VideoSource`, `open()`), the
+extension-keyed `io::sequence` registry, the generated `registerVideoCodecs()` aggregator, and the
+`io::extensionKey` hoist. `ctest` **574/574** (+14), warning-clean, format-check clean, and the
+default (video-off) configuration builds and passes with it.
+
+- **The seam is built unconditionally; only the CODEC is opt-in.** That is what makes ADR-0019's
+  amendment true rather than aspirational: with no plugin, `.mp4` still routes to a video opener and
+  is told *"this build has no video codec plugin"* — a missing capability — instead of falling
+  through to the still opener and being told its file is not a directory. It also means the empty
+  aggregator is not a stub: `registerVideoCodecs()` registering nothing, correctly, is the default
+  build's whole video story, and `plugins/io/video/test` asserts the count in BOTH configurations.
+- **The video reader registry is keyed by BACKEND NAME, not by format — the one place this seam
+  deliberately does not mirror `io::image`.** An image codec claims a format (libpng decodes png and
+  nothing else), so an extension key there is a capability. A video demuxer claims a whole family and
+  identifies containers by CONTENT — FFmpeg opens an mp4 called `.bin` — so an extension key would be
+  a second, worse answer to a question the demuxer already answers. The extension selects the
+  **medium**; being registered selects the backend.
+  - **"Backend" is the exact word, and it was corrected on review** (raised by the repo owner, 5a's
+    first draft said *codec name*). A video file has two aspects — a **container** (mp4, mov, mkv:
+    what muxes the streams) and a **codec** (h264, prores, vp9: what encoded the frames) — and
+    `"ffmpeg"` is neither. It is one implementation covering both, which is exactly what a
+    platform-native alternative (AVFoundation, Media Foundation) would also do. Two words survive
+    on purpose: what is REGISTERED is a backend, what is BUILT is "the video codec plugin", which
+    is what ADR-0019, the README and `LAIN_IO_VIDEO_FFMPEG` all call the dependency.
+- **Container and codec are NOT two registries and two interfaces — and the reason is not "FFmpeg
+  does both".** The decomposition that looks right (`Demuxer -> Packet`, `Decoder(Packet) -> Image`)
+  cuts through the middle of one thing rather than between two:
+  - **A demuxer's output is not codec-neutral.** The same H.264 stream leaves an MP4 as
+    length-prefixed AVCC with its parameter sets in the container's `extradata`, and a TS as in-band
+    Annex-B — which is why FFmpeg needs a *bitstream filter* to convert one to the other. So the
+    "clean" seam is wrong until lain also models bitstream filters, and its wrongness would be
+    discovered by a file, not by a compiler.
+  - **"Decode frame 412" is one algorithm across both halves**: seek to the preceding keyframe
+    (demuxer knowledge), flush, decode forward matching by pts (decoder state). Splitting the
+    interface does not decouple that; it routes the coupling through a public boundary and a
+    `Packet` type lain would then own — bytes, pts, dts, duration, keyframe flag, and that
+    codec-specific extradata.
+  - **The swap the seam exists for replaces both halves at once**, so two registries would be two
+    registries with one member each — what slice 0 declined for the aggregator, slice 2 for the
+    opener facade and slice 3 for the scheme registry.
+  - **Where the distinction IS real, it is data, not structure.** A reader reports the container and
+    codec it found (5b, with a log line consuming them); `videoExtensions()` is a **container**
+    claim and says so; and at the writer (slice 6) the codec is an *option* chosen by availability
+    while the container follows the extension — one `VideoWriter` per backend all the same.
+  - **The trigger to revisit**, so it is not rediscovered: split when lain owns a **demuxer** (a
+    capture container, M9's territory) and wants a standard codec to decode its packets, or when a
+    second backend covers a genuinely disjoint set. The first type to build then is `Packet`, and
+    whoever builds it needs the AVCC/Annex-B trap above in front of them.
+- **The container-extension list lives in the SEAM, not in a backend plugin**, and the diagnostic is
+  the reason. A list owned by the plugin disappears with the plugin, taking `.mp4`'s meaning with it
+  — which is the vocabulary loss the amendment exists to prevent. What a file is *called* is a claim
+  about which medium it belongs to, and that claim survives having no codec at all.
+- **Dispatch is by extension with ONE default, and the asymmetry is load-bearing.** Video is
+  addressed by what a file is called; the image medium is addressed **structurally** — a folder has
+  no extension to key on, and `shot.####.png`'s extension names the still format rather than the
+  sequence's. So video registers claims and stills are the default, which is also the honest error
+  path: `openSequence` already says *"neither a directory nor a ####-numbered pattern"* for anything
+  it cannot take.
+- **The registry lives in `open.cpp` and the wiring in `openers.cpp`** — the only translation unit in
+  the library that names a medium. Adding a medium touches the second file; a medium outside this
+  tree touches neither. `registerSequenceOpeners()` is the app's single wiring point, beside
+  `registerImageCodecs()` and `registerVideoCodecs()`, and it is deliberately separate from them:
+  those wire CODECS into a medium, this wires MEDIA into the dispatcher.
+- **`VideoSource` is in the seam, not the plugin.** A plugin implements `VideoReader` and nothing
+  else — the ring cache, the lock, the range check and the spec enforcement are `media::FrameSource`'s
+  and are written once for the medium, exactly as `ImageSequenceSource` leaves libpng with only
+  `ImageReader` to fill in. Its `timestampOf` override is what makes VFR free, and a `[io::video]`
+  test pins it by reporting timestamps **no rate could produce**, since the base's default is
+  rate × ordinal and a test that used real rate-derived values could not tell the two apart.
+- **`VideoReader::open` takes an already-open `ReadStream`, never a uri.** ADR-0004's split, made
+  structural: a codec plugin cannot open a file because it is never given a name. The prebuilt FFmpeg
+  is `--disable-network`, so for video this is not a nicety — a future `s3://` reaches the decoder
+  through lain's transport or not at all.
+- **`io::extensionKey` hoisted into `lain::io`, beside `canonicalUri` / `localPath` / `numberField`,
+  and it collapsed TWO copies rather than one.** `io::image` and `io::data` each had a private
+  `formatkey.h`, the second carrying a comment explaining that it was duplicated *"so neither seam
+  depends on the other"* — a reason that had already expired, since both link `lain::io`, which is
+  where the shared home was all along. Three seams now ask this question (a codec key, a container
+  claim, a medium dispatch), and a format decided in three places disagrees with itself over
+  `clip.MP4` silently: the wrong opener, or none.
+- **A `core::Factory` only grows, so the empty-registry case got its own executable.** The default
+  build's behaviour — no codec, an honest refusal — cannot share a process with a test that registers
+  a fake one, and the alternative was a rule about the order Catch2 runs cases in. One case, one
+  binary, no ordering to remember.
+
 #### Queued: `core::Uri` — an identity, not a path algebra (raised 2026-09-01, build after slice 5)
 
 A uri is a bare `std::string` everywhere it matters — `io::read` / `write` / `openStream`,

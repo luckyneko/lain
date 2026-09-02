@@ -34,7 +34,7 @@ add_executable(flowview
 
 target_compile_features(flowview PRIVATE cxx_std_17)
 target_link_libraries(flowview
-	PRIVATE lain::app lain::core lain::gui lain::flow-example lain::io lain::io::sequence lain::media::serialize lain::io::image lain::io::image::codecs
+	PRIVATE lain::app lain::core lain::gui lain::flow-example lain::io lain::io::sequence lain::media::serialize lain::io::image lain::io::image::codecs lain::io::video::codecs
 			lain::flow::serialize lain::io::data::codecs # graph <-> data::Value <-> json
 			lain::string lain::log archimedes Vulkan::Loader lain::warnings
 )

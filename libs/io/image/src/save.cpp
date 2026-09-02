@@ -1,7 +1,6 @@
 #include "lain/io/image/save.h"
 
-#include "formatkey.h" // formatKeyFromUri (shared with load.cpp)
-
+#include <lain/io/uri.h>
 #include <lain/io/write.h>
 #include <lain/log/log.h>
 
@@ -55,7 +54,7 @@ namespace lain::io::image
 			return false;
 		}
 
-		const std::string key = formatKeyFromUri(uri);
+		const std::string key = formatKeyOf(uri);
 		if (key.empty())
 		{
 			log::warn("io::image::save: no file extension to select a writer: {}", std::string(uri));
@@ -70,6 +69,9 @@ namespace lain::io::image
 	}
 	std::string formatKeyOf(std::string_view uri)
 	{
-		return formatKeyFromUri(uri);
+		// io::extensionKey, not a local copy: io::sequence dispatches a uri to a MEDIUM by the
+		// same string this picks a codec by, so the two must agree about what "clip.MP4" is
+		// called (WORK.md M10 slice 5).
+		return lain::io::extensionKey(uri);
 	}
 } // namespace lain::io::image

@@ -1,7 +1,7 @@
 #include "lain/io/image/sequence.h"
 
-#include "formatkey.h"
 #include "lain/io/image/load.h"
+#include "lain/io/image/save.h" // formatKeyOf
 
 #include <lain/io/uri.h>
 #include <lain/log/log.h>
@@ -56,7 +56,7 @@ namespace lain::io::image
 	// so a directory yields exactly the files load() could open.
 	static bool isReadable(const fs::path& path)
 	{
-		const std::string key = formatKeyFromUri(path.string());
+		const std::string key = formatKeyOf(path.string());
 		return !key.empty() && readerRegistry().contains(key);
 	}
 

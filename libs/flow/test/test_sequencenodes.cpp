@@ -13,6 +13,7 @@
 #include <lain/flow/scheduler.h>
 #include <lain/io/image/load.h>
 #include <lain/io/image/reader.h>
+#include <lain/io/sequence/open.h>
 #include <lain/media/frameposition.h>
 #include <lain/media/framesequence.h>
 
@@ -80,7 +81,14 @@ namespace
 
 	struct Registration
 	{
-		Registration() { io::image::readerRegistry().registerType<TagReader>(extension); }
+		Registration()
+		{
+			io::image::readerRegistry().registerType<TagReader>(extension);
+			// The opener registry has to be wired too, or io::sequence::open has nothing to
+			// dispatch to: OpenSequence names a MEDIUM-neutral entry point, and which media exist
+			// is the host's to say (WORK.md M10 slice 5).
+			io::sequence::registerSequenceOpeners();
+		}
 	};
 	const Registration registration;
 

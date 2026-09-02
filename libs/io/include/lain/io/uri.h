@@ -42,6 +42,20 @@ namespace lain::io
 	// and numberField do: a spelling decided in two places eventually disagrees with itself.
 	[[nodiscard]] std::optional<std::filesystem::path> localPath(std::string_view uri);
 
+	// The lowercase extension of `uri`, without the leading dot, or empty when it has none —
+	// the key every format-keyed registry in the tree looks a codec up by.
+	//
+	// It lives here, beside the other two naming rules, because THREE seams now ask it: io::image
+	// keys its readers and writers by it, io::video claims a set of container extensions, and
+	// io::sequence dispatches a uri to a medium by it. A format decided in three places eventually
+	// disagrees with itself over a spelling — "MP4", "file://clip.MP4" — and the failure is the
+	// quiet kind: the wrong opener, or none.
+	//
+	// path::extension reads the LAST component's extension, so a scheme prefix is harmless. A uri
+	// with no extension (a directory of stills) yields an empty string, which is a legitimate
+	// answer rather than a failure — it is what "not addressed by format" looks like.
+	[[nodiscard]] std::string extensionKey(std::string_view uri);
+
 	// Where the number sits in a ####-numbered sequence pattern ("shot.####.png"). `width` is 0
 	// when there is no run of '#' at all.
 	struct NumberField
