@@ -186,10 +186,15 @@ TEST_CASE("nonlinear tone ops require Straight alpha", "[ops]")
 
 TEST_CASE("value-blending ops require Linear", "[ops]")
 {
-	Image img(2, 2, PixelFormat::RGB8, ColorSpace::sRGB); // not Linear
-	REQUIRE_FALSE(convolve(img, gaussianKernel(1, 1.0f)).valid());
-	REQUIRE_FALSE(resize(img, lain::math::Vec2i{4, 4}).valid());
-	REQUIRE_FALSE(rotate(img, 0.5f).valid());
+	// Every encoded space is refused, not just sRGB — a new one joins the enforced set rather
+	// than slipping past a check written against the spaces that existed when it was written.
+	for (const ColorSpace space : {ColorSpace::Unspecified, ColorSpace::sRGB, ColorSpace::BT709})
+	{
+		Image img(2, 2, PixelFormat::RGB8, space); // not Linear
+		REQUIRE_FALSE(convolve(img, gaussianKernel(1, 1.0f)).valid());
+		REQUIRE_FALSE(resize(img, lain::math::Vec2i{4, 4}).valid());
+		REQUIRE_FALSE(rotate(img, 0.5f).valid());
+	}
 }
 
 TEST_CASE("crop rejects an out-of-bounds rect", "[ops]")

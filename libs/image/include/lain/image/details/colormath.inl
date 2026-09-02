@@ -1,7 +1,10 @@
 #pragma once
 
-// Template definitions for the color-value algorithms (see colormath.h): channel-value
-// normalization across base types, luminance, saturate, and the Color -> Color convert.
+// Definitions for the color-value algorithms (see colormath.h): channel-value normalization
+// across base types, luminance, saturate, the Color -> Color convert, and the ColorSpace
+// transfer curves. The transfer functions are non-template but live here (inline) rather than
+// in a .cpp so they still inline into mapColorChannels — they run once per color channel of
+// every converted image, so an out-of-line call there is a real cost.
 
 #include <cmath>
 #include <limits>
@@ -190,6 +193,68 @@ namespace lain::image
 			b = x;
 		}
 		return convert<Dst>(ColorRGBf(r + m, g + m, b + m));
+	}
+
+	// --- ColorSpace transfer curves ----------------------------------------------
+	//
+	// Each pair is a standard's own encode/decode, over unit [0,1] channel values. Both use
+	// their spec's ROUNDED constants — sRGB's 0.04045 / 1.055 / 2.4 and Rec.709's
+	// 4.5 / 0.018 / 1.099 / 0.099, as the documents print them and as OCIO / Nuke spell them.
+	// Neither pair's two segments therefore meet exactly (Rec.709 steps by ~2e-4 at its
+	// breakpoint); that is the published curve, so do NOT "fix" it to the continuous alpha /
+	// beta values — that silently changes every decode for a discontinuity nothing can see.
+	namespace detail
+	{
+		inline float srgbToLinear(float c)
+		{
+			return c <= 0.04045f ? c / 12.92f : math::pow((c + 0.055f) / 1.055f, 2.4f);
+		}
+		inline float linearToSrgb(float c)
+		{
+			return c <= 0.0031308f ? c * 12.92f : 1.055f * math::pow(c, 1.0f / 2.4f) - 0.055f;
+		}
+
+		// The INVERSE Rec.709 OETF and the OETF itself — the curve a camera/encoder actually
+		// applied, which is what "Rec709 to linear" means in Nuke and OCIO (ADR-0018). NOT the
+		// BT.1886 2.4 display gamma: lain applies no OOTF and does no display rendering.
+		inline float bt709ToLinear(float c)
+		{
+			return c <= 0.081f ? c / 4.5f : math::pow((c + 0.099f) / 1.099f, 1.0f / 0.45f);
+		}
+		inline float linearToBt709(float c)
+		{
+			return c <= 0.018f ? c * 4.5f : 1.099f * math::pow(c, 0.45f) - 0.099f;
+		}
+	} // namespace detail
+
+	inline float toLinear(ColorSpace space, float c)
+	{
+		switch (space)
+		{
+			case ColorSpace::sRGB:
+				return detail::srgbToLinear(c);
+			case ColorSpace::BT709:
+				return detail::bt709ToLinear(c);
+			case ColorSpace::Linear:
+			case ColorSpace::Unspecified:
+				break;
+		}
+		return c;
+	}
+
+	inline float fromLinear(ColorSpace space, float c)
+	{
+		switch (space)
+		{
+			case ColorSpace::sRGB:
+				return detail::linearToSrgb(c);
+			case ColorSpace::BT709:
+				return detail::linearToBt709(c);
+			case ColorSpace::Linear:
+			case ColorSpace::Unspecified:
+				break;
+		}
+		return c;
 	}
 
 	template <typename View, typename Fn>

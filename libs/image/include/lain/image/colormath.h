@@ -1,10 +1,12 @@
 #pragma once
 
-#include "lain/image/color.h" // Color + typedefs
+#include "lain/image/color.h"	   // Color + typedefs
+#include "lain/image/colorspace.h" // ColorSpace (which curve toLinear / fromLinear apply)
 
-// The color-value algorithms: free functions over Color (luminance / saturate / convert).
-// Kept apart from the Color *type* (color.h) so a consumer that only needs the type doesn't
-// pull the math — the same types-vs-algorithms split as imageview.h / traverse.h.
+// The color-value algorithms: free functions over Color (luminance / saturate / convert),
+// plus the scalar transfer curves of the tracked ColorSpaces. Kept apart from the Color
+// *type* (color.h) so a consumer that only needs the type doesn't pull the math — the same
+// types-vs-algorithms split as imageview.h / traverse.h.
 namespace lain::image
 {
 	// The Rec709 relative luminance of a color's RGB, in unit [0,1] space (Gray replicates
@@ -31,6 +33,19 @@ namespace lain::image
 	// type to land there directly (channel counts/types map through) — e.g. convert<ColorRGBA8>(hsv).
 	template <typename Dst = ColorRGBf>
 	Dst convert(const ColorHSVf& hsv);
+
+	// The transfer between a ColorSpace's encoded values and linear light, per channel in unit
+	// [0,1] space. There is one pair rather than a curve per ordered pairing because
+	// image::convert composes THROUGH Linear — fromLinear(dst, toLinear(src, c)) expresses
+	// every pairing, so a new standard is one curve here and no new dispatch anywhere.
+	//
+	// ColorSpace::Linear is the identity, as it must be for that composition to work.
+	// ColorSpace::Unspecified has no curve and passes the value through unchanged: a fallback
+	// so these stay total, NOT a meaning. A caller that cares rejects Unspecified first —
+	// image::convert does. (This header is public and lain::log is private to the image
+	// target, so it cannot assert; that check belongs one level up.)
+	float toLinear(ColorSpace space, float c);	 // the space's encoded value -> linear light
+	float fromLinear(ColorSpace space, float c); // linear light -> the space's encoded value
 
 	// Apply a unit-[0,1] function to each pixel's color channels of a view — every channel
 	// but a trailing alpha (which is linear and left as-is). The per-pixel-channel workhorse

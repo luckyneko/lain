@@ -10,18 +10,8 @@
 
 namespace lain::image
 {
-	// --- file-local transfer helpers ---------------------------------------------
-
-	static float srgbToLinear(float c)
-	{
-		return c <= 0.04045f ? c / 12.92f : math::pow((c + 0.055f) / 1.055f, 2.4f);
-	}
-	static float linearToSrgb(float c)
-	{
-		return c <= 0.0031308f ? c * 12.92f : 1.055f * math::pow(c, 1.0f / 2.4f) - 0.055f;
-	}
-
-	// mapColorChannels (the per-pixel-channel transfer applied below) lives in colormath.h.
+	// The transfer curves (toLinear / fromLinear) and the per-pixel-channel applicator
+	// (mapColorChannels) both live in colormath.h.
 
 	template <typename View>
 	static void premultiplyView(View view)
@@ -105,17 +95,16 @@ namespace lain::image
 		if (srcSpace == dstSpace) // already there
 			return src;
 
+		// Compose through linear light rather than pairing spaces: decode out of the source
+		// curve, encode into the destination's. That expresses EVERY pairing (so there is no
+		// unsupported-pair arm to fall off), and it does so in ONE pass — the intermediate
+		// stays a float within a single channel visit, so an 8-bit image is quantised once
+		// instead of once per hop.
 		Image dst = src;
 		dst.setColorSpace(dstSpace);
-		if (srcSpace == ColorSpace::sRGB && dstSpace == ColorSpace::Linear)
-			visit(dst, [](auto v)
-				  { mapColorChannels(v, srgbToLinear); });
-		else if (srcSpace == ColorSpace::Linear && dstSpace == ColorSpace::sRGB)
-			visit(dst, [](auto v)
-				  { mapColorChannels(v, linearToSrgb); });
-		else if (!lain::log::ensure(false, "image::convert between {} and {} is not supported",
-									lain::meta::enums::name(srcSpace), lain::meta::enums::name(dstSpace)))
-			return {};
+		visit(dst, [srcSpace, dstSpace](auto v)
+			  { mapColorChannels(v, [srcSpace, dstSpace](float c)
+								 { return fromLinear(dstSpace, toLinear(srcSpace, c)); }); });
 		return dst;
 	}
 

@@ -19,10 +19,10 @@ is the contract that keeps that pipeline honest.
 
 ## Decision
 
-- **Two tags on `Image`, defaulting `Unspecified`.** `ColorSpace { Unspecified, Linear, sRGB }`
-  and `AlphaMode { Unspecified, Straight, Premultiplied }`. `Unspecified` is the default so
-  "be explicit" is the path of least resistance — a space/alpha-sensitive op on an undeclared
-  image asserts, which is the reminder to declare/convert first.
+- **Two tags on `Image`, defaulting `Unspecified`.** `ColorSpace { Unspecified, Linear, sRGB,
+  BT709 }` and `AlphaMode { Unspecified, Straight, Premultiplied }`. `Unspecified` is the
+  default so "be explicit" is the path of least resistance — a space/alpha-sensitive op on an
+  undeclared image asserts, which is the reminder to declare/convert first.
 - **ColorSpace is separate from PixelFormat.** sRGB and linear share a byte layout, so the tag
   is its own axis, not baked into the format enum (which would combinatorially explode).
 - **Enforcement is by op *class*, and loud.** The op owns its condition; `log::ensure` owns the
@@ -58,6 +58,14 @@ is the contract that keeps that pipeline honest.
 - **The bail path is release-only observable.** In debug the guard asserts (aborts), so the
   "returns invalid Image" behaviour is only reachable under `NDEBUG`; its tests are guarded
   accordingly.
-- **Adding a color space is additive.** New named standards (Rec709, PQ, DisplayP3, …) extend
-  the enum; `convert(img, ColorSpace)` already expresses every pairing without a `toX`/`toY`
-  explosion.
+- **Adding a color space is additive.** New named standards (PQ, DisplayP3, …) extend the enum;
+  `convert(img, ColorSpace)` already expresses every pairing without a `toX`/`toY` explosion.
+  **Amended 2026-09-01, cashing that claim:** the first such addition — `BT709`, for M10's video
+  decode ([ADR-0018](0018-frame-sequences-and-host-driven-rendering.md)) — landed as one
+  enumerator plus one curve pair, and *removed* code rather than adding any. What makes it
+  additive is that `convert` **composes through Linear** (`fromLinear(dst, toLinear(src, c))`)
+  instead of dispatching on the ordered pair: three spaces would have meant six pairwise arms,
+  and the "this pairing is not supported" bail arm is now unreachable by construction. The
+  curves live in `image::toLinear` / `fromLinear` (colormath.h), which are the enum's only
+  exhaustive `switch` in the tree — so the next standard is flagged by `-Wswitch` rather than
+  found by a wrong picture.

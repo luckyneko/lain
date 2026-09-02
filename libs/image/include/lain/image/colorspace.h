@@ -9,11 +9,21 @@ namespace lain::image
 	// auto-converts (round trips shed accuracy). Values name unambiguous standards; a
 	// custom/parametric curve is an op argument (image::gamma), never tracked here. Default
 	// is Unspecified: be explicit before a space-sensitive op, or it asserts.
+	//
+	// This axis is TRANSFER ONLY — it says nothing about primaries or gamut. sRGB and BT709
+	// share primaries and differ only in their curve, which is exactly why the tag is needed:
+	// the two are byte-identical and visually close, so a mislabel is silent. (Do not confuse
+	// BT709-the-space with image::luminance's "Rec709 luminance", which is the primaries'
+	// matrix and applies in linear light whatever this tag says.)
+	//
+	// Adding a standard is additive: image::convert composes through Linear, so a new value
+	// needs one curve pair in colormath.h and no new dispatch anywhere.
 	enum class ColorSpace
 	{
 		Unspecified, // undeclared — asserts on any space-sensitive op
 		Linear,		 // linear light — the correct space for blending / filtering
 		sRGB,		 // sRGB-encoded — display-ready
+		BT709,		 // Rec.709-encoded — the transfer video decodes against (see ADR-0018)
 	};
 
 	// Whether an alpha-bearing pixel's color channels are premultiplied by alpha. Tracked

@@ -91,6 +91,54 @@ TEST_CASE("convert between color spaces round-trips and flips the tag", "[conver
 	REQUIRE(back.as<ColorRGBf>()(0, 0).r == Approx(0.5f).margin(0.001));
 }
 
+TEST_CASE("convert between BT709 and Linear round-trips and flips the tag", "[convert]")
+{
+	Image s(1, 1, PixelFormat::RGB32F, ColorSpace::BT709);
+	s.as<ColorRGBf>()(0, 0) = ColorRGBf(0.5f, 0.5f, 0.5f);
+
+	const Image lin = convert(s, ColorSpace::Linear);
+	REQUIRE(lin.colorSpace() == ColorSpace::Linear);
+	REQUIRE(lin.as<ColorRGBf>()(0, 0).r == Approx(0.2596f).margin(0.001)); // BT709 0.5 -> ~0.260
+
+	const Image back = convert(lin, ColorSpace::BT709);
+	REQUIRE(back.colorSpace() == ColorSpace::BT709);
+	REQUIRE(back.as<ColorRGBf>()(0, 0).r == Approx(0.5f).margin(0.001));
+}
+
+TEST_CASE("BT709 decodes differently from sRGB", "[convert]")
+{
+	// The load-bearing case for the enumerator existing at all: the same encoded value lands
+	// ~20% apart in linear light. Decoded footage tagged sRGB would be silently wrong in every
+	// blend, which is exactly what this refuses to allow.
+	Image bt(1, 1, PixelFormat::RGB32F, ColorSpace::BT709);
+	bt.as<ColorRGBf>()(0, 0) = ColorRGBf(0.5f, 0.5f, 0.5f);
+	Image sr(1, 1, PixelFormat::RGB32F, ColorSpace::sRGB);
+	sr.as<ColorRGBf>()(0, 0) = ColorRGBf(0.5f, 0.5f, 0.5f);
+
+	const float fromBt = convert(bt, ColorSpace::Linear).as<ColorRGBf>()(0, 0).r;
+	const float fromSrgb = convert(sr, ColorSpace::Linear).as<ColorRGBf>()(0, 0).r;
+	REQUIRE(fromBt != Approx(fromSrgb).margin(0.01));
+	REQUIRE(fromBt > fromSrgb); // Rec.709 is the lighter encoding of the two
+}
+
+TEST_CASE("convert between sRGB and BT709 composes through Linear", "[convert]")
+{
+	// Neither direction has a curve of its own — both spaces only know how to reach linear
+	// light — so this pairing works only because convert composes.
+	Image s(1, 1, PixelFormat::RGB32F, ColorSpace::sRGB);
+	s.as<ColorRGBf>()(0, 0) = ColorRGBf(0.5f, 0.5f, 0.5f);
+
+	const Image bt = convert(s, ColorSpace::BT709);
+	REQUIRE(bt.colorSpace() == ColorSpace::BT709);
+	// sRGB 0.5 -> linear ~0.214 -> BT709 encodes ~0.450; the value MOVES (a no-op relabel
+	// would leave it at 0.5, which is precisely the mislabel this guards against).
+	REQUIRE(bt.as<ColorRGBf>()(0, 0).r == Approx(0.4502f).margin(0.001));
+
+	const Image back = convert(bt, ColorSpace::sRGB);
+	REQUIRE(back.colorSpace() == ColorSpace::sRGB);
+	REQUIRE(back.as<ColorRGBf>()(0, 0).r == Approx(0.5f).margin(0.001));
+}
+
 TEST_CASE("convert to the same color space is a no-op", "[convert]")
 {
 	Image s(1, 1, PixelFormat::RGB32F, ColorSpace::Linear);
@@ -125,5 +173,16 @@ TEST_CASE("convert to Gray on a non-linear image bails (release)", "[convert]")
 	rgb.as<ColorRGB8>()(0, 0) = ColorRGB8(255, 255, 255);
 	const Image gray = convert(rgb, PixelFormat::Gray8);
 	REQUIRE_FALSE(gray.valid());
+}
+#endif
+
+#ifdef NDEBUG
+TEST_CASE("convert to Gray on a BT709 image bails (release)", "[convert]")
+{
+	// Luminance is only "brightness" in linear light, so BT709 must trip the same guard sRGB
+	// does — a new space joins the enforced set, it does not get waved through it.
+	Image rgb(1, 1, PixelFormat::RGB8, ColorSpace::BT709);
+	rgb.as<ColorRGB8>()(0, 0) = ColorRGB8(255, 255, 255);
+	REQUIRE_FALSE(convert(rgb, PixelFormat::Gray8).valid());
 }
 #endif

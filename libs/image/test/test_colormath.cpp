@@ -1,4 +1,5 @@
-// Unit tests for the color-value algorithms — convert, luminance, saturate.
+// Unit tests for the color-value algorithms — convert, luminance, saturate, and the
+// ColorSpace transfer curves.
 
 #include "lain/image/colormath.h"
 
@@ -109,4 +110,53 @@ TEST_CASE("convert maps HSV to RGB", "[colormath]")
 	REQUIRE(int(red8.r) == 255);
 	REQUIRE(int(red8.g) == 0);
 	REQUIRE(int(red8.a) == 255);
+}
+
+TEST_CASE("toLinear and fromLinear are inverses of each other", "[colormath]")
+{
+	// The whole compose-through-Linear scheme rests on this: if a space's pair did not invert,
+	// converting A -> B -> A would drift instead of returning the value it started with.
+	for (const ColorSpace space : {ColorSpace::sRGB, ColorSpace::BT709})
+	{
+		for (float v = 0.0f; v <= 1.0f; v += 0.05f)
+		{
+			REQUIRE(fromLinear(space, toLinear(space, v)) == Approx(v).margin(1e-5));
+			REQUIRE(toLinear(space, fromLinear(space, v)) == Approx(v).margin(1e-5));
+		}
+	}
+}
+
+TEST_CASE("Linear and Unspecified pass values through unchanged", "[colormath]")
+{
+	// Linear MUST be the identity — it is the intermediate every other pairing composes
+	// through. Unspecified is the documented total-function fallback, not a meaning.
+	for (const ColorSpace space : {ColorSpace::Linear, ColorSpace::Unspecified})
+	{
+		REQUIRE(toLinear(space, 0.25f) == 0.25f);
+		REQUIRE(fromLinear(space, 0.25f) == 0.25f);
+	}
+}
+
+TEST_CASE("the BT709 curve is the Rec.709 OETF, not sRGB's", "[colormath]")
+{
+	// The linear toe below the breakpoint is an exact divide by 4.5.
+	REQUIRE(toLinear(ColorSpace::BT709, 0.045f) == Approx(0.01f));
+	REQUIRE(fromLinear(ColorSpace::BT709, 0.01f) == Approx(0.045f));
+
+	// Mid-grey: the two spaces differ by ~20% of the linear value. That gap is the whole
+	// reason BT709 is its own enumerator rather than footage being tagged sRGB.
+	REQUIRE(toLinear(ColorSpace::BT709, 0.5f) == Approx(0.2596f).margin(0.001));
+	REQUIRE(toLinear(ColorSpace::sRGB, 0.5f) == Approx(0.2140f).margin(0.001));
+}
+
+TEST_CASE("the BT709 breakpoint steps by the spec's rounding", "[colormath]")
+{
+	// Rec.709's published constants leave the two segments meeting at ~2e-4 rather than
+	// exactly. Pinned so the discontinuity is a recorded property, not a surprise, and so
+	// "fixing" it to the continuous alpha/beta values shows up as a deliberate change.
+	const float below = fromLinear(ColorSpace::BT709, 0.018f - 1e-6f);
+	const float above = fromLinear(ColorSpace::BT709, 0.018f + 1e-6f);
+	REQUIRE(below == Approx(0.081f).margin(1e-4));
+	REQUIRE(above == Approx(0.081f).margin(1e-3));
+	REQUIRE(above - below < 1e-3f);
 }

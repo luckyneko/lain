@@ -20,9 +20,15 @@ namespace lain::image
 	// through, and a newly-added (opaque) alpha channel is Straight.
 	Image convert(const Image& src, PixelFormat dstFormat);
 
-	// Convert to a ColorSpace: applies the transfer function between the source space and
-	// `dstSpace` on the color channels only (alpha is linear and untouched; Gray's single
-	// channel is treated as color). REQUIRES a known (non-Unspecified) source space.
+	// Convert to a ColorSpace: applies the transfer between the source space and `dstSpace` on
+	// the color channels only (alpha is linear and untouched; Gray's single channel is treated
+	// as color). REQUIRES a known (non-Unspecified) source space. Conversion COMPOSES THROUGH
+	// LINEAR LIGHT, so every pair of known spaces is expressible and a single call is always
+	// one pass — chaining two calls to reach a third space quantises twice, this does not.
+	//
+	// Known limitation: this reads only the space tag, not alphaMode(). Applying a nonlinear
+	// curve to Premultiplied color is wrong, and nothing here catches it — convert the SPACE
+	// first and the alpha mode second (as flow-example's BlurNode does).
 	Image convert(const Image& src, ColorSpace dstSpace);
 
 	// Convert to an AlphaMode: premultiplies / un-premultiplies the color channels by alpha

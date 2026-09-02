@@ -360,8 +360,8 @@ and the "Loading" section of `CONTEXT.md`):
   — and `ColorSpace` is read from the file, `Unspecified` when untagged (never guessed). **lain
   format gaps still filled by expansion** (candidates to add as native formats later): indexed /
   palette color; sub-byte channel depths (1/2/4-bit); colourkey transparency (tRNS, vs. a full
-  alpha channel); and colour spaces beyond `Unspecified`/`Linear`/`sRGB` (arbitrary gamma, ICC
-  profiles, non-sRGB primaries — currently collapsed to `Unspecified`). A codec may instead
+  alpha channel); and colour spaces beyond `Unspecified`/`Linear`/`sRGB`/`BT709` (arbitrary gamma,
+  ICC profiles, non-sRGB primaries — currently collapsed to `Unspecified`). A codec may instead
   **reject** a layout it can't represent faithfully rather than expand it — the TIFF reader
   rejects tiled / planar / float / palette / exotic-photometric loudly (logged, invalid Image);
   either way the response is loud, never a silent wrong result.
@@ -2852,6 +2852,63 @@ through the rewritten transport.
 - **Deliberately NOT done here: a `Uri` type.** The pressure is real and recorded — see the note
   below — but the change wanted is a core type reaching `FrameRef`, and it is better shaped against
   slice 5's opener as a third consumer than against two.
+
+**Slice 4 is built (2026-09-01).** `ColorSpace` gains **`BT709`**, so slice 5's decoder has an
+honest tag to hand back. Public surface: `image::toLinear(ColorSpace, float)` /
+`fromLinear(ColorSpace, float)` in `colormath.h` (curves `inline` in `details/colormath.inl`, so
+they still inline into `mapColorChannels` — this runs per colour channel of every converted image).
+The curve is the **inverse Rec.709 OETF** per ADR-0018, with the spec's **rounded** constants
+(4.5 / 0.018 / 1.099 / 0.099), matching how sRGB is already spelled here. `ctest` **560/560** (+11),
+warning-clean, format-check clean.
+
+- **`convert` composes THROUGH LINEAR, and the change is net-negative in code.** Three spaces would
+  have meant six ordered pairwise arms; instead `fromLinear(dst, toLinear(src, c))` expresses every
+  pairing in one `mapColorChannels` pass, so the pairwise if-chain and its
+  `ensure(false, "…not supported")` bail arm were **deleted**, not extended. That arm is now
+  unreachable by construction. It is also one pass rather than two: the intermediate stays a float
+  inside a single channel visit, so an 8-bit image converting sRGB→BT709 is quantised **once**,
+  where chaining two `convert` calls quantises twice. sRGB↔Linear is bit-identical to before (the
+  same float ops with an identity on one side), so the pre-existing `[convert]` cases are the
+  regression proof — and they do fail under the sabotages below, which is what makes that claim
+  worth anything. ADR-0003's "adding a color space is additive" bullet is amended in place with
+  what actually made it so.
+- **Two functions, not eight.** The individual curves are `detail::srgbToLinear` / `linearToSrgb` /
+  `bt709ToLinear` / `linearToBt709`, private in the `.inl`. `toLinear`/`fromLinear` deliberately
+  echoes `detail::toUnit`/`fromUnit` sitting in the same file — the same "convert to and from a
+  canonical intermediate" job. `encode`/`decode` was rejected: CONTEXT.md has both words spoken for
+  by the codec seam (`ImageReader::decode`, `encode(asset) → Buffer`).
+- **These are the enum's ONLY exhaustive `switch` in the tree, and that is deliberate.** Before this
+  slice every `ColorSpace` site was an `==` comparison, so a new enumerator was invisible to the
+  compiler and had to be found by reading. Adding one now fails the build with
+  `-Werror,-Wswitch` — verified by temporarily adding an enumerator and watching it break.
+- **`Unspecified` passes values through**, because `colormath.h` is public and `lain::log` is
+  PRIVATE to the `image` target, so it cannot assert. Documented as a total-function fallback, not
+  a meaning; `image::convert` rejects `Unspecified` one level up, where the logger exists.
+- **Op-class enforcement needed no code change** — `ensureBlendable` and the to-Gray guard both test
+  `== ColorSpace::Linear`, which already excludes BT709 correctly. What it owed them was tests, and
+  "value-blending ops require Linear" now loops over every non-Linear space rather than naming sRGB,
+  so the next standard joins the enforced set instead of slipping past a check written before it
+  existed.
+- **Three sabotages, all caught.** Aliasing `bt709ToLinear` to `srgbToLinear` fails the load-bearing
+  "BT709 decodes differently from sRGB" case (mid-grey lands 0.2596 vs 0.2140 — the ~20% silent
+  blend error the enumerator exists to prevent); making `fromLinear` the identity fails every
+  round-trip **including the pre-existing sRGB one**; letting BT709 through `ensureBlendable` fails
+  the `[ops]` case under `NDEBUG`.
+- **Deliberately unchanged, both pre-existing and now stated rather than left as traps.**
+  `convert(src, ColorSpace)` reads only the space tag, never `alphaMode()` — a nonlinear curve on
+  Premultiplied colour is wrong and nothing catches it, dodged today only by the convention
+  `BlurNode` follows (space first, alpha second). Now a documented limitation on `convert.h`; fixing
+  it would change existing results inside a commit whose claim is that sRGB↔Linear did not move, so
+  it belongs in its own change. And `pngreader`'s gAMA ≈0.45 branch still returns `sRGB` even though
+  0.45 is the Rec.709 exponent — a PNG gamma chunk is a hint, not a Rec.709 tag, and retagging
+  stills off a gamma number is exactly the guessing ADR-0003 forbids.
+- **Found while verifying, NOT fixed here (pre-existing, unrelated):** the tree **does not build in
+  Release**. `libs/memory/src/alloc.cpp:11`'s `isPowerOfTwo` is used only by a debug assert, so
+  `NDEBUG` makes it dead and `-Werror,-Wunused-function` fails the build. Consequence worth
+  weighing: every `#ifdef NDEBUG` enforcement test in the repo is release-only *and unreachable*, so
+  that whole class has not run in some time. This slice's guarded cases were exercised in a
+  throwaway Release build with the warning downgraded, and pass; the alloc.cpp fix is a one-liner
+  for its own commit.
 
 #### Queued: `core::Uri` — an identity, not a path algebra (raised 2026-09-01, build after slice 5)
 

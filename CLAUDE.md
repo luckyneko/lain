@@ -801,6 +801,57 @@ re-driven through the real binary with its four outputs byte-identical to their 
   its home is `core` (because `media::FrameRef` needs it and media links no io), and it carries no
   path algebra. After slice 5, with an ADR.
 
+### Update 2026-09-01 — M10 slice 4 built: `ColorSpace += BT709`
+
+`lain::image::ColorSpace` gains **`BT709`**, so slice 5's decoder has an honest tag for footage
+whose transfer is not sRGB — the alternative being a silent ~20% error at mid-grey in every blend
+(tag it `sRGB`) or frames op-class enforcement refuses to touch (tag it `Unspecified`). The curve is
+the **inverse Rec.709 OETF** per ADR-0018 with the spec's **rounded** constants
+(4.5 / 0.018 / 1.099 / 0.099), matching how sRGB is already spelled here. `ctest` **560/560** (+11),
+warning-clean, format-check clean. No gui surface, no FFmpeg involvement — this builds and passes in
+the default configuration.
+
+- **The public surface is two functions, and the commit is net-negative in code.**
+  `image::toLinear(ColorSpace, float)` / `fromLinear(ColorSpace, float)` in `colormath.h`, with the
+  four curves private in `details/colormath.inl` (`inline`, not a new `.cpp` — they run per colour
+  channel of every converted image). `convert` **composes through Linear**, so the ordered pairwise
+  if-chain and its `ensure(false, "…not supported")` bail arm were **deleted** rather than grown
+  from two arms to six; that arm is now unreachable by construction. It is also one pass, not two —
+  the intermediate stays a float inside a single channel visit, so an 8-bit sRGB→BT709 conversion
+  quantises once where chaining two `convert` calls quantises twice. **ADR-0003's "adding a color
+  space is additive" bullet is amended in place** with what actually made it so.
+- **`toLinear`/`fromLinear` deliberately echoes `detail::toUnit`/`fromUnit`** in the same file — the
+  same "convert to and from a canonical intermediate" job. `encode`/`decode` was rejected because
+  CONTEXT.md has both words spoken for by the codec seam (`ImageReader::decode`,
+  `encode(asset) → Buffer`).
+- **They are the enum's ONLY exhaustive `switch` in the tree, deliberately.** Every other
+  `ColorSpace` site is an `==`, so before this a new enumerator was invisible to the compiler and
+  had to be found by reading. Adding one now fails with `-Werror,-Wswitch` — verified by adding one
+  and watching it break, not assumed.
+- **`Unspecified` passes values through:** `colormath.h` is public and `lain::log` is PRIVATE to the
+  `image` target, so it cannot assert. A total-function fallback, not a meaning — `image::convert`
+  rejects it one level up, where the logger exists.
+- **Op-class enforcement needed no code change** (`ensureBlendable` tests `== Linear`, which already
+  excludes BT709); it needed tests. "value-blending ops require Linear" now loops over every
+  non-Linear space instead of naming sRGB, so the next standard joins the enforced set rather than
+  slipping past a check written before it existed.
+- **Three sabotages, all caught.** Aliasing the BT709 curve to sRGB's fails the load-bearing
+  "decodes differently" case (0.2596 vs 0.2140 at mid-grey); making `fromLinear` the identity fails
+  every round-trip **including the pre-existing sRGB one**; letting BT709 past `ensureBlendable`
+  fails the `[ops]` case under `NDEBUG`.
+- **Two pre-existing traps now stated rather than left silent.** `convert(src, ColorSpace)` never
+  reads `alphaMode()` — a nonlinear curve on Premultiplied colour is wrong, unguarded, and dodged
+  only by the convention `BlurNode` follows; it is now a documented limitation on `convert.h`, since
+  changing it would move existing results inside a commit whose claim is that sRGB↔Linear did not.
+  And `pngreader`'s gAMA ≈0.45 branch still returns `sRGB` though 0.45 is the Rec.709 exponent — a
+  gamma hint is not a Rec.709 tag.
+- **Found while verifying, NOT fixed (pre-existing, unrelated): the tree does not build in
+  Release.** `libs/memory/src/alloc.cpp:11`'s `isPowerOfTwo` is used only by a debug assert, so
+  `NDEBUG` makes it dead and `-Werror,-Wunused-function` fails. That means **every `#ifdef NDEBUG`
+  enforcement test in the repo is currently unreachable**, so that whole class has not run in some
+  time. This slice's guarded cases were exercised in a throwaway Release build with the warning
+  downgraded and pass. The fix is a one-liner and wants its own commit.
+
 ### Update 2026-08-03 — M6 step 5 built: host keys carry their level (**M6 COMPLETE**)
 
 The last step of Milestone 6. `PinKey` — the key the preview cache, Inspector, Interface, Preview
