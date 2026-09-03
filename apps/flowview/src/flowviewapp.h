@@ -11,6 +11,7 @@
 #include <lain/flow/node.h>
 #include <lain/flow/scheduler.h>
 #include <lain/flow/types.h>
+#include <lain/media/framespec.h>
 
 #include <cstdint>
 #include <memory>
@@ -78,6 +79,8 @@ namespace flowview
 		std::string m_savePath;				   // run --save: serialize the graph here
 		lain::core::Range m_frameRange;		   // run --frame: a render over these frames (a TYPED option)
 		std::string m_onMissingFrame = "stop"; // run --on-missing-frame: stop | skip
+		std::string m_videoCodec = "auto";	   // run --codec: the codec FAMILY, never an encoder name
+		lain::media::FrameRate m_outputRate{}; // run --rate: the output rate for a video output
 
 		// The headless subcommands. Their pointers stay valid through Application::run() (the cli::App
 		// outlives onStart/onProcess), so ->parsed()/->remaining() drive the headless dispatch.

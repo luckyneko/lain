@@ -13,15 +13,19 @@
 
 #include <lain/core/range.h>
 #include <lain/flow/boundary.h>
+#include <lain/flow/example/convertnode.h>
 #include <lain/flow/example/frameatnode.h>
 #include <lain/flow/example/opensequencenode.h>
 #include <lain/flow/graph.h>
+#include <lain/image/convert.h>
 #include <lain/image/image.h>
 #include <lain/io/image/codecs.h>
 #include <lain/io/image/load.h>
 #include <lain/io/image/save.h>
 #include <lain/io/sequence/openers.h>
 #include <lain/io/video/codecs.h>
+#include <lain/io/video/open.h>
+#include <lain/io/video/save.h>
 #include <lain/media/frameposition.h>
 #include <lain/media/framesequence.h>
 
@@ -30,6 +34,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <vector>
 
 using namespace lain;
@@ -290,4 +295,280 @@ TEST_CASE("an unbound frame position suppresses rather than guessing", "[flowvie
 	flowview::RunOptions options = sweepOptions(graphPath, stills, dir / "none.png", std::nullopt);
 	CHECK(flowview::runGraph(options, factory, binders) == 0);
 	CHECK_FALSE(fs::exists(dir / "none.png"));
+}
+
+// --- rendering to a video ------------------------------------------------------
+//
+// These are M10 slice 6c's claim: one writer per video-valued output, opened on the first frame
+// that produced something, held across the whole range, and finished on EVERY exit path. The cases
+// that need an encoder skip in a build with no video codec plugin; the ones that are about names
+// and rates run in both configurations, which is where the interesting refusals are anyway.
+
+namespace
+{
+	// Is there a video writer in this build at all? Asked through the production seam rather than
+	// by testing a CMake flag, because what matters is whether a backend REGISTERED itself.
+	bool haveVideoWriter()
+	{
+		ensureCodecs();
+		const fs::path probe = fs::temp_directory_path() / "lain_sweep_probe.mkv";
+		lain::media::FrameSpec spec;
+		spec.extent = {2, 2};
+		spec.pixelFormat = lain::image::PixelFormat::Gray8;
+		spec.colorSpace = lain::image::ColorSpace::sRGB;
+		spec.rate = {24, 1};
+
+		lain::io::video::VideoWriterOptions options;
+		options.codec = lain::io::video::VideoCodec::FFV1;
+		auto writer = lain::io::video::openWriter(probe.string(), spec, options);
+		const bool have = writer != nullptr;
+		if (writer)
+			(void)writer->finish();
+		std::error_code error;
+		fs::remove(probe, error);
+		return have;
+	}
+
+	// stills : FrameSequence ─► FrameAt ─► Convert ─► result : Image
+	//                              ▲
+	// frame : FramePosition ───────┘
+	//
+	// The Convert is not decoration: lain's PNG writer records no colour chunk, so a still saved
+	// and reloaded comes back Unspecified — and the video writer refuses Unspecified rather than
+	// guessing, because writing a guess into a file outlives the guess. Convert is how a graph
+	// complies, which is the whole reason it exists.
+	std::string buildVideoGraph(const fs::path& dir, const core::Factory<flow::Node>& factory)
+	{
+		flow::Graph graph;
+		flow::GroupInputNode& in = graph.boundaryInputNode();
+		const flow::PortId stills = in.addBoundary<media::FrameSequence>("stills");
+		const flow::PortId frame = in.addBoundary<media::FramePosition>("frame");
+
+		flow::GroupOutputNode& out = graph.boundaryOutputNode();
+		const flow::PortId result = out.addBoundary<lain::image::Image>("result");
+
+		const flow::NodeId at = graph.add<flow::example::FrameAtNode>();
+		const flow::NodeId convert = graph.add<flow::example::ConvertNode>();
+		const flow::Node& atNode = graph.node(at);
+		const flow::Node& convertNode = graph.node(convert);
+
+		REQUIRE(graph.connect(flow::PortAddress{in.id(), stills},
+							  flow::PortAddress{at, atNode.input(0).id()}) == flow::Connection::Ok);
+		REQUIRE(graph.connect(flow::PortAddress{in.id(), frame},
+							  flow::PortAddress{at, atNode.input(1).id()}) == flow::Connection::Ok);
+		REQUIRE(graph.connect(flow::PortAddress{at, atNode.output(0).id()},
+							  flow::PortAddress{convert, convertNode.input(0).id()}) == flow::Connection::Ok);
+		REQUIRE(graph.connect(flow::PortAddress{convert, convertNode.output(0).id()},
+							  flow::PortAddress{out.id(), result}) == flow::Connection::Ok);
+
+		const std::string path = (dir / "video.json").string();
+		REQUIRE(flowview::saveGraph(path, graph, factory));
+		return path;
+	}
+
+	flowview::RunOptions videoOptions(const std::string& graphPath, const fs::path& stills, const fs::path& out,
+									  lain::core::Range range)
+	{
+		flowview::RunOptions options = sweepOptions(graphPath, stills, out, range);
+		options.videoCodec = "ffv1"; // lossless, and the only family a byte-exact check can use
+		// Stills genuinely have no rate of their own, so a video output must be told one — which is
+		// ADR-0018's "required explicitly when there is no sequence input", reached from the other
+		// direction: there IS a sequence, and it still cannot say.
+		options.outputRate = lain::media::FrameRate{24, 1};
+		return options;
+	}
+} // namespace
+
+TEST_CASE("a folder of stills renders into one video file", "[flowview][sweep]")
+{
+	if (!haveVideoWriter())
+		SKIP("this build has no video codec plugin");
+
+	const fs::path dir = scratchDir("tovideo");
+	const fs::path stills = dir / "frames";
+	fs::create_directories(stills);
+	for (int i = 0; i < 4; ++i)
+		writeGrey(stills / ("f" + std::to_string(i) + ".png"), static_cast<std::uint8_t>(40 + i * 20));
+
+	const core::Factory<flow::Node> factory = sweepFactory();
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+
+	const std::string graphPath = buildVideoGraph(dir, factory);
+	const fs::path out = dir / "out.mkv";
+
+	// A video output needs NO #### field: one container holds the whole range.
+	REQUIRE(flowview::runGraph(videoOptions(graphPath, stills, out, lain::core::Range{0, 3}), factory, binders) == 0);
+	REQUIRE(fs::exists(out));
+
+	// Reopened through the production reader — the round trip is the assertion, and the frames
+	// must be in order and carry the value of the still each came from.
+	const auto sequence = io::video::open(out.string());
+	REQUIRE(sequence.has_value());
+	CHECK(sequence->size() == 4);
+
+	// The rate SURVIVES, but this deliberately does not assert its exact value. Matroska's own
+	// timebase is what a rate has to fit into, and over a clip this short libavformat's rate
+	// estimate is visibly approximate (a 4-frame file reopens at 24.08 rather than 24). Exact
+	// round-trip fidelity is pinned where it belongs — test_ffmpegwriter.cpp's 6-frame case, which
+	// checks the declaration itself — and asserting it a second time here, more weakly, would only
+	// record a heuristic.
+	CHECK(sequence->spec().rate.specified());
+
+	// The expected value is COMPUTED THROUGH THE SAME PUBLIC CONVERSION rather than written down:
+	// the graph's Convert declares the untagged still sRGB and converts it to BT709, which really
+	// does move the pixel values, and a hardcoded number here would either duplicate the colour
+	// math or quietly pin whatever the code happened to produce.
+	for (std::size_t i = 0; i < 4; ++i)
+	{
+		const lain::image::Image frame = sequence->image(i);
+		REQUIRE(frame.valid());
+
+		lain::image::Image still{2, 2, lain::image::PixelFormat::Gray8, lain::image::ColorSpace::sRGB};
+		for (std::size_t b = 0; b < still.byteSize(); ++b)
+			still.data()[b] = static_cast<std::uint8_t>(40 + i * 20);
+		// Format then space, which is the order ConvertNode applies them in.
+		const lain::image::Image expected =
+			lain::image::convert(lain::image::convert(still, lain::image::PixelFormat::RGB8),
+								 lain::image::ColorSpace::BT709);
+
+		CHECK(static_cast<int>(frame.data()[0]) == static_cast<int>(expected.data()[0]));
+	}
+}
+
+TEST_CASE("a video output refuses a #### field, which asks for one file per frame", "[flowview][sweep]")
+{
+	// The exact inverse of the still rule, and it needs no codec: it is about the NAME.
+	const fs::path dir = scratchDir("videopattern");
+	const fs::path stills = dir / "frames";
+	fs::create_directories(stills);
+	for (int i = 0; i < 2; ++i)
+		writeGrey(stills / ("f" + std::to_string(i) + ".png"), static_cast<std::uint8_t>(30 + i));
+
+	const core::Factory<flow::Node> factory = sweepFactory();
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+
+	const std::string graphPath = buildVideoGraph(dir, factory);
+	CHECK(flowview::runGraph(videoOptions(graphPath, stills, dir / "out.####.mkv", lain::core::Range{0, 1}), factory,
+							 binders) != 0);
+	CHECK_FALSE(fs::exists(dir / "out.0000.mkv"));
+}
+
+TEST_CASE("a video render with no rate to take is refused, naming --rate", "[flowview][sweep]")
+{
+	// A folder of stills has no rate of its own, so nothing can supply one — ADR-0018's "required
+	// explicitly when there is no sequence input", and it must be a refusal rather than a guess,
+	// because a container states a timebase whether or not anyone chose it. No codec needed: the
+	// rate is established before a writer is opened.
+	const fs::path dir = scratchDir("norate");
+	const fs::path stills = dir / "frames";
+	fs::create_directories(stills);
+	for (int i = 0; i < 2; ++i)
+		writeGrey(stills / ("f" + std::to_string(i) + ".png"), static_cast<std::uint8_t>(30 + i));
+
+	const core::Factory<flow::Node> factory = sweepFactory();
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+
+	const std::string graphPath = buildVideoGraph(dir, factory);
+	flowview::RunOptions options = sweepOptions(graphPath, stills, dir / "out.mkv", lain::core::Range{0, 1});
+	options.videoCodec = "ffv1";
+	CHECK(flowview::runGraph(options, factory, binders) != 0);
+}
+
+TEST_CASE("a render that stops leaves a valid, visibly truncated video", "[flowview][sweep]")
+{
+	if (!haveVideoWriter())
+		SKIP("this build has no video codec plugin");
+
+	// THE case the single-exit finishWrites exists for. The range runs past the end of the
+	// sequence, so a frame produces nothing and the default policy stops — and the file must still
+	// have been finalised, because one that was never finalised is not a video at all, which is a
+	// worse failure than the truncation it was meant to report.
+	const fs::path dir = scratchDir("videostop");
+	const fs::path stills = dir / "frames";
+	fs::create_directories(stills);
+	for (int i = 0; i < 2; ++i)
+		writeGrey(stills / ("f" + std::to_string(i) + ".png"), static_cast<std::uint8_t>(50 + i * 30));
+
+	const core::Factory<flow::Node> factory = sweepFactory();
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+
+	const std::string graphPath = buildVideoGraph(dir, factory);
+	const fs::path out = dir / "short.mkv";
+
+	CHECK(flowview::runGraph(videoOptions(graphPath, stills, out, lain::core::Range{0, 3}), factory, binders) != 0);
+
+	// Truncated AND openable: exactly the two frames that rendered.
+	REQUIRE(fs::exists(out));
+	const auto sequence = io::video::open(out.string());
+	REQUIRE(sequence.has_value());
+	CHECK(sequence->size() == 2);
+}
+
+TEST_CASE("skipping a missing frame closes the gap a video cannot hold", "[flowview][sweep]")
+{
+	if (!haveVideoWriter())
+		SKIP("this build has no video codec plugin");
+
+	// The asymmetry ADR-0018 ends on. Numbered stills record a hole as a gap in the numbering; a
+	// video closes up, so the output is one frame shorter. Frame 1 is unreadable, so it produces
+	// nothing, and the remaining two frames must be adjacent in the file.
+	const fs::path dir = scratchDir("videoskip");
+	const fs::path stills = dir / "frames";
+	fs::create_directories(stills);
+	writeGrey(stills / "f0.png", 60);
+	writeGrey(stills / "f1.png", 90);
+	writeGrey(stills / "f2.png", 120);
+
+	const core::Factory<flow::Node> factory = sweepFactory();
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+
+	const std::string graphPath = buildVideoGraph(dir, factory);
+	const fs::path out = dir / "skipped.mkv";
+
+	flowview::RunOptions options = videoOptions(graphPath, stills, out, lain::core::Range{0, 3});
+	options.skipMissingFrames = true;
+	CHECK(flowview::runGraph(options, factory, binders) == 0);
+
+	const auto sequence = io::video::open(out.string());
+	REQUIRE(sequence.has_value());
+	// Three stills rendered, the fourth position produced nothing and was dropped rather than
+	// leaving a hole — the file is shorter, not gappy.
+	CHECK(sequence->size() == 3);
+}
+
+TEST_CASE("the codec family asked for is the one used, never a substitute", "[flowview][sweep]")
+{
+	if (!haveVideoWriter())
+		SKIP("this build has no video codec plugin");
+
+	// A REGRESSION TEST FOR A REAL BUG, and the shape is what makes it one. QuickTime cannot carry
+	// FFV1 but carries h264 happily, so asking for ffv1 into a .mov must REFUSE — while a writer
+	// that quietly fell back to the delivery default would succeed. The first --codec used a CLI11
+	// CheckedTransformer, which rewrote the name to the enum's underlying number; runmode then
+	// failed to parse it and defaulted to auto, so `--codec ffv1` rendered h264 and said so only in
+	// a log line nobody reads. Found by driving the real binary, which is the only place it showed.
+	const fs::path dir = scratchDir("videocodec");
+	const fs::path stills = dir / "frames";
+	fs::create_directories(stills);
+	for (int i = 0; i < 2; ++i)
+		writeGrey(stills / ("f" + std::to_string(i) + ".png"), static_cast<std::uint8_t>(70 + i * 10));
+
+	const core::Factory<flow::Node> factory = sweepFactory();
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+	const std::string graphPath = buildVideoGraph(dir, factory);
+
+	CHECK(flowview::runGraph(videoOptions(graphPath, stills, dir / "no.mov", lain::core::Range{0, 1}), factory,
+							 binders) != 0);
+
+	// And a name that is not a family at all refuses rather than resolving to the default — the
+	// same rule, reached from the other side.
+	flowview::RunOptions bogus = videoOptions(graphPath, stills, dir / "bogus.mkv", lain::core::Range{0, 1});
+	bogus.videoCodec = "h265"; // close enough to be a plausible typo for "hevc"
+	CHECK(flowview::runGraph(bogus, factory, binders) != 0);
 }

@@ -5,7 +5,9 @@
 #include <lain/flow/porttyperegistry.h>
 #include <lain/flow/serialize/serialize.h>
 #include <lain/image/color.h>
+#include <lain/image/colorspace.h>
 #include <lain/image/image.h>
+#include <lain/image/pixelformat.h>
 #include <lain/io/data/codecs.h> // registerDataCodecs
 #include <lain/io/data/load.h>
 #include <lain/io/data/save.h>
@@ -53,6 +55,11 @@ namespace flowview
 		codecs.registerType<std::filesystem::path>("path");
 		codecs.registerType<image::ColorRGBf>("color");
 		codecs.registerType<media::FramePosition>("framePosition"); // FrameAt's position default
+		// Convert's three enum params. data reflects an enum as its NAME through meta::enums, so
+		// these are ordinary codec registrations rather than a new mechanism — and a name survives
+		// an enumerator being inserted, which an ordinal would not.
+		codecs.registerType<image::PixelFormat>("pixelFormat");
+		codecs.registerType<image::ColorSpace>("colorSpace");
 		return codecs;
 	}
 

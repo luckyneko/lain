@@ -3189,6 +3189,85 @@ this slice is all plugin), warning-clean, format-check clean.
   `[gpu]` tests already use. That keeps ADR-0019's conditionality visible in the suite instead of
   hidden behind an `#ifdef`.
 
+**Slice 6c is built (2026-09-03) — M10 slice 6 is COMPLETE.** The render loop's encoder, `--codec`
+and `--rate`, the sequence-to-video transcode arm, and `ConvertNode`. `ctest` **595/595** default,
+**625/625** with video on, warning-clean, format-check clean. Driven through the real binary:
+a folder of stills renders to `out.mkv` as `matroska/ffv1` and reads back as four PNGs; `--codec
+h264` gives `mp4/h264_videotoolbox`; a truncated render exits 1 leaving a **valid four-frame file**;
+and the same document on a video-OFF build still lists its whole interface and refuses with a
+missing **capability**.
+
+- **`sweep` splits into `sweep` + `sweepFrames` so writers are finished in exactly ONE place.**
+  ADR-0018's default policy is "finalise what exists, report the ordinal, exit non-zero", and a
+  `finish()` that must be remembered at each of five return sites is one that will eventually be
+  forgotten on the path that matters — the failing one. A file that was never finalised is not a
+  video at all, which is a worse failure than the truncation it was meant to report. Proven live,
+  not just asserted: a render past the end of its footage exits 1 and the file it leaves opens with
+  exactly the frames that rendered.
+- **The `####` rule became two rules with one home, and they are exact inverses.** A still output
+  needs a frame field whenever the range is longer than one; a video output must NOT have one,
+  because a container holds the whole range and a numbered pattern asks for one video per frame.
+- **`--codec` is a FAMILY, and the first version silently substituted.** `CheckedTransformer`
+  rewrites the matched string to the enum's underlying NUMBER, so `runmode` failed to parse `"4"`
+  and fell back to `Auto` — `--codec ffv1` rendered **h264**, announcing it only in a log line. Two
+  changes, because one would not have been enough: the option now uses `IsMember`, which validates
+  and leaves the name alone; and `codecFamily` returns `std::optional` and the render REFUSES on an
+  unparseable name instead of defaulting. **Found by driving the real binary** — every test passed
+  with the bug in place, because nothing then compared what was asked for against what was written.
+  The regression test now does, in the only shape that can tell them apart: QuickTime cannot carry
+  FFV1 but carries h264 happily, so `--codec ffv1 --result out.mov` must refuse, where a silent
+  fallback would succeed.
+- **Where the rate comes from:** `--rate`, else the one specified rate among the bound sequences
+  (found **by type**, the rule that already finds the frame position), else refuse. Two bound
+  sequences with two different specified rates is refused naming both, mirroring `media::unify`'s
+  refusal to reconcile them — choosing one is a retime. `--rate` is typed like `--frame`:
+  `media::FrameRate` gains `parse` + CLI11's `lexical_cast` hook, so a malformed rate is refused by
+  the parser before a graph loads. **It accepts `24` and `30000/1001` and refuses `29.97`**, which
+  is the type's whole reason for existing — and note the asymmetry with `core::Range`, whose
+  `toString()` IS its literal form while `FrameRate::toString()` is a deliberately approximate
+  display form.
+- **OPEN, deliberately: a stride does not retime.** `--frame 0-499x2` writes 250 frames at the
+  source rate, so the result plays twice as fast. The alternative — dividing the rate, so the output
+  covers the same duration at half the temporal resolution — was argued on the grounds that the
+  input↔output correspondence the missing-frame policy protects is a correspondence in TIME as well
+  as in count. The repo owner is undecided and asked to keep this and revisit, so it is **recorded
+  here as an open decision rather than a settled one**. `--rate` says otherwise either way.
+- **`ConvertNode` (`flow-example`) is what lets a graph COMPLY with the writer's refusals** —
+  without it the strict rule is just a wall. Two params rather than one, because conflating them is
+  how a pipeline acquires a silent lie: **`assume` DECLARES what an untagged image already is** (no
+  conversion — there is no source curve to convert from, and `image::convert` refuses `Unspecified`
+  for that reason), and **`colorSpace` is the TARGET**, reached by conversion. A tagged image is
+  never retagged. Alpha is deliberately absent: it has the same untagged problem a third time and no
+  video codec carries it, so the one caller this node exists for would never use it.
+- **A bug in ConvertNode, caught by the sweep and worth keeping in mind for every node of this
+  shape:** on an invalid input it returned early, LEAVING the previous frame's image in its output
+  slot — so a suppressed frame read downstream as "this frame rendered" and the missing-frame policy
+  never fired. It now propagates the invalidity. The existing sweep tests never saw it because
+  `FrameAt` fed the boundary directly; inserting any node between a source and the output exposes
+  it.
+- **Why `ConvertNode` was needed at all is a pre-existing gap, FOUND NOT FIXED:** `pngwriter.cpp`
+  records **no colour chunk** (no `sRGB`, no `gAMA`), so a still saved and reloaded through lain's
+  own codec comes back `Unspecified`. That is why the natural stills→video path needs a Convert in
+  it. Fixing the writer is a separate change with its own consequences for existing files.
+- **The writer's input boundary is 8-bit Gray or RGB**, refused by name otherwise. The reader's
+  boundary is RGB8; widening Gray to a colour stream loses nothing, so refusing it would be stricter
+  than the rule requires — "no LOSS" is not "no conversion". 16-bit and float are refused, since no
+  delivery codec here takes them.
+- **A `FrameSequence` output to a container TRANSCODES** instead of writing a manifest, which is
+  what gives `io::video::save` a production caller in the slice that introduces it. A non-container
+  path still writes the manifest, which stays the default.
+- `--codec` and `--rate` joined the reserved-name set, so a boundary pin called `rate` is reported
+  as unreachable rather than silently shadowed.
+- **`gui::enumCombo` has a live caller again.** Convert's `PixelFormat`/`ColorSpace` params are the
+  first enum params in the tree, and they edit through the combo that has had no caller since the
+  preview-size dropdown was retired on 2026-07-31 — a real user, rather than an API kept alive to
+  dogfood itself.
+- **Not asserted, and the reason is recorded in the test:** the exact rate of a very short Matroska
+  clip. A 4-frame file reopens at 24.08 rather than 24, because libavformat estimates the rate and
+  the container's timebase is what it has to fit into. A `video_track_timescale` fix was tried and
+  **removed when it changed nothing measurable** — unverified code does not go in. Exact declaration
+  fidelity is pinned where it belongs, in the plugin's 6-frame round trip.
+
 #### Queued: `core::Uri` — an identity, not a path algebra (raised 2026-09-01, build after slice 5)
 
 A uri is a bare `std::string` everywhere it matters — `io::read` / `write` / `openStream`,

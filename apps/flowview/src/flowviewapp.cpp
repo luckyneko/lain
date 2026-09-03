@@ -10,13 +10,35 @@
 #include <lain/io/image/codecs.h>
 #include <lain/io/sequence/openers.h>
 #include <lain/io/video/codecs.h>
+#include <lain/io/video/writer.h>
+#include <lain/meta/enums.h>
 
+#include <cctype>
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace flowview
 {
 	using namespace lain;
+
+	// The --codec option's accepted names, straight from the enum, lowercased so they read like a
+	// command line rather than like C++ identifiers. Derived rather than typed out: a hand-written
+	// list is a second place the set of families lives, and it goes stale silently.
+	static std::vector<std::string> codecNames()
+	{
+		std::vector<std::string> names;
+		for (const auto& [name, value] : lain::meta::enums::nameValueMap<lain::io::video::VideoCodec>())
+		{
+			(void)value;
+			std::string lowered = name;
+			for (char& c : lowered)
+				c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+			names.push_back(std::move(lowered));
+		}
+		return names;
+	}
 
 	bool FlowviewApp::onInit(app::Application&, app::cli::App& cli)
 	{
@@ -47,6 +69,27 @@ namespace flowview
 		m_runCmd->add_option("--on-missing-frame", m_onMissingFrame,
 							 "what a render does when a frame produces nothing: stop (default) | skip")
 			->check(app::cli::IsMember({"stop", "skip"}));
+
+		// A codec FAMILY, never an encoder name: "h264_videotoolbox" is a fact about one machine,
+		// so a command line carrying it stops working on the next one — which is what ADR-0019's
+		// "never by a hardcoded name" forbids. The names come from the enum itself, so this list
+		// cannot drift from what the writer accepts.
+		m_runCmd->add_option("--codec", m_videoCodec,
+							 "codec family for a video-valued output: auto (delivery, or refuse) | h264 | hevc | "
+							 "prores | ffv1 (lossless) | mjpeg")
+			// IsMember VALIDATES and leaves the string alone; CheckedTransformer would rewrite it to
+			// the enum's underlying NUMBER, which runmode then fails to parse and — before this was
+			// caught by running the real binary — silently fell back to auto. Asking for ffv1 and
+			// getting h264 is precisely the substitution this option exists to prevent, so the
+			// value that travels is the name.
+			->check(app::cli::IsMember(codecNames(), app::cli::ignore_case));
+
+		// TYPED, like --frame: media::FrameRate provides CLI11's lexical_cast hook, so a malformed
+		// rate is refused by the parser before a graph loads. Decimals are refused on purpose —
+		// "29.97" is a rounded rendering of 30000/1001, and a rate that has been through a decimal
+		// cannot go back into a container's timebase without drifting.
+		m_runCmd->add_option("--rate", m_outputRate,
+							 "output frame rate for a video output: 24 | 30000/1001 (default: the bound sequence's)");
 
 		m_runCmd->allow_extras(); // --<boundary> <value> pairs, matched to the loaded graph
 
@@ -128,6 +171,11 @@ namespace flowview
 		if (m_runCmd->count("--frame") > 0)
 			options.frameRange = m_frameRange;
 		options.skipMissingFrames = m_onMissingFrame == "skip";
+		options.videoCodec = m_videoCodec;
+		// Presence, not emptiness — the same reason --frame uses count(): an unspecified rate and
+		// a rate that happens to be zero are different requests, and only one of them is an error.
+		if (m_runCmd->count("--rate") > 0)
+			options.outputRate = m_outputRate;
 		options.bindings = m_runCmd->remaining();
 		options.exampleSize = m_size;
 		return runGraph(options, m_nodeFactory, binders);

@@ -5,6 +5,7 @@
 #include <lain/flow/example/blurnode.h>
 #include <lain/flow/example/clipsequencenode.h>
 #include <lain/flow/example/combinenode.h>
+#include <lain/flow/example/convertnode.h>
 #include <lain/flow/example/frameatnode.h>
 #include <lain/flow/example/gradientnode.h>
 #include <lain/flow/example/listdirnode.h>
@@ -42,6 +43,7 @@ namespace flowview
 	static constexpr const char* kGroupOutputKey = "groupOutput";
 	static constexpr const char* kListDirKey = "listDir";
 	static constexpr const char* kCombineKey = "combine";
+	static constexpr const char* kConvertKey = "convert";
 
 	// The frame-sequence kinds (M10). Registered in the FACTORY but deliberately not in the
 	// catalog yet: the catalog is the gui's Add menu, and M10 puts flowview's gui work in its own
@@ -63,7 +65,7 @@ namespace flowview
 		// Interface panel, not added like an ordinary node.
 		static const std::vector<NodeCategory> catalog = {
 			{"Sources", {kGradientKey, kLoadImageKey, kListDirKey, kConstIntKey, kConstBoolKey, kConstFloatKey, kConstPathKey, kConstStringKey}},
-			{"Filters", {kTintKey, kBlurKey, kCombineKey}},
+			{"Filters", {kTintKey, kBlurKey, kCombineKey, kConvertKey}},
 			{"Control", {kGateKey, kMergeKey, kSelectKey}},
 			// A group is added empty (its inner graph is born with its own boundary pair) and grown by
 			// descending into it, and a MAP the same way — the difference is only that a map's face is
@@ -89,6 +91,9 @@ namespace flowview
 		// folder holds until it has run, which is why the scheduler plans in stages.
 		factory.registerType<flow::example::ListDirNode>(kListDirKey);
 		factory.registerType<flow::example::CombineNode>(kCombineKey);
+		// The way a graph complies with the video writer's refusals: declare an untagged image and
+		// convert it to something a container can state (WORK.md M10 slice 6c).
+		factory.registerType<flow::example::ConvertNode>(kConvertKey);
 		factory.registerType<flow::example::OpenSequenceNode>(kOpenSequenceKey);
 		factory.registerType<flow::example::FrameAtNode>(kFrameAtKey);
 		factory.registerType<flow::example::ClipSequenceNode>(kClipSequenceKey);

@@ -984,7 +984,10 @@ medium.
   what exists, report the ordinal, exit non-zero — a truncated video is visibly truncated, whereas a
   silently shortened one has destroyed the input↔output frame correspondence with nothing downstream
   able to tell. **Skip** is opt-in. Note the asymmetry: numbered stills *can* represent a hole (a
-  visible gap in the numbering), a video cannot and must close up. _Avoid_: writing a black frame.
+  visible gap in the numbering), a video cannot and must close up. Its corollary at the node level:
+  a node handed an invalid image must **emit** one rather than leaving its previous output in place,
+  or a stale frame reads downstream as a rendered one and this policy never fires. _Avoid_: writing
+  a black frame, a node that returns early and keeps last frame's output.
 
 - **Video reader / writer** — the `lain::io::video` seam, mirroring `io::image`'s registry and plugin
   idiom. The **writer breaks the parallel deliberately**: an encoder is open-push-finalise and its

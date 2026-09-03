@@ -13,16 +13,21 @@
 #include <lain/image/image.h>
 #include <lain/io/data/save.h>
 #include <lain/io/image/save.h>
+#include <lain/io/uri.h>
+#include <lain/io/video/open.h>
+#include <lain/io/video/save.h>
 #include <lain/log/log.h>
 #include <lain/media/frameposition.h>
 #include <lain/media/framesequence.h>
 #include <lain/media/serialize/manifest.h>
+#include <lain/meta/enums.h>
 #include <lain/meta/typenames.h>
 
 #include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <utility>
@@ -88,7 +93,8 @@ namespace flowview
 		// `run`'s own registered options. CLI11 consumes these before the extras are collected, so a
 		// boundary pin named after one is simply unreachable — and silently so, which is why it is
 		// worth saying out loud rather than leaving to be discovered.
-		static const std::set<std::string> reserved{"graph", "g", "save", "frame", "on-missing-frame"};
+		static const std::set<std::string> reserved{"graph", "g", "save", "frame",
+													"on-missing-frame", "codec", "rate"};
 
 		std::set<std::string> inputs;
 		for (const flow::BoundaryInput& in : graph.boundaryInputs())
@@ -172,6 +178,17 @@ namespace flowview
 
 		if (delivered.holds<media::FrameSequence>())
 		{
+			// Naming a container is the explicit alternative to the default, and it is a TRANSCODE:
+			// the selection's frames, encoded. This is io::video::save's production caller, which
+			// is what keeps the one-shot facade from shipping unreachable.
+			if (io::video::isVideoUri(path))
+			{
+				if (io::video::save(path, delivered.get<media::FrameSequence>()))
+					return true;
+				log::error("flowview: could not transcode --{} to {}", out.name, path);
+				return false;
+			}
+
 			// A sequence is written as a MANIFEST, not as pixels: a sequence-valued output is
 			// necessarily a selection, and what it selected is the thing worth recording.
 			if (io::data::save(path, data::toValue(media::manifestOf(delivered.get<media::FrameSequence>()))))
@@ -210,15 +227,167 @@ namespace flowview
 		return false;
 	}
 
+	// One requested output, plus everything a sweep must remember about it across the range.
+	//
+	// A struct rather than the pair it replaces because a VIDEO output is STATEFUL: its encoder is
+	// opened on the first frame that produced something and lives until the sweep ends, whereas a
+	// still is a complete transaction per frame. That difference is the whole of ADR-0018's second
+	// broken parallel, and it is the only reason this type exists.
+	struct Write
+	{
+		flow::BoundaryOutput out;
+		std::string path;
+		bool video = false;								// io::video::isVideoUri(path), asked once
+		std::unique_ptr<io::video::VideoWriter> writer; // video only; null until the first frame arrives
+	};
+
+	// The codec family named on the command line, or nullopt if the name is not one.
+	//
+	// OPTIONAL RATHER THAN A DEFAULT, and the difference is not theoretical: the first version
+	// returned Auto for anything it could not parse, and a cli transformer that rewrote the name to
+	// a number meant `--codec ffv1` silently rendered h264. Asking for one codec and getting
+	// another is exactly what this option exists to prevent, so an unparseable name must REFUSE.
+	// The parser validates the same names, so reaching the nullopt arm means the two lists drifted
+	// — which is the case worth failing loudly on rather than absorbing.
+	static std::optional<io::video::VideoCodec> codecFamily(const std::string& name)
+	{
+		return meta::enums::fromString<io::video::VideoCodec>(name, /*caseInsensitive=*/true);
+	}
+
+	// The rate a video output should declare.
+	//
+	// In order (ADR-0018): --rate if given; else the one specified rate among the BOUND sequences,
+	// found BY TYPE — the same rule that finds the frame position, and for the same reason a magic
+	// pin name would break the moment a linked group renames its interface. Two bound sequences
+	// with two DIFFERENT specified rates is refused naming both, mirroring media::unify's refusal
+	// to reconcile them: choosing one is a retime, and no host should make that call silently.
+	static std::optional<media::FrameRate> outputRate(const RunOptions& options, const flow::Graph& graph,
+													  const flow::Evaluation& evaluation)
+	{
+		if (options.outputRate)
+			return options.outputRate;
+
+		std::optional<media::FrameRate> found;
+		for (const flow::BoundaryInput& in : graph.boundaryInputs())
+		{
+			if (in.type != typeid(media::FrameSequence))
+				continue;
+
+			const flow::PortValue& bound = evaluation.value(in.port);
+			if (!bound.holds<media::FrameSequence>())
+				continue;
+
+			const media::FrameRate rate = bound.get<media::FrameSequence>().spec().rate;
+			if (!rate.specified())
+				continue;
+
+			if (found && *found != rate)
+			{
+				log::error("flowview: bound sequences declare {} and {} — pick one with --rate, "
+						   "because reconciling them is a retime",
+						   found->toString(), rate.toString());
+				return std::nullopt;
+			}
+			found = rate;
+		}
+
+		if (!found)
+		{
+			// Two different situations, one message, because the fix is the same and the
+			// distinction is the caller's to see: there may be no sequence input at all, or there
+			// may be one that simply has no rate — a folder of stills genuinely has none, which is
+			// the common case and would read as a bug if this claimed the input was missing.
+			log::error("flowview: no bound frame sequence declares a rate (a folder of stills has none), "
+					   "so --rate is required to write a video");
+		}
+		return found;
+	}
+
+	// Finish every open video writer. THE ONLY PLACE THEY ARE FINISHED, which is why sweep() funnels
+	// every exit through it: ADR-0018's default policy is "finalise what exists, report the ordinal,
+	// exit non-zero", and a finish() that has to be remembered at each failure path is one that will
+	// eventually be forgotten on the path that matters — the failing one. A file that is never
+	// finalised is not a video at all, which is worse than the truncation it was meant to report.
+	static int finishWrites(std::vector<Write>& writes)
+	{
+		int status = 0;
+		for (Write& write : writes)
+		{
+			if (!write.writer)
+				continue;
+			if (!write.writer->finish())
+			{
+				log::error("flowview: could not finalise --{} at {}", write.out.name, write.path);
+				status = 1;
+			}
+			else
+			{
+				log::info("flowview: wrote --{} to {}", write.out.name, write.path);
+			}
+			write.writer.reset();
+		}
+		return status;
+	}
+
+	// One frame's worth of output for one write. Returns false to stop the render.
+	static bool writeFrame(Write& write, std::size_t frame, const flow::Evaluation& evaluation,
+						   const RunOptions& options, const flow::Graph& graph, bool& preflighted)
+	{
+		const flow::PortValue& delivered = evaluation.value(write.out);
+
+		if (!write.video)
+		{
+			const std::string path = frameOutputPath(write.path, frame);
+			if (!preflighted && !encodableHere(write.out, path, evaluation))
+				return false;
+			return writeBoundaryValue(write.out, path, evaluation);
+		}
+
+		if (!delivered.holds<image::Image>())
+		{
+			log::error("flowview: --{} is a video output but delivered {}, which is not an image",
+					   write.out.name, evaluation.describe(write.out.port));
+			return false;
+		}
+
+		if (!write.writer)
+		{
+			// THE PREFLIGHT, on the first frame that produced something — the video peer of
+			// encodableHere, arrived at by a different route because opening an encoder already
+			// answers the question. The spec comes from this frame and fixes every later one
+			// (ADR-0018); a refusal stops the render before a second frame is computed.
+			const std::optional<media::FrameRate> rate = outputRate(options, graph, evaluation);
+			if (!rate)
+				return false;
+
+			const std::optional<io::video::VideoCodec> family = codecFamily(options.videoCodec);
+			if (!family)
+			{
+				log::error("flowview: '{}' is not a codec family", options.videoCodec);
+				return false;
+			}
+
+			const media::FrameSpec spec = media::specOf(delivered.get<image::Image>(), *rate);
+			io::video::VideoWriterOptions writerOptions;
+			writerOptions.codec = *family;
+
+			write.writer = io::video::openWriter(write.path, spec, writerOptions);
+			if (!write.writer)
+				return false; // openWriter named the reason: the spec, the container or the codec
+		}
+
+		return write.writer->write(delivered.get<image::Image>());
+	}
+
 	// Run the graph once per frame over `range`, rebinding the frame position each time.
 	//
 	// This is the RENDER of ADR-0018: a fold, not a map. It consumes frames one at a time and
 	// produces files, so memory is one frame's worth at any range length — which is the whole reason
 	// the host owns the loop instead of a map materialising 500 decoded frames.
-	static int sweep(const core::Range& range, const RunOptions& options, const flow::Graph& graph,
-					 flow::Evaluation& evaluation, flow::Scheduler& scheduler,
-					 const std::vector<flow::BoundaryInput>& positions,
-					 const std::vector<std::pair<flow::BoundaryOutput, std::string>>& writes)
+	static int sweepFrames(const core::Range& range, const RunOptions& options, const flow::Graph& graph,
+						   flow::Evaluation& evaluation, flow::Scheduler& scheduler,
+						   const std::vector<flow::BoundaryInput>& positions, std::vector<Write>& writes,
+						   std::size_t& written)
 	{
 		// The range arrived already parsed: `--frame` is a typed option, so a malformed one was
 		// refused by the command line before a graph was ever loaded.
@@ -231,27 +400,30 @@ namespace flowview
 			return 1;
 		}
 
-		// An output must be able to name a frame whenever there is more than one, or the render
-		// silently overwrites one file per iteration and exits reporting success — destroying the
-		// correspondence between input and output frames, which is what the missing-frame policy
-		// exists to prevent. A ONE-frame range is exempt: `--frame 5 --result out.png` is
-		// unambiguous, and demanding a #### field there would be ceremony.
-		if (range.count() > 1)
+		// TWO RULES, ONE HOME, and they are exact inverses. A STILL output must be able to name a
+		// frame whenever there is more than one, or the render silently overwrites one file per
+		// iteration and exits reporting success. A VIDEO output must NOT carry a #### field: one
+		// container holds the whole range, so a numbered pattern asks for one video per frame,
+		// which is not a thing. A ONE-frame range exempts the first rule — `--frame 5 --result
+		// out.png` is unambiguous, and demanding a #### field there would be ceremony.
+		for (const Write& write : writes)
 		{
-			for (const auto& [out, path] : writes)
+			if (write.video && isFramePattern(write.path))
 			{
-				if (!isFramePattern(path))
-				{
-					log::error("flowview: --{} is '{}', which has no #### field — a {}-frame render needs one per frame",
-							   out.name, path, range.count());
-					return 1;
-				}
+				log::error("flowview: --{} is '{}', but a video holds the whole range in one file — "
+						   "drop the #### field",
+						   write.out.name, write.path);
+				return 1;
+			}
+			if (!write.video && range.count() > 1 && !isFramePattern(write.path))
+			{
+				log::error("flowview: --{} is '{}', which has no #### field — a {}-frame render needs one per frame",
+						   write.out.name, write.path, range.count());
+				return 1;
 			}
 		}
 
-		int status = 0;
 		bool preflighted = false;
-		std::size_t written = 0;
 
 		for (std::size_t frame = range.first; frame <= range.last; frame += range.step)
 		{
@@ -272,37 +444,70 @@ namespace flowview
 			if (frame == range.first)
 				dumpGraph(std::cout, graph, evaluation);
 
-			for (const auto& [out, path] : writes)
+			for (Write& write : writes)
 			{
-				if (producedNothing(out, evaluation))
+				if (producedNothing(write.out, evaluation))
 				{
 					// A suppressed frame. The policy belongs to the HOST, not to the writer: the
 					// default stops, reports the ordinal and exits non-zero, because a truncated
-					// render must be visibly truncated. Skipping is opt-in, and for numbered stills
-					// the gap in the numbering is itself the record — which is why a video, which
-					// cannot represent a hole, will need the same flag to mean something stricter.
+					// render must be visibly truncated.
 					if (options.skipMissingFrames)
 					{
-						log::warn("flowview: frame {} produced no --{} — skipped, leaving a gap", frame, out.name);
+						// The asymmetry ADR-0018 ends on. Numbered stills represent a hole as a gap
+						// in the numbering, which is itself a record. A video CANNOT, so the gap
+						// closes up: the output is one frame shorter and everything after it has
+						// moved earlier in time. Said out loud, because the file cannot say it.
+						if (write.video)
+						{
+							log::warn("flowview: frame {} produced no --{} — dropped. A video cannot hold a "
+									  "gap, so the output is a frame shorter and no longer lines up with the source.",
+									  frame, write.out.name);
+						}
+						else
+						{
+							log::warn("flowview: frame {} produced no --{} — skipped, leaving a gap", frame,
+									  write.out.name);
+						}
 						continue;
 					}
 					log::error("flowview: frame {} produced no --{} — stopping after {} frame(s). Use --on-missing-frame skip to continue.",
-							   frame, out.name, written);
+							   frame, write.out.name, written);
 					return 1;
 				}
 
-				if (!preflighted && !encodableHere(out, frameOutputPath(path, frame), evaluation))
-					return 1;
-
-				if (!writeBoundaryValue(out, frameOutputPath(path, frame), evaluation))
+				if (!writeFrame(write, frame, evaluation, options, graph, preflighted))
 					return 1;
 			}
 			preflighted = true;
 			++written;
 		}
 
+		return 0;
+	}
+
+	// sweep() OWNS the writers; sweepFrames() may return early from anywhere. Deliberate structure
+	// rather than a rule at five return sites — see finishWrites.
+	static int sweep(const core::Range& range, const RunOptions& options, const flow::Graph& graph,
+					 flow::Evaluation& evaluation, flow::Scheduler& scheduler,
+					 const std::vector<flow::BoundaryInput>& positions,
+					 const std::vector<std::pair<flow::BoundaryOutput, std::string>>& requested)
+	{
+		std::vector<Write> writes;
+		writes.reserve(requested.size());
+		for (const auto& [out, path] : requested)
+		{
+			// isVideoUri is asked ONCE, of the seam that owns the container-name claim — deriving it
+			// a second way here would let this decision and the write disagree about what a path
+			// means, which is the shape that keeps producing bugs in this repo.
+			writes.push_back(Write{out, path, io::video::isVideoUri(path), nullptr});
+		}
+
+		std::size_t written = 0;
+		const int status = sweepFrames(range, options, graph, evaluation, scheduler, positions, writes, written);
+		const int finished = finishWrites(writes);
+
 		log::info("flowview: rendered {} frame(s)", written);
-		return status;
+		return std::max(status, finished);
 	}
 
 	// --- subcommands ----------------------------------------------------------

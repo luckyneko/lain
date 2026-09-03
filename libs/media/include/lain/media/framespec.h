@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace lain::media
 {
@@ -34,10 +35,33 @@ namespace lain::media
 		double hz() const;
 
 		std::string toString() const; // "29.97 fps" / "unspecified"
+
+		// Parse the literal form: "24" or "30000/1001".
+		//
+		// DECIMALS ARE REFUSED, and that is the type's whole reason for existing: "29.97" is not a
+		// rate, it is a rounded rendering of 30000/1001, and a rate that has been through a decimal
+		// cannot be written back into a container's timebase without drifting. Refusing it costs a
+		// caller six characters and buys an exact answer.
+		//
+		// Note the asymmetry with core::Range, which set the opposite precedent: THERE toString()
+		// is the literal form and round-trips. Here it is a DISPLAY form ("29.97 fps") that is
+		// deliberately approximate, so it is not what parse() accepts.
+		//
+		// Returns nullopt for a decimal, a zero or missing numerator or denominator, trailing junk,
+		// an empty string, a negative number, or a value too large to hold.
+		static std::optional<FrameRate> parse(std::string_view text);
 	};
 
 	bool operator==(const FrameRate& a, const FrameRate& b);
 	bool operator!=(const FrameRate& a, const FrameRate& b);
+
+	// CLI11 converts a custom option type through an unqualified `lexical_cast` found by ADL on the
+	// type — the same hook core::Range provides, and for the same reason: an app writes
+	// `cli.add_option("--rate", rate)` with no string staging, so a malformed rate is refused by the
+	// PARSER before a graph is loaded and there is no second place the syntax could drift.
+	//
+	// lain::media names nothing of CLI11 to do this: the hook is a plain signature.
+	bool lexical_cast(const std::string& input, FrameRate& output);
 
 	// The single declared shape of every frame in a sequence.
 	//

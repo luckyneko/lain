@@ -2,8 +2,11 @@
 
 #include <lain/flow/portvalue.h>
 #include <lain/gui/dialogs.h>
+#include <lain/gui/enums.h>
 #include <lain/gui/gui.h>
 #include <lain/image/color.h>
+#include <lain/image/colorspace.h>
+#include <lain/image/pixelformat.h>
 
 #include <filesystem>
 #include <string>
@@ -164,6 +167,21 @@ namespace flowview
 		return false;
 	}
 
+	// An enum param edits as a combo over its own enumerators — the ONE editor shape that needs no
+	// per-type code, since lain::meta::enums supplies the names. Convert's pixel format and colour
+	// space are its first users, and they give gui::enumCombo a live caller again: it has had none
+	// since the preview-size dropdown was retired on 2026-07-31, and an API kept alive only to
+	// dogfood itself is the thing that retirement deliberately avoided.
+	template <typename E>
+	static bool editEnum(const std::string& label, flow::PortValue& value)
+	{
+		E current = value.holds<E>() ? value.get<E>() : E{};
+		if (!gui::enumCombo(label.c_str(), current))
+			return false;
+		value.set<E>(current);
+		return true;
+	}
+
 	void registerBuiltinParamEditors(ParamEditors& editors)
 	{
 		editors.add(typeid(int), &editInt);
@@ -172,5 +190,7 @@ namespace flowview
 		editors.add(typeid(std::string), &editString);
 		editors.add(typeid(std::filesystem::path), &editPath);
 		editors.add(typeid(image::ColorRGBf), &editColorRGBf);
+		editors.add(typeid(image::PixelFormat), &editEnum<image::PixelFormat>);
+		editors.add(typeid(image::ColorSpace), &editEnum<image::ColorSpace>);
 	}
 } // namespace flowview

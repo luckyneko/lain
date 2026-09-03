@@ -5,6 +5,7 @@
 #include <lain/core/factory.h>
 #include <lain/core/range.h>
 #include <lain/flow/node.h>
+#include <lain/media/framespec.h>
 
 #include <cstdint>
 #include <optional>
@@ -31,6 +32,17 @@ namespace flowview
 		bool skipMissingFrames = false;	   // --on-missing-frame skip; default is stop
 		std::vector<std::string> bindings; // the --<boundary> <value> extras
 		std::uint32_t exampleSize = 64;
+
+		// The codec FAMILY a video-valued output asks for ("auto", "h264", "ffv1", ...). A string
+		// rather than the enum, matching --on-missing-frame: the cli validates it against
+		// meta::enums' names and runmode does the one conversion, so no CLI11 reaches this header
+		// and there is no second parser.
+		std::string videoCodec = "auto";
+
+		// The output rate, when the caller states one. Unset means "take it from the bound
+		// sequence" — ADR-0018: the rate defaults to the bound sequence's and is required
+		// explicitly when there is no sequence input.
+		std::optional<lain::media::FrameRate> outputRate;
 	};
 
 	// The headless subcommands. Both build the example scene when `graphPath` is empty (so they run
