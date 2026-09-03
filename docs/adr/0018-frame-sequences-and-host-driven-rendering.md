@@ -247,10 +247,28 @@ either way, and this one is right for everything modern while the alternative is
 states only what the file states, so an untagged STILL is `Unspecified`. The media differ for a
 reason. A still file may hold a mask, a heightmap or a depth pass, where untagged genuinely means
 unknown; a delivery-coded video stream is always a picture encoded against some transfer, which is
-what makes the guess here right and the same guess wrong for stills. ADR-0020 also records the
-three loose ends this decision left in the video reader — the BT.601 decode coefficients used for
-untagged footage, the P3/XYZ primaries that are accepted rather than refused, and the log line that
-misses a file tagged only by its matrix.
+what makes the guess here right and the same guess wrong for stills. Three loose ends this decision left in the reader
+were closed at the same time.
+
+**The refusal lists are ALLOWLISTS as of 2026-09-03.** They were written as denylists naming the
+standards above, which meant every value nobody had thought about fell through to BT709 — and that
+set was neither small nor harmless: the LOG and LOG_SQRT transfers (V-Log/S-Log footage,
+catastrophically wrong linearised with a 709 curve), `AVCOL_TRC_LINEAR` (which the write seam
+already refused for exactly this reason, so the two directions disagreed about one value), DCI-P3
+and Display P3 primaries, CIE XYZ, and every extension FFmpeg adds later. A denylist defaults to
+CLAIMING and an allowlist defaults to REFUSING, and only the second is what "reported and refused,
+not relabelled" means. It also matches the shape `io::video::canEncode` already had on the write
+side.
+
+**The decode matrix is a separate question from the transfer, with a different answer.** Untagged
+footage is decoded with BT.601 coefficients while its transfer is treated as BT709, and that is not
+an inconsistency: the BT.601 and BT.709 OETFs are the same curve to within rounding, so the
+transfer guess above costs nothing whichever standard the footage really is, while the coefficient
+sets are ~17% apart on a saturated green and an encoder that wrote no tag is overwhelmingly one
+that used BT.601. Measured, not assumed — lain's own untagged fixture decodes back to its source
+colour exactly under BT.601 and 10 counts out under BT.709, at 720p as well as at 64×48. What
+changed is that the value is now stated by `decodeMatrixFor`, tested, and logged at open, instead
+of being inherited by passing the raw tag to swscale and taking its default.
 
 Per-element incrementality, keyed elements, a linked map over N streams, realtime playback of
 processed output, and the capture manifest and capture dataset remain outside this decision.

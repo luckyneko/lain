@@ -101,11 +101,20 @@ namespace lain::io::video::ffmpeg
 											parameters.color_space));
 			return false;
 		}
-		if (parameters.color_trc == AVCOL_TRC_UNSPECIFIED && parameters.color_space == AVCOL_SPC_UNSPECIFIED)
+		// Said out loud rather than assumed quietly: these ARE guesses. Two lines, not one, because
+		// they are two decisions with two different answers — and the condition is per axis, since
+		// the old single check required BOTH to be unspecified and so said nothing at all about a
+		// file tagged only by its matrix, while telling one tagged only by its primaries that it
+		// "carries no colour tags".
+		if (parameters.color_trc == AVCOL_TRC_UNSPECIFIED)
 		{
-			// Said out loud rather than assumed quietly: it IS a guess, and it is the right one for
-			// everything modern (FFmpeg's own convention would guess BT.601 by frame size).
-			lain::log::info("io::video::ffmpeg: {} carries no colour tags — treating it as BT709",
+			lain::log::info("io::video::ffmpeg: {} states no transfer — treating it as BT709",
+							m_stream->uri());
+		}
+		if (parameters.color_space == AVCOL_SPC_UNSPECIFIED)
+		{
+			lain::log::info("io::video::ffmpeg: {} states no matrix — decoding YUV with BT.601 "
+							"coefficients, which is what an untagged encoder used",
 							m_stream->uri());
 		}
 
@@ -359,7 +368,12 @@ namespace lain::io::video::ffmpeg
 		// so a frame that really was full-range would come back crushed unless its own tag is
 		// passed through here.
 		const int sourceRange = frame.color_range == AVCOL_RANGE_JPEG ? 1 : 0;
-		const int* sourceMatrix = sws_getCoefficients(frame.colorspace);
+		// THE MATRIX IS THE POLICY'S ANSWER, not the raw tag. Handing frame.colorspace straight to
+		// swscale let AVCOL_SPC_UNSPECIFIED select swscale's own default, so the coefficient set for
+		// untagged footage was a library default nobody had chosen — and it sat beside a transfer
+		// that ADR-0018 argued for explicitly. decodeMatrixFor returns the same set for that case
+		// and states why; the point is that it is now decided, tested and logged at open.
+		const int* sourceMatrix = sws_getCoefficients(decodeMatrixFor(static_cast<AVColorSpace>(frame.colorspace)));
 		const int* destinationMatrix = sws_getCoefficients(SWS_CS_DEFAULT);
 		// It fails only on a context whose formats are not both convertible, which cannot be true
 		// of one sws_getCachedContext just returned for these formats.

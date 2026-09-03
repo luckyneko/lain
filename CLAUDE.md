@@ -314,10 +314,18 @@ a writer records the tag when the format can state it, and refuses when it canno
 - **The loss matrix is a test** (`plugins/io/image/test/test_colorroundtrip.cpp`), and every image
   codec now switches exhaustively on `ColorSpace` — none did, which is why `BT709` reached none of
   them when M10 added it.
-- **Recorded, NOT fixed — three video items inside ADR-0018's territory**, each changing decoded
-  pixels or accepted files: untagged YUV is decoded with **BT.601 coefficients while tagged BT709**;
-  P3/XYZ primaries are accepted as BT709; and the untagged log line misses a file tagged only by its
-  matrix. Details in WORK.md.
+- **Three video items inside ADR-0018's territory, fixed in the follow-up commit.** The **refusal
+  lists were denylists**, so everything unlisted was claimed as BT709 — the LOG transfers,
+  `AVCOL_TRC_LINEAR` (already refused on the write side, so the directions disagreed), DCI-P3 /
+  Display P3 / XYZ primaries. Now **allowlists**: default to refusing, not to claiming, which is
+  the same lesson the codec capability tables encode. The **log line** is now one per axis, since
+  the old condition needed both transfer and matrix unspecified and so said nothing about a file
+  tagged only by its matrix. And the **untagged decode matrix finding was right but my proposed fix
+  was wrong**: measurement showed lain's own untagged fixture decodes back to its source colour
+  exactly under BT.601 and 10 counts out under BT.709 (at 720p too), because an untagged encoder
+  used BT.601. The transfer and the matrix are separate questions — the OETFs are the same curve,
+  the coefficient sets are 17% apart — so the behaviour stayed and became a stated, tested, logged
+  decision (`decodeMatrixFor`) instead of an inherited swscale default. `ctest` **645/645**.
 
 ### Update 2026-09-02 — M10 slice 5b built: the FFmpeg reader (**slice 5 COMPLETE**)
 

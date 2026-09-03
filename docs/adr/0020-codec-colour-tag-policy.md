@@ -154,6 +154,20 @@ Two round trips change a tag, and both are the *format* speaking rather than lai
   a tag survives or is refused — and one case asserts that *some* codec can carry every
   `ColorSpace` lain has, so adding a standard that nothing can save fails there rather than being
   discovered later.
-- **Three video items are out of scope and recorded rather than fixed** (WORK.md M10): untagged YUV
-  is decoded with BT.601 coefficients while being tagged BT709; P3/XYZ primaries are accepted as
-  BT709 rather than refused; and the untagged log line misses a file tagged only by its matrix.
+- **The same denylist-versus-allowlist defect existed one level up, in the video reader, and was
+  fixed straight after** (see ADR-0018's 2026-09-03 amendment). Its refusal lists named the
+  standards to reject and let everything else fall through to BT709 — including the LOG transfers,
+  `AVCOL_TRC_LINEAR`, and DCI-P3/Display P3/XYZ primaries. They are now allowlists, so an
+  unrecognised tag is refused rather than claimed, which is the same lesson this ADR's per-format
+  capability tables encode: **default to refusing, not to claiming.**
+- **One finding did NOT survive being measured, and the correction is worth recording.** The
+  untagged YUV decode matrix looked like a bug — lain tags such footage BT709 while swscale's
+  default decodes it with BT.601 coefficients — and the obvious fix was to drive the matrix from
+  the resolved policy. Measurement refuted it: lain's own untagged fixture decodes back to its
+  source colour exactly under BT.601 and 10 counts out under BT.709, at 720p as well as at 64×48,
+  because an encoder that writes no tag is one that used BT.601. **The transfer and the matrix are
+  separate questions with different right answers**: the BT.601 and BT.709 OETFs are the same curve
+  to within rounding, so ADR-0018's transfer guess is free, while the coefficient sets are 17%
+  apart on a saturated green. The behaviour therefore stayed and became a stated, tested, logged
+  decision (`decodeMatrixFor`) instead of a library default nobody had chosen — which was the real
+  defect all along.

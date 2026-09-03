@@ -3427,19 +3427,34 @@ states; a writer records the tag when the format can state it, and refuses when 
 - **Behaviour changes, none silent:** PNG and TIFF output gains colour tags; a profile-bearing or
   explicitly-uncalibrated JPEG now reads `Unspecified`; and `Linear`/`BT709` to JPEG, `BT709` to
   PNG, and `Premultiplied` to PNG are now refusals rather than mislabelled files.
-- **Found in the video path, RECORDED NOT FIXED** (all inside ADR-0018's territory, all changing
-  decoded pixels or accepted files, so each wants its own decision):
-  - **Untagged YUV is decoded with BT.601 coefficients while being tagged BT709.**
-    `ffmpegreader.cpp:362` passes the raw `frame.colorspace` to `sws_getCoefficients`, and
-    `AVCOL_SPC_UNSPECIFIED` selects swscale's BT.601 row — FFmpeg's "guess BT.601" convention
-    surviving in the matrix even though ADR-0018 overrode it in the tag. lain's own round trip is
-    unaffected (the writer stamps an explicit matrix); third-party untagged footage is not. The fix
-    is to drive the coefficients from the *resolved* policy.
-  - **P3 / XYZ / SMPTE240M primaries are accepted as BT709.** `refusedPrimaries` lists only the
-    BT.601 and BT.2020 families. Defensible, since `ColorSpace` is transfer-only by contract — but
-    `colorpolicy.h` claims the policy weighs primaries "as much as curves", and for P3 it does not.
-  - **The untagged log line misses a case.** `ffmpegreader.cpp:104` requires *both* `color_trc` and
-    `color_space` unspecified, so a file tagged only by its matrix takes the BT709 default silently.
+- **Found in the video path, and FIXED in the follow-up commit** — the same denylist defect one
+  level up, plus a finding that did not survive measurement:
+  - **The refusal lists were denylists, so anything unlisted was claimed as BT709.** Not a small
+    set: the **LOG / LOG_SQRT transfers** (V-Log/S-Log footage, and linearising a log curve with a
+    709 OETF is not a subtle error), **`AVCOL_TRC_LINEAR`** — which the write seam already refused
+    for exactly this reason, so the two directions disagreed about one value — **DCI-P3 and Display
+    P3 primaries**, **CIE XYZ**, and every extension FFmpeg adds later. Now allowlists. A denylist
+    defaults to CLAIMING and an allowlist defaults to REFUSING, and only the second is what
+    ADR-0018's "reported and refused, not relabelled" means; it is also the shape
+    `io::video::canEncode` already had on the write side.
+  - **The untagged decode matrix: the finding was right, the proposed fix was WRONG, and measuring
+    it is what said so.** Untagged YUV is decoded with BT.601 coefficients while lain tags the
+    frame BT709, which looked like ADR-0018's overridden convention surviving in the matrix — so
+    the obvious fix was to drive the coefficients from the resolved policy. It is not: lain's own
+    untagged fixture decodes back to its source colour **exactly** under BT.601 and **10 counts
+    out** under BT.709, at 720p as well as at 64x48, because an encoder that writes no tag is one
+    that used BT.601. **The transfer and the matrix are separate questions with different right
+    answers** — the two OETFs are the same curve to within rounding, so ADR-0018's transfer guess
+    is free, while the coefficient sets are ~17% apart on a saturated green. The behaviour stayed;
+    what changed is that it is now a stated, tested, logged decision (`decodeMatrixFor`) rather
+    than a swscale default inherited by passing the raw tag through. That was the real defect:
+    nobody had chosen it.
+  - **The log line missed cases and misdescribed others.** It required BOTH `color_trc` and
+    `color_space` unspecified, so a file tagged only by its matrix took the BT709 default silently,
+    while one tagged only by its primaries was told it "carries no colour tags". Now one line per
+    axis, each naming the decision it is announcing.
+  - Sabotage-verified both ways: reverting the allowlist to accept-by-default, and making
+    `decodeMatrixFor` state BT.709, each fail the suite.
 
 ## Backlog (deferred — don't build speculatively)
 

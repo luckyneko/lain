@@ -12,6 +12,7 @@
 
 using lain::image::ColorSpace;
 using lain::io::video::ffmpeg::colorSpaceFor;
+using lain::io::video::ffmpeg::decodeMatrixFor;
 using lain::io::video::ffmpeg::refusedTagName;
 
 TEST_CASE("BT709 and untagged footage both decode as BT709", "[video][color]")
@@ -96,10 +97,59 @@ TEST_CASE("what lain writes, lain reads back as the same space", "[color][video]
 
 TEST_CASE("the spaces a container cannot state produce no tags", "[color][video]")
 {
-	// Linear is the sharp one. AVCOL_TRC_LINEAR exists and the file would encode fine — but
-	// colorSpaceFor does not refuse it, so the result would read back as BT709 with every value
-	// off by the ~2.2 gamma, invisibly. Refused at io::video::canEncode, where the refusal is about
-	// the MEDIUM rather than this backend; answered here too so no arm can quietly write a guess.
+	// Linear is the sharp one. AVCOL_TRC_LINEAR exists and the file would encode fine — and it
+	// would have read back as BT709 with every value off by the ~2.2 gamma, invisibly, until the
+	// read side became an allowlist and started refusing it too (see the case below). It is still
+	// refused at io::video::canEncode, where the refusal is about the MEDIUM rather than this
+	// backend, and answered here as well so no arm can quietly write a guess.
 	CHECK_FALSE(lain::io::video::ffmpeg::colorTagsFor(lain::image::ColorSpace::Linear, false).has_value());
 	CHECK_FALSE(lain::io::video::ffmpeg::colorTagsFor(lain::image::ColorSpace::Unspecified, false).has_value());
+}
+
+TEST_CASE("a tag lain was not built to handle is refused, not claimed as BT709", "[video][color]")
+{
+	// The allowlist's whole purpose. Each of these fell through a denylist to "BT709" — they are
+	// not exotic corners, they are the values nobody had got round to naming.
+
+	// LOG footage read as BT709 is the loudest of them: a log curve exists precisely because it is
+	// not a display curve, and linearising it with a 709 OETF is not a subtle error.
+	CHECK_FALSE(colorSpaceFor(AVCOL_TRC_LOG, AVCOL_PRI_BT709, AVCOL_SPC_BT709).has_value());
+	CHECK_FALSE(colorSpaceFor(AVCOL_TRC_LOG_SQRT, AVCOL_PRI_BT709, AVCOL_SPC_BT709).has_value());
+
+	// Linear, which the WRITE seam already refused for exactly this reason while the read side let
+	// it through — the two directions disagreeing about the same value.
+	CHECK_FALSE(colorSpaceFor(AVCOL_TRC_LINEAR, AVCOL_PRI_BT709, AVCOL_SPC_BT709).has_value());
+
+	// Wide-gamut primaries lain has no model for. Display P3 in particular is not a curiosity.
+	CHECK_FALSE(colorSpaceFor(AVCOL_TRC_BT709, AVCOL_PRI_SMPTE432, AVCOL_SPC_BT709).has_value()); // Display P3
+	CHECK_FALSE(colorSpaceFor(AVCOL_TRC_BT709, AVCOL_PRI_SMPTE431, AVCOL_SPC_BT709).has_value()); // DCI-P3
+	CHECK_FALSE(colorSpaceFor(AVCOL_TRC_BT709, AVCOL_PRI_SMPTE428, AVCOL_SPC_BT709).has_value()); // CIE XYZ
+	CHECK_FALSE(colorSpaceFor(AVCOL_TRC_BT709, AVCOL_PRI_BT470M, AVCOL_SPC_BT709).has_value());	  // NTSC 1953
+
+	// And an enumerator this code has never heard of. A denylist accepts one by construction; an
+	// allowlist refuses it, which is the direction a policy that "reports and refuses" needs.
+	CHECK_FALSE(colorSpaceFor(static_cast<AVColorTransferCharacteristic>(200), AVCOL_PRI_BT709,
+							  AVCOL_SPC_BT709)
+					.has_value());
+
+	// Each still names the axis, so the refusal is actionable rather than a blanket "unsupported".
+	CHECK(refusedTagName(AVCOL_TRC_LOG, AVCOL_PRI_BT709, AVCOL_SPC_BT709).find("transfer") == 0);
+	CHECK(refusedTagName(AVCOL_TRC_BT709, AVCOL_PRI_SMPTE432, AVCOL_SPC_BT709).find("primaries") == 0);
+}
+
+TEST_CASE("the decode matrix is a stated decision, and differs from the transfer's", "[video][color]")
+{
+	// Two axes, two answers, and the difference is the point. An unspecified TRANSFER is treated as
+	// BT709 because the BT.601 and BT.709 OETFs are the same curve to within rounding, so the guess
+	// costs nothing. An unspecified MATRIX is BT.601, because the coefficient sets really do differ
+	// (17% on a saturated green) and an encoder that wrote no tag used BT.601 — measured on lain's
+	// own untagged fixture, which decodes back to its source colour exactly one way and 10 counts
+	// out the other.
+	CHECK(decodeMatrixFor(AVCOL_SPC_UNSPECIFIED) == AVCOL_SPC_BT470BG); // = SWS_CS_ITU601
+	CHECK(colorSpaceFor(AVCOL_TRC_UNSPECIFIED, AVCOL_PRI_UNSPECIFIED, AVCOL_SPC_UNSPECIFIED) ==
+		  ColorSpace::BT709);
+
+	// A stated matrix is used as stated — the guess applies only where the file said nothing.
+	CHECK(decodeMatrixFor(AVCOL_SPC_BT709) == AVCOL_SPC_BT709);
+	CHECK(decodeMatrixFor(AVCOL_SPC_RGB) == AVCOL_SPC_RGB);
 }

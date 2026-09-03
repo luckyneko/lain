@@ -42,6 +42,19 @@ namespace lain::io::video::ffmpeg
 																	   AVColorPrimaries primaries,
 																	   AVColorSpace matrix);
 
+	// The matrix to decode a YUV frame against — the coefficient set, which is a SEPARATE question
+	// from the ColorSpace above and has a different answer when the file says nothing.
+	//
+	// A tagged matrix is used as stated. An UNSPECIFIED one decodes as BT.601, where an unspecified
+	// TRANSFER is treated as BT709: the two OETFs are the same curve to within rounding so the
+	// transfer guess is free, while the matrices are far apart (17% on a saturated green) and an
+	// untagged file is overwhelmingly one an encoder wrote with BT.601. See the reasoning, and the
+	// measurement, in colorpolicy.cpp.
+	//
+	// The result is numerically an SWS_CS_* constant and can be handed straight to
+	// sws_getCoefficients; FFmpeg aligns the two enumerations deliberately.
+	[[nodiscard]] AVColorSpace decodeMatrixFor(AVColorSpace matrix);
+
 	// Which tag caused a refusal, for the log line — "transfer SMPTE ST 2084 (PQ)". Empty when the
 	// tags are acceptable. A refusal that did not name the tag would leave a user guessing which of
 	// three axes to look at.
