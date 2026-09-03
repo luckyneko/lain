@@ -3128,6 +3128,67 @@ clean. Nothing here names FFmpeg; slice 6b is the backend.
   nothing else.
 
 
+**Slice 6b is built (2026-09-02) — a render can produce a real video file.** `FFmpegVideoWriter` in
+`plugins/io/video/ffmpeg`: encoder selection by availability, a muxer over an `AVIOContext` built on
+slice 3's `WriteStream`, swscale RGB→the encoder's pixel format with range compression, the
+write-side colour tags, and the drain/trailer/finish path. Registered beside the reader in the same
+`registerCodec()`, so no aggregator or CMake-property change was needed. `ctest` **619/619** with
+video on (+13 cases over 6a; the default configuration is unchanged at 589, which is the point —
+this slice is all plugin), warning-clean, format-check clean.
+
+- **The availability test is `avcodec_open2` SUCCEEDING, not `avcodec_find_encoder_by_name`
+  returning non-null.** An encoder can be compiled into a build and fail to open for want of a
+  device — NVENC on a machine with no NVIDIA card — so a name lookup answers a different question
+  than the one asked. `avformat_query_codec` runs first and folds container/codec compatibility into
+  the same question, which is what makes `.webm` refuse with *"no encoder is available for the webm
+  container"* rather than failing later and obscurely inside `write_header`.
+- **VAAPI and V4L2-M2M were DROPPED from ADR-0019's delivery table**, which is amended in place.
+  Neither accepts a software frame — both need an `AVHWFramesContext` and an uploaded surface — so
+  listing them converts a clean absence into a confusing failure to open a codec that visibly
+  exists. Real consequence, stated rather than discovered: a Linux box with no NVIDIA card has no
+  delivery encoder here and `auto` refuses on it.
+- **`AV_CODEC_FLAG_GLOBAL_HEADER` is the one line between a playable MP4 and a file that decodes to
+  nothing.** MP4/MOV keep the parameter sets in the container's extradata rather than in the
+  bitstream, so an encoder not told to emit them out-of-band produces a stream with no SPS/PPS
+  anywhere the demuxer will look. The mp4 round-trip test covers it, and covers the muxer's
+  **seek-back** at the same time — patching the mdat size and appending the moov is what slice 3's
+  positional, non-truncating `WriteStream` was specified for, three slices before this caller
+  existed.
+- **`av_guess_format` picks the muxer**, not a table in lain. FFmpeg already owns extension→muxer
+  and knows things a second table would eventually disagree with the demuxer about. The name is
+  *synthesised* (`"x." + format`) rather than passing the uri, so the plugin still receives a format
+  claim and never a path it could open (ADR-0004).
+- **The pixel format is chosen for the FAMILY, and for FFV1 that is what makes "lossless" true.** An
+  8-bit RGB→YUV matrix is not invertible, so FFV1 over `yuv420p` is a lossless encoding of a lossy
+  conversion: the file round-trips and the frames do not. FFV1 offers `bgr0`/`bgra`/`rgb48le`, so
+  the byte-exact test is possible without inventing a codec — the `qtrle` fallback that was on the
+  table is **not needed**. Everything else prefers `yuv420p`, which every player decodes.
+- **Range compression mirrors the reader's expansion.** RGB is always full range and a YUV video
+  stream is conventionally limited, so a full-range frame written into a limited-range-tagged stream
+  without `sws_setColorspaceDetails` on the DESTINATION comes back crushed — swscale's default is
+  not the range the tag claims.
+- **An RGB-coded stream is tagged `AVCOL_SPC_RGB`, not BT709.** No matrix was applied, and claiming
+  one states a conversion that never happened; `colorSpaceFor` accepts it, so the round trip still
+  closes. The two colour directions live in ONE file with a test asserting their composition is the
+  identity — split across two files is how they drift, and the drift is silent.
+- **The AVIO bridge was HOISTED, not duplicated** (`src/aviobridge.{h,cpp}`). The seek callback is
+  identical in both directions because seeking is `io::Stream`'s, not either subclass's:
+  `AVSEEK_SIZE` is a question, `AVSEEK_FORCE` is masked, the three whences map the same. The reader
+  moved onto it as a pure refactor and its 17 cases pass unchanged. The write callback's
+  `const uint8_t*` — which the read callback does not have — is FFmpeg's own asymmetry and is
+  commented so nobody tidies it up.
+- **Three test premises, one of which was wrong and is recorded.** mp4 **does** carry FFV1 in a
+  current FFmpeg (ISO/IEC 23001-17), so it is not a container/codec mismatch; QuickTime genuinely
+  refuses it while carrying h264 and ProRes happily, which is the sharper test anyway — a container
+  with other options that must still refuse rather than substitute.
+- **The licence claim is executable, not prose.** `test_encoderpolicy.cpp` asserts both that no
+  candidate list names libx264/libx265 **and** that `avcodec_find_encoder_by_name` cannot find them
+  in the linked library — the second is the property ADR-0019 actually rests on, since linking a
+  build configured with them relicenses the distribution regardless of which encoder is called.
+- **Delivery cases SKIP rather than fail** when the platform provides no encoder, the discipline the
+  `[gpu]` tests already use. That keeps ADR-0019's conditionality visible in the suite instead of
+  hidden behind an `#ifdef`.
+
 #### Queued: `core::Uri` — an identity, not a path algebra (raised 2026-09-01, build after slice 5)
 
 A uri is a bare `std::string` everywhere it matters — `io::read` / `write` / `openStream`,

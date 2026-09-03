@@ -1,5 +1,6 @@
 #include "ffmpegreader.h"
 
+#include "aviobridge.h"
 #include "colorpolicy.h"
 
 #include <lain/log/log.h>
@@ -15,59 +16,6 @@ extern "C"
 
 namespace lain::io::video::ffmpeg
 {
-	// --- the transport bridge ---------------------------------------------------
-	//
-	// FFmpeg reads through these two callbacks and never sees a filename: the transport is lain's
-	// (ADR-0004), which is what keeps every fstream out of a codec plugin and what will let a
-	// future s3:// scheme reach the decoder unchanged. The prebuilt is --disable-network, so
-	// libavformat could not open a remote url even if we handed it one.
-
-	static constexpr int avioBufferSize = 32768;
-
-	static int readPacket(void* opaque, std::uint8_t* buffer, int size)
-	{
-		auto* stream = static_cast<lain::io::ReadStream*>(opaque);
-		const std::optional<std::size_t> read = stream->read(reinterpret_cast<std::byte*>(buffer),
-															 static_cast<std::size_t>(size));
-		if (!read)
-			return AVERROR(EIO); // a failure, which is NOT the end of the file
-		if (*read == 0)
-			return AVERROR_EOF;
-		return static_cast<int>(*read);
-	}
-
-	static std::int64_t seekPacket(void* opaque, std::int64_t offset, int whence)
-	{
-		auto* stream = static_cast<lain::io::ReadStream*>(opaque);
-
-		// AVSEEK_SIZE is a question, not a move — answering it is what lets libavformat probe a
-		// container's tail (where an MP4 keeps its index) without reading everything before it.
-		if ((whence & AVSEEK_SIZE) != 0)
-		{
-			const std::optional<std::uint64_t> size = stream->size();
-			return size ? static_cast<std::int64_t>(*size) : AVERROR(ENOSYS);
-		}
-
-		lain::io::SeekOrigin from = lain::io::SeekOrigin::Begin;
-		switch (whence & ~AVSEEK_FORCE)
-		{
-			case SEEK_SET:
-				from = lain::io::SeekOrigin::Begin;
-				break;
-			case SEEK_CUR:
-				from = lain::io::SeekOrigin::Current;
-				break;
-			case SEEK_END:
-				from = lain::io::SeekOrigin::End;
-				break;
-			default:
-				return AVERROR(EINVAL);
-		}
-
-		const std::optional<std::uint64_t> position = stream->seek(offset, from);
-		return position ? static_cast<std::int64_t>(*position) : AVERROR(EINVAL);
-	}
-
 	// --- lifetime ---------------------------------------------------------------
 
 	FFmpegVideoReader::~FFmpegVideoReader()
@@ -88,13 +36,7 @@ namespace lain::io::video::ffmpeg
 		if (m_format != nullptr)
 			avformat_close_input(&m_format);
 
-		if (m_avio != nullptr)
-		{
-			// FFmpeg may have replaced the buffer we handed it, so the one to free is the one the
-			// context holds now — freeing our original pointer would free the wrong allocation.
-			av_freep(&m_avio->buffer);
-			avio_context_free(&m_avio);
-		}
+		freeContext(m_avio);
 	}
 
 	// --- open -------------------------------------------------------------------
@@ -105,20 +47,9 @@ namespace lain::io::video::ffmpeg
 		if (!m_stream)
 			return false;
 
-		auto* buffer = static_cast<unsigned char*>(av_malloc(avioBufferSize));
-		if (buffer == nullptr)
-		{
-			lain::log::error("io::video::ffmpeg: out of memory allocating the read buffer");
-			return false;
-		}
-
-		m_avio = avio_alloc_context(buffer, avioBufferSize, 0, m_stream.get(), &readPacket, nullptr, &seekPacket);
+		m_avio = makeReadContext(*m_stream);
 		if (m_avio == nullptr)
-		{
-			av_free(buffer);
-			lain::log::error("io::video::ffmpeg: could not create the IO context for {}", m_stream->uri());
-			return false;
-		}
+			return false; // makeReadContext logged the reason
 
 		m_format = avformat_alloc_context();
 		if (m_format == nullptr)

@@ -9,7 +9,9 @@
 add_executable(test-io-video-ffmpeg
 	test_build.cpp
 	test_colorpolicy.cpp
+	test_encoderpolicy.cpp
 	test_ffmpegreader.cpp
+	test_ffmpegwriter.cpp
 )
 
 target_compile_features(test-io-video-ffmpeg PRIVATE cxx_std_17)
@@ -17,7 +19,7 @@ target_compile_features(test-io-video-ffmpeg PRIVATE cxx_std_17)
 # reader test reaches the production opener through lain::io::video.
 target_include_directories(test-io-video-ffmpeg PRIVATE ../src)
 target_link_libraries(test-io-video-ffmpeg
-	PRIVATE lain::io::video::ffmpeg lain::io::video lain::media FFmpeg::avutil
+	PRIVATE lain::io::video::ffmpeg lain::io::video lain::media FFmpeg::avutil FFmpeg::avcodec
 	PRIVATE lain::warnings Catch2::Catch2WithMain
 )
 

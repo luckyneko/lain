@@ -1,7 +1,13 @@
 #pragma once
 
-// How a container's colour tags become a lain::image::ColorSpace — the whole of ADR-0018's colour
-// rule for video, as one pure function so it can be tested across its arms without a file.
+// How a container's colour tags become a lain::image::ColorSpace, and back — the whole of
+// ADR-0018's colour rule for video, as pure functions so they can be tested across their arms
+// without a file.
+//
+// BOTH DIRECTIONS LIVE IN ONE FILE ON PURPOSE. What the writer stamps, the reader must read back as
+// the same ColorSpace, or lain's own round trip relabels footage — the silent wrong answer ADR-0018
+// refuses on the way in, arriving on the way out. Splitting them across two files is how the two
+// halves drift; a test asserts the composition is the identity over every space lain writes.
 
 #include <lain/image/colorspace.h>
 
@@ -41,4 +47,26 @@ namespace lain::io::video::ffmpeg
 	// three axes to look at.
 	[[nodiscard]] std::string refusedTagName(AVColorTransferCharacteristic transfer, AVColorPrimaries primaries,
 											 AVColorSpace matrix);
+
+	// The container tags to stamp on a stream carrying `space`.
+	//
+	// The exact inverse of colorSpaceFor. BT709 tags all three axes BT709; sRGB writes the
+	// IEC 61966-2-1 transfer over BT709 primaries, because that tag and nothing else is what
+	// colorSpaceFor believes. Linear and Unspecified never arrive — io::video::canEncode refuses
+	// them at the seam, one level up, where the refusal is about the MEDIUM rather than about this
+	// backend (Linear in particular would encode fine as AVCOL_TRC_LINEAR and read back as BT709
+	// with every value off by the gamma, which is why it is refused rather than tolerated).
+	//
+	// `rgbPixelFormat` decides the matrix, and it is not a detail: an RGB-coded stream has had no
+	// matrix applied, so tagging it BT709 would state a conversion that never happened.
+	// AVCOL_SPC_RGB is what actually occurred, and colorSpaceFor accepts it — it is not one of the
+	// refused matrices — so the round trip still closes.
+	struct ColorTags
+	{
+		AVColorTransferCharacteristic transfer;
+		AVColorPrimaries primaries;
+		AVColorSpace matrix;
+	};
+
+	[[nodiscard]] std::optional<ColorTags> colorTagsFor(lain::image::ColorSpace space, bool rgbPixelFormat);
 } // namespace lain::io::video::ffmpeg

@@ -36,6 +36,26 @@ headers and `dlopen()`s the driver at run time, so it links nothing restrictive 
 uniform** across every target, as is archival encoding, so only the delivery-write path is
 platform-conditional, and the writer selects by availability rather than by a hardcoded name.
 
+**Narrowed 2026-09-02 (M10 slice 6b), on building the writer: VAAPI and V4L2-M2M are not
+candidates.** Neither can accept a software frame — both require an `AVHWFramesContext` and an
+uploaded surface, which this writer has no path to construct — so listing them would turn a clean
+"this build has no delivery encoder" into a confusing failure to open a codec that visibly exists.
+The videotoolbox, Media Foundation and NVENC wrappers all take software frames and stay. The
+consequence is real rather than cosmetic and is better stated than discovered: **a Linux machine
+without an NVIDIA card has no delivery encoder here**, and `--codec auto` refuses on it, naming what
+is missing. Hardware-frame upload is the change that would restore them, and it is a genuine feature
+rather than a fix.
+
+Two further facts, established by probing the shipped library rather than reasoning about it. The
+writer asks for a **codec family** (`auto / h264 / hevc / prores / ffv1 / mjpeg`) and never an
+encoder name, because a name like `h264_videotoolbox` is a fact about one machine that would travel
+in a command line or a saved document to a machine where it is false — the same objection this ADR
+already makes to hardcoding. And **FFV1 is the only family through which a byte-exact round trip is
+possible**, because it is the only lossless one that offers an RGB pixel format (`bgr0`, `bgra`,
+`rgb48le`): an 8-bit RGB→YUV matrix is not invertible, so FFV1 over `yuv420p` would be a lossless
+encoding of a lossy conversion — the file round-trips and the frames do not. Its container is
+Matroska; `avformat_query_codec` refuses FFV1 in QuickTime, while mp4 accepts it (ISO/IEC 23001-17).
+
 ## Why not the alternatives
 
 **Platform-native backends** (AVFoundation/VideoToolbox, Media Foundation) need no exception and

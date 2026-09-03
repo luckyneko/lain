@@ -68,3 +68,38 @@ TEST_CASE("a refusal names the tag that caused it", "[video][color]")
 	// Nothing to name when nothing is refused, so the caller cannot print an empty accusation.
 	CHECK(refusedTagName(AVCOL_TRC_BT709, AVCOL_PRI_BT709, AVCOL_SPC_BT709).empty());
 }
+
+TEST_CASE("what lain writes, lain reads back as the same space", "[color][video]")
+{
+	// THE property that keeps the two directions from drifting. If colorTagsFor and colorSpaceFor
+	// ever disagree, a file lain wrote comes back tagged as a space it does not hold — the silent
+	// wrong answer ADR-0018 refuses on the way in, arriving on the way out. Neither arm can be
+	// edited alone without this failing, which is the only form in which the property survives.
+	for (const lain::image::ColorSpace space : {lain::image::ColorSpace::BT709, lain::image::ColorSpace::sRGB})
+	{
+		for (const bool rgb : {false, true})
+		{
+			const auto tags = lain::io::video::ffmpeg::colorTagsFor(space, rgb);
+			REQUIRE(tags.has_value());
+
+			// Nothing lain writes may be a tag lain refuses: it would be unable to read its own
+			// output at all.
+			CHECK(lain::io::video::ffmpeg::refusedTagName(tags->transfer, tags->primaries, tags->matrix).empty());
+
+			const auto readBack = lain::io::video::ffmpeg::colorSpaceFor(tags->transfer, tags->primaries,
+																		 tags->matrix);
+			REQUIRE(readBack.has_value());
+			CHECK(*readBack == space);
+		}
+	}
+}
+
+TEST_CASE("the spaces a container cannot state produce no tags", "[color][video]")
+{
+	// Linear is the sharp one. AVCOL_TRC_LINEAR exists and the file would encode fine — but
+	// colorSpaceFor does not refuse it, so the result would read back as BT709 with every value
+	// off by the ~2.2 gamma, invisibly. Refused at io::video::canEncode, where the refusal is about
+	// the MEDIUM rather than this backend; answered here too so no arm can quietly write a guess.
+	CHECK_FALSE(lain::io::video::ffmpeg::colorTagsFor(lain::image::ColorSpace::Linear, false).has_value());
+	CHECK_FALSE(lain::io::video::ffmpeg::colorTagsFor(lain::image::ColorSpace::Unspecified, false).has_value());
+}

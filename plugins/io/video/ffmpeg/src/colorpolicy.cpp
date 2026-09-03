@@ -95,4 +95,32 @@ namespace lain::io::video::ffmpeg
 		}
 		return {};
 	}
+
+	std::optional<ColorTags> colorTagsFor(lain::image::ColorSpace space, bool rgbPixelFormat)
+	{
+		// The matrix an RGB-coded stream carries is RGB, not BT709: no matrix was applied, and
+		// claiming one states a conversion that never happened. colorSpaceFor accepts AVCOL_SPC_RGB
+		// (it is not among the refused matrices), so the round trip closes either way.
+		const AVColorSpace matrix = rgbPixelFormat ? AVCOL_SPC_RGB : AVCOL_SPC_BT709;
+
+		switch (space)
+		{
+			case lain::image::ColorSpace::BT709:
+				return ColorTags{AVCOL_TRC_BT709, AVCOL_PRI_BT709, matrix};
+
+			case lain::image::ColorSpace::sRGB:
+				// The one tag colorSpaceFor believes over BT709, so writing anything else here
+				// would make a file lain wrote read back as a different space than it holds.
+				return ColorTags{AVCOL_TRC_IEC61966_2_1, AVCOL_PRI_BT709, matrix};
+
+			case lain::image::ColorSpace::Linear:
+			case lain::image::ColorSpace::Unspecified:
+				// Never reached: io::video::canEncode refuses both at the seam, where the refusal
+				// belongs, because neither is a fact about THIS backend. Answered exhaustively all
+				// the same, so adding a ColorSpace fails the build here rather than silently
+				// writing whatever the last arm returned.
+				return std::nullopt;
+		}
+		return std::nullopt;
+	}
 } // namespace lain::io::video::ffmpeg

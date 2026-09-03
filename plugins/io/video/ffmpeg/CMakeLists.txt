@@ -9,9 +9,12 @@
 include(addFFmpeg) # FFmpeg::avutil et al (fetches the pinned LGPL archive on demand)
 
 add_library(io-video-ffmpeg STATIC
+	src/aviobridge.cpp
 	src/build.cpp
 	src/colorpolicy.cpp
+	src/encoderpolicy.cpp
 	src/ffmpegreader.cpp
+	src/ffmpegwriter.cpp
 	src/register.cpp
 )
 add_library(lain::io::video::ffmpeg ALIAS io-video-ffmpeg)
