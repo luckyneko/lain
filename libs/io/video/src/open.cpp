@@ -6,6 +6,7 @@
 #include <lain/io/uri.h>
 #include <lain/log/log.h>
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -36,6 +37,19 @@ namespace lain::io::video
 			"y4m",
 		};
 		return extensions;
+	}
+
+	bool isVideoUri(std::string_view uri)
+	{
+		// io::extensionKey, not a local lowercase-the-suffix: three seams ask what a file is called
+		// (a codec key, this container claim, io::sequence's medium dispatch) and a format decided
+		// in three places disagrees with itself over "clip.MP4" silently.
+		const std::string key = lain::io::extensionKey(uri);
+		if (key.empty())
+			return false;
+
+		const std::vector<std::string>& extensions = videoExtensions();
+		return std::find(extensions.begin(), extensions.end(), key) != extensions.end();
 	}
 
 	std::optional<lain::media::FrameSequence> open(std::string_view uri, lain::media::FrameRate rate)

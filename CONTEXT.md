@@ -991,7 +991,28 @@ medium.
   file is invalid until finalised, so it is a **stateful handle** (`openWriter` / `write` / `finish`,
   `finish()` explicit and status-returning because a trailer write can fail and a destructor has
   nowhere to report), with a one-shot `save(uri, sequence)` facade over it for transcoding.
-  _Avoid_: `encode(vector<Image>) → Buffer`, a writer whose destructor is the commit.
+  `finish()` is **close, not commit**: it still writes the trailer after a failed frame, so a
+  truncated render leaves a *playable* short file — which is what makes the missing-frame policy's
+  "finalise what exists" true rather than aspirational. _Avoid_: `encode(vector<Image>) → Buffer`,
+  a writer whose destructor is the commit.
+
+- **Codec family** *(`VideoCodec`: auto / h264 / hevc / prores / ffv1 / mjpeg)* — what a caller asks
+  a writer for: **the job, never an encoder's name**. `h264_videotoolbox` is a fact about one
+  platform and one build, so a command line or a document naming it stops working on the next
+  machine — which is the thing ADR-0019's *select by availability* exists to prevent. A caller names
+  the family; the backend probes what this build has and **reports** the encoder it found through
+  `codec()`. `auto` means delivery-or-refuse and never slides into an archival codec: a delivery
+  render that quietly became MJPEG is a wrong answer that looks like success. _Avoid_: an encoder
+  name on a command line or in a document, a fallback across families.
+
+- **Writable spec** — what the video medium can hold, asked as `io::video::canEncode(FrameSpec)`
+  before a render starts. It refuses **alpha** (no codec in the set carries it), **Linear** and
+  **Unspecified**, each by name — the `ImageWriter` rule ("refuse, never silently degrade") applied
+  to a spec rather than an image. Linear is the sharp one: it would encode fine and read back tagged
+  BT709 with every value off by the gamma, so tolerating it would make lain's own round trip
+  relabel footage. And untagged is tolerated on the way *in* and refused on the way *out*, because
+  reading is a guess about someone else's file while writing is **authorship**. _Avoid_: converting
+  at the writer, a spec check per frame instead of once.
 
 - **Container / codec / backend** — three words, kept distinct because video is the first medium
   where they are not the same thing. A **container** (mp4, mov, mkv) muxes streams and is what a

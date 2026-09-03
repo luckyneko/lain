@@ -55,6 +55,24 @@ namespace lain::io::video
 	// the question that survives having no backend at all.
 	const std::vector<std::string>& videoExtensions();
 
+	// Whether `uri` names a video CONTAINER this seam claims — io::extensionKey against
+	// videoExtensions(), asked as a predicate.
+	//
+	// Public for exactly the reason io::image::formatKeyOf is: a render sweep has to decide whether
+	// an Image-valued output is a run of numbered stills or ONE video, and deriving that a second
+	// way in the app would let the decision and the write disagree about what a path means. Two
+	// callers want the QUESTION rather than the list, and a linear scan written twice is a list
+	// decided in two places.
+	//
+	// It asks about the NAME, so it answers the same in a build with no video codec at all — which
+	// is what keeps that build's refusal "this build has no video codec plugin" rather than
+	// something about extensions.
+	//
+	// NOTE the read claim and the write CAPABILITY are different sets and always will be: this
+	// lists what lain recognises AS video, and an LGPL FFmpeg reads .webm without being able to
+	// encode one. openWriter is where that difference is discovered and said out loud.
+	[[nodiscard]] bool isVideoUri(std::string_view uri);
+
 	// Open `uri` as a frame sequence of decoded video frames — the video medium's contribution to
 	// the frame-sequence model, peer of io::image::openSequence.
 	//

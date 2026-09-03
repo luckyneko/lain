@@ -2593,8 +2593,11 @@ decoder stays warm and sequential — provided the sweep **retains one `Evaluati
    64×48 multi-GOP clip is ~9 KB, and generating one at test time would only work on macOS anyway,
    since the other targets have no H.264 encoder. Now `--video src.mp4` works.
 6. **Video write.** `VideoWriter` handle seam (`openWriter` / `write` / `finish`, `finish()` explicit
-   and status-returning), the FFmpeg writer, the one-shot `save(uri, sequence)` facade, the render
-   loop's encoder, and the `--on-missing-frame stop|skip` policy. Encoder selection is by
+   and status-returning), the FFmpeg writer, the one-shot `save(uri, sequence)` facade, and the
+   render loop's encoder. (**Corrected 2026-09-02:** this bullet also listed `--on-missing-frame
+   stop|skip`, which actually landed in **slice 2**. What is slice 6's is the *asymmetry* — numbered
+   stills represent a hole as a gap in the numbering, a video cannot and must close up, so `skip`
+   means something stricter here and a truncated render must still be finalised.) Encoder selection is by
    availability against slice 0's table: a delivery codec where the platform provides one, archival
    ProRes / FFV1 / MJPEG everywhere, and an honest refusal naming what is missing rather than a
    silent fallback. **Never x264/x265** — they are not in the archive and enabling them would
@@ -3069,6 +3072,61 @@ a real mp4 swept to `out.####.png` through the production binary.
 - **Also true now: slice 0's `--licenses` limitation is discharged.** flowview links the video
   aggregator, which links the plugin, which links FFmpeg — so the notice it prints names a
   dependency the binary actually has. (5a made that true; 5b is what makes it *useful*.)
+
+**Slice 6a is built (2026-09-02).** The write seam, in the DEFAULT (video-off) build: `VideoWriter`
+(the open-push-finish handle), `VideoCodec` + `VideoWriterOptions`, `writerRegistry()`,
+`canEncode(FrameSpec)` / `refusedSpecReason`, `openWriter`, the one-shot `save(uri, sequence)`
+transcode facade, and `isVideoUri` beside `videoExtensions()`. `ctest` **589/589** in the default
+configuration (+11 cases, all of them reachable with no codec at all), warning-clean, format-check
+clean. Nothing here names FFmpeg; slice 6b is the backend.
+
+- **The codec option is a FAMILY, not an encoder name** — `VideoCodec { Auto, H264, HEVC, ProRes,
+  FFV1, MJPEG }`. The build order said "encoder selection is by availability"; what it did not say
+  is what a CALLER may therefore ask for, and a raw name is the wrong answer:
+  `h264_videotoolbox` is a fact about one platform and one build, so a command line or a saved
+  document naming it stops working on the next machine — the exact thing "never by a hardcoded name"
+  exists to prevent. A caller names the JOB; the backend probes and **reports** what it found
+  through `codec()`. **`Auto` refuses rather than falling back** to an archival family: a delivery
+  render that quietly became MJPEG is a wrong answer that looks like success, which is the same
+  argument the missing-frame policy makes about a silently shortened video.
+- **`canEncode(FrameSpec)` lives in the SEAM, not in a backend**, because what it refuses is true of
+  the medium rather than of an implementation: no video codec in the LGPL set carries alpha, and
+  neither Linear nor Unspecified is a transfer a container can state. It is the `ImageWriter` rule —
+  *refuse, never silently degrade* — applied to a spec instead of an image, and quiet (no logging)
+  for the same reason `io::image::canEncode` is: a render asks it once, before the first frame.
+- **Linear is the arm that is easy to get wrong, and refusing it is not pedantry.**
+  `AVCOL_TRC_LINEAR` exists and the file would encode fine — but slice 5b's read policy does *not*
+  refuse it, so the result reads back tagged BT709 with every value off by the ~2.2 gamma,
+  invisibly. Tolerating it would make lain's own round trip relabel footage, which is the failure
+  ADR-0018 refuses on the way in, arriving by the other door.
+- **Untagged is tolerated on the way IN and refused on the way OUT**, and the asymmetry is the
+  point: reading an untagged file is a guess about someone else's material, where rejecting it would
+  be loud and wrong; writing one is **authorship**, and a guess baked into a file will outlive the
+  guess.
+- **`openWriter` IS the preflight** — the video peer of `canEncode` + `formatKeyOf` on the still
+  path, arrived at by a different route because opening an encoder already answers the question.
+  A caller with 500 frames asks once, before the first is encoded.
+- **It does not loop backends the way `open()` does, and that asymmetry is load-bearing.** A reader
+  probes because only content identifies a container; a writer is *told* which container to write,
+  so there is nothing to probe — the loop exists only to let one backend refuse a codec family
+  another could serve. One thing genuinely differs and is stated rather than discovered:
+  `createStream` **truncates**, so a refused attempt has already emptied the file. Harmless, since
+  nothing valid existed either way and nothing valid exists until `finish()`.
+- **`isVideoUri` is in `open.h`, beside the list it consults**, not in `save.h`. It is a question
+  about a NAME, which is why it answers identically in a build with no codec — and why both
+  directions plus the render sweep can share one answer instead of scanning the list in three
+  places. **The read claim and the write CAPABILITY are deliberately different sets**: an LGPL
+  FFmpeg reads `.webm` and cannot encode one, and `openWriter` is where that is said out loud.
+- **`save(uri, sequence)` finishes the writer on the failure path too**, so a hole mid-transcode
+  leaves a closed, visibly short file rather than a headless one — pinned by a test that counts
+  `finish()` calls, not by a comment. `finish()` is idempotent for the reason the trailer makes
+  obvious: a second one would corrupt the file it is meant to close.
+- **The empty-registry case joins `test_nocodec.cpp` rather than getting a third binary.** That file
+  already is "the default build's video story, in its own executable", and an empty *writer*
+  registry is the same fact about the same build. Its new case asserts the spec is writable and the
+  path is claimed *first*, so the refusal is demonstrably about the missing **capability** and
+  nothing else.
+
 
 #### Queued: `core::Uri` — an identity, not a path algebra (raised 2026-09-01, build after slice 5)
 

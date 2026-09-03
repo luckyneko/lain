@@ -11,6 +11,7 @@
 
 add_library(io-video STATIC
 	src/open.cpp
+	src/save.cpp
 	src/videosource.cpp
 )
 add_library(lain::io::video ALIAS io-video)
@@ -21,7 +22,7 @@ target_link_libraries(io-video
 	PUBLIC lain::image lain::core
 	PUBLIC lain::io					# a VideoReader is handed an io::ReadStream (reader.h)
 	PUBLIC lain::media				# open() returns a media::FrameSequence
-	PRIVATE lain::log lain::warnings
+	PRIVATE lain::log lain::meta lain::string lain::warnings
 )
 
 if(LAIN_BUILD_TESTING)

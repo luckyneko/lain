@@ -173,6 +173,27 @@ The output spec comes from the first frame; later frames must match, refused rat
 Frame rate defaults to the bound sequence's rate and is required explicitly when there is no sequence
 input.
 
+**Amended 2026-09-02 (M10 slice 6a), two things this decision left implicit.** First, *which* specs
+a writer accepts at all. The seam refuses **alpha** (no codec in the LGPL set carries it, and every
+one reaches a subsampled plane with nowhere to put it), **`Linear`** and **`Unspecified`** — the
+`ImageWriter` rule, *refuse rather than silently degrade*, applied to a `FrameSpec` instead of an
+`Image`. `Linear` is the arm worth stating: `AVCOL_TRC_LINEAR` exists and the file would encode
+fine, but the read policy above does *not* refuse it, so the result comes back tagged BT709 with
+every value off by the ~2.2 gamma — invisibly. Tolerating it would make lain's own round trip
+relabel footage, which is the failure this ADR refuses on the way in, arriving by the other door.
+And untagged material is treated as BT709 **on the way in** while being refused **on the way out**:
+reading is a guess about someone else's file, writing is authorship, and a guess baked into a file
+outlives the guess.
+
+Second, what a caller may ASK a writer for. Selection is by availability, so the request is a
+**codec family** — `auto / h264 / hevc / prores / ffv1 / mjpeg` — never an encoder's name.
+`h264_videotoolbox` is a fact about one platform and one build, so a command line or a saved
+document naming it stops working on the next machine, which is precisely what "by availability,
+never by a hardcoded name" exists to prevent. The backend probes and *reports* the encoder it found.
+`auto` means delivery-or-refuse and never slides into an archival family: a delivery render that
+quietly became MJPEG is a wrong answer that looks like success — the same argument this ADR already
+makes about a silently shortened video.
+
 **A suppressed frame is the host's policy, not the writer's.** The default stops the render,
 finalises what exists, reports the ordinal and exits non-zero: a truncated video is visibly
 truncated, whereas a silently shortened one has destroyed the correspondence between input and output
