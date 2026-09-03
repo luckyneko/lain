@@ -59,10 +59,15 @@ TEST_CASE("Image pixel bytes are writable", "[image]")
 	REQUIRE(img.data()[4] == 100);
 }
 
-TEST_CASE("Image::toString names extent and format", "[image]")
+TEST_CASE("Image::toString names extent, format and both tags", "[image]")
 {
-	REQUIRE(Image(64, 64).toString() == "Image 64x64 RGBA8");
-	REQUIRE(Image().toString() == "Image 0x0 RGBA8");
+	REQUIRE(Image(64, 64).toString() == "Image 64x64 RGBA8 Unspecified Unspecified");
+	REQUIRE(Image().toString() == "Image 0x0 RGBA8 Unspecified Unspecified");
+
+	// The tags are the reason this string exists: a codec refusal prints it, and what is being
+	// refused is the space (see ADR-0020). An untagged image says so rather than saying nothing.
+	REQUIRE(Image(8, 8, PixelFormat::RGB8, ColorSpace::Linear, AlphaMode::Straight).toString() ==
+			"Image 8x8 RGB8 Linear Straight");
 }
 
 TEST_CASE("bytesPerPixel is 4 for RGBA8", "[image]")

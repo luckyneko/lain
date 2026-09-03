@@ -3,6 +3,7 @@
 // Covers RGBA8 (pixels + alpha from ExtraSamples), the 16-bit RGB U16 round-trip, grayscale
 // preservation, the Unspecified color space, and rejection of non-TIFF bytes.
 
+#include "tiffcolor.h" // transferTable — so the test locates the real curve, not a guessed offset
 #include "tifffixtures.h"
 
 #include <lain/image/image.h>
@@ -13,9 +14,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 using lain::image::AlphaMode;
 using lain::image::ColorSpace;
@@ -36,7 +39,7 @@ TEST_CASE("TiffReader decodes an 8-bit RGBA image with pixels and straight alpha
 	REQUIRE(image->width() == 2);
 	REQUIRE(image->height() == 2);
 	REQUIRE(image->pixelFormat() == PixelFormat::RGBA8);
-	REQUIRE(image->colorSpace() == ColorSpace::Unspecified); // TIFF carries no sRGB flag lain reads
+	REQUIRE(image->colorSpace() == ColorSpace::Unspecified); // no ICC profile, no TransferFunction
 	REQUIRE(image->alphaMode() == AlphaMode::Straight);		 // ExtraSamples = unassociated
 
 	const std::uint8_t* px = image->data();
@@ -145,4 +148,101 @@ TEST_CASE("TiffWriter rejects a float format this writer won't store", "[io-imag
 {
 	lain::io::image::tiff::registerCodec();
 	REQUIRE_FALSE(lain::io::image::encode("tiff", rampImage(2, 2, PixelFormat::RGB32F)).has_value());
+}
+
+// --- the colour tags, both directions (ADR-0020) ---------------------------------
+
+TEST_CASE("TiffWriter records the ColorSpace as a TransferFunction, for every space", "[io-image-tiff]")
+{
+	// TIFF is the one still format here that round-trips all four values. That is not a nicety:
+	// PNG must refuse BT709 and JPEG cannot state anything but sRGB, so this is where a caller
+	// who needs the tag preserved is sent.
+	lain::io::image::tiff::registerCodec();
+
+	for (const ColorSpace space :
+		 {ColorSpace::sRGB, ColorSpace::Linear, ColorSpace::BT709, ColorSpace::Unspecified})
+	{
+		for (const PixelFormat format : {PixelFormat::RGB8, PixelFormat::Gray8, PixelFormat::RGB16})
+		{
+			lain::image::Image original = rampImage(3, 2, format);
+			original.setColorSpace(space);
+
+			const auto encoded = lain::io::image::encode("tiff", original);
+			REQUIRE(encoded.has_value());
+			const auto decoded = lain::io::image::decode("tiff", *encoded);
+			REQUIRE(decoded.has_value());
+			REQUIRE(decoded->colorSpace() == space);
+
+			for (std::size_t i = 0; i < original.byteSize(); ++i)
+				REQUIRE(decoded->data()[i] == original.data()[i]); // recording a tag moves no pixels
+		}
+	}
+}
+
+TEST_CASE("sRGB and BT709 are told apart, which is the whole reason TIFF states a curve", "[io-image-tiff]")
+{
+	// The two spaces share primaries and differ only in transfer, so they are byte-identical on
+	// disk. A format that cannot distinguish them (PNG, via gAMA) has to refuse one; TIFF states
+	// the curve itself, so the round trip keeps them separate.
+	lain::io::image::tiff::registerCodec();
+
+	lain::image::Image srgb = rampImage(2, 2, PixelFormat::RGB8);
+	srgb.setColorSpace(ColorSpace::sRGB);
+	lain::image::Image bt709 = rampImage(2, 2, PixelFormat::RGB8);
+	bt709.setColorSpace(ColorSpace::BT709);
+
+	const auto a = lain::io::image::encode("tiff", srgb);
+	const auto b = lain::io::image::encode("tiff", bt709);
+	REQUIRE(a.has_value());
+	REQUIRE(b.has_value());
+	REQUIRE(lain::io::image::decode("tiff", *a)->colorSpace() == ColorSpace::sRGB);
+	REQUIRE(lain::io::image::decode("tiff", *b)->colorSpace() == ColorSpace::BT709);
+}
+
+TEST_CASE("a TransferFunction lain did not write reads as Unspecified", "[io-image-tiff]")
+{
+	// The comparison is exact rather than a tolerance window, so a curve that is merely CLOSE to
+	// one lain knows is not claimed as it. That is what keeps this a fact instead of a second
+	// gAMA-style heuristic — the price being that a foreign file states its curve in vain.
+	lain::io::image::tiff::registerCodec();
+	lain::image::Image image = rampImage(2, 2, PixelFormat::RGB8);
+	image.setColorSpace(ColorSpace::sRGB);
+	const auto encoded = lain::io::image::encode("tiff", image);
+	REQUIRE(encoded.has_value());
+
+	// Perturb one entry of the stored table by a single count. Searching for the table's bytes is
+	// what keeps this test honest about WHERE the tag is: it patches the real curve, not a guess
+	// at an offset.
+	std::vector<std::uint8_t> bytes(encoded->size());
+	std::memcpy(bytes.data(), encoded->data(), encoded->size());
+	const std::vector<std::uint16_t> table = lain::io::image::tiff::transferTable(ColorSpace::sRGB, 8);
+	std::vector<std::uint8_t> needle(table.size() * sizeof(std::uint16_t));
+	std::memcpy(needle.data(), table.data(), needle.size());
+	const auto at = std::search(bytes.begin(), bytes.end(), needle.begin(), needle.end());
+	REQUIRE(at != bytes.end()); // the curve really is in the file
+
+	bytes[static_cast<std::size_t>(at - bytes.begin()) + 40] ^= 0x01;
+	lain::memory::Buffer patched(bytes.size());
+	std::memcpy(patched.data(), bytes.data(), bytes.size());
+
+	const auto decoded = lain::io::image::decode("tiff", patched);
+	REQUIRE(decoded.has_value());
+	REQUIRE(decoded->colorSpace() == ColorSpace::Unspecified);
+}
+
+TEST_CASE("an unspecified alpha mode is written as unspecified, not invented as straight", "[io-image-tiff]")
+{
+	// The writer used to record EXTRASAMPLE_UNASSALPHA whatever it was told, so an image lain knew
+	// nothing about came back Straight — a claim manufactured by the round trip itself.
+	lain::io::image::tiff::registerCodec();
+
+	for (const AlphaMode mode : {AlphaMode::Unspecified, AlphaMode::Straight, AlphaMode::Premultiplied})
+	{
+		const lain::image::Image original = rampImage(2, 2, PixelFormat::RGBA8, mode);
+		const auto encoded = lain::io::image::encode("tiff", original);
+		REQUIRE(encoded.has_value());
+		const auto decoded = lain::io::image::decode("tiff", *encoded);
+		REQUIRE(decoded.has_value());
+		REQUIRE(decoded->alphaMode() == mode);
+	}
 }

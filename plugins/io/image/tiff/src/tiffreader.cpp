@@ -1,5 +1,7 @@
 #include "tiffreader.h"
 
+#include "tiffcolor.h" // the read half of this codec's ADR-0020 policy
+
 #include <lain/image/image.h>
 #include <lain/io/image/load.h>	  // readerRegistry
 #include <lain/io/image/reader.h> // ImageReader
@@ -95,8 +97,10 @@ namespace lain::io::image::tiff
 	//                  JPEG-in-TIFF/LZMA/ZSTD/WebP — a decode failure then rejects)
 	//
 	// The covered subset is preserved exactly, incl. the 16-bit (U16) path; AlphaMode is read
-	// from ExtraSamples (TIFF distinguishes premultiplied vs straight). ColorSpace is always
-	// Unspecified — TIFF's colour is ICC/colorimetry, which lain can't yet represent. Two
+	// from ExtraSamples (TIFF distinguishes premultiplied, straight and unspecified), and
+	// ColorSpace from an ICC profile or a TransferFunction curve (see tiffcolor.h) — TIFF has no
+	// sRGB flag, but a stated curve is a fact rather than the blanket Unspecified this reader
+	// used to return. Two
 	// things decode but are NOT honoured, each with a logged warning: a multi-page TIFF reads
 	// only its first page, and a non-default Orientation tag is ignored (rows read as stored).
 	// "One day" (WORK.md M3): float sample format (intermediary files), CIELab, YCbCr.
@@ -146,21 +150,33 @@ namespace lain::io::image::tiff
 		if (orientation != ORIENTATION_TOPLEFT)
 			lain::log::warn("io::image tiff: Orientation {} ignored — pixels read as stored", orientation);
 
-		// Alpha: TIFF's ExtraSamples distinguishes associated (premultiplied) from
-		// unassociated (straight) — unlike PNG, which is always straight.
+		// Alpha: TIFF's ExtraSamples distinguishes associated (premultiplied) from unassociated
+		// (straight) — unlike PNG, which is always straight. TIFF also has a third value,
+		// EXTRASAMPLE_UNSPECIFIED, and it is read as lain's Unspecified rather than folded into
+		// Straight: the file declined to say, and inventing the answer here is what the writer
+		// used to do in the other direction (ADR-0020).
 		auto alphaMode = lain::image::AlphaMode::Unspecified;
 		if (samples == 2 || samples == 4)
 		{
-			alphaMode = lain::image::AlphaMode::Straight;
 			std::uint16_t extraCount = 0;
 			std::uint16_t* extra = nullptr;
 			if (TIFFGetField(tif, TIFFTAG_EXTRASAMPLES, &extraCount, &extra) != 0 && extraCount > 0 &&
-				extra != nullptr && extra[extraCount - 1] == EXTRASAMPLE_ASSOCALPHA)
-				alphaMode = lain::image::AlphaMode::Premultiplied;
+				extra != nullptr)
+			{
+				if (extra[extraCount - 1] == EXTRASAMPLE_ASSOCALPHA)
+					alphaMode = lain::image::AlphaMode::Premultiplied;
+				else if (extra[extraCount - 1] == EXTRASAMPLE_UNASSALPHA)
+					alphaMode = lain::image::AlphaMode::Straight;
+			}
 		}
 
+		// The colour tags, read rather than assumed — see tiffcolor.h. The alpha channel is not a
+		// colour channel, so it takes no part in how many transfer arrays the directory holds.
+		const auto colorChannels = static_cast<std::uint16_t>(samples == 2 || samples == 4 ? samples - 1 : samples);
+		const lain::image::ColorSpace colorSpace = colorSpaceFromTiff(tif, bits, colorChannels);
+
 		out = lain::image::Image(static_cast<int>(width), static_cast<int>(height), pixelFormatFor(samples, bits),
-								 lain::image::ColorSpace::Unspecified, alphaMode);
+								 colorSpace, alphaMode);
 
 		// Read scanlines straight into the Image. libtiff returns native-order samples, so
 		// 16-bit data needs no manual swap. Its row size must equal the packed stride.

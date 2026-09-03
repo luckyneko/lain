@@ -1,5 +1,6 @@
 #include "jpegwriter.h"
 
+#include "jpegcolor.h"			// jpegCanStateSpace — the write half of this codec's ADR-0020 policy
 #include "lain/io/image/save.h" // ImageWriter, writerRegistry
 #include "lain/io/image/writer.h"
 
@@ -36,6 +37,12 @@ namespace lain::io::image::jpeg
 	// save an RGBA image as JPEG the caller drops alpha itself (convert to RGB8) — an explicit
 	// choice, not a hidden one. Quality uses a fixed default; a quality knob is deferred
 	// (WORK.md M3: encoder config, decided with all three encoder surfaces in view).
+	//
+	// COLOUR follows the same "no silent loss" rule (ADR-0020): stb emits a fixed JFIF header and
+	// no marker this codec could write a space into, so Linear and BT709 are refused rather than
+	// written and read back as sRGB. Unspecified is accepted, and does come back sRGB — that is
+	// the JFIF header stating the format's convention, the same one the reader applies to any
+	// foreign JFIF file, rather than lain inventing a tag of its own.
 	class JpegWriter : public ImageWriter
 	{
 	public:
@@ -46,6 +53,10 @@ namespace lain::io::image::jpeg
 			const auto desc = image.descriptor();
 			if (desc.channelType != lain::image::ChannelType::U8)
 				return false; // JPEG is 8-bit
+			// ADR-0020: this codec can state exactly one space, so it refuses the two it would
+			// otherwise write and read back as sRGB.
+			if (!jpegCanStateSpace(image.colorSpace()))
+				return false;
 			return desc.model == lain::image::ColorModel::Gray || desc.model == lain::image::ColorModel::RGB;
 		}
 

@@ -242,6 +242,16 @@ ordinary material for a tag it never carried. So the refusal applies to **explic
 BT.601 / BT.2020 / PQ / HLG only; unspecified is treated as BT709 with a log line. That is a guess
 either way, and this one is right for everything modern while the alternative is loud and wrong.
 
+**Amended 2026-09-03.** That default is the VIDEO arm of a general codec rule, not the rule itself:
+[ADR-0020](0020-codec-colour-tag-policy.md) settles what any codec may claim, and there a reader
+states only what the file states, so an untagged STILL is `Unspecified`. The media differ for a
+reason. A still file may hold a mask, a heightmap or a depth pass, where untagged genuinely means
+unknown; a delivery-coded video stream is always a picture encoded against some transfer, which is
+what makes the guess here right and the same guess wrong for stills. ADR-0020 also records the
+three loose ends this decision left in the video reader — the BT.601 decode coefficients used for
+untagged footage, the P3/XYZ primaries that are accepted rather than refused, and the log line that
+misses a file tagged only by its matrix.
+
 Per-element incrementality, keyed elements, a linked map over N streams, realtime playback of
 processed output, and the capture manifest and capture dataset remain outside this decision.
 Playback in the viewer is best-effort: advancing a frame rebinds and re-runs, so a heavy graph

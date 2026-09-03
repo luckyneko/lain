@@ -58,6 +58,13 @@ is the contract that keeps that pipeline honest.
 - **The bail path is release-only observable.** In debug the guard asserts (aborts), so the
   "returns invalid Image" behaviour is only reachable under `NDEBUG`; its tests are guarded
   accordingly.
+- **What a CODEC may claim is a separate decision, and it needed one.** This ADR's workflow opens
+  with "I/O reads a file in its native space", which assumes a reader that reads and a writer that
+  records — and for years neither was true of every codec: JPEG asserted sRGB without looking, TIFF
+  asserted Unspecified without looking, and no still-image writer recorded a colour tag at all, so
+  lain's own round trip lost the tag this ADR calls a contract. Settled in
+  **[ADR-0020](0020-codec-colour-tag-policy.md)**: a reader states only what the file states; a
+  writer records the tag when the format can state it and refuses when it cannot.
 - **Adding a color space is additive.** New named standards (PQ, DisplayP3, …) extend the enum;
   `convert(img, ColorSpace)` already expresses every pairing without a `toX`/`toY` explosion.
   **Amended 2026-09-01, cashing that claim:** the first such addition — `BT709`, for M10's video

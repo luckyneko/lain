@@ -356,12 +356,20 @@ and the "Loading" section of `CONTEXT.md`):
 - **Codec format policy: documented lossless expansion, honest tags.** A reader PRESERVES any
   source format lain represents natively (RGB/RGBA/Gray/**GrayAlpha** at 8/16-bit — GrayAlpha was
   added to `lain::image` for this) and never silently changes it. Formats lain can't hold are
-  expanded *losslessly in pixel value* — as the reader's documented contract, not a silent surprise
-  — and `ColorSpace` is read from the file, `Unspecified` when untagged (never guessed). **lain
+  expanded *losslessly in pixel value* — as the reader's documented contract, not a silent surprise.
+  **`ColorSpace` is read from the file, `Unspecified` when untagged — corrected 2026-09-03, because
+  the claim was false when written**: only the PNG reader did this. JPEG asserted `sRGB` without
+  consulting a single marker and TIFF asserted `Unspecified` without reading one, and no still-image
+  writer recorded a colour tag at all, so lain's own round trip lost it. The rule is now stated and
+  enforced by **[ADR-0020](docs/adr/0020-codec-colour-tag-policy.md)** — a reader states only what
+  the file states; a writer records the tag when the format can state it and refuses when it cannot —
+  with the two remaining conventional arms (PNG's gAMA window, JPEG's JFIF arm) named there rather
+  than passed off as readings. **lain
   format gaps still filled by expansion** (candidates to add as native formats later): indexed /
   palette color; sub-byte channel depths (1/2/4-bit); colourkey transparency (tRNS, vs. a full
   alpha channel); and colour spaces beyond `Unspecified`/`Linear`/`sRGB`/`BT709` (arbitrary gamma,
-  ICC profiles, non-sRGB primaries — currently collapsed to `Unspecified`). A codec may instead
+  ICC profiles, non-sRGB primaries — collapsed to `Unspecified`, which ADR-0020 keeps: a space lain
+  cannot hold is not the same as no space). A codec may instead
   **reject** a layout it can't represent faithfully rather than expand it — the TIFF reader
   rejects tiled / planar / float / palette / exotic-photometric loudly (logged, invalid Image);
   either way the response is loud, never a silent wrong result.
@@ -3245,10 +3253,13 @@ missing **capability**.
   never fired. It now propagates the invalidity. The existing sweep tests never saw it because
   `FrameAt` fed the boundary directly; inserting any node between a source and the output exposes
   it.
-- **Why `ConvertNode` was needed at all is a pre-existing gap, FOUND NOT FIXED:** `pngwriter.cpp`
-  records **no colour chunk** (no `sRGB`, no `gAMA`), so a still saved and reloaded through lain's
-  own codec comes back `Unspecified`. That is why the natural stills→video path needs a Convert in
-  it. Fixing the writer is a separate change with its own consequences for existing files.
+- **Why `ConvertNode` was needed at all was a pre-existing gap, found here and FIXED 2026-09-03:**
+  `pngwriter.cpp` recorded **no colour chunk** (no `sRGB`, no `gAMA`), so a still saved and reloaded
+  through lain's own codec came back `Unspecified` — which is why the natural stills→video path
+  needed a Convert in it. The audit that followed found the same hole in the TIFF and JPEG writers
+  (never recorded anywhere) and two invented claims besides, and the whole question is now settled by
+  **[ADR-0020](docs/adr/0020-codec-colour-tag-policy.md)**. `ConvertNode` remains what a caller uses
+  for genuinely untagged input; it is no longer structural.
 - **The writer's input boundary is 8-bit Gray or RGB**, refused by name otherwise. The reader's
   boundary is RGB8; widening Gray to a colour stream loses nothing, so refusing it would be stricter
   than the rule requires — "no LOSS" is not "no conversion". 16-bit and float are refused, since no
@@ -3329,6 +3340,106 @@ the part worth keeping, because it is what someone would otherwise "fix" later:
   here is best-effort: advance, rebind, re-run.
 - **A linked map over N streams**, per-element incrementality, and keyed elements — still ADR-0014's,
   still waiting on the workload.
+
+## Codec colour-tag policy (audited + built 2026-09-03)
+
+The question was "what do the readers and writers actually think they read and write, and is it a
+fixed assumption or genuinely from the file?" The audit found **four policies for one question, a
+WORK.md claim matching none of them, and no ADR owning any of it**. Settled in
+**[ADR-0020](docs/adr/0020-codec-colour-tag-policy.md)**: *a reader states only what the file
+states; a writer records the tag when the format can state it, and refuses when it cannot.*
+`ctest` **642/642** (+23), warning-clean, format-check clean.
+
+- **Only PNG and the video reader were reading anything.** JPEG hardcoded `sRGB`
+  (`jpegreader.cpp:59`) — stb_image discards every APP marker, so no JFIF, Exif, ICC or Adobe tag
+  was ever consulted — and TIFF hardcoded `Unspecified` (`tiffreader.cpp:163`) without reading
+  `ICCPROFILE` or `TRANSFERFUNCTION`. **No still-image writer recorded a colour tag at all**, and no
+  image `canEncode` consulted `colorSpace()`, so `Linear` → JPEG → `sRGB` was accepted silently:
+  pixels a whole transfer curve away from the tag the file came back with, nothing logged. That was
+  the worst path in the image stack.
+- **Each codec's colour decision is now ONE file holding both directions** — `pngcolor`,
+  `jpegcolor`, `tiffcolor`, on the `colorpolicy.{h,cpp}` precedent whose own header says why:
+  *"Splitting them across two files is how the two halves drift."* A reader reading three chunks
+  beside a writer writing none is that drift, arrived at over three separate commits.
+- **JPEG now scans its own APP markers** (~180 lines, no new dependency): Exif `ColorSpace` (0xA001)
+  above the ICC profile above the JFIF header. **Exif outranks the profile deliberately** — that is
+  the Exif specification's arrangement, 1 means sRGB and `Uncalibrated` means the answer is in the
+  profile, so ordering the profile first would discard an explicit sRGB tag on the very common
+  camera JPEG that carries both. The JFIF arm survives as the one conventional answer and is
+  **logged** at debug (a stills sequence decodes one file per frame, so info would be 500 lines).
+- **The repo's own grayscale JPEG fixture proved the point.** Generated by `sips`, it carries a
+  4.5 KB grey-gamma-2.2 ICC profile and no Exif ColorSpace — an ordinary file that lain reported as
+  `sRGB` and now reports as `Unspecified`. The test that changed is the evidence, not a casualty.
+- **TIFF states its curve with `TransferFunction`**, which makes it the one still format here that
+  round-trips all four values — including `BT709`, which **PNG must refuse**: PNG's only handle is
+  `gAMA`, BT709's exponent is 0.45, and lain's own PNG reader answers `sRGB` for that window, so
+  writing it would produce a file lain relabels. The table is built by sampling `image::toLinear`,
+  so the curve written, the curve recognised and the curve `image::convert` applies are one
+  function, and **the comparison on read is exact** — a near-miss is `Unspecified` rather than a
+  second gAMA-style heuristic in the one place that could be exact.
+- **Two invented claims removed, both adjacent to colour and both the same defect.** The PNG writer
+  accepted `AlphaMode::Premultiplied` and the reader handed it back `Straight` over already-scaled
+  colour — data corruption, and precisely what `writer.h`'s `canEncode` contract says must not
+  happen; it is now refused. The TIFF writer recorded `EXTRASAMPLE_UNASSALPHA` whatever it was told,
+  so an image lain knew nothing about came back `Straight` — a claim manufactured by the round trip
+  itself; `Unspecified` now writes `EXTRASAMPLE_UNSPECIFIED` and reads back as itself.
+- **`BlurNode` was overwriting a stated fact.** `in.setColorSpace(sRGB)` ran unconditionally, so a
+  BT709 video frame was linearised with the wrong curve and came out relabelled — the one
+  unconditional clobber in the tree. It now declares only what is undeclared (`ConvertNode`'s rule)
+  and converts back to the space and alpha association it was handed.
+- **`Image::toString` names both tags**, because every codec refusal prints it and the refusals are
+  *about* the tags: "cannot encode Image 64x64 RGB8" named nothing a caller could act on. The video
+  writer's frame-mismatch log was printing "RGB8 does not match RGB8 BT709 · 24 fps" for the same
+  reason.
+- **The loss matrix is a test, not a table** (`plugins/io/image/test/test_colorroundtrip.cpp`): the
+  property every codec must share — a tag survives, or it is refused — asserted across whichever
+  codecs the build enabled, so a codec that stops recording cannot pass by having its own
+  expectations updated alongside it. One case asserts that *some* codec can carry every `ColorSpace`
+  lain has, so a standard nothing can save fails there rather than being discovered later.
+- **Every image codec now switches exhaustively on `ColorSpace`.** None did before, which is why
+  `BT709`'s arrival in M10 slice 4 reached none of them; a fifth enumerator now fails the build.
+- **PNG's `gAMA` and `iCCP` arms had NO fixture and were untested** — reachable only through files
+  nothing in the suite produced. Both now have one, and building the iCCP fixture found libpng's
+  real constraint: it reads up to 81 bytes of keyword then demands 11 more, so an iCCP chunk under
+  ~92 bytes is rejected as "too short" and an all-zeros profile compresses far below that. The
+  fixture carries a synthetic, structurally valid v2.1 profile with deliberately wide primaries (so
+  libpng's own sRGB-match cannot reclassify it) **and a gAMA of 1.0** — which is what makes the
+  assertion sharp: a dropped profile would leave the gAMA arm answering `Linear`, so the test fails
+  rather than passing for the wrong reason. It did exactly that on the first attempt.
+- **Four sabotages, all caught**: PNG skipping the sRGB chunk, PNG accepting BT709, TIFF's curve
+  comparison made tolerant, JPEG dropping its ICC arm. The TIFF one **initially passed and exposed a
+  weak test** — libtiff deduplicates identical per-channel transfer arrays and replicates them on
+  read, so corrupting the stored table corrupts all three channels and the green/blue compare caught
+  what the sabotaged red compare missed. Sabotaging the length every comparison uses fails it.
+- **A REAL memory-corruption bug, caught only by building Release.** libtiff's TransferFunction
+  getter and setter are **asymmetric**: `TIFFSetField` consumes one array for a single-colour-channel
+  image and three otherwise, but `TIFFGetField` **always** consumes three `uint16_t**`, writing NULL
+  into the second and third when there is one channel (`tif_dir.c`, the else arm). Passing one
+  pointer to the getter — the obvious mirror of the setter — lets libtiff write two NULLs past the
+  end of the argument list. The Debug build absorbed it and passed; Release SIGSEGV'd on the first
+  grayscale image. Two things worth carrying: a variadic C API's two directions can disagree about
+  arity and the compiler cannot help, and **the suite must be run in both configurations** — the
+  2026-09-01 note that Release did not build at all is what let this class of bug hide.
+- **Accepted, and stated rather than found later:** a TIFF `TransferFunction` is fixed by the
+  specification at 2^BitsPerSample entries per colour channel — 1.5 KB on an 8-bit RGB image, 384 KB
+  on a 16-bit one. Under 1% of any 16-bit image anyone actually writes; disproportionate only for a
+  tiny one.
+- **Behaviour changes, none silent:** PNG and TIFF output gains colour tags; a profile-bearing or
+  explicitly-uncalibrated JPEG now reads `Unspecified`; and `Linear`/`BT709` to JPEG, `BT709` to
+  PNG, and `Premultiplied` to PNG are now refusals rather than mislabelled files.
+- **Found in the video path, RECORDED NOT FIXED** (all inside ADR-0018's territory, all changing
+  decoded pixels or accepted files, so each wants its own decision):
+  - **Untagged YUV is decoded with BT.601 coefficients while being tagged BT709.**
+    `ffmpegreader.cpp:362` passes the raw `frame.colorspace` to `sws_getCoefficients`, and
+    `AVCOL_SPC_UNSPECIFIED` selects swscale's BT.601 row — FFmpeg's "guess BT.601" convention
+    surviving in the matrix even though ADR-0018 overrode it in the tag. lain's own round trip is
+    unaffected (the writer stamps an explicit matrix); third-party untagged footage is not. The fix
+    is to drive the coefficients from the *resolved* policy.
+  - **P3 / XYZ / SMPTE240M primaries are accepted as BT709.** `refusedPrimaries` lists only the
+    BT.601 and BT.2020 families. Defensible, since `ColorSpace` is transfer-only by contract — but
+    `colorpolicy.h` claims the policy weighs primaries "as much as curves", and for P3 it does not.
+  - **The untagged log line misses a case.** `ffmpegreader.cpp:104` requires *both* `color_trc` and
+    `color_space` unspecified, so a file tagged only by its matrix takes the BT709 default silently.
 
 ## Backlog (deferred — don't build speculatively)
 

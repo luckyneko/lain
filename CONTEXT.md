@@ -802,6 +802,16 @@ rides a `flow` port like any payload. Vocabulary, three axes kept apart:
   need different primaries or a real HDR model. **AlphaMode** *(tracked, enforced)* — whether color is
   premultiplied by alpha (`Unspecified`/`Straight`/`Premultiplied`), meaningful only for
   alpha-bearing formats. Both default `Unspecified` (be explicit).
+- **A tag is a CLAIM, and only a codec that read one may make it.** What a reader and writer may say
+  about colour is [ADR-0020](docs/adr/0020-codec-colour-tag-policy.md)'s: a reader states only what
+  the file states (untagged, or a space lain cannot represent, is `Unspecified` — "one we can't hold"
+  is not "none"), and a writer records the tag when the format can state it and **refuses** when it
+  cannot, rather than writing a file that reads back as something else. Which spaces a format can
+  hold differs and is not a defect: TIFF states a curve exactly and carries all four, PNG cannot spell
+  `BT709` apart from `sRGB`, JPEG can state only what its JFIF header implies. **Video is the one
+  medium that guesses** — untagged footage is `BT709` with a log line — because a delivery-coded
+  stream is always a picture encoded against *some* transfer, where a still may be a mask, a
+  heightmap or a depth pass.
 - **No implicit conversion.** Nothing auto-converts space or alpha (a round trip sheds
   accuracy). The one verb **`convert`** is overloaded on its *target* — `convert(img,
   PixelFormat | ColorSpace | AlphaMode)` — and is direction-agnostic (converting to the value

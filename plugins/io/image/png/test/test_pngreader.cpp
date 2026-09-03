@@ -113,6 +113,50 @@ TEST_CASE("PngReader reports Unspecified color space for an untagged PNG", "[io-
 	REQUIRE(image->colorSpace() == ColorSpace::Unspecified); // no colour chunk -> honestly unknown
 }
 
+// --- the gAMA / iCCP arms of colorSpaceFromPng (ADR-0020) ------------------------
+//
+// These four fixtures cover every arm below the sRGB chunk, none of which had a fixture before:
+// the heuristic was reachable only through files nothing in the suite produced.
+
+TEST_CASE("a gAMA near 1/2.2 with no sRGB chunk reads as sRGB", "[io-image-png]")
+{
+	lain::io::image::png::registerCodec();
+	const auto image = lain::io::image::decode("png", bufferFrom(kPngGamma45Rgb8_1x1, sizeof(kPngGamma45Rgb8_1x1)));
+	REQUIRE(image.has_value());
+	REQUIRE(image->colorSpace() == ColorSpace::sRGB);
+}
+
+TEST_CASE("a gAMA of 1.0 reads as Linear", "[io-image-png]")
+{
+	lain::io::image::png::registerCodec();
+	const auto image =
+		lain::io::image::decode("png", bufferFrom(kPngGammaLinearRgb8_1x1, sizeof(kPngGammaLinearRgb8_1x1)));
+	REQUIRE(image.has_value());
+	REQUIRE(image->colorSpace() == ColorSpace::Linear);
+}
+
+TEST_CASE("a gAMA outside both windows reads as Unspecified, not the nearer one", "[io-image-png]")
+{
+	// 0.30 is a real exponent lain has no name for. Naming it anyway is the mislabel ADR-0020
+	// removes; the file said something, and what it said is not a standard lain tracks.
+	lain::io::image::png::registerCodec();
+	const auto image = lain::io::image::decode("png", bufferFrom(kPngGammaOddRgb8_1x1, sizeof(kPngGammaOddRgb8_1x1)));
+	REQUIRE(image.has_value());
+	REQUIRE(image->colorSpace() == ColorSpace::Unspecified);
+}
+
+TEST_CASE("an ICC profile reads as Unspecified, outranking a gAMA that would have answered", "[io-image-png]")
+{
+	// The fixture carries an ICC profile AND a gAMA of 1.0. Unspecified therefore proves the iCCP
+	// arm actually ran: had libpng dropped the profile, the gAMA arm would say Linear.
+	// "A space lain cannot hold" is not "no space" — the caller has to decide, so lain says so.
+	lain::io::image::png::registerCodec();
+	const auto image = lain::io::image::decode(
+		"png", bufferFrom(kPngIccpAndGammaLinearRgb8_1x1, sizeof(kPngIccpAndGammaLinearRgb8_1x1)));
+	REQUIRE(image.has_value());
+	REQUIRE(image->colorSpace() == ColorSpace::Unspecified);
+}
+
 TEST_CASE("PngReader rejects non-PNG bytes", "[io-image-png]")
 {
 	lain::io::image::png::registerCodec();
@@ -173,4 +217,62 @@ TEST_CASE("PngWriter rejects a float format PNG can't store", "[io-image-png]")
 {
 	lain::io::image::png::registerCodec();
 	REQUIRE_FALSE(lain::io::image::encode("png", rampImage(2, 2, PixelFormat::RGB32F)).has_value());
+}
+
+// --- the writer records the tag, or refuses it (ADR-0020) -------------------------
+
+TEST_CASE("PngWriter records the ColorSpace, so lain's own round trip keeps it", "[io-image-png]")
+{
+	// The whole point of ADR-0020's write half. Before it, every one of these came back
+	// Unspecified, which is why the stills->video path needed a ConvertNode in it.
+	lain::io::image::png::registerCodec();
+
+	for (const ColorSpace space : {ColorSpace::sRGB, ColorSpace::Linear, ColorSpace::Unspecified})
+	{
+		lain::image::Image original = rampImage(2, 2, PixelFormat::RGB8);
+		original.setColorSpace(space);
+
+		const auto encoded = lain::io::image::encode("png", original);
+		REQUIRE(encoded.has_value());
+		const auto decoded = lain::io::image::decode("png", *encoded);
+		REQUIRE(decoded.has_value());
+		REQUIRE(decoded->colorSpace() == space);
+
+		for (std::size_t i = 0; i < original.byteSize(); ++i)
+			REQUIRE(decoded->data()[i] == original.data()[i]); // recording a tag moves no pixels
+	}
+}
+
+TEST_CASE("PngWriter refuses BT709, which it could only record as sRGB", "[io-image-png]")
+{
+	// PNG's only transfer handle is gAMA, and BT709's exponent (0.45) sits inside the window
+	// colorSpaceFromPng answers sRGB for. Writing it would make lain relabel its own file, so the
+	// codec refuses instead: convert to sRGB, or write TIFF, which states the curve exactly.
+	lain::io::image::png::registerCodec();
+	lain::image::Image image = rampImage(2, 2, PixelFormat::RGB8);
+	image.setColorSpace(ColorSpace::BT709);
+
+	REQUIRE_FALSE(lain::io::image::canEncode("png", image));
+	REQUIRE_FALSE(lain::io::image::encode("png", image).has_value());
+}
+
+TEST_CASE("PngWriter refuses premultiplied alpha rather than mislabelling it", "[io-image-png]")
+{
+	// PNG's alpha is unassociated by specification. Encoding premultiplied bytes would produce a
+	// file the reader tags Straight over colour that is already scaled — silent corruption, and
+	// exactly what ImageWriter::canEncode exists to prevent (io/image/writer.h).
+	lain::io::image::png::registerCodec();
+	lain::image::Image image = rampImage(2, 2, PixelFormat::RGBA8);
+	image.setAlphaMode(AlphaMode::Premultiplied);
+	REQUIRE_FALSE(lain::io::image::canEncode("png", image));
+
+	// Unspecified is accepted, and comes back Straight: that is the FORMAT supplying a fact it
+	// guarantees, not lain inventing one.
+	image.setAlphaMode(AlphaMode::Unspecified);
+	REQUIRE(lain::io::image::canEncode("png", image));
+	const auto encoded = lain::io::image::encode("png", image);
+	REQUIRE(encoded.has_value());
+	const auto decoded = lain::io::image::decode("png", *encoded);
+	REQUIRE(decoded.has_value());
+	REQUIRE(decoded->alphaMode() == AlphaMode::Straight);
 }

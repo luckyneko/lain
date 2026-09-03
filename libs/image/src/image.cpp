@@ -62,6 +62,11 @@ namespace lain::image
 
 	std::string Image::toString() const
 	{
-		return "Image " + std::to_string(m_extent.x) + "x" + std::to_string(m_extent.y) + " " + std::string(lain::meta::enums::name(m_format));
+		// Both tags are named, always — including when they are Unspecified. This string is what
+		// a codec's refusal prints (io::image::encode, the video writer's frame check), and those
+		// refusals are ABOUT the tags: "cannot encode Image 64x64 RGB8" names nothing the caller
+		// can act on, while "... RGB8 Linear Straight" says which conversion to insert.
+		return "Image " + std::to_string(m_extent.x) + "x" + std::to_string(m_extent.y) + " " + std::string(lain::meta::enums::name(m_format)) +
+			   " " + std::string(lain::meta::enums::name(m_colorSpace)) + " " + std::string(lain::meta::enums::name(m_alphaMode));
 	}
 } // namespace lain::image

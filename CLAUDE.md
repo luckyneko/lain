@@ -276,6 +276,49 @@ sits inside an inline group).
   **gui-mode live-verified 2026-08-11 — M7 is COMPLETE.**
 - Still out: file watching, prefab overrides, in-place template editing.
 
+### Update 2026-09-03 — codec colour-tag policy audited and settled (ADR-0020)
+
+The question was what each reader and writer actually *thinks* it reads and writes, and whether that
+is a fixed assumption or genuinely from the file. The audit found **four policies for one question, a
+WORK.md claim matching none of them, and no ADR owning any of it** — ADR-0003 owns `ColorSpace` and
+said nothing about codecs; ADR-0018 governed video only. Settled in
+**[ADR-0020](docs/adr/0020-codec-colour-tag-policy.md)**: *a reader states only what the file states;
+a writer records the tag when the format can state it, and refuses when it cannot.* `ctest`
+**642/642** (+23), warning-clean, format-check clean. Full landing notes in WORK.md.
+
+- **Only PNG and the video reader read anything.** JPEG hardcoded `sRGB` (stb_image discards every
+  APP marker, so nothing was consulted); TIFF hardcoded `Unspecified` without reading `ICCPROFILE` or
+  `TRANSFERFUNCTION`. **No still-image writer recorded a colour tag at all** and no image `canEncode`
+  consulted `colorSpace()`, so lain's own round trip lost the tag — which is why the stills→video path
+  needed a hand-placed `ConvertNode` — and `Linear` → JPEG → `sRGB` was accepted silently.
+- **Each codec's colour decision is now ONE file holding both directions** (`pngcolor`, `jpegcolor`,
+  `tiffcolor`), on the `colorpolicy.{h,cpp}` precedent whose header says why: splitting them is how
+  the halves drift, and a reader reading three chunks beside a writer writing none *is* that drift.
+- **JPEG scans its own APP markers**: Exif `ColorSpace` above the ICC profile above JFIF — Exif first
+  because that is the specification's own arrangement, so a camera JPEG carrying both keeps the one
+  statement lain can represent. The JFIF arm survives as the single conventional answer, **logged**.
+- **TIFF states its curve** (`TransferFunction`, sampled from `image::toLinear`, compared **exactly**),
+  making it the one still format that round-trips all four values. **PNG refuses `BT709`**: its only
+  handle is `gAMA`, and lain's own reader reads 0.45 back as `sRGB`.
+- **Two invented claims removed**, same defect on the alpha axis: PNG accepted `Premultiplied` and
+  handed it back `Straight` (corruption `canEncode` exists to prevent), and TIFF wrote
+  "unassociated" for an alpha mode it was never told.
+- **`BlurNode` stopped overwriting a stated fact** — `setColorSpace(sRGB)` ran unconditionally, so a
+  BT709 frame was linearised with the wrong curve and relabelled. **`Image::toString` names both
+  tags**, because every codec refusal prints it and the refusals are about the tags.
+- **A real memory-corruption bug, caught only by building Release**: libtiff's TransferFunction
+  getter always consumes three `uint16_t**` while its setter takes one or three, so the obvious
+  mirror of the setter let libtiff write two NULLs past the argument list — absorbed in Debug,
+  SIGSEGV in Release on the first grayscale image. Both configurations are now verified
+  (**643/643** Debug, **619/619** Release).
+- **The loss matrix is a test** (`plugins/io/image/test/test_colorroundtrip.cpp`), and every image
+  codec now switches exhaustively on `ColorSpace` — none did, which is why `BT709` reached none of
+  them when M10 added it.
+- **Recorded, NOT fixed — three video items inside ADR-0018's territory**, each changing decoded
+  pixels or accepted files: untagged YUV is decoded with **BT.601 coefficients while tagged BT709**;
+  P3/XYZ primaries are accepted as BT709; and the untagged log line misses a file tagged only by its
+  matrix. Details in WORK.md.
+
 ### Update 2026-09-02 — M10 slice 5b built: the FFmpeg reader (**slice 5 COMPLETE**)
 
 `FFmpegVideoReader` in `plugins/io/video/ffmpeg` — a custom `AVIOContext` over slice 3's `Stream`

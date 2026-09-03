@@ -8,6 +8,7 @@
 include(addStb) # stb::image (fetches stb, compiles its impl in a non-strict TU)
 
 add_library(io-image-jpeg STATIC
+	src/jpegcolor.cpp
 	src/jpegreader.cpp
 	src/jpegwriter.cpp
 	src/register.cpp
@@ -18,7 +19,7 @@ target_compile_features(io-image-jpeg PUBLIC cxx_std_17)
 target_include_directories(io-image-jpeg PUBLIC include)
 target_link_libraries(io-image-jpeg
 	PUBLIC lain::io::image
-	PRIVATE stb::image lain::warnings
+	PRIVATE stb::image lain::log lain::warnings
 )
 
 # Advertise this codec to the generated aggregator (see plugins/io/image/CMakeLists.txt).

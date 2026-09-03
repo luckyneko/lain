@@ -5,6 +5,7 @@
 include(addLibTIFF) # TIFF::tiff (fetches libtiff + zlib on demand)
 
 add_library(io-image-tiff STATIC
+	src/tiffcolor.cpp
 	src/tiffreader.cpp
 	src/tiffwriter.cpp
 	src/register.cpp

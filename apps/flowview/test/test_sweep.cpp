@@ -366,6 +366,37 @@ namespace
 		return path;
 	}
 
+	// The same graph WITHOUT the Convert — stills : FrameSequence -> FrameAt -> result : Image.
+	//
+	// This is only buildable because the PNG writer records the ColorSpace (ADR-0020): writeGrey
+	// saves an sRGB still, so the sequence opens as sRGB and io::video::canEncode accepts it. Before
+	// that, a reloaded still was Unspecified and the writer refused, which is the entire reason
+	// ConvertNode sits in the graph above.
+	std::string buildVideoGraphWithoutConvert(const fs::path& dir, const core::Factory<flow::Node>& factory)
+	{
+		flow::Graph graph;
+		flow::GroupInputNode& in = graph.boundaryInputNode();
+		const flow::PortId stills = in.addBoundary<media::FrameSequence>("stills");
+		const flow::PortId frame = in.addBoundary<media::FramePosition>("frame");
+
+		flow::GroupOutputNode& out = graph.boundaryOutputNode();
+		const flow::PortId result = out.addBoundary<lain::image::Image>("result");
+
+		const flow::NodeId at = graph.add<flow::example::FrameAtNode>();
+		const flow::Node& atNode = graph.node(at);
+
+		REQUIRE(graph.connect(flow::PortAddress{in.id(), stills},
+							  flow::PortAddress{at, atNode.input(0).id()}) == flow::Connection::Ok);
+		REQUIRE(graph.connect(flow::PortAddress{in.id(), frame},
+							  flow::PortAddress{at, atNode.input(1).id()}) == flow::Connection::Ok);
+		REQUIRE(graph.connect(flow::PortAddress{at, atNode.output(0).id()},
+							  flow::PortAddress{out.id(), result}) == flow::Connection::Ok);
+
+		const std::string path = (dir / "video-noconvert.json").string();
+		REQUIRE(flowview::saveGraph(path, graph, factory));
+		return path;
+	}
+
 	flowview::RunOptions videoOptions(const std::string& graphPath, const fs::path& stills, const fs::path& out,
 									  lain::core::Range range)
 	{
@@ -571,4 +602,35 @@ TEST_CASE("the codec family asked for is the one used, never a substitute", "[fl
 	flowview::RunOptions bogus = videoOptions(graphPath, stills, dir / "bogus.mkv", lain::core::Range{0, 1});
 	bogus.videoCodec = "h265"; // close enough to be a plausible typo for "hevc"
 	CHECK(flowview::runGraph(bogus, factory, binders) != 0);
+}
+
+TEST_CASE("a tagged still reaches a video writer with no Convert in the graph", "[flowview][sweep]")
+{
+	// The end-to-end point of ADR-0020. io::video::canEncode refuses Unspecified by name, and every
+	// still lain wrote used to come back Unspecified because no image writer recorded a colour tag —
+	// so the stills->video path structurally required a ConvertNode to declare a space by hand. The
+	// PNG writer now records it, so the tag survives the round trip and the graph is just the work.
+	if (!haveVideoWriter())
+		SKIP("this build has no video codec plugin");
+
+	const fs::path dir = scratchDir("noconvert");
+	const fs::path stills = dir / "frames";
+	fs::create_directories(stills);
+	for (int i = 0; i < 4; ++i)
+		writeGrey(stills / ("f" + std::to_string(i) + ".png"), static_cast<std::uint8_t>(40 + i * 20));
+
+	// The claim rests on this: the reloaded still carries the tag it was saved with.
+	const auto reloaded = io::image::load((stills / "f0.png").string());
+	REQUIRE(reloaded.has_value());
+	REQUIRE(reloaded->colorSpace() == lain::image::ColorSpace::sRGB);
+
+	const core::Factory<flow::Node> factory = sweepFactory();
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+
+	const std::string graphPath = buildVideoGraphWithoutConvert(dir, factory);
+	const fs::path out = dir / "out.mkv";
+	CHECK(flowview::runGraph(videoOptions(graphPath, stills, out, lain::core::Range{0, 3}), factory, binders) == 0);
+	CHECK(fs::exists(out));
+	CHECK(fs::file_size(out) > 0);
 }

@@ -39,7 +39,10 @@ TEST_CASE("JpegReader decodes an RGB JPEG to RGB8/sRGB with the right colours", 
 	REQUIRE(image->width() == 16);
 	REQUIRE(image->height() == 16);
 	REQUIRE(image->pixelFormat() == PixelFormat::RGB8);
-	REQUIRE(image->colorSpace() == ColorSpace::sRGB); // JFIF default
+	// Read, not assumed: this fixture's Exif carries ColorSpace (0xA001) = 1, the field the
+	// Exif specification defines to mean sRGB. Before ADR-0020 every JPEG got this answer
+	// whatever it said; now it is what the file states.
+	REQUIRE(image->colorSpace() == ColorSpace::sRGB);
 
 	// Sample each quadrant's centre (mid-block, away from JPEG edge ringing).
 	const std::uint8_t* d = image->data();
@@ -61,7 +64,12 @@ TEST_CASE("JpegReader decodes a grayscale JPEG to Gray8", "[io-image-jpeg]")
 	const auto image = lain::io::image::decode("jpeg", bufferFrom(kJpegGray16, sizeof(kJpegGray16)));
 	REQUIRE(image.has_value());
 	REQUIRE(image->pixelFormat() == PixelFormat::Gray8);
-	REQUIRE(image->colorSpace() == ColorSpace::sRGB);
+
+	// Unspecified, and this fixture is why the rule is worth having: it carries a 4.5 KB APP2 ICC
+	// profile (a grey gamma-2.2 profile, from the `sips` that generated it) and no Exif ColorSpace
+	// tag. It is genuinely NOT sRGB, and before ADR-0020 lain reported it as sRGB — an ordinary
+	// file, silently mislabelled, with no marker ever consulted.
+	REQUIRE(image->colorSpace() == ColorSpace::Unspecified);
 
 	const std::uint8_t* d = image->data();
 	REQUIRE(near(d[16 * 8 + 4], 0x30));	 // left, dark
@@ -119,4 +127,23 @@ TEST_CASE("JpegWriter rejects a 16-bit image (JPEG is 8-bit)", "[io-image-jpeg]"
 {
 	lain::io::image::jpeg::registerCodec();
 	REQUIRE_FALSE(lain::io::image::encode("jpg", solid(4, 4, PixelFormat::RGB16, 1)).has_value());
+}
+
+TEST_CASE("JpegWriter refuses a space it would encode and read back as sRGB", "[io-image-jpeg]")
+{
+	// The worst silent path in the image stack before ADR-0020: Linear pixels encoded without
+	// complaint into a file whose JFIF header makes this codec's own reader call them sRGB — a tag
+	// nothing wrote, over values a whole transfer curve away from it.
+	lain::io::image::jpeg::registerCodec();
+	lain::image::Image image = solid(8, 8, PixelFormat::RGB8, 128);
+
+	image.setColorSpace(ColorSpace::Linear);
+	REQUIRE_FALSE(lain::io::image::canEncode("jpg", image));
+	REQUIRE_FALSE(lain::io::image::encode("jpg", image).has_value());
+
+	image.setColorSpace(ColorSpace::BT709);
+	REQUIRE_FALSE(lain::io::image::canEncode("jpg", image));
+
+	image.setColorSpace(ColorSpace::sRGB);
+	REQUIRE(lain::io::image::canEncode("jpg", image));
 }

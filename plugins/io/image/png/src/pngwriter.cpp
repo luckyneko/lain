@@ -2,6 +2,7 @@
 
 #include "lain/io/image/save.h" // ImageWriter, writerRegistry
 #include "lain/io/image/writer.h"
+#include "pngcolor.h" // the write half of this codec's ADR-0020 policy
 
 #include <lain/image/image.h>
 #include <lain/image/pixelformat.h>
@@ -105,6 +106,7 @@ namespace lain::io::image::png
 		png_set_write_fn(png, &out, &writeToVector, &flushVector);
 		png_set_IHDR(png, info, static_cast<png_uint_32>(image.width()), static_cast<png_uint_32>(image.height()),
 					 bitDepth, colorType, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+		applyColorSpaceToPng(png, info, image.colorSpace()); // before write_info — the chunks go in the header
 		png_write_info(png, info);
 		if (bitDepth == 16 && hostIsLittleEndian())
 			png_set_swap(png); // native u16 -> big-endian; libpng swaps its own row copy, not ours
@@ -131,13 +133,26 @@ namespace lain::io::image::png
 	// The PNG writer: a CPU image::Image in, PNG bytes out. Stateless. Preserves the format
 	// (Gray/GrayAlpha/RGB/RGBA at 8/16-bit); a float format is rejected (nullopt) — PNG is
 	// integer-only.
+	//
+	// It also RECORDS the ColorSpace (sRGB / gAMA chunks, per ADR-0020), so an image saved and
+	// reloaded through lain's own codec keeps its tag, and refuses the two things PNG cannot state
+	// without the reader relabelling them: BT709, and premultiplied alpha. See pngcolor.h.
 	class PngWriter : public ImageWriter
 	{
 	public:
 		bool canEncode(const lain::image::Image& image) const override
 		{
+			if (!image.valid())
+				return false;
+			const auto desc = image.descriptor();
 			// PNG stores 8/16-bit Gray/GrayAlpha/RGB/RGBA — every lain format except float.
-			return image.valid() && image.descriptor().channelType != lain::image::ChannelType::F32;
+			if (desc.channelType == lain::image::ChannelType::F32)
+				return false;
+			// ADR-0020: record the tag or refuse it. BT709 has no PNG spelling this codec's own
+			// reader would not read back as sRGB, and premultiplied alpha has none at all.
+			if (!pngCanStateSpace(image.colorSpace()))
+				return false;
+			return !desc.hasAlpha() || pngCanStateAlpha(image.alphaMode());
 		}
 
 		std::optional<memory::Buffer> encode(const lain::image::Image& image) const override

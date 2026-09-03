@@ -2,6 +2,7 @@
 
 #include "lain/io/image/save.h" // ImageWriter, writerRegistry
 #include "lain/io/image/writer.h"
+#include "tiffcolor.h" // the write half of this codec's ADR-0020 policy
 
 #include <lain/image/image.h>
 #include <lain/image/pixelformat.h>
@@ -96,6 +97,10 @@ namespace lain::io::image::tiff
 	// AlphaMode carried via ExtraSamples. libtiff manages byte order (the file header records
 	// host order), so 16-bit needs no manual swap. Compression is LZW (lossless, core libtiff,
 	// no external dep); a compression-type knob is deferred (WORK.md M3: encoder config).
+	//
+	// It RECORDS the ColorSpace as a TransferFunction (ADR-0020), which makes TIFF the one still
+	// format here that round-trips all four values — including BT709, which PNG must refuse and
+	// JPEG cannot state. canEncode therefore rejects nothing on colour grounds; see tiffcolor.h.
 	class TiffWriter : public ImageWriter
 	{
 	public:
@@ -135,11 +140,24 @@ namespace lain::io::image::tiff
 			TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, 0));
 			if (hasAlpha)
 			{
-				const std::uint16_t extra =
-					image.alphaMode() == lain::image::AlphaMode::Premultiplied ? EXTRASAMPLE_ASSOCALPHA
-																			   : EXTRASAMPLE_UNASSALPHA;
+				// Three values, not two: an Unspecified alpha mode is written as UNSPECIFIED
+				// rather than as UNASSALPHA. Writing "unassociated" for an image lain was never
+				// told about states a fact into a durable file that lain did not have — and the
+				// reader then hands it back as Straight, so the invention survives the round trip
+				// looking like a reading (ADR-0020).
+				std::uint16_t extra = EXTRASAMPLE_UNSPECIFIED;
+				if (image.alphaMode() == lain::image::AlphaMode::Premultiplied)
+					extra = EXTRASAMPLE_ASSOCALPHA;
+				else if (image.alphaMode() == lain::image::AlphaMode::Straight)
+					extra = EXTRASAMPLE_UNASSALPHA;
 				TIFFSetField(tif, TIFFTAG_EXTRASAMPLES, 1, &extra);
 			}
+
+			// LAST, and it has to be: libtiff reads 2^BitsPerSample entries per array and decides
+			// how many arrays to expect from the colour-channel count, so every tag it derives
+			// that from must already be set (see tiffcolor.h).
+			const auto colorChannels = static_cast<std::uint16_t>(hasAlpha ? samples - 1 : samples);
+			applyColorSpaceToTiff(tif, image.colorSpace(), static_cast<std::uint16_t>(bits), colorChannels);
 
 			// Write scanlines from a per-row scratch copy: TIFFWriteScanline may modify the
 			// buffer it's given (predictors), so it must not point into the caller's image.

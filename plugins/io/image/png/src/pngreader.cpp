@@ -1,5 +1,7 @@
 #include "pngreader.h"
 
+#include "pngcolor.h" // colorSpaceFromPng — the read half of this codec's ADR-0020 policy
+
 #include <lain/image/image.h>
 #include <lain/io/image/load.h>	  // readerRegistry
 #include <lain/io/image/reader.h> // ImageReader
@@ -31,36 +33,6 @@ namespace lain::io::image::png
 		std::size_t size;
 		std::size_t offset;
 	};
-
-	// The image's ColorSpace as declared by its PNG chunks — honestly, without guessing.
-	// An sRGB chunk is definitive; a gAMA near 1/2.2 or 1.0 maps to sRGB / Linear; an ICC
-	// profile, an unrecognised gamma, or no colour chunk at all is Unspecified (lain can't
-	// represent an arbitrary profile, and "untagged" genuinely means unknown — the caller
-	// declares/convert()s before a space-sensitive op, per the image contract).
-	static lain::image::ColorSpace colorSpaceFromPng(png_structp png, png_infop info)
-	{
-		int srgbIntent = 0;
-		if (png_get_sRGB(png, info, &srgbIntent) != 0)
-			return lain::image::ColorSpace::sRGB;
-
-		png_charp iccName = nullptr;
-		int iccCompression = 0;
-		png_bytep iccProfile = nullptr;
-		png_uint_32 iccLength = 0;
-		if (png_get_iCCP(png, info, &iccName, &iccCompression, &iccProfile, &iccLength) != 0)
-			return lain::image::ColorSpace::Unspecified;
-
-		double fileGamma = 0.0;
-		if (png_get_gAMA(png, info, &fileGamma) != 0)
-		{
-			if (fileGamma > 0.44 && fileGamma < 0.47) // ~1/2.2, sRGB-ish encoding
-				return lain::image::ColorSpace::sRGB;
-			if (fileGamma > 0.99 && fileGamma < 1.01) // linear light
-				return lain::image::ColorSpace::Linear;
-			return lain::image::ColorSpace::Unspecified; // some other gamma lain can't track
-		}
-		return lain::image::ColorSpace::Unspecified; // untagged -> honestly unknown
-	}
 
 	static void readFromMemory(png_structp png, png_bytep out, png_size_t count)
 	{

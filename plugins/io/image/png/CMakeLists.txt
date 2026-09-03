@@ -6,6 +6,7 @@
 include(addLibPNG) # PNG::png (fetches libpng + zlib on demand)
 
 add_library(io-image-png STATIC
+	src/pngcolor.cpp
 	src/pngreader.cpp
 	src/pngwriter.cpp
 	src/register.cpp

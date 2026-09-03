@@ -39,15 +39,26 @@ namespace lain::flow::example
 		// alpha). The gradient is already RGBA8, so the smoke scene is unchanged.
 		if (in.pixelFormat() != image::PixelFormat::RGBA8)
 			in = image::convert(in, image::PixelFormat::RGBA8);
-		in.setColorSpace(image::ColorSpace::sRGB);
-		in.setAlphaMode(image::AlphaMode::Straight);
+
+		// DECLARE only what is undeclared — ConvertNode's rule (see its `assume` param), and the
+		// reason it is a rule: this used to assign sRGB unconditionally, so a BT709 video frame
+		// was linearised with the wrong curve and came back out relabelled sRGB. A tag the
+		// upstream stated is a fact, and a convenience default must not overwrite one.
+		const image::ColorSpace assumed =
+			in.colorSpace() == image::ColorSpace::Unspecified ? image::ColorSpace::sRGB : in.colorSpace();
+		const image::AlphaMode assumedAlpha =
+			in.alphaMode() == image::AlphaMode::Unspecified ? image::AlphaMode::Straight : in.alphaMode();
+		in.setColorSpace(assumed);
+		in.setAlphaMode(assumedAlpha);
 
 		const image::Image linear = image::convert(in, image::ColorSpace::Linear);
 		const image::Image premul = image::convert(linear, image::AlphaMode::Premultiplied);
 		const image::Image blurred =
 			image::convolve(premul, image::gaussianKernel(evaluation.input(m_radius).get<int>(), evaluation.input(m_sigma).get<float>()));
-		const image::Image straight = image::convert(blurred, image::AlphaMode::Straight);
 
-		evaluation.output(m_out).set(image::convert(straight, image::ColorSpace::sRGB));
+		// Back to whatever the input was in, on both axes — a filter changes the pixels, not the
+		// space or the association they are expressed in.
+		const image::Image restored = image::convert(blurred, assumedAlpha);
+		evaluation.output(m_out).set(image::convert(restored, assumed));
 	}
 } // namespace lain::flow::example
