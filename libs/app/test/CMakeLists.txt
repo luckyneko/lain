@@ -21,4 +21,4 @@ target_link_libraries(test-app PRIVATE
 	Catch2::Catch2WithMain
 )
 
-catch_discover_tests(test-app TEST_PREFIX "(app) ")
+catch_discover_tests(test-app TEST_PREFIX "(app) " ${LAIN_TEST_DL_PATHS})

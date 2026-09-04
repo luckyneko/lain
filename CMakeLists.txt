@@ -76,6 +76,14 @@ if(LAIN_BUILD_TESTING OR LAIN_BUILD_APPS)
 	# Stated rather than arranged: reordering these two so ASM_MASM is enabled last would also
 	# work today, but positional fixes to a language-resolution rule nobody can see are how this
 	# silently comes back. A no-op everywhere but MSVC, where the collision exists.
+	# Catch2 runs each test executable at BUILD time to enumerate its cases, and ctest runs them
+	# again afterwards. On Windows the loader is a DLL (vulkan-1.dll) that nothing puts on the
+	# path, so any test linking it died with STATUS_DLL_NOT_FOUND in both phases — reported as a
+	# test-discovery error, which names neither the DLL nor the loader (CI, 2026-09-04). DL_PATHS
+	# covers discovery and the run together; empty and harmless off Windows. archimedes' own test
+	# suite hit this first and solves it the same way.
+	set(LAIN_TEST_DL_PATHS DL_PATHS "$<TARGET_FILE_DIR:Vulkan::Loader>")
+
 	if(MSVC AND TARGET vulkan)
 		get_target_property(_lain_loader_dir vulkan SOURCE_DIR)
 		set_source_files_properties("${_lain_loader_dir}/unknown_ext_chain_masm.asm"

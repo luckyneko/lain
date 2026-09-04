@@ -3736,14 +3736,52 @@ and the rest are real findings. The other four legs failed, on **three** distinc
    lain's own: this is a condition of including FFmpeg's headers, so every consumer needs it and
    none should have to remember.
 
+### Run 3 (2026-09-05)
+
+The `.asm` fix worked — `vkdev_ext` unresolved count went from 750 to **zero**, so the Windows
+loader links — and the FFmpeg header definitions cleared the Linux compile. Both legs moved on to
+new ground. Four more findings, three of them the same shape as everything before: something libc++
+supplies that the other two standard libraries do not.
+
+5. **`parameditors.h` uses `std::string` and never includes `<string>`.** libc++ pulls it in through
+   `<functional>`/`<map>`; MSVC's STL does not, and the failure cascades — the reported errors were
+   `std::move` not found, `std::map` having no `operator[]`, a member function "not found in" its own
+   class, and a function pointer that would not convert to the `std::function` it matches. None of
+   those are real; the first line of the log is, and it is in the header.
+   A sweep for the same defect across every `.h`/`.inl` in the tree turns up ~40 more candidates,
+   but almost all are `.inl` files whose parent header supplies the include, or lain headers reached
+   through other lain headers — consistent across compilers, so nits rather than portability bugs.
+   Only this one demonstrably broke, so only this one is fixed; CI remains the oracle for the rest.
+
+6. **A `//` comment ending in a backslash splices the next line** (`-Werror=comment`).
+   `videofixtures.h` documents the ffmpeg commands that generated the checked-in fixtures, and those
+   used shell line-continuations. Rewritten with the same `R=`-style shell variables the block
+   already used, so the recipe stays copy-pasteable without continuations.
+
+7. **The Linux FFmpeg prebuilt needs `libva` at link time.** Its `MANIFEST.txt` records
+   `--enable-vaapi`, so `libavcodec.so` carries an unresolved dependency every consumer's linker has
+   to satisfy; without it, anything linking the video plugin fails with a page of undefined `va*`
+   references. `libva-dev` joins the Linux apt step. It is the only flag in that build that needs an
+   external shared library — `v4l2-m2m` is kernel headers, `nvenc`/`ffnvcodec` are dlopen'd — and it
+   is worth knowing generally: **a Linux consumer of lain's video plugin needs libva installed.**
+
+8. **On Windows the Vulkan loader is a DLL, and nothing put it where the executables look.** Every
+   test binary linking it died with `STATUS_DLL_NOT_FOUND` — surfaced as a Catch2 *test-discovery*
+   error naming neither the DLL nor the loader, because discovery runs the executable at build time.
+   `DL_PATHS` on `catch_discover_tests` covers discovery and the ctest run together, which is how
+   archimedes' own suite solves it; `flowview` gets the loader staged beside it instead, since an app
+   that ships has to carry it rather than be handed a path.
+
 ### Still to come
 
-Each leg has been stopping at its first error, so every one of these may still be standing in
-front of more of the same — the second run got the subproject smoke to green and turned up two
-findings the first run never reached. Expected behind them, unchanged from the pre-run
-prediction: MSVC's C4267/C4244/C4100 across 208 sources, further GCC/clang `-Wextra` divergence,
-`<windows.h>`'s `min`/`max` macros arriving via GLFW, and the `windows-x86_64` archive pin, which
-nothing has fetched yet — the Linux one now has.
+Each leg still stops at its first error, so more may be queued behind these. Notably the prediction
+made before any of this ran has been wrong about the *kind* of finding: not one MSVC narrowing
+warning (C4267/C4244/C4100) has appeared, nor a `<windows.h>` `min`/`max` collision. What has
+actually turned up, five times out of eight, is **something libc++ provides that libstdc++ and
+MSVC's STL do not** — transitive includes, `__STDC_CONSTANT_MACROS`, and the diagnostics clang
+simply does not implement. Both archive pins have now been fetched and neither was wrong. Windows
+has still never reached the link stage for lain's own executables, so the narrowing warnings may
+yet be there; they just are not what has been costing the round trips.
 
 ## Backlog (deferred — don't build speculatively)
 

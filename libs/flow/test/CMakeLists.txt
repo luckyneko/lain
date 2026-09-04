@@ -43,4 +43,4 @@ target_link_libraries(test-flow PRIVATE
 	Catch2::Catch2WithMain
 )
 
-catch_discover_tests(test-flow TEST_PREFIX "(flow) ")
+catch_discover_tests(test-flow TEST_PREFIX "(flow) " ${LAIN_TEST_DL_PATHS})

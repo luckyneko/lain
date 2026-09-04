@@ -23,10 +23,9 @@
 //   ffmpeg $R -c:v h264_videotoolbox -g 4 -b:v 200k -pix_fmt yuv420p clip.mp4
 //   ffmpeg $R -c:v mpeg4 -bf 2 -g 6 -q:v 4 -pix_fmt yuv420p bframes.mp4
 //   head -c 9216 frames.raw > one.raw   # one frame
-//   ffmpeg -f rawvideo -pix_fmt rgb24 -s 64x48 -r 24 -i one.raw \
-//       -vf "setparams=color_trc=smpte2084:color_primaries=bt2020" \
-//       -c:v h264_videotoolbox -b:v 100k -pix_fmt yuv420p -colorspace bt2020nc \
-//       -movflags +write_colr pq.mp4
+//   V='-vf setparams=color_trc=smpte2084:color_primaries=bt2020'
+//   C="-c:v h264_videotoolbox -b:v 100k -pix_fmt yuv420p -colorspace bt2020nc -movflags +write_colr"
+//   ffmpeg -f rawvideo -pix_fmt rgb24 -s 64x48 -r 24 -i one.raw $V $C pq.mp4
 //
 // h264_videotoolbox is macOS-only, so REGENERATING clip.mp4 and pq.mp4 needs a mac — decoding them
 // does not, which is the half that matters: h264 decode is uniform on every target lain builds for

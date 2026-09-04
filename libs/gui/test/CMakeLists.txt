@@ -11,4 +11,4 @@ add_executable(test-gui
 target_compile_features(test-gui PRIVATE cxx_std_17)
 target_link_libraries(test-gui PRIVATE lain::gui Vulkan::Loader lain::warnings Catch2::Catch2WithMain)
 
-catch_discover_tests(test-gui TEST_PREFIX "(gui) ")
+catch_discover_tests(test-gui TEST_PREFIX "(gui) " ${LAIN_TEST_DL_PATHS})

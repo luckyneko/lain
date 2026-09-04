@@ -50,4 +50,4 @@ if(LAIN_IO_VIDEO_FFMPEG)
 	lain_ffmpeg_stage_runtime(test-flowview)
 endif()
 
-catch_discover_tests(test-flowview TEST_PREFIX "(flowview) ")
+catch_discover_tests(test-flowview TEST_PREFIX "(flowview) " ${LAIN_TEST_DL_PATHS})

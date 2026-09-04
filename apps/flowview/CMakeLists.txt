@@ -56,6 +56,15 @@ if(LAIN_IO_VIDEO_FFMPEG)
 	lain_ffmpeg_stage_runtime(flowview)
 endif()
 
+# And the loader itself, for the same reason: on Windows it is vulkan-1.dll, which the executable
+# resolves by name from its own directory. DL_PATHS answers this for the test binaries; an app that
+# ships has to carry it.
+if(WIN32)
+	add_custom_command(TARGET flowview POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:Vulkan::Loader>" "$<TARGET_FILE_DIR:flowview>"
+		COMMENT "Staging the Vulkan loader beside flowview")
+endif()
+
 # Driver-free unit tests for the app's testable internals (the undo history).
 if(LAIN_BUILD_TESTING)
 	add_subdirectory(test)

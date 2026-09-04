@@ -133,12 +133,17 @@ jobs:
             ${{ runner.os }}-deps-video${{ matrix.video }}-
             ${{ runner.os }}-deps-
 
-      # GLFW's X11/Wayland backends and the from-source Vulkan loader need these headers.
+      # xorg/wayland: GLFW's backends and the from-source Vulkan loader need these headers.
+      # libva: the Linux FFmpeg prebuilt is configured --enable-vaapi (its MANIFEST.txt says so),
+      # so libavcodec.so carries an unresolved dependency on libva that the linker has to satisfy
+      # in every consumer — without it, anything linking the video plugin fails with a page of
+      # undefined `va*` references (CI, 2026-09-04). It is the only flag in that build needing an
+      # external shared library: v4l2-m2m is kernel headers, and nvenc/ffnvcodec are dlopen'd.
       - name: Install Linux windowing dependencies
         if: ${{ matrix.linux_deps }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
+          sudo apt-get install -y xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols libva-dev
 
       # LAIN_BUILD_TESTING and LAIN_BUILD_APPS default ON for a top-level build, so the full
       # graph — libraries, plugins, the app stack and flowview — is what gets configured.
