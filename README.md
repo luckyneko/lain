@@ -1,4 +1,7 @@
 # lain
+
+[![CI](https://github.com/luckyneko/lain/actions/workflows/ci.yml/badge.svg)](https://github.com/luckyneko/lain/actions/workflows/ci.yml)
+
 A set of C++ libraries used to rapidly prototype ideas.
 
 ## Third-party licenses

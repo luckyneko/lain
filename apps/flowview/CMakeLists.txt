@@ -49,6 +49,13 @@ target_link_libraries(flowview
 # driver, the instance is invalid, and gui-mode trips GLFW's null-instance assert.
 acm_stage_vulkan_runtime(flowview)
 
+# Same problem, other dependency: Windows has no rpath, so with the FFmpeg plugin enabled its
+# DLLs must sit beside the executable or flowview will not start. The video test executables
+# already stage them; flowview links lain::io::video::codecs too and was missing it.
+if(LAIN_IO_VIDEO_FFMPEG)
+	lain_ffmpeg_stage_runtime(flowview)
+endif()
+
 # Driver-free unit tests for the app's testable internals (the undo history).
 if(LAIN_BUILD_TESTING)
 	add_subdirectory(test)

@@ -276,6 +276,49 @@ sits inside an inline group).
   **gui-mode live-verified 2026-08-11 — M7 is COMPLETE.**
 - Still out: file watching, prefab overrides, in-place template editing.
 
+### Update 2026-09-04 — CI: the tree meets a compiler other than Apple clang
+
+`lain` had **no CI at all**, and all 210 commits were built and verified on one macOS arm64 machine.
+`.github/workflows/ci.yml` (modelled on archimedes') now builds and tests on **Linux x64, macOS arm64
+and Windows x64**. Full landing notes in WORK.md's *Continuous integration* section. **The first run
+is a discovery run, not a gate** — CI is the only Windows and Linux compiler this project has, so the
+workflow is the porting *tool*; "CI is done" means three green platforms, not a merged yml, and the
+fix-forward backlog lives in WORK.md.
+
+- **Six jobs.** Four build legs — Linux Release, Linux Debug, macOS Release, Windows Release — plus a
+  `clang-format` job (over the repo's pinned clang-format 20, which exists precisely so CI and every
+  machine format identically) and an `add_subdirectory` smoke. `fail-fast: false` is load-bearing: a
+  red leg must not hide what the other three would have said.
+- **Release everywhere, Debug on the cheapest runner.** Release is what a fresh clone gets and is the
+  configuration that has rotted before (M10 slice 4 found every `#ifdef NDEBUG` enforcement test in
+  the repo had been unreachable for some time); Debug is a genuinely different test set.
+- **Video is ON everywhere EXCEPT macOS Release, and the asymmetry is the point.** The option
+  defaults OFF, so something must prove the default configuration builds — but every unknown worth
+  paying for lives off macOS: the `windows-x86_64` / `linux-x86_64` archive pins in
+  `cmake/addFFmpeg.cmake` had never been fetched by anyone, and the Windows DLL staging had never
+  run. macOS is the platform built by hand daily, so it carries the default config and the other
+  three carry the full one — both covered without a fifth leg.
+- **The `add_subdirectory` smoke proves two claims with one job**, because `LAIN_BUILD_TESTING` /
+  `_APPS` / `_FORMAT` all default to `${LAIN_NOT_SUBPROJECT}`: lain is consumable as a subdirectory,
+  *and* a headless consumer of `lain::flow` is not forced to vendor GLFW or ImGui. Verified locally
+  before pushing — it builds, runs, and pulls no GLFW, no ImGui and no Vulkan loader. It also makes
+  visible that `add_subdirectory(extern/archimedes)` is unconditional, so a headless consumer builds
+  a Vulkan renderer regardless.
+- **The GPU is deliberately not covered.** The one `[gpu]` test self-SKIPs behind `LAIN_GUI_SMOKE`
+  and `catch_discover_tests` sets `SKIP_RETURN_CODE=4`, so it reports skipped rather than failed;
+  `ensureGlfw`/`ensureInstance` are lazy, so the headless `[app]` tests need no driver. **gui-mode
+  remains eyeball-verified on a Metal machine and nothing about that changes.**
+- **`flowview` is smoked as a BINARY** (`--version`, `list`, `run`, `--licenses` on the video legs),
+  because `apps/flowview/test` compiles `runmode.cpp` into the test binary and so ctest structurally
+  never exercises the shipped executable — including whether it launches at all.
+- **Found and fixed here: `flowview` and `test-flowview` staged no FFmpeg DLLs.**
+  `lain_ffmpeg_stage_runtime()` was called by the two video test executables and by neither of them,
+  though both link `lain::io::video::codecs`; on Windows neither would have started. For
+  `test-flowview` that fails the **build**, not the tests, since `catch_discover_tests` runs the
+  executable at build time to enumerate cases. The same compiled-linked-unreachable shape as M5's bug
+  six — and the one thing fixed ahead of the discovery run, since it is a known omission rather than
+  anything a compiler had to tell us.
+
 ### Update 2026-09-04 — M10 slice 7b built: the sequence player and the palette (**M10 COMPLETE**)
 
 The second of slice 7's two commits, and the end of Milestone 10. Footage is now something you can

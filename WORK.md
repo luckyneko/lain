@@ -3573,6 +3573,115 @@ states; a writer records the tag when the format can state it, and refuses when 
   - Sabotage-verified both ways: reverting the allowlist to accept-by-default, and making
     `decodeMatrixFor` state BT.709, each fail the suite.
 
+## Continuous integration (built 2026-09-04)
+
+lain had **no CI at all** until now, and every one of its 210 commits was built and verified on a
+single macOS arm64 machine. The tree is written portably *by intent* — two files in 208 sources
+carry a `_WIN32`/`_MSC_VER` branch, there is not one POSIX header or `__attribute__` in the tree —
+but that intent had never been checked by a compiler other than Apple clang.
+`.github/workflows/ci.yml` is modelled on archimedes', and its purpose is the plain one: does the
+tree build, and do its tests pass, on the three platforms it claims.
+
+**The first run is a discovery run, not a gate.** CI is the only Windows and Linux compiler this
+project has, so the workflow is the porting *tool* rather than a check on porting already done.
+"CI is done" means three platforms green, not a merged yml. `fail-fast: false` is load-bearing for
+exactly that reason: a red leg must not hide what the other three would have said.
+
+### The matrix
+
+| leg | runner | build type | `LAIN_IO_VIDEO_FFMPEG` |
+|---|---|---|---|
+| Linux Release | `ubuntu-24.04` | Release | ON |
+| Linux Debug | `ubuntu-24.04` | Debug | ON |
+| macOS Release | `macos-15` (arm64) | Release | **OFF** |
+| Windows Release | `windows-2022` | Release | ON |
+
+Plus a `clang-format` job and an `add_subdirectory` smoke, both on Linux. Six jobs.
+
+- **Release everywhere, Debug on the cheapest runner** — archimedes' shape. Release is what a fresh
+  clone gets (`CMakeLists.txt` defaults `CMAKE_BUILD_TYPE` to it) and is the configuration that has
+  rotted before (M10 slice 4 found `alloc.cpp`'s unused static under `NDEBUG`, and with it that
+  *every* `#ifdef NDEBUG` enforcement test in the repo had been unreachable for some time). Debug is
+  not the same test set — the assert-based cases only exist there — so one leg carries it.
+- **Video ON everywhere except macOS Release, and the asymmetry is the point.** The option defaults
+  OFF, so something must prove the default configuration still builds; but every unknown worth
+  paying for lives off macOS. The `windows-x86_64` and `linux-x86_64` SHA-256 pins in
+  `cmake/addFFmpeg.cmake` had never been fetched by anyone, and the Windows DLL staging had never
+  run. macOS is also the one platform built by hand daily. So macOS carries the default config and
+  the other three carry the full one — both covered, without a fifth leg.
+- **`submodules: recursive`** is the one thing this workflow needs that archimedes' does not:
+  lain carries `extern/archimedes`, and without it the first `add_subdirectory` fails.
+- **`bash` on every leg, Windows included** (Git Bash ships on the runner), so one command shape
+  serves all three and the binary paths need no per-shell quoting. Windows uses the default Visual
+  Studio generator, which is multi-config: `--config` / `-C` carry the build type there and
+  `CMAKE_BUILD_TYPE` is ignored, so both are passed everywhere.
+- **ctest runs serially.** Twenty test files write into the shared `fs::temp_directory_path()`, so
+  `-j` invites collisions between them.
+- **The `flowview` binary is smoked separately from ctest** (`--version`, `list`, `run`, and
+  `--licenses` on the video legs). `apps/flowview/test` compiles `runmode.cpp` *into* the test
+  binary, so ctest structurally never exercises the shipped executable — including whether it
+  launches and resolves its dynamic dependencies, which on Windows with FFmpeg is the real question.
+
+### What CI deliberately does not cover
+
+**The GPU.** The one `[gpu]` test self-SKIPs unless `LAIN_GUI_SMOKE=1`, and `catch_discover_tests`
+sets `SKIP_RETURN_CODE=4`, so ctest reports it skipped rather than failed. `Application::ensureGlfw`
+and `ensureInstance` are lazy — only `createWindow` reaches them — so the headless `[app]` tests need
+no driver and no display. gui-mode stays what it has always been: eyeballed on a Metal-capable
+machine. A hosted runner has no driver worth trusting, and a windowed smoke that passes for the
+wrong reason is worse than one that never ran.
+
+### The `add_subdirectory` smoke proves two claims with one job
+
+`.github/subproject-smoke/` is a parent project that adds lain as a subdirectory and links
+`lain::flow` alone. Because `LAIN_BUILD_TESTING` / `_APPS` / `_FORMAT` all default to
+`${LAIN_NOT_SUBPROJECT}`, being a subproject turns the tests, the app stack and the Vulkan loader
+off by itself — so the one job checks both that lain is consumable that way *and* the claim
+`CMakeLists.txt` makes in a comment, that a headless consumer of `lain::flow` is not forced to
+vendor GLFW or ImGui. Verified locally before the first push: it builds, runs, and pulls no GLFW,
+no ImGui and no Vulkan loader — only the Vulkan headers archimedes compiles against.
+
+Note that `add_subdirectory(extern/archimedes)` is unconditional, so even a headless consumer builds
+a Vulkan renderer. That is a wart CI now makes visible rather than one it fixes.
+
+### Caching
+
+`actions/cache` over `.cache/fetch` — the downloaded **archives** only; the dependencies themselves
+(Catch2, GLFW, ImGui, imnodes, fmt, spdlog, libpng, zlib, libtiff, the Vulkan loader *from source*,
+MoltenVK, and all of archimedes) are recompiled per leg. One path covers everything because
+archimedes' own `addXXX.cmake` modules write to `${CMAKE_SOURCE_DIR}/.cache/fetch`, which resolves
+to lain's root when it is nested here. The video flag is in the key, since the FFmpeg archive is
+fetched only when it is ON.
+
+No compiler cache yet, deliberately: a stale one producing baffling errors is the last thing wanted
+while diagnosing genuine MSVC breakage. Read the real timings off the discovery run and add `ccache`
+via plain `actions/cache` in a follow-up if a leg is painfully slow.
+
+### Found while building this: `flowview` staged no FFmpeg DLLs
+
+`lain_ffmpeg_stage_runtime()` (`cmake/addFFmpeg.cmake`) was called by the two video test
+executables and by **neither** `flowview` nor `test-flowview`, both of which link
+`lain::io::video::codecs`. Windows has no rpath, so with the plugin enabled neither would have
+started. For `test-flowview` that is worse than it sounds: `catch_discover_tests` runs the
+executable at build time to enumerate its cases, so a missing DLL fails the **build**, with a
+message about test discovery rather than about a DLL. Both now stage, guarded by
+`LAIN_IO_VIDEO_FFMPEG` in the pattern `plugins/io/video/test` already used.
+
+This is the one thing fixed ahead of the discovery run rather than left for it. It is not a
+prediction about a compiler — it is a written-and-never-called function, the same
+compiled-linked-unreachable shape as M5's bug six and `File ▸ Reload Linked Groups`' missing menu
+item. Leaving it in would have spent a whole CI round trip re-learning something already known.
+
+### Fix-forward backlog
+
+Filled in from the discovery run. Expected, in rough order of likely volume:
+
+1. **MSVC `/W4 /WX`** across 208 sources — C4267/C4244 (`size_t` → narrower), C4100, C4996.
+2. **GCC's `-Wextra` is not clang's**, and libstdc++ 13+ does not transitively include `<cstdint>`
+   where libc++ does — plausible first-run breakage in `libs/core`'s headers.
+3. **`<windows.h>` `min`/`max` macros** arriving via GLFW and colliding with `std::min`/`std::max`.
+4. **The unverified FFmpeg archive pins** for `windows-x86_64` and `linux-x86_64`.
+
 ## Backlog (deferred — don't build speculatively)
 
 ### Tier A — when a real graph demands it

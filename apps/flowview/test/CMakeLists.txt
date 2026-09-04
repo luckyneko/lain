@@ -44,4 +44,10 @@ target_link_libraries(test-flowview PRIVATE
 	lain::warnings Catch2::Catch2WithMain
 )
 
+# catch_discover_tests RUNS this executable at build time to enumerate its cases, so on Windows a
+# missing FFmpeg DLL fails the BUILD rather than the test — stage them beside it.
+if(LAIN_IO_VIDEO_FFMPEG)
+	lain_ffmpeg_stage_runtime(test-flowview)
+endif()
+
 catch_discover_tests(test-flowview TEST_PREFIX "(flowview) ")

@@ -1,0 +1,211 @@
+# lain CI — does the tree build, and do its tests pass, on the three platforms it claims to
+# support? Modelled on archimedes' workflow, with the differences noted where they occur.
+#
+# WHAT THIS DOES NOT COVER, deliberately: the GPU. The one [gpu] test self-SKIPs unless
+# LAIN_GUI_SMOKE=1, and gui-mode is verified by hand on a Metal-capable machine. A hosted
+# runner has no driver worth trusting, and a windowed smoke that passes for the wrong reason
+# is worse than one that never ran.
+
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Its own job, not a step inside a build leg: formatting feedback should still arrive while a
+  # build leg is red. The binary is the repo's PINNED clang-format 20 (cmake/addclangformat.cmake),
+  # which exists precisely so CI and every developer machine format identically.
+  format:
+    name: clang-format
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache fetched tools
+        uses: actions/cache@v4
+        with:
+          path: .cache/fetch
+          key: ${{ runner.os }}-format-${{ hashFiles('.clang-format', '.clang-format-include', 'cmake/addclangformat.cmake') }}
+          restore-keys: |
+            ${{ runner.os }}-format-
+
+      - name: Configure formatter
+        run: >
+          cmake -S . -B build-format
+          -DLAIN_FORMAT=ON
+          -DLAIN_BUILD_TESTING=OFF
+          -DLAIN_BUILD_APPS=OFF
+
+      - name: Check formatting
+        run: cmake --build build-format --target format-check
+
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+
+    # bash everywhere, Windows included (Git Bash ships on the runner), so one command shape
+    # serves all three legs and the binary paths below need no per-shell quoting.
+    defaults:
+      run:
+        shell: bash
+
+    strategy:
+      # Never cancel siblings: a platform-specific failure is the whole point of this matrix, and
+      # one red leg must not hide what the other three would have told us.
+      fail-fast: false
+      matrix:
+        include:
+          # Release is what a fresh clone gets (CMakeLists defaults CMAKE_BUILD_TYPE to it) and is
+          # the configuration that has rotted before. Debug rides along on the cheapest runner
+          # because it is a genuinely different test set — the assert-based and NDEBUG-guarded
+          # enforcement cases only exist there.
+          #
+          # LAIN_IO_VIDEO_FFMPEG is ON everywhere EXCEPT macOS Release, and that asymmetry is
+          # deliberate. The option defaults OFF, so something must prove the default configuration
+          # still builds; but every unknown worth paying for lives off macOS — the windows-x86_64
+          # and linux-x86_64 archive pins in cmake/addFFmpeg.cmake have never been fetched by
+          # anyone, and the Windows DLL staging has never been exercised. macOS is also the one
+          # platform built by hand daily. So macOS carries the default config and the rest carry
+          # the full one, and both are covered without a fifth leg.
+          - name: Linux Release
+            os: ubuntu-24.04
+            build_type: Release
+            video: 'ON'
+            linux_deps: true
+            flowview: build/apps/flowview/flowview
+
+          - name: Linux Debug
+            os: ubuntu-24.04
+            build_type: Debug
+            video: 'ON'
+            linux_deps: true
+            flowview: build/apps/flowview/flowview
+
+          - name: macOS Release
+            os: macos-15
+            build_type: Release
+            video: 'OFF'
+            linux_deps: false
+            flowview: build/apps/flowview/flowview
+
+          # Visual Studio's generator is multi-config, so --config / -C carry the build type here
+          # and CMAKE_BUILD_TYPE is ignored; both are passed so one command shape serves every leg.
+          # That also puts the executables under a per-config subdirectory.
+          - name: Windows Release
+            os: windows-2022
+            build_type: Release
+            video: 'ON'
+            linux_deps: false
+            flowview: build/apps/flowview/Release/flowview.exe
+
+    steps:
+      # submodules: recursive is the one thing this workflow needs that archimedes' does not —
+      # lain carries extern/archimedes, and without it the very first add_subdirectory fails.
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Downloaded ARCHIVES only; the dependencies themselves are recompiled from source each run.
+      # One path covers everything: archimedes' own addXXX.cmake modules write to
+      # ${CMAKE_SOURCE_DIR}/.cache/fetch, which resolves to lain's root when it is nested here.
+      # The video flag is in the key because the FFmpeg archive is fetched only when it is ON.
+      - name: Cache fetched dependencies
+        uses: actions/cache@v4
+        with:
+          path: .cache/fetch
+          key: ${{ runner.os }}-deps-video${{ matrix.video }}-${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', 'plugins/**/CMakeLists.txt', 'extern/archimedes/cmake/*.cmake') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-video${{ matrix.video }}-
+            ${{ runner.os }}-deps-
+
+      # GLFW's X11/Wayland backends and the from-source Vulkan loader need these headers.
+      - name: Install Linux windowing dependencies
+        if: ${{ matrix.linux_deps }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
+
+      # LAIN_BUILD_TESTING and LAIN_BUILD_APPS default ON for a top-level build, so the full
+      # graph — libraries, plugins, the app stack and flowview — is what gets configured.
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DLAIN_IO_VIDEO_FFMPEG=${{ matrix.video }}
+
+      - name: Build
+        run: cmake --build build --parallel --config ${{ matrix.build_type }}
+
+      # Serial on purpose: twenty test files write into the shared fs::temp_directory_path(),
+      # so -j invites collisions between them. A [gpu] SKIP reports as a ctest skip, not a
+      # failure — catch_discover_tests sets SKIP_RETURN_CODE=4.
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -C ${{ matrix.build_type }}
+
+      # ctest links runmode.cpp into the test binary, so it never exercises the SHIPPED
+      # executable. This does: that flowview launches at all, and resolves its dynamic
+      # dependencies — which on Windows with FFmpeg ON is the real question.
+      - name: Smoke the flowview binary
+        run: |
+          ${{ matrix.flowview }} --version
+          ${{ matrix.flowview }} list
+          ${{ matrix.flowview }} run
+
+      - name: Report third-party licences
+        if: ${{ matrix.video == 'ON' }}
+        run: ${{ matrix.flowview }} --licenses
+
+  # Proves TWO claims with one job, because LAIN_BUILD_TESTING / _APPS / _FORMAT all default to
+  # ${LAIN_NOT_SUBPROJECT}: that lain is consumable via add_subdirectory, and that a headless
+  # consumer of lain::flow is not forced to vendor the GUI stack or build a Vulkan loader.
+  # Linux only — this is CMake wiring, not compiler behaviour, so once is enough.
+  subproject:
+    name: add_subdirectory smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # A different cache path from the legs above: CMAKE_SOURCE_DIR is the parent project here,
+      # so the fetched archives land under it instead of under lain's root.
+      - name: Cache fetched dependencies
+        uses: actions/cache@v4
+        with:
+          path: .github/subproject-smoke/.cache/fetch
+          key: ${{ runner.os }}-subproject-${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.github/subproject-smoke/*') }}
+          restore-keys: |
+            ${{ runner.os }}-subproject-
+
+      # lain's add_subdirectory(extern/archimedes) is unconditional, so archimedes builds even in
+      # a headless consumer build and these are still wanted.
+      - name: Install Linux windowing dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
+
+      - name: Configure parent project
+        run: >
+          cmake -S .github/subproject-smoke -B build-subproject
+          -DCMAKE_BUILD_TYPE=Release
+          -DLAIN_SOURCE_DIR=${{ github.workspace }}
+
+      - name: Build parent project
+        run: cmake --build build-subproject --parallel
