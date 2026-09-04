@@ -3,6 +3,7 @@
 #include "../appcontext.h"
 #include "../flowviewapp.h" // ctx.app->reevaluate()
 #include "../groupnav.h"	// editableAt — a linked group's nodes belong to its template
+#include "../imagecanvas.h" // previewFit / thumbnailBox (the shared thumbnail sizing)
 #include "../parameditors.h"
 #include "../previewcache.h"
 #include "canvasstate.h" // selectedNodes
@@ -148,33 +149,35 @@ namespace flowview
 
 				auto port = [&](const char* tag, const flow::Port& p, bool output)
 				{
-					// An image port carrying a value shows extent + its thumbnail (uploaded + cached
-					// by the preview cache, keyed by the port's stable id); everything else — CPU
-					// values and the empty slot — is text via the shared describe() pathway. The
-					// value comes from the EVALUATION; the port only declares its type.
-					const flow::PortValue& value = evaluation.value(flow::PortAddress{id, p.id()});
-					if (!value.empty() && p.type() == typeid(image::Image))
+					// EVERY port is one line of text through the shared describe() pathway — the
+					// declared type renders its own value, so there is no per-type branch here. A port
+					// whose value the view registry can poster ALSO gets a thumbnail, which the
+					// preview cache uploaded and keyed by the port's stable id. The value comes from
+					// the EVALUATION; the port only declares its type.
+					const flow::PortAddress address{id, p.id()};
+					const flow::PortValue& value = evaluation.value(address);
+					gui::Text("    %s %s: %s", tag, p.name().c_str(), evaluation.describe(address).c_str());
+
+					const PinKey key{ctx.activePath, address};
+					if (const gui::Texture* tex = previews.find(key))
 					{
-						const image::Image& img = value.get<image::Image>();
-						gui::Text("    %s %s: %s %dx%d", tag, p.name().c_str(), std::string(p.typeName()).c_str(), img.width(), img.height());
-						const PinKey key{ctx.activePath, flow::PortAddress{id, p.id()}};
-						if (const gui::Texture* tex = previews.find(key))
-						{
-							// Fits the pane's width, capped in height, aspect preserved — no size
-							// setting: the Preview pane is where you go for a proper look.
-							gui::Image(*tex, previewFit(img.extent(), thumbnailBox())); // Texture -> ImTextureRef implicitly
-							if (gui::IsItemClicked())
-								ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
-						}
-						if (output) // outputs are the results you'd export; inputs are just what was fed in
-						{
-							gui::PushID(ctx.canvas.pin({id, p.id()}, output));
-							renderImageSave(ctx, key, img);
-							gui::PopID();
-						}
-						return;
+						// Fits the pane's width, capped in height, aspect preserved — no size
+						// setting: the Preview pane is where you go for a proper look. The aspect
+						// comes from the TEXTURE, since the value need not be an image at all (a
+						// sequence's thumbnail is a decoded poster frame).
+						gui::Image(*tex, previewFit(tex->extent(), thumbnailBox())); // Texture -> ImTextureRef implicitly
+						if (gui::IsItemClicked())
+							ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 					}
-					gui::Text("    %s %s: %s", tag, p.name().c_str(), evaluation.describe(flow::PortAddress{id, p.id()}).c_str());
+					// Saving stays image-only: it writes the value, not the thumbnail, and only an
+					// Image has a still-image encoder behind it. Outputs are the results you'd
+					// export; inputs are just what was fed in.
+					if (output && value.holds<image::Image>())
+					{
+						gui::PushID(ctx.canvas.pin(address, output));
+						renderImageSave(ctx, key, value.get<image::Image>());
+						gui::PopID();
+					}
 				};
 
 				for (std::size_t i = 0; i < node.inputCount(); ++i)

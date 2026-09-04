@@ -11,6 +11,7 @@ add_executable(test-flowview
 	test_pinkey.cpp
 	test_framepattern.cpp
 	test_sweep.cpp
+	test_valueviews.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/undo.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/groupnav.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/canvasids.cpp"
@@ -20,18 +21,24 @@ add_executable(test-flowview
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/scene.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/dump.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/clibinders.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/valueviews.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/imagecanvas.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/imageview.cpp"
 )
 
 target_compile_features(test-flowview PRIVATE cxx_std_17)
 target_include_directories(test-flowview PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 # lain::flow::serialize: groupnav's layout tree is an EditorTree (the serialize layer's type).
 # lain::image + lain::io::data::codecs: graphio names image::Image / ColorRGBf and reads/writes json.
-# Still driver-free — graphio touches the file system, but no device and no window.
+# lain::gui + Vulkan::Loader: the value views draw with ImGui, so they link it (the same recipe
+# libs/gui's own tests use). Still driver-free — the POSTER half is what the tests call, and no
+# gui::Context is ever constructed; graphio touches the file system, but no device and no window.
 target_link_libraries(test-flowview PRIVATE
 	lain::data lain::flow lain::flow::serialize lain::flow-example lain::image
 	lain::io lain::io::sequence lain::media::serialize lain::io::image lain::io::data::codecs lain::io::image::codecs
 	lain::io::video::codecs
 	lain::log lain::string
+	lain::gui Vulkan::Loader
 	lain::warnings Catch2::Catch2WithMain
 )
 

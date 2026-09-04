@@ -14,9 +14,16 @@ namespace lain::flow
 
 namespace flowview
 {
-	// One uploaded GPU thumbnail per ready image port, keyed by its stable PinKey. The panes
+	class ValueViews;
+
+	// One uploaded GPU thumbnail per ready VIEWABLE port, keyed by its stable PinKey. The panes
 	// (Inspector / Interface / Preview) draw from it; only edits refresh it, because
 	// acm::Texture::upload is a synchronous, stalling submit that must not run every frame.
+	//
+	// What "viewable" means is the ValueViews registry's answer, not this class's: a port's value is
+	// handed to it and what comes back is the still image that stands for that value — the image
+	// itself for an image::Image (aliased, so nothing is copied), a decoded poster frame for a
+	// frame sequence. A type with no view registered simply has no thumbnail.
 	//
 	// Ownership: the MainWindow owns one of these and a lain::gui::Context; refresh() borrows
 	// the context to (re)allocate descriptors. The cached gui::Texture handles must be released
@@ -28,13 +35,18 @@ namespace flowview
 		// that may have changed images / added / removed ports).
 		void markDirty() { m_dirty = true; }
 
-		// Rebuild the cache from the graph iff it was marked dirty: upsert a thumbnail per ready
-		// image port (upload in place when the size/format matches, else reallocate via `ctx`) and
-		// prune thumbnails whose port is gone (the erased gui::Texture reclaims its descriptor).
-		// `path` is the level `graph` sits at — it goes into every key this builds, so entries from
-		// two levels (or two evaluations of one definition) can never be mistaken for each other.
+		// Rebuild the cache from the graph iff it was marked dirty: upsert a thumbnail per port whose
+		// value `views` can poster (upload in place when the size/format matches, else reallocate via
+		// `ctx`) and prune thumbnails whose port is gone (the erased gui::Texture reclaims its
+		// descriptor). `path` is the level `graph` sits at — it goes into every key this builds, so
+		// entries from two levels (or two evaluations of one definition) can never be mistaken for
+		// each other.
+		//
+		// Producing a poster may DECODE (a sequence's is its first frame), which is affordable only
+		// because this runs on an edit and not per frame — the same reason the upload is deferred.
 		void refreshIfDirty(const GraphPath& path, const lain::flow::Graph& graph,
-							const lain::flow::Evaluation& evaluation, lain::gui::Context& ctx);
+							const lain::flow::Evaluation& evaluation, const ValueViews& views,
+							lain::gui::Context& ctx);
 
 		// The valid thumbnail for `key`, or nullptr when there is none (missing or not yet
 		// uploaded) — folds the "found and valid" check the panes all repeat.

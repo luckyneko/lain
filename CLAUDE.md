@@ -276,6 +276,33 @@ sits inside an inline group).
   **gui-mode live-verified 2026-08-11 — M7 is COMPLETE.**
 - Still out: file watching, prefab overrides, in-place template editing.
 
+### Update 2026-09-04 — M10 slice 7a built: the GUI view registry, with no new behaviour
+
+The first of slice 7's two commits. CONTEXT.md's deferred **"GUI view"** seam is built — flowview's
+**`ValueViews`**, a `type_index` registry, sibling of `ParamEditors`: that one is how a type is
+WRITTEN, this is how it is SHOWN. Only `image::Image` is registered, so behaviour is unchanged and the
+existing suite is the regression test. `ctest` **648/648** (+3), warning-clean, format-check clean,
+both headless paths unchanged. Full landing notes in WORK.md M10.
+
+- **Two halves**, because a value appears in two places with two lifetimes: a **poster** (the still
+  standing for it in a list, uploaded into the edit-refreshed `PreviewCache`) and a **view** (the
+  Preview pane rendering, owning zoom — and at 7b a playback position and a decoded frame, state that
+  changes with **no edit at all**, which is why it cannot live in that cache).
+- **A poster is a `PortValue`, not an `Image`** — so the image case **aliases its own payload**
+  (`PortValue::alias`), because a thumbnail of an image IS that image and a by-value poster would
+  charge every image port a deep pixel copy per edit. Sabotage-verified on an address comparison.
+- **Five hardcoded `typeid(image::Image)` branches are gone.** Every port is one line of
+  `Evaluation::describe()` plus a thumbnail iff the cache has one. `ValueView::summary` was designed
+  and **dropped**: `describe()` already answers it for every type, and a per-view string would be a
+  second answer to a question flow already answers.
+- **New `gui::Texture::extent()`, and it is not a convenience**: the panes sized thumbnails from the
+  value's image extent, which 7b's sequence pin does not have. The aspect belongs to what was uploaded.
+- **The image bind gesture moved into `ParamEditors`**, which deleted the last type branch from
+  `interfacepane.cpp` — it has to land here, or removing the branch would regress the gesture.
+- **`ImageCanvas`** is the extracted zoom/pan/fit widget, split into `drawImage` + `drawToolbar` so a
+  view owns its layout; `previewFit` / `thumbnailBox` moved out of `AppContext` to sit beside it,
+  which is also what keeps the new tests driver-free.
+
 ### Update 2026-09-03 — codec colour-tag policy audited and settled (ADR-0020)
 
 The question was what each reader and writer actually *thinks* it reads and writes, and whether that

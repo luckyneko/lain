@@ -102,21 +102,6 @@ namespace flowview
 		std::optional<std::size_t> returnDepth;
 	};
 
-	// The tallest a list thumbnail is drawn. A HEIGHT cap is what bounds the size in practice —
-	// width follows from the aspect ratio for anything but a panoramic image, which the pane's own
-	// width then catches.
-	inline constexpr float kThumbnailMaxHeight = 160.0f;
-
-	// Fit `extent` inside `box`, preserving aspect ratio; the size to draw at. The one place that
-	// arithmetic lives — a list thumbnail and the Preview pane's fit-to-pane are the same operation
-	// with a different box. Scales UP as well as down, so a small image still fills a list row and the
-	// rows keep an even rhythm. Zero extent or box yields zero.
-	lain::math::Vec2f previewFit(lain::math::Vec2i extent, lain::math::Vec2f box);
-
-	// The box a LIST thumbnail fits into: the current pane's remaining width, capped in height. Call
-	// while the target pane is current.
-	lain::math::Vec2f thumbnailBox();
-
 	// The shared model the panes read and write — graph-adjacent metadata plus the cross-pane
 	// signals (one pane sets a request, another consumes it) and the document / pending-load
 	// state. Deliberately plain data + trivial setters: it is not a manager, just the "chairs"

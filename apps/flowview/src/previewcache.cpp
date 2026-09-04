@@ -1,5 +1,7 @@
 #include "previewcache.h"
 
+#include "valueviews.h"
+
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
@@ -13,7 +15,8 @@ namespace flowview
 	using namespace lain;
 
 	void PreviewCache::refreshIfDirty(const GraphPath& path, const flow::Graph& graph,
-									  const flow::Evaluation& evaluation, gui::Context& ctx)
+									  const flow::Evaluation& evaluation, const ValueViews& views,
+									  gui::Context& ctx)
 	{
 		if (!m_dirty)
 			return;
@@ -22,10 +25,13 @@ namespace flowview
 		std::set<PinKey> live;
 		const auto refresh = [&](flow::NodeId id, const flow::Port& p)
 		{
-			const flow::PortValue& value = evaluation.value(flow::PortAddress{id, p.id()});
-			if (value.empty() || p.type() != typeid(image::Image))
+			// The registry decides what a value looks like as a still — this loop no longer knows
+			// that an image is the thing worth uploading. An unviewable type, an empty slot, or a
+			// poster that could not be produced (a frame that would not decode) all yield nothing.
+			const flow::PortValue poster = views.poster(evaluation.value(flow::PortAddress{id, p.id()}));
+			if (!poster.holds<image::Image>())
 				return;
-			const image::Image& img = value.get<image::Image>();
+			const image::Image& img = poster.get<image::Image>();
 			if (!img.valid())
 				return;
 			const PinKey key{path, flow::PortAddress{id, p.id()}};
@@ -42,7 +48,7 @@ namespace flowview
 			for (std::size_t o = 0; o < node.outputCount(); ++o)
 				refresh(id, node.output(o));
 		}
-		// Drop previews whose pin is gone (or no longer a ready image); the erased
+		// Drop previews whose pin is gone (or no longer posters anything); the erased
 		// gui::Texture reclaims its descriptor.
 		for (auto it = m_textures.begin(); it != m_textures.end();)
 		{

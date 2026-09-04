@@ -40,8 +40,9 @@ namespace flowview
 		guiConfig.iniFilename = iniPath.string();
 		guiConfig.docking = true;
 		m_guiCtx = std::make_unique<gui::Context>(window.app(), window, guiConfig);
-		registerBuiltinParamEditors(m_paramEditors);
-		m_canvas.init(); // canvas colour style + Alt-drag panning (needs the imnodes context above)
+		registerBuiltinParamEditors(m_paramEditors); // how a type is written
+		registerBuiltinValueViews(m_valueViews);	 // ... and how it is shown
+		m_canvas.init();							 // canvas colour style + Alt-drag panning (needs the imnodes context above)
 
 		// What carried over from the last run: put the file dialogs back where they were, and reopen the
 		// graph that was open — the load is deferred to the end of the first frame like every graph swap,
@@ -155,7 +156,7 @@ namespace flowview
 			m_ctx.loadIssues.clear();
 		}
 
-		m_previews.refreshIfDirty(drawnPath, graph, evaluation, *m_guiCtx);
+		m_previews.refreshIfDirty(drawnPath, graph, evaluation, m_valueViews, *m_guiCtx);
 
 		// The per-node Inspector — reads (and param-edits) the now post-edit graph.
 		m_inspector.draw(m_ctx, graph, editable, evaluation, m_previews, m_paramEditors);
@@ -164,7 +165,7 @@ namespace flowview
 		m_interface.draw(m_ctx, graph, editable, evaluation, m_previews, m_paramEditors);
 
 		// Preview + Issues panels — docked windows the default layout tiles alongside the Graph.
-		m_preview.draw(m_ctx, graph, evaluation, m_previews);
+		m_preview.draw(m_ctx, graph, evaluation, m_previews, m_valueViews, *m_guiCtx);
 		m_issues.draw(m_ctx, graph, evaluation);
 
 		// The unsaved-changes guard for New (opened by requestNew when m_ctx.dirty).
@@ -273,7 +274,12 @@ namespace flowview
 		m_ctx.session.lastDialogDir = gui::lastDirectory();
 		saveSession(m_ctx.session);
 
-		m_previews.clear(); // release the preview descriptors while the ImGui backend lives
-		m_guiCtx.reset();	// then destroy the backend, before the device tears down
+		// Release every GPU texture while the ImGui backend still lives — a gui::Texture reclaims its
+		// descriptor there. The Preview pane's view holds one of its own (a player decodes its current
+		// frame), and pane members are destroyed AFTER this window's Context, so waiting for its
+		// destructor would touch a backend that is already gone.
+		m_previews.clear();
+		m_preview.releaseView();
+		m_guiCtx.reset(); // then destroy the backend, before the device tears down
 	}
 } // namespace flowview

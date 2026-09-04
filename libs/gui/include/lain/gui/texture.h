@@ -1,5 +1,7 @@
 #pragma once
 
+#include <lain/math/types.h> // Vec2i (extent)
+
 #include <archimedes/acmTexture.h> // acm::Texture (owned)
 #include <imgui.h>				   // ImTextureID / ImTextureRef
 
@@ -35,6 +37,11 @@ namespace lain::gui
 
 		bool valid() const { return m_id != ImTextureID{}; }
 		operator ImTextureRef() const { return m_id; } // draw via gui::Image(tex, size)
+
+		// The uploaded size in pixels ({0, 0} when empty). What a caller fitting this texture into a
+		// box needs: the ASPECT belongs to what was uploaded, not to whatever value it was made from
+		// — a poster frame decoded out of a frame sequence has no image on the port to ask.
+		lain::math::Vec2i extent() const;
 
 		// Re-upload pixels into the existing texture, in place, when `image` matches this
 		// texture's current extent + format — reusing the texture and its descriptor (no

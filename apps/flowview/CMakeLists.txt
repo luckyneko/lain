@@ -13,6 +13,9 @@ add_executable(flowview
 	src/session.cpp
 	src/undo.cpp
 	src/previewcache.cpp
+	src/valueviews.cpp
+	src/imagecanvas.cpp
+	src/imageview.cpp
 	src/panes/menubar.cpp
 	src/panes/issuespane.cpp
 	src/panes/previewpane.cpp

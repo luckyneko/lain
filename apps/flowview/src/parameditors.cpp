@@ -6,7 +6,9 @@
 #include <lain/gui/gui.h>
 #include <lain/image/color.h>
 #include <lain/image/colorspace.h>
+#include <lain/image/image.h>
 #include <lain/image/pixelformat.h>
+#include <lain/io/image/load.h>
 
 #include <filesystem>
 #include <string>
@@ -138,6 +140,37 @@ namespace flowview
 		return committed || browsed;
 	}
 
+	// An IMAGE is picked, not typed: the editor opens the native file dialog and loads what comes
+	// back. It lives here rather than in the Interface pane — where it was an `if (type == image)`
+	// branch beside the fall-through to this registry — because ADR-0005's rule is that the TYPE
+	// chooses the widget, and a pane deciding it for one type is how a second type (a frame sequence)
+	// ends up with no way to be bound at all.
+	//
+	// A failed load is said out loud rather than silently leaving the old value: the user picked a
+	// file and nothing happened otherwise.
+	static bool editImage(const std::string& label, flow::PortValue& value)
+	{
+		gui::PushID(label.c_str());
+		bool bound = false;
+		if (gui::Button("Bind file..."))
+		{
+			if (const auto path = gui::openFile("Open image", {}, {{"Images", {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff"}}}))
+			{
+				if (auto loaded = io::image::load(path->string()))
+				{
+					value.set<image::Image>(std::move(*loaded));
+					bound = true;
+				}
+				else
+				{
+					gui::message("Load failed", "Could not load: " + path->string(), true);
+				}
+			}
+		}
+		gui::PopID();
+		return bound;
+	}
+
 	static bool editColorRGBf(const std::string& label, flow::PortValue& value)
 	{
 		const image::ColorRGBf color = currentOr<image::ColorRGBf>(value);
@@ -190,6 +223,7 @@ namespace flowview
 		editors.add(typeid(std::string), &editString);
 		editors.add(typeid(std::filesystem::path), &editPath);
 		editors.add(typeid(image::ColorRGBf), &editColorRGBf);
+		editors.add(typeid(image::Image), &editImage);
 		editors.add(typeid(image::PixelFormat), &editEnum<image::PixelFormat>);
 		editors.add(typeid(image::ColorSpace), &editEnum<image::ColorSpace>);
 	}

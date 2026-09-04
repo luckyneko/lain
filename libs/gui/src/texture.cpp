@@ -45,6 +45,14 @@ namespace lain::gui
 			ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(m_id));
 	}
 
+	lain::math::Vec2i Texture::extent() const
+	{
+		if (!valid())
+			return lain::math::Vec2i{0, 0};
+		const acm::Extent2D extent = m_texture.extent();
+		return lain::math::Vec2i{static_cast<int>(extent.width), static_cast<int>(extent.height)};
+	}
+
 	bool Texture::upload(const lain::image::Image& image)
 	{
 		if (!valid() || !image.valid())

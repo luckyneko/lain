@@ -9,6 +9,7 @@
 #include "panes/previewpane.h"
 #include "parameditors.h"
 #include "previewcache.h"
+#include "valueviews.h"
 
 #include <lain/app/windowdelegate.h>
 #include <lain/gui/context.h>
@@ -38,7 +39,8 @@ namespace flowview
 	private:
 		std::unique_ptr<lain::gui::Context> m_guiCtx;
 		ParamEditors m_paramEditors; // type-keyed param editors (registered in onInit)
-		PreviewCache m_previews;	 // one uploaded thumbnail per image port
+		ValueViews m_valueViews;	 // type-keyed value views: how a type is SHOWN (registered in onInit)
+		PreviewCache m_previews;	 // one uploaded thumbnail per viewable port
 		GraphPane m_canvas;			 // the node canvas + Nodes palette (owns the canvas style)
 		MenuBarPane m_menuBar;		 // File / Add / View menu + shortcuts (its own pane)
 		IssuesPane m_issues;		 // the Issues panel (validation + load issues)

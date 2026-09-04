@@ -3279,6 +3279,60 @@ missing **capability**.
   **removed when it changed nothing measurable** — unverified code does not go in. Exact declaration
   fidelity is pinned where it belongs, in the plugin's 6-frame round trip.
 
+**Slice 7a is built (2026-09-04)** — the slice is two commits (the registry and the rewiring, then the
+sequence made first-class). 7a lands the deferred **GUI view registry** and moves the cache and three
+panes onto it, with **no new behaviour**: the only type registered is `image::Image`, so the existing
+suite is the regression test. `ctest` **648/648** (+3), warning-clean, format-check clean, both
+headless paths unchanged.
+
+- **The registry has TWO HALVES, and that is the whole design.** A value is shown in two places with
+  two different lifetimes: a **poster** (the still that stands for it in a list, uploaded into the
+  edit-refreshed `PreviewCache`) and a **view** (the Preview pane rendering, which owns state — zoom,
+  and at 7b a playback position and a decoded frame). That state changes with **no edit at all**, so
+  it cannot live in a cache rebuilt on edits; and a poster must not be re-produced per drawn frame,
+  because producing one may decode. One registry, `ValueViews`, keyed by `type_index`, sibling of
+  `ParamEditors`: that one is how a type is WRITTEN, this is how it is SHOWN.
+- **A poster is a `PortValue`, not an `image::Image`** — the one non-obvious signature, and it is
+  what lets the image case **alias its own payload** (`PortValue::alias`, ADR-0014's mechanism). The
+  thumbnail of an image IS that image; returning one by value would charge every image port a deep
+  pixel copy on every edit, which is exactly the cost M5 slice 1 took off the edge path.
+  Sabotage-verified on an **address** comparison.
+- **Five hardcoded `typeid(image::Image)` branches retired**, which is the measure of the commit: the
+  cache chose what to upload, the Inspector and Interface chose what drew a thumbnail, the Preview
+  pane refused everything else outright, and the Interface pane's bind gesture was image-only. Every
+  port is now one line of `Evaluation::describe()` — the PortType capability every pane already read
+  — plus a thumbnail iff the cache has one. Saving stays image-only, and says why: it writes the
+  VALUE, not the thumbnail.
+- **`ValueView::summary` was designed and dropped.** The Preview header needed a type-specific tail,
+  and `describe()` already answers it for every type through the capability flow owns — a per-view
+  string would have been a second answer to a question already answered, and would have had to be
+  written again for every new viewable type. The header now reads `tint [a1b2] | result : Image 64x64
+  RGB8 sRGB Straight`, which is MORE than the old hand-built one, from less code.
+- **`gui::Texture::extent()` is new, and it is not a convenience.** The panes sized a thumbnail from
+  `value.get<image::Image>().extent()` — impossible for the sequence pin 7b adds, whose value is not
+  an image at all. The aspect belongs to **what was uploaded**, so the texture is the only honest
+  source, and `ImageView` stopped reaching back into the value for a fact its own texture holds.
+- **The image bind gesture moved into `ParamEditors`, which deleted the last type branch in a pane.**
+  The file dialog and `io::image::load` came verbatim out of `interfacepane.cpp`, where they were an
+  `if (type == image::Image)` sitting beside a fall-through to this registry — the pane deciding by
+  type what ADR-0005 says the type decides for itself. It has to land here rather than at 7b, or
+  removing the branch would regress the gesture.
+- **`ImageCanvas` is the extracted zoom/pan/fit widget** (cursor-anchored wheel zoom, drag panning,
+  the logarithmic percent toolbar), split into `drawImage` + `drawToolbar` so a view owns its own
+  layout — 7b's player puts a transport row between them. **`previewFit` / `thumbnailBox` moved out
+  of `AppContext`** to sit beside it: they were in the shared model only because there was nowhere
+  else, and the move is also what keeps the new tests driver-free, since `appcontext.cpp` reaches the
+  app delegate and imnodes while the thumbnail arithmetic reaches nothing.
+- **A lifetime hazard the design creates, and where it is discharged:** the Preview pane now owns its
+  view, and at 7b that view owns a GPU texture — which must be released while its Context's ImGui
+  backend is alive. Pane members are destroyed AFTER the window's Context, so `MainWindow::onShutdown`
+  calls `releaseView()` beside `PreviewCache::clear()`. Missing it is a crash on exit, not a leak.
+- **New tests (3, `[views]`), one sabotage, caught.** The alias is pinned by an **address**
+  comparison (make it copy → fails); plus the aliased poster outliving the slot it came from, an
+  unregistered type postering nothing and making no view, and two view instances being distinct.
+  `test-flowview` gains `lain::gui` + `Vulkan::Loader` (libs/gui's own recipe) and stays driver-free:
+  no `gui::Context` is ever constructed.
+
 #### Queued: `core::Uri` — an identity, not a path algebra (raised 2026-09-01, build after slice 5)
 
 A uri is a bare `std::string` everywhere it matters — `io::read` / `write` / `openStream`,

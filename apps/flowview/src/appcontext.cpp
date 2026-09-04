@@ -7,34 +7,14 @@
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h> // setName (unique default titles)
 #include <lain/gui/dock.h>	// activateWindowTab (bring the Graph tab forward)
-#include <lain/gui/gui.h>	// GetContentRegionAvail (the thumbnail box)	// activateWindowTab (bring the Graph tab forward)
 #include <lain/gui/nodes.h> // imnodes selection + grid-space placement
 #include <lain/math/types.h>
 
-#include <algorithm>
 #include <string>
 
 namespace flowview
 {
 	using namespace lain;
-
-	math::Vec2f previewFit(math::Vec2i extent, math::Vec2f box)
-	{
-		const float w = static_cast<float>(extent.x);
-		const float h = static_cast<float>(extent.y);
-		if (w <= 0.0f || h <= 0.0f || box.x <= 0.0f || box.y <= 0.0f)
-			return math::Vec2f{0.0f, 0.0f};
-		// The smaller ratio is the one that fits BOTH ways: width-limited for a wide image, and
-		// height-limited for a tall one. Drawing at {side, side} (as this used to) squashed every
-		// non-square image into a square.
-		const float scale = std::min(box.x / w, box.y / h);
-		return math::Vec2f{w * scale, h * scale};
-	}
-
-	math::Vec2f thumbnailBox()
-	{
-		return math::Vec2f{gui::GetContentRegionAvail().x, kThumbnailMaxHeight};
-	}
 
 	void AppContext::locateNode(flow::NodeId id)
 	{

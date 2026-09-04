@@ -3,6 +3,7 @@
 #include "../appcontext.h"
 #include "../flowviewapp.h" // ctx.app->reevaluate()
 #include "../groupnav.h"	// editableAt — a linked group's interface belongs to its template
+#include "../imagecanvas.h" // previewFit / thumbnailBox (the shared thumbnail sizing)
 #include "../parameditors.h"
 #include "../previewcache.h"
 #include "imagesave.h"
@@ -15,10 +16,8 @@
 #include <lain/flow/node.h>
 #include <lain/flow/port.h>
 #include <lain/flow/porttyperegistry.h> // portTypeKeys
-#include <lain/gui/dialogs.h>
 #include <lain/gui/gui.h>
 #include <lain/image/image.h>
-#include <lain/io/image/load.h>
 #include <lain/math/types.h>
 
 #include <string>
@@ -171,48 +170,30 @@ namespace flowview
 				const flow::PortAddress address{node.id(), pin.id()};
 				const PinKey key{ctx.activePath, address};
 				const flow::PortValue& bound = evaluation.value(address);
-				if (const gui::Texture* tex = previews.find(key); tex && bound.holds<image::Image>())
+				if (const gui::Texture* tex = previews.find(key))
 				{
-					gui::Image(*tex, previewFit(bound.get<image::Image>().extent(), thumbnailBox()));
+					// The aspect comes from the TEXTURE: a bound value need not be an image (a
+					// sequence's thumbnail is a decoded poster frame), so there may be no extent on
+					// the value to ask for.
+					gui::Image(*tex, previewFit(tex->extent(), thumbnailBox()));
 					if (gui::IsItemClicked())
 						ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 				}
 
-				// Host binding is ROOT-ONLY — BOTH arms below bind, so the gate wraps them together.
-				// Inside a group this pin's value is driven by the parent's edges (the plan's entry step
-				// overwrites it every run), so a bound value would be silently discarded. Below the root
-				// this panel edits the INTERFACE — names and ± pins, which is how a group's own ports are
-				// shaped — and does not bind it.
-				if (!atRoot)
+				// Host binding is ROOT-ONLY. Inside a group this pin's value is driven by the parent's
+				// edges (the plan's entry step overwrites it every run), so a bound value would be
+				// silently discarded. Below the root this panel edits the INTERFACE — names and ± pins,
+				// which is how a group's own ports are shaped — and does not bind it.
+				//
+				// EVERY type binds through the same registry: an image opens a file picker, a frame
+				// sequence opens footage, a scalar edits in place. That the picker used to be an
+				// `if (type == image)` here and the scalars an else was the pane deciding by type what
+				// ADR-0005 says the type decides for itself — and it is why a FrameSequence boundary
+				// input read "(no editor)" and could not be bound at all. Read the currently bound
+				// value from the EVALUATION, edit a detached copy, and bind on change (which stores it
+				// and requests the boundary node's recompute).
+				if (atRoot)
 				{
-					// nothing to bind here
-				}
-				else if (pin.type() == typeid(image::Image))
-				{
-					if (gui::Button("Bind file..."))
-					{
-						if (const auto path = gui::openFile("Open image", {},
-															{{"Images", {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff"}}}))
-						{
-							if (auto image = io::image::load(path->string()))
-							{
-								flow::PortValue v;
-								v.set<image::Image>(std::move(*image));
-								evaluation.bind(address, std::move(v));
-								changed = true;
-							}
-							else
-							{
-								gui::message("Load failed", "Could not load: " + path->string(), true);
-							}
-						}
-					}
-				}
-				else
-				{
-					// A scalar boundary input: edit its value by type via the shared registry. Read the
-					// currently bound value from the EVALUATION, edit a detached copy, and bind on
-					// change (which stores it and requests the boundary node's recompute).
 					flow::PortValue current = bound;
 					if (editors.render("##value", pin.type(), current))
 					{
@@ -262,9 +243,9 @@ namespace flowview
 				}
 				else
 				{
-					if (const gui::Texture* tex = previews.find(key); tex && delivered.holds<image::Image>())
+					if (const gui::Texture* tex = previews.find(key))
 					{
-						gui::Image(*tex, previewFit(delivered.get<image::Image>().extent(), thumbnailBox()));
+						gui::Image(*tex, previewFit(tex->extent(), thumbnailBox()));
 						if (gui::IsItemClicked())
 							ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 					}
