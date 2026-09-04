@@ -20,10 +20,15 @@ namespace
 	struct Streamy
 	{
 	};
-	// Declared only — has_ostream inspects it in an unevaluated context, so it is never
-	// odr-used; [[maybe_unused]] silences clang's -Wunneeded-internal-declaration for this
-	// internal-linkage operator (pre-existing, unrelated to the archimedes update).
-	[[maybe_unused]] std::ostream& operator<<(std::ostream&, const Streamy&);
+	// has_ostream inspects this in an unevaluated context, so it is never odr-used and the body
+	// never runs. It still needs one: GCC rejects an internal-linkage function that is declared
+	// and never defined outright (-Wunused-function, "declared static but never defined"), and
+	// [[maybe_unused]] does not cover that case — it excuses a definition that goes uncalled,
+	// which is what clang's -Wunneeded-internal-declaration wanted. Defining it satisfies both.
+	[[maybe_unused]] std::ostream& operator<<(std::ostream& os, const Streamy&)
+	{
+		return os;
+	}
 
 	struct Plain
 	{

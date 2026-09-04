@@ -9,7 +9,10 @@ if(NOT DEFINED PROJECT_NAME)
 	set(LAIN_NOT_SUBPROJECT ON)
 endif()
 
-project(lain LANGUAGES CXX VERSION 0.1.0)
+# C as well as CXX: the build compiles C throughout (libpng, zlib, libtiff, stb, and the Vulkan
+# loader), and the sibling repos declare both. Declaring it here is also this tree's first probe at
+# the Windows loader link failure (CI 2026-09-04), where MASM-defined trampolines went unassembled.
+project(lain LANGUAGES CXX C VERSION 0.1.0)
 
 # Default build release.
 if(NOT CMAKE_BUILD_TYPE)

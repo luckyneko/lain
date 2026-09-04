@@ -75,10 +75,16 @@ namespace lain::io::image::png
 	// a level knob is deferred (WORK.md M3: encoder config).
 	static bool encodePngInto(const lain::image::Image& image, std::vector<std::uint8_t>& out)
 	{
-		int colorType = 0;
-		int bitDepth = 0;
-		if (!pngTypeFor(image.pixelFormat(), colorType, bitDepth))
+		int pngColorType = 0;
+		int pngBitDepth = 0;
+		if (!pngTypeFor(image.pixelFormat(), pngColorType, pngBitDepth))
 			return false;
+
+		// volatile because both are read AFTER the setjmp below: only a volatile automatic
+		// object is guaranteed to still hold its value once a longjmp has returned through
+		// this frame. GCC's -Wclobbered says the same thing, and said it first (CI, 2026-09-04).
+		const volatile int colorType = pngColorType;
+		const volatile int bitDepth = pngBitDepth;
 
 		png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
 		if (png == nullptr)
@@ -95,7 +101,10 @@ namespace lain::io::image::png
 		// is null-initialised, so the ERROR HANDLER below — which runs only when a later
 		// png_error longjmps *back* to this setjmp, not in program order — free()s it safely
 		// whether or not the jump happened before it was allocated.
-		png_bytep* rows = nullptr;
+		// volatile for the reason above, and here it is not theoretical: `rows` is written
+		// after the setjmp and read by the handler, which is exactly the case the standard
+		// leaves indeterminate for a non-volatile local.
+		png_bytep* volatile rows = nullptr;
 		if (setjmp(png_jmpbuf(png)) != 0)
 		{
 			std::free(rows);

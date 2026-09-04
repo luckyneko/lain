@@ -85,7 +85,10 @@ namespace lain::io::image::png
 			return false;
 		}
 
-		png_bytep* rows = nullptr;
+		// volatile: `rows` is written after the setjmp and read by the handler below, and only
+		// a volatile automatic object is guaranteed to keep its value across a longjmp — a
+		// non-volatile one is indeterminate there, so the free() could be handed a stale pointer.
+		png_bytep* volatile rows = nullptr;
 		if (setjmp(png_jmpbuf(png)) != 0)
 		{
 			std::free(rows);

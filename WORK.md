@@ -3672,15 +3672,59 @@ prediction about a compiler — it is a written-and-never-called function, the s
 compiled-linked-unreachable shape as M5's bug six and `File ▸ Reload Linked Groups`' missing menu
 item. Leaving it in would have spent a whole CI round trip re-learning something already known.
 
-### Fix-forward backlog
+### The discovery run (2026-09-04)
 
-Filled in from the discovery run. Expected, in rough order of likely volume:
+Run 33881484863, the first time this tree met a compiler other than Apple clang. **clang-format and
+macOS Release passed** — 626/626 in the default video-off configuration, matching the count recorded
+for that config, plus a clean binary smoke — which is what says the workflow itself is wired right
+and the rest are real findings. The other four legs failed, on **three** distinct causes.
 
-1. **MSVC `/W4 /WX`** across 208 sources — C4267/C4244 (`size_t` → narrower), C4100, C4996.
-2. **GCC's `-Wextra` is not clang's**, and libstdc++ 13+ does not transitively include `<cstdint>`
-   where libc++ does — plausible first-run breakage in `libs/core`'s headers.
-3. **`<windows.h>` `min`/`max` macros** arriving via GLFW and colliding with `std::min`/`std::max`.
-4. **The unverified FFmpeg archive pins** for `windows-x86_64` and `linux-x86_64`.
+1. **GCC rejects a declared-but-never-defined internal-linkage function.**
+   `libs/meta/test/test_traits.cpp` declares `operator<<(std::ostream&, const Streamy&)` with no
+   body, because `has_ostream` only inspects it in an unevaluated context. clang accepts that and
+   wanted `[[maybe_unused]]`; GCC errors with *"declared static but never defined"*
+   (`-Werror=unused-function`), which `[[maybe_unused]]` does **not** cover — that attribute
+   excuses a definition that goes uncalled. Fixed by giving it a body, which satisfies both.
+   Blocked both Linux legs at ~2 minutes.
+
+2. **libpng's `setjmp`, flagged by both compilers, and one of the two was right.** GCC's
+   `-Werror=clobbered` on `pngwriter.cpp`, MSVC's **C4611** on both `pngreader.cpp` and
+   `pngwriter.cpp`. The audit they forced found a genuine latent bug rather than a style
+   complaint: **`rows` is written after the `setjmp` and read by the error handler**, and a
+   non-volatile automatic object's value is *indeterminate* once a longjmp has returned through
+   the frame — so the handler's `free()` could be handed a stale pointer. It is now `volatile` in
+   both files, as are the writer's `colorType`/`bitDepth`, which are read after the jump.
+   Interestingly GCC pointed at those two rather than at `rows`, so the warning that fired was the
+   less serious half of what was there.
+   C4611 gets a per-target suppression instead, because no change to the code can answer it: MSVC
+   warns that a longjmp skips C++ destructors whenever `setjmp` appears in a C++ TU, whatever the
+   frame holds. The reasoning sits in `plugins/io/image/png/CMakeLists.txt` beside the flag —
+   lain's idiom, as in `libs/app/test`.
+   Hit by the subproject smoke first, which builds no tests and so got past `libs/meta`; both
+   Linux legs died on finding 1 before reaching it.
+
+3. **The Vulkan loader will not link on Windows — OPEN.** 750 unresolved `vkdev_ext0…N` from
+   `dev_ext_trampoline.obj`: the MASM-defined trampolines are not assembled into the loader. What
+   is established so far — MASM *was* found and enabled (`ml64.exe`, "The ASM_MASM compiler
+   identification is MSVC"), and the loader's own assembler check *passed*, since `gen_defines.asm`
+   is generated and that only happens inside that branch, which means `unknown_ext_chain_masm.asm`
+   is in the target's sources. MSBuild simply never assembled it. **archimedes' own Windows CI
+   builds this same loader green**, so the cause is something about lain's context rather than the
+   loader or the runner.
+   The one structural difference found so far is that lain declared `project(lain LANGUAGES CXX)`
+   where archimedes declares `LANGUAGES CXX C`. lain's build compiles C throughout (libpng, zlib,
+   libtiff, stb, the loader itself), so declaring it is defensible on its own terms; whether it is
+   also the fix is what the next run answers. **If it is not, this is likely archimedes' to fix**,
+   since `acm_require_vulkan_runtime()` owns how the loader is built — and it would then be the
+   first thing lain's CI has found in the submodule rather than in lain.
+
+### Still to come
+
+Both Linux legs stopped at finding 1 and Windows stopped at 2 and 3, so each may be standing in
+front of more of the same. Expected behind them, unchanged from the pre-run prediction: MSVC's
+C4267/C4244/C4100 across 208 sources, further GCC/clang `-Wextra` divergence, `<windows.h>`'s
+`min`/`max` macros arriving via GLFW, and the never-fetched `windows-x86_64` / `linux-x86_64`
+FFmpeg archive pins, which nothing has reached yet.
 
 ## Backlog (deferred — don't build speculatively)
 

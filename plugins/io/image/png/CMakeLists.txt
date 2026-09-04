@@ -20,6 +20,15 @@ target_link_libraries(io-image-png
 	PRIVATE PNG::png lain::warnings
 )
 
+# libpng reports errors by longjmp, so this is the one library in the tree that calls setjmp, and
+# MSVC's C4611 fires on that alone — it warns that a longjmp would skip C++ destructors, whatever
+# the frame actually holds, so no change to the code can answer it. Both readers and writers are
+# written for exactly this: the only object living across the jump is a malloc'd row-pointer array
+# (no destructor to skip), it is null-initialised so the handler frees it safely whether or not the
+# allocation had happened, and it is volatile so its value survives the jump. Suppressed here, per
+# target and with the reasoning, rather than in the sources — lain's idiom, as in libs/app/test.
+target_compile_options(io-image-png PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/wd4611>)
+
 # Advertise this codec to the generated aggregator (plugins/io/image/CMakeLists.txt).
 # The entry is the alias target *and* the namespace — the aggregator links it and, from
 # the same string, derives its <lain/io/image/png/register.h> include and registerCodec()
