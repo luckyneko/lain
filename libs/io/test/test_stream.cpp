@@ -143,7 +143,7 @@ TEST_CASE("sequential reads continue where the last one stopped", "[stream]")
 	REQUIRE(first == content);
 }
 
-TEST_CASE("a read past the end is short, then empty — not a failure", "[stream]")
+TEST_CASE("a read past the end is short, then empty - not a failure", "[stream]")
 {
 	const TempFile file(ramp(4));
 

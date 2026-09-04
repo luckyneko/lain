@@ -76,6 +76,21 @@ if(LAIN_BUILD_TESTING OR LAIN_BUILD_APPS)
 	# Stated rather than arranged: reordering these two so ASM_MASM is enabled last would also
 	# work today, but positional fixes to a language-resolution rule nobody can see are how this
 	# silently comes back. A no-op everywhere but MSVC, where the collision exists.
+	# archimedes' objects call vk* directly, so anything linking archimedes needs the loader AFTER
+	# it on the link line. Saying so here is what makes that true everywhere: listing the loader in
+	# an executable's own target_link_libraries does not, because CMake emits direct dependencies
+	# before transitive ones, and archimedes arrives transitively (through lain::gui or lain::app).
+	# In test-flowview that put the loader at position 34 and libarchimedes.a at 109 — fine for
+	# Apple's linker, which resolves shared libraries globally, but GNU ld links left to right and
+	# Ubuntu defaults to --as-needed, so it dropped the loader before ever seeing the references
+	# and the link failed on vkDestroyBuffer (CI, 2026-09-04).
+	#
+	# archimedes leaves this to consumers by design, since it cannot know whether one wants the
+	# vendored loader. By here that choice is made: acm_require_vulkan_runtime() has just run.
+	if(TARGET archimedes AND TARGET Vulkan::Loader)
+		target_link_libraries(archimedes INTERFACE Vulkan::Loader)
+	endif()
+
 	# Catch2 runs each test executable at BUILD time to enumerate its cases, and ctest runs them
 	# again afterwards. On Windows the loader is a DLL (vulkan-1.dll) that nothing puts on the
 	# path, so any test linking it died with STATUS_DLL_NOT_FOUND in both phases — reported as a

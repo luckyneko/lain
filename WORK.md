@@ -3772,6 +3772,33 @@ supplies that the other two standard libraries do not.
    archimedes' own suite solves it; `flowview` gets the loader staged beside it instead, since an app
    that ships has to carry it rather than be handed a path.
 
+### Run 4 (2026-09-05) — Windows reaches the test suite
+
+Both previous fixes held, and the Windows leg **built and ran ctest for the first time**: 658 tests
+discovered, 655 passing. What is left is small and, in both cases, not what it first looked like.
+
+9. **Three test FAILURES on Windows that are not test failures.** Each reported *"No test cases
+   matched"* — ctest passes a test's name back to the executable as a filter, and three names
+   contain a UTF-8 em dash that does not survive that round trip on Windows (the log shows it
+   arriving as `G��`). Catch2 then matches nothing, and "no tests ran" is a failure.
+   Renamed to ASCII. Prose keeps its em dashes; a test NAME is an argument that crosses a process
+   boundary, so it stays ASCII — a scan confirms these were the only three non-ASCII names in the
+   tree. The Windows leg is itself the guard against a fourth.
+
+10. **`test-flowview` alone would not link on Linux**, on `vkDestroyBuffer` and
+    `vkGetInstanceProcAddr` from `libarchimedes.a` — while `flowview`, `test-app`, `test-flow` and
+    `test-gui`, which link the same two things, were all fine. The link line says why: the loader
+    sat at position 34 and `libarchimedes.a` at 109. **CMake emits direct dependencies before
+    transitive ones**, and in that target archimedes arrives transitively through `lain::gui` while
+    the loader is listed directly — so no ordering of that target's own `target_link_libraries`
+    could have fixed it. Apple's linker resolves shared libraries globally and never noticed; GNU ld
+    links left to right and Ubuntu defaults to `--as-needed`, so it dropped the loader before
+    meeting a single reference to it.
+    Fixed by stating the dependency that actually exists — `target_link_libraries(archimedes
+    INTERFACE Vulkan::Loader)`, once, after `acm_require_vulkan_runtime()` — so CMake orders the
+    loader after archimedes in every target on every platform. archimedes leaves this to consumers
+    because it cannot know whether one wants the vendored loader; by that line the choice is made.
+
 ### Still to come
 
 Each leg still stops at its first error, so more may be queued behind these. Notably the prediction

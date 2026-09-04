@@ -108,7 +108,7 @@ TEST_CASE("Value-level round-trip is idempotent", "[serialize]")
 	REQUIRE(once == twice); // toValue . fromValue . toValue == toValue
 }
 
-TEST_CASE("the type is the schema — a mismatch is nullopt, not a coerced value", "[serialize]")
+TEST_CASE("the type is the schema - a mismatch is nullopt, not a coerced value", "[serialize]")
 {
 	REQUIRE_FALSE(fromValue<int>(Value("not a number")).has_value());
 	REQUIRE_FALSE(fromValue<demo::Vec3>(Value(3)).has_value()); // scalar where an object is due

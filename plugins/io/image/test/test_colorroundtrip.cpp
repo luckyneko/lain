@@ -52,7 +52,7 @@ static std::vector<std::string> enabledFormats()
 	return keys;
 }
 
-TEST_CASE("every codec either keeps a ColorSpace or refuses it — never silently drops one",
+TEST_CASE("every codec either keeps a ColorSpace or refuses it - never silently drops one",
 		  "[io-image-codecs][color]")
 {
 	// The property, stated once. Before ADR-0020 EVERY cell of this table failed: no image writer
