@@ -139,6 +139,15 @@ function(_lain_ffmpeg_add_library name)
 	set_property(TARGET FFmpeg::${name} APPEND PROPERTY
 		INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_ffmpeg_root}/include")
 
+	# libavutil/common.h #errors out without these when included from C++. They gate the
+	# UINT64_C / INT64_MAX families in <stdint.h>, which C99 says a C++ translation unit only
+	# gets when it asks — glibc still honours that, while libc++ defines them unconditionally,
+	# so this is invisible on macOS and fatal on Linux (CI, 2026-09-04). It belongs on the
+	# imported target rather than on lain's own: it is a condition of INCLUDING FFmpeg's
+	# headers, so every consumer needs it and none should have to remember.
+	set_property(TARGET FFmpeg::${name} APPEND PROPERTY
+		INTERFACE_COMPILE_DEFINITIONS __STDC_CONSTANT_MACROS __STDC_LIMIT_MACROS __STDC_FORMAT_MACROS)
+
 	if(WIN32)
 		# Windows ships the DLLs in bin/ with both MSVC (.lib, beside them) and MinGW
 		# (.dll.a, in lib/) import libraries; pick by toolchain rather than guessing.

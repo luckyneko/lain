@@ -64,6 +64,24 @@ include(addmagicenum)  # enum reflection behind lain::meta
 # and pulls MoltenVK on macOS.
 if(LAIN_BUILD_TESTING OR LAIN_BUILD_APPS)
 	acm_require_vulkan_runtime()
+
+	# Say which assembler owns the loader's .asm, because in this tree two languages claim that
+	# extension. The loader enables ASM_MASM for its unknown-function trampolines; libpng then
+	# declares `project(libpng LANGUAGES C ASM)` unconditionally, and CMake resolves a source's
+	# language by extension across every ENABLED language, so plain ASM — whose Windows
+	# "assembler" is cl.exe — took the file instead. Nothing errored: the trampolines were simply
+	# never assembled, and the loader failed to link with 750 unresolved vkdev_ext symbols (CI,
+	# 2026-09-04). archimedes never sees this because it builds no libpng.
+	#
+	# Stated rather than arranged: reordering these two so ASM_MASM is enabled last would also
+	# work today, but positional fixes to a language-resolution rule nobody can see are how this
+	# silently comes back. A no-op everywhere but MSVC, where the collision exists.
+	if(MSVC AND TARGET vulkan)
+		get_target_property(_lain_loader_dir vulkan SOURCE_DIR)
+		set_source_files_properties("${_lain_loader_dir}/unknown_ext_chain_masm.asm"
+			TARGET_DIRECTORY vulkan
+			PROPERTIES LANGUAGE ASM_MASM)
+	endif()
 endif()
 
 if(LAIN_BUILD_TESTING)

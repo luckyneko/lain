@@ -3703,28 +3703,47 @@ and the rest are real findings. The other four legs failed, on **three** distinc
    Hit by the subproject smoke first, which builds no tests and so got past `libs/meta`; both
    Linux legs died on finding 1 before reaching it.
 
-3. **The Vulkan loader will not link on Windows — OPEN.** 750 unresolved `vkdev_ext0…N` from
-   `dev_ext_trampoline.obj`: the MASM-defined trampolines are not assembled into the loader. What
-   is established so far — MASM *was* found and enabled (`ml64.exe`, "The ASM_MASM compiler
-   identification is MSVC"), and the loader's own assembler check *passed*, since `gen_defines.asm`
-   is generated and that only happens inside that branch, which means `unknown_ext_chain_masm.asm`
-   is in the target's sources. MSBuild simply never assembled it. **archimedes' own Windows CI
-   builds this same loader green**, so the cause is something about lain's context rather than the
-   loader or the runner.
-   The one structural difference found so far is that lain declared `project(lain LANGUAGES CXX)`
-   where archimedes declares `LANGUAGES CXX C`. lain's build compiles C throughout (libpng, zlib,
-   libtiff, stb, the loader itself), so declaring it is defensible on its own terms; whether it is
-   also the fix is what the next run answers. **If it is not, this is likely archimedes' to fix**,
-   since `acm_require_vulkan_runtime()` owns how the loader is built — and it would then be the
-   first thing lain's CI has found in the submodule rather than in lain.
+3. **The Vulkan loader would not link on Windows — DIAGNOSED, and it was lain's, not
+   archimedes'.** 750 unresolved `vkdev_ext0…N` from `dev_ext_trampoline.obj`: the MASM
+   trampolines were never assembled. Nothing errored, which is what made it hard — MASM was
+   found and enabled, the loader's own assembler check passed, and `unknown_ext_chain_masm.asm`
+   was in the target's sources the whole time.
+
+   **Two languages claim the `.asm` extension in this tree.** The loader enables `ASM_MASM`
+   for its trampolines; libpng — configured afterwards — declares `project(libpng LANGUAGES C
+   ASM)` unconditionally, with no option to turn it off. CMake resolves a source file's language
+   by extension across every *enabled* language, so plain `ASM`, whose Windows "assembler" is
+   `cl.exe`, took the file. The trampolines were silently dropped from the build.
+
+   The discriminator was in the configure logs: archimedes prints *"The ASM_MASM compiler
+   identification is MSVC"* and then, at build time, *"Assembling …
+   unknown_ext_chain_masm.asm"*; lain prints **both** ASM and ASM_MASM identifications and never
+   assembles anything. archimedes never meets this because it builds no libpng — so the earlier
+   guess that this might be archimedes' to fix was wrong, and so was the first probe
+   (`LANGUAGES CXX C`, which changed nothing and stays only because it is true of the build).
+
+   Fixed by **stating** the language of the loader's `.asm` (`set_source_files_properties(…
+   LANGUAGE ASM_MASM)`, MSVC-only) rather than by reordering the two so `ASM_MASM` is enabled
+   last. Reordering would work today, but a positional fix to a resolution rule nobody can see
+   is how this comes back silently.
+
+4. **FFmpeg's headers need `__STDC_CONSTANT_MACROS` from C++ — new, and macOS could never have
+   found it.** `libavutil/common.h` `#error`s without it. The macro gates the `UINT64_C` family
+   in `<stdint.h>`, which C99 says a C++ translation unit only gets when it asks: glibc still
+   honours that, libc++ defines them unconditionally. So the video plugin has never compiled
+   anywhere but macOS, and both Linux legs stopped there once finding 1 stopped blocking them.
+   The definitions go on the **imported FFmpeg targets** in `cmake/addFFmpeg.cmake`, not on
+   lain's own: this is a condition of including FFmpeg's headers, so every consumer needs it and
+   none should have to remember.
 
 ### Still to come
 
-Both Linux legs stopped at finding 1 and Windows stopped at 2 and 3, so each may be standing in
-front of more of the same. Expected behind them, unchanged from the pre-run prediction: MSVC's
-C4267/C4244/C4100 across 208 sources, further GCC/clang `-Wextra` divergence, `<windows.h>`'s
-`min`/`max` macros arriving via GLFW, and the never-fetched `windows-x86_64` / `linux-x86_64`
-FFmpeg archive pins, which nothing has reached yet.
+Each leg has been stopping at its first error, so every one of these may still be standing in
+front of more of the same — the second run got the subproject smoke to green and turned up two
+findings the first run never reached. Expected behind them, unchanged from the pre-run
+prediction: MSVC's C4267/C4244/C4100 across 208 sources, further GCC/clang `-Wextra` divergence,
+`<windows.h>`'s `min`/`max` macros arriving via GLFW, and the `windows-x86_64` archive pin, which
+nothing has fetched yet — the Linux one now has.
 
 ## Backlog (deferred — don't build speculatively)
 
