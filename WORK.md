@@ -3573,7 +3573,7 @@ states; a writer records the tag when the format can state it, and refuses when 
   - Sabotage-verified both ways: reverting the allowlist to accept-by-default, and making
     `decodeMatrixFor` state BT.709, each fail the suite.
 
-## Continuous integration (built 2026-09-04)
+## Continuous integration (built 2026-09-04, **GREEN on all three platforms 2026-09-05**)
 
 lain had **no CI at all** until now, and every one of its 210 commits was built and verified on a
 single macOS arm64 machine. The tree is written portably *by intent* — two files in 208 sources
@@ -3799,16 +3799,49 @@ discovered, 655 passing. What is left is small and, in both cases, not what it f
     loader after archimedes in every target on every platform. archimedes leaves this to consumers
     because it cannot know whether one wants the vendored loader; by that line the choice is made.
 
-### Still to come
+### Green (2026-09-05, run 33890635630)
 
-Each leg still stops at its first error, so more may be queued behind these. Notably the prediction
-made before any of this ran has been wrong about the *kind* of finding: not one MSVC narrowing
-warning (C4267/C4244/C4100) has appeared, nor a `<windows.h>` `min`/`max` collision. What has
-actually turned up, five times out of eight, is **something libc++ provides that libstdc++ and
-MSVC's STL do not** — transitive includes, `__STDC_CONSTANT_MACROS`, and the diagnostics clang
-simply does not implement. Both archive pins have now been fetched and neither was wrong. Windows
-has still never reached the link stage for lain's own executables, so the narrowing warnings may
-yet be there; they just are not what has been costing the round trips.
+Five runs from the first red one. **lain builds and passes its tests on Linux x64, macOS arm64 and
+Windows x64.**
+
+| leg | tests | time |
+|---|---|---|
+| Linux Release (video ON) | 658/658 | 5m |
+| Linux Debug (video ON) | 652/652 | 3m |
+| macOS Release (video OFF) | 626/626 | 17m |
+| Windows Release (video ON) | 658/658 | 7m |
+| clang-format | pass | 41s |
+| add_subdirectory smoke | pass | 2m |
+
+**The Debug/Release split earned its place immediately**: Linux Release runs 658 where Debug runs
+652, and those six are the `NDEBUG`-guarded enforcement cases — the class this file recorded as
+having gone unreachable without anyone noticing. A Release-only matrix would not have run the
+asserts; a Debug-only one would not have run those six.
+
+**What the port actually cost: ten findings, and the prediction was wrong about their kind.** Not
+one MSVC narrowing warning (C4267/C4244/C4100) appeared, and not one `<windows.h>` `min`/`max`
+collision — the two things predicted loudest before any of it ran. What actually turned up, six
+times out of ten, was **something libc++ supplies that libstdc++ and MSVC's STL do not**: a
+transitively-included `<string>`, `__STDC_CONSTANT_MACROS`, and three diagnostics clang does not
+implement at all (`-Wclobbered`, `-Wcomment`, and GCC's rejection of a declared-but-undefined
+internal-linkage function). The remaining four were each a different kind of invisible: two
+languages claiming the `.asm` extension, a DLL nothing put on the path, a link order only
+`--as-needed` enforces, and an em dash that could not survive a trip through argv.
+
+**Two were real bugs rather than portability noise**, and both had been in the tree unnoticed:
+`rows` crossing a `setjmp` without `volatile` in both PNG codecs, where a `longjmp` could have
+handed `free()` a stale pointer on any platform; and `flowview` never staging the FFmpeg DLLs it
+links. Neither is a Windows or Linux problem — they were simply never *asked* about before.
+
+**The macOS leg is the slowest by a factor of three** (17m against Linux's 3–5m), because it builds
+MoltenVK on top of everything else. If PR latency ever matters, that is the leg to attack, and a
+compiler cache is the untried lever — no caching beyond the fetched archives is in place yet.
+
+### Not covered, and deliberately
+
+The GPU. gui-mode is still eyeball-verified by the repo owner on a Metal-capable machine; the one
+`[gpu]` test self-SKIPs, and ctest reports it skipped rather than passed. Nothing here changes that,
+and nothing here should be read as covering it.
 
 ## Backlog (deferred — don't build speculatively)
 

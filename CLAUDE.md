@@ -276,7 +276,7 @@ sits inside an inline group).
   **gui-mode live-verified 2026-08-11 — M7 is COMPLETE.**
 - Still out: file watching, prefab overrides, in-place template editing.
 
-### Update 2026-09-04 — CI: the tree meets a compiler other than Apple clang
+### Update 2026-09-05 — CI: lain builds and tests on Linux, macOS and Windows (**GREEN**)
 
 `lain` had **no CI at all**, and all 210 commits were built and verified on one macOS arm64 machine.
 `.github/workflows/ci.yml` (modelled on archimedes') now builds and tests on **Linux x64, macOS arm64
@@ -318,6 +318,30 @@ fix-forward backlog lives in WORK.md.
   executable at build time to enumerate cases. The same compiled-linked-unreachable shape as M5's bug
   six — and the one thing fixed ahead of the discovery run, since it is a known omission rather than
   anything a compiler had to tell us.
+- **GREEN on all three platforms 2026-09-05**, five runs after the first: Linux Release 658/658,
+  Linux Debug 652/652, macOS Release 626/626 (video off), Windows Release 658/658, plus the format
+  and subproject jobs. **The Debug/Release split earned its place immediately** — Release runs six
+  more tests than Debug, and those six are the `NDEBUG`-guarded enforcement cases this file recorded
+  as having gone unreachable unnoticed.
+- **The port took ten findings, and the prediction was wrong about their kind.** Not one MSVC
+  narrowing warning and not one `<windows.h>` `min`/`max` collision — the two predicted loudest. Six
+  of ten were instead **something libc++ supplies that libstdc++ and MSVC's STL do not**: a
+  transitively-included `<string>`, `__STDC_CONSTANT_MACROS`, and three diagnostics clang does not
+  implement (`-Wclobbered`, `-Wcomment`, GCC's rejection of a declared-but-undefined
+  internal-linkage function). The rest were each invisible in their own way: two languages claiming
+  the `.asm` extension (libpng's `project(LANGUAGES C ASM)` silently taking the Vulkan loader's MASM
+  trampolines, which then failed to link with 750 unresolved symbols), a DLL nothing put on the
+  path, a link order only GNU ld's `--as-needed` enforces, and an em dash that could not survive a
+  trip through argv into a ctest filter.
+- **Two were real bugs, not portability noise, and both predate this work.** `rows` crossed a
+  `setjmp` without `volatile` in both PNG codecs — a `longjmp` could have handed `free()` a stale
+  pointer on *any* platform; and `flowview` never staged the FFmpeg DLLs it links. Neither is a
+  Windows or Linux problem. They had simply never been asked about.
+- **Standing consequence worth knowing: a Linux consumer of the video plugin needs `libva`
+  installed.** The prebuilt is configured `--enable-vaapi`, so `libavcodec.so` carries a link-time
+  dependency every consumer must satisfy.
+- **Still not covered, deliberately: the GPU.** gui-mode remains eyeball-verified on a Metal
+  machine, and the `[gpu]` test still self-SKIPs. Nothing in CI should be read as covering it.
 
 ### Update 2026-09-04 — M10 slice 7b built: the sequence player and the palette (**M10 COMPLETE**)
 
