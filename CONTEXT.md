@@ -742,11 +742,23 @@ Rendering a port's value splits by *purpose*; don't conflate them.
   through it. This is **the extension point for per-type facilities**: a new one becomes
   a field on `PortType`, never another functor on every `Port`.
 
-- **GUI view** *(deferred)* — showing a value richly (a texture *thumbnail*, not the
-  string `"acm::Texture 64x64"`) is a **separate, larger seam**: a registry of viewers
-  keyed by type, living in `lain::gui` or the app. Not built yet. Today each adapter
-  keeps its own texture branch (cli reads back pixels, the inspector draws a thumbnail)
-  and falls through to `Port::describe()` for everything else.
+- **GUI view** — showing a value richly (a *thumbnail*, a *player*, not the string
+  `"500 frames · 3840x2160"`) is a separate seam from `describe()`: flowview's
+  **`ValueViews`**, a registry of viewers keyed by `type_index`, sibling of `ParamEditors`
+  (that one is how a type is WRITTEN, this is how it is SHOWN). Built at M10 slice 7, with
+  two customers: `image::Image` and `media::FrameSequence`. It has **two halves**, because a
+  value is shown in two places with two different lifetimes:
+  - a **poster** — the still image that stands for the value in a *list* (an Inspector or
+    Interface thumbnail). It goes into the host's preview cache, which is rebuilt on an
+    **edit**. A poster is a `PortValue` rather than an `Image`, so the image case can *alias*
+    its own payload and cost a refcount bump; a sequence's is its first frame, decoded.
+  - a **view** — the full pane rendering, which owns **view state**: an image's zoom and pan,
+    a player's position and its own decoded frame. That state changes with **no edit at all**,
+    which is precisely why it cannot live in the cache.
+
+  A type with no view registered is text through `describe()`, exactly as before — that
+  fall-through is the seam's default, not its absence. The cli remains its own adapter (it
+  reads back pixels); nothing in `flow` knows any of this exists.
 
 ## Color & display — the non-encoding swapchain
 

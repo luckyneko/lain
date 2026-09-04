@@ -3333,6 +3333,69 @@ headless paths unchanged.
   `test-flowview` gains `lain::gui` + `Vulkan::Loader` (libs/gui's own recipe) and stays driver-free:
   no `gui::Context` is ever constructed.
 
+**Slice 7b is built (2026-09-04) — M10 slice 7 is COMPLETE, and so is MILESTONE 10.** The frame
+sequence becomes a first-class thing to look at and to drive: the player, the palette entries, and the
+`FrameSequence` / `FramePosition` boundary editors. `ctest` **652/652** with video on (+4), **626/626**
+in the default video-off configuration, warning-clean, format-check clean; both headless paths
+unchanged. **gui-mode live-verified by the repo owner 2026-09-04** — no crashes.
+
+- **A sequence's poster is its first frame, decoded** — the second customer 7a's registry was shaped
+  for, and where its `PortValue` return type earns itself: unlike an image's, this poster cannot be
+  aliased (there is no image on the port to point at), so producing one is work, and it happens once
+  per edit rather than once per drawn frame.
+- **The player decodes by FRAME IDENTITY, not by position** — `sequence.frame(position)` (which does
+  not decode) against the `FrameRef` of what is on screen. Position alone is a real bug: a re-run can
+  rebind a *different* sequence onto the pin while the transport sits still, and the view would go on
+  showing the old footage. It also records the attempted frame **whether or not the decode
+  succeeded**, so a broken file is not re-decoded 60 times a second.
+- **Two states that are values, not failures, and read as such.** An **empty sequence** (a folder
+  that exists and holds no images) says so and posters nothing — it still has a view; and a frame
+  that will not decode says *"frame N could not be shown"* and **clears** the texture. That second
+  one is slice 6c's `ConvertNode` bug in a new place: a stale frame presented as the current one is
+  worse than a visible hole. ("Shown" rather than "decoded" because the upload can refuse too, and
+  the view has not established which.)
+- **Playback drops frames rather than sliding behind the clock** — it advances by however many whole
+  frames the elapsed wall time covers at the sequence's own rate, which is ADR-0018's "best effort"
+  made literal. One decoder behind a mutex cannot promise a frame per refresh, and playing 4K in slow
+  motion while claiming to be at rate would be the dishonest alternative. An unspecified rate (a
+  folder of stills has none) plays at 24 fps **with a tooltip saying so**, rather than implying the
+  footage has a rate. It stops at the last frame; a loop is a choice, not a default.
+- **An INSPECTION player, and the boundary is structural, not a rule.** It decodes straight from the
+  value on the pin and never re-runs the graph — so it shows the footage a node holds, not the
+  graph's output at that frame. Driving a render is binding a `FramePosition`, which is the Interface
+  pane's new editor; the transport that does it for you is the follow-on ADR-0018 names.
+- **`media::FrameSequence` binds through `ParamEditors`** — **File... / Folder...** through
+  `io::sequence::open`, both modes because the opener dispatches by what the uri IS (a video file by
+  its extension, a folder or a `####` pattern structurally). It shows `FrameSequence::toString()`
+  rather than a path, because a bound sequence is not one: it may span several sources, and the value
+  no longer remembers what was typed to get it. This is what 7a's branch removal was for — before it,
+  a `FrameSequence` boundary input read **"(no editor)"** and could not be bound at all.
+- **`media::FramePosition` edits as a plain drag, deliberately unbounded.** An editor is handed only
+  `(label, type, value)`: it cannot know WHICH sequence a position indexes, and a bound taken from
+  the wrong one is worse than none. That bound is the per-value hint ADR-0005 already names as a
+  refinement, and belongs to the driving transport.
+- **The dialog filters were hiding video.** `editPath`'s File... offered Images only — with a comment
+  already admitting the gap — so an `openSequence` node's `path` could not be pointed at an `.mp4`
+  through the gui. The filters now come from **`io::video::videoExtensions()`**, the seam's own one
+  list, so the dialog cannot offer a different set from the opener that will be handed the result,
+  plus **All files**, because a footage uri is legitimately anything an opener claims.
+- **`openSequence` / `frameAt` / `clipSequence` are on the menu**, in a **Sequence** category of their
+  own — which reaches the menu bar's Add, the canvas right-click palette and the Nodes pane at once,
+  since all three read `nodeCatalog()`. A category rather than a source plus two filters: what they
+  have in common is the payload they pass, which is what a user reaching for them is looking for.
+  Canvas colours for the three payload types too, so a footage graph is legible instead of falling to
+  the name-hash fallback.
+- **New tests (4, `[views]` + `[catalog]`), and a second sabotage caught.** The poster is pinned by
+  which frame it decodes (make it frame 1 → fails), plus an empty sequence postering nothing while
+  still having a view. `[catalog]` pins the invariant a hand-added menu entry breaks **silently**:
+  every catalog key must be creatable by the factory, or the menu item does nothing — M5's bug six
+  from the other direction, and the exact failure mode of adding a category by hand.
+- **Milestone 10 is complete.** A folder of stills or a video file opens as one sequence, renders to
+  numbered stills or to a container, and is now something you can see and drive in the gui. What was
+  deliberately left out is unchanged and listed under *Not in this milestone* above — the driving
+  timeline, a handle pool, a decoder pool, BT.601 / BT.2020 / PQ / HLG, device capture, and realtime
+  playback of processed output. **`core::Uri` is the queued follow-on below.**
+
 #### Queued: `core::Uri` — an identity, not a path algebra (raised 2026-09-01, build after slice 5)
 
 A uri is a bare `std::string` everywhere it matters — `io::read` / `write` / `openStream`,

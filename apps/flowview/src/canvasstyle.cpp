@@ -2,6 +2,9 @@
 
 #include <lain/image/colormath.h> // convert (HSV -> RGB)
 #include <lain/image/image.h>
+#include <lain/media/frameposition.h>
+#include <lain/media/frameref.h>
+#include <lain/media/framesequence.h>
 
 #include <cstddef>
 #include <functional>
@@ -58,6 +61,13 @@ namespace flowview
 		style.addPortColor(typeid(bool), image::ColorRGBA8(180, 120, 225, 255));		// purple
 		style.addPortColor(typeid(std::string), image::ColorRGBA8(230, 175, 80, 255));	// amber
 
+		// The frame-sequence payloads (M10). A sequence is a warm counterpart to the image blue —
+		// related, since a frame OF one is an image — while a position and a frame reference are the
+		// small facts that travel beside it.
+		style.addPortColor(typeid(media::FrameSequence), image::ColorRGBA8(215, 105, 95, 255));	 // coral
+		style.addPortColor(typeid(media::FramePosition), image::ColorRGBA8(225, 145, 120, 255)); // pale coral
+		style.addPortColor(typeid(media::FrameRef), image::ColorRGBA8(180, 120, 105, 255));		 // muted coral
+
 		// Node title colours by factory kind — categories are emergent from shared colour (no Category
 		// enum). These keys must match scene.cpp's registrations.
 		const image::ColorRGBA8 source(46, 86, 120, 255);  // sources: emit a value
@@ -68,8 +78,11 @@ namespace flowview
 		style.addNodeColor("loadimage", source);
 		style.addNodeColor("constInt", source);
 		style.addNodeColor("constBool", source);
+		style.addNodeColor("openSequence", source);
 		style.addNodeColor("tint", filter);
 		style.addNodeColor("blur", filter);
+		style.addNodeColor("frameAt", filter);
+		style.addNodeColor("clipSequence", filter);
 		style.addNodeColor("gate", control);
 		style.addNodeColor("merge", control);
 		style.addNodeColor("select", control);

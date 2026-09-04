@@ -45,11 +45,9 @@ namespace flowview
 	static constexpr const char* kCombineKey = "combine";
 	static constexpr const char* kConvertKey = "convert";
 
-	// The frame-sequence kinds (M10). Registered in the FACTORY but deliberately not in the
-	// catalog yet: the catalog is the gui's Add menu, and M10 puts flowview's gui work in its own
-	// slice — the same order M8 used, where the map node ran headless a slice before it was
-	// reachable from a menu. The factory entries are needed regardless, because serialization names
-	// a node by its factory key on save.
+	// The frame-sequence kinds (M10). In the catalog since slice 7 — until then they were registered
+	// in the factory alone and reachable only from the cli, the same order M8 used when the map node
+	// ran headless a slice before it appeared in a menu.
 	static constexpr const char* kOpenSequenceKey = "openSequence";
 	static constexpr const char* kFrameAtKey = "frameAt";
 	static constexpr const char* kClipSequenceKey = "clipSequence";
@@ -66,6 +64,12 @@ namespace flowview
 		static const std::vector<NodeCategory> catalog = {
 			{"Sources", {kGradientKey, kLoadImageKey, kListDirKey, kConstIntKey, kConstBoolKey, kConstFloatKey, kConstPathKey, kConstStringKey}},
 			{"Filters", {kTintKey, kBlurKey, kCombineKey, kConvertKey}},
+			// Footage. openSequence brings a folder of stills or a video file in as one sequence
+			// (medium-neutral — the opener seam decides which), frameAt is where it becomes pixels a
+			// graph can process, and clipSequence trims the range. A category of their own rather
+			// than a source + two filters: what they have in common is the payload they pass, which
+			// is what a user is looking for when reaching for them.
+			{"Sequence", {kOpenSequenceKey, kFrameAtKey, kClipSequenceKey}},
 			{"Control", {kGateKey, kMergeKey, kSelectKey}},
 			// A group is added empty (its inner graph is born with its own boundary pair) and grown by
 			// descending into it, and a MAP the same way — the difference is only that a map's face is

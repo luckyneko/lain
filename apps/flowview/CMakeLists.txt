@@ -16,6 +16,7 @@ add_executable(flowview
 	src/valueviews.cpp
 	src/imagecanvas.cpp
 	src/imageview.cpp
+	src/sequenceview.cpp
 	src/panes/menubar.cpp
 	src/panes/issuespane.cpp
 	src/panes/previewpane.cpp

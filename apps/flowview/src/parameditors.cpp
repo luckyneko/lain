@@ -9,11 +9,19 @@
 #include <lain/image/image.h>
 #include <lain/image/pixelformat.h>
 #include <lain/io/image/load.h>
+#include <lain/io/sequence/open.h>
+#include <lain/io/video/open.h> // videoExtensions — the one list of what counts as video
+#include <lain/media/frameposition.h>
+#include <lain/media/framesequence.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <typeindex>
 #include <utility>
+#include <vector>
 
 namespace flowview
 {
@@ -86,6 +94,21 @@ namespace flowview
 		return committed;							   // recompute only on commit
 	}
 
+	// The filters a "pick something to open" dialog offers when the value does not say what it is.
+	// The video patterns are built from io::video::videoExtensions() — the seam's own list, so the
+	// dialog cannot offer a different set from the opener that will be handed the result — and "All
+	// files" is last because a footage uri is legitimately anything an opener claims. Before this the
+	// only filter was Images, which hid every .mp4 from the path editor an openSequence node uses.
+	static std::vector<gui::FileFilter> openableFilters()
+	{
+		std::vector<std::string> video;
+		for (const std::string& extension : io::video::videoExtensions())
+			video.push_back("*." + extension);
+		return {{"Images", {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff"}},
+				{"Video", std::move(video)},
+				{"All files", {"*"}}};
+	}
+
 	static bool editPath(const std::string& label, flow::PortValue& value)
 	{
 		// A text field (type/paste, commit on Enter or focus loss — committing per keystroke would
@@ -116,8 +139,7 @@ namespace flowview
 		gui::SameLine();
 		if (gui::Button("File..."))
 		{
-			const auto picked =
-				gui::openFile("Open image", startDir, {{"Images", {"*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff"}}});
+			const auto picked = gui::openFile("Open file", startDir, openableFilters());
 			if (picked)
 			{
 				value.set<std::filesystem::path>(*picked);
@@ -169,6 +191,60 @@ namespace flowview
 		}
 		gui::PopID();
 		return bound;
+	}
+
+	// FOOTAGE is opened, and it is the one editor that offers both pick modes for a reason the type
+	// states: io::sequence::open dispatches by what the uri IS — a video file by its extension, a
+	// folder or a "shot.####.png" pattern structurally — so a sequence is legitimately either.
+	//
+	// It shows what is currently bound through FrameSequence::toString ("500 frames · 3840x2160 RGB8
+	// BT709 · 24 fps") rather than a path, because a bound sequence is not a path: it may span
+	// several sources, and the value on the pin no longer remembers what was typed to get it.
+	static bool editFrameSequence(const std::string& label, flow::PortValue& value)
+	{
+		gui::TextDisabled("%s", value.holds<media::FrameSequence>()
+									? value.get<media::FrameSequence>().toString().c_str()
+									: "(nothing bound)");
+
+		gui::PushID(label.c_str());
+		const auto bind = [&](const std::optional<std::filesystem::path>& picked)
+		{
+			if (!picked)
+				return false;
+			if (auto sequence = io::sequence::open(picked->string()))
+			{
+				value.set<media::FrameSequence>(std::move(*sequence));
+				return true;
+			}
+			// Said out loud: the refusal is a capability or a format question (a build with no video
+			// codec answers exactly that), and silence would read as a broken button.
+			gui::message("Open failed", "Could not open as footage: " + picked->string(), true);
+			return false;
+		};
+
+		bool bound = false;
+		if (gui::Button("File..."))
+			bound = bind(gui::openFile("Open footage", {}, openableFilters()));
+		gui::SameLine();
+		if (gui::Button("Folder..."))
+			bound = bind(gui::selectFolder("Select footage folder", {}));
+		gui::PopID();
+		return bound;
+	}
+
+	// A FRAME POSITION is a plain drag over its ordinal — deliberately not a slider bounded by the
+	// sequence's length. An editor is handed only (label, type, value): it has no way to know WHICH
+	// sequence this position indexes, and a bound taken from the wrong one is worse than none. That
+	// bound is the per-value hint ADR-0005 names as a refinement, and belongs to the driving
+	// transport this milestone defers.
+	static bool editFramePosition(const std::string& label, flow::PortValue& value)
+	{
+		const media::FramePosition current = currentOr<media::FramePosition>(value);
+		int position = static_cast<int>(current.value);
+		if (!gui::DragInt(label.c_str(), &position, 1.0f, 0, 0, "frame %d"))
+			return false;
+		value.set<media::FramePosition>(media::FramePosition{static_cast<std::size_t>(std::max(0, position))});
+		return true;
 	}
 
 	static bool editColorRGBf(const std::string& label, flow::PortValue& value)
@@ -224,6 +300,8 @@ namespace flowview
 		editors.add(typeid(std::filesystem::path), &editPath);
 		editors.add(typeid(image::ColorRGBf), &editColorRGBf);
 		editors.add(typeid(image::Image), &editImage);
+		editors.add(typeid(media::FrameSequence), &editFrameSequence);
+		editors.add(typeid(media::FramePosition), &editFramePosition);
 		editors.add(typeid(image::PixelFormat), &editEnum<image::PixelFormat>);
 		editors.add(typeid(image::ColorSpace), &editEnum<image::ColorSpace>);
 	}

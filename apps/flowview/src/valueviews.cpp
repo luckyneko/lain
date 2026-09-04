@@ -1,8 +1,10 @@
 #include "valueviews.h"
 
 #include "imageview.h"
+#include "sequenceview.h"
 
 #include <lain/image/image.h>
+#include <lain/media/framesequence.h>
 
 #include <typeindex>
 #include <utility>
@@ -51,9 +53,33 @@ namespace flowview
 		return flow::PortValue::alias(value, value.get<image::Image>());
 	}
 
+	// A sequence's poster is its FIRST FRAME, decoded. Unlike an image's it cannot be aliased —
+	// there is no image on the port to point at — so this is where the registry earns its return
+	// type: producing a poster may be work, and for a type where it is, it happens once per edit
+	// rather than once per drawn frame.
+	//
+	// An EMPTY sequence posters nothing. That is not a failure: a folder that exists and holds no
+	// images is a value, and the pin still describes itself as "0 frames" in text.
+	static flow::PortValue posterOfSequence(const flow::PortValue& value)
+	{
+		if (!value.holds<media::FrameSequence>())
+			return {};
+		const media::FrameSequence& sequence = value.get<media::FrameSequence>();
+		if (sequence.empty())
+			return {};
+		image::Image frame = sequence.image(0);
+		if (!frame.valid())
+			return {}; // the frame would not decode; the pin gets text and no thumbnail
+		flow::PortValue poster;
+		poster.set<image::Image>(std::move(frame));
+		return poster;
+	}
+
 	void registerBuiltinValueViews(ValueViews& views)
 	{
 		views.add(typeid(image::Image), &posterOfImage, []
 				  { return std::make_unique<ImageView>(); });
+		views.add(typeid(media::FrameSequence), &posterOfSequence, []
+				  { return std::make_unique<SequenceView>(); });
 	}
 } // namespace flowview

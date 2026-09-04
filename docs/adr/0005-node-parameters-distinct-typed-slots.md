@@ -82,3 +82,23 @@ because params and ports share one internal value machinery.
   save/load walks; this design doesn't add a member-pointer indirection that would fight it.
 - The editor registry **unifies later with the texture-preview "GUI view" seam** — both are
   `type_index → gui rendering`.
+
+  **Amended 2026-09-04 (M10 slice 7), with what actually landed.** They are **siblings, not one
+  registry**: `ParamEditors` is how a type is written, `ValueViews` is how it is shown, and they are
+  asked at different moments by different panes. Merging them would have made every viewable type
+  also declare an editor and vice versa. What DID unify is the rule — the type chooses, in both
+  directions — and the unification paid off in the direction this bullet did not anticipate: the
+  Interface pane's *bind* gesture was an `if (type == image::Image)` branch sitting beside a
+  fall-through to this registry, so a `media::FrameSequence` boundary input had no editor and could
+  not be bound at all. Moving the picker into an `image::Image` editor deleted the branch and gave
+  the sequence its own.
+
+  Two shapes are worth carrying forward. A **view is an object, not a function**, because it owns
+  state (zoom, a playback position, a decoded frame) that an editor's `(label, type, value)` call
+  never needs. And a view's **poster** — the still that stands for a value in a list — is a
+  `PortValue`, so the image case aliases its own payload rather than deep-copying it per edit.
+
+  The **per-value hint** this ADR names as a refinement is still not built, and slice 7 met it twice:
+  a `std::filesystem::path` editor cannot tell an image from a folder from a clip (it offers all
+  three), and a `media::FramePosition` editor cannot know which sequence it indexes (so it is an
+  unbounded drag, not a slider).

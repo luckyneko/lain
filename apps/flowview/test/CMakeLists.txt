@@ -12,6 +12,7 @@ add_executable(test-flowview
 	test_framepattern.cpp
 	test_sweep.cpp
 	test_valueviews.cpp
+	test_catalog.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/undo.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/groupnav.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/canvasids.cpp"
@@ -24,6 +25,7 @@ add_executable(test-flowview
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/valueviews.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/imagecanvas.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/imageview.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/sequenceview.cpp"
 )
 
 target_compile_features(test-flowview PRIVATE cxx_std_17)

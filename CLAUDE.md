@@ -276,6 +276,44 @@ sits inside an inline group).
   **gui-mode live-verified 2026-08-11 — M7 is COMPLETE.**
 - Still out: file watching, prefab overrides, in-place template editing.
 
+### Update 2026-09-04 — M10 slice 7b built: the sequence player and the palette (**M10 COMPLETE**)
+
+The second of slice 7's two commits, and the end of Milestone 10. Footage is now something you can
+see and drive in the gui. `ctest` **652/652** with video on (+4), **626/626** in the default
+video-off configuration, warning-clean, format-check clean. **gui-mode live-verified by the repo
+owner 2026-09-04** — no crashes. Full landing notes in WORK.md M10.
+
+- **A sequence's poster is its first frame, decoded** — the second customer 7a's registry was shaped
+  for, and where the `PortValue` return type earns itself: this one cannot be aliased, so producing
+  it is work, and it happens once per edit rather than once per drawn frame.
+- **The player decodes by FRAME IDENTITY** (`FrameRef`, which `sequence.frame()` answers without
+  decoding), not by position — a re-run can rebind a different sequence while the transport sits
+  still, and position alone would keep showing the old footage. It records the attempted frame
+  whether or not the decode succeeded, so a broken file is not re-decoded 60 times a second, and a
+  frame that will not show **clears** the texture (slice 6c's `ConvertNode` lesson: a stale frame
+  presented as the current one is worse than a visible hole). Playback **drops frames** rather than
+  sliding behind the clock — ADR-0018's "best effort" made literal; an unspecified rate plays at
+  24 fps with a tooltip saying so.
+- **An INSPECTION player, structurally**: it decodes from the value on the pin and never re-runs the
+  graph. Driving a render is binding a `FramePosition`, which is the Interface pane's new editor; the
+  transport that does it for you is the follow-on.
+- **`FrameSequence` binds through `ParamEditors`** (File... / Folder... through `io::sequence::open`,
+  both modes because the opener dispatches by what the uri IS), which is what 7a's branch removal was
+  for — before it, such a boundary input read "(no editor)". **`FramePosition`** edits as a plain
+  drag, deliberately unbounded: an editor cannot know which sequence a position indexes.
+  **ADR-0005 is amended in place** with what actually landed: siblings, not one registry, and a view
+  is an object because it owns state.
+- **The dialog filters were hiding video** — Images-only, with a comment already admitting the gap,
+  so an `openSequence` path could not be pointed at an `.mp4`. They now come from
+  `io::video::videoExtensions()`, the seam's own list, plus All files.
+- **`openSequence` / `frameAt` / `clipSequence` are on the menu** (a new **Sequence** category, which
+  reaches the menu bar, the right-click palette and the Nodes pane at once), with canvas colours for
+  the three payload types. A new `[catalog]` test pins the invariant a hand-added entry breaks
+  silently: every catalog key must be creatable by the factory, or the menu item does nothing.
+- **Milestone 10 is complete.** What was deliberately left out is listed in WORK.md's *Not in this
+  milestone*: the driving timeline, a handle pool, a decoder pool, BT.601 / BT.2020 / PQ / HLG,
+  device capture, realtime playback of processed output. **`core::Uri` is the queued follow-on.**
+
 ### Update 2026-09-04 — M10 slice 7a built: the GUI view registry, with no new behaviour
 
 The first of slice 7's two commits. CONTEXT.md's deferred **"GUI view"** seam is built — flowview's
