@@ -354,6 +354,61 @@ Seven call sites, nothing returns `PerIteration` yet, and the existing suite is 
   comment saying the scheduler asks the fact rather than the class — the include contradicted the
   rule this slice is about.
 
+### Update 2026-09-05 — M11 slice 2 built: `LoopNode`, core types only
+
+The second of M11's two no-behaviour-change refactors, and the last before the loop runs. `LoopNode`
+lands beside `MapNode` — `addCarry<T>`, the id-keyed carry map, the two reserved inner pins, the
+node-owned `count` / `iterations`, `editableInner()`, and the mirroring overrides. **Nothing runs and
+nothing constructs one** outside its own tests (no factory reaches it until slice 6), so the existing
+suite is the regression test and it moved by zero: `ctest` **663/663** Debug with video on (was
+652) and **637/637** Release in the default video-off configuration (was 626) — both baselines grown
+by exactly the eleven new cases. Warning-clean, format-check clean, and `flowview run --example` is
+identical to the pre-change binary once timestamps and minted uuids are normalised. Full landing
+notes in WORK.md M11.
+
+- **The reserved pins are STATIC pins, through a new `addReserved` seam on the boundary nodes.**
+  ADR-0021 asked for `index : int` and `continue : bool` with `Default{true}`, and neither was
+  reachable: `addBoundary` routes through `addDynamicPort`, which **marks the pin dynamic** — so
+  serialization would replay `index` onto a constructor that already made it, logging *"could not be
+  added"* on every loop document — and has no `Default` overload, while `Node::addInput(name,
+  Default<T>)` is protected and reachable only from inside a boundary node. Static is
+  `SelectNode::selector`'s precedent exactly: replay skips it, the ctor rebuilds it on load, an edge
+  to it resolves **by name** like any other, and `continue`'s default round-trips as an ordinary
+  `Param`. **Slice 5 needs no special case, and `populateInputs` already seeds an unconnected input
+  from `defaultOf`, so slice 4 needs no new mechanism to read `continue`.**
+- **"Not a candidate" and "refused" are different questions, and the tests are what said so.** The
+  first cut put the reserved-pin skip inside `exposePort` beside the name-collision refusal, and the
+  new `GroupSync::refused` then named `index` and `continue` **on every pass for the life of the
+  document** — the reporting channel drowned by the one case that is silent by design. Now
+  `GroupNode::mirrorsPin(direction, pin)` (default true) answers *is this pin mirrored at all* and
+  `exposePort` answers *was a candidate refused*. The skip is **by id** — sabotage-verified: by name,
+  renaming `index` mirrors both reserved pins straight onto the outer face.
+- **A loop is the first group kind with ports of its OWN, so it is the first where an inner pin's
+  name can collide with one** — not anticipated by ADR-0021, and `addInputLike` answers a duplicate
+  with an **assert**. Refused and reported by name, the same call `MapNode::exposePort` makes for an
+  unliftable type — which that refusal now inherits, having been silent since M8. It arrives by
+  **two** doors: the add phase, and the *rename* phase retitling a mirrored port onto a name the loop
+  already owns, which would leave two same-named outer ports and make every name-addressed edge
+  through them ambiguous on disk.
+- **`refused` is names, not a count, and deliberately not a `changed()`.** A refusal is the only
+  outcome here a user can act on and acting needs to know which pin; but a refused pin is retried
+  every pass and flowview syncs every frame, so folding it into `changed()` would bump the recipe
+  version continuously and re-run every evaluation forever. Sabotage-verified.
+- **`GroupNode::reconcileInterior()` settles what ADR-0021 did not: a broken carry.** A pairing is
+  the one thing about an interior that is not derivable from it, and the Interface pane's ± can
+  delete either half. `syncGroupPorts` calls the hook before touching a port; `LoopNode` drops a
+  pairing whose pin is gone, and the survivor then means exactly what an unpaired pin means — an
+  invariant, or a last-iteration output. A virtual for the reason `exposePort` is one.
+- **Two ADR claims checked at the code — one confirmed, one corrected.** The removal phase really
+  does need no exception for `count` / `iterations` (it iterates `portMap()`, which never names a
+  node-owned port), and `enterGroup` skips them for the same reason. But `exposePort` does **not**
+  "derive seed / invariant / final / last": that derivation is *identical* to a plain group's,
+  because the pairing changes what the engine does BETWEEN iterations, never what the ports look
+  like. The override is refusals only. Both amended in place in ADR-0021 and WORK.md.
+- **Found for slice 4, not fixed here:** `Scheduler::exitGroup` **clears** an output whose `innerPin`
+  is null, so it would wipe `iterations` — `LoopExit` must write the node-owned outputs after it, or
+  not reuse `exitGroup` at all.
+
 ### Update 2026-09-05 — CI: lain builds and tests on Linux, macOS and Windows (**GREEN**)
 
 `lain` had **no CI at all**, and all 210 commits were built and verified on one macOS arm64 machine.

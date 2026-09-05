@@ -3956,12 +3956,64 @@ exists, flowview last with its own live verification. Same shape as M8.
    - **Found and removed: `scheduler.cpp` included `group.h` for a class it never names.** The include
      comment read *"MapNode — the scheduler asks whether a node maps, not which class it is"*, so it
      contradicted the rule this slice is about. It compiles and passes without it.
-2. **`LoopNode`, core types only.** The class beside `MapNode`, `addCarry<T>`, the carry map, the
-   reserved pin ids, `count` / `iterations`, `editableInner()` (the M8 slice 6c lesson — without it
-   every pane is read-only inside a loop), and the `exposePort` override deriving
-   seed / invariant / final / last. `edit::syncGroupPorts` skips the reserved inner pins **by id**;
-   its removal phase needs no change, since it already iterates `portMap()` and a node-owned port is
-   invisible to it. Nothing runs yet.
+2. ✅ **`LoopNode`, core types only — BUILT** (2026-09-05). The class beside `MapNode`,
+   `addCarry<T>`, the carry map, the reserved pin ids, `count` / `iterations`, `editableInner()` (the
+   M8 slice 6c lesson — without it every pane is read-only inside a loop), and the mirroring
+   overrides. Nothing runs: no factory reaches a `LoopNode`, so the existing suite is the regression
+   test and it moved by zero: `ctest` **663/663** Debug with video on (was 652) and **637/637**
+   Release in the default video-off configuration (was 626) — both baselines grown by exactly the
+   eleven new cases, on both axes. Warning-clean, format-check clean, and `flowview run --example`
+   is identical to the pre-change binary once timestamps and freshly-minted uuids are normalised.
+   - **The reserved pins are STATIC pins, through a new `addReserved` seam on the boundary nodes** —
+     a decision forced by two facts that only appear at the code. `addBoundary<T>` routes through
+     `addDynamicPort`, which (a) marks the pin dynamic, so serialization would replay `index` onto a
+     constructor that already made it and log *"could not be added — skipped"* on every loop
+     document, and (b) has no `Default` overload, while `Node::addInput(name, Default<T>)` is
+     protected and reachable only from inside a boundary node. Static is exactly
+     `SelectNode::selector`'s precedent: serialization replays only dynamic pins, the `LoopNode` ctor
+     rebuilds both on load, an edge to one resolves by name like any other, and `continue`'s default
+     round-trips as an ordinary `Param`. **Slice 5 needs no special case, and `populateInputs` already
+     seeds an unconnected input from `defaultOf`, so slice 4 needs no new mechanism to read
+     `continue`.** A test pins `!isDynamic()` here rather than at slice 5, where the failure would
+     look unrelated.
+   - **`count` defaults to 1**, so a fresh loop behaves exactly like a group. `0` is the fold
+     identity and a perfectly good value, just not a sensible thing for a node to do the moment it
+     lands on a canvas. `int` on both sides, because that is the type a graph can actually drive.
+   - **"Not a candidate" and "refused" turned out to be different questions, and the tests are what
+     said so.** The first cut put the reserved-pin skip inside `exposePort` beside the collision
+     refusal, and `GroupSync::refused` then named `index` and `continue` on **every pass for the life
+     of the document** — the reporting channel drowned by the one case that is silent by design. Now
+     `GroupNode::mirrorsPin(direction, pin)` (default true) answers *is this pin mirrored at all*, and
+     `exposePort` answers *was a candidate refused*. A reserved pin is skipped by **id** through the
+     first — sabotage-verified: skipping by name mirrors both pins the moment either is renamed.
+   - **A loop is the first group kind with ports of its OWN, so it is the first where an inner pin's
+     name can collide with one** — which ADR-0021 did not anticipate, and which `addInputLike`
+     answers with a duplicate-name **assert**. Refused in `exposePort` and reported by name
+     (`sync.refused`), the same add-nothing-rather-than-degrade call `MapNode::exposePort` makes for
+     an unliftable type — which that refusal now inherits, having been silent since M8. **The
+     collision arrives by two doors**: the add phase, and the *rename* phase retitling a mirrored port
+     onto a name the loop already owns — that one leaves two same-named outer ports, which makes
+     every name-addressed edge through them ambiguous on disk. Both refuse and report.
+   - **`refused` is deliberately not part of `GroupSync::changed()`.** A refused pin is retried on
+     every pass and flowview syncs every frame, so folding it in would bump the node's recipe version
+     continuously and force every evaluation to re-run forever. It describes a steady state, not a
+     transition — sabotage-verified.
+   - **`GroupNode::reconcileInterior()` (default no-op) settles what happens to a broken carry.** A
+     pairing is the one thing about an interior that is not derivable from it, and a user may delete
+     either half through the Interface pane's ±. `syncGroupPorts` calls it before touching any port
+     and `LoopNode` drops a pairing whose pin is gone; the survivor then means exactly what an
+     unpaired pin means — an invariant, or a last-iteration output — so derivation stays total and
+     there is no broken state to represent. A virtual for the reason `exposePort` is one: the
+     reconciliation gesture must not learn which kind it is holding.
+   - **ADR-0021's removal-phase claim verified, and one of its `exposePort` claims corrected.** The
+     removal phase really does need no exception for `count` / `iterations` (it iterates `portMap()`,
+     which never names a node-owned port), and `enterGroup` skips them for the same reason. But the
+     override does **not** "derive seed / invariant / final / last": that derivation is *identical* to
+     a plain group's, because the pairing changes what the engine does BETWEEN iterations and never
+     what the ports look like. The override is refusals only.
+   - **Found while planning, for slice 4:** `Scheduler::exitGroup` **clears** an output whose
+     `innerPin` is null, so it would wipe `iterations` — `LoopExit` must write the node-owned outputs
+     after it, or not reuse `exitGroup` at all.
 3. **Staging generalises.** `PreparedMaps` becomes per-frontier staging state, so a frontier may be
    raised repeatedly. A map still defers exactly once — no behaviour change, the M8 slice 2 shape.
 4. **The loop runs.** `prepareLoop`, the `LoopExit` step, the count / `continue` termination test, the

@@ -151,6 +151,11 @@ namespace lain::flow::edit
 		// shared definition (ADR-0013).
 		const Graph& inner = *node->innerGraph();
 
+		// The node's own interior-derived state first, before any port moves: a kind that stores
+		// something about its interior which is NOT derivable from it (a loop's carry pairing) gets
+		// to drop what has become false. A no-op for a group and a map, which store nothing.
+		node->reconcileInterior();
+
 		// --- 1. Remove outer ports whose inner pin is gone -------------------------------------
 		// Collected first: removing mutates the port list, and a dropped port may still be wired in
 		// the parent, so each removal goes through edit::removePort (disconnect, then the primitive).
@@ -195,8 +200,20 @@ namespace lain::flow::edit
 			const Port* pin = outerPort ? innerPinFor(inner, side, innerId) : nullptr;
 			if (pin != nullptr && pin->name() != outerPort->name())
 			{
-				outerPort->setName(pin->name());
-				++sync.renamed;
+				// ...unless another port on this side already carries that name. Only a kind with
+				// ports of its OWN can produce that (a loop's `count` / `iterations`), and taking
+				// the name anyway would leave two same-named outer ports — which makes every
+				// name-addressed edge through them ambiguous on disk. Keep the old label and report
+				// it, the same call exposePort makes when the collision arrives by the other door.
+				if (node->hasPortNamed(side, pin->name()))
+				{
+					sync.refused.push_back(pin->name());
+				}
+				else
+				{
+					outerPort->setName(pin->name());
+					++sync.renamed;
+				}
 			}
 		}
 
@@ -221,12 +238,19 @@ namespace lain::flow::edit
 		for (std::size_t i = 0; i < boundaryIn.outputCount(); ++i)
 		{
 			const Port& pin = boundaryIn.output(i);
-			if (mirroredInputs.count(pin.id()) == 0)
+			// A pin the node does not mirror at all is not a candidate and not a refusal — a
+			// loop's reserved pins are the engine's, and naming them would make every loop
+			// report two problems forever.
+			if (mirroredInputs.count(pin.id()) == 0 && node->mirrorsPin(Port::Direction::Input, pin))
 			{
-				// A map refuses a pin whose type has no registered collection form, and adds
-				// nothing — so count what was actually mirrored, not what was attempted.
+				// A map refuses a pin whose type has no registered collection form, and a loop
+				// one whose name collides with a port of its own — each adding nothing. So count
+				// what was actually mirrored, not what was attempted, and NAME what was not,
+				// since that is the part a user can act on.
 				if (node->exposePort(Port::Direction::Input, pin) != PortId{})
 					++sync.added;
+				else
+					sync.refused.push_back(pin.name());
 			}
 		}
 
@@ -234,10 +258,12 @@ namespace lain::flow::edit
 		for (std::size_t i = 0; i < boundaryOut.inputCount(); ++i)
 		{
 			const Port& pin = boundaryOut.input(i);
-			if (mirroredOutputs.count(pin.id()) == 0)
+			if (mirroredOutputs.count(pin.id()) == 0 && node->mirrorsPin(Port::Direction::Output, pin))
 			{
 				if (node->exposePort(Port::Direction::Output, pin) != PortId{})
 					++sync.added;
+				else
+					sync.refused.push_back(pin.name());
 			}
 		}
 

@@ -662,12 +662,19 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   prose (*a carried pin*, *the carried value*); the ordinary VERB is unchanged and unrelated (*a port
   carries a `vector<T>`*). _Avoid_: accumulator (implies summing, and a carry is usually a
   replacement), feedback (suggests a cycle, which the graph forbids), state (spoken for by
-  *Evaluation*), loop variable (that is the `index` pin).
+  *Evaluation*), loop variable (that is the `index` pin). Losing either pin **prunes** the pairing
+  rather than leaving half of one: the survivor then means exactly what an unpaired pin means, so
+  derivation stays total and no reader has to distrust a stored fact.
 - **Reserved pin** *(M11)* — an inner boundary pin the ENGINE writes or reads rather than the parent
   graph: `index` (which iteration this is) and `continue` (whether to run another). Not mirrored
   outward, and skipped by id rather than by name, so renaming one cannot change what a loop does.
   `continue` defaults to true, so an unwired condition is transparent while a wired-and-suppressed one
-  means the iteration failed — the distinction `GateNode::enable` already draws.
+  means the iteration failed — the distinction `GateNode::enable` already draws. **Static**, not a
+  dynamic pin (`addReserved`): serialization replays only dynamic pins, so a reserved pin is rebuilt
+  on load by the owner's constructor, exactly as a Select's `selector` is. Being not-mirrored is *not
+  a refusal* — a reserved pin is **not a candidate** (`mirrorsPin`), while a pin `exposePort` refuses
+  is one a user can act on and a host names; conflating them makes every loop report two problems
+  forever.
 - **Stage / frontier** *(M8; generalised M11)* — a map's arity comes from a value computed **during**
   the run, so the plan cannot be complete before it starts. `expand()` refuses to descend into a map
   whose arity is unknown — that map is a **frontier**, and everything downstream of it is left out of

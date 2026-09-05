@@ -10,6 +10,8 @@
 //                      path, read-only in place.
 //   MapNode          — a group whose interior is evaluated once per ELEMENT of a collection, so its
 //                      face is LIFTED (an inner T becomes an outer vector<T>). Owns its Graph.
+//   LoopNode         — a group whose interior is evaluated once per ITERATION, each pass's CARRIED
+//                      outputs seeding the next one's inputs. Bounded by construction. Owns its Graph.
 //
 // Read-only-in-place is a property of the TYPE, not a rule each caller remembers: `Node::innerGraph()`
 // is const for everyone, and a kind hands out a mutable interior only if that interior is its own —
@@ -19,7 +21,7 @@
 //
 // See ADR-0009 (the scheduler flattens all nesting into one execution plan, so compute() here is
 // never called), ADR-0010 (inline vs linked, the interface cache, why overrides are deferred) and
-// ADR-0013 (shared template definitions).
+// ADR-0013 (shared template definitions) and ADR-0021 (loop nodes).
 
 #include "lain/flow/graph.h"
 #include "lain/flow/node.h"
@@ -119,6 +121,27 @@ namespace lain::flow
 			return outer;
 		}
 
+		// Whether this node mirrors `innerPin` outward at all. Default TRUE: a group's face IS its
+		// interior's, and a map's is that face lifted, so every inner pin is a candidate.
+		//
+		// Separate from exposePort REFUSING one, and the distinction is not academic: a refusal is
+		// something a user can act on and a host should say out loud, while a pin that is not a
+		// candidate is not mirrored BY DESIGN and reporting it would mean every loop permanently
+		// naming its two reserved pins as problems. This is the question, and exposePort answers the
+		// other one.
+		virtual bool mirrorsPin(Port::Direction /*outerSide*/, const Port& /*innerPin*/) const { return true; }
+
+		// Reconcile whatever state this node stores ABOUT its interior against the interior as it now
+		// is. Called by edit::syncGroupPorts before it touches any port, so a kind that derives its
+		// whole face from the inner boundary (a group, a map) needs nothing here — hence the no-op
+		// default.
+		//
+		// A LOOP stores a carry PAIRING, which is the one thing about an interior that is not
+		// derivable from it, and a user may delete either half through the Interface pane. A virtual
+		// rather than a branch in edit.cpp, for the reason exposePort is one: the reconciliation
+		// gesture must not learn which kind it is holding.
+		virtual void reconcileInterior() {}
+
 		// Never called: the scheduler expands a group into its inner steps plus an entry/exit step
 		// pair, so a group is never executed AS a node (ADR-0009). Kept as a no-op rather than an
 		// assert because a group is a perfectly valid inert node outside a scheduler.
@@ -214,6 +237,139 @@ namespace lain::flow
 
 	private:
 		Graph m_inner; // born with its own boundary pair — the interface each element is evaluated over
+	};
+
+	// A LOOP: a group whose interior is evaluated once per ITERATION, each pass's CARRIED outputs
+	// seeding the next one's inputs (ADR-0021). Where a map's children are independent by
+	// construction, a loop's are sequentially dependent — which is what makes it a different
+	// execution shape rather than a variant of the map. It owns its inner Graph as an inline group
+	// does; a LINKED loop is deferred exactly as a linked map is.
+	//
+	// Unlike a map, its FACE is derived exactly as a plain group's is — same type in, same type out.
+	// The pairing changes what the engine does BETWEEN iterations, never what the ports look like:
+	//
+	//     a CARRIED inner pin pair  -> an outer input holding the SEED + an outer output holding the
+	//                                  FINAL value (the same name on both sides, by design)
+	//     an unpaired inner input   -> an outer input, INVARIANT across iterations
+	//     an unpaired inner output  -> an outer output, the LAST iteration's value
+	//     a RESERVED inner pin      -> nothing: it is the engine's, not the parent graph's
+	//
+	// So the whole difference between a loop's face and a group's is two negatives, and they are
+	// deliberately different questions: a reserved pin is NOT A CANDIDATE (mirrorsPin), while a pin
+	// whose name collides with one of this node's own is a candidate that is REFUSED (exposePort) —
+	// the first is by design and silent, the second is something a user can act on and a host says.
+	//
+	// It also owns two ports of its own, which no other group kind does: `count` (the bound, with a
+	// default, so an unbounded loop has no representation at all) and `iterations` (how many actually
+	// ran, which is what makes "converged at 7" distinguishable from "hit the bound at 100"). They
+	// mirror nothing, so portMap() never names them and edit::syncGroupPorts's removal phase is
+	// already blind to them. They are declared in the constructor, so they are always this node's
+	// FIRST input and FIRST output — mirrored ports are appended at reconciliation time.
+	class LoopNode : public GroupNode
+	{
+	public:
+		LoopNode();
+
+		Graph& inner() { return m_inner; }
+		const Graph& inner() const { return m_inner; }
+		const Graph* innerGraph() const override { return &m_inner; }
+
+		// A loop OWNS its interior, like an inline group and a map — so a host may edit through it.
+		// Without this every pane is read-only inside a loop: one you could add, descend into, and
+		// never build (M8 slice 6c, which is where that bug was found in map-shaped form).
+		Graph* editableInner() override { return &m_inner; }
+
+		// The structural fact that makes this a loop: ONE child evaluation, re-run per iteration,
+		// each pass seeding the next. A map's elements are co-equal results; a loop's iterations are
+		// steps toward one, so only the last survives (ADR-0021).
+		InteriorEvaluation interiorEvaluation() const override { return InteriorEvaluation::PerIteration; }
+
+		// This node's own ports (see the class header) — the trip bound it reads, and the count it
+		// reports. Both int: `int` is the type a graph can actually drive (a registered port type
+		// with a cli binder, a param editor and a constant node), and the two must agree.
+		PortId countPort() const { return m_count; }
+		PortId iterationsPort() const { return m_iterations; }
+
+		// The RESERVED inner pins — `index` on the interior's GroupInputNode (which iteration this
+		// is) and `continue` on its GroupOutputNode (whether to run another). The engine writes the
+		// first and reads the second; neither is mirrored outward.
+		//
+		// They live on DIFFERENT nodes, so a PortId alone does not name one: a PortId is minted per
+		// node, so both are PortId{1} (the constructor declares them before anything else can). Every
+		// reader pairs the id with a direction, exactly as portMap()'s values are read.
+		PortId indexPin() const { return m_index; }
+		PortId continuePin() const { return m_continue; }
+
+		// One carry, as the pair of inner boundary pins it IS: the value delivered on `innerOut` at
+		// iteration k is what arrives on `innerIn` at iteration k+1.
+		struct Carry
+		{
+			PortId innerIn;	 // a pin on the interior's GroupInputNode  (the body READS it)
+			PortId innerOut; // a pin on the interior's GroupOutputNode (the body WRITES it)
+		};
+
+		// Add a carry: one pin of type T on EACH inner boundary node, both named `name`, recorded as
+		// a pair. The paired gesture is the only way to make one, which is what stops half a carry
+		// from being authored — a lone pin is not a weaker carry, it is a silent invariant (or a
+		// last-iteration output) the user never asked for.
+		//
+		// Refuses (returning a null Carry, having added NOTHING on either side) an invalid name or
+		// one already taken on either inner boundary node.
+		template <typename T>
+		Carry addCarry(std::string name)
+		{
+			GroupInputNode& into = m_inner.boundaryInputNode();
+			GroupOutputNode& from = m_inner.boundaryOutputNode();
+
+			// Both sides vetted BEFORE either is touched, so the common refusal needs no undo at all.
+			if (!validPortName(name) || into.hasPortNamed(Port::Direction::Output, name) || from.hasPortNamed(Port::Direction::Input, name))
+				return Carry{};
+
+			const PortId innerIn = into.addBoundary<T>(name);
+			if (innerIn == PortId{})
+				return Carry{};
+			const PortId innerOut = from.addBoundary<T>(name);
+			if (innerOut == PortId{})
+			{
+				// Unreachable after the checks above — but the undo is what makes atomicity a
+				// property of the code rather than of an argument about it. Nothing can be wired to
+				// a pin this new, so the refusing primitive accepts the removal.
+				m_inner.removePort(PortAddress{into.id(), innerIn});
+				return Carry{};
+			}
+			m_carries[innerIn] = innerOut;
+			return Carry{innerIn, innerOut};
+		}
+
+		// The whole pairing, inner GroupInput pin -> inner GroupOutput pin. Id-keyed for the reason
+		// portMap() is: a rename must move a label, never behaviour. Pairing by NAME would let
+		// renaming one half silently stop a loop carrying — no error, no empty value, just a
+		// different answer, which is strictly worse than the wiring loss ids already prevent.
+		const std::map<PortId, PortId>& carries() const { return m_carries; }
+
+		// The reserved pin for `outerSide` is not a candidate for mirroring at all — the answer to
+		// "does the add phase skip this pin?", by ID and never by name, so renaming `index` cannot
+		// quietly turn a while loop into a count loop.
+		bool mirrorsPin(Port::Direction outerSide, const Port& innerPin) const override;
+
+		// Mirror an inner pin — same type, same name, as a plain group does — except that a loop is
+		// the first kind that can REFUSE one: see the class header. Returns the null PortId then,
+		// adding nothing, which is MapNode::exposePort's call for an unliftable type.
+		PortId exposePort(Port::Direction outerSide, const Port& innerPin, Presence presence = Presence::Required) override;
+
+		// Drop any carry whose inner pin has gone (a user removing one half through the Interface
+		// pane's ±). The survivor then means exactly what an unpaired pin means — an invariant, or a
+		// last-iteration output — so derivation stays total and there is no broken state to
+		// represent. Called by edit::syncGroupPorts before it touches a port.
+		void reconcileInterior() override;
+
+	private:
+		Graph m_inner;						// born with its own boundary pair — the loop's interface
+		std::map<PortId, PortId> m_carries; // innerIn -> innerOut
+		PortId m_count;						// this node's input: the trip bound
+		PortId m_iterations;				// this node's output: how many ran
+		PortId m_index;						// reserved, on m_inner's GroupInputNode
+		PortId m_continue;					// reserved, on m_inner's GroupOutputNode
 	};
 
 	// One pin of a linked group's cached interface: enough to rebuild the port without the template.

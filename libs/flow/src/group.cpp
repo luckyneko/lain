@@ -25,4 +25,59 @@ namespace lain::flow
 		mapPort(outer, innerPin.id());
 		return outer;
 	}
+
+	// A loop is born with its bound and its report, and its interior with the two pins the ENGINE
+	// talks to it through. The reserved pins are declared FIRST on each boundary node, so they are
+	// deterministically PortId{1} there and a loaded document's replayed pins land after them.
+	LoopNode::LoopNode()
+		: GroupNode("Loop")
+	{
+		// A DEFAULTED input rather than a param: every iteration evaluates one definition, so a
+		// bound that is meant to be graph-driven cannot be per-node configuration (the 2026-08-15
+		// param audit's rule, and the same reason a map's per-element settings had to become pins).
+		// Default 1 — a fresh loop behaves exactly like a group, which is the least surprising thing
+		// on a canvas; 0 is the fold identity and a legitimate value, just not a sensible default.
+		m_count = addInput<int>("count", Default{1});
+		m_iterations = addOutput<int>("iterations");
+
+		m_index = m_inner.boundaryInputNode().addReserved<int>("index");
+		// True, so an unwired condition is TRANSPARENT (the count decides) while a wired-and-
+		// suppressed one stays empty and means the iteration failed — GateNode::enable's 2026-08-15
+		// resolution, reused rather than reinvented for the same trap.
+		m_continue = m_inner.boundaryOutputNode().addReserved<bool>("continue", Default{true});
+	}
+
+	bool LoopNode::mirrorsPin(Port::Direction outerSide, const Port& innerPin) const
+	{
+		// By id, never by name: renaming `index` must not quietly turn a while loop into a count
+		// loop. The two reserved pins live on different nodes and are therefore BOTH PortId{1}, so
+		// the direction is what picks which one to compare against — portMap()'s standing asymmetry.
+		const PortId reserved = (outerSide == Port::Direction::Input) ? m_index : m_continue;
+		return innerPin.id() != reserved;
+	}
+
+	PortId LoopNode::exposePort(Port::Direction outerSide, const Port& innerPin, Presence presence)
+	{
+		// A loop is the first group kind with ports of its OWN, so it is the first where an inner
+		// pin's name can collide with one (`count`, `iterations`). addInputLike / addOutputLike
+		// assert on a duplicate — a duplicate would also make a name-addressed edge ambiguous on
+		// disk — so it is refused here, adding nothing rather than degrading.
+		if (hasPortNamed(outerSide, innerPin.name()))
+			return PortId{};
+
+		return GroupNode::exposePort(outerSide, innerPin, presence);
+	}
+
+	void LoopNode::reconcileInterior()
+	{
+		const GroupInputNode& into = m_inner.boundaryInputNode();
+		const GroupOutputNode& from = m_inner.boundaryOutputNode();
+		for (auto it = m_carries.begin(); it != m_carries.end();)
+		{
+			if (into.findOutput(it->first) != nullptr && from.findInput(it->second) != nullptr)
+				++it;
+			else
+				it = m_carries.erase(it); // half of it is gone — the pairing is no longer a fact
+		}
+	}
 } // namespace lain::flow

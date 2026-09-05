@@ -47,6 +47,20 @@ namespace lain::flow
 			return addDynamicPort<T>(std::move(name));
 		}
 
+		// Declare a RESERVED pin: one the ENGINE writes rather than one a user adds — declared by the
+		// node that OWNS this graph, for its own interior (ADR-0021's `index`, which tells a loop body
+		// which iteration it is in). Returns its stable PortId.
+		//
+		// STATIC, deliberately — not a dynamic pin. Serialization replays only dynamic pins, so a
+		// reserved pin is rebuilt on load by the owner's constructor, exactly as a Select's
+		// ctor-declared `selector` is (Port::isDynamic). An edge to it is name-addressed on disk like
+		// any other, so it resolves onto the ctor-created pin with nothing special in the loader.
+		template <typename T>
+		PortId addReserved(std::string name)
+		{
+			return addOutput<T>(std::move(name));
+		}
+
 		std::size_t boundaryCount() const { return outputCount(); }
 
 		// Nothing to compute: a graph input's value is BOUND, not produced, and a bound value is
@@ -77,6 +91,22 @@ namespace lain::flow
 		PortId addBoundary(std::string name)
 		{
 			return addDynamicPort<T>(std::move(name));
+		}
+
+		// The reading twin of GroupInputNode::addReserved (see there for why a reserved pin is static):
+		// a pin the ENGINE reads back out of the interior — ADR-0021's `continue`, which is how a loop
+		// body says whether to run another iteration.
+		//
+		// It takes a DEFAULT because of the trap GateNode::enable hit on 2026-08-15: "nobody wired it"
+		// and "the thing wired to it was suppressed" are the same empty slot with opposite meanings.
+		// A default seeds an input with NO incoming edge and never fills a connected one that produced
+		// nothing (Node::addInput), so an unwired condition is transparent while a broken one
+		// suppresses. Only a member of this node can reach that protected declaration, which is the
+		// other half of why this seam exists.
+		template <typename T>
+		PortId addReserved(std::string name, Default<T> fallback)
+		{
+			return addInput<T>(std::move(name), std::move(fallback));
 		}
 
 		std::size_t boundaryCount() const { return inputCount(); }

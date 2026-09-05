@@ -26,7 +26,10 @@ listed at the end.
 outputs seed the next one's inputs, and whose trip count is bounded by construction.**
 
 - **One `LoopNode`: bounded, plus an optional condition.** A node-owned `count` input carrying a
-  `Default{}` and an **optional** inner `continue : bool`. A count loop is the count alone; a while
+  `Default{1}` (*amended at the build, 2026-09-05: the value is **1**, so a fresh loop behaves exactly
+  like a group — `0` is the fold identity and a perfectly good value, just not a sensible thing for a
+  node to do the moment it lands on a canvas; `int` on both sides, because that is the type a graph
+  can actually drive*) and an **optional** inner `continue : bool`. A count loop is the count alone; a while
   loop is the condition with the count as its safety bound; a converging solver is both, which is what
   real solver code already does. A loop therefore **cannot fail to terminate**, and that is not only
   user safety — see *Why*.
@@ -38,11 +41,25 @@ outputs seed the next one's inputs, and whose trip count is bounded by construct
 - **Two reserved inner pins, never mirrored.** The interior is born with `index : int` on the inner
   `GroupInputNode` and `continue : bool` on the inner `GroupOutputNode` — the same shape as a `Graph`
   being born with its boundary pair. `LoopNode` stores their `PortId`s and `edit::syncGroupPorts`'s
-  *add* phase skips them **by id, never by name**. `continue` carries `Default{true}`, so **unwired
-  means the count decides** while **wired-and-suppressed stays empty and means the iteration failed**.
+  *add* phase skips them **by id, never by name** — through `GroupNode::mirrorsPin`, *not* through
+  `exposePort` (*amended at the build: those are different questions. A reserved pin is **not a
+  candidate** for mirroring and is silent; a pin `exposePort` **refuses** is a candidate a user can act
+  on and a host should name. The first cut conflated them, and `GroupSync::refused` then named `index`
+  and `continue` on every pass for the life of the document.*). They are declared through a new
+  `GroupInputNode` / `GroupOutputNode` **`addReserved`** seam, as **static** pins (*amended at the
+  build: `addBoundary` routes through `addDynamicPort`, which marks a pin dynamic — so serialization
+  would replay `index` onto a constructor that already made it — and has no `Default` overload, while
+  `Node::addInput(name, Default<T>)` is protected. Static is `SelectNode::selector`'s precedent
+  exactly: replay skips it, the ctor rebuilds it on load, an edge to it resolves by name like any
+  other, and `continue`'s default round-trips as an ordinary `Param`.*). `continue` carries
+  `Default{true}`, so **unwired means the count decides** while **wired-and-suppressed stays empty and
+  means the iteration failed**.
 - **A loop folds; it never scans.** Each carry mirrors out as its **final** value, each unpaired inner
   output as its **last-iteration** value, plus one node-owned `iterations : int`. A map maps, a loop
-  folds.
+  folds. (*Amended at the build: deriving seed / invariant / final / last needs **no** special
+  mirroring — it is identical to a plain group's, because the pairing changes what the engine does
+  BETWEEN iterations and never what the ports look like. `LoopNode::exposePort` overrides only to
+  refuse.*)
 - **One iteration per stage.** The loop raises a frontier; between stages the coordinator reads
   iteration *k*'s carry outputs and `continue`, seeds *k+1*, and re-plans. In `expand`, an iterating
   loop emits its interior steps **and re-raises itself as a frontier**; a finished loop emits
@@ -170,9 +187,29 @@ fact beside the underivable one, which is a second source that can disagree with
 - **A loop inside a map iterates in lockstep across elements**, because the staging loop handles every
   frontier in a stage together — so stages are bounded by the deepest loop's count, not by their sum.
   A map inside a loop costs two stages per iteration.
-- **`syncGroupPorts` needs no exception for `count` / `iterations`**: its removal phase iterates
-  `portMap()`, so a node-owned port that mirrors nothing is already invisible to it. Only the *add*
-  phase changes, to skip the two reserved inner pins.
+- **`syncGroupPorts` needs no exception for `count` / `iterations`** *in its removal phase*: it
+  iterates `portMap()`, so a node-owned port that mirrors nothing is already invisible to it —
+  verified at the build, along with the same property in `enterGroup`. But the *rename* and *add*
+  phases each needed one, for the collision in the next bullet, as well as the reserved-pin skip.
+- **A loop is the first group kind with ports of its OWN, so it is the first where an inner pin's name
+  can COLLIDE with one** *(found at the build, 2026-09-05; not anticipated here)*. A map owns no
+  ports, so this has never been possible, and `addInputLike` answers a duplicate with an **assert**.
+  It is refused and reported by name, the same add-nothing-rather-than-degrade call
+  `MapNode::exposePort` makes for an unliftable type — which that refusal now inherits, having been
+  silent since M8. The collision arrives by **two** doors: the add phase, and the rename phase
+  retitling a mirrored port onto a name the loop already owns, which would leave two same-named outer
+  ports and make every name-addressed edge through them ambiguous on disk.
+- **`GroupSync` gains `refused` (names, not a count), and it is deliberately not a `changed()`**
+  *(build, 2026-09-05)*. A refusal is the only outcome here a user can act on, and acting needs to
+  know which pin. But a refused pin is retried on every pass and a host syncs every frame, so counting
+  it as a change would bump the node's recipe version continuously and force every evaluation to
+  re-run forever: it describes a steady state, not a transition.
+- **A carry whose inner pin is deleted is PRUNED, through a new `GroupNode::reconcileInterior()`**
+  *(build, 2026-09-05 — this ADR did not settle it)*. The pairing is the one thing about an interior
+  that is not derivable from it, and the Interface pane's ± can delete either half. The survivor then
+  means exactly what an unpaired pin means — an invariant, or a last-iteration output — so derivation
+  stays total and there is no broken state to represent. A virtual for the reason `exposePort` is one:
+  the reconciliation gesture must not learn which kind it is holding.
 - **A carry legitimately produces an outer input and an outer output of the same name.**
   `Node::hasPortNamed` is per-direction, so this is unambiguous — but it is the first node where it
   happens by design rather than by accident.

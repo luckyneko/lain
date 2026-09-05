@@ -10,6 +10,9 @@
 
 #include "lain/flow/graph.h" // Graph, Graph::Edge, NodeId, PortAddress, Connection
 
+#include <string>
+#include <vector>
+
 namespace lain::flow
 {
 	class GroupNode; // replaceGroup takes one by pointer — group.h is the .cpp's business
@@ -65,6 +68,16 @@ namespace lain::flow::edit
 		int removed = 0;	  // outer ports dropped because their inner pin is gone
 		int renamed = 0;	  // outer ports retitled to match a renamed inner pin
 		int disconnected = 0; // parent edges cut by those removals
+
+		// Inner pins that could NOT be mirrored, by name. Names rather than a count, unlike its
+		// siblings above: a refusal is the only outcome here a user can act on ("rename that pin"),
+		// and acting needs to know which one. A map refuses a type with no registered collection
+		// form; a loop refuses a pin whose name collides with `count` / `iterations`.
+		//
+		// Deliberately NOT part of changed(): a refused pin is retried on every pass, and a host
+		// syncs every frame — so folding it in would bump the node's recipe version continuously and
+		// force every evaluation to re-run forever. It describes a steady state, not a transition.
+		std::vector<std::string> refused;
 
 		bool changed() const { return added != 0 || removed != 0 || renamed != 0; }
 	};
