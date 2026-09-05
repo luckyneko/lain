@@ -75,17 +75,30 @@ jobs:
           # because it is a genuinely different test set — the assert-based and NDEBUG-guarded
           # enforcement cases only exist there.
           #
-          # LAIN_IO_VIDEO_FFMPEG is ON everywhere EXCEPT macOS Release, and that asymmetry is
-          # deliberate. The option defaults OFF, so something must prove the default configuration
-          # still builds; but every unknown worth paying for lives off macOS — the windows-x86_64
-          # and linux-x86_64 archive pins in cmake/addFFmpeg.cmake have never been fetched by
-          # anyone, and the Windows DLL staging has never been exercised. macOS is also the one
-          # platform built by hand daily. So macOS carries the default config and the rest carry
-          # the full one, and both are covered without a fifth leg.
+          # LAIN_IO_VIDEO_FFMPEG defaults OFF, so one leg has to prove that default configuration
+          # still builds. That leg is Linux, and which platform carries it is the whole reason this
+          # matrix has five entries instead of four: Linux does the work in about three minutes
+          # where macOS takes seventeen, so the cheap runner should be the one asked twice.
+          # It was macOS at first, on the reasoning that a platform built by hand daily needs CI
+          # least — which inverted once the timings arrived, because the daily build has video ON.
+          # CI was spending its most expensive leg on a combination nobody builds while never
+          # exercising the one that is built every day.
+          #
+          # Each axis varies alone. The video-off leg is Release, since Release is what a fresh
+          # clone gets and so is what "the default configuration" means; Debug stays video-ON so it
+          # matches the daily build.
           - name: Linux Release
             os: ubuntu-24.04
             build_type: Release
             video: 'ON'
+            linux_deps: true
+            flowview: build/apps/flowview/flowview
+
+          # The default configuration, on the fastest runner.
+          - name: Linux Release (video off)
+            os: ubuntu-24.04
+            build_type: Release
+            video: 'OFF'
             linux_deps: true
             flowview: build/apps/flowview/flowview
 
@@ -99,7 +112,7 @@ jobs:
           - name: macOS Release
             os: macos-15
             build_type: Release
-            video: 'OFF'
+            video: 'ON'
             linux_deps: false
             flowview: build/apps/flowview/flowview
 

@@ -3592,23 +3592,27 @@ exactly that reason: a red leg must not hide what the other three would have sai
 | leg | runner | build type | `LAIN_IO_VIDEO_FFMPEG` |
 |---|---|---|---|
 | Linux Release | `ubuntu-24.04` | Release | ON |
+| Linux Release (video off) | `ubuntu-24.04` | Release | **OFF** |
 | Linux Debug | `ubuntu-24.04` | Debug | ON |
-| macOS Release | `macos-15` (arm64) | Release | **OFF** |
+| macOS Release | `macos-15` (arm64) | Release | ON |
 | Windows Release | `windows-2022` | Release | ON |
 
-Plus a `clang-format` job and an `add_subdirectory` smoke, both on Linux. Six jobs.
+Plus a `clang-format` job and an `add_subdirectory` smoke, both on Linux. Seven jobs.
 
 - **Release everywhere, Debug on the cheapest runner** — archimedes' shape. Release is what a fresh
   clone gets (`CMakeLists.txt` defaults `CMAKE_BUILD_TYPE` to it) and is the configuration that has
   rotted before (M10 slice 4 found `alloc.cpp`'s unused static under `NDEBUG`, and with it that
   *every* `#ifdef NDEBUG` enforcement test in the repo had been unreachable for some time). Debug is
   not the same test set — the assert-based cases only exist there — so one leg carries it.
-- **Video ON everywhere except macOS Release, and the asymmetry is the point.** The option defaults
-  OFF, so something must prove the default configuration still builds; but every unknown worth
-  paying for lives off macOS. The `windows-x86_64` and `linux-x86_64` SHA-256 pins in
-  `cmake/addFFmpeg.cmake` had never been fetched by anyone, and the Windows DLL staging had never
-  run. macOS is also the one platform built by hand daily. So macOS carries the default config and
-  the other three carry the full one — both covered, without a fifth leg.
+- **The default configuration gets its own Linux leg, and that is why there are five.** Video
+  defaults OFF, so one leg has to prove that configuration still builds. It was macOS at first, on
+  the reasoning that a platform built by hand daily needs CI least — **which inverted once the
+  timings arrived** (revised 2026-09-05). macOS is the slowest leg by 3–4×, *and* the daily build
+  has video ON, so CI was spending seventeen minutes on a combination nobody builds while never
+  exercising the one built every day. Linux does the same work in three, so the cheap runner is the
+  one asked twice. Each axis now varies alone: the video-off leg is Release, since Release is what
+  a fresh clone gets and so is what "the default configuration" means, and Debug stays video-ON to
+  match the daily build.
 - **`submodules: recursive`** is the one thing this workflow needs that archimedes' does not:
   lain carries `extern/archimedes`, and without it the first `add_subdirectory` fails.
 - **`bash` on every leg, Windows included** (Git Bash ships on the runner), so one command shape
@@ -3833,9 +3837,31 @@ languages claiming the `.asm` extension, a DLL nothing put on the path, a link o
 handed `free()` a stale pointer on any platform; and `flowview` never staging the FFmpeg DLLs it
 links. Neither is a Windows or Linux problem — they were simply never *asked* about before.
 
-**The macOS leg is the slowest by a factor of three** (17m against Linux's 3–5m), because it builds
-MoltenVK on top of everything else. If PR latency ever matters, that is the leg to attack, and a
-compiler cache is the untried lever — no caching beyond the fetched archives is in place yet.
+**The macOS leg is the slowest by 3–4× (17m against Linux's 3–5m), and it is not MoltenVK.** An
+earlier revision of this section said it was, which was wrong and worth correcting where it stood:
+`acmVulkan.cmake` fetches MoltenVK as a **prebuilt tarball**, so nothing builds it. The per-step
+timings say where the time actually goes — Configure, which is where every FetchContent download
+happens, is 60s; the cache restores in 2s; the **Build step is 15m43s**. macOS compiles 489
+translation units to Linux's 506 — *fewer*, since it was the video-off leg — with parallelism
+working. It is simply a slower 3-core runner, with nothing structural to fix and nothing about
+MoltenVK to cache or to move to archimedes, which already owns it end to end.
+
+Measured while settling that (`build/.ninja_log`, Debug + video ON, 308 CPU-seconds of compilation):
+**Catch2 is 15.4% of all compile time** (47.4s, 107 TUs) — the largest single dependency and half of
+all third-party time — followed by `apps/flowview` at 12.4%, `apps/flowview/test` at 8.3%,
+`extern/archimedes` at 7.8% and `libs/flow/test` at 7.7%. **Third-party plus submodule is 31% of
+compile time, not the "over half" a TU count suggests**: libtiff's 44 files cost 3.0s while
+flowview's 33 cost 38.3s.
+
+Two conclusions follow, both deliberately not acted on. **Prebuilding PNG/TIFF is not worth it** —
+which contradicts the candidate named in `notes.txt`, since libtiff is 1.0% and libpng does not
+reach the top 26; it would buy ~2% in exchange for a hash-pinned archive per platform, a
+licence-notice obligation and the platform-gap apologies `addFFmpeg.cmake` already carries.
+**Catch2 is the only dependency where prebuilding would matter**, and `cmake/addcatch2.cmake`
+already declares `FIND_PACKAGE_ARGS CONFIG`, so a system Catch2 is preferred when present —
+installing one in CI would skip those 107 TUs with no new machinery, at the cost of testing a
+different Catch2 than the pin. A compiler cache remains the untried general lever; no caching
+beyond the fetched archives is in place.
 
 ### Not covered, and deliberately
 

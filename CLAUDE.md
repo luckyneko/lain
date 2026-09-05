@@ -292,12 +292,13 @@ fix-forward backlog lives in WORK.md.
 - **Release everywhere, Debug on the cheapest runner.** Release is what a fresh clone gets and is the
   configuration that has rotted before (M10 slice 4 found every `#ifdef NDEBUG` enforcement test in
   the repo had been unreachable for some time); Debug is a genuinely different test set.
-- **Video is ON everywhere EXCEPT macOS Release, and the asymmetry is the point.** The option
-  defaults OFF, so something must prove the default configuration builds — but every unknown worth
-  paying for lives off macOS: the `windows-x86_64` / `linux-x86_64` archive pins in
-  `cmake/addFFmpeg.cmake` had never been fetched by anyone, and the Windows DLL staging had never
-  run. macOS is the platform built by hand daily, so it carries the default config and the other
-  three carry the full one — both covered without a fifth leg.
+- **The default configuration gets its own Linux leg** (revised 2026-09-05, five legs). Video
+  defaults OFF, so one leg must prove that configuration builds. macOS carried it at first, on the
+  reasoning that a platform built by hand daily needs CI least — **which inverted once the timings
+  arrived**: macOS is the slowest leg by 3–4×, and the daily build has video ON, so CI was spending
+  seventeen minutes on a combination nobody builds while never exercising the one built daily. Linux
+  does the same work in three. Each axis now varies alone; Debug stays video-ON to match the daily
+  build, and the video-off leg is Release because that is what a fresh clone gets.
 - **The `add_subdirectory` smoke proves two claims with one job**, because `LAIN_BUILD_TESTING` /
   `_APPS` / `_FORMAT` all default to `${LAIN_NOT_SUBPROJECT}`: lain is consumable as a subdirectory,
   *and* a headless consumer of `lain::flow` is not forced to vendor GLFW or ImGui. Verified locally
