@@ -410,11 +410,11 @@ TEST_CASE("a map crumb reports that it is per-element, and how many", "[groupnav
 
 	const std::vector<Crumb> viaGroup = breadcrumb(root, GraphPath{{group}});
 	REQUIRE(viaGroup.size() == 2);
-	REQUIRE_FALSE(viaGroup[1].perElement); // an ordinary group has exactly one evaluation
+	REQUIRE(viaGroup[1].interior == InteriorEvaluation::Once); // an ordinary group: one evaluation
 
 	const std::vector<Crumb> viaMap = breadcrumb(root, GraphPath{{map}});
 	REQUIRE(viaMap.size() == 2);
-	REQUIRE(viaMap[1].perElement);
+	REQUIRE(viaMap[1].interior == InteriorEvaluation::PerElement);
 
 	const std::vector<std::size_t> counts = pathElementCounts(evaluation, GraphPath{{map, 2}});
 	REQUIRE(counts.size() == 1);
@@ -480,7 +480,7 @@ TEST_CASE("every crumb's depth indexes the path it was built from", "[groupnav]"
 	for (const Crumb& crumb : crumbs)
 	{
 		REQUIRE(crumb.depth <= path.size()); // never names a step the path does not have
-		if (crumb.perElement)
+		if (crumb.interior == InteriorEvaluation::PerElement)
 			REQUIRE(crumb.depth >= 1); // the root is not an element of anything
 	}
 
@@ -488,6 +488,6 @@ TEST_CASE("every crumb's depth indexes the path it was built from", "[groupnav]"
 	Evaluation evaluation{root};
 	const std::vector<std::size_t> counts = pathElementCounts(evaluation, path);
 	REQUIRE(counts.size() == path.size());
-	REQUIRE(crumbs.back().perElement);
+	REQUIRE(crumbs.back().interior == InteriorEvaluation::PerElement);
 	REQUIRE(crumbs.back().depth - 1 < counts.size());
 }

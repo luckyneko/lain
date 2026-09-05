@@ -81,7 +81,7 @@ namespace flowview
 			const flow::Graph* inner = node.innerGraph();
 			if (inner == nullptr)
 				break;
-			crumbs.push_back(Crumb{node.name(), i + 1, node.evaluatesPerElement()});
+			crumbs.push_back(Crumb{node.name(), i + 1, node.interiorEvaluation()});
 			current = inner;
 		}
 		return crumbs;

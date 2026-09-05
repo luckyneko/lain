@@ -74,7 +74,7 @@ namespace flowview
 			// log-free — but the child evaluations are right here, so the host simply looks. One row
 			// per output rather than one per failed element: a systematically broken folder would
 			// otherwise bury the panel under a row per file.
-			if (node.evaluatesPerElement() && node.innerGraph() != nullptr)
+			if (node.interiorEvaluation() == flow::InteriorEvaluation::PerElement && node.innerGraph() != nullptr)
 			{
 				const flow::NodeId boundary = node.innerGraph()->boundaryOutputNode().id();
 				const std::size_t elements = evaluation.childCount(id);

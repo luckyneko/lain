@@ -16,6 +16,23 @@ namespace lain::flow
 	class Graph;		  // a node may CONTAIN one (see innerGraph) — the group-node seam
 	class NodeEvaluation; // the per-node runtime view compute() is handed (evaluation.h)
 
+	// How often a node's CONTAINED graph is evaluated. The third and last part of the structural
+	// seam, beside innerGraph() and innerPin(), and asked for the same reason as those two: the
+	// scheduler needs the FACT, not the class, so a future interior kind needs no scheduler change.
+	//
+	// An ENUM rather than a bool per kind (ADR-0021): two booleans could express a state that means
+	// nothing, and only an enum lets -Wswitch find the sites the NEXT interior kind has to visit.
+	//
+	// There is deliberately no `None` for a node with no interior. innerGraph() already answers
+	// that, and a second source for the same fact could disagree with the first — the shape M7
+	// slice 1 and ADR-0014 each deleted. Every reader pairs the two.
+	enum class InteriorEvaluation
+	{
+		Once,		  // a group: one child evaluation, run once (ADR-0009)
+		PerElement,	  // a map: one child per ELEMENT of a collection, sized between stages (ADR-0014)
+		PerIteration, // a loop: ONE child, re-run per ITERATION, each pass seeding the next (ADR-0021)
+	};
+
 	// Abstract base for a graph node — a DEFINITION: what it is, what ports and params it declares,
 	// what it computes. It holds no runtime state at all; values and bookkeeping live in an
 	// Evaluation (ADR-0012).
@@ -165,14 +182,15 @@ namespace lain::flow
 		// graph-containing node work with no scheduler change.
 		virtual PortId innerPin(PortId /*outer*/) const { return PortId{}; }
 
-		// Whether this node evaluates its contained graph ONCE PER ELEMENT of a collection — a map
-		// (ADR-0014) — rather than once. The third and last part of the structural seam, and asked
-		// for the same reason as the two above: the scheduler needs the fact, not the class, so a
-		// future per-element node needs no scheduler change.
+		// How often this node's contained graph is evaluated (see InteriorEvaluation above) — the
+		// third part of the structural seam. Meaningful only alongside innerGraph(); a node with no
+		// interior answers Once and is never asked.
 		//
-		// It is what makes a node's children plural: one evaluation per element rather than one
-		// full stop, sized between stages because the collection is only computed during the run.
-		virtual bool evaluatesPerElement() const { return false; }
+		// It is what decides how many child evaluations a node has, and how they relate: PerElement
+		// makes them PLURAL (one per element, sized between stages because the collection is only
+		// computed during the run), PerIteration makes one child SEQUENTIAL (re-run per iteration,
+		// each pass seeding the next).
+		virtual InteriorEvaluation interiorEvaluation() const { return InteriorEvaluation::Once; }
 
 		// (Readiness — "every REQUIRED input carries a value", ADR-0007 — followed the values into
 		// the Evaluation: `evaluation.ready(id)` for a host, `nodeEvaluation.ready()` inside compute.

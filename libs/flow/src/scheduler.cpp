@@ -2,7 +2,6 @@
 
 #include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h" // Graph + the boundary nodes a group step crosses through
-#include "lain/flow/group.h" // MapNode — the scheduler asks whether a node maps, not which class it is
 
 #include <lain/task/task.h>
 
@@ -142,7 +141,7 @@ namespace lain::flow
 			// A map is recognised BEFORE the no-child case below: it legitimately has zero children
 			// (an empty collection, or one that could not be determined), and running it as an
 			// ordinary node would silently do nothing instead of gathering.
-			const bool isMap = node.evaluatesPerElement() && inner != nullptr;
+			const bool isMap = node.interiorEvaluation() == InteriorEvaluation::PerElement && inner != nullptr;
 			if (inner == nullptr || (!isMap && !evaluation.hasChild(id)))
 			{
 				const std::size_t step = plan.steps.size();

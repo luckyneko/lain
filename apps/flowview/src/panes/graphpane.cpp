@@ -227,7 +227,10 @@ namespace flowview
 				// It earns its keep when an element FAILS: one hole clears the whole map's output
 				// (ADR-0014), so the way to find out which element broke is to go and look at it —
 				// and the Issues row for that element navigates straight here.
-				if (crumbs[i].perElement && crumbs[i].depth >= 1)
+				//
+				// PerElement ONLY: a loop level has one child evaluation re-run per iteration, so
+				// there is nothing to page between — only its last iteration survives (ADR-0021).
+				if (crumbs[i].interior == flow::InteriorEvaluation::PerElement && crumbs[i].depth >= 1)
 				{
 					const std::size_t step = crumbs[i].depth - 1;
 					const std::size_t count = step < ctx.pathElementCounts.size() ? ctx.pathElementCounts[step] : 0;

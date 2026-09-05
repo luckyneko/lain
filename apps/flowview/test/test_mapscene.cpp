@@ -149,7 +149,7 @@ TEST_CASE("a folder of images maps through one subgraph and combines", "[flowvie
 	{
 		for (const NodeId id : graph.nodeIds())
 		{
-			if (graph.node(id).evaluatesPerElement())
+			if (graph.node(id).interiorEvaluation() == InteriorEvaluation::PerElement)
 				return id;
 		}
 		return NodeId{};

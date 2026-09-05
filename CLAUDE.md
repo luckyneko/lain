@@ -325,6 +325,35 @@ WORK.md, vocabulary in CONTEXT.md. Both earlier ADRs are resolved in place. **No
   (6) flowview + both verticals. Count vertical needs no new node (`gradient → carry → blur ×5`); the
   while vertical adds `ImageDifferenceNode` + `CompareNode` and blurs until it stops changing.
 
+### Update 2026-09-05 — M11 slice 1 built: the structural seam becomes an enum
+
+The first of M11's two no-behaviour-change refactors. `Node::evaluatesPerElement()` is now
+**`interiorEvaluation() -> { Once, PerElement, PerIteration }`** — a free `enum class` at
+`lain::flow` scope in `node.h` (matching `Presence`, so the type and its accessor share a word).
+Seven call sites, nothing returns `PerIteration` yet, and the existing suite is the regression test:
+`ctest` **652/652** Debug and **658/658** Release, warning-clean, format-check clean, `flowview run
+--example` unchanged. Full landing notes in WORK.md M11.
+
+- **All three enumerators landed now, with ONE exhaustive switch**, because `PerIteration`'s arm is
+  already *correct* rather than a placeholder: `Evaluation::prepare`'s child-count arm became a
+  `switch` where a loop joins a group in the guaranteed-one-child case (ADR-0021 — one retained
+  child, reused per iteration). So `-Wswitch` has a real anchor from this commit rather than from
+  slice 4, **sabotage-verified** by deleting an arm and watching the build fail. Everything else
+  stays an `==` comparison — M10 slice 4's `ColorSpace` precedent exactly.
+- **The coverage claim is measured, not assumed.** Giving `PerIteration` the *map's* arm passes all
+  652 tests, because nothing returns it yet. The switch's correctness is bought by slice 4; here the
+  enum's value is the compiler's, not the suite's.
+- **No `None` for a node with no interior.** `innerGraph()` already answers that and every reader
+  pairs the two, so a fourth enumerator would be a second source able to disagree with the first —
+  the shape M7 slice 1 and ADR-0014 each deleted. Stated in the header, so the absence reads as a
+  decision.
+- **flowview's `Crumb` carries the enum, not a derived bool** — which is where *"the element stepper
+  stays off a loop crumb"* is actually bought (a map's elements are co-equal results you page
+  between; a loop's iterations are steps, and only the last survives).
+- **Found and removed: `scheduler.cpp` included `group.h` for a class it never names**, under a
+  comment saying the scheduler asks the fact rather than the class — the include contradicted the
+  rule this slice is about.
+
 ### Update 2026-09-05 — CI: lain builds and tests on Linux, macOS and Windows (**GREEN**)
 
 `lain` had **no CI at all**, and all 210 commits were built and verified on one macOS arm64 machine.
@@ -753,7 +782,8 @@ ragged / `N == 0` rules — all driven through the production schedulers, serial
 - **`Node::evaluatesPerElement()`** is the structural seam's third question, beside `innerGraph()` and
   `innerPin()`. The scheduler asks the fact, not the class: the first draft used
   `dynamic_cast<MapNode*>` and was corrected, since ADR-0009's whole point is that a future
-  graph-containing node needs no scheduler change.
+  graph-containing node needs no scheduler change. *(Renamed `interiorEvaluation()`, returning an
+  enum, in M11 slice 1 — see the 2026-09-05 update.)*
 - **Lifting needs the port-type REGISTRY — an addition the ADR did not anticipate.** A `PortType`
   knows its element type, but nothing walks that backwards (naming `std::vector<T>` needs `T` at
   compile time, and mirroring has only a runtime type). `registerPortType<std::vector<T>>` now also

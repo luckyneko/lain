@@ -191,7 +191,7 @@ namespace lain::flow
 
 		// The structural fact that makes this a map: its interior is evaluated once per element,
 		// so it has N child evaluations rather than one, sized between stages.
-		bool evaluatesPerElement() const override { return true; }
+		InteriorEvaluation interiorEvaluation() const override { return InteriorEvaluation::PerElement; }
 
 		// Mirror an inner pin LIFTED — an inner T becomes an outer vector<T>, which is what makes
 		// this node a map rather than a group.

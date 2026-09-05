@@ -144,12 +144,23 @@ namespace lain::flow
 					(existingChildren == m_children.end())
 						? std::vector<std::unique_ptr<Evaluation>>{}
 						: std::move(existingChildren->second);
-				// A group is always exactly one evaluation, so give it its one. A MAP's count is the
-				// length of a collection this run has not computed yet, so leave it alone entirely —
-				// including at zero, which is a legitimate answer (an empty collection) and must not
-				// be quietly turned into one spurious child.
-				if (kept.empty() && !node.evaluatesPerElement())
-					kept.push_back(std::make_unique<Evaluation>());
+				// How many children this KIND of interior is guaranteed before anything runs. The
+				// one place in the tree that switches over InteriorEvaluation exhaustively, so the
+				// next interior kind is asked this question by the compiler rather than by a reader.
+				switch (node.interiorEvaluation())
+				{
+					case InteriorEvaluation::Once:		   // a group: always exactly one evaluation
+					case InteriorEvaluation::PerIteration: // a loop: one, REUSED every iteration
+						if (kept.empty())
+							kept.push_back(std::make_unique<Evaluation>());
+						break;
+
+					case InteriorEvaluation::PerElement:
+						// A MAP's count is the length of a collection this run has not computed yet,
+						// so leave it alone entirely — including at zero, which is a legitimate
+						// answer (an empty collection) and must not become one spurious child.
+						break;
+				}
 
 				for (std::unique_ptr<Evaluation>& child : kept)
 				{

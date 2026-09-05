@@ -2094,7 +2094,8 @@ and `PortId` changes green, and the shape that makes a regression unambiguous.
    structural assertion.
    - **The structural seam gained its third question: `Node::evaluatesPerElement()`.** The scheduler
      asks the fact, not the class — ADR-0009's rule, and the first draft of this slice broke it with
-     a `dynamic_cast<MapNode*>` before it was corrected.
+     a `dynamic_cast<MapNode*>` before it was corrected. *(Renamed `interiorEvaluation()`, returning
+     an enum, in M11 slice 1.)*
    - **Addition the ADR did not anticipate: lifting needs the port-type REGISTRY.** A `PortType`
      knows its element type, but nothing can walk that backwards — naming `std::vector<T>` needs `T`
      at compile time, and mirroring has only a runtime type. So `registerPortType<std::vector<T>>`
@@ -3925,11 +3926,36 @@ deliverable.**
 **Build order** — structural refactors land as no-behaviour-change commits *before* the feature
 exists, flowview last with its own live verification. Same shape as M8.
 
-1. **The seam becomes an enum.** `Node::evaluatesPerElement()` → `interiorEvaluation() ->
-   { Once, PerElement, PerIteration }`. Seven call sites. Two booleans could express a nonsense state;
-   an enum cannot, and `-Wswitch` then catches the next interior kind (the M10 slice 4 lesson). It also
-   drops a loop into `Evaluation::prepare`'s guaranteed-one-child arm and keeps the element stepper off
-   a loop crumb, both for free. No behaviour change — the existing suite is the regression test.
+1. ✅ **The seam becomes an enum — BUILT** (2026-09-05). `Node::evaluatesPerElement()` →
+   `interiorEvaluation() -> { Once, PerElement, PerIteration }`, a free `enum class` at `lain::flow`
+   scope in `node.h` (matching `Presence` in `port.h`, not nesting like `Port::Direction`, so the type
+   and its accessor share a word). Seven call sites. No behaviour change — the existing suite is the
+   regression test, and it moved by zero: `ctest` **652/652** Debug and **658/658** Release,
+   warning-clean, format-check clean, `flowview run --example` unchanged.
+   - **All three enumerators landed now, with ONE exhaustive switch — because `PerIteration`'s arm is
+     already correct rather than a placeholder.** `Evaluation::prepare`'s child-count arm became a
+     `switch`, where a loop joins a group in the guaranteed-one-child case (ADR-0021: one retained
+     child, reused per iteration). That gives `-Wswitch` a real anchor from this commit instead of
+     from slice 4 — **sabotage-verified**: deleting an arm fails the build with
+     *"enumeration value 'PerElement' not handled in switch [-Werror,-Wswitch]"*. Every other site
+     stays an `==` comparison, which is M10 slice 4's `ColorSpace` precedent exactly (one deliberate
+     exhaustive switch in the tree; comparisons everywhere else).
+   - **The honest statement of this slice's coverage, measured rather than assumed.** Giving
+     `PerIteration` the *map's* arm — no child guaranteed — passes all 652 tests, because nothing
+     returns `PerIteration` yet. The switch's correctness is bought by slice 4, and this is why the
+     enum's value here is the compiler's, not the suite's.
+   - **No `None` for a node with no interior**, decided while building. `innerGraph()` already answers
+     that question and every reader pairs the two (`== PerElement && inner != nullptr`), so a fourth
+     enumerator would be a second source able to disagree with the first — the shape M7 slice 1 and
+     ADR-0014 each deleted. Stated in the header so the absence reads as a decision.
+   - **flowview's `Crumb` carries the enum, not a derived bool.** The element stepper now tests
+     `interior == PerElement`, which is where "the stepper stays off a loop crumb" is actually bought:
+     a map's elements are co-equal results you page between, a loop's iterations are steps and only
+     the last survives. Carrying the enum is ADR-0021's own anti-two-booleans argument applied one
+     level up — a loop crumb that later wants its own marker adds no second field.
+   - **Found and removed: `scheduler.cpp` included `group.h` for a class it never names.** The include
+     comment read *"MapNode — the scheduler asks whether a node maps, not which class it is"*, so it
+     contradicted the rule this slice is about. It compiles and passes without it.
 2. **`LoopNode`, core types only.** The class beside `MapNode`, `addCarry<T>`, the carry map, the
    reserved pin ids, `count` / `iterations`, `editableInner()` (the M8 slice 6c lesson — without it
    every pane is read-only inside a loop), and the `exposePort` override deriving

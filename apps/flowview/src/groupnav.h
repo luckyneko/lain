@@ -10,6 +10,7 @@
 // built from that template, so that is an explicit "Edit Template…" act, not a side effect of
 // clicking in.
 
+#include <lain/flow/node.h>					// InteriorEvaluation — a crumb carries which kind of level it names
 #include <lain/flow/serialize/loadresult.h> // EditorTree — layout mirrors the nesting
 #include <lain/flow/types.h>
 #include <lain/math/types.h> // Vec2f — canvas positions, for the layout migration below
@@ -83,8 +84,13 @@ namespace flowview
 	struct Crumb
 	{
 		std::string label;
-		std::size_t depth;		 // path length once this crumb is chosen (0 = root)
-		bool perElement = false; // this crumb is a MAP: it has one evaluation per element
+		std::size_t depth; // path length once this crumb is chosen (0 = root)
+
+		// What KIND of level this crumb names, carried as the enum rather than as a derived bool for
+		// the reason ADR-0021 gives one level down: a second flag beside it could disagree with it.
+		// Only PerElement gets the element stepper — a map's elements are co-equal results you page
+		// between, while a loop's iterations are steps and only the last one survives.
+		lain::flow::InteriorEvaluation interior = lain::flow::InteriorEvaluation::Once;
 	};
 
 	// The breadcrumb for `path`: "root" plus each descended group's display name.
