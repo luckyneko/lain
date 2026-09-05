@@ -276,6 +276,55 @@ sits inside an inline group).
   **gui-mode live-verified 2026-08-11 — M7 is COMPLETE.**
 - Still out: file watching, prefab overrides, in-place template editing.
 
+### Update 2026-09-05 — M11 designed: loop nodes (nothing built yet)
+
+`flow` can run a subgraph **once** (a group) and **N times independently** (a map). It cannot run one
+**sequentially, feeding each pass into the next**. ADR-0012 named *"whether Loop carries state between
+iterations"* among four questions it refused to guess at; ADR-0014 settled the other three for the map
+and re-deferred this one. **Milestone 11** answers it. Grilled 2026-09-05; decisions in
+**[ADR-0021](docs/adr/0021-loop-nodes-carried-state-per-iteration-staging.md)**, build order in
+WORK.md, vocabulary in CONTEXT.md. Both earlier ADRs are resolved in place. **Nothing is built.**
+
+- **There is no production caller, and the milestone says so out loud** — the owner's framing was
+  *"there is no direct use case as much as this is a feature that really tests the node approach."*
+  That makes the standard **stricter** than M8's, not looser, since ADR-0012's own warning is that
+  guessing produces a mechanism fitted to imagined requirements. The vertical is the deliverable.
+- **One `LoopNode`, bounded plus an optional condition** — a node-owned `count` input with a
+  `Default{}` and an optional inner `continue : bool`. Count loop = count; while loop = condition with
+  count as its bound; converging solver = both, which is what real solver code already is. There is no
+  unbounded state to represent, so nothing has to refuse one at runtime.
+- **The count bound is the staging loop's well-formedness condition, not a usability nicety.**
+  `runStages` terminates today because *"a map is deferred at most once per invocation"*; a loop is
+  deferred **per iteration**, which destroys that argument outright. The bound is what restores it —
+  the reason this decision is load-bearing only became visible while working out the lowering.
+- **A carry is a stored `PortId` pair**, created only by a paired gesture so half a carry cannot be
+  authored — id-keyed for the reason `portMap` already is. Name-pairing was refused on its failure
+  mode: a rename would silently stop a loop carrying, with no error and a plausible answer.
+- **Two reserved inner pins** the engine writes and reads (`index`, `continue`), not mirrored, skipped
+  **by id**. `continue` defaults to **true**, so unwired is transparent while wired-and-suppressed
+  means the iteration failed — `GateNode::enable`'s 2026-08-15 resolution, reused rather than
+  reinvented for the same trap.
+- **A map maps, a loop folds.** Gathering across iterations was refused so the two node kinds stay one
+  job each. `iterations : int` is what makes "converged at 7" distinguishable from "hit the bound at
+  100" — a fact the graph reads instead of a policy the engine invents.
+- **One iteration per stage, one retained child evaluation.** A map's elements are co-equal *results*,
+  a loop's iterations are *steps*, so retaining them would turn ADR-0014's self-declared sharpest cost
+  into something a typo makes unbounded. It also keeps `EvalPath` at index 0, so `PinKey`, the
+  breadcrumb and the element stepper need **nothing** — the surface that produced all ten of M5's bugs
+  is untouched.
+- **Reading a carry out before rebinding the same child is sound only because of M5 slice 1** —
+  `PortValue` payloads are shared and immutable, so *"an earlier copy keeps the old payload"*. Without
+  it, reuse would need a second child or a deep copy per carry per iteration.
+- **Store the pairing, derive the ports** — so a loop follows M5's group rule rather than the map's.
+  A map stores its *ports* because its mode lives in a type; a loop's mode **is** the pairing, so
+  storing that stores the fact rather than its consequence, and no derivable second source can
+  disagree with it.
+- Six slices, the two structural refactors landing as **no-behaviour-change** commits first: (1)
+  `evaluatesPerElement()` becomes an `interiorEvaluation()` enum, (2) `LoopNode` core types, (3)
+  staging generalises so a frontier may be raised repeatedly, (4) the loop runs, (5) serialization,
+  (6) flowview + both verticals. Count vertical needs no new node (`gradient → carry → blur ×5`); the
+  while vertical adds `ImageDifferenceNode` + `CompareNode` and blurs until it stops changing.
+
 ### Update 2026-09-05 — CI: lain builds and tests on Linux, macOS and Windows (**GREEN**)
 
 `lain` had **no CI at all**, and all 210 commits were built and verified on one macOS arm64 machine.

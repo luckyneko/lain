@@ -146,9 +146,15 @@ type is the mode.
 
 ## Deliberately unsettled
 
-- **Loop, and whether it carries state between iterations.** Still ADR-0012's question, still without a
-  caller. A map's children are independent by construction; a loop's are not, which is a different
-  execution shape rather than a variant of this one.
+- ~~**Loop, and whether it carries state between iterations.**~~ **Settled 2026-09-05 by
+  [ADR-0021](0021-loop-nodes-carried-state-per-iteration-staging.md)** — it carries, through paired
+  inner boundary pins. The prediction here held: a loop is a different execution shape rather than a
+  variant, and the difference lands in the staging loop. A map raises a frontier **once**, which is
+  what bounds the number of stages; a loop raises one per iteration, so ADR-0021 makes a loop bounded
+  by construction and that bound *is* the replacement for this ADR's termination argument. Two things
+  built here paid forward unchanged: the frontier machinery needed no new substrate, and `at()`'s
+  aliasing sibling — M5's shared, immutable `PortValue` payload — is what lets a loop read a carry out
+  of a child evaluation and bind it straight back into the same one.
 - **A linked map.** One shared template mapped over N streams is what the video workload wants, and
   M7's ownership model already permits it; it needs the workload in front of it to decide how an
   instance's interface reconciles against a shared template's.

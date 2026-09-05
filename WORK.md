@@ -3876,6 +3876,102 @@ The GPU. gui-mode is still eyeball-verified by the repo owner on a Metal-capable
 `[gpu]` test self-SKIPs, and ctest reports it skipped rather than passed. Nothing here changes that,
 and nothing here should be read as covering it.
 
+## Milestone 11 — loop nodes (grilled 2026-09-05)
+
+**Designed, not started.** `flow` can run a subgraph **once** (a group) and **N times independently**
+(a map). It cannot run one **sequentially, feeding each pass into the next**. ADR-0012 named
+*"whether Loop carries state between iterations"* among four questions it refused to guess at;
+ADR-0014 settled the other three for the map and re-deferred this one, because *"a map's children are
+independent by construction, a loop's are not"*. Decisions in
+**[ADR-0021](docs/adr/0021-loop-nodes-carried-state-per-iteration-staging.md)**; vocabulary in
+[CONTEXT.md](CONTEXT.md).
+
+**There is no production caller, and the milestone says so out loud.** The owner's framing was *"there
+is no direct use case as much as this is a feature that really tests the node approach."* That makes
+the standard **stricter** than M8's, not looser — ADR-0012's own warning is that guessing produces a
+mechanism fitted to imagined requirements — so everything below is either forced by a rule already in
+force or is the smallest thing that makes a count loop and a while loop work. **The vertical is the
+deliverable.**
+
+**What it is, in one line each:**
+
+- A **loop** is a group whose interior runs **once per iteration**, each iteration's **carried**
+  outputs seeding the next one's inputs. One `LoopNode` beside `MapNode`, inline only.
+- **Bounded by construction.** A node-owned `count` input with a `Default{}` plus an **optional**
+  inner `continue : bool`. Count loop = count; while loop = condition with count as its bound;
+  converging solver = both. There is no unbounded state to represent, so nothing refuses one at
+  runtime.
+- **The count bound is the staging loop's well-formedness condition, not a nicety.** `runStages`
+  terminates today because a map is deferred at most once; a loop is deferred per iteration, which
+  destroys that argument. The bound restores it.
+- A **carry** is a stored `PortId` **pair** on the inner boundary, created only by a paired gesture,
+  so half a carry cannot be authored. Name-pairing was refused: a rename would silently stop a loop
+  carrying, with no error.
+- Two **reserved inner pins** the engine writes and reads — `index` and `continue` — not mirrored
+  outward, skipped **by id**. `continue` defaults to **true**, so unwired is transparent and
+  wired-and-suppressed means the iteration failed (`GateNode::enable`'s resolution, reused).
+- **A map maps, a loop folds.** Carries mirror out as final values, unpaired outputs as last-iteration
+  values, plus `iterations : int` — which is what makes "converged at 7" distinguishable from "hit the
+  bound at 100".
+- **One iteration per stage**, on the existing frontier machinery. An iterating loop emits its
+  interior steps *and* re-raises itself as a frontier; a finished one emits `LoopExit` alone.
+- **One retained child evaluation**, reused. A map's elements are results; a loop's iterations are
+  steps. Keeps `EvalPath` at index 0, so `PinKey` / the breadcrumb / the element stepper need nothing.
+- **Suppression is failure, `continue` is break.** `count == 0` is not failure: zero iterations, each
+  carry delivers its **seed** — the fold identity, as a map's `N == 0` yields an empty vector.
+- **Store the pairing, derive the ports** — name-addressed on disk like every edge, so a loop follows
+  M5's group rule rather than the map's.
+
+**Build order** — structural refactors land as no-behaviour-change commits *before* the feature
+exists, flowview last with its own live verification. Same shape as M8.
+
+1. **The seam becomes an enum.** `Node::evaluatesPerElement()` → `interiorEvaluation() ->
+   { Once, PerElement, PerIteration }`. Seven call sites. Two booleans could express a nonsense state;
+   an enum cannot, and `-Wswitch` then catches the next interior kind (the M10 slice 4 lesson). It also
+   drops a loop into `Evaluation::prepare`'s guaranteed-one-child arm and keeps the element stepper off
+   a loop crumb, both for free. No behaviour change — the existing suite is the regression test.
+2. **`LoopNode`, core types only.** The class beside `MapNode`, `addCarry<T>`, the carry map, the
+   reserved pin ids, `count` / `iterations`, `editableInner()` (the M8 slice 6c lesson — without it
+   every pane is read-only inside a loop), and the `exposePort` override deriving
+   seed / invariant / final / last. `edit::syncGroupPorts` skips the reserved inner pins **by id**;
+   its removal phase needs no change, since it already iterates `portMap()` and a node-owned port is
+   invisible to it. Nothing runs yet.
+3. **Staging generalises.** `PreparedMaps` becomes per-frontier staging state, so a frontier may be
+   raised repeatedly. A map still defers exactly once — no behaviour change, the M8 slice 2 shape.
+4. **The loop runs.** `prepareLoop`, the `LoopExit` step, the count / `continue` termination test, the
+   `count == 0` identity, the suppression rules, `iterations`. Through **both** schedulers. Reading a
+   carry out before rebinding the same child is sound only because M5 slice 1 made `PortValue`
+   payloads shared and immutable — worth a comment at the site. Test nested loops, a loop inside a map
+   and a map inside a loop.
+5. **Serialization.** The `loop` section (name-addressed carries + the reserved pin names),
+   rectification on the map's precedent, round-trip byte-idempotence.
+6. **flowview + the verticals.** `Add ▸ Groups ▸ loop` (plus the `[catalog]` creatable-key test), a
+   canvas colour, and an **Add Carry** gesture in the Interface pane — without it a loop cannot be
+   authored, which is the "compiled, linked, unreachable" shape this file has caught four times. Two
+   new example nodes, `ImageDifferenceNode` and `CompareNode`, exist to make the condition path real.
+   **Count vertical needs no new node**: `gradient → carry → blur ×5`. **While vertical**: blur until
+   it stops changing.
+
+**Verification.** `ctest` green in **both Debug and Release** (M10 slice 4 found every `#ifdef NDEBUG`
+enforcement test had gone unreachable); warning-clean; `format-check` clean. Sabotage, at least:
+remove the count bound and watch `runStages` **hang**; bind the seed every iteration and watch the
+carry stop carrying; drop the reserved-pin skip and watch `index` / `continue` leak onto the outer
+face. Headless through the **real binary** for both verticals, plus save ⇒ load ⇒ save
+byte-idempotence and a `count = 0` document delivering its seeds. `[group]`-style 100× race sweep on
+the parallel path. **gui-mode live-verified by the repo owner on the Metal machine** — slice 6 is not
+done until that happens.
+
+### Not in this milestone
+
+- **A linked loop** — one shared template iterated, exactly as ADR-0014 defers the linked map.
+- **Retaining per-iteration state**, and the breadcrumb iteration stepper it would enable. Needs a
+  retention policy, which ADR-0012 refuses to have.
+- **Plan caching across stages** — the optimisation that makes this lowering cheap, already deferred
+  elsewhere in this file, and the named escape if `O(N × document)` planning ever bites.
+- **A scan output** (gathering across iterations). Refused so Loop and Map stay one job each; the
+  machinery would be `exitMap`'s gather.
+- **`count` visible to the interior**, for progress. Additive, nothing asks.
+
 ## Backlog (deferred — don't build speculatively)
 
 ### Tier A — when a real graph demands it

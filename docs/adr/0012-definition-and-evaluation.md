@@ -282,11 +282,22 @@ imagined requirements.
 > **staging** — `expand()` stops at a map of unknown arity and the run re-plans, so the second
 > coordinator point is the gap between stages and the invariant below survives unchanged. **Loop
 > remains unsettled**: a map's children are independent by construction, a loop's are not.
+>
+> **Loop settled in turn (2026-09-05) by
+> [ADR-0021](0021-loop-nodes-carried-state-per-iteration-staging.md)** — with, unusually, no caller:
+> the feature exists to test the node model itself, which the ADR states rather than hides. It
+> **carries**, through paired inner boundary pins identified by `PortId`. One retained child
+> evaluation, reused per iteration; the same staging machinery, but a frontier raised **per
+> iteration** rather than once — which is why a loop is bounded by construction, since the bound
+> replaces the termination argument ADR-0014 got from "a map is deferred at most once". All four
+> questions here are now answered.
 
 - Whether a map's child index is positional or something stabler. If the input collection reorders
   between runs, *"element 3"* follows the position, not the stream, and a pinned preview quietly
   changes subject.
-- Whether Loop carries state between iterations or starts clean.
+- ~~Whether Loop carries state between iterations or starts clean.~~ **Settled by ADR-0021: it
+  carries**, through paired inner boundary pins. A count loop with no carry would just be a map over a
+  range, so the carry is the whole reason the node kind exists.
 - How suppression (ADR-0007) crosses a map — does an unready element suppress the whole map or just
   its own child?
 - How the execution plan (ADR-0009) lowers a map: N children expanded into one flat plan, or a

@@ -646,14 +646,38 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   **serializes its interface**: its mirroring is under-determined by one bit per input pin, so the
   ports cannot be re-derived. _Avoid_: SplitGroup (the working name in ADR-0012, retired — a map does
   not split a *group*).
-- **Stage / frontier** *(M8)* — a map's arity comes from a value computed **during** the run, so the
-  plan cannot be complete before it starts. `expand()` refuses to descend into a map whose arity is
-  unknown — that map is a **frontier**, and everything downstream of it is left out of this **stage**.
-  `run()` loops: plan, execute the stage flat, prepare the children now that N is known, plan again.
-  The gap between stages is the **second coordinator point** ADR-0012 left open, so *"a coordinator
-  grows evaluation storage, a worker task never does"* survives intact, and each stage is still the
-  one flat DAG both backends already run. _Avoid_: subflow, nested run, a per-map join barrier —
-  independent siblings still plan into the current stage.
+- **Loop node** *(M11 — [ADR-0021](docs/adr/0021-loop-nodes-carried-state-per-iteration-staging.md))* —
+  a group whose interior runs **once per iteration**, each iteration's carried outputs seeding the
+  next one's inputs. Where a map's children are independent by construction, a loop's are sequentially
+  dependent, which is what makes it a different execution shape rather than a variant. A loop is
+  **bounded by construction** — a `count` input with a default, so an unbounded loop has no
+  representation — and stops early when the interior says so. It **folds**: one result, never a
+  collection. _Avoid_: Fold as the node name (ADR-0018 already uses the word for the host's frame
+  loop, which is a different loop over different things); Repeat, Iterate, While.
+- **Carry** *(noun; M11)* — one **paired** inner boundary pin, whose value on the output side becomes
+  its value on the input side next iteration. Identified by its `PortId` pair, not by name, for the
+  reason `portMap` already is: a rename must move a label, never behaviour. It is the whole reason a
+  loop exists — a count loop with no carry is a map over a range. Mirrors outward as **two** ports: an
+  input holding the seed and an output holding the final value. The adjective does most of the work in
+  prose (*a carried pin*, *the carried value*); the ordinary VERB is unchanged and unrelated (*a port
+  carries a `vector<T>`*). _Avoid_: accumulator (implies summing, and a carry is usually a
+  replacement), feedback (suggests a cycle, which the graph forbids), state (spoken for by
+  *Evaluation*), loop variable (that is the `index` pin).
+- **Reserved pin** *(M11)* — an inner boundary pin the ENGINE writes or reads rather than the parent
+  graph: `index` (which iteration this is) and `continue` (whether to run another). Not mirrored
+  outward, and skipped by id rather than by name, so renaming one cannot change what a loop does.
+  `continue` defaults to true, so an unwired condition is transparent while a wired-and-suppressed one
+  means the iteration failed — the distinction `GateNode::enable` already draws.
+- **Stage / frontier** *(M8; generalised M11)* — a map's arity comes from a value computed **during**
+  the run, so the plan cannot be complete before it starts. `expand()` refuses to descend into a map
+  whose arity is unknown — that map is a **frontier**, and everything downstream of it is left out of
+  this **stage**. `run()` loops: plan, execute the stage flat, prepare the children now that N is
+  known, plan again. The gap between stages is the **second coordinator point** ADR-0012 left open, so
+  *"a coordinator grows evaluation storage, a worker task never does"* survives intact, and each stage
+  is still the one flat DAG both backends already run. A map raises a frontier **once**; a **loop
+  raises one per iteration**, and what keeps the loop terminating is that a loop is bounded — the
+  count bound is the staging loop's well-formedness condition, not just user safety. _Avoid_: subflow,
+  nested run, a per-map join barrier — independent siblings still plan into the current stage.
 - **Node evaluation** — the view handed to `Node::compute` for one node in one Evaluation. Compute is
   const over the definition; it reads this node's evaluated inputs, writes its evaluated outputs, and
   may request another computation here, never by mutating the Node. A narrow non-owning capability
