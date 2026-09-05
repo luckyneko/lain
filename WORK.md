@@ -3803,19 +3803,26 @@ discovered, 655 passing. What is left is small and, in both cases, not what it f
     loader after archimedes in every target on every platform. archimedes leaves this to consumers
     because it cannot know whether one wants the vendored loader; by that line the choice is made.
 
-### Green (2026-09-05, run 33890635630)
+### Green (first on 2026-09-05, run 33890635630; current shape run 33940070934)
 
 Five runs from the first red one. **lain builds and passes its tests on Linux x64, macOS arm64 and
-Windows x64.**
+Windows x64.** The figures below are the reshuffled five-leg matrix:
 
 | leg | tests | time |
 |---|---|---|
-| Linux Release (video ON) | 658/658 | 5m |
-| Linux Debug (video ON) | 652/652 | 3m |
-| macOS Release (video OFF) | 626/626 | 17m |
-| Windows Release (video ON) | 658/658 | 7m |
-| clang-format | pass | 41s |
-| add_subdirectory smoke | pass | 2m |
+| Linux Release (video ON) | 658/658 | 4m26s |
+| Linux Release (video off) | 626/626 | 4m14s |
+| Linux Debug (video ON) | 652/652 | 4m05s |
+| macOS Release (video ON) | 658/658 | 12m46s |
+| Windows Release (video ON) | 658/658 | 6m48s |
+| clang-format | pass | 26s |
+| add_subdirectory smoke | pass | 1m43s |
+
+Moving video onto macOS added 32 tests there (626 → 658) and gave the `macos-arm64` FFmpeg pin and
+`flowview --licenses` their first exercise in CI; both passed. The default configuration is now the
+626 on Linux. macOS came in at 12m46s against the 17m it took while building *less*, so the earlier
+17m was partly runner variance on top of a genuinely slow runner — worth remembering before reading
+any single leg's duration as a fixed cost.
 
 **The Debug/Release split earned its place immediately**: Linux Release runs 658 where Debug runs
 652, and those six are the `NDEBUG`-guarded enforcement cases — the class this file recorded as

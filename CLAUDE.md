@@ -319,11 +319,12 @@ fix-forward backlog lives in WORK.md.
   executable at build time to enumerate cases. The same compiled-linked-unreachable shape as M5's bug
   six — and the one thing fixed ahead of the discovery run, since it is a known omission rather than
   anything a compiler had to tell us.
-- **GREEN on all three platforms 2026-09-05**, five runs after the first: Linux Release 658/658,
-  Linux Debug 652/652, macOS Release 626/626 (video off), Windows Release 658/658, plus the format
-  and subproject jobs. **The Debug/Release split earned its place immediately** — Release runs six
-  more tests than Debug, and those six are the `NDEBUG`-guarded enforcement cases this file recorded
-  as having gone unreachable unnoticed.
+- **GREEN on all three platforms 2026-09-05**, five runs after the first, and green again on the
+  reshuffled five-leg matrix: Linux Release 658/658, Linux Release video-off 626/626, Linux Debug
+  652/652, macOS Release 658/658, Windows Release 658/658, plus the format and subproject jobs.
+  **The Debug/Release split earned its place immediately** — Release runs six more tests than Debug,
+  and those six are the `NDEBUG`-guarded enforcement cases this file recorded as having gone
+  unreachable unnoticed.
 - **The port took ten findings, and the prediction was wrong about their kind.** Not one MSVC
   narrowing warning and not one `<windows.h>` `min`/`max` collision — the two predicted loudest. Six
   of ten were instead **something libc++ supplies that libstdc++ and MSVC's STL do not**: a
