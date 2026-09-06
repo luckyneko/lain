@@ -683,7 +683,9 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   *"a coordinator grows evaluation storage, a worker task never does"* survives intact, and each stage
   is still the one flat DAG both backends already run. A map raises a frontier **once**; a **loop
   raises one per iteration**, and what keeps the loop terminating is that a loop is bounded — the
-  count bound is the staging loop's well-formedness condition, not just user safety. _Avoid_: subflow,
+  count bound is the staging loop's well-formedness condition, not just user safety. What a run has
+  done to each frontier is **staging state**, held per frontier *address* and answered as a count of
+  **preparations** (`Scheduler::Staging`), since only a count can say which raise this is. _Avoid_: subflow,
   nested run, a per-map join barrier — independent siblings still plan into the current stage.
 - **Node evaluation** — the view handed to `Node::compute` for one node in one Evaluation. Compute is
   const over the definition; it reads this node's evaluated inputs, writes its evaluated outputs, and

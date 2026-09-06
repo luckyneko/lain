@@ -177,10 +177,21 @@ fact beside the underivable one, which is a second source that can disagree with
   guaranteed-one-child arm and keeps the breadcrumb's element stepper off a loop crumb, both for free.
 - **A frontier may now be raised repeatedly**, which contradicts `scheduler.h`'s current prose and the
   `PreparedMaps` comment that a map *"is deferred at most once per invocation"*. `PreparedMaps` becomes
-  per-frontier staging state; the map's own behaviour is unchanged.
+  per-frontier staging state; the map's own behaviour is unchanged. *(Built 2026-09-05:
+  `Scheduler::Staging`, a record per frontier ADDRESS — looked up through `Frontier`'s own equality —
+  answering a **count of preparations** rather than membership, because a flag can say a frontier came
+  back and only a count can say which time this is. Two things were measured rather than assumed: the
+  map's bound really does pass through the new type — losing the record makes the staging loop spin
+  forever — while the definition/evaluation halves of the address are **not** observable with only
+  maps raising frontiers, since every frontier raised in a stage is prepared before the next, so two
+  sharing a node id cannot diverge. The first case that buys them is a while loop inside a map whose
+  rows stop at different iterations.)*
 - **`expand` gains a step kind that both emits and defers.** An iterating loop contributes its
   interior steps *and* a frontier in the same stage, which no node has done before. Everything
   downstream of it is deferred exactly as it is for a map, so nothing at that level reads its `ends`.
+  *(Checked at the code, 2026-09-05: this needs no seam of its own — a node may push steps, then
+  `deferred.insert(id)` and set no `ends` entry, and the existing `downstreamOfDeferred` scan and
+  both `runStages` break conditions already cope.)*
 - **Planning is `O(N × document)` for an N-iteration loop.** Each stage rebuilds a plan. Acceptable
   for the counts a graph editor will see, and the named escape is plan caching.
 - **Only the last iteration is inspectable.** Stated as a cost, with `count = 3` as the gesture.

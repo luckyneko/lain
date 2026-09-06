@@ -80,6 +80,36 @@ namespace lain::flow
 		return order;
 	}
 
+	//=========================================================================
+	// Scheduler::Staging — what this invocation has done to each frontier
+	//=========================================================================
+
+	// A linear walk, because the entries are per FRONTIER and not per raise: a document holds a
+	// handful of nodes that can raise one, and a node that raises its frontier again comes back to
+	// its own entry rather than adding another.
+	std::size_t Scheduler::Staging::preparations(const Frontier& frontier) const
+	{
+		for (const Entry& entry : m_entries)
+		{
+			if (entry.frontier == frontier)
+				return entry.preparations;
+		}
+		return 0;
+	}
+
+	void Scheduler::Staging::recordPreparation(const Frontier& frontier)
+	{
+		for (Entry& entry : m_entries)
+		{
+			if (entry.frontier == frontier)
+			{
+				++entry.preparations;
+				return;
+			}
+		}
+		m_entries.push_back(Entry{frontier, 1});
+	}
+
 	// Flatten one level into the plan, recursing through anything that contains a graph.
 	//
 	// A plain node becomes one step that both consumes (populateInputs) and produces. A group
@@ -88,7 +118,7 @@ namespace lain::flow
 	// gathering exit, or is deferred to the next stage. Wiring this level's edges between those ends
 	// is what stitches the levels into a single DAG.
 	void Scheduler::expand(const Graph& definition, Evaluation& evaluation, const std::vector<NodeId>& order, Plan& plan,
-						   const PreparedMaps& prepared)
+						   const Staging& staging)
 	{
 		// Where a node's value is consumed and where it becomes available: the same step for a
 		// plain node, entry and exit for a group.
@@ -104,18 +134,6 @@ namespace lain::flow
 		// one. `order` is topo, so a node's predecessors are already decided when it is reached —
 		// the same shape runOrder uses to grow the stale closure.
 		std::set<NodeId> deferred;
-
-		// Has this map already been prepared during this invocation? That is what bounds the staging
-		// loop: a map is deferred at most once, so the stage count cannot exceed the number of maps.
-		const auto alreadyPrepared = [&](NodeId id)
-		{
-			for (const Frontier& f : prepared)
-			{
-				if (f.definition == &definition && f.evaluation == &evaluation && f.node == id)
-					return true;
-			}
-			return false;
-		};
 
 		for (const NodeId id : order)
 		{
@@ -174,15 +192,18 @@ namespace lain::flow
 			// bindings can be trusted yet — defer it, and let the loop prepare it once the stage that
 			// computes its input has run.
 			//
-			// The `prepared` check is what makes the SECOND stage expand it instead of deferring it
+			// The staging check is what makes the SECOND stage expand it instead of deferring it
 			// again; preparation also REQUESTS this map's recompute, so that it — and everything
-			// downstream of it — is still selected when the plan is rebuilt.
+			// downstream of it — is still selected when the plan is rebuilt. Asking for a COUNT of
+			// preparations rather than for membership is what leaves room for a node that raises its
+			// frontier more than once; a map's answer is only ever 0 or 1.
 			if (isMap)
 			{
-				if (publish && !alreadyPrepared(id))
+				const Frontier frontier{&definition, &evaluation, id};
+				if (publish && staging.preparations(frontier) == 0)
 				{
 					deferred.insert(id);
-					plan.frontiers.push_back(Frontier{&definition, &evaluation, id});
+					plan.frontiers.push_back(frontier);
 					continue;
 				}
 
@@ -190,7 +211,7 @@ namespace lain::flow
 				const std::size_t count = evaluation.childCount(id);
 				const std::size_t begin = plan.steps.size();
 				for (std::size_t i = 0; i < count; ++i)
-					expand(*inner, evaluation.child(id, i), runOrder(*inner, evaluation.child(id, i)), plan, prepared);
+					expand(*inner, evaluation.child(id, i), runOrder(*inner, evaluation.child(id, i)), plan, staging);
 				const std::size_t end = plan.steps.size();
 
 				const std::size_t exit = plan.steps.size();
@@ -224,7 +245,7 @@ namespace lain::flow
 			plan.steps.push_back(Step{Step::Kind::GroupEntry, &definition, &evaluation, id, publish});
 
 			const std::size_t innerBegin = plan.steps.size();
-			expand(*inner, child, runOrder(*inner, child), plan, prepared);
+			expand(*inner, child, runOrder(*inner, child), plan, staging);
 			const std::size_t innerEnd = plan.steps.size();
 
 			const std::size_t exit = plan.steps.size();
@@ -261,15 +282,15 @@ namespace lain::flow
 		}
 	}
 
-	Scheduler::Plan Scheduler::buildRunPlan(const Graph& definition, Evaluation& evaluation, const PreparedMaps& prepared)
+	Scheduler::Plan Scheduler::buildRunPlan(const Graph& definition, Evaluation& evaluation, const Staging& staging)
 	{
 		Plan plan;
-		expand(definition, evaluation, runOrder(definition, evaluation), plan, prepared);
+		expand(definition, evaluation, runOrder(definition, evaluation), plan, staging);
 		return plan;
 	}
 
 	Scheduler::Plan Scheduler::buildEvalPlan(const Graph& definition, Evaluation& evaluation, NodeId target,
-											 const PreparedMaps& prepared)
+											 const Staging& staging)
 	{
 		std::set<NodeId> cone;
 		collectUpstream(definition, target, cone);
@@ -284,7 +305,7 @@ namespace lain::flow
 		}
 
 		Plan plan;
-		expand(definition, evaluation, order, plan, prepared);
+		expand(definition, evaluation, order, plan, staging);
 		return plan;
 	}
 
@@ -328,15 +349,15 @@ namespace lain::flow
 	// one plan: the cost and the behaviour of a single-plan run, unchanged.
 	void Scheduler::runStages(const Graph& definition, Evaluation& evaluation, Mode mode, NodeId target)
 	{
-		// Every map prepared so far in this invocation. A map is deferred at most once, so this also
-		// bounds the loop: at most one stage per map, plus the final one.
-		PreparedMaps prepared;
+		// What this invocation has done to each frontier so far. A map is deferred at most once, so
+		// this also bounds the loop: at most one stage per map, plus the final one.
+		Staging staging;
 
 		while (true)
 		{
 			const Plan plan = (mode == Mode::Push)
-								  ? buildRunPlan(definition, evaluation, prepared)
-								  : buildEvalPlan(definition, evaluation, target, prepared);
+								  ? buildRunPlan(definition, evaluation, staging)
+								  : buildEvalPlan(definition, evaluation, target, staging);
 
 			if (plan.steps.empty() && plan.frontiers.empty())
 				break;
@@ -361,7 +382,7 @@ namespace lain::flow
 			for (const Frontier& frontier : plan.frontiers)
 			{
 				prepareMap(frontier);
-				prepared.push_back(frontier);
+				staging.recordPreparation(frontier);
 			}
 		}
 	}

@@ -409,6 +409,42 @@ notes in WORK.md M11.
   is null, so it would wipe `iterations` — `LoopExit` must write the node-owned outputs after it, or
   not reuse `exitGroup` at all.
 
+### Update 2026-09-05 — M11 slice 3 built: staging state becomes a record per frontier
+
+The last structural change before the loop runs. `Scheduler::PreparedMaps` — a `std::vector<Frontier>`
+of frontiers already seen, scanned by a lambda inside `expand` — is now **`Scheduler::Staging`**, a
+record per frontier ADDRESS answering a **count of preparations**. A map still defers exactly once, so
+behaviour is identical and the existing suite is the regression test: `ctest` **663/663** Debug with
+video on and **637/637** Release in the default video-off configuration, both unchanged from slice 2;
+warning-clean, format-check clean, and `flowview run` over the example scene identical to the
+pre-change binary once the timestamp and the minted uuids are normalised. Full landing notes in
+WORK.md M11.
+
+- **A record per frontier rather than a longer list is the whole slice.** The old shape encoded its
+  own assumption — *"a map is deferred at most once per invocation"* — in the fact that it only ever
+  appended. A loop raises its frontier **per iteration** (ADR-0021), so an append-only list would grow
+  an entry per iteration and be re-walked on every `expand` lookup; the entry count now stays per
+  frontier address however many times that frontier comes back.
+- **A COUNT, not a flag** — a flag can say a frontier came back, only a count can say *which time this
+  is*. The map's whole use of it is `== 0`, so, stated the way slice 1 stated its own coverage,
+  **nothing reads it as more than 0-or-1 yet**: the count is bought by slice 4, not by this suite.
+- **The map's own bound demonstrably still passes through the new type.** Sabotage: make
+  `recordPreparation` record nothing and the `[flow][map]` cases **hang** — the map is deferred again
+  on every stage and its frontier re-raised forever, which is exactly what M8 slice 2's staging test
+  exists to prevent.
+- **Sabotaging the ADDRESS changes nothing, and that is a finding rather than a pass.** Keying the
+  record on the `NodeId` alone passes all 663 tests — including *"a map inside a map costs one more
+  stage and nothing else"*, which exists for the `{definition, evaluation, node}` address — because
+  every frontier raised in a stage is prepared before the next one, so two frontiers sharing a node id
+  are always in the same state and, with only maps raising them, cannot diverge. The address is
+  structurally required and observably bought by the first loop whose trip count can differ from a
+  sibling's: a **while loop inside a map**, now named in slice 4's test list. Pre-existing — the old
+  lambda compared all three fields and nothing tested that either.
+- **Checked at the code, needs nothing:** ADR-0021's *"`expand` gains a step kind that both emits and
+  defers"* is already expressible — a node may push its interior steps, then `deferred.insert(id)` and
+  set no `ends` entry, and the existing `downstreamOfDeferred` scan plus both `runStages` break
+  conditions already cope. Amended into the ADR in place.
+
 ### Update 2026-09-05 — CI: lain builds and tests on Linux, macOS and Windows (**GREEN**)
 
 `lain` had **no CI at all**, and all 210 commits were built and verified on one macOS arm64 machine.

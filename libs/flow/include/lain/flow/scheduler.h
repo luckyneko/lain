@@ -30,6 +30,12 @@
 // and the gap BETWEEN stages is where a map's child evaluations are created, on the coordinator
 // thread, which is what keeps "a worker task never grows evaluation storage" true (ADR-0012).
 // A graph with no map raises no frontier and so runs in exactly one stage, as it always has.
+//
+// What has been done to each frontier so far is STAGING STATE, held per FRONTIER rather than as a
+// list of frontiers seen — because a frontier may be raised more than once. A map raises one
+// exactly once, which is what bounds the loop below; the loop node ADR-0021 designs raises one per
+// ITERATION, and its own mandatory count is what bounds that instead. Nothing raises one twice
+// today, so this is structure rather than behaviour — see Staging.
 
 #include "lain/flow/evaluation.h" // Session holds an Evaluation::RunLease by value
 #include "lain/flow/types.h"
@@ -113,12 +119,21 @@ namespace lain::flow
 		// of it are left out of the stage; the loop prepares its children and plans again.
 		//
 		// Addressed exactly like a Step, and for the same reason: one shared definition may be
-		// mapped in several evaluations at once, so neither half names the work alone.
+		// mapped in several evaluations at once, so neither half names the work alone. That address
+		// is also the key its staging state is kept under.
 		struct Frontier
 		{
 			const Graph* definition = nullptr;
 			Evaluation* evaluation = nullptr;
 			NodeId node;
+
+			// The same work in the same evaluation — all three fields, since neither half names it
+			// alone. Equality rather than an ordering: Staging looks a record up by this, and nothing
+			// needs an order over addresses.
+			friend bool operator==(const Frontier& a, const Frontier& b)
+			{
+				return a.definition == b.definition && a.evaluation == b.evaluation && a.node == b.node;
+			}
 		};
 
 		// A whole nested graph flattened into one task DAG: steps in a valid serial order, plus
@@ -135,23 +150,48 @@ namespace lain::flow
 			std::vector<Frontier> frontiers;
 		};
 
-		// The maps already prepared during THIS invocation. Passed down rather than held on the
-		// Scheduler, because one Scheduler may be running two evaluations at once — a member would
-		// be shared mutable state on an object whose whole contract is that it has none.
+		// What ONE invocation has done to each frontier it raised. Passed down rather than held on
+		// the Scheduler, because one Scheduler may be running two evaluations at once — a member
+		// would be shared mutable state on an object whose whole contract is that it has none.
 		//
-		// It is also what guarantees the staging loop terminates: a map is deferred at most once per
-		// invocation, so the number of stages is bounded by the number of maps.
-		using PreparedMaps = std::vector<Frontier>;
+		// A RECORD PER FRONTIER, not a list of frontiers seen, because a frontier may be raised
+		// REPEATEDLY: a map raises one once, a loop one per iteration (ADR-0021). An append-only list
+		// would then grow an entry per iteration and be re-walked on every lookup, so the entry count
+		// stays per frontier ADDRESS however many times that frontier comes back.
+		class Staging
+		{
+		public:
+			// How many times this frontier has been prepared during this invocation; 0 if it has never
+			// been raised.
+			//
+			// A map's whole use of it is `== 0` — not prepared yet, so defer it — and that is what
+			// bounds the staging loop for a map: it is deferred at most once, so the number of stages
+			// cannot exceed the number of maps. A loop is bounded by its own mandatory count instead,
+			// which is why the answer is a COUNT and not a flag: a flag can say a frontier came back,
+			// only a count can say which time this is. Nothing reads it as more than 0-or-1 yet.
+			std::size_t preparations(const Frontier& frontier) const;
+
+			// Record one preparation of this frontier, creating its entry on the first.
+			void recordPreparation(const Frontier& frontier);
+
+		private:
+			struct Entry
+			{
+				Frontier frontier;
+				std::size_t preparations = 0;
+			};
+			std::vector<Entry> m_entries; // one per FRONTIER, never one per raise — see above
+		};
 
 		// The plan for a full run: the STALE CLOSURE at every level — every node the evaluation says
 		// needs recomputing plus everything downstream of one, with each group expanded in place and
 		// each not-yet-prepared map left as a frontier.
-		Plan buildRunPlan(const Graph& definition, Evaluation& evaluation, const PreparedMaps& prepared);
+		Plan buildRunPlan(const Graph& definition, Evaluation& evaluation, const Staging& staging);
 
 		// The plan for a pull: the stale nodes in `target`'s upstream cone. Deliberately NOT the
 		// closure — a node that does not need recomputing keeps its value even if something upstream
 		// does, which is the long-standing pull semantic.
-		Plan buildEvalPlan(const Graph& definition, Evaluation& evaluation, NodeId target, const PreparedMaps& prepared);
+		Plan buildEvalPlan(const Graph& definition, Evaluation& evaluation, NodeId target, const Staging& staging);
 
 		// Execute ONE stage's plan — the only thing the two strategies do differently. It is handed a
 		// complete, already-ordered plan, so a backend never plans, never takes the lease and never
@@ -204,7 +244,7 @@ namespace lain::flow
 		// whose input may still change in this stage is recorded in `plan.frontiers` instead, along
 		// with everything downstream of it.
 		void expand(const Graph& definition, Evaluation& evaluation, const std::vector<NodeId>& order, Plan& plan,
-					const PreparedMaps& prepared);
+					const Staging& staging);
 
 		// Size and fill a deferred map's children, now that the stage which computes its input has
 		// finished: populate its own inputs, read the arity from its split inputs, create/prune one

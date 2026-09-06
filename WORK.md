@@ -4014,13 +4014,51 @@ exists, flowview last with its own live verification. Same shape as M8.
    - **Found while planning, for slice 4:** `Scheduler::exitGroup` **clears** an output whose
      `innerPin` is null, so it would wipe `iterations` — `LoopExit` must write the node-owned outputs
      after it, or not reuse `exitGroup` at all.
-3. **Staging generalises.** `PreparedMaps` becomes per-frontier staging state, so a frontier may be
-   raised repeatedly. A map still defers exactly once — no behaviour change, the M8 slice 2 shape.
+3. ✅ **Staging generalises — BUILT** (2026-09-05). `PreparedMaps` — a `std::vector<Frontier>` of
+   frontiers already seen, scanned by a lambda inside `expand` — is now **`Scheduler::Staging`**, a
+   record per frontier ADDRESS answering a **count of preparations**. A map still defers exactly
+   once, so behaviour is identical and the existing suite is the regression test: `ctest`
+   **663/663** Debug with video on and **637/637** Release in the default video-off configuration,
+   both unchanged from slice 2. Warning-clean, format-check clean, and `flowview run` over the
+   example scene is identical to the pre-change binary once the timestamp and the freshly-minted
+   uuids are normalised.
+   - **A record per frontier rather than a longer list, which is the whole slice.** The old shape
+     encoded its own assumption — *"a map is deferred at most once per invocation"* — in the fact
+     that it only ever appended. A loop raises its frontier **per iteration** (ADR-0021), so an
+     append-only list would grow an entry per iteration and be re-walked on every `expand` lookup;
+     the entry count now stays per frontier address however many times that frontier comes back.
+   - **A COUNT, not a flag.** A flag can say a frontier came back; only a count can say *which time
+     this is*, which is what slice 4's iteration bookkeeping needs. The map's whole use of it is
+     `== 0`, so — stated the way slice 1 stated its own coverage — **nothing reads it as more than
+     0-or-1 yet**, and the count itself is bought by slice 4 rather than by this suite.
+   - **The map's own bound demonstrably still passes through the new type.** Sabotage: make
+     `recordPreparation` record nothing, and the `[flow][map]` cases **hang** — the map is deferred
+     again on every stage and its frontier is re-raised forever. That is the same failure M8 slice
+     2's staging test exists to prevent, arriving from the other direction.
+   - **Sabotaging the ADDRESS changes nothing, and that is a finding rather than a pass.** Keying
+     the record on the `NodeId` alone passes all **663** tests, including *"a map inside a map costs
+     one more stage and nothing else"*, which exists for the `{definition, evaluation, node}`
+     address. The reason is that every frontier raised in a stage is prepared before the next one,
+     so two frontiers sharing a node id are always in the same state: with only maps raising them,
+     they cannot diverge. The address is structurally required and **observably** bought by the
+     first loop whose trip count can differ from a sibling's — a while loop inside a map — which is
+     now named in slice 4's test list. (Pre-existing: the old lambda compared all three fields and
+     nothing tested that either.)
+   - **Checked at the code, needs nothing here:** ADR-0021's *"`expand` gains a step kind that both
+     emits and defers"* is already expressible — a node may push its interior steps, then
+     `deferred.insert(id)` and set no `ends` entry, and the existing `downstreamOfDeferred` scan
+     does the rest. Both `runStages` break conditions already cope with a stage that emits steps
+     *and* raises a frontier.
+   - `Frontier` gained an inline `operator==` so both `Staging` methods say *the same frontier* once
+     instead of open-coding the three-field compare. Equality, not an ordering: nothing needs an
+     order over addresses, and equality is a straight port of what the lambda already did.
 4. **The loop runs.** `prepareLoop`, the `LoopExit` step, the count / `continue` termination test, the
    `count == 0` identity, the suppression rules, `iterations`. Through **both** schedulers. Reading a
    carry out before rebinding the same child is sound only because M5 slice 1 made `PortValue`
    payloads shared and immutable — worth a comment at the site. Test nested loops, a loop inside a map
-   and a map inside a loop.
+   and a map inside a loop — **including a loop inside a map whose rows stop at different
+   iterations**, which is what finally buys the `{definition, evaluation, node}` frontier address
+   (slice 3 measured that maps alone cannot make two frontiers sharing a node id diverge).
 5. **Serialization.** The `loop` section (name-addressed carries + the reserved pin names),
    rectification on the map's precedent, round-trip byte-idempotence.
 6. **flowview + the verticals.** `Add ▸ Groups ▸ loop` (plus the `[catalog]` creatable-key test), a
