@@ -131,6 +131,15 @@ namespace lain::flow
 	// entry step and its producing end is the exit step. A MAP becomes its children's steps plus a
 	// gathering exit, or is deferred to the next stage. Wiring this level's edges between those ends
 	// is what stitches the levels into a single DAG.
+	//
+	// ONE RULE ACROSS ALL THREE KINDS: a node does not publish while its interior has deferred. It
+	// still contributes the interior's steps — that is the work that makes progress — but emits no
+	// exit and no PRODUCING end, so everything downstream waits a stage instead of recomputing on a
+	// value that is last stage's, or (for a gather) on a cleared one. It keeps its CONSUMING end
+	// where it has a step that still reads this level's values, which is the group's entry. The loop
+	// arm needs the rule to be CORRECT, since the coordinator reads carried values out between
+	// stages; a group and a map merely published early, which is why theirs went unnoticed for two
+	// milestones.
 	void Scheduler::expand(const Graph& definition, Evaluation& evaluation, const std::vector<NodeId>& order, Plan& plan,
 						   const Staging& staging)
 	{
@@ -225,9 +234,22 @@ namespace lain::flow
 				// N children, all sharing one definition — the target workload, finally literal.
 				const std::size_t count = evaluation.childCount(id);
 				const std::size_t begin = plan.steps.size();
+				const std::size_t raised = plan.frontiers.size();
 				for (std::size_t i = 0; i < count; ++i)
 					expand(*inner, evaluation.child(id, i), runOrder(*inner, evaluation.child(id, i)), plan, staging);
 				const std::size_t end = plan.steps.size();
+
+				// An element's own interior deferred — a nested map sizing its children, a loop part-way
+				// through its fold — so not every element has delivered. Gathering now would read one that
+				// has not run, and since a single hole clears the whole output (ADR-0014) it would publish
+				// a CLEARED collection downstream, to be replaced a stage later. Contribute the work and
+				// take no `ends`, so everything downstream waits — the same rule the loop arm below
+				// follows, and no frontier of our own: the interior's is what brings this map back.
+				if (plan.frontiers.size() > raised)
+				{
+					deferred.insert(id);
+					continue;
+				}
 
 				const std::size_t exit = plan.steps.size();
 				plan.steps.push_back(Step{Step::Kind::MapExit, &definition, &evaluation, id, false});
@@ -308,25 +330,52 @@ namespace lain::flow
 			plan.steps.push_back(Step{Step::Kind::GroupEntry, &definition, &evaluation, id, publish});
 
 			const std::size_t innerBegin = plan.steps.size();
+			const std::size_t raised = plan.frontiers.size();
 			expand(*inner, child, runOrder(*inner, child), plan, staging);
 			const std::size_t innerEnd = plan.steps.size();
+
+			// The entry writes what the inner GroupInput carries onward, so it must precede that
+			// step — and it must do so whether or not the group goes on to publish, because the
+			// interior runs in this stage either way. Wired BEFORE the deferral below for exactly
+			// that reason: an entry left unordered would be free to run after the boundary node it
+			// feeds, which a serial walk hides and the parallel backend does not.
+			// (Steps from a DEEPER level carry that level's definition pointer, so this skips them.)
+			for (std::size_t i = innerBegin; i < innerEnd; ++i)
+			{
+				const Step& step = plan.steps[i];
+				if (step.definition == inner && step.kind == Step::Kind::Node && step.node == inner->boundaryInputNode().id())
+					plan.edges.emplace_back(entry, i);
+			}
+
+			// The interior deferred something of its own, so what this group would publish is the
+			// PREVIOUS stage's value wearing this stage's clothes. The final value is right either way,
+			// but every downstream node recomputes on it once per intermediate stage and reads a partial
+			// result as a finished one. Emit the entry and the inner steps — that is the work that makes
+			// progress — and no exit and no `ends`, so everything downstream waits. A group still raises
+			// NO frontier: the interior's own is what keeps the staging loop moving, and Scheduler::stale
+			// recurses into the child evaluation, so this group is still selected next stage.
+			if (plan.frontiers.size() > raised)
+			{
+				deferred.insert(id);
+				// The entry still CONSUMES this level's values, so this level's edges into the group
+				// must still be honoured — without an `ends` entry the entry step would be free to
+				// publish before the node feeding it had run, which is a wrong value rather than a
+				// wasted one. The mirror image of the map arm above: everything downstream of a
+				// deferred node is itself deferred and takes no `ends`, so the producing end here is
+				// never read, and both ends name the entry.
+				ends[id] = Ends{entry, entry};
+				continue;
+			}
 
 			const std::size_t exit = plan.steps.size();
 			plan.steps.push_back(Step{Step::Kind::GroupExit, &definition, &evaluation, id, false});
 
-			// The entry writes what the inner GroupInput carries onward, and the exit reads what the
-			// inner GroupOutput was delivered — so those two inner steps, when selected, are the
-			// only ones that must be ordered against the boundary steps. Everything else inside is
-			// ordered transitively by the inner graph's own edges. (Steps from a DEEPER level carry
-			// that level's definition pointer, so this skips them.)
+			// The exit reads what the inner GroupOutput was delivered, so that step must precede it.
+			// Everything else inside is ordered transitively by the inner graph's own edges.
 			for (std::size_t i = innerBegin; i < innerEnd; ++i)
 			{
 				const Step& step = plan.steps[i];
-				if (step.definition != inner || step.kind != Step::Kind::Node)
-					continue;
-				if (step.node == inner->boundaryInputNode().id())
-					plan.edges.emplace_back(entry, i);
-				else if (step.node == inner->boundaryOutputNode().id())
+				if (step.definition == inner && step.kind == Step::Kind::Node && step.node == inner->boundaryOutputNode().id())
 					plan.edges.emplace_back(i, exit);
 			}
 
@@ -458,7 +507,9 @@ namespace lain::flow
 						break;
 
 					case InteriorEvaluation::Once:
-						// A group is expanded in place and never deferred, so it cannot be a frontier.
+						// A group contributes its interior's steps in place. It may be DEFERRED (when that
+						// interior deferred something of its own) but never raises a frontier: the interior's
+						// own is what brings the level back, so nothing here ever prepares a group.
 						assert(false && "flow::Scheduler: a group never raises a frontier");
 						break;
 				}

@@ -4112,6 +4112,55 @@ exists, flowview last with its own live verification. Same shape as M8.
      does the same thing today** — so the fix (emit entry and inner steps but no exit and no `ends`
      while the interior has deferred, which is exactly the rule the loop arm now follows) belongs in
      its own commit rather than in the one that introduces the loop.
+     *(**Fixed 2026-09-06** in its own commit — see "A node does not publish while its interior has
+     deferred" below.)*
+
+**A node does not publish while its interior has deferred — BUILT** (2026-09-06, its own commit,
+before slice 5). The rule the loop arm arrived at in slice 4, applied to the two arms that did not
+follow it. `expand`'s group arm and map arm now measure whether their recursive expansion raised a
+frontier, and if it did, contribute the interior's steps but take **no exit and no `ends`** —
+deferring themselves so everything downstream waits a stage. Neither raises a frontier of its own:
+the interior's is what brings the level back, and `Scheduler::stale` recurses into the child
+evaluation, so the node is still selected next stage. `ctest` **680/680** Debug with video on (+2),
+warning-clean, format-check clean, `[loop]` swept 100× on the parallel path, `flowview run --example`
+unchanged.
+
+- **Both arms, not just the recorded one.** The map's is the same defect with a sharper edge: a
+  gather reads elements that have not run, and since ONE hole clears the whole output (ADR-0014) an
+  early `MapExit` publishes a **cleared** collection rather than merely a stale value. Fixing the
+  group and leaving its twin would have made the rule kind-specific, which is the shape ADR-0009
+  keeps deleting.
+- **The bug is invisible on a FIRST run, and that is why both tests measure the SECOND.** The first
+  draft of each test failed to catch its own sabotage. On a fresh evaluation the node's outer output
+  is still empty, so an early publish hands the consumer an empty slot, ADR-0007 suppresses it, and
+  nothing computes on nonsense. Only once the node HOLDS a value does an early publish hand over the
+  previous run's answer — indistinguishable from a finished one. The map twin needed one more turn:
+  with a **new** element the gather reads a child that never ran and publishes empty (suppression
+  again), so the row count is held steady and only the values change.
+- **The observable is a call count, never a value.** Every value assertion passes with the bug
+  present — the final publish is correct — which is exactly why two milestones of tests missed it.
+  Sabotage-verified on both: the group's downstream consumer computes **6 times instead of 1**, the
+  map's **2 instead of 1**.
+- **Deferring a group cost it TWO plan edges, and both are wrong answers rather than wasted work.**
+  Neither was anticipated; the parallel section of the group test found them, and both are invisible
+  to a serial walk because `plan.steps` order alone happens to be right there.
+  1. A group's **entry step still consumes this level's values**, so it needs its incoming edge —
+     but the deferral originally took no `ends` entry, and this level's edge wiring skips a node
+     that has none. The entry was then free to run before the node feeding it and published the
+     PREVIOUS value into the interior. A deferred group now records `Ends{entry, entry}`: the mirror
+     image of the map arm's own note, since everything downstream of a deferred node is itself
+     deferred and takes no `ends`, so the producing end is never read.
+  2. The **entry → inner GroupInput** edge is wired BEFORE the deferral check, not after the exit
+     push where it used to sit, because the interior runs in this stage either way. Without it, a
+     body node reading the boundary but not downstream of the deferred loop — the ordinary shape —
+     races the entry.
+  The test needed a scene with a parent-level input relayed through a body node to expose either;
+  the first draft had the seed *inside* the group and could not. Sabotage-verified: **11/20** and
+  **18/20** failures across the parallel section.
+- Two comments corrected with it: `expand`'s header now states the rule once for all three kinds,
+  and `runStages`' *"a group is expanded in place and never deferred, so it cannot be a frontier"*
+  becomes *never raises a frontier* — which is the property its assert actually depends on, and is
+  still true now that a group can be deferred.
 5. **Serialization.** The `loop` section (name-addressed carries + the reserved pin names),
    rectification on the map's precedent, round-trip byte-idempotence.
 6. **flowview + the verticals.** `Add ▸ Groups ▸ loop` (plus the `[catalog]` creatable-key test), a

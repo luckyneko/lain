@@ -689,7 +689,12 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   defers at most once **per enclosing iteration** — seeding a loop's next pass forgets what is staged
   inside its interior, because that subgraph is about to run again with new values — and a loop
   re-raises itself only when the iteration will finish in that stage, so an interior that deferred
-  something of its own costs a stage rather than a partial answer. _Avoid_: subflow,
+  something of its own costs a stage rather than a partial answer. Generalised to a rule over every
+  interior-bearing kind: **a node does not publish while its interior has deferred** — it contributes
+  the interior's steps but takes no exit, so a downstream node waits a stage instead of recomputing
+  on the previous stage's value (or, for a gather, on a cleared one). Being **deferred** and
+  **raising a frontier** are different: only a map and a loop raise one, which is why preparing a
+  frontier never has a group to prepare. _Avoid_: subflow,
   nested run, a per-map join barrier — independent siblings still plan into the current stage.
 - **Node evaluation** — the view handed to `Node::compute` for one node in one Evaluation. Compute is
   const over the definition; it reads this node's evaluated inputs, writes its evaluated outputs, and

@@ -510,6 +510,108 @@ TEST_CASE("a map inside a map costs one more stage and nothing else", "[flow][ma
 	REQUIRE(evaluation.child(outerId, 1).childCount(innerId) == 1);
 }
 
+TEST_CASE("a map holding a deferred map gathers once, not once per stage", "[flow][map]")
+{
+	// The group twin of the same defect (see the [loop] case of the same name). The outer map's
+	// gathering exit used to be emitted even when an element's own interior had deferred — so it
+	// read elements that had not run, and since ONE hole clears the whole output (ADR-0014) it
+	// published a CLEARED collection downstream, replaced a stage later by the real one.
+	//
+	// Measured on a SECOND run, because the first has nothing to be stale about: an early gather on
+	// a fresh evaluation publishes empty, which suppresses the consumer rather than feeding it a
+	// wrong answer. Once the map holds a value, an early gather overwrites it with an empty one and
+	// the consumer sees a collection that briefly claims the map produced nothing.
+	registerMapTypes();
+	registerPortType<std::vector<Ints>>("ListOfListOfInt");
+
+	Graph graph;
+	const NodeId outerId = graph.add<MapNode>();
+	auto& outer = static_cast<MapNode&>(graph.node(outerId));
+	const PortId outerIn = outer.inner().boundaryInputNode().addBoundary<Ints>("row");
+	const PortId outerOut = outer.inner().boundaryOutputNode().addBoundary<Ints>("row");
+
+	const NodeId innerId = outer.inner().add<MapNode>();
+	auto& innerMap = static_cast<MapNode&>(outer.inner().node(innerId));
+	const PortId innerIn = innerMap.inner().boundaryInputNode().addBoundary<int>("item");
+	const PortId innerOut = innerMap.inner().boundaryOutputNode().addBoundary<int>("result");
+	const NodeId body = innerMap.inner().add<AddOne>();
+	REQUIRE(wire(innerMap.inner(), innerMap.inner().boundaryInputNode().id(), innerIn, body, 0) == Connection::Ok);
+	REQUIRE(wire(innerMap.inner(), body, 0, innerMap.inner().boundaryOutputNode().id(), innerOut) == Connection::Ok);
+	edit::syncGroupPorts(outer.inner(), innerId);
+
+	REQUIRE(outer.inner().connect(PortAddress{outer.inner().boundaryInputNode().id(), outerIn},
+								  PortAddress{innerId, outer.inner().node(innerId).input(0).id()}) == Connection::Ok);
+	REQUIRE(outer.inner().connect(PortAddress{innerId, outer.inner().node(innerId).output(0).id()},
+								  PortAddress{outer.inner().boundaryOutputNode().id(), outerOut}) == Connection::Ok);
+	edit::syncGroupPorts(graph, outerId);
+
+	// A source whose rows can be changed between runs, so the second run has something stale.
+	struct Rows : Node
+	{
+		std::vector<Ints>* rows;
+		PortId out;
+		explicit Rows(std::vector<Ints>* r)
+			: Node("Rows")
+			, rows(r)
+		{
+			out = addOutput<std::vector<Ints>>("rows");
+		}
+		void compute(NodeEvaluation& evaluation) const override
+		{
+			evaluation.output(out).set(*rows);
+		}
+	};
+
+	// Counts how often it was handed the outer map's gathered collection, and sums it — the SUM is
+	// what tells a stale gather from the real one, since the row COUNT is deliberately held steady.
+	struct SumRows : Node
+	{
+		int* calls;
+		PortId in, out;
+		explicit SumRows(int* c)
+			: Node("SumRows")
+			, calls(c)
+		{
+			in = addInput<std::vector<Ints>>("rows");
+			out = addOutput<int>("sum");
+		}
+		void compute(NodeEvaluation& evaluation) const override
+		{
+			++*calls;
+			int total = 0;
+			for (const Ints& row : evaluation.input(in).get<std::vector<Ints>>())
+			{
+				for (const int v : row)
+					total += v;
+			}
+			evaluation.output(out).set(total);
+		}
+	};
+
+	std::vector<Ints> rows{{1, 2}, {10}};
+	int consumed = 0;
+	const NodeId source = graph.add<Rows>(&rows);
+	const NodeId consumer = graph.add<SumRows>(&consumed);
+	REQUIRE(graph.connect(source, 0, outerId, 0) == Connection::Ok);
+	REQUIRE(graph.connect(outerId, 0, consumer, 0) == Connection::Ok);
+
+	Evaluation evaluation{graph};
+	SerialScheduler{}.run(graph, evaluation);
+	REQUIRE(evaluation.value(PortAddress{consumer, graph.node(consumer).output(0).id()}).get<int>() == 16);
+
+	// The row COUNT stays the same and only the values change, which is what makes the early gather
+	// misleading rather than merely empty: with a new row, the gather would read a child that has
+	// never run, publish a cleared collection, and the consumer would be suppressed instead of
+	// computing on a plausible answer.
+	consumed = 0;
+	rows = {{5, 2}, {10}};
+	evaluation.requestRecompute(source);
+	SerialScheduler{}.run(graph, evaluation);
+
+	REQUIRE(evaluation.value(PortAddress{consumer, graph.node(consumer).output(0).id()}).get<int>() == 20);
+	REQUIRE(consumed == 1);
+}
+
 TEST_CASE("a map keeps its elements' work across runs", "[flow][map]")
 {
 	// Each element's Evaluation is retained, so a second run with nothing stale recomputes nothing —

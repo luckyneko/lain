@@ -445,6 +445,42 @@ WORK.md M11.
   set no `ends` entry, and the existing `downstreamOfDeferred` scan plus both `runStages` break
   conditions already cope. Amended into the ADR in place.
 
+### Update 2026-09-06 — a node does not publish while its interior has deferred
+
+Slice 4's recorded pre-existing bug, fixed in its own commit before slice 5. `expand`'s group and map
+arms emitted their exit even when the recursive expansion of the interior had deferred something — so
+a group containing a mid-fold loop republished the **previous stage's** value on every intermediate
+stage, and a map containing a deferred map gathered elements that had not run and published a
+**cleared** collection (ADR-0014: one hole clears the whole output). Both now measure whether the
+interior raised a frontier and, if so, contribute its steps but take **no exit and no `ends`** —
+which is the rule the loop arm already followed. `ctest` **680/680** Debug (+2), warning-clean,
+format-check clean, `[loop]` swept 100×, `flowview run --example` unchanged.
+
+- **Neither arm raises a frontier of its own**, so `runStages`' *"a group never raises a frontier"*
+  assert stays true; the interior's own frontier brings the level back, and `Scheduler::stale`
+  recurses into the child evaluation so the node is still selected next stage. The stale comment
+  saying a group *"is never deferred"* is corrected to *never raises a frontier*.
+- **Both tests had to be rewritten to catch their own sabotage**, and the reason is the finding: the
+  bug is **invisible on a first run**. With nothing computed yet, an early publish hands the consumer
+  an *empty* slot, ADR-0007 suppresses it, and nothing runs on a wrong value. Only on a re-run does
+  an early publish hand over a plausible, finished-looking previous answer. The map twin needed one
+  turn more — a **new** element gathers empty (suppression again), so the element count is held
+  steady and only the values change.
+- **The observable is a call count, never a value**: every value assertion passes with the bug
+  present, which is why it survived two milestones. Sabotage-verified — the group's consumer computes
+  **6 times instead of 1**, the map's **2 instead of 1**.
+- **Deferring a group cost it two plan edges, and those ARE wrong answers.** Found by the test's
+  parallel section, not by the design, and invisible to a serial walk because `plan.steps` order
+  happens to be right there. (1) A deferred group took no `ends` entry, and this level's edge wiring
+  skips a node with none — so the entry step lost its incoming dependency and published the previous
+  value into the interior. It now records `Ends{entry, entry}`, the mirror of the map arm's own note:
+  everything downstream of a deferred node is deferred too, so the producing end is never read.
+  (2) The **entry → inner GroupInput** edge moved BEFORE the deferral check, since the interior runs
+  in this stage either way. Exposing either needed a scene with a parent-level input relayed through
+  a body node; sabotage-verified at **11/20** and **18/20** parallel failures.
+- `ctest` **680/680** Debug (video on) and **654/654** Release (default video-off) — both baselines
+  grown by exactly the two new cases.
+
 ### Update 2026-09-06 — M11 slice 4 built: loops run
 
 The milestone's centre: `prepareLoop`, the `LoopExit` step, the count / `continue` termination test,

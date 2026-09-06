@@ -32,6 +32,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -931,6 +932,113 @@ TEST_CASE("a loop inside a group delivers through the group's face", "[flow][loo
 	SerialScheduler{}.run(parent, evaluation);
 
 	REQUIRE(evaluation.value(PortAddress{groupId, outputNamed(parent.node(groupId), "result")}).get<int>() == 13);
+}
+
+TEST_CASE("a group holding an iterating loop publishes once, not once per stage", "[flow][loop]")
+{
+	// A group's exit used to be emitted unconditionally, even when the recursive expansion of its
+	// interior had deferred something — so a group containing a mid-fold loop republished the
+	// PREVIOUS stage's value onto its outer outputs on every intermediate stage, and everything
+	// downstream recomputed on it. The final value was right, which is exactly why no value
+	// assertion ever caught this: the only observable is how often a downstream node ran.
+	//
+	// The rule now: a node does not publish while its interior has deferred.
+	Graph parent;
+	const NodeId groupId = parent.add<InlineGroupNode>();
+	auto& group = static_cast<InlineGroupNode&>(parent.node(groupId));
+	Graph& body = group.inner();
+
+	const NodeId loopId = body.add<LoopNode>();
+	auto& loop = static_cast<LoopNode&>(body.node(loopId));
+	const LoopNode::Carry carry = loop.addCarry<int>("value");
+	const NodeId add = loop.inner().add<AddOne>();
+	REQUIRE(loop.inner().connect(PortAddress{loop.inner().boundaryInputNode().id(), carry.innerIn},
+								 PortAddress{add, loop.inner().node(add).input(0).id()}) == Connection::Ok);
+	REQUIRE(loop.inner().connect(PortAddress{add, loop.inner().node(add).output(0).id()},
+								 PortAddress{loop.inner().boundaryOutputNode().id(), carry.innerOut}) == Connection::Ok);
+	edit::syncGroupPorts(body, loopId);
+
+	// The seed arrives from the PARENT, through the group's own face and one node inside that reads
+	// it. That node is what makes the entry step's ordering observable: it is not downstream of the
+	// deferred loop, so it runs in the very stage the group is deferred in, and it must not read the
+	// boundary before the entry has published into it.
+	const PortId seedPin = body.boundaryInputNode().addBoundary<int>("seed");
+	const NodeId relay = body.add<AddOne>();
+	REQUIRE(body.connect(PortAddress{body.boundaryInputNode().id(), seedPin},
+						 PortAddress{relay, body.node(relay).input(0).id()}) == Connection::Ok);
+	const NodeId bound = body.add<ConstantNode<int>>(4);
+	REQUIRE(body.connect(PortAddress{relay, body.node(relay).output(0).id()},
+						 PortAddress{loopId, inputNamed(body.node(loopId), "value")}) == Connection::Ok);
+	REQUIRE(body.connect(PortAddress{bound, body.node(bound).output(0).id()},
+						 PortAddress{loopId, loop.countPort()}) == Connection::Ok);
+
+	const PortId resultPin = body.boundaryOutputNode().addBoundary<int>("result");
+	REQUIRE(body.connect(PortAddress{loopId, outputNamed(body.node(loopId), "value")},
+						 PortAddress{body.boundaryOutputNode().id(), resultPin}) == Connection::Ok);
+	edit::syncGroupPorts(parent, groupId);
+
+	const NodeId seed = parent.add<ConstantNode<int>>(9);
+	REQUIRE(parent.connect(PortAddress{seed, parent.node(seed).output(0).id()},
+						   PortAddress{groupId, inputNamed(parent.node(groupId), "seed")}) == Connection::Ok);
+
+	// The observable: a consumer of the GROUP's output, counting how often it was handed one.
+	// Atomic because the parallel section below runs it on a worker.
+	struct Counted : Node
+	{
+		std::atomic<int>& calls;
+		PortId in, out;
+		explicit Counted(std::atomic<int>& c)
+			: Node("Counted")
+			, calls(c)
+		{
+			in = addInput<int>("x");
+			out = addOutput<int>("x");
+		}
+		void compute(NodeEvaluation& evaluation) const override
+		{
+			++calls;
+			evaluation.output(out).set(evaluation.input(in).get<int>());
+		}
+	};
+
+	std::atomic<int> consumed{0};
+	const NodeId consumer = parent.add<Counted>(consumed);
+	REQUIRE(parent.connect(PortAddress{groupId, outputNamed(parent.node(groupId), "result")},
+						   PortAddress{consumer, parent.node(consumer).input(0).id()}) == Connection::Ok);
+
+	// Both strategies, because the entry step must be ORDERED against the inner boundary it feeds
+	// whether or not the group goes on to publish — a serial walk hides a missing edge there, the
+	// parallel backend does not.
+	lain::task::Executor executor;
+	bool parallel = false;
+	SECTION("serial") {}
+	SECTION("parallel")
+	{
+		parallel = true;
+	}
+	Evaluation evaluation{parent};
+	const auto run = [&]
+	{
+		if (parallel)
+			ParallelScheduler{executor}.run(parent, evaluation);
+		else
+			SerialScheduler{}.run(parent, evaluation);
+	};
+
+	run();
+	REQUIRE(evaluation.value(PortAddress{consumer, parent.node(consumer).output(0).id()}).get<int>() == 14);
+
+	// It has to be the SECOND run that is measured, and that is the whole subtlety of this bug. On a
+	// first run the group's outer output is still empty, so an early publish hands the consumer an
+	// empty slot, ADR-0007 suppresses it, and nothing runs on nonsense. Once the group HOLDS a
+	// value, an early publish hands over the PREVIOUS run's answer — indistinguishable from a
+	// finished one — and the consumer computes on it once per intermediate stage.
+	consumed = 0;
+	static_cast<ConstantNode<int>&>(parent.node(seed)).setValue(19);
+	run();
+
+	REQUIRE(evaluation.value(PortAddress{consumer, parent.node(consumer).output(0).id()}).get<int>() == 24);
+	REQUIRE(consumed == 1);
 }
 
 TEST_CASE("the pull path folds a loop the same way", "[flow][loop]")

@@ -129,6 +129,12 @@ namespace lain::flow
 		// a map's children, seeding a loop's next pass — and plans again. A loop is the one node that
 		// contributes steps AND raises a frontier in the same stage.
 		//
+		// Being DEFERRED and RAISING one are different things, and only the second is a frontier. Any
+		// node whose interior deferred something is itself deferred — it contributes its interior's
+		// steps but publishes nothing, since what it would publish is the previous stage's value — and
+		// a group or a map in that position raises nothing of its own: the interior's frontier is what
+		// brings the level back. That is why preparing a frontier never has a group to prepare.
+		//
 		// Addressed exactly like a Step, and for the same reason: one shared definition may be
 		// mapped in several evaluations at once, so neither half names the work alone. That address
 		// is also the key its staging state is kept under.
