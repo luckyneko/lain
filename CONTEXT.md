@@ -685,7 +685,11 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   raises one per iteration**, and what keeps the loop terminating is that a loop is bounded — the
   count bound is the staging loop's well-formedness condition, not just user safety. What a run has
   done to each frontier is **staging state**, held per frontier *address* and answered as a count of
-  **preparations** (`Scheduler::Staging`), since only a count can say which raise this is. _Avoid_: subflow,
+  **preparations** (`Scheduler::Staging`), since only a count can say which raise this is. A map
+  defers at most once **per enclosing iteration** — seeding a loop's next pass forgets what is staged
+  inside its interior, because that subgraph is about to run again with new values — and a loop
+  re-raises itself only when the iteration will finish in that stage, so an interior that deferred
+  something of its own costs a stage rather than a partial answer. _Avoid_: subflow,
   nested run, a per-map join barrier — independent siblings still plan into the current stage.
 - **Node evaluation** — the view handed to `Node::compute` for one node in one Evaluation. Compute is
   const over the definition; it reads this node's evaluated inputs, writes its evaluated outputs, and

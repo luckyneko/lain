@@ -4052,13 +4052,66 @@ exists, flowview last with its own live verification. Same shape as M8.
    - `Frontier` gained an inline `operator==` so both `Staging` methods say *the same frontier* once
      instead of open-coding the three-field compare. Equality, not an ordering: nothing needs an
      order over addresses, and equality is a straight port of what the lambda already did.
-4. **The loop runs.** `prepareLoop`, the `LoopExit` step, the count / `continue` termination test, the
-   `count == 0` identity, the suppression rules, `iterations`. Through **both** schedulers. Reading a
-   carry out before rebinding the same child is sound only because M5 slice 1 made `PortValue`
-   payloads shared and immutable — worth a comment at the site. Test nested loops, a loop inside a map
-   and a map inside a loop — **including a loop inside a map whose rows stop at different
-   iterations**, which is what finally buys the `{definition, evaluation, node}` frontier address
-   (slice 3 measured that maps alone cannot make two frontiers sharing a node id diverge).
+4. ✅ **The loop runs — BUILT** (2026-09-06). `prepareLoop`, the `LoopExit` step, the count /
+   `continue` termination test, the `count == 0` identity, the suppression rules and `iterations`,
+   through **both** schedulers. `ctest` **678/678** Debug with video on (+15) and **652/652** Release
+   in the default video-off configuration (+15); warning-clean, format-check clean, the `[loop]` tag
+   swept **100×** on the parallel path with no failures, and `flowview run` byte-identical to the
+   pre-change binary (nothing constructs a loop yet) once the timestamp and minted uuids are
+   normalised.
+   - **The scheduler learns a loop through ONE new seam, `Node::iterationPorts()`** — `bound`,
+     `report`, `index`, `condition` and the carry pairing in one `IterationPorts`, beside
+     `innerGraph()` / `innerPin()` / `interiorEvaluation()`. A map needed no equivalent because
+     split-or-broadcast follows from a port's own type; none of a loop's five facts follows from
+     anything, and pairing by NAME was refused in ADR-0021 precisely because a rename would then
+     silently stop a loop carrying. So `scheduler.cpp` still names no node class and still does not
+     include `group.h`. **Deviation from the plan:** it is answered `std::optional<IterationPorts>`
+     BY VALUE rather than as a pointer to a stored struct — `carries` points into the answering node,
+     so a stored one would be a single move of that node away from dangling.
+   - **A loop re-raises its own frontier only when the iteration will FINISH in this stage — found by
+     the tests, not by the design.** The first cut had an iterating loop always emit its interior's
+     steps and re-raise itself; the loop-inside-a-loop and map-inside-a-loop cases then failed on
+     their very first run, because the coordinator read the carried outputs between stages while the
+     interior had itself deferred, saw them **empty**, and called the iteration a failure — a wrong
+     answer, not a crash. `expand` now measures whether the recursive expansion raised any frontier
+     of its own and holds the loop back a stage if so. That is what makes ADR-0021's own prediction
+     — *"a map inside a loop costs two stages per iteration"* — literally true rather than
+     approximately.
+   - **A new iteration FORGETS what is staged inside the interior** (`forgetInterior`, recursing
+     through the definition). A loop reuses one child evaluation, so a map inside it has the same
+     frontier address every pass and would otherwise be expanded against the previous iteration's
+     children. Sabotage-verified — and it turned out to be needed for a nested **loop** as well as a
+     nested map: dropping it fails both cases, because an inner loop must start its fold over on
+     each outer pass. The staging bound becomes *"a map defers at most once per enclosing
+     iteration"*, which is still bounded because iterations are.
+   - **`LoopExit` is its own routine, which discharges slice 2's flagged trap.** `exitGroup` clears
+     an output with no inner pin — exactly the loop's own `iterations` — so it could not be reused.
+     Whether the loop could run at all, and whether the fold BROKE, are asked at the exit rather than
+     remembered from the preparation that stopped it: `exitMap`'s rule, one question in one place.
+     Only a broken **carry** or condition clears everything; an unpaired output being empty is
+     ordinary per-port emptiness, exactly as it is for a group.
+   - **The iteration count travels in the Step**, as `publish` already does, because a task copies a
+     step and can consult no staging state — and it is what separates the two zero-iteration cases at
+     the exit: the identity (`count == 0`, every carry delivers its seed) from a loop that could not
+     run at all (everything cleared).
+   - **Four sabotages, all caught.** Remove the count bound → the count-fold test **hangs**
+     (ADR-0021's claim that the bound is the staging loop's well-formedness condition, observed).
+     Bind the seeds instead of the carried values → the fold returns 11 instead of 15 and 12 of 26
+     cases fail. Drop `forgetInterior` → the map-in-a-loop serves iteration 0's gather forever (4,
+     not 10). **Key the staging record on the `NodeId` alone → *"a loop inside a map lets each
+     element stop at its own iteration"* fails** — which is the measurement slice 3 could not make
+     and recorded as owed here: the `{definition, evaluation, node}` address is now bought.
+   - **Accepted costs, both stated in the code.** `bind` marks the whole inner `GroupInputNode`
+     rather than one pin, so a subtree fed only by an invariant recomputes every iteration; and a
+     loop is not incremental inside — whenever it is selected at all it re-folds from its seeds,
+     because iteration k's inputs are iteration k-1's outputs.
+   - **Recorded, deliberately NOT fixed here (pre-existing):** `expand` emits a group's `GroupExit`
+     unconditionally even when its interior deferred, so a group containing an iterating loop
+     republishes a stale value onto its outer outputs on each intermediate stage and its downstream
+     recomputes each time. The final value is correct (a test pins it), and **a map inside a group
+     does the same thing today** — so the fix (emit entry and inner steps but no exit and no `ends`
+     while the interior has deferred, which is exactly the rule the loop arm now follows) belongs in
+     its own commit rather than in the one that introduces the loop.
 5. **Serialization.** The `loop` section (name-addressed carries + the reserved pin names),
    rectification on the map's precedent, round-trip byte-idempotence.
 6. **flowview + the verticals.** `Add ▸ Groups ▸ loop` (plus the `[catalog]` creatable-key test), a

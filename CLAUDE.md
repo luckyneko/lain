@@ -445,6 +445,49 @@ WORK.md M11.
   set no `ends` entry, and the existing `downstreamOfDeferred` scan plus both `runStages` break
   conditions already cope. Amended into the ADR in place.
 
+### Update 2026-09-06 — M11 slice 4 built: loops run
+
+The milestone's centre: `prepareLoop`, the `LoopExit` step, the count / `continue` termination test,
+the `count == 0` identity, the suppression rules and `iterations` — through **both** schedulers.
+`ctest` **678/678** Debug with video on (+15) and **652/652** Release in the default video-off
+configuration (+15); warning-clean, format-check clean, the `[loop]` tag swept **100×** on the
+parallel path with no failures, and `flowview run` byte-identical to the pre-change binary (nothing
+constructs a loop until slice 6). Full landing notes in WORK.md M11.
+
+- **One new structural seam, `Node::iterationPorts()`** — `bound`, `report`, `index`, `condition`
+  and the carry pairing in one `IterationPorts`, beside `innerGraph()` / `innerPin()` /
+  `interiorEvaluation()`. A map needed no equivalent because split-or-broadcast follows from a
+  port's own type; none of a loop's five facts follows from anything, and pairing by NAME was
+  refused in ADR-0021 because a rename would then silently stop a loop carrying. `scheduler.cpp`
+  still names no node class. Answered `std::optional` **by value**, not as a pointer to a stored
+  struct: `carries` points into the answering node, so a stored one would be one move away from
+  dangling.
+- **A loop re-raises its frontier only when the iteration will FINISH in that stage — found by the
+  tests, not the design.** The first cut had an iterating loop always emit its interior's steps and
+  re-raise; loop-in-a-loop and map-in-a-loop then failed on their first run, because the coordinator
+  read the carried outputs between stages while the interior had itself deferred, saw them **empty**,
+  and called the iteration a failure — a wrong answer, not a crash. `expand` now measures whether
+  its recursive expansion raised a frontier and holds the loop back a stage, which is what makes
+  ADR-0021's own *"a map inside a loop costs two stages per iteration"* literally true.
+- **Seeding a new iteration FORGETS what is staged inside the interior.** One child evaluation is
+  reused, so a map in the body keeps the same frontier address every pass and would be expanded
+  against the previous iteration's children. Sabotage-verified, and needed for a nested **loop**
+  too — dropping it fails both cases. The staging bound becomes *a map defers at most once per
+  enclosing iteration*, still bounded because iterations are.
+- **`LoopExit` is its own routine, discharging slice 2's flagged trap** (`exitGroup` clears an
+  output with no inner pin — exactly `iterations`). Whether the loop could run, and whether the fold
+  BROKE, are asked at the exit rather than remembered — `exitMap`'s rule. Only a broken **carry** or
+  condition clears everything; an unpaired output being empty is ordinary per-port emptiness.
+- **Four sabotages, all caught.** Remove the count bound → the fold **hangs**. Bind the seeds
+  instead of the carries → 11 instead of 15, 12 of 26 cases fail. Drop the interior forget → the map
+  in a loop serves iteration 0 forever. **Key staging on the `NodeId` alone → *"a loop inside a map
+  lets each element stop at its own iteration"* fails**, which is the measurement slice 3 recorded
+  as owed: the `{definition, evaluation, node}` address is now bought.
+- **Recorded, not fixed (pre-existing):** a group emits its `GroupExit` even when its interior
+  deferred, so a group containing an iterating loop republishes a stale value each intermediate
+  stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
+  so the fix belongs in its own commit.
+
 ### Update 2026-09-05 — CI: lain builds and tests on Linux, macOS and Windows (**GREEN**)
 
 `lain` had **no CI at all**, and all 210 commits were built and verified on one macOS arm64 machine.

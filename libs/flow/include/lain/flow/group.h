@@ -29,6 +29,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -346,6 +347,14 @@ namespace lain::flow
 		// renaming one half silently stop a loop carrying — no error, no empty value, just a
 		// different answer, which is strictly worse than the wiring loss ids already prevent.
 		const std::map<PortId, PortId>& carries() const { return m_carries; }
+
+		// How the ENGINE drives this interior: the bound it reads, the report it writes, the two
+		// reserved pins and the carry pairing, in one answer (see Node::IterationPorts). This is the
+		// whole of what the scheduler knows about a loop — it never names this class.
+		std::optional<IterationPorts> iterationPorts() const override
+		{
+			return IterationPorts{m_count, m_iterations, m_index, m_continue, &m_carries};
+		}
 
 		// The reserved pin for `outerSide` is not a candidate for mirroring at all — the answer to
 		// "does the add phase skip this pin?", by ID and never by name, so renaming `index` cannot

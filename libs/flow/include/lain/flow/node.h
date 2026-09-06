@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <typeindex>
 #include <utility>
@@ -31,6 +32,29 @@ namespace lain::flow
 		Once,		  // a group: one child evaluation, run once (ADR-0009)
 		PerElement,	  // a map: one child per ELEMENT of a collection, sized between stages (ADR-0014)
 		PerIteration, // a loop: ONE child, re-run per ITERATION, each pass seeding the next (ADR-0021)
+	};
+
+	// The ports an ITERATING interior is driven through (ADR-0021) — the fourth part of the
+	// structural seam, and the only one that is not derivable from something already declared.
+	// A map needs no equivalent: whether an input splits or broadcasts follows from its own port
+	// type, so nothing has to be told. A loop's bound, its report, the two reserved pins and above
+	// all its CARRY PAIRING are facts about the node that no type can imply, and pairing by NAME
+	// was refused because a rename would then silently stop a loop carrying.
+	//
+	// It is a struct rather than a handful of virtuals so the scheduler asks one question, and so
+	// the next fact an interior kind must state costs Node nothing. It is answered BY VALUE (in an
+	// optional) rather than by pointer to a stored one: `carries` points into the answering node,
+	// so a stored struct would be one move of that node away from dangling.
+	struct IterationPorts
+	{
+		PortId bound;	  // this node's INPUT: at most how many iterations to run
+		PortId report;	  // this node's OUTPUT: how many actually ran
+		PortId index;	  // inner GroupInput pin the engine WRITES: which iteration this is
+		PortId condition; // inner GroupOutput pin the engine READS: run another?
+
+		// innerIn -> innerOut: the value delivered on innerOut at iteration k is what arrives on
+		// innerIn at k+1. Owned by the node; never null when this struct is returned at all.
+		const std::map<PortId, PortId>* carries = nullptr;
 	};
 
 	// Abstract base for a graph node — a DEFINITION: what it is, what ports and params it declares,
@@ -191,6 +215,12 @@ namespace lain::flow
 		// computed during the run), PerIteration makes one child SEQUENTIAL (re-run per iteration,
 		// each pass seeding the next).
 		virtual InteriorEvaluation interiorEvaluation() const { return InteriorEvaluation::Once; }
+
+		// How the engine drives an interior that iterates, or nullptr for every other node — the
+		// detail behind InteriorEvaluation::PerIteration (see IterationPorts above). Asked for the
+		// same reason as the three seams above it: the scheduler needs the FACT, never the class, so
+		// nothing in the execution layer names a node kind.
+		virtual std::optional<IterationPorts> iterationPorts() const { return std::nullopt; }
 
 		// (Readiness — "every REQUIRED input carries a value", ADR-0007 — followed the values into
 		// the Evaluation: `evaluation.ready(id)` for a host, `nodeEvaluation.ready()` inside compute.

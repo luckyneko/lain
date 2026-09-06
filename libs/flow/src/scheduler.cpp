@@ -5,6 +5,7 @@
 
 #include <lain/task/task.h>
 
+#include <cassert>
 #include <map>
 #include <optional>
 #include <set>
@@ -87,27 +88,40 @@ namespace lain::flow
 	// A linear walk, because the entries are per FRONTIER and not per raise: a document holds a
 	// handful of nodes that can raise one, and a node that raises its frontier again comes back to
 	// its own entry rather than adding another.
-	std::size_t Scheduler::Staging::preparations(const Frontier& frontier) const
+	const Scheduler::Staging::State* Scheduler::Staging::find(const Frontier& frontier) const
 	{
 		for (const Entry& entry : m_entries)
 		{
 			if (entry.frontier == frontier)
-				return entry.preparations;
+				return &entry.state;
 		}
-		return 0;
+		return nullptr;
 	}
 
-	void Scheduler::Staging::recordPreparation(const Frontier& frontier)
+	Scheduler::Staging::State& Scheduler::Staging::record(const Frontier& frontier)
 	{
 		for (Entry& entry : m_entries)
 		{
 			if (entry.frontier == frontier)
 			{
-				++entry.preparations;
+				++entry.state.preparations;
+				return entry.state;
+			}
+		}
+		m_entries.push_back(Entry{frontier, State{1, std::nullopt}});
+		return m_entries.back().state;
+	}
+
+	void Scheduler::Staging::forget(const Frontier& frontier)
+	{
+		for (auto it = m_entries.begin(); it != m_entries.end(); ++it)
+		{
+			if (it->frontier == frontier)
+			{
+				m_entries.erase(it);
 				return;
 			}
 		}
-		m_entries.push_back(Entry{frontier, 1});
 	}
 
 	// Flatten one level into the plan, recursing through anything that contains a graph.
@@ -160,6 +174,7 @@ namespace lain::flow
 			// (an empty collection, or one that could not be determined), and running it as an
 			// ordinary node would silently do nothing instead of gathering.
 			const bool isMap = node.interiorEvaluation() == InteriorEvaluation::PerElement && inner != nullptr;
+			const bool isLoop = node.interiorEvaluation() == InteriorEvaluation::PerIteration && inner != nullptr;
 			if (inner == nullptr || (!isMap && !evaluation.hasChild(id)))
 			{
 				const std::size_t step = plan.steps.size();
@@ -194,13 +209,13 @@ namespace lain::flow
 			//
 			// The staging check is what makes the SECOND stage expand it instead of deferring it
 			// again; preparation also REQUESTS this map's recompute, so that it — and everything
-			// downstream of it — is still selected when the plan is rebuilt. Asking for a COUNT of
-			// preparations rather than for membership is what leaves room for a node that raises its
-			// frontier more than once; a map's answer is only ever 0 or 1.
+			// downstream of it — is still selected when the plan is rebuilt. A map is prepared at most
+			// once per staging entry — and an enclosing loop drops that entry when it seeds a new
+			// iteration, which is what makes a map inside a loop re-prepare per pass.
 			if (isMap)
 			{
 				const Frontier frontier{&definition, &evaluation, id};
-				if (publish && staging.preparations(frontier) == 0)
+				if (publish && staging.find(frontier) == nullptr)
 				{
 					deferred.insert(id);
 					plan.frontiers.push_back(frontier);
@@ -228,6 +243,54 @@ namespace lain::flow
 				// A map is never consumed within a stage it is expanded in — it would have been
 				// deferred if a predecessor were running — so the consuming end is never read. Both
 				// ends name the exit, which is the step that genuinely produces its outputs.
+				ends[id] = Ends{exit, exit};
+				continue;
+			}
+
+			// A LOOP is expanded ONE ITERATION AT A TIME (ADR-0021), and what it contributes depends on
+			// how far its fold has got — which the coordinator settles between stages, so the plan reads
+			// it rather than deciding it.
+			//
+			// Deliberately NOT conditioned on `publish` the way a map is: iteration k's inputs are
+			// iteration k-1's outputs, so there is no inner incrementality to protect. Whenever a loop
+			// is selected at all — even only because something inside it was edited — it re-folds from
+			// its seeds, and re-seeding is what the first preparation does.
+			if (isLoop)
+			{
+				const Frontier frontier{&definition, &evaluation, id};
+				const Staging::State* state = staging.find(frontier);
+				if (state == nullptr || !state->iterations.has_value())
+				{
+					// Not seeded yet, or still iterating. An ITERATING loop contributes this iteration's
+					// interior steps AND raises itself again — the one node that both emits and defers.
+					// Either way its own outputs are not available in this stage, so it takes no `ends`
+					// and everything downstream of it waits, exactly as it does for a map.
+					//
+					// It raises itself only when this iteration will actually FINISH in this stage. If the
+					// interior deferred something of its own — a map sizing its children, a nested loop
+					// part-way through its own fold — then the values this pass produces are not there yet,
+					// and reading them between stages would see an empty carry and call the iteration
+					// failed. The interior's own frontier keeps the staging loop going meanwhile, so this
+					// costs a stage rather than a special case (ADR-0021: a map inside a loop costs two
+					// stages per iteration).
+					bool interiorPending = false;
+					if (state != nullptr)
+					{
+						Evaluation& child = evaluation.child(id); // one child, reused every iteration
+						const std::size_t raised = plan.frontiers.size();
+						expand(*inner, child, runOrder(*inner, child), plan, staging);
+						interiorPending = plan.frontiers.size() > raised;
+					}
+					deferred.insert(id);
+					if (!interiorPending)
+						plan.frontiers.push_back(frontier);
+					continue;
+				}
+
+				// The fold is over: one step publishes it, carrying the iteration count the coordinator
+				// settled — a task can consult no staging state.
+				const std::size_t exit = plan.steps.size();
+				plan.steps.push_back(Step{Step::Kind::LoopExit, &definition, &evaluation, id, false, *state->iterations});
 				ends[id] = Ends{exit, exit};
 				continue;
 			}
@@ -381,8 +444,24 @@ namespace lain::flow
 			// open, and it is what keeps "a worker task never grows evaluation storage" true.
 			for (const Frontier& frontier : plan.frontiers)
 			{
-				prepareMap(frontier);
-				staging.recordPreparation(frontier);
+				// Counted BEFORE the pass happens, so a preparer knows which one it is: for a loop, 1 is
+				// the seeding pass and every later one follows exactly one completed iteration.
+				Staging::State& state = staging.record(frontier);
+				switch (frontier.definition->node(frontier.node).interiorEvaluation())
+				{
+					case InteriorEvaluation::PerElement:
+						prepareMap(frontier);
+						break;
+
+					case InteriorEvaluation::PerIteration:
+						prepareLoop(frontier, staging, state);
+						break;
+
+					case InteriorEvaluation::Once:
+						// A group is expanded in place and never deferred, so it cannot be a frontier.
+						assert(false && "flow::Scheduler: a group never raises a frontier");
+						break;
+				}
 			}
 		}
 	}
@@ -410,6 +489,9 @@ namespace lain::flow
 				break;
 			case Step::Kind::MapExit:
 				exitMap(*step.definition, *step.evaluation, step.node);
+				break;
+			case Step::Kind::LoopExit:
+				exitLoop(*step.definition, *step.evaluation, step.node, step.iterations);
 				break;
 		}
 	}
@@ -679,6 +761,243 @@ namespace lain::flow
 			else
 				view.output(outer.id()).clear();
 		}
+	}
+
+	//=========================================================================
+	// Scheduler — loops
+	//=========================================================================
+
+	// One int in a PortValue — the reserved `index` pin the engine writes, and the loop's own
+	// report. int on both sides because that is the type a graph can actually drive.
+	static PortValue intValue(std::size_t value)
+	{
+		PortValue slot;
+		slot.set<int>(static_cast<int>(value));
+		return slot;
+	}
+
+	// What a carried output delivers when NO iteration ran: its SEED, which is the value on the
+	// outer input paired with it. The pairing is inner pin to inner pin, so this walks innerOut ->
+	// innerIn -> the outer input mirroring that pin — all through Node's own seam, so nothing here
+	// names a node class. An output that is not carried has no seed and no last iteration.
+	static PortValue seedValue(const Node& node, const Evaluation& evaluation, NodeId id, const IterationPorts& ports,
+							   PortId innerOut)
+	{
+		for (const auto& [innerIn, out] : *ports.carries)
+		{
+			if (out != innerOut)
+				continue;
+			for (std::size_t i = 0; i < node.inputCount(); ++i)
+			{
+				const Port& outer = node.input(i);
+				if (node.innerPin(outer.id()) == innerIn)
+					return evaluation.value(PortAddress{id, outer.id()});
+			}
+		}
+		return PortValue{};
+	}
+
+	// Seed or advance a deferred loop, between stages and on the coordinator thread (ADR-0021).
+	void Scheduler::prepareLoop(const Frontier& frontier, Staging& staging, Staging::State& state)
+	{
+		const Graph& definition = *frontier.definition;
+		Evaluation& evaluation = *frontier.evaluation;
+		const NodeId id = frontier.node;
+		const Node& node = definition.node(id);
+		const Graph* inner = node.innerGraph();
+		const std::optional<IterationPorts> ports = node.iterationPorts();
+		if (inner == nullptr || !ports.has_value())
+		{
+			// A node that says PerIteration but answers no ports is inconsistent with itself. End the
+			// fold at zero rather than leaving it un-ended: the exit clears its outputs, and the staging
+			// loop must never be able to wait on something that will never finish.
+			state.iterations = 0;
+			return;
+		}
+
+		Evaluation& child = evaluation.child(id); // exactly ONE, reused every iteration
+		const NodeId inBoundary = inner->boundaryInputNode().id();
+		const NodeId outBoundary = inner->boundaryOutputNode().id();
+
+		// The trip bound, read from the loop's own input each pass rather than remembered: it was
+		// populated on the seeding pass and cannot change within an invocation. A value that is not
+		// an int, or is negative, means no iterations — which is a legitimate answer (the identity),
+		// not an error.
+		const auto trips = [&]() -> std::size_t
+		{
+			const PortValue& value = evaluation.value(PortAddress{id, ports->bound});
+			if (!value.holds<int>())
+				return 0;
+			const int bound = value.get<int>();
+			return bound <= 0 ? 0 : static_cast<std::size_t>(bound);
+		};
+
+		// THE SEEDING PASS. Everything the fold starts from is established here, on this thread,
+		// before any of the next stage's tasks run.
+		if (state.preparations == 1)
+		{
+			populateInputs(definition, evaluation, id);
+
+			// Requested ONCE, and that is enough for the whole fold: nothing clears it until exitLoop
+			// does, so the loop — and everything downstream of it — stays selected in every stage this
+			// invocation plans.
+			evaluation.requestRecompute(id);
+
+			// ADR-0007: a node whose required input carries no value does not run at all. Recorded as
+			// a finished fold of zero iterations; the exit asks readiness again and clears the outputs,
+			// so the rule lives in one place rather than being remembered here.
+			if (!evaluation.ready(id))
+			{
+				state.iterations = 0;
+				return;
+			}
+
+			// Publish every mirrored input into the interior, exactly as enterGroup publishes a
+			// group's — a carried pin's value is its SEED, an unpaired one's is an invariant that
+			// simply stays bound for the whole fold.
+			//
+			// Accepted cost: bind marks the whole inner GroupInputNode, not one pin, so a subtree fed
+			// only by an invariant recomputes every iteration anyway.
+			for (std::size_t i = 0; i < node.inputCount(); ++i)
+			{
+				const Port& outer = node.input(i);
+				const PortId pin = node.innerPin(outer.id());
+				if (pin != PortId{})
+					child.bind(PortAddress{inBoundary, pin}, evaluation.value(PortAddress{id, outer.id()}));
+			}
+			child.bind(PortAddress{inBoundary, ports->index}, intValue(0));
+
+			// A bound of zero is the fold IDENTITY, not a failure: no iteration runs and every carry
+			// delivers its seed — the same answer a map's N == 0 gives when it gathers an empty vector.
+			if (trips() == 0)
+				state.iterations = 0;
+			return;
+		}
+
+		// EVERY LATER PASS follows exactly one completed iteration.
+		const std::size_t completed = state.preparations - 1;
+
+		// Read the iteration's results OUT before binding anything back IN. This is only sound
+		// because a PortValue's payload is shared and IMMUTABLE (M5 slice 1): these copies keep
+		// iteration k's values alive and unchanged while the binds below rebind the very slots
+		// iteration k+1 will read. Without that, reuse would need a second child or a deep copy per
+		// carry per iteration.
+		const PortValue condition = child.value(PortAddress{outBoundary, ports->condition});
+		std::vector<std::pair<PortId, PortValue>> carried;
+		carried.reserve(ports->carries->size());
+		for (const auto& [innerIn, innerOut] : *ports->carries)
+		{
+			carried.emplace_back(innerIn, child.value(PortAddress{outBoundary, innerOut}));
+		}
+
+		// The iteration FAILED if it produced no condition or lost a carried value — a suppressed
+		// body, ADR-0007 reaching the engine. The fold stops, and the exit (which asks the same
+		// question itself) clears every output: a partial fold that looks finished is worse than no
+		// answer at all.
+		bool failed = !condition.holds<bool>(); // empty, or somehow not a bool
+		for (const auto& carry : carried)
+		{
+			if (carry.second.empty())
+				failed = true;
+		}
+
+		// Stop on failure, on the body saying so (`continue` false — an unwired one defaults to
+		// true, so a count loop is transparent here), or on the bound. `iterations` is how many
+		// actually ran, which is what makes "converged at 7" distinguishable from "hit 100".
+		if (failed || !condition.get<bool>() || completed >= trips())
+		{
+			state.iterations = completed;
+			return;
+		}
+
+		// Another iteration: each carried value becomes the input it is paired with, and the body is
+		// told which pass this is.
+		for (const auto& carry : carried)
+		{
+			child.bind(PortAddress{inBoundary, carry.first}, carry.second);
+		}
+		child.bind(PortAddress{inBoundary, ports->index}, intValue(completed));
+
+		// The same subgraph is about to run again with new values, so whatever is staged INSIDE it
+		// belongs to the iteration that just ended — a map in there must defer and re-prepare rather
+		// than be expanded against the previous iteration's children.
+		forgetInterior(*inner, child, staging);
+	}
+
+	void Scheduler::forgetInterior(const Graph& inner, Evaluation& child, Staging& staging)
+	{
+		for (const NodeId id : inner.nodeIds())
+		{
+			const Graph* nested = inner.node(id).innerGraph();
+			if (nested == nullptr)
+				continue; // only a node that CONTAINS a graph can ever have been a frontier
+
+			staging.forget(Frontier{&inner, &child, id});
+			for (std::size_t i = 0; i < child.childCount(id); ++i)
+			{
+				forgetInterior(*nested, child.child(id, i), staging);
+			}
+		}
+	}
+
+	// Crossing OUT of a LOOP: publish the fold.
+	void Scheduler::exitLoop(const Graph& definition, Evaluation& evaluation, NodeId id, std::size_t iterations)
+	{
+		const Node& node = definition.node(id);
+		const Graph* inner = node.innerGraph();
+		const std::optional<IterationPorts> ports = node.iterationPorts();
+		const Evaluation& child = evaluation.child(id);
+		const NodeId outBoundary = inner->boundaryOutputNode().id();
+		NodeEvaluation view = evaluation.node(id);
+
+		// "Could this loop run at all?" and "did the fold break?" are asked HERE, not remembered from
+		// the preparation that decided to stop — exitMap's rule, one question in one place. Note the
+		// asymmetry ADR-0021 draws: an empty CARRIED output or condition means the fold itself broke
+		// and clears everything, while an unpaired output being empty is ordinary per-port emptiness,
+		// exactly as it is for a group.
+		bool folded = ports.has_value() && evaluation.ready(id);
+		if (folded && iterations > 0)
+		{
+			folded = child.value(PortAddress{outBoundary, ports->condition}).holds<bool>();
+			for (const auto& carry : *ports->carries)
+			{
+				if (!child.hasValue(PortAddress{outBoundary, carry.second}))
+					folded = false;
+			}
+		}
+
+		for (std::size_t o = 0; o < node.outputCount(); ++o)
+		{
+			const Port& outer = node.output(o);
+			PortValue& slot = view.output(outer.id());
+			if (!folded)
+			{
+				slot.clear();
+				continue;
+			}
+			if (outer.id() == ports->report)
+			{
+				slot = intValue(iterations);
+				continue;
+			}
+
+			const PortId pin = node.innerPin(outer.id());
+			if (pin == PortId{})
+			{
+				slot.clear(); // mirrors nothing (mid-sync, or a mapping that lost its pin)
+				continue;
+			}
+
+			// No iteration ran, so there is nothing to copy out: a carried output delivers its seed,
+			// and an unpaired one has no last iteration to report.
+			slot = (iterations == 0) ? seedValue(node, evaluation, id, *ports, pin)
+									 : child.value(PortAddress{outBoundary, pin});
+		}
+
+		// The loop's own work IS this crossing, so it goes clean here — the two halves in the order
+		// runNode uses, for the same reasons.
+		evaluation.clearRecomputeRequest(id);
+		evaluation.markComputed(id, node.version());
 	}
 
 	//=========================================================================

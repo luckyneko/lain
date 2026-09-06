@@ -191,9 +191,30 @@ fact beside the underivable one, which is a second source that can disagree with
   downstream of it is deferred exactly as it is for a map, so nothing at that level reads its `ends`.
   *(Checked at the code, 2026-09-05: this needs no seam of its own — a node may push steps, then
   `deferred.insert(id)` and set no `ends` entry, and the existing `downstreamOfDeferred` scan and
-  both `runStages` break conditions already cope.)*
+  both `runStages` break conditions already cope.)* **Amended at the build, 2026-09-06: it emits and
+  defers only when the iteration will FINISH in that stage.** If the interior deferred anything of
+  its own — a map sizing its children, a nested loop mid-fold — the loop must NOT re-raise, because
+  the coordinator would then read carried outputs that do not exist yet, see them empty, and call
+  the iteration failed. `expand` measures whether its recursive expansion raised a frontier and
+  holds the loop back a stage; the interior's own frontier keeps the staging loop moving meanwhile,
+  which is what makes this ADR's *"a map inside a loop costs two stages per iteration"* literal.
+  Found by the nested tests failing on their first run, not by the design.
 - **Planning is `O(N × document)` for an N-iteration loop.** Each stage rebuilds a plan. Acceptable
   for the counts a graph editor will see, and the named escape is plan caching.
+- **The scheduler learns a loop through one new structural seam, `Node::iterationPorts()`** *(built
+  2026-09-06; this ADR did not say how)*. It answers `bound`, `report`, `index`, `condition` and the
+  carry pairing together, beside `innerGraph()` / `innerPin()` / `interiorEvaluation()`, so the
+  execution layer still names no node class. A map needed no equivalent because split-or-broadcast
+  follows from a port's own declared type; not one of a loop's five facts follows from anything.
+- **Seeding a new iteration FORGETS the staging state inside the interior** *(built 2026-09-06; not
+  anticipated here)*. One child evaluation is reused, so a map inside the body keeps the same
+  frontier address every pass and would be expanded against the previous iteration's children — a
+  silently wrong answer. It is needed for a nested loop too, which must start its own fold over on
+  each outer pass. The termination bound therefore reads *"a map defers at most once per enclosing
+  iteration"*, still bounded because iterations are.
+- **`LoopExit` re-asks readiness and fold failure rather than remembering them** *(built
+  2026-09-06)*, which is `exitMap`'s rule; and it is a routine of its own rather than `exitGroup`,
+  which clears an output with no inner pin — exactly the loop's own `iterations`.
 - **Only the last iteration is inspectable.** Stated as a cost, with `count = 3` as the gesture.
 - **A loop inside a map iterates in lockstep across elements**, because the staging loop handles every
   frontier in a stage together — so stages are bounded by the deepest loop's count, not by their sum.

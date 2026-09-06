@@ -33,9 +33,11 @@
 //
 // What has been done to each frontier so far is STAGING STATE, held per FRONTIER rather than as a
 // list of frontiers seen — because a frontier may be raised more than once. A map raises one
-// exactly once, which is what bounds the loop below; the loop node ADR-0021 designs raises one per
-// ITERATION, and its own mandatory count is what bounds that instead. Nothing raises one twice
-// today, so this is structure rather than behaviour — see Staging.
+// exactly once; a LOOP raises one per ITERATION (ADR-0021), emitting that iteration's interior
+// steps and re-raising itself in the same stage, while the coordinator reads each pass's carried
+// values out between stages and binds them in as the next pass's inputs. A loop's mandatory count
+// is what bounds the staging loop: a map is deferred at most once per enclosing iteration, and
+// iterations are bounded, so "plan again" always terminates.
 
 #include "lain/flow/evaluation.h" // Session holds an Evaluation::RunLease by value
 #include "lain/flow/types.h"
@@ -105,6 +107,7 @@ namespace lain::flow
 				GroupEntry, // publish the group's outer inputs into its child evaluation's boundary
 				GroupExit,	// copy the child's delivered outputs out onto the group's own output ports
 				MapExit,	// GATHER every child's delivered outputs into one collection per port
+				LoopExit,	// publish the FOLD: the carries' final values, the last iteration's, the count
 			};
 
 			Kind kind = Kind::Node;
@@ -112,11 +115,19 @@ namespace lain::flow
 			Evaluation* evaluation = nullptr;  // the evaluation THAT graph's values live in
 			NodeId node;					   // the node to run, or the group whose boundary is being crossed
 			bool publish = false;			   // GroupEntry only: whether the inputs actually need republishing
+
+			// LoopExit only: how many iterations ran. A coordinator decision carried INTO the step, as
+			// `publish` is — a step must stay self-contained, because a task copies it and can consult
+			// no staging state. It is also what separates the two zero-iteration cases at the exit: the
+			// fold identity (count == 0, carries deliver their seeds) from a fold that never could run.
+			std::size_t iterations = 0;
 		};
 
-		// A node that could not be expanded when this stage was planned, because its arity is only
-		// known once the run has produced its input — a map (ADR-0014). It and everything downstream
-		// of it are left out of the stage; the loop prepares its children and plans again.
+		// A node this stage could not finish: a MAP whose arity is only known once the run has
+		// produced its input (ADR-0014), or a LOOP that has more iterations to run (ADR-0021). It and
+		// everything downstream of it are left out of the stage; the staging loop prepares it — sizing
+		// a map's children, seeding a loop's next pass — and plans again. A loop is the one node that
+		// contributes steps AND raises a frontier in the same stage.
 		//
 		// Addressed exactly like a Step, and for the same reason: one shared definition may be
 		// mapped in several evaluations at once, so neither half names the work alone. That address
@@ -161,24 +172,40 @@ namespace lain::flow
 		class Staging
 		{
 		public:
-			// How many times this frontier has been prepared during this invocation; 0 if it has never
-			// been raised.
-			//
-			// A map's whole use of it is `== 0` — not prepared yet, so defer it — and that is what
-			// bounds the staging loop for a map: it is deferred at most once, so the number of stages
-			// cannot exceed the number of maps. A loop is bounded by its own mandatory count instead,
-			// which is why the answer is a COUNT and not a flag: a flag can say a frontier came back,
-			// only a count can say which time this is. Nothing reads it as more than 0-or-1 yet.
-			std::size_t preparations(const Frontier& frontier) const;
+			// What has happened to ONE frontier during this invocation.
+			struct State
+			{
+				// How many times it has been prepared, COUNTING THE PASS BEING STARTED — so 1 is the
+				// seeding pass and, for a loop, `preparations - 1` is the number of iterations that have
+				// completed. A map's whole use of it is that an entry exists at all: it is deferred at
+				// most once per enclosing iteration, which is what bounds the number of stages.
+				std::size_t preparations = 0;
 
-			// Record one preparation of this frontier, creating its entry on the first.
-			void recordPreparation(const Frontier& frontier);
+				// Set when a LOOP's fold is over, holding how many iterations ran. One optional rather
+				// than a flag beside a count, so "finished" and "how many" cannot disagree and
+				// "finished, count unknown" cannot be written at all.
+				std::optional<std::size_t> iterations;
+			};
+
+			// This frontier's state, or nullptr if it has never been raised — which is exactly a map's
+			// question ("not prepared yet, so defer it") and half of a loop's.
+			const State* find(const Frontier& frontier) const;
+
+			// Begin one preparation of this frontier: create its entry on the first, count this pass,
+			// and hand back the state so the preparer can record what it decided.
+			State& record(const Frontier& frontier);
+
+			// Drop this frontier's entry, so it is staged from scratch again. A LOOP does this to
+			// everything inside its interior when it seeds a new iteration: the same subgraph is about
+			// to run again with new values, so a map in there must defer and re-prepare rather than be
+			// expanded against the previous iteration's children (Scheduler::forgetInterior).
+			void forget(const Frontier& frontier);
 
 		private:
 			struct Entry
 			{
 				Frontier frontier;
-				std::size_t preparations = 0;
+				State state;
 			};
 			std::vector<Entry> m_entries; // one per FRONTIER, never one per raise — see above
 		};
@@ -278,6 +305,31 @@ namespace lain::flow
 		// a std::vector<T> cannot hold one, and quietly shortening it would break the positional
 		// correspondence between the input collection and the output (ADR-0014).
 		void exitMap(const Graph& definition, Evaluation& evaluation, NodeId id);
+
+		// Seed or advance a deferred LOOP, between stages and on the coordinator thread (ADR-0021).
+		// The first pass populates the loop's own inputs, reads its bound and binds the seeds and
+		// `index` into its ONE child; every later pass reads the iteration that just ran — its carried
+		// outputs and its `continue` — and either ends the fold (a failure, a break, or the bound) or
+		// binds those values back in as the next iteration's inputs.
+		//
+		// Recording how many iterations ran in `state` is what the next plan reads to decide between
+		// emitting another iteration and emitting the exit.
+		void prepareLoop(const Frontier& frontier, Staging& staging, Staging::State& state);
+
+		// Drop the staging state of everything INSIDE a loop's interior, because the next iteration
+		// re-runs that same subgraph with new values: a map in there must be deferred and re-prepared
+		// rather than expanded against the previous iteration's children. Recurses through the
+		// DEFINITION, so a frontier nested at any depth below this child is forgotten too.
+		void forgetInterior(const Graph& inner, Evaluation& child, Staging& staging);
+
+		// Crossing out of a LOOP: publish the whole fold — each carry's FINAL value, each unpaired
+		// inner output's LAST-ITERATION value, and the iteration count. Deliberately not exitGroup:
+		// that one clears an output with no inner pin, which is exactly the loop's own report.
+		//
+		// `iterations == 0` is the fold IDENTITY rather than a failure — every carry delivers its
+		// seed, as a map's N == 0 gathers an empty vector. Whether the loop could run at all, and
+		// whether the fold broke, are asked HERE rather than remembered, which is exitMap's rule.
+		void exitLoop(const Graph& definition, Evaluation& evaluation, NodeId id, std::size_t iterations);
 
 		// Collect `id` and everything transitively feeding it into `cone`.
 		static void collectUpstream(const Graph& definition, NodeId id, std::set<NodeId>& cone);
