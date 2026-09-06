@@ -445,6 +445,41 @@ WORK.md M11.
   set no `ends` entry, and the existing `downstreamOfDeferred` scan plus both `runStages` break
   conditions already cope. Amended into the ADR in place.
 
+### Update 2026-09-06 — M11 slice 5 built: loop serialization
+
+A loop can now be saved. It writes a nested body like an inline group plus one **`loop` section** —
+the carry **pairing** as name pairs, and the two reserved pin names — and, unlike a map, **not** its
+own ports: a loop's face derives exactly as a plain group's, so storing them would put a derivable
+fact beside the underivable one. `ctest` **690/690** Debug with video on (+10) and **664/664**
+Release in the default video-off configuration (+10); warning-clean, format-check clean, `flowview
+run --example` unchanged (nothing constructs a loop until slice 6). Full landing notes in WORK.md M11.
+
+- **A loop's reserved pins do NOT survive a load, and this file and CONTEXT.md both claimed they
+  did.** The claim was that a reserved pin is *"rebuilt on load by the owner's constructor, exactly
+  as a Select's `selector` is"* — true for a Select, whose static pin is on the node the factory
+  made, and false for a loop, whose pins are on its **interior**, which the loader replaces
+  wholesale. `loadBody` gains a **`prepareInterior`** hook, invoked on the freshly constructed Graph
+  before any node is seated, so the pins exist before that body's edges resolve. Declaring them first
+  also makes their ids deterministic and turns a document naming a dynamic pin `index` into a
+  reported skip rather than a duplicate-name assert. Sabotage: without the hook, **all eight** cases
+  fail.
+- **The reserved pin NAMES are stored, and that is load-bearing.** A reserved pin is renameable and
+  an edge into one is name-addressed like every other, so a renamed `continue` whose name is not
+  recorded comes back as `continue`, its edge resolves to nothing, and the condition falls back to
+  `Default{true}`. Sabotage-verified: the converging while loop runs to its bound — **110 instead of
+  13, 100 iterations instead of 3**.
+- **`establishReserved` and `pairCarry` are each ONE routine with two callers** — the constructor and
+  the loader; the authoring gesture and a document restore. `addCarry<T>` delegates to `pairCarry`,
+  which refuses a reserved pin, a pin already half of another pairing, and a **type mismatch**
+  (`Evaluation::bind` type-checks nothing, so a mismatched pair binds the wrong payload at runtime).
+  Sabotage: skip the restore and **5 of 8** fail, the fold falling back to its seed.
+- **Found by the tests, fixed at its source: renaming a defaulted input's port stranded its param.**
+  `Port::setName` says a rename *"touches nothing structural"* — false once a port has a `Default`,
+  since the param behind it keeps the old name and **a param is addressed by name on disk**, so the
+  default silently reverts on the next load. New **`Node::renamePort`** moves both and refuses an
+  invalid or already-taken name; `edit::syncGroupPorts` and flowview's Interface pane now use it.
+  Latent until now — `continue` is the first port in the tree that is both defaulted and renameable.
+
 ### Update 2026-09-06 — a node does not publish while its interior has deferred
 
 Slice 4's recorded pre-existing bug, fixed in its own commit before slice 5. `expand`'s group and map

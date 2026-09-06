@@ -81,6 +81,27 @@ namespace lain::flow
 		return id;
 	}
 
+	inline bool Node::renamePort(PortId port, std::string name)
+	{
+		Port* declared = findDeclared(m_inputs, port);
+		if (declared == nullptr)
+			declared = findDeclared(m_outputs, port);
+		if (declared == nullptr)
+			return false;
+		if (!validPortName(name) || (name != declared->name() && hasPortNamed(declared->direction(), name)))
+			return false;
+
+		// The param behind a DEFAULTED input carries the port's name, and is found by that name on
+		// load — so the two move together or the default is lost on the next round trip.
+		if (const auto it = m_defaults.find(port); it != m_defaults.end())
+		{
+			if (Param* fallback = findDeclared(m_params, it->second))
+				fallback->rename(name); // Node is Param's friend
+		}
+		declared->setName(std::move(name));
+		return true;
+	}
+
 	inline bool Node::setParam(PortId id, PortValue value)
 	{
 		Param* param = findDeclared(m_params, id);

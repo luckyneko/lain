@@ -670,11 +670,15 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   outward, and skipped by id rather than by name, so renaming one cannot change what a loop does.
   `continue` defaults to true, so an unwired condition is transparent while a wired-and-suppressed one
   means the iteration failed — the distinction `GateNode::enable` already draws. **Static**, not a
-  dynamic pin (`addReserved`): serialization replays only dynamic pins, so a reserved pin is rebuilt
-  on load by the owner's constructor, exactly as a Select's `selector` is. Being not-mirrored is *not
-  a refusal* — a reserved pin is **not a candidate** (`mirrorsPin`), while a pin `exposePort` refuses
-  is one a user can act on and a host names; conflating them makes every loop report two problems
-  forever.
+  dynamic pin (`addReserved`): serialization replays only dynamic pins. But *unlike* a Select's
+  `selector`, a reserved pin is **not** simply rebuilt by the owner's constructor on load — it lives
+  on the owner's INTERIOR, and a load replaces that interior wholesale, so the loader must declare it
+  onto the graph it is filling, **before that body's edges resolve**. Its NAME is therefore stored:
+  a reserved pin is renameable and an edge into one is name-addressed like any other, so an
+  unrecorded rename unwires the condition and a while loop reloads as a count loop. Being
+  not-mirrored is *not a refusal* — a reserved pin is **not a candidate** (`mirrorsPin`), while a pin
+  `exposePort` refuses is one a user can act on and a host names; conflating them makes every loop
+  report two problems forever.
 - **Stage / frontier** *(M8; generalised M11)* — a map's arity comes from a value computed **during**
   the run, so the plan cannot be complete before it starts. `expand()` refuses to descend into a map
   whose arity is unknown — that map is a **frontier**, and everything downstream of it is left out of
@@ -1230,6 +1234,21 @@ iff it stays payload-agnostic; the moment it must name a concrete payload type o
   key` reverse lookup for save). A plain node serializes no ports — they're implied by its `kind`.
   **Contract:** a `DynamicPortsNode`'s factory form has an **empty dynamic side** (all dynamic pins
   are serialized + replayed), so no double-add.
+
+- **The `loop` section** — a loop's engine wiring: its **carry pairing** as name pairs, plus the two
+  reserved pin names. The pairing is the one thing about an interior that is *not* derivable from it
+  (a carried and an invariant `Image` are the same type), so it is stored — while the loop's own
+  PORTS are not, unlike a map's, because a loop's face derives exactly as a plain group's. Absence of
+  the section is a loop with no carries: legal, just degenerate, and not an issue. Restoring it is
+  rectified like a map's interface — a pair naming a pin that has gone is dropped **and reported**,
+  costing that carry alone, since the surviving pin then means what any unpaired pin means.
+
+- **A rename moves every copy of the name** — `Node::renamePort`, not `Port::setName`. A port
+  declared with a `Default` has a **param** behind it carrying the same name, and a param is
+  addressed by name on disk, so renaming only the port leaves a document naming a param the reloaded
+  node does not declare and the default silently reverts to the constructor's. The same seam refuses
+  a name already taken on that side, which would make every name-addressed edge through the pair
+  ambiguous.
 
 - **`editor` section** — a separate, **adapter-owned** part of the document keyed by node-id that
   `flow::serialize` **round-trips as an opaque `Value`** and never interprets: node position, color,

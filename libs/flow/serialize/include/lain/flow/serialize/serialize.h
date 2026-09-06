@@ -28,6 +28,14 @@
 // plus { version }. The root and every template file are documents; an INLINE group embeds a body
 // under its node's "graph" key, so nesting is the same shape all the way down. A LINKED group
 // instead stores "source" (its template's path) plus "interface" (the cached pin names + types).
+//
+// A MAP embeds a body and, uniquely, its OWN ports under "interface" — its mirroring is
+// under-determined by one bit per input pin, so they cannot be re-derived. A LOOP embeds a body and
+// a "loop" section: { index, continue, carries: [{ in, out }] } — the carry PAIRING, which no
+// declaration can encode (a carried and an invariant Image are the same type), plus the two reserved
+// pin names, which are stored because a reserved pin is renameable and an edge into one is
+// name-addressed like any other. A loop's own ports are NOT stored: its face derives exactly as a
+// plain group's.
 namespace lain::flow::serialize
 {
 	// A template resolved to the document it names, plus a CANONICAL key identifying it (an absolute

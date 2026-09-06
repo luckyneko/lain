@@ -4161,8 +4161,55 @@ unchanged.
   and `runStages`' *"a group is expanded in place and never deferred, so it cannot be a frontier"*
   becomes *never raises a frontier* — which is the property its assert actually depends on, and is
   still true now that a group can be deferred.
-5. **Serialization.** The `loop` section (name-addressed carries + the reserved pin names),
-   rectification on the map's precedent, round-trip byte-idempotence.
+5. ✅ **Serialization — BUILT** (2026-09-06). The `loop` section (name-addressed carries + the
+   reserved pin names), rectification on the map's precedent, round-trip byte-idempotence. `ctest`
+   **690/690** Debug with video on (+10) and **664/664** Release in the default video-off
+   configuration (+10); warning-clean, format-check clean, `flowview run --example` unchanged
+   (nothing constructs a loop until slice 6).
+   - **A loop's reserved pins do NOT survive a load, and both this file and CONTEXT.md claimed they
+     did.** The claim was that a reserved pin is *"rebuilt on load by the owner's constructor,
+     exactly as a Select's `selector` is"*. That holds for `SelectNode` because the ctor's pin is on
+     the node the factory made. A `LoopNode`'s are on **`m_inner`'s boundary nodes**, and the loader
+     does `loop->inner() = loadBody(...)` — moving the whole interior away, ctor pins and all. So the
+     loader has to declare them onto the graph it is **filling**, before that body's edges resolve,
+     which is a new hook: `loadBody` gains a `prepareInterior` callback invoked on the freshly
+     constructed Graph before any node is seated. Declaring them FIRST also makes their ids
+     deterministic and turns a document naming a dynamic pin `index` into `addDynamicPort`'s
+     reported skip rather than `addOutput`'s duplicate-name assert. Sabotage: without the hook, **all
+     eight** cases fail.
+   - **The reserved pin NAMES are stored, and that is load-bearing rather than tidy.** A reserved pin
+     is renameable and an edge into one is name-addressed like every other, so a renamed `continue`
+     whose name is not recorded comes back as `continue`, its edge resolves to nothing, and the
+     condition falls back to its `Default{true}`. Sabotage-verified: the while loop runs to its bound
+     — **110 instead of 13, 100 iterations instead of 3**. (The lost edge *is* reported, so it is not
+     perfectly silent; a warning beside a different answer is still a different answer.)
+   - **`LoopNode::establishReserved` is ONE routine with two callers** — the constructor on its own
+     interior, the loader on the graph it is about to move in — because a fact computed two ways
+     eventually disagrees with itself, and here it would do so silently. The canonical names are
+     `LoopNode::kIndexPin` / `kContinuePin`, public so the serializer's fallback and a fresh loop's
+     spelling cannot drift.
+   - **`pairCarry` is the one place a pairing is recorded**, and `addCarry<T>` now goes through it,
+     so the authoring gesture and a document restore cannot disagree about what a valid carry is. It
+     refuses — recording nothing — a pin not on the matching boundary node, a RESERVED pin, a pin
+     already half of another carry, and a **type mismatch**: `Evaluation::bind` type-checks nothing,
+     so a hand-written mismatched pair would bind the wrong payload into a slot at runtime.
+     Sabotage: skip the restore and **5 of 8** fail, the fold falling back to its seed (11, not 15).
+   - **The section is read WHOLE and applied in two parts**, because its halves become true at two
+     different moments: the reserved names must reach the interior *before* that body's edges
+     resolve, and the carries need the pins to *already exist* to be paired.
+   - **No stored interface, unlike a map.** A loop's face is derived exactly as a plain group's, so
+     storing the ports would put a derivable fact beside the underivable one. **No version bump**
+     either: a v2 document whose loop has no `loop` section loads as a loop with no carries, which is
+     legal, just degenerate — and no issue is raised, because nothing went wrong.
+   - **Found by the tests, fixed at its source: renaming a defaulted input's port stranded its
+     param.** `Port::setName` says a rename *"touches nothing structural"* — false once a port has a
+     `Default`, because the param behind it keeps the old name and **a param is addressed by name on
+     disk**, so the default silently reverts to the constructor's on the next load. New
+     **`Node::renamePort(PortId, name)`** moves both and refuses an invalid or already-taken name;
+     `edit::syncGroupPorts`'s retitle phase and flowview's Interface pane now go through it. Latent
+     until now — `continue` is the first port in the tree that is both defaulted and renameable — and
+     found only because the round-trip test logged *"unknown param \"continue\" on node
+     \"GroupOutput\" — skipped"*.
 6. **flowview + the verticals.** `Add ▸ Groups ▸ loop` (plus the `[catalog]` creatable-key test), a
    canvas colour, and an **Add Carry** gesture in the Interface pane — without it a loop cannot be
    authored, which is the "compiled, linked, unreachable" shape this file has caught four times. Two

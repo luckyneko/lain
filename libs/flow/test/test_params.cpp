@@ -297,3 +297,50 @@ TEST_CASE("a default never stands in for a suppressed upstream", "[param][defaul
 	REQUIRE(test::output(graph, evaluation, id, 0).empty());						  // so it produced nothing...
 	REQUIRE(evaluation.value(PortAddress{id, graph.node(id).input(0).id()}).empty()); // ...and was NOT defaulted
 }
+
+TEST_CASE("renaming a defaulted port carries its param with it", "[param][default]")
+{
+	// A rename is display-only for the port — edges reference the PortId — but a DEFAULTED input has
+	// a param behind it carrying the same name, and a param is addressed BY NAME on disk. Renaming
+	// only the port leaves a saved document naming a param the reloaded node does not declare, so
+	// the default silently reverts to the constructor's. Node::renamePort moves both, which is why
+	// it exists rather than callers reaching for Port::setName.
+	Defaulted node{7};
+	const Param* fallback = node.defaultOf(node.in);
+	REQUIRE(fallback != nullptr);
+	REQUIRE(fallback->name() == "value");
+
+	REQUIRE(node.renamePort(node.in, "seed"));
+	REQUIRE(node.input(node.in).name() == "seed");
+	// The SAME param — identity is the PortId, so only the label moved.
+	REQUIRE(node.defaultOf(node.in) == fallback);
+	REQUIRE(fallback->name() == "seed");
+	REQUIRE(fallback->get<int>() == 7);
+}
+
+TEST_CASE("renamePort refuses a name that would make an edge ambiguous", "[param][default]")
+{
+	// Port names are the on-disk edge key, so two ports sharing one on a side makes every edge
+	// through them ambiguous on load. A primitive reports and changes nothing; it does not decide.
+	struct TwoInputs : Node
+	{
+		PortId a, b;
+		TwoInputs()
+			: Node("TwoInputs")
+		{
+			a = addInput<int>("a", Default{1});
+			b = addInput<int>("b");
+		}
+		void compute(NodeEvaluation&) const override {}
+	};
+
+	TwoInputs node;
+	REQUIRE_FALSE(node.renamePort(node.a, "b"));	 // already taken on this side
+	REQUIRE_FALSE(node.renamePort(node.a, "2fast")); // not a valid port name
+	REQUIRE_FALSE(node.renamePort(PortId{}, "c"));	 // no such port
+	REQUIRE(node.input(node.a).name() == "a");
+	REQUIRE(node.defaultOf(node.a)->name() == "a");
+
+	// The port's OWN name is not a collision with itself.
+	REQUIRE(node.renamePort(node.a, "a"));
+}

@@ -291,6 +291,12 @@ namespace lain::flow
 		PortId countPort() const { return m_count; }
 		PortId iterationsPort() const { return m_iterations; }
 
+		// The names a reserved pin is BORN with. Public because a serializer needs the same two
+		// strings to fall back on when a document does not name them — one source, so the spelling
+		// a load rebuilds cannot drift from the spelling a fresh loop gets.
+		static constexpr const char* kIndexPin = "index";
+		static constexpr const char* kContinuePin = "continue";
+
 		// The RESERVED inner pins — `index` on the interior's GroupInputNode (which iteration this
 		// is) and `continue` on its GroupOutputNode (whether to run another). The engine writes the
 		// first and reads the second; neither is mirrored outward.
@@ -330,17 +336,48 @@ namespace lain::flow
 			if (innerIn == PortId{})
 				return Carry{};
 			const PortId innerOut = from.addBoundary<T>(name);
-			if (innerOut == PortId{})
+			// The pairing itself is recorded by pairCarry, so there is ONE routine that decides what
+			// a valid carry is — this gesture and a loader restoring one from a document cannot
+			// disagree about it.
+			if (innerOut == PortId{} || !pairCarry(innerIn, innerOut))
 			{
 				// Unreachable after the checks above — but the undo is what makes atomicity a
 				// property of the code rather than of an argument about it. Nothing can be wired to
 				// a pin this new, so the refusing primitive accepts the removal.
 				m_inner.removePort(PortAddress{into.id(), innerIn});
+				if (innerOut != PortId{})
+					m_inner.removePort(PortAddress{from.id(), innerOut});
 				return Carry{};
 			}
-			m_carries[innerIn] = innerOut;
 			return Carry{innerIn, innerOut};
 		}
+
+		// Record a carry between two inner boundary pins that ALREADY exist — what a LOADER has,
+		// where addCarry's job of creating them was done by the interior it just read. Returns false
+		// having recorded NOTHING when the pair is not a carry: a pin that is not on the matching
+		// boundary node, a RESERVED pin (the engine already drives those), two pins of different
+		// types — Evaluation::bind type-checks nothing, so a mismatch would bind the wrong payload
+		// into a slot at runtime — or a pin already half of another pairing.
+		bool pairCarry(PortId innerIn, PortId innerOut);
+
+		// Declare this loop's reserved pins on `interior` and record their ids. The CONSTRUCTOR calls
+		// it on its own interior; a LOADER calls it on the graph it is about to fill and then moves
+		// that graph in. One routine for both, because a fact computed two ways eventually disagrees
+		// with itself, and here it would do so silently.
+		//
+		// A loader has to call it at all because a reserved pin is STATIC: it is never written to the
+		// document and never replayed, and the loader REPLACES this node's whole interior — so the
+		// pins the constructor made are destroyed with it, and an inner edge into `continue` would
+		// resolve to nothing, turning a while loop back into a count loop with no error anywhere.
+		// The names are parameters for the same reason: a reserved pin can be renamed, edges are
+		// name-addressed on disk, so the document's spelling is what the rebuilt pin must carry.
+		//
+		// Call it BEFORE any pin is replayed onto `interior`. That is what makes the reserved ids
+		// deterministically PortId{1} on each side, and what turns a document naming a dynamic pin
+		// `index` into addDynamicPort's "could not be added" skip rather than addOutput's
+		// duplicate-name assert.
+		void establishReserved(Graph& interior, const std::string& indexName = kIndexPin,
+							   const std::string& continueName = kContinuePin);
 
 		// The whole pairing, inner GroupInput pin -> inner GroupOutput pin. Id-keyed for the reason
 		// portMap() is: a rename must move a label, never behaviour. Pairing by NAME would let

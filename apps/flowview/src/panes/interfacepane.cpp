@@ -41,23 +41,24 @@ namespace flowview
 	// An editable pin-name field (commits on Enter / focus loss) — boundary pins are user-named.
 	// Returns whether the pin was actually renamed.
 	//
-	// A new name must be a valid port name AND unused on this side of the node: serialization
-	// addresses edges by port name, so two pins sharing one would make an edge ambiguous on load
-	// (addDynamicPort enforces the same rule at creation — a rename must not be the way around it).
-	// A refused name is simply not applied, and the field reverts to the current one next frame.
-	// The field is drawn from the READ side and committed through the WRITE side, which is null inside
-	// a linked group — so the name is always legible there, and never editable.
-	static bool renderPinName(const flow::Node& node, const flow::Port& pin, flow::Port* writable)
+	// The rename goes through flow::Node::renamePort, which is the seam rather than Port::setName
+	// because a rename has to move every copy of the name: it refuses one that is invalid or already
+	// taken on this side (serialization addresses edges by port name, so two pins sharing one makes
+	// an edge ambiguous on load), and it carries the param behind a DEFAULTED pin along with the
+	// port — a param is addressed by name on disk too, so leaving it behind would make the default
+	// silently revert on the next load. A refused name is simply not applied, and the field reverts
+	// to the current one next frame.
+	//
+	// Drawn from the READ side and committed through the WRITE side, which is null inside a linked
+	// group — so the name is always legible there, and never editable.
+	static bool renderPinName(const flow::Port& pin, flow::Node* writable)
 	{
 		std::string name = pin.name();
 		gui::SetNextItemWidth(110.0f);
 		gui::InputText("##name", &name);
 		if (writable == nullptr || !gui::IsItemDeactivatedAfterEdit() || name == pin.name())
 			return false;
-		if (!flow::validPortName(name) || node.hasPortNamed(pin.direction(), name))
-			return false;
-		writable->setName(std::move(name));
-		return true;
+		return writable->renamePort(pin.id(), std::move(name));
 	}
 
 	// The per-node "+" : a menu of the registered port types the node accepts (filtered by
@@ -162,7 +163,7 @@ namespace flowview
 				const flow::Port& pin = node.output(i);
 				gui::PushID(static_cast<int>(pin.id().value()));
 				gui::BeginDisabled(!editable);
-				renamed |= renderPinName(node, pin, writable != nullptr ? &writable->output(i) : nullptr);
+				renamed |= renderPinName(pin, writable);
 				gui::EndDisabled();
 				gui::SameLine();
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
@@ -228,7 +229,7 @@ namespace flowview
 				const flow::Port& pin = node.input(i);
 				gui::PushID(static_cast<int>(pin.id().value()));
 				gui::BeginDisabled(!editable);
-				renamed |= renderPinName(node, pin, writable != nullptr ? &writable->input(i) : nullptr);
+				renamed |= renderPinName(pin, writable);
 				gui::EndDisabled();
 				gui::SameLine();
 				gui::Text(": %s", std::string(pin.typeName()).c_str());

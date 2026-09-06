@@ -77,6 +77,12 @@ namespace lain::flow
 		// Seed the declared default (addParam). Not part of the public surface: see the note above.
 		template <typename T>
 		void set(T value);
+
+		// Move the label. Node-only, and reached from exactly one place: Node::renamePort, which
+		// renames a defaulted input's port and the param behind it TOGETHER. A param is addressed by
+		// name on disk, so a rename that moved only one of the two would leave a document naming a
+		// param the reloaded node does not have.
+		void rename(std::string name) { m_name = std::move(name); }
 		Param(std::string name, const PortType& type, PortId id)
 			: m_name(std::move(name))
 			, m_type(&type)

@@ -200,20 +200,17 @@ namespace lain::flow::edit
 			const Port* pin = outerPort ? innerPinFor(inner, side, innerId) : nullptr;
 			if (pin != nullptr && pin->name() != outerPort->name())
 			{
-				// ...unless another port on this side already carries that name. Only a kind with
-				// ports of its OWN can produce that (a loop's `count` / `iterations`), and taking
-				// the name anyway would leave two same-named outer ports — which makes every
-				// name-addressed edge through them ambiguous on disk. Keep the old label and report
-				// it, the same call exposePort makes when the collision arrives by the other door.
-				if (node->hasPortNamed(side, pin->name()))
-				{
+				// Through Node::renamePort, which refuses a name another port on this side already
+				// carries — only a kind with ports of its OWN can produce that (a loop's `count` /
+				// `iterations`), and taking it anyway would leave two same-named outer ports, making
+				// every name-addressed edge through them ambiguous on disk. Keep the old label and
+				// report it, the same call exposePort makes when the collision arrives by the other
+				// door. (renamePort also moves the param behind a defaulted port, which a bare
+				// Port::setName would leave behind.)
+				if (!node->renamePort(outer, pin->name()))
 					sync.refused.push_back(pin->name());
-				}
 				else
-				{
-					outerPort->setName(pin->name());
 					++sync.renamed;
-				}
 			}
 		}
 

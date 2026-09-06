@@ -129,6 +129,49 @@ namespace lain::flow::serialize
 		return out;
 	}
 
+	// A LOOP's engine wiring: the carry PAIRING plus the two reserved pin names. The pairing is the
+	// one thing about an interior that is not derivable from it — a carried Image and an invariant
+	// Image are the same type, so no declaration can encode which is which (ADR-0021).
+	//
+	// Its outer PORTS are deliberately NOT stored, unlike a map's. A loop's face is derived exactly
+	// as a plain group's, because the pairing changes what the engine does BETWEEN iterations and
+	// never what the ports look like — so storing them would put a derivable fact beside the
+	// underivable one, which is a second source able to disagree with the first.
+	//
+	// Name-addressed, like every edge in this format: no PortId appears anywhere on disk (ids are
+	// minted fresh in replay order), so a name is the durable key and a PortId the runtime identity.
+	static data::Value loopToValue(const LoopNode& loop)
+	{
+		const GroupInputNode& into = loop.inner().boundaryInputNode();
+		const GroupOutputNode& from = loop.inner().boundaryOutputNode();
+
+		data::Value out = data::Value::object();
+
+		// The reserved pins are RENAMEABLE, and an edge into one is name-addressed like any other —
+		// so a renamed `continue` that is not recorded comes back as `continue`, its edge resolves to
+		// nothing, and a while loop silently reloads as a count loop. Written whenever the pin is
+		// there; its absence means the name the loader's own default gives it.
+		if (const Port* indexPin = into.findOutput(loop.indexPin()))
+			out.set("index", data::Value(indexPin->name()));
+		if (const Port* continuePin = from.findInput(loop.continuePin()))
+			out.set("continue", data::Value(continuePin->name()));
+
+		data::Value carries = data::Value::array();
+		for (const auto& [innerIn, innerOut] : loop.carries())
+		{
+			const Port* in = into.findOutput(innerIn);
+			const Port* pinOut = from.findInput(innerOut);
+			if (in == nullptr || pinOut == nullptr)
+				continue; // half of it is gone — there is no name to write, and no carry to restore
+			data::Value carry = data::Value::object();
+			carry.set("in", data::Value(in->name()));
+			carry.set("out", data::Value(pinOut->name()));
+			carries.push(std::move(carry));
+		}
+		out.set("carries", std::move(carries));
+		return out;
+	}
+
 	static data::Value nodeToValue(const Node& node, const std::string& kind, const ValueCodecs& codecs,
 								   const core::Factory<Node>& factory, const EditorTree* subtree)
 	{
@@ -194,6 +237,13 @@ namespace lain::flow::serialize
 			static const EditorTree empty;
 			out.set("graph", bodyToValue(map->inner(), factory, codecs, subtree ? *subtree : empty));
 			out.set("interface", mapInterfaceToValue(*map));
+		}
+		else if (const auto* loop = dynamic_cast<const LoopNode*>(&node))
+		{
+			// A loop stores its recipe like an inline group, plus the pairing its face cannot carry.
+			static const EditorTree empty;
+			out.set("graph", bodyToValue(loop->inner(), factory, codecs, subtree ? *subtree : empty));
+			out.set("loop", loopToValue(*loop));
 		}
 		else if (const auto* group = dynamic_cast<const InlineGroupNode*>(&node))
 		{
@@ -377,7 +427,14 @@ namespace lain::flow::serialize
 	// two identical ones (ADR-0013). Without a cache two instances do hold separate equal copies, and
 	// that is still fine: ids need only be unique WITHIN a graph, and each instance's values live in
 	// its own child Evaluation keyed by the group node's id in the parent.
-	static Graph loadBody(const data::Value& body, EditorTree& editor, LoadContext& ctx);
+	//
+	// `prepareInterior`, when set, is called on the freshly constructed Graph BEFORE any node is
+	// seated: the hook for an owner whose interior is born with more than the boundary pair. Today
+	// that is exactly a LOOP's two reserved pins, which are static — never written, never replayed —
+	// and must exist before this body's edges resolve, since an edge into `continue` is
+	// name-addressed like any other.
+	static Graph loadBody(const data::Value& body, EditorTree& editor, LoadContext& ctx,
+						  const std::function<void(Graph&)>& prepareInterior = {});
 	static Graph loadDocument(const data::Value& document, EditorTree& editor, LoadContext& ctx);
 
 	// The pins a linked group's template actually exposes, as PinSpecs — what the cached interface is
@@ -449,6 +506,80 @@ namespace lain::flow::serialize
 				return true;
 		}
 		return false;
+	}
+
+	// A loop's `loop` section, read whole before any of it is applied — the two halves land at two
+	// different moments (see the load arm), and reading it twice would be two readers to keep in step.
+	struct LoopSection
+	{
+		std::optional<std::string> indexName;	 // absent: the pin keeps the name a fresh loop gives it
+		std::optional<std::string> continueName; // ditto
+		std::vector<std::pair<std::string, std::string>> carries;
+	};
+
+	static LoopSection readLoopSection(const data::Value* stored, LoadContext& ctx)
+	{
+		LoopSection section;
+		if (stored == nullptr)
+			return section; // no section: a loop with no carries, which is a legal (degenerate) loop
+
+		// A stored name is about to be handed to a STATIC port declaration, which asserts on an
+		// invalid one — so a hand-written document is checked here, where there is an issue list to
+		// report into, rather than at the declaration, where there is only an abort.
+		const auto readName = [&](const char* key) -> std::optional<std::string>
+		{
+			const data::Value* nameV = stored->find(key);
+			const std::string* name = nameV ? nameV->asString() : nullptr;
+			if (name == nullptr)
+				return std::nullopt;
+			if (!validPortName(*name))
+			{
+				ctx.warn("loop reserved pin \"" + std::string(key) + "\" is named \"" + *name + "\", which is not a valid port name — the default is used");
+				return std::nullopt;
+			}
+			return *name;
+		};
+		section.indexName = readName("index");
+		section.continueName = readName("continue");
+
+		const data::Value* carriesV = stored->find("carries");
+		const data::Value::Array* arr = carriesV ? carriesV->asArray() : nullptr;
+		if (arr == nullptr)
+			return section;
+
+		for (const data::Value& carryV : *arr)
+		{
+			const data::Value* inV = carryV.find("in");
+			const data::Value* outV = carryV.find("out");
+			const std::string* in = inV ? inV->asString() : nullptr;
+			const std::string* out = outV ? outV->asString() : nullptr;
+			if (in == nullptr || out == nullptr)
+			{
+				ctx.warn("loop carry is missing its \"in\" or \"out\" pin name — skipped");
+				continue;
+			}
+			section.carries.emplace_back(*in, *out);
+		}
+		return section;
+	}
+
+	// Restore the pairing onto the interior that has just been read. Matched by NAME, the only
+	// durable link between a stored carry and a rebuilt pin, since a PortId is minted per load.
+	//
+	// A pair that will not resolve, or that pairCarry refuses, is dropped AND REPORTED — the same
+	// call the map's interface rectification makes. The cost is that carry alone: the surviving pin
+	// then means exactly what an unpaired pin means, an invariant or a last-iteration output, so
+	// there is no broken state to represent and nothing downstream has to distrust the pairing.
+	static void loadCarries(LoopNode& loop, const LoopSection& section, LoadContext& ctx)
+	{
+		const Graph& inner = *loop.innerGraph();
+		for (const auto& [inName, outName] : section.carries)
+		{
+			const Port* in = findPortByName(inner.boundaryInputNode(), Port::Direction::Output, inName);
+			const Port* out = findPortByName(inner.boundaryOutputNode(), Port::Direction::Input, outName);
+			if (in == nullptr || out == nullptr || !loop.pairCarry(in->id(), out->id()))
+				ctx.warn("loop carry \"" + inName + "\" -> \"" + outName + "\" could not be restored — dropped (those pins become an invariant and a last-iteration output)");
+		}
 	}
 
 	// Restore a MAP's own outer ports from the interface the document stored, so the author's
@@ -715,7 +846,8 @@ namespace lain::flow::serialize
 	// One level of the load: nodes (recursing into groups), then edges, then the editor blobs.
 	// Returns the graph rather than filling one, because its boundary pair is born with the
 	// document's ids — a group's inner graph is move-assigned from this, exactly as the root is.
-	Graph loadBody(const data::Value& document, EditorTree& editor, LoadContext& ctx)
+	Graph loadBody(const data::Value& document, EditorTree& editor, LoadContext& ctx,
+				   const std::function<void(Graph&)>& prepareInterior)
 	{
 		const auto error = [&](std::string msg)
 		{ ctx.error(std::move(msg)); };
@@ -795,6 +927,12 @@ namespace lain::flow::serialize
 		// Born with the document's own boundary pair: node identity is immutable after admission, so
 		// the pair cannot be re-keyed afterwards.
 		Graph graph{boundary};
+
+		// Before ANY pin is replayed (see the declaration): the reserved pins land first, so their
+		// ids are deterministic and a document that names a dynamic pin `index` is refused by
+		// addDynamicPort — a reported skip — rather than asserting on a duplicate static name.
+		if (prepareInterior)
+			prepareInterior(graph);
 
 		// --- adopt: seat each staged node, in array order, and replay its definition ---
 		IdRemap remap;
@@ -900,6 +1038,28 @@ namespace lain::flow::serialize
 				if (const data::Value* innerBody = nodeV.find("graph"))
 					map->inner() = loadBody(*innerBody, editor.groups[liveId], ctx);
 				loadMapInterface(*map, nodeV.find("interface"), ctx);
+			}
+			else if (auto* loop = dynamic_cast<LoopNode*>(&created))
+			{
+				// The section is read WHOLE, then applied in two parts, because its halves become
+				// true at two different moments. The reserved pin NAMES must reach the interior
+				// before that body's edges resolve — an edge into `continue` is name-addressed, and
+				// the pins are static, so the loader has to declare them onto the graph it is
+				// filling. The CARRIES need the opposite: the pins must already exist to be paired.
+				const LoopSection section = readLoopSection(nodeV.find("loop"), ctx);
+				if (const data::Value* innerBody = nodeV.find("graph"))
+				{
+					loop->inner() = loadBody(*innerBody, editor.groups[liveId], ctx,
+											 [&](Graph& interior)
+											 {
+												 loop->establishReserved(interior,
+																		 section.indexName.value_or(LoopNode::kIndexPin),
+																		 section.continueName.value_or(LoopNode::kContinuePin));
+											 });
+				}
+				// (With no body the constructor's interior stands, reserved pins and all — there is
+				// nothing loaded for a stored name to have to match.)
+				loadCarries(*loop, section, ctx);
 			}
 			else if (auto* group = dynamic_cast<InlineGroupNode*>(&created))
 			{

@@ -51,7 +51,13 @@ outputs seed the next one's inputs, and whose trip count is bounded by construct
   would replay `index` onto a constructor that already made it — and has no `Default` overload, while
   `Node::addInput(name, Default<T>)` is protected. Static is `SelectNode::selector`'s precedent
   exactly: replay skips it, the ctor rebuilds it on load, an edge to it resolves by name like any
-  other, and `continue`'s default round-trips as an ordinary `Param`.*). `continue` carries
+  other, and `continue`'s default round-trips as an ordinary `Param`.* — **corrected at slice 5,
+  2026-09-06: "the ctor rebuilds it on load" is exactly where the `selector` analogy breaks.** A
+  Select's static pin is on the node the factory made; a loop's are on its INTERIOR, and a load
+  replaces that interior wholesale, moving the constructor's pins away with it. The LOADER must
+  declare them onto the graph it is filling, before that body's edges resolve, and under the name
+  the document recorded — a reserved pin is renameable, and an edge into one is name-addressed like
+  any other.*). `continue` carries
   `Default{true}`, so **unwired means the count decides** while **wired-and-suppressed stays empty and
   means the iteration failed**.
 - **A loop folds; it never scans.** Each carry mirrors out as its **final** value, each unpaired inner
@@ -74,7 +80,10 @@ outputs seed the next one's inputs, and whose trip count is bounded by construct
 - **The pairing is stored; the ports are derived.** A `loop` section holds `carries: [{in, out}]` plus
   the `index` / `continue` pin names, all **name-addressed like every edge in this format**. The outer
   ports are re-derived by `edit::syncGroupPorts`, so a loop follows M5's group rule rather than the
-  map's.
+  map's. (*Built 2026-09-06. The pin names proved REQUIRED rather than a convenience —
+  sabotage-verified: dropping them turns a converging while loop into one that runs to its bound,
+  110 instead of 13. The section is read whole and applied in two parts, because the names must reach
+  the interior before its edges resolve while the carries need those pins to already exist.*)
 - **Inline only.** A linked loop is deferred for the same reason a linked map is.
 
 ## Why
@@ -245,6 +254,23 @@ fact beside the underivable one, which is a second source that can disagree with
 - **A carry legitimately produces an outer input and an outer output of the same name.**
   `Node::hasPortNamed` is per-direction, so this is unambiguous — but it is the first node where it
   happens by design rather than by accident.
+- **A loader needs a hook to establish an interior born with more than its boundary pair** *(built
+  2026-09-06; this ADR assumed the constructor sufficed)*. `serialize::loadBody` gains a
+  `prepareInterior` callback, invoked on the freshly constructed Graph before any node is seated —
+  which also makes the reserved ids deterministic and turns a document naming a dynamic pin `index`
+  into a reported skip rather than a duplicate-name assert. `LoopNode::establishReserved` is the one
+  routine both the constructor and the loader call, because a fact computed two ways eventually
+  disagrees with itself, and here it would do so silently.
+- **A carry restored from a document goes through the same check the authoring gesture does** *(built
+  2026-09-06)*. `pairCarry` records the pairing and `addCarry<T>` delegates to it, so the two cannot
+  disagree about what a valid carry is. It refuses a reserved pin, a pin already half of another
+  pairing, and a **type mismatch** — `Evaluation::bind` type-checks nothing, so a mismatched pair
+  would bind the wrong payload into a slot at runtime.
+- **Renaming a defaulted port stranded the param behind it** *(found at slice 5, fixed at its
+  source)*. `Port::setName` claims a rename touches nothing structural; that stops being true once a
+  port has a `Default`, because the param keeps the old name and a param is addressed by name on
+  disk. `continue` is the first port in the tree that is both defaulted and renameable, so the trap
+  stayed latent until this milestone. `Node::renamePort` now moves both.
 - **Two new example nodes** — `ImageDifferenceNode` and `CompareNode` — exist to make the while
   vertical real. Without them the condition path would be built and never exercised.
 

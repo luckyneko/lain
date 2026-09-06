@@ -40,11 +40,45 @@ namespace lain::flow
 		m_count = addInput<int>("count", Default{1});
 		m_iterations = addOutput<int>("iterations");
 
-		m_index = m_inner.boundaryInputNode().addReserved<int>("index");
+		establishReserved(m_inner);
+	}
+
+	void LoopNode::establishReserved(Graph& interior, const std::string& indexName, const std::string& continueName)
+	{
+		m_index = interior.boundaryInputNode().addReserved<int>(indexName);
 		// True, so an unwired condition is TRANSPARENT (the count decides) while a wired-and-
 		// suppressed one stays empty and means the iteration failed — GateNode::enable's 2026-08-15
 		// resolution, reused rather than reinvented for the same trap.
-		m_continue = m_inner.boundaryOutputNode().addReserved<bool>("continue", Default{true});
+		m_continue = interior.boundaryOutputNode().addReserved<bool>(continueName, Default{true});
+	}
+
+	bool LoopNode::pairCarry(PortId innerIn, PortId innerOut)
+	{
+		const GroupInputNode& into = m_inner.boundaryInputNode();
+		const GroupOutputNode& from = m_inner.boundaryOutputNode();
+
+		const Port* in = into.findOutput(innerIn);
+		const Port* out = from.findInput(innerOut);
+		if (in == nullptr || out == nullptr)
+			return false; // one half names no pin on the boundary node it should be on
+
+		// The engine writes `index` and reads `continue`; carrying one would be a second driver.
+		if (innerIn == m_index || innerOut == m_continue)
+			return false;
+
+		// addCarry<T> makes both pins the same type by construction; a document can name a pair that
+		// is not, and nothing downstream would notice — Evaluation::bind type-checks nothing.
+		if (in->type() != out->type())
+			return false;
+
+		for (const auto& [pairedIn, pairedOut] : m_carries)
+		{
+			if (pairedIn == innerIn || pairedOut == innerOut)
+				return false; // already half of another carry
+		}
+
+		m_carries[innerIn] = innerOut;
+		return true;
 	}
 
 	bool LoopNode::mirrorsPin(Port::Direction outerSide, const Port& innerPin) const

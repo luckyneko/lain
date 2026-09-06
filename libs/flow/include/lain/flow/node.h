@@ -157,6 +157,20 @@ namespace lain::flow
 			return it == m_defaults.end() ? nullptr : findParam(it->second);
 		}
 
+		// Rename a port — THE seam for it, because a rename is display-only for the port and not
+		// necessarily for what stands behind it. A port declared with a Default has a PARAM carrying
+		// the same name, and a param is addressed BY NAME on disk: renaming only the port leaves the
+		// document naming a param the reloaded node does not declare, so the default silently reverts
+		// to what the constructor gave it. This moves both.
+		//
+		// Returns false, changing nothing, for an unknown port, an invalid name, or one already taken
+		// on that side — a duplicate would make every name-addressed edge through the pair ambiguous
+		// on disk. A primitive reports; it does not decide.
+		//
+		// A rename is NOT a recipe change (nothing computes differently), so it bumps no version —
+		// same as Port::setName, which stays available for a caller that has only a Port.
+		bool renamePort(PortId port, std::string name);
+
 		// THE seam for changing a param: type-check, commit and invalidate as one operation.
 		// Returns false — changing nothing at all — when `id` names no param of this node or when
 		// `value`'s payload type is not the param's DECLARED type ("the type is the schema"; an
