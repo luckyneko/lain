@@ -452,6 +452,54 @@ TEST_CASE("addCarry refuses a taken name and touches NEITHER side", "[flow][loop
 	}
 }
 
+TEST_CASE("a carry can be added by registry KEY, and it is the same carry", "[flow][loop]")
+{
+	// The spelling a HOST has: its "+ add carry" menu is the port-type registry's keys, so it has a
+	// string where addCarry<T> wants a type. Both run one routine, because an authoring gesture that
+	// means two different things depending on which door it came through is how the two drift.
+	registerLoopTypes();
+	Scene scene;
+	LoopNode& loop = scene.loop();
+	GroupInputNode& into = loop.inner().boundaryInputNode();
+	GroupOutputNode& from = loop.inner().boundaryOutputNode();
+
+	const LoopNode::Carry carry = loop.addCarry("Int", "total");
+	REQUIRE(carry.innerIn != PortId{});
+	REQUIRE(loop.carries().size() == 1);
+	REQUIRE(loop.carries().at(carry.innerIn) == carry.innerOut);
+	REQUIRE(has(into, Port::Direction::Output, "total"));
+	REQUIRE(has(from, Port::Direction::Input, "total"));
+	// DYNAMIC on both sides, like any user-added boundary pin — which is what makes it serialize,
+	// and what keeps the Interface pane's × willing to remove it.
+	REQUIRE(into.findOutput(carry.innerIn)->isDynamic());
+	REQUIRE(from.findInput(carry.innerOut)->isDynamic());
+
+	// It mirrors outward exactly as the templated form's does: a seed in, a final out.
+	scene.sync();
+	REQUIRE(has(loop, Port::Direction::Input, "total"));
+	REQUIRE(has(loop, Port::Direction::Output, "total"));
+
+	SECTION("an unregistered key adds NOTHING on either side")
+	{
+		// The refusal only this spelling can produce, and the one worth pinning: an unknown key must
+		// REFUSE, never quietly substitute some default type. A carry whose pins are the wrong type
+		// is not a broken carry a user can see — it is one that binds the wrong payload at runtime,
+		// which is the same trap pairCarry's type check exists for.
+		const std::size_t inputsBefore = into.outputCount();
+		const std::size_t outputsBefore = from.inputCount();
+		REQUIRE(loop.addCarry("NoSuchType", "other").innerIn == PortId{});
+		REQUIRE(loop.carries().size() == 1);
+		REQUIRE(into.outputCount() == inputsBefore);
+		REQUIRE(from.inputCount() == outputsBefore);
+	}
+
+	SECTION("a taken name is refused the same way")
+	{
+		REQUIRE(loop.addCarry("Int", "total").innerIn == PortId{});
+		REQUIRE(loop.carries().size() == 1);
+	}
+}
+
 TEST_CASE("an inner pin colliding with a loop's own port is refused and named", "[flow][loop]")
 {
 	// A loop is the first group kind with ports of its own, so it is the first that can hit this.

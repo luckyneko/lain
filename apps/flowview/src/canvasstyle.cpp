@@ -70,10 +70,11 @@ namespace flowview
 
 		// Node title colours by factory kind — categories are emergent from shared colour (no Category
 		// enum). These keys must match scene.cpp's registrations.
-		const image::ColorRGBA8 source(46, 86, 120, 255);  // sources: emit a value
-		const image::ColorRGBA8 filter(38, 104, 104, 255); // filters: transform a value
-		const image::ColorRGBA8 control(86, 58, 124, 255); // control flow: gate / merge / select
-		const image::ColorRGBA8 boundary(74, 74, 86, 255); // the graph's I/O
+		const image::ColorRGBA8 source(46, 86, 120, 255);	 // sources: emit a value
+		const image::ColorRGBA8 filter(38, 104, 104, 255);	 // filters: transform a value
+		const image::ColorRGBA8 control(86, 58, 124, 255);	 // control flow: gate / merge / select
+		const image::ColorRGBA8 boundary(74, 74, 86, 255);	 // the graph's I/O
+		const image::ColorRGBA8 container(62, 68, 112, 255); // groups: they CONTAIN a graph
 		style.addNodeColor("gradient", source);
 		style.addNodeColor("loadimage", source);
 		style.addNodeColor("constInt", source);
@@ -86,8 +87,20 @@ namespace flowview
 		style.addNodeColor("gate", control);
 		style.addNodeColor("merge", control);
 		style.addNodeColor("select", control);
+		style.addNodeColor("imageDifference", filter);
+		style.addNodeColor("compare", control);
 		style.addNodeColor("groupInput", boundary);
 		style.addNodeColor("groupOutput", boundary);
+
+		// The four group kinds share one colour, because they are one category in the catalog and
+		// this file's rule is that categories are EMERGENT from shared colour. Until the loop
+		// arrived none of them had one at all, so a group, a map and a linked group were each the
+		// default title grey — indistinguishable from an ordinary node on a canvas where the one
+		// thing you most need to see is which nodes you can descend into.
+		style.addNodeColor("group", container);
+		style.addNodeColor("map", container);
+		style.addNodeColor("loop", container);
+		style.addNodeColor("linkedGroup", container);
 	}
 
 } // namespace flowview

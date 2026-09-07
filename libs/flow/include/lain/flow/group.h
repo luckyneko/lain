@@ -27,6 +27,7 @@
 #include "lain/flow/node.h"
 #include "lain/flow/types.h"
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -325,32 +326,18 @@ namespace lain::flow
 		template <typename T>
 		Carry addCarry(std::string name)
 		{
-			GroupInputNode& into = m_inner.boundaryInputNode();
-			GroupOutputNode& from = m_inner.boundaryOutputNode();
-
-			// Both sides vetted BEFORE either is touched, so the common refusal needs no undo at all.
-			if (!validPortName(name) || into.hasPortNamed(Port::Direction::Output, name) || from.hasPortNamed(Port::Direction::Input, name))
-				return Carry{};
-
-			const PortId innerIn = into.addBoundary<T>(name);
-			if (innerIn == PortId{})
-				return Carry{};
-			const PortId innerOut = from.addBoundary<T>(name);
-			// The pairing itself is recorded by pairCarry, so there is ONE routine that decides what
-			// a valid carry is — this gesture and a loader restoring one from a document cannot
-			// disagree about it.
-			if (innerOut == PortId{} || !pairCarry(innerIn, innerOut))
-			{
-				// Unreachable after the checks above — but the undo is what makes atomicity a
-				// property of the code rather than of an argument about it. Nothing can be wired to
-				// a pin this new, so the refusing primitive accepts the removal.
-				m_inner.removePort(PortAddress{into.id(), innerIn});
-				if (innerOut != PortId{})
-					m_inner.removePort(PortAddress{from.id(), innerOut});
-				return Carry{};
-			}
-			return Carry{innerIn, innerOut};
+			return addCarryUsing(name, [](DynamicPortsNode& node, const std::string& pin)
+								 { return node.addDynamicPort<T>(pin); });
 		}
+
+		// The same gesture keyed by a REGISTERED port type rather than by a compile-time one — what
+		// a HOST has, whose "+ add carry" menu is the port-type registry's keys (edit::addPort's
+		// shape). Both spellings run one routine, so the gesture cannot come to mean two different
+		// things depending on which door it was reached through.
+		//
+		// Refuses, having added nothing, everything the template form refuses plus an unregistered
+		// key.
+		Carry addCarry(const std::string& typeKey, std::string name);
 
 		// Record a carry between two inner boundary pins that ALREADY exist — what a LOADER has,
 		// where addCarry's job of creating them was done by the interior it just read. Returns false
@@ -410,6 +397,13 @@ namespace lain::flow
 		void reconcileInterior() override;
 
 	private:
+		// The ONE body behind both addCarry spellings: vet BOTH inner boundary nodes before either
+		// is touched, add through `add`, record the pairing through pairCarry, and undo on any
+		// refusal — so a carry is atomic whichever spelling asked for it. `add` is the only thing
+		// the two differ by: a compile-time T, or a registry key.
+		Carry addCarryUsing(const std::string& name,
+							const std::function<PortId(DynamicPortsNode&, const std::string&)>& add);
+
 		Graph m_inner;						// born with its own boundary pair — the loop's interface
 		std::map<PortId, PortId> m_carries; // innerIn -> innerOut
 		PortId m_count;						// this node's input: the trip bound

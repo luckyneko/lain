@@ -491,3 +491,55 @@ TEST_CASE("every crumb's depth indexes the path it was built from", "[groupnav]"
 	REQUIRE(crumbs.back().interior == InteriorEvaluation::PerElement);
 	REQUIRE(crumbs.back().depth - 1 < counts.size());
 }
+
+TEST_CASE("the loop a level belongs to is resolved one step UP", "[groupnav]")
+{
+	// A pane draws a graph; a loop's CARRY PAIRING is not in that graph — it is on the node that
+	// owns it (ADR-0021). So the Interface pane, showing a loop's interior, has to reach one level
+	// up to say which of those pins are paired, and to pair another. Nothing needed this before,
+	// because every other question a pane asks is answered by the interior alone.
+	Graph root;
+	const NodeId group = root.add<InlineGroupNode>();
+	const NodeId map = root.add<MapNode>();
+	const NodeId loop = root.add<LoopNode>();
+
+	REQUIRE(loopAt(root, GraphPath{{loop}}) != nullptr);
+	REQUIRE(editableLoopAt(root, GraphPath{{loop}}) != nullptr);
+
+	// Not a loop, and not a level at all: each answers nothing rather than something near-enough.
+	REQUIRE(loopAt(root, GraphPath{{group}}) == nullptr);
+	REQUIRE(loopAt(root, GraphPath{{map}}) == nullptr);
+	REQUIRE(loopAt(root, GraphPath{}) == nullptr); // the root graph is nobody's interior
+
+	SECTION("a loop nested inside a group resolves against ITS parent, not the root")
+	{
+		auto& inner = static_cast<InlineGroupNode&>(root.node(group)).inner();
+		const NodeId nested = inner.add<LoopNode>();
+		REQUIRE(loopAt(root, GraphPath{{group}, {nested}}) != nullptr);
+		REQUIRE(editableLoopAt(root, GraphPath{{group}, {nested}}) != nullptr);
+	}
+
+	SECTION("a loop inside a LINKED group is legible but not editable")
+	{
+		// Its carries belong to the template, which the parent document does not store — the same
+		// rule resolveEditable already applies to everything below a link.
+		Graph body;
+		body.add<LoopNode>();
+		const NodeId linkedId = root.add<LinkedGroupNode>();
+		auto& linked = static_cast<LinkedGroupNode&>(root.node(linkedId));
+		const NodeId nested = [&]
+		{
+			for (const NodeId id : body.nodeIds())
+			{
+				if (body.node(id).interiorEvaluation() == InteriorEvaluation::PerIteration)
+					return id;
+			}
+			return NodeId{};
+		}();
+		linked.adoptInterior(std::move(body));
+
+		const GraphPath path{{linkedId}, {nested}};
+		REQUIRE(loopAt(root, path) != nullptr);
+		REQUIRE(editableLoopAt(root, path) == nullptr);
+	}
+}

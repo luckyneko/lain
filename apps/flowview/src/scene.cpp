@@ -5,9 +5,11 @@
 #include <lain/flow/example/blurnode.h>
 #include <lain/flow/example/clipsequencenode.h>
 #include <lain/flow/example/combinenode.h>
+#include <lain/flow/example/comparenode.h>
 #include <lain/flow/example/convertnode.h>
 #include <lain/flow/example/frameatnode.h>
 #include <lain/flow/example/gradientnode.h>
+#include <lain/flow/example/imagedifferencenode.h>
 #include <lain/flow/example/listdirnode.h>
 #include <lain/flow/example/loadimagenode.h>
 #include <lain/flow/example/opensequencenode.h>
@@ -44,6 +46,10 @@ namespace flowview
 	static constexpr const char* kListDirKey = "listDir";
 	static constexpr const char* kCombineKey = "combine";
 	static constexpr const char* kConvertKey = "convert";
+	// The two halves of a loop's CONDITION (M11): measure, then decide. They exist so the while
+	// vertical is real — without them the `continue` pin would be built and never driven.
+	static constexpr const char* kImageDifferenceKey = "imageDifference";
+	static constexpr const char* kCompareKey = "compare";
 
 	// The frame-sequence kinds (M10). In the catalog since slice 7 — until then they were registered
 	// in the factory alone and reachable only from the cli, the same order M8 used when the map node
@@ -53,6 +59,7 @@ namespace flowview
 	static constexpr const char* kClipSequenceKey = "clipSequence";
 	static constexpr const char* kGroupKey = "group";
 	static constexpr const char* kMapKey = "map";
+	static constexpr const char* kLoopKey = "loop";
 	static constexpr const char* kLinkedGroupKey = "linkedGroup";
 
 	const std::vector<NodeCategory>& nodeCatalog()
@@ -63,20 +70,24 @@ namespace flowview
 		// Interface panel, not added like an ordinary node.
 		static const std::vector<NodeCategory> catalog = {
 			{"Sources", {kGradientKey, kLoadImageKey, kListDirKey, kConstIntKey, kConstBoolKey, kConstFloatKey, kConstPathKey, kConstStringKey}},
-			{"Filters", {kTintKey, kBlurKey, kCombineKey, kConvertKey}},
+			{"Filters", {kTintKey, kBlurKey, kCombineKey, kConvertKey, kImageDifferenceKey}},
 			// Footage. openSequence brings a folder of stills or a video file in as one sequence
 			// (medium-neutral — the opener seam decides which), frameAt is where it becomes pixels a
 			// graph can process, and clipSequence trims the range. A category of their own rather
 			// than a source + two filters: what they have in common is the payload they pass, which
 			// is what a user is looking for when reaching for them.
 			{"Sequence", {kOpenSequenceKey, kFrameAtKey, kClipSequenceKey}},
-			{"Control", {kGateKey, kMergeKey, kSelectKey}},
+			// Compare sits with the control nodes rather than the filters: what it produces is a
+			// bool nothing looks at for its own sake — it gates, or it drives a loop's `continue`.
+			{"Control", {kGateKey, kMergeKey, kSelectKey, kCompareKey}},
 			// A group is added empty (its inner graph is born with its own boundary pair) and grown by
 			// descending into it, and a MAP the same way — the difference is only that a map's face is
 			// lifted, so its `files` input takes the whole collection its interior is written against
-			// one element of. A LINKED group needs a template chosen first, so the menu bar adds it
-			// through a file dialog rather than from this list.
-			{"Groups", {kGroupKey, kMapKey}},
+			// one element of. A LOOP is added empty too and is likewise grown from inside, but what
+			// makes it a loop is authored rather than derived: its CARRIES, paired in the Interface
+			// pane. A LINKED group needs a template chosen first, so the menu bar adds it through a
+			// file dialog rather than from this list.
+			{"Groups", {kGroupKey, kMapKey, kLoopKey}},
 		};
 		return catalog;
 	}
@@ -98,6 +109,11 @@ namespace flowview
 		// The way a graph complies with the video writer's refusals: declare an untagged image and
 		// convert it to something a container can state (WORK.md M10 slice 6c).
 		factory.registerType<flow::example::ConvertNode>(kConvertKey);
+		// The condition path of a WHILE loop (M11): measure the change, then decide. Registered
+		// beside the other example nodes because that is all they are — a loop needs no engine
+		// support for its condition beyond the reserved pin itself.
+		factory.registerType<flow::example::ImageDifferenceNode>(kImageDifferenceKey);
+		factory.registerType<flow::example::CompareNode>(kCompareKey);
 		factory.registerType<flow::example::OpenSequenceNode>(kOpenSequenceKey);
 		factory.registerType<flow::example::FrameAtNode>(kFrameAtKey);
 		factory.registerType<flow::example::ClipSequenceNode>(kClipSequenceKey);
@@ -132,6 +148,10 @@ namespace flowview
 		factory.registerType<flow::InlineGroupNode>(kGroupKey);
 		factory.registerType<flow::LinkedGroupNode>(kLinkedGroupKey);
 		factory.registerType<flow::MapNode>(kMapKey);
+		// The LOOP. Until this line nothing in the tree constructed one: slices 1-5 built it, ran it
+		// and persisted it, and it was reachable from no menu and no document — which is the
+		// compiled-linked-unreachable shape this repo has caught four times.
+		factory.registerType<flow::LoopNode>(kLoopKey);
 	}
 
 	void buildExampleScene(flow::Graph& graph, const core::Factory<flow::Node>& factory)

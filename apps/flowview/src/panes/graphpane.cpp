@@ -260,6 +260,16 @@ namespace flowview
 						stepTo(element + 1);
 					gui::EndDisabled();
 				}
+				// A LOOP crumb says which pass you are looking at instead, because there is exactly
+				// one to look at: a loop reuses ONE child evaluation, so each iteration overwrites
+				// the last and only the final one survives (ADR-0021). Stating it is what makes the
+				// missing stepper read as a decision rather than as something not built yet — and
+				// the gesture for "show me iteration 3" is to set count = 3 and look.
+				else if (crumbs[i].interior == flow::InteriorEvaluation::PerIteration)
+				{
+					gui::SameLine();
+					gui::TextDisabled("[last iteration]");
+				}
 				gui::PopID();
 			}
 			// (The read-only STATE is shown on the canvas itself — see the overlay after the editor —

@@ -678,7 +678,11 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   unrecorded rename unwires the condition and a while loop reloads as a count loop. Being
   not-mirrored is *not a refusal* — a reserved pin is **not a candidate** (`mirrorsPin`), while a pin
   `exposePort` refuses is one a user can act on and a host names; conflating them makes every loop
-  report two problems forever.
+  report two problems forever. Being static is also what makes a reserved pin **not the user's to
+  remove**: an editor's per-pin × removes only DYNAMIC pins, because every pin a user adds to a
+  boundary node is dynamic and a static one exists only because the node that OWNS that graph
+  declared it. Asked of the pin, so a host needs no idea which kinds have reserved pins; the rename
+  stays available, since a reserved pin is renameable by design.
 - **Stage / frontier** *(M8; generalised M11)* — a map's arity comes from a value computed **during**
   the run, so the plan cannot be complete before it starts. `expand()` refuses to descend into a map
   whose arity is unknown — that map is a **frontier**, and everything downstream of it is left out of

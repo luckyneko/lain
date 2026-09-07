@@ -480,6 +480,73 @@ run --example` unchanged (nothing constructs a loop until slice 6). Full landing
   invalid or already-taken name; `edit::syncGroupPorts` and flowview's Interface pane now use it.
   Latent until now — `continue` is the first port in the tree that is both defaulted and renameable.
 
+### Update 2026-09-06 — M11 slice 6 built: a loop is reachable, authorable, and both verticals run
+
+The milestone's deliverable. Slices 1–5 built the loop end to end and **nothing constructed one** —
+no factory key reached `LoopNode`, so it was unreachable from the gui, the palette and any document a
+user could write, which is the compiled-linked-unreachable shape this file has caught four times.
+`ctest` **697/697** Debug with video on (+7) and **671/671** Release in the default video-off
+configuration (+7) — both baselines grown by exactly the seven new cases; warning-clean, format-check
+clean, `[loop]` swept 100× on the parallel path. **gui-mode was eyeballed by the repo owner on
+2026-09-07 and found issues** — untriaged at the time of writing, so slice 6 and M11 are NOT complete.
+Full landing notes in WORK.md M11.
+
+- **Both verticals run through the REAL binary.** `flowview run --graph count-loop.json` folds a
+  gradient through five blurs and reports `iterations: 5`; `while-loop.json` blurs until the picture
+  **stops changing** and reports `iterations: 23` against a bound of 100 — ADR-0021's claim that
+  `iterations` separates *"converged at k"* from *"hit the bound"*, observed rather than argued. Both
+  documents are self-contained (a `GradientNode` is the seed), so the binary opens and runs them with
+  nothing bound.
+- **"Stopped changing" is LITERAL, which deleted an invented number.** The first cut carried a
+  tolerance of 0.002; probing showed a cliff — 2 iterations at every threshold down to 0.0001, then
+  8, then **23 for anything below ~0.00003** — because a clamped Gaussian blur of an 8-bit image
+  reaches an exact fixed point. So the threshold is **0**, `> 0` is an exact test, and the magic
+  number is gone. A positive tolerance is the same mechanism stopping earlier, which the bounded
+  section demonstrates from the other end.
+- **The count vertical is checked against an INDEPENDENT chain of five blurs, byte for byte** —
+  because every weaker assertion (it is an image, the right size, blurrier than the seed) passes just
+  as well when the carry is not carrying. Sabotage-verified: recording no pairing fails the count
+  vertical on that comparison and the while vertical on `iterations` (100, i.e. it ran to its bound),
+  while the round-trip case correctly still passes, since it only asks whether a load folds the same
+  as the build.
+- **Found and fixed here: the Interface pane's `×` would remove a RESERVED pin.** `Graph::removePort`
+  erases a static port as happily as a dynamic one, so from the very pane this slice adds the carry
+  gesture to, a user could delete `index` or `continue`; `LoopNode` then held a `PortId` naming
+  nothing, the condition fell back to its `Default{true}`, and a while loop ran to its bound with no
+  error — while a save-and-reload quietly healed it (`establishReserved` remakes them), which is what
+  would have made it hard to find. The guard is **`Port::isDynamic()`**: general rather than
+  loop-shaped, since every pin a user adds here is dynamic and a static one exists only because the
+  node that OWNS this graph declared it. The panel needs no idea what a loop is, the root is
+  unaffected, and the NAME stays editable — a reserved pin is renameable by design.
+- **`LoopNode::addCarry` gained a registry-keyed twin, and both run ONE routine.** A host's menu is
+  `portTypeKeys()`, so it has a string where `addCarry<T>` wants a type. Sabotage: let an unknown key
+  fall back to a default type — a plausible wrong implementation, since a mistyped carry is not a
+  visible break but one that binds the wrong payload at runtime — and the new case fails. Recorded:
+  the undo inside is still **unreachable**, because both adders refuse the same things, so anything
+  failing on the second side already failed on the first. It stays for the reason its comment gives.
+- **The Carries section STATES the pairing** rather than letting the pins imply it — a carried
+  `Image` and an invariant `Image` are the same pin of the same type, and a document may pair two
+  differently-named pins. Each row's `×` removes both pins (the atomic inverse of the paired add);
+  the pairing needs no explicit drop, since `syncGroupPorts` calls `reconcileInterior()` first.
+- **`groupnav::loopAt` / `editableLoopAt`** resolve the loop whose interior a path names — one level
+  UP, since the pairing is the node's and the pins are its interior's. Two functions rather than one
+  plus a remembered check, as `resolvePath` / `resolveEditable` are. `loopAt` also checks the parent
+  path resolved COMPLETELY: `resolvePath` truncates what did not, and a lookup in an ancestor finds a
+  different node — M5's bug six.
+- **All four group kinds gained a canvas colour, not just the loop** (`group`, `map`, `linkedGroup`,
+  `loop` share one): they are one category in the catalog, and `canvasstyle.cpp`'s rule is that
+  categories are emergent from shared colour. None of them had one before, so what you can descend
+  into was the default title grey.
+- **`CompareNode` carries four INEQUALITIES and no equality** (exact float equality would need an
+  epsilon policy nothing asks for); its `op` round-trips through `data`'s enum-as-name. And
+  **`ImageDifferenceNode` is a measurement, not a blend**, so no op-class enforcement applies —
+  differing size or format is refused rather than reconciled, which inside a loop is an iteration
+  that failed.
+- **Three adjacent gaps found and deliberately left out**, each with its own commit owed and listed
+  in WORK.md: `GroupSync::refused` still has no reader; the Issues pane flags an unwired DEFAULTED
+  input as a missing required one (`BlurNode` has done this since 2026-08-15); and
+  `refusalText(NotInline)` says "linked" for a map or a loop.
+
 ### Update 2026-09-06 — a node does not publish while its interior has deferred
 
 Slice 4's recorded pre-existing bug, fixed in its own commit before slice 5. `expand`'s group and map

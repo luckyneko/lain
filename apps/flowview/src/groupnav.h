@@ -24,6 +24,7 @@ namespace lain::flow
 	class Evaluation;
 	class Graph;
 	class LinkedGroupNode;
+	class LoopNode;
 } // namespace lain::flow
 
 namespace flowview
@@ -73,6 +74,20 @@ namespace flowview
 	// (M5's bugs three and ten: the Interface pane's ± and the Inspector's params were silently lost
 	// on save inside a linked group). Here a pane that has no mutable graph cannot mutate one.
 	lain::flow::Graph* resolveEditable(lain::flow::Graph& root, const GraphPath& path);
+
+	// The LOOP whose interior `path` names — i.e. the node of `path`'s last step, when that node is
+	// a loop. Null at the root, and null when the last step is a plain group or a map.
+	//
+	// It exists because a loop is the one group kind with a fact its interior does not carry: the
+	// CARRY PAIRING (ADR-0021). Every other pane question is answered by the interior graph alone,
+	// which is why nothing needed this before — the Interface pane, drawing that interior, has to
+	// reach one level UP to say which of its pins are paired and to pair another.
+	const lain::flow::LoopNode* loopAt(const lain::flow::Graph& root, const GraphPath& path);
+
+	// The same, for EDITING: null when any step above the loop crosses into a linked group, whose
+	// carries belong to its template. Paired with the reading form for the reason resolvePath and
+	// resolveEditable are a pair — see there.
+	lain::flow::LoopNode* editableLoopAt(lain::flow::Graph& root, const GraphPath& path);
 
 	// The matching RUNTIME state for that graph: an Evaluation is a tree with one child per group
 	// node, so the same path walks it. Tolerant in the same way — a step with no child Evaluation

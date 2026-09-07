@@ -10,6 +10,8 @@ add_library(flow-example STATIC
 	src/loadimagenode.cpp
 	src/listdirnode.cpp
 	src/combinenode.cpp
+	src/imagedifferencenode.cpp
+	src/comparenode.cpp
 	src/convertnode.cpp
 	src/opensequencenode.cpp
 	src/frameatnode.cpp

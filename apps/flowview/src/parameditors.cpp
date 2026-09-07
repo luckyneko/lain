@@ -1,5 +1,6 @@
 #include "parameditors.h"
 
+#include <lain/flow/example/comparenode.h> // Comparison — CompareNode's operator param
 #include <lain/flow/portvalue.h>
 #include <lain/gui/dialogs.h>
 #include <lain/gui/enums.h>
@@ -304,5 +305,9 @@ namespace flowview
 		editors.add(typeid(media::FramePosition), &editFramePosition);
 		editors.add(typeid(image::PixelFormat), &editEnum<image::PixelFormat>);
 		editors.add(typeid(image::ColorSpace), &editEnum<image::ColorSpace>);
+		// Compare's operator (M11). An example node's enum reaching this list is not a layering
+		// slip: flowview OWNS the example scene, and sceneCodecs already names the same type on the
+		// serialization side — the two have to agree about which params a document can carry.
+		editors.add(typeid(flow::example::Comparison), &editEnum<flow::example::Comparison>);
 	}
 } // namespace flowview

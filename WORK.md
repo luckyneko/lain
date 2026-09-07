@@ -4210,24 +4210,120 @@ unchanged.
      until now — `continue` is the first port in the tree that is both defaulted and renameable — and
      found only because the round-trip test logged *"unknown param \"continue\" on node
      \"GroupOutput\" — skipped"*.
-6. **flowview + the verticals.** `Add ▸ Groups ▸ loop` (plus the `[catalog]` creatable-key test), a
-   canvas colour, and an **Add Carry** gesture in the Interface pane — without it a loop cannot be
-   authored, which is the "compiled, linked, unreachable" shape this file has caught four times. Two
-   new example nodes, `ImageDifferenceNode` and `CompareNode`, exist to make the condition path real.
-   **Count vertical needs no new node**: `gradient → carry → blur ×5`. **While vertical**: blur until
-   it stops changing.
+6. ✅ **flowview + the verticals — BUILT** (2026-09-06). `Add ▸ Groups ▸ loop`, an **Add Carry**
+   gesture in the Interface pane, the two example nodes that make the condition path real, and both
+   verticals driven through the **real binary**. `ctest` **697/697** Debug with video on (+7) and
+   **671/671** Release in the default video-off configuration (+7) — both baselines grown by exactly
+   the seven new cases; warning-clean, format-check clean, `[loop]` swept 100× on the parallel path.
+   **gui-mode was eyeballed by the repo owner on 2026-09-07 and FOUND ISSUES**, not yet triaged —
+   so the slice, and the milestone, is not complete. That is the expected distribution: this slice's
+   whole surface is the one all ten of M5's bugs lived on, while the engine slices produced none.
+   - **The verticals, through `flowview run`.** The count loop folds a gradient through five blurs
+     and reports `iterations: 5`; the while loop blurs until the picture **stops changing** and
+     reports `iterations: 23` against a bound of 100 — which is the ADR's own claim that
+     `iterations` is what separates "converged at k" from "hit the bound", observed rather than
+     argued. Both documents are self-contained (a `GradientNode` is the seed), so the binary opens
+     and runs them with nothing bound, and they are written to a stable scratch path so the run is a
+     copy-paste.
+   - **"Stopped changing" turned out to be LITERAL, which removed an invented number.** The first
+     cut carried a tolerance of 0.002; probing it showed a cliff (2 iterations at any threshold down
+     to 0.0001, then 8, then **23 for every threshold below ~0.00003**) — because a clamped Gaussian
+     blur of an 8-bit image reaches an exact fixed point, so the difference eventually becomes zero.
+     The threshold is therefore **0**, `> 0` is an exact test, and the magic number is gone. A
+     positive tolerance is the same mechanism stopping earlier, which the bounded section
+     demonstrates from the other end.
+   - **The count vertical is checked against an INDEPENDENT chain of five blurs, byte for byte.**
+     Every weaker assertion — it is an image, it is the right size, it is blurrier than the seed —
+     passes just as well when the carry is not carrying at all. Sabotage-verified: making
+     `pairCarry` record nothing fails the count vertical on that comparison **and** the while
+     vertical on `iterations` (100 instead of 23, i.e. it ran to its bound), while the round-trip
+     case correctly still passes, since it only asks whether a load folds the same as the build.
+   - **Found and fixed here: the Interface pane's `×` would remove a RESERVED pin.** It calls
+     `edit::removePort`, and `Graph::removePort` erases a static port as happily as a dynamic one —
+     so from the very pane this slice adds the carry gesture to, a user could delete `index` or
+     `continue`. `LoopNode` then held a `PortId` naming nothing, the condition fell back to its
+     `Default{true}`, and the while loop ran to its bound with no error anywhere — while a
+     save-and-reload quietly healed it (`establishReserved` remakes them), which is exactly what
+     would have made it hard to find. The guard is **`Port::isDynamic()`**, which is general rather
+     than loop-shaped: every pin a user adds here is dynamic, and a static one exists only because
+     the node that OWNS this graph declared it. So the panel needs no idea what a loop is, and at
+     the root — where every pin is dynamic — it changes nothing. The NAME stays editable, because a
+     reserved pin is renameable by design and its name is stored precisely so a rename survives a
+     round trip.
+   - **`LoopNode::addCarry` gains a registry-keyed twin, and both run ONE routine.** A host's "+ add
+     carry" menu is `portTypeKeys()`, so it has a string where `addCarry<T>` wants a type;
+     `addCarryUsing` holds the body and the two spellings differ only by their adder. Sabotage: make
+     an unknown key fall back to a default type — a genuinely plausible wrong implementation, since
+     a mistyped carry is not a broken carry a user can see but one that binds the wrong payload at
+     runtime — and the new `[loop]` case fails. Worth recording: the undo inside `addCarryUsing` is
+     still **unreachable**, because both spellings of the adder refuse the same things, so anything
+     that fails on the second side already failed on the first. It stays, for the reason the
+     original comment gave: it makes atomicity a property of the code rather than of that argument.
+   - **The Carries section states the pairing rather than letting the pins imply it.** A carried
+     `Image` and an invariant `Image` are the same pin of the same type, and a document may
+     legitimately pair two DIFFERENTLY named pins — which per-pin "(carried)" markers alone could
+     not show. Each row's `×` removes **both** pins, the atomic inverse of the paired add; the
+     pairing needs no explicit drop, because `syncGroupPorts` calls `reconcileInterior()` before it
+     touches a port and the host syncs every group on the path every frame. The remove-confirm
+     generalised from one target to a list to carry that.
+   - **`groupnav::loopAt` / `editableLoopAt`** resolve the loop whose interior a path names — one
+     level UP, because the pairing is the loop node's while the pins are its interior's. Two
+     functions rather than one plus an "am I allowed?" check, for the reason `resolvePath` and
+     `resolveEditable` are two. `loopAt` also checks that the parent path resolved **completely**:
+     `resolvePath` truncates what did not, and looking the node up in an ancestor would find a
+     different node — M5's bug six, which is what made `enclosingLinkedGroup` return the node rather
+     than an id.
+   - **A loop crumb says `[last iteration]`** where a map crumb offers its element stepper. It
+     discharges ADR-0021's own consequence — *only the last iteration is inspectable* — at the one
+     place a user would look for the missing stepper, so its absence reads as a decision.
+   - **All four group kinds gained a canvas colour, not just the loop.** `group`, `map`,
+     `linkedGroup` and `loop` share one, because they are one category in the catalog and
+     `canvasstyle.cpp`'s own rule is that categories are emergent from shared colour. Until now none
+     of them had one at all: a group, a map and a linked group were each the default title grey,
+     indistinguishable from an ordinary node on a canvas where the one thing you most need to see is
+     what you can descend into.
+   - **`CompareNode` carries the four INEQUALITIES and no equality.** Exact float equality would
+     need an epsilon policy nothing asks for, and inventing one is the guessing ADR-0012 warns
+     against — "close enough" is `Less` against a tolerance, which is the shape a convergence test
+     has anyway. Its `op` is an enum param, so it round-trips through `data`'s enum-as-name (the
+     document reads `"Greater"`) and edits through the existing `editEnum`, both one line beside
+     `ConvertNode`'s three.
+   - **`ImageDifferenceNode` is a MEASUREMENT, not a blend**, so ADR-0003's op-class enforcement
+     does not apply and nothing is converted to Linear — it compares the bytes it was given, which
+     is what makes "the last pass produced the same picture" mean what a caller expects. Differing
+     size or format is refused rather than reconciled, `CombineNode`'s call; inside a loop that
+     refusal is an iteration that FAILED, which is exactly right.
 
-**Verification.** `ctest` green in **both Debug and Release** (M10 slice 4 found every `#ifdef NDEBUG`
-enforcement test had gone unreachable); warning-clean; `format-check` clean. Sabotage, at least:
-remove the count bound and watch `runStages` **hang**; bind the seed every iteration and watch the
-carry stop carrying; drop the reserved-pin skip and watch `index` / `continue` leak onto the outer
-face. Headless through the **real binary** for both verticals, plus save ⇒ load ⇒ save
-byte-idempotence and a `count = 0` document delivering its seeds. `[group]`-style 100× race sweep on
-the parallel path. **gui-mode live-verified by the repo owner on the Metal machine** — slice 6 is not
-done until that happens.
+**Verification.** All of it done except the last line. `ctest` green in **both Debug and Release**
+(M10 slice 4 found every `#ifdef NDEBUG` enforcement test had gone unreachable) — **697/697** Debug
+with video on, **671/671** Release in the default video-off configuration; warning-clean;
+`format-check` clean; `[loop]` swept 100× on the parallel path. Both verticals driven headless
+through the **real binary** (`flowview run --graph …`: `iterations: 5` for the count fold,
+`iterations: 23` against a bound of 100 for the converging one), plus save ⇒ load ⇒ save
+byte-idempotence and a `count = 0` document delivering its seeds. Sabotages, each caught: removing
+the count bound **hangs** `runStages`; binding the seed every iteration stops the carry carrying;
+dropping the reserved-pin skip leaks `index` / `continue` onto the outer face; recording no pairing
+makes the count vertical produce one blur instead of five and the while vertical run to its bound;
+and an unknown port-type key silently substituting a type is refused. **gui-mode still needs the
+repo owner's eyeball on the Metal machine** — slice 6, and the milestone, is not done until that
+happens.
 
 ### Not in this milestone
 
+- **Surfacing `GroupSync::refused`.** Slice 2 built it — an inner pin whose name collides with
+  `count` / `iterations` cannot be mirrored, and the refusal is reported BY NAME because that is the
+  part a user can act on — and `groupnav::syncPathGroups` drops it on the floor. It is the same
+  compiled-linked-unreachable shape this file keeps catching, and it is not caused by this slice, so
+  it gets its own commit: `syncPathGroups` returns the names, the Issues pane renders a row each.
+- **The Issues pane flagging an unwired DEFAULTED input** as "required input is not connected". A
+  defaulted input stays `Required` by design (that is what keeps a default from swallowing
+  suppression), so every fresh loop reports `count` and every loop interior reports `continue`.
+  Pre-existing: `BlurNode`'s `radius` / `sigma` have done it since 2026-08-15. One line — skip when
+  `node.defaultOf(port) != nullptr` — and its own commit.
+- **`refusalText(NotInline)` saying "This group is linked - make it local first"**, which is wrong
+  for a map and now for a loop as well: `edit::ungroup` refuses both, and neither is linked. The
+  menu greys the item out (`canUngroupSelection` asks for an `InlineGroupNode`), so the wording is
+  only reachable from a keyboard shortcut — pre-existing since M8.
 - **A linked loop** — one shared template iterated, exactly as ADR-0014 defers the linked map.
 - **Retaining per-iteration state**, and the breadcrumb iteration stepper it would enable. Needs a
   retention policy, which ADR-0012 refuses to have.

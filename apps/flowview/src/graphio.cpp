@@ -1,6 +1,7 @@
 #include "graphio.h"
 
 #include <lain/data/data.h>
+#include <lain/flow/example/comparenode.h> // Comparison — CompareNode's operator param
 #include <lain/flow/graph.h>
 #include <lain/flow/porttyperegistry.h>
 #include <lain/flow/serialize/serialize.h>
@@ -60,6 +61,9 @@ namespace flowview
 		// an enumerator being inserted, which an ordinal would not.
 		codecs.registerType<image::PixelFormat>("pixelFormat");
 		codecs.registerType<image::ColorSpace>("colorSpace");
+		// Compare's operator (M11) — the same enum-as-name mechanism, so a document says
+		// "Greater" rather than an ordinal that an inserted enumerator would silently re-point.
+		codecs.registerType<flow::example::Comparison>("comparison");
 		return codecs;
 	}
 

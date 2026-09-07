@@ -2,7 +2,7 @@
 
 #include "../appcontext.h"
 #include "../flowviewapp.h" // ctx.app->reevaluate()
-#include "../groupnav.h"	// editableAt — a linked group's interface belongs to its template
+#include "../groupnav.h"	// loopAt / editableLoopAt — a loop's carries live one level up
 #include "../imagecanvas.h" // previewFit / thumbnailBox (the shared thumbnail sizing)
 #include "../parameditors.h"
 #include "../previewcache.h"
@@ -13,6 +13,7 @@
 #include <lain/flow/edit.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
+#include <lain/flow/group.h> // LoopNode — the carry pairing this panel states and authors
 #include <lain/flow/node.h>
 #include <lain/flow/port.h>
 #include <lain/flow/porttyperegistry.h> // portTypeKeys
@@ -94,6 +95,49 @@ namespace flowview
 		return added;
 	}
 
+	// The first `carry`, `carry2`, … free on BOTH inner boundary nodes. A port name is an identifier
+	// (validPortName), so it uniquifies with a digit rather than with the " 2" the canvas gives a
+	// node title — and it must be free on both sides, because one gesture names both.
+	static std::string freeCarryName(const flow::GroupInputNode& into, const flow::GroupOutputNode& from)
+	{
+		for (int n = 1;; ++n)
+		{
+			const std::string name = n == 1 ? std::string("carry") : "carry" + std::to_string(n);
+			if (!into.hasPortNamed(flow::Port::Direction::Output, name) && !from.hasPortNamed(flow::Port::Direction::Input, name))
+				return name;
+		}
+	}
+
+	// The per-loop "+ add carry": the registered port types both inner boundary nodes accept, and
+	// picking one adds a pin of that type to EACH side and records the pairing.
+	//
+	// ONE gesture, because half a carry is not a weaker carry — it is a silent invariant (or a
+	// last-iteration output) nobody asked for (ADR-0021). The keyed LoopNode::addCarry is the same
+	// routine the templated one runs, so what this menu authors and what a document restores cannot
+	// come to mean different things.
+	static bool renderAddCarry(flow::LoopNode* loop, const flow::GroupInputNode& into, const flow::GroupOutputNode& from)
+	{
+		bool added = false;
+		if (gui::Button("+ add carry"))
+			gui::OpenPopup("addCarry");
+		if (gui::BeginPopup("addCarry"))
+		{
+			bool any = false;
+			for (const std::string& key : flow::portTypeKeys())
+			{
+				if (!into.acceptsPortType(key) || !from.acceptsPortType(key))
+					continue;
+				any = true;
+				if (gui::MenuItem(key.c_str()) && loop != nullptr)
+					added |= loop->addCarry(key, freeCarryName(into, from)).innerIn != flow::PortId{};
+			}
+			if (!any)
+				gui::TextDisabled("(no registered types)");
+			gui::EndPopup();
+		}
+		return added;
+	}
+
 	bool InterfacePane::renderRemoveConfirm(flow::Graph* editable)
 	{
 		if (m_removeRequested)
@@ -104,10 +148,14 @@ namespace flowview
 		bool removed = false;
 		if (gui::BeginPopupModal("Remove pin", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
 		{
-			gui::Text("Remove '%s'?  It has %d link(s).", m_removeName.c_str(), m_removeLinks);
+			gui::Text("Remove %s?  It has %d link(s).", m_removeLabel.c_str(), m_removeLinks);
 			if (gui::Button("Remove"))
 			{
-				removed = editable != nullptr && flow::edit::removePort(*editable, m_removeTarget);
+				// Every target, not the first one that works: a carry is two pins, and leaving one
+				// behind would turn it into a silent invariant (or a last-iteration output) the user
+				// did not ask for — which is the shape the paired gesture exists to prevent.
+				for (const flow::PortAddress& target : m_removeTargets)
+					removed |= editable != nullptr && flow::edit::removePort(*editable, target);
 				gui::CloseCurrentPopup();
 			}
 			gui::SameLine();
@@ -124,13 +172,53 @@ namespace flowview
 		bool changed = false;
 		bool renamed = false; // a pin rename: a document change, but no recompute (see below)
 
-		// Request the remove-confirm for `pin` on `node` (opened after the panel, clean id stack).
-		const auto requestRemove = [&](flow::NodeId node, const flow::Port& pin)
+		// Request the remove-confirm for `targets` (opened after the panel, clean id stack).
+		const auto requestRemove = [&](std::string label, std::vector<flow::PortAddress> targets)
 		{
-			m_removeTarget = flow::PortAddress{node, pin.id()};
-			m_removeName = pin.name();
-			m_removeLinks = linkCount(graph, m_removeTarget);
+			m_removeLinks = 0;
+			for (const flow::PortAddress& target : targets)
+				m_removeLinks += linkCount(graph, target);
+			m_removeTargets = std::move(targets);
+			m_removeLabel = std::move(label);
 			m_removeRequested = true;
+		};
+		const auto requestRemovePin = [&](flow::NodeId node, const flow::Port& pin)
+		{
+			requestRemove("pin '" + pin.name() + "'", {flow::PortAddress{node, pin.id()}});
+		};
+
+		// The LOOP this panel is inside, if any — resolved one level up, because the pairing is the
+		// loop node's and the pins are its interior's. Read through the const graph and written
+		// through the mutable one, the same split renderPinName already draws with: inside a linked
+		// group the carries are legible and not editable.
+		const flow::LoopNode* loop = loopAt(ctx.app->graph(), ctx.activePath);
+		flow::LoopNode* writableLoop = editableLoopAt(ctx.app->graph(), ctx.activePath);
+
+		// Whether an inner boundary pin is half of a carry — the marker each list draws. Keyed by
+		// PortId, never by name, because that is what the pairing IS (a rename must move a label,
+		// never behaviour).
+		const auto carriedIn = [&](flow::PortId pin)
+		{ return loop != nullptr && loop->carries().count(pin) != 0; };
+		const auto carriedOut = [&](flow::PortId pin)
+		{
+			if (loop == nullptr)
+				return false;
+			for (const auto& [innerIn, innerOut] : loop->carries())
+			{
+				if (innerOut == pin)
+					return true;
+			}
+			return false;
+		};
+
+		// What a pin's row says about itself beyond its type. A RESERVED pin (a loop's `index` /
+		// `continue`) is static, which is also what makes it unremovable below — one fact, read
+		// twice, rather than two that can disagree.
+		const auto pinNote = [&](const flow::Port& pin, bool carried) -> const char*
+		{
+			if (!pin.isDynamic())
+				return "(reserved)";
+			return carried ? "(carried)" : nullptr;
 		};
 
 		gui::SetNextWindowPos(math::Vec2f{940.0f, 20.0f}, ImGuiCond_FirstUseEver);
@@ -150,6 +238,28 @@ namespace flowview
 			gui::TextUnformatted(editable ? "Group interface (this group's ports)"
 										  : "Group interface (linked - read only)");
 
+		// The per-pin "×". STATIC pins are not the user's to remove: every pin a user added here is
+		// dynamic (addBoundary -> addDynamicPort -> markDynamic), so a static one exists only
+		// because the node that OWNS this graph declared it — today a loop's reserved `index` /
+		// `continue` (ADR-0021). Removing one left LoopNode holding a PortId that names nothing:
+		// the condition fell back to its default and the while loop ran to its bound with no error
+		// anywhere, while a save-and-reload quietly healed it (establishReserved remakes them),
+		// which is what would have made it hard to find.
+		//
+		// The rule is asked of the PIN, not of the level, so this panel needs no idea what a loop
+		// is — and at the root, where every pin is dynamic, it changes nothing. The NAME stays
+		// editable, because a reserved pin is renameable by design and its name is stored precisely
+		// so that a rename survives a round trip.
+		const auto removePinButton = [&](flow::NodeId node, const flow::Port& pin)
+		{
+			gui::BeginDisabled(!editable || !pin.isDynamic());
+			if (gui::Button("x"))
+				requestRemovePin(node, pin);
+			gui::EndDisabled();
+			if (!pin.isDynamic() && gui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				gui::SetTooltip("This pin belongs to the node that owns this graph - it cannot be removed here.");
+		};
+
 		// Inputs: per GroupInput node, each pin (editable name, bound thumbnail, Bind…, ×) + a "+".
 		gui::TextUnformatted("Inputs");
 		gui::Separator();
@@ -167,6 +277,11 @@ namespace flowview
 				gui::EndDisabled();
 				gui::SameLine();
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
+				if (const char* note = pinNote(pin, carriedIn(pin.id())))
+				{
+					gui::SameLine();
+					gui::TextDisabled("%s", note);
+				}
 
 				const flow::PortAddress address{node.id(), pin.id()};
 				const PinKey key{ctx.activePath, address};
@@ -203,10 +318,7 @@ namespace flowview
 					}
 				}
 				gui::SameLine();
-				gui::BeginDisabled(!editable);
-				if (gui::Button("x"))
-					requestRemove(node.id(), pin);
-				gui::EndDisabled();
+				removePinButton(node.id(), pin);
 				gui::PopID();
 			}
 			gui::BeginDisabled(!editable);
@@ -233,6 +345,11 @@ namespace flowview
 				gui::EndDisabled();
 				gui::SameLine();
 				gui::Text(": %s", std::string(pin.typeName()).c_str());
+				if (const char* note = pinNote(pin, carriedOut(pin.id())))
+				{
+					gui::SameLine();
+					gui::TextDisabled("%s", note);
+				}
 
 				const PinKey key{ctx.activePath, flow::PortAddress{node.id(), pin.id()}};
 				const flow::PortValue& delivered = evaluation.value(key.port);
@@ -254,10 +371,7 @@ namespace flowview
 						renderImageSave(ctx, key, delivered.get<image::Image>());
 				}
 				gui::SameLine();
-				gui::BeginDisabled(!editable);
-				if (gui::Button("x"))
-					requestRemove(node.id(), pin);
-				gui::EndDisabled();
+				removePinButton(node.id(), pin);
 				gui::PopID();
 			}
 			gui::BeginDisabled(!editable);
@@ -265,6 +379,55 @@ namespace flowview
 			gui::EndDisabled();
 			gui::PopID();
 		}
+		// --- Carries (inside a LOOP only) --------------------------------------------------------
+		// The pairing is the one fact about a loop's interior that is NOT derivable from it — a
+		// carried Image and an invariant Image are the same pin of the same type — so it is the one
+		// thing this panel has to STATE rather than let the pins imply, and the one thing it has to
+		// author. A document may legitimately pair two DIFFERENTLY named pins, which the per-pin
+		// "(carried)" markers alone could not show.
+		if (loop != nullptr)
+		{
+			gui::Spacing();
+			gui::TextUnformatted("Carries");
+			gui::Separator();
+
+			// `graph` IS this loop's interior: loop is non-null exactly when the active path's last
+			// step named one, and that is the graph the panel is drawing.
+			const flow::GroupInputNode& into = graph.boundaryInputNode();
+			const flow::GroupOutputNode& from = graph.boundaryOutputNode();
+			gui::PushID("carries");
+			for (const auto& [innerIn, innerOut] : loop->carries())
+			{
+				const flow::Port* in = into.findOutput(innerIn);
+				const flow::Port* out = from.findInput(innerOut);
+				if (in == nullptr || out == nullptr)
+					continue; // half of it has gone; syncGroupPorts prunes the pairing this frame
+
+				gui::PushID(static_cast<int>(innerIn.value()));
+				gui::Text("%s -> %s : %s", in->name().c_str(), out->name().c_str(),
+						  std::string(in->typeName()).c_str());
+				gui::SameLine();
+				gui::BeginDisabled(writableLoop == nullptr);
+				if (gui::Button("x"))
+				{
+					// BOTH pins — the atomic inverse of the paired add. The pairing itself needs no
+					// explicit drop: syncGroupPorts calls reconcileInterior() before it touches a
+					// port, and the host syncs every group on the path every frame.
+					requestRemove("carry '" + in->name() + "'",
+								  {flow::PortAddress{into.id(), innerIn}, flow::PortAddress{from.id(), innerOut}});
+				}
+				gui::EndDisabled();
+				gui::PopID();
+			}
+			if (loop->carries().empty())
+				gui::TextDisabled("(none - without one, a loop runs its body N times over the same inputs)");
+
+			gui::BeginDisabled(writableLoop == nullptr);
+			changed |= renderAddCarry(writableLoop, into, from);
+			gui::EndDisabled();
+			gui::PopID();
+		}
+
 		gui::End();
 
 		changed |= renderRemoveConfirm(editableGraph);

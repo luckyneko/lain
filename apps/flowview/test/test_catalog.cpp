@@ -59,6 +59,15 @@ TEST_CASE("the frame-sequence kinds are on the menu", "[catalog]")
 	CHECK(offers("frameAt"));
 	CHECK(offers("clipSequence"));
 
+	// The LOOP (M11). Until slice 6 nothing in the tree constructed one — it ran, folded and
+	// persisted, and was reachable from no menu and no document a user could write. The first case
+	// above is what makes this line mean something: the key is offered AND the factory builds it.
+	CHECK(offers("loop"));
+	// ... with the two example nodes that make its condition path real. Without them the reserved
+	// `continue` pin would be built and never driven by anything.
+	CHECK(offers("imageDifference"));
+	CHECK(offers("compare"));
+
 	// The boundary pair stays OFF it — one each per graph, born with the graph and grown from the
 	// Interface panel, not added like an ordinary node.
 	CHECK_FALSE(offers("groupInput"));

@@ -59,7 +59,11 @@ outputs seed the next one's inputs, and whose trip count is bounded by construct
   the document recorded — a reserved pin is renameable, and an edge into one is name-addressed like
   any other.*). `continue` carries
   `Default{true}`, so **unwired means the count decides** while **wired-and-suppressed stays empty and
-  means the iteration failed**.
+  means the iteration failed**. (*Amended at slice 6, 2026-09-06: static is also what makes a reserved
+  pin **not the user's to remove**. An editor's per-pin × goes through `edit::removePort`, and
+  `Graph::removePort` erases a static port as happily as a dynamic one — so an Interface panel removes
+  only `isDynamic()` pins. Asked of the PIN rather than of the level, so the panel needs no idea which
+  node kinds have reserved pins. Renaming stays available.*)
 - **A loop folds; it never scans.** Each carry mirrors out as its **final** value, each unpaired inner
   output as its **last-iteration** value, plus one node-owned `iterations : int`. A map maps, a loop
   folds. (*Amended at the build: deriving seed / invariant / final / last needs **no** special
@@ -225,6 +229,8 @@ fact beside the underivable one, which is a second source that can disagree with
   2026-09-06)*, which is `exitMap`'s rule; and it is a routine of its own rather than `exitGroup`,
   which clears an output with no inner pin — exactly the loop's own `iterations`.
 - **Only the last iteration is inspectable.** Stated as a cost, with `count = 3` as the gesture.
+  *(Built 2026-09-06: a loop crumb says `[last iteration]` where a map crumb offers its element
+  stepper, so the missing stepper reads as a decision at the one place a user would look for it.)*
 - **A loop inside a map iterates in lockstep across elements**, because the staging loop handles every
   frontier in a stage together — so stages are bounded by the deepest loop's count, not by their sum.
   A map inside a loop costs two stages per iteration.
@@ -263,7 +269,11 @@ fact beside the underivable one, which is a second source that can disagree with
   disagrees with itself, and here it would do so silently.
 - **A carry restored from a document goes through the same check the authoring gesture does** *(built
   2026-09-06)*. `pairCarry` records the pairing and `addCarry<T>` delegates to it, so the two cannot
-  disagree about what a valid carry is. It refuses a reserved pin, a pin already half of another
+  disagree about what a valid carry is. *(Extended at slice 6: a HOST has a registry KEY where
+  `addCarry<T>` wants a type, since its "+ add carry" menu is `portTypeKeys()`. So there is a keyed
+  `addCarry(typeKey, name)` too, and both run one `addCarryUsing` differing only by their adder — an
+  unknown key must REFUSE, never quietly substitute a type, because a mistyped carry is not a visible
+  break but one that binds the wrong payload at runtime.)* It refuses a reserved pin, a pin already half of another
   pairing, and a **type mismatch** — `Evaluation::bind` type-checks nothing, so a mismatched pair
   would bind the wrong payload into a slot at runtime.
 - **Renaming a defaulted port stranded the param behind it** *(found at slice 5, fixed at its
@@ -272,7 +282,16 @@ fact beside the underivable one, which is a second source that can disagree with
   disk. `continue` is the first port in the tree that is both defaulted and renameable, so the trap
   stayed latent until this milestone. `Node::renamePort` now moves both.
 - **Two new example nodes** — `ImageDifferenceNode` and `CompareNode` — exist to make the while
-  vertical real. Without them the condition path would be built and never exercised.
+  vertical real. Without them the condition path would be built and never exercised. *(Built
+  2026-09-06. `ImageDifference` is a MEASUREMENT, not a blend, so ADR-0003's op-class enforcement does
+  not apply and nothing is converted to Linear — it compares the bytes it was given, which is what
+  makes "the last pass produced the same picture" mean what a caller expects; differing size or format
+  is refused rather than reconciled, and inside a loop that refusal is an iteration that failed.
+  `Compare` carries the four INEQUALITIES and no equality: exact float equality would need an epsilon
+  policy nothing asks for, and "close enough" is `Less` against a tolerance, which is the shape a
+  convergence test has anyway. And the vertical needed no tolerance at all — a clamped Gaussian blur
+  of an 8-bit image reaches an exact fixed point, so "blur until it stops changing" is literal and the
+  threshold is 0.)*
 
 ## Deliberately unsettled
 

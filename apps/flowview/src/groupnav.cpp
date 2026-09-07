@@ -53,6 +53,36 @@ namespace flowview
 		return current;
 	}
 
+	const flow::LoopNode* loopAt(const flow::Graph& root, const GraphPath& path)
+	{
+		if (path.empty())
+			return nullptr; // the root graph is nobody's interior
+		GraphPath parent(path.begin(), path.end() - 1);
+		const flow::Graph& level = resolvePath(root, parent);
+		// resolvePath TRUNCATES what did not resolve, so a short answer means `level` is some
+		// ancestor rather than the graph holding this step — and looking the node up there would
+		// find a different node, which is exactly the mistake M5's bug six made.
+		if (parent.size() + 1 != path.size() || !level.contains(path.back().node))
+			return nullptr;
+		return dynamic_cast<const flow::LoopNode*>(&level.node(path.back().node));
+	}
+
+	flow::LoopNode* editableLoopAt(flow::Graph& root, const GraphPath& path)
+	{
+		if (path.empty())
+			return nullptr;
+		// Through resolveEditable, so a loop inside a LINKED group answers nullptr: its carries
+		// belong to the template, and pairing one here would be an edit the parent document cannot
+		// store. Two functions rather than one plus an "am I allowed?" check, for the reason
+		// resolvePath and resolveEditable are two — a caller that may not edit is handed nothing to
+		// edit through, so the check cannot be forgotten.
+		const GraphPath parent(path.begin(), path.end() - 1);
+		flow::Graph* level = resolveEditable(root, parent);
+		if (level == nullptr || !level->contains(path.back().node))
+			return nullptr;
+		return dynamic_cast<flow::LoopNode*>(&level->node(path.back().node));
+	}
+
 	flow::Evaluation& resolveEvaluation(flow::Evaluation& root, const GraphPath& path)
 	{
 		flow::Evaluation* current = &root;

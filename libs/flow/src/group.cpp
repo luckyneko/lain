@@ -1,6 +1,6 @@
 #include "lain/flow/group.h"
 
-#include "lain/flow/porttyperegistry.h" // listTypeFor — the only way to lift a runtime type
+#include "lain/flow/porttyperegistry.h" // listTypeFor (a map's lift) + addPortOfType (a loop's keyed carry)
 
 namespace lain::flow
 {
@@ -50,6 +50,44 @@ namespace lain::flow
 		// suppressed one stays empty and means the iteration failed — GateNode::enable's 2026-08-15
 		// resolution, reused rather than reinvented for the same trap.
 		m_continue = interior.boundaryOutputNode().addReserved<bool>(continueName, Default{true});
+	}
+
+	LoopNode::Carry LoopNode::addCarry(const std::string& typeKey, std::string name)
+	{
+		return addCarryUsing(name, [&typeKey](DynamicPortsNode& node, const std::string& pin)
+							 { return addPortOfType(node, typeKey, pin); });
+	}
+
+	LoopNode::Carry LoopNode::addCarryUsing(const std::string& name,
+											const std::function<PortId(DynamicPortsNode&, const std::string&)>& add)
+	{
+		GroupInputNode& into = m_inner.boundaryInputNode();
+		GroupOutputNode& from = m_inner.boundaryOutputNode();
+
+		// Both sides vetted BEFORE either is touched, so the common refusal needs no undo at all.
+		if (!validPortName(name) || into.hasPortNamed(Port::Direction::Output, name) || from.hasPortNamed(Port::Direction::Input, name))
+			return Carry{};
+
+		const PortId innerIn = add(into, name);
+		if (innerIn == PortId{})
+			return Carry{}; // an unregistered key, or a name the adder itself rejected
+		const PortId innerOut = add(from, name);
+		// The pairing itself is recorded by pairCarry, so there is ONE routine that decides what
+		// a valid carry is — this gesture and a loader restoring one from a document cannot
+		// disagree about it.
+		if (innerOut == PortId{} || !pairCarry(innerIn, innerOut))
+		{
+			// Unreachable after the checks above — both spellings of `add` refuse the SAME things,
+			// so a key or a name that fails on the second side already failed on the first. The
+			// undo is here anyway, because it makes atomicity a property of the code rather than of
+			// that argument about it. Nothing can be wired to a pin this new, so the refusing
+			// primitive accepts the removal.
+			m_inner.removePort(PortAddress{into.id(), innerIn});
+			if (innerOut != PortId{})
+				m_inner.removePort(PortAddress{from.id(), innerOut});
+			return Carry{};
+		}
+		return Carry{innerIn, innerOut};
 	}
 
 	bool LoopNode::pairCarry(PortId innerIn, PortId innerOut)

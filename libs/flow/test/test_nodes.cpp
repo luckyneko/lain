@@ -3,10 +3,13 @@
 
 #include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
+#include "lain/flow/nodes/constant.h"
 #include "lain/flow/scheduler.h"
 
 #include <lain/flow/example/blurnode.h>
+#include <lain/flow/example/comparenode.h>
 #include <lain/flow/example/gradientnode.h>
+#include <lain/flow/example/imagedifferencenode.h>
 #include <lain/flow/example/loadimagenode.h>
 #include <lain/flow/example/tintnode.h>
 #include <lain/image/color.h> // image::ColorRGBf (the tint param type, in tests)
@@ -175,6 +178,104 @@ TEST_CASE("BlurNode runs the op catalog through an edge: gradient -> blur", "[fl
 	CHECK(br.r < 255);
 	CHECK(br.r > 245);
 	CHECK(br.a == 255);
+}
+
+TEST_CASE("ImageDifferenceNode measures how far two images are apart", "[flow]")
+{
+	// The measurement half of a while loop's condition (M11): "has this stopped changing?" is
+	// something the GRAPH asks, so the answer has to be a value on a pin.
+	constexpr int kSize = 16;
+
+	using namespace lain::flow;
+	Graph graph;
+	const NodeId a = graph.add<example::GradientNode>(kSize, kSize);
+	const NodeId b = graph.add<example::GradientNode>(kSize, kSize);
+	const NodeId diff = graph.add<example::ImageDifferenceNode>();
+	REQUIRE(graph.connect(a, 0, diff, 0) == Connection::Ok);
+	REQUIRE(graph.connect(b, 0, diff, 1) == Connection::Ok);
+
+	Evaluation e{graph};
+	SerialScheduler{}.evaluate(graph, e, diff);
+
+	const PortAddress out{diff, graph.node(diff).output(0).id()};
+	REQUIRE(e.value(out).holds<float>());
+	// Two identical gradients: exactly zero, which is what makes "converged" expressible at all.
+	CHECK(e.value(out).get<float>() == 0.0f);
+
+	SECTION("and a blurred copy differs from its source")
+	{
+		const NodeId blur = graph.add<example::BlurNode>(2, 1.5f);
+		REQUIRE(graph.connect(a, 0, blur, 0) == Connection::Ok);
+		REQUIRE(graph.disconnect(diff, 1)); // an input takes one source; free it before rewiring
+		REQUIRE(graph.connect(blur, 0, diff, 1) == Connection::Ok);
+		e.requestRecomputeAll();
+		SerialScheduler{}.evaluate(graph, e, diff);
+
+		REQUIRE(e.value(out).holds<float>());
+		const float d = e.value(out).get<float>();
+		CHECK(d > 0.0f);
+		CHECK(d < 1.0f); // a blur moves the pixels; it does not invert them
+	}
+
+	SECTION("images of differing size are refused, not reconciled")
+	{
+		// CombineNode's call: a difference across differing extents would silently mean something
+		// the caller did not ask for. No value, so ADR-0007 suppresses — inside a loop, an
+		// iteration that FAILED.
+		const NodeId small = graph.add<example::GradientNode>(kSize / 2, kSize / 2);
+		REQUIRE(graph.disconnect(diff, 1));
+		REQUIRE(graph.connect(small, 0, diff, 1) == Connection::Ok);
+		e.requestRecomputeAll();
+		SerialScheduler{}.evaluate(graph, e, diff);
+		CHECK(e.value(out).empty());
+	}
+}
+
+TEST_CASE("CompareNode turns a measurement into the bool a condition needs", "[flow]")
+{
+	// The deciding half. `b` is a DEFAULTED input, so the threshold is typed on the node in the
+	// common case and driven by the graph when something is wired to it.
+	using namespace lain::flow;
+	Graph graph;
+	const NodeId value = graph.add<ConstantNode<float>>(0.5f);
+	const NodeId compare = graph.add<example::CompareNode>(example::Comparison::Greater, 0.25f);
+	REQUIRE(graph.connect(value, 0, compare, 0) == Connection::Ok);
+
+	Node& node = graph.node(compare);
+	const PortAddress out{compare, node.output(0).id()};
+	// By NAME, not by position: `b`'s Default declares a param of its own first, so the operator is
+	// not param 0 — which is exactly the trap a positional handle sets (M6 step 2).
+	const PortId op = [&]
+	{
+		for (std::size_t i = 0; i < node.paramCount(); ++i)
+		{
+			if (node.param(i).name() == "op")
+				return node.param(i).id();
+		}
+		return PortId{};
+	}();
+	REQUIRE(op != PortId{});
+
+	const auto answer = [&](example::Comparison comparison)
+	{
+		REQUIRE(node.setParam<example::Comparison>(op, comparison));
+		Evaluation e{graph};
+		SerialScheduler{}.evaluate(graph, e, compare);
+		REQUIRE(e.value(out).holds<bool>());
+		return e.value(out).get<bool>();
+	};
+
+	CHECK(answer(example::Comparison::Greater));		 // 0.5 >  0.25
+	CHECK(answer(example::Comparison::GreaterEqual));	 // 0.5 >= 0.25
+	CHECK_FALSE(answer(example::Comparison::Less));		 // 0.5 <  0.25
+	CHECK_FALSE(answer(example::Comparison::LessEqual)); // 0.5 <= 0.25
+
+	SECTION("a wired threshold beats the typed one")
+	{
+		const NodeId threshold = graph.add<ConstantNode<float>>(0.75f);
+		REQUIRE(graph.connect(threshold, 0, compare, 1) == Connection::Ok);
+		CHECK_FALSE(answer(example::Comparison::Greater)); // 0.5 > 0.75 is false
+	}
 }
 
 // A fake image reader for the LoadImageNode tests: decodes to a 1-row RGBA8 image whose
