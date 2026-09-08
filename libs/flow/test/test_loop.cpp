@@ -637,6 +637,34 @@ TEST_CASE("the body is told which iteration it is in", "[flow][loop]")
 	REQUIRE(f.out(evaluation, "step").get<int>() == 3); // iterations are indexed from zero
 }
 
+TEST_CASE("a condition on `index` is asked about the pass that JUST RAN", "[flow][loop]")
+{
+	// The arithmetic that surprised the first gui-mode user of a loop, pinned so it cannot drift.
+	// `continue` is a value the BODY produces, so it is read after a pass and answers "run another?"
+	// about the pass that just finished — which makes a loop a DO-WHILE, and makes a condition on
+	// `index` off by one against the C `for` it reads like.
+	//
+	// `index < 4` therefore runs FIVE passes (indices 0..4): the pass at index 4 is the first whose
+	// answer is false, and by then it has already run. For "exactly N passes" the mechanism is
+	// `count`, which is pre-tested; conditioning on `index` re-implements it with this built in.
+	Fold f{0, 100}; // a bound the condition is expected to stop far short of
+	const NodeId body = f.inner().add<AddOne>();
+	f.carryThrough(body);
+
+	const NodeId below = f.inner().add<Below>(4);
+	REQUIRE(f.inner().connect(PortAddress{f.innerIn(), f.loop().indexPin()},
+							  PortAddress{below, f.inner().node(below).input(0).id()}) == Connection::Ok);
+	REQUIRE(f.inner().connect(PortAddress{below, f.inner().node(below).output(0).id()},
+							  PortAddress{f.innerOut(), f.loop().continuePin()}) == Connection::Ok);
+	f.close();
+
+	Evaluation evaluation{f.parent};
+	SerialScheduler{}.run(f.parent, evaluation);
+
+	CHECK(f.iterations(evaluation).get<int>() == 5);   // NOT 4 — see above
+	CHECK(f.out(evaluation, "value").get<int>() == 5); // AddOne, five times, from a seed of 0
+}
+
 TEST_CASE("a count of zero is the fold identity, not a failure", "[flow][loop]")
 {
 	// Zero iterations run and every carry delivers its SEED — the fold over an empty sequence,

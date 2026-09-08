@@ -184,6 +184,31 @@ fact beside the underivable one, which is a second source that can disagree with
 
 ## Consequences
 
+
+**Amended 2026-09-08, after the first gui-mode use.** `continue` is a **POST-test**, and this ADR
+never said so. It is a value the BODY produces, so it can only be read after a pass has run, and it
+is asked about the pass that just ran. Three consequences the design implies but did not state:
+
+- **A loop is a do-while.** With any positive `count` the body runs at least once; `count == 0` is
+  the only pre-test, and it is the fold identity rather than a condition.
+- **A condition on `index` is off by one against a C `for`.** `index < 4` runs **five** passes,
+  because the last pass to run is index 4. That is self-consistent — "keep going while the pass that
+  just finished was below 4" — but it is not what "while" suggests, and the word is used loosely
+  throughout this document to mean the condition-driven MODE, not the timing.
+- **`count` is the mechanism for "exactly N".** Conditioning on `index` re-implements it with that
+  off-by-one built in. The condition exists for what a count cannot express: stop when the work stops
+  changing, where one extra pass is meaningless.
+
+And a trap worth naming, since it is the first thing a user reaches for: **a Gate must not be used to
+end a loop.** `continue == false` stops it cleanly; a SUPPRESSED `continue` is an iteration failure
+and the exit clears every output. That split is deliberate (see the `GateNode::enable` resolution
+above) — it is what distinguishes "the loop finished" from "the fold broke" — but it makes the
+obvious gesture the wrong one.
+
+There is no pre-test available and this is not an omission: a pre-test would need the condition
+computed outside the body, and the entire reason it lives inside is that it is computed FROM the
+body's work.
+
 - **`Node::evaluatesPerElement()` becomes an enum**, `interiorEvaluation() -> { Once, PerElement,
   PerIteration }`. Two booleans could express a nonsense state; an enum cannot, and `-Wswitch` then
   catches the next interior kind. It also drops a loop into `Evaluation::prepare`'s

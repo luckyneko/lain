@@ -626,6 +626,31 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-08 — M12 live-verified; loop timing documented (do-while, not while)
+
+**gui-mode was eyeballed by the repo owner 2026-09-08**: a loop built from const + compare + cast
+works. One crash was found and fixed on the way (the stale-value `bad_any_cast`, in the M12 entry
+below), and one **oddity turned out to be a documentation gap rather than a bug**.
+
+- **`continue` is a POST-test, and nothing said so.** It is a value the BODY produces, so it can only
+  be read after a pass, and it is asked about the pass that just ran. A loop is therefore a
+  **do-while**: with any positive `count` the body runs at least once, and `count == 0` is the only
+  pre-test (the fold identity). A condition of `index < 4` runs **five** passes, because the pass at
+  index 4 is the first whose answer is false and by then it has already run.
+- **`count` is the mechanism for "exactly N".** Conditioning on `index` re-implements it with that
+  off-by-one built in. The condition exists for what a count cannot express — stop when the work
+  stops changing, where one extra pass is meaningless.
+- **A Gate must NOT be used to end a loop**, which is the first thing a user reaches for.
+  `continue == false` stops it cleanly; a **suppressed** `continue` is an iteration FAILURE and the
+  exit clears every output. That split is deliberate (`GateNode::enable`'s resolution) — it is what
+  distinguishes "the loop finished" from "the fold broke" — but it makes the obvious gesture wrong.
+- **No pre-test is available, and that is not an omission:** it would require the condition to be
+  computed outside the body, and the whole reason it lives inside is that it is computed FROM the
+  body's work. The same constraint the owner identified visually.
+- Recorded where a reader looks: **ADR-0021 amended in place**, CONTEXT.md's *reserved pin* entry,
+  and `LoopNode::continuePin`'s own documentation. Pinned by a test — *a condition on `index` is
+  asked about the pass that JUST RAN* — so the arithmetic cannot drift. `ctest` **728/728**.
+
 ### Update 2026-09-07 — M12 built (all four slices): a node's payload type is data
 
 M11's loop could not be driven from the GUI: `LoopNode`'s `index` is an `int`, `CompareNode`'s inputs

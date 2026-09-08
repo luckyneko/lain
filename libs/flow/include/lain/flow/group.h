@@ -302,6 +302,17 @@ namespace lain::flow
 		// is) and `continue` on its GroupOutputNode (whether to run another). The engine writes the
 		// first and reads the second; neither is mirrored outward.
 		//
+		// `continue` is a POST-TEST: it is a value the body PRODUCES, so it can only be read after a
+		// pass, and it is asked about the pass that just ran. A loop is therefore a DO-WHILE — the
+		// body runs at least once whenever `count` is positive, and `count == 0` is the only
+		// pre-test. A condition of `index < 4` runs FIVE passes, because the last pass to run is
+		// index 4. For "exactly N passes" the mechanism is `count`; the condition is for what a
+		// count cannot express, which is stopping when the work stops changing.
+		//
+		// Ending a loop is `continue == false`, never a suppressed `continue`: an empty one means
+		// the iteration FAILED and the exit clears every output. So a Gate on the condition path
+		// breaks the fold rather than ending it.
+		//
 		// They live on DIFFERENT nodes, so a PortId alone does not name one: a PortId is minted per
 		// node, so both are PortId{1} (the constructor declares them before anything else can). Every
 		// reader pairs the id with a direction, exactly as portMap()'s values are read.

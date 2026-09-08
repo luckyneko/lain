@@ -714,7 +714,16 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   graph: `index` (which iteration this is) and `continue` (whether to run another). Not mirrored
   outward, and skipped by id rather than by name, so renaming one cannot change what a loop does.
   `continue` defaults to true, so an unwired condition is transparent while a wired-and-suppressed one
-  means the iteration failed — the distinction `GateNode::enable` already draws. **Static**, not a
+  means the iteration failed — the distinction `GateNode::enable` already draws. That distinction is
+  also why a **Gate is the wrong tool for ending a loop**: `continue = false` stops it cleanly, while
+  a suppressed `continue` is a broken fold and clears every output.
+  **`continue` is a POST-test**, and this is the one thing about a loop that surprises: it is a value
+  the body PRODUCES, so it is read after each pass and asked about the pass that just ran. A loop is
+  therefore a **do-while** — `count` is the only pre-test, and only for its zero case (the fold
+  identity). So a condition of `index < 4` runs **five** passes: the last one to run is index 4.
+  Conditioning on `index` is re-implementing `count` with an off-by-one; `count` is the mechanism for
+  "exactly N", and the condition is for what `count` cannot express — *stop when the work stops
+  changing*, where one extra pass is meaningless. **Static**, not a
   dynamic pin (`addReserved`): serialization replays only dynamic pins. But *unlike* a Select's
   `selector`, a reserved pin is **not** simply rebuilt by the owner's constructor on load — it lives
   on the owner's INTERIOR, and a load replaces that interior wholesale, so the loader must declare it
