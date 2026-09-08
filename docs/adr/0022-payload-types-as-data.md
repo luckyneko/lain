@@ -167,6 +167,16 @@ still loads, and lies.
   `operator<` is declared for every element type and fails only when *instantiated*, so plain
   detection answers true for `std::vector<T>` whatever `T` is, and the first real comparison is a hard
   error inside `<algorithm>` rather than a false from the trait. Found by the build, not by reading.
+- **Every per-type bridge must be TOTAL in the value it is handed.** A retype makes a port's declared
+  type disagree with the value the last run left in the evaluation — a state that could not exist
+  before, since a port's type was fixed at declaration and a slot held that type or nothing. And the
+  retype *cannot* clear it: invalidation is pulled (ADR-0012), so a definition holds no list of its
+  evaluations. It bumps the node's version and the next run corrects the slot, but a host draws in
+  between. So `PortType::describe` and the four collection bridges test `holds<T>()`, not
+  `empty()`, and `describe` answers **"(stale)"** — deliberately not `"(empty)"`, which means
+  SUPPRESSED (ADR-0007) and would be a lie about a port that has a value, just not one of its type
+  yet. The same rule applies to any adapter reading a value: ask what the VALUE holds, never what the
+  port declares.
 - **A retype is not undoable by itself** — it goes through the host's ordinary edit path, so it is
   captured by the next snapshot like any other change.
 - **The canvas offering to insert a Cast on a mismatched drag is deliberately out.** The registry makes

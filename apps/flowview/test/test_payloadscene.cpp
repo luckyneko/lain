@@ -4,22 +4,26 @@
 // Compiles the production scene.cpp / graphio.cpp, so these are the real registrations the binary
 // runs — not a copy that could drift from them.
 
+#include "dump.h"
 #include "graphio.h"
 #include "scene.h"
 
 #include <lain/core/factory.h>
 #include <lain/data/value.h>
+#include <lain/flow/edit.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
 #include <lain/flow/nodes/constant.h>
 #include <lain/flow/porttype.h>
 #include <lain/flow/porttyperegistry.h>
+#include <lain/flow/scheduler.h>
 #include <lain/image/image.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <typeinfo>
 #include <vector>
@@ -178,4 +182,30 @@ TEST_CASE("the conversions this app registers are exactly the ones it decided on
 		CHECK_FALSE(portTypeKey(pair.first->index).empty());
 		CHECK_FALSE(portTypeKey(pair.second->index).empty());
 	}
+}
+
+TEST_CASE("the cli dump survives a port retyped since the last run", "[flowview][payload]")
+{
+	// The same crash the Inspector hit, on the headless path: dumpGraph rendered a port's value
+	// through the port's DECLARED type, so a Constant retyped to Image over a leftover int threw
+	// std::bad_any_cast out of `flowview run`. Both sites now ask what the VALUE holds.
+	const Factory<Node> factory = sceneFactory();
+
+	Graph graph;
+	const NodeId id = graph.add(constantOf(7));
+	Evaluation evaluation{graph};
+	SerialScheduler scheduler;
+	scheduler.run(graph, evaluation);
+
+	REQUIRE(edit::setPayloadType(graph, id, ConstantNode::kValuePayload, &portType<lain::image::Image>()).ok);
+
+	std::ostringstream out;
+	REQUIRE_NOTHROW(flowview::dumpGraph(out, graph, evaluation));
+	CHECK(out.str().find("(stale)") != std::string::npos);
+
+	// And the next run fills it in for real, because the retype bumped the node's version.
+	scheduler.run(graph, evaluation);
+	std::ostringstream after;
+	REQUIRE_NOTHROW(flowview::dumpGraph(after, graph, evaluation));
+	CHECK(after.str().find("(stale)") == std::string::npos);
 }

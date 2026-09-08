@@ -73,10 +73,15 @@ namespace flowview
 	// everything else — CPU values, the empty slot, and unrenderable types — goes through
 	// Evaluation::describe (the shared meta::toString pathway), so this adapter owns only the
 	// image-specific branch.
-	static std::string valueLabel(const Evaluation& evaluation, PortAddress address, const Port& port)
+	//
+	// The branch asks what the VALUE holds, never what the port declares. Those are the same
+	// question only until a port can be RETYPED (ADR-0022): after one, a slot still carries what the
+	// last run left there, so a port declaring Image over a leftover int would have taken this
+	// branch and thrown std::bad_any_cast out of `flowview run`. describe() handles the mismatch.
+	static std::string valueLabel(const Evaluation& evaluation, PortAddress address, const Port&)
 	{
 		const PortValue& value = evaluation.value(address);
-		if (!value.empty() && port.type() == typeid(lain::image::Image))
+		if (value.holds<lain::image::Image>())
 			return imageLabel(value.get<lain::image::Image>());
 		return evaluation.describe(address);
 	}

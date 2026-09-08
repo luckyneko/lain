@@ -637,8 +637,8 @@ that model at any size — it needs one key per *pair*. Grilled 2026-09-07; deci
 **[ADR-0022](docs/adr/0022-payload-types-as-data.md)**, build order in WORK.md M12, vocabulary in
 CONTEXT.md's new *Payload type* section. **All four slices are built** — the mechanism + Constant,
 the conversion registry + Cast, the ordering capability + Compare, and the control nodes. `ctest`
-**724/724** Debug with video on (+27 from 697) and **698/698** Release in the default video-off
-configuration (+27 from 671); warning-clean, format-check clean, and `flowview --version` / `list` /
+**727/727** Debug with video on (+30 from 697) and **701/701** Release in the default video-off
+configuration (+30 from 671); warning-clean, format-check clean, and `flowview --version` / `list` /
 `run` unchanged through the real binary. **gui-mode NOT eyeballed** — the Inspector's payload-type
 dropdown and the Issues row are new UI and need a Metal session, so M12 is NOT complete.
 
@@ -698,6 +698,16 @@ checking the fold produces a **different picture**, since every weaker assertion
 - **Deviation, deliberate and recorded:** no generated per-pair palette entries (`Cast ▸ Int →
   Float`). They want `NodeCategory` to carry a preset and three render sites to apply it — a refactor
   for ergonomics, where the Inspector's two dropdowns already reach every pair in two clicks.
+- **First gui-mode bug, found by the repo owner and fixed 2026-09-08: a STALE value crashed the
+  panes.** Adding a Constant (Int) and changing its type to Image threw `std::bad_any_cast`. A retype
+  makes a port's declared type disagree with the value the last run left in the evaluation — a state
+  that could not exist before, since a port's type was fixed at declaration. The retype **cannot**
+  clear it (invalidation is pulled, ADR-0012), and a host draws before the next run corrects it. So
+  the per-type bridges are now TOTAL in the value they are handed (`holds<T>()`, not `empty()`), and
+  `describe` answers **"(stale)"** — not `"(empty)"`, which means SUPPRESSED. **The same bug was in
+  `dump.cpp`**, unreported: it tested the port's DECLARED type then read the value, so `flowview run`
+  would have thrown identically. Found by auditing for the shape. The rule, now in the ADR: ask what
+  the VALUE holds, never what the port declares.
 - **Noted for its own commit:** `ctest -j8` fails ~7 io/io::video cases on shared scratch paths.
   Pre-existing, unrelated, invisible serially (724/724 passes).
 

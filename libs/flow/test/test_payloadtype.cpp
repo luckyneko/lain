@@ -495,3 +495,51 @@ TEST_CASE("a retype leaves a control node's non-payload pins alone", "[payload][
 	CHECK(graph.node(select).input(0).type() == typeid(int)); // selector
 	CHECK(graph.node(select).output(0).type() == typeid(std::string));
 }
+
+TEST_CASE("a value left over from before a retype is described, not thrown at", "[payload][describe]")
+{
+	// A RETYPE makes a port's declared type disagree with the value the last run left in the
+	// evaluation — a state that could not exist before payload types, since a port's type was fixed
+	// at declaration and a slot held that type or nothing.
+	//
+	// Invalidation is PULLED (ADR-0012): a definition holds no list of its evaluations, so a retype
+	// CANNOT reach in and clear them. It bumps the node's version and the value is corrected on the
+	// next run — but a host draws in between, and every pane renders a port through its declared
+	// type. So the per-type bridges have to be total in the value they are handed.
+	Graph graph;
+	const NodeId id = graph.add(constantOf(7));
+	Evaluation evaluation{graph};
+	SerialScheduler scheduler;
+	scheduler.run(graph, evaluation);
+
+	const PortAddress out{id, graph.node(id).output(0).id()};
+	REQUIRE(evaluation.describe(out) == "7");
+
+	// Retype to something the leftover int is not. This is exactly "add a Constant, change its type
+	// to Image" — which threw std::bad_any_cast out of the Inspector.
+	REQUIRE(edit::setPayloadType(graph, id, ConstantNode::kValuePayload, &portType<std::string>()).ok);
+
+	// Described, not thrown at — and NOT as "(empty)", which would be a lie: an empty value means
+	// suppressed (ADR-0007), and this port has a value, just not one of its type yet.
+	std::string described;
+	REQUIRE_NOTHROW(described = evaluation.describe(out));
+	CHECK(described == "(stale)");
+
+	// And the next run corrects it, because the retype bumped the node's version.
+	scheduler.run(graph, evaluation);
+	CHECK(evaluation.describe(out) == "");
+	CHECK(evaluation.value(out).holds<std::string>());
+}
+
+TEST_CASE("the collection capability is total in the value it is handed", "[payload][describe]")
+{
+	// The same hazard on the four collection bridges, which a map's scheduler steps call: a stale
+	// value of another type must read as "nothing here", exactly as an empty one does.
+	const PortType& lists = portType<std::vector<int>>();
+	PortValue notAList;
+	notAList.set<int>(3);
+
+	CHECK(lists.describe(notAList) == "(stale)");
+	CHECK(lists.size(notAList) == 0);
+	CHECK(lists.at(notAList, 0).empty());
+}

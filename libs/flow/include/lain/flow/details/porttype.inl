@@ -12,17 +12,32 @@
 
 namespace lain::flow
 {
+	// What describe() says for a value whose type is not the port's. NOT "(empty)": an empty value
+	// means SUPPRESSED (ADR-0007), and a port whose last run left an int behind while it now
+	// declares an Image has a value — just not one of its type yet.
+	//
+	// The state is reachable because invalidation is PULLED (ADR-0012): a definition holds no list
+	// of its evaluations, so a retype cannot reach in and clear them. It bumps the node's version
+	// and the next run corrects the slot — but a host draws in between, and drawing must not throw.
+	inline constexpr const char* kStaleValue = "(stale)";
+
 	namespace detail
 	{
 		// The type-erasure bridge for PortType::describe: recover the T from the port's
 		// slot and render it via meta::toString. Empty slot -> "(empty)". Instantiated per
 		// T in the TU that declares the port, so flow never names the concrete type (a GPU
 		// handle with no toString falls back to its type name inside meta::toString).
+		//
+		// TOTAL in the value it is handed — see kStaleValue. A slot holding some OTHER type is
+		// reachable once a port can be retyped (ADR-0022), and this bridge is what every pane, the
+		// cli dump and every tooltip render a port through.
 		template <typename T>
 		std::string describePortValue(const PortValue& value)
 		{
 			if (value.empty())
 				return "(empty)";
+			if (!value.holds<T>())
+				return kStaleValue;
 			return lain::meta::toString(value.get<T>());
 		}
 
@@ -66,17 +81,20 @@ namespace lain::flow
 		{
 			if (value.empty())
 				return "(empty)";
+			if (!value.holds<T>())
+				return kStaleValue;
 			const std::size_t count = value.get<T>().size();
 			return std::to_string(count) + (count == 1 ? " item" : " items");
 		}
 
 		// PortType::size for a collection T. An EMPTY slot has no elements rather than being an
 		// error: absence already travels as an empty value (ADR-0007), and a map whose input was
-		// suppressed upstream must read as "nothing to do", not throw inside a scheduler step.
+		// suppressed upstream must read as "nothing to do", not throw inside a scheduler step. A
+		// slot holding another type reads the same way, for the same reason (see kStaleValue).
 		template <typename T>
 		std::size_t collectionSize(const PortValue& value)
 		{
-			return value.empty() ? std::size_t{0} : value.get<T>().size();
+			return value.holds<T>() ? value.get<T>().size() : std::size_t{0};
 		}
 
 		// PortType::at for a collection T: element `index`, ALIASED into the collection's own
@@ -88,7 +106,7 @@ namespace lain::flow
 		template <typename T>
 		PortValue collectionAt(const PortValue& value, std::size_t index)
 		{
-			if (value.empty())
+			if (!value.holds<T>()) // empty, or a value left over from before a retype
 				return {};
 			const T& items = value.get<T>();
 			if (index >= items.size())

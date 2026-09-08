@@ -4495,6 +4495,33 @@ video-off configuration (+27 from 671); warning-clean, format-check clean, and `
 payload-type dropdown and the Issues row are new UI and need a Metal session. That is the one thing
 standing between M12 and complete.
 
+### Found by the repo owner in gui-mode, fixed 2026-09-08: a stale value crashed the panes
+
+Adding a Constant (Int) and changing its type to Image threw **`std::bad_any_cast`**. The mechanism
+is one the milestone creates and nothing else in the tree had: a retype makes a port's declared type
+disagree with the value the LAST RUN left in the evaluation. Before payload types a port's type was
+fixed at declaration, so a slot held that type or nothing — `empty()` was the only mismatch possible.
+
+- **The retype cannot clear the value, and should not try.** Invalidation is PULLED (ADR-0012): a
+  definition holds no list of its evaluations, so `edit::setPayloadType` has nothing to reach. It
+  bumps the node's version and the next run corrects the slot — but **a host draws in between**, and
+  every pane renders a port through `Evaluation::describe`, which resolves the port's declared
+  `PortType` and calls its `describe` bridge on whatever the slot holds.
+- **The fix is at the bridges, which must be TOTAL in the value they are handed.**
+  `describePortValue` / `describeCollection` / `collectionSize` / `collectionAt` now test
+  `holds<T>()` rather than `empty()`. `gather` already did.
+- **`describe` answers `"(stale)"`, deliberately not `"(empty)"`** — empty means SUPPRESSED
+  (ADR-0007), and saying it here would be a lie about a port that has a value, just not one of its
+  type yet.
+- **The same bug was in the CLI, unreported**: `dump.cpp` tested the port's **declared** type and
+  then read the value, so `flowview run` over a retyped document would have thrown the same way.
+  Both sites now ask what the VALUE holds. Found by auditing for the shape rather than by hitting it.
+- **The two gui value paths were already safe** (`valueviews.cpp`, `previewcache.cpp`,
+  `interfacepane.cpp`, `inspectorpane.cpp` all guard with `holds<T>()`), which is why the crash came
+  out of the text line and not the thumbnail.
+- `ctest` **727/727** Debug with video on (+3) and **701/701** Release video-off (+3).
+  Sabotage-verified: dropping the guard fails the engine case *and* the cli case.
+
 ### Not in this milestone
 
 **Generated per-pair palette entries** (`Cast > Int -> Float` read off the conversion registry) — it
