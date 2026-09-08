@@ -242,8 +242,8 @@ namespace
 
 		Fold(int seed, int trips)
 			: loopId(parent.add<LoopNode>())
-			, seedId(parent.add<ConstantNode<int>>(seed))
-			, boundId(parent.add<ConstantNode<int>>(trips))
+			, seedId(parent.add(constantOf(seed)))
+			, boundId(parent.add(constantOf(trips)))
 		{
 			carry = loop().addCarry<int>("value");
 			REQUIRE(carry.innerIn != PortId{});
@@ -692,7 +692,7 @@ TEST_CASE("a condition that is false at once still runs one iteration", "[flow][
 	const NodeId body = f.inner().add<AddOne>();
 	f.carryThrough(body);
 
-	const NodeId stop = f.inner().add<ConstantNode<bool>>(false);
+	const NodeId stop = f.inner().add(constantOf(false));
 	REQUIRE(f.inner().connect(PortAddress{stop, f.inner().node(stop).output(0).id()},
 							  PortAddress{f.innerOut(), f.loop().continuePin()}) == Connection::Ok);
 	f.close();
@@ -784,7 +784,7 @@ TEST_CASE("an unpaired input is an invariant that holds for the whole fold", "[f
 							  PortAddress{body, f.inner().node(body).input(1).id()}) == Connection::Ok);
 	f.close();
 
-	const NodeId k = f.parent.add<ConstantNode<int>>(3);
+	const NodeId k = f.parent.add(constantOf(3));
 	REQUIRE(f.parent.connect(PortAddress{k, f.parent.node(k).output(0).id()},
 							 PortAddress{f.loopId, inputNamed(f.parent.node(f.loopId), "k")}) == Connection::Ok);
 
@@ -814,7 +814,7 @@ TEST_CASE("a loop keeps its result when a later run has nothing stale", "[flow][
 	REQUIRE(calls == 5); // nothing changed, so no iteration ran
 	REQUIRE(f.out(evaluation, "value").get<int>() == 15);
 
-	static_cast<ConstantNode<int>&>(f.parent.node(f.seedId)).setValue(20);
+	static_cast<ConstantNode&>(f.parent.node(f.seedId)).setValue(20);
 	scheduler.run(f.parent, evaluation);
 	REQUIRE(calls == 10); // the whole fold re-runs from the new seed
 	REQUIRE(f.out(evaluation, "value").get<int>() == 25);
@@ -837,7 +837,7 @@ TEST_CASE("a loop inside a loop folds at both levels", "[flow][loop]")
 			Connection::Ok);
 	edit::syncGroupPorts(body, innerId);
 
-	const NodeId innerBound = body.add<ConstantNode<int>>(2);
+	const NodeId innerBound = body.add(constantOf(2));
 	REQUIRE(body.connect(PortAddress{innerBound, body.node(innerBound).output(0).id()},
 						 PortAddress{innerId, innerLoop.countPort()}) == Connection::Ok);
 	REQUIRE(body.connect(PortAddress{outer.innerIn(), outer.carry.innerIn},
@@ -924,7 +924,7 @@ TEST_CASE("a loop inside a map lets each element stop at its own iteration", "[f
 			Connection::Ok);
 	edit::syncGroupPorts(body, loopId);
 
-	const NodeId bound = body.add<ConstantNode<int>>(100);
+	const NodeId bound = body.add(constantOf(100));
 	REQUIRE(body.connect(PortAddress{bound, body.node(bound).output(0).id()},
 						 PortAddress{loopId, loop.countPort()}) == Connection::Ok);
 	REQUIRE(body.connect(PortAddress{body.boundaryInputNode().id(), rowIn},
@@ -933,7 +933,7 @@ TEST_CASE("a loop inside a map lets each element stop at its own iteration", "[f
 						 PortAddress{body.boundaryOutputNode().id(), rowOut}) == Connection::Ok);
 	edit::syncGroupPorts(parent, mapId);
 
-	const NodeId source = parent.add<ConstantNode<std::vector<int>>>(std::vector<int>{1, 5});
+	const NodeId source = parent.add(constantOf(std::vector<int>{1, 5}));
 	REQUIRE(parent.connect(PortAddress{source, parent.node(source).output(0).id()},
 						   PortAddress{mapId, inputNamed(parent.node(mapId), "value")}) == Connection::Ok);
 
@@ -964,8 +964,8 @@ TEST_CASE("a loop inside a group delivers through the group's face", "[flow][loo
 								 PortAddress{loop.inner().boundaryOutputNode().id(), carry.innerOut}) == Connection::Ok);
 	edit::syncGroupPorts(body, loopId);
 
-	const NodeId seed = body.add<ConstantNode<int>>(10);
-	const NodeId bound = body.add<ConstantNode<int>>(3);
+	const NodeId seed = body.add(constantOf(10));
+	const NodeId bound = body.add(constantOf(3));
 	REQUIRE(body.connect(PortAddress{seed, body.node(seed).output(0).id()},
 						 PortAddress{loopId, inputNamed(body.node(loopId), "value")}) == Connection::Ok);
 	REQUIRE(body.connect(PortAddress{bound, body.node(bound).output(0).id()},
@@ -1014,7 +1014,7 @@ TEST_CASE("a group holding an iterating loop publishes once, not once per stage"
 	const NodeId relay = body.add<AddOne>();
 	REQUIRE(body.connect(PortAddress{body.boundaryInputNode().id(), seedPin},
 						 PortAddress{relay, body.node(relay).input(0).id()}) == Connection::Ok);
-	const NodeId bound = body.add<ConstantNode<int>>(4);
+	const NodeId bound = body.add(constantOf(4));
 	REQUIRE(body.connect(PortAddress{relay, body.node(relay).output(0).id()},
 						 PortAddress{loopId, inputNamed(body.node(loopId), "value")}) == Connection::Ok);
 	REQUIRE(body.connect(PortAddress{bound, body.node(bound).output(0).id()},
@@ -1025,7 +1025,7 @@ TEST_CASE("a group holding an iterating loop publishes once, not once per stage"
 						 PortAddress{body.boundaryOutputNode().id(), resultPin}) == Connection::Ok);
 	edit::syncGroupPorts(parent, groupId);
 
-	const NodeId seed = parent.add<ConstantNode<int>>(9);
+	const NodeId seed = parent.add(constantOf(9));
 	REQUIRE(parent.connect(PortAddress{seed, parent.node(seed).output(0).id()},
 						   PortAddress{groupId, inputNamed(parent.node(groupId), "seed")}) == Connection::Ok);
 
@@ -1082,7 +1082,7 @@ TEST_CASE("a group holding an iterating loop publishes once, not once per stage"
 	// value, an early publish hands over the PREVIOUS run's answer — indistinguishable from a
 	// finished one — and the consumer computes on it once per intermediate stage.
 	consumed = 0;
-	static_cast<ConstantNode<int>&>(parent.node(seed)).setValue(19);
+	static_cast<ConstantNode&>(parent.node(seed)).setValue(19);
 	run();
 
 	REQUIRE(evaluation.value(PortAddress{consumer, parent.node(consumer).output(0).id()}).get<int>() == 24);

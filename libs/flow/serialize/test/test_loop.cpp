@@ -30,6 +30,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <functional>
 #include <string>
 #include <string_view>
 
@@ -99,7 +100,10 @@ namespace
 		factory.registerType<InlineGroupNode>("group");
 		factory.registerType<AddOne>("addOne");
 		factory.registerType<Below>("below");
-		factory.registerType<ConstantNode<int>>("constInt", 0);
+		// ONE Constant kind, whatever type it emits: the type is a payload type the document
+		// carries, not part of the key (ADR-0022). The preset is what a node created from this key
+		// starts as, and what a document with no `types` section keeps.
+		factory.registerType<ConstantNode>("constant", std::cref(portType<int>()));
 		factory.registerType<GroupInputNode>("groupInput");
 		factory.registerType<GroupOutputNode>("groupOutput");
 		return factory;
@@ -170,7 +174,7 @@ namespace
 		}
 		edit::syncGroupPorts(graph, id);
 
-		const NodeId seed = graph.add<ConstantNode<int>>(seedValue);
+		const NodeId seed = graph.add(constantOf(seedValue));
 		REQUIRE(graph.connect(PortAddress{seed, graph.node(seed).output(0).id()},
 							  PortAddress{id, inputNamed(graph.node(id), "value")}) == Connection::Ok);
 		return id;

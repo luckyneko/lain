@@ -27,7 +27,14 @@ namespace flowview
 
 	// One-time registration serialization needs: the image::Image port type (so boundary pins
 	// replay) and the data codecs (json). Idempotent — safe to call in either mode's startup.
+	// Registers the scene's value conversions too, so both halves of "what types does this app
+	// know" are established by one call.
 	void registerSceneSerialization();
+
+	// What a CAST node may convert, and how (ADR-0022) — the value-conversion registry's contents
+	// for this app. Called by registerSceneSerialization; separate so a test can ask for the
+	// conversions alone. Idempotent.
+	void registerSceneConversions();
 
 	// Save `graph` as JSON at `uri` (io::data picks the codec by extension). `editor` is the
 	// adapter's per-node metadata (canvas positions), keyed by NodeId. Returns false on a write /

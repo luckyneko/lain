@@ -27,6 +27,23 @@ namespace lain::flow
 		std::string_view name;					   // human type name (meta::typeName<T>)
 		std::string (*describe)(const PortValue&); // current value as text (bridges meta::toString)
 
+		// A default-constructed value of this type, or null when T is not default-constructible.
+		// Filled for the same reason describe is: a caller holding only a runtime type needs to make
+		// a value of it. Two callers, both in the payload-type mechanism (ADR-0022) — seeding a param
+		// declared from a payload type, and resetting one whose old value no type conversion reaches.
+		PortValue (*defaultValue)() = nullptr;
+
+		// --- the ORDERING capability (ADR-0022) ---------------------------------------------
+		// Three-way compare, filled only when T is less-comparable; null for every other type, so
+		// `compare != nullptr` IS the question "can values of this type be ordered?" — no separate
+		// flag, and no registry of comparable types to keep in step, exactly as `element` below.
+		//
+		// It exists so a COMPARE NODE can order two values without flow core naming a payload type,
+		// and so that node's accepted payload types are DERIVED from the capability rather than
+		// listed. Answers -1 / 0 / +1; an empty slot on either side answers 0 (a comparison that
+		// cannot be made is the node's business, and it checks for emptiness before asking).
+		int (*compare)(const PortValue&, const PortValue&) = nullptr;
+
 		// --- the COLLECTION capability (ADR-0014) --------------------------------------------
 		// Filled only when T is a collection (a std::vector); left null for every other type, so
 		// `element != nullptr` IS the question "can this be mapped over?" — there is no separate
@@ -48,6 +65,9 @@ namespace lain::flow
 		// Whether a value of this type can be mapped over — one question asked in one place,
 		// rather than each caller testing which of the four fields it happens to need.
 		bool isCollection() const { return element != nullptr; }
+
+		// Whether values of this type can be ordered (see `compare`).
+		bool isOrderable() const { return compare != nullptr; }
 	};
 
 	// The single shared PortType for T (a function-local static: built once, stable

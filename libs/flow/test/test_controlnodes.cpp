@@ -15,6 +15,7 @@
 
 using lain::flow::Connection;
 using lain::flow::ConstantNode;
+using lain::flow::constantOf;
 using lain::flow::Evaluation;
 using lain::flow::GateNode;
 using lain::flow::Graph;
@@ -22,20 +23,21 @@ using lain::flow::MergeNode;
 using lain::flow::Node;
 using lain::flow::NodeId;
 using lain::flow::Param;
+using lain::flow::portType;
 using lain::flow::SelectNode;
 using lain::flow::SerialScheduler;
 
 TEST_CASE("Constant emits its value and re-emits on change", "[flow][nodes]")
 {
 	Graph graph;
-	const NodeId c = graph.add<ConstantNode<int>>(42);
+	const NodeId c = graph.add(constantOf(42));
 
 	lain::flow::Evaluation e{graph};
 	SerialScheduler scheduler;
 	scheduler.run(graph, e);
 	REQUIRE(e.value(lain::flow::PortAddress{c, graph.node(c).output(0).id()}).get<int>() == 42);
 
-	static_cast<ConstantNode<int>&>(graph.node(c)).setValue(7);
+	static_cast<ConstantNode&>(graph.node(c)).setValue(7);
 	scheduler.run(graph, e);
 	REQUIRE(e.value(lain::flow::PortAddress{c, graph.node(c).output(0).id()}).get<int>() == 7);
 }
@@ -43,9 +45,9 @@ TEST_CASE("Constant emits its value and re-emits on change", "[flow][nodes]")
 TEST_CASE("Gate passes its value when enabled and suppresses when not", "[flow][nodes]")
 {
 	Graph graph;
-	const NodeId enable = graph.add<ConstantNode<bool>>(true);
-	const NodeId value = graph.add<ConstantNode<int>>(5);
-	const NodeId gate = graph.add<GateNode<int>>();
+	const NodeId enable = graph.add(constantOf(true));
+	const NodeId value = graph.add(constantOf(5));
+	const NodeId gate = graph.add<GateNode>(portType<int>());
 	graph.connect(enable, 0, gate, 0); // -> enable
 	graph.connect(value, 0, gate, 1);  // -> value
 
@@ -55,7 +57,7 @@ TEST_CASE("Gate passes its value when enabled and suppresses when not", "[flow][
 	REQUIRE_FALSE(e.value(lain::flow::PortAddress{gate, graph.node(gate).output(0).id()}).empty());
 	REQUIRE(e.value(lain::flow::PortAddress{gate, graph.node(gate).output(0).id()}).get<int>() == 5);
 
-	static_cast<ConstantNode<bool>&>(graph.node(enable)).setValue(false);
+	static_cast<ConstantNode&>(graph.node(enable)).setValue(false);
 	scheduler.run(graph, e);
 	REQUIRE(e.value(lain::flow::PortAddress{gate, graph.node(gate).output(0).id()}).empty()); // suppressed — no value produced
 }
@@ -63,15 +65,15 @@ TEST_CASE("Gate passes its value when enabled and suppresses when not", "[flow][
 TEST_CASE("Merge forwards the first live of its variadic branches (if/else via two gates)", "[flow][nodes]")
 {
 	Graph graph;
-	const NodeId enA = graph.add<ConstantNode<bool>>(false); // branch a gated off
-	const NodeId enB = graph.add<ConstantNode<bool>>(true);	 // branch b on
-	const NodeId va = graph.add<ConstantNode<int>>(3);
-	const NodeId vb = graph.add<ConstantNode<int>>(7);
-	const NodeId ga = graph.add<GateNode<int>>();
-	const NodeId gb = graph.add<GateNode<int>>();
-	const NodeId merge = graph.add<MergeNode<int>>();
+	const NodeId enA = graph.add(constantOf(false)); // branch a gated off
+	const NodeId enB = graph.add(constantOf(true));	 // branch b on
+	const NodeId va = graph.add(constantOf(3));
+	const NodeId vb = graph.add(constantOf(7));
+	const NodeId ga = graph.add<GateNode>(portType<int>());
+	const NodeId gb = graph.add<GateNode>(portType<int>());
+	const NodeId merge = graph.add<MergeNode>(portType<int>());
 	// The merge is empty at construction (the dynamic-side contract) — add its branches at runtime.
-	auto& mergeNode = static_cast<MergeNode<int>&>(graph.node(merge));
+	auto& mergeNode = static_cast<MergeNode&>(graph.node(merge));
 	mergeNode.addDynamicPort<int>("a");
 	mergeNode.addDynamicPort<int>("b");
 	graph.connect(enA, 0, ga, 0);
@@ -87,8 +89,8 @@ TEST_CASE("Merge forwards the first live of its variadic branches (if/else via t
 	REQUIRE(e.value(lain::flow::PortAddress{merge, graph.node(merge).output(0).id()}).get<int>() == 7); // picked the live branch b
 
 	// flip the condition: a on, b off -> merge now forwards a (first live branch)
-	static_cast<ConstantNode<bool>&>(graph.node(enA)).setValue(true);
-	static_cast<ConstantNode<bool>&>(graph.node(enB)).setValue(false);
+	static_cast<ConstantNode&>(graph.node(enA)).setValue(true);
+	static_cast<ConstantNode&>(graph.node(enB)).setValue(false);
 	scheduler.run(graph, e);
 	REQUIRE(e.value(lain::flow::PortAddress{merge, graph.node(merge).output(0).id()}).get<int>() == 3);
 }
@@ -96,11 +98,11 @@ TEST_CASE("Merge forwards the first live of its variadic branches (if/else via t
 TEST_CASE("Select routes among its variadic branches by a connectable selector input", "[flow][nodes]")
 {
 	Graph graph;
-	const NodeId sel = graph.add<ConstantNode<int>>(0); // the selector, driven by a ConstantNode
-	const NodeId va = graph.add<ConstantNode<int>>(10);
-	const NodeId vb = graph.add<ConstantNode<int>>(20);
-	const NodeId select = graph.add<SelectNode<int>>();
-	auto& selectNode = static_cast<SelectNode<int>&>(graph.node(select));
+	const NodeId sel = graph.add(constantOf(0)); // the selector, driven by a ConstantNode
+	const NodeId va = graph.add(constantOf(10));
+	const NodeId vb = graph.add(constantOf(20));
+	const NodeId select = graph.add<SelectNode>(portType<int>());
+	auto& selectNode = static_cast<SelectNode&>(graph.node(select));
 	selectNode.addDynamicPort<int>("a"); // branch 0 (input 1 — the selector is input 0)
 	selectNode.addDynamicPort<int>("b"); // branch 1 (input 2)
 	graph.connect(sel, 0, select, 0);	 // -> selector input
@@ -112,12 +114,12 @@ TEST_CASE("Select routes among its variadic branches by a connectable selector i
 	scheduler.run(graph, e);
 	REQUIRE(e.value(lain::flow::PortAddress{select, graph.node(select).output(0).id()}).get<int>() == 10); // selector 0 -> branch a
 
-	static_cast<ConstantNode<int>&>(graph.node(sel)).setValue(1);
+	static_cast<ConstantNode&>(graph.node(sel)).setValue(1);
 	scheduler.run(graph, e);
 	REQUIRE(e.value(lain::flow::PortAddress{select, graph.node(select).output(0).id()}).get<int>() == 20); // selector 1 -> branch b
 
 	// selector out of range -> no output (nothing to route)
-	static_cast<ConstantNode<int>&>(graph.node(sel)).setValue(5);
+	static_cast<ConstantNode&>(graph.node(sel)).setValue(5);
 	scheduler.run(graph, e);
 	REQUIRE(e.value(lain::flow::PortAddress{select, graph.node(select).output(0).id()}).empty());
 }
@@ -129,8 +131,8 @@ TEST_CASE("an unwired Gate passes its value through", "[flow][nodes][default]")
 	// unwired gate was never ready, so it suppressed everything downstream and read as broken until
 	// you found a Constant<bool> to feed it.
 	Graph graph;
-	const NodeId source = graph.add<ConstantNode<int>>(42);
-	const NodeId gate = graph.add<GateNode<int>>();
+	const NodeId source = graph.add(constantOf(42));
+	const NodeId gate = graph.add<GateNode>(portType<int>());
 	REQUIRE(graph.connect(source, 0, gate, 1) == Connection::Ok); // -> value; `enable` left unwired
 
 	Evaluation evaluation{graph};
@@ -152,7 +154,7 @@ TEST_CASE("an unwired Gate passes its value through", "[flow][nodes][default]")
 
 	SECTION("a wired enable still wins over the default")
 	{
-		const NodeId enable = graph.add<ConstantNode<bool>>(false);
+		const NodeId enable = graph.add(constantOf(false));
 		REQUIRE(graph.connect(enable, 0, gate, 0) == Connection::Ok);
 
 		SerialScheduler{}.run(graph, evaluation);
@@ -168,10 +170,10 @@ TEST_CASE("an unwired Select routes branch 0, and a suppressed selector suppress
 	// where a defaulted one leaves the node unready, so a suppressed selector suppresses — the same
 	// rule the Gate follows, and the reason a defaulted input stays Required.
 	Graph graph;
-	const NodeId a = graph.add<ConstantNode<int>>(10);
-	const NodeId b = graph.add<ConstantNode<int>>(20);
-	const NodeId select = graph.add<SelectNode<int>>();
-	auto& node = static_cast<SelectNode<int>&>(graph.node(select));
+	const NodeId a = graph.add(constantOf(10));
+	const NodeId b = graph.add(constantOf(20));
+	const NodeId select = graph.add<SelectNode>(portType<int>());
+	auto& node = static_cast<SelectNode&>(graph.node(select));
 	const lain::flow::PortId branchA = node.addDynamicPort<int>("a");
 	const lain::flow::PortId branchB = node.addDynamicPort<int>("b");
 	REQUIRE(graph.connect(lain::flow::PortAddress{a, graph.node(a).output(0).id()},
@@ -185,7 +187,7 @@ TEST_CASE("an unwired Select routes branch 0, and a suppressed selector suppress
 
 	SECTION("a wired selector picks its branch")
 	{
-		const NodeId sel = graph.add<ConstantNode<int>>(1);
+		const NodeId sel = graph.add(constantOf(1));
 		REQUIRE(graph.connect(sel, 0, select, 0) == Connection::Ok); // input 0 is `selector`
 		SerialScheduler{}.run(graph, evaluation);
 		REQUIRE(lain::flow::test::output(graph, evaluation, select, 0).get<int>() == 20);

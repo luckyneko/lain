@@ -125,6 +125,154 @@ namespace lain::flow
 		return setParam(id, std::move(erased));
 	}
 
+	inline const PortType* Node::payloadType(const std::string& name) const
+	{
+		for (const PayloadType& payload : m_payloadTypes)
+		{
+			if (payload.name == name)
+				return payload.type;
+		}
+		return nullptr;
+	}
+
+	inline void Node::addPayloadType(std::string name, const PortType& initial)
+	{
+		assert(payloadType(name) == nullptr && "flow::Node: duplicate payload type name");
+		m_payloadTypes.push_back(PayloadType{std::move(name), &initial});
+	}
+
+	// The index of the payload type `name`, asserted to exist: a node declares from its OWN payload
+	// types, so naming one it never declared is an author bug, like reaching input(PortId) with an
+	// id from another node.
+	inline std::size_t Node::payloadIndex(const std::string& name) const
+	{
+		for (std::size_t i = 0; i < m_payloadTypes.size(); ++i)
+		{
+			if (m_payloadTypes[i].name == name)
+				return i;
+		}
+		assert(false && "flow::Node: no payload type by that name — declare it with addPayloadType first");
+		return 0;
+	}
+
+	inline PortId Node::addInputOf(const std::string& payload, std::string name, Presence presence)
+	{
+		const std::size_t slot = payloadIndex(payload);
+		const PortId id = addInputLike(std::move(name), *m_payloadTypes[slot].type, presence);
+		m_payloadOf[id] = slot;
+		return id;
+	}
+
+	inline PortId Node::addOutputOf(const std::string& payload, std::string name)
+	{
+		const std::size_t slot = payloadIndex(payload);
+		const PortId id = addOutputLike(std::move(name), *m_payloadTypes[slot].type);
+		m_payloadOf[id] = slot;
+		return id;
+	}
+
+	inline PortId Node::addParamOf(const std::string& payload, std::string name)
+	{
+		const std::size_t slot = payloadIndex(payload);
+		const PortType& type = *m_payloadTypes[slot].type;
+		const PortId id = nextPortId();
+		Param p(std::move(name), type, id);
+		// A type with no default simply starts empty — the same state a param whose old value no
+		// conversion reaches ends in, so there is one shape to handle rather than two.
+		if (type.defaultValue != nullptr)
+			p.m_value = type.defaultValue();
+		m_params.push_back(std::move(p));
+		m_payloadOf[id] = slot;
+		return id;
+	}
+
+	inline void Node::tagAs(PortId declaration, const std::string& payload)
+	{
+		const std::size_t slot = payloadIndex(payload);
+		const PortType& type = *m_payloadTypes[slot].type;
+
+		const Port* port = findDeclared(m_inputs, declaration);
+		if (port == nullptr)
+			port = findDeclared(m_outputs, declaration);
+		if (port != nullptr)
+		{
+			if (port->type() == type.index)
+				m_payloadOf[declaration] = slot;
+			return;
+		}
+		if (const Param* param = findDeclared(m_params, declaration); param != nullptr && param->type() == type.index)
+			m_payloadOf[declaration] = slot;
+	}
+
+	inline PortId Node::addDefaultedInputOf(const std::string& payload, std::string name)
+	{
+		// REQUIRED and same-named as its param, for the reasons addInput<T>(name, Default{...})
+		// gives — this is that declaration with the type coming from a payload type instead of a T.
+		const PortId port = addInputOf(payload, name, Presence::Required);
+		const PortId param = addParamOf(payload, std::move(name));
+		m_defaults[port] = param;
+		return port;
+	}
+
+	inline std::vector<PortId> Node::declarationsOf(const std::string& name) const
+	{
+		std::vector<PortId> declared;
+		for (std::size_t i = 0; i < m_payloadTypes.size(); ++i)
+		{
+			if (m_payloadTypes[i].name != name)
+				continue;
+			for (const auto& tagged : m_payloadOf)
+			{
+				if (tagged.second == i)
+					declared.push_back(tagged.first);
+			}
+			break;
+		}
+		return declared;
+	}
+
+	inline bool Node::retypePayload(const std::string& name, const PortType& type, std::vector<PortId>* reset)
+	{
+		std::size_t slot = 0;
+		bool found = false;
+		for (std::size_t i = 0; i < m_payloadTypes.size(); ++i)
+		{
+			if (m_payloadTypes[i].name == name)
+			{
+				slot = i;
+				found = true;
+				break;
+			}
+		}
+		if (!found || !acceptsPayloadType(name, type))
+			return false;
+		if (m_payloadTypes[slot].type == &type)
+			return true; // already this type — nothing declared differently, so nothing to invalidate
+
+		m_payloadTypes[slot].type = &type;
+		for (const auto& tagged : m_payloadOf)
+		{
+			if (tagged.second != slot)
+				continue;
+
+			// IN PLACE: the declaration keeps its id, name, order and presence, so an edge that
+			// still typechecks keeps pointing at the same port.
+			if (Port* in = findDeclared(m_inputs, tagged.first))
+				in->m_type = &type;
+			else if (Port* out = findDeclared(m_outputs, tagged.first))
+				out->m_type = &type;
+			else if (Param* param = findDeclared(m_params, tagged.first))
+			{
+				param->m_type = &type;
+				param->m_value = (type.defaultValue != nullptr) ? type.defaultValue() : PortValue{};
+				if (reset != nullptr)
+					reset->push_back(tagged.first);
+			}
+		}
+		bumpVersion(); // the node declares something different — every evaluation of it is stale
+		return true;
+	}
+
 	template <typename T>
 	PortId Node::addParam(std::string name, T defaultValue)
 	{

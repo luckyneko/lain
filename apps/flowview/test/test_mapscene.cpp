@@ -29,6 +29,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -51,8 +52,9 @@ namespace
 		factory.registerType<example::ListDirNode>("listDir");
 		factory.registerType<example::LoadImageNode>("loadimage");
 		factory.registerType<example::CombineNode>("combine");
-		factory.registerType<ConstantNode<std::filesystem::path>>("constPath");
-		factory.registerType<ConstantNode<std::string>>("constString");
+		// One Constant kind for every payload type (ADR-0022) — the path and string sources this
+		// scene wires are the same node, differing only in the type the document records.
+		factory.registerType<ConstantNode>("constant", std::cref(portType<int>()));
 		return factory;
 	}
 
@@ -263,7 +265,7 @@ TEST_CASE("a wired directory beats the configured one", "[flowview][map]")
 	}
 
 	// ...then WIRED to the real one, which wins.
-	const NodeId source = graph.add<ConstantNode<std::filesystem::path>>(real);
+	const NodeId source = graph.add(constantOf(real));
 	REQUIRE(graph.connect(source, 0, listId, 0) == Connection::Ok); // input 0 is `directory`
 
 	Evaluation evaluation{graph};
@@ -280,7 +282,7 @@ TEST_CASE("a wired directory beats the configured one", "[flowview][map]")
 		SerialScheduler{}.run(graph, evaluation);
 		REQUIRE(evaluation.value(graph.boundaryOutputs().front()).empty()); // the .txt broke the map
 
-		const NodeId ext = graph.add<ConstantNode<std::string>>(std::string{".png"});
+		const NodeId ext = graph.add(constantOf(std::string{".png"}));
 		REQUIRE(graph.connect(ext, 0, listId, 1) == Connection::Ok); // input 1 is `extension`
 		SerialScheduler{}.run(graph, evaluation);
 		REQUIRE(resultLevel(graph, evaluation) == 60); // filtered back down to the two images

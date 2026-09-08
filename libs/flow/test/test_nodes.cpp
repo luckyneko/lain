@@ -237,11 +237,17 @@ TEST_CASE("CompareNode turns a measurement into the bool a condition needs", "[f
 	// common case and driven by the graph when something is wired to it.
 	using namespace lain::flow;
 	Graph graph;
-	const NodeId value = graph.add<ConstantNode<float>>(0.5f);
-	const NodeId compare = graph.add<example::CompareNode>(example::Comparison::Greater, 0.25f);
+	const NodeId value = graph.add(constantOf(0.5f));
+	const NodeId compare = graph.add<example::CompareNode>(portType<float>(), example::Comparison::Greater);
 	REQUIRE(graph.connect(value, 0, compare, 0) == Connection::Ok);
 
 	Node& node = graph.node(compare);
+	// The threshold is `b`'s DEFAULT, seeded from the payload type (0 for a float) and set here the
+	// way the Inspector sets it — there is no constructor argument for it, because the type a
+	// Compare compares is chosen at runtime and a compile-time seed could not follow it (ADR-0022).
+	const Param* fallback = node.defaultOf(node.input(1).id());
+	REQUIRE(fallback != nullptr);
+	REQUIRE(node.setParam<float>(fallback->id(), 0.25f));
 	const PortAddress out{compare, node.output(0).id()};
 	// By NAME, not by position: `b`'s Default declares a param of its own first, so the operator is
 	// not param 0 — which is exactly the trap a positional handle sets (M6 step 2).
@@ -272,7 +278,7 @@ TEST_CASE("CompareNode turns a measurement into the bool a condition needs", "[f
 
 	SECTION("a wired threshold beats the typed one")
 	{
-		const NodeId threshold = graph.add<ConstantNode<float>>(0.75f);
+		const NodeId threshold = graph.add(constantOf(0.75f));
 		REQUIRE(graph.connect(threshold, 0, compare, 1) == Connection::Ok);
 		CHECK_FALSE(answer(example::Comparison::Greater)); // 0.5 > 0.75 is false
 	}

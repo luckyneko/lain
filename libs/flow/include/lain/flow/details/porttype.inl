@@ -26,6 +26,36 @@ namespace lain::flow
 			return lain::meta::toString(value.get<T>());
 		}
 
+		// PortType::defaultValue for T: a slot holding a default-constructed T. Instantiated only
+		// when T is default-constructible — a type that is not simply has no default, and the
+		// payload-type mechanism reports a reset it cannot perform rather than inventing a value.
+		template <typename T>
+		PortValue defaultPortValue()
+		{
+			PortValue value;
+			value.set<T>(T{});
+			return value;
+		}
+
+		// PortType::compare for a less-comparable T: -1 / 0 / +1, spelled with `<` alone so a type
+		// that defines only that one operator is still orderable.
+		//
+		// An empty slot on either side answers 0. That is not "equal": a comparison against a value
+		// that was never produced has no answer, and the only caller (a Compare node) checks both
+		// inputs for emptiness before asking — an empty input suppresses it, as it does any node.
+		// Answering 0 rather than asserting keeps this a total function, as `at` and `size` are.
+		template <typename T>
+		int comparePortValues(const PortValue& lhs, const PortValue& rhs)
+		{
+			if (lhs.empty() || rhs.empty())
+				return 0;
+			const T& a = lhs.get<T>();
+			const T& b = rhs.get<T>();
+			if (a < b)
+				return -1;
+			return (b < a) ? 1 : 0;
+		}
+
 		// PortType::describe for a collection T. meta::toString has no arm for a vector, so it would
 		// fall back to the bare type name — which says nothing a pin's type label does not already
 		// say, and would be what the Inspector, the pin tooltips and the cli dump showed for EVERY
@@ -103,6 +133,27 @@ namespace lain::flow
 			result.set(std::move(gathered));
 			return result;
 		}
+
+		// The two OPTIONAL per-type bridges, selected at the one place a PortType is built. They are
+		// functions rather than `if constexpr` inside the aggregate because a null field and a filled
+		// one are the same expression here, so each capability is decided in exactly one place.
+		template <typename T>
+		constexpr PortValue (*defaultValueOf())()
+		{
+			if constexpr (std::is_default_constructible_v<T>)
+				return &defaultPortValue<T>;
+			else
+				return nullptr;
+		}
+
+		template <typename T>
+		constexpr int (*comparerOf())(const PortValue&, const PortValue&)
+		{
+			if constexpr (lain::meta::is_less_comparable_v<T>)
+				return &comparePortValues<T>;
+			else
+				return nullptr;
+		}
 	} // namespace detail
 
 	template <typename T>
@@ -117,6 +168,8 @@ namespace lain::flow
 				std::type_index(typeid(T)),
 				lain::meta::typeName<T>(),
 				&detail::describeCollection<T>,
+				detail::defaultValueOf<T>(),
+				detail::comparerOf<T>(),
 				&portType<lain::meta::vector_element_t<T>>(),
 				&detail::collectionSize<T>,
 				&detail::collectionAt<T>,
@@ -125,12 +178,14 @@ namespace lain::flow
 		}
 		else
 		{
-			// Not a collection: the four capability fields keep their null defaults, which is what
+			// Not a collection: the four collection fields keep their null defaults, which is what
 			// isCollection() reads.
 			static const PortType info{
 				std::type_index(typeid(T)),
 				lain::meta::typeName<T>(),
-				&detail::describePortValue<T>};
+				&detail::describePortValue<T>,
+				detail::defaultValueOf<T>(),
+				detail::comparerOf<T>()};
 			return info;
 		}
 	}

@@ -119,6 +119,31 @@ namespace lain::flow
 		// removed.
 		bool removePort(PortAddress port);
 
+		// Choose the type for node `id`'s payload type `name` (ADR-0022) — a *primitive*, and the
+		// ONLY writer of one. It REFUSES (returns false, changing nothing) for an unknown node, a
+		// payload type the node does not declare, a type the node does not accept, or — the reason
+		// it is a primitive at all — if any edge incident on a declaration this would retype would
+		// be left with ends whose types disagree.
+		//
+		// That last refusal is what makes the mechanism safe: connect() type-checks once and nothing
+		// re-checks afterwards (Scheduler::populateInputs copies a value into the slot blind), so a
+		// retype under a live edge would install a wrongly-typed payload and throw inside a worker
+		// task. The safe gesture edit::setPayloadType disconnects the offending edges first — exactly
+		// the split removePort already has.
+		//
+		// The refusal is spelled as "would this edge's ends still agree?" rather than "is this edge on
+		// a retyped port?", because that IS the invariant being kept. The two coincide today: connect()
+		// is the only thing that makes an edge and it type-checks, so an existing edge's other end
+		// always carries the port's CURRENT type, and a genuine retype therefore breaks every edge on
+		// every port it moves. Edges on this node's OTHER ports — a Gate's bool `enable`, a Compare's
+		// bool `result` — are untagged, never examined, and survive.
+		//
+		// `reset` (optional) collects the params whose value this cleared: a param's declared type
+		// changed, so its old value no longer belongs to it. Carrying one across is the gesture's
+		// job, since converting is a registry lookup and this layer decides no policy.
+		bool setPayloadType(NodeId id, const std::string& name, const PortType& type,
+							std::vector<PortId>* reset = nullptr);
+
 		// A directed edge: an output PortAddress feeding an input PortAddress. Addressed by
 		// stable PortId, never std::size_t, so it survives dynamic-port mutation.
 		struct Edge

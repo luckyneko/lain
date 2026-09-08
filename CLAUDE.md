@@ -626,6 +626,81 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-07 — M12 built (all four slices): a node's payload type is data
+
+M11's loop could not be driven from the GUI: `LoopNode`'s `index` is an `int`, `CompareNode`'s inputs
+were `float`, and `Graph::connect` type-checks exactly — with **no conversion anywhere in `flow`**.
+That is an instance of a wider gap: a node's payload type was baked into its **factory key**, so
+`ConstantNode<T>` cost one palette entry per type (five, against ten registered port types and
+growing), `Gate`/`Merge`/`Select` existed for `image::Image` alone, and a **Cast** is impossible in
+that model at any size — it needs one key per *pair*. Grilled 2026-09-07; decisions in
+**[ADR-0022](docs/adr/0022-payload-types-as-data.md)**, build order in WORK.md M12, vocabulary in
+CONTEXT.md's new *Payload type* section. **All four slices are built** — the mechanism + Constant,
+the conversion registry + Cast, the ordering capability + Compare, and the control nodes. `ctest`
+**724/724** Debug with video on (+27 from 697) and **698/698** Release in the default video-off
+configuration (+27 from 671); warning-clean, format-check clean, and `flowview --version` / `list` /
+`run` unchanged through the real binary. **gui-mode NOT eyeballed** — the Inspector's payload-type
+dropdown and the Issues row are new UI and need a Metal session, so M12 is NOT complete.
+
+**The blocker, resolved, is a test**: `a loop's own index drives its condition and its body` wires
+`index → Compare<Int> → continue` (no cast needed — slice 3) *and* `index → Cast(Int→Float) → sigma`
+(slice 2), through the production factory and the production retype gesture. It reports **4
+iterations against a bound of 100** — it stopped on the condition, which is what ADR-0021 built
+`iterations` to make readable — and the Cast is proved to feed the blur by cutting its edge and
+checking the fold produces a **different picture**, since every weaker assertion passes either way.
+
+- **A payload type is a `const PortType*` a node declares its ports and params FROM**, named because
+  one is not always enough (a Constant has `value`; a Cast will have `from` and `to`). It is the
+  flyweight and not a registry key, so a payload-typed node is still constructible with no registry
+  populated — which `libs/flow`'s own tests need; the key is only the on-disk form.
+- **It is emphatically NOT a param, and the reason is structural.** A `Node` cannot reach its
+  `Graph`, so it cannot disconnect its own edges — a retype can therefore never be `setParam`. Stored
+  as a param, the Inspector's generic loop would reach it and commit through the one writer that
+  cannot cut an edge; **nothing re-checks an edge after `connect`** (`populateInputs` copies into the
+  slot blind), so the failure would arrive as a `bad_any_cast` inside a worker task.
+- **Retyping is IN PLACE**, so `PortId`, name, order and presence survive — sabotage-verified:
+  remove-and-re-add draws fresh ids and **aborts** two cases. The writer is
+  `Graph::setPayloadType` (a primitive that REFUSES while an edge would be left with ends that
+  disagree) under `edit::setPayloadType` (the gesture that cuts exactly those and reports them) —
+  precisely the `removePort` split.
+- **Corrected during the build:** *"edges that still typecheck survive a retype"* describes a case
+  that cannot occur — `connect` is the only edge-maker and it type-checks, so a genuine retype breaks
+  every edge on every port it moves. What survives is edges on the node's **untagged** ports.
+- **Per-type behaviour followed ADR-0014's own split:** **ordering** is a new `PortType::compare`
+  field (derivable from `T`), **conversion** is a registry keyed by the type pair (a relation between
+  two types). So a Compare's accepted types will be *derived* from `isOrderable()`, not listed.
+- **`meta::is_less_comparable` asks a container about its ELEMENT** — found by the build: before
+  C++20 `std::vector`'s `operator<` is declared for every element type and fails only when
+  instantiated, so plain detection answered true for `std::vector<image::Image>`.
+- **The conversion registry landed here rather than in slice 2**, because `edit::setPayloadType` is
+  its first caller: a retype carries a param's value across through **the same conversion a Cast
+  will**. Deferring it would have shipped a retype that loses the number the user typed.
+- **No schema version bump**: one optional `types` section per node, and **absent means the factory's
+  preset stands**. The five keys `constant` replaced stay registered through `Factory`'s
+  **string-creator** form, which records no reverse type → key entry — load-bearing, since `keyOf`
+  maps one class to one key and the typed form would make a Float constant **save as `constInt`**.
+- **Six sabotages, all caught by named cases**; and a bug in one of the new tests, found by running
+  it, where the conversion menu was checked without the port types registered.
+- **An unconvertible Cast PAIR is representable, and the loader forced that.** Refusing one through
+  `acceptsPayloadType` is the shape this repo normally prefers and is wrong here: payload types are
+  applied **one at a time** on load, so a document saying `Path → String` would have its `from`
+  refused while `to` was still the factory preset, and come back as a different node than it was
+  saved as. So `canConvert()` answers the pair whole and the **Issues pane** reports it — the one
+  place the adapter asks a CLASS rather than a structural fact, because there is none to ask.
+- **A DYNAMIC pin has to be TAGGED as it arrives** (`Node::tagAs`, from `onDynamicPortAdded`). A
+  Merge's branches are added through the port-type registry, whose creator has a compile-time `T` and
+  knows nothing about payload types — without the tag a retype moves the declared `out` and leaves
+  every branch behind, so the node forwards nothing while looking correctly configured.
+  Sabotage-verified, and the whole reason Merge/Select were in scope.
+- **Presets keep every existing document loading unchanged**: Gate/Merge/Select preset `image::Image`
+  (what they were fixed to), Compare presets `Float`, Constant presets `Int`. None of them writes a
+  `types` section a v2 reader would choke on, and absent means the preset stands.
+- **Deviation, deliberate and recorded:** no generated per-pair palette entries (`Cast ▸ Int →
+  Float`). They want `NodeCategory` to carry a preset and three render sites to apply it — a refactor
+  for ergonomics, where the Inspector's two dropdowns already reach every pair in two clicks.
+- **Noted for its own commit:** `ctest -j8` fails ~7 io/io::video cases on shared scratch paths.
+  Pre-existing, unrelated, invisible serially (724/724 passes).
+
 ### Update 2026-09-05 — CI: lain builds and tests on Linux, macOS and Windows (**GREEN**)
 
 `lain` had **no CI at all**, and all 210 commits were built and verified on one macOS arm64 machine.

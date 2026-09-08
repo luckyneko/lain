@@ -196,6 +196,40 @@ namespace lain::flow
 		return true;
 	}
 
+	bool Graph::setPayloadType(NodeId id, const std::string& name, const PortType& type,
+							   std::vector<PortId>* reset)
+	{
+		if (!valid(id))
+			return false;
+
+		Node& target = node(id);
+		const std::vector<PortId> affected = target.declarationsOf(name);
+
+		// Refuse while any incident edge would be left with ends that disagree. Checked against the
+		// OTHER end's declared type, since this end is the one about to change; an edge whose other
+		// end already carries `type` survives the retype and is deliberately left alone.
+		for (const Edge& e : m_edges)
+		{
+			const bool touchesFrom = e.from.node == id && std::find(affected.begin(), affected.end(), e.from.port) != affected.end();
+			const bool touchesTo = e.to.node == id && std::find(affected.begin(), affected.end(), e.to.port) != affected.end();
+			if (!touchesFrom && !touchesTo)
+				continue;
+
+			const PortAddress other = touchesFrom ? e.to : e.from;
+			const Port* port = touchesFrom ? node(other.node).findInput(other.port)
+										   : node(other.node).findOutput(other.port);
+			if (port == nullptr || port->type() != type.index)
+				return false;
+		}
+
+		if (!target.retypePayload(name, type, reset))
+			return false;
+
+		// No bump() here: retypePayload bumps the node itself, and the edge set is unchanged (this
+		// refuses rather than dropping one), so the topo order still stands.
+		return true;
+	}
+
 	void Graph::rebuildTopoOrder()
 	{
 		// Kahn's algorithm over the id-keyed node set (ids aren't contiguous, so

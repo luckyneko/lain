@@ -10,11 +10,13 @@
 #include "imagesave.h"	 // renderImageSave
 
 #include <lain/flow/boundary.h> // GroupInputNode / GroupOutputNode (dynamic_cast)
+#include <lain/flow/edit.h>		// setPayloadType — the only safe way to change a node's type
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
 #include <lain/flow/param.h>
 #include <lain/flow/port.h>
+#include <lain/flow/porttyperegistry.h> // portTypeKeys / portTypeFor — what the dropdown offers
 #include <lain/flow/portvalue.h>
 #include <lain/gui/gui.h>
 #include <lain/image/image.h>
@@ -97,6 +99,63 @@ namespace flowview
 				{
 					writable->setName(std::move(nodeName));
 					renamed = true;
+				}
+
+				// PAYLOAD TYPES (ADR-0022): the types this node's ports and params are declared from,
+				// each a dropdown of the registered types the node accepts. A node with none — most
+				// of them — shows nothing here.
+				//
+				// It does NOT go through ParamEditors, and that is the whole point: a param editor
+				// commits with Node::setParam, which cannot disconnect an edge, and retyping a port
+				// under a live edge leaves ends that disagree. Nothing re-checks an edge after
+				// connect(), so that would surface as a bad_any_cast thrown inside a worker task.
+				// This commits through edit::setPayloadType, which cuts the edges that would break
+				// and reports them.
+				for (const flow::PayloadType& payload : node.payloadTypes())
+				{
+					// One payload type reads as "Type"; two or more are distinguished by their own
+					// names ("from", "to"), which is what they are there for.
+					const std::string label = node.payloadTypes().size() == 1 ? std::string{"Type"} : payload.name;
+					const std::string current = flow::portTypeKey(payload.type->index);
+
+					if (!gui::BeginCombo(label.c_str(), current.c_str()))
+						continue;
+					for (const std::string& key : flow::portTypeKeys())
+					{
+						const flow::PortType* option = flow::portTypeFor(key);
+						// Filtered by the NODE: a Compare offers only types that can be ordered, and
+						// asks the capability rather than carrying a list that could rot.
+						if (option == nullptr || !node.acceptsPayloadType(payload.name, *option))
+							continue;
+
+						const bool selected = option == payload.type;
+						if (gui::Selectable(key.c_str(), selected) && !selected && editableGraph != nullptr)
+						{
+							const flow::edit::RetypeResult result =
+								flow::edit::setPayloadType(*editableGraph, id, payload.name, option);
+							// Both outcomes are work the user did that the retype could not keep, so
+							// both are said out loud rather than left to be discovered.
+							if (!result.disconnected.empty())
+							{
+								ctx.noteMessage(Issue::Severity::Warning,
+												string::format("Retyped to {} - disconnected {} edge(s)", key,
+															   result.disconnected.size()));
+							}
+							if (!result.reset.empty())
+							{
+								std::string names;
+								for (const std::string& param : result.reset)
+									names += (names.empty() ? "" : ", ") + param;
+								ctx.noteMessage(Issue::Severity::Warning,
+												string::format("Retyped to {} - reset {} (no conversion)", key, names));
+							}
+							if (result.ok)
+								paramEdited = true; // re-runs the scene and marks the document dirty
+						}
+						if (selected)
+							gui::SetItemDefaultFocus();
+					}
+					gui::EndCombo();
 				}
 
 				// The params that back a DEFAULTED INPUT, and whether that input is currently wired.

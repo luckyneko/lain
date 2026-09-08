@@ -11,11 +11,13 @@
 #include <lain/flow/node.h>
 #include <lain/flow/nodes/merge.h>
 #include <lain/flow/nodes/select.h>
+#include <lain/flow/porttype.h>
 #include <lain/flow/porttyperegistry.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstddef>
+#include <functional>
 #include <string>
 
 using lain::core::Factory;
@@ -107,17 +109,17 @@ TEST_CASE("variadic Merge/Select round-trip: dynamic branches replay, the static
 	Factory<Node> factory;
 	factory.registerType<GroupInputNode>("groupInput");
 	factory.registerType<GroupOutputNode>("groupOutput");
-	factory.registerType<MergeNode<int>>("merge");
-	factory.registerType<SelectNode<int>>("select");
+	factory.registerType<MergeNode>("merge", std::cref(lain::flow::portType<int>()));
+	factory.registerType<SelectNode>("select", std::cref(lain::flow::portType<int>()));
 	const ValueCodecs codecs;
 
 	Graph graph;
-	const NodeId merge = graph.add<MergeNode<int>>();
-	const NodeId select = graph.add<SelectNode<int>>();
-	auto& mergeNode = static_cast<MergeNode<int>&>(graph.node(merge));
+	const NodeId merge = graph.add<MergeNode>(lain::flow::portType<int>());
+	const NodeId select = graph.add<SelectNode>(lain::flow::portType<int>());
+	auto& mergeNode = static_cast<MergeNode&>(graph.node(merge));
 	mergeNode.addDynamicPort<int>("a");
 	mergeNode.addDynamicPort<int>("b");
-	auto& selectNode = static_cast<SelectNode<int>&>(graph.node(select));
+	auto& selectNode = static_cast<SelectNode&>(graph.node(select));
 	selectNode.addDynamicPort<int>("x"); // one dynamic branch (the selector is a static input)
 
 	const Value doc = toValue(graph, factory, codecs);

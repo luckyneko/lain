@@ -16,8 +16,12 @@
 #include <lain/media/frameposition.h>
 #include <lain/media/frameref.h>
 #include <lain/media/framesequence.h>
+#include <lain/string/format.h> // format — a float's text form
 
+#include <exception>
 #include <filesystem>
+#include <optional>
+#include <string>
 
 // image::ColorRGBf's serialize() — defined in lain::image so ADL finds it. flowview owns this
 // because it names both the type (image) and the archive (data); lain::image itself stays data-free,
@@ -92,7 +96,78 @@ namespace flowview
 		// type on disk, which a map's stored interface needs.
 		flow::registerPortType<std::vector<image::Image>>("ListOfImage");
 		flow::registerPortType<std::vector<std::filesystem::path>>("ListOfPath");
+
+		registerSceneConversions();
 		io::data::registerDataCodecs(); // json (Value <-> bytes)
+	}
+
+	// Parse a whole `text` as T, or nothing. The STRICT parse clibinders.cpp already applies to a
+	// cli value: trailing junk ("12x") is not a number, because a graph quietly reading 12 out of a
+	// typo is worse than a Cast that produces nothing and says so. One policy, two callers.
+	template <typename T, typename Parse>
+	static std::optional<T> parseWhole(const std::string& text, Parse parse)
+	{
+		try
+		{
+			std::size_t used = 0;
+			const T value = parse(text, &used);
+			if (used != text.size())
+				return std::nullopt;
+			return value;
+		}
+		catch (const std::exception&)
+		{
+			return std::nullopt; // not a number at all, or out of range
+		}
+	}
+
+	void registerSceneConversions()
+	{
+		// What a CAST node may do (ADR-0022). Each entry is a POLICY, which is why they are spelled
+		// out per pair rather than offered for every pair the language happens to convert: `float ->
+		// int` truncates toward zero, and that is a decision, not a fact about the types.
+		//
+		// Nothing else reads this registry. `connect` type-checks exactly — a conversion is
+		// something a graph asks for by containing a node that does it, never something an edge
+		// performs on its behalf (ADR-0020's "no silent lossy conversion", arriving from the other
+		// side).
+
+		// The arithmetic pair, and the one that unblocked a loop: an `index` is an Int and every
+		// numeric setting downstream is a Float.
+		flow::registerConversion<int, float>();
+		// TRUNCATES toward zero (2.9 -> 2), which is C++'s own conversion and what a node called
+		// Cast should mean. Rounding is a different operation and belongs to a numeric node that
+		// says so, not to a param here whose meaning would exist for only some pairs.
+		flow::registerConversion<float, int>();
+
+		// To text: total, and useful for a label or a filename.
+		flow::registerConversion<int, std::string>(+[](const int& v) -> std::string
+												   { return std::to_string(v); });
+		flow::registerConversion<float, std::string>(+[](const float& v) -> std::string
+													 { return lain::string::format("{}", v); });
+		flow::registerConversion<bool, std::string>(+[](const bool& v) -> std::string
+													{ return v ? "true" : "false"; });
+
+		// From text: FALLIBLE — an unparseable string converts to nothing, which suppresses the Cast
+		// exactly as any node that produced no value does (ADR-0007).
+		flow::registerConversion<std::string, int>(+[](const std::string& v) -> std::optional<int>
+												   { return parseWhole<int>(v, [](const std::string& t, std::size_t* used)
+																			{ return std::stoi(t, used); }); });
+		flow::registerConversion<std::string, float>(+[](const std::string& v) -> std::optional<float>
+													 { return parseWhole<float>(v, [](const std::string& t, std::size_t* used)
+																				{ return std::stof(t, used); }); });
+
+		// A path IS text, in both directions and without loss — the one pair here that cannot fail.
+		flow::registerConversion<std::filesystem::path, std::string>(
+			+[](const std::filesystem::path& v) -> std::string
+			{ return v.string(); });
+		flow::registerConversion<std::string, std::filesystem::path>(
+			+[](const std::string& v) -> std::filesystem::path
+			{ return std::filesystem::path{v}; });
+
+		// Deliberately absent: bool <-> int. What `2 -> true` should mean is a decision nothing is
+		// asking for, and an absent conversion is a menu entry that never appears rather than a
+		// wrong answer nobody notices.
 	}
 
 	bool saveGraph(const std::string& uri, const flow::Graph& graph,

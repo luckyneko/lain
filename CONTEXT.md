@@ -109,6 +109,51 @@ never by driving a live GUI.
   papered over by a default. _Avoid_: "optional input with a fallback" (an Optional defaulted input
   would let a suppressed upstream reach `compute()` as an empty slot).
 
+## Payload type — a node's type as data
+
+*(M12 — [ADR-0022](docs/adr/0022-payload-types-as-data.md).)*
+
+- **Payload type** — a **named type a node declares its ports and params FROM**, chosen by whoever
+  authored the graph rather than fixed by the node's class, and stored with the document. A
+  `Constant` has one (`value`); a `Cast` has two (`from`, `to`); a `Gate`/`Merge`/`Select` has one.
+  The name says what the type is *for* on that node, which is why a node may have more than one.
+  What a node holds is a `const PortType*` — the flyweight, not a registry key — so a payload-typed
+  node is constructible with no registry populated; the key is only the **on-disk** form.
+  A declaration built from one is **tagged**, and a retype moves every tagged declaration **in
+  place**: the `PortId`, name, order and presence all survive.
+  _Avoid_: **type param** (a **Param** is a non-connectable value `compute()` reads, written through
+  `setParam` — this is emphatically not one, and cannot be, since a `Node` cannot reach its `Graph`
+  to drop the edges a retype breaks); **type slot** (a *slot* holds a value — `PortValue`,
+  `Evaluation::inputSlot`); **type binding** (*bind* is boundary binding, `Evaluation::bind`, the cli
+  binders); **type key** (that is the registry's *string*, `portTypeKey`); **generic node**
+  (*generic* reads as "template", which this deliberately is not).
+
+- **Retype** *(the gesture)* — changing a node's payload type. A **primitive**
+  (`Graph::setPayloadType`) that REFUSES while any incident edge would be left with ends that
+  disagree, under a **gesture** (`edit::setPayloadType`) that cuts those edges first and reports
+  them — the same split `Graph::removePort` / `edit::removePort` has, and for the same reason: only
+  the parent Graph can cut an edge. It reports **two** things a host must surface, because both are
+  work the user did that the retype could not keep: the edges cut, and the params whose value could
+  not be carried across.
+
+- **Value conversion** — how a value of one payload type becomes a value of another: an app-filled
+  registry keyed by the **pair** (`registerConversion<From, To>`). A registry rather than a
+  `PortType` field for the reason `listTypeFor` is one — a conversion is a relation *between* two
+  types, and nothing can enumerate the second where a `PortType` for the first is built. Read by the
+  **Cast** node, by a host's menus, and by a retype carrying a param's value across; **never by
+  `connect`**, which type-checks exactly. A conversion that cannot convert answers an **empty value**
+  — ordinary suppression (ADR-0007), not a separate error channel.
+
+- **Cast vs Convert** — keep these apart: **Convert** changes a value's representation *within* its
+  type (`ConvertNode`'s colour space and pixel format on an `Image`; `image::convert`); **Cast**
+  changes its **type**. _Avoid_: using either word for the other.
+
+- **Ordering capability** — `PortType::compare` (three-way), filled under `if constexpr` on
+  `meta::is_less_comparable_v<T>` exactly as the collection capability is filled from `is_vector_v`.
+  It is what lets a Compare node's accepted payload types be **derived** rather than listed. Note the
+  trait asks a **container about its element**: before C++20 `std::vector`'s `operator<` is declared
+  for every element type and fails only when instantiated.
+
 ## Payload-agnostic
 
 `flow` names no GPU/UI types. A **PortValue** is a type-erased slot carrying any

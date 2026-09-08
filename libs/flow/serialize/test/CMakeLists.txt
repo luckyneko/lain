@@ -9,6 +9,7 @@ add_executable(test-flow-serialize
 	test_map.cpp
 	test_loop.cpp
 	test_identity.cpp
+	test_payloadtype.cpp
 )
 
 target_compile_features(test-flow-serialize PRIVATE cxx_std_17)

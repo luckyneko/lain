@@ -25,6 +25,7 @@ add_executable(test-flow
 	test_incremental.cpp
 	test_conditional.cpp
 	test_controlnodes.cpp
+	test_payloadtype.cpp
 )
 
 target_compile_features(test-flow PRIVATE cxx_std_17)

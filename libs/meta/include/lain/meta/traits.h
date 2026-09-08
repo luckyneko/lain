@@ -103,4 +103,50 @@ namespace lain::meta
 	};
 	template <typename T>
 	inline constexpr bool is_variant_v = is_variant<T>::value;
+
+	// True when `a < b` compiles for two `const T&` and yields something a bool can be made of —
+	// T DECLARES an ordering. A detection primitive in the shape of has_to_string / has_ostream
+	// above, and like has_ostream it is for surgical use: what a generic algorithm actually needs is
+	// is_less_comparable below, because a declared `<` is not always an instantiable one.
+	//
+	// It asks only for `<`: the other three comparisons are that one with its arguments swapped or
+	// its answer negated, so requiring them separately would exclude a type for declaring less than
+	// it can actually do.
+	template <typename T, typename = void>
+	struct has_less : std::false_type
+	{
+	};
+
+	template <typename T>
+	struct has_less<T, std::void_t<decltype(static_cast<bool>(std::declval<const T&>() < std::declval<const T&>()))>>
+		: std::true_type
+	{
+	};
+
+	template <typename T>
+	inline constexpr bool has_less_v = has_less<T>::value;
+
+	// Whether values of T can actually BE ordered: `a < b` is declared *and* instantiable. Added
+	// here (rather than beside its consumer) for the reason this header states — a real consumer
+	// appeared: flow's PortType ordering capability (ADR-0022) is filled for exactly the types this
+	// answers true for, so a node that orders values need not enumerate them.
+	//
+	// A CONTAINER is asked about its ELEMENT, and that is the difference between right and wrong
+	// rather than a refinement. Before C++20 std::vector's operator< is declared for every element
+	// type and fails only when INSTANTIATED, so has_less answers true for std::vector<T> whatever T
+	// is, and the first real comparison is a hard error inside <algorithm> instead of a false here.
+	// (Any other std container whose comparison is declared unconditionally would want the same
+	// specialization; vector is the one lain carries as a payload.)
+	template <typename T>
+	struct is_less_comparable : has_less<T>
+	{
+	};
+
+	template <typename U, typename A>
+	struct is_less_comparable<std::vector<U, A>> : is_less_comparable<U>
+	{
+	};
+
+	template <typename T>
+	inline constexpr bool is_less_comparable_v = is_less_comparable<T>::value;
 } // namespace lain::meta

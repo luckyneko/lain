@@ -14,6 +14,7 @@ add_executable(test-flowview
 	test_sweep.cpp
 	test_valueviews.cpp
 	test_catalog.cpp
+	test_payloadscene.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/undo.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/groupnav.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/canvasids.cpp"

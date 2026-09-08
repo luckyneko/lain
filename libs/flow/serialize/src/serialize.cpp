@@ -193,6 +193,27 @@ namespace lain::flow::serialize
 		if (const data::Value::Array* arr = params.asArray(); arr && !arr->empty())
 			out.set("params", std::move(params));
 
+		// PAYLOAD TYPES (ADR-0022): the types this node's declarations are built from, as
+		// { <payload type name>: <port-type key> }. Written only for a node that HAS any — most
+		// nodes declare from a compile-time type and have nothing to record.
+		//
+		// Absent means "whatever the factory preset", exactly as an absent `params` means the
+		// declared defaults — which is what lets a document written before this existed load with
+		// its nodes unchanged, and is why the format needs no version bump.
+		if (const PayloadTypes& payloads = node.payloadTypes(); !payloads.empty())
+		{
+			data::Value types = data::Value::object();
+			for (const PayloadType& payload : payloads)
+			{
+				const std::string typeKey = portTypeKey(payload.type->index);
+				if (typeKey.empty())
+					continue; // an unregistered type has no stable name; the preset stands on load
+				types.set(payload.name, data::Value(typeKey));
+			}
+			if (const data::Value::Object* obj = types.asObject(); obj && !obj->empty())
+				out.set("types", std::move(types));
+		}
+
 		// Dynamic pins: a DynamicPortsNode's runtime pins (addDynamicPort) on its dynamic side, each
 		// { name, type } (type = its port-type key). Direction is implied by dynamicSide(), so it isn't
 		// stored. Only the pins added at runtime are replayed — a STATIC pin the node declares in its
@@ -990,6 +1011,46 @@ namespace lain::flow::serialize
 			{
 				if (const std::string* name = nameV->asString(); name && !name->empty())
 					created.setName(*name);
+			}
+
+			// PAYLOAD TYPES first, before any pin is replayed and before any param is read: the
+			// types decide what this node DECLARES, so a param's stored value is only acceptable
+			// once its declared type is the document's rather than the factory preset's.
+			//
+			// Through Graph::setPayloadType, the same primitive the authoring gesture goes through
+			// — one routine, two callers. Its no-mistyped-edge refusal is vacuous here (this
+			// level's edges are resolved further down, so the node has none yet), which is exactly
+			// why the loader may use it directly rather than needing a path of its own.
+			if (const data::Value* types = nodeV.find("types"))
+			{
+				if (const data::Value::Object* obj = types->asObject())
+				{
+					for (const auto& entryV : *obj)
+					{
+						const std::string* typeKey = entryV.second.asString();
+						if (typeKey == nullptr)
+						{
+							warn("payload type \"" + entryV.first + "\" is not a name — ignored");
+							continue;
+						}
+						const PortType* resolved = portTypeFor(*typeKey);
+						if (resolved == nullptr)
+						{
+							// Reported, not fatal: the node keeps its preset and loads with the
+							// wrong face, which its edges will then fail to resolve against and say
+							// so. Dropping the node would take its edges with it for a type this
+							// BUILD happens not to register.
+							warn("unknown port type \"" + *typeKey + "\" for payload type \"" + entryV.first +
+								 "\" on node \"" + created.name() + "\" — kept its default type");
+							continue;
+						}
+						if (!graph.setPayloadType(liveId, entryV.first, *resolved))
+						{
+							warn("node \"" + created.name() + "\" would not take port type \"" + *typeKey +
+								 "\" for payload type \"" + entryV.first + "\" — kept its default type");
+						}
+					}
+				}
 			}
 
 			// Replay dynamic pins BEFORE edges, so an edge addressing one resolves.

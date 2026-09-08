@@ -77,8 +77,7 @@ namespace flowview
 		const image::ColorRGBA8 container(62, 68, 112, 255); // groups: they CONTAIN a graph
 		style.addNodeColor("gradient", source);
 		style.addNodeColor("loadimage", source);
-		style.addNodeColor("constInt", source);
-		style.addNodeColor("constBool", source);
+		style.addNodeColor("constant", source);
 		style.addNodeColor("openSequence", source);
 		style.addNodeColor("tint", filter);
 		style.addNodeColor("blur", filter);
@@ -89,6 +88,7 @@ namespace flowview
 		style.addNodeColor("select", control);
 		style.addNodeColor("imageDifference", filter);
 		style.addNodeColor("compare", control);
+		style.addNodeColor("cast", control);
 		style.addNodeColor("groupInput", boundary);
 		style.addNodeColor("groupOutput", boundary);
 

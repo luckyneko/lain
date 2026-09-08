@@ -7,6 +7,7 @@
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
+#include <lain/flow/nodes/cast.h> // CastNode — an unconvertible pair is a row, not a silent empty
 #include <lain/flow/port.h>
 #include <lain/gui/color.h> // gui::packColor (image::ColorRGBA8 -> ImU32)
 #include <lain/gui/gui.h>
@@ -64,6 +65,26 @@ namespace flowview
 												   id));
 					}
 				}
+			}
+
+			// A CAST whose two payload types have no conversion between them. It produces nothing
+			// and suppresses everything downstream, and without this row the only symptom is an
+			// empty result — the same shape the map hole below is reported for.
+			//
+			// This one asks the CLASS, where the map below asks a structural fact
+			// (interiorEvaluation). There is no structural fact to ask: nothing in general says two
+			// of a node's payload types must be connected by a conversion, and inventing a virtual
+			// for one caller would be a seam with nothing behind it. The adapter already names every
+			// node kind — its factory, its palette, its canvas colours — so a cast here is not the
+			// layering break the same line would be in the scheduler.
+			if (const auto* cast = dynamic_cast<const flow::CastNode*>(&node); cast != nullptr && !cast->canConvert())
+			{
+				issues.push_back(Issue::at(Issue::Severity::Warning,
+										   string::format("{} [{}]: no conversion from {} to {} — it produces nothing",
+														  node.name(), label,
+														  cast->payloadType(flow::CastNode::kFromPayload)->name,
+														  cast->payloadType(flow::CastNode::kToPayload)->name),
+										   id));
 			}
 
 			// A MAP whose gather found a HOLE. One element producing nothing clears the WHOLE output

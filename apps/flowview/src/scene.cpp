@@ -16,12 +16,19 @@
 #include <lain/flow/example/tintnode.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/group.h>
-#include <lain/flow/nodes/constant.h> // ConstantNode — sources to drive the control nodes
+#include <lain/flow/nodes/cast.h>	  // CastNode — the conversion the graph authors
+#include <lain/flow/nodes/constant.h> // ConstantNode — the payload-typed source
 #include <lain/flow/nodes/gate.h>	  // control nodes over the scene payload (image::Image)
 #include <lain/flow/nodes/merge.h>
 #include <lain/flow/nodes/select.h>
+#include <lain/flow/porttype.h> // portType<T> — a payload type's flyweight
 #include <lain/flow/scheduler.h>
 #include <lain/image/image.h>
+
+#include <filesystem>
+#include <functional>
+#include <memory>
+#include <string>
 
 namespace flowview
 {
@@ -36,11 +43,14 @@ namespace flowview
 	static constexpr const char* kGateKey = "gate";
 	static constexpr const char* kMergeKey = "merge";
 	static constexpr const char* kSelectKey = "select";
-	static constexpr const char* kConstIntKey = "constInt";
-	static constexpr const char* kConstBoolKey = "constBool";
-	static constexpr const char* kConstFloatKey = "constFloat";
-	static constexpr const char* kConstPathKey = "constPath";
-	static constexpr const char* kConstStringKey = "constString";
+	// ONE Constant kind for every payload type (ADR-0022). It replaced constInt / constBool /
+	// constFloat / constPath / constString, which were five keys for one class template and grew
+	// with every port type the app registered — the type a Constant emits is now a payload type the
+	// document carries, chosen from the Inspector.
+	static constexpr const char* kConstantKey = "constant";
+	// The node the payload-type mechanism exists FOR (M12): a per-type Cast would need one key per
+	// PAIR, which is not viable at any number of types.
+	static constexpr const char* kCastKey = "cast";
 	static constexpr const char* kGroupInputKey = "groupInput";
 	static constexpr const char* kGroupOutputKey = "groupOutput";
 	static constexpr const char* kListDirKey = "listDir";
@@ -69,7 +79,7 @@ namespace flowview
 		// here: they're a one-each-per-graph fixture that comes with a New graph and is grown from the
 		// Interface panel, not added like an ordinary node.
 		static const std::vector<NodeCategory> catalog = {
-			{"Sources", {kGradientKey, kLoadImageKey, kListDirKey, kConstIntKey, kConstBoolKey, kConstFloatKey, kConstPathKey, kConstStringKey}},
+			{"Sources", {kGradientKey, kLoadImageKey, kListDirKey, kConstantKey}},
 			{"Filters", {kTintKey, kBlurKey, kCombineKey, kConvertKey, kImageDifferenceKey}},
 			// Footage. openSequence brings a folder of stills or a video file in as one sequence
 			// (medium-neutral — the opener seam decides which), frameAt is where it becomes pixels a
@@ -79,7 +89,10 @@ namespace flowview
 			{"Sequence", {kOpenSequenceKey, kFrameAtKey, kClipSequenceKey}},
 			// Compare sits with the control nodes rather than the filters: what it produces is a
 			// bool nothing looks at for its own sake — it gates, or it drives a loop's `continue`.
-			{"Control", {kGateKey, kMergeKey, kSelectKey, kCompareKey}},
+			// The graph's PLUMBING — what routes, tests and converts values, as opposed to what
+			// processes pictures. Gate/Merge/Select route, Compare tests, Cast converts; none of them
+			// produces a value anyone looks at for its own sake.
+			{"Control", {kGateKey, kMergeKey, kSelectKey, kCompareKey, kCastKey}},
 			// A group is added empty (its inner graph is born with its own boundary pair) and grown by
 			// descending into it, and a MAP the same way — the difference is only that a map's face is
 			// lifted, so its `files` input takes the whole collection its interior is written against
@@ -118,25 +131,49 @@ namespace flowview
 		factory.registerType<flow::example::FrameAtNode>(kFrameAtKey);
 		factory.registerType<flow::example::ClipSequenceNode>(kClipSequenceKey);
 
-		// Control nodes over the scene payload. Gate passes its image when enabled (else suppresses
-		// downstream); the variadic Merge/Select are empty at construction — the canvas ± grows their
-		// image branches (the "Image" port type, registered in registerSceneSerialization).
-		factory.registerType<flow::GateNode<image::Image>>(kGateKey);
-		factory.registerType<flow::MergeNode<image::Image>>(kMergeKey);
-		factory.registerType<flow::SelectNode<image::Image>>(kSelectKey);
+		// Control nodes, PRESET to the scene payload. Gate passes its value when enabled (else
+		// suppresses downstream); the variadic Merge/Select are empty at construction — the canvas ±
+		// grows their branches, filtered to whatever payload type the node currently carries.
+		//
+		// Image is the preset because it is what these were fixed to before M12, so every document
+		// written until now — which names no `types` section for them — loads exactly as it did.
+		// What is new is that a graph can now gate a float, merge bools or select between paths.
+		factory.registerType<flow::GateNode>(kGateKey, std::cref(flow::portType<image::Image>()));
+		factory.registerType<flow::MergeNode>(kMergeKey, std::cref(flow::portType<image::Image>()));
+		factory.registerType<flow::SelectNode>(kSelectKey, std::cref(flow::portType<image::Image>()));
 
-		// Scalar sources to drive the control nodes: a bool for a Gate's `enable`, an int for a
-		// Select's `selector`. Their value is a param the inspector edits (checkbox / drag).
-		factory.registerType<flow::ConstantNode<int>>(kConstIntKey);
-		factory.registerType<flow::ConstantNode<bool>>(kConstBoolKey);
+		// The one Constant. It drives whatever a graph needs a fixed value for — a Gate's bool
+		// `enable`, a Select's int `selector`, a Blur's float `sigma`, a ListDir's folder or
+		// extension filter — and which of those it is, is the payload type on the node rather than
+		// which of five keys was used to make it.
+		//
+		// Wiring one is how a SETTING becomes part of the graph (see flow::Default): drivable from a
+		// boundary input and visible on the canvas, instead of buried in a node's inspector.
+		//
+		// The preset is Int. A fresh Constant has to be something, and the Inspector's payload-type
+		// dropdown is one click away; an old document that names a type carries it in `types`.
+		factory.registerType<flow::ConstantNode>(kConstantKey, std::cref(flow::portType<int>()));
 
-		// Sources for the settings a node exposes as INPUTS rather than only params (see
-		// the input-default mechanism (flow::Default)): a folder for ListDir, an extension filter for it. Wiring one is how a
-		// setting becomes part of the graph — drivable from a boundary input, and visible on the
-		// canvas — instead of being buried in a node's inspector.
-		factory.registerType<flow::ConstantNode<float>>(kConstFloatKey); // drives a Blur's sigma
-		factory.registerType<flow::ConstantNode<std::filesystem::path>>(kConstPathKey);
-		factory.registerType<flow::ConstantNode<std::string>>(kConstStringKey);
+		// The five keys `constant` replaced, kept so documents written before it still open. They go
+		// in through the STRING-CREATOR form, which records no reverse type -> key entry: a Factory
+		// maps one class to exactly one key, so registering these the typed way would make keyOf
+		// answer whichever registered last, and a Float constant would SAVE as "constInt" carrying a
+		// `types` section that contradicts its own kind. Nothing ever saves under them; they are
+		// deletable whole once no document in the wild names one.
+		const auto legacyConstant = [](const flow::PortType& type)
+		{ return [&type]() -> std::unique_ptr<flow::Node>
+		  { return std::make_unique<flow::ConstantNode>(type); }; };
+		factory.registerType("constInt", legacyConstant(flow::portType<int>()));
+		factory.registerType("constBool", legacyConstant(flow::portType<bool>()));
+		factory.registerType("constFloat", legacyConstant(flow::portType<float>()));
+		factory.registerType("constPath", legacyConstant(flow::portType<std::filesystem::path>()));
+		factory.registerType("constString", legacyConstant(flow::portType<std::string>()));
+
+		// The Cast, preset Int -> Float: the pair that unblocked driving a float setting from a
+		// loop's int `index`, and the one a fresh Cast is most often wanted for. Both ends are
+		// payload types, changed from the Inspector.
+		factory.registerType<flow::CastNode>(kCastKey, std::cref(flow::portType<int>()),
+											 std::cref(flow::portType<float>()));
 
 		// The boundary nodes are added to the scene directly (not via the palette), but they must be
 		// in the factory too so serialization can name them (keyOf) and recreate them on load.

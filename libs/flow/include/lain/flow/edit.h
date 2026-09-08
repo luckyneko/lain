@@ -60,6 +60,43 @@ namespace lain::flow::edit
 	// the Graph::removePort primitive. Returns whether the port was removed.
 	bool removePort(Graph& graph, PortAddress port);
 
+	// What a setPayloadType gesture changed — the two things a host must SURFACE, because both are
+	// work the user did that the retype could not keep.
+	struct RetypeResult
+	{
+		bool ok = false; // whether the payload type was changed at all
+
+		// The edges cut because their ends would no longer agree, by their destination (an edge's
+		// stable identity). In practice that is every edge on every port the retype moves: connect()
+		// type-checks, so an existing edge's other end always carried the OLD type. Edges on the
+		// node's UNTAGGED ports (a Gate's bool `enable`) are never examined and survive.
+		std::vector<PortAddress> disconnected;
+
+		// The params whose value could not be carried across, by name — no conversion is registered
+		// from the old payload type to the new one, so they hold the new type's default instead.
+		// Names rather than ids for GroupSync::refused's reason: this is the outcome a user can act
+		// on, and acting needs to know which value went.
+		std::vector<std::string> reset;
+	};
+
+	// Choose the type for a node's payload type `name` (ADR-0022) — the GESTURE over the
+	// Graph::setPayloadType primitive, and the only safe way in.
+	//
+	// The primitive REFUSES while an incident edge would be left with ends that disagree, because
+	// nothing re-checks an edge after connect() and Scheduler::populateInputs copies into the slot
+	// blind. So this cuts those edges first and REPORTS them — a host
+	// must surface them, since they are wiring the user did that the retype could not keep. Same split as addPort / removePort: only the parent
+	// Graph can cut an edge, so only a gesture in this layer can make a retype safe.
+	//
+	// Each affected PARAM's value is carried across through the value-conversion registry where a
+	// conversion exists (a Constant's 5 becomes 5.0), and reset to the new type's default where none
+	// does — reported either way, so a number does not silently become 0. That is deliberately the
+	// SAME conversion a Cast node would perform, so the registry means one thing everywhere.
+	//
+	// `type` must be non-null. Returns a result whose `ok` is false, having changed nothing, when
+	// the node is unknown, declares no payload type by that name, or refuses the type.
+	RetypeResult setPayloadType(Graph& graph, NodeId node, const std::string& name, const PortType* type);
+
 	// What a syncGroupPorts pass changed. `disconnected` is the one a host must SURFACE: those are
 	// the parent's edges that a pin disappearing from the group's interface took with it.
 	struct GroupSync

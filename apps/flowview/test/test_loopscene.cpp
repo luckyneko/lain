@@ -25,6 +25,7 @@
 #include <lain/flow/boundary.h>
 #include <lain/flow/edit.h>
 #include <lain/flow/evaluation.h>
+#include <lain/flow/example/comparenode.h> // Comparison + the payload-type name the retype addresses
 #include <lain/flow/graph.h>
 #include <lain/flow/group.h>
 #include <lain/flow/param.h>
@@ -98,6 +99,22 @@ namespace
 		const Param* fallback = node.defaultOf(port);
 		REQUIRE(fallback != nullptr);
 		REQUIRE(node.setParam<T>(fallback->id(), std::move(value)));
+	}
+
+	// Set a param addressed by NAME — `b`'s Default declares a param of its own first, so a
+	// positional handle would find the wrong one (M6 step 2's trap).
+	template <typename T>
+	void setParamNamed(Node& node, const std::string& name, T value)
+	{
+		for (std::size_t i = 0; i < node.paramCount(); ++i)
+		{
+			if (node.param(i).name() == name)
+			{
+				REQUIRE(node.setParam<T>(node.param(i).id(), std::move(value)));
+				return;
+			}
+		}
+		FAIL("no param named " + name);
 	}
 
 	Connection wire(Graph& g, NodeId from, PortId fromPin, NodeId to, PortId toPin)
@@ -362,5 +379,69 @@ TEST_CASE("both loop scenes survive save and load and fold the same", "[flowview
 		const std::filesystem::path again = dir / ("again-" + c.file);
 		REQUIRE(flowview::saveGraph(again.string(), loaded.graph, factory));
 		REQUIRE(readAll(document) == readAll(again));
+	}
+}
+
+TEST_CASE("a loop's own index drives its condition and its body", "[flowview][loop][payload]")
+{
+	// THE blocker M12 exists for: a loop's `index` is an `int`, and before payload types the only
+	// Compare in the tree took floats — so a while loop could not be conditioned on its own index
+	// from the GUI at all. Here it is, twice over:
+	//
+	//   index -> Compare<Int> -> continue     the condition, needing NO cast (slice 3)
+	//   index -> Cast(Int -> Float) -> sigma  the body, needing one (slice 2)
+	//
+	// Both through the production factory and the production retype gesture.
+	const Factory<Node> factory = sceneFactory();
+	Scene scene = buildFoldScene(factory, 100); // a bound the condition is expected to stop short of
+	Graph& inner = scene.inner();
+	const PortId indexPin = scene.loop().indexPin();
+
+	// --- the condition: index < 3, over Int ------------------------------------------------
+	const NodeId compare = inner.add(factory.create("compare"));
+	// The factory's preset is Float (what every document written before this carried). Retyping it
+	// goes through the same gesture the Inspector's dropdown uses.
+	const edit::RetypeResult retyped =
+		edit::setPayloadType(inner, compare, example::CompareNode::kValuePayload, &portType<int>());
+	REQUIRE(retyped.ok);
+	CHECK(retyped.disconnected.empty()); // nothing wired yet, so nothing to cut
+	CHECK(inner.node(compare).input(0).type() == typeid(int));
+
+	REQUIRE(wire(inner, inner.boundaryInputNode().id(), indexPin, compare, in0(inner, compare)) == Connection::Ok);
+	setDefault<int>(inner.node(compare), inner.node(compare).input(1).id(), 3);
+	setParamNamed<example::Comparison>(inner.node(compare), "op", example::Comparison::Less);
+	REQUIRE(wire(inner, compare, out0(inner, compare), inner.boundaryOutputNode().id(), scene.loop().continuePin()) ==
+			Connection::Ok);
+
+	// --- the body: sigma grows with the index, through a Cast -------------------------------
+	const NodeId cast = inner.add(factory.create("cast")); // preset Int -> Float
+	REQUIRE(wire(inner, inner.boundaryInputNode().id(), indexPin, cast, in0(inner, cast)) == Connection::Ok);
+	const PortId sigma = portNamed(inner.node(scene.blur), Port::Direction::Input, "sigma");
+	REQUIRE(sigma != PortId{});
+	REQUIRE(wire(inner, cast, out0(inner, cast), scene.blur, sigma) == Connection::Ok);
+
+	Evaluation evaluation{scene.graph};
+	SerialScheduler{}.run(scene.graph, evaluation);
+
+	// It stopped on the CONDITION, not on the bound of 100 — which is the fact ADR-0021 built
+	// `iterations` to make readable.
+	// FOUR, not 100: it stopped on the CONDITION, which is exactly the fact ADR-0021 built
+	// `iterations` to make readable. The index runs 0, 1, 2, 3 and `3 < 3` is what ends it, so the
+	// iteration at index 3 is the last one that ran.
+	const int ran = boundaryInt(scene.graph, evaluation, "iterations");
+	CHECK(ran == 4);
+	const Image& result = boundaryImage(scene.graph, evaluation, "result");
+	CHECK(result.width() > 0);
+
+	SECTION("the cast really feeds the blur")
+	{
+		// Sabotage-shaped: with the cast's edge cut, sigma falls back to its default and the fold
+		// produces a DIFFERENT picture. Every weaker assertion above passes either way.
+		Image withCast = result; // a copy, since the second run rebinds the slot it came from
+
+		REQUIRE(inner.disconnect(PortAddress{scene.blur, sigma}));
+		Evaluation fresh{scene.graph};
+		SerialScheduler{}.run(scene.graph, fresh);
+		CHECK_FALSE(sameBytes(withCast, boundaryImage(scene.graph, fresh, "result")));
 	}
 }

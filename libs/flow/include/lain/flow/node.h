@@ -57,6 +57,23 @@ namespace lain::flow
 		const std::map<PortId, PortId>* carries = nullptr;
 	};
 
+	// One of a node's named PAYLOAD TYPES (ADR-0022): a type some of its declarations are built
+	// FROM, chosen by whoever authored the graph rather than fixed by the node's class. A Constant
+	// has one ("value"); a Cast has two ("from" and "to"); a Gate/Merge/Select has one.
+	//
+	// The name says what the type is FOR on this node, which is why a node may have more than one.
+	// It is NOT a param: a param is a value compute() reads, written through setParam — this decides
+	// what the node DECLARES, and changing it can invalidate edges, which only a Graph can drop. So
+	// the writer is Graph::setPayloadType (the primitive) reached through edit::setPayloadType (the
+	// gesture); see node.h's private retypePayload and CONTEXT.md's "payload type".
+	struct PayloadType
+	{
+		std::string name;	  // what this type is for on this node ("value", "from", "to")
+		const PortType* type; // the type itself — a shared flyweight, never null
+	};
+
+	using PayloadTypes = std::vector<PayloadType>;
+
 	// Abstract base for a graph node — a DEFINITION: what it is, what ports and params it declares,
 	// what it computes. It holds no runtime state at all; values and bookkeeping live in an
 	// Evaluation (ADR-0012).
@@ -236,6 +253,35 @@ namespace lain::flow
 		// nothing in the execution layer names a node kind.
 		virtual std::optional<IterationPorts> iterationPorts() const { return std::nullopt; }
 
+		// This node's named PAYLOAD TYPES (see PayloadType above), in declaration order — EMPTY for
+		// most nodes, which declare their ports from a compile-time T and have nothing to choose.
+		//
+		// A plain accessor rather than the nullable virtual the other structural seams use: the
+		// declarations these types build are this node's, so the tagging has to live here anyway —
+		// and a virtual answering a fact Node already holds would be a second source able to
+		// disagree with the first, which is the shape M7 slice 1 and ADR-0014 each deleted.
+		const PayloadTypes& payloadTypes() const { return m_payloadTypes; }
+
+		// The type currently chosen for the payload type `name`, or nullptr if this node has none by
+		// that name. What an adapter reads to show the current selection.
+		const PortType* payloadType(const std::string& name) const;
+
+		// The declarations — ports and params alike — built from payload type `name`: exactly what
+		// a retype would move. A read, like defaultOf and hasPortNamed, and public for the same
+		// reason: both writers of a retype are outside this class, and each must know what a retype
+		// would touch BEFORE performing one. There is no answer to that question afterwards,
+		// because nothing re-checks an edge once connect() has passed it.
+		std::vector<PortId> declarationsOf(const std::string& name) const;
+
+		// Whether this node accepts `type` for its payload type `name` — the filter behind a host's
+		// dropdown, and the refusal Graph::setPayloadType enforces so a document cannot install a
+		// type the node cannot work with.
+		//
+		// Accepts anything by default. A node that needs a CAPABILITY overrides and asks for it
+		// (a Compare requires PortType::isOrderable), which is what keeps its accepted set derived
+		// from what the type can do rather than listed and left to rot.
+		virtual bool acceptsPayloadType(const std::string& /*name*/, const PortType& /*type*/) const { return true; }
+
 		// (Readiness — "every REQUIRED input carries a value", ADR-0007 — followed the values into
 		// the Evaluation: `evaluation.ready(id)` for a host, `nodeEvaluation.ready()` inside compute.
 		// It is a join of declaration and runtime, so it belongs to the side that owns the values.)
@@ -300,6 +346,35 @@ namespace lain::flow
 		template <typename T>
 		PortId addParam(std::string name, T defaultValue);
 
+		// --- declaring FROM a payload type (ADR-0022) ------------------------------------------
+		// Declare a named payload type, seeded with `initial` — the type this node's declarations
+		// start out built from, and the one an old document with no `types` section keeps.
+		void addPayloadType(std::string name, const PortType& initial);
+
+		// Declare a port / param whose type IS the payload type `payload`, and TAG it so a later
+		// retype moves it. Same asserts and same id minting as the plain declarations; the type
+		// comes from the payload type rather than from a compile-time T.
+		//
+		// A tagged declaration is retyped IN PLACE (its PortId, name, order and presence all
+		// survive), which is what lets an edge that still typechecks survive a retype too.
+		PortId addInputOf(const std::string& payload, std::string name, Presence presence = Presence::Required);
+		PortId addOutputOf(const std::string& payload, std::string name);
+		PortId addParamOf(const std::string& payload, std::string name);
+
+		// Record that a declaration this node ALREADY made is built from payload type `payload`, so a
+		// retype moves it too. For a pin the node did not declare itself: a DYNAMIC branch, added
+		// through the port-type registry's creator (which has a compile-time T and no idea this node
+		// has payload types at all). A Merge tags each branch in onDynamicPortAdded.
+		//
+		// Ignores a declaration whose type is not the payload type's — a mistyped pin is not made
+		// less mistyped by pretending a retype owns it.
+		void tagAs(PortId declaration, const std::string& payload);
+
+		// A defaulted input declared from a payload type — the type-erased twin of
+		// addInput<T>(name, Default{...}), seeded from the payload type's own default value. Both
+		// halves are tagged, so a retype moves the port and the param behind it together.
+		PortId addDefaultedInputOf(const std::string& payload, std::string name);
+
 	private:
 		friend class Graph; // assigns the id when the node is added, removes ports, and bumps versions
 
@@ -350,6 +425,25 @@ namespace lain::flow
 		template <typename D>
 		static D* checked(D* declared);
 
+		// The index of the payload type `name` in m_payloadTypes, asserted to exist — a node
+		// declares from its own payload types, so naming one it never declared is an author bug.
+		std::size_t payloadIndex(const std::string& name) const;
+
+		// Retype every declaration built from the payload type `name`, in place. Graph-only, and
+		// that is the whole safety of the mechanism: retyping a port can leave an edge whose ends
+		// disagree, nothing re-checks an edge after connect(), and a Node cannot reach its Graph to
+		// drop one — so Graph::setPayloadType enforces the no-mistyped-edge invariant BEFORE calling
+		// this, exactly as it enforces no-dangling-edge before Node::removePort.
+		//
+		// Returns false, changing nothing, when this node has no payload type by that name or
+		// refuses `type` (acceptsPayloadType). Retyping to the type already chosen is a no-op that
+		// succeeds and bumps no version.
+		//
+		// Every tagged PARAM is reset to `type`'s default value (empty if it has none) and named in
+		// `reset`, if given. Carrying a value across is not this level's business: a conversion is a
+		// registry lookup, and the gesture that owns the reporting owns that too.
+		bool retypePayload(const std::string& name, const PortType& type, std::vector<PortId>* reset = nullptr);
+
 		// input PortId -> the PortId of the param holding its default. Empty for most nodes.
 		std::map<PortId, PortId> m_defaults;
 
@@ -360,6 +454,8 @@ namespace lain::flow
 		std::vector<Port> m_inputs;
 		std::vector<Port> m_outputs;
 		std::vector<Param> m_params;
+		PayloadTypes m_payloadTypes;			   // named types this node's declarations are built from
+		std::map<PortId, std::size_t> m_payloadOf; // declaration id -> index into m_payloadTypes
 		// Starts at 1, not 0: a freshly prepared Evaluation records `computedAt = 0`, so a node is
 		// stale until something actually computes it.
 		std::uint64_t m_version = 1;

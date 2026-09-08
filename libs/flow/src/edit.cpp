@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -114,6 +115,85 @@ namespace lain::flow::edit
 			graph.disconnect(input);
 
 		return graph.removePort(port);
+	}
+
+	RetypeResult setPayloadType(Graph& graph, NodeId node, const std::string& name, const PortType* type)
+	{
+		RetypeResult result;
+		if (type == nullptr || !graph.contains(node))
+			return result;
+
+		const Node& target = graph.node(node);
+		const PortType* current = target.payloadType(name);
+		if (current == nullptr || !target.acceptsPayloadType(name, *type))
+			return result;
+		if (current == type)
+		{
+			// Already this type. Reported as done rather than refused: a host that re-selects the
+			// current entry has asked for a state the graph is already in.
+			result.ok = true;
+			return result;
+		}
+
+		// The values to carry, read BEFORE the retype clears them. Kept by name, because the param
+		// is what a report must name and the id is only how we get back to it.
+		const std::vector<PortId> affected = target.declarationsOf(name);
+		std::map<PortId, PortValue> carried;
+		for (const PortId id : affected)
+		{
+			if (const Param* param = target.findParam(id))
+				carried[id] = param->value();
+		}
+
+		// Cut the edges whose ends would stop agreeing — the SAME predicate the primitive refuses on,
+		// so this cuts exactly what it would refuse for and nothing more. That is every edge on a
+		// retyped port (connect() type-checks, so the other end held the old type) and nothing on this
+		// node's untagged ports. Collected first, since disconnecting shifts the edge list.
+		for (const Graph::Edge& e : graph.edges())
+		{
+			const bool touchesFrom = e.from.node == node && std::find(affected.begin(), affected.end(), e.from.port) != affected.end();
+			const bool touchesTo = e.to.node == node && std::find(affected.begin(), affected.end(), e.to.port) != affected.end();
+			if (!touchesFrom && !touchesTo)
+				continue;
+
+			const PortAddress other = touchesFrom ? e.to : e.from;
+			const Port* port = touchesFrom ? graph.node(other.node).findInput(other.port)
+										   : graph.node(other.node).findOutput(other.port);
+			if (port == nullptr || port->type() != type->index)
+				result.disconnected.push_back(e.to);
+		}
+		for (const PortAddress& input : result.disconnected)
+			graph.disconnect(input);
+
+		std::vector<PortId> reset;
+		if (!graph.setPayloadType(node, name, *type, &reset))
+		{
+			// The primitive refused after we cut edges for it, which can only mean the node's own
+			// refusal changed underneath us — nothing here can put those edges back, so say so
+			// rather than reporting a success that did not happen.
+			return result;
+		}
+
+		// Carry each param's old value across where the registry knows how. What converts is
+		// committed through setParam, so the node type-checks it against its NEW declared type; what
+		// does not is left at the default the retype seeded and reported by name.
+		Node& writable = graph.node(node);
+		for (const PortId id : reset)
+		{
+			const Param* param = writable.findParam(id);
+			if (param == nullptr)
+				continue;
+
+			const auto it = carried.find(id);
+			PortValue converted = (it == carried.end()) ? PortValue{} : convertValue(it->second, *type);
+			if (!converted.empty() && writable.setParam(id, std::move(converted)))
+				continue;
+
+			result.reset.push_back(param->name());
+		}
+
+		result.ok = true;
+		return result;
 	}
 
 	// How many parent edges touch `port` — what a removal is about to cut. Reported so a host can

@@ -170,7 +170,7 @@ TEST_CASE("FrameAt decodes the frame its position names", "[flow][sequence]")
 
 	SECTION("a wired position overrides the default")
 	{
-		const NodeId position = graph.add<ConstantNode<media::FramePosition>>();
+		const NodeId position = graph.add<ConstantNode>(flow::portType<media::FramePosition>());
 		Node& node = graph.node(position);
 		REQUIRE(node.setParam(node.param(0).id(), media::FramePosition{2}));
 		REQUIRE(graph.connect(position, 0, at, 1) == Connection::Ok);
@@ -183,7 +183,7 @@ TEST_CASE("FrameAt decodes the frame its position names", "[flow][sequence]")
 
 	SECTION("a position past the end yields an invalid image, not a cleared output")
 	{
-		const NodeId position = graph.add<ConstantNode<media::FramePosition>>();
+		const NodeId position = graph.add<ConstantNode>(flow::portType<media::FramePosition>());
 		Node& node = graph.node(position);
 		REQUIRE(node.setParam(node.param(0).id(), media::FramePosition{99}));
 		REQUIRE(graph.connect(position, 0, at, 1) == Connection::Ok);
