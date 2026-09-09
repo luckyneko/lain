@@ -488,7 +488,9 @@ user could write, which is the compiled-linked-unreachable shape this file has c
 `ctest` **697/697** Debug with video on (+7) and **671/671** Release in the default video-off
 configuration (+7) — both baselines grown by exactly the seven new cases; warning-clean, format-check
 clean, `[loop]` swept 100× on the parallel path. **gui-mode was eyeballed by the repo owner on
-2026-09-07 and found issues** — untriaged at the time of writing, so slice 6 and M11 are NOT complete.
+2026-09-07 and found issues** — untriaged at the time of writing. *(**Superseded** — triaged in the
+2026-09-08 pass: one crash (M12's stale-value `bad_any_cast`) and one documentation gap (a loop is a
+do-while). **Slice 6 and M11 are COMPLETE as of 2026-09-08** — see the 2026-09-08 update below.)*
 Full landing notes in WORK.md M11.
 
 - **Both verticals run through the REAL binary.** `flowview run --graph count-loop.json` folds a
@@ -702,7 +704,9 @@ the conversion registry + Cast, the ordering capability + Compare, and the contr
 **727/727** Debug with video on (+30 from 697) and **701/701** Release in the default video-off
 configuration (+30 from 671); warning-clean, format-check clean, and `flowview --version` / `list` /
 `run` unchanged through the real binary. **gui-mode NOT eyeballed** — the Inspector's payload-type
-dropdown and the Issues row are new UI and need a Metal session, so M12 is NOT complete.
+dropdown and the Issues row are new UI and need a Metal session. *(**Superseded** — eyeballed
+2026-09-08; it found the stale-value crash recorded at the end of this entry, and nothing else.
+**M12 is COMPLETE as of 2026-09-08** — see the 2026-09-08 update above.)*
 
 **The blocker, resolved, is a test**: `a loop's own index drives its condition and its body` wires
 `index → Compare<Int> → continue` (no cast needed — slice 3) *and* `index → Cast(Int→Float) → sigma`
@@ -1132,8 +1136,10 @@ distribution M5 saw, and the reason that surface is driven rather than assumed.
   does not extend to it. Reconciled on load by the rectification pass linked groups already use.
 - **Accepted costs, all named in the ADR:** per-element incrementality is unavailable (any change
   rebuilds the whole vector, so all N children recompute), child state is retained per element, and
-  the gather copies. The escape from the first two is the `Collection` payload behind the same
-  `size`/`at`/`gather` interface — which is why that seam is an interface rather than a type.
+  the gather copies. The escape from the **first and the third** is the `Collection` payload behind
+  the same `size`/`at`/`gather` interface — which is why that seam is an interface rather than a
+  type. (Retention is untouched by it: that is N retained child evaluations of computed interior
+  values, unrelated to how the input collection is stored.)
 - Six slices, the two structural refactors landing as **no-behaviour-change** commits before the map
   exists: (1) the `PortType` capability, (2) staged planning with zero frontiers, (3) N children per
   node, (4) `MapNode` + the map steps, (5) serialization, (6) flowview + the example nodes.
@@ -1277,7 +1283,9 @@ format-check clean.
   masked it by dirtying everything or running once. Now requested explicitly, with a regression test
   at that exact shape.
 
-**Slice 6c is built (2026-08-14) — gui-mode NOT eyeballed, no Metal in this sandbox.** `ctest`
+**Slice 6c is built (2026-08-14) — gui-mode NOT eyeballed, no Metal in this sandbox.**
+*(**Superseded** — that eyeball happened; see "Live-verified 2026-08-15" at the end of this entry,
+after which no gui-mode work was outstanding for M8.)* `ctest`
 **466/466** (+2), warning-clean, format-check clean, both headless paths unchanged.
 - **Found first, and it would have made `Add ▸ Map` useless:** `resolveEditable` and `syncPathGroups`
   both `dynamic_cast<InlineGroupNode*>` to mean "owns a mutable interior". A map owns one but is not

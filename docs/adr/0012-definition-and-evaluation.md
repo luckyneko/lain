@@ -292,17 +292,27 @@ imagined requirements.
 > replaces the termination argument ADR-0014 got from "a map is deferred at most once". All four
 > questions here are now answered.
 
-- Whether a map's child index is positional or something stabler. If the input collection reorders
-  between runs, *"element 3"* follows the position, not the stream, and a pinned preview quietly
-  changes subject.
+- ~~Whether a map's child index is positional or something stabler.~~ **Settled by ADR-0014: it is
+  positional**, because position is the only identity a `std::vector` has. The cost this bullet
+  predicted is real and accepted — if the input collection reorders between runs, *"element 3"*
+  follows the position, not the stream, and a pinned preview quietly changes subject. A stabler key
+  stays deferred there as *keyed elements*.
 - ~~Whether Loop carries state between iterations or starts clean.~~ **Settled by ADR-0021: it
   carries**, through paired inner boundary pins. A count loop with no carry would just be a map over a
   range, so the carry is the whole reason the node kind exists.
-- How suppression (ADR-0007) crosses a map — does an unready element suppress the whole map or just
-  its own child?
-- How the execution plan (ADR-0009) lowers a map: N children expanded into one flat plan, or a
-  nested-but-joined shape — **and with it, where a map prepares its children.** These are one
-  question, not two: a map's arity comes from a collection computed *during* the run, so its child
+- ~~How suppression (ADR-0007) crosses a map — does an unready element suppress the whole map or just
+  its own child?~~ **Settled by ADR-0014: the whole map.** A `std::vector<T>` has no hole, and
+  gathering only the survivors would silently break the positional correspondence between the input
+  and output lists. `N == 0` is deliberately not that case: an empty collection in yields an empty
+  vector out, which is a value.
+- ~~How the execution plan (ADR-0009) lowers a map: N children expanded into one flat plan, or a
+  nested-but-joined shape — **and with it, where a map prepares its children.**~~ **Settled by
+  ADR-0014: the scheduler plans in STAGES.** `expand()` refuses to descend into a map of unknown
+  arity, and the run loops plan → execute → prepare → plan again; each stage is still one flat DAG,
+  so ADR-0009's flattening holds and no substrate surface is added. The invariant this bullet
+  insisted on survives intact — **the second coordinator point is the gap between stages**, on the
+  coordinator thread. The original framing follows, and it was right that these are one question,
+  not two: a map's arity comes from a collection computed *during* the run, so its child
   Evaluations cannot exist when the plan is built. Whatever shape the plan takes decides where the
   second coordinator point sits. The invariant that must survive either answer is the one stated
   above — a coordinator grows evaluation storage, never a worker task.

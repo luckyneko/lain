@@ -86,9 +86,13 @@ capability is an interface, so the cheaper payload can arrive behind it later wi
 **Position is the only identity a vector has.** A value-derived key would keep a reordered list
 incremental and a pinned preview on its subject, but it needs a per-type `key()` capability that is
 unimplementable for the very type the first vertical maps over — a path has a natural key, an image
-does not, and hashing pixels to identify a frame is absurd. An explicit parallel key input would work
-and is what the video workload will probably want; building it now means inventing rules for
-mismatched lengths, duplicate keys and empty keys that nothing is asking for.
+does not, and hashing pixels to identify a frame is absurd. An explicit parallel key input would work;
+building it now means inventing rules for mismatched lengths, duplicate keys and empty keys that
+nothing is asking for. *(**Amended 2026-09-09.** This said the parallel key input "is what the video
+workload will probably want". That prediction is falsified:
+[ADR-0018](0018-frame-sequences-and-host-driven-rendering.md) routed video **around** the map
+altogether — a render is a host-owned fold over frame positions, not a map over frames — so the
+workload that was expected to force this never asks the question.)*
 
 **The mode belongs in the port type because a remembered bool is what M7 deleted.** A per-pin
 split/broadcast flag can disagree with the port it describes, gives `edit::syncGroupPorts` a third
@@ -175,9 +179,19 @@ type is the mode.
   semantics. The one real cost — plumbing a map's boundary to the link's face by hand — is a
   **gesture, not a class** (WORK.md's Tier A *"Map over selection"*). The same reasoning retires the
   linked loop ([ADR-0021](0021-loop-nodes-carried-state-per-iteration-staging.md)).
-- **The `Collection` payload.** Named here as the escape from the two costs above, but not built: it
-  buys nothing the first vertical can measure.
-- **Keyed elements.** The parallel key input, for when "stream 3" must survive a reorder.
+- **The `Collection` payload.** Named here as the escape from two of the costs above — per-element
+  incrementality and the gather copies, not the per-element retention — but not built: it buys
+  nothing the first vertical can measure. *(**Amended 2026-09-09.**
+  [ADR-0018](0018-frame-sequences-and-host-driven-rendering.md) describes itself as *discharging*
+  this question, which is accurate and worth reading precisely: it answers it **outside the map**,
+  by making a render a host-owned fold over frame positions rather than a map over frames. The
+  question is answered; the type is still not built, and the capability remains an interface so one
+  could arrive behind it without touching a node.)*
+- **Keyed elements.** The parallel key input, for when "stream 3" must survive a reorder. It is
+  **downstream of the `Collection` payload above**, which is worth stating because it is the reason
+  not to build it first: without per-element incrementality a stable key saves no recompute (any
+  edit already rebuilds the whole vector and recomputes all N), so only the second half of what a key
+  buys — a pinned preview staying on its subject — is achievable today.
 - **A cli binder for a collection boundary input.** `BoundaryBinders` maps one string to one
   `PortValue`; binding `--files a.png b.png c.png` needs a multi-value arm. Not needed by the first
   vertical, whose list is built in-graph by `listDir`.

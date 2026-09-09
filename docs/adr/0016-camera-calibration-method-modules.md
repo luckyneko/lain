@@ -175,4 +175,7 @@ request from an `Evaluation` and publishes the corresponding report; they do not
 solver state on the node. Reports and sequence handles travel as shared immutable `PortValue`
 payloads. The current vector-backed `MapNode` may help compact in-memory workloads, but production
 video calibration does not materialize a `std::vector<image::Image>`; it retains the finite, lazy
-`FrameSequence` seam whose loader design is deferred to its own session.
+`FrameSequence` seam whose loader design is deferred to its own session. *(**That session happened:**
+Milestone 10, decided in [ADR-0018](0018-frame-sequences-and-host-driven-rendering.md) and built
+2026-08-31 → 09-04. A sequence is a list of frame references over sources, lazily decoded; the host
+owns the frame loop, so a render is a fold rather than a map.)*

@@ -969,11 +969,11 @@ and the pack happens only at the imnodes boundary. What remains is the *typed su
 still a bare `namespace nodes = ImNodes;`, and `panes/graphpane.cpp` still names `ImNodesCol_*` (lines
 ~219–232), `ImNodesPinShape*` (~261, ~278), and `ImNodesAttributeFlags_*` (~254) directly.
 
-## Milestone 5 — group nodes / subgraphs (grilled 2026-07-29)
+## Milestone 5 — group nodes / subgraphs (grilled 2026-07-29, **COMPLETE** 2026-08-11)
 
-A **group node** contains its own graph and exposes selected inner ports as its own, through the
-*same* boundary mechanism the top-level graph uses — "the top-level Graph is the outermost group",
-made real. Two kinds: an **inline group** (recipe stored in the parent document, editable in place)
+**All six slices built and live-verified.** A **group node** contains its own graph and exposes
+selected inner ports as its own, through the *same* boundary mechanism the top-level graph uses —
+"the top-level Graph is the outermost group", made real. Two kinds: an **inline group** (recipe stored in the parent document, editable in place)
 and a **linked group** (recipe in an external **template** document, read-only in place, rebuilt
 from the template on every load). Design locked in **[ADR-0009](docs/adr/0009-group-nodes-flattened-into-one-execution-plan.md)**
 (execution) and **[ADR-0010](docs/adr/0010-inline-vs-linked-groups-no-prefab-overrides.md)**
@@ -1161,8 +1161,10 @@ byte-idempotent.
    reporting, and the recursion refusal). **The cycle guard was verified by removing it: a self-linking
    template SIGSEGVs** (unbounded recursion), so the guard is load-bearing, not decorative. Flat
    documents are byte-identical to before — the real scene's `run` / `list` / idempotence are unchanged.
-6. ⚠️ **flowview — navigation + the palette entries** (built 2026-07-29; **gui-mode NOT eyeballed —
-   no Metal in this sandbox**). New **`groupnav.{h,cpp}`**: a `GraphPath` (the group nodes descended
+6. ✅ **flowview — navigation + the palette entries** (built 2026-07-29; **gui-mode NOT eyeballed —
+   no Metal in this sandbox**). *(**Superseded** — that eyeball happened across 2026-07-29 → 07-31,
+   and the last two items were confirmed 2026-08-11; every gui item in this slice is live-verified.
+   See the end of this slice.)* New **`groupnav.{h,cpp}`**: a `GraphPath` (the group nodes descended
    from the root), `resolvePath` (tolerant — truncates a path that no longer resolves, so a deleted
    group degrades to its parent), `breadcrumb`, `editableAt` / `enclosingLinkedGroup`, and the
    `EditorTree` subtree accessors.
@@ -1468,13 +1470,14 @@ it now opens at fit and zooms.
   **built 2026-08-11**; see "Group authoring gestures" after Milestone 7 for the landing notes.
 - **Prefab overrides** — per-instance divergence from a template. Needs a template-stable inner-node
   address + conflict rules; ADR-0010 explains why parameterising via boundary pins is preferred.
-- **Plan caching** across runs; **file-watch** on templates (manual *Reload linked groups* first);
+- **Plan caching** across runs; **file-watch** on templates (the manual *Reload Linked Groups*
+  gesture named here as the prerequisite shipped in M7 slice 3, 2026-08-11);
   a **registered node-serializer seam** if third-party structural node kinds ever appear.
 
-## Milestone 6 — definition & evaluation (grilled 2026-07-31 → 08-01)
+## Milestone 6 — definition & evaluation (grilled 2026-07-31 → 08-01, **COMPLETE** 2026-08-10)
 
-**Designed, not started.** `flow` currently keeps a graph's *recipe* and its *run state* in the same
-objects: `Port` owns a `PortValue`, `Node` owns `m_dirty`. Three pressures converged on that —
+**All five steps built and live-verified.** `flow` kept a graph's *recipe* and its *run state* in the same
+objects: `Port` owned a `PortValue`, `Node` owned `m_dirty`. Three pressures converged on that —
 identity that kept needing composition, undo that needed positional ordinals, and a target workload
 (N video streams through one subgraph; a Loop node) that the model cannot express at all. Decisions in
 **[ADR-0011](docs/adr/0011-node-identity-is-a-uuid.md)** (identity) and
@@ -2347,18 +2350,27 @@ adds a pin to the canvas.
 
 ### Not in this milestone
 
-- **Loop.** A map's children are independent by construction; a loop's are not. Its carry question is
-  still ADR-0012's and still has no caller.
+- ~~**Loop.**~~ A map's children are independent by construction; a loop's are not. *(**Built** by
+  Milestone 11, 2026-09-06. The carry question this bullet left with ADR-0012 is settled by
+  [ADR-0021](docs/adr/0021-loop-nodes-carried-state-per-iteration-staging.md): a loop **carries**,
+  through paired inner boundary pins. It landed with no production caller, which the ADR states
+  rather than hides — the feature exists to test the node model.)*
 - **A linked map** (one shared template mapped over N streams) — what the video workload will want,
   deferred until it exists to shape the interface reconciliation. *(**Refused** 2026-09-09: the
   reconciliation question dissolves once you compose instead — a map whose interior holds a linked
   group. Argument in ADR-0014.)*
 - **The `Collection` payload**, keyed elements, and a multi-value cli binder for a collection boundary
-  input — all named in ADR-0014 as the escapes from the accepted costs, none built.
+  input — all named in ADR-0014 as the escapes from the accepted costs, none built. *(The `Collection`
+  payload's **question** was since answered outside the map — ADR-0018 makes a render a host-owned
+  fold, so the big-N case that would have forced it never reaches a map. Answered, not built: no such
+  type exists, and the capability seam stays an interface so one could still arrive behind it.)*
 - **Per-element incrementality**, which the natural-vector payload makes unavailable: any change
   rebuilds the whole vector, so all N children recompute.
 
 ## Milestone 9 — camera calibration and fixed registration (grilled 2026-08-14 to 08-15)
+
+**Designed, not started** — the only milestone from 5 onward that is. M10 was numbered after it and
+built before it, discharging its frame-sequence prerequisite.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -2481,14 +2493,14 @@ lands with copied solver/detector logic or a second production path.
 - A generic `Measurement<T>` uncertainty template without a second concrete caller.
 - Runtime-defined distortion-model plugins or SuiteSparse-enabled Ceres builds.
 
-## Milestone 10 — video + frame sequences (grilled 2026-08-19)
+## Milestone 10 — video + frame sequences (grilled 2026-08-19, **COMPLETE** 2026-09-04)
 
 **Numbered after M9, built before it** — M9's prerequisite note points here. Domain vocabulary is in
 [CONTEXT.md](CONTEXT.md) under *Frame sequences*; the model is
 [ADR-0018](docs/adr/0018-frame-sequences-and-host-driven-rendering.md), the codec backend and its
 licence exception are [ADR-0019](docs/adr/0019-ffmpeg-lgpl-for-video-codec-support.md) (with
-[ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md) amended). **Nothing is
-built.**
+[ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md) amended).
+**All eight slices (0–7) built; gui-mode live-verified 2026-09-04.**
 
 The ask was "load and save video the way images already load and save". The parallel holds at the
 registry / plugin / facade level and **breaks in exactly two places**, which is most of the design:
@@ -3882,10 +3894,11 @@ The GPU. gui-mode is still eyeball-verified by the repo owner on a Metal-capable
 `[gpu]` test self-SKIPs, and ctest reports it skipped rather than passed. Nothing here changes that,
 and nothing here should be read as covering it.
 
-## Milestone 11 — loop nodes (grilled 2026-09-05)
+## Milestone 11 — loop nodes (grilled 2026-09-05, **COMPLETE** 2026-09-08)
 
-**Designed, not started.** `flow` can run a subgraph **once** (a group) and **N times independently**
-(a map). It cannot run one **sequentially, feeding each pass into the next**. ADR-0012 named
+**All six slices built and live-verified.** `flow` could run a subgraph **once** (a group) and
+**N times independently** (a map). It could not run one **sequentially, feeding each pass into the
+next**. ADR-0012 named
 *"whether Loop carries state between iterations"* among four questions it refused to guess at;
 ADR-0014 settled the other three for the map and re-deferred this one, because *"a map's children are
 independent by construction, a loop's are not"*. Decisions in
@@ -4220,8 +4233,11 @@ unchanged.
    verticals driven through the **real binary**. `ctest` **697/697** Debug with video on (+7) and
    **671/671** Release in the default video-off configuration (+7) — both baselines grown by exactly
    the seven new cases; warning-clean, format-check clean, `[loop]` swept 100× on the parallel path.
-   **gui-mode was eyeballed by the repo owner on 2026-09-07 and FOUND ISSUES**, not yet triaged —
-   so the slice, and the milestone, is not complete. That is the expected distribution: this slice's
+   **gui-mode was eyeballed by the repo owner on 2026-09-07 and FOUND ISSUES**, not yet triaged at
+   the time of writing. *(**Superseded** — they were triaged in the 2026-09-08 pass: the crash was
+   M12's stale-value `bad_any_cast`, and the remaining oddity was a documentation gap, not a bug —
+   a loop's condition is a POST-test, so a loop is a do-while. **Slice 6 and M11 are COMPLETE as of
+   2026-09-08.** See the 2026-09-08 update in CLAUDE.md.)* That is the expected distribution: this slice's
    whole surface is the one all ten of M5's bugs lived on, while the engine slices produced none.
    - **The verticals, through `flowview run`.** The count loop folds a gradient through five blurs
      and reports `iterations: 5`; the while loop blurs until the picture **stops changing** and
@@ -4311,7 +4327,7 @@ dropping the reserved-pin skip leaks `index` / `continue` onto the outer face; r
 makes the count vertical produce one blur instead of five and the while vertical run to its bound;
 and an unknown port-type key silently substituting a type is refused. **gui-mode still needs the
 repo owner's eyeball on the Metal machine** — slice 6, and the milestone, is not done until that
-happens.
+happens. *(**Superseded** — it happened 2026-09-07 → 09-08; **M11 is COMPLETE as of 2026-09-08.**)*
 
 ### Not in this milestone
 
@@ -4339,10 +4355,10 @@ happens.
   machinery would be `exitMap`'s gather.
 - **`count` visible to the interior**, for progress. Additive, nothing asks.
 
-## Milestone 12 — payload types: a node's type as data (grilled 2026-09-07)
+## Milestone 12 — payload types: a node's type as data (grilled 2026-09-07, **COMPLETE** 2026-09-08)
 
-Testing M11's loop in the GUI was blocked: `LoopNode`'s `index` is an `int`, `CompareNode`'s inputs
-were `float`, and `Graph::connect` type-checks exactly — and there is **no conversion anywhere in
+**All four slices built and live-verified.** Testing M11's loop in the GUI was blocked: `LoopNode`'s
+`index` is an `int`, `CompareNode`'s inputs were `float`, and `Graph::connect` type-checks exactly — and there is **no conversion anywhere in
 `flow`**, implicit or explicit. That is an instance of a wider gap: a node's payload type was baked
 into its **factory key**, so `ConstantNode<T>` cost one palette entry per type (five, against a
 registered port-type set of ten and growing), `Gate`/`Merge`/`Select` existed for `image::Image`
@@ -4362,13 +4378,15 @@ Four slices, one commit each:
 4. **`GateNode` / `MergeNode` / `SelectNode`** — built 2026-09-07; the case that proves a retype
    reaches DYNAMIC pins
 
-All four are built. **gui-mode is not yet eyeballed**, so M12 is not complete.
+All four are built, and **gui-mode was eyeballed 2026-09-08** — it found one crash (the stale-value
+`bad_any_cast`, fixed; see below) and nothing else. **M12 is COMPLETE as of 2026-09-08.**
 
 ### Slice 1 — built 2026-09-07: the mechanism, and Constant stops being a template
 
 `ctest` **717/717** Debug with video on (+20 new cases, from 697), warning-clean, format-check clean.
 **gui-mode NOT eyeballed** — the Inspector's payload-type dropdown is new UI and needs a Metal
-session, the standing gap for every adapter change.
+session, the standing gap for every adapter change. *(**Superseded** — eyeballed 2026-09-08; see the
+stale-value section below.)*
 
 - **`Node` gains payload types as DATA, not a virtual.** `payloadTypes()` is a plain accessor and
   `declarationsOf(name)` says what a retype would move; the one virtual is `acceptsPayloadType`. A
@@ -4498,8 +4516,9 @@ produces a **different picture**: every weaker assertion passes either way.
 `ctest` **724/724** Debug with video on (+27 from 697) and **698/698** Release in the default
 video-off configuration (+27 from 671); warning-clean, format-check clean, and `flowview --version` /
 `list` / `run` unchanged through the real binary. **gui-mode NOT eyeballed** — the Inspector's
-payload-type dropdown and the Issues row are new UI and need a Metal session. That is the one thing
-standing between M12 and complete.
+payload-type dropdown and the Issues row are new UI and need a Metal session. That was the one thing
+standing between M12 and complete. *(**Superseded** — the eyeball happened 2026-09-08 and is the very
+next section: it found one crash, fixed there. **M12 is COMPLETE as of 2026-09-08.**)*
 
 ### Found by the repo owner in gui-mode, fixed 2026-09-08: a stale value crashed the panes
 
@@ -4690,10 +4709,16 @@ own design (what if two conversions exist? none?) and wants grilling of its own.
    parse/format ISO-8601 (`%FT%T%z` for local, `%FT%T` for UTC). Split from
    `lain::core::Time` (which stays monotonic-only) because calendar/formatting is
    the `std::chrono` *time_point* side, not durations. Likely first needed when
-   graphs serialize to json (Tier A item 1 — timestamps).
+   graphs serialize to json (Tier A item 1 — timestamps). *(**That trigger fired and was answered
+   negatively:** Tier A #1 shipped and records "`core::DateTime` (Tier C #8) is **not** pulled in —
+   `version` is a plain int, no timestamps". Still unbuilt, now with no predicted caller.)*
 9. **Video `Timecode` / `Timestamp`** — a frame-rate-aware time type for camera /
    video data (SMPTE-style timecode, drop-frame, frame ↔ time conversions). Lands
-   when a camera / video node needs it.
+   when a camera / video node needs it. *(**That trigger fired and was answered negatively:**
+   Milestone 10 built the video and camera-facing nodes and needed none of it — a frame is addressed
+   by **ordinal**, with `media::FrameRate` for the rate and `core::Time` for the presentation
+   timestamp (`frameref.h`, `framesource.h`). SMPTE timecode and drop-frame land when something asks
+   for them by name.)*
 
 ## Open questions
 
