@@ -271,6 +271,8 @@ changed is that the value is now stated by `decodeMatrixFor`, tested, and logged
 of being inherited by passing the raw tag to swscale and taking its default.
 
 Per-element incrementality, keyed elements, a linked map over N streams, realtime playback of
-processed output, and the capture manifest and capture dataset remain outside this decision.
+processed output, and the capture manifest and capture dataset remain outside this decision. (The
+linked map has since been **refused** rather than deferred — compose a map whose interior holds a
+linked group; see [ADR-0014](0014-map-nodes-staged-planning.md), amended 2026-09-09.)
 Playback in the viewer is best-effort: advancing a frame rebinds and re-runs, so a heavy graph
 simply evaluates as fast as it can.

@@ -184,8 +184,12 @@ namespace lain::flow
 	};
 
 	// A MAP: a group whose interior is evaluated once per ELEMENT of a collection, rather than once
-	// (ADR-0014). It owns its inner Graph exactly as an inline group does — a linked map (one shared
-	// template mapped over N streams) is deferred until the video workload asks for it.
+	// (ADR-0014). It owns its inner Graph exactly as an inline group does, and always will: a LINKED
+	// map is refused rather than deferred (ADR-0014, 2026-09-09). One would have its interior BE the
+	// template, leaving nowhere for work the template does not do and making the template and the
+	// instance two owners of one interface. Compose instead — a map whose interior holds a linked
+	// group — which keeps one owner per fact: the template owns the recipe, this node's own boundary
+	// owns the lifting below.
 	//
 	// The difference is entirely in the FACE it presents. Where a group mirrors an inner pin of type
 	// T as a port of type T, a map mirrors it LIFTED, as vector<T>: its `files` input takes the whole
@@ -211,7 +215,7 @@ namespace lain::flow
 		const Graph* innerGraph() const override { return &m_inner; }
 
 		// A map OWNS its interior, like an inline group — so a host may edit through it. (A linked
-		// map, whose body would come from a shared template, is deferred; see the class header.)
+		// map, whose body would come from a shared template, is refused; see the class header.)
 		Graph* editableInner() override { return &m_inner; }
 
 		// The structural fact that makes this a map: its interior is evaluated once per element,
@@ -245,7 +249,8 @@ namespace lain::flow
 	// seeding the next one's inputs (ADR-0021). Where a map's children are independent by
 	// construction, a loop's are sequentially dependent — which is what makes it a different
 	// execution shape rather than a variant of the map. It owns its inner Graph as an inline group
-	// does; a LINKED loop is deferred exactly as a linked map is.
+	// does; a LINKED loop is refused exactly as a linked map is — compose one whose interior holds a
+	// linked group (ADR-0014).
 	//
 	// Unlike a map, its FACE is derived exactly as a plain group's is — same type in, same type out.
 	// The pairing changes what the engine does BETWEEN iterations, never what the ports look like:

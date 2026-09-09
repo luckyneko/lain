@@ -155,9 +155,26 @@ type is the mode.
   built here paid forward unchanged: the frontier machinery needed no new substrate, and `at()`'s
   aliasing sibling — M5's shared, immutable `PortValue` payload — is what lets a loop read a carry out
   of a child evaluation and bind it straight back into the same one.
-- **A linked map.** One shared template mapped over N streams is what the video workload wants, and
-  M7's ownership model already permits it; it needs the workload in front of it to decide how an
-  instance's interface reconciles against a shared template's.
+- ~~**A linked map.**~~ **Refused 2026-09-09** — not built, and no longer waiting on a workload. The
+  reconciliation question this bullet posed has no defensible answer because it should not be asked:
+  a map whose interior holds a **linked group** is what a linked map was for, and it is the better
+  shape. The template owns the recipe; the map's own boundary owns the lifting (`exposePort` vs
+  `exposeBroadcast`) — one owner per fact, where a linked map would make the template and the
+  instance two owners of one interface, the shape M7 slice 1's deleted `editableAt` and this ADR's
+  own *"no flag, nothing stored"* rule each refuse. It is also strictly more expressive: a linked
+  map's interior *would be* the template, so there is nowhere for a per-element pre-tint, an index
+  tag or a second link, and no way to wrap more than one thing. It degrades better — a failed link
+  cannot touch a face derived from the map's own boundary, so the arity contract and the parent's
+  wiring survive, where a linked map would need ADR-0010's cached interface a second time and lifted.
+  And the extra level costs nothing measurable: one `shared_ptr<const Graph>` definition backs N
+  evaluations either way, the level adds one entry/exit pair per element, a boundary crossing is a
+  refcount bump (M5 slice 1), and the stage count is unchanged because a linked group is `Once` and
+  raises no frontier — which is exactly the nesting depth of 2 the consequences above already size
+  this workload at. What is lost is one breadcrumb level and a face that tracks the template
+  automatically; that is the trade worth making, since automatic tracking is the half with no settled
+  semantics. The one real cost — plumbing a map's boundary to the link's face by hand — is a
+  **gesture, not a class** (WORK.md's Tier A *"Map over selection"*). The same reasoning retires the
+  linked loop ([ADR-0021](0021-loop-nodes-carried-state-per-iteration-staging.md)).
 - **The `Collection` payload.** Named here as the escape from the two costs above, but not built: it
   buys nothing the first vertical can measure.
 - **Keyed elements.** The parallel key input, for when "stream 3" must survive a reorder.

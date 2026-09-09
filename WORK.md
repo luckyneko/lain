@@ -2002,7 +2002,8 @@ run — which is the fact every decision below turns on.
   `T` splits, `T` against `T` broadcasts. No flag, nothing stored; the declaration *is* the mode.
 - **A hole suppresses the whole output** (a `vector<Image>` has no hole, and shortening it would break
   the positional correspondence). `N == 0` is different: empty in, empty vector out, which is a value.
-- **`MapNode` is a third `GroupNode` subclass, inline only.** A linked map is deferred.
+- **`MapNode` is a third `GroupNode` subclass, inline only.** A linked map is deferred. *(**Refused**
+  2026-09-09 — compose it: a map whose interior holds a linked group. See ADR-0014.)*
 - **A map serializes its interface** — unlike a group, whose ports are re-derived, because a map's
   mirroring is under-determined by exactly one bit per input pin.
 
@@ -2349,7 +2350,9 @@ adds a pin to the canvas.
 - **Loop.** A map's children are independent by construction; a loop's are not. Its carry question is
   still ADR-0012's and still has no caller.
 - **A linked map** (one shared template mapped over N streams) — what the video workload will want,
-  deferred until it exists to shape the interface reconciliation.
+  deferred until it exists to shape the interface reconciliation. *(**Refused** 2026-09-09: the
+  reconciliation question dissolves once you compose instead — a map whose interior holds a linked
+  group. Argument in ADR-0014.)*
 - **The `Collection` payload**, keyed elements, and a multi-value cli binder for a collection boundary
   input — all named in ADR-0014 as the escapes from the accepted costs, none built.
 - **Per-element incrementality**, which the natural-vector payload makes unavailable: any change
@@ -3456,8 +3459,10 @@ the part worth keeping, because it is what someone would otherwise "fix" later:
   already says a live capture becomes a frame sequence only once the host establishes its end.
 - **Realtime playback of processed output** — that is the streaming pipeline (Tier B #4). Playback
   here is best-effort: advance, rebind, re-run.
-- **A linked map over N streams**, per-element incrementality, and keyed elements — still ADR-0014's,
-  still waiting on the workload.
+- **Per-element incrementality** and **keyed elements** — still ADR-0014's, still waiting on the
+  workload.
+- **A linked map over N streams** — *no longer deferred but **refused** (2026-09-09): a map whose
+  interior holds a linked group is the shape, and it is the better one. See ADR-0014.*
 
 ## Codec colour-tag policy (audited + built 2026-09-03)
 
@@ -4325,6 +4330,7 @@ happens.
   menu greys the item out (`canUngroupSelection` asks for an `InlineGroupNode`), so the wording is
   only reachable from a keyboard shortcut — pre-existing since M8.
 - **A linked loop** — one shared template iterated, exactly as ADR-0014 defers the linked map.
+  *(**Refused** 2026-09-09 along with it: compose a loop whose interior holds a linked group.)*
 - **Retaining per-iteration state**, and the breadcrumb iteration stepper it would enable. Needs a
   retention policy, which ADR-0012 refuses to have.
 - **Plan caching across stages** — the optimisation that makes this lowering cheap, already deferred
@@ -4638,6 +4644,29 @@ own design (what if two conversions exist? none?) and wants grilling of its own.
    (`connect`/`disconnect`/`removeNode`/`removePort`) mark the affected downstream node dirty, and
    flowview marks a node dirty on a param edit (`GroupInputNode::setValue` already did on bind), so
    incremental is correct by construction. Tested with compute-counting nodes; full suite 279/279.
+
+10. **"Map over selection" — a group-kind parameter on `edit::groupSelected`.** The ergonomic gap
+    left by refusing the linked map (ADR-0014, 2026-09-09). Composing a map around a linked group is
+    the right shape, but its one real cost is plumbing the map's boundary to the link's face by hand,
+    and re-doing it when the template's interface changes. `groupSelected` already computes the
+    cut-set and builds the boundary pins; it hardcodes the kind at exactly **one** site
+    (`libs/flow/src/edit.cpp:512`), steps 3–5 are kind-agnostic, and the lifting falls out for free
+    because `syncGroupPorts` calls the **virtual** `exposePort` that `MapNode` overrides.
+    `replaceGroup` already takes a `unique_ptr<GroupNode>`.
+
+    **The one thing it has to decide, and the reason it is a gesture rather than a derivation:**
+    step 5 re-attaches the parent's edges to the new outer ports, and a **lifted** port will not
+    type-check against a source producing `T` — so it cannot reconnect everything the way grouping
+    does, and at least one input must be lifted or the map has no arity to size its children from.
+    That choice is the split/broadcast bit, which is the instance's to make and cannot be derived —
+    which is itself part of why the linked map is refused.
+
+    A second gesture ("re-mirror my boundary against this node's face") covers the template-changed
+    case. It should stay offerable rather than automatic, for the same reason: re-deriving silently
+    is how the broadcast choice would be lost.
+
+    *(Numbered 10 because Tier A/B/C share one sequence and prose refers to "Tier B #4" — inserting
+    a 4 here would renumber those.)*
 
 ### Tier B — speculative / large
 

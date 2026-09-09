@@ -626,6 +626,43 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-09 — the linked map and linked loop are REFUSED, not deferred (decision only)
+
+ADR-0014 deferred a **linked map** (one shared template mapped over N streams) and ADR-0021 deferred a
+**linked loop** behind the same sentence — *"it needs the workload in front of it to decide how an
+instance's interface reconciles against a shared template's."* That question is retired by refusing
+the cell rather than answering it: **compose instead — a map (or loop) whose interior holds a linked
+group.** Nothing is built; this is a decision commit, and the argument is written up once in
+[ADR-0014](docs/adr/0014-map-nodes-staged-planning.md).
+
+- **The composition is not a workaround, it is the better shape.** A linked map's interior would BE
+  the template, so there is nowhere for a per-element pre-tint, an index tag or a second link, and no
+  way to wrap more than one thing. It degrades better too: a failed link cannot touch a face derived
+  from the map's own boundary, so the arity contract and the parent's wiring survive, where a linked
+  map would need ADR-0010's cached interface a second time and lifted.
+- **It dissolves the blocker rather than dodging it.** The template owns the recipe; the map's own
+  boundary owns the lifting (`exposePort` vs `exposeBroadcast`) — one owner per fact. A linked map
+  would make the template and the instance two owners of one interface, which is the shape M7 slice
+  1's deleted `editableAt` and ADR-0014's own *"no flag, nothing stored"* rule each refuse.
+- **The extra level costs nothing measurable.** One `shared_ptr<const Graph>` definition backs N
+  evaluations either way; the level adds one entry/exit pair per element; a boundary crossing is a
+  refcount bump (M5 slice 1); and the stage count is unchanged, because a linked group is `Once` and
+  raises no frontier — exactly the nesting depth of 2 ADR-0014 already sizes the target workload at.
+  `groupnav::hasLinkedGroups` is already recursive, so `File ▸ Reload Linked Groups` already reaches
+  a link inside a map.
+- **The one real cost is a GESTURE, not a class**, and it is now WORK.md's Tier A #10: plumbing a
+  map's boundary to the link's face by hand. `edit::groupSelected` already computes the cut-set and
+  builds the boundary pins, and hardcodes the kind at exactly one site; the lifting would fall out
+  for free, since `syncGroupPorts` calls the **virtual** `exposePort` a `MapNode` overrides. Its one
+  genuine decision — a lifted outer port will not type-check against a parent source producing `T`,
+  so it cannot reconnect everything the way grouping does, and at least one input must be lifted or
+  the map has no arity to size its children from — is itself part of why the cell is refused: the
+  split/broadcast bit is the instance's to make and cannot be derived.
+- Amended in place: ADR-0014's and ADR-0021's deferred items (ADR-0021 points at ADR-0014 rather than
+  restating it), WORK.md's four historical mentions (M8 ×2, M10, M11) plus the new Tier A item, and
+  the three comments in `libs/flow/include/lain/flow/group.h`. **No code changed** — comment-only, so
+  the build and the suite are unmoved.
+
 ### Update 2026-09-08 — M12 live-verified; loop timing documented (do-while, not while)
 
 **gui-mode was eyeballed by the repo owner 2026-09-08**: a loop built from const + compare + cast

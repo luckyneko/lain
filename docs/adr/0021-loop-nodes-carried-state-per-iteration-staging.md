@@ -88,7 +88,11 @@ outputs seed the next one's inputs, and whose trip count is bounded by construct
   sabotage-verified: dropping them turns a converging while loop into one that runs to its bound,
   110 instead of 13. The section is read whole and applied in two parts, because the names must reach
   the interior before its edges resolve while the carries need those pins to already exist.*)
-- **Inline only.** A linked loop is deferred for the same reason a linked map is.
+- **Inline only**, and a linked loop is *refused* rather than deferred, for the same reason a linked
+  map is (ADR-0014, amended 2026-09-09): a loop whose interior holds a **linked group** is what one
+  would have been for, and it keeps the template owning the recipe while the loop's own boundary
+  keeps owning the carry pairing — one owner per fact, and room inside the body for work the template
+  does not do.
 
 ## Why
 
@@ -320,8 +324,9 @@ body's work.
 
 ## Deliberately unsettled
 
-- **A linked loop.** One shared template iterated, exactly as ADR-0014 defers the linked map, and it
-  would reuse `LinkedGroupNode::adoptInterior` the same way.
+- ~~**A linked loop.**~~ **Refused 2026-09-09**, exactly as ADR-0014 now refuses the linked map —
+  compose it instead: a loop whose interior holds a linked group. The argument is written up once,
+  there.
 - **Retaining per-iteration state.** Would make a loop's interior inspectable per pass and give the
   breadcrumb an iteration stepper. It needs a retention policy, which ADR-0012 refuses to have.
 - **Plan caching across stages.** The optimisation that makes this lowering cheap. Deferred with its
