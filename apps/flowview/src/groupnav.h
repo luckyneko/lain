@@ -128,12 +128,43 @@ namespace flowview
 	// group, say), so an id alone would send the caller looking in the wrong graph for it.
 	const lain::flow::LinkedGroupNode* enclosingLinkedGroup(const lain::flow::Graph& root, const GraphPath& path);
 
+	// One inner pin a group could NOT mirror onto its own face (flow::edit::GroupSync::refused). A
+	// map refuses a type with no registered collection form; a loop refuses a pin whose name collides
+	// with one of its own ports. Either way the pin is simply absent from the group's interface, so
+	// nothing outside can reach it and there is no other symptom — which is why the sync reports it
+	// by NAME and a host says it out loud.
+	//
+	// `level` is the group's INTERIOR, not the graph the group sits in: that is where the pin lives
+	// and where it can be renamed, so it is where a row pointing at this has to lead.
+	struct PinRefusal
+	{
+		GraphPath level;		 // the group's interior (the group node itself is one level above)
+		lain::flow::NodeId node; // the group, so two same-titled ones read apart
+		std::string group;		 // its display name, captured at the sync
+		std::string pin;		 // the inner pin's name
+	};
+
+	// What a pass over the path did.
+	struct PathSync
+	{
+		bool changed = false; // a port was added, dropped or retitled somewhere along the path
+
+		// Deliberately NOT folded into `changed`, for edit::GroupSync's own reason: a refused pin is
+		// retried on every pass and a host syncs every frame, so counting it as a change would bump
+		// the recipe version continuously and re-run every evaluation forever. It is a steady state.
+		std::vector<PinRefusal> refused;
+	};
+
 	// Re-derive the outer ports of every group along `path` from its own inner boundary, and report
 	// whether anything moved. A group's ports mirror its interior, and that interior can be changed
 	// from several places (the Interface panel's ± and renames while descended, the canvas ±, an undo
 	// restore), so rather than enumerating those paths the host reconciles the ones it is inside.
 	// syncGroupPorts is idempotent and proportional to the pin count, so a no-op pass costs nothing.
-	bool syncPathGroups(lain::flow::Graph& root, const GraphPath& path);
+	//
+	// Refusals therefore have the same reach as the sync: the groups the user is INSIDE. A document's
+	// other groups are reconciled where they are rebuilt — the loader reports theirs into
+	// LoadResult::issues.
+	PathSync syncPathGroups(lain::flow::Graph& root, const GraphPath& path);
 
 	// How many linked groups anywhere in `root` (at any depth) are built from `source` — the blast
 	// radius of editing that template, which the Edit affordance states before you commit to it.

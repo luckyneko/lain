@@ -175,11 +175,17 @@ namespace flowview
 		// Interface panel's ± and renames act on the INNER boundary, and nothing else would carry that
 		// out to the group's own face (or to the parent's edges into it). Done after the panes drew, so
 		// this frame's edits are included; idempotent, so a quiet frame costs a pin walk.
-		if (!drawnPath.empty() && syncPathGroups(appDelegate.graph(), drawnPath))
+		// An empty path syncs nothing, and is deliberately still called: assigning the (empty) refusals
+		// is what CLEARS the rows when the user steps back out to the root.
+		PathSync sync = syncPathGroups(appDelegate.graph(), drawnPath);
+		if (sync.changed)
 		{
 			appDelegate.reevaluate();
 			m_previews.markDirty();
 		}
+		// A pin a group could not mirror is absent from its face with no other symptom, so the Issues
+		// pane says so. Rewritten whole, never appended: this is a steady state, not an event.
+		m_ctx.syncRefusals = std::move(sync.refused);
 
 		// Capture THIS level's positions into the layout tree, now that the canvas has drawn them.
 		// imnodes only knows about the level on screen, so every other level keeps the positions

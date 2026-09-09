@@ -236,15 +236,59 @@ TEST_CASE("syncing the active path carries an inner interface out to the group's
 	Graph& inner = static_cast<InlineGroupNode&>(root.node(group)).inner();
 
 	inner.boundaryInputNode().addBoundary<int>("in");
-	REQUIRE(syncPathGroups(root, GraphPath{{group}}));
+	REQUIRE(syncPathGroups(root, GraphPath{{group}}).changed);
 	REQUIRE(root.node(group).inputCount() == 1);
 
 	// The second pin lands on the OTHER side, whose inner PortId collides with the first's.
 	inner.boundaryOutputNode().addBoundary<int>("out");
-	REQUIRE(syncPathGroups(root, GraphPath{{group}}));
+	REQUIRE(syncPathGroups(root, GraphPath{{group}}).changed);
 	REQUIRE(root.node(group).outputCount() == 1);
 
-	REQUIRE_FALSE(syncPathGroups(root, GraphPath{{group}})); // settles: a quiet frame reports no change
+	REQUIRE_FALSE(syncPathGroups(root, GraphPath{{group}}).changed); // settles: a quiet frame reports no change
+}
+
+TEST_CASE("a pin a group cannot mirror is reported, with the level that holds it", "[groupnav]")
+{
+	// The refusal edit::syncGroupPorts reports BY NAME, carried out to a host. Without this the pin is
+	// simply missing from the loop's face: nothing outside can wire to it, and there is no other
+	// symptom at all — which is why the name is worth carrying and why this reaches the Issues pane.
+	//
+	// Nested one level down deliberately: the level a row must lead to is the group's INTERIOR (where
+	// the pin lives and can be renamed), not the graph the group sits in, and only a path with more
+	// than one step tells those two apart.
+	Graph root;
+	const NodeId wrapper = addGroup<InlineGroupNode>(root, "wrapper");
+	Graph& mid = static_cast<InlineGroupNode&>(root.node(wrapper)).inner();
+	const NodeId loop = addGroup<LoopNode>(mid, "fold");
+
+	// `count` is one of the loop's OWN ports, so the inner pin cannot be mirrored under that name.
+	static_cast<LoopNode&>(mid.node(loop)).inner().boundaryInputNode().addBoundary<int>("count");
+
+	const GraphPath path{{wrapper}, {loop}};
+	const flowview::PathSync sync = syncPathGroups(root, path);
+
+	REQUIRE(sync.refused.size() == 1);
+	REQUIRE(sync.refused[0].pin == "count");
+	REQUIRE(sync.refused[0].node == loop);
+	REQUIRE(sync.refused[0].group == "fold");
+	REQUIRE(sync.refused[0].level == path); // the loop's interior, not the graph it sits in
+
+	// A refusal is a STEADY STATE, not a transition: it is retried on every pass and a host syncs
+	// every frame, so reporting it as a change would bump the recipe version continuously and re-run
+	// every evaluation forever. It also survives the settling pass, rather than being reported once.
+	REQUIRE_FALSE(sync.changed);
+	REQUIRE(syncPathGroups(root, path).refused.size() == 1);
+}
+
+TEST_CASE("a loop's reserved pins are never reported as refusals", "[groupnav]")
+{
+	// `index` and `continue` are the engine's, and a plain loop has both. They are NOT CANDIDATES for
+	// mirroring (GroupNode::mirrorsPin), which is a different question from being REFUSED — conflating
+	// them would make every loop in every document report two problems, forever, from the frame it was
+	// created. The panel this feeds would be useless.
+	Graph root;
+	const NodeId loop = addGroup<LoopNode>(root, "fold");
+	REQUIRE(syncPathGroups(root, GraphPath{{loop}}).refused.empty());
 }
 
 TEST_CASE("a document knows whether it links anything, at any depth", "[groupnav]")
@@ -452,7 +496,7 @@ TEST_CASE("a map's interior is editable, a linked group's is not", "[groupnav]")
 
 	auto& inner = static_cast<MapNode&>(root.node(map)).inner();
 	inner.boundaryInputNode().addBoundary<int>("item");
-	REQUIRE(syncPathGroups(root, GraphPath{{map}}));
+	REQUIRE(syncPathGroups(root, GraphPath{{map}}).changed);
 	REQUIRE(root.node(map).inputCount() == 1);
 }
 

@@ -516,3 +516,34 @@ TEST_CASE("a loop nested inside an inline group round-trips", "[flow][serialize]
 	SerialScheduler{}.run(loaded.graph, evaluation);
 	REQUIRE(evaluation.value(PortAddress{reloadedGroup, outputNamed(loaded.graph.node(reloadedGroup), "result")}).get<int>() == 14);
 }
+
+TEST_CASE("a pin the loop cannot mirror onto its face is reported on load", "[flow][serialize][loop]")
+{
+	// The load is the only pass that sees EVERY group in a document — a host reconciles only the
+	// groups the user is currently inside — so it is where an unmirrorable pin has to be said out
+	// loud. Otherwise the pin is absent from the loop's interface with no symptom whatsoever: nothing
+	// outside can wire to it, and the document that produced it is silent.
+	//
+	// `count` is one of the loop's own ports, which is the collision a user can author from the
+	// Interface pane in two clicks. It survives the round trip as an ordinary dynamic pin of the
+	// interior, so the refusal happens again on every load rather than being a one-off.
+	registerTypes();
+	const Factory<Node> factory = makeFactory();
+	const ValueCodecs codecs = loopCodecs();
+
+	Graph original;
+	const NodeId loopId = buildFold(original, 10, 5, false);
+	auto& loop = static_cast<LoopNode&>(original.node(loopId));
+	REQUIRE(loop.inner().boundaryInputNode().addBoundary<int>("count") != PortId{});
+
+	LoadResult loaded = fromValue(toValue(original, factory, codecs, {}), factory, codecs);
+	REQUIRE(reported(loaded, "could not be mirrored"));
+	REQUIRE(reported(loaded, "count"));
+
+	// It costs that pin its mirror and nothing else. Two inputs, not three: the loop's own `count`
+	// and the carry's seed, with the refused pin adding none — and the fold still runs.
+	const NodeId reloaded = onlyLoop(loaded.graph);
+	REQUIRE(loaded.graph.node(reloaded).inputCount() == 2);
+	REQUIRE(inputNamed(loaded.graph.node(reloaded), "count") != PortId{});
+	REQUIRE(fold(loaded.graph, reloaded).value == 15);
+}

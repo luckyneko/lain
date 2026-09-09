@@ -628,6 +628,47 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-09 — `GroupSync::refused` has readers (both of them)
+
+Known defect #1, cleared. M11 slice 2 built the refusal — an inner boundary pin a group cannot mirror
+onto its own face, reported **by name** because that is the part a user can act on — and nothing read
+it. The symptom was total silence: the pin is simply absent from the group's interface, nothing
+outside can wire to it, and no channel says why. `ctest` **731/731** (+3), warning-clean,
+format-check clean, `flowview run --example` unchanged. **gui-mode not eyeballed** — the Issues row
+is new UI and needs a Metal session.
+
+- **It needed TWO readers, not the one WORK.md named.** `edit::syncGroupPorts` has exactly two
+  production callers and *both* dropped the field: `groupnav::syncPathGroups`, and **the loader**.
+  Fixing only the host would have left the defect half-alive, and the half left behind is the more
+  important one — the loader syncs **every** group in a document, where a host reconciles only the
+  groups the user is currently INSIDE. So a refusal now survives navigating away, arrives on a
+  document authored elsewhere, and reaches headless `run` / `list` (through `ctx.warn`'s log line;
+  `runmode` reads `LoadResult::issues` for nothing else either). Proved on the real binary against a
+  hand-collided `count-loop.json`, with the unmodified document silent as the control.
+- **`syncPathGroups` returns a `PathSync {changed, refused}`**, and a `PinRefusal` carries the path
+  to the group's **INTERIOR**, not to the graph the group sits in. That is where the pin lives and
+  where the Interface pane can rename it, so it is where the row has to lead — and only a path more
+  than one step deep tells the two levels apart, which is why the test nests one. A row naming the
+  level already drawn is a `note` rather than an `inside`: navigating costs a preview-cache clear,
+  and spending one to arrive where you already are is not a link.
+- **The refusals are AppContext data, not Issues**, rewritten whole each frame. Not folded into
+  `loadIssues`, though it is the same panel: an edit CLEARS those, and the edit that creates a
+  colliding pin is precisely the edit whose refusal must survive it. Held as the sync's own record
+  because the wording belongs to the pane that shows them.
+- **The row states the CONSEQUENCE, not the cause** — *"inner pin 'count' could not be mirrored onto
+  its face — nothing outside can connect to it"*. There are two causes (a loop's name collision, a
+  map's type with no registered collection form) and `refused` carries names alone by decision; the
+  host *could* infer which from the node's class, and that would be a second answer to a question
+  core already owns.
+- **`refused` stays out of `changed()` at the host level too**, and a test pins it: a refused pin is
+  retried on every pass and flowview syncs every frame, so counting one as a change would bump the
+  recipe version continuously and re-run every evaluation forever. A second case pins the other half
+  — a plain loop reports **nothing**, because its reserved pins are *not candidates*
+  (`mirrorsPin`) rather than refused, and conflating the two would make every loop in every document
+  report two problems from the frame it was created.
+- **CONTEXT.md needed no edit** — its *reserved pin* entry already said a refused pin is one "a user
+  can act on **and a host names**". That sentence was aspirational until this commit.
+
 ### Update 2026-09-09 — the linked map and linked loop are REFUSED, not deferred (decision only)
 
 ADR-0014 deferred a **linked map** (one shared template mapped over N streams) and ADR-0021 deferred a

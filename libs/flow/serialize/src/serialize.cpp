@@ -1130,7 +1130,14 @@ namespace lain::flow::serialize
 					group->inner() = loadBody(*innerBody, editor.groups[liveId], ctx);
 			}
 			if (created.innerGraph() != nullptr)
-				edit::syncGroupPorts(graph, liveId);
+			{
+				// A pin the group could not mirror onto its face is absent from its interface with no
+				// other symptom — nothing outside can wire to it, and the document is silent about why.
+				// This is the only pass that sees EVERY group in a document (a host's own reconciliation
+				// reaches only the groups the user is inside), so it is where a refusal is reported.
+				for (const std::string& pin : edit::syncGroupPorts(graph, liveId).refused)
+					ctx.warn("\"" + created.name() + "\": inner pin \"" + pin + "\" could not be mirrored onto its face — nothing outside can connect to it");
+			}
 		}
 
 		// Edges: resolve endpoints by node id + port name, reconnect through Graph::connect.

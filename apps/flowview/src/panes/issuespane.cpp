@@ -1,7 +1,7 @@
 #include "issuespane.h"
 
 #include "../appcontext.h"
-#include "../groupnav.h" // GraphPath — a map element's row navigates INTO it
+#include "../groupnav.h" // GraphPath (a map element's row navigates INTO it) + PinRefusal
 
 #include <lain/flow/boundary.h> // the inner GroupOutput a map element delivers to
 #include <lain/flow/evaluation.h>
@@ -16,6 +16,7 @@
 
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace flowview
@@ -133,6 +134,22 @@ namespace flowview
 		return issues;
 	}
 
+	// A pin a group could not mirror onto its own face. The row states the CONSEQUENCE rather than the
+	// cause, because there are two causes — a loop's name collision, a map's unliftable type — and the
+	// sync reports the pin by name without saying which (edit::GroupSync::refused). What they share is
+	// what the user is looking at: an inner pin with no port outside, and no other symptom at all.
+	//
+	// It leads to the level the pin LIVES on, so the Interface pane there can rename it — unless that
+	// is the level already drawn, where a click would spend a preview-cache clear going nowhere.
+	static Issue refusalRow(const PinRefusal& refusal, const GraphPath& drawnPath)
+	{
+		std::string message = string::format("{} [{}]: inner pin '{}' could not be mirrored onto its face — nothing outside can connect to it",
+											 refusal.group, refusal.node.shortString(), refusal.pin);
+		if (refusal.level == drawnPath)
+			return Issue::note(Issue::Severity::Warning, std::move(message));
+		return Issue::inside(Issue::Severity::Warning, std::move(message), refusal.level);
+	}
+
 	void IssuesPane::draw(AppContext& ctx, const flow::Graph& graph, const flow::Evaluation& evaluation)
 	{
 		if (gui::Begin("Issues"))
@@ -178,6 +195,11 @@ namespace flowview
 			for (const Issue& issue : ctx.loadIssues)
 			{
 				row(issue);
+				any = true;
+			}
+			for (const PinRefusal& refusal : ctx.syncRefusals)
+			{
+				row(refusalRow(refusal, ctx.drawnPath));
 				any = true;
 			}
 			const std::vector<Issue> derived = collectIssues(graph, evaluation, ctx.activePath);

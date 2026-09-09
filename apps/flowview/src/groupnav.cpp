@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <string>
 #include <vector>
 
 namespace flowview
@@ -179,10 +180,11 @@ namespace flowview
 		return false;
 	}
 
-	bool syncPathGroups(flow::Graph& root, const GraphPath& path)
+	PathSync syncPathGroups(flow::Graph& root, const GraphPath& path)
 	{
-		bool changed = false;
+		PathSync result;
 		flow::Graph* parent = &root;
+		GraphPath level; // the steps taken so far — after the push below, the group's own interior
 		for (const PathStep& step : path)
 		{
 			if (!parent->contains(step.node))
@@ -195,11 +197,16 @@ namespace flowview
 			flow::Graph* editable = group != nullptr ? group->editableInner() : nullptr;
 			if (editable == nullptr)
 				break;
+			const std::string name = group->name(); // read before the sync, so the record stands alone
+			level.push_back(step);					// ...and now names the interior the pins live in
 			// Sync the group IN its parent — only the parent can disconnect edges a dropped pin frees.
-			changed |= flow::edit::syncGroupPorts(*parent, step.node).changed();
+			const flow::edit::GroupSync sync = flow::edit::syncGroupPorts(*parent, step.node);
+			result.changed |= sync.changed();
+			for (const std::string& pin : sync.refused)
+				result.refused.push_back(PinRefusal{level, step.node, name, pin});
 			parent = editable;
 		}
-		return changed;
+		return result;
 	}
 
 	flow::serialize::EditorTree& layoutAt(flow::serialize::EditorTree& root, const GraphPath& path)

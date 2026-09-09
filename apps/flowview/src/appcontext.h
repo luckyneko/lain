@@ -201,6 +201,15 @@ namespace flowview
 		std::optional<Issue> recentIssue;
 		int recentIssueFrames = 0;
 
+		// Inner pins the groups on the active path could not mirror onto their faces. Rewritten whole
+		// every frame from the sync pass, so a pin that gets renamed clears its own row and a stale one
+		// cannot outlive a frame.
+		//
+		// Not in loadIssues, though it is the same panel: an EDIT clears those, and the edit that
+		// creates a colliding pin is precisely the edit whose refusal has to survive it. Kept as the
+		// sync's own record rather than as Issues — the wording belongs to the pane that shows them.
+		std::vector<PinRefusal> syncRefusals;
+
 		// A transient row, worded by the caller. Every gesture that can REFUSE reports through here:
 		// an action that silently does nothing reads as a bug, and the reason is usually specific
 		// enough ("a value leaves this selection and comes back") that a fixed message could not say it.

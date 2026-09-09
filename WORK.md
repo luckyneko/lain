@@ -4346,6 +4346,18 @@ happens. *(**Superseded** — it happened 2026-09-07 → 09-08; **M11 is COMPLET
   part a user can act on — and `groupnav::syncPathGroups` drops it on the floor. It is the same
   compiled-linked-unreachable shape this file keeps catching, and it is not caused by this slice, so
   it gets its own commit: `syncPathGroups` returns the names, the Issues pane renders a row each.
+  **BUILT 2026-09-09**, and it needed TWO readers, not one: `syncGroupPorts` has exactly two
+  production callers and *both* dropped the field. `syncPathGroups` now returns a `PathSync
+  {changed, refused}` whose `PinRefusal` carries the group, its name and the path to its INTERIOR —
+  the level the pin lives on, so the Issues row leads where it can be renamed. The **loader** is the
+  second, found while fixing the first, and it is the more important one: it syncs EVERY group in a
+  document, where the host reaches only the groups the user is inside, so a refusal now survives
+  navigating away and reaches headless `run` / `list` (through `ctx.warn`'s log line — `runmode`
+  reads `LoadResult::issues` for nothing else either). The row states the CONSEQUENCE, not the cause
+  — *"inner pin 'count' could not be mirrored onto its face — nothing outside can connect to it"* —
+  because there are two causes (a loop's name collision, a map's unliftable type) and `refused`
+  deliberately carries names alone. `ctest` **731/731** (+3); sabotage: drop either reader and its
+  own case fails; proved through the real binary on a hand-collided `count-loop.json`.
 - **The Issues pane flagging an unwired DEFAULTED input** as "required input is not connected". A
   defaulted input stays `Required` by design (that is what keeps a default from swallowing
   suppression), so every fresh loop reports `count` and every loop interior reports `continue`.
@@ -4690,19 +4702,18 @@ SuiteSparse-enabled Ceres; capture manifests and capture datasets (which M10 han
 
 Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
 
-1. **`GroupSync::refused` has no reader.** M11 slice 2 built the refusal and reports it *by name*
-   because that is the part a user can act on; `groupnav::syncPathGroups` drops it on the floor. The
-   compiled-linked-unreachable shape this repo keeps catching. *(M11 §Not in this milestone.)*
-2. **The Issues pane flags an unwired DEFAULTED input** as "required input is not connected", so
+1. **The Issues pane flags an unwired DEFAULTED input** as "required input is not connected", so
    every fresh loop reports `count` and every loop interior reports `continue`. Pre-existing —
    `BlurNode`'s `radius` / `sigma` have done it since 2026-08-15. One line: skip when
    `node.defaultOf(port) != nullptr`. *(M11 §Not in this milestone.)*
-3. **`refusalText(NotInline)` says "This group is linked - make it local first"**, which is wrong for
+2. **`refusalText(NotInline)` says "This group is linked - make it local first"**, which is wrong for
    a map and for a loop — `edit::ungroup` refuses both and neither is linked. Reachable only by
    keyboard shortcut, since the menu greys the item out. Pre-existing since M8.
    *(M11 §Not in this milestone.)*
-4. **`ctest -j8` fails ~7 `io` / `io::video` cases on shared scratch paths.** Pre-existing and
+3. **`ctest -j8` fails ~7 `io` / `io::video` cases on shared scratch paths.** Pre-existing and
    invisible serially. *(M12.)*
+
+*Fixed: `GroupSync::refused` had no reader (2026-09-09) — see M11 §Not in this milestone.*
 
 ### Refused, not deferred — do not re-raise
 
