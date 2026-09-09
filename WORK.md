@@ -4363,6 +4363,19 @@ happens. *(**Superseded** — it happened 2026-09-07 → 09-08; **M11 is COMPLET
   suppression), so every fresh loop reports `count` and every loop interior reports `continue`.
   Pre-existing: `BlurNode`'s `radius` / `sigma` have done it since 2026-08-15. One line — skip when
   `node.defaultOf(port) != nullptr` — and its own commit.
+  **BUILT 2026-09-09**, and the one line was the smaller half. It was wider than recorded — TWELVE
+  defaulted inputs exist (Blur radius/sigma, Gate enable, Select selector, Loop count, a loop
+  interior's continue, ClipSequence position/count, FrameAt position, OpenSequence path, LoadImage
+  path, ListDir directory/extension), and the default example scene holds a Blur, so flowview OPENED
+  with two false warnings. It lasted because nothing could test it: `collectIssues` was a `static`
+  function inside `issuespane.cpp`, which the driver-free test binary does not compile, so the
+  panel's whole validation — this rule, the map-hole row, the Cast row — had never been under test.
+  So it moved to **`apps/flowview/src/validation.{h,cpp}`** (it touches no ImGui: a pure
+  `Graph` + `Evaluation` → `vector<Issue>`), compiled into `test-flowview` beside `groupnav.cpp`.
+  `ctest` **734/734** (+3): the rule driven through the production `BlurNode`, which carries both
+  kinds of required input at once; a loop reporting neither `count` nor `continue`, asked of both
+  levels; and the readiness rule, pinned so the move is known to be faithful. Sabotage: restore the
+  old condition and the first two fail.
 - **`refusalText(NotInline)` saying "This group is linked - make it local first"**, which is wrong
   for a map and now for a loop as well: `edit::ungroup` refuses both, and neither is linked. The
   menu greys the item out (`canUngroupSelection` asks for an `InlineGroupNode`), so the wording is
@@ -4702,18 +4715,22 @@ SuiteSparse-enabled Ceres; capture manifests and capture datasets (which M10 han
 
 Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
 
-1. **The Issues pane flags an unwired DEFAULTED input** as "required input is not connected", so
-   every fresh loop reports `count` and every loop interior reports `continue`. Pre-existing —
-   `BlurNode`'s `radius` / `sigma` have done it since 2026-08-15. One line: skip when
-   `node.defaultOf(port) != nullptr`. *(M11 §Not in this milestone.)*
-2. **`refusalText(NotInline)` says "This group is linked - make it local first"**, which is wrong for
+1. **`refusalText(NotInline)` says "This group is linked - make it local first"**, which is wrong for
    a map and for a loop — `edit::ungroup` refuses both and neither is linked. Reachable only by
    keyboard shortcut, since the menu greys the item out. Pre-existing since M8.
    *(M11 §Not in this milestone.)*
-3. **`ctest -j8` fails ~7 `io` / `io::video` cases on shared scratch paths.** Pre-existing and
+2. **`ctest -j8` fails ~7 `io` / `io::video` cases on shared scratch paths.** Pre-existing and
    invisible serially. *(M12.)*
 
-*Fixed: `GroupSync::refused` had no reader (2026-09-09) — see M11 §Not in this milestone.*
+*Fixed 2026-09-09, both in M11 §Not in this milestone: `GroupSync::refused` had no reader; the
+Issues pane flagged an unwired DEFAULTED input.*
+
+**Noticed while fixing the second, not built:** the Issues pane has no row for *a node that ran and
+produced nothing*. It matters because a `LoadImage` added from the palette defaults its `path` to an
+empty one — so it loads nothing, suppresses everything downstream, and (correctly, now) reports no
+missing connection. The old row said the wrong thing about it; saying nothing is better, and saying
+the right thing is a check the panel does not have. It wants care: a suppressed node is ORDINARY
+under ADR-0007, so the rule cannot simply be "empty output is a problem".
 
 ### Refused, not deferred — do not re-raise
 

@@ -628,6 +628,48 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-09 — an unwired DEFAULTED input is not a missing required input
+
+Known defect #2, cleared. The Issues pane reported *"required input 'radius' is not connected"* on
+every input that was `Required` with no incoming edge — and a **defaulted** input is `Required` by
+design. That is exactly what keeps a default from swallowing suppression (ADR-0007: a Gate wired in
+and turned off must leave the slot empty rather than fall back), and `populateInputs` seeds such a
+slot from its param whenever nothing is wired. So the input always carries a value and can never be
+why a node cannot run. `ctest` **734/734** (+3), warning-clean, format-check clean, `flowview run
+--example` unchanged. **gui-mode not eyeballed.**
+
+- **Wider than the defect list recorded, and visible on startup.** Twelve defaulted inputs exist
+  today — Blur `radius`/`sigma`, Gate `enable`, Select `selector`, Loop `count`, a loop interior's
+  `continue`, ClipSequence `position`/`count`, FrameAt `position`, OpenSequence `path`, LoadImage
+  `path`, ListDir `directory`/`extension` — and the **default example scene contains a Blur**, so
+  flowview opened with two false warnings before the user touched anything.
+- **The one-line fix was the smaller half. It lasted because nothing could test it.**
+  `collectIssues` was a `static` function inside `issuespane.cpp`, which the driver-free
+  `test-flowview` does not compile — so the panel's entire validation (this rule, the map-hole row,
+  the Cast row) had never been under test, and the defect survived two milestones and twelve
+  declarations. It now lives in **`apps/flowview/src/validation.{h,cpp}`**, compiled into the test
+  binary beside `groupnav.cpp` / `undo.cpp` / `canvasids.cpp`. It moved cleanly because it touches
+  no ImGui at all: a pure `Graph` + `Evaluation` → `vector<Issue>`, with the pane keeping only the
+  drawing.
+- **Asked of the NODE, not the port.** `Port::required()` cannot answer this — a port does not know
+  what stands behind it — so the check is `node.defaultOf(in.id()) == nullptr`, the same public
+  accessor the Inspector already uses to show *"driven by input"*. No new API.
+- **The positive control shares the case with the rule**, because "reports nothing" would pass just
+  as well if the check had been deleted outright: a bare `BlurNode` carries both kinds at once
+  (`image` required with no default, `radius`/`sigma` required *with* one) and must report exactly
+  one row. The loop case asks both levels, since `count` is the loop's own port while `continue` is
+  an input of its interior's `GroupOutput`.
+- **Found by writing the third test, and it corrected the test rather than the code:** an output is
+  called a dead end once its node is READY, which is not the same as "has run" — a node with no
+  inputs is ready from the start, and a node whose required input is unfed never becomes ready
+  however many times the graph runs. The case now runs the graph on both sides, so what separates
+  them is readiness alone.
+- **Left for its own commit, recorded in WORK.md:** there is no row for *a node that ran and produced
+  nothing*. A palette-added `LoadImage` defaults its `path` to an empty one, so it loads nothing and
+  suppresses everything downstream while correctly reporting no missing connection. The old row said
+  the wrong thing about it; saying nothing is better, and saying the right thing needs care, because
+  a suppressed node is ORDINARY under ADR-0007.
+
 ### Update 2026-09-09 — `GroupSync::refused` has readers (both of them)
 
 Known defect #1, cleared. M11 slice 2 built the refusal — an inner boundary pin a group cannot mirror

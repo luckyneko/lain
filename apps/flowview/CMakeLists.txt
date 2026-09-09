@@ -10,6 +10,7 @@ add_executable(flowview
 	src/appcontext.cpp
 	src/groupnav.cpp
 	src/groupedit.cpp
+	src/validation.cpp
 	src/session.cpp
 	src/undo.cpp
 	src/previewcache.cpp
