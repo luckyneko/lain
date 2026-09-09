@@ -5,6 +5,10 @@ for working discipline. This plan states intent and decisions; it is not a
 commitment to build past what a milestone needs. Discipline is "only the
 necessary" — don't build ahead of a real caller.
 
+**What is still open lives in one place: [Outstanding work — one index](#outstanding-work--one-index),
+just above the backlog.** Every deferred item, known defect and standing refusal, each pointing at
+the section that owns its reasoning.
+
 ## What this is
 
 A fast, threadable node-graph engine for rapid prototyping: nodes with typed
@@ -114,12 +118,13 @@ Libraries live under `libs/` (a `lain::<name>` each); runnable executables under
 `apps/`. Consumed-as-subdirectory rule (`archimedes` already honors it): a lib's
 tests build, and `apps/` build, only when `lain` is the top-level CMake project.
 
-## Milestone 1 — engine + app stack + viewer
+## Milestone 1 — engine + app stack + viewer (**COMPLETE** 2026-06-30)
 
-**Status:** the engine core (steps 1–4 below, plus the engine test suite + example
-GPU node) is built, tested, and committed. The remaining M1 work — decouple `flow`
-from archimedes, then `lain::math` / `lain::app` / `lain::gui` / `flowview` — is in
-"Remaining work" after the engine steps. Steps 1–4 record what was built.
+**Status:** complete. The engine core (steps 1–4 below, plus the engine test suite +
+example GPU node), the decoupling of `flow` from archimedes, and `lain::math` /
+`lain::app` / `lain::gui` / `flowview` all landed by 2026-06-30, with gui-mode
+verified on the live driver. Steps 1–4 record the engine; the "Remaining work"
+section after them records the rest, and is likewise done.
 
 **Foundational additions (landed, beyond the original M1 steps):**
 `lain::core::Version` (semver-style identity type, sibling to `Time`); **`libs/log`**
@@ -215,9 +220,9 @@ on-request refire), and a CPU + GPU-handle port round-trip. A small example grap
 scene — `[gpu]` tests `SKIP`-aware so GPU-less CI stays green, matching
 `archimedes`. New libs add their own per-step tests below.
 
-## Remaining work — decouple + app stack + viewer
+## Remaining work — decouple + app stack + viewer (**all built** by 2026-06-30)
 
-Build order. Each lib builds standalone + as a subdirectory, strict-clean.
+Retained as the record of M1's build order and the decisions inside it. Build order. Each lib builds standalone + as a subdirectory, strict-clean.
 
 ### 5. Decouple `flow` from archimedes
 
@@ -285,7 +290,7 @@ Every lib compiles warning-clean under strict flags; `ctest` passes; a `flowview
 graph with a GPU node's texture visible in the inspector. Do not claim the viewer
 works without running it.
 
-## Milestone 2 — interactive graph editing (done)
+## Milestone 2 — interactive graph editing (**COMPLETE** 2026-07-02)
 
 The viewer became an editor. Landed in order:
 
@@ -309,7 +314,7 @@ The viewer became an editor. Landed in order:
 Preview descriptors for deleted nodes are reclaimed via `lain::gui::Context::releaseImage`
 (the inspector prunes its texture cache after each edit).
 
-## Milestone 3 — file loading
+## Milestone 3 — file loading (**COMPLETE** 2026-07-14)
 
 **Status:** the **read vertical is done and cli-verified** — `lain::memory` (Buffer) → `lain::io`
 (`read → Buffer`) → `lain::io::image` (reader registry + `load` facade) → the **png / tiff / jpeg**
@@ -477,9 +482,14 @@ adoption. **TIFF reader breadth ("one day", not now):** float sample format → 
 (intermediary/HDR files — lain already has the `*32F` formats), `CIELab`/`YCbCr` photometrics
 (need a colour conversion), and tiled / planar / multi-page (currently rejected / first-page).
 
-## Milestone 4 — pipeline I/O: graph boundary + host binding (rough plan)
+## Milestone 4 — pipeline I/O: graph boundary + host binding (**COMPLETE** 2026-07-10)
 
-**Not yet designed — a rough sketch, captured so M3 closes cleanly. Grill + ADR before building.**
+**Both verticals built and verified.** This began as a rough sketch captured so M3 could close
+cleanly — *"not yet designed… grill + ADR before building"* — and was then designed and built:
+vertical **(a)** (the boundary seam, the cli round-trip, the Interface panel) and vertical **(b)**
+(dynamic boundary pins on stable `PortId`s) both landed 2026-07-10, and the cli named-binding
+deferred here landed 2026-07-13 with Tier A #1's `run` subcommand. **Two things stay deferred from
+this milestone:** the Merge / fan-in (multi-connectable) port, and port reorder.
 
 `flow`'s reason for being is a **volumetric reconstruction pipeline**: N streams of frames (images)
 → voxels, live (real-time) and offline (cli). That reframes I/O away from per-file load/save
@@ -4557,6 +4567,160 @@ itself a **collection** (nothing refuses it, nothing tests it); and the canvas o
 Cast on a mismatched drag** — the registry makes it possible, but it is an adapter gesture with its
 own design (what if two conversions exist? none?) and wants grilling of its own.
 
+
+## Outstanding work — one index
+
+Every deferred item, known defect and standing refusal in this file, in one place. It exists because
+that information is otherwise spread across nine *Not in this milestone* sections, four ADR
+*Deliberately unsettled* lists and three backlog tiers — which is how the 2026-09-09 audit found
+**thirteen** claims a later milestone had already overtaken, three of them milestone status lines
+saying work was unbuilt that was finished weeks earlier.
+
+**This is a POINTER index, not a second copy.** Each row names an item and says where the reasoning
+lives; none of them restates a decision, because a restatement is a second source able to disagree
+with the first — the shape M7 slice 1 and ADR-0014 each deleted. Owners are named by **section**
+rather than by heading anchor, since the headings here carry dates that change.
+
+**Keeping it honest:** when an item is built or refused, amend its owning section and **delete its
+row here**. A row is cheap to delete and expensive to leave.
+
+### Unfinished milestones
+
+- **M9 — camera calibration and fixed registration.** Designed 2026-08-14/15 with three ADRs, no
+  code. **Unblocked:** M10 was numbered after it and built before it, discharging its frame-sequence
+  prerequisite. *(Milestone 9; [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
+  [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
+  [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md).)*
+
+M1–M8 and M10–M12 are built. M9 is the only milestone from 5 onward that is not.
+
+### Deferred — engine / `flow` core
+
+- **The `Collection` payload** — the zero-copy element aggregate behind the same
+  `size`/`at`/`gather` interface. The *question* was answered outside the map by ADR-0018; the type
+  is not built. *(ADR-0014 §Deliberately unsettled; M8 §Not in this milestone.)*
+- **Keyed elements** — the parallel key input, so "stream 3" survives a reorder. Downstream of the
+  `Collection` payload. *(ADR-0014 §Deliberately unsettled.)*
+- **Per-element incrementality** — unavailable while the payload is a natural `std::vector`; blocked
+  on `Collection`. *(ADR-0014 §Consequences; M8 §Not in this milestone.)*
+- **Retaining per-iteration state**, and the breadcrumb iteration stepper it would enable. Needs a
+  retention policy ADR-0012 refuses to have. *(ADR-0021 §Deliberately unsettled; M11.)*
+- **Plan caching** across runs and across stages — the optimisation that makes the group/map/loop
+  lowering cheap. *(ADR-0009; ADR-0021; M5 §Deferred; M11.)*
+- **A scan output** for Loop (gathering across iterations) — refused so Loop and Map stay one job
+  each; not impossible, the machinery is `exitMap`'s gather. *(ADR-0021; M11.)*
+- **`count` visible to a loop's interior**, for progress. Additive. *(ADR-0021; M11.)*
+- **In-run liveness release** — M6 bounds retention *after* a run, not peak *during* one. Cheap to
+  add because `PortValue` payloads are already shared and immutable. *(M6 §Not in this milestone.)*
+- **A multi-value cli binder** for a collection boundary input (`--files a.png b.png c.png`).
+  *(ADR-0014; M8.)*
+- **A registered node-serializer seam**, if third-party structural node kinds ever appear.
+  *(M5 §Deferred.)*
+- **The Merge / fan-in (multi-connectable) port** — one input pin accepting N connections, which is
+  Merge's natural form; the N-pin Merge that exists is explicitly a strawman for it.
+  *(M4, deferred as planned.)*
+- **Port reorder.** Ids ride along, so edges are untouched by a permutation — but nothing performs
+  one. *(M4, deferred as planned; see also the storage note in M4's mutation design.)*
+
+### Deferred — payload types
+
+- **A payload type that is itself a collection** — nothing refuses it, nothing tests it.
+- **`acceptsPayloadType` refusing per-VALUE** rather than per-type. No caller.
+- **Rounding / saturating / checked numeric conversions.** One numeric node, when something asks.
+- **`bool ↔ int`** — what `2 → true` means is a decision nothing is asking for.
+- **Generated per-pair palette entries** (`Cast ▸ Int → Float`) — wants `NodeCategory` to carry a
+  preset; the Inspector's dropdowns already reach every pair.
+- **The canvas offering to insert a Cast on a mismatched drag** — possible, but an adapter gesture
+  with its own design (two conversions? none?), so it wants grilling of its own.
+
+*(All six: [ADR-0022](docs/adr/0022-payload-types-as-data.md) §Deliberately unsettled;
+M12 §Not in this milestone.)*
+
+### Deferred — groups and templates
+
+- **Prefab overrides / per-instance divergence.** Parameterising via boundary pins is preferred, and
+  sharing strengthened the argument. *(ADR-0010; M5 §Deferred; M7 §Not in this milestone.)*
+- **File watching on templates** — an external edit needs the explicit *Reload Linked Groups*
+  gesture, which shipped in M7 slice 3. *(M7; M5 §Deferred.)*
+- **In-place template editing** — `Edit Template…` stays the explicit act. *(M7.)*
+- **"Map over selection"** — a group-kind parameter on `edit::groupSelected`, the ergonomic gap left
+  by refusing the linked map. *(Backlog Tier A #10.)*
+
+### Deferred — video and media
+
+- **A driving timeline in the gui.** Slice 7 is an *inspection* player; a transport that binds a
+  `FramePosition` and re-runs the graph is the follow-on.
+- **A handle pool** and a **decoder pool** (with it, parallel decode). Both interfaces were specified
+  so each is a pure backend swap.
+- **BT.601 / BT.2020 / PQ / HLG**, U16 decode output, audio, and **BT.1886** display rendering.
+- **Device capture** — the prebuilt FFmpeg is `--disable-avdevice`.
+- **Realtime playback of processed output** — that is the streaming pipeline, Tier B #4.
+- **`core::Uri`** — queued with its own ADR; must *not* be an RFC 3986 parser, and its home is
+  `core`. *(§Queued: `core::Uri`, in Milestone 10.)*
+
+*(Others: M10 §Not in this milestone.)*
+
+### Deferred — serialization, params, graphics
+
+- **Untagged variant, yaml / xml / binary codecs, per-node-type schema versioning, and
+  C++26-reflection auto-`serialize`.** *(Backlog Tier A #1, §Deferred (designed-for).)*
+- **A read-only ("Debug") param kind**, the **per-value editor hint** (M10 slice 7 met it twice —
+  a `path` cannot tell an image from a folder from a clip, a `FramePosition` cannot know its
+  sequence), and **keyboard-search add**. *(ADR-0005.)*
+- **The non-encoding swapchain** — designed, dormant on MoltenVK; an archimedes change for when a
+  target surface actually forces sRGB. *(ADR-0002.)*
+
+### Backlog tiers — speculative and foundational
+
+- **Tier B:** #4 streaming pipeline · #5 node hot-reload + a node-type plugin registry ·
+  #6 imgui-node-editor + docking/multi-viewport · #7 type-owned factory keys.
+- **Tier C:** #8 `core::DateTime` · #9 video `Timecode` / `Timestamp`. **Both triggers have fired
+  and were answered negatively** — json shipped without timestamps, and M10 addresses a frame by
+  ordinal with `media::FrameRate` + `core::Time`. Still unbuilt, now with no predicted caller.
+
+### After M9 exists — its own exclusions
+
+Joint intrinsic/extrinsic optimization, multi-board calibration, mutable intrinsics during
+registration; moving-camera pose tracking, temporal-alignment estimation, world-frame alignment; a
+generic `Measurement<T>` without a second caller; runtime-defined distortion-model plugins and
+SuiteSparse-enabled Ceres; capture manifests and capture datasets (which M10 hands to M9).
+*(M9 §Not in this milestone; M10 §Not in this milestone.)*
+
+### Known defects, each owed its own commit
+
+Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
+
+1. **`GroupSync::refused` has no reader.** M11 slice 2 built the refusal and reports it *by name*
+   because that is the part a user can act on; `groupnav::syncPathGroups` drops it on the floor. The
+   compiled-linked-unreachable shape this repo keeps catching. *(M11 §Not in this milestone.)*
+2. **The Issues pane flags an unwired DEFAULTED input** as "required input is not connected", so
+   every fresh loop reports `count` and every loop interior reports `continue`. Pre-existing —
+   `BlurNode`'s `radius` / `sigma` have done it since 2026-08-15. One line: skip when
+   `node.defaultOf(port) != nullptr`. *(M11 §Not in this milestone.)*
+3. **`refusalText(NotInline)` says "This group is linked - make it local first"**, which is wrong for
+   a map and for a loop — `edit::ungroup` refuses both and neither is linked. Reachable only by
+   keyboard shortcut, since the menu greys the item out. Pre-existing since M8.
+   *(M11 §Not in this milestone.)*
+4. **`ctest -j8` fails ~7 `io` / `io::video` cases on shared scratch paths.** Pre-existing and
+   invisible serially. *(M12.)*
+
+### Refused, not deferred — do not re-raise
+
+- **A linked map and a linked loop** — compose instead: a map (or loop) whose interior holds a
+  linked group. *(ADR-0014, amended 2026-09-09; ADR-0021.)*
+- **A value-derived key** for map elements — unimplementable for the type the first vertical maps
+  over. *(ADR-0014.)*
+- **An ambient time cursor**, and **a decoded-unit `Frame` aggregate**. *(ADR-0018.)*
+- **Relabelling explicitly tagged BT.601 / BT.2020 / HDR footage** — reported and refused, never
+  silently converted. *(ADR-0018; ADR-0020.)*
+- **thorax** — static linking with service-shaped seams instead. *(ADR-0004.)*
+- **GPU coverage in CI.** gui-mode stays eyeball-verified on a Metal machine and the one `[gpu]` test
+  self-SKIPs. Deliberate and permanent. *(§Continuous integration.)*
+
+### Standing verification gap
+
+`flowview` gui-mode is verified by the repo owner's eyeball on a Metal machine, not by CI. Nothing in
+the suite or the workflow should be read as covering it.
 
 ## Backlog (deferred — don't build speculatively)
 

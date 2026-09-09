@@ -2057,8 +2057,8 @@ one proving copies share a payload *address*, one proving a fan-out graph run tw
 copies); headless `run` still flows source→tint→blur→result with each stage distinct, and save→load→save
 is still byte-idempotent.
 
-**Engine core is built, tested, committed. The remaining M1 work is one decoupling
-refactor of `flow` plus the app stack + viewer:**
+**Milestone 1 is complete (2026-06-30) — the engine core, the `flow` decoupling, and the
+app stack + viewer. What each piece is, and what it decided:**
 
 - ✅ Build skeleton (umbrella CMake, `lain::task` wrapping Taskflow), `PortValue`,
   `Port`/`Node`/`Graph` (type-checked + cycle-rejecting), and the `Scheduler`
