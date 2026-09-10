@@ -577,18 +577,33 @@ namespace lain::flow::edit
 			result.refusal = GroupRefusal::NotAGroup;
 			return result;
 		}
-		// INLINE only. A linked group's interior is its template's definition, shared by every other
-		// instance of it (ADR-0013) — there is nothing here this document owns to splice, and the type
-		// hands out no mutable interior to take it from. Make it local first.
+		// Two separate conditions, asked of the SEAMS rather than of a class — the same reason the
+		// scheduler names no node kind. Testing for InlineGroupNode answers both at once and so could
+		// only report one reason, which is how a map came to be told it was linked.
 		Node& node = parent.node(group);
-		auto* inlineGroup = dynamic_cast<InlineGroupNode*>(&node);
-		if (inlineGroup == nullptr)
+		auto* groupNode = dynamic_cast<GroupNode*>(&node);
+		if (groupNode == nullptr)
 		{
-			result.refusal = dynamic_cast<GroupNode*>(&node) != nullptr ? GroupRefusal::NotInline
-																		: GroupRefusal::NotAGroup;
+			result.refusal = GroupRefusal::NotAGroup;
 			return result;
 		}
-		Graph& inner = inlineGroup->inner();
+		// (1) Is this interior ours to take? A linked group's is its template's definition, shared by
+		// every other instance of it (ADR-0013), and the type hands out no mutable interior at all.
+		Graph* interior = groupNode->editableInner();
+		if (interior == nullptr)
+		{
+			result.refusal = GroupRefusal::LinkedInterior;
+			return result;
+		}
+		// (2) Does it run ONCE? A map evaluates its interior per element and a loop per iteration, so
+		// the spliced-out nodes would run exactly once and the graph would quietly compute something
+		// else. The nodes are the node's body, not a nesting level a user chose to make.
+		if (node.interiorEvaluation() != InteriorEvaluation::Once)
+		{
+			result.refusal = GroupRefusal::InteriorRepeats;
+			return result;
+		}
+		Graph& inner = *interior;
 		const NodeId innerInId = inner.boundaryInputNode().id();
 		const NodeId innerOutId = inner.boundaryOutputNode().id();
 
@@ -602,12 +617,12 @@ namespace lain::flow::edit
 		{
 			if (e.to.node == group)
 			{
-				if (const PortId pin = inlineGroup->innerPin(e.to.port); pin != PortId{})
+				if (const PortId pin = groupNode->innerPin(e.to.port); pin != PortId{})
 					feeding.emplace_back(pin, e.from);
 			}
 			else if (e.from.node == group)
 			{
-				if (const PortId pin = inlineGroup->innerPin(e.from.port); pin != PortId{})
+				if (const PortId pin = groupNode->innerPin(e.from.port); pin != PortId{})
 					feedingTo.emplace_back(pin, e.to);
 			}
 		}

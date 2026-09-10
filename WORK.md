@@ -4380,6 +4380,19 @@ happens. *(**Superseded** — it happened 2026-09-07 → 09-08; **M11 is COMPLET
   for a map and now for a loop as well: `edit::ungroup` refuses both, and neither is linked. The
   menu greys the item out (`canUngroupSelection` asks for an `InlineGroupNode`), so the wording is
   only reachable from a keyboard shortcut — pre-existing since M8.
+  **BUILT 2026-09-10, and that last sentence was wrong**: the shortcut runs the same
+  `ungroupSelection`, which pre-filters with `soleSelectedOfType<InlineGroupNode>` and answers
+  *"Select a single inline group to ungroup"* before `edit::ungroup` is ever called. So the string
+  was unreachable from all four of its call sites (`groupSelected` cannot return it and
+  `replaceGroup` returns only `NotAGroup`), and `NotAGroup`'s was dead beside it. Fixing the wording
+  alone would have edited text nobody could see. So: `ungroup` now asks the two SEAMS instead of one
+  class — `editableInner()` for *is this interior ours* (**`LinkedInterior`**, renamed from
+  `NotInline` to say the fact rather than the failed test) and `interiorEvaluation()` for *does it
+  run once* (**`InteriorRepeats`**, new) — so it names no node kind, as the scheduler does not; and
+  `ungroupSelection` asks only *is exactly one node selected*, letting each of the four cases carry
+  its own reason. `ctest` **735/735** (+1): the case that was missing, since this file tested the
+  linked and plain-node kinds and neither of the two added since. Sabotage: put the single class
+  test back and it fails.
 - **A linked loop** — one shared template iterated, exactly as ADR-0014 defers the linked map.
   *(**Refused** 2026-09-09 along with it: compose a loop whose interior holds a linked group.)*
 - **Retaining per-iteration state**, and the breadcrumb iteration stepper it would enable. Needs a
@@ -4715,15 +4728,12 @@ SuiteSparse-enabled Ceres; capture manifests and capture datasets (which M10 han
 
 Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
 
-1. **`refusalText(NotInline)` says "This group is linked - make it local first"**, which is wrong for
-   a map and for a loop — `edit::ungroup` refuses both and neither is linked. Reachable only by
-   keyboard shortcut, since the menu greys the item out. Pre-existing since M8.
-   *(M11 §Not in this milestone.)*
-2. **`ctest -j8` fails ~7 `io` / `io::video` cases on shared scratch paths.** Pre-existing and
+1. **`ctest -j8` fails ~7 `io` / `io::video` cases on shared scratch paths.** Pre-existing and
    invisible serially. *(M12.)*
 
-*Fixed 2026-09-09, both in M11 §Not in this milestone: `GroupSync::refused` had no reader; the
-Issues pane flagged an unwired DEFAULTED input.*
+*Fixed, all three in M11 §Not in this milestone: `GroupSync::refused` had no reader (2026-09-09);
+the Issues pane flagged an unwired DEFAULTED input (2026-09-09); `ungroup` told a map it was linked
+(2026-09-10).*
 
 **Noticed while fixing the second, not built:** the Issues pane has no row for *a node that ran and
 produced nothing*. It matters because a `LoadImage` added from the palette defaults its `path` to an

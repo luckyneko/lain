@@ -366,8 +366,34 @@ TEST_CASE("ungroup refuses a linked group", "[flow][group][edit]")
 	const NodeId linked = g.add<LinkedGroupNode>();
 	// A linked group's interior is its template's definition, shared with every other instance of it —
 	// there is nothing here this document owns to splice out.
-	REQUIRE(edit::ungroup(g, linked).refusal == edit::GroupRefusal::NotInline);
+	REQUIRE(edit::ungroup(g, linked).refusal == edit::GroupRefusal::LinkedInterior);
 	REQUIRE(g.contains(linked));
+}
+
+TEST_CASE("ungroup refuses a map and a loop, and not as linked ones", "[flow][group][edit]")
+{
+	// A map and a loop OWN their interiors — editableInner() hands them out — so the reason ungroup
+	// refuses them is nothing to do with sharing. It is that they evaluate that interior more than
+	// once (per element, per iteration), and nodes spliced into the parent would run exactly once:
+	// the graph would go on evaluating and quietly compute something else.
+	//
+	// Answering both questions with one `dynamic_cast<InlineGroupNode*>` could only ever report one
+	// reason, so a map was told its interior belonged to a template. Nothing caught it because
+	// nothing asked — this file tested the linked case and the plain-node case, and neither of the
+	// two kinds added since.
+	registerInt();
+	Graph g;
+	const NodeId map = g.add<MapNode>();
+	const NodeId loop = g.add<LoopNode>();
+
+	REQUIRE(edit::ungroup(g, map).refusal == edit::GroupRefusal::InteriorRepeats);
+	REQUIRE(edit::ungroup(g, loop).refusal == edit::GroupRefusal::InteriorRepeats);
+
+	// Refused ATOMICALLY, like every other group refusal: both nodes are still here, interiors intact.
+	REQUIRE(g.contains(map));
+	REQUIRE(g.contains(loop));
+	REQUIRE(g.node(map).innerGraph() != nullptr);
+	REQUIRE(g.node(loop).innerGraph() != nullptr);
 }
 
 TEST_CASE("ungroup refuses a node that contains no graph", "[flow][group][edit]")

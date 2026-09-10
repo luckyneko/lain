@@ -132,8 +132,11 @@ namespace flowview
 				return "A value leaves this selection and comes back - include the nodes in between";
 			case flow::edit::GroupRefusal::NotAGroup:
 				return "That node contains no graph";
-			case flow::edit::GroupRefusal::NotInline:
+			case flow::edit::GroupRefusal::LinkedInterior:
 				return "This group is linked - make it local first";
+			case flow::edit::GroupRefusal::InteriorRepeats:
+				return "This node runs its interior more than once - ungrouping it would run those "
+					   "nodes once and change what the graph computes";
 			case flow::edit::GroupRefusal::None:
 				break;
 		}
@@ -187,12 +190,17 @@ namespace flowview
 			ctx.noteReadOnlyEdit();
 			return false;
 		}
-		const flow::NodeId group = soleSelectedOfType<flow::InlineGroupNode>(ctx, activeGraph);
-		if (group == flow::NodeId{})
+		// Only "is there exactly one?" is asked here. WHETHER that one can be ungrouped is
+		// edit::ungroup's to answer, and it distinguishes four cases where a class test here could
+		// only ever produce one message — so a map, a loop, a linked group and a plain node were all
+		// told to "select a single inline group", which is true and says nothing.
+		const std::vector<flow::NodeId> selected = selectionIn(ctx, activeGraph);
+		if (selected.size() != 1)
 		{
-			ctx.noteMessage(Issue::Severity::Warning, "Select a single inline group to ungroup");
+			ctx.noteMessage(Issue::Severity::Warning, "Select a single group to ungroup");
 			return false;
 		}
+		const flow::NodeId group = selected.front();
 
 		// Read the inner layout and the group's own position BEFORE the group is destroyed.
 		const math::Vec2f groupPos = nodePos(ctx, group);

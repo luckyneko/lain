@@ -547,7 +547,10 @@ Full landing notes in WORK.md M11.
 - **Three adjacent gaps found and deliberately left out**, each with its own commit owed and listed
   in WORK.md: `GroupSync::refused` still has no reader; the Issues pane flags an unwired DEFAULTED
   input as a missing required one (`BlurNode` has done this since 2026-08-15); and
-  `refusalText(NotInline)` says "linked" for a map or a loop.
+  `refusalText(NotInline)` says "linked" for a map or a loop. *(**All three fixed** 2026-09-09 /
+  09-10 — see the entries of those dates. Each was larger than it looked here: the first needed two
+  readers, the second was untestable where it sat, and the third's wrong string turned out to be
+  unreachable.)*
 
 ### Update 2026-09-06 — a node does not publish while its interior has deferred
 
@@ -627,6 +630,38 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   deferred, so a group containing an iterating loop republishes a stale value each intermediate
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
+
+### Update 2026-09-10 — a map is not a linked group, and `ungroup` stops saying so
+
+Known defect #3, cleared — and the recorded defect was wrong about the part that mattered. It read
+*"reachable only by keyboard shortcut, since the menu greys the item out"*. The shortcut runs the
+same `ungroupSelection`, which pre-filtered with `soleSelectedOfType<InlineGroupNode>` and answered
+*"Select a single inline group to ungroup"* before `edit::ungroup` was ever called — so the wrong
+string was unreachable from **all four** of its call sites, and `NotAGroup`'s was dead beside it.
+Correcting the wording alone would have edited text nobody could see. `ctest` **735/735** (+1),
+warning-clean, format-check clean, `flowview run --example` unchanged. **gui-mode not eyeballed.**
+
+- **One class test was answering two questions**, which is why it could only ever report one reason.
+  `dynamic_cast<InlineGroupNode*>` conflates *is this interior mine to take?* with *does it run
+  once?*, so a map — which owns its interior outright — was told that interior belonged to a
+  template. `ungroup` now asks the two SEAMS instead: `editableInner()` for the first,
+  `interiorEvaluation()` for the second. It names no node kind at all now, the way the scheduler
+  does not, so the next interior kind needs no edit here.
+- **`NotInline` became `LinkedInterior`**, saying the fact rather than the failed test. With the
+  map/loop case split off it means exactly "linked" — and the old name would have misled a reader,
+  since a map is *also* not inline yet no longer returns it. Its partner **`InteriorRepeats`** is
+  worded around the consequence: the spliced nodes would run **once**, so the graph would go on
+  evaluating and quietly compute something else. Unlike a linked group there is no first step that
+  makes it possible — repetition is what the node IS.
+- **The host stopped duplicating the decision.** `ungroupSelection` now asks only *is exactly one
+  node selected* and lets `edit::ungroup` say why not, so a map, a loop, a linked group and a plain
+  node each get their own reason where all four used to get one message that was true and said
+  nothing. The menu item stays greyed (`canUngroupSelection`) — greying out what cannot be done is
+  right; the shortcut is where the explanation was owed.
+- **Nothing caught it because nothing asked.** `test_groupedit.cpp` covered the linked kind and the
+  plain-node kind, and neither of the two kinds added since (M8's map, M11's loop). The new case
+  asserts both refuse as `InteriorRepeats` and that the refusal is atomic; sabotage — put the single
+  class test back — fails it.
 
 ### Update 2026-09-09 — an unwired DEFAULTED input is not a missing required input
 

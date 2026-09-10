@@ -156,8 +156,14 @@ namespace lain::flow::edit
 						  // after those nodes — so the selection has to be widened (or narrowed) to
 						  // take them in. The graph itself was, and stays, acyclic.
 		NotAGroup,		  // ungroup: that node contains no graph
-		NotInline,		  // ungroup: that node is a LINKED group — its interior is its template's, and
-						  // is shared by every other instance, so it cannot be spliced into this parent
+		LinkedInterior,	  // ungroup: that node is a LINKED group — its interior is its template's, and
+						  // is shared by every other instance, so there is nothing here this document
+						  // owns to splice into the parent. Make it local first, and the gesture works.
+		InteriorRepeats,  // ungroup: that node runs its interior more than ONCE — a map once per
+						  // element, a loop once per iteration. Splicing that interior into the parent
+						  // would run it exactly once, so the graph would go on evaluating and quietly
+						  // compute something else. Unlike LinkedInterior there is no first step that
+						  // makes it possible: repetition is what the node IS.
 	};
 
 	// What groupSelected did.
