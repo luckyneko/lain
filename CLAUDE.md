@@ -631,6 +631,41 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-10 — `ctest -j` is green, and CI runs it that way
+
+The last known defect, cleared: `ctest -j8` failed ~7 `io` / `io::video` cases, nondeterministically,
+and passed serially every time. `ctest` **735/735** at `-j16` (×3), `-j8` (×5), `--parallel 4` (×3,
+CI's setting) and serially; warning-clean, format-check clean; the headless/subproject configuration
+(`LAIN_BUILD_TESTING=OFF`) still configures and builds.
+
+- **`catch_discover_tests` runs every TEST_CASE as its own PROCESS** — it re-invokes the executable
+  with a filter. Fourteen test files had each grown the same private fixture uniquifying its path
+  with a `static int counter = 0`, under a comment promising *"each test owns an isolated fixture on
+  disk"*. That counter restarts at 0 in every process, so two concurrent cases of one executable
+  took the same name; the failure output showed a single file holding two tests' interleaved frames.
+- **A counter cannot fix it, because the processes cannot see each other's.** What can is identity
+  minted without coordination, which is what `core::Uuid` is already in the tree for. So the new
+  header-only **`lain::testing`** (`libs/testing`, built only under `LAIN_BUILD_TESTING`) puts the
+  uniqueness in a per-process **directory** and a plain counter inside it — sufficient, because
+  Catch2 runs one case at a time within a process.
+- **The uuid buys the CLEANUP as much as the name**, and the sabotage is what showed it: fixing the
+  directory name to a constant fails **10–19** tests, *more* than the 7 it replaces, because each
+  finishing process then `remove_all`s the directory out from under every other one still running.
+  Recorded in the header, since it is not what you would predict.
+- **Measured bonus:** a full run now leaves **zero** scratch directories behind, where the old
+  scheme had left 13 stray files in the temp dir.
+- **CI turns `--parallel 4` on**, which is part of the fix, not a follow-on: the step's comment
+  read *"Serial on purpose: twenty test files write into the shared `fs::temp_directory_path()`"* —
+  a workaround whose reason is now gone. A serial CI also could not catch this coming back, since
+  the collision is invisible to a serial run.
+- **`lain::testing` has no test of its own, deliberately.** The property that matters is
+  cross-process, and no in-process fixture can assert it — a case checking "these two paths differ"
+  passes just as happily under the bug. The suite at `-j` is the test, which is why CI had to change.
+- **All four known defects are now fixed, and two of the four were larger than their one-line
+  description in the same way**: the recorded symptom was the visible end of a decision that was
+  duplicated (this one, fourteen times) or unreachable (defect 3's dead string). Worth remembering
+  when writing the next entry on that list.
+
 ### Update 2026-09-10 — a map is not a linked group, and `ungroup` stops saying so
 
 Known defect #3, cleared — and the recorded defect was wrong about the part that mattered. It read

@@ -7,6 +7,8 @@
 #include "lain/io/image/load.h"
 #include "lain/io/image/reader.h"
 
+#include <lain/testing/scratch.h>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstddef>
@@ -40,9 +42,7 @@ class TempFile
 public:
 	TempFile(const std::string& extension, const std::vector<std::uint8_t>& bytes)
 	{
-		static int counter = 0;
-		m_path = std::filesystem::temp_directory_path() /
-				 ("lain_ioimage_" + std::to_string(counter++) + "." + extension);
+		m_path = lain::testing::scratchPath("ioimage", "." + extension);
 		std::ofstream out(m_path, std::ios::binary | std::ios::trunc);
 		out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 	}
@@ -132,6 +132,6 @@ TEST_CASE("load returns nullopt when the uri has no extension", "[io-image]")
 TEST_CASE("load returns nullopt when the file is missing", "[io-image]")
 {
 	registerFake("fake");
-	const auto missing = std::filesystem::temp_directory_path() / "lain_ioimage_absent.fake";
+	const auto missing = lain::testing::scratchPath("absent", ".fake");
 	REQUIRE_FALSE(load(missing.string()).has_value());
 }

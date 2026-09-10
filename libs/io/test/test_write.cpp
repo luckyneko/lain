@@ -5,6 +5,8 @@
 #include "lain/io/read.h"
 #include "lain/io/write.h"
 
+#include <lain/testing/scratch.h>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstddef>
@@ -32,9 +34,7 @@ class TempPath
 public:
 	explicit TempPath(const std::string& extension)
 	{
-		static int counter = 0;
-		m_path = std::filesystem::temp_directory_path() /
-				 ("lain_iowrite_" + std::to_string(counter++) + "." + extension);
+		m_path = lain::testing::scratchPath("iowrite", "." + extension);
 	}
 	~TempPath()
 	{
@@ -91,6 +91,6 @@ TEST_CASE("write of an unsupported scheme fails", "[write]")
 
 TEST_CASE("write into a missing directory fails", "[write]")
 {
-	const auto missing = std::filesystem::temp_directory_path() / "lain_no_such_dir" / "x.bin";
+	const auto missing = lain::testing::scratchPath("absent-dir") / "x.bin";
 	REQUIRE_FALSE(write(missing.string(), bufferFrom({1, 2, 3})));
 }

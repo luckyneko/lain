@@ -12,6 +12,8 @@
 #include "lain/io/stream.h"
 #include "lain/io/uri.h"
 
+#include <lain/testing/scratch.h>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstddef>
@@ -33,9 +35,7 @@ class TempFile
 public:
 	explicit TempFile(const std::vector<std::uint8_t>& bytes)
 	{
-		static int counter = 0;
-		m_path = std::filesystem::temp_directory_path() /
-				 ("lain_iostream_test_" + std::to_string(counter++) + ".bin");
+		m_path = lain::testing::scratchPath("iostream", ".bin");
 		std::ofstream out(m_path, std::ios::binary | std::ios::trunc);
 		out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 	}
@@ -61,9 +61,7 @@ class TempPath
 public:
 	TempPath()
 	{
-		static int counter = 0;
-		m_path = std::filesystem::temp_directory_path() /
-				 ("lain_iostreamw_test_" + std::to_string(counter++) + ".bin");
+		m_path = lain::testing::scratchPath("iostreamw", ".bin");
 	}
 
 	~TempPath()
@@ -256,7 +254,7 @@ TEST_CASE("a read stream reports its uri canonically", "[stream]")
 
 TEST_CASE("openStream refuses what it cannot read", "[stream]")
 {
-	const auto missing = std::filesystem::temp_directory_path() / "lain_iostream_does_not_exist.bin";
+	const auto missing = lain::testing::scratchPath("absent", ".bin");
 	REQUIRE(openStream(missing.string()) == nullptr);
 
 	// A directory opens perfectly well on some platforms and reads nothing — the regular-file
@@ -366,7 +364,7 @@ TEST_CASE("a write stream past the end extends the resource", "[stream]")
 
 TEST_CASE("createStream refuses what it cannot create", "[stream]")
 {
-	const auto missing = std::filesystem::temp_directory_path() / "lain_iostream_no_such_dir" / "out.bin";
+	const auto missing = lain::testing::scratchPath("absent-dir") / "out.bin";
 	REQUIRE(createStream(missing.string()) == nullptr);
 
 	REQUIRE(createStream("http://example.com/clip.mp4") == nullptr);

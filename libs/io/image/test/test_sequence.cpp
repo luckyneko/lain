@@ -10,6 +10,7 @@
 #include "lain/io/image/sequence.h"
 
 #include <lain/io/uri.h>
+#include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -62,8 +63,7 @@ namespace
 	public:
 		TempDir()
 		{
-			static int counter = 0;
-			m_path = fs::temp_directory_path() / ("lain_seq_" + std::to_string(counter++));
+			m_path = lain::testing::scratchPath("seq");
 			fs::remove_all(m_path);
 			fs::create_directories(m_path);
 		}
@@ -126,7 +126,7 @@ TEST_CASE("a missing directory fails, an empty one is a value", "[io::image][seq
 {
 	// The distinction flow's ListDir already draws, arriving from the other end: absent is a
 	// failure, empty is zero frames.
-	CHECK_FALSE(openSequence((fs::temp_directory_path() / "lain_seq_does_not_exist").string()).has_value());
+	CHECK_FALSE(openSequence(lain::testing::scratchPath("absent").string()).has_value());
 
 	TempDir empty;
 	const std::optional<lain::media::FrameSequence> sequence = openSequence(empty.string());

@@ -4728,12 +4728,51 @@ SuiteSparse-enabled Ceres; capture manifests and capture datasets (which M10 han
 
 Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
 
-1. **`ctest -j8` fails ~7 `io` / `io::video` cases on shared scratch paths.** Pre-existing and
-   invisible serially. *(M12.)*
+**The list is empty.** All four are fixed — the three from M11 §Not in this milestone
+(`GroupSync::refused` had no reader, 2026-09-09; the Issues pane flagged an unwired DEFAULTED
+input, 2026-09-09; `ungroup` told a map it was linked, 2026-09-10) and the parallel-ctest collision
+below (2026-09-10). Two of the four turned out to be **larger than their one-line description**, and
+in the same way each time: the described symptom was the visible end of a duplicated or unreachable
+decision. Worth remembering when writing the next entry here.
 
-*Fixed, all three in M11 §Not in this milestone: `GroupSync::refused` had no reader (2026-09-09);
-the Issues pane flagged an unwired DEFAULTED input (2026-09-09); `ungroup` told a map it was linked
-(2026-09-10).*
+### `ctest -j` and scratch paths — FIXED 2026-09-10
+
+`ctest -j8` failed ~7 `io` / `io::video` cases, nondeterministically, and passed serially every time.
+**`catch_discover_tests` registers each TEST_CASE as its own ctest test and runs it by invoking the
+executable again with a filter — so every case is a separate PROCESS.** Fourteen test files had each
+grown the same private fixture uniquifying its path with a `static int counter = 0`, under a comment
+promising *"each test owns an isolated fixture on disk"*. That counter restarts at 0 in every
+process, so two concurrent cases of one executable took the same name and wrote over each other: the
+failure output showed one file holding two tests' interleaved frames.
+
+- **A counter cannot fix it**, because the processes cannot see each other's. What can is identity
+  minted without coordination — `core::Uuid`, already in the tree for exactly that. So the new
+  header-only **`lain::testing`** (`libs/testing`, built only under `LAIN_BUILD_TESTING`) puts the
+  uniqueness in a per-process **directory** and a plain counter inside it, which is sufficient
+  because Catch2 runs one case at a time within a process.
+- **The uuid buys the CLEANUP as much as the name**, which the sabotage is what showed: fixing the
+  directory name to a constant fails **10–19** tests, more than the 7 it replaces, because each
+  finishing process then `remove_all`s the directory out from under every other one still running.
+- **Fourteen copies deleted, plus three fixed-name paths** that were the same latent shape and
+  happened not to be hit. Measured bonus: a full `-j16` run now leaves **zero** scratch directories
+  behind, where the old scheme had left 13 stray files in the temp dir.
+- **`lain::testing` has no test of its own, deliberately.** The property that matters is
+  cross-process, and no in-process fixture can assert it — a case checking "these two paths differ"
+  would pass just as happily under the bug. The regression test is **the suite at `-j`**, which is
+  now green at `-j8` (×5), `-j16` (×3) and serially.
+- **CI now runs `ctest --parallel 4`**, and that is part of the fix rather than a follow-on: its
+  step carried a comment reading *"Serial on purpose: twenty test files write into the shared
+  `fs::temp_directory_path()`"*, a workaround whose reason this commit removes. Leaving it serial
+  would also leave the regression untested — a collision is invisible to a serial run, so a serial
+  CI could not catch this coming back.
+- **Every private helper is gone, including flowview's four** (which root their per-case names in
+  `scratchDir()` now) and the deliberately-absent paths in the io tests, which were still spelling
+  `temp_directory_path()` by hand and so still inviting the next author to copy that line for a
+  fixture that WRITES. The one deliberate exception is `test_loopscene.cpp`, whose stable directory
+  is documented as a copy-paste target for a manual `flowview run --graph …`; one case writes there,
+  so a uuid would buy it nothing.
+- Not covered: nothing makes a NEW test file use the helper. A private fixture reintroducing a
+  counter would still work serially — but now fails in CI, which is the point of the line above.
 
 **Noticed while fixing the second, not built:** the Issues pane has no row for *a node that ran and
 produced nothing*. It matters because a `LoadImage` added from the palette defaults its `path` to an

@@ -72,7 +72,9 @@ namespace
 	std::filesystem::path scratchDir()
 	{
 		// Stable, so the manual `flowview run --graph …` this milestone verifies with is a
-		// copy-paste rather than a path to go hunting for.
+		// copy-paste rather than a path to go hunting for. Deliberately NOT lain::testing's
+		// per-process scratch dir, which changes every run and so could not be copy-pasted — safe
+		// because exactly one case writes here, and a uuid would buy nothing a single writer needs.
 		const std::filesystem::path dir = std::filesystem::temp_directory_path() / "flowview-loopscene-test";
 		std::error_code ec;
 		std::filesystem::create_directories(dir, ec);

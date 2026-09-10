@@ -28,6 +28,7 @@
 #include <lain/io/video/save.h>
 #include <lain/media/frameposition.h>
 #include <lain/media/framesequence.h>
+#include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -59,7 +60,7 @@ namespace
 
 	fs::path scratchDir(const std::string& name)
 	{
-		const fs::path dir = fs::temp_directory_path() / ("lain_sweep_" + name);
+		const fs::path dir = lain::testing::scratchDir() / ("sweep-" + name);
 		fs::remove_all(dir);
 		fs::create_directories(dir);
 		return dir;
@@ -311,7 +312,7 @@ namespace
 	bool haveVideoWriter()
 	{
 		ensureCodecs();
-		const fs::path probe = fs::temp_directory_path() / "lain_sweep_probe.mkv";
+		const fs::path probe = lain::testing::scratchPath("sweep-probe", ".mkv");
 		lain::media::FrameSpec spec;
 		spec.extent = {2, 2};
 		spec.pixelFormat = lain::image::PixelFormat::Gray8;

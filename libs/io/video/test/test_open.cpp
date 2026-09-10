@@ -9,6 +9,7 @@
 #include "lain/io/video/reader.h"
 
 #include <lain/io/uri.h>
+#include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -98,8 +99,7 @@ namespace
 	public:
 		explicit TempFile(std::uint8_t tag, const std::string& extension = "mp4")
 		{
-			static int counter = 0;
-			m_path = fs::temp_directory_path() / ("lain_video_" + std::to_string(counter++) + "." + extension);
+			m_path = lain::testing::scratchPath("video", "." + extension);
 			std::ofstream out(m_path, std::ios::binary | std::ios::trunc);
 			const char byte = static_cast<char>(tag);
 			out.write(&byte, 1);

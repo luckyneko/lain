@@ -5,6 +5,8 @@
 
 #include "lain/io/read.h"
 
+#include <lain/testing/scratch.h>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstddef>
@@ -23,9 +25,7 @@ class TempFile
 public:
 	explicit TempFile(const std::vector<std::uint8_t>& bytes)
 	{
-		static int counter = 0;
-		m_path = std::filesystem::temp_directory_path() /
-				 ("lain_io_test_" + std::to_string(counter++) + ".bin");
+		m_path = lain::testing::scratchPath("ioread", ".bin");
 		std::ofstream out(m_path, std::ios::binary | std::ios::trunc);
 		out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 	}
@@ -107,7 +107,7 @@ TEST_CASE("a bare path and a file:// uri read the same file", "[read]")
 
 TEST_CASE("read of a missing file returns nullopt", "[read]")
 {
-	const auto missing = std::filesystem::temp_directory_path() / "lain_io_does_not_exist.bin";
+	const auto missing = lain::testing::scratchPath("absent", ".bin");
 	REQUIRE_FALSE(read(missing.string()).has_value());
 }
 

@@ -169,11 +169,16 @@ jobs:
       - name: Build
         run: cmake --build build --parallel --config ${{ matrix.build_type }}
 
-      # Serial on purpose: twenty test files write into the shared fs::temp_directory_path(),
-      # so -j invites collisions between them. A [gpu] SKIP reports as a ctest skip, not a
-      # failure — catch_discover_tests sets SKIP_RETURN_CODE=4.
+      # PARALLEL on purpose, since 2026-09-10. It used to be serial because twenty test files each
+      # wrote into the shared fs::temp_directory_path() and -j made them collide; they now take
+      # their paths from lain::testing, which roots them in a per-PROCESS directory (see
+      # libs/testing/include/lain/testing/scratch.h — catch_discover_tests runs every case as its
+      # own process, which is what defeats a per-file counter). Running -j here is what keeps that
+      # true: the collision was invisible to a serial run, so a serial CI could not have caught it
+      # coming back. A [gpu] SKIP reports as a ctest skip, not a failure — catch_discover_tests
+      # sets SKIP_RETURN_CODE=4.
       - name: Test
-        run: ctest --test-dir build --output-on-failure -C ${{ matrix.build_type }}
+        run: ctest --test-dir build --output-on-failure -C ${{ matrix.build_type }} --parallel 4
 
       # ctest links runmode.cpp into the test binary, so it never exercises the SHIPPED
       # executable. This does: that flowview launches at all, and resolves its dynamic

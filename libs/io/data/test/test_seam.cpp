@@ -7,6 +7,8 @@
 #include "lain/io/data/save.h"
 #include "lain/io/data/writer.h"
 
+#include <lain/testing/scratch.h>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
@@ -57,9 +59,7 @@ class TempPath
 public:
 	explicit TempPath(const std::string& extension)
 	{
-		static int counter = 0;
-		m_path = std::filesystem::temp_directory_path() /
-				 ("lain_iodata_" + std::to_string(counter++) + "." + extension);
+		m_path = lain::testing::scratchPath("iodata", "." + extension);
 	}
 	~TempPath()
 	{

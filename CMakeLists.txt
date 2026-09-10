@@ -126,6 +126,11 @@ add_subdirectory(libs/data)             # serialization DOM (Value) + reflection
 add_subdirectory(libs/task)
 add_subdirectory(libs/flow)             # the node-graph engine (WORK.md M1)
 
+# Test-support, built only when there are tests to support (see libs/testing/scratch.h).
+if(LAIN_BUILD_TESTING)
+	add_subdirectory(libs/testing)      # collision-free scratch paths for parallel ctest
+endif()
+
 # ---- Plugins (swappable satellites: lain::io::image::<fmt> codecs) ----------
 add_subdirectory(plugins)
 

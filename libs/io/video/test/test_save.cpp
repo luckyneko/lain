@@ -10,6 +10,7 @@
 #include "lain/io/video/save.h"
 
 #include <lain/media/framesource.h>
+#include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -162,8 +163,7 @@ namespace
 	public:
 		explicit TempOut(const std::string& extension = "mp4")
 		{
-			static int counter = 0;
-			m_path = fs::temp_directory_path() / ("lain_videowrite_" + std::to_string(counter++) + "." + extension);
+			m_path = lain::testing::scratchPath("videowrite", "." + extension);
 			std::error_code error;
 			fs::remove(m_path, error);
 		}

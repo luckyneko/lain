@@ -10,6 +10,7 @@
 
 #include <lain/io/video/open.h>
 #include <lain/io/video/save.h>
+#include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -78,8 +79,7 @@ namespace
 	public:
 		explicit TempOut(const std::string& extension)
 		{
-			static int counter = 0;
-			m_path = fs::temp_directory_path() / ("lain_vidwrite_" + std::to_string(counter++) + "." + extension);
+			m_path = lain::testing::scratchPath("vidwrite", "." + extension);
 			std::error_code error;
 			fs::remove(m_path, error);
 		}

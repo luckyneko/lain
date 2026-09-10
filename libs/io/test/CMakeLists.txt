@@ -9,6 +9,6 @@ add_executable(test-io
 )
 
 target_compile_features(test-io PRIVATE cxx_std_17)
-target_link_libraries(test-io PRIVATE lain::io lain::warnings Catch2::Catch2WithMain)
+target_link_libraries(test-io PRIVATE lain::io lain::testing lain::warnings Catch2::Catch2WithMain)
 
 catch_discover_tests(test-io TEST_PREFIX "(io) ")

@@ -20,7 +20,7 @@ target_compile_features(test-io-video-ffmpeg PRIVATE cxx_std_17)
 target_include_directories(test-io-video-ffmpeg PRIVATE ../src)
 target_link_libraries(test-io-video-ffmpeg
 	PRIVATE lain::io::video::ffmpeg lain::io::video lain::media FFmpeg::avutil FFmpeg::avcodec
-	PRIVATE lain::warnings Catch2::Catch2WithMain
+	PRIVATE lain::testing lain::warnings Catch2::Catch2WithMain
 )
 
 # Windows has no rpath: the DLLs must sit beside the executable or it will not start.

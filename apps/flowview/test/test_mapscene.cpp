@@ -23,6 +23,7 @@
 #include <lain/image/image.h>
 #include <lain/io/image/codecs.h>
 #include <lain/io/image/save.h>
+#include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -60,7 +61,7 @@ namespace
 
 	std::filesystem::path scratchDir(const char* name)
 	{
-		const std::filesystem::path dir = std::filesystem::temp_directory_path() / "flowview-mapscene-test" / name;
+		const std::filesystem::path dir = lain::testing::scratchDir() / "mapscene" / name;
 		std::error_code ec;
 		std::filesystem::remove_all(dir, ec);
 		std::filesystem::create_directories(dir, ec);

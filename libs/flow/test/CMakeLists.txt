@@ -39,6 +39,7 @@ target_link_libraries(test-flow PRIVATE
 	lain::io::image # the LoadImageNode tests register a fake reader / call readerRegistry()
 	lain::io::sequence # the sequence-node tests wire the opener registry (registerSequenceOpeners)
 	lain::task
+	lain::testing
 	archimedes
 	lain::warnings
 	Vulkan::Loader

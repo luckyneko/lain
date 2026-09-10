@@ -10,6 +10,7 @@
 #include <lain/image/image.h>
 #include <lain/io/read.h>
 #include <lain/memory/buffer.h>
+#include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -49,9 +50,7 @@ class TempPath
 public:
 	explicit TempPath(const std::string& extension)
 	{
-		static int counter = 0;
-		m_path = std::filesystem::temp_directory_path() /
-				 ("lain_iosave_" + std::to_string(counter++) + "." + extension);
+		m_path = lain::testing::scratchPath("iosave", "." + extension);
 	}
 	~TempPath()
 	{

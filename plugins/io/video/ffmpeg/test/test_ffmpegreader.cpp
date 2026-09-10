@@ -10,6 +10,7 @@
 #include <lain/io/video/ffmpeg/register.h>
 #include <lain/io/video/open.h>
 #include <lain/media/operations.h>
+#include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -32,8 +33,7 @@ namespace
 	public:
 		Fixture(const unsigned char* bytes, std::size_t size, const std::string& extension = "mp4")
 		{
-			static int counter = 0;
-			m_path = fs::temp_directory_path() / ("lain_video_fixture_" + std::to_string(counter++) + "." + extension);
+			m_path = lain::testing::scratchPath("video-fixture", "." + extension);
 			std::ofstream out(m_path, std::ios::binary | std::ios::trunc);
 			out.write(reinterpret_cast<const char*>(bytes), static_cast<std::streamsize>(size));
 		}

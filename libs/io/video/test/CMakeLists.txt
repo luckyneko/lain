@@ -7,7 +7,7 @@ add_executable(test-io-video
 )
 
 target_compile_features(test-io-video PRIVATE cxx_std_17)
-target_link_libraries(test-io-video PRIVATE lain::io::video lain::io lain::media lain::warnings Catch2::Catch2WithMain)
+target_link_libraries(test-io-video PRIVATE lain::io::video lain::io lain::media lain::testing lain::warnings Catch2::Catch2WithMain)
 
 catch_discover_tests(test-io-video TEST_PREFIX "(io::video) ")
 
@@ -19,6 +19,6 @@ add_executable(test-io-video-nocodec
 )
 
 target_compile_features(test-io-video-nocodec PRIVATE cxx_std_17)
-target_link_libraries(test-io-video-nocodec PRIVATE lain::io::video lain::media lain::warnings Catch2::Catch2WithMain)
+target_link_libraries(test-io-video-nocodec PRIVATE lain::io::video lain::media lain::testing lain::warnings Catch2::Catch2WithMain)
 
 catch_discover_tests(test-io-video-nocodec TEST_PREFIX "(io::video) ")

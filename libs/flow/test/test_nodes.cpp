@@ -16,6 +16,7 @@
 #include <lain/image/image.h>
 #include <lain/io/image/load.h>
 #include <lain/io/image/reader.h>
+#include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -302,9 +303,7 @@ class TempFile
 public:
 	TempFile(const std::string& extension, const std::vector<std::uint8_t>& bytes)
 	{
-		static int counter = 0;
-		m_path = std::filesystem::temp_directory_path() /
-				 ("lain_loadnode_" + std::to_string(counter++) + "." + extension);
+		m_path = lain::testing::scratchPath("loadnode", "." + extension);
 		std::ofstream out(m_path, std::ios::binary | std::ios::trunc);
 		out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 	}

@@ -7,6 +7,8 @@
 
 #include "lain/io/uri.h"
 
+#include <lain/testing/scratch.h>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
@@ -27,8 +29,7 @@ namespace
 	public:
 		TempTree()
 		{
-			static int counter = 0;
-			m_dir = fs::temp_directory_path() / ("lain_uri_" + std::to_string(counter++));
+			m_dir = lain::testing::scratchPath("uri");
 			fs::remove_all(m_dir);
 			fs::create_directories(m_dir / "sub");
 			std::ofstream out(m_dir / "file.txt", std::ios::trunc);

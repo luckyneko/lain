@@ -7,6 +7,8 @@
 #include "lain/io/video/open.h"
 #include "lain/io/video/save.h"
 
+#include <lain/testing/scratch.h>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
@@ -16,7 +18,7 @@
 TEST_CASE("with no codec registered the seam reports a missing capability", "[io::video]")
 {
 	namespace fs = std::filesystem;
-	const fs::path path = fs::temp_directory_path() / "lain_video_nocodec.mp4";
+	const fs::path path = lain::testing::scratchPath("nocodec", ".mp4");
 	{
 		std::ofstream out(path, std::ios::binary | std::ios::trunc);
 		out << "not really an mp4";
@@ -36,7 +38,7 @@ TEST_CASE("with no codec registered the seam reports a missing capability", "[io
 TEST_CASE("with no codec registered the seam refuses to write, for the same reason", "[io::video]")
 {
 	namespace fs = std::filesystem;
-	const fs::path path = fs::temp_directory_path() / "lain_video_nocodec_out.mp4";
+	const fs::path path = lain::testing::scratchPath("nocodec-out", ".mp4");
 	std::error_code error;
 	fs::remove(path, error);
 

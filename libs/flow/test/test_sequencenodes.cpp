@@ -16,6 +16,7 @@
 #include <lain/io/sequence/openers.h>
 #include <lain/media/frameposition.h>
 #include <lain/media/framesequence.h>
+#include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -52,8 +53,7 @@ namespace
 	public:
 		explicit TempDir(int frames)
 		{
-			static int counter = 0;
-			m_path = std::filesystem::temp_directory_path() / ("lain_seqnode_" + std::to_string(counter++));
+			m_path = lain::testing::scratchPath("seqnode");
 			std::filesystem::remove_all(m_path);
 			std::filesystem::create_directories(m_path);
 			for (int i = 0; i < frames; ++i)

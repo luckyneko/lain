@@ -6,6 +6,7 @@
 #include <lain/data/data.h>
 #include <lain/io/data/load.h>
 #include <lain/io/data/save.h>
+#include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -122,7 +123,7 @@ TEST_CASE("save then load a file round-trips", "[json]")
 {
 	ensureJson();
 	const Value v = sampleValue();
-	const auto path = (std::filesystem::temp_directory_path() / "lain_json_roundtrip.json").string();
+	const auto path = lain::testing::scratchPath("json-roundtrip", ".json").string();
 
 	REQUIRE(save(path, v));
 	const auto loaded = load(path);

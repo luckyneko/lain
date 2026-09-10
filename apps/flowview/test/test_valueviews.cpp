@@ -18,6 +18,7 @@
 #include <lain/io/sequence/openers.h>
 #include <lain/io/video/codecs.h>
 #include <lain/media/framesequence.h>
+#include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -45,7 +46,7 @@ namespace
 
 	fs::path scratchDir(const std::string& name)
 	{
-		const fs::path dir = fs::temp_directory_path() / ("lain_views_" + name);
+		const fs::path dir = lain::testing::scratchDir() / ("views-" + name);
 		fs::remove_all(dir);
 		fs::create_directories(dir);
 		return dir;

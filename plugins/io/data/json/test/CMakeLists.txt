@@ -6,6 +6,6 @@ add_executable(test-io-data-json
 )
 
 target_compile_features(test-io-data-json PRIVATE cxx_std_17)
-target_link_libraries(test-io-data-json PRIVATE lain::io::data::json lain::warnings Catch2::Catch2WithMain)
+target_link_libraries(test-io-data-json PRIVATE lain::io::data::json lain::testing lain::warnings Catch2::Catch2WithMain)
 
 catch_discover_tests(test-io-data-json TEST_PREFIX "(io::data::json) ")
