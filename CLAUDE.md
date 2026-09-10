@@ -631,6 +631,32 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-10 — a fourth em dash, caught by the Windows leg
+
+The first push after the `-j` fix went red on Windows alone: one case of 741, *"an unpaired inner pin
+mirrors as one port — invariant in, last out"*, reporting **"No test cases matched"**. Not a test
+failure — `catch_discover_tests` hands a test's NAME back to the executable as a filter, and a UTF-8
+em dash does not survive that trip through argv on Windows (the log shows `G��`). It is the same
+finding the port recorded on 2026-09-05, a fourth time; the test was written that same day, in M11
+slice 2. Renamed to ASCII. `ctest -j8` **735/735**, format-check clean. Full notes in WORK.md's
+*Run 9*.
+
+- **The guard fired at its first opportunity; the latency is the push cadence.** Run 4 chose the
+  Windows leg as the guard against a fourth rather than building a local check, and that is what
+  caught this. But the em dash landed 2026-09-05 and the last CI run was on the commit *before* it,
+  so **16 commits accumulated** — M11 slices 3–6, M12 and four fixes — before anything asked Windows.
+  The measured cost is therefore not the ~8 minutes of runner: it is that a pure text fact,
+  checkable in milliseconds anywhere, went unchecked across sixteen commits because only a push
+  checks it.
+- **A local guard is available and deliberately not built here** — a scan of `TEST_CASE("…")` for
+  bytes above 0x7F, in the `format-check` gate that already polices text the compiler does not. One
+  red run is not evidence against a decision that was made deliberately, so it is recorded in WORK.md
+  as an option with a known price rather than taken unilaterally.
+- **SECTION names are unaffected, and three keep their em dashes.** Discovery registers TEST_CASEs
+  only, so a section name never crosses a process boundary. The rule the port wrote — *prose keeps
+  its em dashes; a test NAME is an argument that crosses a process boundary* — is what says where the
+  constraint stops, and it stops before sections.
+
 ### Update 2026-09-10 — `ctest -j` is green, and CI runs it that way
 
 The last known defect, cleared: `ctest -j8` failed ~7 `io` / `io::video` cases, nondeterministically,

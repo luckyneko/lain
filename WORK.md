@@ -3815,7 +3815,8 @@ discovered, 655 passing. What is left is small and, in both cases, not what it f
    arriving as `G��`). Catch2 then matches nothing, and "no tests ran" is a failure.
    Renamed to ASCII. Prose keeps its em dashes; a test NAME is an argument that crosses a process
    boundary, so it stays ASCII — a scan confirms these were the only three non-ASCII names in the
-   tree. The Windows leg is itself the guard against a fourth.
+   tree. The Windows leg is itself the guard against a fourth — which is exactly what happened on
+   2026-09-10; see §Run 9 below for what that guard cost and what it did not catch.
 
 10. **`test-flowview` alone would not link on Linux**, on `vkDestroyBuffer` and
     `vkGetInstanceProcAddr` from `libarchimedes.a` — while `flowview`, `test-app`, `test-flow` and
@@ -3897,6 +3898,33 @@ already declares `FIND_PACKAGE_ARGS CONFIG`, so a system Catch2 is preferred whe
 installing one in CI would skip those 107 TUs with no new machinery, at the cost of testing a
 different Catch2 than the pin. A compiler cache remains the untried general lever; no caching
 beyond the fetched archives is in place.
+
+### Run 9 (2026-09-10) — the fourth em dash, and what the guard cost
+
+Windows Release failed alone, on one case out of 741: *"an unpaired inner pin mirrors as one port —
+invariant in, last out"* (`libs/flow/test/test_loop.cpp`), reporting **"No test cases matched"** with
+the filter arriving as `G��`. It is finding 9 from the discovery run, a fourth time — the test was
+written on 2026-09-05 as part of M11 slice 2, the same day the first three were renamed. Renamed to
+ASCII; a scan again confirms it was the only non-ASCII test NAME in the tree. `ctest -j8` **735/735**
+locally, format-check clean.
+
+- **The guard worked, and fired at its first opportunity — the latency is the push cadence, not the
+  guard.** Run 4 chose the Windows leg as the guard rather than building a local check. The em dash
+  landed in `e26ecec` on 2026-09-05 and the last CI run before this one was on the commit *before*
+  it, so **16 commits accumulated locally** — M11 slices 3–6, M12, and four fixes — before anything
+  asked Windows. The guard then caught it on the first run it was given. So the measured cost is not
+  the ~8 minutes of a Windows runner; it is that a pure text fact, checkable in milliseconds on any
+  machine, stayed unchecked across sixteen commits because the only thing that checks it is a push.
+- **Nothing makes a new test name ASCII**, which is the same "not covered" line the `-j` fix carries.
+  A local guard is cheap and available — a scan of `TEST_CASE("…")` for bytes above 0x7F, in the
+  `format-check` gate that already exists to police text the compiler does not — and is **not built
+  here**, because Run 4 chose CI as the guard deliberately and one red run is not yet evidence
+  against that choice. Recorded as an option with a known price, not as a defect.
+- **SECTION names are NOT affected and were left alone.** Three still contain em dashes
+  (`test_boundary.cpp`, `test_groupsync.cpp`, `test_graphio.cpp`). `catch_discover_tests` registers
+  TEST_CASEs only, so a section name never crosses a process boundary — which is precisely the rule
+  Run 4 stated, applied to say where it stops. Renaming them would spend prose on a constraint that
+  does not reach them.
 
 ### Not covered, and deliberately
 

@@ -402,7 +402,7 @@ TEST_CASE("a carry mirrors out as a seed input AND a final output of the same na
 	REQUIRE(loop.outputCount() == 2);
 }
 
-TEST_CASE("an unpaired inner pin mirrors as one port — invariant in, last out", "[flow][loop]")
+TEST_CASE("an unpaired inner pin mirrors as one port - invariant in, last out", "[flow][loop]")
 {
 	Scene scene;
 	LoopNode& loop = scene.loop();
