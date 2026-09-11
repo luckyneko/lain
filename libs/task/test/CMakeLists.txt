@@ -1,6 +1,6 @@
 # lain::task smoke tests (Catch2). enable_testing() + addcatch2 are done at the
 # project root. Exercises the wrapper's production surface — emplace + precede +
-# run — not Taskflow directly.
+# run — not multi directly.
 
 add_executable(test-task
 	test_task.cpp

@@ -263,7 +263,7 @@ TEST_CASE("N evaluations run simultaneously over one const definition", "[flow][
 
 TEST_CASE("the parallel scheduler keeps two evaluations apart too", "[flow][evaluation]")
 {
-	// Same claim, through the Taskflow lowering — where node tasks of both runs are genuinely
+	// Same claim, through the parallel lowering — where node tasks of both runs are genuinely
 	// interleaved on the pool.
 	std::atomic<int> calls{0};
 	Graph graph;

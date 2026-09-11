@@ -47,11 +47,11 @@ endif()
 # (no tagged releases yet), added via add_subdirectory. Their testbed/testing
 # stays OFF here since lain, not they, is the top-level project.
 add_subdirectory(extern/archimedes)     # acm:: Vulkan renderer (for flow + flowview)
+add_subdirectory(extern/multi)          # multi:: work-stealing pool (behind lain::task)
 # add_subdirectory(extern/thorax)       # deferred — no M1 consumer yet
 
 # Third-party deps via cmake/addXXX.cmake FetchContent modules (prefer system
 # package, else pinned release; headers re-exposed SYSTEM under strict flags).
-include(addTaskflow)
 include(addGLM)
 include(addfmt)        # {fmt} — formatting for lain::log (and spdlog's external fmt)
 include(addspdlog)     # logging backend behind lain::log (built against addfmt's fmt)

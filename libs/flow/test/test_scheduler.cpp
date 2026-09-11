@@ -1,4 +1,4 @@
-// Tests for the scheduler — the full push run (serial, and the Taskflow-backed
+// Tests for the scheduler — the full push run (serial, and the pool-backed
 // parallel one) and the pull evaluate. Pure CPU nodes, so no driver is needed; the
 // wide-graph case exercises concurrent task execution for correctness.
 

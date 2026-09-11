@@ -33,7 +33,6 @@ a video keeps its nodes and edges and reports a missing capability when run.
 
 | Dependency | Version/status | License | Scope |
 | --- | --- | --- | --- |
-| [Taskflow](https://github.com/taskflow/taskflow) | 3.7.0, current | [MIT] | `lain::task` executor |
 | [GLM](https://github.com/g-truc/glm) | 1.0.3, current | [MIT] | `lain::math` implementation |
 | [{fmt}](https://github.com/fmtlib/fmt) | 10.2.1, current | [MIT] | Formatting and logging |
 | [spdlog](https://github.com/gabime/spdlog) | 1.14.1, current | [MIT] | `lain::log` implementation |

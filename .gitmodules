@@ -2,3 +2,7 @@
 	path = extern/archimedes
 	url = https://github.com/luckyneko/archimedes.git
 	branch = develop
+[submodule "extern/multi"]
+	path = extern/multi
+	url = https://github.com/luckyneko/multi.git
+	branch = develop

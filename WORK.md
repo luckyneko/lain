@@ -20,10 +20,12 @@ outputs rendered as thumbnails with no copy.
 each either owned `lain` code or a thin wrapper that gives an external library a
 `lain::` face. The node-graph engine composes the set rather than reinventing it:
 
-- **Taskflow** (via **`lain::task`**, `libs/task`) — a header-only task-graph
-  executor. It is the execution substrate: it *is* a DAG scheduler with a
-  work-stealing executor, so the push side of evaluation is largely its job, not
-  ours. We wrap it thin so the rest of the set sees `lain::task`, never `tf::`.
+- **`multi`** (via **`lain::task`**, `libs/task`) — lain's own work-stealing pool,
+  a submodule under `extern/`. It is the execution substrate: it *is* a DAG
+  scheduler (`Recipe` / `Step` / `Context`) with a work-stealing executor, so the
+  push side of evaluation is largely its job, not ours. We wrap it thin so the rest
+  of the set sees `lain::task`, never `multi::`. *(Taskflow held this place from M1
+  until 2026-09-11; see §notes.txt triage for the swap.)*
   Alongside it `flow` links only **`lain::meta`** (a `Port` captures
   `lain::meta::typeName<T>()` for inspector pin labels) — both featherweight, no
   GPU/UI coupling.
@@ -42,22 +44,24 @@ value — so the GPU/UI pieces live in `flow`'s *consumers*, not in `flow`:
 - **`lain::math`** (`libs/math`, GLM) — typed vector/matrix names, and the
   `ImVec2`/`ImVec4` ↔ `Vec2f`/`Vec4f` bridge `lain::gui` uses.
 
-(`multi`, `lain`'s own work-stealing pool, is **not** used for now —
-Taskflow replaces it. It stays a sibling library and can return later behind the
-same `lain::task` seam; see Decisions.)
+(**It did return.** This paragraph used to read *"`multi` is not used for now —
+Taskflow replaces it. It stays a sibling library and can return later behind the same
+`lain::task` seam"*. That happened on 2026-09-11, and the seam held: `libs/flow` changed
+by **zero lines**.)
 
 ## Decisions locked (planning, 2026-06-27)
 
 1. **Cumulative-set layout.** Every library lives under `libs/` (a `lain::<name>`
    each); runnable executables live under `apps/`. An external dependency is
    brought in as a thin wrapper lib with a matching namespace — `libs/task` →
-   `lain::task` (Taskflow), `libs/math` → `lain::math` (GLM, when needed). Owned
-   `lain` libraries (`archimedes`, `thorax`) are git submodules under `extern/`;
+   `lain::task` (`multi`), `libs/math` → `lain::math` (GLM, when needed). Owned
+   `lain` libraries (`archimedes`, `multi`, `thorax`) are git submodules under `extern/`;
    third-party libraries come via `FetchContent`, exactly as `archimedes`'
    `cmake/addXXX.cmake` modules do.
-2. **Taskflow is the substrate (drops `multi` for now).** `libs/task` wraps
-   Taskflow; `flow`'s scheduler lowers the DAG onto a `tf::Taskflow` and runs it
-   on a `lain::task` executor. `multi` is not a dependency of `flow` for M1.
+2. **`multi` is the substrate** (Taskflow was, M1 → 2026-09-11; the decision as
+   written invited the swap and is recorded as taken rather than rewritten).
+   `libs/task` wraps `multi`; `flow`'s scheduler lowers the DAG onto a
+   `multi::Recipe` and runs it on a `lain::task` executor.
 3. **`flow` is payload-agnostic (decoupled from archimedes).** A `PortValue` is a
    thin `std::any` slot carrying any copyable value — a CPU payload or a GPU handle
    (`acm::Texture`/`acm::Buffer` are just copyable `shared_ptr` handles), so `flow`
@@ -65,7 +69,7 @@ same `lain::task` seam; see Decisions.)
    preview it" is the viewer's
    job: it compares `PortValue::type()` against `typeid(acm::Texture)` (it already
    links archimedes). Supersedes the earlier dual-tagged-PortValue plan.
-4. **Hybrid execution.** Taskflow's executor drives a **push** run (every node
+4. **Hybrid execution.** The pool's executor drives a **push** run (every node
    fires once its inputs are ready). On top of that we own a **pull** path,
    `evaluate(NodeId)`, that recomputes just one node's upstream subgraph on
    demand. Pull is what serves nodes that don't fit a single full run:
@@ -96,13 +100,13 @@ lain/
   CMakeLists.txt              # umbrella; add_subdirectory each libs/* + apps/* + extern/
   cmake/
     lainWarnings.cmake        # shared strict-flag INTERFACE target
-    addTaskflow.cmake         # FetchContent, mirrors archimedes' addXXX.cmake
     addGLM.cmake  addGLFW.cmake  addCLI11.cmake  addImGui.cmake  addImnodes.cmake
   extern/
     archimedes/               # submodule (owned), tracks develop
+    multi/                    # submodule (owned), tracks develop — behind lain::task
     thorax/                   # owned — deferred until a consumer needs it
   libs/                       # libraries (lain::<name>)
-    task/                     # lain::task — thin wrapper over Taskflow
+    task/                     # lain::task — thin wrapper over multi
     flow/                     # lain::flow — the node-graph engine (GPU-free core)
       include/lain/flow/
       src/
@@ -145,12 +149,12 @@ diagnostics now route through `lain::log`.
 ### 1. Build skeleton
 
 Umbrella `CMakeLists.txt` aggregating `libs/*`, `apps/*`, and `extern/*`.
-`extern/` submodules (`archimedes`, `thorax`) via `add_subdirectory` with their
+`extern/` submodules (`archimedes`, `multi`, `thorax`) via `add_subdirectory` with their
 testing/benchmark options OFF (default OFF when not top-level). Third-party deps
-(Taskflow, ImGui, imnodes, json, Catch2) via `cmake/addXXX.cmake` FetchContent
+(ImGui, imnodes, json, Catch2, …) via `cmake/addXXX.cmake` FetchContent
 modules patterned on `archimedes` (prefer system package, else pinned release,
 download cached under `.cache/fetch/`, headers re-exposed `SYSTEM` so strict
-flags don't fire on them). `libs/task` wraps Taskflow; `flow` links `lain::task`;
+flags don't fire on them). `libs/task` wraps `multi`; `flow` links `lain::task`;
 `apps/flowview` links `flow` + `archimedes` + ImGui. Strict flags come from a
 shared `lain_warnings` INTERFACE target (`/WX /W4`, `-Werror -Wall -Wextra`),
 out-of-source enforced.
@@ -202,6 +206,11 @@ concrete backends implement `run`:
   in-degree-0 nodes and dispatches successors as predecessors finish (work-stealing
   across threads). Taskflow already owns this push scheduling that `multi` would have
   made us write by hand, so this stays thin.
+  *(**Corrected 2026-09-11.** The last sentence was the reason M1 chose Taskflow, and it
+  was wrong about `multi`: `multi::Recipe` is a task DAG with the same three operations,
+  so nothing was written by hand when the substrate was swapped — `libs/flow` changed by
+  zero lines. What Taskflow genuinely bought was being available on day one. See
+  §notes.txt triage.)*
 - **Pull (shared, on the base).** `evaluate(Graph&, NodeId)` is our own code
   (Taskflow is push-oriented): walk dependencies, recompute only `dirty()` upstream
   nodes, then run the target — same `Node::compute()` path. This is the constant /
@@ -655,7 +664,8 @@ gui bind/save), on the pin-centric multi-port seam shaped so (b)'s dynamic ports
 
 **Also implicates** (each its own effort): the deferred **`Stream` transport** (video / live
 frames, incremental vs. `read`'s whole-asset slurp); **multi-stream sync** (temporal alignment of N
-streams); and a **live / real-time execution** model (Taskflow `tf::Pipeline`, Tier B item 4). The
+streams); and a **live / real-time execution** model (Tier B item 4 — which lost its named
+mechanism when Taskflow left on 2026-09-11; `multi` has chunked parallel-for, not a pipeline). The
 **side-effecting-sink** concept a true write-in-graph node would need is deferred with it — the host
 binding sidesteps it for now.
 
@@ -996,6 +1006,7 @@ from the template on every load). Design locked in **[ADR-0009](docs/adr/0009-gr
   `SerialScheduler` walks it; `ParallelScheduler` emplaces a task per step + a `precede` per plan
   edge. No nested runs, no subflows, so it needs nothing beyond `lain::task`'s existing
   `emplace`/`precede`/`run` — and survives the planned Taskflow → `multi` swap untouched.
+  *(**Confirmed 2026-09-11**: the swap landed and `libs/flow` changed by zero lines.)*
   `evaluate` builds a plan too (upstream-cone mode), so there is **one** expansion mechanism and
   `GroupNode::compute()` is a no-op.
 - **`Node` gains `virtual Graph* innerGraph()`** (null by default) — the scheduler asks the
@@ -4716,6 +4727,8 @@ being a decision and starts being a rediscovery if nothing points at it from the
   `reader.h`/`load.h` split); the verb + layering pass; and `ImageWriterOptions`.
 - **`lain::task` → `extern/multi`** — its own commit. This relitigates locked decision #2 in
   CLAUDE.md, which invited it (*"`multi` … can return behind the `lain::task` seam later"*).
+  ***Built the same day** — see §`lain::task` moves from Taskflow to `multi`. `libs/flow` changed by
+  zero lines of production code.*
 
 Both are specified in full in the plan for this session; the decisions that are *refusals* are
 recorded below so they are not re-raised from scratch.
@@ -4761,6 +4774,65 @@ code that was right and silent about being right.
 - **`core::hex`** — trigger: a second consumer. Today's two sites (`uuid.cpp` decode and encode) are
   **inverse directions in one file**, not two implementations of one thing, and are the only hex
   handling in the tree. The likely second consumer is a `#RRGGBB` colour parser for `gui` / `image`.
+
+
+
+## `lain::task` moves from Taskflow to `multi` (2026-09-11)
+
+CLAUDE.md's locked decision #2 read *"Taskflow is the substrate (drops `multi` for now)"* and its own
+prose invited this: *"`multi` … stays a sibling library and can return later behind the same
+`lain::task` seam."* It returned. `ctest -j8` **742/742** (+3 new `[task]` cases), warning-clean,
+format-check clean, and the `[map],[loop],[group],[scheduler]` tags swept **100×** on the parallel
+path with no failures.
+
+**`libs/flow` changed by ZERO lines of production code** — `src/`, `include/`, `serialize/` and
+`example/` are byte-identical across the swap, which is the claim the seam was built to make and the
+only real measure of whether it was worth having. It uses exactly three calls (`flow.emplace(fn)`,
+`tasks[a].precede(tasks[b])`, `executor.run(flow)`) plus the `Executor` constructor, and none of them
+moved. Two stale *comments* in `libs/flow/test` naming the old backend were corrected in the same
+commit; that is documentation drift, not adaptation, and it is why the claim above is scoped to
+production code rather than to the directory.
+
+- **The one API friction is that an edge belongs to the GRAPH.** multi spells it
+  `recipe.order(before >> after)`, where Taskflow hung `precede` off the task. `lain::task::Task`
+  now carries a `Flow*` so `precede` keeps its signature — which is what kept the call site in
+  `scheduler.cpp` unchanged.
+- **A DUPLICATE EDGE is success, and finding that out is what the swap cost.** The first run failed
+  one case of 739 — *(flowview)a count loop folds a gradient through five blurs* — on an assert that
+  treated any refusal as an error. Probed rather than assumed: the result was `DuplicateEdge`, not
+  `WouldCycle`. flow emits one plan edge per GRAPH edge, so two inputs of one node fed by one
+  producer ask for the same ordering twice; Taskflow absorbed that by counting dependents, multi
+  refuses the second and keeps the single constraint. The resulting order is identical, which is the
+  only thing an edge in a task graph means. A `[task]` case now pins it, so `precede` cannot go back
+  to calling it a bug.
+- **multi VALIDATES the graph, where Taskflow did not.** `RecipeResult::WouldCycle` turns what was a
+  hang into a reported refusal. `flow::Graph` already rejects a cycle when the edge is made, so the
+  assert that remains is about the lowering inventing one.
+- **`Executor{0}` runs INLINE, in dependency order** — multi leaves the pool inactive and dispatches
+  on the caller. A parallel plan is now executable deterministically and single-threaded with no
+  second scheduler, and a platform whose `hardware_concurrency()` answers 0 degrades to
+  correct-but-serial instead of to a made-up thread count (the old wrapper forced `1`). Nothing
+  passed a thread count, so redefining `0` cost nothing. **The test asserts THREAD IDENTITY, not
+  just order**: the order is 1, 2, 3 whether or not a worker ran it, so order alone would not have
+  reached the claim.
+- **`wait()` then `get()`, and the pair is load-bearing.** multi's `get()` is a NON-BLOCKING fetch
+  that rethrows; its `wait()` blocks and deliberately does not. Calling only `get()` returns while
+  the work is still running and swallows the exception with it — sabotage-verified, it fails the new
+  *a task's exception escapes the run* case. flow relies on propagation: a `compute()` that throws
+  must leave its node stale and reach the caller.
+- **What it costs, stated:** `lain::task` is still an INTERFACE target but `multi::multi` is a static
+  library, so a consumer now links one where header-only Taskflow linked nothing. And **Tier B #4
+  (streaming / live execution) loses its named mechanism** — `tf::Pipeline` was it; multi has chunked
+  parallel-for (`ChunkPolicy`) and no pipeline, so that item is now "design a pipeline, or grow one
+  in `multi`" rather than "use the one that ships". Amended at both of its sites.
+- **What it buys beyond dogfooding:** multi's own CI is broader than lain's — Linux across
+  compilers, install-smoke, **ASAN**, **TSAN**, macOS, Android, iOS and Windows 2022 + 2025. TSAN on
+  a work-stealing pool is real cover for `ParallelScheduler`, which lain otherwise verifies by
+  sweeping tags 100×. It also retires Taskflow's `v3.7.0` pin and the reason for it: 4.x requires
+  C++20, which would have propagated `cxx_std_20` to every `lain::task` consumer in a C++17 set.
+- CI needed no change — every checkout already does `submodules: recursive`.
+- **Not verified here: gui-mode.** Nothing in the swap touches a pane, but flowview runs graphs on
+  this pool, so it is owed the usual Metal eyeball alongside the tidy pass's File ▸ Quit change.
 
 
 
@@ -4875,9 +4947,6 @@ M12 §Not in this milestone.)*
 - **A standard way to convert between types** — one decided mechanism instead of a named
   `toXXX`/`fromXXX` per pair. Carries a survey of what would and would not register, and the
   `porttyperegistry.h` objection any design must answer. *(§notes.txt triage.)*
-- **`lain::task` → `extern/multi`** — decided, not built; its own commit, whose success criterion is
-  that `libs/flow` changes by zero lines. Relitigates CLAUDE.md locked decision #2, which invited it.
-  *(§notes.txt triage.)*
 - **`ReadWriteStream`**, **`Range<T>`** and **`core::hex`**, each with its trigger.
   *(§notes.txt triage.)*
 
@@ -4972,7 +5041,7 @@ under ADR-0007, so the rule cannot simply be "empty output is a problem".
   Of the C ones, **GLFW is the only dependency with official upstream binaries** (glfw.org: Windows
   and macOS, explicitly not Linux) and is not a hog; zlib/libpng/libtiff ship source only and are
   among the *cheapest* things lain builds. The expensive ones — Catch2, the Vulkan loader, ImGui,
-  and header-only Taskflow/nlohmann on every TU — are all structurally un-prebuildable, so the
+  and header-only nlohmann on every TU — are all structurally un-prebuildable, so the
   note's premise inverts. ccache is refused separately: state held between builds is hard to debug
   when it goes bad, and the saving is single minutes. **Trigger to revisit: tens of minutes, not
   single minutes.** FFmpeg stays the one prebuilt, for LGPL relinking rather than for speed.
@@ -5123,7 +5192,10 @@ the suite or the workflow should be read as covering it.
 ### Tier B — speculative / large
 
 4. **Streaming pipeline** — process a stream of inputs through the graph with
-   stage overlap. Taskflow's `tf::Pipeline` is the natural fit; build only if
+   stage overlap. **This item has no named mechanism any more.** `tf::Pipeline` was it, and
+   Taskflow left the tree on 2026-09-11; `multi` has chunked parallel-for (`ChunkPolicy`) but
+   no pipeline, so the work is now "design a pipeline, or grow one in `multi`" rather than
+   "use the one that ships". Build only if
    streaming becomes real.
 5. **Node hot-reload** and a node-type plugin registry.
 6. **imgui-node-editor + docking/multi-viewport** upgrade from imnodes.
@@ -5165,11 +5237,14 @@ the suite or the workflow should be read as covering it.
   once the node set is known, but only if profiling a real graph shows the erasure cost matters.
 - `lain::task` is scoped minimal: an executor + the small DAG-build surface
   `flow`'s scheduler needs (a flow that emplaces node-tasks and adds edges), and
-  nothing more. Subflows / `tf::Pipeline` stay unexposed until a caller needs
-  them.
-- Resolved for now: the `archimedes` submodule tracks `develop` (no tagged
-  release exists; its real code isn't on `master`), and Taskflow FetchContent
-  pins `v3.7.0`. Revisit if either gains a release worth pinning.
+  nothing more. `multi`'s wider surface (`async`/`parallel`/`each`/`range`, chunk
+  policies, `waitAny`) stays unexposed until a caller needs it — as Taskflow's
+  subflows and `tf::Pipeline` did before it.
+- Resolved for now: the `archimedes` and `multi` submodules track `develop` (no
+  tagged release exists for either). Revisit if either gains one worth pinning.
+  **Taskflow's `v3.7.0` FetchContent pin is gone with Taskflow**, and with it the
+  constraint that forced it: 4.x requires C++20, which would have propagated
+  `cxx_std_20` to every `lain::task` consumer in a C++17 set.
 - **thorax: resolved — deferred, static linking with service-shaped seams**
   ([ADR-0004](docs/adr/0004-static-linking-service-shaped-seams-over-thorax.md)). Not vendored;
   `core::Factory<Base>` is the seam a plugin backs later. Reopen only if `lain` starts
