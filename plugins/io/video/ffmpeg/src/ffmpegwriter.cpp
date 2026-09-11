@@ -342,7 +342,7 @@ namespace lain::io::video::ffmpeg
 		const AVPixelFormat sourceFormat =
 			m_spec.pixelFormat == lain::image::PixelFormat::Gray8 ? AV_PIX_FMT_GRAY8 : AV_PIX_FMT_RGB24;
 		const int sourceStride =
-			m_spec.extent.x * static_cast<int>(lain::image::descriptor(m_spec.pixelFormat).bytesPerPixel());
+			m_spec.extent.x * static_cast<int>(lain::image::formatDescriptor(m_spec.pixelFormat).bytesPerPixel());
 
 		m_scaler = sws_getCachedContext(m_scaler, m_spec.extent.x, m_spec.extent.y, sourceFormat,
 										m_spec.extent.x, m_spec.extent.y, m_pixelFormat, SWS_BILINEAR, nullptr,

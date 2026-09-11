@@ -104,7 +104,7 @@ namespace
 		void onUpdate(app::Application& app, const app::TimeState& time, const app::InputState&) override
 		{
 			if (time.frame >= 3)
-				app.quit();
+				app.exit();
 		}
 	};
 } // namespace

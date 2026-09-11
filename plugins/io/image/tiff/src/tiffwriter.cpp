@@ -72,7 +72,7 @@ namespace lain::io::image::tiff
 	// deferred "one day" — WORK.md M3).
 	static bool tiffTypeFor(lain::image::PixelFormat format, int& bits, int& samples, int& photometric, bool& hasAlpha)
 	{
-		const auto desc = lain::image::descriptor(format);
+		const auto desc = lain::image::formatDescriptor(format);
 		if (desc.channelType == lain::image::ChannelType::F32)
 			return false;
 		bits = desc.channelType == lain::image::ChannelType::U16 ? 16 : 8;
@@ -107,7 +107,7 @@ namespace lain::io::image::tiff
 		bool canEncode(const lain::image::Image& image) const override
 		{
 			// This writer stores 8/16-bit integer Gray/GrayAlpha/RGB/RGBA (float is deferred).
-			return image.valid() && image.descriptor().channelType != lain::image::ChannelType::F32;
+			return image.valid() && image.formatDescriptor().channelType != lain::image::ChannelType::F32;
 		}
 
 		std::optional<memory::Buffer> encode(const lain::image::Image& image) const override

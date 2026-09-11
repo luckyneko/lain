@@ -631,6 +631,66 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-11 — notes.txt triage: tidy pass built, M13 and the substrate swap decided
+
+A reading pass had collected 25 tidy/adjustment observations in `notes.txt`. Grilled one at a time,
+they split three ways: a **tidy pass built here**, a designed **M13 "io coherence"** (five slices,
+nothing built), and one isolated **`lain::task` → `extern/multi`** swap (decided, not built). Six are
+deferred with recorded triggers. `ctest` **739/739** (+4), warning-clean, format-check clean,
+`flowview --version` / `run --example` / `--frame` unchanged through the real binary. **gui-mode not
+eyeballed** — File ▸ Quit changed call, so it needs a Metal session. Full landing notes in WORK.md's
+*notes.txt triage*.
+
+- **`Application::exit(int)` had no callers — the compiled-linked-unreachable shape, a sixth time.**
+  `quit()` had four; nothing reached `exit`. Merging them into `exit(int code = EXIT_SUCCESS)` is
+  what gives the status path its first reachability, since every former `quit()` site can now pass
+  one. `run()`'s bare `return 1` / `return 0` became `EXIT_FAILURE` / `EXIT_SUCCESS` — not an enum,
+  because a process exit code IS an `int` and `run()` returns one.
+- **`core::Range` becoming a class closed a latent infinite loop, which is not what the note asked
+  for.** The complaint was that it "feels like scrap code"; the cause was **invariants not enforced
+  by the type**, as `count()`'s own comment admitted (*"a hand-built Range can hold them"*). With
+  `last >= first` and `step >= 1` now guaranteed by construction, `runmode.cpp`'s sweep —
+  `for (f = first(); f <= last(); f += step())` — can no longer be handed a zero step and spin
+  forever. **Not templated:** one caller, and `Bounded<T>` is already reserved for the other meaning
+  of range; a `Range<float>` would make `contains()` an exact-modulo test on accumulated floats.
+- **Two hand-rolled digit parsers became `std::from_chars`**, net negative code, removing a
+  locale-dependent `std::isdigit`. Sabotage-verified: dropping the `ptr == end` full-consumption
+  test fails *(core)parse rejects malformed input*.
+- **`math::Rect2i` is the first OWNED type in `lain::math`** — GLM has no rectangle, so it is the
+  one thing there that is not a typed name over something else, which is why it is `rect.h` and not
+  a line in `types.h`. `image::crop` and both `ImageView::subview` overloads took four loose ints,
+  where transposing x with y or w with h compiles silently. A **negative extent is empty rather than
+  reversed**: a rect quietly meaning `[x+w, x)` would pass `crop`'s bounds check and read backwards
+  off the buffer.
+- **`image::descriptor` → `formatDescriptor`** (49 sites, 16 files) — checked first that every
+  `descriptor(` in the tree is this one, with no Vulkan descriptor-pool collision. It is a free
+  function found by ADL on `PixelFormat`, so the bare noun was reachable unqualified from any scope
+  holding one. Also inlined `Time` (deleting `libs/core/src/time.cpp`) and moved `std::hash<Uuid>`
+  into `details/uuid.inl`, the split `colormath.h` already uses.
+- **The io cluster was mostly ALREADY DECIDED and nobody could find it.** Six of the nine io notes
+  are downstream of WORK.md's *Queued: `core::Uri`*, whose "build after slice 5" condition has been
+  met since 2026-09-02; notes 22 and 26 **are that section, restated by someone who had forgotten it
+  existed**. `libs/io/include/lain/io/uri.h` now carries a pointer back to it. The lesson is general:
+  a queued decision with nothing pointing at it from the code it governs stops being a decision and
+  becomes a rediscovery.
+- **Note 27's consistency question answered itself.** The tree already runs a four-verb rule nobody
+  had written down — `read`/`write` = bytes at the transport, `load`/`save` = uri to a whole typed
+  asset, `encode`/`decode` = typed value ↔ format bytes in memory, `open` = a lazy handle. It goes
+  into CONTEXT.md with M13 slice 4, whose one rename (`io::image::openSequence` → `io::image::open`)
+  is its only outlier.
+- **Note 1's premise inverts on inspection, and is refused permanently.** Prebuilt is **C-ABI only**
+  (Catch2/fmt/spdlog can never qualify), GLFW is the sole dependency with official upstream binaries
+  and is not a hog, and zlib/libpng/libtiff — the ones the note names — are among the *cheapest*
+  things lain builds. The expensive ones are all structurally un-prebuildable. ccache refused too:
+  state between builds is hard to debug, and the saving is single minutes. Trigger to revisit: tens
+  of minutes.
+- **`cast` vs `convert` is deferred whole, with its survey recorded** rather than a header edited.
+  The distinction the call sites already draw — `cast<To>(from)` when the TYPE changes,
+  `convert(value, target)` when the type stays and a tagged PROPERTY changes — plus the standing
+  preference behind it (no proliferation of `toXXX`/`fromXXX`) and the counter-evidence any design
+  must answer: `porttyperegistry.h` has already refused the automatic model, because WHICH
+  conversions a graph offers is a policy.
+
 ### Update 2026-09-10 — a fourth em dash, caught by the Windows leg
 
 The first push after the `-j` fix went red on Windows alone: one case of 741, *"an unpaired inner pin

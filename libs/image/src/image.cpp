@@ -18,7 +18,7 @@ namespace lain::image
 
 	std::uint32_t Image::bytesPerPixel(PixelFormat format)
 	{
-		return image::descriptor(format).bytesPerPixel();
+		return image::formatDescriptor(format).bytesPerPixel();
 	}
 
 	Image::Image(int width, int height, PixelFormat format, ColorSpace colorSpace, AlphaMode alphaMode)

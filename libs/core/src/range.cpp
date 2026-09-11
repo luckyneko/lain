@@ -1,53 +1,44 @@
 #include "lain/core/range.h"
 
-#include <cctype>
-#include <limits>
+#include <cassert>
+#include <charconv>
 
 namespace lain::core
 {
-	std::size_t Range::count() const
+	Range::Range(std::size_t first, std::size_t last, std::size_t step)
+		: m_first(first)
+		, m_last(last < first ? first : last)
+		, m_step(step == 0 ? 1 : step)
 	{
-		if (step == 0 || last < first)
-			return 0;
-		return (last - first) / step + 1;
-	}
-
-	bool Range::contains(std::size_t value) const
-	{
-		if (step == 0 || value < first || value > last)
-			return false;
-		return (value - first) % step == 0;
+		assert(last >= first && "core::Range: last precedes first — parse() is the door for untrusted text");
+		assert(step >= 1 && "core::Range: a step of 0 would never terminate");
 	}
 
 	std::string Range::toString() const
 	{
-		std::string text = std::to_string(first);
-		if (last != first)
-			text += "-" + std::to_string(last);
-		if (step != 1)
-			text += "x" + std::to_string(step);
+		std::string text = std::to_string(m_first);
+		if (m_last != m_first)
+			text += "-" + std::to_string(m_last);
+		if (m_step != 1)
+			text += "x" + std::to_string(m_step);
 		return text;
 	}
 
 	// A run of digits at `pos`, advanced past it. nullopt when there is not one, or when the value
 	// would not fit — refusing beats wrapping, since a wrapped range visits the wrong values and
 	// says nothing about it.
+	//
+	// std::from_chars answers both halves at once: it reports result_out_of_range rather than
+	// wrapping, and the ptr it hands back IS the advanced position, which is what this incremental
+	// form wants. It also stops the classification being locale-dependent, which std::isdigit is.
 	static std::optional<std::size_t> readNumber(std::string_view text, std::size_t& pos)
 	{
-		const std::size_t start = pos;
-		while (pos < text.size() && std::isdigit(static_cast<unsigned char>(text[pos])) != 0)
-			++pos;
-		if (pos == start)
-			return std::nullopt;
-
 		std::size_t value = 0;
-		for (std::size_t i = start; i < pos; ++i)
-		{
-			const std::size_t digit = static_cast<std::size_t>(text[i] - '0');
-			if (value > (std::numeric_limits<std::size_t>::max() - digit) / 10)
-				return std::nullopt;
-			value = value * 10 + digit;
-		}
+		const std::from_chars_result result = std::from_chars(text.data() + pos, text.data() + text.size(), value);
+		if (result.ec != std::errc{})
+			return std::nullopt; // no digits here, or a value too large to hold
+
+		pos = static_cast<std::size_t>(result.ptr - text.data());
 		return value;
 	}
 
@@ -58,42 +49,35 @@ namespace lain::core
 		if (!first.has_value())
 			return std::nullopt;
 
-		Range range;
-		range.first = *first;
-		range.last = *first; // a bare number is a one-value range, not an error
+		std::size_t last = *first; // a bare number is a one-value range, not an error
+		std::size_t step = 1;
 
 		if (pos < text.size() && text[pos] == '-')
 		{
 			++pos;
-			const std::optional<std::size_t> last = readNumber(text, pos);
-			if (!last.has_value())
+			const std::optional<std::size_t> parsed = readNumber(text, pos);
+			if (!parsed.has_value())
 				return std::nullopt;
-			range.last = *last;
+			last = *parsed;
 		}
 
 		if (pos < text.size() && text[pos] == 'x')
 		{
 			++pos;
-			const std::optional<std::size_t> step = readNumber(text, pos);
-			if (!step.has_value() || *step == 0)
+			const std::optional<std::size_t> parsed = readNumber(text, pos);
+			if (!parsed.has_value() || *parsed == 0)
 				return std::nullopt;
-			range.step = *step;
+			step = *parsed;
 		}
 
 		if (pos != text.size())
 			return std::nullopt; // trailing junk
-		if (range.last < range.first)
+		if (last < *first)
 			return std::nullopt; // reversed: reversing is an operation on a collection, not a range
 
-		return range;
+		// Every refusal is above, so the constructor's precondition holds by construction here.
+		return Range{*first, last, step};
 	}
-
-	bool operator==(const Range& a, const Range& b)
-	{
-		return a.first == b.first && a.last == b.last && a.step == b.step;
-	}
-
-	bool operator!=(const Range& a, const Range& b) { return !(a == b); }
 
 	bool lexical_cast(const std::string& input, Range& output)
 	{

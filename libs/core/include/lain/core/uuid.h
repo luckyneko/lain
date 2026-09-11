@@ -3,7 +3,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <functional> // std::hash specialisation below
 #include <optional>
 #include <string>
 #include <string_view>
@@ -67,21 +66,6 @@ namespace lain::core
 	};
 } // namespace lain::core
 
-// Hash so a Uuid keys an unordered_map/set. Folds the 16 bytes as two 64-bit halves — the bits are
-// already well distributed (v7's tail is random), so no avalanche step is needed.
-template <>
-struct std::hash<lain::core::Uuid>
-{
-	std::size_t operator()(const lain::core::Uuid& id) const noexcept
-	{
-		const std::array<std::uint8_t, 16>& b = id.bytes();
-		std::uint64_t high = 0;
-		std::uint64_t low = 0;
-		for (std::size_t i = 0; i < 8; ++i)
-		{
-			high = (high << 8) | b[i];
-			low = (low << 8) | b[i + 8];
-		}
-		return static_cast<std::size_t>(high ^ (low + 0x9e3779b97f4a7c15ULL + (high << 6) + (high >> 2)));
-	}
-};
+// Uuid is hashable: a std::hash specialisation lets one key an unordered_map/set. Its body is
+// implementation, so it lives beside this header rather than in it.
+#include "lain/core/details/uuid.inl"

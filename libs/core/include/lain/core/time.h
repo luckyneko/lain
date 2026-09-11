@@ -24,7 +24,10 @@ namespace lain::core
 		constexpr Time() = default;
 
 		// A high-resolution monotonic sample — the performance clock.
-		static Time now();
+		static Time now()
+		{
+			return Time{std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())};
+		}
 
 		// Build from a unit value: Time::from<Milliseconds>(16.6).
 		template <class Units>
@@ -44,7 +47,12 @@ namespace lain::core
 		// Interval arithmetic (Time behaves as a duration).
 		constexpr Time operator+(Time rhs) const { return Time{m_ns + rhs.m_ns}; }
 		constexpr Time operator-(Time rhs) const { return Time{m_ns - rhs.m_ns}; }
-		Time operator*(double scale) const;
+		Time operator*(double scale) const
+		{
+			// Scale in seconds (double) so a fractional factor doesn't truncate the
+			// nanosecond rep mid-multiply, then quantize back to exact ns.
+			return from<Seconds>(seconds() * scale);
+		}
 
 		constexpr bool operator==(Time rhs) const { return m_ns == rhs.m_ns; }
 		constexpr bool operator!=(Time rhs) const { return m_ns != rhs.m_ns; }

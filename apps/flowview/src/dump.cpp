@@ -22,7 +22,7 @@ namespace flowview
 	// dumps correctly, not just the RGBA8 the gradient scene produces.
 	static std::string pixel(const lain::image::Image& img, std::size_t texel)
 	{
-		const auto desc = img.descriptor();
+		const auto desc = img.formatDescriptor();
 		const std::uint8_t* base = img.data() + texel * desc.bytesPerPixel();
 		std::ostringstream s;
 		s << '(';

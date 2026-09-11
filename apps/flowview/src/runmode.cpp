@@ -425,7 +425,7 @@ namespace flowview
 
 		bool preflighted = false;
 
-		for (std::size_t frame = range.first; frame <= range.last; frame += range.step)
+		for (std::size_t frame = range.first(); frame <= range.last(); frame += range.step())
 		{
 			for (const flow::BoundaryInput& pin : positions)
 			{
@@ -441,7 +441,7 @@ namespace flowview
 
 			// Only the first frame is dumped. The dump is the "it actually ran" evidence, and it is
 			// the whole graph per frame — useful once, unreadable 500 times.
-			if (frame == range.first)
+			if (frame == range.first())
 				dumpGraph(std::cout, graph, evaluation);
 
 			for (Write& write : writes)

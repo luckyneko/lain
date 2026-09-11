@@ -13,9 +13,9 @@ TEST_CASE("a bare number is a one-value range", "[core][range]")
 {
 	const auto range = Range::parse("12");
 	REQUIRE(range.has_value());
-	REQUIRE(range->first == 12);
-	REQUIRE(range->last == 12);
-	REQUIRE(range->step == 1);
+	REQUIRE(range->first() == 12);
+	REQUIRE(range->last() == 12);
+	REQUIRE(range->step() == 1);
 	REQUIRE(range->count() == 1);
 }
 
@@ -23,8 +23,8 @@ TEST_CASE("a range is inclusive at both ends", "[core][range]")
 {
 	const auto range = Range::parse("0-499");
 	REQUIRE(range.has_value());
-	REQUIRE(range->first == 0);
-	REQUIRE(range->last == 499);
+	REQUIRE(range->first() == 0);
+	REQUIRE(range->last() == 499);
 
 	// Inclusive: "0-499" reads as 500 things and must mean 500 things.
 	REQUIRE(range->count() == 500);
@@ -35,7 +35,7 @@ TEST_CASE("a step takes every nth value", "[core][range]")
 {
 	const auto range = Range::parse("0-9x3");
 	REQUIRE(range.has_value());
-	REQUIRE(range->step == 3);
+	REQUIRE(range->step() == 3);
 	REQUIRE(range->count() == 4); // 0, 3, 6, 9
 
 	// The end is visited only when the step lands on it — "every third from 0", not "four values

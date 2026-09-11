@@ -20,7 +20,7 @@ namespace lain::image
 		template <typename C>
 		constexpr bool isReinterpretable()
 		{
-			return std::is_standard_layout_v<C> && std::is_trivially_copyable_v<C> && sizeof(C) == descriptor(C::format).bytesPerPixel();
+			return std::is_standard_layout_v<C> && std::is_trivially_copyable_v<C> && sizeof(C) == formatDescriptor(C::format).bytesPerPixel();
 		}
 	} // namespace detail
 

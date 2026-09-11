@@ -3,6 +3,7 @@
 
 add_executable(test-math
 	test_types.cpp
+	test_rect.cpp
 )
 
 target_compile_features(test-math PRIVATE cxx_std_17)

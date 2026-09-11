@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib> // EXIT_SUCCESS / EXIT_FAILURE
 #include <iostream>
 #include <memory>
 #include <utility>
@@ -129,13 +130,15 @@ namespace lain::app
 		bool deviceCreated{false};
 		bool quit{false};
 
-		struct Entry
+		// One window the app owns, its borrowed delegate, and the extent it was last seen at
+		// (the resize edge is a comparison against this, so it lives beside the window).
+		struct ManagedWindow
 		{
 			std::unique_ptr<Window> window;
 			WindowDelegate* delegate{nullptr};
 			acm::Extent2D lastExtent{0, 0};
 		};
-		std::vector<Entry> windows;
+		std::vector<ManagedWindow> windows;
 
 		InputState input;
 		lain::math::Vec2f scrollAccum{0.0f, 0.0f};
@@ -183,11 +186,11 @@ namespace lain::app
 
 		delegate.onInit(*window);
 
-		impl::Entry entry;
-		entry.window = std::move(window);
-		entry.delegate = &delegate;
-		entry.lastExtent = entry.window->framebufferExtent();
-		s.windows.push_back(std::move(entry));
+		impl::ManagedWindow managed;
+		managed.window = std::move(window);
+		managed.delegate = &delegate;
+		managed.lastExtent = managed.window->framebufferExtent();
+		s.windows.push_back(std::move(managed));
 		return *s.windows.back().window;
 	}
 
@@ -208,12 +211,12 @@ namespace lain::app
 			cliApp.add_flag("--licenses", showLicenses, "print third-party licence notices and exit");
 			cliApp.add_flag("-v,--verbose", s.verbosity, "increase log verbosity (-v: debug, -vv: trace)");
 			if (!s.delegate.onInit(*this, cliApp))
-				return 1;
+				return EXIT_FAILURE;
 		}
 		catch (const cli::Error& e)
 		{
 			lain::log::error("CLI setup failed (did a delegate re-register a reserved flag like --verbose or --version?): {}", e.what());
-			return 1;
+			return EXIT_FAILURE;
 		}
 
 		try
@@ -237,7 +240,7 @@ namespace lain::app
 				std::cout << s.info.name << " has no third-party licence notices to report.\n";
 			else
 				std::cout << notices << std::flush;
-			return 0;
+			return EXIT_SUCCESS;
 		}
 
 		// Raise the log level from -v before anything logs (-v: debug, -vv+: trace).
@@ -251,7 +254,7 @@ namespace lain::app
 		lain::log::info("{} {}", s.info.name, s.info.version.toString());
 
 		if (!s.delegate.onStart(*this))
-			return 1;
+			return EXIT_FAILURE;
 
 		if (s.windows.empty())
 		{
@@ -329,8 +332,6 @@ namespace lain::app
 	}
 
 	int Application::process() { return m->delegate.onProcess(*this); }
-
-	void Application::quit() { exit(0); }
 
 	acm::Device& Application::device() { return ensureDevice({}); }
 

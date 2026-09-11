@@ -486,7 +486,7 @@ namespace flowview
 					reloadTemplates(ctx, graph);
 				gui::Separator();
 				if (gui::MenuItem("Quit", (m + "Q").c_str()))
-					app.quit();
+					app.exit();
 				gui::EndMenu();
 			}
 			if (gui::BeginMenu("Edit"))
@@ -568,6 +568,6 @@ namespace flowview
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))
 			saveToCurrentPath(ctx, graph);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Q, ImGuiInputFlags_RouteGlobal))
-			app.quit();
+			app.exit();
 	}
 } // namespace flowview

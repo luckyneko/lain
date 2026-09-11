@@ -3422,7 +3422,16 @@ unchanged. **gui-mode live-verified by the repo owner 2026-09-04** — no crashe
   timeline, a handle pool, a decoder pool, BT.601 / BT.2020 / PQ / HLG, device capture, and realtime
   playback of processed output. **`core::Uri` is the queued follow-on below.**
 
-#### Queued: `core::Uri` — an identity, not a path algebra (raised 2026-09-01, build after slice 5)
+#### Queued: `core::Uri` — an identity, not a path algebra (raised 2026-09-01, **scheduled as M13 slice 1** 2026-09-11)
+
+> **Status:** the "after slice 5" condition was satisfied on 2026-09-02 and this sat unread until the
+> 2026-09-11 triage re-derived it from three separate notes. It is now M13 slice 1, and
+> `libs/io/include/lain/io/uri.h` carries a pointer back here so the next reader of that code finds
+> the decision instead of making it again. The one addition from the triage: the type also absorbs
+> `io::extensionKey` as `Uri::extension()` (which survives the "no path algebra" test where
+> `parent_path`/`filename` do not — "which codec" is a real question for every scheme) and the
+> private `libs/io/src/scheme.h`, which is deleted.
+
 
 A uri is a bare `std::string` everywhere it matters — `io::read` / `write` / `openStream`,
 `media::FrameRef::source`, `FrameSource::uri()`, `graphio::templateKey` — and slice 3 added the
@@ -4634,6 +4643,127 @@ Cast on a mismatched drag** — the registry makes it possible, but it is an ada
 own design (what if two conversions exist? none?) and wants grilling of its own.
 
 
+## notes.txt triage (2026-09-11) — tidy pass built; io coherence and the substrate swap decided
+
+A reading pass over the tree collected 25 tidy/adjustment observations in `notes.txt`. Grilling them
+one at a time split them three ways: a **tidy pass built here**, a designed **M13 "io coherence"**,
+and one isolated **substrate swap**. Six are deferred with recorded triggers rather than left as
+prose. `ctest` **739/739** (+4, the new `[math][rect]` cases), warning-clean, format-check clean,
+`flowview --version` / `run --example` / `--frame` unchanged through the real binary.
+
+**The io cluster was most of the value, and most of it was already written down.** Six of the nine io
+notes are downstream of a type this file has carried since 2026-09-01 — *Queued: `core::Uri`*, whose
+"build after slice 5" condition has been satisfied for over a week. Note 22 ("why is there no URI
+class?") and note 26 ("scheme.h feels like it should be part of a URI class") **are that queued item,
+restated by someone who had forgotten it existed.** Worth knowing about a queued section: it stops
+being a decision and starts being a rediscovery if nothing points at it from the code it governs.
+
+### Built here — the tidy pass
+
+- **`Application::exit(int)` had no callers.** `quit()` had four; nothing in the tree reached
+  `exit`. That is the compiled-linked-unreachable shape this file has now caught **six** times. The
+  two merged into `exit(int code = EXIT_SUCCESS)` — one verb for ending a run — which is what gives
+  the status path its first reachability, since every former `quit()` site can now pass one. Also in
+  the same commit: the file-local `struct Entry` became `ManagedWindow` (it owns a Window, borrows a
+  delegate, caches `lastExtent`), and `run()`'s bare `return 1` / `return 0` became `EXIT_FAILURE` /
+  `EXIT_SUCCESS`. Not an enum — a process exit code IS an `int`, and `run()` returns one.
+- **Two hand-rolled digit parsers became `std::from_chars`** (`version.cpp:parseNumber`,
+  `range.cpp:readNumber`). Net negative code. It reports overflow as `result_out_of_range` rather
+  than wrapping, refuses an empty string and a leading `-`/`+` for an unsigned type without a check
+  of our own, and hands back the `ptr` that `readNumber`'s incremental form wanted. It also removes
+  `range.cpp`'s locale-dependent `std::isdigit`. **Sabotage-verified:** dropping the `ptr == end`
+  full-consumption test — the half that replaces "reject any non-digit" — fails *(core)parse rejects
+  malformed input*.
+- **`core::Range` is a class, and the bug it closes was latent.** The "scrap code" complaint was
+  **invariants not enforced by the type**, not missing genericity: `count()`'s own comment admitted
+  it — *"neither is constructible through parse(), but a hand-built Range can hold them."* Fields are
+  private now and the constructor asserts (`<cassert>`; core is std-only, so no `log::ensure`) and
+  normalises, so `last >= first` and `step >= 1` always hold. `count()` and `contains()` dropped their
+  defensive guards. **The real win is at the caller:** `runmode.cpp`'s sweep is
+  `for (f = first(); f <= last(); f += step())`, which with a zero step was an infinite loop — the
+  type now makes that unrepresentable rather than asking the sweep to check. Every refusal in
+  `parse()` happens BEFORE a Range is built, which is what keeps the constructor's precondition a
+  precondition: untrusted text cannot reach it.
+- **Not templated.** One caller (`--frame`, over `std::size_t`), and `Bounded<T>` is already reserved
+  here for the other meaning of range (a value with limits, for the param-editor slider). A
+  `Range<float>` would also make `contains()` an exact-modulo test on accumulated floats and `count()`
+  a rounding question — most of the genericity would go straight back out as a constraint.
+- **`Time` is inline and `libs/core/src/time.cpp` is deleted.** Two one-line functions; `time.h`
+  already included `<chrono>`, and `now()` is called per frame.
+- **`std::hash<Uuid>` moved to `details/uuid.inl`**, the split `colormath.h` already uses. The
+  header keeps a line saying the specialisation exists and where — a specialisation cannot be
+  usefully forward-declared, so it travels with the header either way; what moves is the
+  bit-folding, which is implementation.
+- **`image::descriptor` → `formatDescriptor`** — 49 replacements across 16 files. Checked before
+  renaming: **every `descriptor(` in the tree is this one**, with no Vulkan descriptor-pool
+  collision anywhere. The name mattered because it is a free function found by ADL on
+  `lain::image::PixelFormat`, so the bare noun was reachable unqualified from any scope holding one.
+- **`math::Rect2i`, and it is the first OWNED type in `lain::math`** — GLM models vectors and
+  matrices and has no rectangle, so this is the one thing there that is not a typed name over
+  something else. That is why it is `rect.h` rather than a line in `types.h`, whose own header
+  comment says what it is. `image::crop` and both `ImageView::subview` overloads took four loose
+  ints, where transposing x with y or w with h compiles and is silent. Half-open by construction
+  (`right()` / `bottom()` are one past the end), and a **negative extent is empty rather than
+  reversed** — a rect that quietly meant `[x+w, x)` would pass `crop`'s bounds check and then read
+  backwards off the buffer.
+
+### Decided here, not built
+
+- **M13 "io coherence"** — five slices: `core::Uri` (absorbing `scheme.h`, `localPath`,
+  `extensionKey`; `io::canonicalise(Uri) -> Uri` stays in io because it touches the filesystem); the
+  `<key>` pattern system in `lain::string`; `transport.h` (merging `read.h` + `write.h` and taking
+  `openStream`/`createStream` from `stream.h`, so io's top level matches its own sub-seams'
+  `reader.h`/`load.h` split); the verb + layering pass; and `ImageWriterOptions`.
+- **`lain::task` → `extern/multi`** — its own commit. This relitigates locked decision #2 in
+  CLAUDE.md, which invited it (*"`multi` … can return behind the `lain::task` seam later"*).
+
+Both are specified in full in the plan for this session; the decisions that are *refusals* are
+recorded below so they are not re-raised from scratch.
+
+### The four-verb rule, found rather than invented
+
+Note 27 asked for consistency between `load`/`save`, `read`/`write` and `encode`/`decode`. The tree
+already runs a coherent rule and nobody had written it down:
+
+| verb | means | example |
+|---|---|---|
+| `read` / `write` | **bytes**, at the transport | `io::read(uri) -> Buffer` |
+| `load` / `save` | uri → **whole typed asset** | `io::image::load`, `io::data::save` |
+| `encode` / `decode` | typed value ↔ **format bytes**, in memory | `ImageWriter::encode`, `DataReader::decode` |
+| `open` | a **lazy handle** | `openStream`, `io::video::open`, `io::sequence::open` |
+
+`Reader`/`Writer` are the *classes* and `decode`/`encode` are what they *do* — not a collision. The
+one genuine outlier is `io::image::openSequence`, which M13 slice 4 renames to `io::image::open`.
+**The rule itself belongs in CONTEXT.md and lands with that slice**, beside the other thing note 28
+turned out to need: the three-layer sequence picture. Notes 22/26/28 were each a correct reading of
+code that was right and silent about being right.
+
+### Deferred, with triggers
+
+- **A standard way to convert between types** (notes 12/14/15). The survey, so a later pass starts
+  from evidence rather than one header: the call sites already draw a line — **`cast<To>(from)` when
+  the TYPE changes** (`convert<ColorRGBA8>(c)`, `convert<ColorRGBf>(hsv)`, ~13 sites) vs
+  **`convert(value, target)` when the type stays and a tagged PROPERTY changes**
+  (`convert(image, PixelFormat/ColorSpace/AlphaMode)`, ~15 sites). `image::convert` is two
+  operations under one name, which is what makes note 15's "why is this here and that there" feel
+  arbitrary. `toLinear`/`fromLinear` are **neither**: a bare `float` carries no colour-space tag, so
+  there is no source property to read and both ends must be stated — naming the canonical
+  intermediate is what makes "compose through Linear" visible. **The counter-evidence a design must
+  answer:** only ~3 pairs would register today (`Color<Src>→Color<Dst>` is a template family, not a
+  pair; `Vec2f ↔ ImVec2` already converts implicitly through `IM_VEC2_CLASS_EXTRA`, which is better
+  at an ImGui call site), and `porttyperegistry.h` has **already refused the automatic model on
+  principle** — *"spelled out per pair rather than offered for every convertible pair, because WHICH
+  conversions a graph offers is a POLICY"*; flowview hand-registers ten. The standing preference
+  driving the item is no proliferation of `toXXX`/`fromXXX`, and it reaches `Version::toString`/
+  `parse`, `Uuid`, `data::toValue`/`fromValue`, `toLinear`/`fromLinear` and `gui::packColor`.
+- **`ReadWriteStream`** — see M13's own record; the trigger is `-movflags +faststart`.
+- **`Range<T>`** — trigger: a second element type actually appearing.
+- **`core::hex`** — trigger: a second consumer. Today's two sites (`uuid.cpp` decode and encode) are
+  **inverse directions in one file**, not two implementations of one thing, and are the only hex
+  handling in the tree. The likely second consumer is a `#RRGGBB` colour parser for `gui` / `image`.
+
+
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -4658,7 +4788,11 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md).)*
 
-M1–M8 and M10–M12 are built. M9 is the only milestone from 5 onward that is not.
+- **M13 — io coherence.** Decided 2026-09-11 across five slices (`core::Uri`, the `<key>` pattern
+  system, `transport.h`, the verb + layering pass, `ImageWriterOptions`), no code. Slice 1 wants a
+  short ADR; most of its argument is already in §Queued: `core::Uri`. *(§notes.txt triage.)*
+
+M1–M8 and M10–M12 are built. M9 and M13 are the milestones from 5 onward that are not.
 
 ### Deferred — engine / `flow` core
 
@@ -4735,6 +4869,17 @@ M12 §Not in this milestone.)*
   sequence), and **keyboard-search add**. *(ADR-0005.)*
 - **The non-encoding swapchain** — designed, dormant on MoltenVK; an archimedes change for when a
   target surface actually forces sRGB. *(ADR-0002.)*
+
+### Deferred — from the notes.txt triage
+
+- **A standard way to convert between types** — one decided mechanism instead of a named
+  `toXXX`/`fromXXX` per pair. Carries a survey of what would and would not register, and the
+  `porttyperegistry.h` objection any design must answer. *(§notes.txt triage.)*
+- **`lain::task` → `extern/multi`** — decided, not built; its own commit, whose success criterion is
+  that `libs/flow` changes by zero lines. Relitigates CLAUDE.md locked decision #2, which invited it.
+  *(§notes.txt triage.)*
+- **`ReadWriteStream`**, **`Range<T>`** and **`core::hex`**, each with its trigger.
+  *(§notes.txt triage.)*
 
 ### Backlog tiers — speculative and foundational
 
@@ -4821,6 +4966,25 @@ under ADR-0007, so the rule cannot simply be "empty output is a problem".
 - **thorax** — static linking with service-shaped seams instead. *(ADR-0004.)*
 - **GPU coverage in CI.** gui-mode stays eyeball-verified on a Metal machine and the one `[gpu]` test
   self-SKIPs. Deliberate and permanent. *(§Continuous integration.)*
+- **Prebuilt third-party dependencies, beyond FFmpeg** — and **ccache**. Prebuilt is **C-ABI only**:
+  a prebuilt `Catch2`/`fmt`/`spdlog` binary would have to match the consumer's compiler, standard
+  library, `_GLIBCXX_USE_CXX11_ABI`, MSVC CRT model and C++ standard, so those are permanently out.
+  Of the C ones, **GLFW is the only dependency with official upstream binaries** (glfw.org: Windows
+  and macOS, explicitly not Linux) and is not a hog; zlib/libpng/libtiff ship source only and are
+  among the *cheapest* things lain builds. The expensive ones — Catch2, the Vulkan loader, ImGui,
+  and header-only Taskflow/nlohmann on every TU — are all structurally un-prebuildable, so the
+  note's premise inverts. ccache is refused separately: state held between builds is hard to debug
+  when it goes bad, and the saving is single minutes. **Trigger to revisit: tens of minutes, not
+  single minutes.** FFmpeg stays the one prebuilt, for LGPL relinking rather than for speed.
+  *(§notes.txt triage.)*
+- **An "invalid" `PixelFormatDescriptor`.** `ColorModel` and `ChannelType` have no such enumerator,
+  and adding one would propagate into every switch over them AND into `channelCount()` /
+  `bytesPerChannel()` — to represent a state the exhaustive switch plus `-Wswitch` (an error under
+  lain's strict flags) already proves cannot occur. The fallback `return` exists only because
+  control must not reach the end of a non-void function, and now says so. *(§notes.txt triage.)*
+- **A public `ChannelTypeList`.** `detail::channelTypes` stays `detail::`: it is the mapping
+  mechanism rather than an interface, and exposing it invites indexing with a raw `std::size_t`.
+  *(§notes.txt triage.)*
 
 ### Standing verification gap
 

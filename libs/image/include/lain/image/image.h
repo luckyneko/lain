@@ -49,7 +49,7 @@ namespace lain::image
 		int height() const { return m_extent.y; }
 
 		PixelFormat pixelFormat() const { return m_format; }
-		constexpr PixelFormatDescriptor descriptor() const { return image::descriptor(m_format); }
+		constexpr PixelFormatDescriptor formatDescriptor() const { return image::formatDescriptor(m_format); }
 
 		ColorSpace colorSpace() const { return m_colorSpace; }
 		AlphaMode alphaMode() const { return m_alphaMode; }

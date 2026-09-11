@@ -41,7 +41,7 @@ TEST_CASE("range-for iterates a view's pixels", "[view]")
 TEST_CASE("range-for over a subview visits only the window (stride-aware)", "[view]")
 {
 	Image img(4, 4, PixelFormat::Gray8); // all zero
-	auto window = img.as<ColorGray8>().subview(1, 1, 2, 2);
+	auto window = img.as<ColorGray8>().subview({1, 1, 2, 2});
 	for (ColorGray8& p : window)
 		p = ColorGray8(255);
 

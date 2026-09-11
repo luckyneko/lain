@@ -48,7 +48,7 @@ namespace lain::io::image::png
 	// can't store — float (PNG is 8/16-bit integer).
 	static bool pngTypeFor(lain::image::PixelFormat format, int& colorType, int& bitDepth)
 	{
-		const auto desc = lain::image::descriptor(format);
+		const auto desc = lain::image::formatDescriptor(format);
 		if (desc.channelType == lain::image::ChannelType::F32)
 			return false;
 		bitDepth = desc.channelType == lain::image::ChannelType::U16 ? 16 : 8;
@@ -153,7 +153,7 @@ namespace lain::io::image::png
 		{
 			if (!image.valid())
 				return false;
-			const auto desc = image.descriptor();
+			const auto desc = image.formatDescriptor();
 			// PNG stores 8/16-bit Gray/GrayAlpha/RGB/RGBA — every lain format except float.
 			if (desc.channelType == lain::image::ChannelType::F32)
 				return false;

@@ -1,5 +1,6 @@
 #include "lain/core/version.h"
 
+#include <charconv>
 #include <cstdint>
 #include <utility>
 
@@ -8,21 +9,17 @@ namespace lain::core
 	// --- file-local helpers (named static, not an anonymous namespace) ----------
 
 	// Parse an all-digits field into a uint32, rejecting empties and overflow.
+	//
+	// std::from_chars is the standard spelling of exactly this: no locale, no allocation, and it
+	// reports overflow as result_out_of_range rather than wrapping to a small number. It does not
+	// skip whitespace and accepts no sign for an unsigned type, so "+1" / " 1" / "-1" are refused
+	// without a check of our own. Requiring it to consume the WHOLE field is what rejects "1x" —
+	// from_chars stops at the first non-digit and reports success for the prefix.
 	static bool parseNumber(std::string_view s, uint32_t& out)
 	{
-		if (s.empty())
-			return false;
-		uint64_t v = 0;
-		for (char c : s)
-		{
-			if (c < '0' || c > '9')
-				return false;
-			v = v * 10 + static_cast<uint64_t>(c - '0');
-			if (v > UINT32_MAX)
-				return false;
-		}
-		out = static_cast<uint32_t>(v);
-		return true;
+		const char* const end = s.data() + s.size();
+		const std::from_chars_result result = std::from_chars(s.data(), end, out);
+		return result.ec == std::errc{} && result.ptr == end;
 	}
 
 	// --- Version ----------------------------------------------------------------

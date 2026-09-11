@@ -6,6 +6,13 @@
 #include <string>
 #include <string_view>
 
+// The uri naming rules: canonical form, the local path one names, and its format key.
+//
+// THESE ARE SCHEDULED TO BECOME core::Uri (WORK.md, M13 slice 1 — the argument is in
+// §Queued: `core::Uri`). This pointer exists because the 2026-09-11 triage re-derived that
+// decision from scratch while the written one sat unread: a queued section stops being a decision
+// and becomes a rediscovery when nothing points at it from the code it governs.
+
 namespace lain::io
 {
 	// The canonical form of `uri` — ONE resource has ONE name, however it was spelled.

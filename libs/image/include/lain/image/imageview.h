@@ -3,6 +3,8 @@
 #include "lain/image/image.h"		  // Image (the single owner these view; Image::as<C> in imageview.inl)
 #include "lain/image/pixeliterator.h" // PixelIterator — begin()/end()
 
+#include <lain/math/rect.h> // math::Rect2i (subview window)
+
 #include <cstddef>
 
 namespace lain::image
@@ -46,9 +48,9 @@ namespace lain::image
 		const_iterator end() const { return {m_data + static_cast<std::size_t>(m_height) * m_rowStride, 0, m_width, m_rowStride}; }
 
 		// A window aliasing this view's storage (no copy). Rows stay strided by the parent.
-		ImageView subview(int x, int y, int w, int h)
+		ImageView subview(lain::math::Rect2i window)
 		{
-			return ImageView(&(*this)(x, y), w, h, m_rowStride);
+			return ImageView(&(*this)(window.origin.x, window.origin.y), window.extent.x, window.extent.y, m_rowStride);
 		}
 
 	private:
@@ -92,9 +94,9 @@ namespace lain::image
 		const_iterator begin() const { return {m_data, 0, m_width, m_rowStride}; }
 		const_iterator end() const { return {m_data + static_cast<std::size_t>(m_height) * m_rowStride, 0, m_width, m_rowStride}; }
 
-		ConstImageView subview(int x, int y, int w, int h) const
+		ConstImageView subview(lain::math::Rect2i window) const
 		{
-			return ConstImageView(&(*this)(x, y), w, h, m_rowStride);
+			return ConstImageView(&(*this)(window.origin.x, window.origin.y), window.extent.x, window.extent.y, m_rowStride);
 		}
 
 	private:

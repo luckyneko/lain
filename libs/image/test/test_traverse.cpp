@@ -71,7 +71,7 @@ TEST_CASE("visit dispatches to the Color matching the runtime format", "[travers
 		  {
 			using C = std::remove_reference_t<decltype(view(0, 0))>;
 			view(0, 0) = C(); // default pixel
-			REQUIRE(descriptor(C::format).channelCount() == 3); });
+			REQUIRE(formatDescriptor(C::format).channelCount() == 3); });
 	REQUIRE(img.pixelFormat() == PixelFormat::RGB8);
 }
 
@@ -85,7 +85,7 @@ TEST_CASE("visit over a const image yields read-only views", "[traverse]")
 	visit(cimg, [&](auto view)
 		  {
 			using C = std::remove_const_t<std::remove_reference_t<decltype(view(0, 0))>>;
-			channels = descriptor(C::format).channelCount();
+			channels = formatDescriptor(C::format).channelCount();
 			REQUIRE(view(0, 0).r == 7); });
 	REQUIRE(channels == 4);
 }

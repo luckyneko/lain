@@ -46,7 +46,7 @@ namespace lain::image
 	float luminance(const Color<F>& c)
 	{
 		using T = typename Color<F>::value_type;
-		constexpr auto N = descriptor(F).channelCount();
+		constexpr auto N = formatDescriptor(F).channelCount();
 		if constexpr (N == 1 || N == 2)
 			return detail::toUnit<T>(c[0]); // Gray / GrayAlpha: channel 0 is the luminance
 		else
@@ -57,7 +57,7 @@ namespace lain::image
 	Color<F> saturate(const Color<F>& c)
 	{
 		using T = typename Color<F>::value_type;
-		constexpr auto N = descriptor(F).channelCount();
+		constexpr auto N = formatDescriptor(F).channelCount();
 		Color<F> out{};
 		for (math::length_t i = 0; i < N; ++i)
 		{
@@ -86,8 +86,8 @@ namespace lain::image
 		{
 			using T = typename Color<Src>::value_type;
 			using U = typename Dst::value_type;
-			constexpr auto N = descriptor(Src).channelCount();
-			constexpr auto M = descriptor(Dst::format).channelCount();
+			constexpr auto N = formatDescriptor(Src).channelCount();
+			constexpr auto M = formatDescriptor(Dst::format).channelCount();
 
 			// source channels -> canonical unit RGBA
 			float r, g, b, a;
@@ -262,8 +262,8 @@ namespace lain::image
 	{
 		using C = std::remove_reference_t<decltype(view(0, 0))>;
 		using T = typename C::value_type;
-		constexpr auto channels = descriptor(C::format).channelCount();
-		constexpr math::length_t colorChannels = descriptor(C::format).hasAlpha() ? channels - 1 : channels;
+		constexpr auto channels = formatDescriptor(C::format).channelCount();
+		constexpr math::length_t colorChannels = formatDescriptor(C::format).hasAlpha() ? channels - 1 : channels;
 		for (auto& px : view)
 		{
 			for (math::length_t i = 0; i < colorChannels; ++i)

@@ -4,7 +4,6 @@
 # No lain or third-party deps, so any library above may build on it.
 
 add_library(core STATIC
-	src/time.cpp
 	src/version.cpp
 	src/range.cpp
 	src/paths.cpp

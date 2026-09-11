@@ -49,7 +49,7 @@ namespace lain::image
 			{
 				const int w = std::min(blockW, view.width() - x);
 				const int h = std::min(blockH, view.height() - y);
-				fn(view.subview(x, y, w, h), x, y);
+				fn(view.subview(lain::math::Rect2i{x, y, w, h}), x, y);
 			}
 		}
 	}

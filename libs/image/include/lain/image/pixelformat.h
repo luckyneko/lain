@@ -62,8 +62,8 @@ namespace lain::image
 	// A format's reflective facts, derived from its two axes. Unlike flow's PortType
 	// flyweight (referenced by pointer, so it needs a stable address), a descriptor is
 	// pure derivable data with no identity — so it is a plain constexpr value returned by
-	// descriptor(PixelFormat). Sizes are computed from (model, channelType), not hardcoded
-	// per format, so a new format is one line in descriptor().
+	// formatDescriptor(PixelFormat). Sizes are computed from (model, channelType), not hardcoded
+	// per format, so a new format is one line in formatDescriptor().
 	struct PixelFormatDescriptor
 	{
 		PixelFormat format;		 // the format this describes
@@ -100,7 +100,12 @@ namespace lain::image
 	};
 
 	// The descriptor for a format — a single constexpr mapping enum -> {model, channelType}.
-	constexpr PixelFormatDescriptor descriptor(PixelFormat format)
+	//
+	// Named for what it describes rather than just `descriptor`: this is a free function found by
+	// ADL on lain::image::PixelFormat, so the bare noun would be reachable, unqualified, from any
+	// scope holding one — a name general enough to collide with whatever the next library calls
+	// its own descriptors.
+	constexpr PixelFormatDescriptor formatDescriptor(PixelFormat format)
 	{
 		switch (format)
 		{
@@ -129,6 +134,13 @@ namespace lain::image
 			case PixelFormat::GrayAlpha32F:
 				return {format, ColorModel::GrayAlpha, ChannelType::F32};
 		}
-		return {format, ColorModel::RGBA, ChannelType::U8}; // unreachable: all formats handled
+		// Unreachable: every enumerator is handled above, so -Wswitch (an error under lain's strict
+		// flags) fails the build when a format is added — the same guard M10 slice 4 gave ColorSpace.
+		// This exists only because control must not reach the end of a non-void function.
+		//
+		// Deliberately NOT an "invalid" descriptor: ColorModel and ChannelType have no such value,
+		// and adding one would propagate into every switch over them AND into channelCount() /
+		// bytesPerChannel(), to represent a state the compiler already proves cannot occur.
+		return {format, ColorModel::RGBA, ChannelType::U8};
 	}
 } // namespace lain::image

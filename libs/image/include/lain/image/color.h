@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lain/image/pixelformat.h" // PixelFormat + descriptor()
+#include "lain/image/pixelformat.h" // PixelFormat + formatDescriptor()
 
 #include <lain/math/types.h> // math::Vec<N,T> — Color's base
 
@@ -14,8 +14,8 @@ namespace lain::image
 	// list that gives a format its byte size.
 	template <PixelFormat F>
 	using ColorBase = lain::math::Vec<
-		static_cast<math::length_t>(descriptor(F).channelCount()),
-		detail::channelTypes::template at<static_cast<std::size_t>(descriptor(F).channelType)>>;
+		static_cast<math::length_t>(formatDescriptor(F).channelCount()),
+		detail::channelTypes::template at<static_cast<std::size_t>(formatDescriptor(F).channelType)>>;
 
 	// A pixel value of a given PixelFormat, as a distinct strong type over its math::Vec.
 	// Parameterizing on the format (not on <N,T>) ties a Color 1:1 to a PixelFormat, so the
@@ -71,7 +71,7 @@ namespace lain::image
 	// A Color's format / channel count / channel type come straight from the type: the
 	// format is the template parameter (Color<F>::format), and the channel count and channel
 	// storage type are the descriptor's channelCount() and GLM's value_type. So there is no
-	// separate traits struct — descriptor(C::format) + Color<F>::value_type say it all. (That
+	// separate traits struct — formatDescriptor(C::format) + Color<F>::value_type say it all. (That
 	// a Color is a sound reinterpretation target — standard-layout, trivially-copyable,
 	// padding-free — is asserted at the point of reinterpretation, in Image::as<C>().)
 	//

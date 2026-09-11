@@ -2,6 +2,7 @@
 
 #include "lain/image/image.h"
 
+#include <lain/math/rect.h>	 // math::Rect2i (crop region)
 #include <lain/math/types.h> // math::Vec2i (resize extent)
 
 #include <cstddef> // std::size_t (Kernel::at)
@@ -76,8 +77,11 @@ namespace lain::image
 
 	// --- geometry ----------------------------------------------------------------
 
-	// Extract the rectangular sub-region [x, x+w) x [y, y+h). Pixel-rearranging -> agnostic.
-	Image crop(const Image& src, int x, int y, int w, int h);
+	// Extract the rectangular sub-region `region`. Pixel-rearranging -> agnostic.
+	//
+	// A Rect2i rather than four loose ints: x-for-y or w-for-h transposed compiles and is silent,
+	// and this is the only op whose arguments are not distinguishable by type.
+	Image crop(const Image& src, lain::math::Rect2i region);
 
 	// Rotate by a multiple of 90 degrees clockwise (lossless, no resampling). Pixel-
 	// rearranging -> agnostic. Extent swaps for odd quarter-turns.

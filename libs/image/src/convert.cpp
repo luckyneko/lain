@@ -18,7 +18,7 @@ namespace lain::image
 	{
 		using C = std::remove_reference_t<decltype(view(0, 0))>;
 		using T = typename C::value_type;
-		constexpr math::length_t ch = descriptor(C::format).channelCount();
+		constexpr math::length_t ch = formatDescriptor(C::format).channelCount();
 		for (auto& px : view)
 		{
 			const float a = detail::toUnit<T>(px[ch - 1]);
@@ -32,7 +32,7 @@ namespace lain::image
 	{
 		using C = std::remove_reference_t<decltype(view(0, 0))>;
 		using T = typename C::value_type;
-		constexpr math::length_t ch = descriptor(C::format).channelCount();
+		constexpr math::length_t ch = formatDescriptor(C::format).channelCount();
 		for (auto& px : view)
 		{
 			const float a = detail::toUnit<T>(px[ch - 1]);
@@ -52,9 +52,9 @@ namespace lain::image
 			return {};
 
 		// A reduction to Gray / GrayAlpha uses Rec709 luminance, only meaningful in linear light.
-		const ColorModel dstModel = descriptor(dstFormat).model;
+		const ColorModel dstModel = formatDescriptor(dstFormat).model;
 		const bool toGray = dstModel == ColorModel::Gray || dstModel == ColorModel::GrayAlpha;
-		if (toGray && src.descriptor().channelCount() >= 3)
+		if (toGray && src.formatDescriptor().channelCount() >= 3)
 		{
 			if (!lain::log::ensure(src.colorSpace() == ColorSpace::Linear,
 								   "image::convert to Gray uses luminance and requires ColorSpace::Linear (got {})",
@@ -64,8 +64,8 @@ namespace lain::image
 
 		// Tags carry through; a newly-added (opaque) alpha channel is Straight.
 		AlphaMode dstAlpha = AlphaMode::Unspecified;
-		if (descriptor(dstFormat).hasAlpha())
-			dstAlpha = src.descriptor().hasAlpha() ? src.alphaMode() : AlphaMode::Straight;
+		if (formatDescriptor(dstFormat).hasAlpha())
+			dstAlpha = src.formatDescriptor().hasAlpha() ? src.alphaMode() : AlphaMode::Straight;
 
 		Image dst(src.width(), src.height(), dstFormat, src.colorSpace(), dstAlpha);
 		visit(src, [&](auto sv)
@@ -114,7 +114,7 @@ namespace lain::image
 	{
 		if (!src.valid())
 			return {};
-		if (!src.descriptor().hasAlpha()) // no alpha channel -> nothing to do
+		if (!src.formatDescriptor().hasAlpha()) // no alpha channel -> nothing to do
 			return src;
 		if (!lain::log::ensure(dstAlpha != AlphaMode::Unspecified,
 							   "image::convert target AlphaMode must not be Unspecified"))

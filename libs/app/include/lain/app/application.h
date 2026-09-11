@@ -6,6 +6,7 @@
 #include <archimedes/acmForward.h>
 
 #include <cassert>
+#include <cstdlib> // EXIT_SUCCESS (the default exit status)
 #include <memory>
 
 namespace lain::app
@@ -46,9 +47,18 @@ namespace lain::app
 		// in gui-mode a delegate calls it on demand (e.g. a "Run" button) and can act on the result.
 		int process();
 
-		// Ask the gui loop to exit after the current iteration, reporting success. exit(code) is
-		// the same request with a status.
-		void quit();
+		// End the run with `code`, taking effect after the current gui loop iteration; in
+		// headless mode it sets the status that run() returns.
+		//
+		// The gui counterpart of onProcess's return value: a windowed app has no single work
+		// routine whose status could stand for the run, so a delegate that concludes it has
+		// failed says so here. Defaulted, so the common "just close cleanly" case reads
+		// app.exit() and there is ONE verb for ending a run rather than two.
+		//
+		// Known gap, pre-existing: run()'s early exits — onInit or onStart returning false, a
+		// CLI parse error, --licenses — return their own fixed code and never reach this, so a
+		// status set before one of them is discarded.
+		void exit(int code = EXIT_SUCCESS);
 
 		// The shared device, created on demand (for windows or headless compute).
 		// Returned by reference: acm::Device is a move-only owning root, so the app
@@ -83,18 +93,6 @@ namespace lain::app
 		// onto the log level; this exposes the raw count for an app that wants to gate
 		// its own behaviour on it.
 		int verbosity() const;
-
-		// End the run with `code` — quit() that also says why.
-		//
-		// The gui counterpart of onProcess's return value: a windowed app has no single work
-		// routine whose status could stand for the run, so a delegate that concludes it has failed
-		// says so here. Takes effect after the current loop iteration, exactly as quit() does; in
-		// headless mode it sets the status that run() returns.
-		//
-		// Known gap, pre-existing: run()'s early exits — onInit or onStart returning false, a CLI
-		// parse error, --licenses — return their own fixed code and never reach this, so a status
-		// set before one of them is discarded.
-		void exit(int code);
 
 	private:
 		// Lazy subsystem bring-up, on demand: GLFW, the Vulkan instance, and the one

@@ -77,7 +77,7 @@ TEST_CASE("bytesPerPixel is 4 for RGBA8", "[image]")
 
 TEST_CASE("PixelFormat descriptor reports model, channel type and sizes", "[image]")
 {
-	const auto rgba8 = lain::image::descriptor(PixelFormat::RGBA8);
+	const auto rgba8 = lain::image::formatDescriptor(PixelFormat::RGBA8);
 	REQUIRE(rgba8.model == ColorModel::RGBA);
 	REQUIRE(rgba8.channelType == ChannelType::U8);
 	REQUIRE(rgba8.channelCount() == 4u);
@@ -85,20 +85,20 @@ TEST_CASE("PixelFormat descriptor reports model, channel type and sizes", "[imag
 	REQUIRE(rgba8.bytesPerPixel() == 4u);
 	REQUIRE(rgba8.hasAlpha());
 
-	const auto gray16 = lain::image::descriptor(PixelFormat::Gray16);
+	const auto gray16 = lain::image::formatDescriptor(PixelFormat::Gray16);
 	REQUIRE(gray16.model == ColorModel::Gray);
 	REQUIRE(gray16.channelType == ChannelType::U16);
 	REQUIRE(gray16.channelCount() == 1u);
 	REQUIRE(gray16.bytesPerPixel() == 2u);
 	REQUIRE_FALSE(gray16.hasAlpha());
 
-	const auto rgb32f = lain::image::descriptor(PixelFormat::RGB32F);
+	const auto rgb32f = lain::image::formatDescriptor(PixelFormat::RGB32F);
 	REQUIRE(rgb32f.channelCount() == 3u);
 	REQUIRE(rgb32f.bytesPerChannel() == 4u);
 	REQUIRE(rgb32f.bytesPerPixel() == 12u);
 	REQUIRE_FALSE(rgb32f.hasAlpha());
 
-	const auto grayAlpha8 = lain::image::descriptor(PixelFormat::GrayAlpha8);
+	const auto grayAlpha8 = lain::image::formatDescriptor(PixelFormat::GrayAlpha8);
 	REQUIRE(grayAlpha8.model == ColorModel::GrayAlpha);
 	REQUIRE(grayAlpha8.channelType == ChannelType::U8);
 	REQUIRE(grayAlpha8.channelCount() == 2u);
@@ -106,10 +106,10 @@ TEST_CASE("PixelFormat descriptor reports model, channel type and sizes", "[imag
 	REQUIRE(grayAlpha8.hasAlpha());
 }
 
-TEST_CASE("descriptor() is usable in a constexpr context", "[image]")
+TEST_CASE("formatDescriptor() is usable in a constexpr context", "[image]")
 {
-	STATIC_REQUIRE(lain::image::descriptor(PixelFormat::RGBA8).bytesPerPixel() == 4u);
-	STATIC_REQUIRE(lain::image::descriptor(PixelFormat::RGB32F).bytesPerPixel() == 12u);
-	STATIC_REQUIRE(lain::image::descriptor(PixelFormat::Gray8).channelCount() == 1u);
-	STATIC_REQUIRE_FALSE(lain::image::descriptor(PixelFormat::RGB8).hasAlpha());
+	STATIC_REQUIRE(lain::image::formatDescriptor(PixelFormat::RGBA8).bytesPerPixel() == 4u);
+	STATIC_REQUIRE(lain::image::formatDescriptor(PixelFormat::RGB32F).bytesPerPixel() == 12u);
+	STATIC_REQUIRE(lain::image::formatDescriptor(PixelFormat::Gray8).channelCount() == 1u);
+	STATIC_REQUIRE_FALSE(lain::image::formatDescriptor(PixelFormat::RGB8).hasAlpha());
 }

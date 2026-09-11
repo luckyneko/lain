@@ -140,7 +140,7 @@ namespace flowview
 	void FlowviewApp::onUpdate(app::Application& app, const app::TimeState& time, const app::InputState&)
 	{
 		if (m_frames > 0 && time.frame >= static_cast<std::uint64_t>(m_frames))
-			app.quit();
+			app.exit();
 	}
 
 	int FlowviewApp::onProcess(app::Application&)

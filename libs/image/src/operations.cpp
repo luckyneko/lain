@@ -16,7 +16,7 @@ namespace lain::image
 	// True when the format has no alpha channel (alpha mode is moot) or its mode matches.
 	static bool alphaOk(const Image& img, AlphaMode required)
 	{
-		return !img.descriptor().hasAlpha() || img.alphaMode() == required;
+		return !img.formatDescriptor().hasAlpha() || img.alphaMode() == required;
 	}
 
 	// A value-blending op needs linear light and (for alpha formats) premultiplied color.
@@ -42,7 +42,7 @@ namespace lain::image
 	{
 		using C = std::remove_const_t<std::remove_reference_t<decltype(view(0, 0))>>;
 		using T = typename C::value_type;
-		constexpr math::length_t ch = descriptor(C::format).channelCount();
+		constexpr math::length_t ch = formatDescriptor(C::format).channelCount();
 		const int w = view.width();
 		const int h = view.height();
 
@@ -153,7 +153,7 @@ namespace lain::image
 			  {
 				using C = std::remove_reference_t<decltype(v(0, 0))>;
 				using T = typename C::value_type;
-				constexpr math::length_t ch = descriptor(C::format).channelCount();
+				constexpr math::length_t ch = formatDescriptor(C::format).channelCount();
 				for (auto& px : v)
 				{
 					for (math::length_t i = 0; i < ch; ++i)
@@ -178,7 +178,7 @@ namespace lain::image
 			  {
 				using C = std::remove_const_t<std::remove_reference_t<decltype(sv(0, 0))>>;
 				using T = typename C::value_type;
-				constexpr math::length_t ch = descriptor(C::format).channelCount();
+				constexpr math::length_t ch = formatDescriptor(C::format).channelCount();
 				auto dv = dst.as<C>();
 				const int w = sv.width();
 				const int h = sv.height();
@@ -238,23 +238,24 @@ namespace lain::image
 
 	// --- geometry ----------------------------------------------------------------
 
-	Image crop(const Image& src, int x, int y, int w, int h)
+	Image crop(const Image& src, lain::math::Rect2i region)
 	{
 		if (!src.valid())
 			return {};
-		if (!lain::log::ensure(x >= 0 && y >= 0 && w > 0 && h > 0 && x + w <= src.width() && y + h <= src.height(),
+		if (!lain::log::ensure(region.origin.x >= 0 && region.origin.y >= 0 && !region.empty() && region.right() <= src.width() && region.bottom() <= src.height(),
 							   "image::crop rect ({},{} {}x{}) is out of bounds for a {}x{} image",
-							   x, y, w, h, src.width(), src.height()))
+							   region.origin.x, region.origin.y, region.extent.x, region.extent.y,
+							   src.width(), src.height()))
 			return {};
-		Image dst(w, h, src.pixelFormat(), src.colorSpace(), src.alphaMode());
+		Image dst(region.extent.x, region.extent.y, src.pixelFormat(), src.colorSpace(), src.alphaMode());
 		visit(src, [&](auto sv)
 			  {
 				using C = std::remove_const_t<std::remove_reference_t<decltype(sv(0, 0))>>;
 				auto dv = dst.as<C>();
-				const auto window = sv.subview(x, y, w, h);
-				for (int yy = 0; yy < h; ++yy)
+				const auto window = sv.subview(region);
+				for (int yy = 0; yy < region.extent.y; ++yy)
 				{
-					for (int xx = 0; xx < w; ++xx)
+					for (int xx = 0; xx < region.extent.x; ++xx)
 						dv(xx, yy) = window(xx, yy);
 				} });
 		return dst;

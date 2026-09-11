@@ -140,7 +140,7 @@ TEST_CASE("crop extracts a sub-region", "[ops]")
 		for (int x = 0; x < 4; ++x)
 			v(x, y) = ColorGray8(static_cast<std::uint8_t>(y * 4 + x));
 	}
-	const Image c = crop(img, 1, 1, 2, 2);
+	const Image c = crop(img, {1, 1, 2, 2});
 	REQUIRE(c.width() == 2);
 	REQUIRE(c.height() == 2);
 	REQUIRE(c.as<ColorGray8>()(0, 0)[0] == 5);	// src (1,1) = 1*4+1
@@ -200,6 +200,6 @@ TEST_CASE("value-blending ops require Linear", "[ops]")
 TEST_CASE("crop rejects an out-of-bounds rect", "[ops]")
 {
 	Image img(4, 4, PixelFormat::Gray8);
-	REQUIRE_FALSE(crop(img, 3, 3, 4, 4).valid());
+	REQUIRE_FALSE(crop(img, {3, 3, 4, 4}).valid());
 }
 #endif

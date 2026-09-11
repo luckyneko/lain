@@ -34,7 +34,7 @@ namespace lain::io::video
 		// reaches a subsampled YUV plane that has nowhere to put it. Dropping it here would be the
 		// silent degradation ImageWriter refuses (jpeg rejects alpha rather than flattening it) —
 		// composite it yourself, and the result is the one you chose.
-		if (lain::image::descriptor(spec.pixelFormat).hasAlpha())
+		if (lain::image::formatDescriptor(spec.pixelFormat).hasAlpha())
 			return lain::string::format("the pixel format {} has an alpha channel, which no video codec holds",
 										lain::meta::enums::name(spec.pixelFormat));
 
@@ -43,7 +43,7 @@ namespace lain::io::video
 		// planes, and 16-bit or float would need a wider path than any delivery codec offers. Gray
 		// and RGB are both accepted because widening Gray to a colour stream loses nothing — the
 		// rule is "no LOSS", not "no conversion".
-		if (lain::image::descriptor(spec.pixelFormat).channelType != lain::image::ChannelType::U8)
+		if (lain::image::formatDescriptor(spec.pixelFormat).channelType != lain::image::ChannelType::U8)
 			return lain::string::format("the pixel format {} is not 8-bit, which no video codec here writes",
 										lain::meta::enums::name(spec.pixelFormat));
 

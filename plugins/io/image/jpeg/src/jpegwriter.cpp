@@ -50,7 +50,7 @@ namespace lain::io::image::jpeg
 		{
 			if (!image.valid())
 				return false;
-			const auto desc = image.descriptor();
+			const auto desc = image.formatDescriptor();
 			if (desc.channelType != lain::image::ChannelType::U8)
 				return false; // JPEG is 8-bit
 			// ADR-0020: this codec can state exactly one space, so it refuses the two it would
@@ -62,7 +62,7 @@ namespace lain::io::image::jpeg
 
 		std::optional<memory::Buffer> encode(const lain::image::Image& image) const override
 		{
-			const auto desc = image.descriptor();
+			const auto desc = image.formatDescriptor();
 			int components = 0;
 			if (desc.channelType == lain::image::ChannelType::U8 && desc.model == lain::image::ColorModel::Gray)
 				components = 1;
