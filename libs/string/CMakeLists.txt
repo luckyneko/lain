@@ -3,6 +3,10 @@
 # formatter for any type exposing toString() (detected via lain::meta::has_to_string).
 # The formatter lives here, not in lain::core, so a type becomes formattable just by
 # having toString() and lain::core stays format-unaware. Depends on fmt + lain::meta.
+#
+# lain::log links THIS target PUBLICly, to carry that formatter to every log site in the
+# tree. So the dependency runs one way only: this target must never link lain::log, and a
+# diagnostic needed here goes to the caller rather than through a logger.
 
 add_library(lain_string INTERFACE)
 add_library(lain::string ALIAS lain_string)

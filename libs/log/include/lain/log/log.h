@@ -1,5 +1,15 @@
 #pragma once
 
+// The generic fmt formatter for any type exposing toString(). Its HOME is lain::string
+// (so lain::core stays format-unaware), but its CONSUMERS are here: a diagnostic is the
+// main place a lain type is rendered by name, and until this include existed the
+// formatter was reachable from no log site in the tree — tested, and unused. Carried
+// PUBLICly so "{}" renders a Version, a Uuid, an Image, a Uri or a FrameSpec at every
+// log call without the caller spelling .toString().
+//
+// The dependency runs one way only: lain::string must never link lain::log.
+#include <lain/string/format.h>
+
 #include <fmt/format.h>
 
 #include <cassert>

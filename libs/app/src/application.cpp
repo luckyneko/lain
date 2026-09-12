@@ -251,7 +251,7 @@ namespace lain::app
 
 		// Past the parse (so --version / --help have already printed and exited): a
 		// normal run announces its identity.
-		lain::log::info("{} {}", s.info.name, s.info.version.toString());
+		lain::log::info("{} {}", s.info.name, s.info.version);
 
 		if (!s.delegate.onStart(*this))
 			return EXIT_FAILURE;

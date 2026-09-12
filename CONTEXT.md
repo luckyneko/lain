@@ -838,6 +838,15 @@ Rendering a port's value splits by *purpose*; don't conflate them.
   something. A type opts into a nice text form just by exposing `toString()` — there
   is **no central `holds<int>/holds<float>/…` ladder**.
 
+- **Diagnostics** *(every `lain::log` call)* — `log.h` includes `lain::string`'s generic
+  `fmt::formatter`, so a bare `{}` renders any type exposing `toString()` and a log site
+  never spells `.toString()`. The formatter's *home* is `lain::string` (which keeps the fmt
+  dependency out of `lain::core`); its *consumers* are here. **The dependency runs one way:
+  `lain::string` must never link `lain::log`**, so a diagnostic wanted inside `string` goes
+  to its caller instead. A type that is both a range and has `toString()` would be ambiguous
+  with fmt's range formatter — none of lain's is, and `core::Range` is the one to watch,
+  since a `begin()`/`end()` on it would fire that tree-wide.
+
 - **PortType** *(the per-type flyweight)* — `flow`'s **`PortType`** (`porttype.h`)
   bundles a declared type's reflective facts — `type_index`, human `typeName`, and a
   `describe(PortValue)` bridge over `meta::toString` — into **one static instance per

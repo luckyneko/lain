@@ -631,6 +631,43 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-12 — `lain::log` carries the toString formatter
+
+The decision M13 slice 1b was blocked on, taken as its own commit ahead of the typing sweep that
+needs it. `lain::log` now PUBLIC-links `lain::string` and `log.h` includes its generic
+`fmt::formatter`, so a bare `{}` at any log site renders any type exposing `toString()`.
+`ctest -j8` **748/748** (+1), warning-clean, format-check clean.
+
+- **The measurement is what decided it: the formatter had ZERO production consumers.**
+  `libs/string/test/test_string.cpp` was its only exercise. Eleven TUs included the header, and the
+  production sites where it was genuinely in scope — `media/framespec.cpp`, `media/framesequence.cpp`,
+  `app/application.cpp` — all wrote `.toString()` anyway. So the mechanism this file describes as
+  *"a type is formattable just by having `toString()`, no per-type registration"* was reachable from
+  **no log site in the tree**, which is the one place a lain type is most often rendered by name.
+  That is the compiled-linked-unreachable shape, a seventh time — and the alternative on the table
+  (slice 1b's ~39 uri log sites each spelling `.toString()`) would have entrenched it.
+- **Two production sites converted in the same commit**, so the mechanism does not ship with only a
+  test consumer: `lain::app`'s startup banner (`core::Version`) and `io::image::encode`'s refusal
+  (`image::Image`). `flowview run --example` prints `flowview 0.1.0` through the formatter.
+- **The dependency runs ONE WAY, and both CMakeLists say so:** `lain::string` must never link
+  `lain::log`. A diagnostic wanted inside `string` goes to its caller instead. `lain::string` is
+  INTERFACE over `fmt` (already log's PUBLIC dep) and `lain::meta`, so the added weight is a trait
+  header.
+- **A forward reference in CMake is fine, and this proves why it is worth knowing:** `libs/log` is
+  added before `libs/string` in the root `CMakeLists.txt`, but a name containing `::` is resolved at
+  **generate** time — `libs/string` already forward-references `lain::meta`, which is added after it.
+  No reordering was needed.
+- **The caveat becomes tree-wide, and was measured rather than assumed:** a type that is both a range
+  and has `toString()` is ambiguous with fmt's range formatter. Of the ten headers declaring
+  `std::string toString() const`, **none declares `begin()`**. `core::Range` is the one to watch —
+  it is named for a range and is not one, and a future `begin()`/`end()` on it would fire this
+  everywhere rather than in eleven TUs.
+- **Sabotage-verified:** removing the include from `log.h` fails the new `[log]` case with fmt's
+  *"Cannot format an argument"* static assertion — a hard compile error, not a silent fallback to an
+  address or a type name. The case asserts through `fmt::format` rather than log output (the sink is
+  not capturable there) precisely because `test-log` links `lain::log` and nothing else, so if the
+  formatter renders there, `log.h` is what brought it.
+
 ### Update 2026-09-11 — M13 slice 1: `core::Uri`, an identity rather than a path algebra
 
 The first of Milestone 13's five slices (io coherence). `lain::core::Uri` lands with
@@ -2417,6 +2454,10 @@ app stack + viewer. What each piece is, and what it decided:**
   of `core`. (Caveat: a type that is both a range/tuple and has `toString()` would be
   ambiguous with fmt's range formatter; none of lain's are.) Depends on `fmt::fmt` +
   `lain::meta`. 3 tests pass (format, the Version-via-`toString` path, specs).
+  **`lain::log` carries that formatter** (`log.h` includes it; `lain::string` is PUBLIC on
+  `lain::log`) — see the 2026-09-12 update: until then it was reachable from no log site in
+  the tree, which is the one place a lain type is most often rendered by name. The
+  dependency runs one way: **`lain::string` must never link `lain::log`.**
 - ✅ **`libs/meta`** (`lain::meta`) — compile-time introspection behind a lain:: face,
   header-only. Enum reflection over magic_enum 0.9.8 (`cmake/addmagicenum.cmake`, SYSTEM)
   in the `lain::meta::enums` sub-namespace (short names kept clear of the type-level

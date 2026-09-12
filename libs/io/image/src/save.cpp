@@ -40,7 +40,7 @@ namespace lain::io::image
 		auto bytes = writer->encode(image);
 		if (!bytes)
 		{
-			log::error("io::image::encode: writer for '{}' failed to encode {}", key, image.toString());
+			log::error("io::image::encode: writer for '{}' failed to encode {}", key, image);
 			return std::nullopt;
 		}
 		return bytes;
