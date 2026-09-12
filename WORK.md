@@ -3435,13 +3435,11 @@ unchanged. **gui-mode live-verified by the repo owner 2026-09-04** — no crashe
 
 #### Queued: `core::Uri` — an identity, not a path algebra (raised 2026-09-01, **scheduled as M13 slice 1** 2026-09-11)
 
-> **Status:** the "after slice 5" condition was satisfied on 2026-09-02 and this sat unread until the
-> 2026-09-11 triage re-derived it from three separate notes. It is now M13 slice 1, and
-> `libs/io/include/lain/io/uri.h` carries a pointer back here so the next reader of that code finds
-> the decision instead of making it again. The one addition from the triage: the type also absorbs
-> `io::extensionKey` as `Uri::extension()` (which survives the "no path algebra" test where
-> `parent_path`/`filename` do not — "which codec" is a real question for every scheme) and the
-> private `libs/io/src/scheme.h`, which is deleted.
+> **Status: BUILT 2026-09-11 as M13 slice 1** — see §Milestone 13 and
+> [ADR-0023](docs/adr/0023-uri-as-an-identity-not-a-path-algebra.md), which carries the reasoning
+> below plus what the build added. Everything here was decided on 2026-09-01; the "after slice 5"
+> condition was satisfied on 2026-09-02 and this then sat unread until the 2026-09-11 triage
+> re-derived it from three separate notes. That is the lesson the ADR opens with.
 
 
 A uri is a bare `std::string` everywhere it matters — `io::read` / `write` / `openStream`,
@@ -4836,6 +4834,56 @@ production code rather than to the directory.
 
 
 
+## Milestone 13 — io coherence (decided 2026-09-11)
+
+Five slices, from the notes.txt triage: `core::Uri`, the `<key>` pattern system in `lain::string`,
+`transport.h`, the verb + layering pass, and `ImageWriterOptions`. §notes.txt triage carries the
+decisions; this section carries what gets built.
+
+### Slice 1 — `core::Uri` (built 2026-09-11)
+
+`lain::core::Uri` lands with [ADR-0023](docs/adr/0023-uri-as-an-identity-not-a-path-algebra.md). It
+absorbs `io::localPath` (as `Uri::path()`), `io::extensionKey` (as `Uri::extension()`) and the
+private `libs/io/src/scheme.h` (as `Uri::scheme()` / `isLocal()`), which is **deleted**.
+`io::canonicalUri` becomes **`io::canonicalise(Uri) -> Uri`** and stays in `io`, because it touches
+the filesystem and `lain::core` does not. `ctest -j8` **747/747** (+5 net: 8 new `[core][uri]` cases,
+3 io ones that moved with the functions), warning-clean, format-check clean, `flowview run --example`
+unchanged, and the linked-group / `templateKey` cases still pass.
+
+- **`media` needed no new dependency**, which is the ADR's "home is `core`" argument confirmed at the
+  CMake level rather than argued: `lain::media` already links `lain::core` PUBLIC for `core::Time`.
+  `libs/io` gained `PUBLIC lain::core`.
+- **The implicit `Uri(std::string_view)` constructor is deliberate.** The type's value is in what it
+  refuses to offer *afterwards* — no `parent()`, no `filename()`, and a `path()` that can say no —
+  not in policing where a name came from. An explicit conversion at ~30 call sites would have bought
+  nothing. `fromPath` is the one that IS explicit, because it is the conversion that can silently
+  mean something else: a Windows path is not a uri.
+- **`extension()` reads the WHOLE text, not `rest()`.** A remote uri still has a format, and a
+  version that only answered for local schemes would make the method lie for every scheme but one —
+  while `io::sequence` dispatches a MEDIUM by exactly this string.
+- **The test split follows the ADR's split.** What a uri is *called* is core's and is tested in
+  `libs/core/test/test_uri.cpp`; what it *resolves to* needs a filesystem and is tested beside `io`.
+  A new case pins the two collisions ADR-0023 turns on — `shot.####.png` and `C:\footage\clip.mp4`
+  — so a later "let's parse it properly" has to fail a test rather than only a review.
+- **Found while writing the tests: Catch2 here cannot stringify a `std::string_view`.** Its
+  `StringMaker` for one is compiled out, so comparing a `scheme()` result directly fails to LINK
+  rather than to compile. Wrapped in `std::string` at the assertion sites. Worth knowing before the
+  next test compares a `string_view`.
+- **Also found, not fixed: `numberField` / `substituteNumber` have no direct tests.** They are
+  covered only through `framepattern` and `sequence`. Slice 2 replaces both, so the cover arrives
+  with the replacement rather than being written for code about to be deleted.
+
+**Slice 1b — deliberately not done here, and why.** The transport signatures (`io::read` / `write` /
+`openStream` / `createStream`, `Stream::uri()`) and `media::FrameRef::source` still speak
+`std::string`. The implicit constructor means changing them compiles every caller untouched, so the
+work is small — but `Stream::uri()` is printed at ~15 `lain::log` sites in the FFmpeg plugin, and
+`lain::log` does not link `lain::string`, so the `toString()` fmt formatter is not in scope there.
+Typing it therefore costs either `.toString()` at every one of those sites or a new dependency for
+the plugin, and that is a decision worth making on its own rather than inside a slice about naming.
+**It is the more valuable half** — ADR-0023 says so — so it is owed, not dropped.
+
+
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -4860,9 +4908,10 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md).)*
 
-- **M13 — io coherence.** Decided 2026-09-11 across five slices (`core::Uri`, the `<key>` pattern
-  system, `transport.h`, the verb + layering pass, `ImageWriterOptions`), no code. Slice 1 wants a
-  short ADR; most of its argument is already in §Queued: `core::Uri`. *(§notes.txt triage.)*
+- **M13 — io coherence.** Five slices; **slice 1 (`core::Uri`) is built** (2026-09-11, ADR-0023).
+  Remaining: the `<key>` pattern system, `transport.h`, the verb + layering pass,
+  `ImageWriterOptions` — plus **slice 1b**, typing the transport signatures and
+  `media::FrameRef::source`. *(§Milestone 13.)*
 
 M1–M8 and M10–M12 are built. M9 and M13 are the milestones from 5 onward that are not.
 

@@ -49,7 +49,7 @@ namespace lain::io
 		Stream(const Stream&) = delete;
 		Stream& operator=(const Stream&) = delete;
 
-		// The canonical uri this stream reads or writes (io::canonicalUri of what was asked
+		// The canonical uri this stream reads or writes (io::canonicalise of what was asked
 		// for). Canonical because a stream that reopens by a RELATIVE path is one chdir away
 		// from silently touching a different file — and because a media::FrameRef names its
 		// source by canonical uri, so one resource must have one name here too.

@@ -20,7 +20,7 @@ namespace lain::media
 	//
 	// The source is a canonical uri rather than a minted id because a minted id changes every
 	// run, which would make a saved manifest meaningless. One resource has ONE name however it is
-	// spelled, and io::canonicalUri is the single function that decides that — a key computed two
+	// spelled, and io::canonicalise is the single function that decides that — a key computed two
 	// ways eventually disagrees with itself, silently.
 	struct FrameRef
 	{

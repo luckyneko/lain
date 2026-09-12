@@ -8,6 +8,7 @@
 #include "lain/io/video/open.h"
 #include "lain/io/video/reader.h"
 
+#include <lain/core/uri.h>
 #include <lain/io/uri.h>
 #include <lain/testing/scratch.h>
 
@@ -143,7 +144,7 @@ TEST_CASE("a registered reader opens a uri as a sequence", "[io::video]")
 
 	// The frame names its source by CANONICAL uri, which is what makes two references to one frame
 	// compare equal however the path was spelled (media::FrameRef).
-	CHECK(sequence->frame(0).source == lain::io::canonicalUri(file.string()));
+	CHECK(sequence->frame(0).source == lain::io::canonicalise(lain::core::Uri::fromPath(file.string())).toString());
 	CHECK(sequence->frame(3).ordinal == 3);
 }
 

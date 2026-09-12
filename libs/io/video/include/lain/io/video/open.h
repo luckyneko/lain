@@ -55,7 +55,7 @@ namespace lain::io::video
 	// the question that survives having no backend at all.
 	const std::vector<std::string>& videoExtensions();
 
-	// Whether `uri` names a video CONTAINER this seam claims — io::extensionKey against
+	// Whether `uri` names a video CONTAINER this seam claims — Uri::extension() against
 	// videoExtensions(), asked as a predicate.
 	//
 	// Public for exactly the reason io::image::formatKeyOf is: a render sweep has to decide whether

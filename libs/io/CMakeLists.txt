@@ -18,6 +18,7 @@ target_compile_features(io PUBLIC cxx_std_17)
 target_include_directories(io PUBLIC include)
 target_link_libraries(io
 	PUBLIC lain::memory
+	PUBLIC lain::core				# core::Uri is the name every entry point takes (ADR-0023)
 	PRIVATE lain::log lain::warnings
 )
 

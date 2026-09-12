@@ -1,9 +1,5 @@
 #include "lain/io/uri.h"
 
-#include "scheme.h"
-
-#include <algorithm>
-#include <cctype>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -11,40 +7,24 @@
 
 namespace lain::io
 {
-	std::string canonicalUri(std::string_view uri)
+	lain::core::Uri canonicalise(const lain::core::Uri& uri)
 	{
-		const ParsedUri parsed = parseUri(uri);
-		if (!isLocalScheme(parsed.scheme))
-			return std::string{uri};
+		// The scheme is asked about ONCE, by Uri::path(): a uri it can turn into a path is one this
+		// library can serve, and one it cannot has nothing to canonicalise. Testing isLocal()
+		// separately would be a second place deciding the same thing.
+		const std::optional<std::filesystem::path> local = uri.path();
+		if (!local.has_value())
+			return uri;
 
 		// weakly_canonical rather than canonical: a not-yet-existing path must still have a
 		// stable name, since an output pattern is canonicalised before anything is written to it.
 		// The error_code overload keeps a permission-denied directory from throwing out of what
 		// callers treat as a pure naming function.
 		std::error_code error;
-		const std::filesystem::path canonical = std::filesystem::weakly_canonical(std::filesystem::path{parsed.rest}, error);
+		const std::filesystem::path canonical = std::filesystem::weakly_canonical(*local, error);
 		if (error)
-			return std::string{uri};
-		return canonical.string();
-	}
-
-	std::optional<std::filesystem::path> localPath(std::string_view uri)
-	{
-		const ParsedUri parsed = parseUri(uri);
-		if (!isLocalScheme(parsed.scheme))
-			return std::nullopt;
-		return std::filesystem::path{parsed.rest};
-	}
-
-	std::string extensionKey(std::string_view uri)
-	{
-		std::string ext = std::filesystem::path(uri).extension().string();
-		if (!ext.empty() && ext.front() == '.')
-			ext.erase(ext.begin());
-		std::transform(ext.begin(), ext.end(), ext.begin(),
-					   [](unsigned char c)
-					   { return static_cast<char>(std::tolower(c)); });
-		return ext;
+			return uri;
+		return lain::core::Uri::fromPath(canonical);
 	}
 
 	NumberField numberField(std::string_view pattern)

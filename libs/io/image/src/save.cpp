@@ -69,9 +69,9 @@ namespace lain::io::image
 	}
 	std::string formatKeyOf(std::string_view uri)
 	{
-		// io::extensionKey, not a local copy: io::sequence dispatches a uri to a MEDIUM by the
+		// Uri::extension(), not a local copy: io::sequence dispatches a uri to a MEDIUM by the
 		// same string this picks a codec by, so the two must agree about what "clip.MP4" is
 		// called (WORK.md M10 slice 5).
-		return lain::io::extensionKey(uri);
+		return lain::core::Uri{uri}.extension();
 	}
 } // namespace lain::io::image

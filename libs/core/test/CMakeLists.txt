@@ -8,6 +8,7 @@ add_executable(test-core
 	test_range.cpp
 	test_paths.cpp
 	test_uuid.cpp
+	test_uri.cpp
 )
 
 target_compile_features(test-core PRIVATE cxx_std_17)

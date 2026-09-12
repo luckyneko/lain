@@ -179,13 +179,13 @@ namespace flowview
 
 	std::string templateKey(const std::filesystem::path& path)
 	{
-		// ONE canonicalisation in the tree. io::canonicalUri owns the rule (weakly_canonical, so a
+		// ONE canonicalisation in the tree. io::canonicalise owns the rule (weakly_canonical, so a
 		// template that does not exist yet still has a stable key, which is what lets a broken link
 		// heal when the file appears); this names the CONCEPT — a template's cache key — and is what
 		// the four call sites read. A key computed two ways eventually disagrees with itself, and
 		// the failure is silent: an invalidation that misses simply keeps serving the definition it
 		// was told to drop.
-		return lain::io::canonicalUri(path.string());
+		return lain::io::canonicalise(lain::core::Uri::fromPath(path)).toString();
 	}
 
 	flow::serialize::TemplateResolver templateResolver(const std::filesystem::path& documentDir)

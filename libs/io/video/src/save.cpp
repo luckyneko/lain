@@ -72,7 +72,7 @@ namespace lain::io::video
 	std::unique_ptr<VideoWriter> openWriter(std::string_view uri, const lain::media::FrameSpec& spec,
 											const VideoWriterOptions& options)
 	{
-		const std::string canonical = lain::io::canonicalUri(uri);
+		const std::string canonical = lain::io::canonicalise(lain::core::Uri{uri}).toString();
 
 		if (!isVideoUri(canonical))
 		{
@@ -110,7 +110,7 @@ namespace lain::io::video
 				return nullptr; // createStream logged the reason; a second backend cannot help
 
 			std::unique_ptr<VideoWriter> writer = writerRegistry().create(backend);
-			if (writer && writer->open(std::move(stream), lain::io::extensionKey(canonical), spec, options))
+			if (writer && writer->open(std::move(stream), lain::core::Uri{canonical}.extension(), spec, options))
 			{
 				// What this file turned INTO, said once, where a person can see it — and in
 				// particular which encoder "by availability" resolved to on this machine, which is
@@ -133,7 +133,7 @@ namespace lain::io::video
 		{
 			// Not a zero-frame container. The caller asked to transcode nothing, and a file that
 			// hides that is worse than an error.
-			lain::log::error("io::video: cannot write {} — the sequence is empty", lain::io::canonicalUri(uri));
+			lain::log::error("io::video: cannot write {} — the sequence is empty", lain::io::canonicalise(lain::core::Uri{uri}).toString());
 			return false;
 		}
 
@@ -153,7 +153,7 @@ namespace lain::io::video
 				// A hole. Unlike a render, a transcode has no host policy to consult — the caller
 				// asked for THESE frames, and a video cannot represent a missing one.
 				lain::log::error("io::video: {} produced no image while writing {}",
-								 sequence.frame(position).toString(), lain::io::canonicalUri(uri));
+								 sequence.frame(position).toString(), lain::io::canonicalise(lain::core::Uri{uri}).toString());
 				ok = false;
 				break;
 			}

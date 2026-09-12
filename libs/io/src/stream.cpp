@@ -2,7 +2,6 @@
 
 #include "lain/io/uri.h"
 #include "localstream.h" // openLocalReadStream / createLocalWriteStream
-#include "scheme.h"		 // parseUri / isLocalScheme (shared with read.cpp / write.cpp)
 
 #include <lain/log/log.h>
 
@@ -104,35 +103,35 @@ namespace lain::io
 
 	// --- scheme dispatch -------------------------------------------------------
 	//
-	// The scheme is asked about ONCE, by io::localPath: a uri it can turn into a path is one
+	// The scheme is asked about ONCE, by Uri::path(): a uri it can turn into a path is one
 	// this library can serve, and one it cannot is the unsupported-scheme branch. Splitting
-	// that into a separate isLocalScheme test would be a second place to decide the same
-	// thing, which is exactly the shape this hoist removed. canonicalUri leaves a non-local
-	// uri untouched, so canonicalising first costs nothing and keeps one name per resource.
+	// that into a separate isLocal() test would be a second place to decide the same thing.
+	// canonicalise leaves a non-local uri untouched, so canonicalising first costs nothing
+	// and keeps one name per resource.
 
 	std::unique_ptr<ReadStream> openStream(std::string_view uri)
 	{
-		std::string canonical = canonicalUri(uri);
-		const std::optional<std::filesystem::path> path = localPath(canonical);
+		const lain::core::Uri canonical = canonicalise(lain::core::Uri{uri});
+		const std::optional<std::filesystem::path> path = canonical.path();
 		if (!path)
 		{
 			log::warn("io::openStream: unsupported scheme '{}' in uri: {}",
-					  std::string(parseUri(uri).scheme), std::string(uri));
+					  std::string(canonical.scheme()), std::string(uri));
 			return nullptr;
 		}
-		return openLocalReadStream(*path, std::move(canonical));
+		return openLocalReadStream(*path, canonical.toString());
 	}
 
 	std::unique_ptr<WriteStream> createStream(std::string_view uri)
 	{
-		std::string canonical = canonicalUri(uri);
-		const std::optional<std::filesystem::path> path = localPath(canonical);
+		const lain::core::Uri canonical = canonicalise(lain::core::Uri{uri});
+		const std::optional<std::filesystem::path> path = canonical.path();
 		if (!path)
 		{
 			log::warn("io::createStream: unsupported scheme '{}' in uri: {}",
-					  std::string(parseUri(uri).scheme), std::string(uri));
+					  std::string(canonical.scheme()), std::string(uri));
 			return nullptr;
 		}
-		return createLocalWriteStream(*path, std::move(canonical));
+		return createLocalWriteStream(*path, canonical.toString());
 	}
 } // namespace lain::io

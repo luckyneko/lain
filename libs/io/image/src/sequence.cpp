@@ -137,26 +137,27 @@ namespace lain::io::image
 
 	std::optional<lain::media::FrameSequence> openSequence(std::string_view uri, lain::media::FrameRate rate)
 	{
-		const std::string canonical = lain::io::canonicalUri(uri);
-		const std::optional<fs::path> local = lain::io::localPath(canonical);
+		const lain::core::Uri canonical = lain::io::canonicalise(lain::core::Uri{uri});
+		const std::optional<fs::path> local = canonical.path();
 		if (!local)
 		{
 			// A still sequence is read frame-by-frame with io::read, which serves the local
 			// scheme only. Saying so is the point of asking: building a path out of the whole
 			// uri instead would make "s3:" a relative directory name and report the wrong
 			// reason for the wrong thing.
-			lain::log::error("io::image: {} is not a local path — only local stills open as a sequence", canonical);
+			lain::log::error("io::image: {} is not a local path — only local stills open as a sequence",
+							 canonical.toString());
 			return std::nullopt;
 		}
 		const fs::path& path = *local;
 
 		std::error_code error;
 		const bool isDirectory = fs::is_directory(path, error);
-		const bool isPattern = lain::io::numberField(canonical).found();
+		const bool isPattern = lain::io::numberField(canonical.toString()).found();
 
 		if (!isDirectory && !isPattern)
 		{
-			lain::log::error("io::image: {} is neither a directory nor a ####-numbered pattern", canonical);
+			lain::log::error("io::image: {} is neither a directory nor a ####-numbered pattern", canonical.toString());
 			return std::nullopt;
 		}
 
@@ -173,7 +174,7 @@ namespace lain::io::image
 		std::vector<std::string> paths = isDirectory ? filesInDirectory(directory) : filesMatchingPattern(path);
 		if (paths.empty())
 		{
-			lain::log::info("io::image: no images found for {} — an empty sequence", canonical);
+			lain::log::info("io::image: no images found for {} — an empty sequence", canonical.toString());
 			return lain::media::FrameSequence{};
 		}
 
@@ -184,11 +185,11 @@ namespace lain::io::image
 		if (!first.has_value())
 		{
 			lain::log::error("io::image: cannot open {} as a sequence — its first frame {} would not decode",
-							 canonical, paths.front());
+							 canonical.toString(), paths.front());
 			return std::nullopt;
 		}
 
-		auto source = std::make_shared<ImageSequenceSource>(canonical, lain::media::specOf(*first, rate),
+		auto source = std::make_shared<ImageSequenceSource>(canonical.toString(), lain::media::specOf(*first, rate),
 															std::move(paths));
 		return lain::media::FrameSequence::over(std::move(source));
 	}

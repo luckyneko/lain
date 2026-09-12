@@ -1,0 +1,88 @@
+# `core::Uri` — an identity, not a path algebra, and not RFC 3986
+
+---
+Status: accepted
+---
+
+A uri is a bare `std::string` everywhere it matters: `io::read` / `write` / `openStream` /
+`createStream`, `media::FrameRef::source`, `FrameSource::uri()`, `graphio::templateKey`, and every
+opener. Nothing stops one being pasted into a `std::filesystem::path`, and that is not a
+hypothetical — M10 slice 3 found `openSequence` building its `fs::path` from the **whole** uri, so
+`s3://bucket/frames` became a relative directory named `s3:` that the opener then asked the working
+directory about. The fix at the time was `io::localPath`, which collapsed two hand-written
+uri→path conversions into one and made the refusal explicit. This ADR types the thing itself.
+
+**The decision was written down on 2026-09-01 and then rediscovered on 2026-09-11.** WORK.md's
+*Queued: `core::Uri`* section carried the reasoning, including both collisions below, and its
+"build after slice 5" condition was satisfied on 2026-09-02. Three separate notes in a later reading
+pass — *"why is there no URI class? a bunch of random functions on a std::string"*, *"scheme.h feels
+like it should be part of a URI class"*, and the `NumberField` complaint — re-derived it from
+scratch, because nothing in `libs/io/include/lain/io/uri.h` pointed at the queue. That is the
+general lesson, and it is why this is an ADR beside the code rather than a section in a plan file:
+**a queued decision with nothing pointing at it from the code it governs stops being a decision and
+becomes a rediscovery.**
+
+## Decision
+
+`lain::core::Uri` is a value type naming one resource. It carries an opaque `scheme://rest` split,
+answers what it is *called* and where it is *local*, and does nothing else.
+
+### It is NOT an RFC 3986 parser, and not a `fs::path` for schemes
+
+Two of lain's own strings collide with the standard head-on, and both are load-bearing:
+
+- **`shot.####.png` is not a valid URI reference.** `#` is the fragment delimiter, so a conforming
+  parser reads path `shot.` and fragment `###.png`. `io::numberField` scans for exactly that run of
+  `#`, for both the sequence opener and the render sweep. Percent-encoding it to `%23` fixes the
+  parse and wrecks the human-readable identity strings in a manifest.
+- **`C:\footage\clip.mp4` parses as scheme `C`**, on a platform lain ships and CI covers.
+
+The existing `://` test is immune to both by construction, so it is kept. The type's job is to stop
+a uri being pasted into a `fs::path`, not to model the web.
+
+*(M13 slice 2 retires `####` for `<frame:04>`, which removes the first collision. The decision does
+not depend on it: the `C:\` collision stands alone, and a Windows path is not going away.)*
+
+### Its home is `lain::core`, not `lain::io`
+
+The most valuable site is `media::FrameRef::source`, and `lain::media` links no `io` by rule — a
+medium-neutral library that knew how to open things would end up depending on every medium. `core`
+is std-only and already names `std::filesystem` in `paths.h`, so a local-only `path()` accessor
+fits.
+
+Canonicalisation touches the filesystem, so it stays in `io` as a free function,
+`io::canonicalise(Uri) -> Uri`.
+
+### No path algebra on it
+
+Every `parent_path` / `relative` / `filename` in the tree operates on a genuinely local path, and
+none of those verbs means anything for a scheme with no implementation — the
+registry-with-one-member rule, applied to methods. `path()` plus `fs::path` covers every current
+caller.
+
+**`extension()` is the exception, and it survives that test where the others do not:** "which codec,
+or which medium" is a real question for every scheme, including one served remotely. Three seams ask
+it today (`io::image` keys its codecs by it, `io::video` claims a set of container extensions,
+`io::sequence` dispatches a uri to a medium by it), and a format decided in three places eventually
+disagrees with itself over `clip.MP4` — silently, as the wrong opener or none.
+
+### The private `scheme.h` is absorbed and deleted
+
+`parseUri` / `isLocalScheme` become `Uri::scheme()` / `Uri::isLocal()`. That file already carried
+the comment *"a full Uri type would live here if scheme handling ever grows"*; it grew.
+
+## What this does NOT buy, stated up front
+
+**Canonical-ness stays a discipline rule.** The version that makes "a key computed two ways"
+*unrepresentable* is a distinct `CanonicalUri` that only `io::canonicalise` can mint, which costs a
+cross-library friend or a token type. There are five call sites and one historical miss
+(`graphio::templateKey`, already collapsed into `canonicalUri`). Reach for it if a second miss
+appears.
+
+## Costs
+
+- `media::FrameRef::source` becomes a `Uri`. Cheap: `ManifestFrame` already flattens it to a
+  `std::string`, so it costs one `toString()` in `manifestOf` — no serialize arm, no wire change.
+- A cross-cutting change touching `read` / `write` / `openStream` / the openers / `FrameRef` /
+  `templateKey`. This is why it was deliberately sequenced after M10 slice 5 rather than interleaved
+  with the FFmpeg unknowns.

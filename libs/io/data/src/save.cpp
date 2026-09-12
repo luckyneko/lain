@@ -35,7 +35,7 @@ namespace lain::io::data
 
 	bool save(std::string_view uri, const lain::data::Value& value)
 	{
-		const std::string key = lain::io::extensionKey(uri);
+		const std::string key = lain::core::Uri{uri}.extension();
 		if (key.empty())
 		{
 			log::warn("io::data::save: no file extension to select a writer: {}", std::string(uri));

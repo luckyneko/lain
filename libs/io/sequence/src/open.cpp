@@ -37,9 +37,9 @@ namespace lain::io::sequence
 	{
 		const Registry& registered = registry();
 
-		// io::extensionKey, not a local copy: this picks a MEDIUM by the same string io::image
+		// Uri::extension(), not a local copy: this picks a MEDIUM by the same string io::image
 		// picks a codec by, and a spelling decided twice eventually disagrees with itself.
-		const std::string extension = lain::io::extensionKey(uri);
+		const std::string extension = lain::core::Uri{uri}.extension();
 
 		const auto claimed = registered.byExtension.find(extension);
 		if (claimed != registered.byExtension.end())

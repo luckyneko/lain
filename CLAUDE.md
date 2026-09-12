@@ -631,6 +631,46 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-11 — M13 slice 1: `core::Uri`, an identity rather than a path algebra
+
+The first of Milestone 13's five slices (io coherence). `lain::core::Uri` lands with
+**[ADR-0023](docs/adr/0023-uri-as-an-identity-not-a-path-algebra.md)**, absorbing `io::localPath`
+(as `Uri::path()`), `io::extensionKey` (as `Uri::extension()`) and the private
+`libs/io/src/scheme.h` (as `scheme()` / `isLocal()`), which is **deleted**. `io::canonicalUri`
+becomes **`io::canonicalise(Uri) -> Uri`** and stays in `io`, because it touches the filesystem and
+`lain::core` does not. `ctest -j8` **747/747** (+5 net), warning-clean, format-check clean,
+`flowview run --example` unchanged, linked-group and `templateKey` cases still green. Full landing
+notes in WORK.md's *Milestone 13*.
+
+- **The decision was written down on 2026-09-01 and rediscovered on 2026-09-11.** WORK.md's
+  *Queued: `core::Uri`* carried the whole argument, and its "build after slice 5" condition was met
+  on 2026-09-02 — then three separate notes in a reading pass re-derived it from scratch, because
+  nothing in the code pointed at it. That is the ADR's opening paragraph and the general rule worth
+  carrying: **a queued decision with nothing pointing at it from the code it governs stops being a
+  decision and becomes a rediscovery.**
+- **It is NOT an RFC 3986 parser, and a test now enforces that** rather than a review. Two of lain's
+  own strings collide with the standard head-on: `shot.####.png` is not a valid URI reference (`#`
+  is the fragment delimiter, so a conforming parser reads path `shot.` + fragment `###.png`), and
+  `C:\footage\clip.mp4` parses as **scheme `C`** on a platform lain ships. The opaque `://` split
+  is immune to both.
+- **`media` needed no new dependency** — the ADR's "home is `core`" argument confirmed at the CMake
+  level rather than argued: `lain::media` already links `lain::core` for `core::Time`, and it links
+  no `io` by rule, which is exactly why the type could not live there.
+- **`extension()` is the one piece of "path algebra" that survives**, because "which codec, or which
+  medium" is a real question for every scheme — `parent_path` / `filename` mean nothing for one with
+  no implementation. It reads the whole text rather than `rest()`, so a remote uri still has a
+  format.
+- **Found while writing the tests: Catch2 here cannot stringify a `std::string_view`** — its
+  `StringMaker` is compiled out, so comparing a `scheme()` result fails to LINK rather than to
+  compile. Wrapped in `std::string` at the assertion sites; worth knowing before the next test
+  compares one.
+- **Slice 1b is owed, not dropped.** The transport signatures and `media::FrameRef::source` still
+  speak `std::string`. The implicit constructor makes the change compile every caller untouched, but
+  `Stream::uri()` is printed at ~15 `lain::log` sites in the FFmpeg plugin and `lain::log` does not
+  link `lain::string`, so the `toString()` formatter is not in scope there. That costs either
+  `.toString()` at each site or a new plugin dependency — a decision worth making on its own rather
+  than inside a slice about naming. ADR-0023 calls it the more valuable half.
+
 ### Update 2026-09-11 — `lain::task` moves from Taskflow to `multi`
 
 The swap the triage decided, built. Locked decision #2 read *"Taskflow is the substrate (drops

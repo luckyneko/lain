@@ -1,17 +1,10 @@
 #pragma once
 
+#include <lain/core/uri.h>
+
 #include <cstddef>
-#include <filesystem>
-#include <optional>
 #include <string>
 #include <string_view>
-
-// The uri naming rules: canonical form, the local path one names, and its format key.
-//
-// THESE ARE SCHEDULED TO BECOME core::Uri (WORK.md, M13 slice 1 — the argument is in
-// §Queued: `core::Uri`). This pointer exists because the 2026-09-11 triage re-derived that
-// decision from scratch while the written one sat unread: a queued section stops being a decision
-// and becomes a rediscovery when nothing points at it from the code it governs.
 
 namespace lain::io
 {
@@ -25,6 +18,11 @@ namespace lain::io
 	// openers cannot each grow their own version: a key computed two ways eventually disagrees
 	// with itself, and the failure is silent.
 	//
+	// It lives HERE rather than on core::Uri because it touches the filesystem, which lain::core
+	// does not (ADR-0023). That split is also what keeps the type honest about what it knows: a
+	// Uri can say what it is called and whether it is local, but only io can say what it resolves
+	// to.
+	//
 	// Local paths resolve through std::filesystem::weakly_canonical, so a path that does not
 	// exist yet still has a stable answer (an output pattern, a template about to be written).
 	// Symlinks along an existing prefix are resolved. A non-local scheme is returned unchanged —
@@ -32,36 +30,7 @@ namespace lain::io
 	//
 	// Returns `uri` unchanged if the filesystem refuses to answer, which is the honest fallback:
 	// a worse key beats no key.
-	[[nodiscard]] std::string canonicalUri(std::string_view uri);
-
-	// The local filesystem path `uri` names, or nullopt when it names something that is not on
-	// the local filesystem (a remote scheme).
-	//
-	// THE conversion from a uri to a path, in one place. Written by hand it is a one-liner —
-	// strip the scheme, keep the rest — which is exactly why it kept being written by hand, and
-	// why the copies disagreed: one of them skipped the strip entirely and built a path straight
-	// out of the whole uri, which is correct for every uri that has no scheme and quietly wrong
-	// for every uri that has one. Returning an optional is the point: a caller that cannot serve
-	// a remote resource has to SAY so, rather than construct a relative path called "s3:" and
-	// carry on.
-	//
-	// It is the naming rule's other half, and it lives beside it for the same reason canonicalUri
-	// and numberField do: a spelling decided in two places eventually disagrees with itself.
-	[[nodiscard]] std::optional<std::filesystem::path> localPath(std::string_view uri);
-
-	// The lowercase extension of `uri`, without the leading dot, or empty when it has none —
-	// the key every format-keyed registry in the tree looks a codec up by.
-	//
-	// It lives here, beside the other two naming rules, because THREE seams now ask it: io::image
-	// keys its readers and writers by it, io::video claims a set of container extensions, and
-	// io::sequence dispatches a uri to a medium by it. A format decided in three places eventually
-	// disagrees with itself over a spelling — "MP4", "file://clip.MP4" — and the failure is the
-	// quiet kind: the wrong opener, or none.
-	//
-	// path::extension reads the LAST component's extension, so a scheme prefix is harmless. A uri
-	// with no extension (a directory of stills) yields an empty string, which is a legitimate
-	// answer rather than a failure — it is what "not addressed by format" looks like.
-	[[nodiscard]] std::string extensionKey(std::string_view uri);
+	[[nodiscard]] lain::core::Uri canonicalise(const lain::core::Uri& uri);
 
 	// Where the number sits in a ####-numbered sequence pattern ("shot.####.png"). `width` is 0
 	// when there is no run of '#' at all.
@@ -78,7 +47,7 @@ namespace lain::io
 	// one must agree on where the number goes: io::image::openSequence matches files against this,
 	// and a render sweep substitutes into it. Two implementations of "find the # run" means what a
 	// sweep writes cannot be read back, and the disagreement is silent — the same shape
-	// canonicalUri exists to prevent.
+	// canonicalise exists to prevent.
 	[[nodiscard]] NumberField numberField(std::string_view pattern);
 
 	// `pattern` with its '#' run replaced by `number`, zero-padded to the run's width.
