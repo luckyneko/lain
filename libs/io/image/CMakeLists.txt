@@ -20,6 +20,7 @@ target_link_libraries(io-image
 	PUBLIC lain::image lain::memory lain::core
 	PUBLIC lain::media				# openSequence returns a media::FrameSequence (sequence.h)
 	PRIVATE lain::io lain::log lain::warnings
+	PRIVATE lain::string				# the <key> pattern a numbered still sequence matches by (sequence.cpp)
 )
 
 if(LAIN_BUILD_TESTING)

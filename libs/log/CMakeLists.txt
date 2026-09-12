@@ -16,9 +16,10 @@ target_include_directories(lain_log PUBLIC include)
 # it too. spdlog is PRIVATE: only log.cpp emits through it, keeping the backend hidden.
 #
 # lain::string is PUBLIC because log.h includes its toString() formatter, which has to be
-# visible in the consumer's TU for "{}" to render a lain type. It is header-only
-# (INTERFACE over fmt + lain::meta), so the weight is a trait header. THE DEPENDENCY RUNS
-# ONE WAY: lain::string must never link lain::log, or this becomes a cycle.
+# visible in the consumer's TU for "{}" to render a lain type. What log.h pulls in is that
+# header alone — lain::string's <key> pattern system is a separate header, so the weight here
+# stays a formatter plus a trait header. THE DEPENDENCY RUNS ONE WAY: lain::string must never
+# link lain::log, or this becomes a cycle.
 #
 # Forward reference, and that is fine: libs/string is added after libs/log in the root
 # CMakeLists, but a name containing "::" is resolved at GENERATE time — libs/string

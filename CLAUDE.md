@@ -631,6 +631,67 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-12 — M13 slice 2 built: `####` retires for a `<key>` pattern system
+
+notes.txt note 21 — *"The entire NumberField approach sucks. I want some type of replacement
+dictionary"*. `io::NumberField` / `numberField` / `substituteNumber` are **deleted**;
+**`lain::string::Pattern` + `Dictionary`** replace them, formatting and matching literal text with
+named holes (`shot.<frame:04>.png`). `ctest -j8` **760/760** Debug with video on (+12), **734/734**
+Release in the default video-off configuration (+12), **766/766** Release with video on (+12);
+warning-clean, format-check clean, and the render sweep re-driven end to end through the real binary
+— the same four output names as the `####` run, read back as a sequence by the opener, both
+`--on-missing-frame` policies unchanged. Full landing notes in WORK.md's *Milestone 13*.
+
+- **The mechanism is a rewrite, so fmt's spec language comes free.** A key the dictionary holds
+  becomes `{key:spec}`, literals are brace-escaped, and one `fmt::vformat` runs over a
+  `dynamic_format_arg_store`. A key it does **not** hold survives as its own token — which is what
+  makes partial resolution work, and why an unknown key is not an error. Sabotage-verified.
+- **An agreement that was STRUCTURAL became a property, and now something asserts it.**
+  `io::numberField` lived in `io` rather than in either caller for a stated reason: *"two
+  implementations of 'find the # run' means what a sweep writes cannot be read back, and the
+  disagreement is silent."* One function, both directions. Now the grammar is `lain::string`'s and
+  the key is **`io::image::frameKey`**, declared once — so a new `[sweep]` case sweeps four frames
+  to `out.<frame:04>.png` and then opens **that same pattern string** through
+  `io::image::openSequence`, finding the four frames in order. Nothing tested that before, in either
+  spelling.
+- **The shared-key sabotage is worth knowing for what it does NOT catch.** Giving flowview its own
+  `"frame"` literal passes everything: the constant buys a **compile error on a rename**, not a test
+  failure. A *divergent* spelling fails **8 of 17** cases — which is what drift actually looks like.
+- **ADR-0023 predicted its own amendment wrongly, and is corrected in place.** It said slice 2
+  *"removes the first collision"* with RFC 3986. `<` and `>` appear in no production of that grammar,
+  so a conforming parser rejects `shot.<frame:04>.png` as surely as it misreads `shot.####.png`
+  (where `#` is the fragment delimiter). The collision **changed shape rather than disappearing** —
+  and is now deliberate: neither character is legal in a Windows filename, so a real file can never
+  be mistaken for a pattern.
+- **`format` returns `std::optional`**, because `lain::string` cannot log (the dependency to
+  `lain::log` runs one way) and a pattern is text a user typed. Exactly one caller pays. The
+  alternatives were worse in the same direction: an exception escaping a string helper, or a token
+  rendered literally — which would write every frame of a render to one filename, the precise
+  failure the frame-field rule exists to prevent.
+- **It is NOT a regex, and match() is where that shows.** A key captures the shortest non-empty run
+  its neighbouring literals allow, the spec is not consulted, and what a capture *means* belongs to
+  the caller — `io::image` is what rejects `shot.x.png`, since it parses the number to order the
+  sequence anyway.
+- **The delimiters are two of fmt's three alignment characters, and the first cut lost them.**
+  Ending a token at the first `>` left `{:>8}` and `{:*<8}` unspellable; that shipped as a stated
+  limitation and review rejected it. `findSpecEnd` now applies fmt's own rule — an alignment sits at
+  spec index 0 or 1 and nowhere else — but only **assumes** one when that reading still leaves a
+  closing `>` behind, so `<name:8>` remains a width and no pattern changes meaning. The fallback is
+  the half that matters: without it the fix failed *"width alone"* on the first run. Both halves
+  sabotage-verified. `[]` was reconsidered and refused again — a bracketed pattern is a shell
+  **glob** that can silently expand to an existing wrong filename, where `<>` fails loudly.
+- **`filesMatchingPattern` came out net-negative and lost a second defect**: the hand-rolled
+  prefix/suffix compare became `Pattern::match`, and `std::all_of(std::isdigit)` + throwing
+  `std::stoull` became **`std::from_chars`** — the tidy pass's own idiom, removing a locale-dependent
+  digit test and an overflow throw in one move. The Pattern is built once, outside the scan.
+- **The break is compiler- and test-caught** (no stored `.json` in the tree holds a `####`; seven
+  test spellings failed on the first run), and the one place it cannot be gets a directed message:
+  handed a `####`, `openSequence` now says *"'####' was retired for the named form, so write it as
+  'shot.<frame:04>.png'"*.
+- **`lain::string` is STATIC now** where it was INTERFACE, and `pattern.h` is deliberately separate
+  from `format.h`: `log.h` includes that one at every log site in the tree and must not start
+  carrying a parser.
+
 ### Update 2026-09-12 — M13 slice 1b built: the signatures take a `core::Uri`
 
 The half [ADR-0023](docs/adr/0023-uri-as-an-identity-not-a-path-algebra.md) called *the more valuable
@@ -2492,20 +2553,24 @@ app stack + viewer. What each piece is, and what it decided:**
   `registerType<T>(key, args...)` that synthesises the creator with construction context
   captured in the closure; keys stay explicit strings (not `typeName<T>()`, which is
   display-only). 16 tests pass.
-- ✅ **`libs/string`** (`lain::string`) — string utilities behind a lain:: face,
-  header-only. `format(fmtStr, args...)` wraps `fmt::format` (C++17 has no
-  `std::format`) with compile-time-checked format strings. A generic `fmt::formatter`
+- ✅ **`libs/string`** (`lain::string`) — string utilities behind a lain:: face (header-only
+  until M13 slice 2 added `pattern.cpp`). `format(fmtStr, args...)` wraps `fmt::format`
+  (C++17 has no `std::format`) with compile-time-checked format strings. A generic `fmt::formatter`
   for any type exposing `toString()` (detected via `lain::meta::has_to_string`, which
   requires a string-convertible return) renders through it, inheriting
   `fmt::formatter<std::string>` so width/fill/align specs apply — so a type is formattable
   just by having `toString()`, no per-type registration, and the fmt dependency stays out
   of `core`. (Caveat: a type that is both a range/tuple and has `toString()` would be
   ambiguous with fmt's range formatter; none of lain's are.) Depends on `fmt::fmt` +
-  `lain::meta`. 3 tests pass (format, the Version-via-`toString` path, specs).
+  `lain::meta`. Tests cover format, the Version-via-`toString` path, specs, and the pattern
+  system.
   **`lain::log` carries that formatter** (`log.h` includes it; `lain::string` is PUBLIC on
   `lain::log`) — see the 2026-09-12 update: until then it was reachable from no log site in
   the tree, which is the one place a lain type is most often rendered by name. The
-  dependency runs one way: **`lain::string` must never link `lain::log`.**
+  dependency runs one way: **`lain::string` must never link `lain::log`.** `pattern.h` — the
+  `<key>` **name pattern** (`format` / `match` / `keys`, see the 2026-09-12 slice 2 update) — is
+  deliberately a separate header from `format.h`, so `log.h` carries the formatter without the
+  parser.
 - ✅ **`libs/meta`** (`lain::meta`) — compile-time introspection behind a lain:: face,
   header-only. Enum reflection over magic_enum 0.9.8 (`cmake/addmagicenum.cmake`, SYSTEM)
   in the `lain::meta::enums` sub-namespace (short names kept clear of the type-level

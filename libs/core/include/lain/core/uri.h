@@ -17,10 +17,12 @@ namespace lain::core
 	// directory about. See ADR-0023.
 	//
 	// IT IS NOT AN RFC 3986 PARSER, and that is a decision rather than an omission. Two of lain's
-	// own strings collide with the standard head-on: "shot.####.png" is not a valid URI reference
-	// ('#' is the fragment delimiter, so a conforming parser reads path "shot." and fragment
-	// "###.png"), and "C:\footage\clip.mp4" parses as SCHEME "C" on a platform lain ships. The
-	// opaque "scheme://rest" split below is immune to both by construction.
+	// own strings collide with the standard head-on: a sequence pattern ("shot.<frame:04>.png")
+	// uses two characters that appear in no production of the grammar, so a conforming parser
+	// rejects it outright; and "C:\footage\clip.mp4" parses as SCHEME "C" on a platform lain
+	// ships. The opaque "scheme://rest" split below is immune to both by construction. (The
+	// pattern collision predates the named form — the retired "####" spelling collided with the
+	// fragment delimiter instead. It changed shape; it did not go away.)
 	//
 	// IT CARRIES NO PATH ALGEBRA. There is no parent(), no filename(), no relative() — none of them
 	// means anything for a scheme with no implementation, and every such call in the tree operates

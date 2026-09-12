@@ -1,16 +1,19 @@
 #include "framepattern.h"
 
-#include <lain/io/uri.h>
+#include <lain/io/image/sequence.h> // frameKey
+#include <lain/string/pattern.h>
 
 namespace flowview
 {
-	std::string frameOutputPath(std::string_view pattern, std::size_t frame)
+	std::optional<std::string> frameOutputPath(std::string_view pattern, std::size_t frame)
 	{
-		return lain::io::substituteNumber(pattern, static_cast<unsigned long long>(frame));
+		lain::string::Dictionary values;
+		values.set(lain::io::image::frameKey, frame);
+		return lain::string::Pattern{pattern}.format(values);
 	}
 
 	bool isFramePattern(std::string_view pattern)
 	{
-		return lain::io::numberField(pattern).found();
+		return lain::string::Pattern{pattern}.has(lain::io::image::frameKey);
 	}
 } // namespace flowview

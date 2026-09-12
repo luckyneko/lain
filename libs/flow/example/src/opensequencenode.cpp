@@ -12,7 +12,7 @@ namespace lain::flow::example
 		: Node("OpenSequence")
 	{
 		// A std::filesystem::path so the adapter renders a picker rather than a text field — the
-		// type carries the widget intent (ADR-0005). It names a folder or a ####-numbered pattern
+		// type carries the widget intent (ADR-0005). It names a folder or a "<frame:04>" pattern
 		// today, and a video file once slice 5 lands, which is exactly why the pin is a path and
 		// the node is not called OpenVideo.
 		m_path = addInput<std::filesystem::path>("path", Default{std::filesystem::path(std::move(uri))});

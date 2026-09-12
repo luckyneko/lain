@@ -24,7 +24,7 @@ namespace lain::io::sequence
 	// name `media` would resolve to itself and shadow `lain::media` at every mention.
 	//
 	// DISPATCH IS BY EXTENSION, WITH ONE DEFAULT. Uri::extension() selects a registered
-	// opener; anything unclaimed — a directory, a "shot.####.png" pattern, a still — goes to the
+	// opener; anything unclaimed — a directory, a "shot.<frame:04>.png" pattern, a still — goes to the
 	// default. That asymmetry is not a shortcut: the video medium is addressed by what a FILE is
 	// called, while the image medium is addressed STRUCTURALLY (a folder, or a numbered pattern),
 	// and a folder has no extension at all to key on.

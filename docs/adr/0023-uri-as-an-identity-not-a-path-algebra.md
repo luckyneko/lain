@@ -31,17 +31,22 @@ answers what it is *called* and where it is *local*, and does nothing else.
 
 Two of lain's own strings collide with the standard head-on, and both are load-bearing:
 
-- **`shot.####.png` is not a valid URI reference.** `#` is the fragment delimiter, so a conforming
-  parser reads path `shot.` and fragment `###.png`. `io::numberField` scans for exactly that run of
-  `#`, for both the sequence opener and the render sweep. Percent-encoding it to `%23` fixes the
-  parse and wrecks the human-readable identity strings in a manifest.
+- **A sequence pattern is not a valid URI reference.** `shot.<frame:04>.png` uses two characters
+  that appear in no production of RFC 3986's grammar (`pchar` = unreserved / pct-encoded /
+  sub-delims / `:` / `@`), so a conforming parser rejects it outright. Percent-encoding fixes the
+  parse and wrecks the human-readable identity strings a manifest is made of.
 - **`C:\footage\clip.mp4` parses as scheme `C`**, on a platform lain ships and CI covers.
 
 The existing `://` test is immune to both by construction, so it is kept. The type's job is to stop
 a uri being pasted into a `fs::path`, not to model the web.
 
-*(M13 slice 2 retires `####` for `<frame:04>`, which removes the first collision. The decision does
-not depend on it: the `C:\` collision stands alone, and a Windows path is not going away.)*
+*(**Amended 2026-09-12, M13 slice 2.** The first bullet used to read `shot.####.png`, which collides
+with the standard the other way round — `#` is the fragment delimiter, so a conforming parser reads
+path `shot.` and fragment `###.png`. This ADR then predicted that retiring `####` would **remove**
+that collision. It does not: the named form's own delimiters are excluded from the grammar too, so
+the collision changed shape rather than disappearing — and it is now deliberate, since `<` and `>`
+are illegal in a Windows filename and a real file therefore cannot be mistaken for a pattern. The
+decision never depended on either: the `C:\` collision stands alone.)*
 
 ### Its home is `lain::core`, not `lain::io`
 

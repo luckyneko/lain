@@ -58,7 +58,7 @@ TEST_CASE("the claim is case-insensitive, because io::extensionKey lowercases", 
 
 TEST_CASE("an unclaimed name goes to the default opener", "[io::sequence]")
 {
-	// A directory has no extension at all, and a "####" pattern's extension names the STILL
+	// A directory has no extension at all, and a "<frame:04>" pattern's extension names the STILL
 	// format rather than the sequence's — which is why the image medium is the default rather than
 	// a set of claims.
 	fallbackUri.clear();
@@ -66,8 +66,8 @@ TEST_CASE("an unclaimed name goes to the default opener", "[io::sequence]")
 	CHECK(fallbackUri == "/footage/take1");
 
 	fallbackUri.clear();
-	REQUIRE(lain::io::sequence::open("/footage/shot.####.png").has_value());
-	CHECK(fallbackUri == "/footage/shot.####.png");
+	REQUIRE(lain::io::sequence::open("/footage/shot.<frame:04>.png").has_value());
+	CHECK(fallbackUri == "/footage/shot.<frame:04>.png");
 }
 
 TEST_CASE("the production wiring claims video containers and defaults to stills", "[io::sequence]")

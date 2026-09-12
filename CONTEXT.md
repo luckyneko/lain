@@ -983,6 +983,25 @@ both sit behind service-shaped seams. See [ADR-0004](docs/adr/0004-static-linkin
   decodes; it only moves bytes. `read` is a **whole-asset** read (the resource in one `Buffer`).
   _Avoid_: loader (that's a Reader).
 
+- **Name pattern** *(`lain::string::Pattern`)* — literal text with named holes, `<key>` or
+  `<key:spec>`: `shot.<frame:04>.png`. **One type, both directions** — `format()` fills it from a
+  **Dictionary**, `match()` reads a real name back into captures — because a writer and a reader
+  that disagree about where the number goes produce files that cannot be read back, and the
+  disagreement is silent. The spec after `:` is **fmt's own**: a mapped key is rewritten to
+  `{key:spec}` and the whole thing goes through one `vformat`, so the language costs no parser of
+  ours. A key the dictionary does **not** hold survives as its own token, which is what makes
+  partial resolution work.
+  Its refusals are the shape of it. It is **not a regex**: a key captures the shortest non-empty run
+  its neighbouring literals allow, the spec is not consulted when matching, and what a capture
+  **means** belongs to the caller — `io::image` is what rejects `shot.x.png`, because it has to
+  parse the number to order the sequence anyway. `<>` rather than `[]` on evidence: YAML reads a
+  bare leading `[` as a flow sequence, `<UDIM>` is the convention every renderer already uses, and
+  neither character is legal in a Windows filename, so a real file can never be mistaken for a
+  pattern. And the **key is not the pattern system's** — it is declared once by whoever reads and
+  writes that kind of name (`io::image::frameKey`), so a sweep and an opener share a spelling rather
+  than each having one. _Avoid_: `####` / a number field (the retired form, which could name exactly
+  one thing), regex, template (spoken for — a linked group's).
+
 - **Stream** — the **incremental, seekable** transport, for video and the other assets a whole-asset
   slurp cannot serve. Dispatched by scheme exactly as `read` is, and equally media-agnostic. A
   **ReadStream** pulls bytes; a **WriteStream** is open-push-**finish**, because an encoder's file is
@@ -1109,8 +1128,8 @@ medium.
 
 - **Frame sweep** *(the cli surface)* — `run` accepting a **range** where it accepts a value, so the
   loop is a modifier on the one binding path rather than a second subcommand duplicating it. An
-  `Image` output plus a video uri encodes across iterations; plus a `####` pattern writes numbered
-  stills; a `FrameSequence` output writes a **manifest** (`data::toValue` over the sequence — a
+  `Image` output plus a video uri encodes across iterations; plus a **name pattern** naming the
+  frame key writes numbered stills; a `FrameSequence` output writes a **manifest** (`data::toValue` over the sequence — a
   selection's honest artifact is *these frames of that source*, not pixels). Range defaults to the
   single bound sequence's full length.
 

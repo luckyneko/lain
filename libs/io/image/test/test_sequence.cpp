@@ -146,7 +146,7 @@ TEST_CASE("a directory of nothing readable is empty, not a failure", "[io::image
 	CHECK(sequence->empty());
 }
 
-TEST_CASE("a #### pattern orders numerically, not lexicographically", "[io::image][sequence]")
+TEST_CASE("a <frame> pattern orders numerically, not lexicographically", "[io::image][sequence]")
 {
 	TempDir dir;
 	dir.write(std::string("shot.2.") + extension, 2);
@@ -156,13 +156,13 @@ TEST_CASE("a #### pattern orders numerically, not lexicographically", "[io::imag
 	dir.write(std::string("shot.x.") + extension, 4);  // not a number
 
 	const std::optional<lain::media::FrameSequence> sequence =
-		openSequence((dir.path() / (std::string("shot.####.") + extension)).string());
+		openSequence((dir.path() / (std::string("shot.<frame:04>.") + extension)).string());
 	REQUIRE(sequence.has_value());
 	REQUIRE(sequence->size() == 3);
 
 	// 1, 2, 10 — the case a lexicographic directory listing gets wrong, and the reason patterns
 	// exist. Padding is a writing convention, not a read filter: "shot.2" and "shot.0001" both
-	// matched a four-hash run.
+	// matched a key written as <frame:04>.
 	CHECK(tagOf(sequence->image(0)) == 1);
 	CHECK(tagOf(sequence->image(1)) == 2);
 	CHECK(tagOf(sequence->image(2)) == 10);
@@ -264,5 +264,5 @@ TEST_CASE("a remote uri is refused as not local, not as not-a-directory", "[io::
 	// where the process happened to be standing and the reason reported was the wrong one.
 	// io::read serves the local scheme only, so a still sequence can too, and it says which.
 	CHECK_FALSE(openSequence("s3://bucket/frames").has_value());
-	CHECK_FALSE(openSequence("https://example.com/shot.####.png").has_value());
+	CHECK_FALSE(openSequence("https://example.com/shot.<frame:04>.png").has_value());
 }

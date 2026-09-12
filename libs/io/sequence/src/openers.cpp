@@ -23,9 +23,9 @@ namespace lain::io::sequence
 			registerOpener(extension, &lain::io::video::open);
 
 		// Stills are the default rather than a set of claimed extensions, because the image medium
-		// is addressed structurally: a folder has no extension to key on, and a "shot.####.png"
+		// is addressed structurally: a folder has no extension to key on, and a "shot.<frame:04>.png"
 		// pattern names the still format rather than the sequence's. openSequence already answers
-		// "that is neither a directory nor a ####-numbered pattern" for anything it cannot take,
+		// "that is neither a directory nor a numbered pattern" for anything it cannot take,
 		// which is the honest report for an unclaimed name.
 		registerDefaultOpener(&lain::io::image::openSequence);
 	}

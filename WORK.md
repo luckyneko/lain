@@ -4930,6 +4930,108 @@ byte-idempotent.
   *"exactly like scheme.h"* — a file slice 1 deleted.
 
 
+### Slice 2 — the `<key>` pattern system in `lain::string` (built 2026-09-12)
+
+notes.txt note 21 — *"The entire NumberField approach sucks. I want some type of replacement
+dictionary"*. `io::NumberField` / `numberField` / `substituteNumber` are **deleted**; in their place
+`lain::string::Pattern` + `Dictionary` (`libs/string/{include/lain/string/pattern.h,src/pattern.cpp}`)
+formats and matches literal text with named holes — `shot.<frame:04>.png`. `ctest -j8` **760/760**
+Debug with video on (+12), **734/734** Release in the default video-off configuration (+12),
+**766/766** Release with video on (+12) — every baseline grown by exactly the twelve new cases.
+Warning-clean, format-check clean.
+
+- **The mechanism is a rewrite, so the spec language is free.** A key the dictionary holds becomes
+  `{key:spec}`, literals are brace-escaped, and the whole thing goes through **one**
+  `fmt::vformat` over a `dynamic_format_arg_store`. A key it does **not** hold survives as its own
+  token, which is what makes partial resolution work — a half-filled pattern is still a pattern, and
+  an unknown key is not an error. Sabotage: rewrite every key instead of only the mapped ones and
+  two cases fail.
+- **What the agreement cost, which is the whole risk of the slice.** `io::numberField`'s own header
+  said why it lived in `io` rather than in either caller: *"two implementations of 'find the # run'
+  means what a sweep writes cannot be read back, and the disagreement is silent."* That was
+  **structural** — one function, both directions. Now the grammar is `lain::string`'s and the KEY is
+  `io::image::frameKey`, so the agreement is a property, and a new `[sweep]` case asserts it: sweep
+  four frames to `out.<frame:04>.png`, then open **that same pattern string** through
+  `io::image::openSequence` and find the four frames in order, carrying the source stills' values.
+  Nothing tested that before, in either spelling.
+- **The sabotage on the shared key is worth recording for what it did NOT catch.** Replacing
+  `io::image::frameKey` with flowview's own `"frame"` literal passes everything — the constant buys
+  a **compile error on a rename**, not a test failure. A *divergent* spelling (`"Frame"`) fails
+  **8 of 17** cases, which is what drift actually looks like.
+- **The delimiters are two of fmt's three alignment characters, and the first cut lost them.**
+  Ending a token at the first `>` left `{:>8}` and `{:*<8}` with no spelling at all; that shipped as
+  a stated limitation and review rejected it, correctly — the fix is fmt's own rule rather than an
+  invention. `findSpecEnd` knows the one thing this grammar knows about what a spec MEANS: fmt puts
+  an alignment at spec index 0 (bare) or 1 (after a fill) and **nowhere else**
+  (`fmt/core.h:2194` `parse_align`, `:2307` `parse_format_specs`), so a `<` or `>` there belongs to
+  the spec.
+- **An alignment is only ASSUMED when that reading still leaves a closing `>` behind — which is the
+  half that matters, and the half the first attempt at the fix got wrong.** `>` cannot be blindly
+  both an alignment and a terminator: reading `<name:8>` greedily makes `8` a fill and `>` its
+  alignment, and the token then never closes. So the scan tries the longest interpretation first
+  and **falls back**, which makes the rule purely additive — `<name:8>` is still a width, `<frame:>`
+  is still the empty spec it always was, and no pattern that read one way before reads another way
+  now. Caught by a test, not by review: the first version of the fix failed *"width alone: fmt's own
+  default"* immediately. Both halves are sabotage-verified — removing the alignment awareness fails
+  3 assertions, removing the fallback fails 3 different ones.
+- What stays ambiguous, deliberately: a spec followed by literal text containing a `>` (`<a:b>c>`
+  reads as fill `b` aligned right). That is fmt's own reading, and the accepted cost of using its
+  spec language under these delimiters.
+- **`[]` was reconsidered here and refused again.** It would reach the whole spec language too — but
+  a bracketed pattern is a **glob**: unquoted in a shell, `out.[frame:04].png` can expand to an
+  existing `out.4.png`, silently the wrong file, where `<`/`>` fail loudly as redirections. That is
+  a new argument on top of the three recorded ones (YAML reads a bare leading `[` as a flow
+  sequence; neither `<` nor `>` is legal in a Windows filename, so a pattern can never *be* a real
+  file; `<UDIM>` is the convention USD, MaterialX, Arnold and RenderMan already use). With the
+  alignment rule in place the brackets buy nothing at all.
+- **ADR-0023's prediction about itself was wrong, and is amended in place.** It said M13 slice 2
+  *"removes the first collision"* with RFC 3986. It does not: `<` and `>` appear in no production of
+  the grammar (`pchar` = unreserved / pct-encoded / sub-delims / `:` / `@`), so a conforming parser
+  rejects `shot.<frame:04>.png` as surely as it misreads `shot.####.png` (where `#` is the fragment
+  delimiter). **The collision changed shape rather than disappearing** — and it is now deliberate,
+  since neither character is legal in a Windows filename, so a real file cannot be mistaken for a
+  pattern. `core::Uri`'s head comment and the pinned `[core][uri]` case carry the correction too.
+- **`format` returns `std::optional<std::string>`, and exactly one caller pays.** `lain::string`
+  cannot log (the dependency to `lain::log` runs one way), so a spec fmt refuses is reported by the
+  return type. The alternatives were both worse where the text comes from a command line: an
+  exception escaping a string helper, or a token rendered literally — which would write every frame
+  of a render to one filename, the exact failure the frame-field rule exists to prevent. Driven
+  through the real binary: `--result 'bad.<frame:zz>.png'` reports and writes nothing.
+- **`filesMatchingPattern` is net-negative code and lost a second defect on the way.** The
+  hand-rolled prefix/suffix compare is now `Pattern::match`, and the `std::all_of(std::isdigit)` +
+  throwing `std::stoull` became **`std::from_chars`** — the tidy pass's own idiom, which removes a
+  locale-dependent digit test and an exception on overflow in one move. The Pattern is built **once**
+  outside the directory scan, which the old code could not do with a free function.
+- **The "is this a pattern" question moved from the whole uri to the FILENAME**, which is the only
+  component a one-directory scan can honour. A key written into a directory component used to be
+  claimed as a pattern and then match nothing — an empty sequence, silently; it is now refused by
+  name. (The old code asked `numberField` about the whole uri while matching only the filename, so
+  the two halves already disagreed.)
+- **The break is compiler- and test-caught, and the one place it cannot be gets a directed
+  message.** No stored `.json` document in the tree contains a `####` (checked), and the seven
+  `####` test spellings failed immediately on the first run. A *user's* saved document is the
+  accepted casualty, so `io::image::openSequence` now says *"'####' was retired for the named form,
+  so write it as 'shot.<frame:04>.png'"* when it is handed one — a silent non-match turned into a
+  fix instruction.
+- **One lifetime hazard closed in `Dictionary::set`:** fmt's store copies a `std::string` but holds
+  a `string_view` **by reference** (`args.h`: *"string types (but not string views) are copied"*), so
+  anything string-like is converted to a `std::string` before being pushed. A Dictionary outlives the
+  expression that filled it.
+- **`lain::string` is a STATIC target now**, where it was INTERFACE. `pattern.h` is deliberately a
+  **separate header** from `format.h`: `log.h` includes that one at every log site in the tree and
+  must not start carrying a parser. `libs/log/CMakeLists.txt`'s "header-only … the weight is a trait
+  header" comment is corrected in the same commit.
+- **An honest sabotage result:** letting a key capture the empty string fails the `[pattern]` suite
+  but **not** `io::image`'s — `std::from_chars` rejects an empty capture anyway, so the numeric-order
+  case never depended on that rule. Recorded because the plan predicted otherwise.
+- Driven through the real binary end to end: the sweep writes `out.0000.png` … `out.0003.png` — the
+  same four names the `####` run produced — a second run **reads them back** as a 4-frame sequence
+  through `--stills 'out.<frame:04>.png'` (frame 2 carries the right value), and both
+  `--on-missing-frame` policies are unchanged (stop → exit 1, four of six frames; skip → exit 0,
+  a visible gap). `flowview --version` / `run --example` / `list` unchanged.
+- **gui-mode not needed:** nothing here touches a pane, and `parameditors.cpp` changed only a
+  comment.
+
 
 ## Outstanding work — one index
 
@@ -4955,8 +5057,8 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md).)*
 
-- **M13 — io coherence.** Five slices; **slices 1 and 1b (`core::Uri`, and the signatures that take
-  one) are built** (2026-09-11 / 09-12, ADR-0023). Remaining: the `<key>` pattern system,
+- **M13 — io coherence.** Five slices; **slices 1, 1b and 2 (`core::Uri`, the signatures that take
+  one, and the `<key>` pattern system) are built** (2026-09-11 / 09-12, ADR-0023). Remaining:
   `transport.h`, the verb + layering pass, `ImageWriterOptions`. *(§Milestone 13.)*
 
 M1–M8 and M10–M12 are built. M9 and M13 are the milestones from 5 onward that are not.

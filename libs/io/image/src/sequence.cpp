@@ -6,9 +6,10 @@
 #include <lain/io/uri.h>
 #include <lain/log/log.h>
 #include <lain/media/framesource.h>
+#include <lain/string/pattern.h>
 
 #include <algorithm>
-#include <cctype>
+#include <charconv>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -67,18 +68,14 @@ namespace lain::io::image
 		unsigned long long number = 0;
 	};
 
-	// Files matching a "shot.####.png" pattern, ordered NUMERICALLY. The run marks where the
+	// Files matching a "shot.<frame:04>.png" pattern, ordered NUMERICALLY. The key marks where the
 	// number is, not how many digits to insist on — so an unpadded "shot.7.png" is found and
 	// sorted as 7, which is the case a lexicographic directory listing gets wrong.
 	static std::vector<std::string> filesMatchingPattern(const fs::path& pattern)
 	{
-		const std::string name = pattern.filename().string();
-		// io::numberField, not a local copy: the render sweep substitutes into these patterns
-		// through io::substituteNumber, and a matcher that disagreed with the substituter would
-		// mean what a sweep writes cannot be read back.
-		const lain::io::NumberField field = lain::io::numberField(name);
-		const std::string prefix = name.substr(0, field.offset);
-		const std::string suffix = name.substr(field.offset + field.width);
+		// Parsed ONCE, outside the scan: a Pattern is asked about every entry in the directory.
+		const lain::string::Pattern name{pattern.filename().string()};
+		const std::string key{frameKey};
 
 		const fs::path directory = pattern.has_parent_path() ? pattern.parent_path() : fs::path{"."};
 
@@ -89,22 +86,21 @@ namespace lain::io::image
 			if (!entry.is_regular_file())
 				continue;
 
-			const std::string candidate = entry.path().filename().string();
-			if (candidate.size() <= prefix.size() + suffix.size())
-				continue;
-			if (candidate.compare(0, prefix.size(), prefix) != 0)
-				continue;
-			if (candidate.compare(candidate.size() - suffix.size(), suffix.size(), suffix) != 0)
+			const std::optional<lain::string::Captures> captures = name.match(entry.path().filename().string());
+			if (!captures)
 				continue;
 
-			const std::string digits = candidate.substr(prefix.size(), candidate.size() - prefix.size() - suffix.size());
-			const bool numeric = !digits.empty() && std::all_of(digits.begin(), digits.end(),
-																[](unsigned char c)
-																{ return std::isdigit(c) != 0; });
-			if (!numeric)
+			// What a capture MEANS is asked here rather than by the matcher, which delimits by the
+			// literals around a key and nothing else. This is where "shot.x.png" is rejected — and
+			// it has to be asked anyway, since the number is what orders the sequence.
+			const std::string& digits = captures->at(key);
+			unsigned long long number = 0;
+			const char* const end = digits.data() + digits.size();
+			const std::from_chars_result parsed = std::from_chars(digits.data(), end, number);
+			if (parsed.ec != std::errc{} || parsed.ptr != end)
 				continue;
 
-			matched.push_back({entry.path().string(), std::stoull(digits)});
+			matched.push_back({entry.path().string(), number});
 		}
 
 		std::sort(matched.begin(), matched.end(),
@@ -153,11 +149,31 @@ namespace lain::io::image
 
 		std::error_code error;
 		const bool isDirectory = fs::is_directory(path, error);
-		const bool isPattern = lain::io::numberField(canonical.toString()).found();
+		// Asked of the FILENAME, which is the only component the scan below can honour.
+		const bool isPattern = lain::string::Pattern{path.filename().string()}.has(frameKey);
 
 		if (!isDirectory && !isPattern)
 		{
-			lain::log::error("io::image: {} is neither a directory nor a ####-numbered pattern", canonical);
+			// One message, and a directed one where there is something to direct. The two cases
+			// worth naming are both of them a pattern the caller believes in: the retired '####'
+			// spelling, and a key written into a directory component.
+			if (lain::string::Pattern{path.parent_path().string()}.has(frameKey))
+			{
+				lain::log::error("io::image: {} names <{}> in a directory component, which a "
+								 "one-directory scan cannot resolve — the key belongs in the filename",
+								 canonical, frameKey);
+			}
+			else if (path.filename().string().find('#') != std::string::npos)
+			{
+				lain::log::error("io::image: {} is not a sequence pattern — '####' was retired for the "
+								 "named form, so write it as 'shot.<{}:04>.png'",
+								 canonical, frameKey);
+			}
+			else
+			{
+				lain::log::error("io::image: {} is neither a directory nor a pattern naming <{}>", canonical,
+								 frameKey);
+			}
 			return std::nullopt;
 		}
 

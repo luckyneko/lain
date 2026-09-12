@@ -376,7 +376,7 @@ TEST_CASE("isVideoUri answers about the name, and only about the name", "[io::vi
 
 	// The still medium is addressed structurally, not by name — a folder has no extension, and a
 	// numbered pattern's extension names the still format rather than the sequence's.
-	CHECK_FALSE(lain::io::video::isVideoUri("shot.####.png"));
+	CHECK_FALSE(lain::io::video::isVideoUri("shot.<frame:04>.png"));
 	CHECK_FALSE(lain::io::video::isVideoUri("/footage/take1"));
 	CHECK_FALSE(lain::io::video::isVideoUri(""));
 }

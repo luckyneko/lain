@@ -196,7 +196,7 @@ namespace flowview
 
 	// FOOTAGE is opened, and it is the one editor that offers both pick modes for a reason the type
 	// states: io::sequence::open dispatches by what the uri IS — a video file by its extension, a
-	// folder or a "shot.####.png" pattern structurally — so a sequence is legitimately either.
+	// folder or a "shot.<frame:04>.png" pattern structurally — so a sequence is legitimately either.
 	//
 	// It shows what is currently bound through FrameSequence::toString ("500 frames · 3840x2160 RGB8
 	// BT709 · 24 fps") rather than a path, because a bound sequence is not a path: it may span

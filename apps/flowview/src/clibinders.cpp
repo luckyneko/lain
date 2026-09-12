@@ -109,7 +109,7 @@ namespace flowview
 	}
 
 	// A frame sequence binds by OPENING the uri, the way an image binds by loading one — a folder
-	// of stills, a ####-numbered pattern, or (once slice 5 lands) a video file, dispatched by
+	// of stills, a "shot.<frame:04>.png" pattern, or a video file, dispatched by
 	// io::sequence::open so the cli names no medium.
 	static std::optional<flow::PortValue> bindFrameSequence(const std::string& s)
 	{

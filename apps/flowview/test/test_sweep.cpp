@@ -22,6 +22,7 @@
 #include <lain/io/image/codecs.h>
 #include <lain/io/image/load.h>
 #include <lain/io/image/save.h>
+#include <lain/io/image/sequence.h>
 #include <lain/io/sequence/openers.h>
 #include <lain/io/video/codecs.h>
 #include <lain/io/video/open.h>
@@ -127,6 +128,41 @@ namespace
 	}
 } // namespace
 
+TEST_CASE("what a sweep writes, the opener reads back", "[flowview][sweep]")
+{
+	// The property io::NumberField used to hold STRUCTURALLY, by being the one function both
+	// directions called. M13 slice 2 split it: lain::string owns the grammar, io::image::frameKey
+	// owns the key, and the sweep names that constant. So the agreement is now a property to
+	// assert — and this is the only test that spans both halves of it.
+	const fs::path dir = scratchDir("readback");
+	const fs::path stills = dir / "frames";
+	fs::create_directories(stills);
+	for (int i = 0; i < 4; ++i)
+		writeGrey(stills / ("f" + std::to_string(i) + ".png"), static_cast<std::uint8_t>(40 + i * 20));
+
+	const core::Factory<flow::Node> factory = sweepFactory();
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+
+	const std::string graphPath = buildSweepGraph(dir, factory);
+	const fs::path pattern = dir / "read.<frame:04>.png";
+	REQUIRE(flowview::runGraph(sweepOptions(graphPath, stills, pattern, lain::core::Range{0, 3}), factory, binders) == 0);
+
+	// The SAME pattern string, handed to the opener that reads a numbered sequence.
+	const std::optional<media::FrameSequence> written = io::image::openSequence(core::Uri::fromPath(pattern));
+	REQUIRE(written.has_value());
+	REQUIRE(written->size() == 4);
+
+	// In frame order, carrying the source stills' values — so the four files were not merely
+	// found, they were found in the order the sweep wrote them.
+	for (std::size_t i = 0; i < 4; ++i)
+	{
+		const lain::image::Image frame = written->image(i);
+		REQUIRE(frame.valid());
+		CHECK(frame.data()[0] == static_cast<std::uint8_t>(40 + i * 20));
+	}
+}
+
 TEST_CASE("a folder of stills sweeps to numbered stills", "[flowview][sweep]")
 {
 	const fs::path dir = scratchDir("basic");
@@ -140,7 +176,7 @@ TEST_CASE("a folder of stills sweeps to numbered stills", "[flowview][sweep]")
 	flowview::registerBoundaryBinders(binders);
 
 	const std::string graphPath = buildSweepGraph(dir, factory);
-	const fs::path pattern = dir / "out.####.png";
+	const fs::path pattern = dir / "out.<frame:04>.png";
 
 	REQUIRE(flowview::runGraph(sweepOptions(graphPath, stills, pattern, lain::core::Range{0, 3}), factory, binders) == 0);
 
@@ -171,7 +207,7 @@ TEST_CASE("a stride renders only the frames it names", "[flowview][sweep]")
 	flowview::registerBoundaryBinders(binders);
 
 	const std::string graphPath = buildSweepGraph(dir, factory);
-	REQUIRE(flowview::runGraph(sweepOptions(graphPath, stills, dir / "s.####.png", lain::core::Range{0, 5, 2}), factory, binders) == 0);
+	REQUIRE(flowview::runGraph(sweepOptions(graphPath, stills, dir / "s.<frame:04>.png", lain::core::Range{0, 5, 2}), factory, binders) == 0);
 
 	CHECK(fs::exists(dir / "s.0000.png"));
 	CHECK(fs::exists(dir / "s.0002.png"));
@@ -198,7 +234,7 @@ TEST_CASE("the missing-frame policy decides whether a render stops", "[flowview]
 		// Frames 2 and 3 are past the end of a two-frame sequence, so they render nothing. A
 		// truncated render must be VISIBLY truncated: the two frames that worked are on disk, and
 		// the exit code says the rest are missing.
-		const int status = flowview::runGraph(sweepOptions(graphPath, stills, dir / "stop.####.png", lain::core::Range{0, 3}), factory, binders);
+		const int status = flowview::runGraph(sweepOptions(graphPath, stills, dir / "stop.<frame:04>.png", lain::core::Range{0, 3}), factory, binders);
 		CHECK(status != 0);
 
 		CHECK(fs::exists(dir / "stop.0000.png"));
@@ -208,7 +244,7 @@ TEST_CASE("the missing-frame policy decides whether a render stops", "[flowview]
 
 	SECTION("skip is opt-in, and the gap in the numbering is the record")
 	{
-		flowview::RunOptions options = sweepOptions(graphPath, stills, dir / "skip.####.png", lain::core::Range{0, 3});
+		flowview::RunOptions options = sweepOptions(graphPath, stills, dir / "skip.<frame:04>.png", lain::core::Range{0, 3});
 		options.skipMissingFrames = true;
 
 		CHECK(flowview::runGraph(options, factory, binders) == 0);
@@ -233,7 +269,7 @@ TEST_CASE("a render refuses what could not name its frames", "[flowview][sweep]"
 	flowview::registerBoundaryBinders(binders);
 	const std::string graphPath = buildSweepGraph(dir, factory);
 
-	SECTION("a multi-frame output with no #### field")
+	SECTION("a multi-frame output that names no frame field")
 	{
 		// Writing every frame to one path exits reporting success while having destroyed the
 		// correspondence between input and output frames — so it is refused BEFORE anything runs,
@@ -269,7 +305,7 @@ TEST_CASE("one frame is a range of one, and needs no pattern", "[flowview][sweep
 	flowview::RunOptions options = sweepOptions(graphPath, stills, dir / "one.png", lain::core::Range{1, 1});
 	CHECK(flowview::runGraph(options, factory, binders) == 0);
 
-	// No #### field required: one write cannot collide with itself.
+	// No frame field required: one write cannot collide with itself.
 	REQUIRE(fs::exists(dir / "one.png"));
 	const auto loaded = io::image::load((dir / "one.png").string());
 	REQUIRE(loaded.has_value());
@@ -429,7 +465,7 @@ TEST_CASE("a folder of stills renders into one video file", "[flowview][sweep]")
 	const std::string graphPath = buildVideoGraph(dir, factory);
 	const fs::path out = dir / "out.mkv";
 
-	// A video output needs NO #### field: one container holds the whole range.
+	// A video output needs NO frame field: one container holds the whole range.
 	REQUIRE(flowview::runGraph(videoOptions(graphPath, stills, out, lain::core::Range{0, 3}), factory, binders) == 0);
 	REQUIRE(fs::exists(out));
 
@@ -468,7 +504,7 @@ TEST_CASE("a folder of stills renders into one video file", "[flowview][sweep]")
 	}
 }
 
-TEST_CASE("a video output refuses a #### field, which asks for one file per frame", "[flowview][sweep]")
+TEST_CASE("a video output refuses a frame field, which asks for one file per frame", "[flowview][sweep]")
 {
 	// The exact inverse of the still rule, and it needs no codec: it is about the NAME.
 	const fs::path dir = scratchDir("videopattern");
@@ -482,7 +518,7 @@ TEST_CASE("a video output refuses a #### field, which asks for one file per fram
 	flowview::registerBoundaryBinders(binders);
 
 	const std::string graphPath = buildVideoGraph(dir, factory);
-	CHECK(flowview::runGraph(videoOptions(graphPath, stills, dir / "out.####.mkv", lain::core::Range{0, 1}), factory,
+	CHECK(flowview::runGraph(videoOptions(graphPath, stills, dir / "out.<frame:04>.mkv", lain::core::Range{0, 1}), factory,
 							 binders) != 0);
 	CHECK_FALSE(fs::exists(dir / "out.0000.mkv"));
 }

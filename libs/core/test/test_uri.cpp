@@ -45,16 +45,23 @@ TEST_CASE("a remote uri has no path, rather than a path made of its whole text",
 	CHECK_FALSE(Uri{"https://example.com/clip.mp4"}.path().has_value());
 }
 
-TEST_CASE("the ####-pattern and a Windows path survive, which RFC 3986 would not", "[core][uri]")
+TEST_CASE("a name pattern and a Windows path survive, which RFC 3986 would not", "[core][uri]")
 {
 	// The two collisions ADR-0023 turns on, asserted so a later "let's parse it properly" has to
 	// fail a test rather than a review.
 	//
-	// '#' is the fragment delimiter, so a conforming parser reads path "shot." + fragment
-	// "###.png". lain scans that run of '#' for both the sequence opener and the render sweep.
-	const Uri pattern{"/footage/shot.####.png"};
-	CHECK(std::string{pattern.rest()} == "/footage/shot.####.png");
+	// '<' and '>' appear in no production of RFC 3986's grammar (pchar = unreserved / pct-encoded
+	// / sub-delims / ':' / '@'), so a conforming parser rejects a sequence pattern outright. That
+	// is the same collision the retired "####" spelling had, in a new shape rather than gone: '#'
+	// was the fragment delimiter, so "shot.####.png" parsed as path "shot." + fragment "###.png".
+	// Percent-encoding either fixes the parse and wrecks the human-readable identity strings a
+	// manifest is made of.
+	const Uri pattern{"/footage/shot.<frame:04>.png"};
+	CHECK(std::string{pattern.rest()} == "/footage/shot.<frame:04>.png");
 	CHECK(pattern.isLocal());
+
+	// And the extension is still the STILL format, despite the ':' in the key — which is what lets
+	// io::sequence dispatch a pattern to the image medium.
 	CHECK(pattern.extension() == "png");
 
 	// "C:\footage\clip.mp4" parses as SCHEME "C" under RFC 3986. Here it is a local path, because

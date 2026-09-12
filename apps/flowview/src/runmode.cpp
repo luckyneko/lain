@@ -13,6 +13,7 @@
 #include <lain/image/image.h>
 #include <lain/io/data/save.h>
 #include <lain/io/image/save.h>
+#include <lain/io/image/sequence.h> // frameKey — the one spelling a sweep and the opener share
 #include <lain/io/uri.h>
 #include <lain/io/video/open.h>
 #include <lain/io/video/save.h>
@@ -337,10 +338,18 @@ namespace flowview
 
 		if (!write.video)
 		{
-			const std::string path = frameOutputPath(write.path, frame);
-			if (!preflighted && !encodableHere(write.out, path, evaluation))
+			const std::optional<std::string> path = frameOutputPath(write.path, frame);
+			if (!path)
+			{
+				// A spec fmt refuses, in text the caller typed. Stopping is the only honest
+				// answer: every frame would otherwise land on one filename.
+				log::error("flowview: --{} is '{}', whose format spec is not one that can be filled",
+						   write.out.name, write.path);
 				return false;
-			return writeBoundaryValue(write.out, path, evaluation);
+			}
+			if (!preflighted && !encodableHere(write.out, *path, evaluation))
+				return false;
+			return writeBoundaryValue(write.out, *path, evaluation);
 		}
 
 		if (!delivered.holds<image::Image>())
@@ -402,23 +411,24 @@ namespace flowview
 
 		// TWO RULES, ONE HOME, and they are exact inverses. A STILL output must be able to name a
 		// frame whenever there is more than one, or the render silently overwrites one file per
-		// iteration and exits reporting success. A VIDEO output must NOT carry a #### field: one
+		// iteration and exits reporting success. A VIDEO output must NOT name the frame key: one
 		// container holds the whole range, so a numbered pattern asks for one video per frame,
 		// which is not a thing. A ONE-frame range exempts the first rule — `--frame 5 --result
-		// out.png` is unambiguous, and demanding a #### field there would be ceremony.
+		// out.png` is unambiguous, and demanding a frame key there would be ceremony.
 		for (const Write& write : writes)
 		{
 			if (write.video && isFramePattern(write.path))
 			{
 				log::error("flowview: --{} is '{}', but a video holds the whole range in one file — "
-						   "drop the #### field",
-						   write.out.name, write.path);
+						   "drop the <{}> field",
+						   write.out.name, write.path, io::image::frameKey);
 				return 1;
 			}
 			if (!write.video && range.count() > 1 && !isFramePattern(write.path))
 			{
-				log::error("flowview: --{} is '{}', which has no #### field — a {}-frame render needs one per frame",
-						   write.out.name, write.path, range.count());
+				log::error("flowview: --{} is '{}', which names no <{}> field — a {}-frame render needs "
+						   "one file per frame, so write it as 'out.<{}:04>.png'",
+						   write.out.name, write.path, io::image::frameKey, range.count(), io::image::frameKey);
 				return 1;
 			}
 		}
