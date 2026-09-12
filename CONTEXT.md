@@ -1018,7 +1018,9 @@ both sit behind service-shaped seams. See [ADR-0004](docs/adr/0004-static-linkin
   same reason, so a re-acquired handle needs no memory of where the last one had got to. A Stream is
   not thread-safe: its owner serialises, the way a **frame source** already holds the lock around its
   decoder. _Avoid_: exposing a file descriptor, a Stream that is only valid while its handle is, an
-  append-only write sink (a muxer seeks back to patch its header).
+  append-only write sink (a muxer seeks back to patch its header), one Stream with an access flag
+  (reading and writing differ in their CONTRACT — open-push-finish against atEnd — not in their
+  rights, and what they share is already on the base).
 
 - **Reader** / **Writer** — a **Reader** decodes a `Buffer` of one format into a typed asset; a
   **Writer** encodes the asset back to bytes. One per format, holding both directions (they share

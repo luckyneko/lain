@@ -1,10 +1,15 @@
 #pragma once
 
+// The incremental transport's INTERFACE — the contract a backend implements, and nothing else.
+// The entry points that hand one out live in transport.h, which includes this header and is
+// never included by it: a file that only implements or holds a Stream (io::video's reader.h and
+// writer.h, the FFmpeg plugin's AVIO bridge) takes this alone and gets no whole-asset API with
+// it. It is the reader.h/load.h split every medium seam under io already runs, at io's own level.
+
 #include <lain/core/uri.h>
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <optional>
 
 namespace lain::io
@@ -17,8 +22,8 @@ namespace lain::io
 		End
 	};
 
-	// The incremental, seekable transport — a PEER of read()/write(), for the assets a
-	// whole-asset slurp cannot serve. A video container is opened once, its frame table is
+	// The incremental, seekable transport — a PEER of read()/write() (transport.h), for the
+	// assets a whole-asset slurp cannot serve. A video container is opened once, its frame table is
 	// built by seeking around it, and single frames are decoded on demand for as long as any
 	// evaluation retains the sequence; read(uri) -> Buffer cannot express that (WORK.md M10,
 	// ADR-0018). Dispatched by uri scheme exactly as read() is, and equally media-agnostic:
@@ -38,6 +43,19 @@ namespace lain::io
 	//      handle lives exactly as long as it does. (openStream/createStream still validate
 	//      eagerly, so a missing file is reported at open, as read()/write() report it — it
 	//      is the coupling of the two LIFETIMES that this refuses, not early validation.)
+	//
+	// WHY READING AND WRITING ARE TWO TYPES RATHER THAN ONE STREAM WITH ACCESS FLAGS. They differ
+	// in their CONTRACT, not in their rights: a WriteStream is open-push-finish and nothing on
+	// disk is valid before finish(), while a ReadStream has atEnd() and no finish at all. One type
+	// with an access flag is a type whose members refuse for half its instances — a remembered
+	// flag that can disagree with what the object is. What the two genuinely share is shared
+	// already, here on the base: seek() and size() are Stream's, which is why the FFmpeg plugin's
+	// ONE seek callback serves both directions and takes an io::Stream*.
+	//
+	// A stream open for BOTH is therefore a third type rather than a flag, and nothing asks for
+	// one — a WriteStream already seeks back and overwrites bytes it wrote earlier, which is what
+	// a muxer patching its own header needs. WORK.md's Milestone 13 slice 3 carries the trigger
+	// that would change that, and the cheaper answer which may serve it instead.
 	//
 	// A Stream is NOT thread-safe: its owner serialises access, the way a media::FrameSource
 	// already holds the lock around its decoder.
@@ -152,16 +170,4 @@ namespace lain::io
 		bool m_finished{false};
 		bool m_finishStatus{true};
 	};
-
-	// Open `uri` for incremental reading, or nullptr when it cannot be opened — missing
-	// file, not a regular file, or an unsupported scheme. The reason is logged; the caller
-	// decides how to surface it, exactly as with read(). Only the local/file scheme is
-	// served today; remote/s3 dispatch behind this same function later.
-	[[nodiscard]] std::unique_ptr<ReadStream> openStream(const core::Uri& uri);
-
-	// Create (or truncate) `uri` for incremental writing, or nullptr when it cannot be
-	// created — a missing parent directory, no permission, or an unsupported scheme. The
-	// reason is logged. Named create rather than open because it is destructive, which is
-	// what io::write() already does to an existing file.
-	[[nodiscard]] std::unique_ptr<WriteStream> createStream(const core::Uri& uri);
 } // namespace lain::io

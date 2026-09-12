@@ -4,10 +4,13 @@
 # bytes and never decodes (codecs live in lain::io::image et al., WORK.md M3). Only
 # the local/file scheme is served today; remote/s3 dispatch behind the same entry
 # points later. Depends on lain::memory (Buffer in the API) + lain::log (reasons).
+#
+# The headers split the way every medium seam under this one splits: transport.h
+# declares the entry points (as load.h/save.h do) over stream.h's interface (as
+# reader.h/writer.h do), and the include runs transport -> stream only.
 
 add_library(io STATIC
-	src/read.cpp
-	src/write.cpp
+	src/transport.cpp
 	src/stream.cpp
 	src/localstream.cpp
 	src/uri.cpp

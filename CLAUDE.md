@@ -631,6 +631,59 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-12 — M13 slice 3 built: `transport.h`, and io's top level follows its own rule
+
+notes.txt — *"libs/io/include/lain/io/read/write.h — Why split these? Also should probably have
+openStream here. **So Stream is just a class.**"* Every seam beneath `lain::io` splits one way:
+`reader.h` / `writer.h` declare the interface a backend implements, `load.h` / `save.h` the entry
+points a caller calls. **The one layer that defined that pattern was the only layer not following
+it.** Now **`transport.h`** holds `read` / `write` / `openStream` / `createStream` and **`stream.h`**
+holds `Stream` / `ReadStream` / `WriteStream` and nothing else; `read.h`, `write.h`, `read.cpp` and
+`write.cpp` are deleted and `src/transport.cpp` takes their bodies plus the scheme dispatch. Nothing
+behaves differently and no function is renamed, so the existing suite is the regression test and
+every baseline is unmoved: `ctest -j8` **760/760** Debug with video on, **766/766** Release with
+video on, **734/734** Release in the default video-off configuration. Warning-clean, format-check
+clean; `flowview --version` / `run --example` / `list` unchanged and save ⇒ load ⇒ save still
+byte-idempotent through the real binary. Full landing notes in WORK.md's *Milestone 13*.
+
+- **The cost was in the SOURCES, not only in the header names.** `src/stream.cpp` included
+  `localstream.h` and `uri.h`, because the interface file's implementation also owned backend
+  selection. It now includes neither — **the interface stops naming the backend**, which is the
+  property `reader.h` has had all along.
+- **The include runs ONE WAY, and that is the layering claim**: `transport.h` includes `stream.h`,
+  never the reverse. Five files depend on `stream.h` alone — `io::video`'s `reader.h` / `writer.h`
+  and the FFmpeg plugin's `aviobridge.h` / `ffmpegreader.h` / `ffmpegwriter.h` — and **none of them
+  appears in the diff**, which is how the claim is checked rather than argued. A `stream.h` reaching
+  back would hand every codec plugin a whole-asset API it must not have.
+- **`ReadWriteStream` is refused with a trigger, and the record it was already pointing at now
+  exists.** The Outstanding-work index said *"see M13's own record"* and there was **no record** —
+  the dangling-pointer shape ADR-0023 opens with, three slices after that lesson was written down.
+  The note asks something broader than a third class (*"a singular stream + access perms"*), and the
+  answer is that the two differ in **contract, not rights**: a `WriteStream` is open-push-**finish**
+  with nothing valid before `finish()`, a `ReadStream` has `atEnd()` and no finish, so one type with
+  an access flag is a type whose members refuse for half its instances — the shape M7 slice 1's
+  `editableAt` and ADR-0014's *"no flag, nothing stored"* each deleted. What the two genuinely share
+  is already shared on the base (`seek`, `size`), which is why the FFmpeg bridge's ONE seek callback
+  takes an `io::Stream*`. Nothing asks for the type today, because a `WriteStream` already seeks
+  back and overwrites what it wrote. **The trigger is a muxer that reads back its own output**
+  (`-movflags +faststart`) — stated as the class of need, since the prebuilt FFmpeg ships headers
+  only and the requirement inside the mov muxer is not checkable from the tree; what is checkable is
+  that `makeWriteContext` hands `avio_alloc_context` a null `read_packet`. And the cheaper answer
+  may serve it anyway: a post-pass through `openStream` + `createStream` is what `qt-faststart` is.
+  Recorded in `stream.h`'s own refusals list, where the question gets asked.
+- **The no-scheme-registry decision gets a pointer from the code that provokes it.** notes.txt also
+  asked why the local backend is not a registry *"like other IO paths"* — already answered in M10
+  slice 3 (*"one member is not a registry"*) and recorded nowhere the asker would look.
+  `transport.cpp`'s dispatch block now says it, and says where a second scheme would attach.
+- **Tests follow the sources exactly**, the mapping `io::image` already uses: `test_read.cpp` +
+  `test_write.cpp` become `test_transport.cpp` (one duplicated `bytesEqual` deleted on the way), and
+  the two `openStream` / `createStream` refusal cases move across with them because scheme dispatch
+  is `transport.cpp`'s. `test_stream.cpp` keeps the thirteen Stream-contract cases and still reaches
+  them through the production door.
+- **No new test case, and nothing to sabotage** — the claim is that nothing moved, so the count had
+  to move by zero and did. Three configurations at their existing baselines is the verification;
+  inventing a case to have one would have been the dishonest version.
+
 ### Update 2026-09-12 — M13 slice 2 built: `####` retires for a `<key>` pattern system
 
 notes.txt note 21 — *"The entire NumberField approach sucks. I want some type of replacement

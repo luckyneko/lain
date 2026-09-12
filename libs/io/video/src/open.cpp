@@ -2,7 +2,7 @@
 
 #include "videosource.h"
 
-#include <lain/io/stream.h>
+#include <lain/io/transport.h>
 #include <lain/io/uri.h>
 #include <lain/log/log.h>
 

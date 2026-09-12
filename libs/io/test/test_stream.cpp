@@ -1,15 +1,18 @@
-// Unit tests for lain::io::openStream / createStream — the incremental transport. Exercises
-// the production path against real files in a temp dir (a file transport is tested by
-// reading and writing files), and reads written bytes back through io::read so the two
-// shapes of the seam are checked against each other. No driver.
+// Unit tests for the Stream CONTRACT — what a ReadStream and a WriteStream do once one has been
+// handed out. Exercises the production path against real files in a temp dir (a file transport is
+// tested by reading and writing files), reaching a stream through the production door
+// (openStream / createStream) and reading written bytes back through io::read, so the two shapes
+// of the seam are checked against each other. No driver.
+//
+// What those two doors REFUSE is test_transport.cpp's — scheme dispatch belongs to the entry
+// points, the way this file pairs with stream.cpp and that one with transport.cpp.
 //
 // Two cases carry the design rather than its surface: a released handle resumes at the
 // logical position, and a released WRITE handle re-acquires WITHOUT truncating. Those are
 // the promises a future handle pool is built on, and both fail loudly if the backend starts
 // tracking its own position or reopens with std::ios::trunc.
 
-#include "lain/io/read.h"
-#include "lain/io/stream.h"
+#include "lain/io/transport.h"
 #include "lain/io/uri.h"
 
 #include <lain/testing/scratch.h>
@@ -252,19 +255,6 @@ TEST_CASE("a read stream reports its uri canonically", "[stream]")
 	REQUIRE(bare->uri() == scheme->uri());
 }
 
-TEST_CASE("openStream refuses what it cannot read", "[stream]")
-{
-	const auto missing = lain::testing::scratchPath("absent", ".bin");
-	REQUIRE(openStream(missing.string()) == nullptr);
-
-	// A directory opens perfectly well on some platforms and reads nothing — the regular-file
-	// guard is what keeps that from looking like an empty file.
-	REQUIRE(openStream(std::filesystem::temp_directory_path().string()) == nullptr);
-
-	REQUIRE(openStream("http://example.com/clip.mp4") == nullptr);
-	REQUIRE(openStream("s3://bucket/key") == nullptr);
-}
-
 // --- writing ---------------------------------------------------------------
 
 TEST_CASE("a write stream pushes bytes and finishes", "[stream]")
@@ -360,13 +350,4 @@ TEST_CASE("a write stream past the end extends the resource", "[stream]")
 	REQUIRE(stream->finish());
 
 	REQUIRE(contentsOf(path.string()).size() == std::size_t{7});
-}
-
-TEST_CASE("createStream refuses what it cannot create", "[stream]")
-{
-	const auto missing = lain::testing::scratchPath("absent-dir") / "out.bin";
-	REQUIRE(createStream(missing.string()) == nullptr);
-
-	REQUIRE(createStream("http://example.com/clip.mp4") == nullptr);
-	REQUIRE(createStream("s3://bucket/key") == nullptr);
 }

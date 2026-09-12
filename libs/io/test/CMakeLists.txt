@@ -2,8 +2,7 @@
 # Reads real files from the temp dir (the production path) — no driver.
 
 add_executable(test-io
-	test_read.cpp
-	test_write.cpp
+	test_transport.cpp
 	test_stream.cpp
 	test_uri.cpp
 )

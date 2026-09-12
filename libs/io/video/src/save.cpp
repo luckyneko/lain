@@ -3,7 +3,7 @@
 #include "lain/io/video/open.h" // isVideoUri
 
 #include <lain/image/pixelformat.h>
-#include <lain/io/stream.h>
+#include <lain/io/transport.h>
 #include <lain/io/uri.h>
 #include <lain/log/log.h>
 #include <lain/meta/enums.h>

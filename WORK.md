@@ -4767,7 +4767,8 @@ code that was right and silent about being right.
   conversions a graph offers is a POLICY"*; flowview hand-registers ten. The standing preference
   driving the item is no proliferation of `toXXX`/`fromXXX`, and it reaches `Version::toString`/
   `parse`, `Uuid`, `data::toValue`/`fromValue`, `toLinear`/`fromLinear` and `gui::packColor`.
-- **`ReadWriteStream`** — see M13's own record; the trigger is `-movflags +faststart`.
+- **`ReadWriteStream`** — refused with its trigger (`-movflags +faststart`, i.e. a muxer that
+  reads back what it wrote). *(§Milestone 13 slice 3, and `stream.h`'s own refusals list.)*
 - **`Range<T>`** — trigger: a second element type actually appearing.
 - **`core::hex`** — trigger: a second consumer. Today's two sites (`uuid.cpp` decode and encode) are
   **inverse directions in one file**, not two implementations of one thing, and are the only hex
@@ -5033,6 +5034,75 @@ Warning-clean, format-check clean.
   comment.
 
 
+### Slice 3 — `transport.h` (built 2026-09-12)
+
+notes.txt: *"libs/io/include/lain/io/read/write.h — Why split these? Also should probably have
+openStream here. **So Stream is just a class.**"* io's top level now runs the split every seam
+beneath it already runs — **`transport.h`** declares the four entry points (`read` / `write` /
+`openStream` / `createStream`) the way `load.h` / `save.h` do, over **`stream.h`**, which is the
+interface a backend implements the way `reader.h` / `writer.h` are. `read.h` and `write.h` are
+deleted; `src/read.cpp` and `src/write.cpp` become `src/transport.cpp`, which also takes the scheme
+dispatch. **Nothing behaves differently and no function is renamed**, so the existing suite is the
+regression test and every baseline is unmoved: `ctest -j8` **760/760** Debug with video on,
+**766/766** Release with video on, **734/734** Release in the default video-off configuration.
+Warning-clean, format-check clean.
+
+- **The one layer that DEFINED the pattern was the one layer not following it**, and the cost was
+  visible in the sources rather than only in the header names: `src/stream.cpp` included
+  `localstream.h` and `uri.h`, because the interface file's implementation also owned backend
+  selection. It now includes neither — **the interface stops naming the backend**, which is the
+  property `reader.h` has had all along.
+- **The include runs ONE WAY, and that is the whole layering claim**: `transport.h` includes
+  `stream.h`, never the reverse. Five files depend on `stream.h` alone and have no business knowing
+  about whole-asset reads — `io::video`'s `reader.h` and `writer.h`, and the FFmpeg plugin's
+  `aviobridge.h` / `ffmpegreader.h` / `ffmpegwriter.h`. **None of the five appears in the diff**,
+  which is how the claim is checked rather than argued: a stream.h that reached back here would have
+  handed every codec plugin an API it must not have.
+- **`ReadWriteStream` is REFUSED with a trigger, and the record it was already pointing at now
+  exists.** The Outstanding-work index said *"see M13's own record"* and there was no record — the
+  dangling-pointer shape ADR-0023 opens with, three slices after that lesson was written down. The
+  note behind it asks something broader than a third class: *"What if I want to read from a write
+  stream? I wonder if a singular stream + access perms is the go?"*
+  - **They differ in CONTRACT, not in rights.** A `WriteStream` is open-push-**finish** and nothing
+    on disk is valid before `finish()`; a `ReadStream` has `atEnd()` and no finish at all. One type
+    with an access flag is a type whose members refuse for half its instances — a remembered flag
+    that can disagree with what the object is, the shape M7 slice 1 (`editableAt`) and ADR-0014
+    (*"no flag, nothing stored"*) each deleted.
+  - **What the two genuinely share is already shared**, deliberately, on the base: `seek()` and
+    `size()` are `Stream`'s, which is why `aviobridge.h`'s ONE seek callback serves both directions
+    and takes an `io::Stream*`.
+  - **Nothing asks for the third type today**, because a `WriteStream` already seeks back and
+    overwrites bytes it wrote earlier — pinned by its own test — which is what a muxer patching its
+    own header needs.
+  - **The trigger is a muxer that reads back what it wrote**, `-movflags +faststart` being the one
+    lain would plausibly want. What is checkable from the tree: `makeWriteContext` hands
+    `avio_alloc_context` a **null** `read_packet` (`aviobridge.cpp`), and FFmpeg has a real
+    read-write mode it cannot therefore reach (`AVIO_FLAG_READ_WRITE`, `avio.h:619`). The prebuilt
+    ships headers only, so the exact requirement inside the mov muxer is **not** asserted here.
+  - **And the cheaper answer may serve it anyway:** a post-pass over the finished file through
+    `openStream` + `createStream` — two handles and a temp file — is what `qt-faststart` is. So the
+    trigger is a reason to look again, not a commitment to the type.
+  - Recorded where the question gets asked: `stream.h`'s own refusals list, beside the four that
+    were already there.
+- **The no-scheme-registry decision gets a pointer from the code that provokes it.** notes.txt also
+  asked *"why not just define a stream here… this should probably also use a Registry like other IO
+  paths"* — already answered in M10 slice 3 (*"one member is not a registry"*) and recorded nowhere
+  the asker would look. `transport.cpp`'s dispatch block now says it, and says where a second scheme
+  would attach. Comment only.
+- **The tests follow the sources exactly**, which is the mapping `io::image` already uses:
+  `test_read.cpp` + `test_write.cpp` become **`test_transport.cpp`** (deduplicating one copy of
+  `bytesEqual` on the way), and *"openStream refuses what it cannot read"* / *"createStream refuses
+  what it cannot create"* move across with them, because scheme dispatch is `transport.cpp`'s.
+  `test_stream.cpp` keeps the thirteen cases that are the Stream contract and still reaches them
+  through the production door. Tags become `[transport]`; free to change, since
+  `catch_discover_tests` registers by TEST_CASE **name** and nothing in CI, CMake or the docs sweeps
+  the old ones.
+- **No new test case, and nothing to sabotage.** The claim of this slice is that nothing moved, so
+  the count had to move by zero and did — the honest verification is three configurations at their
+  existing baselines plus `flowview run --example` unchanged, not a case invented to have one.
+- **gui-mode not needed** — no file under `apps/` changes.
+
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -5057,9 +5127,9 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md).)*
 
-- **M13 — io coherence.** Five slices; **slices 1, 1b and 2 (`core::Uri`, the signatures that take
-  one, and the `<key>` pattern system) are built** (2026-09-11 / 09-12, ADR-0023). Remaining:
-  `transport.h`, the verb + layering pass, `ImageWriterOptions`. *(§Milestone 13.)*
+- **M13 — io coherence.** Five slices; **slices 1, 1b, 2 and 3 (`core::Uri`, the signatures that
+  take one, the `<key>` pattern system, and `transport.h`) are built** (2026-09-11 / 09-12,
+  ADR-0023). Remaining: the verb + layering pass, `ImageWriterOptions`. *(§Milestone 13.)*
 
 M1–M8 and M10–M12 are built. M9 and M13 are the milestones from 5 onward that are not.
 
