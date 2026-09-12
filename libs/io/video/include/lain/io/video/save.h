@@ -3,12 +3,12 @@
 #include "lain/io/video/writer.h"
 
 #include <lain/core/factory.h>
+#include <lain/core/uri.h>
 #include <lain/media/framesequence.h>
 #include <lain/media/framespec.h>
 
 #include <memory>
 #include <string>
-#include <string_view>
 
 namespace lain::io::video
 {
@@ -54,7 +54,7 @@ namespace lain::io::video
 	// THIS IS THE PREFLIGHT. A caller with 500 frames to render asks the question once, here,
 	// before the first frame is encoded — the same discipline io::image::canEncode gives the still
 	// path, arrived at by a different route because opening an encoder already answers it.
-	[[nodiscard]] std::unique_ptr<VideoWriter> openWriter(std::string_view uri, const lain::media::FrameSpec& spec,
+	[[nodiscard]] std::unique_ptr<VideoWriter> openWriter(const lain::core::Uri& uri, const lain::media::FrameSpec& spec,
 														  const VideoWriterOptions& options = {});
 
 	// Encode every frame of `sequence` to `uri` — the one-shot TRANSCODE facade over the handle
@@ -75,6 +75,6 @@ namespace lain::io::video
 	// It is deliberately not the RENDER path: a render's frames come from a graph one at a time and
 	// its missing-frame policy is the host's, so a host drives the handle directly (ADR-0018 — "a
 	// suppressed frame is the host's policy, not the writer's").
-	[[nodiscard]] bool save(std::string_view uri, const lain::media::FrameSequence& sequence,
+	[[nodiscard]] bool save(const lain::core::Uri& uri, const lain::media::FrameSequence& sequence,
 							const VideoWriterOptions& options = {});
 } // namespace lain::io::video

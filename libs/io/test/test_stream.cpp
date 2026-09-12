@@ -248,7 +248,7 @@ TEST_CASE("a read stream reports its uri canonically", "[stream]")
 	auto scheme = openStream("file://" + file.path());
 	REQUIRE(bare != nullptr);
 	REQUIRE(scheme != nullptr);
-	REQUIRE(bare->uri() == lain::io::canonicalise(lain::core::Uri::fromPath(file.path())).toString());
+	REQUIRE(bare->uri() == lain::io::canonicalise(lain::core::Uri::fromPath(file.path())));
 	REQUIRE(bare->uri() == scheme->uri());
 }
 

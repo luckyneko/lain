@@ -191,7 +191,7 @@ TEST_CASE("one file has one template key, however it is spelled", "[graphio]")
 	const Factory<Node> factory = ioFactory();
 	writeTemplate(factory, dir / "template.json");
 
-	const std::string direct = flowview::templateKey(dir / "template.json");
+	const lain::core::Uri direct = flowview::templateKey(dir / "template.json");
 	REQUIRE(flowview::templateKey(dir / "sub" / ".." / "template.json") == direct);
 	REQUIRE(flowview::templateKey(dir / "./template.json") == direct);
 
@@ -229,7 +229,7 @@ TEST_CASE("invalidating a template's key is what makes an edit to it visible", "
 
 	SECTION("dropping that one key picks the edit up")
 	{
-		cache.invalidate(flowview::templateKey(templatePath));
+		cache.invalidate(flowview::templateKey(templatePath).toString());
 		const LoadResult again = flowview::restoreGraph(document, factory, dir, &cache);
 		const LinkedGroupNode* link = onlyLink(again.graph);
 		REQUIRE(link->innerGraph()->boundaryInputNode().outputCount() == 2);

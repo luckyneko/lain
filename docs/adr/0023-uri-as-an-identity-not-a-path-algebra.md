@@ -86,3 +86,33 @@ appears.
 - A cross-cutting change touching `read` / `write` / `openStream` / the openers / `FrameRef` /
   `templateKey`. This is why it was deliberately sequenced after M10 slice 5 rather than interleaved
   with the FFmpeg unknowns.
+
+## Amendment (2026-09-12) — what the signatures cost, once they were typed
+
+Slice 1 landed the type; slice 1b landed the signatures. Three things were settled by doing it.
+
+**A logged `Uri` needed a decision, and it was not the one the cost list assumed.** 29 log sites
+print a uri, 13 of them in the FFmpeg plugin, and `lain::log` did not carry `lain::string`'s
+`toString()` formatter — so typing the signatures meant either `.toString()` at every site or a new
+dependency for the plugin. The measurement settled it: **that formatter had no production consumer
+at all**, its own unit test being its only exercise, so it was reachable from no log site in the
+tree. `lain::log` now links `lain::string` PUBLIC and includes the formatter, the 29 sites changed
+by zero lines, and the dependency runs one way only — `lain::string` must never link `lain::log`.
+
+**`.toString()` marks exactly one seam, and that is a feature.** `flow::serialize`'s `TemplateCache`
+and `ResolvedTemplate::key` stay `std::string`, because to flow a template key is an **opaque
+identity token** and ADR-0013's amendment already says flow must not interpret a `source` path —
+`scheme()`, `path()` and `extension()` are precisely the verbs it must not call. The four
+`.toString()` calls at that boundary are where a name stops being one. `ManifestFrame::source` stays
+a string for the matching reason on the wire side.
+
+**The "not urgent" latent bug was real, and the type is what surfaced it.** This ADR recorded
+`graphio::loadGraph` doing `std::filesystem::path(uri).parent_path()` on its document argument as
+*"the same shape as the bug slice 3 fixed, without the exposure"*. With the argument typed, that line
+does not compile: it now asks `uri.path()` and falls back to no document directory when the answer is
+`nullopt`. That is the value of the type stated concretely — not that it refuses bad input at
+runtime, but that it makes a caller which cannot serve a remote resource say so at build time.
+
+One practical note for the remaining slices: because `Uri(std::string_view)` is implicit, an
+un-migrated *definition* compiles as a separate overload, so a half-done rename fails at **link**,
+not at compile. Build to a link.

@@ -166,7 +166,7 @@ namespace flowview
 
 	bool MenuBarPane::openGraphPath(AppContext& ctx, const std::filesystem::path& path)
 	{
-		flow::serialize::LoadResult result = loadGraph(path.string(), ctx.app->nodeFactory(), &ctx.templates);
+		flow::serialize::LoadResult result = loadGraph(core::Uri::fromPath(path), ctx.app->nodeFactory(), &ctx.templates);
 		// Surface load problems in the Issues panel (not a modal) — they persist until the graph is
 		// next edited. Map the serialize severity onto the panel's.
 		ctx.loadIssues.clear();
@@ -405,13 +405,13 @@ namespace flowview
 			return saveAsDialog(ctx, activeGraph); // no file yet -> prompt for one
 
 		const flow::Graph& document = documentToSave(ctx, activeGraph);
-		if (saveGraph(ctx.currentPath.string(), document, ctx.app->nodeFactory(), ctx.layout))
+		if (saveGraph(core::Uri::fromPath(ctx.currentPath), document, ctx.app->nodeFactory(), ctx.layout))
 		{
 			// This file may be somebody's template — including, one Return away, this document's own
 			// parent. REQUIRED, not tidiness: Edit Template... -> Save -> Return works because the
 			// return re-reads the file, and a cache entry holding the pre-edit definition would
 			// quietly serve it instead.
-			ctx.templates.invalidate(templateKey(ctx.currentPath));
+			ctx.templates.invalidate(templateKey(ctx.currentPath).toString());
 			ctx.dirty = false;
 			noteGraphPath(ctx.session, ctx.currentPath); // saving makes it the current document too
 			saveSession(ctx.session);
@@ -430,13 +430,13 @@ namespace flowview
 		std::filesystem::path file = *path;
 		file.replace_extension("json"); // force .json (the codec is keyed off the extension)
 		const flow::Graph& document = documentToSave(ctx, activeGraph);
-		if (!saveGraph(file.string(), document, ctx.app->nodeFactory(), ctx.layout))
+		if (!saveGraph(core::Uri::fromPath(file), document, ctx.app->nodeFactory(), ctx.layout))
 		{
 			gui::message("Save failed", "Could not write " + file.string(), true);
 			return false;
 		}
-		ctx.templates.invalidate(templateKey(file)); // as for Save: the file written may be a template
-		ctx.currentPath = file;						 // remember for plain Save
+		ctx.templates.invalidate(templateKey(file).toString()); // as for Save: the file written may be a template
+		ctx.currentPath = file;									// remember for plain Save
 		ctx.dirty = false;
 		noteGraphPath(ctx.session, file);
 		saveSession(ctx.session);

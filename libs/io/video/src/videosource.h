@@ -20,7 +20,7 @@ namespace lain::io::video
 	class VideoSource : public lain::media::FrameSource
 	{
 	public:
-		VideoSource(std::string uri, std::unique_ptr<VideoReader> reader);
+		VideoSource(lain::core::Uri uri, std::unique_ptr<VideoReader> reader);
 
 	protected:
 		lain::image::Image decodeFrame(std::size_t ordinal) const override;

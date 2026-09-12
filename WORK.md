@@ -4873,14 +4873,61 @@ unchanged, and the linked-group / `templateKey` cases still pass.
   covered only through `framepattern` and `sequence`. Slice 2 replaces both, so the cover arrives
   with the replacement rather than being written for code about to be deleted.
 
-**Slice 1b — deliberately not done here, and why.** The transport signatures (`io::read` / `write` /
-`openStream` / `createStream`, `Stream::uri()`) and `media::FrameRef::source` still speak
-`std::string`. The implicit constructor means changing them compiles every caller untouched, so the
-work is small — but `Stream::uri()` is printed at ~15 `lain::log` sites in the FFmpeg plugin, and
-`lain::log` does not link `lain::string`, so the `toString()` fmt formatter is not in scope there.
-Typing it therefore costs either `.toString()` at every one of those sites or a new dependency for
-the plugin, and that is a decision worth making on its own rather than inside a slice about naming.
-**It is the more valuable half** — ADR-0023 says so — so it is owed, not dropped.
+### Slice 1b — the transport speaks `core::Uri` (built 2026-09-12)
+
+The half ADR-0023 called *the more valuable one*. Slice 1 built the type and typed nothing with it,
+so the tax was visible in the code it left behind: `io::image::src/sequence.cpp` built a
+`core::Uri canonical` and then called `.toString()` on it **five times in one function**, and
+`io::video::open` was `const std::string canonical = canonicalise(Uri{uri}).toString();` — a `Uri`
+that lived for the length of one expression. `libs/io/CMakeLists.txt` already carried the comment
+*"core::Uri is the name every entry point takes"*, which was not true until now.
+
+Typed: `io::read` / `write` / `openStream` / `createStream`, `Stream` (ctor + `uri()`), every
+per-medium entry point (`io::image::{load, save, formatKeyOf, openSequence}`, `io::data::{load,
+save}`, `io::video::{open, save, openWriter, isVideoUri}`, `io::sequence::open` **and its `Opener`
+alias**), `media::FrameSource` (ctor + `uri()`), `media::FrameRef::source`, and flowview's
+`graphio::{templateKey, saveGraph, loadGraph}`. `ctest -j8` **748/748** Debug with video on,
+**754/754** Release with video on, **722/722** Release in the default video-off configuration;
+warning-clean, format-check clean, and the real binary round-trips a PNG out through
+`io::image::save` and back in through `io::image::load`, with save ⇒ list ⇒ load ⇒ save still
+byte-idempotent.
+
+- **The log question was answered first, in its own commit** — `lain::log` now carries
+  `lain::string`'s `toString()` formatter, so the **29** log sites that print a uri (13 of them in
+  the FFmpeg plugin) changed by **zero lines**. See the 2026-09-12 entry in CLAUDE.md for the
+  measurement that decided it.
+- **The compiler found the bug ADR-0023 predicted and called "not urgent".** `graphio::loadGraph`
+  did `std::filesystem::path(uri).parent_path()` on its document argument; for
+  `s3://bucket/scene.json` that builds a relative directory called `s3:` and resolves every linked
+  template against it — the exact bug `io::localPath` was introduced to fix, one level up. With
+  `uri` typed, that line stops compiling. It now asks `uri.path()` and falls back to no document
+  directory, which is the existing mode where `source` is taken as written.
+- **The failure mode of a half-done rename is a LINK error, not a compile error**, because the
+  implicit `Uri(std::string_view)` constructor lets an un-migrated definition compile as a separate
+  overload. Worth knowing for slices 3 and 4: build to a link, not to a compile.
+- **`.toString()` marks exactly one seam, deliberately** — `flow::serialize`'s `TemplateCache` and
+  `ResolvedTemplate::key` stay `std::string`. To flow a template key is an opaque identity token,
+  and ADR-0013's amendment says flow must not interpret a `source` path; `Uri`'s verbs
+  (`scheme()`, `path()`, `extension()`) are precisely the ones it must not call. The `.toString()`
+  at those four call sites is where a name stops being one, which is worth seeing.
+  `media::serialize::ManifestFrame::source` stays a `std::string` for the same reason on the wire
+  side — no serialize arm for `Uri`, no format change.
+- **Twelve `std::string(uri)` casts are gone**, replaced by the uri itself; `io/image/sequence.cpp`
+  went from six `.toString()` calls to one, and that one is `numberField(...)` — a **pattern**, not
+  a uri, which slice 2 deletes anyway.
+- **`Uri::fromPath` is now the named door at nine production sites** that used to flatten a
+  `std::filesystem::path` with `.string()` (`session.cpp`, `graphio`, `groupedit`, `menubar`,
+  `imagesave`, `LoadImageNode`, `OpenSequenceNode`). **Test sites were deliberately left alone**:
+  their fixtures are `TempPath` / `TempFile` / `Fixture` objects whose own `.string()` is their
+  accessor, not `fs::path`s, so `fromPath` does not apply without giving each a `path()` — and in a
+  test the surrounding lines already say what the value is.
+- **A `static_assert` pins the property the whole type rests on**: a bare `std::filesystem::path`
+  must NOT convert to a `Uri`, while `std::string` and a literal must. Asserted rather than reviewed,
+  because the implicit constructors sit right beside `fromPath` and nothing else would stop one being
+  added for `path`. Sabotage-verified both ways — adding an implicit path constructor fails the
+  assert, and handing a bare path to `io::image::load` fails to compile.
+- **Found and fixed in passing:** `libs/io/src/localstream.h` still described itself as private
+  *"exactly like scheme.h"* — a file slice 1 deleted.
 
 
 
@@ -4908,10 +4955,9 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md).)*
 
-- **M13 — io coherence.** Five slices; **slice 1 (`core::Uri`) is built** (2026-09-11, ADR-0023).
-  Remaining: the `<key>` pattern system, `transport.h`, the verb + layering pass,
-  `ImageWriterOptions` — plus **slice 1b**, typing the transport signatures and
-  `media::FrameRef::source`. *(§Milestone 13.)*
+- **M13 — io coherence.** Five slices; **slices 1 and 1b (`core::Uri`, and the signatures that take
+  one) are built** (2026-09-11 / 09-12, ADR-0023). Remaining: the `<key>` pattern system,
+  `transport.h`, the verb + layering pass, `ImageWriterOptions`. *(§Milestone 13.)*
 
 M1–M8 and M10–M12 are built. M9 and M13 are the milestones from 5 onward that are not.
 

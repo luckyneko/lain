@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <string>
+#include <type_traits>
 #include <unordered_set>
 
 using lain::core::Uri;
@@ -115,4 +116,13 @@ TEST_CASE("fromPath is the explicit conversion, and it adds no scheme", "[core][
 	const Uri fromPath = Uri::fromPath(std::filesystem::path{"/footage/take1.mp4"});
 	CHECK(fromPath == Uri{"/footage/take1.mp4"});
 	CHECK(std::string{fromPath.scheme()} == "local");
+
+	// ... and it is the ONLY door. A std::filesystem::path must not convert on its own, or every
+	// signature that now takes a Uri would silently accept a path again and the type would be
+	// decoration. Asserted rather than reviewed, because the implicit std::string / string_view /
+	// const char* constructors sit right beside it and nothing else stops one being added for path.
+	static_assert(!std::is_convertible_v<std::filesystem::path, Uri>,
+				  "a path must be adopted through fromPath, never implicitly");
+	static_assert(std::is_convertible_v<std::string, Uri>, "a string IS a uri spelling");
+	static_assert(std::is_convertible_v<const char*, Uri>, "so is a literal");
 }

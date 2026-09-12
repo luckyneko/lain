@@ -22,11 +22,13 @@ namespace lain::flow::example
 	void LoadImageNode::compute(NodeEvaluation& evaluation) const
 	{
 		// An ordinary input read: unconnected, the slot carries the configured default.
-		const std::string path = evaluation.input(m_path).get<std::filesystem::path>().string();
+		const std::filesystem::path path = evaluation.input(m_path).get<std::filesystem::path>();
 
 		// io::image::load reads the bytes and dispatches to the reader for the uri's
 		// extension; nullopt (missing/unknown/bad) becomes an invalid Image on the port.
-		auto loaded = lain::io::image::load(path);
+		// fromPath, not the path's text: a uri is what load() names a resource by, and the
+		// conversion from a path is the one that has to be spelled out (ADR-0023).
+		auto loaded = lain::io::image::load(lain::core::Uri::fromPath(path));
 		evaluation.output(m_out).set(loaded ? std::move(*loaded) : image::Image{});
 	}
 } // namespace lain::flow::example

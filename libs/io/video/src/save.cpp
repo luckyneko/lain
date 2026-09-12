@@ -69,10 +69,10 @@ namespace lain::io::video
 		return {};
 	}
 
-	std::unique_ptr<VideoWriter> openWriter(std::string_view uri, const lain::media::FrameSpec& spec,
+	std::unique_ptr<VideoWriter> openWriter(const lain::core::Uri& uri, const lain::media::FrameSpec& spec,
 											const VideoWriterOptions& options)
 	{
-		const std::string canonical = lain::io::canonicalise(lain::core::Uri{uri}).toString();
+		const lain::core::Uri canonical = lain::io::canonicalise(uri);
 
 		if (!isVideoUri(canonical))
 		{
@@ -110,7 +110,7 @@ namespace lain::io::video
 				return nullptr; // createStream logged the reason; a second backend cannot help
 
 			std::unique_ptr<VideoWriter> writer = writerRegistry().create(backend);
-			if (writer && writer->open(std::move(stream), lain::core::Uri{canonical}.extension(), spec, options))
+			if (writer && writer->open(std::move(stream), canonical.extension(), spec, options))
 			{
 				// What this file turned INTO, said once, where a person can see it — and in
 				// particular which encoder "by availability" resolved to on this machine, which is
@@ -127,13 +127,13 @@ namespace lain::io::video
 		return nullptr;
 	}
 
-	bool save(std::string_view uri, const lain::media::FrameSequence& sequence, const VideoWriterOptions& options)
+	bool save(const lain::core::Uri& uri, const lain::media::FrameSequence& sequence, const VideoWriterOptions& options)
 	{
 		if (sequence.empty())
 		{
 			// Not a zero-frame container. The caller asked to transcode nothing, and a file that
 			// hides that is worse than an error.
-			lain::log::error("io::video: cannot write {} — the sequence is empty", lain::io::canonicalise(lain::core::Uri{uri}).toString());
+			lain::log::error("io::video: cannot write {} — the sequence is empty", lain::io::canonicalise(uri));
 			return false;
 		}
 
@@ -153,7 +153,7 @@ namespace lain::io::video
 				// A hole. Unlike a render, a transcode has no host policy to consult — the caller
 				// asked for THESE frames, and a video cannot represent a missing one.
 				lain::log::error("io::video: {} produced no image while writing {}",
-								 sequence.frame(position).toString(), lain::io::canonicalise(lain::core::Uri{uri}).toString());
+								 sequence.frame(position).toString(), lain::io::canonicalise(uri));
 				ok = false;
 				break;
 			}

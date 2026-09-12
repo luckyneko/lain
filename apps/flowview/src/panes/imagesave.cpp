@@ -40,7 +40,7 @@ namespace flowview
 			return; // cancelled
 		std::filesystem::path out = *path;
 		out.replace_extension(key);
-		if (io::image::save(out.string(), img))
+		if (io::image::save(lain::core::Uri::fromPath(out), img))
 			log::info("flowview: saved image to {}", out.string());
 		else
 			gui::message("Save failed", "Couldn't write the file: " + out.string(), true);

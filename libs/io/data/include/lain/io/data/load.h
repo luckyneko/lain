@@ -3,6 +3,7 @@
 #include "lain/io/data/reader.h"
 
 #include <lain/core/factory.h>
+#include <lain/core/uri.h>
 #include <lain/data/value.h>
 #include <lain/memory/buffer.h>
 
@@ -25,5 +26,5 @@ namespace lain::io::data
 	// Load and decode the document at `uri`: read its bytes (io::read), pick the reader by the
 	// uri's file extension, decode. std::nullopt on a read failure, a missing extension / unknown
 	// format, or a decode failure — the reason is logged. The "file path in, Value out" entry point.
-	[[nodiscard]] std::optional<lain::data::Value> load(std::string_view uri);
+	[[nodiscard]] std::optional<lain::data::Value> load(const lain::core::Uri& uri);
 } // namespace lain::io::data

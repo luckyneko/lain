@@ -1,11 +1,11 @@
 #pragma once
 
+#include <lain/core/uri.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <string>
-#include <string_view>
 
 namespace lain::io
 {
@@ -53,7 +53,7 @@ namespace lain::io
 		// for). Canonical because a stream that reopens by a RELATIVE path is one chdir away
 		// from silently touching a different file — and because a media::FrameRef names its
 		// source by canonical uri, so one resource must have one name here too.
-		const std::string& uri() const { return m_uri; }
+		const core::Uri& uri() const { return m_uri; }
 
 		// The logical position of the next read or write, in bytes from the start. Owned
 		// here rather than by the backend, which is what makes a reopen invisible.
@@ -76,7 +76,7 @@ namespace lain::io
 		virtual void release() = 0;
 
 	protected:
-		explicit Stream(std::string uri)
+		explicit Stream(core::Uri uri)
 			: m_uri(std::move(uri))
 		{
 		}
@@ -85,7 +85,7 @@ namespace lain::io
 		void advance(std::uint64_t bytes) { m_position += bytes; }
 
 	private:
-		std::string m_uri;
+		core::Uri m_uri;
 		std::uint64_t m_position{0};
 	};
 
@@ -157,11 +157,11 @@ namespace lain::io
 	// file, not a regular file, or an unsupported scheme. The reason is logged; the caller
 	// decides how to surface it, exactly as with read(). Only the local/file scheme is
 	// served today; remote/s3 dispatch behind this same function later.
-	[[nodiscard]] std::unique_ptr<ReadStream> openStream(std::string_view uri);
+	[[nodiscard]] std::unique_ptr<ReadStream> openStream(const core::Uri& uri);
 
 	// Create (or truncate) `uri` for incremental writing, or nullptr when it cannot be
 	// created — a missing parent directory, no permission, or an unsupported scheme. The
 	// reason is logged. Named create rather than open because it is destructive, which is
 	// what io::write() already does to an existing file.
-	[[nodiscard]] std::unique_ptr<WriteStream> createStream(std::string_view uri);
+	[[nodiscard]] std::unique_ptr<WriteStream> createStream(const core::Uri& uri);
 } // namespace lain::io

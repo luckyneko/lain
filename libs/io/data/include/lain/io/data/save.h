@@ -3,6 +3,7 @@
 #include "lain/io/data/writer.h"
 
 #include <lain/core/factory.h>
+#include <lain/core/uri.h>
 #include <lain/data/value.h>
 #include <lain/memory/buffer.h>
 
@@ -25,5 +26,5 @@ namespace lain::io::data
 	// Encode `value` (format chosen by the uri's extension) and write it to `uri` (io::write).
 	// Returns false on a missing/unknown extension, an encode failure, or a write failure — the
 	// reason is logged. The single "Value + path in, file out" entry point.
-	[[nodiscard]] bool save(std::string_view uri, const lain::data::Value& value);
+	[[nodiscard]] bool save(const lain::core::Uri& uri, const lain::data::Value& value);
 } // namespace lain::io::data

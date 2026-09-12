@@ -16,7 +16,8 @@ namespace lain::media
 			// decode a single one to say so.
 			const FrameRef ref = sequence.frame(position);
 			manifest.frames.push_back(
-				ManifestFrame{ref.source, static_cast<std::uint64_t>(ref.ordinal), ref.timestamp.seconds()});
+				ManifestFrame{ref.source.toString(), static_cast<std::uint64_t>(ref.ordinal),
+							  ref.timestamp.seconds()});
 		}
 		return manifest;
 	}

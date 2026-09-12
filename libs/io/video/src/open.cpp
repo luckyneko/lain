@@ -39,12 +39,12 @@ namespace lain::io::video
 		return extensions;
 	}
 
-	bool isVideoUri(std::string_view uri)
+	bool isVideoUri(const lain::core::Uri& uri)
 	{
 		// Uri::extension(), not a local lowercase-the-suffix: three seams ask what a file is called
 		// (a codec key, this container claim, io::sequence's medium dispatch) and a format decided
 		// in three places disagrees with itself over "clip.MP4" silently.
-		const std::string key = lain::core::Uri{uri}.extension();
+		const std::string key = uri.extension();
 		if (key.empty())
 			return false;
 
@@ -52,9 +52,9 @@ namespace lain::io::video
 		return std::find(extensions.begin(), extensions.end(), key) != extensions.end();
 	}
 
-	std::optional<lain::media::FrameSequence> open(std::string_view uri, lain::media::FrameRate rate)
+	std::optional<lain::media::FrameSequence> open(const lain::core::Uri& uri, lain::media::FrameRate rate)
 	{
-		const std::string canonical = lain::io::canonicalise(lain::core::Uri{uri}).toString();
+		const lain::core::Uri canonical = lain::io::canonicalise(uri);
 
 		const std::vector<std::string> backends = readerRegistry().keys();
 		if (backends.empty())

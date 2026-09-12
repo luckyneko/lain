@@ -12,7 +12,7 @@
 
 namespace lain::io
 {
-	std::optional<memory::Buffer> read(std::string_view uri)
+	std::optional<memory::Buffer> read(const core::Uri& uri)
 	{
 		// The whole-asset read is the incremental one used once: open, size, fill. Scheme
 		// dispatch, the local backend and the failure reporting all live in openStream, so
@@ -24,7 +24,7 @@ namespace lain::io
 		const std::optional<std::uint64_t> size = stream->size();
 		if (!size)
 		{
-			log::error("io::read: cannot determine size: {}", std::string(uri));
+			log::error("io::read: cannot determine size: {}", uri);
 			return std::nullopt;
 		}
 
@@ -35,7 +35,7 @@ namespace lain::io
 			if (!got || *got != buffer.size())
 			{
 				log::error("io::read: short read ({} of {} bytes): {}",
-						   got.value_or(0), buffer.size(), std::string(uri));
+						   got.value_or(0), buffer.size(), uri);
 				return std::nullopt;
 			}
 		}

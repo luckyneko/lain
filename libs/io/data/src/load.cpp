@@ -33,12 +33,12 @@ namespace lain::io::data
 		return value;
 	}
 
-	std::optional<lain::data::Value> load(std::string_view uri)
+	std::optional<lain::data::Value> load(const lain::core::Uri& uri)
 	{
-		const std::string key = lain::core::Uri{uri}.extension();
+		const std::string key = uri.extension();
 		if (key.empty())
 		{
-			log::warn("io::data::load: no file extension to select a reader: {}", std::string(uri));
+			log::warn("io::data::load: no file extension to select a reader: {}", uri);
 			return std::nullopt;
 		}
 

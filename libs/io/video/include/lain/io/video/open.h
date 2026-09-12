@@ -3,12 +3,12 @@
 #include "lain/io/video/reader.h"
 
 #include <lain/core/factory.h>
+#include <lain/core/uri.h>
 #include <lain/media/framesequence.h>
 #include <lain/media/framespec.h>
 
 #include <optional>
 #include <string>
-#include <string_view>
 #include <vector>
 
 namespace lain::io::video
@@ -71,7 +71,7 @@ namespace lain::io::video
 	// NOTE the read claim and the write CAPABILITY are different sets and always will be: this
 	// lists what lain recognises AS video, and an LGPL FFmpeg reads .webm without being able to
 	// encode one. openWriter is where that difference is discovered and said out loud.
-	[[nodiscard]] bool isVideoUri(std::string_view uri);
+	[[nodiscard]] bool isVideoUri(const lain::core::Uri& uri);
 
 	// Open `uri` as a frame sequence of decoded video frames — the video medium's contribution to
 	// the frame-sequence model, peer of io::image::openSequence.
@@ -86,6 +86,6 @@ namespace lain::io::video
 	// Returns std::nullopt when the uri cannot be opened, when no video reader is registered (a
 	// build without a video codec plugin), or when the reader refuses the container. The reason is
 	// logged in every case.
-	[[nodiscard]] std::optional<lain::media::FrameSequence> open(std::string_view uri,
+	[[nodiscard]] std::optional<lain::media::FrameSequence> open(const lain::core::Uri& uri,
 																 lain::media::FrameRate rate = {});
 } // namespace lain::io::video

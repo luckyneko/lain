@@ -49,6 +49,11 @@ namespace lain::media
 	// Its own type rather than a FrameRef because FrameRef::timestamp is a core::Time whose only
 	// accessor returns by value, and Archive::member needs a real lvalue — it writes through the
 	// reference on load. Seconds is what a manifest reader wants anyway.
+	//
+	// `source` is a flat std::string where FrameRef::source is a core::Uri, and that is the point of
+	// the split: this is the WIRE form, so it carries text and no behaviour. Typing it would need a
+	// serialize() arm for Uri and would let a reader ask a stored string about its scheme, which is
+	// a question only the live side should be answering.
 	struct ManifestFrame
 	{
 		std::string source;		   // the canonical uri of the source this frame belongs to

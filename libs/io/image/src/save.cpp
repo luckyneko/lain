@@ -46,18 +46,18 @@ namespace lain::io::image
 		return bytes;
 	}
 
-	bool save(std::string_view uri, const lain::image::Image& image)
+	bool save(const lain::core::Uri& uri, const lain::image::Image& image)
 	{
 		if (!image.valid())
 		{
-			log::warn("io::image::save: refusing to save an invalid image to: {}", std::string(uri));
+			log::warn("io::image::save: refusing to save an invalid image to: {}", uri);
 			return false;
 		}
 
 		const std::string key = formatKeyOf(uri);
 		if (key.empty())
 		{
-			log::warn("io::image::save: no file extension to select a writer: {}", std::string(uri));
+			log::warn("io::image::save: no file extension to select a writer: {}", uri);
 			return false;
 		}
 
@@ -67,11 +67,12 @@ namespace lain::io::image
 
 		return io::write(uri, *bytes);
 	}
-	std::string formatKeyOf(std::string_view uri)
+
+	std::string formatKeyOf(const lain::core::Uri& uri)
 	{
 		// Uri::extension(), not a local copy: io::sequence dispatches a uri to a MEDIUM by the
 		// same string this picks a codec by, so the two must agree about what "clip.MP4" is
 		// called (WORK.md M10 slice 5).
-		return lain::core::Uri{uri}.extension();
+		return uri.extension();
 	}
 } // namespace lain::io::image

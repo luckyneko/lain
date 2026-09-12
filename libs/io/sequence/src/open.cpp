@@ -33,13 +33,13 @@ namespace lain::io::sequence
 		registry().fallback = std::move(opener);
 	}
 
-	std::optional<lain::media::FrameSequence> open(std::string_view uri, lain::media::FrameRate rate)
+	std::optional<lain::media::FrameSequence> open(const lain::core::Uri& uri, lain::media::FrameRate rate)
 	{
 		const Registry& registered = registry();
 
 		// Uri::extension(), not a local copy: this picks a MEDIUM by the same string io::image
 		// picks a codec by, and a spelling decided twice eventually disagrees with itself.
-		const std::string extension = lain::core::Uri{uri}.extension();
+		const std::string extension = uri.extension();
 
 		const auto claimed = registered.byExtension.find(extension);
 		if (claimed != registered.byExtension.end())
@@ -48,8 +48,7 @@ namespace lain::io::sequence
 		if (registered.fallback)
 			return registered.fallback(uri, rate);
 
-		lain::log::error("io::sequence: no opener for {} — call io::sequence::registerSequenceOpeners()",
-						 std::string(uri));
+		lain::log::error("io::sequence: no opener for {} — call io::sequence::registerSequenceOpeners()", uri);
 		return std::nullopt;
 	}
 } // namespace lain::io::sequence

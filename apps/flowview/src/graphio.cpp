@@ -170,14 +170,14 @@ namespace flowview
 		// wrong answer nobody notices.
 	}
 
-	bool saveGraph(const std::string& uri, const flow::Graph& graph,
+	bool saveGraph(const core::Uri& uri, const flow::Graph& graph,
 				   const core::Factory<flow::Node>& factory, const flow::serialize::EditorTree& editor)
 	{
 		const data::Value document = flow::serialize::toValue(graph, factory, sceneCodecs(), editor);
 		return io::data::save(uri, document);
 	}
 
-	std::string templateKey(const std::filesystem::path& path)
+	core::Uri templateKey(const std::filesystem::path& path)
 	{
 		// ONE canonicalisation in the tree. io::canonicalise owns the rule (weakly_canonical, so a
 		// template that does not exist yet still has a stable key, which is what lets a broken link
@@ -185,7 +185,7 @@ namespace flowview
 		// the four call sites read. A key computed two ways eventually disagrees with itself, and
 		// the failure is silent: an invalidation that misses simply keeps serving the definition it
 		// was told to drop.
-		return lain::io::canonicalise(lain::core::Uri::fromPath(path)).toString();
+		return lain::io::canonicalise(lain::core::Uri::fromPath(path));
 	}
 
 	flow::serialize::TemplateResolver templateResolver(const std::filesystem::path& documentDir)
@@ -197,28 +197,39 @@ namespace flowview
 		return [documentDir](const std::string& source) -> std::optional<flow::serialize::ResolvedTemplate>
 		{
 			const std::filesystem::path full = documentDir.empty() ? std::filesystem::path(source) : documentDir / source;
-			const std::string key = templateKey(full);
+			const core::Uri key = templateKey(full);
 
 			const auto document = io::data::load(key);
 			if (!document)
 				return std::nullopt; // io::data::load logged it; serialize turns this into an issue
-			return flow::serialize::ResolvedTemplate{key, *document};
+
+			// .toString(): to flow a template key is an opaque identity token, not a name it may
+			// ask about a scheme or an extension (ADR-0013). This is where a uri stops being one.
+			return flow::serialize::ResolvedTemplate{key.toString(), *document};
 		};
 	}
 
-	flow::serialize::LoadResult loadGraph(const std::string& uri, const core::Factory<flow::Node>& factory,
+	flow::serialize::LoadResult loadGraph(const core::Uri& uri, const core::Factory<flow::Node>& factory,
 										  flow::serialize::TemplateCache* cache)
 	{
 		const auto document = io::data::load(uri);
 		if (!document)
 		{
 			flow::serialize::LoadResult result; // io::data::load logged the read failure
-			result.issues.push_back({flow::serialize::Severity::Error, "could not read graph file: " + uri});
+			result.issues.push_back(
+				{flow::serialize::Severity::Error, "could not read graph file: " + uri.toString()});
 			return result;
 		}
-		// Linked groups resolve against the folder holding THIS document.
-		return flow::serialize::fromValue(*document, factory, sceneCodecs(),
-										  templateResolver(std::filesystem::path(uri).parent_path()), cache);
+
+		// Linked groups resolve against the folder holding THIS document — which only exists if the
+		// document is local. Before core::Uri reached this signature the line was
+		// std::filesystem::path(uri).parent_path(), which for "s3://bucket/scene.json" would have
+		// built a relative directory called "s3:" and resolved every template against it: the exact
+		// bug io::localPath was introduced to fix (ADR-0023), one level up. A non-local document
+		// falls back to no directory, which is the existing mode where `source` is taken as written.
+		const std::optional<std::filesystem::path> local = uri.path();
+		const std::filesystem::path documentDir = local ? local->parent_path() : std::filesystem::path{};
+		return flow::serialize::fromValue(*document, factory, sceneCodecs(), templateResolver(documentDir), cache);
 	}
 
 	data::Value snapshotGraph(const flow::Graph& graph, const core::Factory<flow::Node>& factory,

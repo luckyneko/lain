@@ -33,12 +33,12 @@ namespace lain::io::image
 		return image;
 	}
 
-	std::optional<lain::image::Image> load(std::string_view uri)
+	std::optional<lain::image::Image> load(const lain::core::Uri& uri)
 	{
-		const std::string key = lain::core::Uri{uri}.extension();
+		const std::string key = uri.extension();
 		if (key.empty())
 		{
-			log::warn("io::image::load: no file extension to select a reader: {}", std::string(uri));
+			log::warn("io::image::load: no file extension to select a reader: {}", uri);
 			return std::nullopt;
 		}
 

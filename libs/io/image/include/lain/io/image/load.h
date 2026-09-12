@@ -3,6 +3,7 @@
 #include "lain/io/image/reader.h"
 
 #include <lain/core/factory.h>
+#include <lain/core/uri.h>
 #include <lain/image/image.h>
 #include <lain/memory/buffer.h>
 
@@ -29,5 +30,5 @@ namespace lain::io::image
 	// the uri's file extension, decode. Returns std::nullopt on a read failure, a missing
 	// extension / unknown format, or a decode failure — the reason is logged in each
 	// case. The single "file path in, Image out" entry point.
-	[[nodiscard]] std::optional<lain::image::Image> load(std::string_view uri);
+	[[nodiscard]] std::optional<lain::image::Image> load(const lain::core::Uri& uri);
 } // namespace lain::io::image

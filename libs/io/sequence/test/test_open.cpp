@@ -17,15 +17,15 @@ namespace
 	std::string claimed; // which fake was asked, and for what
 	std::string fallbackUri;
 
-	std::optional<lain::media::FrameSequence> claimingOpener(std::string_view uri, lain::media::FrameRate)
+	std::optional<lain::media::FrameSequence> claimingOpener(const lain::core::Uri& uri, lain::media::FrameRate)
 	{
-		claimed = std::string(uri);
+		claimed = uri.toString();
 		return lain::media::FrameSequence{};
 	}
 
-	std::optional<lain::media::FrameSequence> defaultOpener(std::string_view uri, lain::media::FrameRate)
+	std::optional<lain::media::FrameSequence> defaultOpener(const lain::core::Uri& uri, lain::media::FrameRate)
 	{
-		fallbackUri = std::string(uri);
+		fallbackUri = uri.toString();
 		return lain::media::FrameSequence{};
 	}
 

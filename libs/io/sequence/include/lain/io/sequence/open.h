@@ -1,12 +1,12 @@
 #pragma once
 
+#include <lain/core/uri.h>
 #include <lain/media/framesequence.h>
 #include <lain/media/framespec.h>
 
 #include <functional>
 #include <optional>
 #include <string>
-#include <string_view>
 
 namespace lain::io::sequence
 {
@@ -31,12 +31,12 @@ namespace lain::io::sequence
 	//
 	// `rate` is the nominal frame rate to declare for a medium that has none of its own (stills,
 	// a raw stream). Returns std::nullopt when nothing can open the uri; the reason is logged.
-	[[nodiscard]] std::optional<lain::media::FrameSequence> open(std::string_view uri,
+	[[nodiscard]] std::optional<lain::media::FrameSequence> open(const lain::core::Uri& uri,
 																 lain::media::FrameRate rate = {});
 
 	// What an opener is: a uri and a fallback rate in, a sequence or a logged refusal out — the
 	// signature both media seams already have.
-	using Opener = std::function<std::optional<lain::media::FrameSequence>(std::string_view uri,
+	using Opener = std::function<std::optional<lain::media::FrameSequence>(const lain::core::Uri& uri,
 																		   lain::media::FrameRate rate)>;
 
 	// Claim `extension` (lowercase, no dot) for `opener`, replacing any previous claim.

@@ -274,7 +274,7 @@ namespace flowview
 		// Write the interior out as a document in its own right — which is all a template is.
 		{
 			const auto& inlineGroup = static_cast<const flow::InlineGroupNode&>(editable->node(group));
-			if (!saveGraph(file.string(), inlineGroup.inner(), ctx.app->nodeFactory(), innerLayout))
+			if (!saveGraph(lain::core::Uri::fromPath(file), inlineGroup.inner(), ctx.app->nodeFactory(), innerLayout))
 			{
 				gui::message("Save failed", "Could not write " + file.string(), true);
 				return false;
@@ -282,7 +282,7 @@ namespace flowview
 		}
 		// The file just changed, so any definition cached under it is now the OLD one. Same rule as
 		// Save: an invalidation that is skipped simply keeps serving what it was told to drop.
-		ctx.templates.invalidate(templateKey(file));
+		ctx.templates.invalidate(templateKey(file).toString());
 
 		// Re-point the group at what we just wrote. The link is resolved through the loader's own
 		// routine, so this instance shares the cached definition with every other one built from that
@@ -352,7 +352,7 @@ namespace flowview
 		const std::filesystem::path documentDir = ctx.currentPath.parent_path();
 		const std::filesystem::path target = documentDir.empty() ? std::filesystem::path(linked.source())
 																 : documentDir / linked.source();
-		flow::serialize::LoadResult loaded = loadGraph(target.string(), ctx.app->nodeFactory(), nullptr);
+		flow::serialize::LoadResult loaded = loadGraph(lain::core::Uri::fromPath(target), ctx.app->nodeFactory(), nullptr);
 		if (loaded.graph.nodeCount() == 0)
 		{
 			ctx.noteMessage(Issue::Severity::Error, "Could not read the template " + target.string());

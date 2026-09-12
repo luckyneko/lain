@@ -42,7 +42,7 @@ namespace lain::media
 		FrameSource& operator=(const FrameSource&) = delete;
 
 		// The canonical uri identifying this source, as it appears in every FrameRef it issues.
-		const std::string& uri() const { return m_uri; }
+		const core::Uri& uri() const { return m_uri; }
 
 		// The declared shape of every frame here. Established at open, never re-derived.
 		const FrameSpec& spec() const { return m_spec; }
@@ -72,7 +72,7 @@ namespace lain::media
 		static constexpr std::size_t defaultCacheFrames = 4;
 
 	protected:
-		FrameSource(std::string uri, FrameSpec spec, std::size_t frameCount,
+		FrameSource(core::Uri uri, FrameSpec spec, std::size_t frameCount,
 					std::size_t cacheFrames = defaultCacheFrames);
 
 		// Decode frame `ordinal`, ignoring any cache. Called with the source's lock held and
@@ -102,7 +102,7 @@ namespace lain::media
 			lain::image::Image image;
 		};
 
-		std::string m_uri;
+		core::Uri m_uri;
 		FrameSpec m_spec;
 		std::size_t m_frameCount = 0;
 

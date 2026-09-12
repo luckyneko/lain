@@ -4,7 +4,7 @@
 
 namespace lain::io::video
 {
-	VideoSource::VideoSource(std::string uri, std::unique_ptr<VideoReader> reader)
+	VideoSource::VideoSource(lain::core::Uri uri, std::unique_ptr<VideoReader> reader)
 		: FrameSource{std::move(uri), reader->spec(), reader->frameCount()}
 		, m_reader{std::move(reader)}
 	{

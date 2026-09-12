@@ -180,7 +180,7 @@ TEST_CASE("a sequence names its source canonically", "[io::image][sequence]")
 	REQUIRE(sequence.has_value());
 	REQUIRE(sequence->size() == 1);
 
-	CHECK(sequence->frame(0).source == lain::io::canonicalise(lain::core::Uri::fromPath(dir.string())).toString());
+	CHECK(sequence->frame(0).source == lain::io::canonicalise(lain::core::Uri::fromPath(dir.string())));
 	CHECK(sequence->frame(0).ordinal == 0);
 }
 

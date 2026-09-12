@@ -23,7 +23,7 @@ namespace lain::io
 	class LocalReadStream final : public ReadStream
 	{
 	public:
-		LocalReadStream(std::filesystem::path path, std::string uri, std::ifstream file, std::uint64_t size)
+		LocalReadStream(std::filesystem::path path, lain::core::Uri uri, std::ifstream file, std::uint64_t size)
 			: ReadStream(std::move(uri))
 			, m_path(std::move(path))
 			, m_file(std::move(file))
@@ -110,7 +110,7 @@ namespace lain::io
 	class LocalWriteStream final : public WriteStream
 	{
 	public:
-		LocalWriteStream(std::filesystem::path path, std::string uri, std::ofstream file)
+		LocalWriteStream(std::filesystem::path path, lain::core::Uri uri, std::ofstream file)
 			: WriteStream(std::move(uri))
 			, m_path(std::move(path))
 			, m_file(std::move(file))
@@ -211,7 +211,7 @@ namespace lain::io
 
 	// --- factories -------------------------------------------------------------
 
-	std::unique_ptr<ReadStream> openLocalReadStream(const std::filesystem::path& path, std::string uri)
+	std::unique_ptr<ReadStream> openLocalReadStream(const std::filesystem::path& path, lain::core::Uri uri)
 	{
 		std::error_code error;
 		if (!std::filesystem::is_regular_file(path, error))
@@ -237,7 +237,7 @@ namespace lain::io
 		return std::make_unique<LocalReadStream>(path, std::move(uri), std::move(file), static_cast<std::uint64_t>(size));
 	}
 
-	std::unique_ptr<WriteStream> createLocalWriteStream(const std::filesystem::path& path, std::string uri)
+	std::unique_ptr<WriteStream> createLocalWriteStream(const std::filesystem::path& path, lain::core::Uri uri)
 	{
 		// Created / truncated here and never again: this is the one open that is allowed to
 		// destroy what was there, so a later re-acquire cannot be the one that does it.

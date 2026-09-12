@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lain/core/factory.h>
+#include <lain/core/uri.h>
 #include <lain/data/value.h>
 #include <lain/flow/node.h>
 #include <lain/flow/serialize/loadresult.h>
@@ -39,15 +40,19 @@ namespace flowview
 	// Save `graph` as JSON at `uri` (io::data picks the codec by extension). `editor` is the
 	// adapter's per-node metadata (canvas positions), keyed by NodeId. Returns false on a write /
 	// encode failure (logged).
-	bool saveGraph(const std::string& uri, const lain::flow::Graph& graph,
+	bool saveGraph(const lain::core::Uri& uri, const lain::flow::Graph& graph,
 				   const lain::core::Factory<lain::flow::Node>& factory,
 				   const lain::flow::serialize::EditorTree& editor = {});
 
-	// The canonical key one template file is known by: the cycle guard compares it, and the
+	// The canonical uri one template file is known by: the cycle guard compares it, and the
 	// TemplateCache is keyed on it. ONE function, because a key that is computed two ways is a key
 	// that eventually disagrees with itself — and a disagreement here is silent (an invalidation that
 	// misses simply keeps serving the old definition).
-	std::string templateKey(const std::filesystem::path& path);
+	//
+	// It answers a core::Uri, and flow::serialize takes its .toString(): a cache key there is an
+	// OPAQUE identity token, and flow must not interpret a source path (ADR-0013). That .toString()
+	// at the call site is the seam where a name stops being one, which is worth seeing.
+	lain::core::Uri templateKey(const std::filesystem::path& path);
 
 	// The template resolver a load uses for LINKED groups: `source` is read relative to
 	// `documentDir` (so a project folder stays portable) and canonicalised through templateKey.
@@ -61,7 +66,7 @@ namespace flowview
 	// single definition (ADR-0013). Required rather than defaulted: omitting it is silent, and what it
 	// silently costs is the whole point of having one. Pass nullptr where there is genuinely no host
 	// to own a cache, and mean it.
-	lain::flow::serialize::LoadResult loadGraph(const std::string& uri,
+	lain::flow::serialize::LoadResult loadGraph(const lain::core::Uri& uri,
 												const lain::core::Factory<lain::flow::Node>& factory,
 												lain::flow::serialize::TemplateCache* cache);
 

@@ -1,10 +1,10 @@
 #pragma once
 
+#include <lain/core/uri.h>
 #include <lain/media/framesequence.h>
 #include <lain/media/framespec.h>
 
 #include <optional>
-#include <string_view>
 
 namespace lain::io::image
 {
@@ -37,6 +37,6 @@ namespace lain::io::image
 	// Frames are decoded lazily, one at a time, and validated against the declared spec as they
 	// arrive: a stray odd-sized still yields an invalid Image for that frame rather than
 	// corrupting the sequence's promise.
-	[[nodiscard]] std::optional<lain::media::FrameSequence> openSequence(std::string_view uri,
+	[[nodiscard]] std::optional<lain::media::FrameSequence> openSequence(const lain::core::Uri& uri,
 																		 lain::media::FrameRate rate = {});
 } // namespace lain::io::image

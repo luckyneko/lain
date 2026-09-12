@@ -3,6 +3,7 @@
 #include "lain/io/image/writer.h"
 
 #include <lain/core/factory.h>
+#include <lain/core/uri.h>
 #include <lain/image/image.h>
 #include <lain/memory/buffer.h>
 
@@ -32,7 +33,7 @@ namespace lain::io::image
 	// that: check canEncode ONCE against the first frame, rather than discovering on every one of
 	// 500 frames that the format cannot hold the image. Deriving the key a second way in the caller
 	// would let the preflight and the write disagree about what format a path names.
-	[[nodiscard]] std::string formatKeyOf(std::string_view uri);
+	[[nodiscard]] std::string formatKeyOf(const lain::core::Uri& uri);
 
 	// Encode `image` to `formatKey` bytes in memory. std::nullopt if no writer is registered
 	// for the key or the writer fails (reason logged). For bytes you want in a Buffer rather
@@ -42,5 +43,5 @@ namespace lain::io::image
 	// Encode `image` (format chosen by the uri's extension) and write it to `uri` (io::write).
 	// Returns false on an invalid image, a missing/unknown extension, an encode failure, or a
 	// write failure — the reason is logged. The single "Image + path in, file out" entry point.
-	[[nodiscard]] bool save(std::string_view uri, const lain::image::Image& image);
+	[[nodiscard]] bool save(const lain::core::Uri& uri, const lain::image::Image& image);
 } // namespace lain::io::image

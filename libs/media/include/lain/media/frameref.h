@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lain/core/time.h>
+#include <lain/core/uri.h>
 
 #include <cstddef>
 #include <string>
@@ -27,7 +28,7 @@ namespace lain::media
 		// The canonical uri of the source this frame belongs to — a video file, or an
 		// image-sequence pattern. Not the individual still's path: the source is the sequence,
 		// and the ordinal locates the frame within it.
-		std::string source;
+		core::Uri source;
 
 		// Which frame OF THAT SOURCE, from 0. Survives clipping, concatenation and selection.
 		std::size_t ordinal = 0;

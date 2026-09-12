@@ -37,7 +37,7 @@ namespace flowview
 		if (file.empty() || !std::filesystem::exists(file, ec))
 			return {};
 
-		const auto document = io::data::load(file.string());
+		const auto document = io::data::load(lain::core::Uri::fromPath(file));
 		if (!document)
 			return {}; // unreadable / not valid json — io::data::load logged it; convenience state, so carry on
 
@@ -55,7 +55,7 @@ namespace flowview
 		const std::filesystem::path file = sessionFile();
 		if (file.empty())
 			return;
-		if (!io::data::save(file.string(), data::toValue(session)))
+		if (!io::data::save(lain::core::Uri::fromPath(file), data::toValue(session)))
 			log::warn("session: could not write {}", file.string()); // convenience state only — nothing to interrupt
 	}
 

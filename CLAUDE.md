@@ -631,6 +631,54 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-12 — M13 slice 1b built: the signatures take a `core::Uri`
+
+The half [ADR-0023](docs/adr/0023-uri-as-an-identity-not-a-path-algebra.md) called *the more valuable
+one*. Slice 1 built the type and typed nothing with it, so the tax stayed visible in the code it left
+behind: `io/image/src/sequence.cpp` built a `core::Uri canonical` and then called `.toString()` on it
+**five times in one function**, and `io::video::open` was
+`const std::string canonical = canonicalise(Uri{uri}).toString();` — a `Uri` that lived for the
+length of one expression. Now every `lain::io` entry point, `Stream`, `media::FrameSource`,
+`media::FrameRef::source` and flowview's `graphio` take or answer one. `ctest -j8` **748/748** Debug
+with video on, **754/754** Release with video on, **722/722** Release in the default video-off
+configuration; warning-clean, format-check clean. Full landing notes in WORK.md's *Milestone 13*.
+
+- **The log question was answered first and separately** (see the entry below), so the **29** log
+  sites that print a uri — 13 of them in the FFmpeg plugin — changed by **zero lines**. Had it gone
+  the other way, this commit would have added 29 `.toString()` calls to diagnostics.
+- **The compiler found the bug ADR-0023 recorded as "not urgent".** `graphio::loadGraph` did
+  `std::filesystem::path(uri).parent_path()` on its document argument; for `s3://bucket/scene.json`
+  that builds a relative directory called `s3:` and resolves every linked template against it — the
+  exact bug `io::localPath` was introduced to fix, one level up. Typed, the line stops compiling; it
+  now asks `uri.path()` and falls back to no document directory. **That is the concrete value of the
+  type**: not refusing bad input at runtime, but making a caller which cannot serve a remote resource
+  say so at build time.
+- **A half-done rename fails at LINK, not at compile**, because the implicit `Uri(std::string_view)`
+  constructor lets an un-migrated definition compile as a separate overload. Worth carrying into
+  slices 3 and 4: build to a link, not to a compile.
+- **`.toString()` now marks exactly one seam, deliberately.** `flow::serialize`'s `TemplateCache` and
+  `ResolvedTemplate::key` stay `std::string`: to flow a template key is an **opaque identity token**,
+  and ADR-0013's amendment says flow must not interpret a `source` path — `scheme()` / `path()` /
+  `extension()` are precisely the verbs it must not call. The four `.toString()` calls there are
+  where a name stops being one. `media::serialize::ManifestFrame::source` stays a string for the
+  matching reason on the wire side, which is what keeps ADR-0023's "no serialize arm, no wire change"
+  true.
+- **Twelve `std::string(uri)` casts are gone**; `io/image/sequence.cpp` went from six `.toString()`
+  calls to one, and that one is `numberField(...)` — a **pattern**, not a uri, which slice 2 deletes.
+- **`Uri::fromPath` is the named door at nine production sites** that used to flatten a
+  `std::filesystem::path` with `.string()`. **Test sites were deliberately left alone**: their
+  fixtures are `TempPath` / `TempFile` / `Fixture` objects whose own `.string()` is the accessor, not
+  `fs::path`s, so `fromPath` does not apply without giving each a `path()` — found by the compiler
+  after a first sweep tried it, and reverted rather than worked around.
+- **A `static_assert` pins the property the type rests on**: a bare `std::filesystem::path` must NOT
+  convert, while a `std::string` and a literal must. Asserted rather than reviewed, because the
+  implicit constructors sit right beside `fromPath`. Sabotage-verified both ways — adding an implicit
+  path constructor fails the assert, and handing a bare path to `io::image::load` fails to compile.
+- **Found and fixed in passing:** `libs/io/src/localstream.h` still described itself as private
+  *"exactly like scheme.h"*, a file slice 1 deleted.
+- **gui-mode was not eyeballed, and does not need to be**: nothing here touches ImGui or a pane's
+  drawing, and the `graphio` / `session` / `menubar` changes are covered by `apps/flowview/test`.
+
 ### Update 2026-09-12 — `lain::log` carries the toString formatter
 
 The decision M13 slice 1b was blocked on, taken as its own commit ahead of the typing sweep that

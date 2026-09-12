@@ -6,7 +6,7 @@
 
 namespace lain::media
 {
-	FrameSource::FrameSource(std::string uri, FrameSpec spec, std::size_t frameCount, std::size_t cacheFrames)
+	FrameSource::FrameSource(core::Uri uri, FrameSpec spec, std::size_t frameCount, std::size_t cacheFrames)
 		: m_uri{std::move(uri)}
 		, m_spec{spec}
 		, m_frameCount{frameCount}

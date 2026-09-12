@@ -23,7 +23,7 @@ namespace lain::flow::example
 	{
 		const std::filesystem::path path = evaluation.input(m_path).get<std::filesystem::path>();
 
-		std::optional<lain::media::FrameSequence> sequence = lain::io::sequence::open(path.string());
+		std::optional<lain::media::FrameSequence> sequence = lain::io::sequence::open(lain::core::Uri::fromPath(path));
 		if (!sequence.has_value())
 		{
 			// open() logged why. Clearing rather than emitting an empty sequence keeps the two

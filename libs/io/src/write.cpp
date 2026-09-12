@@ -9,7 +9,7 @@
 
 namespace lain::io
 {
-	bool write(std::string_view uri, const memory::Buffer& bytes)
+	bool write(const core::Uri& uri, const memory::Buffer& bytes)
 	{
 		// The whole-asset write is the incremental one used once: create, push, finish.
 		// finish() rather than letting the stream go, because this call returns a status and
