@@ -29,13 +29,29 @@ using lain::io::image::writerRegistry;
 // A fake writer: encodes an Image to a Buffer that is a byte-for-byte copy of its pixels, so
 // a test can confirm the exact bytes save() wrote (read them back with io::read). An invalid
 // image encodes to nullopt — the writer's "can't encode this" path.
+//
+// It also RECORDS the options it was handed, in a process-wide slot: the registry makes a fresh
+// writer per encode (that is the seam's contract), so there is no instance for a test to keep hold
+// of and ask afterwards.
 class FakeWriter : public ImageWriter
 {
 public:
+	// What the last encode() through this writer was told. Reset it before the call you mean to
+	// examine; a nullopt means no encode reached a writer at all.
+	static std::optional<lain::io::image::ImageWriterOptions>& lastOptions()
+	{
+		static std::optional<lain::io::image::ImageWriterOptions> options;
+		return options;
+	}
+
 	bool canEncode(const lain::image::Image& image) const override { return image.valid(); }
 
-	std::optional<lain::memory::Buffer> encode(const lain::image::Image& image) const override
+	bool isLossy() const override { return false; }
+
+	std::optional<lain::memory::Buffer> encode(const lain::image::Image& image,
+											   const lain::io::image::ImageWriterOptions& options) const override
 	{
+		lastOptions() = options;
 		if (!image.valid())
 			return std::nullopt;
 		lain::memory::Buffer buffer(image.byteSize());
@@ -118,4 +134,41 @@ TEST_CASE("save fails when the uri has no extension", "[io-image-save]")
 	writerRegistry().registerType<FakeWriter>("fake");
 	const TempPath path(""); // trailing dot -> empty extension
 	REQUIRE_FALSE(save(path.string(), rampImage()));
+}
+
+TEST_CASE("the options a caller hands save reach the writer unchanged", "[io-image-save]")
+{
+	// The seam's whole job with an ImageWriterOptions is to carry it, so this asks the only thing
+	// it can get wrong: dropping it, or substituting a default of its own. The plugins' tests then
+	// cover what each codec DOES with what arrives.
+	writerRegistry().registerType<FakeWriter>("fake");
+	const TempPath path("fake");
+
+	lain::io::image::ImageWriterOptions options;
+	options.compression = lain::io::image::Compression::Small;
+	options.quality = 42;
+
+	FakeWriter::lastOptions().reset();
+	REQUIRE(save(path.string(), rampImage(), options));
+	REQUIRE(FakeWriter::lastOptions().has_value());
+	CHECK(FakeWriter::lastOptions()->compression == lain::io::image::Compression::Small);
+	REQUIRE(FakeWriter::lastOptions()->quality.has_value());
+	CHECK(*FakeWriter::lastOptions()->quality == 42);
+
+	// And a caller that says nothing gets the defaults, not the last caller's leftovers: both
+	// facades default the argument, which is what keeps every pre-existing call site writing what
+	// it always wrote.
+	FakeWriter::lastOptions().reset();
+	REQUIRE(encode("fake", rampImage()).has_value());
+	REQUIRE(FakeWriter::lastOptions().has_value());
+	CHECK(FakeWriter::lastOptions()->compression == lain::io::image::Compression::Default);
+	CHECK_FALSE(FakeWriter::lastOptions()->quality.has_value());
+}
+
+TEST_CASE("isLossy answers the writer, and answers false for a format nothing registered",
+		  "[io-image-save]")
+{
+	writerRegistry().registerType<FakeWriter>("fake");
+	CHECK_FALSE(lain::io::image::isLossy("fake")); // what FakeWriter says about itself
+	CHECK_FALSE(lain::io::image::isLossy("no-such-format"));
 }

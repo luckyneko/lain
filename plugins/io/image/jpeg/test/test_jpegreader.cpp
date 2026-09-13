@@ -13,10 +13,12 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 using lain::image::ColorSpace;
 using lain::image::PixelFormat;
@@ -146,4 +148,97 @@ TEST_CASE("JpegWriter refuses a space it would encode and read back as sRGB", "[
 
 	image.setColorSpace(ColorSpace::sRGB);
 	REQUIRE(lain::io::image::canEncode("jpg", image));
+}
+
+// --- the quality knob (M13 slice 5) ----------------------------------------------
+
+// An image with detail to lose: a gradient carrying a small deterministic jitter, so quality has
+// something to spend. A flat colour survives every quality equally, which is exactly why the
+// round-trip case above uses one and this one must not.
+static lain::image::Image textureImage(int w, int h)
+{
+	lain::image::Image image(w, h, PixelFormat::RGB8, ColorSpace::sRGB);
+	std::uint8_t* px = image.data();
+	for (std::size_t i = 0; i < image.byteSize(); ++i)
+	{
+		const std::size_t x = (i / 3) % static_cast<std::size_t>(w);
+		const std::size_t y = (i / 3) / static_cast<std::size_t>(w);
+		px[i] = static_cast<std::uint8_t>((x * 2 + y * 3) ^ ((i * 37) & 0x1f));
+	}
+	return image;
+}
+
+// How far the worst channel of a decoded image strayed from the original.
+static int worstError(const lain::image::Image& original, const lain::image::Image& decoded)
+{
+	int worst = 0;
+	for (std::size_t i = 0; i < original.byteSize(); ++i)
+	{
+		const int delta = static_cast<int>(decoded.data()[i]) - static_cast<int>(original.data()[i]);
+		worst = std::max(worst, delta < 0 ? -delta : delta);
+	}
+	return worst;
+}
+
+TEST_CASE("a lower JpegWriter quality is both smaller and further from the source", "[io-image-jpeg]")
+{
+	// BOTH halves, and the second is the one that matters: size alone would pass just as happily
+	// if the number reached some other stb parameter, since almost anything written into that call
+	// changes the byte count.
+	lain::io::image::jpeg::registerCodec();
+	const lain::image::Image original = textureImage(32, 32);
+
+	auto encodeAt = [&original](std::uint8_t quality)
+	{
+		lain::io::image::ImageWriterOptions options;
+		options.quality = quality;
+		const auto encoded = lain::io::image::encode("jpg", original, options);
+		REQUIRE(encoded.has_value());
+		const auto decoded = lain::io::image::decode("jpg", *encoded);
+		REQUIRE(decoded.has_value());
+		return std::pair<std::size_t, int>{encoded->size(), worstError(original, *decoded)};
+	};
+
+	const auto [lowBytes, lowError] = encodeAt(20);
+	const auto [highBytes, highError] = encodeAt(95);
+
+	CHECK(lowBytes < highBytes);
+	CHECK(lowError > highError);
+}
+
+TEST_CASE("an unset quality is the 90 JpegWriter has always written", "[io-image-jpeg]")
+{
+	// The seam deliberately does not spell that number (options.quality is an optional, not a
+	// sentinel), so this is what holds "a caller who says nothing gets the bytes it got before the
+	// knob existed" to the codec rather than to a comment.
+	lain::io::image::jpeg::registerCodec();
+	const lain::image::Image original = textureImage(16, 16);
+
+	lain::io::image::ImageWriterOptions ninety;
+	ninety.quality = 90;
+
+	const auto unset = lain::io::image::encode("jpg", original);
+	const auto asked = lain::io::image::encode("jpg", original, ninety);
+	REQUIRE(unset.has_value());
+	REQUIRE(asked.has_value());
+	REQUIRE(unset->size() == asked->size());
+	CHECK(std::memcmp(unset->data(), asked->data(), unset->size()) == 0);
+}
+
+TEST_CASE("JpegWriter ignores Compression, which must never mean blurrier", "[io-image-jpeg]")
+{
+	// stb has no effort knob, and routing Small into quality would look helpful while quietly
+	// making a size request into a fidelity one — the confusion the two fields exist to keep apart.
+	lain::io::image::jpeg::registerCodec();
+	const lain::image::Image original = textureImage(16, 16);
+
+	lain::io::image::ImageWriterOptions small;
+	small.compression = lain::io::image::Compression::Small;
+
+	const auto plain = lain::io::image::encode("jpg", original);
+	const auto squeezed = lain::io::image::encode("jpg", original, small);
+	REQUIRE(plain.has_value());
+	REQUIRE(squeezed.has_value());
+	REQUIRE(plain->size() == squeezed->size());
+	CHECK(std::memcmp(plain->data(), squeezed->data(), plain->size()) == 0);
 }

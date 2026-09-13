@@ -67,6 +67,49 @@ namespace lain::io::image::tiff
 	static int memMap(thandle_t, void**, toff_t*) { return 0; }
 	static void memUnmap(thandle_t, void*, toff_t) {}
 
+	// What libtiff should be told for a requested Compression: the algorithm, and for deflate the
+	// effort level.
+	//
+	// Default is LZW because LZW is what this writer has always written — not because libtiff would
+	// choose it (left alone, libtiff writes uncompressed, so reading Default as "the library's
+	// default" would quietly inflate every TIFF lain produces).
+	//
+	// FAST IS DEFLATE AT LEVEL 1 RATHER THAN PACKBITS, AND THAT WAS MEASURED. PackBits is the
+	// obvious cheap arm — RLE, always compiled in, readable by anything — and on a jittered
+	// gradient it produced a file 1% LARGER than storing the pixels uncompressed, which is RLE
+	// working correctly on data that has no runs. An arm named Fast may cost size; it may not cost
+	// MORE size than None, or the enum's own ordering is a lie. Deflate is cheap at level 1 and
+	// always beat storing.
+	//
+	// Note where libtiff's "ZIPQUALITY" lands: it is an EFFORT level, so it belongs to Compression.
+	// The misnaming is precisely why ImageWriterOptions keeps the two axes apart — see this file's
+	// quality note below.
+	//
+	// Every arm is one lain's OWN reader can read back: deflate is available because
+	// addLibTIFF.cmake wires zlib. A knob that can write a file this codec cannot reopen would be
+	// worse than no knob.
+	struct TiffCompression
+	{
+		std::uint16_t tag = COMPRESSION_LZW;
+		std::optional<int> zipLevel; // deflate only, and only when we chose the level ourselves
+	};
+
+	static TiffCompression tiffCompressionFor(Compression compression)
+	{
+		switch (compression)
+		{
+			case Compression::Default:
+				return {COMPRESSION_LZW, std::nullopt};
+			case Compression::None:
+				return {COMPRESSION_NONE, std::nullopt};
+			case Compression::Fast:
+				return {COMPRESSION_ADOBE_DEFLATE, 1};
+			case Compression::Small:
+				return {COMPRESSION_ADOBE_DEFLATE, 9};
+		}
+		return {COMPRESSION_LZW, std::nullopt};
+	}
+
 	// The TIFF sample layout for a lain PixelFormat. Returns false for a format this writer
 	// won't store — float (matches the reader, which reads only integer; TIFF float is a
 	// deferred "one day" — WORK.md M3).
@@ -95,8 +138,10 @@ namespace lain::io::image::tiff
 	// The TIFF writer: a CPU image::Image in, TIFF bytes out. Stateless. Writes the common
 	// striped/chunky/integer layout the reader reads back — Gray/GrayAlpha/RGB/RGBA at 8/16-bit,
 	// AlphaMode carried via ExtraSamples. libtiff manages byte order (the file header records
-	// host order), so 16-bit needs no manual swap. Compression is LZW (lossless, core libtiff,
-	// no external dep); a compression-type knob is deferred (WORK.md M3: encoder config).
+	// host order), so 16-bit needs no manual swap. Compression selects the ALGORITHM and its effort
+	// — none / lzw / deflate — and every one of them is lossless, which is why quality is
+	// ignored here: libtiff spells its deflate level "ZIPQUALITY", and taking that spelling
+	// seriously is exactly the fidelity-versus-size confusion ImageWriterOptions refuses.
 	//
 	// It RECORDS the ColorSpace as a TransferFunction (ADR-0020), which makes TIFF the one still
 	// format here that round-trips all four values — including BT709, which PNG must refuse and
@@ -110,7 +155,12 @@ namespace lain::io::image::tiff
 			return image.valid() && image.formatDescriptor().channelType != lain::image::ChannelType::F32;
 		}
 
-		std::optional<memory::Buffer> encode(const lain::image::Image& image) const override
+		// Every compression this writer offers is lossless, so a quality means nothing here. The
+		// day a JPEG-in-TIFF arm appears, this stops being a constant.
+		bool isLossy() const override { return false; }
+
+		std::optional<memory::Buffer> encode(const lain::image::Image& image,
+											 const ImageWriterOptions& options) const override
 		{
 			if (!image.valid())
 				return std::nullopt;
@@ -136,7 +186,10 @@ namespace lain::io::image::tiff
 			TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
 			TIFFSetField(tif, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_UINT);
 			TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
-			TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_LZW);
+			const TiffCompression compression = tiffCompressionFor(options.compression);
+			TIFFSetField(tif, TIFFTAG_COMPRESSION, compression.tag);
+			if (compression.zipLevel)
+				TIFFSetField(tif, TIFFTAG_ZIPQUALITY, *compression.zipLevel); // after the codec is chosen
 			TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tif, 0));
 			if (hasAlpha)
 			{

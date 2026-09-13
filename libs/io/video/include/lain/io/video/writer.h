@@ -42,9 +42,10 @@ namespace lain::io::video
 	// Deliberately two fields, and the omissions are the design. The RATE is not here: it lives in
 	// the FrameSpec, which is the one place a sequence's rate lives, and a second copy would need a
 	// precedence rule a caller has to remember. GOP length, ProRes profile and FFV1 level are not
-	// here either — the same judgement io::image::ImageWriter made about jpeg quality, for the same
-	// reason: the shape of encoder config is decided once real encoders have visible needs, not
-	// guessed at the seam.
+	// here either — and that is no longer a deferral. io::image::ImageWriterOptions answered the
+	// question this used to point at (M13 slice 5), and its answer is the rule those three fail:
+	// a caller names THE JOB, never an encoder's knob. VideoCodec is that rule applied to which
+	// encoder; a GOP length is the other kind of thing.
 	struct VideoWriterOptions
 	{
 		VideoCodec codec = VideoCodec::Auto;

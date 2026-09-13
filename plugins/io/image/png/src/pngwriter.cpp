@@ -70,10 +70,30 @@ namespace lain::io::image::png
 		return false;
 	}
 
+	// The zlib level for a requested Compression, or nullopt for Default — which means "say
+	// nothing to libpng", not "level 6". The two are the same number today and would stop being
+	// one the day zlib or libpng changed its own default, and this codec's promise is that a
+	// caller with nothing to say gets exactly the bytes it got before the knob existed.
+	static std::optional<int> zlibLevelFor(Compression compression)
+	{
+		switch (compression)
+		{
+			case Compression::Default:
+				return std::nullopt;
+			case Compression::None:
+				return 0; // stored: valid PNG, no deflate
+			case Compression::Fast:
+				return 1;
+			case Compression::Small:
+				return 9;
+		}
+		return std::nullopt;
+	}
+
 	// Encode `image` into `out` (which lives in the caller's frame, so a libpng longjmp — it
-	// unwinds only to the setjmp below — never crosses it). Compression uses libpng's default;
-	// a level knob is deferred (WORK.md M3: encoder config).
-	static bool encodePngInto(const lain::image::Image& image, std::vector<std::uint8_t>& out)
+	// unwinds only to the setjmp below — never crosses it).
+	static bool encodePngInto(const lain::image::Image& image, const ImageWriterOptions& options,
+							  std::vector<std::uint8_t>& out)
 	{
 		int pngColorType = 0;
 		int pngBitDepth = 0;
@@ -113,6 +133,11 @@ namespace lain::io::image::png
 		}
 
 		png_set_write_fn(png, &out, &writeToVector, &flushVector);
+		// Before png_write_info: the level governs the IDAT deflate stream, and libpng wants it set
+		// before it starts one. QUALITY IS NOT CONSULTED — PNG is lossless, so there is no fidelity
+		// to trade; isLossy() below is what tells a host not to offer it.
+		if (const std::optional<int> level = zlibLevelFor(options.compression))
+			png_set_compression_level(png, *level);
 		png_set_IHDR(png, info, static_cast<png_uint_32>(image.width()), static_cast<png_uint_32>(image.height()),
 					 bitDepth, colorType, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
 		applyColorSpaceToPng(png, info, image.colorSpace()); // before write_info — the chunks go in the header
@@ -141,7 +166,7 @@ namespace lain::io::image::png
 
 	// The PNG writer: a CPU image::Image in, PNG bytes out. Stateless. Preserves the format
 	// (Gray/GrayAlpha/RGB/RGBA at 8/16-bit); a float format is rejected (nullopt) — PNG is
-	// integer-only.
+	// integer-only. Compression maps onto zlib's effort level and changes not one pixel.
 	//
 	// It also RECORDS the ColorSpace (sRGB / gAMA chunks, per ADR-0020), so an image saved and
 	// reloaded through lain's own codec keeps its tag, and refuses the two things PNG cannot state
@@ -164,13 +189,18 @@ namespace lain::io::image::png
 			return !desc.hasAlpha() || pngCanStateAlpha(image.alphaMode());
 		}
 
-		std::optional<memory::Buffer> encode(const lain::image::Image& image) const override
+		// PNG is lossless in every configuration this writer can produce, so a quality means
+		// nothing here and a host should not offer one.
+		bool isLossy() const override { return false; }
+
+		std::optional<memory::Buffer> encode(const lain::image::Image& image,
+											 const ImageWriterOptions& options) const override
 		{
 			if (!image.valid())
 				return std::nullopt;
 
 			std::vector<std::uint8_t> bytes;
-			if (!encodePngInto(image, bytes))
+			if (!encodePngInto(image, options, bytes))
 				return std::nullopt;
 
 			memory::Buffer buffer(bytes.size());

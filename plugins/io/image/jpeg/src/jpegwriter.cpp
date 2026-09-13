@@ -35,8 +35,12 @@ namespace lain::io::image::jpeg
 	// JPEG is 8-bit with no alpha, so only Gray8 and RGB8 encode without loss — everything else
 	// (alpha-bearing, 16-bit, float) is rejected by canEncode(), never silently converted. To
 	// save an RGBA image as JPEG the caller drops alpha itself (convert to RGB8) — an explicit
-	// choice, not a hidden one. Quality uses a fixed default; a quality knob is deferred
-	// (WORK.md M3: encoder config, decided with all three encoder surfaces in view).
+	// choice, not a hidden one.
+	//
+	// It is the one still format here that HONOURS quality and the only one that IGNORES
+	// compression: a JPEG is compressed by being a JPEG, and there is no effort knob to turn.
+	// Routing Compression into quality would look helpful and would be the fidelity-versus-size
+	// confusion ImageWriterOptions exists to keep apart — Small must never mean "blurrier".
 	//
 	// COLOUR follows the same "no silent loss" rule (ADR-0020): stb emits a fixed JFIF header and
 	// no marker this codec could write a space into, so Linear and BT709 are refused rather than
@@ -60,7 +64,12 @@ namespace lain::io::image::jpeg
 			return desc.model == lain::image::ColorModel::Gray || desc.model == lain::image::ColorModel::RGB;
 		}
 
-		std::optional<memory::Buffer> encode(const lain::image::Image& image) const override
+		// The only lossy still format lain writes — which is what makes a quality control worth
+		// offering here and a lie anywhere else.
+		bool isLossy() const override { return true; }
+
+		std::optional<memory::Buffer> encode(const lain::image::Image& image,
+											 const ImageWriterOptions& options) const override
 		{
 			const auto desc = image.formatDescriptor();
 			int components = 0;
@@ -71,10 +80,15 @@ namespace lain::io::image::jpeg
 			else
 				return std::nullopt; // defensive: the seam's canEncode should have rejected this
 
-			constexpr int kQuality = 90; // deferred config knob
+			// The number this codec has always written, still written when a caller says nothing.
+			// options.quality is an optional precisely so that stays true by construction rather
+			// than by the seam repeating 90 back at us.
+			constexpr int kDefaultQuality = 90;
+			const int quality = options.quality ? static_cast<int>(*options.quality) : kDefaultQuality;
+
 			std::vector<std::uint8_t> bytes;
 			if (stbi_write_jpg_to_func(&writeToVector, &bytes, image.width(), image.height(), components, image.data(),
-									   kQuality) == 0)
+									   quality) == 0)
 				return std::nullopt;
 
 			memory::Buffer buffer(bytes.size());

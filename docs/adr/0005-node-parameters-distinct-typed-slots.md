@@ -17,6 +17,14 @@ config from the graph" power of editable pins is recovered *without* the extra c
 **promoting a param to a real input port** and feeding it a `ConstantFloatNode` — cheap precisely
 because params and ports share one internal value machinery.
 
+> **Note (2026-09-13, M13 slice 5).** The third example above never became one, and where it ended
+> up is worth recording because it reads like a counter-example and is not. `ImageWriteNode` was
+> refused (M3 step 4: a save *node* is a side-effecting sink in a pure-compute engine), so **format
+> and quality are HOST state** — flowview's per-pin `saveFormat` / `saveOptions`, and `run`'s
+> `--compression` / `--quality`, carried to the codec as an `io::image::ImageWriterOptions`. They
+> configure an ACTION the host takes, not a node the graph evaluates, which is exactly why they are
+> not params. The first two examples are params and still the point.
+
 ## Decision
 
 - **Params are distinct from ports and non-connectable.** Config, not dataflow. A node declares

@@ -465,9 +465,10 @@ Deferring it keeps the milestone honest for a modest re-entry cost. The `ImageWr
   seam (`save(uri, Image)` facade) + **png / tiff / jpeg** encoders. Encoders **reject rather than
   degrade**: `ImageWriter::canEncode(image)` gates the seam so a lossy silent conversion never
   happens (JPEG refuses alpha / 16-bit; png/tiff refuse float) — the caller converts explicitly
-  (ADR-0003). Config knobs (png level / tiff compression / jpeg quality) use fixed defaults; a
-  config mechanism is **deferred** (the three surfaces are heterogeneous — decide with a real
-  caller, i.e. the M4 output binding).
+  (ADR-0003). Config knobs (png level / tiff compression / jpeg quality) used fixed defaults, with a
+  config mechanism **deferred** until the three heterogeneous surfaces could be decided against a
+  real caller. **Built 2026-09-13 as M13 slice 5** — `ImageWriterOptions`, where the heterogeneity is
+  what the shape answers: a caller names the job, each codec maps it. *(§Milestone 13 slice 5.)*
 - ✅ **Step 4 — interim save consumer** (done, Mac-verified). `ImageWriteNode` was the planned
   caller, but it's the **wrong model** (see M4): a save *node* is a side-effecting sink in a
   pure-compute engine, and "output to one file" reads oddly in a gui. Instead, saving is a **host
@@ -5162,6 +5163,69 @@ Release in the default video-off configuration. Warning-clean, format-check clea
   returning a path, in a library with its own vocabulary.
 
 
+### Slice 5 — `ImageWriterOptions` (built 2026-09-13)
+
+notes.txt note 29 — *"libs/io/image/include/lain/io/image/writer.h — Feels like this needs some kind
+of 'Quality' setting."* The knob had been deferred since M3 **with a stated condition** — *"the three
+surfaces are heterogeneous, decide with a real caller"* — and both halves of that condition were
+long since met: three encoders with hardcoded constants (`kQuality = 90`, libpng's default, LZW), and
+two production callers that could say nothing about any of them. The part that made it overdue is
+that `io::video::VideoWriterOptions` **cited that deferral as its own precedent**, so one decision was
+load-bearing in two seams while existing in neither.
+
+`lain::io::image::Compression` + `ImageWriterOptions`, `ImageWriter::isLossy()`, and
+`encode`/`save` that carry them. `ctest -j8` **773/773** Debug with video on (+13), warning-clean,
+format-check clean.
+
+- **THE DEFAULTS CHANGE NOTHING, CHECKED BY BYTES.** A png and a tiff written by the pre-change
+  binary and by this one are **byte-identical** through `flowview run --result` — the only honest
+  form of that claim. (The example graph is RGBA8, which JPEG correctly refuses, so jpeg's half is
+  pinned in-suite instead: an unset quality and `quality = 90` produce identical bytes.) That is
+  what `std::optional<std::uint8_t> quality` buys over a `0` sentinel — the seam never repeats the
+  codec's number back at it, so "a caller who says nothing gets what it always got" is structural.
+- **`Default` is its own arm and the suite now says so.** Its meaning is *what this codec already
+  wrote*, not *what the library defaults to* — read the second way, a TIFF falls back to
+  uncompressed and every file lain writes silently grows. Both lossless cases assert
+  `normal != none && normal != small`, because folding Default into Small is the change no
+  round-trip assertion would notice. Sabotage-verified in both codecs.
+- **PackBits was measured and rejected, which is why `Fast` is deflate.** The obvious cheap tiff arm
+  is RLE — always compiled in, readable by anything — and on a jittered gradient it produced a file
+  **1% LARGER than storing the pixels uncompressed** (12602 against 12466 bytes), which is RLE
+  working correctly on data with no runs. An arm named `Fast` may cost size; it may not cost more
+  size than `None`, or the enum's own ordering is a lie. Found by the test failing, not by review.
+- **libtiff's `ZIPQUALITY` is where the two fields would have blurred, and it lands on the right
+  one.** It is an EFFORT level despite its name, so it belongs to `Compression`; `quality` stays
+  fidelity and tiff ignores it. A case pins that — the same encode with and without a quality, at
+  the one arm that *has* a zip level, is byte-identical.
+- **`isLossy()` is a second question, not a synonym for `canEncode`.** `canEncode` asks whether the
+  format can HOLD this image (no knob moves it, so it takes no options); `isLossy` asks whether
+  encoding discards fidelity — which is what a host gates a quality control on, and what lets the
+  cli warn instead of silently ignoring `--quality` on a png. A census case asserts exactly one
+  still format answers true, because a wrong answer there is invisible in both hosts.
+- **No default argument on the virtual `encode`.** A default on a virtual binds to the STATIC type,
+  so two callers holding one writer through different types would get different defaults; the
+  defaults live on the free functions, as `io::video::openWriter`'s do.
+- **The cross-codec matrix is `test_optionsroundtrip.cpp`**, beside the colour one and for its
+  argument: each plugin's cases pin its own mapping, while what goes wrong across codecs is them
+  disagreeing about what a setting MEANS. It asserts the shared property — every setting reads back
+  through lain's own codec, `Compression` costs no pixel in anything calling itself lossless, and a
+  lossless codec ignores a quality rather than spending it elsewhere. It deliberately does **not**
+  assert that a setting changes the bytes: jpeg ignores `Compression` and the other two ignore
+  quality, and requiring otherwise would invent a rule none of them agreed to.
+- **Every arm is one lain can read back.** libtiff will happily write compressions this build was
+  not configured to decode (its optional codecs are all off in `addLibTIFF.cmake`), so the tiff case
+  decodes each setting through the production reader. A knob that writes a file its own codec cannot
+  reopen would be worse than no knob.
+- **Four sabotages, each caught by a named case**: a writer that ignores its options (and one of
+  them would not even compile — `-Wunused-function` catches the dropped call before a test can),
+  `Default` aliased to `Small`, jpeg routing a `Compression` request into quality, and png claiming
+  to be lossy.
+- **`io::video::writer.h`'s stale citation is amended in place** in the same commit: the judgement it
+  pointed at now has an answer, and that answer is what keeps GOP length, ProRes profile and FFV1
+  level out of `VideoWriterOptions` — a caller names the job, never a knob.
+
+
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -5275,6 +5339,16 @@ M12 §Not in this milestone.)*
   `porttyperegistry.h` objection any design must answer. *(§notes.txt triage.)*
 - **`ReadWriteStream`**, **`Range<T>`** and **`core::hex`**, each with its trigger.
   *(§notes.txt triage.)*
+
+### Deferred — encoder options
+
+- **A still-image quality on the per-format axis a codec actually has** — jpeg chroma subsampling,
+  png filter strategy, tiff deflate level. All three are KNOBS, which is what `ImageWriterOptions`
+  refuses to carry; a design would have to say what job they serve first. *(§Milestone 13 slice 5;
+  CONTEXT.md §Encoder options.)*
+- **Encoder options in a saved document.** Saving is a host action on an image port, not a node (M3
+  step 4), so nothing on disk carries them today. Trigger: an `ImageWriteNode`, which that decision
+  refused for other reasons. *(§Milestone 13 slice 5.)*
 
 ### Backlog tiers — speculative and foundational
 

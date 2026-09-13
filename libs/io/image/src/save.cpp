@@ -20,7 +20,14 @@ namespace lain::io::image
 		return writer && writer->canEncode(image);
 	}
 
-	std::optional<memory::Buffer> encode(std::string_view formatKey, const lain::image::Image& image)
+	bool isLossy(std::string_view formatKey)
+	{
+		const auto writer = writerRegistry().create(std::string(formatKey));
+		return writer && writer->isLossy();
+	}
+
+	std::optional<memory::Buffer> encode(std::string_view formatKey, const lain::image::Image& image,
+										 const ImageWriterOptions& options)
 	{
 		const std::string key(formatKey);
 		const auto writer = writerRegistry().create(key);
@@ -37,7 +44,7 @@ namespace lain::io::image
 			return std::nullopt;
 		}
 
-		auto bytes = writer->encode(image);
+		auto bytes = writer->encode(image, options);
 		if (!bytes)
 		{
 			log::error("io::image::encode: writer for '{}' failed to encode {}", key, image);
@@ -46,7 +53,7 @@ namespace lain::io::image
 		return bytes;
 	}
 
-	bool save(const lain::core::Uri& uri, const lain::image::Image& image)
+	bool save(const lain::core::Uri& uri, const lain::image::Image& image, const ImageWriterOptions& options)
 	{
 		if (!image.valid())
 		{
@@ -61,7 +68,7 @@ namespace lain::io::image
 			return false;
 		}
 
-		auto bytes = encode(key, image);
+		auto bytes = encode(key, image, options);
 		if (!bytes)
 			return false; // encode logged the reason already
 

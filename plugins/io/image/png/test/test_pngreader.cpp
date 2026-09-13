@@ -276,3 +276,80 @@ TEST_CASE("PngWriter refuses premultiplied alpha rather than mislabelling it", "
 	REQUIRE(decoded.has_value());
 	REQUIRE(decoded->alphaMode() == AlphaMode::Straight);
 }
+
+// --- the compression knob (M13 slice 5) ------------------------------------------
+
+// An image with something to compress: a gradient carrying a small deterministic jitter, so
+// zlib's effort actually matters. A pure ramp compresses to almost nothing at every level and a
+// pure noise field compresses at none, and either would make the sizes below say nothing.
+static lain::image::Image textureImage(int w, int h)
+{
+	lain::image::Image image(w, h, PixelFormat::RGB8, ColorSpace::sRGB, AlphaMode::Straight);
+	std::uint8_t* px = image.data();
+	for (std::size_t i = 0; i < image.byteSize(); ++i)
+	{
+		const std::size_t x = (i / 3) % static_cast<std::size_t>(w);
+		const std::size_t y = (i / 3) / static_cast<std::size_t>(w);
+		px[i] = static_cast<std::uint8_t>((x * 2 + y * 3) ^ ((i * 37) & 0x0f));
+	}
+	return image;
+}
+
+TEST_CASE("PngWriter maps Compression onto zlib effort, and every setting stays lossless",
+		  "[io-image-png]")
+{
+	lain::io::image::png::registerCodec();
+	const lain::image::Image original = textureImage(64, 64);
+
+	auto sizeWith = [&original](lain::io::image::Compression compression)
+	{
+		lain::io::image::ImageWriterOptions options;
+		options.compression = compression;
+		const auto encoded = lain::io::image::encode("png", original, options);
+		REQUIRE(encoded.has_value());
+
+		// Lossless is the property that makes the sizes below a fair comparison: these are four
+		// encodings of the SAME pixels, not four different pictures.
+		const auto decoded = lain::io::image::decode("png", *encoded);
+		REQUIRE(decoded.has_value());
+		for (std::size_t i = 0; i < original.byteSize(); ++i)
+			REQUIRE(decoded->data()[i] == original.data()[i]);
+		return encoded->size();
+	};
+
+	const std::size_t none = sizeWith(lain::io::image::Compression::None);
+	const std::size_t fast = sizeWith(lain::io::image::Compression::Fast);
+	const std::size_t normal = sizeWith(lain::io::image::Compression::Default);
+	const std::size_t small = sizeWith(lain::io::image::Compression::Small);
+
+	// None is stored, so it must be larger than anything deflate produced — this is the assertion
+	// that proves the knob reaches libpng at all.
+	CHECK(none > fast);
+	CHECK(none > small);
+	// And the ordering runs the way the names claim. Small versus Fast is what separates "the two
+	// arms are wired" from "they collapsed onto one level".
+	CHECK(small < fast);
+	CHECK(small <= normal);
+
+	// Default is its own arm, not an alias for one of the others: what it means is "whatever this
+	// codec already wrote", and a tidy pass folding it into Small is the change no round-trip
+	// assertion would notice.
+	CHECK(normal != none);
+	CHECK(normal != small);
+}
+
+TEST_CASE("PngWriter ignores a quality, because PNG has no fidelity to trade", "[io-image-png]")
+{
+	lain::io::image::png::registerCodec();
+	const lain::image::Image original = textureImage(16, 16);
+
+	lain::io::image::ImageWriterOptions asked;
+	asked.quality = 10; // as low as a caller can ask for
+
+	const auto plain = lain::io::image::encode("png", original);
+	const auto withQuality = lain::io::image::encode("png", original, asked);
+	REQUIRE(plain.has_value());
+	REQUIRE(withQuality.has_value());
+	REQUIRE(plain->size() == withQuality->size());
+	CHECK(std::memcmp(plain->data(), withQuality->data(), plain->size()) == 0);
+}

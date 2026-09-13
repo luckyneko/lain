@@ -993,6 +993,25 @@ both sit behind service-shaped seams. See [ADR-0004](docs/adr/0004-static-linkin
   _Avoid_: a fifth verb for a fourth thing; `write` for anything but bytes; naming a function for
   the noun it returns (`openSequence`) rather than for what it does.
 
+- **Encoder options** *(`ImageWriterOptions` / `VideoWriterOptions`)* — what a caller may tell a
+  writer beyond the asset, and the rule is that it names **the job, never an encoder's knob**. The
+  three still codecs spell one question three incompatible ways (a zlib level 0-9, a tiff
+  *algorithm*, a jpeg quality), so a seam carrying any of those spellings would be carrying one
+  codec's vocabulary — the same reason a **codec family** names `h264` rather than
+  `h264_videotoolbox`. A caller says **Compression** (`Default` / `None` / `Fast` / `Small` — how
+  hard to squeeze, no pixel changed) or **quality** (1..100 fidelity, lossy formats only), and each
+  codec maps that onto whatever it actually has.
+  Three things hold it honest. **`Default` means what that codec already did**, not what the library
+  defaults to — read the other way, a TIFF would fall back to uncompressed and every file lain
+  writes would silently grow. **The two fields never merge**: libtiff spells its deflate *level*
+  `ZIPQUALITY`, and one field meaning fidelity in one codec and speed in another is a value that
+  disagrees with itself. And a codec **ignores what it cannot use**, which is only safe because a
+  host can ask first: **`canEncode`** is whether the format can *hold* this image (ADR-0003 /
+  ADR-0020 — no knob moves it), **`isLossy`** is whether encoding discards fidelity, and it is the
+  second that decides whether a quality control is offered at all. _Avoid_: a per-format options
+  struct (the host then names codecs), a string key-value bag, an encoder's own number on a command
+  line or in a document, a quality that secretly sets a compression level.
+
 - **IO scheme** — a **byte-transport backend keyed by URI scheme** (`local` now; `remote`/`s3`
   later). `lain::io::read(uri) → Buffer` dispatches to one. **Media-agnostic** — `io` never
   decodes; it only moves bytes. `read` is a **whole-asset** read (the resource in one `Buffer`).

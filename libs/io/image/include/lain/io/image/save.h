@@ -26,6 +26,12 @@ namespace lain::io::image
 	// loud rejection. encode()/save() enforce the same check.
 	[[nodiscard]] bool canEncode(std::string_view formatKey, const lain::image::Image& image);
 
+	// Whether encoding through `formatKey` discards fidelity (false if no writer is registered).
+	// Quiet, like canEncode, and asked for the same kind of reason: a host offers a quality control
+	// only where one does something, and warns rather than silently ignoring a quality asked of a
+	// lossless codec. See ImageWriter::isLossy for why this is not canEncode's question.
+	[[nodiscard]] bool isLossy(std::string_view formatKey);
+
 	// The format key save() will derive from `uri` — its extension, lowercased, without the dot;
 	// empty when it has none.
 	//
@@ -38,10 +44,15 @@ namespace lain::io::image
 	// Encode `image` to `formatKey` bytes in memory. std::nullopt if no writer is registered
 	// for the key or the writer fails (reason logged). For bytes you want in a Buffer rather
 	// than a file; save() is the to-uri path.
-	[[nodiscard]] std::optional<memory::Buffer> encode(std::string_view formatKey, const lain::image::Image& image);
+	[[nodiscard]] std::optional<memory::Buffer> encode(std::string_view formatKey, const lain::image::Image& image,
+													   const ImageWriterOptions& options = {});
 
 	// Encode `image` (format chosen by the uri's extension) and write it to `uri` (io::write).
 	// Returns false on an invalid image, a missing/unknown extension, an encode failure, or a
 	// write failure — the reason is logged. The single "Image + path in, file out" entry point.
-	[[nodiscard]] bool save(const lain::core::Uri& uri, const lain::image::Image& image);
+	//
+	// `options` defaults to {}, which is every codec's standing behaviour: a caller that has nothing
+	// to say about compression writes exactly the bytes it wrote before the knob existed.
+	[[nodiscard]] bool save(const lain::core::Uri& uri, const lain::image::Image& image,
+							const ImageWriterOptions& options = {});
 } // namespace lain::io::image

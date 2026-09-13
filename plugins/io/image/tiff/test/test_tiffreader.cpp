@@ -246,3 +246,88 @@ TEST_CASE("an unspecified alpha mode is written as unspecified, not invented as 
 		REQUIRE(decoded->alphaMode() == mode);
 	}
 }
+
+// --- the compression knob (M13 slice 5) ------------------------------------------
+
+// An image with something to compress: a gradient carrying a small deterministic jitter, so the
+// algorithms below have different amounts of work to do. A flat or purely periodic image would
+// compress to almost nothing under all of them and make the sizes say nothing.
+static lain::image::Image textureImage(int w, int h)
+{
+	lain::image::Image image(w, h, PixelFormat::RGB8, ColorSpace::Unspecified, AlphaMode::Straight);
+	std::uint8_t* px = image.data();
+	for (std::size_t i = 0; i < image.byteSize(); ++i)
+	{
+		const std::size_t x = (i / 3) % static_cast<std::size_t>(w);
+		const std::size_t y = (i / 3) / static_cast<std::size_t>(w);
+		px[i] = static_cast<std::uint8_t>((x * 2 + y * 3) ^ ((i * 37) & 0x0f));
+	}
+	return image;
+}
+
+TEST_CASE("TiffWriter maps Compression onto an algorithm, and lain reads every one of them back",
+		  "[io-image-tiff]")
+{
+	// The second half of that name is the load-bearing half: libtiff can write compressions this
+	// build cannot read (its optional codecs are all off in addLibTIFF.cmake), and a knob that
+	// produces a file its own codec cannot reopen would be worse than no knob.
+	lain::io::image::tiff::registerCodec();
+	const lain::image::Image original = textureImage(64, 64);
+
+	auto sizeWith = [&original](lain::io::image::Compression compression)
+	{
+		lain::io::image::ImageWriterOptions options;
+		options.compression = compression;
+		const auto encoded = lain::io::image::encode("tiff", original, options);
+		REQUIRE(encoded.has_value());
+
+		const auto decoded = lain::io::image::decode("tiff", *encoded);
+		REQUIRE(decoded.has_value());
+		REQUIRE(decoded->pixelFormat() == PixelFormat::RGB8);
+		for (std::size_t i = 0; i < original.byteSize(); ++i)
+			REQUIRE(decoded->data()[i] == original.data()[i]); // every arm here is lossless
+		return encoded->size();
+	};
+
+	const std::size_t none = sizeWith(lain::io::image::Compression::None);
+	const std::size_t fast = sizeWith(lain::io::image::Compression::Fast);
+	const std::size_t normal = sizeWith(lain::io::image::Compression::Default);
+	const std::size_t small = sizeWith(lain::io::image::Compression::Small);
+
+	// Uncompressed is larger than anything that compressed, which is what proves the tag reached
+	// libtiff rather than being dropped on the floor.
+	CHECK(none > fast);
+	CHECK(none > small);
+	// The ordering the names promise is real: both deflate arms, at their two effort levels.
+	CHECK(small < fast);
+	CHECK(small < normal); // deflate at level 9 beats the LZW this writer has always used
+
+	// Default is its own arm, not an alias for one of the others: what it means is "whatever this
+	// codec already wrote", and a tidy pass folding it into Small is the change no round-trip
+	// assertion would notice.
+	CHECK(normal != none);
+	CHECK(normal != small);
+}
+
+TEST_CASE("TiffWriter ignores a quality, which libtiff would have spent on its deflate level",
+		  "[io-image-tiff]")
+{
+	// libtiff spells that level ZIPQUALITY, which is the exact confusion ImageWriterOptions
+	// refuses: quality is fidelity, and nothing this writer produces trades any.
+	lain::io::image::tiff::registerCodec();
+	const lain::image::Image original = textureImage(16, 16);
+
+	lain::io::image::ImageWriterOptions asked;
+	asked.compression = lain::io::image::Compression::Small; // the arm that HAS a zip level
+	asked.quality = 10;
+
+	lain::io::image::ImageWriterOptions unasked;
+	unasked.compression = lain::io::image::Compression::Small;
+
+	const auto withQuality = lain::io::image::encode("tiff", original, asked);
+	const auto without = lain::io::image::encode("tiff", original, unasked);
+	REQUIRE(withQuality.has_value());
+	REQUIRE(without.has_value());
+	REQUIRE(withQuality->size() == without->size());
+	CHECK(std::memcmp(withQuality->data(), without->data(), without->size()) == 0);
+}
