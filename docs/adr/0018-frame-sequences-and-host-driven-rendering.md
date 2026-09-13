@@ -165,8 +165,11 @@ the first thing to break that.
 
 `ImageWriter` is one-shot; a video encoder is open-push-finalise and its file is invalid until
 finalised. The seam is therefore a **writer handle** — `openWriter(uri, spec, options)`,
-`write(image)`, `finish()` — with a one-shot `save(uri, sequence)` facade layered on it for the
-transcode case. `finish()` is explicit and returns a status, because a trailer write can fail and a
+`encode(image)`, `finish()` — with a one-shot `save(uri, sequence)` facade layered on it for the
+transcode case. *(Amended 2026-09-13, M13 slice 4: the push was `write(image)` until io's four-verb
+rule was written down. `write` means bytes at the transport, and a VideoWriter owns a `WriteStream`
+whose `write()` takes exactly those — so the push is `encode`, which is also what its read-side peer
+`VideoReader::decode` already was.)* `finish()` is explicit and returns a status, because a trailer write can fail and a
 failure in a destructor has nowhere to go.
 
 The output spec comes from the first frame; later frames must match, refused rather than rescaled.

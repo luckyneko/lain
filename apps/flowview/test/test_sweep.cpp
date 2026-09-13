@@ -21,8 +21,8 @@
 #include <lain/image/image.h>
 #include <lain/io/image/codecs.h>
 #include <lain/io/image/load.h>
+#include <lain/io/image/open.h>
 #include <lain/io/image/save.h>
-#include <lain/io/image/sequence.h>
 #include <lain/io/sequence/openers.h>
 #include <lain/io/video/codecs.h>
 #include <lain/io/video/open.h>
@@ -149,7 +149,7 @@ TEST_CASE("what a sweep writes, the opener reads back", "[flowview][sweep]")
 	REQUIRE(flowview::runGraph(sweepOptions(graphPath, stills, pattern, lain::core::Range{0, 3}), factory, binders) == 0);
 
 	// The SAME pattern string, handed to the opener that reads a numbered sequence.
-	const std::optional<media::FrameSequence> written = io::image::openSequence(core::Uri::fromPath(pattern));
+	const std::optional<media::FrameSequence> written = io::image::open(core::Uri::fromPath(pattern));
 	REQUIRE(written.has_value());
 	REQUIRE(written->size() == 4);
 

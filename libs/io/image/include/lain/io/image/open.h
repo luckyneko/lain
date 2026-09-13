@@ -23,11 +23,18 @@ namespace lain::io::image
 	inline constexpr std::string_view frameKey = "frame";
 
 	// Open a folder or a numbered pattern of stills as a media::FrameSequence — the image
-	// medium's contribution to the frame-sequence model (ADR-0018).
+	// medium's contribution to the frame-sequence model (ADR-0018), and the peer of
+	// io::video::open.
 	//
-	// Each medium's opener lives in that medium's own io seam, which is why this is here and not
-	// in lain::media: a medium-neutral library that knew how to open things would end up
-	// depending on every medium.
+	// THE SEQUENCE IS lain::media's, NOT THIS MEDIUM'S. A frame sequence is medium-neutral and
+	// lives in lain::media, which depends on no io at all; what lives here is the image medium's
+	// way of OPENING one, the way io::video owns the video medium's. A medium-neutral library
+	// that knew how to open things would end up depending on every medium — which is also why
+	// io::sequence, one level up, is what dispatches between the two.
+	//
+	// It is `open` and not `openSequence` because open is the verb: uri in, a LAZY HANDLE out.
+	// load() in this same seam is the other one — uri in, a whole decoded Image out — and the
+	// difference between them is exactly the difference the two names carry.
 	//
 	// `uri` is either:
 	//   - a DIRECTORY — every file in it whose extension has a registered image reader, sorted
@@ -53,6 +60,6 @@ namespace lain::io::image
 	// Frames are decoded lazily, one at a time, and validated against the declared spec as they
 	// arrive: a stray odd-sized still yields an invalid Image for that frame rather than
 	// corrupting the sequence's promise.
-	[[nodiscard]] std::optional<lain::media::FrameSequence> openSequence(const lain::core::Uri& uri,
-																		 lain::media::FrameRate rate = {});
+	[[nodiscard]] std::optional<lain::media::FrameSequence> open(const lain::core::Uri& uri,
+																 lain::media::FrameRate rate = {});
 } // namespace lain::io::image

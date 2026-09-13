@@ -2,7 +2,7 @@
 # references over one or more sources, with exactly one class per medium that decodes.
 #
 # It depends on NO io. Each medium's opener lives in that medium's own io seam
-# (lain::io::image::openSequence, later lain::io::video::open) and constructs a FrameSource
+# (lain::io::image::open, lain::io::video::open) and constructs a FrameSource
 # defined here — so the medium-neutral library never acquires a dependency on every medium,
 # which is the junk drawer CONTEXT.md's loading split exists to prevent.
 

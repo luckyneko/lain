@@ -1,4 +1,4 @@
-#include "lain/io/image/sequence.h"
+#include "lain/io/image/open.h"
 
 #include "lain/io/image/load.h"
 #include "lain/io/image/save.h" // formatKeyOf
@@ -131,7 +131,7 @@ namespace lain::io::image
 
 	// --- the opener ------------------------------------------------------------
 
-	std::optional<lain::media::FrameSequence> openSequence(const lain::core::Uri& uri, lain::media::FrameRate rate)
+	std::optional<lain::media::FrameSequence> open(const lain::core::Uri& uri, lain::media::FrameRate rate)
 	{
 		const lain::core::Uri canonical = lain::io::canonicalise(uri);
 		const std::optional<fs::path> local = canonical.path();

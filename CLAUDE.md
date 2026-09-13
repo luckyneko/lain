@@ -631,6 +631,53 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-13 — M13 slice 4 built: the verb + layering pass
+
+notes.txt notes 27 and 28 — *"load/save vs read/write vs encode/decode — This needs some
+consistency"* and *"sequence.h — Not sure if this should be here? Sequence feels like a 'type' of
+Video rather than something Image based."* The tree already ran a coherent **four-verb rule** and had
+never written it down, which is why the functions disagreeing with it read as normal.
+**`io::image::openSequence` → `io::image::open`** (files and test renamed with it) and
+**`VideoWriter::write(const Image&)` → `encode`**; the rule and the three-layer sequence picture go
+into CONTEXT.md. Nothing behaves differently and nothing on disk changes, so every baseline is
+unmoved: `ctest -j8` **760/760** Debug with video on, **766/766** Release with video on, **734/734**
+Release in the default video-off configuration. Warning-clean, format-check clean. Full landing notes
+in WORK.md's *Milestone 13*.
+
+- **The triage's "one genuine outlier" claim did not survive.** It surveyed the free-function facades
+  and not the interface classes. `VideoReader::decode(ordinal)` already followed the rule and says so
+  in its own comment (*"exactly as ImageReader::decode does"*), while its write-side peer did not —
+  and the sharp form is the COLLISION rather than the asymmetry: **a VideoWriter owns an
+  `io::WriteStream` whose `write()` takes bytes**, so inside `ffmpegwriter.cpp` one word meant two
+  different things one layer apart. ADR-0018's writer-handle triple is amended in place.
+- **The file rename is what makes note 28's answer structural.** `io::image` now reads `load.h` /
+  `save.h` / `open.h` / `reader.h` / `writer.h` — the rule visible in a directory listing — and there
+  are three media-level `open.h` files meaning one verb. A frame sequence was never video's *or*
+  image's: **`lain::media` owns the model and depends on no io**, which is precisely why it cannot
+  also own opening; each medium's io seam opens its own, and `io::sequence` dispatches. After the
+  rename the file no longer claims the noun at all.
+- **The node factory key `"openSequence"` did NOT change, and the code now says why.** It is a
+  serialization key — an unknown `kind` drops the node **and its edges**, so every saved document
+  holding footage would come back structurally damaged — and it is the name ADR-0019's amendment
+  settled on. The reason sits on `kOpenSequenceKey` itself, because the next tidy pass would
+  otherwise "fix" it, and that fix is data loss.
+- **The renamed test's calls are QUALIFIED deliberately**: `using lain::io::image::open;` at
+  namespace scope collides with POSIX `::open` from `<fcntl.h>` as soon as any header in the TU pulls
+  it in — a Linux-leg break this machine would never see. Said in the head comment so it is not
+  tidied back.
+- **CONTEXT.md is now the OWNER of the rule**, and WORK.md's triage drops its table for a pointer:
+  the audit owns the finding, the glossary owns the rule. The entry **states its two deliberate
+  exceptions** rather than hiding them — `createStream` is an open named for being destructive,
+  `openWriter` opens a handle whose pushes are `encode` — because a rule that quietly excuses its
+  own exceptions stops discriminating.
+- **Surveyed and kept, so it is not re-derived:** `media::FrameSource::decodeFrame` is the same job
+  as `VideoReader::decode` one layer up, but `lain::media` is not an io seam and `decodeFrame` is a
+  *more specific* name rather than a conflicting one; `gui::openFile` / `saveFile` are file dialogs
+  returning a path, in a library with its own vocabulary.
+- **The `encode` rename only compiles in a video-ON build** — the override lives in the FFmpeg
+  plugin, so the video-off leg builds the seam and never the implementation. Both video-ON
+  configurations were run for that reason.
+
 ### Update 2026-09-12 — M13 slice 3 built: `transport.h`, and io's top level follows its own rule
 
 notes.txt — *"libs/io/include/lain/io/read/write.h — Why split these? Also should probably have

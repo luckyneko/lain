@@ -978,6 +978,21 @@ both sit behind service-shaped seams. See [ADR-0004](docs/adr/0004-static-linkin
   it unchanged. The *manager* (mimalloc / marv / custom pool) is a backend chosen by profiling,
   not a type in any signature.
 
+- **The four verbs** *(io's naming rule)* — which word a loading function gets is decided by
+  **what it hands back**, not by which library it sits in. `read` / `write` move **bytes at the
+  transport** (`io::read(uri) -> Buffer`); `load` / `save` turn a uri into a **whole typed asset**
+  (`io::image::load`, `io::data::save`); `encode` / `decode` convert a **typed value and format
+  bytes** (`ImageWriter::encode`, `DataReader::decode`, `VideoWriter::encode`); and `open` yields a
+  **lazy handle** (`io::openStream`, `io::image::open`, `io::video::open`, `io::sequence::open`).
+  `Reader` / `Writer` are the **classes** and `encode` / `decode` are what they *do* — not a
+  collision.
+  The rule was **found, not invented**: the tree already ran it and had never written it down, so
+  the one function disagreeing (`io::image::openSequence`) read as normal until the rule was stated.
+  Its two deliberate exceptions are part of it, not blemishes on it: **`createStream`** is an open
+  named for being **destructive**, and **`openWriter`** opens a handle whose pushes are `encode`.
+  _Avoid_: a fifth verb for a fourth thing; `write` for anything but bytes; naming a function for
+  the noun it returns (`openSequence`) rather than for what it does.
+
 - **IO scheme** — a **byte-transport backend keyed by URI scheme** (`local` now; `remote`/`s3`
   later). `lain::io::read(uri) → Buffer` dispatches to one. **Media-agnostic** — `io` never
   decodes; it only moves bytes. `read` is a **whole-asset** read (the resource in one `Buffer`).
@@ -1049,10 +1064,25 @@ both sit behind service-shaped seams. See [ADR-0004](docs/adr/0004-static-linkin
 
 ## Frame sequences — finite lazy footage, medium-neutral
 
-*(M10 — [ADR-0018](docs/adr/0018-frame-sequences-and-host-driven-rendering.md).)* `lain::media` owns
-these and depends on **no `io` at all**; each medium's opener lives in that medium's own io seam
-(`io::image::openSequence`, `io::video::open`), so the medium-neutral library never depends on every
-medium.
+*(M10 — [ADR-0018](docs/adr/0018-frame-sequences-and-host-driven-rendering.md).)*
+
+**Three layers, and which one owns what is the thing to know.** A *frame sequence* is not a video
+concept that images borrow, nor an image concept video extends — it is **medium-neutral**, and the
+question "shouldn't this live under video?" is what the layering answers:
+
+1. **`lain::media` owns the MODEL** — `FrameSequence`, `FrameSource`, `FrameRef`, `FrameSpec` — and
+   depends on **no `io` at all**. That dependency rule is why the model cannot also own opening:
+   a medium-neutral library that knew how to open things would end up depending on every medium,
+   which is the junk drawer the loading split exists to prevent.
+2. **`io::image` and `io::video` each OPEN their own medium** into that model — `io::image::open`
+   for a folder or a numbered pattern of stills, `io::video::open` for a container. One medium's
+   opener knows one medium; neither knows the other exists.
+3. **`io::sequence` DISPATCHES between them**, one level up, so a graph names one node kind whatever
+   the footage is and a document does not change vocabulary when stills become an mp4. Its dispatch
+   asymmetry belongs to the picture rather than being a shortcut: video is addressed by **what a
+   file is called**, the image medium **structurally** (a folder has no extension to key on), so
+   extensions select a medium and everything unclaimed goes to the still opener.
+
 
 - **Frame sequence** — a **finite, ordered list of frame references over one or more frame sources**.
   Not a handle to a file and not a chain of wrapping decoders: **every sequence operation is a list
@@ -1147,13 +1177,16 @@ medium.
 
 - **Video reader / writer** — the `lain::io::video` seam, mirroring `io::image`'s registry and plugin
   idiom. The **writer breaks the parallel deliberately**: an encoder is open-push-finalise and its
-  file is invalid until finalised, so it is a **stateful handle** (`openWriter` / `write` / `finish`,
-  `finish()` explicit and status-returning because a trailer write can fail and a destructor has
-  nowhere to report), with a one-shot `save(uri, sequence)` facade over it for transcoding.
+  file is invalid until finalised, so it is a **stateful handle** (`openWriter` / `encode` /
+  `finish`, `finish()` explicit and status-returning because a trailer write can fail and a
+  destructor has nowhere to report), with a one-shot `save(uri, sequence)` facade over it for
+  transcoding. The push is **`encode`, not `write`**: a video writer owns a `WriteStream` whose
+  `write()` takes bytes, so the two words stay one meaning each.
   `finish()` is **close, not commit**: it still writes the trailer after a failed frame, so a
   truncated render leaves a *playable* short file — which is what makes the missing-frame policy's
-  "finalise what exists" true rather than aspirational. _Avoid_: `encode(vector<Image>) → Buffer`,
-  a writer whose destructor is the commit.
+  "finalise what exists" true rather than aspirational. _Avoid_: encoding a whole sequence in one
+  call and handing back a Buffer (the SHAPE `ImageWriter` has and this one cannot — a 500-frame
+  render must never materialise one), a writer whose destructor is the commit.
 
 - **Codec family** *(`VideoCodec`: auto / h264 / hevc / prores / ffv1 / mjpeg)* — what a caller asks
   a writer for: **the job, never an encoder's name**. `h264_videotoolbox` is a fact about one

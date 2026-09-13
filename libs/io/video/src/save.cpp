@@ -158,7 +158,7 @@ namespace lain::io::video
 				break;
 			}
 
-			ok = writer->write(image);
+			ok = writer->encode(image);
 		}
 
 		// EITHER WAY. A failure leaves a closed, visibly short file rather than a headless one —

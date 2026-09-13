@@ -149,7 +149,7 @@ namespace lain::io::video::ffmpeg
 		m_encoder->color_primaries = tags->primaries;
 		m_encoder->colorspace = tags->matrix;
 		// RGB is always full range; a YUV stream lain writes is limited range, which is the
-		// convention a player assumes and what the range compression in write() targets.
+		// convention a player assumes and what the range compression in encode() targets.
 		m_encoder->color_range = rgb ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
 
 		if (options.bitsPerSecond > 0)
@@ -321,7 +321,7 @@ namespace lain::io::video::ffmpeg
 		}
 	}
 
-	bool FFmpegVideoWriter::write(const lain::image::Image& image)
+	bool FFmpegVideoWriter::encode(const lain::image::Image& image)
 	{
 		if (m_encoder == nullptr || !m_headerWritten)
 			return false;

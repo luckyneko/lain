@@ -1,6 +1,6 @@
 #include "framepattern.h"
 
-#include <lain/io/image/sequence.h> // frameKey
+#include <lain/io/image/open.h> // frameKey
 #include <lain/string/pattern.h>
 
 namespace flowview

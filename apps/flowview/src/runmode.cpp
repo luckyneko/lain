@@ -12,8 +12,8 @@
 #include <lain/flow/scheduler.h>
 #include <lain/image/image.h>
 #include <lain/io/data/save.h>
+#include <lain/io/image/open.h> // frameKey — the one spelling a sweep and the opener share
 #include <lain/io/image/save.h>
-#include <lain/io/image/sequence.h> // frameKey — the one spelling a sweep and the opener share
 #include <lain/io/uri.h>
 #include <lain/io/video/open.h>
 #include <lain/io/video/save.h>
@@ -385,7 +385,7 @@ namespace flowview
 				return false; // openWriter named the reason: the spec, the container or the codec
 		}
 
-		return write.writer->write(delivered.get<image::Image>());
+		return write.writer->encode(delivered.get<image::Image>());
 	}
 
 	// Run the graph once per frame over `range`, rebinding the frame position each time.

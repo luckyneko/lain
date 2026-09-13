@@ -4,7 +4,7 @@
 //
 // The facade: include this for the whole vocabulary, or the individual headers when only part
 // of it is wanted. The library owns the sequence model and DEPENDS ON NO io AT ALL — each
-// medium's opener lives in that medium's own io seam (io::image::openSequence,
+// medium's opener lives in that medium's own io seam (io::image::open,
 // io::video::open), so the medium-neutral library never depends on every medium (ADR-0018).
 
 #include "lain/media/frameref.h"	  // which frame of which source — identity

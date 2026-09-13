@@ -160,7 +160,7 @@ TEST_CASE("a lossless write round-trips byte for byte", "[video][ffmpeg]")
 		for (std::size_t i = 0; i < frameCount; ++i)
 		{
 			written.push_back(frameOf(i));
-			REQUIRE(writer->write(written.back()));
+			REQUIRE(writer->encode(written.back()));
 		}
 		REQUIRE(writer->finish());
 	}
@@ -196,7 +196,7 @@ TEST_CASE("a delivery write reopens with its frames in order", "[video][ffmpeg]"
 		CHECK(writer->container() == "mp4");
 
 		for (std::size_t i = 0; i < frameCount; ++i)
-			REQUIRE(writer->write(frameOf(i)));
+			REQUIRE(writer->encode(frameOf(i)));
 		REQUIRE(writer->finish());
 	}
 
@@ -226,7 +226,7 @@ TEST_CASE("the colour tag lain writes is the one it reads back", "[video][ffmpeg
 	{
 		auto writer = lain::io::video::openWriter(out.string(), spec(lain::image::ColorSpace::sRGB), options);
 		REQUIRE(writer != nullptr);
-		REQUIRE(writer->write(frameOf(0, lain::image::ColorSpace::sRGB)));
+		REQUIRE(writer->encode(frameOf(0, lain::image::ColorSpace::sRGB)));
 		REQUIRE(writer->finish());
 	}
 
@@ -274,14 +274,14 @@ TEST_CASE("a mismatched frame is refused, and what came before it survives", "[v
 	{
 		auto writer = lain::io::video::openWriter(out.string(), spec(), options);
 		REQUIRE(writer != nullptr);
-		REQUIRE(writer->write(frameOf(0)));
-		REQUIRE(writer->write(frameOf(1)));
+		REQUIRE(writer->encode(frameOf(0)));
+		REQUIRE(writer->encode(frameOf(1)));
 
 		// Refused, never rescaled (ADR-0018) — a conversion chosen here, on a frame the caller did
 		// not know would differ, is the silent lossy conversion the homogeneity rule prevents.
 		lain::image::Image wrongSize{frameWidth * 2, frameHeight, lain::image::PixelFormat::RGB8,
 									 lain::image::ColorSpace::BT709};
-		CHECK_FALSE(writer->write(wrongSize));
+		CHECK_FALSE(writer->encode(wrongSize));
 
 		// finish() is CLOSE, not commit: it still writes the trailer after a failed frame, which is
 		// what makes a truncated render a playable short file instead of a headless one.
@@ -307,7 +307,7 @@ TEST_CASE("finish is idempotent and a second call cannot corrupt the file", "[vi
 	{
 		auto writer = lain::io::video::openWriter(out.string(), spec(), options);
 		REQUIRE(writer != nullptr);
-		REQUIRE(writer->write(frameOf(0)));
+		REQUIRE(writer->encode(frameOf(0)));
 		CHECK(writer->finish());
 		CHECK(writer->finish()); // repeats the first answer; a second trailer would corrupt it
 	}
@@ -329,7 +329,7 @@ TEST_CASE("save transcodes a whole sequence through the one-shot facade", "[vide
 		auto writer = lain::io::video::openWriter(source.string(), spec(), options);
 		REQUIRE(writer != nullptr);
 		for (std::size_t i = 0; i < frameCount; ++i)
-			REQUIRE(writer->write(frameOf(i)));
+			REQUIRE(writer->encode(frameOf(i)));
 		REQUIRE(writer->finish());
 	}
 

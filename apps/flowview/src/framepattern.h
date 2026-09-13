@@ -19,7 +19,7 @@ namespace flowview
 	// The output path for one frame: `pattern` with its frame key replaced by `frame`.
 	//
 	// Names io::image::frameKey rather than a spelling of its own, so what a sweep writes is what
-	// io::image::openSequence reads back. Returns nullopt when the pattern's spec is one fmt
+	// io::image::open reads back. Returns nullopt when the pattern's spec is one fmt
 	// refuses ("out.<frame:zz>.png") — a caller's text, so the caller reports it.
 	[[nodiscard]] std::optional<std::string> frameOutputPath(std::string_view pattern, std::size_t frame);
 

@@ -74,7 +74,7 @@ namespace lain::io::video
 	[[nodiscard]] bool isVideoUri(const lain::core::Uri& uri);
 
 	// Open `uri` as a frame sequence of decoded video frames — the video medium's contribution to
-	// the frame-sequence model, peer of io::image::openSequence.
+	// the frame-sequence model, peer of io::image::open.
 	//
 	// The transport is opened here (io::openStream) and handed to the reader, so the codec plugin
 	// holds a Stream and never a file. Frames are decoded lazily behind the source's lock, with the

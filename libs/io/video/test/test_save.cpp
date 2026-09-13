@@ -85,7 +85,7 @@ namespace
 		const std::string& container() const override { return m_container; }
 		const std::string& codec() const override { return m_codec; }
 
-		bool write(const lain::image::Image& image) override
+		bool encode(const lain::image::Image& image) override
 		{
 			// The spec check every writer owes its caller (ADR-0018: refused, never rescaled or
 			// relabelled). media::matches is the one place the homogeneity question is asked, so
@@ -220,7 +220,7 @@ TEST_CASE("openWriter creates the transport and hands it to a backend", "[io::vi
 	// openWriter the preflight.
 	CHECK(out.exists());
 
-	CHECK(writer->write(taggedFrame(7)));
+	CHECK(writer->encode(taggedFrame(7)));
 	CHECK(writer->finish());
 	CHECK(out.contents() == "open mp4\nframe 7\nend\n");
 }
@@ -295,13 +295,13 @@ TEST_CASE("a frame that does not match the spec is refused, not rescaled", "[io:
 	auto writer = lain::io::video::openWriter(out.string(), writableSpec());
 	REQUIRE(writer != nullptr);
 
-	CHECK(writer->write(taggedFrame(1)));
+	CHECK(writer->encode(taggedFrame(1)));
 
 	lain::image::Image wrongSize{8, 2, lain::image::PixelFormat::RGB8, lain::image::ColorSpace::BT709};
-	CHECK_FALSE(writer->write(wrongSize));
+	CHECK_FALSE(writer->encode(wrongSize));
 
 	lain::image::Image wrongSpace{4, 2, lain::image::PixelFormat::RGB8, lain::image::ColorSpace::sRGB};
-	CHECK_FALSE(writer->write(wrongSpace));
+	CHECK_FALSE(writer->encode(wrongSpace));
 
 	// A refusal is not corruption: what was written before it is still there after finishing.
 	CHECK(writer->finish());

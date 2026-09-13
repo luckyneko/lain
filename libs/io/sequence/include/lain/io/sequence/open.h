@@ -17,7 +17,7 @@ namespace lain::io::sequence
 	// It lives here, one level up from the per-medium seams, because lain::media depends on no io
 	// at all: a medium-neutral library that knew how to open things would end up depending on every
 	// medium, which is the junk drawer CONTEXT.md's loading split exists to prevent. Each medium's
-	// opener stays in its own seam (io::image::openSequence, io::video::open) and this dispatches
+	// opener stays in its own seam (io::image::open, io::video::open) and this dispatches
 	// to them.
 	//
 	// Namespace note: `lain::io::sequence`, not `lain::io::media`, because inside the latter the

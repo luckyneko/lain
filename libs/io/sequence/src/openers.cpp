@@ -2,7 +2,7 @@
 
 #include "lain/io/sequence/open.h" // registerOpener / registerDefaultOpener
 
-#include <lain/io/image/sequence.h>
+#include <lain/io/image/open.h>
 #include <lain/io/video/open.h>
 
 #include <string>
@@ -24,9 +24,9 @@ namespace lain::io::sequence
 
 		// Stills are the default rather than a set of claimed extensions, because the image medium
 		// is addressed structurally: a folder has no extension to key on, and a "shot.<frame:04>.png"
-		// pattern names the still format rather than the sequence's. openSequence already answers
+		// pattern names the still format rather than the sequence's. The image opener already answers
 		// "that is neither a directory nor a numbered pattern" for anything it cannot take,
 		// which is the honest report for an unclaimed name.
-		registerDefaultOpener(&lain::io::image::openSequence);
+		registerDefaultOpener(&lain::io::image::open);
 	}
 } // namespace lain::io::sequence

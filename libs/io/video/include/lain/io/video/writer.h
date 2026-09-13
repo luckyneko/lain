@@ -109,14 +109,21 @@ namespace lain::io::video
 		virtual const std::string& codec() const = 0;
 
 		// Encode and mux one frame. Frames are consumed IN ORDER and their position IS their
-		// timestamp: a writer has no seek, so frame n is the n'th write() that returned true. The
+		// timestamp: a writer has no seek, so frame n is the n'th encode() that returned true. The
 		// stream timebase is the reciprocal of the spec's rate, which makes the output
-		// constant-rate and exactly as long as the number of frames written.
+		// constant-rate and exactly as long as the number of frames encoded.
+		//
+		// ENCODE, NOT WRITE, and the distinction is this seam's own (M13 slice 4). In lain, write
+		// means BYTES AT THE TRANSPORT — and a VideoWriter owns an io::WriteStream whose write()
+		// takes exactly that, so one word would mean two things inside one object. What this does
+		// is turn a typed value into format bytes, which is encode; VideoReader::decode is its
+		// peer, and ImageWriter::encode is the shape it breaks only in being a HANDLE rather than
+		// returning a Buffer.
 		//
 		// Returns false when `image` does not match the spec (media::matches — refused, never
 		// rescaled or relabelled) or when the encoder fails. A false is TERMINAL: the caller stops
 		// and calls finish(), which closes honestly over what exists.
-		[[nodiscard]] virtual bool write(const lain::image::Image& image) = 0;
+		[[nodiscard]] virtual bool encode(const lain::image::Image& image) = 0;
 
 		// Flush the encoder's held frames, write the trailer, flush and finish the transport.
 		//
@@ -124,7 +131,7 @@ namespace lain::io::video
 		// nowhere to report it — the same reason io::WriteStream::finish() exists one layer down,
 		// and the reason CONTEXT.md's entry says "avoid: a writer whose destructor is the commit".
 		//
-		// It is CLOSE, NOT COMMIT. After a failed write() this still writes the trailer, so a
+		// It is CLOSE, NOT COMMIT. After a failed encode() this still writes the trailer, so a
 		// truncated render leaves a playable file that is visibly short — which is the whole of
 		// ADR-0018's default missing-frame policy ("finalise what exists, report the ordinal, exit
 		// non-zero"). Idempotent: a second call repeats the first one's answer. An implementation's

@@ -64,6 +64,12 @@ namespace flowview
 	// The frame-sequence kinds (M10). In the catalog since slice 7 — until then they were registered
 	// in the factory alone and reachable only from the cli, the same order M8 used when the map node
 	// ran headless a slice before it appeared in a menu.
+	//
+	// The KEY IS SERIALIZED and must not be tidied to follow the C++ rename in M13 slice 4:
+	// io::image::openSequence became io::image::open, but a node kind is what a saved document
+	// names, and an unknown kind drops the node AND its edges. It is also the name ADR-0019's
+	// amendment settled on ("one openSequence node over an opener registry"), and the node calls
+	// io::sequence::open rather than either medium's seam.
 	static constexpr const char* kOpenSequenceKey = "openSequence";
 	static constexpr const char* kFrameAtKey = "frameAt";
 	static constexpr const char* kClipSequenceKey = "clipSequence";

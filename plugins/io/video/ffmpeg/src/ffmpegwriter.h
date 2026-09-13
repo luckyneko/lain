@@ -39,7 +39,7 @@ namespace lain::io::video::ffmpeg
 		const std::string& container() const override { return m_container; }
 		const std::string& codec() const override { return m_codec; }
 
-		bool write(const lain::image::Image& image) override;
+		bool encode(const lain::image::Image& image) override;
 		bool finish() override;
 
 	private:

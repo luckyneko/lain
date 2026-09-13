@@ -1,4 +1,10 @@
-// Unit tests for io::image::openSequence — the image medium's frame-sequence opener (M10).
+// Unit tests for io::image::open — the image medium's frame-sequence opener (M10), peer of
+// io::video::open. What it yields is a lain::media::FrameSequence, which is medium-neutral and
+// belongs to lain::media; what this seam owns is the image medium's way of OPENING one.
+//
+// The calls below are QUALIFIED deliberately. A `using lain::io::image::open;` at namespace scope
+// collides with POSIX ::open from <fcntl.h> the moment any header in this TU pulls it in, and that
+// is a platform-dependent break this machine would never see.
 //
 // Same discipline as test_load.cpp: a FAKE reader registered into the production registry, and
 // REAL temp files, so the production dispatch path is exercised with no codec and no driver.
@@ -6,8 +12,8 @@
 // can say which frame it got back; two sentinel bytes let it produce an off-spec frame or fail.
 
 #include "lain/io/image/load.h"
+#include "lain/io/image/open.h"
 #include "lain/io/image/reader.h"
-#include "lain/io/image/sequence.h"
 
 #include <lain/core/uri.h>
 #include <lain/io/uri.h>
@@ -23,7 +29,6 @@
 #include <vector>
 
 using lain::io::image::ImageReader;
-using lain::io::image::openSequence;
 using lain::io::image::readerRegistry;
 
 namespace fs = std::filesystem;
@@ -109,7 +114,7 @@ TEST_CASE("a directory opens as a sequence of its readable images", "[io::image]
 	dir.write(std::string("c.") + extension, 30);
 	dir.write("notes.txt", 99); // no reader for .txt, so not a frame
 
-	const std::optional<lain::media::FrameSequence> sequence = openSequence(dir.string());
+	const std::optional<lain::media::FrameSequence> sequence = lain::io::image::open(dir.string());
 	REQUIRE(sequence.has_value());
 	REQUIRE(sequence->size() == 3);
 
@@ -127,10 +132,10 @@ TEST_CASE("a missing directory fails, an empty one is a value", "[io::image][seq
 {
 	// The distinction flow's ListDir already draws, arriving from the other end: absent is a
 	// failure, empty is zero frames.
-	CHECK_FALSE(openSequence(lain::testing::scratchPath("absent").string()).has_value());
+	CHECK_FALSE(lain::io::image::open(lain::testing::scratchPath("absent").string()).has_value());
 
 	TempDir empty;
-	const std::optional<lain::media::FrameSequence> sequence = openSequence(empty.string());
+	const std::optional<lain::media::FrameSequence> sequence = lain::io::image::open(empty.string());
 	REQUIRE(sequence.has_value());
 	CHECK(sequence->empty());
 }
@@ -141,7 +146,7 @@ TEST_CASE("a directory of nothing readable is empty, not a failure", "[io::image
 	dir.write("notes.txt", 1);
 	dir.write("data.bin", 2);
 
-	const std::optional<lain::media::FrameSequence> sequence = openSequence(dir.string());
+	const std::optional<lain::media::FrameSequence> sequence = lain::io::image::open(dir.string());
 	REQUIRE(sequence.has_value());
 	CHECK(sequence->empty());
 }
@@ -156,7 +161,7 @@ TEST_CASE("a <frame> pattern orders numerically, not lexicographically", "[io::i
 	dir.write(std::string("shot.x.") + extension, 4);  // not a number
 
 	const std::optional<lain::media::FrameSequence> sequence =
-		openSequence((dir.path() / (std::string("shot.<frame:04>.") + extension)).string());
+		lain::io::image::open((dir.path() / (std::string("shot.<frame:04>.") + extension)).string());
 	REQUIRE(sequence.has_value());
 	REQUIRE(sequence->size() == 3);
 
@@ -176,7 +181,7 @@ TEST_CASE("a sequence names its source canonically", "[io::image][sequence]")
 	// One resource, one name however spelled — what makes two FrameRefs to one frame compare
 	// equal, and a saved manifest mean something.
 	const std::string awkward = (dir.path() / "." / ".." / dir.path().filename()).string();
-	const std::optional<lain::media::FrameSequence> sequence = openSequence(awkward);
+	const std::optional<lain::media::FrameSequence> sequence = lain::io::image::open(awkward);
 	REQUIRE(sequence.has_value());
 	REQUIRE(sequence->size() == 1);
 
@@ -191,7 +196,7 @@ TEST_CASE("a sequence declares the rate it is given", "[io::image][sequence]")
 	dir.write(std::string("b.") + extension, 2);
 
 	const std::optional<lain::media::FrameSequence> sequence =
-		openSequence(dir.string(), lain::media::FrameRate{24, 1});
+		lain::io::image::open(dir.string(), lain::media::FrameRate{24, 1});
 	REQUIRE(sequence.has_value());
 	CHECK(sequence->spec().rate == lain::media::FrameRate{24, 1});
 
@@ -211,7 +216,7 @@ TEST_CASE("an undecodable first frame is a failure, a later one is not", "[io::i
 		dir.write(std::string("a.") + extension, failTag);
 		dir.write(std::string("b.") + extension, 2);
 
-		CHECK_FALSE(openSequence(dir.string()).has_value());
+		CHECK_FALSE(lain::io::image::open(dir.string()).has_value());
 	}
 
 	SECTION("a later failure costs only its own frame")
@@ -221,7 +226,7 @@ TEST_CASE("an undecodable first frame is a failure, a later one is not", "[io::i
 		dir.write(std::string("b.") + extension, failTag);
 		dir.write(std::string("c.") + extension, 3);
 
-		const std::optional<lain::media::FrameSequence> sequence = openSequence(dir.string());
+		const std::optional<lain::media::FrameSequence> sequence = lain::io::image::open(dir.string());
 		REQUIRE(sequence.has_value());
 		REQUIRE(sequence->size() == 3);
 
@@ -236,7 +241,7 @@ TEST_CASE("an undecodable first frame is a failure, a later one is not", "[io::i
 		dir.write(std::string("a.") + extension, 1);
 		dir.write(std::string("b.") + extension, offSpecTag);
 
-		const std::optional<lain::media::FrameSequence> sequence = openSequence(dir.string());
+		const std::optional<lain::media::FrameSequence> sequence = lain::io::image::open(dir.string());
 		REQUIRE(sequence.has_value());
 		REQUIRE(sequence->size() == 2);
 
@@ -254,7 +259,7 @@ TEST_CASE("a uri that is neither a directory nor a pattern is refused", "[io::im
 	dir.write(std::string("a.") + extension, 1);
 
 	// A single still is a load(), not a sequence — saying so beats quietly returning one frame.
-	CHECK_FALSE(openSequence((dir.path() / (std::string("a.") + extension)).string()).has_value());
+	CHECK_FALSE(lain::io::image::open((dir.path() / (std::string("a.") + extension)).string()).has_value());
 }
 
 TEST_CASE("a remote uri is refused as not local, not as not-a-directory", "[io::image][sequence]")
@@ -263,6 +268,6 @@ TEST_CASE("a remote uri is refused as not local, not as not-a-directory", "[io::
 	// named "s3:" — and then asked the working directory about it, so the answer depended on
 	// where the process happened to be standing and the reason reported was the wrong one.
 	// io::read serves the local scheme only, so a still sequence can too, and it says which.
-	CHECK_FALSE(openSequence("s3://bucket/frames").has_value());
-	CHECK_FALSE(openSequence("https://example.com/shot.<frame:04>.png").has_value());
+	CHECK_FALSE(lain::io::image::open("s3://bucket/frames").has_value());
+	CHECK_FALSE(lain::io::image::open("https://example.com/shot.<frame:04>.png").has_value());
 }

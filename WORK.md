@@ -4733,21 +4733,22 @@ recorded below so they are not re-raised from scratch.
 
 ### The four-verb rule, found rather than invented
 
-Note 27 asked for consistency between `load`/`save`, `read`/`write` and `encode`/`decode`. The tree
-already runs a coherent rule and nobody had written it down:
+Note 27 asked for consistency between `load`/`save`, `read`/`write` and `encode`/`decode`. The
+finding was that the tree already ran a coherent rule and nobody had written it down — so the
+functions that disagreed with it read as normal. Notes 22/26/28 were each a correct reading of code
+that was right and silent about being right, the same shape as the `core::Uri` rediscovery one level
+down.
 
-| verb | means | example |
-|---|---|---|
-| `read` / `write` | **bytes**, at the transport | `io::read(uri) -> Buffer` |
-| `load` / `save` | uri → **whole typed asset** | `io::image::load`, `io::data::save` |
-| `encode` / `decode` | typed value ↔ **format bytes**, in memory | `ImageWriter::encode`, `DataReader::decode` |
-| `open` | a **lazy handle** | `openStream`, `io::video::open`, `io::sequence::open` |
+**The rule itself now lives in CONTEXT.md** (*The four verbs*, in §Loading), landed by M13 slice 4
+along with the three-layer sequence picture note 28 turned out to need. It is deliberately not
+restated here: a restatement is a second source able to disagree with the first, and what this
+section owns is the finding rather than the rule.
 
-`Reader`/`Writer` are the *classes* and `decode`/`encode` are what they *do* — not a collision. The
-one genuine outlier is `io::image::openSequence`, which M13 slice 4 renames to `io::image::open`.
-**The rule itself belongs in CONTEXT.md and lands with that slice**, beside the other thing note 28
-turned out to need: the three-layer sequence picture. Notes 22/26/28 were each a correct reading of
-code that was right and silent about being right.
+**One claim made here did not survive the slice.** It said `io::image::openSequence` was "the one
+genuine outlier". That survey covered the free-function facades and not the interface classes:
+`VideoWriter::write(const Image&)` was a second, and the sharper one, since a VideoWriter owns an
+`io::WriteStream` whose `write()` takes bytes — one word meaning two things inside one object. Both
+are renamed in slice 4.
 
 ### Deferred, with triggers
 
@@ -5103,6 +5104,64 @@ Warning-clean, format-check clean.
 - **gui-mode not needed** — no file under `apps/` changes.
 
 
+### Slice 4 — the verb + layering pass (built 2026-09-13)
+
+notes.txt note 27 — *"load/save vs read/write vs encode/decode — This needs some consistency"* — and
+note 28 — *"sequence.h — Not sure if this should be here? Sequence feels like a 'type' of Video
+rather than something Image based."* Two renames and two doc entries. **Nothing behaves differently
+and nothing on disk changes**, so the existing suite is the regression test and every baseline is
+unmoved: `ctest -j8` **760/760** Debug with video on, **766/766** Release with video on, **734/734**
+Release in the default video-off configuration. Warning-clean, format-check clean.
+
+- **`io::image::openSequence` → `io::image::open`, and the FILES went with it** —
+  `sequence.{h,cpp}` → `open.{h,cpp}`, `test_sequence.cpp` → `test_open.cpp`, the source↔test
+  mapping slice 3 applied to the transport. `io::image` now reads `load.h` / `save.h` / `open.h` /
+  `reader.h` / `writer.h`: the four-verb rule visible in a directory listing, and three media-level
+  `open.h` files (`io::image`, `io::video`, `io::sequence`) that all mean the same verb. `frameKey`
+  travels with the header, because the key must stay where the opener that reads it lives — slice
+  2's whole argument.
+- **`VideoWriter::write(const Image&)` → `encode(const Image&)`, and this is the outlier the triage
+  missed.** Its claim that `openSequence` was *"the one genuine outlier"* surveyed the free-function
+  facades and not the interface classes. `VideoReader::decode(ordinal)` already followed the rule and
+  says so in its own comment (*"exactly as ImageReader::decode does"*), while its write-side peer did
+  not — and the sharp form is not the asymmetry but the collision: **a VideoWriter owns an
+  `io::WriteStream` whose `write()` takes bytes**, so inside `ffmpegwriter.cpp` one word meant two
+  different things one layer apart. Renamed at the pure virtual, the FFmpeg override (where it lands
+  beside the existing private `encodeAndMux(AVFrame*)`), `io::video::save`, flowview's render sweep,
+  a test fake, and ~12 assertions. **ADR-0018's writer-handle triple is amended in place.**
+- **The node factory key `"openSequence"` did NOT change, and the code now says why.** It is a
+  *serialization* key: an unknown `kind` drops the node **and its edges**, so every saved document
+  holding footage would come back structurally damaged. It is also the name ADR-0019's amendment
+  settled on, and `OpenSequenceNode` calls `io::sequence::open` rather than either medium's seam. The
+  reason sits on `kOpenSequenceKey` itself, where the next tidy pass will read it — the alternative
+  being a rename that looks like consistency and is data loss.
+- **The test's calls are QUALIFIED, deliberately.** `using lain::io::image::open;` at namespace scope
+  collides with POSIX `::open` from `<fcntl.h>` the moment any header in the TU pulls it in — a
+  Linux-leg break this machine would never see. The head comment says so, so it is not tidied back.
+- **CONTEXT.md becomes the OWNER of the four-verb rule** (*The four verbs*, in §Loading), and this
+  file's §notes.txt triage drops its table for a pointer: the audit owns the finding, the glossary
+  owns the rule, and a restatement is a second source able to disagree with the first. The entry
+  states the two deliberate exceptions rather than pretending they are not there — **`createStream`**
+  is an open named for being destructive, **`openWriter`** opens a handle whose pushes are `encode`.
+- **The three-layer sequence picture is note 28's actual answer**, and it is a layering fact rather
+  than a naming one: `lain::media` owns the MODEL and depends on no io (which is *why* it cannot also
+  own opening); `io::image` and `io::video` each open their own medium into it; `io::sequence`
+  dispatches between them. So a frame sequence was never video's — and after the rename the file no
+  longer claims the noun at all.
+- **No new test case, and nothing to sabotage.** The claim is that nothing moved, so the count had to
+  move by zero and did. Worth recording: renaming test *files* changes nothing ctest sees, and none
+  of the nine case names in `test_open.cpp` contained `openSequence` — they are all behavioural, so
+  the ctest names are unmoved too, not only the count.
+- **The `encode` rename is only compiled in a video-ON build**, since the override lives in the
+  FFmpeg plugin — the video-off leg builds the seam and never the implementation. Both video-ON
+  configurations were run for exactly that reason.
+- **Surveyed and deliberately kept: `media::FrameSource::decodeFrame`.** Same job as
+  `VideoReader::decode` one layer up, two spellings. `lain::media` is not an io seam, the four-verb
+  rule is io's, and `decodeFrame` is a *more specific* name rather than a conflicting one. Recorded
+  so the next reader does not re-derive it. Likewise `gui::openFile` / `saveFile`: a file *dialog*
+  returning a path, in a library with its own vocabulary.
+
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -5127,9 +5186,9 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md).)*
 
-- **M13 — io coherence.** Five slices; **slices 1, 1b, 2 and 3 (`core::Uri`, the signatures that
-  take one, the `<key>` pattern system, and `transport.h`) are built** (2026-09-11 / 09-12,
-  ADR-0023). Remaining: the verb + layering pass, `ImageWriterOptions`. *(§Milestone 13.)*
+- **M13 — io coherence.** Five slices; **slices 1, 1b, 2, 3 and 4 (`core::Uri`, the signatures that
+  take one, the `<key>` pattern system, `transport.h`, and the verb + layering pass) are built**
+  (2026-09-11 / 09-13, ADR-0023). Remaining: `ImageWriterOptions`. *(§Milestone 13.)*
 
 M1–M8 and M10–M12 are built. M9 and M13 are the milestones from 5 onward that are not.
 
