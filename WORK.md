@@ -5224,6 +5224,14 @@ format-check clean.
   pointed at now has an answer, and that answer is what keeps GOP length, ProRes profile and FFV1
   level out of `VideoWriterOptions` — a caller names the job, never a knob.
 
+**The adjacent finding, in its own commit.** `VideoWriterOptions::bitsPerSecond` was read by the FFmpeg
+writer and **set by no caller and no test in the tree** — the compiled-linked-unreachable shape, sitting
+inside the very precedent this slice mirrors. It now has an exercise: 24 frames of LCG noise (a flat
+frame costs a delivery encoder almost nothing, so both rates would produce much the same file and say
+nothing) at 50 kbps against 5 Mbps, which on this machine's videotoolbox wrapper is **8648 bytes
+against 169384**. The assertion stays a strict inequality rather than a ratio, because which h264
+encoder a build has is platform-conditional (ADR-0019). Sabotage-verified. The missing `--bitrate`
+spelling is recorded in the Outstanding index rather than guessed at inside a still-image slice.
 
 
 ## Outstanding work — one index
@@ -5342,6 +5350,10 @@ M12 §Not in this milestone.)*
 
 ### Deferred — encoder options
 
+- **A `--bitrate` cli spelling** for `VideoWriterOptions::bitsPerSecond`. The field is honoured by the
+  FFmpeg writer and, as of M13 slice 5, **exercised by a test** — but no in-tree caller sets it, so it
+  is reachable only by a library consumer. Trigger: a render whose delivery size matters. *(§Milestone
+  13 slice 5.)*
 - **A still-image quality on the per-format axis a codec actually has** — jpeg chroma subsampling,
   png filter strategy, tiff deflate level. All three are KNOBS, which is what `ImageWriterOptions`
   refuses to carry; a design would have to say what job they serve first. *(§Milestone 13 slice 5;

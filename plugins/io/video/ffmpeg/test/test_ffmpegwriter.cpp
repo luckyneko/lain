@@ -347,3 +347,57 @@ TEST_CASE("save transcodes a whole sequence through the one-shot facade", "[vide
 	for (std::size_t i = 0; i < frameCount; ++i)
 		CHECK(identical(reopened->image(i), frameOf(i)));
 }
+
+TEST_CASE("a requested bit rate reaches the encoder", "[video][ffmpeg]")
+{
+	// VideoWriterOptions::bitsPerSecond was read here and set NOWHERE in the tree — no caller, no
+	// test — which is the compiled-linked-unreachable shape this repo keeps finding. This is the
+	// exercise it was missing; the cli spelling that would make it reachable from outside is
+	// recorded in WORK.md's Outstanding index instead of guessed at here.
+	if (!haveEncoderFor(VideoCodec::H264, "mp4"))
+		SKIP("this build has no h264 delivery encoder");
+
+	// NOISE, not the flat frames the other cases use: a delivery encoder spends almost nothing on a
+	// flat colour, so both rates would produce much the same file and the comparison would say
+	// nothing about whether the number arrived.
+	auto noisyFrame = [](std::size_t ordinal)
+	{
+		lain::image::Image image{frameWidth, frameHeight, lain::image::PixelFormat::RGB8,
+								 lain::image::ColorSpace::BT709};
+		std::uint32_t state = static_cast<std::uint32_t>(ordinal) * 2654435761u + 1u;
+		for (std::size_t i = 0; i < image.byteSize(); ++i)
+		{
+			state = state * 1664525u + 1013904223u; // a plain LCG: deterministic, and it does not compress
+			image.data()[i] = static_cast<std::uint8_t>(state >> 24);
+		}
+		return image;
+	};
+
+	auto sizeAt = [&noisyFrame](std::uint32_t bitsPerSecond)
+	{
+		TempOut out{"mp4"};
+		VideoWriterOptions options;
+		options.codec = VideoCodec::H264;
+		options.bitsPerSecond = bitsPerSecond;
+		{
+			auto writer = lain::io::video::openWriter(out.string(), spec(), options);
+			REQUIRE(writer != nullptr);
+			for (std::size_t i = 0; i < 24; ++i)
+				REQUIRE(writer->encode(noisyFrame(i)));
+			REQUIRE(writer->finish());
+		}
+		REQUIRE(out.exists());
+		return fs::file_size(out.string());
+	};
+
+	const std::uintmax_t lean = sizeAt(50'000);		   // 50 kbps
+	const std::uintmax_t generous = sizeAt(5'000'000); // 5 Mbps
+
+	// The CLAIM is only that the number arrived, because how faithfully an encoder honours a rate
+	// target is a fact about that encoder — and which one this build has is platform-conditional
+	// (ADR-0019). On this machine's videotoolbox wrapper the gap was about twentyfold (8648 bytes
+	// against 169384), so a strict inequality is not a knife-edge here; it is simply the strongest
+	// thing that stays true on a machine with a different h264 encoder.
+	INFO("50 kbps produced " << lean << " bytes, 5 Mbps produced " << generous);
+	CHECK(lean < generous);
+}
