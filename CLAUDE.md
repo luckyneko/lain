@@ -631,6 +631,67 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-13 — M13 slice 5 built: encoder options say the job (**M13 COMPLETE**)
+
+notes.txt note 29 — *"libs/io/image/include/lain/io/image/writer.h — Feels like this needs some kind
+of 'Quality' setting."* The last slice of Milestone 13. `lain::io::image::Compression` +
+**`ImageWriterOptions`**, `ImageWriter::isLossy()`, and the `encode`/`save` that carry them — with a
+cli spelling (`--compression` / `--quality` on `run`) and the Save... panel's two controls, so the
+knob is reachable rather than merely present. `ctest -j8` **774/774** Debug with video on (+14),
+**780/780** Release with video on (+14), **748/748** Release in the default video-off configuration
+(+14); warning-clean, format-check clean. **gui-mode NOT eyeballed** — the two controls are new UI
+and need a Metal session. Full landing notes in WORK.md M13.
+
+- **The knob was deferred since M3 WITH A CONDITION, and both halves of it had been met for a
+  while.** *"The three surfaces are heterogeneous — decide with a real caller."* The part that made
+  it overdue is that **`VideoWriterOptions` cited that deferral as its own precedent**, so one
+  decision was load-bearing in two seams while existing in neither. That citation is amended in
+  place: the judgement it pointed at now has an answer, and the answer is what keeps GOP length,
+  ProRes profile and FFV1 level out of the video options too.
+- **The shape is `VideoCodec`'s rule applied to stills: name THE JOB, never an encoder's knob.** A
+  zlib level 0-9, a tiff *algorithm* and a jpeg quality are one question in three incompatible
+  spellings, so a caller says `Compression` (`Default` / `None` / `Fast` / `Small`) or `quality`
+  (1-100, lossy only) and each codec maps it. No per-format options struct, no string bag.
+- **THE DEFAULTS CHANGE NOTHING, CHECKED BY BYTES.** A png and a tiff written by the pre-change
+  binary and by this one are byte-identical through the real binary. That is what
+  `std::optional<std::uint8_t> quality` buys over a `0` sentinel: the seam never repeats the codec's
+  number back at it, so "a caller who says nothing gets what it always got" is structural rather
+  than a coincidence of two 90s agreeing.
+- **`Default` means what this codec already wrote, not what the library defaults to** — read the
+  second way, a TIFF falls back to uncompressed and every file lain writes silently grows. Both
+  lossless cases now assert `Default` is distinct from `None` and `Small`, because folding it into
+  one of them is the change no round-trip assertion would notice.
+- **PackBits was measured and rejected, which is why `Fast` is deflate.** The obvious cheap tiff arm
+  is RLE, and on a jittered gradient it produced a file **1% LARGER than storing the pixels
+  uncompressed** — RLE working correctly on data with no runs. An arm named `Fast` may cost size; it
+  may not cost more size than `None`, or the enum's own ordering is a lie. Found by the test failing.
+- **libtiff spells its deflate LEVEL "ZIPQUALITY", and that is exactly where the two fields would
+  have blurred.** It is an effort knob, so it belongs to `Compression`; `quality` stays fidelity and
+  every lossless codec ignores it. One field meaning fidelity in one codec and speed in another is a
+  value that disagrees with itself — the shape `editableAt` and ADR-0014's *"no flag, nothing
+  stored"* each deleted.
+- **`isLossy()` is a SECOND question, not a synonym for `canEncode`.** `canEncode` asks whether the
+  format can HOLD this image (no knob moves it, so it takes no options); `isLossy` asks whether
+  encoding costs fidelity — which is what the gui gates its slider on and what the cli warns from. A
+  census case asserts exactly one still format answers true, because a wrong answer there is silent
+  in both hosts. It also retired the panel's *"no lossless format"* string, which with a quality
+  slider a line below was two meanings of one word.
+- **Found by driving the binary: the quality warn only fired on the SWEEP path**, because it had been
+  folded into `encodableHere`, which a single run never calls. Extracted as `noteIgnoredQuality` and
+  called from both — and the split is the better shape anyway, since a predicate that also warns
+  about an unrelated thing is two jobs.
+- **`lain::gui::enumCombo` has a live production caller again**, three months after its only one was
+  retired with the preview-size dropdown (2026-07-31). An untouched quality slider reads **"codec
+  default"** rather than a number, because the handle must sit somewhere and a number there would be
+  the pane claiming to know the codec's default — the duplication the optional exists to prevent.
+- **The adjacent finding, in its own commit: `VideoWriterOptions::bitsPerSecond` was read by the
+  FFmpeg writer and set by NOTHING in the tree** — no caller, no test. The eighth instance of the
+  compiled-linked-unreachable shape, and it was sitting inside the precedent this slice mirrors. It
+  now has a test (24 frames of noise at 50 kbps against 5 Mbps: 8648 bytes against 169384); the
+  missing `--bitrate` spelling is recorded in the Outstanding index rather than guessed at inside a
+  still-image slice.
+- **M13 is COMPLETE**, and **M9 is now the only milestone from 5 onward that is not built**.
+
 ### Update 2026-09-13 — M13 slice 4 built: the verb + layering pass
 
 notes.txt notes 27 and 28 — *"load/save vs read/write vs encode/decode — This needs some

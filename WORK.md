@@ -5224,6 +5224,55 @@ format-check clean.
   pointed at now has an answer, and that answer is what keeps GOP length, ProRes profile and FFV1
   level out of `VideoWriterOptions` — a caller names the job, never a knob.
 
+**The hosts.** `ctest -j8` **774/774** Debug with video on, **748/748** Release in the
+default video-off configuration, **780/780** Release with video on — every baseline grown by exactly
+the fourteen new cases. Driven through the real binary end to end.
+
+- **cli: `--compression` and `--quality` on `run`.** Both are the job rather than a codec's number,
+  which is what lets one spelling serve png, tiff and jpeg. The compression names come from the enum
+  (`IsMember`, which VALIDATES and leaves the string alone — `CheckedTransformer` rewrites it to the
+  enum's NUMBER, which is how `--codec ffv1` once silently rendered h264), and `--quality` is
+  range-checked 1-100 by the parser, so both are refused before a graph loads.
+  `codecNames()` became a **template** `enumNames<E>()` rather than gaining a copy beside it.
+- **Presence, not a sentinel**, for `--quality`: `count("--quality") > 0` is what distinguishes "no
+  quality asked for" — which is what reaches the codec's own default — from any number. The same
+  rule `--frame` and `--rate` already follow one screen up.
+- **An unreadable `--compression` REFUSES the render, before the graph is loaded.** `imageOptions()`
+  returns an optional for `codecFamily`'s reason: the cli validates the same names, so reaching the
+  nullopt arm means the two lists drifted, and a render that quietly ignored what it was asked for is
+  the failure the option exists to prevent. Pinned by a case that also asserts nothing was written.
+- **Found by driving it: the quality warn only fired on the SWEEP path.** It had been folded into
+  `encodableHere`, which a single run never calls — so `flowview run --result out.png --quality 50`
+  said nothing at all. It is now **`noteIgnoredQuality`**, called from both paths, and that split is
+  the better shape anyway: `encodableHere` answers whether this can be written, and a predicate that
+  also warns about an unrelated thing is two jobs. In the sweep it sits under the same `!preflighted`
+  guard as the preflight, so a 500-frame render says it once rather than 500 times.
+- **gui: the Save... panel grows the two controls**, held per pin in `AppContext::saveOptions` beside
+  `saveFormat` — two image outputs of one graph are two pictures going to two places. The quality
+  slider is drawn **only when `io::image::isLossy(sel)`**, asked of the seam rather than derived from
+  the format key here: which formats those are is the codec's fact to state, not this pane's to
+  remember.
+- **An untouched quality slider shows what it MEANS, not a number.** Its label reads *codec default*
+  until the user moves it, because the handle has to sit somewhere and a number under an untouched
+  slider would be the pane claiming to know the codec's default — the duplication the optional was
+  introduced to avoid. Moving it is what makes the request explicit.
+- **`lain::gui::enumCombo` has a live production caller again.** Its only one was retired on
+  2026-07-31 with the preview-size dropdown, leaving it exercised by a headless smoke test alone;
+  the Compression setting is an enum a user picks from, which is exactly what it is for.
+- **The panel's "no lossless format" string is now "no format here can hold this image".** With a
+  quality control a line below, one word cannot mean both `canEncode`'s question and `isLossy`'s — a
+  JPEG answers yes to both, so the old wording read as a contradiction the moment the slider
+  appeared.
+- **The cli case pins the CARRYING, not the codecs** (`test_sweep.cpp`): a `RunOptions` the cli filled
+  in reaches `io::image::save` at the far end of the sweep. Before it, both options could have been
+  parsed, stored and quietly dropped inside `writeFrame` without one test noticing —
+  sabotage-verified, and both its sections fail when the sweep passes `{}` instead.
+- **Driven through the real binary**: one gradient written as png at `--compression none` / default /
+  `small` is **16613 / 352 / 312** bytes; the same picture converted to RGB8 and written as jpeg at
+  `--quality 20` / default / `95` is **787 / 1134 / 1814**; `--compression ludicrous` is refused by
+  the parser naming the four settings; and `--quality 50` on a png warns that png is lossless.
+- **gui-mode is NOT eyeballed** — the two controls are new UI and need a Metal session.
+
 **The adjacent finding, in its own commit.** `VideoWriterOptions::bitsPerSecond` was read by the FFmpeg
 writer and **set by no caller and no test in the tree** — the compiled-linked-unreachable shape, sitting
 inside the very precedent this slice mirrors. It now has an exercise: 24 frames of LCG noise (a flat
@@ -5258,11 +5307,7 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md).)*
 
-- **M13 — io coherence.** Five slices; **slices 1, 1b, 2, 3 and 4 (`core::Uri`, the signatures that
-  take one, the `<key>` pattern system, `transport.h`, and the verb + layering pass) are built**
-  (2026-09-11 / 09-13, ADR-0023). Remaining: `ImageWriterOptions`. *(§Milestone 13.)*
-
-M1–M8 and M10–M12 are built. M9 and M13 are the milestones from 5 onward that are not.
+M1–M8 and M10–M13 are built. **M9 is the only milestone from 5 onward that is not.**
 
 ### Deferred — engine / `flow` core
 

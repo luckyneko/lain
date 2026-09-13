@@ -8,6 +8,7 @@
 #include <lain/app/window.h>
 #include <lain/flow/graph.h>
 #include <lain/io/image/codecs.h>
+#include <lain/io/image/writer.h> // Compression — the --compression option's names come from the enum
 #include <lain/io/sequence/openers.h>
 #include <lain/io/video/codecs.h>
 #include <lain/io/video/writer.h>
@@ -23,13 +24,14 @@ namespace flowview
 {
 	using namespace lain;
 
-	// The --codec option's accepted names, straight from the enum, lowercased so they read like a
+	// An enum option's accepted names, straight from the enum, lowercased so they read like a
 	// command line rather than like C++ identifiers. Derived rather than typed out: a hand-written
-	// list is a second place the set of families lives, and it goes stale silently.
-	static std::vector<std::string> codecNames()
+	// list is a second place the set of values lives, and it goes stale silently.
+	template <typename E>
+	static std::vector<std::string> enumNames()
 	{
 		std::vector<std::string> names;
-		for (const auto& [name, value] : lain::meta::enums::nameValueMap<lain::io::video::VideoCodec>())
+		for (const auto& [name, value] : lain::meta::enums::nameValueMap<E>())
 		{
 			(void)value;
 			std::string lowered = name;
@@ -82,7 +84,7 @@ namespace flowview
 			// caught by running the real binary — silently fell back to auto. Asking for ffv1 and
 			// getting h264 is precisely the substitution this option exists to prevent, so the
 			// value that travels is the name.
-			->check(app::cli::IsMember(codecNames(), app::cli::ignore_case));
+			->check(app::cli::IsMember(enumNames<lain::io::video::VideoCodec>(), app::cli::ignore_case));
 
 		// TYPED, like --frame: media::FrameRate provides CLI11's lexical_cast hook, so a malformed
 		// rate is refused by the parser before a graph loads. Decimals are refused on purpose —
@@ -90,6 +92,20 @@ namespace flowview
 		// cannot go back into a container's timebase without drifting.
 		m_runCmd->add_option("--rate", m_outputRate,
 							 "output frame rate for a video output: 24 | 30000/1001 (default: the bound sequence's)");
+
+		// How a STILL output is encoded. Both are the job rather than a codec's own number, which is
+		// what lets one spelling serve png, tiff and jpeg — and what keeps a command line that works
+		// here working after a format joins. The names come from the enum, like --codec's.
+		m_runCmd->add_option("--compression", m_compression,
+							 "how hard a still-image output squeezes: default | none | fast | small")
+			->check(app::cli::IsMember(enumNames<lain::io::image::Compression>(), app::cli::ignore_case));
+
+		// Fidelity, and ONLY for a lossy format — a png ignores it, and runmode says so once rather
+		// than leaving a caller to wonder. Range-checked by the parser, so 0 and 101 are refused
+		// before a graph loads; unset is what asks for the codec's own default, which is why the
+		// value here is read through count() below rather than compared against a sentinel.
+		m_runCmd->add_option("--quality", m_quality, "fidelity for a lossy still-image output: 1-100 (jpeg)")
+			->check(app::cli::Range(1, 100));
 
 		m_runCmd->allow_extras(); // --<boundary> <value> pairs, matched to the loaded graph
 
@@ -176,6 +192,11 @@ namespace flowview
 		// a rate that happens to be zero are different requests, and only one of them is an error.
 		if (m_runCmd->count("--rate") > 0)
 			options.outputRate = m_outputRate;
+		options.compression = m_compression;
+		// Presence again, for the reason the option's own comment gives: "no quality asked for" is
+		// what reaches the codec's default, and it is not the same request as any number.
+		if (m_runCmd->count("--quality") > 0)
+			options.quality = m_quality;
 		options.bindings = m_runCmd->remaining();
 		options.exampleSize = m_size;
 		return runGraph(options, m_nodeFactory, binders);

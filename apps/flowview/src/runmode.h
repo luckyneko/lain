@@ -43,6 +43,14 @@ namespace flowview
 		// sequence" — ADR-0018: the rate defaults to the bound sequence's and is required
 		// explicitly when there is no sequence input.
 		std::optional<lain::media::FrameRate> outputRate;
+
+		// How a still-image output should be encoded. `compression` is a string for the same reason
+		// videoCodec is — the cli validates it against meta::enums' names and runmode does the one
+		// conversion, so no CLI11 reaches this header and there is no second parser. `quality` is an
+		// optional because unset means "the codec's own default", which is not a number this side
+		// gets to invent.
+		std::string compression = "default";
+		std::optional<std::uint8_t> quality;
 	};
 
 	// The headless subcommands. Both build the example scene when `graphPath` is empty (so they run

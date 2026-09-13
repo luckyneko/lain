@@ -10,6 +10,7 @@
 #include <lain/flow/serialize/loadresult.h>	   // EditorData (a value member) + Graph (loadedGraph target)
 #include <lain/flow/serialize/templatecache.h> // TemplateCache — one definition per template file
 #include <lain/flow/types.h>				   // NodeId
+#include <lain/io/image/writer.h>			   // ImageWriterOptions — how a pin's Save... encodes
 #include <lain/math/types.h>				   // Vec2f / Vec2i (preview sizing)
 
 #include <cstddef>
@@ -177,6 +178,11 @@ namespace flowview
 		// ("png" / "jpg" / …). Robust to the savable list changing — an entry not (or no longer) in a
 		// port's list falls back to that list's first format.
 		std::map<PinKey, std::string> saveFormat;
+		// How that pin's Save... should encode, per pin for the same reason the format is: two image
+		// outputs of one graph are two different pictures going to two different places. An entry
+		// that was never touched is a default-constructed ImageWriterOptions, which is every codec's
+		// own standing behaviour.
+		std::map<PinKey, lain::io::image::ImageWriterOptions> saveOptions;
 
 		// --- Cross-pane signals ---
 		// Preview routing: a clicked thumbnail (Inspector / Interface) targets an asset; the Preview

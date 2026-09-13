@@ -81,6 +81,8 @@ namespace flowview
 		std::string m_onMissingFrame = "stop"; // run --on-missing-frame: stop | skip
 		std::string m_videoCodec = "auto";	   // run --codec: the codec FAMILY, never an encoder name
 		lain::media::FrameRate m_outputRate{}; // run --rate: the output rate for a video output
+		std::string m_compression = "default"; // run --compression: how hard a still output squeezes
+		std::uint8_t m_quality = 0;			   // run --quality: fidelity for a lossy still format
 
 		// The headless subcommands. Their pointers stay valid through Application::run() (the cli::App
 		// outlives onStart/onProcess), so ->parsed()/->remaining() drive the headless dispatch.

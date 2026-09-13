@@ -24,6 +24,7 @@
 #include <lain/io/image/open.h>
 #include <lain/io/image/save.h>
 #include <lain/io/sequence/openers.h>
+#include <lain/io/transport.h> // io::read — comparing two encodes byte for byte
 #include <lain/io/video/codecs.h>
 #include <lain/io/video/open.h>
 #include <lain/io/video/save.h>
@@ -33,6 +34,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstring>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -670,4 +672,72 @@ TEST_CASE("a tagged still reaches a video writer with no Convert in the graph", 
 	CHECK(flowview::runGraph(videoOptions(graphPath, stills, out, lain::core::Range{0, 3}), factory, binders) == 0);
 	CHECK(fs::exists(out));
 	CHECK(fs::file_size(out) > 0);
+}
+
+// --- the encoder options a render was asked for (M13 slice 5) --------------------
+
+TEST_CASE("a render carries its encoder options all the way to the codec", "[flowview][sweep]")
+{
+	// What this pins is the CARRYING, not the codecs: each plugin's own cases say what a setting
+	// does, and the claim here is that a RunOptions the cli filled in reaches io::image::save at the
+	// far end of the sweep. Before it, --quality and --compression could have been parsed, stored,
+	// and quietly dropped on the way through writeFrame without one test noticing.
+	const fs::path dir = scratchDir("options");
+	const fs::path stills = dir / "frames";
+	fs::create_directories(stills);
+	for (int i = 0; i < 2; ++i)
+		writeGrey(stills / ("f" + std::to_string(i) + ".png"), static_cast<std::uint8_t>(40 + i * 20));
+
+	const core::Factory<flow::Node> factory = sweepFactory();
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+	const std::string graphPath = buildSweepGraph(dir, factory);
+
+	SECTION("a quality reaches a lossy format")
+	{
+		// Byte inequality rather than a size ordering: a 2x2 still is too small for a size claim to
+		// be about anything, while two quantisation tables cannot produce the same file. What the
+		// LOWER quality costs is the jpeg plugin's case to make, on an image big enough to say.
+		flowview::RunOptions low = sweepOptions(graphPath, stills, dir / "low.<frame:04>.jpg", lain::core::Range{0, 1});
+		low.quality = 20;
+		flowview::RunOptions high = sweepOptions(graphPath, stills, dir / "high.<frame:04>.jpg", lain::core::Range{0, 1});
+		high.quality = 95;
+
+		REQUIRE(flowview::runGraph(low, factory, binders) == 0);
+		REQUIRE(flowview::runGraph(high, factory, binders) == 0);
+
+		const auto lowBytes = io::read((dir / "low.0000.jpg").string());
+		const auto highBytes = io::read((dir / "high.0000.jpg").string());
+		REQUIRE(lowBytes.has_value());
+		REQUIRE(highBytes.has_value());
+		const bool sameBytes = lowBytes->size() == highBytes->size() &&
+							   std::memcmp(lowBytes->data(), highBytes->data(), lowBytes->size()) == 0;
+		CHECK_FALSE(sameBytes);
+	}
+
+	SECTION("a compression reaches a lossless format")
+	{
+		flowview::RunOptions none = sweepOptions(graphPath, stills, dir / "none.<frame:04>.png", lain::core::Range{0, 1});
+		none.compression = "none";
+		flowview::RunOptions small =
+			sweepOptions(graphPath, stills, dir / "small.<frame:04>.png", lain::core::Range{0, 1});
+		small.compression = "small";
+
+		REQUIRE(flowview::runGraph(none, factory, binders) == 0);
+		REQUIRE(flowview::runGraph(small, factory, binders) == 0);
+		CHECK(fs::file_size(dir / "none.0000.png") > fs::file_size(dir / "small.0000.png"));
+	}
+
+	SECTION("a compression setting that is not one refuses the render rather than absorbing it")
+	{
+		// The cli validates these names, so this arm is reachable only if the two lists drift — and
+		// drift is exactly the case worth failing loudly on. A render that quietly ignored what it
+		// was asked for is the failure the option exists to prevent.
+		flowview::RunOptions bad =
+			sweepOptions(graphPath, stills, dir / "bad.<frame:04>.png", lain::core::Range{0, 1});
+		bad.compression = "ludicrous";
+
+		CHECK(flowview::runGraph(bad, factory, binders) == 1);
+		CHECK_FALSE(fs::exists(dir / "bad.0000.png")); // refused BEFORE the graph ran
+	}
 }

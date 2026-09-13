@@ -14,6 +14,7 @@
 #include <lain/io/data/save.h>
 #include <lain/io/image/open.h> // frameKey — the one spelling a sweep and the opener share
 #include <lain/io/image/save.h>
+#include <lain/io/image/writer.h> // ImageWriterOptions — how a still output is encoded
 #include <lain/io/uri.h>
 #include <lain/io/video/open.h>
 #include <lain/io/video/save.h>
@@ -94,8 +95,8 @@ namespace flowview
 		// `run`'s own registered options. CLI11 consumes these before the extras are collected, so a
 		// boundary pin named after one is simply unreachable — and silently so, which is why it is
 		// worth saying out loud rather than leaving to be discovered.
-		static const std::set<std::string> reserved{"graph", "g", "save", "frame",
-													"on-missing-frame", "codec", "rate"};
+		static const std::set<std::string> reserved{"graph", "g", "save", "frame", "on-missing-frame",
+													"codec", "rate", "compression", "quality"};
 
 		std::set<std::string> inputs;
 		for (const flow::BoundaryInput& in : graph.boundaryInputs())
@@ -165,13 +166,13 @@ namespace flowview
 	// Write one delivered boundary value to `path`. Returns false when it could not be written;
 	// an EMPTY value is not this function's business — the caller decides what suppression means.
 	static bool writeBoundaryValue(const flow::BoundaryOutput& out, const std::string& path,
-								   const flow::Evaluation& evaluation)
+								   const flow::Evaluation& evaluation, const io::image::ImageWriterOptions& imageOptions)
 	{
 		const flow::PortValue& delivered = evaluation.value(out);
 
 		if (delivered.holds<image::Image>())
 		{
-			if (io::image::save(path, delivered.get<image::Image>()))
+			if (io::image::save(path, delivered.get<image::Image>(), imageOptions))
 				return true;
 			log::error("flowview: could not write --{} to {}", out.name, path);
 			return false;
@@ -228,6 +229,25 @@ namespace flowview
 		return false;
 	}
 
+	// Say so when a quality was asked of a format that ignores it.
+	//
+	// Not an error and not a refusal — the file written is exactly what was asked for — but silence
+	// would leave a caller believing a knob did something. Separate from encodableHere because that
+	// answers whether this can be written at all, and a predicate that also warns about an unrelated
+	// thing is two jobs; separate from the codecs because io::image::isLossy is the question they
+	// answer and this is the host deciding what to do about the answer.
+	static void noteIgnoredQuality(const flow::BoundaryOutput& out, const std::string& path,
+								   const io::image::ImageWriterOptions& imageOptions)
+	{
+		if (!imageOptions.quality)
+			return;
+		const std::string key = io::image::formatKeyOf(path);
+		if (key.empty() || io::image::isLossy(key))
+			return;
+		log::warn("flowview: --quality does nothing for --{}: '{}' is lossless, so there is no fidelity to trade",
+				  out.name, key);
+	}
+
 	// One requested output, plus everything a sweep must remember about it across the range.
 	//
 	// A struct rather than the pair it replaces because a VIDEO output is STATEFUL: its encoder is
@@ -253,6 +273,23 @@ namespace flowview
 	static std::optional<io::video::VideoCodec> codecFamily(const std::string& name)
 	{
 		return meta::enums::fromString<io::video::VideoCodec>(name, /*caseInsensitive=*/true);
+	}
+
+	// How a still-image output should be encoded, or nullopt if --compression is not one of the
+	// settings. Optional for the reason codecFamily is: a name this cannot read must REFUSE, because
+	// the alternative is a render that quietly ignores what the caller asked for. The parser
+	// validates the same names, so the nullopt arm means the two lists drifted.
+	static std::optional<io::image::ImageWriterOptions> imageOptions(const RunOptions& options)
+	{
+		const auto compression = meta::enums::fromString<io::image::Compression>(options.compression,
+																				 /*caseInsensitive=*/true);
+		if (!compression)
+			return std::nullopt;
+
+		io::image::ImageWriterOptions writerOptions;
+		writerOptions.compression = *compression;
+		writerOptions.quality = options.quality; // unset stays unset: that is what asks for the codec's default
+		return writerOptions;
 	}
 
 	// The rate a video output should declare.
@@ -332,7 +369,8 @@ namespace flowview
 
 	// One frame's worth of output for one write. Returns false to stop the render.
 	static bool writeFrame(Write& write, std::size_t frame, const flow::Evaluation& evaluation,
-						   const RunOptions& options, const flow::Graph& graph, bool& preflighted)
+						   const RunOptions& options, const flow::Graph& graph,
+						   const io::image::ImageWriterOptions& imageOptions, bool& preflighted)
 	{
 		const flow::PortValue& delivered = evaluation.value(write.out);
 
@@ -347,9 +385,15 @@ namespace flowview
 						   write.out.name, write.path);
 				return false;
 			}
-			if (!preflighted && !encodableHere(write.out, *path, evaluation))
-				return false;
-			return writeBoundaryValue(write.out, *path, evaluation);
+			if (!preflighted)
+			{
+				// ONCE per render, which is why it sits under the same guard as the preflight: per
+				// frame it would say the same thing 500 times.
+				noteIgnoredQuality(write.out, *path, imageOptions);
+				if (!encodableHere(write.out, *path, evaluation))
+					return false;
+			}
+			return writeBoundaryValue(write.out, *path, evaluation, imageOptions);
 		}
 
 		if (!delivered.holds<image::Image>())
@@ -396,7 +440,7 @@ namespace flowview
 	static int sweepFrames(const core::Range& range, const RunOptions& options, const flow::Graph& graph,
 						   flow::Evaluation& evaluation, flow::Scheduler& scheduler,
 						   const std::vector<flow::BoundaryInput>& positions, std::vector<Write>& writes,
-						   std::size_t& written)
+						   const io::image::ImageWriterOptions& imageOptions, std::size_t& written)
 	{
 		// The range arrived already parsed: `--frame` is a typed option, so a malformed one was
 		// refused by the command line before a graph was ever loaded.
@@ -485,7 +529,7 @@ namespace flowview
 					return 1;
 				}
 
-				if (!writeFrame(write, frame, evaluation, options, graph, preflighted))
+				if (!writeFrame(write, frame, evaluation, options, graph, imageOptions, preflighted))
 					return 1;
 			}
 			preflighted = true;
@@ -500,7 +544,8 @@ namespace flowview
 	static int sweep(const core::Range& range, const RunOptions& options, const flow::Graph& graph,
 					 flow::Evaluation& evaluation, flow::Scheduler& scheduler,
 					 const std::vector<flow::BoundaryInput>& positions,
-					 const std::vector<std::pair<flow::BoundaryOutput, std::string>>& requested)
+					 const std::vector<std::pair<flow::BoundaryOutput, std::string>>& requested,
+					 const io::image::ImageWriterOptions& imageOptions)
 	{
 		std::vector<Write> writes;
 		writes.reserve(requested.size());
@@ -513,7 +558,8 @@ namespace flowview
 		}
 
 		std::size_t written = 0;
-		const int status = sweepFrames(range, options, graph, evaluation, scheduler, positions, writes, written);
+		const int status =
+			sweepFrames(range, options, graph, evaluation, scheduler, positions, writes, imageOptions, written);
 		const int finished = finishWrites(writes);
 
 		log::info("flowview: rendered {} frame(s)", written);
@@ -524,6 +570,16 @@ namespace flowview
 
 	int runGraph(const RunOptions& options, const core::Factory<flow::Node>& factory, const BoundaryBinders& binders)
 	{
+		// Before anything is loaded or run: a --compression this cannot read is refused here rather
+		// than absorbed, for codecFamily's reason — a render that silently ignored what was asked
+		// for is the failure these options exist to prevent.
+		const std::optional<io::image::ImageWriterOptions> imageOptions = flowview::imageOptions(options);
+		if (!imageOptions)
+		{
+			log::error("flowview: '{}' is not a compression setting", options.compression);
+			return 1;
+		}
+
 		flow::Graph graph;
 		if (!buildOrLoad(graph, options.graphPath, factory))
 			return 1;
@@ -599,19 +655,20 @@ namespace flowview
 					// this run. A legitimate outcome, not an error — report it and write nothing.
 					log::info("flowview: --{} produced no output this run — nothing written", out.name);
 				}
-				else if (writeBoundaryValue(out, path, evaluation))
-				{
-					log::info("flowview: wrote --{} to {}", out.name, path);
-				}
 				else
 				{
-					status = 1;
+					noteIgnoredQuality(out, path, *imageOptions);
+					if (writeBoundaryValue(out, path, evaluation, *imageOptions))
+						log::info("flowview: wrote --{} to {}", out.name, path);
+					else
+						status = 1;
 				}
 			}
 		}
 		else
 		{
-			status = std::max(status, sweep(*options.frameRange, options, graph, evaluation, scheduler, positions, writes));
+			status = std::max(status, sweep(*options.frameRange, options, graph, evaluation, scheduler, positions,
+											writes, *imageOptions));
 		}
 
 		if (!options.savePath.empty())
