@@ -7,6 +7,7 @@ add_executable(test-flowview
 	test_undo.cpp
 	test_groupnav.cpp
 	test_canvasids.cpp
+	test_clibinders.cpp
 	test_graphio.cpp
 	test_mapscene.cpp
 	test_loopscene.cpp

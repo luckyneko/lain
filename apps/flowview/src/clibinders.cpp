@@ -1,5 +1,6 @@
 #include "clibinders.h"
 
+#include <lain/core/parse.h>
 #include <lain/image/image.h>
 #include <lain/io/image/load.h>
 #include <lain/io/sequence/open.h>
@@ -37,38 +38,22 @@ namespace flowview
 
 	static std::optional<flow::PortValue> bindInt(const std::string& s)
 	{
-		try
-		{
-			std::size_t pos = 0;
-			const int v = std::stoi(s, &pos);
-			if (pos != s.size())
-				return std::nullopt; // trailing junk ("12x") isn't a clean int
-			flow::PortValue pv;
-			pv.set<int>(v);
-			return pv;
-		}
-		catch (...)
-		{
-			return std::nullopt; // not a number / out of range
-		}
+		const std::optional<int> v = core::parse<int>(s);
+		if (!v.has_value())
+			return std::nullopt; // not a number, out of range, or trailing junk ("12x")
+		flow::PortValue pv;
+		pv.set<int>(*v);
+		return pv;
 	}
 
 	static std::optional<flow::PortValue> bindFloat(const std::string& s)
 	{
-		try
-		{
-			std::size_t pos = 0;
-			const float v = std::stof(s, &pos);
-			if (pos != s.size())
-				return std::nullopt;
-			flow::PortValue pv;
-			pv.set<float>(v);
-			return pv;
-		}
-		catch (...)
-		{
+		const std::optional<float> v = core::parse<float>(s);
+		if (!v.has_value())
 			return std::nullopt;
-		}
+		flow::PortValue pv;
+		pv.set<float>(*v);
+		return pv;
 	}
 
 	static std::optional<flow::PortValue> bindBool(const std::string& s)
@@ -126,21 +111,15 @@ namespace flowview
 	// and a range is not one value.
 	static std::optional<flow::PortValue> bindFramePosition(const std::string& s)
 	{
-		std::size_t consumed = 0;
-		unsigned long long parsed = 0;
-		try
-		{
-			parsed = std::stoull(s, &consumed);
-		}
-		catch (const std::exception&)
-		{
-			return std::nullopt;
-		}
-		if (consumed != s.size()) // trailing junk, as the scalar binders above also refuse
+		// core::parse REFUSES a negative here, where std::stoull accepted one and wrapped it: "-12"
+		// used to bind position 18446744073709551604, a wrong answer that said nothing about being
+		// wrong. A frame position has no negative, so refusing is the only honest reading.
+		const std::optional<std::size_t> position = core::parse<std::size_t>(s);
+		if (!position.has_value())
 			return std::nullopt;
 
 		flow::PortValue pv;
-		pv.set<media::FramePosition>(media::FramePosition{static_cast<std::size_t>(parsed)});
+		pv.set<media::FramePosition>(media::FramePosition{*position});
 		return pv;
 	}
 

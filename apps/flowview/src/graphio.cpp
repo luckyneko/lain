@@ -1,5 +1,6 @@
 #include "graphio.h"
 
+#include <lain/core/parse.h>
 #include <lain/data/data.h>
 #include <lain/flow/example/comparenode.h> // Comparison — CompareNode's operator param
 #include <lain/flow/graph.h>
@@ -18,7 +19,6 @@
 #include <lain/media/framesequence.h>
 #include <lain/string/format.h> // format — a float's text form
 
-#include <exception>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -101,26 +101,6 @@ namespace flowview
 		io::data::registerDataCodecs(); // json (Value <-> bytes)
 	}
 
-	// Parse a whole `text` as T, or nothing. The STRICT parse clibinders.cpp already applies to a
-	// cli value: trailing junk ("12x") is not a number, because a graph quietly reading 12 out of a
-	// typo is worse than a Cast that produces nothing and says so. One policy, two callers.
-	template <typename T, typename Parse>
-	static std::optional<T> parseWhole(const std::string& text, Parse parse)
-	{
-		try
-		{
-			std::size_t used = 0;
-			const T value = parse(text, &used);
-			if (used != text.size())
-				return std::nullopt;
-			return value;
-		}
-		catch (const std::exception&)
-		{
-			return std::nullopt; // not a number at all, or out of range
-		}
-	}
-
 	void registerSceneConversions()
 	{
 		// What a CAST node may do (ADR-0022). Each entry is a POLICY, which is why they are spelled
@@ -149,13 +129,14 @@ namespace flowview
 													{ return v ? "true" : "false"; });
 
 		// From text: FALLIBLE — an unparseable string converts to nothing, which suppresses the Cast
-		// exactly as any node that produced no value does (ADR-0007).
+		// exactly as any node that produced no value does (ADR-0007). Both read the WHOLE string or
+		// refuse, because a graph quietly reading 12 out of a typo'd "12x" is worse than a Cast that
+		// produces nothing and says so — the same policy the cli binders apply to a bound value, and
+		// the same two routines, so the two doors cannot drift apart.
 		flow::registerConversion<std::string, int>(+[](const std::string& v) -> std::optional<int>
-												   { return parseWhole<int>(v, [](const std::string& t, std::size_t* used)
-																			{ return std::stoi(t, used); }); });
+												   { return core::parse<int>(v); });
 		flow::registerConversion<std::string, float>(+[](const std::string& v) -> std::optional<float>
-													 { return parseWhole<float>(v, [](const std::string& t, std::size_t* used)
-																				{ return std::stof(t, used); }); });
+													 { return core::parse<float>(v); });
 
 		// A path IS text, in both directions and without loss — the one pair here that cannot fail.
 		flow::registerConversion<std::filesystem::path, std::string>(

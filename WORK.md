@@ -5300,10 +5300,9 @@ whole field, refuse trailing junk — in **four spellings**:
 | `apps/flowview/src/graphio.cpp` `parseWhole<T>` | `stoi` / `stof` + try/catch |
 | `apps/flowview/src/clibinders.cpp` ×3 | `stoi` / `stof` / `stoull` + try/catch |
 
-**`lain::core` now declares it** — `core/parse.h` + `details/parse.inl`, header-only. The four
-in-tree callers are converted here; flowview's four follow in the next commit. `ctest -j8`
-**785/785** Debug with video on (was 775) and **758/758** Release in the default video-off
-configuration (was 748);
+**`lain::core` now declares it** — `core/parse.h` + `details/parse.inl`, header-only — and **every
+one of the seven rows above is a caller**. `ctest -j8` **789/789** Debug with video on (+14,
+was 775) and **762/762** Release in the default video-off configuration (+14, was 748);
 warning-clean, format-check clean, and `flowview run --example` identical to the pre-change binary
 once the timestamp and the minted uuids are normalised.
 
@@ -5397,6 +5396,49 @@ once the timestamp and the minted uuids are normalised.
   that case was strengthened: the first cut refused with `"x"` and at end-of-text, and `from_chars`
   advances its `ptr` on **neither**, so the case passed with the guard deleted. The arm that buys it
   is `result_out_of_range`, where `from_chars` *does* advance past the digits it refused.
+
+### The flowview binders (same change set)
+
+The four remaining sites — `clibinders.cpp`'s `bindInt` / `bindFloat` / `bindFramePosition` and
+`graphio.cpp`'s `parseWhole<T>` behind the Cast node's `string -> int` / `string -> float` — are
+converted too. `parseWhole<T>` is **deleted**. The first pass recorded these as *"the integral ones
+convert verbatim"*; that was wrong twice over, and both corrections are the interesting part.
+
+- **A REAL BUG, found by measuring rather than by reading: `std::stoull` does not refuse a negative,
+  it NEGATES.** `stoull("-12")` returns **18446744073709551604**, and it consumes the whole string,
+  so `bindFramePosition`'s trailing-junk check passed it straight through — `--position -12` bound
+  frame 18446744073709551604 and the sweep then asked a sequence for a frame no footage has. A wrong
+  answer that said nothing about being wrong, which is the exact failure `core::parse` exists to
+  prevent, sitting in the code the parser was being extracted for. **`core::parse<std::size_t>`
+  refuses it**, because `from_chars` takes no sign for an unsigned type.
+- **Nothing had ever asked.** All 781 tests passed with the bug present, and `clibinders.cpp` is
+  already compiled into `test-flowview` — so this was not the Issues-pane shape (untestable where it
+  sat). It was reachable, compiled into the test binary, and simply never tested. **The plumbing is
+  proven on the real binary**: `flowview run --example -12` reports `value '-12'`, so a negative
+  token survives CLI11's own negative-number handling and reaches the binding layer.
+- **A deliberate tightening, and it is NOT verbatim**: `"+12"` and `" 12"` were accepted by
+  `stoi` / `stoull` (which skip whitespace and take a leading `+`) and are now refused. Both are
+  shell oddities rather than values anyone means, and the refusal is the same policy the trailing-junk
+  check already applied at the other end of the string.
+- **The tightening reaches float too**, because float now goes through `core::parse` like everything
+  else: `"+1.5"`, `" 1.5"` and `"0x1p3"` are refused where `std::stof` took them. *"every scalar
+  binder reads text the same way"* is what states that as a promise rather than a coincidence — an
+  int and a float run different mechanisms inside core, and the binder's caller is told neither.
+- **An intermediate version of this commit had a `parsefloat.h` in flowview and was REJECTED**, on
+  the ground that the `static_assert` keeping float out of `core::parse` was ours rather than the
+  API's — so a second name in an app existed only to dodge a restriction core had imposed on itself.
+  It is recorded because the reasoning was self-contradictory in a way that reads as reasonable:
+  the argument for putting `parse` in core at all is that a caller should not carry the mechanism,
+  and the workaround handed one back to two callers.
+- **The agreement is asserted as an agreement, not as two copies of a string list.** *"a bound value
+  and a Cast read text the same way"* loops the same strings through both doors and compares the
+  verdicts — because a list duplicated in a test is the drift the test exists to catch. Sabotage:
+  give the Cast its own `stoi`, and that case fails **along with** the pre-existing
+  *"text converts only when the whole string is a number"*.
+- **Second sabotage: put `std::stoull` back**, and *"a negative frame position is refused, not
+  wrapped"* fails — with everything else still green, which is what says the case is about the wrap
+  and not about the conversion generally.
+
 
 ## Outstanding work — one index
 

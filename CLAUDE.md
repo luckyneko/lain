@@ -638,10 +638,9 @@ the problem. A survey found **seven implementations of one job** — text to a n
 refuse trailing junk — in **four spellings**: `version.cpp`'s `parseNumber`, `range.cpp`'s
 incremental `readNumber`, inline `from_chars` in `io/image/open.cpp` and `flow/serialize/version1.cpp`,
 and `stoi` / `stof` / `stoull` inside a try/catch at four flowview sites. **`lain::core` now declares
-it** (`core/parse.h` + `details/parse.inl`, header-only), and the four in-tree callers are converted
-here; flowview's four follow in the next commit. `ctest -j8` **785/785** Debug with video on (was
-775) and **758/758** Release in the default video-off configuration (was 748); warning-clean,
-format-check clean, and
+it** (`core/parse.h` + `details/parse.inl`, header-only), and **every one of them is a caller**.
+`ctest -j8` **789/789** Debug with video on (+14, was 775) and **762/762** Release in the default
+video-off configuration (+14, was 748); warning-clean, format-check clean, and
 `flowview run --example` identical to the pre-change binary once the timestamp and the minted uuids
 are normalised. Full landing notes in WORK.md's *`core::parse`*.
 
@@ -668,6 +667,17 @@ are normalised. Full landing notes in WORK.md's *`core::parse`*.
   drift about what `"1x"` means. `version1.cpp`'s **prefix-only** behaviour was silent and is now a
   stated decision (`parseAt` with the position ignored), **kept rather than tightened**: changing what
   an existing v1 document comes back as is its own decision, not a side effect of naming a parse.
+- **A REAL BUG in the flowview binders, found by measuring rather than by reading.** `std::stoull`
+  does not refuse a negative — **it negates**: `stoull("-12")` is `18446744073709551604`, consuming
+  the whole string, so `bindFramePosition`'s trailing-junk check passed it through and
+  `--position -12` bound a frame no footage has. The exact failure `core::parse` exists to prevent,
+  sitting in the code the parser was being extracted for. **Nothing had ever asked** — all 781 tests
+  passed with it, and `clibinders.cpp` was already compiled into `test-flowview`, so it was reachable
+  and simply untested. Plumbing proven on the real binary (`flowview run --example -12` reports
+  `value '-12'`, so a negative token survives CLI11 and reaches the binder).
+- **Deliberate tightening, and the first pass's "the integral ones convert verbatim" was wrong**:
+  `"+12"` and `" 12"` were accepted by `stoi` / `stoull`, which skip whitespace and take a leading
+  sign, and are now refused. Shell oddities rather than values anyone means.
 - **Floating point is IN, and it took two wrong answers to get there — both worth keeping.** The
   first pass refused it on SEMANTICS (*"`stof` accepts hex floats and leading whitespace"*), and
   measurement shrank that to nearly nothing: `1e5`, `inf`, `nan`, `.5` and `5.` agree exactly. The
@@ -710,6 +720,11 @@ are normalised. Full landing notes in WORK.md's *`core::parse`*.
   was strengthened first: the original refused with `"x"` and at end-of-text, and `from_chars`
   advances its `ptr` on **neither**, so it passed with the guard deleted. The arm that buys it is
   `result_out_of_range`, where `from_chars` *does* advance past the digits it refused.
+- **Two more on the binder half.** Putting `std::stoull` back fails *"a negative frame position is
+  refused, not wrapped"* alone; giving the Cast its own `stoi` fails *"a bound value and a Cast read
+  text the same way"* **together with** the pre-existing *"text converts only when the whole string is
+  a number"*. That agreement case compares the two doors' verdicts over one string list rather than
+  keeping a copy of the list, since a duplicated list is the drift it exists to catch.
 
 ### Update 2026-09-13 — M13 slice 5 built: encoder options say the job (**M13 COMPLETE**)
 
