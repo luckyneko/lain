@@ -3,6 +3,7 @@
 
 add_executable(test-core
 	test_factory.cpp
+	test_parse.cpp
 	test_time.cpp
 	test_version.cpp
 	test_range.cpp

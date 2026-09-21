@@ -2,14 +2,13 @@
 
 #include "lain/flow/serialize/serialize.h" // kFormatVersion — what the migrated document claims to be
 
+#include <lain/core/parse.h>
 #include <lain/core/uuid.h>
 
-#include <charconv>
 #include <cstdint>
 #include <map>
 #include <optional>
 #include <string>
-#include <system_error>
 #include <utility>
 
 namespace lain::flow::serialize::detail
@@ -121,10 +120,15 @@ namespace lain::flow::serialize::detail
 				data::Value migrated = data::Value::object();
 				for (const auto& [blobKey, blob] : *value.asObject())
 				{
-					std::int64_t fileId = 0;
-					if (std::from_chars(blobKey.data(), blobKey.data() + blobKey.size(), fileId).ec != std::errc{})
+					// parseAt rather than parse: this reads a LEADING number and ignores anything
+					// after it, which is what the v1 loader did. Deliberately kept — tightening a
+					// migration path changes what an existing document on disk comes back as, and
+					// that is its own decision, not a side effect of naming this parse.
+					std::size_t pos = 0;
+					const std::optional<std::int64_t> fileId = core::parseAt<std::int64_t>(blobKey, pos);
+					if (!fileId.has_value())
 						continue; // a non-numeric editor key was never ours — the v1 loader ignored it too
-					if (const auto it = ids.find(fileId); it != ids.end())
+					if (const auto it = ids.find(*fileId); it != ids.end())
 						migrated.set(it->second, blob);
 				}
 				out.set(key, std::move(migrated));

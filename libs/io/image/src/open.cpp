@@ -3,18 +3,17 @@
 #include "lain/io/image/load.h"
 #include "lain/io/image/save.h" // formatKeyOf
 
+#include <lain/core/parse.h>
 #include <lain/io/uri.h>
 #include <lain/log/log.h>
 #include <lain/media/framesource.h>
 #include <lain/string/pattern.h>
 
 #include <algorithm>
-#include <charconv>
 #include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
-#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -94,13 +93,11 @@ namespace lain::io::image
 			// literals around a key and nothing else. This is where "shot.x.png" is rejected — and
 			// it has to be asked anyway, since the number is what orders the sequence.
 			const std::string& digits = captures->at(key);
-			unsigned long long number = 0;
-			const char* const end = digits.data() + digits.size();
-			const std::from_chars_result parsed = std::from_chars(digits.data(), end, number);
-			if (parsed.ec != std::errc{} || parsed.ptr != end)
+			const std::optional<unsigned long long> number = lain::core::parse<unsigned long long>(digits);
+			if (!number.has_value())
 				continue;
 
-			matched.push_back({entry.path().string(), number});
+			matched.push_back({entry.path().string(), *number});
 		}
 
 		std::sort(matched.begin(), matched.end(),

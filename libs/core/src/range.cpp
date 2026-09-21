@@ -1,7 +1,8 @@
 #include "lain/core/range.h"
 
+#include "lain/core/parse.h"
+
 #include <cassert>
-#include <charconv>
 
 namespace lain::core
 {
@@ -24,28 +25,14 @@ namespace lain::core
 		return text;
 	}
 
-	// A run of digits at `pos`, advanced past it. nullopt when there is not one, or when the value
-	// would not fit — refusing beats wrapping, since a wrapped range visits the wrong values and
-	// says nothing about it.
-	//
-	// std::from_chars answers both halves at once: it reports result_out_of_range rather than
-	// wrapping, and the ptr it hands back IS the advanced position, which is what this incremental
-	// form wants. It also stops the classification being locale-dependent, which std::isdigit is.
-	static std::optional<std::size_t> readNumber(std::string_view text, std::size_t& pos)
-	{
-		std::size_t value = 0;
-		const std::from_chars_result result = std::from_chars(text.data() + pos, text.data() + text.size(), value);
-		if (result.ec != std::errc{})
-			return std::nullopt; // no digits here, or a value too large to hold
-
-		pos = static_cast<std::size_t>(result.ptr - text.data());
-		return value;
-	}
-
 	std::optional<Range> Range::parse(std::string_view text)
 	{
+		// core::parseAt rather than core::parse: a range is SCANNED, so each number is a leading run
+		// with the position advanced past it, and what follows is a separator this reads next.
+		// Refusing a value too large to hold is the part that matters here — a wrapped range visits
+		// the wrong values and says nothing about it.
 		std::size_t pos = 0;
-		const std::optional<std::size_t> first = readNumber(text, pos);
+		const std::optional<std::size_t> first = core::parseAt<std::size_t>(text, pos);
 		if (!first.has_value())
 			return std::nullopt;
 
@@ -55,7 +42,7 @@ namespace lain::core
 		if (pos < text.size() && text[pos] == '-')
 		{
 			++pos;
-			const std::optional<std::size_t> parsed = readNumber(text, pos);
+			const std::optional<std::size_t> parsed = core::parseAt<std::size_t>(text, pos);
 			if (!parsed.has_value())
 				return std::nullopt;
 			last = *parsed;
@@ -64,7 +51,7 @@ namespace lain::core
 		if (pos < text.size() && text[pos] == 'x')
 		{
 			++pos;
-			const std::optional<std::size_t> parsed = readNumber(text, pos);
+			const std::optional<std::size_t> parsed = core::parseAt<std::size_t>(text, pos);
 			if (!parsed.has_value() || *parsed == 0)
 				return std::nullopt;
 			step = *parsed;

@@ -4772,7 +4772,9 @@ are renamed in slice 4.
 - **`ReadWriteStream`** — refused with its trigger (`-movflags +faststart`, i.e. a muxer that
   reads back what it wrote). *(§Milestone 13 slice 3, and `stream.h`'s own refusals list.)*
 - **`Range<T>`** — trigger: a second element type actually appearing.
-- **`core::hex`** — trigger: a second consumer. Today's two sites (`uuid.cpp` decode and encode) are
+- **`core::hex`** — trigger: a second consumer. (That criterion **fired for the number parser** on
+  2026-09-21 — see §`core::parse`, which found seven implementations of one job. Hex is still two
+  inverse directions in one file, so it stands.) Today's two sites (`uuid.cpp` decode and encode) are
   **inverse directions in one file**, not two implementations of one thing, and are the only hex
   handling in the tree. The likely second consumer is a `#RRGGBB` colour parser for `gui` / `image`.
 
@@ -5283,6 +5285,119 @@ encoder a build has is platform-conditional (ADR-0019). Sabotage-verified. The m
 spelling is recorded in the Outstanding index rather than guessed at inside a still-image slice.
 
 
+## `core::parse` — the number parser stops hiding (built 2026-09-21)
+
+`libs/core/src/version.cpp`'s `parseNumber` was a file-local `static`, and the hiding was the symptom
+rather than the problem. A survey found **seven implementations of one job** — text to a number,
+whole field, refuse trailing junk — in **four spellings**:
+
+| site | shape |
+|---|---|
+| `libs/core/src/version.cpp` `parseNumber` | `from_chars`, whole-field, `uint32_t` |
+| `libs/core/src/range.cpp` `readNumber` | `from_chars`, **incremental** (advances `pos`) |
+| `libs/io/image/src/open.cpp` | `from_chars` inline, `unsigned long long` |
+| `libs/flow/serialize/src/version1.cpp` | `from_chars` inline, **prefix-only** (no `ptr == end`) |
+| `apps/flowview/src/graphio.cpp` `parseWhole<T>` | `stoi` / `stof` + try/catch |
+| `apps/flowview/src/clibinders.cpp` ×3 | `stoi` / `stof` / `stoull` + try/catch |
+
+**`lain::core` now declares it** — `core/parse.h` + `details/parse.inl`, header-only. The four
+in-tree callers are converted here; flowview's four follow in the next commit. `ctest -j8`
+**785/785** Debug with video on (was 775) and **758/758** Release in the default video-off
+configuration (was 748);
+warning-clean, format-check clean, and `flowview run --example` identical to the pre-change binary
+once the timestamp and the minted uuids are normalised.
+
+- **This is the criterion the `core::hex` deferral already set — *trigger: a second consumer* —
+  fired, and nobody noticed it had.** `hexValue` has one consumer, so it stands and `uuid.cpp` is
+  untouched (which is also where the owner's own leniency sat). `parseNumber`'s second consumer was
+  **20 lines away in the same library**, and its third and fourth were one library up. The general
+  shape is the one this file keeps recording from the other end: a rule written down for one case is
+  not self-applying, and the case it fires on next is the one nobody re-reads it for.
+- **`graphio.cpp`'s own comment reads *"One policy, two callers"* — while being the third spelling of
+  that policy**, in an app, above a core library hiding two of its own. That comment is what settled
+  the question: the policy was already understood to be worth stating once, and had been stated once
+  three times.
+- **`lain::string` is the obvious home and is REFUSED, on a dependency direction.** It PUBLIC-links
+  `fmt::fmt` + `lain::meta`, and `libs/core/CMakeLists.txt` says *"No lain or third-party deps, so
+  any library above may build on it."* Putting a number parser there buys `lain::core` a dependency
+  on fmt to parse `"1.2.3"`. `lain::core` is the only home that serves every caller, and it is also
+  where every existing `parse` already lives.
+- **No new verb, and it is deliberately not a fifth io verb.** `parse` is what `Version`, `Range`,
+  `Uuid` and `Uri` already answer text with, so this is that verb one level down — the primitive all
+  four are built out of. CONTEXT.md's *The four verbs* warns against *"a fifth verb for a fourth
+  thing"*; those name what a **loading** function hands back, and this sits below all of them. The
+  distinction is recorded beside that entry rather than in a section of its own.
+- **Not ADL-reachable, checked rather than assumed.** `image::descriptor` was renamed in the M13 tidy
+  pass because a bare noun taking a `PixelFormat` was reachable unqualified from any scope holding
+  one. `parse` takes a `std::string_view`, which associates namespace `std`, so a caller must write
+  `core::parse<T>` or bring the name in deliberately.
+- **`parse` is implemented OVER `parseAt`** — the strict reading is *the scan, plus nothing was left
+  over* — so the policy is stated once and the two cannot drift into disagreeing about `"1x"`. A
+  caller wanting the looser reading asks `parseAt` and says so, which is what `version1.cpp` now
+  does: its prefix-only behaviour was silent and is now a stated decision. **Deliberately kept, not
+  tightened** — changing what an existing v1 document comes back as is its own decision, not a side
+  effect of naming a parse.
+- **Floating point is IN, and getting there took two wrong answers.** The first pass refused it on
+  semantics (*"`stof` accepts hex floats and leading whitespace"*); measurement shrank that to almost
+  nothing, since `1e5`, `inf`, `nan`, `.5` and `5.` agree exactly. The second pass refused it on
+  portability and put a `parseFloat` in flowview — which the repo owner rejected on the sharper
+  ground: **the `static_assert` was ours, not the API's**, so the answer was a second name in an app
+  to dodge a restriction core had imposed on itself. That is the shape this whole change deletes.
+- **The portability fact is real and is worse than first recorded — but it constrains the MECHANISM,
+  not the interface.** libc++'s floating-point `from_chars` is not "wait for the CI runner": it is
+  marked **introduced in macOS 26**, so any consumer with an ordinary deployment target cannot reach
+  it. Measured rather than assumed — `-mmacosx-version-min=15.0` fails to compile with
+  *"'from_chars' is unavailable: introduced in macOS 26.0"* on a toolchain where the default target
+  compiles fine. libstdc++ (GCC 11+) and MSVC both have it. `__cpp_lib_to_chars` is useless as a
+  gate: libc++ 21 has the overloads and still does not define it.
+- **So `core::parse<T>` is ONE POLICY over TWO MECHANISMS**: `from_chars` for an integral type,
+  `strtof` / `strtod` / `strtold` for a floating one, chosen by an `if constexpr` inside the one
+  function. A caller writes `core::parse<float>` and is told none of it. The day from_chars is
+  reachable, that arm is deleted and no caller changes — which is the entire reason the seam is in
+  core rather than at each call site.
+- **The first cut of the floating arm was rejected for CONVOLUTION, and the cause is worth keeping.**
+  It read `parse<T>` → `parseAt<T>` → three `parseFloating` overloads → `parseFloatingImpl<T>` →
+  three `callStrto` overloads: **two overload sets doing the same dispatch**, plus a forwarding
+  layer, to reach one call. All of it existed to keep the arm OUT OF LINE in a `src/parse.cpp` — and
+  that was buying almost nothing, since `<cstdlib>` and `<cerrno>` are two of the lightest headers
+  there are. Dropping the out-of-line requirement collapsed seven functions to one `if constexpr`
+  and deleted `src/parse.cpp` entirely. The lesson generalises: **an out-of-line split is a cost,
+  and a template forced out of line pays it in dispatch machinery** — worth it for a heavy
+  dependency, not for two C headers.
+- **Both arms now compute a `read` count and `pos += read` happens once**, which is also what makes
+  *"a refusal does not move the scanner"* structural rather than remembered: every refusal returns
+  before that line. The first cut had the integral arm assign `pos` absolutely and the floating arm
+  increment it, which is two spellings of one step.
+- **The three refusals are INLINE in `parseAt`, not a helper.** They were briefly a named
+  `looseNumericForm` in `lain::core`, which had one caller and sat in a public header — so it added
+  a library-namespace name for something only that one function can use. That is the same criterion
+  this section applies to `core::hex` (*a helper with one consumer stays where it is*), and applying
+  it to `hexValue` while breaking it two files away is the inconsistency the owner caught.
+- **Nothing makes the two arms agree except a test, so there is one.** `strtof` accepts three things
+  `from_chars` refuses — a leading `+`, leading whitespace, and a hex float (`0x1p3` is 8) — and
+  `parseAt` refuses them ahead of BOTH arms, so `parseAt` agrees as well as `parse` does. *"the integral and floating arms refuse the same
+  forms"* runs one list through `int`, `float` and `double` rather than keeping a copy per type,
+  because a duplicated list is the drift it exists to catch. Sabotage: drop that check and **three**
+  cases fail, in core and in flowview.
+- **`ERANGE` is checked, and it is the float twin of the integral wrap.** `strtof` answers
+  `HUGE_VALF` and sets `errno`, so reading the result without it hands back an infinity for a finite
+  number someone wrote. Sabotage-verified. `parse<double>("1e300")` succeeds where `parse<float>` of
+  the same text refuses, which is the arm doing its job per type rather than per mechanism.
+- **Two costs of the floating arm, stated in the header rather than discovered later**: it is
+  **locale-dependent** through `LC_NUMERIC` (a decimal-comma locale misreads `"1.5"` — the same
+  exposure `std::stof` always had, and lain never calls `setlocale`), and it **copies the field** to
+  null-terminate it, which lands inside `std::string`'s small buffer for any real number. Both end
+  with the mechanism.
+- **`bool` is the one arithmetic type still refused, and for a reason that is not portability**: it
+  is not a numeral. Whoever reads `"true"` is deciding a spelling, which is `bindBool`'s job.
+- **Two sabotages, both caught, and the second changed a test.** Dropping the `pos == text.size()`
+  test fails the new strict case, the coupling case **and Version's own existing
+  `parse rejects malformed input`** — which is what proves the production path still runs through it.
+  Writing `pos` before the error check fails *"parseAt does not move pos on a refusal"* only because
+  that case was strengthened: the first cut refused with `"x"` and at end-of-text, and `from_chars`
+  advances its `ptr` on **neither**, so the case passed with the guard deleted. The arm that buys it
+  is `result_out_of_range`, where `from_chars` *does* advance past the digits it refused.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -5392,6 +5507,11 @@ M12 §Not in this milestone.)*
   `porttyperegistry.h` objection any design must answer. *(§notes.txt triage.)*
 - **`ReadWriteStream`**, **`Range<T>`** and **`core::hex`**, each with its trigger.
   *(§notes.txt triage.)*
+- **`core::parse`'s floating-point arm is `strtof`, not `std::from_chars`** — so that one arm is
+  locale-dependent and copies its field, where the integral arm is neither. Not a design question:
+  libc++ marks floating-point `from_chars` introduced in **macOS 26**, so it is unreachable for any
+  ordinary deployment target. Trigger: that floor being acceptable — at which point the arm is
+  deleted and no caller changes. *(§`core::parse`.)*
 
 ### Deferred — encoder options
 

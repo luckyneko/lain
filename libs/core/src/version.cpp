@@ -1,29 +1,12 @@
 #include "lain/core/version.h"
 
-#include <charconv>
+#include "lain/core/parse.h"
+
 #include <cstdint>
 #include <utility>
 
 namespace lain::core
 {
-	// --- file-local helpers (named static, not an anonymous namespace) ----------
-
-	// Parse an all-digits field into a uint32, rejecting empties and overflow.
-	//
-	// std::from_chars is the standard spelling of exactly this: no locale, no allocation, and it
-	// reports overflow as result_out_of_range rather than wrapping to a small number. It does not
-	// skip whitespace and accepts no sign for an unsigned type, so "+1" / " 1" / "-1" are refused
-	// without a check of our own. Requiring it to consume the WHOLE field is what rejects "1x" —
-	// from_chars stops at the first non-digit and reports success for the prefix.
-	static bool parseNumber(std::string_view s, uint32_t& out)
-	{
-		const char* const end = s.data() + s.size();
-		const std::from_chars_result result = std::from_chars(s.data(), end, out);
-		return result.ec == std::errc{} && result.ptr == end;
-	}
-
-	// --- Version ----------------------------------------------------------------
-
 	Version::Version(uint32_t major, uint32_t minor, uint32_t patch, std::string prerelease, std::string build)
 		: m_major(major)
 		, m_minor(minor)
@@ -68,22 +51,26 @@ namespace lain::core
 			text = text.substr(0, dash);
 		}
 
-		// What's left must be exactly "major.minor.patch". The patch field carries no
-		// separator, so a trailing ".4" lands in it and fails the all-digits check.
+		// What's left must be exactly "major.minor.patch". Each field is parsed WHOLE, so "1x"
+		// and an empty field are refused; the patch field carries no separator, so a trailing
+		// ".4" lands in it and fails that same test.
 		uint32_t parts[3] = {0, 0, 0};
 		for (int i = 0; i < 3; ++i)
 		{
+			std::string_view field = text;
 			if (i < 2)
 			{
 				const auto dot = text.find('.');
 				if (dot == std::string_view::npos)
 					return std::nullopt;
-				if (!parseNumber(text.substr(0, dot), parts[i]))
-					return std::nullopt;
+				field = text.substr(0, dot);
 				text = text.substr(dot + 1);
 			}
-			else if (!parseNumber(text, parts[2]))
+
+			const std::optional<uint32_t> value = core::parse<uint32_t>(field);
+			if (!value.has_value())
 				return std::nullopt;
+			parts[i] = *value;
 		}
 
 		return Version{parts[0], parts[1], parts[2], std::move(prerelease), std::move(build)};

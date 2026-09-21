@@ -992,6 +992,21 @@ both sit behind service-shaped seams. See [ADR-0004](docs/adr/0004-static-linkin
   named for being **destructive**, and **`openWriter`** opens a handle whose pushes are `encode`.
   _Avoid_: a fifth verb for a fourth thing; `write` for anything but bytes; naming a function for
   the noun it returns (`openSequence`) rather than for what it does.
+  **`parse` is not a fifth verb.** The four above name what a **loading** function hands back, and
+  `parse` is **text to a value, fallible, answered as an `optional`** — it sits BELOW all four rather
+  than beside them, which is why `Version`, `Range`, `Uuid` and `Uri` have each answered to it since
+  long before the rule was written. **`core::parse<T>` / `core::parseAt<T>`** are the primitive all
+  four are built out of: `parse` takes the whole text or nothing, `parseAt` reads a leading run and
+  advances a position, and `parse` IS `parseAt` plus *nothing was left over* — so a caller wanting
+  the looser reading asks for it by name instead of forgetting a check. **One policy, two
+  mechanisms**: an integral type reads through `std::from_chars`, a floating one through `strtof`,
+  because libc++ marks floating-point `from_chars` introduced in macOS 26 and so it is unreachable
+  for an ordinary deployment target. A caller is told none of that, and a test — not the code's
+  arrangement — is what holds the two arms to the same answers. _Avoid_: a `toInt` / `toUInt` family
+  (the standing preference against `toXXX` / `fromXXX` reaches here); a hand-rolled digit scan, which
+  is locale-dependent through `std::isdigit` and wraps on overflow instead of refusing; and a
+  per-caller parser written because one type's mechanism is awkward — the awkwardness belongs behind
+  the seam, which is the point of having one.
 
 - **Encoder options** *(`ImageWriterOptions` / `VideoWriterOptions`)* — what a caller may tell a
   writer beyond the asset, and the rule is that it names **the job, never an encoder's knob**. The
