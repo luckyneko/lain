@@ -1,6 +1,6 @@
 #pragma once
 
-// The bodies of core::parse / core::parseAt. Split out of parse.h for the reason details/uri.inl is
+// The bodies of core::parse / core::parseAt / core::parseInto. Split out of parse.h for the reason details/uri.inl is
 // split out of uri.h: the header should read as the interface, and this is implementation.
 
 #include <cerrno>
@@ -92,5 +92,15 @@ namespace lain::core
 		if (!value.has_value() || pos != text.size())
 			return std::nullopt;
 		return value;
+	}
+
+	template <typename T>
+	bool parseInto(std::string_view text, T& output)
+	{
+		const std::optional<T> parsed = T::parse(text);
+		if (!parsed.has_value())
+			return false; // untouched on a refusal — see parse.h
+		output = *parsed;
+		return true;
 	}
 } // namespace lain::core

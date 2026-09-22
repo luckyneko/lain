@@ -25,8 +25,8 @@ namespace lain::media
 		std::size_t value = 0;
 
 		std::string toString() const; // "frame 12"
-	};
 
-	bool operator==(FramePosition a, FramePosition b);
-	bool operator!=(FramePosition a, FramePosition b);
+		bool operator==(FramePosition other) const { return value == other.value; }
+		bool operator!=(FramePosition other) const { return !(*this == other); }
+	};
 } // namespace lain::media

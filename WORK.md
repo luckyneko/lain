@@ -5440,6 +5440,120 @@ convert verbatim"*; that was wrong twice over, and both corrections are the inte
   and not about the conversion generally.
 
 
+
+## Where a body lives (built 2026-09-21) — and the hidden-friend spelling refused
+
+Inlining `Time::from` / `Time::as` (the repo owner, ahead of this) was right for a reason that
+generalises: those bodies were out of line **in the same header**, which buys nothing — a reader
+scrolls past them either way, and the declaration and definition become two places. The survey for
+that shape found three things, and **no rule written down anywhere** — not AGENTS.md, not
+CONTEXT.md, not CLAUDE.md. `ctest -j8` **791/791** Debug with video on (+2), **764/764** Release in
+the default video-off configuration (+2) and **797/797** Release with video on (+2) — every
+baseline grown by exactly the two new cases; warning-clean, format-check clean, and `flowview run
+--example` **identical** to the pre-change binary once the timestamp and the minted uuids are
+normalised.
+
+### The refusal, which is the more useful half
+
+The first cut applied a second rule — *a binary operator is a hidden friend* — and converted twelve
+types. **Refused on review.** Recording why, so it is not re-derived:
+
+- **A comparison operator did have THREE spellings, six types each** — hidden friend (`core::Uri`,
+  `core::Uuid`, `flow::NodeId`, `flow::PortId`, `flow::PortAddress`, `Scheduler::Frontier`), member
+  (`core::Time`, `core::Version`, `data::Value`, `image::PixelIterator`, `flowview::PathStep`,
+  `flowview::PinKey`) and free at namespace scope (`core::Range`, `math::Rect2<T>`, and the four
+  `media` types). That observation is real. It is not by itself a reason to change anything.
+- **Argument 1 — conversion symmetry — is true, measured, and worthless here.** A member cannot
+  convert its LEFT operand, so `data::Value` (six implicit constructors) compiled `value == 42` and
+  rejected `42 == value`, while `"file://x" == uri` worked because `Uri`'s are hidden friends. The
+  only thing that asymmetry forbids is the Yoda form, which is not code this repo wants written;
+  the genuine non-Yoda case (a heterogeneous `std::upper_bound`, which needs `key < element`) does
+  not occur, and `Value` has no `operator<` at all. **It is also C++17-only** — C++20 synthesises
+  the reversed candidate for `==`, so the argument has a shelf life as well as no customer.
+- **Argument 2 — ADL scoping — was measured and came to nothing.** In `lain::math` the `Rect2`
+  template is a candidate for unqualified comparisons, but GLM's operators live in `glm`, so ADL
+  never associates `lain::math` for a `Vec2i` and deduction fails instantly; `lain::media`'s four
+  overloads are non-viable on sight. The argument bites for a GREEDY free template that matches
+  something unintended — none of these is a template that could.
+- **Argument 3 — the body sits with the data — is served identically by a member**, which is what
+  actually killed it. Nothing was left but uniformity for its own sake, and that does not pay for
+  the churn or for `friend` appearing in eleven public structs.
+- **Consequence, accepted deliberately: two spellings remain.** The six types that were hidden
+  friends before this work are untouched. Converting them would be churn in working code on the
+  strength of an argument already conceded. The rule therefore covers a body's HOME and is silent
+  on member-vs-free.
+
+### What landed
+
+- **The rule**, in CLAUDE.md's *Conventions to inherit*: three homes (in the class, `details/*.inl`,
+  `src/*.cpp`), the split must buy something, and **never out of line in the same header** — that
+  buys nothing and costs a second place to look.
+- **Bodies moved into their classes, keeping whatever spelling they had.** `core::Version`'s
+  `operator==` / `operator<` and the four `media` types' comparisons come out of their `.cpp` files
+  (a one-line `operator!=` defined a translation unit away is the `time.h` complaint across a TU);
+  `core::Range`'s and `math::Rect2`'s come in from namespace scope.
+- **Two byte-identical `lexical_cast` adapters collapse into `core::parseInto` + a macro.**
+  `core::Range` and `media::FrameRate` each carried the same six-line `T::parse` → bool CLI11 hook;
+  `framespec.h`'s own comment already said *"the same hook core::Range provides, and for the same
+  reason"*. The `core::hex` trigger — *a second consumer* — had fired unnoticed, one commit after
+  `core::parse` recorded that exact lesson. Each site is now **one line beside its type**:
+
+      LAIN_CLI_OPTION(Range)        // core/clioption.h
+
+  CLI11 finds the hook by ADL, so it cannot be a member; it touches nothing private, so it needs no
+  `friend`. **ONE macro does both jobs** — it expands to the whole inline definition, so there is no
+  `.cpp` half, no signature written twice, and nothing to keep in step. (An intermediate design had
+  a DECLARE/DEFINE pair with the body in the `.cpp`; the pair bought only a dependency boundary on
+  `core/parse.h`, which is std-only and is what `Range` is *about*. Rejected on that trade, and
+  CLAUDE.md's *Where a body lives* now states the exception rather than being quietly contradicted
+  by it.)
+- **The macro earns its place on legibility, not on line count.** Spelled out, `bool
+  lexical_cast(const std::string&, FrameRate&);` is an anonymous-looking free function with nothing
+  to connect it to a command line — it was written out twice, identically, before this existed.
+  `LAIN_CLI_OPTION(FrameRate)` says what it is. Cost, stated: `grep lexical_cast` no longer lists
+  the bindable types; `grep LAIN_CLI_OPTION` does.
+- **A single generic hook is IMPOSSIBLE, and the near-miss was measured rather than argued.** ADL
+  requires the hook in the TYPE'S own namespace, so it cannot be declared once for everything the
+  way `lain::string`'s fmt formatter is. One constrained template plus a per-namespace
+  using-declaration *does* work — **ADL reaches a function introduced by a using-declaration**,
+  confirmed by building it against real CLI11 over three types in two namespaces, including
+  `core::Version`, which has no hook today. Refused anyway: at two types it saves nothing, it
+  trades a greppable per-type line for an implicit *"any type here with a parse() is bindable"*
+  rule, and it leaves a `using` that reads as a deletable convenience import and silently breaks
+  conversion when deleted — the `task::Task::precede` hazard again. **Trigger recorded in
+  `clioption.h`**: a third bindable type, or a bindable type in a third namespace.
+- **`parseInto` takes a `string_view`** so `parse.h` does not carry `<string>` for a hook's
+  `const std::string&`, which converts at the call. It requires only
+  `static std::optional<T> parse(std::string_view)`, which `Range`, `FrameRate` and `Version`
+  already declare.
+- **The shared body guarantees what the two copies happened to honour: on a refusal the output is
+  untouched.** Sabotage it and **three** cases fail — the two new ones *and the pre-existing*
+  `(core)lexical_cast is the hook a command line converts through`, which is what proves the
+  shipped conversion runs through the shared body rather than merely compiling beside it.
+  `libs/app`'s existing *"cli: a custom option type converts through its own lexical_cast"* drives
+  `core::Range` through **real CLI11**. **`media::FrameRate`'s hook had never been tested at
+  all** — the second copy of the adapter, unexercised — and now is.
+- **Every `.inl` in the tree is included by its own header, so a split buys NO include and no
+  rebuild** — readability only. `valuecodecs.inl` claimed otherwise (*"only registration sites pull
+  in data.h"*) and `valuecodecs.h:69` includes it unconditionally; the comment is corrected rather
+  than the code, because the split still earns its place on length. The three whose bodies are
+  one-to-four-line forwarders — `graph.inl` (`Graph::add<T>`), `param.inl` (`Param::set`/`get`),
+  `data.inl` (`toValue`/`fromValue`) — are **deleted**, their bodies folded into their classes. The
+  other twelve stay.
+- **`task::Task::precede` is the one sanctioned same-file out-of-line body, and it now says so.**
+  It cannot sit in its class: `Task` is defined while `Flow` is only forward-declared, and the body
+  reaches through `m_flow` into `Flow`'s recipe. Moving it up is a build break rather than a tidy,
+  which is precisely what the next tidy pass would have found out the hard way.
+- **Found, NOT fixed — an eighth spelling of the number parser.** `FrameRate::parse`
+  (`libs/media/src/framespec.cpp`) hand-rolls a digit loop with its own overflow check, twenty
+  lines from the `lexical_cast` that now routes through `core::parseInto`. The `core::parse` commit
+  claimed to collapse *seven implementations in four spellings* and this one was not in the survey.
+  It is a drop-in for `core::parse<std::uint32_t>`. Left for its own commit, with its own sabotage,
+  rather than folded into a change about macros.
+- **The ASCII-test-name rule joins the conventions too.** It had been learned three times and
+  written only into landing notes, where nobody writing a new `TEST_CASE` reads it. The tree was
+  scanned and is clean.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because

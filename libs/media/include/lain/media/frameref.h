@@ -41,8 +41,14 @@ namespace lain::media
 		bool valid() const { return !source.empty(); }
 
 		std::string toString() const; // "frame 412 of /footage/take1.mp4"
-	};
 
-	bool operator==(const FrameRef& a, const FrameRef& b);
-	bool operator!=(const FrameRef& a, const FrameRef& b);
+		bool operator==(const FrameRef& other) const
+		{
+			// The timestamp is derived from the source and the ordinal, so two refs agreeing on
+			// those agree on it too; comparing it as well costs nothing and keeps this a plain
+			// structural equality rather than a rule about which fields count.
+			return source == other.source && ordinal == other.ordinal && timestamp == other.timestamp;
+		}
+		bool operator!=(const FrameRef& other) const { return !(*this == other); }
+	};
 } // namespace lain::media

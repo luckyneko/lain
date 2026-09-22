@@ -43,7 +43,11 @@ namespace lain::flow
 		// Construct a node of type T (must derive from Node) in place; returns its id (or the null
 		// NodeId if the add was refused — see the type-erased overload).
 		template <typename T, typename... Args>
-		NodeId add(Args&&... args);
+		NodeId add(Args&&... args)
+		{
+			static_assert(std::is_base_of<Node, T>::value, "T must derive from lain::flow::Node");
+			return add(std::make_unique<T>(std::forward<Args>(args)...)); // the adopt overload assigns the id
+		}
 
 		// Adopt an already-constructed node (e.g. produced by a factory), MINTING its identity;
 		// returns its id. The type-erased entry point the template add<T> forwards to. REFUSES
@@ -223,5 +227,3 @@ namespace lain::flow
 		std::vector<NodeId> m_topo;
 	};
 } // namespace lain::flow
-
-#include "lain/flow/details/graph.inl"

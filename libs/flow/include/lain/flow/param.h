@@ -62,7 +62,10 @@ namespace lain::flow
 		// invalidate its node — which only the node can do. Writes go through
 		// Node::setParam(id, value), which type-checks, commits and invalidates as one operation.
 		template <typename T>
-		const T& get() const;
+		const T& get() const
+		{
+			return m_value.get<T>();
+		}
 		template <typename T>
 		bool holds() const
 		{
@@ -76,7 +79,10 @@ namespace lain::flow
 
 		// Seed the declared default (addParam). Not part of the public surface: see the note above.
 		template <typename T>
-		void set(T value);
+		void set(T value)
+		{
+			m_value.set(std::move(value));
+		}
 
 		// Move the label. Node-only, and reached from exactly one place: Node::renamePort, which
 		// renames a defaulted input's port and the param behind it TOGETHER. A param is addressed by
@@ -96,5 +102,3 @@ namespace lain::flow
 		PortValue m_value;		// seeded with the default at addParam<T>
 	};
 } // namespace lain::flow
-
-#include "lain/flow/details/param.inl"

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <lain/core/clioption.h> // LAIN_CLI_OPTION — the command-line conversion hook, below
 #include <lain/image/colorspace.h>
 #include <lain/image/image.h>
 #include <lain/image/pixelformat.h>
@@ -50,18 +51,21 @@ namespace lain::media
 		// Returns nullopt for a decimal, a zero or missing numerator or denominator, trailing junk,
 		// an empty string, a negative number, or a value too large to hold.
 		static std::optional<FrameRate> parse(std::string_view text);
+
+		bool operator==(const FrameRate& other) const
+		{
+			// Value equality, not equivalence: 30000/1001 and 60000/2002 are the same rate but not
+			// the same declaration, and nothing here needs them to compare equal. Reducing on
+			// construction would be the fix if a caller ever does.
+			return numerator == other.numerator && denominator == other.denominator;
+		}
+		bool operator!=(const FrameRate& other) const { return !(*this == other); }
 	};
 
-	bool operator==(const FrameRate& a, const FrameRate& b);
-	bool operator!=(const FrameRate& a, const FrameRate& b);
-
-	// CLI11 converts a custom option type through an unqualified `lexical_cast` found by ADL on the
-	// type — the same hook core::Range provides, and for the same reason: an app writes
-	// `cli.add_option("--rate", rate)` with no string staging, so a malformed rate is refused by the
-	// PARSER before a graph is loaded and there is no second place the syntax could drift.
-	//
-	// lain::media names nothing of CLI11 to do this: the hook is a plain signature.
-	bool lexical_cast(const std::string& input, FrameRate& output);
+	// A command-line option type (see clioption.h): an app writes `cli.add_option("--rate", rate)`
+	// with no string staging, so a malformed rate is refused by the PARSER before a graph is
+	// loaded and there is no second place the syntax could drift.
+	LAIN_CLI_OPTION(FrameRate)
 
 	// The single declared shape of every frame in a sequence.
 	//
@@ -83,10 +87,13 @@ namespace lain::media
 		bool valid() const { return extent.x > 0 && extent.y > 0; }
 
 		std::string toString() const; // "3840x2160 RGB8 sRGB · 29.97 fps"
-	};
 
-	bool operator==(const FrameSpec& a, const FrameSpec& b);
-	bool operator!=(const FrameSpec& a, const FrameSpec& b);
+		bool operator==(const FrameSpec& other) const
+		{
+			return extent == other.extent && pixelFormat == other.pixelFormat && colorSpace == other.colorSpace && alphaMode == other.alphaMode && rate == other.rate;
+		}
+		bool operator!=(const FrameSpec& other) const { return !(*this == other); }
+	};
 
 	// The spec `image` would contribute to a sequence, at `rate`.
 	FrameSpec specOf(const lain::image::Image& image, FrameRate rate = {});

@@ -1,5 +1,6 @@
 #include "testsource.h"
 
+#include <lain/core/range.h>
 #include <lain/media/framespec.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -99,5 +100,33 @@ TEST_CASE("unify enforces homogeneity, and an unspecified rate adopts", "[media]
 	{
 		// Reconciling them is a retime, which no composition should decide silently.
 		CHECK_FALSE(unify(twentyFive, testSpec(FrameRate{30, 1})).has_value());
+	}
+}
+
+TEST_CASE("a rate converts through its own lexical_cast, on the shared body", "[media][spec]")
+{
+	// The hook is a hidden friend, so this unqualified call is ADL on FrameRate — the same lookup
+	// CLI11 performs. Nothing here names core::parseInto; that it is the body is the point.
+	FrameRate rate;
+	REQUIRE(lexical_cast(std::string{"30000/1001"}, rate));
+	REQUIRE(rate == FrameRate{30000, 1001});
+
+	// The second consumer of the adapter, asked the same question as the first. Until the body was
+	// shared these were two copies and only core::Range's was ever tested.
+	FrameRate untouched{24, 1};
+	REQUIRE_FALSE(lexical_cast(std::string{"29.97"}, untouched));
+	REQUIRE(untouched == FrameRate{24, 1});
+
+	// One list, both doors: a hook that starts disagreeing with its sibling about what text means
+	// is exactly what one shared body exists to prevent, and a copy of the list per type would be
+	// the drift it is guarding against.
+	for (const std::string& junk : {std::string{""}, std::string{"nonsense"}, std::string{"-1"}, std::string{" 24"}})
+	{
+		FrameRate rateOut{24, 1};
+		lain::core::Range rangeOut{1, 2, 1};
+		REQUIRE_FALSE(lexical_cast(junk, rateOut));
+		REQUIRE_FALSE(lexical_cast(junk, rangeOut));
+		REQUIRE(rateOut == FrameRate{24, 1});
+		REQUIRE(rangeOut == lain::core::Range{1, 2, 1});
 	}
 }

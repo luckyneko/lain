@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lain/data/archive.h"
+#include "lain/data/details/reflect.h" // the dispatch engine toValue / fromValue bottom out on
 #include "lain/data/macros.h"
 #include "lain/data/value.h"
 
@@ -36,13 +37,20 @@ namespace lain::data
 	// Reflect a C++ value into a Value tree. Handles arithmetic / bool / std::string, std::vector,
 	// std::optional, and any type with a serialize(). Format-neutral — no bytes, no JSON.
 	template <typename T>
-	Value toValue(const T& value);
+	Value toValue(const T& value)
+	{
+		return detail::writeValue(value);
+	}
 
 	// Reflect a Value back into a T, or nullopt on a shape/type mismatch (PURE — a failure leaves
 	// no partial state). "The type is the schema": success == the data conformed to T. T must be
 	// default-constructible.
 	template <typename T>
-	std::optional<T> fromValue(const Value& value);
+	std::optional<T> fromValue(const Value& value)
+	{
+		T out{};
+		if (detail::readValue(value, out))
+			return out;
+		return std::nullopt;
+	}
 } // namespace lain::data
-
-#include "lain/data/details/data.inl"

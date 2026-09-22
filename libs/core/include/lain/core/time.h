@@ -31,10 +31,17 @@ namespace lain::core
 
 		// Build from a unit value: Time::from<Milliseconds>(16.6).
 		template <class Units>
-		static Time from(double value);
+		static Time from(double value)
+		{
+			return Time{std::chrono::duration_cast<std::chrono::nanoseconds>(Units(value))};
+		}
+
 		// Read as a unit value: t.as<Milliseconds>().
 		template <class Units>
-		double as() const;
+		double as() const
+		{
+			return Units(m_ns).count(); // target rep is double, so the conversion is exact-typed
+		}
 		double seconds() const { return as<Seconds>(); }
 
 		// std::chrono interop — implicit, so a Time passes to any chrono API.
@@ -69,16 +76,4 @@ namespace lain::core
 
 		std::chrono::nanoseconds m_ns{0}; // signed int64 ns: exact + safe differences
 	};
-
-	template <class Units>
-	Time Time::from(double value)
-	{
-		return Time{std::chrono::duration_cast<std::chrono::nanoseconds>(Units(value))};
-	}
-
-	template <class Units>
-	double Time::as() const
-	{
-		return Units(m_ns).count(); // target rep is double, so the conversion is exact-typed
-	}
 } // namespace lain::core

@@ -5,6 +5,8 @@
 // as a survey of std::from_chars.
 
 #include "lain/core/parse.h"
+#include "lain/core/range.h"
+#include "lain/core/version.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -14,6 +16,9 @@
 
 using lain::core::parse;
 using lain::core::parseAt;
+using lain::core::parseInto;
+using lain::core::Range;
+using lain::core::Version;
 
 TEST_CASE("parse takes the whole text or nothing", "[core][parse]")
 {
@@ -181,4 +186,41 @@ TEST_CASE("parseAt scans a float and advances past it", "[core][parse]")
 	pos = 0;
 	CHECK_FALSE(parseAt<float>(" 1.5", pos).has_value());
 	CHECK(pos == 0);
+}
+
+TEST_CASE("parseInto is parse in the spelling an out-parameter hook needs", "[core][parse]")
+{
+	// ONE body for every type that offers CLI11's lexical_cast. Two types here, with unrelated
+	// parse() implementations, because a single one would not distinguish "the adapter works" from
+	// "Range works" — and it is the adapter being shared that this pins.
+	Range range;
+	REQUIRE(parseInto("0-9x3", range));
+	REQUIRE(range == Range{0, 9, 3});
+
+	Version version;
+	REQUIRE(parseInto("1.4.0-rc.2", version));
+	REQUIRE(version == Version{1, 4, 0});
+
+	SECTION("a refusal leaves the output alone")
+	{
+		// The contract every such hook has, and the reason the adapter is one function: a copy per
+		// type is where one of them eventually assigns a half-built value on a refusal, in a branch
+		// the caller reads as "nothing happened".
+		Range untouchedRange{1, 2, 1};
+		REQUIRE_FALSE(parseInto("nonsense", untouchedRange));
+		REQUIRE(untouchedRange == Range{1, 2, 1});
+
+		Version untouchedVersion{9, 9, 9};
+		REQUIRE_FALSE(parseInto("nonsense", untouchedVersion));
+		REQUIRE(untouchedVersion == Version{9, 9, 9});
+	}
+
+	SECTION("it takes the whole text, because T::parse does")
+	{
+		// parseInto adds no reading of its own: the strictness is the type's, so "0-9junk" is
+		// refused here for exactly the reason Range::parse refuses it.
+		Range range2;
+		REQUIRE_FALSE(parseInto("0-9junk", range2));
+		REQUIRE_FALSE(parseInto("", range2));
+	}
 }

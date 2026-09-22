@@ -41,9 +41,19 @@ namespace lain::core
 		static std::optional<Version> parse(std::string_view text);
 
 		// Precedence on the numeric triple only (tags ignored — see the class note).
-		bool operator==(const Version& rhs) const;
+		bool operator==(const Version& rhs) const
+		{
+			return m_major == rhs.m_major && m_minor == rhs.m_minor && m_patch == rhs.m_patch;
+		}
 		bool operator!=(const Version& rhs) const { return !(*this == rhs); }
-		bool operator<(const Version& rhs) const;
+		bool operator<(const Version& rhs) const
+		{
+			if (m_major != rhs.m_major)
+				return m_major < rhs.m_major;
+			if (m_minor != rhs.m_minor)
+				return m_minor < rhs.m_minor;
+			return m_patch < rhs.m_patch;
+		}
 		bool operator<=(const Version& rhs) const { return !(rhs < *this); }
 		bool operator>(const Version& rhs) const { return rhs < *this; }
 		bool operator>=(const Version& rhs) const { return !(*this < rhs); }

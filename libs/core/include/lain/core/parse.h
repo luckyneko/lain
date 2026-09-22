@@ -45,7 +45,23 @@ namespace lain::core
 	// prefix it did read. A caller wanting that looser reading asks parseAt and says so.
 	template <typename T>
 	std::optional<T> parse(std::string_view text);
+
+	// The same question in the OUT-PARAMETER spelling a C-style hook demands — today CLI11's
+	// `lexical_cast`, which it finds by ADL and which must answer bool. Not a fourth verb: parse is
+	// still what runs, and T is what supplies it — core::Range, media::FrameRate and core::Version
+	// each already declare `static std::optional<T> parse(std::string_view)`, which is the whole
+	// requirement on T.
+	//
+	// ON A REFUSAL THE OUTPUT IS UNTOUCHED, and that is why this is one function rather than one
+	// per type: the adapter is five lines of parse-then-assign, and five lines copied per type is
+	// where one copy eventually assigns a half-built value on a refusal and nothing notices. It
+	// already had two copies when it was written down.
+	//
+	// Takes a string_view, so this header does not start carrying <string> for a hook's
+	// `const std::string&` — which converts at the call.
+	template <typename T>
+	bool parseInto(std::string_view text, T& output);
 } // namespace lain::core
 
-// Both are templates, and a body is implementation. Split out for the reason details/uri.inl is.
+// All three are templates, and a body is implementation. Split out for the reason details/uri.inl is.
 #include "lain/core/details/parse.inl"

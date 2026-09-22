@@ -65,13 +65,4 @@ namespace lain::core
 		// Every refusal is above, so the constructor's precondition holds by construction here.
 		return Range{*first, last, step};
 	}
-
-	bool lexical_cast(const std::string& input, Range& output)
-	{
-		const std::optional<Range> parsed = Range::parse(input);
-		if (!parsed.has_value())
-			return false;
-		output = *parsed;
-		return true;
-	}
 } // namespace lain::core

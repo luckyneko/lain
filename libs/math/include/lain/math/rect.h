@@ -45,15 +45,13 @@ namespace lain::math
 		// Whether this covers nothing. A negative extent is empty rather than reversed: reversing
 		// is an operation on the thing being addressed, not a property of the address.
 		constexpr bool empty() const { return extent.x <= T{0} || extent.y <= T{0}; }
-	};
 
-	template <typename T>
-	constexpr bool operator==(const Rect2<T>& a, const Rect2<T>& b)
-	{
-		return a.origin == b.origin && a.extent == b.extent;
-	}
-	template <typename T>
-	constexpr bool operator!=(const Rect2<T>& a, const Rect2<T>& b) { return !(a == b); }
+		constexpr bool operator==(const Rect2& other) const
+		{
+			return origin == other.origin && extent == other.extent;
+		}
+		constexpr bool operator!=(const Rect2& other) const { return !(*this == other); }
+	};
 
 	// The one concrete a consumer has asked for. Others (Rect2f, …) are one alias each when one
 	// does — the same rule the port-type and codec registries follow.

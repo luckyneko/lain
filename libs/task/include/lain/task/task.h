@@ -80,6 +80,10 @@ namespace lain::task
 		multi::Recipe m_recipe;
 	};
 
+	// OUT OF LINE BECAUSE IT CANNOT BE IN THE CLASS: the body reaches through m_flow into Flow's
+	// recipe, and Flow is merely forward-declared where Task is defined. This is the one sanctioned
+	// exception to "a body a reader takes in at a glance lives in its class" (CLAUDE.md, *Where a
+	// body lives*) — moving it up is a build break, not a tidy.
 	inline Task& Task::precede(Task successor)
 	{
 		const multi::RecipeResult result = m_flow->m_recipe.order(m_step >> successor.m_step);

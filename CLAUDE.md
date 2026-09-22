@@ -631,6 +631,73 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-21 — one rule for where a body lives (and the hidden-friend spelling refused)
+
+The repo owner inlined `Time::from` / `Time::as`, and the reason generalises: those bodies were out
+of line **in the same header**, which buys nothing — a reader scrolls past them either way, and the
+declaration and definition become two places. Surveying for that shape found three things and **no
+rule written down anywhere** (not AGENTS.md, not CONTEXT.md, not CLAUDE.md). The rule is now in
+*Conventions to inherit* below. `ctest -j8` **791/791** Debug with video on (+2), **764/764**
+Release in the default video-off configuration (+2), **797/797** Release with video on (+2);
+warning-clean, format-check clean, and `flowview run --example` **identical** to the pre-change
+binary once the timestamp and the minted uuids are normalised. Full landing notes in WORK.md's
+*Where a body lives*.
+
+- **The first cut made every comparison a hidden friend, and that was REFUSED on review — the
+  refusal is the more useful half of this entry.** Three arguments were offered and none survived.
+  (1) *Conversion symmetry*: a member cannot convert its LEFT operand, so `data::Value` — with six
+  implicit constructors — accepted `value == 42` and rejected `42 == value`. True, measured, and
+  worthless: the only thing it enables is a Yoda comparison this codebase does not want written,
+  nothing here does a heterogeneous `upper_bound`, and it is **C++17-only** besides, since C++20
+  synthesises the reversed candidate for `==`. (2) *ADL scoping*: measured and came to nothing —
+  GLM's operators live in `glm`, so ADL never associates `lain::math` for a `Vec2i`, and `media`'s
+  four overloads are non-viable on sight. The argument only bites for a GREEDY free template, and
+  none of these is one. (3) *The body sits with the data*: **a member does that too**, which is
+  what actually killed it. What remained was uniformity for its own sake, which does not pay for
+  `friend` in eleven public structs.
+- **So the rule covers a body's HOME and says nothing about its spelling.** One-line bodies move
+  INTO their class — as members, where they were already members — and the six types that were
+  hidden friends before this work (`Uri`, `Uuid`, `NodeId`, `PortId`, `PortAddress`, `Frontier`)
+  are left exactly as they were. Two spellings remain and that is deliberate: a rule needs a
+  benefit to justify the churn, and this one had none.
+- **What the survey found and the change kept:** `core::Version`'s and the four `media` types'
+  comparison bodies move out of their `.cpp` files into their classes (a one-line `operator!=`
+  defined a translation unit away is the `time.h` complaint across a TU); `core::Range`'s and
+  `math::Rect2`'s move in from namespace scope.
+- **Two byte-identical `lexical_cast` adapters became `core::parseInto` + `LAIN_CLI_OPTION`.**
+  `Range` and `FrameRate` each carried the same six-line `T::parse` → bool hook, and `framespec.h`
+  already *said* it was the same hook — the `core::hex` trigger (*a second consumer*) fired
+  unnoticed again, one commit after `core::parse` recorded that exact lesson. Each is now **one
+  line beside its type**, `LAIN_CLI_OPTION(Range)`, from the new **`core/clioption.h`**.
+- **The macro is the whole hook, not a declaration needing a `.cpp` half.** Spelled out, `bool
+  lexical_cast(const std::string&, FrameRate&);` is an anonymous-looking free function with nothing
+  connecting it to a command line — the macro is what makes the line say *this type is a
+  command-line option*. It cannot be a member (CLI11 finds it by ADL) and needs no `friend`
+  (nothing private). **One macro serves both jobs** because it expands to the whole inline
+  definition, so there is no signature written twice and nothing to keep in step.
+- **A single generic hook is impossible, and that was measured rather than assumed.** ADL requires
+  the hook in the TYPE'S namespace, so it cannot be declared once like `lain::string`'s fmt
+  formatter. One constrained template plus a per-namespace `using` DOES work — ADL reaches a
+  function introduced by a using-declaration, verified through real CLI11 on three types across two
+  namespaces — but at two types it saves nothing, trades a greppable per-type line for an implicit
+  rule, and leaves a `using` that looks deletable and silently breaks conversion. Refused with a
+  trigger, recorded in `clioption.h`: a third bindable type, or a third namespace.
+- **The shared body guarantees what the two copies happened to honour: on a refusal the output is
+  untouched.** Sabotage it and **three** cases fail, including the *pre-existing* `lexical_cast`
+  case — which is what proves the shipped path runs through it. **`FrameRate`'s hook had never
+  been tested at all.**
+- **Found, not fixed: `FrameRate::parse` hand-rolls its own digit loop** — an eighth spelling of
+  the job `core::parse` collapsed seven of, twenty lines from a file that now calls into it. It is
+  a drop-in for `core::parse<std::uint32_t>` (both refuse a decimal point, both refuse an overflow
+  rather than wrapping), but swapping it is its own commit with its own sabotage.
+- **Every `.inl` is included by its own header, so a split buys no include and no rebuild** —
+  readability only. `valuecodecs.inl` claimed otherwise and was wrong; its comment is corrected.
+  The three holding one-to-four-line forwarders (`graph.inl`, `param.inl`, `data.inl`) are
+  **deleted** and folded into their classes; the other twelve stay.
+- **`task::Task::precede` is the one sanctioned same-file out-of-line body and now says so** — it
+  reaches through `m_flow` into a `Flow` that is only forward-declared where `Task` is defined, so
+  moving it up is a build break rather than a tidy.
+
 ### Update 2026-09-21 — `core::parse`: the number parser stops hiding
 
 `version.cpp`'s `parseNumber` was a file-local `static`, and the hiding was the symptom rather than
@@ -3162,6 +3229,34 @@ beside this repo) before writing:
   pattern. `Graph`/`Node` are owners (handle-ish); the scheduler is internal.
 - **Tests.** Catch2 via `ctest`; `[gpu]` tests `SKIP`-aware (no driver → green),
   exactly as `archimedes` does. Tests exercise the production path, never a copy.
+  A **TEST_CASE name is ASCII** — `catch_discover_tests` hands it back to the executable
+  as an argv filter, and a non-ASCII byte does not survive that trip on Windows. Prose and
+  SECTION names keep their em dashes.
+- **Where a body lives.** Three homes, and the split must buy something.
+  1. **In the class** — the default. Anything a reader takes in at a glance: a forwarder,
+     a comparison, a one-expression accessor.
+  2. **`details/<name>.inl`** — a template body long enough that the header would stop
+     reading as an interface. Every `.inl` in the tree is included by its own header, so
+     the split buys *readability only*; never claim it buys an include or a rebuild.
+  3. **`src/<name>.cpp`** — a non-template body. The only home that buys a real dependency
+     boundary, and the default for one. A ONE-LINE DELEGATION whose dependency is light and
+     already part of what the type is about may stay inline in the header instead —
+     `LAIN_CLI_OPTION` (core/clioption.h) is the standing case, where splitting bought a
+     `.cpp` half that had to be kept in step with a signature in the header, and bought
+     nothing else. That is a trade made deliberately, not a shortcut.
+
+  **Never out of line in the same header.** It buys nothing — the reader scrolls past the
+  body either way — and costs a second place to look. The one sanctioned exception is a
+  body that *cannot* sit in its class because it needs a type declared later
+  (`task::Task::precede` needs `Flow`), and such a body says so in a comment, because
+  moving it up is a build break rather than a tidy.
+  This rule is about a body's HOME, and deliberately says nothing about whether an operator
+  is a member or a free function. Making every comparison a hidden friend was considered and
+  **refused** (2026-09-21): the only thing it buys over a member is converting the LEFT
+  operand, which just enables `42 == value` — Yoda comparisons nobody here wants to read —
+  and it is a C++17-only difference anyway, since C++20 synthesises the reversed candidate.
+  The ADL-scoping argument was measured and came to nothing in this tree. Both spellings
+  exist and both are fine; the body goes in the class either way.
 
 ## Where to start
 

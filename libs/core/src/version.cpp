@@ -75,18 +75,4 @@ namespace lain::core
 
 		return Version{parts[0], parts[1], parts[2], std::move(prerelease), std::move(build)};
 	}
-
-	bool Version::operator==(const Version& rhs) const
-	{
-		return m_major == rhs.m_major && m_minor == rhs.m_minor && m_patch == rhs.m_patch;
-	}
-
-	bool Version::operator<(const Version& rhs) const
-	{
-		if (m_major != rhs.m_major)
-			return m_major < rhs.m_major;
-		if (m_minor != rhs.m_minor)
-			return m_minor < rhs.m_minor;
-		return m_patch < rhs.m_patch;
-	}
 } // namespace lain::core

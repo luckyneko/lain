@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lain/core/clioption.h" // LAIN_CLI_OPTION — the command-line conversion hook, below
+
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -63,23 +65,20 @@ namespace lain::core
 		// constructor's precondition a precondition: untrusted text cannot reach it.
 		static std::optional<Range> parse(std::string_view text);
 
+		constexpr bool operator==(const Range& other) const
+		{
+			return m_first == other.m_first && m_last == other.m_last && m_step == other.m_step;
+		}
+		constexpr bool operator!=(const Range& other) const { return !(*this == other); }
+
 	private:
 		std::size_t m_first = 0;
 		std::size_t m_last = 0;
 		std::size_t m_step = 1;
 	};
 
-	constexpr bool operator==(const Range& a, const Range& b)
-	{
-		return a.first() == b.first() && a.last() == b.last() && a.step() == b.step();
-	}
-	constexpr bool operator!=(const Range& a, const Range& b) { return !(a == b); }
-
-	// CLI11 converts a custom option type through an unqualified `lexical_cast` found by ADL on the
-	// type. Satisfying it here is what lets an app write `cli.add_option("--frame", range)` with no
-	// wrapper and no string staging — the same shape meta::enums gives an enum option.
-	//
-	// Note core names nothing of CLI11 to do this: the hook is a plain signature, so the dependency
-	// stays one-way and this header remains std-only.
-	bool lexical_cast(const std::string& input, Range& output);
+	// A command-line option type: an app writes `cli.add_option("--frame", range)` with no wrapper
+	// and no string staging, the same shape meta::enums gives an enum option. See clioption.h —
+	// core names nothing of CLI11 to offer this.
+	LAIN_CLI_OPTION(Range)
 } // namespace lain::core

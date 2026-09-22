@@ -21,16 +21,6 @@ namespace lain::media
 		return lain::string::format("{:g} fps", hz());
 	}
 
-	bool operator==(const FrameRate& a, const FrameRate& b)
-	{
-		// Value equality, not equivalence: 30000/1001 and 60000/2002 are the same rate but not
-		// the same declaration, and nothing here needs them to compare equal. Reducing on
-		// construction would be the fix if a caller ever does.
-		return a.numerator == b.numerator && a.denominator == b.denominator;
-	}
-
-	bool operator!=(const FrameRate& a, const FrameRate& b) { return !(a == b); }
-
 	std::optional<FrameRate> FrameRate::parse(std::string_view text)
 	{
 		if (text.empty())
@@ -67,15 +57,6 @@ namespace lain::media
 		return FrameRate{*numerator, *denominator};
 	}
 
-	bool lexical_cast(const std::string& input, FrameRate& output)
-	{
-		const std::optional<FrameRate> parsed = FrameRate::parse(input);
-		if (!parsed)
-			return false;
-		output = *parsed;
-		return true;
-	}
-
 	std::string FrameSpec::toString() const
 	{
 		if (!valid())
@@ -84,13 +65,6 @@ namespace lain::media
 									lain::meta::enums::name(pixelFormat),
 									lain::meta::enums::name(colorSpace), rate.toString());
 	}
-
-	bool operator==(const FrameSpec& a, const FrameSpec& b)
-	{
-		return a.extent == b.extent && a.pixelFormat == b.pixelFormat && a.colorSpace == b.colorSpace && a.alphaMode == b.alphaMode && a.rate == b.rate;
-	}
-
-	bool operator!=(const FrameSpec& a, const FrameSpec& b) { return !(a == b); }
 
 	FrameSpec specOf(const lain::image::Image& image, FrameRate rate)
 	{

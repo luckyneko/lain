@@ -1,8 +1,13 @@
 #pragma once
 
 // ValueCodecs::registerType<T> — captures T in a captureless pair of function pointers that route
-// through the lain::data reflection facade. Split from the header so only registration sites pull
-// in data.h (the facade); the ValueCodec struct needs only value.h (data::Value).
+// through the lain::data reflection facade.
+//
+// Split from the header for READABILITY only. It used to claim the split kept data.h off
+// non-registration sites; it does not, and never did — valuecodecs.h includes this unconditionally,
+// as every .inl in the tree is included by its own header, so a split buys no include and no
+// rebuild. What it does buy is a header that reads as an interface, which is the whole test
+// (CLAUDE.md, *Where a body lives*).
 
 #include <lain/data/data.h> // data::toValue / data::fromValue
 
