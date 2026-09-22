@@ -5544,12 +5544,22 @@ types. **Refused on review.** Recording why, so it is not re-derived:
   It cannot sit in its class: `Task` is defined while `Flow` is only forward-declared, and the body
   reaches through `m_flow` into `Flow`'s recipe. Moving it up is a build break rather than a tidy,
   which is precisely what the next tidy pass would have found out the hard way.
-- **Found, NOT fixed — an eighth spelling of the number parser.** `FrameRate::parse`
-  (`libs/media/src/framespec.cpp`) hand-rolls a digit loop with its own overflow check, twenty
-  lines from the `lexical_cast` that now routes through `core::parseInto`. The `core::parse` commit
-  claimed to collapse *seven implementations in four spellings* and this one was not in the survey.
-  It is a drop-in for `core::parse<std::uint32_t>`. Left for its own commit, with its own sabotage,
-  rather than folded into a change about macros.
+- **The adjacent finding, in its own commit: an EIGHTH spelling of the number parser.**
+  `FrameRate::parse` (`libs/media/src/framespec.cpp`) hand-rolled a digit loop with its own
+  overflow check, twenty lines from the `lexical_cast` that now routes through `core::parseInto`.
+  The `core::parse` commit claimed to collapse *seven implementations in four spellings*, and this
+  one was not in the survey — it is a `for` loop over chars rather than a `from_chars` or a `stoi`,
+  so none of the four greps that found the others would have seen it. It is now
+  `core::parse<std::uint32_t>`.
+  - **Characterised BEFORE it was swapped, which is the only reason the equivalence is a
+    measurement.** `FrameRate::parse` is reached from nowhere but `lexical_cast` and had **no
+    direct test at all**, so a new `[media][spec]` case pinned the whole refusal list — decimals,
+    overflow, empty fields, a second slash, a sign, whitespace, hex, zero on either side — and was
+    run against the hand-rolled loop first: **36 assertions green**. The swap left all 36 green.
+  - **Sabotage names the load-bearing property.** Substituting prefix-only `core::parseAt` for
+    whole-field `core::parse` fails exactly **4 of 36** — both decimals, `"24fps"` and `"24 "` —
+    which is the full-consumption test, and is precisely what makes refusing `"29.97"` (this
+    type's whole reason for existing) survive the change of mechanism.
 - **The ASCII-test-name rule joins the conventions too.** It had been learned three times and
   written only into landing notes, where nobody writing a new `TEST_CASE` reads it. The tree was
   scanned and is clean.

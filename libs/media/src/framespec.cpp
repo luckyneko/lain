@@ -1,5 +1,6 @@
 #include "lain/media/framespec.h"
 
+#include <lain/core/parse.h> // core::parse — one reading of text as a number, tree-wide
 #include <lain/meta/enums.h>
 #include <lain/string/format.h>
 
@@ -33,24 +34,13 @@ namespace lain::media
 		const std::string_view denominatorText =
 			slash == std::string_view::npos ? std::string_view{"1"} : text.substr(slash + 1);
 
-		const auto field = [](std::string_view digits) -> std::optional<std::uint32_t>
-		{
-			if (digits.empty())
-				return std::nullopt;
-			std::uint64_t value = 0;
-			for (const char c : digits)
-			{
-				if (c < '0' || c > '9')
-					return std::nullopt; // a decimal point lands here, which is the point
-				value = value * 10 + static_cast<std::uint64_t>(c - '0');
-				if (value > 0xFFFFFFFFull)
-					return std::nullopt; // refused rather than wrapped to a small, wrong rate
-			}
-			return static_cast<std::uint32_t>(value);
-		};
-
-		const std::optional<std::uint32_t> numerator = field(numeratorText);
-		const std::optional<std::uint32_t> denominator = field(denominatorText);
+		// core::parse, not a digit loop of our own: it takes the WHOLE field or nothing, so a
+		// decimal point is refused (from_chars stops at the '.', and the full-consumption test
+		// rejects what is left) — which is this type's whole reason for existing — and a value
+		// too large reports result_out_of_range rather than wrapping to a small, wrong rate.
+		// A leading sign, leading whitespace and a hex spelling are refused there too.
+		const std::optional<std::uint32_t> numerator = core::parse<std::uint32_t>(numeratorText);
+		const std::optional<std::uint32_t> denominator = core::parse<std::uint32_t>(denominatorText);
 		if (!numerator || !denominator || *numerator == 0 || *denominator == 0)
 			return std::nullopt; // zero on either side is "unspecified", which is not something to ASK for
 

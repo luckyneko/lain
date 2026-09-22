@@ -130,3 +130,50 @@ TEST_CASE("a rate converts through its own lexical_cast, on the shared body", "[
 		REQUIRE(rangeOut == lain::core::Range{1, 2, 1});
 	}
 }
+
+TEST_CASE("a rate parses only from an exact rational", "[media][spec]")
+{
+	// Characterises FrameRate::parse's whole refusal list. Written to pin the hand-rolled digit
+	// loop's behaviour before that loop was replaced by core::parse<std::uint32_t>, so it is the
+	// evidence the two agree rather than an assertion that they do.
+	CHECK(FrameRate::parse("24") == FrameRate{24, 1});
+	CHECK(FrameRate::parse("30000/1001") == FrameRate{30000, 1001});
+	CHECK(FrameRate::parse("024") == FrameRate{24, 1});					// leading zeros are digits
+	CHECK(FrameRate::parse("4294967295") == FrameRate{4294967295u, 1}); // the largest that fits
+
+	SECTION("a decimal is refused, which is the type's whole reason for existing")
+	{
+		CHECK_FALSE(FrameRate::parse("29.97"));
+		CHECK_FALSE(FrameRate::parse("30000.0/1001"));
+	}
+
+	SECTION("a value too large is refused, not wrapped to a small wrong rate")
+	{
+		CHECK_FALSE(FrameRate::parse("4294967296")); // 2^32
+		CHECK_FALSE(FrameRate::parse("99999999999999"));
+	}
+
+	SECTION("a malformed field is refused")
+	{
+		CHECK_FALSE(FrameRate::parse(""));
+		CHECK_FALSE(FrameRate::parse("/1001"));		// no numerator
+		CHECK_FALSE(FrameRate::parse("30000/"));	// no denominator
+		CHECK_FALSE(FrameRate::parse("24fps"));		// trailing junk
+		CHECK_FALSE(FrameRate::parse("24/1001/2")); // the second slash lands in the denominator
+	}
+
+	SECTION("a sign, whitespace or a hex spelling is not a rate")
+	{
+		CHECK_FALSE(FrameRate::parse("+24"));
+		CHECK_FALSE(FrameRate::parse("-24"));
+		CHECK_FALSE(FrameRate::parse(" 24"));
+		CHECK_FALSE(FrameRate::parse("24 "));
+		CHECK_FALSE(FrameRate::parse("0x18"));
+	}
+
+	SECTION("zero on either side names no rate, so it is not something to ask for")
+	{
+		CHECK_FALSE(FrameRate::parse("0"));
+		CHECK_FALSE(FrameRate::parse("24/0"));
+	}
+}

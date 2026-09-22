@@ -686,10 +686,17 @@ binary once the timestamp and the minted uuids are normalised. Full landing note
   untouched.** Sabotage it and **three** cases fail, including the *pre-existing* `lexical_cast`
   case — which is what proves the shipped path runs through it. **`FrameRate`'s hook had never
   been tested at all.**
-- **Found, not fixed: `FrameRate::parse` hand-rolls its own digit loop** — an eighth spelling of
-  the job `core::parse` collapsed seven of, twenty lines from a file that now calls into it. It is
-  a drop-in for `core::parse<std::uint32_t>` (both refuse a decimal point, both refuse an overflow
-  rather than wrapping), but swapping it is its own commit with its own sabotage.
+- **The adjacent finding, in its own commit: an EIGHTH spelling of the number parser.**
+  `FrameRate::parse` hand-rolled a digit loop with its own overflow check, twenty lines from the
+  file that now calls into `core::parseInto`. The `core::parse` commit claimed *seven
+  implementations in four spellings*, and this one was missed because it is a `for` loop over
+  chars — none of the greps that found a `from_chars` or a `stoi` would see it. Now
+  `core::parse<std::uint32_t>`. It had **no direct test at all** (it is reached only through
+  `lexical_cast`), so the refusal list was characterised against the OLD loop first — 36
+  assertions green — and the swap left all 36 green, which is what makes the equivalence measured
+  rather than argued. Sabotage: prefix-only `parseAt` instead of whole-field `parse` fails exactly
+  4 of 36, both decimals plus `"24fps"` and `"24 "` — the full-consumption test, which is what
+  keeps `"29.97"` refused across a change of mechanism.
 - **Every `.inl` is included by its own header, so a split buys no include and no rebuild** —
   readability only. `valuecodecs.inl` claimed otherwise and was wrong; its comment is corrected.
   The three holding one-to-four-line forwarders (`graph.inl`, `param.inl`, `data.inl`) are
