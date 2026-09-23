@@ -23,8 +23,18 @@ namespace lain::math
 	template <typename T>
 	struct Rect2
 	{
-		Vec2<T> origin{};
-		Vec2<T> extent{};
+		// {T{0}} rather than {}, which is the difference between constexpr and not ON MSVC ONLY:
+		// GLM stores a vec's components in ANONYMOUS UNIONS (`union {T x, r, s;}`), and MSVC's
+		// constexpr evaluator does not treat a VALUE-INITIALISED union member as initialised. So
+		// `constexpr Rect2i{}` compiled on clang and gcc and failed on MSVC with "expression did
+		// not evaluate to a constant", while every Rect2i{x, y, w, h} beside it was fine — those
+		// reach GLM's two-argument constructor, which names the members. Naming the scalar
+		// constructor here does the same for the default.
+		//
+		// GLM_FORCE_XYZW_ONLY would also fix it and is REFUSED: it removes the .r/.g/.b spellings,
+		// which image::ColorRGBf is read through in flowview's graphio.cpp and parameditors.cpp.
+		Vec2<T> origin{T{0}};
+		Vec2<T> extent{T{0}};
 
 		constexpr Rect2() = default;
 		constexpr Rect2(Vec2<T> rectOrigin, Vec2<T> rectExtent)

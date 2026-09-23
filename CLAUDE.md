@@ -631,6 +631,54 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-22 — Windows CI: red since 2026-09-14, and neither cause was recent
+
+The push of the two body-placement commits came back red on **Windows Release alone**, at Build.
+**Neither failure came from those commits** — the run of 2026-09-14 carries the same two errors, so
+the leg had been broken since the 2026-09-11 work shipped and stayed broken for eight days across
+two pushes. Last green: 2026-09-10. That is Run 9's *"only a push runs CI"* lesson getting worse:
+the check existed, ran, and reported correctly; nobody opened it. Full notes in WORK.md's *Run 10*.
+
+- **C4324 from `multi`, and multi ALREADY SUPPRESSED IT — wrongly scoped.** MSVC reports that the
+  `alignas(CACHE_LINE_SIZE)` on `ChaseLevDeque` / `MpmcQueue` / `WorkerPool` padded the struct,
+  which is the entire point of a deque that must not false-share, and `/W4 /WX` makes it fatal.
+  multi's CMakeLists already carried `/wd4324` with a correct comment — inside
+  `target_compile_options(... PRIVATE ...)`. **PRIVATE covers multi's own sources and not the
+  headers a consumer includes**, which is exactly why multi's own Windows CI (two images, Debug and
+  Release) was green while every consumer tripped over it: the library that owned the problem was
+  the one configuration that could not see it. The general shape — **a suppression for something
+  declared in a public header belongs at the declaration**, because a build flag stops at the
+  target boundary and a header does not.
+- **Fixed in multi:** `MULTI_BEGIN_CACHE_ALIGNED` / `MULTI_END_CACHE_ALIGNED` in
+  `details/platform.h`, beside the `CACHE_LINE_SIZE` it is about and already included by all three
+  headers, wrapping each class. **The `/wd4324` flag is deleted rather than kept alongside**, which
+  is what turns multi's own Windows leg into a test of the pragma instead of a test of the flag.
+  Two CIs now each prove one half. `task.h`'s `alignas(SBO_ALIGN)` is deliberately not covered — it
+  is `alignof(void*)` on a char buffer, so it cannot pad and does not warn.
+- **A first fix was built in lain and BACKED OUT:** re-exposing multi's headers as SYSTEM from
+  lain's root CMakeLists. It worked and was wrong twice — it silences every warning from an owned
+  library rather than the one that is noise, and it fixes one consumer while leaving the next, and
+  every non-CMake consumer, to hit it again. One finding survives it and is worth keeping: MSVC's
+  `/external:I` does nothing to warnings without `/external:W<n>`, so a SYSTEM re-expose can be a
+  silent no-op there; CMake emits both for MSVC >= 19.29.30036.3, which CI's VS 2022 satisfies.
+- **`test_rect.cpp(44) C2131`, and only line 44** — `STATIC_REQUIRE(lm::Rect2i{}.empty())`, the
+  DEFAULT-constructed case, while every `Rect2i{x, y, w, h}` beside it passed. GLM stores a vec's
+  components in **anonymous unions** behind a defaulted default constructor, and MSVC's constexpr
+  evaluator does not treat a value-initialised union member as initialised; the four-argument path
+  reaches GLM's two-argument constructor, which names the members. `Rect2`'s NSDMIs now say
+  `{T{0}}`. **`GLM_FORCE_XYZW_ONLY` also fixes it and is refused** on a checked ground: it removes
+  the `.r`/`.g`/`.b` spellings that `image::ColorRGBf` is read through in `graphio.cpp` and
+  `parameditors.cpp`.
+- **Neither fix is verifiable on this machine.** CI is still the only Windows compiler this project
+  has, so the next push is the test; multi passing standalone (103/103) and lain's three
+  configurations staying green (792 / 765 / 798) says the fixes break nothing, not that they work.
+  The residual risk is real and stated: C4324 is raised at template INSTANTIATION while the pragma
+  sits at the definition — MSVC attributes it to the member's own line, which the wrap covers, and
+  this is `concurrentqueue`'s and `folly`'s idiom for this exact warning, but it is unproven here.
+  Fallback: multi's `/wd4324` moved from PRIVATE to INTERFACE. And the Test step has not run on
+  Windows since 2026-09-10, so everything from the `multi` swap onward is unproven there rather
+  than merely unreported.
+
 ### Update 2026-09-21 — one rule for where a body lives (and the hidden-friend spelling refused)
 
 The repo owner inlined `Time::from` / `Time::as`, and the reason generalises: those bodies were out

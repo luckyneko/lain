@@ -3945,6 +3945,91 @@ locally, format-check clean.
   Run 4 stated, applied to say where it stops. Renaming them would spend prose on a constraint that
   does not reach them.
 
+### Run 10 (2026-09-22) — Windows had been red for eight days and nobody looked
+
+The push of the two body-placement commits came back red on **Windows Release alone**, at the Build
+step. **Neither failure was in those commits.** The run of 2026-09-14 carries the SAME TWO ERRORS,
+byte for byte, so the leg had been broken since the 2026-09-11 work went out and stayed broken for
+eight days across two pushes. The last green run is 2026-09-10.
+
+That is Run 9's lesson repeating and getting worse. Run 9 measured the cost of push-only CI as
+sixteen commits of latency on a text fact; here it is **a red leg nobody read**. The check existed,
+ran, and reported correctly. Worth saying plainly: the guard against this is not another check, it
+is looking at the result of the one we have.
+
+**Cause 1 — C4324 from `multi`, in `flow.vcxproj` and `test-task.vcxproj`.** *"structure was padded
+due to alignment specifier"* on the `alignas(CACHE_LINE_SIZE)` members of `ChaseLevDeque`,
+`MpmcQueue` and `WorkerPool` — MSVC reporting that the alignment those types ask for did exactly
+what it says, which is the entire point of a deque that must not false-share. `/W4 /WX` makes it
+fatal.
+
+- **multi ALREADY SUPPRESSED THIS, and the bug was the visibility of the suppression.** Its
+  CMakeLists carried `/wd4324` with a correct comment (*"cache-line alignas() on small members
+  intentionally pads the struct"*) inside `target_compile_options(... PRIVATE ...)`. PRIVATE covers
+  multi's own sources and NOT the headers a consumer includes — which is exactly why multi's own
+  Windows CI (windows-2022 + windows-2025, Debug and Release) was green while every consumer tripped
+  over it. **The library that owned the problem was the one configuration that could not see it.**
+  The general shape: a suppression for something declared in a PUBLIC HEADER belongs at the
+  declaration, because a build flag stops at the target boundary and a header does not.
+- **Fixed in multi, at the declaration.** `MULTI_BEGIN_CACHE_ALIGNED` /
+  `MULTI_END_CACHE_ALIGNED` in `details/platform.h` — beside `CACHE_LINE_SIZE`, which that header
+  already owns and which all three headers already include, so no new include anywhere — wrapping
+  each of the three class definitions. `#pragma warning(push/disable/pop)` behind `_MSC_VER`,
+  expanding to nothing elsewhere.
+- **The `/wd4324` flag is DELETED, not kept alongside.** That is what makes this a simplification
+  rather than an addition, and it is what turns multi's own Windows leg into a real test of the
+  pragma instead of a test of the flag: miss a site and that leg goes red. Two CIs now each prove
+  one half — multi's that the pragma covers its own translation units, lain's that it reaches a
+  consumer.
+- **`task.h`'s `alignas(SBO_ALIGN)` is deliberately NOT covered.** It is `alignof(void*)` on an
+  `unsigned char[24]` — no greater than the struct's natural requirement, so it cannot pad and does
+  not warn. Covering it would be speculative, and the macro's name says cache-line.
+- **A FIRST FIX WAS BUILT IN LAIN AND BACKED OUT.** It re-exposed multi's headers as SYSTEM from
+  lain's root CMakeLists, the way every `cmake/addXXX.cmake` module does for a third-party
+  dependency. It worked, and it was wrong twice over: it silences *every* warning from an owned
+  library rather than the one that is noise, and it fixes the symptom in one consumer while leaving
+  the next consumer — and every non-CMake consumer — to hit it again. Recorded because the
+  reasoning that produced it reads as sound: lain does consume multi and does rely on multi's
+  broader CI, so SYSTEM looked principled. What it missed is that multi had already made this
+  decision and merely scoped it wrongly.
+- **One genuine finding survives from that dead end, and is worth keeping:** MSVC's `/external:I`
+  does nothing to warnings unless `/external:W<n>` is also passed, so a SYSTEM re-expose can be a
+  silent no-op there. CMake emits **both** `-external:I` and `-external:W0` for MSVC >=
+  19.29.30036.3 (`Modules/Compiler/MSVC.cmake`), which CI's VS 2022 satisfies. Had that not held,
+  every SYSTEM re-expose in `cmake/` would have been a no-op on Windows and the other five
+  dependencies merely clean by luck.
+
+**Cause 2 — `test_rect.cpp(44) C2131: expression did not evaluate to a constant`,** and only line
+44. `STATIC_REQUIRE(lm::Rect2i{}.empty())` — the DEFAULT-constructed case, while every
+`Rect2i{x, y, w, h}` around it passed. **GLM stores a vec's components in anonymous unions**
+(`union {T x, r, s;}`) behind a defaulted default constructor, and MSVC's constexpr evaluator does
+not treat a value-initialised union member as initialised; the four-argument path reaches GLM's
+two-argument constructor, which names the members, which is exactly why those lines were fine.
+`Rect2`'s NSDMIs now say `{T{0}}`, naming GLM's scalar constructor. **The line-44-only signature is
+what identifies the cause rather than a guess at it.**
+
+- **`GLM_FORCE_XYZW_ONLY` also fixes it and is REFUSED**, on a checked ground rather than a
+  stylistic one: it removes the `.r`/`.g`/`.b` spellings, and `image::ColorRGBf` is read through
+  them in flowview's `graphio.cpp` (whose comment already says *"its .r/.g/.b are GLM lvalue
+  members"*) and `parameditors.cpp`.
+
+**NEITHER FIX IS VERIFIABLE ON THIS MACHINE**, and that is the honest state of it: CI is still the
+only Windows compiler this project has, so the next push is the test. multi builds and passes
+standalone (103/103, warning-clean) and lain's three configurations are unmoved (792 / 765 / 798)
+and format-check clean — which says the fixes break nothing, not that they work. The one local
+check that bears on the mechanism: with the SYSTEM re-expose backed out, `compile_commands.json`
+contains **no** `-isystem` for multi, so the pragma is the only thing that can suppress C4324 on
+MSVC.
+
+**A pragma around a class and a warning raised at INSTANTIATION are not obviously the same scope**,
+which is the residual risk. MSVC attributes C4324 to the member's own line (the log reads
+`chaselevdeque.h(177,1)`), which the wrap covers, and this is the idiom `concurrentqueue` and
+`folly` use for this exact warning. If it does not take, the fallback is multi's `/wd4324` moved
+from PRIVATE to INTERFACE — certain, less precise, and still inside multi.
+
+**There may be more behind them.** The Build step failed, so the Test step has not run on Windows
+since 2026-09-10; everything from the `multi` swap onward is unproven there, not merely unreported.
+
 ### Not covered, and deliberately
 
 The GPU. gui-mode is still eyeball-verified by the repo owner on a Metal-capable machine; the one
