@@ -70,12 +70,31 @@ namespace lain::core
 
 	std::string Uri::extension() const
 	{
-		// path::extension reads the LAST component's extension, so a scheme prefix is harmless and
-		// this deliberately runs on the whole text rather than on rest() — a remote uri still has a
-		// format, and refusing to name it would make extension() lie for every scheme but one.
-		std::string ext = std::filesystem::path(m_text).extension().string();
-		if (!ext.empty() && ext.front() == '.')
-			ext.erase(ext.begin());
+		// SCANNED HERE rather than handed to std::filesystem::path, which is what this used to do.
+		// On Windows that type also splits a component on ':' — "C:foo" is a real drive-relative
+		// path — so "shot.<frame:04>.png" reported its extension as "<frame" there while every
+		// other platform said "png". io::sequence dispatches a uri to a medium BY EXTENSION, so a
+		// render pattern reached no medium at all on Windows, silently.
+		//
+		// The deeper reason is that the delegation contradicted what this type is for: a Uri
+		// deliberately carries no platform's path semantics (ADR-0023), and borrowing them for one
+		// accessor let one in through the back door. Doing the scan here makes the answer the same
+		// everywhere, which is the only thing a format-keyed registry can be built on.
+		//
+		// Both separators, because a Uri legitimately holds either: "s3://bucket/take1.mov" and
+		// "C:\footage\clip.mp4" are both things it must answer for.
+		const std::size_t lastSeparator = m_text.find_last_of("/\\");
+		const std::string_view name = lastSeparator == std::string::npos
+										  ? std::string_view{m_text}
+										  : std::string_view{m_text}.substr(lastSeparator + 1);
+
+		// A LEADING dot is a name, not an extension (".hidden", and "." / ".." with it), and a
+		// trailing one names no format.
+		const std::size_t dot = name.find_last_of('.');
+		if (dot == std::string_view::npos || dot == 0 || dot + 1 == name.size())
+			return {};
+
+		std::string ext{name.substr(dot + 1)};
 		std::transform(ext.begin(), ext.end(), ext.begin(),
 					   [](unsigned char c)
 					   { return static_cast<char>(std::tolower(c)); });

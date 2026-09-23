@@ -631,6 +631,32 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-23 — Windows builds again, and the Test step finds a real bug
+
+Both Run 10 fixes worked. **Windows Release BUILDS for the first time since 2026-09-10** and its
+Test step ran for the first time in thirteen days: **797/798**. multi's own CI went fully green in
+parallel — all four Windows jobs, with `/wd4324` deleted — which **retires the instantiation-scope
+risk** Run 10 flagged: a pragma around a class does cover a warning raised when its templates are
+instantiated, and lain's leg proved it crosses the header boundary into another TU. Full notes in
+WORK.md's *Run 11*.
+
+- **The one failure is a REAL PRODUCTION BUG**, in the test whose own name is about Windows:
+  `pattern.extension()` expanded to `"<frame" == "png"`. **`Uri::extension()` delegated to
+  `std::filesystem::path`, and on Windows that splits a component on `:`** (`C:foo` is a real
+  drive-relative path), so `shot.<frame:04>.png` reported `<frame` there and `png` everywhere else.
+  `io::sequence` dispatches a uri to a medium BY EXTENSION — so on Windows a render pattern reached
+  no medium at all, silently. Latent since M13 slice 1 (2026-09-11).
+- **The fault is the delegation, not the platform.** A `Uri` deliberately carries no platform's
+  path semantics (ADR-0023) — borrowing `std::filesystem`'s for one accessor let them in through
+  the back door. The last component is now scanned here, on both `/` and `\`, so the answer is
+  identical everywhere; a format-keyed registry cannot be built on anything else.
+- **A test that fails on every platform now exists**, where the old one could only fail on Windows:
+  `Uri{"C:\\footage.old\\clip"}.extension()` must be empty, the dot in the DIRECTORY being what
+  discriminates. Sabotage-verified on macOS, where the original bug was invisible.
+- **The second half of Run 10's lesson:** a red build had been hiding a red test for eight days,
+  and no amount of reading would have found this one — the code is correct on two platforms of
+  three.
+
 ### Update 2026-09-22 — Windows CI: red since 2026-09-14, and neither cause was recent
 
 The push of the two body-placement commits came back red on **Windows Release alone**, at Build.

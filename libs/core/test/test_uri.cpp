@@ -87,6 +87,14 @@ TEST_CASE("extension is the registry key: lowercased, dotless, and last-componen
 	CHECK(Uri{"/footage/take1"}.extension().empty());
 	CHECK(Uri{""}.extension().empty());
 	CHECK(Uri{"/footage/.hidden"}.extension().empty());
+
+	// A BACKSLASH separates a component too, because a Uri holds a Windows path (see the pattern
+	// case above). The dot in the DIRECTORY is what makes this discriminating: reading the last
+	// dot of the whole text answers "old\clip" here, and reading the last component answers
+	// nothing, which is correct.
+	CHECK(Uri{"C:\\footage\\clip.mp4"}.extension() == "mp4");
+	CHECK(Uri{"C:\\footage.old\\clip"}.extension().empty());
+	CHECK(Uri{"/footage.old/clip"}.extension().empty());
 }
 
 TEST_CASE("a uri compares and hashes on its exact text", "[core][uri]")

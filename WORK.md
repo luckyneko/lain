@@ -4030,6 +4030,43 @@ from PRIVATE to INTERFACE — certain, less precise, and still inside multi.
 **There may be more behind them.** The Build step failed, so the Test step has not run on Windows
 since 2026-09-10; everything from the `multi` swap onward is unproven there, not merely unreported.
 
+### Run 11 (2026-09-23) — the build goes green, and the Test step finds a real bug
+
+Both Run 10 fixes worked: **Windows Release BUILDS for the first time since 2026-09-10**, and the
+Test step ran for the first time in thirteen days. **797 of 798 passed.** multi's own CI went fully
+green at the same time — all four Windows jobs (2022 and 2025, Debug and Release) — with `/wd4324`
+deleted, so those legs compiled multi's own translation units with the pragma as the only thing
+between them and C4324. **The instantiation-scope risk Run 10 flagged is retired**: a pragma around
+a class does cover a warning raised when its templates are instantiated, measured rather than
+argued, and lain's leg then proved it crosses the header boundary into a different consumer's TU.
+
+**The one failure is a REAL PRODUCTION BUG, not a test artifact**, and it is the test whose own name
+is about Windows: *"a name pattern and a Windows path survive, which RFC 3986 would not"*.
+
+      CHECK( pattern.extension() == "png" )
+      with expansion:  "<frame" == "png"
+
+- **`Uri::extension()` delegated to `std::filesystem::path`, and on Windows that type splits a
+  component on `:`** — `C:foo` is a real drive-relative path — so
+  `/footage/shot.<frame:04>.png` reported its extension as `<frame` there and `png` everywhere
+  else. **`io::sequence` dispatches a uri to a medium BY EXTENSION**, so on Windows a render
+  pattern reached no medium at all, silently. The test's own comment already said that is what it
+  was protecting (*"which is what lets io::sequence dispatch a pattern to the image medium"*).
+- **The deeper fault is the delegation itself, not the platform.** A `Uri` deliberately carries no
+  platform's path semantics — that is ADR-0023's whole thesis, and why it is not an RFC 3986
+  parser either — and borrowing `std::filesystem`'s for one accessor let them in through the back
+  door. The scan is now done here, on both `/` and `\`, so the answer is the same on every
+  platform. That is the only thing a format-keyed registry can be built on.
+- **A test that fails on EVERY platform now exists.** The old case only failed on Windows, so
+  macOS and Linux could not have caught it: `Uri{"C:\\footage.old\\clip"}.extension()` must be
+  empty, and the dot in the DIRECTORY is what makes it discriminating — reading the last dot of the
+  whole text answers `old\clip`. Sabotage-verified by dropping `\\` from the separator set:
+  fails on macOS, where the original bug was invisible.
+- **Latent since M13 slice 1 (2026-09-11)**, and it took the Test step running to find it — which
+  is the second half of Run 10's lesson. A red *build* had been hiding a red *test* for eight days,
+  and the test was one nobody could have found by reading, because the code is correct on two of
+  three platforms.
+
 ### Not covered, and deliberately
 
 The GPU. gui-mode is still eyeball-verified by the repo owner on a Metal-capable machine; the one
