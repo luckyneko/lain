@@ -631,6 +631,89 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-26 — a ColorSpace's transfer becomes one value
+
+`lain::image` runs one conversion verb overloaded on its target, and the one place it did not was
+the scalar transfer: a **public pair named for a direction**, `image::toLinear(ColorSpace, float)` /
+`fromLinear(ColorSpace, float)`. The pair is now **one value** — **`TransferCurve {toLinear,
+fromLinear}`**, answered by **`transferCurve(ColorSpace)`** — with the four curves private in
+`details/colormath.inl`. `ctest -j8` **794/794** Debug with video on (+1, was 792), **767/767**
+Release in the default video-off configuration, **800/800** Release with video on; warning-clean,
+format-check clean, `flowview run --example` identical to the pre-change binary once the timestamp
+and minted uuids are normalised. Full landing notes in WORK.md.
+
+- **ADR-0003 promised the opposite of what it shipped.** Its *adding a color space is additive*
+  bullet says `convert` expresses every pairing *"without a `toX`/`toY` explosion"*, and its own
+  2026-09-01 amendment names `toLinear` / `fromLinear` as the mechanism that makes it so. One
+  document, both claims — which is what made this a correction rather than a preference.
+- **The deliverable is an INVARIANT, not a spelling.** The pair is what a colour space *is* on this
+  axis, so it is a type you get whole or not at all, where two free functions could be half-written,
+  wired backwards, or drift apart across two switches that had to independently agree.
+- **Three arrangements sit on top of the type, each closing a different hole.** (1) **A `constexpr`
+  pair per space, beside the curves it pairs** — so `transferCurve`'s switch maps a space to a
+  *curve* and cannot get a direction wrong at all, and the one line where a pair could be reversed
+  sits under the two bodies it names. A struct-per-space was refused: it would be the tree's first
+  struct-as-namespace (verified — there is none in `libs/`) and leaves each half callable anyway.
+  (2) **Space-first curve names** (`srgbToLinear` / `srgbFromLinear`). A `transferLinear*` prefix was
+  measured against the goal and **still splits each pair** in a sorted listing, because it puts the
+  invariant part first. Space-first clusters each pair and makes the suffixes mirror the member
+  order, which turns three miswirings from test-only into readable: reversed, doubled, and
+  cross-standard. (3) **Its own header** — `transfercurve.h` + `details/transfercurve.inl`, not a
+  place beside the enum the way `formatDescriptor` sits with `PixelFormat`, because that descriptor is
+  `constexpr` arithmetic needing nothing while these curves need `math::pow`, and `colorspace.h` has
+  **zero includes** and reaches every consumer of the tags through `image.h`. The payoff is API
+  SURFACE, not compile cost: consumers are nearly disjoint (`tiffcolor.cpp` wanted the transfer and
+  nothing else; `operations.cpp` the reverse; only `convert.cpp` both), so the TIFF plugin no longer
+  sees `luminance` / `saturate` / `convert<Dst>` / `mapColorChannels` — but it still pulls **311
+  transitive headers against 313**, since both reach `math/types.h` for `math::pow` and GLM behind it
+  is the whole count. **An earlier version of this note claimed 356 -> 62, which was fabricated** —
+  measured against a file that did not exist yet. The split stands on separation and on housing the
+  type and its trigger block, the same idiom as `imageview.h` / `traverse.h`, not on include weight.
+- **`detail::identity` was the last generic name, and it took three attempts to place.** At
+  `image::detail` scope it was the `image::descriptor` -> `formatDescriptor` problem one level down.
+  **Two inline lambdas** were tried and reverted — clang-format's Allman braces put a lambda body on
+  its own line, so `{[](float c) { return c; }, …}` comes out unreadable. **A nested
+  `detail::transfer`** was tried and also removed, and the reason it was wrong is worth keeping: a
+  file does NOT scope names, so the header split would not have retired the nest by itself; what
+  retires it is removing the one name that needed protecting. `TransferCurve::identity()` is the
+  answer — scoped to the type, nothing added to `image::detail`, with a `static_assert` pinning that
+  static members cost the type neither aggregate init nor trivial copyability.
+- **`toUnit` / `fromUnit` are deliberately NOT given the same treatment**, and the rule is worth
+  carrying: **a pair earns being a type only when its halves are assembled at runtime.** A
+  `ColorSpace` comes from a file, so a switch picks the halves and can pick the wrong pair — that is
+  the invariant `TransferCurve` buys. `toUnit<T>` / `fromUnit<U>` are selected by template argument:
+  two instantiations, not two things anyone pairs. They are also the *original* of the pattern and
+  were always private, which is why they never became the complaint the public pair did. Trigger, at
+  the code: a runtime channel-type dispatch (`PixelFormatDescriptor` already carries a `ChannelType`).
+- **MY PERFORMANCE ARGUMENT FOR THIS SHAPE WAS WRONG, and measuring is what said so.** The case for
+  hoisting was that it removes a per-channel switch and so pays for itself with more than tidiness.
+  Benchmarked A/B in one TU over 50M colour channels: **0.995x-1.012x across four runs — a wash**,
+  because two `pow` calls dominate everything around them. The hoist stays for clarity, not speed;
+  the overclaiming comments were corrected to say so, with the number.
+- **Six sabotages, six DIFFERENT failures, and the differences are the finding.** A **reversed**
+  pair fails 4 cases but **not** the round-trip one — correctly, since a reversed pair is still a
+  mutual inverse; the mid-grey case catches it. **One direction twice** fails 5, including the round
+  trip, because a double-decode is not an inverse. A **cross-standard** pair fails 3. So all three
+  miswirings a paired type still permits are caught, by different cases — the round-trip test alone
+  would have looked sufficient. A **null `kIdentity`** segfaults 18 tests while the census case fails
+  cleanly by name, which is exactly why `transferCurve` is total. And giving `TransferCurve` a
+  data member fails the new aggregate-init `static_assert`, which the brace-built pairs rely on.
+- **The `from == to` exactness moved rather than vanished** — to `convert(img, ColorSpace)`'s early
+  return, now its only user, carrying the measurement that makes it load-bearing: **314 sRGB and 412
+  BT709 values of 1001** do not survive a decode/encode round trip.
+- **A wrong control, caught by running it:** the first cut asserted the round trip at 0.77 differs.
+  It does not — 0.77 survives exactly. Which values survive is a property of the platform's `pow`,
+  so the claim became *"inexact somewhere in a 1001-point sweep"* rather than *"inexact at this
+  value"*, which was a guess dressed as a test.
+- **Three triggers recorded in WORK.md, pointed at from `transfercurve.h`** (scattered notes are how a queued
+  decision becomes a rediscovery): an X-macro table — trigger a fourth space; a `ColorSpaceDescriptor`
+  wrapping the curve — trigger a second per-space fact; qualifying `transferCurve` — trigger a second
+  module exposing transfer curves. The first two fire on the same event and should land together.
+- **`convert<Dst>` was examined and deliberately NOT renamed to `cast<Dst>`** — only a name change,
+  and CONTEXT.md already named `image::convert` as its example of Convert, so the vocabulary's owner
+  was on the keep side. CONTEXT.md now owns the answer and WORK.md points at it.
+- Found in passing: `color.h` pointed at `image::toRGB`, a function that does not exist.
+
 ### Update 2026-09-23 — Windows builds again, and the Test step finds a real bug
 
 Both Run 10 fixes worked. **Windows Release BUILDS for the first time since 2026-09-10** and its

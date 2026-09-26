@@ -4875,22 +4875,31 @@ are renamed in slice 4.
 
 ### Deferred, with triggers
 
-- **A standard way to convert between types** (notes 12/14/15). The survey, so a later pass starts
-  from evidence rather than one header: the call sites already draw a line — **`cast<To>(from)` when
-  the TYPE changes** (`convert<ColorRGBA8>(c)`, `convert<ColorRGBf>(hsv)`, ~13 sites) vs
-  **`convert(value, target)` when the type stays and a tagged PROPERTY changes**
-  (`convert(image, PixelFormat/ColorSpace/AlphaMode)`, ~15 sites). `image::convert` is two
-  operations under one name, which is what makes note 15's "why is this here and that there" feel
-  arbitrary. `toLinear`/`fromLinear` are **neither**: a bare `float` carries no colour-space tag, so
-  there is no source property to read and both ends must be stated — naming the canonical
-  intermediate is what makes "compose through Linear" visible. **The counter-evidence a design must
-  answer:** only ~3 pairs would register today (`Color<Src>→Color<Dst>` is a template family, not a
-  pair; `Vec2f ↔ ImVec2` already converts implicitly through `IM_VEC2_CLASS_EXTRA`, which is better
-  at an ImGui call site), and `porttyperegistry.h` has **already refused the automatic model on
-  principle** — *"spelled out per pair rather than offered for every convertible pair, because WHICH
-  conversions a graph offers is a POLICY"*; flowview hand-registers ten. The standing preference
-  driving the item is no proliferation of `toXXX`/`fromXXX`, and it reaches `Version::toString`/
-  `parse`, `Uuid`, `data::toValue`/`fromValue`, `toLinear`/`fromLinear` and `gui::packColor`.
+- **A standard way to convert between types** (notes 12/14/15). **Two of its three parts are now
+  answered** (2026-09-26, see §*A ColorSpace's transfer becomes one value*); what remains deferred
+  is the *automatic registry*, and the counter-evidence below is why.
+  - **ANSWERED — `toLinear`/`fromLinear`.** This survey recorded them as *"neither"* of the two
+    shapes: *"a bare `float` carries no colour-space tag, so there is no source property to read
+    and both ends must be stated — naming the canonical intermediate is what makes 'compose
+    through Linear' visible."* The first half holds; the conclusion did not follow. The answer is
+    not a longer signature but **the pair as a type** — `TransferCurve` + `transferCurve(space)`,
+    resolved once, so the float never needs a tag at all. A three-argument `convert` was built on
+    the way and dropped for it. (§*A ColorSpace's transfer becomes one value*.)
+  - **ANSWERED — `convert<Dst>(Color<Src>)` / `convert<Dst>(ColorHSVf)`, and the answer is KEEP.**
+    This survey listed them under *"the TYPE changes"*, i.e. as `cast` sites. **CONTEXT.md's
+    Cast-vs-Convert entry already named `image::convert` as its example of Convert**, so the two
+    documents disagreed and the vocabulary's owner was on the other side — which is how the
+    question came back a third time. Settled there, with the reasoning, rather than here: the rule
+    was written for flow's payload types, where a type change is categorical. **CONTEXT.md owns
+    it; do not re-derive it from one header.**
+  - **STILL DEFERRED — the registry itself,** and the counter-evidence any design must answer:
+    only ~3 pairs would register today (`Color<Src>→Color<Dst>` is a template family, not a pair;
+    `Vec2f ↔ ImVec2` already converts implicitly through `IM_VEC2_CLASS_EXTRA`, which is better at
+    an ImGui call site), and `porttyperegistry.h` has **already refused the automatic model on
+    principle** — *"spelled out per pair rather than offered for every convertible pair, because
+    WHICH conversions a graph offers is a POLICY"*; flowview hand-registers ten.
+  - The standing preference driving the item is no proliferation of `toXXX`/`fromXXX`. Remaining
+    reach: `Version::toString`/`parse`, `Uuid`, `data::toValue`/`fromValue`, `gui::packColor`.
 - **`ReadWriteStream`** — refused with its trigger (`-movflags +faststart`, i.e. a muxer that
   reads back what it wrote). *(§Milestone 13 slice 3, and `stream.h`'s own refusals list.)*
 - **`Range<T>`** — trigger: a second element type actually appearing.
@@ -5685,6 +5694,167 @@ types. **Refused on review.** Recording why, so it is not re-derived:
 - **The ASCII-test-name rule joins the conventions too.** It had been learned three times and
   written only into landing notes, where nobody writing a new `TEST_CASE` reads it. The tree was
   scanned and is clean.
+
+## A ColorSpace's transfer becomes one value (built 2026-09-26)
+
+`lain::image` runs one conversion verb overloaded on its target, and the one place it did not was
+the scalar transfer: a **public pair named for a direction**, `image::toLinear(ColorSpace, float)` /
+`fromLinear(ColorSpace, float)`. The pair is now **one value** — **`TransferCurve {toLinear,
+fromLinear}`**, answered by **`transferCurve(ColorSpace)`** — with the four curves private in
+`details/colormath.inl`. `ctest -j8` **794/794** Debug with video on (+1, was 792), **767/767**
+Release in the default video-off configuration, **800/800** Release with video on; warning-clean,
+format-check clean, and `flowview run --example` **identical** to the pre-change binary once the
+timestamp and minted uuids are normalised.
+
+- **ADR-0003 promised the opposite of what it shipped.** Its *adding a color space is additive*
+  bullet says `convert` expresses every pairing *"without a `toX`/`toY` explosion"*, and its own
+  2026-09-01 amendment names `toLinear` / `fromLinear` as the mechanism that makes it so. One
+  document, both claims — which is what makes this a correction rather than a preference.
+- **The deliverable is an INVARIANT, not a spelling.** The pair is what a colour space *is* on this
+  axis, so it is now a type you get whole or not at all. Two free functions could be half-written,
+  wired backwards, or drift apart across two switches that had to independently agree about
+  direction.
+- **Three arrangements landed on top of the type, and each one closes a different hole.**
+  - **A `constexpr` pair per space, beside the curves it pairs** (`kSrgb{srgbToLinear,
+    srgbFromLinear}`). So "which two functions are sRGB's curve" lives *with the functions*, and
+    `transferCurve`'s switch answers only "which space maps to which curve" — meaning the switch
+    cannot get a direction wrong at all, and the one line where a pair *could* be reversed sits
+    directly beneath the two bodies it names. A struct-per-space with static members was the other
+    way to group them and was refused: it would be the tree's first struct-as-namespace (verified —
+    there is none in `libs/`), costs three or four lines per space for grouping a namespace already
+    gives, and leaves each half individually callable anyway. Inheriting from `TransferCurve` is
+    worse still: construction-by-inheritance, sliced back on return, and it makes each space a
+    distinct *type* of a thing that has one kind.
+  - **Space-first curve names** (`srgbToLinear` / `srgbFromLinear`, not `linearToSrgb`). A
+    `transferLinear*` prefix was proposed and measured against the goal instead: it **still splits
+    each pair** in a sorted listing, because it puts the invariant part first, so all the Froms
+    cluster and then all the Tos. Space-first clusters each pair — and, more usefully, makes the
+    suffixes mirror `TransferCurve`'s member order, so the constant reads as a column mapping. That
+    turns three miswirings from test-only into readable: a reversed pair (suffix order flipped), a
+    doubled direction (identical suffixes), and a cross-standard pair (prefix disagrees with the
+    constant's own name).
+  - **Its own header, `transfercurve.h` + `details/transfercurve.inl`.** Not a place beside the
+    enum, the way `formatDescriptor` sits with `PixelFormat` in `pixelformat.h` — and the asymmetry
+    that breaks that precedent is checkable rather than aesthetic: a `PixelFormatDescriptor` is
+    `constexpr` arithmetic needing nothing, while these curves need `math::pow`, and `colorspace.h`
+    has **zero includes** and is pulled in by `image.h` for the tags alone. The payoff is in API
+    SURFACE, not compile cost, and the distinction is measured rather than assumed: the consumers
+    really are nearly disjoint (`tiffcolor.cpp` wanted the transfer and *nothing* else from
+    `colormath.h`; `operations.cpp` the exact reverse; only `convert.cpp` both), so the TIFF plugin
+    no longer sees `luminance` / `saturate` / `convert<Dst>` / `mapColorChannels` at all — but it
+    still pulls **311 transitive headers against 313**, a saving of two. Both headers reach
+    `math/types.h` for `math::pow`, and GLM behind it is essentially the whole count. **An earlier
+    version of this note claimed 356 -> 62; that number was fabricated** (measured against a file
+    that did not yet exist) and the real figure is the one above. The split stands on separation and
+    on being the natural home for the type and its trigger block, which is the same
+    types-vs-algorithms idiom as `imageview.h` / `traverse.h` — not on dependency weight.
+  - **The identity pair on the TYPE** — `TransferCurve::identity()` over `TransferCurve::unchanged`.
+    `identity` is a maximally generic name for a do-nothing function and `image::detail` is one flat
+    scope shared by the whole library, so at that scope it was the `image::descriptor` ->
+    `formatDescriptor` problem one level down. Scoped to the type it cannot collide and reads as what
+    it is. A `static_assert` pins what this relies on — static members must not cost `TransferCurve`
+    its aggregate init (the pair constants use braces) or its trivial copyability (it is copied per
+    asset by value).
+    **An intermediate `detail::transfer` namespace was built for this and then removed**, and the
+    reasoning is worth recording because it was wrong in a specific way: a file does **not** scope
+    names, so splitting the header would not by itself have retired the nest — `convert.cpp` includes
+    both headers, so both clusters still share `lain::image::detail`. What retires it is removing the
+    one name that needed protecting, and after the space-first rename `identity` was the only one.
+    The nest was structure standing in for a rename.
+
+- **It is a behaviour table, not a descriptor, and the codebase had already written that
+  distinction down.** `PixelFormatDescriptor`'s own comment: *"Unlike flow's PortType flyweight …, a
+  descriptor is pure derivable data with no identity."* Everything `formatDescriptor` returns is
+  computed from `(model, channelType)`; nothing about sRGB's 0.04045 is derivable from an
+  enumerator. So the precedent for this case is `PortType` — which is pointedly not called a
+  descriptor — and `ColorSpaceDescriptor` was refused on that ground, plus a second: a space-named
+  sidecar is where a reader would put the primaries and matrix `colorspace.h` and ADR-0003 both keep
+  OUT of this axis.
+- **`ColorSpaceTransferCurve` was refused on a rule worth keeping.** A prefix earns its place when
+  the head noun is *empty* — `Descriptor` needs a subject to mean anything, which is why the
+  existing type carries its enum — and a transfer curve is a complete object without one. *Transfer*
+  is already this axis's word here: `colorspace.h`'s own prose, TIFF's `TIFFTAG_TRANSFERFUNCTION`,
+  `tiffcolor`'s `transferTable`, FFmpeg's `AVCOL_TRC`. The question splits, and only the FUNCTION
+  has `formatDescriptor`'s problem: `transferCurve(ColorSpace)` is found by ADL, so the bare name is
+  callable unqualified from any scope holding one. Kept, because the noun is far more specific than
+  `descriptor` (which had *already* collided in this tree — `VkDescriptorSet`, `AVPixFmtDescriptor`),
+  with the trigger recorded instead of pre-paid.
+- **A scalar `convert(float, ColorSpace, ColorSpace)` was built, then dropped — and that is the
+  cleaner answer to the original complaint.** It existed because a bare channel value carries no
+  tag, so both ends had to be stated. Resolving the pair once dissolves that premise instead of
+  working around it: after `transferCurve(space)` the float genuinely needs no second argument.
+- **MY PERFORMANCE ARGUMENT FOR THIS SHAPE WAS WRONG, and measurement is what said so.** The case
+  made for hoisting was that it removes a per-channel switch and so *"pays for itself with something
+  other than tidiness"*. Benchmarked A/B in one TU over 50M colour channels, old against new:
+  **0.995x-1.012x across four runs — a wash.** Two `pow` calls dominate everything around them, so
+  the per-channel switch was never the cost. The hoist stays because resolving a pair once and using
+  it twice is the clearer shape, not because it is faster; the overclaiming comments were corrected
+  to say so, with the number, rather than left to be believed.
+- **Six sabotages, six different failures, and the differences are the point.**
+  (1) Adding a `ColorSpace` enumerator still fails the build on `-Werror,-Wswitch`.
+  (2) A pair **reversed** in its constant fails **4** cases — but NOT the round-trip case,
+  correctly: a reversed pair is still a mutual inverse. What catches it is the mid-grey case
+  (BT709 0.2596 vs sRGB 0.2140) and the image-level `[convert]` cases.
+  (3) A pair built from **one direction twice** fails **5**, this time including the round-trip case,
+  because a double-decode is not an inverse. So the two miswirings a paired type still permits are
+  each caught, by different cases — worth knowing, since the round-trip test alone would have looked
+  sufficient.
+  (4) A **cross-standard** pair (sRGB's decode with BT709's encode) fails **3**. Not a new hazard —
+  the same mistake was possible before — but now the constant's name and its members' prefixes have
+  to agree, so it reads as wrong.
+  (5) `TransferCurve::identity()` returning a **null pair** segfaults **18** tests, while the
+  census case fails cleanly by name. That is exactly why `transferCurve` is total: a crash says
+  something is wrong, the census says what.
+  (6) Giving `TransferCurve` a **data member** fails the new `static_assert` on aggregate init,
+  which is what the brace-built pair constants depend on.
+- **The `from == to` exactness moved rather than vanished.** With the pair there is no single call
+  that means "sRGB to sRGB", so the guarantee lives where it is now solely relied on —
+  `convert(img, ColorSpace)`'s early return — carrying the measurement that makes it load-bearing:
+  over a 1001-point sweep, **314 sRGB and 412 BT709 values** do not survive a decode/encode round
+  trip. Its test became *"a decode followed by its own encode is not EXACT"*, which states the
+  property rather than the short-circuit.
+- **A wrong control, caught by running it.** The first version of that test asserted the round trip
+  at 0.77 differs. It does not — 0.77 happens to survive exactly. Which values survive is a property
+  of the platform's `pow`, so the claim is now *"inexact somewhere in a 1001-point sweep"*, which is
+  robust, rather than *"inexact at this value"*, which was a guess dressed as a test.
+- **`detail::identity` was the one generic name left, and it took three attempts to place it.** At
+  `image::detail` scope, `identity` was a maximally generic name for a do-nothing function sitting
+  where a matrix identity could later want it — the `image::descriptor` -> `formatDescriptor` problem
+  one level down. **Two inline lambdas** were tried first and reverted: clang-format's Allman braces
+  put a lambda body on its own line, so `{[](float c) { return c; }, [](float c) { return c; }}` comes
+  out genuinely unreadable. **A nested namespace** was tried second and also removed (above).
+  `TransferCurve::identity()` is what answers it — the name lives where it cannot collide, and
+  nothing was added to `image::detail` at all.
+- **`toUnit` / `fromUnit` are deliberately left alone, with the reasoning recorded at the code.** They
+  are the same to/from-a-canonical-intermediate shape and it would be easy to apply the same medicine.
+  The reason not to: **a pair earns being a type only when its halves are assembled at runtime.** A
+  `ColorSpace` arrives from a file, so a switch picks the halves and can pick the wrong pair — that
+  mispairing is the invariant `TransferCurve` buys. `toUnit<T>` / `fromUnit<U>` are selected by
+  TEMPLATE ARGUMENT: two instantiations, not two things anyone pairs, so a `ChannelScale<T>` would
+  pair something that cannot be mispaired. They are also the *original* of the pattern — the curves
+  were named after them (M10 slice 4) — and were always private, which is why they never became the
+  complaint the public pair did. **Trigger recorded beside them:** a runtime channel-type dispatch.
+  `PixelFormatDescriptor` already carries a `ChannelType`, and nothing normalises through it today
+  only because `visit()` fans out to a compile-time `T`.
+- **Three triggers recorded HERE, with a pointer from `transfercurve.h`**, because scattered notes are how a
+  queued decision becomes a rediscovery (`core::Uri`, `core::hex`):
+  (1) an **X-macro table** generating the arm, so one line of text is the whole fact about a space —
+  trigger: a fourth space;
+  (2) a **`ColorSpaceDescriptor`** holding `TransferCurve transfer;` — trigger: a second per-space
+  fact (primaries, a white point, an HDR flag);
+  (3) **qualifying `transferCurve`** — trigger: a second module in lain exposing transfer curves.
+  The first two fire on the SAME event and should land as one change: a fourth space, or a second
+  per-space fact, is where "a space has a curve" becomes "a space has a ROW", and the table then
+  generates descriptors rather than switch arms.
+- **`convert<Dst>` was examined and deliberately NOT renamed to `cast<Dst>`.** It is only a name
+  change, and **CONTEXT.md already named `image::convert` as its example of Convert** — so two
+  documents disagreed and the vocabulary's owner was on the keep side; the survey's rule was written
+  for flow's payload types, where a type change is categorical (an `Image` becoming a `String`), and
+  a `ColorRGB8` becoming a `ColorRGBAf` is the same colour in a different container. CONTEXT.md now
+  owns the answer and this file points at it.
+- **Found in passing, fixed here:** `color.h` pointed at `image::toRGB`, a function that does not
+  exist — the HSV conversion has been `image::convert` for some time.
+- **No gui-mode eyeball needed** — nothing here touches ImGui or a pane's drawing.
 
 ## Outstanding work — one index
 

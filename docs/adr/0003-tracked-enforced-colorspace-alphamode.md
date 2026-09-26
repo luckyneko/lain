@@ -70,9 +70,49 @@ is the contract that keeps that pipeline honest.
   **Amended 2026-09-01, cashing that claim:** the first such addition — `BT709`, for M10's video
   decode ([ADR-0018](0018-frame-sequences-and-host-driven-rendering.md)) — landed as one
   enumerator plus one curve pair, and *removed* code rather than adding any. What makes it
-  additive is that `convert` **composes through Linear** (`fromLinear(dst, toLinear(src, c))`)
-  instead of dispatching on the ordered pair: three spaces would have meant six pairwise arms,
-  and the "this pairing is not supported" bail arm is now unreachable by construction. The
-  curves live in `image::toLinear` / `fromLinear` (colormath.h), which are the enum's only
-  exhaustive `switch` in the tree — so the next standard is flagged by `-Wswitch` rather than
-  found by a wrong picture.
+  additive is that `convert` **composes through Linear** instead of dispatching on the ordered
+  pair: three spaces would have meant six pairwise arms, and the "this pairing is not supported"
+  bail arm is now unreachable by construction.
+  **Amended 2026-09-26, closing the `toX`/`toY` hole this bullet opened.** The composition was
+  cashed as a **public pair**, `image::toLinear` / `fromLinear` — so the sentence above promising no
+  `toX`/`toY` explosion was discharged by shipping one, and a caller spelled
+  `fromLinear(dst, toLinear(src, c))` itself. The pair is now **one value**:
+  **`image::TransferCurve {toLinear, fromLinear}`**, answered by `image::transferCurve(ColorSpace)`
+  in its own **`transfercurve.h`** + `details/transfercurve.inl`.
+  What that buys is not a shorter spelling but an **invariant**: the pair is what a colour space IS
+  on this axis, so it is a type you get whole or not at all. Each space's pair is built once as a
+  `constexpr` constant beside the two curves it pairs, and the switch only maps a space to one of
+  them — so the switch cannot get a direction wrong at all, and the single line where a pair *could*
+  be reversed sits directly beneath the bodies it names. The curves are named space-first
+  (`srgbToLinear` / `srgbFromLinear`), which makes each pair sort adjacent and makes the suffixes
+  mirror `TransferCurve`'s members, so a reversed, doubled or cross-standard pair reads as wrong
+  rather than needing a test to catch it. The identity pair lives ON the type,
+  `TransferCurve::identity()`, which keeps a maximally generic name out of the library-wide
+  `image::detail` scope — a nested `detail::transfer` namespace was built for that and removed, since
+  a FILE DOES NOT SCOPE NAMES and removing the one name that needed protecting does.
+  It has its own header rather than a place beside the enum, the way `formatDescriptor` sits with
+  `PixelFormat`: that descriptor is `constexpr` arithmetic needing nothing, while these curves need
+  `math::pow`, and `colorspace.h` has zero includes and reaches every consumer of the tags. The gain
+  is API surface, not compile cost — `tiffcolor.cpp` no longer sees `luminance` / `saturate` /
+  `convert<Dst>` / `mapColorChannels`, but still pulls 311 transitive headers against 313, because
+  both reach GLM for `pow`. Measured, after an earlier draft of this amendment asserted a large
+  reduction that was not real.
+  It is a behaviour table, not a descriptor: nothing about sRGB's 0.04045 is *derivable* from the
+  enumerator, which is why the model is flow's `PortType` flyweight rather than
+  `PixelFormatDescriptor` — whose own comment defines a descriptor here as *"pure derivable data
+  with no identity"*. Naming it for the space rather than the curve was considered and refused for
+  the same reason it is not `ColorSpaceDescriptor`: a space-named sidecar is where a reader would
+  put the primaries and matrix this ADR keeps OUT of the transfer enum.
+  **A scalar `convert(float, ColorSpace, ColorSpace)` was built and then dropped.** It existed
+  because a bare channel value carries no tag, so both ends had to be stated; resolving the pair
+  once dissolves that premise rather than working around it — after `transferCurve(space)` the
+  float genuinely needs no second argument. Its `from == to` short-circuit moved to
+  `convert(img, ColorSpace)`, which is now the only place relying on it, with the measurement that
+  makes it load-bearing: over a 1001-point sweep **314 sRGB and 412 BT709 values** do not survive a
+  decode/encode round trip, so equality has to return the image untouched rather than let the
+  curves cancel.
+  The one `switch` behind `transferCurve` is what flags the next standard with `-Wswitch` rather
+  than a wrong picture. Correcting this bullet's own stale claim while here: it is no longer *the
+  tree's* only exhaustive switch on the enum — ADR-0020's codec work gave `pngcolor.cpp` two and
+  `jpegcolor.cpp` / `tiffcolor.cpp` one each, for the same reason — so what it is is
+  `lain::image`'s, which is the layer this ADR governs.

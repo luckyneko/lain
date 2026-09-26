@@ -23,8 +23,9 @@ namespace lain::io::image::tiff
 {
 	// The TransferFunction table lain writes for `space` at `bits`: entry i maps the stored code i
 	// to the linear intensity it stands for, scaled across the full uint16 range, which is what the
-	// TIFF specification defines the table to hold. It samples image::toLinear, so the curve
-	// written, the curve recognised and the curve image::convert applies are one function.
+	// TIFF specification defines the table to hold. It samples the decode half of
+	// image::transferCurve, so the curve written, the curve recognised and the curve
+	// image::convert applies are one function.
 	//
 	// Public because it is also what a caller needs to ASK what lain would write — which is how the
 	// tests find the tag inside an encoded file rather than guessing at an offset, and how they

@@ -147,6 +147,15 @@ never by driving a live GUI.
 - **Cast vs Convert** — keep these apart: **Convert** changes a value's representation *within* its
   type (`ConvertNode`'s colour space and pixel format on an `Image`; `image::convert`); **Cast**
   changes its **type**. _Avoid_: using either word for the other.
+  **`image::convert<Dst>(Color<Src>)` and `convert<Dst>(ColorHSVf)` are Convert, and that was
+  examined rather than grandfathered** (2026-09-23). Read literally they change a C++ type, so a
+  survey once listed them under Cast; the rule was written for **flow's payload types**, where a
+  type change is categorical — an `Image` becoming a `String`. A `ColorRGB8` becoming a
+  `ColorRGBAf` is the same colour in a different container, and the type changes only because
+  that is what has to hold it. `cast(hsv)` would also read badly against the defaulted
+  `Dst = ColorRGBf` that lets `convert(hsv)` be called with no explicit argument. **This entry is
+  the owner** — WORK.md's deferred survey is recorded as pointing here, so the question is not
+  re-derived from one header a third time.
 
 - **Ordering capability** — `PortType::compare` (three-way), filled under `if constexpr` on
   `meta::is_less_comparable_v<T>` exactly as the collection capability is filled from `is_vector_v`.
@@ -941,6 +950,50 @@ rides a `flow` port like any payload. Vocabulary, three axes kept apart:
   accuracy). The one verb **`convert`** is overloaded on its *target* — `convert(img,
   PixelFormat | ColorSpace | AlphaMode)` — and is direction-agnostic (converting to the value
   the Image is already in is a no-op). See [ADR-0003](docs/adr/0003-tracked-enforced-colorspace-alphamode.md).
+- **TransferCurve** *(the pair is the type)* — a ColorSpace's two transfer halves as ONE value,
+  `{toLinear, fromLinear}`, answered by **`image::transferCurve(ColorSpace)`**. The pair is what a
+  colour space *is* on this axis, so it is something you get whole or not at all — which a public
+  `toLinear` / `fromLinear` pair permitted being half-written, reversed, or drifting apart across two
+  switches that had to independently agree. Each pair is a `constexpr` constant built beside the two
+  curves it pairs (`kSrgb{srgbToLinear, srgbFromLinear}`), so the switch maps a space to a **curve**
+  and can get no direction wrong; the curves are named **space-first** so each pair sorts adjacent
+  and the suffixes mirror the members, making a reversed or cross-standard pair visible by eye. It has
+  **its own header** (`transfercurve.h`), not a place beside the enum as `formatDescriptor` has: the
+  curves need `math::pow` where that descriptor needs nothing, and `colorspace.h` is include-free and
+  reaches every consumer of the tags. The identity pair is a static member —
+  **`TransferCurve::identity()`** — so the one generic name this cluster needs is scoped to the type
+  rather than added to the library-wide `image::detail`; a nested `detail::transfer` was built for
+  that and removed, because **a file does not scope names** and removing the name does.
+  Composing through linear light is the curve's business, not a caller's,
+  which is what keeps *adding a standard* to one curve pair and no new dispatch. **Resolve it once
+  per asset**, not per channel — readability, not speed: the two are within noise of each other,
+  since a `pow` dominates either way.
+  It is a **behaviour table, not a descriptor** — nothing about sRGB's 0.04045 is derivable from the
+  enumerator, so the model is flow's `PortType` flyweight, not `PixelFormatDescriptor` (whose own
+  comment defines a descriptor here as *"pure derivable data with no identity"*). It is not
+  `ColorSpaceTransferCurve` either: `PixelFormatDescriptor` carries its enum because "descriptor"
+  means nothing without a subject, while a transfer curve is a complete object, and *transfer* is
+  already this axis's word (`colorspace.h`'s own prose, TIFF's `TRANSFERFUNCTION`, FFmpeg's
+  `AVCOL_TRC`). _Avoid_: a `toXXX` / `fromXXX` pair for a two-way conversion — the standing
+  preference bites hardest where a pair looks inevitable because one end is a canonical
+  intermediate; naming it for the **space** rather than the curve, which invites the primaries and
+  matrix ADR-0003 keeps out of this axis; a generic name in the flat `image::detail` (`identity` for
+  a do-nothing function was the `image::descriptor` -> `formatDescriptor` problem one level down —
+  putting it on the TYPE is what let the plain name stay); and a `default:` arm in that switch, which
+  silences
+  nothing today and deletes the `-Wswitch` guard that makes adding a standard safe.
+
+- **A pair is a TYPE only when the halves are assembled at runtime.** `TransferCurve` earns being a
+  value because a `ColorSpace` arrives from a file, so a switch picks the two halves and could pick
+  the wrong pair — that mispairing is the invariant the type buys. `image::detail`'s `toUnit<T>` /
+  `fromUnit<U>` are the same "to and from a canonical intermediate" shape and deliberately get no
+  such treatment: they are selected by **template argument**, so they are two instantiations rather
+  than two things anyone pairs, and a `ChannelScale<T>` would pair something that cannot be
+  mispaired. They are also the *original* of the pattern — the transfer curves were named after them
+  — and were always private, which is why they never became the complaint the public `toLinear` /
+  `fromLinear` pair did. _Trigger_ that would flip this: a **runtime** channel-type dispatch
+  (`PixelFormatDescriptor` already carries a `ChannelType`; nothing normalises through it today
+  because `visit()` fans out to a compile-time `T`).
 
 ### Op-class enforcement
 

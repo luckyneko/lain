@@ -1,6 +1,6 @@
 #include "tiffcolor.h"
 
-#include <lain/image/colormath.h> // toLinear — the curve the table samples
+#include <lain/image/transfercurve.h> // transferCurve — the curve the table samples
 
 #include <cmath>
 #include <cstring>
@@ -13,9 +13,14 @@ namespace lain::io::image::tiff
 		const std::size_t entries = static_cast<std::size_t>(1) << bits;
 		std::vector<std::uint16_t> table(entries);
 		const float last = static_cast<float>(entries - 1);
+
+		// Resolved once for the whole table rather than per entry (256 entries at 8 bits, 65536 at
+		// 16). Sampling the DECODE half is what makes the curve written and the curve
+		// image::convert applies one function.
+		const lain::image::TransferCurve curve = lain::image::transferCurve(space);
 		for (std::size_t i = 0; i < entries; ++i)
 		{
-			const float linear = lain::image::toLinear(space, static_cast<float>(i) / last);
+			const float linear = curve.toLinear(static_cast<float>(i) / last);
 			table[i] = static_cast<std::uint16_t>(std::lround(linear * 65535.0f));
 		}
 		return table;
@@ -78,7 +83,7 @@ namespace lain::io::image::tiff
 	{
 		// Exhaustive with no default arm, so a new ColorSpace fails the build here rather than
 		// silently inheriting whichever answer happened to sit last (-Werror,-Wswitch). A new
-		// standard only needs a curve in image::toLinear for this arm to keep being true.
+		// standard only needs a pair in image::transferCurve for this arm to keep being true.
 		switch (space)
 		{
 			case lain::image::ColorSpace::Unspecified: // no tag; "no claim" round-trips exactly

@@ -4,6 +4,7 @@ add_executable(test-image
 	test_image.cpp
 	test_color.cpp
 	test_colormath.cpp
+	test_transfercurve.cpp
 	test_imageview.cpp
 	test_traverse.cpp
 	test_convert.cpp
