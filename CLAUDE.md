@@ -631,6 +631,36 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-26 — the image type tables stop being `detail::`
+
+`image`'s two enum-indexed type tables are now public and each sits beside the thing whose order it
+must match: **`ChannelTypeList`** under the `ChannelType` enum (it had been below the *other* enum)
+and **`ColorTypeList`** under the Color family it enumerates (it had been in `details/traverse.inl`).
+Both invariants are asserted together in `image.cpp`. No behaviour change and no test added or
+removed, so the existing suite is the regression test: `ctest -j8` **794/794** Debug with video on,
+warning-clean, format-check clean. Full landing notes in WORK.md.
+
+- **It REVERSES a recorded refusal**, which is the only reason it is worth an entry. WORK.md's
+  §Refused, not deferred held *"a public `ChannelTypeList` … exposing it invites indexing with a raw
+  `std::size_t`"*, and **nothing in `pixelformat.h` pointed at it** — so it was rediscovered in
+  review, not by the author. That is the same shape as `core::Uri` and `core::hex`: *a queued
+  decision with nothing pointing at it from the code it governs stops being a decision.* The bullet
+  is deleted rather than amended, because a reversed entry in a "do not re-raise" list stops the
+  list discriminating.
+- **The refused argument survives as a stated cost.** `Color<F>`, `Color<F>::value_type` and
+  `visit(img, fn)` already reach everything a consumer wants, enum-keyed; all 17 in-tree uses of the
+  format table go through `visit`. The public aliases add `visitAt` with a raw index, and have **no
+  consumer outside `lain::image`**. The locality win is real and was independent of visibility.
+- **`ChannelTypeList` is a misnomer, kept deliberately.** Four lines under `enum class ChannelType`
+  while holding `uint8_t`/`uint16_t`/`float`, it reads as "a list of ChannelType"; the intended
+  parse is (Channel)(TypeList). `ChannelStorageTypes` / `ColorTypes` were proposed — `...List`
+  appears nowhere else in `libs/` and names an alias after its own type, and "storage type" is
+  already the phrase three comments use. **Trigger: a consumer outside `lain::image`.**
+- **A comment that had gone from true to false:** `image.cpp` claimed both tables were *"guarded
+  reorder-proof at their definitions"* — true before the move, false after, since the guard moved
+  in with it. It also overclaimed for `ChannelTypeList`, which has no order guard and **can have
+  none**: only the enumerator's name says `U8` means `uint8_t`.
+
 ### Update 2026-09-26 — a ColorSpace's transfer becomes one value
 
 `lain::image` runs one conversion verb overloaded on its target, and the one place it did not was

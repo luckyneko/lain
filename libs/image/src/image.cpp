@@ -1,20 +1,32 @@
 #include "lain/image/image.h"
 
-#include "lain/image/traverse.h" // detail::colorList (visit table) — for the completeness check
+#include "lain/image/color.h"
 
 #include <lain/meta/enums.h>
 
 #include <cstring> // memset / memcpy for the pixel buffer
+#include <utility> // std::index_sequence — the reorder fold below
 
 namespace lain::image
 {
-	// The two enum-indexed type tables must cover their whole enum (their internal order is
-	// guarded reorder-proof at their definitions). Checked here, the one TU where magic_enum
-	// is already in scope, so the widely-included headers stay magic_enum-free.
-	static_assert(detail::channelTypes::size == lain::meta::enums::count<ChannelType>(),
-				  "channelTypes must have one entry per ChannelType");
-	static_assert(detail::colorList::size == lain::meta::enums::count<PixelFormat>(),
-				  "colorList must have one Color per PixelFormat");
+	// The two enum-indexed type tables (pixelformat.h, color.h), checked in the one TU where
+	// magic_enum is already in scope (Image::toString below uses it), so the widely-included
+	// headers stay magic_enum-free. Both must cover their whole enum; ColorTypeList must also be
+	// IN enum order, which the fold below verifies slot by slot. ChannelTypeList gets no order
+	// check and can have none — only the enumerator's name says U8 means uint8_t.
+	static_assert(ChannelTypeList::size == lain::meta::enums::count<ChannelType>(),
+				  "ChannelTypeList must have one entry per ChannelType");
+	static_assert(ColorTypeList::size == lain::meta::enums::count<PixelFormat>(),
+				  "ColorTypeList must have one Color per PixelFormat");
+	template <std::size_t... Is>
+	static constexpr bool colorTypeListMatchesFormats(std::index_sequence<Is...>)
+	{
+		return (... && (ColorTypeList::at<Is>::format == static_cast<PixelFormat>(Is)));
+	}
+	static_assert(colorTypeListMatchesFormats(std::make_index_sequence<ColorTypeList::size>{}),
+				  "ColorTypeList must list each PixelFormat's Color in enum order");
+
+	// ------------------------------------------------------------------------
 
 	std::uint32_t Image::bytesPerPixel(PixelFormat format)
 	{

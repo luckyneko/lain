@@ -5856,6 +5856,49 @@ timestamp and minted uuids are normalised.
   exist — the HSV conversion has been `image::convert` for some time.
 - **No gui-mode eyeball needed** — nothing here touches ImGui or a pane's drawing.
 
+## The image type tables stop being `detail::` (built 2026-09-26)
+
+`image`'s two enum-indexed type tables — `ChannelType -> storage type` and `PixelFormat -> Color` —
+were `detail::channelTypes` (in `pixelformat.h`, below the *other* enum) and `detail::colorList` (in
+`details/traverse.inl`). They are now `ChannelTypeList` beside the `ChannelType` enum it mirrors and
+`ColorTypeList` beside the Color family it enumerates, with both invariants asserted together in
+`image.cpp`. No behaviour change and no test added or removed, so the existing suite is the
+regression test: `ctest -j8` **794/794** Debug with video on, warning-clean, format-check clean.
+
+- **This REVERSES a refusal, which is why it has an entry at all.** *"A public `ChannelTypeList`:
+  it is the mapping mechanism rather than an interface, and exposing it invites indexing with a raw
+  `std::size_t`"* sat in §Refused, not deferred — and nothing in `pixelformat.h` pointed at it, so
+  the refusal was rediscovered by review rather than by the author. The bullet is **deleted** rather
+  than amended: a reversed entry left in a "do not re-raise" list stops the list discriminating.
+- **The argument it was refused on still stands, and is now a known cost rather than a defence.**
+  Everything a consumer wants is already reachable more safely — `Color<F>` for a compile-time
+  format, `Color<F>::value_type` for its storage type, `visit(img, fn)` for a runtime one — and all
+  17 in-tree uses of the format table go through `visit`. What the public aliases add is `visitAt`
+  with a raw `std::size_t`. **There is no consumer outside `lain::image` today.**
+- **What the move buys is locality, and that is independent of the visibility.** A `ChannelType`
+  table had been sitting under the `PixelFormat` enum; the census of the Color family had been
+  living in the traversal file. Each is now beside the thing whose order it must match — which is
+  the invariant, and the one a comment has to carry.
+- **PascalCase is a fix, not a side effect.** `colorList` / `channelTypes` were type aliases spelled
+  like variables, against the convention every other type in the tree follows.
+- **`ChannelTypeList` is a misnomer and is kept anyway** (repo owner's call). It sits four lines
+  under `enum class ChannelType` and holds `uint8_t` / `uint16_t` / `float`, so it reads as "a list
+  of ChannelType", which it is not; the intended parse is (Channel)(TypeList). `ChannelStorageTypes`
+  was proposed — "storage type" being the phrase three existing comments already use for exactly
+  this — along with `ColorTypes`, since `...List` appears nowhere else in `libs/` and names the
+  alias after its own type. **Trigger to revisit: a consumer outside `lain::image`**, at which point
+  the misparse stops being an in-library reading cost.
+- **The reorder guard moved to `image.cpp` with the count checks** and its comment was corrected:
+  it had claimed both tables were *"guarded reorder-proof at their definitions"*, which was true
+  before the move and false after. `ChannelTypeList` has **no** order guard and can have none —
+  only the enumerator's name says `U8` means `uint8_t`, so there is no second source to compare
+  against. The count assert catches an enumerator added without an entry, never a reorder.
+- Hygiene found in review: the reorder helper was not `static` (`convert.cpp` spells the same shape
+  correctly two files over), `image.cpp` named `std::index_sequence` with no `<utility>`, `color.h`
+  named `meta::TypeList` with no `typelist.h`, and `traverse.inl` kept a `<utility>` that left with
+  the fold. All four reached their header transitively and worked — the class of thing the
+  2026-09-05 CI port found six of.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -6086,9 +6129,6 @@ under ADR-0007, so the rule cannot simply be "empty output is a problem".
   `bytesPerChannel()` — to represent a state the exhaustive switch plus `-Wswitch` (an error under
   lain's strict flags) already proves cannot occur. The fallback `return` exists only because
   control must not reach the end of a non-void function, and now says so. *(§notes.txt triage.)*
-- **A public `ChannelTypeList`.** `detail::channelTypes` stays `detail::`: it is the mapping
-  mechanism rather than an interface, and exposing it invites indexing with a raw `std::size_t`.
-  *(§notes.txt triage.)*
 
 ### Standing verification gap
 

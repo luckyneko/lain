@@ -2,7 +2,8 @@
 
 #include "lain/image/pixelformat.h" // PixelFormat + formatDescriptor()
 
-#include <lain/math/types.h> // math::Vec<N,T> — Color's base
+#include <lain/math/types.h>	// math::Vec<N,T> — Color's base
+#include <lain/meta/typelist.h> // meta::TypeList — the PixelFormat -> Color table
 
 #include <cstddef>
 
@@ -10,12 +11,12 @@ namespace lain::image
 {
 	// The math::Vec a Color<F> derives from: channel count and channel type read off the
 	// format's descriptor, so the format alone determines the layout. The channel type comes
-	// from the shared channelTypes list (pixelformat.h), indexed by the enum value — the same
+	// from the shared ChannelTypeList (pixelformat.h), indexed by the enum value — the same
 	// list that gives a format its byte size.
 	template <PixelFormat F>
 	using ColorBase = lain::math::Vec<
 		static_cast<math::length_t>(formatDescriptor(F).channelCount()),
-		detail::channelTypes::template at<static_cast<std::size_t>(formatDescriptor(F).channelType)>>;
+		ChannelTypeList::template at<static_cast<std::size_t>(formatDescriptor(F).channelType)>>;
 
 	// A pixel value of a given PixelFormat, as a distinct strong type over its math::Vec.
 	// Parameterizing on the format (not on <N,T>) ties a Color 1:1 to a PixelFormat, so the
@@ -56,6 +57,17 @@ namespace lain::image
 	using ColorGrayAlpha8 = Color<PixelFormat::GrayAlpha8>;
 	using ColorGrayAlpha16 = Color<PixelFormat::GrayAlpha16>;
 	using ColorGrayAlphaf = Color<PixelFormat::GrayAlpha32F>;
+
+	// The Color of each PixelFormat, indexed by the enum value — the census of the family
+	// above, and the table image::visit (traverse.h) dispatches over. Order must match the
+	// PixelFormat enum, which image.cpp checks slot by slot: each Color must report its own
+	// position's format, so a reorder is caught rather than silently mapping a format to the
+	// wrong Color. image.cpp also asserts every format has an entry.
+	using ColorTypeList = lain::meta::TypeList<
+		ColorGray8, ColorGray16, ColorGrayf,
+		ColorRGB8, ColorRGB16, ColorRGBf,
+		ColorRGBA8, ColorRGBA16, ColorRGBAf,
+		ColorGrayAlpha8, ColorGrayAlpha16, ColorGrayAlphaf>;
 
 	// A colour in the HSV model — hue in degrees [0,360), saturation + value in [0,1]. Distinct from
 	// the pixel-format Color<F> family: HSV is a colour *model*, not a byte layout, so it can't be a

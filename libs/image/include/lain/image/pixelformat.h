@@ -28,6 +28,13 @@ namespace lain::image
 		F32, // 32-bit float
 	};
 
+	// The C++ storage type of each ChannelType, indexed by the enum's value — the one source
+	// for both a Color's channel type (color.h) and a format's byte size (bytesPerChannel,
+	// below). Order must match the enum above, and nothing can check it: only the enumerator's
+	// NAME says U8 means uint8_t, so there is no second source to compare it against. image.cpp
+	// asserts the COUNT, which catches an enumerator added without an entry — never a reorder.
+	using ChannelTypeList = lain::meta::TypeList<std::uint8_t, std::uint16_t, float>;
+
 	// A pixel's byte layout: ColorModel x ChannelType. The primary runtime handle an
 	// Image carries — cheap to switch on and magic_enum-reflectable. Deliberately NOT the
 	// color space (sRGB/linear): that is a separate tracked axis (see colorspace.h), since
@@ -45,19 +52,11 @@ namespace lain::image
 		RGBA16,
 		RGBA32F,
 		// Appended (not grouped with Gray) so existing enum values are unshifted; the
-		// colorList in traverse.inl mirrors this order.
+		// ColorTypeList in color.h mirrors this order.
 		GrayAlpha8,
 		GrayAlpha16,
 		GrayAlpha32F,
 	};
-
-	namespace detail
-	{
-		// The C++ storage type of each ChannelType, indexed by the enum's value — the one
-		// source for both a Color's channel type (color.h) and a format's byte size below.
-		// Order must match the ChannelType enum (guarded by a static_assert in image.cpp).
-		using channelTypes = lain::meta::TypeList<std::uint8_t, std::uint16_t, float>;
-	} // namespace detail
 
 	// A format's reflective facts, derived from its two axes. Unlike flow's PortType
 	// flyweight (referenced by pointer, so it needs a stable address), a descriptor is
@@ -88,7 +87,7 @@ namespace lain::image
 
 		constexpr std::uint8_t bytesPerChannel() const // sizeof the channel's storage type
 		{
-			return static_cast<std::uint8_t>(detail::channelTypes::sizeAt(static_cast<std::size_t>(channelType)));
+			return static_cast<std::uint8_t>(ChannelTypeList::sizeAt(static_cast<std::size_t>(channelType)));
 		}
 
 		constexpr std::uint32_t bytesPerPixel() const

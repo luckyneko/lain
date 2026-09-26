@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lain/image/color.h"	  // Color typedefs (the visit dispatch table) + Image::as<C>
+#include "lain/image/color.h"	  // Color typedefs + ColorTypeList (the visit dispatch table)
 #include "lain/image/imageview.h" // ImageView / ConstImageView
 
 #include <algorithm>
@@ -57,7 +57,7 @@ namespace lain::image
 	// Dispatch a runtime PixelFormat to the matching Color view and call fn with it — so an
 	// op is written once as a generic lambda (fn(auto view)) and runs on every format. fn
 	// receives an ImageView<C> (mutable) or ConstImageView<C> (const overload). Defined in
-	// traverse.inl over the private format -> Color table.
+	// traverse.inl over ColorTypeList (color.h), the format -> Color table.
 	template <typename F>
 	void visit(Image& img, F&& fn);
 	template <typename F>
