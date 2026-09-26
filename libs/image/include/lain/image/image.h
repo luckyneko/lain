@@ -75,12 +75,9 @@ namespace lain::image
 
 		bool valid() const { return m_extent.x > 0 && m_extent.y > 0 && !m_bytes.empty(); }
 		std::size_t pixelCount() const { return static_cast<std::size_t>(m_extent.x) * m_extent.y; }
-		std::size_t byteSize() const { return pixelCount() * bytesPerPixel(m_format); }
+		std::size_t byteSize() const { return pixelCount() * image::formatDescriptor(m_format).bytesPerPixel(); }
 
 		std::string toString() const; // e.g. "Image 64x64 RGBA8"
-
-		// Bytes per pixel for a format (RGBA8 -> 4) — reads the flyweight descriptor.
-		static std::uint32_t bytesPerPixel(PixelFormat format);
 
 	private:
 		lain::math::Vec2i m_extent{0, 0};

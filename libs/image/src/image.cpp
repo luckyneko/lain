@@ -28,17 +28,12 @@ namespace lain::image
 
 	// ------------------------------------------------------------------------
 
-	std::uint32_t Image::bytesPerPixel(PixelFormat format)
-	{
-		return image::formatDescriptor(format).bytesPerPixel();
-	}
-
 	Image::Image(int width, int height, PixelFormat format, ColorSpace colorSpace, AlphaMode alphaMode)
 		: m_extent(width, height)
 		, m_format(format)
 		, m_colorSpace(colorSpace)
 		, m_alphaMode(alphaMode)
-		, m_bytes((width > 0 && height > 0) ? static_cast<std::size_t>(width) * height * bytesPerPixel(format) : 0)
+		, m_bytes((width > 0 && height > 0) ? static_cast<std::size_t>(width) * height * image::formatDescriptor(format).bytesPerPixel() : 0)
 	{
 		// Zero the pixels — the previous std::vector storage was value-initialised, and some
 		// callers rely on a fresh Image being cleared. (Buffer itself leaves bytes untouched.)

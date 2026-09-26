@@ -70,11 +70,6 @@ TEST_CASE("Image::toString names extent, format and both tags", "[image]")
 			"Image 8x8 RGB8 Linear Straight");
 }
 
-TEST_CASE("bytesPerPixel is 4 for RGBA8", "[image]")
-{
-	REQUIRE(Image::bytesPerPixel(PixelFormat::RGBA8) == 4u);
-}
-
 TEST_CASE("PixelFormat descriptor reports model, channel type and sizes", "[image]")
 {
 	const auto rgba8 = lain::image::formatDescriptor(PixelFormat::RGBA8);
