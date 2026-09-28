@@ -236,7 +236,9 @@ namespace lain::flow
 
 		// Evaluate one node: populate its inputs, then either compute() (READY — every required
 		// input has a value) or SUPPRESS it (a required input is empty → clear its outputs, don't
-		// compute), and record the definition version it was computed at. ADR-0007.
+		// compute), and record the definition version it was computed at. ADR-0007. A compute() that
+		// throws records nothing and asks for its node again before the exception leaves, so the node
+		// stays stale however it came to be in the run.
 		void runNode(const Graph& definition, Evaluation& evaluation, NodeId id);
 
 		// Copy each connected upstream output into `id`'s matching input. The value is SHARED, not

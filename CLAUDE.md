@@ -778,6 +778,22 @@ Slice 2 landed*.
 - **The clone tests' scene is now `libs/flow/test/testscene.h`**, shared, with the map's list as a
   param so a test can edit arity. Seven sabotages, all caught, recorded in WORK.md.
 
+### Update 2026-09-28 — a compute() that throws stays stale (fixed ahead of M14 slice 3)
+
+Found while planning slice 3 (cancellation), fixed in its own commit. `runNode` clears a node's
+recompute request before `compute()` and skips `markComputed` on a throw. So a node in the run only
+because something UPSTREAM changed (its own version already recorded) went **clean** when it threw,
+and kept the value it had built from the old input: **1 instead of 2, measured**. It now asks for the
+node again on the way out of a throw. `ctest -j8` **817/817** Debug with video on, **823/823**
+Release with video on, **790/790** Release video-off (+1 each); warning-clean, format-check clean.
+Full notes in WORK.md's *Milestone 14 › A compute() that throws stays stale*.
+
+- **It matters for slice 4**, whose coordinator marks a throwing node **Failed**, defined as "stays
+  Stale". Without this fix, a Failed node would have gone clean.
+- **It fixes the thrower only.** Nodes a throw leaves UNREACHED (a serial walk stops, multi skips the
+  thrower's successors) stay wrongly clean until slice 3 persists the planned closure as recompute
+  requests.
+
 ### Update 2026-09-26 — one process task pool; `lain::task` becomes an alias for `multi`
 
 The wrapper moved from Taskflow to `multi` on 2026-09-11 with `libs/flow` unchanged by a single line

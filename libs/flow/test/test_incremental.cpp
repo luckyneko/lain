@@ -14,6 +14,7 @@
 
 #include <atomic>
 #include <memory>
+#include <stdexcept>
 
 using lain::flow::Connection;
 using lain::flow::Graph;
@@ -73,6 +74,80 @@ private:
 	lain::flow::PortId m_in;
 	lain::flow::PortId m_out;
 };
+
+// A passthrough whose compute() throws while it is armed — a node failing on the input it was
+// handed. Counted, so a test can see whether a later run tried it again.
+class ThrowingRelay : public lain::flow::Node
+{
+public:
+	ThrowingRelay()
+		: lain::flow::Node("ThrowingRelay")
+	{
+		m_in = addInput<int>("in");
+		m_out = addOutput<int>("out");
+	}
+	std::unique_ptr<lain::flow::Node> clone() const override { return std::make_unique<ThrowingRelay>(*this); }
+	void compute(lain::flow::NodeEvaluation& evaluation) const override
+	{
+		++*m_computes;
+		if (*m_armed)
+			throw std::runtime_error("ThrowingRelay: armed");
+		evaluation.output(m_out).set<int>(evaluation.input(m_in).get<int>());
+	}
+	int computes() const { return *m_computes; } // test probes — see CountingSource
+	void arm(bool armed) { *m_armed = armed; }
+
+private:
+	std::shared_ptr<std::atomic<int>> m_computes = std::make_shared<std::atomic<int>>(0);
+	std::shared_ptr<std::atomic<bool>> m_armed = std::make_shared<std::atomic<bool>>(false);
+	lain::flow::PortId m_in;
+	lain::flow::PortId m_out;
+};
+
+// Source -> ThrowingRelay, where the relay is in the second run ONLY because its source changed: its
+// own version still equals what it was computed at. The run that throws must leave it owed a
+// compute, so the next run retries it on the new input rather than serving the old one.
+static void checkThrowStaysStale(lain::flow::Scheduler& scheduler)
+{
+	Graph graph;
+	const NodeId s = graph.add<CountingSource>();
+	const NodeId t = graph.add<ThrowingRelay>();
+	REQUIRE(graph.connect(s, 0, t, 0) == Connection::Ok);
+	auto& src = static_cast<CountingSource&>(graph.node(s));
+	auto& relay = static_cast<ThrowingRelay&>(graph.node(t));
+
+	lain::flow::Evaluation evaluation{graph};
+	scheduler.run(graph, evaluation);
+	REQUIRE(relay.computes() == 1);
+	REQUIRE(lain::flow::test::output(graph, evaluation, t, 0).get<int>() == 1);
+
+	src.value = 2;
+	evaluation.requestRecompute(s); // an evaluation-local request: the relay's version is untouched
+	relay.arm(true);
+	REQUIRE_THROWS_AS(scheduler.run(graph, evaluation), std::runtime_error);
+	REQUIRE(relay.computes() == 2);
+	REQUIRE(evaluation.needsRecompute(t)); // the node that threw is still owed a compute
+
+	relay.arm(false);
+	scheduler.run(graph, evaluation);
+	REQUIRE(relay.computes() == 3);
+	REQUIRE(lain::flow::test::output(graph, evaluation, t, 0).get<int>() == 2);
+}
+
+TEST_CASE("a node that throws stays stale when only its input changed", "[flow][incremental]")
+{
+	SECTION("serial")
+	{
+		SerialScheduler scheduler;
+		checkThrowStaysStale(scheduler);
+	}
+	SECTION("parallel")
+	{
+		lain::testing::ThreadPool pool;
+		ParallelScheduler scheduler;
+		checkThrowStaysStale(scheduler);
+	}
+}
 
 TEST_CASE("run recomputes only the dirty closure, skipping clean nodes", "[flow][incremental]")
 {

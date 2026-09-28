@@ -6342,6 +6342,32 @@ pre-change binary (built from a stash of this work) once the timestamp and minte
 - **`PublishedEvaluation` has no production caller until slice 4** — the same deliberate choice slice
   1 made for `Graph::clone`, which the `[published]` cases exercise until the runner does.
 
+### A compute() that throws stays stale — FIXED 2026-09-28
+
+Found while planning slice 3, fixed in its own commit ahead of it. `runNode` clears a node's recompute
+request **before** `compute()` (so an on-request source can rearm itself) and records `computedAt`
+after it, and its comment claimed that *"a compute() that threw ... must stay stale and be retried"*.
+That held only for a node whose own version had changed. A node in the run **only because something
+upstream changed** already has `computedAt` equal to its version, and its request had just been
+cleared. A throw therefore left it **clean**, and it kept the value it had built from the old input.
+**Measured: 1 served instead of 2** once the throw was over. `runNode` now asks for the node again on
+the way out of a throw (`try` / `catch (...)` → `requestRecompute` → rethrow). `ctest -j8` **817/817**
+Debug with video on, **823/823** Release with video on, **790/790** Release video-off (+1 each);
+warning-clean, format-check clean; the case swept 100× through the Catch2 binary (1 matching case) and
+the whole `test-flow` binary run five times shuffled and once in declaration order with no failure;
+`flowview run --example` identical to the pre-change binary once the timestamp and short ids are
+normalised.
+
+- **Why now:** slice 4's coordinator catches a throw and marks the node **Failed**, which CONTEXT.md
+  defines as *"it stays Stale"*. Without this fix, a Failed node would have gone clean and never
+  retried.
+- **The thrower itself is all this fixes.** What a throw leaves *unreached* is a separate problem. A
+  serial walk stops, and multi skips a thrower's successors, so a node that would have run after the
+  throw is left clean too. That is exactly the "a run finishes its closure" assumption, and slice 3's
+  closure persistence is what discharges it.
+- **Sabotage:** drop the re-request and *"a node that throws stays stale when only its input
+  changed"* fails in both sections, serving the old value (1 instead of 2).
+
 ### Visual design (settled in outline, tuned by eyeball)
 
 Freshness takes channels nothing else uses — title colour is category, a muted title is *not ready*,

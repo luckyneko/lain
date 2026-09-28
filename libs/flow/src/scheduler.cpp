@@ -599,7 +599,20 @@ namespace lain::flow
 		// presence itself. A Gate suppresses by clearing its output — "skip" is just no value.
 		if (view.ready())
 		{
-			node.compute(view);
+			// A compute() that THROWS produced nothing, so it must stay stale and be retried rather
+			// than be remembered as done. Skipping markComputed below is not enough on its own: a node
+			// in this run only because something UPSTREAM changed already has computedAt equal to its
+			// version, and its request was cleared above — so without asking again here it would go
+			// clean on the throw and keep the value it built from the old input.
+			try
+			{
+				node.compute(view);
+			}
+			catch (...)
+			{
+				evaluation.requestRecompute(id);
+				throw;
+			}
 		}
 		else
 		{
@@ -607,11 +620,9 @@ namespace lain::flow
 				view.output(node.output(o).id()).clear();
 		}
 
-		// Recorded only once the node actually got through — a compute() that threw produced
-		// nothing, so it must stay stale and be retried rather than be remembered as done. A
-		// SUPPRESSED node does reach here, deliberately: ADR-0007 relies on it going clean and empty
-		// together, so a stable-off subtree drops out of future closures instead of being re-examined
-		// forever.
+		// Recorded only once the node actually got through. A SUPPRESSED node does reach here,
+		// deliberately: ADR-0007 relies on it going clean and empty together, so a stable-off subtree
+		// drops out of future closures instead of being re-examined forever.
 		evaluation.markComputed(id, node.version());
 	}
 
