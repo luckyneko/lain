@@ -233,7 +233,9 @@ one execution.)*
   captures stable per-node views; no task calls `operator[]`, resizes evaluation storage or creates a
   child. Hosts inspect the owning `Evaluation` through `EvalPath` + `PortAddress`, while
   `NodeEvaluation` remains the narrow execution capability passed only to compute. `Evaluation` is a
-  move-only value in `flow` core (`evaluation.h`) — it needs `PortValue` and nothing else.
+  move-only value in `flow` core (`evaluation.h`) — it needs `PortValue` and nothing else. *(Amended
+  2026-09-28, [ADR-0025](0025-runs-read-a-clone-gui-never-waits.md) slice 2: callers still cannot copy
+  one; its single copy is a `PublishedEvaluation`, which holds the definition the copy reads through.)*
 - **`Graph::topoOrder()` stops being lazy.** The mutators (`add` / `removeNode` / `connect` /
   `disconnect` / `removePort`) maintain the order, so the accessor is a plain const read of
   non-`mutable` state and two concurrent runs cannot rebuild it at once. Seeding switches from map

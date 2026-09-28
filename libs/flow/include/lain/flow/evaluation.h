@@ -91,9 +91,13 @@ namespace lain::flow
 		NodeId m_id;
 	};
 
-	// One graph's runtime state. Move-only: it is a value the host owns, so retention is ownership
-	// rather than policy — the cli drops it after reading its outputs, the gui keeps updating one
-	// because the Inspector reads it, and a bounded pool is simply how many it keeps.
+	// One graph's runtime state. A value the host owns, so retention is ownership rather than policy
+	// — the cli drops it after reading its outputs, the gui keeps updating one because the Inspector
+	// reads it, and a bounded pool is simply how many it keeps.
+	//
+	// A caller can move one but not copy it. The ONE copy is a PublishedEvaluation (below): a copy
+	// reads through the definition it was prepared against, so a copy that did not also hold that
+	// definition would be one scope away from reading a destroyed graph.
 	//
 	// It is also a TREE: one child Evaluation per group node, reached by the group's NodeId. (A map
 	// node will hold N children per node; that is why a child is located by coordinate rather than by
@@ -108,9 +112,8 @@ namespace lain::flow
 
 		Evaluation(Evaluation&&) noexcept;
 		Evaluation& operator=(Evaluation&&) noexcept;
-		Evaluation(const Evaluation&) = delete;
 		Evaluation& operator=(const Evaluation&) = delete;
-		~Evaluation();
+		~Evaluation(); // the copy constructor is private: see PublishedEvaluation
 
 		// Create/prune storage to match `definition`, recursively for group children, and record it.
 		// THE COORDINATOR CALLS THIS BEFORE DISPATCH: after it, every node and every declared port has
@@ -129,7 +132,8 @@ namespace lain::flow
 		// Not necessarily the document: once runs read clones, it is the clone the last run read. It
 		// is what ready(), describe() and needsRecompute() consult, so it must outlive any read made
 		// through this Evaluation — a host that lets it die has to prepare against another graph of
-		// the same lineage before reading again.
+		// the same lineage before reading again. A PublishedEvaluation holds its copy's definition
+		// for exactly this reason.
 		const Graph* definition() const { return m_definition; }
 
 		// --- per-node access ---------------------------------------------------
@@ -214,7 +218,14 @@ namespace lain::flow
 
 	private:
 		friend class NodeEvaluation;
-		friend class Scheduler; // the run lease, computedAt bookkeeping and input population
+		friend class Scheduler;			  // the run lease, computedAt bookkeeping and input population
+		friend class PublishedEvaluation; // the one caller of the copy constructor
+
+		// A copy of this Evaluation and its whole child tree: every port value is a refcount bump
+		// (a PortValue shares its payload), every child is copied in turn, and the copy is not being
+		// run whatever this one is. Private because a copy reads through the same definition as its
+		// source and holds nothing that keeps it alive — PublishedEvaluation is what pairs the two.
+		Evaluation(const Evaluation& other);
 
 		// Everything one node accumulates across runs.
 		struct NodeState
@@ -277,5 +288,53 @@ namespace lain::flow
 		// Held for the duration of a scheduler invocation. A plain bool guarded by the fact that only
 		// the coordinator thread takes it — a worker task never enters the scheduler (fire-and-join).
 		bool m_running = false;
+	};
+
+	// A read-only copy of an Evaluation, together with the definition it reads through (ADR-0025: a
+	// host's panes read one while a run holds the working evaluation). The copy's ready(),
+	// describe() and needsRecompute() consult the graph its source was last prepared against — in a
+	// gui host, the clone the run read — and every child's reads lead into that graph's interiors. So
+	// the definition travels WITH the copy: holding the root keeps every inline, map and loop
+	// interior alive (their nodes own them) and every linked definition too (a LinkedGroupNode shares
+	// it). A lifetime the type states rather than one a host has to remember.
+	//
+	// Only const access goes out. A published evaluation is something a host READS; it can never be
+	// handed to Scheduler::run, so a second working evaluation branched off a first (ADR-0025's
+	// deferred "evaluation fork") cannot be made by accident.
+	//
+	// Not called a snapshot — that word means the undo document — and not a record of one execution:
+	// a host replaces it as newer results land.
+	class PublishedEvaluation
+	{
+	public:
+		// Nothing published yet: every read answers empty, not ready, "(empty)".
+		PublishedEvaluation() = default;
+
+		// Copy `evaluation` — a refcount bump per port value, the child tree copied in turn — and
+		// keep `definition` alive for as long as the copy lives.
+		//
+		// Throws std::logic_error unless `definition` is the graph `evaluation` was LAST PREPARED
+		// against. That is an address comparison, and rightly so: the question here is lifetime,
+		// not history — the copy reads through that one object, so it is the object that must be
+		// held. A null `definition` is refused for the same reason.
+		//
+		// Precondition, not checked: nothing writes `evaluation` while it is copied. A host publishes
+		// where its coordinator is quiescent — between stages, or once a run has returned.
+		PublishedEvaluation(std::shared_ptr<const Graph> definition, const Evaluation& evaluation);
+
+		// Move-only: copying one would be the whole per-port copy again, for a value a host replaces
+		// rather than duplicates.
+		PublishedEvaluation(PublishedEvaluation&&) noexcept = default;
+		PublishedEvaluation& operator=(PublishedEvaluation&&) noexcept = default;
+		PublishedEvaluation(const PublishedEvaluation&) = delete;
+		PublishedEvaluation& operator=(const PublishedEvaluation&) = delete;
+
+		const Evaluation& evaluation() const { return m_evaluation; }
+
+	private:
+		// Declared FIRST, so it is destroyed LAST: the copy never outlives the graph it reads through,
+		// even for the length of its own destructor.
+		std::shared_ptr<const Graph> m_definition;
+		Evaluation m_evaluation;
 	};
 } // namespace lain::flow

@@ -75,6 +75,21 @@ namespace lain::flow
 		// Two values may connect when they carry the same payload type.
 		bool sameType(const PortValue& other) const;
 
+		// Whether both slots read the SAME payload object, as the same type — identity, not equality:
+		// two slots set to equal values hold two payloads. Because a payload is never mutated, the same
+		// payload is the same value, so this is how "has it changed?" is asked (a viewer skipping a
+		// thumbnail it already uploaded) without comparing values nobody can compare generically.
+		//
+		// Two empty slots are the same (nothing is nothing). An alias is its own payload: it reads a
+		// subobject, not its owner — and since a first member shares its owner's address, the type is
+		// compared as well as the address.
+		//
+		// Deliberately a comparison between two LIVE slots, never an address a caller keeps: a payload
+		// that is freed and reallocated can land at the same address, so a stored address would call a
+		// new value unchanged. A caller asking "changed since?" keeps the PortValue it saw instead —
+		// which is also what stops that address being reused while the question is open.
+		bool samePayload(const PortValue& other) const;
+
 		// Drop the payload, returning the slot to empty.
 		void clear();
 

@@ -25,20 +25,33 @@ namespace flowview
 		std::set<PinKey> live;
 		const auto refresh = [&](flow::NodeId id, const flow::Port& p)
 		{
+			const flow::PortAddress address{id, p.id()};
+			const PinKey key{path, address};
+			const flow::PortValue& value = evaluation.value(address);
+
+			// The same payload as the thumbnail was made from is the same picture (a payload is never
+			// mutated), so neither the poster nor the stalling upload is worth repeating.
+			const auto existing = m_entries.find(key);
+			if (existing != m_entries.end() && existing->second.texture.valid() && existing->second.source.samePayload(value))
+			{
+				live.insert(key);
+				return;
+			}
+
 			// The registry decides what a value looks like as a still — this loop no longer knows
 			// that an image is the thing worth uploading. An unviewable type, an empty slot, or a
 			// poster that could not be produced (a frame that would not decode) all yield nothing.
-			const flow::PortValue poster = views.poster(evaluation.value(flow::PortAddress{id, p.id()}));
+			const flow::PortValue poster = views.poster(value);
 			if (!poster.holds<image::Image>())
 				return;
 			const image::Image& img = poster.get<image::Image>();
 			if (!img.valid())
 				return;
-			const PinKey key{path, flow::PortAddress{id, p.id()}};
 			live.insert(key);
-			gui::Texture& tex = m_textures[key]; // default-empty on first sight
-			if (!tex.upload(img))				 // re-upload in place when size/format fits...
-				tex = ctx.createTexture(img);	 // ...else first-time or resized -> reallocate
+			Entry& entry = m_entries[key]; // default-empty on first sight
+			entry.source = value;
+			if (!entry.texture.upload(img))				// re-upload in place when size/format fits...
+				entry.texture = ctx.createTexture(img); // ...else first-time or resized -> reallocate
 		};
 		for (const flow::NodeId id : graph.topoOrder())
 		{
@@ -50,10 +63,10 @@ namespace flowview
 		}
 		// Drop previews whose pin is gone (or no longer posters anything); the erased
 		// gui::Texture reclaims its descriptor.
-		for (auto it = m_textures.begin(); it != m_textures.end();)
+		for (auto it = m_entries.begin(); it != m_entries.end();)
 		{
 			if (live.count(it->first) == 0)
-				it = m_textures.erase(it);
+				it = m_entries.erase(it);
 			else
 				++it;
 		}
@@ -61,9 +74,9 @@ namespace flowview
 
 	const gui::Texture* PreviewCache::find(const PinKey& key) const
 	{
-		const auto it = m_textures.find(key);
-		if (it == m_textures.end() || !it->second.valid())
+		const auto it = m_entries.find(key);
+		if (it == m_entries.end() || !it->second.texture.valid())
 			return nullptr;
-		return &it->second;
+		return &it->second.texture;
 	}
 } // namespace flowview

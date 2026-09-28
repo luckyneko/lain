@@ -204,6 +204,11 @@ a recompute never disturbs a payload another slot is still reading. A node that 
 modify a value copies it out (`image::Image src = evaluation.input(m_image).get<image::Image>()`), which is
 the one place a deep copy is paid — deliberately, by the node that needs it.
 
+Because a payload is never mutated, **"has this value changed?" is a question of identity**:
+`samePayload()` — the same object, read as the same type — never equality, and never an address a
+caller keeps (a freed payload's address can be reused by a new one). A caller asking "changed since?"
+keeps the `PortValue` it saw; the preview cache does exactly that to skip re-uploading a thumbnail.
+
 ## Camera geometry — evidence before reconstruction
 
 - **Axis convention** — the orientation and handedness assigned to coordinate axes, independent of
@@ -703,7 +708,8 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   UUIDs match — its nodes are new objects with new Versions, and the **lineage** differs, so `prepare`
   refuses the pairing. It **does** span a **clone** (M14 slice 1, built), which carries the Versions and
   the lineage — `prepare` checks lineage, not the definition's address, so the Graph it last prepared
-  against is the one it reads through, and must outlive those reads. Before dispatch, `prepare(definition)` creates,
+  against is the one it reads through, and must outlive those reads (which is why its one copy, a
+  **published evaluation**, holds that Graph). Before dispatch, `prepare(definition)` creates,
   prunes and stabilises its storage. Scheduler entry holds a non-blocking **run lease**: reusing one
   Evaluation concurrently or recursively throws `std::logic_error` immediately, while distinct
   Evaluations — including two over the same definition — may run concurrently; the RAII lease releases
@@ -890,7 +896,7 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 
 ## Running while you edit — the host's side of a run
 
-*(M14 — designed, not built. [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
+*(M14 — designed; slices 1-2 built, the host side not yet. [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
 host keeps its document editable while a run is in flight. These are the words for how a run is
 started, stopped and shown.
 
@@ -910,8 +916,12 @@ started, stopped and shown.
 - **Published evaluation** — the copy of an Evaluation a host's panes read while a run holds the
   real one: refreshed as results land (per node as each finishes, and whole at stage boundaries and
   run end), and written directly by the host for a **pending binding**. A view of the newest results,
-  located by the same EvalPath — not a record of one execution. _Avoid_: snapshot (the undo document),
-  cache, result.
+  located by the same EvalPath — not a record of one execution. It **holds the definition it reads
+  through** (the clone its run read), because an Evaluation's reads go through the graph it was
+  prepared against — so the copy and that graph are one value, `flow::PublishedEvaluation`, and there
+  is no other way to copy an Evaluation. A host only READS one: it can never be run, since a second
+  working evaluation branched off the first would be a fork (deferred). _Avoid_: snapshot (the undo
+  document), cache, result.
 - **Pending binding** — a boundary value the user has bound that no run has consumed yet. Applied at
   the next run's start; shown at once in the published evaluation, so the value the user just set is
   the value they see. Not a document change, so undo ignores it — as it ignores every binding.

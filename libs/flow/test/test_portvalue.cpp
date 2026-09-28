@@ -164,3 +164,75 @@ TEST_CASE("the payload is shared, never copied", "[portvalue]")
 		REQUIRE(Tracked::copies == 0);
 	}
 }
+
+TEST_CASE("samePayload asks for the same object and not an equal one", "[portvalue]")
+{
+	// A payload is immutable, so identity is how a viewer asks "has this value changed?" — and a
+	// wrong answer either way is invisible: a false "same" leaves a stale picture on screen, a false
+	// "different" only costs a re-upload. The sections below each discriminate one plausible wrong
+	// implementation (sameType, a control-block compare, an address compare without the type).
+	PortValue v;
+	v.set<int>(7);
+
+	SECTION("a copy reads the same payload")
+	{
+		const PortValue copy = v;
+		REQUIRE(copy.samePayload(v));
+		REQUIRE(v.samePayload(copy));
+	}
+
+	SECTION("an equal value set separately is a different payload")
+	{
+		PortValue equal;
+		equal.set<int>(7);
+		REQUIRE(equal.sameType(v));			 // same type, same value...
+		REQUIRE_FALSE(equal.samePayload(v)); // ...and still not the same object
+	}
+
+	SECTION("rebinding a slot makes it a different payload from its earlier copies")
+	{
+		const PortValue before = v;
+		v.set<int>(7);
+		REQUIRE_FALSE(v.samePayload(before));
+	}
+
+	SECTION("two empty slots are the same, and empty is not a value")
+	{
+		const PortValue a;
+		const PortValue b;
+		REQUIRE(a.samePayload(b));
+		REQUIRE_FALSE(a.samePayload(v));
+		REQUIRE_FALSE(v.samePayload(a));
+	}
+
+	SECTION("aliases of one element are the same payload; of two elements, not")
+	{
+		// Every alias of a collection shares the collection's control block, so a compare of
+		// ownership would call two different elements one payload.
+		PortValue list;
+		list.set(std::vector<int>{1, 2});
+		const std::vector<int>& items = list.get<std::vector<int>>();
+		const PortValue first = PortValue::alias(list, items[0]);
+		const PortValue again = PortValue::alias(list, items[0]);
+		const PortValue second = PortValue::alias(list, items[1]);
+		REQUIRE(first.samePayload(again));
+		REQUIRE_FALSE(first.samePayload(second));
+		REQUIRE_FALSE(first.samePayload(list)); // an alias reads a subobject, not its owner
+	}
+
+	SECTION("an alias of a first member is not its owner, though it shares the address")
+	{
+		struct Pair
+		{
+			int first;
+			int second;
+		};
+		PortValue owner;
+		owner.set(Pair{1, 2});
+		const PortValue member = PortValue::alias(owner, owner.get<Pair>().first);
+		// Standard layout puts the first member at the object's own address, so only the TYPE tells
+		// these two apart.
+		REQUIRE(static_cast<const void*>(&member.get<int>()) == static_cast<const void*>(&owner.get<Pair>()));
+		REQUIRE_FALSE(member.samePayload(owner));
+	}
+}

@@ -10,9 +10,9 @@
 #include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
 #include "lain/flow/group.h"
-#include "lain/flow/porttyperegistry.h"
 #include "lain/flow/scheduler.h"
 #include "testnodes.h"
+#include "testscene.h"
 
 #include <lain/testing/threadpool.h>
 
@@ -29,146 +29,7 @@
 #include <vector>
 
 using namespace lain::flow;
-
-namespace
-{
-	using Ints = std::vector<int>;
-
-	void registerCloneTypes()
-	{
-		static bool done = false;
-		if (done)
-			return;
-		done = true;
-		registerPortType<int>("Int");
-		registerPortType<Ints>("ListOfInt");
-	}
-
-	// An int source whose value is a PARAM, so editing it is a recipe change (a version bump) — the
-	// edit the incremental case makes between clones. The counter is held by REFERENCE: a clone
-	// copies the node, so a clone counts into the same place, which is what lets a test add up the
-	// work done across several clones.
-	struct Source : Node
-	{
-		std::atomic<int>& calls;
-		PortId value, out;
-		Source(std::atomic<int>& c, int initial)
-			: Node("Source")
-			, calls(c)
-		{
-			value = addParam<int>("value", initial);
-			out = addOutput<int>("out");
-		}
-		std::unique_ptr<Node> clone() const override { return std::make_unique<Source>(*this); }
-		void compute(NodeEvaluation& evaluation) const override
-		{
-			++calls;
-			evaluation.output(out).set(param(value).get<int>());
-		}
-	};
-
-	// Passes an int through, counted.
-	struct Relay : Node
-	{
-		std::atomic<int>& calls;
-		PortId in, out;
-		explicit Relay(std::atomic<int>& c)
-			: Node("Relay")
-			, calls(c)
-		{
-			in = addInput<int>("in");
-			out = addOutput<int>("out");
-		}
-		std::unique_ptr<Node> clone() const override { return std::make_unique<Relay>(*this); }
-		void compute(NodeEvaluation& evaluation) const override
-		{
-			++calls;
-			evaluation.output(out).set(evaluation.input(in).get<int>());
-		}
-	};
-
-	// A whole collection, counted — what the map maps over.
-	struct MakeInts : Node
-	{
-		std::atomic<int>& calls;
-		Ints values;
-		PortId out;
-		MakeInts(std::atomic<int>& c, Ints v)
-			: Node("MakeInts")
-			, calls(c)
-			, values(std::move(v))
-		{
-			out = addOutput<Ints>("items");
-		}
-		std::unique_ptr<Node> clone() const override { return std::make_unique<MakeInts>(*this); }
-		void compute(NodeEvaluation& evaluation) const override
-		{
-			++calls;
-			evaluation.output(out).set(values);
-		}
-	};
-
-	// Where each piece of work is counted.
-	struct Calls
-	{
-		std::atomic<int> source{0};	 // the root source feeding the group
-		std::atomic<int> inner{0};	 // the relay INSIDE the inline group
-		std::atomic<int> sink{0};	 // the root relay downstream of the group
-		std::atomic<int> list{0};	 // the collection the map maps over
-		std::atomic<int> element{0}; // the relay inside the map, once per element
-	};
-
-	// source -> [group: relay] -> sink, and beside it list -> [map: relay]. Two independent chains, so
-	// an edit to the first can be shown to leave the second alone — and both kinds of child
-	// evaluation (a group's one, a map's N) have to survive being prepared against a clone.
-	struct Scene
-	{
-		NodeId source;
-		NodeId group;
-		NodeId sink;
-		NodeId map;
-	};
-
-	// Wire an interior `in -> body -> out` between its own boundary pins, then mirror its face.
-	void buildInterior(Graph& parent, NodeId groupId, Graph& inner, std::unique_ptr<Node> body)
-	{
-		const PortId inPin = inner.boundaryInputNode().addBoundary<int>("x");
-		const PortId outPin = inner.boundaryOutputNode().addBoundary<int>("y");
-		const NodeId bodyId = inner.add(std::move(body));
-		REQUIRE(inner.connect(PortAddress{inner.boundaryInputNode().id(), inPin},
-							  PortAddress{bodyId, inner.node(bodyId).input(0).id()}) == Connection::Ok);
-		REQUIRE(inner.connect(PortAddress{bodyId, inner.node(bodyId).output(0).id()},
-							  PortAddress{inner.boundaryOutputNode().id(), outPin}) == Connection::Ok);
-		edit::syncGroupPorts(parent, groupId);
-	}
-
-	Scene buildScene(Graph& graph, Calls& calls)
-	{
-		registerCloneTypes();
-		Scene s{};
-		s.source = graph.add<Source>(calls.source, 1);
-
-		s.group = graph.add<InlineGroupNode>();
-		auto& group = static_cast<InlineGroupNode&>(graph.node(s.group));
-		buildInterior(graph, s.group, group.inner(), std::make_unique<Relay>(calls.inner));
-
-		s.sink = graph.add<Relay>(calls.sink);
-		REQUIRE(graph.connect(s.source, 0, s.group, 0) == Connection::Ok);
-		REQUIRE(graph.connect(s.group, 0, s.sink, 0) == Connection::Ok);
-
-		const NodeId list = graph.add<MakeInts>(calls.list, Ints{1, 2, 3});
-		s.map = graph.add<MapNode>();
-		auto& map = static_cast<MapNode&>(graph.node(s.map));
-		buildInterior(graph, s.map, map.inner(), std::make_unique<Relay>(calls.element));
-		REQUIRE(graph.connect(list, 0, s.map, 0) == Connection::Ok);
-		return s;
-	}
-
-	int intOut(const Graph& graph, const Evaluation& evaluation, NodeId node)
-	{
-		return test::output(graph, evaluation, node, 0).get<int>();
-	}
-} // namespace
+using namespace lain::flow::test; // the shared scene (testscene.h)
 
 TEST_CASE("a clone is the same recipe at the same point in its history", "[flow][clone]")
 {

@@ -2,7 +2,8 @@
 
 #include "pinkey.h"
 
-#include <lain/gui/context.h> // gui::Texture (a member of the map)
+#include <lain/flow/portvalue.h> // flow::PortValue (the source an entry was made from)
+#include <lain/gui/context.h>	 // gui::Texture (a member of the map)
 
 #include <map>
 
@@ -19,6 +20,14 @@ namespace flowview
 	// One uploaded GPU thumbnail per ready VIEWABLE port, keyed by its stable PinKey. The panes
 	// (Inspector / Interface / Preview) draw from it; only edits refresh it, because
 	// acm::Texture::upload is a synchronous, stalling submit that must not run every frame.
+	//
+	// And a refresh re-produces and re-uploads only the ports whose PAYLOAD changed. A payload is
+	// immutable, so the same payload is the same picture: each entry keeps the value it was made
+	// from and asks PortValue::samePayload of the port's current one. Without that, every frame of a
+	// param drag re-uploaded every image on the level, though the drag changed one node and what is
+	// downstream of it. Keeping the source also holds its payload alive until the next refresh,
+	// which is what makes an identity comparison sound — a freed payload's address could otherwise
+	// be reused by a new one and look unchanged.
 	//
 	// What "viewable" means is the ValueViews registry's answer, not this class's: a port's value is
 	// handed to it and what comes back is the still image that stands for that value — the image
@@ -37,8 +46,8 @@ namespace flowview
 
 		// Rebuild the cache from the graph iff it was marked dirty: upsert a thumbnail per port whose
 		// value `views` can poster (upload in place when the size/format matches, else reallocate via
-		// `ctx`) and prune thumbnails whose port is gone (the erased gui::Texture reclaims its
-		// descriptor). `path` is the level `graph` sits at — it goes into every key this builds, so
+		// `ctx`) — skipping a port whose payload is the one its thumbnail was made from — and prune
+		// thumbnails whose port is gone (the erased gui::Texture reclaims its descriptor). `path` is the level `graph` sits at — it goes into every key this builds, so
 		// entries from two levels (or two evaluations of one definition) can never be mistaken for
 		// each other.
 		//
@@ -54,10 +63,19 @@ namespace flowview
 
 		// Drop every cached thumbnail (on graph replace / shutdown). Must run while the owning
 		// Context's backend is alive so the descriptors are reclaimed cleanly.
-		void clear() { m_textures.clear(); }
+		void clear() { m_entries.clear(); }
 
 	private:
-		std::map<PinKey, lain::gui::Texture> m_textures;
+		// A thumbnail and the port value it was made from — the value, not the poster, since a
+		// poster may be produced fresh each time (a sequence's is a decode) and so never compares
+		// the same.
+		struct Entry
+		{
+			lain::flow::PortValue source;
+			lain::gui::Texture texture;
+		};
+
+		std::map<PinKey, Entry> m_entries;
 		bool m_dirty = true; // rebuild on the next refreshIfDirty (init + after edits)
 	};
 } // namespace flowview

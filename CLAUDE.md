@@ -747,6 +747,37 @@ process-unique*.
   each case in its own process. The case now registers what it relies on. **A whole-binary sabotage
   run is not ctest**, and its shuffled order can turn up an unrelated failure.
 
+### Update 2026-09-28 — M14 slice 2 built: the published evaluation + payload identity
+
+**`flow::PublishedEvaluation`** — the copy of an `Evaluation` a gui host's panes will read while a run
+holds the working one — and **`PortValue::samePayload`**, with its first production caller: flowview's
+`PreviewCache` now skips a port whose payload its thumbnail was made from. `ctest -j8` **816/816** Debug
+with video on, **822/822** Release with video on, **789/789** Release video-off (+6 each);
+warning-clean, format-check clean; `flowview run --example` identical to the pre-change binary once the
+timestamp and minted ids are normalised. **gui-mode NOT eyeballed** — a `--frames` smoke renders and
+exits cleanly, but the skip needs an edit to exercise. Full landing notes in WORK.md's *Milestone 14 ›
+Slice 2 landed*.
+
+- **A copy reads through the definition its source was prepared against**, so the copy and that graph
+  are one value: `{shared_ptr<const Graph>, Evaluation}`. `Evaluation`'s copy constructor is
+  **private** with `PublishedEvaluation` its one caller, so no copy can outlive the graph it reads —
+  the *"a lifetime held only by a scope is a lifetime nothing states"* shape, closed by the type. Chosen
+  with the repo owner over a public `Evaluation::copy()` and over a keep-alive field in `Evaluation`.
+- **Only const access goes out, so a published copy can never be run.** ADR-0025's deferred
+  *evaluation fork* stays deferred by construction. Publishing checks the definition **by address** —
+  right here, where it was wrong for `prepare`, because the question is lifetime rather than history.
+- **`samePayload` is identity, never an exposed address**: a freed payload's address can be reused, so
+  a kept address would call a new value unchanged. It compares the stored pointer (not the control
+  block — every alias of a collection shares its owner's) **and** the type (a first member shares its
+  owner's address). A caller asking "changed since?" keeps the `PortValue` it saw.
+- **The preview cache keeps the port's value, not its poster** — a sequence's poster is decoded afresh
+  and never compares the same — so a skip saves the decode as well as the stalling upload. Before this,
+  every frame of a param drag re-uploaded every image on the level. Pulled forward from slice 6 so the
+  accessor did not land four slices ahead of its caller; it is not under ctest (`previewcache.cpp`
+  needs a `gui::Context`).
+- **The clone tests' scene is now `libs/flow/test/testscene.h`**, shared, with the map's list as a
+  param so a test can edit arity. Seven sabotages, all caught, recorded in WORK.md.
+
 ### Update 2026-09-26 — one process task pool; `lain::task` becomes an alias for `multi`
 
 The wrapper moved from Taskflow to `multi` on 2026-09-11 with `libs/flow` unchanged by a single line

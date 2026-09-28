@@ -75,6 +75,27 @@ namespace lain::flow
 	Evaluation& Evaluation::operator=(Evaluation&&) noexcept = default;
 	Evaluation::~Evaluation() = default;
 
+	Evaluation::Evaluation(const Evaluation& other)
+		: m_definition(other.m_definition)
+		, m_lineage(other.m_lineage)
+		, m_nodes(other.m_nodes) // PortValue copies: refcount bumps, never a payload copy
+	{
+		// Each child is copied rather than shared: the source keeps preparing, growing and rebinding
+		// its own, and this copy must go on reading what it saw. (Spelled with `new` because
+		// make_unique cannot reach a private constructor.)
+		for (const auto& entry : other.m_children)
+		{
+			std::vector<std::unique_ptr<Evaluation>>& copied = m_children[entry.first];
+			copied.reserve(entry.second.size());
+			for (const std::unique_ptr<Evaluation>& child : entry.second)
+				copied.push_back(std::unique_ptr<Evaluation>(new Evaluation(*child)));
+		}
+		// m_running stays false: a copy is not being scheduled, even when its source is — a host
+		// publishes between stages, while the source's run lease is still held. Unobservable today
+		// (a PublishedEvaluation hands out only const access, so nothing can try to run one), and
+		// stated so a future second use of the copy does not inherit a lease it never took.
+	}
+
 	Evaluation::NodeState* Evaluation::state(NodeId id)
 	{
 		const auto it = m_nodes.find(id);
@@ -369,5 +390,27 @@ namespace lain::flow
 	{
 		if (m_evaluation != nullptr)
 			m_evaluation->m_running = false;
+	}
+
+	//=========================================================================
+	// PublishedEvaluation
+	//=========================================================================
+	// Checked before the copy is made, so a refused publish costs nothing — which is why this is a
+	// function the member-initialiser list calls, ahead of m_evaluation's copy, and not a check in
+	// the constructor's body.
+	static std::shared_ptr<const Graph> checkedDefinition(std::shared_ptr<const Graph> definition,
+														  const Evaluation& evaluation)
+	{
+		// The copy reads through evaluation.definition(), so THAT object is the one to hold. Anything
+		// else would keep the wrong graph alive while the copy pointed at one that may not outlive it.
+		if (definition == nullptr || evaluation.definition() != definition.get())
+			throw std::logic_error("flow::PublishedEvaluation: the definition held is not the graph the evaluation was last prepared against");
+		return definition;
+	}
+
+	PublishedEvaluation::PublishedEvaluation(std::shared_ptr<const Graph> definition, const Evaluation& evaluation)
+		: m_definition(checkedDefinition(std::move(definition), evaluation))
+		, m_evaluation(evaluation)
+	{
 	}
 } // namespace lain::flow

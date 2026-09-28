@@ -6072,7 +6072,7 @@ regression test: `ctest -j8` **794/794** Debug with video on, warning-clean, for
   the fold. All four reached their header transitively and worked — the class of thing the
   2026-09-05 CI port found six of.
 
-## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slice 1 built)
+## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-2 built)
 
 gui-mode runs `SerialScheduler::run` synchronously inside the frame loop — `FlowviewApp::reevaluate`
 is reached from `mainwindow.cpp` twice, `inspectorpane.cpp` and `interfacepane.cpp`, on every edit
@@ -6081,7 +6081,8 @@ has no gui caller. This milestone moves graph work off the frame loop, makes the
 default with Serial selectable, and gives the UI the controls a 5-minute graph needs as well as a
 1-second one. Decisions in **[ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md)**;
 vocabulary in CONTEXT.md's *Running while you edit* (plus *clone*, *lineage*, *coordinator*).
-**Slice 1 (clone + lineage) is built** — see *Slice 1 landed* below; slices 2-8 are not.
+**Slices 1 (clone + lineage) and 2 (the published evaluation + payload identity) are built** — see
+*Slice 1 landed* and *Slice 2 landed* below; slices 3-8 are not.
 
 ### The shape
 
@@ -6113,7 +6114,8 @@ vocabulary in CONTEXT.md's *Running while you edit* (plus *clone*, *lineage*, *c
   inner`), so a clone per run would fail it for every inline interior unless lineage covers children.
 - **`PreviewCache::refreshIfDirty` re-uploads every viewable port** on each refresh, through a
   synchronous stalling submit. Harmless when a refresh meant "an edit happened"; per-node publication
-  would make it once per node landing.
+  would make it once per node landing. *(Fixed in slice 2: a refresh skips a port whose payload is the
+  one its thumbnail was made from.)*
 
 ### Build order
 
@@ -6129,9 +6131,10 @@ Structural, no-behaviour-change slices first; each its own commit with its docs.
    inheriting its parent's `clone()` and slicing; one evaluation runs incrementally across two clones
    (call counts); a reloaded graph with identical ids is refused. No behaviour change: the gui still
    runs the document itself, synchronously.
-2. **The published-evaluation primitive + payload identity** (`libs/flow`, additive). An explicit
-   copy of an `Evaluation` (the class is move-only today) that keeps its definition alive, and a
-   `PortValue` payload-identity accessor (it has `sameType`, nothing for identity).
+2. **The published-evaluation primitive + payload identity** — **built 2026-09-28**. An explicit
+   copy of an `Evaluation` that keeps its definition alive (`flow::PublishedEvaluation`), and a
+   `PortValue` payload-identity accessor (`samePayload`). It also took slice 6's preview-cache bullet,
+   so the accessor lands with its production caller rather than four slices ahead of it.
 3. **Cancellation** (`scheduler.{h,cpp}`, `evaluation.{h,cpp}`). A cancel token on `run` / `evaluate`,
    checked before each step and between stages; `NodeEvaluation::cancelled()`; closure-as-requests;
    a progress read (`RecipeHandle::finishedCount()` / `stepCount()`, summed across stages). Tests: a
@@ -6154,7 +6157,7 @@ Structural, no-behaviour-change slices first; each its own commit with its docs.
    const — they take a mutable `Evaluation&` only to reach `child()`, which has a const overload),
    lineage-checked so it may compare the document against an evaluation computed on a clone. Canvas
    glyph + outline (`panes/graphpane.cpp`, `canvasstyle.cpp`), thumbnail stale badge, viewport status
-   bar; `previewcache.{h,cpp}` uploads only ports whose payload changed; Failed rows in Issues.
+   bar; Failed rows in Issues. (The preview cache's skip of an unchanged payload moved to slice 2.)
 7. **Per-node publication.** A per-step started / finished hook on the run; a finished step's worker
    copies its outputs into a completion record (race-free — a finished node has only readers), the UI
    folds them into the published evaluation. This is what makes **Queued** and **Computing** real.
@@ -6276,6 +6279,69 @@ warning-clean, format-check clean.
   **Lesson for sabotage runs:** a whole-binary run is not ctest's one-process-per-case, and a
   shuffled order can turn up a failure that has nothing to do with the sabotage.
 
+### Slice 2 landed (2026-09-28) — the published evaluation + payload identity
+
+**`flow::PublishedEvaluation`** (in `evaluation.h`, beside the class it copies) and
+**`PortValue::samePayload`**, plus the accessor's first production caller: `PreviewCache` skips a port
+whose payload its thumbnail was made from. `ctest -j8` **816/816** Debug with video on (+6 from 810),
+**822/822** Release with video on (+6 from 816), **789/789** Release in the default video-off
+configuration (+6 from 783); warning-clean, format-check clean; the whole `test-flow` binary run five
+times shuffled and once in declaration order with no failure; `flowview run --example` identical to the
+pre-change binary (built from a stash of this work) once the timestamp and minted ids are normalised;
+`flowview --example --frames 120` opens, renders and exits 0 on the live driver.
+
+- **The copy is reachable only as a `PublishedEvaluation`, decided with the repo owner** over a
+  public `Evaluation::copy()` and over a keep-alive member inside `Evaluation`. A copy reads through
+  the definition its source was last prepared against — `ready()`, `describe()`, `needsRecompute()`,
+  and every child's reads into that graph's interiors — so a copy that did not hold that graph would be
+  one scope away from reading a destroyed one: the *"a lifetime held only by a scope is a lifetime
+  nothing states"* shape the process-pool entry recorded. `Evaluation`'s copy constructor is therefore
+  **private**, with `PublishedEvaluation` its one friend caller; holding the ROOT `shared_ptr<const
+  Graph>` keeps everything alive, since the clone's nodes own every inline, map and loop interior and
+  a `LinkedGroupNode` shares its definition.
+- **It hands out only const access, so a published copy cannot be run.** That makes ADR-0025's
+  deferred *evaluation fork* impossible by accident rather than by convention, and it is why the
+  copy's reset run lease (`m_running = false`) is unobservable today — stated in the code, so a later
+  second use of the copy does not inherit a lease it never took. Slices 5 (pending bind) and 7 (fold of
+  completion records) each add the one mutator they need.
+- **Publishing checks the definition by ADDRESS, and that is right here** where it was wrong for
+  `prepare`: the question is lifetime, not history — the copy reads through one object, so that object
+  is the one to hold. The check runs from the member-initialiser list, ahead of the copy, so a refused
+  publish costs nothing. `m_definition` is declared first so it is destroyed last.
+- **`samePayload` is identity, not equality, and deliberately a comparison of two LIVE slots.** It
+  compares the stored pointer and the type. The stored pointer, not the control block, because every
+  alias of one collection shares its owner's control block; the type as well, because a first member
+  shares its owner's address. No address accessor is exposed: a freed payload's address can be reused,
+  so a kept address would call a new value unchanged. A caller asking "changed since?" keeps the
+  `PortValue` it saw, which also stops that address being reused while the question is open.
+- **`PreviewCache` keeps the port's VALUE per entry, not its poster.** A sequence's poster is decoded
+  afresh each time and would never compare the same; comparing the source skips the poster decode as
+  well as the stalling upload. Before this, every frame of a param drag re-uploaded every image on the
+  level, though the drag changed one node and what is downstream of it.
+- **The scene moved to `libs/flow/test/testscene.h`** (from test_clone.cpp's anonymous namespace), so
+  slice 3's cancellation tests can use it rather than copying it. `MakeInts`' list became a **param**,
+  so a test can change a map's arity as a recipe edit; test_clone's cases are otherwise unchanged.
+- **Sabotages, all caught.**
+  - `samePayload` without the type comparison: the first-member section fails.
+  - `samePayload` comparing control blocks (`owner_before`): the two-elements section fails.
+  - `samePayload` as `sameType`: the equal-values, rebind and two-elements sections fail.
+  - The copy constructor skipping children: three of the five `[published]` cases fail (child counts,
+    and a child read that asserts).
+  - `PublishedEvaluation` as a VIEW onto the working evaluation instead of a copy — the plausible
+    wrong design: *"unaffected by the runs after it"* fails, reading the second run's 5 for the
+    published 1.
+  - The definition not held: the keep-alive case fails on its `weak_ptr` watch.
+  - The address check dropped: the refusal case fails at its first `REQUIRE_THROWS`.
+- **Not covered by ctest: the preview cache's skip.** `previewcache.cpp` needs a `gui::Context`, so it
+  is not compiled into the driver-free `test-flowview`, and there is nothing there to sabotage. The
+  flow half — what "the same payload" means — is what the suite pins. **gui-mode NOT eyeballed**: the
+  `--frames` smoke exercises the cache's first fill, not a skip, which needs an edit. For the repo
+  owner: drag a param at the end of a chain (the edited node's and downstream thumbnails update,
+  upstream ones stay right), step into a group and back, a sequence poster still shows, New/Open
+  clears.
+- **`PublishedEvaluation` has no production caller until slice 4** — the same deliberate choice slice
+  1 made for `Graph::clone`, which the `[published]` cases exercise until the runner does.
+
 ### Visual design (settled in outline, tuned by eyeball)
 
 Freshness takes channels nothing else uses — title colour is category, a muted title is *not ready*,
@@ -6338,8 +6404,9 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md).)*
 
-- **M14 — asynchronous execution: the gui never waits on graph work.** Designed 2026-09-28; slice 1
-  (clone + lineage) built 2026-09-28, slices 2-8 not.
+- **M14 — asynchronous execution: the gui never waits on graph work.** Designed 2026-09-28; slices 1
+  (clone + lineage) and 2 (the published evaluation + payload identity) built 2026-09-28, slices 3-8
+  not.
   *(Milestone 14; [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)*
 
 M1–M8 and M10–M13 are built. **M9 and M14 are the milestones from 5 onward that are not.**

@@ -7,6 +7,7 @@ add_executable(test-flow
 	test_collection.cpp
 	test_evaluation.cpp
 	test_clone.cpp
+	test_published.cpp
 	test_graph.cpp
 	test_scheduler.cpp
 	test_edit.cpp

@@ -1,7 +1,8 @@
 # A run reads a clone of the document, and the gui never waits on graph work
 
 ---
-Status: accepted (designed 2026-09-28; slice 1 — clone + lineage — built 2026-09-28, the rest not)
+Status: accepted (designed 2026-09-28; slices 1 — clone + lineage — and 2 — the published evaluation
++ payload identity — built 2026-09-28, the rest not)
 Amends [ADR-0012](0012-definition-and-evaluation.md) — the pairing guard moves from address identity
 to **lineage**, and a *published evaluation* is the "different concept" it set aside. Amends
 [ADR-0024](0024-one-process-task-pool.md) — gui-mode stops being serial, and the coordinator thread is
@@ -103,6 +104,16 @@ where the coordinator is quiescent, and then per node as steps finish: a finishe
 that node's outputs into a completion record (race-free — a finished node has only readers left) and
 the UI folds them in each frame. The ten pane files keep taking `const Evaluation&` and do not change.
 
+*Built in slice 2 (2026-09-28).* The type is **`flow::PublishedEvaluation`**: the copy and the
+`shared_ptr<const Graph>` it reads through, travelling together. `Evaluation`'s copy constructor is
+private and this is its one caller, so no copy exists without its definition — holding the root clone
+keeps every interior alive, since the clone's nodes own them and a linked group shares its definition.
+Publishing refuses a definition other than the one the evaluation was last prepared against, by
+address: the question there is lifetime, not history. It hands out only `const Evaluation&`, so a
+published copy can never be passed to `run()` — the *evaluation fork* below stays deferred by
+construction. The mutators a host needs (a pending binding, the fold) arrive with the slices that need
+them.
+
 ADR-0012 said *"a historical snapshot of one execution, if a caller ever needs one, is a different
 concept."* This is that concept, and it is not a snapshot of one execution either: it is the host's
 most recent *view* of a working evaluation it cannot read while a run holds it. It is deliberately not
@@ -182,9 +193,13 @@ engine instead of re-implementing it.
 - **The UI never hitches.** The promise is narrower and exact: *the frame loop never waits on graph
   work.* Viewer work stays on the UI thread — a synchronous texture upload, a sequence poster's
   first-frame decode, the player's playback decode — and is made proportional to what changed (the
-  preview cache skips a port whose payload is unchanged) rather than moved.
-- **A reusable runner.** The coordinator, the triggers and the published evaluation live in flowview
-  until a second gui host exists; only the engine pieces are in `libs/flow`.
+  preview cache skips a port whose payload is unchanged, `PortValue::samePayload`, built in slice 2)
+  rather than moved.
+- **A reusable runner.** The coordinator, the triggers and the policy of *when and what to publish*
+  live in flowview until a second gui host exists; only the engine pieces are in `libs/flow`. *(Amended
+  2026-09-28, slice 2: the published evaluation's TYPE is one of those engine pieces — it states flow's
+  own invariant, that an evaluation's reads go through the definition it was prepared against, so it
+  belongs beside `Evaluation`.)*
 
 ## Deliberately unsettled
 
