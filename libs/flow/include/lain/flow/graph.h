@@ -40,6 +40,27 @@ namespace lain::flow
 		Graph();
 		explicit Graph(BoundaryIds boundary);
 
+		// This definition's LINEAGE (see types.h): minted by the constructors above, so every Graph
+		// begins a version history of its own — a load, a New and an undo restore included, since all
+		// three construct one. Carried by clone() and by a move; never changed by an edit, which is
+		// what lets one Evaluation span in-place edits and clones alike.
+		Lineage lineage() const { return m_lineage; }
+
+		// The same recipe at the same point in its history (ADR-0025): the third way to get a graph,
+		// beside a LOAD (identity preserved, history restarted) and a PASTE (identity minted). Every
+		// node keeps its NodeId and its version, insertion and topo order carry over, and the lineage
+		// is this one's — so an Evaluation computed against this graph stays incremental against the
+		// clone, and an edit to either afterwards never reaches the other.
+		//
+		// Owned interiors (inline, map, loop) are deep-copied through the nodes' own clone(). A linked
+		// group's definition is SHARED, never copied: it is already immutable and shared between
+		// instances (ADR-0013), so sharing it once more is free and changes nothing. Params are
+		// PortValues, so copying one is a refcount bump.
+		//
+		// There is deliberately no copy constructor: a copy that silently carried history is exactly
+		// what the name "clone" is here to make conspicuous.
+		Graph clone() const;
+
 		// Construct a node of type T (must derive from Node) in place; returns its id (or the null
 		// NodeId if the add was refused — see the type-erased overload).
 		template <typename T, typename... Args>
@@ -192,6 +213,14 @@ namespace lain::flow
 		const GroupOutputNode& boundaryOutputNode() const;
 
 	private:
+		// A graph with NOTHING in it — not even its boundary pair — for clone() to fill. The pair is a
+		// construction invariant, so this is private: clone() copies the original's pair in, and no
+		// other caller may observe a graph without one.
+		struct Bare
+		{
+		};
+		explicit Graph(Bare);
+
 		bool valid(NodeId id) const { return m_nodes.count(id) != 0; }
 		// Is `target` reachable from `start` by following edges (start included)?
 		bool reaches(NodeId start, NodeId target) const;
@@ -225,5 +254,7 @@ namespace lain::flow
 		// Rebuilt by rebuildTopoOrder() whenever nodes or edges change — never lazily, so reading it
 		// through a const Graph& is safe from several threads at once.
 		std::vector<NodeId> m_topo;
+		// Which version history this definition belongs to (see lineage()).
+		Lineage m_lineage;
 	};
 } // namespace lain::flow

@@ -18,6 +18,7 @@ namespace lain::flow::example
 		// ctor args seed editable params of the same name.
 		explicit BlurNode(int radius = 2, float sigma = 1.5f);
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<BlurNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override;
 
 	private:

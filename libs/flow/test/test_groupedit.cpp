@@ -40,6 +40,7 @@ struct UnnamedSource : Node
 	{
 		out = addOutput<Unnamed>("thing");
 	}
+	std::unique_ptr<Node> clone() const override { return std::make_unique<UnnamedSource>(*this); }
 	void compute(NodeEvaluation& evaluation) const override { evaluation.output(out).set(Unnamed{}); }
 };
 
@@ -51,6 +52,7 @@ struct UnnamedSink : Node
 	{
 		in = addInput<Unnamed>("thing");
 	}
+	std::unique_ptr<Node> clone() const override { return std::make_unique<UnnamedSink>(*this); }
 	void compute(NodeEvaluation&) const override {}
 };
 

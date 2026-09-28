@@ -39,6 +39,7 @@ namespace lain::flow
 		// The name of this node's payload type — what a host's dropdown and the serializer address.
 		static constexpr const char* kValuePayload = "value";
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<GateNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			// A whole-slot copy. This node never knew what it was passing; now it does not have to

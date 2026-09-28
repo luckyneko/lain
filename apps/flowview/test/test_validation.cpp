@@ -48,6 +48,7 @@ namespace
 		{
 			out = addOutput<lain::image::Image>("image");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<ImageSource>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(out).set(lain::image::Image(4, 4, lain::image::PixelFormat::RGBA8));

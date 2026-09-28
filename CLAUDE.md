@@ -678,6 +678,47 @@ CONTEXT.md's new *Running while you edit* section plus *clone*, *lineage* and *c
 - **The promise is exact: the frame loop never waits on GRAPH work.** Texture upload and poster decode
   stay on the UI thread, made proportional to what changed (payload identity) rather than moved.
 
+### Update 2026-09-28 — M14 slice 1 built: clone + lineage
+
+The structural half of ADR-0025, with no change in behaviour. **`Node::clone()`** (pure) on every
+kind, **`Graph::clone()`** (the same NodeIds, versions, order and lineage; owned interiors deep-copied,
+linked definitions shared), **`flow::Lineage`**, and `Evaluation::prepare` checking **lineage** where
+it checked addresses — at the root and for every child. Nothing in production calls `clone()` until
+slice 4's runner; the gui still runs the document itself. `ctest -j8` **807/807** Debug with video on,
+**813/813** Release with video on, **780/780** Release video-off (+10 each, measured against the
+pre-change tree); warning-clean, format-check clean, `flowview run --example` identical to the
+pre-change binary once timestamps and minted ids are normalised. Full landing notes in WORK.md's
+*Milestone 14 › Slice 1 landed*.
+
+- **Three clones are hand-written, not mechanical.** A `Graph` is move-only, so `InlineGroupNode`,
+  `MapNode` and `LoopNode` have deleted implicit copies and a copy constructor that clones the
+  interior. `LoopNode`'s also copies state that is mostly not serialized as itself (its PortIds), so a
+  forgotten member is invisible to the document census. The loop-scene and map-scene *"a cloned …
+  runs the same"* cases are what catch one, and sabotage confirms it: dropping `m_carries`, `m_count`
+  or `m_continue` each fails.
+- **Pure `clone()` cost 68 test fixtures one line each** (the owner's call over a refusing default:
+  the compiler lists every kind that lacks one). Three fixtures had a `mutable std::atomic` probe a
+  copy cannot carry; it moved behind a shared counter with a `computes()` accessor.
+- **The census runs over the PRODUCTION factory** (`apps/flowview/test/test_clone.cpp`): every key
+  clones to the same dynamic type and the same document. A subclass of a concrete kind that inherits
+  its parent's `clone()` is caught by `Graph::clone`'s assert in Debug and by the census in Release,
+  both verified with a deliberately slicing kind.
+- **Lineage is an opaque in-process counter**, not a uuid (the owner's call: it is never stored and
+  never crosses a process). The loader needed no change, since every load constructs a Graph.
+- **What address identity got wrong was a WRONG ANSWER, not only a missed refusal.** An interior
+  rebuilt in the same storage, with the same ids and versions but a different constant, kept its
+  child evaluation and served the old value: **1 instead of 2, measured against the pre-change
+  checks**. At the root, a graph rebuilt and moved into the same variable was accepted. Both are now
+  tests.
+- **`Evaluation::definition()` is "the graph last prepared against"**, which will be a clone once runs
+  read clones. `evaluation.h` now states that it must outlive any read; slice 2's published
+  evaluation is what will hold it.
+- **Found, pre-existing, not fixed:** `edit::replaceGroup` (Save as Template / Make Local) re-seats a
+  node at the same NodeId, and its restarted version can land exactly on its predecessor's
+  `computedAt`. **Measured: 3 == 3 after making a one-input linked group local**, so the group looks
+  clean over a fresh child and **its output goes empty**. The same happens under the old checks.
+  Listed in WORK.md's *Known defects*.
+
 ### Update 2026-09-26 — one process task pool; `lain::task` becomes an alias for `multi`
 
 The wrapper moved from Taskflow to `multi` on 2026-09-11 with `libs/flow` unchanged by a single line
@@ -3509,7 +3550,9 @@ Three layers, public → private, mirroring `multi`'s layering discipline:
    removed, and a fresh Evaluation is the full reset.
    A host owns a definition and its Evaluation as **one replaceable unit**, so a
    load/undo Graph replacement replaces both; `Evaluation{graph}` records its
-   definition and `prepare` compares it as a guard rail, not as the mechanism.
+   definition's **lineage** and `prepare` refuses a definition of another one — so an
+   Evaluation spans in-place edits and `Graph::clone()`s alike, and never a rebuilt
+   graph, wherever in memory it was rebuilt (ADR-0025, M14 slice 1).
    Boundary handles are immutable recipe metadata; hosts and group-entry steps use
    `evaluation.bind(input, value)` / `evaluation.value(output)`. Boundary Nodes
    retain no bound or delivered runtime cache.

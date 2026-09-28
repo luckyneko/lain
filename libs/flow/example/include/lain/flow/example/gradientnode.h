@@ -20,6 +20,7 @@ namespace lain::flow::example
 	public:
 		GradientNode(std::uint32_t width, std::uint32_t height);
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<GradientNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override;
 
 	private:

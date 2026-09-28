@@ -31,6 +31,7 @@ namespace lain::flow::example
 	public:
 		FrameAtNode();
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<FrameAtNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override;
 
 	private:

@@ -14,13 +14,16 @@
 // — a data race between evaluations of the same node. Passing the context explicitly is not the
 // tasteful option, it is the only one that survives.
 //
-// OWNERSHIP IS THE PAIRING RULE. A host owns a definition and its Evaluation as one replaceable
-// unit. An Evaluation spans in-place edits of its definition — that is where version comparison earns
-// its incrementality — but never transfers to a *rebuilt* Graph, even one whose node UUIDs match,
-// because per-node versions are runtime counters that restart at zero. So New/Open/undo replace both
-// or neither. `prepare` compares the recorded definition as a cheap guard rail; that is address
-// identity, so it catches a mispaired call but not a Graph rebuilt where the old one stood. It is a
-// guard rail, not the mechanism.
+// LINEAGE IS THE PAIRING RULE. An Evaluation spans in-place edits of its definition — that is where
+// version comparison earns its incrementality — and spans a CLONE of it, which carries the same
+// versions (ADR-0025: a run reads a clone of the document, so one Evaluation meets a new Graph object
+// every run). It never transfers to a *rebuilt* Graph, even one whose node UUIDs match, because
+// per-node versions are runtime counters that restart. What tells the two apart is the definition's
+// LINEAGE (types.h), which a clone carries and a construction mints: `prepare` records it and refuses
+// a definition of another one, at the root and for every child. That is the property the old
+// address comparison stood in for, and unlike it, it cannot be fooled by a Graph rebuilt where the old
+// one stood. A host still replaces its document and Evaluation together on New/Open/undo — now
+// because the lineage says so, rather than because ownership was the only thing that could.
 //
 // INVALIDATION IS PULLED, NEVER PUSHED. The definition holds no list of its evaluations — deliberately
 // — so an edit cannot walk them to drop values. It bumps a per-node version, and each Evaluation
@@ -97,7 +100,8 @@ namespace lain::flow
 	{
 	public:
 		Evaluation() = default;
-		// Records `definition` so prepare can check it is still being run against the same one.
+		// Records `definition`'s lineage, so prepare can check it is still being run against the same
+		// version history.
 		explicit Evaluation(const Graph& definition);
 
 		Evaluation(Evaluation&&) noexcept;
@@ -111,12 +115,19 @@ namespace lain::flow
 		// its slot, so worker tasks only read and write existing entries. A node whose ports changed
 		// keeps the values of the ports it still has.
 		//
-		// Throws std::logic_error if `definition` is not the graph this Evaluation was built for —
-		// the guard rail against pairing an evaluation with a rebuilt definition, whose restarted
-		// version counters would make changed nodes look clean.
+		// Throws std::logic_error if `definition` is of another LINEAGE than the one this Evaluation
+		// was built for — a rebuilt definition, whose restarted version counters would make changed
+		// nodes look clean. A clone of the same definition is accepted: that is the point of it. A
+		// CHILD whose interior is of another lineage (a linked template re-resolved, an interior
+		// replaced wholesale) is not an error but a fresh start: that child is rebuilt empty.
 		void prepare(const Graph& definition);
 
-		// The definition this Evaluation belongs to, or nullptr if default-constructed.
+		// The graph this Evaluation was LAST PREPARED against, or nullptr if default-constructed.
+		//
+		// Not necessarily the document: once runs read clones, it is the clone the last run read. It
+		// is what ready(), describe() and needsRecompute() consult, so it must outlive any read made
+		// through this Evaluation — a host that lets it die has to prepare against another graph of
+		// the same lineage before reading again.
 		const Graph* definition() const { return m_definition; }
 
 		// --- per-node access ---------------------------------------------------
@@ -253,6 +264,9 @@ namespace lain::flow
 		};
 
 		const Graph* m_definition = nullptr;
+		// The version history this Evaluation's computedAt values belong to. "None yet" until the
+		// first prepare, which adopts it — so a default-constructed child can join any interior.
+		Lineage m_lineage;
 		std::map<NodeId, NodeState> m_nodes;
 		// One entry per graph-containing node, holding ONE evaluation for a group and N for a map.
 		// Indirect, because an Evaluation must not move when the vector grows: the scheduler holds

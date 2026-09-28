@@ -84,6 +84,7 @@ namespace
 			in = addInput<int>("x");
 			out = addOutput<int>("x");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<AddOne>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			if (calls != nullptr)
@@ -104,6 +105,7 @@ namespace
 			in = addInput<int>("x");
 			out = addOutput<bool>("below");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<Below>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(out).set(evaluation.input(in).get<int>() < limit);
@@ -123,6 +125,7 @@ namespace
 			in = addInput<int>("x");
 			out = addOutput<int>("x");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<StopAt>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			const int x = evaluation.input(in).get<int>();
@@ -143,6 +146,7 @@ namespace
 			in = addInput<int>("x");
 			out = addOutput<int>("x");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<PassInt>(*this); }
 		void compute(NodeEvaluation& evaluation) const override { evaluation.output(out).set(evaluation.input(in).get<int>()); }
 	};
 
@@ -156,6 +160,7 @@ namespace
 		{
 			out = addOutput<int>("x");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<Nothing>(*this); }
 		void compute(NodeEvaluation& evaluation) const override { evaluation.output(out).clear(); }
 	};
 
@@ -170,6 +175,7 @@ namespace
 			in = addInput<int>("x");
 			out = addOutput<std::vector<int>>("pair");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<PairOf>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			const int x = evaluation.input(in).get<int>();
@@ -186,6 +192,7 @@ namespace
 			in = addInput<std::vector<int>>("items");
 			out = addOutput<int>("sum");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<SumInts>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			int total = 0;
@@ -1070,6 +1077,7 @@ TEST_CASE("a group holding an iterating loop publishes once, not once per stage"
 			in = addInput<int>("x");
 			out = addOutput<int>("x");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<Counted>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			++calls;

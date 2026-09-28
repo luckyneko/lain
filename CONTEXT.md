@@ -700,8 +700,10 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   a snapshot of one run. A cli creates and drops one; a gui retains one; a `SplitGroup` retains one
   child per stream. A host owns it **together with** the definition it belongs to, as one replaceable
   unit: in-place edits keep it, while a rebuilt Graph (load, New, undo) gets a new one even when node
-  UUIDs match, because per-node Versions restart. It **does** span a **clone** (M14, designed), which
-  carries the Versions and the **lineage** that make them comparable. Before dispatch, `prepare(definition)` creates,
+  UUIDs match, because per-node Versions restart. It **does** span a **clone** (M14 slice 1, built), which
+  carries the Versions and the **lineage** that make them comparable — `prepare` checks lineage, not
+  the definition's address, so the Graph it last prepared against is the one it reads through, and
+  must outlive those reads. Before dispatch, `prepare(definition)` creates,
   prunes and stabilises its storage. Scheduler entry holds a non-blocking **run lease**: reusing one
   Evaluation concurrently or recursively throws `std::logic_error` immediately, while distinct
   Evaluations — including two over the same definition — may run concurrently; the RAII lease releases
@@ -849,19 +851,23 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   "paste" is a **linked template**: one file may back several linked groups in one document, so a
   resolved template is instantiated with fresh ids rather than restored. Nothing is lost, because a
   linked group's interior is never written to the parent — only its source path and interface cache.
-- **Clone** *(M14 — designed, [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md))* — the
+- **Clone** *(M14 slice 1 — built, [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md))* — the
   third way to get a graph, and the strictest: a clone preserves identity **and history** — the same
   NodeIds, the same per-node Versions, the same **lineage** — so it is the same recipe at the same
   point in its history. That is why one Evaluation spans clones while it can never span a load (whose
   Versions restart). A run reads a clone of the document, so an edit never races it. Linked-template
-  definitions are shared by a clone, never copied. _Avoid_: snapshot (the undo document), copy (says
-  nothing about history), run copy, frozen definition.
-- **Lineage** *(M14 — designed)* — the identity of one definition's version history: what makes two
+  definitions are shared by a clone, never copied. `Graph::clone()` over `Node::clone()`, which is pure
+  — so every node kind has one — and a group kind that OWNS its interior deep-copies it there.
+  _Avoid_: snapshot (the undo document), copy (says nothing about history), run copy, frozen
+  definition.
+- **Lineage** *(M14 slice 1 — built)* — the identity of one definition's version history: what makes two
   definitions' Versions **comparable**. Minted when a Graph is constructed or loaded (so New, Open and
   an undo restore each begin one), carried by a clone, and recorded by an Evaluation, which refuses a
   definition of another lineage — at the root and for every child. It replaces comparing a
   definition's address, which could not tell a rebuilt graph at a recycled address from the original.
-  _Avoid_: generation, epoch (both read as counters, which is what a Version is), graph id.
+  At the root a mismatch is refused; for a child it means a fresh child, since an interior replaced
+  wholesale (a re-resolved template) is legitimate. Opaque and in-process only — `flow::Lineage`, a
+  counter behind equality, never stored or shown. _Avoid_: generation, epoch (both read as counters, which is what a Version is), graph id.
 - **Identity admission** — the only point a Node receives its immutable NodeId. Ordinary
   `Graph::add(node)` mints; v2 load uses `add(node, requestedId)`. Because every Graph is born with its
   boundary pair, the loader stages headers and passes their saved UUIDs to `Graph{BoundaryIds}` before

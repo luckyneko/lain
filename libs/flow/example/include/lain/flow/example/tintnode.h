@@ -18,6 +18,7 @@ namespace lain::flow::example
 		// the gui renders as a colour swatch.
 		TintNode(float tintR, float tintG, float tintB);
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<TintNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override;
 
 	private:

@@ -71,6 +71,7 @@ namespace
 			in = addInput<int>("x");
 			out = addOutput<int>("x");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<AddOne>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(out).set(evaluation.input(in).get<int>() + 1);
@@ -87,6 +88,7 @@ namespace
 			in = addInput<int>("x");
 			out = addOutput<bool>("below");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<Below>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(out).set(evaluation.input(in).get<int>() < 13);

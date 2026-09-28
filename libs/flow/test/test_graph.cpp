@@ -34,6 +34,7 @@ namespace
 		{
 			out = addOutput<int>("value");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<ConstInt>(*this); }
 		void compute(NodeEvaluation& evaluation) const override { evaluation.output(out).set(value); }
 	};
 
@@ -48,6 +49,7 @@ namespace
 			b = addInput<int>("b");
 			sum = addOutput<int>("sum");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<AddInt>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(sum).set(evaluation.input(a).get<int>() + evaluation.input(b).get<int>());
@@ -63,6 +65,7 @@ namespace
 		{
 			in = addInput<float>("x");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<SinkFloat>(*this); }
 		void compute(NodeEvaluation&) const override {}
 	};
 

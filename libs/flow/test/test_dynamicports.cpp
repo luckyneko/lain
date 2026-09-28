@@ -28,6 +28,7 @@ namespace
 		{
 		}
 		Port::Direction dynamicSide() const override { return Port::Direction::Input; }
+		std::unique_ptr<Node> clone() const override { return std::make_unique<DynInts>(*this); }
 		void compute(NodeEvaluation&) const override {}
 	};
 
@@ -201,6 +202,7 @@ TEST_CASE("acceptsPortType narrows the addable types", "[flow][dynamic]")
 		}
 		Port::Direction dynamicSide() const override { return Port::Direction::Input; }
 		bool acceptsPortType(const std::string& key) const override { return key == "Image"; }
+		std::unique_ptr<Node> clone() const override { return std::make_unique<ImagesOnly>(*this); }
 		void compute(NodeEvaluation&) const override {}
 	};
 

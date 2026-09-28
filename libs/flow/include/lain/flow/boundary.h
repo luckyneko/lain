@@ -70,6 +70,7 @@ namespace lain::flow
 		// into the run; it simply carries what the host supplied. (ADR-0012 — this node held an
 		// m_bound map before, which made one definition unable to serve two differently-bound
 		// evaluations.)
+		std::unique_ptr<Node> clone() const override { return std::make_unique<GroupInputNode>(*this); }
 		void compute(NodeEvaluation&) const override {}
 	};
 
@@ -114,6 +115,7 @@ namespace lain::flow
 		// Passthrough — the scheduler populated the inputs, and the host reads them from the
 		// Evaluation (evaluation.value(output)). The delivered value is runtime, so it is not held
 		// here either.
+		std::unique_ptr<Node> clone() const override { return std::make_unique<GroupOutputNode>(*this); }
 		void compute(NodeEvaluation&) const override {}
 	};
 

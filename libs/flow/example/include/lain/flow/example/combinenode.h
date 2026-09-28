@@ -26,6 +26,7 @@ namespace lain::flow::example
 	public:
 		CombineNode();
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<CombineNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override;
 
 	private:

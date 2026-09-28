@@ -29,6 +29,7 @@ namespace lain::flow::example
 	public:
 		explicit LoadImageNode(std::string uri = {});
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<LoadImageNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override;
 
 	private:

@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <typeindex>
@@ -292,11 +293,32 @@ namespace lain::flow
 		// dependency order, only when the node is ready (see above).
 		virtual void compute(NodeEvaluation& evaluation) const = 0;
 
+		// This node AS IT IS — the same NodeId, the same version, the same declarations and params —
+		// as a new object of this node's own dynamic type. What Graph::clone() is built from
+		// (ADR-0025); a graph-owning node deep-copies its interior here, a linked one shares its
+		// definition.
+		//
+		// Pure, so the compiler names every node kind that lacks one. For almost every kind the body
+		// is one line over the copy constructor:
+		//
+		//     std::unique_ptr<Node> clone() const override { return std::make_unique<MyNode>(*this); }
+		//
+		// A subclass of a CONCRETE kind must override it too: otherwise it inherits its parent's and
+		// comes back as the parent, sliced, with nothing to say so but Graph::clone's assert and the
+		// census test over the production factory.
+		virtual std::unique_ptr<Node> clone() const = 0;
+
 	protected:
 		explicit Node(std::string name)
 			: m_name(std::move(name))
 		{
 		}
+
+		// Copied only by a subclass's own copy constructor — which is what clone() is built from —
+		// and never from outside, where a copy through a base reference would slice. Not assignable:
+		// a node's identity is fixed at admission, and assigning one node over another would rewrite it.
+		Node(const Node&) = default;
+		Node& operator=(const Node&) = delete;
 
 		// Declare a port in the subclass constructor; returns its stable PortId, which the node
 		// keeps as a named member and passes to input() / output() inside compute(). An ID, not a

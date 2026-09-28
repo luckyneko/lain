@@ -14,6 +14,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
+#include <memory>
 
 using lain::flow::Connection;
 using lain::flow::Graph;
@@ -30,6 +31,7 @@ public:
 	{
 		m_out = addOutput<int>("out");
 	}
+	std::unique_ptr<lain::flow::Node> clone() const override { return std::make_unique<TestGate>(*this); }
 	void compute(lain::flow::NodeEvaluation& evaluation) const override
 	{
 		if (pass)
@@ -54,14 +56,16 @@ public:
 		m_in = addInput<int>("in"); // Required (default): an empty input keeps the node from being ready
 		m_out = addOutput<int>("out");
 	}
+	std::unique_ptr<lain::flow::Node> clone() const override { return std::make_unique<CountingRelay>(*this); }
 	void compute(lain::flow::NodeEvaluation& evaluation) const override
 	{
-		++computes; // reached only when the required input has a value
+		++*m_computes; // reached only when the required input has a value
 		evaluation.output(m_out).set<int>(evaluation.input(m_in).get<int>());
 	}
-	mutable std::atomic<int> computes{0}; // a test probe — compute() is const (see test_incremental)
+	int computes() const { return *m_computes; } // a test probe — compute() is const (see test_incremental)
 
 private:
+	std::shared_ptr<std::atomic<int>> m_computes = std::make_shared<std::atomic<int>>(0);
 	lain::flow::PortId m_in;
 	lain::flow::PortId m_out;
 };
@@ -77,6 +81,7 @@ public:
 		m_b = addInput<int>("b", Presence::Optional);
 		m_out = addOutput<int>("out");
 	}
+	std::unique_ptr<lain::flow::Node> clone() const override { return std::make_unique<TestSelect>(*this); }
 	void compute(lain::flow::NodeEvaluation& evaluation) const override
 	{
 		if (!evaluation.input(m_a).empty())
@@ -112,8 +117,8 @@ TEST_CASE("an empty required input suppresses the node, and that propagates", "[
 	SerialScheduler scheduler;
 	scheduler.run(graph, evaluation);
 
-	REQUIRE(relay.computes == 0); // required input empty -> not ready -> never computed
-	REQUIRE(sink.computes == 0);
+	REQUIRE(relay.computes() == 0); // required input empty -> not ready -> never computed
+	REQUIRE(sink.computes() == 0);
 	REQUIRE(lain::flow::test::output(graph, evaluation, r, 0).empty()); // its outputs were cleared
 	REQUIRE(lain::flow::test::output(graph, evaluation, k, 0).empty());
 }
@@ -136,7 +141,7 @@ TEST_CASE("giving the gate a value resurrects the suppressed subtree", "[flow][c
 	lain::flow::Evaluation evaluation{graph};
 	SerialScheduler scheduler;
 	scheduler.run(graph, evaluation); // suppressed
-	REQUIRE(relay.computes == 0);
+	REQUIRE(relay.computes() == 0);
 
 	gate.pass = true;
 	// `pass` is a bare member of this test node, not a param, so nothing bumped the definition
@@ -145,8 +150,8 @@ TEST_CASE("giving the gate a value resurrects the suppressed subtree", "[flow][c
 	evaluation.requestRecompute(g);
 	scheduler.run(graph, evaluation); // gate stale -> closure pulls the subtree back in -> now ready
 
-	REQUIRE(relay.computes == 1);
-	REQUIRE(sink.computes == 1);
+	REQUIRE(relay.computes() == 1);
+	REQUIRE(sink.computes() == 1);
 	REQUIRE_FALSE(lain::flow::test::output(graph, evaluation, r, 0).empty());
 	REQUIRE(lain::flow::test::output(graph, evaluation, k, 0).get<int>() == 5); // the value flowed all the way through
 }

@@ -40,6 +40,7 @@ namespace
 			in = addInput<int>("in");
 			out = addOutput<int>("out");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<CountingPass>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			++calls;
@@ -56,6 +57,7 @@ namespace
 		{
 			out = addOutput<int>("out");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<Rearming>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			const PortValue& previous = evaluation.output(out);
@@ -77,6 +79,7 @@ namespace
 		{
 			out = addOutput<int>("out");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<Blocking>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			entered = true;
@@ -323,6 +326,7 @@ TEST_CASE("the lease is released when a node throws", "[flow][evaluation]")
 		{
 			addOutput<int>("out");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<Throwing>(*this); }
 		void compute(NodeEvaluation&) const override { throw std::runtime_error("boom"); }
 	};
 
@@ -337,10 +341,9 @@ TEST_CASE("the lease is released when a node throws", "[flow][evaluation]")
 
 TEST_CASE("an evaluation is refused against a different definition", "[flow][evaluation]")
 {
-	// The guard rail, not the mechanism: a host owns a definition and its evaluation as one
-	// replaceable unit, which is what actually prevents the mispairing. This catches a call that
-	// slipped through — though not a Graph rebuilt at a recycled address, which is why the
-	// ownership rule is the real protection.
+	// Two separately constructed graphs are two LINEAGES, so an evaluation of one refuses the other
+	// (ADR-0025). The case this used to concede — a Graph rebuilt at a recycled address — is refused
+	// too now, and has its own test in test_clone.cpp, beside the clone an evaluation must accept.
 	Graph first;
 	Graph second;
 	Evaluation evaluation{first};

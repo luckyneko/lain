@@ -41,6 +41,7 @@ namespace
 			m_out = addOutputOf("value", "out");
 		}
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<PassThroughNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			if (evaluation.input(m_enable).get<bool>())
@@ -80,6 +81,7 @@ namespace
 			return type.isOrderable();
 		}
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<OrderedOnlyNode>(*this); }
 		void compute(NodeEvaluation&) const override {}
 
 	private:
@@ -97,6 +99,7 @@ namespace
 			m_in = addInput<T>("in");
 		}
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<SinkNode>(*this); }
 		void compute(NodeEvaluation&) const override {}
 		PortId inPort() const { return m_in; }
 

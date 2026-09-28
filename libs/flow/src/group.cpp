@@ -43,6 +43,17 @@ namespace lain::flow
 		establishReserved(m_inner);
 	}
 
+	LoopNode::LoopNode(const LoopNode& other)
+		: GroupNode(other)
+		, m_inner(other.m_inner.clone()) // the reserved pins come with it, ids and all
+		, m_carries(other.m_carries)
+		, m_count(other.m_count)
+		, m_iterations(other.m_iterations)
+		, m_index(other.m_index)
+		, m_continue(other.m_continue)
+	{
+	}
+
 	void LoopNode::establishReserved(Graph& interior, const std::string& indexName, const std::string& continueName)
 	{
 		m_index = interior.boundaryInputNode().addReserved<int>(indexName);

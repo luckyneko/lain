@@ -6072,7 +6072,7 @@ regression test: `ctest -j8` **794/794** Debug with video on, warning-clean, for
   the fold. All four reached their header transitively and worked — the class of thing the
   2026-09-05 CI port found six of.
 
-## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28, nothing built)
+## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slice 1 built)
 
 gui-mode runs `SerialScheduler::run` synchronously inside the frame loop — `FlowviewApp::reevaluate`
 is reached from `mainwindow.cpp` twice, `inspectorpane.cpp` and `interfacepane.cpp`, on every edit
@@ -6081,7 +6081,7 @@ has no gui caller. This milestone moves graph work off the frame loop, makes the
 default with Serial selectable, and gives the UI the controls a 5-minute graph needs as well as a
 1-second one. Decisions in **[ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md)**;
 vocabulary in CONTEXT.md's *Running while you edit* (plus *clone*, *lineage*, *coordinator*).
-**Nothing is built.**
+**Slice 1 (clone + lineage) is built** — see *Slice 1 landed* below; slices 2-8 are not.
 
 ### The shape
 
@@ -6119,7 +6119,7 @@ vocabulary in CONTEXT.md's *Running while you edit* (plus *clone*, *lineage*, *c
 
 Structural, no-behaviour-change slices first; each its own commit with its docs.
 
-1. **Clone + lineage** (`libs/flow`). `virtual std::unique_ptr<Node> clone() const` on every node kind
+1. **Clone + lineage** (`libs/flow`) — **built 2026-09-28**. `virtual std::unique_ptr<Node> clone() const` on every node kind
    — mechanical, since `Node`'s members are copyable and no node holds a mutex, a thread or a
    non-copyable cache (checked 2026-09-28; the only owned structure is a group's interior).
    `Graph::clone()` deep-copies inline / map / loop interiors and shares linked definitions. Lineage on
@@ -6160,6 +6160,73 @@ Structural, no-behaviour-change slices first; each its own commit with its docs.
    folds them into the published evaluation. This is what makes **Queued** and **Computing** real.
 8. **Run Selection.** The multi-target upstream-cone plan (`buildEvalPlan`'s shape, many targets,
    executed through `executePlan`) and its menu item.
+
+### Slice 1 landed (2026-09-28) — clone + lineage
+
+`Node::clone()` (pure) on every kind, `Graph::clone()`, `flow::Lineage`, and `Evaluation::prepare`
+checking lineage where it checked addresses — at the root (a mismatch throws, as before) and for
+every child (a mismatch means a fresh child, as before). No behaviour change: nothing in production
+calls `clone()` yet, the gui still runs the document itself. `ctest -j8` **807/807** Debug with video
+on (+10 from 797, measured on the pre-change tree), **813/813** Release with video on (+10),
+**780/780** Release in the default video-off configuration (+10); warning-clean, format-check clean;
+`flowview run --example` identical to the pre-change binary once the timestamp and minted ids are
+normalised.
+
+- **Three clones were not mechanical, and the entry above said they would be.** It is true that no
+  node holds a mutex or a thread and that the only owned structure is a group's interior — and that
+  interior is exactly what makes `InlineGroupNode`, `MapNode` and `LoopNode` different: a `Graph` is
+  move-only, so their implicit copy constructors are **deleted**, and each has a hand-written one that
+  `clone()`s the interior. `LoopNode`'s also copies the carry pairing and four `PortId`s, most of which
+  are not serialized as themselves — so a member left out is invisible to a document comparison, and
+  the scene tests' *"a cloned … runs the same"* cases are what run a clone and compare answers.
+  `LinkedGroupNode`'s implicit copy shares its `shared_ptr<const Graph>`, which is the ADR's rule.
+- **`clone()` is PURE, decided with the repo owner** over a refusing default: the compiler lists every
+  kind that lacks one. The cost was **68 test fixtures** gaining the same one line beside the 23
+  production kinds. Three fixtures held a `mutable std::atomic<int>` probe, which a copy cannot carry;
+  they moved it behind a `shared_ptr` with a `computes()` accessor, so construction is unchanged and a
+  clone counts into the same place — the reason the new tests hold their counters by reference.
+- **`Node`'s copy constructor is protected and its assignment deleted**, so nothing outside a subclass
+  can slice a node, and a node's identity cannot be assigned over.
+- **`Graph::clone` copies order, edges and topo as they stand**, through a private bare constructor:
+  seating nodes through `adopt()` would rebuild the topo order once per node, and `add()` mints ids and
+  refuses the boundary pair. Per node it asserts the clone is the same dynamic type with the same id —
+  so every Debug test that clones is also a slicing check.
+- **Lineage is an opaque counter, not a uuid** (decided with the repo owner): it never leaves the
+  process and is never stored, and ADR-0011 chose uuids for the two-laptops case, which does not arise.
+  Equality only, so nothing can mistake it for a Version. **The loader needed no change**: every load
+  constructs a `Graph`, which is where lineage is minted, and a move carries it.
+- **The hole address identity could not close is move-assignment into the same object**, and both new
+  guard tests use exactly that shape. At the root, a graph rebuilt with the same ids and moved into
+  the same variable was accepted. At a child it was a **wrong answer**: an interior rebuilt in the
+  same storage with the same ids and versions but a different constant kept its child, every node
+  looked clean, and the group served the old value — **1 instead of 2, measured against the pre-change
+  checks**.
+- **`Evaluation::definition()` now means "the graph last prepared against"** — once runs read clones,
+  that is the clone the last run read, and ready() / describe() / needsRecompute() read through it.
+  Stated in `evaluation.h`: it must outlive any read, which slice 2's published evaluation will
+  guarantee by holding it.
+- **`Graph::clone` has no production caller until slice 4.** That is the compiled-linked-unreachable
+  shape this file keeps catching, and it is deliberate here: the structural slices land first by
+  design, and the census plus the flow tests are what exercise it until the runner does.
+- **Sabotages, all caught.**
+  - Root check back to an address comparison: the incremental case fails in both sections (the
+    second clone is refused), and so do the rebuilt-in-place case and the serialize reload case.
+  - Child check back to an address comparison: the incremental case fails because the group's result
+    goes **empty** (a clean group does not republish into a fresh child), and the rebuilt interior
+    **throws** from the child's own lineage check rather than rebuilding.
+  - A kind derived from a concrete kind without its own `clone()`: in Debug, `Graph::clone`'s assert
+    fires with the census naming the key; in Release, the census's `typeid` check names it.
+  - `LoopNode`'s copy constructor dropping `m_carries` (the fold changes), `m_count` (the trip count
+    changes), or `m_continue` (the trip count changes, and so does the document's `loop` section).
+- **Found, pre-existing, NOT fixed — a replaced group can inherit its predecessor's `computedAt`.**
+  `edit::replaceGroup` (Save as Template / Make Local) re-seats a new node **at the same NodeId**, and
+  its version restarts at 1. The bumps that follow (sync, then reconnecting its inputs) can add up to
+  exactly the old version, and the root evaluation still holds the old node's `computedAt` under that
+  id. **Measured: a linked group with one input, made local, comes back at version 3 == 3**, so the
+  group looks clean. Its child is fresh, because the interior is a different one, and a clean group
+  does not republish its inputs into it, so **its output goes empty**. The pre-change address checks
+  give the same result. The general shape is any node replaced under the same NodeId without a
+  prepare in between; the fix belongs with evaluation identity rather than with this slice.
 
 ### Visual design (settled in outline, tuned by eyeball)
 
@@ -6223,7 +6290,8 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md).)*
 
-- **M14 — asynchronous execution: the gui never waits on graph work.** Designed 2026-09-28, no code.
+- **M14 — asynchronous execution: the gui never waits on graph work.** Designed 2026-09-28; slice 1
+  (clone + lineage) built 2026-09-28, slices 2-8 not.
   *(Milestone 14; [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)*
 
 M1–M8 and M10–M13 are built. **M9 and M14 are the milestones from 5 onward that are not.**
@@ -6351,7 +6419,12 @@ SuiteSparse-enabled Ceres; capture manifests and capture datasets (which M10 han
 
 Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
 
-**The list is empty.** All four are fixed — the three from M11 §Not in this milestone
+- **A group replaced at its own NodeId can come back looking clean, and deliver nothing** (found
+  2026-09-28, measured, pre-existing). `edit::replaceGroup`'s new node can reach exactly its
+  predecessor's version, and the evaluation still holds the old `computedAt` under that id.
+  *(Milestone 14, *Slice 1 landed*, last bullet.)*
+
+The four before it are fixed — the three from M11 §Not in this milestone
 (`GroupSync::refused` had no reader, 2026-09-09; the Issues pane flagged an unwired DEFAULTED
 input, 2026-09-09; `ungroup` told a map it was linked, 2026-09-10) and the parallel-ctest collision
 below (2026-09-10). Two of the four turned out to be **larger than their one-line description**, and

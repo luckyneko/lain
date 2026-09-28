@@ -42,6 +42,7 @@ namespace lain::flow
 			return portTypeFor(key) == payloadType(kValuePayload);
 		}
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<MergeNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			const PortType* type = payloadType(kValuePayload);

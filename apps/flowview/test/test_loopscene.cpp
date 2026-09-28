@@ -338,6 +338,34 @@ TEST_CASE("a while loop blurs until the picture stops changing", "[flowview][loo
 	}
 }
 
+TEST_CASE("a cloned loop folds exactly as its original", "[flowview][loop][clone]")
+{
+	// M14 slice 1 (ADR-0025): a run is going to read a CLONE of the document. LoopNode's copy
+	// constructor is written by hand — its interior is a Graph, which does not copy — and most of
+	// what it copies beyond the interior is not serialized as itself: the count and iterations PortIds
+	// and the reserved-pin ids live only on the node. So the census's document comparison cannot see
+	// one of them left out, and running the clone can. Both verticals, because together they read
+	// all of it: the carry, the bound, the report and `continue`.
+	const Factory<Node> factory = sceneFactory();
+	for (const bool converging : {false, true})
+	{
+		INFO((converging ? "while" : "count") << " loop");
+		Scene scene = buildFoldScene(factory, converging ? kWhileBound : kCountIterations);
+		if (converging)
+			addConvergenceCondition(scene, factory, kWhileThreshold);
+
+		Evaluation original{scene.graph};
+		SerialScheduler{}.run(scene.graph, original);
+
+		const Graph clone = scene.graph.clone();
+		Evaluation cloned{clone};
+		SerialScheduler{}.run(clone, cloned);
+
+		REQUIRE(boundaryInt(clone, cloned, "iterations") == boundaryInt(scene.graph, original, "iterations"));
+		REQUIRE(sameBytes(boundaryImage(clone, cloned, "result"), boundaryImage(scene.graph, original, "result")));
+	}
+}
+
 TEST_CASE("both loop scenes survive save and load and fold the same", "[flowview][loop]")
 {
 	// Through the PRODUCTION facade — the same saveGraph / loadGraph the menu bar calls — so this

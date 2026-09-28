@@ -33,6 +33,7 @@ public:
 		m_out = addOutput<int>("readCount");
 	}
 
+	std::unique_ptr<Node> clone() const override { return std::make_unique<ConfigNode>(*this); }
 	void compute(NodeEvaluation& evaluation) const override
 	{
 		evaluation.output(m_out).set<int>(param(m_count).get<int>()); // read a param like a real node
@@ -214,6 +215,7 @@ namespace
 			in = addInput<int>("value", Default{fallback});
 			out = addOutput<int>("out");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<Defaulted>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			// Read as an ordinary input: unconnected, the slot carries the default, so there is
@@ -231,6 +233,7 @@ namespace
 		{
 			out = addOutput<int>("out");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<Suppressor>(*this); }
 		void compute(NodeEvaluation& evaluation) const override { evaluation.output(out).clear(); }
 	};
 } // namespace
@@ -331,6 +334,7 @@ TEST_CASE("renamePort refuses a name that would make an edge ambiguous", "[param
 			a = addInput<int>("a", Default{1});
 			b = addInput<int>("b");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<TwoInputs>(*this); }
 		void compute(NodeEvaluation&) const override {}
 	};
 

@@ -39,6 +39,7 @@ namespace
 			addParam<int>("value", 0);
 			addOutput<int>("out");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<ConstNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(output(0).id()).set(param(0).get<int>());
@@ -56,6 +57,7 @@ namespace
 			addInput<int>("in");
 			addOutput<int>("out");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<AddNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(output(0).id()).set(evaluation.input(input(0).id()).get<int>() + param(0).get<int>());

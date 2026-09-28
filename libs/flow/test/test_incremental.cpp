@@ -13,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
+#include <memory>
 
 using lain::flow::Connection;
 using lain::flow::Graph;
@@ -29,18 +30,22 @@ public:
 	{
 		m_out = addOutput<int>("out");
 	}
+	std::unique_ptr<lain::flow::Node> clone() const override { return std::make_unique<CountingSource>(*this); }
 	void compute(lain::flow::NodeEvaluation& evaluation) const override
 	{
-		++computes;
+		++*m_computes;
 		evaluation.output(m_out).set<int>(value);
 	}
 	// A TEST PROBE, not a pattern: compute() is const because a node must not write to its
-	// definition (several evaluations may run it at once), so counting here needs `mutable`. Atomic
-	// so the counter stays meaningful if a case ever runs this node in parallel.
-	mutable std::atomic<int> computes{0};
+	// definition (several evaluations may run it at once), so the count lives OUTSIDE the node and
+	// the node holds a pointer to it — which is also what lets a clone share it, since clone() copies
+	// the node (ADR-0025). Atomic so the counter stays meaningful if a case ever runs this node in
+	// parallel.
+	int computes() const { return *m_computes; }
 	int value = 1;
 
 private:
+	std::shared_ptr<std::atomic<int>> m_computes = std::make_shared<std::atomic<int>>(0);
 	lain::flow::PortId m_out;
 };
 
@@ -54,15 +59,17 @@ public:
 		m_in = addInput<int>("in");
 		m_out = addOutput<int>("out");
 	}
+	std::unique_ptr<lain::flow::Node> clone() const override { return std::make_unique<CountingRelay>(*this); }
 	void compute(lain::flow::NodeEvaluation& evaluation) const override
 	{
-		++computes;
+		++*m_computes;
 		const lain::flow::PortValue& in = evaluation.input(m_in);
 		evaluation.output(m_out).set<int>(in.holds<int>() ? in.get<int>() : 0);
 	}
-	mutable std::atomic<int> computes{0}; // a test probe — see CountingSource
+	int computes() const { return *m_computes; } // a test probe — see CountingSource
 
 private:
+	std::shared_ptr<std::atomic<int>> m_computes = std::make_shared<std::atomic<int>>(0);
 	lain::flow::PortId m_in;
 	lain::flow::PortId m_out;
 };
@@ -83,28 +90,28 @@ TEST_CASE("run recomputes only the dirty closure, skipping clean nodes", "[flow]
 	lain::flow::Evaluation evaluation{graph};
 	SerialScheduler scheduler;
 	scheduler.run(graph, evaluation); // a fresh evaluation knows nothing -> everything runs once
-	REQUIRE(src.computes == 1);
-	REQUIRE(mid.computes == 1);
-	REQUIRE(sink.computes == 1);
+	REQUIRE(src.computes() == 1);
+	REQUIRE(mid.computes() == 1);
+	REQUIRE(sink.computes() == 1);
 
 	scheduler.run(graph, evaluation); // nothing stale -> nothing recomputes
-	REQUIRE(src.computes == 1);
-	REQUIRE(mid.computes == 1);
-	REQUIRE(sink.computes == 1);
+	REQUIRE(src.computes() == 1);
+	REQUIRE(mid.computes() == 1);
+	REQUIRE(sink.computes() == 1);
 
 	evaluation.requestRecompute(m);	  // demand a recompute of the middle node
 	scheduler.run(graph, evaluation); // mid + its downstream (sink) rerun; the source does not
-	REQUIRE(src.computes == 1);
-	REQUIRE(mid.computes == 2);
-	REQUIRE(sink.computes == 2);
+	REQUIRE(src.computes() == 1);
+	REQUIRE(mid.computes() == 2);
+	REQUIRE(sink.computes() == 2);
 
 	// Force a full refresh. Addressed to THIS evaluation — a definition cannot know which of several
 	// evaluations a caller wants refreshed, which is why Graph::markAllDirty could not survive.
 	evaluation.requestRecomputeAll();
 	scheduler.run(graph, evaluation);
-	REQUIRE(src.computes == 2);
-	REQUIRE(mid.computes == 3);
-	REQUIRE(sink.computes == 3);
+	REQUIRE(src.computes() == 2);
+	REQUIRE(mid.computes() == 3);
+	REQUIRE(sink.computes() == 3);
 }
 
 TEST_CASE("connect marks the downstream node dirty (not the source)", "[flow][incremental]")
@@ -118,13 +125,13 @@ TEST_CASE("connect marks the downstream node dirty (not the source)", "[flow][in
 	scheduler.run(graph, evaluation); // source runs; the relay's required input is unconnected -> not ready
 	auto& src = static_cast<CountingSource&>(graph.node(s));
 	auto& sink = static_cast<CountingRelay&>(graph.node(k));
-	REQUIRE(src.computes == 1);
-	REQUIRE(sink.computes == 0); // empty required input -> suppressed (readiness model)
+	REQUIRE(src.computes() == 1);
+	REQUIRE(sink.computes() == 0); // empty required input -> suppressed (readiness model)
 
 	REQUIRE(graph.connect(s, 0, k, 0) == Connection::Ok); // bumps k's version; it now has an input source
 	scheduler.run(graph, evaluation);
-	REQUIRE(sink.computes == 1); // recomputed — now ready
-	REQUIRE(src.computes == 1);	 // the (clean) source was skipped
+	REQUIRE(sink.computes() == 1); // recomputed — now ready
+	REQUIRE(src.computes() == 1);  // the (clean) source was skipped
 }
 
 TEST_CASE("disconnect and removeNode re-evaluate (and suppress) the affected downstream", "[flow][incremental]")
@@ -170,15 +177,15 @@ TEST_CASE("the parallel scheduler is incremental too", "[flow][incremental]")
 	scheduler.run(graph, evaluation); // a fresh evaluation -> everything runs
 	auto& src = static_cast<CountingSource&>(graph.node(s));
 	auto& sink = static_cast<CountingRelay&>(graph.node(k));
-	REQUIRE(src.computes == 1);
-	REQUIRE(sink.computes == 1);
+	REQUIRE(src.computes() == 1);
+	REQUIRE(sink.computes() == 1);
 
 	scheduler.run(graph, evaluation); // nothing stale -> no tasks run
-	REQUIRE(src.computes == 1);
-	REQUIRE(sink.computes == 1);
+	REQUIRE(src.computes() == 1);
+	REQUIRE(sink.computes() == 1);
 
 	evaluation.requestRecompute(k);
 	scheduler.run(graph, evaluation); // only k
-	REQUIRE(src.computes == 1);
-	REQUIRE(sink.computes == 2);
+	REQUIRE(src.computes() == 1);
+	REQUIRE(sink.computes() == 2);
 }

@@ -50,6 +50,7 @@ public:
 	{
 		addInput<int>("in");
 	}
+	std::unique_ptr<Node> clone() const override { return std::make_unique<IntSink>(*this); }
 	void compute(lain::flow::NodeEvaluation&) const override {}
 };
 

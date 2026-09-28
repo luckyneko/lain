@@ -42,6 +42,7 @@ namespace lain::flow
 		static constexpr const char* kFromPayload = "from";
 		static constexpr const char* kToPayload = "to";
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<CastNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			// An empty result — no conversion for this pair, or one that could not convert this

@@ -66,6 +66,7 @@ namespace lain::flow
 	//=========================================================================
 	Evaluation::Evaluation(const Graph& definition)
 		: m_definition(&definition)
+		, m_lineage(definition.lineage())
 	{
 		prepare(definition);
 	}
@@ -110,13 +111,15 @@ namespace lain::flow
 
 	void Evaluation::prepare(const Graph& definition)
 	{
-		if (m_definition != nullptr && m_definition != &definition)
+		if (m_lineage != Lineage{} && m_lineage != definition.lineage())
 		{
-			// See the header: this catches a mispaired call, not a rebuilt-in-place definition. The
-			// real protection is that a host owns the two as one replaceable unit.
-			throw std::logic_error("flow::Evaluation: prepared against a different Graph than it was built for");
+			// See the header: the versions recorded here belong to another definition's history, so
+			// comparing them against this one would call changed nodes clean. A clone passes (it
+			// carries the lineage); a rebuilt graph does not, wherever in memory it was rebuilt.
+			throw std::logic_error("flow::Evaluation: prepared against a definition of another lineage than it was built for");
 		}
 		m_definition = &definition;
+		m_lineage = definition.lineage();
 
 		// Nodes: create what is new, keep what survived, drop what went (its values go with it).
 		std::map<NodeId, NodeState> nodes;
@@ -164,10 +167,13 @@ namespace lain::flow
 
 				for (std::unique_ptr<Evaluation>& child : kept)
 				{
-					// A group whose inner Graph was REPLACED (a linked template re-resolved) gets a
-					// fresh child: the old one's per-node versions belong to a definition that no
-					// longer exists, which is the same mispairing prepare guards against above.
-					if (child->m_definition != nullptr && child->m_definition != inner)
+					// A group whose inner Graph was REPLACED (a linked template re-resolved, an
+					// interior assigned wholesale) gets a fresh child: the old one's per-node
+					// versions belong to a history that no longer backs this node, which is the same
+					// mispairing prepare refuses above. Asked by LINEAGE, not address — a cloned
+					// interior is a different object of the same history and must keep its child,
+					// while an interior rebuilt in the very storage of the old one must not.
+					if (child->m_lineage != Lineage{} && child->m_lineage != inner->lineage())
 						child = std::make_unique<Evaluation>();
 					child->prepare(*inner);
 				}

@@ -23,6 +23,7 @@ namespace lain::flow::test
 		{
 			out = addOutput<int>("value");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<ConstInt>(*this); }
 		void compute(NodeEvaluation& evaluation) const override { evaluation.output(out).set(value); }
 	};
 
@@ -37,6 +38,7 @@ namespace lain::flow::test
 			b = addInput<int>("b");
 			sum = addOutput<int>("sum");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<AddInt>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(sum).set(evaluation.input(a).get<int>() + evaluation.input(b).get<int>());
@@ -52,6 +54,7 @@ namespace lain::flow::test
 		{
 			in = addInput<float>("x");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<SinkFloat>(*this); }
 		void compute(NodeEvaluation&) const override {}
 	};
 

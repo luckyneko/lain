@@ -1,25 +1,69 @@
 #include "lain/flow/graph.h" // includes boundary.h (GroupInput/OutputNode, BoundaryInput/Output)
 
 #include <algorithm>
+#include <atomic>
+#include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <set>
+#include <typeinfo>
 #include <utility>
 
 namespace lain::flow
 {
+	Lineage Lineage::mint()
+	{
+		// Starts at 1, so a minted lineage never equals the default-constructed "none yet".
+		static std::atomic<std::uint64_t> next{1};
+		return Lineage{next.fetch_add(1, std::memory_order_relaxed)};
+	}
+
 	Graph::Graph()
 		: Graph(BoundaryIds{}) // both null -> both minted
 	{
 	}
 
+	Graph::Graph(Bare)
+	{
+	}
+
 	Graph::Graph(BoundaryIds boundary)
+		: m_lineage(Lineage::mint()) // every constructed graph begins a history — a load included
 	{
 		// The interface pair (see graph.h). Seated through the private adopt path, not add(), which
 		// refuses exactly these types once the pair exists. usableId mints what the caller did not
 		// supply, so a loader's missing / duplicated boundary id costs the pair nothing.
 		m_boundaryIn = adopt(std::make_unique<GroupInputNode>(), usableId(boundary.input));
 		m_boundaryOut = adopt(std::make_unique<GroupOutputNode>(), usableId(boundary.output));
+	}
+
+	Graph Graph::clone() const
+	{
+		Graph copy{Bare{}};
+		for (const auto& [id, node] : m_nodes)
+		{
+			const Node& original = *node;
+			std::unique_ptr<Node> cloned = original.clone();
+			assert(cloned != nullptr && "flow::Graph::clone: a node's clone() returned nothing");
+			// A subclass of a concrete kind that does not override clone() inherits its parent's and
+			// comes back as the parent — sliced, silently. Every Debug test that clones asks; the
+			// census over the production factory asks in every configuration. (Through named
+			// references, because a typeid operand with a call in it is evaluated and clang says so.)
+			[[maybe_unused]] const Node& copied = *cloned;
+			assert(typeid(copied) == typeid(original) && "flow::Graph::clone: a node kind did not override clone()");
+			assert(copied.id() == id && "flow::Graph::clone: a clone must keep its NodeId");
+			copy.m_nodes.emplace(id, std::move(cloned));
+		}
+		// Copied as they stand rather than re-derived: seating each node through adopt() would
+		// rebuild the topo order once per node, and add() would mint ids and refuse the boundary pair.
+		copy.m_order = m_order;
+		copy.m_boundaryIn = m_boundaryIn;
+		copy.m_boundaryOut = m_boundaryOut;
+		copy.m_edges = m_edges;
+		copy.m_topo = m_topo;
+		copy.m_lineage = m_lineage; // the same history — which is what "clone" means here
+		return copy;
 	}
 
 	NodeId Graph::usableId(NodeId requested) const

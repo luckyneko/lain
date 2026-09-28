@@ -52,6 +52,7 @@ namespace lain::flow::example
 		// answer grows with the registered types instead of rotting.
 		bool acceptsPayloadType(const std::string& name, const PortType& type) const override;
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<CompareNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override;
 
 	private:

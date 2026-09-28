@@ -189,6 +189,24 @@ TEST_CASE("a folder of images maps through one subgraph and combines", "[flowvie
 	}
 }
 
+TEST_CASE("a cloned map scene runs the same", "[flowview][map][clone]")
+{
+	// M14 slice 1 (ADR-0025): a run is going to read a CLONE of the document, and a map's clone is a
+	// hand-written copy (its interior is a Graph, which does not copy). The clone gets an evaluation
+	// of its own here, so what is compared is the recipe the copy carried, not retained values.
+	sceneFactory(); // registers the port types (a map lifts through them) and the png codec
+	const std::filesystem::path dir = scratchDir("clone");
+	writeGrey(dir / "a.png", 30);
+	writeGrey(dir / "b.png", 60);
+	writeGrey(dir / "c.png", 90);
+
+	const Graph graph = buildMapScene(dir);
+	const Graph clone = graph.clone();
+	Evaluation evaluation{clone};
+	SerialScheduler{}.run(clone, evaluation);
+	REQUIRE(resultLevel(clone, evaluation) == 60); // (30+60+90)/3, three elements through the clone's interior
+}
+
 TEST_CASE("a map scene survives save and load and runs the same", "[flowview][map]")
 {
 	// Through the PRODUCTION facade — the same saveGraph/loadGraph the menu bar calls — so this

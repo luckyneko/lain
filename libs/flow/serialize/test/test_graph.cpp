@@ -45,6 +45,7 @@ public:
 		addOutput<int>("out");
 		addParam<int>("seed", 7);
 	}
+	std::unique_ptr<Node> clone() const override { return std::make_unique<SourceNode>(*this); }
 	void compute(lain::flow::NodeEvaluation& evaluation) const override
 	{
 		evaluation.output(output(0).id()).set<int>(param(0).get<int>());
@@ -60,6 +61,7 @@ public:
 		addInput<int>("in");
 		addParam<float>("scale", 1.5f);
 	}
+	std::unique_ptr<Node> clone() const override { return std::make_unique<SinkNode>(*this); }
 	void compute(lain::flow::NodeEvaluation&) const override {}
 };
 

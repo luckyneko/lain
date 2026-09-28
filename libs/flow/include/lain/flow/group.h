@@ -171,6 +171,17 @@ namespace lain::flow
 		{
 		}
 
+		// A copy with its OWN interior — a deep clone, since this node owns its graph outright. The
+		// implicit one is deleted (a Graph is not copyable), which is why this kind's clone() is not
+		// the one-liner every leaf node's is.
+		InlineGroupNode(const InlineGroupNode& other)
+			: GroupNode(other)
+			, m_inner(other.m_inner.clone())
+		{
+		}
+
+		std::unique_ptr<Node> clone() const override { return std::make_unique<InlineGroupNode>(*this); }
+
 		// The mutable interior — the thing that makes this kind different. The loader builds into it,
 		// and the host edits through it.
 		Graph& inner() { return m_inner; }
@@ -209,6 +220,16 @@ namespace lain::flow
 			: GroupNode("Map")
 		{
 		}
+
+		// A copy with its own interior, as InlineGroupNode's is. The lifting needs nothing here: it is
+		// each outer port's declared type, which the base copy carries.
+		MapNode(const MapNode& other)
+			: GroupNode(other)
+			, m_inner(other.m_inner.clone())
+		{
+		}
+
+		std::unique_ptr<Node> clone() const override { return std::make_unique<MapNode>(*this); }
 
 		Graph& inner() { return m_inner; }
 		const Graph& inner() const { return m_inner; }
@@ -276,6 +297,14 @@ namespace lain::flow
 	{
 	public:
 		LoopNode();
+
+		// A copy with its own interior, plus everything this kind stores about it: the carry pairing
+		// and the four port ids. Written out by hand because a Graph is not copyable — so a member
+		// added to this class must be added here too, and the run-equivalence test over the loop scene
+		// is what notices when one is not (a PortId member is not serialized, so the census cannot).
+		LoopNode(const LoopNode& other);
+
+		std::unique_ptr<Node> clone() const override { return std::make_unique<LoopNode>(*this); }
 
 		Graph& inner() { return m_inner; }
 		const Graph& inner() const { return m_inner; }
@@ -449,6 +478,10 @@ namespace lain::flow
 			, m_inner(std::make_shared<const Graph>()) // never null: every group HAS an interior
 		{
 		}
+
+		// The implicit copy SHARES the definition rather than copying it — which is exactly right: it
+		// is immutable and already shared between instances (ADR-0013), so a clone is one more sharer.
+		std::unique_ptr<Node> clone() const override { return std::make_unique<LinkedGroupNode>(*this); }
 
 		const Graph* innerGraph() const override { return m_inner.get(); }
 

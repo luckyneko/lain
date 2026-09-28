@@ -27,6 +27,7 @@ namespace lain::flow::example
 	public:
 		ImageDifferenceNode();
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<ImageDifferenceNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override;
 
 	private:

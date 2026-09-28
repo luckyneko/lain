@@ -39,6 +39,7 @@ namespace lain::flow::example
 	public:
 		ConvertNode();
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<ConvertNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override;
 
 	private:

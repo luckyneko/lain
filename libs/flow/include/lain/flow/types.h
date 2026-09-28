@@ -83,6 +83,38 @@ namespace lain::flow
 		std::uint32_t m_value = 0;
 	};
 
+	// The identity of one definition's VERSION HISTORY (ADR-0025): what makes two definitions' per-node
+	// versions comparable. Minted when a Graph is constructed — which is also how every load, New and
+	// undo restore begins — carried by Graph::clone(), and recorded by an Evaluation, which refuses a
+	// definition of another lineage. Moving a Graph carries it too, since a moved graph is the same one.
+	//
+	// It replaces comparing a definition's ADDRESS, which could not tell a graph rebuilt where the old
+	// one stood from the original — and which a clone per run would fail every time.
+	//
+	// Opaque, with equality only: a lineage is never ordered, shown or stored, so nothing can mistake
+	// it for a Version. A process-wide counter rather than a uuid, because it never leaves the process
+	// that minted it — NodeId is a uuid for the two-laptops case (ADR-0011), which does not arise here.
+	// A default-constructed Lineage is "none yet": what an Evaluation holds before it first prepares.
+	class Lineage
+	{
+	public:
+		Lineage() = default;
+
+		// A lineage no other Graph in this process has. Thread-safe: a graph may be built on any thread.
+		static Lineage mint();
+
+		friend bool operator==(Lineage a, Lineage b) { return a.m_value == b.m_value; }
+		friend bool operator!=(Lineage a, Lineage b) { return a.m_value != b.m_value; }
+
+	private:
+		explicit Lineage(std::uint64_t value)
+			: m_value(value)
+		{
+		}
+
+		std::uint64_t m_value = 0; // 0 is "none yet"; minted values start at 1
+	};
+
 	// The durable address of one port on one node: the unit an edge and a boundary handle
 	// reference (an Edge is two PortAddresses, {from, to}), and the serialization primitive
 	// (a connection is {from, to}). Holds no direction — an edge implies it by position, a

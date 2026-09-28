@@ -14,12 +14,14 @@
 #include <lain/flow/group.h>
 #include <lain/flow/node.h>
 #include <lain/flow/porttyperegistry.h>
+#include <lain/flow/scheduler.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -42,6 +44,7 @@ namespace
 			addParam<int>("value", 0);
 			addOutput<int>("out");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<ConstNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(output(0).id()).set(param(0).get<int>());
@@ -56,6 +59,7 @@ namespace
 		{
 			addInput<int>("in");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<SinkNode>(*this); }
 		void compute(lain::flow::NodeEvaluation&) const override {}
 	};
 
@@ -148,6 +152,32 @@ TEST_CASE("a load restores nodes as themselves", "[flow-serialize][identity]")
 
 	// ... and so does the ORDER, which the nodes array carries rather than a separate field.
 	REQUIRE(result.graph.nodeIds() == graph.nodeIds());
+}
+
+TEST_CASE("a reloaded graph with identical ids is refused by the old evaluation", "[flow-serialize][identity]")
+{
+	// A load preserves IDENTITY but not HISTORY: per-node versions restart, so an evaluation of the
+	// original must never be paired with the reload, however alike the two look (ADR-0025). The
+	// sharpest form of the trap is below — reloaded into the SAME storage (so an address comparison
+	// accepts it), then edited back up to the version the evaluation last saw (so a version
+	// comparison calls the edited node clean and serves the old value). Lineage is what refuses it.
+	const Factory<Node> factory = identityFactory();
+	Graph graph;
+	const NodeId source = graph.add<ConstNode>();
+	const PortId value = graph.node(source).param(0).id();
+	REQUIRE(graph.node(source).setParam(value, 11));
+	const std::uint64_t seen = graph.node(source).version();
+
+	Evaluation evaluation{graph};
+	SerialScheduler{}.run(graph, evaluation);
+
+	graph = fromValue(toValue(graph, factory, intCodecs()), factory, intCodecs()).graph;
+	REQUIRE(graph.contains(source)); // the same identity ...
+	while (graph.node(source).version() < seen)
+		REQUIRE(graph.node(source).setParam(value, 22)); // ... edited back up to the same version
+	REQUIRE(graph.node(source).version() == seen);
+
+	REQUIRE_THROWS_AS(SerialScheduler{}.run(graph, evaluation), std::logic_error);
 }
 
 TEST_CASE("a load preserves identity through nesting", "[flow-serialize][identity]")

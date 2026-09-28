@@ -1,7 +1,7 @@
 # A run reads a clone of the document, and the gui never waits on graph work
 
 ---
-Status: accepted (designed 2026-09-28; nothing built yet)
+Status: accepted (designed 2026-09-28; slice 1 — clone + lineage — built 2026-09-28, the rest not)
 Amends [ADR-0012](0012-definition-and-evaluation.md) — the pairing guard moves from address identity
 to **lineage**, and a *published evaluation* is the "different concept" it set aside. Amends
 [ADR-0024](0024-one-process-task-pool.md) — gui-mode stops being serial, and the coordinator thread is

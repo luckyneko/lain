@@ -16,6 +16,7 @@ add_executable(test-flowview
 	test_sweep.cpp
 	test_valueviews.cpp
 	test_catalog.cpp
+	test_clone.cpp
 	test_payloadscene.cpp
 	test_validation.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/undo.cpp"

@@ -48,6 +48,7 @@ namespace lain::flow
 			return portTypeFor(key) == payloadType(kValuePayload);
 		}
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<SelectNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			// Unwired, the slot carries the declared default, so there is no presence check here. And

@@ -73,6 +73,7 @@ namespace
 		{
 			out = addOutput<Ints>("items");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<MakeInts>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			if (calls != nullptr)
@@ -91,6 +92,7 @@ namespace
 			in = addInput<int>("in");
 			out = addOutput<int>("out");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<AddOne>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(out).set(evaluation.input(in).get<int>() + 1);
@@ -108,6 +110,7 @@ namespace
 			b = addInput<int>("b");
 			out = addOutput<int>("out");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<AddTwo>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(out).set(evaluation.input(a).get<int>() + evaluation.input(b).get<int>());
@@ -126,6 +129,7 @@ namespace
 			in = addInput<int>("in");
 			out = addOutput<int>("out");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<HoleAt>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			const int value = evaluation.input(in).get<int>();
@@ -148,6 +152,7 @@ namespace
 			in = addInput<int>("in");
 			out = addOutput<int>("out");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<CountingInt>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			++calls;
@@ -165,6 +170,7 @@ namespace
 			in = addInput<Ints>("items");
 			out = addOutput<int>("sum");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<SumInts>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			int total = 0;
@@ -491,6 +497,7 @@ TEST_CASE("a map inside a map costs one more stage and nothing else", "[flow][ma
 		{
 			out = addOutput<std::vector<Ints>>("rows");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<MakeRows>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(out).set(std::vector<Ints>{{1, 2}, {10}});
@@ -556,6 +563,7 @@ TEST_CASE("a map holding a deferred map gathers once, not once per stage", "[flo
 		{
 			out = addOutput<std::vector<Ints>>("rows");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<Rows>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(out).set(*rows);
@@ -575,6 +583,7 @@ TEST_CASE("a map holding a deferred map gathers once, not once per stage", "[flo
 			in = addInput<std::vector<Ints>>("rows");
 			out = addOutput<int>("sum");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<SumRows>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			++*calls;

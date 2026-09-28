@@ -29,6 +29,7 @@ namespace
 			in = addInput<int>("in");
 			out = addOutput<int>("out");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<CountingPass>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			++calls;

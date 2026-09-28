@@ -31,6 +31,7 @@ public:
 		addParam<int>("count", 5);
 	}
 
+	std::unique_ptr<lain::flow::Node> clone() const override { return std::make_unique<ParamNode>(*this); }
 	void compute(lain::flow::NodeEvaluation&) const override {}
 };
 

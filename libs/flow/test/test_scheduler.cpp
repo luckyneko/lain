@@ -29,6 +29,7 @@ namespace
 		{
 			out = addOutput<int>("value");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<ConstInt>(*this); }
 		void compute(NodeEvaluation& evaluation) const override { evaluation.output(out).set(value); }
 	};
 
@@ -42,6 +43,7 @@ namespace
 			b = addInput<int>("b");
 			sum = addOutput<int>("sum");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<AddInt>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(sum).set(evaluation.input(a).get<int>() + evaluation.input(b).get<int>());
@@ -59,6 +61,7 @@ namespace
 		{
 			out = addOutput<int>("v");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<Counter>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			++calls;
@@ -79,6 +82,7 @@ namespace
 		{
 			out = addOutput<int>("v");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<Source>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			++calls;
@@ -111,6 +115,7 @@ namespace
 		{
 			out = addOutput<Tracked>("v");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<MakeTracked>(*this); }
 		void compute(NodeEvaluation& evaluation) const override { evaluation.output(out).set(Tracked{}); }
 	};
 
@@ -125,6 +130,7 @@ namespace
 			in = addInput<Tracked>("in");
 			out = addOutput<int>("seen");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<ReadTracked>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			const Tracked& seen = evaluation.input(in).get<Tracked>();
@@ -148,6 +154,7 @@ namespace
 		{
 			done = addOutput<int>("done");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<WhereItRan>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds(2));

@@ -39,6 +39,7 @@ namespace lain::flow
 		// both address it by name, and a string spelled in three places eventually differs in one.
 		static constexpr const char* kValuePayload = "value";
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<ConstantNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(m_out) = param(m_value).value();

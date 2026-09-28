@@ -24,6 +24,7 @@ namespace lain::flow::example
 	public:
 		ClipSequenceNode(std::size_t position = 0, std::size_t count = 0);
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<ClipSequenceNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override;
 
 	private:

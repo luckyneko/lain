@@ -26,6 +26,7 @@ namespace lain::flow::example
 	public:
 		explicit ListDirNode(std::string directory = {});
 
+		std::unique_ptr<Node> clone() const override { return std::make_unique<ListDirNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override;
 
 	private:

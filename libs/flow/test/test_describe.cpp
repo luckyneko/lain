@@ -40,6 +40,7 @@ namespace lain::flow::test
 			st = addOutput<Stamped>("st");
 			op = addOutput<Opaque>("op");
 		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<DescribeNode>(*this); }
 		void compute(NodeEvaluation& evaluation) const override
 		{
 			evaluation.output(i).set(42);
