@@ -18,7 +18,7 @@
 #include "lain/flow/scheduler.h"
 #include "testnodes.h"
 
-#include <lain/task/task.h>
+#include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -248,8 +248,8 @@ TEST_CASE("a map runs its interior once per element", "[flow][map]")
 	{
 		// Serial and parallel must agree: this is where N evaluations of ONE definition genuinely
 		// run at once, which is the contract M6 built and M8 is the first real user of.
-		lain::task::Executor executor;
-		ParallelScheduler{executor}.run(graph, evaluation);
+		lain::testing::ThreadPool pool;
+		ParallelScheduler{}.run(graph, evaluation);
 		check();
 	}
 }

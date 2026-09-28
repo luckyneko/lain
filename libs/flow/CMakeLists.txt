@@ -19,9 +19,9 @@ target_include_directories(flow PUBLIC include)
 # lain::meta is PUBLIC: node.inl (a header consumers compile when they declare ports)
 # calls lain::meta::typeName<T>(). lain::core is PUBLIC too: types.h names core::Uuid, which
 # IS a NodeId (ADR-0011) — core is std-only, so this adds no dependency weight. lain::task is
-# PRIVATE: only the scheduler / Graph .cpp use it; graph.h merely forward-declares
-# task::Executor. No GPU dependency — a node that emits an acm:: handle (and the viewer that
-# previews it) links archimedes.
+# PRIVATE, and strictly so since ADR-0024: the pool is the process's, so scheduler.cpp is the only
+# file that names it and no public header mentions it at all. No GPU dependency — a node that emits
+# an acm:: handle (and the viewer that previews it) links archimedes.
 target_link_libraries(flow
 	PUBLIC lain::meta lain::core
 	PRIVATE lain::task lain::warnings

@@ -23,7 +23,7 @@ target_include_directories(app PUBLIC include PRIVATE src)
 
 target_link_libraries(app
 	PUBLIC archimedes lain::core lain::math CLI11::CLI11
-	PRIVATE glfw lain::log lain::warnings
+	PRIVATE glfw lain::log lain::task lain::warnings
 )
 
 if(LAIN_BUILD_TESTING)

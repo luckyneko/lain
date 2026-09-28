@@ -9,7 +9,7 @@
 #include "lain/flow/scheduler.h"
 #include "testnodes.h"
 
-#include <lain/task/task.h>
+#include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -174,8 +174,8 @@ TEST_CASE("serial and parallel agree over a nested graph", "[flow][group][schedu
 	const auto [pa, pb] = build(parallel);
 	Evaluation parallelEval{parallel};
 	feed(parallel, parallelEval, parallel.boundaryInputs().front().port.port);
-	lain::task::Executor executor;
-	ParallelScheduler{executor}.run(parallel, parallelEval);
+	lain::testing::ThreadPool pool;
+	ParallelScheduler{}.run(parallel, parallelEval);
 
 	const auto out = [](Graph& g, Evaluation& e, PortId pin)
 	{ return e.value(PortAddress{g.boundaryOutputNode().id(), pin}).get<int>(); };

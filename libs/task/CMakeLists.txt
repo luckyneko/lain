@@ -1,11 +1,10 @@
-# lain::task — a thin, header-only wrapper over multi (lain's own work-stealing
-# pool). Exposes only the small surface flow's scheduler uses: a Flow that
-# emplaces node-tasks and adds edges, and an Executor that runs one to
-# completion. Nothing else of multi leaks past lain::task (no multi:: in a
-# consumer's translation unit).
+# lain::task — a namespace ALIAS for multi (lain's own work-stealing pool), not a wrapper.
+# One line of header: `namespace lain { namespace task = multi; }`. multi is owned, so there is
+# no upstream vocabulary to keep out — the same reason acm:: appears raw in lain::app's and
+# lain::gui's public headers. See docs/adr/0024-one-process-task-pool.md.
 #
-# The header is INTERFACE but multi::multi is a static library, so a consumer
-# links one — where Taskflow, being header-only, linked nothing.
+# The target survives the wrapper's deletion because it is what carries the link: multi::multi
+# is a static library, so a consumer links one where header-only Taskflow linked nothing.
 
 add_library(lain_task INTERFACE)
 add_library(lain::task ALIAS lain_task)

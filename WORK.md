@@ -23,9 +23,10 @@ each either owned `lain` code or a thin wrapper that gives an external library a
 - **`multi`** (via **`lain::task`**, `libs/task`) — lain's own work-stealing pool,
   a submodule under `extern/`. It is the execution substrate: it *is* a DAG
   scheduler (`Recipe` / `Step` / `Context`) with a work-stealing executor, so the
-  push side of evaluation is largely its job, not ours. We wrap it thin so the rest
-  of the set sees `lain::task`, never `multi::`. *(Taskflow held this place from M1
-  until 2026-09-11; see §notes.txt triage for the swap.)*
+  push side of evaluation is largely its job, not ours. `lain::task` is a namespace
+  ALIAS for it, so the rest of the set spells it `lain::task` and gets multi's whole
+  surface. *(Taskflow held this place from M1 until 2026-09-11; see §notes.txt triage
+  for the swap, and §one process task pool for the alias that replaced the wrapper.)*
   Alongside it `flow` links only **`lain::meta`** (a `Port` captures
   `lain::meta::typeName<T>()` for inspector pin labels) — both featherweight, no
   GPU/UI coupling.
@@ -103,10 +104,10 @@ lain/
     addGLM.cmake  addGLFW.cmake  addCLI11.cmake  addImGui.cmake  addImnodes.cmake
   extern/
     archimedes/               # submodule (owned), tracks develop
-    multi/                    # submodule (owned), tracks develop — behind lain::task
+    multi/                    # submodule (owned), tracks develop — spelled lain::task
     thorax/                   # owned — deferred until a consumer needs it
   libs/                       # libraries (lain::<name>)
-    task/                     # lain::task — thin wrapper over multi
+    task/                     # lain::task — one-line namespace alias for multi
     flow/                     # lain::flow — the node-graph engine (GPU-free core)
       include/lain/flow/
       src/
@@ -154,7 +155,7 @@ testing/benchmark options OFF (default OFF when not top-level). Third-party deps
 (ImGui, imnodes, json, Catch2, …) via `cmake/addXXX.cmake` FetchContent
 modules patterned on `archimedes` (prefer system package, else pinned release,
 download cached under `.cache/fetch/`, headers re-exposed `SYSTEM` so strict
-flags don't fire on them). `libs/task` wraps `multi`; `flow` links `lain::task`;
+flags don't fire on them). `libs/task` aliases `multi`; `flow` links `lain::task`;
 `apps/flowview` links `flow` + `archimedes` + ImGui. Strict flags come from a
 shared `lain_warnings` INTERFACE target (`/WX /W4`, `-Werror -Wall -Wextra`),
 out-of-source enforced.
@@ -200,12 +201,14 @@ concrete backends implement `run`:
 - **`SerialScheduler`.** One topo-order pass (per node: `clearDirty` → populate
   inputs from edges → `Node::compute()`). No execution dependency, so it is the
   natural choice for cli / headless runs and tests.
-- **`ParallelScheduler`.** Lowers the `Graph` to a `tf::Taskflow`: one task per node
-  (its body calls `Node::compute()`), edges become `task.precede(...)`. Runs it to
-  completion on an **injected, caller-owned** `lain::task` executor — which seeds
-  in-degree-0 nodes and dispatches successors as predecessors finish (work-stealing
-  across threads). Taskflow already owns this push scheduling that `multi` would have
-  made us write by hand, so this stays thin.
+- **`ParallelScheduler`.** Lowers the `Graph` to a task DAG: one task per node (its body
+  calls `Node::compute()`), edges become orderings. Runs it to completion on the process
+  task pool — which seeds in-degree-0 nodes and dispatches successors as predecessors
+  finish (work-stealing across threads). Taskflow already owns this push scheduling that
+  `multi` would have made us write by hand, so this stays thin.
+  *(**Corrected 2026-09-26.** "Injected, caller-owned executor" was true until
+  [ADR-0024](docs/adr/0024-one-process-task-pool.md); the pool is now the process's, owned by
+  `lain::app`, and the scheduler takes nothing.)*
   *(**Corrected 2026-09-11.** The last sentence was the reason M1 chose Taskflow, and it
   was wrong about `multi`: `multi::Recipe` is a task DAG with the same three operations,
   so nothing was written by hand when the substrate was swapped — `libs/flow` changed by
@@ -216,9 +219,14 @@ concrete backends implement `run`:
   nodes, then run the target — same `Node::compute()` path. This is the constant /
   on-request (`CameraCapture`) entry point, and is serial for either backend.
 
-The caller owns the executor (so worker count and lifetime stay explicit) — there is
-no default or hidden process-wide pool. Workers must not block on nested graph runs —
-dispatch from the executor's join, never recursively from inside a node body.
+**Superseded 2026-09-26** ([ADR-0024](docs/adr/0024-one-process-task-pool.md)). This read: *"The
+caller owns the executor (so worker count and lifetime stay explicit) — there is no default or
+hidden process-wide pool."* There is now exactly one pool per process, owned by `lain::app` and
+sized by `--threads`, and `ParallelScheduler` takes no executor. The sentence was written when
+`flow` was the only thing in lain that wanted threads; a per-caller pool means the second
+subsystem to want them oversubscribes the machine. Workers must still not block on nested graph
+runs — dispatch from the join, never recursively from inside a node body, which one shared pool
+makes load-bearing program-wide rather than merely wasteful.
 
 ### Engine tests + example graph  (built)
 
@@ -4911,6 +4919,157 @@ are renamed in slice 4.
 
 
 
+## One process task pool; `lain::task` becomes an alias for `multi` (2026-09-26)
+
+The swap below proved the seam's one claim and, in the same stroke, exhausted its reason to exist.
+`lain::task` is now `namespace task = multi;`, the pool is the process's, `lain::app` owns it and
+exposes `--threads`, and `flowview run` gives `ParallelScheduler` its first production caller.
+Decisions in **[ADR-0024](docs/adr/0024-one-process-task-pool.md)**; the dated summary is in
+CLAUDE.md.
+
+**Measured, not assumed:** `ctest -j8` **797/797** Debug with video on, **803/803** Release with video
+on, **770/770** Release in the default video-off configuration. The pre-change tree was stashed,
+rebuilt and run to confirm its Debug baseline was **793** (CLAUDE.md's last recorded 794 predates the
+`bytesPerPixel` commit), and its `flowview run` output is byte-identical to this one's once the
+timestamp and minted uuids are normalised. Net delta: −1 `[task]`, +1 `[scheduler]`, +4 `[app]`.
+Warning-clean,
+format-check clean. The parallel path swept **100×** with no failures: 88 `[map],[loop],[group],[scheduler]`
+cases in `test-flow`, 3 in `test-task`, 4 `[loop]` in `test-flowview` and 13 `[group]` in
+`test-flow-serialize`. **gui-mode not eyeballed.**
+
+**A sweep must invoke the Catch2 BINARY with the tag, not `ctest -R`.** The first two attempts here
+ran `ctest -R '\[map\]|\[loop\]|…'` and reported *"0 failures / 100"* while matching **zero tests** —
+`catch_discover_tests` registers a case by its NAME (with a `(flow) ` prefix), so a tag is not part of
+anything `-R` can see, and ctest's "No tests were found" is not a non-zero exit under a loop that only
+checks status. Caught here by printing the match count; worth knowing before trusting any sweep in
+this file that does not say how it was run.
+
+### What was built
+
+- **`libs/task/include/lain/task/task.h` is four lines of code.** `Flow`, `Task` and `Executor` are
+  deleted. The file explains why an alias rather than a wrapper; the CMake target survives because it
+  is what carries the link (`multi::multi` is a static library).
+- **`lain::app` owns the lifetime, and the lifecycle became the interface.** `--threads` joins
+  `--version` / `--licenses` / `-v` as a reserved framework flag (`-1` = `hw - 1`, `0` = inline).
+  `run(int, char**)` is **replaced** by three public phases — **`initialise` / `run` / `shutdown`** —
+  so the header states the model where it used to describe a six-step sequence in prose.
+  `initialise` starts the pool past every early exit; `shutdown` stops it after the last
+  `onShutdown`; `~Application` asserts the stop happened and then does it.
+- **`ParallelScheduler` takes nothing** and writes multi's vocabulary through lain's spelling:
+  `task::Recipe{plan.steps.size()}` (the default reserve is 128, which a real plan passes),
+  `recipe.step(...)`, `recipe.order(a >> b)`, then `async` → `waitAll` → `get`.
+- **`flowview run` is parallel; gui-mode is serial**, each commented with why.
+- **`lain::testing::ThreadPool`** replaces `task::Executor` one-for-one at 16 sites.
+- **`initialise` answers `std::optional<int>`, because it has three outcomes, not two** — carry on,
+  stop with 0 (`--version` / `--help` / `--licenses`), stop with a failure (a refused command line,
+  `onInit` false). A bare `int` cannot separate "0, carry on" from "0, we printed the version". It
+  advances the phase ONLY when it returns nullopt, so an early exit leaves nothing brought up and
+  `shutdown` and the destructor stay silent — matching the old behaviour exactly on those paths.
+- **One `[app]` case asserts the wiring** — the pool is running by the time `onProcess` is called,
+  `--threads 3` yields three workers, `--threads 0` yields none and dispatch still runs inline.
+  Nothing else in the tree would notice if `--threads` parsed into a member that reached no one.
+
+### What the build taught
+
+- **A namespace alias cannot be reopened, and that is load-bearing twice.** It is why `lain::task` can
+  hold no owned name — which forced the RAII, the thread count and the wait-then-get triple to find
+  real owners instead of accreting in a wrapper — and it is why `scheduler.h`'s
+  `namespace lain::task { class Executor; }` forward declaration had to go. Had `ParallelScheduler`
+  kept a member, `flow`'s public header would have had to `#include <multi/context.h>`. The global
+  pool is what makes the deletion free.
+- **The two additions to `multi` were both wrong, and the reasons generalise.** A scoped-pool RAII
+  duplicates `WorkerPool::~WorkerPool`, which already asserts and then stops defensively — the defect
+  is *where* it complains (a static destructor after `main`), not that nothing does. And a synchronous
+  `run(Recipe&&)` would make blocking look ordinary, against multi's intent that a thread is blocked
+  only when the caller really means it. Both refusals are recorded in the ADR so they are not
+  re-raised.
+- **`multi::waitAll` is duck-typed over `.complete()`**, so it already works on a `RecipeHandle` and is
+  what multi's README teaches. The participating wait therefore needed **no new code** — only the
+  recognition that `Executor::run()` had been using `handle.wait()`, the one wait that does *not*
+  steal, and compensating with `hardware_concurrency()` workers instead of `hw - 1`. Two undocumented
+  deviations that happened to cancel out.
+- **`ParallelScheduler` had no production caller** — the ninth compiled-linked-unreachable instance
+  recorded in this tree. Without switching headless `run`, this whole change would have been a
+  refactor that left nothing running in parallel.
+- **The suite could have gone silently serial**, and nothing existing could have noticed: every
+  parallel case asserts a result the inline path produces too. Hence one case that asserts the
+  MECHANISM — 32 independent nodes, more than one thread id — SKIP-aware below two cores.
+
+### The lifecycle split, and the defect it caused
+
+The first cut kept `run(int, char**)` public and hid the phases in a private `runLifecycle()` — a
+function invented so the pool could be bracketed by one return, with a name that said nothing about
+what it was. Review replaced it with the three public phases. Two things came out of that.
+
+- **It cost a documented lifetime, and the compiler could not say so.** `cli::App` was a LOCAL of
+  the old `run(int, char**)`, so it lived for the whole lifecycle by accident of scope. A delegate
+  keeps the `cli::App*` that `add_subcommand` hands back and reads it later — `flowview`'s `run` and
+  `list` do exactly that, and `flowviewapp.h` says so in a comment: *"Their pointers stay valid
+  through `Application::run()`"*. Making `initialise` its own function destroyed the parser at the
+  end of phase one, so every later phase read freed memory. **The symptom was a HANG**, deterministic
+  5 for 5, with `--version` still working because it exits before anything dereferences a pointer —
+  the worst possible shape, since a crash would have named the line. The parser now lives on `impl`
+  for the Application's life, along with anything the parser binds a reference to. A `[app]` case
+  stores a subcommand pointer in `onInit` and reads it in `onProcess`; sabotage-verified by putting
+  the local back.
+- **`~Application` replaces the bracket, and is the stronger mechanism.** The old argument was
+  *"`runLifecycle()` is one call, so every way it RETURNS is bracketed"*; with two public calls a
+  caller can leave between them. The destructor asserts the stop happened and then does it — multi's
+  own `WorkerPool` contract one level up — and it also covers a caller who never calls `shutdown` at
+  all, which the bracket never did. ADR-0024 is amended in place rather than left claiming a
+  property it no longer has.
+
+### Sabotages
+
+- **Delete the `ThreadPool` from the guard case** → it fails. Without this the guard is decorative.
+- **Drop `waitAll` from the `[task]` helper** → both pooled cases fail and the unstarted-pool case
+  correctly still passes, its work already done inline by the time the handle is read. That
+  asymmetry is exactly why the exception case has to start a pool: with no workers it would pass
+  with the bug in it.
+- **Drop `task::waitAll(handle)` from the production `executePlan`** → **12 of 793** fail.
+- **Put `cli::App` back as a local of `initialise`** → the new cli-lifetime case fails (and the real
+  binary hangs).
+- **Delete `app.shutdown()` from `main`** → Debug aborts on *"initialise() without shutdown()"*;
+  the same build in Release tears down silently and exits 0, which is the other half of the contract.
+- **Advance the phase on `initialise`'s early-exit path** → the destructor then complains on
+  `--licenses`, where nothing was ever started.
+
+### Driven through the real binary
+
+`flowview --threads N run --save …` at unset / `0` / `1` / `4`, all four producing identical dumps
+and identical saved graphs once the timestamp and minted uuids are normalised — **and identical to
+the pre-change SERIAL binary**, so the parallel switch moves no output byte.
+
+**The first pass of this check was hollow, and only driving the binary showed it.** It was written
+`flowview run --save f --threads 0`, and a reserved flag after a subcommand is swallowed by that
+subcommand's `allow_extras`: every run used the default worker count and matched for that reason,
+with one unmatched-argument warning as the only clue. Pre-existing — `-v` has always behaved this
+way — and `--threads` simply joined it. CLI11's `fallthrough()` is the obvious fix and was **tried
+and reverted**: it makes a subcommand pass unmatched options up to the parent, which refuses them,
+so `--<boundary>` binding stops working entirely. The position is now stated in the flag's own help
+text, in `application.cpp` beside it, and in ADR-0024. `--version`, `--help` and
+`--licenses` return before the pool starts. An `add_subdirectory` consumer with no `lain::app` calls
+`lain::task::parallel(a, b)` inline and gets `workers=2 sum=11`, pulling no GLFW and no ImGui — which
+is the ergonomic the change was asked for.
+
+### Owed
+
+- **gui-mode eyeball** on a Metal session: nothing draws differently, but `Application::run()` gained
+  a start/stop pair around the whole run loop.
+- **Asynchronous graph execution + a non-blocking gui** — a milestone, not a follow-on. The blocker is
+  not the task layer: `Scheduler::run` is a staging loop, and ten pane files make 23 direct reads of
+  an evaluation every frame. Payloads are shared and immutable since M5 slice 1 so the pixels are
+  safe, but the slot is rebound non-atomically and a pane reading mid-rebind **tears**. Wants panes
+  drawing the last completed snapshot (cheap *because* of M5 slice 1 — N refcount bumps) plus
+  `run()` splitting into `start()`/`poll()` with the frame loop driving the staging loop.
+- **A worker-thread guard.** Nested dispatch (`task::each` in a `compute()`) is fine; entering a
+  scheduler from a task is not, and with one pool that is a deadlock rather than a slowdown. A guard
+  needs multi to answer whether the caller is a worker. Trigger: anything that dispatches a graph run
+  from inside `compute()`.
+- **An isolated pool for `ParallelScheduler`.** No caller today — `catch_discover_tests` gives every
+  TEST_CASE its own process, so the process pool is already per-case. Trigger recorded on the class
+  itself, not only here.
+
 ## `lain::task` moves from Taskflow to `multi` (2026-09-11)
 
 CLAUDE.md's locked decision #2 read *"Taskflow is the substrate (drops `multi` for now)"* and its own
@@ -5675,6 +5834,10 @@ types. **Refused on review.** Recording why, so it is not re-derived:
   It cannot sit in its class: `Task` is defined while `Flow` is only forward-declared, and the body
   reaches through `m_flow` into `Flow`'s recipe. Moving it up is a build break rather than a tidy,
   which is precisely what the next tidy pass would have found out the hard way.
+  *(**Gone 2026-09-26.** [ADR-0024](docs/adr/0024-one-process-task-pool.md) deleted `Task` with the
+  rest of the wrapper, so the rule now has no example in the tree. Kept as a rule, because the shape
+  recurs whenever two classes in one header refer to each other; the exception is stated in
+  CLAUDE.md without one, and this is where the example it used to have is recorded.)*
 - **The adjacent finding, in its own commit: an EIGHTH spelling of the number parser.**
   `FrameRate::parse` (`libs/media/src/framespec.cpp`) hand-rolled a digit loop with its own
   overflow check, twenty lines from the `lexical_cast` that now routes through `core::parseInto`.
@@ -6310,11 +6473,13 @@ the suite or the workflow should be read as covering it.
   it stores the payload **shared + immutable** (`shared_ptr<const void>` + `type_index`), so
   the per-edge copy is a refcount bump. Could lean to a closed `std::variant` later for speed
   once the node set is known, but only if profiling a real graph shows the erasure cost matters.
-- `lain::task` is scoped minimal: an executor + the small DAG-build surface
-  `flow`'s scheduler needs (a flow that emplaces node-tasks and adds edges), and
-  nothing more. `multi`'s wider surface (`async`/`parallel`/`each`/`range`, chunk
-  policies, `waitAny`) stays unexposed until a caller needs it — as Taskflow's
-  subflows and `tf::Pipeline` did before it.
+- ~~`lain::task` is scoped minimal … `multi`'s wider surface stays unexposed until a caller
+  needs it.~~ **Discharged 2026-09-26** ([ADR-0024](docs/adr/0024-one-process-task-pool.md)):
+  `lain::task` is a namespace alias for `multi`, so the whole surface —
+  `async`/`parallel`/`each`/`range`, chunk policies, `waitAny` — is exposed. The deferral's own
+  condition was met sideways: what needed the wider surface was not a caller in `flow` but the
+  paradigm, since a pool reached only through an injected executor cannot be dispatched to inline
+  from anywhere else in the set.
 - Resolved for now: the `archimedes` and `multi` submodules track `develop` (no
   tagged release exists for either). Revisit if either gains one worth pinning.
   **Taskflow's `v3.7.0` FetchContent pin is gone with Taskflow**, and with it the

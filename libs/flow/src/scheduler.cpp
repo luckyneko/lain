@@ -1062,10 +1062,6 @@ namespace lain::flow
 	//=========================================================================
 	// ParallelScheduler
 	//=========================================================================
-	ParallelScheduler::ParallelScheduler(lain::task::Executor& executor)
-		: m_executor(executor)
-	{
-	}
 
 	// Every node's and every port's storage exists before a single task starts (the Session prepared
 	// it, and any later stage's storage is created between stages), so a worker only reads and writes
@@ -1076,17 +1072,48 @@ namespace lain::flow
 	// scheduler ever runs from inside a task).
 	void ParallelScheduler::executePlan(const Plan& plan)
 	{
-		lain::task::Flow flow;
-		std::vector<lain::task::Task> tasks;
-		tasks.reserve(plan.steps.size());
+		// Reserved to the real size: task::Recipe defaults to 128 steps and a plan of any depth
+		// passes that, so the default would reallocate mid-build on every run of a real graph.
+		task::Recipe recipe{plan.steps.size()};
+		std::vector<task::Step> steps;
+		steps.reserve(plan.steps.size());
 		for (const Step& step : plan.steps)
 		{
-			tasks.push_back(flow.emplace([this, step]() // Step is a small value, copied into the task
-										 { runStep(step); }));
+			steps.push_back(recipe.step([this, step]() // Step is a small value, copied into the task
+										{ runStep(step); }));
+			assert(steps.back().valid() && "ParallelScheduler: the recipe is full");
 		}
-		for (const auto& edge : plan.edges)
-			tasks[edge.first].precede(tasks[edge.second]);
 
-		m_executor.run(flow); // blocks until every task finishes
+		for (const auto& edge : plan.edges)
+		{
+			const task::RecipeResult result = recipe.order(steps[edge.first] >> steps[edge.second]);
+
+			// A DUPLICATE IS SUCCESS, and the reason belongs here rather than in the task layer: it
+			// is THIS lowering that emits one plan edge per GRAPH edge, so two inputs of one node
+			// fed by one producer ask for the same ordering twice and the second request is already
+			// satisfied by the first. The resulting order is identical, which is the only thing an
+			// edge in a task graph means. Measured, not assumed: it is exactly what
+			// (flowview)a count loop folds a gradient through five blurs produces.
+			//
+			// A CYCLE or an invalid step is a different matter. multi VALIDATES, and flow::Graph
+			// already rejects a cycle when the edge is made, so reaching one here means the lowering
+			// invented it — a programming error, asserted.
+			assert((result == task::RecipeResult::Ok || result == task::RecipeResult::DuplicateEdge) && "ParallelScheduler: refused edge (cycle, or a step from another recipe)");
+			(void)result; // release builds do not inspect it
+		}
+
+		task::RecipeHandle handle = task::async(std::move(recipe));
+
+		// waitAll, NOT handle.wait(), and the difference is a whole core. multi's plain wait blocks
+		// the caller idle; waitAll spins through waitUntil, running stolen tasks meanwhile — the same
+		// model parallel/each/range already use, so one worker count (hardware_concurrency() - 1 plus
+		// this participating thread) is right for every primitive in the process.
+		task::waitAll(handle);
+
+		// Non-blocking fetch that rethrows the first exception a step let escape. It is only correct
+		// after the wait above: on its own it would return while the work was still running and
+		// swallow the exception with it. flow relies on propagation — a compute() that throws must
+		// leave its node stale and reach the caller.
+		handle.get();
 	}
 } // namespace lain::flow

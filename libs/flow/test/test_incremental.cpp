@@ -8,7 +8,7 @@
 #include "lain/flow/scheduler.h"
 #include "testnodes.h" // test::output — positional value lookup
 
-#include <lain/task/task.h>
+#include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -165,8 +165,8 @@ TEST_CASE("the parallel scheduler is incremental too", "[flow][incremental]")
 	graph.connect(s, 0, k, 0);
 
 	lain::flow::Evaluation evaluation{graph};
-	lain::task::Executor executor;
-	ParallelScheduler scheduler{executor};
+	lain::testing::ThreadPool pool;
+	ParallelScheduler scheduler;
 	scheduler.run(graph, evaluation); // a fresh evaluation -> everything runs
 	auto& src = static_cast<CountingSource&>(graph.node(s));
 	auto& sink = static_cast<CountingRelay&>(graph.node(k));

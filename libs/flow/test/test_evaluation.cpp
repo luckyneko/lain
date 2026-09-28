@@ -14,7 +14,7 @@
 #include "lain/flow/scheduler.h"
 #include "testnodes.h"
 
-#include <lain/task/task.h>
+#include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -274,11 +274,11 @@ TEST_CASE("the parallel scheduler keeps two evaluations apart too", "[flow][eval
 	bindInt(graph, first, p.in, 101);
 	bindInt(graph, second, p.in, 202);
 
-	lain::task::Executor executor;
+	lain::testing::ThreadPool pool;
 	std::thread a([&]
-				  { ParallelScheduler{executor}.run(graph, first); });
+				  { ParallelScheduler{}.run(graph, first); });
 	std::thread b([&]
-				  { ParallelScheduler{executor}.run(graph, second); });
+				  { ParallelScheduler{}.run(graph, second); });
 	a.join();
 	b.join();
 

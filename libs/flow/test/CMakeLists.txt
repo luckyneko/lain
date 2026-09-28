@@ -29,7 +29,8 @@ add_executable(test-flow
 )
 
 target_compile_features(test-flow PRIVATE cxx_std_17)
-# lain::task: the scheduler tests name task::Executor (flow links it PRIVATEly).
+# lain::testing: the scheduler tests start the process task pool (flow links task PRIVATEly,
+# and lain::testing carries it).
 # lain::flow-example: the example-node tests (pure CPU, pull in lain::image transitively).
 # archimedes + Vulkan::Loader: test_portvalue names null acm::Texture/Buffer to prove a GPU
 # handle rides the payload-agnostic slot (the loader resolves archimedes' vk* at link).
@@ -38,7 +39,6 @@ target_link_libraries(test-flow PRIVATE
 	lain::flow-example
 	lain::io::image # the LoadImageNode tests register a fake reader / call readerRegistry()
 	lain::io::sequence # the sequence-node tests wire the opener registry (registerSequenceOpeners)
-	lain::task
 	lain::testing
 	archimedes
 	lain::warnings

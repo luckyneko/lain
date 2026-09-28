@@ -31,7 +31,7 @@
 #include <lain/flow/param.h>
 #include <lain/flow/scheduler.h>
 #include <lain/image/image.h>
-#include <lain/task/task.h> // task::Executor — the parallel scheduler is injected one
+#include <lain/testing/threadpool.h> // the process pool the parallel scheduler dispatches onto
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -297,10 +297,10 @@ TEST_CASE("a count loop folds a gradient through five blurs", "[flowview][loop]"
 
 	SECTION("and the parallel scheduler folds it identically")
 	{
-		lain::task::Executor executor;
+		lain::testing::ThreadPool pool;
 		Scene same = buildFoldScene(factory, kCountIterations);
 		Evaluation e{same.graph};
-		ParallelScheduler{executor}.run(same.graph, e);
+		ParallelScheduler{}.run(same.graph, e);
 
 		REQUIRE(boundaryInt(same.graph, e, "iterations") == kCountIterations);
 		REQUIRE(sameBytes(boundaryImage(same.graph, e, "result"), blurChain(factory, kCountIterations)));

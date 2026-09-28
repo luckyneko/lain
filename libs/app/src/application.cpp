@@ -11,6 +11,7 @@
 
 #include <lain/core/time.h>
 #include <lain/log/log.h>
+#include <lain/task/task.h>
 
 #include <archimedes/archimedes.h>
 
@@ -122,8 +123,30 @@ namespace lain::app
 
 		ApplicationDelegate& delegate;
 		AppInfo info;
-		int verbosity{0}; // -v/--verbose count, filled in by run()'s parse
+		int verbosity{0}; // -v/--verbose count, filled in by initialise()'s parse
+		int threads{-1};  // --threads, filled in by initialise()'s parse; -1 = hardware_concurrency() - 1
 		int exitCode{0};  // what run() returns; a delegate sets it when its own work fails
+
+		// How far the lifecycle got. `Initialised` is reached ONLY by an initialise() that
+		// returned nullopt, so an early exit (--version, a bad command line) leaves it at
+		// Constructed with nothing brought up — which is what makes shutdown() and the
+		// destructor no-ops on those paths, exactly as before the lifecycle was split.
+		enum class Phase
+		{
+			Constructed,
+			Initialised,
+			ShutDown
+		};
+		Phase phase{Phase::Constructed};
+
+		// THE CLI OUTLIVES THE PARSE, and must: a delegate keeps the cli::App* its onInit got
+		// back from add_subcommand and reads it during onProcess (flowview's `run` / `list` do
+		// exactly that, and say so). Held here rather than as a local in initialise(), which is
+		// where it started life and where it dangled — the symptom was a HANG in a later phase,
+		// with nothing for a compiler to object to. Anything the parser binds a reference to
+		// lives here for the same reason.
+		std::unique_ptr<cli::App> parser;
+		bool showLicenses{false};
 		acm::Instance instance;
 		acm::Device device;
 		bool glfwReady{false};
@@ -151,7 +174,15 @@ namespace lain::app
 		: m(std::make_unique<impl>(delegate, std::move(info)))
 	{
 	}
-	Application::~Application() = default;
+	// Complain, then do it anyway — multi's WorkerPool contract, one level up and at a point
+	// where there is still a stack to say why. The pool must be stopped before static
+	// destruction, and this object lives in main, so it is what guarantees the stop runs in
+	// time however a caller leaves.
+	Application::~Application()
+	{
+		assert(m->phase != impl::Phase::Initialised && "Application: initialise() without shutdown()");
+		shutdown();
+	}
 
 	Window& Application::createWindow(const WindowSpec& spec, WindowDelegate& delegate)
 	{
@@ -194,22 +225,37 @@ namespace lain::app
 		return *s.windows.back().window;
 	}
 
-	int Application::run(int argc, char** argv)
+	std::optional<int> Application::initialise(int argc, char** argv)
 	{
 		impl& s = *m;
+		assert(s.phase == impl::Phase::Constructed && "Application::initialise: already initialised");
 
 		// onInit: name the CLI after the app, wire up the framework flags (--version,
-		// --licenses, -v/--verbose), let the delegate register its own options (CLI11's
-		// API), then parse argv. All three are reserved by the framework; a delegate that
-		// re-registers one makes CLI11 throw on construction — caught here and reported,
-		// rather than escaping run() as an uncaught terminate.
-		cli::App cliApp{s.info.name, s.info.name};
-		bool showLicenses = false;
+		// --licenses, -v/--verbose, --threads), let the delegate register its own options
+		// (CLI11's API), then parse argv. All four are reserved by the framework; a delegate
+		// that re-registers one makes CLI11 throw on construction — caught here and reported,
+		// rather than escaping initialise() as an uncaught terminate.
+		s.parser = std::make_unique<cli::App>(s.info.name, s.info.name);
+		cli::App& cliApp = *s.parser;
 		try
 		{
 			cliApp.set_version_flag("--version", s.info.name + " " + s.info.version.toString());
-			cliApp.add_flag("--licenses", showLicenses, "print third-party licence notices and exit");
+			cliApp.add_flag("--licenses", s.showLicenses, "print third-party licence notices and exit");
 			cliApp.add_flag("-v,--verbose", s.verbosity, "increase log verbosity (-v: debug, -vv: trace)");
+			// The process owns ONE pool, so the knob for it belongs to the framework beside the
+			// other process-wide ones rather than to each app. 0 is not a degenerate value: it
+			// leaves the pool inactive, and every dispatch then runs inline on the caller in
+			// dependency order — a deterministic single-threaded execution of a parallel plan,
+			// which is the escape hatch to reach for when concurrency is the suspect.
+			//
+			// LIKE EVERY RESERVED FLAG, it must come BEFORE a subcommand: an app that defines
+			// one with allow_extras swallows anything typed after it, so `app run --threads 0`
+			// warns about an unmatched argument and silently keeps the default. Pre-existing and
+			// shared with -v, hence the help text saying so. CLI11's fallthrough() is the obvious
+			// fix and was tried and REVERTED: it makes a subcommand hand unmatched options up to
+			// the parent, which then REFUSES them, so flowview's --<boundary> bindings stop
+			// working entirely. Measured, not assumed.
+			cliApp.add_option("--threads", s.threads, "worker threads, before any subcommand (-1: one per core less this one, 0: run inline)")->capture_default_str();
 			if (!s.delegate.onInit(*this, cliApp))
 				return EXIT_FAILURE;
 		}
@@ -233,7 +279,7 @@ namespace lain::app
 		// log: it is the program's answer, not a diagnostic, so it must survive a redirect
 		// and must not be filtered by a log level. A binary with no obliging dependency
 		// still answers, rather than printing nothing and looking broken.
-		if (showLicenses)
+		if (s.showLicenses)
 		{
 			const std::string_view notices = thirdPartyNotices();
 			if (notices.empty())
@@ -252,6 +298,28 @@ namespace lain::app
 		// Past the parse (so --version / --help have already printed and exited): a
 		// normal run announces its identity.
 		lain::log::info("{} {}", s.info.name, s.info.version);
+
+		// The pool starts here and nowhere else: past every exit path above, so --version /
+		// --help / --licenses answer without spawning a thread, and before onStart, so a
+		// delegate may dispatch from the moment it is brought up. shutdown() stops it after
+		// the last onShutdown, so teardown may dispatch too.
+		//
+		// The start and the stop are now separate public calls rather than a bracket inside one
+		// function, so what guarantees the pair is ~Application: it asserts the stop happened and
+		// then does it, which is multi's own WorkerPool contract one level up. That object lives
+		// in main, so it runs before static destruction — which is the whole requirement. An
+		// exception escaping in between needs no cover: it reaches no handler, the process
+		// terminates without running static destructors, and the pool is never destroyed to
+		// complain about. See docs/adr/0024-one-process-task-pool.md.
+		task::start(s.threads);
+		s.phase = impl::Phase::Initialised;
+		return std::nullopt;
+	}
+
+	int Application::run()
+	{
+		impl& s = *m;
+		assert(s.phase == impl::Phase::Initialised && "Application::run: call initialise() first");
 
 		if (!s.delegate.onStart(*this))
 			return EXIT_FAILURE;
@@ -305,6 +373,22 @@ namespace lain::app
 
 		s.delegate.onStop(*this);
 
+		// What the process reports is whatever the delegate's own work concluded (0 unless it said
+		// otherwise). A headless run that stopped early must be able to say so — see exit().
+		return s.exitCode;
+	}
+
+	void Application::shutdown()
+	{
+		impl& s = *m;
+
+		// Total and idempotent, so every path can call it: nothing was brought up before
+		// initialise() succeeded, and nothing is left after the first call. That is what lets
+		// the destructor be a net rather than a second contract to reason about.
+		if (s.phase != impl::Phase::Initialised)
+			return;
+		s.phase = impl::Phase::ShutDown;
+
 		// Teardown, device-before-surface ordered: release the windows' device objects,
 		// destroy the device (flushing deferred destroys while the surfaces live), then
 		// the surfaces + GLFW windows, the instance, and GLFW.
@@ -325,10 +409,8 @@ namespace lain::app
 
 		s.delegate.onShutdown(*this);
 
-		// Teardown happens either way; what the process reports is whatever the delegate's own work
-		// concluded (0 unless it said otherwise). A headless run that stopped early must be able to
-		// say so — see setExitCode.
-		return s.exitCode;
+		// Last, so everything above may still dispatch.
+		task::stop();
 	}
 
 	int Application::process() { return m->delegate.onProcess(*this); }

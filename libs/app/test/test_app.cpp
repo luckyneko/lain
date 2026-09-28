@@ -16,11 +16,15 @@
 #include <lain/flow/scheduler.h>
 #include <lain/log/log.h>
 #include <lain/meta/enums.h>
+#include <lain/task/task.h>
 
 #include <archimedes/archimedes.h>
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdlib>
+#include <optional>
+#include <string>
+#include <thread>
 #include <vector>
 
 using namespace lain;
@@ -109,6 +113,18 @@ namespace
 	};
 } // namespace
 
+// The three phases in the order main writes them, so a case reads as one line and the suite
+// drives the same sequence a real app does. Named runApp rather than run so it cannot be
+// mistaken for Application::run, which is only the middle phase.
+static int runApp(app::Application& app, int argc, char** argv)
+{
+	if (const std::optional<int> code = app.initialise(argc, argv))
+		return *code;
+	const int status = app.run();
+	app.shutdown();
+	return status;
+}
+
 TEST_CASE("headless: a windowless app runs onProcess and its graph", "[app]")
 {
 	GraphApp delegate;
@@ -116,7 +132,7 @@ TEST_CASE("headless: a windowless app runs onProcess and its graph", "[app]")
 	char arg0[] = "test-app";
 	char* argv[] = {arg0};
 
-	REQUIRE(app.run(1, argv) == 0);
+	REQUIRE(runApp(app, 1, argv) == 0);
 	REQUIRE(delegate.result == 5);
 }
 
@@ -142,7 +158,7 @@ TEST_CASE("cli: the delegate registers options the base app parses", "[app]")
 	char a3[] = "42";
 	char* argv[] = {a0, a1, a2, a3};
 
-	REQUIRE(app.run(4, argv) == 0);
+	REQUIRE(runApp(app, 4, argv) == 0);
 	REQUIRE(delegate.flag);
 	REQUIRE(delegate.value == 42);
 }
@@ -158,7 +174,7 @@ TEST_CASE("cli: -v/--verbose raises the log level", "[app][log]")
 	{
 		char a0[] = "test-app";
 		char* argv[] = {a0};
-		REQUIRE(app.run(1, argv) == 0);
+		REQUIRE(runApp(app, 1, argv) == 0);
 		REQUIRE(app.verbosity() == 0);
 		REQUIRE(log::level() == log::Level::Info);
 	}
@@ -167,7 +183,7 @@ TEST_CASE("cli: -v/--verbose raises the log level", "[app][log]")
 		char a0[] = "test-app";
 		char a1[] = "-v";
 		char* argv[] = {a0, a1};
-		REQUIRE(app.run(2, argv) == 0);
+		REQUIRE(runApp(app, 2, argv) == 0);
 		REQUIRE(app.verbosity() == 1);
 		REQUIRE(log::level() == log::Level::Debug);
 	}
@@ -176,7 +192,7 @@ TEST_CASE("cli: -v/--verbose raises the log level", "[app][log]")
 		char a0[] = "test-app";
 		char a1[] = "-vv";
 		char* argv[] = {a0, a1};
-		REQUIRE(app.run(2, argv) == 0);
+		REQUIRE(runApp(app, 2, argv) == 0);
 		REQUIRE(app.verbosity() == 2);
 		REQUIRE(log::level() == log::Level::Trace);
 	}
@@ -215,7 +231,7 @@ TEST_CASE("cli: an enum option is validated from the enum's names", "[app]")
 		char a1[] = "--mode";
 		char a2[] = "fast"; // lower-case still matches Fast
 		char* argv[] = {a0, a1, a2};
-		REQUIRE(app.run(3, argv) == 0);
+		REQUIRE(runApp(app, 3, argv) == 0);
 		REQUIRE(delegate.mode == Mode::Fast);
 	}
 	SECTION("an unknown value is rejected by the parse")
@@ -224,7 +240,7 @@ TEST_CASE("cli: an enum option is validated from the enum's names", "[app]")
 		char a1[] = "--mode";
 		char a2[] = "sideways";
 		char* argv[] = {a0, a1, a2};
-		REQUIRE(app.run(3, argv) != 0); // CLI11 validation failure -> non-zero exit
+		REQUIRE(runApp(app, 3, argv) != 0); // CLI11 validation failure -> non-zero exit
 		REQUIRE(delegate.mode == Mode::Off);
 	}
 }
@@ -247,7 +263,7 @@ TEST_CASE("cli: re-registering a reserved flag fails gracefully", "[app]")
 	app::Application app(delegate, {"test-app", {0, 0, 0}});
 	char a0[] = "test-app";
 	char* argv[] = {a0};
-	REQUIRE(app.run(1, argv) == 1);
+	REQUIRE(runApp(app, 1, argv) == 1);
 }
 
 TEST_CASE("gui: opens a window and renders frames", "[app][gpu]")
@@ -260,7 +276,7 @@ TEST_CASE("gui: opens a window and renders frames", "[app][gpu]")
 	char arg0[] = "test-app";
 	char* argv[] = {arg0};
 
-	REQUIRE(app.run(1, argv) == 0);
+	REQUIRE(runApp(app, 1, argv) == 0);
 }
 
 TEST_CASE("headless: onProcess's status is the process's exit code", "[app]")
@@ -283,13 +299,197 @@ TEST_CASE("headless: onProcess's status is the process's exit code", "[app]")
 	{
 		delegate.status = 0;
 		app::Application app(delegate, {"test-app", {0, 0, 0}});
-		REQUIRE(app.run(1, argv) == 0);
+		REQUIRE(runApp(app, 1, argv) == 0);
 	}
 	SECTION("a failure reaches the caller")
 	{
 		delegate.status = 3;
 		app::Application app(delegate, {"test-app", {0, 0, 0}});
-		REQUIRE(app.run(1, argv) == 3);
+		REQUIRE(runApp(app, 1, argv) == 3);
+	}
+}
+
+TEST_CASE("a delegate's cli pointers stay valid past initialise", "[app]")
+{
+	// add_subcommand hands back a raw cli::App* owned by the parser, and a delegate is entitled
+	// to keep it: flowview's `run` and `list` store theirs in onInit and read them in onProcess.
+	// So the parser has to outlive the phase that built it.
+	//
+	// This is a regression test for a real defect, not a hypothetical. Splitting run(argc, argv)
+	// into initialise/run/shutdown left the cli::App a local of initialise, so every later phase
+	// read freed memory — and the symptom was a HANG in onProcess with nothing for a compiler to
+	// object to, while --version still worked because it exits before anything reads a pointer.
+	struct SubcommandApp : app::ApplicationDelegate
+	{
+		app::cli::App* sub = nullptr;
+		std::string seenName;
+		bool sawParse = false;
+
+		bool onInit(app::Application&, app::cli::App& cli) override
+		{
+			sub = cli.add_subcommand("work", "a subcommand whose handle outlives onInit");
+			return true;
+		}
+		bool onStart(app::Application&) override { return true; } // no windows -> headless
+		int onProcess(app::Application&) override
+		{
+			// Reading through the stored pointer is the whole point: under the defect this is a
+			// use-after-free, so the assertions below are about it being READABLE at all.
+			seenName = sub->get_name();
+			sawParse = sub->parsed();
+			return 0;
+		}
+	} delegate;
+
+	char arg0[] = "test-app";
+	char work[] = "work";
+	char* argv[] = {arg0, work};
+
+	app::Application app(delegate, {"test-app", {0, 0, 0}});
+	REQUIRE(runApp(app, 2, argv) == 0);
+	REQUIRE(delegate.seenName == "work");
+	REQUIRE(delegate.sawParse); // the subcommand named on the command line was matched
+}
+
+TEST_CASE("initialise answers carry-on, stop-with-0, or stop-with-a-failure", "[app]")
+{
+	// Three outcomes is why initialise returns an optional and not an int: --licenses and a
+	// refused command line BOTH end the process, and a bare 0 could not tell the first of them
+	// from "carry on". Nothing asked this before the lifecycle was split.
+	struct PlainApp : app::ApplicationDelegate
+	{
+		bool onStart(app::Application&) override { return true; }
+		int onProcess(app::Application&) override { return 0; }
+	};
+
+	char arg0[] = "test-app";
+
+	SECTION("a plain command line carries on")
+	{
+		PlainApp delegate;
+		char* argv[] = {arg0};
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		REQUIRE_FALSE(app.initialise(1, argv).has_value()); // nullopt: run() is next
+		app.shutdown();
+	}
+	SECTION("--licenses answers, and answers with success")
+	{
+		PlainApp delegate;
+		char licenses[] = "--licenses";
+		char* argv[] = {arg0, licenses};
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		const std::optional<int> code = app.initialise(2, argv);
+		REQUIRE(code.has_value());
+		REQUIRE(*code == 0);
+	}
+	SECTION("a command line it refuses answers with a failure")
+	{
+		PlainApp delegate;
+		char bogus[] = "--no-such-flag";
+		char* argv[] = {arg0, bogus};
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		const std::optional<int> code = app.initialise(2, argv);
+		REQUIRE(code.has_value());
+		REQUIRE(*code != 0);
+	}
+}
+
+TEST_CASE("shutdown is total: idempotent, and a no-op on a run that never started", "[app]")
+{
+	// The destructor calls shutdown() if the caller did not, so shutdown() has to be safe on
+	// every path a caller can leave by — including the two where nothing was ever brought up.
+	// Without that the net would be worse than no net: it would tear down state that is not there.
+	struct PlainApp : app::ApplicationDelegate
+	{
+		bool onStart(app::Application&) override { return true; }
+		int onProcess(app::Application&) override { return 0; }
+	};
+
+	char arg0[] = "test-app";
+
+	SECTION("twice after a real run")
+	{
+		PlainApp delegate;
+		char* argv[] = {arg0};
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		REQUIRE_FALSE(app.initialise(1, argv).has_value());
+		REQUIRE(app.run() == 0);
+		app.shutdown();
+		app.shutdown(); // the second one must do nothing at all
+	}
+	SECTION("after an initialise that answered instead")
+	{
+		PlainApp delegate;
+		char version[] = "--licenses";
+		char* argv[] = {arg0, version};
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		REQUIRE(app.initialise(2, argv).has_value());
+		app.shutdown(); // nothing was started, so there is nothing to stop
+	}
+	SECTION("on an Application that was never initialised")
+	{
+		PlainApp delegate;
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		app.shutdown();
+	}
+}
+
+TEST_CASE("the task pool is running by onProcess, and --threads sizes it", "[app]")
+{
+	// lain::app owns the process pool (ADR-0024), so a delegate must find it already started —
+	// otherwise every task::parallel / each / async in the program silently runs inline and the
+	// only symptom is that nothing is faster. Nothing else in the tree asks whether --threads is
+	// CONNECTED: the option could parse into a member that reaches no one and every other test
+	// would still pass.
+	struct PoolApp : app::ApplicationDelegate
+	{
+		std::size_t workers = 0;
+		bool sawParallel = false;
+		bool onStart(app::Application&) override { return true; } // no windows -> headless
+		int onProcess(app::Application&) override
+		{
+			workers = lain::task::threadCount();
+			int a = 0, b = 0;
+			lain::task::parallel([&]
+								 { a = 1; }, [&]
+								 { b = 2; });
+			sawParallel = (a == 1 && b == 2);
+			return 0;
+		}
+	} delegate;
+
+	char arg0[] = "test-app";
+	char threadsFlag[] = "--threads";
+
+	SECTION("the default starts workers")
+	{
+		char* argv[] = {arg0};
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		REQUIRE(runApp(app, 1, argv) == 0);
+		// multi's default is hardware_concurrency() - 1; on a single-core host that is 0, and the
+		// inline path is then correct rather than a failure — so this asserts the pairing, not a
+		// number the machine happens to have.
+		if (std::thread::hardware_concurrency() > 1)
+			REQUIRE(delegate.workers == std::thread::hardware_concurrency() - 1);
+		REQUIRE(delegate.sawParallel);
+	}
+	SECTION("--threads sizes it")
+	{
+		char count[] = "3";
+		char* argv[] = {arg0, threadsFlag, count};
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		REQUIRE(runApp(app, 3, argv) == 0);
+		REQUIRE(delegate.workers == 3);
+		REQUIRE(delegate.sawParallel);
+	}
+	SECTION("--threads 0 leaves it inactive, and dispatch still runs")
+	{
+		char zero[] = "0";
+		char* argv[] = {arg0, threadsFlag, zero};
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		REQUIRE(runApp(app, 3, argv) == 0);
+		REQUIRE(delegate.workers == 0);
+		REQUIRE(delegate.sawParallel); // inline on the caller, which is the documented behaviour
 	}
 }
 
@@ -317,7 +517,7 @@ TEST_CASE("cli: a custom option type converts through its own lexical_cast", "[a
 		char a1[] = "--frame";
 		char a2[] = "0-9x3";
 		char* argv[] = {a0, a1, a2};
-		REQUIRE(app.run(3, argv) == 0);
+		REQUIRE(runApp(app, 3, argv) == 0);
 		REQUIRE(delegate.range == lain::core::Range{0, 9, 3});
 	}
 	SECTION("a malformed one is refused by the PARSE, before any work begins")
@@ -329,6 +529,6 @@ TEST_CASE("cli: a custom option type converts through its own lexical_cast", "[a
 		char a1[] = "--frame";
 		char a2[] = "10-2"; // reversed
 		char* argv[] = {a0, a1, a2};
-		REQUIRE(app.run(3, argv) != 0);
+		REQUIRE(runApp(app, 3, argv) != 0);
 	}
 }

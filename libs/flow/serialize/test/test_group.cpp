@@ -15,7 +15,7 @@
 #include <lain/flow/node.h>
 #include <lain/flow/porttyperegistry.h>
 #include <lain/flow/scheduler.h>
-#include <lain/task/task.h>
+#include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -532,11 +532,11 @@ TEST_CASE("two instances of one template run independently over one shared defin
 	// therefore run at the same time over the one definition they share. That is the arrangement
 	// ADR-0012's "a const Graph& is concurrently readable" exists for, and the first place it is a
 	// genuine simultaneous read of a single shared Graph rather than of a private copy.
-	lain::task::Executor executor;
+	lain::testing::ThreadPool pool;
 	for (int i = 0; i < 50; ++i)
 	{
 		Evaluation parallelEval{loaded.graph};
-		ParallelScheduler{executor}.run(loaded.graph, parallelEval);
+		ParallelScheduler{}.run(loaded.graph, parallelEval);
 		REQUIRE(parallelEval.value(outputs[0]).get<int>() == 105);
 		REQUIRE(parallelEval.value(outputs[1]).get<int>() == 106);
 	}

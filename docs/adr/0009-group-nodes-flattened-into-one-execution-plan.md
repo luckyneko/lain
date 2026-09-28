@@ -67,10 +67,16 @@ one thread — a group is exactly where the parallel work will live.
   semantics; (1) makes a `compute()` whose safety depends on which thread called it — the kind of
   by-convention invariant this codebase has consistently refused (`Graph::removePort` *refuses* rather
   than trusting callers; `connect` *rejects* cycles rather than documenting them).
-- **It needs no new substrate surface.** Only `emplace` + `precede` + `run`, which `lain::task`
-  already exposes and which `multi`'s `Recipe::step` / `Recipe::order` / `Context::async` match 1:1 —
-  so the planned Taskflow → `multi` swap stays a `lain::task` internal change with no `flow` edits.
-  (3) would have forced subflows through the wrapper, the one Taskflow concept most likely to leak.
+- **It needs no new substrate surface.** Only add-a-task, add-an-edge and run-to-completion, which
+  `lain::task` already exposes and which `multi`'s `Recipe::step` / `Recipe::order` / `Context::async`
+  match 1:1 — so the planned Taskflow → `multi` swap stays a `lain::task` internal change with no
+  `flow` edits. (3) would have forced subflows through the wrapper, the one Taskflow concept most
+  likely to leak.
+  *(**Amended 2026-09-26.** That swap happened on 2026-09-11 and the claim held — `libs/flow` changed
+  by zero lines of production code. The three operations were spelled `emplace` / `precede` / `run` on
+  a `lain::task` wrapper until [ADR-0024](0024-one-process-task-pool.md) deleted it, and the lowering
+  now writes multi's own `step` / `order` / `async` directly. Still three operations, still no
+  subflows.)*
 - **Conditional eval crosses group boundaries for free.** An unready group publishes empty values into
   its inner boundary; inner nodes see empty required inputs and suppress themselves through the
   existing readiness gate (ADR-0007); the emptiness reaches the inner `GroupOutputNode` and the exit

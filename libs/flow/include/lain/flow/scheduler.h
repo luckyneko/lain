@@ -12,8 +12,8 @@
 //
 // Two run strategies share one pull path:
 //   - SerialScheduler   — single-threaded topo-order run; needs no execution deps.
-//   - ParallelScheduler — lowers the DAG onto an injected (caller-owned) lain::task
-//                         executor for work-stealing parallelism.
+//   - ParallelScheduler — lowers the DAG onto the process task pool for work-stealing
+//                         parallelism.
 //
 // Both go through one EXECUTION PLAN (ADR-0009). A plan is a dependency-ordered list of
 // steps covering EVERY level of group nesting at once: a node that contains a graph is not
@@ -47,11 +47,6 @@
 #include <set>
 #include <utility>
 #include <vector>
-
-namespace lain::task
-{
-	class Executor; // named only by ParallelScheduler; full type via <lain/task/task.h>
-}
 
 namespace lain::flow
 {
@@ -349,18 +344,24 @@ namespace lain::flow
 		void executePlan(const Plan& plan) override;
 	};
 
-	// Parallel: lowers each stage's plan onto the injected lain::task executor (one task
-	// per step, one precedence per plan edge) and runs it to completion. The caller owns the
-	// executor, so worker count and lifetime stay explicit.
+	// Parallel: lowers each stage's plan onto the PROCESS task pool (one task per step, one
+	// precedence per plan edge) and runs it to completion. There is no executor to pass and no
+	// pool to own — lain::app starts one for the process and exposes --threads; a run with none
+	// started executes the plan inline on the caller, in dependency order.
+	//
+	// It BLOCKS the calling thread until the whole plan finishes, participating in the pool's
+	// work-stealing meanwhile, so it must never be entered from inside a pool task (the
+	// fire-and-join contract). Making a run non-blocking is a separate milestone; what it needs
+	// is not here but in how a host reads an evaluation while one is in flight.
+	//
+	// It takes no isolated pool, because nothing needs one: catch_discover_tests gives every
+	// TEST_CASE its own process, so the process pool is already per-case. Trigger for adding one
+	// — a caller that must not share the pool. It is two lines then (a
+	// `task::Context& m_context = multi::context();` member), at the cost of this header having
+	// to include <multi/context.h>, since you cannot forward-declare into a namespace alias.
 	class ParallelScheduler : public Scheduler
 	{
-	public:
-		explicit ParallelScheduler(lain::task::Executor& executor);
-
 	protected:
 		void executePlan(const Plan& plan) override;
-
-	private:
-		lain::task::Executor& m_executor;
 	};
 } // namespace lain::flow

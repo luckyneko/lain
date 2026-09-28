@@ -84,16 +84,22 @@ namespace flowview
 		std::string m_compression = "default"; // run --compression: how hard a still output squeezes
 		std::uint8_t m_quality = 0;			   // run --quality: fidelity for a lossy still format
 
-		// The headless subcommands. Their pointers stay valid through Application::run() (the cli::App
-		// outlives onStart/onProcess), so ->parsed()/->remaining() drive the headless dispatch.
+		// The headless subcommands. Their pointers stay valid for the Application's whole lifetime —
+		// it OWNS the cli::App rather than parsing through a local, deliberately and because of
+		// this — so ->parsed()/->remaining() drive the headless dispatch from onProcess, two phases
+		// after onInit handed them over.
 		lain::app::cli::App* m_runCmd = nullptr;
 		lain::app::cli::App* m_listCmd = nullptr;
 
 		// The gui-mode scene, held by unique_ptr so onStop can release it (and its
 		// node-owned payloads) explicitly, before the window/device teardown.
 		std::unique_ptr<lain::flow::Graph> m_graph;
-		lain::flow::Evaluation m_evaluation;				 // its runtime state — replaced WITH it, never apart
-		lain::flow::SerialScheduler m_scheduler;			 // runs the scene (no threads needed)
+		lain::flow::Evaluation m_evaluation; // its runtime state — replaced WITH it, never apart
+		// SERIAL, deliberately, where the headless `run` path is parallel: a scheduler run BLOCKS
+		// until the whole plan finishes, and doing that in the frame loop would stall the window
+		// for the length of the graph. Making a run non-blocking is its own milestone — the work
+		// is not in the scheduler but in how a pane reads an evaluation while one is in flight.
+		lain::flow::SerialScheduler m_scheduler;
 		lain::core::Factory<lain::flow::Node> m_nodeFactory; // node-type palette
 		MainWindow m_window;								 // gui-mode inspector
 	};

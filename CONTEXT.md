@@ -51,6 +51,22 @@ apart: logic that belongs to one must not swell another.
   Policy varies across front-ends; primitives don't. That is why editing is its
   own layer and not methods on Graph.
 
+### Waiting on the pool
+
+There is one **task pool** for the process. A thread that hands it work and then waits does so in
+one of two ways, and the words are not interchangeable:
+
+- **Participating wait** — the waiting thread runs tasks from the pool while it waits, so it is a
+  worker for the duration. That is why the pool is sized to *one fewer* than the machine: the
+  participant is the last one. A scheduler run waits this way.
+- **Blocking wait** — the waiting thread sleeps until the work is done, contributing nothing. It is
+  the right choice only when the thread has something else it must be able to do promptly, or must
+  not be seen running unrelated work.
+
+The distinction is about the WAITER, never about the work: the same plan, on the same pool, finishes
+identically either way. What changes is how many threads are running it and what the waiter may find
+itself executing.
+
 ## Adapter
 
 A front-end (e.g. flowview's imnodes canvas) is an **adapter**: it decodes its own

@@ -16,6 +16,7 @@ target_link_libraries(test-app PRIVATE
 	lain::flow
 	lain::log
 	lain::meta
+	lain::task # the pool-lifetime case asks task::threadCount() from inside onProcess
 	Vulkan::Loader
 	lain::warnings
 	Catch2::Catch2WithMain

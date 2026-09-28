@@ -8,6 +8,7 @@
 #include <cassert>
 #include <cstdlib> // EXIT_SUCCESS (the default exit status)
 #include <memory>
+#include <optional>
 
 namespace lain::app
 {
@@ -17,8 +18,24 @@ namespace lain::app
 
 	// Owns the Vulkan instance, the one shared acm::Device, the windows it creates,
 	// and the run loop. Driven by an ApplicationDelegate; each window by its own
-	// WindowDelegate. Construct one, run() it. Sole owner (non-copyable); delegates
-	// are borrowed — you keep them alive past run().
+	// WindowDelegate. Sole owner (non-copyable); delegates are borrowed — you keep
+	// them alive past the Application, which its destructor relies on.
+	//
+	// THE LIFECYCLE IS THE INTERFACE: initialise -> run -> shutdown, in that order, once
+	// each. A main is four lines:
+	//
+	//     Application app(delegate, {"myapp", {0, 1, 0}});
+	//     if (const auto code = app.initialise(argc, argv))
+	//         return *code;
+	//     const int status = app.run();
+	//     app.shutdown();
+	//     return status;
+	//
+	// Deliberately NOT hidden behind a macro that writes main for you. It would save three
+	// lines in the one app this tree has, while hiding where the program starts and breaking
+	// a grep for "int main" — and it is under-determined by a single caller: how the delegate
+	// is constructed, where the AppInfo comes from, whether it can be opted out of. Trigger
+	// for revisiting: a second app.
 	class Application
 	{
 	public:
@@ -35,12 +52,36 @@ namespace lain::app
 		// for the Application's lifetime.
 		Window& createWindow(const WindowSpec& spec, WindowDelegate& delegate);
 
-		// onInit(cli) -> parse argv -> onStart -> then:
+		// Phase 1. onInit(cli) -> parse argv -> apply -v -> log the banner -> start the process
+		// task pool (see --threads). Nothing is brought up before this and nothing after it can
+		// be skipped, so it is the only phase that reads the command line.
+		//
+		// A VALUE means stop here and exit with it — --version / --help / --licenses (0), a bad
+		// command line, or onInit returning false (non-zero). Nullopt means carry on. Three
+		// outcomes, which is why this is not an int: a bare 0 cannot separate "carry on" from
+		// "we printed the version". An exit leaves nothing started, so shutdown() has nothing
+		// to do and the destructor stays quiet.
+		[[nodiscard]] std::optional<int> initialise(int argc, char** argv);
+
+		// Phase 2. onStart -> then:
 		//   gui-mode (windows opened): the frame loop (onUpdate + render each window)
-		//     until every window closes or quit() is called;
+		//     until every window closes or exit() is called;
 		//   headless (no windows): onProcess once.
-		// -> onStop -> device+window teardown -> onShutdown. Returns an exit code.
-		int run(int argc, char** argv);
+		// -> onStop. Returns the exit code the process should report.
+		//
+		// onStart returning false reports EXIT_FAILURE and skips onStop — it never started.
+		// Teardown still happens, in shutdown(), because onInit already ran and the delegate
+		// may be holding what it allocated there.
+		int run();
+
+		// Phase 3. Window and device teardown (device before surface), onShutdown, then stop
+		// the process task pool. Idempotent, and a no-op on an Application that never got past
+		// initialise — so calling it on any path is safe.
+		//
+		// The destructor calls it if you did not, after asserting in debug that you did: the
+		// pool must be stopped before static destruction, and this object is what guarantees
+		// it runs in time. See docs/adr/0024-one-process-task-pool.md.
+		void shutdown();
 
 		// Invoke the delegate's onProcess (the work routine) and return its status — 0 for success.
 		// run() calls this once in headless-mode and reports the status as the process exit code;
@@ -55,9 +96,10 @@ namespace lain::app
 		// failed says so here. Defaulted, so the common "just close cleanly" case reads
 		// app.exit() and there is ONE verb for ending a run rather than two.
 		//
-		// Known gap, pre-existing: run()'s early exits — onInit or onStart returning false, a
-		// CLI parse error, --licenses — return their own fixed code and never reach this, so a
-		// status set before one of them is discarded.
+		// Known gap, pre-existing: initialise()'s exits — onInit returning false, a CLI parse
+		// error, --version, --licenses — answer with their own code and never reach this, so a
+		// status set from onInit is discarded. Confined to that one phase now, where before it
+		// was spread through run(); still a gap, because those paths have no run to report on.
 		void exit(int code = EXIT_SUCCESS);
 
 		// The shared device, created on demand (for windows or headless compute).

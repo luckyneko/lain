@@ -27,7 +27,7 @@
 #include "lain/flow/scheduler.h"
 #include "testnodes.h"
 
-#include <lain/task/task.h>
+#include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -606,8 +606,8 @@ TEST_CASE("a count loop folds its carried value once per iteration", "[flow][loo
 	{
 		// Both strategies share one staging loop and differ only in executePlan, so the fold
 		// cannot drift between them.
-		lain::task::Executor executor;
-		ParallelScheduler{executor}.run(f.parent, evaluation);
+		lain::testing::ThreadPool pool;
+		ParallelScheduler{}.run(f.parent, evaluation);
 	}
 
 	REQUIRE(f.out(evaluation, "value").get<int>() == 15);
@@ -1085,7 +1085,7 @@ TEST_CASE("a group holding an iterating loop publishes once, not once per stage"
 	// Both strategies, because the entry step must be ORDERED against the inner boundary it feeds
 	// whether or not the group goes on to publish — a serial walk hides a missing edge there, the
 	// parallel backend does not.
-	lain::task::Executor executor;
+	lain::testing::ThreadPool pool;
 	bool parallel = false;
 	SECTION("serial") {}
 	SECTION("parallel")
@@ -1096,7 +1096,7 @@ TEST_CASE("a group holding an iterating loop publishes once, not once per stage"
 	const auto run = [&]
 	{
 		if (parallel)
-			ParallelScheduler{executor}.run(parent, evaluation);
+			ParallelScheduler{}.run(parent, evaluation);
 		else
 			SerialScheduler{}.run(parent, evaluation);
 	};

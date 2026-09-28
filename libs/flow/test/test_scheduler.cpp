@@ -6,9 +6,14 @@
 #include "lain/flow/graph.h"
 #include "lain/flow/scheduler.h"
 
-#include <lain/task/task.h>
+#include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include <chrono>
+#include <mutex>
+#include <set>
+#include <thread>
 
 using namespace lain::flow;
 
@@ -127,6 +132,32 @@ namespace
 			evaluation.output(out).set(1);
 		}
 	};
+
+	// Records the thread it ran on and nothing else. Its work is a short sleep rather than none:
+	// 32 instant tasks can all be stolen and finished by one worker before the others wake, which
+	// would make the guard flaky in exactly the direction that hides the bug.
+	struct WhereItRan : Node
+	{
+		std::mutex& mutex;
+		std::set<std::thread::id>& seen;
+		PortId done;
+		WhereItRan(std::mutex& m, std::set<std::thread::id>& s)
+			: Node("WhereItRan")
+			, mutex(m)
+			, seen(s)
+		{
+			done = addOutput<int>("done");
+		}
+		void compute(NodeEvaluation& evaluation) const override
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(2));
+			{
+				const std::lock_guard<std::mutex> lock(mutex);
+				seen.insert(std::this_thread::get_id());
+			}
+			evaluation.output(done).set(0);
+		}
+	};
 } // namespace
 
 TEST_CASE("push run evaluates the whole graph", "[scheduler]")
@@ -139,8 +170,8 @@ TEST_CASE("push run evaluates the whole graph", "[scheduler]")
 	REQUIRE(g.connect(c2, 0, add, 1) == Connection::Ok);
 
 	Evaluation e{g};
-	lain::task::Executor executor;
-	ParallelScheduler{executor}.run(g, e);
+	lain::testing::ThreadPool pool;
+	ParallelScheduler{}.run(g, e);
 
 	REQUIRE(e.value(PortAddress{add, g.node(add).output(0).id()}).get<int>() == 5);
 	REQUIRE_FALSE(e.needsRecompute(add)); // the evaluation recorded it at the definition's version
@@ -177,8 +208,8 @@ TEST_CASE("push run flows multi-level dependencies", "[scheduler]")
 	g.connect(c3, 0, add2, 1);	// ... + 10
 
 	Evaluation e{g};
-	lain::task::Executor executor;
-	ParallelScheduler{executor}.run(g, e);
+	lain::testing::ThreadPool pool;
+	ParallelScheduler{}.run(g, e);
 
 	REQUIRE(e.value(PortAddress{add2, g.node(add2).output(0).id()}).get<int>() == 15);
 }
@@ -201,10 +232,42 @@ TEST_CASE("push run computes independent branches correctly", "[scheduler]")
 	g.connect(cd, 0, total, 1);
 
 	Evaluation e{g};
-	lain::task::Executor executor;
-	ParallelScheduler{executor}.run(g, e);
+	lain::testing::ThreadPool pool;
+	ParallelScheduler{}.run(g, e);
 
 	REQUIRE(e.value(PortAddress{total, g.node(total).output(0).id()}).get<int>() == 10);
+}
+
+TEST_CASE("the parallel scheduler really runs on several threads", "[scheduler]")
+{
+	// THIS IS THE GUARD ON EVERY OTHER PARALLEL CASE IN THE SUITE, and on the 100x
+	// [map],[loop],[group],[scheduler] sweeps that are the only race cover this repo has.
+	//
+	// lain runs one pool for the whole process and lain::app owns it, so a test starts its own.
+	// A test that forgets is not an error and says nothing: an inactive pool dispatches INLINE on
+	// the caller, in dependency order, so the assertions still hold, the case passes, and it runs
+	// faster while covering none of the concurrency it is named for. Nothing else in the suite can
+	// notice that, because every parallel case asserts a result that the serial path produces too.
+	//
+	// So one case asserts the mechanism instead of the answer: independent nodes must have run on
+	// more than one thread.
+	if (std::thread::hardware_concurrency() < 2)
+		SKIP("one core: there is no second thread for the work to land on");
+
+	// Wide and shallow, with nothing to order: 32 independent nodes, so the pool has no reason to
+	// keep them on one worker other than not being a pool at all. Each records where it ran.
+	Graph g;
+	std::mutex mutex;
+	std::set<std::thread::id> threads;
+	for (int i = 0; i < 32; ++i)
+		g.add<WhereItRan>(mutex, threads);
+
+	Evaluation e{g};
+	lain::testing::ThreadPool pool;
+	REQUIRE(pool.owned()); // it started one; without this the rest measures the inline path
+	ParallelScheduler{}.run(g, e);
+
+	REQUIRE(threads.size() > 1);
 }
 
 TEST_CASE("pull evaluates only the target's upstream", "[scheduler]")
@@ -298,8 +361,8 @@ TEST_CASE("one run is one stage, even with a self-rearming source", "[scheduler]
 	{
 		// Both strategies share the one staging loop and differ only in executePlan, so the
 		// termination rule cannot drift between them — this pins that down.
-		lain::task::Executor executor;
-		ParallelScheduler sched{executor};
+		lain::testing::ThreadPool pool;
+		ParallelScheduler sched;
 		sched.run(g, e);
 		REQUIRE(calls == 1);
 		REQUIRE(e.needsRecompute(s));

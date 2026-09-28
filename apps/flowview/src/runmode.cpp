@@ -639,7 +639,13 @@ namespace flowview
 		for (const auto& [name, value] : args)
 			log::warn("flowview: --{} matched no boundary (value '{}')", name, value);
 
-		flow::SerialScheduler scheduler;
+		// PARALLEL here, serial in gui-mode. A cli is exactly where blocking the calling thread
+		// is free — there is no frame to keep alive — so the run takes the whole machine: the
+		// process pool's workers plus this thread, which participates in their stealing rather
+		// than sleeping. `--threads 0` leaves the pool inactive and executes the same plan inline
+		// in dependency order, so a suspicious result can be re-run deterministically without
+		// changing anything else.
+		flow::ParallelScheduler scheduler;
 
 		if (!options.frameRange.has_value())
 		{
