@@ -38,6 +38,13 @@ definition, N evaluations.**
   evaluation with a new definition. `Evaluation{graph}` records its definition and `prepare` compares
   it — a guard rail that catches a mispaired call in practice, though not a definition rebuilt at a
   recycled address. Retained document/UI identity such as `CanvasIds` is a separate concern.
+  *(**Amended 2026-09-28 by [ADR-0025](0025-runs-read-a-clone-gui-never-waits.md) — designed, not
+  built.** The guard moves from address identity to **lineage**: a definition's version-history
+  identity, minted on construct and load, carried by `Graph::clone()`, and checked by `prepare` at the
+  root and for every child. Ownership is still the mechanism for load/undo; what changes is that one
+  Evaluation now legitimately spans *clones* — a run reads a clone of the document so edits never race
+  it — and an address check would reject every one of them. Lineage also closes the recycled-address
+  hole this bullet concedes.)*
 - **An `Evaluation` is a tree.** It holds this graph's values plus **named children**: one child
   Evaluation per group node, N per map element. One is located by an `EvalPath` — a sequence of
   `{NodeId, index}` steps — a **coordinate composed of things that already exist**, not a minted id.
@@ -169,6 +176,11 @@ identity in core again — the thing ADR-0011 rejects. It is also wrong for a li
 pinned to run #47 goes stale the instant run #48 happens. A coordinate keeps pointing at *"element 3
 of the map in group X"* and shows whatever that Evaluation holds now, which is what an inspector
 wants. A historical snapshot of one execution, if a caller ever needs one, is a different concept.
+*(**Amended 2026-09-28 by [ADR-0025](0025-runs-read-a-clone-gui-never-waits.md).** The first caller
+of a different concept is the gui's **published evaluation**: a copy of the working evaluation the
+panes read while a run holds the real one. It is still located by coordinate — panes resolve an
+`EvalPath` into it exactly as before — and it is a *view* refreshed as results land, not a record of
+one execution.)*
 
 ## Consequences
 

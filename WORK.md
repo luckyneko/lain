@@ -5062,6 +5062,13 @@ is the ergonomic the change was asked for.
   safe, but the slot is rebound non-atomically and a pane reading mid-rebind **tears**. Wants panes
   drawing the last completed snapshot (cheap *because* of M5 slice 1 — N refcount bumps) plus
   `run()` splitting into `start()`/`poll()` with the frame loop driving the staging loop.
+  **Designed 2026-09-28 as Milestone 14 ([ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md)),
+  and the `start()`/`poll()` half is SUPERSEDED.** Driven from the frame loop, staging is
+  frame-quantised — a loop raises a frontier per iteration, so 100 trivial iterations cost at least 100
+  frames — `SerialScheduler` and `--threads 0` would block the UI again, and the between-stage work
+  lands on the UI thread. A dedicated coordinator thread calls the unchanged, blocking `run()` instead.
+  The snapshot half survives as the *published evaluation*. And the slot was the smaller race: a run
+  also reads the definition the panes mutate in place, which is why a run reads a clone.
 - **A worker-thread guard.** Nested dispatch (`task::each` in a `compute()`) is fine; entering a
   scheduler from a task is not, and with one pool that is a deadlock rather than a slowdown. A guard
   needs multi to answer whether the caller is a worker. Trigger: anything that dispatches a graph run
@@ -6065,6 +6072,133 @@ regression test: `ctest -j8` **794/794** Debug with video on, warning-clean, for
   the fold. All four reached their header transitively and worked — the class of thing the
   2026-09-05 CI port found six of.
 
+## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28, nothing built)
+
+gui-mode runs `SerialScheduler::run` synchronously inside the frame loop — `FlowviewApp::reevaluate`
+is reached from `mainwindow.cpp` twice, `inspectorpane.cpp` and `interfacepane.cpp`, on every edit
+including every frame of a param drag — so a slow graph freezes the window, and `ParallelScheduler`
+has no gui caller. This milestone moves graph work off the frame loop, makes the gui Parallel by
+default with Serial selectable, and gives the UI the controls a 5-minute graph needs as well as a
+1-second one. Decisions in **[ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md)**;
+vocabulary in CONTEXT.md's *Running while you edit* (plus *clone*, *lineage*, *coordinator*).
+**Nothing is built.**
+
+### The shape
+
+- **Two races, not one.** Panes read the live `Evaluation` while workers rebind slots — the half the
+  process-pool *Owed* note named — and a run reads `const Graph&` on workers for its whole length
+  while four panes and `syncPathGroups` mutate the document in place. The second is undefined
+  behaviour (edge vector reallocation; plan steps holding `const Graph*` into an interior that was
+  just deleted), which is why simply moving `run()` to another thread was never an option.
+- **A run reads a clone** (identity + versions + lineage preserved); edits land on the document.
+- **A dedicated coordinator thread** calls the unchanged, blocking `run()`; the frame loop polls.
+- **Panes read a published evaluation**, refreshed at stage boundaries + run end, then per node.
+- **Supersede** at step boundaries, with an opt-in `NodeEvaluation::cancelled()` inside `compute()`.
+- **Run triggers** Live / On commit / Manual (per document), scheduler Serial / Parallel (per
+  session), a Run menu with Run, Run Selection and Stop, and five **freshness** states on the canvas.
+
+### Found while grilling — each owes a test
+
+- **Staleness assumes a run finishes its closure.** `runOrder` propagates *downstream of a recomputed
+  node* within one run, and `runNode` clears the request and records `computedAt` per node — so a run
+  cancelled after U but before its consumer D leaves both clean, and D keeps a value computed from U's
+  old output. Any cancel, Stop included, has to leave every unreached node stale. The mechanism:
+  persist the planned closure as recompute requests when the plan is built, cleared as each step runs.
+- **A throwing `compute()` would crash gui-mode today** — nothing in flowview catches (`reevaluate`
+  has no `try`). It has not bitten because nodes suppress rather than throw (`ListDirNode` uses the
+  `error_code` overloads for exactly that). The coordinator catches, and the node becomes **Failed**.
+- **Shutdown order.** The pool stops after the last `onShutdown`, and a run participates in it, so
+  `FlowviewApp::onStop` must cancel and **join** the coordinator before it releases the graph.
+- **`Evaluation`'s child guard is address identity too** (`evaluation.cpp`: `child->m_definition !=
+  inner`), so a clone per run would fail it for every inline interior unless lineage covers children.
+- **`PreviewCache::refreshIfDirty` re-uploads every viewable port** on each refresh, through a
+  synchronous stalling submit. Harmless when a refresh meant "an edit happened"; per-node publication
+  would make it once per node landing.
+
+### Build order
+
+Structural, no-behaviour-change slices first; each its own commit with its docs.
+
+1. **Clone + lineage** (`libs/flow`). `virtual std::unique_ptr<Node> clone() const` on every node kind
+   — mechanical, since `Node`'s members are copyable and no node holds a mutex, a thread or a
+   non-copyable cache (checked 2026-09-28; the only owned structure is a group's interior).
+   `Graph::clone()` deep-copies inline / map / loop interiors and shares linked definitions. Lineage on
+   `Graph`, minted on construct and load, carried by clone; `Evaluation::prepare` checks lineage at the
+   root and for every child instead of addresses. Tests: a **census** — every factory key clones to the
+   same dynamic type with `toValue(clone) == toValue(original)`, which is what catches a subclass
+   inheriting its parent's `clone()` and slicing; one evaluation runs incrementally across two clones
+   (call counts); a reloaded graph with identical ids is refused. No behaviour change: the gui still
+   runs the document itself, synchronously.
+2. **The published-evaluation primitive + payload identity** (`libs/flow`, additive). An explicit
+   copy of an `Evaluation` (the class is move-only today) that keeps its definition alive, and a
+   `PortValue` payload-identity accessor (it has `sameType`, nothing for identity).
+3. **Cancellation** (`scheduler.{h,cpp}`, `evaluation.{h,cpp}`). A cancel token on `run` / `evaluate`,
+   checked before each step and between stages; `NodeEvaluation::cancelled()`; closure-as-requests;
+   a progress read (`RecipeHandle::finishedCount()` / `stepCount()`, summed across stages). Tests: a
+   run cancelled mid-plan and then re-run matches a clean run — **sabotage: drop the closure
+   persistence and D keeps the wrong value**; a step that finishes after the cancel is not recomputed
+   next run; a cooperative node that bails stays stale; a loop stops between iterations.
+4. **The async vertical** (flowview). `apps/flowview/src/runner.{h,cpp}`: the coordinator thread,
+   clone-per-run, supersede, catch → Failed. `FlowviewApp` owns the runner beside the document and its
+   evaluation; `reevaluate()` becomes a trigger; `onStop` cancels and joins. `MainWindow` polls and
+   publishes at stage boundaries + run end. Parallel by default, Serial selectable, Stop. Live only.
+   Correct the two comments that place the whole problem in pane reads — `ParallelScheduler`'s in
+   `scheduler.h` and `m_scheduler`'s in `flowviewapp.h` — since the definition race is the larger one.
+5. **Triggers, persistence, bindings.** On commit (fires on undo's boundary, `pendingSnapshot &&
+   !gui::IsAnyItemActive()`) and Manual; the trigger in a new optional **document-level editor blob**
+   (`flow::serialize`'s `EditorTree` gains it; absent means Live, so no version bump — M12's `types`
+   precedent); the scheduler in `session.{h,cpp}`; the Run menu (`panes/menubar.cpp`); **pending
+   bindings** (`panes/interfacepane.cpp`, `scene.cpp`'s `bindDefaultInput`), written into the published
+   evaluation at once.
+6. **Freshness.** A public const stale-closure query in flow (`stale()` / `runOrder()` lifted to
+   const — they take a mutable `Evaluation&` only to reach `child()`, which has a const overload),
+   lineage-checked so it may compare the document against an evaluation computed on a clone. Canvas
+   glyph + outline (`panes/graphpane.cpp`, `canvasstyle.cpp`), thumbnail stale badge, viewport status
+   bar; `previewcache.{h,cpp}` uploads only ports whose payload changed; Failed rows in Issues.
+7. **Per-node publication.** A per-step started / finished hook on the run; a finished step's worker
+   copies its outputs into a completion record (race-free — a finished node has only readers), the UI
+   folds them into the published evaluation. This is what makes **Queued** and **Computing** real.
+8. **Run Selection.** The multi-target upstream-cone plan (`buildEvalPlan`'s shape, many targets,
+   executed through `executePlan`) and its menu item.
+
+### Visual design (settled in outline, tuned by eyeball)
+
+Freshness takes channels nothing else uses — title colour is category, a muted title is *not ready*,
+the accent title is selection, pin colour is type, a muted link is inactive:
+
+- a **title-bar glyph**: nothing for Current, hollow dot Stale, filled dot Queued, animated arc
+  Computing, red `!` Failed — shapes, so it reads without colour — with a tooltip;
+- the **node outline** pulses while Computing and fades on landing (*just updated*);
+- a **stale badge** on Inspector / Interface / Preview thumbnails;
+- a **viewport status bar**: `Live · Parallel · Computing 12/40 · 3.4 s [Stop]`, then `Last run 3.4 s`.
+
+### Not in this milestone
+
+- **Evaluation fork** (start the next run while a superseded one drains). Trigger: a long
+  non-cooperative step whose drain latency matters.
+- **View-driven pull.** Trigger: an expensive branch downstream of routine edits that is not being
+  looked at.
+- **Keeping an evaluation across undo / Open.** They start a new lineage, so they recompute everything
+  — pre-existing, and expensive in Live on a slow graph. Trigger: undo on a slow graph.
+- **Asynchronous texture upload; off-thread poster production; playback decode.** Viewer work, not
+  graph work — the milestone promises the frame loop never waits on *graph* work, not that the UI
+  never hitches. Trigger: an upload or a poster decode that visibly hitches.
+- **A reusable runner.** The coordinator and its policy live in flowview until a second gui host.
+
+### Verification (per slice, and for the milestone)
+
+- `ctest -j8` Debug with video on, Release video off, Release video on; warning-clean;
+  `format-check`. Every slice's sabotages recorded here.
+- Cancel and parallel races swept 100× by invoking the **Catch2 binary with the tag** — not
+  `ctest -R`, which matches zero tagged cases (the process-pool section's lesson) — printing the match
+  count.
+- `flowview run --example` identical to the pre-change binary once the timestamp and minted uuids are
+  normalised: the headless path does not change.
+- **gui-mode on the live driver**, by the repo owner: a slow graph keeps the window responsive; a Live
+  drag supersedes; On commit runs on release; Manual with Run / Run Selection / Stop; the glyphs,
+  outline, badges and status bar; a bind during a run; New / Open / undo during a run; `--frames N`
+  quitting cleanly mid-run.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -6089,7 +6223,10 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md).)*
 
-M1–M8 and M10–M13 are built. **M9 is the only milestone from 5 onward that is not.**
+- **M14 — asynchronous execution: the gui never waits on graph work.** Designed 2026-09-28, no code.
+  *(Milestone 14; [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)*
+
+M1–M8 and M10–M13 are built. **M9 and M14 are the milestones from 5 onward that are not.**
 
 ### Deferred — engine / `flow` core
 

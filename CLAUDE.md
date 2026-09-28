@@ -631,6 +631,53 @@ constructs a loop until slice 6). Full landing notes in WORK.md M11.
   stage. The final value is correct (pinned by a test) and a map inside a group does the same today,
   so the fix belongs in its own commit.
 
+### Update 2026-09-28 — M14 designed: the gui never waits on graph work (nothing built yet)
+
+gui-mode runs `SerialScheduler::run` synchronously in the frame loop on every edit — every frame of a
+param drag included — so a slow graph freezes the window and `ParallelScheduler` has no gui caller.
+Grilled 2026-09-28; decisions in **[ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md)**
+(amending ADR-0012 and ADR-0024 in place), build order in WORK.md's **Milestone 14**, vocabulary in
+CONTEXT.md's new *Running while you edit* section plus *clone*, *lineage* and *coordinator*.
+**Nothing is built.**
+
+- **The recorded blocker was the smaller half.** ADR-0024 named torn reads of an evaluation slot. A run
+  also reads `const Graph&` on workers for its whole length while four panes and `syncPathGroups`
+  mutate the document in place — edge-vector reallocation, plan steps holding `const Graph*` into a
+  deleted interior. That is undefined behaviour, so "run it on another thread" was never an option
+  until something decides what an edit does meanwhile.
+- **A run reads a CLONE of the document.** `Graph::clone()` preserves NodeIds, per-node versions and
+  **lineage**, so one evaluation stays incremental across clones while edits land on the document and
+  never race a run. Glossary: *load* preserves identity, *paste* mints it, *clone* preserves identity
+  **and history**. Rejected: draining in-flight steps before each mutation (the stall is the longest
+  single step — seconds for a footage open — and it needs a choke point four panes do not have), a
+  reader/writer lock, edits as queued commands.
+- **Lineage replaces address identity in `Evaluation::prepare`** — at the root AND for children,
+  whose guard (`child->m_definition != inner`) would reject every cloned interior. It also closes the
+  recycled-address hole ADR-0012 admitted.
+- **A dedicated coordinator thread calls the unchanged, blocking `run()`**; the frame loop polls.
+  **WORK.md's recorded `start()`/`poll()` sketch is superseded**: driven from the frame loop, staging
+  is frame-quantised (a 100-iteration loop costs ≥ 100 frames), and Serial and `--threads 0` would
+  block the UI again. Under Parallel the coordinator is the pool's participating "+1".
+- **Panes read a *published evaluation*** — a refcount-cheap copy that keeps its run's clone alive —
+  so the ten pane files do not change. Published at stage boundaries + run end, then per node as
+  steps finish. Not a "snapshot": that word is the undo document.
+- **Cancel at step boundaries + an opt-in `NodeEvaluation::cancelled()`.** A step that finishes after
+  a cancel is KEPT — its version still matches for every node the edit did not touch.
+- **Found while grilling: staleness assumes a run finishes its closure.** A run cancelled after U but
+  before its consumer D leaves both clean, and D keeps a value computed from U's old output. The
+  planned closure must be persisted as recompute requests at plan time. Also: a throwing `compute()`
+  would crash gui-mode today (nothing catches), and `onStop` must join the coordinator before the pool
+  stops.
+- **UI:** run triggers **Live / On commit / Manual** per document (no timer — the delay worth waiting
+  depends on a cost nobody knows in advance; On commit reuses undo's gesture boundary), scheduler
+  Serial / Parallel per session, a Run menu with **Run Selection** and **Stop**, and five
+  **freshness** states — Stale / Queued / Computing / Current / Failed — shown by a title-bar glyph,
+  an outline pulse, thumbnail badges and a status bar, on channels no existing canvas state uses.
+  *Stale* includes "anything upstream is Stale", and flow exposes that closure rule publicly rather
+  than letting the viewer re-implement it.
+- **The promise is exact: the frame loop never waits on GRAPH work.** Texture upload and poster decode
+  stay on the UI thread, made proportional to what changed (payload identity) rather than moved.
+
 ### Update 2026-09-26 — one process task pool; `lain::task` becomes an alias for `multi`
 
 The wrapper moved from Taskflow to `multi` on 2026-09-11 with `libs/flow` unchanged by a single line
@@ -737,7 +784,8 @@ eyeball actually confirms is that the three phases are ordered right around a re
   non-blocking gui. The blocker is not the task layer — `Scheduler::run` is a staging loop, and ten
   pane files make 23 direct reads of an evaluation every frame. Payloads are shared and immutable
   since M5 slice 1 so the pixels are safe, but the **slot** is rebound non-atomically and a pane
-  reading mid-rebind **tears**.
+  reading mid-rebind **tears**. *(Designed 2026-09-28 as **M14** — see that entry above. The slot
+  turned out to be the smaller race.)*
 
 ### Update 2026-09-26 — the image type tables stop being `detail::`
 

@@ -115,13 +115,22 @@ where blocking the calling thread is free, so `flowview run` takes the parallel 
 is the escape hatch. gui-mode stays serial: a run blocks until the whole plan finishes, and doing that
 in the frame loop would stall the window for the length of the graph.
 
+*(**Amended 2026-09-28 by [ADR-0025](0025-runs-read-a-clone-gui-never-waits.md) — designed, not
+built.** gui-mode moves off the frame loop entirely: a dedicated coordinator thread calls the
+still-blocking `run()` on a clone of the document, and gui-mode defaults to `ParallelScheduler` with
+Serial selectable. Under Parallel the coordinator is a participating waiter, which is exactly the "+1"
+this ADR sizes the pool for; the foreign-work latency hazard in **Costs** below then delays only when
+the coordinator notices completion, never the UI.)*
+
 ## What this does NOT buy, stated up front
 
 - **It does not make graph execution asynchronous.** A run still blocks its caller. Making it not
   block is a separate milestone, and the work is not in the task layer: `Scheduler::run` is a staging
   loop, and ten flowview pane files make twenty-three direct reads of an evaluation's values every
   frame. Payloads are shared and immutable since M5 slice 1, so the pixels are safe, but the *slot* is
-  rebound non-atomically and a pane reading mid-rebind tears.
+  rebound non-atomically and a pane reading mid-rebind tears. *(That milestone is M14, designed in
+  [ADR-0025](0025-runs-read-a-clone-gui-never-waits.md), and it found the slot was the smaller half: a
+  run also reads the definition the canvas mutates in place, which is why a run reads a clone.)*
 - **It does not give `flow` a parallel-for.** `task::each` / `parallel` / `range` are now reachable
   from any lain code, but no node uses them.
 - **It does not isolate pools.** Nothing can run a graph on a pool of its own. Nothing needs to:

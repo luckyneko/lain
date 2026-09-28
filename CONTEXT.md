@@ -67,6 +67,15 @@ The distinction is about the WAITER, never about the work: the same plan, on the
 identically either way. What changes is how many threads are running it and what the waiter may find
 itself executing.
 
+- **Coordinator** — the thread running a scheduler invocation's staging loop: it plans, prepares
+  evaluation storage between stages (which is why *"a coordinator grows evaluation storage, a worker
+  task never does"*), and waits on each stage — participating under the parallel scheduler, doing the
+  work itself under the serial one. Headless, it is simply the caller. In the gui it is a thread the
+  host **dedicates** to runs *(M14 — designed,
+  [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md))*, so the UI thread never waits on
+  graph work. Never a pool task: entering a scheduler from a task deadlocks one pool. _Avoid_: worker
+  (a pool thread), background thread, render thread.
+
 ## Adapter
 
 A front-end (e.g. flowview's imnodes canvas) is an **adapter**: it decodes its own
@@ -691,7 +700,8 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   a snapshot of one run. A cli creates and drops one; a gui retains one; a `SplitGroup` retains one
   child per stream. A host owns it **together with** the definition it belongs to, as one replaceable
   unit: in-place edits keep it, while a rebuilt Graph (load, New, undo) gets a new one even when node
-  UUIDs match, because per-node Versions restart. Before dispatch, `prepare(definition)` creates,
+  UUIDs match, because per-node Versions restart. It **does** span a **clone** (M14, designed), which
+  carries the Versions and the **lineage** that make them comparable. Before dispatch, `prepare(definition)` creates,
   prunes and stabilises its storage. Scheduler entry holds a non-blocking **run lease**: reusing one
   Evaluation concurrently or recursively throws `std::logic_error` immediately, while distinct
   Evaluations — including two over the same definition — may run concurrently; the RAII lease releases
@@ -839,6 +849,19 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   "paste" is a **linked template**: one file may back several linked groups in one document, so a
   resolved template is instantiated with fresh ids rather than restored. Nothing is lost, because a
   linked group's interior is never written to the parent — only its source path and interface cache.
+- **Clone** *(M14 — designed, [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md))* — the
+  third way to get a graph, and the strictest: a clone preserves identity **and history** — the same
+  NodeIds, the same per-node Versions, the same **lineage** — so it is the same recipe at the same
+  point in its history. That is why one Evaluation spans clones while it can never span a load (whose
+  Versions restart). A run reads a clone of the document, so an edit never races it. Linked-template
+  definitions are shared by a clone, never copied. _Avoid_: snapshot (the undo document), copy (says
+  nothing about history), run copy, frozen definition.
+- **Lineage** *(M14 — designed)* — the identity of one definition's version history: what makes two
+  definitions' Versions **comparable**. Minted when a Graph is constructed or loaded (so New, Open and
+  an undo restore each begin one), carried by a clone, and recorded by an Evaluation, which refuses a
+  definition of another lineage — at the root and for every child. It replaces comparing a
+  definition's address, which could not tell a rebuilt graph at a recycled address from the original.
+  _Avoid_: generation, epoch (both read as counters, which is what a Version is), graph id.
 - **Identity admission** — the only point a Node receives its immutable NodeId. Ordinary
   `Graph::add(node)` mints; v2 load uses `add(node, requestedId)`. Because every Graph is born with its
   boundary pair, the loader stages headers and passes their saved UUIDs to `Graph{BoundaryIds}` before
@@ -851,6 +874,48 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   address derives it from `Port::direction()`. Has `==` + `std::hash` so it keys selection / lookup.
   (The **on-disk** edge form addresses ports by *name*, not PortId — see `flow::serialize`'s
   name-addressed edges; PortAddress is the runtime primitive it resolves to.)
+
+## Running while you edit — the host's side of a run
+
+*(M14 — designed, not built. [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
+host keeps its document editable while a run is in flight. These are the words for how a run is
+started, stopped and shown.
+
+- **Run trigger** — what starts a run, chosen per document: **Live** (every change, including each
+  frame of a drag), **On commit** (when a gesture ends), **Manual** (only an explicit Run). A choice
+  about how expensive the graph is, which is why it travels with the document. Never switched
+  automatically. _Avoid_: auto / semi-auto (say which trigger), debounce (there is no timer: the
+  delay worth waiting depends on the run's cost, unknowable before it runs).
+- **Committed edit** — a gesture that has ended: a click, a connect, the release of a drag. The unit
+  undo records and **On commit** runs on, so a slider drag is one committed edit however many frames
+  it spans. _Avoid_: change (every frame of a drag is a change; only its end is committed).
+- **Superseded run** — a run a newer trigger has cancelled. It stops starting steps; a step already
+  computing finishes, or stops early if its node checks for cancellation. What finished normally is
+  **kept**, since its Version still matches for every node the edit did not touch; what stopped
+  because of the cancel, and everything the run never reached, stays **Stale**. _Avoid_: aborted run
+  (implies its work is discarded — it is not), killed.
+- **Published evaluation** — the copy of an Evaluation a host's panes read while a run holds the
+  real one: refreshed as results land (per node as each finishes, and whole at stage boundaries and
+  run end), and written directly by the host for a **pending binding**. A view of the newest results,
+  located by the same EvalPath — not a record of one execution. _Avoid_: snapshot (the undo document),
+  cache, result.
+- **Pending binding** — a boundary value the user has bound that no run has consumed yet. Applied at
+  the next run's start; shown at once in the published evaluation, so the value the user just set is
+  the value they see. Not a document change, so undo ignores it — as it ignores every binding.
+- **Freshness** — whether a node's *shown* value reflects the document. A second axis beside
+  readiness (which says whether a node *could* run), with five states:
+  - **Stale** — it does not: the node's Version differs from what its shown value was computed at, a
+    recompute request is pending, **or anything upstream is Stale**. The last clause is the one a
+    per-node comparison misses, and it is the engine's own stale-closure rule, asked by the host.
+  - **Queued** — Stale, and part of the run in flight, not yet started. Distinct from Stale because
+    under **Manual** a Stale node waits for Run, and "will update by itself" is a different message.
+  - **Computing** — its step is running now.
+  - **Current** — not Stale. *Just updated* is Current plus a moment's highlight, not a state.
+  - **Failed** — its last compute threw. It stays Stale, and the message goes to Issues.
+  A group, map or loop shows the most active state inside it. _Avoid_: dirty (retired with M6), up to
+  date / out of date, running / updating (a *run* is a scheduler invocation; a node *computes*).
+- **Run Selection** — a Manual-mode run of just the upstream cone of the selected nodes: the way to
+  say "get me this far" on a graph too slow to run whole. _Avoid_: partial run, preview render.
 
 ## Value display — two purposes, two seams
 
