@@ -641,8 +641,9 @@ production caller. Decisions in **[ADR-0024](docs/adr/0024-one-process-task-pool
 **797/797** Debug with video on against a pre-change baseline of **793** (measured, not assumed — the
 old tree was stashed, rebuilt and run twice), **803/803** Release with video on, **770/770** Release
 in the default video-off configuration; warning-clean, format-check clean, and the parallel path swept
-**100x** across five binaries. **gui-mode NOT eyeballed** — nothing draws differently, but
-`Application`'s run cycle is restructured and `main` is rewritten.
+**100x** across five binaries. **gui-mode live-verified by the repo owner 2026-09-28** — nothing
+draws differently, but `Application`'s run cycle is restructured and `main` is rewritten, so what the
+eyeball actually confirms is that the three phases are ordered right around a real window.
 
 - **A tag sweep must invoke the Catch2 BINARY, not `ctest -R`** — found the hard way here. The first
   two attempts reported *"0 failures / 100"* while matching **zero tests**: `catch_discover_tests`
@@ -1447,7 +1448,11 @@ The swap the triage decided, built. Locked decision #2 read *"Taskflow is the su
 `multi` for now)"* and its own prose invited this — *"`multi` … can return later behind the same
 `lain::task` seam."* `ctest -j8` **742/742** (+3 `[task]` cases), warning-clean, format-check clean,
 `[map],[loop],[group],[scheduler]` swept **100×** on the parallel path with no failures. **gui-mode
-not eyeballed.** Full landing notes in WORK.md's *`lain::task` moves from Taskflow to `multi`*.
+not eyeballed.** *(**Discharged 2026-09-28** — gui-mode was
+driven on a tree where `lain::app` starts and stops the pool on every run, so the question this
+raised (does the viewer work with multi underneath) is answered. The tidy pass's File ▸ Quit
+gesture is a separate claim and is NOT covered by it.)* Full landing notes in WORK.md's *`lain::task` moves from Taskflow to
+`multi`*.
 
 - **`libs/flow` changed by ZERO lines of production code.** `src/`, `include/`, `serialize/` and
   `example/` are byte-identical across a change of concurrency substrate — which is the claim the

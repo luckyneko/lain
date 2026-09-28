@@ -4935,7 +4935,9 @@ timestamp and minted uuids are normalised. Net delta: −1 `[task]`, +1 `[schedu
 Warning-clean,
 format-check clean. The parallel path swept **100×** with no failures: 88 `[map],[loop],[group],[scheduler]`
 cases in `test-flow`, 3 in `test-task`, 4 `[loop]` in `test-flowview` and 13 `[group]` in
-`test-flow-serialize`. **gui-mode not eyeballed.**
+`test-flow-serialize`. **gui-mode live-verified by the repo owner 2026-09-28** — the run cycle is
+restructured and `main` is rewritten, so the window coming up, drawing and closing cleanly is what
+says the three phases are wired in the right order.
 
 **A sweep must invoke the Catch2 BINARY with the tag, not `ctest -R`.** The first two attempts here
 ran `ctest -R '\[map\]|\[loop\]|…'` and reported *"0 failures / 100"* while matching **zero tests** —
@@ -5054,8 +5056,6 @@ is the ergonomic the change was asked for.
 
 ### Owed
 
-- **gui-mode eyeball** on a Metal session: nothing draws differently, but `Application::run()` gained
-  a start/stop pair around the whole run loop.
 - **Asynchronous graph execution + a non-blocking gui** — a milestone, not a follow-on. The blocker is
   not the task layer: `Scheduler::run` is a staging loop, and ten pane files make 23 direct reads of
   an evaluation every frame. Payloads are shared and immutable since M5 slice 1 so the pixels are
@@ -5126,6 +5126,9 @@ production code rather than to the directory.
 - CI needed no change — every checkout already does `submodules: recursive`.
 - **Not verified here: gui-mode.** Nothing in the swap touches a pane, but flowview runs graphs on
   this pool, so it is owed the usual Metal eyeball alongside the tidy pass's File ▸ Quit change.
+  *(**Discharged 2026-09-28** for the pool half: gui-mode was driven on a tree where `lain::app`
+  starts and stops the pool on every run, so the viewer demonstrably works with multi underneath.
+  The File ▸ Quit gesture is a separate claim and remains unconfirmed.)*
 
 
 
