@@ -495,6 +495,60 @@ TEST_CASE("replaceGroup refuses a node that is not a group", "[flow][group][edit
 	REQUIRE(g.contains(plain));
 }
 
+TEST_CASE("replaceGroup under a retained evaluation recomputes the group it re-seats", "[flow][group][edit]")
+{
+	// Make Local's exact shape, measured 2026-09-28: a LINKED group with one input, made local. The
+	// replacement lands at the SAME NodeId, so a host's retained evaluation still holds the old
+	// node's record under that id. While a version was a per-node counter from 1, the replacement's
+	// bumps (sync, then reconnecting its input) added up to exactly the old version — 3 == 3 — so the
+	// group looked clean over a FRESH child, never republished its input into it, and delivered
+	// NOTHING. The cases above miss it because each runs a new evaluation afterwards.
+	registerInt();
+	Graph g;
+	const NodeId source = g.add<ConstInt>(5);
+
+	// x -> x + x -> y
+	auto doubler = [](Graph& interior)
+	{
+		const PortId x = interior.boundaryInputNode().addBoundary<int>("x");
+		const PortId y = interior.boundaryOutputNode().addBoundary<int>("y");
+		const NodeId add = interior.add<AddInt>();
+		const PortAddress in{interior.boundaryInputNode().id(), x};
+		REQUIRE(interior.connect(in, PortAddress{add, interior.node(add).input(0).id()}) == Connection::Ok);
+		REQUIRE(interior.connect(in, PortAddress{add, interior.node(add).input(1).id()}) == Connection::Ok);
+		REQUIRE(interior.connect(PortAddress{add, interior.node(add).output(0).id()},
+								 PortAddress{interior.boundaryOutputNode().id(), y}) == Connection::Ok);
+	};
+
+	const NodeId group = g.add<LinkedGroupNode>();
+	{
+		Graph interior;
+		doubler(interior);
+		static_cast<LinkedGroupNode&>(g.node(group)).adoptInterior(std::move(interior));
+	}
+	edit::syncGroupPorts(g, group);
+	REQUIRE(g.connect(source, 0, group, 0) == Connection::Ok);
+
+	Evaluation evaluation{g};
+	SerialScheduler scheduler;
+	scheduler.run(g, evaluation);
+	REQUIRE(valueAt(g, evaluation, group, 0) == 10);
+	const std::uint64_t before = g.node(group).version();
+
+	auto local = std::make_unique<InlineGroupNode>();
+	doubler(local->inner());
+	const edit::ReplaceResult result = edit::replaceGroup(g, group, std::move(local));
+	REQUIRE(result.ok());
+	REQUIRE(result.reconnected == 1);
+
+	// A different node object at the same id is a different recipe history, so it can never carry
+	// the version its predecessor was computed at.
+	REQUIRE(g.node(group).version() != before);
+	scheduler.run(g, evaluation);
+	REQUIRE_FALSE(output(g, evaluation, group, 0).empty());
+	REQUIRE(valueAt(g, evaluation, group, 0) == 10);
+}
+
 TEST_CASE("Graph::extract hands the node over, keeping its identity", "[flow][graph]")
 {
 	Graph source;

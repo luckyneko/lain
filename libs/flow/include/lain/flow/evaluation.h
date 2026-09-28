@@ -17,13 +17,15 @@
 // LINEAGE IS THE PAIRING RULE. An Evaluation spans in-place edits of its definition — that is where
 // version comparison earns its incrementality — and spans a CLONE of it, which carries the same
 // versions (ADR-0025: a run reads a clone of the document, so one Evaluation meets a new Graph object
-// every run). It never transfers to a *rebuilt* Graph, even one whose node UUIDs match, because
-// per-node versions are runtime counters that restart. What tells the two apart is the definition's
-// LINEAGE (types.h), which a clone carries and a construction mints: `prepare` records it and refuses
-// a definition of another one, at the root and for every child. That is the property the old
-// address comparison stood in for, and unlike it, it cannot be fooled by a Graph rebuilt where the old
-// one stood. A host still replaces its document and Evaluation together on New/Open/undo — now
-// because the lineage says so, rather than because ownership was the only thing that could.
+// every run). It never transfers to a *rebuilt* Graph, even one whose node UUIDs match: a rebuilt
+// graph is new node objects, so its versions are ones this Evaluation never recorded (a version is
+// drawn from one process-wide sequence — node.h), and pairing the two would silently recompute
+// everything while keeping records that belong to another document. What tells a clone from a
+// rebuild is the definition's LINEAGE (types.h), which a clone carries and a construction mints:
+// `prepare` records it and refuses a definition of another one, at the root and for every child — a
+// mispairing is a host bug, so it is reported rather than absorbed. Unlike the old address
+// comparison, it cannot be fooled by a Graph rebuilt where the old one stood, and it does not reject
+// a clone. A host still replaces its document and Evaluation together on New/Open/undo.
 //
 // INVALIDATION IS PULLED, NEVER PUSHED. The definition holds no list of its evaluations — deliberately
 // — so an edit cannot walk them to drop values. It bumps a per-node version, and each Evaluation
@@ -116,8 +118,8 @@ namespace lain::flow
 		// keeps the values of the ports it still has.
 		//
 		// Throws std::logic_error if `definition` is of another LINEAGE than the one this Evaluation
-		// was built for — a rebuilt definition, whose restarted version counters would make changed
-		// nodes look clean. A clone of the same definition is accepted: that is the point of it. A
+		// was built for — a rebuilt definition, whose records here describe another document. A clone
+		// of the same definition is accepted: that is the point of it. A
 		// CHILD whose interior is of another lineage (a linked template re-resolved, an interior
 		// replaced wholesale) is not an error but a fresh start: that child is rebuilt empty.
 		void prepare(const Graph& definition);

@@ -207,8 +207,17 @@ namespace lain::flow
 		bool setParam(PortId id, T value);
 
 		// This node's RECIPE VERSION: bumped exactly when its definition changes (a param committed
-		// through setParam, a structural edit by one of Graph's primitives). Starts at 1, so it never
+		// through setParam, a structural edit by one of Graph's primitives). Never 0, so it never
 		// equals a freshly prepared Evaluation's `computedAt` of 0.
+		//
+		// Drawn from ONE PROCESS-WIDE SEQUENCE, at construction and at every bump — not counted per
+		// node. So no two node objects ever hold the same version, unless one is a clone of the other
+		// (which is the same recipe at the same point in its history, ADR-0025). That is what lets an
+		// Evaluation key its records by NodeId alone: a DIFFERENT node put back at the same id — a
+		// group re-seated by edit::replaceGroup — cannot land on the version its predecessor was
+		// computed at. While this was a per-node counter from 1 it could, and did (3 == 3 after Make
+		// Local), leaving the group looking clean over a fresh interior and delivering nothing.
+		// Only ever compared for EQUALITY; the values are monotonic, but mean nothing on their own.
 		//
 		// This is how invalidation reaches evaluations WITHOUT the definition knowing about them.
 		// A definition holds no list of its evaluations — deliberately, since they are host-owned —
@@ -405,7 +414,11 @@ namespace lain::flow
 		// Record that this node's recipe changed. Private, and reached only through the operations
 		// that actually change it — setParam here, Graph's structural primitives there — so there is
 		// no public "mutate, then remember to bump" protocol to forget half of.
-		void bumpVersion() { ++m_version; }
+		void bumpVersion() { m_version = mintVersion(); }
+
+		// The next value of the process-wide version sequence (see version()). In node.cpp, so the
+		// sequence is one object and <atomic> stays out of every header that declares a node.
+		static std::uint64_t mintVersion();
 
 		// Erase a port by id (raw — no edge check). Graph::removePort enforces the
 		// no-dangling-edge invariant *before* calling this, so it is Graph-only. Returns whether
@@ -478,9 +491,10 @@ namespace lain::flow
 		std::vector<Param> m_params;
 		PayloadTypes m_payloadTypes;			   // named types this node's declarations are built from
 		std::map<PortId, std::size_t> m_payloadOf; // declaration id -> index into m_payloadTypes
-		// Starts at 1, not 0: a freshly prepared Evaluation records `computedAt = 0`, so a node is
-		// stale until something actually computes it.
-		std::uint64_t m_version = 1;
+		// Minted, never 0: a freshly prepared Evaluation records `computedAt = 0`, so a node is stale
+		// until something actually computes it. Copied as-is by the copy constructor, which is the one
+		// way two objects share a version — a clone.
+		std::uint64_t m_version = mintVersion();
 	};
 } // namespace lain::flow
 

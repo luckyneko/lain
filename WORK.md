@@ -6218,7 +6218,8 @@ normalised.
     fires with the census naming the key; in Release, the census's `typeid` check names it.
   - `LoopNode`'s copy constructor dropping `m_carries` (the fold changes), `m_count` (the trip count
     changes), or `m_continue` (the trip count changes, and so does the document's `loop` section).
-- **Found, pre-existing, NOT fixed — a replaced group can inherit its predecessor's `computedAt`.**
+- **Found, pre-existing — FIXED the same day (see *Versions become process-unique* below) — a
+  replaced group could inherit its predecessor's `computedAt`.**
   `edit::replaceGroup` (Save as Template / Make Local) re-seats a new node **at the same NodeId**, and
   its version restarts at 1. The bumps that follow (sync, then reconnecting its inputs) can add up to
   exactly the old version, and the root evaluation still holds the old node's `computedAt` under that
@@ -6227,6 +6228,43 @@ normalised.
   does not republish its inputs into it, so **its output goes empty**. The pre-change address checks
   give the same result. The general shape is any node replaced under the same NodeId without a
   prepare in between; the fix belongs with evaluation identity rather than with this slice.
+
+### Versions become process-unique — the replaced-group defect, FIXED 2026-09-28
+
+The defect slice 1 found (the bullet above) is fixed at its cause rather than at `replaceGroup`. A
+version was a per-node counter starting at 1, so two node objects at one NodeId could hold the same
+number, and an evaluation keys its records by NodeId alone. **A version is now drawn from one
+process-wide sequence**, at construction and at every bump (`Node::mintVersion`, `src/node.cpp`). No
+two node objects share a version unless one is a clone of the other, which is the only case where
+sharing one is right. Chosen with the repo owner over patching `replaceGroup` (which leaves the shape
+open to the next caller that re-seats a node) and over a per-lineage clock (nodes bump themselves with
+no pointer to their graph, and exist outside one before they are added). `ctest -j8` **810/810** Debug
+with video on, **816/816** Release with video on, **783/783** Release video-off (+3 each);
+warning-clean, format-check clean.
+
+- **It was larger than the one-line description**, like two of the four defects before it: not
+  `replaceGroup` but *any* different node at the same id. The sharpest form needs no group at all. A
+  source removed and replaced at its own id by another with a different constant sat at version 1
+  both times. The retained evaluation's record said "computed at 1", so the new constant was **never
+  computed**: 1 was served instead of 2. Both shapes are now tests, beside the property itself (*no
+  two node objects share a version unless one is a clone of the other*).
+- **It changes what lineage is FOR, which ADR-0025 and CONTEXT.md now say.** Once a version cannot
+  falsely match, a rebuilt graph can never look clean however it is paired, so lineage no longer
+  prevents a wrong answer. It is the **pairing rule**: an evaluation of one document run against
+  another is refused loudly rather than silently recomputed, a clone is accepted, and a replaced
+  interior gets a fresh child. ADR-0012's ownership paragraph and ADR-0025's lineage section are
+  amended in place.
+- **Two of slice 1's own tests were built on the coincidence this removes**, and now say so. The
+  serialize reload case used to edit the reload back up to the version the evaluation had seen,
+  which is no longer possible, so it asserts the version differs and the pairing is still refused.
+  The rebuilt-interior case used to require equal versions and now requires them to differ; what it
+  still discriminates is the child guard's *replace, don't refuse*.
+- **Only equality was ever asked of a version**, checked across the tree: `markComputed` stores one
+  and `needsRecompute` compares with `!=`. Monotonic values keep the three tests that assert `>`
+  after a bump true, but nothing in production reads a version as a count.
+- **Sabotage** — the per-node counter restored — fails exactly five cases: the three new ones plus
+  the two rewritten slice-1 cases. flowview's suite is unaffected, as expected, since the defect
+  needs a retained evaluation across a replace.
 
 ### Visual design (settled in outline, tuned by eyeball)
 
@@ -6419,17 +6457,15 @@ SuiteSparse-enabled Ceres; capture manifests and capture datasets (which M10 han
 
 Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
 
-- **A group replaced at its own NodeId can come back looking clean, and deliver nothing** (found
-  2026-09-28, measured, pre-existing). `edit::replaceGroup`'s new node can reach exactly its
-  predecessor's version, and the evaluation still holds the old `computedAt` under that id.
-  *(Milestone 14, *Slice 1 landed*, last bullet.)*
-
-The four before it are fixed — the three from M11 §Not in this milestone
+**The list is empty.** All five are fixed — a group replaced at its own NodeId looking clean and
+delivering nothing (found by M14 slice 1, fixed 2026-09-28 by making versions process-unique; see
+Milestone 14), the three from M11 §Not in this milestone
 (`GroupSync::refused` had no reader, 2026-09-09; the Issues pane flagged an unwired DEFAULTED
 input, 2026-09-09; `ungroup` told a map it was linked, 2026-09-10) and the parallel-ctest collision
-below (2026-09-10). Two of the four turned out to be **larger than their one-line description**, and
-in the same way each time: the described symptom was the visible end of a duplicated or unreachable
-decision. Worth remembering when writing the next entry here.
+below (2026-09-10). Three of the five turned out to be **larger than their one-line description**:
+the described symptom was the visible end of a duplicated or unreachable decision, or — the newest —
+of a general shape (any node re-seated at its own id) that one caller happened to reach first. Worth
+remembering when writing the next entry here.
 
 ### `ctest -j` and scratch paths — FIXED 2026-09-10
 

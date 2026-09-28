@@ -83,10 +83,16 @@ namespace lain::flow
 		std::uint32_t m_value = 0;
 	};
 
-	// The identity of one definition's VERSION HISTORY (ADR-0025): what makes two definitions' per-node
-	// versions comparable. Minted when a Graph is constructed — which is also how every load, New and
-	// undo restore begins — carried by Graph::clone(), and recorded by an Evaluation, which refuses a
-	// definition of another lineage. Moving a Graph carries it too, since a moved graph is the same one.
+	// The identity of one definition's VERSION HISTORY (ADR-0025): what says an Evaluation's records
+	// belong to this definition, so it may be run against it. Minted when a Graph is constructed —
+	// which is also how every load, New and undo restore begins — carried by Graph::clone(), and
+	// recorded by an Evaluation, which refuses a definition of another lineage. Moving a Graph carries
+	// it too, since a moved graph is the same one.
+	//
+	// It is not what keeps a version from falsely matching: a version is drawn from one process-wide
+	// sequence (node.h), so no two node objects share one unless one is a clone of the other. Lineage
+	// is the PAIRING rule on top of that — a mispaired evaluation is refused loudly rather than
+	// silently recomputed.
 	//
 	// It replaces comparing a definition's ADDRESS, which could not tell a graph rebuilt where the old
 	// one stood from the original — and which a clone per run would fail every time.

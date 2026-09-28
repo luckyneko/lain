@@ -221,6 +221,46 @@ TEST_CASE("a definition edit invalidates every evaluation, without touching them
 	REQUIRE(second.needsRecompute(p.pass)); // BOTH notice, though the edit reached neither
 }
 
+TEST_CASE("no two node objects share a version unless one is a clone of the other", "[flow][evaluation]")
+{
+	// A version is drawn from ONE process-wide sequence, at construction and at every bump. That is
+	// what lets an evaluation key its records by NodeId alone: a different node object put back at
+	// the same id cannot land on the version its predecessor was computed at. A clone is the one
+	// exception, by design — it is the same recipe at the same point in its history (ADR-0025).
+	const test::ConstInt a{1};
+	const test::ConstInt b{1};
+	REQUIRE(a.version() != 0); // never the "computed at nothing" a fresh evaluation records
+	REQUIRE(a.version() != b.version());
+
+	Graph graph;
+	const NodeId id = graph.add<test::ConstInt>(1);
+	const Graph clone = graph.clone();
+	REQUIRE(clone.node(id).version() == graph.node(id).version());
+	graph.bumpNodeVersion(id);
+	REQUIRE(clone.node(id).version() != graph.node(id).version());
+}
+
+TEST_CASE("a different node re-seated at its own id is stale to a retained evaluation", "[flow][evaluation]")
+{
+	// The general shape of the replaceGroup bug (see test_groupedit.cpp): an evaluation keys its
+	// records by NodeId, and a node REMOVED and replaced by another at the same id leaves the old
+	// record in place until something says it no longer applies. A source is the sharpest case,
+	// since nothing bumps it on the way in: with per-node counters both objects sat at version 1, the
+	// record said "computed at 1", and the new constant was never computed — a wrong answer, 1 not 2.
+	Graph graph;
+	const NodeId id = graph.add<test::ConstInt>(1);
+	Evaluation evaluation{graph};
+	SerialScheduler scheduler;
+	scheduler.run(graph, evaluation);
+	REQUIRE(test::output(graph, evaluation, id, 0).get<int>() == 1);
+
+	REQUIRE(graph.removeNode(id));
+	REQUIRE(graph.add(std::make_unique<test::ConstInt>(2), id) == id);
+	REQUIRE(evaluation.needsRecompute(id)); // the old record is still there, and it does not apply
+	scheduler.run(graph, evaluation);
+	REQUIRE(test::output(graph, evaluation, id, 0).get<int>() == 2);
+}
+
 TEST_CASE("N evaluations run simultaneously over one const definition", "[flow][evaluation]")
 {
 	// What `const Graph&` in the scheduler signature actually promises. Repeated in the style of

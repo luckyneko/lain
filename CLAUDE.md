@@ -713,11 +713,34 @@ pre-change binary once timestamps and minted ids are normalised. Full landing no
 - **`Evaluation::definition()` is "the graph last prepared against"**, which will be a clone once runs
   read clones. `evaluation.h` now states that it must outlive any read; slice 2's published
   evaluation is what will hold it.
-- **Found, pre-existing, not fixed:** `edit::replaceGroup` (Save as Template / Make Local) re-seats a
+- **Found, pre-existing:** `edit::replaceGroup` (Save as Template / Make Local) re-seats a
   node at the same NodeId, and its restarted version can land exactly on its predecessor's
   `computedAt`. **Measured: 3 == 3 after making a one-input linked group local**, so the group looks
   clean over a fresh child and **its output goes empty**. The same happens under the old checks.
-  Listed in WORK.md's *Known defects*.
+  *(**Fixed the same day** — see the next entry.)*
+
+### Update 2026-09-28 — versions become process-unique (the replaced-group defect, fixed)
+
+The defect slice 1 found, fixed at its cause. A node's version was a per-node counter from 1, so a
+DIFFERENT node object re-seated at the same NodeId could climb to exactly the version its predecessor
+had been computed at, and an evaluation keys its records by NodeId alone. **A version is now drawn
+from one process-wide sequence** (`Node::mintVersion`, new `libs/flow/src/node.cpp`) at construction
+and at every bump, so no two node objects share one unless one is a clone of the other. The repo
+owner chose this over patching `replaceGroup` and over a per-lineage clock. `ctest -j8` **810/810**
+Debug with video on, **816/816** Release with video on, **783/783** Release video-off (+3 each);
+warning-clean, format-check clean. Full notes in WORK.md's *Milestone 14 › Versions become
+process-unique*.
+
+- **Larger than its description:** any node, not just a group. A source removed and replaced at its
+  own id served its predecessor's constant, 1 instead of 2, because both objects sat at version 1.
+  That shape, the measured `replaceGroup` shape and the property itself are the three new tests;
+  sabotage (the counter restored) fails exactly those plus the two slice-1 cases built on the
+  coincidence.
+- **Lineage is now the PAIRING rule, not the thing preventing a false match**, because a version can
+  no longer produce one. It refuses an evaluation of one document run against another (loudly,
+  instead of a silent full recompute), accepts a clone, and gives a replaced interior a fresh child.
+  ADR-0012 and ADR-0025 are amended in place; CONTEXT.md's *Version* entry now says a version is
+  process-unique and compared only for equality.
 
 ### Update 2026-09-26 — one process task pool; `lain::task` becomes an alias for `multi`
 

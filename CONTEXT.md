@@ -700,10 +700,10 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   a snapshot of one run. A cli creates and drops one; a gui retains one; a `SplitGroup` retains one
   child per stream. A host owns it **together with** the definition it belongs to, as one replaceable
   unit: in-place edits keep it, while a rebuilt Graph (load, New, undo) gets a new one even when node
-  UUIDs match, because per-node Versions restart. It **does** span a **clone** (M14 slice 1, built), which
-  carries the Versions and the **lineage** that make them comparable — `prepare` checks lineage, not
-  the definition's address, so the Graph it last prepared against is the one it reads through, and
-  must outlive those reads. Before dispatch, `prepare(definition)` creates,
+  UUIDs match — its nodes are new objects with new Versions, and the **lineage** differs, so `prepare`
+  refuses the pairing. It **does** span a **clone** (M14 slice 1, built), which carries the Versions and
+  the lineage — `prepare` checks lineage, not the definition's address, so the Graph it last prepared
+  against is the one it reads through, and must outlive those reads. Before dispatch, `prepare(definition)` creates,
   prunes and stabilises its storage. Scheduler entry holds a non-blocking **run lease**: reusing one
   Evaluation concurrently or recursively throws `std::logic_error` immediately, while distinct
   Evaluations — including two over the same definition — may run concurrently; the RAII lease releases
@@ -807,7 +807,11 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 - **Version** *(per node, on the definition)* — bumped only when that node's recipe changes. An
   evaluation records the version it computed each node at, and staleness is the comparison. Invalidation
   is therefore **pulled** by an evaluation when it next runs, never **pushed** by an edit — an edit
-  cannot reach the evaluations, and must not cost anything per stream.
+  cannot reach the evaluations, and must not cost anything per stream. A Version is drawn from **one
+  process-wide sequence** — at construction and at every bump — so no two node objects ever hold the
+  same one unless one is a **clone** of the other; that is what lets an evaluation key its records by
+  NodeId alone, since a different node put back at the same id can never match what its predecessor
+  was computed at. Compared only for equality. _Avoid_: reading a Version as a count of edits.
 - **Recompute request** *(per node, on one evaluation)* — runtime demand to compute that node again
   without changing its definition: a boundary rebind, group-entry publication, or on-request source
   rearm. It affects only that evaluation; a recipe edit uses the definition's Version instead. One
@@ -855,16 +859,19 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   third way to get a graph, and the strictest: a clone preserves identity **and history** — the same
   NodeIds, the same per-node Versions, the same **lineage** — so it is the same recipe at the same
   point in its history. That is why one Evaluation spans clones while it can never span a load (whose
-  Versions restart). A run reads a clone of the document, so an edit never races it. Linked-template
+  nodes are new objects, with new Versions and a new lineage). A run reads a clone of the document, so an edit never races it. Linked-template
   definitions are shared by a clone, never copied. `Graph::clone()` over `Node::clone()`, which is pure
   — so every node kind has one — and a group kind that OWNS its interior deep-copies it there.
   _Avoid_: snapshot (the undo document), copy (says nothing about history), run copy, frozen
   definition.
-- **Lineage** *(M14 slice 1 — built)* — the identity of one definition's version history: what makes two
-  definitions' Versions **comparable**. Minted when a Graph is constructed or loaded (so New, Open and
-  an undo restore each begin one), carried by a clone, and recorded by an Evaluation, which refuses a
-  definition of another lineage — at the root and for every child. It replaces comparing a
-  definition's address, which could not tell a rebuilt graph at a recycled address from the original.
+- **Lineage** *(M14 slice 1 — built)* — the identity of one definition's version history: what says an
+  Evaluation's records belong to this definition. Minted when a Graph is constructed or loaded (so New,
+  Open and an undo restore each begin one), carried by a clone, and recorded by an Evaluation, which
+  refuses a definition of another lineage — at the root and for every child. It replaces comparing a
+  definition's address, which could not tell a rebuilt graph at a recycled address from the original,
+  and rejected every clone. It is the **pairing rule**, not the thing that stops a false match: a
+  Version is process-unique, so a rebuilt graph could never look clean — lineage is what makes pairing
+  one with an evaluation of another document an error rather than a silent full recompute.
   At the root a mismatch is refused; for a child it means a fresh child, since an interior replaced
   wholesale (a re-resolved template) is legitimate. Opaque and in-process only — `flow::Lineage`, a
   counter behind equality, never stored or shown. _Avoid_: generation, epoch (both read as counters, which is what a Version is), graph id.

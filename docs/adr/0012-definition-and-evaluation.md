@@ -171,6 +171,17 @@ rebuilt where the old one stood, so it must not be mistaken for the mechanism. T
 lesson as ADR-0011: a discriminator bolted onto an ambiguous key is weaker than removing the
 ambiguity.
 
+*Amended 2026-09-28 (ADR-0025, M14 slice 1).* Both halves of that paragraph have since moved. The
+guard rail compares **lineage**, not an address, so a definition rebuilt where the old one stood is
+refused and a clone is accepted. And **versions are no longer per-node counters**: each is drawn from
+one process-wide sequence at construction and at every bump, so no two node objects share one unless
+one is a clone of the other. The per-node counter was ambiguous at a finer grain than this paragraph
+considered. A DIFFERENT node re-seated at the SAME NodeId (`edit::replaceGroup`, behind Make Local and
+Save as Template) could restart and climb to exactly the version its predecessor had been computed at,
+and an in-place edit keeps the evaluation, so ownership could not help. Measured: 3 == 3, the group
+looked clean over a fresh interior, and delivered nothing. That was the same lesson again, so the fix
+removed the ambiguity rather than adding a discriminator.
+
 **Coordinates rather than minted run ids.** A minted `EvaluationId` would be process-unique runtime
 identity in core again — the thing ADR-0011 rejects. It is also wrong for a live viewer: a preview
 pinned to run #47 goes stale the instant run #48 happens. A coordinate keeps pointing at *"element 3

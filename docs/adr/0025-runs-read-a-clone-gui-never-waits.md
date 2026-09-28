@@ -52,6 +52,17 @@ That is the property the address check was standing in for: *these versions are 
 ADR-0012's recycled-address hole rather than working around it, and it is what makes asking "is this
 node stale?" across the document and an evaluation computed against a clone legitimate.
 
+*Amended 2026-09-28, the day slice 1 landed.* Lineage stopped being what prevents a **false match**,
+because a version stopped being able to produce one. Building slice 1 found that a per-node counter was
+ambiguous *within* a lineage: `edit::replaceGroup` re-seats a different node at the same NodeId, and
+its restarted counter reached exactly the version its predecessor was computed at (3 == 3), so the
+group looked clean over a fresh interior and delivered nothing. Versions are now drawn from one
+process-wide sequence, so no two node objects share one unless one is a clone of the other. Every
+version comparison is therefore sound across any two definitions. Lineage is the **pairing rule**
+layered on top: it refuses an evaluation of one document run against another, a host bug, loudly
+rather than as a silent full recompute. It still accepts the clone the address check rejected. At a
+child it still decides that a replaced interior gets a fresh child evaluation instead of an error.
+
 ### Supersede: cancel at step boundaries, plus an opt-in check inside compute
 
 A newer trigger cancels the in-flight run. Every step checks the cancel flag before it starts; a long
@@ -163,7 +174,8 @@ engine instead of re-implementing it.
 - **A superseded run's payloads are destroyed on the coordinator thread.** Fine for today's CPU nodes;
   a node that owns GPU resources must not assume the render thread releases them.
 - **New, Open and undo start a new lineage, so they recompute everything.** Pre-existing — a rebuilt
-  graph's versions restart — but in Live mode on a slow graph, every undo is a full run.
+  graph's nodes are new objects with new versions — but in Live mode on a slow graph, every undo is a
+  full run.
 
 ## What this does NOT buy
 
@@ -180,6 +192,6 @@ engine instead of re-implementing it.
 - **View-driven pull** — trigger: an expensive branch downstream of routine edits that is not being
   looked at.
 - **Keeping an evaluation across an undo** — trigger: undo on a slow graph. It needs a way to say a
-  restored node is the same recipe as the current one, which a restarted version cannot.
+  restored node is the same recipe as the current one, which a freshly minted version cannot.
 - **Asynchronous texture upload and off-thread poster production** — trigger: an upload or a poster
   decode that visibly hitches.

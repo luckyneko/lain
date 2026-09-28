@@ -156,26 +156,28 @@ TEST_CASE("a load restores nodes as themselves", "[flow-serialize][identity]")
 
 TEST_CASE("a reloaded graph with identical ids is refused by the old evaluation", "[flow-serialize][identity]")
 {
-	// A load preserves IDENTITY but not HISTORY: per-node versions restart, so an evaluation of the
-	// original must never be paired with the reload, however alike the two look (ADR-0025). The
-	// sharpest form of the trap is below — reloaded into the SAME storage (so an address comparison
-	// accepts it), then edited back up to the version the evaluation last saw (so a version
-	// comparison calls the edited node clean and serves the old value). Lineage is what refuses it.
+	// A load preserves IDENTITY but not HISTORY, so an evaluation of the original must never be
+	// paired with the reload, however alike the two look (ADR-0025). Reloaded here into the SAME
+	// storage, so an address comparison would have accepted it.
+	//
+	// Two things now stand in the way, and this case is about the second. Every reloaded node is a
+	// new object and so carries a version no evaluation has recorded — versions are one process-wide
+	// sequence — which means nothing could be mistaken for clean. (While versions were per-node
+	// counters, this case edited the reload back up to the version the evaluation last saw, and a
+	// version comparison then served the old value.) And the LINEAGE differs, so the pairing is
+	// REFUSED rather than quietly recomputed: a mispaired evaluation is a host bug, and it says so.
 	const Factory<Node> factory = identityFactory();
 	Graph graph;
 	const NodeId source = graph.add<ConstNode>();
-	const PortId value = graph.node(source).param(0).id();
-	REQUIRE(graph.node(source).setParam(value, 11));
+	REQUIRE(graph.node(source).setParam(graph.node(source).param(0).id(), 11));
 	const std::uint64_t seen = graph.node(source).version();
 
 	Evaluation evaluation{graph};
 	SerialScheduler{}.run(graph, evaluation);
 
 	graph = fromValue(toValue(graph, factory, intCodecs()), factory, intCodecs()).graph;
-	REQUIRE(graph.contains(source)); // the same identity ...
-	while (graph.node(source).version() < seen)
-		REQUIRE(graph.node(source).setParam(value, 22)); // ... edited back up to the same version
-	REQUIRE(graph.node(source).version() == seen);
+	REQUIRE(graph.contains(source));			   // the same identity ...
+	REQUIRE(graph.node(source).version() != seen); // ... never the same version
 
 	REQUIRE_THROWS_AS(SerialScheduler{}.run(graph, evaluation), std::logic_error);
 }

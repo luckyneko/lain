@@ -175,10 +175,12 @@ TEST_CASE("a clone is the same recipe at the same point in its history", "[flow]
 	Calls calls;
 	Graph graph;
 	const Scene s = buildScene(graph, calls);
-	// An edit before cloning, so the versions being compared are not all the initial 1.
+	// An edit before cloning, so the version a clone must carry is one an edit produced rather than
+	// the one the node was built with.
 	auto& source = static_cast<Source&>(graph.node(s.source));
+	const std::uint64_t built = graph.node(s.source).version();
 	REQUIRE(source.setParam(source.value, 5));
-	REQUIRE(graph.node(s.source).version() > 1);
+	REQUIRE(graph.node(s.source).version() != built);
 
 	const Graph copy = graph.clone();
 
@@ -323,8 +325,10 @@ TEST_CASE("one evaluation stays incremental across clones of its document", "[fl
 TEST_CASE("an evaluation refuses a graph rebuilt where the old one stood", "[flow][clone][evaluation]")
 {
 	// The hole address identity could not close (ADR-0012 conceded it): a Graph rebuilt in the SAME
-	// storage has the same address, so comparing addresses accepted it — and its versions restart,
-	// so comparing them against this evaluation's records would call changed nodes clean.
+	// storage has the same address, so comparing addresses accepted it. Its nodes are new objects, so
+	// their versions can no longer coincide with this evaluation's records (a version is drawn from
+	// one process-wide sequence) — but an evaluation of one document run against another is a host
+	// bug, and lineage refuses it rather than quietly recomputing everything.
 	Graph graph;
 	const NodeId source = graph.add<test::ConstInt>(1);
 	Evaluation evaluation{graph};
@@ -350,13 +354,14 @@ TEST_CASE("an evaluation refuses a graph rebuilt where the old one stood", "[flo
 
 TEST_CASE("an interior rebuilt where the old one stood gets a fresh child evaluation", "[flow][clone][evaluation]")
 {
-	// The child-level twin of the case above, and the one where address identity gives a WRONG
-	// ANSWER rather than a missed refusal. The interior is replaced by one with the same node ids
-	// and the same versions but a different constant, in the same storage: comparing addresses kept
-	// the child, every inner node looked clean, and the group went on serving the old value (1,
-	// measured against the pre-change checks). Lineage at the CHILD GUARD is what turns that into a
-	// fresh child rather than an error: with the guard alone reverted, the child's own prepare still
-	// refuses the new interior by lineage, and the run throws instead of rebuilding.
+	// The child-level twin of the case above. The interior is replaced, in the same storage, by one
+	// with the same node ids and a different constant. When versions were per-node counters this was
+	// a WRONG ANSWER under address identity: the rebuilt nodes could carry the very versions the
+	// child had recorded, the child was kept, everything looked clean, and the group served the old
+	// value (1, measured). Versions are one process-wide sequence now, so rebuilt nodes can never
+	// match — and what is left for the CHILD GUARD to decide is whether the old child is replaced or
+	// refused. Lineage replaces it; with the guard reverted to addresses, the child's own prepare
+	// refuses the new interior by lineage and the run throws instead.
 	Graph graph;
 	const NodeId groupId = graph.add<InlineGroupNode>();
 	auto& group = static_cast<InlineGroupNode&>(graph.node(groupId));
@@ -374,14 +379,15 @@ TEST_CASE("an interior rebuilt where the old one stood gets a fresh child evalua
 	SerialScheduler{}.run(graph, evaluation);
 	REQUIRE(evaluation.value(groupOut).get<int>() == 1);
 
-	// The same interior, rebuilt: same boundary ids, same pin, same node id, same versions.
+	// The same interior, rebuilt: same boundary ids, same pin, same node id — and, being new node
+	// objects, versions no evaluation has seen.
 	Graph rebuilt{BoundaryIds{inId, outId}};
 	REQUIRE(rebuilt.boundaryOutputNode().addBoundary<int>("y") == outPin);
 	REQUIRE(rebuilt.add(std::make_unique<test::ConstInt>(2), constant) == constant);
 	REQUIRE(rebuilt.connect(PortAddress{constant, rebuilt.node(constant).output(0).id()},
 							PortAddress{outId, outPin}) == Connection::Ok);
 	for (const NodeId id : rebuilt.nodeIds())
-		REQUIRE(rebuilt.node(id).version() == group.inner().node(id).version());
+		REQUIRE(rebuilt.node(id).version() != group.inner().node(id).version());
 
 	const Graph* const address = &group.inner();
 	group.inner() = std::move(rebuilt);
