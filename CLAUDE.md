@@ -741,6 +741,11 @@ process-unique*.
   instead of a silent full recompute), accepts a clone, and gives a replaced interior a fresh child.
   ADR-0012 and ADR-0025 are amended in place; CONTEXT.md's *Version* entry now says a version is
   process-unique and compared only for equality.
+- **Found while sabotaging, fixed in its own commit: an order-dependent test.** A M12 payload-type case
+  assumed the process-wide conversion registry held no int -> string conversion. Catch2 v3 shuffles
+  case order, so as a whole binary it failed about half the time; ctest never saw it, since it runs
+  each case in its own process. The case now registers what it relies on. **A whole-binary sabotage
+  run is not ctest**, and its shuffled order can turn up an unrelated failure.
 
 ### Update 2026-09-26 — one process task pool; `lain::task` becomes an alias for `multi`
 

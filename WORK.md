@@ -6265,6 +6265,16 @@ warning-clean, format-check clean.
 - **Sabotage** — the per-node counter restored — fails exactly five cases: the three new ones plus
   the two rewritten slice-1 cases. flowview's suite is unaffected, as expected, since the defect
   needs a retained evaluation across a replace.
+- **Found while sabotaging, fixed in its own commit: an ORDER-DEPENDENT test.**
+  *"a value left over from before a retype is described, not thrown at"* (`test_payloadtype.cpp`,
+  M12) relied on the process-wide conversion registry NOT holding int -> string. Other cases in the
+  file register it, and Catch2 v3 shuffles case order, so run as a whole binary it failed about half
+  the time. It fails every time under `--order decl`. `ctest` never saw it, because it runs each case
+  in a process of its own. The case now registers the conversions itself and asserts what that
+  means: after the rerun, the slot holds the STRING `"7"` the retype carried across. The flow,
+  flow-serialize and flowview binaries were each run whole repeatedly afterwards, with no failure.
+  **Lesson for sabotage runs:** a whole-binary run is not ctest's one-process-per-case, and a
+  shuffled order can turn up a failure that has nothing to do with the sabotage.
 
 ### Visual design (settled in outline, tuned by eyeball)
 

@@ -509,6 +509,12 @@ TEST_CASE("a value left over from before a retype is described, not thrown at", 
 	// CANNOT reach in and clear them. It bumps the node's version and the value is corrected on the
 	// next run — but a host draws in between, and every pane renders a port through its declared
 	// type. So the per-type bridges have to be total in the value they are handed.
+	//
+	// The conversions are registered HERE, not left to whichever case ran first. The registry is
+	// process-wide and Catch2 shuffles case order, so this case used to see int -> string registered
+	// or not depending on the shuffle, and assert a different answer than it got about half the time
+	// — invisible under ctest, which runs every case in a process of its own.
+	registerTestConversions();
 	Graph graph;
 	const NodeId id = graph.add(constantOf(7));
 	Evaluation evaluation{graph};
@@ -528,10 +534,11 @@ TEST_CASE("a value left over from before a retype is described, not thrown at", 
 	REQUIRE_NOTHROW(described = evaluation.describe(out));
 	CHECK(described == "(stale)");
 
-	// And the next run corrects it, because the retype bumped the node's version.
+	// And the next run corrects it, because the retype bumped the node's version: the slot now holds
+	// a STRING — the 7 the retype carried across through the registered int -> string conversion.
 	scheduler.run(graph, evaluation);
-	CHECK(evaluation.describe(out) == "");
 	CHECK(evaluation.value(out).holds<std::string>());
+	CHECK(evaluation.describe(out) == "7");
 }
 
 TEST_CASE("the collection capability is total in the value it is handed", "[payload][describe]")
