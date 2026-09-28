@@ -123,7 +123,8 @@ namespace lain::flow::test
 	};
 
 	// Wire an interior `in -> body -> out` between its own boundary pins, then mirror its face.
-	inline void buildInterior(Graph& parent, NodeId groupId, Graph& inner, std::unique_ptr<Node> body)
+	// Answers the body's id, for a test that edits the interior afterwards.
+	inline NodeId buildInterior(Graph& parent, NodeId groupId, Graph& inner, std::unique_ptr<Node> body)
 	{
 		const PortId inPin = inner.boundaryInputNode().addBoundary<int>("x");
 		const PortId outPin = inner.boundaryOutputNode().addBoundary<int>("y");
@@ -133,6 +134,7 @@ namespace lain::flow::test
 		REQUIRE(inner.connect(PortAddress{bodyId, inner.node(bodyId).output(0).id()},
 							  PortAddress{inner.boundaryOutputNode().id(), outPin}) == Connection::Ok);
 		edit::syncGroupPorts(parent, groupId);
+		return bodyId;
 	}
 
 	inline Scene buildScene(Graph& graph, Calls& calls)

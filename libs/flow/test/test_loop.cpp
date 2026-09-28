@@ -24,6 +24,7 @@
 #include "lain/flow/group.h"
 #include "lain/flow/nodes/constant.h"
 #include "lain/flow/porttyperegistry.h"
+#include "lain/flow/runcontrol.h"
 #include "lain/flow/scheduler.h"
 #include "testnodes.h"
 
@@ -89,6 +90,35 @@ namespace
 		{
 			if (calls != nullptr)
 				++*calls;
+			evaluation.output(out).set(evaluation.input(in).get<int>() + 1);
+		}
+	};
+
+	// int -> int + 1 like AddOne, also reading `index`: when armed it cancels the run on iteration
+	// `at` and then FINISHES NORMALLY, so that iteration's body is kept and the loop can only stop
+	// between iterations. Armed through a reference, so the test disarms it without an edit.
+	struct AddOneCancelAt : Node
+	{
+		int* calls;
+		RunControl*& trigger;
+		int at;
+		PortId in, index, out;
+		AddOneCancelAt(int* c, RunControl*& t, int cancelAt)
+			: Node("AddOneCancelAt")
+			, calls(c)
+			, trigger(t)
+			, at(cancelAt)
+		{
+			in = addInput<int>("x");
+			index = addInput<int>("index");
+			out = addOutput<int>("x");
+		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<AddOneCancelAt>(*this); }
+		void compute(NodeEvaluation& evaluation) const override
+		{
+			++*calls;
+			if (trigger != nullptr && evaluation.input(index).get<int>() == at)
+				trigger->cancel();
 			evaluation.output(out).set(evaluation.input(in).get<int>() + 1);
 		}
 	};
@@ -619,6 +649,51 @@ TEST_CASE("a count loop folds its carried value once per iteration", "[flow][loo
 
 	REQUIRE(f.out(evaluation, "value").get<int>() == 15);
 	REQUIRE(f.iterations(evaluation).get<int>() == 5);
+}
+
+TEST_CASE("a cancelled loop stops between iterations", "[flow][loop][cancel]")
+{
+	// A cancel is asked between stages, and an iteration boundary IS a stage boundary (ADR-0021), so
+	// the loop stops after the iteration the cancel landed in. What it must NOT do is walk its
+	// remaining iterations as skipped steps up to its bound and then run its fold — the exit is a
+	// crossing, and crossings still run — over whatever the last real iteration left behind,
+	// publishing iterations == 100 for a fold that stopped at 4.
+	Fold f{0, 100};
+	int calls = 0;
+	RunControl* trigger = nullptr;
+	const NodeId body = f.inner().add<AddOneCancelAt>(&calls, trigger, 3);
+	f.carryThrough(body);
+	REQUIRE(f.inner().connect(PortAddress{f.innerIn(), f.loop().indexPin()},
+							  PortAddress{body, f.inner().node(body).input(1).id()}) == Connection::Ok);
+	f.close();
+
+	Evaluation evaluation{f.parent};
+	RunControl control;
+	trigger = &control;
+
+	SECTION("serial")
+	{
+		SerialScheduler{}.run(f.parent, evaluation, control);
+	}
+
+	SECTION("parallel")
+	{
+		// The rest of iteration 3 depends on the body that cancelled, so the cut is the same.
+		lain::testing::ThreadPool pool;
+		ParallelScheduler{}.run(f.parent, evaluation, control);
+	}
+
+	trigger = nullptr;
+	REQUIRE(calls == 4);						 // iterations 0 to 3, and not one more
+	REQUIRE(f.iterations(evaluation).empty());	 // the fold never published
+	REQUIRE(f.out(evaluation, "value").empty()); // nor any carried value
+	REQUIRE(evaluation.needsRecompute(f.loopId));
+
+	// Owed, so the next run folds — from the SEED, since a loop has no partial fold to resume.
+	SerialScheduler{}.run(f.parent, evaluation);
+	REQUIRE(calls == 104);
+	REQUIRE(f.out(evaluation, "value").get<int>() == 100);
+	REQUIRE(f.iterations(evaluation).get<int>() == 100);
 }
 
 TEST_CASE("the body is told which iteration it is in", "[flow][loop]")

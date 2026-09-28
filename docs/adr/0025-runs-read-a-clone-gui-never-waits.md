@@ -1,8 +1,8 @@
 # A run reads a clone of the document, and the gui never waits on graph work
 
 ---
-Status: accepted (designed 2026-09-28; slices 1 — clone + lineage — and 2 — the published evaluation
-+ payload identity — built 2026-09-28, the rest not)
+Status: accepted (designed 2026-09-28; slices 1 — clone + lineage — 2 — the published evaluation
++ payload identity — and 3 — cancellation — built 2026-09-28, the rest not)
 Amends [ADR-0012](0012-definition-and-evaluation.md) — the pairing guard moves from address identity
 to **lineage**, and a *published evaluation* is the "different concept" it set aside. Amends
 [ADR-0024](0024-one-process-task-pool.md) — gui-mode stops being serial, and the coordinator thread is
@@ -82,9 +82,42 @@ A newer trigger cancels the in-flight run. Every step checks the cancel flag bef
 Loops cancel between iterations for free, since an iteration boundary is a stage boundary. In Manual
 (below) an edit never touches a run; only Stop cancels.
 
+*Amended 2026-09-28, the day slice 3 landed.* Building it settled four things this section left open:
+
+- **Only COMPUTE is cancelled; the crossings between levels always run.** "Every step checks the
+  cancel flag" was wrong for a group's entry and exit, a map's gather and a loop's fold. A skipped exit
+  leaves nothing to say its owner is owed: the entry already cleared the group's request, and the
+  inner GroupOutput's own step cleared that node's. A skipped entry is worse, since the group is
+  selected next run only for its stale interior, does not republish, and its interior computes the
+  old input for good. Saying so would take a per-node "exit pending" flag, plus a republish that throws
+  away the interior's incrementality after every supersede. A crossing only copies values, so running
+  it keeps its owner consistent with whatever its interior currently holds, and the interior's own
+  requests keep the owner stale. That needs no new state.
+- **The closure requests are exact.** A stage persists a request for three kinds of node: each node
+  STEP it emits, each node deferred because something upstream of it was, and each FRONTIER it raises.
+  It does *not* persist one for a group or map expanded without republishing, an owner deferred only
+  because its interior was, or an exit. A request on any of those would make it republish next stage,
+  which is a change to an uncancelled run, and its interior's entries already keep it owed. The same
+  requests cover a THROW: a serial walk stops where it is, abandoning branches that have nothing to do
+  with the thrower.
+- **Staleness asks every child of a map, not the first.** A map's children share a definition and
+  are run together, so asking child 0 used to be enough. A cancel can stop a map part-way, and its
+  gather still runs, so element 2 can be owed while element 0 has finished.
+- **The surface is one `flow::RunControl` per run**, holding the cancel flag and the progress read. It
+  counts NODE computes only, summed across stages (a map's elements and a loop's iterations are
+  planned only once the stage before them has run), on the scheduler's own counters.
+  `RecipeHandle::finishedCount()` lives inside `ParallelScheduler::executePlan` and the serial
+  strategy has no handle. `Scheduler::evaluate` takes no control yet: the gui's cancellable pull is
+  Run Selection, many targets at once, and arrives with it (slice 8).
+
+A compute that finishes after the cancel is kept, as above. One that asks
+`NodeEvaluation::cancelled()` and hears yes has **given up**, so it is not recorded and stays stale,
+whatever it wrote.
+
 ### A dedicated coordinator thread; `Scheduler::run` stays blocking
 
-The host hands a coordinator thread the clone, the evaluation and a cancel token; it calls the chosen
+The host hands a coordinator thread the clone, the evaluation and a cancel token (built as
+`flow::RunControl` in slice 3); it calls the chosen
 scheduler's `run()`; the frame loop polls atomics for completion and progress. The staging loop keeps
 running at full speed off the UI thread. `SerialScheduler` runs *on* the coordinator and `--threads 0`
 runs the parallel plan inline *there*, so both stay asynchronous to the gui. The scheduler's surface

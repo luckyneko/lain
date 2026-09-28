@@ -5,6 +5,7 @@
 
 #include <lain/task/task.h>
 
+#include <algorithm>
 #include <cassert>
 #include <map>
 #include <optional>
@@ -24,20 +25,28 @@ namespace lain::flow
 	// evaluation recorded, so "is anything inside stale?" is a question about that group's CHILD
 	// evaluation, and is asked there. Recursion through nested groups falls out, since a child asks
 	// its own children the same way.
+	//
+	// EVERY child is asked, not only the first. A map's children share one definition and are run
+	// together, so an edit inside it shows in all of them alike — but a cancelled run can stop part-way
+	// through a map, leaving element 2 owed while element 0 finished, and the gather still runs (it is
+	// a crossing). Asking child 0 alone would call that map clean and keep its mixed collection.
 	bool Scheduler::stale(const Graph& definition, Evaluation& evaluation, NodeId id)
 	{
 		if (evaluation.needsRecompute(id))
 			return true;
 
 		const Graph* inner = definition.node(id).innerGraph();
-		if (inner == nullptr || !evaluation.hasChild(id))
+		if (inner == nullptr)
 			return false;
 
-		Evaluation& child = evaluation.child(id);
-		for (const NodeId innerId : inner->nodeIds())
+		for (std::size_t i = 0; i < evaluation.childCount(id); ++i)
 		{
-			if (stale(*inner, child, innerId))
-				return true;
+			Evaluation& child = evaluation.child(id, i);
+			for (const NodeId innerId : inner->nodeIds())
+			{
+				if (stale(*inner, child, innerId))
+					return true;
+			}
 		}
 		return false;
 	}
@@ -175,7 +184,11 @@ namespace lain::flow
 			}
 			if (downstreamOfDeferred)
 			{
+				// CLOSURE: it will consume new values in a later stage. Already selected then anyway
+				// (what it waits on is requested or prepared), so the request only matters if this run
+				// never gets there.
 				deferred.insert(id);
+				plan.closure.emplace_back(&evaluation, id);
 				continue;
 			}
 
@@ -186,8 +199,11 @@ namespace lain::flow
 			const bool isLoop = node.interiorEvaluation() == InteriorEvaluation::PerIteration && inner != nullptr;
 			if (inner == nullptr || (!isMap && !evaluation.hasChild(id)))
 			{
+				// CLOSURE: the step clears this request itself, before it computes — so it is owed
+				// exactly until it has run.
 				const std::size_t step = plan.steps.size();
 				plan.steps.push_back(Step{Step::Kind::Node, &definition, &evaluation, id, false});
+				plan.closure.emplace_back(&evaluation, id);
 				ends[id] = Ends{step, step};
 				continue;
 			}
@@ -226,8 +242,11 @@ namespace lain::flow
 				const Frontier frontier{&definition, &evaluation, id};
 				if (publish && staging.find(frontier) == nullptr)
 				{
+					// CLOSURE: a raised frontier. Its preparation requests it anyway — the request
+					// matters only when a cancel stops the run before that preparation happens.
 					deferred.insert(id);
 					plan.frontiers.push_back(frontier);
+					plan.closure.emplace_back(&evaluation, id);
 					continue;
 				}
 
@@ -303,9 +322,15 @@ namespace lain::flow
 						expand(*inner, child, runOrder(*inner, child), plan, staging);
 						interiorPending = plan.frontiers.size() > raised;
 					}
+					// CLOSURE, when raised — for the same reason as a map's. A loop whose interior is
+					// pending raises nothing and needs no entry: it has been requested since it was
+					// seeded, and only its exit clears that.
 					deferred.insert(id);
 					if (!interiorPending)
+					{
 						plan.frontiers.push_back(frontier);
+						plan.closure.emplace_back(&evaluation, id);
+					}
 					continue;
 				}
 
@@ -437,18 +462,27 @@ namespace lain::flow
 	//=========================================================================
 	void Scheduler::run(const Graph& definition, Evaluation& evaluation)
 	{
+		RunControl control; // nobody holds it, so nothing can cancel this run
+		run(definition, evaluation, control);
+	}
+
+	void Scheduler::run(const Graph& definition, Evaluation& evaluation, RunControl& control)
+	{
 		// One evaluation runs once at a time: the lease throws immediately rather than waiting, so an
 		// accidental reuse is a deterministic error instead of a race or a deadlock. It is held for
 		// the WHOLE invocation, every stage of it, so staging changes nothing about the contract.
 		// Preparation happens with it, so all storage exists before any step touches it.
 		const Session session(definition, evaluation);
-		runStages(definition, evaluation, Mode::Push, NodeId{});
+		runStages(definition, evaluation, Mode::Push, NodeId{}, control);
 	}
 
+	// No control to hand in, deliberately: the pull path's cancellable form arrives with the caller
+	// that needs one — a gui host's Run Selection, many targets at once (M14 slice 8).
 	void Scheduler::evaluate(const Graph& definition, Evaluation& evaluation, NodeId target)
 	{
 		const Session session(definition, evaluation);
-		runStages(definition, evaluation, Mode::Pull, target);
+		RunControl control;
+		runStages(definition, evaluation, Mode::Pull, target, control);
 	}
 
 	// The staging loop (ADR-0014). A map's arity comes from a collection computed during the run, so
@@ -459,13 +493,19 @@ namespace lain::flow
 	//
 	// A graph with no map raises no frontier, so the loop runs exactly one stage and builds exactly
 	// one plan: the cost and the behaviour of a single-plan run, unchanged.
-	void Scheduler::runStages(const Graph& definition, Evaluation& evaluation, Mode mode, NodeId target)
+	void Scheduler::runStages(const Graph& definition, Evaluation& evaluation, Mode mode, NodeId target,
+							  RunControl& control)
 	{
 		// What this invocation has done to each frontier so far. A map is deferred at most once, so
 		// this also bounds the loop: at most one stage per map, plus the final one.
 		Staging staging;
 
-		while (true)
+		// A cancelled run plans nothing more. Asked BEFORE a stage is planned, and again below before
+		// anything is prepared, so the last thing a cancelled run does is finish the stage it is in.
+		// For a loop that is the difference between stopping between iterations and walking every
+		// remaining iteration as skipped steps up to its bound — and then running its fold over the
+		// values the last real one left behind.
+		while (!control.cancelled())
 		{
 			const Plan plan = (mode == Mode::Push)
 								  ? buildRunPlan(definition, evaluation, staging)
@@ -474,17 +514,27 @@ namespace lain::flow
 			if (plan.steps.empty() && plan.frontiers.empty())
 				break;
 
+			// Persist the closure BEFORE executing any of it: each entry is owed until its own step
+			// runs, so however this stage ends — finished, cancelled, or thrown out of — nothing it
+			// meant to recompute is left looking clean (Plan::closure).
+			for (const auto& [owner, id] : plan.closure)
+				owner->requestRecompute(id);
+
+			const auto computes = std::count_if(plan.steps.begin(), plan.steps.end(), [](const Step& step)
+												{ return step.kind == Step::Kind::Node; });
+			control.m_planned.fetch_add(static_cast<std::size_t>(computes), std::memory_order_relaxed);
+
 			// The one thing the strategies differ in — except the pull path, which is serial for
 			// either of them by design (see evaluate()).
 			if (mode == Mode::Push)
-				executePlan(plan);
+				executePlan(plan, control);
 			else
-				runSteps(plan);
+				runSteps(plan, control);
 
 			// Nothing was deferred, so this stage was the whole run. Checking the frontiers rather
 			// than re-planning to discover there is nothing left is what keeps a mapless run at one
 			// plan build — and what stops a self-rearming source from looping forever.
-			if (plan.frontiers.empty())
+			if (plan.frontiers.empty() || control.cancelled())
 				break;
 
 			// The stage just executed produced the collections these maps map over, so their arity
@@ -517,21 +567,29 @@ namespace lain::flow
 		}
 	}
 
-	void Scheduler::runSteps(const Plan& plan)
+	void Scheduler::runSteps(const Plan& plan, RunControl& control)
 	{
 		// The plan is already in a valid serial order — every dependency points backwards — so the
 		// walk needs no further ordering work.
 		for (const Step& step : plan.steps)
-			runStep(step);
+			runStep(step, control);
 	}
 
-	void Scheduler::runStep(const Step& step)
+	void Scheduler::runStep(const Step& step, RunControl& control)
 	{
 		switch (step.kind)
 		{
 			case Step::Kind::Node:
-				runNode(*step.definition, *step.evaluation, step.node);
+				// A cancelled run starts no further COMPUTE. Nothing is recorded, so the closure request
+				// persisted for this node keeps it owed to the next run.
+				if (control.cancelled())
+					return;
+				runNode(*step.definition, *step.evaluation, step.node, control);
 				break;
+
+			// The crossings run regardless (see scheduler.h): each only copies values, so running it
+			// keeps its owner consistent with what its interior currently holds, and the interior's
+			// own requests are what keep the owner stale.
 			case Step::Kind::GroupEntry:
 				enterGroup(*step.definition, *step.evaluation, step.node, step.publish);
 				break;
@@ -581,7 +639,7 @@ namespace lain::flow
 
 	// The single "execute a node" primitive (see scheduler.h) — reached from every plan step that
 	// runs a node, so readiness (conditional eval) is handled identically everywhere.
-	void Scheduler::runNode(const Graph& definition, Evaluation& evaluation, NodeId id)
+	void Scheduler::runNode(const Graph& definition, Evaluation& evaluation, NodeId id, RunControl& control)
 	{
 		const Node& node = definition.node(id);
 		populateInputs(definition, evaluation, id);
@@ -590,7 +648,7 @@ namespace lain::flow
 		// itself inside compute() (evaluation.requestRecompute()) keeps its NEW request.
 		evaluation.clearRecomputeRequest(id);
 
-		NodeEvaluation view = evaluation.node(id);
+		NodeEvaluation view = evaluation.node(id, control);
 
 		// Conditional eval (ADR-0007): a node computes iff it is READY — every REQUIRED input carries a
 		// value. If a required input is empty (unconnected, or its upstream produced nothing / was itself
@@ -620,10 +678,22 @@ namespace lain::flow
 				view.output(node.output(o).id()).clear();
 		}
 
+		// A node that asked whether it was cancelled and heard yes has GIVEN UP: whatever it wrote is
+		// left where it is but not trusted, so it is not recorded and is asked for again — the same
+		// reasoning as a throw, for the same closure-only node. One that never asked has finished
+		// normally and is kept below, even though the cancel landed while it ran: its result is right
+		// for the recipe it read (ADR-0025).
+		if (view.m_sawCancel)
+		{
+			evaluation.requestRecompute(id);
+			return;
+		}
+
 		// Recorded only once the node actually got through. A SUPPRESSED node does reach here,
 		// deliberately: ADR-0007 relies on it going clean and empty together, so a stable-off subtree
 		// drops out of future closures instead of being re-examined forever.
 		evaluation.markComputed(id, node.version());
+		control.m_finished.fetch_add(1, std::memory_order_relaxed);
 	}
 
 	// Crossing INTO a group: take the group's own inputs from the parent graph, then BIND them into
@@ -1065,9 +1135,9 @@ namespace lain::flow
 	//=========================================================================
 	// SerialScheduler
 	//=========================================================================
-	void SerialScheduler::executePlan(const Plan& plan)
+	void SerialScheduler::executePlan(const Plan& plan, RunControl& control)
 	{
-		runSteps(plan);
+		runSteps(plan, control);
 	}
 
 	//=========================================================================
@@ -1081,7 +1151,7 @@ namespace lain::flow
 	// One task per plan step, one precedence per plan edge — across EVERY level of nesting at once,
 	// so inner nodes of two sibling groups interleave freely and nothing is nested at runtime (no
 	// scheduler ever runs from inside a task).
-	void ParallelScheduler::executePlan(const Plan& plan)
+	void ParallelScheduler::executePlan(const Plan& plan, RunControl& control)
 	{
 		// Reserved to the real size: task::Recipe defaults to 128 steps and a plan of any depth
 		// passes that, so the default would reallocate mid-build on every run of a real graph.
@@ -1090,8 +1160,10 @@ namespace lain::flow
 		steps.reserve(plan.steps.size());
 		for (const Step& step : plan.steps)
 		{
-			steps.push_back(recipe.step([this, step]() // Step is a small value, copied into the task
-										{ runStep(step); }));
+			// Step is a small value, copied into the task; the control is the run's, and outlives the
+			// wait below.
+			steps.push_back(recipe.step([this, step, &control]()
+										{ runStep(step, control); }));
 			assert(steps.back().valid() && "ParallelScheduler: the recipe is full");
 		}
 

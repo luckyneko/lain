@@ -46,6 +46,7 @@ namespace lain::flow
 	class Graph;
 	class Node;
 	class Evaluation;
+	class RunControl;
 	struct BoundaryPin;
 
 	// The per-node view a running node is handed: `compute(NodeEvaluation&) const` reads its inputs
@@ -77,18 +78,33 @@ namespace lain::flow
 		// the same definition.
 		void requestRecompute();
 
+		// Whether the run computing this node has been cancelled (RunControl) — for a LONG compute()
+		// to poll and return early (ADR-0025). Always false outside a cancellable run.
+		//
+		// Answering true is taken as this node GIVING UP: whatever it wrote is not trusted, it is not
+		// recorded as computed, and it stays stale for the next run. A node that never asks, or asks
+		// only while the answer is false, has finished normally and is KEPT even if the cancel landed
+		// while it ran — its result is still right for the recipe it read.
+		bool cancelled() const;
+
 	private:
 		friend class Evaluation;
-		NodeEvaluation(Evaluation& evaluation, const Node& node, NodeId id)
+		friend class Scheduler; // reads m_sawCancel, to tell a node that gave up from one that finished
+		NodeEvaluation(Evaluation& evaluation, const Node& node, NodeId id, const RunControl* control)
 			: m_evaluation(&evaluation)
 			, m_node(&node)
 			, m_id(id)
+			, m_control(control)
 		{
 		}
 
 		Evaluation* m_evaluation;
 		const Node* m_node;
 		NodeId m_id;
+		const RunControl* m_control; // null outside a run a host can cancel
+		// Set when cancelled() answered true. Mutable because asking is a read, and safe because a
+		// view belongs to the one task computing its node — nothing else holds it.
+		mutable bool m_sawCancel = false;
 	};
 
 	// One graph's runtime state. A value the host owns, so retention is ownership rather than policy
@@ -245,6 +261,10 @@ namespace lain::flow
 		// books, are the scheduler's business — a node body writes only its own outputs, and a host
 		// neither writes inputs nor records what ran.
 		PortValue& inputSlot(NodeId node, PortId port);
+
+		// The view a COMPUTE is handed: node(id), plus the run's control, so the node can ask whether
+		// it has been cancelled. Scheduler-only, since only a run has a control to hand over.
+		NodeEvaluation node(NodeId id, const RunControl& control);
 
 		// The two halves of "this node ran", deliberately apart and in this order:
 		//   clearRecomputeRequest BEFORE compute, so an on-request source that rearms itself from

@@ -792,7 +792,40 @@ Full notes in WORK.md's *Milestone 14 › A compute() that throws stays stale*.
   Stale". Without this fix, a Failed node would have gone clean.
 - **It fixes the thrower only.** Nodes a throw leaves UNREACHED (a serial walk stops, multi skips the
   thrower's successors) stay wrongly clean until slice 3 persists the planned closure as recompute
-  requests.
+  requests. *(Discharged by slice 3, below.)*
+
+### Update 2026-09-28 — M14 slice 3 built: cancellation
+
+A run can be stopped and leave the evaluation where the NEXT run computes the right answer.
+**`flow::RunControl`** (new `runcontrol.h`) holds a cancel flag and the progress read (node computes
+planned and finished, summed across stages), any thread. `Scheduler::run(definition, evaluation,
+control)` sits beside the unchanged two-argument `run`. `NodeEvaluation::cancelled()` lets a long
+compute give up. Nothing in production passes a control until slice 4, and an uncancelled run behaves
+as before. `ctest -j8` **827/827** Debug with video on, **833/833** Release with video on, **800/800**
+Release video-off (+10 each); warning-clean, format-check clean; `[cancel]` swept 100× in Debug and
+in Release through the Catch2 binary; `flowview run --example` identical to the pre-change binary.
+Full notes in WORK.md's *Milestone 14 › Slice 3 landed*.
+
+- **Only COMPUTE is cancelled; crossings always run** (decided with the repo owner, and ADR-0025 is
+  amended in place). A skipped group exit had nothing to say the group was owed. A skipped entry left
+  the group, on the next run, not republishing and computing its old input for good. A crossing only
+  copies values, so running it keeps the owner consistent with its interior and needs no new state.
+- **The planned closure is persisted as recompute requests** before each stage runs, because
+  staleness assumed a run finishes its closure. There are exactly three kinds of entry: a node step,
+  a node deferred because of something upstream of it, and a raised frontier. There are deliberately
+  none for a group or map expanded without republishing, which would make it republish next stage, a
+  change to an uncancelled run. The same requests fix what a THROW leaves unreached on a serial walk.
+- **A compute that finishes after the cancel is KEPT; one that asked `cancelled()` and heard yes has
+  GIVEN UP** and stays stale, whatever it wrote.
+- **`stale()` asks every child of a map**, not child 0: a cancel stops a map part-way while its
+  gather still runs. Slice 6's public freshness query inherits that.
+- **Stopping between stages is what stops a loop between iterations.** Without it, the skipped
+  iterations walk to the bound and the fold (a crossing) publishes `iterations == 100` for a fold
+  that stopped at 4.
+- **Deviations:** progress is on the scheduler's own atomics, not `RecipeHandle::finishedCount()`,
+  which exists only inside `ParallelScheduler::executePlan`. It counts node computes, including a
+  graph's own boundary pair, not crossings. `evaluate` takes no control until slice 8's Run
+  Selection. Seven sabotages, all caught.
 
 ### Update 2026-09-26 — one process task pool; `lain::task` becomes an alias for `multi`
 

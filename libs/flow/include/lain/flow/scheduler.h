@@ -40,6 +40,7 @@
 // iterations are bounded, so "plan again" always terminates.
 
 #include "lain/flow/evaluation.h" // Session holds an Evaluation::RunLease by value
+#include "lain/flow/runcontrol.h" // run() takes one, so a caller needs the whole type anyway
 #include "lain/flow/types.h"
 
 #include <cstddef>
@@ -66,6 +67,18 @@ namespace lain::flow
 		// ready. Throws std::logic_error if `evaluation` is already being scheduled (see the run
 		// lease); distinct evaluations, including two over this same definition, run concurrently.
 		void run(const Graph& definition, Evaluation& evaluation);
+
+		// The same run, steered by a host through `control` (runcontrol.h): another thread may cancel
+		// it, and read how far it has got, while it is in flight (ADR-0025).
+		//
+		// A cancelled run stops starting node COMPUTES and plans no further stage. A compute already
+		// running finishes — or gives up, if it asks NodeEvaluation::cancelled() — and the crossings
+		// between levels (a group's entry and exit, a map's gather, a loop's fold) still run, since
+		// they only copy values and keep each owner consistent with its interior. What finished
+		// normally is KEPT; what gave up, and everything the run never reached, stays STALE, so the
+		// next run picks it up. That last part holds because every stage's closure is written into
+		// the evaluation as recompute requests before the stage runs (Plan::closure).
+		void run(const Graph& definition, Evaluation& evaluation, RunControl& control);
 
 		// Pull: evaluate just `target`'s upstream subgraph on demand, recomputing only the nodes
 		// that need it (a constant stays computed after its first run; an on-request source requests
@@ -160,6 +173,21 @@ namespace lain::flow
 			// and costs exactly what a single-plan run always did. It is what tells the loop to plan
 			// again without having to speculatively re-plan to find out.
 			std::vector<Frontier> frontiers;
+
+			// This stage's CLOSURE, as the recompute requests that keep it owed until it has run.
+			// Staleness assumes a run finishes its closure — a node is selected when it is stale OR
+			// downstream of a selected node, and each step records its node as computed — so a run
+			// stopped part-way (a cancel, a throw) would leave a node that was selected only because of
+			// its upstream looking clean, holding a value built from the old input. The staging loop
+			// therefore requests every entry before the stage executes, and each clears as its own
+			// step runs.
+			//
+			// Exactly three kinds of entry, each named where expand() decides it: a node STEP, a node
+			// deferred because something UPSTREAM of it was, and a raised FRONTIER. Deliberately not a
+			// group or map expanded without republishing, an owner deferred only because its interior
+			// was, or an exit: a request on any of those would make it republish next stage — a
+			// change to an uncancelled run — and its interior's own entries already keep it owed.
+			std::vector<std::pair<Evaluation*, NodeId>> closure;
 		};
 
 		// What ONE invocation has done to each frontier it raised. Passed down rather than held on
@@ -223,23 +251,30 @@ namespace lain::flow
 
 		// Execute ONE stage's plan — the only thing the two strategies do differently. It is handed a
 		// complete, already-ordered plan, so a backend never plans, never takes the lease and never
-		// decides when the run is over.
-		virtual void executePlan(const Plan& plan) = 0;
+		// decides when the run is over. `control` is the run's, threaded down to every step: the
+		// Scheduler holds no per-run state, since one may be running two evaluations at once.
+		virtual void executePlan(const Plan& plan, RunControl& control) = 0;
 
 		// Walk a stage's steps in order. The plan is already a valid serial order — every dependency
 		// points backwards — so this needs no further ordering work. Used by SerialScheduler, and by
 		// the pull path for either strategy.
-		void runSteps(const Plan& plan);
+		void runSteps(const Plan& plan, RunControl& control);
 
-		// Execute one step. The single dispatch point, so both strategies handle groups identically.
-		void runStep(const Step& step);
+		// Execute one step. The single dispatch point, so both strategies handle groups identically
+		// — and cancel identically: a cancelled run skips a node COMPUTE step, whose closure request
+		// keeps it owed, and still runs every CROSSING. A crossing only copies values, so running it
+		// keeps its owner consistent with whatever its interior currently holds, and the interior's
+		// own requests keep the owner stale. Skipping one would need state of its own to say so.
+		void runStep(const Step& step, RunControl& control);
 
 		// Evaluate one node: populate its inputs, then either compute() (READY — every required
 		// input has a value) or SUPPRESS it (a required input is empty → clear its outputs, don't
 		// compute), and record the definition version it was computed at. ADR-0007. A compute() that
 		// throws records nothing and asks for its node again before the exception leaves, so the node
-		// stays stale however it came to be in the run.
-		void runNode(const Graph& definition, Evaluation& evaluation, NodeId id);
+		// stays stale however it came to be in the run — and one that GAVE UP on a cancel (it asked
+		// NodeEvaluation::cancelled() and heard yes) is treated the same way, keeping whatever it wrote
+		// but not trusting it.
+		void runNode(const Graph& definition, Evaluation& evaluation, NodeId id, RunControl& control);
 
 		// Copy each connected upstream output into `id`'s matching input. The value is SHARED, not
 		// deep-copied — the source keeps it, which is what leaves every stage inspectable.
@@ -257,7 +292,9 @@ namespace lain::flow
 
 		// The staging loop (ADR-0014): plan, execute, prepare what the stage revealed, plan again.
 		// Preparation happens HERE, between stages, on the coordinator thread — never inside a task.
-		void runStages(const Graph& definition, Evaluation& evaluation, Mode mode, NodeId target);
+		// A cancelled run stops here too: no stage is planned, and no frontier prepared, once the
+		// control says so — which is what stops a loop between iterations.
+		void runStages(const Graph& definition, Evaluation& evaluation, Mode mode, NodeId target, RunControl& control);
 
 		// The nodes a run must recompute at ONE level, in topo order: the stale closure. Takes both,
 		// because staleness is a comparison BETWEEN them — the definition's per-node version against
@@ -266,7 +303,8 @@ namespace lain::flow
 
 		// Whether `id` is stale in `evaluation`, INCLUDING anything inside it if it contains a graph
 		// — the recursive question a group used to answer with a virtual dirty() over mutable state
-		// on its inner definition. It is now asked of the matching child Evaluation.
+		// on its inner definition. It is now asked of the matching child Evaluations: EVERY one of a
+		// map's, since a cancel can stop a map with element 2 still owed while element 0 finished.
 		static bool stale(const Graph& definition, Evaluation& evaluation, NodeId id);
 
 		// Emit `order`'s nodes (already topo-ordered and selected) into `plan`, recursing into any
@@ -343,7 +381,7 @@ namespace lain::flow
 	class SerialScheduler : public Scheduler
 	{
 	protected:
-		void executePlan(const Plan& plan) override;
+		void executePlan(const Plan& plan, RunControl& control) override;
 	};
 
 	// Parallel: lowers each stage's plan onto the PROCESS task pool (one task per step, one
@@ -364,6 +402,6 @@ namespace lain::flow
 	class ParallelScheduler : public Scheduler
 	{
 	protected:
-		void executePlan(const Plan& plan) override;
+		void executePlan(const Plan& plan, RunControl& control) override;
 	};
 } // namespace lain::flow

@@ -2,6 +2,7 @@
 
 #include "lain/flow/boundary.h" // BoundaryInput / BoundaryOutput — the host binding handles
 #include "lain/flow/graph.h"
+#include "lain/flow/runcontrol.h"
 
 #include <cassert>
 #include <stdexcept>
@@ -59,6 +60,14 @@ namespace lain::flow
 	void NodeEvaluation::requestRecompute()
 	{
 		m_evaluation->requestRecompute(m_id);
+	}
+
+	bool NodeEvaluation::cancelled() const
+	{
+		if (m_control == nullptr || !m_control->cancelled())
+			return false;
+		m_sawCancel = true; // the node now knows, so what it does next is giving up (see the header)
+		return true;
 	}
 
 	//=========================================================================
@@ -209,7 +218,14 @@ namespace lain::flow
 	{
 		assert(m_definition != nullptr && "flow::Evaluation: no definition (default-constructed)");
 		assert(contains(id) && "flow::Evaluation: node was not prepared");
-		return NodeEvaluation(*this, m_definition->node(id), id);
+		return NodeEvaluation(*this, m_definition->node(id), id, nullptr);
+	}
+
+	NodeEvaluation Evaluation::node(NodeId id, const RunControl& control)
+	{
+		assert(m_definition != nullptr && "flow::Evaluation: no definition (default-constructed)");
+		assert(contains(id) && "flow::Evaluation: node was not prepared");
+		return NodeEvaluation(*this, m_definition->node(id), id, &control);
 	}
 
 	bool Evaluation::ready(NodeId id) const

@@ -896,7 +896,7 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 
 ## Running while you edit — the host's side of a run
 
-*(M14 — designed; slices 1-2 built, the host side not yet. [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
+*(M14 — designed; slices 1-3 built, the host side not yet. [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
 host keeps its document editable while a run is in flight. These are the words for how a run is
 started, stopped and shown.
 
@@ -908,11 +908,17 @@ started, stopped and shown.
 - **Committed edit** — a gesture that has ended: a click, a connect, the release of a drag. The unit
   undo records and **On commit** runs on, so a slider drag is one committed edit however many frames
   it spans. _Avoid_: change (every frame of a drag is a change; only its end is committed).
-- **Superseded run** — a run a newer trigger has cancelled. It stops starting steps; a step already
-  computing finishes, or stops early if its node checks for cancellation. What finished normally is
-  **kept**, since its Version still matches for every node the edit did not touch; what stopped
-  because of the cancel, and everything the run never reached, stays **Stale**. _Avoid_: aborted run
-  (implies its work is discarded — it is not), killed.
+- **Superseded run** — a run a newer trigger has cancelled. It stops starting node computes and plans
+  no further stage; the crossings between levels (a group's entry and exit, a map's gather, a loop's
+  fold) still run, since they only copy values. A compute already running finishes, or **gives up** if
+  its node asks whether it was cancelled and hears yes. What finished normally is **kept**, since its
+  Version still matches for every node the edit did not touch; what gave up, and everything the run
+  never reached, stays **Stale**. _Avoid_: aborted run (implies its work is discarded — it is not),
+  killed.
+- **Run control** — the host's hold on one run in flight, `flow::RunControl`: it cancels the run and
+  reads its progress (node computes planned and finished, summed across stages), from any thread. One
+  per run — the run that supersedes it gets a fresh one. _Avoid_: token (it carries progress too),
+  handle (a multi handle is a different thing).
 - **Published evaluation** — the copy of an Evaluation a host's panes read while a run holds the
   real one: refreshed as results land (per node as each finishes, and whole at stage boundaries and
   run end), and written directly by the host for a **pending binding**. A view of the newest results,

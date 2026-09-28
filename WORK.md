@@ -6072,7 +6072,7 @@ regression test: `ctest -j8` **794/794** Debug with video on, warning-clean, for
   the fold. All four reached their header transitively and worked — the class of thing the
   2026-09-05 CI port found six of.
 
-## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-2 built)
+## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-3 built)
 
 gui-mode runs `SerialScheduler::run` synchronously inside the frame loop — `FlowviewApp::reevaluate`
 is reached from `mainwindow.cpp` twice, `inspectorpane.cpp` and `interfacepane.cpp`, on every edit
@@ -6081,8 +6081,8 @@ has no gui caller. This milestone moves graph work off the frame loop, makes the
 default with Serial selectable, and gives the UI the controls a 5-minute graph needs as well as a
 1-second one. Decisions in **[ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md)**;
 vocabulary in CONTEXT.md's *Running while you edit* (plus *clone*, *lineage*, *coordinator*).
-**Slices 1 (clone + lineage) and 2 (the published evaluation + payload identity) are built** — see
-*Slice 1 landed* and *Slice 2 landed* below; slices 3-8 are not.
+**Slices 1 (clone + lineage), 2 (the published evaluation + payload identity) and 3 (cancellation)
+are built** — see *Slice 1 landed*, *Slice 2 landed* and *Slice 3 landed* below; slices 4-8 are not.
 
 ### The shape
 
@@ -6105,6 +6105,8 @@ vocabulary in CONTEXT.md's *Running while you edit* (plus *clone*, *lineage*, *c
   cancelled after U but before its consumer D leaves both clean, and D keeps a value computed from U's
   old output. Any cancel, Stop included, has to leave every unreached node stale. The mechanism:
   persist the planned closure as recompute requests when the plan is built, cleared as each step runs.
+  *(Built in slice 3, and it covers a throw too: a serial walk that stops early abandons branches that
+  have nothing to do with the thrower.)*
 - **A throwing `compute()` would crash gui-mode today** — nothing in flowview catches (`reevaluate`
   has no `try`). It has not bitten because nodes suppress rather than throw (`ListDirNode` uses the
   `error_code` overloads for exactly that). The coordinator catches, and the node becomes **Failed**.
@@ -6135,12 +6137,12 @@ Structural, no-behaviour-change slices first; each its own commit with its docs.
    copy of an `Evaluation` that keeps its definition alive (`flow::PublishedEvaluation`), and a
    `PortValue` payload-identity accessor (`samePayload`). It also took slice 6's preview-cache bullet,
    so the accessor lands with its production caller rather than four slices ahead of it.
-3. **Cancellation** (`scheduler.{h,cpp}`, `evaluation.{h,cpp}`). A cancel token on `run` / `evaluate`,
-   checked before each step and between stages; `NodeEvaluation::cancelled()`; closure-as-requests;
-   a progress read (`RecipeHandle::finishedCount()` / `stepCount()`, summed across stages). Tests: a
-   run cancelled mid-plan and then re-run matches a clean run — **sabotage: drop the closure
-   persistence and D keeps the wrong value**; a step that finishes after the cancel is not recomputed
-   next run; a cooperative node that bails stays stale; a loop stops between iterations.
+3. **Cancellation** (`scheduler.{h,cpp}`, `evaluation.{h,cpp}`) — **built 2026-09-28**. A cancel
+   token on `run`, checked between stages and before each node compute; `NodeEvaluation::cancelled()`;
+   closure-as-requests; a progress read summed across stages. Three deviations, all in *Slice 3
+   landed*: the crossings are never cancelled; the token and progress are one `flow::RunControl`,
+   counting node computes on the scheduler's own atomics rather than `RecipeHandle::finishedCount()`;
+   and `evaluate` takes no token until slice 8.
 4. **The async vertical** (flowview). `apps/flowview/src/runner.{h,cpp}`: the coordinator thread,
    clone-per-run, supersede, catch → Failed. `FlowviewApp` owns the runner beside the document and its
    evaluation; `reevaluate()` becomes a trigger; `onStop` cancels and joins. `MainWindow` polls and
@@ -6155,7 +6157,9 @@ Structural, no-behaviour-change slices first; each its own commit with its docs.
    evaluation at once.
 6. **Freshness.** A public const stale-closure query in flow (`stale()` / `runOrder()` lifted to
    const — they take a mutable `Evaluation&` only to reach `child()`, which has a const overload),
-   lineage-checked so it may compare the document against an evaluation computed on a clone. Canvas
+   lineage-checked so it may compare the document against an evaluation computed on a clone. It must
+   ask EVERY child of a map, as `stale()` does since slice 3: a cancel can leave element 2 owed while
+   element 0 is current. Canvas
    glyph + outline (`panes/graphpane.cpp`, `canvasstyle.cpp`), thumbnail stale badge, viewport status
    bar; Failed rows in Issues. (The preview cache's skip of an unchanged payload moved to slice 2.)
 7. **Per-node publication.** A per-step started / finished hook on the run; a finished step's worker
@@ -6368,6 +6372,73 @@ normalised.
 - **Sabotage:** drop the re-request and *"a node that throws stays stale when only its input
   changed"* fails in both sections, serving the old value (1 instead of 2).
 
+### Slice 3 landed (2026-09-28) — cancellation
+
+**`flow::RunControl`** (new `runcontrol.h`) holds a cancel flag plus planned and finished counters.
+`Scheduler::run(definition, evaluation, control)` sits beside the unchanged two-argument `run`,
+which now forwards a control nobody holds. The slice also adds `NodeEvaluation::cancelled()`, the
+closure persisted as recompute requests (`Plan::closure`), and a staleness check that asks every
+child of a map. No behaviour change for a run that is neither cancelled nor throws: nothing in
+production passes a control until slice 4. `ctest -j8` **827/827** Debug with video on,
+**833/833** Release with video on, **800/800** Release video-off (+10 each: nine cases in the new
+`test_cancel.cpp`, one in `test_loop.cpp`); warning-clean, format-check clean. The `[cancel]` tag
+(10 matching cases) was swept 100× through the Catch2 binary in Debug and in Release, and the
+scheduler-facing tags (`[map],[loop],[group],[scheduler],[incremental],[published]`, 103 cases) 100×
+in Release. The whole `test-flow` binary was run five times shuffled and once in declaration order.
+All of it passed with no failure. `flowview run --example` is identical to the pre-change binary once
+the timestamp and short ids are normalised.
+
+- **The crossings are never cancelled: the ADR said otherwise and is amended in place.** Its "every
+  step checks the cancel flag" left a skipped group EXIT with nothing to say the group was owed. The
+  entry had cleared the group's request, and the inner GroupOutput's own step had cleared that node's.
+  A skipped ENTRY was worse. The group came back next run only for its stale interior, did not
+  republish because nothing upstream changed again, and its interior computed the old input for good.
+  Saying either would need a per-node "exit pending" flag, plus a forced republish that drops the
+  interior's incrementality after every supersede. Running them costs nothing new: a crossing only
+  copies values, so it keeps the owner consistent with its interior, and the interior's requests
+  keep the owner stale. Decided with the repo owner.
+- **The closure requests go at exactly three points in `expand`, and why not more is the subtle
+  part.** A request is persisted for each node STEP, each node deferred because something upstream of
+  it was, and each raised FRONTIER. It is NOT persisted for a group or map expanded without
+  republishing, an owner deferred only because its interior was, or an exit. A request on those would
+  make them republish next stage, which is a behaviour change in an uncancelled run. The unchanged
+  suite across three configurations is what says the three points change nothing: each is either
+  cleared by its own step before it computes, or would have been selected next stage anyway.
+- **One finished assertion needed the graph's own boundary pair.** The progress expectations were
+  written as 3 and 15 and measured as 5 and 17: every graph is born with a GroupInput and a
+  GroupOutput, and they are node steps. Counted rather than excluded, since a user sees them on the
+  canvas like any node.
+- **`stale()` asks every child of a map**, where it asked child 0. A map's children share a
+  definition and ran together, so the first stood for all. A cancel stops a map part-way while its
+  gather still runs. Slice 6's public freshness query inherits the requirement, and its bullet above
+  now says so.
+- **A throw is covered by the same requests.** Commit *A compute() that throws stays stale* fixed the
+  thrower. What a serial walk abandons after it, branches that have nothing to do with the thrower,
+  is what the closure fixes. Under the pool it is not needed: multi keeps running independent
+  branches and skips only the thrower's successors, which the thrower's re-request already selects.
+  The case pins both strategies to the same answer and asserts the topo order that makes the serial
+  cut meaningful, so a change there fails loudly instead of quietly testing less.
+- **Deviations from the build-order entry:** progress comes from the scheduler's own atomics, not
+  `RecipeHandle::finishedCount()` (that handle lives inside `ParallelScheduler::executePlan`, and the
+  serial strategy has none). Progress counts node computes only, not crossings, because a user sees
+  nodes. `evaluate` takes no control until slice 8, whose Run Selection is the gui's cancellable pull,
+  so the entry point does not ship ahead of its caller.
+- **`testscene.h`'s `buildInterior` answers the body's id**, for the map case that edits the
+  interior afterwards. No existing caller changed.
+- **Sabotages, all caught.** One at a time against a pristine copy, each through the `[cancel]` tag:
+  - Closure requests not applied: the unreached-node case fails in both sections; so do the kept-step
+    case (the sink is never recomputed), the serial throw case and the map case.
+  - A compute that returns after the cancel treated as having given up: the kept-step case fails in
+    both sections, and so do the group case (the canceller computes again) and the serial map case.
+  - A node that asked and heard yes treated as finished: the gave-up case fails in both sections.
+  - `GroupEntry` made cancellable, the plausible wrong reading of the ADR: the group case fails in
+    both sections, since the interior computes the old input.
+  - `stale()` back to child 0: the map case fails and keeps the mixed gather `{101, 12, 13}`.
+  - Both between-stage checks dropped: the loop case fails (its skipped iterations walk to the bound
+    and the fold publishes), and so does the cancelled-before-start case.
+  - Progress counted only at run end: the live-progress case reads 0 finished from inside the run,
+    and the gave-up case's `finished() == 1` fails too.
+
 ### Visual design (settled in outline, tuned by eyeball)
 
 Freshness takes channels nothing else uses — title colour is category, a muted title is *not ready*,
@@ -6431,8 +6502,8 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md).)*
 
 - **M14 — asynchronous execution: the gui never waits on graph work.** Designed 2026-09-28; slices 1
-  (clone + lineage) and 2 (the published evaluation + payload identity) built 2026-09-28, slices 3-8
-  not.
+  (clone + lineage), 2 (the published evaluation + payload identity) and 3 (cancellation) built
+  2026-09-28, slices 4-8 not.
   *(Milestone 14; [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)*
 
 M1–M8 and M10–M13 are built. **M9 and M14 are the milestones from 5 onward that are not.**
