@@ -61,8 +61,9 @@ namespace flowview
 			for (std::size_t o = 0; o < node.outputCount(); ++o)
 				refresh(id, node.output(o));
 		}
-		// Drop previews whose pin is gone (or no longer posters anything); the erased
-		// gui::Texture reclaims its descriptor.
+		// Drop previews whose pin is gone (or no longer posters anything). Safe while frames that drew
+		// them are still running: archimedes defers destroying an erased gui::Texture past them. Safe
+		// against THIS frame too, because this runs before any pane has drawn a thumbnail.
 		for (auto it = m_entries.begin(); it != m_entries.end();)
 		{
 			if (live.count(it->first) == 0)

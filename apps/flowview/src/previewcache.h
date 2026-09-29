@@ -35,8 +35,9 @@ namespace flowview
 	// frame sequence. A type with no view registered simply has no thumbnail.
 	//
 	// Ownership: the MainWindow owns one of these and a lain::gui::Context; refresh() borrows
-	// the context to (re)allocate descriptors. The cached gui::Texture handles must be released
-	// (clear()) while that Context's ImGui backend is still alive.
+	// the context to (re)allocate textures. The cached gui::Texture handles are archimedes
+	// resources, so they must be released (clear()) before the device is destroyed, and never
+	// between drawing a thumbnail and rendering that frame (gui::Texture says why).
 	class PreviewCache
 	{
 	public:
@@ -47,7 +48,8 @@ namespace flowview
 		// Rebuild the cache from the graph iff it was marked dirty: upsert a thumbnail per port whose
 		// value `views` can poster (upload in place when the size/format matches, else reallocate via
 		// `ctx`) — skipping a port whose payload is the one its thumbnail was made from — and prune
-		// thumbnails whose port is gone (the erased gui::Texture reclaims its descriptor). `path` is the level `graph` sits at — it goes into every key this builds, so
+		// thumbnails whose port is gone (an erased gui::Texture's GPU objects outlive the frames that
+		// drew it). `path` is the level `graph` sits at — it goes into every key this builds, so
 		// entries from two levels (or two evaluations of one definition) can never be mistaken for
 		// each other.
 		//

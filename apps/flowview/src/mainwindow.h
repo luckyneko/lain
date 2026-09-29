@@ -55,6 +55,10 @@ namespace flowview
 		bool m_seedLayout = false;
 		bool m_resetLayout = false;
 
+		// A document swap happened at the end of last frame: drop its thumbnails at the top of this
+		// one, never in the swap itself, which runs after the panes have drawn them (see onRender).
+		bool m_dropPreviews = false;
+
 		// The shared model the panes read/write: graph-adjacent metadata, cross-pane signals, and the
 		// document / pending-load state. The window owns it and hands panes a reference.
 		AppContext m_ctx;

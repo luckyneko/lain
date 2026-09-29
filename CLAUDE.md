@@ -907,6 +907,48 @@ format-check clean. `flowview run --example` is unchanged, and the headless save
   (`reflect.h`). But *The type is the schema* claimed `fromValue` "fails on a shape/type mismatch",
   which is true of a struct's shape only.
 
+### Update 2026-09-29 — a texture's descriptor is archimedes' (the mid-session descriptor free, fixed)
+
+The defect the shutdown drain could not reach. `gui::Texture` took its descriptor from ImGui's pool and
+gave it back with `ImGui_ImplVulkan_RemoveTexture`, an immediate `vkFreeDescriptorSets`. That ran on
+every preview reallocation and prune, and every frame change of the sequence player, while up to
+`acm::Renderer::MaxFramesInFlight` frames that had bound the set could still run. **The descriptor is
+now an `acm::DescriptorSet`**, so acm's existing deferred destroy covers it exactly as it always
+covered the image. `ctest -j8` **910/910** Debug with video on and **916/916** Release with video on
+(+2 each: the two windowed gui cases, which skip under ctest); archimedes' own suite **57/57** (+1);
+warning-clean, format-check clean in both repos. Full notes in WORK.md's *Milestone 14 › A texture's
+descriptor outlives the frames that drew it*.
+
+- **Decided with the repo owner.** A Texture holding a pointer to its Context's release queue was
+  refused outright: a Texture holds no Context. Moving the descriptor into the library that already
+  owns GPU lifetimes needed no reference at all. `gui::Texture`'s destructor is now `= default`, and
+  it no longer has to die before its Context, only before the device.
+- **The seam is layout identity.** `Context` allocates each descriptor against a layout identical to
+  ImGui's texture set (one fragment `SAMPLED_IMAGE` at binding 0), and hands ImGui the raw handle as
+  its `ImTextureID`. Vulkan binds a set where another layout is expected only when the two are
+  identically defined, so that layout must follow ImGui's; the comment on it says so.
+- **archimedes gained exactly what that needed** (`2df9d31` on its `develop`, pushed first):
+  `DescriptorType::SampledImage`, `DescriptorSet::setSampledImage`, `acm::interop::descriptorSet`,
+  and a test. Its deferral stamping is **unchanged**. A "last submitted + 1" stamp was proposed and
+  dropped, because the case it aimed at is a caller rule rather than a timing one: a texture released
+  between being drawn and being rendered is used after release when the frame is recorded.
+- **flowview broke that rule once**: the document-swap block cleared the preview cache after the
+  panes drew that frame. The clear now happens at the top of the next frame.
+- **ImGui's descriptor pool stops capping previews** (it was 64 sets, about 63 thumbnails). It serves
+  ImGui's own atlas only now, sized at ImGui's minimum.
+- **Tests pin the arrangement, not the defect**, which nothing on this machine can observe: there is
+  no validation layer, and MoltenVK does not fault on it.
+  - archimedes: a sampled image read back through `texelFetch`.
+  - lain::gui (`[gpu]`, `LAIN_GUI_SMOKE=1`): a texture drawn through ImGui offscreen and read back;
+    72 textures from one Context, which fails if descriptors come from ImGui's pool again.
+  - Each was sabotage-verified. **The draw test does NOT catch layout drift**: MoltenVK drew correctly
+    through a stage-mask and a descriptor-type mismatch, both measured.
+- **A sabotage restored in the SAME SECOND as the build that compiled it stays compiled**, even via
+  `cp` plus `touch`: make wants the source strictly newer than the object. archimedes' suite then went
+  red on the restored-and-correct test, which looked like an order-dependent flake until the
+  assertion count (8, the sabotaged run's, not 11) gave it away. Check the object's mtime, or touch
+  again a second later, before believing a post-sabotage result.
+
 ### Update 2026-09-29 — the GPU is drained before teardown (the early-quit device loss, fixed)
 
 The defect M14 slice 8b found while smoking: `flowview --frames 1` or `2` logged a MoltenVK *"Lost
@@ -935,10 +977,10 @@ format-check clean. Full notes in WORK.md's *Milestone 14 › Quitting early los
 - **Found on the way: `test-app`'s `[gpu]` cases could never reach a driver on macOS**, because no
   MoltenVK ICD was staged beside it; they died on the instance and then on GLFW's null-window assert.
   `acm_stage_vulkan_runtime(test-app)` now stages it, as flowview's CMake does.
-- **Recorded, not fixed: the same shape mid-session.** `gui::Texture` frees its ImGui descriptor set
-  immediately (`ImGui_ImplVulkan_RemoveTexture`) whenever the preview cache reallocates or prunes one,
-  while a frame that drew it may still run. A Vulkan usage error not seen to fault; now in WORK.md's
-  *Known defects*.
+- **Recorded, not fixed here: the same shape mid-session.** `gui::Texture` freed its ImGui descriptor
+  set immediately (`ImGui_ImplVulkan_RemoveTexture`) whenever the preview cache reallocated or pruned
+  one, while a frame that drew it could still run. *(**Fixed the same day** — see *a texture's
+  descriptor is archimedes'*, above.)*
 - **A verification that was hollow the first time:** a loop passing `"--example --frames 1"` as `$args`
   under zsh handed CLI11 ONE argument, so every run exited 109 (an extras error) without opening a
   window, and "0 errors" meant nothing. Re-run with the arguments split. **Check the exit code of a
@@ -4076,8 +4118,9 @@ Hard contracts:
 backends from `archimedes`' raw handles (`vkInstance`/`vkDevice`/`vkQueue`/
 `getQueueIdx`/`SwapChain::vkRenderPass`/`maxSampleCount`) and a `lain::app` window,
 and records ImGui draw data inside `acm::Renderer::render(record)`. GPU port
-previews go through `ImGui_ImplVulkan_AddTexture` → `lain::gui::Image` (from
-`Texture::vkImageView` + `acm::Sampler`). Do **not** hand-write an ImGui backend.
+previews go through `Context::createTexture` → a `gui::Texture` (an `acm::Texture` plus an
+`acm::DescriptorSet` built against ImGui's texture-set layout, so both are archimedes' to
+destroy) → `lain::gui::Image`. Do **not** hand-write an ImGui backend.
 
 ## Conventions to inherit (so new code looks native)
 

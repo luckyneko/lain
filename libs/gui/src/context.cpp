@@ -28,6 +28,13 @@ namespace lain::gui
 		std::string iniFilename;				   // kept alive: ImGui stores io.IniFilename by pointer
 		VkFormat colorFormat{VK_FORMAT_UNDEFINED}; // kept alive: imgui holds pColorAttachmentFormats by pointer
 		acm::Device* device{nullptr};			   // the shared device, for upload()
+		// The layout every gui::Texture's descriptor is allocated against. Built to be IDENTICAL
+		// to ImGui's own texture set layout (imgui_impl_vulkan.cpp's DescriptorSetLayoutTexture:
+		// one SAMPLED_IMAGE at binding 0, fragment stage, no flags), because Vulkan lets a set
+		// bind where another layout is expected only when the two are identically defined — and
+		// ImGui binds an ImTextureID straight into its pipeline's set 0. The sampler is ImGui's,
+		// in its set 1. If ImGui ever changes that layout, this one has to follow.
+		acm::DescriptorSetLayout textureLayout;
 	};
 
 	Context::Context(app::Application& app, app::Window& window, ContextConfig config)
@@ -70,7 +77,10 @@ namespace lain::gui
 		info.Device = acm::interop::device(device);
 		info.QueueFamily = device.queueFamily();
 		info.Queue = acm::interop::queue(device);
-		info.DescriptorPoolSize = 64; // > 0 -> the backend creates + owns its pool
+		// > 0 -> the backend creates + owns its pool. It serves ImGui's OWN font atlas only: a
+		// gui::Texture's descriptor is archimedes', so the pool is sized at ImGui's minimum rather
+		// than for however many previews an app shows.
+		info.DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_SAMPLED_IMAGE_POOL_SIZE;
 		info.MinImageCount = 2;
 		info.ImageCount = images < 2 ? 2 : images;
 		info.UseDynamicRendering = true;
@@ -80,6 +90,10 @@ namespace lain::gui
 		info.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
 		info.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &m->colorFormat;
 		ImGui_ImplVulkan_Init(&info);
+
+		m->textureLayout = device.createDescriptorSetLayout({
+			{0, acm::DescriptorType::SampledImage, acm::ShaderStage::Fragment},
+		});
 	}
 
 	Context::~Context()
@@ -127,9 +141,16 @@ namespace lain::gui
 		acm::Texture texture = m->device->createTexture(acm::Format::R8G8B8A8_Unorm, acm::Extent2D{static_cast<std::uint32_t>(img.width()), static_cast<std::uint32_t>(img.height())});
 		if (!texture.valid())
 			return {};
-		texture.upload(img.data(), img.byteSize());
+		texture.upload(img.data(), img.byteSize()); // synchronous; leaves it SHADER_READ_ONLY
 
-		VkDescriptorSet set = ImGui_ImplVulkan_AddTexture(acm::interop::imageView(texture), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-		return Texture(std::move(texture), reinterpret_cast<ImTextureID>(set), image::PixelFormat::RGBA8);
+		// The descriptor is archimedes', not one from ImGui's pool (ImGui_ImplVulkan_AddTexture), so
+		// releasing the Texture defers destroying it past every frame that could have drawn it —
+		// which ImGui_ImplVulkan_RemoveTexture, an immediate vkFreeDescriptorSets, did not.
+		acm::DescriptorSet descriptor = m->device->createDescriptorSet(m->textureLayout);
+		if (!descriptor.valid())
+			return {};
+		descriptor.setSampledImage(0, texture);
+		const VkDescriptorSet set = acm::interop::descriptorSet(descriptor);
+		return Texture(std::move(texture), std::move(descriptor), reinterpret_cast<ImTextureID>(set), image::PixelFormat::RGBA8);
 	}
 } // namespace lain::gui

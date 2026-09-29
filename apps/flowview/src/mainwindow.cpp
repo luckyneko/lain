@@ -106,6 +106,17 @@ namespace flowview
 			m_ctx.previewTarget.reset(); // the asset being previewed belonged to that other level
 		}
 
+		// ... and the thumbnails of a document swapped out at the end of LAST frame. Dropped here
+		// rather than in the swap itself: the swap runs after the panes have drawn this frame, and
+		// a texture released between being drawn and being rendered is used after release — the
+		// frame's draw data still names it when Context::render records it (gui::Texture).
+		if (m_dropPreviews)
+		{
+			m_previews.clear();
+			m_previews.markDirty();
+			m_dropPreviews = false;
+		}
+
 		// The ACTIVE graph — the root, or whatever group the user has descended into. Resolved once
 		// here and handed to every pane, so navigating retargets the canvas, Inspector, Preview and
 		// Issues together. resolvePath truncates a path that no longer resolves, so a group deleted
@@ -248,8 +259,7 @@ namespace flowview
 			}
 			appDelegate.replaceGraph(std::move(m_ctx.loadedGraph));
 			m_ctx.loadRequested = false;
-			m_previews.clear(); // the old graph's cached thumbnails are gone
-			m_previews.markDirty();
+			m_dropPreviews = true;		// the old graph's thumbnails go, but not before this frame renders them
 			m_canvas.onGraphReplaced(); // re-seed positions next frame + drop stale canvas selection
 			m_ctx.layout = std::move(m_ctx.pendingLayout);
 			m_ctx.pendingLayout = {};
@@ -323,10 +333,11 @@ namespace flowview
 		m_ctx.session.scheduler = m_ctx.app->strategy();
 		saveSession(m_ctx.session);
 
-		// Release every GPU texture while the ImGui backend still lives — a gui::Texture reclaims its
-		// descriptor there. The Preview pane's view holds one of its own (a player decodes its current
-		// frame), and pane members are destroyed AFTER this window's Context, so waiting for its
-		// destructor would touch a backend that is already gone.
+		// Release every GPU texture before the device goes. A gui::Texture is an archimedes resource,
+		// and a Device must outlive its resources — but this window (with its panes) belongs to the
+		// FlowviewApp delegate, which outlives Application::shutdown(), where the device is
+		// destroyed. So waiting for the destructors would be too late. The Preview pane's view holds
+		// one of its own (a player decodes its current frame).
 		m_previews.clear();
 		m_preview.releaseView();
 		m_guiCtx.reset(); // then destroy the backend, before the device tears down

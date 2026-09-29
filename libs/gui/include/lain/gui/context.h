@@ -69,10 +69,12 @@ namespace lain::gui
 		void render(acm::CommandBuffer cmd);
 
 		// Allocate a GPU texture sized to `image` (via this Context's shared device), upload
-		// its pixels, and register it for display — the app-facing preview path, with no
-		// VkImageView or ImTextureID leaking out. Returns an invalid handle for an empty or
-		// unsupported-format image. To refresh an existing texture in place, prefer
-		// gui::Texture::upload(); recreate here only on first sight or a resize.
+		// its pixels, and give it a descriptor ImGui can bind — the app-facing preview path,
+		// with no VkImageView or ImTextureID leaking out. Both are archimedes' resources, so the
+		// returned Texture may be released while frames that drew it are still running.
+		// Returns an invalid handle for an empty or unsupported-format image. To refresh an
+		// existing texture in place, prefer gui::Texture::upload(); recreate here only on first
+		// sight or a resize.
 		Texture createTexture(const lain::image::Image& image);
 
 	private:

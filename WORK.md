@@ -7186,12 +7186,68 @@ The device WAS waited idle, but inside `device.reset()`, after every delegate ha
   MoltenVK ICD was staged beside the executable, so both died on the instance (then on GLFW's
   null-window assert) however `LAIN_GUI_SMOKE` was set. `libs/app/test` now calls
   `acm_stage_vulkan_runtime(test-app)`, as flowview does.
-- **Not fixed here, and the same shape mid-session:** `gui::Texture` frees its descriptor set
-  immediately. Recorded under *Known defects*.
+- **Not fixed here, and the same shape mid-session:** `gui::Texture` freed its descriptor set
+  immediately. *(**Fixed the same day** — see the next section.)*
 - `ctest -j8` **908/908** Debug with video on, **914/914** Release with video on (+1 each, the new
   case, which skips); warning-clean, format-check clean; the new `[gpu]` case passes 10 of 10 in Debug
   and 5 of 5 in Release; flowview quits clean in 35 runs over `--frames 1/2` with and without
   `--example`, plus `--size 2048 --frames 1/2/5`, which quits with a run in flight.
+
+### A texture's descriptor outlives the frames that drew it — FIXED 2026-09-29
+
+The mid-session half of the shutdown fault. `gui::Texture` took its descriptor from ImGui's pool
+(`ImGui_ImplVulkan_AddTexture`) and gave it back with `ImGui_ImplVulkan_RemoveTexture`, an immediate
+`vkFreeDescriptorSets`. The preview cache reallocates and prunes thumbnails on edits, and the sequence
+player replaces its frame while it plays, so a set was freed while up to
+`acm::Renderer::MaxFramesInFlight` frames that had bound it could still be executing. That is a Vulkan
+usage error (VUID-vkFreeDescriptorSets-pDescriptorSets-00309), never seen to fault on MoltenVK. The
+`acm::Texture` half was always safe, because acm defers every destroy of its own resources until the
+submissions already made have completed.
+
+- **The fix gives the descriptor to acm too**, rather than teaching lain::gui to defer it. `Context`
+  allocates each texture's descriptor as an `acm::DescriptorSet` against a layout identical to
+  ImGui's texture set (one fragment-stage `SAMPLED_IMAGE` at binding 0), and hands ImGui the raw
+  handle as the `ImTextureID`. ImGui binds that id straight into its pipeline's set 0, and Vulkan
+  accepts a set there when the layouts are identically defined. `gui::Texture` now holds only acm
+  handles, and its destructor is `= default`. `ImGui_ImplVulkan_AddTexture` / `RemoveTexture` are gone.
+- **Chosen with the repo owner over three alternatives.** A raw back-pointer from a Texture to its
+  Context's release queue was refused outright: a Texture holds no Context. A shared queue kept the
+  descriptor in ImGui's pool. Explicit release put the burden on every owner.
+- **archimedes gains what the descriptor needed and nothing else**: `DescriptorType::SampledImage`,
+  `DescriptorSet::setSampledImage`, and `acm::interop::descriptorSet`. Its deferred-destroy stamping
+  is **unchanged**. Stamping "last submitted + 1" was proposed and dropped. It is only exact with one
+  submitter, and the case it targets is not a stamping problem anyway: a texture released between
+  being DRAWN and being RENDERED is used after release, because the frame's draw data names its raw
+  handle when `Context::render` records it. That is now a stated rule on `gui::Texture`.
+- **flowview broke that rule in one place, and it is fixed**: the document-swap block in
+  `MainWindow::onRender` cleared the preview cache AFTER the panes had drawn this frame and before it
+  was recorded. The clear now happens at the top of the next frame, beside the path-change clear.
+  Every other release site runs before its texture is drawn in that frame.
+- **Also gone: ImGui's pool as a cap on previews.** It was sized 64, so about 63 thumbnails. It now
+  serves ImGui's own font atlas only and is sized at ImGui's minimum.
+- **A Texture no longer has to die before its Context**, since nothing of ImGui's backend is left in
+  it. It still has to die before the device, like every acm resource, which is why flowview's
+  `onShutdown` still releases the cache and the Preview pane's view. Their comments now say that.
+- **Tests, and what they do not cover.** The defect itself cannot be observed here: there is no
+  validation layer, and MoltenVK does not fault on it. Checking handle reuse fails too, because acm
+  legitimately destroys the descriptor as soon as the next upload idles the queue. So the tests pin
+  what the arrangement rests on.
+  - archimedes: *a sampled image is read without a sampler* renders a split red/green image through
+    `texelFetch`. Sabotage (no descriptor write) fails it.
+  - lain::gui, `[gpu]` behind `LAIN_GUI_SMOKE=1`: *a texture's archimedes descriptor draws through
+    ImGui's pipeline* renders ImGui offscreen and reads back magenta. Sabotage (descriptor never
+    written) reads `0x0e0e0e`, the window background.
+  - *a context holds more textures than ImGui's descriptor pool* creates 72. Sabotage (back to
+    `AddTexture`) fails it: MoltenVK enforces the pool size.
+  - **Not guarded: the layout staying identical to ImGui's.** MoltenVK draws correctly through a
+    stage-mask and even a descriptor-type mismatch (both measured), so drift would pass the draw test.
+    The identity is held by the comment on `Context`'s layout; testing it needs a validation layer.
+- `ctest -j8` **910/910** Debug with video on, **916/916** Release with video on (+2 each, the new gui
+  cases, which skip); archimedes' own suite **57/57** (+1). Warning-clean, format-check clean in both
+  repos. The four windowed `[gpu]` cases (two in `test-app`, two in `test-gui`) pass 3 of 3 in both
+  configurations, and flowview quits clean at `--frames 1/2/5/30`, with a run in flight at
+  `--size 2048`. **gui-mode NOT eyeballed**: playing a sequence, editing with thumbnails showing, and
+  a document swap (New / Open / undo) with thumbnails on screen are the paths that release textures.
 
 ### Visual design (settled in outline, tuned by eyeball)
 
@@ -7389,23 +7445,17 @@ SuiteSparse-enabled Ceres; capture manifests and capture datasets (which M10 han
 
 Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
 
-- **`gui::Texture` frees its ImGui descriptor set while a frame may still read it.**
-  `ImGui_ImplVulkan_RemoveTexture` is an immediate `vkFreeDescriptorSets`, and it runs whenever the
-  preview cache reallocates or prunes a thumbnail, so up to `acm::Renderer::MaxFramesInFlight` frames
-  that drew it can still be executing. A Vulkan usage error, not yet observed to fault; ImGui's own
-  atlas textures are safe because it waits until they have gone unused for `ImageCount` frames. The
-  same shape as the shutdown fault fixed 2026-09-29, which the shutdown drain cannot reach
-  mid-session. *(Milestone 14 › Quitting early lost the device.)*
-
-**Otherwise empty.** The five before it are fixed — a group replaced at its own NodeId looking clean and
-delivering nothing (found by M14 slice 1, fixed 2026-09-28 by making versions process-unique; see
+**The list is empty.** All six are fixed — `gui::Texture` freeing a descriptor set a running frame
+could still read (2026-09-29; see Milestone 14 › *A texture's descriptor outlives the frames that
+drew it*), a group replaced at its own NodeId looking clean and delivering
+nothing (found by M14 slice 1, fixed 2026-09-28 by making versions process-unique; see
 Milestone 14), the three from M11 §Not in this milestone
 (`GroupSync::refused` had no reader, 2026-09-09; the Issues pane flagged an unwired DEFAULTED
 input, 2026-09-09; `ungroup` told a map it was linked, 2026-09-10) and the parallel-ctest collision
-below (2026-09-10). Three of the five turned out to be **larger than their one-line description**:
-the described symptom was the visible end of a duplicated or unreachable decision, or — the newest —
-of a general shape (any node re-seated at its own id) that one caller happened to reach first. Worth
-remembering when writing the next entry here.
+below (2026-09-10). Three of the first five turned out to be **larger than their one-line
+description**: the described symptom was the visible end of a duplicated or unreachable decision, or
+— the NodeId one — of a general shape (any node re-seated at its own id) that one caller happened to
+reach first. Worth remembering when writing the next entry here.
 
 ### `ctest -j` and scratch paths — FIXED 2026-09-10
 

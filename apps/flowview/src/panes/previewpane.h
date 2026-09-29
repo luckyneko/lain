@@ -41,10 +41,10 @@ namespace flowview
 		void draw(AppContext& ctx, const lain::flow::Graph& graph, const lain::flow::Evaluation& evaluation,
 				  const PreviewCache& previews, const ValueViews& views, lain::gui::Context& gui);
 
-		// Drop the live view — and with it any GPU texture it holds. MUST run while the gui Context's
-		// ImGui backend is still alive (gui::Texture reclaims its descriptor there), which is why
-		// MainWindow::onShutdown calls it beside PreviewCache::clear rather than leaving it to this
-		// pane's destructor, which runs after the Context is gone.
+		// Drop the live view — and with it any GPU texture it holds. MUST run before the device is
+		// destroyed (a gui::Texture is an archimedes resource), which is why MainWindow::onShutdown
+		// calls it beside PreviewCache::clear rather than leaving it to this pane's destructor, which
+		// runs after Application::shutdown has destroyed the device.
 		void releaseView();
 
 	private:

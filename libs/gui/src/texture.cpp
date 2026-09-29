@@ -3,46 +3,39 @@
 #include <lain/image/convert.h> // normalise to RGBA8 (a gui::Texture is always RGBA8)
 #include <lain/image/image.h>
 
-#include <imgui_impl_vulkan.h>
-#include <vulkan/vulkan.h> // VkDescriptorSet — the ImGui descriptor behind an ImTextureID
-
 #include <utility>
 
 namespace lain::gui
 {
-	Texture::Texture(acm::Texture texture, ImTextureID id, lain::image::PixelFormat format)
+	Texture::Texture(acm::Texture texture, acm::DescriptorSet descriptor, ImTextureID id, lain::image::PixelFormat format)
 		: m_texture(std::move(texture))
+		, m_descriptor(std::move(descriptor))
 		, m_id(id)
 		, m_format(format)
 	{
 	}
 
+	// Moves hand both acm halves over and leave the source empty — a moved-from Texture must not
+	// go on naming a descriptor it no longer owns. Releasing what this one held is the acm
+	// handles' own business, deferred past the frames that drew it.
 	Texture::Texture(Texture&& other) noexcept
 		: m_texture(std::move(other.m_texture))
-		, m_id(other.m_id)
+		, m_descriptor(std::move(other.m_descriptor))
+		, m_id(std::exchange(other.m_id, ImTextureID{}))
 		, m_format(other.m_format)
 	{
-		other.m_id = ImTextureID{};
 	}
 
 	Texture& Texture::operator=(Texture&& other) noexcept
 	{
 		if (this != &other)
 		{
-			if (m_id != ImTextureID{})
-				ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(m_id));
 			m_texture = std::move(other.m_texture);
-			m_id = other.m_id;
+			m_descriptor = std::move(other.m_descriptor);
+			m_id = std::exchange(other.m_id, ImTextureID{});
 			m_format = other.m_format;
-			other.m_id = ImTextureID{};
 		}
 		return *this;
-	}
-
-	Texture::~Texture()
-	{
-		if (m_id != ImTextureID{})
-			ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(m_id));
 	}
 
 	lain::math::Vec2i Texture::extent() const
