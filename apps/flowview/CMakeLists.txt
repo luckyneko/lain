@@ -14,6 +14,7 @@ add_executable(flowview
 	src/session.cpp
 	src/undo.cpp
 	src/previewcache.cpp
+	src/runner.cpp
 	src/valueviews.cpp
 	src/imagecanvas.cpp
 	src/imageview.cpp

@@ -31,7 +31,7 @@ namespace flowview
 		// graph (bind / add / remove pins) and, on a change, re-runs the scene via ctx.app and refreshes
 		// the previews.
 		void draw(AppContext& ctx, const lain::flow::Graph& graph, lain::flow::Graph* editable,
-				  lain::flow::Evaluation& evaluation, PreviewCache& previews, const ParamEditors& editors);
+				  const lain::flow::Evaluation& evaluation, PreviewCache& previews, const ParamEditors& editors);
 
 	private:
 		// The "Remove pin?" confirm modal (opened by a "×"); runs edit::removePort on confirm. Returns

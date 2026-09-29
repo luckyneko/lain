@@ -14,11 +14,17 @@
 // asks NodeEvaluation::cancelled() — and the staging loop plans no further stage. Whatever did not
 // finish stays stale, so the next run picks it up.
 //
+// A host may also ask to be told when a STAGE has finished (setStageObserver): the one point inside
+// a run where the evaluation is quiescent, so a host can copy it and show a map's or a loop's
+// progress before the whole run returns.
+//
 // (A per-step started/finished hook joins this with M14 slice 7, which is where a host learns WHICH
 // nodes are Queued and Computing rather than only how many.)
 
 #include <atomic>
 #include <cstddef>
+#include <functional>
+#include <utility>
 
 namespace lain::flow
 {
@@ -44,11 +50,31 @@ namespace lain::flow
 		// planned().
 		std::size_t finished() const noexcept { return m_finished.load(std::memory_order_relaxed); }
 
+		// Called BETWEEN stages: after a stage has executed, when another stage follows and the run
+		// has not been cancelled — before the next stage is prepared or planned. It runs on the thread
+		// that called Scheduler::run, while no step is running, so the evaluation is QUIESCENT and may
+		// be read, and copied, from inside it (a PublishedEvaluation is the reason it exists).
+		//
+		// Never called after the last stage: run() returning is that boundary, and a host already
+		// knows when that happens. So a run with no map and no loop — one stage — never calls it.
+		//
+		// Set it before the run, not during one: it is read by the run without a lock. It must not
+		// re-enter the scheduler on the same evaluation (the run lease would throw), and whatever it
+		// throws propagates out of run() the way a compute's exception does.
+		void setStageObserver(std::function<void()> observer) { m_stageObserver = std::move(observer); }
+
 	private:
-		friend class Scheduler; // the one writer of the counters
+		friend class Scheduler; // the one writer of the counters, and the one caller of the observer
+
+		void notifyStage() const
+		{
+			if (m_stageObserver)
+				m_stageObserver();
+		}
 
 		std::atomic<bool> m_cancelled{false};
 		std::atomic<std::size_t> m_planned{0};
 		std::atomic<std::size_t> m_finished{0};
+		std::function<void()> m_stageObserver;
 	};
 } // namespace lain::flow

@@ -30,6 +30,14 @@ static std::shared_ptr<const Graph> runOnAClone(const Graph& document, Evaluatio
 	return clone;
 }
 
+// An int in a slot of its own, for a binding.
+static PortValue intValue(int v)
+{
+	PortValue value;
+	value.set(v);
+	return value;
+}
+
 // The one node inside an interior that is not its boundary pair — the scene's relay.
 static NodeId bodyOf(const Graph& inner)
 {
@@ -208,4 +216,35 @@ TEST_CASE("nothing published reads as empty", "[flow][published]")
 	REQUIRE_FALSE(nothing.ready(node));
 	REQUIRE(nothing.describe(out) == "(empty)");
 	REQUIRE(nothing.childCount(node) == 0);
+}
+
+TEST_CASE("binding a published evaluation writes the copy, never its source", "[flow][published]")
+{
+	// A host shows a PENDING binding at once by writing it into what its panes read, while the same
+	// value waits in a queue for the next run. The working evaluation belongs to a run meanwhile, so
+	// the write must not reach it — and the next run, not this, is what makes the value real.
+	Graph document;
+	const PortId pin = document.boundaryInputNode().addBoundary<int>("x");
+	const PortAddress bound{document.boundaryInputNode().id(), pin};
+	std::atomic<int> relayCalls{0};
+	const NodeId relay = document.add<Relay>(relayCalls);
+	REQUIRE(document.connect(bound, PortAddress{relay, document.node(relay).input(0).id()}) == Connection::Ok);
+
+	Evaluation working{document};
+	working.bind(bound, intValue(1));
+	const std::shared_ptr<const Graph> clone = runOnAClone(document, working);
+
+	PublishedEvaluation published{clone, working};
+	published.bind(bound, intValue(5));
+	REQUIRE(published.evaluation().value(bound).get<int>() == 5);
+	REQUIRE(working.value(bound).get<int>() == 1);
+	// Nothing downstream moved: a copy is never run, so showing a binding computes nothing.
+	REQUIRE(intOut(*clone, published.evaluation(), relay) == 1);
+
+	// A pin added since the run the copy came from has no slot in it, and binding it is ignored
+	// rather than refused — the queued value still reaches the next run, which prepares that slot.
+	const PortId later = document.boundaryInputNode().addBoundary<int>("later");
+	const PortAddress laterAddress{document.boundaryInputNode().id(), later};
+	published.bind(laterAddress, intValue(9));
+	REQUIRE(published.evaluation().value(laterAddress).empty());
 }

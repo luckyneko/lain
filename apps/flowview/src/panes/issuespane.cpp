@@ -1,14 +1,16 @@
 #include "issuespane.h"
 
 #include "../appcontext.h"
-#include "../groupnav.h"   // GraphPath (a map element's row navigates INTO it) + PinRefusal
-#include "../validation.h" // collectIssues — the rules themselves, apart from the drawing
+#include "../flowviewapp.h" // runFailure — the last run that threw
+#include "../groupnav.h"	// GraphPath (a map element's row navigates INTO it) + PinRefusal
+#include "../validation.h"	// collectIssues — the rules themselves, apart from the drawing
 
 #include <lain/gui/color.h> // gui::packColor (image::ColorRGBA8 -> ImU32)
 #include <lain/gui/gui.h>
 #include <lain/image/color.h>
 #include <lain/string/format.h>
 
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -69,6 +71,15 @@ namespace flowview
 			};
 
 			bool any = false;
+			// A run that threw. It persists — unlike a transient refusal — because the node that threw
+			// stays stale and throws again next run until something changes; a run that completes
+			// clears it. The row is run-level: which node threw is not known here yet (M14 slice 7's
+			// per-step hook is what will say).
+			if (const std::optional<std::string>& failure = ctx.app->runFailure())
+			{
+				row(Issue::note(Issue::Severity::Error, "run failed: " + *failure));
+				any = true;
+			}
 			if (ctx.recentIssueFrames > 0 && ctx.recentIssue)
 			{
 				row(*ctx.recentIssue);

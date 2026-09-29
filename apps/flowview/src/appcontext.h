@@ -111,7 +111,7 @@ namespace flowview
 	// separately, since they are GPU resources, not model state.)
 	struct AppContext
 	{
-		// The app delegate — reached for graph()/nodeFactory()/reevaluate()/replaceGraph(). Set once in
+		// The app delegate — reached for graph()/nodeFactory()/requestRun()/bind()/replaceGraph(). Set once in
 		// MainWindow::onInit (stable for the window's life); null before then.
 		FlowviewApp* app = nullptr;
 

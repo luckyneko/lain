@@ -896,7 +896,8 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 
 ## Running while you edit — the host's side of a run
 
-*(M14 — designed; slices 1-3 built, the host side not yet. [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
+*(M14 — designed; slices 1-4 built: runs are off the frame loop, Live only, and freshness is not
+drawn yet. [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
 host keeps its document editable while a run is in flight. These are the words for how a run is
 started, stopped and shown.
 
@@ -917,8 +918,13 @@ started, stopped and shown.
   killed.
 - **Run control** — the host's hold on one run in flight, `flow::RunControl`: it cancels the run and
   reads its progress (node computes planned and finished, summed across stages), from any thread. One
-  per run — the run that supersedes it gets a fresh one. _Avoid_: token (it carries progress too),
-  handle (a multi handle is a different thing).
+  per run — the run that supersedes it gets a fresh one. It also carries the host's **stage
+  observer**, called between stages while nothing is running — the one point inside a run where the
+  evaluation may be copied. _Avoid_: token (it carries progress too), handle (a multi handle is a
+  different thing).
+- **Runner** — flowview's coordinator: the thread that calls the blocking `run()` over a clone, one job
+  at a time, and hands the frame loop each publication and how each run ended. The host decides WHEN to
+  run (the trigger); the runner only runs. _Avoid_: executor (the task pool's word), worker.
 - **Published evaluation** — the copy of an Evaluation a host's panes read while a run holds the
   real one: refreshed as results land (per node as each finishes, and whole at stage boundaries and
   run end), and written directly by the host for a **pending binding**. A view of the newest results,
@@ -929,8 +935,10 @@ started, stopped and shown.
   working evaluation branched off the first would be a fork (deferred). _Avoid_: snapshot (the undo
   document), cache, result.
 - **Pending binding** — a boundary value the user has bound that no run has consumed yet. Applied at
-  the next run's start; shown at once in the published evaluation, so the value the user just set is
-  the value they see. Not a document change, so undo ignores it — as it ignores every binding.
+  the next run's start, after that run's prepare (so a pin added since the last run receives it); shown
+  at once in the published evaluation, so the value the user just set is the value they see — and laid
+  over any publication from a run that started before the binding was taken. Not a document change, so
+  undo ignores it — as it ignores every binding.
 - **Freshness** — whether a node's *shown* value reflects the document. A second axis beside
   readiness (which says whether a node *could* run), with five states:
   - **Stale** — it does not: the node's Version differs from what its shown value was computed at, a

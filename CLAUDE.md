@@ -827,6 +827,51 @@ Full notes in WORK.md's *Milestone 14 › Slice 3 landed*.
   graph's own boundary pair, not crossings. `evaluate` takes no control until slice 8's Run
   Selection. Seven sabotages, all caught.
 
+### Update 2026-09-29 — M14 slice 4 built: the gui never waits on graph work
+
+gui-mode stops running the graph in the frame loop. **`flowview::Runner`** (`apps/flowview/src/
+runner.{h,cpp}`) calls the unchanged, blocking `Scheduler::run` on a coordinator thread of its own,
+over a **clone** of the document taken on the UI thread, and the panes read a **published copy**
+(`flow::PublishedEvaluation`). The frame loop polls at its start (`FlowviewApp::pollRun`) and pumps at
+its end (`pumpRun`), and never waits. Parallel by default, Serial selectable, Stop; Live is the only
+trigger. `ctest -j8` **837/837** Debug with video on, **843/843** Release with video on, **810/810**
+Release video-off (+10 each); warning-clean, format-check clean; `[runner]` and `[cancel]` swept 100×
+through their Catch2 binaries in Debug and Release; `flowview run --example` identical to the
+pre-change binary; `--frames` quits cleanly with a run in flight. **gui-mode eyeballed by the repo
+owner 2026-09-29** (a quick pass, which looked good). Full notes in WORK.md's *Milestone 14 › Slice 4
+landed*.
+
+- **Two pieces came forward, decided with the repo owner while planning.** Pending bindings, whole,
+  from slice 5: the Interface pane's direct `evaluation.bind()` is a race once a run owns the
+  evaluation, and the immediate write into the published copy (`PublishedEvaluation::bind`) keeps a
+  scalar drag from snapping back. And a between-stages observer on `RunControl`
+  (`setStageObserver`), because the staging loop lives inside the blocking `run()` and a host could
+  otherwise publish only at the end.
+- **One job slot, and a supersede never waits.** `pumpRun` cancels a run in flight and keeps the
+  request; the frame after it drains, it clones and starts the next. So one clone per run that starts,
+  always of the newest document, and never a second job queued behind a first (that would need a second
+  working evaluation — ADR-0025's deferred fork).
+- **Found while wiring: a publication can be older than a binding already handed to the next job** —
+  a run ending between one frame's poll and its pump publishes after the next job took the queue. So
+  jobs have serials, a publication says which job made it, and `PendingBindings` lays every binding a
+  publication cannot contain over it. Pinned by a thread-free test.
+- **Bindings are applied after the runner's own `prepare`, outside the run lease** — the host cannot
+  take the scheduler's lease and does not need to, since the coordinator is the working evaluation's
+  only user once a job holds it. Prepare-then-bind is what lets a freshly added pin receive a value.
+  ADR-0025 amended in place.
+- **A throw is a RUN-level failure**: caught on the coordinator (it used to be nothing — gui-mode had no
+  `try` around a run), logged, and shown as a persistent Issues row until a run completes. Which node
+  threw is unknown — the exception does not say — and slice 6's per-node Failed now records that it
+  depends on settling that first.
+- **A document swap ABANDONS the run in flight** — drops whatever it would still publish — and the
+  panes read an empty published evaluation until the new document's first run lands, rather than the
+  old document's values from a dead lineage.
+- **`onStop` stops the runner first** (cancel + join), before the published copy, the evaluation, the
+  graph and — after the last `onShutdown` — the pool go. The coordinator starts lazily with the first
+  job, so headless never has one.
+- Seven sabotages, all caught — including the one that proves the point of the catch: without it, the
+  throw case aborts the whole test binary with *uncaught exception ... boom*.
+
 ### Update 2026-09-26 — one process task pool; `lain::task` becomes an alias for `multi`
 
 The wrapper moved from Taskflow to `multi` on 2026-09-11 with `libs/flow` unchanged by a single line

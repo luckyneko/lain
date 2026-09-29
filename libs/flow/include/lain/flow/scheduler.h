@@ -391,8 +391,11 @@ namespace lain::flow
 	//
 	// It BLOCKS the calling thread until the whole plan finishes, participating in the pool's
 	// work-stealing meanwhile, so it must never be entered from inside a pool task (the
-	// fire-and-join contract). Making a run non-blocking is a separate milestone; what it needs
-	// is not here but in how a host reads an evaluation while one is in flight.
+	// fire-and-join contract). A host that must not block calls it from a thread of its own, and
+	// that is not the hard part: a run reads its definition on the workers for its whole length, so
+	// the host must also keep editing the document without racing it — a run reads a CLONE — and
+	// keep its panes off the evaluation the run is writing — they read a published copy
+	// (ADR-0025; flowview's runner.h is the host that does both).
 	//
 	// It takes no isolated pool, because nothing needs one: catch_discover_tests gives every
 	// TEST_CASE its own process, so the process pool is already per-case. Trigger for adding one

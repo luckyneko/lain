@@ -78,6 +78,13 @@ namespace flowview
 	{
 		FlowviewApp& appDelegate = window.app().getDelegate<FlowviewApp>();
 
+		// Take whatever the coordinator has published since last frame, FIRST — before anything below
+		// takes a reference into the published evaluation, since this replaces it. A new publication
+		// means new values, so the thumbnails built from the old one are refreshed (the cache skips a
+		// port whose payload did not change, so this costs what actually changed).
+		if (appDelegate.pollRun())
+			m_previews.markDirty();
+
 		// Consume a navigation requested LAST frame (a breadcrumb click, a double-click descent) before
 		// resolving the path, so the canvas seeds positions for the level it is about to draw. Doing
 		// this inside the canvas would consume a flag raised during its own draw — seeding the level
@@ -111,10 +118,12 @@ namespace flowview
 		flow::Graph* editable = resolveEditable(appDelegate.graph(), m_ctx.activePath);
 		// ... and the runtime state that belongs to it. An Evaluation is a tree with one child per
 		// group node, so the SAME path walks it — every pane gets a definition and its values in step.
-		flow::Evaluation& evaluation = resolveEvaluation(appDelegate.evaluation(), m_ctx.activePath);
+		// It is the PUBLISHED copy: the working evaluation belongs to the run in flight (ADR-0025), so
+		// the values here can be a stage or a run behind the document the panes are also reading.
+		const flow::Evaluation& evaluation = resolveEvaluation(appDelegate.published(), m_ctx.activePath);
 		// The element counts belong to the ROOT evaluation, which only this function holds — a pane
 		// receives the ACTIVE one and could not count the levels above it.
-		m_ctx.pathElementCounts = pathElementCounts(appDelegate.evaluation(), m_ctx.activePath);
+		m_ctx.pathElementCounts = pathElementCounts(appDelegate.published(), m_ctx.activePath);
 		// The path the panes are about to draw with. Captured now because a pane may NAVIGATE during
 		// this frame (a double-click descends), and the positions collected at the end of the frame
 		// belong to the level that was actually on screen — not to the one we are moving to.
@@ -144,13 +153,13 @@ namespace flowview
 		// Add feeds the same `edited` flag as the canvas, so a menu Add Node re-runs the scene like any edit.
 		m_menuBar.draw(m_ctx, graph, window.app(), edited, m_resetLayout);
 
-		// A topology edit re-runs the scene, so the previews need refreshing (recomputed
-		// images, added/removed ports). Mark them dirty; refreshIfDirty below upserts in
+		// A topology edit asks for a run, and the previews need refreshing (added/removed ports now;
+		// recomputed images when the run publishes). Mark them dirty; refreshIfDirty below upserts in
 		// place where it can. (Deferred, not per-frame — acm::Texture::upload is a stalling
 		// synchronous submit.)
 		if (edited)
 		{
-			appDelegate.reevaluate(); // always runs the ROOT: the plan expands groups, so one run covers every level
+			appDelegate.requestRun(); // always runs the ROOT: the plan expands groups, so one run covers every level
 			m_previews.markDirty();
 			m_ctx.markChanged(); // a topology edit -> unsaved changes + an undo snapshot
 			m_ctx.loadIssues.clear();
@@ -180,7 +189,7 @@ namespace flowview
 		PathSync sync = syncPathGroups(appDelegate.graph(), drawnPath);
 		if (sync.changed)
 		{
-			appDelegate.reevaluate();
+			appDelegate.requestRun();
 			m_previews.markDirty();
 		}
 		// A pin a group could not mirror is absent from its face with no other symptom, so the Issues
@@ -267,6 +276,11 @@ namespace flowview
 		// Positions were seeded during this frame's canvas draw, so the layout is already live.
 		if (!m_ctx.undo.hasBaseline())
 			m_ctx.undo.reset(snapshotNow());
+
+		// Act on this frame's requests for a run, LAST: after every edit, the group sync and any
+		// document swap have landed, so the clone a new run reads is of the document as the frame
+		// leaves it. Never waits — a run in flight is cancelled, and a later frame starts the next.
+		appDelegate.pumpRun();
 
 		window.renderer().render([&](acm::CommandBuffer cmd, uint32_t)
 								 { m_guiCtx->render(cmd); });

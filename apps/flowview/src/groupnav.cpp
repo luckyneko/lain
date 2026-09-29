@@ -84,9 +84,9 @@ namespace flowview
 		return dynamic_cast<flow::LoopNode*>(&level->node(path.back().node));
 	}
 
-	flow::Evaluation& resolveEvaluation(flow::Evaluation& root, const GraphPath& path)
+	const flow::Evaluation& resolveEvaluation(const flow::Evaluation& root, const GraphPath& path)
 	{
-		flow::Evaluation* current = &root;
+		const flow::Evaluation* current = &root;
 		for (const PathStep& step : path)
 		{
 			// The element is what makes this walk differ from the graph walk: a group has exactly

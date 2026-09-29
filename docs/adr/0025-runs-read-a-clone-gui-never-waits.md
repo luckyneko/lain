@@ -2,7 +2,8 @@
 
 ---
 Status: accepted (designed 2026-09-28; slices 1 — clone + lineage — 2 — the published evaluation
-+ payload identity — and 3 — cancellation — built 2026-09-28, the rest not)
++ payload identity — and 3 — cancellation — built 2026-09-28, 4 — the async vertical — 2026-09-29,
+the rest not)
 Amends [ADR-0012](0012-definition-and-evaluation.md) — the pairing guard moves from address identity
 to **lineage**, and a *published evaluation* is the "different concept" it set aside. Amends
 [ADR-0024](0024-one-process-task-pool.md) — gui-mode stops being serial, and the coordinator thread is
@@ -121,8 +122,21 @@ The host hands a coordinator thread the clone, the evaluation and a cancel token
 scheduler's `run()`; the frame loop polls atomics for completion and progress. The staging loop keeps
 running at full speed off the UI thread. `SerialScheduler` runs *on* the coordinator and `--threads 0`
 runs the parallel plan inline *there*, so both stay asynchronous to the gui. The scheduler's surface
-grows only by the cancel token, a progress read and (later) a per-step completion hook; the headless
-`flowview run` path is untouched.
+grows only by the cancel token, a progress read, a between-stages observer and (later) a per-step
+completion hook; the headless `flowview run` path is untouched.
+
+*Built in slice 4 (2026-09-29)* as flowview's `Runner`, with one job slot: the host supersedes by
+cancelling the run in flight and starting the next once it has drained, so it clones exactly once per
+run that starts, always from the newest document, and never queues a second job behind a first — which
+would need the fork below. The between-stages observer (`RunControl::setStageObserver`) is what
+stage-boundary publication needed and this section had not listed: the staging loop lives inside the
+blocking `run()`, so without a hook the host could publish only at the end. It is called on the thread
+inside `run()`, after a stage has executed and before the next is prepared, never after the last. The
+coordinator starts with the first job, so a headless process never has one.
+
+A throw is caught on the coordinator and reported per RUN: the exception leaving `run()` does not say
+which node threw, so per-node **Failed** needs either the per-step hook or flow naming the node on the
+way out. Slice 6, which draws it, has to settle which.
 
 Under `ParallelScheduler` the coordinator is a participating waiter — exactly the "+1" ADR-0024 sizes
 the pool for (`hw - 1` workers). ADR-0024's caveat that a participating waiter can be caught inside
@@ -156,14 +170,33 @@ called a snapshot — that word means the undo document.
 
 A boundary binding is a host operation on the working evaluation, which the run owns while in flight.
 The host keeps **pending bindings** — the latest per pin — and the coordinator applies them at the
-next run's start, inside the run lease, after `prepare`. The UI writes the same value into the
+next run's start, after `prepare`. The UI writes the same value into the
 published evaluation immediately, because the Interface pane reads the bound value back every frame
 and would otherwise snap a scalar drag back until the run caught up. A binding triggers a run like an
 edit does, and is still not a document change.
 
+*Amended 2026-09-29, the day slice 4 built it* (moved there from slice 5, since the Interface pane's
+direct bind became a race the moment runs left the UI thread):
+
+- **Applied after the runner's OWN prepare, before `run()` — not inside the run lease.** The lease is
+  the scheduler's and a host cannot take it, and it does not need to: once a job holds the working
+  evaluation, the coordinator is its only user. Prepare-then-bind is the load-bearing order, since
+  `Evaluation::bind` ignores a pin it has no slot for and a pin added since the last run has none until
+  prepare makes it. `run()` then prepares again against the same clone and finds nothing to do.
+- **"Shown at once" has to survive a publication that is OLDER than the binding.** A run that ends
+  between one frame's poll and its pump publishes into the next frame — after the pump has handed the
+  queue to the next job. So each job has a serial, each publication carries the serial of the job that
+  made it, and each binding remembers which job took it: a publication from job N has every binding
+  taken after N, plus those still queued, laid over it (flowview's `PendingBindings`).
+- **A binding onto a pin the published copy has no slot for is not shown** until a run publishes one —
+  exactly what `Evaluation::bind` does with it. It still reaches the run.
+
 A **document swap during a run** needs no rule of its own: New, Open and undo replace the host's pair
 as they do today and cancel the in-flight run; the job shares ownership of its clone and evaluation, so
-the old pair drains and is destroyed with it, and nothing waits.
+the old pair drains and is destroyed with it, and nothing waits. *(Slice 4: the cancel is an ABANDON,
+which also drops whatever that run would still publish, and the panes read an empty published
+evaluation until the new document's first run lands — the old values belong to a dead lineage, and a
+lineage-checked freshness query would refuse them anyway.)*
 
 ### Triggers, and what a run computes
 

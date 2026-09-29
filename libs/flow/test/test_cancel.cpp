@@ -581,3 +581,82 @@ TEST_CASE("a run cancelled before it starts computes nothing", "[flow][cancel]")
 	REQUIRE(calls.element == 3);
 	REQUIRE(intOut(graph, evaluation, scene.sink) == 1);
 }
+
+TEST_CASE("the stage observer is called between stages, never after the last", "[flow][cancel][map]")
+{
+	// What a gui host builds on it (ADR-0025): a copy of the evaluation, taken where nothing is
+	// running, so a map's or a loop's progress shows before the whole run returns. The scene runs in
+	// two stages — the root and the list, then the map's elements — so the observer fires exactly
+	// once, and what it sees is the FIRST stage: the collection the map is about to map over is
+	// there, and no element has run.
+	SECTION("a run in two stages calls it once, between them")
+	{
+		Calls calls;
+		Graph document;
+		const Scene s = buildScene(document, calls);
+		const auto clone = std::make_shared<const Graph>(document.clone());
+		Evaluation working{document};
+
+		int observed = 0;
+		int elementsAtObservation = -1;
+		std::vector<int> listAtObservation;
+		RunControl control;
+		control.setStageObserver([&]()
+								 {
+			++observed;
+			elementsAtObservation = calls.element;
+			// The use it exists for, and the proof the evaluation is readable here: publishing
+			// checks that the pair is the one the run prepared, and copies every slot.
+			const PublishedEvaluation published{clone, working};
+			listAtObservation = output(*clone, published.evaluation(), s.list, 0).get<Ints>(); });
+		SerialScheduler{}.run(*clone, working, control);
+
+		REQUIRE(observed == 1);
+		REQUIRE(elementsAtObservation == 0);
+		REQUIRE(listAtObservation == Ints{1, 2, 3});
+		REQUIRE(calls.element == 3); // and the run carried on past it
+	}
+
+	SECTION("a run in one stage never calls it")
+	{
+		// run() returning is that boundary, and a host already knows when that happens — so a graph
+		// with no map and no loop is observed not at all, rather than once at the end.
+		Graph graph;
+		std::atomic<int> sourceCalls{0}, relayCalls{0};
+		const NodeId source = graph.add<Source>(sourceCalls, 1);
+		const NodeId relay = graph.add<Relay>(relayCalls);
+		REQUIRE(graph.connect(source, 0, relay, 0) == Connection::Ok);
+
+		Evaluation evaluation{graph};
+		int observed = 0;
+		RunControl control;
+		control.setStageObserver([&]()
+								 { ++observed; });
+		SerialScheduler{}.run(graph, evaluation, control);
+		REQUIRE(observed == 0);
+		REQUIRE(relayCalls == 1);
+	}
+
+	SECTION("a run cancelled in its first stage never calls it")
+	{
+		// The cancel lands in the stage BEFORE the map, so there is no next stage to be between.
+		Calls calls;
+		Graph graph;
+		const Scene s = buildScene(graph, calls);
+		std::atomic<int> cancellerCalls{0};
+		Trigger trigger = nullptr;
+		const NodeId canceller = graph.add<Canceller>(cancellerCalls, trigger);
+		REQUIRE(graph.connect(s.source, 0, canceller, 0) == Connection::Ok);
+
+		Evaluation evaluation{graph};
+		int observed = 0;
+		RunControl control;
+		trigger = &control;
+		control.setStageObserver([&]()
+								 { ++observed; });
+		SerialScheduler{}.run(graph, evaluation, control);
+		REQUIRE(cancellerCalls == 1);
+		REQUIRE(observed == 0);
+		REQUIRE(calls.element == 0);
+	}
+}

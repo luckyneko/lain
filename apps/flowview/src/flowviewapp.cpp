@@ -12,12 +12,14 @@
 #include <lain/io/sequence/openers.h>
 #include <lain/io/video/codecs.h>
 #include <lain/io/video/writer.h>
+#include <lain/log/log.h>
 #include <lain/meta/enums.h>
 
 #include <cctype>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace flowview
@@ -145,11 +147,12 @@ namespace flowview
 			buildExampleScene(*m_graph, m_nodeFactory);
 		// else: a blank document needs no building — a fresh Graph is already one empty Input +
 		// one empty Output node, and the user grows the interface from the Interface panel's ±.
-		m_evaluation = flow::Evaluation{*m_graph};
+		m_evaluation = std::make_shared<flow::Evaluation>(*m_graph);
 		if (m_useExample)
 			for (const flow::BoundaryInput& in : m_graph->boundaryInputs())
-				bindDefaultInput(in, m_evaluation, m_size);
-		m_scheduler.run(*m_graph, m_evaluation);
+				bindDefaultInput(in, *m_evaluation, m_size);
+		// Asked for rather than run: the first frame starts it, off the frame loop like every other.
+		requestRun();
 		return true;
 	}
 
@@ -210,30 +213,107 @@ namespace flowview
 		// onStop runs before device teardown, so resetting here keeps that safe. Headless
 		// mode uses a local graph, so m_graph is null here and this is a no-op.
 		//
-		// The evaluation goes FIRST and with it: it is where the payloads actually live now, and it
-		// holds a pointer to the definition it belongs to.
-		m_evaluation = flow::Evaluation{};
+		// The run in flight goes FIRST: it participates in the task pool, which stops after the last
+		// onShutdown, and it may be reading the evaluation and a clone of the document. stop() cancels
+		// and JOINS it — the drain is bounded by the compute in progress, and this is the one place
+		// the UI thread is allowed to wait on graph work, since there is no longer a frame to keep.
+		m_runner.stop();
+
+		// Then what the panes read, and the evaluation it was copied from: they are where the payloads
+		// actually live.
+		m_published = flow::PublishedEvaluation{};
+		m_bindings.clear();
+		m_evaluation.reset();
 		m_graph.reset();
 	}
 
-	void FlowviewApp::reevaluate()
+	void FlowviewApp::requestRun()
 	{
-		// A full topo-order run (not a pull of one target) recomputes the whole graph
-		// through its current wiring — correct no matter which nodes/edges were edited,
-		// including deletion of whatever used to be the pulled sink.
-		m_scheduler.run(*m_graph, m_evaluation);
+		m_runRequested = true;
+	}
+
+	void FlowviewApp::bind(flow::PortAddress input, flow::PortValue value)
+	{
+		// Shown now, applied later: the published copy is what the panes read this frame, and the
+		// queue is what the next run consumes.
+		m_published.bind(input, value);
+		m_bindings.set(input, std::move(value));
+		requestRun();
+	}
+
+	void FlowviewApp::stopRun()
+	{
+		m_runner.cancel();
+		m_runRequested = false;
+	}
+
+	bool FlowviewApp::pollRun()
+	{
+		RunReport report = m_runner.take();
+		if (report.outcome == RunOutcome::Completed)
+			m_runFailure.reset();
+		else if (report.outcome == RunOutcome::Failed)
+		{
+			log::error("flowview: the run failed: {}", report.failure);
+			m_runFailure = std::move(report.failure);
+		}
+
+		if (!report.published)
+			return false;
+		m_published = std::move(*report.published);
+		// A binding this copy cannot contain yet would read back as its old value until a later run
+		// lands, so it is laid over the top (PendingBindings says when that is).
+		m_bindings.showOn(m_published, report.publishedBy);
+		return true;
+	}
+
+	void FlowviewApp::pumpRun()
+	{
+		if (!m_runRequested || !m_graph)
+			return;
+
+		// SUPERSEDE: the run in flight is computing against a document that has since changed. Cancel
+		// it and keep the request; once it has drained, a later frame starts the new one. (Waiting for
+		// it here is what this whole arrangement exists not to do.)
+		if (m_runner.busy())
+		{
+			m_runner.cancel();
+			return;
+		}
+
+		RunJob job;
+		// The clone is the ONE place a run meets the document, and it is taken here, on the thread
+		// that edits it, between frames — so no edit can race it (ADR-0025).
+		job.definition = std::make_shared<const flow::Graph>(m_graph->clone());
+		job.evaluation = m_evaluation;
+		job.bindings = m_bindings.handOver(m_runner.nextJob());
+		job.strategy = m_strategy;
+		m_runner.start(std::move(job));
+		m_runRequested = false;
 	}
 
 	void FlowviewApp::replaceGraph(std::unique_ptr<flow::Graph> graph)
 	{
-		// BOTH or neither: a new definition gets a new evaluation, because the old one's recorded
-		// per-node versions belong to a graph that no longer exists (ADR-0012). Making the swap
-		// atomic here is what makes the pairing structural rather than something to remember.
+		// A run of the old document may still be in flight. It is dropped, not waited for: it holds
+		// its own clone and a share of the old evaluation, so it drains and dies with its job — and
+		// whatever it would still publish belongs to a lineage the panes are no longer showing.
+		m_runner.abandon();
+
+		// BOTH or neither: a new definition gets a new evaluation, because the old one's records
+		// belong to a graph that no longer exists (ADR-0012). Making the swap atomic here is what
+		// makes the pairing structural rather than something to remember.
 		m_graph = std::move(graph);
-		m_evaluation = flow::Evaluation{*m_graph};
-		// A loaded scene has nothing bound — show a gradient on every image input it has.
+		m_evaluation = std::make_shared<flow::Evaluation>(*m_graph);
+		// A loaded scene has nothing bound — show a gradient on every image input it has. Directly into
+		// the evaluation, which is safe exactly here: no run has seen this one yet.
 		for (const flow::BoundaryInput& in : m_graph->boundaryInputs())
-			bindDefaultInput(in, m_evaluation, m_size);
-		m_scheduler.run(*m_graph, m_evaluation);
+			bindDefaultInput(in, *m_evaluation, m_size);
+
+		// The panes show nothing until the new document's first run publishes, rather than the old
+		// document's values: those belong to a dead lineage, and would pass for the new one's.
+		m_published = flow::PublishedEvaluation{};
+		m_bindings.clear();
+		m_runFailure.reset();
+		requestRun();
 	}
 } // namespace flowview

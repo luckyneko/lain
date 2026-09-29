@@ -1,7 +1,7 @@
 #include "interfacepane.h"
 
 #include "../appcontext.h"
-#include "../flowviewapp.h" // ctx.app->reevaluate()
+#include "../flowviewapp.h" // ctx.app->requestRun() / bind()
 #include "../groupnav.h"	// loopAt / editableLoopAt — a loop's carries live one level up
 #include "../imagecanvas.h" // previewFit / thumbnailBox (the shared thumbnail sizing)
 #include "../parameditors.h"
@@ -167,7 +167,7 @@ namespace flowview
 	}
 
 	void InterfacePane::draw(AppContext& ctx, const flow::Graph& graph, flow::Graph* editableGraph,
-							 flow::Evaluation& evaluation, PreviewCache& previews, const ParamEditors& editors)
+							 const flow::Evaluation& evaluation, PreviewCache& previews, const ParamEditors& editors)
 	{
 		bool changed = false;
 		bool renamed = false; // a pin rename: a document change, but no recompute (see below)
@@ -306,14 +306,16 @@ namespace flowview
 				// `if (type == image)` here and the scalars an else was the pane deciding by type what
 				// ADR-0005 says the type decides for itself — and it is why a FrameSequence boundary
 				// input read "(no editor)" and could not be bound at all. Read the currently bound
-				// value from the EVALUATION, edit a detached copy, and bind on change (which stores it
-				// and requests the boundary node's recompute).
+				// value from the published evaluation, edit a detached copy, and bind on change —
+				// through the HOST, never into an evaluation: a run may hold the working one, so the
+				// value is queued for the next run and shown in the published copy at once, which is
+				// what this pane reads back next frame (ADR-0025's pending binding).
 				if (atRoot)
 				{
 					flow::PortValue current = bound;
 					if (editors.render("##value", pin.type(), current))
 					{
-						evaluation.bind(address, std::move(current));
+						ctx.app->bind(address, std::move(current));
 						changed = true;
 					}
 				}
@@ -432,14 +434,14 @@ namespace flowview
 
 		changed |= renderRemoveConfirm(editableGraph);
 
-		// An add / remove / bind re-runs the graph (as a param/canvas edit does) and refreshes previews
-		// next frame. markChanged arms the guard AND requests an undo snapshot — but a bind changes only
+		// An add / remove / bind asks for a run (as a param/canvas edit does) and refreshes previews
+		// next frame. (A bind has asked already — FlowviewApp::bind does — and asking twice is one run.) markChanged arms the guard AND requests an undo snapshot — but a bind changes only
 		// the (non-serialized) bound value, so its snapshot equals the current one and the undo stack
 		// ignores it; a pin add/remove does change the document and records a step. Either way New is
 		// guarded — a bound image is loaded data worth not losing silently.
 		if (changed)
 		{
-			ctx.app->reevaluate();
+			ctx.app->requestRun();
 			previews.markDirty();
 			ctx.markChanged();
 			ctx.loadIssues.clear(); // load issues are stale once the graph changes

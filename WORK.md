@@ -6072,7 +6072,7 @@ regression test: `ctest -j8` **794/794** Debug with video on, warning-clean, for
   the fold. All four reached their header transitively and worked — the class of thing the
   2026-09-05 CI port found six of.
 
-## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-3 built)
+## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-4 built)
 
 gui-mode runs `SerialScheduler::run` synchronously inside the frame loop — `FlowviewApp::reevaluate`
 is reached from `mainwindow.cpp` twice, `inspectorpane.cpp` and `interfacepane.cpp`, on every edit
@@ -6081,8 +6081,9 @@ has no gui caller. This milestone moves graph work off the frame loop, makes the
 default with Serial selectable, and gives the UI the controls a 5-minute graph needs as well as a
 1-second one. Decisions in **[ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md)**;
 vocabulary in CONTEXT.md's *Running while you edit* (plus *clone*, *lineage*, *coordinator*).
-**Slices 1 (clone + lineage), 2 (the published evaluation + payload identity) and 3 (cancellation)
-are built** — see *Slice 1 landed*, *Slice 2 landed* and *Slice 3 landed* below; slices 4-8 are not.
+**Slices 1 (clone + lineage), 2 (the published evaluation + payload identity), 3 (cancellation) and 4
+(the async vertical) are built** — see *Slice 1 landed* through *Slice 4 landed* below; slices 5-8 are
+not.
 
 ### The shape
 
@@ -6110,8 +6111,10 @@ are built** — see *Slice 1 landed*, *Slice 2 landed* and *Slice 3 landed* belo
 - **A throwing `compute()` would crash gui-mode today** — nothing in flowview catches (`reevaluate`
   has no `try`). It has not bitten because nodes suppress rather than throw (`ListDirNode` uses the
   `error_code` overloads for exactly that). The coordinator catches, and the node becomes **Failed**.
+  *(Caught in slice 4, as a RUN-level failure: the exception does not say which node threw.)*
 - **Shutdown order.** The pool stops after the last `onShutdown`, and a run participates in it, so
   `FlowviewApp::onStop` must cancel and **join** the coordinator before it releases the graph.
+  *(Built in slice 4: `Runner::stop()`, first thing in `onStop`.)*
 - **`Evaluation`'s child guard is address identity too** (`evaluation.cpp`: `child->m_definition !=
   inner`), so a clone per run would fail it for every inline interior unless lineage covers children.
 - **`PreviewCache::refreshIfDirty` re-uploads every viewable port** on each refresh, through a
@@ -6143,18 +6146,22 @@ Structural, no-behaviour-change slices first; each its own commit with its docs.
    landed*: the crossings are never cancelled; the token and progress are one `flow::RunControl`,
    counting node computes on the scheduler's own atomics rather than `RecipeHandle::finishedCount()`;
    and `evaluate` takes no token until slice 8.
-4. **The async vertical** (flowview). `apps/flowview/src/runner.{h,cpp}`: the coordinator thread,
-   clone-per-run, supersede, catch → Failed. `FlowviewApp` owns the runner beside the document and its
-   evaluation; `reevaluate()` becomes a trigger; `onStop` cancels and joins. `MainWindow` polls and
-   publishes at stage boundaries + run end. Parallel by default, Serial selectable, Stop. Live only.
-   Correct the two comments that place the whole problem in pane reads — `ParallelScheduler`'s in
-   `scheduler.h` and `m_scheduler`'s in `flowviewapp.h` — since the definition race is the larger one.
-5. **Triggers, persistence, bindings.** On commit (fires on undo's boundary, `pendingSnapshot &&
+4. **The async vertical** (flowview) — **built 2026-09-29**. `apps/flowview/src/runner.{h,cpp}`: the
+   coordinator thread, clone-per-run, supersede, catch → Failed. `FlowviewApp` owns the runner beside
+   the document and its evaluation; `reevaluate()` becomes a trigger; `onStop` cancels and joins.
+   `MainWindow` polls and publishes at stage boundaries + run end. Parallel by default, Serial
+   selectable, Stop. Live only. Correct the two comments that place the whole problem in pane reads —
+   `ParallelScheduler`'s in `scheduler.h` and `m_scheduler`'s in `flowviewapp.h` — since the definition
+   race is the larger one. **Pending bindings moved here from slice 5** (decided with the repo owner):
+   once runs leave the UI thread the Interface pane's direct bind is a race, so this slice cannot ship
+   without the queue, and the immediate write into the published copy came with it. So did a
+   between-stages observer on `RunControl`, which stage-boundary publication needs.
+5. **Triggers and persistence.** On commit (fires on undo's boundary, `pendingSnapshot &&
    !gui::IsAnyItemActive()`) and Manual; the trigger in a new optional **document-level editor blob**
    (`flow::serialize`'s `EditorTree` gains it; absent means Live, so no version bump — M12's `types`
-   precedent); the scheduler in `session.{h,cpp}`; the Run menu (`panes/menubar.cpp`); **pending
-   bindings** (`panes/interfacepane.cpp`, `scene.cpp`'s `bindDefaultInput`), written into the published
-   evaluation at once.
+   precedent); the scheduler in `session.{h,cpp}`; the Run menu grows Run and the trigger choice
+   (`panes/menubar.cpp` — slice 4 built it with Stop and the scheduler radio). *(Pending bindings were
+   here; slice 4 took them.)*
 6. **Freshness.** A public const stale-closure query in flow (`stale()` / `runOrder()` lifted to
    const — they take a mutable `Evaluation&` only to reach `child()`, which has a const overload),
    lineage-checked so it may compare the document against an evaluation computed on a clone. It must
@@ -6162,6 +6169,10 @@ Structural, no-behaviour-change slices first; each its own commit with its docs.
    element 0 is current. Canvas
    glyph + outline (`panes/graphpane.cpp`, `canvasstyle.cpp`), thumbnail stale badge, viewport status
    bar; Failed rows in Issues. (The preview cache's skip of an unchanged payload moved to slice 2.)
+   **Per-node Failed needs attribution this slice does not have**: slice 4 reports a failure per RUN,
+   because the exception leaving `run()` does not say which node threw. Either slice 7's per-step hook
+   comes first (a finished-step record can carry "threw"), or flow names the node on the way out of
+   `runNode`'s catch — decide before building the glyph.
 7. **Per-node publication.** A per-step started / finished hook on the run; a finished step's worker
    copies its outputs into a completion record (race-free — a finished node has only readers), the UI
    folds them into the published evaluation. This is what makes **Queued** and **Computing** real.
@@ -6439,6 +6450,95 @@ the timestamp and short ids are normalised.
   - Progress counted only at run end: the live-progress case reads 0 finished from inside the run,
     and the gave-up case's `finished() == 1` fails too.
 
+### Slice 4 landed (2026-09-29) — the async vertical
+
+gui-mode stops running the graph in the frame loop. **`flowview::Runner`**
+(`apps/flowview/src/runner.{h,cpp}`) owns a coordinator thread that calls the unchanged, blocking
+`Scheduler::run` over a **clone** of the document, while the panes read a **published copy**. The
+frame loop only polls (`FlowviewApp::pollRun`, first thing in `MainWindow::onRender`) and pumps
+(`pumpRun`, last thing). Parallel is the default, Serial can be selected, and Stop works. The one
+trigger is Live. `ctest -j8` **837/837** Debug with video on, **843/843** Release with video on,
+**810/810** Release video-off (+10 each: two flow cases, eight `[runner]` cases); warning-clean,
+format-check clean. `[runner]` (8 cases) and `[cancel]` (11 cases) were each swept 100× through their
+Catch2 binaries in Debug and in Release with no failure, and both whole binaries run shuffled and in
+declaration order. `flowview run --example` is identical to the pre-change binary once the timestamp
+and short ids are normalised. `flowview --example --frames 120` exits 0, and so does `--size 2048
+--frames 1/2/5`, which quits with a run still in flight. **gui-mode eyeballed by the repo owner
+2026-09-29 — a quick pass, which looked good**; the full checklist below has not been walked item by
+item.
+
+- **Two scope changes, both decided with the repo owner while planning.** Pending bindings moved in
+  from slice 5, whole: the Interface pane bound straight into the working evaluation, which is a data
+  race once a run owns it. The immediate write into the published copy came too
+  (`PublishedEvaluation::bind`), since without it a scalar boundary drag reads its old value back until
+  the run lands and snaps back. And stage-boundary publication needed a hook the scheduler did not have:
+  **`RunControl::setStageObserver`**, called between stages (after a stage has executed, when another
+  follows and the run was not cancelled) on the thread inside `run()`, where the evaluation is
+  quiescent. Never after the last stage — `run()` returning is that boundary.
+- **The UI thread clones exactly once per run that starts, from the newest document.** `pumpRun` does
+  nothing while a run is in flight except cancel it and keep the request standing; the next frame after
+  it has drained, it clones and starts. So a supersede never waits and never queues a second job behind
+  the first — which would need a second working evaluation, ADR-0025's deferred fork. One job slot.
+- **Found while wiring, and not in the plan: a publication can be OLDER than a binding already handed
+  to the next job.** A run that ends between one frame's poll and its pump publishes into the next
+  frame, after the pump has started the next job with the queue. Laying only the still-queued bindings
+  over it read the handed-over one back as its old value for a frame. So every job has a serial
+  (`Runner::start` answers it, `RunReport::publishedBy` carries it), and **`PendingBindings`** remembers
+  which job took each binding: a publication from job N gets every binding taken by a job after N, plus
+  those still queued, laid over it. `Runner::nextJob()` exists so the host can tag the bindings before it
+  hands the job over.
+- **Bindings are applied after the runner's OWN prepare, before `run()`, outside the run lease.** The
+  ADR said "inside the run lease, after prepare"; the host cannot take the lease (it is the scheduler's),
+  and does not need to — once a job holds the working evaluation, the coordinator is its only user.
+  Prepare-then-bind is what lets a pin added since the last run receive a value: `Evaluation::bind`
+  ignores a pin it has no slot for. `run()` prepares again against the same clone and finds nothing to
+  do. ADR-0025 amended in place.
+- **A failure is RUN-level.** The coordinator catches everything (`std::exception` → `what()`,
+  anything else → a fixed message), logs it, and the Issues pane shows a persistent Error row until a
+  run completes without throwing — a superseded one does not count, since it proves nothing about the
+  node that threw. Which node threw is not known: the exception leaving `run()` does not say. Slice 6's
+  per-node Failed depends on that, and its build-order entry now says so.
+- **A document swap abandons the run in flight and shows nothing until the new document publishes.**
+  `Runner::abandon()` cancels and drops anything the run would still publish or report. The old clone
+  and evaluation drain and are destroyed with the job, on the coordinator. The panes read an empty
+  `PublishedEvaluation` in between rather than the old document's values, which belong to a dead lineage
+  and would pass for the new one's. `bindDefaultInput` still binds directly into the fresh evaluation —
+  safe exactly there, since no run has seen it — so `scene.cpp` and the headless path did not change.
+- **Publication rules.** Latest wins. A stage publication is skipped while the previous one is untaken,
+  so a hundred-iteration loop costs about one copy per frame rather than one per iteration; the
+  run-end publication always replaces it. Every run publishes at its end, a cancelled or failed one
+  included, since what a superseded run finished is kept and worth showing. A run that failed in
+  `prepare` never paired the evaluation with its clone, so it publishes nothing and what the panes have
+  stands. The copy is taken outside the lock, and what a replace drops is destroyed outside it.
+- **The coordinator starts lazily, with the first job**, so a headless process never has one.
+  `FlowviewApp::onStop` calls `Runner::stop()` (abandon + join) first, before the published copy, the
+  evaluation and the graph go, and before the pool stops after the last `onShutdown`. The runner is
+  also declared last in `FlowviewApp`, so its destructor's join is the net.
+- **The UI:** a minimal **Run** menu — Stop, enabled while a run is in flight and labelled with its
+  progress (`Stop (12/40)`), and a Scheduler ▸ Parallel / Serial radio, not persisted. Slice 5 adds the
+  trigger choice, Run, and remembers both. `resolveEvaluation` became const, and the Inspector and
+  Interface panes take a `const Evaluation&`: nothing on the UI thread writes an evaluation now.
+- **Comments corrected** as the build order asked: `ParallelScheduler`'s in `scheduler.h` now names
+  the definition race, and `m_scheduler`'s went with the member, its reasoning now at the top of
+  `runner.h`.
+- **Sabotages, all caught.** One at a time, against a backup:
+  - The stage observer also called after the last stage: all three sections of the flow case fail.
+  - Bindings applied before prepare: the added-pin case fails (the relay never receives 5).
+  - Publishing only a `Completed` run: the supersede and throw cases fail (no publication).
+  - `publish` ignoring abandonment: the abandon case fails.
+  - No catch in `execute`: the binary aborts on the throw case, *terminating due to uncaught
+    exception ... boom* — exactly what a throwing compute would have done to gui-mode.
+  - `abandon` (and so `stop`) not cancelling: the stop case hangs and is killed by the harness's
+    60-second alarm.
+  - `PendingBindings::showOn` laying only queued bindings over a publication: the bindings case fails,
+    reading 1 where the handed-over 3 belongs.
+- **Not covered by ctest:** the frame-loop wiring (`pollRun` / `pumpRun`, the Run menu, the Issues
+  row) lives in files that need a `gui::Context`. The runner and `PendingBindings` it drives are what the
+  suite pins. The full gui checklist, for a longer pass: a slow graph (`--example --size 4096`, or a large image through a
+  large-radius blur) keeps the window responsive; a Live param drag supersedes; Stop; switching Serial
+  / Parallel; a scalar boundary drag during a run does not snap back; New, Open and undo during a run;
+  the run-failed row.
+
 ### Visual design (settled in outline, tuned by eyeball)
 
 Freshness takes channels nothing else uses — title colour is category, a muted title is *not ready*,
@@ -6503,7 +6603,7 @@ row here**. A row is cheap to delete and expensive to leave.
 
 - **M14 — asynchronous execution: the gui never waits on graph work.** Designed 2026-09-28; slices 1
   (clone + lineage), 2 (the published evaluation + payload identity) and 3 (cancellation) built
-  2026-09-28, slices 4-8 not.
+  2026-09-28, slice 4 (the async vertical) 2026-09-29, slices 5-8 not.
   *(Milestone 14; [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)*
 
 M1–M8 and M10–M13 are built. **M9 and M14 are the milestones from 5 onward that are not.**

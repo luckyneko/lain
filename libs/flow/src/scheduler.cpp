@@ -537,6 +537,11 @@ namespace lain::flow
 			if (plan.frontiers.empty() || control.cancelled())
 				break;
 
+			// Another stage follows, and nothing is running: the one point inside a run where a host
+			// may read — and copy — the evaluation. Before the frontiers are prepared, so what it sees
+			// is the stage that just ran (a loop's last pass, not the next one's seeds).
+			control.notifyStage();
+
 			// The stage just executed produced the collections these maps map over, so their arity
 			// is knowable now and was not before. Sizing and binding their children happens HERE, on
 			// the coordinator thread between stages: it is the second coordinator point ADR-0012 left

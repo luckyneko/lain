@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mainwindow.h"
+#include "runner.h"
 
 #include <lain/app/applicationdelegate.h>
 #include <lain/app/cli.h>
@@ -9,13 +10,16 @@
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
-#include <lain/flow/scheduler.h>
+#include <lain/flow/portvalue.h>
 #include <lain/flow/types.h>
 #include <lain/media/framespec.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace flowview
 {
@@ -42,15 +46,13 @@ namespace flowview
 		const lain::flow::Graph& graph() const { return *m_graph; }
 		lain::flow::Graph& graph() { return *m_graph; } // the canvas edits it in place
 
-		// The scene's RUNTIME STATE: every port value the last run produced, plus what is bound at
-		// the boundary. Every pane reads values through this — the definition holds none (ADR-0012).
-		//
-		// The definition and this are ONE REPLACEABLE UNIT, which is the whole pairing rule: an
-		// evaluation spans in-place edits of its graph but never transfers to a rebuilt one, because
-		// per-node versions restart from zero. replaceGraph swaps both together, so no path here can
-		// produce the mispairing.
-		const lain::flow::Evaluation& evaluation() const { return m_evaluation; }
-		lain::flow::Evaluation& evaluation() { return m_evaluation; }
+		// What every pane READS: the newest published copy of the scene's runtime state — every port
+		// value a run has produced, plus what is bound at the boundary (ADR-0025). Not the working
+		// evaluation: a run owns that while it is in flight, on the coordinator thread, and a pane
+		// reading it would race the run's writes. Refreshed by pollRun() as results land, so it can be
+		// a stage or a run behind the document; empty after a document swap until the new document's
+		// first run publishes.
+		const lain::flow::Evaluation& published() const { return m_published.evaluation(); }
 
 		// The node-type palette the canvas' add menu draws from.
 		const lain::core::Factory<lain::flow::Node>& nodeFactory() const { return m_nodeFactory; }
@@ -62,12 +64,48 @@ namespace flowview
 		// graph the last session had open.
 		bool useExample() const { return m_useExample; }
 
-		// Re-run the scene after a canvas edit so data flows through the current
-		// wiring. Called from the render thread.
-		void reevaluate();
+		// Ask for a run after an edit, so data flows through the current wiring. Only records the
+		// request: pumpRun() starts it at the end of the frame, once every edit of that frame has
+		// landed — the one trigger this slice has, Live. UI thread.
+		void requestRun();
+
+		// Bind a root boundary input. Not a document change, and not a write to the working
+		// evaluation either, which a run may hold: the value is QUEUED for the next run's start and
+		// written into the published copy at once, so the pane binding it reads its own value back
+		// this frame rather than snapping back until the run catches up. Then asks for a run, as an
+		// edit does. UI thread.
+		void bind(lain::flow::PortAddress input, lain::flow::PortValue value);
+
+		// Stop the run in flight and forget the request for another: what it finished is kept, the
+		// rest stays stale until something asks again. UI thread.
+		void stopRun();
+
+		// Which scheduler the next run goes through. Parallel by default.
+		RunStrategy strategy() const { return m_strategy; }
+		void setStrategy(RunStrategy strategy) { m_strategy = strategy; }
+
+		// Whether a run is in flight, and how far it has got (node computes, summed across stages).
+		bool running() const { return m_runner.busy(); }
+		std::size_t runPlanned() const { return m_runner.planned(); }
+		std::size_t runFinished() const { return m_runner.finished(); }
+
+		// Why the last run that got to an end threw, until one completes without throwing. A run that
+		// was superseded proves nothing about the node that threw, so it does not clear this.
+		const std::optional<std::string>& runFailure() const { return m_runFailure; }
+
+		// Frame start: take what the coordinator has produced since the last frame. True when a new
+		// publication landed, so the caller can refresh what it built from the old one. UI thread.
+		bool pollRun();
+
+		// Frame end: act on a requested run. If one is in flight it is SUPERSEDED — cancelled, with
+		// the request left standing — and the next frame starts the new one once it has drained;
+		// otherwise the document is cloned and the run starts now. So exactly one clone per run that
+		// starts, always of the newest document, and the frame loop never waits. UI thread.
+		void pumpRun();
 
 		// Replace the gui-mode scene with a freshly loaded graph (from the canvas Load…), bind its
-		// input to a default gradient so it shows a result, and run it. Called from the render thread.
+		// input to a default gradient so it shows a result, and ask for a run. Called from the render
+		// thread.
 		void replaceGraph(std::unique_ptr<lain::flow::Graph> graph);
 
 	private:
@@ -94,13 +132,30 @@ namespace flowview
 		// The gui-mode scene, held by unique_ptr so onStop can release it (and its
 		// node-owned payloads) explicitly, before the window/device teardown.
 		std::unique_ptr<lain::flow::Graph> m_graph;
-		lain::flow::Evaluation m_evaluation; // its runtime state — replaced WITH it, never apart
-		// SERIAL, deliberately, where the headless `run` path is parallel: a scheduler run BLOCKS
-		// until the whole plan finishes, and doing that in the frame loop would stall the window
-		// for the length of the graph. Making a run non-blocking is its own milestone — the work
-		// is not in the scheduler but in how a pane reads an evaluation while one is in flight.
-		lain::flow::SerialScheduler m_scheduler;
+
+		// Its runtime state. The document and this are ONE REPLACEABLE UNIT: an evaluation spans
+		// in-place edits and the clones a run reads, but never a rebuilt graph, so replaceGraph swaps
+		// both together. SHARED because a run in flight holds it too: a document swapped mid-run drops
+		// this reference and the old evaluation drains and dies with its job, and nothing waits.
+		// Written only by the coordinator once a job holds it — the UI thread binds into a fresh one
+		// in replaceGraph, before any run has seen it, and otherwise goes through bind() below.
+		std::shared_ptr<lain::flow::Evaluation> m_evaluation;
+
+		// What the panes read (published()), and the bindings it may not contain yet — queued for the
+		// next run, or taken by a run whose publication has not landed.
+		lain::flow::PublishedEvaluation m_published;
+		PendingBindings m_bindings;
+
+		bool m_runRequested = false;
+		RunStrategy m_strategy = RunStrategy::Parallel;
+		std::optional<std::string> m_runFailure;
+
 		lain::core::Factory<lain::flow::Node> m_nodeFactory; // node-type palette
 		MainWindow m_window;								 // gui-mode inspector
+
+		// LAST, so it is destroyed FIRST: its destructor joins the coordinator, and nothing above may
+		// go while a run could still reach it. onStop stops it explicitly anyway, before the pool
+		// does; this ordering is the net.
+		Runner m_runner;
 	};
 } // namespace flowview

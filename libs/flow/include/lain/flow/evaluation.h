@@ -39,6 +39,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace lain::flow
@@ -320,7 +321,8 @@ namespace lain::flow
 	//
 	// Only const access goes out. A published evaluation is something a host READS; it can never be
 	// handed to Scheduler::run, so a second working evaluation branched off a first (ADR-0025's
-	// deferred "evaluation fork") cannot be made by accident.
+	// deferred "evaluation fork") cannot be made by accident. The one write is bind(), below, and it
+	// changes what the copy SHOWS — never what any run computes.
 	//
 	// Not called a snapshot — that word means the undo document — and not a record of one execution:
 	// a host replaces it as newer results land.
@@ -350,6 +352,16 @@ namespace lain::flow
 		PublishedEvaluation& operator=(const PublishedEvaluation&) = delete;
 
 		const Evaluation& evaluation() const { return m_evaluation; }
+
+		// Show a PENDING BINDING at once: a boundary value the host has bound that no run has
+		// consumed yet (ADR-0025). The host queues the same value for the working evaluation, which a
+		// run owns while it is in flight; without this the Interface pane would read the old value
+		// back every frame until the run caught up, and a scalar drag would snap back.
+		//
+		// Writes the copy only — its source never sees it. A port the copy has no slot for (a pin
+		// added since the run this was copied from) is ignored, exactly as Evaluation::bind ignores
+		// it: the queued binding still reaches the next run, which prepares that slot first.
+		void bind(PortAddress input, PortValue value) { m_evaluation.bind(input, std::move(value)); }
 
 	private:
 		// Declared FIRST, so it is destroyed LAST: the copy never outlives the graph it reads through,

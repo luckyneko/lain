@@ -18,6 +18,7 @@
 #include <lain/gui/dialogs.h>
 #include <lain/gui/gui.h>
 #include <lain/math/types.h>
+#include <lain/string/format.h>
 
 #include <cstddef>
 #include <filesystem>
@@ -534,6 +535,31 @@ namespace flowview
 				gui::Separator();
 				if (gui::MenuItem("Linked Group..."))
 					edited |= addLinkedGroup(ctx);
+				gui::EndMenu();
+			}
+			// Runs happen off the frame loop (ADR-0025), so there is something to steer while one is in
+			// flight. The trigger is always Live for now: every change asks for a run. (M14 slice 5
+			// adds On commit / Manual, an explicit Run, and remembers these choices.)
+			if (gui::BeginMenu("Run"))
+			{
+				// Progress on the item that acts on it: how far the run in flight has got, in node
+				// computes — which grow while it runs, since a map's elements and a loop's iterations
+				// are planned only once the stage before them has finished.
+				const bool running = ctx.app->running();
+				const std::string stop = running ? string::format("Stop ({}/{})", ctx.app->runFinished(), ctx.app->runPlanned())
+												 : std::string("Stop");
+				if (gui::MenuItem(stop.c_str(), nullptr, false, running))
+					ctx.app->stopRun();
+				gui::Separator();
+				// Which scheduler the NEXT run goes through; the run in flight finishes as it began.
+				if (gui::BeginMenu("Scheduler"))
+				{
+					if (gui::MenuItem("Parallel", nullptr, ctx.app->strategy() == RunStrategy::Parallel))
+						ctx.app->setStrategy(RunStrategy::Parallel);
+					if (gui::MenuItem("Serial", nullptr, ctx.app->strategy() == RunStrategy::Serial))
+						ctx.app->setStrategy(RunStrategy::Serial);
+					gui::EndMenu();
+				}
 				gui::EndMenu();
 			}
 			if (gui::BeginMenu("View"))

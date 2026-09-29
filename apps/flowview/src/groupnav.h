@@ -93,7 +93,11 @@ namespace flowview
 	// node, so the same path walks it. Tolerant in the same way — a step with no child Evaluation
 	// stops the walk — so the two resolutions agree even mid-edit. Call it with the path
 	// resolvePath already truncated, and the panes get a definition and its values in step.
-	lain::flow::Evaluation& resolveEvaluation(lain::flow::Evaluation& root, const GraphPath& path);
+	//
+	// Const, because what the panes walk is a PUBLISHED copy (ADR-0025): the working evaluation
+	// belongs to the run in flight, and nothing on the UI thread writes to a published one except a
+	// pending binding, which goes through the host.
+	const lain::flow::Evaluation& resolveEvaluation(const lain::flow::Evaluation& root, const GraphPath& path);
 
 	// One breadcrumb entry: the label to show and the path depth clicking it navigates to.
 	struct Crumb

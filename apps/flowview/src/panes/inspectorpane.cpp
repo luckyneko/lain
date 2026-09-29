@@ -1,7 +1,7 @@
 #include "inspectorpane.h"
 
 #include "../appcontext.h"
-#include "../flowviewapp.h" // ctx.app->reevaluate()
+#include "../flowviewapp.h" // ctx.app->requestRun()
 #include "../groupnav.h"	// editableAt — a linked group's nodes belong to its template
 #include "../imagecanvas.h" // previewFit / thumbnailBox (the shared thumbnail sizing)
 #include "../parameditors.h"
@@ -34,7 +34,7 @@ namespace flowview
 	using namespace lain;
 
 	void InspectorPane::draw(AppContext& ctx, const flow::Graph& graph, flow::Graph* editableGraph,
-							 flow::Evaluation& evaluation, PreviewCache& previews, const ParamEditors& editors)
+							 const flow::Evaluation& evaluation, PreviewCache& previews, const ParamEditors& editors)
 	{
 		// Whether the graph on screen may be edited at all: false inside a linked group, and expressed
 		// by there being nothing to edit through rather than by a separate check.
@@ -247,11 +247,11 @@ namespace flowview
 		}
 		gui::End();
 
-		// A param edit re-runs the scene (a full run recomputes every node) and marks the
+		// A param edit asks for a run (the stale closure recomputes, off the frame loop) and marks the
 		// previews for refresh next frame — the same path a canvas edit takes.
 		if (paramEdited)
 		{
-			ctx.app->reevaluate();
+			ctx.app->requestRun();
 			previews.markDirty();
 			ctx.markChanged(); // a param edit -> unsaved changes + an undo snapshot
 			ctx.loadIssues.clear();
