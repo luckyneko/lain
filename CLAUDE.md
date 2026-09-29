@@ -1041,7 +1041,12 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
     and `plugins/camera` unchanged: 3/3 in Release and Debug, warning-free, and nothing fetched
     with the option OFF.
   - clang-format 20 (the pinned binary) is clean on the new sources.
-  - The full tree, `flowview --licenses` included, is the CI run's to prove.
+  - **CI then proved the full tree** (`c90d6a8`, every job green):
+    - `[opencv]` passed on Linux Debug (910/910), Linux Release, macOS (916/916) and Windows
+      (916/916). On Windows, the tests launching at all proves the DLL staging.
+    - `flowview --licenses` prints the notice everywhere.
+    - The default leg, with `LAIN_CAMERA_OPENCV=OFF`, fetched and configured nothing of OpenCV,
+      and stayed at 880/880.
 - **Found while building:** the planned `MAP_IMPORTED_CONFIG_{RELWITHDEBINFO,MINSIZEREL}` is
   already done by OpenCV's own config under MSVC (`OPENCV_MAP_IMPORTED_CONFIG`), so the module
   relies on it instead of stating it twice. WORK.md is corrected in place.

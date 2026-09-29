@@ -2592,7 +2592,14 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      - It configured, built warning-free, and passed 3/3 in both Release and Debug.
      - With the option OFF it fetched nothing.
      - The notice and the nine licence texts were staged.
-     - Full-tree integration, including `flowview --licenses`, is the CI run's to prove.
+     - **Full tree proven by CI** ([run](https://github.com/luckyneko/lain/actions/runs/36552651761),
+       `c90d6a8`), green on every job.
+       - The three `[opencv]` cases ran and passed in the full tree on Linux Debug (910/910),
+         Linux Release, macOS (916/916) and Windows (916/916). On Windows the tests launching at
+         all proves the DLL staging, since there is no rpath there.
+       - `flowview --licenses` prints the OpenCV notice on every platform.
+       - The video-off leg configured with `LAIN_CAMERA_OPENCV=OFF` shows no OpenCV activity, and
+         its 880/880 matches the pre-slice baseline.
    - **Sabotages, all caught:**
      - Doctoring each of the six manifest fields in turn fails configure and names the field.
      - A missing manifest configures with the warning.
