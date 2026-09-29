@@ -28,7 +28,10 @@ namespace lain::app
 		// The swapchain was rebuilt at a new size (resize). Main thread.
 		virtual void onResize([[maybe_unused]] Window& window, [[maybe_unused]] acm::Extent2D extent) {}
 
-		// Release per-window GPU resources before the window/device tear down.
+		// Release per-window GPU resources before the window/device tear down. The GPU is idle by
+		// now — every frame the loop submitted has FINISHED, not merely been submitted — so this
+		// may free anything a frame read, including objects acm does not own and so cannot defer
+		// to a completed frame (ImGui's backend, torn down by gui::Context's destructor).
 		virtual void onShutdown([[maybe_unused]] Window& window) {}
 	};
 } // namespace lain::app

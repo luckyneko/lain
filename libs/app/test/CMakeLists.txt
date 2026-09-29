@@ -1,6 +1,6 @@
 # lain::app tests (Catch2). enable_testing() + addcatch2 are at the project root.
 # The [app] tests drive the headless (cli-mode) path through a real flow Graph — no
-# driver needed. The opt-in [gpu] windowed smoke (LAIN_GUI_SMOKE=1) opens a window
+# driver needed. The opt-in [gpu] windowed cases (LAIN_GUI_SMOKE=1) open a window
 # on the live driver. Vulkan::Loader resolves archimedes' vk* symbols for the exe.
 
 add_executable(test-app
@@ -21,5 +21,10 @@ target_link_libraries(test-app PRIVATE
 	lain::warnings
 	Catch2::Catch2WithMain
 )
+
+# The [gpu] cases open a real window, and on macOS the loader finds no driver unless the vendored
+# MoltenVK ICD sits beside the executable — without it they fail on the instance before a window
+# exists, however LAIN_GUI_SMOKE is set. No-op elsewhere.
+acm_stage_vulkan_runtime(test-app)
 
 catch_discover_tests(test-app TEST_PREFIX "(app) " ${LAIN_TEST_DL_PATHS})

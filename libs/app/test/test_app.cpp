@@ -1,8 +1,8 @@
 // Tests for lain::app. The headless path (an ApplicationDelegate that opens no
 // windows -> onProcess runs once) is exercised end-to-end through a real flow Graph
-// and through the CLI hook — no driver needed. The windowed smoke opens a real
-// window on the live driver and is opt-in (LAIN_GUI_SMOKE=1) so GUI-less / driver-
-// less CI stays green.
+// and through the CLI hook — no driver needed. The windowed cases (the smoke, and the
+// shutdown drain) open a real window on the live driver and are opt-in (LAIN_GUI_SMOKE=1)
+// so GUI-less / driver-less CI stays green.
 
 #include "lain/app/application.h"
 #include "lain/app/applicationdelegate.h"
@@ -21,6 +21,9 @@
 #include <archimedes/archimedes.h>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <optional>
 #include <string>
@@ -110,6 +113,86 @@ namespace
 		void onUpdate(app::Application& app, const app::TimeState& time, const app::InputState&) override
 		{
 			if (time.frame >= 3)
+				app.exit();
+		}
+	};
+
+	// onShutdown is where a delegate releases what its frames read, including objects acm does not
+	// own and so cannot defer: ImGui's backend frees its buffers, font image and pipeline there,
+	// and freeing one while the last frame still runs is a GPU page fault — flowview quitting at
+	// --frames 1 lost the device every time. So the frames must be FINISHED by then, not merely
+	// submitted. The last frame hands the GPU a real copy and onShutdown asks whether it landed;
+	// the copy is large so that, undrained, it is still running when the CPU gets there.
+	struct DrainProbe : app::WindowDelegate
+	{
+		static constexpr std::uint32_t kSize = 2048;
+		static constexpr std::uint8_t kFill = 0xA5;
+		std::uint64_t lastFrame = 0;
+		acm::Texture source;
+		acm::Buffer readback;
+		bool landed = false;
+
+		bool onInit(app::Window& window) override
+		{
+			acm::Device& device = window.app().device();
+			const std::size_t bytes = std::size_t{kSize} * kSize * 4;
+			source = device.createTexture(acm::Format::R8G8B8A8_Unorm, acm::Extent2D{kSize, kSize});
+			readback = device.createBuffer(bytes, acm::BufferUsage::TransferDst);
+			if (!source.valid() || !readback.valid())
+				return false;
+			const std::vector<std::uint8_t> pixels(bytes, kFill);
+			source.upload(pixels.data(), pixels.size()); // synchronous; leaves it ShaderReadOnly
+			const std::vector<std::uint8_t> zeros(bytes, 0);
+			return !readback.write(zeros.data(), zeros.size());
+		}
+
+		void onRender(app::Window& window, const app::TimeState& time) override
+		{
+			if (time.frame != lastFrame)
+			{
+				window.renderer().render([](acm::CommandBuffer&, uint32_t) {});
+				return;
+			}
+			// A copy is a transfer, so it goes in the pre-pass, outside the rendering scope.
+			window.renderer().render(
+				[this](acm::CommandBuffer& cmd, uint32_t)
+				{
+					cmd.transitionImage(source, acm::ImageLayout::ShaderReadOnly, acm::ImageLayout::TransferSrc);
+					cmd.copyTextureToBuffer(source, readback);
+				},
+				[](acm::CommandBuffer&, uint32_t) {});
+		}
+
+		void onShutdown(app::Window&) override
+		{
+			const auto* bytes = static_cast<const std::uint8_t*>(readback.map());
+			landed = bytes != nullptr && std::all_of(bytes, bytes + readback.size(), [](std::uint8_t b)
+													 { return b == kFill; });
+			readback.unmap();
+			readback.reset();
+			source.reset();
+		}
+	};
+
+	struct DrainApp : app::ApplicationDelegate
+	{
+		DrainProbe window;
+
+		bool onStart(app::Application& app) override
+		{
+			app::WindowSpec spec;
+			spec.title = "lain::app drain";
+			spec.width = 320;
+			spec.height = 240;
+			app.createWindow(spec, window);
+			return true;
+		}
+
+		// Quit in the second frame, as `flowview --frames 1` does: the frame that asks to stop is
+		// still rendered, so it is the last one, and the one that holds the copy.
+		void onUpdate(app::Application& app, const app::TimeState& time, const app::InputState&) override
+		{
+			if (time.frame >= window.lastFrame)
 				app.exit();
 		}
 	};
@@ -279,6 +362,21 @@ TEST_CASE("gui: opens a window and renders frames", "[app][gpu]")
 	char* argv[] = {arg0};
 
 	REQUIRE(runApp(app, 1, argv) == 0);
+}
+
+TEST_CASE("gui: a window delegate shuts down after the GPU has finished its frames", "[app][gpu]")
+{
+	if (!std::getenv("LAIN_GUI_SMOKE"))
+		SKIP("set LAIN_GUI_SMOKE=1 to run the windowed smoke (needs a display + driver)");
+
+	DrainApp delegate;
+	delegate.window.lastFrame = 1;
+	app::Application app(delegate, {"test-app", {0, 0, 0}});
+	char arg0[] = "test-app";
+	char* argv[] = {arg0};
+
+	REQUIRE(runApp(app, 1, argv) == 0);
+	REQUIRE(delegate.window.landed);
 }
 
 TEST_CASE("headless: onProcess's status is the process's exit code", "[app]")

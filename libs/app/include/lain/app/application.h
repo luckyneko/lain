@@ -74,9 +74,12 @@ namespace lain::app
 		// may be holding what it allocated there.
 		int run();
 
-		// Phase 3. Window and device teardown (device before surface), onShutdown, then stop
-		// the process task pool. Idempotent, and a no-op on an Application that never got past
-		// initialise — so calling it on any path is safe.
+		// Phase 3. Drain the GPU, then window and device teardown (device before surface),
+		// onShutdown, then stop the process task pool. Idempotent, and a no-op on an Application
+		// that never got past initialise — so calling it on any path is safe.
+		//
+		// The drain comes FIRST, before any WindowDelegate::onShutdown: the frame loop ends with
+		// its last frames still executing, and a delegate releases what they read there.
 		//
 		// The destructor calls it if you did not, after asserting in debug that you did: the
 		// pool must be stopped before static destruction, and this object is what guarantees

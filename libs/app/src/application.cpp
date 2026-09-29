@@ -389,6 +389,20 @@ namespace lain::app
 			return;
 		s.phase = impl::Phase::ShutDown;
 
+		// DRAIN FIRST. The frame loop ends with its last frames (up to acm::Renderer::MaxFramesInFlight)
+		// still executing, and a window delegate's onShutdown releases what they read — including
+		// objects acm does not own and so cannot defer to a completed frame, like the buffers, font
+		// image and pipeline ImGui's backend frees in ImGui_ImplVulkan_Shutdown. Freeing one
+		// mid-flight is a GPU page fault, which MoltenVK reports as a lost device. device.reset()
+		// below waits too, but only once every delegate has already released; the wait has to
+		// come before them. It is a race, not a first-frame bug: flowview quitting at --frames 1
+		// faulted every time and at --frames 30 never, but nothing bounds how long a last frame runs.
+		// Here rather than at the end of run(): waitIdle is externally synchronized, so nothing
+		// else may be submitting, and onStop is where a delegate stops its own threads (flowview
+		// joins its run coordinator there).
+		if (s.device.valid())
+			s.device.waitIdle();
+
 		// Teardown, device-before-surface ordered: release the windows' device objects,
 		// destroy the device (flushing deferred destroys while the surfaces live), then
 		// the surfaces + GLFW windows, the instance, and GLFW.

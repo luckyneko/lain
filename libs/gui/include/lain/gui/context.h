@@ -31,6 +31,11 @@ namespace lain::gui
 	//   lain::gui::Begin("Inspector"); ...; lain::gui::End();
 	//   window.renderer().render([&](acm::CommandBuffer cmd, uint32_t) { ctx.render(cmd); });
 	//
+	// DESTROY IT IN WindowDelegate::onShutdown. The destructor tears the Vulkan backend down at
+	// once — its buffers, font image and pipeline are ImGui's, not acm's, so nothing defers them
+	// to a completed frame — and a frame still executing reads them. lain::app drains the GPU
+	// before onShutdown, which is what makes that the safe place. Anywhere else, drain first.
+	//
 	// Construction options — a struct so each is named at the call site (rather than a bare trailing
 	// bool with no meaning on its own).
 	struct ContextConfig

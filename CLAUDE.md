@@ -907,6 +907,43 @@ format-check clean. `flowview run --example` is unchanged, and the headless save
   (`reflect.h`). But *The type is the schema* claimed `fromValue` "fails on a shape/type mismatch",
   which is true of a struct's shape only.
 
+### Update 2026-09-29 — the GPU is drained before teardown (the early-quit device loss, fixed)
+
+The defect M14 slice 8b found while smoking: `flowview --frames 1` or `2` logged a MoltenVK *"Lost
+VkDevice ... GPU Address Fault"* on every try. **The cause was in `lain::app`, not flowview**:
+`Application::shutdown()` handed teardown to every `WindowDelegate::onShutdown` while the frame loop's
+last frames could still be executing, and flowview's destroys its `gui::Context`, whose
+`ImGui_ImplVulkan_Shutdown()` frees ImGui's buffers, font image and pipeline at once. Those are raw
+Vulkan objects ImGui owns, so acm's deferred destroy never sees them. The device was waited idle, but
+only inside `device.reset()`, after every delegate had released. `shutdown()` now calls
+`device.waitIdle()` **before** the first `onShutdown`. `ctest -j8` **908/908** Debug with video on,
+**914/914** Release with video on (+1 each, a case that skips under ctest); warning-clean,
+format-check clean. Full notes in WORK.md's *Milestone 14 › Quitting early lost the device*.
+
+- **The three leads were ruled out by measurement.** A blank document (no previews, a trivial run)
+  faulted exactly as `--example` did, leaving only what every document has: ImGui. A throwaway drain
+  in `~Context` took it to 0 of 10 before the fix was placed where it belongs.
+- **In `shutdown()`, not at the end of `run()`**: `acm::Device::waitIdle` is externally synchronized,
+  and only after `onStop` has a delegate joined its own threads (flowview's run coordinator among
+  them). `WindowDelegate::onShutdown` and `gui::Context` now state the guarantee and what relies on it.
+- **A race, not a first-frame bug**: every try at `--frames 1/2`, never at `30`, but nothing bounds
+  how long a last frame runs.
+- **The test observes the contract, not the MoltenVK message**: a `[gpu]` window delegate whose last
+  frame copies a 2048² texture into a readback buffer, and whose `onShutdown` checks every byte landed.
+  Sabotage (drain removed): 10 of 10 runs fail, and flowview faults 3 of 3. Opt-in behind
+  `LAIN_GUI_SMOKE=1`, like the smoke beside it.
+- **Found on the way: `test-app`'s `[gpu]` cases could never reach a driver on macOS**, because no
+  MoltenVK ICD was staged beside it; they died on the instance and then on GLFW's null-window assert.
+  `acm_stage_vulkan_runtime(test-app)` now stages it, as flowview's CMake does.
+- **Recorded, not fixed: the same shape mid-session.** `gui::Texture` frees its ImGui descriptor set
+  immediately (`ImGui_ImplVulkan_RemoveTexture`) whenever the preview cache reallocates or prunes one,
+  while a frame that drew it may still run. A Vulkan usage error not seen to fault; now in WORK.md's
+  *Known defects*.
+- **A verification that was hollow the first time:** a loop passing `"--example --frames 1"` as `$args`
+  under zsh handed CLI11 ONE argument, so every run exited 109 (an extras error) without opening a
+  window, and "0 errors" meant nothing. Re-run with the arguments split. **Check the exit code of a
+  smoke, not only its log.**
+
 ### Update 2026-09-29 — M14 slice 8b built: Run Selection (**M14 COMPLETE**)
 
 The flowview half, on 8a's pull. **Run ▸ Run Selection** (Cmd/Ctrl+Shift+Enter) brings the selection
@@ -940,8 +977,9 @@ live-verified by the repo owner 2026-09-29** — the whole checklist in WORK.md'
   build proves nothing**, and the old binary's answer looks exactly like a pass.
 - **Found while smoking, older than this slice:** quitting in the first frame or two logs a MoltenVK
   *"Lost VkDevice ... GPU Address Fault"*. The process exits 0, and the pre-change binary does the
-  same. Flagged as its own task. A copied binary cannot be used to check this: it has to run from
-  `build/apps/flowview/`, where the MoltenVK ICD is staged, or it aborts with *"no driver/ICD found"*.
+  same. A copied binary cannot be used to check this: it has to run from `build/apps/flowview/`,
+  where the MoltenVK ICD is staged, or it aborts with *"no driver/ICD found"*. *(**Fixed the same
+  day**, in `lain::app` — see *the GPU is drained before teardown*, above.)*
 
 ### Update 2026-09-29 — M14 slice 8a built: a pull of many targets, cancellable and parallel
 

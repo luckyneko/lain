@@ -7143,10 +7143,11 @@ binary once the timestamp and short ids are normalised; the `--frames` smokes ex
   - a nested selection passed through unmapped fails the `selectionTargets` case.
   - Two of those first ran against a stale binary, because an unused parameter broke the build under
     `-Werror`, and were re-run once they compiled: a sabotage that does not build proves nothing.
-- **Found while smoking, NOT fixed, and older than this slice:** quitting within the first frame or
-  two (`--frames 1` / `--frames 2`) logs a MoltenVK *"Lost VkDevice ... GPU Address Fault"*, though
-  the process exits 0 and `--frames 30` is clean. The binary built at `95747c6`, before the pull fix,
-  logs it identically on every try, so it is not Run Selection's. Flagged as a separate task.
+- **Found while smoking, and older than this slice:** quitting within the first frame or two
+  (`--frames 1` / `--frames 2`) logs a MoltenVK *"Lost VkDevice ... GPU Address Fault"*, though the
+  process exits 0 and `--frames 30` is clean. The binary built at `95747c6`, before the pull fix,
+  logs it identically on every try, so it is not Run Selection's. *(**Fixed the same day**, in
+  `lain::app` rather than flowview — see *Quitting early lost the device* below.)*
 - **gui-mode checklist — live-verified by the repo owner 2026-09-29:**
   - in a Manual document, select a mid-chain node and press Cmd+Shift+Enter: only its cone goes
     Queued, then Computing, then Current, and the rest stays Stale, not Queued;
@@ -7154,6 +7155,43 @@ binary once the timestamp and short ids are normalised; the `--frames` smokes ex
   - in Live, after a Stop, Run Selection runs only the cone;
   - in Live, an edit during a partial run supersedes it with a whole run;
   - the status bar reads "Last run (selection)".
+
+### Quitting early lost the device — FIXED 2026-09-29
+
+The defect 8b found. **Not the runner, not the preview cache, and not flowview at all.**
+`Application::shutdown()` called every `WindowDelegate::onShutdown` while the frame loop's last frames
+(up to `acm::Renderer::MaxFramesInFlight`) could still be executing, and flowview's `onShutdown`
+destroys its `gui::Context`, whose `ImGui_ImplVulkan_Shutdown()` frees ImGui's vertex and index
+buffers, font image and pipeline **at once**. Those are raw Vulkan objects ImGui owns, so acm's
+deferred destroy (which retires its own resources only once the frame that used them completes)
+never sees them. Freeing one mid-flight is a GPU page fault, which MoltenVK reports as a lost device.
+The device WAS waited idle, but inside `device.reset()`, after every delegate had already released.
+
+- **The fix is a drain at the top of teardown**: `s.device.waitIdle()` before the first
+  `onShutdown`, so a delegate tears down against an idle GPU. It sits in `shutdown()` rather than at
+  the end of `run()` because `acm::Device::waitIdle` is externally synchronized, and only after
+  `onStop` has the delegate joined its own threads (flowview's coordinator among them).
+- **The leads were ruled out by measurement, not argument.** A blank document (no previews, no image,
+  a trivial run) faulted exactly as `--example` did, which leaves only what every document has: ImGui
+  itself. A throwaway `waitIdle()` in `~Context` took it from every try to 0 of 10 before the fix
+  was placed.
+- **It is a race, not a first-frame bug.** It faulted at `--frames 1` and `2` every time and at `30`
+  never, but nothing bounds how long a last frame runs; the early frames just leave the widest window.
+- **The regression test observes the contract, not the symptom**: *(app)gui: a window delegate shuts
+  down after the GPU has finished its frames*. The last frame's pre-pass copies a 2048² texture into
+  a readback buffer, and `onShutdown` checks every byte landed. Sabotage (the drain removed): **10 of
+  10 runs fail** on that check, and flowview faults 3 of 3. It is `[gpu]` and opt-in behind
+  `LAIN_GUI_SMOKE=1`, like the smoke beside it, so ctest skips it.
+- **Found on the way: neither `[gpu]` case in `test-app` could ever reach a driver on macOS.** No
+  MoltenVK ICD was staged beside the executable, so both died on the instance (then on GLFW's
+  null-window assert) however `LAIN_GUI_SMOKE` was set. `libs/app/test` now calls
+  `acm_stage_vulkan_runtime(test-app)`, as flowview does.
+- **Not fixed here, and the same shape mid-session:** `gui::Texture` frees its descriptor set
+  immediately. Recorded under *Known defects*.
+- `ctest -j8` **908/908** Debug with video on, **914/914** Release with video on (+1 each, the new
+  case, which skips); warning-clean, format-check clean; the new `[gpu]` case passes 10 of 10 in Debug
+  and 5 of 5 in Release; flowview quits clean in 35 runs over `--frames 1/2` with and without
+  `--example`, plus `--size 2048 --frames 1/2/5`, which quits with a run in flight.
 
 ### Visual design (settled in outline, tuned by eyeball)
 
@@ -7351,7 +7389,15 @@ SuiteSparse-enabled Ceres; capture manifests and capture datasets (which M10 han
 
 Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
 
-**The list is empty.** All five are fixed — a group replaced at its own NodeId looking clean and
+- **`gui::Texture` frees its ImGui descriptor set while a frame may still read it.**
+  `ImGui_ImplVulkan_RemoveTexture` is an immediate `vkFreeDescriptorSets`, and it runs whenever the
+  preview cache reallocates or prunes a thumbnail, so up to `acm::Renderer::MaxFramesInFlight` frames
+  that drew it can still be executing. A Vulkan usage error, not yet observed to fault; ImGui's own
+  atlas textures are safe because it waits until they have gone unused for `ImageCount` frames. The
+  same shape as the shutdown fault fixed 2026-09-29, which the shutdown drain cannot reach
+  mid-session. *(Milestone 14 › Quitting early lost the device.)*
+
+**Otherwise empty.** The five before it are fixed — a group replaced at its own NodeId looking clean and
 delivering nothing (found by M14 slice 1, fixed 2026-09-28 by making versions process-unique; see
 Milestone 14), the three from M11 §Not in this milestone
 (`GroupSync::refused` had no reader, 2026-09-09; the Issues pane flagged an unwired DEFAULTED
