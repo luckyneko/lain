@@ -907,6 +907,37 @@ format-check clean. `flowview run --example` is unchanged, and the headless save
   (`reflect.h`). But *The type is the schema* claimed `fromValue` "fails on a shape/type mismatch",
   which is true of a struct's shape only.
 
+### Update 2026-09-29 — M14 slice 8a built: a pull of many targets, cancellable and parallel
+
+The flow half of Run Selection, on the pull fix below.
+- **`Scheduler::evaluate(definition, evaluation, targets, control)`** pulls several root-level targets
+  at once. The single-target form forwards to it.
+- **A pull's stages execute through `executePlan`**, so ParallelScheduler runs a pull on the pool
+  instead of walking it serially.
+- **What a pull leaves owed is reported through a new `RunObserver::leftOwed`.**
+
+Nothing in flowview calls it until 8b. `ctest -j8` **901/901** Debug with video on, **907/907**
+Release with video on, **874/874** Release video-off (+7 each); warning-clean, format-check clean;
+`[pull],[observer],[cancel]` (36 cases) swept 100× in Debug and Release; `flowview run --example`
+unchanged. Full notes in WORK.md's *Milestone 14 › Slice 8a landed*.
+
+- **A pull is a run with a cone, and nothing else.**
+  - `Scheduler::Mode` is deleted, and `buildRunPlan` / `buildEvalPlan` became one `buildPlan` over an
+    optional cone (null for a run). One staging loop serves both entry points.
+  - The lease, cancellation, progress and the observer were already `run()`'s.
+  - The cone is collected once per pull, since the definition cannot change under a run.
+- **`leftOwed` is its own method, not a flag on `owed`.** A host's copy must mark those nodes stale,
+  or a node fed the new value past the cone reads current (7a's argument). But the runner turns `owed`
+  into **Queued**, and a left node will never compute, so the two must not share a spelling a host
+  could forget to split.
+- **A target the definition does not hold contributes nothing.** A host's selection may outlive a
+  node, since Run Selection is captured at the click and may start frames later. No targets pulls
+  nothing.
+- **Three sabotages, all caught:**
+  - a serial pull fails the new threads case;
+  - no `leftOwed` report fails both the report case and the replay-exactness case;
+  - reporting left nodes as `owed` fails the report case.
+
 ### Update 2026-09-29 — a pull finishes what it starts (fixed ahead of M14 slice 8)
 
 Found while planning slice 8 (Run Selection, which is `Scheduler::evaluate` with many targets), fixed in

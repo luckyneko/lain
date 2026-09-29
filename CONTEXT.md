@@ -903,7 +903,8 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 
 *(M14 — designed; slices 1-7 built: runs are off the frame loop under all three triggers, a run
 reports each node as it goes and each result lands as it finishes, and freshness is drawn in all five
-states. Slice 8, Run Selection, is not.
+states. Slice 8a, the flow half of Run Selection — a cancellable, parallel pull of many targets — is
+built; 8b, Run Selection itself, is not.
 [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
 host keeps its document editable while a run is in flight. These are the words for how a run is
 started, stopped and shown.
@@ -932,8 +933,10 @@ started, stopped and shown.
   _Avoid_: token (it carries progress too), handle (a multi handle is a different thing).
 - **Run observer** — what a host is told as a run goes, `flow::RunObserver`: when a stage has
   finished, called while nothing is running, the one point inside a run where the evaluation may be
-  copied; which nodes each stage **owes**; and when each node compute starts and each step finishes,
-  with the node's **node record**. Every report names its node by EvalPath. The per-node reports
+  copied; which nodes each stage **owes**; which nodes a pull **leaves owed** — outside the cone it
+  was asked for but fed a new value past it, so marked stale and never Queued, since the run will not
+  compute them; and when each node compute starts and each step finishes, with the node's **node
+  record**. Every report names its node by EvalPath. The per-node reports
   arrive on whichever thread ran the step, so they are `noexcept`. _Avoid_: callback, listener, stage
   observer (retired: the stage report is one of its methods).
 - **Node record** — one node's runtime state in one Evaluation: its port values, the Version it was

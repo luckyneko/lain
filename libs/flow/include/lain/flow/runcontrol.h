@@ -15,7 +15,7 @@
 // finish stays stale, so the next run picks it up.
 //
 // A host may also be TOLD what the run does as it goes (setObserver): when a stage has finished,
-// which nodes each stage owes, and when each node starts and finishes — WHERE, as an EvalPath, since
+// which nodes each stage owes (and which a pull leaves owed), and when each node starts and finishes — WHERE, as an EvalPath, since
 // a working evaluation's address names nothing in the copy a host's panes read (M14 slice 7). That is
 // how a host learns which nodes are Queued and Computing rather than only how many, and how a node's
 // result reaches the screen the moment it lands rather than at the end of its stage.
@@ -62,6 +62,18 @@ namespace lain::flow
 		// one node at a time: without it, a node whose upstream has just landed would read as
 		// current while it still shows the value it built from the old input.
 		virtual void owed(const EvalPath&, NodeId) noexcept {}
+
+		// A PULL (Scheduler::evaluate) leaves the node at (path, node) owed: it is outside the cone
+		// the pull was asked for, so this run will never compute it, but something the pull may
+		// recompute feeds it — so a recompute request has just been written for it, and it stays stale
+		// (Scheduler::Plan::left). On the thread that called Scheduler::evaluate, before any step of
+		// that stage starts. Never reported by a full run, whose cone is everything.
+		//
+		// A copy mirroring the evaluation needs these for the reason it needs owed() — without the
+		// mark, a node whose upstream has just landed reads as current while it shows the value it
+		// built from the old input — and a host must tell the two apart, because only an owed node is
+		// waiting for this run. Showing one of these as Queued would promise a result that never comes.
+		virtual void leftOwed(const EvalPath&, NodeId) noexcept {}
 
 		// A node COMPUTE is starting (the node is "Computing"). On the thread that runs it — a pool
 		// worker under ParallelScheduler, so several may be in flight at once. Never for a crossing,

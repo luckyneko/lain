@@ -29,6 +29,7 @@ namespace lain::flow::test
 		{
 			Stage,	  // stageFinished()
 			Owed,	  // owed()
+			LeftOwed, // leftOwed()
 			Started,  // started()
 			Finished, // finished() with a record
 			GaveUp,	  // finished() with no record
@@ -51,6 +52,10 @@ namespace lain::flow::test
 		void owed(const EvalPath& path, NodeId node) noexcept override
 		{
 			add(Report{Report::Kind::Owed, path, node, std::nullopt});
+		}
+		void leftOwed(const EvalPath& path, NodeId node) noexcept override
+		{
+			add(Report{Report::Kind::LeftOwed, path, node, std::nullopt});
 		}
 		void started(const EvalPath& path, NodeId node) noexcept override
 		{
@@ -109,7 +114,8 @@ namespace lain::flow::test
 	};
 
 	// What a host does with the reports: replay reports [begin, end) onto a copy, in the order they
-	// were made — each owed node marked, each record folded in. Every mark and fold is asserted to
+	// were made — each owed node marked (whether the stage owes it or a pull leaves it owed), each
+	// record folded in. Every mark and fold is asserted to
 	// land, since one that silently missed would make a comparison built on this prove nothing.
 	inline void replay(PublishedEvaluation& copy, const std::vector<Report>& reports, std::size_t begin,
 					   std::size_t end)
@@ -117,7 +123,7 @@ namespace lain::flow::test
 		for (std::size_t i = begin; i < end; ++i)
 		{
 			const Report& report = reports[i];
-			if (report.kind == Report::Kind::Owed)
+			if (report.kind == Report::Kind::Owed || report.kind == Report::Kind::LeftOwed)
 				REQUIRE(copy.owe(report.path, report.node));
 			else if (report.kind == Report::Kind::Finished)
 				REQUIRE(copy.fold(report.path, report.node, *report.record));

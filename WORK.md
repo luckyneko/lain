@@ -6086,7 +6086,9 @@ vocabulary in CONTEXT.md's *Running while you edit* (plus *clone*, *lineage*, *c
 (the async vertical), 5 (triggers + persistence), 6 (freshness: 6a the stale-closure query + the
 failure record, 6b the UI) and 7 (per-node publication: 7a the run observer, the node record and
 `flow::EvalPath`, 7b Queued, Computing and results landing as each node finishes) are built** — see
-*Slice 1 landed* through *Slice 7b landed* below; slice 8 (Run Selection) is not.
+*Slice 1 landed* through *Slice 7b landed* below. Slice 8 (Run Selection) is two commits after a fix
+it rests on (*A pull finishes what it starts*): 8a, the flow half, is built (*Slice 8a landed*); 8b,
+the flowview half, is not.
 
 ### The shape
 
@@ -6198,6 +6200,14 @@ Structural, no-behaviour-change slices first; each its own commit with its docs.
    executed through `executePlan`) and its menu item.
    The pull semantic it builds on was fixed first, in its own commit — see *A pull finishes what it
    starts*: a pull now plans the part of the stale closure in its cone, and keeps owed what it leaves.
+   Then two commits, planned with the repo owner 2026-09-29:
+   - **8a (flow) — built 2026-09-29.** `evaluate(definition, evaluation, targets, control)`, a pull's
+     stage through `executePlan`, one plan builder over an optional cone, and
+     `RunObserver::leftOwed`. See *Slice 8a landed*.
+   - **8b (flowview).** A Run Selection ask in `RunRequests` (every trigger; a partial run answers only
+     its own ask), `RunJob::targets`, the runner's `leftOwed` (an owed mark, never Queued), the Run menu
+     item and Cmd/Ctrl+Shift+Enter. A selection inside a group runs its root-level ancestor whole;
+     per-level cones wait for a slow group interior where "get me this far" matters.
 
 ### Slice 1 landed (2026-09-28) — clone + lineage
 
@@ -7025,6 +7035,55 @@ video-off (+4 each); warning-clean, format-check clean; `[pull]` swept 100× thr
 Debug and Release (4 cases, no failures); `flowview run --example` identical to the pre-change binary
 once the timestamp and short ids are normalised.
 
+### Slice 8a landed (2026-09-29) — a pull of many targets, cancellable and parallel
+
+The flow half of Run Selection. `Scheduler::evaluate(definition, evaluation, targets, control)` pulls
+several targets at once under a host's `RunControl`, and its stages execute through the strategy's own
+`executePlan`, so ParallelScheduler runs a pull on the pool. A pull reports what it leaves owed through
+a new `RunObserver::leftOwed`. The single-target `evaluate(g, e, target)` forwards to it. Nothing in
+flowview calls it until 8b. `ctest -j8` **901/901** Debug with video on, **907/907** Release with video
+on, **874/874** Release video-off (+7 each); warning-clean, format-check clean;
+`[pull],[observer],[cancel]` (36 cases) swept 100× through the Catch2 binary in Debug and Release;
+`flowview run --example` identical to the pre-change binary once the timestamp and short ids are
+normalised.
+
+- **A pull is a run with a cone, and nothing else.** `Scheduler::Mode` is deleted, and so are
+  `buildRunPlan` / `buildEvalPlan`: one `buildPlan` takes an optional cone (null for a run), and one
+  staging loop serves both entry points. The lease, cancellation, progress and the observer were
+  already run()'s and needed nothing. The cone is the definition's, so it is collected once per pull,
+  however many stages the pull takes.
+- **The pull used to be walked serially whatever the strategy** (`runSteps`), because the pre-plan
+  pull path was a depth-first recursion. A Run Selection on a slow graph cannot afford that, and
+  ADR-0025 always said "executed in parallel". *"a pull runs on several threads too"* asserts the
+  mechanism, the way *"the parallel scheduler really runs on several threads"* does for a run, since
+  the answer is the same serially.
+- **`leftOwed` is its own method, not a flag on `owed`.** A host's copy has to mark what a pull leaves
+  owed, or a node fed the new value past the cone reads current while it shows the old one (7a's
+  argument). But the runner turns `owed` into **Queued**, and a left node will never compute, so the
+  two must be told apart. A flag would be a second meaning a host could forget to read.
+- **Targets are root-level NodeIds**, and one the definition does not hold contributes nothing: a
+  collected cone that names a missing node reaches no edge and no closure. A host's selection may
+  outlive a node, since Run Selection is captured at the click and may start a frame or more later. No
+  targets at all is a pull of nothing.
+- **Tests:**
+  - `test_pull.cpp` +3: several targets serial and parallel, with a shared upstream computing once; a
+    missing target, alone and beside a real one; no targets;
+  - `test_scheduler.cpp` +1: the threads case;
+  - `test_cancel.cpp` +1: a cancelled pull leaves the unreached sink owed;
+  - `test_observer.cpp` +2: which nodes a pull reports as left owed (the group, the sink and the map;
+    never as owed, started or finished; the list, stale on its own account, not at all), and the
+    exactness case for a pull of the source and of the sink, serial and parallel. A start copy with
+    every report replayed shows what the end copy shows, and the stale closure over it says what the
+    pull left.
+  - `testobserver.h`'s recorder gains `LeftOwed`, which `replay` marks as `owe`, and `watch()` takes
+    targets.
+- **Three sabotages, all caught:**
+  - walk a pull's stage with `runSteps` and the threads case fails;
+  - drop the `leftOwed` report and the report case and both exactness sections fail, the replayed copy
+    reading a left node as not owed;
+  - report left nodes through `owed` and the report case fails, which is the Queued lie 8b's runner
+    would have shown.
+
 ### Visual design (settled in outline, tuned by eyeball)
 
 Freshness takes channels nothing else uses — title colour is category, a muted title is *not ready*,
@@ -7095,7 +7154,8 @@ row here**. A row is cheap to delete and expensive to leave.
 - **M14 — asynchronous execution: the gui never waits on graph work.** Designed 2026-09-28; slices 1
   (clone + lineage), 2 (the published evaluation + payload identity) and 3 (cancellation) built
   2026-09-28, slices 4 (the async vertical), 5 (triggers + persistence), 6 (freshness) and 7
-  (per-node publication) 2026-09-29; slice 8 (Run Selection) not.
+  (per-node publication) 2026-09-29; slice 8 (Run Selection): its flow half 8a built 2026-09-29, after
+  the pull-path fix it rests on; 8b (flowview) not.
   *(Milestone 14; [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)*
 
 M1–M8 and M10–M13 are built. **M9 and M14 are the milestones from 5 onward that are not.**

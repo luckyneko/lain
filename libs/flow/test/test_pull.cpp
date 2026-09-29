@@ -14,18 +14,26 @@
 //     run — its own record being clean is not the same as its interior having seen the new input;
 //   * a group outside the cone that is stale ONLY inside does not republish — a request would throw
 //     away its inner incrementality, which is the rule the full run's closure already follows.
+//
+// And the shape of a pull as a gui host's Run Selection uses it (M14 slice 8): several targets at once
+// compute each cone once and nothing else, under either strategy; a target the definition does not
+// hold contributes nothing, and no targets at all is a pull of nothing.
 
 #include "lain/flow/edit.h"
 #include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
 #include "lain/flow/group.h"
+#include "lain/flow/runcontrol.h"
 #include "lain/flow/scheduler.h"
 #include "lain/flow/staleness.h"
 #include "testscene.h"
 
+#include <lain/testing/threadpool.h>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
+#include <vector>
 
 using namespace lain::flow;
 using namespace lain::flow::test;
@@ -205,4 +213,107 @@ TEST_CASE("a group outside the cone that is stale only inside does not republish
 	REQUIRE(intOut(scene.graph, evaluation, scene.group) == 21);
 	REQUIRE(scene.innerCalls == 1);
 	REQUIRE(scene.relayCalls == 0); // the boundary handed it nothing new
+}
+
+//=========================================================================
+// Many targets — a host's Run Selection
+//=========================================================================
+
+static void checkSeveralTargets(Scheduler& scheduler)
+{
+	// shared -> a, shared -> b, and beside them other -> c. Pull {a, b}: their cones overlap in
+	// `shared`, which computes ONCE, and `other` and `c` are nobody's business.
+	std::atomic<int> sharedCalls{0}, aCalls{0}, bCalls{0}, otherCalls{0}, cCalls{0};
+	Graph graph;
+	const NodeId shared = graph.add<Source>(sharedCalls, 5);
+	const NodeId a = graph.add<Relay>(aCalls);
+	const NodeId b = graph.add<Relay>(bCalls);
+	const NodeId other = graph.add<Source>(otherCalls, 9);
+	const NodeId c = graph.add<Relay>(cCalls);
+	REQUIRE(graph.connect(shared, 0, a, 0) == Connection::Ok);
+	REQUIRE(graph.connect(shared, 0, b, 0) == Connection::Ok);
+	REQUIRE(graph.connect(other, 0, c, 0) == Connection::Ok);
+
+	Evaluation evaluation{graph};
+	RunControl control;
+	scheduler.evaluate(graph, evaluation, std::vector<NodeId>{a, b}, control);
+
+	REQUIRE(sharedCalls == 1);
+	REQUIRE(aCalls == 1);
+	REQUIRE(bCalls == 1);
+	REQUIRE(otherCalls == 0);
+	REQUIRE(cCalls == 0);
+	REQUIRE(intOut(graph, evaluation, a) == 5);
+	REQUIRE(intOut(graph, evaluation, b) == 5);
+	REQUIRE(control.planned() == 3);
+	REQUIRE(control.finished() == 3);
+
+	const StaleClosure closure(graph, evaluation);
+	REQUIRE(closure.contains(other));
+	REQUIRE(closure.contains(c));
+	REQUIRE_FALSE(closure.contains(a));
+}
+
+TEST_CASE("a pull of several targets computes each cone once and nothing else", "[scheduler][pull]")
+{
+	SECTION("serial")
+	{
+		SerialScheduler scheduler;
+		checkSeveralTargets(scheduler);
+	}
+	SECTION("parallel")
+	{
+		lain::testing::ThreadPool pool;
+		ParallelScheduler scheduler;
+		checkSeveralTargets(scheduler);
+	}
+}
+
+TEST_CASE("a target the definition does not hold contributes nothing", "[scheduler][pull]")
+{
+	// A host's selection can outlive a node: captured when Run Selection is chosen, it may name a node
+	// deleted before the run starts. Such a target is in no edge and no closure, so it adds nothing —
+	// and does not stop the rest of the selection from running.
+	std::atomic<int> uCalls{0}, tCalls{0};
+	Graph graph;
+	const NodeId u = graph.add<Source>(uCalls, 3);
+	const NodeId t = graph.add<Relay>(tCalls);
+	REQUIRE(graph.connect(u, 0, t, 0) == Connection::Ok);
+
+	Graph elsewhere;
+	const NodeId stranger = elsewhere.add<Relay>(tCalls);
+	REQUIRE_FALSE(graph.contains(stranger));
+
+	Evaluation evaluation{graph};
+	RunControl control;
+	SerialScheduler scheduler;
+
+	SECTION("alone, it pulls nothing")
+	{
+		scheduler.evaluate(graph, evaluation, std::vector<NodeId>{stranger}, control);
+		REQUIRE(uCalls == 0);
+		REQUIRE(tCalls == 0);
+		REQUIRE(control.planned() == 0);
+	}
+	SECTION("beside a real target, the real one still runs")
+	{
+		scheduler.evaluate(graph, evaluation, std::vector<NodeId>{stranger, t}, control);
+		REQUIRE(uCalls == 1);
+		REQUIRE(tCalls == 1);
+		REQUIRE(intOut(graph, evaluation, t) == 3);
+	}
+}
+
+TEST_CASE("a pull of no targets computes nothing", "[scheduler][pull]")
+{
+	std::atomic<int> uCalls{0};
+	Graph graph;
+	const NodeId u = graph.add<Source>(uCalls, 3);
+
+	Evaluation evaluation{graph};
+	RunControl control;
+	SerialScheduler{}.evaluate(graph, evaluation, std::vector<NodeId>{}, control);
+
+	REQUIRE(uCalls == 0);
+	REQUIRE(StaleClosure(graph, evaluation).contains(u));
 }

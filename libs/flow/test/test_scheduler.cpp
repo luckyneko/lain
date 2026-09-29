@@ -4,6 +4,7 @@
 
 #include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
+#include "lain/flow/runcontrol.h"
 #include "lain/flow/scheduler.h"
 
 #include <lain/testing/threadpool.h>
@@ -14,6 +15,7 @@
 #include <mutex>
 #include <set>
 #include <thread>
+#include <vector>
 
 using namespace lain::flow;
 
@@ -274,6 +276,33 @@ TEST_CASE("the parallel scheduler really runs on several threads", "[scheduler]"
 	REQUIRE(pool.owned()); // it started one; without this the rest measures the inline path
 	ParallelScheduler{}.run(g, e);
 
+	REQUIRE(threads.size() > 1);
+}
+
+TEST_CASE("a pull runs on several threads too", "[scheduler][pull]")
+{
+	// The parallel strategy is the only thing a pull and a run differ in NOT at all: a pull's stage is
+	// a plan like any other and goes through executePlan. It used to be walked serially whatever the
+	// strategy, which a gui host's Run Selection — many targets at once, on a slow graph — cannot
+	// afford. The case above guards a run the same way, and for the same reason: the answer is the
+	// same serially, so only the mechanism can be asserted.
+	if (std::thread::hardware_concurrency() < 2)
+		SKIP("one core: there is no second thread for the work to land on");
+
+	Graph g;
+	std::mutex mutex;
+	std::set<std::thread::id> threads;
+	std::vector<NodeId> targets;
+	for (int i = 0; i < 32; ++i)
+		targets.push_back(g.add<WhereItRan>(mutex, threads));
+
+	Evaluation e{g};
+	lain::testing::ThreadPool pool;
+	REQUIRE(pool.owned());
+	RunControl control;
+	ParallelScheduler{}.evaluate(g, e, targets, control);
+
+	REQUIRE(control.finished() == 32);
 	REQUIRE(threads.size() > 1);
 }
 

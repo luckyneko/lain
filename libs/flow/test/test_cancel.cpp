@@ -5,7 +5,7 @@
 // What each case pins:
 //   * everything a cancelled (or thrown-out-of) run did not reach stays STALE — the planned closure
 //     is persisted as recompute requests before a stage runs, since staleness otherwise assumes a
-//     run finishes its closure;
+//     run finishes its closure — and the same holds for a cancelled PULL (M14 slice 8);
 //   * a compute that finishes after the cancel is KEPT, and one that asks and gives up is NOT;
 //   * the crossings between levels still run, so a group's entry publishes even when the cancel
 //     landed just before it;
@@ -286,6 +286,46 @@ TEST_CASE("a cancelled run leaves every node it did not reach stale", "[flow][ca
 		lain::testing::ThreadPool pool;
 		ParallelScheduler scheduler;
 		checkUnreachedStaysStale(scheduler);
+	}
+}
+
+static void checkPullUnreachedStaysStale(Scheduler& scheduler)
+{
+	// The same cut, through the pull a host's Run Selection is: a cancel reaches it through the same
+	// control, and it too leaves what it did not reach owed.
+	Chain<Canceller> chain;
+	Evaluation evaluation{chain.graph};
+	scheduler.evaluate(chain.graph, evaluation, chain.sink);
+	REQUIRE(intOut(chain.graph, evaluation, chain.sink) == 1);
+
+	chain.setSource(2);
+	RunControl control;
+	chain.trigger = &control;
+	scheduler.evaluate(chain.graph, evaluation, std::vector<NodeId>{chain.sink}, control);
+	chain.trigger = nullptr;
+	REQUIRE(control.cancelled());
+
+	REQUIRE(chain.sinkCalls == 1);
+	REQUIRE(intOut(chain.graph, evaluation, chain.sink) == 1);
+	REQUIRE(evaluation.needsRecompute(chain.sink));
+
+	scheduler.evaluate(chain.graph, evaluation, chain.sink);
+	REQUIRE(chain.sinkCalls == 2);
+	REQUIRE(intOut(chain.graph, evaluation, chain.sink) == 2);
+}
+
+TEST_CASE("a cancelled pull leaves every node it did not reach stale", "[flow][cancel][pull]")
+{
+	SECTION("serial")
+	{
+		SerialScheduler scheduler;
+		checkPullUnreachedStaysStale(scheduler);
+	}
+	SECTION("parallel")
+	{
+		lain::testing::ThreadPool pool;
+		ParallelScheduler scheduler;
+		checkPullUnreachedStaysStale(scheduler);
 	}
 }
 

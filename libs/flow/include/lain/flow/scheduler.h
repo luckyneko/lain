@@ -10,8 +10,8 @@
 // evaluation storage before dispatching any task. Reusing ONE evaluation concurrently is a caller
 // error and fails immediately — see the run lease in evaluation.h.
 //
-// Two run strategies share one pull path:
-//   - SerialScheduler   — single-threaded topo-order run; needs no execution deps.
+// Two strategies, which differ only in how one stage's plan executes — a push run and a pull alike:
+//   - SerialScheduler   — single-threaded topo-order walk; needs no execution deps.
 //   - ParallelScheduler — lowers the DAG onto the process task pool for work-stealing
 //                         parallelism.
 //
@@ -20,7 +20,7 @@
 // run as a node, it is *expanded* into an entry step, its inner graph's own steps, and an
 // exit step. So a nested graph runs as one flat DAG — no scheduler is ever invoked from
 // inside a task, and inner nodes of two sibling groups interleave freely on the pool.
-// run() plans the stale closure; evaluate() plans the part of it in one node's upstream cone.
+// run() plans the stale closure; evaluate() plans the part of it in its targets' upstream cone.
 //
 // One invocation may build SEVERAL plans, in STAGES (ADR-0014). A map node's arity comes from a
 // collection computed during the run, so it cannot be expanded when the first plan is built: it is
@@ -80,12 +80,20 @@ namespace lain::flow
 		// the evaluation as recompute requests before the stage runs (Plan::closure).
 		void run(const Graph& definition, Evaluation& evaluation, RunControl& control);
 
-		// Pull: bring `target` up to date and nothing else — the part of the stale closure in its
+		// Pull: bring `targets` up to date and nothing else — the part of the stale closure in their
 		// upstream cone (a constant stays computed after its first run; an on-request source requests
 		// its own recompute and so refires each pull; a node downstream of an edit is recomputed, as it
 		// is by run()). The rest of the closure stays stale, including what this pull would otherwise
 		// make LOOK current: a node outside the cone fed by one inside it keeps a recompute request.
-		// Serial for either strategy.
+		//
+		// Everything else is run()'s: the lease, the staging loop, the strategy's own execution — a
+		// pull runs on the pool under ParallelScheduler — and what a cancel through `control` does. A
+		// target is a NodeId of `definition`'s own level; one the definition does not hold contributes
+		// nothing, and no targets at all is a pull of nothing. A host's Run Selection is this (ADR-0025).
+		void evaluate(const Graph& definition, Evaluation& evaluation, const std::vector<NodeId>& targets,
+					  RunControl& control);
+
+		// One target, nothing watching and nothing able to cancel it.
 		void evaluate(const Graph& definition, Evaluation& evaluation, NodeId target);
 
 	protected:
@@ -201,7 +209,7 @@ namespace lain::flow
 			struct Owed
 			{
 				Evaluation* evaluation;
-				std::size_t level; // into `levels`: where it is reported as owed (RunObserver::owed)
+				std::size_t level; // into `levels`: where it is reported (RunObserver::owed / leftOwed)
 				NodeId node;
 			};
 			std::vector<Owed> closure;
@@ -263,15 +271,14 @@ namespace lain::flow
 			std::vector<Entry> m_entries; // one per FRONTIER, never one per raise — see above
 		};
 
-		// The plan for a full run: the STALE CLOSURE at every level — every node the evaluation says
-		// needs recomputing plus everything downstream of one, with each group expanded in place and
-		// each not-yet-prepared map left as a frontier.
-		Plan buildRunPlan(const Graph& definition, Evaluation& evaluation, const Staging& staging);
-
-		// The plan for a pull: the part of the stale closure in `target`'s upstream cone — what the
-		// target needs, and nothing it does not. Whatever else the closure holds that this pull could
-		// make look clean is kept owed (Plan::left).
-		Plan buildEvalPlan(const Graph& definition, Evaluation& evaluation, NodeId target, const Staging& staging);
+		// One stage's plan: the STALE CLOSURE at every level — every node the evaluation says needs
+		// recomputing plus everything downstream of one, with each group expanded in place and each
+		// not-yet-prepared map left as a frontier. For a pull, only the part of the root's closure in
+		// `cone` — what the targets need, and nothing they do not — and whatever else the closure holds
+		// that the pull could make look clean is kept owed (Plan::left). A null cone is a full run: a
+		// run is a pull whose cone is everything.
+		Plan buildPlan(const Graph& definition, Evaluation& evaluation, const std::set<NodeId>* cone,
+					   const Staging& staging);
 
 		// Execute ONE stage's plan — the only thing the two strategies do differently. It is handed a
 		// complete, already-ordered plan, so a backend never plans, never takes the lease and never
@@ -280,8 +287,7 @@ namespace lain::flow
 		virtual void executePlan(const Plan& plan, RunControl& control) = 0;
 
 		// Walk a stage's steps in order. The plan is already a valid serial order — every dependency
-		// points backwards — so this needs no further ordering work. Used by SerialScheduler, and by
-		// the pull path for either strategy.
+		// points backwards — so this needs no further ordering work. SerialScheduler's executePlan.
 		void runSteps(const Plan& plan, RunControl& control);
 
 		// Execute one step. The single dispatch point, so both strategies handle groups identically
@@ -312,20 +318,15 @@ namespace lain::flow
 		void populateInputs(const Graph& definition, Evaluation& evaluation, NodeId id);
 
 	private:
-		// Which plan each stage builds. The two entry points differ in this and in whether a stage
-		// may be executed in parallel — everything else about staging is identical, and writing the
-		// loop twice is how two paths that do one job drift apart.
-		enum class Mode
-		{
-			Push, // run(): the stale closure, executed through executePlan
-			Pull, // evaluate(): the closure's part in the target's upstream cone, always walked serially
-		};
-
 		// The staging loop (ADR-0014): plan, execute, prepare what the stage revealed, plan again.
 		// Preparation happens HERE, between stages, on the coordinator thread — never inside a task.
 		// A cancelled run stops here too: no stage is planned, and no frontier prepared, once the
 		// control says so — which is what stops a loop between iterations.
-		void runStages(const Graph& definition, Evaluation& evaluation, Mode mode, NodeId target, RunControl& control);
+		//
+		// ONE loop for both entry points, which differ only in the cone they plan within (null for a
+		// run): writing it twice is how two paths that do one job drift apart.
+		void runStages(const Graph& definition, Evaluation& evaluation, const std::set<NodeId>* cone,
+					   RunControl& control);
 
 		// (Which nodes a stage recomputes at each level — the stale closure — and whether a group
 		// republishes into its interior are not the scheduler's own: they are StaleClosure's

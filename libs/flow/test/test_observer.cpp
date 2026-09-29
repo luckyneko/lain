@@ -12,7 +12,9 @@
 //     copy taken at run end shows — for a group, a map that grew, and a loop;
 //   * the owed marks are what keep that sound part-way through: a node downstream of one that has
 //     landed reads as stale until it lands itself — and, without the marks, would not;
-//   * fold and owe refuse what the copy does not have.
+//   * fold and owe refuse what the copy does not have;
+//   * a PULL reports what it leaves owed apart from what it owes, and with those replayed too its
+//     copy both matches its end and says what it left stale (M14 slice 8).
 // What a cancel, a give-up and a throw report lives with the cancel suite (test_cancel.cpp,
 // [observer]), beside the nodes that provoke them.
 
@@ -134,7 +136,8 @@ namespace lain::flow::test::observer
 	};
 
 	// What a gui host does around one run: clone the document, prepare the working evaluation against
-	// the clone, publish at the START (what reports fold into), run watched, publish at the END.
+	// the clone, publish at the START (what reports fold into), run watched, publish at the END. Given
+	// `targets`, the run is a PULL of them (Scheduler::evaluate) — a host's Run Selection.
 	struct WatchedRun
 	{
 		std::shared_ptr<const Graph> clone;
@@ -143,14 +146,18 @@ namespace lain::flow::test::observer
 		Recorder recorder;
 	};
 
-	static void watch(Scheduler& scheduler, const Graph& document, Evaluation& working, WatchedRun& run)
+	static void watch(Scheduler& scheduler, const Graph& document, Evaluation& working, WatchedRun& run,
+					  const std::vector<NodeId>* targets = nullptr)
 	{
 		run.clone = std::make_shared<const Graph>(document.clone());
 		working.prepare(*run.clone);
 		run.start = PublishedEvaluation{run.clone, working};
 		RunControl control;
 		control.setObserver(&run.recorder);
-		scheduler.run(*run.clone, working, control);
+		if (targets != nullptr)
+			scheduler.evaluate(*run.clone, working, *targets, control);
+		else
+			scheduler.run(*run.clone, working, control);
 		run.end = PublishedEvaluation{run.clone, working};
 	}
 } // namespace lain::flow::test::observer
@@ -433,6 +440,107 @@ TEST_CASE("a loop's reports replayed show what its fold ended with", "[flow][obs
 		lain::testing::ThreadPool pool;
 		ParallelScheduler scheduler;
 		checkLoopFoldIsExact(scheduler);
+	}
+}
+
+//=========================================================================
+// A pull — a host's Run Selection (M14 slice 8)
+//=========================================================================
+
+// The scene run once, then the source edited and the list grown — both chains stale — ready for a
+// pull that reaches only part of it.
+static void runThenEditBoth(Scheduler& scheduler, Graph& document, const Scene& s, Evaluation& working)
+{
+	{
+		WatchedRun first;
+		watch(scheduler, document, working, first);
+	}
+	auto& source = static_cast<Source&>(document.node(s.source));
+	REQUIRE(source.setParam(source.value, 7));
+	auto& list = static_cast<MakeInts&>(document.node(s.list));
+	REQUIRE(list.setParam(list.values, Ints{1, 2, 3, 4}));
+}
+
+TEST_CASE("a pull reports what it leaves owed, and never as owed", "[flow][observer][pull]")
+{
+	// Pull the SOURCE alone. The group and the sink are fed the new value past the cone and the map is
+	// fed by the grown list: each has a clean record of its own, so each is LEFT owed — told to the
+	// host so its copy marks them, and told apart from what the run owes, because the run will never
+	// compute them. The list is stale on its own account, so it needs no word from this run at all.
+	Calls calls;
+	Graph document;
+	const Scene s = buildScene(document, calls);
+	SerialScheduler scheduler;
+	Evaluation working{document};
+	runThenEditBoth(scheduler, document, s, working);
+	calls.inner = 0;
+	calls.sink = 0;
+
+	const std::vector<NodeId> targets{s.source};
+	WatchedRun run;
+	watch(scheduler, document, working, run, &targets);
+	const Recorder& r = run.recorder;
+
+	REQUIRE(r.count(Report::Kind::Owed, EvalPath{}, s.source) == 1);
+	REQUIRE(r.count(Report::Kind::Finished, EvalPath{}, s.source) == 1);
+	for (const NodeId left : {s.group, s.sink, s.map})
+	{
+		REQUIRE(r.count(Report::Kind::LeftOwed, EvalPath{}, left) == 1);
+		REQUIRE(r.count(Report::Kind::Owed, EvalPath{}, left) == 0);
+		REQUIRE(r.count(Report::Kind::Started, EvalPath{}, left) == 0);
+		REQUIRE(r.count(Report::Kind::Finished, EvalPath{}, left) == 0);
+	}
+	REQUIRE(r.count(Report::Kind::LeftOwed, EvalPath{}, s.list) == 0);
+	REQUIRE(r.count(Report::Kind::Owed, EvalPath{}, s.list) == 0);
+
+	// Reported before anything started, as owed() is: a host has marked them before any result lands.
+	REQUIRE(r.first(Report::Kind::LeftOwed, EvalPath{}, s.sink) < r.first(Report::Kind::Started, EvalPath{}, s.source));
+	REQUIRE(calls.inner == 0);
+	REQUIRE(calls.sink == 0);
+}
+
+static void checkPullFoldIsExact(Scheduler& scheduler, bool pullSink)
+{
+	Calls calls;
+	Graph document;
+	const Scene s = buildScene(document, calls);
+	Evaluation working{document};
+	runThenEditBoth(scheduler, document, s, working);
+
+	// Pulling the sink takes the group's interior with it and leaves only the map; pulling the source
+	// leaves the group and the sink too.
+	const std::vector<NodeId> targets{pullSink ? s.sink : s.source};
+	WatchedRun run;
+	watch(scheduler, document, working, run, &targets);
+
+	replay(run.start, run.recorder.reports);
+	requireSameShown(*run.clone, run.start.evaluation(), run.end.evaluation());
+
+	// And asked about the document, the copy says what the pull did and did not do: what it left is
+	// stale, however clean its own record — which, without the left-owed marks, it would not be.
+	const StaleClosure fromReports(document, run.start.evaluation());
+	REQUIRE_FALSE(fromReports.contains(s.source));
+	REQUIRE(fromReports.contains(s.list));
+	REQUIRE(fromReports.contains(s.map));
+	REQUIRE(fromReports.contains(s.group) == !pullSink);
+	REQUIRE(fromReports.contains(s.sink) == !pullSink);
+	REQUIRE(intOut(*run.clone, run.start.evaluation(), s.sink) == (pullSink ? 7 : 1));
+}
+
+TEST_CASE("a pull's reports replayed show what it ended with, and what it left stale", "[flow][observer][published][pull]")
+{
+	SECTION("serial")
+	{
+		SerialScheduler scheduler;
+		checkPullFoldIsExact(scheduler, false);
+		checkPullFoldIsExact(scheduler, true);
+	}
+	SECTION("parallel")
+	{
+		lain::testing::ThreadPool pool;
+		ParallelScheduler scheduler;
+		checkPullFoldIsExact(scheduler, false);
+		checkPullFoldIsExact(scheduler, true);
 	}
 }
 

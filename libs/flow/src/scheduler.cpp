@@ -360,30 +360,19 @@ namespace lain::flow
 		}
 	}
 
-	Scheduler::Plan Scheduler::buildRunPlan(const Graph& definition, Evaluation& evaluation, const Staging& staging)
+	Scheduler::Plan Scheduler::buildPlan(const Graph& definition, Evaluation& evaluation, const std::set<NodeId>* cone,
+										 const Staging& staging)
 	{
-		Plan plan;
-		plan.levels.push_back(EvalPath{}); // level 0: the root
-		expand(definition, evaluation, 0, StaleClosure(definition, evaluation).order(), plan, staging);
-		return plan;
-	}
-
-	Scheduler::Plan Scheduler::buildEvalPlan(const Graph& definition, Evaluation& evaluation, NodeId target,
-											 const Staging& staging)
-	{
-		std::set<NodeId> cone;
-		collectUpstream(definition, target, cone);
-
-		// The part of the stale CLOSURE that feeds the target, in topo order. The closure and not
+		// The stale CLOSURE — or for a pull, the part of it in the targets' cone. The closure and not
 		// merely the nodes stale on their own account: a node downstream of an edit is owed a compute
 		// as surely as the edited node is, and leaving it out would recompute the edit and then show
-		// the old answer as current. The cone is upstream-closed, so every closure node feeding a cone
-		// node is in the cone too — nothing this plan recomputes waits on a value it will not produce.
+		// the old answer as current. A cone is upstream-closed, so every closure node feeding a cone
+		// node is in the cone too — nothing a pull recomputes waits on a value it will not produce.
 		const StaleClosure closure(definition, evaluation);
 		std::vector<NodeId> order;
 		for (const NodeId id : closure.order())
 		{
-			if (cone.count(id) != 0)
+			if (cone == nullptr || cone->count(id) != 0)
 				order.push_back(id);
 		}
 
@@ -391,23 +380,26 @@ namespace lain::flow
 		plan.levels.push_back(EvalPath{}); // level 0: the root
 		expand(definition, evaluation, 0, order, plan, staging);
 
-		// What the pull LEAVES of the closure: a node outside the cone that something in the closure
+		// What a pull LEAVES of the closure: a node outside the cone that something in the closure
 		// feeds, and whose own record is clean — so it is in the closure only because of what is
 		// upstream of it, which this pull may be about to make clean. Requested, it stays owed.
 		// Not a node whose own record is already stale (it stays stale by itself, and republishes if
 		// it is a group), and above all not a node in the closure only because of its INTERIOR: a
 		// request on a group makes it republish, which would throw away its inner incrementality —
-		// Plan::closure's rule, for the same reason.
-		for (const NodeId id : closure.order())
+		// Plan::closure's rule, for the same reason. A full run leaves nothing.
+		if (cone != nullptr)
 		{
-			if (cone.count(id) != 0 || evaluation.needsRecompute(id))
-				continue;
-			for (const Graph::Edge& e : definition.edges())
+			for (const NodeId id : closure.order())
 			{
-				if (e.to.node == id && closure.contains(e.from.node))
+				if (cone->count(id) != 0 || evaluation.needsRecompute(id))
+					continue;
+				for (const Graph::Edge& e : definition.edges())
 				{
-					plan.left.push_back(Plan::Owed{&evaluation, 0, id});
-					break;
+					if (e.to.node == id && closure.contains(e.from.node))
+					{
+						plan.left.push_back(Plan::Owed{&evaluation, 0, id});
+						break;
+					}
 				}
 			}
 		}
@@ -441,16 +433,27 @@ namespace lain::flow
 		// the WHOLE invocation, every stage of it, so staging changes nothing about the contract.
 		// Preparation happens with it, so all storage exists before any step touches it.
 		const Session session(definition, evaluation);
-		runStages(definition, evaluation, Mode::Push, NodeId{}, control);
+		runStages(definition, evaluation, nullptr, control);
 	}
 
-	// No control to hand in, deliberately: the pull path's cancellable form arrives with the caller
-	// that needs one — a gui host's Run Selection, many targets at once (M14 slice 8).
 	void Scheduler::evaluate(const Graph& definition, Evaluation& evaluation, NodeId target)
 	{
+		RunControl control; // nobody holds it, so nothing can cancel this pull
+		evaluate(definition, evaluation, std::vector<NodeId>{target}, control);
+	}
+
+	void Scheduler::evaluate(const Graph& definition, Evaluation& evaluation, const std::vector<NodeId>& targets,
+							 RunControl& control)
+	{
 		const Session session(definition, evaluation);
-		RunControl control;
-		runStages(definition, evaluation, Mode::Pull, target, control);
+
+		// The cone is the DEFINITION's, which nothing changes while the run holds it — so it is
+		// collected once, however many stages the pull takes. A target the definition does not hold
+		// is in no edge, so it adds only itself, and it is in no closure.
+		std::set<NodeId> cone;
+		for (const NodeId target : targets)
+			collectUpstream(definition, target, cone);
+		runStages(definition, evaluation, &cone, control);
 	}
 
 	// The staging loop (ADR-0014). A map's arity comes from a collection computed during the run, so
@@ -461,7 +464,7 @@ namespace lain::flow
 	//
 	// A graph with no map raises no frontier, so the loop runs exactly one stage and builds exactly
 	// one plan: the cost and the behaviour of a single-plan run, unchanged.
-	void Scheduler::runStages(const Graph& definition, Evaluation& evaluation, Mode mode, NodeId target,
+	void Scheduler::runStages(const Graph& definition, Evaluation& evaluation, const std::set<NodeId>* cone,
 							  RunControl& control)
 	{
 		// What this invocation has done to each frontier so far. A map is deferred at most once, so
@@ -475,9 +478,7 @@ namespace lain::flow
 		// values the last real one left behind.
 		while (!control.cancelled())
 		{
-			const Plan plan = (mode == Mode::Push)
-								  ? buildRunPlan(definition, evaluation, staging)
-								  : buildEvalPlan(definition, evaluation, target, staging);
+			const Plan plan = buildPlan(definition, evaluation, cone, staging);
 
 			if (plan.steps.empty() && plan.frontiers.empty())
 				break;
@@ -494,20 +495,23 @@ namespace lain::flow
 					control.m_observer->owed(plan.levels[owed.level], owed.node);
 			}
 			// And what a pull leaves of the closure, for the same reason: this stage may make clean
-			// what those nodes are stale only because of (Plan::left).
+			// what those nodes are stale only because of (Plan::left). Told apart from what the stage
+			// owes, because a watching host has to mark these stale too but must not show them as
+			// waiting for this run, which will never compute them (RunObserver::leftOwed).
 			for (const Plan::Owed& left : plan.left)
+			{
 				left.evaluation->requestRecompute(left.node);
+				if (control.m_observer != nullptr)
+					control.m_observer->leftOwed(plan.levels[left.level], left.node);
+			}
 
 			const auto computes = std::count_if(plan.steps.begin(), plan.steps.end(), [](const Step& step)
 												{ return step.kind == Step::Kind::Node; });
 			control.m_planned.fetch_add(static_cast<std::size_t>(computes), std::memory_order_relaxed);
 
-			// The one thing the strategies differ in — except the pull path, which is serial for
-			// either of them by design (see evaluate()).
-			if (mode == Mode::Push)
-				executePlan(plan, control);
-			else
-				runSteps(plan, control);
+			// The one thing the strategies differ in — a pull's stage included, which is a plan like
+			// any other and runs on the pool under ParallelScheduler.
+			executePlan(plan, control);
 
 			// Nothing was deferred, so this stage was the whole run. Checking the frontiers rather
 			// than re-planning to discover there is nothing left is what keeps a mapless run at one

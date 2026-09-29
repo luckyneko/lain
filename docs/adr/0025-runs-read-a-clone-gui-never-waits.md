@@ -111,7 +111,8 @@ Loops cancel between iterations for free, since an iteration boundary is a stage
   planned only once the stage before them has run), on the scheduler's own counters.
   `RecipeHandle::finishedCount()` lives inside `ParallelScheduler::executePlan` and the serial
   strategy has no handle. `Scheduler::evaluate` takes no control yet: the gui's cancellable pull is
-  Run Selection, many targets at once, and arrives with it (slice 8).
+  Run Selection, many targets at once, and arrives with it (slice 8). *(Built in slice 8a, 2026-09-29
+  — see the Triggers section.)*
 
 A compute that finishes after the cancel is kept, as above. One that asks
 `NodeEvaluation::cancelled()` and hears yes has **given up**, so it is not recorded and stays stale,
@@ -258,6 +259,26 @@ drag is one run on release), **Manual** (an explicit Run). No timer-based deboun
 waiting depends on the run's cost, which cannot be known before it runs. A run pushes the whole stale
 closure, as today; Manual adds **Run Selection**, the upstream cone of the selected nodes, planned like
 the pull path but multi-target and executed in parallel.
+
+*Built in slice 8a (2026-09-29), the flow half of Run Selection* — on top of the pull fix that came
+first, which made a pull plan the part of the stale closure in its cone and keep owed what it leaves
+(the staleness section below). `Scheduler::evaluate(definition, evaluation, targets, control)` is the
+whole surface. Building it settled three things:
+
+- **A pull is a run with a cone, and nothing else.** The lease, the staging loop, cancellation,
+  progress and the observer are run()'s, unchanged, and a pull's stage goes through the strategy's own
+  `executePlan` — so ParallelScheduler runs it on the pool, where it used to be walked serially
+  whatever the strategy. Planning is one function over an optional cone (null for a run), and the
+  staging loop one loop: two paths doing one job is how they drift apart. The cone is the
+  definition's, so it is collected once per pull however many stages the pull takes.
+- **What a pull leaves owed is reported on its own**, as `RunObserver::leftOwed`, beside `owed`. A
+  host's copy has to mark those nodes for the reason it marks owed ones — without the mark, a node fed
+  the new value past the cone reads as current while it shows the old one — but must not show them as
+  **Queued**, since the run will never compute them. The same method with a flag would have been a
+  second meaning a host could forget to read.
+- **Targets are NodeIds of the root level.** One the definition does not hold contributes nothing, so
+  a host's selection may outlive a node it names; no targets at all is a pull of nothing. A selection
+  inside a group is the host's to map onto a root-level target (slice 8b).
 
 *Amended 2026-09-29, the day slice 5 built the triggers.* Four things this section left open, each
 settled with the repo owner:
