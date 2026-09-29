@@ -128,7 +128,8 @@ namespace flowview
 		// ... and, for the same reason, which of this level's nodes show a value the document has moved
 		// on from: asked of the DOCUMENT against the published copy, since that copy was computed on a
 		// clone and cannot know what has been edited since.
-		m_ctx.freshness = levelFreshness(appDelegate.graph(), appDelegate.published(), m_ctx.activePath);
+		m_ctx.freshness =
+			levelFreshness(appDelegate.graph(), appDelegate.published(), m_ctx.activePath, appDelegate.activity());
 		// The path the panes are about to draw with. Captured now because a pane may NAVIGATE during
 		// this frame (a double-click descends), and the positions collected at the end of the frame
 		// belong to the level that was actually on screen — not to the one we are moving to.

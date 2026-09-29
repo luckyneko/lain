@@ -85,6 +85,14 @@ namespace flowview
 				gui::SameLine();
 				gui::TextDisabled("(stale - predates the latest change)");
 				break;
+			case Freshness::Queued:
+				gui::SameLine();
+				gui::TextDisabled("(queued - the run in flight will recompute it)");
+				break;
+			case Freshness::Computing:
+				gui::SameLine();
+				gui::TextDisabled("(computing - the run in flight is recomputing it now)");
+				break;
 			case Freshness::Failed:
 				gui::SameLine();
 				gui::TextDisabled("(its node's last compute failed - see Issues)");

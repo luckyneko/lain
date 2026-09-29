@@ -6072,7 +6072,7 @@ regression test: `ctest -j8` **794/794** Debug with video on, warning-clean, for
   the fold. All four reached their header transitively and worked — the class of thing the
   2026-09-05 CI port found six of.
 
-## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-6 and 7a built)
+## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-7 built)
 
 gui-mode runs `SerialScheduler::run` synchronously inside the frame loop — `FlowviewApp::reevaluate`
 is reached from `mainwindow.cpp` twice, `inspectorpane.cpp` and `interfacepane.cpp`, on every edit
@@ -6083,9 +6083,9 @@ default with Serial selectable, and gives the UI the controls a 5-minute graph n
 vocabulary in CONTEXT.md's *Running while you edit* (plus *clone*, *lineage*, *coordinator*).
 **Slices 1 (clone + lineage), 2 (the published evaluation + payload identity), 3 (cancellation), 4
 (the async vertical), 5 (triggers + persistence), 6 (freshness: 6a the stale-closure query + the
-failure record, 6b the UI) and 7a (the run observer, the node record, `flow::EvalPath`) are built** —
-see *Slice 1 landed* through *Slice 7a landed* below; 7b (flowview's per-node publication) and 8 are
-not.
+failure record, 6b the UI) and 7 (per-node publication: 7a the run observer, the node record and
+`flow::EvalPath`, 7b Queued, Computing and results landing as each node finishes) are built** — see
+*Slice 1 landed* through *Slice 7b landed* below; slice 8 (Run Selection) is not.
 
 ### The shape
 
@@ -6190,9 +6190,9 @@ Structural, no-behaviour-change slices first; each its own commit with its docs.
      step addressed by it, **`flow::RunObserver`** (replacing the stage observer: `stageFinished`,
      `owed`, `started`, `finished`), **`flow::NodeRecord`** (the completion record: a copy of one
      node's record), and `PublishedEvaluation::fold` / `owe`. See *Slice 7a landed*.
-   - **7b (flowview).** The runner's observer, a publication at the START of every run (so records
-     fold onto a copy of their own clone), the fold in `pollRun`, Queued and Computing in `Freshness`
-     with the roll-up, and their drawing.
+   - **7b (flowview) — built 2026-09-29.** The runner's observer, a publication at the START of every
+     run (so records fold onto a copy of their own clone), the fold in `pollRun` (as `land()`), Queued
+     and Computing in `Freshness` with the roll-up, and their drawing. See *Slice 7b landed*.
 8. **Run Selection.** The multi-target upstream-cone plan (`buildEvalPlan`'s shape, many targets,
    executed through `executePlan`) and its menu item.
 
@@ -6871,6 +6871,113 @@ short ids are normalised. `flowview --example --frames 120` exits 0, and so does
   5. Crossings silent: the crossing case, both loop cases and the map exactness case fail.
   6. The lineage check dropped: the other-history section fails.
 
+### Slice 7b landed (2026-09-29) — results land node by node; Queued and Computing
+
+The flowview half, on 7a's `RunObserver`. A node's value and thumbnail appear the moment it finishes,
+not when the run ends. The canvas shows what the run in flight is doing:
+- **Queued**: every node the run owes, as a filled dot;
+- **Computing**: the node computing, as a turning arc, with an outline that pulses;
+- **landed**: 6b's green *just updated* fade.
+A group, map or loop shows the most active state inside it.
+
+`ctest -j8` **890/890** Debug with video on, **896/896** Release with video on and **863/863** Release
+video-off (+9 each: six `[runner]` cases, three `[freshness]`); warning-clean, format-check clean.
+`[runner],[freshness]` (23 matching cases) was swept 100× through the Catch2 binary in Debug and in
+Release, and the whole `test-flowview` binary was run shuffled and in declaration order, with no
+failure. `flowview run --example` is identical to the 7a binary once the timestamp and short ids are
+normalised; the headless path has no runner, so nothing in it moved. `flowview --example --frames 120`
+exits 0, and so does `--size 2048 --frames 1/2/5`, which quits with a run in flight. **gui-mode checked
+by the repo owner 2026-09-29** — everything new here is drawn, so that is the check the drawing has.
+
+- **The runner** (`runner.{h,cpp}`): its `JobObserver` now handles every report, under the runner's
+  lock since the per-node ones come from pool workers. Two things are handed to the frame loop with
+  each `take()`:
+  - **folds**: one entry per node, holding the latest record and whether the node has been owed again
+    since that record;
+  - **activity** (`RunActivity`): Queued or Computing per node.
+  Taking them under one lock is what stops a node that has just finished showing idle for a frame
+  before its result lands.
+  - A record settles its node's request, so an owed mark made BEFORE the record is dropped. One made
+    after it survives alongside it: a loop's next pass owes a node whose last pass has just landed.
+  - `owed` after a cancel still marks the copy, since the request really is in the working evaluation,
+    but queues nothing.
+- **A publication at the START of every run**, after prepare and the bindings. It replaces an untaken
+  publication rather than being skipped, which is what makes a run's records always fold onto a copy
+  of its own clone. `Publication { Start, Stage, End }` replaced the `final` flag; only a Stage
+  publication is skipped while one is untaken. As a side effect, the structure appears at once after
+  New or Open instead of staying empty until the first run ends.
+- **Which folds a publication drops.** A publication that is actually stored drops every pending fold,
+  since the copy was taken after all of them with no step running. A SKIPPED one drops none, since the
+  copy the frame loop still has does not contain them.
+- **When activity ends.** A cancel drops every Queued entry at once, because the run will start none of
+  them. A compute already running stays Computing until it finishes or gives up. The run's end clears
+  all activity, and an abandon clears the folds as well.
+- **`land()` is the landing order, apart from the app** so it is under test. It applies the
+  publication, then the folds (records folded in, owed nodes marked), then `PendingBindings::showOn`
+  over the result. The bindings go last because a folded boundary node carries what its RUN bound, and
+  a newer binding may still be queued; applying them first would let the fold snap a drag back.
+  `pollRun` now keeps `m_publishedBy` for exactly this re-lay, and answers *landed* when a publication
+  or a record landed, so the preview cache refreshes per node. Its skip of unchanged payloads (slice 2)
+  is what keeps that proportional.
+- **Freshness** gains `Queued` and `Computing`. `levelFreshness` takes the `RunActivity` and lays it
+  over the published copy's answer. A node's own entry sits at `(path, id)`; anything deeper through it
+  (`path + {id, any element} + …`) rolls up, in one pass over the report. One order settles every
+  contest: **Computing, Failed, Queued, Stale, Current**. It matches against the path the walk actually
+  REACHED, so a truncated path is compared at the level on screen.
+- **Drawing.**
+  - `drawFreshnessMark`: Queued is a filled dot, and Computing a three-quarter ring turning at 0.8
+    turns a second. The frame loop redraws continuously, so it animates.
+  - The canvas pulses a Computing node's outline (`CanvasStyle::computingOutline()`, soft blue; alpha
+    35–100% at 1.2 Hz) on the channel the landed fade uses. The two never coincide.
+  - Tooltips and the badge's text cover both new states, and so does the Preview header.
+  - `-Wswitch` found the Preview header's switch the moment the enum grew.
+  - The status bar is unchanged: it counts Stale only, which is right, since Queued nodes will update
+    by themselves.
+- **Found while sabotaging: a failing runner case HUNG instead of failing.** A `REQUIRE` that throws past
+  a latch's release leaves the held compute waiting forever, and the runner's destructor joins it. The
+  held computes now wait at most 10 s, the bound `waitEntered` and `waitIdle` already had. Every
+  sabotage below was run after that fix.
+- **Three existing runner cases changed, all on purpose.**
+  - *start hands the run over* asserted that nothing is published until a one-stage run ends. It now
+    asserts the start publication plus the source's landed result.
+  - *a run in several stages* read the list from the midway publication. It now lands the report as
+    the host does, because the midway copy is the untaken start publication with the list folded in.
+  - *a throwing compute is an outcome* gained a node downstream of the thrower, which the throw leaves
+    owed and unstarted. It must not stay Queued once the run is over (sabotage 6 below).
+- **Tests.** Six new `[runner]` cases, each under both strategies:
+  - Computing and Queued, with the copy's staleness sound mid-run;
+  - a cancel ends Queued but not Computing;
+  - a publication takes in what landed before it, and what lands after survives;
+  - a loop owing a landed node again;
+  - a binding queued after the run started stays shown;
+  - a start publication replacing an untaken one.
+  Three new `[freshness]` cases cover the overlay and roll-up for a group and a map element, and the
+  precedence.
+- **Sabotages** (each restored and touched afterwards):
+  1. The start publication skipped while one is untaken: the untaken-replacement case fails.
+  2. Folds kept when a publication is stored: the publication-contains case fails.
+  3. Folds dropped on a SKIPPED stage publication: the loop case and the several-stages case fail.
+  4. Bindings laid before the folds: the queued-binding case fails.
+  5. A cancel keeping Queued: the cancel case fails.
+  6. Activity not cleared at the run's end: the throw case fails, but only once it gained a node
+     downstream of the thrower. The first run of this sabotage PASSED everything, because a run that
+     ends normally has already emptied its activity node by node; only nodes a run never starts (a
+     throw's successors) need the clear. The case was strengthened, then the sabotage rerun.
+  7. Owed marks not applied: the loop case and the publication-contains case fail.
+  8. No roll-up from inside: all three new `[freshness]` cases fail.
+  9. Queued over Failed: the precedence case fails.
+  A first attempt at 4 did not compile (an unused variable) and so ran against the previous
+  sabotage's binary; it was rerun.
+- **Not covered by ctest:** the drawing. That is the glyphs, the pulse, the tooltips, the badge text,
+  the Preview header, and `pollRun`'s use of `land()`. What gui-mode was checked for:
+  - A slow graph (`--example --size 4096`) shows Queued dots, then an arc and pulse on the node
+    computing, then each node landing with its fade before the run ends.
+  - Descend into a group, a map element and a loop while a run is in flight.
+  - Under Manual, an edit made mid-run shows Stale, not Queued.
+  - Stop turns Queued into Stale while the node still computing finishes.
+  - After New or Open, the structure appears at once as Queued.
+  - A Failed node inside a group shows on the group while its siblings are Queued.
+
 ### Visual design (settled in outline, tuned by eyeball)
 
 Freshness takes channels nothing else uses — title colour is category, a muted title is *not ready*,
@@ -6878,9 +6985,9 @@ the accent title is selection, pin colour is type, a muted link is inactive:
 
 - a **title-bar glyph**: nothing for Current, hollow dot Stale, filled dot Queued, animated arc
   Computing, red `!` Failed — shapes, so it reads without colour — with a tooltip; *(slice 6b drew
-  Current / Stale / Failed; Queued and Computing are slice 7's)*
+  Current / Stale / Failed; 7b Queued and Computing)*
 - the **node outline** pulses while Computing and fades on landing (*just updated*); *(the fade is
-  6b's, the pulse slice 7's)*
+  6b's, the pulse 7b's)*
 - a **stale badge** on Inspector / Interface / Preview thumbnails; *(6b: a badge on the Inspector and
   Interface, words in the Preview header)*
 - a **viewport status bar**: `Live · Parallel · Computing 12/40 · 3.4 s [Stop]`, then `Last run 3.4 s`.
@@ -6940,8 +7047,8 @@ row here**. A row is cheap to delete and expensive to leave.
 
 - **M14 — asynchronous execution: the gui never waits on graph work.** Designed 2026-09-28; slices 1
   (clone + lineage), 2 (the published evaluation + payload identity) and 3 (cancellation) built
-  2026-09-28, slices 4 (the async vertical), 5 (triggers + persistence), 6 (freshness) and 7a (the
-  run observer + node record) 2026-09-29; 7b (per-node publication in flowview) and 8 not.
+  2026-09-28, slices 4 (the async vertical), 5 (triggers + persistence), 6 (freshness) and 7
+  (per-node publication) 2026-09-29; slice 8 (Run Selection) not.
   *(Milestone 14; [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)*
 
 M1–M8 and M10–M13 are built. **M9 and M14 are the milestones from 5 onward that are not.**

@@ -1,5 +1,7 @@
 #include "freshness.h"
 
+#include "runner.h" // RunActivity
+
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
@@ -8,6 +10,8 @@
 #include <lain/gui/gui.h>
 #include <lain/image/color.h>
 #include <lain/math/types.h>
+
+#include <algorithm>
 
 namespace flowview
 {
@@ -42,7 +46,28 @@ namespace flowview
 		return false;
 	}
 
-	LevelFreshness levelFreshness(const flow::Graph& document, const flow::Evaluation& published, const flow::EvalPath& path)
+	// What the run in flight is doing at or under each node of the level `path` names: a node's own
+	// entry, or any entry deeper down through it — `path + {node, any element} + ...` — since a group,
+	// map or loop shows the most active state inside it. Computing outranks Queued. One pass over what
+	// the run reported, however deep it goes.
+	static std::map<flow::NodeId, Activity> activityAt(const RunActivity& activity, const flow::EvalPath& path)
+	{
+		std::map<flow::NodeId, Activity> level;
+		for (const auto& entry : activity.nodes)
+		{
+			const flow::EvalPath& where = entry.first.first;
+			if (where.size() < path.size() || !std::equal(path.begin(), path.end(), where.begin()))
+				continue;
+			const flow::NodeId node = (where.size() == path.size()) ? entry.first.second : where[path.size()].node;
+			const auto placed = level.emplace(node, entry.second);
+			if (!placed.second && entry.second == Activity::Computing)
+				placed.first->second = Activity::Computing;
+		}
+		return level;
+	}
+
+	LevelFreshness levelFreshness(const flow::Graph& document, const flow::Evaluation& published, const flow::EvalPath& path,
+								  const RunActivity& activity)
 	{
 		// What a level is compared against when nothing has run in it: no records, so every node there
 		// is stale. Never prepared, so it pairs with any definition.
@@ -51,6 +76,7 @@ namespace flowview
 		const flow::Graph* graph = &document;
 		const flow::Evaluation* evaluation = &published;
 		bool boundaryStale = false; // the root's boundary is handed values only by a binding, which requests it itself
+		flow::EvalPath resolved;	// the level actually reached, which is what the run's reports are matched against
 		for (const flow::EvalStep& step : path)
 		{
 			// The same truncation as resolvePath: a step that is gone, or no longer contains a graph,
@@ -60,6 +86,7 @@ namespace flowview
 			const flow::Graph* inner = graph->node(step.node).innerGraph();
 			if (inner == nullptr)
 				break;
+			resolved.push_back(step);
 
 			// Whether the level below is being handed values its evaluation has not seen: the level
 			// above says so, by the interior's kind — the one thing a per-level comparison cannot see.
@@ -69,6 +96,7 @@ namespace flowview
 		}
 
 		const flow::StaleClosure closure(*graph, *evaluation, boundaryStale);
+		const std::map<flow::NodeId, Activity> active = activityAt(activity, resolved);
 		LevelFreshness level;
 		for (const flow::NodeId id : graph->nodeIds())
 		{
@@ -77,6 +105,17 @@ namespace flowview
 				state = Freshness::Failed;
 			else if (closure.contains(id))
 				state = Freshness::Stale;
+
+			// The run's half, by the one order (freshness.h): Computing over everything, Queued over
+			// all but Failed.
+			const auto doing = active.find(id);
+			if (doing != active.end())
+			{
+				if (doing->second == Activity::Computing)
+					state = Freshness::Computing;
+				else if (state != Freshness::Failed)
+					state = Freshness::Queued;
+			}
 			level.nodes.emplace(id, state);
 		}
 		return level;
@@ -90,6 +129,7 @@ namespace flowview
 	// a thumbnail). Stale is light and quiet — it is ordinary under Manual, not a problem; Failed is the
 	// Issues pane's error red.
 	static const image::ColorRGBA8 kStaleMark(228, 228, 238, 230);
+	static const image::ColorRGBA8 kComputingMark(120, 190, 255, 255); // the canvas' computing outline, near enough
 	static const image::ColorRGBA8 kFailedMark(230, 90, 80, 255);
 	static const image::ColorRGBA8 kFailedText(255, 255, 255, 255);
 	static const image::ColorRGBA8 kBadgeBacking(20, 20, 24, 200); // so a mark reads over any picture
@@ -105,6 +145,20 @@ namespace flowview
 			case Freshness::Stale:
 				draw->AddCircle(centre, radius, gui::packColor(kStaleMark), 0, 1.5f);
 				return;
+			case Freshness::Queued:
+				draw->AddCircleFilled(centre, radius * 0.75f, gui::packColor(kStaleMark));
+				return;
+			case Freshness::Computing:
+			{
+				// Three quarters of a ring, turning: it moves, which a node whose value is on its way
+				// should, and no static state does. The frame loop redraws continuously, so it animates.
+				constexpr float kTurnsPerSecond = 0.8f;
+				constexpr float kTwoPi = 6.2831853f;
+				const float start = static_cast<float>(gui::GetTime()) * kTurnsPerSecond * kTwoPi;
+				draw->PathArcTo(centre, radius, start, start + kTwoPi * 0.75f, 16);
+				draw->PathStroke(gui::packColor(kComputingMark), 0, 1.8f);
+				return;
+			}
 			case Freshness::Failed:
 			{
 				draw->AddCircleFilled(centre, radius, gui::packColor(kFailedMark));
@@ -129,10 +183,24 @@ namespace flowview
 												  gui::packColor(kBadgeBacking));
 		drawFreshnessMark(corner.x + inset, corner.y + inset, radius, state);
 
-		if (gui::IsItemHovered())
+		if (!gui::IsItemHovered())
+			return;
+		switch (state)
 		{
-			gui::SetTooltip(state == Freshness::Failed ? "Failed: this node's last compute threw (see Issues)"
-													   : "Stale: this value predates the latest change");
+			case Freshness::Current:
+				return;
+			case Freshness::Stale:
+				gui::SetTooltip("Stale: this value predates the latest change");
+				return;
+			case Freshness::Queued:
+				gui::SetTooltip("Queued: the run in flight will recompute this value");
+				return;
+			case Freshness::Computing:
+				gui::SetTooltip("Computing: the run in flight is recomputing this value now");
+				return;
+			case Freshness::Failed:
+				gui::SetTooltip("Failed: this node's last compute threw (see Issues)");
+				return;
 		}
 	}
 } // namespace flowview

@@ -907,6 +907,45 @@ format-check clean. `flowview run --example` is unchanged, and the headless save
   (`reflect.h`). But *The type is the schema* claimed `fromValue` "fails on a shape/type mismatch",
   which is true of a struct's shape only.
 
+### Update 2026-09-29 — M14 slice 7b built: results land node by node; Queued and Computing (**slice 7 COMPLETE**)
+
+The flowview half of slice 7, on 7a's `RunObserver`. Each node's value and thumbnail now appear the
+moment it finishes, not when the run ends. The canvas shows every node the run owes as **Queued** (a
+filled dot), the node computing as **Computing** (a turning arc, and an outline that pulses), and then
+6b's green *just updated* fade as its result lands. A group, map or loop shows the most active state
+inside it. `ctest -j8` **890/890** Debug with video on, **896/896** Release with video on,
+**863/863** Release video-off (+9 each); warning-clean, format-check clean; `[runner],[freshness]` (23
+cases) swept 100× in Debug and Release; `flowview run --example` identical to the 7a binary; the
+`--frames` smokes exit 0, including a quit mid-run. **gui-mode checked by the repo owner 2026-09-29.**
+Nine sabotages, all caught. Full notes in WORK.md's *Milestone 14 › Slice 7b landed*.
+
+- **The runner turns reports into two things the frame loop takes each frame**, together with the
+  publication and under one lock, so a node that has just finished is never shown idle before its
+  result has landed:
+  - **folds**: per node, the latest record plus whether it has been owed again since. A loop's next
+    pass owes a node whose last pass has just landed, and both reach the host.
+  - **activity**: Queued or Computing, per node.
+- **A publication at the START of every run** (after prepare + bindings), replacing an untaken one, as
+  decided in 7a. A run's records then always fold onto a copy of its own clone. It also means the
+  structure appears at once after New or Open, instead of staying empty until the first run ends.
+- **Storing a publication drops the folds it contains; a SKIPPED stage publication drops none.** A
+  cancel ends every Queued at once (the run will start none of them), while a compute already running
+  stays Computing until it finishes. The run's end clears all activity.
+- **The landing order is a driver-free function, `land()`** (`runner.h`), which `pollRun` calls. It
+  applies the publication, then the folds, then the pending bindings laid back over them. That last
+  step has to come last: a folded boundary node carries what its RUN bound, and a newer binding may
+  still be queued. A test pins it.
+- **Precedence Computing > Failed > Queued > Stale > Current** (decided with the repo owner), applied
+  to a node's own state and to the roll-up alike. `-Wswitch` found the Preview pane's header switch
+  the moment the enum grew.
+- **Found while sabotaging, twice.**
+  - A failing runner case HUNG instead of failing. A `REQUIRE` that throws past the release leaves a
+    held compute waiting forever, and the runner's destructor joins it. The held computes now wait at
+    most 10 s, the bound `waitEntered` already had.
+  - Not clearing activity at the run's end passed every test. A run that ends normally has already
+    emptied its activity node by node; only nodes it never starts (a throw's successors) need the
+    clear. The throw case now has a node downstream of the thrower.
+
 ### Update 2026-09-29 — M14 slice 7a built: the run observer, the node record, `flow::EvalPath`
 
 The flow half of slice 7 (per-node publication). A run now TELLS a host what it does as it goes, through

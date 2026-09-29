@@ -58,10 +58,16 @@ namespace flowview
 		// What every pane READS: the newest published copy of the scene's runtime state — every port
 		// value a run has produced, plus what is bound at the boundary (ADR-0025). Not the working
 		// evaluation: a run owns that while it is in flight, on the coordinator thread, and a pane
-		// reading it would race the run's writes. Refreshed by pollRun() as results land, so it can be
+		// reading it would race the run's writes. Refreshed by pollRun() as results land — whole at a
+		// run's start, between stages and at its end, and node by node in between — so it can be a node,
 		// a stage or a run behind the document; empty after a document swap until the new document's
-		// first run publishes.
+		// first run starts.
 		const lain::flow::Evaluation& published() const { return m_published.evaluation(); }
+
+		// What the run in flight is doing to each node — Queued or Computing — as of the last
+		// pollRun(). Empty while no run is in flight. Taken with the results that landed, so a node is
+		// never shown idle before its result has.
+		const RunActivity& activity() const { return m_activity; }
 
 		// The node-type palette the canvas' add menu draws from.
 		const lain::core::Factory<lain::flow::Node>& nodeFactory() const { return m_nodeFactory; }
@@ -116,8 +122,9 @@ namespace flowview
 		// run that was superseded proves nothing either way, so it does not clear this.
 		const std::optional<std::string>& runFailure() const { return m_runFailure; }
 
-		// Frame start: take what the coordinator has produced since the last frame. True when a new
-		// publication landed, so the caller can refresh what it built from the old one. UI thread.
+		// Frame start: take what the coordinator has produced since the last frame. True when new values
+		// landed — a publication, or a node's result folded in — so the caller can refresh what it built
+		// from the old ones. UI thread.
 		bool pollRun();
 
 		// Frame end: act on the asks, under the document's `trigger`. `gestureEnded` is the undo
@@ -172,7 +179,9 @@ namespace flowview
 		// What the panes read (published()), and the bindings it may not contain yet — queued for the
 		// next run, or taken by a run whose publication has not landed.
 		lain::flow::PublishedEvaluation m_published;
+		std::uint64_t m_publishedBy = 0; // the job whose publication m_published is, results folded in since
 		PendingBindings m_bindings;
+		RunActivity m_activity;
 
 		RunRequests m_requests; // what has asked for a run and not had one yet
 		RunStrategy m_strategy = RunStrategy::Parallel;

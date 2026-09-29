@@ -24,6 +24,7 @@
 #include <lain/string/format.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -405,12 +406,24 @@ namespace flowview
 				pushNodeColour(ImNodesCol_NodeBackgroundSelected, mutedBg);
 			}
 
-			// Just updated: the outline lit, fading out over kLandedFade. Orthogonal to the title's
-			// colours above, so it shows on a dimmed node too — a node that just landed EMPTY has still
-			// just landed.
+			// Computing: the outline PULSES for as long as its compute runs. Just updated: the outline
+			// lit, fading out over kLandedFade. Never both — a node that has landed is Current. Both are
+			// orthogonal to the title's colours above, so they show on a dimmed node too — a node that
+			// just landed EMPTY has still just landed.
 			constexpr double kLandedFade = 0.6;
+			constexpr double kPulsesPerSecond = 1.2;
+			constexpr double kTwoPi = 6.283185307179586;
 			int nodeVarsPushed = 0;
-			if (const auto landed = m_landedAt.find(id); landed != m_landedAt.end())
+			if (freshness == Freshness::Computing)
+			{
+				image::ColorRGBA8 outline = m_style.computingOutline();
+				const double swing = 0.5 + 0.5 * std::sin(now * kPulsesPerSecond * kTwoPi); // 0..1
+				outline.a = static_cast<std::uint8_t>(outline.a * (0.35 + 0.65 * swing));
+				pushNodeColour(ImNodesCol_NodeOutline, outline);
+				gui::nodes::PushStyleVar(ImNodesStyleVar_NodeBorderThickness, 2.0f);
+				++nodeVarsPushed;
+			}
+			else if (const auto landed = m_landedAt.find(id); landed != m_landedAt.end())
 			{
 				const double age = now - landed->second;
 				if (age < kLandedFade)
@@ -692,6 +705,13 @@ namespace flowview
 						gui::TextDisabled("Run (%s) updates it", gui::GetIO().ConfigMacOSXBehaviors ? "Cmd+Enter" : "Ctrl+Enter");
 					else
 						gui::TextDisabled("The next run updates it");
+					break;
+				case Freshness::Queued:
+					gui::TextUnformatted("Queued: the run in flight will compute it");
+					gui::TextDisabled("It updates by itself when its turn comes");
+					break;
+				case Freshness::Computing:
+					gui::TextUnformatted("Computing: the run in flight is computing it now");
 					break;
 				case Freshness::Failed:
 					if (const std::string* failure = evaluation.failure(*hoveredMark))

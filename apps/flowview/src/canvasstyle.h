@@ -45,6 +45,10 @@ namespace flowview
 		// selection, pin colour is type.
 		lain::image::ColorRGBA8 landedOutline() const { return m_landedOutline; }
 
+		// The outline a node wears, PULSING, while its compute runs (ADR-0025's Computing) — the same
+		// channel as landedOutline, since the two never coincide: a node that has landed is Current.
+		lain::image::ColorRGBA8 computingOutline() const { return m_computingOutline; }
+
 		// The canvas' read-only watermark. A FOREGROUND tone, unlike the muted* colours above — those
 		// are backgrounds (mutedTitle is near-black, and reads as nothing at all when used as text).
 		// Amber rather than red: this is a restriction, not an error.
@@ -60,6 +64,7 @@ namespace flowview
 		lain::image::ColorRGBA8 m_mutedLink;
 		lain::image::ColorRGBA8 m_selection;
 		lain::image::ColorRGBA8 m_landedOutline;
+		lain::image::ColorRGBA8 m_computingOutline;
 		lain::image::ColorRGBA8 m_readOnlyMark;
 	};
 

@@ -899,9 +899,9 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 
 ## Running while you edit — the host's side of a run
 
-*(M14 — designed; slices 1-6 and 7a built: runs are off the frame loop under all three triggers,
-freshness is drawn as Current / Stale / Failed, and a run reports each node as it goes — Queued and
-Computing reach the screen with slice 7b.
+*(M14 — designed; slices 1-7 built: runs are off the frame loop under all three triggers, a run
+reports each node as it goes and each result lands as it finishes, and freshness is drawn in all five
+states. Slice 8, Run Selection, is not.
 [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
 host keeps its document editable while a run is in flight. These are the words for how a run is
 started, stopped and shown.
@@ -944,10 +944,11 @@ started, stopped and shown.
   at a time, and hands the frame loop each publication and how each run ended. The host decides WHEN to
   run (the trigger); the runner only runs. _Avoid_: executor (the task pool's word), worker.
 - **Published evaluation** — the copy of an Evaluation a host's panes read while a run holds the
-  real one: refreshed as results land (per node as each finishes — a node record **folded** in, each
-  node the run **owes** marked so, which is what keeps its staleness sound while it fills in piecemeal
-  — and whole at stage boundaries and run end), and written directly by the host for a **pending
-  binding**. A view of the newest results,
+  real one: refreshed as results land (whole at a run's START, at stage boundaries and at run end, and
+  in between per node as each finishes — a node record **folded** in, each node the run **owes** marked
+  so, which is what keeps its staleness sound while it fills in piecemeal), and written directly by the
+  host for a **pending binding**. A run's records always fold onto a copy of the clone that produced
+  them, which is what the start publication is for. A view of the newest results,
   located by the same EvalPath — not a record of one execution. It **holds the definition it reads
   through** (the clone its run read), because an Evaluation's reads go through the graph it was
   prepared against — so the copy and that graph are one value, `flow::PublishedEvaluation`, and there
@@ -968,16 +969,19 @@ started, stopped and shown.
     engine's own rule: the **stale closure** (`flow::StaleClosure`), which the scheduler plans from
     and the host asks, one level at a time, each level told by the one above whether its boundary is
     being handed new values.
-  - **Queued** — Stale, and part of the run in flight, not yet started. Distinct from Stale because
-    under **Manual** a Stale node waits for Run, and "will update by itself" is a different message.
-  - **Computing** — its step is running now.
+  - **Queued** — Stale, and part of the run in flight, not yet started: a stage has **owed** it. Distinct
+    from Stale because under **Manual** a Stale node waits for Run, and "will update by itself" is a
+    different message. A cancel ends it at once, since the run will start nothing more.
+  - **Computing** — its step is running now; it stays so through a cancel until the compute finishes.
   - **Current** — not Stale. *Just updated* is Current plus a moment's highlight, not a state.
   - **Failed** — its last compute threw. It stays Stale, and the message goes to Issues. The run
     RECORDS it against the node, in the evaluation it threw in (`Evaluation::failure`), so a failure
     in one map element or one linked-group instance is found there and nowhere else; the next compute
     of that node that gets through (suppression included) clears it.
-  A group, map or loop shows the most active state inside it. _Avoid_: dirty (retired with M6), up to
-  date / out of date, running / updating (a *run* is a scheduler invocation; a node *computes*).
+  A group, map or loop shows the most active state inside it, and one order settles every contest,
+  its own included: **Computing, Failed, Queued, Stale, Current**. A failure outranks waiting, so it
+  shows the moment it lands. _Avoid_: dirty (retired with M6), up to date / out of date, running /
+  updating (a *run* is a scheduler invocation; a node *computes*).
 - **Run Selection** — a Manual-mode run of just the upstream cone of the selected nodes: the way to
   say "get me this far" on a graph too slow to run whole. _Avoid_: partial run, preview render.
 

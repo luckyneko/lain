@@ -21,10 +21,16 @@
 // the coordinator's, and the frame loop just asks again next frame. (Starting the next run before the
 // last has drained would need a second working evaluation — ADR-0025's deferred "fork".)
 //
-// What the frame loop gets back comes through take(): the newest publication, and how the last run
-// ended. A publication lands between STAGES (a map's elements, a loop's iterations — through
-// the run observer's stageFinished) and at the END of every run, a cancelled or failed one included,
-// since what a superseded run finished is kept and worth showing.
+// What the frame loop gets back comes through take(): the newest publication, what has landed since it,
+// what the run is doing now, and how the last run ended.
+//   * A PUBLICATION is a whole copy of the working evaluation. One lands at the START of every run
+//     (after its bindings, before anything computes), between STAGES (a map's elements, a loop's
+//     iterations — the run observer's stageFinished) and at the END of every run, a cancelled or
+//     failed one included, since what a superseded run finished is kept and worth showing.
+//   * FOLDS are what lands in between, node by node (M14 slice 7): each step's record as it finishes,
+//     and each node a stage owes, for the host to write into its copy. The start publication is what
+//     makes them sound — a run's records always fold onto a copy of the clone that produced them.
+//   * ACTIVITY is which nodes the run is Computing now, and which it still owes (Queued).
 //
 // The coordinator, not the pool: a scheduler run blocks, and entering one from a pool task is a
 // deadlock with one pool per process. Under ParallelScheduler this thread is the pool's
@@ -43,6 +49,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -59,6 +66,35 @@ namespace flowview
 		Completed, // ran its whole closure
 		Cancelled, // superseded or stopped: what finished is kept, the rest stays stale
 		Failed,	   // something threw: it propagated out of run(), and the node that threw stays stale
+	};
+
+	// What a run in flight is doing to one node — the half of freshness only the run knows (the other
+	// half, Stale / Failed / Current, is the published copy's).
+	enum class Activity
+	{
+		Queued,	   // the run owes it and has not started it
+		Computing, // its compute is running now
+	};
+
+	// Where a node is: which evaluation (the path from the root) and which node in it — the coordinate
+	// a run reports by, since a working evaluation's address names nothing in the copy a host reads.
+	using NodeAt = std::pair<lain::flow::EvalPath, lain::flow::NodeId>;
+
+	// What a run in flight is doing, by node. A node absent from it is idle as far as the run goes.
+	struct RunActivity
+	{
+		std::map<NodeAt, Activity> nodes;
+	};
+
+	// One node's result, or the fact that the run owes it, to write into the host's published copy
+	// (flow::PublishedEvaluation::fold / owe) — in that order when both are present: a loop's next
+	// pass owes a node whose last pass has just landed.
+	struct Fold
+	{
+		lain::flow::EvalPath path;
+		lain::flow::NodeId node;
+		std::optional<lain::flow::NodeRecord> record; // the step's result, if one landed
+		bool owed = false;							  // owed again since that record (or with none)
 	};
 
 	// A PENDING BINDING: a boundary value the host has bound that no run has consumed yet. Applied by
@@ -83,8 +119,14 @@ namespace flowview
 	{
 		std::optional<lain::flow::PublishedEvaluation> published; // the newest, and only the newest
 		std::uint64_t publishedBy = 0;							  // the job that published it (start()'s answer)
-		std::optional<RunOutcome> outcome;						  // a run returned
-		std::string failure;									  // Failed only: what the exception said
+		// What has landed SINCE that publication (or since the last take, if there is none), node by
+		// node: newer than anything in it, so applied after it.
+		std::vector<Fold> folds;
+		// What the run is doing now. Always present — taken with the folds, under one lock, so a node
+		// that has just finished is never shown idle before its result has landed.
+		RunActivity activity;
+		std::optional<RunOutcome> outcome; // a run returned
+		std::string failure;			   // Failed only: what the exception said
 		// With the outcome: how many node computes THREW (flow::RunControl::failed()). Each of those is
 		// recorded against its node in the evaluation, which is where a host shows it; a Failed run
 		// with none threw from somewhere no node owns — a refused prepare, a stage publication — and only
@@ -129,6 +171,19 @@ namespace flowview
 		std::vector<Entry> m_entries; // oldest first, so laying them over in order leaves the newest
 	};
 
+	// What the frame loop does with a report's results (FlowviewApp::pollRun), apart from the app so
+	// the ORDER is tested: a new publication replaces `published` (and `publishedBy` remembers whose it
+	// is), then every fold lands on top — each record folded in, each owed node marked — and last the
+	// pending bindings are laid back over it all. Last, because a folded boundary node carries the
+	// values its RUN bound, and a newer one may still be queued: laying them first would let the fold
+	// snap a drag back. A fold the copy has no place for (a node added since the run's clone) is
+	// dropped; the run's next publication brings it.
+	//
+	// Answers whether any VALUE landed — a publication or a folded record — which is what a host
+	// refreshes thumbnails for. An owed mark changes no value.
+	bool land(RunReport& report, lain::flow::PublishedEvaluation& published, std::uint64_t& publishedBy,
+			  PendingBindings& bindings);
+
 	class Runner
 	{
 	public:
@@ -155,6 +210,8 @@ namespace flowview
 
 		// Stop the run in flight — a supersede, or the Stop command. It stops at its next step
 		// boundary (flow::RunControl); what it finished is kept, and it still publishes when it ends.
+		// Nothing it owed is Queued any more — it will not start them — while a compute already running
+		// stays Computing until it finishes.
 		void cancel();
 
 		// Cancel, AND drop anything the run would still publish or report: its document has been
@@ -174,8 +231,9 @@ namespace flowview
 		void stop();
 
 	private:
-		// What a job tells the runner as it goes (flow::RunObserver) — between stages, a publication.
-		// Bound to one job, and set on that job's control for exactly the length of its run.
+		// What a job tells the runner as it goes (flow::RunObserver): a publication between stages, and
+		// node by node, what it owes, what it is computing and what has landed. Bound to one job, and
+		// set on that job's control for exactly the length of its run.
 		struct JobObserver;
 
 		void coordinate(); // the coordinator thread's body
@@ -183,12 +241,22 @@ namespace flowview
 		// Run one job to its end, never throwing: an exception becomes the outcome. execute() watches
 		// the run (JobObserver); runJob() is the run.
 		RunOutcome execute(RunJob& job, std::uint64_t serial, lain::flow::RunControl& control, std::string& failure);
-		RunOutcome runJob(RunJob& job, lain::flow::RunControl& control, std::string& failure);
+		RunOutcome runJob(RunJob& job, std::uint64_t serial, lain::flow::RunControl& control, std::string& failure);
 
-		// Copy the job's evaluation into the slot the frame loop takes from. A STAGE publication skips
-		// the copy while the previous one is still untaken, so a hundred-iteration loop costs at most
-		// about one copy per frame; the END publication always replaces what is there.
-		void publish(const RunJob& job, std::uint64_t serial, bool final);
+		// Which point of a run a publication is taken at.
+		enum class Publication
+		{
+			Start, // after the bindings, before anything computes: what the run's records fold onto
+			Stage, // between stages
+			End,   // the run has returned
+		};
+
+		// Copy the job's evaluation into the slot the frame loop takes from, and drop the folds it now
+		// contains. A STAGE publication skips the copy while the previous one is still untaken, so a
+		// hundred-iteration loop costs at most about one copy per frame; the START and END
+		// publications always replace what is there — the start one because the run's records must
+		// fold onto a copy of its own clone, and an untaken copy of the previous run's is not one.
+		void publish(const RunJob& job, std::uint64_t serial, Publication point);
 
 		mutable std::mutex m_mutex;
 		std::condition_variable m_wake;
@@ -202,6 +270,8 @@ namespace flowview
 
 		std::optional<lain::flow::PublishedEvaluation> m_published;
 		std::uint64_t m_publishedBy = 0;
+		std::map<NodeAt, Fold> m_folds; // newer than m_published: one per node, the latest winning
+		RunActivity m_activity;
 		std::optional<RunOutcome> m_outcome;
 		std::string m_failure;
 		std::size_t m_failedNodes = 0;

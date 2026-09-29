@@ -6,9 +6,10 @@
 //
 // The rule is not this file's. What is stale is flow's stale closure (flow::StaleClosure), asked of
 // the DOCUMENT against the published evaluation; what failed is the run's own record
-// (Evaluation::failure). This file only walks to the level on screen, carrying across each level
-// whether its boundary is being handed new values — the part of "anything upstream is stale" that
-// reaches INTO a group — and turns the two answers into one state per node.
+// (Evaluation::failure); what is Queued or Computing is what the run in flight reported (RunActivity,
+// M14 slice 7). This file only walks to the level on screen, carrying across each level whether its
+// boundary is being handed new values — the part of "anything upstream is stale" that reaches INTO a
+// group — and turns the three answers into one state per node.
 
 #include <lain/flow/types.h>
 
@@ -23,16 +24,23 @@ namespace lain::flow
 
 namespace flowview
 {
+	struct RunActivity; // runner.h — what the run in flight reported
+
 	// Declared with no explicit underlying type, so a header that only draws one can forward-declare
-	// it (`enum class Freshness;`).
+	// it (`enum class Freshness;`). Every switch over it is exhaustive, so -Wswitch is what makes a new
+	// state drawn everywhere one is.
 	//
-	// Queued and Computing join with M14 slice 7, whose per-step hook is what knows them. Every
-	// switch over this is exhaustive, so -Wswitch is what makes that slice draw them.
+	// A group, map or loop shows the most active state INSIDE it as well as its own, by one order:
+	// Computing, then Failed, then Queued, then Stale. Failed outranks Queued so a failure inside a
+	// group shows the moment it lands, however much else in there is still waiting — and a failed node
+	// reads Failed until its retry actually starts.
 	enum class Freshness
 	{
-		Current, // the shown value reflects the document. (Just updated is Current plus a highlight.)
-		Stale,	 // it does not — or there is no shown value at all
-		Failed,	 // its last compute threw — or, for a group, map or loop, something inside it did
+		Current,   // the shown value reflects the document. (Just updated is Current plus a highlight.)
+		Stale,	   // it does not — or there is no shown value at all
+		Queued,	   // stale, and the run in flight will compute it: it will update by itself
+		Computing, // its compute is running now
+		Failed,	   // its last compute threw — or, for a group, map or loop, something inside it did
 	};
 
 	// Every node of one level, and its freshness.
@@ -48,7 +56,8 @@ namespace flowview
 		std::size_t count(Freshness state) const;
 	};
 
-	// The freshness of every node on the level `path` names in `document`, against `published`.
+	// The freshness of every node on the level `path` names in `document`, against `published`, with
+	// what the run in flight is doing (`activity`) laid over it: a node's own, and anything inside it.
 	//
 	// The walk truncates exactly as resolvePath does, so it describes the level the panes were given.
 	// Where the published evaluation has no child for a step (nothing has run in there yet), that level
@@ -56,13 +65,14 @@ namespace flowview
 	// which would give the same answer here only by accident (an ancestor's records are of another
 	// lineage, so none of them pair); saying "nothing" is what the level actually has.
 	LevelFreshness levelFreshness(const lain::flow::Graph& document, const lain::flow::Evaluation& published,
-								  const lain::flow::EvalPath& path);
+								  const lain::flow::EvalPath& path, const RunActivity& activity);
 
 	// --- drawing -------------------------------------------------------------
 	// The mark for a state, centred at (x, y) in screen space into the current window's draw list:
-	// nothing for Current, a hollow ring for Stale, a filled red disc with a "!" for Failed. Shapes,
-	// so it reads without colour — the default font has no symbols past U+00FF to use instead. The
-	// one drawing of a state, shared by the canvas title glyph and the thumbnail badge.
+	// nothing for Current, a hollow ring for Stale, a filled dot for Queued, a turning arc for
+	// Computing, a filled red disc with a "!" for Failed. Shapes, so it reads without colour — the
+	// default font has no symbols past U+00FF to use instead. The one drawing of a state, shared by the
+	// canvas title glyph and the thumbnail badge.
 	void drawFreshnessMark(float x, float y, float radius, Freshness state);
 
 	// A badge over the LAST ITEM drawn — a thumbnail — when its value is not Current, with a tooltip

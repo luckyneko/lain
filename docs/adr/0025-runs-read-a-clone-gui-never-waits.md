@@ -3,8 +3,9 @@
 ---
 Status: accepted (designed 2026-09-28; slices 1 — clone + lineage — 2 — the published evaluation
 + payload identity — and 3 — cancellation — built 2026-09-28, 4 — the async vertical — 5 — triggers
-+ persistence — 6 — freshness: the stale-closure query and the failure record, then the UI — and
-7a — the run observer and the node record — 2026-09-29, the rest not)
++ persistence — 6 — freshness: the stale-closure query and the failure record, then the UI — and 7
+— per-node publication: the run observer and the node record, then Queued and Computing on screen —
+2026-09-29; slice 8, Run Selection, not)
 Amends [ADR-0012](0012-definition-and-evaluation.md) — the pairing guard moves from address identity
 to **lineage**, and a *published evaluation* is the "different concept" it set aside. Amends
 [ADR-0024](0024-one-process-task-pool.md) — gui-mode stops being serial, and the coordinator thread is
@@ -200,6 +201,18 @@ every run as well, so a run's records always fold onto a copy of the clone that 
 it, the first run after New or Open has nothing to fold into, and a Live drag folds run k+1's records
 into run k's clone.
 
+*Built in slice 7b (2026-09-29).* flowview's runner turns the reports into two things the frame loop
+takes with each publication, under one lock:
+- **Folds**: per node, the latest record and whether it has been owed again since. A loop's next pass
+  owes a node whose last pass has just landed, and both reach the host, in that order.
+- **Activity**: which nodes are Computing, and which are Queued (owed and not started).
+
+Storing a publication drops the folds it contains, since no step runs while one is copied; a SKIPPED
+stage publication drops none. A cancel ends every Queued entry at once, since the run will start none
+of them, while a compute already running stays Computing until it finishes. The host lands a report in
+one order: the publication, then the folds, then its pending bindings laid back over the top. A folded
+boundary node carries what its RUN bound, and a newer binding may still be queued.
+
 ADR-0012 said *"a historical snapshot of one execution, if a caller ever needs one, is a different
 concept."* This is that concept, and it is not a snapshot of one execution either: it is the host's
 most recent *view* of a working evaluation it cannot read while a run holds it. It is deliberately not
@@ -306,8 +319,12 @@ settled four things:
 at each step and handing each level's `reseeds()` answer down as the next one's `boundaryStale`; a
 level the published copy has no evaluation for is compared against nothing, so all of it is Stale. A
 node is Failed when its own record says so or when anything inside it does (the most active state
-inside), Stale when the closure has it, and Current otherwise. Queued and Computing wait for the
-per-step hook (slice 7). The run-level Issues row now means a throw no node owned: a Failed run whose
+inside), Stale when the closure has it, and Current otherwise. Queued and Computing waited for the
+per-step hook, and arrived with it in slice 7: the run's activity is laid over the published copy's
+answer, a node's own and anything inside it, by one order decided with the repo owner — **Computing,
+Failed, Queued, Stale, Current**. Failed outranks Queued, so a failure inside a group shows the moment
+it lands, however much else in there still waits, and a failed node reads Failed until its retry
+actually starts. The run-level Issues row now means a throw no node owned: a Failed run whose
 `RunControl::failed()` is non-zero is shown on its nodes instead.
 
 ## Alternatives rejected

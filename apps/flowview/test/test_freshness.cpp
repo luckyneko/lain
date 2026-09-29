@@ -9,12 +9,16 @@
 //     leaves what is upstream of it Current;
 //   * a map element is asked in its own evaluation;
 //   * a level nothing has run in is all Stale;
-//   * a throw shows Failed on the node, and on every group it sits inside.
+//   * a throw shows Failed on the node, and on every group it sits inside;
+//   * what the run in flight reports (M14 slice 7) is laid over it — Queued and Computing on the node,
+//     and rolled up onto every group, map and loop they sit inside, by one order: Computing, Failed,
+//     Queued, Stale.
 //
 // Every run here reads a CLONE and is published, which is the host's shape: the published copy's
 // own reads go through the clone, and the question is asked of the document.
 
 #include "freshness.h"
+#include "runner.h" // RunActivity — what a run in flight reports
 
 #include <lain/flow/edit.h>
 #include <lain/flow/evaluation.h>
@@ -163,18 +167,21 @@ namespace flowview::test::freshness
 
 using namespace flowview::test::freshness;
 
+// No run in flight: what every case asks about unless it is about a run in flight.
+static const flowview::RunActivity idle{};
+
 TEST_CASE("an edit marks the edited node and everything it feeds Stale", "[flowview][freshness]")
 {
 	Scene scene;
 	flow::Evaluation working{scene.document};
 	const flow::PublishedEvaluation published = runAndPublish(scene.document, working);
 
-	const LevelFreshness before = levelFreshness(scene.document, published.evaluation(), EvalPath{});
+	const LevelFreshness before = levelFreshness(scene.document, published.evaluation(), EvalPath{}, idle);
 	REQUIRE(before.count(Freshness::Stale) == 0);
 	REQUIRE(before.count(Freshness::Failed) == 0);
 
 	static_cast<IntSource&>(scene.document.node(scene.source)).set(2);
-	const LevelFreshness after = levelFreshness(scene.document, published.evaluation(), EvalPath{});
+	const LevelFreshness after = levelFreshness(scene.document, published.evaluation(), EvalPath{}, idle);
 	REQUIRE(after.of(scene.source) == Freshness::Stale);
 	REQUIRE(after.of(scene.group) == Freshness::Stale);
 	REQUIRE(after.of(scene.sink) == Freshness::Stale);
@@ -192,24 +199,24 @@ TEST_CASE("descending into a group shows what its input change made Stale", "[fl
 	const EvalPath inside{EvalStep{scene.group, 0}};
 	const flow::NodeId boundary = scene.inner().boundaryInputNode().id();
 
-	REQUIRE(levelFreshness(scene.document, published.evaluation(), inside).count(Freshness::Stale) == 0);
+	REQUIRE(levelFreshness(scene.document, published.evaluation(), inside, idle).count(Freshness::Stale) == 0);
 
 	SECTION("an edit upstream of the group: the whole interior, though nothing in it changed")
 	{
 		static_cast<IntSource&>(scene.document.node(scene.source)).set(2);
-		const LevelFreshness level = levelFreshness(scene.document, published.evaluation(), inside);
+		const LevelFreshness level = levelFreshness(scene.document, published.evaluation(), inside, idle);
 		REQUIRE(level.of(boundary) == Freshness::Stale);
 		REQUIRE(level.of(scene.offset) == Freshness::Stale);
 	}
 	SECTION("an edit inside the group: the edited node, and not what is upstream of it")
 	{
 		static_cast<Offset&>(scene.inner().node(scene.offset)).set(100);
-		const LevelFreshness level = levelFreshness(scene.document, published.evaluation(), inside);
+		const LevelFreshness level = levelFreshness(scene.document, published.evaluation(), inside, idle);
 		REQUIRE(level.of(boundary) == Freshness::Current);
 		REQUIRE(level.of(scene.offset) == Freshness::Stale);
 
 		// ... and at the root, the group is Stale because of what is inside it.
-		const LevelFreshness root = levelFreshness(scene.document, published.evaluation(), EvalPath{});
+		const LevelFreshness root = levelFreshness(scene.document, published.evaluation(), EvalPath{}, idle);
 		REQUIRE(root.of(scene.group) == Freshness::Stale);
 		REQUIRE(root.of(scene.source) == Freshness::Current);
 	}
@@ -232,15 +239,15 @@ TEST_CASE("a map element is asked in its own evaluation", "[flowview][freshness]
 	REQUIRE(published.evaluation().childCount(map) == 3);
 
 	const EvalPath element{EvalStep{map, 1}};
-	REQUIRE(levelFreshness(document, published.evaluation(), element).of(body) == Freshness::Current);
+	REQUIRE(levelFreshness(document, published.evaluation(), element, idle).of(body) == Freshness::Current);
 
 	// An element this publication has no evaluation for — the list grew since — has nothing to show.
 	const EvalPath beyond{EvalStep{map, 7}};
-	REQUIRE(levelFreshness(document, published.evaluation(), beyond).of(body) == Freshness::Stale);
+	REQUIRE(levelFreshness(document, published.evaluation(), beyond, idle).of(body) == Freshness::Stale);
 
 	// A new collection reseeds every element.
 	static_cast<MakeInts&>(document.node(list)).set(Ints{4, 5, 6});
-	REQUIRE(levelFreshness(document, published.evaluation(), element).of(body) == Freshness::Stale);
+	REQUIRE(levelFreshness(document, published.evaluation(), element, idle).of(body) == Freshness::Stale);
 }
 
 TEST_CASE("a level nothing has run in is all Stale", "[flowview][freshness]")
@@ -248,11 +255,11 @@ TEST_CASE("a level nothing has run in is all Stale", "[flowview][freshness]")
 	// What the panes read between a document swap and its first run: an empty published copy.
 	Scene scene;
 	const flow::PublishedEvaluation nothing;
-	const LevelFreshness root = levelFreshness(scene.document, nothing.evaluation(), EvalPath{});
+	const LevelFreshness root = levelFreshness(scene.document, nothing.evaluation(), EvalPath{}, idle);
 	REQUIRE(root.count(Freshness::Current) == 0);
 	REQUIRE(root.count(Freshness::Stale) == scene.document.nodeIds().size());
 
-	const LevelFreshness inside = levelFreshness(scene.document, nothing.evaluation(), EvalPath{EvalStep{scene.group, 0}});
+	const LevelFreshness inside = levelFreshness(scene.document, nothing.evaluation(), EvalPath{EvalStep{scene.group, 0}}, idle);
 	REQUIRE(inside.count(Freshness::Current) == 0);
 	REQUIRE(inside.of(scene.offset) == Freshness::Stale);
 }
@@ -279,18 +286,132 @@ TEST_CASE("a throw shows Failed on the node and on every group around it", "[flo
 	flow::Evaluation working{document};
 	const flow::PublishedEvaluation failed = runAndPublish(document, working);
 
-	const LevelFreshness root = levelFreshness(document, failed.evaluation(), EvalPath{});
+	const LevelFreshness root = levelFreshness(document, failed.evaluation(), EvalPath{}, idle);
 	REQUIRE(root.of(outer) == Freshness::Failed);
 	REQUIRE(root.of(source) == Freshness::Current);
 	REQUIRE(root.of(sink) == Freshness::Stale); // never reached
 	const EvalPath middle{EvalStep{outer, 0}};
-	REQUIRE(levelFreshness(document, failed.evaluation(), middle).of(innerGroup) == Freshness::Failed);
+	REQUIRE(levelFreshness(document, failed.evaluation(), middle, idle).of(innerGroup) == Freshness::Failed);
 	const EvalPath bottom{EvalStep{outer, 0}, EvalStep{innerGroup, 0}};
-	REQUIRE(levelFreshness(document, failed.evaluation(), bottom).of(thrower) == Freshness::Failed);
+	REQUIRE(levelFreshness(document, failed.evaluation(), bottom, idle).of(thrower) == Freshness::Failed);
 
 	// Fixed, and run again: Current all the way down.
 	*armed = false;
 	const flow::PublishedEvaluation fixed = runAndPublish(document, working);
-	REQUIRE(levelFreshness(document, fixed.evaluation(), EvalPath{}).count(Freshness::Failed) == 0);
-	REQUIRE(levelFreshness(document, fixed.evaluation(), bottom).of(thrower) == Freshness::Current);
+	REQUIRE(levelFreshness(document, fixed.evaluation(), EvalPath{}, idle).count(Freshness::Failed) == 0);
+	REQUIRE(levelFreshness(document, fixed.evaluation(), bottom, idle).of(thrower) == Freshness::Current);
+}
+
+//=========================================================================
+// The run in flight (M14 slice 7)
+//=========================================================================
+
+namespace flowview::test::freshness
+{
+	// A run's report of what it is doing, built directly: the runner's side is test_runner.cpp's.
+	static RunActivity doing(std::initializer_list<std::pair<flowview::NodeAt, flowview::Activity>> entries)
+	{
+		RunActivity activity;
+		for (const auto& entry : entries)
+			activity.nodes.emplace(entry.first, entry.second);
+		return activity;
+	}
+} // namespace flowview::test::freshness
+
+using flowview::Activity;
+using flowview::NodeAt;
+using flowview::RunActivity;
+
+TEST_CASE("the run in flight shows Queued and Computing, and a group shows what is inside it", "[flowview][freshness][group]")
+{
+	Scene scene;
+	flow::Evaluation working{scene.document};
+	const flow::PublishedEvaluation published = runAndPublish(scene.document, working);
+	static_cast<IntSource&>(scene.document.node(scene.source)).set(2);
+	const EvalPath inside{EvalStep{scene.group, 0}};
+
+	SECTION("the source computing, the rest owed")
+	{
+		const RunActivity activity = doing({{NodeAt{EvalPath{}, scene.source}, Activity::Computing},
+											{NodeAt{inside, scene.offset}, Activity::Queued},
+											{NodeAt{EvalPath{}, scene.sink}, Activity::Queued}});
+		const LevelFreshness root = levelFreshness(scene.document, published.evaluation(), EvalPath{}, activity);
+		REQUIRE(root.of(scene.source) == Freshness::Computing);
+		REQUIRE(root.of(scene.group) == Freshness::Queued); // from inside it
+		REQUIRE(root.of(scene.sink) == Freshness::Queued);
+		REQUIRE(root.of(scene.other) == Freshness::Current);
+
+		const LevelFreshness in = levelFreshness(scene.document, published.evaluation(), inside, activity);
+		REQUIRE(in.of(scene.offset) == Freshness::Queued);
+		// Stale but not owed by this run (nothing reported it): it waits for another.
+		REQUIRE(in.of(scene.inner().boundaryInputNode().id()) == Freshness::Stale);
+	}
+	SECTION("something inside computing: the group is Computing, whatever else waits")
+	{
+		const RunActivity activity = doing({{NodeAt{inside, scene.offset}, Activity::Computing},
+											{NodeAt{EvalPath{}, scene.sink}, Activity::Queued}});
+		const LevelFreshness root = levelFreshness(scene.document, published.evaluation(), EvalPath{}, activity);
+		REQUIRE(root.of(scene.group) == Freshness::Computing);
+		REQUIRE(root.of(scene.source) == Freshness::Stale);
+	}
+}
+
+TEST_CASE("a map element shows only what the run is doing in that element", "[flowview][freshness][map]")
+{
+	flow::registerPortType<int>("Int");
+	flow::registerPortType<Ints>("ListOfInt");
+	flow::Graph document;
+	const flow::NodeId list = document.add<MakeInts>(Ints{1, 2, 3});
+	const flow::NodeId map = document.add<flow::MapNode>();
+	flow::Graph& inner = static_cast<flow::MapNode&>(document.node(map)).inner();
+	const flow::NodeId body = inner.add<Offset>();
+	wireInterior(document, map, inner, body);
+	REQUIRE(document.connect(list, 0, map, 0) == flow::Connection::Ok);
+	flow::Evaluation working{document};
+	const flow::PublishedEvaluation published = runAndPublish(document, working);
+
+	const RunActivity activity = doing({{NodeAt{EvalPath{EvalStep{map, 2}}, body}, Activity::Computing}});
+	REQUIRE(levelFreshness(document, published.evaluation(), EvalPath{}, activity).of(map) == Freshness::Computing);
+	REQUIRE(levelFreshness(document, published.evaluation(), EvalPath{EvalStep{map, 2}}, activity).of(body) ==
+			Freshness::Computing);
+	REQUIRE(levelFreshness(document, published.evaluation(), EvalPath{EvalStep{map, 1}}, activity).of(body) ==
+			Freshness::Current);
+}
+
+TEST_CASE("Computing outranks Failed, and Failed outranks Queued", "[flowview][freshness][failure]")
+{
+	// source -> [outer: x -> thrower -> y]. The thrower has failed; a run in flight owes it again.
+	auto armed = std::make_shared<bool>(true);
+	flow::Graph document;
+	const flow::NodeId source = document.add<IntSource>(1);
+	const flow::NodeId outer = document.add<flow::InlineGroupNode>();
+	flow::Graph& inner = static_cast<flow::InlineGroupNode&>(document.node(outer)).inner();
+	const flow::NodeId thrower = inner.add<Thrower>(armed);
+	const flow::NodeId relay = inner.add<Offset>();
+	wireInterior(document, outer, inner, thrower);
+	REQUIRE(document.connect(source, 0, outer, 0) == flow::Connection::Ok);
+	flow::Evaluation working{document};
+	const flow::PublishedEvaluation failed = runAndPublish(document, working);
+	const EvalPath inside{EvalStep{outer, 0}};
+
+	SECTION("owed again, not yet started: still Failed — its last compute threw, and a failure inside a group shows")
+	{
+		const RunActivity activity = doing({{NodeAt{inside, thrower}, Activity::Queued},
+											{NodeAt{inside, relay}, Activity::Queued}});
+		REQUIRE(levelFreshness(document, failed.evaluation(), inside, activity).of(thrower) == Freshness::Failed);
+		REQUIRE(levelFreshness(document, failed.evaluation(), EvalPath{}, activity).of(outer) == Freshness::Failed);
+	}
+	SECTION("its retry running: Computing, on it and on the group around it")
+	{
+		const RunActivity activity = doing({{NodeAt{inside, thrower}, Activity::Computing}});
+		REQUIRE(levelFreshness(document, failed.evaluation(), inside, activity).of(thrower) == Freshness::Computing);
+		REQUIRE(levelFreshness(document, failed.evaluation(), EvalPath{}, activity).of(outer) == Freshness::Computing);
+	}
+	SECTION("Queued over Stale: a node the run owes will update by itself")
+	{
+		const RunActivity activity = doing({{NodeAt{EvalPath{}, source}, Activity::Queued}});
+		static_cast<IntSource&>(document.node(source)).set(3);
+		REQUIRE(levelFreshness(document, failed.evaluation(), EvalPath{}, activity).of(source) == Freshness::Queued);
+		REQUIRE(levelFreshness(document, failed.evaluation(), EvalPath{}, idle).of(source) == Freshness::Stale);
+	}
 }

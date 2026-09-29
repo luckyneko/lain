@@ -273,13 +273,13 @@ namespace flowview
 				m_runFailure.reset();
 		}
 
-		if (!report.published)
-			return false;
-		m_published = std::move(*report.published);
-		// A binding this copy cannot contain yet would read back as its old value until a later run
-		// lands, so it is laid over the top (PendingBindings says when that is).
-		m_bindings.showOn(m_published, report.publishedBy);
-		return true;
+		m_activity = std::move(report.activity);
+
+		// A new publication, then what has landed since it node by node (M14 slice 7) — each result
+		// folded in, each node the run still owes marked so, which is what keeps the copy's staleness
+		// sound while it fills in piecemeal — and the pending bindings laid back over the top, since a
+		// binding no copy can contain yet would otherwise read back as its old value.
+		return land(report, m_published, m_publishedBy, m_bindings);
 	}
 
 	void FlowviewApp::pumpRun(RunTrigger trigger, bool gestureEnded)
@@ -328,7 +328,9 @@ namespace flowview
 		// The panes show nothing until the new document's first run publishes, rather than the old
 		// document's values: those belong to a dead lineage, and would pass for the new one's.
 		m_published = flow::PublishedEvaluation{};
+		m_publishedBy = 0;
 		m_bindings.clear();
+		m_activity = RunActivity{};
 		m_runFailure.reset();
 		m_lastRun.reset(); // how the old document's last run went says nothing about this one
 		requestRun();
