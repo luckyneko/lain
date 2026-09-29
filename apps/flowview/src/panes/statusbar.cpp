@@ -56,7 +56,9 @@ namespace flowview
 		}
 		else if (const std::optional<LastRun>& last = app.lastRun())
 		{
-			text += string::format(" · Last run {:.1f} s", last->seconds);
+			// A Run Selection says so: what it did not reach is still Stale, and "Last run" alone would
+			// read as though the whole graph had been brought up to date.
+			text += string::format(" · Last run{} {:.1f} s", last->partial ? " (selection)" : "", last->seconds);
 			if (last->outcome == RunOutcome::Cancelled)
 				text += " (stopped)";
 			else if (last->outcome == RunOutcome::Failed)

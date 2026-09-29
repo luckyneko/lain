@@ -901,10 +901,9 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 
 ## Running while you edit — the host's side of a run
 
-*(M14 — designed; slices 1-7 built: runs are off the frame loop under all three triggers, a run
-reports each node as it goes and each result lands as it finishes, and freshness is drawn in all five
-states. Slice 8a, the flow half of Run Selection — a cancellable, parallel pull of many targets — is
-built; 8b, Run Selection itself, is not.
+*(M14 — every slice built: runs are off the frame loop under all three triggers, a run reports each
+node as it goes and each result lands as it finishes, freshness is drawn in all five states, and Run
+Selection brings just the selection up to date.
 [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
 host keeps its document editable while a run is in flight. These are the words for how a run is
 started, stopped and shown.
@@ -987,8 +986,12 @@ started, stopped and shown.
   its own included: **Computing, Failed, Queued, Stale, Current**. A failure outranks waiting, so it
   shows the moment it lands. _Avoid_: dirty (retired with M6), up to date / out of date, running /
   updating (a *run* is a scheduler invocation; a node *computes*).
-- **Run Selection** — a Manual-mode run of just the upstream cone of the selected nodes: the way to
-  say "get me this far" on a graph too slow to run whole. _Avoid_: partial run, preview render.
+- **Run Selection** — a run of just the part of the stale closure in the selected nodes' upstream
+  cone: the way to say "get me this far" on a graph too slow to run whole. What it does not reach
+  stays **Stale**, never Queued. Available under every trigger, as Run is, but it answers only its own
+  ask: under Live or On commit a pending change still gets its whole run, which supersedes it, so it
+  matters most under Manual. Inside a group it runs the root-level group the level on screen is in,
+  whole. _Avoid_: partial run, preview render.
 
 ## Value display — two purposes, two seams
 

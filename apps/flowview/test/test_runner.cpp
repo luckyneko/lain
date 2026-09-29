@@ -17,6 +17,9 @@
 //   * a publication takes in what landed before it, and what lands after it survives it;
 //   * a loop's next pass owes a node whose last pass has landed — both reach the host;
 //   * a binding queued after a run started is still shown once that run's boundary node lands.
+// And a Run Selection (M14 slice 8):
+//   * it computes only its targets' cone; what it leaves is marked stale in the host's copy as the run
+//     goes, is never Queued, and is still stale when the run ends — and the outcome says it was partial.
 //
 // Every node here is CLONE-SAFE, because the runner clones: what a test watches — a call count, a
 // latch, an armed flag — is held behind a shared_ptr, so a clone counts into and waits on the same
@@ -61,6 +64,7 @@ using flowview::RunJob;
 using flowview::Runner;
 using flowview::RunOutcome;
 using flowview::RunReport;
+using flowview::RunScope;
 using flowview::RunStrategy;
 
 namespace flowview::test::runner
@@ -945,4 +949,78 @@ static void checkStartReplacesUntaken(RunStrategy strategy)
 TEST_CASE("a run's start publication replaces one left untaken", "[flowview][runner]")
 {
 	forEachStrategy(checkStartReplacesUntaken);
+}
+
+static void checkSelectionLeavesStale(RunStrategy strategy)
+{
+	// source -> held -> sink, and source -> side. Run whole once, edit the source, then Run Selection of
+	// `held`: its cone is {source, held}. The sink and the side are fed the new value past it, so the run
+	// LEAVES them owed — stale in the copy the host shows, and not waiting for this run.
+	auto latch = std::make_shared<Latch>();
+	auto sinkCalls = counter();
+	auto sideCalls = counter();
+	flow::Graph document;
+	const flow::NodeId source = document.add<IntSource>(counter(), 7);
+	const flow::NodeId held = document.add<HeldAfter>(latch, 1); // the first run passes; the selection's waits
+	const flow::NodeId sink = document.add<Relay>(sinkCalls);
+	const flow::NodeId side = document.add<Relay>(sideCalls);
+	REQUIRE(document.connect(source, 0, held, 0) == flow::Connection::Ok);
+	REQUIRE(document.connect(held, 0, sink, 0) == flow::Connection::Ok);
+	REQUIRE(document.connect(source, 0, side, 0) == flow::Connection::Ok);
+	auto evaluation = std::make_shared<flow::Evaluation>(document);
+
+	Runner runner;
+	runner.start(jobFor(document, evaluation, strategy));
+	waitIdle(runner);
+	(void)runner.take();
+
+	auto& node = static_cast<IntSource&>(document.node(source));
+	REQUIRE(node.setParam(node.value, 9));
+
+	RunJob job = jobFor(document, evaluation, strategy);
+	job.scope = RunScope{std::vector<flow::NodeId>{held}};
+	runner.start(std::move(job));
+	latch->waitEntered();
+
+	// In flight: the selection's own node Computing, and what it leaves nowhere in the activity — it is
+	// not Queued, since this run will never compute it. But marked owed, so once the source lands the
+	// copy does not read it as current.
+	RunReport midway = runner.take();
+	REQUIRE(activityOf(midway, flow::EvalPath{}, held) == Activity::Computing);
+	REQUIRE_FALSE(activityOf(midway, flow::EvalPath{}, sink).has_value());
+	REQUIRE_FALSE(activityOf(midway, flow::EvalPath{}, side).has_value());
+	for (const flow::NodeId left : {sink, side})
+	{
+		const Fold* fold = foldOf(midway, flow::EvalPath{}, left);
+		REQUIRE(fold != nullptr);
+		REQUIRE(fold->owed);
+		REQUIRE_FALSE(fold->record.has_value());
+	}
+	flow::PublishedEvaluation shown;
+	std::uint64_t shownBy = 0;
+	PendingBindings none;
+	land(midway, shown, shownBy, none);
+	const flow::StaleClosure inFlight(document, shown.evaluation());
+	REQUIRE_FALSE(inFlight.contains(source)); // it has landed
+	REQUIRE(inFlight.contains(side));		  // and what it feeds past the selection has not
+	REQUIRE(inFlight.contains(sink));
+
+	latch->release();
+	waitIdle(runner);
+	const RunReport report = runner.take();
+	REQUIRE(report.outcome == RunOutcome::Completed);
+	REQUIRE(report.partial);
+	REQUIRE(valueOf(report, document, held).get<int>() == 10);
+	REQUIRE(valueOf(report, document, sink).get<int>() == 8); // untouched: still the first run's
+	REQUIRE(*sinkCalls == 1);
+	REQUIRE(*sideCalls == 1);
+	const flow::StaleClosure ended(document, report.published->evaluation());
+	REQUIRE_FALSE(ended.contains(held));
+	REQUIRE(ended.contains(sink));
+	REQUIRE(ended.contains(side));
+}
+
+TEST_CASE("a Run Selection computes its cone and leaves the rest stale, never Queued", "[flowview][runner]")
+{
+	forEachStrategy(checkSelectionLeavesStale);
 }

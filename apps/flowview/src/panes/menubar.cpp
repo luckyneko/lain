@@ -7,7 +7,7 @@
 #include "../groupnav.h"  // enclosingLinkedGroup (Edit Template...)
 #include "../scene.h"	  // nodeCatalog (the Add menu grouping) + buildNewScene
 #include "../session.h"	  // noteGraphPath / saveSession (Open Recent + reopen-on-launch)
-#include "canvasstate.h"  // collectLayout (canvas positions for the saved editor section)
+#include "canvasstate.h"  // collectLayout (saved canvas positions), selectedNodesIn (Run Selection)
 
 #include <lain/app/application.h>
 #include <lain/data/value.h> // Value (undo/redo snapshot restored via applyRestore)
@@ -449,6 +449,27 @@ namespace flowview
 		return true;
 	}
 
+	// RUN SELECTION's targets: what is selected on the level on screen, mapped to the root level a pull
+	// plans from (selectionTargets) — so inside a group it names the group, which runs whole. Filtered
+	// to `graph`, the level on screen, because a canvas id can decode to a real node elsewhere.
+	static std::vector<flow::NodeId> runSelectionTargets(const AppContext& ctx, const flow::Graph& graph)
+	{
+		return selectionTargets(ctx.drawnPath, selectedNodesIn(ctx.canvas, graph));
+	}
+
+	// The shortcut's half: a chord pressed with nothing selected says why nothing happens, as Group
+	// does, rather than silently doing nothing.
+	static void runSelection(AppContext& ctx, const flow::Graph& graph)
+	{
+		std::vector<flow::NodeId> targets = runSelectionTargets(ctx, graph);
+		if (targets.empty())
+		{
+			ctx.noteMessage(Issue::Severity::Info, "Run Selection: select the nodes to bring up to date");
+			return;
+		}
+		ctx.app->runSelection(std::move(targets));
+	}
+
 	void MenuBarPane::draw(AppContext& ctx, const flow::Graph& graph, app::Application& app, bool& edited,
 						   bool& resetLayout)
 	{
@@ -550,6 +571,14 @@ namespace flowview
 				// in flight), and under Live it resumes what a Stop left stale without an edit.
 				if (gui::MenuItem("Run", (m + "Enter").c_str()))
 					ctx.app->runNow();
+				// Just what the selection needs — its upstream cone — under every trigger, like Run. What
+				// it does not reach stays Stale. Inside a group the selection is taken to mean that
+				// group, run whole, and the tooltip says so rather than leaving it to be discovered.
+				const std::vector<flow::NodeId> targets = runSelectionTargets(ctx, graph);
+				if (gui::MenuItem("Run Selection", (m + "Shift+Enter").c_str(), false, !targets.empty()))
+					ctx.app->runSelection(targets);
+				if (!targets.empty() && !ctx.drawnPath.empty())
+					gui::SetItemTooltip("Inside a group, runs the whole group at the top level that contains it");
 				// Progress on the item that acts on it: how far the run in flight has got, in node
 				// computes — which grow while it runs, since a map's elements and a loop's iterations
 				// are planned only once the stage before them has finished.
@@ -620,10 +649,12 @@ namespace flowview
 			saveToCurrentPath(ctx, graph);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Q, ImGuiInputFlags_RouteGlobal))
 			app.exit();
-		// Run / Stop. Cmd+Period is the macOS convention for "stop what you are doing"; Ctrl+Period
+		// Run / Run Selection / Stop. Cmd+Period is the macOS convention for "stop what you are doing"; Ctrl+Period
 		// elsewhere, by the same Ctrl -> Cmd remap as every other chord here.
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Enter, ImGuiInputFlags_RouteGlobal))
 			ctx.app->runNow();
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Enter, ImGuiInputFlags_RouteGlobal))
+			runSelection(ctx, graph);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Period, ImGuiInputFlags_RouteGlobal))
 			ctx.app->stopRun();
 	}

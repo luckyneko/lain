@@ -6073,7 +6073,7 @@ regression test: `ctest -j8` **794/794** Debug with video on, warning-clean, for
   the fold. All four reached their header transitively and worked — the class of thing the
   2026-09-05 CI port found six of.
 
-## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-7 built)
+## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; COMPLETE 2026-09-29)
 
 gui-mode runs `SerialScheduler::run` synchronously inside the frame loop — `FlowviewApp::reevaluate`
 is reached from `mainwindow.cpp` twice, `inspectorpane.cpp` and `interfacepane.cpp`, on every edit
@@ -6086,9 +6086,10 @@ vocabulary in CONTEXT.md's *Running while you edit* (plus *clone*, *lineage*, *c
 (the async vertical), 5 (triggers + persistence), 6 (freshness: 6a the stale-closure query + the
 failure record, 6b the UI) and 7 (per-node publication: 7a the run observer, the node record and
 `flow::EvalPath`, 7b Queued, Computing and results landing as each node finishes) are built** — see
-*Slice 1 landed* through *Slice 7b landed* below. Slice 8 (Run Selection) is two commits after a fix
-it rests on (*A pull finishes what it starts*): 8a, the flow half, is built (*Slice 8a landed*); 8b,
-the flowview half, is not.
+*Slice 1 landed* through *Slice 7b landed* below. So is slice 8 (Run Selection), two commits after a
+fix it rests on (*A pull finishes what it starts*): 8a the flow half, 8b the flowview half (*Slice 8a
+landed*, *Slice 8b landed*). **Every slice is built, and slice 8b's gui-mode checklist was walked by
+the repo owner 2026-09-29: M14 is COMPLETE.**
 
 ### The shape
 
@@ -6204,10 +6205,11 @@ Structural, no-behaviour-change slices first; each its own commit with its docs.
    - **8a (flow) — built 2026-09-29.** `evaluate(definition, evaluation, targets, control)`, a pull's
      stage through `executePlan`, one plan builder over an optional cone, and
      `RunObserver::leftOwed`. See *Slice 8a landed*.
-   - **8b (flowview).** A Run Selection ask in `RunRequests` (every trigger; a partial run answers only
-     its own ask), `RunJob::targets`, the runner's `leftOwed` (an owed mark, never Queued), the Run menu
-     item and Cmd/Ctrl+Shift+Enter. A selection inside a group runs its root-level ancestor whole;
-     per-level cones wait for a slow group interior where "get me this far" matters.
+   - **8b (flowview) — built 2026-09-29.** A Run Selection ask in `RunRequests` (every trigger; a
+     partial run answers only its own ask), `RunScope` on the job, the runner's `leftOwed` (an owed
+     mark, never Queued), the Run menu item and Cmd/Ctrl+Shift+Enter. A selection inside a group runs
+     its root-level ancestor whole; per-level cones wait for a slow group interior where "get me this
+     far" matters. See *Slice 8b landed*.
 
 ### Slice 1 landed (2026-09-28) — clone + lineage
 
@@ -7084,6 +7086,75 @@ normalised.
   - report left nodes through `owed` and the report case fails, which is the Queued lie 8b's runner
     would have shown.
 
+### Slice 8b landed (2026-09-29) — Run Selection
+
+The flowview half, on 8a's multi-target pull. **Run ▸ Run Selection** (Cmd/Ctrl+Shift+Enter) brings
+the selection up to date and nothing else: its upstream cone computes and goes Queued → Computing →
+Current, while what it leaves stays Stale. `ctest -j8` **907/907** Debug with video on, **913/913** Release with video on, **880/880** Release
+video-off (+6 each); warning-clean, format-check clean; `[runner],[runpolicy]` (27 cases) swept 100×
+through the Catch2 binary in Debug and Release; `flowview run --example` identical to the pre-change
+binary once the timestamp and short ids are normalised; the `--frames` smokes exit 0. **gui-mode live-verified by the repo owner
+2026-09-29**: the checklist at the end of this entry, every item.
+
+- **The run policy grows a third ask, and a SCOPE.** `RunScope` (`runpolicy.h`) is how far a run
+  reaches: absent targets mean the whole closure, present ones a Run Selection's. `RunRequests` keeps
+  the selection ask beside a change and a Run, and answers `scope()` beside `due()`:
+  - **WHOLE** when Run was asked or a change is due under the trigger, since a whole run covers any
+    selection;
+  - otherwise **partial**, with the targets.
+
+  `started(scope)` takes what started. A whole start answers every ask; a **partial start answers only
+  the selection**, so a change it did not cover still asks. Under Live and On commit that change
+  supersedes the partial run with a whole one on the next frame (Live means every change runs
+  everything); under Manual it waits, as every change does there. That is decision 3, *every trigger*,
+  falling out of the existing rule rather than needing a Manual-only gate.
+- **A selection inside a group runs its root-level ancestor WHOLE** (`selectionTargets`, decided with
+  the repo owner). A pull plans from the root, so the flow API takes root-level NodeIds only, and the
+  menu item's tooltip says so when the canvas is inside a group. Per-level cones are deferred (see
+  *Not in this milestone*); a loop on the path would still have to run whole, since a body run in part
+  breaks its carries and `continue`.
+- **The selection is filtered to the level on screen**, as Group's always was. That filter moved from
+  a static in `groupedit.cpp` to `canvasstate`'s new `selectedNodesIn`, so both gestures read one. It
+  matters more here than there: `CanvasIds` spans the whole document, so a stale canvas int can decode
+  to a real node at another level, and mapped to the root it would run the wrong thing.
+- **Targets are captured at the click**, not when the run starts. A run in flight is superseded first,
+  and the new one starts a frame or more later, by which point the selection can differ; a node
+  deleted meanwhile contributes nothing (8a).
+- **The runner's `leftOwed` marks the fold owed and adds no activity**, so a left node reads Stale in
+  the copy from the moment the run starts and is never shown Queued. `RunJob::scope` picks `evaluate`
+  or `run`. `RunReport::partial` travels with the outcome, set on the coordinator from the job itself.
+  The app's own start bookkeeping would mislabel the outcome of a run that finished between one frame's
+  poll and the pump that started the next. The status bar then reads **"Last run (selection)"**.
+- **The shortcut with nothing selected says why** (an Info row, "select the nodes to bring up to
+  date"), as Group's does; the menu item is greyed out instead.
+- **Tests:**
+  - `test_runpolicy.cpp` +5: due under every trigger with its targets; Run or a due change goes whole;
+    a partial start keeps the change; Stop, replace and empty; `selectionTargets` at the root and
+    nested.
+  - `test_runner.cpp` +1, both strategies: a Run Selection computes its cone (call counts), leaves the
+    rest out of the activity while marking it owed, and the stale closure over the landed copy says so
+    mid-run and at the end; the outcome says partial.
+  - The three existing `started()` calls now say `started(RunScope{})`.
+- **Six sabotages, all caught, each by the case it targets:**
+  - the runner ignoring `leftOwed`, the runner showing left nodes Queued, and the runner ignoring the
+    scope each fail the runner case;
+  - a partial start clearing every ask fails the partial-start case;
+  - the selection winning over Run fails the whole-covers case;
+  - a nested selection passed through unmapped fails the `selectionTargets` case.
+  - Two of those first ran against a stale binary, because an unused parameter broke the build under
+    `-Werror`, and were re-run once they compiled: a sabotage that does not build proves nothing.
+- **Found while smoking, NOT fixed, and older than this slice:** quitting within the first frame or
+  two (`--frames 1` / `--frames 2`) logs a MoltenVK *"Lost VkDevice ... GPU Address Fault"*, though
+  the process exits 0 and `--frames 30` is clean. The binary built at `95747c6`, before the pull fix,
+  logs it identically on every try, so it is not Run Selection's. Flagged as a separate task.
+- **gui-mode checklist — live-verified by the repo owner 2026-09-29:**
+  - in a Manual document, select a mid-chain node and press Cmd+Shift+Enter: only its cone goes
+    Queued, then Computing, then Current, and the rest stays Stale, not Queued;
+  - with a selection inside a group, the group runs whole, and the menu item's tooltip says so;
+  - in Live, after a Stop, Run Selection runs only the cone;
+  - in Live, an edit during a partial run supersedes it with a whole run;
+  - the status bar reads "Last run (selection)".
+
 ### Visual design (settled in outline, tuned by eyeball)
 
 Freshness takes channels nothing else uses — title colour is category, a muted title is *not ready*,
@@ -7111,6 +7182,10 @@ the accent title is selection, pin colour is type, a muted link is inactive:
 - **Asynchronous texture upload; off-thread poster production; playback decode.** Viewer work, not
   graph work — the milestone promises the frame loop never waits on *graph* work, not that the UI
   never hitches. Trigger: an upload or a poster decode that visibly hitches.
+- **Per-level cones for Run Selection.** A selection inside a group runs its root-level ancestor whole
+  (slice 8b). Restricting each level on the path to its own cone needs per-level target sets in
+  `expand`, and a loop on the path would still run whole. Trigger: a slow group interior where "get me
+  this far" matters.
 - **A reusable runner.** The coordinator and its policy live in flowview until a second gui host.
 
 ### Verification (per slice, and for the milestone)
@@ -7151,14 +7226,7 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md).)*
 
-- **M14 — asynchronous execution: the gui never waits on graph work.** Designed 2026-09-28; slices 1
-  (clone + lineage), 2 (the published evaluation + payload identity) and 3 (cancellation) built
-  2026-09-28, slices 4 (the async vertical), 5 (triggers + persistence), 6 (freshness) and 7
-  (per-node publication) 2026-09-29; slice 8 (Run Selection): its flow half 8a built 2026-09-29, after
-  the pull-path fix it rests on; 8b (flowview) not.
-  *(Milestone 14; [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)*
-
-M1–M8 and M10–M13 are built. **M9 and M14 are the milestones from 5 onward that are not.**
+M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not.**
 
 ### Deferred — engine / `flow` core
 

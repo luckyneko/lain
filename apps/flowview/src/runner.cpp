@@ -125,6 +125,7 @@ namespace flowview
 		report.activity = m_activity;
 		report.outcome = m_outcome;
 		m_outcome.reset();
+		report.partial = m_partial;
 		report.failure = std::move(m_failure);
 		m_failure.clear();
 		report.failedNodes = m_failedNodes;
@@ -163,6 +164,7 @@ namespace flowview
 			std::string failure;
 			const RunOutcome outcome = execute(*job, serial, *control, failure);
 			const std::size_t failedNodes = control->failed(); // read before anything else can start a run
+			const bool partial = !job->scope.whole();
 			{
 				// The run is over, so it is doing nothing to any node: whatever it owed and never
 				// started (a cancel, a throw) is simply stale now, which the publication below says.
@@ -183,6 +185,7 @@ namespace flowview
 			if (!m_abandoned)
 			{
 				m_outcome = outcome;
+				m_partial = partial;
 				m_failure = std::move(failure);
 				m_failedNodes = failedNodes;
 			}
@@ -222,6 +225,17 @@ namespace flowview
 			fold.owed = true;
 			if (!control.cancelled())
 				runner.m_activity.nodes.emplace(NodeAt{path, node}, Activity::Queued); // never demotes Computing
+		}
+
+		// A Run Selection leaves it owed: marked in the host's copy for the reason owed() marks one — so
+		// a node fed the new value past the selection does not read as current once its upstream lands
+		// — and NOT Queued, because this run will never compute it. It is simply Stale.
+		void leftOwed(const flow::EvalPath& path, flow::NodeId node) noexcept override
+		{
+			const std::lock_guard<std::mutex> lock(runner.m_mutex);
+			if (runner.m_abandoned)
+				return;
+			foldAt(path, node).owed = true;
 		}
 
 		void started(const flow::EvalPath& path, flow::NodeId node) noexcept override
@@ -295,7 +309,10 @@ namespace flowview
 			flow::Scheduler& scheduler = (job.strategy == RunStrategy::Serial)
 											 ? static_cast<flow::Scheduler&>(m_serial)
 											 : static_cast<flow::Scheduler&>(m_parallel);
-			scheduler.run(*job.definition, *job.evaluation, control);
+			if (job.scope.whole())
+				scheduler.run(*job.definition, *job.evaluation, control);
+			else
+				scheduler.evaluate(*job.definition, *job.evaluation, *job.scope.targets, control);
 			return control.cancelled() ? RunOutcome::Cancelled : RunOutcome::Completed;
 		}
 		// Nothing may escape this thread — an exception leaving a std::thread's body terminates the

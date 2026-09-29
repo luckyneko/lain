@@ -37,7 +37,7 @@
 // participating "+1" (ADR-0024). The policy of WHEN to run — the trigger — is the host's, not this
 // class's (runpolicy.h); so is what a run is fed.
 
-#include "runpolicy.h" // RunStrategy — which scheduler a job goes through
+#include "runpolicy.h" // RunStrategy, RunScope — which scheduler a job goes through, and how far it reaches
 
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
@@ -63,7 +63,7 @@ namespace flowview
 	// How a run ended.
 	enum class RunOutcome
 	{
-		Completed, // ran its whole closure
+		Completed, // ran everything it was asked for — its whole closure, or a Run Selection's cone
 		Cancelled, // superseded or stopped: what finished is kept, the rest stays stale
 		Failed,	   // something threw: it propagated out of run(), and the node that threw stays stale
 	};
@@ -80,7 +80,8 @@ namespace flowview
 	// a run reports by, since a working evaluation's address names nothing in the copy a host reads.
 	using NodeAt = std::pair<lain::flow::EvalPath, lain::flow::NodeId>;
 
-	// What a run in flight is doing, by node. A node absent from it is idle as far as the run goes.
+	// What a run in flight is doing, by node. A node absent from it is idle as far as the run goes —
+	// which includes a node a Run Selection LEAVES stale: it is owed, but not by this run.
 	struct RunActivity
 	{
 		std::map<NodeAt, Activity> nodes;
@@ -111,6 +112,7 @@ namespace flowview
 		std::shared_ptr<lain::flow::Evaluation> evaluation;	 // the working evaluation, of the same lineage
 		std::vector<Binding> bindings;						 // the latest value per pin
 		RunStrategy strategy = RunStrategy::Parallel;
+		RunScope scope; // the whole closure, or a Run Selection's targets
 	};
 
 	// What the frame loop takes each frame. Each part is present only if something landed since the
@@ -126,6 +128,7 @@ namespace flowview
 		// that has just finished is never shown idle before its result has landed.
 		RunActivity activity;
 		std::optional<RunOutcome> outcome; // a run returned
+		bool partial = false;			   // with the outcome: that run was a Run Selection
 		std::string failure;			   // Failed only: what the exception said
 		// With the outcome: how many node computes THREW (flow::RunControl::failed()). Each of those is
 		// recorded against its node in the evaluation, which is where a host shows it; a Failed run
@@ -273,6 +276,7 @@ namespace flowview
 		std::map<NodeAt, Fold> m_folds; // newer than m_published: one per node, the latest winning
 		RunActivity m_activity;
 		std::optional<RunOutcome> m_outcome;
+		bool m_partial = false; // the run m_outcome is about was a Run Selection
 		std::string m_failure;
 		std::size_t m_failedNodes = 0;
 

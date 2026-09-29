@@ -239,6 +239,11 @@ namespace flowview
 		m_requests.runNow();
 	}
 
+	void FlowviewApp::runSelection(std::vector<flow::NodeId> targets)
+	{
+		m_requests.runSelection(std::move(targets));
+	}
+
 	void FlowviewApp::bind(flow::PortAddress input, flow::PortValue value)
 	{
 		// Shown now, applied later: the published copy is what the panes read this frame, and the
@@ -258,7 +263,7 @@ namespace flowview
 	{
 		RunReport report = m_runner.take();
 		if (report.outcome)
-			m_lastRun = LastRun{*report.outcome, m_runStarted.since().seconds(), report.failedNodes};
+			m_lastRun = LastRun{*report.outcome, m_runStarted.since().seconds(), report.failedNodes, report.partial};
 		if (report.outcome == RunOutcome::Completed)
 			m_runFailure.reset();
 		else if (report.outcome == RunOutcome::Failed)
@@ -303,9 +308,11 @@ namespace flowview
 		job.evaluation = m_evaluation;
 		job.bindings = m_bindings.handOver(m_runner.nextJob());
 		job.strategy = m_strategy;
+		job.scope = m_requests.scope(trigger, gestureEnded);
+		const RunScope scope = job.scope; // what the run answers, kept past the hand-over
 		m_runner.start(std::move(job));
 		m_runStarted = core::Time::now();
-		m_requests.started();
+		m_requests.started(scope);
 	}
 
 	void FlowviewApp::replaceGraph(std::unique_ptr<flow::Graph> graph)

@@ -5,7 +5,7 @@ Status: accepted (designed 2026-09-28; slices 1 — clone + lineage — 2 — th
 + payload identity — and 3 — cancellation — built 2026-09-28, 4 — the async vertical — 5 — triggers
 + persistence — 6 — freshness: the stale-closure query and the failure record, then the UI — and 7
 — per-node publication: the run observer and the node record, then Queued and Computing on screen —
-2026-09-29; slice 8, Run Selection, not)
+and 8 — Run Selection: the pull of many targets, then the gesture — 2026-09-29)
 Amends [ADR-0012](0012-definition-and-evaluation.md) — the pairing guard moves from address identity
 to **lineage**, and a *published evaluation* is the "different concept" it set aside. Amends
 [ADR-0024](0024-one-process-task-pool.md) — gui-mode stops being serial, and the coordinator thread is
@@ -280,6 +280,19 @@ whole surface. Building it settled three things:
   a host's selection may outlive a node it names; no targets at all is a pull of nothing. A selection
   inside a group is the host's to map onto a root-level target (slice 8b).
 
+*Built in slice 8b (2026-09-29), the gesture.* Run ▸ Run Selection (Cmd/Ctrl+Shift+Enter), settling
+two things this section left open, both decided with the repo owner:
+
+- **It is available under every trigger, not only Manual.** The run policy gains a third ask beside a
+  change and Run, and a run a **scope** — the whole closure or a selection's targets. A due change or
+  a Run asks for the whole closure, which covers any selection; a partial run answers only its own
+  ask. So under Live and On commit a pending change still gets its whole run, superseding the partial
+  one, and under Manual it waits as every change does. No Manual-only gate is needed for Live to keep
+  meaning "every change runs everything".
+- **A selection inside a group runs the root-level group it is in, whole.** A pull plans from the
+  root. Restricting each level on the path to its own cone is deferred (below); a loop on the path
+  would have to run whole regardless, since a body run in part breaks its carries.
+
 *Amended 2026-09-29, the day slice 5 built the triggers.* Four things this section left open, each
 settled with the repo owner:
 
@@ -414,6 +427,8 @@ actually starts. The run-level Issues row now means a throw no node owned: a Fai
 - **Evaluation fork** — trigger: a long non-cooperative step whose drain latency matters.
 - **View-driven pull** — trigger: an expensive branch downstream of routine edits that is not being
   looked at.
+- **Per-level cones for Run Selection** — trigger: a slow group interior where "get me this far"
+  matters. Today a selection inside a group runs its root-level ancestor whole (slice 8b).
 - **Keeping an evaluation across an undo** — trigger: undo on a slow graph. It needs a way to say a
   restored node is the same recipe as the current one, which a freshly minted version cannot. Under
   **Manual** (slice 5) the cost is sharper than a recompute: an undo leaves the panes EMPTY until the

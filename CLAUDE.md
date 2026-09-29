@@ -907,6 +907,42 @@ format-check clean. `flowview run --example` is unchanged, and the headless save
   (`reflect.h`). But *The type is the schema* claimed `fromValue` "fails on a shape/type mismatch",
   which is true of a struct's shape only.
 
+### Update 2026-09-29 — M14 slice 8b built: Run Selection (**M14 COMPLETE**)
+
+The flowview half, on 8a's pull. **Run ▸ Run Selection** (Cmd/Ctrl+Shift+Enter) brings the selection
+up to date and nothing else. Its upstream cone goes Queued → Computing → Current, while what it
+leaves reads Stale and is never Queued. That completes the build order, and with 8b's gui-mode
+checklist walked by the repo owner, **M14 is complete** — and M9 is again the only milestone from 5
+onward that is not built.
+`ctest -j8` **907/907** Debug with video on, **913/913** Release with video on, **880/880** Release
+video-off (+6 each); warning-clean, format-check clean; `[runner],[runpolicy]` (27 cases) swept 100×
+in Debug and Release; `flowview run --example` unchanged; the `--frames` smokes exit 0. **gui-mode
+live-verified by the repo owner 2026-09-29** — the whole checklist in WORK.md's *Slice 8b landed*.
+
+- **Every trigger, and it falls out of the policy rather than needing a gate** (decided with the repo
+  owner):
+  - `RunRequests` gains a selection ask and answers `scope()` beside `due()`. A **`RunScope`** is the
+    whole closure or a selection's targets.
+  - A due change or a Run is **whole**, and a whole run covers any selection.
+  - A partial start answers only its own ask. Under Live or On commit a pending change therefore
+    supersedes the partial run with a whole one, and under Manual it waits.
+- **Inside a group, the selection means the root-level group it is in, run whole**
+  (`selectionTargets`). The menu item's tooltip says so. Per-level cones are deferred, with a trigger,
+  in WORK.md and ADR-0025.
+- **The selection is filtered to the level on screen.** Group's private filter became `canvasstate`'s
+  `selectedNodesIn`, shared by both gestures. `CanvasIds` spans the whole document, so an unfiltered
+  stale int could decode to a node at another level and, mapped to the root, run the wrong thing.
+- **`RunReport::partial` travels with the outcome**, set on the coordinator from the job. The app's
+  own start bookkeeping would mislabel a run that finished between one frame's poll and the next
+  pump. The status bar reads "Last run (selection)".
+- **Six sabotages, all caught.** Two first ran against a stale binary, because the sabotage itself
+  failed to build under `-Werror`, and were re-run once they compiled: **a sabotage that does not
+  build proves nothing**, and the old binary's answer looks exactly like a pass.
+- **Found while smoking, older than this slice:** quitting in the first frame or two logs a MoltenVK
+  *"Lost VkDevice ... GPU Address Fault"*. The process exits 0, and the pre-change binary does the
+  same. Flagged as its own task. A copied binary cannot be used to check this: it has to run from
+  `build/apps/flowview/`, where the MoltenVK ICD is staged, or it aborts with *"no driver/ICD found"*.
+
 ### Update 2026-09-29 — M14 slice 8a built: a pull of many targets, cancellable and parallel
 
 The flow half of Run Selection, on the pull fix below.

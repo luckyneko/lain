@@ -3,7 +3,7 @@
 #include "appcontext.h"
 #include "flowviewapp.h"
 #include "graphio.h"
-#include "panes/canvasstate.h" // selectedNodes / collectLayout — the canvas half of a gesture
+#include "panes/canvasstate.h" // selectedNodesIn / collectLayout — the canvas half of a gesture
 
 #include <lain/data/value.h>
 #include <lain/flow/edit.h>
@@ -29,26 +29,12 @@ namespace flowview
 
 	// --- reading the canvas ----------------------------------------------------------------------
 
-	// The selection, restricted to nodes actually present in the graph on screen. Both filters earn
-	// their keep: imnodes' selection pool can outlive what it named, and CanvasIds spans the whole
-	// DOCUMENT, so an int can still decode to a perfectly real node at another level.
-	static std::vector<flow::NodeId> selectionIn(const AppContext& ctx, const flow::Graph& graph)
-	{
-		std::vector<flow::NodeId> ids;
-		for (const flow::NodeId id : selectedNodes(ctx.canvas))
-		{
-			if (graph.contains(id))
-				ids.push_back(id);
-		}
-		return ids;
-	}
-
 	// The selected node's id when the selection is exactly one node of type T, else a null id — which
 	// is both "is this gesture available?" and "what does it act on", asked once.
 	template <typename T>
 	static flow::NodeId soleSelectedOfType(const AppContext& ctx, const flow::Graph& graph)
 	{
-		const std::vector<flow::NodeId> ids = selectionIn(ctx, graph);
+		const std::vector<flow::NodeId> ids = selectedNodesIn(ctx.canvas, graph);
 		if (ids.size() != 1)
 			return {};
 		return dynamic_cast<const T*>(&graph.node(ids.front())) != nullptr ? ids.front() : flow::NodeId{};
@@ -92,7 +78,7 @@ namespace flowview
 	{
 		// A boundary node in the selection would be refused by the gesture anyway; excluding it here
 		// too means the menu says so before the click rather than after it.
-		const std::vector<flow::NodeId> ids = selectionIn(ctx, activeGraph);
+		const std::vector<flow::NodeId> ids = selectedNodesIn(ctx.canvas, activeGraph);
 		if (ids.empty())
 			return false;
 		for (const flow::NodeId id : ids)
@@ -151,7 +137,7 @@ namespace flowview
 			ctx.noteReadOnlyEdit();
 			return false;
 		}
-		const std::vector<flow::NodeId> selection = selectionIn(ctx, activeGraph);
+		const std::vector<flow::NodeId> selection = selectedNodesIn(ctx.canvas, activeGraph);
 
 		// Where the nodes are RIGHT NOW, straight from imnodes — ctx.layout is only refreshed at save
 		// and snapshot time, so it would hand back positions from before the last drag.
@@ -194,7 +180,7 @@ namespace flowview
 		// edit::ungroup's to answer, and it distinguishes four cases where a class test here could
 		// only ever produce one message — so a map, a loop, a linked group and a plain node were all
 		// told to "select a single inline group", which is true and says nothing.
-		const std::vector<flow::NodeId> selected = selectionIn(ctx, activeGraph);
+		const std::vector<flow::NodeId> selected = selectedNodesIn(ctx.canvas, activeGraph);
 		if (selected.size() != 1)
 		{
 			ctx.noteMessage(Issue::Severity::Warning, "Select a single group to ungroup");

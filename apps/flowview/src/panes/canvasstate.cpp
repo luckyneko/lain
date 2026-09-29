@@ -32,6 +32,17 @@ namespace flowview
 		return out;
 	}
 
+	std::vector<flow::NodeId> selectedNodesIn(const CanvasIds& ids, const flow::Graph& graph)
+	{
+		std::vector<flow::NodeId> out;
+		for (const flow::NodeId id : selectedNodes(ids))
+		{
+			if (graph.contains(id))
+				out.push_back(id);
+		}
+		return out;
+	}
+
 	flow::serialize::EditorData collectLayout(CanvasIds& ids, const flow::Graph& graph)
 	{
 		flow::serialize::EditorData layout;

@@ -30,6 +30,7 @@ namespace flowview
 		RunOutcome outcome = RunOutcome::Completed;
 		double seconds = 0.0;		 // from the start the host asked for to the outcome it saw
 		std::size_t failedNodes = 0; // node computes that threw (each recorded against its node)
+		bool partial = false;		 // a Run Selection: what it did not reach is still Stale
 	};
 
 	// flowview's application delegate. Two modes, selected by CLI:
@@ -88,6 +89,13 @@ namespace flowview
 		// A run in flight is superseded by it. UI thread.
 		void runNow();
 
+		// A Run Selection: the part of the stale closure in `targets`' upstream cone, and nothing else —
+		// root-level NodeIds, already mapped from what is selected on the level on screen
+		// (selectionTargets). Due under every trigger, like Run, and superseding a run in flight; it
+		// answers only its own ask, so a change it does not cover still starts a whole run under Live
+		// or On commit. Empty targets ask for nothing. UI thread.
+		void runSelection(std::vector<lain::flow::NodeId> targets);
+
 		// Bind a root boundary input. Not a document change, and not a write to the working
 		// evaluation either, which a run may hold: the value is QUEUED for the next run's start and
 		// written into the published copy at once, so the pane binding it reads its own value back
@@ -127,7 +135,8 @@ namespace flowview
 		// from the old ones. UI thread.
 		bool pollRun();
 
-		// Frame end: act on the asks, under the document's `trigger`. `gestureEnded` is the undo
+		// Frame end: act on the asks, under the document's `trigger` — and reaching as far as they ask
+		// (RunRequests::scope: the whole closure, or a Run Selection's cone). `gestureEnded` is the undo
 		// history's own boundary (no widget active), so On commit runs on exactly the edits undo
 		// records. When a run is due and one is in flight, that one is SUPERSEDED — cancelled, with the
 		// asks left standing — and a later frame starts the new one once it has drained; otherwise the
