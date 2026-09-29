@@ -13,6 +13,7 @@ add_executable(test-flow
 	test_staleness.cpp
 	test_graph.cpp
 	test_scheduler.cpp
+	test_pull.cpp
 	test_edit.cpp
 	test_describe.cpp
 	test_nodes.cpp

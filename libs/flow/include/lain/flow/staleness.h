@@ -63,16 +63,18 @@ namespace lain::flow
 		bool reseeds(NodeId owner) const { return m_reseeds.count(owner) != 0; }
 
 		// Whether `id` is OWED a compute on its own account — its own record, or anything inside it —
-		// as opposed to because of something upstream. What the closure grows from, and what the pull
-		// path (Scheduler::evaluate) asks of each node in its target's cone, which deliberately does
-		// not take the closure.
+		// as opposed to because of something upstream. What the closure grows from — and never a
+		// selection on its own: a node downstream of an edit is owed nothing on its own account and is
+		// still owed a compute, which is why even the pull path selects from the closure.
 		static bool owed(const Graph& definition, const Evaluation& evaluation, NodeId id);
 
 		// Whether a group or map would republish its inputs into its interior, given the nodes
 		// `selected` for recomputing at its level: its own record is stale, or a node feeding it is
 		// selected. The one statement of the rule, shared by reseeds() and by the scheduler's plan,
 		// which republishes under it — so the two cannot disagree about when an interior receives new
-		// values. (The pull path passes its cone's selection rather than a closure.)
+		// values. (The pull path passes the part of the closure in its target's cone — which, for a
+		// node in that cone, holds every predecessor the whole closure would, since a cone is closed
+		// upstream.)
 		static bool republishes(const Graph& definition, const Evaluation& evaluation, NodeId id,
 								const std::set<NodeId>& selected);
 

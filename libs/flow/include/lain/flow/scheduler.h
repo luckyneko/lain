@@ -20,7 +20,7 @@
 // run as a node, it is *expanded* into an entry step, its inner graph's own steps, and an
 // exit step. So a nested graph runs as one flat DAG — no scheduler is ever invoked from
 // inside a task, and inner nodes of two sibling groups interleave freely on the pool.
-// run() plans the dirty closure; evaluate() plans the dirty upstream cone of one node.
+// run() plans the stale closure; evaluate() plans the part of it in one node's upstream cone.
 //
 // One invocation may build SEVERAL plans, in STAGES (ADR-0014). A map node's arity comes from a
 // collection computed during the run, so it cannot be expanded when the first plan is built: it is
@@ -80,9 +80,12 @@ namespace lain::flow
 		// the evaluation as recompute requests before the stage runs (Plan::closure).
 		void run(const Graph& definition, Evaluation& evaluation, RunControl& control);
 
-		// Pull: evaluate just `target`'s upstream subgraph on demand, recomputing only the nodes
-		// that need it (a constant stays computed after its first run; an on-request source requests
-		// its own recompute and so refires each pull). Serial for either strategy.
+		// Pull: bring `target` up to date and nothing else — the part of the stale closure in its
+		// upstream cone (a constant stays computed after its first run; an on-request source requests
+		// its own recompute and so refires each pull; a node downstream of an edit is recomputed, as it
+		// is by run()). The rest of the closure stays stale, including what this pull would otherwise
+		// make LOOK current: a node outside the cone fed by one inside it keeps a recompute request.
+		// Serial for either strategy.
 		void evaluate(const Graph& definition, Evaluation& evaluation, NodeId target);
 
 	protected:
@@ -202,6 +205,13 @@ namespace lain::flow
 				NodeId node;
 			};
 			std::vector<Owed> closure;
+
+			// What a PULL leaves of the stale closure, requested for the same reason the closure is: a
+			// node outside the target's cone that something in the closure feeds, and whose own record
+			// is clean. It is stale only because of what is upstream of it, and this stage may make
+			// that clean — so without a request of its own it would look current while showing a value
+			// built from the old input. Empty for a full run, whose cone is everything.
+			std::vector<Owed> left;
 		};
 
 		// What ONE invocation has done to each frontier it raised. Passed down rather than held on
@@ -258,9 +268,9 @@ namespace lain::flow
 		// each not-yet-prepared map left as a frontier.
 		Plan buildRunPlan(const Graph& definition, Evaluation& evaluation, const Staging& staging);
 
-		// The plan for a pull: the stale nodes in `target`'s upstream cone. Deliberately NOT the
-		// closure — a node that does not need recomputing keeps its value even if something upstream
-		// does, which is the long-standing pull semantic.
+		// The plan for a pull: the part of the stale closure in `target`'s upstream cone — what the
+		// target needs, and nothing it does not. Whatever else the closure holds that this pull could
+		// make look clean is kept owed (Plan::left).
 		Plan buildEvalPlan(const Graph& definition, Evaluation& evaluation, NodeId target, const Staging& staging);
 
 		// Execute ONE stage's plan — the only thing the two strategies do differently. It is handed a
@@ -308,7 +318,7 @@ namespace lain::flow
 		enum class Mode
 		{
 			Push, // run(): the stale closure, executed through executePlan
-			Pull, // evaluate(): the stale upstream cone, always walked serially
+			Pull, // evaluate(): the closure's part in the target's upstream cone, always walked serially
 		};
 
 		// The staging loop (ADR-0014): plan, execute, prepare what the stage revealed, plan again.

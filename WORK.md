@@ -1109,7 +1109,8 @@ byte-idempotent.
    every dependency points backwards); `ParallelScheduler` emplaces a task per step and a `precede`
    per edge, across **every level at once**. `buildRunPlan` = the dirty closure; `buildEvalPlan` =
    the dirty *upstream cone* (deliberately not a closure — that is the long-standing pull
-   semantic), so `evaluate` crosses groups through the same one mechanism.
+   semantic), so `evaluate` crosses groups through the same one mechanism. *(That semantic was
+   unsound after an edit, and was reversed 2026-09-29: see M14's "A pull finishes what it starts".)*
 
    Two subtleties, both proven load-bearing by deliberately breaking them and watching a test fail:
    - **Publish gating.** The entry step republishes into the inner boundary only when the group's
@@ -6195,6 +6196,8 @@ Structural, no-behaviour-change slices first; each its own commit with its docs.
      and Computing in `Freshness` with the roll-up, and their drawing. See *Slice 7b landed*.
 8. **Run Selection.** The multi-target upstream-cone plan (`buildEvalPlan`'s shape, many targets,
    executed through `executePlan`) and its menu item.
+   The pull semantic it builds on was fixed first, in its own commit — see *A pull finishes what it
+   starts*: a pull now plans the part of the stale closure in its cone, and keeps owed what it leaves.
 
 ### Slice 1 landed (2026-09-28) — clone + lineage
 
@@ -6977,6 +6980,50 @@ by the repo owner 2026-09-29** — everything new here is drawn, so that is the 
   - Stop turns Queued into Stale while the node still computing finishes.
   - After New or Open, the structure appears at once as Queued.
   - A Failed node inside a group shows on the group while its siblings are Queued.
+
+### A pull finishes what it starts — FIXED 2026-09-29
+
+Found while planning slice 8, fixed in its own commit ahead of it (decided with the repo owner). Run
+Selection is `Scheduler::evaluate` with many targets, and `evaluate` planned only the nodes of its
+target's cone that were stale **on their own account** (`StaleClosure::owed`). That is the M1 pull
+semantic, *"a clean node keeps its cached value even if something upstream recomputes"*, and it is
+unsound once anything has been computed. Edit U in U → D → T and a pull of T recomputed U alone; with
+U's record clean, the stale closure then called D and T **current** while they showed values built
+from U's old output. A node outside the cone that U feeds went the same way. It is slice 3's
+*"staleness assumes a run finishes its closure"* from the pull side, and every pull test missed it for
+the same reason: each started from a fresh evaluation, where the two sets are equal. `evaluate` had no
+production caller, so nothing on screen was ever wrong. Slice 8 would have been the first.
+
+- **A pull plans the part of the CLOSURE in its target's cone.** The cone is upstream-closed, so every
+  closure node feeding a cone node is in the cone too, and nothing the plan recomputes waits on a
+  value it will not produce.
+- **What it leaves of the closure stays owed** (`Scheduler::Plan::left`, requested where
+  `Plan::closure` is). The rule is narrow: a node **outside** the cone that something in the closure
+  **feeds**, and whose **own record is clean**. Both halves are load-bearing:
+  - A group stale for its interior **and** fed by the edit has to be requested. Once the pull makes U
+    clean, `StaleClosure::republishes` no longer sees a selected predecessor, so the group would not
+    republish and its interior would add the new inner value to the OLD input: **21 instead of 22**.
+  - A group stale **only** for its interior must not be. A request makes it republish, which
+    recomputes the relay its boundary feeds and throws away inner incrementality. That is the closure's
+    own rule from slice 3 (`Plan::closure`'s doc).
+  - A node whose own record is already stale needs nothing: it stays stale by itself, and a group in
+    that state republishes anyway. Skipping it is also what stops a later stage re-requesting it.
+- **The existing pull tests needed no change**, since each starts from a fresh evaluation. New:
+  `libs/flow/test/test_pull.cpp`, four cases, each running once, editing, then pulling.
+- **Four sabotages, all caught, each by the case it targets:**
+  - restore the `owed`-only selection and all four fail (a target downstream of an edit keeps its old
+    value);
+  - skip `Plan::left` and two fail (the unreached node reads current, and the fed group does not
+    republish);
+  - leave out every node `owed` on its own account, interior included, and the fed group fails alone
+    (21 instead of 22);
+  - request every out-of-cone closure node and the interior-only group fails alone (its relay
+    recomputes).
+
+`ctest -j8` **894/894** Debug with video on, **900/900** Release with video on, **867/867** Release
+video-off (+4 each); warning-clean, format-check clean; `[pull]` swept 100× through the Catch2 binary in
+Debug and Release (4 cases, no failures); `flowview run --example` identical to the pre-change binary
+once the timestamp and short ids are normalised.
 
 ### Visual design (settled in outline, tuned by eyeball)
 

@@ -23,7 +23,9 @@ apart: logic that belongs to one must not swell another.
     **steps** with dependencies between them, expanded across *every* level of group
     nesting at once, so a nested graph runs as one flat DAG and never as a nested run
     (ADR-0009). A step is addressed by `{const Graph*, Evaluation*, NodeId}` — which node, and in
-    which Evaluation. Both `run` (stale-closure) and `evaluate` (upstream-cone) build one.
+    which Evaluation. Both build one: `run` plans the stale closure, `evaluate` the part of it in one
+    node's upstream cone — never only the cone's nodes stale on their own account, since a node
+    downstream of an edit is owed a compute too. What a pull leaves of the closure stays owed.
   - **Entry / exit step** — the two **boundary steps** a group expands into, around its inner
     graph's own steps: the entry hands the group's outer input values to its inner
     `GroupInputNode`, the exit publishes its inner `GroupOutputNode`'s values onto the group's

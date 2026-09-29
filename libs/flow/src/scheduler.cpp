@@ -374,18 +374,43 @@ namespace lain::flow
 		std::set<NodeId> cone;
 		collectUpstream(definition, target, cone);
 
-		// The stale nodes of that cone, in topo order. Deliberately NOT the closure: the pull path
-		// recomputes only what is itself stale, leaving an up-to-date node on its existing value.
+		// The part of the stale CLOSURE that feeds the target, in topo order. The closure and not
+		// merely the nodes stale on their own account: a node downstream of an edit is owed a compute
+		// as surely as the edited node is, and leaving it out would recompute the edit and then show
+		// the old answer as current. The cone is upstream-closed, so every closure node feeding a cone
+		// node is in the cone too — nothing this plan recomputes waits on a value it will not produce.
+		const StaleClosure closure(definition, evaluation);
 		std::vector<NodeId> order;
-		for (const NodeId id : definition.topoOrder())
+		for (const NodeId id : closure.order())
 		{
-			if (cone.count(id) != 0 && StaleClosure::owed(definition, evaluation, id))
+			if (cone.count(id) != 0)
 				order.push_back(id);
 		}
 
 		Plan plan;
 		plan.levels.push_back(EvalPath{}); // level 0: the root
 		expand(definition, evaluation, 0, order, plan, staging);
+
+		// What the pull LEAVES of the closure: a node outside the cone that something in the closure
+		// feeds, and whose own record is clean — so it is in the closure only because of what is
+		// upstream of it, which this pull may be about to make clean. Requested, it stays owed.
+		// Not a node whose own record is already stale (it stays stale by itself, and republishes if
+		// it is a group), and above all not a node in the closure only because of its INTERIOR: a
+		// request on a group makes it republish, which would throw away its inner incrementality —
+		// Plan::closure's rule, for the same reason.
+		for (const NodeId id : closure.order())
+		{
+			if (cone.count(id) != 0 || evaluation.needsRecompute(id))
+				continue;
+			for (const Graph::Edge& e : definition.edges())
+			{
+				if (e.to.node == id && closure.contains(e.from.node))
+				{
+					plan.left.push_back(Plan::Owed{&evaluation, 0, id});
+					break;
+				}
+			}
+		}
 		return plan;
 	}
 
@@ -468,6 +493,10 @@ namespace lain::flow
 				if (control.m_observer != nullptr)
 					control.m_observer->owed(plan.levels[owed.level], owed.node);
 			}
+			// And what a pull leaves of the closure, for the same reason: this stage may make clean
+			// what those nodes are stale only because of (Plan::left).
+			for (const Plan::Owed& left : plan.left)
+				left.evaluation->requestRecompute(left.node);
 
 			const auto computes = std::count_if(plan.steps.begin(), plan.steps.end(), [](const Step& step)
 												{ return step.kind == Step::Kind::Node; });

@@ -313,7 +313,16 @@ settled four things:
   record of another lineage could never match anyway; the check states the pairing rule and saves
   walking records that describe another document.
 - **The pull path keeps its own semantic** — the stale nodes of the target's cone, not the closure —
-  through the same query's per-node test (`StaleClosure::owed`).
+  through the same query's per-node test (`StaleClosure::owed`). *Reversed 2026-09-29, ahead of slice
+  8, which is its first production caller:* that semantic was unsound once anything had been computed.
+  Edit U in U → D → T and a pull of T recomputed U alone; with U's record clean, the closure then
+  called D and T current while they showed values built from U's old output — slice 3's *"staleness
+  assumes a run finishes its closure"*, from the pull side, and invisible to every pull test because
+  each started from a fresh evaluation. A pull now plans **the part of the closure in its target's
+  cone**, and keeps owed what it would otherwise make look current: a node outside the cone that the
+  closure feeds and whose own record is clean gets a recompute request (`Scheduler::Plan::left`). A node
+  stale only for its INTERIOR is deliberately not one of them, since a request would make a group
+  republish and lose its inner incrementality — the closure's own rule from slice 3.
 
 *Slice 6b (2026-09-29)* draws it. flowview walks from the root to the level on screen, asking the query
 at each step and handing each level's `reseeds()` answer down as the next one's `boundaryStale`; a

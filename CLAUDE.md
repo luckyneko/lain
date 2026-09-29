@@ -907,6 +907,33 @@ format-check clean. `flowview run --example` is unchanged, and the headless save
   (`reflect.h`). But *The type is the schema* claimed `fromValue` "fails on a shape/type mismatch",
   which is true of a struct's shape only.
 
+### Update 2026-09-29 — a pull finishes what it starts (fixed ahead of M14 slice 8)
+
+Found while planning slice 8 (Run Selection, which is `Scheduler::evaluate` with many targets), fixed in
+its own commit ahead of it. The pull planned only the nodes of its target's cone that were stale **on
+their own account** — the M1 semantic, *"a clean node keeps its cached value even if something
+upstream recomputes"*. Once anything has been computed that is unsound: edit U in U → D → T, and a pull
+of T recomputed U alone, after which the stale closure called D and T **current** while they showed
+values built from U's old output. A node outside the cone that U feeds went the same way. It is slice
+3's *"staleness assumes a run finishes its closure"*, from the pull side. `evaluate` had no production
+caller, so nothing on screen was ever wrong; slice 8 would have been the first. `ctest -j8` **894/894** Debug with video on,
+**900/900** Release with video on, **867/867** Release video-off (+4 each); warning-clean, format-check
+clean; `[pull]` swept 100× in Debug and Release; `flowview run --example` unchanged. Full notes
+in WORK.md's *Milestone 14 › A pull finishes what it starts*.
+
+- **A pull plans the part of the stale CLOSURE in its target's cone.** The cone is closed upstream, so
+  nothing the plan recomputes waits on a value it will not produce.
+- **What it leaves of the closure stays owed** (`Scheduler::Plan::left`, requested beside
+  `Plan::closure`): a node outside the cone that the closure **feeds** and whose **own record is
+  clean**. Both halves were settled by a test that fails without them:
+  - a group stale inside AND fed by the edit has to be requested, or it never republishes the new input
+    (21 instead of 22);
+  - a group stale ONLY inside must not be, since a request would make it republish and lose its inner
+    incrementality. That is the closure's own rule from slice 3.
+- **Every existing pull test missed it for one reason:** each started from a fresh evaluation, where
+  "stale on its own account" and "in the closure" are the same set. The four new cases
+  (`libs/flow/test/test_pull.cpp`) each run once, edit, then pull. Four sabotages, all caught.
+
 ### Update 2026-09-29 — M14 slice 7b built: results land node by node; Queued and Computing (**slice 7 COMPLETE**)
 
 The flowview half of slice 7, on 7a's `RunObserver`. Each node's value and thumbnail now appear the
