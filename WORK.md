@@ -2501,9 +2501,23 @@ The 2026-08-16 review also left these requirements and decisions visible before 
 > (a second shared dependency, for symbol isolation from lain's own static zlib) and ADR-0016 pointed
 > at it. **Slice 0 is new and lands first.** Slices 1–4 are unchanged in substance.
 
-0. **OpenCV lands, with nothing depending on it yet.** Blocked on the first published
-   `opencv-4.14.0-calib` release, because the pins come from its `SHA256SUMS`. Modelled directly on
-   `cmake/addFFmpeg.cmake`:
+0. **OpenCV lands, with nothing depending on it yet.** **Unblocked 2026-09-29.**
+   [`opencv-4.14.0-calib`](https://github.com/luckyneko/opencv-prebuilt/releases/tag/opencv-4.14.0-calib)
+   is published, built from `opencv-prebuilt` at `a8985f9`. All four legs passed the prebuilt's
+   checks, Windows in both Release and Debug. The pins, from its `SHA256SUMS`, each matching
+   GitHub's own asset digest:
+
+   ```
+   2bce5f2d7b7d329f3ee80563ecfdc309c51c26db28c03f04bd9dc00d0df6c901  …-linux-x86_64.tar.xz   (6.1 MB)
+   478919da64908f5005aa62b2cbcbb56d53c3c5728fda797ee2d83aaf69bd1c4d  …-linux-arm64.tar.xz    (4.4 MB)
+   b86f52bb474ff6372b36d9bb60298c09375af1e3c6b8a3ad00f938883bd486c7  …-macos-arm64.tar.xz    (3.8 MB)
+   58b937c10040b3443f1f7d35133b1309dc6818cb6e9d29dbccb1f5d1402cc325  …-windows-x86_64.zip    (16.7 MB)
+   ```
+
+   Runtime floors: GLIBC 2.35 / GLIBCXX 3.4.30 (GCC 11.4, Ubuntu 22.04); macOS 11.0; MSVC 19.44
+   (v143) with `/MD` + `/MDd`. The published linux-x86_64 archive was also fetched and consumed
+   end to end outside CI (`find_package` from the extracted tree, the ChArUco probe recovering the
+   camera). Modelled directly on `cmake/addFFmpeg.cmake`:
    - **`cmake/addOpenCV.cmake`:**
      - Guarded, so a second include is a no-op.
      - Per-target `URL` + `URL_HASH`, with `FATAL_ERROR` on macOS x86_64 (no artifact) and on an
@@ -7277,8 +7291,8 @@ row here**. A row is cheap to delete and expensive to leave.
 
 - **M9 — camera calibration and fixed registration.** Designed 2026-08-14/15 with three ADRs, no
   code. **Unblocked:** M10 was numbered after it and built before it, discharging its frame-sequence
-  prerequisite. How OpenCV is obtained was decided 2026-09-29 (a pinned prebuilt), so slice 0
-  (`addOpenCV.cmake`) waits only on the first `opencv-prebuilt` release. *(Milestone 9;
+  prerequisite. How OpenCV is obtained was decided 2026-09-29 (a pinned prebuilt), and its first
+  release (`opencv-4.14.0-calib`) is published, so slice 0 (`addOpenCV.cmake`) can start. *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md),

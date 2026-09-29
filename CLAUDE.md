@@ -957,8 +957,11 @@ So **[`luckyneko/opencv-prebuilt`](https://github.com/luckyneko/opencv-prebuilt)
 (`83943af`), a sibling of `ffmpeg-prebuilt`. The decision is
 **[ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md)**, with ADR-0004 amended,
 ADR-0016 pointed at it, and M9 given a **slice 0** in WORK.md. **Nothing in lain's code changed**,
-and `addOpenCV.cmake` waits on the first published release, since its pins come from that
-release's `SHA256SUMS`.
+and `addOpenCV.cmake` waited on the first published release, since its pins come from that
+release's `SHA256SUMS`. **That release is out:**
+[`opencv-4.14.0-calib`](https://github.com/luckyneko/opencv-prebuilt/releases/tag/opencv-4.14.0-calib),
+built at `a8985f9` after two verify-only CI runs were green on all four targets. WORK.md's M9 slice 0
+holds the hashes, and **slice 0 can start**.
 
 - **Decided with the repo owner:**
   - OpenCV **4.14**, not 5.0 (5.0 splits calib3d and needs eight modules, and is a `.0`);
@@ -994,8 +997,11 @@ release's `SHA256SUMS`.
     zlib symbol; self-containment; `$ORIGIN` RUNPATHs; a **moved** tree loading unaided through
     `find_package(OpenCV CONFIG)`; the library's own build info; and a synthetic ChArUco
     calibration recovering fx = 999.98 against 1000.
-  - **macOS, Windows and linux-arm64 have not run.** The first `publish=false` dispatch is their
-    test.
+  - **CI (added after publishing):** run 1 was green on all four targets at the first attempt;
+    Windows' relocated consumer built and ran in both Release and Debug. Run 2 re-verified a
+    packaging change, and run 3 published. The Windows zip had been made by PowerShell 5.1's
+    `Compress-Archive`, which writes backslash entry names. It is now Python's `zipfile`, and the
+    published zip has 276 entries and no backslash in any of them.
 - **Sabotages, all caught:**
   - One build with three defects (an extra module, OpenCV's default rpath, visible zlib symbols)
     gives 17 distinct failures.
