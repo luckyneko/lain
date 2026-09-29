@@ -37,7 +37,9 @@ as an artificial public limit.
 OpenCV is permitted as the initial optional ChArUco backend, but only modules that directly perform
 OpenCV-backed work may include or link it. Shared board, calibration, registration, request, report,
 and observation contracts use lain-owned types, allowing OpenCV-backed implementations to be
-replaced incrementally without changing those contracts.
+replaced incrementally without changing those contracts. *(How OpenCV is obtained — the 4.14 line, a
+fixed `calib` module profile, shared libraries from a pinned and verified prebuilt — is
+[ADR-0026](0026-opencv-from-a-pinned-minimal-prebuilt.md).)*
 
 `lain::camera::feature` owns backend-neutral scene-feature observations, feature tracks, track sets,
 and extraction reports shared by targetless methods. Optional producer modules perform feature

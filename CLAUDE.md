@@ -943,6 +943,75 @@ live-verified by the repo owner 2026-09-29** — the whole checklist in WORK.md'
   same. Flagged as its own task. A copied binary cannot be used to check this: it has to run from
   `build/apps/flowview/`, where the MoltenVK ICD is staged, or it aborts with *"no driver/ICD found"*.
 
+### Update 2026-09-29 — OpenCV for M9: a pinned, minimal, verified prebuilt (decided; `opencv-prebuilt` built)
+
+M9 needs OpenCV (ChArUco detection, calibration), and building it from source inside lain is the
+cost to avoid. **No existing binary fits:**
+- the official releases cover Windows, iOS and Android only;
+- opencv-mobile drops calib3d, objdetect and flann, and is built without RTTI or exceptions;
+- conda-forge is the full contrib build inside conda;
+- ConanCenter and vcpkg fall back to source builds;
+- system packages are whatever version ships, with large dependency trees.
+
+So **[`luckyneko/opencv-prebuilt`](https://github.com/luckyneko/opencv-prebuilt)** now exists
+(`83943af`), a sibling of `ffmpeg-prebuilt`. The decision is
+**[ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md)**, with ADR-0004 amended,
+ADR-0016 pointed at it, and M9 given a **slice 0** in WORK.md. **Nothing in lain's code changed**,
+and `addOpenCV.cmake` waits on the first published release, since its pins come from that
+release's `SHA256SUMS`.
+
+- **Decided with the repo owner:**
+  - OpenCV **4.14**, not 5.0 (5.0 splits calib3d and needs eight modules, and is a `.0`);
+  - **shared** libraries;
+  - the Windows archive carries **Release and Debug**.
+
+  The fixed **`calib` profile** is core, imgproc, flann, features2d, calib3d, objdetect. ChArUco has
+  been in objdetect since 4.7, so contrib is not needed. A published profile's module set never
+  changes.
+- **Shared is for symbol isolation, not licensing** (ADR-0004's second exception). OpenCV compiles
+  zlib 1.3.2 into `opencv_core`, and lain statically links zlib 1.3.1 into flowview (png/tiff). A
+  static OpenCV would put two zlibs in one link. Apache-2.0 would have allowed static.
+- **Windows is MSVC, not MinGW like FFmpeg.** OpenCV's API is C++, and a MinGW C++ library cannot
+  be consumed by MSVC. The Debug set exists because an MSVC Debug consumer changes `std::vector`'s
+  layout.
+- **Three OpenCV defaults each produce a broken artifact with a green build**, all found by reading
+  its CMake:
+  - the absolute install prefix baked into every RUNPATH;
+  - the **system** zlib on Linux (`BUILD_ZLIB` defaults ON only on Windows/Apple);
+  - the **static** CRT under MSVC.
+
+  `build.sh` overrides all three. Also disabled explicitly: IPP (a configure-time blob download),
+  Eigen (MPL, scoped to Ceres), LAPACK/OpenCL/TBB/OpenMP, and the ARM HALs (KleidiCV is another
+  download), plus all I/O and GUI.
+- **Vendored code is more than zlib, and found only by installing:** SoftFloat, DLPack, KAZE/AKAZE
+  and MSER's chi-table, all BSD-3-Clause or Apache-2.0. The profile records them as reviewed, and
+  `check.sh` fails if the installed licence set differs.
+- **Upstream tags are unsigned**, so the pin is the commit (`0654a42…`). There is no GPG gate as
+  FFmpeg has.
+- **Verified locally on linux-x86_64 only:** `check.sh` PASSED; the archive is 6.1 MB xz, 26 MB
+  extracted; the build takes about 5 min on 4 cores.
+  - The check covers: the exact module set; no downloads; the reviewed licence set; no exported
+    zlib symbol; self-containment; `$ORIGIN` RUNPATHs; a **moved** tree loading unaided through
+    `find_package(OpenCV CONFIG)`; the library's own build info; and a synthetic ChArUco
+    calibration recovering fx = 999.98 against 1000.
+  - **macOS, Windows and linux-arm64 have not run.** The first `publish=false` dispatch is their
+    test.
+- **Sabotages, all caught:**
+  - One build with three defects (an extra module, OpenCV's default rpath, visible zlib symbols)
+    gives 17 distinct failures.
+  - The Linux system-zlib trap is caught by **two** independent checks, the licence set and the
+    build info. Self-containment alone passes it, because a system `libz` is legal.
+  - A 1% error in the smoke's expected camera fails it.
+- **Found in my own check, and fixed before it shipped:** `ldd … | grep -q` under `pipefail`
+  **races**. When `grep -q` exits early, `ldd` takes SIGPIPE and the `if` reads a positive as a
+  negative. The sabotaged tree reported 14, 16, then 17 failures, silently skipping broken
+  libraries. Now it reports 17 every time.
+- **Found in the smoke:** a single linear warp aliases the markers, which biased fx 0.8% against a
+  1% tolerance. Supersampling ×4 then area-averaging gives 0.002%. Rendering smaller instead
+  breaks marker decoding below about 700 px.
+- **Owed by M9 slice 1, recorded in ADR-0026:** OpenCV's own thread pool against ADR-0024's one
+  pool. Either `cv::setNumThreads`, or `cv::parallel::setParallelForBackend` onto `multi`.
+
 ### Update 2026-09-29 — M14 slice 8a built: a pull of many targets, cancellable and parallel
 
 The flow half of Run Selection, on the pull fix below.

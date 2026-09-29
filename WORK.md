@@ -2401,7 +2401,8 @@ adds a pin to the canvas.
 ## Milestone 9 — camera calibration and fixed registration (grilled 2026-08-14 to 08-15)
 
 **Designed, not started** — the only milestone from 5 onward that is. M10 was numbered after it and
-built before it, discharging its frame-sequence prerequisite.
+built before it, discharging its frame-sequence prerequisite. How OpenCV is obtained was settled
+2026-09-29 ([ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md), slice 0 below).
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -2485,6 +2486,60 @@ The 2026-08-16 review also left these requirements and decisions visible before 
 
 ### Build order
 
+> **Revised 2026-09-29 — OpenCV is fetched, not built.** No existing OpenCV binary fits. The
+> official releases cover only Windows, iOS and Android; opencv-mobile drops calib3d and objdetect
+> and is built without RTTI or exceptions; conda-forge, ConanCenter, vcpkg and system packages are
+> either full-fat or source builds. So
+> [`luckyneko/opencv-prebuilt`](https://github.com/luckyneko/opencv-prebuilt) publishes the
+> equivalent of `ffmpeg-prebuilt` for OpenCV:
+> - OpenCV **4.14**, commit-pinned (upstream tags are unsigned);
+> - a fixed **`calib` profile**: core, imgproc, flann, features2d, calib3d, objdetect;
+> - **shared** libraries, with the Windows archive carrying Release and Debug;
+> - no optional third party at all, and every archive verified against its name before publication.
+>
+> Decided in [ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md), with ADR-0004 amended
+> (a second shared dependency, for symbol isolation from lain's own static zlib) and ADR-0016 pointed
+> at it. **Slice 0 is new and lands first.** Slices 1–4 are unchanged in substance.
+
+0. **OpenCV lands, with nothing depending on it yet.** Blocked on the first published
+   `opencv-4.14.0-calib` release, because the pins come from its `SHA256SUMS`. Modelled directly on
+   `cmake/addFFmpeg.cmake`:
+   - **`cmake/addOpenCV.cmake`:**
+     - Guarded, so a second include is a no-op.
+     - Per-target `URL` + `URL_HASH`, with `FATAL_ERROR` on macOS x86_64 (no artifact) and on an
+       unknown platform.
+     - `FetchContent` into `.cache/fetch/opencv-prebuilt/<release>`.
+     - Then `find_package(OpenCV 4.14.0 EXACT CONFIG COMPONENTS … PATHS <root> NO_DEFAULT_PATH GLOBAL)`.
+       The archive is a standard OpenCV install tree, so its own config supplies the targets and,
+       on Windows, picks the Debug or Release set per configuration.
+     - Set `MAP_IMPORTED_CONFIG_{RELWITHDEBINFO,MINSIZEREL}` to Release. Otherwise an MSVC
+       RelWithDebInfo build can resolve to the Debug DLLs.
+     - The Windows root config already falls back from a newer Visual Studio (vc18) to the vc17
+       binaries, so no `OpenCV_RUNTIME` preset is needed.
+   - **The manifest gate.** Parse `MANIFEST.txt` and `FATAL_ERROR` unless all of these match the
+     pins: `profile calib`, `linkage shared`, the `modules` line, and the `third party` line (zlib,
+     bundled, hidden). It executes nothing, for the reason ADR-0019 gives.
+   - **`LAIN_OPENCV_ROOT`** may point at a local install instead. It has no manifest, so configure
+     warns and the runtime test is the only gate.
+   - **Runtime staging:** a `lain_opencv_stage_runtime(target)` that copies
+     `$<TARGET_RUNTIME_DLLS:target>` on Windows. Unlike FFmpeg's DLL glob, this picks the right
+     configuration's DLLs. It is a no-op elsewhere, because CMake derives the build-tree rpath.
+   - **Obligations:** stage the archive's licence texts under `third-party/opencv/`, and generate a
+     `notices/opencv.txt` from the manifest into `LAIN_THIRD_PARTY_NOTICES` for `--licenses`.
+   - **`LAIN_CAMERA_OPENCV`**, default **OFF**, so an all-off configure fetches nothing (M9's
+     dependency-footprint rule).
+   - **A probe test** that links `opencv_core` and asserts the linked library's
+     `cv::getBuildInformation()` agrees with the gate: the modules, `Built as dynamic libs? YES`,
+     bundled zlib, built-in parallel framework, and no IPP/Eigen/LAPACK/OpenCL/TBB. It also proves
+     the shared libraries resolve at run time, as the FFmpeg licence test does.
+   - **README row** replaces "planned" with the pinned version, profile and linkage.
+   - **The footprint criterion** above is met as follows. Versions, enabled modules and transitive
+     licences are in the manifest. Configure/build time falls to a fetch. Record the archive size
+     and the linked size of a representative binary when this lands.
+   - Not decided here, and belonging to slice 1: **OpenCV's own thread pool** against ADR-0024's
+     one pool per process. The two options are capping it with `cv::setNumThreads`, or running
+     OpenCV's `parallel_for_` on `multi` through `cv::parallel::setParallelForBackend`. Both work
+     with these binaries (ADR-0026, Consequences).
 1. **Foundational camera geometry + ChArUco calibration.** Add `core::Length`; the agreed rigid
    transform and axis-convention conversions in `lain::math`; immutable validated camera models;
    the closed distortion-model set; projection, unprojection, containment, applicability, and
@@ -7222,9 +7277,12 @@ row here**. A row is cheap to delete and expensive to leave.
 
 - **M9 — camera calibration and fixed registration.** Designed 2026-08-14/15 with three ADRs, no
   code. **Unblocked:** M10 was numbered after it and built before it, discharging its frame-sequence
-  prerequisite. *(Milestone 9; [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
+  prerequisite. How OpenCV is obtained was decided 2026-09-29 (a pinned prebuilt), so slice 0
+  (`addOpenCV.cmake`) waits only on the first `opencv-prebuilt` release. *(Milestone 9;
+  [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
-  [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md).)*
+  [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md),
+  [ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md).)*
 
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not.**
 

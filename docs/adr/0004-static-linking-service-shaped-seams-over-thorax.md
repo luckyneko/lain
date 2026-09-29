@@ -40,6 +40,17 @@ of going multi-DSO, not a pre-existing pain that adopting `thorax` relieves.
   explicit DLL copy on Windows, which has no rpath. Everything else still links statically, and
   "one binary plus the libraries one dependency is legally obliged to ship separately" is not a
   step toward `thorax`.
+
+  **Amended 2026-09-29 (M9).** OpenCV is the second exception
+  ([ADR-0026](0026-opencv-from-a-pinned-minimal-prebuilt.md)), and its reason is **symbol
+  isolation**, not licensing. Apache-2.0 would allow static linking. But OpenCV compiles its own
+  zlib into `opencv_core`, and lain statically links a different zlib into every binary that has
+  the png or tiff codec. Linked statically, the two collide in one link. Shared, with OpenCV's
+  hidden visibility, the bundled copy cannot be seen (the prebuilt proves nothing of it is
+  exported). The boundary carries OpenCV's own C++ types, but only inside the one camera plugin
+  that links it. No lain type, logger, executor or `Factory` crosses it, so the fragmentation this
+  ADR guards against is still absent. The costs are FFmpeg's again: a build-tree rpath, and a DLL
+  copy on Windows.
 - **Service-shaped seams are the convention.** Anything that would otherwise be a floating
   global is exposed as free functions over a hidden singleton (as `lain::log` already is):
   `memory::alloc`/`dealloc` fronting the allocator, `io::read` fronting scheme dispatch, and a
