@@ -17,6 +17,8 @@
 #include <lain/flow/group.h>
 #include <lain/flow/node.h>
 #include <lain/image/image.h>
+#include <lain/io/data/load.h>
+#include <lain/io/data/save.h>
 #include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -242,4 +244,123 @@ TEST_CASE("invalidating a template's key is what makes an edit to it visible", "
 		const LoadResult again = flowview::restoreGraph(document, factory, dir, &cache);
 		REQUIRE(onlyLink(again.graph)->innerGraph()->boundaryInputNode().outputCount() == 2);
 	}
+}
+
+// --- document options (M14 slice 5) -------------------------------------------
+//
+// A document's run trigger is saved with it (the root editor blob) but is not an undo step — so it is
+// written by saveGraph, stripped from a load by takeDocumentOptions, and absent from every snapshot.
+
+// A document with one image input on its boundary, so a round-trip has something to carry besides the
+// options.
+static Graph optionsDocument()
+{
+	Graph graph;
+	graph.boundaryInputNode().addBoundary<lain::image::Image>("source");
+	return graph;
+}
+
+TEST_CASE("a document's run trigger is saved with it and read back", "[graphio][options]")
+{
+	const std::filesystem::path dir = scratchDir("options-roundtrip");
+	const Factory<Node> factory = ioFactory();
+	const std::filesystem::path file = dir / "doc.json";
+
+	for (const flowview::RunTrigger trigger : {flowview::RunTrigger::OnCommit, flowview::RunTrigger::Manual})
+	{
+		flowview::DocumentOptions options;
+		options.trigger = trigger;
+		REQUIRE(flowview::saveGraph(file.string(), optionsDocument(), factory, {}, options));
+
+		LoadResult loaded = flowview::loadGraph(file.string(), factory, nullptr);
+		REQUIRE(loaded.clean());
+		REQUIRE(flowview::takeDocumentOptions(loaded) == options);
+		REQUIRE(loaded.graph.boundaryInputNode().outputCount() == 1); // and the document is all there
+	}
+}
+
+TEST_CASE("a document at the default options is written without them", "[graphio][options]")
+{
+	// Absent means Live, so a Live document writes no blob at all — which is what keeps every file
+	// saved before options existed byte-identical when it is saved again.
+	const std::filesystem::path dir = scratchDir("options-default");
+	const Factory<Node> factory = ioFactory();
+	const std::filesystem::path file = dir / "doc.json";
+
+	// And the options OWN the root blob: one left in the layout does not leak through.
+	EditorTree layout;
+	lain::data::Value stale = lain::data::Value::object();
+	stale.set("trigger", lain::data::Value(std::string("Manual")));
+	layout.graph = stale;
+
+	REQUIRE(flowview::saveGraph(file.string(), optionsDocument(), factory, layout, flowview::DocumentOptions{}));
+	const auto written = lain::io::data::load(lain::core::Uri::fromPath(file));
+	REQUIRE(written.has_value());
+	REQUIRE(written->find("graphEditor") == nullptr);
+
+	LoadResult loaded = flowview::loadGraph(file.string(), factory, nullptr);
+	REQUIRE(flowview::takeDocumentOptions(loaded) == flowview::DocumentOptions{});
+}
+
+TEST_CASE("options this build does not understand fall back to Live and the document still loads", "[graphio][options]")
+{
+	// The graph must never be the price of a blob this build cannot read.
+	const std::filesystem::path dir = scratchDir("options-unknown");
+	const Factory<Node> factory = ioFactory();
+	const std::filesystem::path file = dir / "doc.json";
+
+	const auto loadWith = [&](lain::data::Value blob)
+	{
+		lain::data::Value document = flowview::snapshotGraph(optionsDocument(), factory);
+		document.set("graphEditor", std::move(blob));
+		REQUIRE(lain::io::data::save(lain::core::Uri::fromPath(file), document));
+		LoadResult loaded = flowview::loadGraph(file.string(), factory, nullptr);
+		REQUIRE(loaded.clean()); // flow round-trips the blob opaquely — it is not flow's to judge
+		return loaded;
+	};
+
+	SECTION("a trigger a newer flowview wrote")
+	{
+		// lain::data reads a struct member best-effort, so this falls back to Live on its own.
+		lain::data::Value blob = lain::data::Value::object();
+		blob.set("trigger", lain::data::Value(std::string("WhenIdle")));
+		LoadResult loaded = loadWith(std::move(blob));
+		REQUIRE(flowview::takeDocumentOptions(loaded) == flowview::DocumentOptions{});
+		REQUIRE(loaded.graph.boundaryInputNode().outputCount() == 1);
+	}
+
+	SECTION("a blob that is not options at all")
+	{
+		LoadResult loaded = loadWith(lain::data::Value(std::string("manual please")));
+		REQUIRE(flowview::takeDocumentOptions(loaded) == flowview::DocumentOptions{});
+		REQUIRE(loaded.graph.boundaryInputNode().outputCount() == 1);
+		// ... and the user is told, since a Manual document quietly running Live is what the option
+		// exists to prevent.
+		REQUIRE(loaded.issues.size() == 1);
+		REQUIRE(loaded.issues.front().severity == Severity::Warning);
+	}
+}
+
+TEST_CASE("a loaded document's snapshots never carry its options", "[graphio][options]")
+{
+	// The undo half of "saved, never undone". The layout a load leaves behind is the undo baseline and
+	// every snapshot after it — so if the options stayed in it, the whole history would carry a frozen
+	// copy of the trigger, one line away from being reapplied by a restore.
+	const std::filesystem::path dir = scratchDir("options-snapshot");
+	const Factory<Node> factory = ioFactory();
+	const std::filesystem::path file = dir / "doc.json";
+
+	flowview::DocumentOptions manual;
+	manual.trigger = flowview::RunTrigger::Manual;
+	REQUIRE(flowview::saveGraph(file.string(), optionsDocument(), factory, {}, manual));
+
+	LoadResult loaded = flowview::loadGraph(file.string(), factory, nullptr);
+	REQUIRE(flowview::takeDocumentOptions(loaded) == manual);
+	REQUIRE(loaded.editor.graph.isNull());
+
+	const lain::data::Value baseline = flowview::snapshotGraph(loaded.graph, factory, loaded.editor);
+	REQUIRE(baseline.find("graphEditor") == nullptr);
+	// ... and so an undo restore of that snapshot hands back no options to apply.
+	LoadResult restored = flowview::restoreGraph(baseline, factory, dir, nullptr);
+	REQUIRE(restored.editor.graph.isNull());
 }

@@ -26,7 +26,8 @@ namespace flowview
 	struct PendingSwap; // a New / Open awaiting the unsaved-changes guard (appcontext.h)
 
 	// The application menu bar (File: New/Open/Open Recent/Save/Save As/Quit; Add ▸ category ▸ kind;
-	// View ▸ Reset Layout), drawn once per frame at the viewport top, plus the global Cmd/Ctrl shortcuts.
+	// Run: Run/Stop, Trigger ▸, Scheduler ▸; View ▸ Reset Layout), drawn once per frame at the viewport
+	// top, plus the global Cmd/Ctrl shortcuts.
 	// Stateless — everything it reads/writes lives in AppContext (document + pending-load state) or
 	// is signalled out through draw()'s out-params.
 	struct MenuBarPane

@@ -1,7 +1,10 @@
 #pragma once
 
+#include "runpolicy.h" // RunTrigger — a document's run trigger is one of its options
+
 #include <lain/core/factory.h>
 #include <lain/core/uri.h>
+#include <lain/data/archive.h> // LAIN_SERIALIZE (DocumentOptions)
 #include <lain/data/value.h>
 #include <lain/flow/node.h>
 #include <lain/flow/serialize/loadresult.h>
@@ -37,12 +40,40 @@ namespace flowview
 	// conversions alone. Idempotent.
 	void registerSceneConversions();
 
+	// What flowview stores about a DOCUMENT as a whole, rather than about its nodes — kept in the
+	// root's editor blob (EditorTree::graph), so flow never interprets it. Travels with the file,
+	// because each of these is a choice about THAT graph (how expensive it is to run).
+	//
+	// Deliberately NOT part of an undo snapshot: switching a slow graph to Manual and then undoing the
+	// param edits made before the switch must not flip it back to Live and start a run. So it is saved
+	// by saveGraph, stripped from a load by takeDocumentOptions, and never seen by snapshotGraph.
+	struct DocumentOptions
+	{
+		RunTrigger trigger = RunTrigger::Live;
+
+		bool operator==(const DocumentOptions& other) const { return trigger == other.trigger; }
+	};
+	LAIN_SERIALIZE(DocumentOptions, trigger)
+
 	// Save `graph` as JSON at `uri` (io::data picks the codec by extension). `editor` is the
-	// adapter's per-node metadata (canvas positions), keyed by NodeId. Returns false on a write /
-	// encode failure (logged).
+	// adapter's layout (canvas positions, per level); `options` becomes the root's editor blob. The
+	// blob is written only when `options` differs from the defaults, so a document that never changed
+	// them keeps the bytes it had before options existed — and `options` OWNS the root blob: whatever
+	// `editor.graph` held is replaced. Returns false on a write / encode failure (logged).
 	bool saveGraph(const lain::core::Uri& uri, const lain::flow::Graph& graph,
 				   const lain::core::Factory<lain::flow::Node>& factory,
-				   const lain::flow::serialize::EditorTree& editor = {});
+				   const lain::flow::serialize::EditorTree& editor = {}, const DocumentOptions& options = {});
+
+	// Read a loaded document's options out of its root editor blob, and STRIP the blob from
+	// `result.editor`, so the host holds exactly ONE copy of them. The layout that remains becomes the
+	// host's layout tree, the undo baseline and every snapshot after it: left in, the blob would ride
+	// through the whole undo history as a second copy of the trigger — frozen at the value the file
+	// was opened with, and one line away from being reapplied by a restore, which is exactly the undo
+	// DocumentOptions refuses. A blob that is not options-shaped becomes the defaults plus a Warning
+	// in `result.issues`; a single field this build cannot read (a trigger a newer flowview wrote)
+	// falls back to its default, as lain::data reads every struct member; either way the document
+	// itself still loads. No blob is the defaults, silently.
+	DocumentOptions takeDocumentOptions(lain::flow::serialize::LoadResult& result);
 
 	// The canonical uri one template file is known by: the cycle guard compares it, and the
 	// TemplateCache is keyed on it. ONE function, because a key that is computed two ways is a key
@@ -75,7 +106,7 @@ namespace flowview
 	// one back through restoreGraph (Load-from-RAM). Uses sceneCodecs(), so it captures exactly what
 	// the on-disk format does — structure, params, node/pin names, dynamic pins, layout — and no
 	// runtime-only state (bound boundary values), which is why two snapshots differing only in a bind
-	// compare equal.
+	// compare equal. It takes no DocumentOptions, on purpose: they are saved, never undone.
 	lain::data::Value snapshotGraph(const lain::flow::Graph& graph,
 									const lain::core::Factory<lain::flow::Node>& factory,
 									const lain::flow::serialize::EditorTree& editor = {});

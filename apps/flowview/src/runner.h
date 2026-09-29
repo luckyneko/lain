@@ -29,7 +29,9 @@
 // The coordinator, not the pool: a scheduler run blocks, and entering one from a pool task is a
 // deadlock with one pool per process. Under ParallelScheduler this thread is the pool's
 // participating "+1" (ADR-0024). The policy of WHEN to run — the trigger — is the host's, not this
-// class's; so is what a run is fed.
+// class's (runpolicy.h); so is what a run is fed.
+
+#include "runpolicy.h" // RunStrategy — which scheduler a job goes through
 
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
@@ -51,13 +53,6 @@
 
 namespace flowview
 {
-	// Which scheduler a run goes through. Chosen per session; takes effect at the next run.
-	enum class RunStrategy
-	{
-		Parallel, // the process task pool — the default
-		Serial,	  // one topo-order walk on the coordinator
-	};
-
 	// How a run ended.
 	enum class RunOutcome
 	{

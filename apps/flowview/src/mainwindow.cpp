@@ -50,6 +50,7 @@ namespace flowview
 		// --example asks for the demo scene explicitly, so it wins over the restore.
 		m_ctx.session = loadSession();
 		gui::setLastDirectory(m_ctx.session.lastDialogDir);
+		appDelegate.setStrategy(m_ctx.session.scheduler); // the scheduler the last session ran with
 		if (!appDelegate.useExample() && !m_ctx.session.lastGraph.empty())
 			m_menuBar.openGraphPath(m_ctx, m_ctx.session.lastGraph);
 		return true;
@@ -207,11 +208,18 @@ namespace flowview
 		const auto snapshotNow = [&]()
 		{ return snapshotGraph(appDelegate.graph(), appDelegate.nodeFactory(), m_ctx.layout); };
 
-		// Record an undo step for a committed edit — but only once no widget is active, so a param
-		// drag (which markChanged()s every frame) coalesces into a single history entry on release.
-		// push() ignores a snapshot equal to the current one, so a bound-value-only edit (not in the
-		// document) records nothing. Done BEFORE the swap below, so it captures the pre-swap graph.
-		if (m_ctx.pendingSnapshot && !gui::IsAnyItemActive())
+		// Whether the gesture in progress has ENDED: no widget is active. This is what a committed edit
+		// is — the one boundary, asked once, for both of its readers. Undo records on it (so a param
+		// drag, which markChanged()s every frame, coalesces into one history entry on release), and the
+		// On commit trigger runs on it (so the same drag is one run, on the same release). Not the
+		// pendingSnapshot flag: a document swap and the startup request carry no snapshot, and still
+		// have to run.
+		const bool gestureEnded = !gui::IsAnyItemActive();
+
+		// Record an undo step for a committed edit. push() ignores a snapshot equal to the current
+		// one, so a bound-value-only edit (not in the document) records nothing. Done BEFORE the swap
+		// below, so it captures the pre-swap graph.
+		if (m_ctx.pendingSnapshot && gestureEnded)
 		{
 			m_ctx.undo.push(snapshotNow());
 			m_ctx.pendingSnapshot = false;
@@ -222,6 +230,14 @@ namespace flowview
 		// frame re-seeds positions from the loaded layout.
 		if (m_ctx.loadRequested)
 		{
+			// A New/Open brings the incoming document's own options (its run trigger) — applied here,
+			// with the document, so the pump below already runs it under the right trigger. A restore
+			// brings none, and the current ones stand: they are saved, never undone.
+			if (m_ctx.pendingOptions)
+			{
+				m_ctx.options = *m_ctx.pendingOptions;
+				m_ctx.pendingOptions.reset();
+			}
 			appDelegate.replaceGraph(std::move(m_ctx.loadedGraph));
 			m_ctx.loadRequested = false;
 			m_previews.clear(); // the old graph's cached thumbnails are gone
@@ -277,10 +293,11 @@ namespace flowview
 		if (!m_ctx.undo.hasBaseline())
 			m_ctx.undo.reset(snapshotNow());
 
-		// Act on this frame's requests for a run, LAST: after every edit, the group sync and any
-		// document swap have landed, so the clone a new run reads is of the document as the frame
-		// leaves it. Never waits — a run in flight is cancelled, and a later frame starts the next.
-		appDelegate.pumpRun();
+		// Act on this frame's asks for a run, LAST: after every edit, the group sync and any document
+		// swap have landed, so the clone a new run reads is of the document as the frame leaves it —
+		// and under the trigger of the document it is. Never waits: a run in flight is cancelled, and a
+		// later frame starts the next.
+		appDelegate.pumpRun(m_ctx.options.trigger, gestureEnded);
 
 		window.renderer().render([&](acm::CommandBuffer cmd, uint32_t)
 								 { m_guiCtx->render(cmd); });
@@ -290,8 +307,12 @@ namespace flowview
 	{
 		// Persist the dialog folder as it ended up — every dialog (graph, image bind, image save) feeds
 		// the one gui-side "last folder", so this is the only place that needs to read it. The document
-		// and recents were already written as they changed, so a crash loses at most this.
+		// and recents were already written as they changed, so a crash loses at most this and the
+		// scheduler below.
 		m_ctx.session.lastDialogDir = gui::lastDirectory();
+		// ... and the scheduler, for the same reason: the app owns the live choice (the Run menu sets
+		// it there), and this is where it is carried into the next session.
+		m_ctx.session.scheduler = m_ctx.app->strategy();
 		saveSession(m_ctx.session);
 
 		// Release every GPU texture while the ImGui backend still lives — a gui::Texture reclaims its

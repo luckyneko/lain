@@ -40,6 +40,7 @@ namespace flowview
 		ctx.pendingPath.reset(); // a New lands at the root, even if an undo was requested first this frame
 		ctx.loadRequested = true;
 		ctx.pendingBaseline = snapshotGraph(*ctx.loadedGraph, ctx.app->nodeFactory()); // reset undo history to the blank doc
+		ctx.pendingOptions = DocumentOptions{};										   // a new document runs Live
 		ctx.currentPath.clear();													   // an untitled document
 		ctx.dirty = false;
 		ctx.loadIssues.clear();
@@ -168,6 +169,9 @@ namespace flowview
 	bool MenuBarPane::openGraphPath(AppContext& ctx, const std::filesystem::path& path)
 	{
 		flow::serialize::LoadResult result = loadGraph(core::Uri::fromPath(path), ctx.app->nodeFactory(), &ctx.templates);
+		// FIRST, before the layout becomes the baseline: this strips the options out of it, so the
+		// trigger lives in ctx.options alone and no snapshot in this document's history carries one.
+		DocumentOptions options = takeDocumentOptions(result);
 		// Surface load problems in the Issues panel (not a modal) — they persist until the graph is
 		// next edited. Map the serialize severity onto the panel's.
 		ctx.loadIssues.clear();
@@ -191,7 +195,8 @@ namespace flowview
 		// Baseline the undo history to the loaded document (via the same snapshot path push() uses, so
 		// the first edit's snapshot compares cleanly). Opening resets history — undo doesn't cross it.
 		ctx.pendingBaseline = snapshotGraph(*ctx.loadedGraph, ctx.app->nodeFactory(), ctx.pendingLayout);
-		ctx.currentPath = path; // remember for plain Save
+		ctx.pendingOptions = options; // this document's own trigger, from the file
+		ctx.currentPath = path;		  // remember for plain Save
 		ctx.dirty = false;
 		noteGraphPath(ctx.session, path); // now the document to reopen + the head of Open Recent
 		saveSession(ctx.session);
@@ -406,7 +411,7 @@ namespace flowview
 			return saveAsDialog(ctx, activeGraph); // no file yet -> prompt for one
 
 		const flow::Graph& document = documentToSave(ctx, activeGraph);
-		if (saveGraph(core::Uri::fromPath(ctx.currentPath), document, ctx.app->nodeFactory(), ctx.layout))
+		if (saveGraph(core::Uri::fromPath(ctx.currentPath), document, ctx.app->nodeFactory(), ctx.layout, ctx.options))
 		{
 			// This file may be somebody's template — including, one Return away, this document's own
 			// parent. REQUIRED, not tidiness: Edit Template... -> Save -> Return works because the
@@ -431,7 +436,7 @@ namespace flowview
 		std::filesystem::path file = *path;
 		file.replace_extension("json"); // force .json (the codec is keyed off the extension)
 		const flow::Graph& document = documentToSave(ctx, activeGraph);
-		if (!saveGraph(core::Uri::fromPath(file), document, ctx.app->nodeFactory(), ctx.layout))
+		if (!saveGraph(core::Uri::fromPath(file), document, ctx.app->nodeFactory(), ctx.layout, ctx.options))
 		{
 			gui::message("Save failed", "Could not write " + file.string(), true);
 			return false;
@@ -538,19 +543,39 @@ namespace flowview
 				gui::EndMenu();
 			}
 			// Runs happen off the frame loop (ADR-0025), so there is something to steer while one is in
-			// flight. The trigger is always Live for now: every change asks for a run. (M14 slice 5
-			// adds On commit / Manual, an explicit Run, and remembers these choices.)
+			// flight — and a slow graph needs a way to stop every change from starting one.
 			if (gui::BeginMenu("Run"))
 			{
+				// Always enabled: under Manual it is the only way anything runs (and it supersedes a run
+				// in flight), and under Live it resumes what a Stop left stale without an edit.
+				if (gui::MenuItem("Run", (m + "Enter").c_str()))
+					ctx.app->runNow();
 				// Progress on the item that acts on it: how far the run in flight has got, in node
 				// computes — which grow while it runs, since a map's elements and a loop's iterations
 				// are planned only once the stage before them has finished.
 				const bool running = ctx.app->running();
 				const std::string stop = running ? string::format("Stop ({}/{})", ctx.app->runFinished(), ctx.app->runPlanned())
 												 : std::string("Stop");
-				if (gui::MenuItem(stop.c_str(), nullptr, false, running))
+				if (gui::MenuItem(stop.c_str(), (m + ".").c_str(), false, running))
 					ctx.app->stopRun();
 				gui::Separator();
+				// What starts a run, for THIS document: saved with it, so it marks the document dirty —
+				// but it is not an edit to the recipe, so it records no undo step (DocumentOptions).
+				if (gui::BeginMenu("Trigger"))
+				{
+					const auto triggerItem = [&](const char* label, RunTrigger trigger)
+					{
+						if (gui::MenuItem(label, nullptr, ctx.options.trigger == trigger) && ctx.options.trigger != trigger)
+						{
+							ctx.options.trigger = trigger;
+							ctx.dirty = true;
+						}
+					};
+					triggerItem("Live", RunTrigger::Live);
+					triggerItem("On Commit", RunTrigger::OnCommit);
+					triggerItem("Manual", RunTrigger::Manual);
+					gui::EndMenu();
+				}
 				// Which scheduler the NEXT run goes through; the run in flight finishes as it began.
 				if (gui::BeginMenu("Scheduler"))
 				{
@@ -595,5 +620,11 @@ namespace flowview
 			saveToCurrentPath(ctx, graph);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Q, ImGuiInputFlags_RouteGlobal))
 			app.exit();
+		// Run / Stop. Cmd+Period is the macOS convention for "stop what you are doing"; Ctrl+Period
+		// elsewhere, by the same Ctrl -> Cmd remap as every other chord here.
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Enter, ImGuiInputFlags_RouteGlobal))
+			ctx.app->runNow();
+		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Period, ImGuiInputFlags_RouteGlobal))
+			ctx.app->stopRun();
 	}
 } // namespace flowview

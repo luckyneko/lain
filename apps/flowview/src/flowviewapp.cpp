@@ -152,6 +152,8 @@ namespace flowview
 			for (const flow::BoundaryInput& in : m_graph->boundaryInputs())
 				bindDefaultInput(in, *m_evaluation, m_size);
 		// Asked for rather than run: the first frame starts it, off the frame loop like every other.
+		// (A new document's trigger is Live. A session reopening a Manual document swaps it in at the
+		// end of the first frame, before the pump — so that document does not run on launch.)
 		requestRun();
 		return true;
 	}
@@ -229,7 +231,12 @@ namespace flowview
 
 	void FlowviewApp::requestRun()
 	{
-		m_runRequested = true;
+		m_requests.changed();
+	}
+
+	void FlowviewApp::runNow()
+	{
+		m_requests.runNow();
 	}
 
 	void FlowviewApp::bind(flow::PortAddress input, flow::PortValue value)
@@ -244,7 +251,7 @@ namespace flowview
 	void FlowviewApp::stopRun()
 	{
 		m_runner.cancel();
-		m_runRequested = false;
+		m_requests.clear();
 	}
 
 	bool FlowviewApp::pollRun()
@@ -267,14 +274,14 @@ namespace flowview
 		return true;
 	}
 
-	void FlowviewApp::pumpRun()
+	void FlowviewApp::pumpRun(RunTrigger trigger, bool gestureEnded)
 	{
-		if (!m_runRequested || !m_graph)
+		if (!m_graph || !m_requests.due(trigger, gestureEnded))
 			return;
 
 		// SUPERSEDE: the run in flight is computing against a document that has since changed. Cancel
-		// it and keep the request; once it has drained, a later frame starts the new one. (Waiting for
-		// it here is what this whole arrangement exists not to do.)
+		// it and keep the asks; once it has drained, a later frame starts the new one. (Waiting for it
+		// here is what this whole arrangement exists not to do.)
 		if (m_runner.busy())
 		{
 			m_runner.cancel();
@@ -289,7 +296,7 @@ namespace flowview
 		job.bindings = m_bindings.handOver(m_runner.nextJob());
 		job.strategy = m_strategy;
 		m_runner.start(std::move(job));
-		m_runRequested = false;
+		m_requests.started();
 	}
 
 	void FlowviewApp::replaceGraph(std::unique_ptr<flow::Graph> graph)

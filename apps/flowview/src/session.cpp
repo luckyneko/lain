@@ -16,7 +16,7 @@ namespace flowview
 
 	// The session file's shape IS this struct (data's "the type is the schema"). Absent keys load as
 	// defaults, so an older file — or one written before a field existed — still reads.
-	LAIN_SERIALIZE(Session, lastGraph, recentGraphs, lastDialogDir)
+	LAIN_SERIALIZE(Session, lastGraph, recentGraphs, lastDialogDir, scheduler)
 
 	// ~/.flowview/session.json — beside the dock layout's imgui.ini. Empty if the home directory
 	// can't be resolved, in which case the session simply isn't persisted.

@@ -132,6 +132,45 @@ TEST_CASE("a graph round-trips through data::Value (structure + params + edges)"
 	REQUIRE(sink->param(0).get<float>() == 9.0f);
 }
 
+TEST_CASE("a graph's own editor blob round-trips, and is not written when there is none", "[flow-serialize]")
+{
+	// The adapter's blob for the graph AS A WHOLE (EditorTree::graph) — flowview keeps a document's
+	// run trigger in the root one. Absent must stay absent: a document that never set one is written
+	// exactly as it was before the key existed, which is what keeps an untouched file's bytes stable.
+	const Factory<Node> factory = nodeFactory();
+	const ValueCodecs codecs = valueCodecs();
+	const Graph graph = sampleGraph();
+
+	SECTION("none is written as no key at all")
+	{
+		const Value doc = toValue(graph, factory, codecs);
+		REQUIRE(doc.find("graphEditor") == nullptr);
+
+		const LoadResult result = fromValue(doc, factory, codecs);
+		REQUIRE(result.clean());
+		REQUIRE(result.editor.graph.isNull());
+		REQUIRE(result.editor.empty());
+	}
+
+	SECTION("one is handed back as written")
+	{
+		Value blob = Value::object();
+		blob.set("trigger", Value(std::string("Manual")));
+		lain::flow::serialize::EditorTree editor;
+		editor.graph = blob;
+
+		const Value doc = toValue(graph, factory, codecs, editor);
+		REQUIRE(doc.find("graphEditor") != nullptr);
+
+		const LoadResult result = fromValue(doc, factory, codecs);
+		REQUIRE(result.clean());
+		REQUIRE(result.editor.graph == blob);
+		REQUIRE_FALSE(result.editor.empty());
+		// And a re-save of what came back is the same document.
+		REQUIRE(toValue(result.graph, factory, codecs, result.editor) == doc);
+	}
+}
+
 TEST_CASE("a user-renamed node keeps its title across a round-trip", "[flow-serialize]")
 {
 	const Factory<Node> factory = nodeFactory();

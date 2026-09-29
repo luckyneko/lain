@@ -2,8 +2,8 @@
 
 ---
 Status: accepted (designed 2026-09-28; slices 1 — clone + lineage — 2 — the published evaluation
-+ payload identity — and 3 — cancellation — built 2026-09-28, 4 — the async vertical — 2026-09-29,
-the rest not)
++ payload identity — and 3 — cancellation — built 2026-09-28, 4 — the async vertical — and 5 —
+triggers + persistence — 2026-09-29, the rest not)
 Amends [ADR-0012](0012-definition-and-evaluation.md) — the pairing guard moves from address identity
 to **lineage**, and a *published evaluation* is the "different concept" it set aside. Amends
 [ADR-0024](0024-one-process-task-pool.md) — gui-mode stops being serial, and the coordinator thread is
@@ -207,6 +207,30 @@ waiting depends on the run's cost, which cannot be known before it runs. A run p
 closure, as today; Manual adds **Run Selection**, the upstream cone of the selected nodes, planned like
 the pull path but multi-target and executed in parallel.
 
+*Amended 2026-09-29, the day slice 5 built the triggers.* Four things this section left open, each
+settled with the repo owner:
+
+- **The trigger is saved with the document, and is not an undo step.** It travels with the file for
+  the reason above, and changing it marks the document dirty. But it stays out of every undo
+  snapshot, and a restore keeps the current trigger: otherwise switching a slow graph to Manual and
+  then undoing the param edits made before the switch would flip it back to Live and start the run
+  the switch was for. It lives in the root's adapter blob (`flow::serialize`'s `EditorTree::graph`,
+  one per level, written only when set — so no version bump, and a Live document is written
+  byte-identically to one saved before this existed). flowview strips it from a load into one live
+  owner, so no snapshot carries a copy.
+- **Manual means only Run starts a run — a document swap included.** New, Open, an undo and a
+  template reload each begin a new lineage, so the panes are empty until the next Run. That is the
+  honest reading of Manual, and it lets a user undo several steps and run once; its cost is the
+  deferred *keeping an evaluation across an undo* below, which Manual makes more pressing.
+- **On commit is undo's boundary, not undo's flag.** A committed edit is "no widget is active" —
+  asked once a frame, for both undo and the trigger. Not `pendingSnapshot`: a document swap and the
+  startup request carry no snapshot, and must still run.
+- **The scheduler is remembered per session**, beside the file dialogs' folder: it is a choice about
+  this machine and this sitting, not about a graph.
+
+Under Manual an edit never cancels a run in flight, since only Run can make one due; under On commit a
+run in flight is superseded on the release, not on the first frame of the drag.
+
 ### The staleness rule is stated once, in flow
 
 The viewer shows each node's **freshness** — Stale, Queued, Computing, Current, Failed — and *Stale*
@@ -273,6 +297,8 @@ engine instead of re-implementing it.
 - **View-driven pull** — trigger: an expensive branch downstream of routine edits that is not being
   looked at.
 - **Keeping an evaluation across an undo** — trigger: undo on a slow graph. It needs a way to say a
-  restored node is the same recipe as the current one, which a freshly minted version cannot.
+  restored node is the same recipe as the current one, which a freshly minted version cannot. Under
+  **Manual** (slice 5) the cost is sharper than a recompute: an undo leaves the panes EMPTY until the
+  next Run, since the swap drops the old lineage's values and a swap does not run.
 - **Asynchronous texture upload and off-thread poster production** — trigger: an upload or a poster
   decode that visibly hitches.

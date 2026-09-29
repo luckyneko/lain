@@ -39,10 +39,17 @@ namespace lain::flow::serialize
 	//
 	// A flat EditorData converts implicitly: a graph with no groups is a tree with no subtrees, so
 	// every caller that has only root-level layout keeps working unchanged.
+	//
+	// `graph` is the adapter's blob for this graph AS A WHOLE, beside the per-node ones — at the root,
+	// that is the document's (flowview keeps its run trigger there). It means the same thing at every
+	// level of the tree, which is why it is not a document-only field: an inline group's body carries
+	// one exactly as the root does, and a linked template's own arrives in its group's subtree. Null
+	// means none, and is not written, so a document that never sets one keeps its bytes.
 	struct EditorTree
 	{
 		EditorData nodes;					 // this graph's per-node blobs
 		std::map<NodeId, EditorTree> groups; // per group node, its inner graph's tree
+		data::Value graph;					 // this graph's own blob; null = none
 
 		EditorTree() = default;
 		EditorTree(EditorData nodes) // NOLINT(google-explicit-constructor) — a flat layout IS a tree
@@ -50,7 +57,7 @@ namespace lain::flow::serialize
 		{
 		}
 
-		bool empty() const { return nodes.empty() && groups.empty(); }
+		bool empty() const { return nodes.empty() && groups.empty() && graph.isNull(); }
 	};
 
 	// The outcome of loading a Graph: a best-effort Graph plus what went wrong + the re-keyed editor

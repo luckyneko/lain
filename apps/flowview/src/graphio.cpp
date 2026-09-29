@@ -14,6 +14,7 @@
 #include <lain/io/data/load.h>
 #include <lain/io/data/save.h>
 #include <lain/io/uri.h>
+#include <lain/log/log.h>
 #include <lain/media/frameposition.h>
 #include <lain/media/frameref.h>
 #include <lain/media/framesequence.h>
@@ -22,6 +23,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <utility>
 
 // image::ColorRGBf's serialize() — defined in lain::image so ADL finds it. flowview owns this
 // because it names both the type (image) and the archive (data); lain::image itself stays data-free,
@@ -151,11 +153,38 @@ namespace flowview
 		// wrong answer nobody notices.
 	}
 
-	bool saveGraph(const core::Uri& uri, const flow::Graph& graph,
-				   const core::Factory<flow::Node>& factory, const flow::serialize::EditorTree& editor)
+	bool saveGraph(const core::Uri& uri, const flow::Graph& graph, const core::Factory<flow::Node>& factory,
+				   const flow::serialize::EditorTree& editor, const DocumentOptions& options)
 	{
-		const data::Value document = flow::serialize::toValue(graph, factory, sceneCodecs(), editor);
+		// The options own the root blob. Null at the defaults, which the serializer writes as no key
+		// at all — so a Live document saved today is byte-identical to one saved before this existed.
+		flow::serialize::EditorTree tree = editor;
+		tree.graph = options == DocumentOptions{} ? data::Value{} : data::toValue(options);
+		const data::Value document = flow::serialize::toValue(graph, factory, sceneCodecs(), tree);
 		return io::data::save(uri, document);
+	}
+
+	DocumentOptions takeDocumentOptions(flow::serialize::LoadResult& result)
+	{
+		const data::Value blob = std::move(result.editor.graph);
+		result.editor.graph = data::Value{};
+		if (blob.isNull())
+			return {};
+
+		// A FIELD this build cannot read — a trigger a newer flowview wrote — does not fail this:
+		// lain::data reads a struct member best-effort and leaves it at its default, which is the soft
+		// forward-compatibility the rest of the document gets too. What does fail is a blob that is not
+		// options-shaped at all.
+		if (std::optional<DocumentOptions> options = data::fromValue<DocumentOptions>(blob))
+			return *options;
+
+		// Costing the whole document for it would be out of all proportion, so the graph loads and the
+		// options fall back — and the user is told, since a Manual document quietly running Live is
+		// exactly what the option exists to prevent.
+		const std::string message = "the document's options were not understood - running it Live";
+		log::warn("flowview: {}", message);
+		result.issues.push_back({flow::serialize::Severity::Warning, message});
+		return {};
 	}
 
 	core::Uri templateKey(const std::filesystem::path& path)

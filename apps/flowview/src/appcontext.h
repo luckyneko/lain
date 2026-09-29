@@ -1,6 +1,7 @@
 #pragma once
 
 #include "canvasids.h" // the imnodes int <-> NodeId/PortAddress mapping (document-lifetime)
+#include "graphio.h"   // DocumentOptions — what the document says about itself (its run trigger)
 #include "groupnav.h"  // GraphPath — which graph the panes are pointed at
 #include "pinkey.h"
 #include "session.h" // what persists between runs (last graph, recents, dialog folder)
@@ -254,6 +255,11 @@ namespace flowview
 		// file dialogs should start. Loaded by MainWindow at startup, updated by the menu bar on every
 		// Open / Save, and written back on shutdown.
 		Session session;
+		// What the open document says about itself — its run trigger (Live / On commit / Manual). The
+		// one live owner: MainWindow hands the trigger to the run pump each frame, Save writes these,
+		// and only New and Open replace them (pendingOptions below). Changing one marks the document
+		// dirty but is NOT an undo step, so an undo or a template reload leaves them alone.
+		DocumentOptions options;
 		bool dirty = false; // unsaved changes since the last save / load / new (drives the discard guard)
 		// A swap the user asked for while there were unsaved changes: it waits here until the guard
 		// modal resolves it (Save / Discard / Cancel).
@@ -286,6 +292,11 @@ namespace flowview
 		// it also resets the active path to the root: a swap remaps every NodeId, so any path into the
 		// old graph is meaningless.
 		lain::flow::serialize::EditorTree pendingLayout;
+		// Set alongside a New/Open swap, never a restore: the options of the document coming in (New's
+		// are the defaults; Open's were read from the file by takeDocumentOptions). Applied with the
+		// swap, so the trigger changes in the same frame as the document it belongs to — and before the
+		// run pump, so a Manual document swapped in does not run.
+		std::optional<DocumentOptions> pendingOptions;
 		// Set alongside a New/Open swap (not an Undo/Redo restore): the freshly-established document to
 		// re-baseline the undo history with once the swap is applied. Its presence is what tells the
 		// swap handler "this is a new document → reset history" vs "this is a restore → keep history".

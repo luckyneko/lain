@@ -872,6 +872,41 @@ landed*.
 - Seven sabotages, all caught — including the one that proves the point of the catch: without it, the
   throw case aborts the whole test binary with *uncaught exception ... boom*.
 
+### Update 2026-09-29 — M14 slice 5 built: run triggers and persistence
+
+**On commit** and **Manual** join Live. The trigger is saved with the document, and the scheduler is
+saved with the session. The Run menu gains **Run** (Cmd/Ctrl+Enter), a Stop shortcut (Cmd/Ctrl+Period)
+and **Trigger ▸** Live / On Commit / Manual. `ctest -j8` **849/849** Debug with video on,
+**855/855** Release with video on, **822/822** Release video-off (+12 each); warning-clean,
+format-check clean. `flowview run --example` is unchanged, and the headless save writes no new key.
+**gui-mode NOT eyeballed** (the triggers act only in the frame loop). Full notes in WORK.md's
+*Milestone 14 › Slice 5 landed*.
+
+- **Three decisions, made with the repo owner while planning.**
+  - **Manual is literal.** A document swap (New, Open, undo, Reload) doesn't run either, so the panes
+    stay empty until Run.
+  - **The trigger is saved but not undoable.** Undoing edits made before a switch to Manual must not
+    flip a slow graph back to Live.
+  - **The blob is per level.** `flow::serialize`'s `EditorTree` gains `graph`, the adapter's blob for
+    a graph as a whole, written under `graphEditor` only when set. That means no version bump, and a
+    Live document keeps its bytes.
+- **The rule is a driver-free unit, `RunRequests`** (`apps/flowview/src/runpolicy.{h,cpp}`). It holds
+  two asks (a change, an explicit Run) and answers `due(trigger, gestureEnded)` fresh each frame. Under
+  Manual only Run is ever due, so an edit never cancels a run in flight. `RunStrategy` moved there
+  from `runner.h`.
+- **On commit keys on undo's boundary (`!IsAnyItemActive()`), not undo's `pendingSnapshot` flag.** A
+  document swap and the startup request carry no snapshot and must still run. It is asked once a
+  frame, for both readers.
+- **The options have one live owner, `AppContext::options`.** New and Open bring them in through
+  `pendingOptions`, applied before the pump, so a reopened Manual document never runs even for one
+  frame. `saveGraph` owns the root blob, and `takeDocumentOptions` strips it from a load, so no undo
+  snapshot carries a frozen copy. **I first claimed the strip prevented a spurious undo step after
+  Open; tracing it said otherwise.** The comments now give the real reason.
+- **Found and corrected in CONTEXT.md, not in code:** `lain::data` reads a struct MEMBER best-effort
+  (an unknown enum name keeps its default and the struct still loads), which is deliberate
+  (`reflect.h`). But *The type is the schema* claimed `fromValue` "fails on a shape/type mismatch",
+  which is true of a struct's shape only.
+
 ### Update 2026-09-26 — one process task pool; `lain::task` becomes an alias for `multi`
 
 The wrapper moved from Taskflow to `multi` on 2026-09-11 with `libs/flow` unchanged by a single line

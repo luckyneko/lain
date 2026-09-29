@@ -22,10 +22,12 @@
 // registry. The Value then rides a codec (lain::io::data) to bytes.
 //
 // Handles plain compute nodes, dynamic pins / boundary nodes, name-addressed edges, group nodes
-// (recursively — see below), and the adapter-owned "editor" section (round-tripped opaquely).
+// (recursively — see below), and the adapter-owned "editor" and "graphEditor" sections
+// (round-tripped opaquely: the first per node, the second for the graph as a whole).
 //
-// The format has two shapes: a GRAPH BODY is { nodes, edges, editor }, and a DOCUMENT is a body
-// plus { version }. The root and every template file are documents; an INLINE group embeds a body
+// The format has two shapes: a GRAPH BODY is { nodes, edges, editor, graphEditor }, and a DOCUMENT
+// is a body plus { version }. Both editor sections are optional and written only when non-empty, so
+// a document that has none reads exactly as it did before either existed. The root and every template file are documents; an INLINE group embeds a body
 // under its node's "graph" key, so nesting is the same shape all the way down. A LINKED group
 // instead stores "source" (its template's path) plus "interface" (the cached pin names + types).
 //
@@ -64,11 +66,12 @@ namespace lain::flow::serialize
 	//   2 — node ids are uuid strings, preserved across saves (ADR-0011).
 	inline constexpr std::int64_t kFormatVersion = 2;
 
-	// Serialize a graph to a data::Value document { version, nodes, edges, editor }. A node whose type
-	// is not registered in `factory` (no kind), a param whose type has no `codecs` entry, or a dynamic
-	// pin whose type has no port-type key is skipped — a Value carries no issue list, so save is
-	// silently best-effort; a clean graph serialises whole. `editor` is the adapter's per-node opaque
-	// metadata (keyed by live NodeId), embedded under "editor" keyed by file id; pass {} for none.
+	// Serialize a graph to a data::Value document { version, nodes, edges, editor, graphEditor }. A
+	// node whose type is not registered in `factory` (no kind), a param whose type has no `codecs`
+	// entry, or a dynamic pin whose type has no port-type key is skipped — a Value carries no issue
+	// list, so save is silently best-effort; a clean graph serialises whole. `editor` is the adapter's
+	// opaque metadata: per node (keyed by live NodeId), embedded under "editor" keyed by file id, and
+	// for each graph as a whole (EditorTree::graph), under "graphEditor"; pass {} for none.
 	[[nodiscard]] data::Value toValue(const Graph& graph, const core::Factory<Node>& factory, const ValueCodecs& codecs, const EditorTree& editor = {});
 
 	// Rebuild a graph from a document, best-effort. Nodes are created via `factory` (by kind) and

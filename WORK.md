@@ -6072,7 +6072,7 @@ regression test: `ctest -j8` **794/794** Debug with video on, warning-clean, for
   the fold. All four reached their header transitively and worked — the class of thing the
   2026-09-05 CI port found six of.
 
-## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-4 built)
+## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-5 built)
 
 gui-mode runs `SerialScheduler::run` synchronously inside the frame loop — `FlowviewApp::reevaluate`
 is reached from `mainwindow.cpp` twice, `inspectorpane.cpp` and `interfacepane.cpp`, on every edit
@@ -6081,9 +6081,9 @@ has no gui caller. This milestone moves graph work off the frame loop, makes the
 default with Serial selectable, and gives the UI the controls a 5-minute graph needs as well as a
 1-second one. Decisions in **[ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md)**;
 vocabulary in CONTEXT.md's *Running while you edit* (plus *clone*, *lineage*, *coordinator*).
-**Slices 1 (clone + lineage), 2 (the published evaluation + payload identity), 3 (cancellation) and 4
-(the async vertical) are built** — see *Slice 1 landed* through *Slice 4 landed* below; slices 5-8 are
-not.
+**Slices 1 (clone + lineage), 2 (the published evaluation + payload identity), 3 (cancellation), 4
+(the async vertical) and 5 (triggers + persistence) are built** — see *Slice 1 landed* through *Slice 5
+landed* below; slices 6-8 are not.
 
 ### The shape
 
@@ -6156,12 +6156,13 @@ Structural, no-behaviour-change slices first; each its own commit with its docs.
    once runs leave the UI thread the Interface pane's direct bind is a race, so this slice cannot ship
    without the queue, and the immediate write into the published copy came with it. So did a
    between-stages observer on `RunControl`, which stage-boundary publication needs.
-5. **Triggers and persistence.** On commit (fires on undo's boundary, `pendingSnapshot &&
-   !gui::IsAnyItemActive()`) and Manual; the trigger in a new optional **document-level editor blob**
-   (`flow::serialize`'s `EditorTree` gains it; absent means Live, so no version bump — M12's `types`
-   precedent); the scheduler in `session.{h,cpp}`; the Run menu grows Run and the trigger choice
-   (`panes/menubar.cpp` — slice 4 built it with Stop and the scheduler radio). *(Pending bindings were
-   here; slice 4 took them.)*
+5. **Triggers and persistence** — **built 2026-09-29**. On commit (fires on undo's boundary — the
+   `!gui::IsAnyItemActive()` half, not the `pendingSnapshot` flag; see *Slice 5 landed*) and Manual;
+   the trigger in a new optional **editor blob for a graph as a whole** (`flow::serialize`'s
+   `EditorTree::graph`, one per level rather than per document; absent means Live, so no version bump
+   — M12's `types` precedent); the scheduler in `session.{h,cpp}`; the Run menu grows Run and the
+   trigger choice (`panes/menubar.cpp` — slice 4 built it with Stop and the scheduler radio).
+   *(Pending bindings were here; slice 4 took them.)*
 6. **Freshness.** A public const stale-closure query in flow (`stale()` / `runOrder()` lifted to
    const — they take a mutable `Evaluation&` only to reach `child()`, which has a const overload),
    lineage-checked so it may compare the document against an evaluation computed on a clone. It must
@@ -6539,6 +6540,90 @@ item.
   / Parallel; a scalar boundary drag during a run does not snap back; New, Open and undo during a run;
   the run-failed row.
 
+### Slice 5 landed (2026-09-29) — triggers and persistence
+
+**On commit** and **Manual** join Live, the trigger is saved with the document, the scheduler is saved
+with the session, and the Run menu gains **Run** (Cmd/Ctrl+Enter), a Stop shortcut (Cmd/Ctrl+Period)
+and a **Trigger ▸** Live / On Commit / Manual choice. `ctest -j8` **849/849** Debug with video on,
+**855/855** Release with video on, **822/822** Release video-off (+12 each: six `[runpolicy]` cases,
+four `[graphio][options]`, two `flow::serialize` editor-blob cases); warning-clean, format-check clean;
+the whole `test-flowview` binary run five times shuffled with no failure. `flowview run` over the
+example is identical to the pre-change binary apart from the output filename it names, and the saved
+document is byte-identical once the minted ids are normalised — the headless save writes no blob.
+`flowview --example --frames 120` exits 0. A session file saying `Serial` survives a run of the real
+binary, which is what shows the scheduler is both restored and written back. **gui-mode NOT
+eyeballed** — the triggers act only in the frame loop.
+
+- **Three decisions, all made with the repo owner while planning.**
+  - **Manual really is manual.** New, Open, undo/redo and Reload Linked Groups do not start a run.
+    Each is a new lineage, so the panes stay empty until Run. It lets a user undo five steps and run
+    once. The cost is recorded against *Keeping an evaluation across undo* below, which Manual makes
+    sharper.
+  - **The trigger is saved but not undoable.** It marks the document dirty, and it stays out of
+    every snapshot: switching a slow graph to Manual and then undoing earlier param edits must not
+    flip it back to Live and start the run the switch was for.
+  - **The blob is per level, not per document.** `EditorTree::graph` means "this graph as a whole"
+    at every node of the tree. Every body writes it under `graphEditor` when it is set; inline groups
+    simply never set it. A linked template's own arrives in its group's subtree because a template
+    is a document, and a document is a body. It is the same code as a document-only field would be,
+    without a field that means something at some levels only.
+- **The rule is a driver-free unit, `RunRequests`** (`runpolicy.{h,cpp}`), because `pumpRun` lives
+  in a file that needs the app and is not under ctest. It holds two asks, a CHANGE and an explicit
+  RUN, and answers `due(trigger, gestureEnded)` afresh each frame. Nothing is latched between
+  frames, so under On commit a new drag that begins before a superseded run drains holds the next
+  run until its own release, which is what On commit means. A change owed under Manual is not lost:
+  switching to Live runs it. `RunStrategy` moved into the same header so `session.h` can name it
+  without pulling in flow and `<thread>`.
+- **On commit keys on undo's boundary, not undo's flag.** WORK.md's entry named `pendingSnapshot &&
+  !IsAnyItemActive()`. A document swap and the startup request carry no snapshot, and a swap sets
+  the flag false, so a trigger reading the flag would never run a freshly opened On commit document.
+  `MainWindow` now asks `!gui::IsAnyItemActive()` once a frame, and both undo and the pump read it.
+- **The options have one live owner, `AppContext::options`.**
+  - New and Open hand a document's options in through `pendingOptions`, applied in the swap block
+    before the pump. A Manual document swapped in (a session reopening one at launch included)
+    therefore never runs under the wrong trigger, even for one frame.
+  - A restore brings none, so the current options stand.
+  - `saveGraph` takes them as a parameter and **owns the root blob**: a blob left in the layout
+    cannot leak through. At the defaults it writes nothing, which is what keeps every Live
+    document's bytes as they were.
+  - `takeDocumentOptions` reads them out of a load and **strips** them. I first claimed the strip
+    prevented a spurious undo step after Open. Tracing it disproved that: an unstripped blob would
+    sit in `ctx.layout` and ride along in every snapshot, so they would still compare equal. What
+    the strip actually buys is one owner. Without it, every snapshot in the history carries a
+    frozen copy of the trigger, one line away from a restore reapplying it. The comments say that.
+- **Found while testing, and settled as a documentation fix, not a code change:** `lain::data`
+  reads a struct MEMBER best-effort. `{"trigger": "WhenIdle"}` loads as Live with no complaint,
+  because `Archive::member` ignores `readValue`'s result. That is deliberate (`reflect.h`:
+  *"per-field tolerance is inside member()"*) and it is the same soft forward-compatibility a
+  document's params get. But CONTEXT.md's *The type is the schema* said `fromValue` "fails on a
+  shape/type mismatch", which is true of a struct's shape only. It now says so. A blob that is not
+  options-shaped at all still gets a Warning, and the document still loads.
+- **A fourth trigger is a compile error** (`-Wswitch` over an exhaustive switch in `due`), which was
+  checked by adding one.
+- **Sabotages, all caught.** One at a time against a backup:
+  - On commit ignoring the gesture: the On-commit case fails, due mid-drag.
+  - Manual treated as Live: the Manual case and the switch case fail.
+  - `started()` leaving the change owed: the consume case and the On-commit case fail.
+  - `saveGraph` writing the blob at the defaults: the no-key case fails.
+  - The blob not owned by the options, so a stale layout blob leaks: the no-key case fails.
+  - `takeDocumentOptions` not stripping: the snapshot case fails.
+    - The explicit reset is load-bearing: a moved-from `data::Value` is not null.
+  - An unreadable blob costing the document: the fallback case fails, with the graph empty.
+  - `bodyToValue` skipping `graphEditor`: both flow cases fail.
+  - `bodyToValue` writing it when null: the absent case fails.
+  - `loadBody` not reading it: both flow cases fail.
+  - "Manual clears the owed change" cannot be written: `due()` is const and the trigger is only an
+    input. So the switch case is protected by the shape, not by a test that could fail.
+- **Not covered by ctest:** the frame-loop wiring (`pumpRun`'s use of `due`, the options swap, the
+  Run menu, the shortcuts) needs a `gui::Context`. For the repo owner's pass:
+  - On commit: a slider drag runs once, on release.
+  - Manual: edits neither run nor cancel a run in flight. Run / Cmd+Enter runs, and Stop / Cmd+.
+    stops.
+  - A Manual document saved and reopened opens Manual and does not run.
+  - An undo under Manual keeps the trigger and runs nothing.
+  - Switching the trigger marks the document dirty, and New asks.
+  - The scheduler survives a restart.
+
 ### Visual design (settled in outline, tuned by eyeball)
 
 Freshness takes channels nothing else uses — title colour is category, a muted title is *not ready*,
@@ -6557,7 +6642,8 @@ the accent title is selection, pin colour is type, a muted link is inactive:
 - **View-driven pull.** Trigger: an expensive branch downstream of routine edits that is not being
   looked at.
 - **Keeping an evaluation across undo / Open.** They start a new lineage, so they recompute everything
-  — pre-existing, and expensive in Live on a slow graph. Trigger: undo on a slow graph.
+  — pre-existing, and expensive in Live on a slow graph. Under **Manual** (slice 5) the cost is
+  sharper: an undo leaves the panes empty until the next Run. Trigger: undo on a slow graph.
 - **Asynchronous texture upload; off-thread poster production; playback decode.** Viewer work, not
   graph work — the milestone promises the frame loop never waits on *graph* work, not that the UI
   never hitches. Trigger: an upload or a poster decode that visibly hitches.
@@ -6603,7 +6689,8 @@ row here**. A row is cheap to delete and expensive to leave.
 
 - **M14 — asynchronous execution: the gui never waits on graph work.** Designed 2026-09-28; slices 1
   (clone + lineage), 2 (the published evaluation + payload identity) and 3 (cancellation) built
-  2026-09-28, slice 4 (the async vertical) 2026-09-29, slices 5-8 not.
+  2026-09-28, slices 4 (the async vertical) and 5 (triggers + persistence) 2026-09-29, slices 6-8
+  not.
   *(Milestone 14; [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)*
 
 M1–M8 and M10–M13 are built. **M9 and M14 are the milestones from 5 onward that are not.**

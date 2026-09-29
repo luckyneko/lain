@@ -1,5 +1,7 @@
 #pragma once
 
+#include "runpolicy.h" // RunStrategy — the scheduler is remembered per session
+
 #include <cstddef>
 #include <filesystem>
 #include <vector>
@@ -30,6 +32,12 @@ namespace flowview
 		// The directory the file dialogs should start in — lain::gui's dialog seam owns this within a
 		// session (gui::lastDirectory()); persisting it is what makes it survive a restart.
 		std::filesystem::path lastDialogDir;
+
+		// The scheduler runs go through (Run ▸ Scheduler). Per SESSION rather than per document: it is
+		// a choice about this machine and this sitting, not about a graph — unlike the run trigger,
+		// which travels with the file. The app owns the live choice; this is its persistence, the same
+		// arrangement as lastDialogDir.
+		RunStrategy scheduler = RunStrategy::Parallel;
 	};
 
 	// How many entries File ▸ Open Recent keeps.

@@ -1,7 +1,7 @@
 # flowview unit tests (Catch2). Driver-free — no window, no device. Compiles the production
-# undo.cpp / groupnav.cpp / canvasids.cpp / validation.cpp / runner.cpp directly (not copies), so the
-# tests exercise the real UndoStack, the real group-navigation model, the real imnodes id mapping, the
-# real Issues-panel rules and the real coordinator thread.
+# undo.cpp / groupnav.cpp / canvasids.cpp / validation.cpp / runner.cpp / runpolicy.cpp directly (not
+# copies), so the tests exercise the real UndoStack, the real group-navigation model, the real imnodes id
+# mapping, the real Issues-panel rules, the real coordinator thread and the real run triggers.
 
 add_executable(test-flowview
 	test_undo.cpp
@@ -20,8 +20,10 @@ add_executable(test-flowview
 	test_payloadscene.cpp
 	test_validation.cpp
 	test_runner.cpp
+	test_runpolicy.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/undo.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runner.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runpolicy.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/groupnav.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/validation.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/canvasids.cpp"

@@ -386,6 +386,68 @@ TEST_CASE("a template that links itself is refused, not followed forever", "[flo
 	REQUIRE(refused);
 }
 
+TEST_CASE("a graph's own editor blob nests with its level", "[flow-serialize][group]")
+{
+	// EditorTree::graph means "this graph as a whole" at EVERY level, not only at a document root: an
+	// inline group's body carries its own, and a linked template's arrives in its group's subtree —
+	// because a template is a document, and a document is a body.
+	const Factory<Node> factory = groupFactory();
+	const ValueCodecs codecs = intCodecs();
+
+	Value rootBlob = Value::object();
+	rootBlob.set("level", Value(std::string("root")));
+	Value innerBlob = Value::object();
+	innerBlob.set("level", Value(std::string("inner")));
+
+	SECTION("an inline group's body")
+	{
+		Graph source;
+		const NodeId group = source.add<InlineGroupNode>();
+		buildAdderInterior(static_cast<InlineGroupNode&>(source.node(group)).inner(), 100);
+		buildParent(source, group, 5);
+
+		EditorTree editor;
+		editor.graph = rootBlob;
+		editor.groups[group].graph = innerBlob;
+
+		const Value doc = toValue(source, factory, codecs, editor);
+		const LoadResult result = fromValue(doc, factory, codecs);
+		REQUIRE(result.clean());
+		REQUIRE(result.editor.graph == rootBlob);
+		REQUIRE(result.editor.groups.count(group) == 1);
+		REQUIRE(result.editor.groups.at(group).graph == innerBlob);
+	}
+
+	SECTION("a linked template's own")
+	{
+		Graph templateGraph;
+		buildAdderInterior(templateGraph, 100);
+		EditorTree templateLayout;
+		templateLayout.graph = innerBlob;
+		const Value templateDoc = toValue(templateGraph, factory, codecs, templateLayout);
+
+		Graph source;
+		const NodeId group = source.add<LinkedGroupNode>();
+		auto& linked = static_cast<LinkedGroupNode&>(source.node(group));
+		linked.setSource("subs/adder.json");
+		Graph interior;
+		buildAdderInterior(interior, 100);
+		linked.adoptInterior(std::move(interior));
+		linked.setResolved(true);
+		const Value doc = toValue(source, factory, codecs);
+
+		const TemplateResolver resolver = [&](const std::string&) -> std::optional<ResolvedTemplate>
+		{ return ResolvedTemplate{"/abs/subs/adder.json", templateDoc}; };
+		const LoadResult result = fromValue(doc, factory, codecs, resolver);
+		REQUIRE(result.clean());
+
+		// The parent set none of its own, and the template's is its template's, not the parent's.
+		REQUIRE(result.editor.graph.isNull());
+		REQUIRE(result.editor.groups.count(group) == 1);
+		REQUIRE(result.editor.groups.at(group).graph == innerBlob);
+	}
+}
+
 TEST_CASE("a linked group shows its template's own node layout", "[flow-serialize][group]")
 {
 	// Reported: nodes inside a linked group sat in default columns instead of where the template put

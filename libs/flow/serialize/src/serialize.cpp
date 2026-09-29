@@ -336,6 +336,10 @@ namespace lain::flow::serialize
 		body.set("edges", std::move(edges));
 		if (const data::Value::Object* obj = editorSection.asObject(); obj && !obj->empty())
 			body.set("editor", std::move(editorSection));
+		// The adapter's blob for this graph as a whole — after the per-node ones, and only when there
+		// is one, so a document that never set it is written exactly as it was before the key existed.
+		if (!editor.graph.isNull())
+			body.set("graphEditor", editor.graph);
 		return body;
 	}
 
@@ -1174,6 +1178,9 @@ namespace lain::flow::serialize
 				}
 			}
 		}
+		// ... and the one for the graph as a whole, which names no node and so needs no remap.
+		if (const data::Value* graphEditor = document.find("graphEditor"))
+			editor.graph = *graphEditor;
 		return graph;
 	}
 } // namespace lain::flow::serialize

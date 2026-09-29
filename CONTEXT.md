@@ -896,16 +896,19 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 
 ## Running while you edit — the host's side of a run
 
-*(M14 — designed; slices 1-4 built: runs are off the frame loop, Live only, and freshness is not
-drawn yet. [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
+*(M14 — designed; slices 1-5 built: runs are off the frame loop under all three triggers, and
+freshness is not drawn yet. [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
 host keeps its document editable while a run is in flight. These are the words for how a run is
 started, stopped and shown.
 
 - **Run trigger** — what starts a run, chosen per document: **Live** (every change, including each
   frame of a drag), **On commit** (when a gesture ends), **Manual** (only an explicit Run). A choice
-  about how expensive the graph is, which is why it travels with the document. Never switched
-  automatically. _Avoid_: auto / semi-auto (say which trigger), debounce (there is no timer: the
-  delay worth waiting depends on the run's cost, unknowable before it runs).
+  about how expensive the graph is, which is why it travels with the document: **saved with it, but
+  not an undo step** — undoing edits made before a switch to Manual must not flip a slow graph back
+  to Live. Absent from a file means Live. Under Manual *every* change waits for Run, a document swap
+  (New, Open, an undo) included, so the panes stay empty until then. Never switched automatically.
+  _Avoid_: auto / semi-auto (say which trigger), debounce (there is no timer: the delay worth
+  waiting depends on the run's cost, unknowable before it runs).
 - **Committed edit** — a gesture that has ended: a click, a connect, the release of a drag. The unit
   undo records and **On commit** runs on, so a slider drag is one committed edit however many frames
   it spans. _Avoid_: change (every frame of a drag is a change; only its end is committed).
@@ -1465,7 +1468,11 @@ first customer; the spine is general but built Graph-driven, json-first — see 
 - **The type is the schema** *(principle)* — there is **no separate validation layer**.
   Format-safety *is* a typed `fromValue<T>` succeeding: it fails on a shape/type mismatch,
   `optional<T>` tolerates an absent key, `variant` rejects an unknown arm, a narrow int
-  range-checks. Machine-generated files need layout + type checks and nothing heavier.
+  range-checks. Machine-generated files need layout + type checks and nothing heavier. **One
+  deliberate softening:** a struct's MEMBERS are read best-effort (`Archive::member`) — a member
+  that is absent, or present with a value that does not read (an enum name this build does not
+  know), keeps its default and the struct still loads. So the check applies to a struct's shape
+  (it must be an object), not to each field.
 
   **Serialization vs reflection** *(the honest split)* — "serialization" is strictly the
   `Value → bytes` step (`io::data` — json/yaml/binary). `T ↔ Value` is **reflection into the
@@ -1579,7 +1586,9 @@ iff it stays payload-agnostic; the moment it must name a concrete payload type o
 - **`editor` section** — a separate, **adapter-owned** part of the document keyed by node-id that
   `flow::serialize` **round-trips as an opaque `Value`** and never interprets: node position, color,
   size, collapsed-state, comments. Keeps `flow::serialize` GUI-free (placement is the adapter's job)
-  in one file; a headless load ignores it.
+  in one file; a headless load ignores it. Its sibling **`graphEditor`** is the same thing for a
+  graph *as a whole* (`EditorTree::graph`) — one per level, written only when set; at the root it is
+  the document's, and flowview keeps its **run trigger** there.
 
 - **version** — a document-root **integer** (monotonic, *not* `core::Version` semver), bumped on an
   incompatible encoding change. The public loader migrates an old `Value` DOM one version at a time,

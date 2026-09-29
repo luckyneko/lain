@@ -64,10 +64,14 @@ namespace flowview
 		// graph the last session had open.
 		bool useExample() const { return m_useExample; }
 
-		// Ask for a run after an edit, so data flows through the current wiring. Only records the
-		// request: pumpRun() starts it at the end of the frame, once every edit of that frame has
-		// landed — the one trigger this slice has, Live. UI thread.
+		// Say that something changed — an edit, a binding, a group sync, a document swap — so the shown
+		// values may no longer match. Only records it: pumpRun() decides at the end of the frame,
+		// under the document's run trigger, whether that starts a run (RunRequests). UI thread.
 		void requestRun();
+
+		// An explicit Run: due under every trigger, and the only thing that starts one under Manual.
+		// A run in flight is superseded by it. UI thread.
+		void runNow();
 
 		// Bind a root boundary input. Not a document change, and not a write to the working
 		// evaluation either, which a run may hold: the value is QUEUED for the next run's start and
@@ -76,11 +80,12 @@ namespace flowview
 		// edit does. UI thread.
 		void bind(lain::flow::PortAddress input, lain::flow::PortValue value);
 
-		// Stop the run in flight and forget the request for another: what it finished is kept, the
-		// rest stays stale until something asks again. UI thread.
+		// Stop the run in flight and forget every ask for another: what it finished is kept, the rest
+		// stays stale until something asks again. UI thread.
 		void stopRun();
 
-		// Which scheduler the next run goes through. Parallel by default.
+		// Which scheduler the next run goes through. Parallel by default; remembered per SESSION (the
+		// window restores it at startup and writes it back at shutdown).
 		RunStrategy strategy() const { return m_strategy; }
 		void setStrategy(RunStrategy strategy) { m_strategy = strategy; }
 
@@ -97,15 +102,20 @@ namespace flowview
 		// publication landed, so the caller can refresh what it built from the old one. UI thread.
 		bool pollRun();
 
-		// Frame end: act on a requested run. If one is in flight it is SUPERSEDED — cancelled, with
-		// the request left standing — and the next frame starts the new one once it has drained;
-		// otherwise the document is cloned and the run starts now. So exactly one clone per run that
-		// starts, always of the newest document, and the frame loop never waits. UI thread.
-		void pumpRun();
+		// Frame end: act on the asks, under the document's `trigger`. `gestureEnded` is the undo
+		// history's own boundary (no widget active), so On commit runs on exactly the edits undo
+		// records. When a run is due and one is in flight, that one is SUPERSEDED — cancelled, with the
+		// asks left standing — and a later frame starts the new one once it has drained; otherwise the
+		// document is cloned and the run starts now. So exactly one clone per run that starts, always of
+		// the newest document, and the frame loop never waits. Under Manual only Run is ever due, so an
+		// edit never cancels a run in flight. UI thread.
+		void pumpRun(RunTrigger trigger, bool gestureEnded);
 
-		// Replace the gui-mode scene with a freshly loaded graph (from the canvas Load…), bind its
-		// input to a default gradient so it shows a result, and ask for a run. Called from the render
-		// thread.
+		// Replace the gui-mode scene with a freshly loaded graph (New, Open, an undo/redo restore, a
+		// template reload), bind its input to a default gradient so it shows a result, and say it
+		// changed. The panes show nothing until the new document's first run publishes — and under
+		// Manual that is the next Run, since a swap is a change like any other. Called from the
+		// render thread.
 		void replaceGraph(std::unique_ptr<lain::flow::Graph> graph);
 
 	private:
@@ -146,7 +156,7 @@ namespace flowview
 		lain::flow::PublishedEvaluation m_published;
 		PendingBindings m_bindings;
 
-		bool m_runRequested = false;
+		RunRequests m_requests; // what has asked for a run and not had one yet
 		RunStrategy m_strategy = RunStrategy::Parallel;
 		std::optional<std::string> m_runFailure;
 
