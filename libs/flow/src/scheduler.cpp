@@ -2,14 +2,17 @@
 
 #include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h" // Graph + the boundary nodes a group step crosses through
+#include "lain/flow/staleness.h"
 
 #include <lain/task/task.h>
 
 #include <algorithm>
 #include <cassert>
+#include <exception>
 #include <map>
 #include <optional>
 #include <set>
+#include <string>
 #include <vector>
 
 namespace lain::flow
@@ -18,77 +21,9 @@ namespace lain::flow
 	// Scheduler — planning
 	//=========================================================================
 
-	// Is this node stale in this evaluation — including anything INSIDE it?
-	//
-	// A group used to answer the recursive half with a virtual dirty() that walked mutable flags on
-	// its inner definition. Staleness is now a comparison between a definition version and what ONE
-	// evaluation recorded, so "is anything inside stale?" is a question about that group's CHILD
-	// evaluation, and is asked there. Recursion through nested groups falls out, since a child asks
-	// its own children the same way.
-	//
-	// EVERY child is asked, not only the first. A map's children share one definition and are run
-	// together, so an edit inside it shows in all of them alike — but a cancelled run can stop part-way
-	// through a map, leaving element 2 owed while element 0 finished, and the gather still runs (it is
-	// a crossing). Asking child 0 alone would call that map clean and keep its mixed collection.
-	bool Scheduler::stale(const Graph& definition, Evaluation& evaluation, NodeId id)
-	{
-		if (evaluation.needsRecompute(id))
-			return true;
-
-		const Graph* inner = definition.node(id).innerGraph();
-		if (inner == nullptr)
-			return false;
-
-		for (std::size_t i = 0; i < evaluation.childCount(id); ++i)
-		{
-			Evaluation& child = evaluation.child(id, i);
-			for (const NodeId innerId : inner->nodeIds())
-			{
-				if (stale(*inner, child, innerId))
-					return true;
-			}
-		}
-		return false;
-	}
-
-	// The stale closure at ONE level, in topo order (see scheduler.h): every node that needs
-	// recomputing plus everything reachable downstream of one. topoOrder() is sources-first, so a
-	// node's predecessors are already decided by the time it is visited — a node is selected iff it
-	// is stale or any predecessor was selected.
-	std::vector<NodeId> Scheduler::runOrder(const Graph& definition, Evaluation& evaluation)
-	{
-		std::map<NodeId, std::vector<NodeId>> predecessors;
-		for (const Graph::Edge& e : definition.edges())
-			predecessors[e.to.node].push_back(e.from.node);
-
-		std::set<NodeId> selected;
-		std::vector<NodeId> order;
-		for (const NodeId id : definition.topoOrder())
-		{
-			bool run = stale(definition, evaluation, id);
-			if (!run)
-			{
-				const auto it = predecessors.find(id);
-				if (it != predecessors.end())
-				{
-					for (const NodeId pred : it->second)
-					{
-						if (selected.count(pred) != 0)
-						{
-							run = true;
-							break;
-						}
-					}
-				}
-			}
-			if (run)
-			{
-				selected.insert(id);
-				order.push_back(id);
-			}
-		}
-		return order;
-	}
+	// Staleness itself — which nodes a stage recomputes, and whether a group republishes into its
+	// interior — is StaleClosure's (staleness.h): the same rule a host asks to show what is out of
+	// date, stated once so the plan and the viewer cannot disagree about it.
 
 	//=========================================================================
 	// Scheduler::Staging — what this invocation has done to each frontier
@@ -164,7 +99,7 @@ namespace lain::flow
 
 		// Nodes left out of this stage: a deferred map, and then everything reachable downstream of
 		// one. `order` is topo, so a node's predecessors are already decided when it is reached —
-		// the same shape runOrder uses to grow the stale closure.
+		// the same shape StaleClosure uses to grow the stale closure.
 		std::set<NodeId> deferred;
 
 		for (const NodeId id : order)
@@ -213,18 +148,9 @@ namespace lain::flow
 			// recomputed. If the group is in the run ONLY because something inside it is stale, its
 			// inputs are unchanged — and republishing would request recompute of the inner boundary
 			// and force the whole inner graph to recompute, throwing away inner incrementality.
-			bool publish = evaluation.needsRecompute(id);
-			if (!publish)
-			{
-				for (const Graph::Edge& e : definition.edges())
-				{
-					if (e.to.node == id && selected.count(e.from.node) != 0)
-					{
-						publish = true;
-						break;
-					}
-				}
-			}
+			// StaleClosure::republishes is the one statement of that rule, shared with the query a
+			// host asks — so the interior a viewer marks stale is the interior this plan reseeds.
+			const bool publish = StaleClosure::republishes(definition, evaluation, id, selected);
 
 			// A MAP is expanded once its children are known to match its input. That is exactly the
 			// condition a group republishes under, read the other way round: if this map's input can
@@ -255,7 +181,7 @@ namespace lain::flow
 				const std::size_t begin = plan.steps.size();
 				const std::size_t raised = plan.frontiers.size();
 				for (std::size_t i = 0; i < count; ++i)
-					expand(*inner, evaluation.child(id, i), runOrder(*inner, evaluation.child(id, i)), plan, staging);
+					expand(*inner, evaluation.child(id, i), StaleClosure(*inner, evaluation.child(id, i)).order(), plan, staging);
 				const std::size_t end = plan.steps.size();
 
 				// An element's own interior deferred — a nested map sizing its children, a loop part-way
@@ -319,7 +245,7 @@ namespace lain::flow
 					{
 						Evaluation& child = evaluation.child(id); // one child, reused every iteration
 						const std::size_t raised = plan.frontiers.size();
-						expand(*inner, child, runOrder(*inner, child), plan, staging);
+						expand(*inner, child, StaleClosure(*inner, child).order(), plan, staging);
 						interiorPending = plan.frontiers.size() > raised;
 					}
 					// CLOSURE, when raised — for the same reason as a map's. A loop whose interior is
@@ -356,7 +282,7 @@ namespace lain::flow
 
 			const std::size_t innerBegin = plan.steps.size();
 			const std::size_t raised = plan.frontiers.size();
-			expand(*inner, child, runOrder(*inner, child), plan, staging);
+			expand(*inner, child, StaleClosure(*inner, child).order(), plan, staging);
 			const std::size_t innerEnd = plan.steps.size();
 
 			// The entry writes what the inner GroupInput carries onward, so it must precede that
@@ -377,7 +303,7 @@ namespace lain::flow
 			// but every downstream node recomputes on it once per intermediate stage and reads a partial
 			// result as a finished one. Emit the entry and the inner steps — that is the work that makes
 			// progress — and no exit and no `ends`, so everything downstream waits. A group still raises
-			// NO frontier: the interior's own is what keeps the staging loop moving, and Scheduler::stale
+			// NO frontier: the interior's own is what keeps the staging loop moving, and StaleClosure
 			// recurses into the child evaluation, so this group is still selected next stage.
 			if (plan.frontiers.size() > raised)
 			{
@@ -422,7 +348,7 @@ namespace lain::flow
 	Scheduler::Plan Scheduler::buildRunPlan(const Graph& definition, Evaluation& evaluation, const Staging& staging)
 	{
 		Plan plan;
-		expand(definition, evaluation, runOrder(definition, evaluation), plan, staging);
+		expand(definition, evaluation, StaleClosure(definition, evaluation).order(), plan, staging);
 		return plan;
 	}
 
@@ -437,7 +363,7 @@ namespace lain::flow
 		std::vector<NodeId> order;
 		for (const NodeId id : definition.topoOrder())
 		{
-			if (cone.count(id) != 0 && stale(definition, evaluation, id))
+			if (cone.count(id) != 0 && StaleClosure::owed(definition, evaluation, id))
 				order.push_back(id);
 		}
 
@@ -667,13 +593,30 @@ namespace lain::flow
 			// in this run only because something UPSTREAM changed already has computedAt equal to its
 			// version, and its request was cleared above — so without asking again here it would go
 			// clean on the throw and keep the value it built from the old input.
+			//
+			// It is also RECORDED, against this node in this evaluation, with what it said: that is
+			// what lets a host show the failure where it happened — a node of one map element, of one
+			// linked-group instance — when the exception leaving run() cannot say which (ADR-0025).
+			// Always with SOME text, since a failure a host cannot describe reads as none at all.
+			const auto threw = [&](std::string message)
+			{
+				evaluation.requestRecompute(id);
+				evaluation.recordFailure(id, std::move(message));
+				control.m_failed.fetch_add(1, std::memory_order_relaxed);
+			};
 			try
 			{
 				node.compute(view);
 			}
+			catch (const std::exception& e)
+			{
+				const std::string what = e.what();
+				threw(what.empty() ? std::string("an exception with no message") : what);
+				throw;
+			}
 			catch (...)
 			{
-				evaluation.requestRecompute(id);
+				threw("an exception that is not a std::exception");
 				throw;
 			}
 		}

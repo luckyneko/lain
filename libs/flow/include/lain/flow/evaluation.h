@@ -4,8 +4,8 @@
 //
 // A `Graph` is a definition: node kinds, params, edges, port declarations, names. An `Evaluation`
 // is everything a run produces or remembers — port values, which node was computed at which
-// definition version, outstanding recompute requests, host boundary bindings, and one child
-// Evaluation per group node. The scheduler takes both:
+// definition version, outstanding recompute requests, what a node's last compute threw, host
+// boundary bindings, and one child Evaluation per group node. The scheduler takes both:
 //
 //     run(const Graph& definition, Evaluation& evaluation)
 //
@@ -38,6 +38,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -178,7 +179,10 @@ namespace lain::flow
 
 		// --- staleness ---------------------------------------------------------
 		// Whether `id` must be recomputed: an outstanding request, or the definition's version for it
-		// differs from what this Evaluation last computed it at.
+		// differs from what this Evaluation last computed it at. Asked of the definition this
+		// Evaluation was last prepared against, and of this one node alone — the CLOSURE (anything
+		// upstream, anything inside, and a definition other than the prepared one, such as a host's
+		// document against an evaluation computed on a clone) is StaleClosure's (staleness.h).
 		bool needsRecompute(NodeId id) const;
 
 		// Demand a recompute of one node on the next run. The ordinary closure carries it downstream,
@@ -190,6 +194,19 @@ namespace lain::flow
 		// evaluation instead of to a definition that cannot know which of several to refresh.
 		// Constructing a fresh Evaluation is the stronger operation: it forgets all retained state.
 		void requestRecomputeAll();
+
+		// --- failure ------------------------------------------------------------
+		// Why `id`'s last compute THREW, or nullptr if it did not — the exception's what(), or a fixed
+		// text for one that is not a std::exception. Recorded by the run, in the evaluation, because a
+		// failure is something a run produces at one coordinate: a node of one map element or of one
+		// linked-group instance, which the NodeId alone could not say (ADR-0025). The node stays stale
+		// meanwhile, and the record is cleared by its next compute that gets through — computed or
+		// suppressed. One that GIVES UP on a cancel ended with no answer, so it leaves the record.
+		const std::string* failure(NodeId id) const;
+
+		// Whether any node at this level or below — in any child evaluation — holds a failure. What a
+		// host reads to show a group as failed when something inside it is.
+		bool hasFailure() const;
 
 		// --- host boundary binding ---------------------------------------------
 		// Supply a graph input's value. The boundary NODES hold none: a bound value is runtime, so it
@@ -237,6 +254,7 @@ namespace lain::flow
 		friend class NodeEvaluation;
 		friend class Scheduler;			  // the run lease, computedAt bookkeeping and input population
 		friend class PublishedEvaluation; // the one caller of the copy constructor
+		friend class StaleClosure;		  // reads computedAt and the request flag against ANOTHER definition
 
 		// A copy of this Evaluation and its whole child tree: every port value is a refcount bump
 		// (a PortValue shares its payload), every child is copied in turn, and the copy is not being
@@ -252,7 +270,8 @@ namespace lain::flow
 			// The definition version this node was last computed at. Starts at 0, which no live
 			// version ever equals (versions start at 1), so a freshly prepared node is stale.
 			std::uint64_t computedAt = 0;
-			bool recomputeRequested = false; // an evaluation-local demand, independent of the recipe
+			bool recomputeRequested = false;	// an evaluation-local demand, independent of the recipe
+			std::optional<std::string> failure; // what the last compute threw, until one gets through
 		};
 
 		NodeState* state(NodeId id);
@@ -273,7 +292,11 @@ namespace lain::flow
 		//   markComputed AFTER it, so a compute() that THROWS leaves the node at its old version —
 		//     it produced nothing, so it must stay stale and be retried, not be recorded as done.
 		void clearRecomputeRequest(NodeId node);
-		void markComputed(NodeId node, std::uint64_t version);
+		void markComputed(NodeId node, std::uint64_t version); // ... and clears any failure: this one got through
+
+		// A compute of `node` threw `message` (failure() above). Scheduler-only: a run records it on
+		// the way out of the compute, before the exception leaves.
+		void recordFailure(NodeId node, std::string message);
 
 		// Reconcile one node's port slots against its declarations, keeping the values of ports that
 		// survived. Called by prepare, never by a worker.

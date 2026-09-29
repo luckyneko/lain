@@ -354,7 +354,40 @@ namespace lain::flow
 	void Evaluation::markComputed(NodeId node, std::uint64_t version)
 	{
 		if (NodeState* state = this->state(node))
+		{
 			state->computedAt = version;
+			state->failure.reset(); // it got through, so whatever it threw last time no longer stands
+		}
+	}
+
+	void Evaluation::recordFailure(NodeId node, std::string message)
+	{
+		if (NodeState* state = this->state(node))
+			state->failure = std::move(message);
+	}
+
+	const std::string* Evaluation::failure(NodeId id) const
+	{
+		const NodeState* state = this->state(id);
+		return (state != nullptr && state->failure.has_value()) ? &*state->failure : nullptr;
+	}
+
+	bool Evaluation::hasFailure() const
+	{
+		for (const auto& entry : m_nodes)
+		{
+			if (entry.second.failure.has_value())
+				return true;
+		}
+		for (const auto& entry : m_children)
+		{
+			for (const std::unique_ptr<Evaluation>& child : entry.second)
+			{
+				if (child->hasFailure())
+					return true;
+			}
+		}
+		return false;
 	}
 
 	std::size_t Evaluation::childCount(NodeId group) const

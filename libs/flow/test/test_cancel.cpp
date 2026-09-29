@@ -13,6 +13,10 @@
 //   * progress is live, and summed across stages.
 // A loop stopping between iterations lives with the loop suite (test_loop.cpp, [cancel]).
 //
+// And what a THROW leaves (M14 slice 6, [failure]): a record against the node that threw, in the
+// evaluation it threw in — so a host can show a failure where it happened (a map element, a
+// linked-group instance) — cleared by that node's next compute that gets through.
+//
 // Every case compares its re-run against a run nobody cancelled, over the same edited graph: a
 // weaker check ("it produced a value") passes just as well when a stale value survives.
 
@@ -32,6 +36,7 @@
 #include <atomic>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 using namespace lain::flow;
@@ -659,4 +664,217 @@ TEST_CASE("the stage observer is called between stages, never after the last", "
 		REQUIRE(observed == 0);
 		REQUIRE(calls.element == 0);
 	}
+}
+
+//=========================================================================
+// What a throw leaves behind (M14 slice 6): a record of it, at the node that threw
+//=========================================================================
+
+namespace lain::flow::test::failure
+{
+	// An int passthrough that throws something that is NOT a std::exception while armed.
+	struct ThrowIntWhenArmed : Node
+	{
+		bool& armed;
+		PortId in, out;
+		explicit ThrowIntWhenArmed(bool& a)
+			: Node("ThrowIntWhenArmed")
+			, armed(a)
+		{
+			in = addInput<int>("in");
+			out = addOutput<int>("out");
+		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<ThrowIntWhenArmed>(*this); }
+		void compute(NodeEvaluation& evaluation) const override
+		{
+			if (armed)
+				throw 42;
+			evaluation.output(out).set(evaluation.input(in).get<int>());
+		}
+	};
+
+	// int -> int, throwing on one value: a map body that fails in exactly one element.
+	struct ThrowAt : Node
+	{
+		int at;
+		PortId in, out;
+		explicit ThrowAt(int value)
+			: Node("ThrowAt")
+			, at(value)
+		{
+			in = addInput<int>("x");
+			out = addOutput<int>("y");
+		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<ThrowAt>(*this); }
+		void compute(NodeEvaluation& evaluation) const override
+		{
+			const int x = evaluation.input(in).get<int>();
+			if (x == at)
+				throw std::runtime_error("ThrowAt: element holding " + std::to_string(x));
+			evaluation.output(out).set(x);
+		}
+	};
+
+	// source -> thrower -> after: the chain a throw is recorded in, armed through a reference.
+	template <typename Thrower>
+	struct Failing
+	{
+		Graph graph;
+		std::atomic<int> sourceCalls{0}, afterCalls{0};
+		bool armed = false;
+		NodeId source, thrower, after;
+
+		Failing()
+		{
+			source = graph.add<Source>(sourceCalls, 1);
+			thrower = graph.add<Thrower>(armed);
+			after = graph.add<Relay>(afterCalls);
+			REQUIRE(graph.connect(source, 0, thrower, 0) == Connection::Ok);
+			REQUIRE(graph.connect(thrower, 0, after, 0) == Connection::Ok);
+		}
+		Failing(const Failing&) = delete;
+
+		void setSource(int value)
+		{
+			auto& node = static_cast<Source&>(graph.node(source));
+			REQUIRE(node.setParam(node.value, value));
+		}
+	};
+} // namespace lain::flow::test::failure
+
+using namespace lain::flow::test::failure;
+
+static void checkThrowRecorded(Scheduler& scheduler)
+{
+	Failing<ThrowWhenArmed> chain;
+	Evaluation evaluation{chain.graph};
+	scheduler.run(chain.graph, evaluation);
+	REQUIRE(evaluation.failure(chain.thrower) == nullptr);
+	REQUIRE_FALSE(evaluation.hasFailure());
+
+	chain.armed = true;
+	chain.setSource(2);
+	RunControl control;
+	REQUIRE_THROWS_AS(scheduler.run(chain.graph, evaluation, control), std::runtime_error);
+
+	// Recorded where it happened, with what it said — and counted, which is how a host tells a
+	// throw some node owned from one none did.
+	const std::string* failure = evaluation.failure(chain.thrower);
+	REQUIRE(failure != nullptr);
+	REQUIRE(*failure == "ThrowWhenArmed: armed");
+	REQUIRE(evaluation.failure(chain.source) == nullptr);
+	REQUIRE(evaluation.failure(chain.after) == nullptr);
+	REQUIRE(evaluation.hasFailure());
+	REQUIRE(control.failed() == 1);
+	REQUIRE(evaluation.needsRecompute(chain.thrower)); // and it is still owed
+
+	// Cleared by the next compute that gets through.
+	chain.armed = false;
+	RunControl clean;
+	scheduler.run(chain.graph, evaluation, clean);
+	REQUIRE(evaluation.failure(chain.thrower) == nullptr);
+	REQUIRE_FALSE(evaluation.hasFailure());
+	REQUIRE(clean.failed() == 0);
+	REQUIRE(intOut(chain.graph, evaluation, chain.after) == 2);
+}
+
+TEST_CASE("a throw is recorded against the node that threw, until it computes again", "[flow][cancel][failure]")
+{
+	SECTION("serial")
+	{
+		SerialScheduler scheduler;
+		checkThrowRecorded(scheduler);
+	}
+	SECTION("parallel")
+	{
+		lain::testing::ThreadPool pool;
+		ParallelScheduler scheduler;
+		checkThrowRecorded(scheduler);
+	}
+}
+
+TEST_CASE("an exception that is not a std::exception is still described", "[flow][cancel][failure]")
+{
+	Failing<ThrowIntWhenArmed> chain;
+	Evaluation evaluation{chain.graph};
+	chain.armed = true;
+	REQUIRE_THROWS_AS(SerialScheduler{}.run(chain.graph, evaluation), int); // the type that left is the one thrown
+	const std::string* failure = evaluation.failure(chain.thrower);
+	REQUIRE(failure != nullptr);
+	REQUIRE_FALSE(failure->empty());
+}
+
+TEST_CASE("a failure is cleared when the node is suppressed instead", "[flow][cancel][failure]")
+{
+	// Suppression is a compute that got through (ADR-0007): the node is clean and empty together, and
+	// what it threw last time no longer describes it.
+	Failing<ThrowWhenArmed> chain;
+	Evaluation evaluation{chain.graph};
+	chain.armed = true;
+	REQUIRE_THROWS_AS(SerialScheduler{}.run(chain.graph, evaluation), std::runtime_error);
+	REQUIRE(evaluation.failure(chain.thrower) != nullptr);
+
+	REQUIRE(chain.graph.disconnect(PortAddress{chain.thrower, chain.graph.node(chain.thrower).input(0).id()}));
+	SerialScheduler{}.run(chain.graph, evaluation); // still armed, but its required input is empty now
+	REQUIRE_FALSE(evaluation.ready(chain.thrower));
+	REQUIRE(evaluation.failure(chain.thrower) == nullptr);
+}
+
+TEST_CASE("a failure survives a run that never reached the node", "[flow][cancel][failure]")
+{
+	// source -> canceller -> thrower. The thrower fails; then a run is cancelled in the canceller, so
+	// it never reaches the thrower — whose last compute still threw, and whose record says so.
+	Graph graph;
+	std::atomic<int> sourceCalls{0}, cancellerCalls{0};
+	Trigger trigger = nullptr;
+	bool armed = true;
+	const NodeId source = graph.add<Source>(sourceCalls, 1);
+	const NodeId canceller = graph.add<Canceller>(cancellerCalls, trigger);
+	const NodeId thrower = graph.add<ThrowWhenArmed>(armed);
+	REQUIRE(graph.connect(source, 0, canceller, 0) == Connection::Ok);
+	REQUIRE(graph.connect(canceller, 0, thrower, 0) == Connection::Ok);
+
+	Evaluation evaluation{graph};
+	REQUIRE_THROWS_AS(SerialScheduler{}.run(graph, evaluation), std::runtime_error);
+	REQUIRE(evaluation.failure(thrower) != nullptr);
+
+	armed = false;
+	auto& src = static_cast<Source&>(graph.node(source));
+	REQUIRE(src.setParam(src.value, 2));
+	RunControl control;
+	trigger = &control;
+	SerialScheduler{}.run(graph, evaluation, control);
+	trigger = nullptr;
+	REQUIRE(control.cancelled());
+	REQUIRE(evaluation.failure(thrower) != nullptr);
+
+	SerialScheduler{}.run(graph, evaluation);
+	REQUIRE(evaluation.failure(thrower) == nullptr);
+}
+
+TEST_CASE("a failure in a map is recorded in the element that threw", "[flow][cancel][failure][map]")
+{
+	// The NodeId of the body names it in every element alike; which ELEMENT failed is known only
+	// because the record sits in that element's own evaluation.
+	registerSceneTypes();
+	Graph graph;
+	std::atomic<int> listCalls{0};
+	const NodeId list = graph.add<MakeInts>(listCalls, Ints{1, 2, 3});
+	const NodeId map = graph.add<MapNode>();
+	Graph& inner = static_cast<MapNode&>(graph.node(map)).inner();
+	const NodeId body = buildInterior(graph, map, inner, std::make_unique<ThrowAt>(2));
+	REQUIRE(graph.connect(list, 0, map, 0) == Connection::Ok);
+
+	Evaluation evaluation{graph};
+	RunControl control;
+	REQUIRE_THROWS_AS(SerialScheduler{}.run(graph, evaluation, control), std::runtime_error);
+	REQUIRE(control.failed() == 1);
+	REQUIRE(evaluation.hasFailure());
+	REQUIRE(evaluation.failure(map) == nullptr); // the map itself did not throw
+	REQUIRE(evaluation.childCount(map) == 3);
+	REQUIRE(evaluation.child(map, 0).failure(body) == nullptr);
+	REQUIRE(evaluation.child(map, 1).failure(body) != nullptr);
+	REQUIRE(*evaluation.child(map, 1).failure(body) == "ThrowAt: element holding 2");
+	REQUIRE_FALSE(evaluation.child(map, 0).hasFailure());
+	REQUIRE(evaluation.child(map, 1).hasFailure());
 }

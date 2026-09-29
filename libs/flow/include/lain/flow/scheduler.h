@@ -270,10 +270,11 @@ namespace lain::flow
 		// Evaluate one node: populate its inputs, then either compute() (READY — every required
 		// input has a value) or SUPPRESS it (a required input is empty → clear its outputs, don't
 		// compute), and record the definition version it was computed at. ADR-0007. A compute() that
-		// throws records nothing and asks for its node again before the exception leaves, so the node
-		// stays stale however it came to be in the run — and one that GAVE UP on a cancel (it asked
-		// NodeEvaluation::cancelled() and heard yes) is treated the same way, keeping whatever it wrote
-		// but not trusting it.
+		// throws is not recorded as computed: it asks for its node again, and records WHAT it threw
+		// against the node (Evaluation::failure) and in the control's count, before the exception
+		// leaves — so the node stays stale however it came to be in the run, and a host can say where
+		// the failure was. One that GAVE UP on a cancel (it asked NodeEvaluation::cancelled() and heard
+		// yes) is treated the same way minus the record, keeping whatever it wrote but not trusting it.
 		void runNode(const Graph& definition, Evaluation& evaluation, NodeId id, RunControl& control);
 
 		// Copy each connected upstream output into `id`'s matching input. The value is SHARED, not
@@ -296,16 +297,9 @@ namespace lain::flow
 		// control says so — which is what stops a loop between iterations.
 		void runStages(const Graph& definition, Evaluation& evaluation, Mode mode, NodeId target, RunControl& control);
 
-		// The nodes a run must recompute at ONE level, in topo order: the stale closure. Takes both,
-		// because staleness is a comparison BETWEEN them — the definition's per-node version against
-		// what this evaluation recorded.
-		std::vector<NodeId> runOrder(const Graph& definition, Evaluation& evaluation);
-
-		// Whether `id` is stale in `evaluation`, INCLUDING anything inside it if it contains a graph
-		// — the recursive question a group used to answer with a virtual dirty() over mutable state
-		// on its inner definition. It is now asked of the matching child Evaluations: EVERY one of a
-		// map's, since a cancel can stop a map with element 2 still owed while element 0 finished.
-		static bool stale(const Graph& definition, Evaluation& evaluation, NodeId id);
+		// (Which nodes a stage recomputes at each level — the stale closure — and whether a group
+		// republishes into its interior are not the scheduler's own: they are StaleClosure's
+		// (staleness.h), the same query a host asks to show what is out of date.)
 
 		// Emit `order`'s nodes (already topo-ordered and selected) into `plan`, recursing into any
 		// node that contains a graph, and wire this level's edges between the resulting steps. A map

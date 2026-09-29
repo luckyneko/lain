@@ -896,8 +896,9 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 
 ## Running while you edit — the host's side of a run
 
-*(M14 — designed; slices 1-5 built: runs are off the frame loop under all three triggers, and
-freshness is not drawn yet. [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
+*(M14 — designed; slices 1-5 built: runs are off the frame loop under all three triggers. Slice 6a
+built the freshness rule in flow (the stale closure, the failure record); nothing draws it yet.
+[ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
 host keeps its document editable while a run is in flight. These are the words for how a run is
 started, stopped and shown.
 
@@ -945,13 +946,20 @@ started, stopped and shown.
 - **Freshness** — whether a node's *shown* value reflects the document. A second axis beside
   readiness (which says whether a node *could* run), with five states:
   - **Stale** — it does not: the node's Version differs from what its shown value was computed at, a
-    recompute request is pending, **or anything upstream is Stale**. The last clause is the one a
-    per-node comparison misses, and it is the engine's own stale-closure rule, asked by the host.
+    recompute request is pending, it has no shown value at all, **or anything upstream is Stale** —
+    including, for a node inside a group, anything upstream of the GROUP, since its interior was fed
+    the group's old inputs. The last clause is the one a per-node comparison misses. It is the
+    engine's own rule: the **stale closure** (`flow::StaleClosure`), which the scheduler plans from
+    and the host asks, one level at a time, each level told by the one above whether its boundary is
+    being handed new values.
   - **Queued** — Stale, and part of the run in flight, not yet started. Distinct from Stale because
     under **Manual** a Stale node waits for Run, and "will update by itself" is a different message.
   - **Computing** — its step is running now.
   - **Current** — not Stale. *Just updated* is Current plus a moment's highlight, not a state.
-  - **Failed** — its last compute threw. It stays Stale, and the message goes to Issues.
+  - **Failed** — its last compute threw. It stays Stale, and the message goes to Issues. The run
+    RECORDS it against the node, in the evaluation it threw in (`Evaluation::failure`), so a failure
+    in one map element or one linked-group instance is found there and nowhere else; the next compute
+    of that node that gets through (suppression included) clears it.
   A group, map or loop shows the most active state inside it. _Avoid_: dirty (retired with M6), up to
   date / out of date, running / updating (a *run* is a scheduler invocation; a node *computes*).
 - **Run Selection** — a Manual-mode run of just the upstream cone of the selected nodes: the way to

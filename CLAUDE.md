@@ -907,6 +907,41 @@ format-check clean. `flowview run --example` is unchanged, and the headless save
   (`reflect.h`). But *The type is the schema* claimed `fromValue` "fails on a shape/type mismatch",
   which is true of a struct's shape only.
 
+### Update 2026-09-29 — M14 slice 6a built: the stale closure, and the failure record
+
+Slice 6 (freshness) is two commits, and this is the flow half. **`flow::StaleClosure`** (new
+`staleness.h`) is the stale closure as a public const query, and the scheduler plans from it:
+`Scheduler::stale()` / `runOrder()` are deleted, so what a run recomputes and what a host will draw as
+Stale are one statement. **`Evaluation::failure(id)`** records what a node's last compute threw, where
+it threw, with `hasFailure()` for a group's roll-up, and **`RunControl::failed()`** counts them.
+Nothing in flowview reads either yet (6b). `ctest -j8` **862/862** Debug with video on, **868/868**
+Release with video on, **835/835** Release video-off (+13 each); warning-clean, format-check clean;
+`[staleness],[cancel],[published],[failure]` (30 cases) swept 100× through the Catch2 binary in Debug
+and Release; `flowview run --example` identical to the pre-change binary. Full notes in WORK.md's
+*Milestone 14 › Slice 6a landed*.
+
+- **Failed is RECORDED, not attributed** (decided with the repo owner). WORK.md offered slice 7's
+  per-step hook first, or flow naming the node in the exception. Instead `runNode`'s existing catch
+  stores the message against the node in the evaluation it threw in, and the exception leaves
+  unchanged. That lands a failure in the right map element or linked-group instance by construction,
+  which a NodeId alone could not say. It reaches the published copy for free and is cleared by the
+  node's next compute that gets through, suppression included. `failed()` tells a throw some node
+  owned from one none did.
+- **Staleness crosses into a group, and a per-level comparison misses it.** After an edit upstream of
+  a group, nothing inside changed, yet every value past its boundary came from the old input. So a
+  level is asked with `boundaryStale`, answered by the level above (`reseeds(owner)`).
+  - A group or map reseeds under the plan's own republish rule, now one function the plan calls
+    (`StaleClosure::republishes`).
+  - A loop reseeds whenever it is stale at all, since it re-folds from its seeds.
+- **The query compares the DOCUMENT against an evaluation prepared on a CLONE**, so it cannot use
+  `needsRecompute` (which reads the clone and says clean). A node with no record is stale. A
+  definition of another lineage is all stale rather than a throw: a query reports, `prepare` acts.
+- **Nine sabotages, all caught, and two verification lessons that each produced a wrong result
+  first.** A sabotage restored with `mv` from its backup keeps an OLDER mtime than the object built
+  from it, so the build silently keeps the sabotage. Touch after restoring. And
+  `--list-test-names-only` is Catch2 v2 and prints 0 in v3, while the sweep itself runs every case.
+  Count with `--list-tests --verbosity quiet`.
+
 ### Update 2026-09-26 — one process task pool; `lain::task` becomes an alias for `multi`
 
 The wrapper moved from Taskflow to `multi` on 2026-09-11 with `libs/flow` unchanged by a single line

@@ -14,6 +14,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <stdexcept>
@@ -247,4 +248,43 @@ TEST_CASE("binding a published evaluation writes the copy, never its source", "[
 	const PortAddress laterAddress{document.boundaryInputNode().id(), later};
 	published.bind(laterAddress, intValue(9));
 	REQUIRE(published.evaluation().value(laterAddress).empty());
+}
+
+namespace lain::flow::test::published
+{
+	// An int passthrough that always throws — a node whose last compute failed.
+	struct AlwaysThrows : Node
+	{
+		PortId in, out;
+		AlwaysThrows()
+			: Node("AlwaysThrows")
+		{
+			in = addInput<int>("in");
+			out = addOutput<int>("out");
+		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<AlwaysThrows>(*this); }
+		void compute(NodeEvaluation&) const override { throw std::runtime_error("AlwaysThrows"); }
+	};
+} // namespace lain::flow::test::published
+
+TEST_CASE("a published evaluation carries what a node threw", "[flow][published][failure]")
+{
+	// A run that fails still publishes at its end (a host's runner does), and what the panes then
+	// show has to say which node failed — so the record travels with the copy like any other.
+	Graph document;
+	std::atomic<int> sourceCalls{0};
+	const NodeId source = document.add<Source>(sourceCalls, 1);
+	const NodeId thrower = document.add<published::AlwaysThrows>();
+	REQUIRE(document.connect(source, 0, thrower, 0) == Connection::Ok);
+
+	Evaluation working{document};
+	const auto clone = std::make_shared<const Graph>(document.clone());
+	REQUIRE_THROWS_AS(SerialScheduler{}.run(*clone, working), std::runtime_error);
+
+	const PublishedEvaluation published{clone, working};
+	const std::string* failure = published.evaluation().failure(thrower);
+	REQUIRE(failure != nullptr);
+	REQUIRE(*failure == "AlwaysThrows");
+	REQUIRE(published.evaluation().hasFailure());
+	REQUIRE(published.evaluation().failure(source) == nullptr);
 }

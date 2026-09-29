@@ -6072,7 +6072,7 @@ regression test: `ctest -j8` **794/794** Debug with video on, warning-clean, for
   the fold. All four reached their header transitively and worked — the class of thing the
   2026-09-05 CI port found six of.
 
-## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-5 built)
+## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-5 and 6a built)
 
 gui-mode runs `SerialScheduler::run` synchronously inside the frame loop — `FlowviewApp::reevaluate`
 is reached from `mainwindow.cpp` twice, `inspectorpane.cpp` and `interfacepane.cpp`, on every edit
@@ -6082,8 +6082,9 @@ default with Serial selectable, and gives the UI the controls a 5-minute graph n
 1-second one. Decisions in **[ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md)**;
 vocabulary in CONTEXT.md's *Running while you edit* (plus *clone*, *lineage*, *coordinator*).
 **Slices 1 (clone + lineage), 2 (the published evaluation + payload identity), 3 (cancellation), 4
-(the async vertical) and 5 (triggers + persistence) are built** — see *Slice 1 landed* through *Slice 5
-landed* below; slices 6-8 are not.
+(the async vertical) and 5 (triggers + persistence) are built**, and so is slice 6's flow half (6a: the
+stale-closure query + the failure record) — see *Slice 1 landed* through *Slice 6a landed* below; slice
+6b (the freshness UI) and slices 7-8 are not.
 
 ### The shape
 
@@ -6111,7 +6112,8 @@ landed* below; slices 6-8 are not.
 - **A throwing `compute()` would crash gui-mode today** — nothing in flowview catches (`reevaluate`
   has no `try`). It has not bitten because nodes suppress rather than throw (`ListDirNode` uses the
   `error_code` overloads for exactly that). The coordinator catches, and the node becomes **Failed**.
-  *(Caught in slice 4, as a RUN-level failure: the exception does not say which node threw.)*
+  *(Caught in slice 4, as a RUN-level failure: the exception does not say which node threw. Recorded
+  per node in slice 6a, in the evaluation it threw in.)*
 - **Shutdown order.** The pool stops after the last `onShutdown`, and a run participates in it, so
   `FlowviewApp::onStop` must cancel and **join** the coordinator before it releases the graph.
   *(Built in slice 4: `Runner::stop()`, first thing in `onStop`.)*
@@ -6163,17 +6165,22 @@ Structural, no-behaviour-change slices first; each its own commit with its docs.
    — M12's `types` precedent); the scheduler in `session.{h,cpp}`; the Run menu grows Run and the
    trigger choice (`panes/menubar.cpp` — slice 4 built it with Stop and the scheduler radio).
    *(Pending bindings were here; slice 4 took them.)*
-6. **Freshness.** A public const stale-closure query in flow (`stale()` / `runOrder()` lifted to
-   const — they take a mutable `Evaluation&` only to reach `child()`, which has a const overload),
-   lineage-checked so it may compare the document against an evaluation computed on a clone. It must
-   ask EVERY child of a map, as `stale()` does since slice 3: a cancel can leave element 2 owed while
-   element 0 is current. Canvas
-   glyph + outline (`panes/graphpane.cpp`, `canvasstyle.cpp`), thumbnail stale badge, viewport status
-   bar; Failed rows in Issues. (The preview cache's skip of an unchanged payload moved to slice 2.)
-   **Per-node Failed needs attribution this slice does not have**: slice 4 reports a failure per RUN,
-   because the exception leaving `run()` does not say which node threw. Either slice 7's per-step hook
-   comes first (a finished-step record can carry "threw"), or flow names the node on the way out of
-   `runNode`'s catch — decide before building the glyph.
+6. **Freshness.** Two commits.
+   - **6a (flow) — built 2026-09-29.** A public const stale-closure query in flow (`stale()` /
+     `runOrder()` lifted to const — they take a mutable `Evaluation&` only to reach `child()`, which has
+     a const overload), lineage-checked so it may compare the document against an evaluation computed
+     on a clone. It must ask EVERY child of a map, as `stale()` does since slice 3: a cancel can leave
+     element 2 owed while element 0 is current. Built as `flow::StaleClosure`, which the scheduler now
+     plans from. **Per-node Failed needed attribution, and got it a third way** (decided with the repo
+     owner, 2026-09-29): neither slice 7's hook first nor naming the node in the exception, but a
+     **record in the Evaluation** — `runNode`'s catch stores what the node threw against that node,
+     where it threw. See *Slice 6a landed*.
+   - **6b (flowview + a `lain::gui` seam) — not built.** Canvas glyph + the outline's *just updated*
+     fade (the Computing pulse is slice 7's) in `panes/graphpane.cpp` / `canvasstyle.cpp`, thumbnail
+     stale badge, a status bar across the bottom of the viewport (a new `lain::gui` seam over
+     `BeginViewportSideBar`, beside `dock.h`'s DockBuilder front), Failed rows in Issues, and the
+     run-level row kept only for a throw no node owned (`RunControl::failed() == 0`). (The preview
+     cache's skip of an unchanged payload moved to slice 2.)
 7. **Per-node publication.** A per-step started / finished hook on the run; a finished step's worker
    copies its outputs into a completion record (race-free — a finished node has only readers), the UI
    folds them into the published evaluation. This is what makes **Queued** and **Computing** real.
@@ -6624,6 +6631,89 @@ eyeballed** — the triggers act only in the frame loop.
   - Switching the trigger marks the document dirty, and New asks.
   - The scheduler survives a restart.
 
+### Slice 6a landed (2026-09-29) — the stale closure, and the failure record
+
+**`flow::StaleClosure`** (new `staleness.h`) is the stale closure as a public const query, and the
+scheduler plans from it: `Scheduler::stale()` and `Scheduler::runOrder()` are deleted, so the set a
+run recomputes and the set a host will draw as Stale are one statement. **`Evaluation::failure(id)`**
+records what a node's last compute threw, in the evaluation it threw in, with `hasFailure()` for a
+group's roll-up and **`RunControl::failed()`** beside `planned()` / `finished()`. Nothing in flowview
+reads any of it until 6b. `ctest -j8` **862/862** Debug with video on, **868/868** Release with video
+on, **835/835** Release video-off (+13 each: seven `[staleness]` cases, six `[failure]`);
+warning-clean, format-check clean. The `[staleness],[cancel],[published],[failure]` tags (30 matching
+cases, counted with `--list-tests --verbosity quiet`) swept 100× through the Catch2 binary in Debug
+and in Release, and the whole `test-flow` binary run shuffled and in declaration order, with no
+failure. `flowview run --example` is identical to the pre-change binary (built from a stash) once the
+timestamp and short ids are normalised.
+
+- **Failed is recorded, not attributed.** WORK.md offered two ways to know which node threw: build
+  slice 7's per-step hook first, or have flow name the node in the exception. Decided with the repo
+  owner for a third, **a record in the Evaluation**. `runNode`'s catch already existed (it re-requests
+  the node), so it now also stores the message against the node and bumps the control's count before
+  the exception leaves with its type unchanged. A NodeId alone could not have said which map element
+  or which linked-group instance threw. A record sits in *that* element's evaluation by construction,
+  travels with a `PublishedEvaluation` for free (the private copy constructor copies `NodeState`), and
+  needs no slice reordered.
+  - Cleared by `markComputed`, so by the next compute that gets through, **suppression included**:
+    ADR-0007 already treats a suppressed node as clean.
+  - A compute that GAVE UP on a cancel leaves the record, since it ended with no answer.
+  - A non-`std::exception`, or an empty `what()`, still gets a text: a failure a host cannot describe
+    reads as none.
+  - `RunControl::failed()` is what 6b needs to tell a throw some node owned from one none did (a
+    lineage-refused prepare, a stage observer, a crossing). Only the second kind keeps the run-level
+    Issues row.
+- **Staleness crosses levels INWARD, and a per-level comparison misses it.** Edit A in
+  `A -> G{GroupInput -> B}` and ask G's interior on its own: nothing in there changed, so B looks
+  current, though its value was built from A's old output. The scheduler never had the problem,
+  because it requests the inner boundary when a group republishes. The query needs the same fact, so
+  a level is asked with **`boundaryStale`**, and the level above answers it with
+  **`reseeds(owner)`**.
+- **Which interiors reseed depends on the KIND, which is why flow answers it.**
+  - A group or a map reseeds under `expand`'s own `publish` rule: its record is stale, or a node
+    feeding it is selected. That rule is now one function, **`StaleClosure::republishes`**, and
+    `expand` calls it, so the plan and the query cannot disagree.
+  - A loop reseeds whenever it is in the closure at all, because it re-folds from its seeds even for
+    an edit inside its body (ADR-0021).
+  - A viewer re-deriving this would get the loop wrong. Sabotage 3 below is exactly that mistake.
+- **The query compares the DOCUMENT against an evaluation prepared on a CLONE**, so it cannot use
+  `Evaluation::needsRecompute`, which reads through the evaluation's own definition (the clone) and
+  answers "clean" whatever the document has done since. A test states that directly. The query reads
+  the recorded `computedAt` against the passed definition's version instead. The rest of its rule:
+  - **A node with no record is stale.** `needsRecompute` answers false there, which a run never meets,
+    since `prepare` makes every record first; a host meets it for a node added since the last
+    publication, and for everything against the empty copy after a swap.
+  - **A definition of another lineage is all stale, and asking does not throw.** `prepare` refuses
+    that pairing because it would act on it; a query only reports. At a child the mismatch is also
+    legitimate: `edit::replaceGroup` gives a group a new interior in place.
+  - **The lineage clause is not separately observable, and that is recorded rather than tested
+    around.** Versions are process-unique, so a record of another lineage can never match a version
+    anyway; missing records and version mismatches make the same answer. The check states the
+    pairing rule and skips walking records that describe another document.
+- **Sabotages, all caught** (one at a time, each against a backup restored and TOUCHED afterwards —
+  see the lesson below):
+  1. The boundary seed ignored: the group-seed section and the loop case fail.
+  2. A missing record treated as clean: both sections of the no-record case fail.
+  3. A loop reseeding under the group rule: the loop case fails.
+  4. A group always reseeding: the inner-edit section fails (the relay upstream of the edit reads
+     stale).
+  5. `owed` asking child 0 only: the new map case and slice 3's cancelled-map case fail.
+  6. `republishes` ignoring upstream selection: eight cases across `[group]` and `[map]` fail, from
+     the ones that show the scheduler reseeds through the shared rule to the query's own seed case.
+  7. `markComputed` keeping the failure: the recorded, suppression and unreached-by-a-cancel cases
+     fail.
+  8. The failure not recorded: all six `[failure]` cases fail.
+  9. The failure not counted: exactly the two cases that read `failed()` fail.
+- **Two lessons about the verification itself, each of which produced a wrong result first.**
+  - **A sabotage restored with `mv` from its backup is still in the build.** `cp` gives the backup a
+    fresh mtime, the sabotaged edit is newer still, and moving the backup back leaves the source
+    OLDER than the object built from the sabotage, so the next build keeps that object. The first
+    pass at sabotage 9 therefore ran with sabotage 7 still compiled in and reported four failures
+    instead of two. Touch the file after restoring it; all nine were re-run from a clean rebuild.
+  - **`--list-test-names-only` is Catch2 v2, and v3 answers it with 0.** A sweep count printed that
+    way reads *"0 matching cases"* while the sweep itself runs every case. That is the reverse of
+    the `ctest -R` trap (a sweep that matched nothing and reported success), and just as easy to
+    misread. Count with `--list-tests --verbosity quiet`.
+
 ### Visual design (settled in outline, tuned by eyeball)
 
 Freshness takes channels nothing else uses — title colour is category, a muted title is *not ready*,
@@ -6689,8 +6779,8 @@ row here**. A row is cheap to delete and expensive to leave.
 
 - **M14 — asynchronous execution: the gui never waits on graph work.** Designed 2026-09-28; slices 1
   (clone + lineage), 2 (the published evaluation + payload identity) and 3 (cancellation) built
-  2026-09-28, slices 4 (the async vertical) and 5 (triggers + persistence) 2026-09-29, slices 6-8
-  not.
+  2026-09-28, slices 4 (the async vertical), 5 (triggers + persistence) and 6a (the stale-closure query
+  + the failure record) 2026-09-29; 6b (the freshness UI) and slices 7-8 not.
   *(Milestone 14; [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)*
 
 M1–M8 and M10–M13 are built. **M9 and M14 are the milestones from 5 onward that are not.**

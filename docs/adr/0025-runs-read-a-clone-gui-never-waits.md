@@ -2,8 +2,8 @@
 
 ---
 Status: accepted (designed 2026-09-28; slices 1 — clone + lineage — 2 — the published evaluation
-+ payload identity — and 3 — cancellation — built 2026-09-28, 4 — the async vertical — and 5 —
-triggers + persistence — 2026-09-29, the rest not)
++ payload identity — and 3 — cancellation — built 2026-09-28, 4 — the async vertical — 5 — triggers
++ persistence — and 6a — the stale-closure query + the failure record — 2026-09-29, the rest not)
 Amends [ADR-0012](0012-definition-and-evaluation.md) — the pairing guard moves from address identity
 to **lineage**, and a *published evaluation* is the "different concept" it set aside. Amends
 [ADR-0024](0024-one-process-task-pool.md) — gui-mode stops being serial, and the coordinator thread is
@@ -138,6 +138,16 @@ A throw is caught on the coordinator and reported per RUN: the exception leaving
 which node threw, so per-node **Failed** needs either the per-step hook or flow naming the node on the
 way out. Slice 6, which draws it, has to settle which.
 
+*Settled 2026-09-29, slice 6a — by neither.* A failure is **recorded in the evaluation**: the
+scheduler's catch around `compute()` (which already re-requests the node) stores what it threw against
+that node (`Evaluation::failure`) and counts it (`RunControl::failed()`), and the exception then leaves
+with its type unchanged. That puts the failure at the coordinate it happened at, which a NodeId alone
+could not: a node of one map element, of one linked-group instance, of a loop body. It reaches the
+panes in the published copy with nothing added, and it needs no slice reordered. The record is cleared
+by the node's next compute that gets through, suppression included; one that gives up on a cancel
+leaves it. `failed()` is what tells a host a throw some node owned from one none did, and only the
+second is reported for the run as a whole.
+
 Under `ParallelScheduler` the coordinator is a participating waiter — exactly the "+1" ADR-0024 sizes
 the pool for (`hw - 1` workers). ADR-0024's caveat that a participating waiter can be caught inside
 unrelated work now delays only when the coordinator *notices* completion, never the UI.
@@ -238,6 +248,30 @@ is `runOrder`'s own closure rule: a node is stale if its version differs from wh
 recompute request is pending, **or anything upstream is stale**. Per-node version comparison alone
 misses the last clause. flow exposes the closure as a public const query, so the viewer asks the
 engine instead of re-implementing it.
+
+*Amended 2026-09-29, the day slice 6a built it* as `flow::StaleClosure` — which the scheduler now plans
+from, so `runOrder` is gone and the set a run recomputes is the set a host marks Stale. Building it
+settled four things:
+
+- **"Upstream" crosses into a group.** Ask a group's interior on its own after an edit upstream of the
+  group, and nothing in there changed — yet every value downstream of its boundary was built from the
+  group's old input. A level is therefore asked with `boundaryStale`, which the level above answers
+  (`reseeds(owner)`). That answer depends on the interior's KIND: a group or a map reseeds under the
+  plan's own republish rule (`StaleClosure::republishes`, which the plan now calls, so the two cannot
+  disagree), while a loop reseeds whenever it is in the closure at all, since it re-folds from its seeds
+  (ADR-0021). Staleness crosses outward too, as before: a node is stale when anything inside it is, in
+  every one of its child evaluations.
+- **It compares a definition other than the one the evaluation was prepared against** — the document,
+  against an evaluation a run prepared on a clone — so it reads the recorded version against the
+  passed definition's, never through the evaluation's own. A node with **no record** is stale: never
+  computed there (added since the last publication, or nothing published yet).
+- **A definition of another lineage is all stale, and asking does not throw.** `prepare` refuses the
+  pairing because it would act on it; a query only reports, and at a child the mismatch is ordinary
+  (a group made local keeps its NodeId and gets a new interior). Since versions are process-unique, a
+  record of another lineage could never match anyway; the check states the pairing rule and saves
+  walking records that describe another document.
+- **The pull path keeps its own semantic** — the stale nodes of the target's cone, not the closure —
+  through the same query's per-node test (`StaleClosure::owed`).
 
 ## Alternatives rejected
 

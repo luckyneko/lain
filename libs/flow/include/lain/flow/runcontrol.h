@@ -50,6 +50,13 @@ namespace lain::flow
 		// planned().
 		std::size_t finished() const noexcept { return m_finished.load(std::memory_order_relaxed); }
 
+		// Node computes that THREW. Each one is also recorded against its node in the evaluation
+		// (Evaluation::failure), so this is how a host tells a throw some node owned — shown where
+		// that node is — from one no node did, which it can only report for the run as a whole. More
+		// than one is possible: a serial walk stops at the first, but under the pool independent
+		// branches keep running and the first exception is the one that leaves run().
+		std::size_t failed() const noexcept { return m_failed.load(std::memory_order_relaxed); }
+
 		// Called BETWEEN stages: after a stage has executed, when another stage follows and the run
 		// has not been cancelled — before the next stage is prepared or planned. It runs on the thread
 		// that called Scheduler::run, while no step is running, so the evaluation is QUIESCENT and may
@@ -75,6 +82,7 @@ namespace lain::flow
 		std::atomic<bool> m_cancelled{false};
 		std::atomic<std::size_t> m_planned{0};
 		std::atomic<std::size_t> m_finished{0};
+		std::atomic<std::size_t> m_failed{0};
 		std::function<void()> m_stageObserver;
 	};
 } // namespace lain::flow

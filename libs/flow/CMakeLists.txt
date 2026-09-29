@@ -10,6 +10,7 @@ add_library(flow STATIC
 	src/graph.cpp
 	src/group.cpp
 	src/scheduler.cpp
+	src/staleness.cpp
 	src/edit.cpp
 	src/porttyperegistry.cpp
 )

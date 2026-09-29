@@ -9,6 +9,7 @@ add_executable(test-flow
 	test_clone.cpp
 	test_published.cpp
 	test_cancel.cpp
+	test_staleness.cpp
 	test_graph.cpp
 	test_scheduler.cpp
 	test_edit.cpp
