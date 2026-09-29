@@ -68,6 +68,16 @@ namespace lain::flow
 		}
 	}
 
+	// The level one step below `level`: the evaluation of `owner` numbered `index` — 0 for a group's
+	// or a loop's one child, the element for a map's.
+	static std::size_t levelBelow(std::vector<EvalPath>& levels, std::size_t level, NodeId owner, std::size_t index)
+	{
+		EvalPath path = levels[level]; // a copy: the push below may reallocate what it was read from
+		path.push_back(EvalStep{owner, index});
+		levels.push_back(std::move(path));
+		return levels.size() - 1;
+	}
+
 	// Flatten one level into the plan, recursing through anything that contains a graph.
 	//
 	// A plain node becomes one step that both consumes (populateInputs) and produces. A group
@@ -84,8 +94,8 @@ namespace lain::flow
 	// arm needs the rule to be CORRECT, since the coordinator reads carried values out between
 	// stages; a group and a map merely published early, which is why theirs went unnoticed for two
 	// milestones.
-	void Scheduler::expand(const Graph& definition, Evaluation& evaluation, const std::vector<NodeId>& order, Plan& plan,
-						   const Staging& staging)
+	void Scheduler::expand(const Graph& definition, Evaluation& evaluation, std::size_t level,
+						   const std::vector<NodeId>& order, Plan& plan, const Staging& staging)
 	{
 		// Where a node's value is consumed and where it becomes available: the same step for a
 		// plain node, entry and exit for a group.
@@ -123,7 +133,7 @@ namespace lain::flow
 				// (what it waits on is requested or prepared), so the request only matters if this run
 				// never gets there.
 				deferred.insert(id);
-				plan.closure.emplace_back(&evaluation, id);
+				plan.closure.push_back(Plan::Owed{&evaluation, level, id});
 				continue;
 			}
 
@@ -137,8 +147,8 @@ namespace lain::flow
 				// CLOSURE: the step clears this request itself, before it computes — so it is owed
 				// exactly until it has run.
 				const std::size_t step = plan.steps.size();
-				plan.steps.push_back(Step{Step::Kind::Node, &definition, &evaluation, id, false});
-				plan.closure.emplace_back(&evaluation, id);
+				plan.steps.push_back(Step{Step::Kind::Node, &definition, &evaluation, level, id, false});
+				plan.closure.push_back(Plan::Owed{&evaluation, level, id});
 				ends[id] = Ends{step, step};
 				continue;
 			}
@@ -172,7 +182,7 @@ namespace lain::flow
 					// matters only when a cancel stops the run before that preparation happens.
 					deferred.insert(id);
 					plan.frontiers.push_back(frontier);
-					plan.closure.emplace_back(&evaluation, id);
+					plan.closure.push_back(Plan::Owed{&evaluation, level, id});
 					continue;
 				}
 
@@ -181,7 +191,11 @@ namespace lain::flow
 				const std::size_t begin = plan.steps.size();
 				const std::size_t raised = plan.frontiers.size();
 				for (std::size_t i = 0; i < count; ++i)
-					expand(*inner, evaluation.child(id, i), StaleClosure(*inner, evaluation.child(id, i)).order(), plan, staging);
+				{
+					Evaluation& child = evaluation.child(id, i);
+					expand(*inner, child, levelBelow(plan.levels, level, id, i), StaleClosure(*inner, child).order(), plan,
+						   staging);
+				}
 				const std::size_t end = plan.steps.size();
 
 				// An element's own interior deferred — a nested map sizing its children, a loop part-way
@@ -197,7 +211,7 @@ namespace lain::flow
 				}
 
 				const std::size_t exit = plan.steps.size();
-				plan.steps.push_back(Step{Step::Kind::MapExit, &definition, &evaluation, id, false});
+				plan.steps.push_back(Step{Step::Kind::MapExit, &definition, &evaluation, level, id, false});
 
 				// Every element's inner GroupOutput must be delivered before the gather reads it.
 				for (std::size_t i = begin; i < end; ++i)
@@ -245,7 +259,8 @@ namespace lain::flow
 					{
 						Evaluation& child = evaluation.child(id); // one child, reused every iteration
 						const std::size_t raised = plan.frontiers.size();
-						expand(*inner, child, StaleClosure(*inner, child).order(), plan, staging);
+						expand(*inner, child, levelBelow(plan.levels, level, id, 0), StaleClosure(*inner, child).order(), plan,
+							   staging);
 						interiorPending = plan.frontiers.size() > raised;
 					}
 					// CLOSURE, when raised — for the same reason as a map's. A loop whose interior is
@@ -255,7 +270,7 @@ namespace lain::flow
 					if (!interiorPending)
 					{
 						plan.frontiers.push_back(frontier);
-						plan.closure.emplace_back(&evaluation, id);
+						plan.closure.push_back(Plan::Owed{&evaluation, level, id});
 					}
 					continue;
 				}
@@ -263,7 +278,7 @@ namespace lain::flow
 				// The fold is over: one step publishes it, carrying the iteration count the coordinator
 				// settled — a task can consult no staging state.
 				const std::size_t exit = plan.steps.size();
-				plan.steps.push_back(Step{Step::Kind::LoopExit, &definition, &evaluation, id, false, *state->iterations});
+				plan.steps.push_back(Step{Step::Kind::LoopExit, &definition, &evaluation, level, id, false, *state->iterations});
 				ends[id] = Ends{exit, exit};
 				continue;
 			}
@@ -278,11 +293,11 @@ namespace lain::flow
 				child.requestRecompute(inner->boundaryInputNode().id());
 
 			const std::size_t entry = plan.steps.size();
-			plan.steps.push_back(Step{Step::Kind::GroupEntry, &definition, &evaluation, id, publish});
+			plan.steps.push_back(Step{Step::Kind::GroupEntry, &definition, &evaluation, level, id, publish});
 
 			const std::size_t innerBegin = plan.steps.size();
 			const std::size_t raised = plan.frontiers.size();
-			expand(*inner, child, StaleClosure(*inner, child).order(), plan, staging);
+			expand(*inner, child, levelBelow(plan.levels, level, id, 0), StaleClosure(*inner, child).order(), plan, staging);
 			const std::size_t innerEnd = plan.steps.size();
 
 			// The entry writes what the inner GroupInput carries onward, so it must precede that
@@ -319,7 +334,7 @@ namespace lain::flow
 			}
 
 			const std::size_t exit = plan.steps.size();
-			plan.steps.push_back(Step{Step::Kind::GroupExit, &definition, &evaluation, id, false});
+			plan.steps.push_back(Step{Step::Kind::GroupExit, &definition, &evaluation, level, id, false});
 
 			// The exit reads what the inner GroupOutput was delivered, so that step must precede it.
 			// Everything else inside is ordered transitively by the inner graph's own edges.
@@ -348,7 +363,8 @@ namespace lain::flow
 	Scheduler::Plan Scheduler::buildRunPlan(const Graph& definition, Evaluation& evaluation, const Staging& staging)
 	{
 		Plan plan;
-		expand(definition, evaluation, StaleClosure(definition, evaluation).order(), plan, staging);
+		plan.levels.push_back(EvalPath{}); // level 0: the root
+		expand(definition, evaluation, 0, StaleClosure(definition, evaluation).order(), plan, staging);
 		return plan;
 	}
 
@@ -368,7 +384,8 @@ namespace lain::flow
 		}
 
 		Plan plan;
-		expand(definition, evaluation, order, plan, staging);
+		plan.levels.push_back(EvalPath{}); // level 0: the root
+		expand(definition, evaluation, 0, order, plan, staging);
 		return plan;
 	}
 
@@ -442,9 +459,15 @@ namespace lain::flow
 
 			// Persist the closure BEFORE executing any of it: each entry is owed until its own step
 			// runs, so however this stage ends — finished, cancelled, or thrown out of — nothing it
-			// meant to recompute is left looking clean (Plan::closure).
-			for (const auto& [owner, id] : plan.closure)
-				owner->requestRecompute(id);
+			// meant to recompute is left looking clean (Plan::closure). And say so, entry by entry, to
+			// whoever is watching: a copy that mirrors these stays as sound as the evaluation does while
+			// results land in it one node at a time (RunObserver::owed).
+			for (const Plan::Owed& owed : plan.closure)
+			{
+				owed.evaluation->requestRecompute(owed.node);
+				if (control.m_observer != nullptr)
+					control.m_observer->owed(plan.levels[owed.level], owed.node);
+			}
 
 			const auto computes = std::count_if(plan.steps.begin(), plan.steps.end(), [](const Step& step)
 												{ return step.kind == Step::Kind::Node; });
@@ -466,7 +489,8 @@ namespace lain::flow
 			// Another stage follows, and nothing is running: the one point inside a run where a host
 			// may read — and copy — the evaluation. Before the frontiers are prepared, so what it sees
 			// is the stage that just ran (a loop's last pass, not the next one's seeds).
-			control.notifyStage();
+			if (control.m_observer != nullptr)
+				control.m_observer->stageFinished();
 
 			// The stage just executed produced the collections these maps map over, so their arity
 			// is knowable now and was not before. Sizing and binding their children happens HERE, on
@@ -503,10 +527,21 @@ namespace lain::flow
 		// The plan is already in a valid serial order — every dependency points backwards — so the
 		// walk needs no further ordering work.
 		for (const Step& step : plan.steps)
-			runStep(step, control);
+			runStep(step, plan.levels[step.level], control);
 	}
 
-	void Scheduler::runStep(const Step& step, RunControl& control)
+	void Scheduler::reportFinished(RunControl& control, const EvalPath& path, const Evaluation& evaluation, NodeId id)
+	{
+		if (control.m_observer == nullptr)
+			return;
+		const Evaluation::NodeState* state = evaluation.state(id);
+		if (state == nullptr)
+			return; // not prepared here — nothing to report, and no step reaches one
+		const NodeRecord record(evaluation.m_lineage, *state);
+		control.m_observer->finished(path, id, &record);
+	}
+
+	void Scheduler::runStep(const Step& step, const EvalPath& path, RunControl& control)
 	{
 		switch (step.kind)
 		{
@@ -515,8 +550,8 @@ namespace lain::flow
 				// persisted for this node keeps it owed to the next run.
 				if (control.cancelled())
 					return;
-				runNode(*step.definition, *step.evaluation, step.node, control);
-				break;
+				runNode(*step.definition, *step.evaluation, path, step.node, control);
+				return; // runNode reports for itself: it knows how the compute ended
 
 			// The crossings run regardless (see scheduler.h): each only copies values, so running it
 			// keeps its owner consistent with what its interior currently holds, and the interior's
@@ -534,6 +569,12 @@ namespace lain::flow
 				exitLoop(*step.definition, *step.evaluation, step.node, step.iterations);
 				break;
 		}
+
+		// A crossing wrote its OWNER's record — the group's inputs as it entered, the outputs it
+		// published, a map's gather, a loop's fold — so a host watching sees the owner land the moment
+		// its interior's result does, and not only at the end of the stage. Never started() first:
+		// a crossing only copies values, so it is never shown Computing.
+		reportFinished(control, path, *step.evaluation, step.node);
 	}
 
 	// Copy each connected upstream output into `id`'s matching input. The value is SHARED, not
@@ -570,8 +611,12 @@ namespace lain::flow
 
 	// The single "execute a node" primitive (see scheduler.h) — reached from every plan step that
 	// runs a node, so readiness (conditional eval) is handled identically everywhere.
-	void Scheduler::runNode(const Graph& definition, Evaluation& evaluation, NodeId id, RunControl& control)
+	void Scheduler::runNode(const Graph& definition, Evaluation& evaluation, const EvalPath& path, NodeId id,
+							RunControl& control)
 	{
+		if (control.m_observer != nullptr)
+			control.m_observer->started(path, id);
+
 		const Node& node = definition.node(id);
 		populateInputs(definition, evaluation, id);
 
@@ -598,11 +643,15 @@ namespace lain::flow
 			// what lets a host show the failure where it happened — a node of one map element, of one
 			// linked-group instance — when the exception leaving run() cannot say which (ADR-0025).
 			// Always with SOME text, since a failure a host cannot describe reads as none at all.
+			//
+			// And REPORTED, with the record that says so, before the exception leaves: a host watching
+			// shows the failure where it happened as soon as it happens, not when the run ends.
 			const auto threw = [&](std::string message)
 			{
 				evaluation.requestRecompute(id);
 				evaluation.recordFailure(id, std::move(message));
 				control.m_failed.fetch_add(1, std::memory_order_relaxed);
+				reportFinished(control, path, evaluation, id);
 			};
 			try
 			{
@@ -634,6 +683,10 @@ namespace lain::flow
 		if (view.m_sawCancel)
 		{
 			evaluation.requestRecompute(id);
+			// Finished, but with nothing to show: whatever it wrote is not to be trusted, and it is
+			// still owed. Reported so a host watching stops showing it Computing.
+			if (control.m_observer != nullptr)
+				control.m_observer->finished(path, id, nullptr);
 			return;
 		}
 
@@ -642,6 +695,11 @@ namespace lain::flow
 		// drops out of future closures instead of being re-examined forever.
 		evaluation.markComputed(id, node.version());
 		control.m_finished.fetch_add(1, std::memory_order_relaxed);
+
+		// AFTER the books are kept, so the record says what the evaluation now says: computed at this
+		// version, request settled, any old failure cleared. Taken on this thread, from the slots this
+		// step wrote, before any downstream step is allowed to read them.
+		reportFinished(control, path, evaluation, id);
 	}
 
 	// Crossing INTO a group: take the group's own inputs from the parent graph, then BIND them into
@@ -1108,10 +1166,10 @@ namespace lain::flow
 		steps.reserve(plan.steps.size());
 		for (const Step& step : plan.steps)
 		{
-			// Step is a small value, copied into the task; the control is the run's, and outlives the
-			// wait below.
-			steps.push_back(recipe.step([this, step, &control]()
-										{ runStep(step, control); }));
+			// Step is a small value, copied into the task; the plan (whose levels a step reports by) and
+			// the control are the run's, and both outlive the wait below.
+			steps.push_back(recipe.step([this, step, &plan, &control]()
+										{ runStep(step, plan.levels[step.level], control); }));
 			assert(steps.back().valid() && "ParallelScheduler: the recipe is full");
 		}
 

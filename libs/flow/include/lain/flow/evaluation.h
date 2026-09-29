@@ -253,8 +253,9 @@ namespace lain::flow
 	private:
 		friend class NodeEvaluation;
 		friend class Scheduler;			  // the run lease, computedAt bookkeeping and input population
-		friend class PublishedEvaluation; // the one caller of the copy constructor
+		friend class PublishedEvaluation; // the one caller of the copy constructor, and the fold
 		friend class StaleClosure;		  // reads computedAt and the request flag against ANOTHER definition
+		friend class NodeRecord;		  // a copy of one NodeState
 
 		// A copy of this Evaluation and its whole child tree: every port value is a refcount bump
 		// (a PortValue shares its payload), every child is copied in turn, and the copy is not being
@@ -334,6 +335,39 @@ namespace lain::flow
 		bool m_running = false;
 	};
 
+	// A copy of one node's RECORD — its port values and its bookkeeping (what it was computed at,
+	// whether a recompute is still owed, what its last compute threw) — as a step left it (ADR-0025,
+	// M14 slice 7). A run hands one to its RunObserver as each step finishes, and a host FOLDS it into
+	// the copy its panes read, so a node's result shows the moment it lands rather than at the end of
+	// its stage.
+	//
+	// Taken by the thread that ran the step, from the slots that step wrote, before anything
+	// downstream is allowed to read them — so it is race-free by the same edges that order the run.
+	// Copying it is a refcount bump per port. Opaque: only the scheduler makes one and only a
+	// PublishedEvaluation reads one, because what it holds is exactly the state neither a host nor a
+	// node body may write.
+	class NodeRecord
+	{
+	public:
+		// What the compute that left this record threw, or nullptr — Evaluation::failure, as it stood.
+		const std::string* failure() const { return m_state.failure.has_value() ? &*m_state.failure : nullptr; }
+
+	private:
+		friend class Scheduler;			  // makes one
+		friend class PublishedEvaluation; // folds one
+
+		NodeRecord(Lineage lineage, const Evaluation::NodeState& state)
+			: m_lineage(lineage)
+			, m_state(state)
+		{
+		}
+
+		// The version history of the evaluation it was taken from. A record folds only into a copy of
+		// that same history: its computedAt means nothing against another.
+		Lineage m_lineage;
+		Evaluation::NodeState m_state;
+	};
+
 	// A read-only copy of an Evaluation, together with the definition it reads through (ADR-0025: a
 	// host's panes read one while a run holds the working evaluation). The copy's ready(),
 	// describe() and needsRecompute() consult the graph its source was last prepared against — in a
@@ -344,8 +378,9 @@ namespace lain::flow
 	//
 	// Only const access goes out. A published evaluation is something a host READS; it can never be
 	// handed to Scheduler::run, so a second working evaluation branched off a first (ADR-0025's
-	// deferred "evaluation fork") cannot be made by accident. The one write is bind(), below, and it
-	// changes what the copy SHOWS — never what any run computes.
+	// deferred "evaluation fork") cannot be made by accident. Its three writes — bind(), fold() and
+	// owe(), below — each change what the copy SHOWS, never what any run computes: a pending binding
+	// shown at once, and a run's progress shown node by node as it lands.
 	//
 	// Not called a snapshot — that word means the undo document — and not a record of one execution:
 	// a host replaces it as newer results land.
@@ -386,7 +421,36 @@ namespace lain::flow
 		// it: the queued binding still reaches the next run, which prepares that slot first.
 		void bind(PortAddress input, PortValue value) { m_evaluation.bind(input, std::move(value)); }
 
+		// Show a node's result the moment it lands (M14 slice 7): replace the record of `node` in the
+		// evaluation at `path` with `record`, which a run reported as a step finished
+		// (RunObserver::finished). Its values, what it was computed at, its request and its failure
+		// all become the record's — the copy then reads as though it had been taken just after that
+		// step.
+		//
+		// Where the copy has fewer elements of a MAP than `path` names — the run has sized them since
+		// the copy was taken — the missing ones are created, prepared against the copy's own
+		// definition, and read as never computed until their own records land. Nothing is ever
+		// dropped: an element a shrunk collection no longer has stays until a publication replaces
+		// the copy.
+		//
+		// Answers false, and changes nothing, when the copy has no such node at that path (its
+		// definition lacks it — a node added since — or nothing has been published at all), or when
+		// the evaluation there is of another lineage than the record: its versions describe another
+		// history.
+		bool fold(const EvalPath& path, NodeId node, const NodeRecord& record);
+
+		// Show that a run OWES `node` at `path` (RunObserver::owed): mark its recompute requested in
+		// the copy, as the run has in its working evaluation, until its record lands and clears it.
+		// Without this, a node whose upstream has just landed reads as current in the copy while it
+		// still shows the value it built from the old input. Finds, grows and refuses exactly as
+		// fold() does, minus the lineage check, which only a record can make.
+		bool owe(const EvalPath& path, NodeId node);
+
 	private:
+		// The evaluation at `path` in the copy, creating a map's missing elements on the way (see
+		// fold), or nullptr where the copy's definition has no such level.
+		Evaluation* locate(const EvalPath& path);
+
 		// Declared FIRST, so it is destroyed LAST: the copy never outlives the graph it reads through,
 		// even for the length of its own destructor.
 		std::shared_ptr<const Graph> m_definition;

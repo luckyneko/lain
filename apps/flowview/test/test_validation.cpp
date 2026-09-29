@@ -28,9 +28,7 @@
 using namespace lain::flow;
 using flowview::collectFailures;
 using flowview::collectIssues;
-using flowview::GraphPath;
 using flowview::Issue;
-using flowview::PathStep;
 
 namespace
 {
@@ -76,7 +74,7 @@ TEST_CASE("a defaulted input with nothing wired is not a missing required input"
 	const NodeId blur = graph.add<example::BlurNode>(2, 1.5f);
 	Evaluation evaluation{graph};
 
-	const std::vector<Issue> issues = collectIssues(graph, evaluation, GraphPath{});
+	const std::vector<Issue> issues = collectIssues(graph, evaluation, EvalPath{});
 
 	// The positive control lives in the same case deliberately: "reports nothing" would also pass if
 	// the check had been deleted outright.
@@ -88,7 +86,7 @@ TEST_CASE("a defaulted input with nothing wired is not a missing required input"
 	const NodeId source = graph.add<ImageSource>();
 	REQUIRE(graph.connect(source, 0, blur, 0) == Connection::Ok);
 	Evaluation fed{graph};
-	REQUIRE_FALSE(mentions(collectIssues(graph, fed, GraphPath{}), "is not connected"));
+	REQUIRE_FALSE(mentions(collectIssues(graph, fed, EvalPath{}), "is not connected"));
 }
 
 TEST_CASE("a loop reports neither its own count nor its interior's continue", "[validation]")
@@ -101,10 +99,10 @@ TEST_CASE("a loop reports neither its own count nor its interior's continue", "[
 	auto& loop = static_cast<LoopNode&>(graph.node(id));
 	Evaluation evaluation{graph};
 
-	REQUIRE_FALSE(mentions(collectIssues(graph, evaluation, GraphPath{}), "'count'"));
+	REQUIRE_FALSE(mentions(collectIssues(graph, evaluation, EvalPath{}), "'count'"));
 
 	Evaluation inner{loop.inner()};
-	REQUIRE_FALSE(mentions(collectIssues(loop.inner(), inner, GraphPath{{id}}), "'continue'"));
+	REQUIRE_FALSE(mentions(collectIssues(loop.inner(), inner, EvalPath{{id}}), "'continue'"));
 }
 
 TEST_CASE("an output is only a dead end once its node can actually run", "[validation]")
@@ -120,13 +118,13 @@ TEST_CASE("an output is only a dead end once its node can actually run", "[valid
 	// happened yet": an unfed blur is not ready however many times the graph is run.
 	Evaluation unfed{graph};
 	SerialScheduler{}.run(graph, unfed);
-	REQUIRE_FALSE(mentions(collectIssues(graph, unfed, GraphPath{}), "is unused"));
+	REQUIRE_FALSE(mentions(collectIssues(graph, unfed, EvalPath{}), "is unused"));
 
 	const NodeId source = graph.add<ImageSource>();
 	REQUIRE(graph.connect(source, 0, blur, 0) == Connection::Ok);
 	Evaluation fed{graph};
 	SerialScheduler{}.run(graph, fed);
-	const std::vector<Issue> issues = collectIssues(graph, fed, GraphPath{});
+	const std::vector<Issue> issues = collectIssues(graph, fed, EvalPath{});
 	REQUIRE(mentions(issues, "Blur")); // ...and now the blur's own output has nowhere to go
 	REQUIRE(mentions(issues, "output 'image' is unused"));
 }
@@ -208,14 +206,14 @@ TEST_CASE("a node that threw is an Error row that locates it", "[validation][fai
 	SerialScheduler scheduler;
 	const PublishedEvaluation published = runAndPublish(document, working, scheduler);
 
-	const std::vector<Issue> rows = collectFailures(published.evaluation(), GraphPath{});
+	const std::vector<Issue> rows = collectFailures(published.evaluation(), EvalPath{});
 	REQUIRE(rows.size() == 1);
 	REQUIRE(rows[0].severity == Issue::Severity::Error);
 	REQUIRE(rows[0].node == boom);
 	REQUIRE(rows[0].message.find("failed: boom") != std::string::npos);
 
 	// Nothing published, nothing to say.
-	REQUIRE(collectFailures(PublishedEvaluation{}.evaluation(), GraphPath{}).empty());
+	REQUIRE(collectFailures(PublishedEvaluation{}.evaluation(), EvalPath{}).empty());
 }
 
 TEST_CASE("a failure inside a group leads into it, and locates it once there", "[validation][failure][group]")
@@ -231,8 +229,8 @@ TEST_CASE("a failure inside a group leads into it, and locates it once there", "
 	SerialScheduler scheduler;
 	const PublishedEvaluation published = runAndPublish(document, working, scheduler);
 
-	const GraphPath inside{PathStep{group, 0}};
-	const std::vector<Issue> fromRoot = collectFailures(published.evaluation(), GraphPath{});
+	const EvalPath inside{EvalStep{group, 0}};
+	const std::vector<Issue> fromRoot = collectFailures(published.evaluation(), EvalPath{});
 	REQUIRE(fromRoot.size() == 1);
 	REQUIRE(fromRoot[0].navigateTo == inside);
 
@@ -259,8 +257,8 @@ TEST_CASE("one node failing in several map elements is one row", "[validation][f
 	const PublishedEvaluation published = runAndPublish(document, working, scheduler);
 	REQUIRE(published.evaluation().childCount(map) == 3);
 
-	const std::vector<Issue> rows = collectFailures(published.evaluation(), GraphPath{});
+	const std::vector<Issue> rows = collectFailures(published.evaluation(), EvalPath{});
 	REQUIRE(rows.size() == 1);
 	REQUIRE(rows[0].message.find("and in 2 more element(s)") != std::string::npos);
-	REQUIRE(rows[0].navigateTo == GraphPath{PathStep{map, 0}}); // the first, in element order
+	REQUIRE(rows[0].navigateTo == EvalPath{EvalStep{map, 0}}); // the first, in element order
 }

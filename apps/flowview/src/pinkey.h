@@ -1,8 +1,6 @@
 #pragma once
 
-#include "groupnav.h" // GraphPath — which level the pin is on
-
-#include <lain/flow/types.h> // PortAddress
+#include <lain/flow/types.h> // EvalPath (which level the pin is on), PortAddress
 
 namespace flowview
 {
@@ -18,16 +16,16 @@ namespace flowview
 	// through one subgraph) have the same node and port ids by design. So the level is part of the
 	// key, and correctness no longer rests on remembering to clear.
 	//
-	// `path` is the evaluation coordinate ADR-0012 calls an EvalPath. Today it is exactly the graph
-	// path — a group has one child Evaluation, so the same walk reaches both — which is why it is
-	// spelled `GraphPath` rather than duplicated as a parallel type. A map node (one child per
-	// element) is what makes the two differ, and is where an EvalPath of its own earns its keep.
+	// `path` is the evaluation coordinate ADR-0012 calls an EvalPath — flow's own type, the one a run
+	// reports where each node computed by (M14 slice 7), so a pin key and a run's report name a level
+	// the same way. It walks the graph too: every element of a map shares one definition, so the graph
+	// walk simply ignores the index.
 	//
 	// There is no direction field: a PortId is minted per NODE across both sides (M6 step 2), so a
 	// PortAddress already names one port unambiguously.
 	struct PinKey
 	{
-		GraphPath path; // empty = the root graph
+		lain::flow::EvalPath path; // empty = the root graph
 		lain::flow::PortAddress port;
 
 		bool operator==(const PinKey& o) const { return path == o.path && port == o.port; }

@@ -13,8 +13,8 @@
 #include <map>
 #include <set>
 
-using flowview::GraphPath;
 using flowview::PinKey;
+using lain::flow::EvalPath;
 using lain::flow::NodeId;
 using lain::flow::PortAddress;
 using lain::flow::PortId;
@@ -27,8 +27,8 @@ TEST_CASE("a pin on two levels is two keys", "[pinkey]")
 	const PortAddress port{NodeId::generate(), PortId{1}};
 	const NodeId group = NodeId::generate();
 
-	const PinKey atRoot{GraphPath{}, port};
-	const PinKey inGroup{GraphPath{{group}}, port};
+	const PinKey atRoot{EvalPath{}, port};
+	const PinKey inGroup{EvalPath{{group}}, port};
 
 	REQUIRE(atRoot != inGroup);
 	REQUIRE((atRoot < inGroup || inGroup < atRoot)); // strictly ordered, so a map keeps them apart
@@ -44,7 +44,7 @@ TEST_CASE("a pin on two levels is two keys", "[pinkey]")
 TEST_CASE("the same pin at the same level is one key", "[pinkey]")
 {
 	const PortAddress port{NodeId::generate(), PortId{3}};
-	const GraphPath path{{NodeId::generate()}, {NodeId::generate()}};
+	const EvalPath path{{NodeId::generate()}, {NodeId::generate()}};
 
 	REQUIRE(PinKey{path, port} == PinKey{path, port});
 	REQUIRE_FALSE(PinKey{path, port} < PinKey{path, port}); // irreflexive, as std::map needs
@@ -60,8 +60,8 @@ TEST_CASE("an input and an output pin are different keys with no direction field
 	// There is no direction in the key, and none is needed: a PortId is minted per NODE across both
 	// sides (M6 step 2), so a node's first input and first output never share one.
 	const NodeId node = NodeId::generate();
-	const PinKey in{GraphPath{}, PortAddress{node, PortId{1}}};
-	const PinKey out{GraphPath{}, PortAddress{node, PortId{2}}};
+	const PinKey in{EvalPath{}, PortAddress{node, PortId{1}}};
+	const PinKey out{EvalPath{}, PortAddress{node, PortId{2}}};
 
 	REQUIRE(in != out);
 	REQUIRE(in < out);
@@ -78,5 +78,5 @@ TEST_CASE("keys sort by level first", "[pinkey]")
 	const NodeId group = NodeId::generate();
 
 	// A HIGHER port address at the root still sorts before a LOWER one inside a group.
-	REQUIRE(PinKey{GraphPath{}, high} < PinKey{GraphPath{{group}}, low});
+	REQUIRE(PinKey{EvalPath{}, high} < PinKey{EvalPath{{group}}, low});
 }

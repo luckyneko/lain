@@ -121,6 +121,7 @@ namespace lain::flow
 			Kind kind = Kind::Node;
 			const Graph* definition = nullptr; // the graph `node` lives in — NOT necessarily the top level
 			Evaluation* evaluation = nullptr;  // the evaluation THAT graph's values live in
+			std::size_t level = 0;			   // where that evaluation is: an index into Plan::levels
 			NodeId node;					   // the node to run, or the group whose boundary is being crossed
 			bool publish = false;			   // GroupEntry only: whether the inputs actually need republishing
 
@@ -166,6 +167,13 @@ namespace lain::flow
 		struct Plan
 		{
 			std::vector<Step> steps;
+
+			// Every evaluation this stage touches, as the COORDINATE a host can use: the EvalPath from
+			// the root. A step (and a closure entry) names its evaluation twice — by address, which is
+			// what executes, and by level, an index into this — because an address names nothing in
+			// the copy a host's panes read, and that is where a RunObserver's reports have to land.
+			// Level 0 is the root. Built as expand() recurses, so it costs one path per level.
+			std::vector<EvalPath> levels;
 			std::vector<std::pair<std::size_t, std::size_t>> edges; // (predecessor, successor)
 
 			// What this stage deferred. EMPTY means the stage covered the whole run, which is the
@@ -187,7 +195,13 @@ namespace lain::flow
 			// group or map expanded without republishing, an owner deferred only because its interior
 			// was, or an exit: a request on any of those would make it republish next stage — a
 			// change to an uncancelled run — and its interior's own entries already keep it owed.
-			std::vector<std::pair<Evaluation*, NodeId>> closure;
+			struct Owed
+			{
+				Evaluation* evaluation;
+				std::size_t level; // into `levels`: where it is reported as owed (RunObserver::owed)
+				NodeId node;
+			};
+			std::vector<Owed> closure;
 		};
 
 		// What ONE invocation has done to each frontier it raised. Passed down rather than held on
@@ -265,7 +279,8 @@ namespace lain::flow
 		// keeps it owed, and still runs every CROSSING. A crossing only copies values, so running it
 		// keeps its owner consistent with whatever its interior currently holds, and the interior's
 		// own requests keep the owner stale. Skipping one would need state of its own to say so.
-		void runStep(const Step& step, RunControl& control);
+		// `path` is the step's level (Plan::levels), which is what its reports are addressed by.
+		void runStep(const Step& step, const EvalPath& path, RunControl& control);
 
 		// Evaluate one node: populate its inputs, then either compute() (READY — every required
 		// input has a value) or SUPPRESS it (a required input is empty → clear its outputs, don't
@@ -275,7 +290,12 @@ namespace lain::flow
 		// leaves — so the node stays stale however it came to be in the run, and a host can say where
 		// the failure was. One that GAVE UP on a cancel (it asked NodeEvaluation::cancelled() and heard
 		// yes) is treated the same way minus the record, keeping whatever it wrote but not trusting it.
-		void runNode(const Graph& definition, Evaluation& evaluation, NodeId id, RunControl& control);
+		//
+		// It reports to the control's observer as it goes: started() before anything else, finished()
+		// with the node's record once the outcome is settled — on the way out of a throw too — and
+		// finished() with no record for a node that gave up.
+		void runNode(const Graph& definition, Evaluation& evaluation, const EvalPath& path, NodeId id,
+					 RunControl& control);
 
 		// Copy each connected upstream output into `id`'s matching input. The value is SHARED, not
 		// deep-copied — the source keeps it, which is what leaves every stage inspectable.
@@ -305,8 +325,15 @@ namespace lain::flow
 		// node that contains a graph, and wire this level's edges between the resulting steps. A map
 		// whose input may still change in this stage is recorded in `plan.frontiers` instead, along
 		// with everything downstream of it.
-		void expand(const Graph& definition, Evaluation& evaluation, const std::vector<NodeId>& order, Plan& plan,
-					const Staging& staging);
+		// `level` is `evaluation`'s index into plan.levels; an interior expanded from here gets a level
+		// of its own, one step deeper.
+		void expand(const Graph& definition, Evaluation& evaluation, std::size_t level,
+					const std::vector<NodeId>& order, Plan& plan, const Staging& staging);
+
+		// Tell the control's observer, if it has one, that a step has finished leaving `id` as it now
+		// stands in `evaluation`. Takes the node's record only when someone is listening, so a run
+		// nobody watches pays nothing for it.
+		static void reportFinished(RunControl& control, const EvalPath& path, const Evaluation& evaluation, NodeId id);
 
 		// Size and fill a deferred map's children, now that the stage which computes its input has
 		// finished: populate its own inputs, read the arity from its split inputs, create/prune one

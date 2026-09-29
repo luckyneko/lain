@@ -53,7 +53,7 @@ namespace flowview
 		//
 		// Producing a poster may DECODE (a sequence's is its first frame), which is affordable only
 		// because this runs on an edit and not per frame — the same reason the upload is deferred.
-		void refreshIfDirty(const GraphPath& path, const lain::flow::Graph& graph,
+		void refreshIfDirty(const lain::flow::EvalPath& path, const lain::flow::Graph& graph,
 							const lain::flow::Evaluation& evaluation, const ValueViews& views,
 							lain::gui::Context& ctx);
 

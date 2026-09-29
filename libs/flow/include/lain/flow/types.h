@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <functional> // std::hash specialisation below
 #include <string>
+#include <vector>
 
 namespace lain::flow
 {
@@ -133,6 +134,33 @@ namespace lain::flow
 		friend bool operator==(const PortAddress& a, const PortAddress& b) { return a.node == b.node && a.port == b.port; }
 		friend bool operator!=(const PortAddress& a, const PortAddress& b) { return !(a == b); }
 	};
+
+	// One step down the EVALUATION TREE: which graph-containing node, and WHICH EVALUATION OF IT —
+	// the `index` Evaluation::child(node, index) takes. A group or a loop has exactly one child, so its
+	// index is always 0; a MAP has one per element, and the index selects it (ADR-0014). Positional,
+	// because position is the only identity a std::vector has.
+	struct EvalStep
+	{
+		NodeId node;
+		std::size_t index = 0;
+
+		friend bool operator==(const EvalStep& a, const EvalStep& b) { return a.node == b.node && a.index == b.index; }
+		friend bool operator!=(const EvalStep& a, const EvalStep& b) { return !(a == b); }
+		friend bool operator<(const EvalStep& a, const EvalStep& b)
+		{
+			if (a.node != b.node)
+				return a.node < b.node;
+			return a.index < b.index;
+		}
+	};
+
+	// Which Evaluation, as a COORDINATE (ADR-0012): the steps from the root down. Empty is the root.
+	// It names the same place across scheduler invocations and across the copies a host reads — the
+	// working evaluation a run writes and a PublishedEvaluation of it have the same shape, so one
+	// path locates a node in either, where an Evaluation's address names only the one it came from.
+	// A run reports where each step ran by it (RunObserver), a host navigates by it, and a preview
+	// pinned to it shows that Evaluation's newest values.
+	using EvalPath = std::vector<EvalStep>;
 
 	// Outcome of Graph::connect — Ok, or the reason the edge was rejected.
 	enum class Connection

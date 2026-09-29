@@ -9,7 +9,8 @@
 // itself was a missing connection.
 
 #include "appcontext.h" // Issue — the row type these produce
-#include "groupnav.h"	// GraphPath — a map element's row names the level to descend into
+
+#include <lain/flow/types.h> // EvalPath — a map element's row names the level to descend into
 
 #include <vector>
 
@@ -29,7 +30,7 @@ namespace flowview
 	// `activePath` is the level `graph` sits at, needed only to build the absolute path a map
 	// element's row navigates into.
 	std::vector<Issue> collectIssues(const lain::flow::Graph& graph, const lain::flow::Evaluation& evaluation,
-									 const GraphPath& activePath);
+									 const lain::flow::EvalPath& activePath);
 
 	// Every node, at ANY level, whose last compute threw — one Error row each, with what it threw
 	// (ADR-0025: a run records a failure against the node, in the evaluation it threw in). Read from the
@@ -40,5 +41,5 @@ namespace flowview
 	// there. The elements of a map share one definition, so the same node failing in several of them
 	// is ONE row naming the first and counting the rest — a broken folder must not bury the panel,
 	// which is the map-hole row's rule too.
-	std::vector<Issue> collectFailures(const lain::flow::Evaluation& published, const GraphPath& activePath);
+	std::vector<Issue> collectFailures(const lain::flow::Evaluation& published, const lain::flow::EvalPath& activePath);
 } // namespace flowview

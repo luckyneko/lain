@@ -2,7 +2,7 @@
 
 #include "../appcontext.h"
 #include "../flowviewapp.h" // runFailure — the last run that threw
-#include "../groupnav.h"	// GraphPath (a map element's row navigates INTO it) + PinRefusal
+#include "../groupnav.h"	// PinRefusal
 #include "../validation.h"	// collectIssues — the rules themselves, apart from the drawing
 
 #include <lain/gui/color.h> // gui::packColor (image::ColorRGBA8 -> ImU32)
@@ -26,7 +26,7 @@ namespace flowview
 	//
 	// It leads to the level the pin LIVES on, so the Interface pane there can rename it — unless that
 	// is the level already drawn, where a click would spend a preview-cache clear going nowhere.
-	static Issue refusalRow(const PinRefusal& refusal, const GraphPath& drawnPath)
+	static Issue refusalRow(const PinRefusal& refusal, const flow::EvalPath& drawnPath)
 	{
 		std::string message = string::format("{} [{}]: inner pin '{}' could not be mirrored onto its face — nothing outside can connect to it",
 											 refusal.group, refusal.node.shortString(), refusal.pin);

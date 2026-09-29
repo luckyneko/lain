@@ -3,8 +3,8 @@
 ---
 Status: accepted (designed 2026-09-28; slices 1 — clone + lineage — 2 — the published evaluation
 + payload identity — and 3 — cancellation — built 2026-09-28, 4 — the async vertical — 5 — triggers
-+ persistence — and 6 — freshness: the stale-closure query and the failure record, then the UI —
-2026-09-29, the rest not)
++ persistence — 6 — freshness: the stale-closure query and the failure record, then the UI — and
+7a — the run observer and the node record — 2026-09-29, the rest not)
 Amends [ADR-0012](0012-definition-and-evaluation.md) — the pairing guard moves from address identity
 to **lineage**, and a *published evaluation* is the "different concept" it set aside. Amends
 [ADR-0024](0024-one-process-task-pool.md) — gui-mode stops being serial, and the coordinator thread is
@@ -124,7 +124,8 @@ scheduler's `run()`; the frame loop polls atomics for completion and progress. T
 running at full speed off the UI thread. `SerialScheduler` runs *on* the coordinator and `--threads 0`
 runs the parallel plan inline *there*, so both stay asynchronous to the gui. The scheduler's surface
 grows only by the cancel token, a progress read, a between-stages observer and (later) a per-step
-completion hook; the headless `flowview run` path is untouched.
+completion hook — built as one `flow::RunObserver` in slice 7a, the between-stages call now one of its
+methods; the headless `flowview run` path is untouched.
 
 *Built in slice 4 (2026-09-29)* as flowview's `Runner`, with one job slot: the host supersedes by
 cancelling the run in flight and starting the next once it has drained, so it clones exactly once per
@@ -171,6 +172,33 @@ address: the question there is lifetime, not history. It hands out only `const E
 published copy can never be passed to `run()` — the *evaluation fork* below stays deferred by
 construction. The mutators a host needs (a pending binding, the fold) arrive with the slices that need
 them.
+
+*Built in slice 7a (2026-09-29), the flow half of per-node publication.* The completion record is
+**`flow::NodeRecord`**, a copy of one node's record (its values, the version it was computed at,
+whether a recompute is owed, what it threw). A run hands one to the host's **`flow::RunObserver`** as
+each step finishes: after a compute that got through or threw, and after every crossing, for the node
+that owns it. A compute that gave up reports no record. **`PublishedEvaluation::fold`** writes one
+into the copy. The observer is one interface replacing slice 4's stage observer, since per-node
+reports arrive on workers and are `noexcept`. Building it settled three things this section left
+open:
+
+- **A record is addressed by `flow::EvalPath`**, since the working evaluation's address names nothing
+  in the copy. So the EvalPath coordinate ADR-0012 named became flow's own type; flowview's
+  `GraphPath` was deleted rather than kept as a second name for it.
+- **Folding records alone is UNSOUND**, and the fold needs a second mutator. Take U → D with U edited:
+  fold U's record and D's own record is clean, so the stale closure calls D current while it still
+  shows the value it built from U's old output. The scheduler already writes each stage's closure into
+  the working evaluation as recompute requests (slice 3), so the observer is also told each entry as
+  it is written (**`owed`**), and the host marks it in its copy (**`PublishedEvaluation::owe`**). The
+  copy's bookkeeping then stays a faithful view of the working evaluation's, and the staleness query
+  over it stays sound while it fills in node by node. The same marks are what make a node **Queued**.
+- **A fold creates a map's elements the copy lacks**, since a run sizes them after the copy was taken,
+  and never drops one. It refuses a record of another lineage.
+
+Slice 7b's host needs one thing more, decided with the repo owner: the runner publishes at the START of
+every run as well, so a run's records always fold onto a copy of the clone that produced them. Without
+it, the first run after New or Open has nothing to fold into, and a Live drag folds run k+1's records
+into run k's clone.
 
 ADR-0012 said *"a historical snapshot of one execution, if a caller ever needs one, is a different
 concept."* This is that concept, and it is not a snapshot of one execution either: it is the host's

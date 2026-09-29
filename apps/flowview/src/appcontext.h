@@ -3,7 +3,7 @@
 #include "canvasids.h" // the imnodes int <-> NodeId/PortAddress mapping (document-lifetime)
 #include "freshness.h" // LevelFreshness — whether each node on screen shows a current value
 #include "graphio.h"   // DocumentOptions — what the document says about itself (its run trigger)
-#include "groupnav.h"  // GraphPath — which graph the panes are pointed at
+#include "groupnav.h"  // PinRefusal, and the path helpers the panes are pointed with
 #include "pinkey.h"
 #include "session.h" // what persists between runs (last graph, recents, dialog folder)
 #include "undo.h"	 // UndoStack (the graph-document history)
@@ -59,21 +59,21 @@ namespace flowview
 			return Issue(severity, std::move(message), node, {});
 		}
 
-		static Issue inside(Severity severity, std::string message, GraphPath level)
+		static Issue inside(Severity severity, std::string message, lain::flow::EvalPath level)
 		{
 			return Issue(severity, std::move(message), {}, std::move(level));
 		}
 
 		Severity severity = Severity::Warning;
 		std::string message;
-		lain::flow::NodeId node; // set by `at`: the node to select and centre
-		GraphPath navigateTo;	 // set by `inside`: the level to descend into
+		lain::flow::NodeId node;		 // set by `at`: the node to select and centre
+		lain::flow::EvalPath navigateTo; // set by `inside`: the level to descend into
 
 		// Whether the row leads anywhere — which is what makes it worth clicking.
 		bool locatable() const { return node != lain::flow::NodeId{} || !navigateTo.empty(); }
 
 	private:
-		Issue(Severity s, std::string m, lain::flow::NodeId n, GraphPath p)
+		Issue(Severity s, std::string m, lain::flow::NodeId n, lain::flow::EvalPath p)
 			: severity(s)
 			, message(std::move(m))
 			, node(n)
@@ -138,7 +138,7 @@ namespace flowview
 		// The path of group nodes descended from the root; empty = the root graph. MainWindow
 		// resolves it once per frame and hands every pane the graph it names, so descending retargets
 		// the canvas, Inspector, Preview and Issues together.
-		GraphPath activePath;
+		lain::flow::EvalPath activePath;
 
 		// The path the panes are DRAWING this frame — captured by MainWindow once the graph is
 		// resolved, and the only honest answer to "which level is on screen" from inside a draw.
@@ -146,7 +146,7 @@ namespace flowview
 		// descent), so anything writing per-level state during the draw — the canvas layout capture
 		// above all — must key it by this, or it files the level it is looking at under the level it
 		// is moving to.
-		GraphPath drawnPath;
+		lain::flow::EvalPath drawnPath;
 
 		// How many evaluations each step of activePath currently has — 1 for a group, N for a map.
 		// Filled by MainWindow each frame, because it is the one place that holds the ROOT evaluation
@@ -163,14 +163,14 @@ namespace flowview
 		// selection. Still REQUIRED with unique canvas ids — imnodes destroys a node's data the first
 		// frame it is not submitted, and frees selection-pool indices without pruning them (ADR-0011).
 		bool pathChanged = false;
-		void navigateTo(GraphPath path)
+		void navigateTo(lain::flow::EvalPath path)
 		{
 			activePath = std::move(path);
 			pathChanged = true;
 		}
 		void descendInto(lain::flow::NodeId group)
 		{
-			activePath.push_back(PathStep{group, 0}); // descending always lands on the first element
+			activePath.push_back(lain::flow::EvalStep{group, 0}); // descending always lands on the first element
 			pathChanged = true;
 		}
 
@@ -318,6 +318,6 @@ namespace flowview
 		// Absent on New/Open, which go back to the root because the document itself changed. Without
 		// this, undoing an edit made INSIDE a group threw the user back out to the root, away from
 		// what they just undid.
-		std::optional<GraphPath> pendingPath;
+		std::optional<lain::flow::EvalPath> pendingPath;
 	};
 } // namespace flowview

@@ -14,7 +14,7 @@ namespace flowview
 {
 	using namespace lain;
 
-	void PreviewCache::refreshIfDirty(const GraphPath& path, const flow::Graph& graph,
+	void PreviewCache::refreshIfDirty(const flow::EvalPath& path, const flow::Graph& graph,
 									  const flow::Evaluation& evaluation, const ValueViews& views,
 									  gui::Context& ctx)
 	{

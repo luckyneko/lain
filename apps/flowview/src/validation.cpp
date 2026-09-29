@@ -21,7 +21,7 @@ namespace flowview
 	// active node's output with no outgoing edge (a dead end). Recomputed each frame — cheap at
 	// prototyping scale, and self-clearing as the graph is fixed.
 	std::vector<Issue> collectIssues(const flow::Graph& graph, const flow::Evaluation& evaluation,
-									 const GraphPath& activePath)
+									 const flow::EvalPath& activePath)
 	{
 		std::vector<Issue> issues;
 		// The ports an edge touches, by their durable addresses — the same key an edge stores.
@@ -122,8 +122,8 @@ namespace flowview
 					if (missing == 0)
 						continue;
 
-					GraphPath into = activePath;
-					into.push_back(PathStep{id, first});
+					flow::EvalPath into = activePath;
+					into.push_back(flow::EvalStep{id, first});
 					// `inside`, not `at`: the subject is the ELEMENT's level, one step down, and there is
 					// no node at this level worth centring — the map itself is plainly visible.
 					issues.push_back(Issue::inside(Issue::Severity::Warning,
@@ -139,7 +139,7 @@ namespace flowview
 	// One failure found by the walk below: the level it was found at, and the node.
 	struct FoundFailure
 	{
-		GraphPath level;
+		flow::EvalPath level;
 		flow::NodeId node;
 		std::string name;
 		std::string message;
@@ -147,7 +147,7 @@ namespace flowview
 
 	// Depth first, in the definition's own node order and each map's element order, so "the first"
 	// failure of a node is the one a reader would meet first.
-	static void findFailures(const flow::Graph& definition, const flow::Evaluation& evaluation, const GraphPath& level,
+	static void findFailures(const flow::Graph& definition, const flow::Evaluation& evaluation, const flow::EvalPath& level,
 							 std::vector<FoundFailure>& found)
 	{
 		for (const flow::NodeId id : definition.nodeIds())
@@ -164,8 +164,8 @@ namespace flowview
 				const flow::Evaluation& child = evaluation.child(id, element);
 				if (!child.hasFailure())
 					continue; // nothing down there: skip the walk
-				GraphPath into = level;
-				into.push_back(PathStep{id, element});
+				flow::EvalPath into = level;
+				into.push_back(flow::EvalStep{id, element});
 				findFailures(*inner, child, into, found);
 			}
 		}
@@ -173,14 +173,14 @@ namespace flowview
 
 	// A level with every map element set to 0: the same DEFINITION level, whichever element it was
 	// reached through — what collapses one node failing in several elements into one row.
-	static GraphPath definitionLevel(GraphPath level)
+	static flow::EvalPath definitionLevel(flow::EvalPath level)
 	{
-		for (PathStep& step : level)
-			step.element = 0;
+		for (flow::EvalStep& step : level)
+			step.index = 0;
 		return level;
 	}
 
-	std::vector<Issue> collectFailures(const flow::Evaluation& published, const GraphPath& activePath)
+	std::vector<Issue> collectFailures(const flow::Evaluation& published, const flow::EvalPath& activePath)
 	{
 		std::vector<Issue> issues;
 		const flow::Graph* definition = published.definition();
@@ -188,7 +188,7 @@ namespace flowview
 			return issues;
 
 		std::vector<FoundFailure> found;
-		findFailures(*definition, published, GraphPath{}, found);
+		findFailures(*definition, published, flow::EvalPath{}, found);
 
 		// One row per node per definition level: the first failure found stands for the rest.
 		std::vector<bool> reported(found.size(), false);
@@ -197,7 +197,7 @@ namespace flowview
 			if (reported[i])
 				continue;
 			const FoundFailure& first = found[i];
-			const GraphPath key = definitionLevel(first.level);
+			const flow::EvalPath key = definitionLevel(first.level);
 			std::size_t more = 0;
 			for (std::size_t j = i + 1; j < found.size(); ++j)
 			{

@@ -42,7 +42,7 @@ namespace flowview
 		return false;
 	}
 
-	LevelFreshness levelFreshness(const flow::Graph& document, const flow::Evaluation& published, const GraphPath& path)
+	LevelFreshness levelFreshness(const flow::Graph& document, const flow::Evaluation& published, const flow::EvalPath& path)
 	{
 		// What a level is compared against when nothing has run in it: no records, so every node there
 		// is stale. Never prepared, so it pairs with any definition.
@@ -51,7 +51,7 @@ namespace flowview
 		const flow::Graph* graph = &document;
 		const flow::Evaluation* evaluation = &published;
 		bool boundaryStale = false; // the root's boundary is handed values only by a binding, which requests it itself
-		for (const PathStep& step : path)
+		for (const flow::EvalStep& step : path)
 		{
 			// The same truncation as resolvePath: a step that is gone, or no longer contains a graph,
 			// ends the walk at the deepest level that did resolve.
@@ -64,7 +64,7 @@ namespace flowview
 			// Whether the level below is being handed values its evaluation has not seen: the level
 			// above says so, by the interior's kind — the one thing a per-level comparison cannot see.
 			boundaryStale = flow::StaleClosure(*graph, *evaluation, boundaryStale).reseeds(step.node);
-			evaluation = evaluation->hasChild(step.node, step.element) ? &evaluation->child(step.node, step.element) : &nothing;
+			evaluation = evaluation->hasChild(step.node, step.index) ? &evaluation->child(step.node, step.index) : &nothing;
 			graph = inner;
 		}
 

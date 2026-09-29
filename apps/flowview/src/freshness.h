@@ -10,8 +10,6 @@
 // whether its boundary is being handed new values — the part of "anything upstream is stale" that
 // reaches INTO a group — and turns the two answers into one state per node.
 
-#include "groupnav.h" // GraphPath
-
 #include <lain/flow/types.h>
 
 #include <cstddef>
@@ -58,7 +56,7 @@ namespace flowview
 	// which would give the same answer here only by accident (an ancestor's records are of another
 	// lineage, so none of them pair); saying "nothing" is what the level actually has.
 	LevelFreshness levelFreshness(const lain::flow::Graph& document, const lain::flow::Evaluation& published,
-								  const GraphPath& path);
+								  const lain::flow::EvalPath& path);
 
 	// --- drawing -------------------------------------------------------------
 	// The mark for a state, centred at (x, y) in screen space into the current window's draw list:

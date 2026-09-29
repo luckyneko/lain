@@ -462,4 +462,66 @@ namespace lain::flow
 		, m_evaluation(evaluation)
 	{
 	}
+
+	Evaluation* PublishedEvaluation::locate(const EvalPath& path)
+	{
+		if (m_definition == nullptr)
+			return nullptr; // nothing published yet: there is no level to find
+
+		// Walked against the copy's OWN definition — the graph it reads through — so a level the copy
+		// has is exactly a level that definition has.
+		const Graph* definition = m_definition.get();
+		Evaluation* evaluation = &m_evaluation;
+		for (const EvalStep& step : path)
+		{
+			if (!definition->contains(step.node))
+				return nullptr;
+			const Node& owner = definition->node(step.node);
+			const Graph* inner = owner.innerGraph();
+			if (inner == nullptr)
+				return nullptr;
+
+			// A MAP may have been sized since the copy was taken — its elements are only known once
+			// the stage before them has run — so the elements the path reaches for are created here,
+			// as a run's preparation would, and read as never computed until their records land. A
+			// group or a loop always has its one child (prepare guarantees it), so a missing one there
+			// means the copy has no such level.
+			const std::size_t count = evaluation->childCount(step.node);
+			if (step.index >= count)
+			{
+				if (owner.interiorEvaluation() != InteriorEvaluation::PerElement)
+					return nullptr;
+				evaluation->setChildCount(step.node, step.index + 1);
+				for (std::size_t i = count; i <= step.index; ++i)
+					evaluation->child(step.node, i).prepare(*inner);
+			}
+			evaluation = &evaluation->child(step.node, step.index);
+			definition = inner;
+		}
+		return evaluation;
+	}
+
+	bool PublishedEvaluation::fold(const EvalPath& path, NodeId node, const NodeRecord& record)
+	{
+		Evaluation* evaluation = locate(path);
+		if (evaluation == nullptr || evaluation->m_lineage != record.m_lineage)
+			return false;
+		Evaluation::NodeState* state = evaluation->state(node);
+		if (state == nullptr)
+			return false;
+		*state = record.m_state;
+		return true;
+	}
+
+	bool PublishedEvaluation::owe(const EvalPath& path, NodeId node)
+	{
+		Evaluation* evaluation = locate(path);
+		if (evaluation == nullptr)
+			return false;
+		Evaluation::NodeState* state = evaluation->state(node);
+		if (state == nullptr)
+			return false;
+		state->recomputeRequested = true;
+		return true;
+	}
 } // namespace lain::flow

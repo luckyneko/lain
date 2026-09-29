@@ -17,6 +17,9 @@
 // evaluation it threw in — so a host can show a failure where it happened (a map element, a
 // linked-group instance) — cleared by that node's next compute that gets through.
 //
+// And what each of those ends REPORTS to a watching host (M14 slice 7, [observer]): a skipped
+// compute nothing, a give-up no record, a throw the record that carries its failure.
+//
 // Every case compares its re-run against a run nobody cancelled, over the same edited graph: a
 // weaker check ("it produced a value") passes just as well when a stale value survives.
 
@@ -26,6 +29,7 @@
 #include "lain/flow/runcontrol.h"
 #include "lain/flow/scheduler.h"
 #include "testnodes.h"
+#include "testobserver.h"
 #include "testscene.h"
 
 #include <lain/testing/threadpool.h>
@@ -34,6 +38,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -210,6 +215,17 @@ namespace lain::flow::test::cancel
 			auto& node = static_cast<Source&>(graph.node(source));
 			REQUIRE(node.setParam(node.value, value));
 		}
+	};
+
+	// The stage half of a RunObserver, as a callback: what the stage-observer cases below watch.
+	struct OnStage : RunObserver
+	{
+		std::function<void()> onStage;
+		explicit OnStage(std::function<void()> f)
+			: onStage(std::move(f))
+		{
+		}
+		void stageFinished() override { onStage(); }
 	};
 } // namespace lain::flow::test::cancel
 
@@ -587,7 +603,7 @@ TEST_CASE("a run cancelled before it starts computes nothing", "[flow][cancel]")
 	REQUIRE(intOut(graph, evaluation, scene.sink) == 1);
 }
 
-TEST_CASE("the stage observer is called between stages, never after the last", "[flow][cancel][map]")
+TEST_CASE("a finished stage is reported between stages, never after the last", "[flow][cancel][map]")
 {
 	// What a gui host builds on it (ADR-0025): a copy of the evaluation, taken where nothing is
 	// running, so a map's or a loop's progress shows before the whole run returns. The scene runs in
@@ -606,14 +622,17 @@ TEST_CASE("the stage observer is called between stages, never after the last", "
 		int elementsAtObservation = -1;
 		std::vector<int> listAtObservation;
 		RunControl control;
-		control.setStageObserver([&]()
-								 {
-			++observed;
-			elementsAtObservation = calls.element;
-			// The use it exists for, and the proof the evaluation is readable here: publishing
-			// checks that the pair is the one the run prepared, and copies every slot.
-			const PublishedEvaluation published{clone, working};
-			listAtObservation = output(*clone, published.evaluation(), s.list, 0).get<Ints>(); });
+		OnStage observer{[&]()
+						 {
+							 ++observed;
+							 elementsAtObservation = calls.element;
+							 // The use it exists for, and the proof the evaluation is readable here:
+							 // publishing checks that the pair is the one the run prepared, and copies
+							 // every slot.
+							 const PublishedEvaluation published{clone, working};
+							 listAtObservation = output(*clone, published.evaluation(), s.list, 0).get<Ints>();
+						 }};
+		control.setObserver(&observer);
 		SerialScheduler{}.run(*clone, working, control);
 
 		REQUIRE(observed == 1);
@@ -635,8 +654,9 @@ TEST_CASE("the stage observer is called between stages, never after the last", "
 		Evaluation evaluation{graph};
 		int observed = 0;
 		RunControl control;
-		control.setStageObserver([&]()
-								 { ++observed; });
+		OnStage observer{[&]()
+						 { ++observed; }};
+		control.setObserver(&observer);
 		SerialScheduler{}.run(graph, evaluation, control);
 		REQUIRE(observed == 0);
 		REQUIRE(relayCalls == 1);
@@ -657,8 +677,9 @@ TEST_CASE("the stage observer is called between stages, never after the last", "
 		int observed = 0;
 		RunControl control;
 		trigger = &control;
-		control.setStageObserver([&]()
-								 { ++observed; });
+		OnStage observer{[&]()
+						 { ++observed; }};
+		control.setObserver(&observer);
 		SerialScheduler{}.run(graph, evaluation, control);
 		REQUIRE(cancellerCalls == 1);
 		REQUIRE(observed == 0);
@@ -877,4 +898,96 @@ TEST_CASE("a failure in a map is recorded in the element that threw", "[flow][ca
 	REQUIRE(*evaluation.child(map, 1).failure(body) == "ThrowAt: element holding 2");
 	REQUIRE_FALSE(evaluation.child(map, 0).hasFailure());
 	REQUIRE(evaluation.child(map, 1).hasFailure());
+}
+
+//=========================================================================
+// What a stopped, abandoned or failed compute REPORTS (M14 slice 7)
+//=========================================================================
+// A host shows a node Computing between its started() and its finished(), and folds the record it is
+// handed; these are the three ends a compute can come to other than getting through.
+
+static void checkSkippedReportsNothing(Scheduler& scheduler)
+{
+	Chain<Canceller> chain;
+	Evaluation evaluation{chain.graph};
+	scheduler.run(chain.graph, evaluation);
+
+	chain.setSource(2);
+	Recorder recorder;
+	RunControl control;
+	control.setObserver(&recorder);
+	chain.trigger = &control;
+	scheduler.run(chain.graph, evaluation, control);
+	chain.trigger = nullptr;
+
+	// The sink was OWED — the stage meant to compute it — and never started, so it is never shown
+	// Computing and hands over no record: it keeps its old value, and stays stale.
+	REQUIRE(recorder.count(Report::Kind::Owed, EvalPath{}, chain.sink) == 1);
+	REQUIRE(recorder.count(Report::Kind::Started, EvalPath{}, chain.sink) == 0);
+	REQUIRE(recorder.count(Report::Kind::Finished, EvalPath{}, chain.sink) == 0);
+	REQUIRE(recorder.count(Report::Kind::GaveUp, EvalPath{}, chain.sink) == 0);
+	// The canceller itself finished normally, so it is kept — and reported with its record.
+	REQUIRE(recorder.count(Report::Kind::Finished, EvalPath{}, chain.middle) == 1);
+}
+
+static void checkGiveUpReportsNoRecord(Scheduler& scheduler)
+{
+	Chain<Bailer> chain;
+	Evaluation evaluation{chain.graph};
+	scheduler.run(chain.graph, evaluation);
+
+	chain.setSource(2);
+	Recorder recorder;
+	RunControl control;
+	control.setObserver(&recorder);
+	chain.trigger = &control;
+	scheduler.run(chain.graph, evaluation, control);
+	chain.trigger = nullptr;
+
+	// Started, and ended — but with nothing a host may show: what it wrote is not to be trusted.
+	REQUIRE(recorder.count(Report::Kind::Started, EvalPath{}, chain.middle) == 1);
+	REQUIRE(recorder.count(Report::Kind::GaveUp, EvalPath{}, chain.middle) == 1);
+	REQUIRE(recorder.count(Report::Kind::Finished, EvalPath{}, chain.middle) == 0);
+	REQUIRE(evaluation.needsRecompute(chain.middle));
+}
+
+static void checkThrowReportsFailure(Scheduler& scheduler)
+{
+	Failing<ThrowWhenArmed> chain;
+	Evaluation evaluation{chain.graph};
+	scheduler.run(chain.graph, evaluation);
+
+	chain.armed = true;
+	chain.setSource(2);
+	Recorder recorder;
+	RunControl control;
+	control.setObserver(&recorder);
+	REQUIRE_THROWS_AS(scheduler.run(chain.graph, evaluation, control), std::runtime_error);
+
+	// Reported on the way out of the throw, with the record that carries it — so a host shows the
+	// failure where it happened as soon as it happens, not when the run ends.
+	const NodeRecord* record = recorder.lastRecord(EvalPath{}, chain.thrower);
+	REQUIRE(record != nullptr);
+	REQUIRE(record->failure() != nullptr);
+	REQUIRE(*record->failure() == "ThrowWhenArmed: armed");
+	REQUIRE(recorder.count(Report::Kind::Started, EvalPath{}, chain.after) == 0);
+}
+
+TEST_CASE("a skipped compute reports nothing, a give-up no record, a throw its failure", "[flow][cancel][observer]")
+{
+	SECTION("serial")
+	{
+		SerialScheduler scheduler;
+		checkSkippedReportsNothing(scheduler);
+		checkGiveUpReportsNoRecord(scheduler);
+		checkThrowReportsFailure(scheduler);
+	}
+	SECTION("parallel")
+	{
+		lain::testing::ThreadPool pool;
+		ParallelScheduler scheduler;
+		checkSkippedReportsNothing(scheduler);
+		checkGiveUpReportsNoRecord(scheduler);
+		checkThrowReportsFailure(scheduler);
+	}
 }

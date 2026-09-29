@@ -204,8 +204,8 @@ namespace flowview
 
 		// Read the inner layout and the group's own position BEFORE the group is destroyed.
 		const math::Vec2f groupPos = nodePos(ctx, group);
-		GraphPath innerPath = ctx.activePath;
-		innerPath.push_back(PathStep{group, 0});
+		flow::EvalPath innerPath = ctx.activePath;
+		innerPath.push_back(flow::EvalStep{group, 0});
 		flow::serialize::EditorData innerLayout;
 		if (const flow::serialize::EditorTree* tree = findLayoutAt(ctx.layout, innerPath))
 			innerLayout = tree->nodes;
@@ -267,8 +267,8 @@ namespace flowview
 		std::filesystem::path file = *picked;
 		file.replace_extension("json"); // the data codec is keyed off the extension
 
-		GraphPath innerPath = ctx.activePath;
-		innerPath.push_back(PathStep{group, 0});
+		flow::EvalPath innerPath = ctx.activePath;
+		innerPath.push_back(flow::EvalStep{group, 0});
 		const flow::serialize::EditorTree& innerLayout = layoutAt(ctx.layout, innerPath);
 
 		// Write the interior out as a document in its own right — which is all a template is.
@@ -372,8 +372,8 @@ namespace flowview
 			return false;
 		}
 
-		GraphPath innerPath = ctx.activePath;
-		innerPath.push_back(PathStep{group, 0}); // the id survived the swap, so the subtree is still this group's
+		flow::EvalPath innerPath = ctx.activePath;
+		innerPath.push_back(flow::EvalStep{group, 0}); // the id survived the swap, so the subtree is still this group's
 		layoutAt(ctx.layout, innerPath) = std::move(loaded.editor);
 		setNodePos(ctx, group, where);
 		if (replaced.dropped > 0)

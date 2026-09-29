@@ -907,6 +907,51 @@ format-check clean. `flowview run --example` is unchanged, and the headless save
   (`reflect.h`). But *The type is the schema* claimed `fromValue` "fails on a shape/type mismatch",
   which is true of a struct's shape only.
 
+### Update 2026-09-29 — M14 slice 7a built: the run observer, the node record, `flow::EvalPath`
+
+The flow half of slice 7 (per-node publication). A run now TELLS a host what it does as it goes, through
+**`flow::RunObserver`**:
+- `stageFinished()` — the old stage observer, now one of its methods;
+- `owed(path, node)` — each node a stage owes;
+- `started(path, node)` — a node compute beginning;
+- `finished(path, node, const NodeRecord*)` — a step finishing, with **`flow::NodeRecord`**, a copy of
+  that node's record.
+
+A host folds records into its copy with **`PublishedEvaluation::fold`** and marks owed nodes with
+**`owe`**. Nothing in flowview reads the reports until 7b; the runner only moved its stage publication
+onto the new seam. `ctest -j8` **881/881** Debug with video on, **887/887** Release with video on,
+**854/854** Release video-off (+9 each); warning-clean, format-check clean;
+`[observer],[published],[cancel]` (33 cases) swept 100× in Debug and Release; `flowview run --example`
+identical to the pre-change binary; the `--frames` smokes exit 0. Full notes in WORK.md's *Milestone 14
+› Slice 7a landed*.
+
+- **Found while planning: folding one node's record makes what is downstream of it look CURRENT.** D's
+  own record is clean; it was stale only because U was. Fold U's record and nothing holds D, though it
+  still shows the value built from U's old output. `owed` is the fix: the scheduler already persists
+  each stage's closure as recompute requests (slice 3), so it reports each one, and a copy that mirrors
+  them stays as sound as the working evaluation. A test shows both halves (with the marks the sink is
+  stale; without them it reads current while showing 1 instead of 7).
+- **Decided with the repo owner:**
+  - ONE observer interface rather than a second hook beside the stage observer. The worker-side
+    methods are `noexcept`, since an exception escaping one would leave inside a step.
+  - A publication at the START of every run (lands in 7b), so records always fold onto a copy of
+    their own clone.
+  - The roll-up order for 7b: **Computing > Failed > Queued > Stale > Current**.
+- **`EvalPath` is flow's now**, because a working evaluation's address names nothing in a copy of it.
+  `Plan::levels` holds one path per evaluation a stage touches: `{owner, 0}` for a group or loop,
+  `{map, i}` for an element. flowview's `PathStep`/`GraphPath` are deleted, not aliased, with every use
+  renamed. The compiler found three unqualified `loopAt` calls in a test that had been found by ADL
+  through the old flowview type.
+- **What reports what.** `started` fires for node computes only. `finished` carries a record after a
+  compute that got through, after a throw (carrying the failure, before the exception leaves), and after
+  every crossing, for its owner. It carries null for a give-up; nothing is reported for a compute a
+  cancel skipped. A fold GROWS a map's elements the copy lacks, never shrinks, and refuses another
+  lineage.
+- **Exactness is the headline test:** a copy taken at run start, with every report replayed in order,
+  shows exactly what the run-end copy shows. That holds at every level: the same payload object per port,
+  `needsRecompute`, failures and child counts. It is checked for a group plus a map that grew 3 → 4,
+  and a loop, under both strategies. Six sabotages, all caught.
+
 ### Update 2026-09-29 — M14 slice 6b built: freshness on screen (**slice 6 COMPLETE**)
 
 The UI half of slice 6. New `freshness.{h,cpp}`: `Freshness { Current, Stale, Failed }` and

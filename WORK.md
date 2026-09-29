@@ -6072,7 +6072,7 @@ regression test: `ctest -j8` **794/794** Debug with video on, warning-clean, for
   the fold. All four reached their header transitively and worked — the class of thing the
   2026-09-05 CI port found six of.
 
-## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-6 built)
+## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-6 and 7a built)
 
 gui-mode runs `SerialScheduler::run` synchronously inside the frame loop — `FlowviewApp::reevaluate`
 is reached from `mainwindow.cpp` twice, `inspectorpane.cpp` and `interfacepane.cpp`, on every edit
@@ -6082,9 +6082,10 @@ default with Serial selectable, and gives the UI the controls a 5-minute graph n
 1-second one. Decisions in **[ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md)**;
 vocabulary in CONTEXT.md's *Running while you edit* (plus *clone*, *lineage*, *coordinator*).
 **Slices 1 (clone + lineage), 2 (the published evaluation + payload identity), 3 (cancellation), 4
-(the async vertical), 5 (triggers + persistence) and 6 (freshness: 6a the stale-closure query + the
-failure record, 6b the UI) are built** — see *Slice 1 landed* through *Slice 6b landed* below; slices
-7-8 are not.
+(the async vertical), 5 (triggers + persistence), 6 (freshness: 6a the stale-closure query + the
+failure record, 6b the UI) and 7a (the run observer, the node record, `flow::EvalPath`) are built** —
+see *Slice 1 landed* through *Slice 7a landed* below; 7b (flowview's per-node publication) and 8 are
+not.
 
 ### The shape
 
@@ -6184,6 +6185,14 @@ Structural, no-behaviour-change slices first; each its own commit with its docs.
 7. **Per-node publication.** A per-step started / finished hook on the run; a finished step's worker
    copies its outputs into a completion record (race-free — a finished node has only readers), the UI
    folds them into the published evaluation. This is what makes **Queued** and **Computing** real.
+   Two commits, planned with the repo owner 2026-09-29:
+   - **7a (flow) — built 2026-09-29.** `flow::EvalPath` (flowview's `GraphPath` hoisted), every plan
+     step addressed by it, **`flow::RunObserver`** (replacing the stage observer: `stageFinished`,
+     `owed`, `started`, `finished`), **`flow::NodeRecord`** (the completion record: a copy of one
+     node's record), and `PublishedEvaluation::fold` / `owe`. See *Slice 7a landed*.
+   - **7b (flowview).** The runner's observer, a publication at the START of every run (so records
+     fold onto a copy of their own clone), the fold in `pollRun`, Queued and Computing in `Freshness`
+     with the roll-up, and their drawing.
 8. **Run Selection.** The multi-target upstream-cone plan (`buildEvalPlan`'s shape, many targets,
    executed through `executePlan`) and its menu item.
 
@@ -6795,6 +6804,73 @@ a quick pass**; the checklist below has not been walked item by item.
   - **Thumbnails** badge while stale, and a root Interface input never does.
   - **The status bar** through a run, Stop (its button and Cmd+.), a supersede, and New / Open.
 
+### Slice 7a landed (2026-09-29) — the run observer, the node record, and `flow::EvalPath`
+
+The flow half of per-node publication. A run now TELLS a host, through **`flow::RunObserver`**, which
+nodes each stage owes, when each compute starts and finishes, and — as each step finishes — a
+**`flow::NodeRecord`**: a copy of that node's record (values, `computedAt`, request, failure), taken
+by the thread that ran the step. **`PublishedEvaluation::fold`** writes one into a host's copy, and
+**`owe`** marks a node the run owes. Every report names its node by **`flow::EvalPath`**, which is
+flowview's `GraphPath` hoisted into flow. Nothing in flowview reads the reports until 7b; the runner
+only moved its stage publication onto the new seam. `ctest -j8` **881/881** Debug with video on,
+**887/887** Release with video on and **854/854** Release video-off (+9 each: eight `[observer]` cases
+in the new `test_observer.cpp`, one in `test_cancel.cpp`); warning-clean, format-check clean.
+`[observer],[published],[cancel]` (33 matching cases) was swept 100× through the Catch2 binary in
+Debug and in Release, and the whole `test-flow` binary was run shuffled and in declaration order, with
+no failure. `flowview run --example` is identical to the pre-change binary once the timestamp and
+short ids are normalised. `flowview --example --frames 120` exits 0, and so does `--size 2048 --frames
+1/2/5`.
+
+- **Found while planning: folding a node's record makes what is downstream of it look CURRENT.** Take
+  U → D with U edited. In the published copy, D's own record is clean, and D is stale only because U
+  is. Fold U's record and the stale closure has nothing left to hold D by, though D still shows the
+  value it built from U's old output. A map's children do the same, fed by the node that sizes them.
+  **The fix is `owed`**: the scheduler already writes each stage's closure into the working evaluation
+  as recompute requests (slice 3), so it now reports each entry as it does. A host marks them in its
+  copy, and each record clears its own. The copy's bookkeeping then stays a faithful view of the
+  working evaluation's, and the stale closure over it stays sound mid-run. Pinned by a test that shows
+  both halves: with the marks the sink stays stale until it lands; without them it reads current while
+  showing 1 instead of 7.
+- **One observer, decided with the repo owner** over a node observer beside the stage observer and
+  over one event callback. `setStageObserver(std::function)` is gone, and its three test uses and the
+  runner moved onto `stageFinished()`. The worker-side methods are **`noexcept`**, so "must not throw"
+  is the compiler's rule: an exception escaping one would leave inside a step, where the scheduler would
+  read it as the node's compute having thrown.
+- **What reports what.** `started` is for node computes only. `finished` carries a record after a
+  compute that got through, after a THROW (the record carries the failure, reported before the
+  exception leaves), and after every CROSSING, for the node that owns it (a group's entry and exit, a
+  map's gather, a loop's fold). It carries **null** for a compute that gave up, and nothing at all is
+  reported for a compute a cancel skipped. A record is only built when an observer is set, so headless
+  runs pay nothing.
+- **`EvalPath` moved into flow because the scheduler needed a coordinate.** A plan step knows its
+  `Evaluation*`, and that names nothing in the copy a host reads. `Plan::levels` holds one path per
+  evaluation a stage touches, `Step::level` and each closure entry index into it, and `expand` pushes
+  `{owner, 0}` for a group or loop interior and `{map, i}` for element i. flowview's
+  `PathStep`/`GraphPath` are **deleted** and every use renamed (21 files, `.element` → `.index`), since
+  one coordinate with two names is the shape this repo removes. **Found by the compiler:** three
+  unqualified `loopAt` calls in `test_groupnav.cpp` had been found by ADL through `flowview::PathStep`.
+  Now that the path's element lives in `lain::flow` they need `using` declarations.
+- **`fold` grows a map's elements where the copy has fewer**, prepared against the copy's own
+  definition, since a run sizes them after the copy was taken. It never shrinks: a shrunk collection's
+  extra elements stay until a publication replaces the copy. It refuses a node or level the copy's
+  definition lacks, and a record of another lineage. `owe` locates the same way, minus the lineage
+  check, which only a record can make.
+- **The test that matters most is exactness**: take a copy at run start, replay every report onto it
+  in order, and it shows exactly what a copy taken at run end shows. That means the same payload object
+  on every port, the same `needsRecompute`, the same failures and the same child counts, at every
+  level. It is checked for a group plus a map that grew from 3 elements to 4, and for a loop, under both
+  strategies. Replay itself asserts every mark and fold landed, since one that silently missed would
+  make the comparison prove nothing.
+- **Sabotages, all caught** (each restored and touched afterwards):
+  1. `owe` a no-op: the downstream-hazard case fails.
+  2. `finished` reported before `markComputed`: exactness fails in all four sections, and so does the
+     hazard case.
+  3. The throw path not reporting: the cancel suite's throw case fails, in both strategies.
+  4. `fold` not growing a map: the map exactness case fails (in both strategies) and so does the
+     missing-element section.
+  5. Crossings silent: the crossing case, both loop cases and the map exactness case fail.
+  6. The lineage check dropped: the other-history section fails.
+
 ### Visual design (settled in outline, tuned by eyeball)
 
 Freshness takes channels nothing else uses — title colour is category, a muted title is *not ready*,
@@ -6864,8 +6940,8 @@ row here**. A row is cheap to delete and expensive to leave.
 
 - **M14 — asynchronous execution: the gui never waits on graph work.** Designed 2026-09-28; slices 1
   (clone + lineage), 2 (the published evaluation + payload identity) and 3 (cancellation) built
-  2026-09-28, slices 4 (the async vertical), 5 (triggers + persistence) and 6 (freshness) 2026-09-29;
-  slices 7-8 not.
+  2026-09-28, slices 4 (the async vertical), 5 (triggers + persistence), 6 (freshness) and 7a (the
+  run observer + node record) 2026-09-29; 7b (per-node publication in flowview) and 8 not.
   *(Milestone 14; [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)*
 
 M1–M8 and M10–M13 are built. **M9 and M14 are the milestones from 5 onward that are not.**

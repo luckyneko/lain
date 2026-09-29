@@ -242,8 +242,8 @@ namespace flowview
 			ctx.loadIssues.push_back(Issue::note(sev, "template: " + issue.message));
 		}
 
-		GraphPath groupPath = ctx.activePath;
-		groupPath.push_back(PathStep{id, 0});
+		flow::EvalPath groupPath = ctx.activePath;
+		groupPath.push_back(flow::EvalStep{id, 0});
 		layoutAt(ctx.layout, groupPath) = resolved.editor;
 
 		flow::edit::syncGroupPorts(graph, id);

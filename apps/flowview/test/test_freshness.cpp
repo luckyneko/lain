@@ -30,12 +30,12 @@
 #include <stdexcept>
 #include <vector>
 
+using lain::flow::EvalPath;
+using lain::flow::EvalStep;
 using namespace lain;
 using flowview::Freshness;
-using flowview::GraphPath;
 using flowview::levelFreshness;
 using flowview::LevelFreshness;
-using flowview::PathStep;
 
 namespace flowview::test::freshness
 {
@@ -169,12 +169,12 @@ TEST_CASE("an edit marks the edited node and everything it feeds Stale", "[flowv
 	flow::Evaluation working{scene.document};
 	const flow::PublishedEvaluation published = runAndPublish(scene.document, working);
 
-	const LevelFreshness before = levelFreshness(scene.document, published.evaluation(), GraphPath{});
+	const LevelFreshness before = levelFreshness(scene.document, published.evaluation(), EvalPath{});
 	REQUIRE(before.count(Freshness::Stale) == 0);
 	REQUIRE(before.count(Freshness::Failed) == 0);
 
 	static_cast<IntSource&>(scene.document.node(scene.source)).set(2);
-	const LevelFreshness after = levelFreshness(scene.document, published.evaluation(), GraphPath{});
+	const LevelFreshness after = levelFreshness(scene.document, published.evaluation(), EvalPath{});
 	REQUIRE(after.of(scene.source) == Freshness::Stale);
 	REQUIRE(after.of(scene.group) == Freshness::Stale);
 	REQUIRE(after.of(scene.sink) == Freshness::Stale);
@@ -189,7 +189,7 @@ TEST_CASE("descending into a group shows what its input change made Stale", "[fl
 	Scene scene;
 	flow::Evaluation working{scene.document};
 	const flow::PublishedEvaluation published = runAndPublish(scene.document, working);
-	const GraphPath inside{PathStep{scene.group, 0}};
+	const EvalPath inside{EvalStep{scene.group, 0}};
 	const flow::NodeId boundary = scene.inner().boundaryInputNode().id();
 
 	REQUIRE(levelFreshness(scene.document, published.evaluation(), inside).count(Freshness::Stale) == 0);
@@ -209,7 +209,7 @@ TEST_CASE("descending into a group shows what its input change made Stale", "[fl
 		REQUIRE(level.of(scene.offset) == Freshness::Stale);
 
 		// ... and at the root, the group is Stale because of what is inside it.
-		const LevelFreshness root = levelFreshness(scene.document, published.evaluation(), GraphPath{});
+		const LevelFreshness root = levelFreshness(scene.document, published.evaluation(), EvalPath{});
 		REQUIRE(root.of(scene.group) == Freshness::Stale);
 		REQUIRE(root.of(scene.source) == Freshness::Current);
 	}
@@ -231,11 +231,11 @@ TEST_CASE("a map element is asked in its own evaluation", "[flowview][freshness]
 	const flow::PublishedEvaluation published = runAndPublish(document, working);
 	REQUIRE(published.evaluation().childCount(map) == 3);
 
-	const GraphPath element{PathStep{map, 1}};
+	const EvalPath element{EvalStep{map, 1}};
 	REQUIRE(levelFreshness(document, published.evaluation(), element).of(body) == Freshness::Current);
 
 	// An element this publication has no evaluation for — the list grew since — has nothing to show.
-	const GraphPath beyond{PathStep{map, 7}};
+	const EvalPath beyond{EvalStep{map, 7}};
 	REQUIRE(levelFreshness(document, published.evaluation(), beyond).of(body) == Freshness::Stale);
 
 	// A new collection reseeds every element.
@@ -248,11 +248,11 @@ TEST_CASE("a level nothing has run in is all Stale", "[flowview][freshness]")
 	// What the panes read between a document swap and its first run: an empty published copy.
 	Scene scene;
 	const flow::PublishedEvaluation nothing;
-	const LevelFreshness root = levelFreshness(scene.document, nothing.evaluation(), GraphPath{});
+	const LevelFreshness root = levelFreshness(scene.document, nothing.evaluation(), EvalPath{});
 	REQUIRE(root.count(Freshness::Current) == 0);
 	REQUIRE(root.count(Freshness::Stale) == scene.document.nodeIds().size());
 
-	const LevelFreshness inside = levelFreshness(scene.document, nothing.evaluation(), GraphPath{PathStep{scene.group, 0}});
+	const LevelFreshness inside = levelFreshness(scene.document, nothing.evaluation(), EvalPath{EvalStep{scene.group, 0}});
 	REQUIRE(inside.count(Freshness::Current) == 0);
 	REQUIRE(inside.of(scene.offset) == Freshness::Stale);
 }
@@ -279,18 +279,18 @@ TEST_CASE("a throw shows Failed on the node and on every group around it", "[flo
 	flow::Evaluation working{document};
 	const flow::PublishedEvaluation failed = runAndPublish(document, working);
 
-	const LevelFreshness root = levelFreshness(document, failed.evaluation(), GraphPath{});
+	const LevelFreshness root = levelFreshness(document, failed.evaluation(), EvalPath{});
 	REQUIRE(root.of(outer) == Freshness::Failed);
 	REQUIRE(root.of(source) == Freshness::Current);
 	REQUIRE(root.of(sink) == Freshness::Stale); // never reached
-	const GraphPath middle{PathStep{outer, 0}};
+	const EvalPath middle{EvalStep{outer, 0}};
 	REQUIRE(levelFreshness(document, failed.evaluation(), middle).of(innerGroup) == Freshness::Failed);
-	const GraphPath bottom{PathStep{outer, 0}, PathStep{innerGroup, 0}};
+	const EvalPath bottom{EvalStep{outer, 0}, EvalStep{innerGroup, 0}};
 	REQUIRE(levelFreshness(document, failed.evaluation(), bottom).of(thrower) == Freshness::Failed);
 
 	// Fixed, and run again: Current all the way down.
 	*armed = false;
 	const flow::PublishedEvaluation fixed = runAndPublish(document, working);
-	REQUIRE(levelFreshness(document, fixed.evaluation(), GraphPath{}).count(Freshness::Failed) == 0);
+	REQUIRE(levelFreshness(document, fixed.evaluation(), EvalPath{}).count(Freshness::Failed) == 0);
 	REQUIRE(levelFreshness(document, fixed.evaluation(), bottom).of(thrower) == Freshness::Current);
 }

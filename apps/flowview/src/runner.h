@@ -23,7 +23,7 @@
 //
 // What the frame loop gets back comes through take(): the newest publication, and how the last run
 // ended. A publication lands between STAGES (a map's elements, a loop's iterations — through
-// RunControl's stage observer) and at the END of every run, a cancelled or failed one included,
+// the run observer's stageFinished) and at the END of every run, a cancelled or failed one included,
 // since what a superseded run finished is kept and worth showing.
 //
 // The coordinator, not the pool: a scheduler run blocks, and entering one from a pool task is a
@@ -87,7 +87,7 @@ namespace flowview
 		std::string failure;									  // Failed only: what the exception said
 		// With the outcome: how many node computes THREW (flow::RunControl::failed()). Each of those is
 		// recorded against its node in the evaluation, which is where a host shows it; a Failed run
-		// with none threw from somewhere no node owns — a refused prepare, a stage observer — and only
+		// with none threw from somewhere no node owns — a refused prepare, a stage publication — and only
 		// that is worth reporting for the run as a whole.
 		std::size_t failedNodes = 0;
 	};
@@ -174,10 +174,16 @@ namespace flowview
 		void stop();
 
 	private:
+		// What a job tells the runner as it goes (flow::RunObserver) — between stages, a publication.
+		// Bound to one job, and set on that job's control for exactly the length of its run.
+		struct JobObserver;
+
 		void coordinate(); // the coordinator thread's body
 
-		// Run one job to its end, never throwing: an exception becomes the outcome.
+		// Run one job to its end, never throwing: an exception becomes the outcome. execute() watches
+		// the run (JobObserver); runJob() is the run.
 		RunOutcome execute(RunJob& job, std::uint64_t serial, lain::flow::RunControl& control, std::string& failure);
+		RunOutcome runJob(RunJob& job, lain::flow::RunControl& control, std::string& failure);
 
 		// Copy the job's evaluation into the slot the frame loop takes from. A STAGE publication skips
 		// the copy while the previous one is still untaken, so a hundred-iteration loop costs at most

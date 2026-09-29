@@ -112,7 +112,7 @@ namespace flowview
 		// Why the last run that got to an end threw, when NO NODE owned the throw, until one completes
 		// without throwing. A throw a node owned is recorded against that node in the evaluation, which
 		// is where the panes show it (Issues lists it, the canvas marks it); this is the rest — a
-		// refused prepare, a stage observer — which has nowhere to be shown but the run as a whole. A
+		// refused prepare, a stage publication — which has nowhere to be shown but the run as a whole. A
 		// run that was superseded proves nothing either way, so it does not clear this.
 		const std::optional<std::string>& runFailure() const { return m_runFailure; }
 

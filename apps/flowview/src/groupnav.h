@@ -29,31 +29,13 @@ namespace lain::flow
 
 namespace flowview
 {
-	// One step down the path: which graph-containing node was descended through, and WHICH
-	// EVALUATION OF IT. A group has exactly one, so its element is always 0; a MAP has one per
-	// element, and the element is what the breadcrumb's stepper picks (ADR-0014).
-	//
-	// This is the `{NodeId, index}` step ADR-0012 called an EvalPath and CONTEXT.md has been holding
-	// a note for: until maps existed a group's graph walk and evaluation walk were the same sequence,
-	// so a bare NodeId said everything. A map is what makes them differ.
-	struct PathStep
-	{
-		lain::flow::NodeId node;
-		std::size_t element = 0;
-
-		bool operator==(const PathStep& other) const { return node == other.node && element == other.element; }
-		bool operator!=(const PathStep& other) const { return !(*this == other); }
-		bool operator<(const PathStep& other) const
-		{
-			if (node != other.node)
-				return node < other.node;
-			return element < other.element;
-		}
-	};
-
-	// The path from the root to the active graph: the step descended through at each level.
-	// Empty means the root graph itself.
-	using GraphPath = std::vector<PathStep>;
+	// A path here is a flow::EvalPath: the steps descended through from the root, each naming a
+	// graph-containing node and WHICH EVALUATION OF IT (a group's is always 0; a MAP's index is the
+	// element the breadcrumb's stepper picks, ADR-0014). It was flowview's own `GraphPath` until the
+	// scheduler needed to say where each step ran (M14 slice 7): a run reports by it, the panes
+	// navigate by it, and one type for one coordinate is what keeps the two from disagreeing. The
+	// graph walk ignores the index — every element of a map shares one definition — and the
+	// evaluation walk follows it.
 
 	// Resolve `path` against `root`, returning the graph it names — for READING (navigation, drawing,
 	// previews, validation). TOLERANT: a step that is missing or no longer a group stops the walk and
@@ -64,7 +46,7 @@ namespace flowview
 	// LINKED group is deliberately still allowed — inspecting a template's live intermediates is the
 	// point of being able to look inside one; what you cannot do is edit it, which is what the
 	// separate resolution below expresses.
-	const lain::flow::Graph& resolvePath(const lain::flow::Graph& root, GraphPath& path);
+	const lain::flow::Graph& resolvePath(const lain::flow::Graph& root, lain::flow::EvalPath& path);
 
 	// The same walk, for EDITING: the graph `path` names, or nullptr when any step of it crosses into
 	// a linked group — whose recipe belongs to its template, not to this document.
@@ -73,7 +55,7 @@ namespace flowview
 	// me something I can edit" are the same question, and answering it twice is how a pane forgets
 	// (M5's bugs three and ten: the Interface pane's ± and the Inspector's params were silently lost
 	// on save inside a linked group). Here a pane that has no mutable graph cannot mutate one.
-	lain::flow::Graph* resolveEditable(lain::flow::Graph& root, const GraphPath& path);
+	lain::flow::Graph* resolveEditable(lain::flow::Graph& root, const lain::flow::EvalPath& path);
 
 	// The LOOP whose interior `path` names — i.e. the node of `path`'s last step, when that node is
 	// a loop. Null at the root, and null when the last step is a plain group or a map.
@@ -82,12 +64,12 @@ namespace flowview
 	// CARRY PAIRING (ADR-0021). Every other pane question is answered by the interior graph alone,
 	// which is why nothing needed this before — the Interface pane, drawing that interior, has to
 	// reach one level UP to say which of its pins are paired and to pair another.
-	const lain::flow::LoopNode* loopAt(const lain::flow::Graph& root, const GraphPath& path);
+	const lain::flow::LoopNode* loopAt(const lain::flow::Graph& root, const lain::flow::EvalPath& path);
 
 	// The same, for EDITING: null when any step above the loop crosses into a linked group, whose
 	// carries belong to its template. Paired with the reading form for the reason resolvePath and
 	// resolveEditable are a pair — see there.
-	lain::flow::LoopNode* editableLoopAt(lain::flow::Graph& root, const GraphPath& path);
+	lain::flow::LoopNode* editableLoopAt(lain::flow::Graph& root, const lain::flow::EvalPath& path);
 
 	// The matching RUNTIME state for that graph: an Evaluation is a tree with one child per group
 	// node, so the same path walks it. Tolerant in the same way — a step with no child Evaluation
@@ -97,7 +79,7 @@ namespace flowview
 	// Const, because what the panes walk is a PUBLISHED copy (ADR-0025): the working evaluation
 	// belongs to the run in flight, and nothing on the UI thread writes to a published one except a
 	// pending binding, which goes through the host.
-	const lain::flow::Evaluation& resolveEvaluation(const lain::flow::Evaluation& root, const GraphPath& path);
+	const lain::flow::Evaluation& resolveEvaluation(const lain::flow::Evaluation& root, const lain::flow::EvalPath& path);
 
 	// One breadcrumb entry: the label to show and the path depth clicking it navigates to.
 	struct Crumb
@@ -113,7 +95,7 @@ namespace flowview
 	};
 
 	// The breadcrumb for `path`: "root" plus each descended group's display name.
-	std::vector<Crumb> breadcrumb(const lain::flow::Graph& root, const GraphPath& path);
+	std::vector<Crumb> breadcrumb(const lain::flow::Graph& root, const lain::flow::EvalPath& path);
 
 	// How many child evaluations each step of `path` currently has — 1 for a group, N for a map, and
 	// 0 for a step whose children do not exist yet (nothing has run). Same length as `path`.
@@ -121,7 +103,7 @@ namespace flowview
 	// Separate from breadcrumb() because the two answers come from different owners: the DEFINITION
 	// says whether a step is per-element, the EVALUATION says how many elements there turned out to
 	// be. Asking one for the other is what a map makes impossible — its arity is not in the recipe.
-	std::vector<std::size_t> pathElementCounts(const lain::flow::Evaluation& root, const GraphPath& path);
+	std::vector<std::size_t> pathElementCounts(const lain::flow::Evaluation& root, const lain::flow::EvalPath& path);
 
 	// The enclosing LINKED group, or nullptr if there is none — what "Edit Template…" acts on, and
 	// what the canvas names when it explains why editing is off. Returns the OUTERMOST linked group on
@@ -130,7 +112,7 @@ namespace flowview
 	//
 	// Returns the NODE, not its id, deliberately: the group can sit at any depth (inside an inline
 	// group, say), so an id alone would send the caller looking in the wrong graph for it.
-	const lain::flow::LinkedGroupNode* enclosingLinkedGroup(const lain::flow::Graph& root, const GraphPath& path);
+	const lain::flow::LinkedGroupNode* enclosingLinkedGroup(const lain::flow::Graph& root, const lain::flow::EvalPath& path);
 
 	// One inner pin a group could NOT mirror onto its own face (flow::edit::GroupSync::refused). A
 	// map refuses a type with no registered collection form; a loop refuses a pin whose name collides
@@ -142,10 +124,10 @@ namespace flowview
 	// and where it can be renamed, so it is where a row pointing at this has to lead.
 	struct PinRefusal
 	{
-		GraphPath level;		 // the group's interior (the group node itself is one level above)
-		lain::flow::NodeId node; // the group, so two same-titled ones read apart
-		std::string group;		 // its display name, captured at the sync
-		std::string pin;		 // the inner pin's name
+		lain::flow::EvalPath level; // the group's interior (the group node itself is one level above)
+		lain::flow::NodeId node;	// the group, so two same-titled ones read apart
+		std::string group;			// its display name, captured at the sync
+		std::string pin;			// the inner pin's name
 	};
 
 	// What a pass over the path did.
@@ -168,7 +150,7 @@ namespace flowview
 	// Refusals therefore have the same reach as the sync: the groups the user is INSIDE. A document's
 	// other groups are reconciled where they are rebuilt — the loader reports theirs into
 	// LoadResult::issues.
-	PathSync syncPathGroups(lain::flow::Graph& root, const GraphPath& path);
+	PathSync syncPathGroups(lain::flow::Graph& root, const lain::flow::EvalPath& path);
 
 	// How many linked groups anywhere in `root` (at any depth) are built from `source` — the blast
 	// radius of editing that template, which the Edit affordance states before you commit to it.
@@ -182,8 +164,8 @@ namespace flowview
 
 	// The layout subtree for `path`, creating empty levels as needed — so the canvas reads and writes
 	// positions for the level it is actually showing, and other levels keep theirs.
-	lain::flow::serialize::EditorTree& layoutAt(lain::flow::serialize::EditorTree& root, const GraphPath& path);
-	const lain::flow::serialize::EditorTree* findLayoutAt(const lain::flow::serialize::EditorTree& root, const GraphPath& path);
+	lain::flow::serialize::EditorTree& layoutAt(lain::flow::serialize::EditorTree& root, const lain::flow::EvalPath& path);
+	const lain::flow::serialize::EditorTree* findLayoutAt(const lain::flow::serialize::EditorTree& root, const lain::flow::EvalPath& path);
 
 	// --- Layout migration: keeping positions when nodes change level -----------------------------
 	// The pure-data half of the group gestures, here rather than beside them because this is where

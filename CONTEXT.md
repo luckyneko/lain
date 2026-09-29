@@ -723,7 +723,10 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
   a map's index selects the element. The index is **positional** — position is the only identity a
   `std::vector` has — so a reordered collection rebinds each child and recomputes it rather than
   following it. It is also what the viewer navigates by: descending into a map defaults to element 0
-  and the breadcrumb edits the index.
+  and the breadcrumb edits the index. Since M14 slice 7 it is **flow's own type**, `flow::EvalPath`
+  (a vector of `flow::EvalStep {node, index}`). The scheduler addresses every step by it, because a
+  run reports where each node computed and an Evaluation's address names nothing in a copy of it.
+  flowview's `GraphPath` was deleted rather than kept as a second name.
 - **Map node** *(M8 — [ADR-0014](docs/adr/0014-map-nodes-staged-planning.md))* — a group whose
   interior runs **once per element** of a collection: `MapNode` beside `InlineGroupNode` /
   `LinkedGroupNode`, owning its `Graph` and mirroring each inner pin **lifted**. An input pin
@@ -896,8 +899,9 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 
 ## Running while you edit — the host's side of a run
 
-*(M14 — designed; slices 1-6 built: runs are off the frame loop under all three triggers, and
-freshness is drawn as Current / Stale / Failed — Queued and Computing arrive with slice 7.
+*(M14 — designed; slices 1-6 and 7a built: runs are off the frame loop under all three triggers,
+freshness is drawn as Current / Stale / Failed, and a run reports each node as it goes — Queued and
+Computing reach the screen with slice 7b.
 [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
 host keeps its document editable while a run is in flight. These are the words for how a run is
 started, stopped and shown.
@@ -922,16 +926,28 @@ started, stopped and shown.
   killed.
 - **Run control** — the host's hold on one run in flight, `flow::RunControl`: it cancels the run and
   reads its progress (node computes planned and finished, summed across stages), from any thread. One
-  per run — the run that supersedes it gets a fresh one. It also carries the host's **stage
-  observer**, called between stages while nothing is running — the one point inside a run where the
-  evaluation may be copied. _Avoid_: token (it carries progress too), handle (a multi handle is a
-  different thing).
+  per run — the run that supersedes it gets a fresh one. It also carries the host's **run observer**.
+  _Avoid_: token (it carries progress too), handle (a multi handle is a different thing).
+- **Run observer** — what a host is told as a run goes, `flow::RunObserver`: when a stage has
+  finished, called while nothing is running, the one point inside a run where the evaluation may be
+  copied; which nodes each stage **owes**; and when each node compute starts and each step finishes,
+  with the node's **node record**. Every report names its node by EvalPath. The per-node reports
+  arrive on whichever thread ran the step, so they are `noexcept`. _Avoid_: callback, listener, stage
+  observer (retired: the stage report is one of its methods).
+- **Node record** — one node's runtime state in one Evaluation: its port values, the Version it was
+  computed at, whether a recompute is owed, and what its last compute threw. It is what the stale
+  closure compares (a node with *no record* is stale). A copy of one, `flow::NodeRecord`, is what a run
+  hands its observer as a step finishes, and what a host **folds** into its published evaluation so the
+  node's result shows the moment it lands. _Avoid_: completion record (WORK.md's planning name),
+  result, snapshot.
 - **Runner** — flowview's coordinator: the thread that calls the blocking `run()` over a clone, one job
   at a time, and hands the frame loop each publication and how each run ended. The host decides WHEN to
   run (the trigger); the runner only runs. _Avoid_: executor (the task pool's word), worker.
 - **Published evaluation** — the copy of an Evaluation a host's panes read while a run holds the
-  real one: refreshed as results land (per node as each finishes, and whole at stage boundaries and
-  run end), and written directly by the host for a **pending binding**. A view of the newest results,
+  real one: refreshed as results land (per node as each finishes — a node record **folded** in, each
+  node the run **owes** marked so, which is what keeps its staleness sound while it fills in piecemeal
+  — and whole at stage boundaries and run end), and written directly by the host for a **pending
+  binding**. A view of the newest results,
   located by the same EvalPath — not a record of one execution. It **holds the definition it reads
   through** (the clone its run read), because an Evaluation's reads go through the graph it was
   prepared against — so the copy and that graph are one value, `flow::PublishedEvaluation`, and there

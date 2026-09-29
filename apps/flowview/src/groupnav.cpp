@@ -16,11 +16,11 @@ namespace flowview
 {
 	using namespace lain;
 
-	const flow::Graph& resolvePath(const flow::Graph& root, GraphPath& path)
+	const flow::Graph& resolvePath(const flow::Graph& root, flow::EvalPath& path)
 	{
 		const flow::Graph* current = &root;
 		std::size_t resolved = 0;
-		for (const PathStep& step : path)
+		for (const flow::EvalStep& step : path)
 		{
 			if (!current->contains(step.node))
 				break;
@@ -34,10 +34,10 @@ namespace flowview
 		return *current;
 	}
 
-	flow::Graph* resolveEditable(flow::Graph& root, const GraphPath& path)
+	flow::Graph* resolveEditable(flow::Graph& root, const flow::EvalPath& path)
 	{
 		flow::Graph* current = &root;
-		for (const PathStep& step : path)
+		for (const flow::EvalStep& step : path)
 		{
 			if (!current->contains(step.node))
 				return nullptr;
@@ -54,11 +54,11 @@ namespace flowview
 		return current;
 	}
 
-	const flow::LoopNode* loopAt(const flow::Graph& root, const GraphPath& path)
+	const flow::LoopNode* loopAt(const flow::Graph& root, const flow::EvalPath& path)
 	{
 		if (path.empty())
 			return nullptr; // the root graph is nobody's interior
-		GraphPath parent(path.begin(), path.end() - 1);
+		flow::EvalPath parent(path.begin(), path.end() - 1);
 		const flow::Graph& level = resolvePath(root, parent);
 		// resolvePath TRUNCATES what did not resolve, so a short answer means `level` is some
 		// ancestor rather than the graph holding this step — and looking the node up there would
@@ -68,7 +68,7 @@ namespace flowview
 		return dynamic_cast<const flow::LoopNode*>(&level.node(path.back().node));
 	}
 
-	flow::LoopNode* editableLoopAt(flow::Graph& root, const GraphPath& path)
+	flow::LoopNode* editableLoopAt(flow::Graph& root, const flow::EvalPath& path)
 	{
 		if (path.empty())
 			return nullptr;
@@ -77,28 +77,28 @@ namespace flowview
 		// store. Two functions rather than one plus an "am I allowed?" check, for the reason
 		// resolvePath and resolveEditable are two — a caller that may not edit is handed nothing to
 		// edit through, so the check cannot be forgotten.
-		const GraphPath parent(path.begin(), path.end() - 1);
+		const flow::EvalPath parent(path.begin(), path.end() - 1);
 		flow::Graph* level = resolveEditable(root, parent);
 		if (level == nullptr || !level->contains(path.back().node))
 			return nullptr;
 		return dynamic_cast<flow::LoopNode*>(&level->node(path.back().node));
 	}
 
-	const flow::Evaluation& resolveEvaluation(const flow::Evaluation& root, const GraphPath& path)
+	const flow::Evaluation& resolveEvaluation(const flow::Evaluation& root, const flow::EvalPath& path)
 	{
 		const flow::Evaluation* current = &root;
-		for (const PathStep& step : path)
+		for (const flow::EvalStep& step : path)
 		{
 			// The element is what makes this walk differ from the graph walk: a group has exactly
 			// one child, a MAP one per element, and this is where the breadcrumb's choice lands.
-			if (!current->hasChild(step.node, step.element))
+			if (!current->hasChild(step.node, step.index))
 				break; // no child prepared there (yet) — stop where the values actually are
-			current = &current->child(step.node, step.element);
+			current = &current->child(step.node, step.index);
 		}
 		return *current;
 	}
 
-	std::vector<Crumb> breadcrumb(const flow::Graph& root, const GraphPath& path)
+	std::vector<Crumb> breadcrumb(const flow::Graph& root, const flow::EvalPath& path)
 	{
 		std::vector<Crumb> crumbs;
 		crumbs.push_back(Crumb{"root", 0});
@@ -118,26 +118,26 @@ namespace flowview
 		return crumbs;
 	}
 
-	std::vector<std::size_t> pathElementCounts(const flow::Evaluation& root, const GraphPath& path)
+	std::vector<std::size_t> pathElementCounts(const flow::Evaluation& root, const flow::EvalPath& path)
 	{
 		std::vector<std::size_t> counts;
 		counts.reserve(path.size());
 		const flow::Evaluation* current = &root;
-		for (const PathStep& step : path)
+		for (const flow::EvalStep& step : path)
 		{
 			counts.push_back(current->childCount(step.node));
-			if (!current->hasChild(step.node, step.element))
+			if (!current->hasChild(step.node, step.index))
 				break; // nothing prepared there yet; the remaining steps have no count to report
-			current = &current->child(step.node, step.element);
+			current = &current->child(step.node, step.index);
 		}
 		counts.resize(path.size(), 0); // pad, so callers can index by step without checking
 		return counts;
 	}
 
-	const flow::LinkedGroupNode* enclosingLinkedGroup(const flow::Graph& root, const GraphPath& path)
+	const flow::LinkedGroupNode* enclosingLinkedGroup(const flow::Graph& root, const flow::EvalPath& path)
 	{
 		const flow::Graph* current = &root;
-		for (const PathStep& step : path)
+		for (const flow::EvalStep& step : path)
 		{
 			if (!current->contains(step.node))
 				break;
@@ -180,12 +180,12 @@ namespace flowview
 		return false;
 	}
 
-	PathSync syncPathGroups(flow::Graph& root, const GraphPath& path)
+	PathSync syncPathGroups(flow::Graph& root, const flow::EvalPath& path)
 	{
 		PathSync result;
 		flow::Graph* parent = &root;
-		GraphPath level; // the steps taken so far — after the push below, the group's own interior
-		for (const PathStep& step : path)
+		flow::EvalPath level; // the steps taken so far — after the push below, the group's own interior
+		for (const flow::EvalStep& step : path)
 		{
 			if (!parent->contains(step.node))
 				break;
@@ -209,20 +209,20 @@ namespace flowview
 		return result;
 	}
 
-	flow::serialize::EditorTree& layoutAt(flow::serialize::EditorTree& root, const GraphPath& path)
+	flow::serialize::EditorTree& layoutAt(flow::serialize::EditorTree& root, const flow::EvalPath& path)
 	{
 		flow::serialize::EditorTree* current = &root;
 		// Keyed by NODE alone, deliberately: a layout describes the DEFINITION, and every element of
 		// a map shares one interior and so one arrangement. Only values differ per element.
-		for (const PathStep& step : path)
+		for (const flow::EvalStep& step : path)
 			current = &current->groups[step.node]; // default-constructs the level if it is new
 		return *current;
 	}
 
-	const flow::serialize::EditorTree* findLayoutAt(const flow::serialize::EditorTree& root, const GraphPath& path)
+	const flow::serialize::EditorTree* findLayoutAt(const flow::serialize::EditorTree& root, const flow::EvalPath& path)
 	{
 		const flow::serialize::EditorTree* current = &root;
-		for (const PathStep& step : path)
+		for (const flow::EvalStep& step : path)
 		{
 			const auto it = current->groups.find(step.node);
 			if (it == current->groups.end())

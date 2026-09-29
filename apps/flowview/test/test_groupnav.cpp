@@ -23,14 +23,14 @@ using flowview::ascendLayout;
 using flowview::breadcrumb;
 using flowview::Crumb;
 using flowview::descendLayout;
+using flowview::editableLoopAt;
 using flowview::enclosingLinkedGroup;
 using flowview::findLayoutAt;
-using flowview::GraphPath;
 using flowview::hasLinkedGroups;
 using flowview::layoutAt;
 using flowview::liftedPositions;
+using flowview::loopAt;
 using flowview::pathElementCounts;
-using flowview::PathStep;
 using flowview::resolveEditable;
 using flowview::resolveEvaluation;
 using flowview::resolvePath;
@@ -69,7 +69,7 @@ namespace
 TEST_CASE("an empty path is the root graph", "[groupnav]")
 {
 	Graph root;
-	GraphPath path;
+	EvalPath path;
 	REQUIRE(&resolvePath(root, path) == &root);
 	REQUIRE(path.empty());
 }
@@ -82,7 +82,7 @@ TEST_CASE("a path resolves down through nested groups", "[groupnav]")
 	const NodeId inner = addGroup<InlineGroupNode>(mid, "inner");
 	Graph& deep = static_cast<InlineGroupNode&>(mid.node(inner)).inner();
 
-	GraphPath path{{outer}, {inner}};
+	EvalPath path{{outer}, {inner}};
 	REQUIRE(&resolvePath(root, path) == &deep);
 	REQUIRE(path.size() == 2); // fully resolved, so nothing was truncated
 }
@@ -98,21 +98,21 @@ TEST_CASE("a stale path degrades to the deepest level that still resolves", "[gr
 	SECTION("a removed step truncates the path there")
 	{
 		REQUIRE(mid.removeNode(inner));
-		GraphPath path{{outer}, {inner}};
+		EvalPath path{{outer}, {inner}};
 		REQUIRE(&resolvePath(root, path) == &mid); // stopped at the parent
 		REQUIRE(path.size() == 1);
 	}
 
 	SECTION("a step that is not a group truncates too")
 	{
-		GraphPath path{{outer}, {root.boundaryInputNode().id()}}; // a real node, but it contains no graph
+		EvalPath path{{outer}, {root.boundaryInputNode().id()}}; // a real node, but it contains no graph
 		REQUIRE(&resolvePath(root, path) == &static_cast<InlineGroupNode&>(root.node(outer)).inner());
 		REQUIRE(path.size() == 1);
 	}
 
 	SECTION("an id from another graph truncates immediately")
 	{
-		GraphPath path{{NodeId::generate()}};
+		EvalPath path{{NodeId::generate()}};
 		REQUIRE(&resolvePath(root, path) == &root);
 		REQUIRE(path.empty());
 	}
@@ -125,7 +125,7 @@ TEST_CASE("the breadcrumb names each level and where clicking it lands", "[group
 	Graph& mid = static_cast<InlineGroupNode&>(root.node(outer)).inner();
 	const NodeId inner = addGroup<InlineGroupNode>(mid, "sharpen");
 
-	const std::vector<Crumb> crumbs = breadcrumb(root, GraphPath{{outer}, {inner}});
+	const std::vector<Crumb> crumbs = breadcrumb(root, EvalPath{{outer}, {inner}});
 	REQUIRE(crumbs.size() == 3);
 	REQUIRE(crumbs[0].label == "root");
 	REQUIRE(crumbs[0].depth == 0); // clicking it returns to the root
@@ -150,21 +150,21 @@ TEST_CASE("editing stops at a linked group, and stays off below it", "[groupnav]
 	const NodeId nestedInLink = addGroup<InlineGroupNode>(interior, "nested");
 	static_cast<LinkedGroupNode&>(root.node(linked)).adoptInterior(std::move(interior));
 
-	REQUIRE(resolveEditable(root, GraphPath{}) == &root);							// the root document
-	REQUIRE(resolveEditable(root, GraphPath{{inlineGroup}}) != nullptr);			// editable in place
-	REQUIRE(resolveEditable(root, GraphPath{{linked}}) == nullptr);					// the link is not
-	REQUIRE(resolveEditable(root, GraphPath{{linked}, {nestedInLink}}) == nullptr); // nor anything below it
+	REQUIRE(resolveEditable(root, EvalPath{}) == &root);						   // the root document
+	REQUIRE(resolveEditable(root, EvalPath{{inlineGroup}}) != nullptr);			   // editable in place
+	REQUIRE(resolveEditable(root, EvalPath{{linked}}) == nullptr);				   // the link is not
+	REQUIRE(resolveEditable(root, EvalPath{{linked}, {nestedInLink}}) == nullptr); // nor anything below it
 
 	// Reading still descends all the way: looking inside a template is the point of being able to
 	// navigate into one at all.
-	GraphPath deep{{linked}, {nestedInLink}};
+	EvalPath deep{{linked}, {nestedInLink}};
 	REQUIRE(resolvePath(root, deep).nodeCount() == 2); // the nested group's own boundary pair
 	REQUIRE(deep.size() == 2);						   // ... and nothing was truncated
 
 	// "Edit Template..." acts on the OUTERMOST link — that is the template owning everything below,
 	// and the only one whose stored `source` is relative to the open document.
-	REQUIRE(enclosingLinkedGroup(root, GraphPath{{linked}, {nestedInLink}}) == &root.node(linked));
-	REQUIRE(enclosingLinkedGroup(root, GraphPath{{inlineGroup}}) == nullptr);
+	REQUIRE(enclosingLinkedGroup(root, EvalPath{{linked}, {nestedInLink}}) == &root.node(linked));
+	REQUIRE(enclosingLinkedGroup(root, EvalPath{{inlineGroup}}) == nullptr);
 }
 
 TEST_CASE("a linked group nested inside an inline group is still found", "[groupnav]")
@@ -184,9 +184,9 @@ TEST_CASE("a linked group nested inside an inline group is still found", "[group
 	REQUIRE_FALSE(root.contains(linked));
 	REQUIRE(mid.contains(linked));
 
-	REQUIRE(enclosingLinkedGroup(root, GraphPath{{outer}, {linked}}) == &mid.node(linked));
-	REQUIRE(resolveEditable(root, GraphPath{{outer}, {linked}}) == nullptr);
-	REQUIRE(resolveEditable(root, GraphPath{{outer}}) == &mid); // the wrapper itself is still editable
+	REQUIRE(enclosingLinkedGroup(root, EvalPath{{outer}, {linked}}) == &mid.node(linked));
+	REQUIRE(resolveEditable(root, EvalPath{{outer}, {linked}}) == nullptr);
+	REQUIRE(resolveEditable(root, EvalPath{{outer}}) == &mid); // the wrapper itself is still editable
 }
 
 TEST_CASE("layout is stored and found per level", "[groupnav]")
@@ -204,11 +204,11 @@ TEST_CASE("layout is stored and found per level", "[groupnav]")
 	lain::data::Value innerBlob = lain::data::Value::object();
 	innerBlob.set("x", lain::data::Value(99.0));
 
-	layoutAt(tree, GraphPath{}).nodes[group] = rootBlob;
-	layoutAt(tree, GraphPath{{group}}).nodes[node] = innerBlob;
+	layoutAt(tree, EvalPath{}).nodes[group] = rootBlob;
+	layoutAt(tree, EvalPath{{group}}).nodes[node] = innerBlob;
 
-	const auto* rootLevel = findLayoutAt(tree, GraphPath{});
-	const auto* innerLevel = findLayoutAt(tree, GraphPath{{group}});
+	const auto* rootLevel = findLayoutAt(tree, EvalPath{});
+	const auto* innerLevel = findLayoutAt(tree, EvalPath{{group}});
 	REQUIRE(rootLevel != nullptr);
 	REQUIRE(innerLevel != nullptr);
 	REQUIRE(rootLevel->nodes.at(group).find("x")->asDouble() == 10.0);
@@ -216,14 +216,14 @@ TEST_CASE("layout is stored and found per level", "[groupnav]")
 
 	SECTION("an unvisited level simply has no stored layout")
 	{
-		REQUIRE(findLayoutAt(tree, GraphPath{{NodeId::generate()}}) == nullptr);
+		REQUIRE(findLayoutAt(tree, EvalPath{{NodeId::generate()}}) == nullptr);
 	}
 
 	SECTION("layoutAt creates a level on demand, so a first visit can record into it")
 	{
 		const NodeId unvisited = NodeId::generate();
-		layoutAt(tree, GraphPath{{unvisited}}).nodes[NodeId::generate()] = rootBlob;
-		REQUIRE(findLayoutAt(tree, GraphPath{{unvisited}}) != nullptr);
+		layoutAt(tree, EvalPath{{unvisited}}).nodes[NodeId::generate()] = rootBlob;
+		REQUIRE(findLayoutAt(tree, EvalPath{{unvisited}}) != nullptr);
 	}
 }
 
@@ -236,15 +236,15 @@ TEST_CASE("syncing the active path carries an inner interface out to the group's
 	Graph& inner = static_cast<InlineGroupNode&>(root.node(group)).inner();
 
 	inner.boundaryInputNode().addBoundary<int>("in");
-	REQUIRE(syncPathGroups(root, GraphPath{{group}}).changed);
+	REQUIRE(syncPathGroups(root, EvalPath{{group}}).changed);
 	REQUIRE(root.node(group).inputCount() == 1);
 
 	// The second pin lands on the OTHER side, whose inner PortId collides with the first's.
 	inner.boundaryOutputNode().addBoundary<int>("out");
-	REQUIRE(syncPathGroups(root, GraphPath{{group}}).changed);
+	REQUIRE(syncPathGroups(root, EvalPath{{group}}).changed);
 	REQUIRE(root.node(group).outputCount() == 1);
 
-	REQUIRE_FALSE(syncPathGroups(root, GraphPath{{group}}).changed); // settles: a quiet frame reports no change
+	REQUIRE_FALSE(syncPathGroups(root, EvalPath{{group}}).changed); // settles: a quiet frame reports no change
 }
 
 TEST_CASE("a pin a group cannot mirror is reported, with the level that holds it", "[groupnav]")
@@ -264,7 +264,7 @@ TEST_CASE("a pin a group cannot mirror is reported, with the level that holds it
 	// `count` is one of the loop's OWN ports, so the inner pin cannot be mirrored under that name.
 	static_cast<LoopNode&>(mid.node(loop)).inner().boundaryInputNode().addBoundary<int>("count");
 
-	const GraphPath path{{wrapper}, {loop}};
+	const EvalPath path{{wrapper}, {loop}};
 	const flowview::PathSync sync = syncPathGroups(root, path);
 
 	REQUIRE(sync.refused.size() == 1);
@@ -288,7 +288,7 @@ TEST_CASE("a loop's reserved pins are never reported as refusals", "[groupnav]")
 	// created. The panel this feeds would be useless.
 	Graph root;
 	const NodeId loop = addGroup<LoopNode>(root, "fold");
-	REQUIRE(syncPathGroups(root, GraphPath{{loop}}).refused.empty());
+	REQUIRE(syncPathGroups(root, EvalPath{{loop}}).refused.empty());
 }
 
 TEST_CASE("a document knows whether it links anything, at any depth", "[groupnav]")
@@ -423,20 +423,20 @@ TEST_CASE("a path step selects WHICH evaluation, not just which node", "[groupna
 	evaluation.setChildCount(group, 3);
 	REQUIRE(evaluation.childCount(group) == 3);
 
-	REQUIRE(&resolveEvaluation(evaluation, GraphPath{{group, 0}}) == &evaluation.child(group, 0));
-	REQUIRE(&resolveEvaluation(evaluation, GraphPath{{group, 2}}) == &evaluation.child(group, 2));
+	REQUIRE(&resolveEvaluation(evaluation, EvalPath{{group, 0}}) == &evaluation.child(group, 0));
+	REQUIRE(&resolveEvaluation(evaluation, EvalPath{{group, 2}}) == &evaluation.child(group, 2));
 	// Not merely equal — a different element is a different Evaluation, which is what keeps two
 	// streams' values apart.
 	REQUIRE(&evaluation.child(group, 0) != &evaluation.child(group, 2));
 
 	SECTION("an element that is not there stops the walk, like any other stale step")
 	{
-		REQUIRE(&resolveEvaluation(evaluation, GraphPath{{group, 9}}) == &evaluation);
+		REQUIRE(&resolveEvaluation(evaluation, EvalPath{{group, 9}}) == &evaluation);
 	}
 
 	SECTION("the default element is 0, so every existing path still resolves")
 	{
-		REQUIRE(&resolveEvaluation(evaluation, GraphPath{{group}}) == &evaluation.child(group, 0));
+		REQUIRE(&resolveEvaluation(evaluation, EvalPath{{group}}) == &evaluation.child(group, 0));
 	}
 }
 
@@ -452,22 +452,22 @@ TEST_CASE("a map crumb reports that it is per-element, and how many", "[groupnav
 	Evaluation evaluation{root};
 	evaluation.setChildCount(map, 4);
 
-	const std::vector<Crumb> viaGroup = breadcrumb(root, GraphPath{{group}});
+	const std::vector<Crumb> viaGroup = breadcrumb(root, EvalPath{{group}});
 	REQUIRE(viaGroup.size() == 2);
 	REQUIRE(viaGroup[1].interior == InteriorEvaluation::Once); // an ordinary group: one evaluation
 
-	const std::vector<Crumb> viaMap = breadcrumb(root, GraphPath{{map}});
+	const std::vector<Crumb> viaMap = breadcrumb(root, EvalPath{{map}});
 	REQUIRE(viaMap.size() == 2);
 	REQUIRE(viaMap[1].interior == InteriorEvaluation::PerElement);
 
-	const std::vector<std::size_t> counts = pathElementCounts(evaluation, GraphPath{{map, 2}});
+	const std::vector<std::size_t> counts = pathElementCounts(evaluation, EvalPath{{map, 2}});
 	REQUIRE(counts.size() == 1);
 	REQUIRE(counts[0] == 4); // how far the stepper may go
 
 	SECTION("a step with nothing prepared reports zero rather than guessing")
 	{
 		Evaluation fresh{root};
-		const std::vector<std::size_t> none = pathElementCounts(fresh, GraphPath{{map, 0}});
+		const std::vector<std::size_t> none = pathElementCounts(fresh, EvalPath{{map, 0}});
 		REQUIRE(none.size() == 1);
 		REQUIRE(none[0] == 0); // a map has no children until a run has sized it
 	}
@@ -483,9 +483,9 @@ TEST_CASE("a map's interior is editable, a linked group's is not", "[groupnav]")
 	const NodeId map = root.add<MapNode>();
 	const NodeId linked = root.add<LinkedGroupNode>();
 
-	REQUIRE(resolveEditable(root, GraphPath{{group}}) != nullptr);
-	REQUIRE(resolveEditable(root, GraphPath{{map}}) != nullptr);
-	REQUIRE(resolveEditable(root, GraphPath{{linked}}) == nullptr);
+	REQUIRE(resolveEditable(root, EvalPath{{group}}) != nullptr);
+	REQUIRE(resolveEditable(root, EvalPath{{map}}) != nullptr);
+	REQUIRE(resolveEditable(root, EvalPath{{linked}}) == nullptr);
 
 	// And the per-frame reconciliation descends into a map too, so editing its interface from the
 	// inside reaches its outer ports (M5's bug three, in its map-shaped form).
@@ -496,7 +496,7 @@ TEST_CASE("a map's interior is editable, a linked group's is not", "[groupnav]")
 
 	auto& inner = static_cast<MapNode&>(root.node(map)).inner();
 	inner.boundaryInputNode().addBoundary<int>("item");
-	REQUIRE(syncPathGroups(root, GraphPath{{map}}).changed);
+	REQUIRE(syncPathGroups(root, EvalPath{{map}}).changed);
 	REQUIRE(root.node(map).inputCount() == 1);
 }
 
@@ -517,7 +517,7 @@ TEST_CASE("every crumb's depth indexes the path it was built from", "[groupnav]"
 	auto& groupInner = static_cast<InlineGroupNode&>(root.node(group)).inner();
 	const NodeId map = groupInner.add<MapNode>();
 
-	const GraphPath path{{group}, {map, 2}};
+	const EvalPath path{{group}, {map, 2}};
 	const std::vector<Crumb> crumbs = breadcrumb(root, path);
 	REQUIRE(crumbs.size() == 3); // document, group, map
 
@@ -547,20 +547,20 @@ TEST_CASE("the loop a level belongs to is resolved one step UP", "[groupnav]")
 	const NodeId map = root.add<MapNode>();
 	const NodeId loop = root.add<LoopNode>();
 
-	REQUIRE(loopAt(root, GraphPath{{loop}}) != nullptr);
-	REQUIRE(editableLoopAt(root, GraphPath{{loop}}) != nullptr);
+	REQUIRE(loopAt(root, EvalPath{{loop}}) != nullptr);
+	REQUIRE(editableLoopAt(root, EvalPath{{loop}}) != nullptr);
 
 	// Not a loop, and not a level at all: each answers nothing rather than something near-enough.
-	REQUIRE(loopAt(root, GraphPath{{group}}) == nullptr);
-	REQUIRE(loopAt(root, GraphPath{{map}}) == nullptr);
-	REQUIRE(loopAt(root, GraphPath{}) == nullptr); // the root graph is nobody's interior
+	REQUIRE(loopAt(root, EvalPath{{group}}) == nullptr);
+	REQUIRE(loopAt(root, EvalPath{{map}}) == nullptr);
+	REQUIRE(loopAt(root, EvalPath{}) == nullptr); // the root graph is nobody's interior
 
 	SECTION("a loop nested inside a group resolves against ITS parent, not the root")
 	{
 		auto& inner = static_cast<InlineGroupNode&>(root.node(group)).inner();
 		const NodeId nested = inner.add<LoopNode>();
-		REQUIRE(loopAt(root, GraphPath{{group}, {nested}}) != nullptr);
-		REQUIRE(editableLoopAt(root, GraphPath{{group}, {nested}}) != nullptr);
+		REQUIRE(loopAt(root, EvalPath{{group}, {nested}}) != nullptr);
+		REQUIRE(editableLoopAt(root, EvalPath{{group}, {nested}}) != nullptr);
 	}
 
 	SECTION("a loop inside a LINKED group is legible but not editable")
@@ -582,7 +582,7 @@ TEST_CASE("the loop a level belongs to is resolved one step UP", "[groupnav]")
 		}();
 		linked.adoptInterior(std::move(body));
 
-		const GraphPath path{{linkedId}, {nested}};
+		const EvalPath path{{linkedId}, {nested}};
 		REQUIRE(loopAt(root, path) != nullptr);
 		REQUIRE(editableLoopAt(root, path) == nullptr);
 	}

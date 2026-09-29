@@ -133,7 +133,7 @@ namespace flowview
 		// this frame (a double-click descends), and the positions collected at the end of the frame
 		// belong to the level that was actually on screen — not to the one we are moving to.
 		m_ctx.drawnPath = m_ctx.activePath;
-		const GraphPath& drawnPath = m_ctx.drawnPath;
+		const flow::EvalPath& drawnPath = m_ctx.drawnPath;
 
 		m_guiCtx->newFrame();
 
@@ -262,7 +262,7 @@ namespace flowview
 			// Assigned directly rather than through navigateTo: onGraphReplaced has already asked for
 			// the re-seed and cleared the selection, and raising pathChanged would clear the selection
 			// AGAIN next frame — wiping the reselect applied just below.
-			m_ctx.activePath = m_ctx.pendingPath.value_or(GraphPath{});
+			m_ctx.activePath = m_ctx.pendingPath.value_or(flow::EvalPath{});
 			m_ctx.pendingPath.reset();
 
 			// A New/Open carries a fresh baseline (the swap resets the history — undo doesn't cross it);

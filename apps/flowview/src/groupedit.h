@@ -12,7 +12,7 @@
 // does for any other edit. A refusal is reported through AppContext's transient-issue channel rather
 // than swallowed: a gesture that silently does nothing reads as a bug.
 
-#include "groupnav.h" // GraphPath — the level a gesture acts at
+#include <lain/flow/types.h> // EvalPath — the level a gesture acts at
 
 namespace lain::flow
 {

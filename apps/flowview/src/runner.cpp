@@ -140,9 +140,6 @@ namespace flowview
 			std::string failure;
 			const RunOutcome outcome = execute(*job, serial, *control, failure);
 			const std::size_t failedNodes = control->failed(); // read before anything else can start a run
-			// The observer captured this job by reference, and the control outlives it (progress is
-			// still read from it until the next start) — so it lets go of it here.
-			control->setStageObserver({});
 			// Publish at the end of EVERY run: a superseded run's finished work is kept, so it is
 			// worth showing, and a failed one's is exactly what the user needs to look at.
 			publish(*job, serial, true);
@@ -164,13 +161,37 @@ namespace flowview
 		}
 	}
 
+	struct Runner::JobObserver final : flow::RunObserver
+	{
+		Runner& runner;
+		const RunJob& job;
+		std::uint64_t serial;
+
+		JobObserver(Runner& r, const RunJob& j, std::uint64_t s)
+			: runner(r)
+			, job(j)
+			, serial(s)
+		{
+		}
+
+		// Between stages, where the evaluation is quiescent.
+		void stageFinished() override { runner.publish(job, serial, false); }
+	};
+
 	RunOutcome Runner::execute(RunJob& job, std::uint64_t serial, flow::RunControl& control, std::string& failure)
 	{
-		// Between stages, where the evaluation is quiescent (RunControl::setStageObserver). Set before
-		// the run, on this thread, which is the one that reads it.
-		control.setStageObserver([this, &job, serial]()
-								 { publish(job, serial, false); });
+		// Set before the run, on this thread, which is the one that reads it — and let go of when
+		// this returns, since the control outlives the job (progress is still read from it until the
+		// next start) and the observer does not.
+		JobObserver observer{*this, job, serial};
+		control.setObserver(&observer);
+		const RunOutcome outcome = runJob(job, control, failure);
+		control.setObserver(nullptr);
+		return outcome;
+	}
 
+	RunOutcome Runner::runJob(RunJob& job, flow::RunControl& control, std::string& failure)
+	{
 		try
 		{
 			// Prepare FIRST, then bind: a pin added since the last run has no slot until prepare makes

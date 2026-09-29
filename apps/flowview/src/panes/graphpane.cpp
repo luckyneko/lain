@@ -187,7 +187,7 @@ namespace flowview
 		// reaching a map crumb behind it indexed element 0 of nothing, and segfaulted. It is the same
 		// lesson MainWindow already learned one level up, where a navigation requested during a draw
 		// is consumed at the START of the next frame rather than in the middle of this one.
-		const GraphPath path = ctx.activePath;
+		const flow::EvalPath path = ctx.activePath;
 		{
 			// The bar reads as one lineage, but its two halves cost very different things — so they get
 			// different separators. "<" precedes a DOCUMENT crumb: that document is not loaded, and
@@ -224,11 +224,11 @@ namespace flowview
 				if (here)
 					gui::TextUnformatted(label.c_str()); // the level in view isn't a link
 				else if (gui::SmallButton(label.c_str()))
-					ctx.navigateTo(GraphPath(path.begin(), path.begin() + static_cast<std::ptrdiff_t>(crumbs[i].depth)));
+					ctx.navigateTo(flow::EvalPath(path.begin(), path.begin() + static_cast<std::ptrdiff_t>(crumbs[i].depth)));
 
 				// A MAP crumb carries which ELEMENT you are looking at, because its level has one
 				// evaluation per element and the canvas can only show one at a time. The path already
-				// holds the choice (PathStep::element), so this only renders and edits it.
+				// holds the choice (flow::EvalStep::index), so this only renders and edits it.
 				//
 				// It earns its keep when an element FAILS: one hole clears the whole map's output
 				// (ADR-0014), so the way to find out which element broke is to go and look at it —
@@ -240,12 +240,12 @@ namespace flowview
 				{
 					const std::size_t step = crumbs[i].depth - 1;
 					const std::size_t count = step < ctx.pathElementCounts.size() ? ctx.pathElementCounts[step] : 0;
-					const std::size_t element = path[step].element;
+					const std::size_t element = path[step].index;
 
 					const auto stepTo = [&](std::size_t target)
 					{
-						GraphPath moved = path;
-						moved[step].element = target;
+						flow::EvalPath moved = path;
+						moved[step].index = target;
 						ctx.navigateTo(std::move(moved)); // the levels below stay: same definition
 					};
 
