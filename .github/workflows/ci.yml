@@ -87,10 +87,16 @@ jobs:
           # Each axis varies alone. The video-off leg is Release, since Release is what a fresh
           # clone gets and so is what "the default configuration" means; Debug stays video-ON so it
           # matches the daily build.
+          #
+          # `camera` (LAIN_CAMERA_OPENCV, ADR-0026) is the one field that does NOT vary alone: it
+          # moves with `video`, because both are opt-in fetched prebuilts. The default leg proves
+          # both stay off without fetching anything, and every other leg proves the fetch, the
+          # manifest gate and the [opencv] runtime test on its platform.
           - name: Linux Release
             os: ubuntu-24.04
             build_type: Release
             video: 'ON'
+            camera: 'ON'
             linux_deps: true
             flowview: build/apps/flowview/flowview
 
@@ -99,6 +105,7 @@ jobs:
             os: ubuntu-24.04
             build_type: Release
             video: 'OFF'
+            camera: 'OFF'
             linux_deps: true
             flowview: build/apps/flowview/flowview
 
@@ -106,6 +113,7 @@ jobs:
             os: ubuntu-24.04
             build_type: Debug
             video: 'ON'
+            camera: 'ON'
             linux_deps: true
             flowview: build/apps/flowview/flowview
 
@@ -113,6 +121,7 @@ jobs:
             os: macos-15
             build_type: Release
             video: 'ON'
+            camera: 'ON'
             linux_deps: false
             flowview: build/apps/flowview/flowview
 
@@ -123,6 +132,7 @@ jobs:
             os: windows-2022
             build_type: Release
             video: 'ON'
+            camera: 'ON'
             linux_deps: false
             flowview: build/apps/flowview/Release/flowview.exe
 
@@ -136,14 +146,15 @@ jobs:
       # Downloaded ARCHIVES only; the dependencies themselves are recompiled from source each run.
       # One path covers everything: archimedes' own addXXX.cmake modules write to
       # ${CMAKE_SOURCE_DIR}/.cache/fetch, which resolves to lain's root when it is nested here.
-      # The video flag is in the key because the FFmpeg archive is fetched only when it is ON.
+      # The video and camera flags are in the key because the FFmpeg and OpenCV archives are
+      # fetched only when they are ON.
       - name: Cache fetched dependencies
         uses: actions/cache@v4
         with:
           path: .cache/fetch
-          key: ${{ runner.os }}-deps-video${{ matrix.video }}-${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', 'plugins/**/CMakeLists.txt', 'extern/archimedes/cmake/*.cmake') }}
+          key: ${{ runner.os }}-deps-video${{ matrix.video }}-camera${{ matrix.camera }}-${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', 'plugins/**/CMakeLists.txt', 'extern/archimedes/cmake/*.cmake') }}
           restore-keys: |
-            ${{ runner.os }}-deps-video${{ matrix.video }}-
+            ${{ runner.os }}-deps-video${{ matrix.video }}-camera${{ matrix.camera }}-
             ${{ runner.os }}-deps-
 
       # xorg/wayland: GLFW's backends and the from-source Vulkan loader need these headers.
@@ -165,6 +176,7 @@ jobs:
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DLAIN_IO_VIDEO_FFMPEG=${{ matrix.video }}
+          -DLAIN_CAMERA_OPENCV=${{ matrix.camera }}
 
       - name: Build
         run: cmake --build build --parallel --config ${{ matrix.build_type }}

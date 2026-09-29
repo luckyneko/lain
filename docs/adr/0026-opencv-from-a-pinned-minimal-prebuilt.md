@@ -80,9 +80,9 @@ Three OpenCV defaults would each have produced a broken artifact without failing
 
 The build overrides all three, and the check proves the overrides took effect.
 
-lain re-checks the archive at configure time, as `addFFmpeg.cmake` does (built by M9 slice 0; not
-yet in the tree when this was written). It parses the archive's
-`MANIFEST.txt` for the profile, modules, linkage and third-party line, and refuses a mismatch
+lain re-checks the archive at configure time, as `addFFmpeg.cmake` does (`cmake/addOpenCV.cmake`,
+built by M9 slice 0). It parses the archive's
+`MANIFEST.txt` for the version, profile, modules, linkage, target and third-party line, and refuses a mismatch
 without executing anything, so the gate still works when cross-compiling. A runtime test asks the
 linked library for `cv::getBuildInformation()` as a second opinion. `LAIN_OPENCV_ROOT` may point at
 a local install; that path has no manifest, so configure warns and the runtime test is the only

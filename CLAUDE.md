@@ -1018,6 +1018,40 @@ holds the hashes, and **slice 0 can start**.
 - **Owed by M9 slice 1, recorded in ADR-0026:** OpenCV's own thread pool against ADR-0024's one
   pool. Either `cv::setNumThreads`, or `cv::parallel::setParallelForBackend` onto `multi`.
 
+### Update 2026-09-29 — M9 slice 0 built: OpenCV lands, with nothing depending on it yet
+
+The first code of Milestone 9, and deliberately nothing but the dependency. It is the shape M10
+slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
+- **`cmake/addOpenCV.cmake`:**
+  - fetches the published `opencv-4.14.0-calib` archive by SHA-256;
+  - refuses at configure time any `MANIFEST.txt` whose version, profile, modules, linkage,
+    **target** or third-party line differs from the pins;
+  - then takes the targets from the archive's own `OpenCVConfig.cmake` (`EXACT`, `GLOBAL`,
+    `NO_DEFAULT_PATH`);
+  - stages the licence texts and a generated `--licenses` notice.
+- **`plugins/camera`** with **`LAIN_CAMERA_OPENCV`**, default OFF. Its one member is
+  **`lain::camera::opencv`**, today only `build.h` (`version()`, `buildInformation()`).
+- **An `[opencv]` runtime test** asserts the prebuilt's contract from the linked library. Its pins
+  are compile definitions fed from the module, so the gate and the test cannot describe two builds.
+- **CI** gains a `camera` field moving with `video`.
+- **`ctest` could not be run on the full tree here, and that is an environment limit, not a
+  skipped step.** The sandbox's egress policy answers 403 to GitHub source-archive downloads, which
+  is how every other lain dependency is fetched, so lain's root does not configure there.
+  - Verified instead through a standalone harness that includes the **real** module, Catch2 module
+    and `plugins/camera` unchanged: 3/3 in Release and Debug, warning-free, and nothing fetched
+    with the option OFF.
+  - clang-format 20 (the pinned binary) is clean on the new sources.
+  - The full tree, `flowview --licenses` included, is the CI run's to prove.
+- **Found while building:** the planned `MAP_IMPORTED_CONFIG_{RELWITHDEBINFO,MINSIZEREL}` is
+  already done by OpenCV's own config under MSVC (`OPENCV_MAP_IMPORTED_CONFIG`), so the module
+  relies on it instead of stating it twice. WORK.md is corrected in place.
+- **Sabotages, all caught:**
+  - each of the six manifest fields doctored in turn fails configure, naming the field;
+  - a missing manifest configures with the warning;
+  - an extra module pinned into the test fails exactly the module case.
+- **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
+  executable 1.2 MB, since OpenCV stays in its DSOs.
+
 ### Update 2026-09-29 — M14 slice 8a built: a pull of many targets, cancellable and parallel
 
 The flow half of Run Selection, on the pull fix below.

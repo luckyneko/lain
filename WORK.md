@@ -2402,7 +2402,8 @@ adds a pin to the canvas.
 
 **Designed, not started** — the only milestone from 5 onward that is. M10 was numbered after it and
 built before it, discharging its frame-sequence prerequisite. How OpenCV is obtained was settled
-2026-09-29 ([ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md), slice 0 below).
+2026-09-29 ([ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md)), and slice 0 below
+(OpenCV lands, nothing depending on it) is built. Slice 1 is where the milestone's code starts.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -2526,8 +2527,11 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      - Then `find_package(OpenCV 4.14.0 EXACT CONFIG COMPONENTS … PATHS <root> NO_DEFAULT_PATH GLOBAL)`.
        The archive is a standard OpenCV install tree, so its own config supplies the targets and,
        on Windows, picks the Debug or Release set per configuration.
-     - Set `MAP_IMPORTED_CONFIG_{RELWITHDEBINFO,MINSIZEREL}` to Release. Otherwise an MSVC
-       RelWithDebInfo build can resolve to the Debug DLLs.
+     - ~~Set `MAP_IMPORTED_CONFIG_{RELWITHDEBINFO,MINSIZEREL}` to Release.~~ **Not needed, found
+       while building:** OpenCV's installed config already remaps RelWithDebInfo and MinSizeRel
+       onto Release under MSVC (`OPENCV_MAP_IMPORTED_CONFIG`), for exactly the Debug-DLL mismatch
+       this bullet worried about. `addOpenCV.cmake` relies on it and says so, rather than stating
+       it a second time.
      - The Windows root config already falls back from a newer Visual Studio (vc18) to the vc17
        binaries, so no `OpenCV_RUNTIME` preset is needed.
    - **The manifest gate.** Parse `MANIFEST.txt` and `FATAL_ERROR` unless all of these match the
@@ -2554,6 +2558,45 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      one pool per process. The two options are capping it with `cv::setNumThreads`, or running
      OpenCV's `parallel_for_` on `multi` through `cv::parallel::setParallelForBackend`. Both work
      with these binaries (ADR-0026, Consequences).
+
+   **Slice 0 built (2026-09-29).**
+   - **`cmake/addOpenCV.cmake`** as above.
+     - The gate checks five manifest fields (version, profile, modules, linkage, target) plus
+       the `third party` line. The **target** is checked too, so a mismatched archive supplied
+       through `LAIN_OPENCV_ROOT` is refused rather than linked.
+     - Windows additionally refuses a non-MSVC toolchain and ARM64 by name, instead of failing
+       later at link or load.
+   - **`plugins/camera`** with `LAIN_CAMERA_OPENCV` (default OFF). Its one member is
+     **`lain::camera::opencv`**, today only `build.h` (`version()`, `buildInformation()`). That is
+     the shape the FFmpeg plugin had before its reader landed. The ChArUco adapters join it in
+     slice 1.
+   - **The `[opencv]` test** (`test-camera-opencv`, 3 cases) asserts the same contract as the
+     prebuilt's `check.sh`, from the linked library: the pinned version; shared; exactly the
+     pinned modules; zlib bundled; the built-in parallel framework; nothing in
+     *Other third-party libraries*; every forbidden component NO. Its pins are compile
+     definitions fed from `addOpenCV.cmake`, so the gate and the test cannot describe two builds.
+   - **CI:** a `camera` field moving with `video`, so four legs fetch and test OpenCV and the
+     default leg proves nothing is fetched.
+   - **Footprint** (linux-x86_64): a 6.1 MB archive, 26 MB extracted.
+     - The six libraries total 19.6 MB: imgproc 8.3, core 5.6, calib3d 2.8, objdetect 1.3,
+       features2d 1.0, flann 0.6.
+     - The probe library is 2 KB, and the test executable 1.2 MB, since OpenCV stays in its DSOs.
+     - Configure/build time is one fetch.
+   - **Verified locally through a harness, not the full tree.** The sandbox's egress policy
+     refuses GitHub source-archive downloads (`github.com/<org>/<repo>/archive/…` answers 403),
+     which is how every other lain dependency is fetched, so lain's root cannot configure there.
+     Release assets download fine.
+     - The harness is a standalone project that includes lain's **real** `addOpenCV.cmake`,
+       `addcatch2.cmake`, `lainWarnings.cmake` and `plugins/camera`, unchanged, with Catch2
+       cloned over git.
+     - It configured, built warning-free, and passed 3/3 in both Release and Debug.
+     - With the option OFF it fetched nothing.
+     - The notice and the nine licence texts were staged.
+     - Full-tree integration, including `flowview --licenses`, is the CI run's to prove.
+   - **Sabotages, all caught:**
+     - Doctoring each of the six manifest fields in turn fails configure and names the field.
+     - A missing manifest configures with the warning.
+     - Pinning an extra module into the test's expectation fails exactly the module case.
 1. **Foundational camera geometry + ChArUco calibration.** Add `core::Length`; the agreed rigid
    transform and axis-convention conversions in `lain::math`; immutable validated camera models;
    the closed distortion-model set; projection, unprojection, containment, applicability, and
@@ -7291,8 +7334,9 @@ row here**. A row is cheap to delete and expensive to leave.
 
 - **M9 — camera calibration and fixed registration.** Designed 2026-08-14/15 with three ADRs, no
   code. **Unblocked:** M10 was numbered after it and built before it, discharging its frame-sequence
-  prerequisite. How OpenCV is obtained was decided 2026-09-29 (a pinned prebuilt), and its first
-  release (`opencv-4.14.0-calib`) is published, so slice 0 (`addOpenCV.cmake`) can start. *(Milestone 9;
+  prerequisite. How OpenCV is obtained was decided 2026-09-29 (a pinned prebuilt), its first
+  release (`opencv-4.14.0-calib`) is published, and **slice 0 is built** (`addOpenCV.cmake`, the
+  `[opencv]` probe), so slice 1 is next. *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md),
