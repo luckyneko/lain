@@ -1,7 +1,11 @@
 #pragma once
 
 #include "../canvasstyle.h"
+#include "../freshness.h" // Freshness — the per-node state the title glyph and the landing outline show
 
+#include <lain/flow/types.h>
+
+#include <map>
 #include <typeindex>
 
 namespace lain::flow
@@ -51,5 +55,13 @@ namespace flowview
 		bool m_linkDragActive = false;
 		bool m_linkDragFromOutput = false;			  // the drag source's direction
 		std::type_index m_linkDragType{typeid(void)}; // ...and its value type (compatible = same)
+
+		// The "just updated" outline (ADR-0025): a node whose freshness went from Stale or Failed to
+		// Current since the last frame — which only a publication landing can do, since an edit only
+		// ever makes things staler — has its outline lit, fading over a moment. Kept per LEVEL: both
+		// maps are dropped on navigation and on a document swap, so arriving somewhere new is never
+		// mistaken for everything on it landing at once.
+		std::map<lain::flow::NodeId, Freshness> m_lastFreshness;
+		std::map<lain::flow::NodeId, double> m_landedAt; // gui::GetTime() of the landing
 	};
 } // namespace flowview

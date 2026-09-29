@@ -75,6 +75,21 @@ namespace flowview
 		// default font has no fancy separators.
 		gui::Text("%s [%s]  |  %s : %s", node->name().c_str(), key.port.node.shortString().c_str(),
 				  port->name().c_str(), evaluation.describe(key.port).c_str());
+		// Said in words here, not as a badge over the picture: this pane is where you look closely, and
+		// a mark in the corner of what you are inspecting is in the way.
+		switch (ctx.freshness.of(key.port.node))
+		{
+			case Freshness::Current:
+				break;
+			case Freshness::Stale:
+				gui::SameLine();
+				gui::TextDisabled("(stale - predates the latest change)");
+				break;
+			case Freshness::Failed:
+				gui::SameLine();
+				gui::TextDisabled("(its node's last compute failed - see Issues)");
+				break;
+		}
 		gui::Separator();
 
 		const math::Vec2f area = gui::GetContentRegionAvail();

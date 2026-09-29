@@ -71,10 +71,16 @@ namespace flowview
 			};
 
 			bool any = false;
-			// A run that threw. It persists — unlike a transient refusal — because the node that threw
-			// stays stale and throws again next run until something changes; a run that completes
-			// clears it. The row is run-level: which node threw is not known here yet (M14 slice 7's
-			// per-step hook is what will say).
+			// What threw, where it threw — read from the published evaluation, which records a failure
+			// against its node (ADR-0025). These persist for as long as the record does: until that
+			// node computes again and gets through.
+			for (const Issue& issue : collectFailures(ctx.app->published(), ctx.activePath))
+			{
+				row(issue);
+				any = true;
+			}
+			// A run that threw from somewhere no node owns — a refused prepare, a stage observer. It
+			// persists until a run completes; a throw a node owned is in the rows above instead.
 			if (const std::optional<std::string>& failure = ctx.app->runFailure())
 			{
 				row(Issue::note(Issue::Severity::Error, "run failed: " + *failure));

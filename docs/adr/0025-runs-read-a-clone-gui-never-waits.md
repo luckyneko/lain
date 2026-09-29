@@ -3,7 +3,8 @@
 ---
 Status: accepted (designed 2026-09-28; slices 1 — clone + lineage — 2 — the published evaluation
 + payload identity — and 3 — cancellation — built 2026-09-28, 4 — the async vertical — 5 — triggers
-+ persistence — and 6a — the stale-closure query + the failure record — 2026-09-29, the rest not)
++ persistence — and 6 — freshness: the stale-closure query and the failure record, then the UI —
+2026-09-29, the rest not)
 Amends [ADR-0012](0012-definition-and-evaluation.md) — the pairing guard moves from address identity
 to **lineage**, and a *published evaluation* is the "different concept" it set aside. Amends
 [ADR-0024](0024-one-process-task-pool.md) — gui-mode stops being serial, and the coordinator thread is
@@ -272,6 +273,14 @@ settled four things:
   walking records that describe another document.
 - **The pull path keeps its own semantic** — the stale nodes of the target's cone, not the closure —
   through the same query's per-node test (`StaleClosure::owed`).
+
+*Slice 6b (2026-09-29)* draws it. flowview walks from the root to the level on screen, asking the query
+at each step and handing each level's `reseeds()` answer down as the next one's `boundaryStale`; a
+level the published copy has no evaluation for is compared against nothing, so all of it is Stale. A
+node is Failed when its own record says so or when anything inside it does (the most active state
+inside), Stale when the closure has it, and Current otherwise. Queued and Computing wait for the
+per-step hook (slice 7). The run-level Issues row now means a throw no node owned: a Failed run whose
+`RunControl::failed()` is non-zero is shown on its nodes instead.
 
 ## Alternatives rejected
 

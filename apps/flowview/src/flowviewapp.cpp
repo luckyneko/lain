@@ -257,12 +257,20 @@ namespace flowview
 	bool FlowviewApp::pollRun()
 	{
 		RunReport report = m_runner.take();
+		if (report.outcome)
+			m_lastRun = LastRun{*report.outcome, m_runStarted.since().seconds(), report.failedNodes};
 		if (report.outcome == RunOutcome::Completed)
 			m_runFailure.reset();
 		else if (report.outcome == RunOutcome::Failed)
 		{
 			log::error("flowview: the run failed: {}", report.failure);
-			m_runFailure = std::move(report.failure);
+			// A throw some node owned is on that node — recorded in the evaluation this run published,
+			// so the canvas marks it and Issues lists it where it happened. Only a throw nobody owned
+			// has to be reported for the run as a whole.
+			if (report.failedNodes == 0)
+				m_runFailure = std::move(report.failure);
+			else
+				m_runFailure.reset();
 		}
 
 		if (!report.published)
@@ -296,6 +304,7 @@ namespace flowview
 		job.bindings = m_bindings.handOver(m_runner.nextJob());
 		job.strategy = m_strategy;
 		m_runner.start(std::move(job));
+		m_runStarted = core::Time::now();
 		m_requests.started();
 	}
 
@@ -321,6 +330,7 @@ namespace flowview
 		m_published = flow::PublishedEvaluation{};
 		m_bindings.clear();
 		m_runFailure.reset();
+		m_lastRun.reset(); // how the old document's last run went says nothing about this one
 		requestRun();
 	}
 } // namespace flowview

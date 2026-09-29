@@ -7,6 +7,7 @@
 #include <lain/app/cli.h>
 #include <lain/core/factory.h>
 #include <lain/core/range.h>
+#include <lain/core/time.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/node.h>
@@ -23,6 +24,14 @@
 
 namespace flowview
 {
+	// How the last run that got to an end went, for the status bar.
+	struct LastRun
+	{
+		RunOutcome outcome = RunOutcome::Completed;
+		double seconds = 0.0;		 // from the start the host asked for to the outcome it saw
+		std::size_t failedNodes = 0; // node computes that threw (each recorded against its node)
+	};
+
 	// flowview's application delegate. Two modes, selected by CLI:
 	//   --headless : cli-mode — build the boundary example graph, bind its input from
 	//                --input (if given), run it, dump the graph, and write its output to
@@ -94,8 +103,17 @@ namespace flowview
 		std::size_t runPlanned() const { return m_runner.planned(); }
 		std::size_t runFinished() const { return m_runner.finished(); }
 
-		// Why the last run that got to an end threw, until one completes without throwing. A run that
-		// was superseded proves nothing about the node that threw, so it does not clear this.
+		// How long the run in flight has been going, in seconds. Meaningful only while running().
+		double runElapsed() const { return m_runStarted.since().seconds(); }
+
+		// How the last run that got to an end went — nothing before the first, or since a swap.
+		const std::optional<LastRun>& lastRun() const { return m_lastRun; }
+
+		// Why the last run that got to an end threw, when NO NODE owned the throw, until one completes
+		// without throwing. A throw a node owned is recorded against that node in the evaluation, which
+		// is where the panes show it (Issues lists it, the canvas marks it); this is the rest — a
+		// refused prepare, a stage observer — which has nowhere to be shown but the run as a whole. A
+		// run that was superseded proves nothing either way, so it does not clear this.
 		const std::optional<std::string>& runFailure() const { return m_runFailure; }
 
 		// Frame start: take what the coordinator has produced since the last frame. True when a new
@@ -159,6 +177,8 @@ namespace flowview
 		RunRequests m_requests; // what has asked for a run and not had one yet
 		RunStrategy m_strategy = RunStrategy::Parallel;
 		std::optional<std::string> m_runFailure;
+		lain::core::Time m_runStarted; // when the run in flight was handed over
+		std::optional<LastRun> m_lastRun;
 
 		lain::core::Factory<lain::flow::Node> m_nodeFactory; // node-type palette
 		MainWindow m_window;								 // gui-mode inspector

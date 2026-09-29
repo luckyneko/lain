@@ -135,4 +135,90 @@ namespace flowview
 		}
 		return issues;
 	}
+
+	// One failure found by the walk below: the level it was found at, and the node.
+	struct FoundFailure
+	{
+		GraphPath level;
+		flow::NodeId node;
+		std::string name;
+		std::string message;
+	};
+
+	// Depth first, in the definition's own node order and each map's element order, so "the first"
+	// failure of a node is the one a reader would meet first.
+	static void findFailures(const flow::Graph& definition, const flow::Evaluation& evaluation, const GraphPath& level,
+							 std::vector<FoundFailure>& found)
+	{
+		for (const flow::NodeId id : definition.nodeIds())
+		{
+			const flow::Node& node = definition.node(id);
+			if (const std::string* failure = evaluation.failure(id))
+				found.push_back(FoundFailure{level, id, node.name(), *failure});
+
+			const flow::Graph* inner = node.innerGraph();
+			if (inner == nullptr)
+				continue;
+			for (std::size_t element = 0; element < evaluation.childCount(id); ++element)
+			{
+				const flow::Evaluation& child = evaluation.child(id, element);
+				if (!child.hasFailure())
+					continue; // nothing down there: skip the walk
+				GraphPath into = level;
+				into.push_back(PathStep{id, element});
+				findFailures(*inner, child, into, found);
+			}
+		}
+	}
+
+	// A level with every map element set to 0: the same DEFINITION level, whichever element it was
+	// reached through — what collapses one node failing in several elements into one row.
+	static GraphPath definitionLevel(GraphPath level)
+	{
+		for (PathStep& step : level)
+			step.element = 0;
+		return level;
+	}
+
+	std::vector<Issue> collectFailures(const flow::Evaluation& published, const GraphPath& activePath)
+	{
+		std::vector<Issue> issues;
+		const flow::Graph* definition = published.definition();
+		if (definition == nullptr || !published.hasFailure())
+			return issues;
+
+		std::vector<FoundFailure> found;
+		findFailures(*definition, published, GraphPath{}, found);
+
+		// One row per node per definition level: the first failure found stands for the rest.
+		std::vector<bool> reported(found.size(), false);
+		for (std::size_t i = 0; i < found.size(); ++i)
+		{
+			if (reported[i])
+				continue;
+			const FoundFailure& first = found[i];
+			const GraphPath key = definitionLevel(first.level);
+			std::size_t more = 0;
+			for (std::size_t j = i + 1; j < found.size(); ++j)
+			{
+				if (!reported[j] && found[j].node == first.node && definitionLevel(found[j].level) == key)
+				{
+					reported[j] = true;
+					++more;
+				}
+			}
+
+			std::string message = string::format("{} [{}] failed: {}", first.name, first.node.shortString(), first.message);
+			if (more > 0)
+				message += string::format(" (and in {} more element(s))", more);
+
+			if (first.level == activePath)
+				issues.push_back(Issue::at(Issue::Severity::Error, std::move(message), first.node));
+			else if (!first.level.empty())
+				issues.push_back(Issue::inside(Issue::Severity::Error, std::move(message), first.level));
+			else
+				issues.push_back(Issue::note(Issue::Severity::Error, std::move(message))); // the root, seen from below it
+		}
+		return issues;
+	}
 } // namespace flowview

@@ -348,6 +348,9 @@ static void checkThrowIsAnOutcome(RunStrategy strategy)
 	REQUIRE(failed.outcome == RunOutcome::Failed);
 	REQUIRE(failed.failure.find("boom") != std::string::npos);
 	REQUIRE(valueOf(failed, document, thrower).empty());
+	// A node OWNED this throw, and the publication says which: the host shows it on that node.
+	REQUIRE(failed.failedNodes == 1);
+	REQUIRE(failed.published->evaluation().failure(thrower) != nullptr);
 
 	// Disarmed WITHOUT an edit — nothing about the recipe changed, so only its staleness can bring
 	// the node back into the next run.
@@ -358,6 +361,8 @@ static void checkThrowIsAnOutcome(RunStrategy strategy)
 	REQUIRE(retried.outcome == RunOutcome::Completed);
 	REQUIRE(*throwerCalls == 2);
 	REQUIRE(valueOf(retried, document, thrower).get<int>() == 7);
+	REQUIRE(retried.failedNodes == 0);
+	REQUIRE(retried.published->evaluation().failure(thrower) == nullptr);
 }
 
 TEST_CASE("a throwing compute is an outcome not a crash and is retried", "[flowview][runner]")
@@ -365,6 +370,27 @@ TEST_CASE("a throwing compute is an outcome not a crash and is retried", "[flowv
 	// Before the runner, nothing in gui-mode caught a compute's exception. On a coordinator thread
 	// it would terminate the process — so the runner reports it, and the node that threw stays stale.
 	forEachStrategy(checkThrowIsAnOutcome);
+}
+
+TEST_CASE("a throw no node owned is reported with no node count", "[flowview][runner]")
+{
+	// The one kind of failure a host must report for the run as a whole: here, a job pairing an
+	// evaluation with a definition of ANOTHER document, which prepare refuses before any node runs.
+	// No node threw, so none is counted — and there is no publication to show one on.
+	flow::Graph first;
+	first.add<IntSource>(counter(), 1);
+	flow::Graph second;
+	second.add<IntSource>(counter(), 2);
+	auto evaluation = std::make_shared<flow::Evaluation>(first);
+
+	Runner runner;
+	runner.start(jobFor(second, evaluation, RunStrategy::Serial));
+	waitIdle(runner);
+	const RunReport report = runner.take();
+	REQUIRE(report.outcome == RunOutcome::Failed);
+	REQUIRE(report.failedNodes == 0);
+	REQUIRE_FALSE(report.failure.empty());
+	REQUIRE_FALSE(report.published.has_value());
 }
 
 TEST_CASE("a pending binding reaches a pin added since the last run", "[flowview][runner]")

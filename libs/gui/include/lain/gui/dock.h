@@ -39,6 +39,17 @@ namespace lain::gui
 	void dockWindow(DockNode node, const char* windowName);
 	void dockFinish(DockNode dockspace);
 
+	// A STATUS BAR across the bottom of the main viewport — ImGui's viewport side bar, which is
+	// internal API (imgui_internal.h), fronted here for the same reason the DockBuilder calls above
+	// are. It takes its height out of the viewport's work area, so the dockspace (and every panel in
+	// it) shrinks to leave it room; like the main menu bar's, that lands on the NEXT frame, so it does
+	// not matter whether it is drawn before or after dockSpaceOverViewport.
+	//
+	// One line tall, styled as a menu bar. Submit its contents between the two calls, and call
+	// endStatusBar() only when beginStatusBar() returned true — exactly BeginMainMenuBar's contract.
+	bool beginStatusBar();
+	void endStatusBar();
+
 	// Bring a docked window's tab to the front — programmatic tab activation (e.g. routing an asset to
 	// a Preview pane). Drives the tab bar's own selection (NextSelectedTabId), which is more reliable
 	// than SetWindowFocus for a docked background tab. No-op if the window isn't found; plain focus if

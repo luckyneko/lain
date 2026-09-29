@@ -896,8 +896,8 @@ Three distinct shapes; keep them apart (conflating the first two is a design tra
 
 ## Running while you edit — the host's side of a run
 
-*(M14 — designed; slices 1-5 built: runs are off the frame loop under all three triggers. Slice 6a
-built the freshness rule in flow (the stale closure, the failure record); nothing draws it yet.
+*(M14 — designed; slices 1-6 built: runs are off the frame loop under all three triggers, and
+freshness is drawn as Current / Stale / Failed — Queued and Computing arrive with slice 7.
 [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)* A gui
 host keeps its document editable while a run is in flight. These are the words for how a run is
 started, stopped and shown.

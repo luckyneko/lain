@@ -7,23 +7,30 @@
 #include "validation.h"
 
 #include <lain/flow/boundary.h>
+#include <lain/flow/edit.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/example/blurnode.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/group.h>
 #include <lain/flow/node.h>
+#include <lain/flow/porttyperegistry.h>
 #include <lain/flow/scheduler.h>
 #include <lain/image/image.h>
+#include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 using namespace lain::flow;
+using flowview::collectFailures;
 using flowview::collectIssues;
 using flowview::GraphPath;
 using flowview::Issue;
+using flowview::PathStep;
 
 namespace
 {
@@ -122,4 +129,138 @@ TEST_CASE("an output is only a dead end once its node can actually run", "[valid
 	const std::vector<Issue> issues = collectIssues(graph, fed, GraphPath{});
 	REQUIRE(mentions(issues, "Blur")); // ...and now the blur's own output has nowhere to go
 	REQUIRE(mentions(issues, "output 'image' is unused"));
+}
+
+//=========================================================================
+// Failures (M14 slice 6): what threw, where it threw
+//=========================================================================
+
+namespace flowview::test::validation
+{
+	// An int source, and an int passthrough that always throws.
+	struct IntSource : Node
+	{
+		PortId out;
+		IntSource()
+			: Node("IntSource")
+		{
+			out = addOutput<int>("out");
+		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<IntSource>(*this); }
+		void compute(NodeEvaluation& evaluation) const override { evaluation.output(out).set(1); }
+	};
+
+	struct Boom : Node
+	{
+		PortId in, out;
+		Boom()
+			: Node("Boom")
+		{
+			in = addInput<int>("x");
+			out = addOutput<int>("y");
+		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<Boom>(*this); }
+		void compute(NodeEvaluation&) const override { throw std::runtime_error("boom"); }
+	};
+
+	struct MakeInts : Node
+	{
+		PortId out;
+		MakeInts()
+			: Node("MakeInts")
+		{
+			out = addOutput<std::vector<int>>("items");
+		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<MakeInts>(*this); }
+		void compute(NodeEvaluation& evaluation) const override { evaluation.output(out).set(std::vector<int>{1, 2, 3}); }
+	};
+
+	// x -> Boom -> y inside `group`'s interior; answers the Boom.
+	static NodeId boomInside(Graph& parent, NodeId group, Graph& inner)
+	{
+		const PortId in = inner.boundaryInputNode().addBoundary<int>("x");
+		const PortId out = inner.boundaryOutputNode().addBoundary<int>("y");
+		const NodeId boom = inner.add<Boom>();
+		REQUIRE(inner.connect(PortAddress{inner.boundaryInputNode().id(), in}, PortAddress{boom, inner.node(boom).input(0).id()}) == Connection::Ok);
+		REQUIRE(inner.connect(PortAddress{boom, inner.node(boom).output(0).id()}, PortAddress{inner.boundaryOutputNode().id(), out}) == Connection::Ok);
+		edit::syncGroupPorts(parent, group);
+		return boom;
+	}
+
+	// Run a clone of `document` — which throws — and publish what it left, as the runner does.
+	static PublishedEvaluation runAndPublish(const Graph& document, Evaluation& working, Scheduler& scheduler)
+	{
+		auto clone = std::make_shared<const Graph>(document.clone());
+		REQUIRE_THROWS_AS(scheduler.run(*clone, working), std::runtime_error);
+		return PublishedEvaluation{clone, working};
+	}
+} // namespace flowview::test::validation
+
+using namespace flowview::test::validation;
+
+TEST_CASE("a node that threw is an Error row that locates it", "[validation][failure]")
+{
+	Graph document;
+	const NodeId source = document.add<IntSource>();
+	const NodeId boom = document.add<Boom>();
+	REQUIRE(document.connect(source, 0, boom, 0) == Connection::Ok);
+	Evaluation working{document};
+	SerialScheduler scheduler;
+	const PublishedEvaluation published = runAndPublish(document, working, scheduler);
+
+	const std::vector<Issue> rows = collectFailures(published.evaluation(), GraphPath{});
+	REQUIRE(rows.size() == 1);
+	REQUIRE(rows[0].severity == Issue::Severity::Error);
+	REQUIRE(rows[0].node == boom);
+	REQUIRE(rows[0].message.find("failed: boom") != std::string::npos);
+
+	// Nothing published, nothing to say.
+	REQUIRE(collectFailures(PublishedEvaluation{}.evaluation(), GraphPath{}).empty());
+}
+
+TEST_CASE("a failure inside a group leads into it, and locates it once there", "[validation][failure][group]")
+{
+	// A failure one level down is exactly what the user has not descended to see, so it is listed from
+	// the root — as a row that goes there.
+	Graph document;
+	const NodeId source = document.add<IntSource>();
+	const NodeId group = document.add<InlineGroupNode>();
+	const NodeId boom = boomInside(document, group, static_cast<InlineGroupNode&>(document.node(group)).inner());
+	REQUIRE(document.connect(source, 0, group, 0) == Connection::Ok);
+	Evaluation working{document};
+	SerialScheduler scheduler;
+	const PublishedEvaluation published = runAndPublish(document, working, scheduler);
+
+	const GraphPath inside{PathStep{group, 0}};
+	const std::vector<Issue> fromRoot = collectFailures(published.evaluation(), GraphPath{});
+	REQUIRE(fromRoot.size() == 1);
+	REQUIRE(fromRoot[0].navigateTo == inside);
+
+	const std::vector<Issue> fromInside = collectFailures(published.evaluation(), inside);
+	REQUIRE(fromInside.size() == 1);
+	REQUIRE(fromInside[0].node == boom);
+	REQUIRE(fromInside[0].navigateTo.empty());
+}
+
+TEST_CASE("one node failing in several map elements is one row", "[validation][failure][map]")
+{
+	// Under the pool every element runs — they are independent branches, and only a thrower's
+	// successors are skipped — so all three throw and all three are recorded.
+	registerPortType<int>("Int");
+	registerPortType<std::vector<int>>("ListOfInt");
+	lain::testing::ThreadPool pool;
+	Graph document;
+	const NodeId list = document.add<MakeInts>();
+	const NodeId map = document.add<MapNode>();
+	boomInside(document, map, static_cast<MapNode&>(document.node(map)).inner());
+	REQUIRE(document.connect(list, 0, map, 0) == Connection::Ok);
+	Evaluation working{document};
+	ParallelScheduler scheduler;
+	const PublishedEvaluation published = runAndPublish(document, working, scheduler);
+	REQUIRE(published.evaluation().childCount(map) == 3);
+
+	const std::vector<Issue> rows = collectFailures(published.evaluation(), GraphPath{});
+	REQUIRE(rows.size() == 1);
+	REQUIRE(rows[0].message.find("and in 2 more element(s)") != std::string::npos);
+	REQUIRE(rows[0].navigateTo == GraphPath{PathStep{map, 0}}); // the first, in element order
 }

@@ -7,6 +7,7 @@
 #include "panes/issuespane.h"
 #include "panes/menubar.h"
 #include "panes/previewpane.h"
+#include "panes/statusbar.h"
 #include "parameditors.h"
 #include "previewcache.h"
 #include "valueviews.h"
@@ -47,6 +48,7 @@ namespace flowview
 		PreviewPane m_preview;		 // the Preview panel (clicked asset, full-size)
 		InspectorPane m_inspector;	 // the per-node Inspector (params + ports)
 		InterfacePane m_interface;	 // the Interface panel (graph I/O boundary)
+		StatusBarPane m_statusBar;	 // the run status across the bottom of the window
 
 		// Docking: seed the default dock layout on the next frame (first run / --reset-layout), and the
 		// View ▸ Reset Layout request. Both re-stamp the default (gui::dock*); a saved ~/.flowview/imgui.ini wins.

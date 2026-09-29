@@ -39,6 +39,12 @@ namespace flowview
 		// tone distinct from every kind colour, so selection reads at a glance.
 		lain::image::ColorRGBA8 selection() const { return m_selection; }
 
+		// The outline a node wears for a moment after its value LANDS (Stale or Failed -> Current), fading
+		// out — ADR-0025's "just updated". On the outline because it is the one channel no other node
+		// state uses: title colour is category, a muted title is not-ready, the accent title is
+		// selection, pin colour is type.
+		lain::image::ColorRGBA8 landedOutline() const { return m_landedOutline; }
+
 		// The canvas' read-only watermark. A FOREGROUND tone, unlike the muted* colours above — those
 		// are backgrounds (mutedTitle is near-black, and reads as nothing at all when used as text).
 		// Amber rather than red: this is a restriction, not an error.
@@ -53,6 +59,7 @@ namespace flowview
 		lain::image::ColorRGBA8 m_mutedPin;
 		lain::image::ColorRGBA8 m_mutedLink;
 		lain::image::ColorRGBA8 m_selection;
+		lain::image::ColorRGBA8 m_landedOutline;
 		lain::image::ColorRGBA8 m_readOnlyMark;
 	};
 

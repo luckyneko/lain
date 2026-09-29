@@ -3,6 +3,7 @@
 // ImGui context / window needed — GetVersion is a constant and the conversions are
 // pure. The windowed Context seam is verified by flowview.
 
+#include "lain/gui/dock.h"
 #include "lain/gui/enums.h"
 #include "lain/gui/gui.h"
 #include "lain/gui/nodes.h"
@@ -115,5 +116,38 @@ TEST_CASE("an imnodes node with an empty body is still drawable", "[gui][nodes]"
 	SUCCEED("a pin-less node drew without tripping ImGui's cursor-bounds assert");
 
 	lain::gui::nodes::DestroyContext(nodesCtx);
+	ImGui::DestroyContext(imguiCtx);
+}
+
+TEST_CASE("the status bar takes its height out of the viewport's work area", "[gui][dock]")
+{
+	// What lets a host draw a bar under a full-viewport dockspace: the side bar shrinks the work area
+	// the dockspace fills, one frame later (the menu bar's arrangement, on the other edge). If it did
+	// not, the dockspace would cover it.
+	ImGuiContext* imguiCtx = ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO();
+	io.DisplaySize = ImVec2(640.0f, 480.0f);
+	io.DeltaTime = 1.0f / 60.0f;
+	unsigned char* pixels = nullptr;
+	int width = 0, height = 0;
+	io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+
+	for (int frame = 0; frame < 2; ++frame)
+	{
+		ImGui::NewFrame();
+		if (lain::gui::beginStatusBar())
+		{
+			ImGui::TextUnformatted("Live");
+			lain::gui::endStatusBar();
+		}
+		ImGui::Render();
+	}
+
+	ImGui::NewFrame();
+	const ImGuiViewport* viewport = ImGui::GetMainViewport();
+	REQUIRE(viewport->WorkSize.y < io.DisplaySize.y);
+	REQUIRE(viewport->WorkPos.y == 0.0f); // taken from the BOTTOM: nothing moved the top edge
+	ImGui::Render();
+
 	ImGui::DestroyContext(imguiCtx);
 }

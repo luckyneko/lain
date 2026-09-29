@@ -25,6 +25,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <typeindex>
 #include <utility>
@@ -150,6 +152,8 @@ namespace flowview
 		m_laidOut = false;
 		gui::nodes::ClearNodeSelection();
 		gui::nodes::ClearLinkSelection();
+		m_lastFreshness.clear(); // a level arrived at has not "just updated", whatever it shows
+		m_landedAt.clear();
 	}
 
 	void GraphPane::onGraphReplaced()
@@ -157,6 +161,8 @@ namespace flowview
 		m_laidOut = false; // re-seed positions from the loaded layout next frame
 		gui::nodes::ClearNodeSelection();
 		gui::nodes::ClearLinkSelection();
+		m_lastFreshness.clear();
+		m_landedAt.clear();
 	}
 
 	void GraphPane::draw(AppContext& ctx, const flow::Graph& graph, flow::Graph* editableGraph,
@@ -337,6 +343,13 @@ namespace flowview
 			return false;
 		};
 
+		// FRESHNESS (ADR-0025): a glyph after each title, and a moment's outline when a value lands. The
+		// glyph's slot is reserved even when it draws nothing (Current), so a node does not change width
+		// as runs come and go — the same reason the label column below is measured from text.
+		const double now = gui::GetTime();
+		const float markSize = gui::GetTextLineHeight();
+		std::optional<flow::NodeId> hoveredMark; // its tooltip is drawn after the editor, with the pin tooltip
+
 		for (const flow::NodeId id : graph.topoOrder())
 		{
 			const flow::Node& node = graph.node(id);
@@ -354,6 +367,14 @@ namespace flowview
 					++middleColumn;
 				gui::nodes::SetNodeGridSpacePos(canvasId, math::Vec2f{60.0f + col * 240.0f, 200.0f});
 			}
+
+			// A move from Stale or Failed to Current is a value LANDING — a publication brought it — and
+			// starts the outline's fade. Asked against last frame, so it fires once per landing.
+			const Freshness freshness = ctx.freshness.of(id);
+			const auto last = m_lastFreshness.find(id);
+			if (last != m_lastFreshness.end() && last->second != Freshness::Current && freshness == Freshness::Current)
+				m_landedAt[id] = now;
+			m_lastFreshness[id] = freshness;
 
 			// State (dim) trumps identity (category colour): an inactive node — one the run skipped
 			// because a Required input was empty (ADR-0007) — is fully muted; an active one wears its
@@ -384,6 +405,28 @@ namespace flowview
 				pushNodeColour(ImNodesCol_NodeBackgroundSelected, mutedBg);
 			}
 
+			// Just updated: the outline lit, fading out over kLandedFade. Orthogonal to the title's
+			// colours above, so it shows on a dimmed node too — a node that just landed EMPTY has still
+			// just landed.
+			constexpr double kLandedFade = 0.6;
+			int nodeVarsPushed = 0;
+			if (const auto landed = m_landedAt.find(id); landed != m_landedAt.end())
+			{
+				const double age = now - landed->second;
+				if (age < kLandedFade)
+				{
+					image::ColorRGBA8 outline = m_style.landedOutline();
+					outline.a = static_cast<std::uint8_t>(outline.a * (1.0 - age / kLandedFade));
+					pushNodeColour(ImNodesCol_NodeOutline, outline);
+					gui::nodes::PushStyleVar(ImNodesStyleVar_NodeBorderThickness, 2.5f);
+					++nodeVarsPushed;
+				}
+				else
+				{
+					m_landedAt.erase(landed);
+				}
+			}
+
 			// A STABLE content-column width from label text (title + pin names). Right-aligning outputs
 			// to the node's *rendered* width feeds back — the indent widens the node, which widens next
 			// frame's indent → runaway growth; a text-derived width is fixed per frame.
@@ -391,7 +434,7 @@ namespace flowview
 			// palette gives each added node a unique one, so the old "[id]" disambiguator is noise here.
 			// The id still shows in the Inspector header (and the cli dump) when you need it.
 			const char* titleText = node.name().c_str();
-			float labelColumn = gui::CalcTextSize(titleText).x;
+			float labelColumn = gui::CalcTextSize(titleText).x + gui::GetStyle().ItemSpacing.x + markSize;
 			for (std::size_t i = 0; i < node.inputCount(); ++i)
 				labelColumn = std::max(labelColumn, gui::CalcTextSize(node.input(i).name().c_str()).x);
 			for (std::size_t o = 0; o < node.outputCount(); ++o)
@@ -412,6 +455,12 @@ namespace flowview
 			gui::nodes::BeginNode(canvasId);
 			gui::nodes::BeginNodeTitleBar();
 			gui::TextUnformatted(titleText);
+			gui::SameLine();
+			const math::Vec2f markAt = gui::GetCursorScreenPos();
+			gui::Dummy(math::Vec2f{markSize, markSize});
+			if (freshness != Freshness::Current && gui::IsItemHovered())
+				hoveredMark = id;
+			drawFreshnessMark(markAt.x + markSize * 0.5f, markAt.y + markSize * 0.5f, markSize * 0.32f, freshness);
 			gui::nodes::EndNodeTitleBar();
 
 			// Detach flag on inputs only (so an output drag creates a new link -> fan-out).
@@ -470,6 +519,8 @@ namespace flowview
 
 			for (int k = 0; k < nodeColoursPushed; ++k)
 				gui::nodes::PopColorStyle();
+			if (nodeVarsPushed > 0)
+				gui::nodes::PopStyleVar(nodeVarsPushed);
 		}
 
 		// Links carry their source pin's type colour, muted when the source produced nothing (a dead
@@ -626,6 +677,32 @@ namespace flowview
 				gui::EndTooltip();
 			}
 		}
+		// The freshness glyph's tooltip: what the mark means, and what will change it. Worded by the
+		// trigger, because under Manual a stale node waits for Run and "it will update" would be false.
+		if (hoveredMark && graph.contains(*hoveredMark))
+		{
+			gui::BeginTooltip();
+			switch (ctx.freshness.of(*hoveredMark))
+			{
+				case Freshness::Current:
+					break; // no mark is drawn, so no hover is recorded
+				case Freshness::Stale:
+					gui::TextUnformatted("Stale: its value predates the latest change");
+					if (ctx.options.trigger == RunTrigger::Manual)
+						gui::TextDisabled("Run (%s) updates it", gui::GetIO().ConfigMacOSXBehaviors ? "Cmd+Enter" : "Ctrl+Enter");
+					else
+						gui::TextDisabled("The next run updates it");
+					break;
+				case Freshness::Failed:
+					if (const std::string* failure = evaluation.failure(*hoveredMark))
+						gui::Text("Failed: %s", failure->c_str());
+					else
+						gui::TextUnformatted("Failed: something inside it threw (see Issues)");
+					break;
+			}
+			gui::EndTooltip();
+		}
+
 		if (!editable && canvasActive && gui::IsKeyPressed(ImGuiKey_Delete) && !selectedNodes(ctx.canvas).empty())
 			ctx.noteReadOnlyEdit();
 		if (editable && canvasActive && gui::IsKeyPressed(ImGuiKey_Delete))

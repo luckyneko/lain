@@ -125,6 +125,10 @@ namespace flowview
 		// The element counts belong to the ROOT evaluation, which only this function holds — a pane
 		// receives the ACTIVE one and could not count the levels above it.
 		m_ctx.pathElementCounts = pathElementCounts(appDelegate.published(), m_ctx.activePath);
+		// ... and, for the same reason, which of this level's nodes show a value the document has moved
+		// on from: asked of the DOCUMENT against the published copy, since that copy was computed on a
+		// clone and cannot know what has been edited since.
+		m_ctx.freshness = levelFreshness(appDelegate.graph(), appDelegate.published(), m_ctx.activePath);
 		// The path the panes are about to draw with. Captured now because a pane may NAVIGATE during
 		// this frame (a double-click descends), and the positions collected at the end of the frame
 		// belong to the level that was actually on screen — not to the one we are moving to.
@@ -153,6 +157,9 @@ namespace flowview
 		// The application menu bar (viewport-top; ImGui places it there regardless of call order). Its
 		// Add feeds the same `edited` flag as the canvas, so a menu Add Node re-runs the scene like any edit.
 		m_menuBar.draw(m_ctx, graph, window.app(), edited, m_resetLayout);
+		// ... and the status bar along the bottom — like the menu bar, placed by the viewport rather
+		// than by call order, and taken out of the dockspace's area from the next frame on.
+		m_statusBar.draw(m_ctx);
 
 		// A topology edit asks for a run, and the previews need refreshing (added/removed ports now;
 		// recomputed images when the run publishes). Mark them dirty; refreshIfDirty below upserts in

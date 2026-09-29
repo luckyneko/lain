@@ -907,6 +907,34 @@ format-check clean. `flowview run --example` is unchanged, and the headless save
   (`reflect.h`). But *The type is the schema* claimed `fromValue` "fails on a shape/type mismatch",
   which is true of a struct's shape only.
 
+### Update 2026-09-29 — M14 slice 6b built: freshness on screen (**slice 6 COMPLETE**)
+
+The UI half of slice 6. New `freshness.{h,cpp}`: `Freshness { Current, Stale, Failed }` and
+`levelFreshness(document, published, path)`, which walks to the level on screen asking 6a's
+`StaleClosure` at each step and carrying `reseeds()` down. MainWindow works it out once a frame
+(`AppContext::freshness`). It drives:
+- the canvas: a title glyph with a tooltip worded by the trigger, and a green outline that fades when
+  a value lands;
+- a thumbnail badge in the Inspector and Interface, and words in the Preview header;
+- a **status bar across the bottom of the window** (a new `lain::gui` seam, `beginStatusBar()` /
+  `endStatusBar()` in `dock.h`, over ImGui's internal `BeginViewportSideBar`);
+- an **Issues row per failed node at any level** (`collectFailures`). The run-level row is kept only
+  for a throw no node owned (`RunReport::failedNodes == 0`).
+
+`ctest -j8` **872/872** Debug with video on, **878/878** Release with video on, **845/845** Release
+video-off (+10 each); warning-clean, format-check clean; 20 cases swept 100× in Debug and Release;
+`flowview run --example` identical to the 6a binary; `--frames` smokes exit 0, including a quit
+mid-run. **gui-mode eyeballed by the repo owner 2026-09-29** (a quick pass); the full checklist in
+WORK.md's *Slice 6b landed* has not been walked item by item.
+
+- **The status bar's separators are raw UTF-8 `·`, not `\u00b7`.** MSVC builds here without
+  `/utf-8`, so a universal-character escape becomes a lone code-page-1252 byte, while raw bytes survive.
+- **One sabotage is NOT caught, on purpose:** the walk reusing `resolveEvaluation`'s tolerance gives
+  the same answer, since an ancestor's records are of another lineage and never pair. Recorded, and
+  the comment claiming otherwise was corrected.
+- Two deliberate deviations: the mark colours live in `freshness.cpp` (one mark, two surfaces), and
+  the Preview pane says "stale" in words rather than badging the picture being inspected.
+
 ### Update 2026-09-29 — M14 slice 6a built: the stale closure, and the failure record
 
 Slice 6 (freshness) is two commits, and this is the flow half. **`flow::StaleClosure`** (new

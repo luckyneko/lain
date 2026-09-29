@@ -1,6 +1,7 @@
 #pragma once
 
 #include "canvasids.h" // the imnodes int <-> NodeId/PortAddress mapping (document-lifetime)
+#include "freshness.h" // LevelFreshness — whether each node on screen shows a current value
 #include "graphio.h"   // DocumentOptions — what the document says about itself (its run trigger)
 #include "groupnav.h"  // GraphPath — which graph the panes are pointed at
 #include "pinkey.h"
@@ -152,6 +153,12 @@ namespace flowview
 		// (a pane is handed only the active one). The breadcrumb's element stepper reads it to know
 		// how far it may step.
 		std::vector<std::size_t> pathElementCounts;
+		// Whether each node on the ACTIVE level shows a value that reflects the document — Current,
+		// Stale or Failed (ADR-0025). Worked out by MainWindow at the start of each frame, from the
+		// document and the published evaluation, for the same reason as pathElementCounts: the walk
+		// down to this level starts at the ROOT, which a pane is never handed. An edit made this frame
+		// shows next frame; a node added this frame is simply missing, and reads as Stale.
+		LevelFreshness freshness;
 		// Set when the path changed this frame: the canvas must re-seed positions and clear its
 		// selection. Still REQUIRED with unique canvas ids — imnodes destroys a node's data the first
 		// frame it is not submitted, and frees selection-pool indices without pruning them (ADR-0011).

@@ -16,6 +16,7 @@ add_executable(flowview
 	src/previewcache.cpp
 	src/runner.cpp
 	src/runpolicy.cpp
+	src/freshness.cpp
 	src/valueviews.cpp
 	src/imagecanvas.cpp
 	src/imageview.cpp
@@ -28,6 +29,7 @@ add_executable(flowview
 	src/panes/graphpane.cpp
 	src/panes/imagesave.cpp
 	src/panes/canvasstate.cpp
+	src/panes/statusbar.cpp
 	src/canvasids.cpp
 	src/parameditors.cpp
 	src/scene.cpp

@@ -85,6 +85,11 @@ namespace flowview
 		std::uint64_t publishedBy = 0;							  // the job that published it (start()'s answer)
 		std::optional<RunOutcome> outcome;						  // a run returned
 		std::string failure;									  // Failed only: what the exception said
+		// With the outcome: how many node computes THREW (flow::RunControl::failed()). Each of those is
+		// recorded against its node in the evaluation, which is where a host shows it; a Failed run
+		// with none threw from somewhere no node owns — a refused prepare, a stage observer — and only
+		// that is worth reporting for the run as a whole.
+		std::size_t failedNodes = 0;
 	};
 
 	// The host's pending bindings, and what it takes to keep SHOWING them until a publication includes
@@ -193,6 +198,7 @@ namespace flowview
 		std::uint64_t m_publishedBy = 0;
 		std::optional<RunOutcome> m_outcome;
 		std::string m_failure;
+		std::size_t m_failedNodes = 0;
 
 		// Stateless, so one of each serves every run.
 		lain::flow::SerialScheduler m_serial;

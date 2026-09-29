@@ -225,6 +225,7 @@ namespace flowview
 						// comes from the TEXTURE, since the value need not be an image at all (a
 						// sequence's thumbnail is a decoded poster frame).
 						gui::Image(*tex, previewFit(tex->extent(), thumbnailBox())); // Texture -> ImTextureRef implicitly
+						drawFreshnessBadge(ctx.freshness.of(id));					 // the value may predate the latest change
 						if (gui::IsItemClicked())
 							ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 					}

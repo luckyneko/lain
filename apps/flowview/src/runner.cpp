@@ -70,6 +70,7 @@ namespace flowview
 			m_published.reset();
 			m_outcome.reset();
 			m_failure.clear();
+			m_failedNodes = 0;
 			// A job not yet picked up has nothing to drain, so it never starts at all.
 			if (m_job)
 			{
@@ -103,6 +104,8 @@ namespace flowview
 		m_outcome.reset();
 		report.failure = std::move(m_failure);
 		m_failure.clear();
+		report.failedNodes = m_failedNodes;
+		m_failedNodes = 0;
 		return report;
 	}
 
@@ -136,6 +139,7 @@ namespace flowview
 
 			std::string failure;
 			const RunOutcome outcome = execute(*job, serial, *control, failure);
+			const std::size_t failedNodes = control->failed(); // read before anything else can start a run
 			// The observer captured this job by reference, and the control outlives it (progress is
 			// still read from it until the next start) — so it lets go of it here.
 			control->setStageObserver({});
@@ -154,6 +158,7 @@ namespace flowview
 			{
 				m_outcome = outcome;
 				m_failure = std::move(failure);
+				m_failedNodes = failedNodes;
 			}
 			m_busy = false;
 		}
@@ -184,7 +189,8 @@ namespace flowview
 		}
 		// Nothing may escape this thread — an exception leaving a std::thread's body terminates the
 		// process, which is what a throwing compute() did to gui-mode before this existed. The node
-		// that threw stays stale (flow re-requests it on the way out), so the next run retries it.
+		// that threw stays stale (flow re-requests it on the way out), so the next run retries it — and
+		// flow has recorded what it threw against it, in the evaluation this publishes.
 		catch (const std::exception& e)
 		{
 			failure = e.what();

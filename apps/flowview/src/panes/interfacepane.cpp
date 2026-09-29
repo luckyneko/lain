@@ -292,6 +292,11 @@ namespace flowview
 					// sequence's thumbnail is a decoded poster frame), so there may be no extent on
 					// the value to ask for.
 					gui::Image(*tex, previewFit(tex->extent(), thumbnailBox()));
+					// At the root this thumbnail IS the binding — shown at once, whether or not a run
+					// has consumed it yet — so it is never out of date. Below the root the value is the
+					// one the group last handed its interior, which can be.
+					if (!atRoot)
+						drawFreshnessBadge(ctx.freshness.of(node.id()));
 					if (gui::IsItemClicked())
 						ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 				}
@@ -366,6 +371,7 @@ namespace flowview
 					if (const gui::Texture* tex = previews.find(key))
 					{
 						gui::Image(*tex, previewFit(tex->extent(), thumbnailBox()));
+						drawFreshnessBadge(ctx.freshness.of(node.id()));
 						if (gui::IsItemClicked())
 							ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 					}

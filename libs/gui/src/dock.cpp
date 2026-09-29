@@ -51,6 +51,26 @@ namespace lain::gui
 		ImGui::DockBuilderFinish(dockspace);
 	}
 
+	bool beginStatusBar()
+	{
+		// Mirrors ImGui's own BeginMainMenuBar, which is a side bar on the other edge: a side-bar window
+		// holding a menu bar, so the strip reads as chrome rather than as a panel.
+		const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar;
+		const bool open = ImGui::BeginViewportSideBar("##StatusBar", ImGui::GetMainViewport(), ImGuiDir_Down,
+													  ImGui::GetFrameHeight(), flags);
+		if (open)
+			ImGui::BeginMenuBar();
+		else
+			ImGui::End();
+		return open;
+	}
+
+	void endStatusBar()
+	{
+		ImGui::EndMenuBar();
+		ImGui::End();
+	}
+
 	void activateWindowTab(const char* windowName)
 	{
 		ImGuiWindow* window = ImGui::FindWindowByName(windowName);

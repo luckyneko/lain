@@ -6072,7 +6072,7 @@ regression test: `ctest -j8` **794/794** Debug with video on, warning-clean, for
   the fold. All four reached their header transitively and worked — the class of thing the
   2026-09-05 CI port found six of.
 
-## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-5 and 6a built)
+## Milestone 14 — asynchronous execution: the gui never waits on graph work (grilled 2026-09-28; slices 1-6 built)
 
 gui-mode runs `SerialScheduler::run` synchronously inside the frame loop — `FlowviewApp::reevaluate`
 is reached from `mainwindow.cpp` twice, `inspectorpane.cpp` and `interfacepane.cpp`, on every edit
@@ -6082,9 +6082,9 @@ default with Serial selectable, and gives the UI the controls a 5-minute graph n
 1-second one. Decisions in **[ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md)**;
 vocabulary in CONTEXT.md's *Running while you edit* (plus *clone*, *lineage*, *coordinator*).
 **Slices 1 (clone + lineage), 2 (the published evaluation + payload identity), 3 (cancellation), 4
-(the async vertical) and 5 (triggers + persistence) are built**, and so is slice 6's flow half (6a: the
-stale-closure query + the failure record) — see *Slice 1 landed* through *Slice 6a landed* below; slice
-6b (the freshness UI) and slices 7-8 are not.
+(the async vertical), 5 (triggers + persistence) and 6 (freshness: 6a the stale-closure query + the
+failure record, 6b the UI) are built** — see *Slice 1 landed* through *Slice 6b landed* below; slices
+7-8 are not.
 
 ### The shape
 
@@ -6175,12 +6175,12 @@ Structural, no-behaviour-change slices first; each its own commit with its docs.
      owner, 2026-09-29): neither slice 7's hook first nor naming the node in the exception, but a
      **record in the Evaluation** — `runNode`'s catch stores what the node threw against that node,
      where it threw. See *Slice 6a landed*.
-   - **6b (flowview + a `lain::gui` seam) — not built.** Canvas glyph + the outline's *just updated*
-     fade (the Computing pulse is slice 7's) in `panes/graphpane.cpp` / `canvasstyle.cpp`, thumbnail
-     stale badge, a status bar across the bottom of the viewport (a new `lain::gui` seam over
+   - **6b (flowview + a `lain::gui` seam) — built 2026-09-29.** Canvas glyph + the outline's *just
+     updated* fade (the Computing pulse is slice 7's) in `panes/graphpane.cpp` / `canvasstyle.cpp`,
+     thumbnail stale badge, a status bar across the bottom of the viewport (a new `lain::gui` seam over
      `BeginViewportSideBar`, beside `dock.h`'s DockBuilder front), Failed rows in Issues, and the
-     run-level row kept only for a throw no node owned (`RunControl::failed() == 0`). (The preview
-     cache's skip of an unchanged payload moved to slice 2.)
+     run-level row kept only for a throw no node owned (`RunControl::failed() == 0`). See *Slice 6b
+     landed*. (The preview cache's skip of an unchanged payload moved to slice 2.)
 7. **Per-node publication.** A per-step started / finished hook on the run; a finished step's worker
    copies its outputs into a completion record (race-free — a finished node has only readers), the UI
    folds them into the published evaluation. This is what makes **Queued** and **Computing** real.
@@ -6714,16 +6714,101 @@ timestamp and short ids are normalised.
     the `ctest -R` trap (a sweep that matched nothing and reported success), and just as easy to
     misread. Count with `--list-tests --verbosity quiet`.
 
+### Slice 6b landed (2026-09-29) — the freshness UI
+
+Freshness is on screen. New `apps/flowview/src/freshness.{h,cpp}` holds `Freshness { Current, Stale,
+Failed }` and **`levelFreshness(document, published, path)`**. It walks to the level on screen asking
+flow's `StaleClosure` at each step, carrying `reseeds()` down as the next level's `boundaryStale`, and
+reads the run's failure records. MainWindow works it out once a frame (`AppContext::freshness`), beside
+`pathElementCounts` and for the same reason: the walk starts at the ROOT, which no pane is handed.
+
+What reads it:
+- **The canvas:** a glyph after each title (nothing for Current, a hollow ring for Stale, a red disc
+  with a `!` for Failed), with a tooltip worded by the trigger. The outline lights green and fades over
+  0.6 s when a node goes from Stale or Failed to Current.
+- **Thumbnails:** the Inspector and Interface badge theirs; the Preview pane says it in words.
+- **A status bar across the bottom of the window:** trigger · scheduler · `Computing 12/40 · 3.4 s
+  [Stop]`, or `Last run 3.4 s`, plus how many nodes on this level are stale or failed, with the Run
+  shortcut under Manual.
+- **Issues:** an Error row per failed node at any level.
+
+`ctest -j8` **872/872** Debug with video on, **878/878** Release with video on, **845/845** Release
+video-off (+10 each: five `[freshness]`, three `[validation][failure]`, one `[runner]`, one gui
+`[dock]`); warning-clean, format-check clean. `[freshness],[failure],[runner],[validation]` (20
+matching cases) swept 100× through the Catch2 binary in Debug and Release, and the whole
+`test-flowview` binary run shuffled and in declaration order. `flowview run --example` is identical to
+the 6a binary (built from a stash). `flowview --example --frames 120` exits 0, and so does `--size 2048
+--frames 1/2/5`, which quits with a run in flight. **gui-mode eyeballed by the repo owner 2026-09-29 —
+a quick pass**; the checklist below has not been walked item by item.
+
+- **The status bar is a `lain::gui` seam, `beginStatusBar()` / `endStatusBar()` in `dock.h`**, over
+  ImGui's internal `BeginViewportSideBar` — fronted for the same reason the DockBuilder calls are, so
+  the app never includes `imgui_internal.h`. Like the main menu bar it takes its height out of the
+  viewport's work area one frame later, so the dockspace leaves it room whatever the call order. The
+  headless `[dock]` case asserts exactly that, and fails when the bar is a plain window.
+  - **The separators are raw UTF-8 `·` bytes, not `\u00b7`.** MSVC here builds without `/utf-8`, so a
+    universal-character escape is converted to code page 1252 (a lone `0xB7`, which ImGui would draw
+    as `?`), while raw bytes survive the round trip. The tree's existing non-ASCII literals already
+    rely on that.
+- **The run-level Issues row now means a throw NO NODE owned.** `RunReport::failedNodes` carries the
+  run's `RunControl::failed()`. `pollRun` keeps `runFailure()` only when it is 0; a throw some node
+  owned is shown on that node. `collectFailures` lists every failed node at any level:
+  - on the active level, a row that locates the node;
+  - below it, a row that descends to the node's level;
+  - at the root while you are inside a group, a note (the Issue shapes have no "go up and locate");
+  - the same node failing in several map elements, ONE row naming the first and counting the rest —
+    the map-hole row's rule.
+  A lineage-refused prepare is the case that pins the unowned kind in `test_runner`.
+- **The glyph's slot is reserved even for Current**, so a node does not change width as runs come and
+  go — the same stable-width rule the label column already follows. The fade fires on a transition
+  observed against last frame, which only a publication landing can produce: an edit only ever makes
+  things staler, and a version never returns. The glyph and the fade are therefore both per LEVEL, and
+  navigating or swapping clears their memory, so arriving somewhere is not a landing.
+- **Deviations from the plan, both deliberate.**
+  - The Stale and Failed mark colours live in `freshness.cpp`, not `CanvasStyle`, because the one mark
+    is drawn on two surfaces (a title bar, a thumbnail). `CanvasStyle` gained only `landedOutline()`,
+    which is canvas-only.
+  - The Preview pane gets words in its header, not a badge over the picture: it is where you look
+    closely, and a mark on what you are inspecting is in the way.
+- **Sabotages** (each restored and touched afterwards):
+  - A. The walk not carrying the seed: the group case's upstream section and the map case fail.
+  - B. No roll-up from inside: the nested-throw case fails.
+  - D. Failures not collapsed across elements: the map row case fails.
+  - E. The failure walk not descending: the group and map row cases fail.
+  - F. The runner dropping the node count: the runner throw case fails in both strategies.
+  - G. The status bar as a plain window: the `[dock]` case fails.
+  - **C, the walk reusing `resolveEvaluation`'s tolerance, is NOT caught, and is recorded rather than
+    tested around:** an ancestor's evaluation is of another lineage, so the flow query already makes
+    that level all Stale. The explicit "nothing" is kept because it states what the level has;
+    `freshness.h` now says the tolerant walk would give the same answer only by accident.
+- **Not covered by ctest:** the drawing — the glyph, the fade, the badges, the status bar's text, the
+  Issues pane's use of `collectFailures`, and `pollRun`'s rule — lives in files that need a
+  `gui::Context`. The full pass, beyond the quick one:
+  - **Live:** drag a param mid-chain. Downstream shows the hollow ring, then lights green on landing;
+    upstream never marks.
+  - **Manual:** an edit leaves nodes Stale with no run, the status bar counts them and names the Run
+    shortcut, and the glyph tooltip says Run.
+  - **A group:** after an edit upstream of it, descending shows its interior Stale; after an edit
+    inside it, only what is downstream of the edit.
+  - **A failure:** a throwing node shows the red `!`, its tooltip gives the message, and Issues lists
+    it, locating the node. Inside a group, the group shows `!` and the row descends.
+  - **Thumbnails** badge while stale, and a root Interface input never does.
+  - **The status bar** through a run, Stop (its button and Cmd+.), a supersede, and New / Open.
+
 ### Visual design (settled in outline, tuned by eyeball)
 
 Freshness takes channels nothing else uses — title colour is category, a muted title is *not ready*,
 the accent title is selection, pin colour is type, a muted link is inactive:
 
 - a **title-bar glyph**: nothing for Current, hollow dot Stale, filled dot Queued, animated arc
-  Computing, red `!` Failed — shapes, so it reads without colour — with a tooltip;
-- the **node outline** pulses while Computing and fades on landing (*just updated*);
-- a **stale badge** on Inspector / Interface / Preview thumbnails;
+  Computing, red `!` Failed — shapes, so it reads without colour — with a tooltip; *(slice 6b drew
+  Current / Stale / Failed; Queued and Computing are slice 7's)*
+- the **node outline** pulses while Computing and fades on landing (*just updated*); *(the fade is
+  6b's, the pulse slice 7's)*
+- a **stale badge** on Inspector / Interface / Preview thumbnails; *(6b: a badge on the Inspector and
+  Interface, words in the Preview header)*
 - a **viewport status bar**: `Live · Parallel · Computing 12/40 · 3.4 s [Stop]`, then `Last run 3.4 s`.
+  *(6b)*
 
 ### Not in this milestone
 
@@ -6779,8 +6864,8 @@ row here**. A row is cheap to delete and expensive to leave.
 
 - **M14 — asynchronous execution: the gui never waits on graph work.** Designed 2026-09-28; slices 1
   (clone + lineage), 2 (the published evaluation + payload identity) and 3 (cancellation) built
-  2026-09-28, slices 4 (the async vertical), 5 (triggers + persistence) and 6a (the stale-closure query
-  + the failure record) 2026-09-29; 6b (the freshness UI) and slices 7-8 not.
+  2026-09-28, slices 4 (the async vertical), 5 (triggers + persistence) and 6 (freshness) 2026-09-29;
+  slices 7-8 not.
   *(Milestone 14; [ADR-0025](docs/adr/0025-runs-read-a-clone-gui-never-waits.md).)*
 
 M1–M8 and M10–M13 are built. **M9 and M14 are the milestones from 5 onward that are not.**

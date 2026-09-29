@@ -21,9 +21,11 @@ add_executable(test-flowview
 	test_validation.cpp
 	test_runner.cpp
 	test_runpolicy.cpp
+	test_freshness.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/undo.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runner.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runpolicy.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/freshness.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/groupnav.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/validation.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/canvasids.cpp"
