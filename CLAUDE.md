@@ -1137,6 +1137,32 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
+### Update 2026-09-30 — M9 slice 1, sub-slice 2: camera models (`libs/camera`)
+
+`lain::camera` exists: immutable validated camera models, the closed distortion set, and ONE
+scalar-generic projection implementation. `ctest -j4` **965/965** Debug with video and camera on
+(+14); Release warning-clean. Full notes in WORK.md's *Sub-slice 2 built*.
+
+- **Six distortion models** in a `std::variant`, each with its formula, coefficient order and
+  direction written in `distortion.h`. `BrownConrady5` and `InverseBrownConrady5` hold the same
+  five numbers and are tested not to be interchangeable.
+- **`project<T>` / `unproject<T>` are scalar-generic**, so slice 2's Ceres Jets will run the same
+  code a report measures with. Coefficients convert to `T` before use. A `float` instantiation is
+  tested as the witness that nothing is secretly double.
+- **A model knows where it is defined.** `create` finds where the radial mapping first folds, and
+  projection past it is `OutsideDomain` rather than a plausible pixel on the wrong branch.
+- **`create` is the only door**, and it refuses a distortion that folds before an image corner
+  (`FoldsInsideImage`) as well as the plain malformations. The unchecked `CameraModelParameters` is
+  what an importer or solver holds until then.
+- **Pixel (0, 0) is the centre of the top-left pixel** (OpenCV's and librealsense's convention),
+  now in CONTEXT.md.
+- **Deviation:** serialization moved to sub-slice 7, as its own `libs/camera/serialize` target
+  beside its first reader, on `media` and `flow`'s precedent of keeping `lain::data` out of the core
+  library.
+- **Eight sabotages, all caught.** Worth remembering from them: the first fold-scan sabotage failed
+  to build (it left `foldOf` unused under `-Werror`) and so proved nothing; the rewrite placed the
+  sabotage inside the function.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 1: camera foundations (`Length`, `Sha256`, `RigidTransform`, `AxisConvention`)
 
 The std-only and GLM-only pieces the camera code stands on, with no consumer yet (sub-slices 2 and 3

@@ -2640,7 +2640,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       **Built 2026-09-30** (landing notes below).
    2. Camera models: intrinsics, the closed distortion set, scalar-generic `project<T>` /
       `unproject<T>`, `ProjectionStatus`, containment, `CameraModel::create` with diagnostics,
-      applicability, serialization, golden tests.
+      applicability, golden tests. **Built 2026-09-30.** Serialization moved to sub-slice 7, the
+      first reader (landing notes below).
    3. Board values and detection contracts: `Pattern` + fingerprint, `Instance`, `Specification`,
       `Observation`, `DetectionRequest`, `DetectionReport`, `Rendering`, the render and detect seams.
    4. The OpenCV renderer and detector: scaled detection mapped back to source pixels, then
@@ -2652,6 +2653,49 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    7. The flow adapter and flowview: five node kinds, capability-driven `registerCameraNodes`, a
       Camera catalog category, a cli vertical.
    8. The real-camera fixture. **Blocked on a capture from the repo owner.**
+
+   **Sub-slice 2 built (2026-09-30): camera models.** New `libs/camera` (`lain::camera`), std and
+   lain only, always built.
+   - **The closed distortion set** as a `std::variant`: `NoDistortion`, `BrownConrady5`,
+     `InverseBrownConrady5`, `ModifiedBrownConrady5`, `RationalBrownConrady8`, `KannalaBrandt4`.
+     `distortion.h` writes each formula, its coefficient order and its direction. Full names, since
+     nothing in the tree abbreviates.
+   - **One projection implementation, scalar-generic.** `project<T>` and `unproject<T>` take the
+     point as `T` and convert every double coefficient to `T` first, so a Ceres Jet (slice 2) runs
+     the same code and a float build raises no MSVC C4244. A `float` instantiation is tested as the
+     witness that nothing is secretly double. Iterative inverses use Newton's method with a
+     finite-difference Jacobian: the residual is exact, so the answer is exact to the tolerance.
+   - **A model knows its own domain.** Every model is defined only where its radial mapping is
+     increasing, since past the first fold two rays share a pixel. `create` finds the fold once, by
+     a scan fine to r = 4 and coarse to the cap, refined by bisection (the rational model's
+     condition is no neat polynomial). Projection past it is `OutsideDomain`, and an unprojection
+     whose pixel no in-domain ray reaches is refused before iterating, so it is not misreported as
+     `NotConverged`.
+   - **`CameraModel::create` is the only door**, and it also refuses a distortion that folds before
+     an image corner (`FoldsInsideImage`): a model with no ray for part of its own image survives no
+     downstream use. That is ADR-0016's "model-specific invariant violations", made concrete. An
+     unchecked `CameraModelParameters` is what an importer or solver holds until then.
+   - **Pixel convention:** (0, 0) is the centre of the top-left pixel, as OpenCV and librealsense
+     have it, so the image spans [-0.5, w - 0.5). Recorded in CONTEXT.md's *Image containment*.
+   - **`applicability`** answers Incompatible for a different geometry and **Unknown**, never
+     Compatible, for a matching one: nothing records lens setting or camera identity yet.
+   - **Deviation: no serialization yet.** `lain::media` and `lain::flow` keep `lain::data` out of
+     their core library and serialize in a separate target, and nothing reads a camera model from
+     disk until sub-slice 7's cli writes a report. `libs/camera/serialize` lands there, beside its
+     reader. `CameraModelParameters` → `create` is already the load path it will use.
+   - **ModifiedBrownConrady5 is written from librealsense's `rs2_project_point_to_pixel`**
+     (tangential terms on the radially distorted point, `r2` from the ideal one). Nothing estimates
+     it, so no backend cross-checks it; the fixture (sub-slice 8) is where a RealSense-exported
+     model can.
+   - `ctest -j4` **965/965** Debug with video and camera on (+14); Release warning-clean and
+     passing. Golden values come from an independent Python implementation of the formulas as
+     written, with every intrinsic and coefficient distinct.
+   - **Eight sabotages, all caught** (the fold one needed a second attempt, since the first failed
+     to build and proved nothing): swapping p1/p2 fails the golden case; unprojecting the inverse
+     model by iteration fails four; the modified model with ideal coordinates in its tangential
+     terms fails one; swapping the rational k4/k5 fails one; Kannala-Brandt on r instead of the
+     angle fails four; disabling the fold scan fails three; dropping the corner check fails one;
+     using fy for u fails four.
 
    **Sub-slice 1 built (2026-09-30): the foundations.** No consumer yet; sub-slices 2 and 3 are
    theirs.

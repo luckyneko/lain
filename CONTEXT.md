@@ -475,6 +475,8 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
 - **Image containment** — whether a successfully projected pixel lies within the camera model's image
   rectangle. It is separate from projection validity: an off-image coordinate may be mathematically
   valid and useful to optimization even though it is not visible in the current image geometry.
+  Pixel (0, 0) is the centre of the top-left pixel, as OpenCV and librealsense have it, so a W x H
+  image spans [-0.5, W - 0.5) x [-0.5, H - 0.5).
   _Avoid_: out-of-bounds projection failure, visible when only bounds were tested.
 - **Camera-model policy** — the requested lens family and the rule for choosing distortion-model
   complexity. Lens family is explicit by default; automatic selection is opt-in and compares a small
