@@ -25,11 +25,13 @@ namespace flowview
 		std::string name;
 		std::vector<std::string> keys;
 	};
-	const std::vector<NodeCategory>& nodeCatalog();
+	// Built per call: the Camera category follows the camera backends registered, so it cannot be a
+	// static fixed at first use.
+	std::vector<NodeCategory> nodeCatalog();
 
 	// Register flow-example's node types into `factory` (gradient / tint / blur /
-	// loadimage), with construction values captured in each creator's closure. This is
-	// the palette the editor draws from. Call once the device is live.
+	// loadimage), with construction values captured in each creator's closure, and the camera kinds
+	// the registered camera backends can run. This is the palette the editor draws from.
 	void registerExampleNodes(lain::core::Factory<lain::flow::Node>& factory, std::uint32_t size);
 
 	// Build flowview's smoke scene into `graph` on the M4 boundary model: a host-bound

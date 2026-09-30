@@ -7,8 +7,11 @@
 // menu item that does nothing at all, which is M5's bug six (a gesture that compiled, linked, and
 // was unreachable) arriving from the other direction.
 
+#include "graphio.h" // sceneCodecs — what a document can carry a param as
 #include "scene.h"
 
+#include <lain/camera/backends.h>
+#include <lain/camera/flow/register.h>
 #include <lain/core/factory.h>
 #include <lain/flow/node.h>
 
@@ -75,4 +78,47 @@ TEST_CASE("the frame-sequence kinds are on the menu", "[catalog]")
 	// ... and so does a linked group, which needs a template chosen first (the menu bar adds it
 	// through a file dialog).
 	CHECK_FALSE(offers("linkedGroup"));
+}
+
+TEST_CASE("the camera kinds are on the menu exactly when a backend can run them", "[catalog]")
+{
+	// ADR-0016: a camera node kind is offered only where it can function. Asked of the production
+	// path, backends and all, and held to the build's configuration BOTH ways: an OpenCV build that
+	// offers none is as wrong as a build without one that offers any.
+	camera::registerCameraBackends();
+	core::Factory<flow::Node> factory;
+	flowview::registerExampleNodes(factory, 8);
+
+	const bool expected = LAIN_EXPECT_CAMERA_NODES != 0;
+	for (const char* key : {camera::kBoardSpecificationKey, camera::kRenderBoardKey, camera::kDetectBoardKey,
+							camera::kCalibrateCameraKey, camera::kCameraModelKey})
+	{
+		INFO("camera kind: " << key);
+		CHECK(offers(key) == expected);
+		CHECK((factory.create(key) != nullptr) == expected);
+	}
+}
+
+TEST_CASE("every parameter of every kind can be saved", "[catalog]")
+{
+	// flow::serialize writes a param through the codec registered for its type and SKIPS one with
+	// none, silently: the document then loads with the default in its place. So a kind whose param
+	// type was never given a codec loses that setting on every save, and nothing says so. Asked of
+	// the production palette with the camera backends registered, so a camera kind is covered in a
+	// build that has them.
+	camera::registerCameraBackends();
+	core::Factory<flow::Node> factory;
+	flowview::registerExampleNodes(factory, 8);
+	const flow::serialize::ValueCodecs codecs = flowview::sceneCodecs();
+
+	for (const std::string& key : factory.keys())
+	{
+		const std::unique_ptr<flow::Node> node = factory.create(key);
+		REQUIRE(node != nullptr);
+		for (std::size_t i = 0; i < node->paramCount(); ++i)
+		{
+			INFO(key << "." << node->param(i).name() << " : " << node->param(i).typeName());
+			CHECK(codecs.find(node->param(i).type()) != nullptr);
+		}
+	}
 }

@@ -125,6 +125,9 @@ namespace lain::camera::board
 		Provenance provenance;
 		core::Time elapsed;
 		std::optional<DetectionEvidence> evidence; // Detailed only
+
+		// One line for a person: the status, the corners found, and the first reason when it failed.
+		std::string toString() const;
 	};
 
 	// --- the backend seam -----------------------------------------------------------

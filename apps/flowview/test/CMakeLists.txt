@@ -24,6 +24,7 @@ add_executable(test-flowview
 	test_freshness.cpp
 	test_runmode.cpp
 	test_examples.cpp
+	test_cameravertical.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../examples/src/examples.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/undo.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runner.cpp"
@@ -48,6 +49,10 @@ target_compile_features(test-flowview PRIVATE cxx_std_17)
 target_include_directories(test-flowview PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src" "${CMAKE_CURRENT_SOURCE_DIR}/../examples/src")
 # The committed examples, which test_examples loads, runs and compares with what the builder writes.
 target_compile_definitions(test-flowview PRIVATE LAIN_FLOWVIEW_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../examples")
+# Whether this build should offer the camera kinds: the catalog test holds the capability rule to the
+# configuration, both ways, so a build that registers none when it should (or any when it cannot)
+# fails rather than quietly passing.
+target_compile_definitions(test-flowview PRIVATE LAIN_EXPECT_CAMERA_NODES=$<IF:$<BOOL:${LAIN_CAMERA_OPENCV}>,1,0>)
 # lain::flow::serialize: groupnav's layout tree is an EditorTree (the serialize layer's type).
 # lain::image + lain::io::data::codecs: graphio names image::Image / ColorRGBf and reads/writes json.
 # lain::gui + Vulkan::Loader: the value views draw with ImGui, so they link it (the same recipe
@@ -57,6 +62,7 @@ target_link_libraries(test-flowview PRIVATE
 	lain::data lain::flow lain::flow::serialize lain::flow-example lain::image
 	lain::io lain::io::sequence lain::media::serialize lain::io::image lain::io::data::codecs lain::io::image::codecs
 	lain::io::video::codecs
+	lain::camera::flow lain::camera::backends
 	lain::log lain::string lain::testing
 	lain::gui Vulkan::Loader
 	lain::warnings Catch2::Catch2WithMain
@@ -66,6 +72,9 @@ target_link_libraries(test-flowview PRIVATE
 # missing FFmpeg DLL fails the BUILD rather than the test — stage them beside it.
 if(LAIN_IO_VIDEO_FFMPEG)
 	lain_ffmpeg_stage_runtime(test-flowview)
+endif()
+if(LAIN_CAMERA_OPENCV)
+	lain_opencv_stage_runtime(test-flowview)
 endif()
 
 catch_discover_tests(test-flowview TEST_PREFIX "(flowview) " ${LAIN_TEST_DL_PATHS})

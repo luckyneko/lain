@@ -1,6 +1,9 @@
 #include "parameditors.h"
 
-#include <lain/flow/example/comparenode.h> // Comparison — CompareNode's operator param
+#include <lain/camera/board/pattern.h>		 // Dictionary, CharucoLayout
+#include <lain/camera/calibration/request.h> // ImportedModelPolicy
+#include <lain/camera/distortion.h>			 // DistortionModel
+#include <lain/flow/example/comparenode.h>	 // Comparison — CompareNode's operator param
 #include <lain/flow/portvalue.h>
 #include <lain/gui/dialogs.h>
 #include <lain/gui/enums.h>
@@ -309,5 +312,11 @@ namespace flowview
 		// slip: flowview OWNS the example scene, and sceneCodecs already names the same type on the
 		// serialization side — the two have to agree about which params a document can carry.
 		editors.add(typeid(flow::example::Comparison), &editEnum<flow::example::Comparison>);
+		// The camera nodes' enum params (M9), agreeing with sceneCodecs for the same reason.
+		editors.add(typeid(camera::board::Dictionary), &editEnum<camera::board::Dictionary>);
+		editors.add(typeid(camera::board::CharucoLayout), &editEnum<camera::board::CharucoLayout>);
+		editors.add(typeid(camera::DistortionModel), &editEnum<camera::DistortionModel>);
+		editors.add(typeid(camera::calibration::ImportedModelPolicy),
+					&editEnum<camera::calibration::ImportedModelPolicy>);
 	}
 } // namespace flowview

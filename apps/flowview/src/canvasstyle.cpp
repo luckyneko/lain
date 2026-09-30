@@ -1,6 +1,11 @@
 #include "canvasstyle.h"
 
-#include <lain/image/colormath.h> // convert (HSV -> RGB)
+#include <lain/camera/board/detection.h>
+#include <lain/camera/board/specification.h>
+#include <lain/camera/calibration/report.h>
+#include <lain/camera/cameramodel.h>
+#include <lain/camera/flow/register.h> // the camera kinds' keys
+#include <lain/image/colormath.h>	   // convert (HSV -> RGB)
 #include <lain/image/image.h>
 #include <lain/media/frameposition.h>
 #include <lain/media/frameref.h>
@@ -70,13 +75,21 @@ namespace flowview
 		style.addPortColor(typeid(media::FramePosition), image::ColorRGBA8(225, 145, 120, 255)); // pale coral
 		style.addPortColor(typeid(media::FrameRef), image::ColorRGBA8(180, 120, 105, 255));		 // muted coral
 
+		// The camera payloads (M9): the board and the camera in one family, the reports in another,
+		// so what a node consumes reads apart from what it merely reports.
+		style.addPortColor(typeid(camera::board::Specification), image::ColorRGBA8(200, 200, 110, 255));   // khaki
+		style.addPortColor(typeid(camera::CameraModel), image::ColorRGBA8(220, 190, 90, 255));			   // gold
+		style.addPortColor(typeid(camera::board::DetectionReport), image::ColorRGBA8(150, 160, 175, 255)); // slate
+		style.addPortColor(typeid(camera::calibration::Report), image::ColorRGBA8(170, 180, 200, 255));	   // pale slate
+
 		// Node title colours by factory kind — categories are emergent from shared colour (no Category
 		// enum). These keys must match scene.cpp's registrations.
-		const image::ColorRGBA8 source(46, 86, 120, 255);	 // sources: emit a value
-		const image::ColorRGBA8 filter(38, 104, 104, 255);	 // filters: transform a value
-		const image::ColorRGBA8 control(86, 58, 124, 255);	 // control flow: gate / merge / select
-		const image::ColorRGBA8 boundary(74, 74, 86, 255);	 // the graph's I/O
-		const image::ColorRGBA8 container(62, 68, 112, 255); // groups: they CONTAIN a graph
+		const image::ColorRGBA8 source(46, 86, 120, 255);	  // sources: emit a value
+		const image::ColorRGBA8 filter(38, 104, 104, 255);	  // filters: transform a value
+		const image::ColorRGBA8 control(86, 58, 124, 255);	  // control flow: gate / merge / select
+		const image::ColorRGBA8 boundary(74, 74, 86, 255);	  // the graph's I/O
+		const image::ColorRGBA8 container(62, 68, 112, 255);  // groups: they CONTAIN a graph
+		const image::ColorRGBA8 cameraWork(112, 92, 44, 255); // camera work: boards and calibration
 		style.addNodeColor("gradient", source);
 		style.addNodeColor("loadimage", source);
 		style.addNodeColor("constant", source);
@@ -103,6 +116,13 @@ namespace flowview
 		style.addNodeColor("map", container);
 		style.addNodeColor("loop", container);
 		style.addNodeColor("linkedGroup", container);
+
+		// The camera kinds, one category as they are in the catalog. Coloured whether or not this
+		// build registers them: a colour for a kind nobody adds costs nothing.
+		for (const char* key : {lain::camera::kBoardSpecificationKey, lain::camera::kRenderBoardKey,
+								lain::camera::kDetectBoardKey, lain::camera::kCalibrateCameraKey,
+								lain::camera::kCameraModelKey})
+			style.addNodeColor(key, cameraWork);
 	}
 
 } // namespace flowview

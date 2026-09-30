@@ -6,6 +6,7 @@
 
 #include <lain/app/application.h>
 #include <lain/app/window.h>
+#include <lain/camera/backends.h> // registerCameraBackends — a no-op unless a camera plugin is built
 #include <lain/flow/graph.h>
 #include <lain/io/image/codecs.h>
 #include <lain/io/image/writer.h> // Compression — the --compression option's names come from the enum
@@ -128,6 +129,7 @@ namespace flowview
 		lain::io::image::registerImageCodecs();
 		lain::io::video::registerVideoCodecs();		   // no-op unless a video codec plugin is built
 		lain::io::sequence::registerSequenceOpeners(); // which media OpenSequence can dispatch to
+		lain::camera::registerCameraBackends();		   // before the palette: camera kinds follow them
 		registerExampleNodes(m_nodeFactory, m_size);
 		registerSceneSerialization(); // image::Image port type (the boundary ± menu) + json codec
 
@@ -174,6 +176,7 @@ namespace flowview
 		lain::io::image::registerImageCodecs();
 		lain::io::video::registerVideoCodecs();
 		lain::io::sequence::registerSequenceOpeners();
+		lain::camera::registerCameraBackends();
 		registerExampleNodes(m_nodeFactory, m_size);
 		registerSceneSerialization();
 		BoundaryBinders binders;

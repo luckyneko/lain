@@ -1137,6 +1137,39 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
+### Update 2026-09-30 — M9 slice 1, sub-slice 7: camera nodes, flowview wiring, a cli vertical
+
+The camera work becomes reachable. New **`libs/camera/flow`** (`lain::camera::flow`, namespace
+`lain::camera`) holds five node kinds: `boardSpecification`, `renderBoard`, `detectBoard`,
+`calibrateCamera` and `cameraModel`. flowview registers the backends, then the kinds a backend can run,
+and offers them under a **Camera** menu category. `ctest -j8` **1021/1021** Debug with video and
+camera on (+12), **1028/1028** Release on, **971/971** Release off; warning-clean, format-check clean.
+**gui-mode NOT eyeballed.** Full notes in WORK.md's *Sub-slice 7 built*. Sub-slice 8 (the real-camera
+fixture) is the only one left, and it waits on a capture.
+
+- **Capability-driven registration is ONE table** (key, needed capability, registrar), read by both
+  `availableCameraNodeKeys()` and `registerCameraNodes()`, so the menu and the factory cannot
+  disagree. It is tested from empty registries one backend at a time, and held to the configuration
+  both ways in flowview: an OpenCV build that offers no camera kind fails, as does a build without
+  OpenCV that offers any. **Port types register always.**
+- **The flowview catalog is built per call** rather than held in a static, because its Camera
+  category depends on backends that register after first use would have fixed it.
+- **The cli vertical runs through `runGraph`:** 24 frames of the production render seen by a known
+  pinhole (drawn in plain C++, supersampled and bilinear, so flowview's tests need no OpenCV) calibrate
+  to **Ready**, with the model within 0.14% and 0.3 px. It was also driven through the real binary. A
+  build without a backend refuses the same document and names each missing kind.
+- **Found: `flow::serialize::toValue` silently drops a param whose type has no codec.** Removing the
+  `distortionModel` codec made the vertical calibrate the default model with nothing logged. A census
+  test now requires a codec for every param of every palette kind. The serializer fix is left for
+  its own change.
+- **Found on CI (fixed in `f8ddc2b`, ahead of this):** test-camera did not link on MSVC, since
+  Catch2's `std::string_view` StringMaker is compiled out there. Compare a view as `std::string`.
+- **A float parameter means the decimal typed:** `markerToSquare` and `heldOutFraction` are rounded to
+  millionths, `squareLengthMm` to whole micrometres. A seed keeps its bits.
+- **Serialization of camera values is re-deferred** to sub-slice 8's imported model, the first thing
+  that reads one from disk; `run` writes each value's one-line `toString()`.
+- Nine sabotages, all caught, listed in WORK.md.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 6: the OpenCV estimator
 
 `OpenCVEstimator` joins the plugin (registered as "opencv"): `calibrateCamera` for no distortion,
@@ -1308,8 +1341,8 @@ commits. `ctest -j4` **931/931** Debug with video and camera on.
 
 ### Update 2026-09-30 — M9 slice 1 planned; sub-slice 0: `run` / `list` refuse a lossy load
 
-M9 slice 1 (camera geometry + ChArUco calibration) is planned as **eight sub-slices, one commit
-each**, in WORK.md's M9 build order. Four decisions came from the repo owner while planning, all
+M9 slice 1 (camera geometry + ChArUco calibration) is planned as **nine sub-slices (0 to 8), one
+commit each**, in WORK.md's M9 build order. Four decisions came from the repo owner while planning, all
 recorded by amending [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md) in place:
 - **The real-camera fixture is last and generic.** The D455 is its first capture, not a type in the
   code, and its provenance is a generic record. Everything before it lands on synthetic evidence.

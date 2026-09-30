@@ -1,5 +1,7 @@
 #include "lain/camera/board/specification.h"
 
+#include <lain/string/format.h>
+
 #include <string>
 
 namespace lain::camera::board
@@ -40,5 +42,19 @@ namespace lain::camera::board
 		const std::uint32_t across = m_pattern.parameters().squaresX - 1;
 		const double square = m_instance.squareLength.value.metres();
 		return math::Vec3d{double(id % across + 1) * square, double(id / across + 1) * square, 0.0};
+	}
+
+	std::string Specification::toString() const
+	{
+		const PatternParameters& p = m_pattern.parameters();
+		std::string text = lain::string::format("ChArUco {}x{} {}", p.squaresX, p.squaresY, name(p.dictionary));
+		if (p.firstMarkerId != 0)
+			text += lain::string::format(" from marker {}", p.firstMarkerId);
+		if (p.layout == CharucoLayout::Legacy)
+			text += " (legacy layout)";
+		// Eight hex digits tell two patterns apart at a glance; the whole digest is in the pattern.
+		return text + lain::string::format(", '{}', {:g} mm squares, pattern {}", m_instance.identity,
+										   m_instance.squareLength.value.millimetres(),
+										   m_pattern.fingerprint().toString().substr(0, 8));
 	}
 } // namespace lain::camera::board

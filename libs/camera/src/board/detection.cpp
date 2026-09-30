@@ -1,5 +1,8 @@
 #include "lain/camera/board/detection.h"
 
+#include <lain/meta/enums.h>
+#include <lain/string/format.h>
+
 #include <algorithm>
 #include <cmath>
 
@@ -31,6 +34,15 @@ namespace lain::camera::board
 				}
 			},
 			policy);
+	}
+
+	std::string DetectionReport::toString() const
+	{
+		std::string text = lain::string::format("{}: {} of {} corners, {} markers", meta::enums::name(status),
+												stats.cornersFound, stats.cornersExpected, stats.markersFound);
+		if (status == DetectionStatus::Failed && !rejections.empty())
+			text += lain::string::format(" ({})", rejections.front().detail);
+		return text;
 	}
 
 	core::Factory<Detector>& detectorRegistry()

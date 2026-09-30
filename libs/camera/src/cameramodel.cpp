@@ -2,6 +2,8 @@
 
 #include "lain/camera/projection.h"
 
+#include <lain/string/format.h>
+
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -204,6 +206,19 @@ namespace lain::camera
 
 		result.model = std::move(model);
 		return result;
+	}
+
+	std::string CameraModel::toString() const
+	{
+		const ImageGeometry& image = m_parameters.image;
+		const Intrinsics& k = m_parameters.intrinsics;
+		std::string text = lain::string::format("{}, {}x{}, fx {:.6g} fy {:.6g}, cx {:.6g} cy {:.6g}",
+												displayName(m_parameters.distortion), image.width, image.height, k.fx,
+												k.fy, k.cx, k.cy);
+		const std::vector<std::pair<const char*, double>> named = coefficients(m_parameters.distortion);
+		for (std::size_t i = 0; i < named.size(); ++i)
+			text += lain::string::format("{}{} {:.6g}", i == 0 ? ", " : " ", named[i].first, named[i].second);
+		return text;
 	}
 
 	// --- free functions ---------------------------------------------------------

@@ -92,6 +92,9 @@ namespace lain::camera
 		const Distortion& distortion() const { return m_parameters.distortion; }
 		const DistortionDomain& domain() const { return m_domain; }
 
+		// One line for a person: the distortion model, the geometry, then every parameter by name.
+		std::string toString() const;
+
 	private:
 		CameraModel(const CameraModelParameters& parameters, const DistortionDomain& domain)
 			: m_parameters(parameters)

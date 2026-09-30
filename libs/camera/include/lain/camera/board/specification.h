@@ -68,6 +68,10 @@ namespace lain::camera::board
 		// Where corner `id` is on the board, or nullopt for an id the pattern does not have.
 		std::optional<math::Vec3d> cornerPosition(std::uint32_t id) const;
 
+		// One line for a person: the layout, the dictionary, the board's identity and square length,
+		// and the start of the pattern fingerprint.
+		std::string toString() const;
+
 	private:
 		Specification(const Pattern& pattern, const Instance& instance)
 			: m_pattern(pattern)

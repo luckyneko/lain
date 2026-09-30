@@ -1,5 +1,6 @@
 #include "scene.h"
 
+#include <lain/camera/flow/register.h> // the camera kinds this build can run
 #include <lain/flow/boundary.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/example/blurnode.h>
@@ -78,13 +79,13 @@ namespace flowview
 	static constexpr const char* kLoopKey = "loop";
 	static constexpr const char* kLinkedGroupKey = "linkedGroup";
 
-	const std::vector<NodeCategory>& nodeCatalog()
+	std::vector<NodeCategory> nodeCatalog()
 	{
 		// The palette-addable kinds, grouped by role (mirrors the canvasstyle title colours). Keys must
 		// match the registrations below. Boundary nodes (GroupInput/GroupOutput) are intentionally NOT
 		// here: they're a one-each-per-graph fixture that comes with a New graph and is grown from the
 		// Interface panel, not added like an ordinary node.
-		static const std::vector<NodeCategory> catalog = {
+		std::vector<NodeCategory> catalog = {
 			{"Sources", {kGradientKey, kLoadImageKey, kListDirKey, kConstantKey}},
 			{"Filters", {kTintKey, kBlurKey, kCombineKey, kConvertKey, kImageDifferenceKey}},
 			// Footage. openSequence brings a folder of stills or a video file in as one sequence
@@ -108,6 +109,13 @@ namespace flowview
 			// file dialog rather than from this list.
 			{"Groups", {kGroupKey, kMapKey, kLoopKey}},
 		};
+		// Camera work (M9), and only the kinds a registered backend can run: the SAME list
+		// registerCameraNodes registers, asked at the same time, so the menu never offers a kind the
+		// factory cannot build. Absent altogether in a build with no camera backend, which is why the
+		// catalog is built per call rather than held in a static.
+		std::vector<std::string> camera = lain::camera::availableCameraNodeKeys();
+		if (!camera.empty())
+			catalog.push_back({"Camera", std::move(camera)});
 		return catalog;
 	}
 
@@ -198,6 +206,11 @@ namespace flowview
 		// and persisted it, and it was reachable from no menu and no document — which is the
 		// compiled-linked-unreachable shape this repo has caught four times.
 		factory.registerType<flow::LoopNode>(kLoopKey);
+
+		// The camera kinds a registered backend can run (ADR-0016): none at all without one, so call
+		// this after lain::camera::registerCameraBackends(). A document naming a camera kind then fails
+		// to load as saved in a build that cannot run it, which `run` and `list` refuse.
+		lain::camera::registerCameraNodes(factory);
 	}
 
 	void buildExampleScene(flow::Graph& graph, const core::Factory<flow::Node>& factory)

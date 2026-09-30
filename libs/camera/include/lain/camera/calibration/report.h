@@ -120,5 +120,9 @@ namespace lain::camera::calibration
 		Diagnostics diagnostics;
 		Reproducibility reproducibility;
 		core::Time elapsed;
+
+		// One line for a person: the verdict and the model, then the evidence behind the verdict; or
+		// the first reason there is no model.
+		std::string toString() const;
 	};
 } // namespace lain::camera::calibration

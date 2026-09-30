@@ -45,6 +45,7 @@ target_compile_features(flowview PRIVATE cxx_std_17)
 target_link_libraries(flowview
 	PRIVATE lain::app lain::core lain::gui lain::flow-example lain::io lain::io::sequence lain::media::serialize lain::io::image lain::io::image::codecs lain::io::video::codecs
 			lain::flow::serialize lain::io::data::codecs # graph <-> data::Value <-> json
+			lain::camera::flow lain::camera::backends # camera node kinds, and the backends that run them
 			lain::string lain::log archimedes Vulkan::Loader lain::warnings
 )
 
@@ -59,6 +60,10 @@ acm_stage_vulkan_runtime(flowview)
 # already stage them; flowview links lain::io::video::codecs too and was missing it.
 if(LAIN_IO_VIDEO_FFMPEG)
 	lain_ffmpeg_stage_runtime(flowview)
+endif()
+# And the OpenCV DLLs, for the camera backend.
+if(LAIN_CAMERA_OPENCV)
+	lain_opencv_stage_runtime(flowview)
 endif()
 
 # And the loader itself, for the same reason: on Windows it is vulkan-1.dll, which the executable
@@ -88,7 +93,7 @@ target_include_directories(flowview-examples PRIVATE src examples/src)
 target_link_libraries(flowview-examples
 	PRIVATE lain::core lain::data lain::flow lain::flow-example lain::flow::serialize lain::image lain::io
 			lain::io::sequence lain::media::serialize lain::io::image lain::io::image::codecs lain::io::video::codecs
-			lain::io::data::codecs lain::string lain::log lain::warnings
+			lain::io::data::codecs lain::camera::flow lain::string lain::log lain::warnings
 )
 if(LAIN_IO_VIDEO_FFMPEG)
 	lain_ffmpeg_stage_runtime(flowview-examples)

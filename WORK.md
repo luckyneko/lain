@@ -2403,8 +2403,8 @@ adds a pin to the canvas.
 **Designed, not started** — the only milestone from 5 onward that is. M10 was numbered after it and
 built before it, discharging its frame-sequence prerequisite. How OpenCV is obtained was settled
 2026-09-29 ([ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md)), and slice 0 below
-(OpenCV lands, nothing depending on it) is built. **Slice 1 is in progress** as eight sub-slices
-(below); sub-slice 0 is built.
+(OpenCV lands, nothing depending on it) is built. **Slice 1 is in progress** as nine sub-slices
+(below): 0 to 7 are built, and 8 (the real-camera fixture) waits on a capture.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -2616,7 +2616,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    RGB stream, but generic: nothing in the code names a device), and an external hashed extended
    dataset. Do not expose targetless or fallback stubs.
 
-   **Planned 2026-09-30 as eight sub-slices, one commit each.** Four decisions came from the repo
+   **Planned 2026-09-30 as nine sub-slices (0 to 8), one commit each.** Four decisions came from the repo
    owner while planning, all recorded in ADR-0016 (amended in place):
    - **The real-camera fixture is last and generic.** Everything lands on synthetic evidence first.
      The D455 is the first capture, not a type, and "the RealSense factory model" is any imported
@@ -2656,8 +2656,76 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    6. The OpenCV estimator (BC5, Rational8, KB4; the other variants are a failed report). **Built
       2026-09-30**, with no distortion estimatable too.
    7. The flow adapter and flowview: five node kinds, capability-driven `registerCameraNodes`, a
-      Camera catalog category, a cli vertical.
+      Camera catalog category, a cli vertical. **Built 2026-09-30.** Serialization is re-deferred to
+      sub-slice 8, its first reader (landing notes below).
    8. The real-camera fixture. **Blocked on a capture from the repo owner.**
+
+   **Sub-slice 7 built (2026-09-30): the flow adapter and flowview.**
+   - **`libs/camera/flow`** (`lain::camera::flow`), a separate target over `lain::camera` and
+     `lain::flow`, so camera stays free of the graph engine and flow core names no camera type. Its
+     NAMESPACE is `lain::camera`, as `lain::media::serialize`'s is `lain::media`: a
+     `lain::camera::flow` namespace would make every `flow::` written inside `lain::camera` resolve
+     to it rather than to `lain::flow`.
+   - **Five kinds.** `boardSpecification` (parameters, not inputs, because a board is configuration
+     nothing upstream computes; parameters that are not a board clear the output and log each
+     reason, so everything downstream is suppressed), `renderBoard` (image + description),
+     `detectBoard` (image, board, an **optional** `frame` that pairs it with frameAt; always a
+     report), `calibrateCamera` (footage, board, an optional imported model and its policy, and the
+     request's knobs; always a report) and `cameraModel` (the report's model, cleared when there is
+     none, passed on whatever the verdict). One calibrate node for the whole method rather than a
+     detect -> select -> estimate chain: a graph that rewired one step would produce a report
+     claiming a method it did not follow.
+   - **Registration is ONE table** of key, needed capability and registrar, which both
+     `availableCameraNodeKeys()` and `registerCameraNodes()` read, so a menu cannot offer a kind the
+     factory cannot build. The specification needs a renderer or a detector; rendering a renderer;
+     detection a detector; calibration and the model a detector AND an estimator. A test stages the
+     registries from empty, one backend kind at a time, in an executable of its own because a
+     registry only grows. **The port types register always** (vocabulary, as the frame-sequence types
+     are whatever the video codecs), so a boundary pin of a camera type still saves and loads.
+   - **flowview:** `registerCameraBackends()` before the palette in both modes; the palette calls
+     `registerCameraNodes`; the catalog is **built per call** with a Camera category from the same
+     list, since a static would be fixed before the backends register; codecs and enum editors for
+     `Dictionary`, `CharucoLayout`, `DistortionModel` and `ImportedModelPolicy`; canvas colours for
+     the kinds and the four payloads; OpenCV DLLs staged beside flowview and test-flowview.
+   - **`toString()` on the four values** (`Specification`, `DetectionReport`, `calibration::Report`,
+     `CameraModel`): one line each, which is what a host shows for a port and what `run` writes for a
+     non-image output. The report leads with its verdict and, short of Ready, names the criterion
+     that withheld it.
+   - **A float parameter means the decimal that was typed.** 0.7f is 0.699999988 and 0.2f is
+     0.200000003, so `markerToSquare` and `heldOutFraction` are rounded to millionths (the
+     fingerprint's own resolution) and `squareLengthMm` to whole micrometres. A seed keeps its bits:
+     -1 is seed 0xFFFFFFFF, not a clamp to 0.
+   - **The cli vertical runs through `runGraph`:** a document holding the camera kinds, a folder of
+     24 PNGs bound to `--footage`, and the report and model written as text. The footage is the
+     production render seen through a known 640x480 pinhole along the plugin's sweep, drawn in plain
+     C++ (an inverse homography, 3x3 supersampled, bilinear) so flowview's tests need no OpenCV. It
+     reports Ready and the model returns within 0.14% and 0.3 px. **Nearest sampling put fx 0.33%
+     out**, which is why the generator samples bilinearly. The document asks for `model = None`,
+     because the camera is a pinhole: asked for Brown-Conrady, the spare coefficients trade against
+     the principal point and the verdict rightly stays Exploratory. That is also a param away from
+     its default, so the document must carry an enum by name. Driven through the real binary too:
+     `flowview list` shows `--footage : FrameSequence`, and `flowview run` writes the Ready report.
+     In a build without a camera backend the same document is refused, with each missing kind named.
+   - **Found: the serializer drops a param it has no codec for, silently.** Removing the
+     `distortionModel` codec made the vertical calibrate Brown-Conrady with nothing logged at any
+     level. A census now asserts that every param of every palette kind (camera kinds included, in a
+     build that has them) has a codec in `sceneCodecs`. Making `toValue` report such a param is left
+     as its own change, since it touches the serializer's result shape.
+   - **Found on CI, fixed ahead of this commit (`f8ddc2b`):** test-camera did not link on MSVC,
+     since Catch2's `std::string_view` StringMaker is compiled out and two cases compared display
+     names as views. They compare `std::string` now.
+   - **Serialization re-deferred.** Sub-slice 2 moved it here as "the first reader", but nothing here
+     reads a camera value from disk: `run` writes describe text, and a document stores parameters
+     through the codecs, not camera values. The first reader is sub-slice 8's imported manufacturer
+     model; `libs/camera/serialize` lands with it.
+   - `ctest -j8` **1021/1021** Debug with video and camera on (+12), **1028/1028** Release with them
+     on, **971/971** Release with them off; warning-clean, format-check clean. The vertical takes
+     about 9 s in Debug. **gui-mode NOT eyeballed:** the Camera menu, the enum editors and the
+     colours need a Metal session.
+   - **Nine sabotages, all caught:** registration ignoring capability, a detection setting dropped,
+     the seed clamped, the decimal rounding removed, a model kept after a failed calibration, the
+     frame ignored, the `distortionModel` codec removed (caught by both the vertical and the census),
+     and the palette not registering the camera kinds.
 
    **Sub-slice 6 built (2026-09-30): the OpenCV estimator.**
    - **`OpenCVEstimator`**, registered as "opencv" beside the renderer and detector:
@@ -2866,7 +2934,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - **Deviation: no serialization yet.** `lain::media` and `lain::flow` keep `lain::data` out of
      their core library and serialize in a separate target, and nothing reads a camera model from
      disk until sub-slice 7's cli writes a report. `libs/camera/serialize` lands there, beside its
-     reader. `CameraModelParameters` → `create` is already the load path it will use.
+     reader. *(Re-deferred in sub-slice 7, which reads no camera value from disk: the first reader
+     is sub-slice 8's imported model.)* `CameraModelParameters` → `create` is already the load path it will use.
    - **ModifiedBrownConrady5 is written from librealsense's `rs2_project_point_to_pixel`**
      (tangential terms on the radially distorted point, `r2` from the ideal one). Nothing estimates
      it, so no backend cross-checks it; the fixture (sub-slice 8) is where a RealSense-exported
@@ -7916,7 +7985,7 @@ row here**. A row is cheap to delete and expensive to leave.
   code. **Unblocked:** M10 was numbered after it and built before it, discharging its frame-sequence
   prerequisite. How OpenCV is obtained was decided 2026-09-29 (a pinned prebuilt), its first
   release (`opencv-4.14.0-calib`) is published, and **slice 0 is built** (`addOpenCV.cmake`, the
-  `[opencv]` probe). **Slice 1 is in progress** as eight sub-slices, of which sub-slice 0 is built
+  `[opencv]` probe). **Slice 1 is in progress** as nine sub-slices, of which 0 to 7 are built
   and sub-slice 8 (the real-camera fixture) waits on a capture. *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
