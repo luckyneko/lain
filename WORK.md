@@ -2644,6 +2644,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       first reader (landing notes below).
    3. Board values and detection contracts: `Pattern` + fingerprint, `Instance`, `Specification`,
       `Observation`, `DetectionRequest`, `DetectionReport`, `Rendering`, the render and detect seams.
+      **Built 2026-09-30.** The generated backend aggregator moved to sub-slice 4, beside its first
+      backend.
    4. The OpenCV renderer and detector: scaled detection mapped back to source pixels, then
       native-resolution refinement.
    5. Calibration contracts and the board method module: `Request`, `Report`, fitness profiles,
@@ -2653,6 +2655,43 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    7. The flow adapter and flowview: five node kinds, capability-driven `registerCameraNodes`, a
       Camera catalog category, a cli vertical.
    8. The real-camera fixture. **Blocked on a capture from the repo owner.**
+
+   **Sub-slice 3 built (2026-09-30): board values and the detection seam** (`lain::camera::board`,
+   in `libs/camera`).
+   - **`Pattern`** (ChArUco: dictionary, squares, marker-to-square ratio, first marker id, and the
+     Standard or pre-4.6 Legacy layout), valid by construction, with a **versioned canonical
+     `description()`** whose SHA-256 is its `fingerprint()`. The ratio enters as whole millionths,
+     so the text needs no double formatting (locale-free, exact) and two patterns that print
+     identically cannot fingerprint apart. The digest of one pattern is pinned in a test, so a
+     format change must bump the version line rather than silently re-identifying every board.
+   - **`Instance`** (identity plus a `MeasuredLength` square side with optional hard bounds, the one
+     concrete measurement, not a generic `Measurement<T>`) and **`Specification`** (pattern plus
+     instance), which places corners in the **board frame**: origin at the top-left corner, X right,
+     Y down, Z into the board. That is the camera frame's convention, so a camera squarely facing an
+     upright print sees the board's axes as its own.
+   - **`Observation`** names its frame (`media::FrameRef`), the geometry its pixels are measured in,
+     and the pattern's fingerprint, and holds corners; never pixels. Covariance is optional and
+     present only when a backend can defend it.
+   - **`DetectionRequest` / `DetectionReport`** carry what ADR-0016 lists: a scale policy
+     (`NativeScale`, `ScaleFactor`, `LongestSide`, resolved to a factor in (0, 1] by one function
+     every backend shares), native refinement as an independent flag, the detail level, a minimum
+     corner count (four fixes a pose), status Detected / Partial / Failed, structured rejections,
+     stats, the actual per-axis transform, the refinement resolution, provenance, timing, and
+     detailed evidence.
+   - **Seams:** `Detector` and `Renderer` backends in name-keyed `core::Factory` registries, the
+     `io::video` shape. The `detect()` facade fills what every backend must report the same way
+     (the request, the expected corner count, the timing, canonical feature order, and status and
+     observation kept consistent). `render()` builds the description and fingerprint and **checks
+     the raster** (8-bit grey, exactly the requested size) instead of trusting the backend. With no
+     backend, detection is a Failed report with `Rejection::NoBackend`, and `canDetect()` /
+     `canRender()` are the capability queries sub-slice 7's registration asks.
+   - **The empty-registry cases have their own executable** (`test-camera-nobackend`), because a
+     `core::Factory` only grows: the precedent `io::video` set.
+   - `ctest -j4` **976/976** Debug with video and camera on (+11); Release warning-clean.
+   - **Six sabotages, all caught** (the fingerprint one needed a second attempt, having left a helper
+     unused under `-Werror` the first time): a fingerprint that ignores the layout, rows and columns
+     swapped in corner positions, no canonical feature order, no raster check, the dictionary
+     capacity test off by one, and a `LongestSide` that enlarges.
 
    **Sub-slice 2 built (2026-09-30): camera models.** New `libs/camera` (`lain::camera`), std and
    lain only, always built.

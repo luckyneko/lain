@@ -1137,6 +1137,28 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
+### Update 2026-09-30 — M9 slice 1, sub-slice 3: board values and the detection seam
+
+`lain::camera::board`, in `libs/camera`: ChArUco patterns with a pinned, versioned fingerprint,
+physical instances and specifications, observations, detection requests and reports, renderings,
+and the `Detector` / `Renderer` backend registries behind `detect()` / `render()` facades. No
+backend yet (sub-slice 4). `ctest -j4` **976/976** Debug with video and camera on (+11); Release
+warning-clean. Full notes in WORK.md's *Sub-slice 3 built*.
+
+- **The fingerprint hashes a versioned canonical text**, with the ratio as whole millionths so no
+  double is ever formatted. One pattern's digest is pinned in a test, so a format change has to bump
+  the version line.
+- **The board frame is the camera frame's convention** (X right, Y down, Z into the board), so a
+  camera squarely facing an upright print sees the board's axes as its own.
+- **The facades do what every backend must do identically:** `detect()` resolves the scale policy,
+  records the request and timing, sorts features canonically and keeps status and observation
+  consistent; `render()` builds the description and fingerprint and checks the raster's size and
+  format rather than trusting the backend. No backend is a Failed report with
+  `Rejection::NoBackend`, from the same value every other outcome arrives in.
+- **An empty registry gets its own test executable**, since a `core::Factory` only grows.
+- The generated `registerCameraBackends()` aggregator moved to sub-slice 4, beside its first
+  backend.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 2: camera models (`libs/camera`)
 
 `lain::camera` exists: immutable validated camera models, the closed distortion set, and ONE
