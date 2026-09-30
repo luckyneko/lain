@@ -1137,6 +1137,25 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
+### Update 2026-09-30 — develop's CI after the example-documents push: two platform bugs, fixed
+
+The example-documents push (`09b1b94`, the entry below this one) went red on every Linux leg and on
+Windows, one failure each, and neither is in the examples themselves. Both are fixed in their own
+commits. `ctest -j4` **931/931** Debug with video and camera on.
+
+- **Linux: a uri in a path param lost its scheme on save.** `lain::data` wrote a
+  `std::filesystem::path` through `generic_string()`, and **libstdc++ collapses repeated
+  separators**, so `s3://bucket/a.png` saved as `s3:/bucket/a.png`. libc++ and MSVC keep them,
+  which is why macOS never showed it. This dates from graph serialization (2026-07-12), and the new
+  document-paths test was simply the first thing to look. `documentpaths.cpp` had the same round
+  trip twice (the scheme check, and the write-back of a path it left alone). Both halves are fixed,
+  and undoing either one fails the case.
+- **Windows: the byte comparison of committed examples read every one as stale.** GitHub's Windows
+  runners check out with `core.autocrlf`, and there was no `.gitattributes`. Now
+  `apps/flowview/examples/*.json text eol=lf`. Reproduced here with a `core.autocrlf=true` checkout:
+  153 CR bytes in `tint-blur.json` without the attribute, none with it, byte-identical to the
+  committed file.
+
 ### Update 2026-09-30 — M9 slice 1 planned; sub-slice 0: `run` / `list` refuse a lossy load
 
 M9 slice 1 (camera geometry + ChArUco calibration) is planned as **eight sub-slices, one commit

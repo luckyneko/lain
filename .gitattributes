@@ -1,0 +1,5 @@
+# The example documents are compared byte for byte against what the builder writes
+# (apps/flowview/test/test_examples.cpp), so no checkout may rewrite their line endings. Without
+# this, a Windows checkout with core.autocrlf (GitHub's Windows runners set it) turns them CRLF
+# and every built example reads as stale.
+apps/flowview/examples/*.json text eol=lf
