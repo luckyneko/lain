@@ -33,6 +33,7 @@ The root flags (`--size`, `--threads`, `-v`) go before `run`.
 | `sequence-render` | one frame per position. In the gui, drag **Position** in the Interface pane |
 | `video` | `data/shot.mp4` as a sequence, and its frame at position 12 (needs a video build) |
 | `bagel` | an inline group holding a map, whose elements run a linked template and a loop |
+| `render-board` | a ChArUco board to print for a real-camera fixture: 9 x 6 squares of 30 mm (needs a camera build); see `plugins/camera/test/fixtures/README.md` |
 
 ## Broken on purpose
 

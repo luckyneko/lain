@@ -1137,6 +1137,31 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
+### Update 2026-09-30 — M9 slice 1, sub-slice 8c: a board to print and the capture guide (**fixture machinery COMPLETE**)
+
+The last third of the real-camera fixture's machinery. What remains of sub-slice 8, and of slice 1,
+is the capture itself, which only the repo owner can make. `ctest -j8` **1035/1035** Debug with
+video and camera on, **1042/1042** Release on, **985/985** Release off; warning-clean, format-check
+clean. Full notes in WORK.md's *Sub-slice 8c built*.
+
+- **`apps/flowview/examples/render-board.json`** prints the board: 9 x 6 squares of 30 mm, ARUCO
+  5x5_100, at 300 dpi, sized for A4 landscape. `flowview run -g render-board.json --board board.png`
+  was driven through the real binary. The example catalog gains **`needsCamera`**: a build without
+  a backend must refuse it, naming each camera kind. The builder writes the camera kinds whatever
+  the build, so every build writes the same bytes.
+- **`plugins/camera/test/fixtures/README.md`** is the capture guide:
+  - print, then measure;
+  - two sessions of about 40 poses, with a remount between them;
+  - commit about 14 frames a session (12 at the least, checked at the code);
+  - fill in `fixture.json`, including how RealSense's intrinsics and distortion names map onto
+    lain's;
+  - pin the full capture as the extended tier.
+- **`camera-fixture-tool template`** writes a `fixture.json` to fill in, so the person starts from
+  a document that already has the right shape.
+- **ADR-0016 is amended in place**: the two-part repeat check, board-geometry reconstruction
+  recorded as not built, storage, and extended-tier addressing.
+- Two sabotages in the camera-off build, both caught.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 8b: the fixture harness, and a repeat check in two halves
 
 The second third of the real-camera fixture: a fixture folder's format and loader, calibration of

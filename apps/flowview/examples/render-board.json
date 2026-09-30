@@ -1,0 +1,139 @@
+{
+  "version": 2,
+  "nodes": [
+    {
+      "id": "00000000-0000-7000-8000-000000000001",
+      "kind": "groupInput",
+      "name": "GroupInput"
+    },
+    {
+      "id": "00000000-0000-7000-8000-000000000002",
+      "kind": "groupOutput",
+      "name": "GroupOutput",
+      "dynamicPins": [
+        {
+          "name": "board",
+          "type": "Image"
+        },
+        {
+          "name": "description",
+          "type": "String"
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-7000-8000-000000000003",
+      "kind": "boardSpecification",
+      "name": "BoardSpecification",
+      "params": [
+        {
+          "name": "dictionary",
+          "type": "arucoDictionary",
+          "value": "Aruco5x5_100"
+        },
+        {
+          "name": "squaresX",
+          "type": "int",
+          "value": 9
+        },
+        {
+          "name": "squaresY",
+          "type": "int",
+          "value": 6
+        },
+        {
+          "name": "markerToSquare",
+          "type": "float",
+          "value": 0.75
+        },
+        {
+          "name": "firstMarkerId",
+          "type": "int",
+          "value": 0
+        },
+        {
+          "name": "layout",
+          "type": "charucoLayout",
+          "value": "Standard"
+        },
+        {
+          "name": "identity",
+          "type": "string",
+          "value": "lain-9x6-30mm"
+        },
+        {
+          "name": "squareLengthMm",
+          "type": "float",
+          "value": 30.0
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-7000-8000-000000000004",
+      "kind": "renderBoard",
+      "name": "RenderBoard",
+      "params": [
+        {
+          "name": "pixelsPerSquare",
+          "type": "int",
+          "value": 354
+        },
+        {
+          "name": "marginPixels",
+          "type": "int",
+          "value": 59
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-000000000003",
+        "port": "board"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-000000000004",
+        "port": "board"
+      }
+    },
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-000000000004",
+        "port": "image"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-000000000002",
+        "port": "board"
+      }
+    },
+    {
+      "from": {
+        "node": "00000000-0000-7000-8000-000000000004",
+        "port": "description"
+      },
+      "to": {
+        "node": "00000000-0000-7000-8000-000000000002",
+        "port": "description"
+      }
+    }
+  ],
+  "editor": {
+    "00000000-0000-7000-8000-000000000001": {
+      "x": 40.0,
+      "y": 40.0
+    },
+    "00000000-0000-7000-8000-000000000002": {
+      "x": 730.0,
+      "y": 40.0
+    },
+    "00000000-0000-7000-8000-000000000003": {
+      "x": 270.0,
+      "y": 40.0
+    },
+    "00000000-0000-7000-8000-000000000004": {
+      "x": 500.0,
+      "y": 40.0
+    }
+  }
+}

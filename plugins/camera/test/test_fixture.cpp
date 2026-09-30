@@ -309,6 +309,20 @@ TEST_CASE("a fixture's problems are named when it loads", "[camera][fixture]")
 		CHECK(load.fixture->sessions.front().footage.size() == 2);
 	}
 
+	SECTION("the template a person fills in loads once it has frames")
+	{
+		// camera-fixture-tool template writes this; its sessions are "a" and "b".
+		writeFrames("b", 64, 48);
+		REQUIRE(writeFixtureDocument(root, templateDocument("from the template")));
+		const FixtureLoad load = loadFixture(root);
+		INFO(load.problems.size());
+		CHECK(load.problems.empty());
+		REQUIRE(load.fixture.has_value());
+		CHECK(load.fixture->sessions.size() == 2);
+		CHECK(load.fixture->model == DistortionModel::BrownConrady5);
+		CHECK(load.fixture->board.pattern().parameters().squaresX == 9);
+	}
+
 	SECTION("a misspelled key is named, not defaulted")
 	{
 		REQUIRE(writeFixtureDocument(root, document));

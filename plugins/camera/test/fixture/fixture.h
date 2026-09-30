@@ -81,6 +81,13 @@ namespace lain::camera::fixture
 	// the json codec.
 	FixtureLoad loadFixture(const std::filesystem::path& root);
 
+	// A fixture.json to fill in: the board apps/flowview/examples/render-board.json prints (9 x 6
+	// squares of 30 mm, markers 0.75 of a square, ARUCO 5x5_100) at its nominal size, Brown-Conrady
+	// with five coefficients, and sessions "a" and "b" in folders of those names, with empty capture
+	// records. What camera-fixture-tool template writes; the square length is replaced by the
+	// measured one, and the records by what is known.
+	FixtureDocument templateDocument(const std::string& name);
+
 	// Write `document` as root/fixture.json. False (logged) on a write failure.
 	bool writeFixtureDocument(const std::filesystem::path& root, const FixtureDocument& document);
 

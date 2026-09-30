@@ -2404,8 +2404,8 @@ adds a pin to the canvas.
 built before it, discharging its frame-sequence prerequisite. How OpenCV is obtained was settled
 2026-09-29 ([ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md)), and slice 0 below
 (OpenCV lands, nothing depending on it) is built. **Slice 1 is in progress** as nine sub-slices
-(below): 0 to 7 are built, and 8 (the real-camera fixture) is building its machinery ahead of the
-capture it waits on.
+(below): 0 to 7 are built, and 8 (the real-camera fixture) has its machinery built; what is left of
+it is the capture, which only the repo owner can make.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -2667,7 +2667,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       - 8b. The fixture harness: format and loader, calibration per session, the two-part repeat
         check, the manufacturer comparison, the hashed extended tier. **Built 2026-09-30** (landing
         notes below).
-      - 8c. The capture guide, a board to print, and the ADR amendments.
+      - 8c. The capture guide, a board to print, and the ADR amendments. **Built 2026-09-30**
+        (landing notes below).
 
       **The capture itself is still owed by the repo owner**, and board-geometry reconstruction (a
       board rebuilt without its geometry, from relative poses) is designed separately: it needs
@@ -2709,6 +2710,39 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      written where millimetres are read, the binder unregistered, and the model output written as
      text.
 
+   **Sub-slice 8c built (2026-09-30): the capture guide, and a board to print.**
+   - **`apps/flowview/examples/render-board.json`**: boardSpecification -> renderBoard, 9 x 6 squares
+     of 30 mm, markers 0.75, ARUCO 5x5_100, 354 px a square (30 mm at 300 dpi) with a 5 mm quiet
+     zone, which fits A4 landscape inside a printer's margins. `flowview run -g render-board.json
+     --board board.png` writes a 3304 x 2242 print, driven through the real binary.
+   - **The example catalog gains `needsCamera`.** In a build without a camera backend the document is
+     refused on load, and the example test requires each camera kind to be named in the refusal. The
+     builder writes camera kinds whatever the build's backends (it registers any missing into a copy
+     of the palette), so every build writes the same bytes. A host's palette still offers a camera
+     kind only when it can run.
+   - **`plugins/camera/test/fixtures/README.md`**, the capture guide:
+     - print and measure the board;
+     - capture two sessions of about 40 poses each, with a remount between them;
+     - commit about 14 frames a session;
+     - fill in `fixture.json`, including a manufacturer model and how RealSense's names and
+       coefficient order map onto lain's;
+     - pin the full capture as the extended tier;
+     - run it.
+   - **`camera-fixture-tool template <dir> <name>`** writes a `fixture.json` to fill in, for the board
+     the example prints, so a person edits a document that already has the right shape. A test loads
+     the template once it has frames.
+   - **Checked at the code while writing the guide:** the hold-out stride starts half a stride in and
+     selection keeps every remaining view, so 12 usable frames a session leave the 10 calibration
+     views Ready needs. The guide says 12 is the least and recommends 14.
+   - **ADR-0016** is amended in place: repeat captures and the two-part repeat check,
+     reconstruction of known board geometry recorded as not built, fixture storage, and
+     extended-tier addressing.
+   - `ctest -j8` **1035/1035** Debug with video and camera on, **1042/1042** Release on, **985/985**
+     Release off: unchanged counts, since the example is a new section of an existing case and the
+     template a new section.
+   - **Two sabotages in the camera-off build, both caught:** the example not marked `needsCamera`,
+     and the builder not registering the camera kinds.
+
    **Sub-slice 8b built (2026-09-30): the fixture harness.** Test code in `plugins/camera/test`
    (nothing ships it): a `camera-fixture` library, `camera-fixture-tool`, and `test-camera-fixture`.
    - **The format.** A fixture is a folder: `fixture.json` (`{version, name, model, board{pattern,
@@ -2734,7 +2768,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      and 8.5 mrad. `kAgreementSigmas = 3` is the one new constant, and a conventional one.
    - **A fixture needs two Ready sessions**, since the check is that two calibrations agree. That
      changes the planned compact tier: session B needs about 14 frames, not 6, to reach ten
-     calibration views after the held-out split. 8c's capture guide says so.
+     calibration views after the held-out split (12 at the least). 8c's capture guide says so.
    - **The manufacturer comparison** holds each imported model on its own session's views and
      reports the angle and the intrinsics difference from the estimate. It never gates: the test's
      factory model is 2% long, beyond any bound agreement can have, and the fixture passes.
@@ -8083,8 +8117,8 @@ row here**. A row is cheap to delete and expensive to leave.
   prerequisite. How OpenCV is obtained was decided 2026-09-29 (a pinned prebuilt), its first
   release (`opencv-4.14.0-calib`) is published, and **slice 0 is built** (`addOpenCV.cmake`, the
   `[opencv]` probe). **Slice 1 is in progress** as nine sub-slices, of which 0 to 7 are built;
-  sub-slice 8 (the real-camera fixture) is building its machinery, and its capture is owed by the
-  repo owner. *(Milestone 9;
+  sub-slice 8 (the real-camera fixture) has its machinery built (8a-8c), and its capture is owed by
+  the repo owner, guided by `plugins/camera/test/fixtures/README.md`. *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md),

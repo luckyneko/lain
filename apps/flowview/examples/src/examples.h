@@ -24,6 +24,10 @@ namespace flowview::examples
 		// How to build it, or null for a FROZEN file written by hand. broken-v1.json is the only one:
 		// nothing can write a version-1 document any more, which is the point of keeping one.
 		Document (*build)(const Context&) = nullptr;
+		// Names camera node kinds, which a build registers only when a camera backend can run them
+		// (ADR-0016). Without one the document is REFUSED on load, naming each kind, rather than run
+		// as the smaller graph that is left. Last, so the entries that do not need it need not say so.
+		bool needsCamera = false;
 	};
 
 	// Every example, in the order they are written. A linked template precedes the documents that

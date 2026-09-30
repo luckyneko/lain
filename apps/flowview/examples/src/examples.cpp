@@ -2,6 +2,13 @@
 
 #include "graphio.h" // saveGraph / sceneCodecs / templateResolver: the production save path
 
+#include <lain/camera/board/pattern.h>
+#include <lain/camera/flow/boardspecificationnode.h>
+#include <lain/camera/flow/calibratecameranode.h>
+#include <lain/camera/flow/cameramodelnode.h>
+#include <lain/camera/flow/detectboardnode.h>
+#include <lain/camera/flow/register.h>
+#include <lain/camera/flow/renderboardnode.h>
 #include <lain/core/uri.h>
 #include <lain/data/value.h>
 #include <lain/flow/dynamicports.h>
@@ -831,6 +838,34 @@ namespace flowview::examples
 		return doc;
 	}
 
+	// A ChArUco board to print for a real-camera fixture: 9 x 6 squares of 30 mm, markers three
+	// quarters of a square, from ARUCO 5x5_100. 354 pixels per square is 30 mm at 300 dpi, with a 5 mm
+	// quiet zone, which fits A4 landscape inside a printer's margins. Whatever scale it prints at, the
+	// square is MEASURED afterwards and the measurement is what a fixture records.
+	static Document renderBoard(const Context& ctx)
+	{
+		Document doc;
+		Level root{ctx, doc.graph, doc.layout};
+		root.outputPin<image::Image>("board");
+		root.outputPin<std::string>("description");
+		root.input(0, 0);
+		const NodeId spec = root.add(camera::kBoardSpecificationKey, 1, 0);
+		root.set(spec, "dictionary", camera::board::Dictionary::Aruco5x5_100);
+		root.set<int>(spec, "squaresX", 9);
+		root.set<int>(spec, "squaresY", 6);
+		root.set<float>(spec, "markerToSquare", 0.75f);
+		root.set<std::string>(spec, "identity", "lain-9x6-30mm");
+		root.set<float>(spec, "squareLengthMm", 30.0f);
+		const NodeId render = root.add(camera::kRenderBoardKey, 2, 0);
+		root.set<int>(render, "pixelsPerSquare", 354);
+		root.set<int>(render, "marginPixels", 59);
+		const NodeId out = root.output(3, 0);
+		root.wire(spec, "board", render, "board");
+		root.wire(render, "image", out, "board");
+		root.wire(render, "description", out, "description");
+		return doc;
+	}
+
 	const std::vector<Example>& catalog()
 	{
 		static const std::vector<Example> examples = {
@@ -850,6 +885,7 @@ namespace flowview::examples
 			{"sequence-render", "a frame per position; sweep it with `run --frame 0-23`", false, "", &sequenceRender},
 			{"video", "data/shot.mp4 as a sequence, and its frame at position 12", true, "", &video},
 			{"bagel", "an inline group holding a map, whose elements run a linked template and a loop", false, "", &bagel},
+			{"render-board", "a ChArUco board to print for a real-camera fixture: 9 x 6 squares of 30 mm", false, "", &renderBoard, true},
 			{"broken-missing-template", "a link to a template that is not there", false, "could not be resolved", &brokenMissingTemplate},
 			{"broken-map-hole", "folder-average over a folder holding one unreadable file", false, "elements produced no", &brokenMapHole},
 			{"broken-cast-pair", "a Cast from Image to Int, a pair nothing converts", false, "no conversion from", &brokenCastPair},
@@ -858,6 +894,13 @@ namespace flowview::examples
 			{"broken-v1", "a version-1 document, migrated on load (hand-written, frozen)", false, "version 1", nullptr},
 		};
 		return examples;
+	}
+
+	template <typename T>
+	static void registerMissing(core::Factory<flow::Node>& factory, const char* key)
+	{
+		if (!factory.contains(key))
+			factory.registerType<T>(key);
 	}
 
 	// --- stable ids ------------------------------------------------------------
@@ -942,8 +985,18 @@ namespace flowview::examples
 		return renumbered(document, table);
 	}
 
-	void writeDocuments(const std::filesystem::path& folder, const core::Factory<flow::Node>& factory)
+	void writeDocuments(const std::filesystem::path& folder, const core::Factory<flow::Node>& palette)
 	{
+		// The camera kinds are written whatever this build's backends, so every build writes the same
+		// bytes: a document is what a build WITH a backend saves, and only such a build runs it. The
+		// palette itself stays the host's, which offers a camera kind only when it can run.
+		core::Factory<flow::Node> factory = palette;
+		registerMissing<camera::BoardSpecificationNode>(factory, camera::kBoardSpecificationKey);
+		registerMissing<camera::RenderBoardNode>(factory, camera::kRenderBoardKey);
+		registerMissing<camera::DetectBoardNode>(factory, camera::kDetectBoardKey);
+		registerMissing<camera::CalibrateCameraNode>(factory, camera::kCalibrateCameraKey);
+		registerMissing<camera::CameraModelNode>(factory, camera::kCameraModelKey);
+
 		const Context ctx{factory, std::filesystem::absolute(folder).lexically_normal()};
 		for (const Example& example : catalog())
 		{

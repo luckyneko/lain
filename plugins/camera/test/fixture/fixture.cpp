@@ -2,6 +2,7 @@
 
 #include <lain/camera/calibration/board.h>
 #include <lain/camera/distortion.h>
+#include <lain/core/length.h>
 #include <lain/core/uri.h>
 #include <lain/io/data/load.h>
 #include <lain/io/data/save.h>
@@ -126,6 +127,22 @@ namespace lain::camera::fixture
 			return result;
 		result.fixture = Fixture{document.name, root, *board.specification, document.model, std::move(sessions)};
 		return result;
+	}
+
+	FixtureDocument templateDocument(const std::string& name)
+	{
+		FixtureDocument document;
+		document.name = name;
+		document.model = DistortionModel::BrownConrady5;
+		document.board.pattern.dictionary = board::Dictionary::Aruco5x5_100;
+		document.board.pattern.squaresX = 9;
+		document.board.pattern.squaresY = 6;
+		document.board.pattern.markerToSquare = 0.75;
+		document.board.instance.identity = "lain-9x6-30mm";
+		document.board.instance.squareLength.value = core::Length::fromMillimetres(30);
+		document.sessions.push_back({"a", "a", CaptureRecord{}});
+		document.sessions.push_back({"b", "b", CaptureRecord{}});
+		return document;
 	}
 
 	bool writeFixtureDocument(const fs::path& root, const FixtureDocument& document)

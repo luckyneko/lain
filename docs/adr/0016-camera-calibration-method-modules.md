@@ -159,6 +159,21 @@ comparison diagnostic, not the ground-truth oracle for the fixture. Fixture pass
 parameter and resampling stability, repeat captures, and reconstruction of known board geometry.
 Factory-versus-estimated parameter differences remain visible but cannot alone accept or reject a
 calibration.
+*(Amended 2026-09-30, when the fixture harness was built. **Repeat captures** are two or more capture
+sessions with the camera unplugged and re-mounted between them, and the **repeat check** over them
+has two halves, because the first alone was measured to be blind to what the second sees.
+**Prediction:** each Ready session's model, held fixed, must predict every other session's views to
+the Ready held-out angle; it sees a lens that is not the lens. It is weak on intrinsics, since a board
+pose recovered with the model fixed absorbs most of a focal or principal-point error: on synthetic
+footage a second camera 3% longer and 12 px off-centre predicted the first's views at 0.27 mrad
+against 0.6 for Ready. **Agreement:** every two Ready sessions' intrinsics must differ by no more than
+three standard deviations of their combined resampled spread. The Ready stability bounds themselves
+were tried and refused, because they bound one capture's resamples and two captures also differ by
+their poses: two sessions of one camera came out 0.544% apart in focal length against a 0.5% bound.
+A fixture therefore needs two Ready sessions. A manufacturer model is held on its own session's views
+and reported with its difference from the estimate, and never gates. **Reconstruction of known board
+geometry is not built yet**: rebuilding a board without its geometry needs relative-pose recovery
+through the backend, designed on its own.)*
 
 Real-camera testing uses two fixture tiers. A compact curated ChArUco image set, first captured on
 the D455's RGB stream, is committed for deterministic integration tests. Everything before it lands
@@ -167,6 +182,15 @@ capture. A larger external capture is addressed by a versioned manifest
 and content hashes for accuracy, performance, downsampling, and resampling experiments. Ordinary CI
 runs the compact tier; extended validation reports that the larger tier was unavailable rather than
 silently substituting different data.
+*(Amended 2026-09-30. **Storage:** a fixture is a folder under `plugins/camera/test/fixtures/`
+holding `fixture.json` (board, distortion model, and each session's frames folder and capture record)
+and one folder of committed PNG stills per session, about 14 each so every session can be Ready on
+its own. The printed board is lain's own rendering (`apps/flowview/examples/render-board.json`),
+measured after printing. **Extended-tier addressing:** a committed `extended.json` pins path, SHA-256
+and size for every file of a full capture, which is itself a fixture folder, found as
+`$LAIN_CAMERA_FIXTURE_DATA/<name>`. It is Verified and run, Unavailable with the reason, or a Mismatch
+naming each missing, resized, rehashed or unpinned file, which is a failure rather than a run on
+different data. One tool writes and verifies the manifest through the same hash.)*
 
 Reconstruction-fitness verdicts use named, versioned threshold profiles with explicit request
 overrides. Reports retain raw pixel RMS, but cross-resolution acceptance emphasizes normalized or

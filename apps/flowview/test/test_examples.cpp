@@ -11,6 +11,8 @@
 #include "scene.h"		// registerExampleNodes, bindDefaultInput: the production palette and stand-in
 #include "validation.h" // collectIssues: the Issues pane's rows
 
+#include <lain/camera/backends.h>
+#include <lain/camera/flow/register.h>
 #include <lain/core/factory.h>
 #include <lain/core/uri.h>
 #include <lain/flow/boundary.h>
@@ -44,6 +46,7 @@ static lain::core::Factory<lain::flow::Node> exampleFactory()
 	lain::io::image::registerImageCodecs();
 	lain::io::video::registerVideoCodecs();
 	lain::io::sequence::registerSequenceOpeners();
+	lain::camera::registerCameraBackends(); // before the palette: camera kinds follow the backends
 	flowview::registerSceneSerialization();
 	lain::core::Factory<lain::flow::Node> factory;
 	flowview::registerExampleNodes(factory, 64);
@@ -54,6 +57,11 @@ static lain::core::Factory<lain::flow::Node> exampleFactory()
 static bool haveVideoReader()
 {
 	return !lain::io::video::readerRegistry().keys().empty();
+}
+
+static bool haveCameraBackend()
+{
+	return !lain::camera::availableCameraNodeKeys().empty();
 }
 
 static std::string bytesOf(const std::filesystem::path& file)
@@ -85,7 +93,16 @@ TEST_CASE("every example loads and runs as the catalog says", "[examples]")
 			for (const lain::flow::serialize::LoadIssue& issue : loaded.issues)
 				raised.push_back(issue.message);
 
-			if (example.needsVideo && !haveVideoReader())
+			if (example.needsCamera && !haveCameraBackend())
+			{
+				// Without a backend the camera kinds are not registered (ADR-0016), so the document
+				// does not load as saved, and each kind it names is reported rather than run around.
+				INFO("raised:" << joined(raised));
+				const std::string text = joined(raised);
+				CHECK(text.find("unknown node kind \"boardSpecification\"") != std::string::npos);
+				CHECK(text.find("unknown node kind \"renderBoard\"") != std::string::npos);
+			}
+			else if (example.needsVideo && !haveVideoReader())
 			{
 				// Without a codec the document still OPENS: video is a capability, not vocabulary.
 				INFO("raised:" << joined(raised));
