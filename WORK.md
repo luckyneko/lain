@@ -2637,6 +2637,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    0. **`run` / `list` refuse a document that did not load as saved.** A consequence of the
       registration rule, and a real hole on its own. **Built 2026-09-30** (landing notes below).
    1. `core::Length`, `core::sha256`, `math::RigidTransform<T>`, `math::AxisConvention`.
+      **Built 2026-09-30** (landing notes below).
    2. Camera models: intrinsics, the closed distortion set, scalar-generic `project<T>` /
       `unproject<T>`, `ProjectionStatus`, containment, `CameraModel::create` with diagnostics,
       applicability, serialization, golden tests.
@@ -2651,6 +2652,40 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    7. The flow adapter and flowview: five node kinds, capability-driven `registerCameraNodes`, a
       Camera catalog category, a cli vertical.
    8. The real-camera fixture. **Blocked on a capture from the repo owner.**
+
+   **Sub-slice 1 built (2026-09-30): the foundations.** No consumer yet; sub-slices 2 and 3 are
+   theirs.
+   - **`core::Length`**: an exact int64 count of nanometres read and written in named units
+     (`fromMillimetres`, `metres()`, ...), as `core::Time` is for seconds. One quantity is one value
+     however it was built, and 0.1 mm + 0.2 mm == 0.3 mm, which a double in metres gets wrong. The
+     double factories follow `core::Range`'s precedent: a NaN or out-of-range value is a
+     precondition, asserted in debug and made defined in release (NaN is zero, anything too large
+     saturates), because whatever turns data into a Length checks it first.
+   - **`core::Sha256`** (FIPS 180-4, std-only): a streaming hash for files too large to hold, a
+     one-shot `sha256()`, and a `Sha256Digest` rendered as 64 lower-case digits. Its consumers are the
+     board-pattern fingerprint (sub-slice 3) and the fixture dataset's hashes (sub-slice 8).
+   - **`core::hex`** (`hexDigits`, `hexDigitValue`): the recorded deferral's trigger fired, since the
+     digest was a second encoder. `Uuid` moved onto it, and its existing formatting tests are the
+     regression test.
+   - **`math::RigidTransform<T>`**: a unit quaternion plus a translation, with `apply`, `rotate`
+     (directions), `*`, `inverse`, `matrix()`, and `fromMatrix`, which refuses scale, shear,
+     reflection and a projective bottom row rather than extracting the nearest rotation. Composition
+     reads the way `aFromB` field names chain: `aFromC = aFromB * bFromC`.
+   - **`math::AxisConvention`**: three `AxisDirection`s on three different physical axes, so
+     `create` refuses Right with Left. It names the camera frame (`XRightYDownZForward`) and the
+     graphics camera frame (`XRightYUpZBackward`) and measures handedness physically.
+     `basisChange<T>(from, to)` is an exact signed permutation; its determinant is -1 exactly when
+     handedness differs. The named conventions are static member functions, not static constexpr
+     data members of the class's own type, a pattern MSVC has mishandled.
+   - `ctest -j4` **951/951** Debug with video and camera on (+20); the Release build also runs the
+     saturation case, which only exists under `NDEBUG`. Warning-clean, format-check clean.
+   - **Seven sabotages, all caught:** truncating instead of rounding a Length fails the exact-sum
+     case (0.3 mm is 299999.99999999994 nm as a double product); a `finish()` that does not reset
+     fails the reset case; padding to 55 bytes fails every vector; composing the rotations in the
+     wrong order fails the composition case; dropping the reflection check fails the refusal case;
+     reversing `basisChange` fails only the vehicle-frame case (camera to graphics is its own
+     inverse, which is why that case exists); and regrouping the uuid's digits fails three uuid
+     cases.
 
    **Sub-slice 0 built (2026-09-30).** `buildOrLoad` in `apps/flowview/src/runmode.cpp`, which
    `run` and `list` share, now refuses any load that reported a `Severity::Error`, the policy
@@ -5093,11 +5128,10 @@ are renamed in slice 4.
 - **`ReadWriteStream`** — refused with its trigger (`-movflags +faststart`, i.e. a muxer that
   reads back what it wrote). *(§Milestone 13 slice 3, and `stream.h`'s own refusals list.)*
 - **`Range<T>`** — trigger: a second element type actually appearing.
-- **`core::hex`** — trigger: a second consumer. (That criterion **fired for the number parser** on
-  2026-09-21 — see §`core::parse`, which found seven implementations of one job. Hex is still two
-  inverse directions in one file, so it stands.) Today's two sites (`uuid.cpp` decode and encode) are
-  **inverse directions in one file**, not two implementations of one thing, and are the only hex
-  handling in the tree. The likely second consumer is a `#RRGGBB` colour parser for `gui` / `image`.
+- ~~**`core::hex`** — trigger: a second consumer.~~ **Fired and built 2026-09-30** (M9 slice 1,
+  sub-slice 1): a `Sha256Digest`'s text was the second hex encoder, and the fixture manifest's hashes
+  will be the second decoder. `core/hex.h` holds `hexDigits` and `hexDigitValue`, and `Uuid` uses
+  both. The second consumer was a digest, not the `#RRGGBB` colour parser this bullet predicted.
 
 
 

@@ -1137,6 +1137,31 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
+### Update 2026-09-30 — M9 slice 1, sub-slice 1: camera foundations (`Length`, `Sha256`, `RigidTransform`, `AxisConvention`)
+
+The std-only and GLM-only pieces the camera code stands on, with no consumer yet (sub-slices 2 and 3
+are theirs). `ctest -j4` **951/951** Debug with video and camera on (+20), plus the release-only
+saturation case in a Release build; warning-clean, format-check clean. Full notes in WORK.md's
+*Sub-slice 1 built*.
+
+- **`core::Length`** is exact int64 nanometres behind named units, as `core::Time` is for seconds, so
+  one quantity is one value and 0.1 mm + 0.2 mm == 0.3 mm. A NaN or out-of-range double is a
+  precondition (asserted in debug, made defined in release), on `core::Range`'s precedent: the door
+  that turns data into a Length refuses bad input first.
+- **`core::Sha256`** is a streaming FIPS 180-4 hash plus a one-shot `sha256()`, for the
+  board-pattern fingerprint and the fixture dataset's content hashes.
+- **The `core::hex` deferral fired and is built.** Its trigger was "a second consumer", and the
+  digest's text was it. `hexDigits` / `hexDigitValue` in `core/hex.h`; `Uuid` uses both.
+- **`math::RigidTransform<T>`**: composition reads the way `aFromB` field names chain
+  (`aFromC = aFromB * bFromC`), and `fromMatrix` refuses scale, shear, reflection and a projective
+  row rather than extracting the nearest rotation.
+- **`math::AxisConvention`** is valid by construction (`create` refuses two axes on one physical
+  line), and `basisChange<T>(from, to)` is an exact signed permutation whose determinant is -1 exactly
+  when handedness differs. The camera frame is `AxisConvention::XRightYDownZForward()`.
+- **Seven sabotages, all caught**. The instructive one: reversing `basisChange` fails only the
+  vehicle-frame case, because camera to graphics is its own inverse and cannot tell the directions
+  apart.
+
 ### Update 2026-09-30 — develop's CI after the example-documents push: two platform bugs, fixed
 
 The example-documents push (`09b1b94`, the entry below this one) went red on every Linux leg and on

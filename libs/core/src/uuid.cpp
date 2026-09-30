@@ -1,5 +1,7 @@
 #include "lain/core/uuid.h"
 
+#include "lain/core/hex.h"
+
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -8,18 +10,6 @@
 namespace lain::core
 {
 	// --- file-local helpers (named static, not an anonymous namespace) ----------
-
-	// A hex digit's value, or -1 if `c` is not one. Case-insensitive (parse is liberal).
-	static int hexValue(char c)
-	{
-		if (c >= '0' && c <= '9')
-			return c - '0';
-		if (c >= 'a' && c <= 'f')
-			return c - 'a' + 10;
-		if (c >= 'A' && c <= 'F')
-			return c - 'A' + 10;
-		return -1;
-	}
 
 	// 64 random bits. The generator is thread_local, so generate() needs no lock and two threads
 	// never share a sequence; it is seeded once per thread from random_device mixed with the clock
@@ -71,7 +61,7 @@ namespace lain::core
 		{
 			if (c == '-')
 				continue;
-			const int value = hexValue(c);
+			const int value = hexDigitValue(c); // either case: parse is liberal
 			if (value < 0 || digits >= 32)
 				return std::nullopt;
 			// Two digits per byte, high nibble first.
@@ -86,17 +76,10 @@ namespace lain::core
 
 	std::string Uuid::toString() const
 	{
-		static constexpr char kHex[] = "0123456789abcdef";
-		std::string out;
-		out.reserve(36);
-		for (std::size_t i = 0; i < 16; ++i)
-		{
-			if (i == 4 || i == 6 || i == 8 || i == 10)
-				out.push_back('-');
-			out.push_back(kHex[m_bytes[i] >> 4]);
-			out.push_back(kHex[m_bytes[i] & 0x0f]);
-		}
-		return out;
+		// 8-4-4-4-12 digits, so byte groups of 4, 2, 2, 2 and 6.
+		const std::uint8_t* bytes = m_bytes.data();
+		return hexDigits(bytes, 4) + '-' + hexDigits(bytes + 4, 2) + '-' + hexDigits(bytes + 6, 2) + '-' +
+			   hexDigits(bytes + 8, 2) + '-' + hexDigits(bytes + 10, 6);
 	}
 
 	std::string Uuid::shortString() const

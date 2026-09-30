@@ -10,6 +10,9 @@ add_executable(test-core
 	test_paths.cpp
 	test_uuid.cpp
 	test_uri.cpp
+	test_hex.cpp
+	test_sha256.cpp
+	test_length.cpp
 )
 
 target_compile_features(test-core PRIVATE cxx_std_17)
