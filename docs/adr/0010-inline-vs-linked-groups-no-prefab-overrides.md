@@ -32,6 +32,8 @@ decides how they execute.
   It is exactly what the template says, so a template edit reaches every linked group the next time
   they load, with **no per-instance diff**. Editing the template is an explicit **Edit Template…**
   gesture that opens it as its own edit session.
+  *(A node's MEDIA paths follow a related but deliberately different rule, relative only inside the
+  document's own folder tree: [ADR-0027](0027-media-paths-relative-to-the-document.md).)*
 
 Port mirroring, plan expansion, dirty propagation and click-through navigation are shared — the kinds
 differ only in what they serialize and whether in-place editing is refused.

@@ -7415,6 +7415,104 @@ the accent title is selection, pin colour is type, a muted link is inactive:
   outline, badges and status bar; a bind during a run; New / Open / undo during a run; `--frames N`
   quitting cleanly mid-run.
 
+## Example documents (grilled 2026-09-30)
+
+Checked-in example graph documents under `apps/flowview/examples/`. **Before this, no graph document
+or media file had ever been committed.** Every test builds its graph in C++ and round-trips it
+inside one build, so nothing tests that a document written by an older build still loads. The
+purposes, in priority order: **(1) gui eyeballing, (2) demos for users, (3) ctest where it adds
+value.** An example must therefore open in flowview and show something with no hand-binding, since
+bound values are not saved.
+
+### Decisions
+
+- **Ship input data, small and self-generated** (about 100 KB of our own synthetic content).
+  Without data there can be no example for `loadimage`, `listDir`, map, `combine` or any Sequence
+  node. A map's only list source is `listDir`, and a list-typed Constant has no value codec, so it
+  drops its value on save.
+- **Media paths are document-relative on disk and absolute in memory**, inside the document's
+  folder tree only ([ADR-0027](docs/adr/0027-media-paths-relative-to-the-document.md)). The
+  format owns the rule, and a host applies it where a document meets a file. As a result the
+  examples are ONE FLAT folder with `data/` beneath it, since `../data` would be saved absolute.
+- **About 20 focused examples plus one composition bagel** whose job is NESTING across kinds:
+  breadcrumb, element stepper and freshness roll-up across inline / linked / map / loop.
+- **`broken-*` documents**, each asserting its expected issue.
+- **One C++ builder writes both the documents and `data/`**, through lain's own encoders. The native
+  window cannot be driven from a session, and nobody is hand-building 20 documents. Its ids are
+  deterministic (minted uuids remapped to `00000000-0000-7000-8000-00000000000N` in first-appearance
+  order, document-wide), so an unchanged example regenerates byte-identical. Layout is an explicit
+  grid, because the gui's fallback gives every node its own column. `broken-v1.json` alone is
+  hand-written and frozen, since only a v2 writer exists.
+- **Data sets:**
+  - `stills/`: 4 same-size PNGs; Combine refuses mixed extents.
+  - `shot/shot.0001..0024.png`: a moving block plus a burned-in 7-segment frame number, so frame
+    identity can be eyeballed through clip / frameAt / the player.
+  - `shot.mp4`: the same shot, video-ON only.
+  - `holes/`: 3 PNGs and one garbage file.
+- **The oracle is loads, runs, fresh; no golden images.** Float blur is not guaranteed identical
+  across MSVC/GCC/clang. A clean example loads with zero issues, runs, and fills every boundary
+  output. A freshness case regenerates the documents into scratch and byte-compares them with the
+  committed ones. Video examples SKIP with no codec. ONE table `{name, build fn, needsVideo,
+  expectedIssue}` is read by both the builder and the test.
+- **Root boundary inputs are designed around, not fixed.** Bound values are not serialized and a
+  wired input ignores its `Default{}`, so a boundary-driven example opens empty in the gui. Only
+  `sequence-render` has one, because the cli sweep finds its FramePosition pin by type.
+
+### The examples
+
+- **Self-contained:** `tint-blur`, `payload-types`, `control-flow`, `colour-convert`,
+  `inline-group`, `linked-group` + `template-soften`, `count-loop`, `while-loop`, `loop-index`.
+- **Media:**
+  - `load-image`
+  - `folder-average` (a split path plus a broadcast Float sigma)
+  - `sequence-clip` (clip 6+12; frameAt shows burned-in frame 7)
+  - `sequence-render` (a root FramePosition; the cli sweep)
+  - `video` (video-ON)
+- **Broken:**
+  - `broken-missing-template` (placeholder)
+  - `broken-map-hole` (the "k of N elements" row)
+  - `broken-cast-pair` (Image→Int)
+  - `broken-loop-pin` (an interior pin `count`: refused mirror)
+  - `broken-unknown-kind` (dropped with its edges)
+  - `broken-v1` (migrates and runs)
+- **`bagel`:** a root Select (constant selector) chooses between a plain gradient and an inline
+  group. Inside the group, a map over `data/stills` runs each element through a linked
+  `template-soften`, then a loop (blur ×3), then Combine.
+
+### Build order: four commits
+
+1. **Document-relative media paths.** Built 2026-09-30; see below.
+2. **`gradient` records its size.** `width` / `height` become defaulted Int inputs; `--size` stays
+   the preset for a NEW node, and a document without them is unchanged. Until then a document does
+   not fully describe itself: the same file renders 64 px in one session and 512 px in another.
+3. **The builder, the data, the documents, the ctest.**
+   - Sources in `apps/flowview/examples/src/`, target `flowview-examples` (EXCLUDE_FROM_ALL).
+   - An `examples` custom target regenerates the documents in place; `--data` also rewrites
+     `data/`. This mirrors `format` / `format-check`.
+   - `test_examples.cpp` is compiled into `test-flowview` and iterates the one table.
+4. **CI:** the binary smoke also runs `list` and `run` on `folder-average.json`.
+
+### Commit 1 built (2026-09-30): document-relative media paths
+
+`flow::serialize` gains `documentpaths.h`: `kPathTypeKey` (the format's key for a file reference)
+and two transforms over a document Value, `relativizePaths` / `resolvePaths`. They walk every param
+stored under that key, recursing into nested bodies. flowview's `graphio` calls them at the file
+boundary and nowhere else: `saveGraph` after `toValue`, `loadGraph` before `fromValue`, and the
+template resolver on each template against its own folder. Undo snapshots never touch a file, so
+they are never rebased.
+
+- **Two shapes were tried first.** An app-only pass keyed on the codec string put the rule in the
+  wrong owner. A version threading `DocumentLocation {folder, Stored|InMemory}` through `toValue` /
+  `fromValue` / the resolver was messier, because snapshots pass through the same functions. The
+  transforms keep the rule in the format and the plumbing out of the serializer.
+- **Tests:** 6 unit cases (`test_documentpaths.cpp`) and 3 end-to-end on real files in
+  `test_graphio.cpp` (a moved project folder, an undo snapshot untouched, a template's media).
+  `ctest -j8` **919/919** Debug with video on, **925/925** Release with video on, **892/892**
+  Release video-off (+9 each). Warning-clean, format-check clean. Real binary from `/`: a document
+  naming `data/a.png` loads the file beside it, and a re-save writes `data/a.png` back.
+- **Seven sabotages, all caught:** the host skipping each of its three calls, `../` allowed, a
+  relative in-memory path kept, the empty/uri guard dropped, nested bodies skipped.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -7444,6 +7542,9 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md).)*
 
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not.**
+
+- **Example documents** — commit 1 of 4 built (document-relative media paths); commits 2–4 (the
+  `gradient` size, the builder + data + documents + ctest, CI) are next. *(§Example documents.)*
 
 ### Deferred — engine / `flow` core
 
@@ -7488,6 +7589,12 @@ M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that i
 M12 §Not in this milestone.)*
 
 ### Deferred — groups and templates
+
+- **Linked `source` adopting the media-path rule** (relative only inside the document's tree). Today
+  a `source` is always relative, `../` included. *(ADR-0027 §Deliberately unsettled.)*
+- **A nested link resolves against the ROOT document's folder**, not its own template's, which
+  diverges from ADR-0010. It is harmless while templates share one folder.
+  *(ADR-0027 §Deliberately unsettled.)*
 
 - **Prefab overrides / per-instance divergence.** Parameterising via boundary pins is preferred, and
   sharing strengthened the argument. *(ADR-0010; M5 §Deferred; M7 §Not in this milestone.)*

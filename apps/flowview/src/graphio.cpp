@@ -5,6 +5,7 @@
 #include <lain/flow/example/comparenode.h> // Comparison — CompareNode's operator param
 #include <lain/flow/graph.h>
 #include <lain/flow/porttyperegistry.h>
+#include <lain/flow/serialize/documentpaths.h> // media paths relative to the document (ADR-0027)
 #include <lain/flow/serialize/serialize.h>
 #include <lain/image/color.h>
 #include <lain/image/colorspace.h>
@@ -52,6 +53,13 @@ namespace flowview
 {
 	using namespace lain;
 
+	// The folder a local file sits in, spelled so it always names one: "doc.json" lives in ".".
+	static std::filesystem::path folderOf(const std::filesystem::path& file)
+	{
+		const std::filesystem::path parent = file.parent_path();
+		return parent.empty() ? std::filesystem::path{"."} : parent;
+	}
+
 	flow::serialize::ValueCodecs sceneCodecs()
 	{
 		flow::serialize::ValueCodecs codecs;
@@ -59,7 +67,8 @@ namespace flowview
 		codecs.registerType<int>("int");   // ConstantNode<int> (a Select's selector source)
 		codecs.registerType<float>("float");
 		codecs.registerType<std::string>("string"); // ConstantNode<std::string> (a ListDir extension)
-		codecs.registerType<std::filesystem::path>("path");
+		// Under the FORMAT's key, which is what makes a path document-relative on disk (ADR-0027).
+		codecs.registerType<std::filesystem::path>(flow::serialize::kPathTypeKey);
 		codecs.registerType<image::ColorRGBf>("color");
 		codecs.registerType<media::FramePosition>("framePosition"); // FrameAt's position default
 		// Convert's three enum params. data reflects an enum as its NAME through meta::enums, so
@@ -160,7 +169,10 @@ namespace flowview
 		// at all — so a Live document saved today is byte-identical to one saved before this existed.
 		flow::serialize::EditorTree tree = editor;
 		tree.graph = options == DocumentOptions{} ? data::Value{} : data::toValue(options);
-		const data::Value document = flow::serialize::toValue(graph, factory, sceneCodecs(), tree);
+		data::Value document = flow::serialize::toValue(graph, factory, sceneCodecs(), tree);
+		// At the file boundary, media paths inside the document's folder become relative to it.
+		if (const std::optional<std::filesystem::path> local = uri.path())
+			flow::serialize::relativizePaths(document, folderOf(*local));
 		return io::data::save(uri, document);
 	}
 
@@ -209,9 +221,13 @@ namespace flowview
 			const std::filesystem::path full = documentDir.empty() ? std::filesystem::path(source) : documentDir / source;
 			const core::Uri key = templateKey(full);
 
-			const auto document = io::data::load(key);
+			auto document = io::data::load(key);
 			if (!document)
 				return std::nullopt; // io::data::load logged it; serialize turns this into an issue
+
+			// A template's media are relative to the TEMPLATE, the file that stored them (ADR-0027).
+			// Against `full`, not the canonical key: the key resolves symlinks, and "inside" is lexical.
+			flow::serialize::resolvePaths(*document, folderOf(full));
 
 			// .toString(): to flow a template key is an opaque identity token, not a name it may
 			// ask about a scheme or an extension (ADR-0013). This is where a uri stops being one.
@@ -222,7 +238,7 @@ namespace flowview
 	flow::serialize::LoadResult loadGraph(const core::Uri& uri, const core::Factory<flow::Node>& factory,
 										  flow::serialize::TemplateCache* cache)
 	{
-		const auto document = io::data::load(uri);
+		auto document = io::data::load(uri);
 		if (!document)
 		{
 			flow::serialize::LoadResult result; // io::data::load logged the read failure
@@ -237,7 +253,12 @@ namespace flowview
 		// built a relative directory called "s3:" and resolved every template against it: the exact
 		// bug io::localPath was introduced to fix (ADR-0023), one level up. A non-local document
 		// falls back to no directory, which is the existing mode where `source` is taken as written.
+		//
+		// The same folder is what the document's media paths are relative to (ADR-0027): read against
+		// it here, at the file boundary, they are absolute from now on.
 		const std::optional<std::filesystem::path> local = uri.path();
+		if (local)
+			flow::serialize::resolvePaths(*document, folderOf(*local));
 		const std::filesystem::path documentDir = local ? local->parent_path() : std::filesystem::path{};
 		return flow::serialize::fromValue(*document, factory, sceneCodecs(), templateResolver(documentDir), cache);
 	}

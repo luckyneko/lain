@@ -1647,3 +1647,13 @@ iff it stays payload-agnostic; the moment it must name a concrete payload type o
   returned (a GUI shows them and treats `!clean()` as failure; a cli refuses on an `Error`);
   `Severity` is `Warning` / `Error`. The engine reports, the host decides. `flow::loadGraph(uri, ctx)`
   funnels codec + semantic failures into one `LoadResult`.
+
+- **Document-relative path** — how a document names the MEDIA it reads (a param stored under the
+  format's `path` type key: LoadImage's `path`, ListDir's `directory`, a path-typed Constant).
+  **Absolute in memory; on disk, relative to the document's folder when inside that folder's tree,
+  absolute otherwise** — `../` is never written. A load reads a relative one against the folder of
+  the file that stored it (a linked template's against the template's). The format owns the rule
+  (`flow::serialize::relativizePaths` / `resolvePaths`); a host applies it only where a document
+  meets a file, so an undo snapshot is never rebased
+  ([ADR-0027](docs/adr/0027-media-paths-relative-to-the-document.md)). _Avoid_: project path, asset
+  path (there is no project or asset concept).

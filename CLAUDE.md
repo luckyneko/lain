@@ -1137,6 +1137,31 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
+### Update 2026-09-30 — example documents designed; media paths become document-relative (commit 1 of 4)
+
+The repo owner asked for example graph documents for testing. **No graph document or media file had
+ever been committed**, so nothing tests that a document written by an older build still loads.
+Grilled 2026-09-30; the plan is in WORK.md's *Example documents*. It calls for about 20 focused
+examples, a composition "bagel", `broken-*` documents, and a small self-generated `data/`, all
+written by one C++ builder with deterministic ids.
+
+**Commit 1 of 4 is built:** document-relative media paths
+([ADR-0027](docs/adr/0027-media-paths-relative-to-the-document.md)).
+- A path param was never interpreted. A relative one was read against the working directory, and
+  the file dialog saved absolute paths, so real documents broke when moved.
+- Now a path is absolute in memory, and on disk relative when inside the document's folder tree,
+  never `../`.
+- The format owns the rule: `flow::serialize::relativizePaths` / `resolvePaths` over a document
+  Value, keyed on `kPathTypeKey`. flowview applies them where a document meets a file, so undo
+  snapshots are never rebased.
+- `ctest -j8` **919/919** Debug with video on, **925/925** Release with video on, **892/892**
+  Release video-off; warning-clean, format-check clean. Verified through the real binary run from
+  `/`.
+- Two other shapes were tried and dropped; see WORK.md's commit 1 notes.
+
+**Next:** commit 2 (`gradient` records its `width`/`height`), commit 3 (the builder, the data, the
+documents, the ctest), commit 4 (CI).
+
 ### Update 2026-09-29 — M14 slice 8a built: a pull of many targets, cancellable and parallel
 
 The flow half of Run Selection, on the pull fix below.

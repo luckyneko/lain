@@ -59,7 +59,8 @@ namespace flowview
 	// adapter's layout (canvas positions, per level); `options` becomes the root's editor blob. The
 	// blob is written only when `options` differs from the defaults, so a document that never changed
 	// them keeps the bytes it had before options existed — and `options` OWNS the root blob: whatever
-	// `editor.graph` held is replaced. Returns false on a write / encode failure (logged).
+	// `editor.graph` held is replaced. Returns false on a write / encode failure (logged). A media path
+	// inside the folder `uri` names is written relative to it (flow::serialize::relativizePaths).
 	bool saveGraph(const lain::core::Uri& uri, const lain::flow::Graph& graph,
 				   const lain::core::Factory<lain::flow::Node>& factory,
 				   const lain::flow::serialize::EditorTree& editor = {}, const DocumentOptions& options = {});
@@ -91,7 +92,8 @@ namespace flowview
 	lain::flow::serialize::TemplateResolver templateResolver(const std::filesystem::path& documentDir);
 
 	// Load a graph from JSON at `uri`. Best-effort: an unreadable file is a fatal Error in the
-	// returned LoadResult (which then carries an empty graph).
+	// returned LoadResult (which then carries an empty graph). A relative media path is read against
+	// the folder of `uri`, and a linked template's against the template's (resolvePaths).
 	//
 	// `cache` is the host's template cache — what makes several linked groups on one file share a
 	// single definition (ADR-0013). Required rather than defaulted: omitting it is silent, and what it
@@ -106,7 +108,8 @@ namespace flowview
 	// one back through restoreGraph (Load-from-RAM). Uses sceneCodecs(), so it captures exactly what
 	// the on-disk format does — structure, params, node/pin names, dynamic pins, layout — and no
 	// runtime-only state (bound boundary values), which is why two snapshots differing only in a bind
-	// compare equal. It takes no DocumentOptions, on purpose: they are saved, never undone.
+	// compare equal. It takes no DocumentOptions, on purpose: they are saved, never undone. Media paths
+	// are left as held: a snapshot never touches a file, so it is never rebased (nor is its restore).
 	lain::data::Value snapshotGraph(const lain::flow::Graph& graph,
 									const lain::core::Factory<lain::flow::Node>& factory,
 									const lain::flow::serialize::EditorTree& editor = {});

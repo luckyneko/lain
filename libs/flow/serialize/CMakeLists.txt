@@ -5,6 +5,7 @@
 
 add_library(flow-serialize STATIC
 	src/valuecodecs.cpp
+	src/documentpaths.cpp # document-relative paths (ADR-0027)
 	src/serialize.cpp
 	src/version1.cpp # the v1 -> v2 DOM migrator; delete this line with the format
 )

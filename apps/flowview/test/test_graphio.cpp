@@ -8,11 +8,13 @@
 // mode (a headless `flowview list` wants exactly that).
 
 #include "graphio.h"
+#include "scene.h" // registerExampleNodes: the palette, for the nodes that carry a path
 
 #include <lain/core/factory.h>
 #include <lain/data/value.h>
 #include <lain/flow/boundary.h>
 #include <lain/flow/edit.h>
+#include <lain/flow/example/loadimagenode.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/group.h>
 #include <lain/flow/node.h>
@@ -22,6 +24,7 @@
 #include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <filesystem>
 #include <string>
@@ -363,4 +366,116 @@ TEST_CASE("a loaded document's snapshots never carry its options", "[graphio][op
 	// ... and so an undo restore of that snapshot hands back no options to apply.
 	LoadResult restored = flowview::restoreGraph(baseline, factory, dir, nullptr);
 	REQUIRE(restored.editor.graph.isNull());
+}
+
+// --- document-relative paths at the file boundary (ADR-0027) -----------------
+//
+// The transforms are flow::serialize's and are pinned there (test_documentpaths.cpp). These cases
+// are what only the HOST can get wrong: applying them at every file it reads or writes, against the
+// right folder, and at nothing else.
+
+static Factory<Node> mediaFactory()
+{
+	flowview::registerSceneSerialization();
+	Factory<Node> factory;
+	flowview::registerExampleNodes(factory, 8);
+	return factory;
+}
+
+// The in-memory path of the first LoadImage in `graph` (not descending).
+static std::filesystem::path loadPath(const Graph& graph)
+{
+	for (const NodeId id : graph.nodeIds())
+	{
+		const Node& node = graph.node(id);
+		if (dynamic_cast<const lain::flow::example::LoadImageNode*>(&node) == nullptr)
+			continue;
+		for (std::size_t i = 0; i < node.paramCount(); ++i)
+		{
+			if (node.param(i).name() == "path")
+				return node.param(i).get<std::filesystem::path>();
+		}
+	}
+	FAIL("no loadimage path");
+	return {};
+}
+
+// What `file` stores as the first LoadImage's path.
+static std::string storedLoadPath(const std::filesystem::path& file)
+{
+	const auto document = lain::io::data::load(lain::core::Uri::fromPath(file));
+	REQUIRE(document.has_value());
+	for (const lain::data::Value& node : *document->find("nodes")->asArray())
+	{
+		if (*node.find("kind")->asString() != "loadimage")
+			continue;
+		for (const lain::data::Value& param : *node.find("params")->asArray())
+		{
+			if (*param.find("name")->asString() == "path")
+				return *param.find("value")->asString();
+		}
+	}
+	FAIL("no loadimage path stored");
+	return {};
+}
+
+static Graph loadingDocument(const std::filesystem::path& path)
+{
+	Graph graph;
+	graph.add<lain::flow::example::LoadImageNode>(path.string());
+	return graph;
+}
+
+TEST_CASE("a project folder saved and moved whole still finds its media", "[graphio][mediapath]")
+{
+	const std::filesystem::path from = scratchDir("media-move-from");
+	const std::filesystem::path to = scratchDir("media-move-to");
+	const Factory<Node> factory = mediaFactory();
+
+	REQUIRE(flowview::saveGraph(lain::core::Uri::fromPath(from / "doc.json"), loadingDocument(from / "data" / "a.png"),
+								factory));
+	REQUIRE(storedLoadPath(from / "doc.json") == "data/a.png");
+
+	// Before the rule, a document named its footage by the absolute path it was saved with, so this
+	// copy would have read the ORIGINAL folder's file, or nothing.
+	std::filesystem::copy_file(from / "doc.json", to / "doc.json");
+	LoadResult loaded = flowview::loadGraph(lain::core::Uri::fromPath(to / "doc.json"), factory, nullptr);
+	REQUIRE(loaded.clean());
+	REQUIRE(loadPath(loaded.graph) == (to / "data" / "a.png").lexically_normal());
+}
+
+TEST_CASE("an undo snapshot keeps media paths exactly as held", "[graphio][mediapath]")
+{
+	// A snapshot never touches a file, so nothing rebases it. A relative path there is the working
+	// directory's, and a restore that rebased it would re-point an undo at a different file.
+	const std::filesystem::path dir = scratchDir("media-snapshot");
+	const Factory<Node> factory = mediaFactory();
+	const std::filesystem::path path = GENERATE(std::filesystem::path{"rel.png"}, std::filesystem::path{"/abs/a.png"});
+
+	LoadResult restored = flowview::restoreGraph(flowview::snapshotGraph(loadingDocument(path), factory), factory, dir, nullptr);
+	REQUIRE(loadPath(restored.graph) == path);
+}
+
+TEST_CASE("a linked template's media are relative to the template file", "[graphio][mediapath]")
+{
+	// A template is a document saved beside its own data. Read against the PARENT's folder, a template
+	// shared by two projects would find its media in one of them at most.
+	const std::filesystem::path root = scratchDir("media-template");
+	const Factory<Node> factory = mediaFactory();
+	std::filesystem::create_directories(root / "lib");
+
+	Graph templateGraph = loadingDocument(root / "lib" / "a.png");
+	templateGraph.boundaryOutputNode().addBoundary<lain::image::Image>("result");
+	REQUIRE(flowview::saveGraph(lain::core::Uri::fromPath(root / "lib" / "template.json"), templateGraph, factory));
+	REQUIRE(storedLoadPath(root / "lib" / "template.json") == "a.png");
+
+	Graph parent;
+	static_cast<LinkedGroupNode&>(parent.node(parent.add<LinkedGroupNode>())).setSource("lib/template.json");
+	REQUIRE(flowview::saveGraph(lain::core::Uri::fromPath(root / "doc.json"), parent, factory));
+
+	LoadResult loaded = flowview::loadGraph(lain::core::Uri::fromPath(root / "doc.json"), factory, nullptr);
+	const LinkedGroupNode* link = onlyLink(loaded.graph);
+	REQUIRE(link != nullptr);
+	REQUIRE(link->resolved());
+	REQUIRE(loadPath(*link->innerGraph()) == (root / "lib" / "a.png").lexically_normal());
 }
