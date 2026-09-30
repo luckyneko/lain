@@ -2,6 +2,7 @@
 
 #include "lain/camera/board/observation.h"
 #include "lain/camera/board/specification.h"
+#include "lain/camera/provenance.h"
 
 #include <lain/core/factory.h>
 #include <lain/core/time.h>
@@ -101,12 +102,6 @@ namespace lain::camera::board
 		NotRefined,
 		DetectionScale, // refined in the reduced image
 		Native,			// refined against source pixels
-	};
-
-	struct Provenance
-	{
-		std::string backend; // the registry key
-		std::string version; // the backend library's own version
 	};
 
 	// Rejected candidates, kept only for DetailLevel::Detailed.

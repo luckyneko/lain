@@ -2651,11 +2651,59 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       `registerCameraBackends()` aggregator.
    5. Calibration contracts and the board method module: `Request`, `Report`, fitness profiles,
       detection over a `FrameSequence` on the process pool, view selection, a held-out split,
-      validation through lain's own projection, seeded resampling, the verdict.
+      validation through lain's own projection, seeded resampling, the verdict. **Built
+      2026-09-30.**
    6. The OpenCV estimator (BC5, Rational8, KB4; the other variants are a failed report).
    7. The flow adapter and flowview: five node kinds, capability-driven `registerCameraNodes`, a
       Camera catalog category, a cli vertical.
    8. The real-camera fixture. **Blocked on a capture from the repo owner.**
+
+   **Sub-slice 5 built (2026-09-30): calibration contracts and the board method module**
+   (`lain::camera::calibration`, `::calibration::board`, in `libs/camera`).
+   - **Contracts:** `Request` (an explicit `DistortionModel`, the imported-model policy
+     Ignore / Initial / HoldAndValidate, a named fitness profile plus overrides, the detection
+     request, view and resampling knobs, a seed, the execution policy), `Report` (status and
+     structured failures, the model, the verdict and every note behind it, the resolved thresholds,
+     held-out and resampling sections each **evidence or `Unavailable` with a reason**, optional
+     parameter uncertainty, the seeded fields, diagnostics with every frame's detection report, and
+     a reproducibility record holding the request exactly as given), and the `Estimator` backend
+     seam (`canEstimate(model)`, `estimate`, `boardPose` with the model held fixed).
+   - **`reconstruction/1`**, the first named, versioned profile. Every criterion is
+     resolution-independent: view count, image-grid coverage, held-out RMS **angle**, and the
+     relative focal and principal-point variation across resamples. Raw pixels stay as diagnostics.
+     Ready needs every criterion's evidence present; Exploratory holds only present evidence
+     against the model.
+   - **`calibrate(footage, board, request)`**, backend-neutral: detection runs one decoded frame per
+     task on the process pool (serially under DeterministicDebug); every fifth usable view in
+     canonical order (source uri, then ordinal) is held out, starting half a stride in; calibration
+     views are chosen greedily by newly covered grid cells, an unrepresented tilt bucket and tilt
+     distance, with the tilt read from a homography's perspective row so no intrinsics are needed;
+     the estimate goes through `CameraModel::create`; validation measures held-out residuals
+     **with lain's projection**, the backend only recovering each view's pose; resampling draws
+     come from one seeded `mt19937_64` in order with a plain modulo, since the standard
+     distributions differ by platform.
+   - **The Initial policy seeds by model.** The same model seeds everything; a different one seeds
+     the pinhole part and starts the coefficients neutral. The report lists every seeded field.
+     **A held model is validated on every usable view, never estimated, and is at most
+     Exploratory**, since Ready needs stability a held model cannot demonstrate.
+   - **Found by the tests, a real one: resamples ignored the seed.** Under the Initial policy the
+     estimate started from the imported model and the bootstrap re-estimates did not, so the
+     stability evidence described a different procedure from the one that produced the model.
+     Resamples now start where the estimate did.
+   - **The parallel path is exercised, not assumed.** A test starts a real pool and asserts that
+     detection ran on more than one thread, and that DeterministicDebug ran on exactly one (the
+     trap CLAUDE.md records: with no pool started, "parallel" runs inline and proves nothing).
+     Results and draws match under both policies; a different seed gives different draws.
+   - **Tests over stand-in backends that answer from a known truth**, in their own executable
+     (`test-camera-calibration`), since the registries only grow. Every failure path is a report
+     with a reason (unknown profile, a model no backend estimates, no footage, holding nothing, an
+     imported model of another geometry, too few views, an estimator failing, an estimate that is
+     not a camera); with no backend at all, `NoDetector`.
+   - `ctest -j4` **1002/1002** Debug with video and camera on (+11); Release warning-clean.
+   - **Nine sabotages, all caught:** held-out views also calibrating, unseeded draws, resamples not
+     seeded like the estimate, a verdict ignoring the held-out angle, no canonical order, a held
+     model allowed Ready, any backend estimating any model, coefficients seeded across models, and
+     an always-serial `forEach`.
 
    **Sub-slice 4 built (2026-09-30): the OpenCV renderer and detector.**
    - **`lain::camera::opencv`** now holds `CharucoRenderer` (OpenCV's own `generateImage`) and

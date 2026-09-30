@@ -83,6 +83,28 @@ namespace lain::camera
 	using Distortion = std::variant<NoDistortion, BrownConrady5, InverseBrownConrady5, ModifiedBrownConrady5,
 									RationalBrownConrady8, KannalaBrandt4>;
 
+	// A distortion model named without its coefficients: what a calibration request asks to
+	// estimate. The order is the variant's, so modelOf is the variant's index.
+	enum class DistortionModel
+	{
+		None,
+		BrownConrady5,
+		InverseBrownConrady5,
+		ModifiedBrownConrady5,
+		RationalBrownConrady8,
+		KannalaBrandt4,
+	};
+	static_assert(std::variant_size_v<Distortion> == 6, "every Distortion alternative needs a DistortionModel");
+
+	inline DistortionModel modelOf(const Distortion& distortion)
+	{
+		return DistortionModel(distortion.index());
+	}
+
+	// The model with every coefficient zero: a starting point that seeds nothing.
+	Distortion neutral(DistortionModel model);
+
 	// The model's name for a person ("Brown-Conrady 5"), as the vocabulary spells it.
 	std::string_view displayName(const Distortion& distortion);
+	std::string_view displayName(DistortionModel model);
 } // namespace lain::camera

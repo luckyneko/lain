@@ -5,12 +5,41 @@
 
 #include <lain/camera/board/detection.h>
 #include <lain/camera/board/rendering.h>
+#include <lain/camera/calibration/board.h>
+#include <lain/camera/calibration/estimator.h>
+#include <lain/media/framesequence.h>
+#include <lain/media/framesource.h>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include <memory>
 
 using namespace lain;
 using namespace lain::camera::board;
 using namespace lain::camera::testing;
+namespace calibration = lain::camera::calibration;
+
+namespace
+{
+	class StillSource : public media::FrameSource
+	{
+	public:
+		StillSource()
+			: FrameSource{core::Uri{"/still"}, spec(), 3}
+		{
+		}
+		static media::FrameSpec spec()
+		{
+			media::FrameSpec s;
+			s.extent = {64, 48};
+			s.pixelFormat = image::PixelFormat::Gray8;
+			return s;
+		}
+
+	protected:
+		image::Image decodeFrame(std::size_t) const override { return image::Image{64, 48, image::PixelFormat::Gray8}; }
+	};
+} // namespace
 
 TEST_CASE("with no backend, detect reports the missing capability as a failed report", "[camera][board]")
 {
@@ -27,4 +56,14 @@ TEST_CASE("with no backend, render has nothing to give", "[camera][board]")
 {
 	REQUIRE_FALSE(canRender());
 	CHECK_FALSE(render(pattern()).has_value());
+}
+
+TEST_CASE("with no backend, calibration fails with the missing capability", "[camera][calibration]")
+{
+	const media::FrameSequence footage = media::FrameSequence::over(std::make_shared<StillSource>());
+	const calibration::Report report = calibration::board::calibrate(footage, specification(), {});
+	CHECK(report.status == calibration::CalibrationStatus::Failed);
+	REQUIRE_FALSE(report.failures.empty());
+	CHECK(report.failures[0].failure == calibration::Failure::NoDetector);
+	CHECK_FALSE(calibration::canEstimate());
 }

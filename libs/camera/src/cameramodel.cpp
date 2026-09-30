@@ -231,6 +231,31 @@ namespace lain::camera
 			distortion);
 	}
 
+	Distortion neutral(DistortionModel model)
+	{
+		switch (model)
+		{
+			case DistortionModel::None:
+				return NoDistortion{};
+			case DistortionModel::BrownConrady5:
+				return BrownConrady5{};
+			case DistortionModel::InverseBrownConrady5:
+				return InverseBrownConrady5{};
+			case DistortionModel::ModifiedBrownConrady5:
+				return ModifiedBrownConrady5{};
+			case DistortionModel::RationalBrownConrady8:
+				return RationalBrownConrady8{};
+			case DistortionModel::KannalaBrandt4:
+				return KannalaBrandt4{};
+		}
+		return NoDistortion{};
+	}
+
+	std::string_view displayName(DistortionModel model)
+	{
+		return displayName(neutral(model));
+	}
+
 	Applicability applicability(const CameraModel& model, const ImageGeometry& footage)
 	{
 		return model.image() == footage ? Applicability::Unknown : Applicability::Incompatible;

@@ -13,6 +13,9 @@ add_library(camera STATIC
 	src/board/specification.cpp
 	src/board/detection.cpp
 	src/board/rendering.cpp
+	src/calibration/fitness.cpp
+	src/calibration/estimator.cpp
+	src/calibration/board.cpp
 )
 add_library(lain::camera ALIAS camera)
 
@@ -22,6 +25,7 @@ target_link_libraries(camera
 	PUBLIC lain::math  # math::AxisConvention names the camera frame (cameramodel.h)
 	PUBLIC lain::core  # Length, Sha256 and Factory are in board values and backend registries
 	PUBLIC lain::media # an observation names its frame (media::FrameRef); image::Image comes with it
+	PRIVATE lain::task # detection and resampling run on the process pool
 	PRIVATE lain::log  # a render that cannot happen says why
 	PRIVATE lain::warnings
 )

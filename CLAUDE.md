@@ -1137,6 +1137,32 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
+### Update 2026-09-30 — M9 slice 1, sub-slice 5: the board calibration method module
+
+`lain::camera::calibration` (Request, Report, the `Estimator` seam, the `reconstruction/1` fitness
+profile) and `calibration::board::calibrate(footage, board, request)`: detection on the process pool,
+a canonical held-out split, greedy view selection by coverage and tilt, estimation through the
+backend, validation through lain's own projection, seeded resampling and the verdict. No real
+estimator yet (sub-slice 6). `ctest -j4` **1002/1002** Debug with video and camera on (+11); Release
+warning-clean. Full notes in WORK.md's *Sub-slice 5 built*.
+
+- **Every criterion in `reconstruction/1` is resolution-independent**: held-out RMS angle, coverage
+  fraction, relative focal and principal-point variation. Ready requires all evidence present, and a
+  held model (HoldAndValidate) is therefore at most Exploratory.
+- **The tests found a real bug:** bootstrap resamples were not seeded like the estimate, so under the
+  Initial policy the stability evidence described a different procedure. Now they start where the
+  estimate did.
+- **The parallel path is proven, not assumed**: a test starts a real pool and requires detection on
+  several threads, and DeterministicDebug on exactly one. With no pool started, "parallel" runs
+  inline, and an equal-results check cannot tell.
+- Resampling draws come from one seeded `mt19937_64` via a plain modulo, because the standard's
+  distributions are implementation-defined.
+- Stand-in backends answer from a known truth in their own test executable, since registries only
+  grow.
+- Two refactors in unpushed code: `Provenance` moved to `lain::camera`, and `distortion.h` gained
+  `DistortionModel`. Inside `calibration`, a bare `board::` now means `calibration::board`, so the
+  headers spell `camera::board::`.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 4: the OpenCV renderer and detector
 
 `lain::camera::opencv` renders and detects ChArUco boards behind `lain::camera::board`'s seams,

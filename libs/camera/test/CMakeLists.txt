@@ -18,3 +18,10 @@ add_executable(test-camera-nobackend test_nobackend.cpp)
 target_compile_features(test-camera-nobackend PRIVATE cxx_std_17)
 target_link_libraries(test-camera-nobackend PRIVATE lain::camera lain::warnings Catch2::Catch2WithMain)
 catch_discover_tests(test-camera-nobackend TEST_PREFIX "(camera) ")
+
+# The calibration method module over stand-in backends that answer from a known truth. Its own
+# executable, so those stand-ins are the only backends registered.
+add_executable(test-camera-calibration test_calibration.cpp)
+target_compile_features(test-camera-calibration PRIVATE cxx_std_17)
+target_link_libraries(test-camera-calibration PRIVATE lain::camera lain::testing lain::warnings Catch2::Catch2WithMain)
+catch_discover_tests(test-camera-calibration TEST_PREFIX "(camera) ")
