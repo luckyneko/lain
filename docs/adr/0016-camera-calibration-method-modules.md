@@ -95,7 +95,13 @@ Brown-Conrady coefficients are not interchangeable merely because both use five 
 and unprojection follow the declared model, and each physical imager and stream geometry receives its
 own camera model rather than inheriting one device-wide calibration.
 
-The first real-camera calibration fixture uses the Intel RealSense D455 RGB stream. Camera-model
+The first real-camera calibration fixture is a **generic** real-camera fixture, and its first capture
+happens to come from an Intel RealSense D455 RGB stream. *(Amended 2026-09-30: this read "uses the
+Intel RealSense D455 RGB stream", and the repo owner corrected the emphasis before any of it was
+built. The goal is to be as generic as possible, so the D455 is a capture, not a type: nothing in
+the code names a device. The fixture's provenance is a generic record (device make, model and
+identity when known, stream profile, SDK and firmware key-values, an optional imported
+manufacturer model), and a second camera is a second capture, not a second schema.)* Camera-model
 support is capability-specific: the shared camera module may represent, project, unproject, validate,
 or import a model even when a particular optional calibration backend cannot estimate that model.
 Calibration requests reject unsupported estimation combinations through a failed calibration report.
@@ -148,14 +154,16 @@ distortion coefficients begin neutral unless a separately tested explicit conver
 record every reused or converted field; coefficient arrays are never copied between forward and
 inverse Brown-Conrady variants based only on matching shape.
 
-The RealSense factory model is a comparison diagnostic, not the ground-truth oracle for the D455
-fixture. Fixture pass/fail criteria use independent held-out board reprojection, geometric coverage,
+An imported manufacturer model (the D455's RealSense factory model, for the first capture) is a
+comparison diagnostic, not the ground-truth oracle for the fixture. Fixture pass/fail criteria use independent held-out board reprojection, geometric coverage,
 parameter and resampling stability, repeat captures, and reconstruction of known board geometry.
 Factory-versus-estimated parameter differences remain visible but cannot alone accept or reject a
 calibration.
 
-Real-camera testing uses two fixture tiers. A compact curated D455 RGB ChArUco image set is committed
-for deterministic integration tests. A larger external capture is addressed by a versioned manifest
+Real-camera testing uses two fixture tiers. A compact curated ChArUco image set, first captured on
+the D455's RGB stream, is committed for deterministic integration tests. Everything before it lands
+on synthetic evidence; the fixture is the last piece of the first slice, because it waits on a real
+capture. A larger external capture is addressed by a versioned manifest
 and content hashes for accuracy, performance, downsampling, and resampling experiments. Ordinary CI
 runs the compact tier; extended validation reports that the larger tier was unavailable rather than
 silently substituting different data.
@@ -181,3 +189,35 @@ video calibration does not materialize a `std::vector<image::Image>`; it retains
 Milestone 10, decided in [ADR-0018](0018-frame-sequences-and-host-driven-rendering.md) and built
 2026-08-31 → 09-04. A sequence is a list of frame references over sources, lazily decoded; the host
 owns the frame loop, so a render is a fold rather than a map.)*
+
+**Node kinds register only when they can run.** *(Added 2026-09-30, decided with the repo owner
+while planning the first slice.)* A camera node kind is registered with a host's node factory only
+when a backend providing the capability it needs is registered: rendering for a board renderer,
+detection for a detector, detection plus estimation for calibration. With no backend (the default
+`LAIN_CAMERA_OPENCV=OFF`), no camera node kind exists. The value types those nodes carry are still
+registered as port types, since they are vocabulary: a boundary pin of one still loads.
+
+This is deliberately the opposite of video's rule (ADR-0019's amendment), and the difference is in
+what is missing. Video's reader seam always exists and only a *format* may be unsupported, the way
+an image loader exists even when JPEG is not compiled in, so `openSequence` is always a node and
+reports a missing codec when run. A calibration node with no backend has no seam behind it at all,
+and a node that cannot function should not be offered.
+
+The cost is recorded rather than avoided. A document saved by a build with camera nodes, opened in
+one without, loses those nodes (and their edges) on load. The loader reports that as an Error, and
+flowview's headless `run` and `list` refuse any document that did not load as saved rather than
+running what is left, which would be a different graph reported as success.
+
+**OpenCV runs serial; lain supplies the parallelism.** *(Added 2026-09-30.)* The OpenCV plugin sets
+`cv::setNumThreads(0)` once, when it registers, so OpenCV's built-in pool never runs beside the
+process pool ADR-0024 makes the only one. Parallelism comes from lain's side of the seam: detection
+over a frame sequence runs one frame per task on that pool, each task decoding its frame and
+releasing it. The deterministic-debug execution policy runs the same work serially. Routing OpenCV's
+`parallel_for_` onto `multi` was the other option (ADR-0026) and was not taken: per-frame
+parallelism already fills the machine, and a nested parallel region inside each frame would only
+contend with it.
+
+**Board rendering is filled by the backend.** *(Added 2026-09-30.)* `lain::camera::board` owns the
+pattern, its fingerprint and the rendering value (raster, description, fingerprint). The OpenCV
+plugin fills the raster, so a rendered board and a detected board are the same backend's idea of the
+pattern, and lain carries no second implementation of the ArUco dictionaries.

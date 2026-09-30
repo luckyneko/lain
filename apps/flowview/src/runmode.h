@@ -63,7 +63,8 @@ namespace flowview
 	// Evaluation retained across the whole sweep, and each iteration's outputs written through a
 	// pattern naming io::image::frameKey ("out.<frame:04>.png").
 	//
-	// Returns a process exit code: 0, or 1 when the graph could not be loaded, a binding was
+	// Returns a process exit code: 0, or 1 when the graph could not be loaded AS SAVED (any
+	// Severity::Error — a missing file, or a node this build has no kind for), a binding was
 	// refused, an output could not be written, or a render stopped on a suppressed frame. A
 	// truncated render must be distinguishable from a complete one by a caller that only sees the
 	// exit status.
@@ -73,7 +74,8 @@ namespace flowview
 	// `list`: print the graph's boundary inputs / outputs as `--<name> : <type>` (the flags `run`
 	// accepts), marking any input whose type has no cli binder, and reporting whether the graph is
 	// RENDERABLE (it has a frame-position input, so `--frame` can drive it). Returns 0, or 1 if the
-	// graph couldn't be loaded.
+	// graph couldn't be loaded as saved — the same refusal `run` makes, since an interface listed
+	// from a partial load would describe a graph the file does not hold.
 	int listGraph(const std::string& graphPath, const lain::core::Factory<lain::flow::Node>& factory,
 				  const BoundaryBinders& binders);
 } // namespace flowview

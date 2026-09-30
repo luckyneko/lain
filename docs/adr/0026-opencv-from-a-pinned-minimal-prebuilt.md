@@ -119,7 +119,10 @@ changed under a stable tag before.
 - **OpenCV brings its own thread pool.** Its built-in parallel framework is left in the prebuilt,
   and ADR-0024 says a process has one pool. The camera plugin has two options: cap OpenCV with
   `cv::setNumThreads`, or install a `cv::parallel` backend that runs OpenCV's `parallel_for_` on
-  `multi`. Choosing is M9 slice 1's job; either works with these binaries.
+  `multi`. Choosing is M9 slice 1's job; either works with these binaries. *(**Decided
+  2026-09-30:** the first. The plugin calls `cv::setNumThreads(0)` when it registers, and lain
+  parallelises across frames on its own pool. The reasoning is in
+  [ADR-0016](0016-camera-calibration-method-modules.md).)*
 - **Obligations are notices, not source.** Apache-2.0 and the vendored permissive licences ask a
   redistributor to pass on the licence texts. They travel in the archive; `addOpenCV.cmake` stages
   them and registers an `--licenses` notice, as FFmpeg's does.

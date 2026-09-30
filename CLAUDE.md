@@ -1137,6 +1137,43 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
+### Update 2026-09-30 — M9 slice 1 planned; sub-slice 0: `run` / `list` refuse a lossy load
+
+M9 slice 1 (camera geometry + ChArUco calibration) is planned as **eight sub-slices, one commit
+each**, in WORK.md's M9 build order. Four decisions came from the repo owner while planning, all
+recorded by amending [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md) in place:
+- **The real-camera fixture is last and generic.** The D455 is its first capture, not a type in the
+  code, and its provenance is a generic record. Everything before it lands on synthetic evidence.
+- **A camera node kind registers only when a backend can run it**, so `LAIN_CAMERA_OPENCV=OFF`
+  registers none. This is the opposite of video's rule, on purpose: video's reader seam always
+  exists and only a format may be missing, while a calibration node with no backend cannot
+  function. Port types still register, since they are vocabulary.
+- **OpenCV runs serial; lain parallelises across frames** (`cv::setNumThreads(0)`, one frame per
+  task on the process pool). This settles ADR-0026's recorded thread-pool question, marked there.
+- **The OpenCV plugin renders boards**, so a rendered and a detected board are one backend's idea of
+  the pattern.
+
+**Sub-slice 0 is built**: `run` and `list` refuse any document whose load reported a
+`Severity::Error`. It is the registration rule's consequence (a document saved with camera nodes,
+opened by a build without them, loses those nodes), and it was a real hole already. `ctest -j4`
+**913/913** Debug with video and camera on (+3); warning-clean, format-check clean. Full notes in
+WORK.md's *Sub-slice 0 built*.
+
+- **The old check had been dead since M5 slice 2.** It tested `nodeCount() == 0`, and every `Graph`
+  is born with its boundary pair, so nothing reached it. Measured before the fix, through the real
+  binary: `run --graph missing.json` ran an empty graph and **exited 0**, and so did `list`.
+- **Carrying on was data loss, not just a wrong answer.** A node whose kind the build lacks is
+  dropped with both of its edges, and `run --save` then wrote that smaller graph to the path it
+  named. A refused run writes nothing, and the test asserts it.
+- **A Warning still runs** (an unknown param), so one stale param does not make a document
+  unrunnable. The gui is unchanged: it already lists every load issue.
+- **Two sabotages, both caught:** the old `nodeCount()` test fails both refusal cases; refusing on
+  any issue fails the warning case.
+- **The full tree now builds in this sandbox.** GitHub source archives still answer 403, so each
+  pinned GitHub dependency is cloned over git and handed to configure as
+  `FETCHCONTENT_SOURCE_DIR_<NAME>`. libtiff (gitlab) downloads normally, and FFmpeg and OpenCV are
+  release assets. The ctest baseline before this change was 910/910, matching CI's Linux Debug leg.
+
 ### Update 2026-09-30 — example documents: media paths become document-relative, gradient records its size, the examples land, CI runs one (commits 1–4, COMPLETE)
 
 The repo owner asked for example graph documents for testing. **No graph document or media file had

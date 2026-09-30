@@ -2403,7 +2403,8 @@ adds a pin to the canvas.
 **Designed, not started** — the only milestone from 5 onward that is. M10 was numbered after it and
 built before it, discharging its frame-sequence prerequisite. How OpenCV is obtained was settled
 2026-09-29 ([ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md)), and slice 0 below
-(OpenCV lands, nothing depending on it) is built. Slice 1 is where the milestone's code starts.
+(OpenCV lands, nothing depending on it) is built. **Slice 1 is in progress** as eight sub-slices
+(below); sub-slice 0 is built.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -2611,8 +2612,69 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    ChArUco rendering and fingerprints, backend-neutral observations and detection reports, view
    selection, calibration reports, validation, and reconstruction-fitness profiles. The optional
    OpenCV adapter owns ChArUco detection and estimation. Prove the direct production path with
-   formula-level synthetic tests, a compact committed D455 RGB fixture, and an external hashed
-   extended dataset. Do not expose targetless or fallback stubs.
+   formula-level synthetic tests, a compact committed real-camera fixture (first captured on a D455
+   RGB stream, but generic: nothing in the code names a device), and an external hashed extended
+   dataset. Do not expose targetless or fallback stubs.
+
+   **Planned 2026-09-30 as eight sub-slices, one commit each.** Four decisions came from the repo
+   owner while planning, all recorded in ADR-0016 (amended in place):
+   - **The real-camera fixture is last and generic.** Everything lands on synthetic evidence first.
+     The D455 is the first capture, not a type, and "the RealSense factory model" is any imported
+     manufacturer model.
+   - **A node kind registers only when it can run.** `LAIN_CAMERA_OPENCV=OFF` registers no camera
+     node kinds, which is the opposite of video's rule on purpose: a video reader seam always exists
+     and only a format may be missing, while a calibration node with no backend cannot function.
+   - **OpenCV runs serial; lain parallelises across frames** (`cv::setNumThreads(0)`, `task::each`).
+     This settles ADR-0026's thread-pool question.
+   - **The OpenCV plugin renders boards**, so a rendered and a detected board are one backend's idea
+     of the pattern.
+
+   Targets: `libs/camera` (std and lain only, always built), `libs/camera/flow` (the node adapter),
+   and the existing `plugins/camera/opencv` for everything that touches OpenCV. Backend seams are
+   name-keyed registries filled by a generated `registerCameraBackends()` aggregator, the
+   `io::video` precedent.
+
+   0. **`run` / `list` refuse a document that did not load as saved.** A consequence of the
+      registration rule, and a real hole on its own. **Built 2026-09-30** (landing notes below).
+   1. `core::Length`, `core::sha256`, `math::RigidTransform<T>`, `math::AxisConvention`.
+   2. Camera models: intrinsics, the closed distortion set, scalar-generic `project<T>` /
+      `unproject<T>`, `ProjectionStatus`, containment, `CameraModel::create` with diagnostics,
+      applicability, serialization, golden tests.
+   3. Board values and detection contracts: `Pattern` + fingerprint, `Instance`, `Specification`,
+      `Observation`, `DetectionRequest`, `DetectionReport`, `Rendering`, the render and detect seams.
+   4. The OpenCV renderer and detector: scaled detection mapped back to source pixels, then
+      native-resolution refinement.
+   5. Calibration contracts and the board method module: `Request`, `Report`, fitness profiles,
+      detection over a `FrameSequence` on the process pool, view selection, a held-out split,
+      validation through lain's own projection, seeded resampling, the verdict.
+   6. The OpenCV estimator (BC5, Rational8, KB4; the other variants are a failed report).
+   7. The flow adapter and flowview: five node kinds, capability-driven `registerCameraNodes`, a
+      Camera catalog category, a cli vertical.
+   8. The real-camera fixture. **Blocked on a capture from the repo owner.**
+
+   **Sub-slice 0 built (2026-09-30).** `buildOrLoad` in `apps/flowview/src/runmode.cpp`, which
+   `run` and `list` share, now refuses any load that reported a `Severity::Error`, the policy
+   `loadresult.h` already described ("a cli may refuse only on an Error").
+   - **The old check had been dead for two months.** It tested `nodeCount() == 0`, and every
+     `Graph` has been born with its boundary pair since M5 slice 2, so nothing could reach it.
+     Measured through the real binary before the fix: `run --graph missing.json` ran an empty
+     graph and exited 0, as did `list`.
+   - **Carrying on was worse than wrong.** A document naming a kind this build lacks loses the node
+     and both of its edges, and `run --save` then wrote that smaller graph to the path it named. A
+     refused run now writes nothing, which the test asserts.
+   - **A Warning still runs** (an unknown param, a v1 document migrated on load), so one stale
+     param does not make a document unrunnable.
+   - The gui is unchanged: it already shows every load issue in the Issues pane.
+   - `ctest -j4` **913/913** Debug with video and camera on (+3, `[runmode]`, new
+     `apps/flowview/test/test_runmode.cpp`); warning-clean, format-check clean. Driven through the
+     real binary: a missing file and a lossy document each exit 1, and the lossy one with `--save`
+     writes no file.
+   - **Two sabotages, both caught.** Restoring the `nodeCount() == 0` test fails both refusal
+     cases. Refusing on any issue fails the warning case.
+   - **The full tree now builds in this sandbox.** GitHub source archives still answer 403, so
+     each pinned GitHub dependency is cloned over git and handed to configure as
+     `FETCHCONTENT_SOURCE_DIR_<NAME>` (libtiff comes from gitlab and downloads normally; FFmpeg
+     and OpenCV are release assets). Slice 0's harness is no longer needed.
 2. **Fixed-camera board registration.** Add explicit capture-group input values, observation-graph
    diagnostics, `referenceFromCamera` results, registration scale status, fitness, and reports. Use
    the optional private Ceres adapter for one sparse global-refinement path, with SuiteSparse disabled
@@ -7592,7 +7654,8 @@ row here**. A row is cheap to delete and expensive to leave.
   code. **Unblocked:** M10 was numbered after it and built before it, discharging its frame-sequence
   prerequisite. How OpenCV is obtained was decided 2026-09-29 (a pinned prebuilt), its first
   release (`opencv-4.14.0-calib`) is published, and **slice 0 is built** (`addOpenCV.cmake`, the
-  `[opencv]` probe), so slice 1 is next. *(Milestone 9;
+  `[opencv]` probe). **Slice 1 is in progress** as eight sub-slices, of which sub-slice 0 is built
+  and sub-slice 8 (the real-camera fixture) waits on a capture. *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md),

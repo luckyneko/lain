@@ -22,6 +22,7 @@ add_executable(test-flowview
 	test_runner.cpp
 	test_runpolicy.cpp
 	test_freshness.cpp
+	test_runmode.cpp
 	test_examples.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../examples/src/examples.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/undo.cpp"
