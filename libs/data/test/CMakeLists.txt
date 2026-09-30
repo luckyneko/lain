@@ -3,6 +3,7 @@
 add_executable(test-data
 	test_value.cpp
 	test_serialize.cpp
+	test_strict.cpp
 	test_macro_variant.cpp
 )
 

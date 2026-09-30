@@ -16,6 +16,7 @@
 #include "graphio.h"
 #include "runmode.h"
 #include "scene.h"
+#include "syntheticfootage.h" // the footage, drawn in plain C++
 
 #include <lain/camera/backends.h>
 #include <lain/camera/board/detection.h>
@@ -156,84 +157,7 @@ namespace
 	}
 
 	// The camera the footage is seen through: a 640x480 pinhole with distinct intrinsics.
-	constexpr double kFx = 600.0, kFy = 602.0, kCx = 321.4, kCy = 238.6;
-	constexpr int kWidth = 640, kHeight = 480;
-
-	// The board at pose `i` of `count`: a sweep across the image that tilts it every way (the
-	// plugin's synthetic sweep).
-	math::RigidTransformd sweepPose(const camera::board::Specification& spec, std::size_t i, std::size_t count)
-	{
-		const double t = double(i) / double(count);
-		const double tau = 6.283185307179586;
-		const camera::board::PatternParameters& p = spec.pattern().parameters();
-		const double square = spec.instance().squareLength.value.metres();
-		const math::Vec3d centre{p.squaresX * square / 2, p.squaresY * square / 2, 0.0};
-		const math::Quatd turn = math::angleAxis(0.5 * std::sin(tau * t), math::Vec3d{0, 1, 0}) *
-								 math::angleAxis(0.4 * std::cos(2 * tau * t), math::Vec3d{1, 0, 0});
-		const math::Vec3d offset{0.13 * std::cos(3 * tau * t), 0.09 * std::sin(3 * tau * t), 0.42};
-		return math::RigidTransformd{turn, offset - turn * centre};
-	}
-
-	// The raster at (x, y), bilinearly, on mid grey beyond its edges.
-	double sample(const image::Image& raster, double x, double y)
-	{
-		const auto at = [&raster](long px, long py) -> double
-		{
-			if (px < 0 || py < 0 || px >= raster.width() || py >= raster.height())
-				return 128;
-			return raster.data()[std::size_t(py) * std::size_t(raster.width()) + std::size_t(px)];
-		};
-		const long x0 = long(std::floor(x)), y0 = long(std::floor(y));
-		const double fx = x - double(x0), fy = y - double(y0);
-		return (at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy) +
-			   (at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy;
-	}
-
-	// What the camera sees of the rendered board at `pose`, on mid grey: each pixel the mean of 3x3
-	// rays, each ray met with the board plane and sampled from the raster. Supersampled, and sampled
-	// bilinearly, because aliased markers bias every corner: nearest sampling put fx 0.33% out.
-	image::Image view(const camera::board::Rendering& rendering, const camera::board::Specification& spec,
-					  const math::RigidTransformd& pose)
-	{
-		const image::Image& raster = rendering.raster;
-		// Board metres -> raster pixel. The board's top-left corner is raster coordinate margin - 0.5,
-		// since pixel (0, 0) is the centre of the first pixel.
-		const double perMetre = rendering.request.pixelsPerSquare / spec.instance().squareLength.value.metres();
-		const double origin = double(rendering.request.marginPixels) - 0.5;
-
-		// A ray d (camera frame) meets the plane where b = R^T (lambda d - t) has b.z = 0.
-		const math::Mat3d r = math::mat3_cast(pose.rotation());
-		const math::Vec3d t = pose.translation();
-		const math::Vec3d c{math::dot(r[0], t), math::dot(r[1], t), math::dot(r[2], t)}; // R^T t
-
-		constexpr int s = 3;
-		image::Image frame{kWidth, kHeight, image::PixelFormat::Gray8, image::ColorSpace::sRGB};
-		for (int v = 0; v < kHeight; ++v)
-		{
-			for (int u = 0; u < kWidth; ++u)
-			{
-				double sum = 0;
-				for (int j = 0; j < s; ++j)
-				{
-					for (int i = 0; i < s; ++i)
-					{
-						const math::Vec3d d{(u + (i + 0.5) / s - 0.5 - kCx) / kFx, (v + (j + 0.5) / s - 0.5 - kCy) / kFy, 1.0};
-						const math::Vec3d q{math::dot(r[0], d), math::dot(r[1], d), math::dot(r[2], d)}; // R^T d
-						double value = 128;
-						if (q.z != 0 && c.z / q.z > 0)
-						{
-							const double lambda = c.z / q.z;
-							value = sample(raster, (lambda * q.x - c.x) * perMetre + origin,
-										   (lambda * q.y - c.y) * perMetre + origin);
-						}
-						sum += value;
-					}
-				}
-				frame.data()[std::size_t(v) * kWidth + std::size_t(u)] = std::uint8_t(std::lround(sum / (s * s)));
-			}
-		}
-		return frame;
-	}
+	const camera::synthetic::Pinhole kCamera{};
 
 	// The footage, as a folder of stills: what a user would bind.
 	fs::path writeFootage(const fs::path& dir, std::size_t frames)
@@ -255,7 +179,9 @@ namespace
 		for (std::size_t i = 0; i < frames; ++i)
 		{
 			const std::string name = "frame." + std::string(4 - std::to_string(i).size(), '0') + std::to_string(i) + ".png";
-			REQUIRE(io::image::save(core::Uri::fromPath(folder / name), view(*rendering, spec, sweepPose(spec, i, frames))));
+			REQUIRE(io::image::save(core::Uri::fromPath(folder / name),
+									camera::synthetic::view(*rendering, spec, kCamera,
+															camera::synthetic::sweepPose(spec, i, frames))));
 		}
 		return folder;
 	}
@@ -315,13 +241,13 @@ TEST_CASE("run calibrates a camera from a folder of footage", "[camera][runmode]
 	REQUIRE(model.has_value());
 	INFO("model: " << model->toString());
 	CHECK(std::holds_alternative<camera::NoDistortion>(model->distortion()));
-	CHECK(model->image() == camera::ImageGeometry{kWidth, kHeight});
+	CHECK(model->image() == camera::ImageGeometry{std::uint32_t(kCamera.width), std::uint32_t(kCamera.height)});
 	// Measured 0.14% and 0.3 px off; the bounds leave room for another platform's arithmetic, and
 	// still catch a model that is not this camera's.
-	CHECK(std::abs(model->intrinsics().fx - kFx) < 0.005 * kFx);
-	CHECK(std::abs(model->intrinsics().fy - kFy) < 0.005 * kFy);
-	CHECK(std::abs(model->intrinsics().cx - kCx) < 1.0);
-	CHECK(std::abs(model->intrinsics().cy - kCy) < 1.0);
+	CHECK(std::abs(model->intrinsics().fx - kCamera.fx) < 0.005 * kCamera.fx);
+	CHECK(std::abs(model->intrinsics().fy - kCamera.fy) < 0.005 * kCamera.fy);
+	CHECK(std::abs(model->intrinsics().cx - kCamera.cx) < 1.0);
+	CHECK(std::abs(model->intrinsics().cy - kCamera.cy) < 1.0);
 
 	SECTION("the model file binds back, and a held model is validated rather than re-estimated")
 	{

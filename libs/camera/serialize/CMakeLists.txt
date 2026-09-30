@@ -10,7 +10,6 @@
 add_library(camera-serialize STATIC
 	src/cameramodel.cpp
 	src/board.cpp
-	src/strict.cpp
 )
 add_library(lain::camera::serialize ALIAS camera-serialize)
 

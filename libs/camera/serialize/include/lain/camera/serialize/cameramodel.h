@@ -47,9 +47,9 @@ namespace lain::camera
 		std::vector<std::string> problems; // empty exactly when `model` is set
 	};
 
-	// A camera model from a document, read STRICTLY, where lain::data reads a member best-effort: an
-	// unknown or missing key, an unknown distortion variant, or a value of the wrong kind is a problem
-	// named by its path, never a silent default. A hand-typed manufacturer model is exactly where a
+	// A camera model from a document, read STRICTLY (data::shapeDifferences), where lain::data reads a
+	// member best-effort: an unknown or missing key, an unknown distortion variant, or a value of the
+	// wrong kind is a problem named by its path, never a silent default. A hand-typed manufacturer model is exactly where a
 	// misspelled "k2" would otherwise load as zero. What is read then goes through CameraModel::create,
 	// whose diagnostics join the problems.
 	CameraModelRead cameraModelFromValue(const data::Value& document);

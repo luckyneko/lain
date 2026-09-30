@@ -3,9 +3,12 @@
 #include "lain/data/archive.h"
 #include "lain/data/details/reflect.h" // the dispatch engine toValue / fromValue bottom out on
 #include "lain/data/macros.h"
+#include "lain/data/strict.h"
 #include "lain/data/value.h"
 
 #include <optional>
+#include <string>
+#include <vector>
 
 // lain::data — the central header + the T <-> Value reflection facade. This is NOT serialization
 // (that is Value <-> bytes, in lain::io::data): a Value is a tree, not a byte stream — hence the
@@ -52,5 +55,33 @@ namespace lain::data
 		if (detail::readValue(value, out))
 			return out;
 		return std::nullopt;
+	}
+
+	// The outcome of a strict read: the value, or every way the document failed to be one.
+	template <typename T>
+	struct StrictRead
+	{
+		std::optional<T> value;
+		std::vector<std::string> problems; // empty exactly when `value` is set
+	};
+
+	// fromValue, then shapeDifferences between the document and the value written back: an unknown or
+	// missing key, an unrecognised enum or variant name, or a value of the wrong kind is a problem named
+	// by its path instead of a default. For documents a person types, where best-effort reading would
+	// hide a typo; fromValue stays the tolerant read for documents another build wrote.
+	template <typename T>
+	StrictRead<T> fromValueStrict(const Value& value)
+	{
+		StrictRead<T> result;
+		std::optional<T> read = fromValue<T>(value);
+		if (!read)
+		{
+			result.problems.push_back("the document does not have the expected shape");
+			return result;
+		}
+		result.problems = shapeDifferences(value, toValue(*read));
+		if (result.problems.empty())
+			result.value = std::move(read);
+		return result;
 	}
 } // namespace lain::data

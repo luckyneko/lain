@@ -1,7 +1,6 @@
 #include "lain/camera/serialize/cameramodel.h"
 
-#include "strict.h"
-
+#include <lain/data/strict.h>
 #include <lain/string/format.h>
 
 #include <utility>
@@ -53,7 +52,9 @@ namespace lain::camera
 			result.problems.push_back("the document is not a camera model");
 			return result;
 		}
-		result.problems = detail::shapeDifferences(document, documentOf(*parameters));
+		// Not fromValueStrict: the version is a document field outside the parameters, so the
+		// comparison is against the whole document written back.
+		result.problems = data::shapeDifferences(document, documentOf(*parameters));
 		if (!result.problems.empty())
 			return result;
 

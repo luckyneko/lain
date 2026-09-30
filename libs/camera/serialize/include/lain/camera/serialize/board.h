@@ -18,6 +18,16 @@ namespace lain::camera::board
 	// the nanometre (core::Length's resolution): 23.7 mm is 23.7 on disk and 23700000 nm in memory.
 	void serialize(data::Archive& archive, Instance& instance);
 
+	// A specification's parts with nothing checked, as a document holds them: {pattern, instance}.
+	// What a document embedding a board (a calibration fixture) reads, before specificationFrom judges
+	// it; the counterpart of CameraModelParameters.
+	struct SpecificationParameters
+	{
+		PatternParameters pattern;
+		Instance instance;
+	};
+	LAIN_SERIALIZE(SpecificationParameters, pattern, instance)
+
 	data::Value specificationToValue(const Specification& specification);
 
 	struct SpecificationRead
@@ -26,8 +36,11 @@ namespace lain::camera::board
 		std::vector<std::string> problems; // empty exactly when `specification` is set
 	};
 
-	// A board specification from a document, read strictly (see cameraModelFromValue): a misspelled
-	// dictionary name is a problem, not the first dictionary. Pattern::create and Specification::create
-	// then judge what was read, and their diagnostics join the problems.
+	// A specification from its parts, through Pattern::create and Specification::create, with every
+	// diagnostic as a problem.
+	SpecificationRead specificationFrom(const SpecificationParameters& parameters);
+
+	// A board specification from a document, read strictly (data::fromValueStrict): a misspelled
+	// dictionary name is a problem, not the first dictionary. Then specificationFrom.
 	SpecificationRead specificationFromValue(const data::Value& document);
 } // namespace lain::camera::board

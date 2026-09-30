@@ -1137,6 +1137,33 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
+### Update 2026-09-30 — M9 slice 1, sub-slice 8b: the fixture harness, and a repeat check in two halves
+
+The second third of the real-camera fixture: a fixture folder's format and loader, calibration of
+each session, the repeat check, the manufacturer comparison, and the hashed extended tier. It is test
+code in `plugins/camera/test` (`camera-fixture`, `camera-fixture-tool`, `test-camera-fixture`), run
+here on synthetic two-session fixtures written in the real on-disk format. `ctest -j8` **1035/1035**
+Debug with video and camera on (+9), **1042/1042** Release on, **985/985** Release off;
+warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 8b built*.
+
+- **Cross-validation alone cannot see an intrinsics error, and measuring it is what said so.** A held
+  model's board poses are recovered per view with the model fixed, and on a planar board a pose
+  absorbs most of a focal or principal-point error. A second camera 3% longer and 12 px off-centre
+  predicted the first's views at 0.27 mrad against Ready's 0.6, and a factory model 2% long validated
+  as well as the estimate. So the repeat check keeps **prediction** (it sees a wrong lens) and adds
+  **agreement**: two Ready sessions' intrinsics compared directly.
+- **Agreement is bounded by the sessions' measured spread, three combined deviations**, not by the
+  Ready stability bounds: held to those (0.5% focal), two sessions of ONE camera failed at 0.544%,
+  because they bound one capture's resamples and two captures also differ by their poses. Ready caps
+  each deviation, so the bound never exceeds about 2.1% and 8.5 mrad.
+- **A fixture needs two Ready sessions**, so the compact tier's second session needs about 14 frames,
+  not the 6 planned. 8c's capture guide carries that.
+- **The manufacturer comparison never gates**, and the test proves it with a model beyond any
+  agreement bound.
+- **`data::fromValueStrict` / `data::shapeDifferences`** are promoted from camera::serialize, since
+  the fixture document and its manifest are the second and third strict readers.
+- Thirteen sabotages, all caught; one first failed to build and was redone.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 8a: camera values as documents, model files in flowview
 
 The first third of the real-camera fixture, which the repo owner chose to have built ahead of the

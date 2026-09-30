@@ -406,6 +406,21 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   guessed. Distinct from a report's backend provenance, which says what software produced a result.
   The imported model is held unchecked, as the manufacturer stated it; what it is worth is decided
   where it is used. _Avoid_: device calibration file, RealSense record, camera metadata.
+- **Real-camera fixture** — footage of one known board from one camera in two or more capture
+  **sessions**, the camera unplugged and re-mounted between them, each with its capture record: a
+  folder holding `fixture.json` and one folder of stills per session. Its **compact tier** is
+  committed and runs in ordinary CI; its **extended tier** is a larger capture kept outside the
+  repository, pinned by a committed manifest of content hashes, verified where present and reported
+  unavailable where not, never substituted. It passes on lain's own evidence (held-out error,
+  coverage, stability, the repeat check); an imported manufacturer model is compared and never gates.
+  _Avoid_: D455 fixture, golden images, calibration dataset (too general).
+- **Repeat check** — the fixture's test that two sessions calibrated the same camera, in two halves,
+  because each misses what the other sees. **Prediction**: each Ready session's model, held, must
+  predict every other session's views to the Ready held-out angle; it sees a wrong lens, and is weak
+  on intrinsics, since a board pose recovered with the model fixed absorbs most of a focal or
+  principal-point error. **Agreement**: every two Ready sessions' intrinsics must differ by no more
+  than three standard deviations of their combined resampled spread. It needs two Ready sessions.
+  _Avoid_: repeatability test, cross-check.
 - **Board specification** — the exact identity of the known calibration board: target family, feature
   pattern, physical-board instance, and measured dimensions with uncertainty. Board-capable methods
   require it because detected image features alone do not establish known-target metric evidence;

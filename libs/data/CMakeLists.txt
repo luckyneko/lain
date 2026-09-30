@@ -6,6 +6,7 @@
 
 add_library(data STATIC
 	src/value.cpp
+	src/strict.cpp
 )
 add_library(lain::data ALIAS data)
 

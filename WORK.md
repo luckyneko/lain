@@ -2664,8 +2664,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       rendering, printed and measured; two sessions with a remount between them. Three commits:
       - 8a. Camera values as documents (`libs/camera/serialize`), `camera::CaptureRecord`, and model
         files in flowview. **Built 2026-09-30** (landing notes below).
-      - 8b. The fixture harness: format and loader, calibration per session, the repeat check as
-        cross-validation, the manufacturer comparison, the hashed extended tier.
+      - 8b. The fixture harness: format and loader, calibration per session, the two-part repeat
+        check, the manufacturer comparison, the hashed extended tier. **Built 2026-09-30** (landing
+        notes below).
       - 8c. The capture guide, a board to print, and the ADR amendments.
 
       **The capture itself is still owed by the repo owner**, and board-geometry reconstruction (a
@@ -2685,8 +2686,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      a problem named by its path. Without it a misspelled `k2` in a hand-typed manufacturer model
      loads as zero, and an unknown distortion name as no distortion, with nothing said. What is read
      then goes through `CameraModel::create` / `Pattern::create` / `Specification::create`, whose
-     diagnostics join the problems. The comparison is private to camera::serialize until a second
-     format wants it, when it belongs in `lain::data`.
+     diagnostics join the problems. The comparison was private to camera::serialize until a second
+     format wanted it; 8b's fixture document and manifest were that, and it is now
+     `data::shapeDifferences` / `data::fromValueStrict`.
    - **`camera::CaptureRecord`** (in `libs/camera`, std-only): device, stream, string properties, and
      an optional imported model held as unchecked parameters with its source. Generic, per the repo
      owner's rule; a new CONTEXT.md term, as is *Camera-model document*.
@@ -2706,6 +2708,54 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - **Five sabotages, all caught:** the strict comparison removed, an arm key renamed, metres
      written where millimetres are read, the binder unregistered, and the model output written as
      text.
+
+   **Sub-slice 8b built (2026-09-30): the fixture harness.** Test code in `plugins/camera/test`
+   (nothing ships it): a `camera-fixture` library, `camera-fixture-tool`, and `test-camera-fixture`.
+   - **The format.** A fixture is a folder: `fixture.json` (`{version, name, model, board{pattern,
+     instance}, sessions[{name, frames, capture}]}`) beside one folder of stills per session. It is
+     read strictly (`data::fromValueStrict`, promoted from camera::serialize for it), the board
+     through `specificationFrom`, frames through `io::sequence`, and each imported model through
+     `CameraModel::create`. A load names every problem it finds: a typo, a missing folder, frames of
+     another size than the capture record's stream, an imported model that is invalid or for another
+     image size, a newer version.
+   - **The repeat check has TWO halves, and the second was found by measuring the first.** The plan
+     was cross-validation alone: every Ready model held (HoldAndValidate) on every other session's
+     views, to the Ready held-out angle. On synthetic footage, a second camera 3% longer and 12 px
+     off-centre predicted the first's views at **0.27 mrad**, against 0.6 for Ready, and a factory
+     model 2% long validated at 0.16 mrad, as well as the estimate. The board pose is recovered per
+     view with the model fixed, and on a planar board a pose absorbs most of a focal or
+     principal-point error. So prediction stays, since it is what sees a lens that is not the lens,
+     and **agreement** joins it: every two Ready sessions' intrinsics are compared directly.
+   - **Agreement is bounded by the sessions' own resampled spread, not by the Ready bounds.** Held to
+     Ready's stability bounds (0.5% focal), two sessions of ONE camera failed at 0.544% apart: those
+     bounds are one capture's resamples, and two captures also differ by their poses. The bound is
+     three combined standard deviations, `3 * sqrt(sa^2 + sb^2)`; the same pair is 1.5 deviations
+     apart, and the 3% camera 12. Ready caps each deviation, so the bound never exceeds about 2.1%
+     and 8.5 mrad. `kAgreementSigmas = 3` is the one new constant, and a conventional one.
+   - **A fixture needs two Ready sessions**, since the check is that two calibrations agree. That
+     changes the planned compact tier: session B needs about 14 frames, not 6, to reach ten
+     calibration views after the held-out split. 8c's capture guide says so.
+   - **The manufacturer comparison** holds each imported model on its own session's views and
+     reports the angle and the intrinsics difference from the estimate. It never gates: the test's
+     factory model is 2% long, beyond any bound agreement can have, and the fixture passes.
+   - **The extended tier:** `extended.json` pins `{path, sha256, bytes}` for every non-dotfile of a
+     dataset found as `$LAIN_CAMERA_FIXTURE_DATA/<name>`. Verified, Unavailable (with the reason), or
+     Mismatch, which names each missing, resized, rehashed or unpinned file. A Verified dataset is a
+     fixture folder and is run like the compact one. `camera-fixture-tool manifest` writes the
+     manifest and `verify` checks it, through the same hashing code.
+   - **Committed fixtures** under `plugins/camera/test/fixtures/<name>/` are each loaded and run; with
+     none, the case SKIPs and says no capture is committed.
+   - The pure-C++ footage generator moved to `libs/camera/test/syntheticfootage.h`, shared with
+     flowview's cli vertical, with a `phase` so two sessions see the board from different poses.
+   - `ctest -j8` **1035/1035** Debug with video and camera on (+9), **1042/1042** Release on,
+     **985/985** Release off (the calibrating cases SKIP); warning-clean, format-check clean.
+   - **Thirteen sabotages, all caught:** prediction always agreeing, agreement always agreeing,
+     agreement held to the Ready bound, one Ready session sufficing, the manufacturer comparison
+     gating, a tolerant read, no stream-size check, no hash comparison, unpinned files ignored,
+     dotfiles hashed, an absent dataset called a mismatch, and two in `data::shapeDifferences` (an
+     unrecognised name, a missing key), one of them caught in both `lain::data` and camera::serialize.
+     One dotfile sabotage first failed to build (an unused function), so it was redone inside the
+     function.
 
    **Sub-slice 7 built (2026-09-30): the flow adapter and flowview.**
    - **`libs/camera/flow`** (`lain::camera::flow`), a separate target over `lain::camera` and

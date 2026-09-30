@@ -47,6 +47,8 @@ add_executable(test-flowview
 
 target_compile_features(test-flowview PRIVATE cxx_std_17)
 target_include_directories(test-flowview PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src" "${CMAKE_CURRENT_SOURCE_DIR}/../examples/src")
+# The synthetic footage the camera vertical draws, shared with the camera fixture harness.
+target_include_directories(test-flowview PRIVATE "${lain_SOURCE_DIR}/libs/camera/test")
 # The committed examples, which test_examples loads, runs and compares with what the builder writes.
 target_compile_definitions(test-flowview PRIVATE LAIN_FLOWVIEW_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../examples")
 # Whether this build should offer the camera kinds: the catalog test holds the capability rule to the

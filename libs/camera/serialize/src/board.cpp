@@ -1,7 +1,5 @@
 #include "lain/camera/serialize/board.h"
 
-#include "strict.h"
-
 #include <utility>
 
 namespace lain::camera::board
@@ -32,39 +30,32 @@ namespace lain::camera::board
 		}
 	}
 
-	// The document's shape, as a struct the reflection can walk: a Specification itself is built only
-	// through create().
-	struct SpecificationDocument
-	{
-		PatternParameters pattern;
-		Instance instance;
-	};
-	LAIN_SERIALIZE(SpecificationDocument, pattern, instance)
-
 	data::Value specificationToValue(const Specification& specification)
 	{
-		return data::toValue(SpecificationDocument{specification.pattern().parameters(), specification.instance()});
+		return data::toValue(SpecificationParameters{specification.pattern().parameters(), specification.instance()});
 	}
 
 	SpecificationRead specificationFromValue(const data::Value& document)
 	{
-		SpecificationRead result;
-		const std::optional<SpecificationDocument> read = data::fromValue<SpecificationDocument>(document);
-		if (!read)
+		data::StrictRead<SpecificationParameters> strict = data::fromValueStrict<SpecificationParameters>(document);
+		if (!strict.value)
 		{
-			result.problems.push_back("the document is not a board specification");
+			SpecificationRead result;
+			result.problems = std::move(strict.problems);
 			return result;
 		}
-		result.problems = detail::shapeDifferences(document, data::toValue(*read));
-		if (!result.problems.empty())
-			return result;
+		return specificationFrom(*strict.value);
+	}
 
-		const PatternResult pattern = Pattern::create(read->pattern);
+	SpecificationRead specificationFrom(const SpecificationParameters& parameters)
+	{
+		SpecificationRead result;
+		const PatternResult pattern = Pattern::create(parameters.pattern);
 		for (const PatternDiagnostic& diagnostic : pattern.diagnostics)
 			result.problems.push_back(diagnostic.detail);
 		if (!pattern.pattern)
 			return result;
-		SpecificationResult specification = Specification::create(*pattern.pattern, read->instance);
+		SpecificationResult specification = Specification::create(*pattern.pattern, parameters.instance);
 		for (const SpecificationDiagnostic& diagnostic : specification.diagnostics)
 			result.problems.push_back(diagnostic.detail);
 		result.specification = std::move(specification.specification);
