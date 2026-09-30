@@ -1137,7 +1137,7 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
-### Update 2026-09-30 — example documents: media paths become document-relative, gradient records its size, the examples land (commits 1–3 of 4)
+### Update 2026-09-30 — example documents: media paths become document-relative, gradient records its size, the examples land, CI runs one (commits 1–4, COMPLETE)
 
 The repo owner asked for example graph documents for testing. **No graph document or media file had
 ever been committed**, so nothing tests that a document written by an older build still loads.
@@ -1173,7 +1173,12 @@ what the builder writes (`examples` / `examples-data` targets regenerate them). 
 inside maps (recorded). `ctest -j8` **924/924** Debug with video on, **930/930** Release with video
 on, **897/897** Release video-off. **gui-mode not yet eyeballed.**
 
-**Next:** commit 4 (CI runs one through the binary).
+**Commit 4 is built:** CI's new *Smoke an example document* step runs `folder-average.json` through
+the shipped binary from a folder that is not the document's. It ends with `test -s` on the output
+file because `flowview run` exits 0 when a bound output is empty. The step was verified locally, not
+yet on CI.
+
+**Owed:** a gui-mode eyeball of every example (their primary purpose), and the first CI run.
 
 ### Update 2026-09-29 — M14 slice 8a built: a pull of many targets, cancellable and parallel
 

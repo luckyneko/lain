@@ -201,6 +201,20 @@ jobs:
           ${{ matrix.flowview }} list
           ${{ matrix.flowview }} run
 
+      # An example document, run from a folder that is NOT the document's: its data paths are
+      # stored relative to the document (ADR-0027), so this checks the shipped binary resolves them
+      # against the document rather than the working directory. $PWD is POSIX-form in every leg's
+      # bash, and Git Bash converts such arguments for a native Windows executable.
+      - name: Smoke an example document
+        run: |
+          root="$PWD"
+          example="$root/apps/flowview/examples/folder-average.json"
+          mkdir -p "$root/smoke-elsewhere"
+          cd "$root/smoke-elsewhere"
+          "$root/${{ matrix.flowview }}" list -g "$example"
+          "$root/${{ matrix.flowview }}" run -g "$example" --result "$root/smoke-elsewhere/folder-average.png"
+          test -s "$root/smoke-elsewhere/folder-average.png"
+
       - name: Report third-party licences
         if: ${{ matrix.video == 'ON' }}
         run: ${{ matrix.flowview }} --licenses

@@ -7484,7 +7484,8 @@ bound values are not saved.
 1. **Document-relative media paths.** Built 2026-09-30; see below.
 2. **`gradient` records its size.** Built 2026-09-30; see below.
 3. **The builder, the data, the documents, the ctest.** Built 2026-09-30; see below.
-4. **CI:** the binary smoke also runs `list` and `run` on `folder-average.json`.
+4. **CI:** the binary smoke also runs `list` and `run` on `folder-average.json`. Built 2026-09-30;
+   see below.
 
 ### Commit 1 built (2026-09-30): document-relative media paths
 
@@ -7556,6 +7557,19 @@ documents are byte for byte what the builder writes into scratch.
 - **gui-mode not eyeballed**, which is the examples' primary purpose: it needs the repo owner on a
   Metal session.
 
+### Commit 4 built (2026-09-30): CI runs an example through the shipped binary
+
+A new CI step, *Smoke an example document*, runs `list` and `run` on `folder-average.json` from a
+working directory that is not the document's. It is the shipped-binary check that data paths
+resolve against the document (ADR-0027); ctest's example test covers the same thing, but only
+through the test binary.
+
+- **It ends with `test -s` on the output file, and that line is load-bearing.** `flowview run` exits
+  0 when a bound output is empty and writes no file. Measured with a copy of the document placed
+  away from its `data/`: `run` exited 0, and only the file check failed.
+- Verified by running the step's commands locally in bash. CI itself runs only on a push, so the
+  three legs have not run it yet.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -7586,8 +7600,8 @@ row here**. A row is cheap to delete and expensive to leave.
 
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not.**
 
-- **Example documents** — commits 1–3 of 4 built; commit 4 (CI runs one through the binary) is next,
-  and gui-mode is not yet eyeballed. *(§Example documents.)*
+- **Example documents** — all four commits built. Owed: a gui-mode eyeball of every example (the
+  primary purpose), and the first CI run of the new smoke step. *(§Example documents.)*
 
 ### Deferred — engine / `flow` core
 
