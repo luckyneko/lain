@@ -46,7 +46,7 @@ namespace flowview
 
 	bool FlowviewApp::onInit(app::Application&, app::cli::App& cli)
 	{
-		cli.add_option("--size", m_size, "example gradient extent (NxN)")->capture_default_str();
+		cli.add_option("--size", m_size, "extent (NxN) of a NEW gradient and of the stand-in bound to an unbound image input; a saved gradient keeps its own size")->capture_default_str();
 		cli.add_option("--frames", m_frames, "gui-mode: quit after N frames (0 = run until the window closes)")->capture_default_str();
 		cli.add_flag("--example", m_useExample, "gui: start from the example scene instead of a blank Input/Output graph");
 		cli.add_flag("--reset-layout", m_resetLayout, "gui: ignore the saved dock layout and start from the default");

@@ -1137,7 +1137,7 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
-### Update 2026-09-30 — example documents designed; media paths become document-relative (commit 1 of 4)
+### Update 2026-09-30 — example documents designed; media paths become document-relative; gradient records its size (commits 1–2 of 4)
 
 The repo owner asked for example graph documents for testing. **No graph document or media file had
 ever been committed**, so nothing tests that a document written by an older build still loads.
@@ -1159,8 +1159,13 @@ written by one C++ builder with deterministic ids.
   `/`.
 - Two other shapes were tried and dropped; see WORK.md's commit 1 notes.
 
-**Next:** commit 2 (`gradient` records its `width`/`height`), commit 3 (the builder, the data, the
-documents, the ctest), commit 4 (CI).
+**Commit 2 is built:** `GradientNode`'s size is now `width` / `height`, Int inputs with defaults, so
+it is saved with the document and drivable from the graph. It used to be a construction value taken
+from `--size`, so one file rendered at a different size per session. `--size` is only where a new
+gradient starts, and older documents keep behaving as before. `ctest -j8` **921/921** Debug with
+video on, **927/927** Release with video on, **894/894** Release video-off.
+
+**Next:** commit 3 (the builder, the data, the documents, the ctest), then commit 4 (CI).
 
 ### Update 2026-09-29 — M14 slice 8a built: a pull of many targets, cancellable and parallel
 

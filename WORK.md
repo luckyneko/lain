@@ -7482,9 +7482,7 @@ bound values are not saved.
 ### Build order: four commits
 
 1. **Document-relative media paths.** Built 2026-09-30; see below.
-2. **`gradient` records its size.** `width` / `height` become defaulted Int inputs; `--size` stays
-   the preset for a NEW node, and a document without them is unchanged. Until then a document does
-   not fully describe itself: the same file renders 64 px in one session and 512 px in another.
+2. **`gradient` records its size.** Built 2026-09-30; see below.
 3. **The builder, the data, the documents, the ctest.**
    - Sources in `apps/flowview/examples/src/`, target `flowview-examples` (EXCLUDE_FROM_ALL).
    - An `examples` custom target regenerates the documents in place; `--data` also rewrites
@@ -7512,6 +7510,21 @@ they are never rebased.
   naming `data/a.png` loads the file beside it, and a re-save writes `data/a.png` back.
 - **Seven sabotages, all caught:** the host skipping each of its three calls, `../` allowed, a
   relative in-memory path kept, the empty/uri guard dropped, nested bodies skipped.
+
+### Commit 2 built (2026-09-30): `gradient` records its size
+
+`GradientNode`'s size was two plain members the factory filled from `--size`, so a document did not
+describe itself: the same file rendered 64 px in one session and 512 px in another. They are now
+`width` / `height`, Int inputs with defaults, so the size is saved as params and can be driven from
+the graph (a Constant, a Cast, a loop's `index`). `--size` is only where a NEW gradient starts, plus
+the stand-in bound to an unbound image input. A document saved before this has no such params and
+keeps the loading session's preset, so it behaves as before. A size below 1 produces no value.
+
+- `ctest -j8` **921/921** Debug with video on, **927/927** Release with video on, **894/894**
+  Release video-off (+2 each). Warning-clean, format-check clean.
+- The real binary is unchanged for the built-in scene, and a document saving 20x10 renders 20x10
+  under `--size 64`.
+- Two sabotages caught: ignoring a wired input, and dropping the below-1 guard.
 
 ## Outstanding work — one index
 
@@ -7543,8 +7556,9 @@ row here**. A row is cheap to delete and expensive to leave.
 
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not.**
 
-- **Example documents** — commit 1 of 4 built (document-relative media paths); commits 2–4 (the
-  `gradient` size, the builder + data + documents + ctest, CI) are next. *(§Example documents.)*
+- **Example documents** — commits 1–2 of 4 built (document-relative media paths; `gradient`
+  records its size); commits 3–4 (the builder + data + documents + ctest, CI) are next.
+  *(§Example documents.)*
 
 ### Deferred — engine / `flow` core
 

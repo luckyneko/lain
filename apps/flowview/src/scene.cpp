@@ -115,6 +115,9 @@ namespace flowview
 	{
 		// The nodes are pure CPU (they produce/consume a lain::image::Image), so each
 		// creator captures only plain construction values — no device, no std::ref.
+		// `size` is only where a NEW gradient starts: its width/height are defaulted inputs, so a
+		// loaded gradient takes the size its document saved and a document renders the same in
+		// every session, whatever --size that session was given.
 		factory.registerType<flow::example::GradientNode>(kGradientKey, size, size);
 		factory.registerType<flow::example::TintNode>(kTintKey, 1.0f, 0.5f, 0.5f); // keep R, halve G/B
 		factory.registerType<flow::example::BlurNode>(kBlurKey, 2, 1.5f);		   // soft 5x5 Gaussian

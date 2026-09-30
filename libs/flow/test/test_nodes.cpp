@@ -4,6 +4,7 @@
 #include "lain/flow/evaluation.h"
 #include "lain/flow/graph.h"
 #include "lain/flow/nodes/constant.h"
+#include "lain/flow/porttype.h"
 #include "lain/flow/scheduler.h"
 
 #include <lain/flow/example/blurnode.h>
@@ -25,6 +26,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 struct Rgba
@@ -68,6 +70,54 @@ TEST_CASE("GradientNode emits an RGBA gradient image on its port", "[flow]")
 	CHECK(br.r == 255);
 	CHECK(br.g == 255);
 	CHECK(br.b == 128);
+}
+
+TEST_CASE("a gradient's size is its width and height inputs", "[flow]")
+{
+	// Defaulted inputs, so the size is saved with a document instead of coming from whichever
+	// process loads it. The constructor's values are only where a fresh node starts.
+	using namespace lain::flow;
+	Graph graph;
+	const NodeId id = graph.add<example::GradientNode>(8, 8);
+	Node& gradient = graph.node(id);
+	const Port& width = gradient.input(0);
+	const Port& height = gradient.input(1);
+	REQUIRE(width.name() == "width");
+	REQUIRE(height.name() == "height");
+
+	const auto extent = [&]() -> std::pair<std::uint32_t, std::uint32_t>
+	{
+		Evaluation e{graph};
+		SerialScheduler{}.evaluate(graph, e, id);
+		const PortValue& out = e.value(PortAddress{id, gradient.output(0).id()});
+		if (!out.holds<lain::image::Image>())
+			return {0, 0};
+		return {out.get<lain::image::Image>().width(), out.get<lain::image::Image>().height()};
+	};
+
+	REQUIRE(extent() == std::pair<std::uint32_t, std::uint32_t>{8, 8});
+
+	SECTION("the default is a param, and setting it resizes")
+	{
+		const Param* widthDefault = gradient.defaultOf(width.id());
+		REQUIRE(widthDefault != nullptr);
+		REQUIRE(gradient.setParam(widthDefault->id(), 16));
+		REQUIRE(extent() == std::pair<std::uint32_t, std::uint32_t>{16, 8});
+	}
+
+	SECTION("a wired input overrides the default")
+	{
+		const NodeId constant = graph.add<ConstantNode>(portType<int>());
+		REQUIRE(static_cast<ConstantNode&>(graph.node(constant)).setValue(4));
+		REQUIRE(graph.connect({constant, graph.node(constant).output(0).id()}, {id, height.id()}) == Connection::Ok);
+		REQUIRE(extent() == std::pair<std::uint32_t, std::uint32_t>{8, 4});
+	}
+
+	SECTION("a size below 1 produces no image")
+	{
+		REQUIRE(gradient.setParam(gradient.defaultOf(height.id())->id(), 0));
+		REQUIRE(extent() == std::pair<std::uint32_t, std::uint32_t>{0, 0});
+	}
 }
 
 TEST_CASE("an image flows through an edge: gradient -> tint", "[flow]")

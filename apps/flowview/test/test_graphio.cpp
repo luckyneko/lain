@@ -14,6 +14,7 @@
 #include <lain/data/value.h>
 #include <lain/flow/boundary.h>
 #include <lain/flow/edit.h>
+#include <lain/flow/example/gradientnode.h>
 #include <lain/flow/example/loadimagenode.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/group.h>
@@ -28,6 +29,7 @@
 
 #include <filesystem>
 #include <string>
+#include <utility>
 
 using lain::core::Factory;
 using namespace lain::flow;
@@ -478,4 +480,66 @@ TEST_CASE("a linked template's media are relative to the template file", "[graph
 	REQUIRE(link != nullptr);
 	REQUIRE(link->resolved());
 	REQUIRE(loadPath(*link->innerGraph()) == (root / "lib" / "a.png").lexically_normal());
+}
+
+// --- a gradient records its size ------------------------------------------------
+
+// A gradient's width and height defaults, as the node holds them.
+static std::pair<int, int> gradientSize(const Graph& graph)
+{
+	for (const NodeId id : graph.nodeIds())
+	{
+		const Node& node = graph.node(id);
+		if (dynamic_cast<const lain::flow::example::GradientNode*>(&node) == nullptr)
+			continue;
+		return {node.defaultOf(node.input(0).id())->get<int>(), node.defaultOf(node.input(1).id())->get<int>()};
+	}
+	FAIL("no gradient");
+	return {};
+}
+
+TEST_CASE("a gradient's size travels with its document, not with --size", "[graphio][gradient]")
+{
+	// Its size used to be a construction value the factory took from --size, so one document
+	// rendered 64 px in one session and 512 px in another.
+	const std::filesystem::path dir = scratchDir("gradient-size");
+	flowview::registerSceneSerialization();
+	Factory<Node> small;
+	flowview::registerExampleNodes(small, 8);
+	Factory<Node> large;
+	flowview::registerExampleNodes(large, 64);
+
+	Graph graph;
+	const NodeId id = graph.add(small.create("gradient"));
+	Node& gradient = graph.node(id);
+	REQUIRE(gradient.setParam(gradient.defaultOf(gradient.input(0).id())->id(), 16));
+	REQUIRE(flowview::saveGraph(lain::core::Uri::fromPath(dir / "doc.json"), graph, small));
+
+	SECTION("a session with another --size loads the saved size")
+	{
+		LoadResult loaded = flowview::loadGraph(lain::core::Uri::fromPath(dir / "doc.json"), large, nullptr);
+		REQUIRE(loaded.clean());
+		REQUIRE(gradientSize(loaded.graph) == std::pair<int, int>{16, 8});
+	}
+
+	SECTION("a document saved before the size was stored keeps behaving as it did")
+	{
+		// Strip the params, as every older file lacks them: the loading session's preset stands.
+		auto document = lain::io::data::load(lain::core::Uri::fromPath(dir / "doc.json"));
+		REQUIRE(document.has_value());
+		for (auto& [key, value] : *document->asObject())
+		{
+			if (key != "nodes")
+				continue;
+			for (lain::data::Value& node : *value.asArray())
+			{
+				if (*node.find("kind")->asString() == "gradient")
+					node.set("params", lain::data::Value::array());
+			}
+		}
+		REQUIRE(lain::io::data::save(lain::core::Uri::fromPath(dir / "old.json"), *document));
+		LoadResult loaded = flowview::loadGraph(lain::core::Uri::fromPath(dir / "old.json"), large, nullptr);
+		REQUIRE(loaded.clean());
+		REQUIRE(gradientSize(loaded.graph) == std::pair<int, int>{64, 64});
+	}
 }
