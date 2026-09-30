@@ -71,6 +71,38 @@ if(WIN32)
 endif()
 
 # Driver-free unit tests for the app's testable internals (the undo history).
+# flowview-examples writes the example documents in examples/, and with --data the data sets they
+# read. It is BUILT with everything, so every platform keeps compiling it, but only RUN through
+# `examples` (documents) or `examples-data` (documents and data), which mirror `format`: commit what
+# they wrote. The example test holds the committed documents to what this builds, as `format-check`
+# holds sources to the formatter.
+add_executable(flowview-examples
+	examples/src/main.cpp
+	examples/src/examples.cpp
+	examples/src/datagen.cpp
+	src/graphio.cpp
+	src/scene.cpp
+)
+target_compile_features(flowview-examples PRIVATE cxx_std_17)
+target_include_directories(flowview-examples PRIVATE src examples/src)
+target_link_libraries(flowview-examples
+	PRIVATE lain::core lain::data lain::flow lain::flow-example lain::flow::serialize lain::image lain::io
+			lain::io::sequence lain::media::serialize lain::io::image lain::io::image::codecs lain::io::video::codecs
+			lain::io::data::codecs lain::string lain::log lain::warnings
+)
+if(LAIN_IO_VIDEO_FFMPEG)
+	lain_ffmpeg_stage_runtime(flowview-examples)
+endif()
+
+add_custom_target(examples
+	COMMAND flowview-examples "${CMAKE_CURRENT_SOURCE_DIR}/examples"
+	COMMENT "Writing the example documents in apps/flowview/examples"
+	VERBATIM)
+add_custom_target(examples-data
+	COMMAND flowview-examples "${CMAKE_CURRENT_SOURCE_DIR}/examples" --data
+	COMMENT "Writing the example documents and their data in apps/flowview/examples"
+	VERBATIM)
+
 if(LAIN_BUILD_TESTING)
 	add_subdirectory(test)
 endif()

@@ -7483,11 +7483,7 @@ bound values are not saved.
 
 1. **Document-relative media paths.** Built 2026-09-30; see below.
 2. **`gradient` records its size.** Built 2026-09-30; see below.
-3. **The builder, the data, the documents, the ctest.**
-   - Sources in `apps/flowview/examples/src/`, target `flowview-examples` (EXCLUDE_FROM_ALL).
-   - An `examples` custom target regenerates the documents in place; `--data` also rewrites
-     `data/`. This mirrors `format` / `format-check`.
-   - `test_examples.cpp` is compiled into `test-flowview` and iterates the one table.
+3. **The builder, the data, the documents, the ctest.** Built 2026-09-30; see below.
 4. **CI:** the binary smoke also runs `list` and `run` on `folder-average.json`.
 
 ### Commit 1 built (2026-09-30): document-relative media paths
@@ -7526,6 +7522,40 @@ keeps the loading session's preset, so it behaves as before. A size below 1 prod
   under `--size 64`.
 - Two sabotages caught: ignoring a wired input, and dropping the below-1 guard.
 
+### Commit 3 built (2026-09-30): the builder, the data, the documents, the ctest
+
+`apps/flowview/examples/` now holds 22 documents, a README and `data/` (about 28 KB). They are
+written by `flowview-examples` (`examples/src/`): `examples.cpp` has the ONE table and a builder per
+document, and `datagen.cpp` makes the data. The tool is built with everything, so every platform
+compiles it, but it is only run through the `examples` / `examples-data` targets.
+`test_examples.cpp` checks two things. Every example loads, runs and raises exactly what its entry
+says (a root image input gets the gradient stand-in, a frame position gets 0). And the committed
+documents are byte for byte what the builder writes into scratch.
+
+- **Ids are renumbered** from a counter in first-appearance order after the production save, so a
+  regeneration diffs only where something changed. Layout is an explicit grid.
+- **Broken documents** raise their issue on load (missing template, unknown kind, v1, the refused
+  loop pin) or in the Issues pane after a run (cast pair, map hole). `broken-v1.json` is
+  hand-written.
+- **Found by the examples, fixed in its own commit:** `image::gaussianKernel` with sigma 0 put a NaN
+  at the centre, which normalised into every weight, so the blurred image came out black.
+  `loop-index` drives sigma from the loop's index, which starts at 0. A sigma that is not positive
+  is now the identity kernel, the Gaussian's limit. The M12 loop test that wires the same shape
+  checked only the width, so it never saw it.
+- **Found, not fixed:** a failed `LoadImage` emits an INVALID image rather than nothing. Inside a
+  map that is not a hole, so `Combine` refuses the element with a log-only warning and the Issues
+  pane explains nothing. `broken-map-hole` puts a blur after the load, which turns the invalid image
+  into no value, a real hole. Recorded in the Outstanding index.
+- `ctest -j8` **924/924** Debug with video on, **930/930** Release with video on, **897/897**
+  Release video-off. Warning-clean, format-check clean.
+- **Sabotages:** a hand-edited committed document fails the freshness case (naming the file) and,
+  because it broke a data path, the run case (naming the empty output). Reverting the kernel fix
+  fails its new case.
+- **Real binary from `/`:** `folder-average`, `bagel`, `video`, the three loops and a 24-frame sweep
+  of `sequence-render` all exit 0 and write their outputs.
+- **gui-mode not eyeballed**, which is the examples' primary purpose: it needs the repo owner on a
+  Metal session.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -7556,9 +7586,8 @@ row here**. A row is cheap to delete and expensive to leave.
 
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not.**
 
-- **Example documents** — commits 1–2 of 4 built (document-relative media paths; `gradient`
-  records its size); commits 3–4 (the builder + data + documents + ctest, CI) are next.
-  *(§Example documents.)*
+- **Example documents** — commits 1–3 of 4 built; commit 4 (CI runs one through the binary) is next,
+  and gui-mode is not yet eyeballed. *(§Example documents.)*
 
 ### Deferred — engine / `flow` core
 
@@ -7603,6 +7632,9 @@ M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that i
 M12 §Not in this milestone.)*
 
 ### Deferred — groups and templates
+
+- **A failed `LoadImage` is invisible inside a map.** It emits an invalid image, not nothing, so the
+  gather sees no hole and `Combine`'s refusal is log-only. *(§Example documents, commit 3.)*
 
 - **Linked `source` adopting the media-path rule** (relative only inside the document's tree). Today
   a `source` is always relative, `../` included. *(ADR-0027 §Deliberately unsettled.)*

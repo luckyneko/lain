@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": 1,
+      "kind": "groupInput",
+      "name": "GroupInput"
+    },
+    {
+      "id": 2,
+      "kind": "groupOutput",
+      "name": "GroupOutput",
+      "dynamicPins": [
+        {
+          "name": "result",
+          "type": "Image"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "kind": "gradient",
+      "name": "Gradient"
+    },
+    {
+      "id": 4,
+      "kind": "tint",
+      "name": "Tint",
+      "params": [
+        {
+          "name": "tint",
+          "type": "color",
+          "value": {
+            "r": 0.6,
+            "g": 0.9,
+            "b": 1.0
+          }
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": {
+        "node": 3,
+        "port": "image"
+      },
+      "to": {
+        "node": 4,
+        "port": "image"
+      }
+    },
+    {
+      "from": {
+        "node": 4,
+        "port": "image"
+      },
+      "to": {
+        "node": 2,
+        "port": "result"
+      }
+    }
+  ],
+  "editor": {
+    "1": {
+      "x": 40.0,
+      "y": 40.0
+    },
+    "2": {
+      "x": 730.0,
+      "y": 40.0
+    },
+    "3": {
+      "x": 270.0,
+      "y": 40.0
+    },
+    "4": {
+      "x": 500.0,
+      "y": 40.0
+    }
+  }
+}

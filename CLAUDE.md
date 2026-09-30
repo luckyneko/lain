@@ -1137,7 +1137,7 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
-### Update 2026-09-30 — example documents designed; media paths become document-relative; gradient records its size (commits 1–2 of 4)
+### Update 2026-09-30 — example documents: media paths become document-relative, gradient records its size, the examples land (commits 1–3 of 4)
 
 The repo owner asked for example graph documents for testing. **No graph document or media file had
 ever been committed**, so nothing tests that a document written by an older build still loads.
@@ -1165,7 +1165,15 @@ from `--size`, so one file rendered at a different size per session. `--size` is
 gradient starts, and older documents keep behaving as before. `ctest -j8` **921/921** Debug with
 video on, **927/927** Release with video on, **894/894** Release video-off.
 
-**Next:** commit 3 (the builder, the data, the documents, the ctest), then commit 4 (CI).
+**Commit 3 is built:** `apps/flowview/examples/` holds 22 documents, a README and ~28 KB of
+synthetic `data/`, written by `flowview-examples` from ONE table that `test_examples.cpp` also reads.
+Every example loads, runs and raises what its entry says, and the committed files are byte for byte
+what the builder writes (`examples` / `examples-data` targets regenerate them). They found
+`gaussianKernel`'s sigma-0 NaN (a black image; fixed in its own commit) and a `LoadImage` gap
+inside maps (recorded). `ctest -j8` **924/924** Debug with video on, **930/930** Release with video
+on, **897/897** Release video-off. **gui-mode not yet eyeballed.**
+
+**Next:** commit 4 (CI runs one through the binary).
 
 ### Update 2026-09-29 — M14 slice 8a built: a pull of many targets, cancellable and parallel
 

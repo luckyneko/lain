@@ -22,6 +22,8 @@ add_executable(test-flowview
 	test_runner.cpp
 	test_runpolicy.cpp
 	test_freshness.cpp
+	test_examples.cpp
+	"${CMAKE_CURRENT_SOURCE_DIR}/../examples/src/examples.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/undo.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runner.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runpolicy.cpp"
@@ -42,7 +44,9 @@ add_executable(test-flowview
 )
 
 target_compile_features(test-flowview PRIVATE cxx_std_17)
-target_include_directories(test-flowview PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+target_include_directories(test-flowview PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src" "${CMAKE_CURRENT_SOURCE_DIR}/../examples/src")
+# The committed examples, which test_examples loads, runs and compares with what the builder writes.
+target_compile_definitions(test-flowview PRIVATE LAIN_FLOWVIEW_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../examples")
 # lain::flow::serialize: groupnav's layout tree is an EditorTree (the serialize layer's type).
 # lain::image + lain::io::data::codecs: graphio names image::Image / ColorRGBf and reads/writes json.
 # lain::gui + Vulkan::Loader: the value views draw with ImGui, so they link it (the same recipe
