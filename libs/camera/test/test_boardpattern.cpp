@@ -10,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <limits>
+#include <string>
 
 using namespace lain;
 using namespace lain::camera::board;
@@ -44,7 +45,7 @@ TEST_CASE("a pattern counts its markers and its inner corners", "[camera][board]
 	CHECK(p.markerCount() == 17); // 35 squares, the white half rounded down
 	CHECK(p.cornerCount() == 24); // 6 x 4 inner corners
 	CHECK(markerCapacity(Dictionary::Aruco5x5_100) == 100);
-	CHECK(name(Dictionary::Aruco7x7_1000) == "ARUCO_7X7_1000");
+	CHECK(std::string(name(Dictionary::Aruco7x7_1000)) == "ARUCO_7X7_1000");
 }
 
 TEST_CASE("a pattern is described and fingerprinted canonically", "[camera][board]")

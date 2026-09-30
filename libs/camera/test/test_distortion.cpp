@@ -10,6 +10,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <string>
+
 using namespace lain::camera;
 using namespace lain::camera::testing;
 
@@ -55,10 +57,12 @@ TEST_CASE("forward and inverse Brown-Conrady are not interchangeable", "[camera]
 
 TEST_CASE("every model has a display name", "[camera][distortion]")
 {
-	CHECK(displayName(NoDistortion{}) == "no distortion");
-	CHECK(displayName(BrownConrady5{}) == "Brown-Conrady 5");
-	CHECK(displayName(InverseBrownConrady5{}) == "Inverse Brown-Conrady 5");
-	CHECK(displayName(ModifiedBrownConrady5{}) == "Modified Brown-Conrady 5");
-	CHECK(displayName(RationalBrownConrady8{}) == "Rational Brown-Conrady 8");
-	CHECK(displayName(KannalaBrandt4{}) == "Kannala-Brandt 4");
+	// Compared as std::string: Catch2 here cannot stringify a std::string_view, which fails to LINK,
+	// and only under MSVC.
+	CHECK(std::string(displayName(NoDistortion{})) == "no distortion");
+	CHECK(std::string(displayName(BrownConrady5{})) == "Brown-Conrady 5");
+	CHECK(std::string(displayName(InverseBrownConrady5{})) == "Inverse Brown-Conrady 5");
+	CHECK(std::string(displayName(ModifiedBrownConrady5{})) == "Modified Brown-Conrady 5");
+	CHECK(std::string(displayName(RationalBrownConrady8{})) == "Rational Brown-Conrady 8");
+	CHECK(std::string(displayName(KannalaBrandt4{})) == "Kannala-Brandt 4");
 }
