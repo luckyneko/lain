@@ -24,9 +24,11 @@ namespace lain::camera::calibration
 			text += lain::string::format(", held out {:.3g} px RMS over {} views", held->rmsPixels, held->views);
 		else
 			text += lain::string::format(", no held-out evidence ({})", std::get<Unavailable>(heldOut).reason);
-		text += lain::string::format(", {} views covering {:.0f}% of the image, {} of {} frames usable",
-									 diagnostics.viewsSelected, diagnostics.coverage * 100.0, diagnostics.framesUsable,
-									 diagnostics.framesExamined);
+		// A held model selected no calibration views, so there is no selection to describe.
+		if (diagnostics.viewsSelected > 0)
+			text += lain::string::format(", {} views covering {:.0f}% of the image", diagnostics.viewsSelected,
+										 diagnostics.coverage * 100.0);
+		text += lain::string::format(", {} of {} frames usable", diagnostics.framesUsable, diagnostics.framesExamined);
 		// What stood between this verdict and a better one, which is the first thing a person with a
 		// Rejected or Exploratory report wants to know.
 		if (verdict != Verdict::Ready && !fitnessNotes.empty())

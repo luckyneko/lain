@@ -5,8 +5,9 @@
 // The footage is a board rendered by the production backend and seen by a known pinhole camera along
 // a sweep of poses, drawn here in plain C++ (an inverse homography, supersampled) so this test needs
 // no OpenCV of its own. What is checked is that the pieces connect: the document saves and loads, the
-// sequence binds, the method runs through the real backends and says Ready, and the model it found is
-// the camera the footage came from. Accuracy is the plugin's tests' business.
+// sequence binds, the method runs through the real backends and says Ready, the model it found is the
+// camera the footage came from, and the model file it wrote binds back into a second run that holds
+// it. Accuracy is the plugin's tests' business.
 //
 // In a build without a camera backend the same document is REFUSED: its camera kinds are not
 // registered there (ADR-0016), so it does not load as saved.
@@ -28,9 +29,11 @@
 #include <lain/camera/flow/detectboardnode.h>
 #include <lain/camera/flow/register.h>
 #include <lain/camera/flow/renderboardnode.h>
+#include <lain/camera/serialize/cameramodel.h>
 #include <lain/core/uri.h>
 #include <lain/flow/boundary.h>
 #include <lain/flow/graph.h>
+#include <lain/io/data/load.h>
 #include <lain/io/image/codecs.h>
 #include <lain/io/image/save.h>
 #include <lain/io/sequence/openers.h>
@@ -45,7 +48,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <string>
+#include <variant>
 
 using namespace lain;
 namespace fs = std::filesystem;
@@ -111,8 +116,9 @@ namespace
 	}
 
 	// footage -> calibrateCamera (board from a boardSpecification of 24 mm squares) -> report, and
-	// -> cameraModel -> model.
-	fs::path writeDocument(const fs::path& file)
+	// -> cameraModel -> model. `held` adds an `imported` model input and holds it (HoldAndValidate):
+	// the document that checks a model file against footage instead of estimating one.
+	fs::path writeDocument(const fs::path& file, bool held = false)
 	{
 		const core::Factory<flow::Node> factory = writingFactory();
 		flow::Graph graph;
@@ -132,6 +138,13 @@ namespace
 		// the verdict rightly withholds Ready. It is also a param away from its default, so the
 		// document has to carry an enum by name for the run to ask for it.
 		setParam(graph, calibrate, "model", camera::DistortionModel::None);
+		if (held)
+		{
+			const flow::PortId imported = input.addBoundary<camera::CameraModel>("imported");
+			REQUIRE(graph.connect(flow::PortAddress{input.id(), imported}, in(graph, calibrate, 2)) ==
+					flow::Connection::Ok);
+			setParam(graph, calibrate, "importedPolicy", camera::calibration::ImportedModelPolicy::HoldAndValidate);
+		}
 
 		REQUIRE(graph.connect(flow::PortAddress{input.id(), footage}, in(graph, calibrate, 0)) == flow::Connection::Ok);
 		REQUIRE(graph.connect(out(graph, spec), in(graph, calibrate, 1)) == flow::Connection::Ok);
@@ -253,13 +266,13 @@ namespace
 		return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
 	}
 
-	// The number after `label` in `text` ("fx 600.3" -> 600.3), or NaN.
-	double numberAfter(const std::string& text, const std::string& label)
+	// A camera-model document on disk, read back through the production reader.
+	std::optional<camera::CameraModel> readModel(const fs::path& file)
 	{
-		const std::size_t at = text.find(label);
-		if (at == std::string::npos)
-			return std::nan("");
-		return std::strtod(text.c_str() + at + label.size(), nullptr);
+		const std::optional<data::Value> document = io::data::load(core::Uri::fromPath(file));
+		if (!document)
+			return std::nullopt;
+		return camera::cameraModelFromValue(*document).model;
 	}
 } // namespace
 
@@ -289,21 +302,46 @@ TEST_CASE("run calibrates a camera from a folder of footage", "[camera][runmode]
 
 	const fs::path footage = writeFootage(dir, 24);
 	const fs::path reportText = dir / "report.txt";
-	const fs::path modelText = dir / "model.txt";
-	options.bindings = {"--footage", footage.string(), "--report", reportText.string(), "--model", modelText.string()};
+	const fs::path modelFile = dir / "model.json";
+	options.bindings = {"--footage", footage.string(), "--report", reportText.string(), "--model", modelFile.string()};
 	REQUIRE(flowview::runGraph(options, factory, binders) == 0);
 
 	const std::string report = readText(reportText);
 	INFO("report: " << report);
 	CHECK(report.rfind("Ready: ", 0) == 0);
 
-	const std::string model = readText(modelText);
-	INFO("model: " << model);
-	CHECK(model.rfind("no distortion, 640x480", 0) == 0);
+	// The model output is a camera-model DOCUMENT, read back by the production reader.
+	const std::optional<camera::CameraModel> model = readModel(modelFile);
+	REQUIRE(model.has_value());
+	INFO("model: " << model->toString());
+	CHECK(std::holds_alternative<camera::NoDistortion>(model->distortion()));
+	CHECK(model->image() == camera::ImageGeometry{kWidth, kHeight});
 	// Measured 0.14% and 0.3 px off; the bounds leave room for another platform's arithmetic, and
 	// still catch a model that is not this camera's.
-	CHECK(std::abs(numberAfter(model, "fx ") - kFx) < 0.005 * kFx);
-	CHECK(std::abs(numberAfter(model, "fy ") - kFy) < 0.005 * kFy);
-	CHECK(std::abs(numberAfter(model, "cx ") - kCx) < 1.0);
-	CHECK(std::abs(numberAfter(model, "cy ") - kCy) < 1.0);
+	CHECK(std::abs(model->intrinsics().fx - kFx) < 0.005 * kFx);
+	CHECK(std::abs(model->intrinsics().fy - kFy) < 0.005 * kFy);
+	CHECK(std::abs(model->intrinsics().cx - kCx) < 1.0);
+	CHECK(std::abs(model->intrinsics().cy - kCy) < 1.0);
+
+	SECTION("the model file binds back, and a held model is validated rather than re-estimated")
+	{
+		// The round trip a user makes: calibrate once, keep model.json, then check it against other
+		// footage. `--imported` reads the file the first run wrote.
+		flowview::RunOptions held;
+		held.graphPath = writeDocument(dir / "validate.json", true).string();
+		const fs::path heldReport = dir / "held.txt";
+		const fs::path heldModel = dir / "held.json";
+		held.bindings = {"--footage", footage.string(), "--imported", modelFile.string(),
+						 "--report", heldReport.string(), "--model", heldModel.string()};
+		REQUIRE(flowview::runGraph(held, factory, binders) == 0);
+
+		// A held model can demonstrate no stability of its own, so it is at most Exploratory.
+		const std::string text = readText(heldReport);
+		INFO("held report: " << text);
+		CHECK(text.rfind("Exploratory: ", 0) == 0);
+		// ... and it comes out exactly as it went in: held, never estimated.
+		const std::optional<camera::CameraModel> out = readModel(heldModel);
+		REQUIRE(out.has_value());
+		CHECK(camera::cameraModelToValue(*out) == camera::cameraModelToValue(*model));
+	}
 }

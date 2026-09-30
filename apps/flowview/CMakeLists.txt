@@ -46,6 +46,7 @@ target_link_libraries(flowview
 	PRIVATE lain::app lain::core lain::gui lain::flow-example lain::io lain::io::sequence lain::media::serialize lain::io::image lain::io::image::codecs lain::io::video::codecs
 			lain::flow::serialize lain::io::data::codecs # graph <-> data::Value <-> json
 			lain::camera::flow lain::camera::backends # camera node kinds, and the backends that run them
+			lain::camera::serialize # camera models as files: --imported model.json, and a model output
 			lain::string lain::log archimedes Vulkan::Loader lain::warnings
 )
 

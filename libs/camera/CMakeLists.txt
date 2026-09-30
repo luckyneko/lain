@@ -4,8 +4,8 @@
 # (lain::camera::board). std + lain only, so it is always built; the optional OpenCV backend lives in
 # plugins/camera/opencv, and no OpenCV type crosses into here.
 #
-# It depends on no lain::data, as lain::media and lain::flow do not: serialization lands as its own
-# target with its first reader.
+# It depends on no lain::data, as lain::media and lain::flow do not: serialization is its own target,
+# libs/camera/serialize.
 
 add_library(camera STATIC
 	src/cameramodel.cpp
@@ -36,6 +36,8 @@ target_link_libraries(camera
 # The node kinds, over lain::flow (added after this directory; a target name is resolved at generate
 # time, as media's serialize target resolves lain::data).
 add_subdirectory(flow)
+# Camera values as documents, over lain::data.
+add_subdirectory(serialize)
 
 if(LAIN_BUILD_TESTING)
 	add_subdirectory(test)

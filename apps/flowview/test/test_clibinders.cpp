@@ -6,13 +6,20 @@
 #include "clibinders.h"
 #include "graphio.h"
 
+#include <lain/camera/serialize/cameramodel.h>
+#include <lain/core/uri.h>
 #include <lain/flow/porttype.h>
 #include <lain/flow/porttyperegistry.h>
 #include <lain/flow/portvalue.h>
+#include <lain/io/data/save.h>
 #include <lain/media/frameposition.h>
+#include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <typeindex>
 #include <typeinfo>
@@ -110,4 +117,40 @@ TEST_CASE("every scalar binder reads text the same way", "[flowview][binder]")
 	CHECK(binders.bind(typeid(float), "12")->get<float>() == 12.0f);
 	CHECK_FALSE(binders.bind(typeid(int), "1.5").has_value());
 	CHECK_FALSE(binders.bind(typeid(float), "1.5f").has_value());
+}
+
+TEST_CASE("a camera model binds from a camera-model document, and a typo is refused", "[flowview][binder]")
+{
+	// What `run --imported factory.json` reads. Through the real json codec and the real binder, so
+	// this is the file a user writes or a calibration's model output left behind.
+	flowview::registerSceneSerialization(); // the json codec
+	const flowview::BoundaryBinders binders = builtIn();
+	const std::filesystem::path dir = lain::testing::scratchDir() / "camera-model-binder";
+	std::filesystem::create_directories(dir);
+
+	camera::CameraModelParameters p;
+	p.image = {1280, 800};
+	p.intrinsics = {640.25, 641.5, 639.75, 401.125};
+	p.distortion = camera::InverseBrownConrady5{-0.055, 0.061, -0.0007, 0.0003, -0.019};
+	const camera::CameraModel model = *camera::CameraModel::create(p).model;
+	const std::filesystem::path file = dir / "factory.json";
+	REQUIRE(io::data::save(core::Uri::fromPath(file), camera::cameraModelToValue(model)));
+
+	const std::optional<flow::PortValue> bound = binders.bind(typeid(camera::CameraModel), file.string());
+	REQUIRE(bound.has_value());
+	REQUIRE(bound->holds<camera::CameraModel>());
+	CHECK(camera::cameraModelToValue(bound->get<camera::CameraModel>()) == camera::cameraModelToValue(model));
+
+	// A coefficient name typed wrong. lain::data alone would read the model with k2 = 0 and say
+	// nothing; the camera reader names the key, and the binder refuses.
+	std::ifstream in(file);
+	std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+	const std::size_t at = text.find("\"k2\"");
+	REQUIRE(at != std::string::npos);
+	text.replace(at, 4, "\"kk2\"");
+	const std::filesystem::path typo = dir / "typo.json";
+	std::ofstream(typo) << text;
+	CHECK_FALSE(binders.bind(typeid(camera::CameraModel), typo.string()).has_value());
+
+	CHECK_FALSE(binders.bind(typeid(camera::CameraModel), (dir / "absent.json").string()).has_value());
 }

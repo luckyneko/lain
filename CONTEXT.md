@@ -399,6 +399,13 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   request: ignored for independent estimation, used only as an initial estimate, or held immutable
   and validated against the calibration dataset. The selected policy and model provenance remain
   visible in the report. _Avoid_: automatic factory calibration, hidden intrinsic prior.
+- **Capture record** — what is known about where a set of frames came from: the device's make, model
+  and identity, the stream profile it delivered, free-form properties such as SDK and firmware
+  versions, and an optional imported manufacturer model with where it came from. Generic: a second
+  camera is a second record, never a second schema, and an unknown field stays empty rather than
+  guessed. Distinct from a report's backend provenance, which says what software produced a result.
+  The imported model is held unchecked, as the manufacturer stated it; what it is worth is decided
+  where it is used. _Avoid_: device calibration file, RealSense record, camera metadata.
 - **Board specification** — the exact identity of the known calibration board: target family, feature
   pattern, physical-board instance, and measured dimensions with uncertainty. Board-capable methods
   require it because detected image features alone do not establish known-target metric evidence;
@@ -457,6 +464,12 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   validated value; malformed imported parameters and invalid solver candidates do not become camera
   models. _Avoid_: board camera model, targetless camera model, device calibration, unchecked camera
   parameters.
+- **Camera-model document** — a camera model written as a versioned document: `{version, image,
+  intrinsics, distortion}`, each distortion model under its stable key (the serialization identity).
+  What a calibration's model output writes and a later run's imported model reads back. It is read
+  strictly: an unknown or missing key, an unrecognised name or a value of the wrong kind is a named
+  problem, never a default, since a hand-typed manufacturer model is exactly where a misspelled
+  coefficient would otherwise load as zero. _Avoid_: calibration file (a report is not a model).
 - **Distortion direction** — which mapping a distortion model and its coefficients define between
   ideal normalized coordinates and observed image coordinates. Forward and inverse Brown-Conrady
   models are distinct even when their coefficient sets have the same shape; projection and

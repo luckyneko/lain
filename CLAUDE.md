@@ -1137,6 +1137,27 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
+### Update 2026-09-30 — M9 slice 1, sub-slice 8a: camera values as documents, model files in flowview
+
+The first third of the real-camera fixture, which the repo owner chose to have built ahead of the
+capture (compact tier committed as PNG, lain's own board printed and measured, two sessions with a
+remount). New **`libs/camera/serialize`** writes and reads camera models, board specifications and
+the new generic **`camera::CaptureRecord`**; flowview binds `--imported model.json` and writes a
+`CameraModel` output as a camera-model document. `ctest -j8` **1026/1026** Debug with video and
+camera on (+5), **1033/1033** Release on, **976/976** Release off; warning-clean, format-check clean.
+Full notes in WORK.md's *Sub-slice 8a built*. 8b (the fixture harness) and 8c (the capture guide and
+a board to print) follow.
+
+- **Each distortion model has a stable key** (`brownConrady5`, `inverseBrownConrady5`, ...), ADR-0016's
+  serialization identity, pinned by a test.
+- **The readers are strict where `lain::data` is best-effort, deliberately.** They write back what
+  they read and compare shapes, so a misspelled coefficient, an unknown distortion name or a dictionary
+  typo is a problem named by its path instead of a silent zero or default. A hand-typed manufacturer
+  model is exactly where that matters.
+- **The vertical round-trips a model file:** calibrate to `model.json`, then bind it with `--imported`
+  into a document that holds it; that run reports Exploratory and outputs the identical model.
+- Five sabotages, all caught.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 7: camera nodes, flowview wiring, a cli vertical
 
 The camera work becomes reachable. New **`libs/camera/flow`** (`lain::camera::flow`, namespace

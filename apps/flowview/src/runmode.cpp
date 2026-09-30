@@ -6,6 +6,7 @@
 #include "graphio.h"
 #include "scene.h"
 
+#include <lain/camera/serialize/cameramodel.h> // cameraModelToValue — a model output's document
 #include <lain/flow/boundary.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
@@ -211,6 +212,17 @@ namespace flowview
 			if (io::data::save(path, data::toValue(media::manifestOf(delivered.get<media::FrameSequence>()))))
 				return true;
 			log::error("flowview: could not write --{} manifest to {}", out.name, path);
+			return false;
+		}
+
+		// A camera model is written as a camera-model DOCUMENT, not its one-line description, on the
+		// manifest's precedent: it is what a later run binds back (`--imported model.json`), so the
+		// file has to hold the model and not a summary of it.
+		if (delivered.holds<camera::CameraModel>())
+		{
+			if (io::data::save(path, camera::cameraModelToValue(delivered.get<camera::CameraModel>())))
+				return true;
+			log::error("flowview: could not write --{} camera model to {}", out.name, path);
 			return false;
 		}
 

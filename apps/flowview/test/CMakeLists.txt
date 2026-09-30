@@ -62,7 +62,7 @@ target_link_libraries(test-flowview PRIVATE
 	lain::data lain::flow lain::flow::serialize lain::flow-example lain::image
 	lain::io lain::io::sequence lain::media::serialize lain::io::image lain::io::data::codecs lain::io::image::codecs
 	lain::io::video::codecs
-	lain::camera::flow lain::camera::backends
+	lain::camera::flow lain::camera::backends lain::camera::serialize
 	lain::log lain::string lain::testing
 	lain::gui Vulkan::Loader
 	lain::warnings Catch2::Catch2WithMain

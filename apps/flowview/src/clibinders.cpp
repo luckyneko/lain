@@ -1,9 +1,12 @@
 #include "clibinders.h"
 
+#include <lain/camera/serialize/cameramodel.h> // cameraModelFromValue — a model file's reader
 #include <lain/core/parse.h>
 #include <lain/image/image.h>
+#include <lain/io/data/load.h>
 #include <lain/io/image/load.h>
 #include <lain/io/sequence/open.h>
+#include <lain/log/log.h>
 #include <lain/media/frameposition.h>
 #include <lain/media/framesequence.h>
 
@@ -123,6 +126,25 @@ namespace flowview
 		return pv;
 	}
 
+	// A camera model binds by READING a camera-model document, the way an image binds by loading one:
+	// what a calibration's `run --model model.json` wrote, or a manufacturer's model typed out. The
+	// reader is strict, and its problems are logged here, since a binder can only say yes or no and
+	// "could not parse" alone would leave a typo in a coefficient name to be found by hand.
+	static std::optional<flow::PortValue> bindCameraModel(const std::string& s)
+	{
+		const std::optional<data::Value> document = io::data::load(s);
+		if (!document)
+			return std::nullopt;
+		camera::CameraModelRead read = camera::cameraModelFromValue(*document);
+		for (const std::string& problem : read.problems)
+			log::error("flowview: {}: {}", s, problem);
+		if (!read.model)
+			return std::nullopt;
+		flow::PortValue pv;
+		pv.set<camera::CameraModel>(std::move(*read.model));
+		return pv;
+	}
+
 	void registerBoundaryBinders(BoundaryBinders& binders)
 	{
 		binders.add(typeid(int), &bindInt);
@@ -132,5 +154,6 @@ namespace flowview
 		binders.add(typeid(image::Image), &bindImage);
 		binders.add(typeid(media::FrameSequence), &bindFrameSequence);
 		binders.add(typeid(media::FramePosition), &bindFramePosition);
+		binders.add(typeid(camera::CameraModel), &bindCameraModel);
 	}
 } // namespace flowview

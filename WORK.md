@@ -2404,7 +2404,8 @@ adds a pin to the canvas.
 built before it, discharging its frame-sequence prerequisite. How OpenCV is obtained was settled
 2026-09-29 ([ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md)), and slice 0 below
 (OpenCV lands, nothing depending on it) is built. **Slice 1 is in progress** as nine sub-slices
-(below): 0 to 7 are built, and 8 (the real-camera fixture) waits on a capture.
+(below): 0 to 7 are built, and 8 (the real-camera fixture) is building its machinery ahead of the
+capture it waits on.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -2658,7 +2659,53 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    7. The flow adapter and flowview: five node kinds, capability-driven `registerCameraNodes`, a
       Camera catalog category, a cli vertical. **Built 2026-09-30.** Serialization is re-deferred to
       sub-slice 8, its first reader (landing notes below).
-   8. The real-camera fixture. **Blocked on a capture from the repo owner.**
+   8. The real-camera fixture. **The machinery is built first and the capture lands last**, decided
+      with the repo owner 2026-09-30: the compact tier is committed PNG; the board is lain's own
+      rendering, printed and measured; two sessions with a remount between them. Three commits:
+      - 8a. Camera values as documents (`libs/camera/serialize`), `camera::CaptureRecord`, and model
+        files in flowview. **Built 2026-09-30** (landing notes below).
+      - 8b. The fixture harness: format and loader, calibration per session, the repeat check as
+        cross-validation, the manufacturer comparison, the hashed extended tier.
+      - 8c. The capture guide, a board to print, and the ADR amendments.
+
+      **The capture itself is still owed by the repo owner**, and board-geometry reconstruction (a
+      board rebuilt without its geometry, from relative poses) is designed separately: it needs
+      relative-pose recovery through the backend.
+
+   **Sub-slice 8a built (2026-09-30): camera values as documents.**
+   - **`libs/camera/serialize`** (`lain::camera::serialize`, namespace `lain::camera`, the
+     `media::serialize` precedent): the six distortion models as a tagged variant under stable keys
+     (`none`, `brownConrady5`, `inverseBrownConrady5`, `modifiedBrownConrady5`,
+     `rationalBrownConrady8`, `kannalaBrandt4`), which are ADR-0016's serialization identity;
+     `CameraModelParameters`; board patterns and instances, with lengths in millimetres read back to
+     the nanometre; and capture records.
+   - **The readers are STRICT where `lain::data` is best-effort.** `cameraModelFromValue` and
+     `specificationFromValue` read, write back what they read, and compare the two by shape, so an
+     unknown key, a missing one, an unrecognised enum or variant name, or a value of the wrong kind is
+     a problem named by its path. Without it a misspelled `k2` in a hand-typed manufacturer model
+     loads as zero, and an unknown distortion name as no distortion, with nothing said. What is read
+     then goes through `CameraModel::create` / `Pattern::create` / `Specification::create`, whose
+     diagnostics join the problems. The comparison is private to camera::serialize until a second
+     format wants it, when it belongs in `lain::data`.
+   - **`camera::CaptureRecord`** (in `libs/camera`, std-only): device, stream, string properties, and
+     an optional imported model held as unchecked parameters with its source. Generic, per the repo
+     owner's rule; a new CONTEXT.md term, as is *Camera-model document*.
+   - **flowview reads and writes model files**, which makes this the first production reader:
+     - `--imported model.json` binds a `CameraModel` input through a new cli binder, which logs the
+       reader's problems before refusing;
+     - `run` writes a `CameraModel` output as a camera-model document on the `FrameSequence`
+       manifest's precedent.
+     The vertical now writes `model.json`, reads it back through the production reader, and binds it
+     into a second document that holds it: that run reports Exploratory and outputs the same model,
+     byte for byte as a document.
+   - **Found while driving it:** a held model's report read "0 views covering 73% of the image",
+     since a held model selects no calibration views. The clause is now left out when no view was
+     selected.
+   - `ctest -j8` **1026/1026** Debug with video and camera on (+5), **1033/1033** Release on,
+     **976/976** Release off; warning-clean, format-check clean.
+   - **Five sabotages, all caught:** the strict comparison removed, an arm key renamed, metres
+     written where millimetres are read, the binder unregistered, and the model output written as
+     text.
 
    **Sub-slice 7 built (2026-09-30): the flow adapter and flowview.**
    - **`libs/camera/flow`** (`lain::camera::flow`), a separate target over `lain::camera` and
@@ -7985,8 +8032,9 @@ row here**. A row is cheap to delete and expensive to leave.
   code. **Unblocked:** M10 was numbered after it and built before it, discharging its frame-sequence
   prerequisite. How OpenCV is obtained was decided 2026-09-29 (a pinned prebuilt), its first
   release (`opencv-4.14.0-calib`) is published, and **slice 0 is built** (`addOpenCV.cmake`, the
-  `[opencv]` probe). **Slice 1 is in progress** as nine sub-slices, of which 0 to 7 are built
-  and sub-slice 8 (the real-camera fixture) waits on a capture. *(Milestone 9;
+  `[opencv]` probe). **Slice 1 is in progress** as nine sub-slices, of which 0 to 7 are built;
+  sub-slice 8 (the real-camera fixture) is building its machinery, and its capture is owed by the
+  repo owner. *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md),

@@ -31,6 +31,8 @@ namespace flowview
 		std::map<std::type_index, Binder> m_binders;
 	};
 
-	// Register the built-in binders: the scalars (int / float / bool / string) + image (loads the path).
+	// Register the built-in binders: the scalars (int / float / bool / string), an image (loads the
+	// path), a frame sequence (opens the uri), a frame position, and a camera model (reads a
+	// camera-model document).
 	void registerBoundaryBinders(BoundaryBinders& binders);
 } // namespace flowview
