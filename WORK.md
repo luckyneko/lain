@@ -2647,7 +2647,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       **Built 2026-09-30.** The generated backend aggregator moved to sub-slice 4, beside its first
       backend.
    4. The OpenCV renderer and detector: scaled detection mapped back to source pixels, then
-      native-resolution refinement.
+      native-resolution refinement. **Built 2026-09-30**, with the generated
+      `registerCameraBackends()` aggregator.
    5. Calibration contracts and the board method module: `Request`, `Report`, fitness profiles,
       detection over a `FrameSequence` on the process pool, view selection, a held-out split,
       validation through lain's own projection, seeded resampling, the verdict.
@@ -2655,6 +2656,52 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    7. The flow adapter and flowview: five node kinds, capability-driven `registerCameraNodes`, a
       Camera catalog category, a cli vertical.
    8. The real-camera fixture. **Blocked on a capture from the repo owner.**
+
+   **Sub-slice 4 built (2026-09-30): the OpenCV renderer and detector.**
+   - **`lain::camera::opencv`** now holds `CharucoRenderer` (OpenCV's own `generateImage`) and
+     `CharucoDetector`, registered as "opencv" by `registerBackend()`, which also calls
+     `cv::setNumThreads(0)`: ADR-0016's decision, built. One private `toCharucoBoard` turns a lain
+     pattern into an OpenCV board, so no OpenCV type crosses into `libs/camera`.
+   - **`plugins/camera`'s generated `registerCameraBackends()`** (`lain::camera::backends`) mirrors
+     `registerVideoCodecs`: built in every configuration, a no-op without a plugin, and an aggregator
+     test asserting the backend count per configuration.
+   - **Detection:** ArUco markers are found at the resolved scale, and OpenCV interpolates the
+     ChArUco corners. The corners are mapped back to source pixels **centre to centre** (reduced
+     pixel x sits at (x + 0.5) / s - 0.5), then refined against source pixels with `cornerSubPix`.
+     Any pixel format works: 8-bit formats are read as they are, and wider ones are narrowed by
+     lain's own conversion first, **per channel, never reduced to grey by lain**, because lain's grey
+     is a luminance that rightly insists on linear light and a picture to find corners in does not
+     need one. An OpenCV exception becomes a Failed report or an invalid raster, since a detection
+     always ends in a report.
+   - **Found by the tests: the first refinement window made things worse.** A quarter of the corner
+     spacing reaches past the gap between a chessboard corner and its nearest marker, (1 - ratio) / 2
+     of a square, and marker edges then pulled the corners: native refinement after a half-scale
+     detection measured 0.80 px, against 0.24 px without refining at all. The window now stays inside
+     that gap, and the refined half-scale detection measures **mean 0.064 px, worst 0.100**, which is
+     native detection's own accuracy (**mean 0.068, worst 0.136**) on ~60 px squares 20 degrees off
+     axis. A flat rendering is found exactly (6e-14 px). The tolerances are set from these
+     measurements with margin, and each measurement is written beside its check.
+   - **lain's projection agrees with OpenCV's to 1e-6 px** for Brown-Conrady 5, rational 8 and
+     Kannala-Brandt 4 (`cv::projectPoints`, `cv::fisheye::projectPoints`), so `distortion.h`'s
+     coefficient orders are checked against the reference implementation rather than against a
+     second reading of the same formula.
+   - **A sabotage the suite could not see, and the test that now can.** Mapping `ARUCO_5X5_100` to
+     OpenCV's 6x6 dictionary passed every test: the renderer and the detector share one mapping, so a
+     wrong board round-trips as itself. A new case renders every lain dictionary and finds its
+     markers with OpenCV's dictionary of that name, from a table written independently in the test,
+     using ids from the top of each dictionary, since the smaller dictionaries are prefixes of the
+     larger and only a high id tells `4X4_50` from `4X4_1000`.
+   - Also tested: the legacy layout is a different pattern (and is detected as itself); a pattern's
+     marker ids start where it says; colour and 16-bit frames give the same corners as grey; a blank
+     frame is Failed with `NoMarkers`; detailed evidence appears only when asked for; and
+     registering caps OpenCV at one thread.
+   - `ctest -j4` **991/991** Debug with video and camera on (+15). Release warning-clean and
+     passing. The camera-OFF configuration builds, fetches no OpenCV, and its aggregator registers
+     nothing.
+   - **Eight sabotages, all caught** (one only after the new test): mapping pixel corners instead of
+     centres (caught by the detection-scale case, which native refinement would otherwise hide), no
+     mapping to source at all, the quarter-spacing window, the layout ignored, the first marker id
+     ignored, the thread cap removed, and two dictionary mismappings, one of them a prefix.
 
    **Sub-slice 3 built (2026-09-30): board values and the detection seam** (`lain::camera::board`,
    in `libs/camera`).

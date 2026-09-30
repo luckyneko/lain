@@ -1,4 +1,5 @@
-# The OpenCV plugin's tests (Catch2): the runtime half of the ADR-0026 gate.
+# The OpenCV plugin's tests (Catch2): the runtime half of the ADR-0026 gate, the ChArUco renderer
+# and detector through lain's production seams, and lain's projection checked against OpenCV's.
 #
 # The test links the real OpenCV and asks it what it is, so it also proves the shared libraries
 # RESOLVE at run time — an executable that cannot find @rpath/libopencv_core does not launch. The
@@ -7,6 +8,8 @@
 
 add_executable(test-camera-opencv
 	test_build.cpp
+	test_charuco.cpp
+	test_projectionagreement.cpp
 )
 
 string(REPLACE ";" " " _lain_opencv_modules "${LAIN_OPENCV_MODULES}")
@@ -17,6 +20,10 @@ target_compile_definitions(test-camera-opencv PRIVATE
 )
 target_link_libraries(test-camera-opencv
 	PRIVATE lain::camera::opencv
+	# The tests themselves name OpenCV: to draw a camera's view of a board, and to ask OpenCV's
+	# projection what lain's should agree with. The plugin links it privately.
+	PRIVATE opencv_core opencv_imgproc opencv_calib3d opencv_objdetect
+	PRIVATE lain::image
 	PRIVATE lain::warnings Catch2::Catch2WithMain
 )
 

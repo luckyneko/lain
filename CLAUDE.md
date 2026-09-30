@@ -1137,6 +1137,33 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
+### Update 2026-09-30 — M9 slice 1, sub-slice 4: the OpenCV renderer and detector
+
+`lain::camera::opencv` renders and detects ChArUco boards behind `lain::camera::board`'s seams,
+registered by the new generated `lain::camera::registerCameraBackends()` (a no-op without a plugin,
+like `registerVideoCodecs`). Registering calls `cv::setNumThreads(0)`. `ctest -j4` **991/991** Debug
+with video and camera on (+15); Release warning-clean; the camera-OFF build registers nothing and
+fetches no OpenCV. Full notes in WORK.md's *Sub-slice 4 built*.
+
+- **Measured accuracy, not asserted.** Native detection on ~60 px squares, 20 degrees off axis:
+  mean 0.068 px, worst 0.136. Half-scale detection refined against source pixels: mean 0.064, worst
+  0.100, i.e. native accuracy. A flat rendering is exact. Tolerances are set from these numbers, and
+  each number is written beside its check.
+- **The tests found a real defect in the first refinement window.** A quarter of the corner spacing
+  reaches into the markers, and "refined" half-scale detection measured 0.80 px against 0.24 px
+  unrefined. The window now stays inside the corner-to-marker gap, as OpenCV's own ChArUco refinement
+  does.
+- **Corners map back centre to centre** ((x + 0.5) / s - 0.5). The detection-scale-only case is what
+  catches a corner-to-corner mapping, because native refinement would hide the half-pixel offset.
+- **lain's projection matches `cv::projectPoints` / `cv::fisheye::projectPoints` to 1e-6 px** for
+  the three shared distortion models, so the coefficient orders are OpenCV's.
+- **A sabotage that passed, and why.** A wrong dictionary mapping round-trips, because renderer and
+  detector share it. Only OpenCV's dictionary, named independently in the test, can tell, so every
+  dictionary is now rendered and checked that way, from ids high enough to separate a dictionary
+  from its smaller prefixes.
+- Any pixel format detects: wider formats are narrowed per channel by lain first, and never reduced
+  to grey by lain, whose grey is a luminance that needs linear light.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 3: board values and the detection seam
 
 `lain::camera::board`, in `libs/camera`: ChArUco patterns with a pinned, versioned fingerprint,
