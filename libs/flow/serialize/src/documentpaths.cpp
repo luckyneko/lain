@@ -35,9 +35,14 @@ namespace lain::flow::serialize
 	// An empty path ("no file chosen yet") and a uri with a scheme are not file-system paths to
 	// rebase. Leaving them alone is what keeps both transforms total: rebasing an empty path would
 	// name the document's own folder.
-	static bool rebasable(const std::filesystem::path& path)
+	//
+	// Asked of the stored TEXT, never of a std::filesystem::path built from it. libstdc++'s
+	// generic_string() collapses repeated separators, so a round trip turns "s3://bucket/a.png" into
+	// "s3:/bucket/a.png", which has no "://" left and reads as a local path. libc++ keeps them, which
+	// is why this passed on macOS and failed on Linux.
+	static bool rebasable(const std::string& text)
 	{
-		return !path.empty() && core::Uri{path.generic_string()}.isLocal();
+		return !text.empty() && core::Uri{text}.isLocal();
 	}
 
 	// A member of an object Value, mutably. data::Value::find is const-only.
@@ -73,6 +78,10 @@ namespace lain::flow::serialize
 					data::Value* value = member(param, "value");
 					if (!type || !type->asString() || *type->asString() != kPathTypeKey || !value || !value->asString())
 						continue;
+					// Untouched, not rewritten to itself: writing a uri back through generic_string()
+					// would collapse its "//" on the same platforms rebasable() explains.
+					if (!rebasable(*value->asString()))
+						continue;
 					*value = data::Value(rewrite(std::filesystem::path(*value->asString())).generic_string());
 				}
 			}
@@ -87,8 +96,6 @@ namespace lain::flow::serialize
 		rewritePathParams(document,
 						  [&base](const std::filesystem::path& path)
 						  {
-							  if (!rebasable(path))
-								  return path;
 							  // A relative in-memory path is the working directory's, since that is
 							  // what the OS reads it against. Written as it is, a load would read it
 							  // against the document instead: a different file, with nothing to say so.
@@ -112,7 +119,7 @@ namespace lain::flow::serialize
 		rewritePathParams(document,
 						  [&base](const std::filesystem::path& stored)
 						  {
-							  if (!rebasable(stored) || stored.is_absolute())
+							  if (stored.is_absolute())
 								  return stored;
 							  return normalPath(base / stored);
 						  });

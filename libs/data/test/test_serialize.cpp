@@ -167,6 +167,16 @@ TEST_CASE("std::filesystem::path and a string-keyed map round-trip", "[serialize
 	REQUIRE(r->counts.at("b") == 2);
 }
 
+TEST_CASE("a path holding a uri keeps its double slash", "[serialize]")
+{
+	// A path param may hold a uri rather than a file-system path (ADR-0023). Written through
+	// generic_string(), libstdc++ collapsed "s3://" to "s3:/", so the scheme was gone after one save
+	// on Linux while macOS and Windows kept it. Only a libstdc++ build can fail this.
+	REQUIRE(toValue(std::filesystem::path("s3://bucket/a.png")) == Value("s3://bucket/a.png"));
+	REQUIRE(toValue(std::filesystem::path("file:///footage/a.png")) == Value("file:///footage/a.png"));
+	REQUIRE(fromValue<std::filesystem::path>(Value("s3://bucket/a.png")).value().string() == "s3://bucket/a.png");
+}
+
 TEST_CASE("raw bytes round-trip through the Bytes arm, not as an Array", "[serialize]")
 {
 	std::vector<std::byte> bytes{std::byte{0x00}, std::byte{0xFF}, std::byte{0x7F}};

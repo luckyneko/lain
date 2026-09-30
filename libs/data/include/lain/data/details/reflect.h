@@ -12,6 +12,7 @@
 #include <lain/meta/enums.h>
 #include <lain/meta/traits.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -142,7 +143,16 @@ namespace lain::data::detail
 		else if constexpr (std::is_same_v<U, std::string>)
 			return Value(value);
 		else if constexpr (std::is_same_v<U, std::filesystem::path>)
-			return Value(value.generic_string()); // portable forward-slash form
+		{
+			// Portable forward slashes, and otherwise the text as spelled. generic_string() is the
+			// obvious spelling and is wrong here: libstdc++ collapses repeated separators, so a uri
+			// held in a path ("s3://bucket/a.png") saved as "s3:/bucket/a.png" on Linux alone, with
+			// its scheme gone. libc++ and MSVC keep them.
+			std::string text = value.string();
+			if constexpr (std::filesystem::path::preferred_separator != '/')
+				std::replace(text.begin(), text.end(), '\\', '/');
+			return Value(std::move(text));
+		}
 		else if constexpr (std::is_same_v<U, std::vector<std::byte>>)
 			return Value(value); // Bytes
 		else if constexpr (meta::is_optional_v<U>)
