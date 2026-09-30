@@ -7,6 +7,9 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+
+#include <limits>
 
 using Catch::Approx;
 using namespace lain::image;
@@ -66,6 +69,19 @@ TEST_CASE("clamp bounds every channel including alpha", "[ops]")
 }
 
 // --- filters -----------------------------------------------------------------
+
+TEST_CASE("gaussianKernel with a sigma that is not positive is the identity", "[ops]")
+{
+	// The Gaussian's limit as sigma -> 0. Before, sigma 0 produced NaN weights and a black image.
+	const float sigma = GENERATE(0.0f, -1.0f, std::numeric_limits<float>::quiet_NaN());
+	const Kernel k = gaussianKernel(2, sigma);
+	REQUIRE(k.size() == 5);
+	for (int y = -2; y <= 2; ++y)
+	{
+		for (int x = -2; x <= 2; ++x)
+			REQUIRE(k.at(x, y) == ((x == 0 && y == 0) ? 1.0f : 0.0f));
+	}
+}
 
 TEST_CASE("gaussianKernel is normalized and symmetric", "[ops]")
 {

@@ -39,7 +39,9 @@ namespace lain::image
 		float at(int kx, int ky) const { return weights[static_cast<std::size_t>((ky + radius) * size() + (kx + radius))]; }
 	};
 
-	// A normalized Gaussian kernel (weights sum to 1) of the given radius and sigma.
+	// A normalized Gaussian kernel (weights sum to 1) of the given radius and sigma. A sigma that is
+	// not positive gives the IDENTITY kernel (all weight at the centre), which is the Gaussian's own
+	// limit as sigma -> 0: a blur of strength 0 changes nothing.
 	Kernel gaussianKernel(int radius, float sigma);
 
 	// --- per-pixel tone ----------------------------------------------------------

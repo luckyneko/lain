@@ -84,6 +84,14 @@ namespace lain::image
 		k.radius = radius < 0 ? 0 : radius;
 		const int n = k.size();
 		k.weights.resize(static_cast<std::size_t>(n) * n);
+		// Not positive (NaN included): the identity. Evaluated as written, sigma 0 puts exp(-0/0), a
+		// NaN, at the centre, the NaN reaches every weight through the normalising sum, and the blurred
+		// image comes out black. Found by a loop driving sigma from its index, which starts at 0.
+		if (!(sigma > 0.0f))
+		{
+			k.weights[static_cast<std::size_t>(k.radius * n + k.radius)] = 1.0f;
+			return k;
+		}
 		const float twoSigma2 = 2.0f * sigma * sigma;
 		float sum = 0.0f;
 		for (int y = -k.radius; y <= k.radius; ++y)
