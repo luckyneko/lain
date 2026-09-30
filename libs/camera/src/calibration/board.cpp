@@ -445,48 +445,35 @@ namespace lain::camera::calibration::board
 
 	// --- calibrate ------------------------------------------------------------------
 
-	Report calibrate(const media::FrameSequence& footage, const cb::Specification& board, const Request& request)
+	// A report that has failed, timed from `start`.
+	static Report failed(Report report, core::Time start, Failure failure, std::string detail)
 	{
-		const core::Time start = core::Time::now();
-		Report report;
+		report.status = CalibrationStatus::Failed;
+		report.failures.push_back({failure, std::move(detail)});
+		report.elapsed = core::Time::now() - start;
+		return report;
+	}
+
+	// The checks both entry points make before any work: a known profile, a usable imported model,
+	// and a backend for the job. Returns the estimator to use, or the failed report.
+	static std::variant<std::unique_ptr<Estimator>, Report> prepare(Report& report, const ImageGeometry& image,
+																	const Request& request, core::Time start)
+	{
 		report.reproducibility.request = request;
-		report.reproducibility.frames = std::uint32_t(footage.size());
-		const auto fail = [&report, &start](Failure failure, std::string detail) -> Report
-		{
-			report.status = CalibrationStatus::Failed;
-			report.failures.push_back({failure, std::move(detail)});
-			report.elapsed = core::Time::now() - start;
-			return report;
-		};
-
-		for (std::size_t i = 0; i < footage.size(); ++i)
-		{
-			const std::string source = footage.frame(i).source.toString();
-			if (std::find(report.reproducibility.sources.begin(), report.reproducibility.sources.end(), source) ==
-				report.reproducibility.sources.end())
-				report.reproducibility.sources.push_back(source);
-		}
-
 		const std::optional<FitnessProfile> profile = fitnessProfile(request.fitnessProfile);
 		if (!profile)
-			return fail(Failure::UnknownFitnessProfile, "no fitness profile is named \"" + request.fitnessProfile + "\"");
+			return failed(report, start, Failure::UnknownFitnessProfile,
+						  "no fitness profile is named \"" + request.fitnessProfile + "\"");
 		report.thresholds = resolve(*profile, request.overrides);
-
-		if (footage.size() == 0)
-			return fail(Failure::NoFootage, "the frame sequence is empty");
-		const math::Vec2i extent = footage.spec().extent;
-		const ImageGeometry image{std::uint32_t(std::max(extent.x, 0)), std::uint32_t(std::max(extent.y, 0))};
 
 		const bool hold = request.importedPolicy == ImportedModelPolicy::HoldAndValidate;
 		if (hold && !request.imported)
-			return fail(Failure::NoImportedModel, "HoldAndValidate needs an imported model to hold");
+			return failed(report, start, Failure::NoImportedModel, "HoldAndValidate needs an imported model to hold");
 		if (request.imported && applicability(*request.imported, image) == Applicability::Incompatible)
-			return fail(Failure::IncompatibleImportedModel,
-						"the imported model is " + std::to_string(request.imported->image().width) + "x" +
-							std::to_string(request.imported->image().height) + " and the footage is " +
-							std::to_string(image.width) + "x" + std::to_string(image.height));
-		if (!cb::canDetect())
-			return fail(Failure::NoDetector, "this build has no board detector (configure with -DLAIN_CAMERA_OPENCV=ON)");
+			return failed(report, start, Failure::IncompatibleImportedModel,
+						  "the imported model is " + std::to_string(request.imported->image().width) + "x" +
+							  std::to_string(request.imported->image().height) + " and the footage is " +
+							  std::to_string(image.width) + "x" + std::to_string(image.height));
 
 		// A held model still needs a backend for board poses; an estimated one needs a backend that
 		// estimates exactly the requested model, never a similar one.
@@ -494,21 +481,21 @@ namespace lain::camera::calibration::board
 			hold ? (canEstimate() ? estimatorRegistry().create(estimatorRegistry().keys().front()) : nullptr)
 				 : estimatorFor(request.model);
 		if (!estimator)
-			return fail(Failure::NoEstimator, canEstimate() ? "no registered backend can estimate " +
-																  std::string(displayName(request.model))
-															: std::string("this build has no calibration estimator"));
+			return failed(report, start, Failure::NoEstimator,
+						  canEstimate() ? "no registered backend can estimate " + std::string(displayName(request.model))
+										: std::string("this build has no calibration estimator"));
 		report.reproducibility.estimator = estimator->provenance();
+		return estimator;
+	}
 
-		// Detect in every frame, one decoded frame per task.
+	// Everything after detection: which views do what, the estimate, its validation, its stability and
+	// its verdict. `report` arrives prepared, with its detections in place.
+	static Report analyse(Report report, const ImageGeometry& image, const cb::Specification& board,
+						  const Request& request, const Estimator& estimator, core::Time start)
+	{
 		Diagnostics& diagnostics = report.diagnostics;
-		diagnostics.detections.resize(footage.size());
-		forEach(footage.size(), request.execution,
-				[&](std::size_t i)
-				{
-					const image::Image frame = footage.image(i);
-					diagnostics.detections[i] = cb::detect(frame, footage.frame(i), board, request.detection);
-				});
-		diagnostics.framesExamined = std::uint32_t(footage.size());
+		diagnostics.framesExamined = std::uint32_t(diagnostics.detections.size());
+		diagnostics.framesUsable = 0;
 		for (const cb::DetectionReport& d : diagnostics.detections)
 		{
 			if (usable(d))
@@ -518,6 +505,7 @@ namespace lain::camera::calibration::board
 		}
 
 		// Which views do what. A held model has nothing to estimate, so every usable view validates it.
+		const bool hold = request.importedPolicy == ImportedModelPolicy::HoldAndValidate;
 		ViewSplit split;
 		if (hold)
 			split.heldOut = canonicalUsable(diagnostics.detections);
@@ -544,9 +532,10 @@ namespace lain::camera::calibration::board
 		else
 		{
 			if (calibrationViews.size() < kMinimumCalibrationViews)
-				return fail(Failure::TooFewViews, std::to_string(calibrationViews.size()) + " usable calibration views of " +
-													  std::to_string(footage.size()) + " frames; at least " +
-													  std::to_string(kMinimumCalibrationViews) + " are needed");
+				return failed(std::move(report), start, Failure::TooFewViews,
+							  std::to_string(calibrationViews.size()) + " usable calibration views of " +
+								  std::to_string(diagnostics.framesExamined) + " frames; at least " +
+								  std::to_string(kMinimumCalibrationViews) + " are needed");
 
 			// The Initial policy seeds the estimate. Every parameter only when the imported model is
 			// the requested model; otherwise the pinhole part alone, with the distortion starting
@@ -563,15 +552,16 @@ namespace lain::camera::calibration::board
 				}
 			}
 
-			const Estimate estimate = estimator->estimate(image, calibrationViews, board, request.model, initial);
+			const Estimate estimate = estimator.estimate(image, calibrationViews, board, request.model, initial);
 			if (!estimate.parameters)
-				return fail(Failure::EstimationFailed, estimate.failure.empty() ? "the estimator returned no model" : estimate.failure);
+				return failed(std::move(report), start, Failure::EstimationFailed,
+							  estimate.failure.empty() ? "the estimator returned no model" : estimate.failure);
 			ModelResult created = CameraModel::create(*estimate.parameters);
 			if (!created.model)
 			{
 				for (const ModelDiagnostic& d : created.diagnostics)
 					report.failures.push_back({Failure::InvalidModel, d.detail});
-				return fail(Failure::InvalidModel, "the estimate is not a valid camera model");
+				return failed(std::move(report), start, Failure::InvalidModel, "the estimate is not a valid camera model");
 			}
 			report.model = std::move(created.model);
 			diagnostics.fitRmsPixels = estimate.rmsPixels;
@@ -579,9 +569,9 @@ namespace lain::camera::calibration::board
 		}
 		report.status = CalibrationStatus::Succeeded;
 
-		report.heldOut = validate(*report.model, board, heldOutViews, *estimator);
+		report.heldOut = validate(*report.model, board, heldOutViews, estimator);
 		report.resampling = hold ? std::variant<ResamplingEvidence, Unavailable>{Unavailable{"the model was held, not estimated"}}
-								 : resample(calibrationViews, board, image, request, initial, *estimator);
+								 : resample(calibrationViews, board, image, request, initial, estimator);
 
 		// The verdict. A held model is judged on the views that validated it.
 		const std::uint32_t supportingViews = hold ? diagnostics.viewsHeldOut : diagnostics.viewsSelected;
@@ -599,5 +589,67 @@ namespace lain::camera::calibration::board
 
 		report.elapsed = core::Time::now() - start;
 		return report;
+	}
+
+	Report calibrate(const std::vector<cb::DetectionReport>& detections, const ImageGeometry& image,
+					 const cb::Specification& board, const Request& request)
+	{
+		const core::Time start = core::Time::now();
+		Report report;
+		std::variant<std::unique_ptr<Estimator>, Report> prepared = prepare(report, image, request, start);
+		if (Report* failure = std::get_if<Report>(&prepared))
+			return std::move(*failure);
+
+		report.reproducibility.frames = std::uint32_t(detections.size());
+		for (const cb::DetectionReport& d : detections)
+		{
+			if (!d.observation)
+				continue;
+			const std::string source = d.observation->frame.source.toString();
+			if (std::find(report.reproducibility.sources.begin(), report.reproducibility.sources.end(), source) ==
+				report.reproducibility.sources.end())
+				report.reproducibility.sources.push_back(source);
+		}
+		report.diagnostics.detections = detections;
+		return analyse(std::move(report), image, board, request, *std::get<std::unique_ptr<Estimator>>(prepared), start);
+	}
+
+	Report calibrate(const media::FrameSequence& footage, const cb::Specification& board, const Request& request)
+	{
+		const core::Time start = core::Time::now();
+		Report report;
+		report.reproducibility.request = request;
+		report.reproducibility.frames = std::uint32_t(footage.size());
+		for (std::size_t i = 0; i < footage.size(); ++i)
+		{
+			const std::string source = footage.frame(i).source.toString();
+			if (std::find(report.reproducibility.sources.begin(), report.reproducibility.sources.end(), source) ==
+				report.reproducibility.sources.end())
+				report.reproducibility.sources.push_back(source);
+		}
+
+		if (footage.size() == 0)
+			return failed(std::move(report), start, Failure::NoFootage, "the frame sequence is empty");
+		const math::Vec2i extent = footage.spec().extent;
+		const ImageGeometry image{std::uint32_t(std::max(extent.x, 0)), std::uint32_t(std::max(extent.y, 0))};
+
+		// Every check that needs no frame comes first, so a request that cannot succeed decodes nothing.
+		if (!cb::canDetect())
+			return failed(std::move(report), start, Failure::NoDetector,
+						  "this build has no board detector (configure with -DLAIN_CAMERA_OPENCV=ON)");
+		std::variant<std::unique_ptr<Estimator>, Report> prepared = prepare(report, image, request, start);
+		if (Report* failure = std::get_if<Report>(&prepared))
+			return std::move(*failure);
+
+		// Detect in every frame, one decoded frame per task.
+		std::vector<cb::DetectionReport>& detections = report.diagnostics.detections;
+		detections.resize(footage.size());
+		forEach(footage.size(), request.execution,
+				[&](std::size_t i)
+				{
+					const image::Image frame = footage.image(i);
+					detections[i] = cb::detect(frame, footage.frame(i), board, request.detection);
+				});
+		return analyse(std::move(report), image, board, request, *std::get<std::unique_ptr<Estimator>>(prepared), start);
 	}
 } // namespace lain::camera::calibration::board

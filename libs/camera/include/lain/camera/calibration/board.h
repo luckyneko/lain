@@ -25,6 +25,12 @@ namespace lain::camera::calibration::board
 	Report calibrate(const media::FrameSequence& footage, const camera::board::Specification& board,
 					 const Request& request);
 
+	// The same from detections already made: one report per frame, measured in `image`. What
+	// calibrate(footage) does after detecting; useful on its own to calibrate stored detections again
+	// with another model or profile without decoding a frame.
+	Report calibrate(const std::vector<camera::board::DetectionReport>& detections, const ImageGeometry& image,
+					 const camera::board::Specification& board, const Request& request);
+
 	// Which usable detections are held out, and which calibrate: positions into `detections`.
 	//
 	// Deterministic. Usable views are put in canonical order (source uri, then frame ordinal); every

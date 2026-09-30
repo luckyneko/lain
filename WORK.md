@@ -2653,10 +2653,60 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       detection over a `FrameSequence` on the process pool, view selection, a held-out split,
       validation through lain's own projection, seeded resampling, the verdict. **Built
       2026-09-30.**
-   6. The OpenCV estimator (BC5, Rational8, KB4; the other variants are a failed report).
+   6. The OpenCV estimator (BC5, Rational8, KB4; the other variants are a failed report). **Built
+      2026-09-30**, with no distortion estimatable too.
    7. The flow adapter and flowview: five node kinds, capability-driven `registerCameraNodes`, a
       Camera catalog category, a cli vertical.
    8. The real-camera fixture. **Blocked on a capture from the repo owner.**
+
+   **Sub-slice 6 built (2026-09-30): the OpenCV estimator.**
+   - **`OpenCVEstimator`**, registered as "opencv" beside the renderer and detector:
+     `calibrateCamera` for no distortion (fixed coefficients), Brown-Conrady 5 and rational 8
+     (`CALIB_RATIONAL_MODEL`), `cv::fisheye::calibrate` for Kannala-Brandt 4. The Initial policy maps
+     to the intrinsic-guess flags. OpenCV's parameter deviations are kept, one per coefficient the
+     model has; the fisheye path computes none and reports none. Inverse and modified Brown-Conrady
+     are refused, never substituted.
+   - **`boardPose` works for every model, OpenCV's or not.** Each corner is unprojected with lain's
+     own model and the pose solved on pinhole-normalised coordinates (IPPE, refined with LM). So a
+     held inverse Brown-Conrady camera, which OpenCV has no model for, validates against its own
+     views to 1e-6 px.
+   - **The method module gained `calibrate(detections, image, board, request)`**, which
+     `calibrate(footage, ...)` now wraps after detecting, sharing one set of pre-checks. It lets a
+     host re-calibrate stored detections with another model or profile without decoding a frame, and
+     lets the per-model tests drive the real estimator through the production module from exact
+     observations.
+   - **Measured through the production path.** From synthetic views with 0.1 px of seeded noise
+     (Box-Muller over `mt19937_64`, since `normal_distribution` differs by platform), each model's
+     intrinsics come back within 0.3% and 2 px, and held-out rays within the noise. **End to end**
+     (rendered, distorted by lain's own model, detected by OpenCV, calibrated), a Brown-Conrady camera
+     comes back within the same tolerances with held-out residuals under 0.25 px, and the verdict is
+     Ready.
+   - **The rational model is Exploratory on this scene, and the test says why.** It is recovered as
+     accurately as the others, but its principal point moves about 2.2 mrad across resamples,
+     against Ready's 2.0: eight coefficients on one planar board are less constrained, which is the
+     stability criterion doing its job.
+   - **Found while testing: the rational model's radial coefficients are not identifiable.**
+     Multiplying numerator and denominator by a common (1 + a r^2) changes every coefficient and no
+     projection, so even exact data cannot pin k4, and asserting it was wrong. The rational test now
+     pins what is identifiable: the tangential terms, and that the recovered model projects like the
+     truth across the image (under 0.05 px), with a strongly rational truth that a fit without the
+     rational terms misses by pixels.
+   - **Found by a new check: a 14-coefficient uncertainty for an 8-coefficient model.** OpenCV hands
+     the rational model back as a 14-element vector (thin-prism and tilt terms appended), and the
+     deviation count had been taken from that vector. It is now taken from the model.
+   - **Two sabotages first went uncaught, and the tests that now catch them.** A swapped p1/p2
+     readout and a rational fit without its rational terms both still reproject within the accuracy
+     tolerances, so nothing pinned the returned coefficients. A noiseless recovery case now checks
+     each model's coefficients in their own slots (by projection for the rational model).
+   - The distorted-footage generator builds its remap through lain's `unproject` on a coarse grid
+     and interpolates it, since distortion is smooth and a per-pixel inverse at supersampled
+     resolution is too slow for a Debug build.
+   - `ctest -j4` **1009/1009** Debug with video and camera on (+7); Release and camera-OFF builds
+     pass. The six calibration cases take about 16 s in Debug, most of it the end-to-end run.
+   - **Six sabotages, all caught** (two only after the new case): the p1/p2 readout swapped, the
+     Kannala-Brandt readout reversed, poses solved on raw pixels instead of lain's rays, the estimator
+     claiming inverse Brown-Conrady, the rational flag dropped, and the uncertainty counted from
+     OpenCV's vector.
 
    **Sub-slice 5 built (2026-09-30): calibration contracts and the board method module**
    (`lain::camera::calibration`, `::calibration::board`, in `libs/camera`).

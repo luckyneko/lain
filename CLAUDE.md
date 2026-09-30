@@ -1137,6 +1137,30 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
 
+### Update 2026-09-30 — M9 slice 1, sub-slice 6: the OpenCV estimator
+
+`OpenCVEstimator` joins the plugin (registered as "opencv"): `calibrateCamera` for no distortion,
+Brown-Conrady 5 and rational 8; `cv::fisheye::calibrate` for Kannala-Brandt 4; inverse and modified
+Brown-Conrady are refused, never substituted. `ctest -j4` **1009/1009** Debug with video and camera on
+(+7); Release and camera-OFF builds pass. Full notes in WORK.md's *Sub-slice 6 built*.
+
+- **End to end, it works:** rendered, distorted (by lain's own model), detected and calibrated
+  footage returns its Brown-Conrady camera within 0.3% and 2 px, with held-out residuals under
+  0.25 px, and is judged Ready.
+- **`boardPose` is model-agnostic**: corners are unprojected with lain's model and the pose is solved
+  on normalised coordinates, so validation works for models OpenCV lacks (a held inverse
+  Brown-Conrady camera validates to 1e-6 px).
+- **New entry point `calibrate(detections, image, board, request)`**, which the footage overload
+  wraps: re-calibrate stored detections without decoding frames.
+- **The rational model's radial coefficients are not identifiable** (a common factor in numerator and
+  denominator changes all of them and no projection). The test pins the projection, not `k4`.
+- **Two real slips found by tests:** a rational model reported 14 coefficient deviations, because
+  OpenCV returns 14 elements and the count came from that vector; and a swapped p1/p2 readout or a
+  rational fit without its rational terms went unseen by the accuracy checks. A noiseless
+  coefficient-recovery case now catches both.
+- The rational model is Exploratory on this synthetic scene: accurate, but its principal point moves
+  2.2 mrad across resamples against Ready's 2.0, which is the stability criterion working.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 5: the board calibration method module
 
 `lain::camera::calibration` (Request, Report, the `Estimator` seam, the `reconstruction/1` fitness

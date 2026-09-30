@@ -1,6 +1,7 @@
 # lain::camera::opencv — the OpenCV-backed camera plugin: the board renderer and detector behind
-# lain::camera::board's seams, plus the probe proving the linked OpenCV is the approved build
-# (ADR-0026). No OpenCV type crosses into lain's camera contracts.
+# lain::camera::board's seams, the calibration estimator behind lain::camera::calibration's, and the
+# probe proving the linked OpenCV is the approved build (ADR-0026). No OpenCV type crosses into lain's
+# camera contracts.
 #
 # addOpenCV is included HERE, not at the root, so nothing is fetched unless this plugin is enabled —
 # the rule addFFmpeg follows for the video plugin.
@@ -13,6 +14,7 @@ add_library(camera-opencv STATIC
 	src/charucoboard.cpp
 	src/charucorenderer.cpp
 	src/charucodetector.cpp
+	src/opencvestimator.cpp
 )
 add_library(lain::camera::opencv ALIAS camera-opencv)
 
@@ -20,7 +22,7 @@ target_compile_features(camera-opencv PUBLIC cxx_std_17)
 target_include_directories(camera-opencv PUBLIC include)
 target_link_libraries(camera-opencv
 	PUBLIC lain::camera # it IS a board Renderer and Detector, and registerBackend fills those registries
-	PRIVATE opencv_core opencv_imgproc opencv_objdetect
+	PRIVATE opencv_core opencv_imgproc opencv_objdetect opencv_calib3d
 	PRIVATE lain::image
 	PRIVATE lain::warnings
 )
