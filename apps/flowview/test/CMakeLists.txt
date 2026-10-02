@@ -51,10 +51,15 @@ target_include_directories(test-flowview PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..
 target_include_directories(test-flowview PRIVATE "${lain_SOURCE_DIR}/libs/camera/test")
 # The committed examples, which test_examples loads, runs and compares with what the builder writes.
 target_compile_definitions(test-flowview PRIVATE LAIN_FLOWVIEW_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../examples")
-# Whether this build should offer the camera kinds: the catalog test holds the capability rule to the
-# configuration, both ways, so a build that registers none when it should (or any when it cannot)
-# fails rather than quietly passing.
-target_compile_definitions(test-flowview PRIVATE LAIN_EXPECT_CAMERA_NODES=$<IF:$<BOOL:${LAIN_CAMERA_OPENCV}>,1,0>)
+# Whether this build has a camera backend, so should OFFER the camera kinds: the catalog test holds the
+# capability rule to the configuration, both ways, so a build that offers none when it should (or any
+# when it cannot) fails rather than quietly passing. Asked of the plugin target: the option alone says
+# nothing on a platform with no prebuilt.
+if(TARGET lain::camera::opencv)
+	target_compile_definitions(test-flowview PRIVATE LAIN_EXPECT_CAMERA_BACKEND=1)
+else()
+	target_compile_definitions(test-flowview PRIVATE LAIN_EXPECT_CAMERA_BACKEND=0)
+endif()
 # lain::flow::serialize: groupnav's layout tree is an EditorTree (the serialize layer's type).
 # lain::image + lain::io::data::codecs: graphio names image::Image / ColorRGBf and reads/writes json.
 # lain::gui + Vulkan::Loader: the value views draw with ImGui, so they link it (the same recipe
@@ -72,10 +77,10 @@ target_link_libraries(test-flowview PRIVATE
 
 # catch_discover_tests RUNS this executable at build time to enumerate its cases, so on Windows a
 # missing FFmpeg DLL fails the BUILD rather than the test — stage them beside it.
-if(LAIN_IO_VIDEO_FFMPEG)
+if(TARGET lain::io::video::ffmpeg)
 	lain_ffmpeg_stage_runtime(test-flowview)
 endif()
-if(LAIN_CAMERA_OPENCV)
+if(TARGET lain::camera::opencv)
 	lain_opencv_stage_runtime(test-flowview)
 endif()
 

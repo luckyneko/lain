@@ -7,6 +7,13 @@
 # is enabled — the same rule addLibPNG follows for the png codec.
 
 include(addFFmpeg) # FFmpeg::avutil et al (fetches the pinned LGPL archive on demand)
+if(NOT LAIN_FFMPEG_FOUND)
+	# Unavailable here: build nothing, so the aggregator registers no codec. The reason goes up to
+	# plugins/io/video for the configure summary.
+	message(STATUS "LAIN_IO_VIDEO_FFMPEG: not built, ${LAIN_FFMPEG_UNAVAILABLE}")
+	set(LAIN_FFMPEG_UNAVAILABLE "${LAIN_FFMPEG_UNAVAILABLE}" PARENT_SCOPE)
+	return()
+endif()
 
 add_library(io-video-ffmpeg STATIC
 	src/aviobridge.cpp

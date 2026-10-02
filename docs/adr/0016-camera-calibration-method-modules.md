@@ -232,6 +232,21 @@ one without, loses those nodes (and their edges) on load. The loader reports tha
 flowview's headless `run` and `list` refuse any document that did not load as saved rather than
 running what is left, which would be a different graph reported as success.
 
+*(**Amended 2026-10-02 — reversed: every camera node kind registers, whatever the backends; what is
+OFFERED follows them.** The cost above was taken on the assumption that a backend-less build would
+be rare, and it was the default configuration, so every fresh clone paid it. The argument that a
+camera node "has no seam behind it" was also wrong: `board::render`, `board::detect` and
+`calibration::board::calibrate` are `lain::camera`'s, built unconditionally, and each already
+reports a missing backend ("this build has no board renderer", a Failed report with
+`Rejection::NoBackend`, `Failure::NoDetector`). So ADR-0019's rule applies here unchanged: whether a
+build can RUN a node is a capability, whether a document can NAME it is vocabulary, and a missing
+capability must not cost a document its vocabulary. `registerCameraNodes` now registers all five
+kinds; `availableCameraNodeKeys` still answers which can run, and flowview's menu offers only those,
+so "a node that cannot function should not be offered" survives as a rule about the menu rather than
+about loading. A camera document opened without a backend loads whole, saves back unchanged, and its
+nodes say what is missing when run. The same day the OpenCV plugin began defaulting ON for a
+top-level build ([ADR-0026](0026-opencv-from-a-pinned-minimal-prebuilt.md)).)*
+
 **OpenCV runs serial; lain supplies the parallelism.** *(Added 2026-09-30.)* The OpenCV plugin sets
 `cv::setNumThreads(0)` once, when it registers, so OpenCV's built-in pool never runs beside the
 process pool ADR-0024 makes the only one. Parallelism comes from lain's side of the seam: detection

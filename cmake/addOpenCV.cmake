@@ -17,10 +17,18 @@
 #
 # Included by the OpenCV camera plugin, so nothing is fetched unless that plugin is enabled;
 # guarded so a second include is a no-op.
+#
+# Sets LAIN_OPENCV_FOUND. FALSE means this platform has no archive, with the reason in
+# LAIN_OPENCV_UNAVAILABLE: nothing is fetched, and the plugin is not built. A BROKEN source — a
+# failed download, a hash or manifest mismatch — still fails configure, since quietly building
+# without camera support there would hide a fault rather than report a fact about the platform.
 
 if(TARGET opencv_core)
+	set(LAIN_OPENCV_FOUND TRUE)
 	return()
 endif()
+set(LAIN_OPENCV_FOUND FALSE)
+set(LAIN_OPENCV_UNAVAILABLE "")
 
 set(LAIN_OPENCV_VERSION "4.14.0")
 set(LAIN_OPENCV_PROFILE "calib")
@@ -36,26 +44,21 @@ if(APPLE)
 		set(_opencv_target "macos-arm64")
 		set(_opencv_sha256 "b86f52bb474ff6372b36d9bb60298c09375af1e3c6b8a3ad00f938883bd486c7")
 	else()
-		# The same gap, for the same reason, as addFFmpeg.cmake: no macos-x86_64 artifact is
-		# published, and failing here beats requesting a url that 404s.
-		message(FATAL_ERROR
-			"LAIN_CAMERA_OPENCV: no prebuilt OpenCV for macOS x86_64 (arm64 only). "
-			"Point LAIN_OPENCV_ROOT at an OpenCV ${LAIN_OPENCV_VERSION} install, or disable the plugin.")
+		# The same gap, for the same reason, as addFFmpeg.cmake: no macos-x86_64 artifact is published.
+		set(LAIN_OPENCV_UNAVAILABLE "no prebuilt OpenCV for macOS x86_64 (arm64 only)")
 	endif()
 elseif(WIN32)
 	# The Windows archive is built with MSVC, and OpenCV's API is C++: std::vector and std::string
 	# cross the DLL boundary, so neither a MinGW toolchain nor an ARM64 target can use it.
 	if(NOT MSVC)
-		message(FATAL_ERROR
-			"LAIN_CAMERA_OPENCV: the prebuilt OpenCV for Windows is MSVC-built, and its C++ API "
-			"cannot be consumed by ${CMAKE_CXX_COMPILER_ID}. Use MSVC, or point LAIN_OPENCV_ROOT "
-			"at an OpenCV built with this toolchain.")
+		set(LAIN_OPENCV_UNAVAILABLE
+			"the prebuilt OpenCV for Windows is MSVC-built, and its C++ API cannot be consumed by ${CMAKE_CXX_COMPILER_ID}")
+	elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|arm64|aarch64")
+		set(LAIN_OPENCV_UNAVAILABLE "no prebuilt OpenCV for Windows ARM64 (x86_64 only)")
+	else()
+		set(_opencv_target "windows-x86_64")
+		set(_opencv_sha256 "58b937c10040b3443f1f7d35133b1309dc6818cb6e9d29dbccb1f5d1402cc325")
 	endif()
-	if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|arm64|aarch64")
-		message(FATAL_ERROR "LAIN_CAMERA_OPENCV: no prebuilt OpenCV for Windows ARM64 (x86_64 only)")
-	endif()
-	set(_opencv_target "windows-x86_64")
-	set(_opencv_sha256 "58b937c10040b3443f1f7d35133b1309dc6818cb6e9d29dbccb1f5d1402cc325")
 elseif(UNIX)
 	if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
 		set(_opencv_target "linux-arm64")
@@ -65,7 +68,11 @@ elseif(UNIX)
 		set(_opencv_sha256 "2bce5f2d7b7d329f3ee80563ecfdc309c51c26db28c03f04bd9dc00d0df6c901")
 	endif()
 else()
-	message(FATAL_ERROR "LAIN_CAMERA_OPENCV: no prebuilt OpenCV for this platform")
+	set(LAIN_OPENCV_UNAVAILABLE "no prebuilt OpenCV for this platform")
+endif()
+
+if(LAIN_OPENCV_UNAVAILABLE)
+	return()
 endif()
 
 if(WIN32)
@@ -221,3 +228,5 @@ file(WRITE "${_opencv_notice}"
 "  Build recipe: https://github.com/luckyneko/opencv-prebuilt\n"
 "  Full licence texts and build manifest: third-party/opencv/\n")
 set_property(GLOBAL APPEND PROPERTY LAIN_THIRD_PARTY_NOTICES "${_opencv_notice}")
+
+set(LAIN_OPENCV_FOUND TRUE)

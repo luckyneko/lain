@@ -2479,7 +2479,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
   without committing to a generic `Measurement<T>` template. The initial board-local representation
   should leave a clean generalization path when a second measured-quantity caller exists.
 - **Dependency footprint is an acceptance criterion.** OpenCV and Ceres camera plugins are opt-in;
-  an all-disabled configure performs no dependency fetch. Record exact versions, enabled modules,
+  an all-disabled configure performs no dependency fetch. *(Since 2026-10-02 OpenCV defaults ON
+  for a top-level build, so "all-disabled" is `-DLAIN_CAMERA_OPENCV=OFF` explicitly.)* Record exact versions, enabled modules,
   transitive licenses, configure/build time, and representative static and dynamic binary sizes so
   dependency containment is measured rather than inferred from target boundaries.
 - **The D455 fixture records capture provenance.** Store RGB stream profile, resolution and format,
@@ -2547,7 +2548,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - **Obligations:** stage the archive's licence texts under `third-party/opencv/`, and generate a
      `notices/opencv.txt` from the manifest into `LAIN_THIRD_PARTY_NOTICES` for `--licenses`.
    - **`LAIN_CAMERA_OPENCV`**, default **OFF**, so an all-off configure fetches nothing (M9's
-     dependency-footprint rule).
+     dependency-footprint rule). *(**Superseded 2026-10-02:** it defaults ON for a top-level build,
+     and a platform with no prebuilt simply does not build the plugin; see ADR-0026.)*
    - **A probe test** that links `opencv_core` and asserts the linked library's
      `cv::getBuildInformation()` agrees with the gate: the modules, `Built as dynamic libs? YES`,
      bundled zlib, built-in parallel framework, and no IPP/Eigen/LAPACK/OpenCL/TBB. It also proves
@@ -2567,8 +2569,10 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        the `third party` line. The **target** is checked too, so a mismatched archive supplied
        through `LAIN_OPENCV_ROOT` is refused rather than linked.
      - Windows additionally refuses a non-MSVC toolchain and ARM64 by name, instead of failing
-       later at link or load.
-   - **`plugins/camera`** with `LAIN_CAMERA_OPENCV` (default OFF). Its one member is
+       later at link or load. *(Since 2026-10-02 these, like every platform without an archive,
+       leave the plugin unbuilt with the reason in the configure summary, rather than failing it.)*
+   - **`plugins/camera`** with `LAIN_CAMERA_OPENCV` (default OFF at the time; ON for a top-level
+     build since 2026-10-02). Its one member is
      **`lain::camera::opencv`**, today only `build.h` (`version()`, `buildInformation()`). That is
      the shape the FFmpeg plugin had before its reader landed. The ChArUco adapters join it in
      slice 1.
@@ -2625,6 +2629,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - **A node kind registers only when it can run.** `LAIN_CAMERA_OPENCV=OFF` registers no camera
      node kinds, which is the opposite of video's rule on purpose: a video reader seam always exists
      and only a format may be missing, while a calibration node with no backend cannot function.
+     *(**Reversed 2026-10-02** (ADR-0016, amended): every camera kind registers, so a camera
+     document loads whole without a backend; only what the menu offers follows the backends.)*
    - **OpenCV runs serial; lain parallelises across frames** (`cv::setNumThreads(0)`, `task::each`).
      This settles ADR-0026's thread-pool question.
    - **The OpenCV plugin renders boards**, so a rendered and a detected board are one backend's idea
@@ -3315,7 +3321,8 @@ cheapest way to retire the last unknown in the back half.
 **Slice 0 is built (2026-08-31).** `cmake/addFFmpeg.cmake` fetches the hash-pinned archive for the
 host platform and defines imported SHARED `FFmpeg::avutil / avcodec / avformat / swscale /
 swresample`; `plugins/io/video/ffmpeg` is the plugin the reader lands in, carrying for now only the
-licence probe and its `[video]` test. `LAIN_IO_VIDEO_FFMPEG` defaults **OFF**. `ctest` **476/476**
+licence probe and its `[video]` test. `LAIN_IO_VIDEO_FFMPEG` defaults **OFF** *(ON for a top-level
+build since 2026-10-02, ADR-0019 amended)*. `ctest` **476/476**
 with it on (473 + 3), warning-clean, format-check clean; the default build is unchanged.
 
 - **The gate is sabotage-verified, all three refusals.** A manifest carrying `--enable-gpl`, one

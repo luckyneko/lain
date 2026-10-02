@@ -22,6 +22,10 @@ if(LAIN_IO_IMAGE_JPEG)
 	add_subdirectory(jpeg)
 endif()
 
+add_feature_info(LAIN_IO_IMAGE_PNG "TARGET lain::io::image::png" "PNG image codec (libpng)")
+add_feature_info(LAIN_IO_IMAGE_TIFF "TARGET lain::io::image::tiff" "TIFF image codec (libtiff)")
+add_feature_info(LAIN_IO_IMAGE_JPEG "TARGET lain::io::image::jpeg" "JPEG image codec (stb_image)")
+
 # Turn the discovered codec list into the aggregator's #includes and registerCodec()
 # calls. Each entry is both the link target and the namespace: "lain::io::image::png" ->
 # include <lain/io/image/png/register.h> + call lain::io::image::png::registerCodec().

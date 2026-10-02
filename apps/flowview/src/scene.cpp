@@ -109,10 +109,10 @@ namespace flowview
 			// file dialog rather than from this list.
 			{"Groups", {kGroupKey, kMapKey, kLoopKey}},
 		};
-		// Camera work (M9), and only the kinds a registered backend can run: the SAME list
-		// registerCameraNodes registers, asked at the same time, so the menu never offers a kind the
-		// factory cannot build. Absent altogether in a build with no camera backend, which is why the
-		// catalog is built per call rather than held in a static.
+		// Camera work (M9), and only the kinds a registered backend can run: every kind is in the
+		// factory (registerExampleNodes), but the menu offers only what will not just fail. Absent
+		// altogether in a build with no camera backend, which is why the catalog is built per call
+		// rather than held in a static.
 		std::vector<std::string> camera = lain::camera::availableCameraNodeKeys();
 		if (!camera.empty())
 			catalog.push_back({"Camera", std::move(camera)});
@@ -207,9 +207,9 @@ namespace flowview
 		// compiled-linked-unreachable shape this repo has caught four times.
 		factory.registerType<flow::LoopNode>(kLoopKey);
 
-		// The camera kinds a registered backend can run (ADR-0016): none at all without one, so call
-		// this after lain::camera::registerCameraBackends(). A document naming a camera kind then fails
-		// to load as saved in a build that cannot run it, which `run` and `list` refuse.
+		// Every camera kind, whatever the backends (ADR-0016, amended): a camera document loads whole in
+		// a build that cannot run it, and its nodes say so when they run. Which kinds are OFFERED is
+		// nodeCatalog's question, asked of the backends.
 		lain::camera::registerCameraNodes(factory);
 	}
 

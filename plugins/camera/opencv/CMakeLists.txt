@@ -7,6 +7,13 @@
 # the rule addFFmpeg follows for the video plugin.
 
 include(addOpenCV) # opencv_core et al (fetches the pinned prebuilt on demand)
+if(NOT LAIN_OPENCV_FOUND)
+	# No prebuilt for this platform: build nothing, so the aggregator registers no backend. The
+	# reason goes up to plugins/camera for the configure summary.
+	message(STATUS "LAIN_CAMERA_OPENCV: not built, ${LAIN_OPENCV_UNAVAILABLE}")
+	set(LAIN_OPENCV_UNAVAILABLE "${LAIN_OPENCV_UNAVAILABLE}" PARENT_SCOPE)
+	return()
+endif()
 
 add_library(camera-opencv STATIC
 	src/build.cpp

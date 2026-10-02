@@ -17,8 +17,8 @@ namespace lain::io::video
 	// hand-listed: this function is generated from the discovered codec list, so adding a codec
 	// plugin needs no edit here.
 	//
-	// WITH NO CODECS ENABLED IT IS A NO-OP, AND CALLING IT IS STILL RIGHT. That is the whole
-	// shape of the video opt-in: the seam is always built, so a document naming an .mp4 keeps its
+	// WITH NO CODECS BUILT IT IS A NO-OP, AND CALLING IT IS STILL RIGHT. That is the whole shape
+	// of an optional video plugin: the seam is always built, so a document naming an .mp4 keeps its
 	// node and its edges and reports a missing capability when run, rather than losing a node kind
 	// and coming back structurally damaged (ADR-0019, amended).
 	void registerVideoCodecs();

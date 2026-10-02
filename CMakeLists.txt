@@ -133,6 +133,10 @@ if(LAIN_BUILD_TESTING)
 endif()
 
 # ---- Plugins (swappable satellites: lain::io::image::<fmt> codecs) ----------
+# Each plugin's option says what is WANTED; its add<Dep>.cmake says whether this platform can have
+# it, and an unavailable plugin is simply not built. add_feature_info records what each one came to,
+# and the summary at the end of this file prints it.
+include(FeatureSummary)
 add_subdirectory(plugins)
 
 # ---- App stack + apps -------------------------------------------------------
@@ -147,4 +151,10 @@ if(LAIN_BUILD_APPS)
 	add_subdirectory(libs/app)            # GLFW + CLI11 app harness
 	add_subdirectory(libs/gui)            # Dear ImGui + imnodes wrapper
 	add_subdirectory(apps/flowview)       # the inspector (step 9)
+endif()
+
+# What this configure built, last, where an option that was asked for but could not be honoured is
+# hard to miss. Top-level only: a bundled lain's plugins are its consumer's business to report.
+if(LAIN_NOT_SUBPROJECT)
+	feature_summary(WHAT ENABLED_FEATURES DISABLED_FEATURES)
 endif()

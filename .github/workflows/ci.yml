@@ -75,8 +75,10 @@ jobs:
           # because it is a genuinely different test set — the assert-based and NDEBUG-guarded
           # enforcement cases only exist there.
           #
-          # LAIN_IO_VIDEO_FFMPEG defaults OFF, so one leg has to prove that default configuration
-          # still builds. That leg is Linux, and which platform carries it is the whole reason this
+          # One leg has to prove that a build WITHOUT the fetched prebuilts still builds and passes:
+          # it is what a platform with no prebuilt gets, and what -D...=OFF gets anywhere. (It was
+          # the default configuration until FFmpeg and OpenCV began defaulting ON at top level,
+          # 2026-10-02.) That leg is Linux, and which platform carries it is the whole reason this
           # matrix has five entries instead of four: Linux does the work in about three minutes
           # where macOS takes seventeen, so the cheap runner should be the one asked twice.
           # It was macOS at first, on the reasoning that a platform built by hand daily needs CI
@@ -85,13 +87,13 @@ jobs:
           # exercising the one that is built every day.
           #
           # Each axis varies alone. The video-off leg is Release, since Release is what a fresh
-          # clone gets and so is what "the default configuration" means; Debug stays video-ON so it
-          # matches the daily build.
+          # clone gets; Debug stays video-ON so it matches the daily build.
           #
           # `camera` (LAIN_CAMERA_OPENCV, ADR-0026) is the one field that does NOT vary alone: it
-          # moves with `video`, because both are opt-in fetched prebuilts. The default leg proves
-          # both stay off without fetching anything, and every other leg proves the fetch, the
-          # manifest gate and the [opencv] runtime test on its platform.
+          # moves with `video`. Every leg states both rather than leaning on the defaults, since the
+          # tests follow what was BUILT: a leg whose plugin was silently skipped would still pass.
+          # The video-off leg proves an all-off build fetches nothing, and every other leg proves
+          # the fetches, the manifest gates and the [video]/[opencv] runtime tests on its platform.
           - name: Linux Release
             os: ubuntu-24.04
             build_type: Release
@@ -100,7 +102,7 @@ jobs:
             linux_deps: true
             flowview: build/apps/flowview/flowview
 
-          # The default configuration, on the fastest runner.
+          # Every optional dependency off, on the fastest runner.
           - name: Linux Release (video off)
             os: ubuntu-24.04
             build_type: Release

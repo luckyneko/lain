@@ -1,6 +1,6 @@
 // Test for the generated video codec aggregator. Unlike the image one, this must be true in BOTH
 // configurations — the aggregator is built whether or not any video plugin is, and "registers
-// nothing, correctly" is the case the video opt-in rests on (ADR-0019, amended).
+// nothing, correctly" is the case an optional video plugin rests on (ADR-0019, amended).
 
 #include <lain/io/video/codecs.h>
 #include <lain/io/video/open.h> // readerRegistry

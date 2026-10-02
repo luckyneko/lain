@@ -102,6 +102,17 @@ already agreed for the OpenCV and Ceres camera plugins. When video is disabled t
 are not registered, and a saved graph referencing one produces an unknown-`kind` `LoadIssue` through
 the existing best-effort load rather than failing opaquely.
 
+**Amended 2026-10-02 — on by default for a top-level build, and skipped where it cannot be had.**
+`LAIN_IO_VIDEO_FFMPEG` defaults ON when lain is the top-level project and OFF when it is bundled, so
+a consumer's configure never downloads a binary it did not ask for, nor fails on that download. The
+option is what is wanted; `addFFmpeg.cmake` says whether this platform can have it — an archive for
+the platform and, on Linux, `libva.so.2` and `libva-drm.so.2`, which both Linux archives link
+(`--enable-vaapi`) — and an unavailable plugin is simply not built, with the reason in the configure
+summary. A BROKEN source (a failed download, a hash or licence-tier mismatch) still fails configure.
+Nothing about the licence changes: the plugin is still optional, still LGPL-gated by the manifest,
+still linked dynamically with its notices staged, and `-DLAIN_IO_VIDEO_FFMPEG=OFF` is still a
+configure that resolves no FFmpeg at all.
+
 **Amended 2026-08-31 — there are no video node kinds; there is one `openSequence` node over an
 opener registry.** Disabling video should remove a *capability*, not a graph's vocabulary. An
 unknown `kind` drops the node **and every edge attached to it**, so a document authored with video

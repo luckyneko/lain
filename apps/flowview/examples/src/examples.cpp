@@ -3,12 +3,7 @@
 #include "graphio.h" // saveGraph / sceneCodecs / templateResolver: the production save path
 
 #include <lain/camera/board/pattern.h>
-#include <lain/camera/flow/boardspecificationnode.h>
-#include <lain/camera/flow/calibratecameranode.h>
-#include <lain/camera/flow/cameramodelnode.h>
-#include <lain/camera/flow/detectboardnode.h>
 #include <lain/camera/flow/register.h>
-#include <lain/camera/flow/renderboardnode.h>
 #include <lain/core/uri.h>
 #include <lain/data/value.h>
 #include <lain/flow/dynamicports.h>
@@ -896,13 +891,6 @@ namespace flowview::examples
 		return examples;
 	}
 
-	template <typename T>
-	static void registerMissing(core::Factory<flow::Node>& factory, const char* key)
-	{
-		if (!factory.contains(key))
-			factory.registerType<T>(key);
-	}
-
 	// --- stable ids ------------------------------------------------------------
 
 	static bool isUuidText(const std::string& text)
@@ -985,18 +973,10 @@ namespace flowview::examples
 		return renumbered(document, table);
 	}
 
-	void writeDocuments(const std::filesystem::path& folder, const core::Factory<flow::Node>& palette)
+	void writeDocuments(const std::filesystem::path& folder, const core::Factory<flow::Node>& factory)
 	{
-		// The camera kinds are written whatever this build's backends, so every build writes the same
-		// bytes: a document is what a build WITH a backend saves, and only such a build runs it. The
-		// palette itself stays the host's, which offers a camera kind only when it can run.
-		core::Factory<flow::Node> factory = palette;
-		registerMissing<camera::BoardSpecificationNode>(factory, camera::kBoardSpecificationKey);
-		registerMissing<camera::RenderBoardNode>(factory, camera::kRenderBoardKey);
-		registerMissing<camera::DetectBoardNode>(factory, camera::kDetectBoardKey);
-		registerMissing<camera::CalibrateCameraNode>(factory, camera::kCalibrateCameraKey);
-		registerMissing<camera::CameraModelNode>(factory, camera::kCameraModelKey);
-
+		// Every build writes the same bytes, camera documents included: the camera kinds are in the
+		// palette whatever this build's backends (registerCameraNodes registers them all).
 		const Context ctx{factory, std::filesystem::absolute(folder).lexically_normal()};
 		for (const Example& example : catalog())
 		{

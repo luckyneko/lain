@@ -1109,7 +1109,8 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
   - then takes the targets from the archive's own `OpenCVConfig.cmake` (`EXACT`, `GLOBAL`,
     `NO_DEFAULT_PATH`);
   - stages the licence texts and a generated `--licenses` notice.
-- **`plugins/camera`** with **`LAIN_CAMERA_OPENCV`**, default OFF. Its one member is
+- **`plugins/camera`** with **`LAIN_CAMERA_OPENCV`**, default OFF *(**superseded 2026-10-02** — it now
+  defaults ON for a top-level build and is skipped where no prebuilt exists; see that update)*. Its one member is
   **`lain::camera::opencv`**, today only `build.h` (`version()`, `buildInformation()`).
 - **An `[opencv]` runtime test** asserts the prebuilt's contract from the linked library. Its pins
   are compile definitions fed from the module, so the gate and the test cannot describe two builds.
@@ -1136,6 +1137,51 @@ slice 0 gave FFmpeg. Full notes in WORK.md's *Milestone 9 › Slice 0 built*.
   - an extra module pinned into the test fails exactly the module case.
 - **Footprint** (linux-x86_64): six libraries, 19.6 MB. The probe library is 2 KB and the test
   executable 1.2 MB, since OpenCV stays in its DSOs.
+
+### Update 2026-10-02 — optional plugins: wanted, available, built; camera kinds are vocabulary
+
+A default build could not load `render-board.json` (`unknown node kind "boardSpecification"`): the
+OpenCV plugin defaulted OFF, and a build with no camera backend registered no camera kinds (ADR-0016),
+so the loader dropped those nodes and their edges and `run`/`list` refused the document. Two parts,
+decided with the repo owner (the CMake shape; camera kinds as vocabulary); the rule they establish is
+in *Conventions to inherit*.
+
+- **The option says what is wanted, `add<Dep>.cmake` says what is available, consumers ask what was
+  built.** `addFFmpeg` / `addOpenCV` no longer fail on a platform with no archive: they set
+  `LAIN_<DEP>_FOUND FALSE` with a reason, fetch nothing, and the plugin dir returns before defining a
+  target. A broken source still fails. Because availability now gates *compilation* rather than the
+  *default*, nothing has to know it before `option()`, so no second file per dependency: an earlier
+  cut split OpenCV's table into its own module for exactly that, and it is gone.
+- **FFmpeg and OpenCV default `${LAIN_NOT_SUBPROJECT}`** — ON top-level (FFmpeg was opt-in), OFF when
+  bundled, so a consumer's configure never downloads a binary unasked or fails on that download.
+- **Linux FFmpeg needs libva, so it is part of availability.** Both Linux archives are
+  `--enable-vaapi`; `libavutil`/`libavcodec` name `libva.so.2` and `libva-drm.so.2` (read from the
+  archives' ELF `DT_NEEDED`), and the linker resolves those by soname, so the runtime packages suffice.
+  Also new: Windows ARM64 is unavailable for FFmpeg, as it already was for OpenCV.
+- **`FeatureSummary`** at the end of a top-level configure, so an explicit ON a platform could not
+  honour is visible ("not built, no prebuilt OpenCV for macOS x86_64 (arm64 only)").
+- **Consumers moved from the option to `if(TARGET …)`**: flowview's and the tests' DLL staging, and
+  `LAIN_EXPECT_CAMERA_BACKEND` (was `_NODES`). The image/data aggregator tests now assert exactly the
+  codecs built, both ways, instead of assuming every option stayed ON.
+- **Camera kinds are vocabulary** (ADR-0016 amended, reversed): `registerCameraNodes` registers all
+  five; `availableCameraNodeKeys` still decides what the menu offers. The nodes already reported a
+  missing backend at run time, so no node changed. A camera document now loads whole without a backend,
+  and `run` reports `Failed: NoDetector (this build has no board detector …)` instead of refusing.
+  `writeDocuments` and the camera vertical lost their hand-registered copies of the camera kinds.
+- **Verified:** every table arm of both modules in script mode (found or a reason, never a fetch on
+  an unavailable arm; libva arms with and without the sonames); an x86_64-mac cross configure with
+  both plugins forced ON configures, says why, builds neither and fetches nothing; the subproject smoke
+  resolves both OFF, fetches nothing, prints no summary; a fresh no-flag configure fetches and verifies
+  both. `ctest -j8` **1042/1042** all-on and **985/985** with video and camera OFF (the 14 skips
+  there are the video-writer, calibrating-fixture and windowed cases); with camera OFF the real binary
+  lists `render-board.json` and runs it to "no board renderer", exit 0, where it used to refuse.
+  Format-check clean. Two sabotages, both caught: conditional registration again fails four flowview
+  cases and the registration case; dropping the plugin's `_FOUND` check fails the x86_64 configure.
+  Not run here: the Linux libva arm on a real Linux machine (CI installs `libva-dev`, so its legs take
+  the found arm).
+- **Still open:** `LAIN_<DEP>_ROOT` cannot rescue a platform with no archive (the table answers
+  first); `CMAKE_OSX_ARCHITECTURES=x86_64` on an arm64 Mac still picks the arm64 archive, since
+  `CMAKE_SYSTEM_PROCESSOR` stays the host's; menubar.cpp's `nodeCount() == 0` load guard is dead.
 
 ### Update 2026-09-30 — M9 slice 1, sub-slice 8c: a board to print and the capture guide (**fixture machinery COMPLETE**)
 
@@ -1422,7 +1468,8 @@ recorded by amending [ADR-0016](docs/adr/0016-camera-calibration-method-modules.
 - **A camera node kind registers only when a backend can run it**, so `LAIN_CAMERA_OPENCV=OFF`
   registers none. This is the opposite of video's rule, on purpose: video's reader seam always
   exists and only a format may be missing, while a calibration node with no backend cannot
-  function. Port types still register, since they are vocabulary.
+  function. Port types still register, since they are vocabulary. *(**Reversed 2026-10-02** — every
+  camera kind registers; only what the menu offers follows the backends. See that update.)*
 - **OpenCV runs serial; lain parallelises across frames** (`cv::setNumThreads(0)`, one frame per
   task on the process pool). This settles ADR-0026's recorded thread-pool question, marked there.
 - **The OpenCV plugin renders boards**, so a rendered and a detected board are one backend's idea of
@@ -4604,6 +4651,23 @@ beside this repo) before writing:
   `lain::<name>` namespace that fronts it; don't leak the upstream namespace (no
   `tf::`, no `glm::`) past the wrapper. Pull it with a `cmake/addXXX.cmake`
   FetchContent module patterned on `archimedes`.
+- **Optional plugins: wanted, available, built.** Three separate questions, each with one owner.
+  1. **The option says what is WANTED** (`LAIN_IO_IMAGE_PNG`, `LAIN_IO_VIDEO_FFMPEG`,
+     `LAIN_CAMERA_OPENCV`, ...). Source-built plugins default ON; a fetched prebuilt defaults
+     `${LAIN_NOT_SUBPROJECT}`, so a bundled lain never downloads a binary its consumer did not ask for.
+  2. **`cmake/add<Dep>.cmake` says what is AVAILABLE**, in one file per dependency. Where availability
+     varies by platform (the prebuilts) it sets `LAIN_<DEP>_FOUND`; FALSE comes with
+     `LAIN_<DEP>_UNAVAILABLE`, fetches nothing and returns. It fails configure only for a BROKEN source
+     (download, hash, manifest): unavailable is a fact about the platform, broken is a fault, and
+     falling back to OFF on a fault would hide it. The plugin's CMakeLists checks `_FOUND` straight
+     after the include and returns before it defines a target or joins its aggregator.
+  3. **Whatever needs to know asks whether it was BUILT**, as `if(TARGET lain::camera::opencv)`, never
+     the option, which is only a wish. Each aggregator directory reports through `add_feature_info`,
+     and a top-level configure ends with the summary.
+
+  And **a node kind is vocabulary, a backend is a capability**: a host registers every node kind
+  whatever the plugins, so a document loads and saves whole in any build, and a node whose backend is
+  missing says so when it runs. What a menu OFFERS may follow the backends.
 - **Style.** `.clang-format` is already present (Allman braces, tabs width 4, no
   column limit, left pointer alignment). Format on save; run clang-format on
   touched files. **Do not go hunting for a `clang-format` on PATH** — the repo

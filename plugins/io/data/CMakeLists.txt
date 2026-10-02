@@ -11,6 +11,7 @@ option(LAIN_IO_DATA_JSON "Build the JSON data codec plugin (nlohmann/json)" ON)
 if(LAIN_IO_DATA_JSON)
 	add_subdirectory(json)
 endif()
+add_feature_info(LAIN_IO_DATA_JSON "TARGET lain::io::data::json" "JSON data codec (nlohmann/json)")
 
 # Turn the discovered codec list into the aggregator's #includes and registerCodec() calls. Each
 # entry is both the link target and the namespace: "lain::io::data::json" -> include

@@ -1,5 +1,5 @@
-// registerCameraBackends() registers exactly what the build enabled: in the default configuration,
-// nothing, and the capability queries say so.
+// registerCameraBackends() registers exactly what the build has: without the OpenCV plugin (off, or
+// no prebuilt for the platform), nothing, and the capability queries say so.
 
 #include <lain/camera/backends.h>
 #include <lain/camera/board/detection.h>

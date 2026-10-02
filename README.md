@@ -19,8 +19,8 @@ package satisfies the target. Versions marked **planned** are approved for the c
 not part of the build yet. This inventory does not replace the license and notice files shipped by
 each upstream source or binary package; those remain authoritative for redistribution.
 
-FFmpeg is **opt-in** (`-DLAIN_IO_VIDEO_FFMPEG=ON`, off by default) and is the one dependency lain
-links **dynamically** — LGPL's relinking requirement is satisfied by dynamic linking alone, whereas a
+FFmpeg is **on by default** for a top-level build (`-DLAIN_IO_VIDEO_FFMPEG=OFF` leaves it out; it is
+off when lain is bundled, and skipped on a platform with no prebuilt) and is linked **dynamically** — LGPL's relinking requirement is satisfied by dynamic linking alone, whereas a
 static build would additionally owe consumers relinkable object files. `cmake/addFFmpeg.cmake`
 **fails configure** if the archive it fetched reports `--enable-gpl` or `--enable-nonfree`, since
 such a build relicenses the combined work whether or not a GPL codec is ever called; a `[video]`
@@ -54,11 +54,11 @@ a video keeps its nodes and edges and reports a missing capability when run.
 | [Catch2](https://github.com/catchorg/Catch2) | 3.14.0, test only | [BSL-1.0] | Unit and integration tests |
 | [glslang](https://github.com/KhronosGroup/glslang) | SDK 1.4.341.0, build only | [BSD-3-Clause] | Standalone Archimedes shader compilation fallback |
 | [clang-format static binaries](https://github.com/muttleyxd/clang-tools-static-binaries) | LLVM 20, build only | [Apache-2.0] WITH [LLVM-exception] | Reproducible formatting tool |
-| [OpenCV](https://github.com/opencv/opencv) | 4.14.0, `calib` profile (core, imgproc, flann, features2d, calib3d, objdetect), **shared**, opt-in (`LAIN_CAMERA_OPENCV`) | [Apache-2.0]; vendored code compiled in: zlib 1.3.2 ([Zlib]), SoftFloat, KAZE/AKAZE, MSER chi-table ([BSD-3-Clause]), DLPack ([Apache-2.0]) | Camera plugin (`lain::camera::opencv`): ChArUco board rendering and detection, and calibration estimation (no distortion, Brown-Conrady 5, rational 8, Kannala-Brandt 4), behind `lain::camera`'s seams (the camera node kinds register only in a build with it), and a probe of the linked library; [prebuilt](https://github.com/luckyneko/opencv-prebuilt), commit- and hash-pinned, no optional third party, manifest verified at configure time ([ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md)) |
+| [OpenCV](https://github.com/opencv/opencv) | 4.14.0, `calib` profile (core, imgproc, flann, features2d, calib3d, objdetect), **shared**, on by default where the prebuilt exists (`LAIN_CAMERA_OPENCV`; off for a bundled lain and for platforms with no archive) | [Apache-2.0]; vendored code compiled in: zlib 1.3.2 ([Zlib]), SoftFloat, KAZE/AKAZE, MSER chi-table ([BSD-3-Clause]), DLPack ([Apache-2.0]) | Camera plugin (`lain::camera::opencv`): ChArUco board rendering and detection, and calibration estimation (no distortion, Brown-Conrady 5, rational 8, Kannala-Brandt 4), behind `lain::camera`'s seams (the camera node kinds register only in a build with it), and a probe of the linked library; [prebuilt](https://github.com/luckyneko/opencv-prebuilt), commit- and hash-pinned, no optional third party, manifest verified at configure time ([ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md)) |
 | [Ceres Solver](https://github.com/ceres-solver/ceres-solver) | planned, version/config TBD | [BSD-3-Clause] | Registration refinement plugin |
 | [Eigen](https://gitlab.com/libeigen/eigen) | planned, version TBD; approved exception | [MPL-2.0] | Ceres linear algebra, with `EIGEN_MPL2_ONLY` |
 | [Abseil](https://github.com/abseil/abseil-cpp) | planned, version TBD | [Apache-2.0] | Ceres dependency |
-| [FFmpeg](https://github.com/FFmpeg/FFmpeg) | 8.1.2, `lgpl` tier, **shared**, opt-in; approved exception | [LGPL-2.1-or-later] | Video decoding behind `lain::io::video` (demux, seek, decode to RGB8), LGPL configuration only (no `--enable-gpl`/`--enable-nonfree`, no x264/x265); [prebuilt](https://github.com/luckyneko/ffmpeg-prebuilt), hash-pinned, tier verified at configure time |
+| [FFmpeg](https://github.com/FFmpeg/FFmpeg) | 8.1.2, `lgpl` tier, **shared**, on by default where the prebuilt exists (`LAIN_IO_VIDEO_FFMPEG`; off for a bundled lain, and skipped on Linux without libva); approved exception | [LGPL-2.1-or-later] | Video decoding behind `lain::io::video` (demux, seek, decode to RGB8), LGPL configuration only (no `--enable-gpl`/`--enable-nonfree`, no x264/x265); [prebuilt](https://github.com/luckyneko/ffmpeg-prebuilt), hash-pinned, tier verified at configure time |
 
 Platform SDKs, GPU drivers, and operating-system utilities invoked by a dependency are not
 redistributed by this repository and are not included in the table. Any newly enabled optional

@@ -9,7 +9,8 @@
 namespace lain::camera
 {
 	// The camera node kinds' factory keys. They are SERIALIZED: a saved document names a node by its
-	// kind, and an unknown kind drops the node and its edges.
+	// kind, and an unknown kind drops the node and its edges — which is why every build registers
+	// them, backend or not (registerCameraNodes).
 	inline constexpr const char* kBoardSpecificationKey = "boardSpecification";
 	inline constexpr const char* kRenderBoardKey = "renderBoard";
 	inline constexpr const char* kDetectBoardKey = "detectBoard";
@@ -17,16 +18,18 @@ namespace lain::camera
 	inline constexpr const char* kCameraModelKey = "cameraModel";
 
 	// The camera node kinds this build can RUN, in display order: each kind is here only when the
-	// backend it needs is registered (ADR-0016). Unlike video, where the node stays and reports a
-	// missing format, a camera node without its backend cannot do anything at all, so it is not
-	// offered.
+	// backend it needs is registered. What a host's menu OFFERS, so nobody adds a node that can only
+	// fail; it does not decide what loads (registerCameraNodes registers every kind).
 	//
 	// Asked of the backend registries at the time of the call, so call it after
-	// registerCameraBackends(). A host's menu reads this and registerCameraNodes() registers exactly
-	// it, so the two cannot disagree.
+	// registerCameraBackends().
 	std::vector<std::string> availableCameraNodeKeys();
 
-	// Register the kinds availableCameraNodeKeys() names into `factory`.
+	// Register EVERY camera node kind into `factory`, whatever the backends (ADR-0016, amended). A
+	// kind is vocabulary and a backend is a capability, video's rule: a document saved with camera
+	// nodes loads whole in a build that cannot run them, and a node with no backend says so when it
+	// runs ("this build has no board renderer", a Failed report with Rejection::NoBackend, ...)
+	// rather than vanishing with its edges on load.
 	void registerCameraNodes(core::Factory<flow::Node>& factory);
 
 	// Register the camera payload types as addable port types (flow::registerPortType): a board

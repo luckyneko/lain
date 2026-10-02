@@ -1,16 +1,22 @@
 # The video codec plugins + the generated aggregator. Mirrors plugins/io/image, with one
-# difference that is not cosmetic: video is OPT-IN (ADR-0019). FFmpeg is a licence exception
-# rather than an ordinary dependency, and an all-disabled configure must resolve nothing at all —
-# so this option defaults OFF where the image codecs default ON.
+# difference that is not cosmetic: FFmpeg is a fetched BINARY (ADR-0019), so the option defaults ON
+# only for a top-level build. A bundled lain leaves it OFF, so a consumer's configure never
+# downloads a binary it did not ask for, nor fails on that download. The option is what you want;
+# whether this platform can have it is addFFmpeg's answer, and an unavailable plugin is not built.
 #
 # The AGGREGATOR is built either way, and its registerVideoCodecs() is then a no-op. That is
 # deliberate: the seam it wires into (lain::io::video) is unconditional too, so a build without a
 # codec answers "no video capability" for an .mp4 instead of losing the vocabulary to name one.
 
-option(LAIN_IO_VIDEO_FFMPEG "Build the FFmpeg video codec plugin (LGPL, fetched)" OFF)
+option(LAIN_IO_VIDEO_FFMPEG "Build the FFmpeg video codec plugin (LGPL, fetched prebuilt)" ${LAIN_NOT_SUBPROJECT})
 if(LAIN_IO_VIDEO_FFMPEG)
 	add_subdirectory(ffmpeg)
 endif()
+set(_lain_ffmpeg_summary "FFmpeg video codecs (LGPL, fetched prebuilt)")
+if(LAIN_FFMPEG_UNAVAILABLE)
+	string(APPEND _lain_ffmpeg_summary ": not built, ${LAIN_FFMPEG_UNAVAILABLE}")
+endif()
+add_feature_info(LAIN_IO_VIDEO_FFMPEG "TARGET lain::io::video::ffmpeg" "${_lain_ffmpeg_summary}")
 
 # Turn the discovered codec list into the aggregator's #includes and registerCodec() calls. Each
 # entry is both the link target and the namespace: "lain::io::video::ffmpeg" ->

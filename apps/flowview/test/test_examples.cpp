@@ -93,18 +93,11 @@ TEST_CASE("every example loads and runs as the catalog says", "[examples]")
 			for (const lain::flow::serialize::LoadIssue& issue : loaded.issues)
 				raised.push_back(issue.message);
 
-			if (example.needsCamera && !haveCameraBackend())
+			if ((example.needsCamera && !haveCameraBackend()) || (example.needsVideo && !haveVideoReader()))
 			{
-				// Without a backend the camera kinds are not registered (ADR-0016), so the document
-				// does not load as saved, and each kind it names is reported rather than run around.
-				INFO("raised:" << joined(raised));
-				const std::string text = joined(raised);
-				CHECK(text.find("unknown node kind \"boardSpecification\"") != std::string::npos);
-				CHECK(text.find("unknown node kind \"renderBoard\"") != std::string::npos);
-			}
-			else if (example.needsVideo && !haveVideoReader())
-			{
-				// Without a codec the document still OPENS: video is a capability, not vocabulary.
+				// Without the backend the document still OPENS, whole: video and camera support are
+				// capabilities, not vocabulary (ADR-0016, amended; ADR-0019). Not run: its nodes would
+				// only report the backend that is missing.
 				INFO("raised:" << joined(raised));
 				CHECK(raised.empty());
 			}

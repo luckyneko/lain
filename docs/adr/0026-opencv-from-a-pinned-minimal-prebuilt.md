@@ -115,7 +115,14 @@ changed under a stable tag before.
 - **M9 gains a slice 0** (WORK.md): `cmake/addOpenCV.cmake`, an opt-in `LAIN_CAMERA_OPENCV`
   (default OFF, so an all-off configure fetches nothing), the manifest gate, notices, and a probe
   test. Nothing depends on it yet. It is blocked on the first published release, because the
-  per-target hashes come from that release's `SHA256SUMS`.
+  per-target hashes come from that release's `SHA256SUMS`. *(**Amended 2026-10-02:** `LAIN_CAMERA_OPENCV` defaults ON for a
+  top-level build and OFF when lain is bundled, so a consumer's configure never downloads a binary it
+  did not ask for. The option is what is wanted; `addOpenCV.cmake` says whether this platform has an
+  archive, and an unavailable plugin is simply not built, with the reason in the configure summary,
+  while a broken download or manifest still fails. `-DLAIN_CAMERA_OPENCV=OFF` is the all-off
+  configure, and it fetches nothing. The same day, camera node kinds began registering whatever the
+  backends ([ADR-0016](0016-camera-calibration-method-modules.md), amended), so a camera document
+  loads in a build without the plugin. FFmpeg follows the same shape (ADR-0019, amended).)*
 - **OpenCV brings its own thread pool.** Its built-in parallel framework is left in the prebuilt,
   and ADR-0024 says a process has one pool. The camera plugin has two options: cap OpenCV with
   `cv::setNumThreads`, or install a `cv::parallel` backend that runs OpenCV's `parallel_for_` on

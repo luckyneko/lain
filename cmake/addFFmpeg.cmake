@@ -20,10 +20,19 @@
 #
 # Included by the ffmpeg video codec plugin, so nothing is fetched unless that plugin is
 # enabled; guarded so a second include is a no-op.
+#
+# Sets LAIN_FFMPEG_FOUND. FALSE means this platform has no archive (or lacks what the archive
+# links against), with the reason in LAIN_FFMPEG_UNAVAILABLE: nothing is fetched, and the plugin
+# is not built. A BROKEN source — a failed download, a hash or a licence mismatch — still fails
+# configure, since quietly building without video there would hide a fault rather than report a
+# fact about the platform.
 
 if(TARGET FFmpeg::avutil)
+	set(LAIN_FFMPEG_FOUND TRUE)
 	return()
 endif()
+set(LAIN_FFMPEG_FOUND FALSE)
+set(LAIN_FFMPEG_UNAVAILABLE "")
 
 set(LAIN_FFMPEG_VERSION "8.1.2")
 set(LAIN_FFMPEG_TIER "lgpl")
@@ -40,14 +49,16 @@ if(APPLE)
 	else()
 		# Not an oversight: GitHub retired the macos-13 image, Apple has discontinued x86_64,
 		# and macOS Intel runners disappear entirely in August 2027, so no such artifact is
-		# published. Failing here beats requesting a url that 404s.
-		message(FATAL_ERROR
-			"LAIN_IO_VIDEO_FFMPEG: no prebuilt FFmpeg for macOS x86_64 (arm64 only). "
-			"Point LAIN_FFMPEG_ROOT at an LGPL-configured FFmpeg, or disable the plugin.")
+		# published.
+		set(LAIN_FFMPEG_UNAVAILABLE "no prebuilt FFmpeg for macOS x86_64 (arm64 only)")
 	endif()
 elseif(WIN32)
-	set(_ffmpeg_target "windows-x86_64")
-	set(_ffmpeg_sha256 "e2b3186e7be3a7c1ca9580cd33fab431afe4f48a6c7cdfe672e549fb59d71a06")
+	if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|arm64|aarch64")
+		set(LAIN_FFMPEG_UNAVAILABLE "no prebuilt FFmpeg for Windows ARM64 (x86_64 only)")
+	else()
+		set(_ffmpeg_target "windows-x86_64")
+		set(_ffmpeg_sha256 "e2b3186e7be3a7c1ca9580cd33fab431afe4f48a6c7cdfe672e549fb59d71a06")
+	endif()
 elseif(UNIX)
 	if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
 		set(_ffmpeg_target "linux-arm64")
@@ -56,8 +67,25 @@ elseif(UNIX)
 		set(_ffmpeg_target "linux-x86_64")
 		set(_ffmpeg_sha256 "93fb12550aeda463523c9b3e9d370dc01d953e3830d45d8684e5fd8deb68a083")
 	endif()
+	# Both Linux archives are configured --enable-vaapi, so libavutil and libavcodec name
+	# libva.so.2 and libva-drm.so.2 in DT_NEEDED, and the linker has to find them for every
+	# executable that links the plugin (CI, 2026-09-04). It resolves a DT_NEEDED by soname, so the
+	# runtime packages are enough; looking for the soname rather than libva.so is what keeps the
+	# -dev package from being demanded. Only the archive needs them, so a root of one's own skips this.
+	if(NOT LAIN_FFMPEG_ROOT)
+		find_library(LAIN_FFMPEG_LIBVA NAMES libva.so.2)
+		find_library(LAIN_FFMPEG_LIBVA_DRM NAMES libva-drm.so.2)
+		if(NOT LAIN_FFMPEG_LIBVA OR NOT LAIN_FFMPEG_LIBVA_DRM)
+			set(LAIN_FFMPEG_UNAVAILABLE
+				"the Linux FFmpeg prebuilt links libva and libva-drm, which are not installed (libva2 and libva-drm2, or libva-dev)")
+		endif()
+	endif()
 else()
-	message(FATAL_ERROR "LAIN_IO_VIDEO_FFMPEG: no prebuilt FFmpeg for this platform")
+	set(LAIN_FFMPEG_UNAVAILABLE "no prebuilt FFmpeg for this platform")
+endif()
+
+if(LAIN_FFMPEG_UNAVAILABLE)
+	return()
 endif()
 
 if(WIN32)
@@ -225,3 +253,5 @@ file(WRITE "${_ffmpeg_notice}"
 "  Full licence texts and build manifest: third-party/ffmpeg/\n"
 "  Configuration: ${LAIN_FFMPEG_CONFIGURATION}\n")
 set_property(GLOBAL APPEND PROPERTY LAIN_THIRD_PARTY_NOTICES "${_ffmpeg_notice}")
+
+set(LAIN_FFMPEG_FOUND TRUE)

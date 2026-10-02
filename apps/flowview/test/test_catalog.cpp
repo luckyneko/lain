@@ -80,22 +80,23 @@ TEST_CASE("the frame-sequence kinds are on the menu", "[catalog]")
 	CHECK_FALSE(offers("linkedGroup"));
 }
 
-TEST_CASE("the camera kinds are on the menu exactly when a backend can run them", "[catalog]")
+TEST_CASE("the camera kinds always load, and are on the menu exactly when a backend can run them", "[catalog]")
 {
-	// ADR-0016: a camera node kind is offered only where it can function. Asked of the production
-	// path, backends and all, and held to the build's configuration BOTH ways: an OpenCV build that
-	// offers none is as wrong as a build without one that offers any.
+	// ADR-0016, amended: a camera kind is vocabulary, so the factory has it in every build and a
+	// camera document loads whole; the menu offers it only where it can function. Asked of the
+	// production path, backends and all, and held to the build's configuration BOTH ways: a build
+	// with the OpenCV backend that offers none is as wrong as a build without one that offers any.
 	camera::registerCameraBackends();
 	core::Factory<flow::Node> factory;
 	flowview::registerExampleNodes(factory, 8);
 
-	const bool expected = LAIN_EXPECT_CAMERA_NODES != 0;
+	const bool expected = LAIN_EXPECT_CAMERA_BACKEND != 0;
 	for (const char* key : {camera::kBoardSpecificationKey, camera::kRenderBoardKey, camera::kDetectBoardKey,
 							camera::kCalibrateCameraKey, camera::kCameraModelKey})
 	{
 		INFO("camera kind: " << key);
 		CHECK(offers(key) == expected);
-		CHECK((factory.create(key) != nullptr) == expected);
+		CHECK(factory.create(key) != nullptr);
 	}
 }
 

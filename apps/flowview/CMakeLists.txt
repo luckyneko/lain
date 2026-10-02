@@ -56,14 +56,16 @@ target_link_libraries(flowview
 # driver, the instance is invalid, and gui-mode trips GLFW's null-instance assert.
 acm_stage_vulkan_runtime(flowview)
 
-# Same problem, other dependency: Windows has no rpath, so with the FFmpeg plugin enabled its
-# DLLs must sit beside the executable or flowview will not start. The video test executables
-# already stage them; flowview links lain::io::video::codecs too and was missing it.
-if(LAIN_IO_VIDEO_FFMPEG)
+# Same problem, other dependency: Windows has no rpath, so with the FFmpeg plugin built its DLLs
+# must sit beside the executable or flowview will not start. The video test executables already
+# stage them; flowview links lain::io::video::codecs too and was missing it. Asked of the plugin
+# TARGET, not the option: the option is only what was wanted, and a platform with no prebuilt
+# builds no plugin (and defines no staging function) however it is set.
+if(TARGET lain::io::video::ffmpeg)
 	lain_ffmpeg_stage_runtime(flowview)
 endif()
 # And the OpenCV DLLs, for the camera backend.
-if(LAIN_CAMERA_OPENCV)
+if(TARGET lain::camera::opencv)
 	lain_opencv_stage_runtime(flowview)
 endif()
 
@@ -96,7 +98,7 @@ target_link_libraries(flowview-examples
 			lain::io::sequence lain::media::serialize lain::io::image lain::io::image::codecs lain::io::video::codecs
 			lain::io::data::codecs lain::camera::flow lain::string lain::log lain::warnings
 )
-if(LAIN_IO_VIDEO_FFMPEG)
+if(TARGET lain::io::video::ffmpeg)
 	lain_ffmpeg_stage_runtime(flowview-examples)
 endif()
 

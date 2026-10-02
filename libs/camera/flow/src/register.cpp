@@ -32,8 +32,8 @@ namespace lain::camera
 	}
 
 	// One row per kind, in display order: its key, the capability it needs, and how it registers.
-	// availableCameraNodeKeys and registerCameraNodes both read THIS, which is what keeps a menu from
-	// offering a kind the factory cannot build.
+	// availableCameraNodeKeys and registerCameraNodes both read THIS, so a menu cannot offer a kind
+	// the factory lacks: the factory has every row, and the menu the rows whose capability is here.
 	struct Kind
 	{
 		const char* key;
@@ -62,10 +62,7 @@ namespace lain::camera
 	void registerCameraNodes(core::Factory<flow::Node>& factory)
 	{
 		for (const Kind& kind : kKinds)
-		{
-			if (kind.available())
-				kind.registerInto(factory, kind.key);
-		}
+			kind.registerInto(factory, kind.key);
 	}
 
 	void registerCameraPortTypes()

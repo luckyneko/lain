@@ -1,16 +1,25 @@
-# Camera plugins — the optional, third-party-backed implementations behind lain's camera contracts
-# (ADR-0016) — and the generated aggregator that registers them. Opt-in like video: an all-disabled
-# configure must resolve nothing at all, which is M9's dependency-footprint rule, so every option
-# here defaults OFF.
+# Camera plugins — the third-party-backed implementations behind lain's camera contracts (ADR-0016)
+# — and the generated aggregator that registers them.
 #
-# The AGGREGATOR is built either way, and its registerCameraBackends() is then a no-op. Unlike video,
-# where a missing codec leaves the node in place to report the missing capability, a camera node that
-# has no backend cannot run at all, so the host reads the capability queries and registers none.
+# The AGGREGATOR is built either way, and its registerCameraBackends() is then a no-op. The camera node
+# kinds still register (a kind is vocabulary, ADR-0016 amended, the same rule as video's), so a camera
+# document loads whole and its nodes report the missing backend when run; only the menu follows the
+# backends.
+#
+# OpenCV is a fetched BINARY (ADR-0026), so the option defaults ON only for a top-level build. A
+# bundled lain leaves it OFF, so a consumer's configure never downloads a binary it did not ask for,
+# nor fails on that download. The option is what you want; whether this platform can have it is
+# addOpenCV's answer, and an unavailable plugin is not built.
 
-option(LAIN_CAMERA_OPENCV "Build the OpenCV camera plugin (Apache-2.0, fetched prebuilt)" OFF)
+option(LAIN_CAMERA_OPENCV "Build the OpenCV camera plugin (Apache-2.0, fetched prebuilt)" ${LAIN_NOT_SUBPROJECT})
 if(LAIN_CAMERA_OPENCV)
 	add_subdirectory(opencv)
 endif()
+set(_lain_opencv_summary "OpenCV camera backend (Apache-2.0, fetched prebuilt)")
+if(LAIN_OPENCV_UNAVAILABLE)
+	string(APPEND _lain_opencv_summary ": not built, ${LAIN_OPENCV_UNAVAILABLE}")
+endif()
+add_feature_info(LAIN_CAMERA_OPENCV "TARGET lain::camera::opencv" "${_lain_opencv_summary}")
 
 # Turn the discovered plugin list into the aggregator's #includes and registerBackend() calls. Each
 # entry is both the link target and the namespace: "lain::camera::opencv" ->

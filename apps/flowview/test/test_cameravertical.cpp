@@ -24,12 +24,7 @@
 #include <lain/camera/calibration/estimator.h>
 #include <lain/camera/calibration/report.h>
 #include <lain/camera/cameramodel.h>
-#include <lain/camera/flow/boardspecificationnode.h>
-#include <lain/camera/flow/calibratecameranode.h>
-#include <lain/camera/flow/cameramodelnode.h>
-#include <lain/camera/flow/detectboardnode.h>
 #include <lain/camera/flow/register.h>
-#include <lain/camera/flow/renderboardnode.h>
 #include <lain/camera/serialize/cameramodel.h>
 #include <lain/core/uri.h>
 #include <lain/flow/boundary.h>
@@ -77,20 +72,6 @@ namespace
 		return camera::board::canRender() && camera::board::canDetect() && camera::calibration::canEstimate();
 	}
 
-	// The camera kinds registered whatever this build's backends, so the document can be WRITTEN in a
-	// build that cannot run it: it is what a build with a backend would have saved.
-	core::Factory<flow::Node> writingFactory()
-	{
-		core::Factory<flow::Node> factory;
-		flowview::registerExampleNodes(factory, 8);
-		factory.registerType<camera::BoardSpecificationNode>(camera::kBoardSpecificationKey);
-		factory.registerType<camera::RenderBoardNode>(camera::kRenderBoardKey);
-		factory.registerType<camera::DetectBoardNode>(camera::kDetectBoardKey);
-		factory.registerType<camera::CalibrateCameraNode>(camera::kCalibrateCameraKey);
-		factory.registerType<camera::CameraModelNode>(camera::kCameraModelKey);
-		return factory;
-	}
-
 	template <typename T>
 	void setParam(flow::Graph& graph, flow::NodeId id, const std::string& name, T value)
 	{
@@ -121,7 +102,10 @@ namespace
 	// the document that checks a model file against footage instead of estimating one.
 	fs::path writeDocument(const fs::path& file, bool held = false)
 	{
-		const core::Factory<flow::Node> factory = writingFactory();
+		// The production palette, which has the camera kinds whatever this build's backends, so the
+		// document is written the same in a build that cannot run it.
+		core::Factory<flow::Node> factory;
+		flowview::registerExampleNodes(factory, 8);
 		flow::Graph graph;
 		flow::GroupInputNode& input = graph.boundaryInputNode();
 		flow::GroupOutputNode& output = graph.boundaryOutputNode();
@@ -186,6 +170,20 @@ namespace
 		return folder;
 	}
 
+	// Footage with no board in it, for a build that cannot render one: enough frames to be a sequence,
+	// which is all a calibration with no detector looks at before it says so.
+	fs::path writePlainFootage(const fs::path& dir, std::size_t frames)
+	{
+		const fs::path folder = dir / "footage";
+		fs::create_directories(folder);
+		for (std::size_t i = 0; i < frames; ++i)
+		{
+			const std::string name = "frame." + std::string(4 - std::to_string(i).size(), '0') + std::to_string(i) + ".png";
+			REQUIRE(io::image::save(core::Uri::fromPath(folder / name), image::Image(kCamera.width, kCamera.height)));
+		}
+		return folder;
+	}
+
 	std::string readText(const fs::path& file)
 	{
 		std::ifstream stream(file, std::ios::binary);
@@ -218,19 +216,22 @@ TEST_CASE("run calibrates a camera from a folder of footage", "[camera][runmode]
 	flowview::RunOptions options;
 	options.graphPath = document.string();
 
-	if (!haveCameraBackend())
-	{
-		// No backend, so no camera kinds: the document does not load as saved, and running what is
-		// left of it would run a different graph.
-		CHECK(flowview::runGraph(options, factory, binders) != 0);
-		return;
-	}
-
-	const fs::path footage = writeFootage(dir, 24);
+	const fs::path footage = haveCameraBackend() ? writeFootage(dir, 24) : writePlainFootage(dir, 2);
 	const fs::path reportText = dir / "report.txt";
 	const fs::path modelFile = dir / "model.json";
 	options.bindings = {"--footage", footage.string(), "--report", reportText.string(), "--model", modelFile.string()};
 	REQUIRE(flowview::runGraph(options, factory, binders) == 0);
+
+	if (!haveCameraBackend())
+	{
+		// No backend: the document still loads whole and runs (a camera kind is vocabulary, ADR-0016
+		// amended), and the report says what is missing instead of describing a camera. No model.
+		const std::string report = readText(reportText);
+		INFO("report: " << report);
+		CHECK(report.rfind("Failed: NoDetector", 0) == 0);
+		CHECK_FALSE(fs::exists(modelFile));
+		return;
+	}
 
 	const std::string report = readText(reportText);
 	INFO("report: " << report);

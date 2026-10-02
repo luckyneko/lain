@@ -7,8 +7,9 @@
 # NAMESPACE would make every `flow::` written inside lain::camera resolve to it rather than to
 # lain::flow.
 #
-# Node kinds register only when a backend can run them (registerCameraNodes); the port types are
-# vocabulary and register always, so a boundary pin of a camera type still loads and saves.
+# Node kinds and port types are vocabulary and register always (registerCameraNodes,
+# registerCameraPortTypes), so a camera document loads and saves whole in a build with no backend;
+# which kinds are OFFERED follows the backends (availableCameraNodeKeys).
 
 add_library(camera-flow STATIC
 	src/boardspecificationnode.cpp
