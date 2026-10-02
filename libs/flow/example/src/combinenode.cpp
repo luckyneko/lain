@@ -1,7 +1,6 @@
 #include "lain/flow/example/combinenode.h"
 
 #include <lain/image/convert.h> // normalise to RGBA8, as the other example filters do
-#include <lain/log/log.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -39,8 +38,7 @@ namespace lain::flow::example
 		{
 			if (!image.valid())
 			{
-				log::warn("flow::example::Combine: an element is not a valid image — no output");
-				evaluation.output(m_out).clear();
+				evaluation.fail("an element is not a valid image");
 				return;
 			}
 			normalised.push_back(image.pixelFormat() == image::PixelFormat::RGBA8
@@ -56,8 +54,7 @@ namespace lain::flow::example
 			// something the caller did not ask for.
 			if (image.width() != width || image.height() != height)
 			{
-				log::warn("flow::example::Combine: elements differ in size — no output");
-				evaluation.output(m_out).clear();
+				evaluation.fail("the elements differ in size");
 				return;
 			}
 		}

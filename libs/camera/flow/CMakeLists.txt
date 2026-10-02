@@ -26,7 +26,6 @@ target_include_directories(camera-flow PUBLIC include)
 target_link_libraries(camera-flow
 	PUBLIC lain::camera # the nodes carry its values
 	PUBLIC lain::flow	# and are flow::Nodes
-	PRIVATE lain::log	# a board specification that cannot be built says why
 	PRIVATE lain::warnings
 )
 

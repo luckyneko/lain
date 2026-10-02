@@ -13,9 +13,9 @@ namespace lain::camera
 	// Parameters rather than inputs: a board is configuration, the same for every frame and every
 	// element of a map, and nothing upstream computes one.
 	//
-	// Parameters that do not make a board CLEAR the output and log each reason, so everything
-	// downstream is suppressed (ADR-0007) rather than run against a board that is not the one asked
-	// for.
+	// Parameters that do not make a board FAIL the node with every reason (NodeEvaluation::fail): the
+	// output is empty, so everything downstream is suppressed (ADR-0007) rather than run against a
+	// board that is not the one asked for, and the reasons are where a host shows a failure.
 	class BoardSpecificationNode : public flow::Node
 	{
 	public:

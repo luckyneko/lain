@@ -306,6 +306,8 @@ namespace lain::flow
 		// leaves — so the node stays stale however it came to be in the run, and a host can say where
 		// the failure was. One that GAVE UP on a cancel (it asked NodeEvaluation::cancelled() and heard
 		// yes) is treated the same way minus the record, keeping whatever it wrote but not trusting it.
+		// One that FAILED without throwing (NodeEvaluation::fail) is recorded as computed, with every
+		// output cleared and its reason recorded against it, and the run carries on.
 		//
 		// It reports to the control's observer as it goes: started() before anything else, finished()
 		// with the node's record once the outcome is settled — on the way out of a throw too — and

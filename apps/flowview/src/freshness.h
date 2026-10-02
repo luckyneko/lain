@@ -40,7 +40,7 @@ namespace flowview
 		Stale,	   // it does not — or there is no shown value at all
 		Queued,	   // stale, and the run in flight will compute it: it will update by itself
 		Computing, // its compute is running now
-		Failed,	   // its last compute threw — or, for a group, map or loop, something inside it did
+		Failed,	   // its last compute failed — or, for a group, map or loop, something inside it did
 	};
 
 	// Every node of one level, and its freshness.

@@ -727,11 +727,25 @@ namespace lain::flow
 		// deliberately: ADR-0007 relies on it going clean and empty together, so a stable-off subtree
 		// drops out of future closures instead of being re-examined forever.
 		evaluation.markComputed(id, node.version());
+
+		// One that FAILED without throwing (NodeEvaluation::fail) got through too, with nothing to show:
+		// every output is cleared whatever it wrote, so downstream is suppressed as by any empty output,
+		// and its reason is recorded where a throw's is — after markComputed, which clears the last one.
+		// Computed rather than owed, unlike a throw: it is this node's answer to these inputs, and each
+		// later stage of this run plans from the whole stale closure, so a failure left stale would be
+		// computed again in every one of them. Not counted by failed(), which counts throws: those are
+		// what a host must tell apart from a throw no node owned, and this run did not end on one.
+		if (view.m_failure.has_value())
+		{
+			for (std::size_t o = 0; o < node.outputCount(); ++o)
+				view.output(node.output(o).id()).clear();
+			evaluation.recordFailure(id, std::move(*view.m_failure));
+		}
 		control.m_finished.fetch_add(1, std::memory_order_relaxed);
 
 		// AFTER the books are kept, so the record says what the evaluation now says: computed at this
-		// version, request settled, any old failure cleared. Taken on this thread, from the slots this
-		// step wrote, before any downstream step is allowed to read them.
+		// version, request settled, any old failure cleared or this one's recorded. Taken on this
+		// thread, from the slots this step wrote, before any downstream step is allowed to read them.
 		reportFinished(control, path, evaluation, id);
 	}
 

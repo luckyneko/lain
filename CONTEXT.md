@@ -969,7 +969,7 @@ started, stopped and shown.
   arrive on whichever thread ran the step, so they are `noexcept`. _Avoid_: callback, listener, stage
   observer (retired: the stage report is one of its methods).
 - **Node record** — one node's runtime state in one Evaluation: its port values, the Version it was
-  computed at, whether a recompute is owed, and what its last compute threw. It is what the stale
+  computed at, whether a recompute is owed, and why its last compute failed. It is what the stale
   closure compares (a node with *no record* is stale). A copy of one, `flow::NodeRecord`, is what a run
   hands its observer as a step finishes, and what a host **folds** into its published evaluation so the
   node's result shows the moment it lands. _Avoid_: completion record (WORK.md's planning name),
@@ -1008,10 +1008,17 @@ started, stopped and shown.
     different message. A cancel ends it at once, since the run will start nothing more.
   - **Computing** — its step is running now; it stays so through a cancel until the compute finishes.
   - **Current** — not Stale. *Just updated* is Current plus a moment's highlight, not a state.
-  - **Failed** — its last compute threw. It stays Stale, and the message goes to Issues. The run
-    RECORDS it against the node, in the evaluation it threw in (`Evaluation::failure`), so a failure
-    in one map element or one linked-group instance is found there and nowhere else; the next compute
-    of that node that gets through (suppression included) clears it.
+  - **Failed** — its last compute failed, and the message goes to Issues. Two doors: it THREW (it
+    stays Stale and is retried), or it **failed without throwing** — called `NodeEvaluation::fail`
+    with a reason, because it could not produce its outputs and knew why (no backend in this build,
+    inputs that disagree). That node is computed, its outputs empty so downstream is suppressed, and
+    the failure is kept until an edit makes it compute again: it is the node's answer to these
+    inputs, not an accident to retry (ADR-0025, amended 2026-10-02). Either way the run RECORDS it
+    against the node, in the evaluation it happened in (`Evaluation::failure`), so a failure in one
+    map element or one linked-group instance is found there and nowhere else; the next compute of
+    that node that gets through without failing (suppression included) clears it. A node that
+    refuses says so through `fail`, never only through a log — a log line is invisible in the gui.
+    _Avoid_: refusal for the record itself (it is a failure whichever door it came through).
   A group, map or loop shows the most active state inside it, and one order settles every contest,
   its own included: **Computing, Failed, Queued, Stale, Current**. A failure outranks waiting, so it
   shows the moment it lands. _Avoid_: dirty (retired with M6), up to date / out of date, running /

@@ -354,7 +354,7 @@ TEST_CASE("footage of a distorted camera calibrates to that camera, end to end",
 	// Render, distort, detect, select, estimate, validate, resample, judge: every stage production.
 	ensureBackend();
 	const cb::Specification spec = boardSpec();
-	const std::optional<cb::Rendering> rendering = cb::render(spec.pattern(), cb::RenderRequest{60, 20});
+	const std::optional<cb::Rendering> rendering = cb::render(spec.pattern(), cb::RenderRequest{60, 20}).rendering;
 	REQUIRE(rendering.has_value());
 	CameraModelParameters p;
 	p.image = {640, 480};

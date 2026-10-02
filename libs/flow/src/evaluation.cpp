@@ -70,6 +70,12 @@ namespace lain::flow
 		return true;
 	}
 
+	void NodeEvaluation::fail(std::string reason)
+	{
+		// Always with SOME text, as a throw's record is: a failure a host cannot describe reads as none.
+		m_failure = reason.empty() ? std::string("failed, giving no reason") : std::move(reason);
+	}
+
 	//=========================================================================
 	// Evaluation
 	//=========================================================================
@@ -356,7 +362,7 @@ namespace lain::flow
 		if (NodeState* state = this->state(node))
 		{
 			state->computedAt = version;
-			state->failure.reset(); // it got through, so whatever it threw last time no longer stands
+			state->failure.reset(); // it got through, so whatever failed last time no longer stands
 		}
 	}
 

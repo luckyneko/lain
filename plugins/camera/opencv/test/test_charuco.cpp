@@ -109,7 +109,7 @@ namespace
 	{
 		ensureBackend();
 		const Specification spec = specOf(patternOf(7, 5));
-		const std::optional<Rendering> rendering = render(spec.pattern(), RenderRequest{80, 20});
+		const std::optional<Rendering> rendering = render(spec.pattern(), RenderRequest{80, 20}).rendering;
 		REQUIRE(rendering.has_value());
 		const ModelResult camera = CameraModel::create(testing::pinhole());
 		REQUIRE(camera.model.has_value());
@@ -132,7 +132,7 @@ TEST_CASE("a rendered board is detected where lain's layout puts its corners", "
 	// corner ids to lain's layout.
 	ensureBackend();
 	const Specification spec = specOf(patternOf(7, 5));
-	const std::optional<Rendering> rendering = render(spec.pattern(), RenderRequest{80, 20});
+	const std::optional<Rendering> rendering = render(spec.pattern(), RenderRequest{80, 20}).rendering;
 	REQUIRE(rendering.has_value());
 	CHECK(rendering->raster.width() == 7 * 80 + 40);
 
@@ -226,7 +226,7 @@ TEST_CASE("the legacy layout is a different pattern from the standard one", "[ca
 	// board detected as its own pattern is found whole; as the standard pattern, it is not.
 	ensureBackend();
 	const Pattern legacy = patternOf(6, 4, CharucoLayout::Legacy);
-	const std::optional<Rendering> rendering = render(legacy, RenderRequest{80, 20});
+	const std::optional<Rendering> rendering = render(legacy, RenderRequest{80, 20}).rendering;
 	REQUIRE(rendering.has_value());
 
 	CHECK(detect(rendering->raster, frameRef(), specOf(legacy)).status == DetectionStatus::Detected);
@@ -247,7 +247,7 @@ TEST_CASE("a pattern's marker ids start where the pattern says", "[camera][openc
 	p.firstMarkerId = 17;
 	const PatternResult second = Pattern::create(p);
 	REQUIRE(second.pattern.has_value());
-	const std::optional<Rendering> rendering = render(*second.pattern, RenderRequest{80, 20});
+	const std::optional<Rendering> rendering = render(*second.pattern, RenderRequest{80, 20}).rendering;
 	REQUIRE(rendering.has_value());
 
 	CHECK(detect(rendering->raster, frameRef(), specOf(*second.pattern)).status == DetectionStatus::Detected);
@@ -293,7 +293,7 @@ TEST_CASE("every dictionary draws OpenCV's dictionary of that name", "[camera][o
 		p.firstMarkerId = markerCapacity(dictionary) - 10;
 		const PatternResult pattern = Pattern::create(p);
 		REQUIRE(pattern.pattern.has_value());
-		const std::optional<Rendering> rendering = render(*pattern.pattern, RenderRequest{60, 20});
+		const std::optional<Rendering> rendering = render(*pattern.pattern, RenderRequest{60, 20}).rendering;
 		REQUIRE(rendering.has_value());
 
 		const cv::Mat raster(rendering->raster.height(), rendering->raster.width(), CV_8UC1,

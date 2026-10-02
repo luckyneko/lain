@@ -52,10 +52,16 @@ TEST_CASE("with no backend, detect reports the missing capability as a failed re
 	CHECK(report.stats.cornersExpected == 24);
 }
 
-TEST_CASE("with no backend, render has nothing to give", "[camera][board]")
+TEST_CASE("with no backend, render says the capability is missing", "[camera][board]")
 {
 	REQUIRE_FALSE(canRender());
-	CHECK_FALSE(render(pattern()).has_value());
+	const RenderResult result = render(pattern());
+	CHECK_FALSE(result.rendering.has_value());
+	REQUIRE(result.diagnostics.size() == 1);
+	CHECK(result.diagnostics[0].problem == RenderProblem::NoBackend);
+	// The text a gui shows on the node (NodeEvaluation::fail), so it has to say what to do about it.
+	CHECK(result.diagnostics[0].detail.find("no board renderer") != std::string::npos);
+	CHECK(result.diagnostics[0].detail.find("LAIN_CAMERA_OPENCV") != std::string::npos);
 }
 
 TEST_CASE("with no backend, calibration fails with the missing capability", "[camera][calibration]")

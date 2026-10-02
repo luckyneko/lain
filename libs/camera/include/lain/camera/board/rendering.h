@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace lain::camera::board
 {
@@ -46,7 +47,29 @@ namespace lain::camera::board
 
 	bool canRender();
 
-	// The pattern drawn by the registered backend, or nullopt (logged) when there is none, when the
-	// request is degenerate, or when the backend fails.
-	std::optional<Rendering> render(const Pattern& pattern, const RenderRequest& request = {});
+	// Why render() drew nothing.
+	enum class RenderProblem
+	{
+		NoBackend,		  // this build has no board renderer
+		NoPixels,		  // 0 pixels per square: there is no board to draw
+		BackendMisbehaved // the backend's raster is not the 8-bit grey board of the size requested
+	};
+
+	struct RenderDiagnostic
+	{
+		RenderProblem problem;
+		std::string detail;
+	};
+
+	struct RenderResult
+	{
+		std::optional<Rendering> rendering;
+		std::vector<RenderDiagnostic> diagnostics; // empty exactly when `rendering` is set
+	};
+
+	// The pattern drawn by the registered backend, or why not: there is none, the request is
+	// degenerate, or the backend fails. Says so rather than logging it, as Pattern::create does, so
+	// the caller decides where a refusal is shown — a node reports it as its failure, which is what
+	// reaches a gui (NodeEvaluation::fail).
+	RenderResult render(const Pattern& pattern, const RenderRequest& request = {});
 } // namespace lain::camera::board

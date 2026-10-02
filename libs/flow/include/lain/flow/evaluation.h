@@ -4,7 +4,7 @@
 //
 // A `Graph` is a definition: node kinds, params, edges, port declarations, names. An `Evaluation`
 // is everything a run produces or remembers — port values, which node was computed at which
-// definition version, outstanding recompute requests, what a node's last compute threw, host
+// definition version, outstanding recompute requests, why a node's last compute failed, host
 // boundary bindings, and one child Evaluation per group node. The scheduler takes both:
 //
 //     run(const Graph& definition, Evaluation& evaluation)
@@ -89,9 +89,27 @@ namespace lain::flow
 		// while it ran — its result is still right for the recipe it read.
 		bool cancelled() const;
 
+		// FAIL without throwing: this compute produces nothing, and `reason` says why — the build has
+		// no backend for it, its inputs disagree, its settings describe nothing. What a node calls
+		// instead of clearing its outputs and logging, so the reason reaches where a host shows a
+		// failure (Evaluation::failure) rather than only a log a gui user never sees (ADR-0025,
+		// amended 2026-10-02).
+		//
+		// When the compute returns, the scheduler clears EVERY output, whatever the body wrote, so
+		// downstream is suppressed exactly as by an empty output (ADR-0007), and records `reason`
+		// (a fixed text if it is empty) as the node's failure. The run carries on. And the node is
+		// recorded as COMPUTED: a failure the node reports is its answer to these inputs, kept until
+		// they or its recipe change, where a throw stays stale and is retried. That difference is
+		// load-bearing, not taste — each stage of a run plans from the whole stale closure, so a
+		// failure left stale would be computed again in every stage of one run.
+		//
+		// A later call replaces an earlier one. A compute that also gives up on a cancel has GIVEN UP
+		// (cancelled() above): it is owed, and its reason is not recorded.
+		void fail(std::string reason);
+
 	private:
 		friend class Evaluation;
-		friend class Scheduler; // reads m_sawCancel, to tell a node that gave up from one that finished
+		friend class Scheduler; // reads m_sawCancel and m_failure: how the compute ended
 		NodeEvaluation(Evaluation& evaluation, const Node& node, NodeId id, const RunControl* control)
 			: m_evaluation(&evaluation)
 			, m_node(&node)
@@ -107,6 +125,7 @@ namespace lain::flow
 		// Set when cancelled() answered true. Mutable because asking is a read, and safe because a
 		// view belongs to the one task computing its node — nothing else holds it.
 		mutable bool m_sawCancel = false;
+		std::optional<std::string> m_failure; // what fail() said, for the scheduler to record
 	};
 
 	// One graph's runtime state. A value the host owns, so retention is ownership rather than policy
@@ -196,12 +215,16 @@ namespace lain::flow
 		void requestRecomputeAll();
 
 		// --- failure ------------------------------------------------------------
-		// Why `id`'s last compute THREW, or nullptr if it did not — the exception's what(), or a fixed
-		// text for one that is not a std::exception. Recorded by the run, in the evaluation, because a
-		// failure is something a run produces at one coordinate: a node of one map element or of one
-		// linked-group instance, which the NodeId alone could not say (ADR-0025). The node stays stale
-		// meanwhile, and the record is cleared by its next compute that gets through — computed or
-		// suppressed. One that GIVES UP on a cancel ended with no answer, so it leaves the record.
+		// Why `id`'s last compute FAILED, or nullptr if it did not: what it THREW (the exception's
+		// what(), or a fixed text for one that is not a std::exception), or the reason it gave
+		// NodeEvaluation::fail. Recorded by the run, in the evaluation, because a failure is something
+		// a run produces at one coordinate: a node of one map element or of one linked-group instance,
+		// which the NodeId alone could not say (ADR-0025).
+		//
+		// A node that threw stays stale meanwhile; one that failed without throwing is computed, its
+		// outputs empty. Either way the record is cleared by the node's next compute that gets through
+		// without failing — computed or suppressed. One that GIVES UP on a cancel ended with no
+		// answer, so it leaves the record.
 		const std::string* failure(NodeId id) const;
 
 		// Whether any node at this level or below — in any child evaluation — holds a failure. What a
@@ -272,7 +295,7 @@ namespace lain::flow
 			// version ever equals (versions start at 1), so a freshly prepared node is stale.
 			std::uint64_t computedAt = 0;
 			bool recomputeRequested = false;	// an evaluation-local demand, independent of the recipe
-			std::optional<std::string> failure; // what the last compute threw, until one gets through
+			std::optional<std::string> failure; // why the last compute failed, until one gets through
 		};
 
 		NodeState* state(NodeId id);
@@ -295,8 +318,9 @@ namespace lain::flow
 		void clearRecomputeRequest(NodeId node);
 		void markComputed(NodeId node, std::uint64_t version); // ... and clears any failure: this one got through
 
-		// A compute of `node` threw `message` (failure() above). Scheduler-only: a run records it on
-		// the way out of the compute, before the exception leaves.
+		// A compute of `node` failed, saying `message` (failure() above). Scheduler-only: a run records
+		// a throw on the way out of the compute, before the exception leaves, and a NodeEvaluation::fail
+		// once the compute has returned — after markComputed, which would otherwise clear it.
 		void recordFailure(NodeId node, std::string message);
 
 		// Reconcile one node's port slots against its declarations, keeping the values of ports that
@@ -336,7 +360,7 @@ namespace lain::flow
 	};
 
 	// A copy of one node's RECORD — its port values and its bookkeeping (what it was computed at,
-	// whether a recompute is still owed, what its last compute threw) — as a step left it (ADR-0025,
+	// whether a recompute is still owed, why its last compute failed) — as a step left it (ADR-0025,
 	// M14 slice 7). A run hands one to its RunObserver as each step finishes, and a host FOLDS it into
 	// the copy its panes read, so a node's result shows the moment it lands rather than at the end of
 	// its stage.
@@ -349,7 +373,7 @@ namespace lain::flow
 	class NodeRecord
 	{
 	public:
-		// What the compute that left this record threw, or nullptr — Evaluation::failure, as it stood.
+		// Why the compute that left this record failed, or nullptr — Evaluation::failure, as it stood.
 		const std::string* failure() const { return m_state.failure.has_value() ? &*m_state.failure : nullptr; }
 
 	private:

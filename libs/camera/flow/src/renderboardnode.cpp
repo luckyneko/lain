@@ -1,8 +1,9 @@
 #include "lain/camera/flow/renderboardnode.h"
 
+#include "reason.h"
+
 #include <algorithm>
 #include <cstdint>
-#include <optional>
 
 namespace lain::camera
 {
@@ -31,14 +32,15 @@ namespace lain::camera
 		request.pixelsPerSquare = std::uint32_t(std::max(0, param(m_pixelsPerSquare).get<int>()));
 		request.marginPixels = std::uint32_t(std::max(0, param(m_margin).get<int>()));
 
-		std::optional<board::Rendering> rendering = board::render(slot.get<board::Specification>().pattern(), request);
-		if (!rendering)
+		board::RenderResult result = board::render(slot.get<board::Specification>().pattern(), request);
+		if (!result.rendering)
 		{
-			evaluation.output(m_image).clear();
-			evaluation.output(m_description).clear();
+			// A failure the gui shows on this node, not only a log line: a build with no renderer
+			// still loads and runs a board document (ADR-0016), and this is where it says it cannot.
+			evaluation.fail(detail::reason(result.diagnostics));
 			return;
 		}
-		evaluation.output(m_image).set(std::move(rendering->raster));
-		evaluation.output(m_description).set(std::move(rendering->description));
+		evaluation.output(m_image).set(std::move(result.rendering->raster));
+		evaluation.output(m_description).set(std::move(result.rendering->description));
 	}
 } // namespace lain::camera

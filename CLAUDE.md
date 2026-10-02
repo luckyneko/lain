@@ -1230,6 +1230,34 @@ WORK.md's M9 slice 1, sub-slice 0, *the gui follows*.
   Not yet eyeballed: the transient message, the Issues rows, and the current document staying on
   screen.
 
+### Update 2026-10-02 — a node can fail without throwing (`NodeEvaluation::fail`)
+
+From a user report: in the gui, `render-board.json`'s RenderBoard showed nothing and never updated.
+Two causes. **The build had no renderer**: an existing `build/` keeps `LAIN_CAMERA_OPENCV=OFF` (and
+FFmpeg OFF) in its CMake cache after the defaults changed, because `option()` never overrides a cached
+value — reconfigure with `-DLAIN_CAMERA_OPENCV=ON`, the `IMGUI_REF` trap again. And **the gui hid the
+reason**: `board::render` logged it, so in gui-mode it went to stderr and the node just sat empty.
+`ctest -j8` **995/995** Release with video and camera off (+9), **1019/1019** with camera on;
+warning-clean, format-check clean. **gui-mode NOT eyeballed.** Full notes in WORK.md's *A node could
+only report a failure by throwing*.
+
+- **`NodeEvaluation::fail(reason)`**, decided with the repo owner over a throwing node and a
+  flowview-only capability row. After the compute, the scheduler clears every output, records the
+  reason in the failure record (`Evaluation::failure`, so the canvas marks the node Failed and Issues
+  lists it), and the run carries on. ADR-0025 and CONTEXT.md's *Failed* are amended.
+- **Such a node is COMPUTED, not owed**, unlike a throw: each stage plans from the whole stale
+  closure, so a failure left stale would recompute in every stage of one run. It is kept until an
+  edit. `RunControl::failed()` still counts throws only; `finished()` counts it.
+- **`board::render` returns `RenderResult {rendering, diagnostics}`** instead of logging, like
+  `Pattern::create`. `renderBoard`, `boardSpecification`, and the example `combine` and
+  `imageDifference` now fail with their reasons; `lain::camera`, `lain::camera::flow` and
+  `flow-example` no longer link `lain::log`.
+- **Headless:** the dump prints `failed: <reason>` under the node, and `run` logs each failure to
+  stderr in the Issues pane's wording (`collectFailures`). The example test now runs
+  `render-board.json` without a camera backend and requires the failure row naming the renderer.
+- **Owed:** `LoadImage` / `OpenSequence` still suppress while io logs why; an empty path on a fresh
+  palette node needs a decision before they adopt `fail`.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 8c: a board to print and the capture guide (**fixture machinery COMPLETE**)
 
 The last third of the real-camera fixture's machinery. What remains of sub-slice 8, and of slice 1,

@@ -247,6 +247,16 @@ about loading. A camera document opened without a backend loads whole, saves bac
 nodes say what is missing when run. The same day the OpenCV plugin began defaulting ON for a
 top-level build ([ADR-0026](0026-opencv-from-a-pinned-minimal-prebuilt.md)).)*
 
+*(Corrected later on 2026-10-02: "says what is missing" was true of a REPORT, and of a log line, and
+only the first reaches a gui. `detectBoard` and `calibrateCamera` put the reason in a report on an
+output, which the Inspector shows; `renderBoard` had nothing but the log, so in gui-mode a board render
+with no renderer was an empty node with no reason anywhere on screen. It now fails with `render()`'s
+reason through `NodeEvaluation::fail` (ADR-0025, amended), which the canvas marks Failed and Issues
+lists — and so does `boardSpecification` given parameters that are not a board. `board::render`
+returns that reason (`RenderResult`) instead of logging it. Also worth knowing from the same report:
+an EXISTING build directory keeps `LAIN_CAMERA_OPENCV=OFF` after the default changed, since `option()`
+never overrides a cached value — reconfigure with `-DLAIN_CAMERA_OPENCV=ON`.)*
+
 **OpenCV runs serial; lain supplies the parallelism.** *(Added 2026-09-30.)* The OpenCV plugin sets
 `cv::setNumThreads(0)` once, when it registers, so OpenCV's built-in pool never runs beside the
 process pool ADR-0024 makes the only one. Parallelism comes from lain's side of the seam: detection

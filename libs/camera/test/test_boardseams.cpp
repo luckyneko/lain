@@ -121,16 +121,26 @@ TEST_CASE("render builds the description and fingerprint and checks the raster",
 	const Pattern p = pattern();
 
 	StandInRenderer::misbehave = false;
-	const std::optional<Rendering> rendering = render(p, RenderRequest{10, 3});
-	REQUIRE(rendering.has_value());
+	const RenderResult result = render(p, RenderRequest{10, 3});
+	REQUIRE(result.rendering.has_value());
+	CHECK(result.diagnostics.empty());
+	const std::optional<Rendering>& rendering = result.rendering;
 	CHECK(rendering->raster.width() == 76);
 	CHECK(rendering->raster.height() == 56);
 	CHECK(rendering->pattern == p.fingerprint());
 	CHECK(rendering->description == p.description() + "render pixelsPerSquare 10\nrender marginPixels 3\n");
 
-	// A raster that is not the size its description claims is refused, not passed on.
+	// A raster that is not the size its description claims is refused, not passed on — and says so.
 	StandInRenderer::misbehave = true;
-	CHECK_FALSE(render(p, RenderRequest{10, 3}).has_value());
+	const RenderResult misbehaved = render(p, RenderRequest{10, 3});
 	StandInRenderer::misbehave = false;
-	CHECK_FALSE(render(p, RenderRequest{0, 0}).has_value());
+	CHECK_FALSE(misbehaved.rendering.has_value());
+	REQUIRE(misbehaved.diagnostics.size() == 1);
+	CHECK(misbehaved.diagnostics[0].problem == RenderProblem::BackendMisbehaved);
+	CHECK(misbehaved.diagnostics[0].detail == "the stand-in renderer did not produce a 76x56 8-bit grey board");
+
+	const RenderResult empty = render(p, RenderRequest{0, 0});
+	CHECK_FALSE(empty.rendering.has_value());
+	REQUIRE(empty.diagnostics.size() == 1);
+	CHECK(empty.diagnostics[0].problem == RenderProblem::NoPixels);
 }

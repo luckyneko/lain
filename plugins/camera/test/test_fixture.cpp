@@ -93,7 +93,7 @@ namespace
 		const board::SpecificationRead spec = board::specificationFrom(document.board);
 		REQUIRE(spec.specification.has_value());
 		const std::optional<board::Rendering> rendering =
-			board::render(spec.specification->pattern(), board::RenderRequest{60, 20});
+			board::render(spec.specification->pattern(), board::RenderRequest{60, 20}).rendering;
 		REQUIRE(rendering.has_value());
 
 		for (const SessionPlan& plan : plans)

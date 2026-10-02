@@ -152,6 +152,30 @@ by the node's next compute that gets through, suppression included; one that giv
 leaves it. `failed()` is what tells a host a throw some node owned from one none did, and only the
 second is reported for the run as a whole.
 
+*Amended 2026-10-02 — a node can FAIL WITHOUT THROWING.* A throw was the only door into the record, so
+a node that could not produce its outputs but knew why (no backend in this build, inputs that
+disagree) cleared them and logged — and in the gui looked like a node that simply did nothing. Found
+on `render-board.json` in a build with no board renderer: the reason went to stderr, and nothing on
+the canvas or in Issues said anything. `NodeEvaluation::fail(reason)` is the second door, decided with
+the repo owner over two alternatives: the node THROWING (no core change, but a throw ends a serial walk
+and nothing in headless `run` catches one) and a flowview-only Issues row read from the camera kinds'
+capability table (visible before a run, but it covers only a missing backend, and every other refusal
+stays silent). After the compute returns, the scheduler clears every output whatever the body wrote,
+so downstream is suppressed as by any empty output (ADR-0007), and records the reason where a throw's
+goes; the run carries on.
+
+**Unlike a throw, the node is recorded as COMPUTED**, and that is load-bearing rather than taste: each
+stage of a run plans from the whole stale closure, so a failure left stale would be computed again in
+every stage of one run — once per iteration of a loop elsewhere in the document. A failure the node
+reports is its answer to these inputs, so it is kept, like any result, until they or its recipe
+change; a throw is an abnormal end and is retried. `failed()` still counts throws only, since it exists
+to attribute an exception that left `run()`, and this run did not end on one; `finished()` counts the
+node. Failed therefore no longer implies Stale: a node reads Failed while its record holds a failure,
+whichever door it came through. The first users are the camera nodes (`renderBoard` with no renderer,
+`boardSpecification` given parameters that are not a board) and the example nodes that refused with a
+log line (`combine`, `imageDifference`). `board::render` now returns its reason (`RenderResult`) rather
+than logging it, as `Pattern::create` already did, so the caller decides where a refusal is shown.
+
 Under `ParallelScheduler` the coordinator is a participating waiter — exactly the "+1" ADR-0024 sizes
 the pool for (`hw - 1` workers). ADR-0024's caveat that a participating waiter can be caught inside
 unrelated work now delays only when the coordinator *notices* completion, never the UI.
@@ -368,7 +392,9 @@ answer, a node's own and anything inside it, by one order decided with the repo 
 Failed, Queued, Stale, Current**. Failed outranks Queued, so a failure inside a group shows the moment
 it lands, however much else in there still waits, and a failed node reads Failed until its retry
 actually starts. The run-level Issues row now means a throw no node owned: a Failed run whose
-`RunControl::failed()` is non-zero is shown on its nodes instead.
+`RunControl::failed()` is non-zero is shown on its nodes instead. (A node that failed without throwing
+— amended 2026-10-02, above — is never retried by itself: it reads Failed until an edit makes it
+compute again.)
 
 ## Alternatives rejected
 

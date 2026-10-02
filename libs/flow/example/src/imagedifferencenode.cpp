@@ -1,7 +1,6 @@
 #include "lain/flow/example/imagedifferencenode.h"
 
 #include <lain/image/convert.h> // normalise to RGBA8, as the other example filters do
-#include <lain/log/log.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -26,8 +25,7 @@ namespace lain::flow::example
 		const image::Image& srcB = evaluation.input(m_b).get<image::Image>();
 		if (!srcA.valid() || !srcB.valid())
 		{
-			log::warn("flow::example::ImageDifference: an input is not a valid image — no output");
-			evaluation.output(m_difference).clear();
+			evaluation.fail("an input is not a valid image");
 			return;
 		}
 
@@ -40,8 +38,7 @@ namespace lain::flow::example
 		{
 			// Reject rather than resize: a difference across differing extents would silently mean
 			// something the caller did not ask for.
-			log::warn("flow::example::ImageDifference: the inputs differ in size — no output");
-			evaluation.output(m_difference).clear();
+			evaluation.fail("the inputs differ in size");
 			return;
 		}
 

@@ -8,6 +8,7 @@
 #include "lain/flow/scheduler.h"
 
 #include <lain/flow/example/blurnode.h>
+#include <lain/flow/example/combinenode.h>
 #include <lain/flow/example/comparenode.h>
 #include <lain/flow/example/gradientnode.h>
 #include <lain/flow/example/imagedifferencenode.h>
@@ -279,7 +280,30 @@ TEST_CASE("ImageDifferenceNode measures how far two images are apart", "[flow]")
 		e.requestRecomputeAll();
 		SerialScheduler{}.evaluate(graph, e, diff);
 		CHECK(e.value(out).empty());
+		// And says why, where a host shows a failure (NodeEvaluation::fail).
+		REQUIRE(e.failure(diff) != nullptr);
+		CHECK(*e.failure(diff) == "the inputs differ in size");
 	}
+}
+
+TEST_CASE("CombineNode refuses a ragged collection and says why", "[flow]")
+{
+	// Averaging across differing extents would mean something nobody asked for, so it is refused —
+	// as a failure with its reason (NodeEvaluation::fail), not a log line a gui user never sees.
+	using namespace lain::flow;
+	std::vector<lain::image::Image> images;
+	images.emplace_back(8, 8, lain::image::PixelFormat::RGBA8);
+	images.emplace_back(4, 4, lain::image::PixelFormat::RGBA8);
+	Graph graph;
+	const NodeId list = graph.add(constantOf(std::move(images)));
+	const NodeId combine = graph.add<example::CombineNode>();
+	REQUIRE(graph.connect(list, 0, combine, 0) == Connection::Ok);
+
+	Evaluation e{graph};
+	SerialScheduler{}.run(graph, e);
+	CHECK(e.value(PortAddress{combine, graph.node(combine).output(0).id()}).empty());
+	REQUIRE(e.failure(combine) != nullptr);
+	CHECK(*e.failure(combine) == "the elements differ in size");
 }
 
 TEST_CASE("CompareNode turns a measurement into the bool a condition needs", "[flow]")

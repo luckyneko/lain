@@ -93,11 +93,29 @@ TEST_CASE("every example loads and runs as the catalog says", "[examples]")
 			for (const lain::flow::serialize::LoadIssue& issue : loaded.issues)
 				raised.push_back(issue.message);
 
-			if ((example.needsCamera && !haveCameraBackend()) || (example.needsVideo && !haveVideoReader()))
+			if (example.needsCamera && !haveCameraBackend())
 			{
-				// Without the backend the document still OPENS, whole: video and camera support are
-				// capabilities, not vocabulary (ADR-0016, amended; ADR-0019). Not run: its nodes would
-				// only report the backend that is missing.
+				// Without the backend the document still OPENS, whole: camera support is a capability,
+				// not vocabulary (ADR-0016, amended). And it RUNS, saying why it produced nothing where
+				// the gui shows a failure — not only in a log line, which is how a board render in a
+				// build with no renderer used to look like a node that simply did nothing.
+				INFO("raised:" << joined(raised));
+				CHECK(raised.empty());
+				lain::flow::Evaluation evaluation{loaded.graph};
+				lain::flow::SerialScheduler{}.run(loaded.graph, evaluation);
+				std::vector<std::string> failures;
+				for (const flowview::Issue& issue : flowview::collectFailures(evaluation, {}))
+					failures.push_back(issue.message);
+				INFO("failures:" << joined(failures));
+				bool named = false;
+				for (const std::string& message : failures)
+					named = named || message.find("this build has no board") != std::string::npos;
+				CHECK(named);
+			}
+			else if (example.needsVideo && !haveVideoReader())
+			{
+				// Without the backend the document still OPENS, whole: video support is a capability,
+				// not vocabulary (ADR-0019). Not run: its nodes would only report the missing backend.
 				INFO("raised:" << joined(raised));
 				CHECK(raised.empty());
 			}

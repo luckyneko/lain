@@ -1,6 +1,6 @@
 #include "lain/camera/board/rendering.h"
 
-#include <lain/log/log.h>
+#include <lain/string/format.h>
 
 #include <string>
 
@@ -17,20 +17,22 @@ namespace lain::camera::board
 		return !rendererRegistry().keys().empty();
 	}
 
-	std::optional<Rendering> render(const Pattern& pattern, const RenderRequest& request)
+	// A result holding only why there is no rendering.
+	static RenderResult refused(RenderProblem problem, std::string detail)
+	{
+		RenderResult result;
+		result.diagnostics.push_back(RenderDiagnostic{problem, std::move(detail)});
+		return result;
+	}
+
+	RenderResult render(const Pattern& pattern, const RenderRequest& request)
 	{
 		const std::vector<std::string> backends = rendererRegistry().keys();
 		if (backends.empty())
-		{
-			log::error("camera::board: cannot render a board: this build has no board renderer "
-					   "(configure with -DLAIN_CAMERA_OPENCV=ON)");
-			return std::nullopt;
-		}
+			return refused(RenderProblem::NoBackend,
+						   "this build has no board renderer (configure with -DLAIN_CAMERA_OPENCV=ON)");
 		if (request.pixelsPerSquare == 0)
-		{
-			log::error("camera::board: cannot render a board at 0 pixels per square");
-			return std::nullopt;
-		}
+			return refused(RenderProblem::NoPixels, "cannot render a board at 0 pixels per square");
 
 		image::Image raster = rendererRegistry().create(backends.front())->raster(pattern, request);
 
@@ -43,9 +45,9 @@ namespace lain::camera::board
 		if (!raster.valid() || raster.pixelFormat() != image::PixelFormat::Gray8 || raster.width() != width ||
 			raster.height() != height)
 		{
-			log::error("camera::board: the {} renderer did not produce a {}x{} 8-bit grey board", backends.front(), width,
-					   height);
-			return std::nullopt;
+			return refused(RenderProblem::BackendMisbehaved,
+						   string::format("the {} renderer did not produce a {}x{} 8-bit grey board", backends.front(),
+										  width, height));
 		}
 
 		Rendering rendering;
@@ -54,6 +56,9 @@ namespace lain::camera::board
 								"\nrender marginPixels " + std::to_string(request.marginPixels) + "\n";
 		rendering.pattern = pattern.fingerprint();
 		rendering.request = request;
-		return rendering;
+
+		RenderResult result;
+		result.rendering = std::move(rendering);
+		return result;
 	}
 } // namespace lain::camera::board

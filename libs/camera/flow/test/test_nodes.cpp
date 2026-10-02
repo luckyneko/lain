@@ -191,6 +191,36 @@ TEST_CASE("parameters that are not a board suppress everything downstream", "[ca
 	INFO("bad parameter: " << name);
 	CHECK(evaluation.value(output(graph, spec)).empty());
 	CHECK(evaluation.value(output(graph, render, 0)).empty());
+	// And the specification says why, where a gui shows a failure; the render was only suppressed.
+	const std::string* failure = evaluation.failure(spec);
+	REQUIRE(failure != nullptr);
+	CHECK(failure->rfind("not a board ", 0) == 0);
+	CHECK(evaluation.failure(render) == nullptr);
+}
+
+TEST_CASE("renderBoard fails with render's reason when it cannot draw", "[camera][flow]")
+{
+	reset();
+	flow::Graph graph;
+	const flow::NodeId spec = graph.add<camera::BoardSpecificationNode>();
+	const flow::NodeId render = graph.add<camera::RenderBoardNode>();
+	REQUIRE(graph.connect(output(graph, spec), flow::PortAddress{render, graph.node(render).input(0).id()}) ==
+			flow::Connection::Ok);
+	setParam(graph, render, "pixelsPerSquare", 0);
+
+	flow::Evaluation evaluation{graph};
+	flow::SerialScheduler{}.run(graph, evaluation);
+	CHECK(evaluation.value(output(graph, render, 0)).empty());
+	CHECK(evaluation.value(output(graph, render, 1)).empty());
+	const std::string* failure = evaluation.failure(render);
+	REQUIRE(failure != nullptr);
+	CHECK(*failure == "cannot render a board at 0 pixels per square");
+
+	// Fixed by an edit: the next compute draws, and the failure is gone.
+	setParam(graph, render, "pixelsPerSquare", 40);
+	flow::SerialScheduler{}.run(graph, evaluation);
+	CHECK(evaluation.failure(render) == nullptr);
+	CHECK(evaluation.value(output(graph, render, 0)).holds<image::Image>());
 }
 
 TEST_CASE("renderBoard draws the specification's pattern", "[camera][flow]")

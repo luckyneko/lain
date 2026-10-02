@@ -20,8 +20,9 @@ namespace lain::flow::example
 	//
 	// Images of differing size or pixel format are REJECTED rather than resized or converted, as
 	// CombineNode rejects a ragged collection: reconciling them would make the number mean something
-	// the caller did not ask for. A refusal produces no value, so ADR-0007 suppresses downstream —
-	// and inside a loop that is an iteration that FAILED, which is exactly right.
+	// the caller did not ask for. A refusal FAILS the node with the reason (NodeEvaluation::fail): no
+	// value, so ADR-0007 suppresses downstream — and inside a loop that is an iteration that FAILED,
+	// which is exactly right — and the reason where a host shows a failure.
 	class ImageDifferenceNode : public Node
 	{
 	public:

@@ -27,7 +27,6 @@ target_link_libraries(camera
 	PUBLIC lain::core  # Length, Sha256 and Factory are in board values and backend registries
 	PUBLIC lain::media # an observation names its frame (media::FrameRef); image::Image comes with it
 	PRIVATE lain::task	 # detection and resampling run on the process pool
-	PRIVATE lain::log	 # a render that cannot happen says why
 	PRIVATE lain::string # the values' toString(), which is what a host shows for one
 	PRIVATE lain::meta	 # enum names in that text
 	PRIVATE lain::warnings

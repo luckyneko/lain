@@ -99,6 +99,10 @@ namespace flowview
 			const Node& node = graph.node(id);
 			// A truncated id keeps the dump scannable; the full uuid is in the document.
 			out << '[' << id.shortString() << "] " << node.name() << '\n';
+			// Why its last compute failed, where the gui shows it in Issues: the one place a headless
+			// run says why a node produced nothing (a board render with no renderer, say).
+			if (const std::string* failure = evaluation.failure(id))
+				out << "  failed: " << *failure << '\n';
 			for (std::size_t i = 0; i < node.inputCount(); ++i)
 				dumpPort(out, "  in  ", evaluation, id, node.input(i));
 			for (std::size_t i = 0; i < node.outputCount(); ++i)

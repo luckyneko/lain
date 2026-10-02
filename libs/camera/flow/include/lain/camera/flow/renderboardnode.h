@@ -14,8 +14,9 @@ namespace lain::camera
 	// `description` that proves which pattern it is (board::render). The print's physical size is the
 	// printer's; the instance's measured square length is not used here.
 	//
-	// A render that cannot happen (the backend refused, or 0 pixels per square) clears both outputs;
-	// render() logs why.
+	// A render that cannot happen (no renderer in this build, 0 pixels per square, a backend that
+	// misbehaved) FAILS the node with render()'s reason (NodeEvaluation::fail): both outputs empty,
+	// and the reason where a host shows a failure.
 	class RenderBoardNode : public flow::Node
 	{
 	public:

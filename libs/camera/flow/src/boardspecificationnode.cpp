@@ -1,8 +1,7 @@
 #include "lain/camera/flow/boardspecificationnode.h"
 
 #include "decimal.h"
-
-#include <lain/log/log.h>
+#include "reason.h"
 
 #include <algorithm>
 #include <cmath>
@@ -48,9 +47,7 @@ namespace lain::camera
 		const board::PatternResult pattern = board::Pattern::create(parameters);
 		if (!pattern.pattern)
 		{
-			for (const board::PatternDiagnostic& problem : pattern.diagnostics)
-				log::warn("camera: not a board pattern: {}", problem.detail);
-			evaluation.output(m_board).clear();
+			evaluation.fail("not a board pattern: " + detail::reason(pattern.diagnostics));
 			return;
 		}
 
@@ -65,9 +62,7 @@ namespace lain::camera
 		const board::SpecificationResult specification = board::Specification::create(*pattern.pattern, instance);
 		if (!specification.specification)
 		{
-			for (const board::SpecificationDiagnostic& problem : specification.diagnostics)
-				log::warn("camera: not a board specification: {}", problem.detail);
-			evaluation.output(m_board).clear();
+			evaluation.fail("not a board specification: " + detail::reason(specification.diagnostics));
 			return;
 		}
 		evaluation.output(m_board).set(*specification.specification);

@@ -83,7 +83,8 @@ namespace lain::flow
 		// A step has FINISHED, leaving the node at (path, node) as `record` — a copy of its values and
 		// bookkeeping, taken by the thread that ran the step, before anything downstream reads it.
 		// Called:
-		//   * after a node compute that got through, computed or suppressed;
+		//   * after a node compute that got through, computed or suppressed — or failed without
+		//     throwing (NodeEvaluation::fail), when the record carries the failure;
 		//   * after one that THREW — the record carries the failure — before the exception leaves;
 		//   * after every CROSSING (a group's entry and exit, a map's gather, a loop's fold), for the
 		//     node that owns it, with no started() before it;
@@ -110,16 +111,18 @@ namespace lain::flow
 		// run (ADR-0014, ADR-0021). Crossings are not counted: the count is of the nodes a user sees.
 		std::size_t planned() const noexcept { return m_planned.load(std::memory_order_relaxed); }
 
-		// Node computes that got through — computed, or suppressed (ADR-0007). A compute skipped by a
-		// cancel, one that gave up, or one that threw is not counted, so finished() never exceeds
-		// planned().
+		// Node computes that got through — computed, suppressed (ADR-0007), or failed without throwing
+		// (NodeEvaluation::fail). A compute skipped by a cancel, one that gave up, or one that threw is
+		// not counted, so finished() never exceeds planned().
 		std::size_t finished() const noexcept { return m_finished.load(std::memory_order_relaxed); }
 
 		// Node computes that THREW. Each one is also recorded against its node in the evaluation
 		// (Evaluation::failure), so this is how a host tells a throw some node owned — shown where
 		// that node is — from one no node did, which it can only report for the run as a whole. More
 		// than one is possible: a serial walk stops at the first, but under the pool independent
-		// branches keep running and the first exception is the one that leaves run().
+		// branches keep running and the first exception is the one that leaves run(). A node that
+		// FAILED without throwing (NodeEvaluation::fail) is recorded the same way but not counted here:
+		// the run did not end on it, so there is no exception for it to be told apart from.
 		std::size_t failed() const noexcept { return m_failed.load(std::memory_order_relaxed); }
 
 		// Be told what the run does as it goes (RunObserver). Not owned: it must outlive the run. Set it

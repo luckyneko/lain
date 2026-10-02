@@ -4,6 +4,7 @@
 // milestones telling every Blur, Gate, Select and Loop that a defaulted input it seeds ITSELF was a
 // missing connection.
 
+#include "dump.h"
 #include "validation.h"
 
 #include <lain/flow/boundary.h>
@@ -21,6 +22,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -161,6 +163,20 @@ namespace flowview::test::validation
 		void compute(NodeEvaluation&) const override { throw std::runtime_error("boom"); }
 	};
 
+	// Fails WITHOUT throwing (NodeEvaluation::fail): what a node with no backend does.
+	struct Refuse : Node
+	{
+		PortId in, out;
+		Refuse()
+			: Node("Refuse")
+		{
+			in = addInput<int>("x");
+			out = addOutput<int>("y");
+		}
+		std::unique_ptr<Node> clone() const override { return std::make_unique<Refuse>(*this); }
+		void compute(NodeEvaluation& evaluation) const override { evaluation.fail("this build has no renderer"); }
+	};
+
 	struct MakeInts : Node
 	{
 		PortId out;
@@ -214,6 +230,32 @@ TEST_CASE("a node that threw is an Error row that locates it", "[validation][fai
 
 	// Nothing published, nothing to say.
 	REQUIRE(collectFailures(PublishedEvaluation{}.evaluation(), EvalPath{}).empty());
+}
+
+TEST_CASE("a node that failed without throwing is an Error row with its reason", "[validation][failure]")
+{
+	// The run carries on, so this is the path a host takes for a run that COMPLETED: the reason
+	// reaches Issues through the published copy, the only place a gui user would see it — and the
+	// headless dump, the cli's equivalent.
+	Graph document;
+	const NodeId source = document.add<IntSource>();
+	const NodeId refuse = document.add<Refuse>();
+	REQUIRE(document.connect(source, 0, refuse, 0) == Connection::Ok);
+	Evaluation working{document};
+	auto clone = std::make_shared<const Graph>(document.clone());
+	SerialScheduler{}.run(*clone, working);
+	const PublishedEvaluation published{clone, working};
+
+	const std::vector<Issue> rows = collectFailures(published.evaluation(), EvalPath{});
+	REQUIRE(rows.size() == 1);
+	REQUIRE(rows[0].severity == Issue::Severity::Error);
+	REQUIRE(rows[0].node == refuse);
+	REQUIRE(rows[0].message.find("failed: this build has no renderer") != std::string::npos);
+
+	std::ostringstream dump;
+	flowview::dumpGraph(dump, *clone, working);
+	CHECK(dump.str().find("[" + refuse.shortString() + "] Refuse\n  failed: this build has no renderer\n") !=
+		  std::string::npos);
 }
 
 TEST_CASE("a failure inside a group leads into it, and locates it once there", "[validation][failure][group]")

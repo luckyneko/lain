@@ -20,7 +20,8 @@ namespace lain::flow::example
 	//
 	// Images of differing size or format are REJECTED rather than resized or converted: silently
 	// reconciling them would make the average mean something the caller did not ask for, and the
-	// image library's own rule is to reject rather than degrade (ADR-0003).
+	// image library's own rule is to reject rather than degrade (ADR-0003). A rejection FAILS the node
+	// with the reason (NodeEvaluation::fail), so it shows where a host shows a failure.
 	class CombineNode : public Node
 	{
 	public:

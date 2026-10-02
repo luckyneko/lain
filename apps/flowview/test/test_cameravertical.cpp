@@ -155,7 +155,7 @@ namespace
 			*camera::board::Specification::create(*camera::board::Pattern::create(parameters).pattern, instance)
 				 .specification;
 		const std::optional<camera::board::Rendering> rendering =
-			camera::board::render(spec.pattern(), camera::board::RenderRequest{60, 20});
+			camera::board::render(spec.pattern(), camera::board::RenderRequest{60, 20}).rendering;
 		REQUIRE(rendering.has_value());
 
 		const fs::path folder = dir / "footage";

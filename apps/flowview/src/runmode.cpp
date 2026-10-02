@@ -5,6 +5,7 @@
 #include "framepattern.h"
 #include "graphio.h"
 #include "scene.h"
+#include "validation.h" // collectFailures — the Issues pane's failure rows, reused for stderr
 
 #include <lain/camera/serialize/cameramodel.h> // cameraModelToValue — a model output's document
 #include <lain/flow/boundary.h>
@@ -173,6 +174,16 @@ namespace flowview
 		if (delivered.holds<image::Image>())
 			return !delivered.get<image::Image>().valid();
 		return false;
+	}
+
+	// Every node whose last compute failed, on stderr in the Issues pane's own words. The dump on stdout
+	// says so too; this is the channel that survives the caller redirecting stdout. Only a node that
+	// failed WITHOUT throwing reaches here (a board render in a build with no renderer) — a throw
+	// leaves run() — and it is otherwise logged nowhere, since it is the node that knows why.
+	static void logFailures(const flow::Evaluation& evaluation)
+	{
+		for (const Issue& row : collectFailures(evaluation, flow::EvalPath{}))
+			log::error("flowview: {}", row.message);
 	}
 
 	// Write one delivered boundary value to `path`. Returns false when it could not be written;
@@ -519,7 +530,10 @@ namespace flowview
 			// Only the first frame is dumped. The dump is the "it actually ran" evidence, and it is
 			// the whole graph per frame — useful once, unreadable 500 times.
 			if (frame == range.first())
+			{
 				dumpGraph(std::cout, graph, evaluation);
+				logFailures(evaluation);
+			}
 
 			for (Write& write : writes)
 			{
@@ -675,6 +689,7 @@ namespace flowview
 			// A single run: unchanged behaviour, and still the common case.
 			scheduler.run(graph, evaluation);
 			dumpGraph(std::cout, graph, evaluation);
+			logFailures(evaluation);
 
 			for (const auto& [out, path] : writes)
 			{

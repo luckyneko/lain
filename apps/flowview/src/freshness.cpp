@@ -199,7 +199,7 @@ namespace flowview
 				gui::SetTooltip("Computing: the run in flight is recomputing this value now");
 				return;
 			case Freshness::Failed:
-				gui::SetTooltip("Failed: this node's last compute threw (see Issues)");
+				gui::SetTooltip("Failed: this node's last compute failed (see Issues for why)");
 				return;
 		}
 	}

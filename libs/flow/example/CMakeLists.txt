@@ -23,8 +23,7 @@ target_compile_features(flow-example PUBLIC cxx_std_17)
 target_include_directories(flow-example PUBLIC include)
 target_link_libraries(flow-example
 	PUBLIC lain::flow lain::image lain::media
-	# LoadImageNode uses io::image::load (impl only); CombineNode says WHY it refused a ragged
-	# collection — flow CORE stays log-free, but an example node is app-adjacent and a silent
-	# refusal reads as a bug.
-	PRIVATE lain::io::image lain::io::sequence lain::log lain::warnings
+	# LoadImageNode uses io::image::load (impl only). A node that refuses says why through
+	# NodeEvaluation::fail rather than a log, so a gui shows it: a silent refusal reads as a bug.
+	PRIVATE lain::io::image lain::io::sequence lain::warnings
 )

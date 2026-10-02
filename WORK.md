@@ -8210,6 +8210,10 @@ M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that i
   *(M4, deferred as planned.)*
 - **Port reorder.** Ids ride along, so edges are untouched by a permutation — but nothing performs
   one. *(M4, deferred as planned; see also the storage note in M4's mutation design.)*
+- **`LoadImage` and `OpenSequence` failing with a reason** (`NodeEvaluation::fail`) instead of
+  suppressing while the io layer logs why. A missing or undecodable file is plainly a failure; an
+  EMPTY path on a fresh palette node is the judgement to make first, or every new LoadImage lands
+  marked Failed. *(§A node could only report a failure by throwing.)*
 
 ### Deferred — payload types
 
@@ -8371,7 +8375,62 @@ produced nothing*. It matters because a `LoadImage` added from the palette defau
 empty one — so it loads nothing, suppresses everything downstream, and (correctly, now) reports no
 missing connection. The old row said the wrong thing about it; saying nothing is better, and saying
 the right thing is a check the panel does not have. It wants care: a suppressed node is ORDINARY
-under ADR-0007, so the rule cannot simply be "empty output is a problem".
+under ADR-0007, so the rule cannot simply be "empty output is a problem". *(**The mechanism exists as
+of 2026-10-02** — `NodeEvaluation::fail`, below: the NODE decides when its emptiness is a failure,
+which is exactly the care this asks for, since the panel cannot tell. `LoadImage` has not adopted it,
+because whether an EMPTY path is a failure or just a node nobody has configured yet is a judgement of
+its own: a fresh palette node would otherwise land already marked Failed. A missing or undecodable
+file is plainly one. Listed under Deferred — engine.)*
+
+### A node could only report a failure by throwing — FIXED 2026-10-02
+
+Found from a user report: in the gui, `render-board.json`'s RenderBoard "does not output anything /
+update". Two causes, one environmental and one a real gap.
+
+- **The build had no renderer.** The report's `build/` held `LAIN_CAMERA_OPENCV=OFF` in its CMake
+  cache from before the default became ON (the 2026-10-02 plugins commit): `option()` never overrides a
+  cached value, so an existing build directory keeps OFF, as it keeps FFmpeg OFF. The fix there is
+  `cmake -B build -DLAIN_CAMERA_OPENCV=ON` — the same trap CLAUDE.md records for `IMGUI_REF`. Verified
+  both ways through the real binary: the existing build logged *"this build has no board renderer"*,
+  a scratch build with the plugin rendered the 3304x2242 board.
+- **The gui hid the reason.** ADR-0016's amendment said a camera node with no backend "says so when
+  it runs". `detectBoard` and `calibrateCamera` did, in a report on an output; `renderBoard` said so
+  only in a LOG line, which gui-mode sends to stderr. So the node sat empty on the canvas, nothing in
+  Issues, nothing marked Failed — the shape the flow-example CMake comment already named: *"a silent
+  refusal reads as a bug"*.
+
+**Fix, decided with the repo owner** over a throwing node (a throw ends a serial walk, and nothing in
+headless `run` catches one) and a flowview-only Issues row from the camera kinds' capability table
+(covers only a missing backend): **`NodeEvaluation::fail(reason)`**, a second door into the failure
+record M14 slice 6a built. The scheduler clears every output the body wrote, records the reason, and
+the run carries on (ADR-0025, amended).
+
+- **A node that fails this way is COMPUTED, not owed.** Measured before deciding: each stage of a run
+  plans from the whole stale closure, so a failure left stale like a throw's is computed again in every
+  stage of one run. It is the node's answer to these inputs and is kept until an edit. Sabotage —
+  leave it stale — fails *"computed once per run, not once per stage"*, *"kept until the node's inputs
+  change"* and *"computed, not owed"*. Sabotage — keep the body's outputs — fails the case that checks
+  downstream is suppressed.
+- **`RunControl::failed()` still counts throws only**, because the runner reads it to tell a throw some
+  node owned from one none did; `finished()` counts the node.
+- **`board::render` returns its reason** (`RenderResult {rendering, diagnostics}`, with a
+  `RenderProblem` enum, as `Pattern::create` returns `PatternResult`) instead of logging it, so its
+  caller decides where a refusal goes. `lain::camera` and `lain::camera::flow` no longer link
+  `lain::log`.
+- **Adopted by every node that refused with a log line:** `renderBoard`, `boardSpecification` (all its
+  diagnostics, joined), and the example `combine` and `imageDifference` — the last two lost their only
+  `lain::log` use, so `flow-example` no longer links it. `combine`'s refusal had no test before.
+- **flowview:** the Failed tooltip says "failed" rather than "threw"; the headless dump prints
+  `failed: <reason>` under the node; and `run` logs each failure to stderr in the Issues pane's own
+  words (`collectFailures`), since `render()` no longer logs and a redirected stdout would otherwise
+  take the reason with it.
+- **The example test now RUNS `render-board.json` in a build with no camera backend**, and requires a
+  failure row naming the missing renderer, where it used to skip the run. Sabotage — `renderBoard`
+  clearing silently again — fails it and the node test.
+- `ctest -j8` **995/995** Release with video and camera off (+9); **1019/1019** Release with camera on,
+  video off (a scratch build); warning-clean, format-check clean. The `--frames` smoke opens and exits
+  cleanly on the document in both builds. **gui-mode NOT eyeballed** — the canvas mark and the Issues
+  row are covered by tests over the code the panes call, not seen.
 
 ### Refused, not deferred — do not re-raise
 
