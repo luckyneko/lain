@@ -16,6 +16,7 @@
 #include <lain/math/types.h> // Vec2f — canvas positions, for the layout migration below
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -96,6 +97,22 @@ namespace flowview
 
 	// The breadcrumb for `path`: "root" plus each descended group's display name.
 	std::vector<Crumb> breadcrumb(const lain::flow::Graph& root, const lain::flow::EvalPath& path);
+
+	// The four kinds of node you can descend into, as CONTEXT.md names them. The canvas marks each
+	// with its own glyph, because a group that looked like any other node left "double-click to open"
+	// as something you had to already know.
+	enum class GroupKind
+	{
+		Inline, // owns its interior, stored in this document
+		Linked, // its interior is a template's, read-only here
+		Map,	// runs its interior once per element
+		Loop,	// runs its interior again and again, each pass feeding the next
+	};
+
+	// Which kind `node` is, or nullopt for a node with no interior. Asked of the structural seams
+	// (innerGraph, interiorEvaluation) first, as the scheduler asks them; only inline-vs-linked needs
+	// the class, since both run their interior once.
+	std::optional<GroupKind> groupKind(const lain::flow::Node& node);
 
 	// How many child evaluations each step of `path` currently has — 1 for a group, N for a map, and
 	// 0 for a step whose children do not exist yet (nothing has run). Same length as `path`.

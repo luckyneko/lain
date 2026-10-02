@@ -42,7 +42,8 @@ namespace flowview
 		// The outline a node wears for a moment after its value LANDS (Stale or Failed -> Current), fading
 		// out — ADR-0025's "just updated". On the outline because it is the one channel no other node
 		// state uses: title colour is category, a muted title is not-ready, the accent title is
-		// selection, pin colour is type.
+		// selection, pin colour is type, the glyph after a title is freshness, and the glyph BEFORE a
+		// title is a group's kind (and the button that opens it).
 		lain::image::ColorRGBA8 landedOutline() const { return m_landedOutline; }
 
 		// The outline a node wears, PULSING, while its compute runs (ADR-0025's Computing) — the same

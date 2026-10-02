@@ -26,6 +26,8 @@ using flowview::descendLayout;
 using flowview::editableLoopAt;
 using flowview::enclosingLinkedGroup;
 using flowview::findLayoutAt;
+using flowview::GroupKind;
+using flowview::groupKind;
 using flowview::hasLinkedGroups;
 using flowview::layoutAt;
 using flowview::liftedPositions;
@@ -498,6 +500,26 @@ TEST_CASE("a map's interior is editable, a linked group's is not", "[groupnav]")
 	inner.boundaryInputNode().addBoundary<int>("item");
 	REQUIRE(syncPathGroups(root, EvalPath{{map}}).changed);
 	REQUIRE(root.node(map).inputCount() == 1);
+}
+
+TEST_CASE("each group kind is told apart, and a plain node is none", "[groupnav]")
+{
+	// What the canvas draws a group's glyph from. Inline and linked both run once, so they are the
+	// pair a structural answer alone cannot separate — and a linked group drawn as inline would hide
+	// that it is read-only here. Default-constructed, the link is unresolved: still Linked.
+	Graph root;
+	const NodeId group = root.add<InlineGroupNode>();
+	const NodeId linked = root.add<LinkedGroupNode>();
+	const NodeId map = root.add<MapNode>();
+	const NodeId loop = root.add<LoopNode>();
+
+	REQUIRE(groupKind(root.node(group)) == GroupKind::Inline);
+	REQUIRE(groupKind(root.node(linked)) == GroupKind::Linked);
+	REQUIRE(groupKind(root.node(map)) == GroupKind::Map);
+	REQUIRE(groupKind(root.node(loop)) == GroupKind::Loop);
+
+	REQUIRE_FALSE(groupKind(root.boundaryInputNode()).has_value());
+	REQUIRE_FALSE(groupKind(root.boundaryOutputNode()).has_value());
 }
 
 TEST_CASE("every crumb's depth indexes the path it was built from", "[groupnav]")

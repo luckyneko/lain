@@ -12,6 +12,7 @@
 #include <lain/flow/edit.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
+#include <lain/flow/group.h> // LinkedGroupNode — a linked glyph's tooltip names its template
 #include <lain/flow/node.h>
 #include <lain/flow/port.h>
 #include <lain/flow/porttyperegistry.h>
@@ -27,6 +28,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <typeindex>
@@ -131,6 +133,69 @@ namespace flowview
 		return true;
 	}
 
+	// A group's kind, drawn in the `size`-square box at `at` — before the title, where it doubles as
+	// the button that opens the group. Drawn rather than typed because the default font stops at
+	// U+00FF. In the title's own text colour, so it reads wherever the name does: on a dimmed node,
+	// which loses its kind colour, and on a selected one.
+	static void drawGroupMark(math::Vec2f at, float size, GroupKind kind, bool hovered)
+	{
+		ImDrawList* draw = gui::GetWindowDrawList();
+		if (hovered) // a backing while hovered, so the glyph reads as something to click
+			draw->AddRectFilled(at, at + math::Vec2f{size, size}, gui::GetColorU32(ImGuiCol_ButtonHovered), 3.0f);
+
+		const ImU32 colour = gui::GetColorU32(ImGuiCol_Text);
+		const math::Vec2f c = at + math::Vec2f{size * 0.5f, size * 0.5f};
+		const float r = size * 0.36f;
+		const float thick = std::max(1.0f, size * 0.09f);
+		switch (kind)
+		{
+			case GroupKind::Inline:
+			{
+				// Two overlapping squares: a graph inside this node.
+				const float o = r * 0.6f;
+				draw->AddRect(c + math::Vec2f{-r + o, -r}, c + math::Vec2f{r, r - o}, colour, 1.5f, 0, thick);
+				draw->AddRect(c + math::Vec2f{-r, -r + o}, c + math::Vec2f{r - o, r}, colour, 1.5f, 0, thick);
+				return;
+			}
+			case GroupKind::Linked:
+			{
+				// A chain link: two capsules through each other, for an interior that lives elsewhere.
+				const float h = r * 0.5f;
+				draw->AddRect(c + math::Vec2f{-r, -h}, c + math::Vec2f{r * 0.25f, h}, colour, h, 0, thick);
+				draw->AddRect(c + math::Vec2f{-r * 0.25f, -h}, c + math::Vec2f{r, h}, colour, h, 0, thick);
+				return;
+			}
+			case GroupKind::Map:
+			{
+				// A list — a dot and a bar per row — for an interior run once per element.
+				for (const float dy : {-r * 0.7f, 0.0f, r * 0.7f})
+				{
+					draw->AddCircleFilled(c + math::Vec2f{-r * 0.75f, dy}, thick * 0.9f, colour);
+					draw->AddLine(c + math::Vec2f{-r * 0.3f, dy}, c + math::Vec2f{r, dy}, colour, thick);
+				}
+				return;
+			}
+			case GroupKind::Loop:
+			{
+				// A circular arrow, for an interior run again and again. Screen y points down, so a
+				// growing angle turns clockwise and the head points along (-sin, cos).
+				constexpr float kTwoPi = 6.2831853f;
+				const float radius = r * 0.85f;
+				const float start = -kTwoPi * 0.25f + 0.5f;
+				const float end = start + kTwoPi * 0.75f;
+				draw->PathArcTo(c, radius, start, end, 20);
+				draw->PathStroke(colour, 0, thick);
+				const math::Vec2f tip = c + math::Vec2f{std::cos(end), std::sin(end)} * radius;
+				const math::Vec2f along{-std::sin(end), std::cos(end)};
+				const math::Vec2f across{std::cos(end), std::sin(end)};
+				const float head = r * 0.55f;
+				draw->AddTriangleFilled(tip + along * (head * 0.6f), tip - along * (head * 0.4f) + across * (head * 0.5f),
+										tip - along * (head * 0.4f) - across * (head * 0.5f), colour);
+				return;
+			}
+		}
+	}
+
 	void GraphPane::init()
 	{
 		registerBuiltinCanvasStyle(m_style);
@@ -155,6 +220,7 @@ namespace flowview
 		gui::nodes::ClearLinkSelection();
 		m_lastFreshness.clear(); // a level arrived at has not "just updated", whatever it shows
 		m_landedAt.clear();
+		m_navigatedAt = gui::GetTime();
 	}
 
 	void GraphPane::onGraphReplaced()
@@ -164,6 +230,7 @@ namespace flowview
 		gui::nodes::ClearLinkSelection();
 		m_lastFreshness.clear();
 		m_landedAt.clear();
+		m_navigatedAt = gui::GetTime();
 	}
 
 	void GraphPane::draw(AppContext& ctx, const flow::Graph& graph, flow::Graph* editableGraph,
@@ -349,7 +416,9 @@ namespace flowview
 		// as runs come and go — the same reason the label column below is measured from text.
 		const double now = gui::GetTime();
 		const float markSize = gui::GetTextLineHeight();
-		std::optional<flow::NodeId> hoveredMark; // its tooltip is drawn after the editor, with the pin tooltip
+		std::optional<flow::NodeId> hoveredMark;  // its tooltip is drawn after the editor, with the pin tooltip
+		std::optional<flow::NodeId> hoveredGroup; // a group glyph under the cursor: tooltip after the editor too
+		std::optional<flow::NodeId> openRequest;  // a group glyph clicked: descended into after the editor
 
 		for (const flow::NodeId id : graph.topoOrder())
 		{
@@ -447,7 +516,10 @@ namespace flowview
 			// palette gives each added node a unique one, so the old "[id]" disambiguator is noise here.
 			// The id still shows in the Inspector header (and the cli dump) when you need it.
 			const char* titleText = node.name().c_str();
+			const std::optional<GroupKind> kind = groupKind(node);
 			float labelColumn = gui::CalcTextSize(titleText).x + gui::GetStyle().ItemSpacing.x + markSize;
+			if (kind)
+				labelColumn += markSize + gui::GetStyle().ItemSpacing.x; // the group glyph before the title
 			for (std::size_t i = 0; i < node.inputCount(); ++i)
 				labelColumn = std::max(labelColumn, gui::CalcTextSize(node.input(i).name().c_str()).x);
 			for (std::size_t o = 0; o < node.outputCount(); ++o)
@@ -467,6 +539,22 @@ namespace flowview
 
 			gui::nodes::BeginNode(canvasId);
 			gui::nodes::BeginNodeTitleBar();
+			// A group says so before its name, and its glyph is the way in: a click opens it, the same
+			// as double-clicking the node. An active ImGui item takes the click from imnodes, so it
+			// neither selects nor drags the node. Acted on after the editor, like every other request.
+			if (kind)
+			{
+				gui::PushID(canvasId);
+				const math::Vec2f glyphAt = gui::GetCursorScreenPos();
+				if (gui::InvisibleButton("##open", math::Vec2f{markSize, markSize}))
+					openRequest = id;
+				const bool glyphHovered = gui::IsItemHovered();
+				if (glyphHovered)
+					hoveredGroup = id;
+				drawGroupMark(glyphAt, markSize, *kind, glyphHovered);
+				gui::PopID();
+				gui::SameLine();
+			}
 			gui::TextUnformatted(titleText);
 			gui::SameLine();
 			const math::Vec2f markAt = gui::GetCursorScreenPos();
@@ -593,9 +681,18 @@ namespace flowview
 		// navigable and inspectable, it just can't be edited in place — so there is one way in, not
 		// two. Its live intermediates are already computed (the run's plan covers every level), so
 		// looking inside costs nothing.
+		//
+		// A click on a group's glyph is the other way in. A double-click is only one on THIS level when
+		// both of its clicks were: open a group by its glyph and a habitual second click lands inside,
+		// where it would otherwise open whatever group sits under the cursor there too.
 		int hoveredNode = 0;
 		const bool overNode = canvasActive && gui::nodes::IsNodeHovered(&hoveredNode);
-		if (overNode && gui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+		const bool doubleClickHere = now - m_navigatedAt >= gui::GetIO().MouseDoubleClickTime;
+		if (openRequest && graph.contains(*openRequest))
+		{
+			ctx.descendInto(*openRequest);
+		}
+		else if (overNode && doubleClickHere && gui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
 		{
 			const auto target = ctx.canvas.toNode(hoveredNode);
 			if (target && graph.contains(*target) && graph.node(*target).innerGraph() != nullptr)
@@ -721,6 +818,38 @@ namespace flowview
 					break;
 			}
 			gui::EndTooltip();
+		}
+		// A group glyph's tooltip: which kind of group this is, and how to open it — the second line is
+		// the part nobody could find out by looking.
+		if (hoveredGroup && graph.contains(*hoveredGroup))
+		{
+			const flow::Node& node = graph.node(*hoveredGroup);
+			if (const std::optional<GroupKind> kind = groupKind(node))
+			{
+				gui::BeginTooltip();
+				switch (*kind)
+				{
+					case GroupKind::Inline:
+						gui::TextUnformatted("Inline group: a graph inside this node");
+						break;
+					case GroupKind::Linked:
+					{
+						// groupKind answers Linked exactly when the node is a LinkedGroupNode.
+						const auto& linked = static_cast<const flow::LinkedGroupNode&>(node);
+						const std::string file = std::filesystem::path(linked.source()).filename().string();
+						gui::Text("Linked group: %s, read-only here%s", file.c_str(), linked.resolved() ? "" : " (not found)");
+						break;
+					}
+					case GroupKind::Map:
+						gui::TextUnformatted("Map: runs its graph once per element");
+						break;
+					case GroupKind::Loop:
+						gui::TextUnformatted("Loop: runs its graph repeatedly, each pass feeding the next");
+						break;
+				}
+				gui::TextDisabled("Click to open, or double-click the node");
+				gui::EndTooltip();
+			}
 		}
 
 		if (!editable && canvasActive && gui::IsKeyPressed(ImGuiKey_Delete) && !selectedNodes(ctx.canvas).empty())

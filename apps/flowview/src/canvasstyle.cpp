@@ -88,7 +88,7 @@ namespace flowview
 		const image::ColorRGBA8 filter(38, 104, 104, 255);	  // filters: transform a value
 		const image::ColorRGBA8 control(86, 58, 124, 255);	  // control flow: gate / merge / select
 		const image::ColorRGBA8 boundary(74, 74, 86, 255);	  // the graph's I/O
-		const image::ColorRGBA8 container(62, 68, 112, 255);  // groups: they CONTAIN a graph
+		const image::ColorRGBA8 container(74, 104, 52, 255);  // groups: they CONTAIN a graph
 		const image::ColorRGBA8 cameraWork(112, 92, 44, 255); // camera work: boards and calibration
 		style.addNodeColor("gradient", source);
 		style.addNodeColor("loadimage", source);
@@ -112,6 +112,11 @@ namespace flowview
 		// arrived none of them had one at all, so a group, a map and a linked group were each the
 		// default title grey — indistinguishable from an ordinary node on a canvas where the one
 		// thing you most need to see is which nodes you can descend into.
+		//
+		// Olive, a hue no other category is near. It was an indigo, between the source blue and the
+		// control purple, and in bagel.json a group sitting beside a Gradient and a Select read as one
+		// more of them. The colour is only half the cue, since a dimmed node loses it: the glyph the
+		// canvas draws before a group's title (graphpane.cpp) is the half that stays.
 		style.addNodeColor("group", container);
 		style.addNodeColor("map", container);
 		style.addNodeColor("loop", container);

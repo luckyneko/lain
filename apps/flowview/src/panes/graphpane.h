@@ -63,5 +63,10 @@ namespace flowview
 		// mistaken for everything on it landing at once.
 		std::map<lain::flow::NodeId, Freshness> m_lastFreshness;
 		std::map<lain::flow::NodeId, double> m_landedAt; // gui::GetTime() of the landing
+
+		// gui::GetTime() of the last navigation or document swap. A double-click whose first click
+		// could predate it straddled the move — say a group opened by its glyph, then a habitual second
+		// click inside — so it is not a double-click on this level and opens nothing.
+		double m_navigatedAt = -1.0e9;
 	};
 } // namespace flowview

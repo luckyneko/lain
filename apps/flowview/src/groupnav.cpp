@@ -118,6 +118,22 @@ namespace flowview
 		return crumbs;
 	}
 
+	std::optional<GroupKind> groupKind(const flow::Node& node)
+	{
+		if (node.innerGraph() == nullptr)
+			return std::nullopt;
+		switch (node.interiorEvaluation())
+		{
+			case flow::InteriorEvaluation::PerElement:
+				return GroupKind::Map;
+			case flow::InteriorEvaluation::PerIteration:
+				return GroupKind::Loop;
+			case flow::InteriorEvaluation::Once:
+				break;
+		}
+		return dynamic_cast<const flow::LinkedGroupNode*>(&node) != nullptr ? GroupKind::Linked : GroupKind::Inline;
+	}
+
 	std::vector<std::size_t> pathElementCounts(const flow::Evaluation& root, const flow::EvalPath& path)
 	{
 		std::vector<std::size_t> counts;

@@ -998,6 +998,34 @@ and the pack happens only at the imnodes boundary. What remains is the *typed su
 still a bare `namespace nodes = ImNodes;`, and `panes/graphpane.cpp` still names `ImNodesCol_*` (lines
 ~219–232), `ImNodesPinShape*` (~261, ~278), and `ImNodesAttributeFlags_*` (~254) directly.
 
+### Group nodes read as groups (2026-10-02)
+
+From a user report on `examples/bagel.json`: the `pipeline` group could not be told from an ordinary
+node, and nothing said that double-clicking opens it. Its only cue was the shared group title colour,
+an indigo `(62,68,112)` between the source blue and the control purple, and a node that did not run
+loses even that (muted beats category). Two cues now, chosen with the repo owner:
+
+- **A kind glyph before the title, which is also the way in.** `groupnav::groupKind(node)` answers
+  `Inline` / `Linked` / `Map` / `Loop` (nullopt for no interior), asking `innerGraph()` and
+  `interiorEvaluation()` first and the class only for inline-vs-linked, which both run once.
+  `graphpane.cpp`'s `drawGroupMark` draws two overlapping squares / a chain link / a list / a circular
+  arrow, in the title's text colour so it survives a dimmed or selected node. It sits on an
+  `InvisibleButton`: a click opens the group (an active ImGui item takes the click from imnodes, so it
+  neither selects nor drags), and the tooltip names the kind (a linked one names its template, and says
+  when it was not found) above *"Click to open, or double-click the node"*. The click is acted on after
+  `EndNodeEditor`, like every other canvas request.
+- **Groups are olive** `(74,104,52)`, a hue no other category is near.
+- **A double-click that straddles a navigation is not one.** Opening a group by its glyph and then
+  clicking a second time out of habit lands inside it, where `IsMouseDoubleClicked` would open whatever
+  group sits under the cursor (in bagel, the Map). `GraphPane::m_navigatedAt` is stamped in
+  `onNavigated` / `onGraphReplaced`, and a double-click opens a group only once
+  `MouseDoubleClickTime` has passed since then.
+
+Test: *each group kind is told apart, and a plain node is none* (`test_groupnav.cpp`). Two sabotages,
+both caught: always answering Inline for a run-once interior, and swapping the Map and Loop arms.
+`ctest -j8` **1053/1053**, warning-clean, format-check clean. The gui smoke opens bagel through a scratch
+`HOME`'s session and exits 0 after 30 frames. **gui-mode live-verified by the repo owner 2026-10-02.**
+
 ## Milestone 5 — group nodes / subgraphs (grilled 2026-07-29, **COMPLETE** 2026-08-11)
 
 **All six slices built and live-verified.** A **group node** contains its own graph and exposes

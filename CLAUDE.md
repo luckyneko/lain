@@ -1258,6 +1258,21 @@ only report a failure by throwing*.
 - **Owed:** `LoadImage` / `OpenSequence` still suppress while io logs why; an empty path on a fresh
   palette node needs a decision before they adopt `fail`.
 
+### Update 2026-10-02 — a group node reads as one, and its glyph opens it
+
+From a user report on `bagel.json`: a group could not be told from an ordinary node, and nothing said
+that double-clicking opens it. Its only cue was a title colour sitting between the source blue and the
+control purple, which a dimmed node loses anyway. `ctest -j8` **1053/1053** (+1), warning-clean,
+format-check clean; the gui smoke opens bagel and exits 0. **gui-mode live-verified by the repo owner
+2026-10-02.** Full notes in WORK.md's *Group nodes read as groups*.
+
+- **A kind glyph before the title** (squares / chain / list / circular arrow, drawn in the title's
+  text colour), from the new driver-free **`groupnav::groupKind`**. The glyph is a button: a click opens
+  the group, and its tooltip names the kind and says *double-click the node* too.
+- **Groups are olive** now, a hue no other category is near.
+- **A double-click that straddles a navigation opens nothing**, so a habitual second click after opening
+  by the glyph does not drop a further level (in bagel, into the Map).
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 8c: a board to print and the capture guide (**fixture machinery COMPLETE**)
 
 The last third of the real-camera fixture's machinery. What remains of sub-slice 8, and of slice 1,
