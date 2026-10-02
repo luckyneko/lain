@@ -45,12 +45,12 @@ namespace flowview
 	// Build the example scene when `graphPath` is empty, else load it. Returns whether a usable
 	// graph resulted.
 	//
-	// A load that reported any ERROR is not usable, however much of it arrived. An Error is a
-	// structural loss (serialize/loadresult.h): an unreadable or too-new file, or a node dropped
-	// together with every edge touching it because this build has no such kind. Running what is left
-	// runs a different graph from the one saved and reports success, and a `--save` then writes
-	// that smaller graph over whatever path it names. A Warning is an item skipped with the rest
-	// intact (an unknown param), and still runs.
+	// A load that is not intact() is not usable, however much of it arrived: an unreadable or
+	// too-new file, or a node dropped together with every edge touching it because this build has no
+	// such kind. Running what is left runs a different graph from the one saved and reports success,
+	// and a `--save` then writes that smaller graph over whatever path it names. A Warning is an item
+	// skipped with the rest intact (an unknown param), and still runs. The gui's Open asks the same
+	// question (MenuBarPane::openGraphPath).
 	//
 	// This used to test nodeCount() == 0, which had been unreachable since every Graph started being
 	// born with its boundary pair (M5 slice 2): a missing file ran an empty graph and exited 0.
@@ -65,14 +65,10 @@ namespace flowview
 		// one template several times still gets one definition instead of N copies of it.
 		flow::serialize::TemplateCache templates;
 		flow::serialize::LoadResult result = loadGraph(graphPath, factory, &templates);
-		const auto errors = std::count_if(result.issues.begin(), result.issues.end(),
-										  [](const flow::serialize::LoadIssue& issue)
-										  { return issue.severity == flow::serialize::Severity::Error; });
-		if (errors > 0)
+		if (!result.intact())
 		{
 			// Each issue was already logged where it was found; this names the consequence.
-			log::error("flowview: {} did not load as saved ({} error(s)) — refusing to use what is left of it",
-					   graphPath, errors);
+			log::error("flowview: {} did not load as saved — refusing to use what is left of it", graphPath);
 			return false;
 		}
 		graph = std::move(result.graph);

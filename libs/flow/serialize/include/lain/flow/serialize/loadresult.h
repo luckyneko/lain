@@ -3,17 +3,18 @@
 #include <lain/data/value.h>
 #include <lain/flow/graph.h>
 
+#include <algorithm>
 #include <map>
 #include <string>
 #include <vector>
 
 namespace lain::flow::serialize
 {
-	// How serious a load problem is. A host thresholds on it: a gui may treat any issue as "did not
-	// load cleanly"; a cli may refuse only on an Error.
+	// How serious a load problem is. A host thresholds on it, through LoadResult's clean() / intact().
 	enum class Severity
 	{
-		Warning, // recoverable: an item was skipped, the rest loaded (an unknown param, a rejected edge)
+		Warning, // recoverable: an item was skipped, the rest loaded (an unknown param, a rejected edge,
+				 // a template that could not be followed, so its group loads from its cached interface)
 		Error,	 // a structural loss (an unknown node kind dropped, a too-new document)
 	};
 
@@ -61,15 +62,26 @@ namespace lain::flow::serialize
 	};
 
 	// The outcome of loading a Graph: a best-effort Graph plus what went wrong + the re-keyed editor
-	// metadata. clean() == a full, issue-free load. A partial load is still an INVARIANT-VALID Graph
-	// (it is rebuilt through Graph's primitives), just possibly incomplete — the engine reports, the
-	// host decides policy.
+	// metadata. A partial load is still an INVARIANT-VALID Graph (it is rebuilt through Graph's
+	// primitives), just possibly incomplete — the engine reports, the host decides policy.
 	struct LoadResult
 	{
 		Graph graph;
 		std::vector<LoadIssue> issues;
 		EditorTree editor; // adapter metadata, re-keyed to this graph's node ids, nesting included
 
+		// A full, issue-free load.
 		bool clean() const { return issues.empty(); }
+
+		// Nothing structural was lost: no Error, though a Warning may have skipped an item. What a
+		// host asks before USING the graph, since a node dropped for an unknown kind takes every edge
+		// touching it along, so running what is left runs a different graph and saving it over the
+		// file makes the loss permanent. A clean load is intact; an intact one need not be clean.
+		bool intact() const
+		{
+			return std::none_of(issues.begin(), issues.end(),
+								[](const LoadIssue& issue)
+								{ return issue.severity == Severity::Error; });
+		}
 	};
 } // namespace lain::flow::serialize

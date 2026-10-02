@@ -15,6 +15,7 @@
 #include <lain/flow/graph.h>
 #include <lain/flow/group.h>
 #include <lain/flow/serialize/loadresult.h>
+#include <lain/flow/serialize/templatecache.h>
 #include <lain/gui/dialogs.h>
 #include <lain/gui/gui.h>
 #include <lain/math/types.h>
@@ -44,6 +45,7 @@ namespace flowview
 		ctx.currentPath.clear();													   // an untitled document
 		ctx.dirty = false;
 		ctx.loadIssues.clear();
+		ctx.templates.clear();		   // a different document: whatever it links is read afresh
 		ctx.returnStack.clear();	   // a new document is a new lineage — nothing to go back to
 		ctx.session.lastGraph.clear(); // nothing to reopen next launch (the recents keep their history)
 		saveSession(ctx.session);
@@ -84,7 +86,21 @@ namespace flowview
 
 	void MenuBarPane::performSwap(AppContext& ctx, const PendingSwap& swap)
 	{
-		// Maintain the return stack HERE, where the swap actually happens: by now the guard has been
+		if (swap.kind == DocumentSwap::New)
+		{
+			newGraph(ctx);
+			return;
+		}
+
+		// The document being left, read before the open replaces currentPath: it is what Edit
+		// Template... comes back to.
+		const std::filesystem::path leaving = ctx.currentPath;
+		const bool opened = swap.path.empty() ? openGraphDialog(ctx)		   // Open... — pick the file now
+											  : openGraphPath(ctx, swap.path); // Open Recent — the file is already known
+		if (!opened)
+			return; // a cancelled dialog or a refused load keeps the current document, its way back included
+
+		// Maintain the return stack HERE, once the swap has actually happened: by now the guard has been
 		// resolved, so a document that was untitled when Edit Template… was clicked has a path if the
 		// user chose Save — and a cancelled guard never reaches this point at all.
 		if (swap.returnDepth)
@@ -94,7 +110,7 @@ namespace flowview
 		}
 		else if (swap.pushReturn)
 		{
-			if (ctx.currentPath.empty())
+			if (leaving.empty())
 			{
 				// An untitled document has no file to come back to, so this really is one-way. Say so
 				// rather than opening the template and leaving the user to discover there is no route
@@ -104,25 +120,13 @@ namespace flowview
 			}
 			else
 			{
-				ctx.returnStack.push_back(ctx.currentPath);
+				ctx.returnStack.push_back(leaving);
 			}
 		}
-		else if (swap.kind == DocumentSwap::Open)
+		else
 		{
 			ctx.returnStack.clear(); // an unrelated Open leaves the lineage — nothing to go back to
 		}
-
-		// A different document: re-read its templates from disk rather than serving whatever the last
-		// one resolved. This is also what makes Edit Template... -> Save -> Return show the edit — the
-		// return re-opens the parent, and the parent must not be handed the pre-edit definition.
-		ctx.templates.clear();
-
-		if (swap.kind == DocumentSwap::New)
-			newGraph(ctx);
-		else if (swap.path.empty())
-			openGraphDialog(ctx); // Open... — pick the file now
-		else
-			openGraphPath(ctx, swap.path); // Open Recent — the file is already known
 	}
 
 	void MenuBarPane::drawConfirmModal(AppContext& ctx, const flow::Graph& graph)
@@ -168,7 +172,12 @@ namespace flowview
 
 	bool MenuBarPane::openGraphPath(AppContext& ctx, const std::filesystem::path& path)
 	{
-		flow::serialize::LoadResult result = loadGraph(core::Uri::fromPath(path), ctx.app->nodeFactory(), &ctx.templates);
+		// A cache of the incoming document's own: a different document re-reads its templates from
+		// disk rather than being served whatever the last one resolved. That is also what makes Edit
+		// Template... -> Save -> Return show the edit, since the return re-opens the parent. It replaces
+		// ctx.templates only once the document is accepted, so a refusal leaves the current one's alone.
+		flow::serialize::TemplateCache templates;
+		flow::serialize::LoadResult result = loadGraph(core::Uri::fromPath(path), ctx.app->nodeFactory(), &templates);
 		// FIRST, before the layout becomes the baseline: this strips the options out of it, so the
 		// trigger lives in ctx.options alone and no snapshot in this document's history carries one.
 		DocumentOptions options = takeDocumentOptions(result);
@@ -180,12 +189,29 @@ namespace flowview
 			const Issue::Severity sev = issue.severity == flow::serialize::Severity::Error ? Issue::Severity::Error : Issue::Severity::Warning;
 			ctx.loadIssues.push_back(Issue::note(sev, "load: " + issue.message));
 		}
-		if (result.graph.nodeCount() == 0) // nothing loaded — the issues above say why; keep the current scene
+
+		// Refused, the same question `run` / `list` ask (runmode's buildOrLoad). Opening what is left
+		// would put a different graph under this file's name, and a plain Save would then write it over
+		// the original, which makes the loss permanent. The current document stays, and the issues
+		// above say why.
+		//
+		// This used to test nodeCount() == 0, which no Graph can be (it is born with its boundary pair),
+		// so a missing file opened as an empty graph under that path.
+		if (!result.intact())
 		{
-			forgetGraphPath(ctx.session, path); // a moved/deleted file shouldn't linger in Open Recent
-			saveSession(ctx.session);
+			ctx.noteMessage(Issue::Severity::Error,
+							string::format("{} did not load as saved, so the current graph is kept", path.filename().string()));
+			// A moved or deleted file shouldn't linger in Open Recent, or be retried at every launch. One
+			// that is still there stays: it may need a newer build, not a different path.
+			std::error_code ec;
+			if (!std::filesystem::exists(path, ec))
+			{
+				forgetGraphPath(ctx.session, path);
+				saveSession(ctx.session);
+			}
 			return false;
 		}
+		ctx.templates = std::move(templates);
 
 		// Replace the scene — deferred to end of frame.
 		ctx.loadedGraph = std::make_unique<flow::Graph>(std::move(result.graph));
@@ -347,14 +373,14 @@ namespace flowview
 		ctx.loadIssues.clear();
 	}
 
-	void MenuBarPane::openGraphDialog(AppContext& ctx)
+	bool MenuBarPane::openGraphDialog(AppContext& ctx)
 	{
 		// "All files" fallback: pfd 0.1.0's macOS picker can grey out everything under a lone
 		// restrictive filter, so offer an escape hatch alongside the JSON one.
 		const auto path = gui::openFile("Open graph", {}, {{"JSON graph", {"*.json"}}, {"All files", {"*"}}});
 		if (!path)
-			return;
-		openGraphPath(ctx, *path);
+			return false;
+		return openGraphPath(ctx, *path);
 	}
 
 	void MenuBarPane::drawOpenRecent(AppContext& ctx)

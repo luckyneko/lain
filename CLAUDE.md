@@ -1182,6 +1182,53 @@ in *Conventions to inherit*.
 - **Still open:** `LAIN_<DEP>_ROOT` cannot rescue a platform with no archive (the table answers
   first); `CMAKE_OSX_ARCHITECTURES=x86_64` on an arm64 Mac still picks the arm64 archive, since
   `CMAKE_SYSTEM_PROCESSOR` stays the host's; menubar.cpp's `nodeCount() == 0` load guard is dead.
+  *(The guard is **fixed the same day** — see the next entry.)*
+
+### Update 2026-10-02 — the gui refuses a lossy load too (`LoadResult::intact`)
+
+menubar.cpp's dead guard, fixed. The gui's Open (Open..., Open Recent, Return, the reopen at launch)
+guarded a failed load with `nodeCount() == 0`, which no `Graph` can be (it is born with its boundary
+pair), so it opened whatever was left of a document that lost nodes, under that document's name. A
+plain Save would then have written the smaller graph over the original. M9 sub-slice 0 had already
+fixed the identical check in headless `run` / `list`. `ctest -j8` **986/986** Release with video and
+camera off (+1); warning-clean, format-check clean. **gui-mode NOT eyeballed.** Full notes in
+WORK.md's M9 slice 1, sub-slice 0, *the gui follows*.
+
+- **Decided with the repo owner:**
+  - **Refuse and keep the current document.** The alternative was to open it with Save blocked,
+    which is new state every save path would have to remember.
+  - **The path leaves Open Recent only if the file is gone.** One that needs a newer build stays.
+  - **Make Local's identical dead guard is fixed in the same commit** (`groupedit.cpp`). Copying a
+    template that lost a node INTO the document is exactly the loss a refusal prevents.
+  - **The predicate lives on the result**: `LoadResult::intact()` (no Error), beside `clean()` (no
+    issue at all). It reads the library's own severity scale, where Error is defined as a structural
+    loss. `runmode`'s `buildOrLoad`, `openGraphPath` and Make Local all ask it, so there is one answer.
+- **A recursive template is now a Warning, not an Error**, which is what made refusing safe. The link
+  is refused and the document is not: it loads as the same placeholder a missing template leaves (a
+  Warning already), and saving it writes back exactly what was read. As an Error, a self-link would
+  have made the gui refuse that template and every document linking it. The gui can make one (Edit
+  Template…, Add ▸ Linked Group… on the same file, Save) and is the only place to delete it.
+  Headless `run` / `list` now run such a document too, as they run one with a missing template.
+- **A refused swap must change nothing, and `performSwap` changed two things first.** It maintained the
+  return stack and cleared the template cache BEFORE loading. A refused Edit Template… would have left
+  a crumb returning to the file you are in, and a refused Return would have dropped the way back. The
+  stack is now maintained only after a successful open. The load fills a cache of its own, which
+  replaces `ctx.templates` only when accepted. Moving the bookkeeping also made a warning visible that
+  never was: Edit Template… from an untitled document noted "never saved", and the open's
+  `loadIssues.clear()` then wiped the note.
+- **Behaviour change: Edit Template… on a missing template is refused.** It used to open an empty graph
+  that Save would turn into the file, but only because the guard was dead.
+- **Two sabotages, both caught.** An `intact()` that ignores Errors fails four cases. Putting the
+  recursive template back to Error fails the serialize case and the new `[graphio]` one (a self-linking
+  template on disk opens through the app's real resolver and saves back byte-identical).
+- **Driven through the real gui binary** with a scratch `HOME` (`--frames 20`, exit 0 each time):
+  - a missing `lastGraph` is dropped from the session and from Open Recent, where the old guard
+    reopened it as an empty graph;
+  - a lossy document that still exists is refused and kept;
+  - an intact one opens with no error.
+
+  Not yet eyeballed: the transient message, the Issues rows, and the current document staying on
+  screen.
 
 ### Update 2026-09-30 — M9 slice 1, sub-slice 8c: a board to print and the capture guide (**fixture machinery COMPLETE**)
 
@@ -1488,7 +1535,8 @@ WORK.md's *Sub-slice 0 built*.
   dropped with both of its edges, and `run --save` then wrote that smaller graph to the path it
   named. A refused run writes nothing, and the test asserts it.
 - **A Warning still runs** (an unknown param), so one stale param does not make a document
-  unrunnable. The gui is unchanged: it already lists every load issue.
+  unrunnable. The gui is unchanged: it already lists every load issue. *(**Superseded 2026-10-02**:
+  the gui's guard was the same dead check, and it now refuses too; see that update.)*
 - **Two sabotages, both caught:** the old `nodeCount()` test fails both refusal cases; refusing on
   any issue fails the warning case.
 - **The full tree now builds in this sandbox.** GitHub source archives still answer 403, so each

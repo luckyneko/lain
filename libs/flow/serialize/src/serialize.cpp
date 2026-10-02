@@ -710,7 +710,10 @@ namespace lain::flow::serialize
 
 		if (resolved && ctx.resolving.count(resolved->key) != 0)
 		{
-			ctx.error("recursive template \"" + source + "\" — the link is not followed");
+			// A Warning, as a missing template is: the link is refused, the DOCUMENT is not. The group
+			// loads as the same placeholder, and saving it writes back exactly what was read. An Error
+			// would have a host refuse the whole file, including the gui that can delete the link.
+			ctx.warn("recursive template \"" + source + "\" — the link is not followed");
 			resolved.reset();
 		}
 

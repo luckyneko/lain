@@ -339,11 +339,20 @@ namespace flowview
 		const std::filesystem::path target = documentDir.empty() ? std::filesystem::path(linked.source())
 																 : documentDir / linked.source();
 		flow::serialize::LoadResult loaded = loadGraph(lain::core::Uri::fromPath(target), ctx.app->nodeFactory(), nullptr);
-		if (loaded.graph.nodeCount() == 0)
+		for (const flow::serialize::LoadIssue& issue : loaded.issues)
 		{
-			ctx.noteMessage(Issue::Severity::Error, "Could not read the template " + target.string());
-			for (const flow::serialize::LoadIssue& issue : loaded.issues)
-				ctx.loadIssues.push_back(Issue::note(Issue::Severity::Error, "template: " + issue.message));
+			const Issue::Severity sev = issue.severity == flow::serialize::Severity::Error ? Issue::Severity::Error
+																						   : Issue::Severity::Warning;
+			ctx.loadIssues.push_back(Issue::note(sev, "template: " + issue.message));
+		}
+		// Refused unless the template arrived whole, the question Open asks of a document. A body that
+		// lost a node would be copied INTO this document, and the next Save would make the loss
+		// permanent, where a linked group only ever reads the file. (This used to test
+		// nodeCount() == 0, which no Graph can be, so a missing template went local as an empty body.)
+		if (!loaded.intact())
+		{
+			ctx.noteMessage(Issue::Severity::Error,
+							"The template " + target.string() + " did not load as saved, so the group stays linked");
 			return false;
 		}
 

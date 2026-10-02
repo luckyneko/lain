@@ -1674,9 +1674,11 @@ iff it stays payload-agnostic; the moment it must name a concrete payload type o
   (`clean()` == no issues), **best-effort**: an unknown `kind` / port-type / param or a rejected edge
   is skipped + recorded, not fatal — and because the graph is rebuilt through `Graph`'s primitives, a
   partial load is still an **invariant-valid** Graph. Each issue is **both** logged (`lain::log`) and
-  returned (a GUI shows them and treats `!clean()` as failure; a cli refuses on an `Error`);
-  `Severity` is `Warning` / `Error`. The engine reports, the host decides. `flow::loadGraph(uri, ctx)`
-  funnels codec + semantic failures into one `LoadResult`.
+  returned; `Severity` is `Warning` (an item skipped, the rest intact) / `Error` (a structural loss).
+  `intact()` == no Error, and is what a host asks before using the graph: flowview's Open, `run` and
+  `list` each refuse a load that is not intact, since running or re-saving what is left makes a
+  different graph pass for the one on disk. The engine reports, the host decides.
+  `flow::loadGraph(uri, ctx)` funnels codec + semantic failures into one `LoadResult`.
 
 - **Document-relative path** — how a document names the MEDIA it reads (a param stored under the
   format's `path` type key: LoadImage's `path`, ListDir's `directory`, a path-typed Constant).

@@ -381,9 +381,19 @@ TEST_CASE("a template that links itself is refused, not followed forever", "[flo
 	for (const LoadIssue& issue : result.issues)
 	{
 		if (issue.message.find("recursive template") != std::string::npos)
+		{
 			refused = true;
+			REQUIRE(issue.severity == Severity::Warning);
+		}
 	}
 	REQUIRE(refused);
+
+	// The LINK is refused; the document is not. The group loads as the placeholder a missing template
+	// leaves, and nothing is lost: saving it writes back exactly what was read. So the load is intact,
+	// and a host that refuses a load that is not (flowview's Open, run and list) still opens this one,
+	// which is what lets the gui that made the link delete it again.
+	REQUIRE(result.intact());
+	REQUIRE(toValue(result.graph, factory, codecs, result.editor) == selfishDoc);
 }
 
 TEST_CASE("a graph's own editor blob nests with its level", "[flow-serialize][group]")

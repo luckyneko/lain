@@ -43,9 +43,10 @@ namespace flowview
 		void drawConfirmModal(AppContext& ctx, const lain::flow::Graph& graph);
 
 		// Load `path` into the scene (deferred to end-of-frame like every graph swap), recording it as
-		// the current document + the head of Open Recent. Returns false if nothing loaded — the reason
-		// is in ctx.loadIssues and the path is dropped from the recents. Public because the window also
-		// calls it at startup, to reopen the graph the last session had open.
+		// the current document + the head of Open Recent. Returns false, keeping the current document,
+		// when the load is not intact (LoadResult::intact) — the reason is in ctx.loadIssues, and the
+		// path leaves the recents if the file is gone. Public because the window also calls it at
+		// startup, to reopen the graph the last session had open.
 		bool openGraphPath(AppContext& ctx, const std::filesystem::path& path);
 
 	private:
@@ -85,7 +86,7 @@ namespace flowview
 		void returnToDocument(AppContext& ctx, std::size_t index);
 		void requestSwap(AppContext& ctx, PendingSwap swap);
 		void performSwap(AppContext& ctx, const PendingSwap& swap);
-		void openGraphDialog(AppContext& ctx);
+		bool openGraphDialog(AppContext& ctx); // whether a document was opened: false if cancelled or refused
 		// Save writes the DOCUMENT — the root graph and every level's layout — never the graph the
 		// panes happen to be pointed at. `activeGraph` is passed only so the level on screen can have
 		// its positions refreshed into the layout tree first.

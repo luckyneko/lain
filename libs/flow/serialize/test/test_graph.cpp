@@ -224,6 +224,7 @@ TEST_CASE("a too-new document version is a fatal load", "[flow-serialize]")
 
 	const LoadResult result = fromValue(doc, factory, codecs);
 	REQUIRE_FALSE(result.clean());
+	REQUIRE_FALSE(result.intact());
 	REQUIRE(result.graph.nodeCount() == kBoundaryNodes + 0);
 	REQUIRE(result.issues.front().severity == Severity::Error);
 }
@@ -246,5 +247,6 @@ TEST_CASE("an unknown node kind is skipped with an Error issue", "[flow-serializ
 
 	const LoadResult result = fromValue(doc, factory, codecs);
 	REQUIRE_FALSE(result.clean());
+	REQUIRE_FALSE(result.intact()); // a node lost with its edges: what a host refuses to use
 	REQUIRE(result.graph.nodeCount() == kBoundaryNodes + 0);
 }

@@ -28,6 +28,8 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <utility>
 
@@ -83,6 +85,12 @@ namespace
 		LoadResult loaded = flowview::restoreGraph(document, factory, dir, nullptr);
 		REQUIRE(loaded.clean());
 		return std::move(loaded.graph);
+	}
+
+	std::string readText(const std::filesystem::path& file)
+	{
+		std::ifstream in(file, std::ios::binary);
+		return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 	}
 
 	const LinkedGroupNode* onlyLink(const Graph& graph)
@@ -185,6 +193,33 @@ TEST_CASE("an undo restore keeps the template definition it already had", "[grap
 	LoadResult second = flowview::restoreGraph(snapshot, factory, dir, &cache); // undo, then redo
 	REQUIRE(second.clean());
 	REQUIRE(onlyLink(second.graph)->definition() == definition);
+}
+
+TEST_CASE("a template that links itself still opens, and saves back unchanged", "[graphio]")
+{
+	// The gui's Open, `run` and `list` all refuse a load that is not intact. A template whose interior
+	// links the template ITSELF takes a few gestures in the gui to make (Edit Template..., Add >
+	// Linked Group... on the same file, Save), and the gui is the only place to delete that link
+	// again, so refusing the link must not refuse the file. Through the app's own resolver, because
+	// its canonical key is what the cycle guard compares.
+	const std::filesystem::path dir = scratchDir("self-link");
+	const Factory<Node> factory = ioFactory();
+	const std::filesystem::path file = dir / "self.json";
+
+	Graph selfish;
+	const NodeId group = selfish.add<LinkedGroupNode>();
+	static_cast<LinkedGroupNode&>(selfish.node(group)).setSource("self.json");
+	REQUIRE(flowview::saveGraph(file.string(), selfish, factory));
+
+	lain::flow::serialize::TemplateCache cache;
+	LoadResult loaded = flowview::loadGraph(file.string(), factory, &cache);
+	REQUIRE_FALSE(loaded.clean()); // the link is refused, and said so...
+	REQUIRE(loaded.intact());	   // ... but the document is not
+
+	// Nothing is lost: saved again, it is the file it was read from, byte for byte.
+	const std::filesystem::path resaved = dir / "resaved.json";
+	REQUIRE(flowview::saveGraph(resaved.string(), loaded.graph, factory, loaded.editor));
+	REQUIRE(readText(resaved) == readText(file));
 }
 
 // --- the template cache's keys and its invalidation (M7 slice 3) -------------

@@ -1190,7 +1190,10 @@ byte-idempotent.
    inline round-trip + byte-idempotence, two-level nesting, the nested editor tree, linked-with-resolver
    running the template's interior, unresolved-keeps-its-face-and-wiring + lossless re-save, rectification
    reporting, and the recursion refusal). **The cycle guard was verified by removing it: a self-linking
-   template SIGSEGVs** (unbounded recursion), so the guard is load-bearing, not decorative. Flat
+   template SIGSEGVs** (unbounded recursion), so the guard is load-bearing, not decorative. *(Since
+   2026-10-02 the refusal is a **Warning**, not an Error: the link is refused and the document is not,
+   since it loads as the same lossless placeholder a missing template leaves. See M9 slice 1, sub-slice
+   0, *the gui follows*.)* Flat
    documents are byte-identical to before — the real scene's `run` / `list` / idempotence are unchanged.
 6. ✅ **flowview — navigation + the palette entries** (built 2026-07-29; **gui-mode NOT eyeballed —
    no Metal in this sandbox**). *(**Superseded** — that eyeball happened across 2026-07-29 → 07-31,
@@ -1966,7 +1969,10 @@ flowview's half is reading the selection, carrying positions across the change, 
 - **`Make Local`** reads the template **from disk** rather than copying the definition in memory. That
   is the honest meaning of the gesture, and also the only way: a definition is a `shared_ptr<const
   Graph>` precisely so no instance can reach in and take it. Loaded with **no cache** — what is being
-  built is a private body, not another sharer.
+  built is a private body, not another sharer. *(Since 2026-10-02 it refuses a template whose load is
+  not `intact()`, and the group stays linked: a body that lost a node would be copied INTO the
+  document. Its old `nodeCount() == 0` guard was dead, so a missing template went local as an empty
+  body. See M9 slice 1, sub-slice 0, *the gui follows*.)*
 - **Layout migration is pure data, and lives in `groupnav`** (which owns the layout tree) rather than
   beside the gestures, so it is unit-tested in the driver-free flowview suite. `descendLayout` /
   `ascendLayout` move entries between levels under unchanged keys; `liftedPositions` translates a
@@ -3133,7 +3139,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      refused run now writes nothing, which the test asserts.
    - **A Warning still runs** (an unknown param, a v1 document migrated on load), so one stale
      param does not make a document unrunnable.
-   - The gui is unchanged: it already shows every load issue in the Issues pane.
+   - The gui is unchanged: it already shows every load issue in the Issues pane. *(**Superseded
+     2026-10-02**: its own guard was the same dead check, so the gui opened what was left. It refuses
+     now too; see *the gui follows*, below.)*
    - `ctest -j4` **913/913** Debug with video and camera on (+3, `[runmode]`, new
      `apps/flowview/test/test_runmode.cpp`); warning-clean, format-check clean. Driven through the
      real binary: a missing file and a lossy document each exit 1, and the lossy one with `--save`
@@ -3144,6 +3152,45 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      each pinned GitHub dependency is cloned over git and handed to configure as
      `FETCHCONTENT_SOURCE_DIR_<NAME>` (libtiff comes from gitlab and downloads normally; FFmpeg
      and OpenCV are release assets). Slice 0's harness is no longer needed.
+
+   **The gui follows (2026-10-02).** `MenuBarPane::openGraphPath` guarded a failed load with the
+   same dead `nodeCount() == 0`, so Open, Open Recent, Return and the reopen at launch put whatever
+   was left of a lossy document under its name, and a plain Save then wrote it over the original. It
+   now refuses as `run` does and keeps the current document. Three decisions, made with the repo
+   owner: **refuse** rather than open with Save blocked (no new state for a save path to forget), the
+   path leaves Open Recent **only if the file is gone** (one that needs a newer build stays), and Make
+   Local's identical guard is fixed in the same commit.
+   - **One predicate, `LoadResult::intact()`**: no Error, beside `clean()` (no issue at all). It sits
+     on the result because it reads the library's own severity scale, where Error is defined as a
+     structural loss. `buildOrLoad`, `openGraphPath` and Make Local all ask it.
+   - **A recursive template is now a Warning**, and that is what made refusing safe. It loads as the
+     same placeholder a missing template leaves (a Warning already), and re-saving it is lossless. As
+     an Error, a self-link (made in the gui: Edit Template…, Add ▸ Linked Group… on the same file,
+     Save) would have made the gui refuse the template and every document linking it, while the gui
+     is the only place to delete that link. Headless `run` / `list` now run such a document too,
+     exactly as they run one with a missing template.
+   - **A refused swap now changes nothing else.** `performSwap` used to maintain the return stack and
+     clear the template cache *before* loading. A refused Edit Template… would then have left a
+     "Return to <this same file>" crumb, and a refused Return would have dropped the way back. The
+     stack is maintained only after a successful open, and the load fills a cache of its own that
+     replaces `ctx.templates` only when accepted. New clears the cache itself. Moving the bookkeeping
+     also surfaced a warning that had never shown: Edit Template… from an untitled document noted
+     "the graph was never saved…" and the open then cleared `loadIssues`, so the note was lost.
+   - **Edit Template… on a missing template is refused now.** It used to open an empty graph at that
+     path (Save then created the file), only because the guard was dead, and nothing documented it.
+   - `ctest -j8` **986/986** Release with video and camera off (+1, `[graphio]`: a template that links
+     itself opens and saves back byte-identical, through the app's real resolver); serialize's
+     recursion case now pins the Warning, the result being `intact()` and the lossless re-save, and
+     the unknown-kind / too-new cases pin `!intact()`. Warning-clean, format-check clean.
+   - **Two sabotages, both caught.** An `intact()` that ignores Errors fails four cases (two in
+     serialize, both `[runmode]` refusals). A recursive template back at Error fails the serialize
+     case and the `[graphio]` one.
+   - **Driven through the real gui binary**, its session isolated under a scratch `HOME`, with
+     `--frames 20`, exit 0 each time. A missing `lastGraph` is dropped from the session and from Open
+     Recent (the old guard reopened it as an empty graph). A lossy one that still exists is refused
+     and kept. An intact one opens with no error. **gui-mode NOT eyeballed**: the refusal's transient
+     message, the Issues rows, and that the current document stays on screen after Open / Open
+     Recent / Return / Edit Template… all want a look.
 2. **Fixed-camera board registration.** Add explicit capture-group input values, observation-graph
    diagnostics, `referenceFromCamera` results, registration scale status, fitness, and reports. Use
    the optional private Ceres adapter for one sparse global-refinement path, with SuiteSparse disabled
