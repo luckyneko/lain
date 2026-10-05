@@ -3305,6 +3305,74 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       - `registerCameras` over collections, with port types and list forms;
       - codecs, editors and the catalog;
       - a three-camera rig run through `runGraph` and the real binary.
+
+   **Sub-slice 1 built (2026-10-05): Ceres and Eigen land, with nothing depending on them.**
+   - **`cmake/addEigen.cmake`**: Eigen 3.4.0 from its gitlab archive.
+     - Eigen's own CMakeLists is never run: `SOURCE_SUBDIR` names a directory the archive lacks,
+       so MakeAvailable only populates.
+     - `Eigen3::Eigen` is an IMPORTED INTERFACE target, which makes its include directory SYSTEM
+       and lets Ceres' export set name it. It carries `EIGEN_MPL2_ONLY`.
+     - A config and version file written into `CMAKE_FIND_PACKAGE_REDIRECTS_DIR` answer Ceres'
+       `find_package(Eigen3 3.3 REQUIRED)` with this copy, so no system Eigen can.
+   - **`cmake/addCeres.cmake`**: Ceres 2.2.0 from its GitHub archive, unhashed like every other
+     source dependency.
+     - Its options are NORMAL variables inside a function (CMP0077), not cache entries, since
+       `BUILD_TESTING`, `BUILD_SHARED_LIBS` and `LAPACK` would otherwise reach other subprojects.
+       The one cost of the function scope: `ceres_SOURCE_DIR` stays inside it, so
+       `FetchContent_GetProperties` fetches it back.
+     - Its headers are re-exposed SYSTEM, as GLM's are. Ceres compiles with its own flags,
+       warning-free.
+   - **`EIGEN_MPL2_ONLY` reaches all 115 of Ceres' compiles** (checked with `ninja -t commands`), so
+     building Ceres with Eigen's sparse Cholesky is the proof that no LGPL Eigen code is reached.
+     Ceres' generated `config.h` still comments `CERES_USE_EIGEN_SPARSE` as "use the LGPL code in
+     Eigen". That predates Eigen relicensing its sparse ordering, and in Eigen 3.4.0 the only
+     header behind the guard is `IncompleteCholesky.h`.
+   - **`plugins/camera/ceres`**:
+     - `LAIN_CAMERA_CERES`, defaulting to `${LAIN_NOT_SUBPROJECT}`, with a feature-summary line;
+     - `lain::camera::ceres` with `build.h` (`version()`, and `configuration()` read from Ceres'
+       generated `config.h` plus miniglog's include guard);
+     - a `registerBackend()` that registers nothing yet;
+     - it joins `LAIN_CAMERA_BACKENDS`, so the aggregator links it.
+   - **`[ceres]` tests** (`test-camera-ceres`, five cases):
+     - the pinned version;
+     - exactly the approved components;
+     - `EIGEN_MPL2_ONLY` defined where Eigen is included;
+     - **the one-implementation proof**: `camera::project<ceres::Jet<double, 3>>` for all six
+       distortion models, at the centre, half way out and near a corner, each at three depths, with
+       the Jet's value equal to `project<double>`'s and its derivatives within 1e-5 of central
+       differences. That includes the inverse Brown-Conrady model's Newton iteration and
+       Kannala-Brandt's on-axis branch, which only the centre pixel reaches;
+     - a three-camera solve through `camera::project` with `SPARSE_NORMAL_CHOLESKY` over Eigen
+       sparse, on one thread, recovering a point to 1e-9.
+   - **Found by the build: the aggregator test assumed every camera plugin is a detector.** It
+     compared the detector count with the number of plugins, and Ceres is a plugin that detects
+     nothing. It now asks per plugin, by what was built (`LAIN_CAMERA_HAS_OPENCV`).
+   - **Obligations:** licence texts are staged under `third-party/{ceres,eigen}/`, and
+     `notices/{ceres,eigen}.txt` reach `--licenses` (Eigen's names its corresponding source). The
+     README rows are current.
+   - **CI:** `LAIN_CAMERA_CERES` moves with the `camera` field, so the camera-off leg builds no
+     Ceres.
+   - **Footprint** (linux-x86_64, four cores):
+     - Ceres built in **1m13s wall / 4m04s CPU** in Debug, and 1m30s at `-j3` in Release.
+     - With the fixed-size Schur specialisations ON it took **3m25s / 11m10s**, about 2.8 times
+       longer, which is why they are off.
+     - `libceres.a` is **7.3 MB** in Release (410 MB in Debug, nearly all of it debug info), and the
+       test executable 4.1 MB.
+     - flowview grows by 88 bytes, since nothing references Ceres yet.
+     - A Ceres-off configure fetches neither library: CMake reports
+       `FETCHCONTENT_SOURCE_DIR_CERES` as unused.
+   - `ctest -j4` **1055/1055** Debug and **1063/1063** Release with video, camera and Ceres on (+5
+     each), and **1001/1001** Release with all three off (unchanged: no Ceres test builds there);
+     warning-clean, format-check clean.
+   - **Four sabotages, all caught; one first proved nothing.**
+     - `std::sqrt` qualified in `detail::ray` still compiled, because only unprojection reaches
+       that function and no Jet is unprojected. `std::atan2` qualified in Kannala-Brandt's
+       projection fails the build, the ADL dependence the kernels state.
+     - Without Kannala-Brandt's on-axis branch, the Jet test fails at the centre pixel.
+     - With Schur specialisations ON, the configuration case fails.
+     - With `EIGEN_MPL2_ONLY` dropped from `Eigen3::Eigen`, the MPL2 case fails.
+     - Also learned: a timed sabotage build whose CMake file was restored BEFORE building
+       reconfigures and measures the original. Hold the change until the build is done.
 3. **Targetless registration with known intrinsics.** Reuse immutable camera models, capture groups,
    registration reports, shared feature-track extraction, and Ceres refinement. Accepted tracks
    establish overlap, initial relative geometry, and scene landmarks before Ceres begins; absent

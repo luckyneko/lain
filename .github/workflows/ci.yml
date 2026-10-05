@@ -89,11 +89,12 @@ jobs:
           # Each axis varies alone. The video-off leg is Release, since Release is what a fresh
           # clone gets; Debug stays video-ON so it matches the daily build.
           #
-          # `camera` (LAIN_CAMERA_OPENCV, ADR-0026) is the one field that does NOT vary alone: it
-          # moves with `video`. Every leg states both rather than leaning on the defaults, since the
-          # tests follow what was BUILT: a leg whose plugin was silently skipped would still pass.
-          # The video-off leg proves an all-off build fetches nothing, and every other leg proves
-          # the fetches, the manifest gates and the [video]/[opencv] runtime tests on its platform.
+          # `camera` (LAIN_CAMERA_OPENCV, ADR-0026, and LAIN_CAMERA_CERES, ADR-0017) is the one
+          # field that does NOT vary alone: it moves with `video`. Every leg states both rather than
+          # leaning on the defaults, since the tests follow what was BUILT: a leg whose plugin was
+          # silently skipped would still pass. The video-off leg proves an all-off build fetches
+          # nothing, and every other leg proves the fetches, the manifest gates, Ceres' source
+          # build and the [video]/[opencv]/[ceres] runtime tests on its platform.
           - name: Linux Release
             os: ubuntu-24.04
             build_type: Release
@@ -179,6 +180,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DLAIN_IO_VIDEO_FFMPEG=${{ matrix.video }}
           -DLAIN_CAMERA_OPENCV=${{ matrix.camera }}
+          -DLAIN_CAMERA_CERES=${{ matrix.camera }}
 
       - name: Build
         run: cmake --build build --parallel --config ${{ matrix.build_type }}

@@ -1379,6 +1379,34 @@ residual* and *weak bridge*.
 - **The sandbox needed the X11/Wayland/libva dev packages** (`libxrandr-dev` and friends) before the
   Vulkan loader would configure. A fresh container does not have them.
 
+### Update 2026-10-05 — M9 slice 2, sub-slice 1: Ceres and Eigen land, with nothing depending on them
+
+The FFmpeg and OpenCV slice-0 shape, for registration's solver.
+- `cmake/addEigen.cmake` brings Eigen 3.4.0's headers.
+- `cmake/addCeres.cmake` builds Ceres 2.2.0 from source: static, with miniglog and Eigen's sparse
+  Cholesky; SuiteSparse, METIS, LAPACK, CUDA, Accelerate, gflags and the Schur specialisations off.
+- `plugins/camera/ceres` (`LAIN_CAMERA_CERES`, default `${LAIN_NOT_SUBPROJECT}`) holds a build probe.
+`ctest -j4` **1055/1055** Debug and **1063/1063** Release with video, camera and Ceres on (+5 each),
+and **1001/1001** Release with all three off (unchanged); warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 1 built* under M9 slice 2.
+
+- **The one-implementation proof is a test.** `camera::project<ceres::Jet>` instantiates for all six
+  distortion models, and its derivatives match finite differences of `project<double>`, through
+  the inverse Brown-Conrady model's Newton iteration and Kannala-Brandt's on-axis branch.
+- **`EIGEN_MPL2_ONLY` is on the `Eigen3::Eigen` target**, so it reaches all 115 of Ceres' compiles
+  and building Ceres proves no LGPL Eigen code is used. Ceres' own `config.h` still calls Eigen's
+  sparse Cholesky LGPL; that is stale.
+- **Eigen's CMakeLists is never run.** The archive is only populated, and a config and version file
+  in `CMAKE_FIND_PACKAGE_REDIRECTS_DIR` answer Ceres' `find_package(Eigen3)` with this copy.
+- **Measured:** Ceres builds in 1m13s wall / 4m04s CPU (Debug, four cores), 2.8 times that with
+  the Schur specialisations, which is why they are off. `libceres.a` is 7.3 MB in Release.
+- **The aggregator test assumed every camera plugin is a detector**, and Ceres is not. It now asks
+  per plugin.
+- **Inside `lain::camera`, write `::ceres::`.** The plugin's namespace is `lain::camera::ceres`, so
+  an unqualified `ceres::` finds it first. The mistake is a compile error, not a wrong lookup.
+- **A sabotage that proved nothing:** a qualified `std::sqrt` in `detail::ray` still compiled,
+  because only unprojection reaches it and no Jet is unprojected. The same sabotage on the
+  projection path fails the build.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 8c: a board to print and the capture guide (**fixture machinery COMPLETE**)
 
 The last third of the real-camera fixture's machinery. What remains of sub-slice 8, and of slice 1,
