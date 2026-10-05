@@ -1,0 +1,461 @@
+// The board registration method module through its production entry points, registerCameras(), over
+// stand-in backends answering from a known rig (syntheticrig.h): a pose solver that may be noisy or
+// rank a plane's other pose first, and a refiner that hands back its starting estimate, so what is
+// under test is everything the module decides around them. Its own executable: the registries only
+// grow, and these stand-ins must be the only backends registered.
+
+#include "syntheticrig.h"
+
+#include <lain/camera/registration/board.h>
+#include <lain/testing/threadpool.h>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
+#include <string>
+
+using namespace lain;
+using namespace lain::camera;
+using namespace lain::camera::registration;
+using namespace lain::camera::testing;
+namespace method = lain::camera::registration::board;
+
+namespace
+{
+	Report run(const Request& request = {})
+	{
+		return method::registerCameras(rig::cameras(), rig::groups(), specification(), request);
+	}
+
+	bool failedWith(const Report& report, Failure failure)
+	{
+		return report.status == RegistrationStatus::Failed && report.cameras.empty() && !report.failures.empty() &&
+			   report.failures.front().failure == failure;
+	}
+
+	std::size_t indexOf(const capture::CameraIdentity& camera)
+	{
+		for (std::size_t c = 0; c < rig::scene().referenceFromCamera.size(); ++c)
+		{
+			if (rig::identityOf(c) == camera.value)
+				return c;
+		}
+		FAIL("no rig camera is " << camera.value);
+		return 0;
+	}
+
+	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
+	{
+		const math::Quatd r = math::conjugate(a.rotation()) * b.rotation();
+		return 2.0 * std::atan2(std::sqrt(r.x * r.x + r.y * r.y + r.z * r.z), std::abs(r.w));
+	}
+
+	// Every registered camera against the truth relative to the report's reference.
+	void requireTruth(const Report& report, double rotation, double translation)
+	{
+		REQUIRE(report.status == RegistrationStatus::Succeeded);
+		REQUIRE(report.reference.has_value());
+		REQUIRE(report.cameras.size() == rig::scene().referenceFromCamera.size());
+		const std::size_t reference = indexOf(*report.reference);
+		for (const RegisteredCamera& c : report.cameras)
+		{
+			CAPTURE(c.camera.value);
+			const math::RigidTransformd truth = rig::trueReferenceFromCamera(reference, indexOf(c.camera));
+			CHECK(rotationBetween(c.referenceFromCamera, truth) < rotation);
+			CHECK(math::length(c.referenceFromCamera.translation() - truth.translation()) < translation);
+		}
+	}
+
+	std::string groupIdentity(std::size_t g)
+	{
+		return rig::group(g).identity();
+	}
+} // namespace
+
+TEST_CASE("a rig that saw the board together registers exactly, Ready", "[camera][registration]")
+{
+	rig::reset();
+	const Report report = run();
+	requireTruth(report, 1e-9, 1e-9);
+	CHECK(report.verdict == Verdict::Ready);
+	CHECK(report.fitnessNotes.empty());
+	CHECK(report.scale.scale == Scale::Metric);
+	CHECK(report.scale.evidence.find("24 mm") != std::string::npos);
+	CHECK(report.thresholds.name == "registration/1");
+	// Every camera shares every group, so the reference is the lowest identity.
+	CHECK(report.reference->value == "cam00");
+	CHECK_FALSE(report.referenceRequested);
+	CHECK(report.referenceFromCamera(capture::CameraIdentity{"cam00"})->translation() == math::Vec3d{0.0});
+
+	const Diagnostics& d = report.diagnostics;
+	CHECK(d.groupsExamined == 24);
+	CHECK(d.groupsUsable == 24);
+	CHECK(d.observations == 96);
+	CHECK(d.observationsWithoutPose == 0);
+	CHECK(d.edges.size() == 6);
+	CHECK(d.components.size() == 1);
+	CHECK(d.weakBridges.empty());
+	CHECK(d.flips.empty());
+	CHECK(d.outliers.empty());
+	CHECK(d.heldOutGroups.size() == 5); // every fifth of 24, from the third
+	CHECK(d.medianDepth > 0.9);
+	CHECK(d.medianDepth < 1.1);
+	REQUIRE(d.refinement.has_value());
+	CHECK(d.refinement->bodies == 19);
+	REQUIRE(d.cameras.size() == 4);
+	for (const CameraEvidence& c : d.cameras)
+	{
+		CHECK(c.groups == 19);
+		CHECK(c.applicability == Applicability::Unknown);
+		CHECK(c.outliers == 0);
+		CHECK(c.rmsPixels < 1e-6);
+	}
+	REQUIRE(d.detections.size() == 24);
+	CHECK(std::is_sorted(d.detections.begin(), d.detections.end(),
+						 [](const GroupDetections& a, const GroupDetections& b)
+						 { return a.group < b.group; }));
+
+	const auto* held = std::get_if<HeldOutEvidence>(&report.heldOut);
+	REQUIRE(held != nullptr);
+	CHECK(held->groups == 5);
+	CHECK(held->predictions == 20);
+	CHECK(held->unpredicted == 0);
+	CHECK(held->rmsAngle < 1e-9);
+	CHECK(held->perCamera.size() == 4);
+	const auto* resampled = std::get_if<ResamplingEvidence>(&report.resampling);
+	REQUIRE(resampled != nullptr);
+	CHECK(resampled->resamples == 10);
+	CHECK(resampled->rotationVariation < 1e-9);
+	CHECK(resampled->translationVariation < 1e-9);
+
+	CHECK(report.reproducibility.poseSolver.backend == "truth");
+	CHECK(report.reproducibility.refiner.backend == "passthrough");
+	CHECK(report.reproducibility.detector.backend == "truth");
+	CHECK(report.reproducibility.frames == 96);
+	CHECK(report.reproducibility.sources ==
+		  std::vector<std::string>{"/rig/cam00", "/rig/cam01", "/rig/cam02", "/rig/cam03"});
+	CHECK(report.toString().find("Ready: 4 cameras relative to cam00, metric") == 0);
+}
+
+TEST_CASE("a partially overlapping rig registers through a chain of bridges", "[camera][registration]")
+{
+	// Each camera sees only its neighbours' part of the room: 0-1, 1-2, 2-3.
+	rig::reset(4, 36);
+	rig::seenBy(0, 12, {0, 1});
+	rig::seenBy(12, 24, {1, 2});
+	rig::seenBy(24, 36, {2, 3});
+	const Report report = run();
+	requireTruth(report, 1e-9, 1e-9);
+	const Diagnostics& d = report.diagnostics;
+	REQUIRE(d.edges.size() == 3);
+	for (const GraphEdgeReport& e : d.edges)
+		CHECK(e.bridge);
+	CHECK(d.weakBridges.empty());
+	// An end camera shares only 12 groups, and fewer once some are held out (9, as measured), which is
+	// short of Ready's 10: Exploratory, and the report says which camera.
+	CHECK(report.verdict == Verdict::Exploratory);
+	REQUIRE(report.fitnessNotes.size() == 1);
+	CHECK(report.fitnessNotes.front() == "Ready: 1 of 4 cameras in fewer than 10 shared groups (fewest: cam03, in 9)");
+}
+
+TEST_CASE("a rig hanging from one shared group names its weak bridge", "[camera][registration]")
+{
+	rig::reset(4, 25);
+	rig::seenBy(0, 12, {0, 1});
+	rig::seenBy(12, 13, {1, 2});
+	rig::seenBy(13, 25, {2, 3});
+	const Report report = run();
+	// Connected, and with exact poses exact; but cameras 2 and 3 rest on a single view.
+	requireTruth(report, 1e-9, 1e-9);
+	REQUIRE(report.diagnostics.weakBridges.size() == 1);
+	const GraphEdgeReport& bridge = report.diagnostics.weakBridges.front();
+	CHECK(bridge.a.value == "cam01");
+	CHECK(bridge.b.value == "cam02");
+	CHECK(bridge.sharedGroups == 1);
+	CHECK(report.verdict == Verdict::Rejected);
+	CHECK(std::any_of(report.fitnessNotes.begin(), report.fitnessNotes.end(), [](const std::string& note)
+					  { return note == "Exploratory: weak bridges: 1 under 2 shared groups (first: cam01-cam02, on 1)"; }));
+	// The one group holding the rig together is never held out, whatever the stride lands on.
+	const std::vector<std::string>& held = report.diagnostics.heldOutGroups;
+	CHECK(std::find(held.begin(), held.end(), groupIdentity(12)) == held.end());
+}
+
+TEST_CASE("a capture group that alone joins two cameras is never held out", "[camera][registration]")
+{
+	// A chain of seven cameras, each neighbouring pair sharing exactly one group: every group holds
+	// the rig together, so whichever the stride lands on must stay in.
+	rig::reset(7, 6);
+	for (std::size_t g = 0; g < 6; ++g)
+		rig::seenBy(g, g + 1, {g, g + 1});
+	const Report report = run();
+	requireTruth(report, 1e-9, 1e-9);
+	CHECK(report.diagnostics.heldOutGroups.empty());
+	REQUIRE(std::holds_alternative<Unavailable>(report.heldOut));
+	CHECK(std::get<Unavailable>(report.heldOut).reason == "no capture groups were held out");
+}
+
+TEST_CASE("a disconnected rig fails, with each component placed as a diagnostic", "[camera][registration]")
+{
+	rig::reset(4, 24);
+	rig::seenBy(0, 12, {0, 1});
+	rig::seenBy(12, 24, {3, 2});
+	const Report report = run();
+	REQUIRE(failedWith(report, Failure::Disconnected));
+	CHECK(report.failures.front().detail.find("{cam00, cam01} {cam02, cam03}") != std::string::npos);
+	const Diagnostics& d = report.diagnostics;
+	REQUIRE(d.components.size() == 2);
+	REQUIRE(d.componentEstimates.size() == 2);
+	for (const ComponentEstimate& estimate : d.componentEstimates)
+	{
+		REQUIRE(estimate.cameras.size() == 2);
+		const std::size_t root = indexOf(estimate.reference);
+		for (const RegisteredCamera& c : estimate.cameras)
+		{
+			const math::RigidTransformd truth = rig::trueReferenceFromCamera(root, indexOf(c.camera));
+			CHECK(rotationBetween(c.referenceFromCamera, truth) < 1e-9);
+			CHECK(math::length(c.referenceFromCamera.translation() - truth.translation()) < 1e-9);
+		}
+	}
+	CHECK(report.toString().find("Failed: Disconnected") == 0);
+}
+
+TEST_CASE("a planar board's other pose, ranked first, is resolved by the other cameras", "[camera][registration]")
+{
+	// Camera 3's pose solver ranks the wrong pose first in every group: no single view can tell, and
+	// a registration that trusted the ranking would place camera 3 wrongly.
+	rig::reset();
+	for (std::size_t g = 0; g < 24; ++g)
+		rig::scene().flipped.insert({3, g});
+	const Report report = run();
+	requireTruth(report, 1e-9, 1e-9);
+	const Diagnostics& d = report.diagnostics;
+	REQUIRE(d.flips.size() >= 15);
+	for (const FlipChoice& flip : d.flips)
+		CHECK(flip.camera.value == "cam03");
+	CHECK(d.outliers.empty());
+}
+
+TEST_CASE("a capture group whose frames disagree is outvoted, and its stray named", "[camera][registration]")
+{
+	// In group 5 camera 2's frame shows the board 6 cm and 0.2 rad from where the others saw it: a
+	// frame from another instant, grouped with the wrong ones.
+	rig::reset();
+	const math::RigidTransformd& actual = rig::scene().referenceFromBoard[5];
+	rig::scene().elsewhere[{2, 5}] =
+		math::RigidTransformd{math::angleAxis(0.2, math::Vec3d{0, 0, 1}), math::Vec3d{0.06, 0, 0}} * actual;
+	Request request;
+	request.heldOutFraction = 0; // so group 5 is certainly fitted
+	const Report report = run(request);
+	requireTruth(report, 1e-9, 1e-9);
+	const Diagnostics& d = report.diagnostics;
+	REQUIRE(d.outliers.size() == 1);
+	CHECK(d.outliers[0].group == groupIdentity(5));
+	CHECK(d.outliers[0].camera.value == "cam02");
+	// The board moved 6 cm at 1 m, some 30 px at f = 500: measured at 66 standard deviations.
+	CHECK(d.outliers[0].rmsWhitened > 10 * request.loss.scale);
+	CHECK(d.cameras[2].outliers == 1);
+}
+
+TEST_CASE("a requested reference is the identity, and every camera is placed relative to it", "[camera][registration]")
+{
+	rig::reset();
+	Request request;
+	request.reference = capture::CameraIdentity{"cam02"};
+	const Report report = run(request);
+	requireTruth(report, 1e-9, 1e-9);
+	CHECK(report.reference->value == "cam02");
+	CHECK(report.referenceRequested);
+	const math::RigidTransformd self = *report.referenceFromCamera(capture::CameraIdentity{"cam02"});
+	CHECK(self.translation() == math::Vec3d{0.0});
+	CHECK(self.rotation() == math::Quatd{1, 0, 0, 0});
+}
+
+TEST_CASE("the reference is the camera in the most shared groups when none is requested", "[camera][registration]")
+{
+	rig::reset(4, 30);
+	rig::seenBy(0, 10, {0, 1});
+	rig::seenBy(10, 30, {1, 2, 3});
+	Request request;
+	request.heldOutFraction = 0;
+	const Report report = run(request);
+	REQUIRE(report.status == RegistrationStatus::Succeeded);
+	// cam01 shares all 30 groups; cam02 and cam03 share 20, cam00 10.
+	CHECK(report.reference->value == "cam01");
+}
+
+TEST_CASE("held-out groups validate and never reach the refinement", "[camera][registration]")
+{
+	rig::reset();
+	Request request;
+	request.resamples = 0;
+	const Report report = run(request);
+	REQUIRE(report.status == RegistrationStatus::Succeeded);
+	const std::size_t held = report.diagnostics.heldOutGroups.size();
+	REQUIRE(held == 5);
+	std::size_t global = 0, single = 0;
+	for (const rig::RefinerScript::Asked& asked : rig::refinerScript().asked)
+	{
+		if (asked.freeCameras)
+		{
+			++global;
+			CHECK(asked.bodies == 24 - held);
+			// Four cameras of 24 corners each per fitted group, no more.
+			CHECK(asked.observations == (24 - held) * 4 * 24);
+		}
+		else
+		{
+			++single;
+			CHECK(asked.bodies == 1);
+			CHECK(asked.observations == 3 * 24); // the other three members
+		}
+	}
+	CHECK(global == 1);
+	CHECK(single == held * 4);
+	CHECK(std::holds_alternative<Unavailable>(report.resampling));
+}
+
+TEST_CASE("a noisy rig is measured: held-out transfer and stability report the noise", "[camera][registration]")
+{
+	rig::reset();
+	rig::scene().poseNoise = 0.002;
+	const Report report = run();
+	requireTruth(report, 0.01, 0.01);
+	const auto* held = std::get_if<HeldOutEvidence>(&report.heldOut);
+	REQUIRE(held != nullptr);
+	// Measured: 0.027 mrad held out, against a rotation spread of 0.69 mrad and a translation spread of
+	// 0.05% of the depth. The noise turns each board about its centre, which moves its corners little
+	// (a transfer barely sees it) but turns the relative pose a group proposes by as much (resamples
+	// do): the stand-in refiner keeps whichever proposal initialisation chose.
+	CHECK(held->rmsAngle > 1e-6);
+	CHECK(held->rmsAngle < 0.001);
+	const auto* resampled = std::get_if<ResamplingEvidence>(&report.resampling);
+	REQUIRE(resampled != nullptr);
+	CHECK(resampled->rotationVariation > 1e-5);
+	CHECK(resampled->rotationVariation < 0.01);
+	CHECK(resampled->translationVariation > 1e-5);
+	CHECK(resampled->translationVariation < 0.01);
+}
+
+TEST_CASE("the same work in parallel, serially, or listed in another order gives the same report", "[camera][registration]")
+{
+	rig::reset();
+	rig::scene().poseNoise = 0.002;
+	rig::scene().flipped.insert({1, 4});
+	const lain::testing::ThreadPool pool;
+	Request parallel;
+	Request serial;
+	serial.execution = ExecutionPolicy::DeterministicDebug;
+	const Report a = run(parallel);
+	const Report b = run(serial);
+
+	std::vector<method::RigCamera> cameras = rig::cameras();
+	std::vector<method::GroupObservations> groups = rig::groups();
+	std::reverse(cameras.begin(), cameras.end());
+	std::reverse(groups.begin(), groups.end());
+	const Report c = method::registerCameras(cameras, groups, specification(), parallel);
+
+	for (const Report* other : {&b, &c})
+	{
+		REQUIRE(other->status == RegistrationStatus::Succeeded);
+		CHECK(other->toString() == a.toString());
+		REQUIRE(other->cameras.size() == a.cameras.size());
+		for (std::size_t i = 0; i < a.cameras.size(); ++i)
+		{
+			CHECK(other->cameras[i].camera == a.cameras[i].camera);
+			CHECK(other->cameras[i].referenceFromCamera.rotation() == a.cameras[i].referenceFromCamera.rotation());
+			CHECK(other->cameras[i].referenceFromCamera.translation() == a.cameras[i].referenceFromCamera.translation());
+		}
+		CHECK(other->diagnostics.heldOutGroups == a.diagnostics.heldOutGroups);
+		CHECK(std::get<HeldOutEvidence>(other->heldOut).rmsAngle == std::get<HeldOutEvidence>(a.heldOut).rmsAngle);
+		const auto& ra = std::get<ResamplingEvidence>(a.resampling);
+		const auto& rb = std::get<ResamplingEvidence>(other->resampling);
+		CHECK(rb.rotationVariation == ra.rotationVariation);
+		CHECK(rb.translationVariation == ra.translationVariation);
+		CHECK(rb.worstCamera == ra.worstCamera);
+		CHECK(other->diagnostics.flips.size() == a.diagnostics.flips.size());
+		CHECK(other->verdict == a.verdict);
+	}
+}
+
+TEST_CASE("footage is detected member by member, then registered", "[camera][registration]")
+{
+	rig::reset(3, 20);
+	const std::vector<method::RigFootage> footage = rig::footage();
+	std::vector<capture::CameraFootage> byPosition;
+	for (const method::RigFootage& c : footage)
+		byPosition.push_back({c.camera, c.footage});
+	const capture::GroupingResult grouping = capture::groupsByPosition(byPosition);
+	REQUIRE(grouping.groups.size() == 20);
+	const Report report = method::registerCameras(footage, grouping.groups, specification(), Request{});
+	requireTruth(report, 1e-9, 1e-9);
+	CHECK(report.diagnostics.observations == 60);
+
+	SECTION("a member whose frame its footage lacks is refused before anything is decoded")
+	{
+		std::vector<capture::CaptureGroup> groups = grouping.groups;
+		media::FrameRef missing = rig::frameOf(0, 999);
+		groups.push_back(*capture::CaptureGroup::create({{capture::CameraIdentity{"cam00"}, missing}}).group);
+		const Report refused = method::registerCameras(footage, groups, specification(), Request{});
+		REQUIRE(failedWith(refused, Failure::InvalidDataset));
+		CHECK(refused.failures.front().detail.find("frame 999 of /rig/cam00") != std::string::npos);
+		CHECK(refused.diagnostics.detections.empty());
+	}
+}
+
+TEST_CASE("a dataset or request that cannot register is refused before any work", "[camera][registration]")
+{
+	rig::reset();
+	SECTION("an unknown fitness profile")
+	{
+		Request request;
+		request.fitnessProfile = "registration/0";
+		CHECK(failedWith(run(request), Failure::UnknownFitnessProfile));
+	}
+	SECTION("an unknown reference")
+	{
+		Request request;
+		request.reference = capture::CameraIdentity{"cam99"};
+		CHECK(failedWith(run(request), Failure::UnknownReference));
+	}
+	SECTION("one camera")
+	{
+		rig::reset(1, 10);
+		CHECK(failedWith(run(), Failure::TooFewCameras));
+	}
+	SECTION("two cameras with one identity")
+	{
+		std::vector<method::RigCamera> cameras = rig::cameras();
+		cameras[1].camera = cameras[0].camera;
+		CHECK(failedWith(method::registerCameras(cameras, rig::groups(), specification(), Request{}), Failure::InvalidDataset));
+	}
+	SECTION("a group naming a camera the dataset lacks")
+	{
+		std::vector<method::RigCamera> cameras = rig::cameras();
+		cameras.pop_back();
+		const Report report = method::registerCameras(cameras, rig::groups(), specification(), Request{});
+		REQUIRE(failedWith(report, Failure::InvalidDataset));
+		CHECK(report.failures.front().detail.find("names camera \"cam03\"") != std::string::npos);
+	}
+	SECTION("a group whose detections do not match its members")
+	{
+		std::vector<method::GroupObservations> groups = rig::groups();
+		groups[3].detections.pop_back();
+		CHECK(failedWith(method::registerCameras(rig::cameras(), groups, specification(), Request{}), Failure::InvalidDataset));
+	}
+	SECTION("a model of another image size")
+	{
+		rig::scene().modelWidth = 800;
+		CHECK(failedWith(run(), Failure::IncompatibleModel));
+	}
+	SECTION("a model of unknown applicability, which the request refuses")
+	{
+		Request request;
+		request.unknownApplicability = ApplicabilityPolicy::Refuse;
+		CHECK(failedWith(run(request), Failure::UnknownApplicability));
+	}
+	SECTION("no capture group seen by two cameras")
+	{
+		rig::seenBy(0, 24, {0});
+		CHECK(failedWith(run(), Failure::TooFewCameras));
+	}
+}

@@ -1379,6 +1379,30 @@ residual* and *weak bridge*.
 - **The sandbox needed the X11/Wayland/libva dev packages** (`libxrandr-dev` and friends) before the
   Vulkan loader would configure. A fresh container does not have them.
 
+### Update 2026-10-05 — M9 slice 2, sub-slice 4: the board registration method module
+
+`registration::board::registerCameras`, over footage or over stored detections. The pose solver and
+the refiner are seams, and everything that decides what a registration means is here. Tested over
+stand-ins, including a pass-through refiner, so the Ceres refiner's accuracy is sub-slice 5's to show.
+`ctest -j8` **1092/1092** Debug and **1100/1100** Release with video, camera and Ceres on,
+**1033/1033** with all three off (+16 each); warning-clean, format-check clean. Full notes in
+WORK.md's *Sub-slice 4 built* under M9 slice 2.
+
+- **Initialisation chooses, it does not trust.** Each spanning-tree edge's relative pose is chosen
+  from every proposal its shared groups make (both of each planar board's poses), scored by the
+  median transfer over at most 24 sampled groups. That one rule resolves a camera whose every view
+  is flipped, and outvotes a group with a frame from another instant.
+- **A group that alone joins two parts of the camera graph is never held out.** What is held out
+  must not decide whether a registration can happen. CONTEXT.md's *Held-out group* is amended.
+- **Outliers and flips are reported after the refinement**: an observation whose RMS whitened
+  residual is above the loss scale, and an observation whose result agrees with the plane's other
+  pose.
+- **A sabotage that passed at first:** removing the hold-out guard broke nothing, because the
+  weak-bridge case's stride never landed on its bridging group. A seven-camera chain in which every
+  group is critical now pins it.
+- **`cmake --build … --target format | tail -0` formats nothing**: tail exits at once and SIGPIPE
+  kills the formatter. Send the output to `/dev/null` instead.
+
 ### Update 2026-10-05 — M9 slice 2, sub-slice 3: capture and registration contracts
 
 The types and pure functions registration will stand on, with nothing using them yet: capture

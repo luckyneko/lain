@@ -1,10 +1,9 @@
 #include "lain/camera/calibration/board.h"
 
+#include "execution.h"
 #include "lain/camera/board/pose.h"
 #include "lain/camera/calibration/estimator.h"
 #include "lain/camera/projection.h"
-
-#include <lain/task/task.h>
 
 #include <algorithm>
 #include <array>
@@ -178,20 +177,7 @@ namespace lain::camera::calibration::board
 		return nullptr;
 	}
 
-	// Run `work(i)` for every i below `count`: in parallel on the process pool normally, serially in
-	// order for deterministic debugging.
-	template <typename Work>
-	static void forEach(std::size_t count, ExecutionPolicy execution, const Work& work)
-	{
-		if (execution == ExecutionPolicy::DeterministicDebug)
-		{
-			for (std::size_t i = 0; i < count; ++i)
-				work(i);
-			return;
-		}
-		task::range(std::ptrdiff_t{0}, std::ptrdiff_t(count), [&work](std::ptrdiff_t i)
-					{ work(std::size_t(i)); });
-	}
+	using detail::forEach;
 
 	static std::vector<cb::Observation> observationsAt(const std::vector<cb::DetectionReport>& detections,
 													   const std::vector<std::uint32_t>& positions)

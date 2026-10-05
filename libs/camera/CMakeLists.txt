@@ -21,6 +21,7 @@ add_library(camera STATIC
 	src/calibration/estimator.cpp
 	src/calibration/board.cpp
 	src/capture/capturegroup.cpp
+	src/registration/board.cpp
 	src/registration/fitness.cpp
 	src/registration/observationgraph.cpp
 	src/registration/refiner.cpp
@@ -29,7 +30,7 @@ add_library(camera STATIC
 add_library(lain::camera ALIAS camera)
 
 target_compile_features(camera PUBLIC cxx_std_17)
-target_include_directories(camera PUBLIC include)
+target_include_directories(camera PUBLIC include PRIVATE src)
 target_link_libraries(camera
 	PUBLIC lain::math  # math::AxisConvention names the camera frame (cameramodel.h)
 	PUBLIC lain::core  # Length, Sha256 and Factory are in board values and backend registries

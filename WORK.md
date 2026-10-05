@@ -3497,6 +3497,111 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        `"a b"` + `"/c"`.
      - Tarjan's `low > order` as `>=` fails the connected and ring cases.
      - The frame-twice check disabled fails its section.
+
+   **Sub-slice 4 built (2026-10-05): the board registration method module.**
+   `registration::board::registerCameras` (`registration/board.{h,cpp}`) has two entry points:
+   - one over footage (`RigFootage`: identity, model, footage);
+   - one over detections already made (`RigCamera` plus `GroupObservations`).
+
+   Everything that decides what a registration means is here; the pose solver and the refiner are
+   seams. In order:
+   1. **Checks before any work**, failing with a reason:
+      - the profile;
+      - camera identities: non-empty and unique;
+      - at least two cameras;
+      - the requested reference;
+      - groups naming known cameras, with one detection per member;
+      - each model against its footage's geometry (Incompatible fails; Unknown follows the
+        request's policy);
+      - the backends.
+
+      The footage overload also checks for a detector and that every member's frame is in its
+      footage, through an index of each footage built once. A linear search was about 1.6e9
+      comparisons at the target scale.
+   2. **A pose for every usable detection**, one per task, keeping the plane's other pose. Each
+      corner's ray is unprojected ONCE, so initialisation's inner loop is a cross product, with no
+      projection.
+   3. **Held out:** every k-th usable group in identity order, **unless that would split the
+      camera graph**. A group that alone joins two parts always stays in, since what is held out
+      must not decide whether a registration can happen; CONTEXT.md's *Held-out group* now says so.
+   4. **The observation graph over the fitting groups.**
+      - More than one component fails `Disconnected`. Each component is still placed relative to
+        its first camera, as a diagnostic.
+      - No group seen by two cameras fails `TooFewCameras`.
+   5. **The reference:** requested, or the camera in the most shared groups, with ties going to
+      the lower identity.
+   6. **Initialisation over a maximum spanning tree.**
+      - Each tree edge's relative pose is chosen among every proposal its shared groups make: four
+        per group, from each pair of the two cameras' poses.
+      - A proposal is scored by the **median**, over the sampled groups, of how well it transfers
+        each camera's board into the other, either pose allowed.
+      - At most 24 evenly spaced groups per edge propose and score
+        (`kInitialisationGroups`), so time does not grow with a rig's thousands of groups.
+      - Each group's board is seeded from whichever member's pose fits the group best, by the
+        median over members.
+   7. **The refinement through the seam.** Then, per fitted observation:
+      - the RMS whitened residual (by the covariance's Cholesky factor, else by the noise model's
+        sigma), where above the loss scale is an **outlier**, named by group and camera;
+      - a **flip**, recorded when the result agrees with the plane's other pose rather than the
+        backend's first;
+      - per-camera residuals, and the median observation depth.
+   8. **Held-out transfer:** each member of each held-out group predicted from the others, through
+      a pose-only refinement (every camera held), measured by `board::measure`, per camera too.
+   9. **A seeded bootstrap.** Resamples of the fitting groups, drawn from one engine before
+      anything runs, each re-initialised and re-refined in parallel. Each camera's rotation and
+      translation spread is measured from the result, the translation over the median depth.
+   10. **The verdict.** The criteria are:
+       - groups per camera;
+       - weak bridges, against each tier's own minimum;
+       - held-out transfer;
+       - rotation and translation spread;
+       - outlier fraction.
+
+       Ready needs all the evidence; the notes say what fell short.
+   - **`forEach` moved to a private `src/execution.h`**, shared by both method modules, and
+     `lain::camera` gained `PRIVATE src` as `lain::app` has.
+   - **Tests:** 14 cases in `test-camera-registration`, over stand-ins (`syntheticrig.h`): a rig on
+     an arc, a pose solver answering from its truth (optionally noisy, or ranking the plane's
+     other pose first), a detector, and a **pass-through refiner** that returns its starting
+     estimate. What is tested is therefore the module around the refinement; the Ceres refiner is
+     sub-slice 5's. The cases:
+     - connected rigs, Ready and exact to 1e-9;
+     - a partial rig, Exploratory, with the camera named;
+     - a weak bridge, Rejected, with the bridge named;
+     - a disconnected rig, with each component placed;
+     - every view of one camera flipped, still exact, with the flips recorded;
+     - a capture group with a frame from another instant, outvoted, its stray named at 66σ;
+     - requested and automatic references;
+     - held-out groups kept out of the refinement, counted through the stand-in refiner;
+     - a noisy rig;
+     - parallel, serial and reversed input giving the same report;
+     - the footage path;
+     - eight refusals.
+
+     Plus `NoPoseSolver` and `NoDetector` in `test-camera-nobackend`, and `NoRefiner` in a new
+     one-case `test-camera-norefiner` (a pose solver and no refiner, since a registry only grows).
+   - **Measured on the noisy rig** (each pose turned up to 2 mrad about the board's centre):
+     - held-out transfer is **0.027 mrad**;
+     - the rotation spread is **0.69 mrad**, and the translation spread **0.05%** of the depth.
+
+     A board turned about its centre barely moves its corners, so a transfer barely sees it. But
+     the relative pose a group proposes turns by as much, and the pass-through refiner keeps
+     whichever proposal initialisation chose.
+   - `ctest -j8` **1092/1092** Debug and **1100/1100** Release with video, camera and Ceres on, and
+     **1033/1033** with all three off (+16 each); warning-clean, format-check clean. The
+     registration executable runs in 0.3 s in Release.
+   - **Four sabotages, all caught; one first proved nothing.**
+     - Dropping the plane's other pose (trusting the backend's ranking) fails the flip case.
+     - Fitting the held-out groups as well fails three cases, including the one that counts the
+       refinement's bodies.
+     - Drawing the bootstrap inside the parallel loop from one engine fails the determinism case 8
+       times in 8.
+     - Holding out a group even when it splits the graph **passed everything at first**: the weak
+       bridge case's stride never landed on its one bridging group. A seven-camera chain, where
+       every group is the only link between its two cameras, now fails without the guard.
+   - **Found by Release only:** GCC's `-Wformat-truncation` at `-O3` refused an `snprintf` in the
+     test rig that Debug accepted. **Found by a pipe:** `cmake --build … --target format | tail -0`
+     kills the formatter by SIGPIPE before it writes anything; send its output to `/dev/null`.
 3. **Targetless registration with known intrinsics.** Reuse immutable camera models, capture groups,
    registration reports, shared feature-track extraction, and Ceres refinement. Accepted tracks
    establish overlap, initial relative geometry, and scene landmarks before Ceres begins; absent

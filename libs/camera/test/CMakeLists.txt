@@ -27,3 +27,16 @@ add_executable(test-camera-calibration test_calibration.cpp)
 target_compile_features(test-camera-calibration PRIVATE cxx_std_17)
 target_link_libraries(test-camera-calibration PRIVATE lain::camera lain::testing lain::warnings Catch2::Catch2WithMain)
 catch_discover_tests(test-camera-calibration TEST_PREFIX "(camera) ")
+
+# The board registration method module over stand-in backends answering from a known rig. Its own
+# executable, so those stand-ins are the only backends registered.
+add_executable(test-camera-registration test_registration.cpp)
+target_compile_features(test-camera-registration PRIVATE cxx_std_17)
+target_link_libraries(test-camera-registration PRIVATE lain::camera lain::testing lain::warnings Catch2::Catch2WithMain)
+catch_discover_tests(test-camera-registration TEST_PREFIX "(camera) ")
+
+# A build that can pose a board but not refine a registration: a pose solver and no refiner.
+add_executable(test-camera-norefiner test_norefiner.cpp)
+target_compile_features(test-camera-norefiner PRIVATE cxx_std_17)
+target_link_libraries(test-camera-norefiner PRIVATE lain::camera lain::warnings Catch2::Catch2WithMain)
+catch_discover_tests(test-camera-norefiner TEST_PREFIX "(camera) ")

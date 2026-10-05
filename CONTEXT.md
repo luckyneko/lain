@@ -298,8 +298,9 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   solved from the other members with every camera held at its registered transform, lain's
   projection predicts the member's corners, and the angle between predicted and observed rays is
   its **transfer residual**. It tests the extrinsics, which a residual on the fitted groups cannot,
-  since refinement has already minimised that. _Avoid_: validation view, reprojection error when
-  the prediction crosses cameras.
+  since refinement has already minimised that. A group that alone joins two parts of the camera
+  graph is never held out: what is held out must not decide whether a registration can happen.
+  _Avoid_: validation view, reprojection error when the prediction crosses cameras.
 - **Global registration refinement** — joint reprojection optimization of all registered camera
   transforms and the method-specific latent geometry while holding the registration reference fixed:
   board poses for board registration or scene landmarks induced by accepted feature tracks for

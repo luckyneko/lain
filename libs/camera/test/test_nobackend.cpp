@@ -8,6 +8,7 @@
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/board.h>
 #include <lain/camera/calibration/estimator.h>
+#include <lain/camera/registration/board.h>
 #include <lain/camera/registration/refiner.h>
 #include <lain/media/framesequence.h>
 #include <lain/media/framesource.h>
@@ -114,4 +115,28 @@ TEST_CASE("with no backend, a registration refinement says the capability is mis
 	CHECK(solution.status == registration::RefinementStatus::NoBackend);
 	CHECK_FALSE(solution.usable());
 	CHECK(solution.detail.find("no registration refiner") != std::string::npos);
+}
+
+TEST_CASE("with no backend, a registration fails for want of a pose solver, or a detector", "[camera][registration]")
+{
+	namespace registration = lain::camera::registration;
+	camera::CameraModelParameters p;
+	p.image = {64, 48};
+	p.intrinsics = {60.0, 60.0, 31.5, 23.5};
+	const camera::CameraModel model = *camera::CameraModel::create(p).model;
+	const std::vector<registration::board::RigCamera> cameras{{camera::capture::CameraIdentity{"a"}, model},
+															  {camera::capture::CameraIdentity{"b"}, model}};
+	const registration::Report fromDetections =
+		registration::board::registerCameras(cameras, {}, specification(), registration::Request{});
+	REQUIRE(fromDetections.status == registration::RegistrationStatus::Failed);
+	CHECK(fromDetections.failures.front().failure == registration::Failure::NoPoseSolver);
+
+	const media::FrameSequence footage = media::FrameSequence::over(std::make_shared<StillSource>());
+	const std::vector<registration::board::RigFootage> rig{{camera::capture::CameraIdentity{"a"}, model, footage},
+														   {camera::capture::CameraIdentity{"b"}, model, footage}};
+	const registration::Report fromFootage =
+		registration::board::registerCameras(rig, {}, specification(), registration::Request{});
+	REQUIRE(fromFootage.status == registration::RegistrationStatus::Failed);
+	CHECK(fromFootage.failures.front().failure == registration::Failure::NoDetector);
+	CHECK(fromFootage.failures.front().detail.find("no board detector") != std::string::npos);
 }
