@@ -10,7 +10,11 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 using namespace lain::camera;
 using namespace lain::camera::testing;
@@ -65,4 +69,42 @@ TEST_CASE("every model has a display name", "[camera][distortion]")
 	CHECK(std::string(displayName(ModifiedBrownConrady5{})) == "Modified Brown-Conrady 5");
 	CHECK(std::string(displayName(RationalBrownConrady8{})) == "Rational Brown-Conrady 8");
 	CHECK(std::string(displayName(KannalaBrandt4{})) == "Kannala-Brandt 4");
+}
+
+TEST_CASE("every model names each of its coefficients in its own order", "[camera][distortion]")
+{
+	// Each model built with distinct values, so a transposed name or value moves a pair. Names are
+	// compared as std::string, for the reason above.
+	using Named = std::vector<std::pair<std::string, double>>;
+	const auto named = [](const Distortion& distortion)
+	{
+		const std::vector<std::string_view> names = coefficientNames(modelOf(distortion));
+		const std::vector<double> values = coefficients(distortion);
+		REQUIRE(names.size() == values.size());
+		Named out;
+		for (std::size_t i = 0; i < names.size(); ++i)
+			out.emplace_back(std::string(names[i]), values[i]);
+		return out;
+	};
+	CHECK(named(NoDistortion{}).empty());
+	CHECK(named(BrownConrady5{1, 2, 3, 4, 5}) == Named{{"k1", 1}, {"k2", 2}, {"p1", 3}, {"p2", 4}, {"k3", 5}});
+	CHECK(named(InverseBrownConrady5{1, 2, 3, 4, 5}) == Named{{"k1", 1}, {"k2", 2}, {"p1", 3}, {"p2", 4}, {"k3", 5}});
+	CHECK(named(ModifiedBrownConrady5{1, 2, 3, 4, 5}) == Named{{"k1", 1}, {"k2", 2}, {"p1", 3}, {"p2", 4}, {"k3", 5}});
+	CHECK(named(RationalBrownConrady8{1, 2, 3, 4, 5, 6, 7, 8}) ==
+		  Named{{"k1", 1}, {"k2", 2}, {"p1", 3}, {"p2", 4}, {"k3", 5}, {"k4", 6}, {"k5", 7}, {"k6", 8}});
+	CHECK(named(KannalaBrandt4{1, 2, 3, 4}) == Named{{"k1", 1}, {"k2", 2}, {"k3", 3}, {"k4", 4}});
+}
+
+TEST_CASE("a model's neutral form is that model with every coefficient zero", "[camera][distortion]")
+{
+	for (int m = 0; m < kModelCount; ++m)
+	{
+		const Distortion model = everyModel(m);
+		INFO(displayName(model));
+		const Distortion zero = neutral(modelOf(model));
+		CHECK(zero.index() == model.index());
+		CHECK(std::string(displayName(modelOf(model))) == std::string(displayName(model)));
+		for (const double value : coefficients(zero))
+			CHECK(value == 0.0);
+	}
 }

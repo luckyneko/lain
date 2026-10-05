@@ -8305,6 +8305,75 @@ No behaviour change and no test added, so the suite is the regression test: `cte
   it `inline constexpr`, the tree's idiom for a header constant (`memory/alloc.h`,
   `camera/flow/register.h`).
 
+## Each distortion model carries its own algorithm (built 2026-10-05)
+
+A distortion struct used to hold only its coefficients. What the model *did* was in three other
+places:
+- its projection in `if constexpr` chains inside `details/projection.inl`'s visitors;
+- its fold scan in `cameramodel.cpp`'s `mappingOf` (over `std::function`, with a
+  `holds_alternative<KannalaBrandt4>` test for "an angle stops at pi/2");
+- its name and coefficient order in `cameramodel.cpp`, `calibration/board.cpp` and the OpenCV
+  estimator, three times over.
+
+ADR-0016 already said each variant *defines* its projection behaviour, so this makes the ADR
+literal (amended in place). Decided with the repo owner: **members**, and **the facts as well as the
+algorithm**. `ctest -j8` **1050/1050** Debug and **1058/1058** Release, both with video and camera on
+(+2 each); warning-clean, format-check clean; `flowview run --example` runs.
+
+- **Every alternative of `Distortion` declares one interface:** `kDisplayName`,
+  `kCoefficientNames`, `coefficients()`, `project<T>(x, y, z, domain)` (a camera-frame direction to
+  distorted normalised coordinates, a new `DistortedPoint<T>`), `unproject<T>(xd, yd, domain)` (to a
+  unit ray), and `domain()`. The free `project` / `unproject` became the intrinsics plus one
+  `std::visit` each, and name no model. Their bodies sit at their declarations in `projection.h`,
+  and `details/projection.inl` is deleted.
+- **Three catch-all `else`s are gone, and each would have misdescribed a seventh model without a
+  compile error:**
+  - `displayName` returned "Kannala-Brandt 4" for any variant it did not name;
+  - `mappingOf` gave any struct with `k1..k3` the Brown-Conrady fold scan;
+  - `coefficients()` dropped any coefficient past `k3`.
+
+  Now a model missing any member fails the build at the visit.
+- **`project` takes the 3D direction, not `x / z`**, because Kannala-Brandt works on
+  `atan2(rho, z)`. So "which side is closed form" is each model's own business: the three forward
+  polynomials delegate to `detail::projectForward` / `unprojectForward` with their `distort`, and
+  `InverseBrownConrady5` writes its iterative projection itself.
+- **Every member is total.** Each `project` refuses `z <= 0` as `BehindCamera`, so a direct caller
+  cannot divide by zero, and the free `project` lost its own check.
+- **Deviation from the plan: the raw formulas are PUBLIC.** These are `distort`, `undistort`, and
+  Kannala-Brandt's `distortedAngle` / `distortedAngleSlope`. The shared forward helpers call
+  `distort`, so private would have needed friends or a lambda per member. A public raw formula is the
+  header's comment made callable, and it is documented as checking nothing. Private member functions
+  would have kept the structs aggregates either way.
+- **Structs stay aggregates** (public data, no constructors), so brace-init, `LAIN_SERIALIZE` and the
+  estimator's construction are untouched.
+- **`domain()` lives in the new `src/distortion.cpp`** (a non-template body), over one `foldOf`
+  templated on its callable, so `std::function` is gone. `NoDistortion` returns `{inf, inf}`
+  directly, which is the answer the old identity scan reached. `displayName` / `neutral` move there
+  from `cameramodel.cpp`, where they had been defined despite being declared in `distortion.h`.
+- **`coefficientNames(DistortionModel)` / `coefficients(const Distortion&)`** replace the hand-spelled
+  lists. `board.cpp`'s copy is deleted, and the estimator's deviation count reads the model.
+  **The estimator's `coefficientsOf` stays**: it is OpenCV's order, a backend's convention that
+  happens to equal lain's (the agreement test checks it). Folding the two would hide that there are
+  two conventions.
+- `ProjectionStatus`, `Unprojection<T>` and `DistortionDomain` moved into `distortion.h`. Every
+  includer still sees them through `projection.h` → `cameramodel.h` → `distortion.h`.
+- **Two new cases**: each model names its coefficients in its own order (distinct values, so a
+  transposed name or value moves a pair), and each model's `neutral` form is that model with every
+  coefficient zero and the same display name.
+- **Four sabotages, all caught:**
+  - swapping `k1` / `k2` in `BrownConrady5::distort` fails the golden projection case;
+  - swapping `k4` / `k5` in `RationalBrownConrady8::kCoefficientNames` fails exactly the new order
+    case;
+  - deleting `ModifiedBrownConrady5::domain()` fails the build at `create`'s visit ("no member named
+    'domain'");
+  - dropping Kannala-Brandt's in-front check fails the `BehindCamera` case for that model.
+
+  Each restore was diffed against its backup and rebuilt, and the objects were confirmed newer than
+  the sources.
+- **Not done:** a byte comparison against a pre-change binary. The formulas moved expression for
+  expression. The golden values, the OpenCV agreement test (1e-6 px) and the camera vertical are
+  what pin the behaviour.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because

@@ -333,21 +333,6 @@ namespace lain::camera::calibration::board
 		return ok;
 	}
 
-	static std::vector<std::string> coefficientNames(DistortionModel model)
-	{
-		switch (model)
-		{
-			case DistortionModel::None:
-				return {};
-			case DistortionModel::RationalBrownConrady8:
-				return {"k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6"};
-			case DistortionModel::KannalaBrandt4:
-				return {"k1", "k2", "k3", "k4"};
-			default:
-				return {"k1", "k2", "p1", "p2", "k3"};
-		}
-	}
-
 	// --- the public pieces --------------------------------------------------------
 
 	double coverage(const std::vector<const cb::Observation*>& views, const ImageGeometry& image)
@@ -547,8 +532,8 @@ namespace lain::camera::calibration::board
 				if (modelOf(request.imported->distortion()) == request.model)
 				{
 					initial->distortion = request.imported->distortion();
-					for (const std::string& name : coefficientNames(request.model))
-						report.seededFields.push_back(name);
+					for (const std::string_view name : coefficientNames(request.model))
+						report.seededFields.emplace_back(name);
 				}
 			}
 

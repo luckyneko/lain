@@ -61,18 +61,6 @@ namespace lain::camera
 		std::string detail; // which parameter or corner, for a person
 	};
 
-	// Where a model's distortion is defined (see distortion.h). `limit` bounds the argument of its
-	// radial mapping, and `limitImage` is the mapping's value there, the bound on the other side:
-	//   forward Brown-Conrady and rational: the ideal radius, and the distorted radius it maps to;
-	//   inverse Brown-Conrady: the DISTORTED radius, and the ideal radius it maps to;
-	//   Kannala-Brandt: the angle from the axis, and the distorted radius it maps to.
-	// Infinite when the mapping never folds; for Kannala-Brandt never more than pi/2.
-	struct DistortionDomain
-	{
-		double limit = 0;
-		double limitImage = 0;
-	};
-
 	struct ModelResult;
 
 	// A calibrated camera: image geometry, intrinsics and distortion (CONTEXT.md, "Camera model").
@@ -90,6 +78,7 @@ namespace lain::camera
 		const ImageGeometry& image() const { return m_parameters.image; }
 		const Intrinsics& intrinsics() const { return m_parameters.intrinsics; }
 		const Distortion& distortion() const { return m_parameters.distortion; }
+		// The distortion's domain(), found once here because it is a scan (distortion.h).
 		const DistortionDomain& domain() const { return m_domain; }
 
 		// One line for a person: the distortion model, the geometry, then every parameter by name.

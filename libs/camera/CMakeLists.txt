@@ -9,6 +9,7 @@
 
 add_library(camera STATIC
 	src/cameramodel.cpp
+	src/distortion.cpp
 	src/board/pattern.cpp
 	src/board/specification.cpp
 	src/board/detection.cpp

@@ -113,6 +113,16 @@ ABI or an untyped coefficient array. Each variant defines its exact coefficient 
 distortion direction, projection and unprojection behavior, serialization identity, and supported
 operations. New variants are added deliberately when a concrete camera family requires them.
 
+*Amended 2026-10-05:* "defines" is literal. Each variant's struct in `distortion.h` declares its
+display name, its coefficient names in order with their values, its projection (camera-frame
+direction to distorted normalised coordinates), its unprojection (back to a unit ray), and its
+domain. A camera model's projection is just its distortion's projection followed by its intrinsics,
+and names no model. A variant that lacks any of these fails to compile where the variant is visited.
+Until this amendment, the same knowledge lived in `if constexpr` chains in the projection kernels and
+in visitors in `cameramodel.cpp`. Several of those ended in a catch-all `else`, so a seventh variant
+would have compiled and been described wrongly. The serialization identity stays with the serialize
+target (`libs/camera/serialize`), which owns the document format.
+
 The initial variants are no distortion, Brown-Conrady 5, Inverse Brown-Conrady 5, Modified
 Brown-Conrady 5, Rational Brown-Conrady 8, and Kannala-Brandt 4. Thin-prism and tilted-sensor models
 remain deferred until a concrete camera requires them. Every built-in variant has formula-level

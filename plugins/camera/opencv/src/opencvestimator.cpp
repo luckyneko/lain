@@ -144,8 +144,7 @@ namespace lain::camera::opencv
 				uncertainty.fy = at(intrinsicDeviations, 1);
 				uncertainty.cx = at(intrinsicDeviations, 2);
 				uncertainty.cy = at(intrinsicDeviations, 3);
-				const int count = model == DistortionModel::None ? 0 : model == DistortionModel::BrownConrady5 ? 5
-																											   : 8;
+				const int count = int(coefficientNames(model).size());
 				for (int i = 0; i < count; ++i)
 					uncertainty.coefficients.push_back(at(intrinsicDeviations, 4 + i));
 				out.uncertainty = uncertainty;

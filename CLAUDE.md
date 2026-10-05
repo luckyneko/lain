@@ -1331,6 +1331,29 @@ change: `ctest -j8` **1048/1048** Debug and **1056/1056** Release, unchanged. Fu
 - A scratch `static_assert` confirmed `create()` and `rightHanded()` still evaluate at compile time.
 - Adjacent, in the next commit: `kCameraFrame` in `camera/cameramodel.h` becomes `inline constexpr`.
 
+### Update 2026-10-05 — each distortion model carries its own algorithm
+
+A distortion struct held only its coefficients. Its projection lived in `if constexpr` chains in
+`details/projection.inl`, its fold scan and name in `cameramodel.cpp`, and its coefficient order in
+three more places. Now each struct in `camera/distortion.h` declares `kDisplayName`,
+`kCoefficientNames`, `coefficients()`, `project<T>`, `unproject<T>` and `domain()`. The free
+`project` / `unproject` are the intrinsics plus one visit, and name no model. ADR-0016 is amended in
+place, since it already said each variant *defines* its projection. `ctest -j8` **1050/1050** Debug
+and **1058/1058** Release with video and camera on (+2 each); warning-clean, format-check clean.
+Full notes in WORK.md's *Each distortion model carries its own algorithm*.
+
+- **Decided with the repo owner:** members rather than free overloads, and the descriptive facts as
+  well as the algorithm.
+- **Three catch-all `else`s are gone.** Each would have compiled for a seventh model and described it
+  wrongly; `displayName`'s returned "Kannala-Brandt 4" for anything it didn't name. A model missing
+  a member now fails the build at the visit, which a sabotage confirmed.
+- **`project` takes the 3D direction** (Kannala-Brandt needs `atan2(rho, z)`) and every member is
+  total: each refuses `z <= 0` itself.
+- **The raw formulas (`distort`, `undistort`, `distortedAngle`) are public**, a deviation from the
+  plan, because the shared forward helpers call `distort`. The structs stay aggregates.
+- **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
+  happens to equal lain's.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 8c: a board to print and the capture guide (**fixture machinery COMPLETE**)
 
 The last third of the real-camera fixture's machinery. What remains of sub-slice 8, and of slice 1,
