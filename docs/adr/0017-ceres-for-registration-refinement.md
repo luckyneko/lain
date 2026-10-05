@@ -65,3 +65,22 @@ measurement is the trigger to revisit.
 The build switch is `LAIN_CAMERA_CERES`. It defaults to `${LAIN_NOT_SUBPROJECT}`, as a fetched
 prebuilt's does, although Ceres is source-built: it is heavy enough that a bundled lain should not
 compile it unasked.
+
+**As built (M9 slice 2, sub-slice 5).** The refiner's residual is one corner seen by one camera, run
+through lain's own `camera::project<T>` with Ceres' automatic differentiation. It is whitened by the
+corner's covariance when the detector reports one, else by the noise model's sigma, under the
+request's robust loss. Cameras and boards are angle-axis plus translation, and the reference camera is
+constant. A global refinement is `SPARSE_SCHUR` over Eigen's sparse Cholesky, eliminating the board
+poses first. A pose-only solve (held-out validation) is a small `DENSE_QR`.
+
+- **The scale test is not a trigger.** 100 cameras and 4,000 capture groups, with each board seen by
+  eight cameras, make 768,000 corner residuals. The single-threaded refinement converged in 9
+  iterations and 16.1 s, and the whole registration, held-out validation included, took 19.7 s at
+  663 MB peak (linux-x86_64, four cores, Release). A Debug build is about 65 times slower, so the
+  scale test runs in Release only.
+- **The default robust loss is Cauchy, not Huber**, decided on a measurement. The outlier a board
+  registration meets is a whole view that does not belong: a frame from another instant, with its
+  corners tens of standard deviations off. Huber's pull stays linear out there. One such view, at 66
+  standard deviations, moved a camera 8.4 mrad under Huber and 1.6 under Cauchy, against 1.8 with no
+  stray view at all (1 m rig). Cauchy's non-convexity is safe because initialisation, which a stray
+  view cannot steer, starts the refinement close.

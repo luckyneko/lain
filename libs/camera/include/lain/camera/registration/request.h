@@ -36,9 +36,16 @@ namespace lain::camera::registration
 
 	// The robust loss on each whitened corner residual, which bounds an outlier's influence. The
 	// scale, in standard deviations, is also where an observation counts as an outlier in the report.
+	//
+	// Cauchy by default, because the outlier a board registration meets is a whole view that does not
+	// belong: a frame from another instant, its corners tens of standard deviations off. Huber's pull
+	// stays linear out there, and a view of 24 corners still drags the rig: measured on the test rig,
+	// one such view at 66 sigma moved a camera 8.4 mrad under Huber and 1.6 under Cauchy, against 1.8
+	// with no stray view at all. Cauchy's redescends; its non-convexity is safe because
+	// initialisation, which a stray view cannot steer, starts the refinement close.
 	struct RobustLoss
 	{
-		LossFamily family = LossFamily::Huber;
+		LossFamily family = LossFamily::Cauchy;
 		double scale = 3.0;
 	};
 

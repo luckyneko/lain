@@ -22,6 +22,10 @@ namespace method = lain::camera::registration::board;
 
 namespace
 {
+	// This executable tests the module around a refinement, not a refinement: the stand-in hands back
+	// its starting estimate.
+	const bool kPassThrough = (rig::registerPassThroughRefiner(), true);
+
 	Report run(const Request& request = {})
 	{
 		return method::registerCameras(rig::cameras(), rig::groups(), specification(), request);

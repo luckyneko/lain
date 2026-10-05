@@ -15,6 +15,7 @@
 #include <lain/camera/registration/refiner.h>
 #include <lain/media/framesource.h>
 
+#include <array>
 #include <cmath>
 #include <map>
 #include <memory>
@@ -75,6 +76,11 @@ namespace lain::camera::testing::rig
 		std::set<std::pair<std::size_t, std::size_t>> flipped;
 		double poseNoise = 0;		  // radians: each pose solved is turned about the board's centre by up to this
 		std::size_t modelWidth = 640; // the cameras' models; a different width makes one Incompatible
+		// Pixel noise on every corner detected, standard deviations in x and y (seeded by camera and
+		// group, so every run is the same), and whether the detector reports it as a covariance.
+		double pixelNoiseX = 0;
+		double pixelNoiseY = 0;
+		bool reportCovariance = false;
 	};
 	inline Scene& scene()
 	{
@@ -137,7 +143,7 @@ namespace lain::camera::testing::rig
 	// or Failed when the camera did not see the board or saw fewer than four corners.
 	inline board::DetectionReport detection(std::size_t camera, std::size_t group, const media::FrameRef& frame)
 	{
-		const board::Specification spec = specification();
+		static const board::Specification spec = specification();
 		board::DetectionReport report;
 		report.provenance = {"truth", "1"};
 		if (!scene().sees[camera][group])
@@ -145,8 +151,17 @@ namespace lain::camera::testing::rig
 			report.rejections.push_back({board::Rejection::NoMarkers, "the camera did not see the board"});
 			return report;
 		}
-		const CameraModel m = model();
+		static const CameraModel m = model();
 		const math::RigidTransformd pose = trueCameraFromBoard(camera, group);
+		// Box-Muller over a seeded engine: the standard's distributions are implementation-defined.
+		std::mt19937_64 engine(camera * 15485863 + group * 32452843 + 7);
+		const auto gaussian = [&]
+		{
+			const double u1 = (double(engine() >> 11) + 0.5) * 0x1.0p-53;
+			const double u2 = double(engine() >> 11) * 0x1.0p-53;
+			return std::sqrt(-2.0 * std::log(u1)) * std::cos(6.283185307179586 * u2);
+		};
+		const Scene& s = scene();
 		board::Observation observation;
 		observation.frame = frame;
 		observation.image = m.image();
@@ -155,8 +170,13 @@ namespace lain::camera::testing::rig
 		{
 			const math::Vec3d p = pose.apply(*spec.cornerPosition(id));
 			const Projection<double> pixel = project(m, p.x, p.y, p.z);
-			if (pixel.ok() && contains(m, pixel.u, pixel.v))
-				observation.features.push_back({id, {pixel.u, pixel.v}, std::nullopt});
+			const double nx = gaussian() * s.pixelNoiseX, ny = gaussian() * s.pixelNoiseY;
+			if (!pixel.ok() || !contains(m, pixel.u, pixel.v))
+				continue;
+			std::optional<std::array<double, 3>> covariance;
+			if (s.reportCovariance)
+				covariance = std::array<double, 3>{s.pixelNoiseX * s.pixelNoiseX, 0.0, s.pixelNoiseY * s.pixelNoiseY};
+			observation.features.push_back({id, {pixel.u + nx, pixel.v + ny}, covariance});
 		}
 		if (observation.features.size() < 4)
 		{
@@ -249,21 +269,35 @@ namespace lain::camera::testing::rig
 		}
 	};
 
+	// The detector and the pose solver. A refiner is the test's choice: the pass-through one above,
+	// or the Ceres plugin's.
 	inline void registerStandIns()
 	{
 		static const bool once = []
 		{
 			board::detectorRegistry().registerType<TruthDetector>("truth");
 			board::poseSolverRegistry().registerType<TruthPoseSolver>("truth");
+			return true;
+		}();
+		(void)once;
+	}
+
+	inline void registerPassThroughRefiner()
+	{
+		static const bool once = []
+		{
 			registration::refinerRegistry().registerType<PassThroughRefiner>("passthrough");
 			return true;
 		}();
 		(void)once;
 	}
 
-	// The default scene: `cameras` cameras on an arc 1 m from the origin, spread over 1.4 rad and
-	// facing the board's front, and `groups` board poses near the origin, each seen by every camera.
-	inline void reset(std::size_t cameras = 4, std::size_t groups = 24)
+	// The default scene: `cameras` cameras on an arc `distance` metres from the origin, spread over
+	// 1.4 rad and facing the board's front, and `groups` board poses near the origin, each seen by
+	// every camera. At 1 m the 168 mm board is small enough that its tilt barely shows (20 mrad of
+	// tilt moves a corner 0.07 px), which is no matter to tests of the method module but limits what
+	// a real refinement can recover; the Ceres tests stand closer.
+	inline void reset(std::size_t cameras = 4, std::size_t groups = 24, double distance = 1.0)
 	{
 		registerStandIns();
 		Scene& s = scene();
@@ -272,7 +306,7 @@ namespace lain::camera::testing::rig
 		for (std::size_t c = 0; c < cameras; ++c)
 		{
 			const double a = cameras == 1 ? 0.0 : -0.7 + 1.4 * double(c) / double(cameras - 1);
-			const math::Vec3d position{std::sin(a), -0.1 * double(c % 2), -std::cos(a)};
+			const math::Vec3d position = distance * math::Vec3d{std::sin(a), -0.1 * double(c % 2), -std::cos(a)};
 			s.referenceFromCamera.push_back(lookingAt(position, math::Vec3d{0.0}));
 		}
 		for (std::size_t g = 0; g < groups; ++g)
@@ -310,22 +344,27 @@ namespace lain::camera::testing::rig
 		return out;
 	}
 
-	inline capture::CaptureGroup group(std::size_t g)
+	// Capture group g: every camera, or only those that saw the board.
+	inline capture::CaptureGroup group(std::size_t g, bool onlySeeing = false)
 	{
 		std::vector<capture::CaptureMember> members;
 		for (std::size_t c = 0; c < scene().referenceFromCamera.size(); ++c)
-			members.push_back({capture::CameraIdentity{identityOf(c)}, frameOf(c, g)});
+		{
+			if (!onlySeeing || scene().sees[c][g])
+				members.push_back({capture::CameraIdentity{identityOf(c)}, frameOf(c, g)});
+		}
 		return *capture::CaptureGroup::create(std::move(members)).group;
 	}
 
-	// Every capture group with every camera's detection: a camera that did not see the board is still
-	// a member, since its frame was captured with the others, and its detection failed.
-	inline std::vector<registration::board::GroupObservations> groups()
+	// Every capture group with its members' detections. By default every camera is a member, since
+	// its frame was captured with the others, and a camera that did not see the board failed to
+	// detect it; `onlySeeing` leaves those out, as a large rig's grouping might.
+	inline std::vector<registration::board::GroupObservations> groups(bool onlySeeing = false)
 	{
 		std::vector<registration::board::GroupObservations> out;
 		for (std::size_t g = 0; g < scene().referenceFromBoard.size(); ++g)
 		{
-			registration::board::GroupObservations entry{group(g), {}};
+			registration::board::GroupObservations entry{group(g, onlySeeing), {}};
 			for (const capture::CaptureMember& m : entry.group.members())
 				entry.detections.push_back(detection(cameraOf(m.frame), g, m.frame));
 			out.push_back(std::move(entry));

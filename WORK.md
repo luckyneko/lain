@@ -3602,6 +3602,74 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - **Found by Release only:** GCC's `-Wformat-truncation` at `-O3` refused an `snprintf` in the
      test rig that Debug accepted. **Found by a pipe:** `cmake --build … --target format | tail -0`
      kills the formatter by SIGPIPE before it writes anything; send its output to `/dev/null`.
+
+   **Sub-slice 5 built (2026-10-05): the Ceres refiner.** `CeresRefiner`
+   (`plugins/camera/ceres/src/ceresrefiner.{h,cpp}`), registered as "ceres" by the plugin's
+   `registerBackend()`.
+   - **The refiner:**
+     - one residual block per corner per camera, through `camera::project<T>` with
+       `AutoDiffCostFunction<…, 2, 6, 6>`;
+     - cameras and boards are angle-axis plus translation;
+     - each corner is whitened by the inverse Cholesky factor of its covariance, else by
+       1/sigma, under the request's loss;
+     - the reference camera is constant, and so is every camera in a pose-only problem;
+     - a global refinement is `SPARSE_SCHUR` over Eigen sparse with the bodies eliminated first; a
+       pose-only one is `DENSE_QR`;
+     - one thread, and silent;
+     - `CONVERGENCE` maps to Converged, `NO_CONVERGENCE` to IterationLimit, and `std::bad_alloc` to
+       ResourceExhausted.
+
+     It returns Ceres' values, never the starting transforms copied back. A constant block is
+     shown to stay put to within 1e-12 (its round trip through angle-axis) rather than overwritten.
+   - **The default robust loss is now Cauchy**, decided on a measurement, recorded in ADR-0017's
+     *As built* and on `RobustLoss`. A view from another instant (66 standard deviations) moved a
+     camera 8.4 mrad under Huber and 1.6 under Cauchy, against 1.8 with no stray view and 120 with
+     no robust loss. Huber's pull stays linear far out, and a 24-corner view still drags the rig.
+   - **The test rig was too weak for a real refinement.** At 1 m a 168 mm board's tilt barely
+     shows: 20 mrad of tilt moves a corner 0.07 px. A three-link chain then accumulated 22 mrad.
+     `rig::reset` gained a distance, and the Ceres tests stand at 0.5 m.
+   - **Convergence is checked separately from noise:**
+     - with exact corners, every rig shape (connected, chain, weak bridge, every view of one camera
+       flipped) converges from 5 mrad starts to 1e-10;
+     - with 0.3 px of noise, the connected rig's worst camera is **0.88 mrad and 0.40 mm** out,
+       with held-out transfer 0.87 mrad.
+   - **Tests: 9 cases in `test-camera-ceres`** (`test_refiner.cpp`, over `syntheticrig.h`):
+     - whitening, checked exactly against r^T C^-1 r for a correlated covariance;
+     - pose-only, with one camera and with a held non-reference camera;
+     - the reference held;
+     - convergence on four rig shapes;
+     - a noisy rig;
+     - the stray view: absorbed under the default loss (0.68 mrad), and dragging the rig with none;
+     - the covariance path: final cost 0.998 of the chi-square expectation, and far from it under a
+       wrong sigma;
+     - **the scale test**.
+
+     Also **an end to end with both real backends** (`plugins/camera/test/test_registration.cpp`,
+     `test-camera-registration-e2e`, built where OpenCV and Ceres both are): three cameras around a
+     rendered, sweeping board, OpenCV detecting and posing, Ceres refining. Ready, the worst camera
+     **0.28 mrad and 0.15 mm** out, held-out transfer 0.22 mrad.
+   - **The scale test**, Release only (a SKIP in Debug, which is about 65 times slower): 100 cameras
+     on a 2 m ring and 4,000 groups, each board seen by eight neighbours, so 768,000 corner
+     residuals. It took **19.7 s** in all, **16.1 s** of it the refinement (9 iterations,
+     single-threaded), and **663 MB** at peak (linux-x86_64, four cores). The worst camera was
+     0.94 mrad and 1.3 mm out, with held-out transfer 0.81 mrad over 800 groups. ADR-0017 named
+     this measurement as the trigger to revisit Ceres running serial; it does not fire.
+   - **Debug time:** `test-camera-ceres` takes 41 s in one process, its longest case about 20 s, and
+     the e2e takes 9 s; `ctest -j8` in Debug went from 30 s to 45 s.
+   - `ctest -j8` **1102/1102** Debug (the scale case skipped) and **1110/1110** Release with video,
+     camera and Ceres on (+10 each), and **1033/1033** with all three off (unchanged: neither
+     plugin's tests build there); warning-clean, format-check clean.
+   - **Four sabotages, all caught; one was caught only indirectly at first.**
+     - Dropping the robust loss fails the stray-view case.
+     - Freeing the reference fails three cases, the scale test among them.
+     - Flipping the sign of the covariance factor's off-diagonal fails the whitening case.
+     - Freeing the cameras in a pose-only problem was caught only by the noisy and scale cases'
+       held-out evidence, because the pose-only case's one camera is also the reference. A
+       two-camera pose-only case now fails directly: the held second camera would otherwise move
+       and fit exactly.
+   - **Two estimates in comments were guesses until measured.** A refiner-level tolerance read
+     "measured at 0.2 mrad" before any run; it was 2.0 mrad, at 1 m. And a chi-square ratio
+     written as 0.98 measured 1.01. Every number beside a check now comes from a run.
 3. **Targetless registration with known intrinsics.** Reuse immutable camera models, capture groups,
    registration reports, shared feature-track extraction, and Ceres refinement. Accepted tracks
    establish overlap, initial relative geometry, and scene landmarks before Ceres begins; absent

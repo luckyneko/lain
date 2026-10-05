@@ -1,7 +1,6 @@
-# lain::camera::ceres — the Ceres-backed camera plugin (ADR-0017). Today only the probe proving the
-# linked Ceres is the approved build, and that lain's projection differentiates through Ceres'
-# automatic differentiation; the registration refiner behind lain::camera::registration's seam
-# joins it in M9 slice 2, sub-slice 5. No Ceres or Eigen type crosses into lain's camera contracts.
+# lain::camera::ceres — the Ceres-backed camera plugin (ADR-0017): the registration refiner behind
+# lain::camera::registration's seam, and the probe proving the linked Ceres is the approved build. No
+# Ceres or Eigen type crosses into lain's camera contracts.
 #
 # addCeres is included HERE, not at the root, so nothing is fetched or built unless this plugin is
 # enabled — the rule addOpenCV follows for the OpenCV plugin.
@@ -18,6 +17,7 @@ endif()
 
 add_library(camera-ceres STATIC
 	src/build.cpp
+	src/ceresrefiner.cpp
 	src/register.cpp
 )
 add_library(lain::camera::ceres ALIAS camera-ceres)

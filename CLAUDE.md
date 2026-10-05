@@ -1379,6 +1379,28 @@ residual* and *weak bridge*.
 - **The sandbox needed the X11/Wayland/libva dev packages** (`libxrandr-dev` and friends) before the
   Vulkan loader would configure. A fresh container does not have them.
 
+### Update 2026-10-05 — M9 slice 2, sub-slice 5: the Ceres refiner
+
+`CeresRefiner` fills registration's refiner seam: a sparse bundle adjustment of cameras and board
+poses, every residual through lain's own `camera::project<T>`. `ctest -j8` **1102/1102** Debug and
+**1110/1110** Release with video, camera and Ceres on (+10 each), **1033/1033** with all three off;
+warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 5 built* under M9 slice 2.
+
+- **The scale target registers in 19.7 s at 663 MB** (Release, four cores): 100 cameras, 4,000
+  groups and 768,000 corner residuals, with a single-threaded refinement of 16.1 s. That was
+  ADR-0017's trigger to revisit running Ceres serially, and it does not fire. Debug is about 65
+  times slower, so the scale test runs in Release only.
+- **End to end with both real backends** (rendered footage, OpenCV detection and poses, Ceres): Ready,
+  with the worst camera 0.28 mrad and 0.15 mm out.
+- **The default robust loss is now Cauchy**, on a measurement: a stray view moved a camera 8.4 mrad
+  under Huber and 1.6 under Cauchy. ADR-0017 records it.
+- **The test rig was too weak for a real refinement**: at 1 m a 168 mm board's tilt barely shows, and
+  a chain accumulated 22 mrad. The Ceres tests stand at 0.5 m, and exact corners converge to 1e-10
+  on every rig shape.
+- **The refiner returns Ceres' values, never the start copied back**, so a constant block is shown to
+  stay put rather than restored. A pose-only problem whose only camera was the reference could not
+  tell a freed camera from a held one; a two-camera case now does.
+
 ### Update 2026-10-05 — M9 slice 2, sub-slice 4: the board registration method module
 
 `registration::board::registerCameras`, over footage or over stored detections. The pose solver and

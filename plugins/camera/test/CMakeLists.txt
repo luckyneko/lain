@@ -63,3 +63,22 @@ if(TARGET lain::camera::opencv)
 endif()
 
 catch_discover_tests(test-camera-fixture TEST_PREFIX "(camera::fixture) ")
+
+# Fixed-camera board registration end to end through both real backends: OpenCV detects and poses,
+# Ceres refines. Built only where both plugins are.
+if(TARGET lain::camera::opencv AND TARGET lain::camera::ceres)
+	add_executable(test-camera-registration-e2e test_registration.cpp)
+	target_compile_features(test-camera-registration-e2e PRIVATE cxx_std_17)
+	target_include_directories(test-camera-registration-e2e PRIVATE "${lain_SOURCE_DIR}/libs/camera/test")
+	target_link_libraries(test-camera-registration-e2e PRIVATE
+		lain::camera::backends
+		lain::io::image::codecs
+		lain::io::sequence
+		lain::io::data::codecs
+		lain::testing
+		lain::warnings
+		Catch2::Catch2WithMain
+	)
+	lain_opencv_stage_runtime(test-camera-registration-e2e)
+	catch_discover_tests(test-camera-registration-e2e TEST_PREFIX "(camera::registration) ")
+endif()
