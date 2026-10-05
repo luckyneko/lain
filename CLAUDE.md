@@ -1379,6 +1379,24 @@ residual* and *weak bridge*.
 - **The sandbox needed the X11/Wayland/libva dev packages** (`libxrandr-dev` and friends) before the
   Vulkan loader would configure. A fresh container does not have them.
 
+### Update 2026-10-05 — M9 slice 2, sub-slice 6: the registerCameras node and the cli vertical (**slice 2 COMPLETE**)
+
+Fixed-camera board registration is reachable: a `registerCameras` node, wired into flowview, run
+end to end through the real binary. `ctest -j8` **1106/1106** Debug and **1114/1114** Release with
+video, camera and Ceres on, **1037/1037** with all three off (+4 each); warning-clean, format-check
+clean. **gui-mode NOT eyeballed.** Full notes in WORK.md's *Sub-slice 6 built* under M9 slice 2.
+
+- **`registerCameras` takes the rig as two collections**, footage and models paired by position, and
+  groups them frame by frame. Each camera is named by its footage's source uri until a capture
+  manifest assigns identities. It is offered only with a detector, a pose solver and a refiner.
+- **The cli binds a rig from folders**: `--footage <folder>` (one entry per camera, by name) and
+  `--models <folder>` (one `.json` per camera, by name). That is a deviation from the planned
+  `listDir → map(openSequence)`: `ListDir` lists regular files only, so it cannot list per-camera
+  still folders.
+- **Through the real binary**, from another folder: `flowview run --graph register.json --footage rig
+  --models models --report report.txt` writes `Ready: 3 cameras relative to …/rig/cam0, metric, …`.
+- **M9 slice 2 is complete.** Still owed: the gui-mode eyeball and a CI run.
+
 ### Update 2026-10-05 — M9 slice 2, sub-slice 5: the Ceres refiner
 
 `CeresRefiner` fills registration's refiner seam: a sparse bundle adjustment of cameras and board

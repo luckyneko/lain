@@ -5,7 +5,8 @@
 #include <lain/camera/calibration/report.h>
 #include <lain/camera/cameramodel.h>
 #include <lain/camera/flow/register.h> // the camera kinds' keys
-#include <lain/image/colormath.h>	   // convert (HSV -> RGB)
+#include <lain/camera/registration/report.h>
+#include <lain/image/colormath.h> // convert (HSV -> RGB)
 #include <lain/image/image.h>
 #include <lain/media/frameposition.h>
 #include <lain/media/frameref.h>
@@ -81,6 +82,7 @@ namespace flowview
 		style.addPortColor(typeid(camera::CameraModel), image::ColorRGBA8(220, 190, 90, 255));			   // gold
 		style.addPortColor(typeid(camera::board::DetectionReport), image::ColorRGBA8(150, 160, 175, 255)); // slate
 		style.addPortColor(typeid(camera::calibration::Report), image::ColorRGBA8(170, 180, 200, 255));	   // pale slate
+		style.addPortColor(typeid(camera::registration::Report), image::ColorRGBA8(160, 175, 215, 255));   // pale blue-slate
 
 		// Node title colours by factory kind — categories are emergent from shared colour (no Category
 		// enum). These keys must match scene.cpp's registrations.
@@ -126,7 +128,7 @@ namespace flowview
 		// build registers them: a colour for a kind nobody adds costs nothing.
 		for (const char* key : {lain::camera::kBoardSpecificationKey, lain::camera::kRenderBoardKey,
 								lain::camera::kDetectBoardKey, lain::camera::kCalibrateCameraKey,
-								lain::camera::kCameraModelKey})
+								lain::camera::kCameraModelKey, lain::camera::kRegisterCamerasKey})
 			style.addNodeColor(key, cameraWork);
 	}
 

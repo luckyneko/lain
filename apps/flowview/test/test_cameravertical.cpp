@@ -20,16 +20,20 @@
 
 #include <lain/camera/backends.h>
 #include <lain/camera/board/detection.h>
+#include <lain/camera/board/pose.h>
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/estimator.h>
 #include <lain/camera/calibration/report.h>
 #include <lain/camera/cameramodel.h>
 #include <lain/camera/flow/register.h>
+#include <lain/camera/registration/refiner.h>
+#include <lain/camera/registration/report.h>
 #include <lain/camera/serialize/cameramodel.h>
 #include <lain/core/uri.h>
 #include <lain/flow/boundary.h>
 #include <lain/flow/graph.h>
 #include <lain/io/data/load.h>
+#include <lain/io/data/save.h>
 #include <lain/io/image/codecs.h>
 #include <lain/io/image/save.h>
 #include <lain/io/sequence/openers.h>
@@ -271,4 +275,134 @@ TEST_CASE("run calibrates a camera from a folder of footage", "[camera][runmode]
 		REQUIRE(out.has_value());
 		CHECK(camera::cameraModelToValue(*out) == camera::cameraModelToValue(*model));
 	}
+}
+
+namespace
+{
+	// footage + models (two collections, a camera each, paired by position) -> registerCameras (board
+	// from a boardSpecification of 24 mm squares) -> report.
+	fs::path writeRigDocument(const fs::path& file)
+	{
+		core::Factory<flow::Node> factory;
+		flowview::registerExampleNodes(factory, 8);
+		flow::Graph graph;
+		flow::GroupInputNode& input = graph.boundaryInputNode();
+		flow::GroupOutputNode& output = graph.boundaryOutputNode();
+		const flow::PortId footage = input.addBoundary<std::vector<media::FrameSequence>>("footage");
+		const flow::PortId models = input.addBoundary<std::vector<camera::CameraModel>>("models");
+		const flow::PortId report = output.addBoundary<camera::registration::Report>("report");
+
+		const flow::NodeId spec = graph.add(factory.create(camera::kBoardSpecificationKey));
+		const flow::NodeId registerCameras = graph.add(factory.create(camera::kRegisterCamerasKey));
+		setParam(graph, spec, "squareLengthMm", 24.0f);
+		setParam(graph, registerCameras, "resamples", 4);
+		REQUIRE(graph.connect(flow::PortAddress{input.id(), footage}, in(graph, registerCameras, 0)) ==
+				flow::Connection::Ok);
+		REQUIRE(graph.connect(flow::PortAddress{input.id(), models}, in(graph, registerCameras, 1)) ==
+				flow::Connection::Ok);
+		REQUIRE(graph.connect(out(graph, spec), in(graph, registerCameras, 2)) == flow::Connection::Ok);
+		REQUIRE(graph.connect(out(graph, registerCameras), flow::PortAddress{output.id(), report}) ==
+				flow::Connection::Ok);
+		REQUIRE(flowview::saveGraph(core::Uri::fromPath(file), graph, factory));
+		return file;
+	}
+
+	bool haveRegistrationBackends()
+	{
+		return camera::board::canRender() && camera::board::canDetect() && camera::board::canSolvePose() &&
+			   camera::registration::canRefine();
+	}
+
+	// Camera c of the rig, turned about the board's mean position (0.42 m ahead of camera 0) by
+	// `angle` about the vertical: referenceFromCamera.
+	math::RigidTransformd rigCamera(double angle)
+	{
+		const math::Vec3d pivot{0, 0, 0.42};
+		const math::Quatd turn = math::angleAxis(angle, math::Vec3d{0, 1, 0});
+		return math::RigidTransformd{turn, pivot - turn * pivot};
+	}
+
+	// A rig of three cameras as a user would bind it: rig/cam0..cam2, each a folder of stills of one
+	// board sweeping through their shared view, and models/cam0..cam2.json, each camera's model.
+	void writeRig(const fs::path& dir, std::size_t frames, bool rendered)
+	{
+		camera::board::PatternParameters parameters;
+		parameters.squaresX = 7;
+		parameters.squaresY = 5;
+		parameters.markerToSquare = 0.75;
+		camera::board::Instance instance{"board", {core::Length::from<core::Length::Millimetres>(24), std::nullopt, std::nullopt}};
+		const camera::board::Specification spec =
+			*camera::board::Specification::create(*camera::board::Pattern::create(parameters).pattern, instance)
+				 .specification;
+		std::optional<camera::board::Rendering> rendering;
+		if (rendered)
+		{
+			rendering = camera::board::render(spec.pattern(), camera::board::RenderRequest{60, 20}).rendering;
+			REQUIRE(rendering.has_value());
+		}
+
+		camera::CameraModelParameters p;
+		p.image = {std::uint32_t(kCamera.width), std::uint32_t(kCamera.height)};
+		p.intrinsics = {kCamera.fx, kCamera.fy, kCamera.cx, kCamera.cy};
+		const camera::CameraModel model = *camera::CameraModel::create(p).model;
+
+		const double angles[] = {0.0, -0.25, 0.25};
+		fs::create_directories(dir / "models");
+		for (std::size_t c = 0; c < 3; ++c)
+		{
+			const std::string name = "cam" + std::to_string(c);
+			const fs::path folder = dir / "rig" / name;
+			fs::create_directories(folder);
+			const math::RigidTransformd cameraFromReference = rigCamera(angles[c]).inverse();
+			for (std::size_t i = 0; i < frames; ++i)
+			{
+				const std::string still = "frame." + std::string(4 - std::to_string(i).size(), '0') + std::to_string(i) + ".png";
+				const image::Image frame =
+					rendered ? camera::synthetic::view(*rendering, spec, kCamera,
+													   cameraFromReference * camera::synthetic::sweepPose(spec, i, frames))
+							 : image::Image(kCamera.width, kCamera.height);
+				REQUIRE(io::image::save(core::Uri::fromPath(folder / still), frame));
+			}
+			REQUIRE(io::data::save(core::Uri::fromPath(dir / "models" / (name + ".json")), camera::cameraModelToValue(model)));
+		}
+	}
+} // namespace
+
+TEST_CASE("run registers a rig from a folder of footage and a folder of models", "[camera][runmode]")
+{
+	ensureRegistered();
+	const fs::path dir = lain::testing::scratchDir() / "rig-vertical";
+	fs::remove_all(dir);
+	fs::create_directories(dir);
+	const fs::path document = writeRigDocument(dir / "register.json");
+	writeRig(dir, haveRegistrationBackends() ? 16 : 2, camera::board::canRender());
+
+	core::Factory<flow::Node> factory;
+	flowview::registerExampleNodes(factory, 8);
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+	flowview::RunOptions options;
+	options.graphPath = document.string();
+	const fs::path reportText = dir / "report.txt";
+	options.bindings = {"--footage", (dir / "rig").string(), "--models", (dir / "models").string(), "--report",
+						reportText.string()};
+	REQUIRE(flowview::runGraph(options, factory, binders) == 0);
+
+	const std::string report = readText(reportText);
+	INFO("report: " << report);
+	if (!camera::board::canDetect())
+	{
+		// The document loads whole and runs without a backend, and the report says what is missing.
+		CHECK(report.rfind("Failed: NoDetector", 0) == 0);
+		return;
+	}
+	if (!haveRegistrationBackends())
+	{
+		CHECK(report.rfind("Failed: NoRefiner", 0) == 0);
+		return;
+	}
+	// Each camera is named by its footage folder, cam0 first since the folder lists by name.
+	CHECK(report.rfind("Ready: 3 cameras relative to ", 0) == 0);
+	CHECK(report.find("rig/cam0") != std::string::npos);
+	CHECK(report.find("16 of 16 groups usable") != std::string::npos);
 }

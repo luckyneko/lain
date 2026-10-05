@@ -32,7 +32,8 @@ namespace flowview
 	};
 
 	// Register the built-in binders: the scalars (int / float / bool / string), an image (loads the
-	// path), a frame sequence (opens the uri), a frame position, and a camera model (reads a
-	// camera-model document).
+	// path), a frame sequence (opens the uri), a frame position, a camera model (reads a camera-model
+	// document), and a rig's footage and models, each from a folder whose entries, by name, are one
+	// camera each.
 	void registerBoundaryBinders(BoundaryBinders& binders);
 } // namespace flowview

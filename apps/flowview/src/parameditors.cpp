@@ -1,9 +1,10 @@
 #include "parameditors.h"
 
-#include <lain/camera/board/pattern.h>		 // Dictionary, CharucoLayout
-#include <lain/camera/calibration/request.h> // ImportedModelPolicy
-#include <lain/camera/distortion.h>			 // DistortionModel
-#include <lain/flow/example/comparenode.h>	 // Comparison — CompareNode's operator param
+#include <lain/camera/board/pattern.h>		  // Dictionary, CharucoLayout
+#include <lain/camera/calibration/request.h>  // ImportedModelPolicy
+#include <lain/camera/distortion.h>			  // DistortionModel
+#include <lain/camera/registration/request.h> // ApplicabilityPolicy, LossFamily
+#include <lain/flow/example/comparenode.h>	  // Comparison — CompareNode's operator param
 #include <lain/flow/portvalue.h>
 #include <lain/gui/dialogs.h>
 #include <lain/gui/enums.h>
@@ -318,5 +319,8 @@ namespace flowview
 		editors.add(typeid(camera::DistortionModel), &editEnum<camera::DistortionModel>);
 		editors.add(typeid(camera::calibration::ImportedModelPolicy),
 					&editEnum<camera::calibration::ImportedModelPolicy>);
+		editors.add(typeid(camera::registration::ApplicabilityPolicy),
+					&editEnum<camera::registration::ApplicabilityPolicy>);
+		editors.add(typeid(camera::registration::LossFamily), &editEnum<camera::registration::LossFamily>);
 	}
 } // namespace flowview

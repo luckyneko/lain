@@ -4,11 +4,15 @@
 #include "lain/camera/flow/calibratecameranode.h"
 #include "lain/camera/flow/cameramodelnode.h"
 #include "lain/camera/flow/detectboardnode.h"
+#include "lain/camera/flow/registercamerasnode.h"
 #include "lain/camera/flow/renderboardnode.h"
 
 #include <lain/camera/board/detection.h>
+#include <lain/camera/board/pose.h>
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/estimator.h>
+#include <lain/camera/registration/refiner.h>
+#include <lain/camera/registration/report.h>
 #include <lain/flow/porttyperegistry.h>
 
 namespace lain::camera
@@ -23,6 +27,12 @@ namespace lain::camera
 	static bool canCalibrate()
 	{
 		return board::canDetect() && calibration::canEstimate();
+	}
+
+	// Registration detects, poses each board, and refines the rig: three backends.
+	static bool canRegister()
+	{
+		return board::canDetect() && board::canSolvePose() && registration::canRefine();
 	}
 
 	template <typename T>
@@ -46,6 +56,7 @@ namespace lain::camera
 		{kDetectBoardKey, &board::canDetect, &add<DetectBoardNode>},
 		{kCalibrateCameraKey, &canCalibrate, &add<CalibrateCameraNode>},
 		{kCameraModelKey, &canCalibrate, &add<CameraModelNode>},
+		{kRegisterCamerasKey, &canRegister, &add<RegisterCamerasNode>},
 	};
 
 	std::vector<std::string> availableCameraNodeKeys()
@@ -71,5 +82,7 @@ namespace lain::camera
 		flow::registerPortType<board::DetectionReport>("BoardDetectionReport");
 		flow::registerPortType<calibration::Report>("CalibrationReport");
 		flow::registerPortType<CameraModel>("CameraModel");
+		flow::registerPortType<std::vector<CameraModel>>("ListOfCameraModel");
+		flow::registerPortType<registration::Report>("RegistrationReport");
 	}
 } // namespace lain::camera

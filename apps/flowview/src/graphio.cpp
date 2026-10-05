@@ -1,9 +1,10 @@
 #include "graphio.h"
 
-#include <lain/camera/board/pattern.h>		 // Dictionary, CharucoLayout — board parameters
-#include <lain/camera/calibration/request.h> // ImportedModelPolicy — a calibration parameter
-#include <lain/camera/distortion.h>			 // DistortionModel — which model a calibration estimates
-#include <lain/camera/flow/register.h>		 // registerCameraPortTypes
+#include <lain/camera/board/pattern.h>		  // Dictionary, CharucoLayout — board parameters
+#include <lain/camera/calibration/request.h>  // ImportedModelPolicy — a calibration parameter
+#include <lain/camera/distortion.h>			  // DistortionModel — which model a calibration estimates
+#include <lain/camera/flow/register.h>		  // registerCameraPortTypes
+#include <lain/camera/registration/request.h> // ApplicabilityPolicy, LossFamily — registration parameters
 #include <lain/core/parse.h>
 #include <lain/data/data.h>
 #include <lain/flow/example/comparenode.h> // Comparison — CompareNode's operator param
@@ -90,6 +91,8 @@ namespace flowview
 		codecs.registerType<camera::board::CharucoLayout>("charucoLayout");
 		codecs.registerType<camera::DistortionModel>("distortionModel");
 		codecs.registerType<camera::calibration::ImportedModelPolicy>("importedModelPolicy");
+		codecs.registerType<camera::registration::ApplicabilityPolicy>("applicabilityPolicy");
+		codecs.registerType<camera::registration::LossFamily>("lossFamily");
 		return codecs;
 	}
 
@@ -118,8 +121,11 @@ namespace flowview
 		// type on disk, which a map's stored interface needs.
 		flow::registerPortType<std::vector<image::Image>>("ListOfImage");
 		flow::registerPortType<std::vector<std::filesystem::path>>("ListOfPath");
+		// A rig's footage, one sequence per camera: what registerCameras takes (M9).
+		flow::registerPortType<std::vector<media::FrameSequence>>("ListOfFrameSequence");
 
-		// The camera payloads (M9): a board specification, the two reports and a camera model.
+		// The camera payloads (M9): a board specification, the three reports, a camera model and a list
+		// of them.
 		// Vocabulary, so registered whatever the camera backends, as the frame-sequence types are
 		// whatever the video codecs.
 		camera::registerCameraPortTypes();

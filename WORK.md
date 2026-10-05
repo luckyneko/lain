@@ -2440,7 +2440,7 @@ built before it, discharging its frame-sequence prerequisite. How OpenCV is obta
 (OpenCV lands, nothing depending on it) is built. **Slice 1 is in progress** as nine sub-slices
 (below): 0 to 7 are built, and 8 (the real-camera fixture) has its machinery built; what is left of
 it is the capture, which only the repo owner can make. **Slice 2** (fixed-camera board registration) was planned
-2026-10-05 as seven sub-slices (below).
+2026-10-05 as seven sub-slices (below), and **all seven are built**; its gui-mode eyeball is owed.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -3670,6 +3670,53 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - **Two estimates in comments were guesses until measured.** A refiner-level tolerance read
      "measured at 0.2 mrad" before any run; it was 2.0 mrad, at 1 m. And a chi-square ratio
      written as 0.98 measured 1.01. Every number beside a check now comes from a run.
+
+   **Sub-slice 6 built (2026-10-05): the node, flowview, and the cli vertical (slice 2 COMPLETE).**
+   - **`registerCameras`** (`RegisterCamerasNode`, `libs/camera/flow`): inputs
+     `footage : vector<FrameSequence>`, `models : vector<CameraModel>` and `board`, paired by
+     position; params mirroring `registration::Request` (an empty `reference` means automatic); one
+     output, `report`.
+     - Each camera's identity is its footage's canonical source uri. Groups come from
+       `groupsByPosition`.
+     - A count mismatch, or a grouping problem, is a Failed report with `InvalidDataset`, never a
+       suppression.
+     - It is offered when a detector, a pose solver **and** a refiner are registered (`canRegister`,
+       one row in the kinds table), and registered always.
+   - **Port types:** `RegistrationReport` and `ListOfCameraModel` in `registerCameraPortTypes`;
+     `ListOfFrameSequence` in flowview beside `FrameSequence`. A list form is what lets a map lift
+     the type and a boundary pin name it on disk.
+   - **flowview:**
+     - codecs and enum editors for `ApplicabilityPolicy` and `LossFamily`;
+     - the node's canvas colour, and a port colour for the report;
+     - **two list binders**: `--footage <folder>` opens every entry of the folder, by name, as one
+       camera's sequence (a folder of stills or a video file); `--models <folder>` reads every
+       `.json` in it, by name, as a camera-model document.
+   - **Deviation: the vertical binds the rig's footage from a folder** rather than through
+     `listDir → map(openSequence)`. `ListDirNode` lists regular files only, so it cannot list a
+     folder of per-camera still folders. With one video file per camera it would work, but only in
+     a video build. The binders pair by name exactly as `listDir` sorts, so a graph built either way
+     sees the same order. ADR-0016's claim that the input composes with a map still holds; it is
+     just not this vertical's path.
+   - **Tests:**
+     - **3 node cases** (`test-camera-flow-registercameras`, a new executable over the rig's
+       stand-ins, since they share keys with the calibration scene's): pairing, naming and grouping;
+       every parameter reaching the request; and a count mismatch refused.
+     - The staged kinds test now shows registration needing all three backends.
+     - **The cli vertical** (`test_cameravertical.cpp`): three cameras' rendered still folders and a
+       models folder through `runGraph`. It gives Ready, with each camera named by its folder.
+       Without a detector it reports `Failed: NoDetector`, and with OpenCV but no Ceres
+       `Failed: NoRefiner`. It runs in 25 s in Debug.
+   - **Driven through the real binary** from a folder that is not the document's:
+     `flowview run --graph register.json --footage rig --models models --report report.txt` exits 0
+     and writes `Ready: 3 cameras relative to …/rig/cam0, metric, held out 0.151 mrad RMS over 3
+     groups, 16 of 16 groups usable`. `flowview list` prints both collection inputs.
+   - `ctest -j8` **1106/1106** Debug and **1114/1114** Release with video, camera and Ceres on, and
+     **1037/1037** with all three off (+4 each: the off build runs the node cases and the vertical's
+     no-detector branch); warning-clean, format-check clean. Debug's suite now takes 60 s.
+   - **One sabotage, caught twice:** with `ListOfCameraModel` unregistered, the port-type case fails,
+     and so does the vertical, since its `models` boundary pin cannot be named on save.
+   - **Owed:** a gui-mode eyeball of the node on a Metal session, and a CI run (this branch's pushes do
+     not trigger CI).
 3. **Targetless registration with known intrinsics.** Reuse immutable camera models, capture groups,
    registration reports, shared feature-track extraction, and Ceres refinement. Accepted tracks
    establish overlap, initial relative geometry, and scene landmarks before Ceres begins; absent
@@ -8838,7 +8885,8 @@ row here**. A row is cheap to delete and expensive to leave.
   `[opencv]` probe). **Slice 1 is in progress** as nine sub-slices, of which 0 to 7 are built;
   sub-slice 8 (the real-camera fixture) has its machinery built (8a-8c), and its capture is owed by
   the repo owner, guided by `plugins/camera/test/fixtures/README.md`. **Slice 2** (fixed-camera
-  board registration, with Ceres) was planned 2026-10-05 as seven sub-slices. *(Milestone 9;
+  board registration, with Ceres) was planned 2026-10-05 as seven sub-slices and is **built**; a
+  gui-mode eyeball of the `registerCameras` node is owed. *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md),

@@ -16,3 +16,11 @@ target_compile_features(test-camera-flow PRIVATE cxx_std_17)
 target_include_directories(test-camera-flow PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../test")
 target_link_libraries(test-camera-flow PRIVATE lain::camera::flow lain::warnings Catch2::Catch2WithMain)
 catch_discover_tests(test-camera-flow TEST_PREFIX "(camera::flow) ")
+
+# registerCameras over the registration method module's stand-in rig. Its own executable: the rig's
+# stand-ins register under the same keys as the calibration scene's.
+add_executable(test-camera-flow-registercameras test_registercameras.cpp)
+target_compile_features(test-camera-flow-registercameras PRIVATE cxx_std_17)
+target_include_directories(test-camera-flow-registercameras PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../test")
+target_link_libraries(test-camera-flow-registercameras PRIVATE lain::camera::flow lain::warnings Catch2::Catch2WithMain)
+catch_discover_tests(test-camera-flow-registercameras TEST_PREFIX "(camera::flow) ")

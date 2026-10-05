@@ -16,6 +16,7 @@ namespace lain::camera
 	inline constexpr const char* kDetectBoardKey = "detectBoard";
 	inline constexpr const char* kCalibrateCameraKey = "calibrateCamera";
 	inline constexpr const char* kCameraModelKey = "cameraModel";
+	inline constexpr const char* kRegisterCamerasKey = "registerCameras";
 
 	// The camera node kinds this build can RUN, in display order: each kind is here only when the
 	// backend it needs is registered. What a host's menu OFFERS, so nobody adds a node that can only
@@ -33,7 +34,8 @@ namespace lain::camera
 	void registerCameraNodes(core::Factory<flow::Node>& factory);
 
 	// Register the camera payload types as addable port types (flow::registerPortType): a board
-	// specification, a detection report, a calibration report and a camera model. ALWAYS, whatever
+	// specification, a detection report, a calibration report, a camera model and a list of them (so
+	// a map can lift one, ADR-0014), and a registration report. ALWAYS, whatever
 	// the backends: a port type is vocabulary, and an unregistered one cannot be named on save, so a
 	// boundary pin of that type would be dropped with its wiring.
 	void registerCameraPortTypes();

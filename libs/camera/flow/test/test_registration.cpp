@@ -6,9 +6,11 @@
 // grow: no other case in this executable registers a backend, so the case starts with none.
 
 #include <lain/camera/board/detection.h>
+#include <lain/camera/board/pose.h>
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/estimator.h>
 #include <lain/camera/flow/register.h>
+#include <lain/camera/registration/refiner.h>
 #include <lain/core/factory.h>
 #include <lain/flow/node.h>
 #include <lain/flow/porttyperegistry.h>
@@ -56,9 +58,27 @@ namespace
 		}
 	};
 
+	class NullPoseSolver : public camera::board::PoseSolver
+	{
+	public:
+		camera::Provenance provenance() const override { return {"null", "1"}; }
+		std::vector<math::RigidTransformd> solve(const camera::CameraModel&, const camera::board::Specification&,
+												 const camera::board::Observation&) const override
+		{
+			return {};
+		}
+	};
+
+	class NullRefiner : public camera::registration::Refiner
+	{
+	public:
+		camera::Provenance provenance() const override { return {"null", "1"}; }
+		camera::registration::Solution refine(const camera::registration::Problem&) const override { return {}; }
+	};
+
 	// Every camera kind, in display order: what registerCameraNodes must ALWAYS put in a factory.
 	const std::vector<std::string> kAllKinds{"boardSpecification", "renderBoard", "detectBoard",
-											 "calibrateCamera", "cameraModel"};
+											 "calibrateCamera", "cameraModel", "registerCameras"};
 
 	// The kinds registerCameraNodes put in a fresh factory that it can build.
 	std::vector<std::string> registered()
@@ -95,6 +115,13 @@ TEST_CASE("camera node kinds register always, and are offered as backends can ru
 
 	// With a detector, detection and calibration, and the model a calibration produces.
 	camera::board::detectorRegistry().registerType<NullDetector>("null");
+	const Keys calibrating{"boardSpecification", "renderBoard", "detectBoard", "calibrateCamera", "cameraModel"};
+	CHECK(camera::availableCameraNodeKeys() == calibrating);
+
+	// Registration also needs a pose for each view and a refinement of the rig: neither alone will do.
+	camera::board::poseSolverRegistry().registerType<NullPoseSolver>("null");
+	CHECK(camera::availableCameraNodeKeys() == calibrating);
+	camera::registration::refinerRegistry().registerType<NullRefiner>("null");
 	CHECK(camera::availableCameraNodeKeys() == kAllKinds);
 
 	// Backends change what is offered, never what registers.
@@ -111,4 +138,7 @@ TEST_CASE("camera port types register whatever the backends", "[camera][flow]")
 	CHECK(flow::portTypeRegistered("CalibrationReport"));
 	CHECK(flow::portTypeRegistered("CameraModel"));
 	CHECK(flow::portTypeKey(typeid(camera::CameraModel)) == "CameraModel");
+	CHECK(flow::portTypeRegistered("RegistrationReport"));
+	// The list form, so a map can lift a camera model: registerCameras takes the rig's models as one.
+	CHECK(flow::portTypeKey(typeid(std::vector<camera::CameraModel>)) == "ListOfCameraModel");
 }

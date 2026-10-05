@@ -1,6 +1,6 @@
-# lain::camera::flow — the camera work as node kinds (M9 slice 1, ADR-0016): a board specification,
-# its rendering, detection in one frame, board calibration over footage, and the model a calibration
-# found. A separate target over lain::camera + lain::flow by the boundary rule lain::media::serialize
+# lain::camera::flow — the camera work as node kinds (M9, ADR-0016): a board specification, its
+# rendering, detection in one frame, board calibration over footage, the model a calibration found,
+# and fixed-camera board registration over a rig's footage. A separate target over lain::camera + lain::flow by the boundary rule lain::media::serialize
 # follows: camera stays free of the graph engine, and flow core names no camera type.
 #
 # The namespace is lain::camera, as lain::media::serialize's is lain::media. A lain::camera::flow
@@ -17,6 +17,7 @@ add_library(camera-flow STATIC
 	src/detectboardnode.cpp
 	src/calibratecameranode.cpp
 	src/cameramodelnode.cpp
+	src/registercamerasnode.cpp
 	src/register.cpp
 )
 add_library(lain::camera::flow ALIAS camera-flow)
