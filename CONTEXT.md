@@ -273,9 +273,10 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   graph to be connected through accepted feature-track overlap; declared camera-pair relationships are
   hints at most, not evidence. _Avoid_: user-provided overlap graph, camera topology.
 - **Weak bridge** — an edge of the camera observation graph whose removal would disconnect it, and
-  which rests on fewer shared capture groups than the request's minimum. The rig is connected, but
-  the cameras beyond the bridge are placed by too little evidence to trust, so a registration with
-  one is never Ready and its report names the bridge. _Avoid_: ambiguous camera, weak camera (the
+  which rests on fewer shared capture groups than the registration fitness profile's minimum (a
+  request may override it, as it may any threshold). The rig is connected, but the cameras beyond
+  the bridge are placed by too little evidence to trust, so a registration with one is never Ready
+  and its report names the bridge. _Avoid_: ambiguous camera, weak camera (the
   weakness is the connection's).
 - **Targetless registration** — fixed camera registration inferred from ordinary scene features using
   shared feature tracks, synchronized capture groups, immutable camera models, connected field-of-view

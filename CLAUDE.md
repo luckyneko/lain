@@ -1379,6 +1379,27 @@ residual* and *weak bridge*.
 - **The sandbox needed the X11/Wayland/libva dev packages** (`libxrandr-dev` and friends) before the
   Vulkan loader would configure. A fresh container does not have them.
 
+### Update 2026-10-05 — M9 slice 2, sub-slice 3: capture and registration contracts
+
+The types and pure functions registration will stand on, with nothing using them yet: capture
+groups, the registration request, report, refiner seam and `registration/1` profile, and the camera
+observation graph. `ctest -j8` **1076/1076** Debug and **1084/1084** Release with video, camera and
+Ceres on, **1017/1017** with all three off (+14 each); warning-clean, format-check clean. Full notes
+in WORK.md's *Sub-slice 3 built* under M9 slice 2.
+
+- **`camera/method.h`** now holds `Verdict`, `Unavailable` and `ExecutionPolicy`, which the method
+  modules share. Calibration keeps its spellings through using-declarations, and registration never
+  includes a calibration header.
+- **A capture group's identity is canonical**: SHA-256 over a versioned, length-prefixed text of its
+  camera-sorted members. It is pinned against a digest computed outside lain. `create` also refuses
+  one frame named by two cameras, which CONTEXT.md already called invalid and the first cut missed.
+- **The weak-bridge threshold is a fitness criterion** (`minimumBridgeGroups`), not a request field
+  as planned, because it decides what a result is fit for. CONTEXT.md's *Weak bridge* is amended.
+- **Bridges are found iteratively**, and a 200,000-camera chain is the test.
+- **A sabotage that proved nothing at first:** the case meant to catch names running together used
+  an example the space separator already told apart. Now it uses `"a b"` + `"/c"`, which collides
+  without the length prefixes.
+
 ### Update 2026-10-05 — M9 slice 2, sub-slice 2: the board pose seam leaves calibration
 
 Calibration's behaviour is unchanged. A board's pose in one view, under a model held fixed, is now

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lain/camera/method.h"
+
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -47,11 +49,7 @@ namespace lain::camera::calibration
 	// The profile with the overrides applied to its Ready tier.
 	FitnessProfile resolve(const FitnessProfile& profile, const FitnessOverrides& overrides);
 
-	// What a calibration may be used for (CONTEXT.md, "Reconstruction fitness").
-	enum class Verdict
-	{
-		Rejected,
-		Exploratory,
-		Ready,
-	};
+	// What a calibration may be used for (CONTEXT.md, "Reconstruction fitness"): the verdict every
+	// camera method module shares (method.h).
+	using camera::Verdict;
 } // namespace lain::camera::calibration

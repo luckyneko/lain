@@ -3433,6 +3433,70 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        alternative"*. The first attempt deleted the comparison, which left `rotationBetween`
        unused, so it failed to build under `-Werror` and the old binary passed. Redone by setting
        the threshold to -1.
+
+   **Sub-slice 3 built (2026-10-05): capture and registration contracts.** Types and pure functions,
+   with nothing yet using them. Everything is std and lain only, in `libs/camera`.
+   - **`camera/method.h`** holds what the method modules share: `Verdict`, `Unavailable` and
+     `ExecutionPolicy`. They moved out of calibration, which keeps its spellings through
+     using-declarations (`calibration::Verdict` names the same type), so no caller changed.
+     Registration includes `method.h`, never a calibration header: the two are siblings (ADR-0016).
+   - **`capture::CaptureGroup`** (`capture/capturegroup.{h,cpp}`):
+     - members are `{CameraIdentity, media::FrameRef}`, sorted by camera;
+     - `create` refuses no members, a member with no camera or no frame, one camera twice, and
+       **one frame named by two cameras**. CONTEXT.md already called duplicate frame identities
+       invalid input, and the first cut did not check it. A refusal carries every reason;
+     - the identity is SHA-256 over a versioned, length-prefixed canonical text, so it does not
+       depend on input order. It is pinned in a test against a digest computed by Python's
+       hashlib, not by lain.
+   - **`groupsByPosition`** makes frame k of every camera group k. A camera with fewer frames is
+     absent past its end, and a position that makes no group is reported by position.
+   - **`registration::Request`, `Report`, `Refiner`**, as planned:
+     - the request's noise model and robust loss are the refiner's;
+     - the report holds `referenceFromCamera` per camera, the scale status, held-out and resampling
+       evidence (each `variant<…, Unavailable>`), and diagnostics: the graph, weak bridges,
+       per-component estimates, flips, outliers, the refinement summary and detections;
+     - the refiner seam is cameras plus latent rigid bodies with known points, with a
+       `freeCameras = false` pose-only mode for held-out validation.
+   - **Deviation: the weak-bridge threshold is a fitness criterion**, `minimumBridgeGroups` in
+     `registration/1`, not a request field as planned. It decides what a registration is fit for, so
+     it belongs with the other criteria, overridable like any of them. CONTEXT.md's *Weak bridge* is
+     amended to say so.
+   - **`registration/1`** in `registration/fitness.{h,cpp}`. Every criterion is independent of
+     resolution and rig size:
+
+     | Criterion | Ready | Exploratory |
+     | --- | --- | --- |
+     | groups per camera | 10 | 4 |
+     | shared groups per bridge | 5 | 2 |
+     | held-out transfer | 1 mrad | 4 mrad |
+     | rotation spread | 1 mrad | 5 mrad |
+     | translation spread, over median depth | 0.2% | 1% |
+     | outliers | 2% | 10% |
+
+     The argument for each number is written beside the profile.
+   - **The observation graph** (`registration/observationgraph.{h,cpp}`) is a pure function:
+     - edges by shared groups, with a camera listed twice in a group counted once;
+     - components by union-find;
+     - bridges by Tarjan's algorithm, **iterative**: a test runs a 200,000-camera chain, which a
+       recursive search would overflow;
+     - `weakBridges(graph, minimum)`. A weak link inside a cycle is not a bridge.
+   - **Tests (+14):**
+     - five capture cases: order, canonical identity, refusals (one frame from two cameras is a
+       section of that case), by-position grouping and its diagnostics;
+     - eight registration-contract cases: connected, partial, ring, disconnected, duplicate member,
+       the long chain, the profile, the report;
+     - one no-backend case: `registration::refine` with no refiner is `NoBackend`.
+   - `ctest -j8` **1076/1076** Debug and **1084/1084** Release with video, camera and Ceres on, and
+     **1017/1017** with all three off (+14 each); warning-clean, format-check clean.
+   - **Four sabotages, all caught; one first proved nothing.**
+     - Hashing the members as listed rather than sorted fails the canonical-identity and
+       by-position cases.
+     - Dropping the length prefixes fails the pinned digest and the run-together case. The first
+       version of that case (`"ab"` + `"/c"` against `"a"` + `"b /c"`) passed with the prefixes
+       gone, since the space separator already told those apart. The example that collides is
+       `"a b"` + `"/c"`.
+     - Tarjan's `low > order` as `>=` fails the connected and ring cases.
+     - The frame-twice check disabled fails its section.
 3. **Targetless registration with known intrinsics.** Reuse immutable camera models, capture groups,
    registration reports, shared feature-track extraction, and Ceres refinement. Accepted tracks
    establish overlap, initial relative geometry, and scene landmarks before Ceres begins; absent

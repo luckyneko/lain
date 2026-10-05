@@ -8,6 +8,7 @@
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/board.h>
 #include <lain/camera/calibration/estimator.h>
+#include <lain/camera/registration/refiner.h>
 #include <lain/media/framesequence.h>
 #include <lain/media/framesource.h>
 
@@ -103,4 +104,14 @@ TEST_CASE("with no backend, a held model fails for want of a pose solver", "[cam
 	CHECK(report.status == calibration::CalibrationStatus::Failed);
 	REQUIRE_FALSE(report.failures.empty());
 	CHECK(report.failures[0].failure == calibration::Failure::NoPoseSolver);
+}
+
+TEST_CASE("with no backend, a registration refinement says the capability is missing", "[camera][registration]")
+{
+	namespace registration = lain::camera::registration;
+	REQUIRE_FALSE(registration::canRefine());
+	const registration::Solution solution = registration::refine(registration::Problem{});
+	CHECK(solution.status == registration::RefinementStatus::NoBackend);
+	CHECK_FALSE(solution.usable());
+	CHECK(solution.detail.find("no registration refiner") != std::string::npos);
 }

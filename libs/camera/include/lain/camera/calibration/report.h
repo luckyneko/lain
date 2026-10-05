@@ -4,6 +4,7 @@
 #include "lain/camera/calibration/fitness.h"
 #include "lain/camera/calibration/request.h"
 #include "lain/camera/cameramodel.h"
+#include "lain/camera/method.h"
 #include "lain/camera/provenance.h"
 
 #include <lain/core/time.h>
@@ -42,12 +43,8 @@ namespace lain::camera::calibration
 		std::string detail;
 	};
 
-	// A section whose evidence could not be computed, and why. Never zeros: missing evidence is not
-	// perfect evidence.
-	struct Unavailable
-	{
-		std::string reason;
-	};
+	// A section whose evidence could not be computed, and why (method.h).
+	using camera::Unavailable;
 
 	// The model checked against views that took no part in estimating it, through lain's own
 	// projection (one implementation: what is measured here is what a solver minimises later).

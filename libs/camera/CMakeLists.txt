@@ -1,8 +1,9 @@
 # lain::camera — camera geometry and boards (M9, ADR-0016): immutable validated camera models, the
-# closed set of distortion models, scalar-generic projection (lain::camera), and board patterns,
+# closed set of distortion models, scalar-generic projection (lain::camera), board patterns,
 # specifications, observations, detection reports and renderings with their backend seams
-# (lain::camera::board). std + lain only, so it is always built; the optional OpenCV backend lives in
-# plugins/camera/opencv, and no OpenCV type crosses into here.
+# (lain::camera::board), capture groups (lain::camera::capture), and the calibration and
+# registration method modules with theirs. std + lain only, so it is always built; the optional
+# backends live in plugins/camera (OpenCV, Ceres), and none of their types crosses into here.
 #
 # It depends on no lain::data, as lain::media and lain::flow do not: serialization is its own target,
 # libs/camera/serialize.
@@ -19,6 +20,11 @@ add_library(camera STATIC
 	src/calibration/report.cpp
 	src/calibration/estimator.cpp
 	src/calibration/board.cpp
+	src/capture/capturegroup.cpp
+	src/registration/fitness.cpp
+	src/registration/observationgraph.cpp
+	src/registration/refiner.cpp
+	src/registration/report.cpp
 )
 add_library(lain::camera ALIAS camera)
 

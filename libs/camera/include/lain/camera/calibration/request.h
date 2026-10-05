@@ -4,6 +4,7 @@
 #include "lain/camera/calibration/fitness.h"
 #include "lain/camera/cameramodel.h"
 #include "lain/camera/distortion.h"
+#include "lain/camera/method.h"
 
 #include <cstdint>
 #include <optional>
@@ -20,11 +21,9 @@ namespace lain::camera::calibration
 		HoldAndValidate, // keep it exactly, and only validate it against the footage
 	};
 
-	enum class ExecutionPolicy
-	{
-		Normal,				// frames and resamples in parallel on the process pool
-		DeterministicDebug, // the same work, serially, in canonical order
-	};
+	// Frames and resamples in parallel on the process pool, or serially in canonical order
+	// (method.h).
+	using camera::ExecutionPolicy;
 
 	// A board calibration request (CONTEXT.md, "Calibration request").
 	struct Request
