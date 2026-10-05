@@ -272,6 +272,11 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   edges are supported by accepted shared observations. Initial targetless registration requires this
   graph to be connected through accepted feature-track overlap; declared camera-pair relationships are
   hints at most, not evidence. _Avoid_: user-provided overlap graph, camera topology.
+- **Weak bridge** — an edge of the camera observation graph whose removal would disconnect it, and
+  which rests on fewer shared capture groups than the request's minimum. The rig is connected, but
+  the cameras beyond the bridge are placed by too little evidence to trust, so a registration with
+  one is never Ready and its report names the bridge. _Avoid_: ambiguous camera, weak camera (the
+  weakness is the connection's).
 - **Targetless registration** — fixed camera registration inferred from ordinary scene features using
   shared feature tracks, synchronized capture groups, immutable camera models, connected field-of-view
   overlap, and predominantly static scene structure. Dynamic observations are rejected as outliers;
@@ -287,6 +292,13 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   residuals, consistency, and stability. Board and targetless diagnostics remain method-specific;
   comparing methods requires the same independent validation evidence. _Avoid_: board RMS as overall
   registration quality, targetless inlier ratio as overall registration quality.
+- **Held-out group** — a capture group kept out of a registration's initialisation and refinement so
+  it can validate the result. Each member in turn is predicted from the others: the board's pose is
+  solved from the other members with every camera held at its registered transform, lain's
+  projection predicts the member's corners, and the angle between predicted and observed rays is
+  its **transfer residual**. It tests the extrinsics, which a residual on the fitted groups cannot,
+  since refinement has already minimised that. _Avoid_: validation view, reprojection error when
+  the prediction crosses cameras.
 - **Global registration refinement** — joint reprojection optimization of all registered camera
   transforms and the method-specific latent geometry while holding the registration reference fixed:
   board poses for board registration or scene landmarks induced by accepted feature tracks for
@@ -327,6 +339,11 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   Output is independent of input order: frames are canonically ordered by timestamp, camera identity,
   and frame identity, group identity derives from selected frame identities, and duplicate frame
   identities are invalid input.
+- **By-position grouping** — the explicit capture grouping for frame-locked footage: frame k of
+  every camera forms capture group k, and a camera with fewer frames is absent from the groups past
+  its end. It reads no timestamp, so it is correct only when the host knows the cameras were
+  triggered together, such as a genlocked rig. _Avoid_: synchronised grouping (nothing was
+  measured), frame-index matching.
 - **Clock domain** — the identity of the time basis shared by comparable capture timestamps. A normal
   registration dataset uses one clock domain; automatic grouping rejects mixed or unknown domains
   unless timestamps have first been mapped into a common domain. _Avoid_: timestamp source when it
@@ -446,6 +463,12 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   visualization resolves that image separately. Calibration, registration, tests, and debug
   visualization use the same observation so displayed evidence matches what was processed. _Avoid_:
   OpenCV corners, detected board image, calibration sample, inferred confidence.
+- **Pose solver** — the backend operation that recovers a board's pose in ONE view under a camera
+  model held fixed, `cameraFromBoard`. A planar target can fit two poses almost equally well (far
+  away, or nearly square-on), so the solver returns the runner-up as an alternative and leaves the
+  choice to a caller with more evidence. Calibration validation and registration both use it, and
+  neither owns it. _Avoid_: PnP when the backend's algorithm is not the point, board pose
+  estimation (calibration estimates a model, not a pose).
 - **Board-detection report** — the result of attempting to find a specified board in one source
   frame, whether detection succeeded, was incomplete, or failed. It carries the usable board
   observation when one exists plus rejection reasons and diagnostic evidence used by view selection,

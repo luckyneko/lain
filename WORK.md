@@ -2439,7 +2439,8 @@ built before it, discharging its frame-sequence prerequisite. How OpenCV is obta
 2026-09-29 ([ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md)), and slice 0 below
 (OpenCV lands, nothing depending on it) is built. **Slice 1 is in progress** as nine sub-slices
 (below): 0 to 7 are built, and 8 (the real-camera fixture) has its machinery built; what is left of
-it is the capture, which only the repo owner can make.
+it is the capture, which only the repo owner can make. **Slice 2** (fixed-camera board registration) was planned
+2026-10-05 as seven sub-slices (below).
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -3231,6 +3232,79 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    the optional private Ceres adapter for one sparse global-refinement path, with SuiteSparse disabled
    by default. Exercise connected, partial, ambiguous, and disconnected synthetic rigs plus the
    target scale of roughly 100 cameras and 4,000 capture groups without fixed camera/group limits.
+
+   **Planned 2026-10-05 as seven sub-slices (0 to 6), one commit each.** Four decisions came from
+   the repo owner while planning, recorded in ADR-0016 and ADR-0017 (both amended in place):
+   - **Ceres 2.2.0, built from source, with Eigen 3.4.0 and Ceres' bundled miniglog.** Only
+     unreleased Ceres master needs Abseil, so Abseil leaves the inventory. Everything optional is
+     off (SuiteSparse, LAPACK, CUDA, Accelerate, gflags), the build is static, and
+     `EIGEN_MPL2_ONLY` is defined for Ceres' own sources as well, so building it proves no LGPL
+     Eigen code is reached.
+   - **Capture groups are explicit**, plus a by-position helper for frame-locked footage. Automatic
+     timestamp grouping is deferred, triggered by the first rig footage that is not frame-locked.
+   - **A graph supplies cameras as collections**: `footage : vector<FrameSequence>` and
+     `models : vector<CameraModel>`, paired by position, so the input composes with
+     `listDir → map(openSequence)` and `map(calibrateCamera)`.
+   - **"Ambiguous" is three tested cases**: a weak bridge, a planar pose flip, and a conflicting
+     capture group.
+
+   Taken by precedent, and recorded in the same amendments:
+   - **Ceres runs serial (`num_threads = 1`)**, as OpenCV does (ADR-0024). Validation and
+     resampling solves run one per task on the process pool, and the scale test's timing is the
+     trigger to revisit.
+   - **`LAIN_CAMERA_CERES` defaults to `${LAIN_NOT_SUBPROJECT}`.** Ceres is source-built, but heavy
+     enough that a bundled lain should not compile it unasked.
+   - **The single-view board-pose solve moves out of `calibration::Estimator`** into a
+     `camera::board` seam, so registration does not depend on calibration.
+
+   0. **Record the plan.** This entry, the two ADR amendments, the README's Ceres and Eigen rows
+      (Abseil's removed), and four CONTEXT.md terms: *pose solver*, *by-position grouping*,
+      *held-out group / transfer residual* and *weak bridge*.
+   1. **Ceres + Eigen land, with nothing depending on them** (FFmpeg's and OpenCV's slice-0
+      precedent):
+      - `cmake/addEigen.cmake` and `cmake/addCeres.cmake`;
+      - `plugins/camera/ceres` with only a build probe;
+      - the licence notices, the README rows made current, a CI field, and the footprint measured;
+      - **the one-implementation proof**: `camera::project<ceres::Jet>` compiles for all six
+        distortion models, and its automatic derivatives match finite differences of
+        `project<double>`, the inverse models' iterative path included.
+   2. **The board pose seam leaves calibration** (no behaviour change):
+      - `board::PoseSolver` + `board::pose()`, carrying IPPE's alternative solution;
+      - the OpenCV body moves into its own pose solver;
+      - `calibration::Estimator::boardPose` is deleted.
+   3. **Capture + registration contracts** in `libs/camera`, std and lain only:
+      - `capture::CaptureGroup`, and by-position grouping;
+      - `registration::Request` and `Report`;
+      - the `registration/1` fitness profile;
+      - the lain-owned `registration::Refiner` seam;
+      - the observation graph (components, weak bridges).
+   4. **The board registration method module**, `registration::board::registerCameras` (`register`
+      is a keyword), over footage or over stored detections. In order:
+      1. detection on the pool;
+      2. one pose per view through the seam;
+      3. the observation graph;
+      4. the reference;
+      5. initialisation over a maximum spanning tree, each candidate relative pose scored against
+         every shared group;
+      6. refinement through the seam, with outliers named;
+      7. held-out groups validated by transfer residual;
+      8. seeded bootstrap stability;
+      9. the verdict.
+
+      Tested with stand-in backends on connected, partial, disconnected and all three ambiguous
+      rigs.
+   5. **The Ceres refiner**:
+      - automatic differentiation through `camera::project<Jet>`, with the reference held
+        constant;
+      - whitening, then a robust loss, with `SPARSE_SCHUR` over Eigen sparse and the board poses
+        eliminated.
+
+      Tested on real refinement of the same rigs, with **the 100-camera, 4,000-group scale test**
+      and an end to end with OpenCV detection.
+   6. **Flow adapter, flowview, cli vertical**:
+      - `registerCameras` over collections, with port types and list forms;
+      - codecs, editors and the catalog;
+      - a three-camera rig run through `runGraph` and the real binary.
 3. **Targetless registration with known intrinsics.** Reuse immutable camera models, capture groups,
    registration reports, shared feature-track extraction, and Ceres refinement. Accepted tracks
    establish overlap, initial relative geometry, and scene landmarks before Ceres begins; absent
@@ -8398,7 +8472,8 @@ row here**. A row is cheap to delete and expensive to leave.
   release (`opencv-4.14.0-calib`) is published, and **slice 0 is built** (`addOpenCV.cmake`, the
   `[opencv]` probe). **Slice 1 is in progress** as nine sub-slices, of which 0 to 7 are built;
   sub-slice 8 (the real-camera fixture) has its machinery built (8a-8c), and its capture is owed by
-  the repo owner, guided by `plugins/camera/test/fixtures/README.md`. *(Milestone 9;
+  the repo owner, guided by `plugins/camera/test/fixtures/README.md`. **Slice 2** (fixed-camera
+  board registration, with Ceres) was planned 2026-10-05 as seven sub-slices. *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md),

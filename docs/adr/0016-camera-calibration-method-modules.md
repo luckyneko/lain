@@ -280,3 +280,37 @@ contend with it.
 pattern, its fingerprint and the rendering value (raster, description, fingerprint). The OpenCV
 plugin fills the raster, so a rendered board and a detected board are the same backend's idea of the
 pattern, and lain carries no second implementation of the ArUco dictionaries.
+
+**Fixed-camera board registration, as planned.** *(Added 2026-10-05, decided with the repo owner
+while planning M9 slice 2.)*
+
+- **A board's pose in one view is `camera::board`'s question, not calibration's.** Calibration
+  validates by recovering each held-out view's board pose with the model held fixed, and that solve
+  lived on `calibration::Estimator` (`boardPose`). Registration needs exactly the same solve, so
+  leaving it there would make registration depend on calibration, two siblings this ADR keeps
+  apart. It becomes a `board::PoseSolver` seam with its own registry and a `board::pose()` facade,
+  filled by the OpenCV plugin, and both method modules call it. The answer carries the planar
+  target's **second solution** as well. A board seen far away or nearly square-on has two poses
+  that fit about equally well, and choosing between them takes evidence from another camera, which
+  one view does not have.
+- **Capture groups are explicit.** Registration takes `capture::CaptureGroup` values, plus a
+  by-position helper for frame-locked footage, in which frame k of every camera is group k. The
+  automatic timestamp grouping CONTEXT.md describes (symmetric discovery, a tolerance, reported
+  ambiguity) is **deferred**. Its trigger is the first rig footage that is not frame-locked.
+- **A graph hands registration its cameras as collections.** `registerCameras` takes
+  `footage : vector<FrameSequence>` and `models : vector<CameraModel>`, paired by position. One
+  wire carries a hundred cameras, and the input composes with `listDir → map(openSequence)` and
+  `map(calibrateCamera)` (M8). Until a capture manifest assigns camera identities, a camera's
+  identity in a graph is its footage's canonical source uri.
+- **An "ambiguous" rig is three cases, each tested.**
+  - A **weak bridge**: a camera reaches the rest only through too little shared evidence. The rig
+    is connected and is never Ready, and the report names the bridge.
+  - A **planar pose flip**: one view's best single-view pose is the wrong one of the two.
+    Initialisation chooses by cross-camera agreement, not by trusting the view.
+  - A **conflicting capture group**: a group whose frames were not simultaneous, or whose board
+    moved, contradicts the rest. Initialisation must not be steered by it, the robust loss must
+    bound its influence, and the outlier diagnostics name it.
+- **The global refinement is a seam.** `registration::Refiner` is lain-owned and holds no Ceres
+  type: cameras, latent rigid bodies (board poses) with their known points, and observations in.
+  The Ceres plugin fills it. It is shaped so that targetless registration adds latent scene points
+  beside the rigid bodies, not a second path.

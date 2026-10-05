@@ -1354,6 +1354,31 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-05 — M9 slice 2 planned: fixed-camera board registration (nothing built yet)
+
+Slice 2 of M9 is planned as **seven sub-slices (0 to 6), one commit each**, in WORK.md's M9 build
+order. ADR-0016 and ADR-0017 are amended in place, the README's Ceres and Eigen rows carry their
+pins, and CONTEXT.md gains *pose solver*, *by-position grouping*, *held-out group / transfer
+residual* and *weak bridge*.
+
+- **Decided with the repo owner:**
+  - **Ceres 2.2.0 is built from source**, with Eigen 3.4.0 and Ceres' bundled miniglog. Only
+    unreleased Ceres master needs Abseil (checked against both trees' CMakeLists), so **Abseil
+    leaves the inventory**. Everything optional is off, the build is static, and `EIGEN_MPL2_ONLY`
+    is defined for Ceres' own sources too.
+  - **Capture groups are explicit**, plus by-position grouping for frame-locked footage. Timestamp
+    grouping is deferred until the first footage that is not frame-locked.
+  - **A graph supplies cameras as collections**, footage and models paired by position.
+  - **"Ambiguous" is three tested cases**: a weak bridge, a planar pose flip, and a conflicting
+    capture group.
+- **Taken by precedent:**
+  - Ceres runs serial and lain supplies the parallelism, as OpenCV does (ADR-0024).
+  - `LAIN_CAMERA_CERES` defaults to `${LAIN_NOT_SUBPROJECT}`.
+  - The single-view board-pose solve moves from `calibration::Estimator` to a `camera::board` seam,
+    since registration must not depend on its sibling.
+- **The sandbox needed the X11/Wayland/libva dev packages** (`libxrandr-dev` and friends) before the
+  Vulkan loader would configure. A fresh container does not have them.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 8c: a board to print and the capture guide (**fixture machinery COMPLETE**)
 
 The last third of the real-camera fixture's machinery. What remains of sub-slice 8, and of slice 1,

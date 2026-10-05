@@ -33,3 +33,35 @@ Global refinement whitens observations using measured pixel covariance when avai
 uses a configured uniform pixel-noise assumption and a configured robust loss; detector response does
 not silently modify residual weight. Reports retain the assumed noise, loss family and scale, and
 outlier diagnostics so weighting decisions are reproducible.
+
+## Amended 2026-10-05: which Ceres, and whose threads
+
+Decided with the repo owner while planning M9 slice 2.
+
+**Ceres 2.2.0, built from source, with Eigen 3.4.0 and Ceres' bundled miniglog.** The inventory
+above listed Abseil as a Ceres dependency, but only unreleased Ceres master needs it
+(`find_package(absl 20240116)`). 2.2.0, the latest release, logs through glog or through miniglog,
+a small glog substitute compiled into Ceres itself under Ceres' own BSD licence. With miniglog
+there is no glog, no gflags and no Abseil, so **Abseil leaves the inventory**. Fetched as source
+through `FetchContent` rather than a published binary, unlike OpenCV
+([ADR-0026](0026-opencv-from-a-pinned-minimal-prebuilt.md)). Ceres' public headers include Eigen's,
+so a prebuilt would also pin lain's Eigen and need a Debug and a Release set for MSVC. A static
+source build has no ABI to keep in step, at the price of build minutes that are measured when it
+lands.
+
+Everything optional is forced off: SuiteSparse (as above), LAPACK, CUDA, Accelerate, gflags, and
+Ceres' tests, examples, benchmarks and documentation. Eigen's sparse Cholesky stays on, since it is
+the sparse solver this ADR names. **`EIGEN_MPL2_ONLY` is defined for Ceres' own sources too**, not
+only for lain's, so building Ceres proves that no LGPL-licensed Eigen code is reached.
+
+**Ceres runs serial (`num_threads = 1`); lain supplies the parallelism.** This is the rule
+ADR-0016 set for OpenCV, and the reason is the same: ADR-0024 makes the process pool the only pool,
+and Ceres 2.2 owns a thread pool of its own that cannot be pointed at it. Registration parallelises
+on lain's side instead. Detection runs one frame per task, as calibration's does, and the
+validation and resampling solves run one per task. A single global refinement is therefore
+single-threaded. The 100-camera, 4,000-group scale test records how long that takes, and that
+measurement is the trigger to revisit.
+
+The build switch is `LAIN_CAMERA_CERES`. It defaults to `${LAIN_NOT_SUBPROJECT}`, as a fetched
+prebuilt's does, although Ceres is source-built: it is heavy enough that a bundled lain should not
+compile it unasked.
