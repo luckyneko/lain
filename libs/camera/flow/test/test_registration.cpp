@@ -54,11 +54,6 @@ namespace
 		{
 			return {};
 		}
-		std::optional<math::RigidTransformd> boardPose(const camera::CameraModel&, const camera::board::Specification&,
-													   const camera::board::Observation&) const override
-		{
-			return std::nullopt;
-		}
 	};
 
 	// Every camera kind, in display order: what registerCameraNodes must ALWAYS put in a factory.

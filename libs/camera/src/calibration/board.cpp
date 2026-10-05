@@ -1,5 +1,6 @@
 #include "lain/camera/calibration/board.h"
 
+#include "lain/camera/board/pose.h"
 #include "lain/camera/calibration/estimator.h"
 #include "lain/camera/projection.h"
 
@@ -203,41 +204,34 @@ namespace lain::camera::calibration::board
 	}
 
 	// The model checked against views it was not estimated from, through lain's own projection. The
-	// backend only recovers each view's board pose with the model held fixed; every residual is
-	// measured here.
+	// pose solver only places each view's board with the model held fixed; every residual is
+	// measured here (board::measure).
 	static std::variant<HeldOutEvidence, Unavailable> validate(const CameraModel& model, const cb::Specification& board,
 															   const std::vector<cb::Observation>& views,
-															   const Estimator& estimator)
+															   Provenance& poseSolver)
 	{
 		if (views.empty())
 			return Unavailable{"no views were held out"};
+		if (!cb::canSolvePose())
+			return Unavailable{"this build has no board pose solver"};
 		HeldOutEvidence evidence;
 		evidence.views = std::uint32_t(views.size());
 		double angles = 0, pixels = 0;
 		for (const cb::Observation& view : views)
 		{
-			const std::optional<math::RigidTransformd> pose = estimator.boardPose(model, board, view);
-			if (!pose)
+			const cb::PoseResult pose = cb::pose(model, board, view);
+			if (poseSolver.backend.empty())
+				poseSolver = pose.provenance;
+			if (!pose.ok())
 			{
 				++evidence.viewsWithoutPose;
 				continue;
 			}
-			for (const cb::FeatureObservation& f : view.features)
-			{
-				const math::Vec3d point = pose->apply(*board.cornerPosition(f.id));
-				const Projection<double> predicted = project(model, point.x, point.y, point.z);
-				const Unprojection<double> observed = unproject(model, f.pixel.x, f.pixel.y);
-				if (!predicted.ok() || !observed.ok())
-					continue;
-				const math::Vec3d ray{observed.x, observed.y, observed.z};
-				const math::Vec3d towards = math::normalize(point);
-				const double angle = std::atan2(math::length(math::cross(ray, towards)), math::dot(ray, towards));
-				const double pixel = math::length(math::Vec2d{predicted.u, predicted.v} - f.pixel);
-				angles += angle * angle;
-				pixels += pixel * pixel;
-				evidence.worstPixels = std::max(evidence.worstPixels, pixel);
-				++evidence.corners;
-			}
+			const cb::ViewResidual residual = cb::measure(model, board, view, pose.pose->cameraFromBoard);
+			angles += residual.sumSquaredAngle;
+			pixels += residual.sumSquaredPixels;
+			evidence.worstPixels = std::max(evidence.worstPixels, residual.worstPixels);
+			evidence.corners += residual.corners;
 		}
 		if (evidence.corners == 0)
 			return Unavailable{"no held-out corner could be measured: no board pose was recovered"};
@@ -440,7 +434,8 @@ namespace lain::camera::calibration::board
 	}
 
 	// The checks both entry points make before any work: a known profile, a usable imported model,
-	// and a backend for the job. Returns the estimator to use, or the failed report.
+	// and a backend for the job. Returns the estimator to use (none for a held model, which estimates
+	// nothing), or the failed report.
 	static std::variant<std::unique_ptr<Estimator>, Report> prepare(Report& report, const ImageGeometry& image,
 																	const Request& request, core::Time start)
 	{
@@ -460,11 +455,16 @@ namespace lain::camera::calibration::board
 							  std::to_string(request.imported->image().height) + " and the footage is " +
 							  std::to_string(image.width) + "x" + std::to_string(image.height));
 
-		// A held model still needs a backend for board poses; an estimated one needs a backend that
-		// estimates exactly the requested model, never a similar one.
-		std::unique_ptr<Estimator> estimator =
-			hold ? (canEstimate() ? estimatorRegistry().create(estimatorRegistry().keys().front()) : nullptr)
-				 : estimatorFor(request.model);
+		// A held model needs only board poses, which are all its validation is; an estimated one needs a
+		// backend that estimates exactly the requested model, never a similar one.
+		if (hold)
+		{
+			if (!cb::canSolvePose())
+				return failed(report, start, Failure::NoPoseSolver,
+							  "this build has no board pose solver, which validating a held model needs");
+			return std::unique_ptr<Estimator>{};
+		}
+		std::unique_ptr<Estimator> estimator = estimatorFor(request.model);
 		if (!estimator)
 			return failed(report, start, Failure::NoEstimator,
 						  canEstimate() ? "no registered backend can estimate " + std::string(displayName(request.model))
@@ -476,7 +476,7 @@ namespace lain::camera::calibration::board
 	// Everything after detection: which views do what, the estimate, its validation, its stability and
 	// its verdict. `report` arrives prepared, with its detections in place.
 	static Report analyse(Report report, const ImageGeometry& image, const cb::Specification& board,
-						  const Request& request, const Estimator& estimator, core::Time start)
+						  const Request& request, const Estimator* estimator, core::Time start)
 	{
 		Diagnostics& diagnostics = report.diagnostics;
 		diagnostics.framesExamined = std::uint32_t(diagnostics.detections.size());
@@ -537,7 +537,7 @@ namespace lain::camera::calibration::board
 				}
 			}
 
-			const Estimate estimate = estimator.estimate(image, calibrationViews, board, request.model, initial);
+			const Estimate estimate = estimator->estimate(image, calibrationViews, board, request.model, initial);
 			if (!estimate.parameters)
 				return failed(std::move(report), start, Failure::EstimationFailed,
 							  estimate.failure.empty() ? "the estimator returned no model" : estimate.failure);
@@ -554,9 +554,9 @@ namespace lain::camera::calibration::board
 		}
 		report.status = CalibrationStatus::Succeeded;
 
-		report.heldOut = validate(*report.model, board, heldOutViews, estimator);
+		report.heldOut = validate(*report.model, board, heldOutViews, report.reproducibility.poseSolver);
 		report.resampling = hold ? std::variant<ResamplingEvidence, Unavailable>{Unavailable{"the model was held, not estimated"}}
-								 : resample(calibrationViews, board, image, request, initial, estimator);
+								 : resample(calibrationViews, board, image, request, initial, *estimator);
 
 		// The verdict. A held model is judged on the views that validated it.
 		const std::uint32_t supportingViews = hold ? diagnostics.viewsHeldOut : diagnostics.viewsSelected;
@@ -596,7 +596,7 @@ namespace lain::camera::calibration::board
 				report.reproducibility.sources.push_back(source);
 		}
 		report.diagnostics.detections = detections;
-		return analyse(std::move(report), image, board, request, *std::get<std::unique_ptr<Estimator>>(prepared), start);
+		return analyse(std::move(report), image, board, request, std::get<std::unique_ptr<Estimator>>(prepared).get(), start);
 	}
 
 	Report calibrate(const media::FrameSequence& footage, const cb::Specification& board, const Request& request)
@@ -635,6 +635,6 @@ namespace lain::camera::calibration::board
 					const image::Image frame = footage.image(i);
 					detections[i] = cb::detect(frame, footage.frame(i), board, request.detection);
 				});
-		return analyse(std::move(report), image, board, request, *std::get<std::unique_ptr<Estimator>>(prepared), start);
+		return analyse(std::move(report), image, board, request, std::get<std::unique_ptr<Estimator>>(prepared).get(), start);
 	}
 } // namespace lain::camera::calibration::board

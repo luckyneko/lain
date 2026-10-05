@@ -26,6 +26,7 @@ namespace lain::camera::calibration
 	{
 		NoDetector,				   // this build cannot detect boards
 		NoEstimator,			   // this build cannot estimate the requested model
+		NoPoseSolver,			   // HoldAndValidate in a build that cannot solve board poses
 		UnknownFitnessProfile,	   // the request names a profile this build does not know
 		IncompatibleImportedModel, // the imported model's geometry is not the footage's
 		NoImportedModel,		   // HoldAndValidate with nothing to hold
@@ -96,7 +97,8 @@ namespace lain::camera::calibration
 		std::uint32_t frames = 0;
 		Provenance detector;
 		Provenance estimator;
-		Request request; // the configuration, seed and execution policy, exactly as given
+		Provenance poseSolver; // what placed the board in each held-out view
+		Request request;	   // the configuration, seed and execution policy, exactly as given
 	};
 
 	// The result of a calibration attempt, successful or not (CONTEXT.md, "Calibration report").

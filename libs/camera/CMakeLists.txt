@@ -14,6 +14,7 @@ add_library(camera STATIC
 	src/board/specification.cpp
 	src/board/detection.cpp
 	src/board/rendering.cpp
+	src/board/pose.cpp
 	src/calibration/fitness.cpp
 	src/calibration/report.cpp
 	src/calibration/estimator.cpp

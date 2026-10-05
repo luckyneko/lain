@@ -3373,6 +3373,66 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      - With `EIGEN_MPL2_ONLY` dropped from `Eigen3::Eigen`, the MPL2 case fails.
      - Also learned: a timed sabotage build whose CMake file was restored BEFORE building
        reconfigures and measures the original. Hold the change until the build is done.
+
+   **Sub-slice 2 built (2026-10-05): the board pose seam leaves calibration.** No behaviour change
+   for calibration: a held-out view is still placed by IPPE refined with Levenberg-Marquardt, through
+   lain's normalised rays, and measured by lain's projection.
+   - **`camera::board::pose`** (`board/pose.h`, `src/board/pose.cpp`), beside `detect` and `render`:
+     - a `PoseSolver` backend with its own registry, plus `canSolvePose()`;
+     - `pose(model, board, view) → PoseResult {status, detail, pose, alternative, provenance}`;
+     - statuses `Solved`, `TooFewCorners`, `NoSolution` and `NoBackend`. No backend is a value,
+       read like every other outcome, as `detect()`'s `NoBackend` is;
+     - `measure(model, board, view, cameraFromBoard) → ViewResidual`, which is calibration's former
+       inline residual loop, now one routine for both modules.
+   - **The facade measures, the backend only proposes.** A backend returns poses best first, and
+     each `PoseCandidate` carries an rms angle and pixel error computed by lain's projection. That
+     makes a choice between two poses something registration can do with evidence from other
+     cameras, using the same measure for every backend.
+   - **A second pose is reported only when it is a second pose.** Refining both IPPE solutions of a
+     clean view lands them about 3e-5 rad apart, so an `alternative` within 1e-3 rad of the first
+     is dropped. A genuine pair differs by roughly twice the board's tilt from square-on.
+   - **Measured: the backend's ranking can be the wrong way round.** The test view is 2.5 m away,
+     turned 0.07 rad, with 0.5 px noise. The two poses come back 0.33 rad apart, both within the
+     noise (rms 0.84 mrad each, where half a pixel at f = 900 is about 0.6 mrad), and the FIRST is
+     the farther from the truth: 0.22 rad, against 0.13. This is why the choice belongs to a caller with more evidence, and it is
+     sub-slice 4's flip case.
+   - **`OpenCVPoseSolver`** (`opencvposesolver.{h,cpp}`) is `OpenCVEstimator::boardPose`'s body
+     moved. It switches from `solvePnP` to `solvePnPGeneric(…, SOLVEPNP_IPPE)` so both solutions
+     return, and runs LM on each.
+   - **`calibration::Estimator::boardPose` is deleted.**
+     - `validate` calls `board::pose` and `board::measure`, and records the solver's provenance in
+       the new `Reproducibility::poseSolver`.
+     - A held model needs a pose solver rather than "any estimator", so `prepare` returns no
+       estimator for HoldAndValidate, and a build without one fails with the new
+       `Failure::NoPoseSolver`.
+   - **Stand-ins:**
+     - `ScriptedEstimator`'s truth pose became a `TruthPoseSolver`, registered as "truth";
+     - `test_registration.cpp`'s `NullEstimator` lost its stub.
+   - **Tests, all new:**
+     - `[pose]` in `test-camera-opencv`, five cases:
+       - the plugin registers a pose solver;
+       - an exact view recovers its pose for no distortion, Brown-Conrady and inverse Brown-Conrady;
+       - the far, nearly square-on view comes back with both poses;
+       - a pose reached twice is not an alternative;
+       - fewer than four corners is `TooFewCorners`.
+     - Two in `test-camera-nobackend`: no backend gives `NoBackend`, and a held model fails with
+       `NoPoseSolver`.
+   - **Found while measuring: the test's noise has to be portable.** `std::normal_distribution` is
+     implementation-defined, so the flip view's noise is Box-Muller over `mt19937_64`, the rule
+     calibration's resampling already follows. Otherwise the recorded angles would be one standard
+     library's.
+   - `ctest -j8` **1062/1062** Debug and **1070/1070** Release with video, camera and Ceres on (+7
+     each), and **1003/1003** with all three off (+2, the no-backend cases); warning-clean,
+     format-check clean.
+   - **Three sabotages, all caught; one first proved nothing.**
+     - The facade answering `NoSolution` where it has no backend fails *"with no backend, a board
+       pose says the capability is missing"*.
+     - The held-model check skipped fails *"with no backend, a held model fails for want of a pose
+       solver"*.
+     - The same-pose filter removed fails *"a pose reached twice is not reported as an
+       alternative"*. The first attempt deleted the comparison, which left `rotationBetween`
+       unused, so it failed to build under `-Werror` and the old binary passed. Redone by setting
+       the threshold to -1.
 3. **Targetless registration with known intrinsics.** Reuse immutable camera models, capture groups,
    registration reports, shared feature-track extraction, and Ceres refinement. Accepted tracks
    establish overlap, initial relative geometry, and scene landmarks before Ceres begins; absent

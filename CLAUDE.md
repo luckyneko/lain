@@ -1379,6 +1379,33 @@ residual* and *weak bridge*.
 - **The sandbox needed the X11/Wayland/libva dev packages** (`libxrandr-dev` and friends) before the
   Vulkan loader would configure. A fresh container does not have them.
 
+### Update 2026-10-05 — M9 slice 2, sub-slice 2: the board pose seam leaves calibration
+
+Calibration's behaviour is unchanged. A board's pose in one view, under a model held fixed, is now
+`camera::board::pose`, so registration (sub-slice 4) can use it without depending on calibration.
+`ctest -j8` **1062/1062** Debug and **1070/1070** Release with video, camera and Ceres on (+7 each),
+**1003/1003** with all three off (+2); warning-clean, format-check clean. Full notes in WORK.md's
+*Sub-slice 2 built* under M9 slice 2.
+
+- **`board::PoseSolver` proposes poses, and the facade measures them** with lain's projection
+  (`board::measure`, which used to be calibration's inline residual loop). `PoseResult` carries a
+  `pose` and, for a planar target's second solution, an `alternative`. The status says why there is
+  none, `NoBackend` included.
+- **`OpenCVPoseSolver` is `OpenCVEstimator::boardPose` moved**, now on `solvePnPGeneric` with IPPE,
+  so both solutions come back, each refined by LM. **`Estimator::boardPose` is deleted.** A held
+  model needs a pose solver, not an estimator, which adds `Failure::NoPoseSolver` and
+  `Reproducibility::poseSolver`.
+- **Measured: on a far, nearly square-on view the backend's FIRST pose can be the wrong one.** At
+  2.5 m, 0.07 rad off square, with 0.5 px noise, the two poses are 0.33 rad apart and both fit within
+  the noise, and the first is 0.22 rad from the truth against the alternative's 0.13. That is why
+  the choice is the caller's.
+- **A second pose within 1e-3 rad of the first is dropped**, since LM often refines both IPPE
+  solutions onto one (3e-5 rad apart on a clean view).
+- **Test noise is Box-Muller over `mt19937_64`**, because `std::normal_distribution` is
+  implementation-defined, and recorded angles must not belong to one standard library.
+- **Three sabotages, all caught; the first cut of one failed to build**, since deleting the
+  comparison left a helper unused under `-Werror`. It was redone so that it compiles.
+
 ### Update 2026-10-05 — M9 slice 2, sub-slice 1: Ceres and Eigen land, with nothing depending on them
 
 The FFmpeg and OpenCV slice-0 shape, for registration's solver.

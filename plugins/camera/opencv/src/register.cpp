@@ -3,6 +3,7 @@
 #include "charucodetector.h"
 #include "charucorenderer.h"
 #include "opencvestimator.h"
+#include "opencvposesolver.h"
 
 #include <opencv2/core/utility.hpp>
 
@@ -18,5 +19,6 @@ namespace lain::camera::opencv
 		board::rendererRegistry().registerType<CharucoRenderer>("opencv");
 		board::detectorRegistry().registerType<CharucoDetector>("opencv");
 		calibration::estimatorRegistry().registerType<OpenCVEstimator>("opencv");
+		board::poseSolverRegistry().registerType<OpenCVPoseSolver>("opencv");
 	}
 } // namespace lain::camera::opencv

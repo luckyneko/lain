@@ -11,6 +11,7 @@ add_executable(test-camera-opencv
 	test_charuco.cpp
 	test_projectionagreement.cpp
 	test_estimator.cpp
+	test_pose.cpp
 )
 
 string(REPLACE ";" " " _lain_opencv_modules "${LAIN_OPENCV_MODULES}")

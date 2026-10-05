@@ -10,6 +10,7 @@
 #include "testboard.h"
 
 #include <lain/camera/board/detection.h>
+#include <lain/camera/board/pose.h>
 #include <lain/camera/calibration/estimator.h>
 #include <lain/camera/projection.h>
 #include <lain/math/rigidtransform.h>
@@ -181,12 +182,18 @@ namespace lain::camera::testing
 			++script().estimates;
 			return out;
 		}
+	};
 
-		// The true pose of the view's frame: validation then measures only the model.
-		std::optional<math::RigidTransformd> boardPose(const CameraModel&, const board::Specification&,
-													   const board::Observation& view) const override
+	// The true pose of the view's frame: validation then measures only the model.
+	class TruthPoseSolver : public board::PoseSolver
+	{
+	public:
+		Provenance provenance() const override { return {"truth", "1"}; }
+
+		std::vector<math::RigidTransformd> solve(const CameraModel&, const board::Specification&,
+												 const board::Observation& view) const override
 		{
-			return testing::boardPose(view.frame.ordinal, scene().frames);
+			return {testing::boardPose(view.frame.ordinal, scene().frames)};
 		}
 	};
 
@@ -196,6 +203,7 @@ namespace lain::camera::testing
 		{
 			board::detectorRegistry().registerType<TruthDetector>("truth");
 			calibration::estimatorRegistry().registerType<ScriptedEstimator>("scripted");
+			board::poseSolverRegistry().registerType<TruthPoseSolver>("truth");
 			return true;
 		}();
 		(void)once;

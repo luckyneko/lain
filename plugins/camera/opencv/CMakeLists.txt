@@ -22,6 +22,7 @@ add_library(camera-opencv STATIC
 	src/charucorenderer.cpp
 	src/charucodetector.cpp
 	src/opencvestimator.cpp
+	src/opencvposesolver.cpp
 )
 add_library(lain::camera::opencv ALIAS camera-opencv)
 

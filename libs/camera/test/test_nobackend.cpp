@@ -4,6 +4,7 @@
 #include "testboard.h"
 
 #include <lain/camera/board/detection.h>
+#include <lain/camera/board/pose.h>
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/board.h>
 #include <lain/camera/calibration/estimator.h>
@@ -72,4 +73,34 @@ TEST_CASE("with no backend, calibration fails with the missing capability", "[ca
 	REQUIRE_FALSE(report.failures.empty());
 	CHECK(report.failures[0].failure == calibration::Failure::NoDetector);
 	CHECK_FALSE(calibration::canEstimate());
+}
+
+TEST_CASE("with no backend, a board pose says the capability is missing", "[camera][board]")
+{
+	REQUIRE_FALSE(canSolvePose());
+	camera::CameraModelParameters p;
+	p.image = {64, 48};
+	p.intrinsics = {60.0, 60.0, 31.5, 23.5};
+	const camera::CameraModel model = *camera::CameraModel::create(p).model;
+	Observation view;
+	for (std::uint32_t id = 0; id < 6; ++id)
+		view.features.push_back({id, {10.0 + id, 12.0 + id}, std::nullopt});
+	const PoseResult result = pose(model, specification(), view);
+	CHECK(result.status == PoseStatus::NoBackend);
+	CHECK_FALSE(result.pose.has_value());
+	CHECK(result.detail.find("no board pose solver") != std::string::npos);
+}
+
+TEST_CASE("with no backend, a held model fails for want of a pose solver", "[camera][calibration]")
+{
+	camera::CameraModelParameters p;
+	p.image = {64, 48};
+	p.intrinsics = {60.0, 60.0, 31.5, 23.5};
+	calibration::Request request;
+	request.imported = *camera::CameraModel::create(p).model;
+	request.importedPolicy = calibration::ImportedModelPolicy::HoldAndValidate;
+	const calibration::Report report = calibration::board::calibrate({}, {64, 48}, specification(), request);
+	CHECK(report.status == calibration::CalibrationStatus::Failed);
+	REQUIRE_FALSE(report.failures.empty());
+	CHECK(report.failures[0].failure == calibration::Failure::NoPoseSolver);
 }
