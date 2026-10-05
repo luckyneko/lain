@@ -1317,6 +1317,20 @@ clean. Full notes in WORK.md's *`Time::from` rounds, as `Length::from` does*.
 - The new rounding test was red against the unchanged code first. Making the helper truncate fails
   three cases across both types.
 
+### Update 2026-10-05 — `AxisConvention`'s long bodies move to a `.inl`
+
+`math/axisconvention.h` was 165 lines for an interface of about a dozen declarations. The `switch`
+helpers, `rightHanded()`'s parity loop and the `vectorOf` / `basisChange` bodies now live in
+`details/axisconvention.inl`, and the header is 102 lines. It is case 3 of the "where a body lives"
+rule, since `lain::math` is header-only and most of these bodies are `constexpr`. No behaviour
+change: `ctest -j8` **1048/1048** Debug and **1056/1056** Release, unchanged. Full notes in WORK.md's
+*`AxisConvention`'s long bodies move to a `.inl`*.
+
+- One-liners, `create()` and the two named conventions stay in the class. The helpers stay private
+  members, defined in the `.inl`; only `name()` needs an explicit `inline`.
+- A scratch `static_assert` confirmed `create()` and `rightHanded()` still evaluate at compile time.
+- Adjacent, in the next commit: `kCameraFrame` in `camera/cameramodel.h` becomes `inline constexpr`.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 8c: a board to print and the capture guide (**fixture machinery COMPLETE**)
 
 The last third of the real-camera fixture's machinery. What remains of sub-slice 8, and of slice 1,

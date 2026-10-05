@@ -8274,6 +8274,37 @@ clean.
   example, from the sub-slice-1 claim corrected above. `0.3 * 1e6` is exactly 300000, so the case
   passed against the unfixed code. Writing the test first is what caught it.
 
+## `AxisConvention`'s long bodies move to a `.inl` (built 2026-10-05)
+
+`math/axisconvention.h` was 165 lines for an interface of about a dozen declarations. Most of the
+class body was implementation: two `switch` helpers about an `AxisDirection` (`physicalAxis`,
+`name`), `sign3`, `rightHanded()`'s permutation-parity loop, and the bodies of `vectorOf` and
+`basisChange`. Those bodies now live in `details/axisconvention.inl`, and the header is 102 lines.
+No behaviour change and no test added, so the suite is the regression test: `ctest -j8`
+**1048/1048** Debug and **1056/1056** Release, unchanged; warning-clean, format-check clean.
+
+- **The "where a body lives" rule, case 3.** A `.cpp` was not available: `lain::math` is
+  header-only, and most of these bodies are `constexpr`. As the rule says, the split buys
+  readability only.
+- **What stays in the class is what reads at a glance**: the accessors and comparisons, the
+  one-line `toString()`, `create()` (four lines, and its one test is the class's invariant), and
+  the two named conventions, whose bodies are the three directions the name promises.
+- **The three helpers stay private static members**, declared in the class and defined in the
+  `.inl`. That keeps access control, and keeps them callable from `create()`'s in-class body, which
+  a namespace-scope function declared after the class would not be.
+- **Only `name()` needs the `inline` keyword**: it returns `std::string` and is neither `constexpr`
+  nor a template, so its out-of-class definition in a header must say so. That follows
+  `node.inl`'s `inline PortId Node::nextPortId()`.
+- **Checked beyond the suite**: no test evaluates `create()` or `rightHanded()` at compile time, so
+  a scratch file did. It `static_assert`ed both through the header alone, which also showed the
+  header still compiles on its own.
+- **Not revisited**: making the named conventions `inline constexpr` data members. Sub-slice 1
+  refused that on MSVC's handling of a static constexpr member of the class's own type.
+- **Adjacent, its own commit**: `camera/cameramodel.h`'s `kCameraFrame` was a namespace-scope
+  `constexpr` without `inline`, so every translation unit got its own copy. The next commit makes
+  it `inline constexpr`, the tree's idiom for a header constant (`memory/alloc.h`,
+  `camera/flow/register.h`).
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
