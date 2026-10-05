@@ -46,7 +46,7 @@ namespace
 		p.markerToSquare = 0.75;
 		cb::Instance instance;
 		instance.identity = "synthetic";
-		instance.squareLength.value = core::Length::fromMillimetres(24.0);
+		instance.squareLength.value = core::Length::from<core::Length::Millimetres>(24.0);
 		return *cb::Specification::create(*cb::Pattern::create(p).pattern, instance).specification;
 	}
 

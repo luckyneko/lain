@@ -144,7 +144,7 @@ TEST_CASE("a board specification is built from its parameters", "[camera][flow]"
 		CHECK(p.dictionary == board::Dictionary::Aruco5x5_100);
 		CHECK(p.layout == board::CharucoLayout::Standard);
 		CHECK(spec.instance().identity == "board");
-		CHECK(spec.instance().squareLength.value == core::Length::fromMillimetres(30));
+		CHECK(spec.instance().squareLength.value == core::Length::from<core::Length::Millimetres>(30));
 		// The fingerprint is the pattern's own: the node adds nothing to what identifies a board.
 		CHECK(spec.pattern().fingerprint() == board::Pattern::create(p).pattern->fingerprint());
 	}
@@ -162,7 +162,7 @@ TEST_CASE("a board specification is built from its parameters", "[camera][flow]"
 		flow::SerialScheduler{}.run(graph, evaluation);
 		const board::Specification& spec = evaluation.value(output(graph, id)).get<board::Specification>();
 		CHECK(spec.pattern().parameters().markerToSquare == 0.7);
-		CHECK(spec.instance().squareLength.value == core::Length::fromMillimetres(23.7));
+		CHECK(spec.instance().squareLength.value == core::Length::from<core::Length::Millimetres>(23.7));
 		CHECK(spec.pattern().parameters().dictionary == board::Dictionary::Aruco6x6_250);
 		CHECK(spec.pattern().parameters().firstMarkerId == 17);
 		CHECK(spec.pattern().parameters().layout == board::CharucoLayout::Legacy);

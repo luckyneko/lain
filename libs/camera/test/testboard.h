@@ -29,7 +29,7 @@ namespace lain::camera::testing
 	{
 		board::Instance instance;
 		instance.identity = "test board";
-		instance.squareLength.value = core::Length::fromMillimetres(24.0);
+		instance.squareLength.value = core::Length::from<core::Length::Millimetres>(24.0);
 		board::SpecificationResult result = board::Specification::create(p, instance);
 		REQUIRE(result.specification.has_value());
 		return *result.specification;

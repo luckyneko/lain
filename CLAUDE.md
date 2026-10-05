@@ -1273,6 +1273,32 @@ format-check clean; the gui smoke opens bagel and exits 0. **gui-mode live-verif
 - **A double-click that straddles a navigation opens nothing**, so a habitual second click after opening
   by the glyph does not drop a further level (in bagel, into the Map).
 
+### Update 2026-10-05 — `Length` reads and writes units the way `Time` does
+
+`core::Length` was documented as working "as `core::Time` is for seconds", but it grew a named
+function per unit (`fromMillimetres`, `millimetres()`, ...), where `Time` has one mechanism over unit
+tags. It now has `Time`'s shape: `Length::from<Length::Millimetres>(23.7)` and
+`length.as<Length::Millimetres>()`, over `std::ratio` tags of the metre. `ctest -j8` **1047/1047**
+Debug and **1054/1054** Release, both with video and camera on (+1 each); warning-clean, format-check clean. `flowview run` on
+`render-board.json` writes a PNG byte-identical to the pre-change binary's. Full notes in WORK.md's
+*`Length` reads and writes units the way `Time` does*.
+
+- **Two named readings stay, each mirroring `Time`** (decided with the repo owner):
+  - `metres()` is the default external reading, as `seconds()` is;
+  - `nanometres()` is the exact int64 representation, as `chrono()` is.
+
+  The other per-unit factories and readers are gone, `fromNanometres` included.
+- **The old readers were wrong 29% of the time.** They multiplied by `1e-6` / `1e-9`, which no
+  double holds exactly, so 28,950 of the 100,001 whole micrometres up to 100 mm read back as a
+  neighbour (0.1 mm as 0.099999999999999992). The board serializer writes that reading to disk.
+  `as<>` divides, as `std::chrono` does; division is correctly rounded and misses none.
+  - Nothing committed was affected: no document holds a `Length`.
+  - A new case sweeps the range. Putting the multiply back fails exactly that case.
+- **`operator*` scales the count directly**, without the round trip through metres.
+- **A recorded sabotage result was false.** Sub-slice 1 said truncation fails the exact-sum case
+  because "0.3 mm is 299999.99999999994 nm". `0.3 * 1e6` is exactly 300000. Re-measured, truncation
+  is caught by the rounding case and the new sweep instead. Corrected in place in WORK.md.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 8c: a board to print and the capture guide (**fixture machinery COMPLETE**)
 
 The last third of the real-camera fixture's machinery. What remains of sub-slice 8, and of slice 1,

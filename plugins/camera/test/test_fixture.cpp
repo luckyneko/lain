@@ -51,7 +51,7 @@ namespace
 		p.pattern.squaresY = 5;
 		p.pattern.markerToSquare = 0.75;
 		p.instance.identity = "synthetic";
-		p.instance.squareLength.value = core::Length::fromMillimetres(24);
+		p.instance.squareLength.value = core::Length::from<core::Length::Millimetres>(24);
 		return p;
 	}
 

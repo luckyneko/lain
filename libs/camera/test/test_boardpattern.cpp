@@ -122,7 +122,7 @@ TEST_CASE("create refuses a pattern that cannot be printed as described", "[came
 TEST_CASE("a specification places each corner in the board frame, in metres", "[camera][board]")
 {
 	const Specification s = specification();
-	CHECK(s.markerLength() == core::Length::fromMillimetres(18.0));
+	CHECK(s.markerLength() == core::Length::from<core::Length::Millimetres>(18.0));
 
 	// Row by row from the top left, one square in from each edge.
 	REQUIRE(s.cornerPosition(0).has_value());
@@ -142,7 +142,7 @@ TEST_CASE("create refuses a board instance it cannot measure by", "[camera][boar
 	Instance instance;
 	instance.identity = "";
 	instance.squareLength.value = core::Length{};
-	instance.squareLength.lowerBound = core::Length::fromMillimetres(1.0);
+	instance.squareLength.lowerBound = core::Length::from<core::Length::Millimetres>(1.0);
 	const SpecificationResult result = Specification::create(pattern(), instance);
 	CHECK_FALSE(result.specification.has_value());
 	CHECK(reports(result, SpecificationProblem::NoIdentity));
@@ -151,9 +151,9 @@ TEST_CASE("create refuses a board instance it cannot measure by", "[camera][boar
 
 	// Bounds are optional, and either may be absent: unknown uncertainty is legitimate.
 	instance.identity = "A3-001";
-	instance.squareLength.value = core::Length::fromMillimetres(24.0);
-	instance.squareLength.lowerBound = core::Length::fromMillimetres(23.95);
+	instance.squareLength.value = core::Length::from<core::Length::Millimetres>(24.0);
+	instance.squareLength.lowerBound = core::Length::from<core::Length::Millimetres>(23.95);
 	CHECK(Specification::create(pattern(), instance).specification.has_value());
-	instance.squareLength.upperBound = core::Length::fromMillimetres(23.99);
+	instance.squareLength.upperBound = core::Length::from<core::Length::Millimetres>(23.99);
 	CHECK(reports(Specification::create(pattern(), instance), SpecificationProblem::BoundsDoNotContainValue));
 }

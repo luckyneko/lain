@@ -139,7 +139,7 @@ namespace lain::camera::fixture
 		document.board.pattern.squaresY = 6;
 		document.board.pattern.markerToSquare = 0.75;
 		document.board.instance.identity = "lain-9x6-30mm";
-		document.board.instance.squareLength.value = core::Length::fromMillimetres(30);
+		document.board.instance.squareLength.value = core::Length::from<core::Length::Millimetres>(30);
 		document.sessions.push_back({"a", "a", CaptureRecord{}});
 		document.sessions.push_back({"b", "b", CaptureRecord{}});
 		return document;

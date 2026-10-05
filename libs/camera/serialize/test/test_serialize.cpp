@@ -187,8 +187,8 @@ TEST_CASE("a board specification round-trips in millimetres, exactly", "[camera]
 	p.layout = board::CharucoLayout::Legacy;
 	board::Instance instance;
 	instance.identity = "print 2";
-	instance.squareLength.value = core::Length::fromMillimetres(23.7);
-	instance.squareLength.lowerBound = core::Length::fromMillimetres(23.65);
+	instance.squareLength.value = core::Length::from<core::Length::Millimetres>(23.7);
+	instance.squareLength.lowerBound = core::Length::from<core::Length::Millimetres>(23.65);
 	const board::Specification spec =
 		*board::Specification::create(*board::Pattern::create(p).pattern, instance).specification;
 
@@ -200,8 +200,8 @@ TEST_CASE("a board specification round-trips in millimetres, exactly", "[camera]
 	INFO("problems:" << joined(read.problems));
 	REQUIRE(read.specification.has_value());
 	CHECK(read.specification->pattern().fingerprint() == spec.pattern().fingerprint());
-	CHECK(read.specification->instance().squareLength.value == core::Length::fromMillimetres(23.7));
-	CHECK(read.specification->instance().squareLength.lowerBound == core::Length::fromMillimetres(23.65));
+	CHECK(read.specification->instance().squareLength.value == core::Length::from<core::Length::Millimetres>(23.7));
+	CHECK(read.specification->instance().squareLength.lowerBound == core::Length::from<core::Length::Millimetres>(23.65));
 	CHECK_FALSE(read.specification->instance().squareLength.upperBound.has_value());
 	CHECK(read.specification->instance().identity == "print 2");
 

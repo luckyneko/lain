@@ -57,7 +57,7 @@ namespace lain::camera
 		board::Instance instance;
 		instance.identity = param(m_identity).get<std::string>();
 		instance.squareLength.value =
-			core::Length::fromMicrometres(std::isfinite(millimetres) ? std::round(double(millimetres) * 1000.0) : 0.0);
+			core::Length::from<core::Length::Micrometres>(std::isfinite(millimetres) ? std::round(double(millimetres) * 1000.0) : 0.0);
 
 		const board::SpecificationResult specification = board::Specification::create(*pattern.pattern, instance);
 		if (!specification.specification)

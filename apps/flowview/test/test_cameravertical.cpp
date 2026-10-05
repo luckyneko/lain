@@ -150,7 +150,7 @@ namespace
 		parameters.squaresX = 7;
 		parameters.squaresY = 5;
 		parameters.markerToSquare = 0.75;
-		camera::board::Instance instance{"board", {core::Length::fromMillimetres(24), std::nullopt, std::nullopt}};
+		camera::board::Instance instance{"board", {core::Length::from<core::Length::Millimetres>(24), std::nullopt, std::nullopt}};
 		const camera::board::Specification spec =
 			*camera::board::Specification::create(*camera::board::Pattern::create(parameters).pattern, instance)
 				 .specification;

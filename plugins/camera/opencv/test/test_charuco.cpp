@@ -54,7 +54,7 @@ namespace
 	{
 		Instance instance;
 		instance.identity = "synthetic";
-		instance.squareLength.value = core::Length::fromMillimetres(24.0);
+		instance.squareLength.value = core::Length::from<core::Length::Millimetres>(24.0);
 		SpecificationResult result = Specification::create(pattern, instance);
 		REQUIRE(result.specification.has_value());
 		return *result.specification;

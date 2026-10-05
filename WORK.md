@@ -3124,7 +3124,10 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    **Sub-slice 1 built (2026-09-30): the foundations.** No consumer yet; sub-slices 2 and 3 are
    theirs.
    - **`core::Length`**: an exact int64 count of nanometres read and written in named units
-     (`fromMillimetres`, `metres()`, ...), as `core::Time` is for seconds. One quantity is one value
+     (`fromMillimetres`, `metres()`, ...), as `core::Time` is for seconds. *(The units were not
+     `Time`'s until 2026-10-05: it is `from<Length::Millimetres>(x)` / `as<...>()` now, and the old
+     readers were wrong for 29% of values. See §`Length` reads and writes units the way `Time`
+     does.)* One quantity is one value
      however it was built, and 0.1 mm + 0.2 mm == 0.3 mm, which a double in metres gets wrong. The
      double factories follow `core::Range`'s precedent: a NaN or out-of-range value is a
      precondition, asserted in debug and made defined in release (NaN is zero, anything too large
@@ -3148,9 +3151,13 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - `ctest -j4` **951/951** Debug with video and camera on (+20); the Release build also runs the
      saturation case, which only exists under `NDEBUG`. Warning-clean, format-check clean.
    - **Seven sabotages, all caught:** truncating instead of rounding a Length fails the exact-sum
-     case (0.3 mm is 299999.99999999994 nm as a double product); a `finish()` that does not reset
-     fails the reset case; padding to 55 bytes fails every vector; composing the rotations in the
-     wrong order fails the composition case; dropping the reflection check fails the refusal case;
+     case (0.3 mm is 299999.99999999994 nm as a double product) *(**corrected 2026-10-05**: it does
+     not. 0.1, 0.2 and 0.3 mm are all exact products, so the exact-sum case passes a truncating
+     Length. What catches truncation, measured, is the rounding case (1.6e-9 m truncates to 1 nm)
+     and, since 2026-10-05, the round-trip sweep (1.001 mm truncates to 1000999 nm))*; a
+     `finish()` that does not reset fails the reset case; padding to 55 bytes fails every vector;
+     composing the rotations in the wrong order fails the composition case; dropping the
+     reflection check fails the refusal case;
      reversing `basisChange` fails only the vehicle-frame case (camera to graphics is its own
      inverse, which is why that case exists); and regrouping the uuid's digits fails three uuid
      cases.
@@ -8175,6 +8182,58 @@ through the test binary.
   away from its `data/`: `run` exited 0, and only the file check failed.
 - Verified by running the step's commands locally in bash. CI itself runs only on a push, so the
   three legs have not run it yet.
+
+## `Length` reads and writes units the way `Time` does (built 2026-10-05)
+
+M9 sub-slice 1 described `core::Length` as working *"as `core::Time` is for seconds"*. The storage
+matched (an exact int64 count behind a double-facing API), but the units did not:
+- `Time` has one mechanism parameterised by unit, `from<Units>(double)` / `as<Units>()`, over
+  nested tags.
+- `Length` grew a named function per unit: four `fromX` factories and four readers. That is the
+  `toXXX`/`fromXXX` growth the standing preference argues against, and each new unit would have
+  added two more names.
+
+`Length` now takes `Time`'s shape. `ctest -j8` **1047/1047** Debug and **1054/1054** Release, both with video and camera
+on (+1 each); warning-clean, format-check clean. `flowview run` on `render-board.json` writes a PNG byte-identical
+to the pre-change binary's.
+
+- **Unit tags are `std::ratio`s of the metre**, as `Time`'s are durations over ratios of the second:
+  `Length::Nanometres`, `Micrometres`, `Millimetres`, `Metres`. These are the four units already in
+  use, and no more. Mixing the types fails to compile both ways: `ratio_divide` refuses a duration,
+  and a ratio has no value constructor.
+- **Two named readings survive, each with its `Time` counterpart** (decided with the repo owner):
+  - `metres()` is the default external reading, as `seconds()` is;
+  - `nanometres()` is the exact int64 representation that equality and order are defined on, as
+    `chrono()` is.
+
+  **`fromNanometres` is gone.** `Time` has no exact factory either, nothing outside `Length`'s own
+  test called it, and `from<Nanometres>(double)` is exact to about 9,000 km.
+- **`as<>` divides, and the old readers were wrong 29% of the time.** `millimetres()` was
+  `m_nm * 1e-6`, a reciprocal no double holds exactly. Measured over every whole micrometre from 0
+  to 100 mm: **28,950 of 100,001** values read back as a neighbour of the value typed. 0.1 mm read
+  as 0.099999999999999992. `metres()` missed 40% of its range the same way. Division is correctly
+  rounded, as `std::chrono`'s conversion is, and misses none.
+  - **It reaches disk.** The board serializer writes this reading as `squareLengthMm`, so a
+    measured 0.1 mm board would have been saved as `0.09999999999999999`.
+  - The serializer's own tests never noticed, because they round-trip through `Length`, which
+    re-rounds to the nanometre. Every value they use (23.7, 23.65, 24, 30) happens to survive the
+    multiply.
+  - **No committed document was affected**: none holds a `Length` value.
+- **`operator*` scales the count directly** rather than round-tripping through metres. Scaling a
+  quantity is not a reading of it, and it costs one floating-point rounding before the final one
+  to the nanometre instead of three.
+- **One sabotage, caught**: putting the reciprocal multiply back into `as<>` fails exactly the new
+  round-trip case (at 0.007 mm), with every other case still green.
+- **A recorded sabotage result was wrong, and re-running it said so.** Sub-slice 1 says a
+  truncating Length fails the exact-sum case because *"0.3 mm is 299999.99999999994 nm as a double
+  product"*. It is not: `0.3 * 1e6` is exactly 300000, and so are the 0.1 and 0.2 products. Measured
+  by making `toNanometres` truncate:
+  - the exact-sum case passes;
+  - the rounding case fails (1.6e-9 m becomes 1 nm);
+  - the new round-trip sweep fails (1.001 mm becomes 1000999 nm).
+
+  So truncation was always caught, by a different case than the note claimed. The note is
+  corrected in place.
 
 ## Outstanding work — one index
 

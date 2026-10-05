@@ -18,7 +18,7 @@ namespace lain::camera::board
 		const MeasuredLength& square = instance.squareLength;
 		if (square.value <= core::Length{})
 			problem(SpecificationProblem::NonPositiveLength,
-					"the square length is " + std::to_string(square.value.millimetres()) + " mm");
+					"the square length is " + std::to_string(square.value.as<core::Length::Millimetres>()) + " mm");
 		if (square.lowerBound && *square.lowerBound > square.value)
 			problem(SpecificationProblem::BoundsDoNotContainValue, "the lower bound is above the measured square length");
 		if (square.upperBound && *square.upperBound < square.value)
@@ -54,7 +54,7 @@ namespace lain::camera::board
 			text += " (legacy layout)";
 		// Eight hex digits tell two patterns apart at a glance; the whole digest is in the pattern.
 		return text + lain::string::format(", '{}', {:g} mm squares, pattern {}", m_instance.identity,
-										   m_instance.squareLength.value.millimetres(),
+										   m_instance.squareLength.value.as<core::Length::Millimetres>(),
 										   m_pattern.fingerprint().toString().substr(0, 8));
 	}
 } // namespace lain::camera::board

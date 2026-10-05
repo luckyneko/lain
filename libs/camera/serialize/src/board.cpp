@@ -7,13 +7,13 @@ namespace lain::camera::board
 	void serialize(data::Archive& archive, Instance& instance)
 	{
 		const MeasuredLength& square = instance.squareLength;
-		double millimetres = square.value.millimetres();
+		double millimetres = square.value.as<core::Length::Millimetres>();
 		std::optional<double> lower;
 		std::optional<double> upper;
 		if (square.lowerBound)
-			lower = square.lowerBound->millimetres();
+			lower = square.lowerBound->as<core::Length::Millimetres>();
 		if (square.upperBound)
-			upper = square.upperBound->millimetres();
+			upper = square.upperBound->as<core::Length::Millimetres>();
 
 		archive.member("identity", instance.identity)
 			.member("squareLengthMm", millimetres)
@@ -22,11 +22,11 @@ namespace lain::camera::board
 
 		if (archive.loading())
 		{
-			instance.squareLength.value = core::Length::fromMillimetres(millimetres);
+			instance.squareLength.value = core::Length::from<core::Length::Millimetres>(millimetres);
 			instance.squareLength.lowerBound =
-				lower ? std::optional<core::Length>(core::Length::fromMillimetres(*lower)) : std::nullopt;
+				lower ? std::optional<core::Length>(core::Length::from<core::Length::Millimetres>(*lower)) : std::nullopt;
 			instance.squareLength.upperBound =
-				upper ? std::optional<core::Length>(core::Length::fromMillimetres(*upper)) : std::nullopt;
+				upper ? std::optional<core::Length>(core::Length::from<core::Length::Millimetres>(*upper)) : std::nullopt;
 		}
 	}
 
