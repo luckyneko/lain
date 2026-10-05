@@ -14,7 +14,7 @@ namespace lain::camera
 	// Every camera interface speaks the camera frame: X right, Y down, Z forward (CONTEXT.md, "Camera
 	// frame"). Another convention is converted at the boundary with math::basisChange, never stored
 	// on a camera value.
-	constexpr math::AxisConvention kCameraFrame = math::AxisConvention::XRightYDownZForward();
+	inline constexpr math::AxisConvention kCameraFrame = math::AxisConvention::XRightYDownZForward();
 
 	// An image rectangle in pixels. Pixel (0, 0) is the CENTRE of the top-left pixel, x right and y
 	// down, as OpenCV and librealsense have it, so the rectangle spans [-0.5, width - 0.5) by
