@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lain/core/details/rounding.h"
+
 #include <chrono>
 
 namespace lain::core
@@ -29,11 +31,18 @@ namespace lain::core
 			return Time{std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())};
 		}
 
-		// Build from a unit value: Time::from<Milliseconds>(16.6).
+		// Build from a unit value, rounded to the nearest nanosecond: Time::from<Milliseconds>(16.6).
+		// Rounded, not duration_cast: that truncates, so 1.001 ms (1000999.9999999999 ns as a double)
+		// would be 1000999 ns.
+		//
+		// PRECONDITION: finite and within the representable range, as detail::roundToInt64 states, and
+		// as core::Length's from<>() has. One that gets here anyway asserts in debug; in release a NaN
+		// is zero and anything out of range saturates, where duration_cast would be undefined.
 		template <class Units>
 		static Time from(double value)
 		{
-			return Time{std::chrono::duration_cast<std::chrono::nanoseconds>(Units(value))};
+			return Time{std::chrono::nanoseconds{
+				detail::roundToInt64(std::chrono::duration<double, std::nano>(Units(value)).count())}};
 		}
 
 		// Read as a unit value: t.as<Milliseconds>().
@@ -54,11 +63,11 @@ namespace lain::core
 		// Interval arithmetic (Time behaves as a duration).
 		constexpr Time operator+(Time rhs) const { return Time{m_ns + rhs.m_ns}; }
 		constexpr Time operator-(Time rhs) const { return Time{m_ns - rhs.m_ns}; }
+		// The count is scaled and re-rounded, so a fractional factor does not truncate. No unit is
+		// involved: scaling a quantity is not a reading of it.
 		Time operator*(double scale) const
 		{
-			// Scale in seconds (double) so a fractional factor doesn't truncate the
-			// nanosecond rep mid-multiply, then quantize back to exact ns.
-			return from<Seconds>(seconds() * scale);
+			return Time{std::chrono::nanoseconds{detail::roundToInt64(static_cast<double>(m_ns.count()) * scale)}};
 		}
 
 		constexpr bool operator==(Time rhs) const { return m_ns == rhs.m_ns; }

@@ -1299,6 +1299,24 @@ Debug and **1054/1054** Release, both with video and camera on (+1 each); warnin
   because "0.3 mm is 299999.99999999994 nm". `0.3 * 1e6` is exactly 300000. Re-measured, truncation
   is caught by the rounding case and the new sweep instead. Corrected in place in WORK.md.
 
+### Update 2026-10-05 — `Time::from` rounds, as `Length::from` does
+
+Found while comparing the two. `Time::from` was a `duration_cast`, which truncates, so
+`from<Milliseconds>(1.001)` came out 1000999 ns: 1,491 of the 100,000 whole microseconds below
+100 ms lost a nanosecond. A NaN reaching the cast was undefined behaviour. `ctest -j8` **1048/1048**
+Debug (+1) and **1056/1056** Release (+2), both with video and camera on; warning-clean, format-check
+clean. Full notes in WORK.md's *`Time::from` rounds, as `Length::from` does*.
+
+- **One routine, two consumers**: `core::detail::roundToInt64` (`details/rounding.h`), which is
+  `Length`'s former `toNanometres` moved, so `src/length.cpp` is gone. It rounds to nearest; NaN and
+  out-of-range values assert in debug and are made defined in release.
+- `Time::operator*` scales the count directly, as `Length`'s does.
+- **Frame timestamps move by up to 1 ns, toward the right value**: `video.json`'s manifest changes in
+  8 of 24 timestamps, from `0.041666666` to `0.041666667`. Every example's dump is otherwise
+  identical to the pre-change binary's.
+- The new rounding test was red against the unchanged code first. Making the helper truncate fails
+  three cases across both types.
+
 ### Update 2026-09-30 — M9 slice 1, sub-slice 8c: a board to print and the capture guide (**fixture machinery COMPLETE**)
 
 The last third of the real-camera fixture's machinery. What remains of sub-slice 8, and of slice 1,

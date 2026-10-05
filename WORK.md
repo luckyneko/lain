@@ -8235,6 +8235,45 @@ to the pre-change binary's.
   So truncation was always caught, by a different case than the note claimed. The note is
   corrected in place.
 
+### `Time::from` rounds, as `Length::from` does (built 2026-10-05, its own commit)
+
+Found while comparing the two types for the change above. `Time::from` was a `duration_cast`, and a
+cast from a floating duration to an integral one **truncates** toward zero.
+- `from<Milliseconds>(1.001)` is 1000999.9999999999 ns as a double product, so it came out 1000999
+  ns. Measured over every whole microsecond below 100 ms: **1,491 of 100,000** lost a nanosecond.
+- A 24 fps frame time, 41666666.67 ns, came out 41666666.
+- A NaN or an infinity reached the cast, which is undefined behaviour.
+
+`Length` had the opposite answer to each of these from the start. `ctest -j8` **1048/1048** Debug
+(+1) and **1056/1056** Release (+2), both with video and camera on; warning-clean, format-check
+clean.
+
+- **One rounding routine, two consumers**: `lain::core::detail::roundToInt64(double)`
+  (`details/rounding.h`, `src/rounding.cpp`), which is `Length`'s former private `toNanometres`
+  moved and renamed.
+  - It rounds to nearest. It asserts a finite, in-range value in debug, and in release makes NaN
+    zero and saturates anything out of range.
+  - `src/length.cpp` is gone, since that was all it held.
+  - A second consumer is the trigger this file has used before (`core::hex`). It also means the
+    two types cannot disagree about what a half rounds to or what happens at the edges.
+- **`Time::operator*` scales the count directly**, as `Length`'s now does, rather than round-tripping
+  through seconds.
+- **Frame timestamps move by up to 1 ns, toward the right answer.** Measured through the real
+  binary: `video.json`'s 24-frame manifest changes in **8 of 24** timestamps, each from a truncated
+  `0.041666666` to the correctly rounded `0.041666667`. Every other example's dump is identical to
+  the pre-change binary's. No committed document holds a manifest.
+- **New tests**:
+  - 1.001 ms is 1001000 ns, 1/24 s is 41666667 ns, values round in both signs, and `operator*`
+    re-rounds;
+  - an `NDEBUG` twin of `Length`'s NaN and saturation case.
+
+  The first was **red against the unchanged code** (1000999 against 1001000) before the fix.
+- **Sabotage, caught by both types**: making the helper truncate fails three cases, Length's
+  rounding case, Length's round-trip sweep and Time's new case, with everything else green.
+- **A first draft of this note was wrong, and the test said so.** It used 0.3 ms as the truncated
+  example, from the sub-slice-1 claim corrected above. `0.3 * 1e6` is exactly 300000, so the case
+  passed against the unfixed code. Writing the test first is what caught it.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because

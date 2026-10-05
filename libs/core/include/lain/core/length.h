@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lain/core/details/rounding.h"
+
 #include <cstdint>
 #include <ratio>
 
@@ -27,15 +29,14 @@ namespace lain::core
 
 		// Build from a unit value, rounded to the nearest nanometre: Length::from<Millimetres>(23.7).
 		//
-		// PRECONDITION: finite and within the representable range. A NaN or an infinity is a
-		// programming error, not data: whatever turns untrusted input into a Length (a document
-		// load, a node parameter) checks it and refuses it first. So it asserts in debug, and in
-		// release it is made defined rather than undefined, NaN becoming zero and anything out of
-		// range saturating. core is std-only, so this is <cassert>, as core::Range does.
+		// PRECONDITION: finite and within the representable range, as detail::roundToInt64 states.
+		// Whatever turns untrusted input into a Length (a document load, a node parameter) checks it
+		// and refuses it first. One that gets here anyway asserts in debug; in release a NaN is zero
+		// and anything out of range saturates.
 		template <class Units>
 		static Length from(double value)
 		{
-			return Length{toNanometres(value, nanometresPer<Units>())};
+			return Length{detail::roundToInt64(value * nanometresPer<Units>())};
 		}
 
 		// Read as a unit value: length.as<Millimetres>(). It divides, as std::chrono does, rather than
@@ -59,7 +60,7 @@ namespace lain::core
 		constexpr Length operator-() const { return Length{-m_nm}; }
 		// The count is scaled and re-rounded, so a fractional factor does not truncate. No unit is
 		// involved: scaling a quantity is not a reading of it.
-		Length operator*(double scale) const { return Length{toNanometres(static_cast<double>(m_nm), scale)}; }
+		Length operator*(double scale) const { return Length{detail::roundToInt64(static_cast<double>(m_nm) * scale)}; }
 		// A length divided by a length is a plain number: the ratio of two quantities.
 		double operator/(Length rhs) const { return static_cast<double>(m_nm) / static_cast<double>(rhs.m_nm); }
 
@@ -83,9 +84,6 @@ namespace lain::core
 			using Ratio = std::ratio_divide<Units, std::nano>;
 			return static_cast<double>(Ratio::num) / static_cast<double>(Ratio::den);
 		}
-
-		// `value * scale` rounded to the nearest nanometre, under the precondition above.
-		static std::int64_t toNanometres(double value, double scale);
 
 		std::int64_t m_nm = 0;
 	};
