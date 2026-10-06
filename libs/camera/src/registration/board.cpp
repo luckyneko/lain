@@ -674,8 +674,9 @@ namespace lain::camera::registration::board
 		summary.iterations = solution.iterations;
 		summary.initialCost = solution.initialCost;
 		summary.finalCost = solution.finalCost;
-		summary.residuals = std::uint32_t(problem.observations.size());
+		summary.residuals = std::uint32_t(problem.observations.size() + problem.landmarkObservations.size());
 		summary.bodies = std::uint32_t(problem.referenceFromBody.size());
+		summary.landmarks = std::uint32_t(problem.landmarks.size());
 		summary.elapsed = solution.elapsed;
 		summary.noise = request.noise;
 		summary.loss = request.loss;

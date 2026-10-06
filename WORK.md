@@ -3783,7 +3783,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      normalised afterwards, and the bootstrap fits one least-squares scale per resample before it
      measures translation spread. Sub-slice 4 measures drift, iterations and any failure of the
      sparse factorisation; a bad measurement is the trigger to hold the seed partner's translation
-     on a `SphereManifold<3>`.
+     on a `SphereManifold<3>`. **Measured in sub-slice 4: the trigger did not fire** (its notes,
+     below).
    - **A fitness profile counts in one evidence unit.** `registration/1` counts capture groups;
      the new `registration-targetless/1` counts accepted tracks. A method refuses a profile of the
      other unit with a new `IncompatibleFitnessProfile`. Its starting thresholds are provisional,
@@ -3880,6 +3881,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         landmark whitening equal to rᵀC⁻¹r; bodies and landmarks in one problem; Release only, 100
         cameras × 50k landmarks × 8 views.
       - Sabotages: always `DENSE_QR`; landmarks held constant; the whitening's sign flipped.
+      **Built 2026-10-06**, below.
    5. **Feature contracts, seams and facades** (`include/lain/camera/feature/`, std and lain only).
       - Values: `Keypoint{pixel (source px), size, angle, response}`; `Features{kind, descriptor
         bytes, image, scale, keypoints, descriptors}`, the descriptors opaque to all but the same
@@ -4126,6 +4128,96 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      - `toString` writing a literal "groups" fails only the new case's `Track` half, as predicted.
      - `registration/1` declaring `Track` fails five cases: the profile case, the golden, the new
        case and the same two note checks.
+
+     Each restored source was touched a second later, and its object checked to be newer, before
+     the green run was believed.
+
+   **Sub-slice 4 built (2026-10-06): the refiner gains landmarks.**
+   - **The seam** (`refiner.h`):
+     - `LandmarkObservation {camera, landmark, pixel, covariance}`;
+     - `Problem::landmarks` (in the reference frame) and `Problem::landmarkObservations`;
+     - `Solution::landmarks`.
+
+     A board problem sets none of them and is untouched. `freeCameras = false` now means a
+     pose-only solve or a triangulation, and the header says a landmark must start in front of
+     every camera that observes it, and that nothing fixes a landmark problem's scale.
+   - **One projection path in the Ceres refiner.**
+     - `whitening()` turns a covariance, or the noise model's sigma, into the residual's [a 0; b c].
+     - `observe()` turns a point in the reference frame into a whitened residual through the camera.
+     - `CornerResidual` is the body's transform followed by `observe()`. `PointResidual`
+       (`AutoDiffCostFunction<…, 2, 6, 3>`) is `observe()` alone.
+   - **Refusals:**
+     - a landmark observation naming no camera or landmark;
+     - a landmark covariance that is not positive definite, with the kind named;
+     - a problem with **neither** kind of observation.
+
+     So a problem of landmarks and no bodies is accepted.
+   - **The solver rule (ADR-0017), and `Solution::detail` names the solver that ran:**
+     - free cameras → `SPARSE_SCHUR`, with bodies and landmarks together in elimination group 0;
+     - held cameras with at most one used latent block → `DENSE_QR`, unchanged for board's
+       held-out pose;
+     - otherwise `SPARSE_NORMAL_CHOLESKY`.
+
+     Detail gains ", linear solver X" from `Summary::linear_solver_type_used`. Without it the rule
+     can be observed only as time, and Ceres may substitute a solver (a Schur solver with nothing
+     to eliminate falls back), so what ran is part of the account. Nothing pinned the old text: the
+     golden uses the pass-through refiner.
+   - **The scale gauge, measured (ADR-0017's measurement). The `SphereManifold<3>` trigger did not
+     fire.**
+     - **8 cameras, 2000 landmarks, 4 views each, 0.3 px of noise**, every non-reference camera
+       started 5 mrad and 5% out and every landmark 5% out:
+       - converged in 4 iterations;
+       - scale 1.022, from a start at 1.0004;
+       - final cost 1.015 of half the residual dimensions less the unknowns.
+     - **Twelve more seeds:** the scale ran from 0.980 to 1.012, in 4 or 5 iterations each, and it
+       was the same at 0 px of noise as at 0.3.
+     - So the solver's path from the start sets the scale, not the noise. It stays inside what the
+       starts were moved, it costs no iterations, and no factorisation failed. The method
+       normalises the scale afterwards (ADR-0016), so nothing holds it.
+   - **The rest, measured on linux-x86_64 (peak memory from `getrusage`, since this container has
+     no GNU `time`):**
+     - **The ring:** 100 cameras, 50k landmarks, 8 views each, Release only.
+       - 4 iterations and 4.2 s over 400,000 residuals, single-threaded, with 324 MB at peak.
+       - The scale came out at 1.004 from 1.0002.
+       - With the scale taken out, the worst camera is 0.79 mrad and 1.7 mm out and the worst
+         landmark 16 mm.
+     - **20k landmarks against held cameras:**
+       - 0.54 s and 78 MB in Release;
+       - the worst point 6.7 mm out, the RMS 1.3 mm, and the cost 0.997 of its expectation.
+       - Release only, since it measured 26 s in Debug.
+     - **A board and 200 landmarks in one problem**, from exact pixels: back to the truth within
+       1e-9 with nothing taken out. The board's metric corners fix the scale at 1 + 1e-9.
+     - **One landmark against three held cameras:** 7e-12 m from the truth.
+     - **A landmark behind a camera at the start fails the solve at iteration 0.** Ceres prints
+       "Terminating: Initial residual and Jacobian evaluation failed" as a miniglog WARNING, and
+       `addCeres` keeps warnings on purpose. Sub-slice 8's cheirality filter is what keeps it from
+       printing.
+   - **The golden changes on purpose for the first time.** Its three `refinement` lines gain
+     `landmarks 0`. The produced file was checked to differ in exactly those lines and copied over
+     the golden. `test_registration.cpp`'s held-out case now also asserts that a board
+     registration asks the refiner for no landmarks.
+   - `test_landmarks.cpp`'s scene (cameras on an arc or ring, points in a cube, Box-Muller over
+     `mt19937_64`) stays local until sub-slice 6's `syntheticscene.h` has a second consumer.
+   - **Running a Catch2 case by name:** a comma in the test spec means "or", so a name containing
+     one is spelled `name\, rest`.
+   - `ctest -j8` **1118/1118** Debug and **1126/1126** Release with video, camera and Ceres on, and
+     **1040/1040** with all three off (+9, +9, +0). In Debug the 20k and ring cases skip.
+     Warning-clean, format-check clean.
+   - **Three sabotages, all caught.**
+     - **Always `DENSE_QR`:**
+       - the solver-rule case fails 3 of its 5 sections, while the two expecting `DENSE_QR` pass,
+         correctly;
+       - the board-and-landmarks case fails its solver check.
+       - Only the small cases were run, since dense QR over 6,000 unknowns ran past five minutes
+         in Debug.
+     - **Landmarks held constant:** 6 of 9 cases fail:
+       - the four that move a landmark;
+       - the ring;
+       - two solver-rule sections where every block is now constant.
+
+       The whitening, refusal and behind-camera cases take no step and pass.
+     - **The whitening's sign flipped:** both covariance sections fail, the landmark case's and the
+       existing corner case's, which shows the helper is shared.
 
      Each restored source was touched a second later, and its object checked to be newer, before
      the green run was believed.

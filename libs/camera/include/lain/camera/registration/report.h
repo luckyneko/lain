@@ -128,6 +128,7 @@ namespace lain::camera::registration
 		double finalCost = 0;
 		std::uint32_t residuals = 0; // residual blocks: one point seen by one camera
 		std::uint32_t bodies = 0;	 // rigid bodies (board poses) estimated alongside the cameras
+		std::uint32_t landmarks = 0; // scene points estimated alongside the cameras
 		core::Time elapsed;
 		NoiseModel noise;
 		RobustLoss loss;

@@ -23,7 +23,7 @@ edge cam01-cam02 shared 32 bridge 0
 edge cam01-cam03 shared 32 bridge 0
 edge cam02-cam03 shared 32 bridge 0
 component cam00 cam01 cam02 cam03
-refinement Converged () iterations 0 cost 0 -> 0 corners 3072 bodies 32 noise 0.5 loss Cauchy 3
+refinement Converged () iterations 0 cost 0 -> 0 corners 3072 bodies 32 landmarks 0 noise 0.5 loss Cauchy 3
 cameraEvidence cam00 Unknown groups 32 corners 768 outliers 0 rmsPixels 0.375496436 rmsAngle 0.000741879
 cameraEvidence cam01 Unknown groups 32 corners 768 outliers 0 rmsPixels 0.353917531 rmsAngle 0.000698789
 cameraEvidence cam02 Unknown groups 32 corners 768 outliers 0 rmsPixels 0.358828417 rmsAngle 0.000708946
@@ -250,7 +250,7 @@ flip e44b46a36f0f cam03
 flip ee7d7a62e032 cam03
 flip eec76be28021 cam03
 flip fec0c26842ba cam03
-refinement Converged () iterations 0 cost 0 -> 0 corners 1824 bodies 19 noise 0.5 loss Cauchy 3
+refinement Converged () iterations 0 cost 0 -> 0 corners 1824 bodies 19 landmarks 0 noise 0.5 loss Cauchy 3
 cameraEvidence cam00 Unknown groups 19 corners 456 outliers 0 rmsPixels 0.013370173 rmsAngle 2.6257e-05
 cameraEvidence cam01 Unknown groups 19 corners 456 outliers 0 rmsPixels 0.008227093 rmsAngle 1.6197e-05
 cameraEvidence cam02 Unknown groups 19 corners 456 outliers 0 rmsPixels 0.009538704 rmsAngle 1.8776e-05
@@ -393,7 +393,7 @@ edge cam01-cam03 shared 18 bridge 0
 edge cam02-cam03 shared 18 bridge 0
 component cam00 cam01 cam02 cam03
 outlier 25da0bf427f4 cam02 131.539106
-refinement Converged () iterations 0 cost 0 -> 0 corners 1728 bodies 18 noise 0.5 loss Huber 3
+refinement Converged () iterations 0 cost 0 -> 0 corners 1728 bodies 18 landmarks 0 noise 0.5 loss Huber 3
 cameraEvidence cam00 Unknown groups 18 corners 432 outliers 0 rmsPixels 0.377503092 rmsAngle 0.000743899
 cameraEvidence cam01 Unknown groups 18 corners 432 outliers 0 rmsPixels 0.35894636 rmsAngle 0.000706376
 cameraEvidence cam02 Unknown groups 18 corners 432 outliers 1 rmsPixels 7.75835815 rmsAngle 0.015452318

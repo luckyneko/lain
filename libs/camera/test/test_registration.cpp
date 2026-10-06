@@ -344,6 +344,8 @@ TEST_CASE("held-out groups validate and never reach the refinement", "[camera][r
 	std::size_t global = 0, single = 0;
 	for (const rig::RefinerScript::Asked& asked : rig::refinerScript().asked)
 	{
+		CHECK(asked.landmarks == 0); // a board registration observes boards
+		CHECK(asked.landmarkObservations == 0);
 		if (asked.freeCameras)
 		{
 			++global;

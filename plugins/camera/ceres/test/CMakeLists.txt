@@ -6,6 +6,7 @@
 add_executable(test-camera-ceres
 	test_build.cpp
 	test_jet.cpp
+	test_landmarks.cpp
 	test_refiner.cpp
 )
 

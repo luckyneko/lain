@@ -1354,6 +1354,55 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-06 — M9 slice 3, sub-slice 4: the refiner gains landmarks
+
+The refiner's seam now carries scene points whose positions are unknown, beside the bodies, which
+targetless registration (sub-slice 8) refines and triangulates. Board registration is unchanged
+except for one new count in its summary. `ctest -j8` **1118/1118** Debug and **1126/1126** Release
+with video, camera and Ceres on (+9 each), **1040/1040** with all three off (+0); warning-clean,
+format-check clean. Full notes in WORK.md's *Sub-slice 4 built* under M9 slice 3.
+
+- **The seam:**
+  - `Problem::landmarks` and `landmarkObservations` (`LandmarkObservation {camera, landmark, pixel,
+    covariance}`);
+  - `Solution::landmarks`;
+  - `RefinementSummary::landmarks`.
+
+  A board problem sets none of them.
+- **One projection path in the Ceres refiner.** `whitening()` and `observe()` are shared:
+  - `CornerResidual` is the body's transform followed by `observe()`;
+  - `PointResidual` (`<…, 2, 6, 3>`) is `observe()` alone.
+
+  A problem is refused only with no observation of either kind.
+- **The linear solver follows the problem's shape** (ADR-0017):
+  - free cameras → `SPARSE_SCHUR`, with landmarks in elimination group 0;
+  - held cameras with at most one latent block → `DENSE_QR`;
+  - otherwise `SPARSE_NORMAL_CHOLESKY`.
+
+  **`Solution::detail` now names the solver that ran**, the only way to observe the rule short of
+  timing, and how its test reads it.
+- **The scale gauge was measured, and the `SphereManifold<3>` trigger did not fire.**
+  - Eight cameras and 2,000 landmarks started 5 mrad and 5% out converged in 4 or 5 iterations over
+    thirteen seeds.
+  - The scale came out between 0.980 and 1.022, from starts within 0.2% of 1. It was the same at
+    0 px of noise as at 0.3 px, so the path from the start sets it, not the noise.
+  - No factorisation failed, and the method normalises the scale afterwards.
+- **Measured, Release, one thread:**
+  - 100 cameras × 50,000 landmarks × 8 views: 4.2 s and 324 MB at peak, in 4 iterations;
+  - 20,000 landmarks against held cameras: 0.54 s.
+
+  Both cases run in Release only; the second took 26 s in Debug.
+- **A landmark behind a camera at the start fails the solve**, which pins why sub-slice 8 filters
+  by cheirality first. Ceres prints a miniglog WARNING when it happens; warnings are kept on purpose.
+- **The golden changed on purpose for the first time**: three `refinement` lines gain
+  `landmarks 0`, and the diff was checked to be exactly those before the file was accepted.
+- **Three sabotages, all caught.** Whitening's sign flipped fails both the landmark and the corner
+  covariance cases, which shows the helper is shared.
+- **Practical:**
+  - this container has no GNU `time`, so peak memory came from Python's `getrusage` on the child;
+  - a Catch2 test spec reads a comma as "or", so escape it (`name\, rest`);
+  - `pkill -f <binary>` matches the shell running it and kills that too.
+
 ### Update 2026-10-06 — M9 slice 3, sub-slice 3: the report, its diagnostics and fitness stop naming a board
 
 No change in behaviour; the golden board report passes with its file untouched, which ends the

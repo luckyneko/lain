@@ -101,7 +101,8 @@ wasted degrees of freedom per point held up only by damping.
 before. Held cameras with at most one latent block (a board's held-out pose) keep `DENSE_QR`, so
 board registration's validation does not change. Held cameras with many latent blocks (held-out
 tracks triangulated together) use `SPARSE_NORMAL_CHOLESKY`, since a dense factorisation of
-thousands of independent points would exhaust memory.
+thousands of independent points would exhaust memory. The solution's account names the solver that ran, since the rule is otherwise visible only as
+time and Ceres may substitute one.
 
 **A targetless problem's scale is left free.** Holding the reference camera removes six degrees of
 freedom and leaves one, the global scale, unconstrained. Ceres leaves the whole gauge free in BAL
@@ -110,6 +111,14 @@ definite and the gradient has no component along the scale direction. The result
 afterwards (ADR-0016, amended). The slice that adds landmarks measures the scale drift, the
 iteration count and any failure of the sparse factorisation; a bad measurement is the trigger to
 hold one camera's translation length on a `SphereManifold<3>`.
+
+*Measured (M9 slice 3, sub-slice 4): the trigger did not fire.* Eight cameras and 2,000 landmarks
+started 5 mrad and 5% out converged in four or five iterations over thirteen seeds, at a scale
+between 0.980 and 1.022, from starts within 0.2% of 1. The scale was the same at 0 px of noise as
+at 0.3 px, so the solver's path from the start sets it, not the noise. A ring of 100 cameras and
+50,000 landmarks converged in four iterations at 1.004. No factorisation failed, and every final
+cost sat where whitened noise puts it. A drift inside what the starts were moved, which costs no
+iterations, is what normalising afterwards is for.
 
 **A projection that fails at the starting point aborts the solve**, since a residual that returns
 false there is fatal to Ceres. A targetless initialisation can place a landmark behind a camera,

@@ -206,7 +206,7 @@ namespace
 			const RefinementSummary& s = *d.refinement;
 			out << "refinement " << name(s.status) << " (" << s.detail << ") iterations " << s.iterations << " cost "
 				<< number(s.initialCost) << " -> " << number(s.finalCost) << " corners " << s.residuals << " bodies "
-				<< s.bodies << " noise " << number(s.noise.pixelSigma) << " loss " << name(s.loss.family) << " "
+				<< s.bodies << " landmarks " << s.landmarks << " noise " << number(s.noise.pixelSigma) << " loss " << name(s.loss.family) << " "
 				<< number(s.loss.scale) << "\n";
 		}
 		else
