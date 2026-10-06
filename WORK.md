@@ -2441,6 +2441,8 @@ built before it, discharging its frame-sequence prerequisite. How OpenCV is obta
 (below): 0 to 7 are built, and 8 (the real-camera fixture) has its machinery built; what is left of
 it is the capture, which only the repo owner can make. **Slice 2** (fixed-camera board registration) was planned
 2026-10-05 as seven sub-slices (below), and **all seven are built**; its gui-mode eyeball is owed.
+**Slice 3** (targetless registration with known intrinsics) was planned 2026-10-06 as eleven
+sub-slices (below); nothing of it is built yet.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -3722,6 +3724,250 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    establish overlap, initial relative geometry, and scene landmarks before Ceres begins; absent
    metric evidence remains explicitly scale-ambiguous. Compare board and targetless registration only
    on shared held-out evidence.
+
+   **Planned 2026-10-06 as eleven sub-slices (0 to 10), one commit each.** Five decisions came from
+   the repo owner while planning, recorded in ADR-0016 and ADR-0017 (both amended in place) and in
+   CONTEXT.md:
+   - **A track is a static landmark across the whole capture.** Every camera samples the same few
+     capture groups. A feature that stays at the same pixel across a fixed camera's sampled frames
+     is static, and a transient one (moving content) is dropped; with one sampled frame, every
+     feature is kept. Each camera pair is then matched once, on the static sets, and verified, and
+     tracks join across cameras. Held-out validation and the bootstrap resample tracks. So capture
+     groups only choose which frames are examined, and CONTEXT's *Targetless registration* stops
+     calling them "synchronized". Matching inside every group was the alternative: its cost is pairs
+     × groups, and a static point would reappear in every group, so a held-out group would not be
+     independent of the fitted ones.
+   - **Board and targetless registration are compared on held-out feature tracks.** A public
+     `registration::validate` predicts each held-out observation by triangulating its landmark from
+     the other members, every camera held, and the transfer residual is the angle between the
+     predicted and observed rays. It is scale-invariant, so a scale-ambiguous result needs no fitted
+     parameter. Held-out board groups were the alternative: they would need the one global scale a
+     targetless result lacks, fitted on the validation data itself.
+   - **A scale-ambiguous result is normalised so the median depth of the landmarks seen from the
+     reference is 1.** Its scale is `Arbitrary`, and the evidence text says so. Fitness already
+     divides translation spread by a median depth.
+   - **SIFT** is the OpenCV producer's detector: the best repeatability across the wide baselines
+     between rig cameras, patent-free, and in the pinned `calib` profile (features2d). ORB and AKAZE
+     were the alternatives.
+   - **Matching is a request selector, `MatchSearch { Exact, Approximate }`, and Exact is the
+     default.** Exact is brute force. `DeterministicDebug` is "the same work, serially"
+     (`method.h`), so the default must be deterministic on the pool, and OpenCV's bundled FLANN
+     seeds its KD-trees from the process-global `std::rand` and searches approximately. Approximate
+     is FLANN, reproducible only within tolerance, and `DeterministicDebug` refuses it. A matcher
+     declares which searches it supports, as an estimator declares its estimatable models. **The
+     repo owner is concerned about processing time**: exact matching is about 1 s per pair at 8k
+     features, so a 100-camera rig whose every pair overlaps would be about 1.5 core-hours.
+     Sub-slice 7 builds both and times them per pair, measures Approximate's recall against Exact,
+     and extrapolates the 100-camera cost. Those numbers are the trigger to revisit the default.
+
+   Taken by precedent, or found by the design review, and recorded in the same amendments:
+   - **Producers propose; lain decides** (ADR-0016 amended). Backends return candidate features,
+     nearest neighbours and candidate poses. Lain applies the ratio and mutual tests, builds the
+     tracks, measures every candidate pose by its angular residual and cheirality through its own
+     unprojection and triangulation, and recomputes the inliers; a backend's inlier mask is ignored.
+     This is the `board::pose` facade's rule ("the facade measures, the backend only proposes")
+     applied again. ADR-0016 had given track construction and geometric verification to producers.
+   - **Placeability, not connectivity, decides whether a rig can register.** Two overlaps A–B and
+     B–C that share no track seen by all three cameras each keep their own scale: bundle adjustment
+     is singular, and an absolute pose cannot place C. Board registration never meets this, because
+     the board is metric. So a camera is **placeable** only when it shares triangulated landmarks
+     with cameras already placed, and a rig with an unplaceable camera fails `Disconnected`, naming
+     those cameras. The observation graph still reports edges, components and weak bridges.
+   - **Initialisation is incremental.** The seed pair is the pair with the most verified inliers
+     whose median triangulation angle clears a floor; the result is rebased onto the reference at
+     the end. The unplaced camera with the most triangulated landmarks is then placed by absolute
+     pose, and the tracks it newly sees are triangulated. Board registration's chaining of pairwise
+     poses over a spanning tree cannot carry one scale across edges.
+   - **The scale gauge is left free in the refiner** (ADR-0017 amended), as Ceres leaves it free in
+     gauge-free BAL problems: LM's damping keeps the Schur system positive definite. The result is
+     normalised afterwards, and the bootstrap fits one least-squares scale per resample before it
+     measures translation spread. Sub-slice 4 measures drift, iterations and any failure of the
+     sparse factorisation; a bad measurement is the trigger to hold the seed partner's translation
+     on a `SphereManifold<3>`.
+   - **A fitness profile counts in one evidence unit.** `registration/1` counts capture groups;
+     the new `registration-targetless/1` counts accepted tracks. A method refuses a profile of the
+     other unit with a new `IncompatibleFitnessProfile`. Its starting thresholds are provisional,
+     re-measured in sub-slice 9 before sub-slice 10 exposes them:
+
+     | Criterion | Ready | Exploratory |
+     | --- | --- | --- |
+     | tracks per camera | 100 | 30 |
+     | tracks per bridge | 50 | 15 |
+     | held-out transfer | 2 mrad | 6 mrad |
+     | rotation spread | 1 mrad | 5 mrad |
+     | translation spread, after scale alignment | 0.5% | 2% |
+     | outliers | 5% | 15% |
+
+     The counts start from COLMAP's minimum inliers to initialise and to place a camera (100) and
+     its minimum for two-view geometry (15). The angles start from SIFT localising to about
+     0.7 mrad at a focal length of 1000 processed pixels, which a transfer through a triangulated
+     point roughly doubles. Outliers are looser than board's, since a verified match can still err
+     along its epipolar line.
+   - **No separate extraction node yet.** Targetless registration has two entry points, over
+     footage (extracting) and over a `TrackSet`, as board registration has over footage and over
+     detections. A node of its own waits for a second consumer, which slice 4's targetless
+     calibration supplies.
+   - **Parallelism is lain's** (ADR-0016, ADR-0017). Extraction runs one camera per task and
+     matching one pair per task, through `detail::forEach`. OpenCV and Ceres stay serial, and so do
+     the USAC calls (`isParallel = false`, with an explicit seed).
+   - **The scale target is met as slice 2 met it.** The 100-camera refinement and method run on
+     synthetic tracks, in Release only. Extraction is measured per 8K image and per camera pair, and
+     its 100-camera cost is extrapolated rather than rendered. Pair matching is exhaustive apart from
+     a pre-screen of each pair on its top 512 features; a neighbour or retrieval restriction waits
+     for the first rig whose matching dominates its registration time.
+
+   Found in the code by the design review, and owned by the sub-slices below:
+   - `Request::detection` (`registration/request.h`) is a `board::DetectionRequest` in the shared
+     request, and `Diagnostics` (`registration/report.h`) is board-shaped: board detections, flips,
+     corners, groups, and a `medianDepth` in metres. `report.cpp` prints "groups usable".
+   - `ScalePolicy` / `resolveScale` live in `board/detection.h`, and the OpenCV image preparation
+     (`intensity()`, the INTER_AREA downscale, the centre-to-centre map) is file-local in
+     `charucodetector.cpp`. The feature module must include neither.
+   - `RigCamera` / `RigFootage` are method-neutral but declared in `registration::board`.
+   - `ceresrefiner.cpp` sends every pose-only problem to `DENSE_QR`, which thousands of landmarks
+     would exhaust, and refuses a problem with no bodies. A projection that fails at the initial
+     point aborts the whole Ceres solve, so a landmark behind a camera must be filtered before
+     refinement.
+   - The union-find `root` is written twice (`board.cpp`, `observationgraph.cpp`).
+   - `detail::forEach` has no concurrency cap, which matters for SIFT's memory at 8K: about 0.5 GB
+     per worker at a 1920 longest side, against about 130 MB of CV_8U descriptors for all 100
+     cameras.
+
+   0. **Record the plan.** This entry; ADR-0016 amended (producers propose, lain decides; static
+      tracks; placeability; `View`, the unit a conflict is judged in, which slice 4 reuses);
+      ADR-0017 amended (landmarks, the solver rule, the free scale gauge); CONTEXT.md gains *static
+      feature*, *held-out track*, *scale normalisation* and *placeable camera*, and amends
+      *Targetless registration*, *Camera observation graph*, *Weak bridge*, *Held-out group*,
+      *Feature track* and *Feature-track extraction*. **Built 2026-10-06** (this commit).
+   1. **Lift the shared registration helpers**, no API change.
+      - First, a golden test that prints every field of the board report at `%.9g`, for three
+        stand-in rigs (connected, flipped, stray), in `test-camera-registration`. Sub-slices 1–3
+        must leave it byte-equal.
+      - A private `src/registration/common.{h,cpp}`: `rotationBetween` (board's atan2 form),
+        `median`, one `root`, `failed`, the reference choice, the bootstrap draws, `meets`, and a
+        `holdOut(cameraLists, fraction)` keeping the guard against holding out a sole bridge.
+      - `RigCamera` / `RigFootage` to `registration/rig.h`, and `ScalePolicy` / `resolveScale` to
+        `camera/scalepolicy.h`, with using-declarations left at the old names.
+      - Sabotage: a changed `kInitialisationGroups` fails the golden.
+   2. **Request and reproducibility become method-neutral.** `Request` loses `detection`, and the
+      board entry points take the `DetectionRequest` explicitly. `Reproducibility` gains
+      `method = std::variant<BoardRecord{detector, poseSolver, detection}>`. The node and the tests
+      change mechanically; the golden stays byte-equal.
+   3. **Report, diagnostics and fitness become method-neutral.** A common `Diagnostics` with
+      neutral names (`Outlier{unit, camera, rmsWhitened}`, `RefinementSummary{observations, bodies,
+      landmarks}`, `CameraEvidence{shared, observations}`, `HeldOutEvidence{units, …}`, a
+      `medianDepth` in the registration's units, `translationVariationAbsolute`), plus
+      `method = std::variant<BoardDiagnostics{groupsExamined, groupsUsable, observations,
+      withoutPose, flips, detections}>`. `FitnessThresholds{minimumSharedPerCamera,
+      minimumBridgeShared, …}` and `FitnessProfile::unit {CaptureGroup, Track}`. Board's
+      `toString` and the golden stay byte-identical.
+   4. **The refiner gains landmarks.**
+      - `Problem::landmarks` (reference frame) with a separate
+        `std::vector<LandmarkObservation{camera, landmark, pixel, covariance}>`, so board problems
+        are untouched, and `Solution::landmarks`.
+      - Ceres: a `PointResidual` (`AutoDiffCostFunction<…, 2, 6, 3>`) sharing a `whitening()`
+        helper with `CornerResidual`; landmarks in elimination group 0; a problem with landmarks
+        and no bodies accepted. **The solver rule:** free cameras → `SPARSE_SCHUR`; held cameras
+        with at most one latent block → `DENSE_QR`, unchanged for board; otherwise
+        `SPARSE_NORMAL_CHOLESKY`.
+      - `PassThroughRefiner` echoes the landmarks.
+      - Tests: one landmark triangulated exactly; 20k landmarks with every camera held, timed;
+        cameras and landmarks converging from 5 mrad / 5% starts, with the scale drift measured;
+        landmark whitening equal to rᵀC⁻¹r; bodies and landmarks in one problem; Release only, 100
+        cameras × 50k landmarks × 8 views.
+      - Sabotages: always `DENSE_QR`; landmarks held constant; the whitening's sign flipped.
+   5. **Feature contracts, seams and facades** (`include/lain/camera/feature/`, std and lain only).
+      - Values: `Keypoint{pixel (source px), size, angle, response}`; `Features{kind, descriptor
+        bytes, image, scale, keypoints, descriptors}`, the descriptors opaque to all but the same
+        kind's matcher.
+      - Seams, each with a registry and a `canX()`: `Extractor::extract(image, ScalePolicy)`;
+        `Matcher::accepts(kind)`, `supports(MatchSearch)` and `nearest(a, b, MatchSearch)` (two
+        neighbours per feature); `GeometrySolver::relativePoses(raysA, raysB, angle, seed)` and
+        `absolutePoses(points, rays, angle, seed)`, which return candidates only.
+      - Facades `match`, `relativePose`, `absolutePose`, answering `Ok / TooFew / NoSolution /
+        Unsupported / NoBackend`. Lain runs the ratio and mutual tests, scores every candidate by
+        angular residual and cheirality through its own triangulation, and recomputes the inliers.
+      - A lain-owned `triangulate(rays, centres, minimumAngle)`.
+      - Tests: scrambled candidate order; a backend inlier mask that lies; the ratio and mutual
+        tests; ill-conditioned triangulation; `NoBackend` and `Unsupported` for each seam.
+      - Sabotages: take the backend's first candidate; trust its mask.
+   6. **Track extraction, `feature::extractTracks`.**
+      - `View{camera, image, frames}`, `SceneObservation{view, pixel, support, covariance}`,
+        `Track{identity, observations}`, `TrackSet{frames, views, tracks}`,
+        `ExtractionRequest{scale policy, sampled frames, feature cap, MatchSearch, ratio, …}` and
+        an `ExtractionReport` (per-camera and per-pair counts, rejections, provenance).
+      - Steps: every camera samples the same groups; one task per camera decodes, extracts,
+        releases and consolidates (SIFT's duplicate orientations collapsed; a mutual nearest within
+        1.5 processed px, a scale ratio within 1.5 and a measured descriptor bound; static at a
+        support of at least half the sampled frames, at the median pixel; the processed sigma
+        scaled back to a source-pixel covariance); each pair pre-screened on its top 512 features;
+        the survivors matched and verified on the pool; the union run serially in canonical pair
+        order; a conflicting track rejected whole.
+      - A track's identity is SHA-256 over canonical text, pixels at 1/64 px, and tracks sort by it,
+        as capture groups do.
+      - Stand-ins in a new `libs/camera/test/syntheticscene.h`: `TruthExtractor` (the landmark id
+        as the descriptor, with dynamic and duplicate options), `ExactMatcher`, `TruthGeometry`.
+      - Tests: a static scene, exactly; dynamic content dropped; minority occlusion kept; one frame
+        keeps everything; duplicate orientations; a conflict; reversed, parallel and serial input
+        identical; each frame decoded once; a pair with no overlap skipped by the pre-screen;
+        refusals.
+      - Sabotages: the union in completion order; first-wins on a conflict; consolidation off;
+        duplicate collapse off.
+   7. **The OpenCV feature producer.**
+      - First, with no behaviour change, the image preparation lifted out of `charucodetector.cpp`
+        into `imageprep.{h,cpp}`.
+      - `SiftExtractor` with CV_8U descriptors (`descriptorType` checked against the 4.14 headers);
+        a matcher declaring both searches (Exact is `BFMatcher` NORM_L2 kNN k=2, Approximate is
+        `FlannBasedMatcher`); an `OpenCVGeometrySolver` (`findEssentialMat` with
+        `UsacParams{MAGSAC, seed, isParallel = false}` and all four `decomposeEssentialMat`
+        candidates; `solvePnPRansac` on normalised rays, as `opencvposesolver.cpp` does; rays more
+        than 80° off-axis dropped for OpenCV only). Links features2d, and flann for Approximate.
+      - A plain C++ scene renderer beside `syntheticfootage.h`: a nearest-hit ray cast over
+        textured planes, at least two of them non-coplanar (one plane is the essential matrix's
+        degenerate case), with procedural texture or the board raster, seeded noise per frame, and
+        a moving occluder.
+      - Tests: native against downsampled mapping; correspondences against the truth; pose error;
+        determinism on the pool; Release only, 8K time and peak memory per worker; **Exact against
+        Approximate**: time per pair at 8k features, recall, and the 100-camera extrapolation, each
+        recorded beside its check.
+      - If the measured memory per worker warrants it, `forEach` gains a concurrency cap or the
+        longest side defaults to 1600.
+      - Sabotages: the ±0.5 centre mapping dropped; `isParallel = true`; Approximate accepted under
+        `DeterministicDebug`.
+   8. **`registration::targetless`.**
+      - `registerCameras(rig, const feature::TrackSet&, const Request&)`, a footage overload taking
+        a `feature::ExtractionRequest`, and the public `registration::validate(rig, report,
+        trackSet, trackIds, execution) → HeldOutEvidence`, which this module's own validation calls.
+      - Steps: checks (with new `NoFeatureExtractor`, `NoFeatureMatcher`, `NoGeometrySolver`,
+        `IncompatibleFitnessProfile`); the observation graph over tracks (`observationGraph` as it
+        is); placeability; incremental initialisation; a cheirality filter; the refinement with
+        landmarks; normalisation to a median depth of 1 from the reference; outliers per (track,
+        camera); held-out tracks, never a placeability-critical one, with a two-member track scored
+        by the angle between its observed ray and the epipolar plane; a bootstrap over tracks with
+        scale alignment; the verdict.
+      - Tests over stand-ins: connected (exact to 1e-9 up to scale), partial, a weak bridge,
+        disconnected, **a chain of pairs only, which fails and names the unplaceable cameras**,
+        dynamic content, wrong matches named as outliers, a landmark behind a camera, held-out
+        tracks never refined, two cameras, the reference, noise, determinism, footage, refusals;
+        Release only, a 100-camera scale test in `test-camera-ceres`.
+      - Sabotages: holding out without the placeability guard; no cheirality filter; no scale
+        alignment; resamples drawn inside the parallel loop.
+   9. **End to end, and the comparison** (`test-camera-registration-e2e`).
+      - Targetless registration on the rendered scene with both real backends.
+      - A rig with a moving board and a static textured scene, registered by both methods, both
+        validated through `registration::validate` on the **same held-out track ids**, and also
+        compared after a similarity alignment.
+      - The guard: one camera perturbed by 5 mrad raises the transfer residual by a measured amount.
+      - The provisional thresholds re-measured, and amended here before sub-slice 10 exposes them.
+   10. **Flow adapter, flowview, cli vertical.**
+       - `registerCamerasTargetless`, with `canRegisterTargetless` in the kinds table, the
+         extraction params (`matchSearch` among them), and the report output.
+       - Codecs, enum editors, the catalog and colours in flowview.
+       - A rendered scene through `runGraph` and the real binary; `NoFeatureExtractor` without
+         OpenCV, `NoRefiner` without Ceres.
+       - Also fixed here: `apps/flowview/test/test_catalog.cpp` never listed `kRegisterCamerasKey`,
+         whose availability needs Ceres as well as OpenCV. Its expectation becomes per kind, and the
+         targetless key joins it.
 4. **Targetless calibration + graph fallback.** Add targetless intrinsics/distortion estimation only
    after the shared feature-track evidence and validation path can meet the report contract. Then
    expose the graph method input and ordered board-then-targetless fallback, retaining every attempted
@@ -8886,7 +9132,9 @@ row here**. A row is cheap to delete and expensive to leave.
   sub-slice 8 (the real-camera fixture) has its machinery built (8a-8c), and its capture is owed by
   the repo owner, guided by `plugins/camera/test/fixtures/README.md`. **Slice 2** (fixed-camera
   board registration, with Ceres) was planned 2026-10-05 as seven sub-slices and is **built**; a
-  gui-mode eyeball of the `registerCameras` node is owed. *(Milestone 9;
+  gui-mode eyeball of the `registerCameras` node is owed. **Slice 3** (targetless registration
+  with known intrinsics) was planned 2026-10-06 as eleven sub-slices; nothing of it is built yet.
+  *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md),

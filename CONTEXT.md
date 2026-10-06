@@ -250,6 +250,11 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   unresolved arbitrary global scale. Scale-ambiguous registration may be geometrically usable, but
   metric reconstruction requires separate metric scale evidence. _Avoid_: normalized metres,
   approximate metric scale without evidence.
+- **Scale normalisation** — the convention that fixes the one global scale a scale-ambiguous
+  registration leaves free: the median depth of the landmarks seen from the registration reference
+  is 1, and the report's scale evidence says so. It makes two runs on one rig comparable without
+  claiming a physical unit; the bootstrap still fits each resample's scale before it measures
+  translation spread. _Avoid_: normalised metres, unit scale (the unit is a median depth, not 1).
 - **Registration dataset** — the calibrated cameras and grouped observations used by one fixed-camera
   registration attempt. It is finite and preserves camera identity, capture association, and timing
   evidence. _Avoid_: independent camera streams when cross-camera observations must correspond.
@@ -263,26 +268,50 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   evidence for targetless calibration, registration, validation, tests, and debug visualization;
   rejection and ambiguity remain visible in the producing report. _Avoid_: feature match when the
   association spans more than one pair, reconstructed landmark before geometry has been estimated.
+  *For fixed cameras a track is a static landmark across the whole capture* (ADR-0016, amended
+  2026-10-06): its observations belong to **views**, a view being the frames one set of feature
+  positions came from (one per camera here, one per frame for a moving camera), and a track holding
+  two different features of one view is a conflict and is rejected whole.
+- **Static feature** — a feature a fixed camera sees at the same pixel in every sampled frame, or in
+  at least half of them, so occlusion by a passer-by does not lose it. Only static features are
+  matched between cameras in targetless registration; a transient feature is moving content and is
+  dropped before matching. With one sampled frame there is nothing to compare, and every feature is
+  kept. _Avoid_: background feature (the test is persistence, not depth), keypoint.
 - **Feature-track extraction** — the shared preprocessing operation that converts a frame sequence
   into accepted feature tracks and a report covering detection, description, matching, track
   construction, geometric verification, rejection, and reproducibility. Targetless methods consume
-  its evidence rather than defining separate feature front ends. _Avoid_: targetless calibration when
-  only evidence was extracted, Ceres feature matching.
+  its evidence rather than defining separate feature front ends. A producer backend only proposes
+  (features, nearest neighbours, candidate poses); lain applies the matching tests, builds the
+  tracks, and measures and accepts the geometry. _Avoid_: targetless calibration when only evidence
+  was extracted, Ceres feature matching.
 - **Camera observation graph** — the automatically inferred graph whose vertices are cameras and whose
   edges are supported by accepted shared observations. Initial targetless registration requires this
   graph to be connected through accepted feature-track overlap; declared camera-pair relationships are
   hints at most, not evidence. _Avoid_: user-provided overlap graph, camera topology.
+  *Connected is necessary but not sufficient for targetless registration* (2026-10-06): every camera
+  must also be a placeable camera.
+- **Placeable camera** — in targetless registration, a camera that shares triangulated landmarks with
+  cameras already placed, so an absolute pose can put it in the frame they share. Two overlaps A–B and
+  B–C with no track seen by all three are connected through B, but each keeps a scale of its own:
+  C cannot be placed and the global refinement is singular. A rig with an unplaceable camera fails as
+  disconnected and names it. A board registration never meets this, because the board is metric.
+  _Avoid_: connected camera (connection is the weaker property), reachable camera.
 - **Weak bridge** — an edge of the camera observation graph whose removal would disconnect it, and
-  which rests on fewer shared capture groups than the registration fitness profile's minimum (a
-  request may override it, as it may any threshold). The rig is connected, but the cameras beyond
-  the bridge are placed by too little evidence to trust, so a registration with one is never Ready
-  and its report names the bridge. _Avoid_: ambiguous camera, weak camera (the
-  weakness is the connection's).
+  which rests on less shared evidence than the registration fitness profile's minimum (a request may
+  override it, as it may any threshold). The evidence is counted in the profile's unit: capture
+  groups for board registration, accepted tracks for targetless registration. The rig is
+  connected, but the cameras beyond the bridge are placed by too little evidence to trust, so a
+  registration with one is never Ready and its report names the bridge. _Avoid_: ambiguous camera,
+  weak camera (the weakness is the connection's).
 - **Targetless registration** — fixed camera registration inferred from ordinary scene features using
-  shared feature tracks, synchronized capture groups, immutable camera models, connected field-of-view
-  overlap, and predominantly static scene structure. Dynamic observations are rejected as outliers;
-  without separate metric evidence, the result remains globally scale-ambiguous. _Avoid_:
-  unsynchronized registration, calibration-free registration, method-owned feature matching.
+  shared feature tracks, capture groups, immutable camera models, field-of-view overlap through which
+  every camera is placeable, and predominantly static scene structure. Moving content is dropped as
+  transient before matching, and what survives it is rejected as outliers; without separate metric
+  evidence, the result remains globally scale-ambiguous and is scale-normalised. _Avoid_:
+  calibration-free registration, method-owned feature matching.
+  *(Amended 2026-10-06: this read "synchronized capture groups". Its tracks are static landmarks
+  across the capture, so its capture groups only choose which frames are examined, and nothing is
+  matched across cameras at an instant that could need synchronising.)*
 - **Registration report** — the result of fixed camera registration, successful or failed, containing
   the chosen registration reference, registered camera transforms when the whole camera graph is
   connected, registration fitness, scale status, and diagnostics for observations, residuals, and
@@ -301,6 +330,15 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   since refinement has already minimised that. A group that alone joins two parts of the camera
   graph is never held out: what is held out must not decide whether a registration can happen.
   _Avoid_: validation view, reprojection error when the prediction crosses cameras.
+  It is board registration's held-out unit; targetless registration's is the held-out track.
+- **Held-out track** — an accepted feature track kept out of a targetless registration's
+  initialisation and refinement so it can validate the result. Each member in turn is predicted from
+  the others: its landmark is triangulated from the other members with every camera held, and the
+  angle between the predicted and observed rays is its transfer residual. A two-member track has one
+  other member, so its member is scored by the angle between its observed ray and the epipolar plane
+  instead. It is scale-invariant, which is why board and targetless registrations are compared on
+  the same held-out tracks. A track whose loss would leave a camera unplaceable is never held out.
+  _Avoid_: held-out match, validation landmark.
 - **Global registration refinement** — joint reprojection optimization of all registered camera
   transforms and the method-specific latent geometry while holding the registration reference fixed:
   board poses for board registration or scene landmarks induced by accepted feature tracks for

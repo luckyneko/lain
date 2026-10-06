@@ -1354,6 +1354,41 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-06 — M9 slice 3 planned: targetless registration with known intrinsics (nothing built yet)
+
+Slice 3 of M9 is planned as **eleven sub-slices (0 to 10), one commit each**, in WORK.md's M9 build
+order. ADR-0016 and ADR-0017 are amended in place. CONTEXT.md gains *static feature*, *held-out track*,
+*scale normalisation* and *placeable camera*, and amends *Targetless registration*, *Camera
+observation graph*, *Weak bridge*, *Feature track* and *Feature-track extraction*.
+
+- **Decided with the repo owner:**
+  - **A track is a static landmark across the whole capture.** A feature a fixed camera sees at one
+    pixel across its sampled frames is static, and moving content is dropped before matching. Each
+    camera pair is matched once, and held-out validation and the bootstrap resample tracks. Capture
+    groups only choose frames, so *Targetless registration* no longer says "synchronized".
+  - **Methods are compared on held-out feature tracks**, through a public `registration::validate`
+    that triangulates each held-out landmark from the other members, cameras held. It is
+    scale-invariant, so nothing is fitted on the validation data.
+  - **A scale-ambiguous result is normalised** so the median depth seen from the reference is 1.
+  - **SIFT** in the OpenCV producer.
+  - **Matching is a selector, Exact (default) or Approximate (FLANN).** The repo owner prefers exact
+    but is concerned about time: about 1 s per pair at 8k features, so about 1.5 core-hours for a
+    100-camera rig whose every pair overlaps. Sub-slice 7 times both and measures Approximate's
+    recall; those numbers are the trigger to revisit the default. `DeterministicDebug` refuses
+    Approximate, whose FLANN trees seed from the process-global `std::rand`.
+- **Found by the design review:**
+  - **Producers propose; lain decides.** Lain runs the matching tests, builds the tracks, and measures
+    and accepts candidate poses itself, the `board::pose` facade's rule again. ADR-0016 had given
+    track construction and verification to the producers.
+  - **Placeability, not connectivity.** Overlaps A–B and B–C with no track seen by all three keep two
+    scales, so C cannot be placed. A rig with an unplaceable camera fails `Disconnected`.
+  - **Initialisation is incremental** (seed pair, then absolute pose camera by camera), because
+    board registration's pairwise chaining cannot carry one scale across edges.
+  - **The scale gauge stays free in Ceres**, normalised afterwards; sub-slice 4 measures it.
+  - **The "shared" registration contracts are board-shaped** (`Request::detection`, the report's
+    diagnostics, the fitness count names). Sub-slices 1 to 3 make them method-neutral with no change
+    in behaviour, held to a golden board report committed first.
+
 ### Update 2026-10-05 — M9 slice 2 planned: fixed-camera board registration (nothing built yet)
 
 Slice 2 of M9 is planned as **seven sub-slices (0 to 6), one commit each**, in WORK.md's M9 build

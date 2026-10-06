@@ -84,3 +84,34 @@ poses first. A pose-only solve (held-out validation) is a small `DENSE_QR`.
   standard deviations, moved a camera 8.4 mrad under Huber and 1.6 under Cauchy, against 1.8 with no
   stray view at all (1 m rig). Cauchy's non-convexity is safe because initialisation, which a stray
   view cannot steer, starts the refinement close.
+
+## Amended 2026-10-06: latent scene points, and the gauge a targetless problem leaves free
+
+Decided while planning M9 slice 3 (targetless registration with known intrinsics).
+
+**The refiner gains landmarks beside its bodies, as `refiner.h` always said it would.** A landmark
+is a 3-DoF point in the reference frame, observed through a list of its own, so a board problem is
+untouched. In Ceres it is a second residual, one landmark seen by one camera
+(`AutoDiffCostFunction<…, 2, 6, 3>`), through the same `camera::project<T>` and the same whitening
+helper as a corner. Landmarks join the bodies in the first elimination group. Modelling a landmark
+as a body with one point at its origin was refused: the body's rotation is unobservable, three
+wasted degrees of freedom per point held up only by damping.
+
+**Which linear solver runs is a rule of the problem's shape.** Free cameras use `SPARSE_SCHUR`, as
+before. Held cameras with at most one latent block (a board's held-out pose) keep `DENSE_QR`, so
+board registration's validation does not change. Held cameras with many latent blocks (held-out
+tracks triangulated together) use `SPARSE_NORMAL_CHOLESKY`, since a dense factorisation of
+thousands of independent points would exhaust memory.
+
+**A targetless problem's scale is left free.** Holding the reference camera removes six degrees of
+freedom and leaves one, the global scale, unconstrained. Ceres leaves the whole gauge free in BAL
+problems and converges, because Levenberg-Marquardt's damping keeps the Schur system positive
+definite and the gradient has no component along the scale direction. The result is normalised
+afterwards (ADR-0016, amended). The slice that adds landmarks measures the scale drift, the
+iteration count and any failure of the sparse factorisation; a bad measurement is the trigger to
+hold one camera's translation length on a `SphereManifold<3>`.
+
+**A projection that fails at the starting point aborts the solve**, since a residual that returns
+false there is fatal to Ceres. A targetless initialisation can place a landmark behind a camera,
+so the method module filters by cheirality before it refines rather than letting a failed solve
+stand for it.

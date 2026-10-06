@@ -48,6 +48,9 @@ initialization evidence needed by targetless solvers. Targetless calibration and
 consume this shared evidence rather than owning separate feature front ends. A high-level operation
 may accept a frame sequence and delegate to the configured producer, but every path reaches the same
 production extraction and track contracts.
+*(Amended 2026-10-06: track construction and the acceptance half of geometric verification are
+`lain::camera::feature`'s, not a producer's. A producer proposes candidates and lain measures them;
+see "Targetless registration with known intrinsics, as planned" below.)*
 
 `lain::camera::board` owns the backend-neutral board-observation contract, while optional detection
 modules produce those observations from images and board specifications. Calibration and
@@ -314,3 +317,46 @@ while planning M9 slice 2.)*
   type: cameras, latent rigid bodies (board poses) with their known points, and observations in.
   The Ceres plugin fills it. It is shaped so that targetless registration adds latent scene points
   beside the rigid bodies, not a second path.
+
+**Targetless registration with known intrinsics, as planned.** *(Added 2026-10-06, decided with the
+repo owner while planning M9 slice 3.)*
+
+- **Producers propose; lain decides.** This amends the paragraph above that gave "track
+  construction" and "geometric verification" to the producer modules. A producer backend returns
+  candidates: features and their descriptors, each feature's nearest neighbours in another image,
+  and candidate relative or absolute poses. `lain::camera::feature` applies the ratio and mutual
+  tests, builds the tracks, measures every candidate pose by its angular residual and cheirality
+  through lain's own unprojection and triangulation, and recomputes the inliers itself; a backend's
+  inlier mask is never read. It is the rule the board pose seam already follows ("the facade
+  measures, the backend only proposes"), and for the same reason: a choice made by one measure is
+  the same choice whichever backend proposed, and a test of the choice needs no backend at all.
+- **A feature track is a static landmark across the whole capture.** Every camera samples the same
+  few capture groups. A feature that stays at the same pixel across a fixed camera's sampled frames
+  is a **static feature**; a transient one is moving content and is dropped before matching. Each
+  camera pair is matched once, on the static features, and verified, and tracks join across cameras.
+  So targetless registration's capture groups choose which frames are examined and nothing more.
+  Matching inside every group was the alternative, and it was refused on two counts: its cost is
+  camera pairs × groups rather than pairs, and a static point reappears in every group, so a
+  held-out group would never be independent of the groups that were fitted.
+- **A track's observations belong to views.** A `View` is the set of frames one set of feature
+  positions was taken from: one per camera in fixed-camera registration, one per frame in the
+  targetless calibration of a moving camera (slice 4). A track holding two different features of one
+  view is a conflict and is rejected whole.
+- **Placeability, not connectivity, decides whether a targetless rig can register.** Two overlaps
+  A–B and B–C that share no track seen by all three cameras each keep a scale of their own, so the
+  global refinement is singular and no absolute pose can place C. A board never meets this, because
+  it is metric. A camera is therefore **placeable** only when it shares triangulated landmarks with
+  cameras already placed, and a rig with an unplaceable camera fails as disconnected, naming those
+  cameras.
+- **Board and targetless registration are compared on held-out feature tracks.** A public
+  `registration::validate` takes registered cameras and track ids that neither registration fitted,
+  and predicts each held-out observation by triangulating its landmark from the other members with
+  every camera held. Being scale-invariant, it compares a metric board registration with a
+  scale-ambiguous targetless one without fitting anything on the validation data.
+- **A scale-ambiguous result is normalised** so the median depth of the landmarks seen from the
+  reference is 1, and its report says so.
+- **SIFT** fills the OpenCV extractor. **Matching is a request choice between Exact and
+  Approximate**, Exact by default: the deterministic-debug policy runs "the same work, serially",
+  so the default must not depend on a process-global random seed, which OpenCV's bundled FLANN
+  does. A matcher declares which searches it supports, as an estimator declares the models it can
+  estimate, and a deterministic-debug request refuses Approximate rather than substituting Exact.
