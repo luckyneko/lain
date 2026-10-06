@@ -1354,6 +1354,40 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-06 — M9 slice 3, sub-slice 5: feature contracts, seams and facades
+
+`lain::camera::feature` lands in `libs/camera` (std and lain only). It holds:
+- the feature values;
+- three backend seams (extractor, matcher, geometry solver), each with a registry;
+- four facades (`extract`, `match`, `relativePose`, `absolutePose`);
+- a public `triangulate`.
+
+Producers propose and lain decides (ADR-0016, amended in place): lain runs the matching tests,
+measures every candidate pose itself and recomputes the inliers. Nothing calls it yet. `ctest -j8`
+**1143/1143** Debug and **1151/1151** Release with video, camera and Ceres on, **1065/1065** with all
+three off (+25 each); warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 5 built*
+under M9 slice 3.
+
+- **One `Status` across the facades**, adding `BackendMisbehaved` to the planned set on `render()`'s
+  precedent. A malformed answer (descriptor bytes, an off-image keypoint, an out-of-range neighbour)
+  is refused rather than indexed.
+- **`match` tests both directions**: mutual nearest, and the ratio test on each side. So
+  `match(a, b)` is `match(b, a)` swapped, and an exact tie is never a match. CONTEXT.md gains
+  *Feature match*.
+- **The pose facades measure every candidate and choose regardless of their order**: by inlier
+  count, then squared residual, then a canonical pose order. Inputs are pair types (`RayPair`,
+  `PointRay`), so a length mismatch cannot be written.
+- **Decided with the repo owner:**
+  - the geometry seam carries no inlier mask (ADR-0016 says one is never read);
+  - `Unsupported` comes from the extractor and the matcher only;
+  - a pair with parallax below the inlier angle is a point at infinity, an inlier when its rays
+    agree under the rotation.
+- **Found by a test: a wrong rotation can hide on far points.** Turned about an axis in the
+  epipolar plane, a far pair is re-triangulated nearer and stays an inlier, which is correct
+  geometry. Turned about the baseline, it explains nothing, and that is what the case now asserts.
+- **Five sabotages, all caught.** The first cut of one did not compile and so proved nothing, until
+  it was rewritten to compile; the comments' guessed measurements were replaced by measured ones.
+
 ### Update 2026-10-06 — M9 slice 3, sub-slice 4: the refiner gains landmarks
 
 The refiner's seam now carries scene points whose positions are unknown, beside the bodies, which

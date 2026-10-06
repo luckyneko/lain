@@ -9,6 +9,7 @@ add_executable(test-camera
 	test_boardseams.cpp
 	test_capturegroup.cpp
 	test_registrationcontracts.cpp
+	test_triangulation.cpp
 )
 target_compile_features(test-camera PRIVATE cxx_std_17)
 target_link_libraries(test-camera PRIVATE lain::camera lain::warnings Catch2::Catch2WithMain)
@@ -46,3 +47,11 @@ add_executable(test-camera-norefiner test_norefiner.cpp)
 target_compile_features(test-camera-norefiner PRIVATE cxx_std_17)
 target_link_libraries(test-camera-norefiner PRIVATE lain::camera lain::warnings Catch2::Catch2WithMain)
 catch_discover_tests(test-camera-norefiner TEST_PREFIX "(camera) ")
+
+# The feature facades (lain::camera::feature) over scripted stand-ins: an extractor, matchers that
+# differ in the kinds and searches they take, a matcher that misbehaves, and a geometry solver that
+# proposes whatever a case scripts. Its own executable, so those are the only backends registered.
+add_executable(test-camera-feature test_featureseams.cpp)
+target_compile_features(test-camera-feature PRIVATE cxx_std_17)
+target_link_libraries(test-camera-feature PRIVATE lain::camera lain::warnings Catch2::Catch2WithMain)
+catch_discover_tests(test-camera-feature TEST_PREFIX "(camera) ")

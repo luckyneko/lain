@@ -3897,6 +3897,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       - Tests: scrambled candidate order; a backend inlier mask that lies; the ratio and mutual
         tests; ill-conditioned triangulation; `NoBackend` and `Unsupported` for each seam.
       - Sabotages: take the backend's first candidate; trust its mask.
+      **Built 2026-10-06**, below, with no inlier mask on the seam (the test and sabotage are
+      restated) and `Unsupported` from the extractor and matcher only.
    6. **Track extraction, `feature::extractTracks`.**
       - `View{camera, image, frames}`, `SceneObservation{view, pixel, support, covariance}`,
         `Track{identity, observations}`, `TrackSet{frames, views, tracks}`,
@@ -4218,6 +4220,86 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        The whitening, refusal and behind-camera cases take no step and pass.
      - **The whitening's sign flipped:** both covariance sections fail, the landmark case's and the
        existing corner case's, which shows the helper is shared.
+
+     Each restored source was touched a second later, and its object checked to be newer, before
+     the green run was believed.
+
+   **Sub-slice 5 built (2026-10-06): feature contracts, seams and facades.** `lain::camera::feature`
+   in `libs/camera` (std and lain only), under `include/lain/camera/feature/`. Nothing calls it yet;
+   sub-slices 6 to 8 do.
+   - **The values and seams.**
+     - `Keypoint {pixel, size, angle, response}`, in source pixels and radians.
+     - `Features {kind, descriptorBytes, image, scale, keypoints, descriptors}`, with opaque
+       descriptors.
+     - Three seams, each with a registry and a `canX()`, on `board::pose`'s pattern (the first
+       registered key answers, a backend created per call):
+       - `Extractor::extract(image, scale)`;
+       - `Matcher` with `accepts(kind)`, `supports(MatchSearch)` and `nearest(a, b, search)`, giving
+         two neighbours per feature;
+       - `GeometrySolver` with `relativePoses(pairs, angle, seed)` and `absolutePoses(pointRays,
+         angle, seed)`, which return candidates and nothing else.
+   - **The facades answer one `Status`**: `Ok`, `TooFew`, `NoSolution`, `Unsupported`, `NoBackend`
+     and `BackendMisbehaved`. The last is new to the planned set, on `render()`'s precedent: a
+     malformed backend answer is refused rather than indexed.
+     - **`extract`:**
+       - resolves the scale policy and hands the backend the factor, as `detect` does (the plan
+         had the policy crossing the seam);
+       - checks the descriptor bytes, the kind and every keypoint's position against the source
+         image;
+       - states `image` and `scale` itself, so a backend cannot misreport them.
+     - **`match`:**
+       - keeps a pair only when each feature is the other's nearest and passes the ratio test
+         against its own second nearest, **in both directions**, so `match(a, b)` is
+         `match(b, a)` swapped and an exact tie is never a match;
+       - counts every rejected feature once, as not mutual or ambiguous;
+       - checks each `nearest` answer: one per feature, two distinct in-range neighbours, distances
+         finite and nearest first.
+     - **`relativePose` / `absolutePose`:**
+       - take pairs by type (`RayPair`, `PointRay`), so a length mismatch cannot be expressed (the
+         plan had parallel vectors);
+       - normalise rays and drop unusable ones before the backend sees them, mapping inliers back
+         to input indices;
+       - measure every candidate;
+       - choose by inlier count, then summed squared residual, then a canonical pose order, so the
+         choice never depends on the order of the candidates.
+   - **Decided with the repo owner:**
+     - **No inlier mask on the seam**, since ADR-0016 says one is never read. The planned "a
+       backend inlier mask that lies" is restated as "relativePose counts its own inliers, not the
+       pairs the backend fitted": every third pair is pushed 0.1 rad off its epipolar plane, the
+       backend proposes the truth, and the inliers are exactly the clean pairs.
+     - **`Unsupported` comes from the extractor (an image it cannot read) and the matcher (a kind
+       or a search) only.** The geometry seam has no capability declaration until a backend lacks
+       one of the two problems.
+     - **A pair whose parallax is below the inlier angle is a point at infinity.** It is an inlier
+       when its rays agree under the candidate's rotation, with half the angle between them as each
+       residual. Distant static background survives verification.
+   - **`triangulate(rays, minimumAngle)`** is the least-squares point nearest every ray. It answers
+     `TooFew`, `IllConditioned` (parallax below the minimum, or exactly parallel) or `Behind`, and
+     reports the parallax. It is public because sub-slices 6 and 8 and `registration::validate`
+     triangulate with it.
+   - **Found by the tests: a wrong rotation is not always visible on far points.** The first
+     far-point case turned the candidate 20 mrad about an axis in the epipolar plane, and every far
+     pair stayed an inlier, re-triangulated nearer. That is correct two-view geometry. Turned about
+     the baseline, the candidate moves each ray out of its epipolar plane and explains none of the
+     40 pairs, which the case now asserts.
+   - **The measured comments were corrected by measuring.** The first cut guessed:
+     - 2e-16 rad where the exact rays give 3e-15;
+     - 4e-16 m where two rays meet to 5e-14;
+     - 8 matches in the symmetry case where there are 15 (with 16 ambiguous and 29 not mutual).
+   - `ctest -j8` **1143/1143** Debug and **1151/1151** Release with video, camera and Ceres on, and
+     **1065/1065** with all three off (+25 each: 5 triangulation, 19 in the new
+     `test-camera-feature`, 1 no-backend). Warning-clean, format-check clean.
+   - **Five sabotages, all caught.**
+     - **The backend's first candidate taken:** both scrambled-order cases fail, as do the tie case
+       and "near points decide".
+       - The first cut of this sabotage did not compile (`better` became unused under `-Werror`)
+         and so proved nothing, until it was rewritten to keep the function used.
+     - **Every correspondence counted as an inlier:** the own-inliers case fails, along with the
+       baseline-turned and wrong-candidate cases.
+     - **A far point counted as an outlier:** the far-point case and the tie case fail.
+     - **The ratio test one way only:** both halves of the symmetry case fail.
+     - **The mutual check dropped:** the mutual case fails, and so does the larger symmetry section,
+       whose not-mutual count goes to zero.
 
      Each restored source was touched a second later, and its object checked to be newer, before
      the green run was believed.

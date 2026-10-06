@@ -330,6 +330,14 @@ repo owner while planning M9 slice 3.)*
   inlier mask is never read. It is the rule the board pose seam already follows ("the facade
   measures, the backend only proposes"), and for the same reason: a choice made by one measure is
   the same choice whichever backend proposed, and a test of the choice needs no backend at all.
+  *Built in M9 slice 3, sub-slice 5:*
+  - **The geometry seam carries no mask at all**: it returns poses and nothing else, so there is
+    nothing to read.
+  - **The choice never depends on the order** the candidates came in. It goes by inlier count,
+    then summed squared residual, then a canonical order of the poses.
+  - **A pair whose parallax is below the inlier angle is a point at infinity.** It is an inlier
+    when its rays agree under the candidate's rotation, so distant static background survives
+    verification while near points still decide the direction of the baseline.
 - **A feature track is a static landmark across the whole capture.** Every camera samples the same
   few capture groups. A feature that stays at the same pixel across a fixed camera's sampled frames
   is a **static feature**; a transient one is moving content and is dropped before matching. Each

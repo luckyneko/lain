@@ -8,6 +8,9 @@
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/board.h>
 #include <lain/camera/calibration/estimator.h>
+#include <lain/camera/feature/features.h>
+#include <lain/camera/feature/geometry.h>
+#include <lain/camera/feature/matching.h>
 #include <lain/camera/registration/board.h>
 #include <lain/camera/registration/refiner.h>
 #include <lain/media/framesequence.h>
@@ -148,4 +151,25 @@ TEST_CASE("with no backend, a registration fails for want of a pose solver, or a
 	const auto& searched = std::get<registration::BoardRecord>(fromFootage.reproducibility.method).detection;
 	REQUIRE(searched.has_value());
 	CHECK(searched->minimumCorners == 9);
+}
+
+TEST_CASE("with no backend, the feature facades say the capability is missing", "[camera][feature]")
+{
+	namespace feature = lain::camera::feature;
+	CHECK_FALSE(feature::canExtract());
+	CHECK_FALSE(feature::canMatch());
+	CHECK_FALSE(feature::canSolveGeometry());
+
+	const feature::ExtractResult extracted = feature::extract(image::Image{64, 48, image::PixelFormat::Gray8});
+	CHECK(extracted.status == feature::Status::NoBackend);
+	CHECK(extracted.detail.find("LAIN_CAMERA_OPENCV") != std::string::npos);
+
+	feature::Features features;
+	features.kind = "sift";
+	CHECK(feature::match(features, features).status == feature::Status::NoBackend);
+
+	const std::vector<feature::RayPair> pairs(5);
+	CHECK(feature::relativePose(pairs).status == feature::Status::NoBackend);
+	const std::vector<feature::PointRay> pointRays(4);
+	CHECK(feature::absolutePose(pointRays).status == feature::Status::NoBackend);
 }

@@ -263,6 +263,11 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   when available. It does not own the source image and is distinct from an observation of a known
   board feature. _Avoid_: keypoint when provenance and uncertainty are part of the contract, board
   observation.
+- **Feature match** — a pair of features of two images that each name the other as their nearest
+  neighbour, and each nearer to the other than to their own second nearest by the ratio test's
+  margin. Both directions are tested, so matching A with B is matching B with A, and an exact tie is
+  never a match. A matcher backend only proposes neighbours; lain applies the tests. _Avoid_:
+  correspondence before the tests have been applied, track when more than two images are involved.
 - **Feature track** — a backend-neutral association of scene-feature observations believed to depict
   the same predominantly static scene point across frames or cameras. Accepted tracks are shared
   evidence for targetless calibration, registration, validation, tests, and debug visualization;
