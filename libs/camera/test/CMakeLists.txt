@@ -55,3 +55,10 @@ add_executable(test-camera-feature test_featureseams.cpp)
 target_compile_features(test-camera-feature PRIVATE cxx_std_17)
 target_link_libraries(test-camera-feature PRIVATE lain::camera lain::warnings Catch2::Catch2WithMain)
 catch_discover_tests(test-camera-feature TEST_PREFIX "(camera) ")
+
+# Feature-track extraction (feature::extractTracks) over stand-ins answering from a known scene
+# (syntheticscene.h). Its own executable, so those are the only backends registered.
+add_executable(test-camera-tracks test_tracks.cpp)
+target_compile_features(test-camera-tracks PRIVATE cxx_std_17)
+target_link_libraries(test-camera-tracks PRIVATE lain::camera lain::testing lain::warnings Catch2::Catch2WithMain)
+catch_discover_tests(test-camera-tracks TEST_PREFIX "(camera) ")

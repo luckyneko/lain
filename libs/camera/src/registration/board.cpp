@@ -980,18 +980,9 @@ namespace lain::camera::registration::board
 		// Each member's frame, found in its camera's footage through an index of that footage built
 		// once. Placeholder detections stand in until the frames are decoded, so prepare() can check
 		// the dataset's shape first.
-		using FrameKey = std::pair<std::string, std::size_t>; // source uri, ordinal: a frame's identity
-		std::map<capture::CameraIdentity, std::pair<const media::FrameSequence*, std::map<FrameKey, std::size_t>>> footageOf;
+		std::map<capture::CameraIdentity, detail::FootageIndex> footageOf;
 		for (const RigFootage& c : cameras)
-		{
-			auto& [footage, positions] = footageOf[c.camera];
-			footage = &c.footage;
-			for (std::size_t i = 0; i < c.footage.size(); ++i)
-			{
-				const media::FrameRef frame = c.footage.frame(i);
-				positions.emplace(FrameKey{frame.source.toString(), frame.ordinal}, i);
-			}
-		}
+			footageOf.insert_or_assign(c.camera, detail::FootageIndex{c.footage});
 		std::vector<GroupObservations> observed;
 		std::vector<std::vector<std::pair<const media::FrameSequence*, std::size_t>>> frames;
 		for (const capture::CaptureGroup& group : groups)
@@ -1006,11 +997,11 @@ namespace lain::camera::registration::board
 					located.push_back({nullptr, 0}); // prepare() names the unknown camera
 					continue;
 				}
-				const auto position = camera->second.second.find(FrameKey{m.frame.source.toString(), m.frame.ordinal});
-				if (position == camera->second.second.end())
+				const std::optional<std::size_t> position = camera->second.position(m.frame);
+				if (!position)
 					return failed(std::move(report), start, Failure::InvalidDataset,
 								  "camera \"" + m.camera.value + "\"'s footage has no " + m.frame.toString());
-				located.push_back({camera->second.first, position->second});
+				located.push_back({&camera->second.footage(), *position});
 			}
 			frames.push_back(std::move(located));
 		}

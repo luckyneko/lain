@@ -1,26 +1,12 @@
 #pragma once
 
-#include "lain/camera/cameramodel.h"
-#include "lain/camera/capture/capturegroup.h"
+#include "lain/camera/rig.h"
 
-#include <lain/media/framesequence.h>
-
-// The cameras of a registration dataset, whichever method registers them: an identity and a
-// calibrated model held fixed, and the footage its capture-group members name.
+// The cameras of a registration dataset, whichever method registers them. The types are
+// lain::camera's (rig.h), since feature extraction takes them too; named here as well, where a
+// registration's callers look for them.
 namespace lain::camera::registration
 {
-	// One camera of a registration dataset: its identity and its calibrated model, held fixed.
-	struct RigCamera
-	{
-		capture::CameraIdentity camera;
-		CameraModel model;
-	};
-
-	// One camera with the footage its capture-group members name.
-	struct RigFootage
-	{
-		capture::CameraIdentity camera;
-		CameraModel model;
-		media::FrameSequence footage;
-	};
+	using camera::RigCamera;
+	using camera::RigFootage;
 } // namespace lain::camera::registration

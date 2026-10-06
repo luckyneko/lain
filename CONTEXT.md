@@ -282,6 +282,9 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   matched between cameras in targetless registration; a transient feature is moving content and is
   dropped before matching. With one sampled frame there is nothing to compare, and every feature is
   kept. _Avoid_: background feature (the test is persistence, not depth), keypoint.
+  *"The same pixel"* (2026-10-06): two frames' features are one feature when they are a feature
+  match between those frames, within 1.5 pixels at the scale searched and a 1.5× size ratio. A
+  static feature sits at the median of its pixels.
 - **Feature-track extraction** — the shared preprocessing operation that converts a frame sequence
   into accepted feature tracks and a report covering detection, description, matching, track
   construction, geometric verification, rejection, and reproducibility. Targetless methods consume

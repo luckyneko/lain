@@ -3921,6 +3921,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         refusals.
       - Sabotages: the union in completion order; first-wins on a conflict; consolidation off;
         duplicate collapse off.
+      **Built 2026-10-06**, below, with consolidation through `match()` instead of a descriptor
+      bound, and `TrackSet::groups` for `frames`.
    7. **The OpenCV feature producer.**
       - First, with no behaviour change, the image preparation lifted out of `charucodetector.cpp`
         into `imageprep.{h,cpp}`.
@@ -4300,6 +4302,100 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      - **The ratio test one way only:** both halves of the symmetry case fail.
      - **The mutual check dropped:** the mutual case fails, and so does the larger symmetry section,
        whose not-mutual count goes to zero.
+
+     Each restored source was touched a second later, and its object checked to be newer, before
+     the green run was believed.
+
+   **Sub-slice 6 built (2026-10-06): track extraction, `feature::extractTracks`.**
+   - **What it is.** It takes footage and capture groups, and returns accepted static tracks plus
+     a report. It is in `libs/camera`, with the values in `feature/tracks.h` (`View`,
+     `SceneObservation`, `Track`, `TrackSet`) and the operation in `feature/extraction.h`
+     (`ExtractionRequest`, `CameraExtraction`, `PairExtraction`, `ExtractionReport`,
+     `ExtractionResult`). Nothing calls it yet; sub-slice 8 does.
+   - **In order:**
+     1. **Every check that needs no frame:** `NoBackend` naming the seam, `Unsupported` for the
+        request, `TooFew`, then a new `Status::InvalidInput` for a malformed dataset.
+     2. **The sampled groups.**
+     3. **One task per camera:**
+        - decode, extract, release, collapse duplicates and cap, frame by frame;
+        - consolidate the static features.
+     4. **One task per pair:** the pre-screen, the full match, and verification by `relativePose`.
+     5. **The union, serially:** a component holding two features of one view is rejected whole.
+   - **Decided with the repo owner:**
+     - **Consolidation pairs a camera's frames through `match()`.** It uses the mutual test and
+       the ratio test both ways, then gates each pair at 1.5 processed px and a 1.5× size ratio.
+       This replaces the planned "measured descriptor bound": descriptors are opaque to lain, an
+       absolute bound would depend on the descriptor kind, and a feature that cannot match itself
+       across frames would fail cross-camera matching anyway.
+       - A cluster found in at least ⌈K/2⌉ of the camera's K extracted frames is static.
+       - It sits at the per-axis median pixel and median size.
+       - Its descriptor, angle and response come from the member nearest that median.
+       - A cluster holding two features of one frame is counted `inconsistent`.
+     - **Sampling is evenly spaced in capture order.**
+       - Groups are ordered by their members' (lower) median timestamp, then median ordinal, then
+         identity.
+       - `min(samples, groups)` are taken at the bin centres `⌊(2i+1)·n / 2k⌋`, so 5 of 9 is
+         {0, 2, 4, 6, 8} and 3 of 9 is {1, 4, 7}, whatever order the groups were handed in.
+     - **Each observation carries `(σ / scale)²`**, isotropic, in source px, with σ =
+       `localisation` in processed px (0.7, provisional until sub-slice 7 measures SIFT). Cameras
+       of different resolutions are searched at different scales, and the refiner's noise model is
+       one value.
+     - **`RigCamera` / `RigFootage` moved down to `lain/camera/rig.h`**, with using-declarations
+       left in `registration/rig.h`, so the feature module names no registration header.
+   - **The duplicate rule is one feature per 1/64-source-px cell**: the largest response, then the
+     smallest angle in [0, 2π), then the smallest size. It is applied per frame and again to the
+     static set.
+     - It collapses SIFT's duplicate orientations, which share a pixel and a size bit for bit.
+     - It also makes a track's identity unique by construction, since a cell holds one feature of a
+       view and a feature belongs to one track.
+     - What the angle tie-break costs in recall on real SIFT is sub-slice 7's to measure.
+   - **A track's identity** is SHA-256 over `lain feature track 1`, then each observation's
+     length-prefixed camera and its pixel on the 1/64 grid as integers, as a capture group's
+     identity is spelled. Tracks sort by it.
+   - **Deviations from the plan:**
+     - `TrackSet::groups` (the sampled capture groups) for `frames`, since a group is the unit
+       sampled.
+     - `Status::InvalidInput` is new to the feature set.
+     - The refusal of Approximate under DeterministicDebug lives here, since `match()` has no
+       execution policy. Sub-slice 7's sabotage targets it, and this sub-slice already tests it.
+     - board.cpp's frame-identity index became a private `detail::FootageIndex`
+       (`src/footageindex.h`), shared with extraction and re-exported into `registration::detail`
+       beside `forEach`. Its last-wins behaviour for a camera named twice is kept. The registration
+       golden is byte-equal.
+     - Defaults: `LongestSide{1920}`, 5 samples, a cap of 8192 per frame, 15 inliers per pair
+       (COLMAP's two-view minimum), and a pre-screen of 512 features needing 5 matches.
+   - **Cost to watch:** consolidation is K(K−1)/2 matches per camera, 10 at the default 5 samples.
+     If sub-slice 7 measures them dominating extraction, match each frame with its neighbours in
+     capture order only.
+   - **Stand-ins** (`libs/camera/test/syntheticscene.h`):
+     - **The scene:** cameras on an arc and landmarks with per-camera descriptor numbers, motion,
+       occlusion and duplication.
+     - **The footage:** blank frames whose first two pixels say which camera and frame they are,
+       from a source with its cache off that counts its decodes.
+     - **`TruthExtractor`.**
+     - **`ExactMatcher`:** brute force on the numbers, with Approximate scriptable and every
+       `nearest` call logged.
+     - **`TruthGeometry`:** proposes every camera pair's true pose, so lain's measurement picks.
+   - **Found by the tests: an orbit about the scene still verifies.** The first "a pair that does
+     not verify" case rendered one camera turned 0.05 rad about the vertical and shifted 0.2 m. That
+     left 37 to 47 inliers of 60, since it is nearly an orbit about the scene and keeps most points
+     on their epipolar lines, which is all a relative pose tests. A 0.2 rad tilt explains 0 of 60,
+     and the case asserts that.
+   - `ctest -j8` **1155/1155** Debug and **1163/1163** Release with video, camera and Ceres on, and
+     **1077/1077** with all three off (+12 each: 11 in the new `test-camera-tracks`, 1 no-backend).
+     Warning-clean, format-check clean, and the parallel case swept 50× in Release with no failure.
+   - **Six sabotages, five caught, one recorded as a finding.**
+     - **The union run in pair completion order** (inside the parallel loop, under a mutex): **not
+       caught, as predicted.** A union-find partition does not depend on the order of its unions,
+       and nothing downstream reads the order, so serial-in-canonical-order is for the data
+       structure's sake, not for the answer's.
+     - **First-wins on a conflict:** the conflict case fails (two partial tracks survive).
+     - **Consolidation off** (the first frame's features kept): the static, moving-content and
+       occlusion cases fail.
+     - **Duplicate collapse off:** the duplicate case fails, since each duplicated landmark's
+       matches tie and the ratio test refuses a tie.
+     - **Approximate accepted under DeterministicDebug:** the refusal case fails.
+     - **The pre-screen ignored:** the pre-screen case fails.
 
      Each restored source was touched a second later, and its object checked to be newer, before
      the green run was believed.

@@ -1354,6 +1354,43 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-06 — M9 slice 3, sub-slice 6: track extraction, `feature::extractTracks`
+
+Footage and capture groups in, accepted static feature tracks and a report out, through sub-slice
+5's facades. Nothing calls it yet; sub-slice 8 does. `ctest -j8` **1155/1155** Debug and
+**1163/1163** Release with video, camera and Ceres on, **1077/1077** with all three off (+12 each);
+warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 6 built* under M9 slice 3.
+
+- **Five steps:**
+  1. checks that decode nothing;
+  2. evenly spaced sampling of the capture groups;
+  3. one task per camera: decode, extract, release, collapse and cap each frame, then consolidate
+     the static features;
+  4. one task per pair: pre-screen, match and verify;
+  5. a serial union in which a component holding two features of one view is rejected whole.
+- **Decided with the repo owner:**
+  - **Consolidation goes through `match()`** (mutual, ratio both ways), gated at 1.5 processed px
+    and a 1.5× size. This replaces a descriptor bound, which lain cannot measure across kinds.
+  - **Sampling is by capture order**: median timestamp, then median ordinal, then identity, at bin
+    centres.
+  - **The covariance is `(σ / scale)²`**, with σ = 0.7 processed px, provisional.
+  - **`RigCamera` / `RigFootage` moved down to `lain/camera/rig.h`**, so feature names no
+    registration header.
+- **One feature per 1/64-source-px cell** (largest response, then smallest angle, then smallest
+  size), per frame and among static features. It collapses SIFT's duplicate orientations and makes
+  track identities (SHA-256 over cameras and pixels on that grid) unique by construction.
+- **Deviations:**
+  - `TrackSet::groups` for `frames`;
+  - a new `Status::InvalidInput`;
+  - the Approximate-under-DeterministicDebug refusal lives here, since `match()` has no execution
+    policy;
+  - board's frame index became a shared `detail::FootageIndex`, with the golden byte-equal.
+- **Found by a test: an orbit about the scene still verifies.** A camera rendered 0.05 rad and
+  0.2 m off still left 37 to 47 of 60 matches on their epipolar lines. A 0.2 rad tilt gives 0, and
+  the case pins that.
+- **Six sabotages, five caught.** Running the union in pair completion order is **not caught, as
+  predicted**: a union-find partition does not depend on the order of its unions.
+
 ### Update 2026-10-06 — M9 slice 3, sub-slice 5: feature contracts, seams and facades
 
 `lain::camera::feature` lands in `libs/camera` (std and lain only). It holds:

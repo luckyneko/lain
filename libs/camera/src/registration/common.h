@@ -1,6 +1,7 @@
 #pragma once
 
 #include "execution.h"
+#include "footageindex.h"
 #include "lain/camera/registration/fitness.h"
 #include "lain/camera/registration/observationgraph.h"
 #include "lain/camera/registration/report.h"
@@ -21,8 +22,10 @@
 // units as numbered lists of the cameras that saw them.
 namespace lain::camera::registration::detail
 {
-	// How a method module runs independent work, shared with calibration (execution.h); named here
-	// too, since inside registration this namespace hides lain::camera::detail.
+	// How a method module runs independent work, shared with calibration (execution.h), and finds a
+	// member's frame in its footage, shared with feature extraction (footageindex.h); named here too,
+	// since inside registration this namespace hides lain::camera::detail.
+	using camera::detail::FootageIndex;
 	using camera::detail::forEach;
 
 	// The rotation between two transforms, radians: 2 atan2(|v|, |w|) of the relative quaternion,

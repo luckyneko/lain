@@ -8,6 +8,7 @@
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/board.h>
 #include <lain/camera/calibration/estimator.h>
+#include <lain/camera/feature/extraction.h>
 #include <lain/camera/feature/features.h>
 #include <lain/camera/feature/geometry.h>
 #include <lain/camera/feature/matching.h>
@@ -172,4 +173,14 @@ TEST_CASE("with no backend, the feature facades say the capability is missing", 
 	CHECK(feature::relativePose(pairs).status == feature::Status::NoBackend);
 	const std::vector<feature::PointRay> pointRays(4);
 	CHECK(feature::absolutePose(pointRays).status == feature::Status::NoBackend);
+}
+
+TEST_CASE("with no backend, track extraction says the capability is missing", "[camera][feature]")
+{
+	namespace feature = lain::camera::feature;
+	// Refused before anything about the dataset is asked: a build with no extractor cannot extract.
+	const feature::ExtractionResult extracted = feature::extractTracks({}, {});
+	CHECK(extracted.status == feature::Status::NoBackend);
+	CHECK(extracted.detail.find("no feature extractor") != std::string::npos);
+	CHECK(extracted.trackSet.tracks.empty());
 }

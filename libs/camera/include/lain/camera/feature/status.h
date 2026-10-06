@@ -12,5 +12,6 @@ namespace lain::camera::feature
 		Unsupported,	   // a backend is registered, but none can do what was asked
 		NoBackend,		   // this build has no backend for this seam
 		BackendMisbehaved, // the backend's answer broke its contract; refused rather than indexed
+		InvalidInput,	   // the caller's input is malformed (a camera named twice, a frame its footage lacks)
 	};
 } // namespace lain::camera::feature

@@ -1,8 +1,9 @@
 # lain::camera — camera geometry and boards (M9, ADR-0016): immutable validated camera models, the
 # closed set of distortion models, scalar-generic projection (lain::camera), board patterns,
 # specifications, observations, detection reports and renderings with their backend seams
-# (lain::camera::board), capture groups (lain::camera::capture), the scene-feature seams and facades
-# (lain::camera::feature), and the calibration and registration method modules with theirs. std + lain only, so it is always built; the optional
+# (lain::camera::board), capture groups (lain::camera::capture), the scene-feature seams, facades and
+# track extraction (lain::camera::feature), and the calibration and registration method modules with
+# theirs. std + lain only, so it is always built; the optional
 # backends live in plugins/camera (OpenCV, Ceres), and none of their types crosses into here.
 #
 # It depends on no lain::data, as lain::media and lain::flow do not: serialization is its own target,
@@ -22,6 +23,7 @@ add_library(camera STATIC
 	src/calibration/estimator.cpp
 	src/calibration/board.cpp
 	src/capture/capturegroup.cpp
+	src/feature/extraction.cpp
 	src/feature/features.cpp
 	src/feature/geometry.cpp
 	src/feature/matching.cpp

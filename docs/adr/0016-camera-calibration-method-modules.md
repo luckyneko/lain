@@ -346,6 +346,22 @@ repo owner while planning M9 slice 3.)*
   Matching inside every group was the alternative, and it was refused on two counts: its cost is
   camera pairs × groups rather than pairs, and a static point reappears in every group, so a
   held-out group would never be independent of the groups that were fitted.
+  *Built in M9 slice 3, sub-slice 6 (`feature::extractTracks`):*
+  - **"The same pixel" is decided through the matcher seam.** A camera's frames are paired
+    through `match()`, so the mutual and ratio tests apply. A pair then counts only within 1.5
+    processed pixels and a 1.5× size ratio. Lain cannot read a descriptor, so an absolute
+    descriptor bound would have to be set per descriptor kind.
+  - **A static feature sits at its median pixel.** It is found in at least half of the camera's
+    frames.
+  - **The sampled groups are spread evenly across the capture.** Groups are ordered by their
+    members' median timestamp, then median ordinal, then identity, so the choice does not depend
+    on input order.
+  - **One feature per 1/64-source-pixel cell**, per frame and again among the static features. It
+    collapses SIFT's duplicate orientations and makes a track's identity, a digest of its cameras
+    and pixels on that grid, unique by construction.
+  - **An observation's covariance is the requested localisation**, in the pixels the backend
+    searched, scaled back to source pixels. A camera searched at a coarser scale is weighted
+    accordingly.
 - **A track's observations belong to views.** A `View` is the set of frames one set of feature
   positions was taken from: one per camera in fixed-camera registration, one per frame in the
   targetless calibration of a moving camera (slice 4). A track holding two different features of one
