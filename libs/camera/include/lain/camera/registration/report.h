@@ -37,7 +37,7 @@ namespace lain::camera::registration
 		IncompatibleModel,	   // a camera model's geometry is not its footage's
 		UnknownApplicability,  // a model's applicability is Unknown and the request refuses that
 		UnknownReference,	   // the requested reference camera is not in the dataset
-		TooFewCameras,		   // fewer than two cameras saw the board together
+		TooFewCameras,		   // fewer than two cameras share any evidence
 		Disconnected,		   // the camera graph falls apart into components
 		InitialisationFailed,  // a relative pose could not be estimated
 		RefinementFailed,	   // the global refinement produced no usable solution
@@ -73,23 +73,25 @@ namespace lain::camera::registration
 		math::RigidTransformd referenceFromCamera;
 	};
 
-	// What each camera brought to the registration, and how well the result explains it.
+	// What each camera brought to the registration, and how well the result explains it. An
+	// observation is one camera's view of one evidence unit; a residual is one point of it: a board
+	// corner, or a track's member.
 	struct CameraEvidence
 	{
 		capture::CameraIdentity camera;
 		Applicability applicability = Applicability::Unknown;
-		std::uint32_t groups = 0;	// capture groups it saw the board in with another camera
-		std::uint32_t corners = 0;	// corners it contributed to the refinement
-		std::uint32_t outliers = 0; // of its observations
-		double rmsPixels = 0;		// fitted residuals, raw, for diagnosis
-		double rmsAngle = 0;		// radians
+		std::uint32_t shared = 0;	 // evidence units it shares with another camera
+		std::uint32_t residuals = 0; // residuals it contributed to the refinement
+		std::uint32_t outliers = 0;	 // of its observations
+		double rmsPixels = 0;		 // fitted residuals, raw, for diagnosis
+		double rmsAngle = 0;		 // radians
 	};
 
 	struct GraphEdgeReport
 	{
 		capture::CameraIdentity a;
 		capture::CameraIdentity b;
-		std::uint32_t sharedGroups = 0;
+		std::uint32_t shared = 0; // evidence units the two cameras share
 		bool bridge = false;
 	};
 
@@ -112,7 +114,7 @@ namespace lain::camera::registration
 	// An observation the result does not explain: its RMS whitened residual exceeds the loss scale.
 	struct Outlier
 	{
-		std::string group;
+		std::string unit; // the evidence unit's identity: a capture group's, or a track's
 		capture::CameraIdentity camera;
 		double rmsWhitened = 0; // standard deviations
 	};
@@ -124,34 +126,34 @@ namespace lain::camera::registration
 		std::uint32_t iterations = 0;
 		double initialCost = 0;
 		double finalCost = 0;
-		std::uint32_t corners = 0; // residual blocks: one corner seen by one camera
-		std::uint32_t bodies = 0;  // board poses estimated alongside the cameras
+		std::uint32_t residuals = 0; // residual blocks: one point seen by one camera
+		std::uint32_t bodies = 0;	 // rigid bodies (board poses) estimated alongside the cameras
 		core::Time elapsed;
 		NoiseModel noise;
 		RobustLoss loss;
 	};
 
-	// The registration checked against capture groups that took no part in it: each member of a
-	// held-out group predicted from the others (CONTEXT.md, "Held-out group").
+	// The registration checked against evidence that took no part in it: each member of a held-out
+	// unit predicted from the others (CONTEXT.md, "Held-out group", "Held-out track").
 	struct HeldOutEvidence
 	{
-		std::uint32_t groups = 0;
+		std::uint32_t units = 0;
 		std::uint32_t predictions = 0; // members predicted
-		std::uint32_t unpredicted = 0; // members whose board could not be placed from the others
-		std::uint32_t corners = 0;
-		double rmsAngle = 0;  // radians: the transfer residual
-		double rmsPixels = 0; // raw, for diagnosis only
+		std::uint32_t unpredicted = 0; // members the others could not predict (no board pose, no landmark)
+		std::uint32_t residuals = 0;   // points predicted
+		double rmsAngle = 0;		   // radians: the transfer residual
+		double rmsPixels = 0;		   // raw, for diagnosis only
 		double worstPixels = 0;
 		std::vector<std::pair<capture::CameraIdentity, double>> perCamera; // RMS transfer angle
 	};
 
-	// How much the registration moves when its capture groups are resampled with replacement.
+	// How much the registration moves when its evidence units are resampled with replacement.
 	struct ResamplingEvidence
 	{
-		std::uint32_t resamples = 0;		   // that produced a registration
-		double rotationVariation = 0;		   // radians: the worst camera's RMS rotation from the result
-		double translationVariation = 0;	   // the worst camera's RMS translation over the median observation depth
-		double translationVariationMetres = 0; // the same, in metres, for diagnosis
+		std::uint32_t resamples = 0;			 // that produced a registration
+		double rotationVariation = 0;			 // radians: the worst camera's RMS rotation from the result
+		double translationVariation = 0;		 // the worst camera's RMS translation over the median observation depth
+		double translationVariationAbsolute = 0; // the same in the registration's units, for diagnosis
 		capture::CameraIdentity worstCamera;
 	};
 
@@ -162,23 +164,31 @@ namespace lain::camera::registration
 		std::vector<std::pair<capture::CameraIdentity, camera::board::DetectionReport>> members;
 	};
 
-	struct Diagnostics
+	// What a board registration examined, beside what every registration reports.
+	struct BoardDiagnostics
 	{
 		std::uint32_t groupsExamined = 0;
-		std::uint32_t groupsUsable = 0;			   // with a posed board in two or more cameras
-		std::uint32_t observations = 0;			   // camera-group observations with a usable detection
-		std::uint32_t observationsWithoutPose = 0; // of those, no board pose could be solved
+		std::uint32_t groupsUsable = 0; // with a posed board in two or more cameras
+		std::uint32_t observations = 0; // camera-group observations with a usable detection
+		std::uint32_t withoutPose = 0;	// of those, no board pose could be solved
+		std::vector<FlipChoice> flips;
+		std::vector<GroupDetections> detections; // in canonical group order
+	};
+
+	// What every registration reports about how it got its result, and in `method`, what its method
+	// alone examined.
+	struct Diagnostics
+	{
 		std::vector<GraphEdgeReport> edges;
 		std::vector<std::vector<capture::CameraIdentity>> components;
-		std::vector<GraphEdgeReport> weakBridges; // against the Ready tier's minimumBridgeGroups
+		std::vector<GraphEdgeReport> weakBridges; // against the Ready tier's minimumBridgeShared
 		std::vector<ComponentEstimate> componentEstimates;
-		std::vector<FlipChoice> flips;
 		std::vector<Outlier> outliers;
 		std::optional<RefinementSummary> refinement;
-		std::vector<CameraEvidence> cameras; // ascending by identity
-		std::vector<std::string> heldOutGroups;
-		double medianDepth = 0;					 // metres: what translation variation is relative to
-		std::vector<GroupDetections> detections; // in canonical group order
+		std::vector<CameraEvidence> cameras;   // ascending by identity
+		std::vector<std::string> heldOutUnits; // their identities, in canonical order
+		double medianDepth = 0;				   // in the registration's units: what translation variation is relative to
+		std::variant<BoardDiagnostics> method;
 	};
 
 	// What a board registration searched with and solved by, beside what every registration records.

@@ -1354,6 +1354,35 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-06 — M9 slice 3, sub-slice 3: the report, its diagnostics and fitness stop naming a board
+
+No change in behaviour; the golden board report passes with its file untouched, which ends the
+byte-equal gate of sub-slices 1 to 3. `ctest -j8` **1109/1109** Debug and **1117/1117** Release with
+video, camera and Ceres on, **1040/1040** with all three off (+1 each); warning-clean, format-check
+clean. Full notes in WORK.md's *Sub-slice 3 built* under M9 slice 3.
+
+- **`Diagnostics` holds what every registration reports** plus `std::variant<BoardDiagnostics>
+  method`, which takes board's own: groups examined and usable, observations, those without a pose,
+  flips and detections.
+- **The shared fields are neutral:**
+  - `Outlier::unit`, `CameraEvidence::shared`, `HeldOutEvidence::units`, `heldOutUnits`;
+  - `residuals` for every corner-level count;
+  - `translationVariationAbsolute`.
+
+  So are the observation graph's (`GraphEdge::shared`, `sharedPerCamera`) and the thresholds'
+  (`minimumSharedPerCamera`, `minimumBridgeShared`).
+- **`FitnessProfile::unit` (`EvidenceUnit {CaptureGroup, Track}`) decides the wording** of the
+  fitness notes and `toString`'s held-out count. `toString`'s method clause goes through
+  `std::visit`, so a new method without a summary does not compile.
+- **Deviations:**
+  - `residuals`, not the planned `observations`, because an observation here is already one
+    camera's view of one unit;
+  - `RefinementSummary::landmarks` moves to sub-slice 4, beside what it counts;
+  - the unit-word test runs on a real stand-in report, because GCC 13 at `-O3` raises a false
+    `-Wmaybe-uninitialized` on a hand-built `Report` whose `heldOut` variant is reassigned.
+- **Three sabotages, all caught**, and one prediction wrong: the cli vertical does not see the unit
+  word, since it pins only board's own "groups usable" clause.
+
 ### Update 2026-10-06 — M9 slice 3, sub-slice 2: the registration request stops naming a board
 
 No change in behaviour; the golden board report passes with its file untouched. `ctest -j8`

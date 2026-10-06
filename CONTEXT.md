@@ -320,8 +320,10 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
 - **Registration fitness** — the method-independent verdict that a registration is rejected,
   exploratory, or ready based on connectivity, global refinement, geometric coverage, held-out
   residuals, consistency, and stability. Board and targetless diagnostics remain method-specific;
-  comparing methods requires the same independent validation evidence. _Avoid_: board RMS as overall
-  registration quality, targetless inlier ratio as overall registration quality.
+  comparing methods requires the same independent validation evidence. A fitness profile counts in
+  one evidence unit, capture groups or accepted tracks, and its notes and the report's summary say
+  which. _Avoid_: board RMS as overall registration quality, targetless inlier ratio as overall
+  registration quality.
 - **Held-out group** — a capture group kept out of a registration's initialisation and refinement so
   it can validate the result. Each member in turn is predicted from the others: the board's pose is
   solved from the other members with every camera held at its registered transform, lain's

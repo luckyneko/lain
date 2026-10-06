@@ -3860,7 +3860,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       `method = std::variant<BoardDiagnostics{groupsExamined, groupsUsable, observations,
       withoutPose, flips, detections}>`. `FitnessThresholds{minimumSharedPerCamera,
       minimumBridgeShared, …}` and `FitnessProfile::unit {CaptureGroup, Track}`. Board's
-      `toString` and the golden stay byte-identical.
+      `toString` and the golden stay byte-identical. **Built 2026-10-06**, below, with the
+      corner-level counts named `residuals` and `landmarks` moved to sub-slice 4.
    4. **The refiner gains landmarks.**
       - `Problem::landmarks` (reference frame) with a separate
         `std::vector<LandmarkObservation{camera, landmark, pixel, covariance}>`, so board problems
@@ -3871,6 +3872,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         with at most one latent block → `DENSE_QR`, unchanged for board; otherwise
         `SPARSE_NORMAL_CHOLESKY`.
       - `PassThroughRefiner` echoes the landmarks.
+      - `RefinementSummary::landmarks` lands here, counted from `Problem::landmarks` (moved from
+        sub-slice 3, where it had no source). The golden then prints it: a deliberate change, since
+        the byte-equal gate ended with sub-slice 3.
       - Tests: one landmark triangulated exactly; 20k landmarks with every camera held, timed;
         cameras and landmarks converging from 5 mrad / 5% starts, with the scale drift measured;
         landmark whitening equal to rᵀC⁻¹r; bodies and landmarks in one problem; Release only, 100
@@ -4060,6 +4064,71 @@ The 2026-08-16 review also left these requirements and decisions visible before 
 
      Each restored source was touched a second later, and its object checked to be newer, before the
      green run was believed.
+
+   **Sub-slice 3 built (2026-10-06): the report, its diagnostics and fitness stop naming a board.**
+   No change in behaviour. The golden passes with its file untouched, as does every `toString` line
+   a test pins, the cli vertical's included. That ends the byte-equal gate of sub-slices 1 to 3.
+   - **`Diagnostics` keeps what every registration reports**:
+     - `edges`, `components`, `weakBridges`, `componentEstimates`, `outliers`, `refinement`,
+       `cameras`, `heldOutUnits` (was `heldOutGroups`) and a `medianDepth` in the registration's
+       units;
+     - plus `std::variant<BoardDiagnostics> method`, where `BoardDiagnostics {groupsExamined,
+       groupsUsable, observations, withoutPose, flips, detections}` holds board's own.
+   - **Shared fields lose their board names**:
+     - `Outlier::unit`;
+     - `CameraEvidence::shared` / `residuals`;
+     - `HeldOutEvidence::units` / `residuals`;
+     - `RefinementSummary::residuals`;
+     - `GraphEdgeReport::shared`;
+     - `ResamplingEvidence::translationVariationAbsolute`.
+   - **Fitness counts in its profile's unit.** `EvidenceUnit {CaptureGroup, Track}` is
+     `FitnessProfile::unit`, and `registration/1` says `CaptureGroup`. The thresholds are
+     `minimumSharedPerCamera` and `minimumBridgeShared`, in the profile and the overrides alike. A
+     private `unitsWord` turns the unit into "groups" or "tracks" for the fitness notes and for
+     `toString`'s held-out count, so one field decides the wording.
+   - **The observation graph says the same word**: `GraphEdge::shared`, `sharedPerCamera`,
+     `observationGraph(cameras, units)` and `weakBridges(graph, minimumShared)`. It is what
+     `minimumBridgeShared` is compared with, and sub-slice 8 uses it as it is.
+   - **`toString`'s method clause goes through `std::visit` to one overload per alternative**
+     (`methodSummary(const BoardDiagnostics&)`), so a targetless alternative without one fails to
+     compile, where a `get_if` would quietly print nothing.
+   - **Deviation: the corner-level counts are `residuals`, not `observations` as planned.** In this
+     report an observation is already one camera's view of one unit:
+     - `BoardDiagnostics::observations` counts them;
+     - an `Outlier` is one;
+     - the note reads "N of M observations are outliers".
+
+     As `observations`, `CameraEvidence` would read "observations 768, outliers 1" for an outlier
+     that is one of 32 views. The refinement summary's own comment already said "residual blocks".
+   - **Deviation: `RefinementSummary::landmarks` moves to sub-slice 4**, beside the
+     `Problem::landmarks` it counts. Here it would always be 0.
+   - **The golden prints no new field.** Its labels are the old names ("heldOut groups", "corners",
+     "metres", "heldOutGroup"), kept so the text stays byte-identical; a comment in the test says
+     so. The profile's unit is not printed, but its one visible effect for board is printed: the
+     wording of the fitness notes ("in fewer than 30 shared groups").
+   - **Deviation: the unit-word test lives in `test_registration.cpp`**, not the contracts test.
+     - GCC 13 at `-O3` raises a false `-Wmaybe-uninitialized` on a hand-built `Report` whose
+       `heldOut` variant is reassigned, and so fails the Release build. Assigning, `emplace` and
+       dropping the other fields all still raised it.
+     - The case instead takes a real stand-in board report, whose held-out evidence is genuine. It
+       reads "over 5 groups, 24 of 24 groups usable" as returned, and "over 5 tracks, 24 of 24
+       groups usable" once its profile's unit is `Track`.
+     - It is the only reader of the `Track` arm until sub-slice 8.
+   - **Left to sub-slice 8 as planned:** refusing a profile of another unit
+     (`IncompatibleFitnessProfile`), since no such profile exists yet.
+   - `ctest -j8` **1109/1109** Debug and **1117/1117** Release with video, camera and Ceres on, and
+     **1040/1040** with all three off (+1 each: *a registration report's words follow its profile's
+     evidence unit*). Warning-clean, format-check clean.
+   - **Three sabotages, all caught.**
+     - `unitsWord(CaptureGroup)` saying "tracks" fails four cases: the golden, the new case, and two
+       existing ones whose notes mention shared groups. The cli vertical does **not** catch it,
+       contrary to the plan, because it pins only board's own "groups usable" clause.
+     - `toString` writing a literal "groups" fails only the new case's `Track` half, as predicted.
+     - `registration/1` declaring `Track` fails five cases: the profile case, the golden, the new
+       case and the same two note checks.
+
+     Each restored source was touched a second later, and its object checked to be newer, before
+     the green run was believed.
 4. **Targetless calibration + graph fallback.** Add targetless intrinsics/distortion estimation only
    after the shared feature-track evidence and validation path can meet the report contract. Then
    expose the graph method input and ordered board-then-targetless fallback, retaining every attempted

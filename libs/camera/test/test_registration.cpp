@@ -57,6 +57,11 @@ namespace
 		return std::get<BoardRecord>(report.reproducibility.method);
 	}
 
+	const BoardDiagnostics& boardDiagnostics(const Report& report)
+	{
+		return std::get<BoardDiagnostics>(report.diagnostics.method);
+	}
+
 	bool failedWith(const Report& report, Failure failure)
 	{
 		return report.status == RegistrationStatus::Failed && report.cameras.empty() && !report.failures.empty() &&
@@ -118,16 +123,17 @@ TEST_CASE("a rig that saw the board together registers exactly, Ready", "[camera
 	CHECK(report.referenceFromCamera(capture::CameraIdentity{"cam00"})->translation() == math::Vec3d{0.0});
 
 	const Diagnostics& d = report.diagnostics;
-	CHECK(d.groupsExamined == 24);
-	CHECK(d.groupsUsable == 24);
-	CHECK(d.observations == 96);
-	CHECK(d.observationsWithoutPose == 0);
+	const BoardDiagnostics& board = boardDiagnostics(report);
+	CHECK(board.groupsExamined == 24);
+	CHECK(board.groupsUsable == 24);
+	CHECK(board.observations == 96);
+	CHECK(board.withoutPose == 0);
 	CHECK(d.edges.size() == 6);
 	CHECK(d.components.size() == 1);
 	CHECK(d.weakBridges.empty());
-	CHECK(d.flips.empty());
+	CHECK(board.flips.empty());
 	CHECK(d.outliers.empty());
-	CHECK(d.heldOutGroups.size() == 5); // every fifth of 24, from the third
+	CHECK(d.heldOutUnits.size() == 5); // every fifth of 24, from the third
 	CHECK(d.medianDepth > 0.9);
 	CHECK(d.medianDepth < 1.1);
 	REQUIRE(d.refinement.has_value());
@@ -135,19 +141,19 @@ TEST_CASE("a rig that saw the board together registers exactly, Ready", "[camera
 	REQUIRE(d.cameras.size() == 4);
 	for (const CameraEvidence& c : d.cameras)
 	{
-		CHECK(c.groups == 19);
+		CHECK(c.shared == 19);
 		CHECK(c.applicability == Applicability::Unknown);
 		CHECK(c.outliers == 0);
 		CHECK(c.rmsPixels < 1e-6);
 	}
-	REQUIRE(d.detections.size() == 24);
-	CHECK(std::is_sorted(d.detections.begin(), d.detections.end(),
+	REQUIRE(board.detections.size() == 24);
+	CHECK(std::is_sorted(board.detections.begin(), board.detections.end(),
 						 [](const GroupDetections& a, const GroupDetections& b)
 						 { return a.group < b.group; }));
 
 	const auto* held = std::get_if<HeldOutEvidence>(&report.heldOut);
 	REQUIRE(held != nullptr);
-	CHECK(held->groups == 5);
+	CHECK(held->units == 5);
 	CHECK(held->predictions == 20);
 	CHECK(held->unpredicted == 0);
 	CHECK(held->rmsAngle < 1e-9);
@@ -166,6 +172,18 @@ TEST_CASE("a rig that saw the board together registers exactly, Ready", "[camera
 	CHECK(report.reproducibility.sources ==
 		  std::vector<std::string>{"/rig/cam00", "/rig/cam01", "/rig/cam02", "/rig/cam03"});
 	CHECK(report.toString().find("Ready: 4 cameras relative to cam00, metric") == 0);
+}
+
+TEST_CASE("a registration report's words follow its profile's evidence unit", "[camera][registration]")
+{
+	rig::reset();
+	Report report = run();
+	REQUIRE(report.status == RegistrationStatus::Succeeded);
+	CHECK(report.toString().find("over 5 groups, 24 of 24 groups usable") != std::string::npos);
+	// The same report read as if its profile counted tracks: the held-out count is in the profile's
+	// unit, while "groups usable" is board registration's own clause.
+	report.thresholds.unit = EvidenceUnit::Track;
+	CHECK(report.toString().find("over 5 tracks, 24 of 24 groups usable") != std::string::npos);
 }
 
 TEST_CASE("a partially overlapping rig registers through a chain of bridges", "[camera][registration]")
@@ -202,12 +220,12 @@ TEST_CASE("a rig hanging from one shared group names its weak bridge", "[camera]
 	const GraphEdgeReport& bridge = report.diagnostics.weakBridges.front();
 	CHECK(bridge.a.value == "cam01");
 	CHECK(bridge.b.value == "cam02");
-	CHECK(bridge.sharedGroups == 1);
+	CHECK(bridge.shared == 1);
 	CHECK(report.verdict == Verdict::Rejected);
 	CHECK(std::any_of(report.fitnessNotes.begin(), report.fitnessNotes.end(), [](const std::string& note)
 					  { return note == "Exploratory: weak bridges: 1 under 2 shared groups (first: cam01-cam02, on 1)"; }));
 	// The one group holding the rig together is never held out, whatever the stride lands on.
-	const std::vector<std::string>& held = report.diagnostics.heldOutGroups;
+	const std::vector<std::string>& held = report.diagnostics.heldOutUnits;
 	CHECK(std::find(held.begin(), held.end(), groupIdentity(12)) == held.end());
 }
 
@@ -220,7 +238,7 @@ TEST_CASE("a capture group that alone joins two cameras is never held out", "[ca
 		rig::seenBy(g, g + 1, {g, g + 1});
 	const Report report = run();
 	requireTruth(report, 1e-9, 1e-9);
-	CHECK(report.diagnostics.heldOutGroups.empty());
+	CHECK(report.diagnostics.heldOutUnits.empty());
 	REQUIRE(std::holds_alternative<Unavailable>(report.heldOut));
 	CHECK(std::get<Unavailable>(report.heldOut).reason == "no capture groups were held out");
 }
@@ -259,11 +277,11 @@ TEST_CASE("a planar board's other pose, ranked first, is resolved by the other c
 		rig::scene().flipped.insert({3, g});
 	const Report report = run();
 	requireTruth(report, 1e-9, 1e-9);
-	const Diagnostics& d = report.diagnostics;
-	REQUIRE(d.flips.size() >= 15);
-	for (const FlipChoice& flip : d.flips)
+	const BoardDiagnostics& board = boardDiagnostics(report);
+	REQUIRE(board.flips.size() >= 15);
+	for (const FlipChoice& flip : board.flips)
 		CHECK(flip.camera.value == "cam03");
-	CHECK(d.outliers.empty());
+	CHECK(report.diagnostics.outliers.empty());
 }
 
 TEST_CASE("a capture group whose frames disagree is outvoted, and its stray named", "[camera][registration]")
@@ -280,7 +298,7 @@ TEST_CASE("a capture group whose frames disagree is outvoted, and its stray name
 	requireTruth(report, 1e-9, 1e-9);
 	const Diagnostics& d = report.diagnostics;
 	REQUIRE(d.outliers.size() == 1);
-	CHECK(d.outliers[0].group == groupIdentity(5));
+	CHECK(d.outliers[0].unit == groupIdentity(5));
 	CHECK(d.outliers[0].camera.value == "cam02");
 	// The board moved 6 cm at 1 m, some 30 px at f = 500: measured at 66 standard deviations.
 	CHECK(d.outliers[0].rmsWhitened > 10 * request.loss.scale);
@@ -321,7 +339,7 @@ TEST_CASE("held-out groups validate and never reach the refinement", "[camera][r
 	request.resamples = 0;
 	const Report report = run(request);
 	REQUIRE(report.status == RegistrationStatus::Succeeded);
-	const std::size_t held = report.diagnostics.heldOutGroups.size();
+	const std::size_t held = report.diagnostics.heldOutUnits.size();
 	REQUIRE(held == 5);
 	std::size_t global = 0, single = 0;
 	for (const rig::RefinerScript::Asked& asked : rig::refinerScript().asked)
@@ -396,14 +414,14 @@ TEST_CASE("the same work in parallel, serially, or listed in another order gives
 			CHECK(other->cameras[i].referenceFromCamera.rotation() == a.cameras[i].referenceFromCamera.rotation());
 			CHECK(other->cameras[i].referenceFromCamera.translation() == a.cameras[i].referenceFromCamera.translation());
 		}
-		CHECK(other->diagnostics.heldOutGroups == a.diagnostics.heldOutGroups);
+		CHECK(other->diagnostics.heldOutUnits == a.diagnostics.heldOutUnits);
 		CHECK(std::get<HeldOutEvidence>(other->heldOut).rmsAngle == std::get<HeldOutEvidence>(a.heldOut).rmsAngle);
 		const auto& ra = std::get<ResamplingEvidence>(a.resampling);
 		const auto& rb = std::get<ResamplingEvidence>(other->resampling);
 		CHECK(rb.rotationVariation == ra.rotationVariation);
 		CHECK(rb.translationVariation == ra.translationVariation);
 		CHECK(rb.worstCamera == ra.worstCamera);
-		CHECK(other->diagnostics.flips.size() == a.diagnostics.flips.size());
+		CHECK(boardDiagnostics(*other).flips.size() == boardDiagnostics(a).flips.size());
 		CHECK(other->verdict == a.verdict);
 	}
 }
@@ -419,10 +437,10 @@ TEST_CASE("footage is detected member by member, then registered", "[camera][reg
 	REQUIRE(grouping.groups.size() == 20);
 	const Report report = method::registerCameras(footage, grouping.groups, specification(), unusualSearch(), Request{});
 	requireTruth(report, 1e-9, 1e-9);
-	CHECK(report.diagnostics.observations == 60);
+	CHECK(boardDiagnostics(report).observations == 60);
 
 	// The search reaches every frame's detection, and the record says what it was.
-	for (const GroupDetections& g : report.diagnostics.detections)
+	for (const GroupDetections& g : boardDiagnostics(report).detections)
 	{
 		for (const auto& member : g.members)
 			CHECK(isUnusualSearch(member.second.request));
@@ -438,7 +456,7 @@ TEST_CASE("footage is detected member by member, then registered", "[camera][reg
 		const Report refused = method::registerCameras(footage, groups, specification(), unusualSearch(), Request{});
 		REQUIRE(failedWith(refused, Failure::InvalidDataset));
 		CHECK(refused.failures.front().detail.find("frame 999 of /rig/cam00") != std::string::npos);
-		CHECK(refused.diagnostics.detections.empty());
+		CHECK(boardDiagnostics(refused).detections.empty());
 		// Nothing was searched, and the record still says what would have been.
 		REQUIRE(boardRecord(refused).detection.has_value());
 		CHECK(isUnusualSearch(*boardRecord(refused).detection));

@@ -8,6 +8,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <string>
+#include <variant>
 #include <vector>
 
 using namespace lain;
@@ -50,10 +52,10 @@ TEST_CASE("a fully connected rig has one component and no bridge", "[camera][reg
 	REQUIRE(graph.edges.size() == 3);
 	for (const GraphEdge& e : graph.edges)
 	{
-		CHECK(e.sharedGroups == 4);
+		CHECK(e.shared == 4);
 		CHECK_FALSE(e.bridge);
 	}
-	CHECK(graph.groupsPerCamera == std::vector<std::uint32_t>{4, 4, 4});
+	CHECK(graph.sharedPerCamera == std::vector<std::uint32_t>{4, 4, 4});
 	CHECK(weakBridges(graph, 100).empty());
 }
 
@@ -64,13 +66,13 @@ TEST_CASE("a partially overlapping rig is connected through a chain of bridges",
 		observationGraph(4, repeated({0, 1}, 6) + repeated({1, 2}, 3) + repeated({2, 3}, 8) + repeated({3}, 5));
 	REQUIRE(graph.components.size() == 1);
 	REQUIRE(graph.edges.size() == 3);
-	CHECK(edge(graph, 0, 1)->sharedGroups == 6);
-	CHECK(edge(graph, 1, 2)->sharedGroups == 3);
-	CHECK(edge(graph, 2, 3)->sharedGroups == 8);
+	CHECK(edge(graph, 0, 1)->shared == 6);
+	CHECK(edge(graph, 1, 2)->shared == 3);
+	CHECK(edge(graph, 2, 3)->shared == 8);
 	for (const GraphEdge& e : graph.edges)
 		CHECK(e.bridge);
 	// A group only camera 3 saw connects nothing and counts for nothing.
-	CHECK(graph.groupsPerCamera == std::vector<std::uint32_t>{6, 9, 11, 8});
+	CHECK(graph.sharedPerCamera == std::vector<std::uint32_t>{6, 9, 11, 8});
 
 	SECTION("the bridges below a threshold are weak")
 	{
@@ -100,7 +102,7 @@ TEST_CASE("a rig that never saw the board together falls apart into components",
 	CHECK(graph.components[0] == std::vector<std::uint32_t>{0, 1});
 	CHECK(graph.components[1] == std::vector<std::uint32_t>{2, 3});
 	CHECK(graph.components[2] == std::vector<std::uint32_t>{4});
-	CHECK(graph.groupsPerCamera[4] == 0);
+	CHECK(graph.sharedPerCamera[4] == 0);
 	// Each component's single edge is a bridge within it.
 	CHECK(edge(graph, 0, 1)->bridge);
 	CHECK(edge(graph, 2, 3)->bridge);
@@ -110,8 +112,8 @@ TEST_CASE("a camera listed twice in a group is one camera", "[camera][registrati
 {
 	const ObservationGraph graph = observationGraph(2, {{1, 0, 1}, {0, 0}});
 	REQUIRE(graph.edges.size() == 1);
-	CHECK(graph.edges[0].sharedGroups == 1);
-	CHECK(graph.groupsPerCamera == std::vector<std::uint32_t>{1, 1});
+	CHECK(graph.edges[0].shared == 1);
+	CHECK(graph.sharedPerCamera == std::vector<std::uint32_t>{1, 1});
 }
 
 TEST_CASE("bridges are found without recursion on a very long chain", "[camera][registration]")
@@ -137,23 +139,25 @@ TEST_CASE("registration/1 is known, and overrides change only its Ready tier", "
 	const std::optional<FitnessProfile> profile = fitnessProfile("registration/1");
 	REQUIRE(profile.has_value());
 	CHECK(profile->name == "registration/1");
+	CHECK(profile->unit == EvidenceUnit::CaptureGroup); // it counts capture groups
 	// Ready is stricter than Exploratory on every criterion.
-	CHECK(profile->ready.minimumGroupsPerCamera > profile->exploratory.minimumGroupsPerCamera);
-	CHECK(profile->ready.minimumBridgeGroups > profile->exploratory.minimumBridgeGroups);
+	CHECK(profile->ready.minimumSharedPerCamera > profile->exploratory.minimumSharedPerCamera);
+	CHECK(profile->ready.minimumBridgeShared > profile->exploratory.minimumBridgeShared);
 	CHECK(profile->ready.maximumHeldOutAngle < profile->exploratory.maximumHeldOutAngle);
 	CHECK(profile->ready.maximumRotationVariation < profile->exploratory.maximumRotationVariation);
 	CHECK(profile->ready.maximumTranslationVariation < profile->exploratory.maximumTranslationVariation);
 	CHECK(profile->ready.maximumOutlierFraction < profile->exploratory.maximumOutlierFraction);
 
 	FitnessOverrides overrides;
-	overrides.minimumBridgeGroups = 2;
+	overrides.minimumBridgeShared = 2;
 	overrides.maximumHeldOutAngle = 0.003;
 	const FitnessProfile resolved = resolve(*profile, overrides);
-	CHECK(resolved.ready.minimumBridgeGroups == 2);
+	CHECK(resolved.ready.minimumBridgeShared == 2);
 	CHECK(resolved.ready.maximumHeldOutAngle == 0.003);
-	CHECK(resolved.ready.minimumGroupsPerCamera == profile->ready.minimumGroupsPerCamera);
-	CHECK(resolved.exploratory.minimumBridgeGroups == profile->exploratory.minimumBridgeGroups);
+	CHECK(resolved.ready.minimumSharedPerCamera == profile->ready.minimumSharedPerCamera);
+	CHECK(resolved.exploratory.minimumBridgeShared == profile->exploratory.minimumBridgeShared);
 	CHECK(resolved.exploratory.maximumHeldOutAngle == profile->exploratory.maximumHeldOutAngle);
+	CHECK(resolved.unit == profile->unit);
 }
 
 TEST_CASE("a registration report reads its own result", "[camera][registration]")
@@ -176,8 +180,9 @@ TEST_CASE("a registration report reads its own result", "[camera][registration]"
 		const math::RigidTransformd moved{math::Quatd{1, 0, 0, 0}, math::Vec3d{0.5, 0, 0}};
 		report.cameras = {{camera::capture::CameraIdentity{"a"}, math::RigidTransformd{}},
 						  {camera::capture::CameraIdentity{"b"}, moved}};
-		report.diagnostics.groupsExamined = 12;
-		report.diagnostics.groupsUsable = 10;
+		BoardDiagnostics& board = std::get<BoardDiagnostics>(report.diagnostics.method);
+		board.groupsExamined = 12;
+		board.groupsUsable = 10;
 		report.fitnessNotes = {"held-out angle 2.1 mrad above 1 mrad"};
 		const std::optional<math::RigidTransformd> b = report.referenceFromCamera(camera::capture::CameraIdentity{"b"});
 		REQUIRE(b.has_value());

@@ -121,7 +121,7 @@ TEST_CASE("three cameras rendered, detected and refined register to their truth"
 	CHECK(record.detector.backend == "opencv");
 	CHECK(record.poseSolver.backend == "opencv");
 	CHECK(report.reproducibility.refiner.backend == "ceres");
-	CHECK(report.diagnostics.groupsUsable == kFrames);
+	CHECK(std::get<registration::BoardDiagnostics>(report.diagnostics.method).groupsUsable == kFrames);
 
 	// Measured: the worst camera 0.28 mrad and 0.15 mm from the truth, and a held-out transfer of
 	// 0.22 mrad, Ready.

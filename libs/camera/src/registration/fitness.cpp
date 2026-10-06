@@ -16,6 +16,7 @@ namespace lain::camera::registration
 	{
 		FitnessProfile p;
 		p.name = "registration/1";
+		p.unit = EvidenceUnit::CaptureGroup;
 		p.ready = {10, 5, 0.001, 0.001, 0.002, 0.02};
 		p.exploratory = {4, 2, 0.004, 0.005, 0.01, 0.1};
 		return p;
@@ -37,8 +38,8 @@ namespace lain::camera::registration
 	{
 		FitnessProfile out = profile;
 		FitnessThresholds& ready = out.ready;
-		ready.minimumGroupsPerCamera = overrides.minimumGroupsPerCamera.value_or(ready.minimumGroupsPerCamera);
-		ready.minimumBridgeGroups = overrides.minimumBridgeGroups.value_or(ready.minimumBridgeGroups);
+		ready.minimumSharedPerCamera = overrides.minimumSharedPerCamera.value_or(ready.minimumSharedPerCamera);
+		ready.minimumBridgeShared = overrides.minimumBridgeShared.value_or(ready.minimumBridgeShared);
 		ready.maximumHeldOutAngle = overrides.maximumHeldOutAngle.value_or(ready.maximumHeldOutAngle);
 		ready.maximumRotationVariation = overrides.maximumRotationVariation.value_or(ready.maximumRotationVariation);
 		ready.maximumTranslationVariation =

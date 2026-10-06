@@ -9,6 +9,10 @@
 //
 // When the text differs, the test writes what it produced beside the build and says where. To
 // accept a deliberate change, copy that file over the golden and commit it with the change.
+//
+// The labels are the golden's own, and some name fields that have since been renamed (sub-slice 3's
+// "groups" for units, "corners" for residuals, "metres" for the absolute translation variation):
+// they stay, so the text is byte-identical across the renames.
 
 #include "syntheticrig.h"
 
@@ -98,14 +102,14 @@ namespace
 
 	std::string thresholds(const FitnessThresholds& t)
 	{
-		return std::to_string(t.minimumGroupsPerCamera) + " " + std::to_string(t.minimumBridgeGroups) + " " +
+		return std::to_string(t.minimumSharedPerCamera) + " " + std::to_string(t.minimumBridgeShared) + " " +
 			   number(t.maximumHeldOutAngle) + " " + number(t.maximumRotationVariation) + " " +
 			   number(t.maximumTranslationVariation) + " " + number(t.maximumOutlierFraction);
 	}
 
 	std::string edge(const GraphEdgeReport& e)
 	{
-		return e.a.value + "-" + e.b.value + " shared " + std::to_string(e.sharedGroups) + " bridge " + std::to_string(e.bridge);
+		return e.a.value + "-" + e.b.value + " shared " + std::to_string(e.shared) + " bridge " + std::to_string(e.bridge);
 	}
 
 	// One detection, compactly: its outcome, and its corners as sums, which change if any corner does.
@@ -157,8 +161,8 @@ namespace
 
 		if (const auto* h = std::get_if<HeldOutEvidence>(&r.heldOut))
 		{
-			out << "heldOut groups " << h->groups << " predictions " << h->predictions << " unpredicted " << h->unpredicted
-				<< " corners " << h->corners << " rmsAngle " << number(h->rmsAngle) << " rmsPixels " << number(h->rmsPixels)
+			out << "heldOut groups " << h->units << " predictions " << h->predictions << " unpredicted " << h->unpredicted
+				<< " corners " << h->residuals << " rmsAngle " << number(h->rmsAngle) << " rmsPixels " << number(h->rmsPixels)
 				<< " worstPixels " << number(h->worstPixels) << "\n";
 			for (const auto& [camera, angle] : h->perCamera)
 				out << "heldOut camera " << camera.value << " " << number(angle) << "\n";
@@ -167,14 +171,15 @@ namespace
 			out << "heldOut unavailable: " << std::get<Unavailable>(r.heldOut).reason << "\n";
 		if (const auto* s = std::get_if<ResamplingEvidence>(&r.resampling))
 			out << "resampling " << s->resamples << " rotation " << number(s->rotationVariation) << " translation "
-				<< number(s->translationVariation) << " metres " << number(s->translationVariationMetres) << " worst "
+				<< number(s->translationVariation) << " metres " << number(s->translationVariationAbsolute) << " worst "
 				<< s->worstCamera.value << "\n";
 		else
 			out << "resampling unavailable: " << std::get<Unavailable>(r.resampling).reason << "\n";
 
 		const Diagnostics& d = r.diagnostics;
-		out << "diagnostics.groupsExamined " << d.groupsExamined << " groupsUsable " << d.groupsUsable << " observations "
-			<< d.observations << " observationsWithoutPose " << d.observationsWithoutPose << "\n";
+		const BoardDiagnostics& b = std::get<BoardDiagnostics>(d.method);
+		out << "diagnostics.groupsExamined " << b.groupsExamined << " groupsUsable " << b.groupsUsable << " observations "
+			<< b.observations << " observationsWithoutPose " << b.withoutPose << "\n";
 		for (const GraphEdgeReport& e : d.edges)
 			out << "edge " << edge(e) << "\n";
 		for (const auto& component : d.components)
@@ -192,49 +197,49 @@ namespace
 			for (const RegisteredCamera& c : estimate.cameras)
 				out << "componentEstimate camera " << c.camera.value << " " << transform(c.referenceFromCamera) << "\n";
 		}
-		for (const FlipChoice& f : d.flips)
+		for (const FlipChoice& f : b.flips)
 			out << "flip " << f.group.substr(0, 12) << " " << f.camera.value << "\n";
 		for (const Outlier& o : d.outliers)
-			out << "outlier " << o.group.substr(0, 12) << " " << o.camera.value << " " << number(o.rmsWhitened) << "\n";
+			out << "outlier " << o.unit.substr(0, 12) << " " << o.camera.value << " " << number(o.rmsWhitened) << "\n";
 		if (d.refinement)
 		{
 			const RefinementSummary& s = *d.refinement;
 			out << "refinement " << name(s.status) << " (" << s.detail << ") iterations " << s.iterations << " cost "
-				<< number(s.initialCost) << " -> " << number(s.finalCost) << " corners " << s.corners << " bodies "
+				<< number(s.initialCost) << " -> " << number(s.finalCost) << " corners " << s.residuals << " bodies "
 				<< s.bodies << " noise " << number(s.noise.pixelSigma) << " loss " << name(s.loss.family) << " "
 				<< number(s.loss.scale) << "\n";
 		}
 		else
 			out << "refinement none\n";
 		for (const CameraEvidence& c : d.cameras)
-			out << "cameraEvidence " << c.camera.value << " " << name(c.applicability) << " groups " << c.groups << " corners "
-				<< c.corners << " outliers " << c.outliers << " rmsPixels " << number(c.rmsPixels) << " rmsAngle "
+			out << "cameraEvidence " << c.camera.value << " " << name(c.applicability) << " groups " << c.shared << " corners "
+				<< c.residuals << " outliers " << c.outliers << " rmsPixels " << number(c.rmsPixels) << " rmsAngle "
 				<< number(c.rmsAngle) << "\n";
-		for (const std::string& g : d.heldOutGroups)
+		for (const std::string& g : d.heldOutUnits)
 			out << "heldOutGroup " << g.substr(0, 12) << "\n";
 		out << "medianDepth " << number(d.medianDepth) << "\n";
-		for (const GroupDetections& g : d.detections)
+		for (const GroupDetections& g : b.detections)
 		{
 			for (const auto& [camera, report] : g.members)
 				out << "detection " << g.group.substr(0, 12) << " " << camera.value << " " << detection(report) << "\n";
 		}
 
 		const Reproducibility& p = r.reproducibility;
-		const BoardRecord& b = std::get<BoardRecord>(p.method);
+		const BoardRecord& record = std::get<BoardRecord>(p.method);
 		for (const std::string& source : p.sources)
 			out << "source " << source << "\n";
-		out << "frames " << p.frames << " detector " << provenance(b.detector) << " poseSolver "
-			<< provenance(b.poseSolver) << " refiner " << provenance(p.refiner) << "\n";
+		out << "frames " << p.frames << " detector " << provenance(record.detector) << " poseSolver "
+			<< provenance(record.poseSolver) << " refiner " << provenance(p.refiner) << "\n";
 		const Request& q = p.request;
 		out << "request reference " << (q.reference ? q.reference->value : "unset") << " unknownApplicability "
 			<< name(q.unknownApplicability) << " noise " << number(q.noise.pixelSigma) << " loss " << name(q.loss.family)
 			<< " " << number(q.loss.scale) << " profile " << q.fitnessProfile << "\n";
 		const FitnessOverrides& o = q.overrides;
-		out << "request overrides " << optional(o.minimumGroupsPerCamera) << " " << optional(o.minimumBridgeGroups) << " "
+		out << "request overrides " << optional(o.minimumSharedPerCamera) << " " << optional(o.minimumBridgeShared) << " "
 			<< optional(o.maximumHeldOutAngle) << " " << optional(o.maximumRotationVariation) << " "
 			<< optional(o.maximumTranslationVariation) << " " << optional(o.maximumOutlierFraction) << "\n";
 		// Printed where it was when the request held it (sub-slice 2 moved it to the board record).
-		out << "request detection " << (b.detection ? detectionRequest(*b.detection) : "unset") << "\n";
+		out << "request detection " << (record.detection ? detectionRequest(*record.detection) : "unset") << "\n";
 		out << "request heldOutFraction " << number(q.heldOutFraction) << " resamples " << q.resamples << " seed " << q.seed
 			<< " maximumIterations " << q.maximumIterations << " execution " << name(q.execution) << "\n";
 		return out.str();
@@ -266,7 +271,7 @@ namespace
 			rig::scene().flipped.insert({3, g});
 		Request flipped;
 		flipped.reference = capture::CameraIdentity{"cam02"};
-		flipped.overrides.minimumGroupsPerCamera = 30;
+		flipped.overrides.minimumSharedPerCamera = 30;
 		text += run("flipped", flipped);
 
 		// A frame from another instant, with measured covariance reported and Huber's loss.

@@ -67,14 +67,14 @@ namespace lain::camera::registration
 		}
 	}
 
-	ObservationGraph observationGraph(std::uint32_t cameras, const std::vector<std::vector<std::uint32_t>>& groups)
+	ObservationGraph observationGraph(std::uint32_t cameras, const std::vector<std::vector<std::uint32_t>>& units)
 	{
 		ObservationGraph graph;
 		graph.cameras = cameras;
-		graph.groupsPerCamera.assign(cameras, 0);
+		graph.sharedPerCamera.assign(cameras, 0);
 
 		std::map<std::pair<std::uint32_t, std::uint32_t>, std::uint32_t> shared;
-		for (std::vector<std::uint32_t> members : groups)
+		for (std::vector<std::uint32_t> members : units)
 		{
 			std::sort(members.begin(), members.end());
 			members.erase(std::unique(members.begin(), members.end()), members.end());
@@ -82,7 +82,7 @@ namespace lain::camera::registration
 				continue;
 			for (std::size_t i = 0; i < members.size(); ++i)
 			{
-				++graph.groupsPerCamera[members[i]];
+				++graph.sharedPerCamera[members[i]];
 				for (std::size_t j = i + 1; j < members.size(); ++j)
 					++shared[{members[i], members[j]}];
 			}
@@ -107,12 +107,12 @@ namespace lain::camera::registration
 		return graph;
 	}
 
-	std::vector<GraphEdge> weakBridges(const ObservationGraph& graph, std::uint32_t minimumSharedGroups)
+	std::vector<GraphEdge> weakBridges(const ObservationGraph& graph, std::uint32_t minimumShared)
 	{
 		std::vector<GraphEdge> out;
 		for (const GraphEdge& e : graph.edges)
 		{
-			if (e.bridge && e.sharedGroups < minimumSharedGroups)
+			if (e.bridge && e.shared < minimumShared)
 				out.push_back(e);
 		}
 		return out;

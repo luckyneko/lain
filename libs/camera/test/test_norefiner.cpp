@@ -7,6 +7,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <variant>
+
 using namespace lain;
 using namespace lain::camera;
 using namespace lain::camera::testing;
@@ -26,5 +28,5 @@ TEST_CASE("with a pose solver and no refiner, a registration fails for want of t
 	REQUIRE(report.status == registration::RegistrationStatus::Failed);
 	CHECK(report.failures.front().failure == registration::Failure::NoRefiner);
 	CHECK(report.failures.front().detail.find("-DLAIN_CAMERA_CERES=ON") != std::string::npos);
-	CHECK(report.diagnostics.observations == 0); // refused before a single pose was solved
+	CHECK(std::get<registration::BoardDiagnostics>(report.diagnostics.method).observations == 0); // refused before a single pose was solved
 }

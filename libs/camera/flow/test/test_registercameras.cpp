@@ -99,7 +99,7 @@ TEST_CASE("registerCameras pairs footage with models and names each camera by it
 	CHECK(report.cameras[0].camera.value == "/rig/cam00");
 	CHECK(report.cameras[1].camera.value == "/rig/cam01");
 	CHECK(report.cameras[2].camera.value == "/rig/cam02");
-	CHECK(report.diagnostics.groupsExamined == 20); // frame k of every camera, group k
+	CHECK(std::get<camera::registration::BoardDiagnostics>(report.diagnostics.method).groupsExamined == 20); // frame k of every camera, group k
 	CHECK(report.reference->value == "/rig/cam00");
 }
 

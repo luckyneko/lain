@@ -16,6 +16,7 @@
 
 #include <cmath>
 #include <string>
+#include <variant>
 
 using namespace lain;
 using namespace lain::camera;
@@ -340,7 +341,7 @@ TEST_CASE("a view from another instant is absorbed by the robust loss and named"
 		CHECK(worstError(report).first < 0.0015);
 		REQUIRE(report.diagnostics.outliers.size() == 1);
 		CHECK(report.diagnostics.outliers[0].camera.value == "cam02");
-		CHECK(report.diagnostics.outliers[0].group == rig::group(5).identity());
+		CHECK(report.diagnostics.outliers[0].unit == rig::group(5).identity());
 	}
 	SECTION("with no robust loss it drags the rig")
 	{
@@ -366,7 +367,7 @@ TEST_CASE("corners with a measured covariance are weighted by it", "[camera][cer
 	REQUIRE(weighted.diagnostics.refinement.has_value());
 	const RefinementSummary& summary = *weighted.diagnostics.refinement;
 	// 0.5 r^T C^-1 r summed is about half the residual dimensions less the unknowns: measured 0.998 of it.
-	const double dimensions = 2.0 * double(summary.corners) - 6.0 * double(3 + summary.bodies);
+	const double dimensions = 2.0 * double(summary.residuals) - 6.0 * double(3 + summary.bodies);
 	CHECK_THAT(summary.finalCost, WithinRel(0.5 * dimensions, 0.15));
 	CHECK(weighted.diagnostics.outliers.empty());
 
@@ -427,7 +428,7 @@ TEST_CASE("a rig of 100 cameras and 4000 capture groups registers", "[camera][ce
 	// Measured on linux-x86_64, four cores, Release: 19.7 s in all, 16.1 s of it the refinement (9
 	// iterations over 768,000 corners), 663 MB at peak. The worst camera 0.94 mrad and 1.3 mm out;
 	// held-out transfer 0.81 mrad over 800 groups.
-	CHECK(report.diagnostics.groupsUsable == kGroups);
+	CHECK(std::get<BoardDiagnostics>(report.diagnostics.method).groupsUsable == kGroups);
 	REQUIRE(report.diagnostics.refinement.has_value());
 	CHECK(report.diagnostics.refinement->status == RefinementStatus::Converged);
 	const auto [rotation, translation] = worstError(report);
@@ -435,6 +436,6 @@ TEST_CASE("a rig of 100 cameras and 4000 capture groups registers", "[camera][ce
 	CHECK(translation < 0.003);
 	const auto* held = std::get_if<HeldOutEvidence>(&report.heldOut);
 	REQUIRE(held != nullptr);
-	CHECK(held->groups == kGroups / 5);
+	CHECK(held->units == kGroups / 5);
 	CHECK(held->rmsAngle < 0.0015);
 }

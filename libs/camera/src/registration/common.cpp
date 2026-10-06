@@ -43,6 +43,18 @@ namespace lain::camera::registration::detail
 		return x;
 	}
 
+	std::string_view unitsWord(EvidenceUnit unit)
+	{
+		switch (unit)
+		{
+			case EvidenceUnit::CaptureGroup:
+				return "groups";
+			case EvidenceUnit::Track:
+				return "tracks";
+		}
+		return "units";
+	}
+
 	Report failed(Report report, core::Time start, Failure failure, std::string detail)
 	{
 		report.status = RegistrationStatus::Failed;
@@ -154,28 +166,29 @@ namespace lain::camera::registration::detail
 			ok = false;
 		};
 		const Diagnostics& d = report.diagnostics;
+		const std::string_view units = unitsWord(report.thresholds.unit);
 
 		std::uint32_t fewest = std::numeric_limits<std::uint32_t>::max(), short_ = 0;
 		const CameraEvidence* weakest = nullptr;
 		for (const CameraEvidence& c : d.cameras)
 		{
-			if (c.groups < t.minimumGroupsPerCamera)
+			if (c.shared < t.minimumSharedPerCamera)
 				++short_;
-			if (c.groups < fewest)
+			if (c.shared < fewest)
 			{
-				fewest = c.groups;
+				fewest = c.shared;
 				weakest = &c;
 			}
 		}
 		if (short_ > 0 && weakest)
-			note(lain::string::format("{} of {} cameras in fewer than {} shared groups (fewest: {}, in {})", short_,
-									  d.cameras.size(), t.minimumGroupsPerCamera, weakest->camera.value, fewest));
+			note(lain::string::format("{} of {} cameras in fewer than {} shared {} (fewest: {}, in {})", short_,
+									  d.cameras.size(), t.minimumSharedPerCamera, units, weakest->camera.value, fewest));
 
-		const std::vector<GraphEdge> weak = weakBridges(graph, t.minimumBridgeGroups);
+		const std::vector<GraphEdge> weak = weakBridges(graph, t.minimumBridgeShared);
 		if (!weak.empty())
-			note(lain::string::format("weak bridges: {} under {} shared groups (first: {}-{}, on {})", weak.size(),
-									  t.minimumBridgeGroups, d.cameras[weak[0].a].camera.value,
-									  d.cameras[weak[0].b].camera.value, weak[0].sharedGroups));
+			note(lain::string::format("weak bridges: {} under {} shared {} (first: {}-{}, on {})", weak.size(),
+									  t.minimumBridgeShared, units, d.cameras[weak[0].a].camera.value,
+									  d.cameras[weak[0].b].camera.value, weak[0].shared));
 
 		if (const auto* e = std::get_if<HeldOutEvidence>(&report.heldOut))
 		{

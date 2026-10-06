@@ -171,7 +171,7 @@ namespace lain::camera::registration::board
 		std::vector<std::size_t> order(graph.edges.size());
 		std::iota(order.begin(), order.end(), std::size_t{0});
 		std::stable_sort(order.begin(), order.end(), [&](std::size_t x, std::size_t y)
-						 { return graph.edges[x].sharedGroups > graph.edges[y].sharedGroups; });
+						 { return graph.edges[x].shared > graph.edges[y].shared; });
 		std::vector<std::uint32_t> parent(n);
 		std::iota(parent.begin(), parent.end(), 0u);
 		std::map<std::pair<std::uint32_t, std::uint32_t>, std::vector<std::uint32_t>> tree; // edge -> its shared groups
@@ -469,8 +469,9 @@ namespace lain::camera::registration::board
 		const std::size_t groupCount = data.groups.size();
 		Diagnostics& diagnostics = report.diagnostics;
 		Reproducibility& reproducibility = report.reproducibility;
-		BoardRecord& method = std::get<BoardRecord>(reproducibility.method);
-		diagnostics.groupsExamined = std::uint32_t(groupCount);
+		BoardRecord& boardRecord = std::get<BoardRecord>(reproducibility.method);
+		BoardDiagnostics& boardDiagnostics = std::get<BoardDiagnostics>(diagnostics.method);
+		boardDiagnostics.groupsExamined = std::uint32_t(groupCount);
 
 		// The record: every source, every detection, in canonical order.
 		std::set<std::string> sources;
@@ -485,12 +486,12 @@ namespace lain::camera::registration::board
 				sources.insert(group.group.members()[m].frame.source.toString());
 				++reproducibility.frames;
 				record.members.push_back({group.group.members()[m].camera, group.detections[m]});
-				if (method.detector.backend.empty())
-					method.detector = group.detections[m].provenance;
-				if (!method.detection)
-					method.detection = group.detections[m].request;
+				if (boardRecord.detector.backend.empty())
+					boardRecord.detector = group.detections[m].provenance;
+				if (!boardRecord.detection)
+					boardRecord.detection = group.detections[m].request;
 			}
-			diagnostics.detections.push_back(std::move(record));
+			boardDiagnostics.detections.push_back(std::move(record));
 		}
 		reproducibility.sources.assign(sources.begin(), sources.end());
 
@@ -509,7 +510,7 @@ namespace lain::camera::registration::board
 					slots.push_back({g, m});
 			}
 		}
-		diagnostics.observations = std::uint32_t(slots.size());
+		boardDiagnostics.observations = std::uint32_t(slots.size());
 		std::vector<std::optional<Posed>> posedSlots(slots.size());
 		std::vector<Provenance> solverOf(slots.size());
 		detail::forEach(slots.size(), request.execution,
@@ -547,11 +548,11 @@ namespace lain::camera::registration::board
 		evidence.byGroup.assign(groupCount, {});
 		for (std::size_t i = 0; i < slots.size(); ++i)
 		{
-			if (method.poseSolver.backend.empty())
-				method.poseSolver = solverOf[i];
+			if (boardRecord.poseSolver.backend.empty())
+				boardRecord.poseSolver = solverOf[i];
 			if (!posedSlots[i])
 			{
-				++diagnostics.observationsWithoutPose;
+				++boardDiagnostics.withoutPose;
 				continue;
 			}
 			evidence.byGroup[posedSlots[i]->group].push_back(std::uint32_t(evidence.posed.size()));
@@ -566,7 +567,7 @@ namespace lain::camera::registration::board
 			if (evidence.byGroup[g].size() >= 2)
 				usableGroups.push_back(g);
 		}
-		diagnostics.groupsUsable = std::uint32_t(usableGroups.size());
+		boardDiagnostics.groupsUsable = std::uint32_t(usableGroups.size());
 		if (usableGroups.empty())
 			return failed(std::move(report), start, Failure::TooFewCameras,
 						  "no capture group has the board posed in two or more cameras");
@@ -580,7 +581,7 @@ namespace lain::camera::registration::board
 			if (!held[i])
 				continue;
 			heldOut[usableGroups[i]] = true;
-			diagnostics.heldOutGroups.push_back(data.groups[usableGroups[i]]->group.identity());
+			diagnostics.heldOutUnits.push_back(data.groups[usableGroups[i]]->group.identity());
 		}
 		std::vector<std::uint32_t> fitting, validating;
 		for (const std::uint32_t g : usableGroups)
@@ -589,10 +590,10 @@ namespace lain::camera::registration::board
 		// 3. The camera observation graph over the fitting groups.
 		const ObservationGraph graph = observationGraph(std::uint32_t(cameraCount), camerasOf(evidence, fitting));
 		const auto edgeReport = [&](const GraphEdge& e)
-		{ return GraphEdgeReport{data.cameras[e.a].camera, data.cameras[e.b].camera, e.sharedGroups, e.bridge}; };
+		{ return GraphEdgeReport{data.cameras[e.a].camera, data.cameras[e.b].camera, e.shared, e.bridge}; };
 		for (const GraphEdge& e : graph.edges)
 			diagnostics.edges.push_back(edgeReport(e));
-		for (const GraphEdge& e : weakBridges(graph, report.thresholds.ready.minimumBridgeGroups))
+		for (const GraphEdge& e : weakBridges(graph, report.thresholds.ready.minimumBridgeShared))
 			diagnostics.weakBridges.push_back(edgeReport(e));
 		for (const std::vector<std::uint32_t>& component : graph.components)
 		{
@@ -606,7 +607,7 @@ namespace lain::camera::registration::board
 			CameraEvidence camera;
 			camera.camera = data.cameras[c].camera;
 			camera.applicability = data.applicability[c];
-			camera.groups = graph.groupsPerCamera[c];
+			camera.shared = graph.sharedPerCamera[c];
 			diagnostics.cameras.push_back(std::move(camera));
 		}
 
@@ -648,7 +649,7 @@ namespace lain::camera::registration::board
 			}
 			report.referenceRequested = true;
 		}
-		const std::uint32_t reference = detail::chooseReference(graph.groupsPerCamera, requested);
+		const std::uint32_t reference = detail::chooseReference(graph.sharedPerCamera, requested);
 		report.reference = data.cameras[reference].camera;
 
 		// 5. Initialisation.
@@ -673,7 +674,7 @@ namespace lain::camera::registration::board
 		summary.iterations = solution.iterations;
 		summary.initialCost = solution.initialCost;
 		summary.finalCost = solution.finalCost;
-		summary.corners = std::uint32_t(problem.observations.size());
+		summary.residuals = std::uint32_t(problem.observations.size());
 		summary.bodies = std::uint32_t(problem.referenceFromBody.size());
 		summary.elapsed = solution.elapsed;
 		summary.noise = request.noise;
@@ -747,7 +748,7 @@ namespace lain::camera::registration::board
 					sumAngles[p.camera] += angle * angle;
 				}
 				CameraEvidence& camera = diagnostics.cameras[p.camera];
-				camera.corners += corners;
+				camera.residuals += corners;
 				const double rmsWhitened =
 					unprojectable || corners == 0 ? std::numeric_limits<double>::infinity() : std::sqrt(whitened / corners);
 				if (rmsWhitened > request.loss.scale)
@@ -759,16 +760,16 @@ namespace lain::camera::registration::board
 
 				// A planar board's second pose, chosen: the result agrees with it rather than the first.
 				if (p.poses.size() == 2 && rotationBetween(cameraFromBoard, p.poses[1]) < rotationBetween(cameraFromBoard, p.poses[0]))
-					diagnostics.flips.push_back({data.groups[g]->group.identity(), camera.camera});
+					boardDiagnostics.flips.push_back({data.groups[g]->group.identity(), camera.camera});
 			}
 		}
 		for (std::size_t c = 0; c < cameraCount; ++c)
 		{
 			CameraEvidence& camera = diagnostics.cameras[c];
-			if (camera.corners > 0)
+			if (camera.residuals > 0)
 			{
-				camera.rmsPixels = std::sqrt(sumPixels[c] / camera.corners);
-				camera.rmsAngle = std::sqrt(sumAngles[c] / camera.corners);
+				camera.rmsPixels = std::sqrt(sumPixels[c] / camera.residuals);
+				camera.rmsAngle = std::sqrt(sumAngles[c] / camera.residuals);
 			}
 		}
 		diagnostics.medianDepth = median(depths);
@@ -839,7 +840,7 @@ namespace lain::camera::registration::board
 							});
 
 			HeldOutEvidence held;
-			held.groups = std::uint32_t(validating.size());
+			held.units = std::uint32_t(validating.size());
 			std::vector<double> cameraAngles(cameraCount, 0);
 			std::vector<std::uint32_t> cameraCorners(cameraCount, 0);
 			double angles = 0, pixels = 0;
@@ -851,19 +852,19 @@ namespace lain::camera::registration::board
 					continue;
 				}
 				++held.predictions;
-				held.corners += p.residual.corners;
+				held.residuals += p.residual.corners;
 				angles += p.residual.sumSquaredAngle;
 				pixels += p.residual.sumSquaredPixels;
 				held.worstPixels = std::max(held.worstPixels, p.residual.worstPixels);
 				cameraAngles[p.camera] += p.residual.sumSquaredAngle;
 				cameraCorners[p.camera] += p.residual.corners;
 			}
-			if (held.corners == 0)
+			if (held.residuals == 0)
 				report.heldOut = Unavailable{"no held-out member could be predicted from the others"};
 			else
 			{
-				held.rmsAngle = std::sqrt(angles / held.corners);
-				held.rmsPixels = std::sqrt(pixels / held.corners);
+				held.rmsAngle = std::sqrt(angles / held.residuals);
+				held.rmsPixels = std::sqrt(pixels / held.residuals);
 				for (std::size_t c = 0; c < cameraCount; ++c)
 				{
 					if (cameraCorners[c] > 0)
@@ -918,10 +919,10 @@ namespace lain::camera::registration::board
 						evidenceOut.rotationVariation = r;
 						evidenceOut.worstCamera = data.cameras[c].camera;
 					}
-					evidenceOut.translationVariationMetres = std::max(evidenceOut.translationVariationMetres, t);
+					evidenceOut.translationVariationAbsolute = std::max(evidenceOut.translationVariationAbsolute, t);
 				}
 				evidenceOut.translationVariation = diagnostics.medianDepth > 0
-													   ? evidenceOut.translationVariationMetres / diagnostics.medianDepth
+													   ? evidenceOut.translationVariationAbsolute / diagnostics.medianDepth
 													   : std::numeric_limits<double>::infinity();
 				if (evidenceOut.worstCamera.empty())
 					evidenceOut.worstCamera = data.cameras[reference].camera;

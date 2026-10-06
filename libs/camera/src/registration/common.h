@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // What every registration method module decides the same way: private to lain::camera, so board and
@@ -33,6 +34,9 @@ namespace lain::camera::registration::detail
 
 	// The root of `x` in a union-find forest, halving the path on the way.
 	std::uint32_t root(std::vector<std::uint32_t>& parent, std::uint32_t x);
+
+	// How a person reads a count of `unit`s, plural: "groups", "tracks".
+	std::string_view unitsWord(EvidenceUnit unit);
 
 	// A report that has failed, timed from `start`.
 	Report failed(Report report, core::Time start, Failure failure, std::string detail);
