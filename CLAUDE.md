@@ -1354,6 +1354,45 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-06 — M9 slice 3, sub-slice 7: the OpenCV feature producer
+
+The three feature seams get a real backend: SIFT, a matcher with both searches, and a geometry
+solver in `plugins/camera/opencv`, tested on scenes a new plain C++ renderer draws, so every match
+and pose is judged against the truth. `ctest -j8` **1163/1163** Debug and **1171/1171** Release with
+video, camera and Ceres on, **1077/1077** with all three off (+8 each on); warning-clean,
+format-check clean. Full notes, every measurement and the recommendations in WORK.md's *Sub-slice 7
+built* under M9 slice 3.
+
+- **Decided with the repo owner:** FLANN's index build runs under a mutex, since it draws from the
+  process-global `std::rand`; and the defaults stay as they are, with the numbers recorded for the
+  repo owner to decide on. Any change is its own commit.
+- **Found by measuring: OpenCV's USAC wants pixel-scale coordinates.**
+  - On normalised rays with an identity camera, MAGSAC++ proposed essential matrices 0.6 to 15 mrad
+    out across 20 seeds; as pixels of a virtual pinhole of focal 1000, 0.25 to 0.47 mrad on every
+    seed.
+  - Lain's own inlier count could not tell them apart (318 either way at 0.004 rad), so a
+    20-seed sweep against the truth is what pins it.
+- **Found by measuring: exact matching is 3.9 times faster over float descriptors**, with answers
+  identical over 243,798 neighbours, since every partial sum of squared byte differences fits a
+  float exactly.
+- **The numbers for the provisional defaults:**
+  - Exact takes 3.7 s per pair at 8192 features, so a 100-camera rig whose every pair overlaps
+    costs 6.1 core-hours. Approximate takes 0.37 s with 96.7% of the matches. The plan's estimate
+    was 1.5 core-hours.
+  - A search at 1920 px peaks at 489 MB per frame, from SIFT's doubled first octave.
+  - SIFT localises to 3.4% of a keypoint's size, so the fixed σ of 0.7 px is three times too loose
+    for the commonest features.
+  - Collapsing duplicate orientations before matching loses a fifth of the correct matches.
+- **Recommended, not done:** keep Exact and 1920 px; make σ proportional to keypoint size; collapse
+  duplicates after matching; halve Exact by answering both directions from one distance matrix.
+- **The renderer took nine tenths of a Debug render in GLM calls.** Plain arithmetic made it 2.5
+  times faster with byte-identical frames, and `RenderedSource` keeps what it draws. The footage
+  case went from 70 s to 28 s in Debug.
+- **Six sabotages, four caught.** `isParallel = true` and the FLANN mutex removed are not caught,
+  as predicted: OpenCV's pool is at one thread, and glibc's `rand()` takes a lock.
+- **A stale `LastTestsFailed.log` from an old configure** made `ctest --rerun-failed` "rerun" two
+  placeholder targets. Read failures from the run itself, not from that file.
+
 ### Update 2026-10-06 — M9 slice 3, sub-slice 6: track extraction, `feature::extractTracks`
 
 Footage and capture groups in, accepted static feature tracks and a report out, through sub-slice

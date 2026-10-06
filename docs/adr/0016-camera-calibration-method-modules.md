@@ -338,6 +338,20 @@ repo owner while planning M9 slice 3.)*
   - **A pair whose parallax is below the inlier angle is a point at infinity.** It is an inlier
     when its rays agree under the candidate's rotation, so distant static background survives
     verification while near points still decide the direction of the baseline.
+  *Built in M9 slice 3, sub-slice 7 (the OpenCV producer, `plugins/camera/opencv`):*
+  - **SIFT, a matcher with both searches, and a geometry solver**, registered as "opencv". Each
+    proposes; none applies a test lain's facades apply.
+  - **OpenCV is handed rays as pixels of a virtual pinhole of focal length 1000**, and the inlier
+    angle in its pixels. On normalised coordinates with an identity camera, USAC's MAGSAC++
+    proposed essential matrices 0.6 to 15 mrad out across 20 seeds; at pixel scale, 0.25 to
+    0.47 mrad on every seed.
+  - **A ray more than 80° off the axis is left out of what OpenCV proposes from**, and only that.
+    Lain's measurement still sees every pair.
+  - **Every proposal is serial and seeded.** USAC runs with `isParallel = false`, OpenCV's own pool
+    at one thread, and the grid neighbourhood rather than FLANN's, so the same input proposes the
+    same candidates on any worker.
+  - **An Approximate search builds its FLANN index under a mutex**, since the build draws from the
+    process-global `std::rand` and lain matches pairs in parallel. Searches stay parallel.
 - **A feature track is a static landmark across the whole capture.** Every camera samples the same
   few capture groups. A feature that stays at the same pixel across a fixed camera's sampled frames
   is a **static feature**; a transient one is moving content and is dropped before matching. Each

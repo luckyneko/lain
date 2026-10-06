@@ -3759,6 +3759,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      features, so a 100-camera rig whose every pair overlaps would be about 1.5 core-hours.
      Sub-slice 7 builds both and times them per pair, measures Approximate's recall against Exact,
      and extrapolates the 100-camera cost. Those numbers are the trigger to revisit the default.
+     *(Measured in sub-slice 7: 3.7 s per pair at 8192 features, so 6.1 core-hours for that rig;
+     Approximate 0.37 s with 96.7% of Exact's matches. The default is unchanged pending the repo
+     owner's decision; see sub-slice 7's notes.)*
 
    Taken by precedent, or found by the design review, and recorded in the same amendments:
    - **Producers propose; lain decides** (ADR-0016 amended). Backends return candidate features,
@@ -3944,6 +3947,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         longest side defaults to 1600.
       - Sabotages: the ±0.5 centre mapping dropped; `isParallel = true`; Approximate accepted under
         `DeterministicDebug`.
+      **Built 2026-10-06**, below, with OpenCV handed a virtual pinhole of focal 1000 rather than
+      normalised rays, the descriptors searched as floats, and the defaults left for the repo owner
+      to decide on the measurements.
    8. **`registration::targetless`.**
       - `registerCameras(rig, const feature::TrackSet&, const Request&)`, a footage overload taking
         a `feature::ExtractionRequest`, and the public `registration::validate(rig, report,
@@ -4337,7 +4343,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        - `min(samples, groups)` are taken at the bin centres `⌊(2i+1)·n / 2k⌋`, so 5 of 9 is
          {0, 2, 4, 6, 8} and 3 of 9 is {1, 4, 7}, whatever order the groups were handed in.
      - **Each observation carries `(σ / scale)²`**, isotropic, in source px, with σ =
-       `localisation` in processed px (0.7, provisional until sub-slice 7 measures SIFT). Cameras
+       `localisation` in processed px (0.7, provisional until sub-slice 7 measures SIFT; *it
+       measured localisation proportional to keypoint size, see sub-slice 7*). Cameras
        of different resolutions are searched at different scales, and the refiner's noise model is
        one value.
      - **`RigCamera` / `RigFootage` moved down to `lain/camera/rig.h`**, with using-declarations
@@ -4348,7 +4355,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      - It collapses SIFT's duplicate orientations, which share a pixel and a size bit for bit.
      - It also makes a track's identity unique by construction, since a cell holds one feature of a
        view and a feature belongs to one track.
-     - What the angle tie-break costs in recall on real SIFT is sub-slice 7's to measure.
+     - What the angle tie-break costs in recall on real SIFT is sub-slice 7's to measure. *(It
+       measured a fifth of the correct matches lost; see sub-slice 7.)*
    - **A track's identity** is SHA-256 over `lain feature track 1`, then each observation's
      length-prefixed camera and its pixel on the 1/64 grid as integers, as a capture group's
      identity is spelled. Tracks sort by it.
@@ -4366,7 +4374,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        (COLMAP's two-view minimum), and a pre-screen of 512 features needing 5 matches.
    - **Cost to watch:** consolidation is K(K−1)/2 matches per camera, 10 at the default 5 samples.
      If sub-slice 7 measures them dominating extraction, match each frame with its neighbours in
-     capture order only.
+     capture order only. *(They do not: a consolidation match costs a pair match, so for 100
+     cameras it is 1000 matches beside 4950, a sixth of the matching.)*
    - **Stand-ins** (`libs/camera/test/syntheticscene.h`):
      - **The scene:** cameras on an arc and landmarks with per-camera descriptor numbers, motion,
        occlusion and duplication.
@@ -4396,6 +4405,140 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        matches tie and the ratio test refuses a tie.
      - **Approximate accepted under DeterministicDebug:** the refusal case fails.
      - **The pre-screen ignored:** the pre-screen case fails.
+
+     Each restored source was touched a second later, and its object checked to be newer, before
+     the green run was believed.
+
+   **Sub-slice 7 built (2026-10-06): the OpenCV feature producer.**
+   - **What it is.** `plugins/camera/opencv` fills the three feature seams, registered as "opencv":
+     - `SiftExtractor`: `cv::SIFT` with Lowe's parameters, CV_8U 128-byte descriptors of kind
+       "sift", and precise upscaling;
+     - `OpenCVMatcher`: both searches, Exact by `BFMatcher` and Approximate by FLANN's KD-trees;
+     - `OpenCVGeometrySolver`: USAC MAGSAC++ for an essential matrix with all four decompositions
+       of each, and USAC PnP plus an LM refinement on its inliers, both returned.
+
+     Each proposes; lain's facades test and measure. The image preparation moved out of
+     `charucodetector.cpp` into `imageprep.{h,cpp}` first, unchanged, and the ChArUco tests pass
+     unchanged.
+   - **Decided with the repo owner:**
+     - **FLANN's index build runs under a mutex.** It draws from the process-global `std::rand`,
+       and lain matches pairs in parallel. Searches stay parallel.
+     - **Measure and record; the defaults stay.** Exact, `LongestSide{1920}`, σ = 0.7 and the
+       uncapped `forEach` are unchanged here. The recommendations are at the end of these notes,
+       and any change is its own small commit.
+   - **Found by measuring: OpenCV's USAC wants pixel-scale coordinates.**
+     - Fed normalised rays with an identity camera, MAGSAC++ proposed essential matrices 0.6 to
+       15 mrad out across 20 seeds, on two rendered views with 2% wrong matches.
+     - The same rays as pixels of a virtual pinhole of focal 1000, with the inlier angle in its
+       pixels, gave 0.25 to 0.47 mrad on every seed.
+     - Neither the local optimisation nor the polisher settings changed this. MSAC on normalised
+       coordinates was fine too (0.39 to 0.47 mrad).
+     - Lain's own inlier count could not see the difference: 318 inliers either way at the 0.004 rad
+       angle, so only a truth comparison catches it, and the seed sweep is that comparison.
+     - This is a deviation from the plan's "normalised rays, as `opencvposesolver.cpp` does". That
+       solver is unchanged: a board's PnP is not USAC.
+   - **Found by measuring: the exact search is 3.9 times faster over floats.** Searching 3891 ×
+     3688 descriptors took 2.37 s as bytes and 0.61 s as floats. The answers are identical, checked
+     over 243,798 neighbours: every partial sum of squared byte differences is an integer below
+     2^24, which a float holds exactly. Both searches now convert.
+   - **The renderer** (`libs/camera/test/texturedscene.h`, test-only, plain C++):
+     - textured rectangles, the nearest hit winning: a back wall, a floor, and a box of four faces,
+       so no two surfaces are coplanar;
+     - a seeded procedural texture of value noise over four octaves with soft blobs;
+     - every ray unprojected through lain's own model, s × s rays a pixel, and seeded Box-Muller
+       noise per frame;
+     - a textured disc moving through the scene frame by frame;
+     - `truthAt` (what a pixel's ray hits) and `RenderedSource` (a `FrameSource` over it, keeping
+       each frame it draws).
+
+     The plane intersection is plain arithmetic rather than GLM calls. GLM's unoptimised calls
+     took nine tenths of a Debug render (3.1 s a frame, now 1.25 s), and the renders are
+     byte-identical to before, checked over 15 frames.
+   - **Measured** (Release, four cores, 640 × 480 views 0.3 rad apart unless said), each number
+     beside its check in `test-camera-opencv-features`:
+     - **The mapping is centred.** A half-scale search against the native one: 484 matched within
+       2 px, mean offset (−0.021, 0.002) px.
+     - **Correspondences:**
+       - 1036 and 1020 features, 324 matches, 317 within 3 px of the truth (97.8%);
+       - RMS 0.438 px between two keypoints, so about 0.31 px each.
+     - **SIFT's localisation scales with the feature.** The residual is 4.9% of the keypoints' mean
+       size, RMS, so 3.4% per keypoint. It is 0.17 px below a size of 4 px and 0.98 px at 16 px and
+       above.
+     - **Poses over 20 seeds:**
+       - relative pose on all 324 matches: 0.24 to 0.47 mrad of rotation and 0.12 to 1.14 mrad of
+         translation direction;
+       - absolute pose from the 317 truth points: 0.12 to 1.0 mrad and 0.24 to 1.69 mm.
+     - **Duplicate orientations:**
+       - 297 of 1036 keypoints share their 1/64-px cell with another, since SIFT gives a keypoint
+         with two strong orientation peaks twice;
+       - duplicates share a response, so the tie-break falls to the smallest angle, which says
+         nothing about the other view;
+       - of 128 correctly matched cells with duplicates in both views, the kept pair agrees in 83;
+       - collapsing loses a fifth of the correct matches: 259 correct cell pairs before, 205 after.
+     - **Rendered footage through `extractTracks`**, three cameras, nine frames, the disc crossing:
+       - identical serially and on a 4-thread pool;
+       - every pair verified (228/225, 126/121, 224/219 matches/inliers), 365 tracks, no conflicts,
+         1468 features dropped as transient, and 278 observations hidden by the disc in a sampled
+         frame and kept;
+       - 350 of 365 tracks within 2 px of the truth everywhere. The other 15 are 2 to 6.7 px out,
+         none near a surface edge: large features, whose localisation scales with their size;
+       - Approximate on the pool found 365 to 372 tracks over six runs, against Exact's 365.
+     - **8K, Release only.** An 8K frame searched at a longest side of 1920 px took 0.60 s and found
+       976 features; at 1600 px, 0.54 s and 1050.
+       - Peak memory growth was 489 MB and 340 MB per frame searched at once (glibc, from VmHWM
+         after `malloc_trim` and a reset through `/proc/self/clear_refs`).
+       - SIFT's doubled first octave, a float pyramid at twice the searched size, is what costs
+         it. The decoded frame comes on top: 100 MB of 8K RGB8.
+     - **Exact against Approximate at 8192 features a view, Release only.** Two 1920 × 1080 views of
+       a finely textured scene, capped at 8192 each from 13238 and 12745. Both directions, as
+       `match()` asks, on one core:
+       - Exact: 2538 matches in 3.68 s;
+       - Approximate: 2498 matches in 0.37 s, holding 96.7% of Exact's;
+       - consolidation (Exact, against another frame of the same view): 7355 matches in 3.69 s.
+         Brute force costs the same whatever the content.
+     - **The 100-camera extrapolation:** 4950 pair matches and 1000 consolidation matches.
+       - 6.1 core-hours all Exact.
+       - 1.5 core-hours with Approximate pairs.
+       - About 0.7 core-hours with Approximate throughout.
+       - Extraction is negligible beside it: 500 frames at 0.6 s is 0.08 core-hours, before
+         decoding.
+   - **Recommendations, for the repo owner to decide:**
+     - **Search: keep Exact as the default.**
+       - It is what `DeterministicDebug` and the pool equivalence rest on, and Approximate is a
+         request away for a large rig.
+       - The cheaper win is the seam: `match()` asks each direction separately, and a brute-force
+         backend could answer both from one distance matrix, about halving Exact.
+     - **Scale and concurrency: keep `LongestSide{1920}` and the uncapped `forEach` for now.**
+       - Per worker that is about 0.6 GB at 8K. A 16-core host's 15 workers peak near 9 GB.
+       - Cap the per-camera stage's concurrency, not the scale, the day a host's workers × 0.6 GB
+         approaches its memory. A smaller scale costs features and accuracy on every host.
+     - **σ: make the covariance proportional to the keypoint**, σ = 0.034 × size in processed px.
+       The commonest features (size 4 to 8 px, half of those matched) localise to about 0.22 px
+       each (0.31 px RMS between two), so a fixed 0.7 px is three times too loose for them and
+       about right only for the largest.
+     - **Tie-break: collapse after matching, not before.** For example, keep a cell's duplicates
+       through the pair match and choose, per cell, the orientation that matched. The current rule
+       loses a fifth of the correct matches.
+   - **Debug cost.** The footage case takes 28 s in Debug, nearly all of it drawing frames, and the
+     two scale cases skip there. The whole executable takes 55 s in Release.
+   - `ctest -j8` **1163/1163** Debug and **1171/1171** Release with video, camera and Ceres on, and
+     **1077/1077** with all three off (+8 each on: the new `test-camera-opencv-features`; unchanged
+     off, which builds no plugin). Warning-clean, format-check clean. A first `--rerun-failed`
+     "failure" was a stale `LastTestsFailed.log` from an old configure, not a failure.
+   - **Six sabotages, four caught, two recorded as findings.**
+     - **The ±0.5 centre mapping dropped in `toSource`:** the mapping case fails (offset 0.52,
+       0.50 px), and so does the ChArUco "detection at a reduced scale still reports source pixels".
+     - **`isParallel = true`: not caught, as predicted.** OpenCV's pool is at one thread, so its
+       parallel USAC runs serially, and the serial-against-pool comparison still matches.
+     - **Approximate accepted under DeterministicDebug** (in `extraction.cpp`): the refusal case
+       fails; with the real matcher the run completes (status Ok).
+     - **The FLANN mutex removed: not caught, as predicted.** The footage case now runs Approximate
+       on the pool, so concurrent builds happen, but glibc's `rand()` takes a lock. The race matters
+       on C libraries without one, and only a race detector would see it.
+     - **One decomposition candidate** (R1, +t): the pose case fails (no relative pose at seed 0),
+       and in the footage case every pair comes back Unverified and no track forms.
+     - **Normalised coordinates** (virtual focal 1): the seed sweep fails at 18 of 20 seeds, 1.3 to
+       10 mrad of rotation, and on the translation direction too.
 
      Each restored source was touched a second later, and its object checked to be newer, before
      the green run was believed.
