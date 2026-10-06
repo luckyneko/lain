@@ -18,6 +18,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <string>
+#include <variant>
 #include <vector>
 
 using namespace lain;
@@ -122,8 +123,12 @@ TEST_CASE("registerCameras hands its settings to the method", "[camera][flow]")
 		CHECK(asked.seed == defaults.seed);
 		CHECK(asked.maximumIterations == defaults.maximumIterations);
 		CHECK(asked.execution == camera::ExecutionPolicy::Normal);
-		CHECK(std::holds_alternative<camera::board::NativeScale>(asked.detection.scale));
-		CHECK(asked.detection.minimumCorners == defaults.detection.minimumCorners);
+		const auto& searched = std::get<camera::registration::BoardRecord>(report.reproducibility.method).detection;
+		const camera::board::DetectionRequest searchDefaults;
+		REQUIRE(searched.has_value());
+		CHECK(std::holds_alternative<camera::board::NativeScale>(searched->scale));
+		CHECK(searched->refineAtNativeResolution == searchDefaults.refineAtNativeResolution);
+		CHECK(searched->minimumCorners == searchDefaults.minimumCorners);
 	}
 	SECTION("every parameter reaches the request")
 	{
@@ -156,10 +161,12 @@ TEST_CASE("registerCameras hands its settings to the method", "[camera][flow]")
 		CHECK(asked.seed == 0xFFFFFFFFu); // a seed keeps its bits
 		CHECK(asked.maximumIterations == 40);
 		CHECK(asked.execution == camera::ExecutionPolicy::DeterministicDebug);
-		REQUIRE(std::holds_alternative<camera::board::LongestSide>(asked.detection.scale));
-		CHECK(std::get<camera::board::LongestSide>(asked.detection.scale).pixels == 800);
-		CHECK_FALSE(asked.detection.refineAtNativeResolution);
-		CHECK(asked.detection.minimumCorners == 6);
+		const auto& searched = std::get<camera::registration::BoardRecord>(report.reproducibility.method).detection;
+		REQUIRE(searched.has_value());
+		REQUIRE(std::holds_alternative<camera::board::LongestSide>(searched->scale));
+		CHECK(std::get<camera::board::LongestSide>(searched->scale).pixels == 800);
+		CHECK_FALSE(searched->refineAtNativeResolution);
+		CHECK(searched->minimumCorners == 6);
 	}
 	SECTION("a refusing applicability policy reaches the method")
 	{
@@ -180,4 +187,6 @@ TEST_CASE("registerCameras refuses footage and models that do not pair", "[camer
 	REQUIRE_FALSE(report.failures.empty());
 	CHECK(report.failures.front().failure == camera::registration::Failure::InvalidDataset);
 	CHECK(report.failures.front().detail == "3 cameras' footage and 2 camera models: they pair by position");
+	// The node's own refusal records the search it would have asked for, as the method's do.
+	CHECK(std::get<camera::registration::BoardRecord>(report.reproducibility.method).detection.has_value());
 }

@@ -181,15 +181,25 @@ namespace lain::camera::registration
 		std::vector<GroupDetections> detections; // in canonical group order
 	};
 
-	// What a report needs to be repeated (CONTEXT.md, "Reproducibility record").
+	// What a board registration searched with and solved by, beside what every registration records.
+	struct BoardRecord
+	{
+		Provenance detector;
+		Provenance poseSolver;
+		// What the frames were searched with: the footage overload's argument, or what the first
+		// given detection reports. Unset when no detection was given and none was made.
+		std::optional<camera::board::DetectionRequest> detection;
+	};
+
+	// What a report needs to be repeated (CONTEXT.md, "Reproducibility record"): what every
+	// registration records, and in `method`, what its method alone does.
 	struct Reproducibility
 	{
 		std::vector<std::string> sources; // the canonical uri of every source the frames came from
 		std::uint32_t frames = 0;
-		Provenance detector;
-		Provenance poseSolver;
 		Provenance refiner;
 		Request request; // exactly as given
+		std::variant<BoardRecord> method;
 	};
 
 	// The result of a fixed-camera registration, successful or not (CONTEXT.md, "Registration report").

@@ -3852,7 +3852,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    2. **Request and reproducibility become method-neutral.** `Request` loses `detection`, and the
       board entry points take the `DetectionRequest` explicitly. `Reproducibility` gains
       `method = std::variant<BoardRecord{detector, poseSolver, detection}>`. The node and the tests
-      change mechanically; the golden stays byte-equal.
+      change mechanically; the golden stays byte-equal. **Built 2026-10-06**, below.
    3. **Report, diagnostics and fitness become method-neutral.** A common `Diagnostics` with
       neutral names (`Outlier{unit, camera, rmsWhitened}`, `RefinementSummary{observations, bodies,
       landmarks}`, `CameraEvidence{shared, observations}`, `HeldOutEvidence{units, …}`, a
@@ -4015,6 +4015,51 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - **Not run: `flowview run` on a registration document**, which the plan named. None is committed
      (`apps/flowview/examples` has no registration example). The cli vertical, which runs one
      through `runGraph`, passed in all three suites.
+
+   **Sub-slice 2 built (2026-10-06): the registration request stops naming a board.** No change in
+   behaviour, and the golden passes with its file untouched.
+   - **`registration::Request` loses `detection`**, and its comments stop assuming a board
+     (an observation's noise, each whitened residual, the most evidence, the usable evidence). The
+     footage overload of `registration::board::registerCameras` takes the `board::DetectionRequest`
+     as an argument, between the board and the request: what the method searches for, then how it
+     searches, then how it registers.
+   - **`Reproducibility` keeps what every registration has** (sources, frames, refiner, the request)
+     and gains `std::variant<BoardRecord> method`. `BoardRecord {detector, poseSolver,
+     optional<DetectionRequest> detection}` is declared in `report.h` at `registration` scope, since
+     `board.h` includes `report.h`. Sub-slice 8 adds a targetless alternative.
+   - **The detections overload takes no detection request**, deliberately. It searches nothing, so a
+     parameter there could only be recorded, and could contradict the detections it was given.
+     Instead the record holds what the first detection in canonical order reports, which is the rule
+     `detector` already followed for provenance. Before this, that overload recorded whatever
+     detection request the caller had left in `Request`, which nothing compared with the
+     detections. Now the record says what they say, and with no detection at all it stays unset
+     rather than claiming a default search nobody made.
+   - **The footage overload records its argument first**, so a refusal before anything is decoded
+     (NoDetector, a frame its footage lacks) still says what would have been searched with.
+     `board::detect` records the request exactly as given, so the first detection agrees with it.
+   - **The node** builds the detection request separately, takes its defaults from
+     `board::DetectionRequest{}`, passes it to the method, and records it in its own refusals too.
+   - **`calibration::Request` keeps its `detection`, deliberately.** Calibration has one method; the
+     same split is due when slice 4 gives it a targetless one.
+   - **Found, and owed to sub-slice 8:** `Request::fitnessProfile` defaults to `"registration/1"`,
+     which counts capture groups. A targetless registration called with a default `Request` would
+     refuse it with `IncompatibleFitnessProfile`. Sub-slice 8 must give each method its own default,
+     for example an empty name meaning "the method's profile".
+   - `ctest -j8` **1108/1108** Debug and **1116/1116** Release with video, camera and Ceres on, and
+     **1039/1039** with all three off (+1 each: *a registration over given detections records the
+     search they report*). The footage case, the no-backend case and the node's settings case gained
+     assertions. Warning-clean, format-check clean.
+   - **Three sabotages, all caught.**
+     - The footage overload searching with `DetectionRequest{}`: the footage case fails on all 60
+       detections. The node's settings case does **not** catch it, contrary to the plan's
+       expectation, because the record holds the argument whatever the detections were made with.
+       The per-detection check is the one that sees a search silently dropped.
+     - `analyse` never recording the detections' request: the golden fails at "request detection
+       unset", and the new case fails.
+     - The node passing a default search: its settings case fails.
+
+     Each restored source was touched a second later, and its object checked to be newer, before the
+     green run was believed.
 4. **Targetless calibration + graph fallback.** Add targetless intrinsics/distortion estimation only
    after the shared feature-track evidence and validation path can meet the report contract. Then
    expose the graph method input and ordered board-then-targetless fallback, retaining every attempted

@@ -602,8 +602,10 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   multiple diagnostics, confidence when no uncertainty model exists.
 - **Reproducibility record** — report provenance sufficient to repeat a calibration or registration
   attempt: canonical input identities, backend and version, solver configuration, random seed, and
-  execution policy. Normal execution promises reproducibility within stated numeric tolerances;
-  deterministic-debug execution uses seeded, canonical, single-threaded processing where supported.
+  execution policy. What a method alone uses (a board registration's detector, pose solver and
+  detection request) sits in a per-method record beside the fields every method shares. Normal
+  execution promises reproducibility within stated numeric tolerances; deterministic-debug execution
+  uses seeded, canonical, single-threaded processing where supported.
   _Avoid_: deterministic result when bit-identical floating-point output is not guaranteed.
 - **Reconstruction fitness** — the primary task-specific verdict describing whether a calibration is
   rejected, exploratory, or ready for reconstruction. It summarizes explicit acceptance criteria

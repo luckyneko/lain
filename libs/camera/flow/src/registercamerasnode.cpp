@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <string>
+#include <variant>
 
 namespace lain::camera
 {
@@ -20,8 +21,10 @@ namespace lain::camera
 		m_models = addInput<std::vector<CameraModel>>("models");
 		m_board = addInput<board::Specification>("board");
 
-		// The request's own defaults, so a fresh node asks for exactly what registration::Request does.
+		// The request's own defaults, so a fresh node asks for exactly what registration::Request and
+		// board::DetectionRequest do.
 		const registration::Request defaults;
+		const board::DetectionRequest searchDefaults;
 		m_reference = addParam<std::string>("reference", std::string{});
 		m_unknownApplicability =
 			addParam<registration::ApplicabilityPolicy>("unknownApplicability", defaults.unknownApplicability);
@@ -35,8 +38,8 @@ namespace lain::camera
 		m_maximumIterations = addParam<int>("maximumIterations", int(defaults.maximumIterations));
 		m_deterministic = addParam<bool>("deterministic", false);
 		m_longestSide = addParam<int>("longestSide", 0);
-		m_refineNative = addParam<bool>("refineNative", defaults.detection.refineAtNativeResolution);
-		m_minimumCorners = addParam<int>("minimumCorners", int(defaults.detection.minimumCorners));
+		m_refineNative = addParam<bool>("refineNative", searchDefaults.refineAtNativeResolution);
+		m_minimumCorners = addParam<int>("minimumCorners", int(searchDefaults.minimumCorners));
 
 		m_report = addOutput<registration::Report>("report");
 	}
@@ -58,8 +61,8 @@ namespace lain::camera
 		request.seed = std::uint64_t(std::uint32_t(param(m_seed).get<int>()));
 		request.maximumIterations = std::uint32_t(std::max(0, param(m_maximumIterations).get<int>()));
 		request.execution = param(m_deterministic).get<bool>() ? ExecutionPolicy::DeterministicDebug : ExecutionPolicy::Normal;
-		request.detection = detail::detectionRequest(param(m_longestSide).get<int>(), param(m_refineNative).get<bool>(),
-													 param(m_minimumCorners).get<int>());
+		const board::DetectionRequest detection = detail::detectionRequest(
+			param(m_longestSide).get<int>(), param(m_refineNative).get<bool>(), param(m_minimumCorners).get<int>());
 
 		const auto& footage = evaluation.input(m_footage).get<std::vector<media::FrameSequence>>();
 		const auto& models = evaluation.input(m_models).get<std::vector<CameraModel>>();
@@ -68,6 +71,7 @@ namespace lain::camera
 		// A mismatch is the report's to say, like every other reason a registration cannot happen.
 		registration::Report refused;
 		refused.reproducibility.request = request;
+		std::get<registration::BoardRecord>(refused.reproducibility.method).detection = detection;
 		if (footage.size() != models.size())
 		{
 			refused.failures.push_back({registration::Failure::InvalidDataset,
@@ -93,6 +97,6 @@ namespace lain::camera
 			evaluation.output(m_report).set(std::move(refused));
 			return;
 		}
-		evaluation.output(m_report).set(registration::board::registerCameras(cameras, grouping.groups, board, request));
+		evaluation.output(m_report).set(registration::board::registerCameras(cameras, grouping.groups, board, detection, request));
 	}
 } // namespace lain::camera

@@ -220,10 +220,11 @@ namespace
 		}
 
 		const Reproducibility& p = r.reproducibility;
+		const BoardRecord& b = std::get<BoardRecord>(p.method);
 		for (const std::string& source : p.sources)
 			out << "source " << source << "\n";
-		out << "frames " << p.frames << " detector " << provenance(p.detector) << " poseSolver "
-			<< provenance(p.poseSolver) << " refiner " << provenance(p.refiner) << "\n";
+		out << "frames " << p.frames << " detector " << provenance(b.detector) << " poseSolver "
+			<< provenance(b.poseSolver) << " refiner " << provenance(p.refiner) << "\n";
 		const Request& q = p.request;
 		out << "request reference " << (q.reference ? q.reference->value : "unset") << " unknownApplicability "
 			<< name(q.unknownApplicability) << " noise " << number(q.noise.pixelSigma) << " loss " << name(q.loss.family)
@@ -232,7 +233,8 @@ namespace
 		out << "request overrides " << optional(o.minimumGroupsPerCamera) << " " << optional(o.minimumBridgeGroups) << " "
 			<< optional(o.maximumHeldOutAngle) << " " << optional(o.maximumRotationVariation) << " "
 			<< optional(o.maximumTranslationVariation) << " " << optional(o.maximumOutlierFraction) << "\n";
-		out << "request detection " << detectionRequest(q.detection) << "\n";
+		// Printed where it was when the request held it (sub-slice 2 moved it to the board record).
+		out << "request detection " << (b.detection ? detectionRequest(*b.detection) : "unset") << "\n";
 		out << "request heldOutFraction " << number(q.heldOutFraction) << " resamples " << q.resamples << " seed " << q.seed
 			<< " maximumIterations " << q.maximumIterations << " execution " << name(q.execution) << "\n";
 		return out.str();

@@ -469,6 +469,7 @@ namespace lain::camera::registration::board
 		const std::size_t groupCount = data.groups.size();
 		Diagnostics& diagnostics = report.diagnostics;
 		Reproducibility& reproducibility = report.reproducibility;
+		BoardRecord& method = std::get<BoardRecord>(reproducibility.method);
 		diagnostics.groupsExamined = std::uint32_t(groupCount);
 
 		// The record: every source, every detection, in canonical order.
@@ -484,8 +485,10 @@ namespace lain::camera::registration::board
 				sources.insert(group.group.members()[m].frame.source.toString());
 				++reproducibility.frames;
 				record.members.push_back({group.group.members()[m].camera, group.detections[m]});
-				if (reproducibility.detector.backend.empty())
-					reproducibility.detector = group.detections[m].provenance;
+				if (method.detector.backend.empty())
+					method.detector = group.detections[m].provenance;
+				if (!method.detection)
+					method.detection = group.detections[m].request;
 			}
 			diagnostics.detections.push_back(std::move(record));
 		}
@@ -544,8 +547,8 @@ namespace lain::camera::registration::board
 		evidence.byGroup.assign(groupCount, {});
 		for (std::size_t i = 0; i < slots.size(); ++i)
 		{
-			if (reproducibility.poseSolver.backend.empty())
-				reproducibility.poseSolver = solverOf[i];
+			if (method.poseSolver.backend.empty())
+				method.poseSolver = solverOf[i];
 			if (!posedSlots[i])
 			{
 				++diagnostics.observationsWithoutPose;
@@ -952,11 +955,12 @@ namespace lain::camera::registration::board
 	}
 
 	Report registerCameras(const std::vector<RigFootage>& cameras, const std::vector<capture::CaptureGroup>& groups,
-						   const cb::Specification& board, const Request& request)
+						   const cb::Specification& board, const cb::DetectionRequest& detection, const Request& request)
 	{
 		const core::Time start = core::Time::now();
 		Report report;
 		report.reproducibility.request = request;
+		std::get<BoardRecord>(report.reproducibility.method).detection = detection;
 
 		std::vector<RigCamera> rig;
 		std::vector<std::optional<ImageGeometry>> geometry;
@@ -1031,7 +1035,7 @@ namespace lain::camera::registration::board
 							const auto [footage, position] = frames[g][m];
 							const image::Image frame = footage->image(position);
 							observed[g].detections[m] =
-								cb::detect(frame, groups[g].members()[m].frame, board, request.detection);
+								cb::detect(frame, groups[g].members()[m].frame, board, detection);
 						});
 		return analyse(std::move(report), data, board, request, start);
 	}

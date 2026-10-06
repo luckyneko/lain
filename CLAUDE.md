@@ -1354,6 +1354,33 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-06 — M9 slice 3, sub-slice 2: the registration request stops naming a board
+
+No change in behaviour; the golden board report passes with its file untouched. `ctest -j8`
+**1108/1108** Debug and **1116/1116** Release with video, camera and Ceres on, **1039/1039** with all
+three off (+1 each); warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 2 built*
+under M9 slice 3.
+
+- **`registration::Request` loses `detection`.** The footage overload of
+  `registration::board::registerCameras` takes the `board::DetectionRequest` as an argument (board,
+  then search, then request), and the node passes it.
+- **`Reproducibility` holds what every registration has** (sources, frames, refiner, the request) plus
+  `std::variant<BoardRecord> method`, where `BoardRecord {detector, poseSolver,
+  optional<DetectionRequest> detection}` lives in `report.h`, since `board.h` includes it.
+- **The detections overload takes no search argument**: it searches nothing, so one could only be
+  recorded and could contradict its detections. The record holds what the first detection reports,
+  as `detector` already did, and stays unset with no detection. It used to record whatever the caller
+  left in `Request`, unchecked.
+- **The footage overload records its argument before any check**, so a refusal that decodes nothing
+  still says what it would have searched with.
+- **`calibration::Request` keeps `detection`** until slice 4 gives calibration a second method.
+- **Owed to sub-slice 8:** `Request::fitnessProfile` defaults to `"registration/1"`, a capture-group
+  profile, so a targetless call with a default `Request` would refuse it. Each method needs its own
+  default.
+- **Three sabotages, all caught**, and one prediction wrong: the footage overload searching with the
+  default is caught only by the per-detection check (60 failures), not by the node's settings test,
+  because the record holds the argument whatever the detections were made with.
+
 ### Update 2026-10-06 — M9 slice 3, sub-slice 1: the shared registration helpers leave board.cpp
 
 No API change and no change in behaviour, held to a golden board report committed in the same

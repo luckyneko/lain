@@ -1,6 +1,5 @@
 #pragma once
 
-#include "lain/camera/board/detection.h"
 #include "lain/camera/capture/capturegroup.h"
 #include "lain/camera/method.h"
 #include "lain/camera/registration/fitness.h"
@@ -20,7 +19,7 @@ namespace lain::camera::registration
 		Refuse, // fail the registration
 	};
 
-	// The pixel noise a corner with no measured covariance is assumed to have (CONTEXT.md,
+	// The pixel noise an observation with no measured covariance is assumed to have (CONTEXT.md,
 	// "Observation-noise model"). A detector's response is never turned into this.
 	struct NoiseModel
 	{
@@ -34,8 +33,8 @@ namespace lain::camera::registration
 		Cauchy, // logarithmic beyond the scale: an outlier's pull fades
 	};
 
-	// The robust loss on each whitened corner residual, which bounds an outlier's influence. The
-	// scale, in standard deviations, is also where an observation counts as an outlier in the report.
+	// The robust loss on each whitened residual, which bounds an outlier's influence. The scale, in
+	// standard deviations, is also where an observation counts as an outlier in the report.
 	//
 	// Cauchy by default, because the outlier a board registration meets is a whole view that does not
 	// belong: a frame from another instant, its corners tens of standard deviations off. Huber's pull
@@ -49,11 +48,13 @@ namespace lain::camera::registration
 		double scale = 3.0;
 	};
 
-	// A fixed-camera registration request (CONTEXT.md, "Fixed camera registration").
+	// A fixed-camera registration request (CONTEXT.md, "Fixed camera registration"), whatever the
+	// method. What a method alone needs (how a board is searched for) is an argument of that method's
+	// entry point, and its report records it beside the method's backends (report.h, BoardRecord).
 	struct Request
 	{
 		// The camera given the identity transform. Unset chooses one deterministically: the camera
-		// sharing the most capture groups with others, ties to the lower identity.
+		// sharing the most evidence with others, ties to the lower identity.
 		std::optional<capture::CameraIdentity> reference;
 		ApplicabilityPolicy unknownApplicability = ApplicabilityPolicy::Accept;
 
@@ -63,9 +64,7 @@ namespace lain::camera::registration
 		std::string fitnessProfile = "registration/1";
 		FitnessOverrides overrides;
 
-		camera::board::DetectionRequest detection; // how each frame is searched
-
-		double heldOutFraction = 0.2;		   // of the usable capture groups, kept out to validate on
+		double heldOutFraction = 0.2;		   // of the usable evidence, kept out to validate on
 		std::uint32_t resamples = 10;		   // bootstrap re-registrations for the stability evidence; 0 skips it
 		std::uint64_t seed = 1;				   // for the resampling draws, recorded in the report
 		std::uint32_t maximumIterations = 100; // of each global refinement

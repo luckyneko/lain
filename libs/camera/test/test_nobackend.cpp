@@ -16,6 +16,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <memory>
+#include <variant>
 
 using namespace lain;
 using namespace lain::camera::board;
@@ -130,13 +131,21 @@ TEST_CASE("with no backend, a registration fails for want of a pose solver, or a
 		registration::board::registerCameras(cameras, {}, specification(), registration::Request{});
 	REQUIRE(fromDetections.status == registration::RegistrationStatus::Failed);
 	CHECK(fromDetections.failures.front().failure == registration::Failure::NoPoseSolver);
+	// No detection was given, so none says how it was searched for.
+	CHECK_FALSE(std::get<registration::BoardRecord>(fromDetections.reproducibility.method).detection.has_value());
 
 	const media::FrameSequence footage = media::FrameSequence::over(std::make_shared<StillSource>());
 	const std::vector<registration::board::RigFootage> rig{{camera::capture::CameraIdentity{"a"}, model, footage},
 														   {camera::capture::CameraIdentity{"b"}, model, footage}};
+	camera::board::DetectionRequest search;
+	search.minimumCorners = 9;
 	const registration::Report fromFootage =
-		registration::board::registerCameras(rig, {}, specification(), registration::Request{});
+		registration::board::registerCameras(rig, {}, specification(), search, registration::Request{});
 	REQUIRE(fromFootage.status == registration::RegistrationStatus::Failed);
 	CHECK(fromFootage.failures.front().failure == registration::Failure::NoDetector);
 	CHECK(fromFootage.failures.front().detail.find("no board detector") != std::string::npos);
+	// Refused before a frame was decoded, and still saying what it would have searched with.
+	const auto& searched = std::get<registration::BoardRecord>(fromFootage.reproducibility.method).detection;
+	REQUIRE(searched.has_value());
+	CHECK(searched->minimumCorners == 9);
 }

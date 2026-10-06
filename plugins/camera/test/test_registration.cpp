@@ -19,6 +19,7 @@
 #include <cmath>
 #include <memory>
 #include <string>
+#include <variant>
 #include <vector>
 
 using namespace lain;
@@ -112,11 +113,13 @@ TEST_CASE("three cameras rendered, detected and refined register to their truth"
 	registration::Request request;
 	request.reference = capture::CameraIdentity{"cam0"};
 	request.resamples = 4;
-	const registration::Report report = method::registerCameras(cameras, grouping.groups, spec, request);
+	const registration::Report report =
+		method::registerCameras(cameras, grouping.groups, spec, board::DetectionRequest{}, request);
 	INFO(report.toString());
 	REQUIRE(report.status == registration::RegistrationStatus::Succeeded);
-	CHECK(report.reproducibility.detector.backend == "opencv");
-	CHECK(report.reproducibility.poseSolver.backend == "opencv");
+	const registration::BoardRecord& record = std::get<registration::BoardRecord>(report.reproducibility.method);
+	CHECK(record.detector.backend == "opencv");
+	CHECK(record.poseSolver.backend == "opencv");
 	CHECK(report.reproducibility.refiner.backend == "ceres");
 	CHECK(report.diagnostics.groupsUsable == kFrames);
 

@@ -13,12 +13,14 @@
 
 #include <algorithm>
 #include <string>
+#include <variant>
 
 using namespace lain;
 using namespace lain::camera;
 using namespace lain::camera::registration;
 using namespace lain::camera::testing;
 namespace method = lain::camera::registration::board;
+namespace cb = lain::camera::board;
 
 namespace
 {
@@ -29,6 +31,30 @@ namespace
 	Report run(const Request& request = {})
 	{
 		return method::registerCameras(rig::cameras(), rig::groups(), specification(), request);
+	}
+
+	// A board search unlike the default in every field, so a record that fell back to the default
+	// cannot pass for it.
+	cb::DetectionRequest unusualSearch()
+	{
+		cb::DetectionRequest search;
+		search.scale = cb::LongestSide{800};
+		search.refineAtNativeResolution = false;
+		search.detail = cb::DetailLevel::Detailed;
+		search.minimumCorners = 6;
+		return search;
+	}
+
+	bool isUnusualSearch(const cb::DetectionRequest& search)
+	{
+		const auto* longest = std::get_if<cb::LongestSide>(&search.scale);
+		return longest != nullptr && longest->pixels == 800 && !search.refineAtNativeResolution &&
+			   search.detail == cb::DetailLevel::Detailed && search.minimumCorners == 6;
+	}
+
+	const BoardRecord& boardRecord(const Report& report)
+	{
+		return std::get<BoardRecord>(report.reproducibility.method);
 	}
 
 	bool failedWith(const Report& report, Failure failure)
@@ -132,9 +158,10 @@ TEST_CASE("a rig that saw the board together registers exactly, Ready", "[camera
 	CHECK(resampled->rotationVariation < 1e-9);
 	CHECK(resampled->translationVariation < 1e-9);
 
-	CHECK(report.reproducibility.poseSolver.backend == "truth");
+	const BoardRecord& record = std::get<BoardRecord>(report.reproducibility.method);
+	CHECK(record.poseSolver.backend == "truth");
 	CHECK(report.reproducibility.refiner.backend == "passthrough");
-	CHECK(report.reproducibility.detector.backend == "truth");
+	CHECK(record.detector.backend == "truth");
 	CHECK(report.reproducibility.frames == 96);
 	CHECK(report.reproducibility.sources ==
 		  std::vector<std::string>{"/rig/cam00", "/rig/cam01", "/rig/cam02", "/rig/cam03"});
@@ -390,19 +417,57 @@ TEST_CASE("footage is detected member by member, then registered", "[camera][reg
 		byPosition.push_back({c.camera, c.footage});
 	const capture::GroupingResult grouping = capture::groupsByPosition(byPosition);
 	REQUIRE(grouping.groups.size() == 20);
-	const Report report = method::registerCameras(footage, grouping.groups, specification(), Request{});
+	const Report report = method::registerCameras(footage, grouping.groups, specification(), unusualSearch(), Request{});
 	requireTruth(report, 1e-9, 1e-9);
 	CHECK(report.diagnostics.observations == 60);
+
+	// The search reaches every frame's detection, and the record says what it was.
+	for (const GroupDetections& g : report.diagnostics.detections)
+	{
+		for (const auto& member : g.members)
+			CHECK(isUnusualSearch(member.second.request));
+	}
+	REQUIRE(boardRecord(report).detection.has_value());
+	CHECK(isUnusualSearch(*boardRecord(report).detection));
 
 	SECTION("a member whose frame its footage lacks is refused before anything is decoded")
 	{
 		std::vector<capture::CaptureGroup> groups = grouping.groups;
 		media::FrameRef missing = rig::frameOf(0, 999);
 		groups.push_back(*capture::CaptureGroup::create({{capture::CameraIdentity{"cam00"}, missing}}).group);
-		const Report refused = method::registerCameras(footage, groups, specification(), Request{});
+		const Report refused = method::registerCameras(footage, groups, specification(), unusualSearch(), Request{});
 		REQUIRE(failedWith(refused, Failure::InvalidDataset));
 		CHECK(refused.failures.front().detail.find("frame 999 of /rig/cam00") != std::string::npos);
 		CHECK(refused.diagnostics.detections.empty());
+		// Nothing was searched, and the record still says what would have been.
+		REQUIRE(boardRecord(refused).detection.has_value());
+		CHECK(isUnusualSearch(*boardRecord(refused).detection));
+	}
+}
+
+TEST_CASE("a registration over given detections records the search they report", "[camera][registration]")
+{
+	rig::reset();
+	std::vector<method::GroupObservations> groups = rig::groups();
+	for (method::GroupObservations& g : groups)
+	{
+		for (cb::DetectionReport& d : g.detections)
+			d.request = unusualSearch();
+	}
+	// The registration's own request holds no search at all: what the detections were made with is
+	// theirs to say.
+	const Report report = method::registerCameras(rig::cameras(), groups, specification(), Request{});
+	REQUIRE(report.status == RegistrationStatus::Succeeded);
+	REQUIRE(boardRecord(report).detection.has_value());
+	CHECK(isUnusualSearch(*boardRecord(report).detection));
+	CHECK(boardRecord(report).detector.backend == "truth");
+
+	SECTION("no detection given, no search recorded")
+	{
+		const Report empty = method::registerCameras(rig::cameras(), {}, specification(), Request{});
+		CHECK(empty.status == RegistrationStatus::Failed);
+		CHECK_FALSE(boardRecord(empty).detection.has_value());
+		CHECK(boardRecord(empty).detector.backend.empty());
 	}
 }
 
