@@ -11,6 +11,7 @@
 add_library(camera STATIC
 	src/cameramodel.cpp
 	src/distortion.cpp
+	src/scalepolicy.cpp
 	src/board/pattern.cpp
 	src/board/specification.cpp
 	src/board/detection.cpp
@@ -22,6 +23,7 @@ add_library(camera STATIC
 	src/calibration/board.cpp
 	src/capture/capturegroup.cpp
 	src/registration/board.cpp
+	src/registration/common.cpp
 	src/registration/fitness.cpp
 	src/registration/observationgraph.cpp
 	src/registration/refiner.cpp

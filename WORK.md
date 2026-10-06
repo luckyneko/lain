@@ -2442,7 +2442,7 @@ built before it, discharging its frame-sequence prerequisite. How OpenCV is obta
 it is the capture, which only the repo owner can make. **Slice 2** (fixed-camera board registration) was planned
 2026-10-05 as seven sub-slices (below), and **all seven are built**; its gui-mode eyeball is owed.
 **Slice 3** (targetless registration with known intrinsics) was planned 2026-10-06 as eleven
-sub-slices (below); nothing of it is built yet.
+sub-slices (below); 0 and 1 are built.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -3839,7 +3839,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       feature*, *held-out track*, *scale normalisation* and *placeable camera*, and amends
       *Targetless registration*, *Camera observation graph*, *Weak bridge*, *Held-out group*,
       *Feature track* and *Feature-track extraction*. **Built 2026-10-06** (this commit).
-   1. **Lift the shared registration helpers**, no API change.
+   1. **Lift the shared registration helpers**, no API change. **Built 2026-10-06**, below.
       - First, a golden test that prints every field of the board report at `%.9g`, for three
         stand-in rigs (connected, flipped, stray), in `test-camera-registration`. Sub-slices 1–3
         must leave it byte-equal.
@@ -3968,6 +3968,53 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        - Also fixed here: `apps/flowview/test/test_catalog.cpp` never listed `kRegisterCamerasKey`,
          whose availability needs Ceres as well as OpenCV. Its expectation becomes per kind, and the
          targetless key joins it.
+
+   **Sub-slice 1 built (2026-10-06): the shared registration helpers leave `board.cpp`.** No API
+   change and no change in behaviour, held to a golden committed in the same commit.
+   - **The golden** (`libs/camera/test/test_registrationgolden.cpp`, in `test-camera-registration`)
+     prints every field of a board registration report, timings aside, and compares the text with
+     `libs/camera/test/golden/boardregistration.txt` (648 lines). It runs four noisy rigs, so a
+     different choice anywhere moves numbers rather than picking an equally exact answer:
+     - **connected**, over 40 groups, so an edge shares more groups than initialisation samples;
+     - **flipped**, with every view of one camera ranked the wrong way round, and a requested
+       reference;
+     - **stray**, with a frame from another instant, measured covariance and Huber's loss;
+     - **disconnected**, so the component estimates are printed too.
+
+     Numbers are snapped to a 1e-9 grid, then printed to nine significant digits. That hides the
+     last bits in which two platforms' maths libraries differ (an exact rig's residuals are about
+     1e-13), while any change of computation shows. A detection is printed as its outcome and the
+     sums of its corners, so 448 detections take one line each. On a mismatch the test writes what it
+     produced beside the build and names the first differing line; a deliberate change is accepted by
+     copying that file over the golden. The golden is `eol=lf` in `.gitattributes`, as the example
+     documents are. **Debug and Release produce the same bytes.**
+   - **`src/registration/common.{h,cpp}`**, namespace `registration::detail`:
+     - moved verbatim: `rotationBetween`, `median`, `root` (the copy in `observationgraph.cpp` is
+       deleted), `failed` and `meets`;
+     - lifted from inline code: `holdOut(cameras, unitCameras, fraction, minimum)`, which keeps the
+       guard against holding out a sole bridge, `chooseReference`, `bootstrapDraws` and `judge` (the
+       verdict, both tiers).
+
+     Each takes evidence units as numbered lists of the cameras that saw them, so a capture group and
+     a feature track are the same to it.
+   - **`forEach` is re-exported** by a using-declaration in `registration::detail`: inside
+     registration, that namespace hides `lain::camera::detail`, and spelling the four call sites
+     `camera::detail::forEach` re-indented 150 lines of lambda bodies under clang-format.
+   - **`registration/rig.h`** holds `RigCamera` and `RigFootage`, and **`camera/scalepolicy.h`** (with
+     `src/scalepolicy.cpp`) holds `ScalePolicy`, its three alternatives and `resolveScale`. Both
+     leave using-declarations at their old names, so no caller changed. No `serialize` overload
+     exists for the scale policy, so moving its namespace moves no argument-dependent lookup.
+   - `board.cpp` is 180 lines shorter. Its diff with whitespace ignored is 19 lines added and 199
+     removed.
+   - `ctest -j8` **1107/1107** Debug and **1115/1115** Release with video, camera and Ceres on, and
+     **1038/1038** with all three off (+1 each: the golden); warning-clean, format-check clean.
+   - **Two sabotages, both caught by the golden.** `kInitialisationGroups` from 24 to 12 changes the
+     connected rig's second camera (line 5). `holdOut` starting one past half a stride changes the
+     held-out groups and fails one other case as well. The object file was checked to be newer than
+     each restored source before the green run was believed.
+   - **Not run: `flowview run` on a registration document**, which the plan named. None is committed
+     (`apps/flowview/examples` has no registration example). The cli vertical, which runs one
+     through `runGraph`, passed in all three suites.
 4. **Targetless calibration + graph fallback.** Add targetless intrinsics/distortion estimation only
    after the shared feature-track evidence and validation path can meet the report contract. Then
    expose the graph method input and ordered board-then-targetless fallback, retaining every attempted
@@ -9133,7 +9180,7 @@ row here**. A row is cheap to delete and expensive to leave.
   the repo owner, guided by `plugins/camera/test/fixtures/README.md`. **Slice 2** (fixed-camera
   board registration, with Ceres) was planned 2026-10-05 as seven sub-slices and is **built**; a
   gui-mode eyeball of the `registerCameras` node is owed. **Slice 3** (targetless registration
-  with known intrinsics) was planned 2026-10-06 as eleven sub-slices; nothing of it is built yet.
+  with known intrinsics) was planned 2026-10-06 as eleven sub-slices, of which 0 and 1 are built.
   *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),

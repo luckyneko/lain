@@ -1,5 +1,7 @@
 #include "lain/camera/registration/observationgraph.h"
 
+#include "common.h"
+
 #include <algorithm>
 #include <map>
 #include <numeric>
@@ -7,15 +9,7 @@
 
 namespace lain::camera::registration
 {
-	static std::uint32_t root(std::vector<std::uint32_t>& parent, std::uint32_t x)
-	{
-		while (parent[x] != x)
-		{
-			parent[x] = parent[parent[x]];
-			x = parent[x];
-		}
-		return x;
-	}
+	using detail::root;
 
 	// Marks each bridge (Tarjan): an edge (u, v) of the DFS tree is a bridge when nothing below v
 	// reaches u or above by another edge. Iterative, so a large rig cannot overflow the stack.

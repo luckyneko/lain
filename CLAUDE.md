@@ -1354,6 +1354,33 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-06 — M9 slice 3, sub-slice 1: the shared registration helpers leave board.cpp
+
+No API change and no change in behaviour, held to a golden board report committed in the same
+commit. `ctest -j8` **1107/1107** Debug and **1115/1115** Release with video, camera and Ceres on,
+**1038/1038** with all three off (+1 each, the golden); warning-clean, format-check clean. Full notes
+in WORK.md's *Sub-slice 1 built* under M9 slice 3.
+
+- **The golden** (`test_registrationgolden.cpp`, `golden/boardregistration.txt`) prints every field of
+  four noisy board reports (connected over 40 groups, flipped with a requested reference, stray with
+  covariance and Huber, disconnected), timings aside. Numbers snap to a 1e-9 grid before nine
+  significant digits, so last-bit maths-library differences do not show. On a mismatch it writes
+  what it produced beside the build. Debug and Release give the same bytes; it holds sub-slices 2
+  and 3 still too.
+- **`src/registration/common.{h,cpp}`** (`registration::detail`): `rotationBetween`, `median`, one
+  `root`, `failed`, `meets`, and four lifted from inline code: `holdOut` (the sole-bridge guard
+  kept), `chooseReference`, `bootstrapDraws`, `judge`. Evidence units are lists of cameras, so a
+  capture group and a feature track are the same to them.
+- **`RigCamera` / `RigFootage` → `registration/rig.h`, `ScalePolicy` → `camera/scalepolicy.h`**, with
+  using-declarations at the old names.
+- **Inside `registration`, a `registration::detail` hides `lain::camera::detail`.** `forEach` is
+  re-exported there by a using-declaration, since spelling the call sites `camera::detail::forEach`
+  made clang-format re-indent 150 lines of lambda bodies in a commit that should read as a move.
+- **Two sabotages, both caught by the golden** (`kInitialisationGroups` 24 → 12; `holdOut` starting
+  one index late).
+- **Not run:** `flowview run` on a registration document, since none is committed; the cli vertical
+  through `runGraph` passed.
+
 ### Update 2026-10-06 — M9 slice 3 planned: targetless registration with known intrinsics (nothing built yet)
 
 Slice 3 of M9 is planned as **eleven sub-slices (0 to 10), one commit each**, in WORK.md's M9 build

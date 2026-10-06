@@ -1,5 +1,6 @@
 #include "lain/camera/registration/board.h"
 
+#include "common.h"
 #include "execution.h"
 #include "lain/camera/board/pose.h"
 #include "lain/camera/projection.h"
@@ -14,7 +15,6 @@
 #include <limits>
 #include <map>
 #include <numeric>
-#include <random>
 #include <set>
 #include <string>
 #include <utility>
@@ -23,6 +23,10 @@
 namespace lain::camera::registration::board
 {
 	namespace cb = camera::board;
+	using detail::failed;
+	using detail::median;
+	using detail::root;
+	using detail::rotationBetween;
 
 	// --- file-local helpers (named static, not an anonymous namespace) ----------
 
@@ -53,28 +57,6 @@ namespace lain::camera::registration::board
 		std::vector<std::vector<std::uint32_t>> byGroup; // per canonical group: into `posed`, ascending by camera
 	};
 
-	// The rotation between two transforms, radians: 2 atan2(|v|, |w|) of the relative quaternion,
-	// which keeps its precision for the tiny angles stability is measured in, where acos does not.
-	static double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
-	{
-		const math::Quatd relative = math::conjugate(a.rotation()) * b.rotation();
-		const double v = std::sqrt(relative.x * relative.x + relative.y * relative.y + relative.z * relative.z);
-		return 2.0 * std::atan2(v, std::abs(relative.w));
-	}
-
-	static double median(std::vector<double> values)
-	{
-		if (values.empty())
-			return std::numeric_limits<double>::infinity();
-		const std::size_t half = values.size() / 2;
-		std::nth_element(values.begin(), values.begin() + std::ptrdiff_t(half), values.end());
-		const double upper = values[half];
-		if (values.size() % 2 == 1)
-			return upper;
-		const double lower = *std::max_element(values.begin(), values.begin() + std::ptrdiff_t(half));
-		return (lower + upper) / 2;
-	}
-
 	// RMS angle, radians, between each observed ray and the ray to its corner posed by
 	// `cameraFromBoard`. The rays were unprojected once, so this is the inner loop of initialisation
 	// and costs no projection.
@@ -98,16 +80,6 @@ namespace lain::camera::registration::board
 		for (const math::RigidTransformd& pose : otherFromBoard)
 			best = std::min(best, angleRms(o, cameraFromOther * pose));
 		return best;
-	}
-
-	static std::uint32_t root(std::vector<std::uint32_t>& parent, std::uint32_t x)
-	{
-		while (parent[x] != x)
-		{
-			parent[x] = parent[parent[x]];
-			x = parent[x];
-		}
-		return x;
 	}
 
 	// The cameras of each group in `groups`, for the observation graph.
@@ -350,84 +322,9 @@ namespace lain::camera::registration::board
 		return solution.cameraFromReference;
 	}
 
-	// A report that has failed, timed from `start`.
-	static Report failed(Report report, core::Time start, Failure failure, std::string detail)
-	{
-		report.status = RegistrationStatus::Failed;
-		report.cameras.clear();
-		report.failures.push_back({failure, std::move(detail)});
-		report.elapsed = core::Time::now() - start;
-		return report;
-	}
-
 	static bool usable(const cb::DetectionReport& report)
 	{
 		return report.status != cb::DetectionStatus::Failed && report.observation.has_value();
-	}
-
-	// Whether the evidence meets one tier. `complete` demands every criterion's evidence be present
-	// (Ready); otherwise a criterion whose evidence is unavailable is not held against it. Notes say
-	// what fell short.
-	static bool meets(const FitnessThresholds& t, const char* tier, bool complete, const Report& report,
-					  const ObservationGraph& graph, std::uint32_t outliers, std::uint32_t fitted,
-					  std::vector<std::string>& notes)
-	{
-		bool ok = true;
-		const auto note = [&](std::string text)
-		{
-			notes.push_back(std::string(tier) + ": " + std::move(text));
-			ok = false;
-		};
-		const Diagnostics& d = report.diagnostics;
-
-		std::uint32_t fewest = std::numeric_limits<std::uint32_t>::max(), short_ = 0;
-		const CameraEvidence* weakest = nullptr;
-		for (const CameraEvidence& c : d.cameras)
-		{
-			if (c.groups < t.minimumGroupsPerCamera)
-				++short_;
-			if (c.groups < fewest)
-			{
-				fewest = c.groups;
-				weakest = &c;
-			}
-		}
-		if (short_ > 0 && weakest)
-			note(lain::string::format("{} of {} cameras in fewer than {} shared groups (fewest: {}, in {})", short_,
-									  d.cameras.size(), t.minimumGroupsPerCamera, weakest->camera.value, fewest));
-
-		const std::vector<GraphEdge> weak = weakBridges(graph, t.minimumBridgeGroups);
-		if (!weak.empty())
-			note(lain::string::format("weak bridges: {} under {} shared groups (first: {}-{}, on {})", weak.size(),
-									  t.minimumBridgeGroups, d.cameras[weak[0].a].camera.value,
-									  d.cameras[weak[0].b].camera.value, weak[0].sharedGroups));
-
-		if (const auto* e = std::get_if<HeldOutEvidence>(&report.heldOut))
-		{
-			if (e->rmsAngle > t.maximumHeldOutAngle)
-				note(lain::string::format("held-out transfer {:.3g} mrad exceeds {:.3g}", e->rmsAngle * 1000,
-										  t.maximumHeldOutAngle * 1000));
-		}
-		else if (complete)
-			note("no held-out evidence: " + std::get<Unavailable>(report.heldOut).reason);
-
-		if (const auto* e = std::get_if<ResamplingEvidence>(&report.resampling))
-		{
-			if (e->rotationVariation > t.maximumRotationVariation)
-				note(lain::string::format("rotation variation {:.3g} mrad exceeds {:.3g} ({})", e->rotationVariation * 1000,
-										  t.maximumRotationVariation * 1000, e->worstCamera.value));
-			if (e->translationVariation > t.maximumTranslationVariation)
-				note(lain::string::format("translation variation {:.3g} of the median depth exceeds {:.3g} ({})",
-										  e->translationVariation, t.maximumTranslationVariation, e->worstCamera.value));
-		}
-		else if (complete)
-			note("no resampling evidence: " + std::get<Unavailable>(report.resampling).reason);
-
-		const double outlierFraction = fitted == 0 ? 0.0 : double(outliers) / double(fitted);
-		if (outlierFraction > t.maximumOutlierFraction)
-			note(lain::string::format("{} of {} observations are outliers, above {:.3g}", outliers, fitted,
-									  t.maximumOutlierFraction));
-		return ok;
 	}
 
 	// A registration dataset in canonical order, with each member's camera resolved to an index.
@@ -671,70 +568,16 @@ namespace lain::camera::registration::board
 			return failed(std::move(report), start, Failure::TooFewCameras,
 						  "no capture group has the board posed in two or more cameras");
 
-		// Every k-th usable group, starting half a stride in, held out unless that would cut a camera
-		// pair's last shared group AND so split the graph: a held-out group must not decide whether the
-		// registration can happen at all.
+		// Every k-th usable group held out, unless that would split the graph (detail::holdOut).
 		std::vector<bool> heldOut(groupCount, false);
-		if (request.heldOutFraction > 0 && usableGroups.size() >= kMinimumToHoldOut)
+		const std::vector<bool> held = detail::holdOut(cameraCount, camerasOf(evidence, usableGroups),
+													   request.heldOutFraction, kMinimumToHoldOut);
+		for (std::size_t i = 0; i < usableGroups.size(); ++i)
 		{
-			std::vector<std::uint32_t> shared(cameraCount * cameraCount, 0);
-			const auto pairsOf = [&](std::uint32_t g)
-			{
-				std::vector<std::size_t> pairs;
-				const std::vector<std::uint32_t>& members = evidence.byGroup[g];
-				for (std::size_t i = 0; i < members.size(); ++i)
-				{
-					for (std::size_t j = i + 1; j < members.size(); ++j)
-						pairs.push_back(evidence.posed[members[i]].camera * cameraCount + evidence.posed[members[j]].camera);
-				}
-				return pairs;
-			};
-			for (const std::uint32_t g : usableGroups)
-			{
-				for (const std::size_t pair : pairsOf(g))
-					++shared[pair];
-			}
-			const auto componentCount = [&]()
-			{
-				std::vector<std::uint32_t> parent(cameraCount);
-				std::iota(parent.begin(), parent.end(), 0u);
-				std::size_t components = cameraCount;
-				for (std::size_t pair = 0; pair < shared.size(); ++pair)
-				{
-					if (shared[pair] == 0)
-						continue;
-					const std::uint32_t a = root(parent, std::uint32_t(pair / cameraCount));
-					const std::uint32_t b = root(parent, std::uint32_t(pair % cameraCount));
-					if (a != b)
-					{
-						parent[a] = b;
-						--components;
-					}
-				}
-				return components;
-			};
-			const std::size_t components = componentCount();
-			const std::size_t stride =
-				std::max<std::size_t>(2, std::size_t(std::lround(1.0 / request.heldOutFraction)));
-			for (std::size_t i = stride / 2; i < usableGroups.size(); i += stride)
-			{
-				const std::uint32_t g = usableGroups[i];
-				const std::vector<std::size_t> pairs = pairsOf(g);
-				bool cuts = false;
-				for (const std::size_t pair : pairs)
-				{
-					if (--shared[pair] == 0)
-						cuts = true;
-				}
-				if (cuts && componentCount() > components)
-				{
-					for (const std::size_t pair : pairs)
-						++shared[pair];
-					continue;
-				}
-				heldOut[g] = true;
-				diagnostics.heldOutGroups.push_back(data.groups[g]->group.identity());
-			}
+			if (!held[i])
+				continue;
+			heldOut[usableGroups[i]] = true;
+			diagnostics.heldOutGroups.push_back(data.groups[usableGroups[i]]->group.identity());
 		}
 		std::vector<std::uint32_t> fitting, validating;
 		for (const std::uint32_t g : usableGroups)
@@ -792,24 +635,17 @@ namespace lain::camera::registration::board
 		}
 
 		// 4. The reference: requested, or the camera in the most shared groups, ties to the lower identity.
-		std::uint32_t reference = 0;
+		std::optional<std::uint32_t> requested;
 		if (request.reference)
 		{
 			for (std::uint32_t c = 0; c < cameraCount; ++c)
 			{
 				if (data.cameras[c].camera == *request.reference)
-					reference = c;
+					requested = c;
 			}
 			report.referenceRequested = true;
 		}
-		else
-		{
-			for (std::uint32_t c = 1; c < cameraCount; ++c)
-			{
-				if (graph.groupsPerCamera[c] > graph.groupsPerCamera[reference])
-					reference = c;
-			}
-		}
+		const std::uint32_t reference = detail::chooseReference(graph.groupsPerCamera, requested);
 		report.reference = data.cameras[reference].camera;
 
 		// 5. Initialisation.
@@ -1034,23 +870,15 @@ namespace lain::camera::registration::board
 			}
 		}
 
-		// 8. Stability: registrations of bootstrap resamples of the fitting groups. The draws come from
-		// one seeded engine, in order, before anything runs, so they are the same under either execution
-		// policy; only the registrations run in parallel. A plain modulo maps a draw to an index, since
-		// the standard's distributions are implementation-defined.
+		// 8. Stability: registrations of bootstrap resamples of the fitting groups. The draws are made
+		// before anything runs (detail::bootstrapDraws), so only the registrations run in parallel.
 		if (request.resamples == 0)
 			report.resampling = Unavailable{"resampling was not requested"};
 		else if (fitting.size() < 2)
 			report.resampling = Unavailable{"too few capture groups to resample"};
 		else
 		{
-			std::mt19937_64 engine(request.seed);
-			std::vector<std::vector<std::uint32_t>> draws(request.resamples);
-			for (std::vector<std::uint32_t>& draw : draws)
-			{
-				for (std::size_t i = 0; i < fitting.size(); ++i)
-					draw.push_back(fitting[std::size_t(engine() % fitting.size())]);
-			}
+			const std::vector<std::vector<std::uint32_t>> draws = detail::bootstrapDraws(fitting, request.resamples, request.seed);
 			std::vector<std::optional<std::vector<math::RigidTransformd>>> registrations(draws.size());
 			detail::forEach(draws.size(), request.execution,
 							[&](std::size_t r)
@@ -1099,15 +927,7 @@ namespace lain::camera::registration::board
 		}
 
 		// 9. The verdict.
-		std::vector<std::string> readyNotes, exploratoryNotes;
-		if (meets(report.thresholds.ready, "Ready", true, report, graph, outliers, fitted, readyNotes))
-			report.verdict = Verdict::Ready;
-		else if (meets(report.thresholds.exploratory, "Exploratory", false, report, graph, outliers, fitted, exploratoryNotes))
-			report.verdict = Verdict::Exploratory;
-		else
-			report.verdict = Verdict::Rejected;
-		report.fitnessNotes = readyNotes;
-		report.fitnessNotes.insert(report.fitnessNotes.end(), exploratoryNotes.begin(), exploratoryNotes.end());
+		detail::judge(report, graph, outliers, fitted);
 
 		report.elapsed = core::Time::now() - start;
 		return report;

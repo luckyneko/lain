@@ -6,6 +6,7 @@
 #include "lain/camera/capture/capturegroup.h"
 #include "lain/camera/registration/report.h"
 #include "lain/camera/registration/request.h"
+#include "lain/camera/registration/rig.h"
 
 #include <lain/media/framesequence.h>
 
@@ -19,20 +20,10 @@
 // backends run. `register` is a keyword, hence `registerCameras`.
 namespace lain::camera::registration::board
 {
-	// One camera of a registration dataset: its identity and its calibrated model, held fixed.
-	struct RigCamera
-	{
-		capture::CameraIdentity camera;
-		CameraModel model;
-	};
-
-	// One camera with the footage its capture-group members name.
-	struct RigFootage
-	{
-		capture::CameraIdentity camera;
-		CameraModel model;
-		media::FrameSequence footage;
-	};
+	// The rig's cameras are registration's, whatever the method (rig.h); named here as well, where
+	// a board registration's callers look for them.
+	using registration::RigCamera;
+	using registration::RigFootage;
 
 	// The detections of one capture group, one per member, in the order of group.members().
 	struct GroupObservations
