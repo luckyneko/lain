@@ -132,21 +132,29 @@ TEST_CASE("bridges are found without recursion on a very long chain", "[camera][
 	CHECK(bridges == n - 1);
 }
 
-TEST_CASE("registration/1 is known, and overrides change only its Ready tier", "[camera][registration]")
+TEST_CASE("both registration profiles are known, and overrides change only their Ready tier", "[camera][registration]")
 {
-	CHECK(fitnessProfileNames() == std::vector<std::string>{"registration/1"});
+	CHECK(fitnessProfileNames() == std::vector<std::string>{"registration/1", "registration-targetless/1"});
 	CHECK_FALSE(fitnessProfile("registration/2").has_value());
+	CHECK_FALSE(fitnessProfile("").has_value()); // the empty name is a request's, resolved by the method
+	const std::optional<FitnessProfile> targetless = fitnessProfile("registration-targetless/1");
+	REQUIRE(targetless.has_value());
+	CHECK(targetless->name == "registration-targetless/1");
+	CHECK(targetless->unit == EvidenceUnit::Track); // it counts accepted feature tracks
 	const std::optional<FitnessProfile> profile = fitnessProfile("registration/1");
 	REQUIRE(profile.has_value());
 	CHECK(profile->name == "registration/1");
 	CHECK(profile->unit == EvidenceUnit::CaptureGroup); // it counts capture groups
-	// Ready is stricter than Exploratory on every criterion.
-	CHECK(profile->ready.minimumSharedPerCamera > profile->exploratory.minimumSharedPerCamera);
-	CHECK(profile->ready.minimumBridgeShared > profile->exploratory.minimumBridgeShared);
-	CHECK(profile->ready.maximumHeldOutAngle < profile->exploratory.maximumHeldOutAngle);
-	CHECK(profile->ready.maximumRotationVariation < profile->exploratory.maximumRotationVariation);
-	CHECK(profile->ready.maximumTranslationVariation < profile->exploratory.maximumTranslationVariation);
-	CHECK(profile->ready.maximumOutlierFraction < profile->exploratory.maximumOutlierFraction);
+	// Ready is stricter than Exploratory on every criterion, in both.
+	for (const FitnessProfile& p : {*profile, *targetless})
+	{
+		CHECK(p.ready.minimumSharedPerCamera > p.exploratory.minimumSharedPerCamera);
+		CHECK(p.ready.minimumBridgeShared > p.exploratory.minimumBridgeShared);
+		CHECK(p.ready.maximumHeldOutAngle < p.exploratory.maximumHeldOutAngle);
+		CHECK(p.ready.maximumRotationVariation < p.exploratory.maximumRotationVariation);
+		CHECK(p.ready.maximumTranslationVariation < p.exploratory.maximumTranslationVariation);
+		CHECK(p.ready.maximumOutlierFraction < p.exploratory.maximumOutlierFraction);
+	}
 
 	FitnessOverrides overrides;
 	overrides.minimumBridgeShared = 2;

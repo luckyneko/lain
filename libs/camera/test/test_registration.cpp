@@ -500,6 +500,25 @@ TEST_CASE("a dataset or request that cannot register is refused before any work"
 		request.fitnessProfile = "registration/0";
 		CHECK(failedWith(run(request), Failure::UnknownFitnessProfile));
 	}
+	SECTION("a profile that counts feature tracks, which a board registration has none of")
+	{
+		Request request;
+		request.fitnessProfile = "registration-targetless/1";
+		const Report report = run(request);
+		REQUIRE(failedWith(report, Failure::IncompatibleFitnessProfile));
+		CHECK(report.failures.front().detail.find("counts tracks") != std::string::npos);
+	}
+	SECTION("the empty name is the method's own profile, and so is registration/1 named")
+	{
+		CHECK(Request{}.fitnessProfile.empty());
+		Request named;
+		named.fitnessProfile = "registration/1";
+		const Report byDefault = run();
+		const Report byName = run(named);
+		CHECK(byDefault.thresholds.name == "registration/1");
+		CHECK(byName.thresholds.name == "registration/1");
+		CHECK(byDefault.verdict == byName.verdict);
+	}
 	SECTION("an unknown reference")
 	{
 		Request request;

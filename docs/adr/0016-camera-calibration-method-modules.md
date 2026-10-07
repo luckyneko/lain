@@ -402,6 +402,17 @@ repo owner while planning M9 slice 3.)*
   and predicts each held-out observation by triangulating its landmark from the other members with
   every camera held. Being scale-invariant, it compares a metric board registration with a
   scale-ambiguous targetless one without fitting anything on the validation data.
+  *Built in M9 slice 3, sub-slice 8a (2026-10-07):*
+  - **One fixed procedure, whatever the report asked for its own refinement.** It uses the tracks'
+    own covariances (the default noise model where a track has none) and no robust loss, so two
+    reports are compared under one prediction.
+  - **One refinement per held-out track, every camera held.** A track's prediction then does not
+    depend on which others were held out, and a start that cannot be refined leaves only its own
+    members unpredicted.
+  - **A two-member track's residual counts twice.** It is measured against the epipolar plane, which
+    gives it one degree of freedom where a transfer has two. Counting it twice keeps the RMS
+    independent of the mix of track lengths, under isotropic noise.
+  - **It answers `Unavailable` rather than zeros** when there is nothing to predict.
 - **A scale-ambiguous result is normalised** so the median depth of the landmarks seen from the
   reference is 1, and its report says so.
 - **SIFT** fills the OpenCV extractor. **Matching is a request choice between Exact and

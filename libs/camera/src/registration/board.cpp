@@ -65,8 +65,7 @@ namespace lain::camera::registration::board
 		double sum = 0;
 		for (std::size_t i = 0; i < o.points.size(); ++i)
 		{
-			const math::Vec3d p = cameraFromBoard.apply(o.points[i]);
-			const double angle = std::atan2(math::length(math::cross(o.rays[i], p)), math::dot(o.rays[i], p));
+			const double angle = detail::angleBetween(o.rays[i], cameraFromBoard.apply(o.points[i]));
 			sum += angle * angle;
 		}
 		return o.points.empty() ? std::numeric_limits<double>::infinity() : std::sqrt(sum / double(o.points.size()));
@@ -344,41 +343,13 @@ namespace lain::camera::registration::board
 										 core::Time start)
 	{
 		report.reproducibility.request = request;
-		const std::optional<FitnessProfile> profile = fitnessProfile(request.fitnessProfile);
-		if (!profile)
-			return failed(report, start, Failure::UnknownFitnessProfile,
-						  "no fitness profile is named \"" + request.fitnessProfile + "\"");
-		report.thresholds = resolve(*profile, request.overrides);
-
-		// Canonical camera order, so nothing downstream depends on how the cameras were listed.
-		std::vector<std::size_t> cameraOrder(cameras.size());
-		std::iota(cameraOrder.begin(), cameraOrder.end(), std::size_t{0});
-		std::stable_sort(cameraOrder.begin(), cameraOrder.end(), [&](std::size_t a, std::size_t b)
-						 { return cameras[a].camera < cameras[b].camera; });
-		for (const std::size_t i : cameraOrder)
-		{
-			if (cameras[i].camera.empty())
-				return failed(report, start, Failure::InvalidDataset, "a camera has no identity");
-			if (!data.cameras.empty() && data.cameras.back().camera == cameras[i].camera)
-				return failed(report, start, Failure::InvalidDataset,
-							  "two cameras have the identity \"" + cameras[i].camera.value + "\"");
-			data.cameras.push_back(cameras[i]);
-		}
-		if (data.cameras.size() < 2)
-			return failed(report, start, Failure::TooFewCameras,
-						  lain::string::format("{} cameras; a registration needs at least two", data.cameras.size()));
-		const auto indexOf = [&](const capture::CameraIdentity& camera) -> std::optional<std::uint32_t>
-		{
-			const auto found = std::lower_bound(data.cameras.begin(), data.cameras.end(), camera,
-												[](const RigCamera& c, const capture::CameraIdentity& id)
-												{ return c.camera < id; });
-			if (found == data.cameras.end() || found->camera != camera)
-				return std::nullopt;
-			return std::uint32_t(found - data.cameras.begin());
-		};
-		if (request.reference && !indexOf(*request.reference))
-			return failed(report, start, Failure::UnknownReference,
-						  "the requested reference \"" + request.reference->value + "\" is not a camera of the dataset");
+		if (std::optional<Report> failure = detail::resolveProfile(report, request, EvidenceUnit::CaptureGroup,
+																   "registration/1", start))
+			return failure;
+		detail::CanonicalCameras canonical;
+		if (std::optional<Report> failure = detail::canonicalCameras(report, canonical, cameras, request, start))
+			return failure;
+		data.cameras = canonical.cameras;
 
 		// Canonical group order, then each member's camera.
 		for (const GroupObservations& g : groups)
@@ -399,7 +370,7 @@ namespace lain::camera::registration::board
 			std::vector<std::uint32_t> members;
 			for (const capture::CaptureMember& m : group.group.members())
 			{
-				const std::optional<std::uint32_t> camera = indexOf(m.camera);
+				const std::optional<std::uint32_t> camera = canonical.indexOf(m.camera);
 				if (!camera)
 					return failed(report, start, Failure::InvalidDataset,
 								  "capture group " + group.group.identity().substr(0, 12) + " names camera \"" +
@@ -410,22 +381,12 @@ namespace lain::camera::registration::board
 		}
 
 		// Each model against the geometry its footage is measured in.
-		for (std::size_t c = 0; c < data.cameras.size(); ++c)
-		{
-			const RigCamera& camera = data.cameras[c];
-			const std::optional<ImageGeometry>& image = geometry[cameraOrder[c]];
-			const Applicability applies = applicability(camera.model, image ? *image : camera.model.image());
-			data.applicability.push_back(applies);
-			if (applies == Applicability::Incompatible)
-				return failed(report, start, Failure::IncompatibleModel,
-							  lain::string::format("camera \"{}\"'s model is {}x{} and its footage is {}x{}", camera.camera.value,
-												   camera.model.image().width, camera.model.image().height, image->width,
-												   image->height));
-			if (applies == Applicability::Unknown && request.unknownApplicability == ApplicabilityPolicy::Refuse)
-				return failed(report, start, Failure::UnknownApplicability,
-							  "camera \"" + camera.camera.value +
-								  "\"'s model is of unknown applicability to its footage, and the request refuses that");
-		}
+		std::vector<std::optional<ImageGeometry>> measured;
+		for (const std::size_t given : canonical.given)
+			measured.push_back(geometry[given]);
+		if (std::optional<Report> failure =
+				detail::checkApplicability(report, data.applicability, data.cameras, measured, request, start))
+			return failure;
 
 		if (!cb::canSolvePose())
 			return failed(report, start, Failure::NoPoseSolver,
@@ -726,26 +687,13 @@ namespace lain::camera::registration::board
 						continue;
 					}
 					const math::Vec2d r = math::Vec2d{predicted.u, predicted.v} - f.pixel;
-					if (f.covariance)
-					{
-						// Whitened by the Cholesky factor of the covariance: L^-1 r.
-						const auto& c = *f.covariance;
-						const double l11 = std::sqrt(c[0]);
-						const double l21 = c[1] / l11;
-						const double l22 = std::sqrt(std::max(c[2] - l21 * l21, 0.0));
-						const double w1 = r.x / l11;
-						const double w2 = (r.y - l21 * w1) / l22;
-						whitened += w1 * w1 + w2 * w2;
-					}
-					else
-						whitened += math::dot(r, r) / (request.noise.pixelSigma * request.noise.pixelSigma);
+					whitened += detail::whitenedSquared(r, f.covariance, request.noise);
 					sumPixels[p.camera] += math::dot(r, r);
 					++corners;
 				}
 				for (std::size_t i = 0; i < p.points.size(); ++i)
 				{
-					const math::Vec3d q = cameraFromBoard.apply(p.points[i]);
-					const double angle = std::atan2(math::length(math::cross(p.rays[i], q)), math::dot(p.rays[i], q));
+					const double angle = detail::angleBetween(p.rays[i], cameraFromBoard.apply(p.points[i]));
 					sumAngles[p.camera] += angle * angle;
 				}
 				CameraEvidence& camera = diagnostics.cameras[p.camera];

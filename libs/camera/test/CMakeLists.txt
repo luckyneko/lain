@@ -62,3 +62,11 @@ add_executable(test-camera-tracks test_tracks.cpp)
 target_compile_features(test-camera-tracks PRIVATE cxx_std_17)
 target_link_libraries(test-camera-tracks PRIVATE lain::camera lain::testing lain::warnings Catch2::Catch2WithMain)
 catch_discover_tests(test-camera-tracks TEST_PREFIX "(camera) ")
+
+# Targetless registration over stand-ins answering from a known scene (syntheticscene.h), with a
+# refiner that hands back its start (passthroughrefiner.h): held-out tracks predicted member by member
+# (registration::validate). Its own executable, so those are the only backends registered.
+add_executable(test-camera-targetless test_targetless.cpp)
+target_compile_features(test-camera-targetless PRIVATE cxx_std_17)
+target_link_libraries(test-camera-targetless PRIVATE lain::camera lain::testing lain::warnings Catch2::Catch2WithMain)
+catch_discover_tests(test-camera-targetless TEST_PREFIX "(camera) ")

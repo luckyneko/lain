@@ -233,7 +233,8 @@ namespace
 		const Request& q = p.request;
 		out << "request reference " << (q.reference ? q.reference->value : "unset") << " unknownApplicability "
 			<< name(q.unknownApplicability) << " noise " << number(q.noise.pixelSigma) << " loss " << name(q.loss.family)
-			<< " " << number(q.loss.scale) << " profile " << q.fitnessProfile << "\n";
+			<< " " << number(q.loss.scale) << " profile "
+			<< (q.fitnessProfile.empty() ? std::string("(method's)") : q.fitnessProfile) << "\n";
 		const FitnessOverrides& o = q.overrides;
 		out << "request overrides " << optional(o.minimumSharedPerCamera) << " " << optional(o.minimumBridgeShared) << " "
 			<< optional(o.maximumHeldOutAngle) << " " << optional(o.maximumRotationVariation) << " "

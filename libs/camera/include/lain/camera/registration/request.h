@@ -61,7 +61,10 @@ namespace lain::camera::registration
 		NoiseModel noise;
 		RobustLoss loss;
 
-		std::string fitnessProfile = "registration/1";
+		// The fitness profile the verdict is judged by. Empty is the method's own: registration/1 for
+		// a board registration, registration-targetless/1 for a targetless one. A method refuses a
+		// profile that counts another evidence unit.
+		std::string fitnessProfile;
 		FitnessOverrides overrides;
 
 		double heldOutFraction = 0.2;		   // of the usable evidence, kept out to validate on

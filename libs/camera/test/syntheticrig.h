@@ -4,6 +4,7 @@
 // answering from its truth. The scene is process-wide, as the stand-ins' registries are; each case
 // starts from rig::reset() and changes only what it is about.
 
+#include "passthroughrefiner.h"
 #include "testboard.h"
 #include "testcamera.h"
 
@@ -230,48 +231,10 @@ namespace lain::camera::testing::rig
 		}
 	};
 
-	// What the stand-in refiner was asked.
-	struct RefinerScript
-	{
-		std::mutex mutex;
-		struct Asked
-		{
-			bool freeCameras = true;
-			std::size_t bodies = 0;
-			std::size_t observations = 0;
-			std::size_t landmarks = 0;
-			std::size_t landmarkObservations = 0;
-		};
-		std::vector<Asked> asked;
-	};
-	inline RefinerScript& refinerScript()
-	{
-		static RefinerScript instance;
-		return instance;
-	}
-
-	// Hands back the starting estimate, unrefined: what the method module does around a refinement
-	// is then the only thing under test. The Ceres refiner has its own tests, in plugins/camera/ceres.
-	class PassThroughRefiner : public registration::Refiner
-	{
-	public:
-		Provenance provenance() const override { return {"passthrough", "1"}; }
-
-		registration::Solution refine(const registration::Problem& problem) const override
-		{
-			{
-				std::lock_guard<std::mutex> lock(refinerScript().mutex);
-				refinerScript().asked.push_back({problem.freeCameras, problem.referenceFromBody.size(), problem.observations.size(),
-												 problem.landmarks.size(), problem.landmarkObservations.size()});
-			}
-			registration::Solution out;
-			out.status = registration::RefinementStatus::Converged;
-			out.cameraFromReference = problem.cameraFromReference;
-			out.referenceFromBody = problem.referenceFromBody;
-			out.landmarks = problem.landmarks;
-			return out;
-		}
-	};
+	// The refiner stand-in is shared with the targetless tests (passthroughrefiner.h); named here too.
+	using testing::PassThroughRefiner;
+	using testing::refinerScript;
+	using testing::RefinerScript;
 
 	// The detector and the pose solver. A refiner is the test's choice: the pass-through one above,
 	// or the Ceres plugin's.
@@ -286,15 +249,7 @@ namespace lain::camera::testing::rig
 		(void)once;
 	}
 
-	inline void registerPassThroughRefiner()
-	{
-		static const bool once = []
-		{
-			registration::refinerRegistry().registerType<PassThroughRefiner>("passthrough");
-			return true;
-		}();
-		(void)once;
-	}
+	using testing::registerPassThroughRefiner;
 
 	// The default scene: `cameras` cameras on an arc `distance` metres from the origin, spread over
 	// 1.4 rad and facing the board's front, and `groups` board poses near the origin, each seen by

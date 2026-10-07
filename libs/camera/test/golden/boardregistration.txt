@@ -202,7 +202,7 @@ source /rig/cam01
 source /rig/cam02
 source /rig/cam03
 frames 160 detector truth/1 poseSolver truth/1 refiner passthrough/1
-request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile registration/1
+request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
 request overrides unset unset unset unset unset unset
 request detection native, refine native 1, detail Summary, minimum corners 4
 request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal
@@ -362,7 +362,7 @@ source /rig/cam01
 source /rig/cam02
 source /rig/cam03
 frames 96 detector truth/1 poseSolver truth/1 refiner passthrough/1
-request reference cam02 unknownApplicability Accept noise 0.5 loss Cauchy 3 profile registration/1
+request reference cam02 unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
 request overrides 30 unset unset unset unset unset
 request detection native, refine native 1, detail Summary, minimum corners 4
 request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal
@@ -506,7 +506,7 @@ source /rig/cam01
 source /rig/cam02
 source /rig/cam03
 frames 96 detector truth/1 poseSolver truth/1 refiner passthrough/1
-request reference unset unknownApplicability Accept noise 0.5 loss Huber 3 profile registration/1
+request reference unset unknownApplicability Accept noise 0.5 loss Huber 3 profile (method's)
 request overrides unset unset unset unset unset unset
 request detection native, refine native 1, detail Summary, minimum corners 4
 request heldOutFraction 0.25 resamples 6 seed 17 maximumIterations 100 execution Normal
@@ -642,7 +642,7 @@ source /rig/cam01
 source /rig/cam02
 source /rig/cam03
 frames 96 detector truth/1 poseSolver truth/1 refiner /
-request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile registration/1
+request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
 request overrides unset unset unset unset unset unset
 request detection native, refine native 1, detail Summary, minimum corners 4
 request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal

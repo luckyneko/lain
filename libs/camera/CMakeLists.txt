@@ -34,6 +34,7 @@ add_library(camera STATIC
 	src/registration/observationgraph.cpp
 	src/registration/refiner.cpp
 	src/registration/report.cpp
+	src/registration/validation.cpp
 )
 add_library(lain::camera ALIAS camera)
 

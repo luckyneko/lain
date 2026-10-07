@@ -1,5 +1,7 @@
 #include "lain/camera/feature/triangulation.h"
 
+#include "angles.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -13,11 +15,6 @@ namespace lain::camera::feature
 	static bool finite(const math::Vec3d& v)
 	{
 		return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
-	}
-
-	static double angleBetween(const math::Vec3d& u, const math::Vec3d& v)
-	{
-		return std::atan2(math::length(math::cross(u, v)), math::dot(u, v));
 	}
 
 	Triangulation triangulate(const std::vector<Ray>& rays, double minimumAngle)
@@ -37,7 +34,7 @@ namespace lain::camera::feature
 		for (std::size_t i = 0; i < usable.size(); ++i)
 		{
 			for (std::size_t j = i + 1; j < usable.size(); ++j)
-				out.angle = std::max(out.angle, angleBetween(usable[i].direction, usable[j].direction));
+				out.angle = std::max(out.angle, detail::angleBetween(usable[i].direction, usable[j].direction));
 		}
 
 		// Least squares over the perpendicular distances: Σ(I − ddᵀ) x = Σ(I − ddᵀ) c.

@@ -22,16 +22,39 @@ namespace lain::camera::registration
 		return p;
 	}
 
+	// registration-targetless/1, counting accepted feature tracks. Provisional (M9 slice 3), re-measured
+	// on rendered and real footage before a node exposes it:
+	// - every camera in 100 or more shared tracks and every bridge resting on 50, starting from
+	//   COLMAP's minimum inliers to initialise and to place a camera (100) and its minimum for
+	//   two-view geometry (15), which Exploratory takes;
+	// - held-out transfer within 2 mrad: SIFT localises to about 0.7 mrad at a focal length of 1000
+	//   processed pixels, and a transfer through a triangulated point roughly doubles that;
+	// - rotation steady to 1 mrad and position to 0.5% of the median depth, after the scale each
+	//   resample leaves free is aligned;
+	// - at most 5% of camera-track observations flagged as outliers: looser than board's, since a
+	//   verified match can still err along its epipolar line.
+	static FitnessProfile registrationTargetless1()
+	{
+		FitnessProfile p;
+		p.name = "registration-targetless/1";
+		p.unit = EvidenceUnit::Track;
+		p.ready = {100, 50, 0.002, 0.001, 0.005, 0.05};
+		p.exploratory = {30, 15, 0.006, 0.005, 0.02, 0.15};
+		return p;
+	}
+
 	std::optional<FitnessProfile> fitnessProfile(std::string_view name)
 	{
 		if (name == "registration/1")
 			return registration1();
+		if (name == "registration-targetless/1")
+			return registrationTargetless1();
 		return std::nullopt;
 	}
 
 	std::vector<std::string> fitnessProfileNames()
 	{
-		return {"registration/1"};
+		return {"registration/1", "registration-targetless/1"};
 	}
 
 	FitnessProfile resolve(const FitnessProfile& profile, const FitnessOverrides& overrides)

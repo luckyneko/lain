@@ -8,6 +8,7 @@ add_executable(test-camera-ceres
 	test_jet.cpp
 	test_landmarks.cpp
 	test_refiner.cpp
+	test_targetless.cpp
 )
 
 target_compile_features(test-camera-ceres PRIVATE cxx_std_17)

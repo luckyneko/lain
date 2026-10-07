@@ -1354,6 +1354,41 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-07 — M9 slice 3, sub-slice 8a: `registration::validate`, and the targetless profile
+
+Sub-slice 8 is two commits, chosen by the repo owner: 8a here, the method in 8b.
+`registration::validate` predicts each member of each held-out track from the others, with every
+camera held, whichever method made the report. That is how sub-slice 9 compares board and targetless
+registrations. `ctest -j8` **1172/1172** Debug and **1180/1180** Release with video, camera and Ceres on (+7 each), **1085/1085** with all three off (+6); warning-clean,
+format-check clean. Full notes in WORK.md's *Sub-slice 8a built* under M9 slice 3.
+
+- **Decided with the repo owner:**
+  - **An empty `Request::fitnessProfile` is the method's own profile**, and is the default. Board
+    resolves it to `registration/1` and refuses the new `registration-targetless/1` with
+    `IncompatibleFitnessProfile`.
+  - **When no pair clears the seed's parallax floor, initialisation seeds from the widest** (8b).
+  - **The board golden changes on purpose in exactly four lines** (`profile (method's)`), diffed
+    before it was copied over.
+- **One fixed procedure, whatever the report's request:** each observation is weighted by its
+  track's own covariance, with no robust loss. A report is judged by what it registered, never by
+  how it asked to be refined.
+- **One refinement per held-out track**, holding only that track's cameras. A start that does not
+  project into every predicting camera is never sent, since one failed start aborts a whole Ceres
+  solve.
+- **A two-member track is scored against its epipolar plane, and that residual counts twice:** it has
+  one degree of freedom where a transfer residual has two. `Unavailable` replaces zeros when nothing
+  is predicted.
+- **Shared with board, and the golden held:** `resolveProfile`, `canonicalCameras`,
+  `checkApplicability`, `whitenedSquared` and a guarded stride `holdOut`. `detail::angleBetween`,
+  which existed four times, now lives once in `src/angles.h`.
+- **The plan had two expectations wrong, and the tests pin what is true:**
+  - A camera turned 5 mrad shows 4.96 mrad in its own members; camera 3, which depends mostly on
+    camera 2, shows 6.16.
+  - A turn about the baseline puts a ray asin(sin t sin f) off its plane, not t. The test works this
+    out from the truth.
+- **Four sabotages, all caught.** One did not compile at first and was redone: under `-Werror`, an
+  unused static function fails the build, and the old binary then answers.
+
 ### Update 2026-10-07 — a feature's orientations stay together through matching
 
 The second of sub-slice 7's two recommendations, settled before sub-slice 8. SIFT reports a keypoint

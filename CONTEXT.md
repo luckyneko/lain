@@ -352,6 +352,9 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   instead. It is scale-invariant, which is why board and targetless registrations are compared on
   the same held-out tracks. A track whose loss would leave a camera unplaceable is never held out.
   _Avoid_: held-out match, validation landmark.
+  *One procedure for every report* (2026-10-07): the prediction weighs each observation by the
+  track's own covariance, with no robust loss, whatever the report's request asked of its own
+  refinement. Two registrations are judged by what they registered, never by how they were refined.
 - **Global registration refinement** — joint reprojection optimization of all registered camera
   transforms and the method-specific latent geometry while holding the registration reference fixed:
   board poses for board registration or scene landmarks induced by accepted feature tracks for

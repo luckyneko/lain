@@ -229,6 +229,51 @@ namespace lain::camera::testing::scene
 		return capture::groupsByPosition(byCamera).groups;
 	}
 
+	// The scene's truth as a track set, as extraction would accept it from a perfect matcher: one view
+	// per camera (frame 0 of its source), and a track per landmark that two or more cameras see in
+	// frame 0, at its true pixel plus `sigma` pixels of Gaussian noise per axis (Box-Muller over a
+	// seeded engine, since the standard's distributions are implementation-defined). Identities are the
+	// landmark's index, zero-padded ("track00042"), so a case controls the order they sort in. Every
+	// observation carries the covariance extraction gives a stand-in feature, whose size is 4.
+	inline feature::TrackSet trackSetOf(double sigma = 0.0, std::uint64_t seed = 1)
+	{
+		feature::TrackSet out;
+		const CameraModel m = model();
+		const std::size_t cameras = scene().referenceFromCamera.size();
+		for (std::size_t c = 0; c < cameras; ++c)
+		{
+			media::FrameRef frame;
+			frame.source = core::Uri{sourceOf(c)};
+			out.views.push_back({capture::CameraIdentity{identityOf(c)}, m.image(), {frame}});
+		}
+		std::mt19937_64 engine(seed);
+		const auto gaussian = [&engine]
+		{
+			const double u1 = (double(engine() >> 11) + 0.5) * 0x1.0p-53;
+			const double u2 = double(engine() >> 11) * 0x1.0p-53;
+			return std::sqrt(-2.0 * std::log(u1)) * std::cos(6.283185307179586 * u2);
+		};
+		const double variance = (0.034 * 4.0) * (0.034 * 4.0);
+		for (std::size_t l = 0; l < scene().landmarks.size(); ++l)
+		{
+			feature::Track track;
+			std::string digits = std::to_string(l);
+			track.identity = "track" + std::string(5 - std::min<std::size_t>(5, digits.size()), '0') + digits;
+			for (std::size_t c = 0; c < cameras; ++c)
+			{
+				const std::optional<math::Vec2d> pixel = pixelOf(c, l, 0);
+				if (!pixel)
+					continue;
+				const double nx = gaussian() * sigma, ny = gaussian() * sigma;
+				track.observations.push_back(
+					{std::uint32_t(c), *pixel + math::Vec2d{nx, ny}, 1, std::array<double, 3>{variance, 0.0, variance}});
+			}
+			if (track.observations.size() >= 2)
+				out.tracks.push_back(std::move(track));
+		}
+		return out;
+	}
+
 	// --- the stand-ins ------------------------------------------------------------------
 
 	inline std::uint32_t valueOf(const feature::Features& f, std::size_t i)

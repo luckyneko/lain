@@ -29,19 +29,20 @@ namespace lain::camera::registration
 
 	enum class Failure
 	{
-		NoDetector,			   // this build cannot detect boards
-		NoPoseSolver,		   // this build cannot solve board poses
-		NoRefiner,			   // this build has no global refinement
-		UnknownFitnessProfile, // the request names a profile this build does not know
-		InvalidDataset,		   // two cameras with one identity, a member of no camera, a frame its footage lacks
-		IncompatibleModel,	   // a camera model's geometry is not its footage's
-		UnknownApplicability,  // a model's applicability is Unknown and the request refuses that
-		UnknownReference,	   // the requested reference camera is not in the dataset
-		TooFewCameras,		   // fewer than two cameras share any evidence
-		Disconnected,		   // the camera graph falls apart into components
-		InitialisationFailed,  // a relative pose could not be estimated
-		RefinementFailed,	   // the global refinement produced no usable solution
-		ResourceExhausted,	   // the machine ran out of memory
+		NoDetector,					// this build cannot detect boards
+		NoPoseSolver,				// this build cannot solve board poses
+		NoRefiner,					// this build has no global refinement
+		UnknownFitnessProfile,		// the request names a profile this build does not know
+		IncompatibleFitnessProfile, // the profile counts another method's evidence unit
+		InvalidDataset,				// two cameras with one identity, a member of no camera, a frame its footage lacks
+		IncompatibleModel,			// a camera model's geometry is not its footage's
+		UnknownApplicability,		// a model's applicability is Unknown and the request refuses that
+		UnknownReference,			// the requested reference camera is not in the dataset
+		TooFewCameras,				// fewer than two cameras share any evidence
+		Disconnected,				// the camera graph falls apart into components
+		InitialisationFailed,		// a relative pose could not be estimated
+		RefinementFailed,			// the global refinement produced no usable solution
+		ResourceExhausted,			// the machine ran out of memory
 	};
 
 	struct FailureReason
@@ -142,8 +143,12 @@ namespace lain::camera::registration
 		std::uint32_t predictions = 0; // members predicted
 		std::uint32_t unpredicted = 0; // members the others could not predict (no board pose, no landmark)
 		std::uint32_t residuals = 0;   // points predicted
-		double rmsAngle = 0;		   // radians: the transfer residual
-		double rmsPixels = 0;		   // raw, for diagnosis only
+		// Of the predictions, those scored against an epipolar plane rather than a predicted point: a
+		// two-member track's (validation.h). Each counts twice in the RMS angles, since its residual
+		// has one degree of freedom where a transfer residual has two.
+		std::uint32_t epipolar = 0;
+		double rmsAngle = 0;  // radians: the transfer residual
+		double rmsPixels = 0; // raw, for diagnosis only, over the predictions with a predicted pixel
 		double worstPixels = 0;
 		std::vector<std::pair<capture::CameraIdentity, double>> perCamera; // RMS transfer angle
 	};

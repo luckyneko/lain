@@ -1,5 +1,6 @@
 #include "lain/camera/feature/geometry.h"
 
+#include "angles.h"
 #include "lain/camera/feature/triangulation.h"
 
 #include <lain/string/format.h>
@@ -33,11 +34,6 @@ namespace lain::camera::feature
 		const math::Quatd& q = t.rotation();
 		return std::isfinite(q.w) && std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) &&
 			   finite(t.translation());
-	}
-
-	static double angleBetween(const math::Vec3d& u, const math::Vec3d& v)
-	{
-		return std::atan2(math::length(math::cross(u, v)), math::dot(u, v));
 	}
 
 	// How well one candidate explains the input: its inliers (indices into the usable entries) and the
@@ -88,11 +84,11 @@ namespace lain::camera::feature
 			double residualB = 0;
 			if (t.status == TriangulationStatus::Ok)
 			{
-				residualA = angleBetween(rayA, t.point);
-				residualB = angleBetween(rayB, t.point - centreB);
+				residualA = detail::angleBetween(rayA, t.point);
+				residualB = detail::angleBetween(rayB, t.point - centreB);
 			}
 			else if (t.status == TriangulationStatus::IllConditioned)
-				residualA = residualB = angleBetween(rayA, rayB) / 2;
+				residualA = residualB = detail::angleBetween(rayA, rayB) / 2;
 			else
 				continue; // Behind: cheirality
 			if (residualA <= angle && residualB <= angle)
@@ -113,7 +109,7 @@ namespace lain::camera::feature
 		Measured out;
 		for (std::size_t k = 0; k < pointRays.size(); ++k)
 		{
-			const double residual = angleBetween(pointRays[k].ray, cameraFromReference.apply(pointRays[k].point));
+			const double residual = detail::angleBetween(pointRays[k].ray, cameraFromReference.apply(pointRays[k].point));
 			if (residual <= angle)
 			{
 				out.inliers.push_back(std::uint32_t(k));

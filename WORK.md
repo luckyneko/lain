@@ -3950,7 +3950,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       **Built 2026-10-06**, below, with OpenCV handed a virtual pinhole of focal 1000 rather than
       normalised rays, the descriptors searched as floats, and the defaults left for the repo owner
       to decide on the measurements.
-   8. **`registration::targetless`.**
+   8. **`registration::targetless`.** *(Split 2026-10-07 into 8a, built, and 8b; see below.)*
       - `registerCameras(rig, const feature::TrackSet&, const Request&)`, a footage overload taking
         a `feature::ExtractionRequest`, and the public `registration::validate(rig, report,
         trackSet, trackIds, execution) → HeldOutEvidence`, which this module's own validation calls.
@@ -4643,6 +4643,103 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        and nothing counted.
 
      Each restored source was touched a second later, and its object checked to be newer.
+   **Sub-slice 8 planned (2026-10-07) as two commits**, decided with the repo owner:
+   - **8a:** `registration::validate`, the targetless fitness profile and the helpers both methods
+     share.
+   - **8b:** the method itself.
+
+   Two more decisions came from the owner:
+   - **An empty `Request::fitnessProfile` is the method's own profile**, and is the default. This
+     discharges sub-slice 2's owed note.
+   - **When no camera pair clears the seed's parallax floor, initialisation seeds from the widest
+     pair tried** and records it, so the floor ranks pairs and never refuses a rig on its own.
+
+   A design review, checked against the code before it was taken, found:
+   - the hold-out guard anchored on the wrong seed;
+   - one bad start failing a whole Ceres batch;
+   - the cheirality filter able to leave a camera unobserved, which Ceres would return unchanged;
+   - epipolar and transfer residuals pooled with different degrees of freedom;
+   - `angleBetween` written four times.
+
+   Each is answered in 8a or 8b.
+
+   **Sub-slice 8a built (2026-10-07): validate, the targetless profile, and the shared helpers.**
+   - **`registration-targetless/1`** (unit `Track`), with the provisional table above:
+     - Ready `{100, 50, 0.002, 0.001, 0.005, 0.05}`;
+     - Exploratory `{30, 15, 0.006, 0.005, 0.02, 0.15}`.
+   - **`Request::fitnessProfile` defaults to empty**, which is the method's own. Board resolves it to
+     `registration/1` and refuses a `Track` profile with the new `Failure::IncompatibleFitnessProfile`,
+     naming both units.
+   - **The golden changes on purpose in exactly four lines**, its request records, which now print
+     `profile (method's)`. The produced file was diffed against the golden before it was copied over.
+   - **Shared helpers in `src/registration/common.{h,cpp}`**, and board calls them in its old order:
+     `resolveProfile`, `canonicalCameras`, `checkApplicability`, `whitenedSquared` (keeping board's
+     clamp), and a guarded stride `holdOut(count, fraction, minimum, mayHold)`. Board's connectivity
+     guard is now one such guard. The golden is otherwise byte-equal.
+   - **`detail::angleBetween` is written once**, in a private `src/angles.h`. It replaces the copies in
+     `feature/geometry.cpp` and `feature/triangulation.cpp` and board's two inline forms; the formula
+     is identical.
+   - **`registration::validate`** (`registration/validation.h`) returns
+     `std::variant<HeldOutEvidence, Unavailable>`. The plan said `HeldOutEvidence`, but missing
+     evidence must never read as zeros.
+     - **A fixed procedure:** the tracks' own covariances, `NoiseModel{}` where there is none, and no
+       robust loss. Two reports are judged by what they registered, never by how they asked to be
+       refined.
+     - **A track of three or more members:** each member is triangulated from the others, then
+       refined with every camera held, in **one refinement per track**, so a track's prediction does
+       not depend on which others were held out.
+       - Each problem holds only that track's cameras.
+       - A start that is not `Ok`, or does not project into every predicting camera, leaves its member
+         unpredicted. A start that failed would abort the whole solve.
+     - **A two-member track** is scored against the epipolar plane. Its member is unpredicted when:
+       - there is no baseline;
+       - the other ray lies along the baseline;
+       - the pair meets behind a camera, which the plane alone cannot see.
+
+       Such a residual counts **twice** in the RMS angles (`HeldOutEvidence::epipolar` counts them),
+       since it has one degree of freedom where a transfer has two.
+     - **Pixels** cover projected transfers only.
+     - **Unavailable** for a failed report, no ids, an unknown id (named), no refiner, or nothing
+       predicted. Ids given twice count once, and their order changes nothing.
+   - **Tests:**
+     - **`test-camera-targetless`**, new, over the scene's stand-ins and the pass-through refiner. It
+       has 6 cases:
+       - exact prediction;
+       - a camera 5 mrad out;
+       - one held-camera problem per track under the fixed procedure;
+       - two-member tracks;
+       - unavailability;
+       - determinism.
+     - **Ceres:** one case in `test-camera-ceres` (`test_targetless.cpp`).
+     - **Stand-ins:**
+       - `syntheticscene.h` gains `trackSetOf(sigma, seed)`, the truth as a track set, with
+         identities that sort in landmark order;
+       - the pass-through refiner moved to `passthroughrefiner.h`, shared with board's tests. It now
+         also records each problem's camera count, loss and noise.
+   - **Two expectations were wrong in the plan, and the tests now pin what is true:**
+     - **"The other cameras show less" is false.**
+       - A camera turned 5 mrad shows 4.96 mrad in its own members: the point comes from three true
+         cameras, and a turn moves a ray off perpendicular to its axis by less than the turn.
+       - Camera 3, at the end of the arc, shows 6.16 mrad, since its points are placed mostly by
+         camera 2.
+       - Cameras 0 and 1 show 1.50 and 1.65 mrad.
+     - **A turn about the baseline does not put every member a turn's angle off its plane.**
+       - A ray at f to the baseline lies asin(sin t sin f) off it.
+       - The test works that out from the truth: 6.30 mrad doubled, against 4.46 counted once.
+   - **Measured through Ceres:** 200 landmarks under 0.3 px of noise predict at 0.587 px RMS
+     (1.38 × √2σ) and 1.12 mrad, the worst member 1.80 px out.
+   - **Four sabotages, all caught:**
+     - **A member in its own triangulation:** camera 2 drops from 4.96 to 3.35 mrad.
+     - **The report's request setting the loss and noise:** the refiner script sees Cauchy at 3 px.
+     - **Two-member tracks left unpredicted:** the plane cases find no evidence. The first cut did
+       not compile (the function went unused under `-Werror`), so the old binary ran and proved
+       nothing. It was redone so that it compiled.
+     - **Epipolar residuals counted once:** 4.46 against 6.30 mrad.
+
+     The restored source was touched a second later, and its object checked to be newer.
+   - `ctest -j8` **1172/1172** Debug and **1180/1180** Release with video, camera and Ceres on (+7 each), and **1085/1085** with all three off (+6). Warning-clean,
+     format-check clean.
+
 4. **Targetless calibration + graph fallback.** Add targetless intrinsics/distortion estimation only
    after the shared feature-track evidence and validation path can meet the report contract. Then
    expose the graph method input and ordered board-then-targetless fallback, retaining every attempted

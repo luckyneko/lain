@@ -101,7 +101,11 @@ wasted degrees of freedom per point held up only by damping.
 before. Held cameras with at most one latent block (a board's held-out pose) keep `DENSE_QR`, so
 board registration's validation does not change. Held cameras with many latent blocks (held-out
 tracks triangulated together) use `SPARSE_NORMAL_CHOLESKY`, since a dense factorisation of
-thousands of independent points would exhaust memory. The solution's account names the solver that ran, since the rule is otherwise visible only as
+thousands of independent points would exhaust memory. *(Amended 2026-10-07, sub-slice 8a:
+`registration::validate` refines each held-out track on its own, the track's leave-one-out landmarks
+in one problem. A track's prediction then does not depend on which other tracks were held out, and
+one start that fails costs only its own track. So a validation problem holds a few latent blocks,
+and the same rule picks `SPARSE_NORMAL_CHOLESKY` for it.)* The solution's account names the solver that ran, since the rule is otherwise visible only as
 time and Ceres may substitute one.
 
 **A targetless problem's scale is left free.** Holding the reference camera removes six degrees of
