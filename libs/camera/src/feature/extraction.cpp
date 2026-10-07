@@ -42,7 +42,7 @@ namespace lain::camera::feature
 	}
 
 	// The order a camera's features are kept in, strongest first: by response, then where they are.
-	// Within one image no two features share a cell (collapse), so it is total there.
+	// Two cells of one image are at two pixels, so it orders them totally.
 	static bool stronger(const Keypoint& a, const Keypoint& b)
 	{
 		if (a.response != b.response)
@@ -75,40 +75,132 @@ namespace lain::camera::feature
 		return out;
 	}
 
-	// One feature per 1/64-pixel cell: of the features in one cell, the largest response, then the
-	// smallest angle, then the smallest size. That collapses SIFT's duplicate orientations, which share
-	// a pixel and a size bit for bit, and it makes a track's identity unique, since a cell then holds
-	// one feature of an image and a feature belongs to one track. The indices kept, strongest first.
-	static std::vector<std::uint32_t> collapse(const Features& f, std::uint32_t& duplicates)
+	// The features of one image as CELLS (ADR-0016): every feature in one 1/64-pixel cell is one
+	// feature, found at one or more orientations, each its own descriptor row. SIFT reports a
+	// keypoint with two strong orientation peaks twice, at one pixel and one size, and which of the
+	// two a view would keep depends on its roll, so every row is matched and a match between rows is
+	// a match between their cells. A cell's rows are contiguous, strongest first, and the cells are in
+	// `stronger` order of their first row.
+	struct Cells
 	{
-		std::vector<std::uint32_t> order(f.size());
-		std::iota(order.begin(), order.end(), 0u);
-		const auto key = [&f](std::uint32_t i)
+		Features rows;
+		std::vector<std::uint32_t> start;  // per cell, its first row
+		std::vector<std::uint32_t> cellOf; // per row, its cell
+
+		std::size_t size() const { return start.size(); }
+		std::uint32_t end(std::size_t c) const { return c + 1 < start.size() ? start[c + 1] : std::uint32_t(rows.size()); }
+		// A cell's first row: its strongest, and the pixel and size the cell is at.
+		const Keypoint& keypoint(std::size_t c) const { return rows.keypoints[start[c]]; }
+	};
+
+	// No cells, over `f`'s descriptor kind, image and scale.
+	static Cells cellsLike(const Features& f)
+	{
+		Cells out;
+		out.rows = subset(f, {});
+		return out;
+	}
+
+	// Appends cell `c` of `from` to `to`, every row at `at`'s pixel and size when given (a static
+	// feature's medians).
+	static void appendCell(Cells& to, const Cells& from, std::size_t c, const Keypoint* at = nullptr)
+	{
+		to.start.push_back(std::uint32_t(to.rows.size()));
+		for (std::uint32_t r = from.start[c]; r < from.end(c); ++r)
 		{
-			const Keypoint& k = f.keypoints[i];
-			return std::make_tuple(cell(k.pixel.y), cell(k.pixel.x), -k.response, wrapped(k.angle), k.size, i);
-		};
-		std::sort(order.begin(), order.end(), [&](std::uint32_t a, std::uint32_t b)
-				  { return key(a) < key(b); });
-		std::vector<std::uint32_t> keep;
-		for (std::size_t n = 0; n < order.size(); ++n)
-		{
-			const Keypoint& k = f.keypoints[order[n]];
-			if (n > 0)
+			Keypoint k = from.rows.keypoints[r];
+			if (at)
 			{
-				const Keypoint& previous = f.keypoints[order[n - 1]];
-				if (cell(k.pixel.y) == cell(previous.pixel.y) && cell(k.pixel.x) == cell(previous.pixel.x))
-				{
-					++duplicates;
-					continue;
-				}
+				k.pixel = at->pixel;
+				k.size = at->size;
 			}
-			keep.push_back(order[n]);
+			to.cellOf.push_back(std::uint32_t(to.start.size() - 1));
+			to.rows.keypoints.push_back(k);
+			const std::uint8_t* d = from.rows.descriptor(r);
+			to.rows.descriptors.insert(to.rows.descriptors.end(), d, d + from.rows.descriptorBytes);
 		}
-		std::sort(keep.begin(), keep.end(),
-				  [&f](std::uint32_t a, std::uint32_t b)
-				  { return stronger(f.keypoints[a], f.keypoints[b]); });
-		return keep;
+	}
+
+	// `f`'s features grouped into cells. A cell's rows run by response, then angle in [0, 2π), then
+	// size, then their order in `f`, so the grouping does not depend on how the backend listed them.
+	// Adds the rows beyond each cell's first to `orientations`.
+	static Cells cellsOf(const Features& f, std::uint32_t& orientations)
+	{
+		std::map<std::pair<long long, long long>, std::vector<std::uint32_t>> byCell; // (y, x) cell -> rows
+		for (std::uint32_t i = 0; i < f.size(); ++i)
+			byCell[{cell(f.keypoints[i].pixel.y), cell(f.keypoints[i].pixel.x)}].push_back(i);
+		const auto rowOrder = [&f](std::uint32_t a, std::uint32_t b)
+		{
+			const Keypoint& x = f.keypoints[a];
+			const Keypoint& y = f.keypoints[b];
+			return std::make_tuple(-x.response, wrapped(x.angle), x.size, a) < std::make_tuple(-y.response, wrapped(y.angle), y.size, b);
+		};
+		std::vector<std::vector<std::uint32_t>> groups;
+		groups.reserve(byCell.size());
+		for (auto& [key, rows] : byCell)
+		{
+			(void)key;
+			std::sort(rows.begin(), rows.end(), rowOrder);
+			orientations += std::uint32_t(rows.size() - 1);
+			groups.push_back(std::move(rows));
+		}
+		// Two cells are at two pixels, so `stronger` orders them totally.
+		std::sort(groups.begin(), groups.end(), [&f](const std::vector<std::uint32_t>& a, const std::vector<std::uint32_t>& b)
+				  { return stronger(f.keypoints[a.front()], f.keypoints[b.front()]); });
+		Cells out = cellsLike(f);
+		for (const std::vector<std::uint32_t>& rows : groups)
+		{
+			out.start.push_back(std::uint32_t(out.rows.size()));
+			for (const std::uint32_t r : rows)
+			{
+				out.cellOf.push_back(std::uint32_t(out.start.size() - 1));
+				out.rows.keypoints.push_back(f.keypoints[r]);
+				const std::uint8_t* d = f.descriptor(r);
+				out.rows.descriptors.insert(out.rows.descriptors.end(), d, d + f.descriptorBytes);
+			}
+		}
+		return out;
+	}
+
+	// The first `count` cells of `c`, its strongest, with all their rows.
+	static Cells firstCells(const Cells& c, std::size_t count)
+	{
+		Cells out = cellsLike(c.rows);
+		for (std::size_t k = 0; k < std::min(count, c.size()); ++k)
+			appendCell(out, c, k);
+		return out;
+	}
+
+	using CellPair = std::pair<std::uint32_t, std::uint32_t>;
+
+	// The cells a match between rows joins, each pair once, ascending.
+	static std::vector<CellPair> cellPairs(const MatchResult& m, const Cells& a, const Cells& b)
+	{
+		std::set<CellPair> pairs;
+		for (const Match& r : m.matches)
+			pairs.insert({a.cellOf[r.a], b.cellOf[r.b]});
+		return {pairs.begin(), pairs.end()};
+	}
+
+	// A cell whose rows matched two cells of the other side says nothing about which is its feature,
+	// so every pair holding it is dropped and counted in `ambiguous`.
+	static std::vector<CellPair> unambiguous(const std::vector<CellPair>& pairs, std::uint32_t& ambiguous)
+	{
+		std::map<std::uint32_t, std::size_t> fromA, fromB;
+		for (const CellPair& p : pairs)
+		{
+			++fromA[p.first];
+			++fromB[p.second];
+		}
+		std::vector<CellPair> kept;
+		for (const CellPair& p : pairs)
+		{
+			if (fromA[p.first] == 1 && fromB[p.second] == 1)
+				kept.push_back(p);
+			else
+				++ambiguous;
+		}
+		return kept;
 	}
 
 	static std::uint32_t root(std::vector<std::uint32_t>& parent, std::uint32_t i)
@@ -213,7 +305,7 @@ namespace lain::camera::feature
 		std::vector<media::FrameRef> frames;
 		// Out.
 		std::vector<media::FrameRef> extracted; // the frames whose features it used
-		Features statics;						// strongest first
+		Cells statics;							// strongest first
 		std::vector<std::uint32_t> support;		// per static feature
 		CameraExtraction counts;
 		Status failure = Status::Ok;
@@ -225,7 +317,7 @@ namespace lain::camera::feature
 	// One camera: its sampled frames' features, then the static ones among them.
 	static void extractCamera(const RigFootage& camera, CameraWork& work, const ExtractionRequest& request)
 	{
-		std::vector<Features> frames;
+		std::vector<Cells> frames;
 		for (std::size_t k = 0; k < work.positions.size(); ++k)
 		{
 			ExtractResult found;
@@ -248,35 +340,36 @@ namespace lain::camera::feature
 			if (!work.extractor)
 				work.extractor = found.provenance;
 			work.counts.scale = found.features.scale;
-			work.counts.features += std::uint32_t(found.features.size());
-			std::vector<std::uint32_t> keep = collapse(found.features, work.counts.duplicates);
-			if (keep.size() > request.featureCap)
+			work.counts.found += std::uint32_t(found.features.size());
+			Cells cells = cellsOf(found.features, work.counts.orientations);
+			if (cells.size() > request.featureCap)
 			{
-				work.counts.capped += std::uint32_t(keep.size() - request.featureCap);
-				keep.resize(request.featureCap);
+				work.counts.capped += std::uint32_t(cells.size() - request.featureCap);
+				cells = firstCells(cells, request.featureCap);
 			}
-			frames.push_back(subset(found.features, keep));
+			frames.push_back(std::move(cells));
 			work.extracted.push_back(work.frames[k]);
 		}
 		if (frames.empty())
 			return;
 
-		// The same feature in two frames: matched, at one pixel and one size in the pixels searched.
+		// The same feature in two frames: a row of each matched, at one pixel and one size in the
+		// pixels searched. What joins is the cells the rows belong to.
 		std::vector<std::uint32_t> offset;
 		std::uint32_t nodes = 0;
-		for (const Features& f : frames)
+		for (const Cells& f : frames)
 		{
 			offset.push_back(nodes);
 			nodes += std::uint32_t(f.size());
 		}
 		std::vector<std::uint32_t> parent(nodes);
 		std::iota(parent.begin(), parent.end(), 0u);
-		const double scale = frames.front().scale;
+		const double scale = frames.front().rows.scale;
 		for (std::size_t i = 0; i < frames.size(); ++i)
 		{
 			for (std::size_t j = i + 1; j < frames.size(); ++j)
 			{
-				const MatchResult m = match(frames[i], frames[j], request.matching);
+				const MatchResult m = match(frames[i].rows, frames[j].rows, request.matching);
 				if (m.status == Status::TooFew)
 					continue;
 				if (!m.ok())
@@ -289,34 +382,41 @@ namespace lain::camera::feature
 					work.matcher = m.provenance;
 				for (const Match& match : m.matches)
 				{
-					const Keypoint& a = frames[i].keypoints[match.a];
-					const Keypoint& b = frames[j].keypoints[match.b];
+					const Keypoint& a = frames[i].rows.keypoints[match.a];
+					const Keypoint& b = frames[j].rows.keypoints[match.b];
 					if (math::length(a.pixel - b.pixel) * scale > request.staticDistance)
 						continue;
 					const double small = std::min(a.size, b.size);
 					const double large = std::max(a.size, b.size);
 					if (large > small * request.staticSizeRatio)
 						continue;
-					join(parent, offset[i] + match.a, offset[j] + match.b);
+					join(parent, offset[i] + frames[i].cellOf[match.a], offset[j] + frames[j].cellOf[match.b]);
 				}
 			}
 		}
 
 		// Each cluster of one feature across frames: static when found in at least half of them.
-		std::map<std::uint32_t, std::vector<std::pair<std::uint32_t, std::uint32_t>>> clusters; // root -> (frame, feature)
+		std::map<std::uint32_t, std::vector<std::pair<std::uint32_t, std::uint32_t>>> clusters; // root -> (frame, cell)
 		for (std::uint32_t f = 0; f < frames.size(); ++f)
 		{
-			for (std::uint32_t i = 0; i < frames[f].size(); ++i)
-				clusters[root(parent, offset[f] + i)].push_back({f, i});
+			for (std::uint32_t c = 0; c < frames[f].size(); ++c)
+				clusters[root(parent, offset[f] + c)].push_back({f, c});
 		}
 		const std::size_t needed = (frames.size() + 1) / 2;
-		Features statics = subset(frames.front(), {});
-		std::vector<std::uint32_t> support;
+		// A static feature: where it sits, and the frame and cell whose orientations it takes.
+		struct Static
+		{
+			Keypoint at;
+			std::uint32_t frame = 0;
+			std::uint32_t cell = 0;
+			std::uint32_t support = 0;
+		};
+		std::vector<Static> found;
 		for (const auto& [r, members] : clusters)
 		{
 			(void)r;
 			std::set<std::uint32_t> seen;
-			for (const auto& [f, i] : members)
+			for (const auto& [f, c] : members)
 				seen.insert(f);
 			if (seen.size() != members.size())
 			{
@@ -329,37 +429,46 @@ namespace lain::camera::feature
 				continue;
 			}
 			std::vector<double> xs, ys, sizes;
-			for (const auto& [f, i] : members)
+			for (const auto& [f, c] : members)
 			{
-				const Keypoint& k = frames[f].keypoints[i];
+				const Keypoint& k = frames[f].keypoint(c);
 				xs.push_back(k.pixel.x);
 				ys.push_back(k.pixel.y);
 				sizes.push_back(k.size);
 			}
 			const math::Vec2d centre{median(xs), median(ys)};
-			// The member nearest the median pixel speaks for the cluster; members are in frame order,
-			// so a tie goes to the earlier frame.
+			// The member nearest the median pixel speaks for the cluster, with all its orientations;
+			// members are in frame order, so a tie goes to the earlier frame.
 			std::size_t representative = 0;
 			for (std::size_t n = 1; n < members.size(); ++n)
 			{
-				const auto [f, i] = members[n];
-				const auto [rf, ri] = members[representative];
-				if (math::length(frames[f].keypoints[i].pixel - centre) < math::length(frames[rf].keypoints[ri].pixel - centre))
+				const auto [f, c] = members[n];
+				const auto [rf, rc] = members[representative];
+				if (math::length(frames[f].keypoint(c).pixel - centre) < math::length(frames[rf].keypoint(rc).pixel - centre))
 					representative = n;
 			}
-			const auto [rf, ri] = members[representative];
-			const Keypoint& k = frames[rf].keypoints[ri];
-			statics.keypoints.push_back({centre, median(sizes), k.angle, k.response});
-			const std::uint8_t* d = frames[rf].descriptor(ri);
-			statics.descriptors.insert(statics.descriptors.end(), d, d + statics.descriptorBytes);
-			support.push_back(std::uint32_t(members.size()));
+			const auto [rf, rc] = members[representative];
+			const Keypoint& k = frames[rf].keypoint(rc);
+			found.push_back({{centre, median(sizes), k.angle, k.response}, rf, rc, std::uint32_t(members.size())});
 		}
 
-		// Two static features whose medians share a cell are one, as two features of one frame are.
-		const std::vector<std::uint32_t> keep = collapse(statics, work.counts.duplicates);
-		work.statics = subset(statics, keep);
-		for (const std::uint32_t i : keep)
-			work.support.push_back(support[i]);
+		// Strongest first; and two static features whose medians share a cell are one, as two
+		// features of one frame are, so the stronger is kept with its orientations and the other
+		// dropped. Stable, so two that tie keep their clusters' order.
+		std::stable_sort(found.begin(), found.end(), [](const Static& a, const Static& b)
+						 { return stronger(a.at, b.at); });
+		std::set<std::pair<long long, long long>> taken;
+		work.statics = cellsLike(frames.front().rows);
+		for (const Static& f : found)
+		{
+			if (!taken.insert({cell(f.at.pixel.y), cell(f.at.pixel.x)}).second)
+			{
+				++work.counts.duplicates;
+				continue;
+			}
+			appendCell(work.statics, frames[f.frame], f.cell, &f.at);
+			work.support.push_back(f.support);
+		}
 		work.counts.staticFeatures = std::uint32_t(work.statics.size());
 	}
 
@@ -367,21 +476,12 @@ namespace lain::camera::feature
 	struct PairWork
 	{
 		PairExtraction entry;
-		std::vector<Match> verified;
+		std::vector<CellPair> verified; // (A's static feature, B's)
 		Status failure = Status::Ok;
 		std::string detail;
 		std::optional<Provenance> matcher;
 		std::optional<Provenance> geometry;
 	};
-
-	// The first `count` features of `f`: its strongest, since a camera's static features are kept
-	// strongest first.
-	static Features strongest(const Features& f, std::size_t count)
-	{
-		std::vector<std::uint32_t> keep(std::min(count, f.size()));
-		std::iota(keep.begin(), keep.end(), 0u);
-		return subset(f, keep);
-	}
 
 	// One camera pair: pre-screened, matched and verified.
 	static void extractPair(const RigFootage& cameraA, const CameraWork& a, const RigFootage& cameraB, const CameraWork& b,
@@ -399,41 +499,54 @@ namespace lain::camera::feature
 			return;
 		}
 
-		// When both sides fit inside the pre-screen, the pre-screen is the full match.
+		// The pre-screen matches each side's strongest features, with all their orientations. When
+		// both sides fit inside it, it is the full match.
 		const bool whole = a.statics.size() <= request.prescreenFeatures && b.statics.size() <= request.prescreenFeatures;
 		MatchResult full;
+		std::size_t screened = 0;
 		if (whole)
-			full = match(a.statics, b.statics, request.matching);
-		const MatchResult prescreen = whole ? full
-											: match(strongest(a.statics, request.prescreenFeatures),
-													strongest(b.statics, request.prescreenFeatures), request.matching);
-		if (!prescreen.ok())
-			return fail(prescreen);
-		work.matcher = prescreen.provenance;
-		work.entry.prescreenMatches = std::uint32_t(prescreen.matches.size());
-		if (prescreen.matches.size() < request.prescreenMatches)
+		{
+			full = match(a.statics.rows, b.statics.rows, request.matching);
+			if (!full.ok())
+				return fail(full);
+			work.matcher = full.provenance;
+			screened = cellPairs(full, a.statics, b.statics).size();
+		}
+		else
+		{
+			const Cells strongestA = firstCells(a.statics, request.prescreenFeatures);
+			const Cells strongestB = firstCells(b.statics, request.prescreenFeatures);
+			const MatchResult prescreen = match(strongestA.rows, strongestB.rows, request.matching);
+			if (!prescreen.ok())
+				return fail(prescreen);
+			work.matcher = prescreen.provenance;
+			screened = cellPairs(prescreen, strongestA, strongestB).size();
+		}
+		work.entry.prescreenMatches = std::uint32_t(screened);
+		if (screened < request.prescreenMatches)
 		{
 			work.entry.outcome = PairOutcome::Skipped;
-			work.entry.detail = string::format("{} matches among the strongest {}; the pre-screen asks for {}",
-											   prescreen.matches.size(), request.prescreenFeatures, request.prescreenMatches);
+			work.entry.detail = string::format("{} matches among the strongest {}; the pre-screen asks for {}", screened,
+											   request.prescreenFeatures, request.prescreenMatches);
 			return;
 		}
 		if (!whole)
 		{
-			full = match(a.statics, b.statics, request.matching);
+			full = match(a.statics.rows, b.statics.rows, request.matching);
 			if (!full.ok())
 				return fail(full);
 		}
-		work.entry.matches = std::uint32_t(full.matches.size());
+		const std::vector<CellPair> matches = unambiguous(cellPairs(full, a.statics, b.statics), work.entry.ambiguous);
+		work.entry.matches = std::uint32_t(matches.size());
 
 		// Each match as a ray from each camera. A pixel its model cannot unproject is a zero ray, which
 		// the facade sets aside as unusable.
 		std::vector<RayPair> pairs;
-		pairs.reserve(full.matches.size());
-		for (const Match& m : full.matches)
+		pairs.reserve(matches.size());
+		for (const auto& [ca, cb] : matches)
 		{
-			const math::Vec2d pa = a.statics.keypoints[m.a].pixel;
-			const math::Vec2d pb = b.statics.keypoints[m.b].pixel;
+			const math::Vec2d pa = a.statics.keypoint(ca).pixel;
+			const math::Vec2d pb = b.statics.keypoint(cb).pixel;
 			const Unprojection<double> ra = unproject(cameraA.model, pa.x, pa.y);
 			const Unprojection<double> rb = unproject(cameraB.model, pb.x, pb.y);
 			pairs.push_back({ra.ok() ? math::Vec3d{ra.x, ra.y, ra.z} : math::Vec3d{0.0},
@@ -452,12 +565,12 @@ namespace lain::camera::feature
 		{
 			work.entry.outcome = PairOutcome::Unverified;
 			work.entry.detail = string::format("its best relative pose explains {} of {} matches; a pair needs {}",
-											   g.inliers.size(), full.matches.size(), request.minimumPairInliers);
+											   g.inliers.size(), matches.size(), request.minimumPairInliers);
 			return;
 		}
 		work.entry.outcome = PairOutcome::Verified;
 		for (const std::uint32_t k : g.inliers)
-			work.verified.push_back(full.matches[k]);
+			work.verified.push_back(matches[k]);
 	}
 
 	// --- extractTracks ------------------------------------------------------------------
@@ -626,8 +739,8 @@ namespace lain::camera::feature
 		std::iota(parent.begin(), parent.end(), 0u);
 		for (const PairWork& p : pairs)
 		{
-			for (const Match& m : p.verified)
-				join(parent, offset[p.entry.a] + m.a, offset[p.entry.b] + m.b);
+			for (const auto& [ca, cb] : p.verified)
+				join(parent, offset[p.entry.a] + ca, offset[p.entry.b] + cb);
 		}
 		std::map<std::uint32_t, std::vector<std::pair<std::uint32_t, std::uint32_t>>> components; // root -> (view, feature)
 		for (std::uint32_t v = 0; v < work.size(); ++v)
@@ -655,7 +768,7 @@ namespace lain::camera::feature
 			{
 				// A static feature's size is its median across frames, in source pixels, so the
 				// covariance is in source pixels too, and a coarser search reaches it through the size.
-				const Keypoint& k = work[v].statics.keypoints[i];
+				const Keypoint& k = work[v].statics.keypoint(i);
 				const double sigma = request.localisationPerSize * k.size;
 				track.observations.push_back({v, k.pixel, work[v].support[i], std::array<double, 3>{sigma * sigma, 0.0, sigma * sigma}});
 			}

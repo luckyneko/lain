@@ -136,8 +136,9 @@ namespace
 		return out;
 	}
 
-	// extractTracks keeps one keypoint per 1/64-pixel cell: the largest response, then the smallest
-	// angle in [0, 2pi), then the smallest size. Restated here to measure what it keeps of SIFT.
+	// The rule extractTracks used until 2026-10-07, before matching: one keypoint per 1/64-pixel cell,
+	// the largest response, then the smallest angle in [0, 2pi), then the smallest size. Restated here
+	// to measure what it cost, which is why it was replaced.
 	std::uint32_t kept(const Features& f, const std::vector<std::uint32_t>& members)
 	{
 		return *std::min_element(members.begin(), members.end(),
@@ -163,16 +164,26 @@ namespace
 		return out;
 	}
 
-	// The `n` strongest, as extractTracks caps a frame.
+	// The `n` strongest features, each with all its orientations, as extractTracks caps a frame.
 	Features strongest(const Features& f, std::size_t n)
 	{
-		std::vector<std::uint32_t> order(f.size());
-		for (std::uint32_t i = 0; i < f.size(); ++i)
-			order[i] = i;
-		std::stable_sort(order.begin(), order.end(), [&](std::uint32_t a, std::uint32_t b)
-						 { return f.keypoints[a].response > f.keypoints[b].response; });
-		order.resize(std::min(n, order.size()));
-		return subset(f, order);
+		std::vector<std::vector<std::uint32_t>> features;
+		for (const auto& [cell, members] : cells(f))
+			features.push_back(members);
+		const auto response = [&f](const std::vector<std::uint32_t>& rows)
+		{
+			double best = 0;
+			for (const std::uint32_t r : rows)
+				best = std::max(best, f.keypoints[r].response);
+			return best;
+		};
+		std::stable_sort(features.begin(), features.end(), [&](const auto& a, const auto& b)
+						 { return response(a) > response(b); });
+		features.resize(std::min(n, features.size()));
+		std::vector<std::uint32_t> rows;
+		for (const std::vector<std::uint32_t>& feature : features)
+			rows.insert(rows.end(), feature.begin(), feature.end());
+		return subset(f, rows);
 	}
 
 	// Two views of the default scene and their matched features, each match judged against the truth.
@@ -388,7 +399,7 @@ TEST_CASE("the relative and absolute poses of two views are recovered", "[camera
 	}
 }
 
-TEST_CASE("duplicate orientations collapse to one per cell at some cost in matches", "[camera][opencv][feature]")
+TEST_CASE("collapsing orientations before matching loses a fifth of the correct matches", "[camera][opencv][feature]")
 {
 	ensureBackend();
 	const TwoViews v = twoViews();
@@ -425,7 +436,8 @@ TEST_CASE("duplicate orientations collapse to one per cell at some cost in match
 
 	// What that costs: of the cell pairs a match joins correctly, 259 before collapsing and 205 after.
 	// A fifth of the correct matches go, because a cell whose views kept disagreeing orientations
-	// keeps two descriptors that no longer match.
+	// keeps two descriptors that no longer match. Which is why extraction keeps every orientation of
+	// a feature and matches them all (since 2026-10-07).
 	const auto keep = [](const Features& f, const auto& byCell)
 	{
 		std::vector<std::uint32_t> out;
@@ -490,17 +502,19 @@ TEST_CASE("rendered footage through extractTracks is the same on the pool and ag
 			CHECK(parallel.trackSet.tracks[t].observations[o].pixel == reference.trackSet.tracks[t].observations[o].pixel);
 	}
 
-	// Measured: every pair verified (228/225, 126/121 and 224/219 matches/inliers), 365 tracks, no
-	// conflicts, 1468 features dropped as transient.
+	// Measured: every pair verified (288/286, 176/169 and 281/277 matches/inliers, after dropping 3, 2
+	// and 2 features matched twice), 429 tracks, one conflict rejected, 1282 features dropped as
+	// transient. Collapsing each feature to one orientation before matching, as extraction did
+	// until 2026-10-07, gave 365 tracks from 225, 121 and 219 inliers.
 	for (const PairExtraction& p : reference.report.pairs)
 		CHECK(p.outcome == PairOutcome::Verified);
 	CHECK(reference.trackSet.tracks.size() > 250);
-	// Measured over six runs: Approximate found 365 to 372 tracks, against Exact's 365. It differs from
-	// run to run, which is why DeterministicDebug refuses it.
+	// Measured over seven runs: Approximate found 426 to 429 tracks, against Exact's 429. It differs
+	// from run to run, which is why DeterministicDebug refuses it.
 	CAPTURE(approximate.trackSet.tracks.size());
 	CHECK(double(approximate.trackSet.tracks.size()) > 0.95 * double(reference.trackSet.tracks.size()));
 	CHECK(double(approximate.trackSet.tracks.size()) < 1.05 * double(reference.trackSet.tracks.size()));
-	CHECK(reference.report.conflicts == 0);
+	CHECK(reference.report.conflicts <= 2);
 	std::uint32_t transient = 0;
 	for (const CameraExtraction& c : reference.report.cameras)
 		transient += c.transient;
@@ -519,10 +533,10 @@ TEST_CASE("rendered footage through extractTracks is the same on the pool and ag
 	}
 
 	// Each track's first observation, cast into the scene without the occluder, lands on the others.
-	// Measured: 350 of 365 tracks within 2 px everywhere, and the rest 2 to 6.7 px out, none of them
-	// near a surface edge: large features, whose localisation scales with their size (the
+	// Measured: 410 of 429 tracks within 2 px everywhere, and the rest at most 6.7 px out, none of
+	// them near a surface edge: large features, whose localisation scales with their size (the
 	// correspondence case). A track of the occluder could not land anywhere near. And no observation
-	// is on the occluder in most of the sampled frames, while 278 were hidden by it in at least one:
+	// is on the occluder in most of the sampled frames, while 345 were hidden by it in at least one:
 	// a static feature survives being covered for a frame or two.
 	synthetic::Scene still = scene;
 	still.occluder.reset();
@@ -627,9 +641,11 @@ TEST_CASE("exact and approximate search at 8192 features a view", "[camera][open
 	SKIP("runs in Release builds, for its timings");
 #endif
 	ensureBackend();
-	// Two 1920 x 1080 views 0.3 rad apart of a finely textured scene: 13238 and 12745 SIFT features,
-	// capped at 8192 each, the strongest, as extractTracks caps a frame. And a third frame of the
-	// first view with other noise, which is what consolidating one camera's frames matches.
+	// Two 1920 x 1080 views 0.3 rad apart of a finely textured scene: 13238 and 12745 SIFT keypoints,
+	// capped at the 8192 strongest features each with all their orientations, as extractTracks caps
+	// a frame: 12182 and 12137 rows, 1.49 a feature. (Lowe reports about 15% of keypoints with a
+	// second orientation; this texture's soft blobs give far more.) And a third frame of the first
+	// view with other noise, which is what consolidating one camera's frames matches.
 	const CameraModel m = pinhole(1920, 1080);
 	synthetic::Scene scene = synthetic::defaultScene(1, 0.01);
 	scene.noise = 1.0;
@@ -640,14 +656,15 @@ TEST_CASE("exact and approximate search at 8192 features a view", "[camera][open
 		return strongest(found.features, 8192);
 	};
 	const Features fa = features(-0.15, 1), fb = features(0.15, 2), again = features(-0.15, 3);
-	REQUIRE(fa.size() == 8192);
-	REQUIRE(fb.size() == 8192);
+	REQUIRE(cells(fa).size() == 8192);
+	REQUIRE(cells(fb).size() == 8192);
 
-	// Measured on one core, both directions as match() asks: Exact 2538 matches in 3.68 s, Approximate
-	// 2498 in 0.37 s with 96.7% of Exact's; consolidation (Exact) 7355 in 3.69 s. For 100 cameras whose
-	// every pair overlaps, 4950 pair matches and 1000 consolidation matches: 6.1 core-hours Exact, 1.5
-	// with Approximate for the pairs. Brute force costs the same whatever the content, so the
-	// consolidation match costs a pair match.
+	// Measured on one core, both directions as match() asks: Exact 3683 matches in 10.2 s, Approximate
+	// 3637 in 0.78 s with 96.8% of Exact's; consolidation (Exact) 10816 in 10.5 s. Brute force grows
+	// with the rows, so keeping every orientation costs 2.8 times the 3.68 s of 8192 rows. For 100
+	// cameras whose every pair overlaps, 4950 pair matches and 1000 consolidation matches: 16.9
+	// core-hours Exact, 4.0 with Approximate for the pairs, 1.5 with Approximate throughout. Brute
+	// force costs the same whatever the content, so the consolidation match costs a pair match.
 	MatchRequest approximateRequest;
 	approximateRequest.search = MatchSearch::Approximate;
 	core::Time start = core::Time::now();

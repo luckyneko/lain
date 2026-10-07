@@ -4518,7 +4518,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        about right only for the largest. *(Taken 2026-10-07; see the follow-up below.)*
      - **Tie-break: collapse after matching, not before.** For example, keep a cell's duplicates
        through the pair match and choose, per cell, the orientation that matched. The current rule
-       loses a fifth of the correct matches.
+       loses a fifth of the correct matches. *(Taken 2026-10-07, with every orientation matched; see
+       follow-up B below, which also nearly triples the exact matching cost at the same cap.)*
    - **Debug cost.** The footage case takes 28 s in Debug, nearly all of it drawing frames, and the
      two scale cases skip there. The whole executable takes 55 s in Release.
    - `ctest -j8` **1163/1163** Debug and **1171/1171** Release with video, camera and Ceres on, and
@@ -4572,6 +4573,76 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - **Sabotage, caught:** σ fixed again (`localisationPerSize / scale`, ignoring the size) fails 241
      covariance assertions in the static-scene case. Restored, touched a second later, and its
      object checked to be newer.
+
+   **Sub-slice 7 follow-up B (2026-10-07): a feature's orientations stay together through
+   matching.** The second of the two defaults settled before sub-slice 8.
+   - **The rule.** The 1/64-pixel cell is the feature, and a cell carries every orientation the
+     backend found there, each its own descriptor row.
+     - Every row is matched, between a camera's frames and between cameras.
+     - A match between rows is a match between their cells.
+     - It replaces "keep the smallest angle, then match". That angle depends on a view's roll, so
+       two views kept agreeing orientations in only 83 of 128 shared cells.
+   - **In `extraction.cpp`, a private `Cells`** (all rows, each cell's first row, each row's cell)
+     replaces the per-frame `collapse`:
+     - the feature cap and the pre-screen count features, each with all its rows;
+     - consolidation joins cells;
+     - a static feature takes every orientation of its representative frame's cell, at the median
+       pixel and size;
+     - two static features in one cell remain the only collapse, the stronger kept whole.
+   - **A pair drops a feature matched to two of the other camera's**, every pair holding it, and
+     counts them in `PairExtraction::ambiguous`. It is the pair's call; a conflict at the union stays
+     the last resort.
+   - **The report changed meaning, so it changed names:**
+     - `CameraExtraction::features` is now `found` (keypoints, every orientation);
+     - `orientations` is new;
+     - `duplicates` now counts only static features dropped for sharing a cell;
+     - `ambiguous` is new on a pair.
+   - **The stand-ins modelled the defect, and now model SIFT.**
+     - A duplicated landmark's second orientation used to repeat its first descriptor: a matched
+       tie that only collapse-before could survive. It now has its own (`kTurned` away).
+     - `turnedIn` (one camera's second orientation) and `turnedOnly` (a camera that finds only the
+       second orientation, rolled so it is that camera's smallest) are new.
+   - **New cases:**
+     - "an orientation one camera lacks still joins";
+     - "a feature matched to two of another camera's is dropped from that pair", with M placed in
+       cameras 0 and 1's epipolar plane through L, so the wrong pair verifies and only the drop
+       stops a conflict.
+   - **Measured on real SIFT** (`test-camera-opencv-features`, the footage case):
+     - **Tracks:** 429, against 365 when collapsing first.
+     - **Inliers per pair:** 286, 169 and 277, against 225, 121 and 219.
+     - **Ambiguous drops per pair:** 3, 2 and 2.
+     - **Consistency:** 410 tracks within 2 px everywhere, the worst still 6.7 px.
+     - **Conflicts:** one, rejected; the bound is now ≤ 2, where 0 was a measured value.
+     - **Approximate:** 426 to 429 tracks over seven runs.
+   - **The cost, measured and not acted on:**
+     - On the rendered texture a feature carries 1.49 rows, where Lowe reports about 15% of
+       keypoints with a second orientation; this texture's soft blobs give far more.
+     - At the same cap of 8192 features, an exact pair match is 12182 × 12137 rows and takes 10.2 s,
+       against 3.68 s for 8192 rows. Approximate takes 0.78 s with 96.8% recall.
+     - The 100-camera extrapolation becomes 16.9 core-hours Exact, 4.0 with Approximate pairs and
+       1.5 with Approximate throughout, against 6.1, 1.5 and 0.7.
+     - **For the repo owner:** the cap could count rows rather than features, or be lowered, if the
+       cost matters more than the tracks. Real footage's rows-per-feature should be measured first,
+       in sub-slice 9.
+   - **Recorded, not built:**
+     - The ratio test's second neighbour can be another orientation of the same feature, which can
+       refuse a true match.
+     - Excluding it needs more than two neighbours from the matcher seam.
+     - Its trigger is sub-slice 9 finding matches lost that way.
+   - **Debug cost:** the footage case takes 39 s in Debug, up from 28 s, with Approximate on the pool
+     and the extra rows.
+   - `ctest -j8` **1165/1165** Debug and **1173/1173** Release with video, camera and Ceres on, and
+     **1079/1079** with all three off (+2 each, the two new stand-in cases). Warning-clean,
+     format-check clean.
+   - **Three sabotages, all caught:**
+     - **One orientation per feature kept before matching:** the roll case fails, and so does the
+       ambiguity case, since no second orientations reach it.
+     - **Repeated cell pairs not dropped:** the several-orientations case fails, as each duplicated
+       landmark's two matches name one pair twice.
+     - **The ambiguity drop removed:** the ambiguity case fails with a conflict, both tracks lost,
+       and nothing counted.
+
+     Each restored source was touched a second later, and its object checked to be newer.
 4. **Targetless calibration + graph fallback.** Add targetless intrinsics/distortion estimation only
    after the shared feature-track evidence and validation path can meet the report contract. Then
    expose the graph method input and ordered board-then-targetless fallback, retaining every attempted

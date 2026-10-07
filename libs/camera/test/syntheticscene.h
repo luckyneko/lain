@@ -41,8 +41,17 @@ namespace lain::camera::testing::scene
 		std::set<std::size_t> cameras;						  // who can see it; empty means every camera
 		std::set<std::pair<std::size_t, std::size_t>> hidden; // (camera, ordinal) where something covers it
 		bool dynamic = false;								  // it moves between frames
-		bool duplicated = false;							  // found twice at its pixel, at two orientations
+		// A second orientation at its pixel, as SIFT reports a keypoint with two strong orientation
+		// peaks: described otherwise, as its rotated descriptor is (turnedOf). `duplicated` gives every
+		// camera one; `turnedIn` gives one camera one, described as it says; and a camera in
+		// `turnedOnly` finds the second orientation alone, at an angle that makes it its smallest.
+		bool duplicated = false;
+		std::map<std::size_t, std::uint32_t> turnedIn;
+		std::set<std::size_t> turnedOnly;
 	};
+
+	// How far a second orientation's descriptor lies from every first one's.
+	inline constexpr std::uint32_t kTurned = 1u << 30;
 
 	struct Scene
 	{
@@ -103,6 +112,17 @@ namespace lain::camera::testing::scene
 	{
 		const auto found = l.descriptorIn.find(camera);
 		return found != l.descriptorIn.end() ? found->second : l.descriptor;
+	}
+
+	// How `camera` describes the landmark's second orientation, if it finds one.
+	inline std::optional<std::uint32_t> turnedOf(const Landmark& l, std::size_t camera)
+	{
+		const auto found = l.turnedIn.find(camera);
+		if (found != l.turnedIn.end())
+			return found->second;
+		if (l.duplicated || l.turnedOnly.count(camera) > 0)
+			return descriptorOf(l, camera) + kTurned;
+		return std::nullopt;
 	}
 
 	inline math::Vec3d pointAt(const Landmark& l, std::size_t ordinal)
@@ -218,7 +238,7 @@ namespace lain::camera::testing::scene
 	}
 
 	// Registered as "truth": every landmark the frame's camera sees in it, where the truth puts it,
-	// described by its number. A duplicated landmark is found again at its pixel, turned.
+	// described by its number at angle 0, and again at its second orientation where it has one.
 	class TruthExtractor : public feature::Extractor
 	{
 	public:
@@ -243,9 +263,11 @@ namespace lain::camera::testing::scene
 					continue;
 				const Landmark& landmark = scene().landmarks[l];
 				const double response = 1.0 + 1.0 / double(l + 1);
-				add(*pixel, 0.0, response, descriptorOf(landmark, camera));
-				if (landmark.duplicated)
-					add(*pixel, 1.5, response, descriptorOf(landmark, camera));
+				const bool first = landmark.turnedOnly.count(camera) == 0;
+				if (first)
+					add(*pixel, 0.0, response, descriptorOf(landmark, camera));
+				if (const std::optional<std::uint32_t> turned = turnedOf(landmark, camera))
+					add(*pixel, first ? 1.5 : 0.2, response, *turned);
 			}
 			return out;
 		}

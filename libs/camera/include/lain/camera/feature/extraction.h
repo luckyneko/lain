@@ -30,7 +30,7 @@ namespace lain::camera::feature
 		ScalePolicy scale = LongestSide{1920};
 		// How many capture groups every camera samples, spread evenly across the capture.
 		std::uint32_t samples = 5;
-		// The strongest features of each frame kept, after duplicates collapse.
+		// The strongest features of each frame kept, each with all its orientations.
 		std::uint32_t featureCap = 8192;
 		// How features are matched: between a camera's frames, and between cameras.
 		MatchRequest matching;
@@ -56,17 +56,19 @@ namespace lain::camera::feature
 	};
 
 	// What became of one camera's features: how many it found, how many left before matching and why,
-	// and how many static features the rest became.
+	// and how many static features the rest became. A feature is everything a backend found at one
+	// pixel, at however many orientations, so the counts below `orientations` are of features.
 	struct CameraExtraction
 	{
 		double scale = 1.0;				  // the factor its frames were searched at
 		std::uint32_t frames = 0;		  // sampled frames it has a member in
 		std::uint32_t framesFailed = 0;	  // of those, frames that did not decode
-		std::uint32_t features = 0;		  // found, summed over its frames
-		std::uint32_t duplicates = 0;	  // collapsed onto a stronger feature at the same pixel
-		std::uint32_t capped = 0;		  // beyond the feature cap
+		std::uint32_t found = 0;		  // keypoints found, summed over its frames, every orientation
+		std::uint32_t orientations = 0;	  // of those, further orientations of a feature, kept with it
+		std::uint32_t capped = 0;		  // features beyond the feature cap
 		std::uint32_t inconsistent = 0;	  // in a cluster holding two features of one frame
 		std::uint32_t transient = 0;	  // in a cluster found in too few of its frames
+		std::uint32_t duplicates = 0;	  // static features dropped for sharing a pixel with a stronger one
 		std::uint32_t staticFeatures = 0; // what it brings to matching
 	};
 
@@ -83,10 +85,12 @@ namespace lain::camera::feature
 		std::uint32_t a = 0; // into TrackSet::views, a < b
 		std::uint32_t b = 0;
 		PairOutcome outcome = PairOutcome::TooFew;
+		// Feature pairs, each pair once however many of their orientations matched.
 		std::uint32_t prescreenMatches = 0;
-		std::uint32_t matches = 0; // from the full match
-		std::uint32_t inliers = 0; // of those, explained by the pair's relative pose
-		std::string detail;		   // why it did not verify
+		std::uint32_t matches = 0;	 // from the full match
+		std::uint32_t ambiguous = 0; // dropped from it: a feature matched to two of the other camera's
+		std::uint32_t inliers = 0;	 // of `matches`, explained by the pair's relative pose
+		std::string detail;			 // why it did not verify
 	};
 
 	struct ExtractionReport
@@ -119,10 +123,11 @@ namespace lain::camera::feature
 	// 2. the capture groups to sample: ordered by their members' median timestamp, then median
 	//    ordinal, then identity, and taken evenly across that order;
 	// 3. per camera, one task: each sampled frame decoded, its features extracted, the image released,
-	//    duplicates collapsed and the cap applied; then the frames matched with each other, and a
-	//    feature found at one pixel in at least half of them kept as static, at its median pixel;
-	// 4. per camera pair, one task: a pre-screen on the strongest features, the full match, and the
-	//    matches verified by a relative pose;
+	//    the keypoints at one pixel kept together as one feature at several orientations, and the cap
+	//    applied; then the frames matched with each other, every orientation of each, and a feature
+	//    found at one pixel in at least half of them kept as static, at its median pixel;
+	// 4. per camera pair, one task: a pre-screen on the strongest features, the full match, a feature
+	//    matched to two of the other camera's dropped, and the matches verified by a relative pose;
 	// 5. the verified matches joined into tracks, serially, a track holding two features of one view
 	//    rejected whole.
 	//

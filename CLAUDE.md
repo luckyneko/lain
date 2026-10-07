@@ -1354,6 +1354,33 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-07 — a feature's orientations stay together through matching
+
+The second of sub-slice 7's two recommendations, settled before sub-slice 8. SIFT reports a keypoint
+with two strong orientation peaks twice, and extraction used to keep one per 1/64-pixel cell (the
+smallest angle) before matching. That angle depends on a view's roll, and a fifth of the correct
+matches were lost. Now the cell is the feature, carrying every orientation as its own descriptor
+row; every row is matched, and a match between rows is a match between cells. `ctest -j8`
+**1165/1165** Debug and **1173/1173** Release with video, camera and Ceres on, **1079/1079** with all
+three off (+2 each); warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 7
+follow-up B*.
+
+- **Real SIFT, rendered footage: 429 tracks against 365**, with pair inliers of 286, 169 and 277
+  against 225, 121 and 219. Consistency holds (410 within 2 px).
+- **A feature matched to two of the other camera's is dropped from that pair** and counted
+  (`PairExtraction::ambiguous`: 3, 2 and 2 on the footage). The union's conflict rule stays the last
+  resort; the footage now has one conflict, where 0 had been a measured value rather than a contract.
+- **The cost is real and is the repo owner's call.** On the rendered texture a feature carries 1.49
+  rows, so an exact match at the 8192-feature cap takes 10.2 s instead of 3.68 s, and a 100-camera
+  rig 16.9 core-hours Exact instead of 6.1. Approximate is 0.78 s at 96.8% recall. Counting the cap
+  in rows, or lowering it, would restore the old cost.
+- **The stand-ins modelled the defect.** A second orientation repeated the first descriptor, a tie
+  only collapse-before survived. It now has its own, and two new options model roll and one
+  camera's extra orientation.
+- **Report names changed with their meaning:** `found`, `orientations`, `duplicates` (static
+  collapses only) and `ambiguous`.
+- **Three sabotages, all caught.**
+
 ### Update 2026-10-07 — the feature covariance follows the keypoint's size
 
 The first of sub-slice 7's two recommendations, settled before sub-slice 8 at the repo owner's call,

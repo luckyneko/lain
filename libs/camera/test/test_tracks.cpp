@@ -179,6 +179,7 @@ TEST_CASE("a static scene gives one track per shared landmark, exactly", "[camer
 		CHECK(c.frames == 5);
 		CHECK(c.scale == 1.0);
 		CHECK(c.transient == 0);
+		CHECK(c.orientations == 0);
 		CHECK(c.duplicates == 0);
 	}
 
@@ -276,7 +277,7 @@ TEST_CASE("one sampled frame keeps every feature", "[camera][feature][tracks]")
 	CHECK(track->observations.front().support == 1);
 }
 
-TEST_CASE("duplicate orientations collapse to one feature", "[camera][feature][tracks]")
+TEST_CASE("a feature found at several orientations is one feature", "[camera][feature][tracks]")
 {
 	scene::registerStandIns();
 	scene::reset();
@@ -285,8 +286,8 @@ TEST_CASE("duplicate orientations collapse to one feature", "[camera][feature][t
 	const ExtractionResult result = run();
 	REQUIRE(result.ok());
 
-	// Two features with one descriptor at one pixel would leave every match of that landmark an exact
-	// tie, and the ratio test refuses a tie; collapsed, each is one feature and joins.
+	// Each orientation matches its counterpart in the other camera, and the two matches name one pair
+	// of features, so each landmark is one track, held once per view.
 	for (std::size_t l = 0; l < 5; ++l)
 	{
 		const std::vector<std::size_t> cameras = staticIn(l, {0, 2, 4, 6, 8});
@@ -303,7 +304,81 @@ TEST_CASE("duplicate orientations collapse to one feature", "[camera][feature][t
 			for (const std::size_t k : {0, 2, 4, 6, 8})
 				sightings += scene::pixelOf(c, l, k) ? 1 : 0;
 		}
-		CHECK(result.report.cameras[c].duplicates == sightings);
+		CHECK(result.report.cameras[c].orientations == sightings);
+		CHECK(result.report.cameras[c].duplicates == 0);
+		std::uint32_t statics = 0;
+		for (std::size_t l = 0; l < scene::scene().landmarks.size(); ++l)
+		{
+			const std::vector<std::size_t> cameras = staticIn(l, {0, 2, 4, 6, 8});
+			statics += std::find(cameras.begin(), cameras.end(), c) != cameras.end() ? 1 : 0;
+		}
+		CHECK(result.report.cameras[c].staticFeatures == statics);
+	}
+	for (const PairExtraction& p : result.report.pairs)
+	{
+		CHECK(p.ambiguous == 0);
+		CHECK(p.inliers == p.matches);
+	}
+}
+
+TEST_CASE("an orientation one camera lacks still joins", "[camera][feature][tracks]")
+{
+	scene::registerStandIns();
+	scene::reset();
+	// Camera 0 finds landmark 0 at angle 0 and again turned, at 1.5; the other cameras, rolled, find
+	// only the turned orientation, at 0.2. Keeping one orientation per pixel before matching would
+	// keep the angle-0 one in camera 0 and the turned one elsewhere, which no match joins. Matched
+	// at every orientation, camera 0's turned one finds the others'.
+	scene::Landmark& landmark = scene::scene().landmarks[0];
+	landmark.duplicated = true;
+	landmark.turnedOnly = {1, 2, 3};
+	const std::vector<std::size_t> cameras = staticIn(0, {0, 2, 4, 6, 8});
+	REQUIRE(cameras.size() >= 2);
+	REQUIRE(cameras.front() == 0);
+	const ExtractionResult result = run();
+	REQUIRE(result.ok());
+	const Track* track = trackAt(result.trackSet, 0, *scene::pixelOf(0, 0, 0));
+	REQUIRE(track != nullptr);
+	CHECK(track->observations.size() == cameras.size());
+}
+
+TEST_CASE("a feature matched to two of another camera's is dropped from that pair", "[camera][feature][tracks]")
+{
+	scene::registerStandIns();
+	scene::reset();
+	scene::Scene& s = scene::scene();
+	// Landmark L, and M placed in the epipolar plane of cameras 0 and 1 through L, so camera 0's L and
+	// camera 1's M agree with the pair's relative pose. Camera 0 finds a second orientation of L, and
+	// camera 1 one of M, described exactly as camera 0 describes L's. So camera 0's L matches camera
+	// 1's L (first orientations) and M (second), and camera 1's M matches camera 0's M and L. Joined,
+	// all of it would be one component holding two of camera 0's features: a conflict, rejected whole.
+	scene::Landmark& l = s.landmarks[0];
+	scene::Landmark& m = s.landmarks[1];
+	const math::Vec3d c0 = s.referenceFromCamera[0].translation();
+	const math::Vec3d c1 = s.referenceFromCamera[1].translation();
+	m.point = l.point + 0.2 * (c1 - c0) + 0.1 * (l.point - c0);
+	l.turnedIn = {{0, l.descriptor + scene::kTurned}};
+	m.turnedIn = {{1, l.descriptor + scene::kTurned}};
+	REQUIRE(staticIn(0, {0, 2, 4, 6, 8}).size() == 4);
+	REQUIRE(staticIn(1, {0, 2, 4, 6, 8}).size() == 4);
+
+	const ExtractionResult result = run();
+	REQUIRE(result.ok());
+	// Cameras 0 and 1 drop (L, L), (L, M) and (M, M): L of camera 0 and M of camera 1 each matched
+	// two features. No other pair sees a second orientation on both sides.
+	REQUIRE(result.report.pairs.size() == 6);
+	CHECK(result.report.pairs[0].a == 0);
+	CHECK(result.report.pairs[0].b == 1);
+	CHECK(result.report.pairs[0].ambiguous == 3);
+	for (std::size_t p = 1; p < result.report.pairs.size(); ++p)
+		CHECK(result.report.pairs[p].ambiguous == 0);
+	CHECK(result.report.conflicts == 0);
+	// Both still join through the other cameras, each a track in every view.
+	for (const std::size_t landmark : {0, 1})
+	{
+		const Track* track = trackAt(result.trackSet, 0, *scene::pixelOf(0, landmark, 0));
+		REQUIRE(track != nullptr);
+		CHECK(track->observations.size() == 4);
 	}
 }
 

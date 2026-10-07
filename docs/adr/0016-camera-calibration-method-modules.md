@@ -372,7 +372,14 @@ repo owner while planning M9 slice 3.)*
     on input order.
   - **One feature per 1/64-source-pixel cell**, per frame and again among the static features. It
     collapses SIFT's duplicate orientations and makes a track's identity, a digest of its cameras
-    and pixels on that grid, unique by construction.
+    and pixels on that grid, unique by construction. *(Amended 2026-10-07: the cell is still the
+    feature, but its orientations are no longer collapsed before matching. Every orientation is its
+    own descriptor row, every row is matched, and a match between rows is a match between their
+    cells. Collapsing first kept the smallest angle, which depends on a view's roll: on real SIFT
+    two views kept agreeing orientations in 83 of 128 shared cells, and a fifth of the correct
+    matches were lost. A cell matched to two of the other camera's is dropped from that pair. The
+    cost is matching every orientation: 1.49 rows a feature on the rendered texture, which nearly
+    triples an exact match at the same feature cap.)*
   - **An observation's covariance is the requested localisation**, in the pixels the backend
     searched, scaled back to source pixels. A camera searched at a coarser scale is weighted
     accordingly. *(Amended 2026-10-07: sub-slice 7 measured SIFT's localisation as proportional to

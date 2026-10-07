@@ -284,7 +284,10 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   kept. _Avoid_: background feature (the test is persistence, not depth), keypoint.
   *"The same pixel"* (2026-10-06): two frames' features are one feature when they are a feature
   match between those frames, within 1.5 pixels at the scale searched and a 1.5× size ratio. A
-  static feature sits at the median of its pixels.
+  static feature sits at the median of its pixels. *One feature, several orientations*
+  (2026-10-07): a detector may report one keypoint at several orientations, each with its own
+  descriptor. Those are one feature, and every orientation takes part in matching, since which one
+  a view would keep depends on its roll.
 - **Feature-track extraction** — the shared preprocessing operation that converts a frame sequence
   into accepted feature tracks and a report covering detection, description, matching, track
   construction, geometric verification, rejection, and reproducibility. Targetless methods consume
