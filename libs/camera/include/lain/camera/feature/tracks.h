@@ -34,8 +34,9 @@ namespace lain::camera::feature
 		math::Vec2d pixel{0.0};	   // SOURCE-image pixels: (0, 0) is the centre of the top-left pixel
 		std::uint32_t support = 0; // how many of the view's frames the feature was found in
 		// The pixel covariance (xx, xy, yy), as board::FeatureObservation's. Extraction states the
-		// localisation it asked for, in the pixels the backend searched, scaled back to source pixels,
-		// so a camera processed at a coarser scale carries a larger one.
+		// localisation it asked for as a proportion of the feature's size, which is in source pixels:
+		// a larger feature carries a larger one, and so does a camera processed at a coarser scale,
+		// whose features are found larger.
 		std::optional<std::array<double, 3>> covariance;
 	};
 

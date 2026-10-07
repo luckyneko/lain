@@ -148,7 +148,7 @@ TEST_CASE("a static scene gives one track per shared landmark, exactly", "[camer
 			CHECK(math::length(observation.pixel - *scene::pixelOf(cameras[o], l, 0)) < 1e-9);
 			CHECK(observation.support == 5);
 			REQUIRE(observation.covariance.has_value());
-			CHECK(std::abs((*observation.covariance)[0] - 0.49) < 1e-12); // 0.7 px at the native scale
+			CHECK(std::abs((*observation.covariance)[0] - 0.136 * 0.136) < 1e-12); // 3.4% of a 4 px feature
 			CHECK((*observation.covariance)[1] == 0.0);
 		}
 	}
@@ -182,16 +182,18 @@ TEST_CASE("a static scene gives one track per shared landmark, exactly", "[camer
 		CHECK(c.duplicates == 0);
 	}
 
-	SECTION("searched at half scale, an observation's covariance is twice the localisation in source pixels")
+	SECTION("searched at half scale, an observation's covariance follows its size, not the scale")
 	{
+		// The stand-in finds every landmark at 4 source px whatever the scale, as a scale-invariant
+		// detector finds a feature at its own size: the covariance says how large the feature is, and
+		// a coarser search changes it only by finding features larger.
 		ExtractionRequest request;
 		request.scale = LongestSide{320};
 		const ExtractionResult half = run(request);
 		REQUIRE(half.ok());
 		CHECK(half.report.cameras.front().scale == 0.5);
 		REQUIRE_FALSE(half.trackSet.tracks.empty());
-		// (0.7 / 0.5)^2
-		CHECK(std::abs((*half.trackSet.tracks.front().observations.front().covariance)[0] - 1.96) < 1e-12);
+		CHECK(std::abs((*half.trackSet.tracks.front().observations.front().covariance)[0] - 0.136 * 0.136) < 1e-12);
 	}
 }
 
@@ -520,6 +522,9 @@ TEST_CASE("extraction refuses what it cannot run before decoding anything", "[ca
 		ExtractionRequest inliers;
 		inliers.minimumPairInliers = 4;
 		refuses(extractTracks(cameras, groups, inliers), Status::Unsupported, "at least 5 inliers");
+		ExtractionRequest localisation;
+		localisation.localisationPerSize = 0;
+		refuses(extractTracks(cameras, groups, localisation), Status::Unsupported, "per unit of size");
 	}
 	SECTION("too little to join")
 	{

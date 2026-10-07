@@ -375,7 +375,11 @@ repo owner while planning M9 slice 3.)*
     and pixels on that grid, unique by construction.
   - **An observation's covariance is the requested localisation**, in the pixels the backend
     searched, scaled back to source pixels. A camera searched at a coarser scale is weighted
-    accordingly.
+    accordingly. *(Amended 2026-10-07: sub-slice 7 measured SIFT's localisation as proportional to
+    the feature's size, 3.4% of it natively and within the same bound at half scale, so the
+    covariance is now `localisationPerSize` times the static feature's size in source pixels. A
+    fixed 0.7 processed px was three times too loose for the commonest features. A coarser search
+    still weighs less, because it finds features larger.)*
 - **A track's observations belong to views.** A `View` is the set of frames one set of feature
   positions was taken from: one per camera in fixed-camera registration, one per frame in the
   targetless calibration of a moving camera (slice 4). A track holding two different features of one

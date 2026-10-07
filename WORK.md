@@ -4515,7 +4515,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      - **σ: make the covariance proportional to the keypoint**, σ = 0.034 × size in processed px.
        The commonest features (size 4 to 8 px, half of those matched) localise to about 0.22 px
        each (0.31 px RMS between two), so a fixed 0.7 px is three times too loose for them and
-       about right only for the largest.
+       about right only for the largest. *(Taken 2026-10-07; see the follow-up below.)*
      - **Tie-break: collapse after matching, not before.** For example, keep a cell's duplicates
        through the pair match and choose, per cell, the orientation that matched. The current rule
        loses a fifth of the correct matches.
@@ -4542,6 +4542,36 @@ The 2026-08-16 review also left these requirements and decisions visible before 
 
      Each restored source was touched a second later, and its object checked to be newer, before
      the green run was believed.
+
+   **Sub-slice 7 follow-up A (2026-10-07): the covariance follows the keypoint's size.** The first of
+   the two defaults the repo owner chose to settle before sub-slice 8, each its own commit.
+   - **`ExtractionRequest::localisation` (0.7 processed px) became `localisationPerSize = 0.034`**,
+     a standard deviation per unit of `Keypoint::size`. The rename makes the change of unit a
+     compile error rather than a silent reinterpretation.
+   - **Each observation's σ is `localisationPerSize` × its static feature's size.** That size is
+     already the median across frames in source pixels, so the scale is not divided out. A coarser
+     search still weighs less, because it finds its features larger.
+   - **Checked at a coarser scale before it was trusted** (`test-camera-opencv-features`, the
+     correspondence case):
+     - At `ScaleFactor{0.5}`, 235 of 236 matches were correct, and the residual was 6.3% of the
+       size, against 4.9% natively.
+     - The excess sits in the smallest features: 6.7% below 8 source px, against 5.4% from 8 to 16
+       and 4.6% from 16 to 32.
+     - It stays inside the native bound (0.07), which the plan set as the test of the pure
+       proportional model, so no floor term was added.
+     - It matters because the default search of 4K to 8K footage runs at 0.25 to 0.5. If sub-slice
+       9's validation finds coarsely searched cameras' small features over-weighted, a floor in
+       processed pixels is the change.
+   - **Stand-ins:**
+     - the covariance is (0.034 × 4)², since the stand-in finds every landmark at 4 source px;
+     - the half-scale section now asserts it is unchanged, as for a scale-invariant detector;
+     - a request refusal for a zero `localisationPerSize` joins the others.
+   - `ctest -j8` **1163/1163** Debug and **1171/1171** Release with video, camera and Ceres on, and
+     **1077/1077** with all three off (unchanged: the new checks are assertions in existing cases).
+     Warning-clean, format-check clean.
+   - **Sabotage, caught:** σ fixed again (`localisationPerSize / scale`, ignoring the size) fails 241
+     covariance assertions in the static-scene case. Restored, touched a second later, and its
+     object checked to be newer.
 4. **Targetless calibration + graph fallback.** Add targetless intrinsics/distortion estimation only
    after the shared feature-track evidence and validation path can meet the report contract. Then
    expose the graph method input and ordered board-then-targetless fallback, retaining every attempted

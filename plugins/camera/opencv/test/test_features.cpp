@@ -189,12 +189,12 @@ namespace
 		std::vector<math::Vec3d> truth; // per match: what A's pixel sees
 	};
 
-	TwoViews twoViews()
+	TwoViews twoViews(const ScalePolicy& scale = NativeScale{})
 	{
 		TwoViews v;
 		v.scene.noise = 1.0;
-		const ExtractResult ea = extract(synthetic::render(v.scene, v.camera, v.a, 0, 2, 1), NativeScale{});
-		const ExtractResult eb = extract(synthetic::render(v.scene, v.camera, v.b, 0, 2, 2), NativeScale{});
+		const ExtractResult ea = extract(synthetic::render(v.scene, v.camera, v.a, 0, 2, 1), scale);
+		const ExtractResult eb = extract(synthetic::render(v.scene, v.camera, v.b, 0, 2, 2), scale);
 		REQUIRE(ea.ok());
 		REQUIRE(eb.ok());
 		v.fa = ea.features;
@@ -316,14 +316,35 @@ TEST_CASE("matched features correspond in the scene", "[camera][opencv][feature]
 
 	// SIFT's localisation scales with the feature: the residual, to which two keypoints' errors add,
 	// is 4.9% of their mean size, RMS, so 3.4% per keypoint. By size band, measured RMS 0.17 px below
-	// 4 px and 0.98 px at 16 px and above. A fixed sigma (ExtractionRequest::localisation, 0.7 px) is
-	// too loose for the many small features and about right for the few largest.
+	// 4 px and 0.98 px at 16 px and above. So a covariance follows the size
+	// (ExtractionRequest::localisationPerSize); the fixed 0.7 px it replaced was three times too loose
+	// for the many small features and about right only for the few largest.
 	const auto rms = [&](int band)
 	{ return std::sqrt(bySize[band].first / double(bySize[band].second)); };
 	CHECK(std::sqrt(sumBySize / double(correct)) < 0.07);
 	REQUIRE(bySize[0].second > 20);
 	REQUIRE(bySize[2].second > 10);
 	CHECK(rms(2) > 3.0 * rms(0));
+
+	// The proportion holds at a coarser search, which is what lets ExtractionRequest::
+	// localisationPerSize state a covariance from the size alone: a feature found at half scale is
+	// larger in source pixels, and its error grows with it. Measured at ScaleFactor{0.5}: 235 correct
+	// of 236 matches, 6.3% of the size against 4.9% natively. The excess sits in the smallest
+	// features (6.7% below 8 source px, 4.6% at 16 to 32), and stays inside the native bound.
+	const TwoViews half = twoViews(ScaleFactor{0.5});
+	double halfBySize = 0;
+	std::size_t halfCorrect = 0;
+	for (std::size_t i = 0; i < half.correct.size(); ++i)
+	{
+		if (!half.correct[i])
+			continue;
+		const Match& m = half.matches.matches[i];
+		const double size = 0.5 * (half.fa.keypoints[m.a].size + half.fb.keypoints[m.b].size);
+		halfBySize += (half.residual[i] / size) * (half.residual[i] / size);
+		++halfCorrect;
+	}
+	REQUIRE(halfCorrect > 150);
+	CHECK(std::sqrt(halfBySize / double(halfCorrect)) < 0.07);
 }
 
 TEST_CASE("the relative and absolute poses of two views are recovered", "[camera][opencv][feature]")

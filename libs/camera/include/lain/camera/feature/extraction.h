@@ -46,9 +46,12 @@ namespace lain::camera::feature
 		// the pixels the backend searched, and this ratio of sizes.
 		double staticDistance = 1.5;
 		double staticSizeRatio = 1.5;
-		// How precisely a feature is located, a standard deviation in the pixels the backend searched.
-		// Provisional, from SIFT's localisation; M9 slice 3 sub-slice 7 measures it.
-		double localisation = 0.7;
+		// How precisely a feature is located: a standard deviation per unit of its size
+		// (Keypoint::size), so in source pixels whatever the scale searched. A detector finds a
+		// feature at a size it chose, and a larger one is located less precisely. 0.034 is SIFT's,
+		// measured against the truth on rendered scenes (M9 slice 3, sub-slice 7): 3.4% natively,
+		// within the same bound at half scale.
+		double localisationPerSize = 0.034;
 		ExecutionPolicy execution = ExecutionPolicy::Normal;
 	};
 

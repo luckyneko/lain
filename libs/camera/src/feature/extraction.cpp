@@ -200,8 +200,8 @@ namespace lain::camera::feature
 			return string::format("a static distance of {} is not positive", r.staticDistance);
 		if (!(std::isfinite(r.staticSizeRatio) && r.staticSizeRatio >= 1))
 			return string::format("a static size ratio of {} is below 1", r.staticSizeRatio);
-		if (!positive(r.localisation))
-			return string::format("a localisation of {} is not positive", r.localisation);
+		if (!positive(r.localisationPerSize))
+			return string::format("a localisation of {} per unit of size is not positive", r.localisationPerSize);
 		return std::nullopt;
 	}
 
@@ -653,9 +653,11 @@ namespace lain::camera::feature
 			Track track;
 			for (const auto& [v, i] : members)
 			{
-				const double sigma = request.localisation / work[v].statics.scale;
-				track.observations.push_back(
-					{v, work[v].statics.keypoints[i].pixel, work[v].support[i], std::array<double, 3>{sigma * sigma, 0.0, sigma * sigma}});
+				// A static feature's size is its median across frames, in source pixels, so the
+				// covariance is in source pixels too, and a coarser search reaches it through the size.
+				const Keypoint& k = work[v].statics.keypoints[i];
+				const double sigma = request.localisationPerSize * k.size;
+				track.observations.push_back({v, k.pixel, work[v].support[i], std::array<double, 3>{sigma * sigma, 0.0, sigma * sigma}});
 			}
 			track.identity = core::sha256(canonicalText(track, out.trackSet.views)).toString();
 			out.trackSet.tracks.push_back(std::move(track));

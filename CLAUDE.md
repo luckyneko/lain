@@ -1354,6 +1354,25 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-07 — the feature covariance follows the keypoint's size
+
+The first of sub-slice 7's two recommendations, settled before sub-slice 8 at the repo owner's call,
+each as its own commit. `ExtractionRequest::localisation` (a fixed 0.7 processed px) is now
+**`localisationPerSize = 0.034`**, and each observation's σ is that times its static feature's size
+in source pixels. `ctest -j8` **1163/1163** Debug and **1171/1171** Release with video, camera and
+Ceres on, **1077/1077** with all three off (unchanged); warning-clean, format-check clean. Full
+notes in WORK.md's *Sub-slice 7 follow-up A*.
+
+- **The rename is the point**: a change of unit under the old name would compile and silently mean
+  something else.
+- **The scale is no longer divided out.** The size is already in source pixels, and a coarser
+  search finds features larger, so it still weighs them less.
+- **The model was checked at half scale before it was trusted.** The error is 6.3% of the size there
+  against 4.9% natively, which is inside the bound the plan set, so no floor term. The excess is in
+  the smallest features, and the default search of 4K to 8K footage is coarse, so sub-slice 9's
+  validation is where a floor would show itself owed.
+- **Sabotage, caught:** a σ that ignores the size fails 241 covariance assertions.
+
 ### Update 2026-10-06 — M9 slice 3, sub-slice 7: the OpenCV feature producer
 
 The three feature seams get a real backend: SIFT, a matcher with both searches, and a geometry
