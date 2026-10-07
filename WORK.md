@@ -3950,7 +3950,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       **Built 2026-10-06**, below, with OpenCV handed a virtual pinhole of focal 1000 rather than
       normalised rays, the descriptors searched as floats, and the defaults left for the repo owner
       to decide on the measurements.
-   8. **`registration::targetless`.** *(Split 2026-10-07 into 8a, built, and 8b; see below.)*
+   8. **`registration::targetless`.** *(Split 2026-10-07 into 8a and 8b, both built; see below.)*
       - `registerCameras(rig, const feature::TrackSet&, const Request&)`, a footage overload taking
         a `feature::ExtractionRequest`, and the public `registration::validate(rig, report,
         trackSet, trackIds, execution) → HeldOutEvidence`, which this module's own validation calls.
@@ -4739,6 +4739,159 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      The restored source was touched a second later, and its object checked to be newer.
    - `ctest -j8` **1172/1172** Debug and **1180/1180** Release with video, camera and Ceres on (+7 each), and **1085/1085** with all three off (+6). Warning-clean,
      format-check clean.
+
+   **Sub-slice 8b built (2026-10-07): `registration::targetless`.** Fixed cameras with known
+   intrinsics registered from the static scene they share (`registration/targetless.h`,
+   `src/registration/targetless.cpp`).
+   - **Two entry points.**
+     - **Over an accepted `TrackSet`.**
+     - **Over footage and capture groups.** This is `feature::extractTracks` followed by the
+       track-set overload. Both overloads measure initialisation by one `GeometryRequest` (the
+       facades' default angle, the request's seed), so they cannot initialise differently, and a test
+       requires the two reports to be equal.
+       - The footage overload runs every check that needs no frame first.
+       - The registration's execution policy governs the extraction.
+       - The diagnostics keep the extraction's report and the track set, so sub-slice 9 can validate
+         without extracting again.
+       - An extraction refused for its dataset (`InvalidInput`) becomes `InvalidDataset`; any other
+         failure is the new `Failure::ExtractionFailed`.
+   - **New failures:**
+     - `NoFeatureExtractor`, `NoFeatureMatcher`, `NoGeometrySolver`;
+     - `ExtractionFailed`.
+   - **New method types:**
+     - **`TargetlessDiagnostics`:**
+       - counts of `tracks`, `tracksUsable`, `landmarks`, `untriangulated` and `behind`;
+       - the `seed` pair, its `seedAngle`, and `seedBelowFloor`;
+       - `placement` (the order cameras were placed in) and `unplaceable`;
+       - the footage overload's `extraction` and `trackSet`.
+     - **`TargetlessRecord`:** geometry, extractor and matcher provenance, plus the extraction request
+       as run.
+     - The one-line summary gains ", N landmarks from M usable tracks".
+   - **The checks refuse a malformed track set as `InvalidDataset`:**
+     - a view of a camera the rig lacks (named), or two views of one camera;
+     - an observation of a view the set does not have, or two observations of one view in a track;
+     - a track identity given twice;
+     - a covariance that is not positive definite, which would otherwise fail a whole solve.
+
+     Applicability is checked against each view's image geometry.
+   - **Placeability is a least fixed point from a seed pair.** The closure repeatedly adds the camera
+     in the most tracks that already have two placed cameras. The minima are the geometry facades'
+     own: 4 such tracks to place a camera, 5 shared tracks to seed. The closure does not depend on
+     the order cameras are added; it does depend on the seed.
+     - Candidate seeds are pairs ordered by shared fitting tracks, ties to `(a, b)`, keeping those
+       whose closure reaches every camera. A candidate inside a closure that fell short is skipped
+       without posing it.
+     - When none reaches every camera, the method fails `Disconnected` and names the cameras outside
+       the top pair's closure. What that pair does place is a component estimate.
+   - **The seed:**
+     - The first 16 covering candidates are posed by `feature::relativePose`.
+     - Each is scored by the median triangulation angle over the inliers that triangulate `Ok`; a
+       point at infinity is excluded.
+     - The seed is the candidate with the most inliers among those clearing 2°. When none clears it,
+       the widest seeds the rig and `seedBelowFloor` says so, as decided.
+   - **Incremental initialisation** runs in the seed's frame with a unit baseline. It triangulates
+     every track with two placed cameras, then places the unplaced camera seeing the most landmarks by
+     `feature::absolutePose`, until every camera is placed. When none can be placed the method fails
+     `InitialisationFailed`, naming the cameras.
+   - **The start for the refinement:**
+     - Rebased onto the reference, which is then set to exactly the identity.
+     - **Cheirality filter:** an observation its camera cannot project is left out, and so is a
+       landmark left with fewer than two observations.
+     - **Every camera is then re-checked for 4 landmarks** (`InitialisationFailed` otherwise), since
+       Ceres would return an unobserved camera unchanged.
+       - **Deviation:** the plan also asked 5 shared tracks of the seed pair here. Once the rig is
+         placed the pair has no special role, and 4 is what the refinement needs.
+     - **Normalised** so the median depth of the landmarks the reference sees is 1, before the
+       refinement for its conditioning and after it for the report.
+   - **Outliers** are per (track, camera), above the loss scale. An observation the filter left out is
+     an outlier with an infinite `rmsWhitened`, counted among the fitted, as board counts an
+     unprojectable view.
+   - **The hold-out guard is anchored on the first covering seed** over the usable tracks, as the
+     design review found it must be.
+     - For each camera the anchor records its **support**: the tracks it was placed with, which have
+       two or more cameras placed before it. The seed pair's support is the tracks it shares.
+     - A track is held out only while every camera it supports keeps at least 4 (5 for the pair).
+       Holding one out decrements the support it gave.
+     - The anchor's placement order stays valid through the hold-out, so a covering seed always
+       survives it.
+   - **Bootstrap:**
+     - Draws are made over the fitting tracks before anything runs.
+     - Each resample is a full registration onto the same reference, aligned to the result by a
+       least-squares scale over the camera centres before its spread is measured.
+   - **No graph bridge exists in a placeable rig of three or more cameras.** A placed camera joins by
+     two edges, so the weak-bridge case is a two-camera rig's own edge. The test says so.
+   - **Stand-in `TruthGeometry` stopped assuming the truth's frame.**
+     - For each true camera c and each working frame a, it proposes `cFromA`, with the translation
+       scaled by the median of per-ray least-squares fits.
+     - It keeps only candidates whose median residual over 16 evenly spaced rays is within the angle.
+     - **`bestOf` then keeps the top four.** Without it, the stand-in proposed up to 4373 candidates
+       per absolute pose, seed selection on the scale rig took 7.7 s, and the scale test took 59.7 s
+       instead of 40 s. test-camera-tracks shares the header and still passes.
+   - **Tests**, in `test-camera-targetless` (+14 cases, 20 in all), over the stand-ins and the
+     pass-through refiner:
+     - registration exact up to the scale, Ready;
+     - held-out tracks never refined: 60 held of 300, one free-camera call and then one held-camera
+       call per held-out track;
+     - partial overlap;
+     - a chain of pairs, which fails `Disconnected` naming what it cannot place;
+     - a disconnected rig, with its component estimates;
+     - two cameras: Ready on 300 tracks, and on 50 a weak bridge of 40, Exploratory;
+     - **the design review's counterexample**:
+       - cameras 0 and 1 share 20 tracks and nothing with three cameras, so their seed places nobody
+         else;
+       - cameras 2 and 3 place everyone, each of 0 and 1 by exactly its 4 tracks, which sit where
+         the stride lands;
+       - only the guard keeps them, and the seed is `cam02`–`cam03`.
+     - a landmark behind a camera, left out, named with an infinite whitened residual, and absent from
+       the refiner's problem;
+     - a narrow rig that seeds below the floor from its widest pair;
+     - seed ranking: a 3 cm pair with the most inliers loses to the wide pair clearing 2°;
+     - a requested reference that is exactly the identity;
+     - determinism: noisy tracks give the same report serially, on a pool of four, and with cameras
+       and tracks reversed;
+     - footage with 30 moving landmarks dropped: equal to extract-then-register, keeping the track
+       set and the record;
+     - the refusals.
+
+     `test_nobackend` and `test_norefiner` name the missing backend for each overload.
+   - **Through Ceres** (`test-camera-ceres`, `test_targetless.cpp`, +4 cases):
+     - **Noisy:** 0.136 px σ, 4 cameras and 400 tracks. The worst camera is 0.454 mrad out and the
+       worst centre 0.039% of the median depth; held out 0.551 mrad over 80 tracks. There are 6
+       outliers in 1280 observations, what a 3σ cut of Gaussian noise leaves. Ready.
+     - **A wrong match** 15 px off is named at 110 σ, and only that member. The rig moves 1.2 µrad.
+     - **A landmark behind a camera at the start** is kept out, and the solve succeeds.
+     - **Scale, Release only:** 100 cameras in a ring, 50,000 tracks, 8 views each.
+       - 40 s in the method on four cores, 7.0 s of it the refinement and most of the rest the ten
+         bootstrap registrations.
+       - 1.26 GB at peak for the whole test, scene included.
+       - The worst camera is 0.66 mrad out and the worst centre 0.057% of the median depth, a ring's
+         drift; held out 0.416 mrad over 10,000 tracks; 2,488 outliers in 320,000 observations.
+       - Ready.
+       - Under the plan's 60 s trigger, so the resamples stay at the default.
+   - **Six sabotages; five caught, and the sixth's survivor is harmless:**
+     - **Hold-out without the guard:** the counterexample fails, its critical tracks held out.
+     - **The guard anchored on the top pair rather than the first covering seed:** the counterexample
+       fails, since the top pair, 0 and 1, places nobody.
+     - **No cheirality filter:** the stand-in behind case fails, and through Ceres the solve fails
+       `RefinementFailed`.
+     - **No scale alignment of the resamples:** the exact case reads a 1.43% translation spread.
+     - **Resamples drawn inside the parallel loop:**
+       - From one engine under a lock it is **not caught**. It only permutes the draws among the
+         resamples, and the spread is a statistic over all of them.
+       - Unlocked, as the plan wrote it, the determinism case fails 3 runs of 3.
+     - **The seed chosen without the angle floor:** the ranking case seeds from the 3 cm pair.
+
+     Each restored source was touched a second later, and its object checked to be newer.
+   - **Recorded, not built:**
+     - **A robust initial triangulation**, retriangulating from inlier rays: a wrong match pulls its
+       landmark's start, and Ceres' Cauchy loss is relied on to recover. Trigger: sub-slice 9's real
+       footage.
+     - **The provisional constants** (2°, 16 candidates, 20 to hold out, the epipolar doubling, the
+       profile's table) are re-measured there.
+   - The golden board report is untouched.
+   - `ctest -j8` **1192/1192** Debug and **1200/1200** Release with video, camera and Ceres on (+20
+     each), and **1101/1101** with all three off (+16). Warning-clean, format-check clean. Under
+     `ctest -j8` the scale test takes 52.6 s, against 40 s alone.
 
 4. **Targetless calibration + graph fallback.** Add targetless intrinsics/distortion estimation only
    after the shared feature-track evidence and validation path can meet the report contract. Then

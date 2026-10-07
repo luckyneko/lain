@@ -306,6 +306,10 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   B–C with no track seen by all three are connected through B, but each keeps a scale of its own:
   C cannot be placed and the global refinement is singular. A rig with an unplaceable camera fails as
   disconnected and names it. A board registration never meets this, because the board is metric.
+  *How many* (2026-10-07): the geometry facades' own minima. A camera needs 4 tracks already seen by
+  two placed cameras, and the pair the placement starts from needs 5 shared tracks. Placing is a
+  closure from that seed pair: it does not depend on the order cameras join, but it does depend on
+  the pair. A camera must still see 4 landmarks once those behind it are left out.
   _Avoid_: connected camera (connection is the weaker property), reachable camera.
 - **Weak bridge** — an edge of the camera observation graph whose removal would disconnect it, and
   which rests on less shared evidence than the registration fitness profile's minimum (a request may

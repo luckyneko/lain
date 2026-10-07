@@ -351,34 +351,125 @@ namespace lain::camera::testing::scene
 		}
 	};
 
-	// Registered as "truth": every pair of cameras' true relative pose, and every camera's true pose,
-	// whatever it is handed; lain's measurement picks the one that explains the input.
+	// Which of `count` inputs a stand-in samples to judge a candidate: at most 16, evenly spaced.
+	inline std::vector<std::size_t> sampleOf(std::size_t count)
+	{
+		std::vector<std::size_t> out;
+		const std::size_t n = std::min<std::size_t>(16, count);
+		for (std::size_t i = 0; i < n; ++i)
+			out.push_back(i * count / n);
+		return out;
+	}
+
+	inline double angleBetween(const math::Vec3d& u, const math::Vec3d& v)
+	{
+		return std::atan2(math::length(math::cross(u, v)), math::dot(u, v));
+	}
+
+	// Of `scored` (a candidate's median sampled residual, its pose), the best few: the ones a robust
+	// estimator would return, in order of residual, ties in the order found.
+	inline std::vector<math::RigidTransformd> bestOf(std::vector<std::pair<double, math::RigidTransformd>> scored)
+	{
+		std::stable_sort(scored.begin(), scored.end(), [](const auto& x, const auto& y)
+						 { return x.first < y.first; });
+		std::vector<math::RigidTransformd> out;
+		for (std::size_t i = 0; i < scored.size() && i < 4; ++i)
+			out.push_back(scored[i].second);
+		return out;
+	}
+
+	inline double medianOf(std::vector<double> values)
+	{
+		std::nth_element(values.begin(), values.begin() + std::ptrdiff_t(values.size() / 2), values.end());
+		return values[values.size() / 2];
+	}
+
+	// Registered as "truth": proposes the scene's true poses, in whatever frame and scale it is asked
+	// in, and nothing else; lain's measurement picks the one that explains the input. A candidate is
+	// proposed only when it explains at least half of a sample of the input, and only the four that
+	// explain it best, as a robust estimator's would: a ring of a hundred cameras is symmetric enough
+	// that thousands of its true poses explain any one pair.
 	class TruthGeometry : public feature::GeometrySolver
 	{
 	public:
 		Provenance provenance() const override { return {"truth", "1"}; }
-		std::vector<math::RigidTransformd> relativePoses(const std::vector<feature::RayPair>&, double,
+
+		// Every ordered pair of true cameras' bFromA whose epipolar planes the sampled pairs lie in.
+		std::vector<math::RigidTransformd> relativePoses(const std::vector<feature::RayPair>& pairs, double angle,
 														 std::uint64_t) const override
 		{
-			std::vector<math::RigidTransformd> out;
+			std::vector<std::pair<double, math::RigidTransformd>> scored;
 			const std::vector<math::RigidTransformd>& truth = scene().referenceFromCamera;
+			const std::vector<std::size_t> sample = sampleOf(pairs.size());
 			for (std::size_t a = 0; a < truth.size(); ++a)
 			{
 				for (std::size_t b = 0; b < truth.size(); ++b)
 				{
-					if (a != b)
-						out.push_back(truth[b].inverse() * truth[a]);
+					if (a == b)
+						continue;
+					const math::RigidTransformd bFromA = truth[b].inverse() * truth[a];
+					std::vector<double> residuals;
+					for (const std::size_t i : sample)
+					{
+						const math::Vec3d normal = math::cross(bFromA.translation(), bFromA.rotate(pairs[i].a));
+						residuals.push_back(math::length(normal) > 0
+												? std::asin(std::min(1.0, std::abs(math::dot(math::normalize(pairs[i].b),
+																							 math::normalize(normal)))))
+												: 1.0);
+					}
+					const double residual = residuals.empty() ? 1.0 : medianOf(residuals);
+					if (residual <= angle)
+						scored.push_back({residual, bFromA});
 				}
 			}
-			return out;
+			return bestOf(std::move(scored));
 		}
-		std::vector<math::RigidTransformd> absolutePoses(const std::vector<feature::PointRay>&, double,
+
+		// For every true camera c and every true camera a whose frame the points may be in, c's pose in
+		// a's frame, its translation scaled to the input's (the median of each sampled point-ray's least
+		// squares scale), when the sample fits.
+		std::vector<math::RigidTransformd> absolutePoses(const std::vector<feature::PointRay>& pointRays, double angle,
 														 std::uint64_t) const override
 		{
-			std::vector<math::RigidTransformd> out;
-			for (const math::RigidTransformd& t : scene().referenceFromCamera)
-				out.push_back(t.inverse());
-			return out;
+			std::vector<std::pair<double, math::RigidTransformd>> scored;
+			const std::vector<math::RigidTransformd>& truth = scene().referenceFromCamera;
+			const std::vector<std::size_t> sample = sampleOf(pointRays.size());
+			for (std::size_t c = 0; c < truth.size(); ++c)
+			{
+				for (std::size_t a = 0; a < truth.size(); ++a)
+				{
+					const math::RigidTransformd cFromA = truth[c].inverse() * truth[a];
+					const math::Vec3d t = cFromA.translation();
+					double k = 0;
+					if (math::length(t) > 0)
+					{
+						// r parallel to R p + k t: cross(r, R p) + k cross(r, t) = 0, for each ray.
+						std::vector<double> ks;
+						for (const std::size_t i : sample)
+						{
+							const math::Vec3d rt = math::cross(pointRays[i].ray, t);
+							const double length2 = math::dot(rt, rt);
+							if (length2 > 0)
+								ks.push_back(-math::dot(math::cross(pointRays[i].ray, cFromA.rotate(pointRays[i].point)), rt) /
+											 length2);
+						}
+						if (ks.empty())
+							continue;
+						std::nth_element(ks.begin(), ks.begin() + std::ptrdiff_t(ks.size() / 2), ks.end());
+						k = ks[ks.size() / 2];
+						if (!(k > 0) || !std::isfinite(k))
+							continue;
+					}
+					const math::RigidTransformd candidate{cFromA.rotation(), t * k};
+					std::vector<double> residuals;
+					for (const std::size_t i : sample)
+						residuals.push_back(angleBetween(pointRays[i].ray, candidate.apply(pointRays[i].point)));
+					const double residual = residuals.empty() ? 1.0 : medianOf(residuals);
+					if (residual <= angle)
+						scored.push_back({residual, candidate});
+				}
+			}
+			return bestOf(std::move(scored));
 		}
 	};
 

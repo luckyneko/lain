@@ -14,6 +14,7 @@
 #include <lain/camera/feature/matching.h>
 #include <lain/camera/registration/board.h>
 #include <lain/camera/registration/refiner.h>
+#include <lain/camera/registration/targetless.h>
 #include <lain/media/framesequence.h>
 #include <lain/media/framesource.h>
 
@@ -152,6 +153,38 @@ TEST_CASE("with no backend, a registration fails for want of a pose solver, or a
 	const auto& searched = std::get<registration::BoardRecord>(fromFootage.reproducibility.method).detection;
 	REQUIRE(searched.has_value());
 	CHECK(searched->minimumCorners == 9);
+}
+
+TEST_CASE("with no backend, a targetless registration fails for want of an extractor, or a geometry solver",
+		  "[camera][registration]")
+{
+	namespace registration = lain::camera::registration;
+	camera::CameraModelParameters p;
+	p.image = {64, 48};
+	p.intrinsics = {60.0, 60.0, 31.5, 23.5};
+	const camera::CameraModel model = *camera::CameraModel::create(p).model;
+	const std::vector<registration::RigCamera> cameras{{camera::capture::CameraIdentity{"a"}, model},
+													   {camera::capture::CameraIdentity{"b"}, model}};
+	camera::feature::TrackSet tracks;
+	tracks.views = {{camera::capture::CameraIdentity{"a"}, {64, 48}, {}}, {camera::capture::CameraIdentity{"b"}, {64, 48}, {}}};
+	const registration::Report fromTracks = registration::targetless::registerCameras(cameras, tracks, registration::Request{});
+	REQUIRE(fromTracks.status == registration::RegistrationStatus::Failed);
+	CHECK(fromTracks.failures.front().failure == registration::Failure::NoGeometrySolver);
+
+	const media::FrameSequence footage = media::FrameSequence::over(std::make_shared<StillSource>());
+	const std::vector<registration::RigFootage> rig{{camera::capture::CameraIdentity{"a"}, model, footage},
+													{camera::capture::CameraIdentity{"b"}, model, footage}};
+	camera::feature::ExtractionRequest extraction;
+	extraction.samples = 3;
+	const registration::Report fromFootage =
+		registration::targetless::registerCameras(rig, {}, extraction, registration::Request{});
+	REQUIRE(fromFootage.status == registration::RegistrationStatus::Failed);
+	CHECK(fromFootage.failures.front().failure == registration::Failure::NoFeatureExtractor);
+	CHECK(fromFootage.failures.front().detail.find("no feature extractor") != std::string::npos);
+	// Refused before a frame was decoded, and still saying what it would have extracted with.
+	const auto& asRun = std::get<registration::TargetlessRecord>(fromFootage.reproducibility.method).extraction;
+	REQUIRE(asRun.has_value());
+	CHECK(asRun->samples == 3);
 }
 
 TEST_CASE("with no backend, the feature facades say the capability is missing", "[camera][feature]")

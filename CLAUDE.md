@@ -1354,6 +1354,42 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-07 — M9 slice 3, sub-slice 8b: `registration::targetless`
+
+Fixed cameras with known intrinsics registered from the static scene they share, over an accepted
+`TrackSet` or over footage. The footage overload is `feature::extractTracks` and then the track-set
+overload, exactly. Nothing calls it from a graph yet; sub-slice 10 does. `ctest -j8` **1192/1192**
+Debug, **1200/1200** Release with video, camera and Ceres on, **1101/1101** with all three off;
+warning-clean, format-check clean, the board golden untouched. Full notes in WORK.md's *Sub-slice 8b
+built* under M9 slice 3.
+
+- **Placeability is a closure from a seed pair**, needing the geometry facades' own minima: 5 shared
+  tracks to seed, 4 tracks already seen by two placed cameras to place a camera. A rig no pair
+  covers fails `Disconnected`, naming what the best-supported pair cannot reach.
+- **The seed** is, of the 16 covering pairs that share the most tracks, the one with the most
+  relative-pose inliers clearing a 2° median triangulation angle. When none clears it, the widest
+  seeds the rig and `seedBelowFloor` says so (the repo owner's call).
+- **The hold-out guard is anchored on the first covering seed.** A track is held out only while every
+  camera it helped place keeps its support. The design review's counterexample is a test: cameras 0
+  and 1 share the most tracks and place nobody else, and only the guard keeps the 8 tracks that
+  place them from 2 and 3.
+- **An observation behind its camera at the start is left out**, named as an outlier with an
+  infinite residual. Every camera must still see 4 landmarks, since Ceres returns an unobserved one
+  unchanged. Without the filter, Ceres fails the whole solve.
+- **The bootstrap aligns each resample's scale** by least squares over the camera centres. Without
+  it, exact tracks read a 1.43% spread.
+- **Measured through Ceres:**
+  - **Noisy rig:** 0.454 mrad and 0.039% of depth at worst, Ready.
+  - **A wrong match:** named at 110 σ, the rest of its track not named.
+  - **Release, 100 cameras × 50,000 tracks:** 40 s (7.0 s refining), 1.26 GB at peak, 0.66 mrad
+    worst, Ready.
+- **The truth stand-in had to stop proposing every candidate.** Without a top-4 cut it offered up to
+  4,373 poses per placement, and seed selection on the scale rig took 7.7 s.
+- **In a placeable rig of three or more cameras no edge can be a bridge**, because a placed camera
+  joins by two edges. So a weak bridge appears only as a two-camera rig's own edge.
+- **Six sabotages, five caught.** Drawing the resamples from one engine under a lock is NOT caught:
+  it only permutes the draws among the resamples. The unlocked form the plan named fails 3 runs of 3.
+
 ### Update 2026-10-07 — M9 slice 3, sub-slice 8a: `registration::validate`, and the targetless profile
 
 Sub-slice 8 is two commits, chosen by the repo owner: 8a here, the method in 8b.

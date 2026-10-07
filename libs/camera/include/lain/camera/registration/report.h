@@ -3,6 +3,8 @@
 #include "lain/camera/board/detection.h"
 #include "lain/camera/cameramodel.h"
 #include "lain/camera/capture/capturegroup.h"
+#include "lain/camera/feature/extraction.h"
+#include "lain/camera/feature/tracks.h"
 #include "lain/camera/method.h"
 #include "lain/camera/provenance.h"
 #include "lain/camera/registration/fitness.h"
@@ -31,6 +33,9 @@ namespace lain::camera::registration
 	{
 		NoDetector,					// this build cannot detect boards
 		NoPoseSolver,				// this build cannot solve board poses
+		NoFeatureExtractor,			// this build cannot extract features
+		NoFeatureMatcher,			// this build cannot match features
+		NoGeometrySolver,			// this build cannot pose cameras from rays
 		NoRefiner,					// this build has no global refinement
 		UnknownFitnessProfile,		// the request names a profile this build does not know
 		IncompatibleFitnessProfile, // the profile counts another method's evidence unit
@@ -39,10 +44,11 @@ namespace lain::camera::registration
 		UnknownApplicability,		// a model's applicability is Unknown and the request refuses that
 		UnknownReference,			// the requested reference camera is not in the dataset
 		TooFewCameras,				// fewer than two cameras share any evidence
-		Disconnected,				// the camera graph falls apart into components
+		Disconnected,				// the camera graph falls apart into components, or a camera cannot be placed
 		InitialisationFailed,		// a relative pose could not be estimated
 		RefinementFailed,			// the global refinement produced no usable solution
 		ResourceExhausted,			// the machine ran out of memory
+		ExtractionFailed,			// feature-track extraction refused or failed, not for its dataset
 	};
 
 	struct FailureReason
@@ -181,6 +187,25 @@ namespace lain::camera::registration
 		std::vector<GroupDetections> detections; // in canonical group order
 	};
 
+	// What a targetless registration examined, beside what every registration reports.
+	struct TargetlessDiagnostics
+	{
+		std::uint32_t tracks = 0;						  // given
+		std::uint32_t tracksUsable = 0;					  // with two or more observations whose pixels unproject
+		std::uint32_t landmarks = 0;					  // fitting tracks triangulated and refined
+		std::uint32_t untriangulated = 0;				  // fitting tracks that never became a refined landmark
+		std::uint32_t behind = 0;						  // observations left out of the refinement: behind their camera, or unprojectable
+		std::vector<capture::CameraIdentity> seed;		  // the two cameras initialisation started from
+		double seedAngle = 0;							  // their median triangulation angle, radians
+		bool seedBelowFloor = false;					  // no pair cleared the floor, so the widest seeded
+		std::vector<capture::CameraIdentity> placement;	  // the cameras in the order they were placed, the seed first
+		std::vector<capture::CameraIdentity> unplaceable; // the cameras no seed could reach, when the rig failed so
+		// When this registration extracted its tracks: what extraction reported, and the tracks, so a
+		// comparison can validate on them without extracting again.
+		std::optional<feature::ExtractionReport> extraction;
+		std::optional<feature::TrackSet> trackSet;
+	};
+
 	// What every registration reports about how it got its result, and in `method`, what its method
 	// alone examined.
 	struct Diagnostics
@@ -194,7 +219,7 @@ namespace lain::camera::registration
 		std::vector<CameraEvidence> cameras;   // ascending by identity
 		std::vector<std::string> heldOutUnits; // their identities, in canonical order
 		double medianDepth = 0;				   // in the registration's units: what translation variation is relative to
-		std::variant<BoardDiagnostics> method;
+		std::variant<BoardDiagnostics, TargetlessDiagnostics> method;
 	};
 
 	// What a board registration searched with and solved by, beside what every registration records.
@@ -207,6 +232,17 @@ namespace lain::camera::registration
 		std::optional<camera::board::DetectionRequest> detection;
 	};
 
+	// What a targetless registration posed with and extracted by, beside what every registration records.
+	struct TargetlessRecord
+	{
+		Provenance geometry; // what proposed the initial poses
+		// When this registration extracted its tracks: the backends that answered, and the request as
+		// run, its execution policy the registration's.
+		Provenance extractor;
+		Provenance matcher;
+		std::optional<feature::ExtractionRequest> extraction;
+	};
+
 	// What a report needs to be repeated (CONTEXT.md, "Reproducibility record"): what every
 	// registration records, and in `method`, what its method alone does.
 	struct Reproducibility
@@ -215,7 +251,7 @@ namespace lain::camera::registration
 		std::uint32_t frames = 0;
 		Provenance refiner;
 		Request request; // exactly as given
-		std::variant<BoardRecord> method;
+		std::variant<BoardRecord, TargetlessRecord> method;
 	};
 
 	// The result of a fixed-camera registration, successful or not (CONTEXT.md, "Registration report").

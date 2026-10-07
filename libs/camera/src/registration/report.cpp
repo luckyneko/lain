@@ -17,6 +17,11 @@ namespace lain::camera::registration
 		return lain::string::format(", {} of {} groups usable", board.groupsUsable, board.groupsExamined);
 	}
 
+	static std::string methodSummary(const TargetlessDiagnostics& targetless)
+	{
+		return lain::string::format(", {} landmarks from {} usable tracks", targetless.landmarks, targetless.tracksUsable);
+	}
+
 	std::optional<math::RigidTransformd> Report::referenceFromCamera(const capture::CameraIdentity& camera) const
 	{
 		for (const RegisteredCamera& c : cameras)

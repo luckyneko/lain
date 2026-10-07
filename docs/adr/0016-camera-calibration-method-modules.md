@@ -397,6 +397,26 @@ repo owner while planning M9 slice 3.)*
   it is metric. A camera is therefore **placeable** only when it shares triangulated landmarks with
   cameras already placed, and a rig with an unplaceable camera fails as disconnected, naming those
   cameras.
+  *Built in M9 slice 3, sub-slice 8b (2026-10-07):*
+  - **Placeability is a closure from a seed pair, with the geometry facades' own minima.**
+    - A pair needs 5 shared tracks to seed.
+    - A camera needs 4 tracks that already have two placed cameras.
+    - A rig fails as disconnected when no pair's closure reaches every camera, naming the cameras
+      the best-supported pair cannot reach.
+  - **The seed is the covering pair with the most relative-pose inliers whose median triangulation
+    angle clears 2°**, of the 16 sharing the most tracks.
+    - When none clears it, the widest seeds the rig and the report says the floor was not cleared.
+    - The floor ranks pairs. It never refuses a rig, so fitness, not initialisation, judges a
+      narrow rig.
+  - **The hold-out guard is anchored on the first covering seed**, the one the rig is most likely to
+    be placed from. A track is held out only while every camera it helped place keeps the support
+    it was placed with. Anchoring on the best-supported pair instead fails whenever that pair
+    places nobody else, as a pair seen only by each other does.
+  - **An observation behind its camera at the start is left out of the refinement**, then every
+    camera is checked again for the 4 landmarks it needs. A landmark behind a camera fails a whole
+    Ceres solve (ADR-0017), and a camera left with no observation would be returned unchanged.
+  - **Registering footage is extracting its tracks, then registering them, exactly.** An extraction
+    that fails for a reason other than its dataset is `ExtractionFailed`.
 - **Board and targetless registration are compared on held-out feature tracks.** A public
   `registration::validate` takes registered cameras and track ids that neither registration fitted,
   and predicts each held-out observation by triangulating its landmark from the other members with
