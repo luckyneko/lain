@@ -64,10 +64,12 @@ endif()
 
 catch_discover_tests(test-camera-fixture TEST_PREFIX "(camera::fixture) ")
 
-# Fixed-camera board registration end to end through both real backends: OpenCV detects and poses,
-# Ceres refines. Built only where both plugins are.
+# Registration end to end through both real backends, on footage drawn in plain C++: board and
+# targetless registration each alone, and one rig registered by both and compared (the comparison
+# and its measurements run in Release only). OpenCV detects, extracts and poses, Ceres refines. Built
+# only where both plugins are.
 if(TARGET lain::camera::opencv AND TARGET lain::camera::ceres)
-	add_executable(test-camera-registration-e2e test_registration.cpp)
+	add_executable(test-camera-registration-e2e test_registration.cpp test_rendering.cpp test_targetlesse2e.cpp test_comparison.cpp)
 	target_compile_features(test-camera-registration-e2e PRIVATE cxx_std_17)
 	target_include_directories(test-camera-registration-e2e PRIVATE "${lain_SOURCE_DIR}/libs/camera/test")
 	target_link_libraries(test-camera-registration-e2e PRIVATE

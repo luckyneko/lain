@@ -2442,7 +2442,8 @@ built before it, discharging its frame-sequence prerequisite. How OpenCV is obta
 it is the capture, which only the repo owner can make. **Slice 2** (fixed-camera board registration) was planned
 2026-10-05 as seven sub-slices (below), and **all seven are built**; its gui-mode eyeball is owed.
 **Slice 3** (targetless registration with known intrinsics) was planned 2026-10-06 as eleven
-sub-slices (below); 0 and 1 are built.
+sub-slices (below); 0 to 9 are built, and 10 (the flow adapter) waits on the repo owner's choice of
+the provisional values sub-slice 9 measured.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -3968,7 +3969,10 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         Release only, a 100-camera scale test in `test-camera-ceres`.
       - Sabotages: holding out without the placeability guard; no cheirality filter; no scale
         alignment; resamples drawn inside the parallel loop.
-   9. **End to end, and the comparison** (`test-camera-registration-e2e`).
+   9. **End to end, and the comparison** (`test-camera-registration-e2e`). *(Built 2026-10-08; see
+      below. The alignment is scale-only: both methods pin the same requested reference to the
+      identity, so a similarity fit has nothing left to fit but the scale, and would hide the
+      reference camera's own error.)*
       - Targetless registration on the rendered scene with both real backends.
       - A rig with a moving board and a static textured scene, registered by both methods, both
         validated through `registration::validate` on the **same held-out track ids**, and also
@@ -4892,6 +4896,192 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - `ctest -j8` **1192/1192** Debug and **1200/1200** Release with video, camera and Ceres on (+20
      each), and **1101/1101** with all three off (+16). Warning-clean, format-check clean. Under
      `ctest -j8` the scale test takes 52.6 s, against 40 s alone.
+
+   **Sub-slice 9 built (2026-10-08): end to end, and the comparison.** One rig registered by both
+   methods from the same rendered footage, through both real backends, and every provisional value
+   measured for the repo owner. Three decisions came from the repo owner:
+   - **Rendered footage only.** No real multi-camera footage exists, so the real-footage triggers
+     carry forward.
+   - **Measure, then the owner decides.** Nothing provisional changes here; the table below has a
+     recommendation for each value, and any change is its own follow-up commit before sub-slice 10.
+   - **The comparison renders at 1280x720 with a focal length of 1000**, the operating point the
+     targetless profile's angles were set for, and runs in Release only. A 640x480 targetless case
+     runs in Debug too.
+
+   - **Test helpers** (`libs/camera/test`):
+     - **`texturedscene.h` gains a moving printed board** (`BoardSurface`, `boardSurface`). Its sheet
+       is the raster's bilinear footprint, so a board in front of nothing draws exactly as
+       `syntheticfootage.h`'s `view` does.
+     - **The plane intersection is one function, `meetRectangle`, shared by the scene's planes and
+       the board.** The features footage case takes 31.8 s in Debug, against the 39 s recorded
+       before.
+     - `RenderedSource` takes a sample count.
+     - `lookingAt` and `arcCamera` moved here from the OpenCV features test.
+     - `testboard.h` takes a square size.
+     - **`rigcompare.h`**: `rotationBetween`, `posesOf`, `rebased`, `compare` (the scale-only fit),
+       and `truthReport`, a successful report holding only the true cameras, which is all `validate`
+       reads.
+   - **`plugins/camera/test`, all in `test-camera-registration-e2e`:**
+     - `renderedrig.h` (`rendered::rig`, `projectInto`, `stillScene`);
+     - `test_rendering.cpp`, `test_targetlesse2e.cpp`, `test_comparison.cpp`.
+   - **Case 0, board parity** (Debug and Release): the board in the textured scene against
+     `synthetic::view`, at three sweep poses. Measured: identical in every pixel.
+   - **Case 1, targetless through both backends** (Debug and Release): the OpenCV footage case's
+     scene exactly (3 cameras, the disc, 9 frames, 640x480 at a focal length of 500).
+     - **Measured:** 429 tracks, 86 held out (207 predictions, 102 on the epipolar plane). The worst
+       camera is 0.37 mrad and 1.6 mm from the truth, held-out transfer 1.06 mrad, 6 outliers, Ready.
+     - **Time:** 13.6 s in Debug, nearly all of it drawing the 15 sampled frames.
+   - **Case 2a, the comparison** (Release only):
+     - **The rig:** 4 cameras 0.6 m apart on the arc, 3.2 m from the scene, BrownConrady5 at
+       1280x720.
+     - **The board:** the 7x5 board with 80 mm squares, sweeping a Lissajous 1.6 m away over 16
+       frames, drawn at 3x3 rays a pixel.
+     - **Time:** 60 s. The board registration's 56.7 s is nearly all the drawing of 64 frames; the
+       targetless one's 3.3 s comes after, on frames already drawn.
+     - **Preconditions:**
+       - every camera sees the board in all 16 frames;
+       - every visible corner moves at least 21.7 px between any two sampled frames;
+       - the board hides at most 5.3% of an image in most of the sampled frames.
+     - **Against the truth:**
+       - board: 0.34 mrad and 0.61 mm with no scale fitted, a fitted scale of 1.00004;
+       - targetless: 0.74 mrad and 1.8 mm once scaled;
+       - the two: 0.55 mrad and 1.3 mm apart. One normalised unit is 4.18 m.
+     - **On the targetless result's 101 held-out tracks** (259 members, 110 epipolar):
+       - the board's result validates at 0.70 mrad and the targetless one at 0.72, although the
+         board's is twice as close to the truth;
+       - the method's own held-out evidence equals the public `validate` result exactly.
+     - **The guard,** cam02 turned 5 mrad about its centre, from 0.58 mrad (cam02) and 0.70 (the rig):
+
+       | turn | cam02 | rig | cam02, 2-member tracks | cam02, longer tracks |
+       | --- | --- | --- | --- | --- |
+       | pan | 3.78 | 4.51 | 0.53 → 0.71 | 0.62 → 5.07 |
+       | tilt | 5.75 | 4.12 | 0.53 → 6.63 | 0.62 → 4.90 |
+
+       A pan stays inside a horizontal rig's near-horizontal epipolar planes, so only tracks of three
+       or more members see it.
+     - **Moving content:** 2 of 503 tracks are not points of the still scene, both wrong matches
+       between scene features rather than board features (below). The board's features never got
+       in.
+     - **Both results are Ready.**
+
+       | Criterion | Targetless | Board |
+       | --- | --- | --- |
+       | fewest shared tracks per camera | 220 | |
+       | weak bridges | none | |
+       | held-out transfer | 0.72 mrad | 0.083 mrad |
+       | rotation spread | 0.53 mrad | 0.25 mrad |
+       | translation spread | 0.034% | 0.027% (0.46 mm) |
+       | outliers | 15 of 1042 | |
+       | seed angle | 7.6° | |
+   - **Case 2b, the tracks against the truth** (Release only, extraction only, 24 s). It runs native
+     Exact, native Approximate and half-scale Exact over the same footage, and scores every track on
+     a truth report.
+     - **Native Exact:**
+       - 503 tracks in 20.6 s;
+       - 1.47 descriptor rows per feature;
+       - 2 features dropped as ambiguous, 3 conflicts.
+     - **Approximate:** the same 503 tracks in 1.86 s.
+     - **Half scale:** 464 tracks in 1.22 s.
+     - **Wrong tracks** (more than 10 mrad from the truth's prediction):
+       - natively, 2 of 503: one 275 mrad out on a 2 px feature with four members, one 13 mrad out
+         on a 42 px feature;
+       - Approximate, 1; half scale, 1.
+     - **The right tracks:** a median of 0.16 mrad, a 95th percentile of 2.1 mrad and an RMS of
+       0.87 mrad. Over every track the RMS is 15.3 mrad.
+     - **The doubling:** two-member tracks against longer ones, 0.98 against 0.78 mrad natively and
+       1.18 against 0.95 at half scale, a ratio of 1.25 both times.
+     - **Size bands** (RMS over the RMS stated sigma, right tracks only):
+       - natively, 4–8, 8–16 and over 16 px give 1.25, 1.50 and 1.40;
+       - under 4 px it is 13, with a median of 2.3 times the stated sigma against 0.2 in the other
+         bands;
+       - at half scale, 1.65, 1.80, 2.33 and 1.39.
+   - **Probes, measured once and not kept as tests:**
+     - **2x2 rays a pixel:**
+       - the board result came out 0.46 mrad from the truth, against 0.34 at 3x3, so 3x3 stays;
+       - the targetless result came out 2.15 mrad and 9.3 mm off, with a rotation spread of
+         1.04 mrad, and so Exploratory;
+       - that footage had 3 wrong tracks.
+     - **A floor on the stated sigma:**
+
+       | floor | 3x3 | 2x2 |
+       | --- | --- | --- |
+       | none | 0.74 mrad | 2.15 |
+       | 0.25 px | 0.88 | 2.02 |
+       | 0.5 px | 1.31 | 2.39 |
+       | 1 px | 2.36, Exploratory | 3.26 |
+     - **The wrong tracks removed:** 0.74 → 0.43 mrad at 3x3, and 2.15 → 2.21 at 2x2.
+     - **What follows:** the 2x2 result's error is the rig's weak mode, not wrong tracks or
+       weighting, and its bootstrap spread reports it. Across the three results, the truth error is
+       1.4 to 2.1 times the rotation spread.
+   - **The values sub-slice 10 would expose, with a recommendation each.** All measurements are on
+     rendered footage at a focal length of 1000.
+
+     | Value | Now | Measured | Recommendation |
+     | --- | --- | --- | --- |
+     | tracks per camera (Ready / Exploratory) | 100 / 30 | 220 at the fewest | keep |
+     | tracks per bridge | 50 / 15 | no bridge on a 4-camera arc | keep; not exercised |
+     | held-out transfer | 2 / 6 mrad | 0.70–0.72; right tracks against the truth 0.87 RMS | keep the bound; make the statistic robust (below) |
+     | rotation spread | 1 / 5 mrad | 0.53, truth error 1.4× it; 2x2 1.04, truth error 2.1× it | keep; it is what catches the weak mode |
+     | translation spread | 0.5% / 2% | 0.034% (board 0.027% against its 0.2%) | consider 0.2%, as `registration/1` |
+     | outliers | 5% / 15% | 1.4% | keep |
+     | `matchSearch` | Exact | Exact 20.6 s, Approximate 1.86 s, the same 503 tracks | keep Exact for determinism (ADR-0016); the cost is now measured |
+     | inlier angle | 0.004 rad | 2 wrong verified tracks in 503 | keep |
+     | feature cap | 8192 | about 1100 features (1620 rows) a 1280x720 frame, so it never binds here; 1.47 rows per feature | keep; real footage still owed |
+     | `localisationPerSize` | 0.034 | holds at 4 px and above (1.25–1.50); under 4 px natively it understates about tenfold | keep; a floor costs accuracy here |
+     | epipolar doubling | ×2 | two-member tracks read 1.25× longer ones | keep |
+   - **Two recommendations that are not thresholds:**
+     - **`validate`'s RMS has no robust loss, so one wrong track decides it.**
+       - The 275 mrad track alone makes the truth's RMS over every track 15.3 mrad, against 0.87
+         over the right ones.
+       - With 2 wrong tracks in 503 and a fifth held out, about one run in three holds one out
+         (1 − 0.8² = 0.36) and fails Ready's 2 mrad on that track alone.
+       - This footage happened to hold out neither.
+       - **Alternatives for the owner:** count members beyond the outlier rule separately, and take
+         the RMS over the rest (the fitted side's own rule); or report a robust statistic beside the
+         RMS.
+     - **Fitness judges the rig-wide held-out RMS.** One camera 5 mrad out raises a 4-camera rig to
+       4.1–4.5 mrad, past Ready, but would raise a rig of seven or more by less than 2 mrad. A
+       per-camera criterion, such as the worst camera's transfer, would catch it at any size.
+   - **Not exercised by this rig, so still provisional:**
+     - the 2° seed floor (the seed is 7.6°);
+     - 16 seed candidates (there are 6 pairs);
+     - 20 tracks to hold out (there are 503).
+   - **The real-footage triggers carry forward unchanged:**
+     - rows per feature on real footage;
+     - matches the ratio test loses to a feature's other orientation;
+     - **robust initial triangulation.** Its trigger did not fire on rendered footage: the wrong
+       tracks moved the 3x3 result by 0.3 mrad and the 2x2 one not at all.
+   - **Deviation:** the alignment is scale-only, not a similarity fit (item 9's text, amended above).
+   - **Found while sabotaging, fixed before commit:**
+     - The first check for moving content asked whether an observation sat on the moving surface in
+       most sampled frames.
+     - With extraction's static rule disabled it still passed case 1, since a feature admitted from
+       one frame sits on the disc in only that frame.
+     - Validation against the truth cannot see such a track either: a synchronised rig sees it at
+       one instant from every camera.
+     - The still scene behind it can. `stillScene` casts each track's first member into the scene
+       without its moving content and projects the point into the other members.
+   - **Six sabotages, all caught:**
+     - **The static rule admitting a single frame:**
+       - case 1: 22 disc tracks off the still scene against a bound of 5, while its registration
+         stayed Ready;
+       - case 2a: 556 board observations, held-out transfer 61 mrad, Rejected.
+     - **The board frozen across the frames:** no corner moves, and the board result is 2.1 mrad out.
+     - **The board's raster scale 1% off:** a fitted scale 1.0% from 1 and 12 mm unscaled in 2a, and
+       255 grey levels in case 0.
+     - **Leave-one-out removed from `validate`:** the guard's rises fall under their bounds (cam02
+       2.1 against 3 mrad; the rig 1.5 against 2).
+     - **Epipolar residuals counted once:** a ratio of 0.88, under its bound of 1.0.
+     - **The scene drawn through a pinhole while the rig is registered with distortion:** case 0
+       still passes, since it is a pinhole, and 2a fails in twelve places, the board 36 mrad out.
+
+     Each restored source was touched a second later and rebuilt before the next.
+   - `ctest -j8` **1196/1196** Debug and **1204/1204** Release with video, camera and Ceres on (+4
+     each: the two Release-only cases skip in Debug), and **1101/1101** with all three off
+     (unchanged). Warning-clean, format-check clean, the board golden untouched.
+     - **Under `ctest -j8`:** the comparison case takes 116 s (60 s alone) and finishes last, and
+       the measurement case takes 77 s.
+     - **In Debug,** case 1 takes 15 s.
 
 4. **Targetless calibration + graph fallback.** Add targetless intrinsics/distortion estimation only
    after the shared feature-track evidence and validation path can meet the report contract. Then
@@ -10058,7 +10248,7 @@ row here**. A row is cheap to delete and expensive to leave.
   the repo owner, guided by `plugins/camera/test/fixtures/README.md`. **Slice 2** (fixed-camera
   board registration, with Ceres) was planned 2026-10-05 as seven sub-slices and is **built**; a
   gui-mode eyeball of the `registerCameras` node is owed. **Slice 3** (targetless registration
-  with known intrinsics) was planned 2026-10-06 as eleven sub-slices, of which 0 and 1 are built.
+  with known intrinsics) was planned 2026-10-06 as eleven sub-slices, of which 0 to 9 are built.
   *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),

@@ -1,6 +1,7 @@
 #pragma once
 
-// A board for the tests: the common 7x5 ChArUco on ARUCO_5X5_100 with 24 mm squares.
+// A board for the tests: the common 7x5 ChArUco on ARUCO_5X5_100, printed with 24 mm squares unless a
+// test needs it seen from further away.
 
 #include <lain/camera/board/specification.h>
 
@@ -25,11 +26,11 @@ namespace lain::camera::testing
 		return *result.pattern;
 	}
 
-	inline board::Specification specification(const board::Pattern& p = pattern())
+	inline board::Specification specification(const board::Pattern& p = pattern(), double millimetres = 24.0)
 	{
 		board::Instance instance;
 		instance.identity = "test board";
-		instance.squareLength.value = core::Length::from<core::Length::Millimetres>(24.0);
+		instance.squareLength.value = core::Length::from<core::Length::Millimetres>(millimetres);
 		board::SpecificationResult result = board::Specification::create(p, instance);
 		REQUIRE(result.specification.has_value());
 		return *result.specification;

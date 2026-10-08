@@ -9,8 +9,12 @@
 // The texture is value noise over several octaves with soft blobs on top, so a detector finds stable
 // extrema at several scales. Every ray is unprojected through lain's own model, so a distorted camera
 // is drawn exactly, and each pixel averages s x s rays. A disc may move through the scene frame by
-// frame, which is the moving content targetless registration must drop.
+// frame, which is the moving content targetless registration must drop, and so may a printed board,
+// which is what lets one rig be registered by both methods from the same footage.
 
+#include "syntheticfootage.h"
+
+#include <lain/camera/board/rendering.h>
 #include <lain/camera/cameramodel.h>
 #include <lain/camera/projection.h>
 #include <lain/image/image.h>
@@ -22,6 +26,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <random>
 #include <string>
@@ -118,10 +123,47 @@ namespace lain::camera::synthetic
 		math::Vec3d centre(std::size_t frame) const { return start + double(frame) * velocity; }
 	};
 
+	// A printed board moving through the scene: its raster on a flat sheet, in frame f at
+	// `sheets[f]` (made by boardSurface), and nowhere in a frame past the last.
+	struct BoardSurface
+	{
+		struct Sheet
+		{
+			math::Vec3d corner{0.0}; // where the raster's coordinate (-1, -1) lies, in the reference frame
+			math::Vec3d u{1.0, 0.0, 0.0};
+			math::Vec3d v{0.0, 1.0, 0.0};
+		};
+
+		std::shared_ptr<const board::Rendering> rendering;
+		double perMetre = 1; // raster pixels per metre of board
+		std::vector<Sheet> sheets;
+	};
+
+	// The board `rendering` printed with squares of `squareMetres`, at `referenceFromBoard[f]` in frame
+	// f, in the board frame's convention (X right, Y down, Z into the board). The sheet is the
+	// raster's bilinear footprint, from coordinate -1 to its size on each axis, so a board in front of
+	// nothing draws exactly as syntheticfootage.h's view does; that half raster pixel beyond the edge
+	// pixels is invisible in front of anything else.
+	inline BoardSurface boardSurface(std::shared_ptr<const board::Rendering> rendering, double squareMetres,
+									 const std::vector<math::RigidTransformd>& referenceFromBoard)
+	{
+		BoardSurface b;
+		b.perMetre = double(rendering->request.pixelsPerSquare) / squareMetres;
+		// Board metres -> raster pixel is x * perMetre + margin - 0.5 (syntheticfootage.h's view), so
+		// raster coordinate -1 is board coordinate (-0.5 - margin) / perMetre.
+		const double first = (-0.5 - double(rendering->request.marginPixels)) / b.perMetre;
+		for (const math::RigidTransformd& pose : referenceFromBoard)
+			b.sheets.push_back({pose.apply(math::Vec3d{first, first, 0.0}), pose.rotate(math::Vec3d{1.0, 0.0, 0.0}),
+								pose.rotate(math::Vec3d{0.0, 1.0, 0.0})});
+		b.rendering = std::move(rendering);
+		return b;
+	}
+
 	struct Scene
 	{
 		std::vector<Plane> planes;
 		std::optional<Occluder> occluder;
+		std::optional<BoardSurface> board;
 		double background = 128;
 		double noise = 0;			 // grey levels: the standard deviation of each pixel's noise
 		std::uint64_t noiseSeed = 1; // with the frame and a render's own seed, decides every pixel's noise
@@ -146,8 +188,25 @@ namespace lain::camera::synthetic
 		return s;
 	}
 
+	// A camera at `position` looking at `target`, with the reference frame's +Y as down.
+	inline math::RigidTransformd lookingAt(const math::Vec3d& position, const math::Vec3d& target)
+	{
+		const math::Vec3d z = math::normalize(target - position);
+		const math::Vec3d x = math::normalize(math::cross(math::Vec3d{0, 1, 0}, z));
+		const math::Vec3d y = math::cross(z, x);
+		return math::RigidTransformd{math::quat_cast(math::Mat3d{x, y, z}), position};
+	}
+
+	// A camera on an arc `radius` from `target`, `angle` radians round it and `rise` above it, looking
+	// at it. The defaults stand round the middle of the default scene.
+	inline math::RigidTransformd arcCamera(double angle, double radius = 3.2, const math::Vec3d& target = {-0.2, 0.2, 0.4},
+										   double rise = 0.5)
+	{
+		return lookingAt(target + math::Vec3d{radius * std::sin(angle), -rise, -radius * std::cos(angle)}, target);
+	}
+
 	// What a ray hits first: the point in the reference frame, its grey level, and which surface
-	// (an index into Scene::planes, or -1 for the occluder).
+	// (an index into Scene::planes, kOccluderSurface or kBoardSurface).
 	struct Hit
 	{
 		double distance = 0;
@@ -155,6 +214,29 @@ namespace lain::camera::synthetic
 		double grey = 0;
 		int surface = 0;
 	};
+
+	constexpr int kOccluderSurface = -1;
+	constexpr int kBoardSurface = -2;
+
+	// Where a ray from `origin` along `direction` meets the rectangle at `corner` spanned by unit axes
+	// `u` and `v`, `width` x `height`: its distance `t` and its coordinates (a, b) along the axes.
+	// Plain arithmetic rather than GLM's calls: a Debug build spent nine tenths of a render in them.
+	inline bool meetRectangle(const math::Vec3d& corner, const math::Vec3d& u, const math::Vec3d& v, double width,
+							  double height, const math::Vec3d& origin, const math::Vec3d& direction, double& t, double& a,
+							  double& b)
+	{
+		const double nx = u.y * v.z - u.z * v.y, ny = u.z * v.x - u.x * v.z, nz = u.x * v.y - u.y * v.x;
+		const double along = direction.x * nx + direction.y * ny + direction.z * nz;
+		if (std::abs(along) < 1e-12)
+			return false;
+		const double ox = corner.x - origin.x, oy = corner.y - origin.y, oz = corner.z - origin.z;
+		t = (ox * nx + oy * ny + oz * nz) / along;
+		// The hit, relative to the corner.
+		const double rx = t * direction.x - ox, ry = t * direction.y - oy, rz = t * direction.z - oz;
+		a = rx * u.x + ry * u.y + rz * u.z;
+		b = rx * v.x + ry * v.y + rz * v.z;
+		return a >= 0 && a <= width && b >= 0 && b <= height;
+	}
 
 	inline std::optional<Hit> cast(const Scene& scene, const math::Vec3d& origin, const math::Vec3d& direction,
 								   std::size_t frame)
@@ -165,24 +247,24 @@ namespace lain::camera::synthetic
 			if (t > 1e-9 && (!best || t < best->distance))
 				best = Hit{t, p, grey, surface};
 		};
-		// Plain arithmetic rather than GLM's calls: a Debug build spent nine tenths of a render in them.
 		for (std::size_t k = 0; k < scene.planes.size(); ++k)
 		{
 			const Plane& plane = scene.planes[k];
-			const math::Vec3d& u = plane.u;
-			const math::Vec3d& v = plane.v;
-			const double nx = u.y * v.z - u.z * v.y, ny = u.z * v.x - u.x * v.z, nz = u.x * v.y - u.y * v.x;
-			const double along = direction.x * nx + direction.y * ny + direction.z * nz;
-			if (std::abs(along) < 1e-12)
-				continue;
-			const double ox = plane.origin.x - origin.x, oy = plane.origin.y - origin.y, oz = plane.origin.z - origin.z;
-			const double t = (ox * nx + oy * ny + oz * nz) / along;
-			// The hit, relative to the plane's origin.
-			const double rx = t * direction.x - ox, ry = t * direction.y - oy, rz = t * direction.z - oz;
-			const double a = rx * u.x + ry * u.y + rz * u.z;
-			const double b = rx * v.x + ry * v.y + rz * v.z;
-			if (a >= 0 && a <= plane.width && b >= 0 && b <= plane.height)
+			double t = 0, a = 0, b = 0;
+			if (meetRectangle(plane.origin, plane.u, plane.v, plane.width, plane.height, origin, direction, t, a, b))
 				consider(t, origin + t * direction, textureAt(plane.texture, a, b), int(k));
+		}
+		if (scene.board && frame < scene.board->sheets.size())
+		{
+			const BoardSurface& board = *scene.board;
+			const BoardSurface::Sheet& sheet = board.sheets[frame];
+			const image::Image& raster = board.rendering->raster;
+			const double width = double(raster.width() + 1) / board.perMetre;
+			const double height = double(raster.height() + 1) / board.perMetre;
+			double t = 0, a = 0, b = 0;
+			if (meetRectangle(sheet.corner, sheet.u, sheet.v, width, height, origin, direction, t, a, b))
+				consider(t, origin + t * direction, sample(raster, a * board.perMetre - 1.0, b * board.perMetre - 1.0),
+						 kBoardSurface);
 		}
 		if (scene.occluder && std::abs(direction.z) > 1e-12)
 		{
@@ -192,7 +274,7 @@ namespace lain::camera::synthetic
 			const math::Vec3d p = origin + t * direction;
 			const double a = p.x - c.x, b = p.y - c.y;
 			if (a * a + b * b <= o.radius * o.radius)
-				consider(t, p, textureAt(o.texture, a + o.radius, b + o.radius), -1);
+				consider(t, p, textureAt(o.texture, a + o.radius, b + o.radius), kOccluderSurface);
 		}
 		return best;
 	}
@@ -262,12 +344,13 @@ namespace lain::camera::synthetic
 	{
 	public:
 		RenderedSource(std::string name, Scene scene, CameraModel model, math::RigidTransformd referenceFromCamera,
-					   std::size_t frames, std::uint64_t seed = 0)
+					   std::size_t frames, std::uint64_t seed = 0, int samples = 2)
 			: FrameSource{core::Uri{"/rendered/" + name}, specOf(model), frames}
 			, m_scene(std::move(scene))
 			, m_model(std::move(model))
 			, m_pose(referenceFromCamera)
 			, m_seed(seed)
+			, m_samples(samples)
 		{
 		}
 
@@ -287,7 +370,7 @@ namespace lain::camera::synthetic
 		{
 			auto found = m_drawn.find(ordinal);
 			if (found == m_drawn.end())
-				found = m_drawn.emplace(ordinal, render(m_scene, m_model, m_pose, ordinal, 2, m_seed)).first;
+				found = m_drawn.emplace(ordinal, render(m_scene, m_model, m_pose, ordinal, m_samples, m_seed)).first;
 			return found->second;
 		}
 
@@ -296,6 +379,7 @@ namespace lain::camera::synthetic
 		CameraModel m_model;
 		math::RigidTransformd m_pose;
 		std::uint64_t m_seed;
+		int m_samples;
 		mutable std::map<std::size_t, image::Image> m_drawn;
 	};
 } // namespace lain::camera::synthetic

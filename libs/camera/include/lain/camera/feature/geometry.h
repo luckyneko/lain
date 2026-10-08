@@ -63,8 +63,9 @@ namespace lain::camera::feature
 	struct GeometryRequest
 	{
 		// An inlier's rays are within this of where the pose puts them, radians. COLMAP's 4 px at a
-		// focal length of 1000 px; provisional until M9 slice 3 sub-slice 7 measures SIFT on rendered
-		// scenes. It is also the parallax below which a pair is a point at infinity.
+		// focal length of 1000 px. It is also the parallax below which a pair is a point at infinity.
+		// Provisional: on rendered footage at that focal length, 2 of 503 tracks it verified were
+		// wrong (M9 slice 3, sub-slice 9), and the repo owner decides before a node exposes it.
 		double angle = 0.004;
 		std::uint64_t seed = 0;
 	};

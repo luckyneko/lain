@@ -433,6 +433,25 @@ repo owner while planning M9 slice 3.)*
     gives it one degree of freedom where a transfer has two. Counting it twice keeps the RMS
     independent of the mix of track lengths, under isotropic noise.
   - **It answers `Unavailable` rather than zeros** when there is nothing to predict.
+
+  *Exercised end to end in M9 slice 3, sub-slice 9 (2026-10-08):*
+  - **One rig, both methods, the same footage.** Four cameras watch a textured scene while a printed
+    board moves in front of it. Board registration places them from the board; targetless
+    registration places them from the scene and drops the board as moving content. Both are
+    validated on the targetless result's held-out track ids, which neither method fitted.
+  - **The two results are compared after a scale-only fit, not a similarity fit.** Both methods pin
+    the same requested reference camera to the identity, so the scale of the centres is the only
+    freedom left between them. A similarity fit would also absorb the reference camera's own error.
+  - **What held-out transfer can and cannot see, measured:**
+    - **It sees one camera turned 5 mrad.** A tilt shows in every track. A pan stays inside the
+      near-horizontal epipolar planes of a horizontal rig, so it shows only in tracks of three or
+      more members.
+    - **It cannot see the rig's weak mode.** The board's result is twice as close to the truth as
+      the targetless one, yet they score 0.70 and 0.72 mrad. That mode is what the bootstrap's
+      rotation spread measures.
+    - **Its RMS has no robust loss.** One wrong track among the held-out ones moves it more than every
+      right track together. WORK.md's sub-slice 9 notes put this to the repo owner, with the
+      alternatives.
 - **A scale-ambiguous result is normalised** so the median depth of the landmarks seen from the
   reference is 1, and its report says so.
 - **SIFT** fills the OpenCV extractor. **Matching is a request choice between Exact and

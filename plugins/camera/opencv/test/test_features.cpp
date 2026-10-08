@@ -55,22 +55,6 @@ namespace
 		(void)once;
 	}
 
-	// A camera at `position` looking at `target`, with the reference frame's +Y as down.
-	math::RigidTransformd lookingAt(const math::Vec3d& position, const math::Vec3d& target)
-	{
-		const math::Vec3d z = math::normalize(target - position);
-		const math::Vec3d x = math::normalize(math::cross(math::Vec3d{0, 1, 0}, z));
-		const math::Vec3d y = math::cross(z, x);
-		return math::RigidTransformd{math::quat_cast(math::Mat3d{x, y, z}), position};
-	}
-
-	// A camera on an arc 3.2 m from the middle of the default scene, `angle` radians round it.
-	math::RigidTransformd arcCamera(double angle)
-	{
-		const math::Vec3d target{-0.2, 0.2, 0.4};
-		return lookingAt(target + math::Vec3d{3.2 * std::sin(angle), -0.5, -3.2 * std::cos(angle)}, target);
-	}
-
 	CameraModel model()
 	{
 		return camera::testing::cameraWith(camera::testing::brownConrady());
@@ -191,8 +175,8 @@ namespace
 	{
 		synthetic::Scene scene = synthetic::defaultScene();
 		CameraModel camera = model();
-		math::RigidTransformd a = arcCamera(-0.15);
-		math::RigidTransformd b = arcCamera(0.15);
+		math::RigidTransformd a = synthetic::arcCamera(-0.15);
+		math::RigidTransformd b = synthetic::arcCamera(0.15);
 		Features fa, fb;
 		MatchResult matches;
 		std::vector<bool> correct;		// per match: A's truth point lands within 3 px of B's feature
@@ -270,7 +254,7 @@ TEST_CASE("a feature searched at half scale lands where the native search finds 
 	ensureBackend();
 	const synthetic::Scene scene = synthetic::defaultScene();
 	const CameraModel m = model();
-	const image::Image frame = synthetic::render(scene, m, arcCamera(0.0));
+	const image::Image frame = synthetic::render(scene, m, synthetic::arcCamera(0.0));
 	const ExtractResult native = extract(frame, NativeScale{});
 	const ExtractResult half = extract(frame, ScaleFactor{0.5});
 	REQUIRE(native.ok());
@@ -473,7 +457,7 @@ TEST_CASE("rendered footage through extractTracks is the same on the pool and ag
 		const std::string name = "cam0" + std::to_string(c);
 		cameras.push_back({capture::CameraIdentity{name}, m,
 						   media::FrameSequence::over(std::make_shared<synthetic::RenderedSource>(
-							   name, scene, m, arcCamera(angles[c]), frames, std::uint64_t(c + 1)))});
+							   name, scene, m, synthetic::arcCamera(angles[c]), frames, std::uint64_t(c + 1)))});
 		byCamera.push_back({cameras.back().camera, cameras.back().footage});
 	}
 	const std::vector<capture::CaptureGroup> groups = capture::groupsByPosition(byCamera).groups;
@@ -528,7 +512,7 @@ TEST_CASE("rendered footage through extractTracks is the same on the pool and ag
 	{
 		std::size_t seen = 0;
 		for (const std::size_t f : sampled)
-			seen += projectInto(m, arcCamera(angles[c]), scene.occluder->centre(f)) ? 1 : 0;
+			seen += projectInto(m, synthetic::arcCamera(angles[c]), scene.occluder->centre(f)) ? 1 : 0;
 		CHECK(seen >= 2);
 	}
 
@@ -545,13 +529,13 @@ TEST_CASE("rendered footage through extractTracks is the same on the pool and ag
 	for (const Track& t : reference.trackSet.tracks)
 	{
 		const SceneObservation& first = t.observations.front();
-		const std::optional<synthetic::Hit> hit = synthetic::truthAt(still, m, arcCamera(angles[first.view]), first.pixel);
+		const std::optional<synthetic::Hit> hit = synthetic::truthAt(still, m, synthetic::arcCamera(angles[first.view]), first.pixel);
 		REQUIRE(hit);
 		bool all = true;
 		for (std::size_t o = 1; o < t.observations.size(); ++o)
 		{
 			const SceneObservation& other = t.observations[o];
-			const std::optional<math::Vec2d> p = projectInto(m, arcCamera(angles[other.view]), hit->point);
+			const std::optional<math::Vec2d> p = projectInto(m, synthetic::arcCamera(angles[other.view]), hit->point);
 			const double r = p ? math::length(*p - other.pixel) : 1e9;
 			worst = std::max(worst, r);
 			all = all && r < 2.0;
@@ -562,8 +546,8 @@ TEST_CASE("rendered footage through extractTracks is the same on the pool and ag
 			std::size_t covered = 0;
 			for (const std::size_t f : sampled)
 			{
-				const std::optional<synthetic::Hit> h = synthetic::truthAt(scene, m, arcCamera(angles[o.view]), o.pixel, f);
-				covered += h && h->surface == -1 ? 1 : 0;
+				const std::optional<synthetic::Hit> h = synthetic::truthAt(scene, m, synthetic::arcCamera(angles[o.view]), o.pixel, f);
+				covered += h && h->surface == synthetic::kOccluderSurface ? 1 : 0;
 			}
 			CHECK(covered * 2 < sampled.size());
 			coveredOnce += covered > 0 ? 1 : 0;
@@ -585,7 +569,7 @@ TEST_CASE("approximate search is refused under deterministic debugging, with the
 		const std::string name = "cam0" + std::to_string(c);
 		cameras.push_back({capture::CameraIdentity{name}, m,
 						   media::FrameSequence::over(std::make_shared<synthetic::RenderedSource>(
-							   name, synthetic::defaultScene(), m, arcCamera(0.2 * double(c)), 3))});
+							   name, synthetic::defaultScene(), m, synthetic::arcCamera(0.2 * double(c)), 3))});
 		byCamera.push_back({cameras.back().camera, cameras.back().footage});
 	}
 	ExtractionRequest request;
@@ -608,7 +592,7 @@ TEST_CASE("an 8K frame is searched at the default size in bounded memory", "[cam
 	// peak growth 340 MB at 1600 px and 489 MB at 1920 px, per frame searched at once (glibc only,
 	// from VmHWM), on top of the decoded frame (33 MB of 8K grey here, 100 MB of 8K RGB8).
 	const CameraModel m = pinhole(7680, 4320);
-	const image::Image frame = synthetic::render(synthetic::defaultScene(), m, arcCamera(0.0), 0, 1, 1);
+	const image::Image frame = synthetic::render(synthetic::defaultScene(), m, synthetic::arcCamera(0.0), 0, 1, 1);
 	double previous = 0;
 	for (const std::uint32_t side : {1600u, 1920u})
 	{
@@ -651,7 +635,7 @@ TEST_CASE("exact and approximate search at 8192 features a view", "[camera][open
 	scene.noise = 1.0;
 	const auto features = [&](double angle, std::uint64_t seed)
 	{
-		const ExtractResult found = extract(synthetic::render(scene, m, arcCamera(angle), 0, 2, seed), NativeScale{});
+		const ExtractResult found = extract(synthetic::render(scene, m, synthetic::arcCamera(angle), 0, 2, seed), NativeScale{});
 		REQUIRE(found.ok());
 		return strongest(found.features, 8192);
 	};

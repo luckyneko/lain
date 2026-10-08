@@ -1354,6 +1354,51 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-08 — M9 slice 3, sub-slice 9: one rig registered both ways, and the provisional values measured
+
+One rig of four cameras is registered by both methods from the same rendered footage, through
+OpenCV and Ceres: a textured scene with a printed board moving in front of it. The board method
+places the cameras from the board; the targetless method places them from the scene and drops the
+board as moving content. Both are validated on the same held-out tracks, compared with each other
+and with the truth, and every value sub-slice 10 would expose is measured, with a recommendation for
+the repo owner, who decides (one follow-up commit each). `ctest -j8` **1196/1196** Debug and
+**1204/1204** Release with video, camera and Ceres on (+4 each), **1101/1101** with all three off
+(unchanged: the end-to-end test builds only with both plugins);
+warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 9 built* under M9 slice 3.
+
+- **Decided with the repo owner:**
+  - rendered footage only, since there is no real rig footage;
+  - measure, then the owner decides;
+  - the comparison at 1280x720 with a focal length of 1000, in Release only, beside a 640x480
+    targetless case that runs in Debug.
+- **The two methods agree.**
+  - **Against each other:** 0.55 mrad and 1.3 mm apart, after a scale-only fit; both pin the same
+    reference to the identity, so a similarity fit would only hide that camera's own error.
+  - **Against the truth:** the board result 0.34 mrad and 0.61 mm off, metric to 0.004%; the
+    targetless result 0.74 mrad and 1.8 mm.
+  - **On the same 101 held-out tracks:** 0.70 and 0.72 mrad, although the board's result is twice as
+    close to the truth.
+  - **What held-out transfer cannot see:** the rig's weak mode, which is what the bootstrap's
+    rotation spread measures (the truth error is 1.4 to 2.1 times the spread).
+- **The 5 mrad guard depends on the axis.** A tilt shows in every track. A pan stays inside a
+  horizontal rig's epipolar planes, so it shows only in tracks of three or more members: 0.71 mrad in
+  two-member tracks, 5.07 in longer ones.
+- **For the owner, beyond the threshold table:**
+  - **`validate`'s RMS has no robust loss.** One verified wrong track 275 mrad out (2 of 503 are
+    wrong) makes the truth's RMS over every track 15.3 mrad, against 0.87 over the right ones. About
+    one run in three would hold one out and fail Ready on it alone.
+  - **Fitness judges the rig-wide RMS,** so one bad camera among seven or more would pass.
+  - **Approximate matching** finds the same tracks 11 times faster than Exact.
+  - **Features under 4 px, searched natively, state about a tenth of their true error.** A floor on
+    the stated sigma made the rig less accurate, not more.
+- **Found by a sabotage, fixed before commit.** The check for moving content asked whether an
+  observation sat on the moving surface in most sampled frames, and a feature admitted from one frame
+  passed it. Validation against the truth cannot see such a track either, because a synchronised rig
+  sees a moving feature consistently at one instant. The check now casts each track into the still
+  scene behind the moving content. With the static rule disabled, 22 disc tracks got in and that
+  registration was still Ready.
+- **Six sabotages, all caught.**
+
 ### Update 2026-10-07 — M9 slice 3, sub-slice 8b: `registration::targetless`
 
 Fixed cameras with known intrinsics registered from the static scene they share, over an accepted
