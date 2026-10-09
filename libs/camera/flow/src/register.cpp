@@ -5,12 +5,16 @@
 #include "lain/camera/flow/cameramodelnode.h"
 #include "lain/camera/flow/detectboardnode.h"
 #include "lain/camera/flow/registercamerasnode.h"
+#include "lain/camera/flow/registercamerastargetlessnode.h"
 #include "lain/camera/flow/renderboardnode.h"
 
 #include <lain/camera/board/detection.h>
 #include <lain/camera/board/pose.h>
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/estimator.h>
+#include <lain/camera/feature/features.h>
+#include <lain/camera/feature/geometry.h>
+#include <lain/camera/feature/matching.h>
 #include <lain/camera/registration/refiner.h>
 #include <lain/camera/registration/report.h>
 #include <lain/flow/porttyperegistry.h>
@@ -35,6 +39,13 @@ namespace lain::camera
 		return board::canDetect() && board::canSolvePose() && registration::canRefine();
 	}
 
+	// Targetless registration extracts and matches features, poses cameras from them, and refines the
+	// rig: four backends, and no board's.
+	static bool canRegisterTargetless()
+	{
+		return feature::canExtract() && feature::canMatch() && feature::canSolveGeometry() && registration::canRefine();
+	}
+
 	template <typename T>
 	static void add(core::Factory<flow::Node>& factory, const char* key)
 	{
@@ -57,7 +68,16 @@ namespace lain::camera
 		{kCalibrateCameraKey, &canCalibrate, &add<CalibrateCameraNode>},
 		{kCameraModelKey, &canCalibrate, &add<CameraModelNode>},
 		{kRegisterCamerasKey, &canRegister, &add<RegisterCamerasNode>},
+		{kRegisterCamerasTargetlessKey, &canRegisterTargetless, &add<RegisterCamerasTargetlessNode>},
 	};
+
+	std::vector<std::string> cameraNodeKeys()
+	{
+		std::vector<std::string> keys;
+		for (const Kind& kind : kKinds)
+			keys.push_back(kind.key);
+		return keys;
+	}
 
 	std::vector<std::string> availableCameraNodeKeys()
 	{

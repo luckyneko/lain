@@ -2442,8 +2442,9 @@ built before it, discharging its frame-sequence prerequisite. How OpenCV is obta
 it is the capture, which only the repo owner can make. **Slice 2** (fixed-camera board registration) was planned
 2026-10-05 as seven sub-slices (below), and **all seven are built**; its gui-mode eyeball is owed.
 **Slice 3** (targetless registration with known intrinsics) was planned 2026-10-06 as eleven
-sub-slices (below); 0 to 9 are built, and 10 (the flow adapter) waits on the repo owner's choice of
-the provisional values sub-slice 9 measured.
+sub-slices (below), and **all eleven are built** (2026-10-09); a gui-mode eyeball of its node is
+owed. The repo owner kept the provisional values sub-slice 9 measured, and queued three changes to
+how held-out evidence is judged (Outstanding work).
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -3803,6 +3804,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      | translation spread, after scale alignment | 0.5% | 2% |
      | outliers | 5% | 15% |
 
+     *(Re-measured on rendered footage in sub-slice 9 and kept by the repo owner, 2026-10-09; real
+     footage is still owed.)*
+
      The counts start from COLMAP's minimum inliers to initialise and to place a camera (100) and
      its minimum for two-view geometry (15). The angles start from SIFT localising to about
      0.7 mrad at a focal length of 1000 processed pixels, which a transfer through a triangulated
@@ -3979,7 +3983,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         compared after a similarity alignment.
       - The guard: one camera perturbed by 5 mrad raises the transfer residual by a measured amount.
       - The provisional thresholds re-measured, and amended here before sub-slice 10 exposes them.
-   10. **Flow adapter, flowview, cli vertical.**
+   10. **Flow adapter, flowview, cli vertical.** *(Built 2026-10-09; see below. The node and
+       `registerCameras` share one base, `RigRegistrationNode`, and the kinds table gained a public
+       `cameraNodeKeys()`.)*
        - `registerCamerasTargetless`, with `canRegisterTargetless` in the kinds table, the
          extraction params (`matchSearch` among them), and the report output.
        - Codecs, enum editors, the catalog and colours in flowview.
@@ -5029,6 +5035,10 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      | feature cap | 8192 | about 1100 features (1620 rows) a 1280x720 frame, so it never binds here; 1.47 rows per feature | keep; real footage still owed |
      | `localisationPerSize` | 0.034 | holds at 4 px and above (1.25–1.50); under 4 px natively it understates about tenfold | keep; a floor costs accuracy here |
      | epipolar doubling | ×2 | two-member tracks read 1.25× longer ones | keep |
+
+     **Decided by the repo owner, 2026-10-09: every value is kept**, translation spread at 0.5%
+     included. The 0.2% question and the two recommendations below are queued in the Outstanding
+     index, and sub-slice 10 exposed the node on these values.
    - **Two recommendations that are not thresholds:**
      - **`validate`'s RMS has no robust loss, so one wrong track decides it.**
        - The 275 mrad track alone makes the truth's RMS over every track 15.3 mrad, against 0.87
@@ -5082,6 +5092,106 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      - **Under `ctest -j8`:** the comparison case takes 116 s (60 s alone) and finishes last, and
        the measurement case takes 77 s.
      - **In Debug,** case 1 takes 15 s.
+
+   **Sub-slice 10 built (2026-10-09): the node, flowview, and the cli vertical (slice 3 COMPLETE).**
+   Targetless registration is reachable from a graph: a `registerCamerasTargetless` node, wired into
+   flowview, run end to end through `runGraph` and the real binary. Three decisions came from the
+   repo owner while planning:
+   - **The provisional values are kept** as sub-slice 9 recommended, and three changes to how
+     held-out evidence is judged are queued in the Outstanding index (a robust statistic, a per-camera
+     criterion, translation spread at 0.2%). The comments that said "before a node exposes it"
+     (`feature/geometry.h`, `registration/fitness.cpp`) now say what was kept.
+   - **The node exposes the tuning set**, named below.
+   - **The two registration nodes share a base class.**
+
+   - **`RigRegistrationNode`** (`libs/camera/flow`, public header): the `footage` and `models`
+     inputs (0 and 1), `declareRequest()` (the shared `Request` settings with its defaults),
+     `request()`, and `rig()`, which pairs footage with models, names each camera by its source,
+     groups by position, or says why not (`InvalidDataset`). Moved from `registerCameras` unchanged.
+     - **`registerCameras` is rebased on it with no change in behaviour**, its own tests the
+       regression test. `board` stays input 2. `pixelSigma` is now the board node's own and moved
+       one Inspector row down; a document loads unchanged, since params are saved by name.
+     - The shared settings exclude `pixelSigma` because whether a default noise model applies
+       depends on the method's observations.
+   - **`registerCamerasTargetless`** (`RegisterCamerasTargetlessNode`): the shared settings, then
+     `longestSide` (1920, 0 = native), `sampledGroups` (5), `featureCap` (8192), `matchSearch`
+     (Exact), `matchRatio` (0.8), `inlierAngleMrad` (4) and `minimumPairInliers` (15), each default
+     read from a default `feature::ExtractionRequest`; one output, `report`.
+     - **No `pixelSigma`**: every observation extracted from footage carries its own covariance.
+       The pre-screen, static-feature and localisation settings stay internal, since they describe
+       the extractor. The geometry seed stays 0; `seed` is the bootstrap's.
+     - **The inlier angle is milliradians as typed, to a millionth**: `round(mrad·1e6)/1e9`, so 4 is
+       exactly 0.004. Dividing `detail::decimal`'s answer by 1000 rounds twice and misses the nearest
+       double for 50,390 of the 200,000 values from 0.000001 to 0.2 mrad, measured.
+     - **Its own refusals are targetless reports.** A default `Report` is a board one, so the node
+       sets `TargetlessDiagnostics` and a `TargetlessRecord` holding the extraction it would have run,
+       with the registration's execution policy, as the method records it.
+     - It is offered where a build can extract, match, pose from rays and refine
+       (`canRegisterTargetless`), with no board backend.
+   - **`cameraNodeKeys()`** (`register.h`): every kind, in display order, from the kinds table.
+     `canvasstyle.cpp` colours from it instead of a hand list, and flowview's catalog test asks about
+     every kind it returns.
+   - **flowview:** a `matchSearch` codec in `sceneCodecs` and an enum editor. No new port type.
+   - **Tests:**
+     - **The staged kinds test** gains the three feature backends after the refiner, one at a time,
+       and checks `kAllKinds` against `cameraNodeKeys()`. A second staged executable
+       (`test-camera-flow-targetlesskinds`) starts with no board backend at all: extractor, matcher
+       and geometry are not enough, and the refiner makes targetless the only kind offered. The null
+       backends moved to `nullbackends.h` for both.
+     - **Four node cases** (`test-camera-flow-registertargetless`, over `syntheticscene.h` and the
+       pass-through refiner): pairing and naming by source; the defaults, every parameter, a native
+       search, `deterministic` with Approximate refused as `ExtractionFailed`, and a refusing
+       applicability policy; no `pixelSigma`; and the two refusals of `rig()`, a count mismatch and
+       two cameras with one source, each a targetless report. The second refusal was untested
+       before.
+     - **`test_catalog.cpp`'s expectation is per kind**: the board kinds expect OpenCV, both
+       registrations OpenCV and Ceres (a new `LAIN_EXPECT_CAMERA_REFINER`), and a kind with no
+       expectation fails. The single OpenCV flag could not say what `registerCameras` needs, so that
+       kind had been left off the list it kept.
+     - **The cli vertical** (`test_cameravertical.cpp`): three cameras on the arc over the default
+       textured scene, BrownConrady5 at 640x480, each camera's frame drawn once and written as three
+       stills, plus a models folder, through `runGraph` with Exact matching, 3 sampled groups and 4
+       resamples. Without a feature extractor it reports `Failed: NoFeatureExtractor`, and with
+       OpenCV but no Ceres `Failed: NoRefiner`. A second case saves `matchSearch = Approximate` and
+       reloads it, since Approximate's tracks vary run to run and the vertical runs Exact.
+   - **Measured, through the vertical and the real binary:** 432 usable tracks, 346 landmarks, 86
+     held out, relative to cam1, Ready. Over 20 runs of the vertical the held-out transfer was 0.68
+     to 1.26 mrad, with 4 to 8 outliers, Ready every time; 12 s in Debug. The real binary took
+     0.97 s in Release, and its report was byte-identical to the Debug binary's.
+   - **Found: where the footage sits decides which tracks are held out.** A camera's identity is its
+     footage's canonical source uri (ADR-0016), a track's identity digests its cameras' identities,
+     and every k-th track in identity order is held out. So the same rig in two folders gives two
+     reports: through the real binary, 0.795 mrad and 6 outliers in one folder and 0.966 and 4 in
+     another, every time. Board registration's groups digest their members' camera identities and
+     sources, so it has the same property. Nothing is wrong in either report; it is the stand-in
+     identity showing. Recorded in the Outstanding index for the repo owner: a capture manifest's
+     identities would end it, or a binder could name cameras relative to the folder it was given.
+   - **Driven through the real binary** from `/`, with absolute paths:
+     `flowview run --graph register-targetless.json --footage rig --models models --report
+     report.txt` exits 0 and writes `Ready: 3 cameras relative to …/rig/cam1, arbitrary scale, held
+     out 0.795 mrad RMS over 86 tracks, 346 landmarks from 432 usable tracks, 6 outliers`.
+     `flowview list` prints both collection inputs and the report output.
+   - **No example document is added**, as none was for `registerCameras`: one would need committed
+     rendered rig footage.
+   - `ctest -j4` **1203/1203** Debug and **1211/1211** Release with video, camera and Ceres on, and
+     **1108/1108** with all three off (+7 each: the five node and staging cases and the two flowview
+     cases, which build in every configuration). With OpenCV on and Ceres and video off, **1145/1145**,
+     where the vertical takes its `NoRefiner` branch. Warning-clean in all four, format-check clean,
+     the board golden untouched.
+   - **Five sabotages, all caught.** Two first failed to build under `-Werror` (an unused function, an
+     unused variable), so the old binary answered; each was redone so it compiled, and checked by the
+     binary's timestamp.
+     - The targetless row's predicate made the board one: the staged test fails 3 assertions, and
+       the second staged executable is offered nothing.
+     - The node's refusal left as a default (board) report: both refusal sections fail.
+     - `matchSearch` not reaching the extraction: the every-parameter section and the
+       deterministic-plus-Approximate refusal fail.
+     - The `MatchSearch` codec dropped: the census names `registerCamerasTargetless.matchSearch`, and
+       the reloaded document comes back Exact.
+     - Both registration kinds expected on OpenCV alone: the catalog test fails for both, in the
+       OpenCV-without-Ceres build.
+   - **Owed:** a gui-mode eyeball of both registration nodes, the `matchSearch` combo included, on a
+     Metal session.
 
 4. **Targetless calibration + graph fallback.** Add targetless intrinsics/distortion estimation only
    after the shared feature-track evidence and validation path can meet the report contract. Then
@@ -10248,7 +10358,25 @@ row here**. A row is cheap to delete and expensive to leave.
   the repo owner, guided by `plugins/camera/test/fixtures/README.md`. **Slice 2** (fixed-camera
   board registration, with Ceres) was planned 2026-10-05 as seven sub-slices and is **built**; a
   gui-mode eyeball of the `registerCameras` node is owed. **Slice 3** (targetless registration
-  with known intrinsics) was planned 2026-10-06 as eleven sub-slices, of which 0 to 9 are built.
+  with known intrinsics) was planned 2026-10-06 as eleven sub-slices, and **all eleven are built**
+  (2026-10-09); a gui-mode eyeball of the `registerCamerasTargetless` node (and its `matchSearch`
+  combo) is owed. **Queued by the repo owner on 2026-10-09**, each its own commit, from sub-slice 9's
+  measurements:
+  - **A robust held-out statistic.** `registration::validate`'s RMS has no robust loss, so one wrong
+    held-out track decides it: about one run in three on footage with 2 wrong tracks in 503 would
+    fail Ready on that track alone. The alternatives: count members beyond the outlier rule apart
+    and take the RMS over the rest, or report a robust statistic beside the RMS.
+  - **A per-camera held-out criterion.** Fitness judges the rig-wide RMS, so one camera 5 mrad out
+    passes in a rig of seven or more; the worst camera's transfer would catch it at any size.
+  - **Translation spread 0.5% → 0.2%** in `registration-targetless/1`, as `registration/1` has; the
+    measured spread was 0.034%.
+
+  **Found in sub-slice 10, a decision for the repo owner:** in a graph, which evidence a
+  registration holds out depends on where its footage sits. A camera's identity there is its
+  footage's canonical source uri, a track's or a group's identity digests it, and every k-th one in
+  identity order is held out, so the same rig in another folder gives another report (0.795 against
+  0.966 mrad through the real binary, each repeatable). A capture manifest's identities would end
+  it, or the cli binder could name each camera relative to the folder it was given.
   *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),

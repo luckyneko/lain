@@ -22,8 +22,10 @@ namespace lain::camera::registration
 		return p;
 	}
 
-	// registration-targetless/1, counting accepted feature tracks. Provisional (M9 slice 3), re-measured
-	// on rendered and real footage before a node exposes it:
+	// registration-targetless/1, counting accepted feature tracks. Set in M9 slice 3, re-measured on
+	// rendered footage in sub-slice 9 and kept by the repo owner (2026-10-09) before a node exposed
+	// it; real footage is still owed. Queued: whether held-out transfer should be judged by a robust
+	// statistic and per camera, and position at 0.2% as registration/1 (WORK.md, Outstanding work).
 	// - every camera in 100 or more shared tracks and every bridge resting on 50, starting from
 	//   COLMAP's minimum inliers to initialise and to place a camera (100) and its minimum for
 	//   two-view geometry (15), which Exploratory takes;

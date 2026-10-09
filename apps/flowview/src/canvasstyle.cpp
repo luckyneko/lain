@@ -4,7 +4,7 @@
 #include <lain/camera/board/specification.h>
 #include <lain/camera/calibration/report.h>
 #include <lain/camera/cameramodel.h>
-#include <lain/camera/flow/register.h> // the camera kinds' keys
+#include <lain/camera/flow/register.h> // every camera kind
 #include <lain/camera/registration/report.h>
 #include <lain/image/colormath.h> // convert (HSV -> RGB)
 #include <lain/image/image.h>
@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <string>
 #include <utility>
 
 namespace flowview
@@ -125,10 +126,9 @@ namespace flowview
 		style.addNodeColor("linkedGroup", container);
 
 		// The camera kinds, one category as they are in the catalog. Coloured whether or not this
-		// build registers them: a colour for a kind nobody adds costs nothing.
-		for (const char* key : {lain::camera::kBoardSpecificationKey, lain::camera::kRenderBoardKey,
-								lain::camera::kDetectBoardKey, lain::camera::kCalibrateCameraKey,
-								lain::camera::kCameraModelKey, lain::camera::kRegisterCamerasKey})
+		// build can run them: a colour for a kind nobody adds costs nothing. Every kind the library
+		// has, so a kind added there is coloured here without this file keeping a list to forget.
+		for (const std::string& key : lain::camera::cameraNodeKeys())
 			style.addNodeColor(key, cameraWork);
 	}
 

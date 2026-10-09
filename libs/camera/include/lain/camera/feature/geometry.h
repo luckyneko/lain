@@ -64,8 +64,9 @@ namespace lain::camera::feature
 	{
 		// An inlier's rays are within this of where the pose puts them, radians. COLMAP's 4 px at a
 		// focal length of 1000 px. It is also the parallax below which a pair is a point at infinity.
-		// Provisional: on rendered footage at that focal length, 2 of 503 tracks it verified were
-		// wrong (M9 slice 3, sub-slice 9), and the repo owner decides before a node exposes it.
+		// On rendered footage at that focal length, 2 of 503 tracks it verified were wrong (M9 slice 3,
+		// sub-slice 9), and the repo owner kept it (2026-10-09) before a node exposed it
+		// (registerCamerasTargetless' inlierAngleMrad). Real footage is still owed.
 		double angle = 0.004;
 		std::uint64_t seed = 0;
 	};

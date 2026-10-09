@@ -254,7 +254,7 @@ reports a missing backend ("this build has no board renderer", a Failed report w
 `Rejection::NoBackend`, `Failure::NoDetector`). So ADR-0019's rule applies here unchanged: whether a
 build can RUN a node is a capability, whether a document can NAME it is vocabulary, and a missing
 capability must not cost a document its vocabulary. `registerCameraNodes` now registers all five
-kinds; `availableCameraNodeKeys` still answers which can run, and flowview's menu offers only those,
+kinds *(seven by 2026-10-09: both registration nodes joined, under the same rule)*; `availableCameraNodeKeys` still answers which can run, and flowview's menu offers only those,
 so "a node that cannot function should not be offered" survives as a rule about the menu rather than
 about loading. A camera document opened without a backend loads whole, saves back unchanged, and its
 nodes say what is missing when run. The same day the OpenCV plugin began defaulting ON for a
@@ -305,6 +305,10 @@ while planning M9 slice 2.)*
   wire carries a hundred cameras, and the input composes with `listDir → map(openSequence)` and
   `map(calibrateCamera)` (M8). Until a capture manifest assigns camera identities, a camera's
   identity in a graph is its footage's canonical source uri.
+  *(Amended 2026-10-09, M9 slice 3, sub-slice 10: `registerCamerasTargetless` takes the same two
+  collections and no board. A node per method, sharing the pairing, the naming, the grouping and
+  the registration request's settings through one base, `RigRegistrationNode`, so the two methods
+  cannot mean different things by one setting.)*
 - **An "ambiguous" rig is three cases, each tested.**
   - A **weak bridge**: a camera reaches the rest only through too little shared evidence. The rig
     is connected and is never Ready, and the report names the bridge.
@@ -459,3 +463,12 @@ repo owner while planning M9 slice 3.)*
   so the default must not depend on a process-global random seed, which OpenCV's bundled FLANN
   does. A matcher declares which searches it supports, as an estimator declares the models it can
   estimate, and a deterministic-debug request refuses Approximate rather than substituting Exact.
+- **A graph reaches it through one node, extraction included** *(built 2026-10-09, M9 slice 3,
+  sub-slice 10)*. `registerCamerasTargetless` runs the footage overload, as `registerCameras` runs
+  board registration's, and is offered where a build can extract, match, pose from rays and refine,
+  with no board backend. It exposes the extraction settings that describe the rig and its footage
+  (the search scale, the groups sampled, the feature cap, the search and its ratio, the inlier angle
+  in milliradians, the inliers a pair needs) and keeps the rest at the library's defaults, since they
+  describe the extractor. It has no `pixelSigma`: every observation extracted from footage carries
+  its own covariance. The provisional values sub-slice 9 measured were kept by the repo owner before
+  the node exposed them.

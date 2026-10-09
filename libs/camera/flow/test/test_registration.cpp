@@ -5,10 +5,8 @@
 // Staged in ONE case from empty registries, adding a backend kind at a time, because registries only
 // grow: no other case in this executable registers a backend, so the case starts with none.
 
-#include <lain/camera/board/detection.h>
-#include <lain/camera/board/pose.h>
-#include <lain/camera/board/rendering.h>
-#include <lain/camera/calibration/estimator.h>
+#include "nullbackends.h"
+
 #include <lain/camera/flow/register.h>
 #include <lain/camera/registration/refiner.h>
 #include <lain/core/factory.h>
@@ -21,64 +19,15 @@
 #include <vector>
 
 using namespace lain;
+using namespace lain::camera::testing::null;
 
 namespace
 {
-	class NullRenderer : public camera::board::Renderer
-	{
-	public:
-		image::Image raster(const camera::board::Pattern&, const camera::board::RenderRequest&) const override
-		{
-			return {};
-		}
-	};
-
-	class NullDetector : public camera::board::Detector
-	{
-	public:
-		camera::board::DetectionReport detect(const image::Image&, const media::FrameRef&,
-											  const camera::board::Specification&, const camera::board::DetectionRequest&,
-											  double) const override
-		{
-			return {};
-		}
-	};
-
-	class NullEstimator : public camera::calibration::Estimator
-	{
-	public:
-		camera::Provenance provenance() const override { return {"null", "1"}; }
-		bool canEstimate(camera::DistortionModel) const override { return true; }
-		camera::calibration::Estimate estimate(const camera::ImageGeometry&,
-											   const std::vector<camera::board::Observation>&,
-											   const camera::board::Specification&, camera::DistortionModel,
-											   const std::optional<camera::CameraModelParameters>&) const override
-		{
-			return {};
-		}
-	};
-
-	class NullPoseSolver : public camera::board::PoseSolver
-	{
-	public:
-		camera::Provenance provenance() const override { return {"null", "1"}; }
-		std::vector<math::RigidTransformd> solve(const camera::CameraModel&, const camera::board::Specification&,
-												 const camera::board::Observation&) const override
-		{
-			return {};
-		}
-	};
-
-	class NullRefiner : public camera::registration::Refiner
-	{
-	public:
-		camera::Provenance provenance() const override { return {"null", "1"}; }
-		camera::registration::Solution refine(const camera::registration::Problem&) const override { return {}; }
-	};
-
 	// Every camera kind, in display order: what registerCameraNodes must ALWAYS put in a factory.
+	// Written out rather than read from cameraNodeKeys(), which is checked against it below.
 	const std::vector<std::string> kAllKinds{"boardSpecification", "renderBoard", "detectBoard",
-											 "calibrateCamera", "cameraModel", "registerCameras"};
+											 "calibrateCamera", "cameraModel", "registerCameras",
+											 "registerCamerasTargetless"};
 
 	// The kinds registerCameraNodes put in a fresh factory that it can build.
 	std::vector<std::string> registered()
@@ -103,6 +52,7 @@ TEST_CASE("camera node kinds register always, and are offered as backends can ru
 	// No backend: every kind is still in the factory, so a camera document loads whole, but none is
 	// offered, not even the board specification, which nothing could then use.
 	CHECK(registered() == kAllKinds);
+	CHECK(camera::cameraNodeKeys() == kAllKinds);
 	CHECK(camera::availableCameraNodeKeys().empty());
 
 	// A renderer alone: a board can be specified and drawn, and nothing else.
@@ -122,6 +72,18 @@ TEST_CASE("camera node kinds register always, and are offered as backends can ru
 	camera::board::poseSolverRegistry().registerType<NullPoseSolver>("null");
 	CHECK(camera::availableCameraNodeKeys() == calibrating);
 	camera::registration::refinerRegistry().registerType<NullRefiner>("null");
+	Keys registering = calibrating;
+	registering.push_back("registerCameras");
+	CHECK(camera::availableCameraNodeKeys() == registering);
+
+	// Targetless registration extracts, matches and poses cameras from what it matched: with a
+	// refiner already here, none of the three alone will do. That it needs the refiner and no board
+	// backend is test_targetlesskinds.cpp's, from a process with no board backend at all.
+	camera::feature::extractorRegistry().registerType<NullExtractor>("null");
+	CHECK(camera::availableCameraNodeKeys() == registering);
+	camera::feature::matcherRegistry().registerType<NullMatcher>("null");
+	CHECK(camera::availableCameraNodeKeys() == registering);
+	camera::feature::geometryRegistry().registerType<NullGeometry>("null");
 	CHECK(camera::availableCameraNodeKeys() == kAllKinds);
 
 	// Backends change what is offered, never what registers.

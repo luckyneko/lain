@@ -60,6 +60,12 @@ if(TARGET lain::camera::opencv)
 else()
 	target_compile_definitions(test-flowview PRIVATE LAIN_EXPECT_CAMERA_BACKEND=0)
 endif()
+# ... and whether it can refine a rig, which both registration kinds need besides OpenCV's backends.
+if(TARGET lain::camera::ceres)
+	target_compile_definitions(test-flowview PRIVATE LAIN_EXPECT_CAMERA_REFINER=1)
+else()
+	target_compile_definitions(test-flowview PRIVATE LAIN_EXPECT_CAMERA_REFINER=0)
+endif()
 # lain::flow::serialize: groupnav's layout tree is an EditorTree (the serialize layer's type).
 # lain::image + lain::io::data::codecs: graphio names image::Image / ColorRGBf and reads/writes json.
 # lain::gui + Vulkan::Loader: the value views draw with ImGui, so they link it (the same recipe

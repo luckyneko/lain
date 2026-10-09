@@ -9,14 +9,19 @@
 // camera the footage came from, and the model file it wrote binds back into a second run that holds
 // it. Accuracy is the plugin's tests' business.
 //
-// In a build without a camera backend the same document is REFUSED: its camera kinds are not
-// registered there (ADR-0016), so it does not load as saved.
+// In a build without a camera backend the same document still loads whole, since a camera kind is
+// vocabulary (ADR-0016, amended), and runs to a report that names the backend it is missing.
+//
+// The same holds for a rig: registered by a board, and without a target from the scene its cameras
+// share.
 
 #include "clibinders.h"
 #include "graphio.h"
 #include "runmode.h"
 #include "scene.h"
 #include "syntheticfootage.h" // the footage, drawn in plain C++
+#include "testcamera.h"		  // the targetless rig's camera
+#include "texturedscene.h"	  // ... and the scene it sees, drawn in plain C++ too
 
 #include <lain/camera/backends.h>
 #include <lain/camera/board/detection.h>
@@ -25,6 +30,9 @@
 #include <lain/camera/calibration/estimator.h>
 #include <lain/camera/calibration/report.h>
 #include <lain/camera/cameramodel.h>
+#include <lain/camera/feature/features.h>
+#include <lain/camera/feature/geometry.h>
+#include <lain/camera/feature/matching.h>
 #include <lain/camera/flow/register.h>
 #include <lain/camera/registration/refiner.h>
 #include <lain/camera/registration/report.h>
@@ -405,4 +413,146 @@ TEST_CASE("run registers a rig from a folder of footage and a folder of models",
 	CHECK(report.rfind("Ready: 3 cameras relative to ", 0) == 0);
 	CHECK(report.find("rig/cam0") != std::string::npos);
 	CHECK(report.find("16 of 16 groups usable") != std::string::npos);
+}
+
+namespace
+{
+	// footage + models (two collections, a camera each, paired by position) ->
+	// registerCamerasTargetless -> report. Three sampled groups, since the rig's footage is three
+	// frames a camera, and `search` the matching asked for.
+	fs::path writeTargetlessDocument(const fs::path& file,
+									 camera::feature::MatchSearch search = camera::feature::MatchSearch::Exact)
+	{
+		core::Factory<flow::Node> factory;
+		flowview::registerExampleNodes(factory, 8);
+		flow::Graph graph;
+		flow::GroupInputNode& input = graph.boundaryInputNode();
+		flow::GroupOutputNode& output = graph.boundaryOutputNode();
+		const flow::PortId footage = input.addBoundary<std::vector<media::FrameSequence>>("footage");
+		const flow::PortId models = input.addBoundary<std::vector<camera::CameraModel>>("models");
+		const flow::PortId report = output.addBoundary<camera::registration::Report>("report");
+
+		const flow::NodeId registerCameras = graph.add(factory.create(camera::kRegisterCamerasTargetlessKey));
+		setParam(graph, registerCameras, "resamples", 4);
+		setParam(graph, registerCameras, "sampledGroups", 3);
+		setParam(graph, registerCameras, "matchSearch", search);
+		REQUIRE(graph.connect(flow::PortAddress{input.id(), footage}, in(graph, registerCameras, 0)) ==
+				flow::Connection::Ok);
+		REQUIRE(graph.connect(flow::PortAddress{input.id(), models}, in(graph, registerCameras, 1)) ==
+				flow::Connection::Ok);
+		REQUIRE(graph.connect(out(graph, registerCameras), flow::PortAddress{output.id(), report}) ==
+				flow::Connection::Ok);
+		REQUIRE(flowview::saveGraph(core::Uri::fromPath(file), graph, factory));
+		return file;
+	}
+
+	bool haveTargetlessBackends()
+	{
+		return camera::feature::canExtract() && camera::feature::canMatch() && camera::feature::canSolveGeometry() &&
+			   camera::registration::canRefine();
+	}
+
+	// A rig of three fixed cameras as a user would bind it: rig/cam0..cam2, each a folder of three
+	// stills of the default textured scene (texturedscene.h) from a point on an arc round it, and
+	// models/cam0..cam2.json, each camera's model. A still scene draws the same frame every time, so
+	// each camera's is drawn once. Unrendered, the frames are blank but the models' size, so a build
+	// that cannot register fails for the backend it lacks rather than for the footage.
+	void writeTexturedRig(const fs::path& dir, bool rendered)
+	{
+		const camera::CameraModel model = camera::testing::cameraWith(camera::testing::brownConrady());
+		const camera::synthetic::Scene scene = camera::synthetic::defaultScene();
+		const double angles[] = {-0.25, 0.0, 0.25};
+		fs::create_directories(dir / "models");
+		for (std::size_t c = 0; c < 3; ++c)
+		{
+			const std::string name = "cam" + std::to_string(c);
+			const fs::path folder = dir / "rig" / name;
+			fs::create_directories(folder);
+			const image::Image frame = rendered ? camera::synthetic::render(scene, model, camera::synthetic::arcCamera(angles[c]))
+												: image::Image(int(model.image().width), int(model.image().height));
+			for (std::size_t i = 0; i < 3; ++i)
+				REQUIRE(io::image::save(core::Uri::fromPath(folder / ("frame.000" + std::to_string(i) + ".png")), frame));
+			REQUIRE(io::data::save(core::Uri::fromPath(dir / "models" / (name + ".json")), camera::cameraModelToValue(model)));
+		}
+	}
+} // namespace
+
+TEST_CASE("run registers a rig without a target from a folder of footage and a folder of models", "[camera][runmode]")
+{
+	ensureRegistered();
+	const fs::path dir = lain::testing::scratchDir() / "targetless-vertical";
+	fs::remove_all(dir);
+	fs::create_directories(dir);
+	const fs::path document = writeTargetlessDocument(dir / "register-targetless.json");
+	writeTexturedRig(dir, haveTargetlessBackends());
+
+	core::Factory<flow::Node> factory;
+	flowview::registerExampleNodes(factory, 8);
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+	flowview::RunOptions options;
+	options.graphPath = document.string();
+	const fs::path reportText = dir / "report.txt";
+	options.bindings = {"--footage", (dir / "rig").string(), "--models", (dir / "models").string(), "--report",
+						reportText.string()};
+	REQUIRE(flowview::runGraph(options, factory, binders) == 0);
+
+	const std::string report = readText(reportText);
+	INFO("report: " << report);
+	if (!camera::feature::canExtract())
+	{
+		// The document loads whole and runs without a backend, and the report says what is missing.
+		CHECK(report.rfind("Failed: NoFeatureExtractor", 0) == 0);
+		return;
+	}
+	if (!haveTargetlessBackends())
+	{
+		CHECK(report.rfind("Failed: NoRefiner", 0) == 0);
+		return;
+	}
+	// Each camera is named by its footage folder; the reference is whichever shares the most, and
+	// nothing measured the rig, so its scale is arbitrary.
+	//
+	// Measured: 432 usable tracks, 346 landmarks, 86 held out, relative to cam1. Over 20 runs the
+	// held-out transfer was 0.68 to 1.26 mrad against Ready's 2, with 4 to 8 outliers, Ready every
+	// time; 12 s in Debug. It varies because a camera's name is its folder's path, which holds this
+	// run's scratch directory: a track's identity digests its cameras' names, and every k-th track in
+	// identity order is held out, so another folder holds out other tracks. One folder gives one
+	// report, byte for byte.
+	CHECK(report.rfind("Ready: 3 cameras relative to ", 0) == 0);
+	CHECK(report.find("rig/cam") != std::string::npos);
+	CHECK(report.find("arbitrary scale") != std::string::npos);
+	CHECK(report.find("landmarks from") != std::string::npos);
+}
+
+TEST_CASE("a targetless registration's matching travels in its document by name", "[camera][runmode]")
+{
+	// The vertical runs Exact, the default, since Approximate's tracks vary from run to run. So the
+	// enum a document must carry by name is checked here: saved as Approximate, loaded through the
+	// production path, and Approximate again rather than the default.
+	ensureRegistered();
+	const fs::path dir = lain::testing::scratchDir() / "targetless-document";
+	fs::remove_all(dir);
+	fs::create_directories(dir);
+	const fs::path document = writeTargetlessDocument(dir / "approximate.json", camera::feature::MatchSearch::Approximate);
+
+	core::Factory<flow::Node> factory;
+	flowview::registerExampleNodes(factory, 8);
+	flow::serialize::LoadResult loaded = flowview::loadGraph(core::Uri::fromPath(document), factory, nullptr);
+	INFO(loaded.issues.size() << " load issues");
+	REQUIRE(loaded.clean());
+	std::size_t found = 0;
+	for (const flow::NodeId id : loaded.graph.nodeIds())
+	{
+		const flow::Node& node = loaded.graph.node(id);
+		for (std::size_t i = 0; i < node.paramCount(); ++i)
+		{
+			if (node.param(i).name() != "matchSearch")
+				continue;
+			++found;
+			REQUIRE(node.param(i).holds<camera::feature::MatchSearch>());
+			CHECK(node.param(i).get<camera::feature::MatchSearch>() == camera::feature::MatchSearch::Approximate);
+		}
+	}
+	CHECK(found == 1);
 }

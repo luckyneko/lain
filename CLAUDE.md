@@ -1354,6 +1354,43 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-09 — M9 slice 3, sub-slice 10: targetless registration is reachable (**slice 3 COMPLETE**)
+
+A `registerCamerasTargetless` node runs `registration::targetless::registerCameras` over a rig's
+footage and models, wired into flowview and run end to end through `runGraph` and the real binary.
+`ctest -j4` **1203/1203** Debug and **1211/1211** Release with video, camera and Ceres on, **1108/1108**
+with all three off (+7 each), and **1145/1145** with OpenCV on but Ceres off. Warning-clean,
+format-check clean.
+**gui-mode NOT eyeballed.** Full notes in WORK.md's *Sub-slice 10 built* under M9 slice 3.
+
+- **Decided with the repo owner:**
+  - **The provisional values sub-slice 9 measured are kept.** Three changes to how held-out evidence
+    is judged are queued in the Outstanding index: a robust statistic, a per-camera criterion, and
+    translation spread at 0.2%.
+  - **The node exposes the extraction settings that describe the rig**: `longestSide`,
+    `sampledGroups`, `featureCap`, `matchSearch`, `matchRatio`, `inlierAngleMrad` and
+    `minimumPairInliers`. There is no `pixelSigma`, since every extracted observation carries its own
+    covariance.
+  - **The two registration nodes share a base, `RigRegistrationNode`**: the footage and models
+    inputs, the `Request` settings, and the rig (paired, named by source, grouped by position).
+    `registerCameras` is rebased on it with no change in behaviour; its `pixelSigma` moved one
+    Inspector row.
+- **A default `Report` is a board report**, so the node's own refusals set the targetless variants,
+  with the extraction it would have run. A sabotage that leaves the default fails both refusal cases.
+- **`cameraNodeKeys()`** lists every kind. flowview's colours use it, and the catalog test asks about
+  every kind it returns with a per-kind expectation: the board kinds need OpenCV, and both
+  registrations need OpenCV and Ceres. The single OpenCV flag could not express that, so
+  `registerCameras` had been left off the list the test kept.
+- **Measured:** 432 usable tracks, 346 landmarks, 86 held out, Ready. Over 20 runs of the vertical
+  the held-out transfer was 0.68 to 1.26 mrad. The real binary took 0.97 s in Release and wrote the
+  Debug binary's bytes.
+- **Found: where footage sits decides which evidence is held out.** A camera in a graph is named by
+  its footage's path, a track's or group's identity digests it, and every k-th one in identity order
+  is held out. The same rig in another folder gave 0.966 mrad against 0.795, each repeatable. This
+  is board registration's property too. It is recorded for the repo owner.
+- **Five sabotages, all caught.** Two first failed to build under `-Werror`, so the old binary
+  answered, and were redone: **a sabotage that does not build proves nothing**, again.
+
 ### Update 2026-10-08 — M9 slice 3, sub-slice 9: one rig registered both ways, and the provisional values measured
 
 One rig of four cameras is registered by both methods from the same rendered footage, through
@@ -2045,7 +2082,9 @@ fixture) is the only one left, and it waits on a capture.
   `availableCameraNodeKeys()` and `registerCameraNodes()`, so the menu and the factory cannot
   disagree. It is tested from empty registries one backend at a time, and held to the configuration
   both ways in flowview: an OpenCV build that offers no camera kind fails, as does a build without
-  OpenCV that offers any. **Port types register always.**
+  OpenCV that offers any. **Port types register always.** *(Superseded 2026-10-09: flowview's
+  expectation is now per kind, since both registration kinds also need Ceres, and every kind the
+  library has must have one. See M9 slice 3, sub-slice 10.)*
 - **The flowview catalog is built per call** rather than held in a static, because its Camera
   category depends on backends that register after first use would have fixed it.
 - **The cli vertical runs through `runGraph`:** 24 frames of the production render seen by a known

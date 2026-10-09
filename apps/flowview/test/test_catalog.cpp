@@ -18,6 +18,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -85,17 +86,38 @@ TEST_CASE("the camera kinds always load, and are on the menu exactly when a back
 	// ADR-0016, amended: a camera kind is vocabulary, so the factory has it in every build and a
 	// camera document loads whole; the menu offers it only where it can function. Asked of the
 	// production path, backends and all, and held to the build's configuration BOTH ways: a build
-	// with the OpenCV backend that offers none is as wrong as a build without one that offers any.
+	// with the backends a kind needs that does not offer it is as wrong as one without them that does.
+	//
+	// What each kind needs is written HERE, per kind, rather than read from the library, so the
+	// library's rule is held to the configuration and not to itself. The board kinds run on OpenCV's
+	// backends; both registrations also refine the rig, which is Ceres'. Every kind the library has
+	// is asked about, so a kind added there without an expectation here fails rather than going
+	// unchecked. The single OpenCV flag this replaced could not say what registerCameras needs, so
+	// that kind was left off the list it kept, and nothing noticed.
 	camera::registerCameraBackends();
 	core::Factory<flow::Node> factory;
 	flowview::registerExampleNodes(factory, 8);
 
-	const bool expected = LAIN_EXPECT_CAMERA_BACKEND != 0;
-	for (const char* key : {camera::kBoardSpecificationKey, camera::kRenderBoardKey, camera::kDetectBoardKey,
-							camera::kCalibrateCameraKey, camera::kCameraModelKey})
+	const bool opencv = LAIN_EXPECT_CAMERA_BACKEND != 0;
+	const bool refiner = LAIN_EXPECT_CAMERA_REFINER != 0;
+	const std::map<std::string, bool> expected{
+		{camera::kBoardSpecificationKey, opencv},
+		{camera::kRenderBoardKey, opencv},
+		{camera::kDetectBoardKey, opencv},
+		{camera::kCalibrateCameraKey, opencv},
+		{camera::kCameraModelKey, opencv},
+		{camera::kRegisterCamerasKey, opencv && refiner},
+		{camera::kRegisterCamerasTargetlessKey, opencv && refiner},
+	};
+	const std::vector<std::string> kinds = camera::cameraNodeKeys();
+	CHECK(kinds.size() == expected.size());
+	for (const std::string& key : kinds)
 	{
 		INFO("camera kind: " << key);
-		CHECK(offers(key) == expected);
+		const auto found = expected.find(key);
+		CHECK(found != expected.end()); // a camera kind with no expectation here
+		if (found != expected.end())
+			CHECK(offers(key) == found->second);
 		CHECK(factory.create(key) != nullptr);
 	}
 }
@@ -105,8 +127,8 @@ TEST_CASE("every parameter of every kind can be saved", "[catalog]")
 	// flow::serialize writes a param through the codec registered for its type and SKIPS one with
 	// none, silently: the document then loads with the default in its place. So a kind whose param
 	// type was never given a codec loses that setting on every save, and nothing says so. Asked of
-	// the production palette with the camera backends registered, so a camera kind is covered in a
-	// build that has them.
+	// every kind the production factory has, which is every camera kind in every build, backends or
+	// not (ADR-0016, amended).
 	camera::registerCameraBackends();
 	core::Factory<flow::Node> factory;
 	flowview::registerExampleNodes(factory, 8);

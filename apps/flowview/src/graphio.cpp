@@ -3,6 +3,7 @@
 #include <lain/camera/board/pattern.h>		  // Dictionary, CharucoLayout — board parameters
 #include <lain/camera/calibration/request.h>  // ImportedModelPolicy — a calibration parameter
 #include <lain/camera/distortion.h>			  // DistortionModel — which model a calibration estimates
+#include <lain/camera/feature/matching.h>	  // MatchSearch — how targetless registration matches
 #include <lain/camera/flow/register.h>		  // registerCameraPortTypes
 #include <lain/camera/registration/request.h> // ApplicabilityPolicy, LossFamily — registration parameters
 #include <lain/core/parse.h>
@@ -93,6 +94,7 @@ namespace flowview
 		codecs.registerType<camera::calibration::ImportedModelPolicy>("importedModelPolicy");
 		codecs.registerType<camera::registration::ApplicabilityPolicy>("applicabilityPolicy");
 		codecs.registerType<camera::registration::LossFamily>("lossFamily");
+		codecs.registerType<camera::feature::MatchSearch>("matchSearch");
 		return codecs;
 	}
 
