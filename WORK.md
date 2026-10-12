@@ -10349,34 +10349,66 @@ row here**. A row is cheap to delete and expensive to leave.
 
 ### Unfinished milestones
 
-- **M9 — camera calibration and fixed registration.** Designed 2026-08-14/15 with three ADRs, no
-  code. **Unblocked:** M10 was numbered after it and built before it, discharging its frame-sequence
-  prerequisite. How OpenCV is obtained was decided 2026-09-29 (a pinned prebuilt), its first
-  release (`opencv-4.14.0-calib`) is published, and **slice 0 is built** (`addOpenCV.cmake`, the
-  `[opencv]` probe). **Slice 1 is in progress** as nine sub-slices, of which 0 to 7 are built;
-  sub-slice 8 (the real-camera fixture) has its machinery built (8a-8c), and its capture is owed by
-  the repo owner, guided by `plugins/camera/test/fixtures/README.md`. **Slice 2** (fixed-camera
-  board registration, with Ceres) was planned 2026-10-05 as seven sub-slices and is **built**; a
-  gui-mode eyeball of the `registerCameras` node is owed. **Slice 3** (targetless registration
-  with known intrinsics) was planned 2026-10-06 as eleven sub-slices, and **all eleven are built**
-  (2026-10-09); a gui-mode eyeball of the `registerCamerasTargetless` node (and its `matchSearch`
-  combo) is owed. **Queued by the repo owner on 2026-10-09**, each its own commit, from sub-slice 9's
-  measurements:
-  - **A robust held-out statistic.** `registration::validate`'s RMS has no robust loss, so one wrong
-    held-out track decides it: about one run in three on footage with 2 wrong tracks in 503 would
-    fail Ready on that track alone. The alternatives: count members beyond the outlier rule apart
-    and take the RMS over the rest, or report a robust statistic beside the RMS.
-  - **A per-camera held-out criterion.** Fitness judges the rig-wide RMS, so one camera 5 mrad out
-    passes in a rig of seven or more; the worst camera's transfer would catch it at any size.
-  - **Translation spread 0.5% → 0.2%** in `registration-targetless/1`, as `registration/1` has; the
-    measured spread was 0.034%.
-
-  **Found in sub-slice 10, a decision for the repo owner:** in a graph, which evidence a
-  registration holds out depends on where its footage sits. A camera's identity there is its
-  footage's canonical source uri, a track's or a group's identity digests it, and every k-th one in
-  identity order is held out, so the same rig in another folder gives another report (0.795 against
-  0.966 mrad through the real binary, each repeatable). A capture manifest's identities would end
-  it, or the cli binder could name each camera relative to the folder it was given.
+- **M9 — camera calibration and fixed registration.** Designed 2026-08-14/15 with three ADRs.
+  **Built:** slice 0 (OpenCV lands), slice 1 sub-slices 0 to 7 plus the fixture machinery (8a to 8c),
+  slice 2 (fixed-camera board registration, with Ceres) and slice 3 (targetless registration with
+  known intrinsics, all eleven sub-slices, 2026-10-09). **Left in M9**, each item pointing at where
+  its detail lives:
+  1. **Build work.**
+     - **Slice 4, targetless calibration and the graph fallback.** Not started and not yet planned.
+       It is also the trigger for a separate feature-extraction node, which waits for a second
+       consumer (slice 3's plan).
+  2. **Owed by the repo owner.**
+     - **The real-camera capture** for slice 1, sub-slice 8, guided by
+       `plugins/camera/test/fixtures/README.md`. It is all that is left of slice 1.
+     - **Three changes to how held-out evidence is judged**, queued on 2026-10-09 from sub-slice 9's
+       measurements, each its own commit:
+       - **A robust held-out statistic.** `registration::validate`'s RMS has no robust loss, so one
+         wrong held-out track decides it: about one run in three on footage with 2 wrong tracks in
+         503 would fail Ready on that track alone. The alternatives: count members beyond the
+         outlier rule apart and take the RMS over the rest, or report a robust statistic beside the
+         RMS.
+       - **A per-camera held-out criterion.** Fitness judges the rig-wide RMS, so one camera 5 mrad
+         out passes in a rig of seven or more; the worst camera's transfer would catch it at any size.
+       - **Translation spread 0.5% → 0.2%** in `registration-targetless/1`, as `registration/1` has;
+         the measured spread was 0.034%.
+     - **Which evidence is held out depends on where the footage sits** (found in sub-slice 10). A
+       camera's identity in a graph is its footage's canonical source uri, a track's or a group's
+       identity digests it, and every k-th one in identity order is held out, so the same rig in
+       another folder gives another report (0.795 against 0.966 mrad through the real binary, each
+       repeatable). A capture manifest's identities would end it, or the cli binder could name each
+       camera relative to the folder it was given.
+     - **The feature cap's cost**: count descriptor rows rather than features, or lower the cap, if
+       Exact matching's cost (16.9 core-hours for a 100-camera rig at the cap) matters more than the
+       tracks. To be decided on real footage's rows per feature (sub-slice 7 follow-up B).
+  3. **Verification owed.**
+     - **gui-mode eyeballs** of `registerCameras` and `registerCamerasTargetless`, the `matchSearch`
+       combo included, on a Metal session.
+     - **A CI run of `feature/M9`.** `.github/workflows/ci.yml` runs on pushes to `main`, `master`
+       and `develop`, on pull requests and on `workflow_dispatch`, so no push to this branch has run
+       it (checked 2026-10-12: no run on the branch). develop's last run is at `66e6dff`, just before
+       slice 2's plan, so the 21 commits of slices 2 and 3 have never been built by CI, and never on
+       macOS or Windows. A `workflow_dispatch` on the branch, or a pull request, would run it.
+  4. **Waiting on real footage**, the triggers sub-slices 7 to 9 carried forward (sub-slice 9's
+     notes):
+     - rows per descriptor on real footage, which also settles the feature cap above;
+     - true matches lost to the ratio test because a feature's other orientation is its second
+       neighbour; excluding that needs more than two neighbours from the matcher seam (sub-slice 7
+       follow-up B);
+     - a robust initial triangulation from inlier rays (sub-slice 8b);
+     - the constants rendered footage never exercised: the 2° seed floor, the 16 seed candidates,
+       the 20 tracks to hold out, and the tracks-per-bridge thresholds;
+     - `localisationPerSize` below 4 px, which states about a tenth of the true error natively on
+       rendered footage, where a floor made the rig less accurate.
+  5. **Deferred, each with its trigger.**
+     - **Timestamp grouping**: the first rig footage that is not frame-locked (slice 2's plan).
+     - **Board-geometry reconstruction**, a board rebuilt from relative poses: designed separately,
+       and needs relative-pose recovery through the backend (slice 1, sub-slice 8).
+     - **A neighbour or retrieval restriction on pair matching**: the first rig whose matching
+       dominates its registration time (slice 3's plan).
+     - **`flow::serialize::toValue` reporting a param it has no codec for**: its own change, since it
+       changes the result's shape; the catalog census test guards it until then (slice 1,
+       sub-slice 7).
   *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
