@@ -128,3 +128,30 @@ iterations, is what normalising afterwards is for.
 false there is fatal to Ceres. A targetless initialisation can place a landmark behind a camera,
 so the method module filters by cheirality before it refines rather than letting a failed solve
 stand for it.
+
+## Amended 2026-10-12: the seam moves, and a model may be free
+
+Decided while planning M9 slice 4 (targetless calibration). Nothing below is built yet.
+
+**Calibration refines through the same seam, so the seam leaves registration.** Targetless calibration
+is a bundle adjustment with the camera model free. ADR-0016 keeps calibration and registration apart, so
+calibration cannot use `registration::Refiner` where it lives. The seam moves to
+`lain::camera::refinement`, with the noise model and the robust loss, and using-declarations are left at
+the old names: the move the board pose seam made in slice 2. It stays one production path: the Ceres
+plugin fills the moved seam, and neither method gets a refiner of its own.
+
+**A problem's cameras may share a model, and a model may be free.** A moving camera's sampled frames are
+the problem's cameras, and they share one model. Each model then states which of its parameters move:
+focal length, principal point, distortion coefficients. In Ceres a free model is one parameter block,
+its held parameters on a `SubsetManifold`, in the elimination group with the cameras, so the landmarks
+are still eliminated first. The refined parameters come back unchecked, and the method passes them
+through `CameraModel::create`, as it does an estimator's. Within one solve the projection's domain is the
+starting model's. A result whose distortion folds inside the image is refused by `create`, not
+reported as a model. Registration never frees a model: joint intrinsic and extrinsic registration
+remains outside M9.
+
+**Ceres differentiates the model's parameters through lain's projection**, never through a copy. The
+distortion formulas and intrinsics become scalar-generic in their parameters as well as their point,
+and each model's automatic derivatives are tested against finite differences, its iterative inverse
+included. The refiner declares the models it can estimate. A model that fails that test is not
+declared, so a request for it is refused rather than refined on wrong derivatives.

@@ -1354,6 +1354,52 @@ Full notes in WORK.md's *Each distortion model carries its own algorithm*.
 - **The OpenCV estimator's `coefficientsOf` is deliberately kept**: it is OpenCV's order, which
   happens to equal lain's.
 
+### Update 2026-10-12 — M9 slice 4 planned: targetless calibration and the graph fallback (nothing built yet)
+
+Slice 4 of M9 is planned as **thirteen sub-slices (0 to 12), one commit each**, in WORK.md's M9 build
+order. ADR-0016 and ADR-0017 are amended in place. CONTEXT.md gains *focal sweep*, *held parameter*,
+*held-out frame* and *accepted attempt*, and amends *Targetless calibration*, *Feature-track
+extraction*, *Calibration method* and *Calibration attempt*.
+
+- **Decided with the repo owner:**
+  - **The fallback is gates and small nodes.** Each method stays one node, and its footage passes
+    through a Gate. `calibrationMethod` and `nextAttempt` switch the gates. `calibrationAttempts`
+    combines the attempts made and names the accepted one. A method that is not needed never runs
+    (ADR-0007 suppression), and editing one method's setting re-runs only its node. It ships as an
+    example document. One fallback node and an attempt chain were refused.
+  - **With no imported model, a focal sweep starts the reconstruction**: log-spaced candidate focal
+    lengths tried through `relativePose` on the best-verified frame pairs, each scored at one pixel
+    threshold so a long candidate is not favoured.
+  - **The principal point is held by default.** A held parameter's variation is reported held, never
+    zero.
+  - **No standalone extraction node yet.** Calibration's extraction differs from the fixed rig's, so
+    its trigger is restated rather than fired.
+- **Taken by precedent, or found by the design review:**
+  - **Every sampled frame of the moving camera is its own view**, and frame pairs are verified by a
+    **fundamental matrix** that lain measures (Sampson distance), since there is no model yet.
+  - **The refiner seam moves from `registration` to `lain::camera::refinement`.** Calibration may not
+    depend on its sibling, as with slice 2's board pose seam. The seam gains cameras sharing one model
+    and free model parameters. Registration never frees one.
+  - **The projection kernels become scalar-generic in intrinsics and coefficients**, so Ceres
+    differentiates the one implementation. A model whose Jet derivatives fail is not declared
+    estimatable.
+  - **Validation is on held-out frames**, board calibration's held-out views with the scene in place of
+    the board. The calibration criteria keep their meaning, and `reconstruction-targetless/1` differs
+    only in its numbers, measured in sub-slice 10.
+  - **Acceptance is Ready under the attempt's own profile**, decided by one `calibration::accepts`.
+  - **Targetless registration's incremental reconstruction is lifted** into a shared private module,
+    held to a golden targetless registration report.
+  - **The calibration report becomes method-neutral first**, held to a golden board calibration
+    report, as registration's did in slice 3.
+- **Found in the code:**
+  - `calibration::Request` carries a board detection request.
+  - The calibration report is board-shaped.
+  - `distortion.h`'s coefficients stay double.
+  - `extractTracks` needs a model per camera, and its track identities would collide across one
+    camera's frames.
+  - `RenderedSource` has one pose.
+  - flowview has no enum boundary binder.
+
 ### Update 2026-10-09 — M9 slice 3, sub-slice 10: targetless registration is reachable (**slice 3 COMPLETE**)
 
 A `registerCamerasTargetless` node runs `registration::targetless::registerCameras` over a rig's

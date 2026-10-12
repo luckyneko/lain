@@ -472,3 +472,63 @@ repo owner while planning M9 slice 3.)*
   describe the extractor. It has no `pixelSigma`: every observation extracted from footage carries
   its own covariance. The provisional values sub-slice 9 measured were kept by the repo owner before
   the node exposed them.
+
+**Targetless calibration, as planned.** *(Added 2026-10-12, decided with the repo owner while
+planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds the build order.)*
+
+- **One moving camera, a standing scene.** Targetless calibration takes one camera's footage of a
+  predominantly static scene, the camera translating as well as turning. Every sampled frame is its own
+  view, so a track is a scene point seen across frames. Nothing stays at one pixel, so moving content
+  cannot be dropped before matching as it is in fixed-camera extraction: verification rejects most of
+  it, and the robust loss and the outlier report the rest. Footage that only turns has no parallax to
+  reconstruct from, and fails initialisation with that reason.
+- **Two extractions, one feature module.** `lain::camera::feature` gains a sequence extraction beside
+  the fixed-rig one, sharing its per-image and per-pair work and its union. A sequence pair is verified
+  by a **fundamental matrix**, since no model exists yet to turn pixels into rays. The geometry backend
+  proposes fundamental-matrix candidates, and lain measures each by its Sampson distance and chooses,
+  by the same rule as its pose facades. A fundamental matrix ignores lens distortion. A lens whose
+  distortion costs too many peripheral matches is the trigger to verify again under the swept model.
+- **The starting focal length comes from a focal sweep** when no imported model seeds it. Lain tries a
+  fixed, log-spaced set of focal lengths on the most strongly verified pairs, through its own
+  relative-pose facade, and keeps the candidate whose poses explain the most matches. Every candidate
+  is scored at one pixel threshold turned into its own angle, because a fixed angle would favour the
+  longest focal length. An imported model under the Initial policy skips the sweep, and HoldAndValidate
+  validates an imported model against ordinary footage. Requiring a prior, and COLMAP's fixed guess of
+  1.2 times the longest side, were the alternatives.
+- **The principal point is held by default**, at the image centre or at an imported model's, because
+  self-calibration conditions it poorly. A setting of the method frees it. A **held parameter** is not
+  estimated, so it has no resampled variation. The report says it was held, and the fitness criterion
+  on it does not apply; its variation is never recorded as zero.
+- **The refiner estimates the model, through the one projection implementation.** The refiner seam
+  moves from `lain::camera::registration` to `lain::camera::refinement`, so calibration does not depend
+  on its sibling: the precedent is the board pose seam, which moved to `lain::camera::board` for the
+  same reason. The seam then gains cameras that share a model, and models with free parameters
+  ([ADR-0017](0017-ceres-for-registration-refinement.md), amended). Registration never frees one, so
+  the exclusion of joint intrinsic and extrinsic registration stands. The projection kernels become
+  scalar-generic in their intrinsics and coefficients as well as their point. A backend declares the
+  models it can estimate, and a model whose automatic derivatives do not match finite differences is
+  not declared.
+- **Validation is on held-out frames.** A held-out frame is the targetless analogue of a held-out board
+  view. It is kept out of the reconstruction, posed afterwards against the landmarks with the model held,
+  and measured as angles through lain's projection. So the calibration fitness criteria keep their
+  meaning in both methods (views, coverage, held-out angle, focal and principal-point variation), and
+  the targetless profile, `reconstruction-targetless/1`, differs only in its numbers: a scene feature
+  is located less precisely than a board corner. An empty profile in a request is the method's own.
+  The bootstrap resamples tracks. The reconstruction's poses and landmarks are diagnostics with an
+  arbitrary scale, never part of the result.
+- **The fallback is a graph of gates and small nodes**, the shape the 2026-08-16 review asked for. Each
+  method stays one node. A method node's footage passes through a Gate. A `calibrationMethod` node says
+  which methods the graph's `method` input includes, and a `nextAttempt` node switches the next
+  method's gate from the earlier attempts' reports. A method that is not needed is therefore never run,
+  by suppression (ADR-0007). A `calibrationAttempts` node combines the attempts made, in priority order,
+  and names the accepted one. Editing one method's setting re-runs only that method's node. One
+  fallback node, which would carry every setting of both methods, and an attempt chain threaded
+  through the method nodes, were the alternatives. The method modules still contain no fallback
+  policy.
+- **Acceptance is stated once**: an attempt is accepted when it succeeded and is Ready under its own
+  method's profile, decided by one shared function that the gating node and the combining node both
+  call. A looser acceptance is a looser profile, not a second setting on the fallback.
+- **No standalone extraction node yet.** Its trigger was "a second consumer", which assumed calibration
+  would consume the fixed-rig extraction. Calibration consumes a different extraction, so each has one
+  consumer. Restated: a second consumer of the same extraction, or a measured need to re-tune a solver
+  setting on real footage without extracting again.

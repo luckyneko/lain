@@ -295,6 +295,11 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   (features, nearest neighbours, candidate poses); lain applies the matching tests, builds the
   tracks, and measures and accepts the geometry. _Avoid_: targetless calibration when only evidence
   was extracted, Ceres feature matching.
+  *Two extractions* (planned 2026-10-12, M9 slice 4): the **fixed-rig** one keeps each camera's
+  static features and verifies a camera pair by relative pose, through the cameras' known models.
+  The **sequence** one, for a moving camera that targetless calibration has no model for yet, makes
+  every sampled frame its own view and verifies a frame pair by a fundamental matrix, measured by its
+  Sampson distance in pixels.
 - **Camera observation graph** — the automatically inferred graph whose vertices are cameras and whose
   edges are supported by accepted shared observations. Initial targetless registration requires this
   graph to be connected through accepted feature-track overlap; declared camera-pair relationships are
@@ -464,10 +469,21 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   calibration attempt while all methods yield the same calibration report. Fallback methods run in
   priority order and stop at the first attempt that meets the requested reconstruction fitness;
   evaluating every successful method is comparison, not fallback. _Avoid_: calibration type.
+  *In a graph* (planned 2026-10-12, M9 slice 4): a `method` input, and the fallback is wired from gates
+  and small nodes rather than one node. Each method's footage passes through a gate, switched from the
+  method and the earlier attempts' reports, so a method that is not needed is never run. "Meets the
+  requested reconstruction fitness" means accepted (below), and a looser acceptance is a looser profile.
 - **Calibration attempt** — the result and evidence produced by one calibration method within a
   request. A fallback report retains every attempt made and fails only after all configured methods
   have failed to meet the requested reconstruction fitness. _Avoid_: fallback result when referring
   to the individual method outcome.
+  *The attempts made* (planned 2026-10-12): a method that was skipped because an earlier attempt was
+  accepted made no attempt, and is not listed.
+- **Accepted attempt** — the first calibration attempt, in priority order, that succeeded and is Ready
+  under its own method's fitness profile. One shared function decides it, and both the gate that skips
+  a later method and the record of the attempts call it, so the two cannot disagree. A fallback with
+  no accepted attempt produces no camera model, and its attempts still say why. _Avoid_: best attempt
+  (nothing is compared), winning method.
 - **Calibration request** — the graph-boundary description of a calibration attempt: its method,
   method-specific evidence specifications or priors, and reconstruction-fitness acceptance criteria.
   Invalid or missing evidence required by the selected method yields a failed calibration report.
@@ -555,6 +571,31 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   distortion, but its trust depends on sufficient motion, scene geometry, observability, priors, and
   independent validation. _Avoid_: automatic calibration, uncalibrated calibration, method-owned
   feature matching.
+  *As planned* (2026-10-12, M9 slice 4): one moving camera's footage of a predominantly static scene,
+  the camera translating as well as turning; footage that only turns has no parallax and fails
+  initialisation. Every sampled frame is a view and its tracks come from the sequence extraction. The
+  camera's frames and the landmarks are reconstructed incrementally from a starting model, either an
+  imported one or the focal sweep's. A bundle adjustment then estimates the model, with fx, fy and the
+  distortion free and the principal point held by default. The model is validated on held-out frames,
+  and its stability measured by resampling tracks. The reconstruction is a by-product with an arbitrary
+  scale, never part of the result.
+- **Focal sweep** — how targetless calibration starts when no imported model seeds it. A fixed,
+  log-spaced set of focal lengths (about 25° to 120° field of view), each with the principal point at
+  the image centre and the requested model's neutral distortion, is tried on the most strongly verified
+  frame pairs. The candidate whose relative poses explain the most matches starts the reconstruction.
+  Every candidate is scored at one pixel threshold, turned into its own angle; a fixed angle covers more
+  pixels at a longer focal length, and would favour the longest candidate. _Avoid_: focal guess (it is
+  measured), self-calibration (the bundle adjustment does that).
+- **Held parameter** — a camera-model parameter a calibration keeps at its starting value rather than
+  estimating, such as targetless calibration's principal point by default. It has no resampled
+  variation, so a report says it was held and the fitness criterion on it does not apply; its variation
+  is never recorded as zero. _Avoid_: fixed parameter when a held one is meant, zero variation.
+- **Held-out frame** — a sampled frame kept out of a targetless calibration's reconstruction so it can
+  validate the model, as a held-out board view does in board calibration. It is posed afterwards against
+  the reconstructed landmarks with the model held, and the angles between its observed and predicted
+  rays are measured through lain's projection. A frame whose loss would leave the reconstruction unable
+  to start is never held out. _Avoid_: held-out view when the method matters, held-out track (that is
+  targetless registration's unit).
 - **Camera model** — the shared description of a calibrated camera: image size, intrinsics,
   distortion model, and uncertainty when known. Board and targetless calibration use the same camera
   model; the calibration report carries how trustworthy it is. A multi-imager device or one imager

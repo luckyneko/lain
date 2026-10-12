@@ -15,8 +15,9 @@ namespace lain::camera
 	//
 	// ONE node for the whole method, extraction included, as registerCameras is for detection: which
 	// features are static, which tracks fit and which validate, and what the verdict is held to are
-	// decisions taken together. A node of its own for extraction waits for a second consumer
-	// (targetless calibration, M9 slice 4).
+	// decisions taken together. A node of its own for extraction waits for a second consumer of THIS
+	// extraction, or a measured need to re-tune a solver setting without extracting again. Targetless
+	// calibration (M9 slice 4) is not one: it extracts a moving camera's frames, a different extraction.
 	//
 	// The extraction settings are the ones that describe the rig and its footage:
 	// - `longestSide`, the scale each frame is searched at, 0 for native;
