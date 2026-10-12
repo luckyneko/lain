@@ -24,7 +24,30 @@ namespace
 {
 	Report run(const Request& request = {})
 	{
-		return method::calibrate(footage(scene().frames), specification(), request);
+		return method::calibrate(footage(scene().frames), specification(), camera::board::DetectionRequest{}, request);
+	}
+
+	// A search unlike the default in every field.
+	camera::board::DetectionRequest unusualSearch()
+	{
+		camera::board::DetectionRequest search;
+		search.scale = camera::board::LongestSide{800};
+		search.refineAtNativeResolution = false;
+		search.detail = camera::board::DetailLevel::Detailed;
+		search.minimumCorners = 6;
+		return search;
+	}
+
+	bool isUnusualSearch(const camera::board::DetectionRequest& search)
+	{
+		const auto* longest = std::get_if<camera::board::LongestSide>(&search.scale);
+		return longest != nullptr && longest->pixels == 800 && !search.refineAtNativeResolution &&
+			   search.detail == camera::board::DetailLevel::Detailed && search.minimumCorners == 6;
+	}
+
+	const BoardRecord& boardRecord(const Report& report)
+	{
+		return std::get<BoardRecord>(report.reproducibility.method);
 	}
 
 	bool failedWith(const Report& report, Failure failure)
@@ -92,9 +115,51 @@ TEST_CASE("a clean scene calibrates Ready, with every section present", "[camera
 
 	CHECK(report.thresholds.name == "reconstruction/1");
 	CHECK(report.reproducibility.sources == std::vector<std::string>{"/synthetic/calibration"});
-	CHECK(report.reproducibility.detector.backend == "truth");
+	CHECK(boardRecord(report).detector.backend == "truth");
 	CHECK(report.reproducibility.estimator.backend == "scripted");
 	CHECK(report.reproducibility.request.seed == 1);
+}
+
+TEST_CASE("footage is searched as asked, and the record says how", "[camera][calibration]")
+{
+	resetScene();
+	const Report report = method::calibrate(footage(scene().frames), specification(), unusualSearch(), Request{});
+	REQUIRE(report.status == CalibrationStatus::Succeeded);
+
+	// The search reaches every frame's detection, and the record says what it was.
+	REQUIRE(report.diagnostics.detections.size() == 40);
+	for (const camera::board::DetectionReport& d : report.diagnostics.detections)
+		CHECK(isUnusualSearch(d.request));
+	REQUIRE(boardRecord(report).detection.has_value());
+	CHECK(isUnusualSearch(*boardRecord(report).detection));
+
+	SECTION("a request refused before anything is detected still says what would have been searched with")
+	{
+		Request request;
+		request.fitnessProfile = "reconstruction/99";
+		const Report refused = method::calibrate(footage(scene().frames), specification(), unusualSearch(), request);
+		REQUIRE(failedWith(refused, Failure::UnknownFitnessProfile));
+		CHECK(refused.diagnostics.detections.empty());
+		REQUIRE(boardRecord(refused).detection.has_value());
+		CHECK(isUnusualSearch(*boardRecord(refused).detection));
+	}
+}
+
+TEST_CASE("a calibration over given detections records the search they report", "[camera][calibration]")
+{
+	resetScene();
+	const media::FrameSequence frames = footage(scene().frames);
+	std::vector<camera::board::DetectionReport> detections;
+	for (std::size_t i = 0; i < frames.size(); ++i)
+		detections.push_back(camera::board::detect(frames.image(i), frames.frame(i), specification(), unusualSearch()));
+
+	// The calibration's own request holds no search at all: what the detections were made with is
+	// theirs to say.
+	const Report report = method::calibrate(detections, trueCamera().image, specification(), Request{});
+	REQUIRE(report.status == CalibrationStatus::Succeeded);
+	REQUIRE(boardRecord(report).detection.has_value());
+	CHECK(isUnusualSearch(*boardRecord(report).detection));
+	CHECK(boardRecord(report).detector.backend == "truth");
 }
 
 TEST_CASE("a model whose held-out rays miss is not Ready, and the notes say why", "[camera][calibration]")

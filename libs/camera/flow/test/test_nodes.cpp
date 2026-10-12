@@ -308,13 +308,16 @@ TEST_CASE("detectBoard reports for the frame it is given", "[camera][flow]")
 TEST_CASE("calibrateCamera hands its settings to the method", "[camera][flow]")
 {
 	reset();
-	SECTION("the defaults are calibration::Request's")
+	SECTION("the defaults are calibration::Request's and board::DetectionRequest's")
 	{
 		const Report report = calibrateScene([](flow::Graph&, flow::NodeId) {});
 		REQUIRE(report.status == camera::calibration::CalibrationStatus::Succeeded);
 		CHECK(report.verdict == camera::calibration::Verdict::Ready);
 		const camera::calibration::Request& asked = report.reproducibility.request;
 		const camera::calibration::Request defaults;
+		const auto& record = std::get<camera::calibration::BoardRecord>(report.reproducibility.method);
+		REQUIRE(record.detection.has_value());
+		const board::DetectionRequest& searched = *record.detection;
 		CHECK(asked.model == defaults.model);
 		CHECK(asked.fitnessProfile == defaults.fitnessProfile);
 		CHECK(asked.maximumViews == defaults.maximumViews);
@@ -322,8 +325,9 @@ TEST_CASE("calibrateCamera hands its settings to the method", "[camera][flow]")
 		CHECK(asked.resamples == defaults.resamples);
 		CHECK(asked.seed == defaults.seed);
 		CHECK(asked.execution == camera::calibration::ExecutionPolicy::Normal);
-		CHECK(std::holds_alternative<board::NativeScale>(asked.detection.scale));
-		CHECK(asked.detection.minimumCorners == defaults.detection.minimumCorners);
+		CHECK(std::holds_alternative<board::NativeScale>(searched.scale));
+		CHECK(searched.refineAtNativeResolution == board::DetectionRequest{}.refineAtNativeResolution);
+		CHECK(searched.minimumCorners == board::DetectionRequest{}.minimumCorners);
 	}
 
 	SECTION("every parameter reaches the request")
@@ -341,15 +345,24 @@ TEST_CASE("calibrateCamera hands its settings to the method", "[camera][flow]")
 				setParam(graph, id, "minimumCorners", 6);
 			});
 		const camera::calibration::Request& asked = report.reproducibility.request;
+		const auto& record = std::get<camera::calibration::BoardRecord>(report.reproducibility.method);
+		REQUIRE(record.detection.has_value());
+		const board::DetectionRequest& searched = *record.detection;
 		CHECK(asked.maximumViews == 12);
 		CHECK(asked.heldOutFraction == 0.25);
 		CHECK(asked.resamples == 3);
 		CHECK(asked.seed == 0xFFFFFFFFu); // a seed keeps its bits: -1 is a seed, not a clamp to 0
 		CHECK(asked.execution == camera::calibration::ExecutionPolicy::DeterministicDebug);
-		REQUIRE(std::holds_alternative<board::LongestSide>(asked.detection.scale));
-		CHECK(std::get<board::LongestSide>(asked.detection.scale).pixels == 800);
-		CHECK_FALSE(asked.detection.refineAtNativeResolution);
-		CHECK(asked.detection.minimumCorners == 6);
+		REQUIRE(std::holds_alternative<board::LongestSide>(searched.scale));
+		CHECK(std::get<board::LongestSide>(searched.scale).pixels == 800);
+		CHECK_FALSE(searched.refineAtNativeResolution);
+		CHECK(searched.minimumCorners == 6);
+		// Every frame was searched as the node said, not only recorded so.
+		for (const board::DetectionReport& d : report.diagnostics.detections)
+		{
+			const auto* longest = std::get_if<board::LongestSide>(&d.request.scale);
+			CHECK((longest != nullptr && longest->pixels == 800));
+		}
 		CHECK(report.diagnostics.viewsSelected == 12);
 	}
 

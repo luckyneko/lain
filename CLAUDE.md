@@ -1400,6 +1400,41 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-12 — M9 slice 4, sub-slice 1: the calibration request stops naming a board
+
+Two commits, split by the repo owner so the history shows that the change leaves the golden
+untouched. No change in behaviour. `ctest` **1206/1206** Debug and **1214/1214** Release with video,
+camera and Ceres on, **1111/1111** with all three off (+3 each across the two commits);
+warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 1a built* and *Sub-slice 1b
+built* under M9 slice 4.
+
+- **1a: a golden board calibration report** (`golden/boardcalibration.txt`, in
+  `test-camera-calibration`), produced by the unchanged library.
+  - It prints every field of four reports, timings aside, plus each `toString()` line: Ready, Rejected,
+    a held model over given detections, and a refusal before detection.
+  - The stand-in estimator's answer depends on which views it is handed. One of the two sabotages,
+    every resample draw shifted by one index, is seen only through that: it keeps each draw's count of
+    distinct views, so the focal term does not move and the principal-point term does.
+  - The goldens' printing and comparison moved to `libs/camera/test/goldentext.h`, shared with the
+    registration golden, whose text is unchanged. Sub-slice 6's targetless golden is the third user.
+- **1b: registration's slice 3 sub-slice 2, for calibration.**
+  - `calibration::Request` loses `detection`. The footage overload of `calibration::board::calibrate`
+    takes the `board::DetectionRequest` between the board and the request.
+  - `Reproducibility` keeps sources, frames, the estimator and the request, and gains
+    `std::variant<BoardRecord> method` (`detector`, `poseSolver`, `optional<DetectionRequest>`).
+    `estimator` stays shared, since for targetless calibration it will be the refiner.
+  - The footage overload records its argument before any check. The detections overload takes no
+    search: the record holds what the first detection reports, beside its detector.
+- **Six sabotages across the two, all caught.** Two lessons from registration held:
+  - a search dropped while the record keeps the argument is seen only per detection, never on the
+    record;
+  - a sabotage that does not build proves nothing. The node's first cut left `search` unused under
+    `-Werror`, and the old binary answered until it was redone.
+- **This container needed the dependency workaround again.** GitHub source archives still answer 403,
+  so each was cloned over git and handed to configure as `FETCHCONTENT_SOURCE_DIR_<NAME>`. Release
+  assets (OpenCV, FFmpeg, clang-format) and gitlab archives (Eigen, libtiff) download normally. The X11,
+  Wayland and libva dev packages that CI installs had to be installed too.
+
 ### Update 2026-10-09 — M9 slice 3, sub-slice 10: targetless registration is reachable (**slice 3 COMPLETE**)
 
 A `registerCamerasTargetless` node runs `registration::targetless::registerCameras` over a rig's

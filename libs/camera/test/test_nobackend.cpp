@@ -76,11 +76,14 @@ TEST_CASE("with no backend, render says the capability is missing", "[camera][bo
 TEST_CASE("with no backend, calibration fails with the missing capability", "[camera][calibration]")
 {
 	const media::FrameSequence footage = media::FrameSequence::over(std::make_shared<StillSource>());
-	const calibration::Report report = calibration::board::calibrate(footage, specification(), {});
+	const calibration::Report report =
+		calibration::board::calibrate(footage, specification(), DetectionRequest{}, calibration::Request{});
 	CHECK(report.status == calibration::CalibrationStatus::Failed);
 	REQUIRE_FALSE(report.failures.empty());
 	CHECK(report.failures[0].failure == calibration::Failure::NoDetector);
 	CHECK_FALSE(calibration::canEstimate());
+	// Nothing was searched, and the record still says what would have been.
+	CHECK(std::get<calibration::BoardRecord>(report.reproducibility.method).detection.has_value());
 }
 
 TEST_CASE("with no backend, a board pose says the capability is missing", "[camera][board]")
@@ -111,6 +114,8 @@ TEST_CASE("with no backend, a held model fails for want of a pose solver", "[cam
 	CHECK(report.status == calibration::CalibrationStatus::Failed);
 	REQUIRE_FALSE(report.failures.empty());
 	CHECK(report.failures[0].failure == calibration::Failure::NoPoseSolver);
+	// No detection was given, so none says how it was searched for.
+	CHECK_FALSE(std::get<calibration::BoardRecord>(report.reproducibility.method).detection.has_value());
 }
 
 TEST_CASE("with no backend, a registration refinement says the capability is missing", "[camera][registration]")

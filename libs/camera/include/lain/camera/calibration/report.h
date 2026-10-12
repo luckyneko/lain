@@ -87,15 +87,25 @@ namespace lain::camera::calibration
 		std::vector<std::uint32_t> heldOut;						// positions of the held-out views
 	};
 
+	// What a board calibration detected with, searched with and placed boards by, beside what every
+	// calibration records.
+	struct BoardRecord
+	{
+		Provenance detector;
+		Provenance poseSolver; // what placed the board in each held-out view
+		// What the frames were searched with: the footage overload's argument, or what the first
+		// given detection reports. Unset when no detection was given and none was made.
+		std::optional<camera::board::DetectionRequest> detection;
+	};
+
 	// What a report needs to be repeated (CONTEXT.md, "Reproducibility record").
 	struct Reproducibility
 	{
 		std::vector<std::string> sources; // the canonical uri of every source the frames came from
 		std::uint32_t frames = 0;
-		Provenance detector;
-		Provenance estimator;
-		Provenance poseSolver; // what placed the board in each held-out view
-		Request request;	   // the configuration, seed and execution policy, exactly as given
+		Provenance estimator; // what estimated the model, whatever kind of backend; unset for a held one
+		Request request;	  // the configuration, seed and execution policy, exactly as given
+		std::variant<BoardRecord> method;
 	};
 
 	// The result of a calibration attempt, successful or not (CONTEXT.md, "Calibration report").

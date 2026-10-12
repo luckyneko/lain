@@ -20,9 +20,10 @@ namespace lain::camera
 		// Optional: most calibrations start from nothing, and the policy says what one is for.
 		m_imported = addInput<CameraModel>("imported", flow::Presence::Optional);
 
-		// The request's own defaults, so a fresh node asks for exactly what calibration::Request
-		// does.
+		// The request's and the search's own defaults, so a fresh node asks for exactly what
+		// calibration::Request and board::DetectionRequest do.
 		const calibration::Request defaults;
+		const board::DetectionRequest search;
 		m_model = addParam<DistortionModel>("model", defaults.model);
 		m_importedPolicy = addParam<calibration::ImportedModelPolicy>("importedPolicy", defaults.importedPolicy);
 		m_fitnessProfile = addParam<std::string>("fitnessProfile", defaults.fitnessProfile);
@@ -32,8 +33,8 @@ namespace lain::camera
 		m_seed = addParam<int>("seed", int(defaults.seed));
 		m_deterministic = addParam<bool>("deterministic", false);
 		m_longestSide = addParam<int>("longestSide", 0);
-		m_refineNative = addParam<bool>("refineNative", defaults.detection.refineAtNativeResolution);
-		m_minimumCorners = addParam<int>("minimumCorners", int(defaults.detection.minimumCorners));
+		m_refineNative = addParam<bool>("refineNative", search.refineAtNativeResolution);
+		m_minimumCorners = addParam<int>("minimumCorners", int(search.minimumCorners));
 
 		m_report = addOutput<calibration::Report>("report");
 	}
@@ -55,11 +56,11 @@ namespace lain::camera
 		request.seed = std::uint64_t(std::uint32_t(param(m_seed).get<int>()));
 		request.execution = param(m_deterministic).get<bool>() ? calibration::ExecutionPolicy::DeterministicDebug
 															   : calibration::ExecutionPolicy::Normal;
-		request.detection = detail::detectionRequest(param(m_longestSide).get<int>(), param(m_refineNative).get<bool>(),
-													 param(m_minimumCorners).get<int>());
+		const board::DetectionRequest search = detail::detectionRequest(
+			param(m_longestSide).get<int>(), param(m_refineNative).get<bool>(), param(m_minimumCorners).get<int>());
 
 		evaluation.output(m_report).set(
 			calibration::board::calibrate(evaluation.input(m_footage).get<media::FrameSequence>(),
-										  evaluation.input(m_board).get<board::Specification>(), request));
+										  evaluation.input(m_board).get<board::Specification>(), search, request));
 	}
 } // namespace lain::camera

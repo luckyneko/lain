@@ -107,10 +107,11 @@ namespace
 			out << "detection " << i << " " << detection(d.detections[i]) << "\n";
 
 		const Reproducibility& p = r.reproducibility;
+		const BoardRecord& record = std::get<BoardRecord>(p.method);
 		for (const std::string& source : p.sources)
 			out << "source " << source << "\n";
-		out << "frames " << p.frames << " detector " << provenance(p.detector) << " estimator " << provenance(p.estimator)
-			<< " poseSolver " << provenance(p.poseSolver) << "\n";
+		out << "frames " << p.frames << " detector " << provenance(record.detector) << " estimator "
+			<< provenance(p.estimator) << " poseSolver " << provenance(record.poseSolver) << "\n";
 		const Request& q = p.request;
 		out << "request model " << name(q.model) << " imported " << (q.imported ? model(*q.imported) : "unset")
 			<< " policy " << name(q.importedPolicy) << " profile " << q.fitnessProfile << "\n";
@@ -118,7 +119,8 @@ namespace
 		out << "request overrides " << optional(o.minimumViews) << " " << optional(o.minimumCoverage) << " "
 			<< optional(o.maximumHeldOutAngle) << " " << optional(o.maximumFocalVariation) << " "
 			<< optional(o.maximumPrincipalPointVariation) << "\n";
-		out << "request detection " << detectionRequest(q.detection) << "\n";
+		// Printed where it was when the request held it (sub-slice 1b moved it to the board record).
+		out << "request detection " << (record.detection ? detectionRequest(*record.detection) : "unset") << "\n";
 		out << "request maximumViews " << q.maximumViews << " heldOutFraction " << number(q.heldOutFraction)
 			<< " resamples " << q.resamples << " seed " << q.seed << " execution " << name(q.execution) << "\n";
 		out << "toString " << r.toString() << "\n";
@@ -181,9 +183,7 @@ namespace
 			};
 			script().rmsPixels = 0.0421;
 			script().uncertainty = ParameterUncertainty{0.5, 0.6, 0.07, 0.08, {0.001, 0.002, 0.0003, 0.0004, 0.005}};
-			Request request;
-			request.detection = unusualSearch();
-			text += section("ready", method::calibrate(footage(scene().frames), specification(), request));
+			text += section("ready", method::calibrate(footage(scene().frames), specification(), unusualSearch(), Request{}));
 		}
 
 		// Rejected, through the footage: an estimate 3% long, seeded from an imported model of
@@ -208,7 +208,8 @@ namespace
 			request.heldOutFraction = 0.25;
 			request.resamples = 5;
 			request.seed = 9;
-			text += section("rejected", method::calibrate(footage(scene().frames), specification(), request));
+			text += section("rejected",
+							method::calibrate(footage(scene().frames), specification(), cb::DetectionRequest{}, request));
 		}
 
 		// A held model, over detections already made with the unusual search: validated, never
@@ -226,7 +227,6 @@ namespace
 			Request request;
 			request.imported = *CameraModel::create(held).model;
 			request.importedPolicy = ImportedModelPolicy::HoldAndValidate;
-			request.detection = unusualSearch();
 			request.execution = ExecutionPolicy::DeterministicDebug;
 			text += section("held", method::calibrate(detections, trueCamera().image, specification(), request));
 		}
@@ -236,8 +236,7 @@ namespace
 			resetScene();
 			Request request;
 			request.fitnessProfile = "reconstruction/99";
-			request.detection = unusualSearch();
-			text += section("refused", method::calibrate(footage(scene().frames), specification(), request));
+			text += section("refused", method::calibrate(footage(scene().frames), specification(), unusualSearch(), request));
 		}
 
 		return text;

@@ -5367,8 +5367,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       - CONTEXT.md, which gains *held-out frame*, *focal sweep*, *held parameter* and *accepted
         attempt*, and amends *Targetless calibration*, *Feature-track extraction*, *Calibration
         method* and *Calibration attempt*.
-   1. **The calibration request and its record become method-neutral.** *(Two commits, 1a and 1b;
-      see below.)*
+   1. **The calibration request and its record become method-neutral.** *(Built 2026-10-12 as two
+      commits, 1a and 1b; see below.)*
       - First, a golden test in `test-camera-calibration`. It prints every field of four stand-in
         board calibration reports (Ready, Rejected, a held model, and a failure before detection),
         snapped to a 1e-9 grid as the registration golden is.
@@ -5530,8 +5530,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    sub-slice 1 and its contracts changed in sub-slices 2 and 3.
 
    **Sub-slice 1a built (2026-10-12): a golden board calibration report.** Test code only, produced
-   by the unchanged library. `ctest -j2` **1204/1204** Debug with video, camera and Ceres on (+1: the
-   golden) and **1212/1212** Release (+1), and **1109/1109** with all three off (+1); warning-clean, format-check clean.
+   by the unchanged library. `ctest -j2` **1204/1204** Debug and **1212/1212** Release with video,
+   camera and Ceres on, and **1109/1109** with all three off (+1 each: the golden); warning-clean,
+   format-check clean.
    - **`golden/boardcalibration.txt`**, from `test_calibrationgolden.cpp` in `test-camera-calibration`.
      It prints every field of four reports, timings aside, and each report's `toString()` line, which
      sub-slice 2's sabotage needs:
@@ -5558,6 +5559,49 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        moves. That is why the stand-in's answer has both terms.
 
      The restored source was touched a second later, and its object checked to be newer.
+
+   **Sub-slice 1b built (2026-10-12): the calibration request stops naming a board.** No change in
+   behaviour: the golden passes, and 1b's diff does not touch its file. `ctest` **1206/1206** Debug
+   and **1214/1214** Release with video, camera and Ceres on, and **1111/1111** with all three off
+   (+2 each: the two cases below); warning-clean, format-check clean.
+   - **`calibration::Request` loses `detection`**, and says it is what every calibration method is
+     asked. The footage overload of `calibration::board::calibrate` takes the
+     `board::DetectionRequest` between the board and the request, registration's order: what is
+     searched for, how, then how to calibrate.
+   - **`Reproducibility` keeps what every calibration records** (sources, frames, the estimator,
+     the request) and gains `std::variant<BoardRecord> method`, where `BoardRecord {detector,
+     poseSolver, optional<DetectionRequest> detection}`. `estimator` stays shared: it is what
+     estimated the model, which for targetless calibration will be the refiner.
+   - **Registration's rules, exactly.**
+     - The footage overload records its argument first, beside the request, so a refusal before
+       any frame is decoded still says what would have been searched with.
+     - The detections overload takes no search. The record holds what the first detection reports,
+       taken in `analyse` where the detector already was, so both come from the given detections.
+       Before this, that overload recorded whatever search the caller had left in `Request`, which
+       nothing compared with the detections. With no detection at all it stays unset.
+   - **Callers, mechanically.** The node builds its search with `board::DetectionRequest`'s
+     defaults, as `registerCameras` does. The fixture harness passes the default search at its one
+     call, since no fixture has needed another. The OpenCV estimator test passes it too.
+   - **Tests.**
+     - Two new cases: footage is searched as asked and the record says how, refusal included; and
+       a calibration over given detections records the search they report.
+     - The no-backend cases check that a NoDetector refusal still records the search, and that an
+       empty set of detections records none.
+     - The node's settings case reads the record, and checks every detection was searched as the
+       node said.
+   - **Four sabotages, all caught.**
+     - The footage overload detecting with a default search: the golden at line 13, the new footage
+       case on every detection, and the node's per-detection check. The record alone cannot see it,
+       since it holds the argument whatever the frames were searched with, as registration found.
+     - `analyse` never recording the detections' search: the golden at line 179 (the held case's
+       `request detection unset`), and the new detections case.
+     - The footage overload recording its argument only after the checks: the golden at line 199
+       (the refused case), the refusal section, and the no-backend case.
+     - The node passing a default search: its settings case. The first cut did not build (`search`
+       set but not used, under `-Werror`), so the old binary answered; it was redone so it compiled,
+       and checked by the object's timestamp.
+
+     Each restored source was touched a second later, and its object checked to be newer.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover

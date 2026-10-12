@@ -216,8 +216,10 @@ namespace lain::camera::fixture
 		request.imported.reset();
 		request.importedPolicy = cal::ImportedModelPolicy::Ignore;
 
+		// The default search: no fixture has needed another yet.
 		for (const Session& session : fixture.sessions)
-			out.sessions.push_back({session.name, cal::board::calibrate(session.footage, fixture.board, request)});
+			out.sessions.push_back(
+				{session.name, cal::board::calibrate(session.footage, fixture.board, board::DetectionRequest{}, request)});
 
 		const auto ready = [](const SessionOutcome& s)
 		{ return s.report.verdict == cal::Verdict::Ready && s.report.model.has_value(); };

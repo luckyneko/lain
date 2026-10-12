@@ -465,14 +465,17 @@ namespace lain::camera::calibration::board
 						  const Request& request, const Estimator* estimator, core::Time start)
 	{
 		Diagnostics& diagnostics = report.diagnostics;
+		BoardRecord& record = std::get<BoardRecord>(report.reproducibility.method);
 		diagnostics.framesExamined = std::uint32_t(diagnostics.detections.size());
 		diagnostics.framesUsable = 0;
 		for (const cb::DetectionReport& d : diagnostics.detections)
 		{
 			if (usable(d))
 				++diagnostics.framesUsable;
-			if (report.reproducibility.detector.backend.empty())
-				report.reproducibility.detector = d.provenance;
+			if (record.detector.backend.empty())
+				record.detector = d.provenance;
+			if (!record.detection)
+				record.detection = d.request;
 		}
 
 		// Which views do what. A held model has nothing to estimate, so every usable view validates it.
@@ -540,7 +543,7 @@ namespace lain::camera::calibration::board
 		}
 		report.status = CalibrationStatus::Succeeded;
 
-		report.heldOut = validate(*report.model, board, heldOutViews, report.reproducibility.poseSolver);
+		report.heldOut = validate(*report.model, board, heldOutViews, record.poseSolver);
 		report.resampling = hold ? std::variant<ResamplingEvidence, Unavailable>{Unavailable{"the model was held, not estimated"}}
 								 : resample(calibrationViews, board, image, request, initial, *estimator);
 
@@ -585,11 +588,13 @@ namespace lain::camera::calibration::board
 		return analyse(std::move(report), image, board, request, std::get<std::unique_ptr<Estimator>>(prepared).get(), start);
 	}
 
-	Report calibrate(const media::FrameSequence& footage, const cb::Specification& board, const Request& request)
+	Report calibrate(const media::FrameSequence& footage, const cb::Specification& board,
+					 const cb::DetectionRequest& detection, const Request& request)
 	{
 		const core::Time start = core::Time::now();
 		Report report;
 		report.reproducibility.request = request;
+		std::get<BoardRecord>(report.reproducibility.method).detection = detection;
 		report.reproducibility.frames = std::uint32_t(footage.size());
 		for (std::size_t i = 0; i < footage.size(); ++i)
 		{
@@ -619,7 +624,7 @@ namespace lain::camera::calibration::board
 				[&](std::size_t i)
 				{
 					const image::Image frame = footage.image(i);
-					detections[i] = cb::detect(frame, footage.frame(i), board, request.detection);
+					detections[i] = cb::detect(frame, footage.frame(i), board, detection);
 				});
 		return analyse(std::move(report), image, board, request, std::get<std::unique_ptr<Estimator>>(prepared).get(), start);
 	}

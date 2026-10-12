@@ -1,6 +1,5 @@
 #pragma once
 
-#include "lain/camera/board/detection.h"
 #include "lain/camera/calibration/fitness.h"
 #include "lain/camera/cameramodel.h"
 #include "lain/camera/distortion.h"
@@ -25,7 +24,9 @@ namespace lain::camera::calibration
 	// (method.h).
 	using camera::ExecutionPolicy;
 
-	// A board calibration request (CONTEXT.md, "Calibration request").
+	// A calibration request (CONTEXT.md, "Calibration request"): what every calibration method is
+	// asked. What only one method uses is an argument of that method's entry point, as board
+	// calibration's detection request is calibration::board::calibrate's.
 	struct Request
 	{
 		// The distortion model to estimate, stated explicitly: automatic selection is opt-in and not
@@ -37,8 +38,6 @@ namespace lain::camera::calibration
 
 		std::string fitnessProfile = "reconstruction/1";
 		FitnessOverrides overrides;
-
-		camera::board::DetectionRequest detection; // how each frame is searched
 
 		std::uint32_t maximumViews = 30; // calibration views selected, at most
 		double heldOutFraction = 0.2;	 // of the usable views, kept out of estimation to validate on
