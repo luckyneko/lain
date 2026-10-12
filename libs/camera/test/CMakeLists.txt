@@ -23,10 +23,16 @@ target_link_libraries(test-camera-nobackend PRIVATE lain::camera lain::warnings 
 catch_discover_tests(test-camera-nobackend TEST_PREFIX "(camera) ")
 
 # The calibration method module over stand-in backends that answer from a known truth. Its own
-# executable, so those stand-ins are the only backends registered.
-add_executable(test-camera-calibration test_calibration.cpp)
+# executable, so those stand-ins are the only backends registered. The golden case compares whole
+# reports with golden/boardcalibration.txt, and writes what it produced beside the build when the two
+# differ.
+add_executable(test-camera-calibration test_calibration.cpp test_calibrationgolden.cpp)
 target_compile_features(test-camera-calibration PRIVATE cxx_std_17)
-target_link_libraries(test-camera-calibration PRIVATE lain::camera lain::testing lain::warnings Catch2::Catch2WithMain)
+target_link_libraries(test-camera-calibration
+	PRIVATE lain::camera lain::meta lain::testing lain::warnings Catch2::Catch2WithMain)
+target_compile_definitions(test-camera-calibration PRIVATE
+	LAIN_CAMERA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
+	LAIN_CAMERA_GOLDEN_OUT="${CMAKE_CURRENT_BINARY_DIR}")
 catch_discover_tests(test-camera-calibration TEST_PREFIX "(camera) ")
 
 # The board registration method module over stand-in backends answering from a known rig. Its own

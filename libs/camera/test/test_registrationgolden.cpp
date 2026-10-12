@@ -2,29 +2,20 @@
 // (golden/boardregistration.txt). It holds the registration contracts still while they are made
 // method-neutral (M9 slice 3, sub-slices 1 to 3): a change that moves only where a field lives must
 // leave this text byte-identical, and a change to what is computed cannot. Timings are left out.
-//
-// Numbers are snapped to a 1e-9 grid, then printed to nine significant digits. That hides the last
-// bits in which two platforms' maths libraries differ (an exact rig's residuals are 1e-13 or so,
-// and nothing here is near a grid boundary), while any change of computation moves them visibly.
-//
-// When the text differs, the test writes what it produced beside the build and says where. To
-// accept a deliberate change, copy that file over the golden and commit it with the change.
+// How it prints and compares is goldentext.h's, shared with the other method goldens; an exact
+// rig's residuals are 1e-13 or so, well inside its 1e-9 grid.
 //
 // The labels are the golden's own, and some name fields that have since been renamed (sub-slice 3's
 // "groups" for units, "corners" for residuals, "metres" for the absolute translation variation):
 // they stay, so the text is byte-identical across the renames.
 
+#include "goldentext.h"
 #include "syntheticrig.h"
 
 #include <lain/camera/registration/board.h>
-#include <lain/meta/enums.h>
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <cmath>
-#include <fstream>
-#include <iomanip>
-#include <locale>
 #include <sstream>
 #include <string>
 #include <variant>
@@ -33,6 +24,7 @@ using namespace lain;
 using namespace lain::camera;
 using namespace lain::camera::registration;
 using namespace lain::camera::testing;
+using namespace lain::camera::testing::golden;
 namespace method = lain::camera::registration::board;
 namespace cb = lain::camera::board;
 
@@ -40,64 +32,12 @@ namespace
 {
 	const bool kPassThrough = (rig::registerPassThroughRefiner(), true);
 
-	std::string number(double x)
-	{
-		if (std::isnan(x))
-			return "nan";
-		if (std::isinf(x))
-			return x > 0 ? "inf" : "-inf";
-		double snapped = std::abs(x) < 1e6 ? std::round(x * 1e9) / 1e9 : x;
-		if (snapped == 0)
-			snapped = 0; // never "-0"
-		std::ostringstream text;
-		text.imbue(std::locale::classic());
-		text << std::setprecision(9) << snapped;
-		return text.str();
-	}
-
-	template <typename E>
-	std::string name(E value)
-	{
-		return std::string(meta::enums::name(value));
-	}
-
 	std::string transform(const math::RigidTransformd& t)
 	{
 		const math::Quatd q = t.rotation();
 		const math::Vec3d p = t.translation();
 		return "q(" + number(q.w) + " " + number(q.x) + " " + number(q.y) + " " + number(q.z) + ") t(" + number(p.x) + " " +
 			   number(p.y) + " " + number(p.z) + ")";
-	}
-
-	std::string provenance(const Provenance& p)
-	{
-		return p.backend + "/" + p.version;
-	}
-
-	std::string scale(const cb::ScalePolicy& policy)
-	{
-		if (const auto* f = std::get_if<cb::ScaleFactor>(&policy))
-			return "factor " + number(f->factor);
-		if (const auto* l = std::get_if<cb::LongestSide>(&policy))
-			return "longest " + std::to_string(l->pixels);
-		return "native";
-	}
-
-	std::string detectionRequest(const cb::DetectionRequest& r)
-	{
-		return scale(r.scale) + ", refine native " + std::to_string(r.refineAtNativeResolution) + ", detail " +
-			   name(r.detail) + ", minimum corners " + std::to_string(r.minimumCorners);
-	}
-
-	template <typename T>
-	std::string optional(const std::optional<T>& value)
-	{
-		if (!value)
-			return "unset";
-		if constexpr (std::is_floating_point_v<T>)
-			return number(*value);
-		else
-			return std::to_string(*value);
 	}
 
 	std::string thresholds(const FitnessThresholds& t)
@@ -110,37 +50,6 @@ namespace
 	std::string edge(const GraphEdgeReport& e)
 	{
 		return e.a.value + "-" + e.b.value + " shared " + std::to_string(e.shared) + " bridge " + std::to_string(e.bridge);
-	}
-
-	// One detection, compactly: its outcome, and its corners as sums, which change if any corner does.
-	std::string detection(const cb::DetectionReport& d)
-	{
-		std::string text = name(d.status) + " " + name(d.refinement) + " by " + provenance(d.provenance);
-		text += " stats(" + std::to_string(d.stats.markersFound) + " " + std::to_string(d.stats.markersRejected) + " " +
-				std::to_string(d.stats.cornersFound) + " " + std::to_string(d.stats.cornersExpected) + ")";
-		text += " transform(" + number(d.transform.scaleX) + " " + number(d.transform.scaleY) + ")";
-		text += " request(" + detectionRequest(d.request) + ")";
-		for (const cb::RejectionReason& r : d.rejections)
-			text += " rejected(" + name(r.reason) + ": " + r.detail + ")";
-		text += " evidence " + std::to_string(d.evidence.has_value());
-		if (d.observation)
-		{
-			const cb::Observation& o = *d.observation;
-			double ids = 0, u = 0, v = 0, cov = 0;
-			for (const cb::FeatureObservation& f : o.features)
-			{
-				ids += f.id;
-				u += f.pixel.x;
-				v += f.pixel.y;
-				if (f.covariance)
-					cov += (*f.covariance)[0] + (*f.covariance)[1] + (*f.covariance)[2];
-			}
-			text += " observation(" + o.frame.toString() + ", " + std::to_string(o.image.width) + "x" +
-					std::to_string(o.image.height) + ", pattern " + o.pattern.toString().substr(0, 12) + ", " +
-					std::to_string(o.features.size()) + " corners, ids " + number(ids) + ", u " + number(u) + ", v " +
-					number(v) + ", covariance " + number(cov) + ")";
-		}
-		return text;
 	}
 
 	std::string describe(const Report& r)
@@ -300,38 +209,9 @@ namespace
 
 		return text;
 	}
-
-	std::string firstDifference(const std::string& expected, const std::string& actual)
-	{
-		std::istringstream a(expected), b(actual);
-		std::string la, lb;
-		for (std::size_t line = 1;; ++line)
-		{
-			const bool ha = static_cast<bool>(std::getline(a, la));
-			const bool hb = static_cast<bool>(std::getline(b, lb));
-			if (!ha && !hb)
-				return "none";
-			if (!ha || !hb || la != lb)
-				return "line " + std::to_string(line) + ":\n  golden:   " + (ha ? la : "<end>") + "\n  produced: " + (hb ? lb : "<end>");
-		}
-	}
 } // namespace
 
 TEST_CASE("a board registration report is exactly the committed golden", "[camera][registration][golden]")
 {
-	const std::string produced = produce();
-
-	const std::string golden = std::string(LAIN_CAMERA_GOLDEN_DIR) + "/boardregistration.txt";
-	std::ifstream in(golden, std::ios::binary);
-	std::ostringstream expected;
-	expected << in.rdbuf();
-
-	if (expected.str() != produced)
-	{
-		const std::string written = std::string(LAIN_CAMERA_GOLDEN_OUT) + "/boardregistration.txt";
-		std::ofstream(written, std::ios::binary) << produced;
-		FAIL("the report differs from " << golden << " at " << firstDifference(expected.str(), produced)
-										<< "\nwhat was produced is in " << written
-										<< "; copy it over the golden only for a deliberate change");
-	}
+	requireGolden("boardregistration.txt", produce());
 }

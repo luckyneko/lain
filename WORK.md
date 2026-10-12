@@ -5367,7 +5367,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       - CONTEXT.md, which gains *held-out frame*, *focal sweep*, *held parameter* and *accepted
         attempt*, and amends *Targetless calibration*, *Feature-track extraction*, *Calibration
         method* and *Calibration attempt*.
-   1. **The calibration request and its record become method-neutral.**
+   1. **The calibration request and its record become method-neutral.** *(Two commits, 1a and 1b;
+      see below.)*
       - First, a golden test in `test-camera-calibration`. It prints every field of four stand-in
         board calibration reports (Ready, Rejected, a held model, and a failure before detection),
         snapped to a 1e-9 grid as the registration golden is.
@@ -5519,6 +5520,44 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        - A build without Ceres offers no targetless kind, and its document reports `NoRefiner`.
 
        **Slice 4 is COMPLETE** when this lands. A gui-mode eyeball is then owed.
+
+   **Sub-slice 1 planned (2026-10-12) as two commits**, decided with the repo owner:
+   - **1a:** the golden alone, produced by the unchanged code.
+   - **1b:** the change, with the golden file untouched.
+
+   In one commit, "the golden stays byte-equal" would be a claim. Split, the history shows it: 1b's
+   diff does not touch the golden file. Slice 3 had this by ordering, since its golden landed in
+   sub-slice 1 and its contracts changed in sub-slices 2 and 3.
+
+   **Sub-slice 1a built (2026-10-12): a golden board calibration report.** Test code only, produced
+   by the unchanged library. `ctest -j2` **1204/1204** Debug with video, camera and Ceres on (+1: the
+   golden) and **1212/1212** Release (+1), and **1109/1109** with all three off (+1); warning-clean, format-check clean.
+   - **`golden/boardcalibration.txt`**, from `test_calibrationgolden.cpp` in `test-camera-calibration`.
+     It prints every field of four reports, timings aside, and each report's `toString()` line, which
+     sub-slice 2's sabotage needs:
+     1. **Ready**, through the footage, with two boardless frames and an unusual search (LongestSide
+        480, no native refinement, Detailed, 6 corners).
+     2. **Rejected**, through the footage: an estimate 3% long, seeded by an imported inverse
+        Brown-Conrady model (so only the pinhole fields seed), with overrides and changed counts.
+     3. **A held model**, over detections already made with the unusual search, under
+        DeterministicDebug.
+     4. **Refused before detection**: profile `reconstruction/99`, with the unusual search.
+
+     Where an estimate is asked for, the stand-in's answer depends on which views it was handed, so
+     the selection, the hold-out and every resample show in the numbers.
+   - **The printing and the comparison moved to `goldentext.h`**, shared with the registration
+     golden, whose text is unchanged. Sub-slice 6's targetless golden is the third user.
+   - **The stand-in estimator reports a scripted residual and uncertainty**, so those fields print
+     values rather than zeros and `unset`.
+   - **Two sabotages, both caught.**
+     - The held-out stride starting at 0: the golden fails at line 3, and so does the view-selection
+       case.
+     - Every resample draw shifted by one index: only the golden sees it, at line 7. The focal
+       variation does not move, since a shift keeps each draw's count of distinct views, and that
+       count is all the focal term reads. The principal-point term reads which views were drawn, and
+       moves. That is why the stand-in's answer has both terms.
+
+     The restored source was touched a second later, and its object checked to be newer.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover

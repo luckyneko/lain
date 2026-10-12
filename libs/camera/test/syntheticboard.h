@@ -143,6 +143,9 @@ namespace lain::camera::testing
 			[](const std::vector<board::Observation>&)
 		{ return std::optional<CameraModelParameters>{trueCamera()}; };
 		std::string failure = "the stand-in was told to fail";
+		// What it reports beside the camera: its own residual, and parameter standard deviations.
+		double rmsPixels = 0;
+		std::optional<calibration::ParameterUncertainty> uncertainty;
 
 		std::mutex mutex;
 		std::optional<CameraModelParameters> lastInitial;
@@ -177,6 +180,8 @@ namespace lain::camera::testing
 			out.parameters = script().answer(views);
 			if (!out.parameters)
 				out.failure = script().failure;
+			out.rmsPixels = script().rmsPixels;
+			out.uncertainty = script().uncertainty;
 			std::lock_guard<std::mutex> lock(script().mutex);
 			script().lastInitial = initial;
 			++script().estimates;
@@ -221,6 +226,8 @@ namespace lain::camera::testing
 		s.estimatable = {DistortionModel::BrownConrady5};
 		s.answer = [](const std::vector<board::Observation>&)
 		{ return std::optional<CameraModelParameters>{trueCamera()}; };
+		s.rmsPixels = 0;
+		s.uncertainty.reset();
 		s.lastInitial.reset();
 		s.estimates = 0;
 	}
