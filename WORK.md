@@ -5379,13 +5379,16 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       - The node, the fixture harness and the tests change mechanically, and the golden stays
         byte-equal.
       - Sabotage: board calibration searching with a default detection request fails the golden.
-   2. **The report, its diagnostics and fitness become method-neutral.**
+   2. **The report, its diagnostics and fitness become method-neutral.** *(Planned in detail
+      2026-10-13 as two commits, 2a and 2b; see below.)*
       - `HeldOutEvidence{views, residuals, viewsWithoutPose, rmsAngle, rmsPixels, worstPixels}`.
       - `ResamplingEvidence` able to say the principal point was held.
       - A shared `Diagnostics{viewsSelected, viewsHeldOut, coverage, fitRmsPixels, selected, heldOut}`,
         plus `method = std::variant<BoardDiagnostics{framesExamined, framesUsable, detections}>`.
       - `toString`'s method clause through `std::visit`.
-      - `Failure` gains what targetless calibration refuses with.
+      - ~~`Failure` gains what targetless calibration refuses with.~~ *Moved to sub-slice 9
+        (2026-10-13)*, beside the code that returns each one, as registration's arrived in its
+        sub-slice 8b.
       - An empty `fitnessProfile` means the method's own. This changes the golden on purpose, in the
         lines that print the request; the diff is checked before it is accepted.
       - Sabotage: the board clause left out of `toString` fails the golden, which prints it.
@@ -5460,7 +5463,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       - `calibrate(footage, settings, request)` and `calibrate(trackSet, image, settings, request)`.
       - Steps:
         1. the checks: `NoFeatureExtractor`, `NoFeatureMatcher`, `NoGeometrySolver`, `NoRefiner`, a
-           model the refiner cannot estimate, the imported model's applicability;
+           model the refiner cannot estimate, the imported model's applicability. Each `Failure`
+           this method returns that board calibration does not is added here, beside the code that
+           returns it (moved from sub-slice 2, 2026-10-13);
         2. the held-out frames;
         3. the starting model: imported, or the focal sweep;
         4. the reconstruction, then the cheirality filter;
@@ -5468,7 +5473,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
            `CameraModel::create`;
         6. the held-out frames posed and measured;
         7. the track bootstrap, and coverage;
-        8. the verdict against `reconstruction-targetless/1`.
+        8. the verdict against `reconstruction-targetless/1`, through sub-slice 2's
+           `calibration::judge`, as board's is.
       - All three imported-model policies. HoldAndValidate reconstructs with the model held, and is
         at most Exploratory, as board's is.
       - Tests, over stand-ins and through Ceres:
@@ -5602,6 +5608,100 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        and checked by the object's timestamp.
 
      Each restored source was touched a second later, and its object checked to be newer.
+
+   **Sub-slice 2 planned (2026-10-13) as two commits**, decided with the repo owner:
+   - **2a:** everything that leaves the golden byte-equal: the diagnostics split, the held-out rename,
+     `toString`'s visit, the held principal point and the verdict. 2a's diff does not touch the golden.
+   - **2b:** the method's own profile, whose diff changes exactly three golden lines.
+
+   In one commit, the golden's three-line diff would have to be trusted to come only from the profile.
+   Split, the history shows it, as it does for 1a and 1b.
+
+   Decided with the repo owner, settling what the plan left open:
+   - **The held principal point is `std::variant<double, Held>`**: `ResamplingEvidence::
+     principalPointVariation`, with an empty `calibration::Held`. Every reader has to say what it does
+     with a held one, and held cannot be mistaken for missing evidence, which Ready refuses.
+     `std::optional<double>` was the alternative: nullopt already means "missing" in
+     `ParameterUncertainty`, and the verdict treats missing and held oppositely.
+   - **The verdict is a public `calibration::judge`**, lifted from `board.cpp`'s file-local `meets` and
+     declared in `report.h`, beside the evidence it reads:
+     `Judgement judge(const FitnessProfile&, std::uint32_t views, double coverage, heldOut, resampling)`.
+     - `Judgement {verdict, notes}`, the notes exactly what `fitnessNotes` holds today: Ready's
+       shortfalls, then Exploratory's when that tier fails too.
+     - Board calls it now and targetless calibration in sub-slice 9, so the held rule is one function.
+       It is tested directly now, although nothing produces a held principal point until 9.
+     - Registration's `judge` is private. The difference is that this rule changes before its second
+       caller exists. A private shared module, and leaving it in `board.cpp`, were the alternatives;
+       both leave the held case untested until sub-slice 9.
+   - **No new `Failure` here.** The plan's bullet moves to sub-slice 9: nothing returns one until then,
+     and registration added its targetless failures in its sub-slice 8b, beside the code returning them.
+
+   Taken by precedent:
+   - **No `IncompatibleFitnessProfile`, and no unit on `FitnessProfile`.** Registration needed both
+     because its counts change unit between methods. Calibration's criteria mean the same in both
+     (ADR-0016), so a board calibration held to the targetless profile is a looser acceptance, which
+     the plan sanctions ("a looser acceptance is a looser profile").
+
+   Found while planning, and recorded in CONTEXT.md's *Held parameter* and ADR-0016:
+   - **A held parameter is part of an estimate; a held model is not an estimate.** Applied to
+     HoldAndValidate, "a held parameter's criterion does not apply" would exempt every criterion and
+     let a held model reach Ready. So `Held` lives inside `ResamplingEvidence`, for an estimated model
+     whose principal point was held, and a held model's resampling stays `Unavailable` ("the model was
+     held, not estimated"). HoldAndValidate stays at most Exploratory, in both methods.
+
+   **2a: the report and its diagnostics stop naming a board, and the principal point can be held.**
+   - `HeldOutEvidence::corners` becomes `residuals`. `viewsWithoutPose` keeps its name; its comment
+     says the pose is a board's, or in targetless calibration a frame's against the landmarks.
+   - `Diagnostics {viewsSelected, viewsHeldOut, coverage, fitRmsPixels, selected, heldOut}`, plus
+     `std::variant<BoardDiagnostics> method`, where `BoardDiagnostics {framesExamined, framesUsable,
+     detections}`.
+     - `selected` and `heldOut` are positions among the frames examined (board: of the detections, one
+       per frame).
+     - A default `Report` is a board report, so sub-slice 9's refusals set the targetless
+       alternatives, as registration's targetless node had to.
+   - `toString` prints the shared clauses, then `std::visit` to one `methodSummary` per alternative
+     (board's: ", 38 of 40 frames usable"), then the fitness note. That is today's order, so board's
+     line is byte-identical, and a method without a summary does not compile.
+   - `ResamplingEvidence::principalPointVariation` becomes `std::variant<double, Held>`. Board always
+     measures it.
+   - `calibration::judge` as above. A held principal point's criterion adds no note and does not count
+     as missing evidence for Ready; an `Unavailable` resampling still does.
+   - Callers, mechanically:
+     - `board.cpp` (`validate`, `resample`, `analyse`, both entry points) and `report.cpp`;
+     - `test_calibration`, `test_nodes`, and the OpenCV `test_estimator`;
+     - the fixture harness: its two reads of `detections`, and its agreement bound, which reads the
+       principal-point variation with `std::get<double>`. A board calibration never holds it, and a
+       held one would throw there rather than become a zero bound.
+   - **The golden printer keeps its labels** ("corners", "diagnostics.framesExamined") while reading
+     the moved fields, with a comment saying why, as the registration golden did in slice 3.
+   - New tests, `judge` over hand-built evidence:
+     - the Ready tier met with a held principal point: Ready, no note;
+     - a held principal point beside a focal variation over its bound: the focal note alone;
+     - resampling `Unavailable`: Ready refused with its reason, Exploratory still reachable;
+     - Ready failing and Exploratory failing: the notes in board's order.
+
+     Each variant is constructed, never reassigned. In registration's slice 3, GCC 13 at `-O3` raised
+     a false `-Wmaybe-uninitialized` on a reassigned `heldOut`, so the Release build is the check.
+   - Sabotages:
+     - the board clause left out of `toString`: the golden at lines 59, 121 and 181;
+     - a held principal point counted as missing evidence for Ready: the first `judge` case;
+     - a held principal point judged as over its bound: the first two `judge` cases.
+
+   **2b: an empty profile is the method's own.**
+   - `Request::fitnessProfile` defaults to `""`. Board resolves it to `reconstruction/1` before looking
+     it up, and records the request exactly as given. Sub-slice 9 lifts that rule into a helper both
+     methods call, as registration's `resolveProfile` is.
+   - The node's `fitnessProfile` param default follows the request, as the registration nodes' did in
+     8a. No committed example holds a `calibrateCamera` node, so the example builder's bytes are
+     unchanged.
+   - **The golden changes in exactly three lines**, 55, 117 and 177: the ready, rejected and held
+     request records read `profile (method's)`, printed as the registration golden prints it. The
+     refused case names `reconstruction/99` and stays. The produced file is diffed against the golden
+     before it is copied over.
+   - New tests: the empty name is the method's own profile, and so is `reconstruction/1` named, with
+     one verdict either way; `fitnessProfile("")` has no value, since the empty name is a request's.
+   - Sabotage: board writing the resolved name back into the recorded request fails the golden's three
+     request lines.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover

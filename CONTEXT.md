@@ -589,7 +589,10 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
 - **Held parameter** — a camera-model parameter a calibration keeps at its starting value rather than
   estimating, such as targetless calibration's principal point by default. It has no resampled
   variation, so a report says it was held and the fitness criterion on it does not apply; its variation
-  is never recorded as zero. _Avoid_: fixed parameter when a held one is meant, zero variation.
+  is never recorded as zero. A held parameter is part of an estimate: a held MODEL (the
+  HoldAndValidate policy) estimated nothing, so its resampling evidence is unavailable and it is at most
+  Exploratory, rather than exempt from every criterion. _Avoid_: fixed parameter when a held one is
+  meant, zero variation.
 - **Held-out frame** — a sampled frame kept out of a targetless calibration's reconstruction so it can
   validate the model, as a held-out board view does in board calibration. It is posed afterwards against
   the reconstructed landmarks with the model held, and the angles between its observed and predicted

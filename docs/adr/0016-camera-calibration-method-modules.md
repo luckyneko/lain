@@ -498,7 +498,11 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
 - **The principal point is held by default**, at the image centre or at an imported model's, because
   self-calibration conditions it poorly. A setting of the method frees it. A **held parameter** is not
   estimated, so it has no resampled variation. The report says it was held, and the fitness criterion
-  on it does not apply; its variation is never recorded as zero.
+  on it does not apply; its variation is never recorded as zero. *(Scoped 2026-10-13, while planning
+  sub-slice 2:)* a held parameter is part of an estimate. A model held whole under HoldAndValidate
+  estimated nothing, so its resampling evidence stays unavailable and it is at most Exploratory; read
+  without that limit, the rule would exempt every criterion and let a held model reach Ready. So the
+  report says "held" inside its resampling evidence, never in place of it.
 - **The refiner estimates the model, through the one projection implementation.** The refiner seam
   moves from `lain::camera::registration` to `lain::camera::refinement`, so calibration does not depend
   on its sibling: the precedent is the board pose seam, which moved to `lain::camera::board` for the
