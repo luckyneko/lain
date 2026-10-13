@@ -5275,8 +5275,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - **The refiner seam leaves `registration`, and gains free models.** Calibration may not depend
      on registration, since ADR-0016 keeps the siblings apart. Slice 2 met the same problem with the
      board pose seam and moved it to `camera::board`.
-     - `registration/refiner.h` moves to `lain/camera/refinement.h` (`lain::camera::refinement`),
-       with the noise model and the robust loss, and using-declarations at the old names.
+     - `registration/refiner.h` moves to `lain/camera/refinement/refiner.h`
+       (`lain::camera::refinement`), with the noise model and the robust loss, and the old names left
+       in registration. *(The path and two names settled 2026-10-13; sub-slice 3's plan, below.)*
      - Its `Problem` gains cameras that share one model, and a model whose parameters are free. A
        moving camera's frames are the problem's cameras, with one model between them.
      - Registration never frees a model, so joint intrinsic and extrinsic registration stays out of
@@ -5392,9 +5393,10 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       - An empty `fitnessProfile` means the method's own. This changes the golden on purpose, in the
         lines that print the request; the diff is checked before it is accepted.
       - Sabotage: the board clause left out of `toString` fails the golden, which prints it.
-   3. **The refinement seam moves to `lain::camera`.**
-      - `lain/camera/refinement.h`, with `NoiseModel`, `RobustLoss` and `LossFamily` beside it, and
-        using-declarations at the old names.
+   3. **The refinement seam moves to `lain::camera::refinement`.** *(Planned in detail 2026-10-13 as
+      one commit; see below.)*
+      - `lain/camera/refinement/refiner.h`, with `NoiseModel`, `RobustLoss` and `LossFamily` beside
+        it, and the old names left in registration.
       - The Ceres plugin implements the moved seam, unchanged in behaviour.
       - The registration golden stays byte-equal.
    4. **The projection kernels become scalar-generic in their parameters.**
@@ -5761,6 +5763,96 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - **Sabotage, caught:** board writing the resolved name back into the recorded request fails the
      golden at exactly 55, 117 and 177, and the new case. The restored source was compared byte for
      byte, touched a second later, and its object checked to be newer.
+
+   **Sub-slice 3 planned (2026-10-13) as one commit.** It moves the seam and changes no behaviour, so
+   the registration and calibration goldens are the regression test and the diff touches neither.
+
+   Decided with the repo owner:
+   - **The seam gets a directory**: `lain/camera/refinement/refiner.h` and
+     `src/refinement/refiner.cpp`, namespace `lain::camera::refinement`. The plan wrote
+     `lain/camera/refinement.h`, but every header at the camera root is in `lain::camera` itself, and
+     every sub-namespace has a directory. `capture/` already holds a namespace with one header.
+   - **Two names lose their stutter.**
+     - `RefinementStatus` becomes `refinement::Status`, as `feature::Status` is.
+     - `RefinementObservation` becomes `refinement::BodyObservation`, which pairs with
+       `LandmarkObservation`.
+
+     Registration keeps both old names as aliases, so its code, its report's `RefinementSummary` and
+     the golden read as before. No field is renamed, since a field cannot be aliased:
+     `Problem::observations` keeps its name, and sub-slice 5 is where the problem's shape changes.
+   - **The dependency direction is stated, not guarded.** The refinement header says it includes
+     nothing from registration or calibration, and why. Nothing in the tree enforces ADR-0016's
+     separation today. A guard should cover the whole rule (calibration and the shared seams include
+     no registration header, and registration none of calibration's), so it is left as an option for
+     a commit of its own.
+
+   Taken by precedent (slice 3's `rig.h` and `scalepolicy.h` moves):
+   - **Each old header keeps exporting what it declared**, so no caller's include changes.
+     - `registration/refiner.h` includes the new header and names the seam in registration:
+       using-declarations for `Problem`, `Solution`, `LandmarkObservation`, `Refiner`,
+       `refinerRegistry`, `canRefine` and `refine`, plus the two aliases.
+     - `registration/request.h` includes it too, and names `NoiseModel`, `LossFamily` and
+       `RobustLoss`. The include now runs the other way: today `refiner.h` includes `request.h` for
+       them.
+   - **Argument-dependent lookup is unaffected.**
+     - No moving type has a `serialize`, a `toString` or an operator, and the enums are printed by
+       name through `meta::enums`.
+     - flowview's `lossFamily` codec and editor are keyed by `type_index`, which an alias does not
+       change.
+     - `meta::typeName<LossFamily>()` does change, but nothing stores or prints it.
+
+   Which spelling a caller uses:
+   - **Code that implements the seam, or asks whether a backend exists, spells `refinement::`.**
+     - The Ceres plugin: `CeresRefiner`, `registerBackend`, and its tests. `test_landmarks.cpp`
+       switches its directive. `test_refiner.cpp` adds the refinement directive beside
+       registration's, since it also runs board registration. Both directives reach one entity
+       through the using-declarations, so no lookup is ambiguous.
+     - The stand-ins: `PassThroughRefiner` (`libs/camera/test`) and `NullRefiner` (camera::flow's
+       tests).
+     - The kinds table's two `canRefine()` calls, which sub-slice 11's calibration rows will make too,
+       and the tests that register a refiner or expect one. These are camera::flow's
+       `test_registration.cpp` and `test_targetlesskinds.cpp`, and flowview's
+       `test_cameravertical.cpp`.
+     - `test_nobackend`'s refinement case, which tests the facade. It is renamed "with no backend, a
+       refinement says the capability is missing".
+   - **Registration's own code, its report and its callers keep the names registration exports**:
+     `board.cpp`, `targetless.cpp`, `validation.cpp`, `report.h`, the node's `loss` param, and
+     flowview's codec and editor. They are registration's request and report, found where their
+     callers look.
+   - **Comments that describe the seam say "refiner", not "registration refiner"**: the plugin's
+     CMakeLists, `register.h`, `ceresrefiner.h` and `test_jet.cpp`. The library's CMakeLists names
+     `lain::camera::refinement` among its namespaces.
+   - **The facade's missing-backend text drops "registration"**: "this build has no refiner
+     (configure with -DLAIN_CAMERA_CERES=ON)", since calibration will read it too. Registration's own
+     three `NoRefiner` texts keep their wording: it is registration's, and still true.
+
+   Left where it is:
+   - **`RefinementSummary` stays in registration's report.** Sub-slice 9 decides whether targetless
+     calibration's report shares it, beside its second user. Moving it then takes one more
+     using-declaration.
+   - **`ApplicabilityPolicy` is registration's.** Calibration has its imported-model policies.
+
+   Verification:
+   - Debug and Release with video, camera and Ceres on, and all three off. The counts stay 1211, 1219
+     and 1116, since one case is renamed and none is added. Warning-clean, format-check clean.
+   - The diff touches no golden file.
+   - A grep: the refinement header and source include nothing from `registration/` or
+     `calibration/`, and calibration includes no registration header (none does today).
+
+   Sabotages:
+   - **A copied seam, not a moved one**: registration answering `canRefine()` from a registry of its
+     own, while every backend registers into refinement's. The predicted failures:
+     - the registration golden, whose reports refuse with `NoRefiner`;
+     - test-camera-registration's cases;
+     - the Ceres plugin's board and targetless registration cases;
+     - flowview's camera vertical, which asks refinement whether to expect a registration.
+
+     The seam's own tests pass. This is ADR-0017's one production path, checked. The sabotage copies
+     `canRefine` and not `refine`: a copied `refine` should not build, because argument-dependent
+     lookup on the moved `Problem` also finds refinement's, which makes the unqualified call ambiguous.
+     `canRefine()` takes no argument, so nothing like that protects it.
+   - **Not caught, as decided**: the refinement header including `registration/request.h` again.
+     Every test passes, and only the grep above sees it.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover

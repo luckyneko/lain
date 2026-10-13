@@ -138,7 +138,10 @@ is a bundle adjustment with the camera model free. ADR-0016 keeps calibration an
 calibration cannot use `registration::Refiner` where it lives. The seam moves to
 `lain::camera::refinement`, with the noise model and the robust loss, and using-declarations are left at
 the old names: the move the board pose seam made in slice 2. It stays one production path: the Ceres
-plugin fills the moved seam, and neither method gets a refiner of its own.
+plugin fills the moved seam, and neither method gets a refiner of its own. *(Settled 2026-10-13, while
+planning sub-slice 3:)* the header is `lain/camera/refinement/refiner.h`, since every sub-namespace of
+`lain::camera` has a directory. Two names lose their stutter there, `refinement::Status` and
+`refinement::BodyObservation`, and registration keeps their old names as aliases.
 
 **A problem's cameras may share a model, and a model may be free.** A moving camera's sampled frames are
 the problem's cameras, and they share one model. Each model then states which of its parameters move:
