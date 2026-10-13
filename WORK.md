@@ -2445,8 +2445,8 @@ it is the capture, which only the repo owner can make. **Slice 2** (fixed-camera
 sub-slices (below), and **all eleven are built** (2026-10-09); a gui-mode eyeball of its node is
 owed. The repo owner kept the provisional values sub-slice 9 measured, and queued three changes to
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
-graph fallback) was planned 2026-10-12 as thirteen sub-slices (below); only sub-slice 0, the plan
-itself, is built.
+graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan) and 1
+(as 1a and 1b) are built, and of sub-slice 2's two commits, 2a.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -5702,6 +5702,44 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      one verdict either way; `fitnessProfile("")` has no value, since the empty name is a request's.
    - Sabotage: board writing the resolved name back into the recorded request fails the golden's three
      request lines.
+
+   **Sub-slice 2a built (2026-10-13): the report and its diagnostics stop naming a board, and the
+   principal point can be held.** No change in behaviour: the golden passes, and 2a's diff does not
+   touch its file. `ctest` **1210/1210** Debug and **1218/1218** Release with video, camera and Ceres
+   on, and **1115/1115** with all three off (+4 each: the `judge` cases); warning-clean, format-check
+   clean.
+   - **As planned:**
+     - `HeldOutEvidence::residuals`;
+     - `BoardDiagnostics {framesExamined, framesUsable, detections}` in
+       `Diagnostics::method`;
+     - `toString`'s board clause through `std::visit` to a `methodSummary` overload;
+     - `ResamplingEvidence::principalPointVariation` as `std::variant<double, Held>`;
+     - a public `calibration::judge` returning a `Judgement {verdict, notes}`.
+   - **`judge` is defined in `report.cpp`**, beside `toString`, and declared in `report.h` as planned.
+     Board's file-local `meets` moved there unchanged except for the held arm: a Held principal point
+     adds no note in either tier and is not missing evidence. Every note's text is the old one, which
+     the golden's `note` lines pin.
+   - **Small additions:**
+     - The clean-scene case now asserts that board calibration measures the principal point's spread.
+       It is not exactly zero, as the focal spread is: the stand-in's exact answers vary the principal
+       point by 2e-16 of floating-point noise, so the check is `< 1e-12`. The first cut asked for
+       `== 0` and failed on that.
+     - The fixture harness reads a session's detections through one `detectionsOf`, used at both of
+       its call sites.
+     - The golden printer reads the held principal point through `get_if` and prints `held`, which
+       no board report reaches. There is no overloaded-lambda helper in the tree, and a test was not
+       the place to add one.
+   - **Three sabotages, all caught**, on the Release tree:
+     - The board clause left out of `toString`: the golden at line 59. The produced file differs at
+       exactly 59, 121 and 181, the three `toString` lines of the reports with a model. To keep it
+       building, the visit was voided rather than deleted, so `methodSummary` stayed used.
+     - A held principal point counted as missing evidence for Ready: the first `judge` case, and the
+       second as well, since its focal note gains a second note beside it. The plan predicted the
+       first alone.
+     - A held principal point judged as over its bound: the first two cases, as predicted.
+
+     The restored source was compared byte for byte with the saved original, touched a second later,
+     and its object checked to be newer before the suite was run green again.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -10861,8 +10899,9 @@ row here**. A row is cheap to delete and expensive to leave.
   its detail lives:
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
-       sub-slices, with only sub-slice 0 (the plan) built. The separate feature-extraction node
-       slice 3 deferred to it stays deferred, with its trigger restated (slice 4's plan).
+       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), and 2a of sub-slice 2's two commits. The
+       separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
+       restated (slice 4's plan).
   2. **Owed by the repo owner.**
      - **The real-camera capture** for slice 1, sub-slice 8, guided by
        `plugins/camera/test/fixtures/README.md`. It is all that is left of slice 1.

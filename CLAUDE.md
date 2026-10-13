@@ -1400,6 +1400,33 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-13 — M9 slice 4, sub-slice 2a: the calibration report stops naming a board, and a principal point can be held
+
+The first of sub-slice 2's two commits, chosen by the repo owner so that 2b's three golden lines
+show on their own. No change in behaviour: the board calibration golden passes, and 2a's diff does
+not touch its file. `ctest` **1210/1210** Debug and **1218/1218** Release with video, camera and
+Ceres on, **1115/1115** with all three off (+4 each); warning-clean, format-check clean. Full notes
+in WORK.md's *Sub-slice 2a built* under M9 slice 4.
+
+- **The report is method-neutral, as registration's became in slice 3:**
+  - `HeldOutEvidence::residuals` replaces `corners`;
+  - `Diagnostics` keeps what every method reports, plus `std::variant<BoardDiagnostics> method`,
+    which holds the frames examined, the frames usable and the detections;
+  - `toString`'s board clause goes through `std::visit`, so a method without a summary does not
+    compile.
+- **A principal point can be held**: `ResamplingEvidence::principalPointVariation` is
+  `std::variant<double, Held>`. Held is not missing evidence (which Ready refuses) and never a zero.
+  Board calibration always measures it. Nothing produces a held one until sub-slice 9.
+- **The verdict is a public `calibration::judge`**, board's former file-local `meets` with one new
+  arm: a Held principal point adds no note in either tier. Its four new cases test that rule now,
+  before anything holds a principal point. Every note's text is unchanged, which the golden pins.
+- **Callers changed mechanically:** board.cpp, the golden printer (it keeps its old labels), the
+  calibration, node and OpenCV estimator tests, and the fixture harness. The harness reads its
+  principal-point bound with `std::get<double>`, so a held one would throw rather than become a zero
+  bound.
+- **Three sabotages, all caught.** One caught more than predicted: counting a held principal point as
+  missing evidence also fails the second `judge` case, not only the first.
+
 ### Update 2026-10-12 — M9 slice 4, sub-slice 1: the calibration request stops naming a board
 
 Two commits, split by the repo owner so the history shows that the change leaves the golden

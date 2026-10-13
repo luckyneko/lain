@@ -358,7 +358,8 @@ TEST_CASE("calibrateCamera hands its settings to the method", "[camera][flow]")
 		CHECK_FALSE(searched.refineAtNativeResolution);
 		CHECK(searched.minimumCorners == 6);
 		// Every frame was searched as the node said, not only recorded so.
-		for (const board::DetectionReport& d : report.diagnostics.detections)
+		for (const board::DetectionReport& d :
+			 std::get<camera::calibration::BoardDiagnostics>(report.diagnostics.method).detections)
 		{
 			const auto* longest = std::get_if<board::LongestSide>(&d.request.scale);
 			CHECK((longest != nullptr && longest->pixels == 800));

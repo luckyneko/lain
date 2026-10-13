@@ -368,7 +368,7 @@ TEST_CASE("footage of a distorted camera calibrates to that camera, end to end",
 	request.resamples = 8;
 	const Report report = method::calibrate(footage, spec, cb::DetectionRequest{}, request);
 
-	CHECK(report.diagnostics.framesUsable >= 25);
+	CHECK(std::get<BoardDiagnostics>(report.diagnostics.method).framesUsable >= 25);
 	requireRecovered(report, truth);
 	const auto* heldOut = std::get_if<HeldOutEvidence>(&report.heldOut);
 	REQUIRE(heldOut != nullptr);

@@ -217,12 +217,12 @@ namespace lain::camera::calibration::board
 			angles += residual.sumSquaredAngle;
 			pixels += residual.sumSquaredPixels;
 			evidence.worstPixels = std::max(evidence.worstPixels, residual.worstPixels);
-			evidence.corners += residual.corners;
+			evidence.residuals += residual.corners;
 		}
-		if (evidence.corners == 0)
+		if (evidence.residuals == 0)
 			return Unavailable{"no held-out corner could be measured: no board pose was recovered"};
-		evidence.rmsAngle = std::sqrt(angles / evidence.corners);
-		evidence.rmsPixels = std::sqrt(pixels / evidence.corners);
+		evidence.rmsAngle = std::sqrt(angles / evidence.residuals);
+		evidence.rmsPixels = std::sqrt(pixels / evidence.residuals);
 		return evidence;
 	}
 
@@ -274,43 +274,6 @@ namespace lain::camera::calibration::board
 		const double focal = (average(fx) + average(fy)) / 2;
 		evidence.principalPointVariation = std::max(deviation(cx), deviation(cy)) / focal;
 		return evidence;
-	}
-
-	// Whether the evidence meets one tier. `complete` demands every criterion's evidence be present
-	// (Ready); otherwise a criterion whose evidence is unavailable is not held against it. Notes say
-	// what fell short.
-	static bool meets(const FitnessThresholds& t, const char* tier, bool complete, std::uint32_t views, double covered,
-					  const std::variant<HeldOutEvidence, Unavailable>& heldOut,
-					  const std::variant<ResamplingEvidence, Unavailable>& resampling, std::vector<std::string>& notes)
-	{
-		bool ok = true;
-		const auto note = [&](std::string text)
-		{
-			notes.push_back(std::string(tier) + ": " + std::move(text));
-			ok = false;
-		};
-		if (views < t.minimumViews)
-			note(std::to_string(views) + " views, fewer than " + std::to_string(t.minimumViews));
-		if (covered < t.minimumCoverage)
-			note("coverage " + std::to_string(covered) + " is below " + std::to_string(t.minimumCoverage));
-		if (const auto* e = std::get_if<HeldOutEvidence>(&heldOut))
-		{
-			if (e->rmsAngle > t.maximumHeldOutAngle)
-				note("held-out RMS angle " + std::to_string(e->rmsAngle) + " rad exceeds " + std::to_string(t.maximumHeldOutAngle));
-		}
-		else if (complete)
-			note("no held-out evidence: " + std::get<Unavailable>(heldOut).reason);
-		if (const auto* e = std::get_if<ResamplingEvidence>(&resampling))
-		{
-			if (e->focalVariation > t.maximumFocalVariation)
-				note("focal variation " + std::to_string(e->focalVariation) + " exceeds " + std::to_string(t.maximumFocalVariation));
-			if (e->principalPointVariation > t.maximumPrincipalPointVariation)
-				note("principal point variation " + std::to_string(e->principalPointVariation) + " rad exceeds " +
-					 std::to_string(t.maximumPrincipalPointVariation));
-		}
-		else if (complete)
-			note("no resampling evidence: " + std::get<Unavailable>(resampling).reason);
-		return ok;
 	}
 
 	// --- the public pieces --------------------------------------------------------
@@ -465,13 +428,14 @@ namespace lain::camera::calibration::board
 						  const Request& request, const Estimator* estimator, core::Time start)
 	{
 		Diagnostics& diagnostics = report.diagnostics;
+		BoardDiagnostics& examined = std::get<BoardDiagnostics>(diagnostics.method);
 		BoardRecord& record = std::get<BoardRecord>(report.reproducibility.method);
-		diagnostics.framesExamined = std::uint32_t(diagnostics.detections.size());
-		diagnostics.framesUsable = 0;
-		for (const cb::DetectionReport& d : diagnostics.detections)
+		examined.framesExamined = std::uint32_t(examined.detections.size());
+		examined.framesUsable = 0;
+		for (const cb::DetectionReport& d : examined.detections)
 		{
 			if (usable(d))
-				++diagnostics.framesUsable;
+				++examined.framesUsable;
 			if (record.detector.backend.empty())
 				record.detector = d.provenance;
 			if (!record.detection)
@@ -482,15 +446,15 @@ namespace lain::camera::calibration::board
 		const bool hold = request.importedPolicy == ImportedModelPolicy::HoldAndValidate;
 		ViewSplit split;
 		if (hold)
-			split.heldOut = canonicalUsable(diagnostics.detections);
+			split.heldOut = canonicalUsable(examined.detections);
 		else
-			split = splitViews(diagnostics.detections, board, request);
+			split = splitViews(examined.detections, board, request);
 		diagnostics.selected = split.calibration;
 		diagnostics.heldOut = split.heldOut;
 		diagnostics.viewsSelected = std::uint32_t(split.calibration.size());
 		diagnostics.viewsHeldOut = std::uint32_t(split.heldOut.size());
-		const std::vector<cb::Observation> calibrationViews = observationsAt(diagnostics.detections, split.calibration);
-		const std::vector<cb::Observation> heldOutViews = observationsAt(diagnostics.detections, split.heldOut);
+		const std::vector<cb::Observation> calibrationViews = observationsAt(examined.detections, split.calibration);
+		const std::vector<cb::Observation> heldOutViews = observationsAt(examined.detections, split.heldOut);
 		{
 			std::vector<const cb::Observation*> supporting;
 			for (const cb::Observation& v : hold ? heldOutViews : calibrationViews)
@@ -508,7 +472,7 @@ namespace lain::camera::calibration::board
 			if (calibrationViews.size() < kMinimumCalibrationViews)
 				return failed(std::move(report), start, Failure::TooFewViews,
 							  std::to_string(calibrationViews.size()) + " usable calibration views of " +
-								  std::to_string(diagnostics.framesExamined) + " frames; at least " +
+								  std::to_string(examined.framesExamined) + " frames; at least " +
 								  std::to_string(kMinimumCalibrationViews) + " are needed");
 
 			// The Initial policy seeds the estimate. Every parameter only when the imported model is
@@ -549,17 +513,9 @@ namespace lain::camera::calibration::board
 
 		// The verdict. A held model is judged on the views that validated it.
 		const std::uint32_t supportingViews = hold ? diagnostics.viewsHeldOut : diagnostics.viewsSelected;
-		std::vector<std::string> readyNotes, exploratoryNotes;
-		if (meets(report.thresholds.ready, "Ready", true, supportingViews, diagnostics.coverage, report.heldOut,
-				  report.resampling, readyNotes))
-			report.verdict = Verdict::Ready;
-		else if (meets(report.thresholds.exploratory, "Exploratory", false, supportingViews, diagnostics.coverage,
-					   report.heldOut, report.resampling, exploratoryNotes))
-			report.verdict = Verdict::Exploratory;
-		else
-			report.verdict = Verdict::Rejected;
-		report.fitnessNotes = readyNotes;
-		report.fitnessNotes.insert(report.fitnessNotes.end(), exploratoryNotes.begin(), exploratoryNotes.end());
+		Judgement judgement = judge(report.thresholds, supportingViews, diagnostics.coverage, report.heldOut, report.resampling);
+		report.verdict = judgement.verdict;
+		report.fitnessNotes = std::move(judgement.notes);
 
 		report.elapsed = core::Time::now() - start;
 		return report;
@@ -584,7 +540,7 @@ namespace lain::camera::calibration::board
 				report.reproducibility.sources.end())
 				report.reproducibility.sources.push_back(source);
 		}
-		report.diagnostics.detections = detections;
+		std::get<BoardDiagnostics>(report.diagnostics.method).detections = detections;
 		return analyse(std::move(report), image, board, request, std::get<std::unique_ptr<Estimator>>(prepared).get(), start);
 	}
 
@@ -618,7 +574,7 @@ namespace lain::camera::calibration::board
 			return std::move(*failure);
 
 		// Detect in every frame, one decoded frame per task.
-		std::vector<cb::DetectionReport>& detections = report.diagnostics.detections;
+		std::vector<cb::DetectionReport>& detections = std::get<BoardDiagnostics>(report.diagnostics.method).detections;
 		detections.resize(footage.size());
 		forEach(footage.size(), request.execution,
 				[&](std::size_t i)

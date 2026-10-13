@@ -70,15 +70,20 @@ namespace
 		out << "thresholds " << r.thresholds.name << " ready(" << thresholds(r.thresholds.ready) << ") exploratory("
 			<< thresholds(r.thresholds.exploratory) << ")\n";
 
+		// The labels are the ones the board-shaped report had (sub-slice 2a renamed and moved the
+		// fields), so a change that only moves a field leaves the golden byte-identical.
 		if (const auto* h = std::get_if<HeldOutEvidence>(&r.heldOut))
-			out << "heldOut views " << h->views << " corners " << h->corners << " withoutPose " << h->viewsWithoutPose
+			out << "heldOut views " << h->views << " corners " << h->residuals << " withoutPose " << h->viewsWithoutPose
 				<< " rmsAngle " << number(h->rmsAngle) << " rmsPixels " << number(h->rmsPixels) << " worstPixels "
 				<< number(h->worstPixels) << "\n";
 		else
 			out << "heldOut unavailable: " << std::get<Unavailable>(r.heldOut).reason << "\n";
 		if (const auto* s = std::get_if<ResamplingEvidence>(&r.resampling))
+		{
+			const double* principalPoint = std::get_if<double>(&s->principalPointVariation);
 			out << "resampling " << s->resamples << " focal " << number(s->focalVariation) << " principalPoint "
-				<< number(s->principalPointVariation) << "\n";
+				<< (principalPoint ? number(*principalPoint) : std::string("held")) << "\n";
+		}
 		else
 			out << "resampling unavailable: " << std::get<Unavailable>(r.resampling).reason << "\n";
 		if (r.uncertainty)
@@ -98,13 +103,15 @@ namespace
 		out << "\n";
 
 		const Diagnostics& d = r.diagnostics;
-		out << "diagnostics.framesExamined " << d.framesExamined << " framesUsable " << d.framesUsable << " viewsSelected "
+		const BoardDiagnostics& examined = std::get<BoardDiagnostics>(d.method);
+		out << "diagnostics.framesExamined " << examined.framesExamined << " framesUsable " << examined.framesUsable
+			<< " viewsSelected "
 			<< d.viewsSelected << " viewsHeldOut " << d.viewsHeldOut << " coverage " << number(d.coverage)
 			<< " fitRmsPixels " << number(d.fitRmsPixels) << "\n";
 		out << "selected" << positions(d.selected) << "\n";
 		out << "heldOutViews" << positions(d.heldOut) << "\n";
-		for (std::size_t i = 0; i < d.detections.size(); ++i)
-			out << "detection " << i << " " << detection(d.detections[i]) << "\n";
+		for (std::size_t i = 0; i < examined.detections.size(); ++i)
+			out << "detection " << i << " " << detection(examined.detections[i]) << "\n";
 
 		const Reproducibility& p = r.reproducibility;
 		const BoardRecord& record = std::get<BoardRecord>(p.method);
