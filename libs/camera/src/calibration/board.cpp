@@ -27,6 +27,8 @@ namespace lain::camera::calibration::board
 	// Fewer usable views than this and none are held out: holding one of four out leaves too little
 	// to estimate from and too little to validate with.
 	static constexpr std::size_t kMinimumToHoldOut = 5;
+	// The profile a request naming none is judged by: this method's own.
+	static constexpr const char* kOwnProfile = "reconstruction/1";
 
 	static bool usable(const cb::DetectionReport& report)
 	{
@@ -389,10 +391,13 @@ namespace lain::camera::calibration::board
 																	const Request& request, core::Time start)
 	{
 		report.reproducibility.request = request;
-		const std::optional<FitnessProfile> profile = fitnessProfile(request.fitnessProfile);
+		// An empty name is the method's own profile. The request is recorded as given, so a report says
+		// whether its profile was asked for or defaulted; the thresholds name what it resolved to.
+		const std::string name = request.fitnessProfile.empty() ? std::string(kOwnProfile) : request.fitnessProfile;
+		const std::optional<FitnessProfile> profile = fitnessProfile(name);
 		if (!profile)
 			return failed(report, start, Failure::UnknownFitnessProfile,
-						  "no fitness profile is named \"" + request.fitnessProfile + "\"");
+						  "no fitness profile is named \"" + name + "\"");
 		report.thresholds = resolve(*profile, request.overrides);
 
 		const bool hold = request.importedPolicy == ImportedModelPolicy::HoldAndValidate;

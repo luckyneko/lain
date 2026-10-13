@@ -36,7 +36,10 @@ namespace lain::camera::calibration
 		std::optional<CameraModel> imported;
 		ImportedModelPolicy importedPolicy = ImportedModelPolicy::Ignore;
 
-		std::string fitnessProfile = "reconstruction/1";
+		// The fitness profile the verdict is judged by. Empty is the method's own: reconstruction/1
+		// for a board calibration. The report records the request exactly as given, and the profile
+		// it resolved to in its thresholds.
+		std::string fitnessProfile;
 		FitnessOverrides overrides;
 
 		std::uint32_t maximumViews = 30; // calibration views selected, at most

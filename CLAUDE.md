@@ -1400,6 +1400,22 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-13 — M9 slice 4, sub-slice 2b: an empty fitness profile is the method's own (**sub-slice 2 COMPLETE**)
+
+The second of sub-slice 2's two commits. `calibration::Request::fitnessProfile` defaults to `""`, and
+board calibration resolves it to `reconstruction/1`, as registration's requests have since slice 3's
+sub-slice 8a. `ctest` **1211/1211** Debug and **1219/1219** Release with video, camera and Ceres on,
+**1116/1116** with all three off (+1 each); warning-clean, format-check clean. Full notes in
+WORK.md's *Sub-slice 2b built* under M9 slice 4.
+
+- **The request is recorded exactly as given**, so a report says whether its profile was asked for or
+  defaulted, and the thresholds name what it resolved to.
+- **The golden changes in exactly the three planned lines**, 55, 117 and 177, each reading
+  `profile (method's)`. They were diffed before the file was accepted.
+- **The node needed no edit**, since its param default already reads `calibration::Request`'s.
+- **Sabotage, caught:** writing the resolved name back into the recorded request fails the golden at
+  those three lines, and the new case.
+
 ### Update 2026-10-13 — M9 slice 4, sub-slice 2a: the calibration report stops naming a board, and a principal point can be held
 
 The first of sub-slice 2's two commits, chosen by the repo owner so that 2b's three golden lines

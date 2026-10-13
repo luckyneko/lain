@@ -52,7 +52,7 @@ detection 38 Detected NotRefined by truth/1 stats(0 0 0 24) transform(1 1) reque
 detection 39 Detected NotRefined by truth/1 stats(0 0 0 24) transform(1 1) request(longest 480, refine native 0, detail Detailed, minimum corners 6) evidence 0 observation(frame 39 of /synthetic/calibration, 960x720, pattern bbb863628b1b, 24 corners, ids 276, u 18660.7562, v 6011.19139, covariance 0)
 source /synthetic/calibration
 frames 40 detector truth/1 estimator scripted/1 poseSolver truth/1
-request model BrownConrady5 imported unset policy Ignore profile reconstruction/1
+request model BrownConrady5 imported unset policy Ignore profile (method's)
 request overrides unset unset unset unset unset
 request detection longest 480, refine native 0, detail Detailed, minimum corners 6
 request maximumViews 30 heldOutFraction 0.2 resamples 20 seed 1 execution Normal
@@ -114,7 +114,7 @@ detection 38 Detected NotRefined by truth/1 stats(0 0 0 24) transform(1 1) reque
 detection 39 Detected NotRefined by truth/1 stats(0 0 0 24) transform(1 1) request(native, refine native 1, detail Summary, minimum corners 4) evidence 0 observation(frame 39 of /synthetic/calibration, 960x720, pattern bbb863628b1b, 24 corners, ids 276, u 18660.7562, v 6011.19139, covariance 0)
 source /synthetic/calibration
 frames 40 detector truth/1 estimator scripted/1 poseSolver truth/1
-request model BrownConrady5 imported 960x720 f(900 905) c(479.5 359.5) Inverse Brown-Conrady 5 (0.1 -0.05 0.001 -0.0005 0) domain(1.63953082 1.48791103) policy Initial profile reconstruction/1
+request model BrownConrady5 imported 960x720 f(900 905) c(479.5 359.5) Inverse Brown-Conrady 5 (0.1 -0.05 0.001 -0.0005 0) domain(1.63953082 1.48791103) policy Initial profile (method's)
 request overrides 35 unset 0.001 unset unset
 request detection native, refine native 1, detail Summary, minimum corners 4
 request maximumViews 20 heldOutFraction 0.25 resamples 5 seed 9 execution Normal
@@ -174,7 +174,7 @@ detection 38 Detected NotRefined by truth/1 stats(0 0 0 24) transform(1 1) reque
 detection 39 Detected NotRefined by truth/1 stats(0 0 0 24) transform(1 1) request(longest 480, refine native 0, detail Detailed, minimum corners 6) evidence 0 observation(frame 39 of /synthetic/calibration, 960x720, pattern bbb863628b1b, 24 corners, ids 276, u 18660.7562, v 6011.19139, covariance 0)
 source /synthetic/calibration
 frames 40 detector truth/1 estimator / poseSolver truth/1
-request model BrownConrady5 imported 960x720 f(900.9 905.4525) c(479.5 359.5) Brown-Conrady 5 (-0.1 0.05 0.001 -0.0005 0) domain(inf inf) policy HoldAndValidate profile reconstruction/1
+request model BrownConrady5 imported 960x720 f(900.9 905.4525) c(479.5 359.5) Brown-Conrady 5 (-0.1 0.05 0.001 -0.0005 0) domain(inf inf) policy HoldAndValidate profile (method's)
 request overrides unset unset unset unset unset
 request detection longest 480, refine native 0, detail Detailed, minimum corners 6
 request maximumViews 30 heldOutFraction 0.2 resamples 20 seed 1 execution DeterministicDebug

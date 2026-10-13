@@ -121,7 +121,8 @@ namespace
 			<< provenance(p.estimator) << " poseSolver " << provenance(record.poseSolver) << "\n";
 		const Request& q = p.request;
 		out << "request model " << name(q.model) << " imported " << (q.imported ? model(*q.imported) : "unset")
-			<< " policy " << name(q.importedPolicy) << " profile " << q.fitnessProfile << "\n";
+			<< " policy " << name(q.importedPolicy) << " profile "
+			<< (q.fitnessProfile.empty() ? std::string("(method's)") : q.fitnessProfile) << "\n";
 		const FitnessOverrides& o = q.overrides;
 		out << "request overrides " << optional(o.minimumViews) << " " << optional(o.minimumCoverage) << " "
 			<< optional(o.maximumHeldOutAngle) << " " << optional(o.maximumFocalVariation) << " "

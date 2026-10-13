@@ -83,6 +83,28 @@ TEST_CASE("the built-in fitness profile resolves, with overrides on its Ready ti
 	CHECK(resolved.exploratory.minimumViews == profile->exploratory.minimumViews);
 }
 
+TEST_CASE("an empty profile is the method's own, and naming that profile judges the same", "[camera][calibration]")
+{
+	// The empty name is a request's way of asking for the method's own profile, never a profile's name.
+	CHECK_FALSE(fitnessProfile("").has_value());
+
+	resetScene();
+	const Report defaulted = run();
+	Request named;
+	named.fitnessProfile = "reconstruction/1";
+	const Report explicitly = run(named);
+	REQUIRE(defaulted.status == CalibrationStatus::Succeeded);
+	REQUIRE(explicitly.status == CalibrationStatus::Succeeded);
+
+	// Recorded as asked, judged alike.
+	CHECK(defaulted.reproducibility.request.fitnessProfile.empty());
+	CHECK(explicitly.reproducibility.request.fitnessProfile == "reconstruction/1");
+	CHECK(defaulted.thresholds.name == "reconstruction/1");
+	CHECK(explicitly.thresholds.name == "reconstruction/1");
+	CHECK(defaulted.verdict == explicitly.verdict);
+	CHECK(defaulted.fitnessNotes == explicitly.fitnessNotes);
+}
+
 TEST_CASE("a clean scene calibrates Ready, with every section present", "[camera][calibration]")
 {
 	resetScene();

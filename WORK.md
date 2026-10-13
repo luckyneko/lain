@@ -2445,8 +2445,8 @@ it is the capture, which only the repo owner can make. **Slice 2** (fixed-camera
 sub-slices (below), and **all eleven are built** (2026-10-09); a gui-mode eyeball of its node is
 owed. The repo owner kept the provisional values sub-slice 9 measured, and queued three changes to
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
-graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan) and 1
-(as 1a and 1b) are built, and of sub-slice 2's two commits, 2a.
+graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
+(as 1a and 1b) and 2 (as 2a and 2b) are built.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -5740,6 +5740,27 @@ The 2026-08-16 review also left these requirements and decisions visible before 
 
      The restored source was compared byte for byte with the saved original, touched a second later,
      and its object checked to be newer before the suite was run green again.
+
+   **Sub-slice 2b built (2026-10-13): an empty profile is the method's own.** The golden changes in
+   exactly the three planned lines and nothing else. `ctest` **1211/1211** Debug and **1219/1219**
+   Release with video, camera and Ceres on, and **1116/1116** with all three off (+1 each: the case
+   below); warning-clean, format-check clean.
+   - **`Request::fitnessProfile` defaults to `""`.** Board resolves an empty name to its own profile,
+     `reconstruction/1` (a `kOwnProfile` beside the method's other constants), before looking it up,
+     and its refusal names what it looked up. The request is recorded exactly as given, so a report
+     says whether its profile was asked for or defaulted; the thresholds name what it resolved to.
+   - **The node needed no edit**: its `fitnessProfile` param already took its default from
+     `calibration::Request`, and its settings test compares against those defaults. No committed
+     example holds a `calibrateCamera` node, and the example byte-comparison passes unchanged.
+   - **The golden's diff is lines 55, 117 and 177 only**, each `profile reconstruction/1` becoming
+     `profile (method's)`, printed as the registration golden prints it. The thresholds lines do not
+     move, since the name resolves to the same profile. The refused case still names
+     `reconstruction/99`. The produced file was diffed against the golden before it was copied over.
+   - **New case:** the empty name and `reconstruction/1` named are recorded as asked and judged alike,
+     one verdict and one set of notes; `fitnessProfile("")` has no value.
+   - **Sabotage, caught:** board writing the resolved name back into the recorded request fails the
+     golden at exactly 55, 117 and 177, and the new case. The restored source was compared byte for
+     byte, touched a second later, and its object checked to be newer.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -10899,7 +10920,7 @@ row here**. A row is cheap to delete and expensive to leave.
   its detail lives:
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
-       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), and 2a of sub-slice 2's two commits. The
+       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b) and 2 (as 2a and 2b). The
        separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
        restated (slice 4's plan).
   2. **Owed by the repo owner.**
