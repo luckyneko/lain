@@ -8,7 +8,7 @@
 #include "syntheticrig.h"
 
 #include <lain/camera/ceres/register.h>
-#include <lain/camera/registration/refiner.h>
+#include <lain/camera/refinement/refiner.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -22,7 +22,7 @@
 
 using namespace lain;
 using namespace lain::camera;
-using namespace lain::camera::registration;
+using namespace lain::camera::refinement;
 using namespace lain::camera::testing;
 using Catch::Matchers::EndsWith;
 using Catch::Matchers::WithinRel;
@@ -222,7 +222,7 @@ TEST_CASE("a held-camera refinement triangulates a landmark", "[camera][ceres][l
 	problem.freeCameras = false;
 	problem.landmarks[0] += math::Vec3d{0.03, -0.04, 0.0}; // 5 cm out
 	const Solution solution = refine(problem);
-	REQUIRE(solution.status == RefinementStatus::Converged);
+	REQUIRE(solution.status == Status::Converged);
 	CHECK(unmoved(solution, problem));
 	REQUIRE(solution.landmarks.size() == 1);
 	// Measured: 7e-12 m from the truth, in four iterations.
@@ -359,7 +359,7 @@ TEST_CASE("20000 landmarks triangulate against held cameras", "[camera][ceres][l
 	Random random(40);
 	moveLandmarks(problem, 0.05, random);
 	const Solution solution = refine(problem);
-	REQUIRE(solution.status == RefinementStatus::Converged);
+	REQUIRE(solution.status == Status::Converged);
 	CHECK(unmoved(solution, problem));
 	CHECK_THAT(solution.detail, EndsWith("linear solver SPARSE_NORMAL_CHOLESKY"));
 	double worst = 0, sum = 0;
@@ -390,7 +390,7 @@ TEST_CASE("cameras and landmarks converge together, with the scale left free", "
 	const math::Vec3d about = centreOf(problem.cameraFromReference[0]);
 	const double started = scaleOf(problem.cameraFromReference, problem.landmarks, scene, about);
 	const Solution solution = refine(problem);
-	REQUIRE(solution.status == RefinementStatus::Converged);
+	REQUIRE(solution.status == Status::Converged);
 	CHECK_THAT(solution.detail, EndsWith("linear solver SPARSE_SCHUR"));
 	CHECK(rotationBetween(solution.cameraFromReference[0], problem.cameraFromReference[0]) < 1e-12);
 	// The scale is wherever the solver's path left it: measured 1.022 here, from a start at 1.0004,
@@ -439,7 +439,7 @@ TEST_CASE("a body and landmarks refine in one problem, and the body holds the sc
 		math::RigidTransformd{math::angleAxis(0.01, math::Vec3d{1, 0, 0}) * body.rotation(), body.translation() + math::Vec3d{0.005, 0, 0}};
 	const math::Vec3d about = centreOf(problem.cameraFromReference[0]);
 	const Solution solution = refine(problem);
-	REQUIRE(solution.status == RefinementStatus::Converged);
+	REQUIRE(solution.status == Status::Converged);
 	CHECK_THAT(solution.detail, EndsWith("linear solver SPARSE_SCHUR"));
 	// Measured: the scale 1 + 1e-9, and every camera, landmark and the board within 1e-9 of the truth
 	// with nothing taken out, in five iterations.
@@ -479,7 +479,7 @@ TEST_CASE("the refiner refuses a landmark problem it cannot pose", "[camera][cer
 		reason = "the problem has no observations";
 	}
 	const Solution solution = refine(problem);
-	CHECK(solution.status == RefinementStatus::Failed);
+	CHECK(solution.status == Status::Failed);
 	CHECK(solution.detail == reason);
 	CHECK(solution.landmarks.empty());
 }
@@ -493,7 +493,7 @@ TEST_CASE("a landmark behind a camera at the start fails the solve", "[camera][c
 	const math::Vec3d centre = centreOf(problem.cameraFromReference[1]);
 	problem.landmarks[2] = centre + (centre - scene.points[2]); // mirrored through camera 1's centre
 	const Solution solution = refine(problem);
-	CHECK(solution.status == RefinementStatus::Failed);
+	CHECK(solution.status == Status::Failed);
 	CHECK(solution.iterations == 0);
 	CHECK(solution.landmarks.empty());
 }
@@ -513,7 +513,7 @@ TEST_CASE("a rig of 100 cameras and 50000 landmarks refines", "[camera][ceres][l
 	const math::Vec3d about = centreOf(problem.cameraFromReference[0]);
 	const double started = scaleOf(problem.cameraFromReference, problem.landmarks, scene, about);
 	const Solution solution = refine(problem);
-	REQUIRE(solution.status == RefinementStatus::Converged);
+	REQUIRE(solution.status == Status::Converged);
 	// Measured on linux-x86_64, Release, one thread: 4.2 s over 400,000 residuals, 324 MB at peak,
 	// four iterations; the scale 1.004 from a start at 1.0002. With it taken out, the worst camera 0.79
 	// mrad and 1.7 mm out and the worst landmark 16 mm, and the final cost 1.001 of half the residual

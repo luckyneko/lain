@@ -15,7 +15,7 @@
 #include <lain/camera/feature/features.h>
 #include <lain/camera/feature/geometry.h>
 #include <lain/camera/feature/matching.h>
-#include <lain/camera/registration/refiner.h>
+#include <lain/camera/refinement/refiner.h>
 #include <lain/camera/registration/report.h>
 #include <lain/flow/porttyperegistry.h>
 
@@ -36,14 +36,14 @@ namespace lain::camera
 	// Registration detects, poses each board, and refines the rig: three backends.
 	static bool canRegister()
 	{
-		return board::canDetect() && board::canSolvePose() && registration::canRefine();
+		return board::canDetect() && board::canSolvePose() && refinement::canRefine();
 	}
 
 	// Targetless registration extracts and matches features, poses cameras from them, and refines the
 	// rig: four backends, and no board's.
 	static bool canRegisterTargetless()
 	{
-		return feature::canExtract() && feature::canMatch() && feature::canSolveGeometry() && registration::canRefine();
+		return feature::canExtract() && feature::canMatch() && feature::canSolveGeometry() && refinement::canRefine();
 	}
 
 	template <typename T>

@@ -1,5 +1,5 @@
-# lain::camera::ceres — the Ceres-backed camera plugin (ADR-0017): the registration refiner behind
-# lain::camera::registration's seam, and the probe proving the linked Ceres is the approved build. No
+# lain::camera::ceres — the Ceres-backed camera plugin (ADR-0017): the refiner behind
+# lain::camera::refinement's seam, and the probe proving the linked Ceres is the approved build. No
 # Ceres or Eigen type crosses into lain's camera contracts.
 #
 # addCeres is included HERE, not at the root, so nothing is fetched or built unless this plugin is
@@ -25,7 +25,7 @@ add_library(lain::camera::ceres ALIAS camera-ceres)
 target_compile_features(camera-ceres PUBLIC cxx_std_17)
 target_include_directories(camera-ceres PUBLIC include)
 target_link_libraries(camera-ceres
-	PUBLIC lain::camera # it will be a registration Refiner, and registerBackend fills that registry
+	PUBLIC lain::camera # it IS a refinement Refiner, and registerBackend fills that registry
 	PRIVATE Ceres::ceres
 	PRIVATE lain::warnings
 )

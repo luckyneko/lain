@@ -131,7 +131,8 @@ stand for it.
 
 ## Amended 2026-10-12: the seam moves, and a model may be free
 
-Decided while planning M9 slice 4 (targetless calibration). Nothing below is built yet.
+Decided while planning M9 slice 4 (targetless calibration). Only the seam's move (the first point) is
+built; the rest is not yet.
 
 **Calibration refines through the same seam, so the seam leaves registration.** Targetless calibration
 is a bundle adjustment with the camera model free. ADR-0016 keeps calibration and registration apart, so
@@ -141,7 +142,8 @@ the old names: the move the board pose seam made in slice 2. It stays one produc
 plugin fills the moved seam, and neither method gets a refiner of its own. *(Settled 2026-10-13, while
 planning sub-slice 3:)* the header is `lain/camera/refinement/refiner.h`, since every sub-namespace of
 `lain::camera` has a directory. Two names lose their stutter there, `refinement::Status` and
-`refinement::BodyObservation`, and registration keeps their old names as aliases.
+`refinement::BodyObservation`, and registration keeps their old names as aliases. *(Built
+2026-10-13, sub-slice 3.)*
 
 **A problem's cameras may share a model, and a model may be free.** A moving camera's sampled frames are
 the problem's cameras, and they share one model. Each model then states which of its parameters move:

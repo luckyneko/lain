@@ -34,7 +34,7 @@
 #include <lain/camera/feature/geometry.h>
 #include <lain/camera/feature/matching.h>
 #include <lain/camera/flow/register.h>
-#include <lain/camera/registration/refiner.h>
+#include <lain/camera/refinement/refiner.h>
 #include <lain/camera/registration/report.h>
 #include <lain/camera/serialize/cameramodel.h>
 #include <lain/core/uri.h>
@@ -318,7 +318,7 @@ namespace
 	bool haveRegistrationBackends()
 	{
 		return camera::board::canRender() && camera::board::canDetect() && camera::board::canSolvePose() &&
-			   camera::registration::canRefine();
+			   camera::refinement::canRefine();
 	}
 
 	// Camera c of the rig, turned about the board's mean position (0.42 m ahead of camera 0) by
@@ -449,7 +449,7 @@ namespace
 	bool haveTargetlessBackends()
 	{
 		return camera::feature::canExtract() && camera::feature::canMatch() && camera::feature::canSolveGeometry() &&
-			   camera::registration::canRefine();
+			   camera::refinement::canRefine();
 	}
 
 	// A rig of three fixed cameras as a user would bind it: rig/cam0..cam2, each a folder of three

@@ -12,8 +12,8 @@
 #include <lain/camera/feature/features.h>
 #include <lain/camera/feature/geometry.h>
 #include <lain/camera/feature/matching.h>
+#include <lain/camera/refinement/refiner.h>
 #include <lain/camera/registration/board.h>
-#include <lain/camera/registration/refiner.h>
 #include <lain/camera/registration/targetless.h>
 #include <lain/media/framesequence.h>
 #include <lain/media/framesource.h>
@@ -118,14 +118,16 @@ TEST_CASE("with no backend, a held model fails for want of a pose solver", "[cam
 	CHECK_FALSE(std::get<calibration::BoardRecord>(report.reproducibility.method).detection.has_value());
 }
 
-TEST_CASE("with no backend, a registration refinement says the capability is missing", "[camera][registration]")
+TEST_CASE("with no backend, a refinement says the capability is missing", "[camera][refinement]")
 {
-	namespace registration = lain::camera::registration;
-	REQUIRE_FALSE(registration::canRefine());
-	const registration::Solution solution = registration::refine(registration::Problem{});
-	CHECK(solution.status == registration::RefinementStatus::NoBackend);
+	namespace refinement = lain::camera::refinement;
+	REQUIRE_FALSE(refinement::canRefine());
+	const refinement::Solution solution = refinement::refine(refinement::Problem{});
+	CHECK(solution.status == refinement::Status::NoBackend);
 	CHECK_FALSE(solution.usable());
-	CHECK(solution.detail.find("no registration refiner") != std::string::npos);
+	// Calibration and registration both read it, so it names neither.
+	CHECK(solution.detail.find("no refiner") != std::string::npos);
+	CHECK(solution.detail.find("LAIN_CAMERA_CERES") != std::string::npos);
 }
 
 TEST_CASE("with no backend, a registration fails for want of a pose solver, or a detector", "[camera][registration]")

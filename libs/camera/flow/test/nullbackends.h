@@ -11,7 +11,7 @@
 #include <lain/camera/feature/features.h>
 #include <lain/camera/feature/geometry.h>
 #include <lain/camera/feature/matching.h>
-#include <lain/camera/registration/refiner.h>
+#include <lain/camera/refinement/refiner.h>
 
 #include <array>
 #include <cstdint>
@@ -66,11 +66,11 @@ namespace lain::camera::testing::null
 		}
 	};
 
-	class NullRefiner : public camera::registration::Refiner
+	class NullRefiner : public camera::refinement::Refiner
 	{
 	public:
 		camera::Provenance provenance() const override { return {"null", "1"}; }
-		camera::registration::Solution refine(const camera::registration::Problem&) const override { return {}; }
+		camera::refinement::Solution refine(const camera::refinement::Problem&) const override { return {}; }
 	};
 
 	class NullExtractor : public camera::feature::Extractor

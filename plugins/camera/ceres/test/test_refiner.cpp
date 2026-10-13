@@ -1,4 +1,4 @@
-// The Ceres registration refiner: the refinement itself (whitening, the reference held, pose-only
+// The Ceres refiner: the refinement itself (whitening, the reference held, pose-only
 // problems), then the board registration method module running through it on the synthetic rig
 // (libs/camera/test/syntheticrig.h) with pixel noise, where the stand-in refiner of
 // test-camera-registration only handed back its start. Every tolerance is a measurement, written
@@ -7,6 +7,7 @@
 #include "syntheticrig.h"
 
 #include <lain/camera/ceres/register.h>
+#include <lain/camera/refinement/refiner.h>
 #include <lain/camera/registration/board.h>
 #include <lain/camera/registration/refiner.h>
 #include <lain/testing/threadpool.h>
@@ -20,6 +21,7 @@
 
 using namespace lain;
 using namespace lain::camera;
+using namespace lain::camera::refinement;
 using namespace lain::camera::registration;
 using namespace lain::camera::testing;
 using Catch::Matchers::WithinAbs;
@@ -110,7 +112,7 @@ TEST_CASE("the refiner whitens each corner by its covariance, else by the noise 
 	problem.referenceFromBody[0] = math::RigidTransformd{truth.rotation(), truth.translation() + math::Vec3d{0.001, 0, 0}};
 
 	double expected = 0;
-	for (const RefinementObservation& o : problem.observations)
+	for (const BodyObservation& o : problem.observations)
 	{
 		const math::Vec3d p = problem.referenceFromBody[0].apply(o.point);
 		const Projection<double> predicted = project(problem.models[0], p.x, p.y, p.z);
@@ -129,7 +131,7 @@ TEST_CASE("the refiner whitens each corner by its covariance, else by the noise 
 		// An anisotropic, correlated covariance: the cost is 0.5 r^T C^-1 r, summed.
 		const std::array<double, 3> c{0.04, 0.01, 0.09};
 		double whitened = 0;
-		for (RefinementObservation& o : problem.observations)
+		for (BodyObservation& o : problem.observations)
 		{
 			o.covariance = c;
 			const math::Vec3d p = problem.referenceFromBody[0].apply(o.point);
@@ -232,7 +234,7 @@ TEST_CASE("a refinement holds its reference where it started, and moves the rest
 	problem.noise.pixelSigma = 0.3;
 	problem.loss.family = LossFamily::None; // a robust loss would shrink the cost compared below
 	const Solution solution = refine(problem);
-	REQUIRE(solution.status == RefinementStatus::Converged);
+	REQUIRE(solution.status == Status::Converged);
 	// The reference moved by nothing but its round trip through angle-axis.
 	CHECK(rotationBetween(solution.cameraFromReference[1], problem.cameraFromReference[1]) < 1e-12);
 	CHECK(math::length(solution.cameraFromReference[1].translation() - problem.cameraFromReference[1].translation()) < 1e-12);

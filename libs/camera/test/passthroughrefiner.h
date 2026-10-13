@@ -5,7 +5,7 @@
 // under test, and it records what it was asked. The Ceres refiner has its own tests, in
 // plugins/camera/ceres.
 
-#include <lain/camera/registration/refiner.h>
+#include <lain/camera/refinement/refiner.h>
 
 #include <cstddef>
 #include <mutex>
@@ -25,8 +25,8 @@ namespace lain::camera::testing
 			std::size_t landmarks = 0;
 			std::size_t landmarkObservations = 0;
 			std::size_t cameras = 0;
-			registration::RobustLoss loss;
-			registration::NoiseModel noise;
+			refinement::RobustLoss loss;
+			refinement::NoiseModel noise;
 		};
 		std::vector<Asked> asked;
 	};
@@ -36,12 +36,12 @@ namespace lain::camera::testing
 		return instance;
 	}
 
-	class PassThroughRefiner : public registration::Refiner
+	class PassThroughRefiner : public refinement::Refiner
 	{
 	public:
 		Provenance provenance() const override { return {"passthrough", "1"}; }
 
-		registration::Solution refine(const registration::Problem& problem) const override
+		refinement::Solution refine(const refinement::Problem& problem) const override
 		{
 			{
 				std::lock_guard<std::mutex> lock(refinerScript().mutex);
@@ -50,8 +50,8 @@ namespace lain::camera::testing
 												 problem.landmarkObservations.size(), problem.models.size(), problem.loss,
 												 problem.noise});
 			}
-			registration::Solution out;
-			out.status = registration::RefinementStatus::Converged;
+			refinement::Solution out;
+			out.status = refinement::Status::Converged;
 			out.cameraFromReference = problem.cameraFromReference;
 			out.referenceFromBody = problem.referenceFromBody;
 			out.landmarks = problem.landmarks;
@@ -63,7 +63,7 @@ namespace lain::camera::testing
 	{
 		static const bool once = []
 		{
-			registration::refinerRegistry().registerType<PassThroughRefiner>("passthrough");
+			refinement::refinerRegistry().registerType<PassThroughRefiner>("passthrough");
 			return true;
 		}();
 		(void)once;

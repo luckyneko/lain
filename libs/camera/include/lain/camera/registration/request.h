@@ -2,6 +2,7 @@
 
 #include "lain/camera/capture/capturegroup.h"
 #include "lain/camera/method.h"
+#include "lain/camera/refinement/refiner.h"
 #include "lain/camera/registration/fitness.h"
 
 #include <cstdint>
@@ -19,34 +20,11 @@ namespace lain::camera::registration
 		Refuse, // fail the registration
 	};
 
-	// The pixel noise an observation with no measured covariance is assumed to have (CONTEXT.md,
-	// "Observation-noise model"). A detector's response is never turned into this.
-	struct NoiseModel
-	{
-		double pixelSigma = 0.5;
-	};
-
-	enum class LossFamily
-	{
-		None,	// least squares
-		Huber,	// quadratic within the scale, linear beyond it
-		Cauchy, // logarithmic beyond the scale: an outlier's pull fades
-	};
-
-	// The robust loss on each whitened residual, which bounds an outlier's influence. The scale, in
-	// standard deviations, is also where an observation counts as an outlier in the report.
-	//
-	// Cauchy by default, because the outlier a board registration meets is a whole view that does not
-	// belong: a frame from another instant, its corners tens of standard deviations off. Huber's pull
-	// stays linear out there, and a view of 24 corners still drags the rig: measured on the test rig,
-	// one such view at 66 sigma moved a camera 8.4 mrad under Huber and 1.6 under Cauchy, against 1.8
-	// with no stray view at all. Cauchy's redescends; its non-convexity is safe because
-	// initialisation, which a stray view cannot steer, starts the refinement close.
-	struct RobustLoss
-	{
-		LossFamily family = LossFamily::Cauchy;
-		double scale = 3.0;
-	};
+	// A refinement's noise model and robust loss are the refiner seam's (refinement/refiner.h), named
+	// here as well, where a registration request's callers look for them.
+	using refinement::LossFamily;
+	using refinement::NoiseModel;
+	using refinement::RobustLoss;
 
 	// A fixed-camera registration request (CONTEXT.md, "Fixed camera registration"), whatever the
 	// method. What a method alone needs (how a board is searched for) is an argument of that method's

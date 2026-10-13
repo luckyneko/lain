@@ -320,7 +320,9 @@ while planning M9 slice 2.)*
 - **The global refinement is a seam.** `registration::Refiner` is lain-owned and holds no Ceres
   type: cameras, latent rigid bodies (board poses) with their known points, and observations in.
   The Ceres plugin fills it. It is shaped so that targetless registration adds latent scene points
-  beside the rigid bodies, not a second path.
+  beside the rigid bodies, not a second path. *(Moved 2026-10-13 to `lain::camera::refinement`, as
+  `refinement::Refiner`, so calibration can refine through it too; registration still names it. See
+  the slice 4 amendment below.)*
 
 **Targetless registration with known intrinsics, as planned.** *(Added 2026-10-06, decided with the
 repo owner while planning M9 slice 3.)*

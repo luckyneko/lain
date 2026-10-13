@@ -2446,7 +2446,7 @@ sub-slices (below), and **all eleven are built** (2026-10-09); a gui-mode eyebal
 owed. The repo owner kept the provisional values sub-slice 9 measured, and queued three changes to
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
 graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
-(as 1a and 1b) and 2 (as 2a and 2b) are built.
+(as 1a and 1b), 2 (as 2a and 2b) and 3 are built.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -5394,7 +5394,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         lines that print the request; the diff is checked before it is accepted.
       - Sabotage: the board clause left out of `toString` fails the golden, which prints it.
    3. **The refinement seam moves to `lain::camera::refinement`.** *(Planned in detail 2026-10-13 as
-      one commit; see below.)*
+      one commit, and built the same day; see below.)*
       - `lain/camera/refinement/refiner.h`, with `NoiseModel`, `RobustLoss` and `LossFamily` beside
         it, and the old names left in registration.
       - The Ceres plugin implements the moved seam, unchanged in behaviour.
@@ -5856,6 +5856,43 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      `canRefine()` takes no argument, so nothing like that protects it.
    - **Not caught, as decided**: the refinement header including `registration/request.h` again.
      Every test passes, and only the grep above sees it.
+
+   **Sub-slice 3 built (2026-10-13).** The seam is `lain/camera/refinement/refiner.h` and
+   `src/refinement/refiner.cpp`, as planned, and no behaviour changed. `ctest` **1211/1211** Debug and
+   **1219/1219** Release with video, camera and Ceres on, **1116/1116** with all three off (the
+   planned counts: one case renamed, none added). Warning-clean, format-check clean. The diff touches
+   no golden file, and both goldens pass.
+   - **As planned:**
+     - `registration/refiner.h` is now using-declarations plus the two aliases, and still includes
+       `registration/request.h`, so it exports every name it did. `request.h` names the noise model
+       and the losses.
+     - The Ceres plugin, `PassThroughRefiner`, `NullRefiner`, the kinds table, the two node-kind
+       tests and the flowview vertical spell `refinement::`. `test_refiner.cpp` holds both directives
+       and uses `refinement::Status` for the seam's own solve, `RefinementStatus` for the report's.
+     - The facade's missing-backend text is "this build has no refiner (configure with
+       -DLAIN_CAMERA_CERES=ON)". Its renamed case checks for "no refiner" and the configure flag, and
+       is tagged `[refinement]`. Registration's three `NoRefiner` texts are unchanged.
+     - The grep is clean: the seam includes nothing from `registration/` or `calibration/`, and
+       calibration includes no registration header.
+   - **Also done:** ADR-0016's slice 2 bullet that names `registration::Refiner` says where the seam
+     went, and ADR-0017's amendment says its first point is built.
+   - **Sabotages:**
+     - **A copied `canRefine`** (registration answering from a registry of its own) fails 53 cases. All
+       the predicted ones are among them: the registration golden, every case of
+       test-camera-registration and test-camera-targetless, the Ceres plugin's registration cases,
+       and both flowview verticals. The prediction missed six: camera::flow's four registration node cases, and the
+       two rendered end-to-end cases in plugins/camera's test-camera-registration-e2e. The seam's own tests and
+       the calibration golden pass.
+     - **A copied `refine` does not build**, as predicted: five unqualified calls in `board.cpp`,
+       `targetless.cpp` and `validation.cpp` are ambiguous.
+     - **The refinement header including `registration/request.h`: the prediction was half wrong.**
+       At the top of the header, where an include goes, it does not build. The two headers then
+       include each other, and a translation unit that reaches the seam first meets `request.h`'s
+       `using refinement::NoiseModel;` before the seam has declared anything. So the cycle guards the
+       natural form of this regression. Only an include placed after the namespace builds. All 1211
+       cases then pass, and the grep is what sees it.
+     - Each sabotaged header was restored from a saved copy, compared byte for byte, touched a second
+       later, and its objects checked to be newer before the final run.
 
    **Sub-slice 4 planned (2026-10-13) as one commit.** No change in behaviour. The double path keeps
    its arithmetic, so its output is bit-identical. The registration and calibration goldens are the
@@ -11157,7 +11194,7 @@ row here**. A row is cheap to delete and expensive to leave.
   its detail lives:
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
-       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b) and 2 (as 2a and 2b). The
+       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b) and 3. The
        separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
        restated (slice 4's plan).
   2. **Owed by the repo owner.**

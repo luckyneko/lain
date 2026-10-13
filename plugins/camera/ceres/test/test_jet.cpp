@@ -1,6 +1,6 @@
 // One projection implementation (M9's review notes, ADR-0016): Ceres' automatic differentiation runs
 // lain's own scalar-generic projection, camera::project<T>, rather than a copy of its formulas. This
-// proves the claim the registration refiner will rest on, for every distortion model: the projection
+// proves the claim the refiner rests on, for every distortion model: the projection
 // instantiates with ceres::Jet, and the derivatives it carries agree with finite differences of the
 // double projection. The inverse Brown-Conrady model projects by Newton's method, so its derivatives
 // come through an iteration, which is the case most worth checking.

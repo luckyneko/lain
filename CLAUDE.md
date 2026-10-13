@@ -1400,6 +1400,33 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-13 — M9 slice 4, sub-slice 3: the refiner seam moves to `lain::camera::refinement`
+
+The seam leaves registration so calibration can refine through it (ADR-0016 keeps the two methods
+apart). It is now `lain/camera/refinement/refiner.h`, with the noise model and the robust loss beside
+it. No behaviour changed: both goldens pass and the diff touches neither. `ctest` **1211/1211** Debug
+and **1219/1219** Release with video, camera and Ceres on, **1116/1116** with all three off (one case
+renamed, none added); warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 3 built*
+under M9 slice 4.
+
+- **Two names lose their stutter**: `refinement::Status` and `refinement::BodyObservation`.
+  Registration keeps `RefinementStatus` and `RefinementObservation` as aliases, and its old headers
+  keep exporting every name they did, so no registration caller changed.
+- **Code that implements the seam, or asks whether a backend exists, spells `refinement::`**: the
+  Ceres plugin, the stand-in refiners, the kinds table and the tests that register a refiner. The
+  facade's missing-backend text drops "registration", since calibration will read it too.
+- **The dependency direction is stated in the header, not guarded.** The seam includes nothing from
+  `registration/` or `calibration/`, checked by a grep.
+- **Three sabotages:**
+  - A copied `canRefine` fails 53 cases, six more than predicted (camera::flow's node cases and the
+    rendered end-to-end cases).
+  - A copied `refine` does not build, as predicted: argument-dependent lookup on the moved `Problem`
+    makes five calls ambiguous.
+  - **The seam including `registration/request.h` was predicted to pass every test, and does not
+    build where an include goes.** The two headers would include each other, and `request.h`'s using-declarations
+    would then precede the seam's declarations. Only an include after the namespace builds and
+    passes, and only the grep sees that one.
+
 ### Update 2026-10-13 — M9 slice 4, sub-slice 2b: an empty fitness profile is the method's own (**sub-slice 2 COMPLETE**)
 
 The second of sub-slice 2's two commits. `calibration::Request::fitnessProfile` defaults to `""`, and

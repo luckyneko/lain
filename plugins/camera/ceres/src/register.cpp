@@ -6,6 +6,6 @@ namespace lain::camera::ceres
 {
 	void registerBackend()
 	{
-		registration::refinerRegistry().registerType<CeresRefiner>("ceres");
+		refinement::refinerRegistry().registerType<CeresRefiner>("ceres");
 	}
 } // namespace lain::camera::ceres

@@ -8,7 +8,7 @@
 #include "nullbackends.h"
 
 #include <lain/camera/flow/register.h>
-#include <lain/camera/registration/refiner.h>
+#include <lain/camera/refinement/refiner.h>
 #include <lain/core/factory.h>
 #include <lain/flow/node.h>
 #include <lain/flow/porttyperegistry.h>
@@ -71,7 +71,7 @@ TEST_CASE("camera node kinds register always, and are offered as backends can ru
 	// Registration also needs a pose for each view and a refinement of the rig: neither alone will do.
 	camera::board::poseSolverRegistry().registerType<NullPoseSolver>("null");
 	CHECK(camera::availableCameraNodeKeys() == calibrating);
-	camera::registration::refinerRegistry().registerType<NullRefiner>("null");
+	camera::refinement::refinerRegistry().registerType<NullRefiner>("null");
 	Keys registering = calibrating;
 	registering.push_back("registerCameras");
 	CHECK(camera::availableCameraNodeKeys() == registering);

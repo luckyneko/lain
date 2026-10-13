@@ -31,6 +31,6 @@ TEST_CASE("targetless registration is offered with feature backends and a refine
 	CHECK(camera::availableCameraNodeKeys().empty());
 
 	// With it, targetless registration, and nothing that needs a board.
-	camera::registration::refinerRegistry().registerType<NullRefiner>("null");
+	camera::refinement::refinerRegistry().registerType<NullRefiner>("null");
 	CHECK(camera::availableCameraNodeKeys() == Keys{camera::kRegisterCamerasTargetlessKey});
 }

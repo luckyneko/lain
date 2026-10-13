@@ -126,23 +126,23 @@ namespace lain::camera::ceres
 		}
 	};
 
-	static ::ceres::LossFunction* lossOf(const registration::RobustLoss& loss)
+	static ::ceres::LossFunction* lossOf(const refinement::RobustLoss& loss)
 	{
 		switch (loss.family)
 		{
-			case registration::LossFamily::None:
+			case refinement::LossFamily::None:
 				return nullptr;
-			case registration::LossFamily::Huber:
+			case refinement::LossFamily::Huber:
 				return new ::ceres::HuberLoss(loss.scale);
-			case registration::LossFamily::Cauchy:
+			case refinement::LossFamily::Cauchy:
 				return new ::ceres::CauchyLoss(loss.scale);
 		}
 		return nullptr;
 	}
 
-	static registration::Solution failure(registration::RefinementStatus status, std::string detail)
+	static refinement::Solution failure(refinement::Status status, std::string detail)
 	{
-		registration::Solution out;
+		refinement::Solution out;
 		out.status = status;
 		out.detail = std::move(detail);
 		return out;
@@ -155,17 +155,17 @@ namespace lain::camera::ceres
 		return {"ceres", CERES_VERSION_STRING};
 	}
 
-	registration::Solution CeresRefiner::refine(const registration::Problem& problem) const
+	refinement::Solution CeresRefiner::refine(const refinement::Problem& problem) const
 	{
 		const core::Time start = core::Time::now();
 		const std::size_t cameraCount = problem.models.size();
 		if (problem.cameraFromReference.size() != cameraCount || problem.reference >= cameraCount)
-			return failure(registration::RefinementStatus::Failed, "the problem's cameras do not match its models");
+			return failure(refinement::Status::Failed, "the problem's cameras do not match its models");
 		if (problem.noise.pixelSigma <= 0)
-			return failure(registration::RefinementStatus::Failed, "the noise model's pixel sigma is not positive");
+			return failure(refinement::Status::Failed, "the noise model's pixel sigma is not positive");
 
 		if (problem.observations.empty() && problem.landmarkObservations.empty())
-			return failure(registration::RefinementStatus::Failed, "the problem has no observations");
+			return failure(refinement::Status::Failed, "the problem has no observations");
 
 		try
 		{
@@ -186,26 +186,26 @@ namespace lain::camera::ceres
 
 			const double sigma = problem.noise.pixelSigma;
 			std::vector<bool> usedCamera(cameraCount, false), usedBody(bodies.size(), false), usedPoint(points.size(), false);
-			for (const registration::RefinementObservation& o : problem.observations)
+			for (const refinement::BodyObservation& o : problem.observations)
 			{
 				if (o.camera >= cameraCount || o.body >= bodies.size())
-					return failure(registration::RefinementStatus::Failed, "an observation names no camera or body");
+					return failure(refinement::Status::Failed, "an observation names no camera or body");
 				const std::optional<Whitening> w = whitening(o.covariance, sigma);
 				if (!w)
-					return failure(registration::RefinementStatus::Failed, "a corner's covariance is not positive definite");
+					return failure(refinement::Status::Failed, "a corner's covariance is not positive definite");
 				solver.AddResidualBlock(new ::ceres::AutoDiffCostFunction<CornerResidual, 2, 6, 6>(
 											new CornerResidual{&problem.models[o.camera], o.point, o.pixel, *w}),
 										loss.get(), cameras[o.camera].data(), bodies[o.body].data());
 				usedCamera[o.camera] = true;
 				usedBody[o.body] = true;
 			}
-			for (const registration::LandmarkObservation& o : problem.landmarkObservations)
+			for (const refinement::LandmarkObservation& o : problem.landmarkObservations)
 			{
 				if (o.camera >= cameraCount || o.landmark >= points.size())
-					return failure(registration::RefinementStatus::Failed, "a landmark observation names no camera or landmark");
+					return failure(refinement::Status::Failed, "a landmark observation names no camera or landmark");
 				const std::optional<Whitening> w = whitening(o.covariance, sigma);
 				if (!w)
-					return failure(registration::RefinementStatus::Failed, "a landmark observation's covariance is not positive definite");
+					return failure(refinement::Status::Failed, "a landmark observation's covariance is not positive definite");
 				solver.AddResidualBlock(
 					new ::ceres::AutoDiffCostFunction<PointResidual, 2, 6, 3>(new PointResidual{&problem.models[o.camera], o.pixel, *w}),
 					loss.get(), cameras[o.camera].data(), points[o.landmark].data());
@@ -262,12 +262,12 @@ namespace lain::camera::ceres
 			}
 			std::string invalid;
 			if (!options.IsValid(&invalid))
-				return failure(registration::RefinementStatus::Failed, "Ceres refused the solver options: " + invalid);
+				return failure(refinement::Status::Failed, "Ceres refused the solver options: " + invalid);
 
 			::ceres::Solver::Summary summary;
 			::ceres::Solve(options, &solver, &summary);
 
-			registration::Solution out;
+			refinement::Solution out;
 			// Which linear solver ran is part of the account: the rule above is otherwise visible only
 			// as time, and Ceres may substitute one (a Schur solver with nothing to eliminate).
 			out.detail = summary.BriefReport() + ", linear solver " + ::ceres::LinearSolverTypeToString(summary.linear_solver_type_used);
@@ -277,13 +277,13 @@ namespace lain::camera::ceres
 			switch (summary.termination_type)
 			{
 				case ::ceres::CONVERGENCE:
-					out.status = registration::RefinementStatus::Converged;
+					out.status = refinement::Status::Converged;
 					break;
 				case ::ceres::NO_CONVERGENCE:
-					out.status = registration::RefinementStatus::IterationLimit;
+					out.status = refinement::Status::IterationLimit;
 					break;
 				default:
-					out.status = registration::RefinementStatus::Failed;
+					out.status = refinement::Status::Failed;
 					break;
 			}
 			if (out.usable())
@@ -300,7 +300,7 @@ namespace lain::camera::ceres
 		}
 		catch (const std::bad_alloc&)
 		{
-			return failure(registration::RefinementStatus::ResourceExhausted,
+			return failure(refinement::Status::ResourceExhausted,
 						   "the machine ran out of memory for a problem of " + std::to_string(problem.observations.size()) +
 							   " corners and " + std::to_string(problem.landmarkObservations.size()) + " landmark observations");
 		}

@@ -1,8 +1,8 @@
-#include "lain/camera/registration/refiner.h"
+#include "lain/camera/refinement/refiner.h"
 
 #include <memory>
 
-namespace lain::camera::registration
+namespace lain::camera::refinement
 {
 	core::Factory<Refiner>& refinerRegistry()
 	{
@@ -21,8 +21,8 @@ namespace lain::camera::registration
 		if (backends.empty())
 		{
 			Solution out;
-			out.status = RefinementStatus::NoBackend;
-			out.detail = "this build has no registration refiner (configure with -DLAIN_CAMERA_CERES=ON)";
+			out.status = Status::NoBackend;
+			out.detail = "this build has no refiner (configure with -DLAIN_CAMERA_CERES=ON)";
 			return out;
 		}
 		const std::unique_ptr<Refiner> refiner = refinerRegistry().create(backends.front());
@@ -30,4 +30,4 @@ namespace lain::camera::registration
 		out.provenance = refiner->provenance();
 		return out;
 	}
-} // namespace lain::camera::registration
+} // namespace lain::camera::refinement
