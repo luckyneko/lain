@@ -5399,14 +5399,17 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         it, and the old names left in registration.
       - The Ceres plugin implements the moved seam, unchanged in behaviour.
       - The registration golden stays byte-equal.
-   4. **The projection kernels become scalar-generic in their parameters.**
+   4. **The projection kernels become scalar-generic in their parameters.** *(Planned in detail
+      2026-10-13 as one commit; see below.)*
       - Each distortion model's formulas take their coefficients as T, and the intrinsics too, in the
         one implementation that `project<T>(const CameraModel&, …)` keeps calling with doubles.
       - Tests in `test-camera-ceres`: for every model, the Jet derivatives with respect to fx, fy, cx,
         cy and every coefficient, against central finite differences of `project<double>`. They go
         through the inverse Brown-Conrady Newton iteration and Kannala-Brandt's on-axis branch. A
         model that fails is recorded, and sub-slice 5 does not declare it estimatable.
-      - Sabotage: one coefficient converted from double inside a formula fails its derivative test.
+      - Sabotage: one coefficient's derivative dropped inside a formula fails its derivative test.
+        *(Reworded 2026-10-13: a coefficient converted to double no longer compiles once it is a Jet,
+        so the type system guards that case; see the detailed plan.)*
    5. **The refiner frees camera models.**
       - `Problem` gains a model index per camera (`modelOf`; empty is one model per camera, as now)
         and a `ModelFreedom` per model: focal length, principal point, coefficients.
@@ -5853,6 +5856,148 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      `canRefine()` takes no argument, so nothing like that protects it.
    - **Not caught, as decided**: the refinement header including `registration/request.h` again.
      Every test passes, and only the grep above sees it.
+
+   **Sub-slice 4 planned (2026-10-13) as one commit.** No change in behaviour. The double path keeps
+   its arithmetic, so its output is bit-identical. The registration and calibration goldens are the
+   regression test, and the diff touches neither. It lands after sub-slice 3, whose comment edits
+   include `test_jet.cpp`.
+
+   Decided with the repo owner:
+   - **The models stay double values; their formulas become static members over a coefficient
+     array.**
+     - Each model gains `template <typename S> using Coefficients = std::array<S, N>`, with N from
+       `kCoefficientNames`, in the order `coefficients()` already returns.
+     - `project`, `unproject` and the raw formulas (`distort`, `undistort`, `distortedAngle`,
+       `distortedAngleSlope`) become static templates taking `const Coefficients<S>&` first. Each
+       body unpacks the array by a structured binding (`const auto& [k1, k2, p1, p2, k3] = c;`), so
+       it still reads as the formula in the comment above it.
+     - `coefficients()`, `domain()`, `kDisplayName` and `kCoefficientNames` are unchanged.
+     - So serialization, the OpenCV estimator and flowview's editors see the same aggregates.
+       Sub-slice 5's functor is templated on the double model type and needs no rebinding.
+     - **The alternative was class templates**: `BasicBrownConrady5<S>`, with
+       `using BrownConrady5 = BasicBrownConrady5<double>`, and `BasicIntrinsics<S>`. Its formula
+       bodies would not change at all. But seven value types would become templates to serve a
+       solver. `domain()`, a scan over doubles, would have to refuse other scalars. Each model would
+       need a rebinding `fromCoefficients<U>`. And `Basic` is a prefix the tree has never used.
+       A model is data that a report, a document and an editor hold; being scalar-generic is a
+       property of its algorithm.
+     - **The cost, stated:** each binding writes the coefficient order once more. Tests that predate
+       this change already pin it. In every build, `test_distortion` projects each forward model to
+       a pinned pixel, and pins the inverse model's closed-form unprojection. In a camera build, the
+       OpenCV agreement tests pin three models against OpenCV's own projection. A sabotage below
+       shows this.
+
+   Taken from the plan's wording, or found while planning:
+   - **Two scalars: S for the parameters, T for the point and the result.**
+     - The bodies keep their `T(k1)` conversions, so `project(const CameraModel&, …)` keeps passing
+       doubles, as the plan says. A held model under Ceres (S = double, T = Jet) then runs the
+       arithmetic it runs today. A free model is S = T = Jet.
+     - S = Jet with T = double does not compile, which is right: a double result cannot carry
+       derivatives.
+   - **Integer literals that multiply a coefficient become double literals.**
+     - Today's `T(2 * p1)` and `T(2 * p2)` (in the polynomial Brown-Conrady 5 and its inverse share,
+       and in the modified and rational models' own formulas) and `T(3 * k1)` … `T(9 * k4)`
+       (Kannala-Brandt's slope) do not compile
+       once the coefficient is a Jet: Jet's `operator*` deduces its scalar from both operands, and
+       an `int` is not a `double`. The probe below found this.
+     - `2.0 * p1` is the same double as `2 * p1`, so the double path stays bit-identical. A
+       `T(2) * p1` would multiply Jets on the held path, which today multiplies a double.
+   - **The parameter overload lives in `projection.h`**:
+     `project<Model>(const std::array<S, 4>& intrinsics, const typename Model::template Coefficients<S>& coefficients, const DistortionDomain&, T x, T y, T z)`.
+     - The intrinsics are in `Intrinsics`' order, fx, fy, cx, cy.
+     - `Model` is named explicitly, since an array cannot say which model it belongs to.
+     - `project(const CameraModel&, …)` becomes a visit, then this overload with the model's
+       doubles: one implementation, two doors.
+     - `unproject(const CameraModel&, …)` visits into the static `unproject` with `coefficients()`
+       too. It gains **no** parameter overload: nothing differentiates an unprojection, and an entry
+       point with no caller is how an unreachable feature stays unreachable. Its formulas are generic
+       in S anyway, because they are shared with projection.
+   - **No combined parameter block.** A free model's Ceres block, and which of its fields a
+     `ModelFreedom` holds, belong to the refiner and are decided in sub-slice 5. The projection takes
+     the intrinsics and the coefficients as a model holds them, as two values.
+   - **No `fromCoefficients` yet.** Its production caller, reading `Solution::models` back into
+     parameters, arrives in sub-slice 5 with a round-trip test. Here the test perturbs the arrays
+     directly.
+   - **`domain()` stays double and is unchanged.** Within one solve the domain is the starting
+     model's (ADR-0017), so it reaches the parameter overload as an argument, as it reaches the
+     model overload today. `KannalaBrandt4::domain()` calls the static slope with `coefficients()`.
+
+   **Probed before planning** (scratch code, not committed). The worry was that Jet derivatives with
+   respect to the coefficients would lag their value through the inverse Brown-Conrady model's Newton
+   loop, because the loop exits once the value converges. They do not lag.
+   - At six points out to a normalised radius of 0.86, `solve()`'s derivatives with respect to k1,
+     k2, p1, p2 and k3 agree with central differences to **8.1e-11** in normalised units, about
+     4e-8 px at f = 500.
+   - One extra Newton step after convergence gave 5.7e-10, no better, which is the differences' own
+     noise. So no extra step is planned.
+   - The probe also found the integer-literal problem above.
+
+   The expectation is therefore that all six models pass. A model that fails is recorded here, and
+   sub-slice 5 does not declare it.
+   - **Passing says the derivatives are right, not that a model's parameters can be estimated from
+     a scene.** The rational model's radial coefficients share a common factor that changes no
+     projection (sub-slice 6 of slice 1 found it). Modified Brown-Conrady has no estimator today,
+     and Ceres would be its first. Sub-slices 5 and 9 decide those questions; this sub-slice
+     measures derivatives only.
+
+   Changes:
+   - `distortion.h`: the six models as above. The header comment's "The coefficients stay double;
+     only the point is T" becomes: the models hold doubles, and their formulas are generic in both
+     the coefficients' scalar and the point's.
+   - `details/distortion.inl`:
+     - `detail::brownConrady`, `projectForward` and `unprojectForward` take the array;
+     - the literals become double literals;
+     - the header comment says what is converted to what.
+   - `projection.h`: the parameter overload, and the two model overloads written as visits into it.
+   - `distortion.cpp`: `KannalaBrandt4::domain()`.
+   - Nothing outside the camera library names a raw formula. The one caller is that `domain()`.
+
+   Tests:
+   - **`test-camera-ceres`**, beside the point-derivative case in `test_jet.cpp`: "camera::project
+     differentiates its parameters through ceres::Jet for every distortion model".
+     - A `ceres::Jet<double, 12>` (4 intrinsics + at most 8 coefficients), over the six models and
+       the point case's nine points: 3 pixels by 3 depths. The centre pixel is Kannala-Brandt's
+       on-axis branch.
+     - The intrinsics are seeded in slots 0 to 3 and the coefficients from 4.
+     - Checked: the value against `project(model, …)`, as the point case checks it; and each of the
+       4 + N derivatives against a central difference of the parameter overload at doubles, with one
+       array element perturbed.
+     - The tolerances are set from the measurement and written beside their checks, as slice 1's
+       detector tolerances were.
+   - **`test-camera`**, in `test_projection.cpp`: "the parameter path is the model path". At doubles,
+     for every model and the same points, the parameter overload with a model's own doubles equals
+     `project(model, …)` **exactly**. This states the one-implementation claim in every build,
+     Ceres or not, so differentiating one door is differentiating the other.
+   - The existing float witness also runs the parameter overload with float coefficients, so a
+     non-double S is instantiated in builds without Ceres. That adds no case.
+
+   Verification:
+   - Debug and Release with video, camera and Ceres on, and all three off.
+     - The counts are 1213, 1221 and 1117: +2 on, +1 off, assuming sub-slice 3 lands first with its
+       counts unchanged.
+     - Warning-clean, format-check clean.
+   - The diff touches no golden file, and both goldens pass.
+   - The three Release scale cases' times are recorded beside their earlier ones: board registration
+     19.7 s, landmarks 4.2 s, targetless registration 40 s. A held model runs the same arithmetic,
+     so a change beyond noise is a finding, not an expectation.
+   - The per-model worst derivative disagreement, recorded.
+
+   Sabotages:
+   - **A coefficient's derivative dropped inside a formula.** This is the plan's "converted from
+     double", which no longer compiles with a Jet coefficient: the type system now guards that
+     case. So the sabotage is written with a scratch helper that keeps a Jet's value and drops its
+     derivative, chosen by `if constexpr` on the scalar, and applied to k3 in
+     `detail::brownConrady`.
+     - Predicted: the parameter case fails at k3's slot for Brown-Conrady 5 and Inverse
+       Brown-Conrady 5, which share that polynomial, and for no other model.
+     - Predicted to pass: the point case and the exactness case.
+   - **A binding that reads two coefficients in the wrong order**: k4 and k5 in the rational model's
+     `distort`.
+     - Predicted: `test_distortion`'s pinned rational pixel in every build, and OpenCV's rational
+       agreement in a camera build.
+     - Predicted to pass: the parameter case, which compares the formula with itself.
+     - This shows that the order the bindings restate is pinned by tests older than the bindings,
+       which is the cost the decision above accepts.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
