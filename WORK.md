@@ -2446,7 +2446,7 @@ sub-slices (below), and **all eleven are built** (2026-10-09); a gui-mode eyebal
 owed. The repo owner kept the provisional values sub-slice 9 measured, and queued three changes to
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
 graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
-(as 1a and 1b), 2 (as 2a and 2b) and 3 are built.
+(as 1a and 1b), 2 (as 2a and 2b), 3 and 4 are built.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -5400,7 +5400,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       - The Ceres plugin implements the moved seam, unchanged in behaviour.
       - The registration golden stays byte-equal.
    4. **The projection kernels become scalar-generic in their parameters.** *(Planned in detail
-      2026-10-13 as one commit; see below.)*
+      2026-10-13 as one commit, and built the same day; see below.)*
       - Each distortion model's formulas take their coefficients as T, and the intrinsics too, in the
         one implementation that `project<T>(const CameraModel&, …)` keeps calling with doubles.
       - Tests in `test-camera-ceres`: for every model, the Jet derivatives with respect to fx, fy, cx,
@@ -6035,6 +6035,58 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      - Predicted to pass: the parameter case, which compares the formula with itself.
      - This shows that the order the bindings restate is pinned by tests older than the bindings,
        which is the cost the decision above accepts.
+
+   **Sub-slice 4 built (2026-10-13).** The six models hold doubles as before. Their formulas are static
+   templates over `Coefficients<S>`, an array in the model's coefficient order whose size comes from
+   `kCoefficientNames`. `project<Model>(intrinsics, coefficients, domain, x, y, z)` in `projection.h`
+   is the parameter overload, and `project(model, …)` is a visit into it with the model's doubles.
+   No behaviour changed: the double path does the same arithmetic, and both goldens pass with their
+   files untouched. `ctest` **1213/1213** Debug and **1221/1221** Release with video, camera and
+   Ceres on, **1117/1117** with all three off (+2 on, +1 off, the planned counts); warning-clean,
+   format-check clean.
+   - **As planned:**
+     - each body unpacks its array by a structured binding, so it reads as the formula above it;
+     - a coefficient times a constant uses a double literal (`2.0 * p1`, `3.0 * k1` … `9.0 * k4`);
+     - `projectForward` / `unprojectForward` take the array and name the model as a template
+       argument, since an array cannot say whose it is;
+     - `unproject(model, …)` visits into the static `unproject` with `coefficients()`, and gains no
+       parameter overload;
+     - `KannalaBrandt4::domain()` reads its coefficients once and hands them to the static slope.
+   - **Every model's derivatives agree with finite differences.** The worst disagreement per model,
+     relative to the derivative or to 1 px per unit where that is smaller:
+     - no distortion 8.6e-11;
+     - Brown-Conrady 5 6.8e-9;
+     - Inverse Brown-Conrady 5 4.0e-8, through Newton's method;
+     - Modified Brown-Conrady 5 1.6e-8;
+     - Rational Brown-Conrady 8 3.2e-8;
+     - Kannala-Brandt 4 2.1e-8.
+
+     At most 8.0e-8 px per unit absolute, against derivatives up to 529 px per unit: the differences'
+     own rounding. The tolerance is 1e-6 of that scale, written beside the check. So, as far as
+     derivatives go, sub-slice 5 may declare all six. Whether a model's parameters can be estimated
+     from a scene is still sub-slices 5 and 9's question.
+   - **The case also checks that a model with fewer than eight coefficients leaves the rest of the
+     12-slot Jet at zero.**
+   - **Timings: no change beyond noise.** The pre-change Release binary was built here too, and the
+     two were run alternately, four rounds each (two for landmarks), timing the whole process:
+     - board registration: 14.94 s before, 14.92 s after;
+     - landmarks: 3.67 s before, 3.56 s after;
+     - targetless registration: 31.44 s before, 32.11 s after. The per-round differences were +2.2,
+       +0.3, 0.0 and +0.2 s, against a 2.1 s spread in the old binary's own runs.
+
+     This machine is faster than the earlier sessions' (19.7, 4.2 and 40 s) for both binaries, which
+     is why the comparison is made here rather than against those numbers.
+   - **Sabotages, both as predicted, the second wider:**
+     - **k3's derivative dropped in `detail::brownConrady`** (a scratch helper keeping a Jet's value):
+       24 failures, all at slot 8 (k3), for Brown-Conrady 5 and Inverse Brown-Conrady 5 only. The
+       point case, the exactness case and the other 1212 cases pass.
+     - **The rational binding reading k4 and k5 swapped:** the pinned rational pixel and OpenCV's
+       rational agreement fail, and the parameter case passes, as predicted. Two more fail that
+       were not predicted: OpenCV's coefficient-recovery and model-recovery cases, which estimate
+       with OpenCV's rational formula and judge through lain's. So the order the bindings restate is
+       pinned in more places than the plan counted.
+     - Each sabotaged file was restored from a saved copy, compared byte for byte, touched a second
+       later, and its objects checked to be newer before the final run.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -11194,7 +11246,7 @@ row here**. A row is cheap to delete and expensive to leave.
   its detail lives:
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
-       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b) and 3. The
+       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3 and 4. The
        separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
        restated (slice 4's plan).
   2. **Owed by the repo owner.**

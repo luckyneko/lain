@@ -1400,6 +1400,33 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-13 — M9 slice 4, sub-slice 4: projection is generic in a model's parameters
+
+Ceres can now differentiate a camera model's intrinsics and coefficients through lain's one projection,
+which sub-slice 5's free models need. No behaviour changed: the double path does the same arithmetic,
+and both goldens pass with their files untouched. `ctest` **1213/1213** Debug and **1221/1221** Release
+with video, camera and Ceres on, **1117/1117** with all three off (+2 on, +1 off); warning-clean,
+format-check clean. Full notes in WORK.md's *Sub-slice 4 built* under M9 slice 4.
+
+- **The models still hold doubles; their formulas became static templates** over `Coefficients<S>`,
+  an array in the model's coefficient order. A model is data a report, a document and an editor hold,
+  so serialization, the OpenCV estimator and flowview's editors are untouched. Each body unpacks its
+  array by a structured binding, so it still reads as its formula.
+- **Two scalars:** S for the parameters, T for the point and the result. A held model runs S = double,
+  an estimated one S = T = Jet. A coefficient times a constant is now a double literal (`2.0 * p1`),
+  since a Jet's `operator*` will not take an `int`.
+- **`project<Model>(intrinsics, coefficients, domain, x, y, z)` is the parameter overload**, and
+  `project(model, …)` is a visit into it. A test asserts the two agree exactly in every build.
+  `unproject` gains no parameter overload, since nothing differentiates one.
+- **All six models' derivatives agree with finite differences**, the worst at 4.0e-8 of the derivative's
+  scale (Inverse Brown-Conrady, through Newton's method). The tolerance is 1e-6.
+- **Timings, before and after, built and run alternately here: no change beyond noise** (board
+  registration 14.94 s and 14.92 s, landmarks 3.67 s and 3.56 s, targetless registration 31.44 s and
+  32.11 s, inside its own 2.1 s spread).
+- **Two sabotages, both caught as predicted.** Dropping k3's derivative fails only k3's slot, for the two
+  models sharing that polynomial. Swapping k4 and k5 in the rational binding fails the pinned pixel and
+  OpenCV's agreement as predicted, and two OpenCV estimator cases that were not predicted.
+
 ### Update 2026-10-13 — M9 slice 4, sub-slice 3: the refiner seam moves to `lain::camera::refinement`
 
 The seam leaves registration so calibration can refine through it (ADR-0016 keeps the two methods

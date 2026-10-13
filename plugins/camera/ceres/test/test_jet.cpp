@@ -5,6 +5,11 @@
 // double projection. The inverse Brown-Conrady model projects by Newton's method, so its derivatives
 // come through an iteration, which is the case most worth checking.
 //
+// Twice: with respect to the POINT, which a solver holding a model differentiates, and with respect
+// to the model's PARAMETERS, its intrinsics and its coefficients, which a solver estimating a model
+// differentiates (M9 slice 4). Passing the second says the derivatives are right, not that a model's
+// parameters can be estimated from a scene.
+//
 // Then a small solve through Ceres itself, so the plugin is known to link and run the solver the
 // refiner uses: Eigen's sparse Cholesky, one thread.
 
@@ -22,9 +27,13 @@
 #include <ceres/problem.h>
 #include <ceres/solver.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <string>
+#include <type_traits>
+#include <variant>
 
 using namespace lain::camera;
 using Catch::Matchers::WithinAbs;
@@ -97,6 +106,105 @@ TEST_CASE("camera::project differentiates through ceres::Jet for every distortio
 			}
 		}
 	}
+}
+
+namespace
+{
+	// Four intrinsics, then at most eight coefficients (the rational model's).
+	using ParameterJet = ceres::Jet<double, 12>;
+
+	// The parameter overload at doubles, with one parameter moved by `delta`: slot 0 to 3 are the
+	// intrinsics (fx, fy, cx, cy), slot 4 on the coefficients in the model's order.
+	template <typename Model>
+	Projection<double> movedProjection(const std::array<double, 4>& intrinsics,
+									   const typename Model::template Coefficients<double>& coefficients,
+									   const DistortionDomain& domain, const std::array<double, 3>& p,
+									   std::size_t slot, double delta)
+	{
+		std::array<double, 4> i = intrinsics;
+		typename Model::template Coefficients<double> c = coefficients;
+		if (slot < 4)
+			i[slot] += delta;
+		else
+			c[slot - 4] += delta;
+		return project<Model>(i, c, domain, p[0], p[1], p[2]);
+	}
+} // namespace
+
+TEST_CASE("camera::project differentiates its parameters through ceres::Jet for every distortion model", "[ceres]")
+{
+	const int index = GENERATE(range(0, testing::kModelCount));
+	const CameraModel model = testing::cameraWith(testing::everyModel(index));
+	CAPTURE(std::string(displayName(modelOf(model.distortion()))));
+
+	std::visit(
+		[&](const auto& d)
+		{
+			using Model = std::decay_t<decltype(d)>;
+			const Intrinsics& k = model.intrinsics();
+			const std::array<double, 4> intrinsics = {k.fx, k.fy, k.cx, k.cy};
+			const typename Model::template Coefficients<double> coefficients = d.coefficients();
+			const std::size_t slots = 4 + coefficients.size();
+
+			// Every parameter its own infinitesimal: the intrinsics in slots 0 to 3, the coefficients
+			// from 4. The point is a constant, so every derivative is one of the parameters'.
+			std::array<ParameterJet, 4> jetIntrinsics;
+			for (std::size_t i = 0; i < 4; ++i)
+				jetIntrinsics[i] = ParameterJet(intrinsics[i], int(i));
+			typename Model::template Coefficients<ParameterJet> jetCoefficients;
+			for (std::size_t i = 0; i < coefficients.size(); ++i)
+				jetCoefficients[i] = ParameterJet(coefficients[i], int(4 + i));
+
+			const std::array<std::array<double, 2>, 3> pixels = {{{320.5, 239.5}, {450.0, 120.0}, {40.0, 440.0}}};
+			for (const auto& pixel : pixels)
+			{
+				for (const double depth : {0.4, 1.7, 6.0})
+				{
+					const std::array<double, 3> p = pointAt(model, pixel[0], pixel[1], depth);
+					CAPTURE(pixel[0], pixel[1], depth);
+
+					const Projection<double> plain = project(model, p[0], p[1], p[2]);
+					const Projection<ParameterJet> jet = project<Model>(
+						jetIntrinsics, jetCoefficients, model.domain(), ParameterJet(p[0]), ParameterJet(p[1]), ParameterJet(p[2]));
+					REQUIRE(plain.ok());
+					REQUIRE(jet.ok());
+					// The Jet carries the model's own value...
+					CHECK_THAT(jet.u.a, WithinAbs(plain.u, 1e-9));
+					CHECK_THAT(jet.v.a, WithinAbs(plain.v, 1e-9));
+
+					// ...and each parameter's derivative agrees with a central difference of the
+					// parameter overload at doubles, one array element moved. Within 1e-6 of the
+					// derivative, or of 1 px per unit where it is smaller. Measured (Debug, Linux
+					// x86_64) as the worst per model, relative to that scale: no distortion 8.6e-11,
+					// Brown-Conrady 5 6.8e-9, Inverse Brown-Conrady 5 4.0e-8 (through Newton's
+					// method), Modified Brown-Conrady 5 1.6e-8, Rational Brown-Conrady 8 3.2e-8,
+					// Kannala-Brandt 4 2.1e-8; at most 8.0e-8 px per unit absolute, against
+					// derivatives up to 529 px per unit. That is the differences' own rounding,
+					// about 1e-16 of a 600 px value over a 1e-6 step.
+					for (std::size_t slot = 0; slot < slots; ++slot)
+					{
+						CAPTURE(slot);
+						const double value = slot < 4 ? intrinsics[slot] : coefficients[slot - 4];
+						const double h = 1e-6 * std::max(1.0, std::abs(value));
+						const Projection<double> plus = movedProjection<Model>(intrinsics, coefficients, model.domain(), p, slot, h);
+						const Projection<double> minus = movedProjection<Model>(intrinsics, coefficients, model.domain(), p, slot, -h);
+						REQUIRE(plus.ok());
+						REQUIRE(minus.ok());
+						const double du = (plus.u - minus.u) / (2 * h);
+						const double dv = (plus.v - minus.v) / (2 * h);
+						CHECK_THAT(jet.u.v[int(slot)], WithinAbs(du, 1e-6 * std::max(1.0, std::abs(du))));
+						CHECK_THAT(jet.v.v[int(slot)], WithinAbs(dv, 1e-6 * std::max(1.0, std::abs(dv))));
+					}
+					// A model with fewer than eight coefficients leaves the rest of the Jet untouched.
+					for (std::size_t slot = slots; slot < 12; ++slot)
+					{
+						CHECK(jet.u.v[int(slot)] == 0.0);
+						CHECK(jet.v.v[int(slot)] == 0.0);
+					}
+				}
+			}
+		},
+		model.distortion());
 }
 
 namespace

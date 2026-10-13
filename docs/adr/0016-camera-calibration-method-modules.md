@@ -511,9 +511,10 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   same reason. The seam then gains cameras that share a model, and models with free parameters
   ([ADR-0017](0017-ceres-for-registration-refinement.md), amended). Registration never frees one, so
   the exclusion of joint intrinsic and extrinsic registration stands. The projection kernels become
-  scalar-generic in their intrinsics and coefficients as well as their point. A backend declares the
-  models it can estimate, and a model whose automatic derivatives do not match finite differences is
-  not declared.
+  scalar-generic in their intrinsics and coefficients as well as their point *(built 2026-10-13: the
+  models hold doubles, and their formulas are static templates over a coefficient array)*. A backend
+  declares the models it can estimate, and a model whose automatic derivatives do not match finite
+  differences is not declared.
 - **Validation is on held-out frames.** A held-out frame is the targetless analogue of a held-out board
   view. It is kept out of the reconstruction, posed afterwards against the landmarks with the model held,
   and measured as angles through lain's projection. So the calibration fitness criteria keep their

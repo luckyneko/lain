@@ -75,34 +75,43 @@ namespace lain::camera
 	// EVERY MODEL CARRIES ITS OWN ALGORITHM, so what a model is and what it does are read in one
 	// place, and a new model that lacks any of this does not compile where the variant is visited:
 	//
-	//   kDisplayName        the model's name for a person, as the vocabulary spells it
-	//   kCoefficientNames   its coefficients' names, in its coefficient order
-	//   coefficients()      their values, in that order
-	//   project(x, y, z)    a camera-frame direction to distorted normalised coordinates
-	//   unproject(xd, yd)   distorted normalised coordinates to a unit ray
-	//   domain()            where the model is defined; a scan, so CameraModel computes it once and
-	//                       hands it back to project / unproject
+	//   kDisplayName          the model's name for a person, as the vocabulary spells it
+	//   kCoefficientNames     its coefficients' names, in its coefficient order
+	//   Coefficients<S>       an array of its coefficients, in that order, as scalar S
+	//   coefficients()        this model's values, as Coefficients<double>
+	//   project(c, x, y, z)   coefficients c and a camera-frame direction to distorted normalised
+	//                         coordinates
+	//   unproject(c, xd, yd)  coefficients c and distorted normalised coordinates to a unit ray
+	//   domain()              where the model is defined; a scan, so CameraModel computes it once
+	//                         and hands it back to project / unproject
 	//
 	// project and unproject are TOTAL (a point not in front of the camera is BehindCamera, never a
 	// division by zero), and SCALAR-GENERIC, so an automatic-differentiation scalar (a Ceres Jet)
-	// runs this same code: one projection implementation, which calibration, validation and later
-	// refinement all use, so what a solver minimises is what a report measures. The coefficients
-	// stay double; only the point is T. Which direction is closed form and which iterates is each
-	// model's own business. A model's raw formula (distort, undistort, distortedAngle) is public
-	// too, and checks nothing: it is the formula above made callable, and project / unproject are
-	// its checked use.
+	// runs this same code: one projection implementation, which calibration, validation and
+	// refinement all use, so what a solver minimises is what a report measures. A model HOLDS
+	// doubles, since it is a value a report, a document and an editor hold; its formulas are STATIC
+	// and generic in two scalars, S for the coefficients and T for the point and the result. A solver
+	// holding a model fixed runs S = double; one estimating it runs S = T, a Jet. (S a Jet with T a
+	// double does not compile, which is right: a double result cannot carry derivatives.) Which
+	// direction is closed form and which iterates is each model's own business. A model's raw formula
+	// (distort, undistort, distortedAngle) is public too, and checks nothing: it is the formula above
+	// made callable, and project / unproject are its checked use.
 
 	// No distortion: xd = x, yd = y.
 	struct NoDistortion
 	{
 		static constexpr std::string_view kDisplayName = "no distortion";
 		static constexpr std::array<std::string_view, 0> kCoefficientNames = {};
-		std::array<double, 0> coefficients() const { return {}; }
+		template <typename S>
+		using Coefficients = std::array<S, kCoefficientNames.size()>;
+		Coefficients<double> coefficients() const { return {}; }
 
-		template <typename T>
-		DistortedPoint<T> project(const T& x, const T& y, const T& z, const DistortionDomain& domain) const;
-		template <typename T>
-		Unprojection<T> unproject(const T& xd, const T& yd, const DistortionDomain& domain) const;
+		template <typename S, typename T>
+		static DistortedPoint<T> project(const Coefficients<S>& c, const T& x, const T& y, const T& z,
+										 const DistortionDomain& domain);
+		template <typename S, typename T>
+		static Unprojection<T> unproject(const Coefficients<S>& c, const T& xd, const T& yd,
+										 const DistortionDomain& domain);
 		DistortionDomain domain() const;
 	};
 
@@ -114,17 +123,21 @@ namespace lain::camera
 
 		static constexpr std::string_view kDisplayName = "Brown-Conrady 5";
 		static constexpr std::array<std::string_view, 5> kCoefficientNames = {"k1", "k2", "p1", "p2", "k3"};
-		std::array<double, 5> coefficients() const { return {k1, k2, p1, p2, k3}; }
+		template <typename S>
+		using Coefficients = std::array<S, kCoefficientNames.size()>;
+		Coefficients<double> coefficients() const { return {k1, k2, p1, p2, k3}; }
 
-		template <typename T>
-		DistortedPoint<T> project(const T& x, const T& y, const T& z, const DistortionDomain& domain) const;
-		template <typename T>
-		Unprojection<T> unproject(const T& xd, const T& yd, const DistortionDomain& domain) const;
+		template <typename S, typename T>
+		static DistortedPoint<T> project(const Coefficients<S>& c, const T& x, const T& y, const T& z,
+										 const DistortionDomain& domain);
+		template <typename S, typename T>
+		static Unprojection<T> unproject(const Coefficients<S>& c, const T& xd, const T& yd,
+										 const DistortionDomain& domain);
 		DistortionDomain domain() const;
 
 		// Ideal (x, y) to distorted (xd, yd): the polynomial.
-		template <typename T>
-		void distort(const T& x, const T& y, T& xd, T& yd) const;
+		template <typename S, typename T>
+		static void distort(const Coefficients<S>& c, const T& x, const T& y, T& xd, T& yd);
 	};
 
 	// Brown-Conrady, INVERSE: the same polynomial with the roles swapped. It maps DISTORTED to ideal,
@@ -136,17 +149,21 @@ namespace lain::camera
 
 		static constexpr std::string_view kDisplayName = "Inverse Brown-Conrady 5";
 		static constexpr std::array<std::string_view, 5> kCoefficientNames = {"k1", "k2", "p1", "p2", "k3"};
-		std::array<double, 5> coefficients() const { return {k1, k2, p1, p2, k3}; }
+		template <typename S>
+		using Coefficients = std::array<S, kCoefficientNames.size()>;
+		Coefficients<double> coefficients() const { return {k1, k2, p1, p2, k3}; }
 
-		template <typename T>
-		DistortedPoint<T> project(const T& x, const T& y, const T& z, const DistortionDomain& domain) const;
-		template <typename T>
-		Unprojection<T> unproject(const T& xd, const T& yd, const DistortionDomain& domain) const;
+		template <typename S, typename T>
+		static DistortedPoint<T> project(const Coefficients<S>& c, const T& x, const T& y, const T& z,
+										 const DistortionDomain& domain);
+		template <typename S, typename T>
+		static Unprojection<T> unproject(const Coefficients<S>& c, const T& xd, const T& yd,
+										 const DistortionDomain& domain);
 		DistortionDomain domain() const;
 
 		// Distorted (xd, yd) to ideal (x, y): the polynomial, which is this model's direction.
-		template <typename T>
-		void undistort(const T& xd, const T& yd, T& x, T& y) const;
+		template <typename S, typename T>
+		static void undistort(const Coefficients<S>& c, const T& xd, const T& yd, T& x, T& y);
 	};
 
 	// Brown-Conrady, FORWARD, with the tangential terms applied to the radially distorted point
@@ -163,17 +180,21 @@ namespace lain::camera
 
 		static constexpr std::string_view kDisplayName = "Modified Brown-Conrady 5";
 		static constexpr std::array<std::string_view, 5> kCoefficientNames = {"k1", "k2", "p1", "p2", "k3"};
-		std::array<double, 5> coefficients() const { return {k1, k2, p1, p2, k3}; }
+		template <typename S>
+		using Coefficients = std::array<S, kCoefficientNames.size()>;
+		Coefficients<double> coefficients() const { return {k1, k2, p1, p2, k3}; }
 
-		template <typename T>
-		DistortedPoint<T> project(const T& x, const T& y, const T& z, const DistortionDomain& domain) const;
-		template <typename T>
-		Unprojection<T> unproject(const T& xd, const T& yd, const DistortionDomain& domain) const;
+		template <typename S, typename T>
+		static DistortedPoint<T> project(const Coefficients<S>& c, const T& x, const T& y, const T& z,
+										 const DistortionDomain& domain);
+		template <typename S, typename T>
+		static Unprojection<T> unproject(const Coefficients<S>& c, const T& xd, const T& yd,
+										 const DistortionDomain& domain);
 		DistortionDomain domain() const;
 
 		// Ideal (x, y) to distorted (xd, yd): the formula above.
-		template <typename T>
-		void distort(const T& x, const T& y, T& xd, T& yd) const;
+		template <typename S, typename T>
+		static void distort(const Coefficients<S>& c, const T& x, const T& y, T& xd, T& yd);
 	};
 
 	// Rational Brown-Conrady, FORWARD (OpenCV's CALIB_RATIONAL_MODEL): the radial factor becomes
@@ -189,17 +210,21 @@ namespace lain::camera
 		static constexpr std::string_view kDisplayName = "Rational Brown-Conrady 8";
 		static constexpr std::array<std::string_view, 8> kCoefficientNames = {"k1", "k2", "p1", "p2",
 																			  "k3", "k4", "k5", "k6"};
-		std::array<double, 8> coefficients() const { return {k1, k2, p1, p2, k3, k4, k5, k6}; }
+		template <typename S>
+		using Coefficients = std::array<S, kCoefficientNames.size()>;
+		Coefficients<double> coefficients() const { return {k1, k2, p1, p2, k3, k4, k5, k6}; }
 
-		template <typename T>
-		DistortedPoint<T> project(const T& x, const T& y, const T& z, const DistortionDomain& domain) const;
-		template <typename T>
-		Unprojection<T> unproject(const T& xd, const T& yd, const DistortionDomain& domain) const;
+		template <typename S, typename T>
+		static DistortedPoint<T> project(const Coefficients<S>& c, const T& x, const T& y, const T& z,
+										 const DistortionDomain& domain);
+		template <typename S, typename T>
+		static Unprojection<T> unproject(const Coefficients<S>& c, const T& xd, const T& yd,
+										 const DistortionDomain& domain);
 		DistortionDomain domain() const;
 
 		// Ideal (x, y) to distorted (xd, yd): the formula above.
-		template <typename T>
-		void distort(const T& x, const T& y, T& xd, T& yd) const;
+		template <typename S, typename T>
+		static void distort(const Coefficients<S>& c, const T& x, const T& y, T& xd, T& yd);
 	};
 
 	// Kannala-Brandt, FORWARD (OpenCV's fisheye model), on the angle from the optical axis rather
@@ -217,19 +242,23 @@ namespace lain::camera
 
 		static constexpr std::string_view kDisplayName = "Kannala-Brandt 4";
 		static constexpr std::array<std::string_view, 4> kCoefficientNames = {"k1", "k2", "k3", "k4"};
-		std::array<double, 4> coefficients() const { return {k1, k2, k3, k4}; }
+		template <typename S>
+		using Coefficients = std::array<S, kCoefficientNames.size()>;
+		Coefficients<double> coefficients() const { return {k1, k2, k3, k4}; }
 
-		template <typename T>
-		DistortedPoint<T> project(const T& x, const T& y, const T& z, const DistortionDomain& domain) const;
-		template <typename T>
-		Unprojection<T> unproject(const T& xd, const T& yd, const DistortionDomain& domain) const;
+		template <typename S, typename T>
+		static DistortedPoint<T> project(const Coefficients<S>& c, const T& x, const T& y, const T& z,
+										 const DistortionDomain& domain);
+		template <typename S, typename T>
+		static Unprojection<T> unproject(const Coefficients<S>& c, const T& xd, const T& yd,
+										 const DistortionDomain& domain);
 		DistortionDomain domain() const;
 
 		// The distorted angle thetad for an angle theta from the axis, and its derivative.
-		template <typename T>
-		T distortedAngle(const T& theta) const;
-		template <typename T>
-		T distortedAngleSlope(const T& theta) const;
+		template <typename S, typename T>
+		static T distortedAngle(const Coefficients<S>& c, const T& theta);
+		template <typename S, typename T>
+		static T distortedAngleSlope(const Coefficients<S>& c, const T& theta);
 	};
 
 	using Distortion = std::variant<NoDistortion, BrownConrady5, InverseBrownConrady5, ModifiedBrownConrady5,

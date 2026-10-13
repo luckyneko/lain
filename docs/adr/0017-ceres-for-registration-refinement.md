@@ -131,8 +131,8 @@ stand for it.
 
 ## Amended 2026-10-12: the seam moves, and a model may be free
 
-Decided while planning M9 slice 4 (targetless calibration). Only the seam's move (the first point) is
-built; the rest is not yet.
+Decided while planning M9 slice 4 (targetless calibration). The seam's move (the first point) and the
+parameter-generic projection (the third) are built; the rest is not yet.
 
 **Calibration refines through the same seam, so the seam leaves registration.** Targetless calibration
 is a bundle adjustment with the camera model free. ADR-0016 keeps calibration and registration apart, so
@@ -159,4 +159,8 @@ remains outside M9.
 distortion formulas and intrinsics become scalar-generic in their parameters as well as their point,
 and each model's automatic derivatives are tested against finite differences, its iterative inverse
 included. The refiner declares the models it can estimate. A model that fails that test is not
-declared, so a request for it is refused rather than refined on wrong derivatives.
+declared, so a request for it is refused rather than refined on wrong derivatives. *(Built 2026-10-13,
+sub-slice 4: the models still hold doubles, and their formulas became static templates over a
+coefficient array, generic in the coefficients' scalar and the point's. All six models' derivatives
+agree with finite differences, the worst at 4.0e-8 of the derivative's scale, through the inverse
+Brown-Conrady model's Newton iteration.)*
