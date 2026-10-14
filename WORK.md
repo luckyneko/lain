@@ -5321,7 +5321,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      - They move to a private module both methods share, held to a golden targetless registration
        report committed first.
      - The one difference is policy. A registration needs every camera placed. A calibration needs
-       only enough frames, and reports an unplaced frame rather than failing on it.
+       only enough frames, and reports an unplaced frame rather than failing on it. *(2026-10-14: the
+       module already leaves that decision to its caller. Only the rule for choosing a seed that
+       reaches fewer than every frame is new, and it lands with sub-slice 9.)*
    - **What only the targetless method uses is an argument of its entry point**, as board's detection
      request is: `calibration::targetless::Settings`. It holds:
      - the sequence extraction request;
@@ -5427,12 +5429,16 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         - a registration problem unchanged;
         - Release only, the time at 60 frames and 20,000 landmarks.
       - Sabotages: the held fields left free; a free model no camera uses.
-   6. **The incremental reconstruction leaves `registration/targetless.cpp`.**
+   6. **The incremental reconstruction leaves `registration/targetless.cpp`.** *(Planned in detail
+      2026-10-14 as three commits, 6a to 6c, with seven scenes in the golden and the observation
+      graph moved down first; see below.)*
       - First, a golden in `test-camera-targetless`, whose stand-ins are already the only backends
         registered there. It prints three targetless registration reports: connected, a chain that
         cannot be placed, and noisy.
       - Placeability, the seed, placement and the cheirality filter then move to a private module over
-        rays. Which views must be placed (all, or enough) is a parameter.
+        rays. ~~Which views must be placed (all, or enough) is a parameter.~~ *(Amended 2026-10-14:
+        the views a seed's closure must reach are a parameter, as registration already passes them two
+        ways. The rule for "enough" lands with sub-slice 9, beside its caller.)*
       - The golden stays byte-equal.
       - Sabotage: a closure that places a view from one placed neighbour fails the chain case.
    7. **Fundamental matrices and sequence track extraction**, lain's side, over stand-ins.
@@ -5475,7 +5481,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
            returns it (moved from sub-slice 2, 2026-10-13);
         2. the held-out frames;
         3. the starting model: imported, or the focal sweep;
-        4. the reconstruction, then the cheirality filter;
+        4. the reconstruction, then the cheirality filter, through sub-slice 6's module. Here the
+           module gains the rule for choosing a seed whose closure reaches fewer than every frame
+           (moved here from sub-slice 6, 2026-10-14);
         5. the bundle adjustment, the model free and the principal point held unless freed, then
            `CameraModel::create`;
         6. the held-out frames posed and measured;
@@ -6445,6 +6453,182 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        and its objects checked newer before the final runs.
    - **Counts as predicted:** 1227/1227 Debug and 1235/1235 Release with video, camera and Ceres on
      (+13 each), 1122/1122 with all three off (+5). Warning-clean, format-check clean.
+
+   **Sub-slice 6 planned (2026-10-14) as three commits.** None of them changes behaviour:
+   1. **6a:** a golden targetless registration report, produced by the unchanged code.
+   2. **6b:** the observation graph moves down to `lain::camera`, and `root` and `median` with it.
+   3. **6c:** the incremental reconstruction moves to a private module both targetless methods can
+      share.
+
+   **Found while planning:**
+   - **The code to lift reaches into registration in three places.** Calibration may not depend on
+     its sibling (ADR-0016), so a module that includes any of them could not be shared:
+     - `candidates` ranks seed pairs by `registration::ObservationGraph`'s edges, a public
+       registration type;
+     - `chooseSeed` takes its median triangulation angle through `registration::detail::median`;
+     - `observationGraph` finds its components through `registration::detail::root`.
+   - **`feature/extraction.cpp` already has private copies of `root` and `median`**, since feature
+     could not reach registration's either. Both copies do the same arithmetic:
+     - `root` halves the path the same way;
+     - both medians take the middle value, or the mean of the middle two added in the same order.
+
+     Extraction never asks for the median of nothing; registration's answers infinity for it.
+   - **No test reaches a private header.** Every camera test goes through a public entry point, so a
+     rule in the module that registration never takes could not be tested before sub-slice 9 calls
+     it.
+   - **The plan's three scenes would miss some of what moves.** None puts a landmark behind a camera
+     (the cheirality filter) or seeds below the parallax floor. None asks for a component estimate,
+     which is the one place registration passes `required` as less than every camera. So the golden
+     prints seven scenes.
+   - **`chooseSeed` and `place` read only the request's seed**, through `geometryRequest(request)`.
+     In the module they take a `feature::GeometryRequest`, which registration builds as it does
+     today.
+
+   **Decided with the repo owner:**
+   - **The observation graph moves down to `lain::camera`**, as `RigCamera`, the refiner seam and the
+     board pose seam did:
+     - `lain/camera/observationgraph.h` holds `GraphEdge`, `ObservationGraph` and `observationGraph`.
+       Registration keeps those names through using-declarations.
+     - `weakBridges` stays in registration. A weak bridge is a fitness judgement (CONTEXT.md, *Weak
+       bridge*), and only registration makes one.
+     - `root` and `median` go down to `camera::detail` with the graph. Registration's `detail` names
+       them through using-declarations, as it does `angleBetween`, and `extraction.cpp`'s copies are
+       deleted in their favour.
+     - So the pair counts the module ranks seeds by come from one routine. Letting the module count
+       pairs itself was the alternative: it would have computed the same counts twice, with only the
+       golden to keep their tie order together.
+   - **"Enough" lands with sub-slice 9, beside its caller.**
+     - The module keeps the parameter registration already passes two ways: `required`, the views a
+       seed's closure must reach (every camera, or one component for a component estimate).
+     - The module already never fails on an unplaced view. `place` places what it can and
+       `startFrom` names the starved views. Registration treats either as a failure; calibration
+       will report them.
+     - How a calibration chooses a seed whose closure reaches fewer than every frame is sub-slice
+       9's, tested there by "a frame left unplaced, and reported". Built now, nothing could reach it.
+   - **Three commits.** The golden comes first, as sub-slice 1's did, and the public header's move is
+     kept apart from the private lift.
+
+   **Taken by precedent, or decided while planning:**
+   - **The module is `src/reconstruction.{h,cpp}`, in namespace `lain::camera::reconstruction`.**
+     - It is private to lain::camera, as `registration/common.h` is, in two ways: `src/` is never on
+       a consumer's include path, and its header says so.
+     - It gets its own namespace rather than `camera::detail`. Inside registration,
+       `registration::detail` hides that namespace, and the module's names (`place`, `Seed`, `Start`)
+       read better with their module's name beside them.
+     - `registration/targetless.cpp` names them through using-declarations at its top, as it names
+       `detail::median` today, so its call sites stay unqualified.
+   - **The module speaks of views**, feature's word for what a track's observation belongs to
+     (`feature::View`, `SceneObservation::view`). In registration a view is a camera; in calibration
+     it will be a frame. The renames:
+     - `Seen::camera` becomes `view`;
+     - `Placement::cameraFromWorld` becomes `viewFromWorld`;
+     - `Start::cameraFromReference` becomes `viewFromReference`;
+     - `camerasOf` becomes `viewsOf`.
+   - **The module holds a model per view, and no identity**: `Evidence { std::vector<CameraModel>
+     models; std::vector<Usable> tracks; }`. Registration keeps its canonical `RigCamera`s beside it,
+     for the identities it reports.
+   - **What moves**, with bodies unchanged apart from the renames and the geometry request:
+     - the four constants (`kSeedShared`, `kPlaceLandmarks`, `kSeedCandidates`, `kSeedAngle`) and
+       the parallax floor;
+     - `Seen`, `Usable`, `Evidence`, `Units`, `viewsOf` and `unitsOf`;
+     - `Closure` and `closure`, `Candidates` and `candidates`, `Seed` and `chooseSeed`, `Placement`
+       and `place`, `Start` and `startFrom`.
+   - **What stays, being registration's:**
+     - the hold-out guard and `kMinimumToHoldOut`, since calibration holds out frames by a rule of
+       its own;
+     - scale normalisation (`normalisation`, `scaleBy`);
+     - the refinement problem (`problemOf`);
+     - the bootstrap's `registerUnits`;
+     - component estimates (`estimate`);
+     - the checks and the report.
+
+     The hold-out guard reads `Closure`'s `rank`, `support` and `shared`, so they stay public members
+     of the module's type.
+   - **The graph's fields keep their names** (`cameras`, `sharedPerCamera`). They are right where
+     the graph is reported, and its header says that a vertex is a method's view. Renaming them
+     would touch board registration, and its golden's printer, for no reader.
+   - **The parallax floor stays the facades' DEFAULT angle**, not the request's angle. That is what
+     `minimumParallax()` reads today. Whether calibration's swept angle should move it is sub-slice
+     9's question.
+   - **The dependency direction is stated in the headers, not guarded**, as sub-slice 3 left it.
+     `reconstruction.h` and `observationgraph.h` include nothing from `registration/` or
+     `calibration/`, which a grep checks.
+
+   **6a: the golden** (`test_targetlessgolden.cpp` in `test-camera-targetless`, compared with
+   `golden/targetlessregistration.txt`):
+   - Every field of a targetless registration report is printed, timings aside, through
+     `goldentext.h`.
+     - The labels are the method-neutral names (units, residuals). There is no earlier text this
+       golden must stay byte-equal to.
+     - The targetless diagnostics and record are printed whole. Over a track set, the extraction and
+       the track set print as unset.
+   - It runs over the stand-ins already registered there and the pass-through refiner. So each
+     result is initialisation's own, which is exactly what moves.
+   - Seven scenes, each for what it reaches:
+     1. **connected**: 4 cameras, 300 landmarks, exact.
+     2. **noisy**: the same at 0.3 px, with a requested reference (cam02), Huber's loss, a quarter
+        held out, and 6 resamples from seed 17. Every resample runs `registerUnits`, so the
+        bootstrap's path through the module is printed too.
+     3. **chain**: pairs (0, 1), (1, 2) and (2, 3), 50 landmarks each. It fails Disconnected, with
+        cam02 and cam03 unplaceable and the top candidate's estimate.
+     4. **disconnected**: {0, 1} and {2, 3}, 100 landmarks each. Each component gets an estimate,
+        with `required` as that component.
+     5. **behind**: camera 3 stands inside the scene facing away, with a wrong match behind it. This
+        prints the cheirality filter's count and its infinite outlier.
+     6. **narrow**: three cameras 3 cm apart. The seed is below the floor, the widest pair.
+     7. **spare**: the design review's 38 tracks, whose critical tracks only the hold-out guard keeps.
+        The guard reads the module's closure.
+
+     Scenes 3 to 7 are built as the existing cases build them.
+   - `test-camera-targetless` gains `lain::meta` and the golden directories, as
+     `test-camera-registration` has them.
+   - Sabotages, on the unchanged code, each restored and checked:
+     - the cheirality filter keeping every observation. Predicted: scene 5 fails, at its `behind`
+       count.
+     - `estimate` asked to reach every camera instead of its component. Predicted: scene 4 fails,
+       because both estimates then start from the top pair, (0, 1).
+   - Counts: +1 in every configuration, so 1228 Debug and 1236 Release with video, camera and Ceres
+     on, and 1123 with all three off.
+
+   **6b: the graph moves down.**
+   - `lain/camera/observationgraph.h` and `src/observationgraph.cpp` hold the moved type and
+     `observationGraph`. The header says a vertex is a method's view: a camera in registration, a
+     frame in targetless calibration.
+   - `registration/observationgraph.h` names the three through using-declarations and still declares
+     `weakBridges`, whose definition stays where it is.
+   - `src/unionfind.h` (`detail::root`) and `src/median.h` (`detail::median`), inline as `angles.h`
+     is.
+   - `test_registrationcontracts.cpp` keeps registration's spelling of the graph, which also shows the
+     old names still reach the moved type.
+   - CONTEXT.md's *Camera observation graph* is amended: the type is `lain::camera`'s, and targetless
+     calibration's frames will form one.
+   - Sabotage: the shared median taking the lower of the middle two values. Predicted:
+     - the targetless golden fails, at scene 1's seed angle, a median over 240 angles;
+     - the board golden fails wherever a median is over an even count;
+     - the track-extraction tests may pass, since a stand-in's static feature is at one pixel in
+       every frame. That is measured, not assumed.
+   - Every golden is untouched, and the counts are unchanged.
+
+   **6c: the lift.**
+   - `src/reconstruction.{h,cpp}`, as above. `registration/targetless.cpp` keeps what is
+     registration's.
+   - The golden is untouched, and the counts are unchanged.
+   - Sabotages:
+     - **The plan's**: a closure that counts a unit once ONE placed view sees it
+       (`inPlaced[u] != 1`). Predicted: scene 3 fails as InitialisationFailed instead of
+       Disconnected, because the closure now covers every camera and `place` cannot triangulate a
+       landmark for cam02. The existing chain case fails too.
+     - The seed ignoring the floor (the most inliers, whatever the angle). Predicted: scene 6 fails,
+       seeding (cam00, cam01) without the below-floor flag, and so does the existing narrow case.
+   - **Timing:** the Release targetless scale case, against the pre-change binary, in alternating
+     order. The module is now a translation unit of its own, and sub-slice 5 found that moving code
+     between translation units changes what GCC inlines. A change beyond noise is a finding.
+   - Also checked: Debug and Release with all three plugins on and with all three off. The Ceres
+     targetless cases and the Release end-to-end comparison, which run real backends through the
+     moved code, must pass unchanged.
+
+   **Docs:** each commit adds its built note here and an entry to CLAUDE.md, as 2a and 2b did. 6b
+   amends CONTEXT.md.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
