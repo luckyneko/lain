@@ -1,10 +1,14 @@
 #include "ceresrefiner.h"
 
+#include "freemodel.h"
+#include "observe.h"
+
 #include <lain/camera/projection.h>
 #include <lain/core/time.h>
 
 #include <ceres/autodiff_cost_function.h>
 #include <ceres/loss_function.h>
+#include <ceres/manifold.h>
 #include <ceres/ordered_groups.h>
 #include <ceres/problem.h>
 #include <ceres/rotation.h>
@@ -48,13 +52,6 @@ namespace lain::camera::ceres
 									 math::Vec3d{pose[3], pose[4], pose[5]}};
 	}
 
-	// What a residual multiplies the pixel error by, so that it is in standard deviations: the inverse
-	// of the covariance's Cholesky factor, [a 0; b c]. Every residual kind whitens through this one.
-	struct Whitening
-	{
-		double a, b, c;
-	};
-
 	// The measured covariance's whitening, or the noise model's sigma's with none; nothing when the
 	// covariance is not positive definite.
 	static std::optional<Whitening> whitening(const std::optional<std::array<double, 3>>& covariance, double sigma)
@@ -71,27 +68,16 @@ namespace lain::camera::ceres
 		return Whitening{1.0 / l11, -l21 / (l11 * l22), 1.0 / l22};
 	}
 
-	// A point in the reference frame seen by a camera: the pixel camera::project<T> predicts, against
-	// the pixel observed, whitened. False when the point does not project, which fails the solve.
+	// A held model's projection: the double model, by pointer, so a held problem runs the arithmetic
+	// it always has.
 	template <typename T>
-	static bool observe(const CameraModel& model, const T* const camera, const T* const inReference, const math::Vec2d& pixel,
-						const Whitening& w, T* residual)
+	static auto heldProjection(const CameraModel& model)
 	{
-		T inCamera[3];
-		::ceres::AngleAxisRotatePoint(camera, inReference, inCamera);
-		for (int i = 0; i < 3; ++i)
-			inCamera[i] += camera[3 + i];
-		const Projection<T> predicted = project(model, inCamera[0], inCamera[1], inCamera[2]);
-		if (!predicted.ok())
-			return false;
-		const T du = predicted.u - T(pixel.x);
-		const T dv = predicted.v - T(pixel.y);
-		residual[0] = T(w.a) * du;
-		residual[1] = T(w.b) * du + T(w.c) * dv;
-		return true;
+		return [&model](const T& x, const T& y, const T& z)
+		{ return project(model, x, y, z); };
 	}
 
-	// One corner seen by one camera, posed by its body and then the camera.
+	// One corner seen by one camera through a held model, posed by its body and then the camera.
 	struct CornerResidual
 	{
 		const CameraModel* model;
@@ -102,17 +88,14 @@ namespace lain::camera::ceres
 		template <typename T>
 		bool operator()(const T* const camera, const T* const body, T* residual) const
 		{
-			const T corner[3] = {T(point.x), T(point.y), T(point.z)};
 			T inReference[3];
-			::ceres::AngleAxisRotatePoint(body, corner, inReference);
-			for (int i = 0; i < 3; ++i)
-				inReference[i] += body[3 + i];
-			return observe(*model, camera, inReference, pixel, whitening, residual);
+			bodyToReference(body, point, inReference);
+			return observe(heldProjection<T>(*model), camera, inReference, pixel, whitening, residual);
 		}
 	};
 
-	// One landmark seen by one camera: the landmark is its own parameter block, already in the
-	// reference frame.
+	// One landmark seen by one camera through a held model: the landmark is its own parameter block,
+	// already in the reference frame.
 	struct PointResidual
 	{
 		const CameraModel* model;
@@ -122,7 +105,7 @@ namespace lain::camera::ceres
 		template <typename T>
 		bool operator()(const T* const camera, const T* const point, T* residual) const
 		{
-			return observe(*model, camera, point, pixel, whitening, residual);
+			return observe(heldProjection<T>(*model), camera, point, pixel, whitening, residual);
 		}
 	};
 
@@ -155,12 +138,42 @@ namespace lain::camera::ceres
 		return {"ceres", CERES_VERSION_STRING};
 	}
 
+	bool CeresRefiner::canEstimate(DistortionModel model) const
+	{
+		// Every model's derivatives are tested against finite differences through the parameter
+		// overload, at nonzero coefficients and at the neutral model (test_jet.cpp), which is ADR-0017's
+		// criterion for declaring one. A new model fails to compile here until it is tested and listed.
+		switch (model)
+		{
+			case DistortionModel::None:
+			case DistortionModel::BrownConrady5:
+			case DistortionModel::InverseBrownConrady5:
+			case DistortionModel::ModifiedBrownConrady5:
+			case DistortionModel::RationalBrownConrady8:
+			case DistortionModel::KannalaBrandt4:
+				return true;
+		}
+		return false;
+	}
+
 	refinement::Solution CeresRefiner::refine(const refinement::Problem& problem) const
 	{
 		const core::Time start = core::Time::now();
-		const std::size_t cameraCount = problem.models.size();
-		if (problem.cameraFromReference.size() != cameraCount || problem.reference >= cameraCount)
+		const std::size_t cameraCount = problem.cameraFromReference.size();
+		const std::size_t modelCount = problem.models.size();
+		if ((problem.modelOf.empty() && modelCount != cameraCount) || problem.reference >= cameraCount)
 			return failure(refinement::Status::Failed, "the problem's cameras do not match its models");
+		if (!problem.modelOf.empty() && problem.modelOf.size() != cameraCount)
+			return failure(refinement::Status::Failed, "the problem's model indices do not match its cameras");
+		const auto modelIndex = [&](std::size_t camera)
+		{ return problem.modelOf.empty() ? camera : problem.modelOf[camera]; };
+		for (std::size_t c = 0; c < cameraCount; ++c)
+		{
+			if (modelIndex(c) >= modelCount)
+				return failure(refinement::Status::Failed, "a camera sees through no model");
+		}
+		if (!problem.modelFreedom.empty() && problem.modelFreedom.size() != modelCount)
+			return failure(refinement::Status::Failed, "the problem's model freedoms do not match its models");
 		if (problem.noise.pixelSigma <= 0)
 			return failure(refinement::Status::Failed, "the noise model's pixel sigma is not positive");
 
@@ -177,6 +190,16 @@ namespace lain::camera::ceres
 			std::vector<std::array<double, 3>> points;
 			for (const math::Vec3d& p : problem.landmarks)
 				points.push_back({p.x, p.y, p.z});
+			// A free model is a block of its own; a held one has none, and its residuals read the
+			// double model.
+			std::vector<bool> freeModel(modelCount, false);
+			std::vector<std::vector<double>> modelBlocks(modelCount);
+			for (std::size_t m = 0; m < modelCount && !problem.modelFreedom.empty(); ++m)
+			{
+				freeModel[m] = problem.modelFreedom[m].frees(problem.models[m]);
+				if (freeModel[m])
+					modelBlocks[m] = blockOf(problem.models[m]);
+			}
 
 			::ceres::Problem::Options problemOptions;
 			// One loss object for every residual, owned here rather than by the problem.
@@ -186,6 +209,7 @@ namespace lain::camera::ceres
 
 			const double sigma = problem.noise.pixelSigma;
 			std::vector<bool> usedCamera(cameraCount, false), usedBody(bodies.size(), false), usedPoint(points.size(), false);
+			std::vector<bool> usedModel(modelCount, false);
 			for (const refinement::BodyObservation& o : problem.observations)
 			{
 				if (o.camera >= cameraCount || o.body >= bodies.size())
@@ -193,9 +217,17 @@ namespace lain::camera::ceres
 				const std::optional<Whitening> w = whitening(o.covariance, sigma);
 				if (!w)
 					return failure(refinement::Status::Failed, "a corner's covariance is not positive definite");
-				solver.AddResidualBlock(new ::ceres::AutoDiffCostFunction<CornerResidual, 2, 6, 6>(
-											new CornerResidual{&problem.models[o.camera], o.point, o.pixel, *w}),
-										loss.get(), cameras[o.camera].data(), bodies[o.body].data());
+				const std::size_t m = modelIndex(o.camera);
+				if (freeModel[m])
+				{
+					solver.AddResidualBlock(freeCornerCost(problem.models[m], o.point, o.pixel, *w), loss.get(),
+											cameras[o.camera].data(), bodies[o.body].data(), modelBlocks[m].data());
+					usedModel[m] = true;
+				}
+				else
+					solver.AddResidualBlock(new ::ceres::AutoDiffCostFunction<CornerResidual, 2, 6, 6>(
+												new CornerResidual{&problem.models[m], o.point, o.pixel, *w}),
+											loss.get(), cameras[o.camera].data(), bodies[o.body].data());
 				usedCamera[o.camera] = true;
 				usedBody[o.body] = true;
 			}
@@ -206,9 +238,17 @@ namespace lain::camera::ceres
 				const std::optional<Whitening> w = whitening(o.covariance, sigma);
 				if (!w)
 					return failure(refinement::Status::Failed, "a landmark observation's covariance is not positive definite");
-				solver.AddResidualBlock(
-					new ::ceres::AutoDiffCostFunction<PointResidual, 2, 6, 3>(new PointResidual{&problem.models[o.camera], o.pixel, *w}),
-					loss.get(), cameras[o.camera].data(), points[o.landmark].data());
+				const std::size_t m = modelIndex(o.camera);
+				if (freeModel[m])
+				{
+					solver.AddResidualBlock(freePointCost(problem.models[m], o.pixel, *w), loss.get(),
+											cameras[o.camera].data(), points[o.landmark].data(), modelBlocks[m].data());
+					usedModel[m] = true;
+				}
+				else
+					solver.AddResidualBlock(
+						new ::ceres::AutoDiffCostFunction<PointResidual, 2, 6, 3>(new PointResidual{&problem.models[m], o.pixel, *w}),
+						loss.get(), cameras[o.camera].data(), points[o.landmark].data());
 				usedCamera[o.camera] = true;
 				usedPoint[o.landmark] = true;
 			}
@@ -217,6 +257,16 @@ namespace lain::camera::ceres
 				if (usedCamera[c] && (!problem.freeCameras || c == problem.reference))
 					solver.SetParameterBlockConstant(cameras[c].data());
 			}
+			// A free model's held fields stay exactly where they started.
+			for (std::size_t m = 0; m < modelCount; ++m)
+			{
+				if (!usedModel[m])
+					continue;
+				const std::vector<int> held = heldFields(problem.modelFreedom[m], modelBlocks[m].size());
+				if (!held.empty())
+					solver.SetManifold(modelBlocks[m].data(), new ::ceres::SubsetManifold(int(modelBlocks[m].size()), held));
+			}
+			const bool anyFreeModel = std::find(usedModel.begin(), usedModel.end(), true) != usedModel.end();
 
 			::ceres::Solver::Options options;
 			options.max_num_iterations = int(problem.maximumIterations);
@@ -226,10 +276,11 @@ namespace lain::camera::ceres
 			// The linear solver follows the problem's shape (ADR-0017).
 			const std::size_t latent = std::size_t(std::count(usedBody.begin(), usedBody.end(), true)) +
 									   std::size_t(std::count(usedPoint.begin(), usedPoint.end(), true));
-			if (problem.freeCameras)
+			if (problem.freeCameras || anyFreeModel)
 			{
 				// The bodies and landmarks are eliminated first: a camera sees hundreds of them, each a
-				// few cameras.
+				// few cameras. A free model couples every latent block its cameras see, so it is a
+				// Schur problem even with the cameras held.
 				options.linear_solver_type = ::ceres::SPARSE_SCHUR;
 				options.sparse_linear_algebra_library_type = ::ceres::EIGEN_SPARSE;
 				auto ordering = std::make_shared<::ceres::ParameterBlockOrdering>();
@@ -248,15 +299,20 @@ namespace lain::camera::ceres
 					if (usedCamera[c])
 						ordering->AddElementToGroup(cameras[c].data(), 1);
 				}
+				for (std::size_t m = 0; m < modelCount; ++m)
+				{
+					if (usedModel[m])
+						ordering->AddElementToGroup(modelBlocks[m].data(), 1);
+				}
 				options.linear_solver_ordering = ordering;
 			}
 			else if (latent <= 1)
 				options.linear_solver_type = ::ceres::DENSE_QR; // one board pose or one point: tiny
 			else
 			{
-				// Every camera held: the unknowns are independent of one another, so the normal
-				// equations are block diagonal and sparse Cholesky factors them in linear time, where
-				// dense QR of thousands of landmarks would not fit in memory.
+				// Every camera and model held: the unknowns are independent of one another, so the
+				// normal equations are block diagonal and sparse Cholesky factors them in linear time,
+				// where dense QR of thousands of landmarks would not fit in memory.
 				options.linear_solver_type = ::ceres::SPARSE_NORMAL_CHOLESKY;
 				options.sparse_linear_algebra_library_type = ::ceres::EIGEN_SPARSE;
 			}
@@ -294,6 +350,11 @@ namespace lain::camera::ceres
 					out.referenceFromBody.push_back(transformOf(p));
 				for (const std::array<double, 3>& p : points)
 					out.landmarks.push_back(math::Vec3d{p[0], p[1], p[2]});
+				// Unchecked: the method passes each through CameraModel::create. A free model no
+				// residual used was never in the problem, and comes back as it started.
+				for (std::size_t m = 0; m < modelCount; ++m)
+					out.models.push_back(usedModel[m] ? parametersOf(problem.models[m], modelBlocks[m])
+													  : problem.models[m].parameters());
 			}
 			out.elapsed = core::Time::now() - start;
 			return out;

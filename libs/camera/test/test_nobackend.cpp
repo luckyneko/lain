@@ -20,6 +20,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <memory>
 #include <variant>
 
@@ -128,6 +129,13 @@ TEST_CASE("with no backend, a refinement says the capability is missing", "[came
 	// Calibration and registration both read it, so it names neither.
 	CHECK(solution.detail.find("no refiner") != std::string::npos);
 	CHECK(solution.detail.find("LAIN_CAMERA_CERES") != std::string::npos);
+	// Nor can it estimate any model.
+	for (std::size_t m = 0; m < std::variant_size_v<lain::camera::Distortion>; ++m)
+	{
+		const lain::camera::DistortionModel model = lain::camera::DistortionModel(m);
+		INFO(lain::camera::displayName(model));
+		CHECK_FALSE(refinement::canEstimate(model));
+	}
 }
 
 TEST_CASE("with no backend, a registration fails for want of a pose solver, or a detector", "[camera][registration]")

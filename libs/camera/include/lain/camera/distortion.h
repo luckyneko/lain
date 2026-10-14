@@ -79,6 +79,8 @@ namespace lain::camera
 	//   kCoefficientNames     its coefficients' names, in its coefficient order
 	//   Coefficients<S>       an array of its coefficients, in that order, as scalar S
 	//   coefficients()        this model's values, as Coefficients<double>
+	//   fromCoefficients(c)   the model holding values c: coefficients()' inverse, which reads a
+	//                         solver's answer back into a model
 	//   project(c, x, y, z)   coefficients c and a camera-frame direction to distorted normalised
 	//                         coordinates
 	//   unproject(c, xd, yd)  coefficients c and distorted normalised coordinates to a unit ray
@@ -105,6 +107,7 @@ namespace lain::camera
 		template <typename S>
 		using Coefficients = std::array<S, kCoefficientNames.size()>;
 		Coefficients<double> coefficients() const { return {}; }
+		static NoDistortion fromCoefficients(const Coefficients<double>&) { return {}; }
 
 		template <typename S, typename T>
 		static DistortedPoint<T> project(const Coefficients<S>& c, const T& x, const T& y, const T& z,
@@ -126,6 +129,7 @@ namespace lain::camera
 		template <typename S>
 		using Coefficients = std::array<S, kCoefficientNames.size()>;
 		Coefficients<double> coefficients() const { return {k1, k2, p1, p2, k3}; }
+		static BrownConrady5 fromCoefficients(const Coefficients<double>& c) { return {c[0], c[1], c[2], c[3], c[4]}; }
 
 		template <typename S, typename T>
 		static DistortedPoint<T> project(const Coefficients<S>& c, const T& x, const T& y, const T& z,
@@ -152,6 +156,7 @@ namespace lain::camera
 		template <typename S>
 		using Coefficients = std::array<S, kCoefficientNames.size()>;
 		Coefficients<double> coefficients() const { return {k1, k2, p1, p2, k3}; }
+		static InverseBrownConrady5 fromCoefficients(const Coefficients<double>& c) { return {c[0], c[1], c[2], c[3], c[4]}; }
 
 		template <typename S, typename T>
 		static DistortedPoint<T> project(const Coefficients<S>& c, const T& x, const T& y, const T& z,
@@ -183,6 +188,7 @@ namespace lain::camera
 		template <typename S>
 		using Coefficients = std::array<S, kCoefficientNames.size()>;
 		Coefficients<double> coefficients() const { return {k1, k2, p1, p2, k3}; }
+		static ModifiedBrownConrady5 fromCoefficients(const Coefficients<double>& c) { return {c[0], c[1], c[2], c[3], c[4]}; }
 
 		template <typename S, typename T>
 		static DistortedPoint<T> project(const Coefficients<S>& c, const T& x, const T& y, const T& z,
@@ -213,6 +219,7 @@ namespace lain::camera
 		template <typename S>
 		using Coefficients = std::array<S, kCoefficientNames.size()>;
 		Coefficients<double> coefficients() const { return {k1, k2, p1, p2, k3, k4, k5, k6}; }
+		static RationalBrownConrady8 fromCoefficients(const Coefficients<double>& c) { return {c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]}; }
 
 		template <typename S, typename T>
 		static DistortedPoint<T> project(const Coefficients<S>& c, const T& x, const T& y, const T& z,
@@ -245,6 +252,7 @@ namespace lain::camera
 		template <typename S>
 		using Coefficients = std::array<S, kCoefficientNames.size()>;
 		Coefficients<double> coefficients() const { return {k1, k2, k3, k4}; }
+		static KannalaBrandt4 fromCoefficients(const Coefficients<double>& c) { return {c[0], c[1], c[2], c[3]}; }
 
 		template <typename S, typename T>
 		static DistortedPoint<T> project(const Coefficients<S>& c, const T& x, const T& y, const T& z,

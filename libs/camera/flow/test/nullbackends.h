@@ -70,6 +70,7 @@ namespace lain::camera::testing::null
 	{
 	public:
 		camera::Provenance provenance() const override { return {"null", "1"}; }
+		bool canEstimate(camera::DistortionModel) const override { return false; }
 		camera::refinement::Solution refine(const camera::refinement::Problem&) const override { return {}; }
 	};
 

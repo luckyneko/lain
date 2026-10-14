@@ -2446,7 +2446,7 @@ sub-slices (below), and **all eleven are built** (2026-10-09); a gui-mode eyebal
 owed. The repo owner kept the provisional values sub-slice 9 measured, and queued three changes to
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
 graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
-(as 1a and 1b), 2 (as 2a and 2b), 3 and 4 are built, and so is the fix that lands ahead of 5.
+(as 1a and 1b), 2 (as 2a and 2b), 3, 4 and 5 are built, with the fix that landed ahead of 5.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -5411,7 +5411,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         *(Reworded 2026-10-13: a coefficient converted to double no longer compiles once it is a Jet,
         so the type system guards that case; see the detailed plan.)*
    5. **The refiner frees camera models.** *(Planned in detail 2026-10-14 as one commit, with a fix
-      to sub-slice 4's Newton solve landing ahead of it in its own commit; see below.)*
+      to sub-slice 4's Newton solve landing ahead of it in its own commit; see below. Both built
+      2026-10-14.)*
       - `Problem` gains a model index per camera (`modelOf`; empty is one model per camera, as now)
         and a `ModelFreedom` per model: focal length, principal point, coefficients.
       - `Solution::models` carries the refined parameters UNCHECKED, for the method to pass through
@@ -6374,6 +6375,76 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      3 fail.
    - **`BrownConrady5::fromCoefficients` reading p1 and p2 swapped.** Predicted: the round-trip case
      fails, and so do case 1 for Brown-Conrady 5 and case 5, whose board camera is Brown-Conrady 5.
+
+   **Sub-slice 5 built (2026-10-14).** A problem's cameras may share a model, and a model may be
+   free. Registration changes by no line: every new field means today's problem when left empty,
+   and both goldens pass with their files untouched.
+   - **The seam** (`refinement/refiner.h`):
+     - `ModelFreedom`, `Problem::modelOf` / `modelFreedom` and `Solution::models` (unchecked), as
+       planned.
+     - `Status::Unsupported`, `Refiner::canEstimate` and the `canEstimate(model)` facade.
+     - **One addition: `ModelFreedom::frees(model)`**, whether a freedom frees anything the model
+       has. The facade asks it to choose a backend, and the Ceres refiner asks it to decide which
+       models get a block, so the two cannot disagree. Freeing only the coefficients of a model with
+       none frees nothing.
+   - **The facade** picks the first refiner that can estimate every model the problem frees. When
+     none can, it is `Unsupported` and names them: "a refiner is registered, but none can estimate
+     Kannala-Brandt 4", joined by "and" when there are several.
+   - **`fromCoefficients`** on each model, the inverse of `coefficients()`, one line in its class.
+   - **The Ceres refiner:**
+     - A free model is one block, `[fx, fy, cx, cy, coefficients...]`. Its held fields sit on a
+       `SubsetManifold`, so a held principal point comes back bit-equal.
+     - A held model has no block, and its residuals read the double model by pointer, as before.
+     - Every residual kind goes through one `observe()`, which takes a projector: held or free, only
+       where the projection's parameters come from differs.
+     - Elimination group 1 holds the used free blocks, and the solver rule is Schur when the cameras
+       or any model is free.
+     - The four new shape checks are in the backend, with the existing message kept.
+     - `canEstimate` is an exhaustive switch over `DistortionModel`, so a seventh model is a compile
+       error there until it is tested and listed.
+   - **Deviation, found by the timing check: the free model's code lives in its own file.**
+     - `freemodel.{h,cpp}` holds the free residuals, the block conversions and the held fields.
+       `observe.h` holds what both kinds share.
+     - With everything in `ceresrefiner.cpp`, the held path slowed. Targetless registration's scale
+       case took 32.3 s against 29.1 s before (three alternating rounds each), with the same 10,011
+       refinements, and the summed solve time grew from 49.0 to 55.0 s.
+     - Not the residual's own code: a variant whose held residuals called the old `observe()` was
+       just as slow. GCC limits how much inlining may grow one translation unit, and the twelve
+       free-model cost functions are large.
+     - Split into two files, it took 29.7 s, inside noise. The reason is written in `observe.h`, so
+       the split is not merged back.
+   - **Timings against the pre-change Release binary**, built here from HEAD and run alternately:
+     - targetless registration: 29.06 s before, 29.11 s after (three rounds);
+     - landmarks: 3.52 s before, 3.38 s after (three rounds);
+     - board registration: 14.59 s before, 14.57 s after (six rounds, the order reversed every
+       round).
+     - An earlier board reading was 1 s slower, with "before" always run first. With the order
+       alternating, the difference went away. Board's own spread here was 13.2 to 15.2 s.
+   - **Measured, and written beside each check** (linux-x86_64, the same in Debug and Release):
+     - Case 1, all six models: focal within 7.5e-9 and ray mapping within 2.8e-6 px, in 12 to 26
+       iterations; 1.6 to 8.5 s per model in Debug. The tolerances are 1e-6 and 1e-4 px.
+     - Case 2: a freed principal point lands 1.5e-7 px from the truth (tolerance 1e-5).
+     - Case 5, the board: focal within 5.4e-9, ray mapping within 1.5e-6 px, in 7 iterations.
+     - **Case 8, the scale case:** 6.4 s over 160,000 residuals, 13 iterations, 162 MB at peak. The
+       final cost is 1.002 of half the residual dimensions less the unknowns.
+       - It asserts the cost (within 1%) and focal within 2%, not recovery.
+       - With 0.5 px of noise and 8-view tracks, focal came out 0.81% long and the worst ray 4.3 px
+         out, which is the probe's finding about short tracks.
+   - **Sabotages, all caught; one wider than predicted:**
+     - No `SubsetManifold`: case 2's held section fails (cx and cy), and case 1 passes, as
+       predicted.
+     - An unused free model added to the ordering: case 4 fails at its requirement that the solve
+       converge, as predicted.
+     - The free residuals reading the block's values without their derivatives: cases 1 (all six
+       models), 2 and 5 fail as predicted, and **case 4 too**, which also asserts that the model in
+       use was refined.
+     - The facade taking the first refiner: seam cases 2 and 3 fail, as predicted.
+     - `BrownConrady5::fromCoefficients` with p1 and p2 swapped: the round trip, case 1 for
+       Brown-Conrady 5 and case 5 fail, each on its ray mapping, as predicted.
+     - Each file was restored from a saved copy, compared byte for byte, touched a second later,
+       and its objects checked newer before the final runs.
+   - **Counts as predicted:** 1227/1227 Debug and 1235/1235 Release with video, camera and Ceres on
+     (+13 each), 1122/1122 with all three off (+5). Warning-clean, format-check clean.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -11533,8 +11604,8 @@ row here**. A row is cheap to delete and expensive to leave.
   its detail lives:
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
-       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, and the fix
-       ahead of 5. The
+       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4 and 5, with the
+       fix ahead of 5. The
        separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
        restated (slice 4's plan).
   2. **Owed by the repo owner.**

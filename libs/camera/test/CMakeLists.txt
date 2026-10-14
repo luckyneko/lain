@@ -10,6 +10,7 @@ add_executable(test-camera
 	test_capturegroup.cpp
 	test_registrationcontracts.cpp
 	test_triangulation.cpp
+	test_refinementseam.cpp
 )
 target_compile_features(test-camera PRIVATE cxx_std_17)
 target_link_libraries(test-camera PRIVATE lain::camera lain::warnings Catch2::Catch2WithMain)

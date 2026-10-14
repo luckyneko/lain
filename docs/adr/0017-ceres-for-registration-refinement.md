@@ -153,7 +153,14 @@ are still eliminated first. The refined parameters come back unchecked, and the 
 through `CameraModel::create`, as it does an estimator's. Within one solve the projection's domain is the
 starting model's. A result whose distortion folds inside the image is refused by `create`, not
 reported as a model. Registration never frees a model: joint intrinsic and extrinsic registration
-remains outside M9.
+remains outside M9. *(Built 2026-10-14, sub-slice 5. Left empty, the problem's new fields mean
+today's problem, so registration changed by no line. The `refine()` facade picks the first refiner
+that can estimate every model a problem frees, as board calibration picks its estimator, and answers
+a new `Status::Unsupported`, naming the models, when none can. A free model is seen through body
+observations as well as landmarks, through the one `observe()` every residual shares, and the
+linear solver is Schur when the cameras or any model is free. The free model's residuals live in a
+file of their own: in one file with the held ones they slowed the held path by 9 to 11%, through
+GCC's per-file inlining limit, measured on targetless registration's scale case.)*
 
 **Ceres differentiates the model's parameters through lain's projection**, never through a copy. The
 distortion formulas and intrinsics become scalar-generic in their parameters as well as their point,
@@ -168,4 +175,5 @@ agreement was measured at nonzero test coefficients only. At the neutral model, 
 calibration starts, the inverse model's Newton solve stops before taking a step, and every
 coefficient's derivative comes back 0. Fixed the same day, in its own commit ahead of sub-slice 5:
 the solve takes a step before it may stop, and the derivatives agree at the neutral model too, the
-inverse model's worst at 8.0e-9.)*
+inverse model's worst at 8.0e-9.)* *(Built 2026-10-14, sub-slice 5: the Ceres refiner declares all six models, through an
+exhaustive switch, so a new model is a compile error there until it is tested and listed.)*

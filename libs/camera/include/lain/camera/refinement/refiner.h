@@ -20,6 +20,11 @@
 // positions are themselves unknown (a feature track's point). One problem, one path, whichever the
 // method observes.
 //
+// Every camera sees through a MODEL, and cameras may share one: a moving camera's frames are cameras
+// of one lens. A model is held unless the problem frees some of its parameters, and a free model
+// moves with every residual of every camera that sees through it, board corners and landmarks alike.
+// Registration holds every model; calibration frees one.
+//
 // It is lain::camera's, not a method module's, because registration and calibration both refine and
 // neither may depend on the other (ADR-0016). So this header includes nothing from registration/ or
 // calibration/, and must not start to: a seam that named one method's request would put the other
@@ -56,6 +61,18 @@ namespace lain::camera::refinement
 		double scale = 3.0;
 	};
 
+	// Which of one model's parameters are free. Every one is held by default.
+	struct ModelFreedom
+	{
+		bool focalLength = false;	 // fx and fy, together
+		bool principalPoint = false; // cx and cy, together
+		bool coefficients = false;	 // every distortion coefficient, or none
+		bool any() const { return focalLength || principalPoint || coefficients; }
+		// Whether this frees anything `model` has: freeing only the coefficients of a model with none
+		// holds it. The facade and a backend both ask this, so they agree on what a problem frees.
+		bool frees(const CameraModel& model) const;
+	};
+
 	// One corner seen by one camera: the point in its body's frame, and where the camera saw it.
 	struct BodyObservation
 	{
@@ -81,7 +98,13 @@ namespace lain::camera::refinement
 
 	struct Problem
 	{
-		std::vector<CameraModel> models;						// per camera, held fixed
+		// The models the cameras see through. Camera c sees through models[modelOf[c]], or through
+		// models[c] when modelOf is empty, which is one model per camera.
+		std::vector<CameraModel> models;
+		std::vector<std::uint32_t> modelOf;
+		// Per model: which of its parameters are free, starting from the model. Empty holds every
+		// model, as does an entry that frees nothing the model has (coefficients, for no distortion).
+		std::vector<ModelFreedom> modelFreedom;
 		std::vector<math::RigidTransformd> cameraFromReference; // per camera: the starting estimate
 		std::uint32_t reference = 0;							// held at its starting transform
 		// False holds EVERY camera, so only the bodies and landmarks move: a pose-only solve, which
@@ -108,6 +131,7 @@ namespace lain::camera::refinement
 		IterationLimit,	   // usable, but stopped at the iteration limit
 		Failed,			   // no usable solution
 		ResourceExhausted, // the machine ran out of memory for this problem
+		Unsupported,	   // a refiner is registered, but none can estimate a model the problem frees
 		NoBackend,		   // this build has no refiner
 	};
 
@@ -118,6 +142,10 @@ namespace lain::camera::refinement
 		std::vector<math::RigidTransformd> cameraFromReference;
 		std::vector<math::RigidTransformd> referenceFromBody;
 		std::vector<math::Vec3d> landmarks; // in the reference frame
+		// Per model, UNCHECKED: a held model as it was, a free one refined. The method passes each
+		// through CameraModel::create, as it does an estimator's answer, so a solver's candidate never
+		// reaches a report without validation.
+		std::vector<CameraModelParameters> models;
 		std::uint32_t iterations = 0;
 		double initialCost = 0; // half the sum of squared, whitened, loss-applied residuals
 		double finalCost = 0;
@@ -136,6 +164,12 @@ namespace lain::camera::refinement
 		virtual ~Refiner() = default;
 
 		virtual Provenance provenance() const = 0;
+
+		// Whether this backend can estimate `model`'s parameters, which a problem that frees them
+		// needs. A model it cannot estimate is refused, never refined on derivatives it cannot vouch
+		// for (ADR-0017).
+		virtual bool canEstimate(DistortionModel model) const = 0;
+
 		virtual Solution refine(const Problem& problem) const = 0;
 	};
 
@@ -145,6 +179,11 @@ namespace lain::camera::refinement
 	// Whether this build can refine at all: whether any backend registered.
 	bool canRefine();
 
-	// Refine through the registered backend. With none registered the solution is NoBackend.
+	// Whether any registered backend can estimate `model`.
+	bool canEstimate(DistortionModel model);
+
+	// Refine through the first registered backend that can estimate every model the problem frees,
+	// so a problem that frees none reaches the first. With none registered the solution is
+	// NoBackend; with none that can, Unsupported, naming the models.
 	Solution refine(const Problem& problem);
 } // namespace lain::camera::refinement

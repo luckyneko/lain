@@ -1400,6 +1400,46 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-14 — M9 slice 4, sub-slice 5: the refiner frees camera models
+
+A refinement problem's cameras may now share a model, and a model may be free, which targetless
+calibration needs: a moving camera's frames are cameras of one lens. Registration changes by no line,
+since every new field means today's problem when left empty, and both goldens pass with their files
+untouched. `ctest` **1227/1227** Debug and **1235/1235** Release with video, camera and Ceres on
+(+13 each), **1122/1122** with all three off (+5); warning-clean, format-check clean. Full notes in
+WORK.md's *Sub-slice 5 built* under M9 slice 4.
+
+- **The seam:**
+  - `ModelFreedom` (focal length, principal point, coefficients, all held by default),
+    `Problem::modelOf` and `modelFreedom`, and `Solution::models`, unchecked for the method to pass
+    through `CameraModel::create`;
+  - `Status::Unsupported`, `Refiner::canEstimate` and a `canEstimate(model)` facade;
+  - each model's `fromCoefficients`, the inverse of `coefficients()`.
+- **One addition beyond the plan, `ModelFreedom::frees(model)`.** The facade asks it to choose a
+  backend, and the Ceres refiner asks it to decide which models get a block, so the two cannot
+  disagree. Freeing only the coefficients of a model that has none frees nothing.
+- **The facade picks the first refiner that can estimate every model a problem frees**, as board
+  calibration picks its estimator. When none can, it is `Unsupported`, naming the models.
+- **In Ceres a free model is one block**, `[fx, fy, cx, cy, coefficients...]`, its held fields on a
+  `SubsetManifold`. Every residual goes through one `observe()` that takes a projector, held or
+  free. Schur runs when the cameras or any model is free. The refiner declares all six models
+  through an exhaustive switch.
+- **Found by the timing check: one file slowed the held path.** With the free residuals in
+  `ceresrefiner.cpp`, targetless registration's scale case took 32.3 s against 29.1 s, with the same
+  10,011 refinements. A variant with the old held `observe()` was as slow, so it was GCC's per-file
+  inlining limit, not the residual. Moved to `freemodel.{h,cpp}` (with `observe.h` shared), it took
+  29.7 s. The reason is in `observe.h`, so nobody merges the files back.
+- **Timings otherwise unchanged**, the pre-change binary built here and run alternately: board
+  registration 14.59 s and 14.57 s, landmarks 3.52 s and 3.38 s. An early board reading 1 s slower
+  went away once the run order alternated: **alternate the order when timing, or the second binary
+  pays for the first.**
+- **Exact tracks recover every model**: focal within 7.5e-9 and the ray mapping within 2.8e-6 px; a
+  board's corners do the same. The Release scale case (60 frames, 20,000 landmarks, 8 views, 0.5 px)
+  takes 6.4 s and 162 MB, and asserts the cost rather than recovery: 8-view tracks left focal 0.81%
+  long, the probe's finding about short tracks.
+- **Five sabotages, all caught.** One was wider than predicted: free residuals that drop their
+  derivatives also fail the unused-model case, which asserts that the model in use was refined.
+
 ### Update 2026-10-14 — Newton's solve takes a step before it may stop (fixed ahead of M9 slice 4, sub-slice 5)
 
 Found while planning sub-slice 5, fixed in its own commit ahead of it, as the plan commit decided with

@@ -40,6 +40,8 @@ namespace lain::camera::testing
 	{
 	public:
 		Provenance provenance() const override { return {"passthrough", "1"}; }
+		// It estimates nothing, so a problem that frees a model never reaches it.
+		bool canEstimate(DistortionModel) const override { return false; }
 
 		refinement::Solution refine(const refinement::Problem& problem) const override
 		{
@@ -55,6 +57,8 @@ namespace lain::camera::testing
 			out.cameraFromReference = problem.cameraFromReference;
 			out.referenceFromBody = problem.referenceFromBody;
 			out.landmarks = problem.landmarks;
+			for (const CameraModel& model : problem.models)
+				out.models.push_back(model.parameters());
 			return out;
 		}
 	};

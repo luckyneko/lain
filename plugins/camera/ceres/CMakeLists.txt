@@ -18,6 +18,7 @@ endif()
 add_library(camera-ceres STATIC
 	src/build.cpp
 	src/ceresrefiner.cpp
+	src/freemodel.cpp
 	src/register.cpp
 )
 add_library(lain::camera::ceres ALIAS camera-ceres)

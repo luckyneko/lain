@@ -339,6 +339,15 @@ TEST_CASE("the linear solver follows the problem's shape", "[camera][ceres][land
 		asBody(problem, 50);
 		expected = "SPARSE_NORMAL_CHOLESKY";
 	}
+	SECTION("held cameras and a free model: Schur")
+	{
+		// The model couples every landmark its camera sees, so the unknowns are no longer
+		// independent of one another.
+		problem.freeCameras = false;
+		problem.modelFreedom.assign(problem.models.size(), ModelFreedom{});
+		problem.modelFreedom[1].focalLength = true;
+		expected = "SPARSE_SCHUR";
+	}
 	const Solution solution = refine(problem);
 	INFO(expected << ": " << solution.detail);
 	REQUIRE(solution.usable());
