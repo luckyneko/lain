@@ -32,26 +32,6 @@ namespace
 {
 	const bool kPassThrough = (rig::registerPassThroughRefiner(), true);
 
-	std::string transform(const math::RigidTransformd& t)
-	{
-		const math::Quatd q = t.rotation();
-		const math::Vec3d p = t.translation();
-		return "q(" + number(q.w) + " " + number(q.x) + " " + number(q.y) + " " + number(q.z) + ") t(" + number(p.x) + " " +
-			   number(p.y) + " " + number(p.z) + ")";
-	}
-
-	std::string thresholds(const FitnessThresholds& t)
-	{
-		return std::to_string(t.minimumSharedPerCamera) + " " + std::to_string(t.minimumBridgeShared) + " " +
-			   number(t.maximumHeldOutAngle) + " " + number(t.maximumRotationVariation) + " " +
-			   number(t.maximumTranslationVariation) + " " + number(t.maximumOutlierFraction);
-	}
-
-	std::string edge(const GraphEdgeReport& e)
-	{
-		return e.a.value + "-" + e.b.value + " shared " + std::to_string(e.shared) + " bridge " + std::to_string(e.bridge);
-	}
-
 	std::string describe(const Report& r)
 	{
 		std::ostringstream out;

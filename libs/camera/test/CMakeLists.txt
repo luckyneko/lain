@@ -72,8 +72,14 @@ catch_discover_tests(test-camera-tracks TEST_PREFIX "(camera) ")
 
 # Targetless registration over stand-ins answering from a known scene (syntheticscene.h), with a
 # refiner that hands back its start (passthroughrefiner.h): held-out tracks predicted member by member
-# (registration::validate). Its own executable, so those are the only backends registered.
-add_executable(test-camera-targetless test_targetless.cpp)
+# (registration::validate). Its own executable, so those are the only backends registered. The golden
+# case compares whole reports with golden/targetlessregistration.txt, and writes what it produced
+# beside the build when the two differ.
+add_executable(test-camera-targetless test_targetless.cpp test_targetlessgolden.cpp)
 target_compile_features(test-camera-targetless PRIVATE cxx_std_17)
-target_link_libraries(test-camera-targetless PRIVATE lain::camera lain::testing lain::warnings Catch2::Catch2WithMain)
+target_link_libraries(test-camera-targetless
+	PRIVATE lain::camera lain::meta lain::testing lain::warnings Catch2::Catch2WithMain)
+target_compile_definitions(test-camera-targetless PRIVATE
+	LAIN_CAMERA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
+	LAIN_CAMERA_GOLDEN_OUT="${CMAKE_CURRENT_BINARY_DIR}")
 catch_discover_tests(test-camera-targetless TEST_PREFIX "(camera) ")

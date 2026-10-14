@@ -2446,7 +2446,8 @@ sub-slices (below), and **all eleven are built** (2026-10-09); a gui-mode eyebal
 owed. The repo owner kept the provisional values sub-slice 9 measured, and queued three changes to
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
 graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
-(as 1a and 1b), 2 (as 2a and 2b), 3, 4 and 5 are built, with the fix that landed ahead of 5.
+(as 1a and 1b), 2 (as 2a and 2b), 3, 4 and 5 are built, with the fix that landed ahead of 5, and
+6a of sub-slice 6.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -6589,6 +6590,36 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        because both estimates then start from the top pair, (0, 1).
    - Counts: +1 in every configuration, so 1228 Debug and 1236 Release with video, camera and Ceres
      on, and 1123 with all three off.
+
+   **Sub-slice 6a built (2026-10-14).** `test_targetlessgolden.cpp` prints the seven scenes into
+   `golden/targetlessregistration.txt` (944 lines). Debug and Release give the same bytes, run to run.
+   - **What each scene was checked to reach before the file was accepted:**
+     - connected: Ready, seed (cam00, cam01), every camera placed;
+     - noisy: the requested cam02, six resamples, 75 tracks held out;
+     - chain: Disconnected, cam02 and cam03 unplaceable, one component estimate from cam00;
+     - disconnected: two component estimates, from cam00 and from cam02;
+     - behind: `behind 1`, and track00006 an infinite outlier at cam03;
+     - narrow: seeded by the widest pair (cam00, cam02), below the floor;
+     - spare: no track held out at all. Every stride position is one of the eight critical tracks,
+       so the guard refusing all of them is exactly what the scene shows. Without the guard, eight
+       would be held out.
+   - **Three registration printers moved into `goldentext.h`** (`transform`, `thresholds`, `edge`),
+     since both registration goldens print them. The board golden's own copies are deleted, and its
+     file is unchanged.
+   - **Over a track set, nothing was extracted**, so the diagnostics' extraction and track set, and
+     the record's extraction request, print as `unset`. How a set one prints is left to the first
+     golden that extracts.
+   - **Sabotages, both caught:**
+     - The cheirality filter keeping every observation: scene 5 fails, its first difference the
+       refinement's residual count (492 becomes 493), which comes before its `behind` line. The
+       existing behind case fails too.
+     - `estimate` reaching every camera instead of its component: scene 4 fails, its second
+       estimate starting from cam00 instead of cam02. **Only the golden sees it**: the existing
+       disconnected case checks only that each estimate has two cameras.
+     - The second sabotage's first cut did not build (the loop's `component` went unused under
+       `-Werror`), so the stale binary answered. It was redone in a form that compiles.
+   - **Counts as predicted:** 1228/1228 Debug and 1236/1236 Release with video, camera and Ceres on,
+     1123/1123 with all three off. Warning-clean, format-check clean.
 
    **6b: the graph moves down.**
    - `lain/camera/observationgraph.h` and `src/observationgraph.cpp` hold the moved type and
@@ -11789,7 +11820,7 @@ row here**. A row is cheap to delete and expensive to leave.
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
        sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4 and 5, with the
-       fix ahead of 5. The
+       fix ahead of 5, and 6a. The
        separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
        restated (slice 4's plan).
   2. **Owed by the repo owner.**

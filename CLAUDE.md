@@ -1400,6 +1400,27 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-14 — M9 slice 4, sub-slice 6a: a golden targetless registration report
+
+The first of sub-slice 6's three commits, none of which changes behaviour. A golden targetless
+registration report, produced by the unchanged code, holds the incremental reconstruction still
+while it moves to a module calibration can share (6b moves the observation graph down, 6c lifts the
+reconstruction). `ctest` **1228/1228** Debug and **1236/1236** Release with video, camera and Ceres on,
+**1123/1123** with all three off (+1 each); warning-clean, format-check clean. Full notes in WORK.md's
+*Sub-slice 6a built* under M9 slice 4.
+
+- **Seven scenes, not the three first planned**, so every piece that moves is reached: connected,
+  noisy (with resamples, so the bootstrap's path prints too), chain, disconnected (a component
+  estimate per component), behind (the cheirality filter), narrow (the parallax floor) and spare (the
+  hold-out guard reading the closure). Each was checked to reach its piece before the file was
+  accepted. Debug and Release give the same bytes.
+- **The registration printers both goldens use moved into `goldentext.h`**, and the board golden's
+  file is unchanged.
+- **Two sabotages, both caught.** One is seen only by the golden: a component estimate that reaches
+  every camera starts the second component from cam00 instead of cam02, and the existing test checks
+  only the estimates' sizes. Its first cut did not build under `-Werror`, so the stale binary
+  answered until it was redone: **a sabotage that does not build proves nothing**, again.
+
 ### Update 2026-10-14 — M9 slice 4, sub-slice 5: the refiner frees camera models
 
 A refinement problem's cameras may now share a model, and a model may be free, which targetless

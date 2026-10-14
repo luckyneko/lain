@@ -1,9 +1,9 @@
 #pragma once
 
 // What the camera method goldens share (golden/*.txt): how a number, an enum, a provenance, a
-// detection request and a detection report are printed, and how what a test produced is compared
-// with its committed golden. One spelling, so a field printed by two goldens means the same thing in
-// both.
+// detection request and a detection report are printed, the registration report's transforms,
+// thresholds and graph edges, and how what a test produced is compared with its committed golden. One
+// spelling, so a field printed by two goldens means the same thing in both.
 //
 // Numbers are snapped to a 1e-9 grid, then printed to nine significant digits. That hides the last
 // bits in which two platforms' maths libraries differ, while any change of computation moves them
@@ -14,6 +14,9 @@
 
 #include <lain/camera/board/detection.h>
 #include <lain/camera/provenance.h>
+#include <lain/camera/registration/fitness.h>
+#include <lain/camera/registration/report.h>
+#include <lain/math/rigidtransform.h>
 #include <lain/meta/enums.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -111,6 +114,26 @@ namespace lain::camera::testing::golden
 					number(v) + ", covariance " + number(cov) + ")";
 		}
 		return text;
+	}
+
+	inline std::string transform(const math::RigidTransformd& t)
+	{
+		const math::Quatd q = t.rotation();
+		const math::Vec3d p = t.translation();
+		return "q(" + number(q.w) + " " + number(q.x) + " " + number(q.y) + " " + number(q.z) + ") t(" + number(p.x) + " " +
+			   number(p.y) + " " + number(p.z) + ")";
+	}
+
+	inline std::string thresholds(const registration::FitnessThresholds& t)
+	{
+		return std::to_string(t.minimumSharedPerCamera) + " " + std::to_string(t.minimumBridgeShared) + " " +
+			   number(t.maximumHeldOutAngle) + " " + number(t.maximumRotationVariation) + " " +
+			   number(t.maximumTranslationVariation) + " " + number(t.maximumOutlierFraction);
+	}
+
+	inline std::string edge(const registration::GraphEdgeReport& e)
+	{
+		return e.a.value + "-" + e.b.value + " shared " + std::to_string(e.shared) + " bridge " + std::to_string(e.bridge);
 	}
 
 	inline std::string firstDifference(const std::string& expected, const std::string& actual)
