@@ -166,5 +166,6 @@ agree with finite differences, the worst at 4.0e-8 of the derivative's scale, th
 Brown-Conrady model's Newton iteration.)* *(Corrected 2026-10-14, while planning sub-slice 5: that
 agreement was measured at nonzero test coefficients only. At the neutral model, where targetless
 calibration starts, the inverse model's Newton solve stops before taking a step, and every
-coefficient's derivative comes back 0. The plan is for the solve to take a step before it may stop,
-in its own commit ahead of sub-slice 5.)*
+coefficient's derivative comes back 0. Fixed the same day, in its own commit ahead of sub-slice 5:
+the solve takes a step before it may stop, and the derivatives agree at the neutral model too, the
+inverse model's worst at 8.0e-9.)*

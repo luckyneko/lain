@@ -52,6 +52,15 @@ namespace lain::camera::detail
 	// Newton's method for (x, y) with f(x, y) == (targetX, targetY), starting from (x, y). The Jacobian
 	// is a central finite difference: the residual is computed exactly, so the answer is exact to the
 	// tolerance even though the steps are approximate.
+	//
+	// It stops only after a step, even when the starting guess already meets the tolerance, because a
+	// derivative of the answer comes from the step and the guess carries none. At a converged point one
+	// step's derivative is the implicit function's, -J^-1 df/dc, whatever the guess carried: the term
+	// that would carry the finite-difference Jacobian's own derivative is multiplied by a residual of
+	// 0. The inverse model starts from the ideal point, which does not depend on its coefficients, and
+	// at the neutral model (every coefficient zero, where a targetless calibration starts) that guess
+	// is already the answer. Stopping there handed an automatic-differentiation scalar a derivative of
+	// 0 for every coefficient. For a double, the step there is exactly 0, since the residual is.
 	template <typename T, typename F>
 	ProjectionStatus solve(const F& f, const T& targetX, const T& targetY, T& x, T& y)
 	{
@@ -64,7 +73,7 @@ namespace lain::camera::detail
 			f(x, y, fx, fy);
 			const T ex = fx - targetX;
 			const T ey = fy - targetY;
-			if (abs(ex) + abs(ey) <= tolerance)
+			if (iteration > 0 && abs(ex) + abs(ey) <= tolerance)
 				return ProjectionStatus::Ok;
 			if (iteration == kMaxIterations)
 				return ProjectionStatus::NotConverged;

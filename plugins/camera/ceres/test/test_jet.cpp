@@ -129,6 +129,83 @@ namespace
 			c[slot - 4] += delta;
 		return project<Model>(i, c, domain, p[0], p[1], p[2]);
 	}
+
+	// Each of the model's parameters differentiated through the parameter overload, at three pixels
+	// and three depths, against a central difference of the parameter overload at doubles.
+	void checkParameterDerivatives(const CameraModel& model)
+	{
+		std::visit(
+			[&](const auto& d)
+			{
+				using Model = std::decay_t<decltype(d)>;
+				const Intrinsics& k = model.intrinsics();
+				const std::array<double, 4> intrinsics = {k.fx, k.fy, k.cx, k.cy};
+				const typename Model::template Coefficients<double> coefficients = d.coefficients();
+				const std::size_t slots = 4 + coefficients.size();
+
+				// Every parameter its own infinitesimal: the intrinsics in slots 0 to 3, the coefficients
+				// from 4. The point is a constant, so every derivative is one of the parameters'.
+				std::array<ParameterJet, 4> jetIntrinsics;
+				for (std::size_t i = 0; i < 4; ++i)
+					jetIntrinsics[i] = ParameterJet(intrinsics[i], int(i));
+				typename Model::template Coefficients<ParameterJet> jetCoefficients;
+				for (std::size_t i = 0; i < coefficients.size(); ++i)
+					jetCoefficients[i] = ParameterJet(coefficients[i], int(4 + i));
+
+				const std::array<std::array<double, 2>, 3> pixels = {{{320.5, 239.5}, {450.0, 120.0}, {40.0, 440.0}}};
+				for (const auto& pixel : pixels)
+				{
+					for (const double depth : {0.4, 1.7, 6.0})
+					{
+						const std::array<double, 3> p = pointAt(model, pixel[0], pixel[1], depth);
+						CAPTURE(pixel[0], pixel[1], depth);
+
+						const Projection<double> plain = project(model, p[0], p[1], p[2]);
+						const Projection<ParameterJet> jet = project<Model>(
+							jetIntrinsics, jetCoefficients, model.domain(), ParameterJet(p[0]), ParameterJet(p[1]), ParameterJet(p[2]));
+						REQUIRE(plain.ok());
+						REQUIRE(jet.ok());
+						// The Jet carries the model's own value...
+						CHECK_THAT(jet.u.a, WithinAbs(plain.u, 1e-9));
+						CHECK_THAT(jet.v.a, WithinAbs(plain.v, 1e-9));
+
+						// ...and each parameter's derivative agrees with a central difference of the
+						// parameter overload at doubles, one array element moved. Within 1e-6 of the
+						// derivative, or of 1 px per unit where it is smaller. Measured (Debug, Linux
+						// x86_64) as the worst per model, relative to that scale, at the test
+						// coefficients: no distortion 8.6e-11, Brown-Conrady 5 6.8e-9, Inverse
+						// Brown-Conrady 5 4.0e-8 (through Newton's method), Modified Brown-Conrady 5
+						// 1.6e-8, Rational Brown-Conrady 8 3.2e-8, Kannala-Brandt 4 2.1e-8; at most
+						// 8.0e-8 px per unit absolute, against derivatives up to 529 px per unit. At
+						// the neutral model the worst is Kannala-Brandt 4's 2.2e-8, and Inverse
+						// Brown-Conrady 5's is 8.0e-9, its coefficient derivatives up to 549 px per
+						// unit; at most 5.0e-8 px per unit absolute. That is the differences' own
+						// rounding, about 1e-16 of a 600 px value over a 1e-6 step.
+						for (std::size_t slot = 0; slot < slots; ++slot)
+						{
+							CAPTURE(slot);
+							const double value = slot < 4 ? intrinsics[slot] : coefficients[slot - 4];
+							const double h = 1e-6 * std::max(1.0, std::abs(value));
+							const Projection<double> plus = movedProjection<Model>(intrinsics, coefficients, model.domain(), p, slot, h);
+							const Projection<double> minus = movedProjection<Model>(intrinsics, coefficients, model.domain(), p, slot, -h);
+							REQUIRE(plus.ok());
+							REQUIRE(minus.ok());
+							const double du = (plus.u - minus.u) / (2 * h);
+							const double dv = (plus.v - minus.v) / (2 * h);
+							CHECK_THAT(jet.u.v[int(slot)], WithinAbs(du, 1e-6 * std::max(1.0, std::abs(du))));
+							CHECK_THAT(jet.v.v[int(slot)], WithinAbs(dv, 1e-6 * std::max(1.0, std::abs(dv))));
+						}
+						// A model with fewer than eight coefficients leaves the rest of the Jet untouched.
+						for (std::size_t slot = slots; slot < 12; ++slot)
+						{
+							CHECK(jet.u.v[int(slot)] == 0.0);
+							CHECK(jet.v.v[int(slot)] == 0.0);
+						}
+					}
+				}
+			},
+			model.distortion());
+	}
 } // namespace
 
 TEST_CASE("camera::project differentiates its parameters through ceres::Jet for every distortion model", "[ceres]")
@@ -136,75 +213,19 @@ TEST_CASE("camera::project differentiates its parameters through ceres::Jet for 
 	const int index = GENERATE(range(0, testing::kModelCount));
 	const CameraModel model = testing::cameraWith(testing::everyModel(index));
 	CAPTURE(std::string(displayName(modelOf(model.distortion()))));
+	checkParameterDerivatives(model);
+}
 
-	std::visit(
-		[&](const auto& d)
-		{
-			using Model = std::decay_t<decltype(d)>;
-			const Intrinsics& k = model.intrinsics();
-			const std::array<double, 4> intrinsics = {k.fx, k.fy, k.cx, k.cy};
-			const typename Model::template Coefficients<double> coefficients = d.coefficients();
-			const std::size_t slots = 4 + coefficients.size();
-
-			// Every parameter its own infinitesimal: the intrinsics in slots 0 to 3, the coefficients
-			// from 4. The point is a constant, so every derivative is one of the parameters'.
-			std::array<ParameterJet, 4> jetIntrinsics;
-			for (std::size_t i = 0; i < 4; ++i)
-				jetIntrinsics[i] = ParameterJet(intrinsics[i], int(i));
-			typename Model::template Coefficients<ParameterJet> jetCoefficients;
-			for (std::size_t i = 0; i < coefficients.size(); ++i)
-				jetCoefficients[i] = ParameterJet(coefficients[i], int(4 + i));
-
-			const std::array<std::array<double, 2>, 3> pixels = {{{320.5, 239.5}, {450.0, 120.0}, {40.0, 440.0}}};
-			for (const auto& pixel : pixels)
-			{
-				for (const double depth : {0.4, 1.7, 6.0})
-				{
-					const std::array<double, 3> p = pointAt(model, pixel[0], pixel[1], depth);
-					CAPTURE(pixel[0], pixel[1], depth);
-
-					const Projection<double> plain = project(model, p[0], p[1], p[2]);
-					const Projection<ParameterJet> jet = project<Model>(
-						jetIntrinsics, jetCoefficients, model.domain(), ParameterJet(p[0]), ParameterJet(p[1]), ParameterJet(p[2]));
-					REQUIRE(plain.ok());
-					REQUIRE(jet.ok());
-					// The Jet carries the model's own value...
-					CHECK_THAT(jet.u.a, WithinAbs(plain.u, 1e-9));
-					CHECK_THAT(jet.v.a, WithinAbs(plain.v, 1e-9));
-
-					// ...and each parameter's derivative agrees with a central difference of the
-					// parameter overload at doubles, one array element moved. Within 1e-6 of the
-					// derivative, or of 1 px per unit where it is smaller. Measured (Debug, Linux
-					// x86_64) as the worst per model, relative to that scale: no distortion 8.6e-11,
-					// Brown-Conrady 5 6.8e-9, Inverse Brown-Conrady 5 4.0e-8 (through Newton's
-					// method), Modified Brown-Conrady 5 1.6e-8, Rational Brown-Conrady 8 3.2e-8,
-					// Kannala-Brandt 4 2.1e-8; at most 8.0e-8 px per unit absolute, against
-					// derivatives up to 529 px per unit. That is the differences' own rounding,
-					// about 1e-16 of a 600 px value over a 1e-6 step.
-					for (std::size_t slot = 0; slot < slots; ++slot)
-					{
-						CAPTURE(slot);
-						const double value = slot < 4 ? intrinsics[slot] : coefficients[slot - 4];
-						const double h = 1e-6 * std::max(1.0, std::abs(value));
-						const Projection<double> plus = movedProjection<Model>(intrinsics, coefficients, model.domain(), p, slot, h);
-						const Projection<double> minus = movedProjection<Model>(intrinsics, coefficients, model.domain(), p, slot, -h);
-						REQUIRE(plus.ok());
-						REQUIRE(minus.ok());
-						const double du = (plus.u - minus.u) / (2 * h);
-						const double dv = (plus.v - minus.v) / (2 * h);
-						CHECK_THAT(jet.u.v[int(slot)], WithinAbs(du, 1e-6 * std::max(1.0, std::abs(du))));
-						CHECK_THAT(jet.v.v[int(slot)], WithinAbs(dv, 1e-6 * std::max(1.0, std::abs(dv))));
-					}
-					// A model with fewer than eight coefficients leaves the rest of the Jet untouched.
-					for (std::size_t slot = slots; slot < 12; ++slot)
-					{
-						CHECK(jet.u.v[int(slot)] == 0.0);
-						CHECK(jet.v.v[int(slot)] == 0.0);
-					}
-				}
-			}
-		},
-		model.distortion());
+TEST_CASE("camera::project differentiates its parameters at the neutral model", "[ceres]")
+{
+	// Every coefficient zero, which is where a targetless calibration starts (WORK.md, M9 slice 4).
+	// The inverse model's Newton solve starts from the ideal point there and already meets its
+	// tolerance, so this is the case that shows the solve takes its step: stopping before one would
+	// leave every coefficient's derivative at zero.
+	const int index = GENERATE(range(0, testing::kModelCount));
+	const CameraModel model = testing::cameraWith(neutral(modelOf(testing::everyModel(index))));
+	CAPTURE(std::string(displayName(modelOf(model.distortion()))));
+	checkParameterDerivatives(model);
 }
 
 namespace

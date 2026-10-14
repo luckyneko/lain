@@ -2446,7 +2446,7 @@ sub-slices (below), and **all eleven are built** (2026-10-09); a gui-mode eyebal
 owed. The repo owner kept the provisional values sub-slice 9 measured, and queued three changes to
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
 graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
-(as 1a and 1b), 2 (as 2a and 2b), 3 and 4 are built.
+(as 1a and 1b), 2 (as 2a and 2b), 3 and 4 are built, and so is the fix that lands ahead of 5.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -6068,8 +6068,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      from a scene is still sub-slices 5 and 9's question.
      *(Corrected 2026-10-14, while planning sub-slice 5: true at the test coefficients only. At the
      neutral model, where every targetless calibration starts, Inverse Brown-Conrady 5's Newton loop
-     stops at iteration 0 and every coefficient's derivative comes back 0. A fix lands ahead of
-     sub-slice 5; see its plan below.)*
+     stops at iteration 0 and every coefficient's derivative comes back 0. Fixed the same day,
+     ahead of sub-slice 5, by making the solve take a step before it may stop. Inverse Brown-Conrady
+     5's worst there is now 8.0e-9; see *The fix built* below.)*
    - **The case also checks that a model with fewer than eight coefficients leaves the rest of the
      12-slot Jet at zero.**
    - **Timings: no change beyond noise.** The pre-change Release binary was built here too, and the
@@ -6153,6 +6154,38 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        sub-slice 4 entry, made in the plan commit;
      - the fix's own entry here and in CLAUDE.md.
    - **Counts:** +1 with Ceres on (1214 Debug, 1222 Release), unchanged with all three off (1117).
+
+   **The fix built (2026-10-14).** `detail::solve` may return `Ok` only from iteration 1 on, and its
+   comment says why: the derivative comes from the step, and the guess carries none. The iteration
+   limit still counts steps, so it is unchanged.
+   - **The test was run red first, against the unchanged solve**, and failed exactly as the plan
+     predicted:
+     - 60 failures, all Inverse Brown-Conrady 5, all at coefficient slots 4 to 8;
+     - none at the intrinsics, and no other model;
+     - 12 per slot: two pixels × three depths × (u, v). At the image centre every coefficient's
+       derivative is truly 0, so those points pass either way.
+   - **Measured at the neutral model** (Debug, Linux x86_64), the worst per model relative to the
+     test's scale, written beside the check:
+     - Kannala-Brandt 4: 2.2e-8.
+     - Inverse Brown-Conrady 5: 8.0e-9, with coefficient derivatives up to 549 px per unit, all from
+       the one step.
+     - The rest are under 8e-9, and at most 5.0e-8 px per unit absolute.
+   - **The test cases share `checkParameterDerivatives(model)`**: the existing case runs it at
+     `testcamera.h`'s coefficients, the new one at `neutral(model)`.
+   - **The double path held**: both goldens pass with their files untouched, and so does the rest of
+     the suite, which runs every forward model's unprojection through the same solve.
+   - **Not timed.** The plan bounds the cost to one step where the loop used to stop at once, which
+     needs coefficients near zero or a point near the image centre. None of the three Release scale
+     cases starts there, so a timing would measure noise.
+   - **Within the domain, the forced step meets no fold.** A point the loop used to accept at once
+     but whose Jacobian is singular would now be `NotConverged`. The domain check comes first, and
+     inside it the Jacobian is not singular.
+   - **Sabotage, caught as predicted:** with the forced step removed, the new case fails exactly as
+     it did before the fix (60 failures, Inverse Brown-Conrady 5, coefficient slots only). The
+     header was restored from a saved copy, compared byte for byte, touched a second later, and the
+     test object checked newer before the final run.
+   - **Counts as predicted:** 1214/1214 Debug and 1222/1222 Release with video, camera and Ceres on,
+     1117/1117 with all three off. Warning-clean, format-check clean.
 
    **Sub-slice 5 decided with the repo owner:**
    - **A free model is seen through body observations as well as landmarks.**
@@ -11500,7 +11533,8 @@ row here**. A row is cheap to delete and expensive to leave.
   its detail lives:
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
-       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3 and 4. The
+       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, and the fix
+       ahead of 5. The
        separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
        restated (slice 4's plan).
   2. **Owed by the repo owner.**

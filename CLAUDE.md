@@ -1400,6 +1400,30 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-14 — Newton's solve takes a step before it may stop (fixed ahead of M9 slice 4, sub-slice 5)
+
+Found while planning sub-slice 5, fixed in its own commit ahead of it, as the plan commit decided with
+the repo owner. At the neutral model (every coefficient zero, where a targetless calibration starts)
+Inverse Brown-Conrady's Newton solve began at the ideal point, found it already within tolerance, and
+returned it without a step. The guess does not depend on the coefficients, so a Jet came back with a
+derivative of 0 for every coefficient. In a scratch probe a free solve from neutral stalled at cost 193
+with fy 6.5% off. `ctest` **1214/1214** Debug and **1222/1222** Release with video, camera and Ceres
+on (+1 each), **1117/1117** with all three off; warning-clean, format-check clean. Full notes in
+WORK.md's *The fix built* under M9 slice 4's sub-slice 5 plan.
+
+- **`detail::solve` may stop only from iteration 1 on**, for every scalar, with no branch on the
+  scalar type. At a converged point one step's derivative is the implicit function's,
+  `-J^-1 df/dc`, since the term carrying the finite-difference Jacobian's own derivative is multiplied
+  by a residual of 0. For a double at the neutral model the step is exactly 0.
+- **The new test was run red first**: 60 failures, all Inverse Brown-Conrady 5 and all at coefficient
+  slots, exactly as predicted. After the fix the worst error at the neutral model is 8.0e-9 of the
+  derivative's scale for that model and 2.2e-8 overall (Kannala-Brandt 4).
+- **The two parameter cases share one helper**, `checkParameterDerivatives(model)`: once at the test
+  coefficients, once at `neutral(model)`.
+- **Both goldens pass with their files untouched.** The solve also serves every forward model's
+  unprojection, and the whole suite is that regression check.
+- **Sabotage, caught:** with the forced step removed, the new case fails as it did before the fix.
+
 ### Update 2026-10-13 — M9 slice 4, sub-slice 4: projection is generic in a model's parameters
 
 Ceres can now differentiate a camera model's intrinsics and coefficients through lain's one projection,
@@ -1422,7 +1446,8 @@ format-check clean. Full notes in WORK.md's *Sub-slice 4 built* under M9 slice 4
   scale (Inverse Brown-Conrady, through Newton's method). The tolerance is 1e-6. *(**Corrected
   2026-10-14**: only at the test's nonzero coefficients. At the neutral model, where targetless
   calibration starts, Inverse Brown-Conrady's Newton solve stops before a step and every coefficient's
-  derivative is 0. Found while planning sub-slice 5, and to be fixed in its own commit ahead of it; see WORK.md.)*
+  derivative is 0. Found while planning sub-slice 5, and **fixed** the same day in its own commit; see
+  the entry above.)*
 - **Timings, before and after, built and run alternately here: no change beyond noise** (board
   registration 14.94 s and 14.92 s, landmarks 3.67 s and 3.56 s, targetless registration 31.44 s and
   32.11 s, inside its own 2.1 s spread).
