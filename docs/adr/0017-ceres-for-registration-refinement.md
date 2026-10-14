@@ -163,4 +163,8 @@ declared, so a request for it is refused rather than refined on wrong derivative
 sub-slice 4: the models still hold doubles, and their formulas became static templates over a
 coefficient array, generic in the coefficients' scalar and the point's. All six models' derivatives
 agree with finite differences, the worst at 4.0e-8 of the derivative's scale, through the inverse
-Brown-Conrady model's Newton iteration.)*
+Brown-Conrady model's Newton iteration.)* *(Corrected 2026-10-14, while planning sub-slice 5: that
+agreement was measured at nonzero test coefficients only. At the neutral model, where targetless
+calibration starts, the inverse model's Newton solve stops before taking a step, and every
+coefficient's derivative comes back 0. The plan is for the solve to take a step before it may stop,
+in its own commit ahead of sub-slice 5.)*

@@ -1419,7 +1419,10 @@ format-check clean. Full notes in WORK.md's *Sub-slice 4 built* under M9 slice 4
   `project(model, …)` is a visit into it. A test asserts the two agree exactly in every build.
   `unproject` gains no parameter overload, since nothing differentiates one.
 - **All six models' derivatives agree with finite differences**, the worst at 4.0e-8 of the derivative's
-  scale (Inverse Brown-Conrady, through Newton's method). The tolerance is 1e-6.
+  scale (Inverse Brown-Conrady, through Newton's method). The tolerance is 1e-6. *(**Corrected
+  2026-10-14**: only at the test's nonzero coefficients. At the neutral model, where targetless
+  calibration starts, Inverse Brown-Conrady's Newton solve stops before a step and every coefficient's
+  derivative is 0. Found while planning sub-slice 5, and to be fixed in its own commit ahead of it; see WORK.md.)*
 - **Timings, before and after, built and run alternately here: no change beyond noise** (board
   registration 14.94 s and 14.92 s, landmarks 3.67 s and 3.56 s, targetless registration 31.44 s and
   32.11 s, inside its own 2.1 s spread).

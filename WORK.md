@@ -5410,7 +5410,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       - Sabotage: one coefficient's derivative dropped inside a formula fails its derivative test.
         *(Reworded 2026-10-13: a coefficient converted to double no longer compiles once it is a Jet,
         so the type system guards that case; see the detailed plan.)*
-   5. **The refiner frees camera models.**
+   5. **The refiner frees camera models.** *(Planned in detail 2026-10-14 as one commit, with a fix
+      to sub-slice 4's Newton solve landing ahead of it in its own commit; see below.)*
       - `Problem` gains a model index per camera (`modelOf`; empty is one model per camera, as now)
         and a `ModelFreedom` per model: focal length, principal point, coefficients.
       - `Solution::models` carries the refined parameters UNCHECKED, for the method to pass through
@@ -6065,6 +6066,10 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      own rounding. The tolerance is 1e-6 of that scale, written beside the check. So, as far as
      derivatives go, sub-slice 5 may declare all six. Whether a model's parameters can be estimated
      from a scene is still sub-slices 5 and 9's question.
+     *(Corrected 2026-10-14, while planning sub-slice 5: true at the test coefficients only. At the
+     neutral model, where every targetless calibration starts, Inverse Brown-Conrady 5's Newton loop
+     stops at iteration 0 and every coefficient's derivative comes back 0. A fix lands ahead of
+     sub-slice 5; see its plan below.)*
    - **The case also checks that a model with fewer than eight coefficients leaves the rest of the
      12-slot Jet at zero.**
    - **Timings: no change beyond noise.** The pre-change Release binary was built here too, and the
@@ -6087,6 +6092,255 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        pinned in more places than the plan counted.
      - Each sabotaged file was restored from a saved copy, compared byte for byte, touched a second
        later, and its objects checked to be newer before the final run.
+
+   **Sub-slice 5 planned (2026-10-14), behind a fix found while planning it.** Two commits:
+   1. **The fix, ahead**: Newton's solve takes a step before it may stop, so a Jet's coefficient
+      derivatives come from the step at the neutral model too.
+   2. **The sub-slice**: the refiner frees camera models.
+
+   **Found while planning: at the neutral model, Inverse Brown-Conrady's coefficient derivatives are
+   zero.** A scratch probe (not committed) freed a shared model in Ceres through the parameter
+   overload, over a moving camera's frames and their landmarks.
+   - **From a neutral start, Inverse Brown-Conrady 5 stalled on EXACT tracks.** Every other model
+     reached a final cost near 1e-15. This one stopped at 193, with fy 6.5% wrong and 11 rejected
+     steps. Started at its true coefficients, it recovered exactly.
+   - **The cause is in `detail::solve`.** It exits when the residual's VALUE meets the tolerance,
+     and at the neutral model the initial guess (the ideal point) already does. So it returns that
+     guess after no step, and the guess carries no derivative with respect to any coefficient.
+     - At (0.4, -0.3, 1), the Jet gives 0 for all five coefficients. Central differences give -50,
+       -12.5, 120, -285 and -3.1 px per unit.
+     - Sub-slice 4's derivative test ran only at `testcamera.h`'s nonzero coefficients, where Newton
+       takes several steps, so it passed.
+     - The neutral model is how every targetless calibration starts: "the requested model's neutral
+       distortion" (the focal sweep, above).
+   - **One forced step fixes it.** It was tried on a patched copy of the header in scratch.
+     - The reason: at a converged point, one Newton step's derivative is the implicit function's,
+       `-J⁻¹ ∂f/∂c`, whatever the guess carried. The term that would carry the finite-difference
+       Jacobian's own derivatives is multiplied by a residual that is 0.
+     - The Jet then agrees with central differences at the neutral model, for every coefficient.
+     - The free solve from neutral reaches 1e-15 and recovers exactly.
+   - **Only Inverse Brown-Conrady's projection iterates.** The other five project in closed form.
+     The probe checked Brown-Conrady 5 and Kannala-Brandt 4 at the neutral model, and both agree; the
+     fix's test covers all six.
+     - `detail::solve` also serves the forward models' unprojection, which nothing differentiates.
+     - Kannala-Brandt's unprojection has a loop of its own, with the same shape. It is left alone:
+       only unprojection runs it, and sub-slice 4 gave unprojection no parameter overload.
+
+   **The fix, ahead (decided with the repo owner): the solve always takes one step.**
+   - **`detail::solve` may stop only after a step**, for every scalar, with no branch on the scalar
+     type. The comment says why: the derivative comes from the step, and the initial guess carries
+     none.
+   - **The double path:**
+     - At the neutral model the forced step is exactly zero, since the residual is exactly 0.
+     - A value changes only where the loop used to stop at iteration 0 with a nonzero residual under
+       1e-12, which happens only for tiny coefficients or at the image centre.
+     - The cost is one step (five evaluations of the formula), only where the loop used to stop at
+       once.
+     - Both goldens snap to a 1e-9 grid, so they are expected to pass with their files untouched.
+       That is checked rather than argued.
+     - The whole suite is the wider regression check, since `detail::solve` also serves every
+       forward model's unprojection.
+   - **Test** (`test-camera-ceres`, `test_jet.cpp`): "camera::project differentiates its parameters
+     at the neutral model".
+     - It is the existing parameter case's check, run at each model's `neutral()`, with the same
+       points and tolerance.
+     - The two cases share a helper, so the check is written once.
+   - **Sabotage:** the forced step removed. Predicted to fail: Inverse Brown-Conrady 5 at every
+     coefficient slot, and no other model. The intrinsics are applied after the solve, so their
+     derivatives are unaffected.
+   - **Docs:**
+     - in-place corrections to sub-slice 4's built note, ADR-0017's built note and CLAUDE.md's
+       sub-slice 4 entry, made in the plan commit;
+     - the fix's own entry here and in CLAUDE.md.
+   - **Counts:** +1 with Ceres on (1214 Debug, 1222 Release), unchanged with all three off (1117).
+
+   **Sub-slice 5 decided with the repo owner:**
+   - **A free model is seen through body observations as well as landmarks.**
+     - A free model moves with every residual of every camera that sees through it, so the refiner's
+       header keeps its "one problem, one path".
+     - The corner residual gets a free twin through the shared `observe()`.
+     - Tested by a board seen in several poses with its model free, which is board calibration as a
+       bundle adjustment.
+     - No method frees a model under a board yet. Refusing that shape was the alternative, which would
+       have put a rule about shapes into the seam.
+   - **The Ceres refiner declares all six models.**
+     - ADR-0017's criterion is correct derivatives, and after the fix all six have them.
+     - The probe also recovered all six exactly from exact tracks.
+     - Withholding Rational 8, whose coefficients are not identifiable, was the alternative. Its
+       noisy fit folded inside the image in 2 of 4 probe runs. `CameraModel::create` refuses that
+       result, which is the designed outcome: sub-slice 9 reports it as the attempt's failure, and
+       sub-slice 10 measures how often it happens.
+
+   **Taken from the plan's wording, by precedent, or found while planning:**
+   - **The problem's new fields mean today's problem when left empty**, as `Request::fitnessProfile`
+     does. So registration, which never frees a model, changes by no line.
+     - `std::vector<std::uint32_t> modelOf`, one per camera: the index of the model it sees
+       through. Empty means camera c sees through `models[c]`.
+     - `std::vector<ModelFreedom> modelFreedom`, one per model. Empty holds every model.
+     - `ModelFreedom { bool focalLength, principalPoint, coefficients; }`, all false by default, with
+       `any()`.
+       - fx and fy move together, and so do cx and cy.
+       - The coefficients move all or none: holding the tangential terms was refused when slice 4
+         was planned.
+       - A single shared focal length (fx = fy) is not offered. Its trigger would be sub-slice 10
+         measuring the aspect ratio as poorly conditioned.
+     - `Problem::models`' comment changes from "per camera, held fixed" to say how a camera finds its
+       model.
+   - **`Solution::models`: `std::vector<CameraModelParameters>`, one per model, UNCHECKED.**
+     - A held model comes back as its own parameters, and a free one as refined.
+     - Filled only when the solution is usable, like the other vectors.
+     - The method passes each through `CameraModel::create`, as it does an estimator's answer.
+     - `PassThroughRefiner` fills it with the models' own parameters.
+   - **Each model gains `static Model fromCoefficients(const Coefficients<double>&)`**, the inverse of
+     `coefficients()`. Sub-slice 4 deferred it to here, where reading a solution back is its
+     production caller.
+     - It writes the coefficient order once more. Tests older than it pin that order, and a round
+       trip pins it to `coefficients()`.
+   - **`Refiner::canEstimate(DistortionModel) const = 0`, and a facade `refinement::canEstimate(model)`**
+     that says whether any registered refiner can. Both mirror `calibration::Estimator` exactly.
+     - `PassThroughRefiner` and camera::flow's `NullRefiner` declare nothing, since neither
+       estimates.
+   - **The `refine()` facade picks the first refiner that can estimate every model the problem
+     frees**, as board calibration picks the first estimator that can estimate its model.
+     - A problem that frees nothing still reaches the first refiner, as now.
+     - When none can, it returns the new `Status::Unsupported`, naming the model: "a refiner is
+       registered, but none can estimate Kannala-Brandt 4". `feature::Status` spells the same case
+       the same way.
+     - Registration's `RefinementStatus` alias gains the enumerator. Nothing switches over it, and the
+       report prints it by name.
+   - **The problem's SHAPE is checked where it is checked today, in the backend**, beside the existing
+     checks:
+     - `modelOf` of the wrong length;
+     - a camera that sees through no model;
+     - `modelFreedom` of the wrong length;
+     - with `modelOf` empty, models and cameras of different counts. The existing message is kept.
+
+     The facade reads `modelFreedom` only where an entry exists, and leaves a malformed problem for
+     the backend to refuse. Moving every shape check into the facade is a separate change, and is
+     not made here.
+   - **In Ceres, a model that frees at least one parameter is one block**, laid out
+     `[fx, fy, cx, cy, coefficients…]`: the parameter overload's order.
+     - Its held fields sit on a `SubsetManifold`.
+     - A model whose switches free nothing it has is held, like NoDistortion with only
+       `coefficients` set. It gets no block.
+     - Held models keep today's residuals, the double model by pointer, so a held problem runs the
+       arithmetic it runs today.
+     - A free model's residuals are templates on the model type (`FreePointResidual<Model>`,
+       `<…, 2, 6, 3, 4 + N>`; `FreeCornerResidual<Model>`, `<…, 2, 6, 6, 4 + N>`), chosen by visiting
+       the starting model. They differ from the held ones only in where the projection's parameters
+       come from.
+     - Each free residual holds the STARTING model's domain (ADR-0017).
+     - A free block joins the cameras in elimination group 1, but only when a residual uses it, as a
+       camera does.
+     - A free model that no camera sees through comes back as it started.
+   - **The linear solver rule widens by one word**: Schur when the cameras OR any model is free.
+     - Held cameras with a free model leave the latent blocks coupled through the model, so the
+       reason given for sparse Cholesky (independent unknowns, a block-diagonal system) no longer
+       holds.
+     - No production problem has that shape yet. The rule is what makes it correct when one does.
+   - **Not decided here, and recorded for the sub-slices that need it:**
+     - **A held-out frame needs no new seam.** Posing a frame against the reconstruction is a
+       pose-only problem whose body is the landmarks: held camera, one body, `DENSE_QR`. That is
+       exactly how board registration's validation poses a board.
+     - **Conditioning under noise is sub-slices 9 and 10's to measure.** The probe's focal error at
+       0.5 px depended on how long the tracks were: 0.1 to 1.8% at 35 views per track, up to 8.5% at
+       8. So this sub-slice's recovery tests use exact tracks, and assert that the seam is wired,
+       not that a scene is well posed.
+
+   **Probe measurements** (one thread; Inverse Brown-Conrady with the fix applied in scratch):
+   - **Exact tracks, Release**, 40 frames, 1,000 landmarks, 35 views each. The start: focal +5%,
+     neutral coefficients, cameras 2 mrad and 1 cm out, landmarks 2% out, and the principal point
+     held at the truth.
+     - every model, Inverse Brown-Conrady included once fixed: focal within 2e-9, ray mapping exact
+       on a 16 px grid;
+     - 11 to 24 iterations, 1.1 to 3.3 s.
+   - **Debug**, 24 frames, 120 landmarks, 16 views: 1.7 to 9.9 s per model, about 25 s for all six.
+     The test is sized from this.
+   - **Release, 60 frames × 20,000 landmarks × 8 views**, with 0.5 px of noise, Brown-Conrady 5 with
+     focal and coefficients free: 5.8 s, 13 iterations. The plan's scale case.
+
+   **Changes:**
+   - `distortion.h`: each model's `fromCoefficients`.
+   - `refinement/refiner.h`:
+     - `ModelFreedom`, `Problem::modelOf` and `modelFreedom`, `Solution::models`;
+     - `Status::Unsupported`, `Refiner::canEstimate` and the `canEstimate` facade;
+     - the header comment, which says a problem's cameras may share a model and a model may be free.
+   - `refinement/refiner.cpp`: the backend choice, and `canEstimate`.
+   - `ceresrefiner.{h,cpp}`:
+     - `observe()` takes the projection's parameters by a small projector, held or free;
+     - the free residuals, the blocks and manifolds, the ordering, the widened solver rule, the new
+       shape checks and `canEstimate`;
+     - reading the blocks back through `fromCoefficients`.
+   - `passthroughrefiner.h` and camera::flow's `nullbackends.h`: `canEstimate`, and `Solution::models`.
+   - ADR-0017's amendment: what is built, the facade's choice and the new status.
+   - Registration changes by no line, and does not export the new names.
+
+   **Tests:**
+   - **`test-camera`**, so in every build:
+     - `test_distortion.cpp`: "every model reads back from its own coefficients". For each of
+       `everyModel`, `fromCoefficients(coefficients())` returns the same coefficients.
+     - New `test_refinementseam.cpp`, over two stand-ins registered there, as `test_boardseams.cpp`
+       does: "a-pinhole" declares only NoDistortion, and "b-polynomial" declares every model but
+       Kannala-Brandt 4. The cases:
+       1. a problem that frees no model reaches the first refiner;
+       2. a freed model reaches the first refiner that can estimate it (NoDistortion to a-pinhole,
+          Brown-Conrady 5 to b-polynomial);
+       3. a freed model no refiner can estimate is `Unsupported`, names the model, and reaches no
+          refiner;
+       4. `canEstimate` answers whether any refiner can.
+   - **`test-camera-nobackend`**: the existing refinement case also checks that `canEstimate` is
+     false for every model.
+   - **`test-camera-ceres`**, in a new `test_freemodel.cpp`, on a moving camera's frames sharing one
+     model, all from exact tracks:
+     1. **"a shared free model is recovered for every distortion model"**, over all six.
+        - The probe's start: focal +5%, neutral coefficients, the principal point held at the truth.
+        - Converged; focal and ray mapping within tolerances set from the measurement and written
+          beside them; `create` accepts the result.
+     2. **"a held principal point comes back exactly where it started"**: started 1 px off the truth,
+        with focal length and coefficients free.
+        - It comes back bit-equal to its start.
+        - A section with it freed shows it moving to the truth, so the case can see movement.
+     3. **"a problem that frees no model solves as before"**:
+        - an explicit identity `modelOf` and all-held `modelFreedom` solve bit-identically to the
+          defaults;
+        - cameras sharing one held model solve bit-identically to cameras holding copies;
+        - `Solution::models` equals the starting parameters.
+     4. **"a free model that no camera sees through comes back as it started"**, beside one that
+        does.
+     5. **"a free model refines through a board's corners"**: one held camera with the test rig's
+        Brown-Conrady 5 model, a board in several poses, the model free. The model is recovered, as
+        in case 1.
+     6. **"the refiner refuses a problem whose models do not match its cameras"**: one section per
+        new shape check.
+     7. **"the Ceres refiner can estimate every distortion model"**.
+     8. **Release only**: "a moving camera of 60 frames and 20000 landmarks refines its shared model"
+        (`[scale]`). Time, iterations and peak memory are recorded beside the check, the memory
+        measured with `getrusage`, as before.
+
+     Also in `test_landmarks.cpp`, the solver-rule case gains a section, "held cameras and a free
+     model: Schur".
+
+   **Verification:**
+   - Debug and Release with video, camera and Ceres on, and all three off.
+     - The counts, after the fix: +13 with Ceres on (1227 Debug, 1235 Release), +5 with all three
+       off (1122).
+     - Warning-clean, format-check clean.
+   - The diff touches no golden file, and both goldens pass. The registration code is unchanged.
+   - The three Release scale cases' times are recorded against sub-slice 4's: board registration
+     14.9 s, landmarks 3.6 s, targetless registration 32 s. A held problem runs the same
+     arithmetic, so a change beyond noise is a finding.
+
+   **Sabotages:**
+   - **The held fields left free** (no `SubsetManifold`). Predicted: case 2 fails. Case 1 holds the
+     principal point at the truth, so it passes.
+   - **A free model that no camera uses, added to the ordering anyway.** Predicted: case 4 fails,
+     since Ceres should refuse an ordering that names a block outside the problem.
+   - **A free model's residuals reading the starting model's doubles** (the free path silently
+     held). Predicted: cases 1, 2 and 5 fail.
+   - **The facade taking the first refiner whatever the problem frees.** Predicted: seam cases 2 and
+     3 fail.
+   - **`BrownConrady5::fromCoefficients` reading p1 and p2 swapped.** Predicted: the round-trip case
+     fails, and so do case 1 for Brown-Conrady 5 and case 5, whose board camera is Brown-Conrady 5.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
