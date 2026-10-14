@@ -1400,6 +1400,33 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-14 — M9 slice 4, sub-slice 6c: the incremental reconstruction becomes a shared module (**sub-slice 6 COMPLETE**)
+
+The last of sub-slice 6's three commits, no change in behaviour. Targetless registration's incremental
+reconstruction (placeability, the seed, placement by absolute pose, the cheirality filter) moves out of
+`registration/targetless.cpp` into a private module targetless calibration can share in sub-slice 9.
+`ctest` **1228/1228** Debug and **1236/1236** Release with video, camera and Ceres on, **1123/1123**
+with all three off (unchanged); every golden untouched; warning-clean, format-check clean. Full notes
+in WORK.md's *Sub-slice 6c built* under M9 slice 4.
+
+- **`src/reconstruction.{h,cpp}`, namespace `lain::camera::reconstruction`**, private to lain::camera.
+  It includes nothing from `registration/` or `calibration/`, which a grep checks.
+- **The module speaks of views**, feature's word: a camera in registration, a frame in targetless
+  calibration. `Evidence` is `{models, tracks}`, a model per view and no identity, so registration
+  keeps its canonical `RigCamera`s beside it for the identities it reports.
+  `chooseSeed` and `place` take a `feature::GeometryRequest`.
+- **What stays is registration's:** the hold-out guard, scale normalisation, the refinement problem,
+  the bootstrap's `registerUnits`, component estimates, the checks and the report.
+- **Two sabotages, both caught, each with one failure more than predicted.**
+  - A closure counting a unit once ONE placed view sees it fails the chain scene as
+    InitialisationFailed, as predicted, and also the spare scene. Its support counts are what the
+    hold-out guard spends, so critical tracks get held out and the rig splits.
+  - A seed ignoring the parallax floor fails the narrow scene, as predicted, and also the
+    seed-selection case.
+- **Timing is unchanged**, Release, four alternating rounds of the targetless scale case: 37.3 s
+  before against 36.6 s after, with about 3 s of spread within each. Sub-slice 5 found that moving
+  code between translation units can change what GCC inlines, so this was measured, not assumed.
+
 ### Update 2026-10-14 — M9 slice 4, sub-slice 6b: the observation graph moves down to `lain::camera`
 
 The second of sub-slice 6's three commits, no change in behaviour. The incremental reconstruction 6c

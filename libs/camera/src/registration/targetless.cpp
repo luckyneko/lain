@@ -3,11 +3,11 @@
 #include "common.h"
 #include "lain/camera/feature/geometry.h"
 #include "lain/camera/feature/matching.h"
-#include "lain/camera/feature/triangulation.h"
 #include "lain/camera/projection.h"
 #include "lain/camera/registration/observationgraph.h"
 #include "lain/camera/registration/refiner.h"
 #include "lain/camera/registration/validation.h"
+#include "reconstruction.h"
 
 #include <lain/string/format.h>
 
@@ -29,23 +29,32 @@ namespace lain::camera::registration::targetless
 	using detail::median;
 	using detail::rotationBetween;
 
+	// The incremental reconstruction (reconstruction.h), which targetless calibration will share. A view
+	// there is a camera here.
+	using reconstruction::Candidates;
+	using reconstruction::candidates;
+	using reconstruction::chooseSeed;
+	using reconstruction::Closure;
+	using reconstruction::Evidence;
+	using reconstruction::kPlaceLandmarks;
+	using reconstruction::kSeedCandidates;
+	using reconstruction::kSeedShared;
+	using reconstruction::place;
+	using reconstruction::Placement;
+	using reconstruction::Seed;
+	using reconstruction::Seen;
+	using reconstruction::Start;
+	using reconstruction::startFrom;
+	using reconstruction::Units;
+	using reconstruction::unitsOf;
+	using reconstruction::Usable;
+	using reconstruction::viewsOf;
+
 	// --- file-local helpers (named static, not an anonymous namespace) ----------
 
 	// Fewer usable tracks than this and none are held out: a track is one point, so a rig with a
 	// handful has too little to register from and too little to validate with.
 	static constexpr std::size_t kMinimumToHoldOut = 20;
-	// The geometry facades' own minima (feature/geometry.h): five pairs pose two cameras, four
-	// point-rays one. A seed pair needs this many shared tracks, and a camera this many landmarks to be
-	// placed, or to be kept once the landmarks behind it are left out.
-	static constexpr std::uint32_t kSeedShared = 5;
-	static constexpr std::uint32_t kPlaceLandmarks = 4;
-	// How many camera pairs are posed as seed candidates: of those whose placement reaches every
-	// camera, the ones sharing the most tracks.
-	static constexpr std::size_t kSeedCandidates = 16;
-	// The median triangulation angle a seed should clear, radians (2 degrees): a landmark the seed
-	// triangulates is as uncertain in depth as its rays' noise over its parallax. Provisional until
-	// sub-slice 9 measures real rigs; it ranks pairs and never refuses a rig.
-	static constexpr double kSeedAngle = 0.03490658503988659;
 
 	// The geometry every pose of initialisation is measured by: the facades' default inlier angle, which
 	// is also where a triangulation becomes a point at infinity, and the request's seed. The same in
@@ -55,412 +64,6 @@ namespace lain::camera::registration::targetless
 		feature::GeometryRequest geometry;
 		geometry.seed = request.seed;
 		return geometry;
-	}
-
-	static double minimumParallax()
-	{
-		return feature::GeometryRequest{}.angle;
-	}
-
-	// One usable observation of a track: a canonical camera, where it saw the landmark, and the ray.
-	struct Seen
-	{
-		std::uint32_t camera = 0;
-		math::Vec2d pixel{0.0};
-		std::optional<std::array<double, 3>> covariance;
-		math::Vec3d ray{0.0}; // unit, in the camera's frame
-	};
-
-	// A track with two or more usable observations, ascending by camera.
-	struct Usable
-	{
-		const feature::Track* track = nullptr;
-		std::vector<Seen> seen;
-	};
-
-	// The usable evidence: tracks in identity order, over the canonical cameras.
-	struct Evidence
-	{
-		std::vector<RigCamera> cameras; // canonical: ascending by identity
-		std::vector<Usable> tracks;
-	};
-
-	// What one registration fits: indices into Evidence::tracks. A bootstrap resample may name a track
-	// twice; each entry is a landmark of its own, as each entry of a board resample is a body of its own.
-	using Units = std::vector<std::uint32_t>;
-
-	// The cameras of each unit, for the observation graph and placeability.
-	static std::vector<std::vector<std::uint32_t>> camerasOf(const Evidence& evidence, const Units& units)
-	{
-		std::vector<std::vector<std::uint32_t>> out;
-		out.reserve(units.size());
-		for (const std::uint32_t u : units)
-		{
-			std::vector<std::uint32_t> cameras;
-			for (const Seen& s : evidence.tracks[u].seen)
-				cameras.push_back(s.camera);
-			out.push_back(std::move(cameras));
-		}
-		return out;
-	}
-
-	// Per camera, the units that saw it.
-	static std::vector<std::vector<std::uint32_t>> unitsOf(std::size_t cameras,
-														   const std::vector<std::vector<std::uint32_t>>& units)
-	{
-		std::vector<std::vector<std::uint32_t>> out(cameras);
-		for (std::uint32_t u = 0; u < units.size(); ++u)
-		{
-			for (const std::uint32_t c : units[u])
-				out[c].push_back(u);
-		}
-		return out;
-	}
-
-	// --- placeability --------------------------------------------------------------
-
-	// Which cameras a seed pair can place (CONTEXT.md, "Placeable camera"): from the pair, repeatedly the
-	// unplaced camera in the most units having two or more placed cameras, needing kPlaceLandmarks of
-	// them, ties to the lower index. Placing a camera only adds to every other camera's count, so the
-	// set reached is the least fixed point whatever order cameras are added in; it depends on the seed.
-	struct Closure
-	{
-		std::uint32_t a = 0, b = 0;
-		std::vector<bool> placed;
-		std::vector<std::uint32_t> rank;	// per placed camera: its place in the order
-		std::vector<std::uint32_t> support; // per placed camera but the seeds: the units it was placed with
-		std::uint32_t shared = 0;			// the units the seed pair shares
-
-		bool covers(const std::vector<std::uint32_t>& cameras) const
-		{
-			return std::all_of(cameras.begin(), cameras.end(), [this](std::uint32_t c)
-							   { return bool(placed[c]); });
-		}
-	};
-
-	static Closure closure(const std::vector<std::vector<std::uint32_t>>& units,
-						   const std::vector<std::vector<std::uint32_t>>& ofCamera, std::uint32_t a, std::uint32_t b)
-	{
-		const std::size_t cameras = ofCamera.size();
-		Closure out;
-		out.a = a;
-		out.b = b;
-		out.placed.assign(cameras, false);
-		out.rank.assign(cameras, std::numeric_limits<std::uint32_t>::max());
-		out.support.assign(cameras, 0);
-		std::vector<std::uint32_t> inPlaced(units.size(), 0), count(cameras, 0);
-		std::uint32_t next = 0;
-		const auto place = [&](std::uint32_t c)
-		{
-			out.placed[c] = true;
-			out.rank[c] = next++;
-			for (const std::uint32_t u : ofCamera[c])
-			{
-				if (++inPlaced[u] != 2)
-					continue;
-				for (const std::uint32_t other : units[u])
-				{
-					if (!out.placed[other])
-						++count[other];
-				}
-			}
-		};
-		for (const std::uint32_t u : ofCamera[a])
-		{
-			if (std::find(units[u].begin(), units[u].end(), b) != units[u].end())
-				++out.shared;
-		}
-		place(a);
-		place(b);
-		for (;;)
-		{
-			std::optional<std::uint32_t> best;
-			for (std::uint32_t c = 0; c < cameras; ++c)
-			{
-				if (!out.placed[c] && count[c] >= kPlaceLandmarks && (!best || count[c] > count[*best]))
-					best = c;
-			}
-			if (!best)
-				break;
-			out.support[*best] = count[*best];
-			place(*best);
-		}
-		return out;
-	}
-
-	// The seed candidates over `units` for placing `required`: each pair of required cameras sharing at
-	// least kSeedShared units, by how many they share, ties to (a, b). `covering` holds the closures that
-	// reach every required camera, at most `limit`, in that order; `top` is the first candidate's,
-	// covering or not. A pair inside a closure that fell short cannot reach further (its own closure
-	// lies inside that one), so it is skipped unexamined.
-	struct Candidates
-	{
-		std::vector<Closure> covering;
-		std::optional<Closure> top;
-	};
-
-	static Candidates candidates(const ObservationGraph& graph, const std::vector<std::vector<std::uint32_t>>& units,
-								 const std::vector<std::vector<std::uint32_t>>& ofCamera,
-								 const std::vector<std::uint32_t>& required, std::size_t limit)
-	{
-		std::vector<bool> isRequired(ofCamera.size(), false);
-		for (const std::uint32_t c : required)
-			isRequired[c] = true;
-		std::vector<const GraphEdge*> order;
-		for (const GraphEdge& e : graph.edges)
-		{
-			if (e.shared >= kSeedShared && isRequired[e.a] && isRequired[e.b])
-				order.push_back(&e);
-		}
-		std::stable_sort(order.begin(), order.end(), [](const GraphEdge* x, const GraphEdge* y)
-						 { return x->shared > y->shared; });
-
-		Candidates out;
-		std::vector<std::vector<bool>> shortOf;
-		for (const GraphEdge* e : order)
-		{
-			const bool inside = std::any_of(shortOf.begin(), shortOf.end(), [e](const std::vector<bool>& placed)
-											{ return placed[e->a] && placed[e->b]; });
-			if (inside)
-				continue;
-			Closure c = closure(units, ofCamera, e->a, e->b);
-			if (!out.top)
-				out.top = c;
-			if (c.covers(required))
-			{
-				out.covering.push_back(std::move(c));
-				if (out.covering.size() == limit)
-					break;
-			}
-			else
-				shortOf.push_back(c.placed);
-		}
-		return out;
-	}
-
-	// --- initialisation ------------------------------------------------------------
-
-	struct Seed
-	{
-		std::uint32_t a = 0, b = 0;
-		math::RigidTransformd bFromA; // a unit baseline
-		std::uint32_t inliers = 0;
-		double angle = 0; // the median triangulation angle of its inliers that triangulate, radians
-		bool belowFloor = false;
-	};
-
-	// The seed: each candidate's relative pose from the tracks its two cameras share, then the one with
-	// the most inliers whose median angle clears kSeedAngle, or the widest when none does. Unset when
-	// no candidate could be posed.
-	static std::optional<Seed> chooseSeed(const Evidence& evidence, const Units& units, const std::vector<Closure>& covering,
-										  const Request& request, Provenance& geometry)
-	{
-		std::optional<Seed> best, widest;
-		for (const Closure& candidate : covering)
-		{
-			std::vector<feature::RayPair> pairs;
-			for (const std::uint32_t u : units)
-			{
-				const Seen* inA = nullptr;
-				const Seen* inB = nullptr;
-				for (const Seen& s : evidence.tracks[u].seen)
-				{
-					if (s.camera == candidate.a)
-						inA = &s;
-					else if (s.camera == candidate.b)
-						inB = &s;
-				}
-				if (inA && inB)
-					pairs.push_back({inA->ray, inB->ray});
-			}
-			const feature::GeometryResult result = feature::relativePose(pairs, geometryRequest(request));
-			if (geometry.backend.empty())
-				geometry = result.provenance;
-			if (!result.ok())
-				continue;
-			Seed seed;
-			seed.a = candidate.a;
-			seed.b = candidate.b;
-			seed.bFromA = *result.pose;
-			seed.inliers = std::uint32_t(result.inliers.size());
-			const math::RigidTransformd aFromB = seed.bFromA.inverse();
-			std::vector<double> angles;
-			for (const std::uint32_t i : result.inliers)
-			{
-				const feature::Triangulation t = feature::triangulate(
-					{{math::Vec3d{0.0}, pairs[i].a}, {aFromB.translation(), aFromB.rotate(pairs[i].b)}}, minimumParallax());
-				if (t.ok())
-					angles.push_back(t.angle);
-			}
-			seed.angle = angles.empty() ? 0.0 : median(std::move(angles));
-			if (seed.angle >= kSeedAngle && (!best || seed.inliers > best->inliers))
-				best = seed;
-			if (!widest || seed.angle > widest->angle)
-				widest = seed;
-		}
-		if (best)
-			return best;
-		if (widest)
-			widest->belowFloor = true;
-		return widest;
-	}
-
-	// Every camera the seed can place, in the seed's first camera's frame (the world) at a unit
-	// baseline: landmarks triangulated from the placed cameras, then the unplaced camera seeing the most
-	// of them placed by absolute pose, until none more can be.
-	struct Placement
-	{
-		std::vector<std::optional<math::RigidTransformd>> cameraFromWorld;
-		std::vector<std::optional<math::Vec3d>> landmarks; // per unit entry, in the world
-		std::vector<std::uint32_t> order;				   // the cameras, as placed
-	};
-
-	static Placement place(const Evidence& evidence, const Units& units, const Seed& seed, const Request& request)
-	{
-		const std::size_t n = evidence.cameras.size();
-		Placement out;
-		out.cameraFromWorld.assign(n, std::nullopt);
-		out.landmarks.assign(units.size(), std::nullopt);
-		std::vector<std::vector<std::uint32_t>> entriesOf(n);
-		for (std::uint32_t e = 0; e < units.size(); ++e)
-		{
-			for (const Seen& s : evidence.tracks[units[e]].seen)
-				entriesOf[s.camera].push_back(e);
-		}
-		std::vector<std::uint32_t> landmarksSeen(n, 0); // per unplaced camera
-
-		const auto triangulateEntry = [&](std::uint32_t e)
-		{
-			if (out.landmarks[e])
-				return;
-			std::vector<feature::Ray> rays;
-			for (const Seen& s : evidence.tracks[units[e]].seen)
-			{
-				if (!out.cameraFromWorld[s.camera])
-					continue;
-				const math::RigidTransformd worldFromCamera = out.cameraFromWorld[s.camera]->inverse();
-				rays.push_back({worldFromCamera.translation(), worldFromCamera.rotate(s.ray)});
-			}
-			if (rays.size() < 2)
-				return;
-			const feature::Triangulation t = feature::triangulate(rays, minimumParallax());
-			if (!t.ok())
-				return;
-			out.landmarks[e] = t.point;
-			for (const Seen& s : evidence.tracks[units[e]].seen)
-			{
-				if (!out.cameraFromWorld[s.camera])
-					++landmarksSeen[s.camera];
-			}
-		};
-		const auto setCamera = [&](std::uint32_t c, const math::RigidTransformd& cameraFromWorld)
-		{
-			out.cameraFromWorld[c] = cameraFromWorld;
-			out.order.push_back(c);
-			for (const std::uint32_t e : entriesOf[c])
-				triangulateEntry(e);
-		};
-		setCamera(seed.a, math::RigidTransformd{});
-		setCamera(seed.b, seed.bFromA);
-
-		for (;;)
-		{
-			std::vector<std::uint32_t> waiting;
-			for (std::uint32_t c = 0; c < n; ++c)
-			{
-				if (!out.cameraFromWorld[c] && landmarksSeen[c] >= kPlaceLandmarks)
-					waiting.push_back(c);
-			}
-			std::stable_sort(waiting.begin(), waiting.end(), [&](std::uint32_t x, std::uint32_t y)
-							 { return landmarksSeen[x] > landmarksSeen[y]; });
-			bool placedOne = false;
-			for (const std::uint32_t c : waiting)
-			{
-				std::vector<feature::PointRay> pointRays;
-				for (const std::uint32_t e : entriesOf[c])
-				{
-					if (!out.landmarks[e])
-						continue;
-					for (const Seen& s : evidence.tracks[units[e]].seen)
-					{
-						if (s.camera == c)
-							pointRays.push_back({*out.landmarks[e], s.ray});
-					}
-				}
-				const feature::GeometryResult result = feature::absolutePose(pointRays, geometryRequest(request));
-				if (!result.ok())
-					continue;
-				setCamera(c, *result.pose);
-				placedOne = true;
-				break;
-			}
-			if (!placedOne)
-				break;
-		}
-		return out;
-	}
-
-	// A placed rig rebased on the reference, with every observation its camera cannot project left out:
-	// a landmark behind a camera at the start fails the whole refinement (ADR-0017). What refinement
-	// starts from.
-	struct Start
-	{
-		std::vector<math::RigidTransformd> cameraFromReference;
-		std::vector<std::optional<math::Vec3d>> landmarks; // per unit entry, in the reference frame; unset: not refined
-		std::vector<std::vector<bool>> kept;			   // per unit entry, per observation: refined
-		std::uint32_t behind = 0;						   // observations left out
-		std::vector<std::uint32_t> starved;				   // cameras left seeing fewer than kPlaceLandmarks landmarks
-	};
-
-	static Start startFrom(const Evidence& evidence, const Units& units, const Placement& placement, std::uint32_t reference)
-	{
-		const std::size_t n = evidence.cameras.size();
-		Start out;
-		const math::RigidTransformd& referenceFromWorld = *placement.cameraFromWorld[reference];
-		const math::RigidTransformd worldFromReference = referenceFromWorld.inverse();
-		for (std::size_t c = 0; c < n; ++c)
-			out.cameraFromReference.push_back(*placement.cameraFromWorld[c] * worldFromReference);
-		out.cameraFromReference[reference] = math::RigidTransformd{};
-		out.landmarks.assign(units.size(), std::nullopt);
-		out.kept.resize(units.size());
-		std::vector<std::uint32_t> seen(n, 0);
-		for (std::size_t e = 0; e < units.size(); ++e)
-		{
-			const std::vector<Seen>& members = evidence.tracks[units[e]].seen;
-			out.kept[e].assign(members.size(), false);
-			if (!placement.landmarks[e])
-				continue;
-			const math::Vec3d point = referenceFromWorld.apply(*placement.landmarks[e]);
-			std::uint32_t kept = 0;
-			for (std::size_t m = 0; m < members.size(); ++m)
-			{
-				const math::Vec3d q = out.cameraFromReference[members[m].camera].apply(point);
-				if (project(evidence.cameras[members[m].camera].model, q.x, q.y, q.z).ok())
-				{
-					out.kept[e][m] = true;
-					++kept;
-				}
-				else
-					++out.behind;
-			}
-			if (kept < 2)
-			{
-				out.kept[e].assign(members.size(), false);
-				continue;
-			}
-			out.landmarks[e] = point;
-			for (std::size_t m = 0; m < members.size(); ++m)
-			{
-				if (out.kept[e][m])
-					++seen[members[m].camera];
-			}
-		}
-		for (std::uint32_t c = 0; c < n; ++c)
-		{
-			if (seen[c] < kPlaceLandmarks)
-				out.starved.push_back(c);
-		}
-		return out;
 	}
 
 	// The scale that puts the median depth of the landmarks the reference sees at 1 (CONTEXT.md, "Scale
@@ -477,7 +80,7 @@ namespace lain::camera::registration::targetless
 			const std::vector<Seen>& members = evidence.tracks[units[e]].seen;
 			for (std::size_t m = 0; m < members.size(); ++m)
 			{
-				if (members[m].camera == reference && kept[e][m])
+				if (members[m].view == reference && kept[e][m])
 					depths.push_back(landmarks[e]->z);
 			}
 		}
@@ -503,9 +106,8 @@ namespace lain::camera::registration::targetless
 							 const Request& request, std::vector<std::uint32_t>& entryOf)
 	{
 		Problem problem;
-		for (const RigCamera& c : evidence.cameras)
-			problem.models.push_back(c.model);
-		problem.cameraFromReference = start.cameraFromReference;
+		problem.models = evidence.models;
+		problem.cameraFromReference = start.viewFromReference;
 		problem.reference = reference;
 		problem.noise = request.noise;
 		problem.loss = request.loss;
@@ -522,7 +124,7 @@ namespace lain::camera::registration::targetless
 			{
 				if (start.kept[e][m])
 					problem.landmarkObservations.push_back(
-						{members[m].camera, landmark, members[m].pixel, members[m].covariance});
+						{members[m].view, landmark, members[m].pixel, members[m].covariance});
 			}
 		}
 		return problem;
@@ -534,8 +136,8 @@ namespace lain::camera::registration::targetless
 	static std::optional<std::vector<math::RigidTransformd>> registerUnits(const Evidence& evidence, const Units& units,
 																		   std::uint32_t reference, const Request& request)
 	{
-		const std::size_t n = evidence.cameras.size();
-		const std::vector<std::vector<std::uint32_t>> cameras = camerasOf(evidence, units);
+		const std::size_t n = evidence.models.size();
+		const std::vector<std::vector<std::uint32_t>> cameras = viewsOf(evidence, units);
 		const ObservationGraph graph = observationGraph(std::uint32_t(n), cameras);
 		if (graph.components.size() != 1)
 			return std::nullopt;
@@ -543,16 +145,16 @@ namespace lain::camera::registration::targetless
 		std::iota(all.begin(), all.end(), 0u);
 		const Candidates found = candidates(graph, cameras, unitsOf(n, cameras), all, kSeedCandidates);
 		Provenance unused;
-		const std::optional<Seed> seed = chooseSeed(evidence, units, found.covering, request, unused);
+		const std::optional<Seed> seed = chooseSeed(evidence, units, found.covering, geometryRequest(request), unused);
 		if (!seed)
 			return std::nullopt;
-		const Placement placement = place(evidence, units, *seed, request);
+		const Placement placement = place(evidence, units, *seed, geometryRequest(request));
 		if (placement.order.size() != n)
 			return std::nullopt;
 		Start start = startFrom(evidence, units, placement, reference);
 		if (!start.starved.empty())
 			return std::nullopt;
-		scaleBy(normalisation(evidence, units, start.landmarks, start.kept, reference).first, start.cameraFromReference,
+		scaleBy(normalisation(evidence, units, start.landmarks, start.kept, reference).first, start.viewFromReference,
 				start.landmarks);
 		std::vector<std::uint32_t> entryOf;
 		const Solution solution = refine(problemOf(evidence, units, start, reference, request, entryOf));
@@ -565,7 +167,8 @@ namespace lain::camera::registration::targetless
 
 	// What the cameras of `component` place, relative to their seed's first camera: a diagnostic of a rig
 	// that cannot register whole. Unset when no pair of them can seed.
-	static std::optional<ComponentEstimate> estimate(const Evidence& evidence, const Units& units,
+	static std::optional<ComponentEstimate> estimate(const std::vector<RigCamera>& rig, const Evidence& evidence,
+													 const Units& units,
 													 const ObservationGraph& graph,
 													 const std::vector<std::vector<std::uint32_t>>& cameras,
 													 const std::vector<std::vector<std::uint32_t>>& ofCamera,
@@ -575,24 +178,24 @@ namespace lain::camera::registration::targetless
 		if (found.covering.empty() && found.top)
 			found.covering.push_back(*found.top);
 		Provenance unused;
-		const std::optional<Seed> seed = chooseSeed(evidence, units, found.covering, request, unused);
+		const std::optional<Seed> seed = chooseSeed(evidence, units, found.covering, geometryRequest(request), unused);
 		if (!seed)
 			return std::nullopt;
-		const Placement placement = place(evidence, units, *seed, request);
+		const Placement placement = place(evidence, units, *seed, geometryRequest(request));
 		ComponentEstimate out;
-		out.reference = evidence.cameras[seed->a].camera;
+		out.reference = rig[seed->a].camera;
 		for (const std::uint32_t c : placement.order)
-			out.cameras.push_back({evidence.cameras[c].camera, placement.cameraFromWorld[c]->inverse()});
+			out.cameras.push_back({rig[c].camera, placement.viewFromWorld[c]->inverse()});
 		std::sort(out.cameras.begin(), out.cameras.end(), [](const RegisteredCamera& x, const RegisteredCamera& y)
 				  { return x.camera < y.camera; });
 		return out;
 	}
 
-	static std::string listOf(const Evidence& evidence, const std::vector<std::uint32_t>& cameras)
+	static std::string listOf(const std::vector<RigCamera>& rig, const std::vector<std::uint32_t>& cameras)
 	{
 		std::string out;
 		for (std::size_t i = 0; i < cameras.size(); ++i)
-			out += (i ? ", " : "") + evidence.cameras[cameras[i]].camera.value;
+			out += (i ? ", " : "") + rig[cameras[i]].camera.value;
 		return out;
 	}
 
@@ -683,11 +286,12 @@ namespace lain::camera::registration::targetless
 	// --- the registration --------------------------------------------------------------
 
 	// Everything after the checks. `report` arrives prepared.
-	static Report analyse(Report report, const Evidence& evidence, const feature::TrackSet& set,
+	static Report analyse(Report report, const std::vector<RigCamera>& rig, const Evidence& evidence,
+						  const feature::TrackSet& set,
 						  const std::vector<Applicability>& applicability, std::optional<std::uint32_t> requested,
 						  const Request& request, core::Time start)
 	{
-		const std::size_t n = evidence.cameras.size();
+		const std::size_t n = rig.size();
 		Diagnostics& diagnostics = report.diagnostics;
 		TargetlessDiagnostics& targetless = std::get<TargetlessDiagnostics>(diagnostics.method);
 		TargetlessRecord& record = std::get<TargetlessRecord>(report.reproducibility.method);
@@ -703,7 +307,7 @@ namespace lain::camera::registration::targetless
 		// then stays a valid placement, so a seed reaching every camera survives the hold-out.
 		Units usable(evidence.tracks.size());
 		std::iota(usable.begin(), usable.end(), 0u);
-		const std::vector<std::vector<std::uint32_t>> usableCameras = camerasOf(evidence, usable);
+		const std::vector<std::vector<std::uint32_t>> usableCameras = viewsOf(evidence, usable);
 		const Candidates anchors = candidates(observationGraph(std::uint32_t(n), usableCameras), usableCameras,
 											  unitsOf(n, usableCameras), all, 1);
 		std::function<bool(std::size_t)> mayHold = [](std::size_t)
@@ -754,11 +358,11 @@ namespace lain::camera::registration::targetless
 		}
 
 		// 4. The camera observation graph over the fitting tracks.
-		const std::vector<std::vector<std::uint32_t>> fittingCameras = camerasOf(evidence, fitting);
+		const std::vector<std::vector<std::uint32_t>> fittingCameras = viewsOf(evidence, fitting);
 		const std::vector<std::vector<std::uint32_t>> fittingOf = unitsOf(n, fittingCameras);
 		const ObservationGraph graph = observationGraph(std::uint32_t(n), fittingCameras);
 		const auto edgeReport = [&](const GraphEdge& e)
-		{ return GraphEdgeReport{evidence.cameras[e.a].camera, evidence.cameras[e.b].camera, e.shared, e.bridge}; };
+		{ return GraphEdgeReport{rig[e.a].camera, rig[e.b].camera, e.shared, e.bridge}; };
 		for (const GraphEdge& e : graph.edges)
 			diagnostics.edges.push_back(edgeReport(e));
 		for (const GraphEdge& e : weakBridges(graph, report.thresholds.ready.minimumBridgeShared))
@@ -767,13 +371,13 @@ namespace lain::camera::registration::targetless
 		{
 			std::vector<capture::CameraIdentity> ids;
 			for (const std::uint32_t c : component)
-				ids.push_back(evidence.cameras[c].camera);
+				ids.push_back(rig[c].camera);
 			diagnostics.components.push_back(std::move(ids));
 		}
 		for (std::size_t c = 0; c < n; ++c)
 		{
 			CameraEvidence camera;
-			camera.camera = evidence.cameras[c].camera;
+			camera.camera = rig[c].camera;
 			camera.applicability = applicability[c];
 			camera.shared = graph.sharedPerCamera[c];
 			diagnostics.cameras.push_back(std::move(camera));
@@ -783,20 +387,20 @@ namespace lain::camera::registration::targetless
 			for (const std::vector<std::uint32_t>& component : graph.components)
 			{
 				if (std::optional<ComponentEstimate> e =
-						estimate(evidence, fitting, graph, fittingCameras, fittingOf, component, request))
+						estimate(rig, evidence, fitting, graph, fittingCameras, fittingOf, component, request))
 					diagnostics.componentEstimates.push_back(std::move(*e));
 			}
 			std::string detail = lain::string::format("the cameras fall into {} groups that share no track:",
 													  graph.components.size());
 			for (const std::vector<std::uint32_t>& component : graph.components)
-				detail += " {" + listOf(evidence, component) + "}";
+				detail += " {" + listOf(rig, component) + "}";
 			return failed(std::move(report), start, Failure::Disconnected, detail);
 		}
 
 		// The reference: requested, or the camera in the most shared tracks, ties to the lower identity.
 		report.referenceRequested = requested.has_value();
 		const std::uint32_t reference = detail::chooseReference(graph.sharedPerCamera, requested);
-		report.reference = evidence.cameras[reference].camera;
+		report.reference = rig[reference].camera;
 
 		// 5. Placeability, then the seed.
 		const Candidates found = candidates(graph, fittingCameras, fittingOf, all, kSeedCandidates);
@@ -807,17 +411,17 @@ namespace lain::camera::registration::targetless
 				for (std::uint32_t c = 0; c < n; ++c)
 				{
 					if (!found.top->placed[c])
-						targetless.unplaceable.push_back(evidence.cameras[c].camera);
+						targetless.unplaceable.push_back(rig[c].camera);
 				}
 				if (std::optional<ComponentEstimate> e =
-						estimate(evidence, fitting, graph, fittingCameras, fittingOf, all, request))
+						estimate(rig, evidence, fitting, graph, fittingCameras, fittingOf, all, request))
 					diagnostics.componentEstimates.push_back(std::move(*e));
 			}
 			else
 				targetless.unplaceable = [&]
 				{
 					std::vector<capture::CameraIdentity> ids;
-					for (const RigCamera& c : evidence.cameras)
+					for (const RigCamera& c : rig)
 						ids.push_back(c.camera);
 					return ids;
 				}();
@@ -829,28 +433,28 @@ namespace lain::camera::registration::targetless
 										  " share no triangulable landmark with the cameras placed before them"
 									: "no camera pair shares enough tracks to seed the rig");
 		}
-		const std::optional<Seed> seed = chooseSeed(evidence, fitting, found.covering, request, record.geometry);
+		const std::optional<Seed> seed = chooseSeed(evidence, fitting, found.covering, geometryRequest(request), record.geometry);
 		if (!seed)
 			return failed(std::move(report), start, Failure::InitialisationFailed,
 						  "no camera pair's relative pose could be estimated from the tracks it shares");
-		targetless.seed = {evidence.cameras[seed->a].camera, evidence.cameras[seed->b].camera};
+		targetless.seed = {rig[seed->a].camera, rig[seed->b].camera};
 		targetless.seedAngle = seed->angle;
 		targetless.seedBelowFloor = seed->belowFloor;
 
 		// 6. Incremental initialisation.
-		const Placement placement = place(evidence, fitting, *seed, request);
+		const Placement placement = place(evidence, fitting, *seed, geometryRequest(request));
 		for (const std::uint32_t c : placement.order)
-			targetless.placement.push_back(evidence.cameras[c].camera);
+			targetless.placement.push_back(rig[c].camera);
 		if (placement.order.size() != n)
 		{
 			std::vector<std::uint32_t> unplaced;
 			for (std::uint32_t c = 0; c < n; ++c)
 			{
-				if (!placement.cameraFromWorld[c])
+				if (!placement.viewFromWorld[c])
 					unplaced.push_back(c);
 			}
 			return failed(std::move(report), start, Failure::InitialisationFailed,
-						  "cameras " + listOf(evidence, unplaced) + " could not be placed by absolute pose");
+						  "cameras " + listOf(rig, unplaced) + " could not be placed by absolute pose");
 		}
 
 		// 7. Cheirality.
@@ -859,8 +463,8 @@ namespace lain::camera::registration::targetless
 		if (!begin.starved.empty())
 			return failed(std::move(report), start, Failure::InitialisationFailed,
 						  lain::string::format("cameras {} see fewer than {} landmarks in front of them",
-											   listOf(evidence, begin.starved), kPlaceLandmarks));
-		scaleBy(normalisation(evidence, fitting, begin.landmarks, begin.kept, reference).first, begin.cameraFromReference,
+											   listOf(rig, begin.starved), kPlaceLandmarks));
+		scaleBy(normalisation(evidence, fitting, begin.landmarks, begin.kept, reference).first, begin.viewFromReference,
 				begin.landmarks);
 
 		// 8. The global refinement.
@@ -910,7 +514,7 @@ namespace lain::camera::registration::targetless
 			for (std::size_t m = 0; m < track.seen.size(); ++m)
 			{
 				const Seen& s = track.seen[m];
-				CameraEvidence& camera = diagnostics.cameras[s.camera];
+				CameraEvidence& camera = diagnostics.cameras[s.view];
 				double rmsWhitened = std::numeric_limits<double>::infinity();
 				if (landmarks[e])
 				{
@@ -922,16 +526,16 @@ namespace lain::camera::registration::targetless
 						diagnostics.outliers.push_back({track.track->identity, camera.camera, rmsWhitened});
 						continue;
 					}
-					const math::Vec3d q = cameraFromReference[s.camera].apply(*landmarks[e]);
-					const Projection<double> predicted = project(evidence.cameras[s.camera].model, q.x, q.y, q.z);
+					const math::Vec3d q = cameraFromReference[s.view].apply(*landmarks[e]);
+					const Projection<double> predicted = project(rig[s.view].model, q.x, q.y, q.z);
 					++fitted;
 					++camera.residuals;
 					depths.push_back(q.z);
-					sumAngles[s.camera] += std::pow(angleBetween(s.ray, q), 2);
+					sumAngles[s.view] += std::pow(angleBetween(s.ray, q), 2);
 					if (predicted.ok())
 					{
 						const math::Vec2d r = math::Vec2d{predicted.u, predicted.v} - s.pixel;
-						sumPixels[s.camera] += math::dot(r, r);
+						sumPixels[s.view] += math::dot(r, r);
 						rmsWhitened = std::sqrt(detail::whitenedSquared(r, s.covariance, request.noise));
 					}
 					if (rmsWhitened > request.loss.scale)
@@ -956,7 +560,7 @@ namespace lain::camera::registration::targetless
 
 		report.status = RegistrationStatus::Succeeded;
 		for (std::size_t c = 0; c < n; ++c)
-			report.cameras.push_back({evidence.cameras[c].camera, cameraFromReference[c].inverse()});
+			report.cameras.push_back({rig[c].camera, cameraFromReference[c].inverse()});
 		report.cameras[reference].referenceFromCamera = math::RigidTransformd{};
 		report.scale.scale = Scale::Arbitrary;
 		report.scale.evidence =
@@ -966,7 +570,7 @@ namespace lain::camera::registration::targetless
 		if (validating.empty())
 			report.heldOut = Unavailable{"no tracks were held out"};
 		else
-			report.heldOut = validate(evidence.cameras, report, set, validating, request.execution);
+			report.heldOut = validate(rig, report, set, validating, request.execution);
 
 		// 10. Stability: registrations of bootstrap resamples of the fitting tracks, drawn before anything
 		// runs (detail::bootstrapDraws). A resample leaves its own scale, so each is aligned to the result
@@ -1021,7 +625,7 @@ namespace lain::camera::registration::targetless
 					if (r > out.rotationVariation)
 					{
 						out.rotationVariation = r;
-						out.worstCamera = evidence.cameras[c].camera;
+						out.worstCamera = rig[c].camera;
 					}
 					out.translationVariationAbsolute = std::max(out.translationVariationAbsolute, t);
 				}
@@ -1029,7 +633,7 @@ namespace lain::camera::registration::targetless
 											   ? out.translationVariationAbsolute / diagnostics.medianDepth
 											   : std::numeric_limits<double>::infinity();
 				if (out.worstCamera.empty())
-					out.worstCamera = evidence.cameras[reference].camera;
+					out.worstCamera = rig[reference].camera;
 				report.resampling = out;
 			}
 		}
@@ -1081,7 +685,8 @@ namespace lain::camera::registration::targetless
 
 		// The usable evidence, in track identity order.
 		Evidence evidence;
-		evidence.cameras = canonical.cameras;
+		for (const RigCamera& c : canonical.cameras)
+			evidence.models.push_back(c.model);
 		std::vector<const feature::Track*> ordered;
 		for (const feature::Track& track : set.tracks)
 			ordered.push_back(&track);
@@ -1099,11 +704,11 @@ namespace lain::camera::registration::targetless
 					usable.seen.push_back({camera, o.pixel, o.covariance, math::normalize(math::Vec3d{ray.x, ray.y, ray.z})});
 			}
 			std::sort(usable.seen.begin(), usable.seen.end(), [](const Seen& x, const Seen& y)
-					  { return x.camera < y.camera; });
+					  { return x.view < y.view; });
 			if (usable.seen.size() >= 2)
 				evidence.tracks.push_back(std::move(usable));
 		}
-		return analyse(std::move(report), evidence, set, applicability, canonical.reference, request, start);
+		return analyse(std::move(report), canonical.cameras, evidence, set, applicability, canonical.reference, request, start);
 	}
 
 	static Report startReport(const Request& request)

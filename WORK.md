@@ -2446,8 +2446,8 @@ sub-slices (below), and **all eleven are built** (2026-10-09); a gui-mode eyebal
 owed. The repo owner kept the provisional values sub-slice 9 measured, and queued three changes to
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
 graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
-(as 1a and 1b), 2 (as 2a and 2b), 3, 4 and 5 are built, with the fix that landed ahead of 5, and
-6a and 6b of sub-slice 6.
+(as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5 and 6 (as 6a, 6b and 6c) are built, with the fix that
+landed ahead of 5.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -6678,6 +6678,44 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - Also checked: Debug and Release with all three plugins on and with all three off. The Ceres
      targetless cases and the Release end-to-end comparison, which run real backends through the
      moved code, must pass unchanged.
+
+   **Sub-slice 6c built (2026-10-14) — sub-slice 6 COMPLETE.** As planned:
+   - **`src/reconstruction.{h,cpp}`, namespace `lain::camera::reconstruction`**, holds:
+     - the four constants, now `inline constexpr` in the header;
+     - `Seen`, `Usable`, `Evidence`, `Units`, `viewsOf` and `unitsOf`;
+     - `Closure` and `closure`, `Candidates` and `candidates`, `Seed` and `chooseSeed`, `Placement`
+       and `place`, `Start` and `startFrom`.
+
+     The parallax floor is file-local to the `.cpp`, since registration never reads it.
+     `Closure::covers` moved out of line with the rest.
+   - **The module speaks of views.** `Seen::view`, `Placement::viewFromWorld`,
+     `Start::viewFromReference` and `viewsOf` are the renames. `Evidence` is `{models, tracks}`, a
+     model per view and no identity. The header says what a view is in each method.
+   - **`chooseSeed` and `place` take a `feature::GeometryRequest`.** Registration builds it with its
+     own `geometryRequest(request)`, so both entry points still measure every pose alike.
+   - **Registration keeps its canonical `RigCamera`s beside the module's evidence.** `analyse`,
+     `estimate` and `listOf` take them as `rig`, for the identities they report and for
+     `validate`. Everything else in `targetless.cpp` names the module through using-declarations at
+     its top, so its call sites read as before.
+   - **The direction is checked by a grep**: `reconstruction.h`, `reconstruction.cpp` and every
+     public header they include name nothing in `registration/` or `calibration/`.
+   - **Sabotages, both caught**, each restored byte for byte and touched a second later:
+     - A closure that counts a unit once ONE placed view sees it (`inPlaced[u] != 1`): scene 3 fails
+       as InitialisationFailed instead of Disconnected, and the existing chain case fails, as
+       predicted. **Not predicted: scene 7 and its case fail too.** The closure's support counts
+       are what the hold-out guard spends, so they fall short and the guard lets critical tracks be
+       held out. The fitting graph then splits into {cam00, cam01} and {cam02, cam03}. That is the
+       guard reading the module's closure, shown from the other side.
+     - The seed ignoring the floor: scene 6 seeds (cam00, cam01) at 0.0097 rad without the
+       below-floor flag, and the existing narrow case fails, as predicted. So does "the seed is the
+       pair with the most inliers that clears the parallax floor", which the plan did not name.
+   - **Timing, Release, four alternating rounds of the targetless scale case** (100 cameras, 50,000
+     tracks): 37.3 s mean before (36.1 to 39.4), 36.6 s after (35.2 to 37.6). That is no change
+     beyond noise. Both binaries ran slower than sub-slice 5's 29 to 32 s, alike, so the difference
+     is this container, not the code.
+   - **Counts unchanged:** 1228/1228 Debug and 1236/1236 Release with video, camera and Ceres on,
+     1123/1123 with all three off. The Ceres targetless cases and the Release end-to-end comparison
+     pass unchanged. Every golden untouched; warning-clean, format-check clean.
 
    **Docs:** each commit adds its built note here and an entry to CLAUDE.md, as 2a and 2b did. 6b
    amends CONTEXT.md.
@@ -11840,8 +11878,8 @@ row here**. A row is cheap to delete and expensive to leave.
   its detail lives:
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
-       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4 and 5, with the
-       fix ahead of 5, and 6a and 6b. The
+       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5 and 6 (as 6a,
+       6b and 6c), with the fix ahead of 5. The
        separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
        restated (slice 4's plan).
   2. **Owed by the repo owner.**
