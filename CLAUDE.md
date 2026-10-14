@@ -1400,6 +1400,25 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-14 — M9 slice 4, sub-slice 6b: the observation graph moves down to `lain::camera`
+
+The second of sub-slice 6's three commits, no change in behaviour. The incremental reconstruction 6c
+lifts ranks its seeds by the camera observation graph, and calibration may not depend on its sibling,
+so the graph moves down first, as `RigCamera` and the refiner seam did. `ctest` **1228/1228** Debug and
+**1236/1236** Release with video, camera and Ceres on, **1123/1123** with all three off (unchanged);
+every golden untouched; warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 6b
+built* under M9 slice 4.
+
+- **`lain/camera/observationgraph.h`** holds `GraphEdge`, `ObservationGraph` and `observationGraph`,
+  whose vertices are a method's views (cameras in registration, frames in targetless calibration).
+  Registration names them through using-declarations and keeps `weakBridges`, a fitness judgement
+  only it makes.
+- **`detail::root` and `detail::median` are lain::camera's** (`src/unionfind.h`, `src/median.h`),
+  so feature extraction's private copies are deleted. The copies did the same arithmetic.
+- **Sabotage, caught, one prediction wrong:** a median taking the lower middle value fails both
+  goldens and nothing else. The targetless one differs first at the scale normalisation (line 5),
+  not at the seed angle predicted.
+
 ### Update 2026-10-14 — M9 slice 4, sub-slice 6a: a golden targetless registration report
 
 The first of sub-slice 6's three commits, none of which changes behaviour. A golden targetless

@@ -9,6 +9,8 @@
 #include "lain/camera/registration/report.h"
 #include "lain/camera/registration/request.h"
 #include "lain/camera/registration/rig.h"
+#include "median.h"
+#include "unionfind.h"
 
 #include <lain/core/time.h>
 #include <lain/math/rigidtransform.h>
@@ -29,22 +31,18 @@
 namespace lain::camera::registration::detail
 {
 	// How a method module runs independent work, shared with calibration (execution.h), finds a
-	// member's frame in its footage, shared with feature extraction (footageindex.h), and measures an
-	// angle (angles.h); named here too, since inside registration this namespace hides
-	// lain::camera::detail.
+	// member's frame in its footage, shared with feature extraction (footageindex.h), measures an angle
+	// (angles.h), takes a median (median.h) and finds a union-find root (unionfind.h); named here too,
+	// since inside registration this namespace hides lain::camera::detail.
 	using camera::detail::angleBetween;
 	using camera::detail::FootageIndex;
 	using camera::detail::forEach;
+	using camera::detail::median;
+	using camera::detail::root;
 
 	// The rotation between two transforms, radians: 2 atan2(|v|, |w|) of the relative quaternion,
 	// which keeps its precision for the tiny angles stability is measured in, where acos does not.
 	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b);
-
-	// The median of `values`; infinity when there are none.
-	double median(std::vector<double> values);
-
-	// The root of `x` in a union-find forest, halving the path on the way.
-	std::uint32_t root(std::vector<std::uint32_t>& parent, std::uint32_t x);
 
 	// How a person reads a count of `unit`s, plural: "groups", "tracks".
 	std::string_view unitsWord(EvidenceUnit unit);

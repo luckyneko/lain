@@ -306,6 +306,9 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   hints at most, not evidence. _Avoid_: user-provided overlap graph, camera topology.
   *Connected is necessary but not sufficient for targetless registration* (2026-10-06): every camera
   must also be a placeable camera.
+  *Whose type* (2026-10-14): `lain::camera`'s (`observationgraph.h`), not registration's, because
+  targetless calibration builds one too, its vertices the moving camera's sampled frames. Registration
+  names it where its callers look for it, and keeps the weak-bridge judgement, which only it makes.
 - **Placeable camera** — in targetless registration, a camera that shares triangulated landmarks with
   cameras already placed, so an absolute pose can put it in the frame they share. Two overlaps A–B and
   B–C with no track seen by all three are connected through B, but each keeps a scale of its own:

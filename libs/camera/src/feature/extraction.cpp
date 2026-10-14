@@ -3,6 +3,8 @@
 #include "execution.h"
 #include "footageindex.h"
 #include "lain/camera/projection.h"
+#include "median.h"
+#include "unionfind.h"
 
 #include <lain/core/sha256.h>
 #include <lain/meta/enums.h>
@@ -23,6 +25,9 @@
 
 namespace lain::camera::feature
 {
+	using detail::median;
+	using detail::root;
+
 	// --- file-local helpers (named static, not an anonymous namespace) ----------
 
 	static constexpr double kTau = 6.283185307179586;
@@ -203,30 +208,12 @@ namespace lain::camera::feature
 		return kept;
 	}
 
-	static std::uint32_t root(std::vector<std::uint32_t>& parent, std::uint32_t i)
-	{
-		while (parent[i] != i)
-		{
-			parent[i] = parent[parent[i]];
-			i = parent[i];
-		}
-		return i;
-	}
-
 	static void join(std::vector<std::uint32_t>& parent, std::uint32_t a, std::uint32_t b)
 	{
 		const std::uint32_t ra = root(parent, a);
 		const std::uint32_t rb = root(parent, b);
 		if (ra != rb)
 			parent[std::max(ra, rb)] = std::min(ra, rb);
-	}
-
-	// The median of `values`, the mean of the middle two when there is an even count.
-	static double median(std::vector<double> values)
-	{
-		std::sort(values.begin(), values.end());
-		const std::size_t n = values.size();
-		return n % 2 == 1 ? values[n / 2] : (values[n / 2 - 1] + values[n / 2]) / 2;
 	}
 
 	// The lower median, for a value that has no mean.

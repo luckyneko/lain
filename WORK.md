@@ -2447,7 +2447,7 @@ owed. The repo owner kept the provisional values sub-slice 9 measured, and queue
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
 graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
 (as 1a and 1b), 2 (as 2a and 2b), 3, 4 and 5 are built, with the fix that landed ahead of 5, and
-6a of sub-slice 6.
+6a and 6b of sub-slice 6.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -6639,6 +6639,27 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      - the track-extraction tests may pass, since a stand-in's static feature is at one pixel in
        every frame. That is measured, not assumed.
    - Every golden is untouched, and the counts are unchanged.
+
+   **Sub-slice 6b built (2026-10-14).** As planned:
+   - `lain/camera/observationgraph.h` and `src/observationgraph.cpp` hold `GraphEdge`,
+     `ObservationGraph` and `observationGraph`. The header says a vertex is a method's view.
+     `observationGraph`'s parameter is now `views`; the fields keep their names.
+   - `registration/observationgraph.h` names the three through using-declarations and declares
+     `weakBridges`, whose definition stays in `src/registration/observationgraph.cpp`.
+   - `src/unionfind.h` and `src/median.h` hold `detail::root` and `detail::median`, inline as
+     `angles.h` is. Registration's `detail` names them through using-declarations, and
+     `feature/extraction.cpp`'s own copies are deleted for using-declarations of the shared two.
+   - CONTEXT.md's *Camera observation graph* says whose type it is.
+   - **The direction is checked by a grep**: the three new headers include nothing from
+     `registration/` or `calibration/`.
+   - **Sabotage, caught, with one prediction wrong.** The shared median taking the lower of the
+     middle two fails the two goldens and nothing else in the Debug suite:
+     - the targetless golden first at scene 1's cam01 translation (line 5), not at the seed angle as
+       predicted. The scale normalisation's median depth comes earlier in the text;
+     - the board golden at its bootstrap's rotation variation (line 10);
+     - the track-extraction tests pass, as the plan allowed.
+   - **Counts unchanged:** 1228/1228 Debug and 1236/1236 Release with video, camera and Ceres on,
+     1123/1123 with all three off. Every golden untouched; warning-clean, format-check clean.
 
    **6c: the lift.**
    - `src/reconstruction.{h,cpp}`, as above. `registration/targetless.cpp` keeps what is
@@ -11820,7 +11841,7 @@ row here**. A row is cheap to delete and expensive to leave.
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
        sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4 and 5, with the
-       fix ahead of 5, and 6a. The
+       fix ahead of 5, and 6a and 6b. The
        separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
        restated (slice 4's plan).
   2. **Owed by the repo owner.**

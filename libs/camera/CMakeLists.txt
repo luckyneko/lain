@@ -13,6 +13,7 @@
 add_library(camera STATIC
 	src/cameramodel.cpp
 	src/distortion.cpp
+	src/observationgraph.cpp
 	src/scalepolicy.cpp
 	src/board/pattern.cpp
 	src/board/specification.cpp
