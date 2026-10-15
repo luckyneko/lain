@@ -5483,7 +5483,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         - Release only: the time to match every pair of 40 frames sampled at a 1920 longest side,
           with and without the pre-screen, recorded beside its check. *(Measured per pair and scaled
           up, decided 2026-10-15: matching all 780 pairs Exact at the cap is about 2.2 core-hours.)*
-   9. **`calibration::targetless`.**
+   9. **`calibration::targetless`.** *(Planned in detail 2026-10-15 as three commits, 9a to 9c; see
+      below. The track-set overload takes no `image`, since a track set's views carry theirs.)*
       - `calibrate(footage, settings, request)` and `calibrate(trackSet, image, settings, request)`.
       - Steps:
         1. the checks: `NoFeatureExtractor`, `NoFeatureMatcher`, `NoGeometrySolver`, `NoRefiner`, a
@@ -7326,6 +7327,245 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - **Counts as predicted:** 1247/1247 Debug and 1255/1255 Release with video, camera and Ceres on
      (+3 each, two of them skipped in Debug), 1138/1138 with all three off. Warning-clean, format-check
      clean. Under `ctest -j8` the timing case took 243 s and its ratios held.
+
+   **Sub-slice 9 planned (2026-10-15) as three commits, 9a to 9c.** The method itself:
+   `calibration::targetless`, from the focal sweep to the verdict.
+
+   **Decided with the repo owner:**
+   - **Three commits:**
+     - **9a**, with no change in behaviour, held to all three goldens: what the method shares with
+       board calibration and registration moves where it can reach it.
+     - **9b**, the method, with tests over stand-ins.
+     - **9c**, the tests through Ceres.
+   - **A held-out frame is measured over its inliers, and the rest are counted.** It is posed by the
+     absolute-pose facade. The RMS angle is taken over the observations within the posing's inlier
+     angle, and the others are counted and reported. Sub-slice 8 measured about 1.7% of tracks wrong
+     along an epipolar line, which no fundamental matrix can see. Measured over every observation,
+     one of them in a held-out frame would decide the verdict, the problem queued for registration on
+     2026-10-09. The alternative was every observation, as board calibration and registration
+     measure today.
+   - **The usable tracks sit in capture order:** by each track's first frame, then its pixel. A track's
+     identity digests its frame's source uri, so in identity order where the footage sits would move
+     the bootstrap draws, the finding slice 3's sub-slice 10 recorded. The held-out frames are chosen
+     in capture order too, so neither depends on the footage's location. The alternative was identity
+     order, as targetless registration does.
+
+   **Found while planning:**
+   - **Calibration cannot reach three things it needs, because registration owns them.**
+     - `holdOut` and `bootstrapDraws` are in `registration::detail` (`src/registration/common.h`).
+     - `RefinementSummary`, what a report says about its refinement, is in `registration/report.h`.
+
+     ADR-0016 keeps the two methods apart, so each moves down to `lain::camera`, as the observation
+     graph and the refiner seam did.
+   - **Board calibration's coverage grid is board's.** `calibration::board::coverage` takes board
+     observations, and the 8 x 6 grid and `cellOf` live beside it. Targetless coverage is the same
+     grid over feature pixels.
+   - **The stand-ins cannot reconstruct a moving camera:**
+     - `TruthGeometry::relativePoses` and `absolutePoses` propose from `scene().referenceFromCamera`,
+       which a moving camera's scene holds one pose in, so they propose nothing;
+     - a moving camera is always a pinhole (`scene::model()`);
+     - `trackSetOf` gives one view per fixed camera, not one per frame;
+     - `PassThroughRefiner::canEstimate` answers false, so the method's refusal would stop every
+       stand-in case before it starts.
+   - **`startFrom` needs every view placed**, and a calibration places only the frames its seed can
+     reach. `candidates` returns only closures that reach every required view.
+   - **`calibrate(trackSet, image, settings, request)` takes a second answer to one question.** A
+     track set's views each carry the image geometry their pixels are in, so an `image` argument could
+     disagree with them. The track-set overload reads the views' geometry, and refuses views that
+     disagree with each other.
+   - **A fisheye's neutral model is equidistant.** Kannala-Brandt 4 with every coefficient zero maps
+     angle to radius linearly, so a field of view becomes a focal length differently from a
+     pinhole's. The sweep's candidates go through the requested model's own neutral projection.
+   - **`Request::maximumViews` is read by board calibration alone**, since a targetless calibration
+     selects no views: its frames are the extraction's `samples`. It stays in the shared request. Moving
+     it would change board's entry point with no second reader; its comment says it is board's.
+   - **`test_calibration.cpp` pins `fitnessProfileNames()` to `{"reconstruction/1"}`**, so 9b changes
+     that case with the profile it adds.
+
+   **Taken by precedent, or decided while planning:**
+   - **The entry points:**
+     - `calibrate(const capture::CameraFootage&, const Settings&, const Request&)`. It takes footage
+       with an identity, as `extractSequenceTracks` and registration's footage overload do, since
+       the identity is digested into every track.
+     - `calibrate(const feature::TrackSet&, const Settings&, const Request&)`.
+
+     The footage overload is `extractSequenceTracks` and then the track-set overload, exactly, with
+     the request's execution policy governing the extraction, as targetless registration's is.
+   - **`calibration::targetless::Settings`** holds the three fields slice 4's plan named:
+     `feature::SequenceExtractionRequest extraction`, `refinement::RobustLoss loss` and
+     `bool freePrincipalPoint = false`. It takes the refiner's default iteration limit.
+   - **Every inlier test is 4 source pixels**, turned into an angle by the focal length in use: the
+     sweep's candidate, the start model's for the seed and placement, the estimate's for the held-out
+     frames. That is the facade's own 4 mrad at a focal length of 1000, and the extraction
+     threshold's default. It is fixed rather than read from the extraction request, because a track
+     set does not say what scale it was searched at, and the two entry points must score alike.
+     Provisional; sub-slice 10 measures it.
+   - **The focal sweep:**
+     - 21 candidates, log-spaced from a 25° to a 120° field of view across the longest side, each
+       through the requested model's neutral projection: 10.8% apart for a pinhole, 8.2% for an
+       equidistant fisheye (provisional);
+     - each with fx = fy, the principal point at the image centre, and neutral distortion;
+     - scored on the 8 frame pairs sharing the most fitting tracks, ties to the lower pair;
+     - the candidate whose relative poses have the most inliers in total starts the reconstruction,
+       ties to the shorter focal length;
+     - every score recorded in the report.
+
+     An imported model under Initial skips it, and so does HoldAndValidate.
+   - **The seed for a calibration places as many frames as any can.** A new module function,
+     `reconstruction::widest`, returns the closures that reach the most frames among the pairs that
+     share at least five tracks, at most sixteen, in order of tracks shared. `chooseSeed` then
+     chooses among them by its own rule. Registration keeps `candidates`. The function lands in 9b,
+     beside its consumer.
+   - **Frames the seed cannot place are reported, not fatal**, and so are frames the cheirality filter
+     leaves seeing fewer than four landmarks. The evidence is narrowed to the placed frames before
+     the start is taken, and narrowed again until no frame is starved, so `startFrom` keeps its
+     contract and the targetless registration golden holds. Fewer than three frames left is
+     `TooFewViews`.
+   - **Footage that only turns fails `InitialisationFailed`, naming its parallax**, when the widest
+     seed's median triangulation angle is below the minimum parallax (the facade's inlier angle).
+   - **Held-out frames:**
+     - every k-th sampled frame in capture order, k = 1 / heldOutFraction, starting half a stride in,
+       through the moved `holdOut`;
+     - none from fewer than five frames;
+     - never a frame of the anchor seed, the first `widest` closure over every frame;
+     - a frame only when the anchor's closure, without it and every frame held out before it, still
+       reaches every other frame it reached.
+
+     A held-out frame's observations reach no refinement. Each is posed afterwards against the
+     refined landmarks, through rays from the estimated model, and measured through lain's
+     projection.
+   - **The bundle adjustment:**
+     - one model shared by every placed frame, its focal length and coefficients free, its principal
+       point free only when `freePrincipalPoint` says so;
+     - the reference is the seed's first frame;
+     - the settings' robust loss;
+     - every observation weighted by its own covariance;
+     - the refined model passed through `CameraModel::create`, an invalid one `InvalidModel`.
+
+     A held model refines the frames and landmarks alone.
+   - **The bootstrap resamples the fitting tracks** through the moved `bootstrapDraws`. Each resample
+     re-runs the bundle adjustment from the result: model, frames and landmarks, a track drawn twice
+     being two landmarks. A frame a resample leaves seeing fewer than four landmarks is left out of
+     it. Focal variation is the relative standard deviation of fx and fy. Principal-point variation
+     is `Held` when it was held, and never a zero. A held model's resampling is `Unavailable`.
+   - **The verdict** goes through `calibration::judge`. Its views are the frames in the bundle
+     adjustment; a held model's are its posed held-out frames, as board's are. Coverage is the
+     shared grid over every kept observation of those frames.
+   - **`reconstruction-targetless/1`, provisional until sub-slice 10 measures it.**
+     - Ready: 10 views, 0.6 coverage, 1.5 mrad held out, 0.5% focal, 2 mrad principal point.
+     - Exploratory: 6, 0.3, 5 mrad, 2%, 10 mrad.
+
+     SIFT localises to about 0.7 mrad at a focal length of 1000, and a held-out frame adds its own
+     pose's error. Focal and principal-point stability bound what the model is used for, so they are
+     board's. An empty profile in a targetless request resolves to it; board's still resolves to
+     `reconstruction/1`. Either profile may judge either method, since both judge the same criteria.
+   - **The report:**
+     - `Failure` gains `NoFeatureExtractor`, `NoFeatureMatcher`, `NoGeometrySolver`, `NoRefiner`,
+       `InvalidDataset`, `ExtractionFailed`, `InitialisationFailed`, `RefinementFailed` and
+       `ResourceExhausted`. A refiner that cannot estimate the requested model is `NoEstimator`, the
+       name board uses.
+     - `HeldOutEvidence` gains `outliers`: observations beyond the posing's inlier angle. Board's is
+       always 0.
+     - `Diagnostics::method` gains `TargetlessDiagnostics`. It holds:
+       - the extraction's report, when it ran;
+       - tracks given and usable;
+       - the sweep's candidates, scores and choice;
+       - the seed frames, their angle and whether they were below the floor;
+       - the placement order, and the frames left unplaced;
+       - the observations left behind, the landmarks refined and the tracks never triangulated;
+       - the refinement summary;
+       - the outliers, named by track and frame.
+
+       It holds no track set, since nothing reads one back, where targetless registration's
+       comparison did.
+     - `Reproducibility::method` gains `TargetlessRecord`: the settings as run, and the extractor,
+       matcher, geometry solver and refiner. `Reproducibility::estimator` is the refiner, unset for a
+       held model.
+     - `toString` adds ", N of M frames placed".
+   - **Every check that needs no frame comes first**, in order:
+     - the frame sequence (`NoFootage`);
+     - the profile;
+     - the imported model;
+     - the four backends;
+     - a refiner that can estimate the requested model, unless it is held.
+
+     Then the extraction (an `InvalidInput` refusal is `InvalidDataset`, anything else
+     `ExtractionFailed`). The track-set overload checks instead that its views are one camera's,
+     each one frame, none twice, with one image geometry, and that every observation names a view and
+     its covariance is positive definite.
+
+   9a. **What the method shares moves where it can reach it.** No change in behaviour; held to the
+       board calibration, board registration and targetless registration goldens, byte for byte.
+       - `holdOut` (both forms) and `bootstrapDraws` move from `registration::detail` to
+         `camera::detail`, in `src/resampling.{h,cpp}`. Registration names them by
+         using-declarations, as it does `median`.
+       - `RefinementSummary` moves to `refinement::Summary` in `refinement/refiner.h`. Registration
+         keeps `RefinementSummary` as an alias, as it kept `RefinementStatus`.
+       - The coverage grid and `cellOf` move to `src/calibration/coverage.{h,cpp}`, shared by the
+         calibration methods, over pixels. `calibration::board::coverage` and its grid constants stay
+         in `board.h`, answered through the shared grid.
+       - **Sabotages:** `bootstrapDraws` taking the engine's next value fails both registration
+         goldens and nothing else; a 7-column grid fails the board calibration golden.
+       - **Counts:** unchanged everywhere.
+   9b. **`calibration::targetless`, over stand-ins.**
+       - `lain/camera/calibration/targetless.h` and `src/calibration/targetless.cpp`: the entry
+         points and steps above. `reconstruction::widest` joins the module, and
+         `reconstruction-targetless/1` joins `fitness.cpp`.
+       - **The stand-ins** (`syntheticscene.h`, `passthroughrefiner.h`):
+         - `TruthGeometry` proposes from the moving camera's path when there is one;
+         - `resetMoving` takes a model, its focal length and distortion the case's, and
+           `resetPanning` turns a camera in place;
+         - `sequenceTrackSetOf(sigma, seed)` gives the truth per frame;
+         - the pass-through refiner can be told it estimates a model, hands back what it was given,
+           and records each problem's cameras.
+       - **Tests, in a new `test-camera-targetless-calibration`**, which builds without either plugin:
+         - the sweep chooses within one candidate of the truth, at the truth's focal length and at
+           0.8 and 1.25 times it, and records every score;
+         - Initial skips the sweep and names the fields it seeded; HoldAndValidate frees no model, is
+           at most Exploratory, and its resampling is Unavailable;
+         - held-out frames are every fifth in capture order, never a seed frame, and none of their
+           observations reaches a refinement; a frame whose loss would cut the placement is kept in;
+         - a frame with too few shared landmarks is reported unplaced, and the calibration succeeds
+           without it;
+         - footage that only turns fails `InitialisationFailed`, naming its parallax; fewer than three
+           frames placed is `TooFewViews`;
+         - the footage overload is the extraction, then the track-set overload, exactly;
+         - views and tracks given in another order, the pool and deterministic debugging give one
+           report;
+         - a held principal point reports `Held`;
+         - an empty profile resolves to `reconstruction-targetless/1`, and `fitnessProfileNames()` lists
+           both;
+         - the refusals, before any decode, each an ordinary failed report.
+       - `test-camera-nobackend` gains the footage overload's `NoFeatureExtractor` and the track-set
+         overload's `NoGeometrySolver`.
+       - **Sabotages:**
+         - the sweep scored at a fixed angle picks the longest candidate, failing the sweep case;
+         - the held-out frames left in the bundle adjustment fail the held-out case;
+         - a held principal point reported as 0 fails the `Held` case.
+       - **Docs:** ADR-0016's validation bullet and CONTEXT.md's *Held-out frame* gain the inlier rule.
+   9c. **Through Ceres** (`plugins/camera/ceres/test/test_targetlesscalibration.cpp`, in
+       `test-camera-ceres`):
+       - a pinhole and a Brown-Conrady camera recovered from exact tracks, compared with the truth by
+         their ray mapping over the image grid;
+       - noise, Ready under `reconstruction-targetless/1`;
+       - a wrong match named as an outlier by track and frame, the model unmoved;
+       - moving content named, the model unmoved;
+       - an off-centre principal point recovered when freed, and reported `Held` and missed when held;
+       - the pool and deterministic debugging give one report, resampling included;
+       - the same tracks under identities that sort another way give one report, which the capture
+         order buys: footage at another path is that case.
+
+       **Sabotages:**
+       - the bootstrap drawn inside the parallel loop fails the determinism case;
+       - the tracks left in identity order fail the identities case.
+
+       Every bound is set from its measurement and written beside it.
+
+   **Counts:** 9a none; 9b a new executable with about a dozen cases, in every configuration, since it
+   needs neither plugin, and two cases in `test-camera-nobackend`; 9c about seven cases wherever Ceres
+   builds.
+
+   **Docs:** each commit adds its built note here and an entry to CLAUDE.md.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
