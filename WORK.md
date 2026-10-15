@@ -5432,7 +5432,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       - Sabotages: the held fields left free; a free model no camera uses.
    6. **The incremental reconstruction leaves `registration/targetless.cpp`.** *(Planned in detail
       2026-10-14 as three commits, 6a to 6c, with seven scenes in the golden and the observation
-      graph moved down first; see below.)*
+      graph moved down first; see below. All three built 2026-10-14.)*
       - First, a golden in `test-camera-targetless`, whose stand-ins are already the only backends
         registered there. It prints three targetless registration reports: connected, a chain that
         cannot be placed, and noisy.
@@ -5442,7 +5442,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         ways. The rule for "enough" lands with sub-slice 9, beside its caller.)*
       - The golden stays byte-equal.
       - Sabotage: a closure that places a view from one placed neighbour fails the chain case.
-   7. **Fundamental matrices and sequence track extraction**, lain's side, over stand-ins.
+   7. **Fundamental matrices and sequence track extraction**, lain's side, over stand-ins. *(Planned
+      in detail 2026-10-15 as three commits, 7a to 7c, with the OpenCV producer moved in from sub-slice
+      8; see below.)*
       - `GeometrySolver::fundamentals` and the `feature::fundamental` facade, measuring Sampson
         distance in source pixels; at least eight pairs.
       - `feature::extractSequenceTracks(footage, request)`:
@@ -5464,8 +5466,10 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         - the refusals.
       - Sabotages: the backend's first fundamental taken; the frame left out of a track's identity.
    8. **The OpenCV fundamental-matrix producer, and a moving camera rendered.**
-      - `findFundamentalMat` with USAC (MAGSAC, an explicit seed, `isParallel = false`), every
-        candidate returned.
+      - ~~`findFundamentalMat` with USAC (MAGSAC, an explicit seed, `isParallel = false`), every
+        candidate returned.~~ *Moved to sub-slice 7a (2026-10-15): the seam method is pure virtual,
+        so every backend answers it in the commit that adds it. It is tested there on two rendered
+        views.*
       - `RenderedSource` taking one pose per frame, and a trajectory that translates and turns.
       - Tests, on rendered footage of a moving Brown-Conrady camera:
         - real SIFT, its verified matches checked against the truth;
@@ -6719,6 +6723,230 @@ The 2026-08-16 review also left these requirements and decisions visible before 
 
    **Docs:** each commit adds its built note here and an entry to CLAUDE.md, as 2a and 2b did. 6b
    amends CONTEXT.md.
+
+   **Sub-slice 7 planned (2026-10-15) as three commits:**
+   1. **7a:** the fundamental-matrix seam, its facade and the OpenCV producer.
+   2. **7b:** the fixed-rig extraction's per-frame, per-pair and union work moves to a private module,
+      with no change in behaviour.
+   3. **7c:** `feature::extractSequenceTracks`.
+
+   **Found while planning:**
+   - **`GeometrySolver` has four implementations**: OpenCV's, the scene stand-in `TruthGeometry`, the
+     facade tests' `ScriptedGeometry`, and flow's `NullGeometry`. A pure virtual must be answered by
+     all four in the commit that adds it.
+   - **The OpenCV tests' `twoViews()` renders through a Brown-Conrady camera**, and a fundamental
+     matrix ignores distortion. So 7a's OpenCV case renders the same two views through a pinhole.
+     What distortion costs stays sub-slice 8's measurement.
+   - **Everything a sequence shares with the rig is file-local in `extraction.cpp`, and buried in
+     larger functions:**
+     - the cell grouping and the cap, inside `extractCamera`'s frame loop;
+     - the pre-screen, the full match and the ambiguity rule, inside `extractPair`, before it verifies;
+     - the union and its conflict rule, inline in `extractTracks`.
+
+     What differs is the verification, and how a track's observations and identity are spelled.
+   - **The rig's track identity is not pinned.** `test_tracks.cpp` checks only that identities are 64
+     hex digits, unique and sorted, so "rig tracks' identities do not change" would be argued, not
+     checked.
+   - **Three documented claims assume fixed cameras:**
+     - `TrackSet::views` is "ascending by camera identity";
+     - `Track::identity` digests "the observations' cameras and pixels";
+     - `PairExtraction::inliers` is what "the pair's relative pose" explains.
+   - **A threshold in pixels needs a scale.** `staticDistance` is stated in the pixels searched, so
+     it means the same under any scale policy. A verification threshold stated the same way is, under
+     the default `LongestSide{1920}` and footage at least that large, the "pixels per longest side"
+     sub-slice 8 measures.
+
+   **Decided with the repo owner:**
+   - **The OpenCV producer lands in 7a**, tested on two rendered views, rather than as a stub in 7a
+     with the real one in 8, or as a seam default that a backend may silently leave out. Sub-slice 8
+     keeps the rendered moving camera, its measurements and its timing.
+   - **Three commits.**
+     - 7b's diff leaves `test_tracks.cpp` untouched, which is the claim that the rig's extraction is
+       unchanged.
+     - A rig track's identity is pinned in 7b against a digest computed outside lain. That turns
+       "rig tracks' identities do not change" into a check before 7c adds a second canonical text.
+     - A golden of whole extraction reports was the alternative. `test_tracks.cpp` already checks
+       every count against the scene's own truth, so it would mostly duplicate those checks.
+   - **The two requests share a base.**
+     - `feature::ExtractionSettings` holds the eight settings both extractions read: `scale`,
+       `featureCap`, `matching`, `minimumPairInliers`, `prescreenFeatures`, `prescreenMatches`,
+       `localisationPerSize` and `execution`.
+     - `ExtractionRequest` and `SequenceExtractionRequest` derive from it, so `request.featureCap`
+       reads as it does today, `ExtractionRequest{}` still value-initialises, and the measured 0.034
+       is stated once.
+     - The shared private helpers take the base.
+     - Two independent structs, and one request carrying both extractions' fields, were the
+       alternatives.
+
+   **Taken by precedent, or decided while planning:**
+   - **The facade** sits in `geometry.h`, beside the pose facades:
+     - `fundamental(pixelPairs, FundamentalRequest{threshold, seed})` returns `FundamentalResult{status,
+       detail, matrix, inliers, rmsDistance, candidates, provenance, elapsed}`.
+     - A `PixelPair` holds two source pixels, (0, 0) the centre of the top-left pixel.
+     - The threshold and every distance are in source pixels.
+     - F is stated as `x_bᵀ F x_a = 0`, with `x = (u, v, 1)`.
+   - **Producers propose; lain decides, again.** `GeometrySolver::fundamentals(pairs, threshold,
+     seed)` returns candidates only, and is called only with at least eight usable pairs.
+     - The facade measures every candidate by its Sampson distance, `(x_bᵀ F x_a)²` over the summed
+       squares of the first two entries of `F x_a` and of `Fᵀ x_b`. A pair is an inlier when the
+       square root is within the threshold.
+     - It chooses by inlier count, then summed squared distance, then a canonical order over the
+       normalised matrix (unit Frobenius norm, its largest-magnitude entry positive, ties to the
+       first in row-major order). It then recomputes the inliers, and returns the matrix
+       normalised.
+     - A candidate that is not finite, or is zero, is skipped. `TooFew` below eight usable pairs;
+       `NoSolution` when no candidate explains eight.
+     - There is no rank test. The seam's contract asks for rank two and both backends give it, and
+       what a candidate explains is what the measurement decides on, whatever its rank.
+   - **The OpenCV producer**, in `opencvgeometry.cpp`:
+     - `findFundamentalMat` under USAC, set up as the relative pose's is (MAGSAC++, an explicit seed,
+       `isParallel = false`, the grid neighbourhood);
+     - every 3x3 block it returns is a candidate;
+     - its threshold is the facade's, in pixels. These are pixels already, so there is no virtual
+       pinhole.
+   - **The stand-ins:**
+     - `ScriptedGeometry` scripts fundamentals as it scripts poses.
+     - `NullGeometry` proposes none.
+     - `TruthGeometry` proposes none in 7a and says why: nothing asks it until 7c, whose moving camera
+       is its first caller.
+   - **7b's module is `src/feature/cells.{h,cpp}`, in `camera::detail`**, as `median.h` and
+     `unionfind.h` are. `feature` has no `detail` of its own to hide that namespace. It holds:
+     - `Cells` with its grouping, its cap and the 1/64-pixel grid;
+     - one frame's features found, grouped and capped, with its counts;
+     - a pair's pre-screen, full match and ambiguity rule, handing back the cell pairs for the caller
+       to verify;
+     - the union of verified pairs, serially in canonical pair order, with the conflict rule,
+       handing back each accepted component's members for the caller to spell as a track;
+     - the checks on `ExtractionSettings`, each caller passing the fewest inliers its verification
+       needs: five for a relative pose, eight for a fundamental matrix.
+
+     `extraction.cpp` keeps what is the rig's: sampling capture groups, the checks on cameras and
+     groups, static consolidation, verification by relative pose, and a rig track's observations and
+     identity text.
+   - **7c's public header is `lain/camera/feature/sequenceextraction.h`**, with
+     `src/feature/sequenceextraction.cpp`.
+     - `SequenceExtractionRequest : ExtractionSettings` adds three fields:
+       - `samples = 40` frames, provisional. It is the number sub-slice 8 times, and sub-slice 10
+         measures the default.
+       - `threshold = 4.0` in the pixels searched, COLMAP's 4 px, provisional until sub-slice 8
+         measures it.
+       - `seed`.
+     - `FrameExtraction{scale, failed, found, orientations, capped, features}` reports each sampled
+       frame.
+     - `SequenceExtractionReport` holds:
+       - the request;
+       - the frames, indexed as `TrackSet::views`;
+       - every frame pair, ascending, as the rig's `PairExtraction`;
+       - the tracks, the conflicts and their observations;
+       - the three backends, and the time taken.
+   - **`extractSequenceTracks(const capture::CameraFootage&, const SequenceExtractionRequest& = {})`**,
+     the camera and its footage as by-position grouping takes them. In order:
+     1. Every check that needs no frame:
+        - the backends;
+        - the shared settings;
+        - a positive, finite threshold;
+        - `samples` of at least 2;
+        - `minimumPairInliers` of at least 8;
+        - Approximate under deterministic debugging;
+        - a search no matcher runs;
+        - a camera with no identity (`InvalidInput`);
+        - fewer than two frames (`TooFew`);
+        - a frame given twice (`InvalidInput`).
+     2. The frames in capture order (timestamp, then ordinal, then source, the rig's group order
+        applied per frame), then `samples` of them at the centres of equal bins. The order the
+        footage lists them in therefore does not matter. A concatenation of two takes is sampled
+        across both.
+     3. One task per sampled frame: decoded, extracted, grouped and capped, through the module. A
+        frame that does not decode is still a view, with no frames and no observations, and its report
+        says it failed, as a rig keeps every camera as a view, tracks or not.
+     4. One task per frame pair:
+        - the module's pre-screen, match and ambiguity rule;
+        - verification by `fundamental` on the cells' source pixels, its threshold turned from the
+          pixels searched into source pixels by the frames' scale (a sequence is homogeneous, so they
+          share one);
+        - a pair verifies with `minimumPairInliers`.
+
+        Pair matching stays exhaustive behind the pre-screen, as planned.
+     5. The module's union. Each observation is at its cell's pixel, with support 1, and its
+        covariance comes from its size, as a rig observation's does.
+   - **Views and identities:**
+     - Every sampled frame is a view, in capture order. Its camera is the footage's identity, and
+       `frames` is that one frame.
+     - `TrackSet::groups` is empty, since a sequence samples no capture group.
+     - A sequence track's identity has its own canonical text (`lain sequence feature track 1`). Each
+       observation contributes:
+       - its camera and its frame's source, each length-prefixed;
+       - its frame's ordinal;
+       - its pixel on the grid.
+     - The rig's text is unchanged, which 7b's pin checks.
+   - **The moving scene, for 7c's tests:**
+     - The stand-ins' scene gains a moving camera: one camera, a true pose per frame, and a pinhole
+       model, since a fundamental matrix ignores distortion.
+     - `TruthGeometry` proposes `K⁻ᵀ [t]ₓ R K⁻¹` for every ordered pair of true poses, scored on a
+       sample by Sampson distance, keeping the best four, as it does for its poses.
+     - Its log records the threshold each call was handed.
+
+   **7a: the fundamental matrix.**
+   - The seam, the facade, the stand-ins and the OpenCV producer, as above.
+   - Four facade cases, over `ScriptedGeometry` in `test-camera-feature`:
+     1. The candidate explaining the most pairs is chosen, whatever order the backend gave them. Ties
+        fall to the summed squared distance, then to the canonical order.
+     2. Sampson distance is in source pixels and measured against both images: pairs placed at known
+        distances from a known F, one exactly at the threshold an inlier and one just past it not,
+        and the reported RMS.
+     3. Too little has no matrix. `TooFew` below eight usable pairs, non-finite pixels set aside and
+        the backend not called; `NoSolution` when the best candidate explains fewer than eight.
+     4. A candidate that is not finite, or is zero, is skipped. The chosen matrix comes back
+        normalised, and its inliers index the input.
+
+     `NoBackend` in the empty registry is one more check in `test-camera-nobackend`'s existing case.
+   - The OpenCV case, on the two views rendered through a pinhole, for seeds 0 to 19. The facade
+     verifies. The correct matches are inliers under the chosen matrix, and their Sampson distances
+     are small. Each bound is set from its measurement and written beside it.
+   - Sabotages:
+     - The facade takes the backend's first candidate. Predicted: the ordering case fails.
+     - Sampson distance measured in B alone (A's gradient terms dropped). Predicted: the
+       known-distance case fails.
+   - Counts: +4 in `test-camera-feature` in every configuration, and +1 where the OpenCV plugin
+     builds.
+
+   **7b: the shared module.**
+   - `ExtractionSettings`, and the module, as above. `extractTracks` runs through the module.
+   - `test_tracks.cpp` is untouched. A new `test_trackidentity.cpp` in `test-camera-tracks` pins one
+     rig track's identity, on a two-camera scene with one landmark, against a digest computed outside
+     lain. The test also spells out the text, so a reader sees what is digested.
+   - Sabotage: the module's ambiguity rule keeping a feature matched to two of the other side's.
+     Predicted: `test_tracks.cpp`'s ambiguity case fails, which shows the rig runs through the module.
+   - **Timing:** the Release targetless end-to-end case, real SIFT through `extractTracks`, against
+     the pre-change binary, in alternating order. Sub-slice 5 found that moving code between
+     translation units changes what GCC inlines.
+   - Counts: +1 in every configuration.
+
+   **7c: sequence extraction.**
+   - As above. Tests in `test_sequencetracks.cpp`, in `test-camera-tracks`, over the moving scene:
+     - a moving camera's tracks, exactly. Every landmark seen in two or more sampled frames is one
+       track over exactly those frames, at its true pixels, with support 1 and its covariance.
+       Every pair verifies;
+     - the threshold handed to the backend is the request's in source pixels, and twice it at half
+       scale;
+     - moving content verifies in no pair and joins no track, worked out from the truth;
+     - a frame pair with no overlap is skipped by the pre-screen;
+     - a conflict is rejected whole;
+     - reversed footage (`media::reverse`), the pool and deterministic debugging give one track set;
+     - each sampled frame is decoded once;
+     - a track's identity names its frames, pinned against a digest computed outside lain;
+     - the refusals, before anything is decoded, and `NoBackend` in the empty registry.
+   - Sabotages:
+     - The frame left out of the identity text. Predicted: the pin fails.
+     - The threshold handed on in the pixels searched, not converted. Predicted: the half-scale check
+       fails.
+   - Docs:
+     - CONTEXT.md's *Feature-track extraction*: its two extractions are built.
+     - *Feature track*: a moving camera's track spans frames.
+     - ADR-0016's *Two extractions, one feature module*, marked built.
+   - Counts are recorded when built.
+
+   **Docs:** each commit adds its built note here and an entry to CLAUDE.md.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
