@@ -2447,7 +2447,7 @@ owed. The repo owner kept the provisional values sub-slice 9 measured, and queue
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
 graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b and 6c), 7 (as 7a, 7b and 7c) and 8
-are built, with the fix that landed ahead of 5.
+are built, with the fix that landed ahead of 5, and 9a and 9b of sub-slice 9's three commits.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -5484,7 +5484,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
           with and without the pre-screen, recorded beside its check. *(Measured per pair and scaled
           up, decided 2026-10-15: matching all 780 pairs Exact at the cap is about 2.2 core-hours.)*
    9. **`calibration::targetless`.** *(Planned in detail 2026-10-15 as three commits, 9a to 9c; see
-      below. The track-set overload takes no `image`, since a track set's views carry theirs.)*
+      below. The track-set overload takes no `image`, since a track set's views carry theirs. 9a and
+      9b built 2026-10-15.)*
       - `calibrate(footage, settings, request)` and `calibrate(trackSet, image, settings, request)`.
       - Steps:
         1. the checks: `NoFeatureExtractor`, `NoFeatureMatcher`, `NoGeometrySolver`, `NoRefiner`, a
@@ -7572,6 +7573,106 @@ The 2026-08-16 review also left these requirements and decisions visible before 
          - the held-out frames left in the bundle adjustment fail the held-out case;
          - a held principal point reported as 0 fails the `Held` case.
        - **Docs:** ADR-0016's validation bullet and CONTEXT.md's *Held-out frame* gain the inlier rule.
+   **Sub-slice 9b built (2026-10-15).** The method, over stand-ins, as planned, with one deviation in
+   how footage that only turns is refused, and two findings for the repo owner.
+   - **Where it lives:**
+     - `calibration/targetless.h` (the two entry points) and `calibration/targetlesssettings.h`
+       (`Settings`, its own header so a report can record it), over `src/calibration/targetless.cpp`.
+     - **`src/calibration/common.{h,cpp}`**, `calibration::detail`: what both calibration methods
+       decide the same way, moved out of `board.cpp`: `failed`, `resolveProfile`, `checkImported`,
+       `initialFrom` and `stability` (which answers `Held` for a held principal point). Board
+       calibration calls them, and its golden is byte for byte. Unlike 9a's `camera::detail`, this
+       namespace sits inside calibration, so it re-exports `forEach`, the coverage grid and the rest
+       by using-declarations, as registration's `common.h` does.
+     - **`src/whitening.h`**: `whitenedSquared` moves from `registration::detail` to
+       `camera::detail`, since both methods name an outlier by it. Registration re-exports it, and
+       both registration goldens are byte for byte.
+     - `reconstruction::widest` in the module, `reconstruction-targetless/1` in `fitness.cpp`, and the
+       report's additions (the new `Failure` values, `HeldOutEvidence::outliers`, `SweepCandidate`,
+       `Outlier`, `TargetlessDiagnostics`, `TargetlessRecord`, ", N of M frames placed").
+   - **Deviation: footage that only turns is refused when most of the seed's matches are points at
+     infinity**, not when the seed's median triangulation angle is below the minimum parallax.
+     `triangulate` succeeds only at or above that parallax, so a median over the matches that
+     triangulate clears it unless none does. Moving content across a pan has real parallax: with
+     every tenth landmark moving, 108 of 120 seed matches are at infinity and the 12 moving ones
+     triangulate at a median 64 mrad, so the planned rule let the pan through. `Seed::atInfinity`
+     counts them in the module (registration never reads it, and its golden holds), and the
+     diagnostics report `seedInliers` and `seedAtInfinity`.
+   - **Found: a pan between two sweep candidates can reconstruct as a spurious orbit.** With the
+     truth at f = 500, the sweep starts at its next candidate, 516.4. A pan of another angle plus the
+     stand-in's arbitrary sideways baseline then explains those rays, 3% off, better than the true
+     pan does. All 120 seed matches triangulate, at a median 52 mrad, 8 of 11 frames are placed, and
+     only the verdict rejects the result (5.3 mrad held out). A pure rotation is told apart for any
+     model by whether a rotation alone explains a pair, as COLMAP's homography test does, and this
+     method does not ask that. A real essential matrix's arbitrary translation is not the stand-in's,
+     so the test refuses pans under a right model (an imported one, and the sweep's own candidate
+     when the truth is one) and records the rest in a comment. **For the repo owner:** whether to add
+     a rotation-only test, or to let sub-slice 10 measure a rendered pan through OpenCV first.
+   - **Found: footage whose every frame looks at one point does not say its focal length.** Every
+     pair's optical axes meet, the classic critical configuration, so the sweep cannot choose.
+     `resetMoving`'s camera, which always looks at the origin, scored all 960 matches for 11
+     consecutive candidates at f = 500, from 251.5 to 702.9, and ties went to the shortest. The
+     tests use a new **`scene::resetWandering`**, the same arc re-aiming and rolling as it goes, as
+     sub-slice 8's `arcPath` does. A camera orbiting an object while keeping it centred is ordinary
+     footage, so the operator guidance sub-slice 10 writes should say so.
+   - **The stand-ins**, as planned: `TruthGeometry` proposes from the moving camera's path, a camera
+     that never moves given a unit baseline; `resetMoving` takes a model and `resetPanning` turns in
+     place; `sequenceTrackSetOf` gives a track per landmark over every frame; the pass-through
+     refiner says it estimates the models a case lists, hands back what it was given, and records
+     each problem's poses, model freedom and pixels. It refines nothing, so a stand-in calibration's
+     model is where the method started it.
+   - **`test-camera-targetless-calibration`**, 13 cases, building without either plugin:
+     - the sweep starts within one candidate of the truth at f = 500, 400 and 625, and for an
+       equidistant fisheye at 500, through each model's neutral projection: candidates 10.83% apart
+       for a pinhole and 8.16% for the fisheye, every score recorded, the most inliers winning and
+       ties going to the shorter;
+     - every candidate is scored at 4 px of its own focal length, read from the angles the stand-in
+       was handed;
+     - Initial skips the sweep and names the fields it seeded, and the true model predicts every
+       held-out frame exactly (RMS under 1e-9 rad); seeding another model seeds the pinhole part
+       alone; HoldAndValidate frees no model, needs no estimator, its resampling is Unavailable, and
+       on 14 frames with half held out (six validate, the anchor's frame 1 kept in) it is Exploratory;
+     - held-out frames are frames 2 and 7 of 12, and none of their pixels reaches the adjustment or
+       a resample; frame 2 is kept in when it seeds the anchor, and frame 7 when it alone joins the
+       frames after it;
+     - a frame seeing three landmarks is unplaced and the calibration goes on ("9 of 10 frames
+       placed"); two placed frames of four is `TooFewViews`;
+     - footage that only turns is refused, static or with moving content, under the sweep and under
+       an imported model;
+     - a held principal point reports `Held` and adds no note; freed, it is a number and the problem
+       frees it;
+     - an empty profile resolves to `reconstruction-targetless/1`, and `reconstruction/1` may judge
+       the method;
+     - DeterministicDebug, the pool and every view, track and observation listed backwards give one
+       report;
+     - calibrating footage is the extraction, then the track-set overload, exactly;
+     - the refusals, each before any decode.
+   - **`test-camera-nobackend` gains one case**, both overloads in it, as targetless registration's
+     is: the footage overload's `NoFeatureExtractor` and the track-set overload's `NoGeometrySolver`.
+     The plan counted two.
+   - **Four sabotages, all caught, one prediction wrong:**
+     - **The sweep scored at a fixed 4 mrad** fails only the case that reads the angles handed (20 of
+       21 candidates; the chosen one's angle reappears in the seed's call). The plan predicted it
+       would pick the longest candidate and fail the sweep case. It does not: the stand-in proposes
+       only true poses, which a wrong focal length's rays miss at either angle, so it still starts
+       within one candidate of every truth.
+     - **The held-out frames left in the adjustment** fail the held-out case, as predicted (1200
+       held-out pixels found across the adjustment and its four resamples), and the unplaced-frame
+       case, whose counts include them.
+     - **A held principal point reported as 0** fails the `Held` case alone, as predicted.
+     - **The planned refusal rule** (the median over the matches that triangulate) fails the pan with
+       moving content alone, as predicted.
+
+     The first cut of the second did not build under `-Werror` (an unused parameter), so the first
+     sabotage's binary answered, and it was redone: **a sabotage that does not build proves nothing**,
+     again.
+   - **Counts:** 1261/1261 Debug and 1268/1269 Release with video, camera and Ceres on, 1152/1152 with
+     all three off (+14 each). Every golden untouched; warning-clean, format-check clean. The Release
+     failure is not this commit's: targetless registration's *a rig of 100 cameras and 50000 tracks
+     registers* exceeded its wall-clock bound, 120.44 s against 120, while ctest ran it beside the two
+     heaviest cases (the 40-frame matching timing at 260 s, the board-and-targetless comparison at
+     193 s) under `-j8`. Every other check in it passed (Ready, 0.416 mrad held out), and alone it
+     passes in 37.1 s. The bound is a regression guard, so under a loaded `-j8` run it can fire.
    9c. **Through Ceres** (`plugins/camera/ceres/test/test_targetlesscalibration.cpp`, in
        `test-camera-ceres`):
        - a pinhole and a Brown-Conrady camera recovered from exact tracks, compared with the truth by
@@ -12755,7 +12856,8 @@ row here**. A row is cheap to delete and expensive to leave.
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
        sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b
-       and 6c), 7 (as 7a, 7b and 7c) and 8, with the fix ahead of 5. The
+       and 6c), 7 (as 7a, 7b and 7c) and 8, with the fix ahead of 5, and 9a and 9b of 9's three
+       commits. The
        separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
        restated (slice 4's plan).
   2. **Owed by the repo owner.**

@@ -3,11 +3,15 @@
 #include "lain/camera/board/detection.h"
 #include "lain/camera/calibration/fitness.h"
 #include "lain/camera/calibration/request.h"
+#include "lain/camera/calibration/targetlesssettings.h"
 #include "lain/camera/cameramodel.h"
+#include "lain/camera/feature/sequenceextraction.h"
 #include "lain/camera/method.h"
 #include "lain/camera/provenance.h"
+#include "lain/camera/refinement/refiner.h"
 
 #include <lain/core/time.h>
+#include <lain/media/frameref.h>
 
 #include <cstdint>
 #include <optional>
@@ -28,12 +32,21 @@ namespace lain::camera::calibration
 		NoDetector,				   // this build cannot detect boards
 		NoEstimator,			   // this build cannot estimate the requested model
 		NoPoseSolver,			   // HoldAndValidate in a build that cannot solve board poses
+		NoFeatureExtractor,		   // this build cannot extract features
+		NoFeatureMatcher,		   // this build cannot match features
+		NoGeometrySolver,		   // this build cannot pose frames from rays
+		NoRefiner,				   // this build has no bundle adjustment
 		UnknownFitnessProfile,	   // the request names a profile this build does not know
 		IncompatibleImportedModel, // the imported model's geometry is not the footage's
 		NoImportedModel,		   // HoldAndValidate with nothing to hold
-		NoFootage,				   // an empty frame sequence
+		NoFootage,				   // an empty frame sequence, or a track set of no frame
+		InvalidDataset,			   // a track set of two cameras, a frame given twice, a track of a frame it lacks
+		ExtractionFailed,		   // feature-track extraction refused or failed, not for its dataset
 		TooFewViews,			   // fewer usable views than any estimate needs
+		InitialisationFailed,	   // no reconstruction could start: no pair of frames could be posed, or none has parallax
 		EstimationFailed,		   // the backend could not fit the model
+		RefinementFailed,		   // the bundle adjustment produced no usable solution
+		ResourceExhausted,		   // the machine ran out of memory
 		InvalidModel,			   // the backend's result is not a valid camera model
 	};
 
@@ -51,13 +64,18 @@ namespace lain::camera::calibration
 	struct HeldOutEvidence
 	{
 		std::uint32_t views = 0;
-		std::uint32_t residuals = 0; // points measured: a board's corners in board calibration
+		std::uint32_t residuals = 0; // points measured: a board's corners, or a frame's features
 		// Views whose pose could not be recovered with the model fixed: a board's pose in board
 		// calibration, or in targetless calibration a frame's against the landmarks.
 		std::uint32_t viewsWithoutPose = 0;
-		double rmsAngle = 0;  // radians, observed against predicted rays
+		double rmsAngle = 0;  // radians, observed against predicted rays, over the residuals
 		double rmsPixels = 0; // raw, for diagnosis only
 		double worstPixels = 0;
+		// Observations not measured because they lie beyond the inlier angle of their view's pose: a
+		// wrong match a fundamental matrix could not see, which would otherwise decide the RMS alone.
+		// Counted, and named nowhere else. Always 0 in board calibration, whose corners are measured
+		// whatever their residual.
+		std::uint32_t outliers = 0;
 	};
 
 	// A parameter the estimate kept at its starting value rather than estimating (CONTEXT.md, "Held
@@ -95,6 +113,50 @@ namespace lain::camera::calibration
 		std::vector<camera::board::DetectionReport> detections; // one per frame, in sequence order
 	};
 
+	// One focal length the sweep tried, and what it scored: the inliers its relative poses had in total
+	// over the frame pairs sharing the most tracks (CONTEXT.md, "Focal sweep").
+	struct SweepCandidate
+	{
+		double focalLength = 0; // pixels, fx and fy alike
+		std::uint32_t inliers = 0;
+	};
+
+	// An observation the result does not explain: its RMS whitened residual exceeds the loss scale,
+	// or it could not even be projected from the start.
+	struct Outlier
+	{
+		std::string track;		 // the feature track's identity
+		std::uint32_t frame = 0; // its position among the frames examined
+		double rmsWhitened = 0;	 // standard deviations; infinite when it was left out of the refinement
+	};
+
+	// What a targetless calibration examined, beside what every calibration reports. Every frame is
+	// named by its position among `frames`.
+	struct TargetlessDiagnostics
+	{
+		// When this calibration extracted its tracks: what extraction reported.
+		std::optional<feature::SequenceExtractionReport> extraction;
+		std::vector<media::FrameRef> frames;  // the frames examined, in capture order: one per sampled frame that decoded
+		std::uint32_t tracks = 0;			  // given
+		std::uint32_t tracksUsable = 0;		  // with two observations outside the held-out frames that unproject
+		std::vector<SweepCandidate> sweep;	  // in ascending focal length; empty when an imported model started it
+		std::optional<std::uint32_t> swept;	  // the candidate that started the reconstruction
+		std::vector<std::uint32_t> seed;	  // the two frames the reconstruction started from
+		double seedAngle = 0;				  // the median triangulation angle of its inliers that triangulate, radians
+		std::uint32_t seedInliers = 0;		  // the matches its relative pose explains
+		std::uint32_t seedAtInfinity = 0;	  // of those, the points at infinity: rays meeting at too little parallax
+		bool seedBelowFloor = false;		  // no seed cleared the floor, so the widest started it
+		std::vector<std::uint32_t> placement; // the frames in the order they were placed, the seed first
+		// The frames, not held out, left out of the bundle adjustment: the seed could not reach them, or
+		// too few of their landmarks were in front of them. Reported, not fatal.
+		std::vector<std::uint32_t> unplaced;
+		std::uint32_t behind = 0;		  // observations left out: behind their frame, or unprojectable
+		std::uint32_t landmarks = 0;	  // tracks triangulated and refined
+		std::uint32_t untriangulated = 0; // usable tracks that never became a refined landmark
+		std::optional<refinement::Summary> refinement;
+		std::vector<Outlier> outliers; // in capture order of their tracks
+	};
+
 	// What every calibration reports about how it got its result, and in `method`, what its method
 	// alone examined. A default is a board calibration's, so another method's report sets its own.
 	struct Diagnostics
@@ -102,11 +164,12 @@ namespace lain::camera::calibration
 		std::uint32_t viewsSelected = 0;
 		std::uint32_t viewsHeldOut = 0;
 		double coverage = 0;	 // of the calibration views, over the image grid
-		double fitRmsPixels = 0; // the estimating backend's own residual on the calibration views
-		// Positions among the frames examined (in board calibration, of the detections, one per frame).
+		double fitRmsPixels = 0; // the estimate's own residual on the calibration views
+		// Positions among the frames examined (in board calibration, of the detections, one per frame;
+		// in targetless calibration, of TargetlessDiagnostics::frames).
 		std::vector<std::uint32_t> selected; // the calibration views
 		std::vector<std::uint32_t> heldOut;	 // the held-out views
-		std::variant<BoardDiagnostics> method;
+		std::variant<BoardDiagnostics, TargetlessDiagnostics> method;
 	};
 
 	// What a board calibration detected with, searched with and placed boards by, beside what every
@@ -120,6 +183,18 @@ namespace lain::camera::calibration
 		std::optional<camera::board::DetectionRequest> detection;
 	};
 
+	// What a targetless calibration extracted with, posed by and refined through, beside what every
+	// calibration records.
+	struct TargetlessRecord
+	{
+		targetless::Settings settings; // as run: its extraction's execution policy the calibration's
+		// When this calibration extracted its tracks: the backends that answered.
+		Provenance extractor;
+		Provenance matcher;
+		Provenance geometry; // what proposed the relative and absolute poses
+		Provenance refiner;	 // what ran the bundle adjustment, a held model's included
+	};
+
 	// What a report needs to be repeated (CONTEXT.md, "Reproducibility record").
 	struct Reproducibility
 	{
@@ -127,7 +202,7 @@ namespace lain::camera::calibration
 		std::uint32_t frames = 0;
 		Provenance estimator; // what estimated the model, whatever kind of backend; unset for a held one
 		Request request;	  // the configuration, seed and execution policy, exactly as given
-		std::variant<BoardRecord> method;
+		std::variant<BoardRecord, TargetlessRecord> method;
 	};
 
 	// The result of a calibration attempt, successful or not (CONTEXT.md, "Calibration report").

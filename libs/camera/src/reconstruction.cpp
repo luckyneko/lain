@@ -141,6 +141,57 @@ namespace lain::camera::reconstruction
 		return out;
 	}
 
+	std::vector<Closure> widest(const ObservationGraph& graph, const std::vector<std::vector<std::uint32_t>>& units,
+								const std::vector<std::vector<std::uint32_t>>& ofView, std::size_t limit)
+	{
+		std::vector<const GraphEdge*> order;
+		for (const GraphEdge& e : graph.edges)
+		{
+			if (e.shared >= kSeedShared)
+				order.push_back(&e);
+		}
+		std::stable_sort(order.begin(), order.end(), [](const GraphEdge* x, const GraphEdge* y)
+						 { return x->shared > y->shared; });
+		// No closure reaches a view in no unit, so one reaching every other is as wide as any can be.
+		const std::size_t possible =
+			std::size_t(std::count_if(ofView.begin(), ofView.end(), [](const std::vector<std::uint32_t>& u)
+									  { return !u.empty(); }));
+		const auto reach = [](const Closure& c)
+		{ return std::size_t(std::count(c.placed.begin(), c.placed.end(), true)); };
+
+		std::vector<Closure> examined;
+		std::vector<std::size_t> reached;
+		std::size_t best = 0, atBest = 0;
+		for (const GraphEdge* e : order)
+		{
+			bool inside = false;
+			for (std::size_t i = 0; i < examined.size() && !inside; ++i)
+				inside = reached[i] < best && examined[i].placed[e->a] && examined[i].placed[e->b];
+			if (inside)
+				continue;
+			Closure c = closure(units, ofView, e->a, e->b);
+			const std::size_t r = reach(c);
+			if (r > best)
+			{
+				best = r;
+				atBest = 0;
+			}
+			if (r == best)
+				++atBest;
+			examined.push_back(std::move(c));
+			reached.push_back(r);
+			if (best == possible && atBest == limit)
+				break;
+		}
+		std::vector<Closure> out;
+		for (std::size_t i = 0; i < examined.size() && out.size() < limit; ++i)
+		{
+			if (reached[i] == best)
+				out.push_back(std::move(examined[i]));
+		}
+		return out;
+	}
+
 	// --- initialisation ------------------------------------------------------------
 
 	std::optional<Seed> chooseSeed(const Evidence& evidence, const Units& units, const std::vector<Closure>& covering,
@@ -182,6 +233,8 @@ namespace lain::camera::reconstruction
 					{{math::Vec3d{0.0}, pairs[i].a}, {aFromB.translation(), aFromB.rotate(pairs[i].b)}}, minimumParallax());
 				if (t.ok())
 					angles.push_back(t.angle);
+				else if (t.status == feature::TriangulationStatus::IllConditioned)
+					++seed.atInfinity;
 			}
 			seed.angle = angles.empty() ? 0.0 : median(std::move(angles));
 			if (seed.angle >= kSeedAngle && (!best || seed.inliers > best->inliers))

@@ -12,6 +12,7 @@
 #include "median.h"
 #include "resampling.h"
 #include "unionfind.h"
+#include "whitening.h"
 
 #include <lain/core/time.h>
 #include <lain/math/rigidtransform.h>
@@ -34,7 +35,8 @@ namespace lain::camera::registration::detail
 	// member's frame in its footage, shared with feature extraction (footageindex.h), measures an angle
 	// (angles.h), takes a median (median.h), finds a union-find root (unionfind.h), and holds evidence
 	// out and draws bootstrap resamples, shared with calibration (resampling.h); named here too, since
-	// inside registration this namespace hides lain::camera::detail.
+	// inside registration this namespace hides lain::camera::detail. A residual is whitened as every
+	// method whitens one (whitening.h).
 	using camera::detail::angleBetween;
 	using camera::detail::bootstrapDraws;
 	using camera::detail::FootageIndex;
@@ -42,6 +44,7 @@ namespace lain::camera::registration::detail
 	using camera::detail::holdOut;
 	using camera::detail::median;
 	using camera::detail::root;
+	using camera::detail::whitenedSquared;
 
 	// The rotation between two transforms, radians: 2 atan2(|v|, |w|) of the relative quaternion,
 	// which keeps its precision for the tiny angles stability is measured in, where acos does not.
@@ -83,11 +86,6 @@ namespace lain::camera::registration::detail
 											 const std::vector<RigCamera>& cameras,
 											 const std::vector<std::optional<ImageGeometry>>& geometry,
 											 const Request& request, core::Time start);
-
-	// The squared length of the pixel residual `r` whitened: by the Cholesky factor of `covariance`
-	// (xx, xy, yy) when there is one, L^-1 r, else by the noise model's sigma.
-	double whitenedSquared(const math::Vec2d& r, const std::optional<std::array<double, 3>>& covariance,
-						   const NoiseModel& noise);
 
 	// The registration reference: `requested` when set, otherwise the camera sharing the most units
 	// with others, ties to the lower index.

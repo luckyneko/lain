@@ -3,6 +3,8 @@
 #include <lain/meta/enums.h>
 #include <lain/string/format.h>
 
+#include <algorithm>
+#include <cstddef>
 #include <string>
 #include <utility>
 
@@ -12,9 +14,18 @@ namespace lain::camera::calibration
 
 	// What a method alone adds to a report's line, after the clauses every method shares. One overload
 	// per alternative of Diagnostics::method, so a method without one does not compile.
-	static std::string methodSummary(const BoardDiagnostics& d)
+	static std::string methodSummary(const Report&, const BoardDiagnostics& d)
 	{
 		return lain::string::format(", {} of {} frames usable", d.framesUsable, d.framesExamined);
+	}
+
+	// Of the frames the reconstruction could place (every frame examined but the held-out ones), how
+	// many it placed and refined.
+	static std::string methodSummary(const Report& report, const TargetlessDiagnostics& d)
+	{
+		const std::size_t placeable = d.frames.size() - std::min(d.frames.size(), report.diagnostics.heldOut.size());
+		const std::size_t placed = placeable - std::min(placeable, d.unplaced.size());
+		return lain::string::format(", {} of {} frames placed", placed, placeable);
 	}
 
 	// Whether the evidence meets one tier. `complete` demands every criterion's evidence be present
@@ -82,8 +93,8 @@ namespace lain::camera::calibration
 		if (diagnostics.viewsSelected > 0)
 			text += lain::string::format(", {} views covering {:.0f}% of the image", diagnostics.viewsSelected,
 										 diagnostics.coverage * 100.0);
-		text += std::visit([](const auto& d)
-						   { return methodSummary(d); }, diagnostics.method);
+		text += std::visit([this](const auto& d)
+						   { return methodSummary(*this, d); }, diagnostics.method);
 		// What stood between this verdict and a better one, which is the first thing a person with a
 		// Rejected or Exploratory report wants to know.
 		if (verdict != Verdict::Ready && !fitnessNotes.empty())

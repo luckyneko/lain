@@ -483,7 +483,15 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   view, so a track is a scene point seen across frames. Nothing stays at one pixel, so moving content
   cannot be dropped before matching as it is in fixed-camera extraction: verification rejects most of
   it, and the robust loss and the outlier report the rest. Footage that only turns has no parallax to
-  reconstruct from, and fails initialisation with that reason.
+  reconstruct from, and fails initialisation with that reason. *(Built 2026-10-15, M9 slice 4,
+  sub-slice 9b: refused when most of the seed's matches are points at infinity. A median over the
+  matches that triangulate cannot say it, since none triangulates below the minimum parallax: moving
+  content across a pan has real parallax and decided it. Two findings for the repo owner: a pan whose
+  focal length falls between two sweep candidates was explained, over stand-ins, by a pan of another
+  angle and an arbitrary baseline, a spurious orbit only the verdict rejected; and footage whose every
+  frame looks at one point does not say its focal length, since every pair's optical axes meet, so the
+  sweep cannot choose among the candidates that explain it. WORK.md's sub-slice 9b note holds the
+  numbers.)*
 - **Two extractions, one feature module.** `lain::camera::feature` gains a sequence extraction beside
   the fixed-rig one, sharing its per-image and per-pair work and its union. A sequence pair is verified
   by a **fundamental matrix**, since no model exists yet to turn pixels into rays. The geometry backend
@@ -523,7 +531,10 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   differences is not declared.
 - **Validation is on held-out frames.** A held-out frame is the targetless analogue of a held-out board
   view. It is kept out of the reconstruction, posed afterwards against the landmarks with the model held,
-  and measured as angles through lain's projection. So the calibration fitness criteria keep their
+  and measured as angles through lain's projection *(built 2026-10-15, sub-slice 9b: over the
+  observations within its pose's inlier angle, the rest counted and reported, since about 1.7% of
+  extracted tracks are wrong along an epipolar line and one of them in a held-out frame would decide the
+  angle alone)*. So the calibration fitness criteria keep their
   meaning in both methods (views, coverage, held-out angle, focal and principal-point variation), and
   the targetless profile, `reconstruction-targetless/1`, differs only in its numbers: a scene feature
   is located less precisely than a board corner. An empty profile in a request is the method's own.

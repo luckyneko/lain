@@ -1400,6 +1400,43 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-15 — M9 slice 4, sub-slice 9b: `calibration::targetless`, over stand-ins
+
+The second of sub-slice 9's three commits: the method itself, from the focal sweep to the verdict,
+tested over stand-ins (9c tests it through Ceres). `calibration::targetless::calibrate` takes footage
+or a track set, plus `Settings` and the shared `Request`. `ctest` **1261/1261** Debug and
+**1268/1269** Release with video, camera and Ceres on, **1152/1152** with all three off (+14 each:
+13 cases in the new `test-camera-targetless-calibration`, 1 in `test-camera-nobackend`); every
+golden untouched; warning-clean, format-check clean. The Release failure is targetless registration's
+100-camera scale case on its wall-clock bound, 120.44 s against 120, run beside the two heaviest
+cases under `-j8`; every other check in it passed, and alone it passes in 37.1 s. Full notes in
+WORK.md's *Sub-slice 9b built* under M9 slice 4.
+
+- **Shared helpers moved:** what both calibration methods decide alike leaves `board.cpp` for
+  `src/calibration/common.{h,cpp}` (`failed`, `resolveProfile`, `checkImported`, `initialFrom`,
+  `stability`); `whitenedSquared` moves from registration to `camera::detail` (`src/whitening.h`).
+  Board calibration's golden and both registration goldens are byte for byte.
+- **Deviation: footage that only turns is refused when most of the seed's matches are points at
+  infinity.** The planned rule, the seed's median triangulation angle below the minimum parallax,
+  cannot fire while anything triangulates, since `triangulate` succeeds only at or above that
+  parallax. A pan with every tenth landmark moving put 108 of 120 matches at infinity, but the 12
+  moving ones triangulated at a median 64 mrad, so the planned rule let it through.
+- **Two findings for the repo owner:**
+  - **A pan between two sweep candidates reconstructs as a spurious orbit over the stand-ins.** With
+    the truth at f = 500, the sweep starts at 516.4. A pan of another angle plus an arbitrary sideways
+    baseline then explains the rays better than the true pan: every seed match triangulates (52 mrad),
+    and only the verdict rejects the result (5.3 mrad held out). A rotation-only test would tell a pan
+    apart under any model; the open question is whether to add one, or to let sub-slice 10 measure a
+    rendered pan through OpenCV first.
+  - **Footage whose every frame looks at one point does not say its focal length**, the classic
+    critical configuration. `resetMoving`'s camera tied all 960 matches across 11 sweep candidates, so
+    the tests use a new `scene::resetWandering` that re-aims and rolls, as sub-slice 8's `arcPath`
+    does.
+- **Four sabotages, all caught, one prediction wrong.** The sweep scored at a fixed angle fails only
+  the case that reads the angles handed, and still starts within one candidate of the truth, rather
+  than picking the longest as planned. The first cut of another did not build under `-Werror`, so the
+  previous sabotage's binary answered until it was redone.
+
 ### Update 2026-10-15 — M9 slice 4, sub-slice 9a: what targetless calibration shares moves where it can reach it
 
 The first of sub-slice 9's three commits, with no change in behaviour. Calibration cannot depend on

@@ -73,7 +73,7 @@ TEST_CASE("the built-in fitness profile resolves, with overrides on its Ready ti
 	const std::optional<FitnessProfile> profile = fitnessProfile("reconstruction/1");
 	REQUIRE(profile.has_value());
 	CHECK_FALSE(fitnessProfile("reconstruction/0").has_value());
-	CHECK(fitnessProfileNames() == std::vector<std::string>{"reconstruction/1"});
+	CHECK(fitnessProfileNames() == std::vector<std::string>{"reconstruction/1", "reconstruction-targetless/1"});
 
 	FitnessOverrides overrides;
 	overrides.minimumViews = 25;

@@ -8,6 +8,7 @@
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/board.h>
 #include <lain/camera/calibration/estimator.h>
+#include <lain/camera/calibration/targetless.h>
 #include <lain/camera/feature/extraction.h>
 #include <lain/camera/feature/features.h>
 #include <lain/camera/feature/geometry.h>
@@ -201,6 +202,35 @@ TEST_CASE("with no backend, a targetless registration fails for want of an extra
 	const auto& asRun = std::get<registration::TargetlessRecord>(fromFootage.reproducibility.method).extraction;
 	REQUIRE(asRun.has_value());
 	CHECK(asRun->samples == 3);
+}
+
+TEST_CASE("with no backend, a targetless calibration fails for want of an extractor, or a geometry solver",
+		  "[camera][calibration]")
+{
+	namespace targetless = lain::camera::calibration::targetless;
+	const media::FrameSequence footage = media::FrameSequence::over(std::make_shared<StillSource>());
+	targetless::Settings settings;
+	settings.extraction.samples = 3;
+	const calibration::Report fromFootage = targetless::calibrate(
+		camera::capture::CameraFootage{camera::capture::CameraIdentity{"a"}, footage}, settings, calibration::Request{});
+	REQUIRE(fromFootage.status == calibration::CalibrationStatus::Failed);
+	CHECK(fromFootage.failures.front().failure == calibration::Failure::NoFeatureExtractor);
+	CHECK(fromFootage.failures.front().detail.find("no feature extractor") != std::string::npos);
+	// Refused before a frame was decoded, and still saying what it would have extracted with.
+	CHECK(std::get<calibration::TargetlessRecord>(fromFootage.reproducibility.method).settings.extraction.samples == 3);
+
+	// Tracks already extracted need no extractor, but every frame must still be posed.
+	camera::feature::TrackSet tracks;
+	for (std::size_t k = 0; k < 3; ++k)
+	{
+		media::FrameRef frame;
+		frame.source = core::Uri{"/still"};
+		frame.ordinal = k;
+		tracks.views.push_back({camera::capture::CameraIdentity{"a"}, {64, 48}, {frame}});
+	}
+	const calibration::Report fromTracks = targetless::calibrate(tracks, targetless::Settings{}, calibration::Request{});
+	REQUIRE(fromTracks.status == calibration::CalibrationStatus::Failed);
+	CHECK(fromTracks.failures.front().failure == calibration::Failure::NoGeometrySolver);
 }
 
 TEST_CASE("with no backend, the feature facades say the capability is missing", "[camera][feature]")

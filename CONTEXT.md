@@ -602,8 +602,10 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
 - **Held-out frame** — a sampled frame kept out of a targetless calibration's reconstruction so it can
   validate the model, as a held-out board view does in board calibration. It is posed afterwards against
   the reconstructed landmarks with the model held, and the angles between its observed and predicted
-  rays are measured through lain's projection. A frame whose loss would leave the reconstruction unable
-  to start is never held out. _Avoid_: held-out view when the method matters, held-out track (that is
+  rays are measured through lain's projection, over the observations within its pose's inlier angle.
+  The rest are counted, not measured: a wrong match no fundamental matrix could see would otherwise
+  decide the held-out angle alone. A frame whose loss would leave the reconstruction unable to start is
+  never held out. _Avoid_: held-out view when the method matters, held-out track (that is
   targetless registration's unit).
 - **Camera model** — the shared description of a calibrated camera: image size, intrinsics,
   distortion model, and uncertainty when known. Board and targetless calibration use the same camera

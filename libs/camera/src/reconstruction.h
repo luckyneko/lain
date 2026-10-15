@@ -110,6 +110,15 @@ namespace lain::camera::reconstruction
 						  const std::vector<std::vector<std::uint32_t>>& ofView, const std::vector<std::uint32_t>& required,
 						  std::size_t limit);
 
+	// The seed candidates for a method that places what it can, rather than needing every view placed
+	// (targetless calibration): each pair of views sharing at least kSeedShared units, by how many they
+	// share, ties to (a, b); of their closures, those that reach the most views, at most `limit`, in
+	// that order. Empty when no pair shares enough. A pair inside a closure that reaches fewer views
+	// than the widest found so far cannot reach as far (its own closure lies inside that one), so it
+	// is skipped unexamined.
+	std::vector<Closure> widest(const ObservationGraph& graph, const std::vector<std::vector<std::uint32_t>>& units,
+								const std::vector<std::vector<std::uint32_t>>& ofView, std::size_t limit);
+
 	// --- initialisation ------------------------------------------------------------
 
 	struct Seed
@@ -118,6 +127,11 @@ namespace lain::camera::reconstruction
 		math::RigidTransformd bFromA; // a unit baseline
 		std::uint32_t inliers = 0;
 		double angle = 0; // the median triangulation angle of its inliers that triangulate, radians
+		// Its inliers whose rays meet at less than the minimum parallax, so that they triangulate to no
+		// depth: points at infinity. A method asks this, not `angle`, whether a pair has any parallax at
+		// all: when most inliers are at infinity, the few that triangulate are what decides `angle`, and
+		// a slightly wrong model's rays meet at a spurious angle where a true model's are parallel.
+		std::uint32_t atInfinity = 0;
 		bool belowFloor = false;
 	};
 

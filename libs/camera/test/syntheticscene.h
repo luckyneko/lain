@@ -63,9 +63,11 @@ namespace lain::camera::testing::scene
 	{
 		std::vector<math::RigidTransformd> referenceFromCamera; // the truth the geometry solver knows
 		std::vector<math::RigidTransformd> renderedFrom;		// where each camera's frames were taken from
-		// One camera moving (resetMoving): where it was at each frame, referenceFromCamera. Empty for
-		// fixed cameras. A moving camera is a pinhole, since a fundamental matrix ignores distortion.
+		// One camera moving (resetMoving, resetPanning): where it was at each frame, referenceFromCamera.
+		// Empty for fixed cameras. A moving camera is a pinhole unless the case says otherwise, since a
+		// fundamental matrix ignores distortion: a case that extracts tracks keeps the pinhole.
 		std::vector<math::RigidTransformd> path;
+		std::optional<CameraModel> movingModel; // the moving camera's model, when not the pinhole
 		std::vector<Landmark> landmarks;
 		std::size_t frames = 9;									   // per camera
 		bool approximate = true;								   // whether the matcher runs Approximate search
@@ -80,6 +82,7 @@ namespace lain::camera::testing::scene
 		};
 		std::vector<Call> nearestCalls;
 		std::vector<double> fundamentalThresholds; // per fundamentals() call, the threshold handed
+		std::vector<double> relativeAngles;		   // per relativePoses() call, the inlier angle handed
 	};
 	inline Scene& scene()
 	{
@@ -104,7 +107,7 @@ namespace lain::camera::testing::scene
 	inline CameraModel model()
 	{
 		if (!scene().path.empty())
-			return *CameraModel::create(parametersWith(NoDistortion{})).model;
+			return scene().movingModel ? *scene().movingModel : *CameraModel::create(parametersWith(NoDistortion{})).model;
 		return *CameraModel::create(parametersWith(brownConrady())).model;
 	}
 
@@ -195,17 +198,61 @@ namespace lain::camera::testing::scene
 
 	// One camera moving through the reset scene's landmarks, `frames` long: along the fixed cameras' arc
 	// from −0.4 to 0.4 rad, rising 5 cm a frame, always looking at the origin. Its frames are its own
-	// views, so every pair of them shares the landmarks both see.
-	inline void resetMoving(std::size_t frames = 12, std::size_t landmarks = 60, std::uint64_t seed = 1)
+	// views, so every pair of them shares the landmarks both see. It sees through `camera`, when given,
+	// else the pinhole.
+	inline void resetMoving(std::size_t frames = 12, std::size_t landmarks = 60, std::uint64_t seed = 1,
+							std::optional<CameraModel> camera = std::nullopt)
 	{
 		reset(1, landmarks, seed);
 		Scene& s = scene();
 		s.frames = frames;
+		s.movingModel = std::move(camera);
 		for (std::size_t k = 0; k < frames; ++k)
 		{
 			const double angle = frames > 1 ? -0.4 + 0.8 * double(k) / double(frames - 1) : 0.0;
 			const math::Vec3d position{3.0 * std::sin(angle), -0.3 + 0.05 * double(k), -3.0 * std::cos(angle)};
 			s.path.push_back(lookingAt(position, math::Vec3d{0.0}));
+		}
+	}
+
+	// One camera moving as resetMoving's does, but re-aiming and rolling as it goes, so no two of its
+	// optical axes meet: a camera whose every frame looks at one point is the classic case in which no
+	// pair of frames says its focal length (the axes of every pair intersect), which a focal sweep over
+	// resetMoving's footage would show as a plateau of equal scores.
+	inline void resetWandering(std::size_t frames = 12, std::size_t landmarks = 60, std::uint64_t seed = 1,
+							   std::optional<CameraModel> camera = std::nullopt)
+	{
+		reset(1, landmarks, seed);
+		Scene& s = scene();
+		s.frames = frames;
+		s.movingModel = std::move(camera);
+		for (std::size_t k = 0; k < frames; ++k)
+		{
+			const double t = frames > 1 ? double(k) / double(frames - 1) : 0.0;
+			const double angle = -0.4 + 0.8 * t;
+			const math::Vec3d position{3.0 * std::sin(angle), -0.2 + 0.05 * double(k), -3.0 * std::cos(angle)};
+			const math::Vec3d target{0.4 * std::sin(1.7 * double(k) + 0.3), 0.25 * std::sin(2.3 * double(k)), 0.0};
+			const math::RigidTransformd aimed = lookingAt(position, target);
+			const math::Quatd roll = math::angleAxis(0.15 * std::sin(1.1 * double(k) + 0.5), math::Vec3d{0.0, 0.0, 1.0});
+			s.path.push_back(math::RigidTransformd{aimed.rotation() * roll, position});
+		}
+	}
+
+	// One camera that only turns, `frames` long: standing 3 m from the origin, panning across the reset
+	// scene's landmarks from 0.8 m to one side of the origin to 0.8 m to the other. No two frames have
+	// any parallax.
+	inline void resetPanning(std::size_t frames = 12, std::size_t landmarks = 60, std::uint64_t seed = 1,
+							 std::optional<CameraModel> camera = std::nullopt)
+	{
+		reset(1, landmarks, seed);
+		Scene& s = scene();
+		s.frames = frames;
+		s.movingModel = std::move(camera);
+		const math::Vec3d position{0.0, -0.3, -3.0};
+		for (std::size_t k = 0; k < frames; ++k)
+		{
+			const double x = frames > 1 ? -0.8 + 1.6 * double(k) / double(frames - 1) : 0.0;
+			s.path.push_back(lookingAt(position, math::Vec3d{x, 0.0, 0.0}));
 		}
 	}
 
@@ -353,6 +400,50 @@ namespace lain::camera::testing::scene
 		return out;
 	}
 
+	// The moving camera's truth as a track set, as sequence extraction would accept it from a perfect
+	// matcher: one view per frame, every frame of the path in order, and a track per landmark that two
+	// or more frames see, at its true pixels plus `sigma` pixels of Gaussian noise per axis, drawn as
+	// trackSetOf draws it. Identities and covariances are trackSetOf's.
+	inline feature::TrackSet sequenceTrackSetOf(double sigma = 0.0, std::uint64_t seed = 1)
+	{
+		feature::TrackSet out;
+		const CameraModel m = model();
+		const std::size_t frames = scene().path.size();
+		for (std::size_t k = 0; k < frames; ++k)
+		{
+			media::FrameRef frame;
+			frame.source = core::Uri{sourceOf(0)};
+			frame.ordinal = k;
+			out.views.push_back({capture::CameraIdentity{identityOf(0)}, m.image(), {frame}});
+		}
+		std::mt19937_64 engine(seed);
+		const auto gaussian = [&engine]
+		{
+			const double u1 = (double(engine() >> 11) + 0.5) * 0x1.0p-53;
+			const double u2 = double(engine() >> 11) * 0x1.0p-53;
+			return std::sqrt(-2.0 * std::log(u1)) * std::cos(6.283185307179586 * u2);
+		};
+		const double variance = (0.034 * 4.0) * (0.034 * 4.0);
+		for (std::size_t l = 0; l < scene().landmarks.size(); ++l)
+		{
+			feature::Track track;
+			std::string digits = std::to_string(l);
+			track.identity = "track" + std::string(5 - std::min<std::size_t>(5, digits.size()), '0') + digits;
+			for (std::size_t k = 0; k < frames; ++k)
+			{
+				const std::optional<math::Vec2d> pixel = pixelOf(0, l, k);
+				if (!pixel)
+					continue;
+				const double nx = gaussian() * sigma, ny = gaussian() * sigma;
+				track.observations.push_back(
+					{std::uint32_t(k), *pixel + math::Vec2d{nx, ny}, 1, std::array<double, 3>{variance, 0.0, variance}});
+			}
+			if (track.observations.size() >= 2)
+				out.tracks.push_back(std::move(track));
+		}
+		return out;
+	}
+
 	// --- the stand-ins ------------------------------------------------------------------
 
 	inline std::uint32_t valueOf(const feature::Features& f, std::size_t i)
@@ -464,22 +555,37 @@ namespace lain::camera::testing::scene
 		return values[values.size() / 2];
 	}
 
+	// The true poses the geometry stand-in proposes from: the moving camera's frames, or the fixed
+	// cameras.
+	inline const std::vector<math::RigidTransformd>& truePoses()
+	{
+		return scene().path.empty() ? scene().referenceFromCamera : scene().path;
+	}
+
 	// Registered as "truth": proposes the scene's true poses, in whatever frame and scale it is asked
 	// in, and nothing else; lain's measurement picks the one that explains the input. A candidate is
 	// proposed only when it explains at least half of a sample of the input, and only the four that
 	// explain it best, as a robust estimator's would: a ring of a hundred cameras is symmetric enough
-	// that thousands of its true poses explain any one pair.
+	// that thousands of its true poses explain any one pair. Since it proposes only true poses, rays
+	// from a wrong model are never fitted, as a real estimator would fit them.
 	class TruthGeometry : public feature::GeometrySolver
 	{
 	public:
 		Provenance provenance() const override { return {"truth", "1"}; }
 
-		// Every ordered pair of true cameras' bFromA whose epipolar planes the sampled pairs lie in.
+		// Every ordered pair of true views' bFromA whose epipolar planes the sampled pairs lie in. Two
+		// views at one place (a camera that only turns) have no baseline, so they are proposed with an
+		// arbitrary unit one, as a real estimator's essential matrix has: every pair of them is then a
+		// point at infinity, explained by the rotation alone. Logs the angle it was handed.
 		std::vector<math::RigidTransformd> relativePoses(const std::vector<feature::RayPair>& pairs, double angle,
 														 std::uint64_t) const override
 		{
+			{
+				std::lock_guard<std::mutex> lock(logMutex());
+				scene().relativeAngles.push_back(angle);
+			}
 			std::vector<std::pair<double, math::RigidTransformd>> scored;
-			const std::vector<math::RigidTransformd>& truth = scene().referenceFromCamera;
+			const std::vector<math::RigidTransformd>& truth = truePoses();
 			const std::vector<std::size_t> sample = sampleOf(pairs.size());
 			for (std::size_t a = 0; a < truth.size(); ++a)
 			{
@@ -487,7 +593,9 @@ namespace lain::camera::testing::scene
 				{
 					if (a == b)
 						continue;
-					const math::RigidTransformd bFromA = truth[b].inverse() * truth[a];
+					math::RigidTransformd bFromA = truth[b].inverse() * truth[a];
+					if (math::length(bFromA.translation()) < 1e-12)
+						bFromA = math::RigidTransformd{bFromA.rotation(), math::Vec3d{1.0, 0.0, 0.0}};
 					std::vector<double> residuals;
 					for (const std::size_t i : sample)
 					{
@@ -505,14 +613,14 @@ namespace lain::camera::testing::scene
 			return bestOf(std::move(scored));
 		}
 
-		// For every true camera c and every true camera a whose frame the points may be in, c's pose in
+		// For every true view c and every true view a whose frame the points may be in, c's pose in
 		// a's frame, its translation scaled to the input's (the median of each sampled point-ray's least
 		// squares scale), when the sample fits.
 		std::vector<math::RigidTransformd> absolutePoses(const std::vector<feature::PointRay>& pointRays, double angle,
 														 std::uint64_t) const override
 		{
 			std::vector<std::pair<double, math::RigidTransformd>> scored;
-			const std::vector<math::RigidTransformd>& truth = scene().referenceFromCamera;
+			const std::vector<math::RigidTransformd>& truth = truePoses();
 			const std::vector<std::size_t> sample = sampleOf(pointRays.size());
 			for (std::size_t c = 0; c < truth.size(); ++c)
 			{

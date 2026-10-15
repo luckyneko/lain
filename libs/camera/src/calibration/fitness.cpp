@@ -16,16 +16,33 @@ namespace lain::camera::calibration
 		return p;
 	}
 
+	// reconstruction-targetless/1, targetless calibration's own: reconstruction/1's shape, with the
+	// held-out angle loosened in both tiers, since a scene feature is located less precisely than a
+	// board corner (SIFT to about 0.7 mrad at f = 1000, M9 slice 3) and a held-out frame adds its own
+	// pose's error to every ray. Focal and principal-point stability bound what the model is used for,
+	// whichever method found it, so they are board's. Provisional: M9 slice 4's sub-slice 10 measures
+	// it on rendered footage before a node exposes it.
+	static FitnessProfile reconstructionTargetless1()
+	{
+		FitnessProfile p;
+		p.name = "reconstruction-targetless/1";
+		p.ready = {10, 0.6, 0.0015, 0.005, 0.002};
+		p.exploratory = {6, 0.3, 0.005, 0.02, 0.01};
+		return p;
+	}
+
 	std::optional<FitnessProfile> fitnessProfile(std::string_view name)
 	{
 		if (name == "reconstruction/1")
 			return reconstruction1();
+		if (name == "reconstruction-targetless/1")
+			return reconstructionTargetless1();
 		return std::nullopt;
 	}
 
 	std::vector<std::string> fitnessProfileNames()
 	{
-		return {"reconstruction/1"};
+		return {"reconstruction/1", "reconstruction-targetless/1"};
 	}
 
 	FitnessProfile resolve(const FitnessProfile& profile, const FitnessOverrides& overrides)

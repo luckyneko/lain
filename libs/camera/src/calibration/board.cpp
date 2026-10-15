@@ -1,7 +1,6 @@
 #include "lain/camera/calibration/board.h"
 
-#include "coverage.h"
-#include "execution.h"
+#include "common.h"
 #include "lain/camera/board/pose.h"
 #include "lain/camera/calibration/estimator.h"
 #include "lain/camera/projection.h"
@@ -11,7 +10,7 @@
 #include <cmath>
 #include <cstddef>
 #include <memory>
-#include <random>
+#include <numeric>
 #include <set>
 #include <string>
 #include <utility>
@@ -134,26 +133,6 @@ namespace lain::camera::calibration::board
 		return 1 + ((quadrant % 4) + 4) % 4;
 	}
 
-	// Sample standard deviation.
-	static double deviation(const std::vector<double>& values)
-	{
-		double mean = 0;
-		for (const double v : values)
-			mean += v / double(values.size());
-		double sum = 0;
-		for (const double v : values)
-			sum += (v - mean) * (v - mean);
-		return std::sqrt(sum / double(values.size() - 1));
-	}
-
-	static double average(const std::vector<double>& values)
-	{
-		double mean = 0;
-		for (const double v : values)
-			mean += v / double(values.size());
-		return mean;
-	}
-
 	// The first registered backend that can estimate `model`, or nullptr.
 	static std::unique_ptr<Estimator> estimatorFor(DistortionModel model)
 	{
@@ -166,6 +145,7 @@ namespace lain::camera::calibration::board
 		return nullptr;
 	}
 
+	using detail::failed;
 	using detail::forEach;
 
 	static std::vector<cb::Observation> observationsAt(const std::vector<cb::DetectionReport>& detections,
@@ -217,11 +197,9 @@ namespace lain::camera::calibration::board
 
 	// Re-estimate from bootstrap resamples of the calibration views, each from the same `initial` as
 	// the estimate itself: stability is a property of the procedure that produced the model, so a
-	// seeded estimate is resampled seeded. The draws come from one seeded
-	// engine, in order, before anything runs, so they are the same under either execution policy;
-	// only the estimates run in parallel. The mapping from an engine draw to an index is a plain
-	// modulo, since the standard's distributions are implementation-defined and would draw
-	// differently on each platform.
+	// seeded estimate is resampled seeded. The draws are made before anything runs
+	// (detail::bootstrapDraws), so they are the same under either execution policy; only the
+	// estimates run in parallel.
 	static std::variant<ResamplingEvidence, Unavailable>
 	resample(const std::vector<cb::Observation>& views, const cb::Specification& board, const ImageGeometry& image,
 			 const Request& request, const std::optional<CameraModelParameters>& initial, const Estimator& estimator)
@@ -231,12 +209,14 @@ namespace lain::camera::calibration::board
 		if (views.size() < kMinimumCalibrationViews)
 			return Unavailable{"too few calibration views to resample"};
 
-		std::mt19937_64 engine(request.seed);
-		std::vector<std::vector<cb::Observation>> draws(request.resamples);
-		for (std::vector<cb::Observation>& draw : draws)
+		std::vector<std::uint32_t> positions(views.size());
+		std::iota(positions.begin(), positions.end(), 0u);
+		std::vector<std::vector<cb::Observation>> draws;
+		for (const std::vector<std::uint32_t>& drawn : detail::bootstrapDraws(positions, request.resamples, request.seed))
 		{
-			for (std::size_t i = 0; i < views.size(); ++i)
-				draw.push_back(views[std::size_t(engine() % views.size())]);
+			std::vector<cb::Observation>& draw = draws.emplace_back();
+			for (const std::uint32_t i : drawn)
+				draw.push_back(views[i]);
 		}
 
 		std::vector<std::optional<CameraModelParameters>> estimates(draws.size());
@@ -244,25 +224,7 @@ namespace lain::camera::calibration::board
 				[&](std::size_t r)
 				{ estimates[r] = estimator.estimate(image, draws[r], board, request.model, initial).parameters; });
 
-		std::vector<double> fx, fy, cx, cy;
-		for (const std::optional<CameraModelParameters>& e : estimates)
-		{
-			if (!e)
-				continue;
-			fx.push_back(e->intrinsics.fx);
-			fy.push_back(e->intrinsics.fy);
-			cx.push_back(e->intrinsics.cx);
-			cy.push_back(e->intrinsics.cy);
-		}
-		if (fx.size() < 2)
-			return Unavailable{"fewer than two resamples produced an estimate"};
-
-		ResamplingEvidence evidence;
-		evidence.resamples = std::uint32_t(fx.size());
-		evidence.focalVariation = std::max(deviation(fx) / average(fx), deviation(fy) / average(fy));
-		const double focal = (average(fx) + average(fy)) / 2;
-		evidence.principalPointVariation = std::max(deviation(cx), deviation(cy)) / focal;
-		return evidence;
+		return detail::stability(estimates, false);
 	}
 
 	// --- the public pieces --------------------------------------------------------
@@ -289,15 +251,13 @@ namespace lain::camera::calibration::board
 
 		// Held out: every k-th usable view, starting half a stride in, so the held-out views are
 		// spread through the footage the way the calibration views are drawn from it.
-		std::vector<bool> heldOut(ordered.size(), false);
-		if (request.heldOutFraction > 0 && ordered.size() >= kMinimumToHoldOut)
+		const std::vector<bool> heldOut = detail::holdOut(ordered.size(), request.heldOutFraction, kMinimumToHoldOut,
+														  [](std::size_t)
+														  { return true; });
+		for (std::size_t i = 0; i < ordered.size(); ++i)
 		{
-			const std::size_t stride = std::max<std::size_t>(2, std::size_t(std::lround(1.0 / request.heldOutFraction)));
-			for (std::size_t i = stride / 2; i < ordered.size(); i += stride)
-			{
-				heldOut[i] = true;
+			if (heldOut[i])
 				split.heldOut.push_back(ordered[i]);
-			}
 		}
 
 		// Calibration views, greedily. A view scores the grid cells it newly covers, a bonus when its
@@ -362,15 +322,6 @@ namespace lain::camera::calibration::board
 
 	// --- calibrate ------------------------------------------------------------------
 
-	// A report that has failed, timed from `start`.
-	static Report failed(Report report, core::Time start, Failure failure, std::string detail)
-	{
-		report.status = CalibrationStatus::Failed;
-		report.failures.push_back({failure, std::move(detail)});
-		report.elapsed = core::Time::now() - start;
-		return report;
-	}
-
 	// The checks both entry points make before any work: a known profile, a usable imported model,
 	// and a backend for the job. Returns the estimator to use (none for a held model, which estimates
 	// nothing), or the failed report.
@@ -378,23 +329,11 @@ namespace lain::camera::calibration::board
 																	const Request& request, core::Time start)
 	{
 		report.reproducibility.request = request;
-		// An empty name is the method's own profile. The request is recorded as given, so a report says
-		// whether its profile was asked for or defaulted; the thresholds name what it resolved to.
-		const std::string name = request.fitnessProfile.empty() ? std::string(kOwnProfile) : request.fitnessProfile;
-		const std::optional<FitnessProfile> profile = fitnessProfile(name);
-		if (!profile)
-			return failed(report, start, Failure::UnknownFitnessProfile,
-						  "no fitness profile is named \"" + name + "\"");
-		report.thresholds = resolve(*profile, request.overrides);
-
+		if (std::optional<Report> failure = detail::resolveProfile(report, request, kOwnProfile, start))
+			return std::move(*failure);
+		if (std::optional<Report> failure = detail::checkImported(report, request, image, start))
+			return std::move(*failure);
 		const bool hold = request.importedPolicy == ImportedModelPolicy::HoldAndValidate;
-		if (hold && !request.imported)
-			return failed(report, start, Failure::NoImportedModel, "HoldAndValidate needs an imported model to hold");
-		if (request.imported && applicability(*request.imported, image) == Applicability::Incompatible)
-			return failed(report, start, Failure::IncompatibleImportedModel,
-						  "the imported model is " + std::to_string(request.imported->image().width) + "x" +
-							  std::to_string(request.imported->image().height) + " and the footage is " +
-							  std::to_string(image.width) + "x" + std::to_string(image.height));
 
 		// A held model needs only board poses, which are all its validation is; an estimated one needs a
 		// backend that estimates exactly the requested model, never a similar one.
@@ -467,20 +406,8 @@ namespace lain::camera::calibration::board
 								  std::to_string(examined.framesExamined) + " frames; at least " +
 								  std::to_string(kMinimumCalibrationViews) + " are needed");
 
-			// The Initial policy seeds the estimate. Every parameter only when the imported model is
-			// the requested model; otherwise the pinhole part alone, with the distortion starting
-			// neutral, since coefficients never carry across models on their shape (ADR-0016).
-			if (request.imported && request.importedPolicy == ImportedModelPolicy::Initial)
-			{
-				initial = CameraModelParameters{image, request.imported->intrinsics(), neutral(request.model)};
-				report.seededFields = {"fx", "fy", "cx", "cy"};
-				if (modelOf(request.imported->distortion()) == request.model)
-				{
-					initial->distortion = request.imported->distortion();
-					for (const std::string_view name : coefficientNames(request.model))
-						report.seededFields.emplace_back(name);
-				}
-			}
+			// The Initial policy seeds the estimate (detail::initialFrom).
+			initial = detail::initialFrom(report, request, image);
 
 			const Estimate estimate = estimator->estimate(image, calibrationViews, board, request.model, initial);
 			if (!estimate.parameters)

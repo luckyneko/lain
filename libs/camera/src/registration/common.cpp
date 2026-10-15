@@ -119,20 +119,6 @@ namespace lain::camera::registration::detail
 		return std::nullopt;
 	}
 
-	double whitenedSquared(const math::Vec2d& r, const std::optional<std::array<double, 3>>& covariance,
-						   const NoiseModel& noise)
-	{
-		if (!covariance)
-			return math::dot(r, r) / (noise.pixelSigma * noise.pixelSigma);
-		const auto& c = *covariance;
-		const double l11 = std::sqrt(c[0]);
-		const double l21 = c[1] / l11;
-		const double l22 = std::sqrt(std::max(c[2] - l21 * l21, 0.0));
-		const double w1 = r.x / l11;
-		const double w2 = (r.y - l21 * w1) / l22;
-		return w1 * w1 + w2 * w2;
-	}
-
 	std::uint32_t chooseReference(const std::vector<std::uint32_t>& sharedPerCamera, std::optional<std::uint32_t> requested)
 	{
 		if (requested)

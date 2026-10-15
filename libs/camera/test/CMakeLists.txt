@@ -83,3 +83,14 @@ target_compile_definitions(test-camera-targetless PRIVATE
 	LAIN_CAMERA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
 	LAIN_CAMERA_GOLDEN_OUT="${CMAKE_CURRENT_BINARY_DIR}")
 catch_discover_tests(test-camera-targetless TEST_PREFIX "(camera) ")
+
+# Targetless calibration (calibration::targetless) over stand-ins answering from a known moving camera
+# (syntheticscene.h), with a refiner that hands back its start and can be told it estimates a model
+# (passthroughrefiner.h): the focal sweep, the held-out frames, which frames are placed, the refusals,
+# and that nothing depends on the order evidence arrives in or the execution policy. Its own
+# executable, so those stand-ins are the only backends registered.
+add_executable(test-camera-targetless-calibration test_targetlesscalibration.cpp)
+target_compile_features(test-camera-targetless-calibration PRIVATE cxx_std_17)
+target_link_libraries(test-camera-targetless-calibration
+	PRIVATE lain::camera lain::meta lain::testing lain::warnings Catch2::Catch2WithMain)
+catch_discover_tests(test-camera-targetless-calibration TEST_PREFIX "(camera) ")
