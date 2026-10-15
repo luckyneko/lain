@@ -39,7 +39,7 @@ catch_discover_tests(test-camera-opencv TEST_PREFIX "(camera::opencv) ")
 # scenes drawn in plain C++ (libs/camera/test/texturedscene.h), every correspondence and pose judged
 # against the truth. Its own executable: it renders, and its Release-only cases measure time and
 # memory at 8K, so it is far heavier than the board tests beside it.
-add_executable(test-camera-opencv-features test_features.cpp)
+add_executable(test-camera-opencv-features test_features.cpp test_sequencefeatures.cpp)
 target_compile_features(test-camera-opencv-features PRIVATE cxx_std_17)
 target_include_directories(test-camera-opencv-features PRIVATE "${lain_SOURCE_DIR}/libs/camera/test")
 target_link_libraries(test-camera-opencv-features

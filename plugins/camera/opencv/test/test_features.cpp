@@ -3,7 +3,7 @@
 // is judged against a known truth. Every bound is a measurement, written beside its check; the cases
 // marked Release only also record what slice 3 left provisional (WORK.md, M9 slice 3, sub-slice 7).
 
-#include "testcamera.h"
+#include "renderedfeatures.h"
 #include "texturedscene.h"
 
 #include <lain/camera/capture/capturegroup.h>
@@ -11,7 +11,6 @@
 #include <lain/camera/feature/features.h>
 #include <lain/camera/feature/geometry.h>
 #include <lain/camera/feature/matching.h>
-#include <lain/camera/opencv/register.h>
 #include <lain/camera/projection.h>
 #include <lain/core/time.h>
 #include <lain/media/framesequence.h>
@@ -40,37 +39,22 @@ using namespace lain;
 using namespace lain::camera;
 using namespace lain::camera::feature;
 namespace synthetic = lain::camera::synthetic;
+using camera::testing::cellOf;
+using camera::testing::cells;
+using camera::testing::ensureBackend;
+using camera::testing::largeCamera;
+using camera::testing::strongest;
+using camera::testing::subset;
 using Catch::Matchers::ContainsSubstring;
+using synthetic::projectInto;
 
 namespace
 {
 	constexpr double kTau = 6.283185307179586;
 
-	void ensureBackend()
-	{
-		static const bool once = []
-		{
-			opencv::registerBackend();
-			return true;
-		}();
-		(void)once;
-	}
-
 	CameraModel model()
 	{
 		return camera::testing::cameraWith(camera::testing::brownConrady());
-	}
-
-	// A pinhole of `width` x `height` with the test camera's field of view, for the large-image cases.
-	CameraModel pinhole(std::uint32_t width, std::uint32_t height)
-	{
-		CameraModelParameters p = camera::testing::parametersWith(NoDistortion{});
-		const double f = 500.0 * double(width) / 640.0;
-		p.image = {width, height};
-		p.intrinsics = {f, f, 0.5 * double(width) - 0.5, 0.5 * double(height) - 0.5};
-		ModelResult result = CameraModel::create(p);
-		REQUIRE(result.model.has_value());
-		return *result.model;
 	}
 
 	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
@@ -89,36 +73,10 @@ namespace
 		return r.ok() ? math::Vec3d{r.x, r.y, r.z} : math::Vec3d{0.0};
 	}
 
-	// Where the camera at `referenceFromCamera` sees `point`, or nothing.
-	std::optional<math::Vec2d> projectInto(const CameraModel& m, const math::RigidTransformd& referenceFromCamera,
-										   const math::Vec3d& point)
-	{
-		const math::Vec3d p = referenceFromCamera.inverse().apply(point);
-		if (p.z <= 0)
-			return std::nullopt;
-		const Projection<double> px = project(m, p.x, p.y, p.z);
-		if (!px.ok())
-			return std::nullopt;
-		return math::Vec2d{px.u, px.v};
-	}
-
 	double wrapped(double a)
 	{
 		const double t = std::fmod(a, kTau);
 		return t < 0 ? t + kTau : t;
-	}
-
-	std::pair<long long, long long> cellOf(const Keypoint& k)
-	{
-		return {std::llround(k.pixel.x * 64), std::llround(k.pixel.y * 64)};
-	}
-
-	std::map<std::pair<long long, long long>, std::vector<std::uint32_t>> cells(const Features& f)
-	{
-		std::map<std::pair<long long, long long>, std::vector<std::uint32_t>> out;
-		for (std::uint32_t i = 0; i < f.size(); ++i)
-			out[cellOf(f.keypoints[i])].push_back(i);
-		return out;
 	}
 
 	// The rule extractTracks used until 2026-10-07, before matching: one keypoint per 1/64-pixel cell,
@@ -134,41 +92,6 @@ namespace
 									 return std::make_tuple(-a.response, wrapped(a.angle), a.size) <
 											std::make_tuple(-b.response, wrapped(b.angle), b.size);
 								 });
-	}
-
-	Features subset(const Features& f, const std::vector<std::uint32_t>& keep)
-	{
-		Features out = f;
-		out.keypoints.clear();
-		out.descriptors.clear();
-		for (const std::uint32_t i : keep)
-		{
-			out.keypoints.push_back(f.keypoints[i]);
-			out.descriptors.insert(out.descriptors.end(), f.descriptor(i), f.descriptor(i) + f.descriptorBytes);
-		}
-		return out;
-	}
-
-	// The `n` strongest features, each with all its orientations, as extractTracks caps a frame.
-	Features strongest(const Features& f, std::size_t n)
-	{
-		std::vector<std::vector<std::uint32_t>> features;
-		for (const auto& [cell, members] : cells(f))
-			features.push_back(members);
-		const auto response = [&f](const std::vector<std::uint32_t>& rows)
-		{
-			double best = 0;
-			for (const std::uint32_t r : rows)
-				best = std::max(best, f.keypoints[r].response);
-			return best;
-		};
-		std::stable_sort(features.begin(), features.end(), [&](const auto& a, const auto& b)
-						 { return response(a) > response(b); });
-		features.resize(std::min(n, features.size()));
-		std::vector<std::uint32_t> rows;
-		for (const std::vector<std::uint32_t>& feature : features)
-			rows.insert(rows.end(), feature.begin(), feature.end());
-		return subset(f, rows);
 	}
 
 	// Two views of the default scene and their matched features, each match judged against the truth.
@@ -421,8 +344,8 @@ TEST_CASE("the fundamental matrix of two views is recovered", "[camera][opencv][
 {
 	ensureBackend();
 	// A fundamental matrix ignores lens distortion, so the two views are rendered through a pinhole with
-	// the test camera's field of view. What distortion costs is sub-slice 8's to measure.
-	const CameraModel camera = pinhole(640, 480);
+	// the test camera's field of view. What distortion costs is measured in test_sequencefeatures.cpp.
+	const CameraModel camera = largeCamera(640, 480);
 	const TwoViews v = twoViews(NativeScale{}, camera);
 	const math::RigidTransformd bFromA = v.b.inverse() * v.a;
 	const Intrinsics& in = camera.intrinsics();
@@ -685,7 +608,7 @@ TEST_CASE("an 8K frame is searched at the default size in bounded memory", "[cam
 	// searched image and keeps a float pyramid of it, so the search, not the frame, sets the memory:
 	// peak growth 340 MB at 1600 px and 489 MB at 1920 px, per frame searched at once (glibc only,
 	// from VmHWM), on top of the decoded frame (33 MB of 8K grey here, 100 MB of 8K RGB8).
-	const CameraModel m = pinhole(7680, 4320);
+	const CameraModel m = largeCamera(7680, 4320);
 	const image::Image frame = synthetic::render(synthetic::defaultScene(), m, synthetic::arcCamera(0.0), 0, 1, 1);
 	double previous = 0;
 	for (const std::uint32_t side : {1600u, 1920u})
@@ -724,7 +647,7 @@ TEST_CASE("exact and approximate search at 8192 features a view", "[camera][open
 	// a frame: 12182 and 12137 rows, 1.49 a feature. (Lowe reports about 15% of keypoints with a
 	// second orientation; this texture's soft blobs give far more.) And a third frame of the first
 	// view with other noise, which is what consolidating one camera's frames matches.
-	const CameraModel m = pinhole(1920, 1080);
+	const CameraModel m = largeCamera(1920, 1080);
 	synthetic::Scene scene = synthetic::defaultScene(1, 0.01);
 	scene.noise = 1.0;
 	const auto features = [&](double angle, std::uint64_t seed)

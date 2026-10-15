@@ -1400,6 +1400,39 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-15 — M9 slice 4, sub-slice 8: a moving camera rendered and measured
+
+One commit of test code only. The producer landed in 7a, so this is the moving camera drawn and what
+real SIFT and the real solver make of its footage. `ctest` **1247/1247** Debug and **1255/1255**
+Release with video, camera and Ceres on (+3 each, two skipped in Debug), **1138/1138** with all three
+off; warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 8 built* under M9 slice 4.
+
+- **`RenderedSource` takes a pose per frame** and `drawAll()` draws the missing frames on the pool.
+  `synthetic::arcPath(frames)` rises, rolls and re-aims as it goes, since a path at one height turning
+  only about the vertical is critical motion for self-calibration. `projectInto` and the OpenCV
+  feature helpers each now live once (`texturedscene.h`, `renderedfeatures.h`).
+- **A moving camera's tracks, against the truth:** 1028 tracks from 8 of 12 frames, the same in Debug
+  and Release, on the pool and serially. All 28 pairs verify. 11 tracks are the disc's, 912 of the
+  other 1017 are within 2 px, and **17 are wrong, up to 571 px out along an epipolar line**, mostly on
+  the floor. A fundamental matrix cannot see those; sub-slice 9's robust loss and outlier report can.
+- **The threshold stays at 4 px.** At a 1920 search it keeps every correct match of both pinhole
+  pairs, and refuses a crossing disc between adjacent frames through every lens. Every lens admits
+  the disc at 16 px.
+- **Distortion costs a wide baseline, not adjacent frames.** At 4 px adjacent frames keep everything
+  up to a 317 px corner shift; the path's ends keep 95% of their outer third at 193 px and 84% at
+  317 px. ADR-0016 is amended with these numbers. The trigger it names is not reached.
+- **All 780 pairs of 40 frames cost 1.2 core-hours Exact** (18 minutes on four cores) and about 6
+  core-minutes Approximate, with or without the pre-screen, which skips nothing on a path that always
+  sees the scene. The plan's 2.2 core-hours was 1.4 times too high from the machine (slice 3's own
+  pair takes 7.07 s here, not 10.2) and 1.3 times from the rows (1.31 a feature here, not 1.49).
+- The plan's corner shifts are from the image's outer corner, (-0.5, -0.5), not the corner pixel's
+  centre.
+- **Two sabotages, both caught, one prediction wrong.** Every frame drawn at the first pose fails the
+  moving-camera case alone, as predicted. The threshold handed on times 1000 fails it on the disc and
+  on the wrong tracks (6.0% against 1.7%), but not on the share within 2 px, which was predicted to
+  fail: admitting everything costs that share only 4 points. It also fails `test-camera-tracks`'
+  threshold and moving-content cases.
+
 ### Update 2026-10-15 — M9 slice 4, sub-slice 7c: a moving camera's feature tracks (**sub-slice 7 COMPLETE**)
 
 The last of sub-slice 7's three commits. `feature::extractSequenceTracks` turns one moving camera's

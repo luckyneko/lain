@@ -492,6 +492,10 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   4, sub-slice 7a; the shared module in 7b; the sequence extraction, `extractSequenceTracks`, in
   7c)*. A fundamental matrix ignores lens distortion. A lens whose
   distortion costs too many peripheral matches is the trigger to verify again under the swept model.
+  *(Measured 2026-10-15, M9 slice 4, sub-slice 8, at 1920 x 1080 and the default 4 px, through k1
+  alone. Adjacent frames keep every correct match through every lens up to a 317 px corner shift,
+  since between them a lens's warp barely changes. The path's ends, 0.7 rad apart, keep all of their
+  outer-third matches at a 72 px shift, 95% at 193 px and 84% at 317 px. Not yet the trigger.)*
 - **The starting focal length comes from a focal sweep** when no imported model seeds it. Lain tries a
   fixed, log-spaced set of focal lengths on the most strongly verified pairs, through its own
   relative-pose facade, and keeps the candidate whose poses explain the most matches. Every candidate

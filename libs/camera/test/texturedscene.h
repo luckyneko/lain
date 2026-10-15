@@ -10,7 +10,8 @@
 // extrema at several scales. Every ray is unprojected through lain's own model, so a distorted camera
 // is drawn exactly, and each pixel averages s x s rays. A disc may move through the scene frame by
 // frame, which is the moving content targetless registration must drop, and so may a printed board,
-// which is what lets one rig be registered by both methods from the same footage.
+// which is what lets one rig be registered by both methods from the same footage. A camera may move
+// too, along a path given a pose per frame, which is targetless calibration's footage.
 
 #include "syntheticfootage.h"
 
@@ -20,6 +21,7 @@
 #include <lain/image/image.h>
 #include <lain/math/rigidtransform.h>
 #include <lain/media/framesource.h>
+#include <lain/task/task.h>
 
 #include <algorithm>
 #include <cmath>
@@ -27,6 +29,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <string>
@@ -205,6 +208,33 @@ namespace lain::camera::synthetic
 		return lookingAt(target + math::Vec3d{radius * std::sin(angle), -rise, -radius * std::cos(angle)}, target);
 	}
 
+	// A moving camera's path round the default scene, a pose per frame. It runs along arcCamera's arc
+	// from -0.35 to 0.35 rad (2.24 m of arc, 2.59 m of travel with the rise), rising and falling 0.3 m
+	// about the arc's 0.5 m rise, rolling up to 0.12 rad, and aimed up to 0.3 m off the middle of the
+	// box, each on its own period so the turn between two frames is not about one axis. A path at one
+	// height turning only about the vertical is planar motion, critical for self-calibration with
+	// constant intrinsics (Sturm, CVPR 1997), and targetless calibration calibrates from this one. The
+	// box stays in view of the test camera in every frame, which the moving camera's first case checks.
+	inline std::vector<math::RigidTransformd> arcPath(std::size_t frames)
+	{
+		constexpr double tau = 6.283185307179586;
+		const math::Vec3d centre{-0.2, 0.2, 0.4}; // arcCamera's target, so the arc is its arc
+		const math::Vec3d box{-0.2, 0.35, 0.1};	  // the middle of defaultScene's box
+		std::vector<math::RigidTransformd> path;
+		for (std::size_t k = 0; k < frames; ++k)
+		{
+			const double s = frames > 1 ? double(k) / double(frames - 1) : 0.0;
+			const double angle = -0.35 + 0.7 * s;
+			const double rise = 0.5 + 0.3 * std::sin(tau * s);
+			const double roll = 0.12 * std::sin(tau * 1.5 * s + 0.5);
+			const math::Vec3d aim = box + math::Vec3d{0.25 * std::sin(tau * 0.8 * s + 1.0), 0.15 * std::sin(tau * 1.3 * s), 0.0};
+			const math::Vec3d position = centre + math::Vec3d{3.2 * std::sin(angle), -rise, -3.2 * std::cos(angle)};
+			path.push_back(lookingAt(position, aim) *
+						   math::RigidTransformd{math::angleAxis(roll, math::Vec3d{0.0, 0.0, 1.0}), math::Vec3d{0.0}});
+		}
+		return path;
+	}
+
 	// What a ray hits first: the point in the reference frame, its grey level, and which surface
 	// (an index into Scene::planes, kOccluderSurface or kBoardSurface).
 	struct Hit
@@ -291,6 +321,19 @@ namespace lain::camera::synthetic
 					frame);
 	}
 
+	// Where `model` at `referenceFromCamera` sees `point`, or nothing: truthAt's inverse.
+	inline std::optional<math::Vec2d> projectInto(const CameraModel& model, const math::RigidTransformd& referenceFromCamera,
+												  const math::Vec3d& point)
+	{
+		const math::Vec3d p = referenceFromCamera.inverse().apply(point);
+		if (p.z <= 0)
+			return std::nullopt;
+		const Projection<double> px = project(model, p.x, p.y, p.z);
+		if (!px.ok())
+			return std::nullopt;
+		return math::Vec2d{px.u, px.v};
+	}
+
 	// What `model` at `referenceFromCamera` sees of `scene` in frame `frame`, as 8-bit grey: each pixel
 	// the mean of `samples` x `samples` rays, plus the scene's noise for this frame and `seed`.
 	inline image::Image render(const Scene& scene, const CameraModel& model, const math::RigidTransformd& referenceFromCamera,
@@ -339,16 +382,25 @@ namespace lain::camera::synthetic
 		return out;
 	}
 
-	// One camera's footage of a scene, drawn when a frame is asked for.
+	// One camera's footage of a scene, each frame drawn when it is first asked for, or by drawAll.
 	class RenderedSource : public media::FrameSource
 	{
 	public:
+		// A fixed camera: every frame drawn from `referenceFromCamera`.
 		RenderedSource(std::string name, Scene scene, CameraModel model, math::RigidTransformd referenceFromCamera,
 					   std::size_t frames, std::uint64_t seed = 0, int samples = 2)
-			: FrameSource{core::Uri{"/rendered/" + name}, specOf(model), frames}
+			: RenderedSource(std::move(name), std::move(scene), std::move(model),
+							 std::vector<math::RigidTransformd>(frames, referenceFromCamera), seed, samples)
+		{
+		}
+
+		// A moving camera: frame f drawn from `referenceFromCamera[f]`, as many frames as poses.
+		RenderedSource(std::string name, Scene scene, CameraModel model, std::vector<math::RigidTransformd> referenceFromCamera,
+					   std::uint64_t seed = 0, int samples = 2)
+			: FrameSource{core::Uri{"/rendered/" + name}, specOf(model), referenceFromCamera.size()}
 			, m_scene(std::move(scene))
 			, m_model(std::move(model))
-			, m_pose(referenceFromCamera)
+			, m_poses(std::move(referenceFromCamera))
 			, m_seed(seed)
 			, m_samples(samples)
 		{
@@ -363,23 +415,53 @@ namespace lain::camera::synthetic
 			return s;
 		}
 
+		// Draws every frame not drawn yet on the process pool, one task a frame. FrameSource asks for a
+		// frame under its own lock, so frames drawn on demand are drawn one at a time, and a timed
+		// extraction over them would time the renders too.
+		void drawAll()
+		{
+			std::vector<std::size_t> missing;
+			{
+				const std::lock_guard<std::mutex> lock(m_drawing);
+				for (std::size_t f = 0; f < m_poses.size(); ++f)
+				{
+					if (m_drawn.count(f) == 0)
+						missing.push_back(f);
+				}
+			}
+			std::vector<image::Image> drawn(missing.size());
+			task::range(std::ptrdiff_t{0}, std::ptrdiff_t(missing.size()),
+						[&](std::ptrdiff_t i)
+						{ drawn[std::size_t(i)] = draw(missing[std::size_t(i)]); });
+			const std::lock_guard<std::mutex> lock(m_drawing);
+			for (std::size_t i = 0; i < missing.size(); ++i)
+				m_drawn.emplace(missing[i], std::move(drawn[i]));
+		}
+
 	protected:
 		// Each frame is drawn once and kept, since a test that extracts the same footage twice would
-		// otherwise pay for every render twice. FrameSource calls this under its own lock.
+		// otherwise pay for every render twice.
 		image::Image decodeFrame(std::size_t ordinal) const override
 		{
+			const std::lock_guard<std::mutex> lock(m_drawing);
 			auto found = m_drawn.find(ordinal);
 			if (found == m_drawn.end())
-				found = m_drawn.emplace(ordinal, render(m_scene, m_model, m_pose, ordinal, m_samples, m_seed)).first;
+				found = m_drawn.emplace(ordinal, draw(ordinal)).first;
 			return found->second;
 		}
 
 	private:
+		image::Image draw(std::size_t ordinal) const
+		{
+			return render(m_scene, m_model, m_poses[ordinal], ordinal, m_samples, m_seed);
+		}
+
 		Scene m_scene;
 		CameraModel m_model;
-		math::RigidTransformd m_pose;
+		std::vector<math::RigidTransformd> m_poses;
 		std::uint64_t m_seed;
 		int m_samples;
+		mutable std::mutex m_drawing; // guards m_drawn, which drawAll fills outside FrameSource's lock
 		mutable std::map<std::size_t, image::Image> m_drawn;
 	};
 } // namespace lain::camera::synthetic

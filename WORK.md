@@ -2446,8 +2446,8 @@ sub-slices (below), and **all eleven are built** (2026-10-09); a gui-mode eyebal
 owed. The repo owner kept the provisional values sub-slice 9 measured, and queued three changes to
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
 graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
-(as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b and 6c) and 7 (as 7a, 7b and 7c) are
-built, with the fix that landed ahead of 5.
+(as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b and 6c), 7 (as 7a, 7b and 7c) and 8
+are built, with the fix that landed ahead of 5.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -5466,7 +5466,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         - the refusals.
       - Sabotages: the backend's first fundamental taken; the frame left out of a track's identity.
    8. **The OpenCV fundamental-matrix producer, and a moving camera rendered.** *(Planned in detail
-      2026-10-15 as one commit of test code only, since the producer moved to 7a; see below.)*
+      2026-10-15 as one commit of test code only, since the producer moved to 7a; see below. Built
+      2026-10-15.)*
       - ~~`findFundamentalMat` with USAC (MAGSAC, an explicit seed, `isParallel = false`), every
         candidate returned.~~ *Moved to sub-slice 7a (2026-10-15): the seam method is pure virtual,
         so every backend answers it in the commit that adds it. It is tested there on two rendered
@@ -7224,6 +7225,107 @@ The 2026-08-16 review also left these requirements and decisions visible before 
 
    **Docs:** the built note here, an entry to CLAUDE.md, and ADR-0016's note that strong distortion
    costs peripheral matches amended with what was measured.
+
+   **Sub-slice 8 built (2026-10-15).** As planned, test code only:
+   - **`RenderedSource` takes a pose per frame.** A second constructor takes the poses, frame f
+     drawn at pose f; the fixed camera's keeps its signature and delegates, so `renderedrig.h` and the
+     rig cases change by nothing. **`drawAll()`** draws every frame not drawn yet on the process pool,
+     one task a frame, under a lock of the source's own, since `drawAll` runs outside FrameSource's.
+   - **`synthetic::arcPath(frames)`**: arcCamera's arc from -0.35 to 0.35 rad (2.24 m of arc, 2.59 m
+     of travel with the rise), rising and falling 0.3 m over one period, rolling up to 0.12 rad over
+     one and a half, and aimed up to 0.3 m off the box's middle on two more.
+   - **`projectInto` moved to `texturedscene.h`**, beside `truthAt`. `renderedrig.h` names it with a
+     using-declaration, so `test_comparison.cpp`'s `rendered::projectInto` reads as it did.
+   - **`renderedfeatures.h`** holds `ensureBackend`, `cellOf`, `cells`, `subset`, `strongest` and
+     `largeCamera(width, height, distortion)`, in `lain::camera::testing` beside `testcamera.h`'s.
+     `test_features.cpp` names them by using-declarations; its only changed calls are `pinhole` to
+     `largeCamera`.
+   - **Three cases in `test_sequencefeatures.cpp`**, in `test-camera-opencv-features`:
+     1. **A moving camera's tracks** (Debug and Release, the same numbers in both). Twelve frames of
+        the test camera along the path, the disc crossing at 0.4 m a frame, eight sampled (0, 2, 3,
+        5, 6, 8, 9, 11):
+        - the last frame is `render()` at the last pose, byte for byte, and the box is in view of
+          every frame;
+        - the pool and deterministic debugging give one track set, through OpenCV's three backends,
+          each frame searched natively (778 to 980 keypoints, 568 to 676 features);
+        - all 28 pairs verify, not only the adjacent ones checked, with 62 to 390 inliers;
+        - 1028 tracks, 5 components rejected as conflicts. 11 tracks are the disc's. Of the other
+          1017, 912 land within 2 px of every member and 88 more within 10 px; **17 are wrong**, one
+          member 56 to 571 px out along its epipolar line, mostly on the floor, whose texture repeats
+          along a grazing view.
+     2. **The threshold and four lenses** (Release only), at 1920 x 1080 (f 1500), searched natively,
+        the disc crossing at 4 cm a frame (about 33 px between adjacent frames). The worst of seeds
+        0 to 4, correct matches kept at 4 px:
+
+        | k1 | corner shift | near pair, all / outer third | far pair, all / outer third |
+        | --- | --- | --- | --- |
+        | 0 | 0 px | 448/448, 141/141 | 27/27, 20/20 |
+        | -0.1 | 72 px (6.5%) | 465/465, 145/145 | 45/45, 28/28 |
+        | -0.2 | 193 px (17.5%) | 572/572, 208/208 | 71/75, 58/61 (95.1%) |
+        | -0.25 | 317 px (28.8%) | 580/580, 223/223 | 66/75, 47/56 (83.9%) |
+
+        - The near pair (frames 19 and 20) keeps every correct match at 4 px through every lens,
+          admitting 17 to 21 wrong ones, the disc's at most 1. At 1 px it keeps 95 to 98% (the -0.25
+          lens 91.5% of its outer third), at 2 px 99 to 100%.
+        - **Above 4 px a matrix takes the disc.** At 16 px every lens's near pair admits 20 to 22 of
+          its 20 to 25 disc matches. At 8 px the pinhole and the -0.2 lens lose up to 4% of their
+          correct matches to a matrix that explains the disc instead.
+        - The far pair (frames 0 and 39, 0.7 rad apart) admits 11 to 18 disc matches at every
+          threshold from 2 px, since the disc moves along the baseline. At 1 px it keeps 68 to 89%; at 16 px
+          the -0.25 lens keeps 97.3%, and all of its outer third.
+     3. **The time to match every pair of 40 frames** (Release only), the 1920 x 1080 pinhole over
+        the fine texture, the 40 frames drawn by `drawAll` first:
+        - on one core, frames 0 and 1 capped at 8192 features (10756 and 10738 rows, 1.31 a feature):
+          the pre-screen 0.039 s Exact and 0.033 s Approximate, the full match 5.59 s Exact and
+          0.41 s Approximate;
+        - the production run over all 40 frames at a cap of 1024: 0 pairs skipped, 780 verified,
+          2608 tracks, 61 s on four workers;
+        - all 780 pairs, worked out:
+
+          | | without the pre-screen | with it |
+          | --- | --- | --- |
+          | Exact | 1.21 core-hours (18 min on four cores) | 1.22 core-hours (18 min) |
+          | Approximate | 5.3 core-minutes (80 s) | 5.8 core-minutes (86 s) |
+
+          The pre-screen pays for itself once more than 0.7% of pairs share nothing under Exact, 8%
+          under Approximate.
+   - **Found while building:**
+     - **The plan's corner shifts are from the image's outer corner** (-0.5, -0.5). The centre of the
+       corner pixel gives 71.6, 192.1 and 315.9 px. `cornerShift` says which it measures.
+     - **The plan's 2.2 core-hours was 1.4 times too high from the machine and 1.3 times from the
+       rows.** Slice 3's own pair of 12182 rows takes 7.07 s here, not the 10.2 s it recorded, and
+       scaled by the rows squared that gives 5.51 s for this case's 10756, against 5.59 s measured.
+       Brute force grows with the rows squared, as slice 3 said, and this path's frames carry 1.31
+       rows a feature against that scene's 1.49.
+     - **A fundamental matrix cannot see a wrong match on the epipolar line.** The 17 wrong tracks
+       in the first case are what sub-slice 9's robust loss and outlier report meet.
+     - The default texture gives 948 features or more a frame at 1920 px, under the 1000 the first
+       cut required. The first cut's third case had a comma in its name, which Catch reads as two
+       filters.
+   - **For the repo owner, nothing changed:**
+     - **The threshold stays at 4 px.** Of the five tried at a 1920 search, it is the smallest that
+       keeps every correct match of the pinhole's two pairs, and the largest that refuses the disc
+       between adjacent frames through every lens.
+     - **Matching every pair of 40 frames Exact at the cap costs 1.2 core-hours**, 18 minutes on four
+       cores, and Approximate about 6 core-minutes. On a path that always sees the scene, the
+       pre-screen saves nothing. The cap, the sampled frames and the search stay sub-slice 10's.
+     - **Distortion costs a wide baseline its peripheral matches, not adjacent frames.** ADR-0016's
+       trigger is not reached; the measurements are written beside it.
+   - **Sabotages, both caught, one prediction wrong:**
+     - **Every frame drawn at the path's first pose**: the moving-camera case alone fails, as
+       predicted, on its byte comparison and its truth checks (none of the still tracks within 2 px,
+       99.9% wrong, 30 on the disc). Every adjacent pair still verified, since a camera that does not
+       move is explained by a degenerate matrix. The rig cases, whose cameras take the constructor that
+       delegates, pass untouched, the registration end to end included.
+     - **The threshold handed to `fundamental` times 1000**: the moving-camera case fails on the disc
+       (22 tracks) and on the wrong tracks (59 of 981, 6.0%). **The share within 2 px stays at 85.5%
+       and passes**, which was predicted to fail: admitting every match doubles the disc's tracks and
+       triples the wrong ones, yet costs that share 4 points. The wrong share is what sees it.
+       `test-camera-tracks` fails too, beyond the plan's prediction: both sections of the threshold
+       case, and the moving-content case.
+   - **Counts as predicted:** 1247/1247 Debug and 1255/1255 Release with video, camera and Ceres on
+     (+3 each, two of them skipped in Debug), 1138/1138 with all three off. Warning-clean, format-check
+     clean. Under `ctest -j8` the timing case took 243 s and its ratios held.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -12384,7 +12486,7 @@ row here**. A row is cheap to delete and expensive to leave.
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
        sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b
-       and 6c) and 7 (as 7a, 7b and 7c), with the fix ahead of 5. The
+       and 6c), 7 (as 7a, 7b and 7c) and 8, with the fix ahead of 5. The
        separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
        restated (slice 4's plan).
   2. **Owed by the repo owner.**

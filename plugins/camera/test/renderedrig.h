@@ -64,18 +64,8 @@ namespace lain::camera::rendered
 		return out;
 	}
 
-	// Where the camera at `worldFromCamera` sees `point`, or nothing.
-	inline std::optional<math::Vec2d> projectInto(const CameraModel& m, const math::RigidTransformd& worldFromCamera,
-												  const math::Vec3d& point)
-	{
-		const math::Vec3d p = worldFromCamera.inverse().apply(point);
-		if (p.z <= 0)
-			return std::nullopt;
-		const Projection<double> px = project(m, p.x, p.y, p.z);
-		if (!px.ok())
-			return std::nullopt;
-		return math::Vec2d{px.u, px.v};
-	}
+	// Where a camera sees a point, or nothing: texturedscene.h's, under the name the rig's cases call.
+	using synthetic::projectInto;
 
 	struct StillScene
 	{
