@@ -53,10 +53,10 @@ namespace lain::camera::opencv
 		return transformOf(r, cv::Vec3d{translation.at<double>(0), translation.at<double>(1), translation.at<double>(2)});
 	}
 
-	// USAC as MAGSAC++, serial and seeded. The threshold is the inlier angle in pixels of the virtual
-	// pinhole, which near the axis is the angle itself. The neighbourhood is the grid, never FLANN's,
-	// whose index would draw from the process-global std::rand.
-	static cv::UsacParams usac(double angle, std::uint64_t seed)
+	// USAC as MAGSAC++, serial and seeded, its threshold in pixels: for rays, the inlier angle in pixels
+	// of the virtual pinhole, which near the axis is the angle itself. The neighbourhood is the grid,
+	// never FLANN's, whose index would draw from the process-global std::rand.
+	static cv::UsacParams usac(double threshold, std::uint64_t seed)
 	{
 		cv::UsacParams params;
 		params.confidence = 0.999;
@@ -66,7 +66,7 @@ namespace lain::camera::opencv
 		params.randomGeneratorState = int(seed & 0x7fffffff);
 		params.sampler = cv::SAMPLING_UNIFORM;
 		params.score = cv::SCORE_METHOD_MAGSAC;
-		params.threshold = angle * kVirtualFocal;
+		params.threshold = threshold;
 		params.final_polisher = cv::MAGSAC;
 		return params;
 	}
@@ -101,7 +101,7 @@ namespace lain::camera::opencv
 			const cv::Mat camera = virtualCamera();
 			cv::Mat mask;
 			const cv::Mat essential =
-				cv::findEssentialMat(a, b, camera, camera, cv::noArray(), cv::noArray(), mask, usac(angle, seed));
+				cv::findEssentialMat(a, b, camera, camera, cv::noArray(), cv::noArray(), mask, usac(angle * kVirtualFocal, seed));
 			// Every 3x3 solution, and every one of its four decompositions: x_b = R x_a + t, so each
 			// is B from A. Which of them is the camera's is lain's to measure.
 			for (int block = 0; block + 3 <= essential.rows; block += 3)
@@ -146,7 +146,8 @@ namespace lain::camera::opencv
 			cv::Mat camera = virtualCamera();
 			cv::Mat rotation, translation;
 			std::vector<int> inliers;
-			if (!cv::solvePnPRansac(objects, rays, camera, cv::noArray(), rotation, translation, inliers, usac(angle, seed)))
+			if (!cv::solvePnPRansac(objects, rays, camera, cv::noArray(), rotation, translation, inliers,
+									usac(angle * kVirtualFocal, seed)))
 				return {};
 			out.push_back(transformOfVectors(rotation, translation));
 			// The same pose refined on its own inliers; both are candidates, since lain measures each.
@@ -162,6 +163,46 @@ namespace lain::camera::opencv
 				cv::Mat r = rotation.clone(), t = translation.clone();
 				cv::solvePnPRefineLM(inObjects, inRays, camera, cv::noArray(), r, t);
 				out.push_back(transformOfVectors(r, t));
+			}
+		}
+		catch (const cv::Exception&)
+		{
+			return {};
+		}
+		return out;
+	}
+
+	std::vector<math::Mat3d> OpenCVGeometrySolver::fundamentals(const std::vector<feature::PixelPair>& pairs,
+																double threshold, std::uint64_t seed) const
+	{
+		if (pairs.size() < 8)
+			return {};
+		// Source pixels as they are: OpenCV's (0, 0) is the centre of the top-left pixel, as lain's is,
+		// and these are pixels already, so no virtual pinhole is needed to bring USAC to its scale.
+		std::vector<cv::Point2d> a, b;
+		for (const feature::PixelPair& p : pairs)
+		{
+			a.emplace_back(p.a.x, p.a.y);
+			b.emplace_back(p.b.x, p.b.y);
+		}
+
+		std::vector<math::Mat3d> out;
+		try
+		{
+			cv::Mat mask;
+			cv::Mat solutions = cv::findFundamentalMat(a, b, mask, usac(threshold, seed));
+			solutions.convertTo(solutions, CV_64F);
+			// Every 3x3 solution, each with [b; 1]ᵀ F [a; 1] = 0, OpenCV's convention and the seam's.
+			// Which of them explains the pairs is lain's to measure.
+			for (int block = 0; block + 3 <= solutions.rows && solutions.cols == 3; block += 3)
+			{
+				math::Mat3d f; // GLM is column-major: f[column][row]
+				for (int row = 0; row < 3; ++row)
+				{
+					for (int col = 0; col < 3; ++col)
+						f[col][row] = solutions.at<double>(block + row, col);
+				}
+				out.push_back(f);
 			}
 		}
 		catch (const cv::Exception&)

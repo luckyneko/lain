@@ -2447,7 +2447,7 @@ owed. The repo owner kept the provisional values sub-slice 9 measured, and queue
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
 graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5 and 6 (as 6a, 6b and 6c) are built, with the fix that
-landed ahead of 5.
+landed ahead of 5, and 7a of sub-slice 7.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -6909,6 +6909,46 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        known-distance case fails.
    - Counts: +4 in `test-camera-feature` in every configuration, and +1 where the OpenCV plugin
      builds.
+
+   **Sub-slice 7a built (2026-10-15).** As planned:
+   - `PixelPair`, `GeometrySolver::fundamentals`, `FundamentalRequest`, `FundamentalResult` and
+     `feature::fundamental` are in `geometry.h`.
+   - **The facades share one `solve`, now templated on the result and the model.** The request's
+     problem, the minimum, the proposal, the preparation, the measurement and how the chosen model is
+     stored are its arguments. `canonical` gains a matrix overload, its entries in row-major order,
+     and `better` is a template over the model.
+   - **A candidate is normalised before it is measured**, so its scale and sign cannot reach the
+     canonical order.
+   - **A pair whose two epipolar lines both vanish is no inlier**: the Sampson denominator is zero,
+     and the pair sits on both epipoles, so it says nothing.
+   - **OpenCV:** `usac()` now takes its threshold in pixels, and the two pose calls convert the angle
+     themselves. `fundamentals` hands USAC source pixels as they are and returns every 3x3 block.
+   - **The OpenCV case is on `twoViews()` rendered through a pinhole** (the helper gained the camera
+     as a parameter). Measured over seeds 0 to 19 on 355 matches, 352 of them correct:
+     - one candidate per seed, the same matrix on every seed;
+     - 353 inliers, holding every correct match (the one more lies within 4 px but outside the 3 px
+       that `correct` asks);
+     - 0.21 px RMS over its inliers, and 0.031 px over the exact correspondences, which it never saw.
+
+     The truth matrix, built in the test from the poses, explains the exact correspondences to
+     2.2e-14 px, which checks the conventions it was built with.
+   - **The facade cases' measured values:**
+     - the truth candidate's RMS is 2.7e-14 px;
+     - a candidate turned 1 mrad still explains all 40 pairs, at 0.58 px RMS, so only the summed
+       distance told it from the truth.
+   - **Sabotages, both caught:**
+     - **The facade taking the backend's first candidate.** Its first cut did not build under
+       `-Werror`, since `canonical` was left unused, so the old binary answered. It was redone as
+       `!best || (false && better(...))`.
+       - The fundamental ordering case fails in 5 of its 6 orders.
+       - Since `solve` is shared, so do the relative and absolute pose ordering cases, the tie case,
+         and "near points decide the baseline's direction". Predicted.
+       - `test-camera-tracks` and `test-camera-targetless` still pass: their stand-in proposes its
+         best candidate first.
+     - **Sampson distance measured in B alone:** only the Sampson case fails, as predicted. The
+       OpenCV case still passes, since a near-truth matrix explains its pairs either way.
+   - **Counts as predicted:** 1233/1233 Debug and 1241/1241 Release with video, camera and Ceres on
+     (+5 each), 1127/1127 with all three off (+4). Warning-clean, format-check clean.
 
    **7b: the shared module.**
    - `ExtractionSettings`, and the module, as above. `extractTracks` runs through the module.
@@ -12107,7 +12147,7 @@ row here**. A row is cheap to delete and expensive to leave.
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
        sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5 and 6 (as 6a,
-       6b and 6c), with the fix ahead of 5. The
+       6b and 6c), with the fix ahead of 5, and 7a. The
        separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
        restated (slice 4's plan).
   2. **Owed by the repo owner.**

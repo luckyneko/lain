@@ -21,6 +21,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <fstream>
 #include <map>
@@ -184,9 +185,10 @@ namespace
 		std::vector<math::Vec3d> truth; // per match: what A's pixel sees
 	};
 
-	TwoViews twoViews(const ScalePolicy& scale = NativeScale{})
+	TwoViews twoViews(const ScalePolicy& scale = NativeScale{}, const CameraModel& camera = model())
 	{
 		TwoViews v;
+		v.camera = camera;
 		v.scene.noise = 1.0;
 		const ExtractResult ea = extract(synthetic::render(v.scene, v.camera, v.a, 0, 2, 1), scale);
 		const ExtractResult eb = extract(synthetic::render(v.scene, v.camera, v.b, 0, 2, 2), scale);
@@ -380,6 +382,98 @@ TEST_CASE("the relative and absolute poses of two views are recovered", "[camera
 		CHECK(absolute.candidates >= 1);
 		CHECK(rotationBetween(*absolute.pose, truthCameraFromReference) < 2e-3);
 		CHECK(math::length(absolute.pose->translation() - truthCameraFromReference.translation()) < 3e-3);
+	}
+}
+
+namespace
+{
+	// F(row, column) is f[column][row] in GLM.
+	math::Mat3d rows(const std::array<double, 9>& e)
+	{
+		math::Mat3d f;
+		for (int row = 0; row < 3; ++row)
+		{
+			for (int column = 0; column < 3; ++column)
+				f[column][row] = e[std::size_t(3 * row + column)];
+		}
+		return f;
+	}
+
+	// Sampson distance, restated to judge a matrix against correspondences the facade never saw.
+	double sampson(const math::Mat3d& f, const PixelPair& p)
+	{
+		const math::Vec3d xa{p.a.x, p.a.y, 1.0}, xb{p.b.x, p.b.y, 1.0};
+		const math::Vec3d lb = f * xa, la = math::transpose(f) * xb;
+		const double e = math::dot(xb, lb);
+		return std::abs(e) / std::sqrt(lb.x * lb.x + lb.y * lb.y + la.x * la.x + la.y * la.y);
+	}
+
+	double rmsSampson(const math::Mat3d& f, const std::vector<PixelPair>& pairs)
+	{
+		double sum = 0;
+		for (const PixelPair& p : pairs)
+			sum += sampson(f, p) * sampson(f, p);
+		return std::sqrt(sum / double(pairs.size()));
+	}
+} // namespace
+
+TEST_CASE("the fundamental matrix of two views is recovered", "[camera][opencv][feature]")
+{
+	ensureBackend();
+	// A fundamental matrix ignores lens distortion, so the two views are rendered through a pinhole with
+	// the test camera's field of view. What distortion costs is sub-slice 8's to measure.
+	const CameraModel camera = pinhole(640, 480);
+	const TwoViews v = twoViews(NativeScale{}, camera);
+	const math::RigidTransformd bFromA = v.b.inverse() * v.a;
+	const Intrinsics& in = camera.intrinsics();
+	const math::Mat3d k = rows({in.fx, 0.0, in.cx, 0.0, in.fy, in.cy, 0.0, 0.0, 1.0});
+	const math::Vec3d t = bFromA.translation();
+	const math::Mat3d tx = rows({0.0, -t.z, t.y, t.z, 0.0, -t.x, -t.y, t.x, 0.0});
+	const math::Mat3d kInverse = math::inverse(k);
+	const math::Mat3d truth = math::transpose(kInverse) * tx * math::mat3_cast(bFromA.rotation()) * kInverse;
+
+	std::vector<PixelPair> all, exact;
+	std::vector<std::uint32_t> correct;
+	for (std::size_t i = 0; i < v.matches.matches.size(); ++i)
+	{
+		const Match& m = v.matches.matches[i];
+		all.push_back({v.fa.keypoints[m.a].pixel, v.fb.keypoints[m.b].pixel});
+		if (!v.correct[i])
+			continue;
+		correct.push_back(std::uint32_t(i));
+		// What the truth point projects to in each view, exactly.
+		const std::optional<math::Vec2d> pa = projectInto(camera, v.a, v.truth[i]);
+		const std::optional<math::Vec2d> pb = projectInto(camera, v.b, v.truth[i]);
+		if (pa && pb)
+			exact.push_back({*pa, *pb});
+	}
+	REQUIRE(correct.size() > 200);
+	REQUIRE(exact.size() > 200);
+	// The truth explains the exact correspondences to rounding, which checks the conventions it was
+	// built with (pixel centres, B from A, GLM's columns): measured 2.2e-14 px.
+	CHECK(rmsSampson(truth, exact) < 1e-9);
+
+	// Every seed: the solver's sampling must not decide whether the matrix is right. Measured over these
+	// 20 seeds on all 355 matches, of which 352 are correct: one candidate each, the same matrix on every
+	// seed, with 353 inliers holding every correct match (the one more lies within 4 px though not
+	// within the 3 px `correct` asks), 0.21 px RMS over its inliers, and 0.031 px RMS over the exact
+	// correspondences, which it never saw.
+	for (std::uint64_t seed = 0; seed < 20; ++seed)
+	{
+		CAPTURE(seed);
+		FundamentalRequest request;
+		request.seed = seed;
+		const FundamentalResult result = fundamental(all, request);
+		REQUIRE(result.ok());
+		CHECK(result.candidates >= 1);
+		REQUIRE(result.matrix.has_value());
+		std::size_t kept = 0;
+		for (const std::uint32_t i : correct)
+			kept += std::binary_search(result.inliers.begin(), result.inliers.end(), i) ? 1 : 0;
+		CHECK(kept == correct.size());
+		CHECK(result.inliers.size() <= correct.size() + 2);
+		CHECK(result.rmsDistance < 0.3);
+		CHECK(rmsSampson(*result.matrix, exact) < 0.06);
 	}
 }
 

@@ -5,8 +5,11 @@
 
 #include <lain/string/format.h>
 
+#include <array>
 #include <cmath>
 #include <memory>
+#include <optional>
+#include <string>
 #include <tuple>
 #include <utility>
 
@@ -15,9 +18,11 @@ namespace lain::camera::feature
 	// --- file-local helpers (named static, not an anonymous namespace) ----------
 
 	// Five pairs fix a relative pose (the five-point problem); three point-rays fix an absolute pose up
-	// to P3P's few solutions, and a fourth chooses among them.
+	// to P3P's few solutions, and a fourth chooses among them. Eight pixel pairs fix a fundamental
+	// matrix linearly (the eight-point problem); seven do up to three solutions.
 	static constexpr std::size_t kRelativeMinimum = 5;
 	static constexpr std::size_t kAbsoluteMinimum = 4;
+	static constexpr std::size_t kFundamentalMinimum = 8;
 
 	static bool finite(const math::Vec3d& v)
 	{
@@ -27,6 +32,28 @@ namespace lain::camera::feature
 	static bool usable(const math::Vec3d& ray)
 	{
 		return finite(ray) && math::length(ray) > 0;
+	}
+
+	static bool finite(const math::Vec2d& v)
+	{
+		return std::isfinite(v.x) && std::isfinite(v.y);
+	}
+
+	static bool positive(double v)
+	{
+		return std::isfinite(v) && v > 0;
+	}
+
+	// A matrix's entries in row-major order: F(row, column) is f[column][row] in GLM.
+	static std::array<double, 9> entries(const math::Mat3d& f)
+	{
+		std::array<double, 9> out{};
+		for (int row = 0; row < 3; ++row)
+		{
+			for (int column = 0; column < 3; ++column)
+				out[std::size_t(3 * row + column)] = f[column][row];
+		}
+		return out;
 	}
 
 	static bool finite(const math::RigidTransformd& t)
@@ -56,9 +83,15 @@ namespace lain::camera::feature
 		return std::make_tuple(s * q.w, s * q.x, s * q.y, s * q.z, p.x, p.y, p.z);
 	}
 
-	// Whether `x` (posed by `px`) explains the input better than `y` (posed by `py`).
-	static bool better(const Measured& x, const math::RigidTransformd& px, const Measured& y,
-					   const math::RigidTransformd& py)
+	// The same for a fundamental matrix, which is measured normalised: its entries in row-major order.
+	static std::array<double, 9> canonical(const math::Mat3d& f)
+	{
+		return entries(f);
+	}
+
+	// Whether `x` (from candidate `px`) explains the input better than `y` (from `py`).
+	template <typename Model>
+	static bool better(const Measured& x, const Model& px, const Measured& y, const Model& py)
 	{
 		if (x.inliers.size() != y.inliers.size())
 			return x.inliers.size() > y.inliers.size();
@@ -120,16 +153,47 @@ namespace lain::camera::feature
 		return out;
 	}
 
-	// The shared shape of both facades: check the backend and the request, keep the usable entries,
-	// ask the backend, measure every candidate, choose, and map the inliers back to the input.
-	// `prepare` turns a candidate into the pose to measure (or nullopt to skip it); `measure` measures it.
-	template <typename Entry, typename Usable, typename Propose, typename Prepare, typename Measure>
-	static GeometryResult solve(const std::vector<Entry>& input, const GeometryRequest& request, std::size_t minimum,
-								const char* entries, const char* problem, Usable isUsable, Propose propose, Prepare prepare,
-								Measure measure)
+	// A fundamental matrix measured against pixel pairs, by Sampson distance: (x_bᵀ F x_a)² over the
+	// summed squares of the first two entries of F x_a and of Fᵀ x_b, the first-order squared distance
+	// from the pair to the matrix's epipolar geometry, in both images at once. A pair whose epipolar
+	// lines both vanish (it sits on both epipoles) says nothing, and is no inlier.
+	static Measured measureFundamental(const std::vector<PixelPair>& pairs, const math::Mat3d& f, double threshold)
+	{
+		Measured out;
+		const math::Mat3d ft = math::transpose(f);
+		for (std::size_t k = 0; k < pairs.size(); ++k)
+		{
+			const math::Vec3d xa{pairs[k].a.x, pairs[k].a.y, 1.0};
+			const math::Vec3d xb{pairs[k].b.x, pairs[k].b.y, 1.0};
+			const math::Vec3d lineB = f * xa;  // x_b's epipolar line in B
+			const math::Vec3d lineA = ft * xb; // x_a's in A
+			const double denominator = lineB.x * lineB.x + lineB.y * lineB.y + lineA.x * lineA.x + lineA.y * lineA.y;
+			if (!(denominator > 0))
+				continue;
+			const double algebraic = math::dot(xb, lineB);
+			const double squared = algebraic * algebraic / denominator;
+			if (std::sqrt(squared) <= threshold)
+			{
+				out.inliers.push_back(std::uint32_t(k));
+				out.sumSquared += squared;
+				out.residuals += 1;
+			}
+		}
+		return out;
+	}
+
+	// The shared shape of the facades: check the backend and the request, keep the usable entries, ask
+	// the backend, measure every candidate, choose, and map the inliers back to the input. `prepare`
+	// turns a candidate into the model to measure (or nullopt to skip it); `measure` measures it; and
+	// `store` writes the chosen one and its RMS residual into the result.
+	template <typename Result, typename Model, typename Entry, typename Usable, typename Propose, typename Prepare,
+			  typename Measure, typename Store>
+	static Result solve(const std::vector<Entry>& input, std::optional<std::string> requestProblem, std::size_t minimum,
+						const char* entries, const char* problem, Usable isUsable, Propose propose, Prepare prepare,
+						Measure measure, Store store)
 	{
 		const core::Time start = core::Time::now();
-		GeometryResult out;
+		Result out;
 		const auto finish = [&](Status status, std::string detail)
 		{
 			out.status = status;
@@ -141,8 +205,8 @@ namespace lain::camera::feature
 		const std::vector<std::string> backends = geometryRegistry().keys();
 		if (backends.empty())
 			return finish(Status::NoBackend, "this build has no geometry solver (configure with -DLAIN_CAMERA_OPENCV=ON)");
-		if (!(std::isfinite(request.angle) && request.angle > 0))
-			return finish(Status::Unsupported, string::format("an inlier angle of {} is not positive", request.angle));
+		if (requestProblem)
+			return finish(Status::Unsupported, std::move(*requestProblem));
 
 		std::vector<Entry> usable;
 		std::vector<std::uint32_t> index; // usable entry -> input index
@@ -163,20 +227,20 @@ namespace lain::camera::feature
 
 		const std::unique_ptr<GeometrySolver> solver = geometryRegistry().create(backends.front());
 		out.provenance = solver->provenance();
-		const std::vector<math::RigidTransformd> candidates = propose(*solver, usable);
+		const std::vector<Model> candidates = propose(*solver, usable);
 		out.candidates = std::uint32_t(candidates.size());
 
-		std::optional<math::RigidTransformd> best;
+		std::optional<Model> best;
 		Measured bestMeasured;
-		for (const math::RigidTransformd& c : candidates)
+		for (const Model& c : candidates)
 		{
-			const std::optional<math::RigidTransformd> pose = prepare(c);
-			if (!pose)
+			const std::optional<Model> model = prepare(c);
+			if (!model)
 				continue;
-			Measured m = measure(usable, *pose);
-			if (!best || better(m, *pose, bestMeasured, *best))
+			Measured m = measure(usable, *model);
+			if (!best || better(m, *model, bestMeasured, *best))
 			{
-				best = pose;
+				best = model;
 				bestMeasured = std::move(m);
 			}
 		}
@@ -188,11 +252,24 @@ namespace lain::camera::feature
 										 problem, minimum));
 		}
 
-		out.pose = best;
 		for (const std::uint32_t k : bestMeasured.inliers)
 			out.inliers.push_back(index[k]);
-		out.rmsAngle = std::sqrt(bestMeasured.sumSquared / double(bestMeasured.residuals));
+		store(out, *best, std::sqrt(bestMeasured.sumSquared / double(bestMeasured.residuals)));
 		return finish(Status::Ok, {});
+	}
+
+	// The problem with an inlier angle, or nothing.
+	static std::optional<std::string> angleProblem(const GeometryRequest& request)
+	{
+		if (positive(request.angle))
+			return std::nullopt;
+		return string::format("an inlier angle of {} is not positive", request.angle);
+	}
+
+	static void storePose(GeometryResult& out, const math::RigidTransformd& pose, double rms)
+	{
+		out.pose = pose;
+		out.rmsAngle = rms;
 	}
 
 	// --- the registry and the facades ---------------------------------------------------
@@ -210,8 +287,8 @@ namespace lain::camera::feature
 
 	GeometryResult relativePose(const std::vector<RayPair>& pairs, const GeometryRequest& request)
 	{
-		return solve(
-			pairs, request, kRelativeMinimum, "pairs", "a relative pose",
+		return solve<GeometryResult, math::RigidTransformd>(
+			pairs, angleProblem(request), kRelativeMinimum, "pairs", "a relative pose",
 			[](const RayPair& p) -> std::optional<RayPair>
 			{
 				if (!usable(p.a) || !usable(p.b))
@@ -229,13 +306,14 @@ namespace lain::camera::feature
 				return math::RigidTransformd{c.rotation(), c.translation() / length};
 			},
 			[&request](const std::vector<RayPair>& usablePairs, const math::RigidTransformd& bFromA)
-			{ return measureRelative(usablePairs, bFromA, request.angle); });
+			{ return measureRelative(usablePairs, bFromA, request.angle); },
+			storePose);
 	}
 
 	GeometryResult absolutePose(const std::vector<PointRay>& pointRays, const GeometryRequest& request)
 	{
-		return solve(
-			pointRays, request, kAbsoluteMinimum, "point-rays", "an absolute pose",
+		return solve<GeometryResult, math::RigidTransformd>(
+			pointRays, angleProblem(request), kAbsoluteMinimum, "point-rays", "an absolute pose",
 			[](const PointRay& p) -> std::optional<PointRay>
 			{
 				if (!finite(p.point) || !usable(p.ray))
@@ -251,6 +329,52 @@ namespace lain::camera::feature
 				return c;
 			},
 			[&request](const std::vector<PointRay>& usableRays, const math::RigidTransformd& cameraFromReference)
-			{ return measureAbsolute(usableRays, cameraFromReference, request.angle); });
+			{ return measureAbsolute(usableRays, cameraFromReference, request.angle); },
+			storePose);
+	}
+
+	FundamentalResult fundamental(const std::vector<PixelPair>& pairs, const FundamentalRequest& request)
+	{
+		std::optional<std::string> problem;
+		if (!positive(request.threshold))
+			problem = string::format("an inlier distance of {} px is not positive", request.threshold);
+		return solve<FundamentalResult, math::Mat3d>(
+			pairs, std::move(problem), kFundamentalMinimum, "pixel pairs", "a fundamental matrix",
+			[](const PixelPair& p) -> std::optional<PixelPair>
+			{
+				if (!finite(p.a) || !finite(p.b))
+					return std::nullopt;
+				return p;
+			},
+			[&request](const GeometrySolver& solver, const std::vector<PixelPair>& usablePairs)
+			{ return solver.fundamentals(usablePairs, request.threshold, request.seed); },
+			// Measured normalised, so a candidate's scale and sign cannot reach the canonical order: unit
+			// Frobenius norm, its largest-magnitude entry positive (the first in row-major order, on a
+			// tie). One that is not finite, or is zero, says nothing.
+			[](const math::Mat3d& c) -> std::optional<math::Mat3d>
+			{
+				const std::array<double, 9> e = entries(c);
+				double norm = 0;
+				std::size_t largest = 0;
+				for (std::size_t i = 0; i < e.size(); ++i)
+				{
+					if (!std::isfinite(e[i]))
+						return std::nullopt;
+					norm += e[i] * e[i];
+					if (std::abs(e[i]) > std::abs(e[largest]))
+						largest = i;
+				}
+				norm = std::sqrt(norm);
+				if (!(norm > 0) || !std::isfinite(norm))
+					return std::nullopt;
+				return c * ((e[largest] < 0 ? -1.0 : 1.0) / norm);
+			},
+			[&request](const std::vector<PixelPair>& usablePairs, const math::Mat3d& f)
+			{ return measureFundamental(usablePairs, f, request.threshold); },
+			[](FundamentalResult& out, const math::Mat3d& f, double rms)
+			{
+				out.matrix = f;
+				out.rmsDistance = rms;
+			});
 	}
 } // namespace lain::camera::feature

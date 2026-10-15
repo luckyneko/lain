@@ -488,7 +488,8 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   the fixed-rig one, sharing its per-image and per-pair work and its union. A sequence pair is verified
   by a **fundamental matrix**, since no model exists yet to turn pixels into rays. The geometry backend
   proposes fundamental-matrix candidates, and lain measures each by its Sampson distance and chooses,
-  by the same rule as its pose facades. A fundamental matrix ignores lens distortion. A lens whose
+  by the same rule as its pose facades *(the facade and OpenCV's producer built 2026-10-15, M9 slice
+  4, sub-slice 7a)*. A fundamental matrix ignores lens distortion. A lens whose
   distortion costs too many peripheral matches is the trigger to verify again under the swept model.
 - **The starting focal length comes from a focal sweep** when no imported model seeds it. Lain tries a
   fixed, log-spaced set of focal lengths on the most strongly verified pairs, through its own

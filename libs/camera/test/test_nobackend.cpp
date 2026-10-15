@@ -221,6 +221,10 @@ TEST_CASE("with no backend, the feature facades say the capability is missing", 
 	CHECK(feature::relativePose(pairs).status == feature::Status::NoBackend);
 	const std::vector<feature::PointRay> pointRays(4);
 	CHECK(feature::absolutePose(pointRays).status == feature::Status::NoBackend);
+	const std::vector<feature::PixelPair> pixelPairs(8);
+	const feature::FundamentalResult fundamental = feature::fundamental(pixelPairs);
+	CHECK(fundamental.status == feature::Status::NoBackend);
+	CHECK(fundamental.detail.find("LAIN_CAMERA_OPENCV") != std::string::npos);
 }
 
 TEST_CASE("with no backend, track extraction says the capability is missing", "[camera][feature]")

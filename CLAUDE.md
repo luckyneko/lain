@@ -1400,6 +1400,25 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-15 — M9 slice 4, sub-slice 7a: the fundamental matrix of two images
+
+The first of sub-slice 7's three commits. Targetless calibration verifies a frame pair before any model
+exists, so the geometry seam gains `fundamentals(pixelPairs, threshold, seed)` and lain a
+`feature::fundamental` facade over it, beside the pose facades. OpenCV's producer lands here too, not in
+sub-slice 8 (the repo owner's call), since the seam method is pure virtual. `ctest` **1233/1233** Debug
+and **1241/1241** Release with video, camera and Ceres on (+5 each), **1127/1127** with all three off
+(+4); warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 7a built* under M9 slice 4.
+
+- **Producers propose; lain decides, again.** The facade measures each candidate by its Sampson
+  distance in source pixels and needs eight usable pairs. It chooses by inliers, then summed squared
+  distance, then a canonical order over the normalised matrix, and returns it normalised.
+- **The three facades now share one `solve`**, templated on the result and the model.
+- **OpenCV on two rendered views through a pinhole:** the same matrix on all 20 seeds, holding every
+  correct match, at 0.21 px RMS over its inliers and 0.031 px over exact correspondences it never saw.
+- **Two sabotages, both caught as predicted.** The first cut of one did not build under `-Werror`
+  (an unused `canonical`), so the old binary answered, and it was redone: **a sabotage that does not
+  build proves nothing**, again.
+
 ### Update 2026-10-14 — M9 slice 4, sub-slice 6c: the incremental reconstruction becomes a shared module (**sub-slice 6 COMPLETE**)
 
 The last of sub-slice 6's three commits, no change in behaviour. Targetless registration's incremental

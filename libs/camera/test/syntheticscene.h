@@ -471,6 +471,14 @@ namespace lain::camera::testing::scene
 			}
 			return bestOf(std::move(scored));
 		}
+
+		// No fundamental matrix: nothing asks a fixed rig's stand-in for one, since its cameras have
+		// models and verify by relative pose. The moving camera of sequence extraction is its first
+		// caller (M9 slice 4, sub-slice 7c).
+		std::vector<math::Mat3d> fundamentals(const std::vector<feature::PixelPair>&, double, std::uint64_t) const override
+		{
+			return {};
+		}
 	};
 
 	inline void registerStandIns()

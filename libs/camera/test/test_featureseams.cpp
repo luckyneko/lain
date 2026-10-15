@@ -11,6 +11,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <mutex>
@@ -156,6 +157,7 @@ namespace
 	struct GeometryScript
 	{
 		std::vector<math::RigidTransformd> candidates;
+		std::vector<math::Mat3d> fundamentals;
 		std::size_t calls = 0;
 		std::size_t handed = 0;
 	};
@@ -168,6 +170,11 @@ namespace
 	{
 		geometryScript() = {};
 		geometryScript().candidates = std::move(candidates);
+	}
+	void proposeFundamentals(std::vector<math::Mat3d> fundamentals)
+	{
+		geometryScript() = {};
+		geometryScript().fundamentals = std::move(fundamentals);
 	}
 
 	class ScriptedGeometry : public GeometrySolver
@@ -186,6 +193,12 @@ namespace
 			++geometryScript().calls;
 			geometryScript().handed = pointRays.size();
 			return geometryScript().candidates;
+		}
+		std::vector<math::Mat3d> fundamentals(const std::vector<PixelPair>& pairs, double, std::uint64_t) const override
+		{
+			++geometryScript().calls;
+			geometryScript().handed = pairs.size();
+			return geometryScript().fundamentals;
 		}
 	};
 
@@ -745,4 +758,228 @@ TEST_CASE("absolutePose needs four usable point-rays", "[camera][feature][geomet
 	CHECK(result.status == Status::TooFew);
 	CHECK_THAT(result.detail, ContainsSubstring("3 usable point-rays"));
 	CHECK(geometryScript().calls == 0);
+}
+
+// --- fundamental matrix ---------------------------------------------------------------
+
+namespace
+{
+	// A matrix from its rows: F(row, column) is f[column][row] in GLM.
+	math::Mat3d rows(const std::array<double, 9>& e)
+	{
+		math::Mat3d f;
+		for (int row = 0; row < 3; ++row)
+		{
+			for (int column = 0; column < 3; ++column)
+				f[column][row] = e[std::size_t(3 * row + column)];
+		}
+		return f;
+	}
+
+	double frobenius(const math::Mat3d& f)
+	{
+		double sum = 0;
+		for (int c = 0; c < 3; ++c)
+		{
+			for (int r = 0; r < 3; ++r)
+				sum += f[c][r] * f[c][r];
+		}
+		return std::sqrt(sum);
+	}
+
+	bool sameMatrix(const math::Mat3d& a, const math::Mat3d& b, double tolerance = 1e-12)
+	{
+		for (int c = 0; c < 3; ++c)
+		{
+			for (int r = 0; r < 3; ++r)
+			{
+				if (std::abs(a[c][r] - b[c][r]) > tolerance)
+					return false;
+			}
+		}
+		return true;
+	}
+
+	math::Mat3d crossMatrix(const math::Vec3d& t)
+	{
+		return rows({0.0, -t.z, t.y, t.z, 0.0, -t.x, -t.y, t.x, 0.0});
+	}
+
+	// Two views of one pinhole (focal 800 by 820, centre (319.5, 239.5)), B half a metre from A and
+	// turned 0.2 rad, and `count` points 3 to 8 m in front of both, as pixels; and the views' true
+	// fundamental matrix, K⁻ᵀ [t]ₓ R K⁻¹ for x_B = R x_A + t.
+	struct TwoImages
+	{
+		math::Mat3d fundamental;
+		std::vector<PixelPair> pairs;
+	};
+	TwoImages twoImages(std::size_t count, const math::Quatd& turn = math::Quatd{1.0, 0.0, 0.0, 0.0})
+	{
+		const math::Mat3d k = rows({800.0, 0.0, 319.5, 0.0, 820.0, 239.5, 0.0, 0.0, 1.0});
+		const math::Quatd r = turn * math::angleAxis(0.2, math::normalize(math::Vec3d{0.3, 1.0, 0.1}));
+		const math::Vec3d t = -(r * math::Vec3d{0.5, 0.05, 0.1});
+		const math::Mat3d kInverse = math::inverse(k);
+		TwoImages out;
+		out.fundamental = math::transpose(kInverse) * crossMatrix(t) * math::mat3_cast(r) * kInverse;
+		Random random(5);
+		const math::Quatd rTrue = math::angleAxis(0.2, math::normalize(math::Vec3d{0.3, 1.0, 0.1}));
+		const math::Vec3d tTrue = -(rTrue * math::Vec3d{0.5, 0.05, 0.1});
+		for (std::size_t i = 0; i < count; ++i)
+		{
+			const double depth = random.uniform(3.0, 8.0);
+			const math::Vec3d inA{random.uniform(-0.2, 0.2) * depth, random.uniform(-0.15, 0.15) * depth, depth};
+			const math::Vec3d inB = rTrue * inA + tTrue;
+			REQUIRE(inB.z > 0);
+			const math::Vec3d pa = k * (inA / inA.z);
+			const math::Vec3d pb = k * (inB / inB.z);
+			out.pairs.push_back({{pa.x, pa.y}, {pb.x, pb.y}});
+		}
+		return out;
+	}
+
+	std::vector<math::Mat3d> fundamentalsOf(const std::vector<TwoImages>& scenes)
+	{
+		std::vector<math::Mat3d> out;
+		for (const TwoImages& s : scenes)
+			out.push_back(s.fundamental);
+		return out;
+	}
+
+	// The rectified pair's matrix: x_bᵀ F x_a = y_a − y_b, so a pair's epipolar lines are its rows and
+	// the least it can move to satisfy them is half its vertical gap in each image, √2/2 of the gap in
+	// all, exactly what Sampson distance measures here.
+	const math::Mat3d kRectified = rows({0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0});
+} // namespace
+
+TEST_CASE("fundamental chooses by measurement, whatever order the candidates come in", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	const TwoImages truth = twoImages(40);
+	// Turned 1 mrad: every pair still within 4 px, but further from it than the truth (measured: 0.58 px
+	// RMS); and turned 0.1 rad, which explains none.
+	const TwoImages near = twoImages(0, math::angleAxis(0.001, math::Vec3d{1.0, 0.0, 0.0}));
+	const TwoImages wrong = twoImages(0, math::angleAxis(0.1, math::Vec3d{1.0, 0.0, 0.0}));
+	const std::vector<math::Mat3d> three = fundamentalsOf({truth, near, wrong});
+	const math::Mat3d expected = truth.fundamental * (1.0 / frobenius(truth.fundamental));
+	std::vector<std::size_t> order{0, 1, 2};
+	do
+	{
+		std::vector<math::Mat3d> candidates;
+		for (const std::size_t i : order)
+			candidates.push_back(three[i]);
+		proposeFundamentals(candidates);
+		const FundamentalResult result = fundamental(truth.pairs);
+		REQUIRE(result.ok());
+		CHECK(result.candidates == 3);
+		CHECK(result.inliers == upTo(40));
+		// The truth's sign is whatever the formula gave; normalised, its largest entry is positive.
+		REQUIRE(result.matrix.has_value());
+		CHECK((sameMatrix(*result.matrix, expected, 1e-12) || sameMatrix(*result.matrix, -1.0 * expected, 1e-12)));
+		// Exact pixels: measured 2.7e-14 px.
+		CHECK(result.rmsDistance < 1e-9);
+	} while (std::next_permutation(order.begin(), order.end()));
+
+	// The near candidate alone explains every pair too, so only the summed distance told them apart.
+	proposeFundamentals({near.fundamental});
+	const FundamentalResult alone = fundamental(truth.pairs);
+	REQUIRE(alone.ok());
+	CHECK(alone.inliers == upTo(40));
+	CHECK(alone.rmsDistance > 0.5);
+}
+
+TEST_CASE("Sampson distance is in source pixels, measured against both images", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	// Pairs with vertical gaps under the rectified matrix: a gap g is g/√2 px from it. At the default
+	// 4 px, a gap just under 4√2 is an inlier and one just over is not; measured in B alone, as an
+	// epipolar distance, each would be its whole gap away and both would be out.
+	const double edge = 4.0 * std::sqrt(2.0);
+	const std::vector<double> gaps{0.0, 1.0, -2.5, 3.0, 5.0, -5.5, edge * (1.0 - 1e-9), edge * (1.0 + 1e-9), 7.0, 0.5, 20.0};
+	std::vector<PixelPair> pairs;
+	for (std::size_t i = 0; i < gaps.size(); ++i)
+		pairs.push_back({{10.0 + 37.0 * double(i), 100.0 + 11.0 * double(i)}, {400.0 - 13.0 * double(i), 100.0 + 11.0 * double(i) + gaps[i]}});
+	proposeFundamentals({kRectified});
+	const FundamentalResult result = fundamental(pairs);
+	REQUIRE(result.ok());
+	CHECK(result.inliers == std::vector<std::uint32_t>{0, 1, 2, 3, 4, 5, 6, 9});
+	double sum = 0;
+	for (const std::uint32_t i : result.inliers)
+		sum += gaps[i] * gaps[i] / 2.0;
+	CHECK(std::abs(result.rmsDistance - std::sqrt(sum / double(result.inliers.size()))) < 1e-12);
+
+	SECTION("a tighter threshold takes fewer")
+	{
+		FundamentalRequest request;
+		request.threshold = 1.0; // a gap of at most √2
+		const FundamentalResult tight = fundamental(pairs, request);
+		CHECK(tight.status == Status::NoSolution);
+		CHECK_THAT(tight.detail, ContainsSubstring("explains 3 of 11 usable pixel pairs"));
+	}
+}
+
+TEST_CASE("fundamental needs eight usable pairs and a candidate that explains eight", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	const TwoImages scene = twoImages(20);
+	SECTION("seven usable pairs are too few, and the backend is never asked")
+	{
+		proposeFundamentals({scene.fundamental});
+		std::vector<PixelPair> seven(scene.pairs.begin(), scene.pairs.begin() + 7);
+		seven.push_back({{kNaN, 1.0}, {1.0, 1.0}});
+		const FundamentalResult result = fundamental(seven);
+		CHECK(result.status == Status::TooFew);
+		CHECK_THAT(result.detail, ContainsSubstring("7 usable pixel pairs"));
+		CHECK(geometryScript().calls == 0);
+	}
+	SECTION("no candidate")
+	{
+		proposeFundamentals({});
+		CHECK(fundamental(scene.pairs).status == Status::NoSolution);
+	}
+	SECTION("a candidate explaining seven")
+	{
+		std::vector<PixelPair> pairs(scene.pairs.begin(), scene.pairs.begin() + 7);
+		for (std::size_t i = 7; i < 20; ++i)
+			pairs.push_back({scene.pairs[i].a, scene.pairs[i].b + math::Vec2d{0.0, 30.0}});
+		proposeFundamentals({scene.fundamental});
+		const FundamentalResult result = fundamental(pairs);
+		CHECK(result.status == Status::NoSolution);
+		CHECK_THAT(result.detail, ContainsSubstring("explains 7 of 20 usable pixel pairs"));
+	}
+	SECTION("an inlier distance that is not positive")
+	{
+		proposeFundamentals({scene.fundamental});
+		FundamentalRequest request;
+		request.threshold = 0;
+		CHECK(fundamental(scene.pairs, request).status == Status::Unsupported);
+	}
+}
+
+TEST_CASE("a fundamental that is not finite or is zero is skipped, and the chosen one comes back normalised",
+		  "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	std::vector<PixelPair> input;
+	std::vector<std::uint32_t> expected;
+	for (std::size_t i = 0; i < 10; ++i)
+	{
+		const double y = 50.0 + 20.0 * double(i);
+		input.push_back({{kNaN, y}, {300.0, y}}); // not a pixel
+		expected.push_back(std::uint32_t(input.size()));
+		input.push_back({{20.0 * double(i), y}, {300.0 - 7.0 * double(i), y}});
+	}
+	math::Mat3d notFinite = kRectified;
+	notFinite[1][2] = kNaN;
+	proposeFundamentals({math::Mat3d{0.0}, notFinite, -3.0 * kRectified});
+	const FundamentalResult result = fundamental(input);
+	REQUIRE(result.ok());
+	CHECK(result.candidates == 3);
+	CHECK(geometryScript().handed == 10);
+	CHECK(result.inliers == expected);
+	// −3 times the rectified matrix, at unit norm with its largest-magnitude entry positive: the first
+	// in row-major order of its two, F(1, 2).
+	REQUIRE(result.matrix.has_value());
+	const double h = 1.0 / std::sqrt(2.0);
+	CHECK(sameMatrix(*result.matrix, rows({0.0, 0.0, 0.0, 0.0, 0.0, h, 0.0, -h, 0.0}), 1e-15));
+	CHECK(std::abs(frobenius(*result.matrix) - 1.0) < 1e-15);
 }
