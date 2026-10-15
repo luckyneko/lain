@@ -10,6 +10,7 @@
 #include "lain/camera/registration/request.h"
 #include "lain/camera/registration/rig.h"
 #include "median.h"
+#include "resampling.h"
 #include "unionfind.h"
 
 #include <lain/core/time.h>
@@ -18,7 +19,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -32,11 +32,14 @@ namespace lain::camera::registration::detail
 {
 	// How a method module runs independent work, shared with calibration (execution.h), finds a
 	// member's frame in its footage, shared with feature extraction (footageindex.h), measures an angle
-	// (angles.h), takes a median (median.h) and finds a union-find root (unionfind.h); named here too,
-	// since inside registration this namespace hides lain::camera::detail.
+	// (angles.h), takes a median (median.h), finds a union-find root (unionfind.h), and holds evidence
+	// out and draws bootstrap resamples, shared with calibration (resampling.h); named here too, since
+	// inside registration this namespace hides lain::camera::detail.
 	using camera::detail::angleBetween;
+	using camera::detail::bootstrapDraws;
 	using camera::detail::FootageIndex;
 	using camera::detail::forEach;
+	using camera::detail::holdOut;
 	using camera::detail::median;
 	using camera::detail::root;
 
@@ -86,30 +89,9 @@ namespace lain::camera::registration::detail
 	double whitenedSquared(const math::Vec2d& r, const std::optional<std::array<double, 3>>& covariance,
 						   const NoiseModel& noise);
 
-	// Which of `count` units are held out to validate on: every k-th, in order, starting half a stride
-	// in, where k is 1/fraction rounded (at least 2), each only when `mayHold(u)` agrees. Nothing is held
-	// out with a fraction of zero or fewer than `minimum` units. `mayHold` is asked once per candidate,
-	// in order, and may keep state: when it answers true, the unit is held out. A method's guard says
-	// what must survive the hold-out: what is held out must not decide whether the registration can
-	// happen at all.
-	std::vector<bool> holdOut(std::size_t count, double fraction, std::size_t minimum,
-							  const std::function<bool(std::size_t)>& mayHold);
-
-	// The same, guarded by connectivity: a unit is kept in when holding it out would cut a camera pair's
-	// last shared unit AND so split the camera graph. `unitCameras[u]` lists the cameras that saw unit u.
-	std::vector<bool> holdOut(std::size_t cameras, const std::vector<std::vector<std::uint32_t>>& unitCameras,
-							  double fraction, std::size_t minimum);
-
 	// The registration reference: `requested` when set, otherwise the camera sharing the most units
 	// with others, ties to the lower index.
 	std::uint32_t chooseReference(const std::vector<std::uint32_t>& sharedPerCamera, std::optional<std::uint32_t> requested);
-
-	// `resamples` bootstrap draws from `units`, each as many as there are units, with replacement.
-	// They come from one engine seeded with `seed`, in order, before anything runs, so they are the same
-	// under either execution policy. A plain modulo maps a draw to an index, since the standard's
-	// distributions are implementation-defined.
-	std::vector<std::vector<std::uint32_t>> bootstrapDraws(const std::vector<std::uint32_t>& units,
-														   std::uint32_t resamples, std::uint64_t seed);
 
 	// Whether the evidence meets one tier. `complete` demands every criterion's evidence be present
 	// (Ready); otherwise a criterion whose evidence is unavailable is not held against it. Notes say

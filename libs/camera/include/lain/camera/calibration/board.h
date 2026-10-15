@@ -50,8 +50,10 @@ namespace lain::camera::calibration::board
 	ViewSplit splitViews(const std::vector<camera::board::DetectionReport>& detections,
 						 const camera::board::Specification& board, const Request& request);
 
-	// The fraction of an 8 x 6 grid over `image` in which at least one of the views has a corner.
-	constexpr int kCoverageColumns = 8;
-	constexpr int kCoverageRows = 6;
+	// The fraction of the coverage grid over `image` (calibration/fitness.h, 8 x 6) in which at least
+	// one of the views has a corner. Every calibration method counts coverage on that one grid; it is
+	// named here too, where board calibration's callers look for it.
+	using calibration::kCoverageColumns;
+	using calibration::kCoverageRows;
 	double coverage(const std::vector<const camera::board::Observation*>& views, const ImageGeometry& image);
 } // namespace lain::camera::calibration::board

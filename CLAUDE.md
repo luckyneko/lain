@@ -1400,6 +1400,23 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-15 — M9 slice 4, sub-slice 9a: what targetless calibration shares moves where it can reach it
+
+The first of sub-slice 9's three commits, with no change in behaviour. Calibration cannot depend on
+registration (ADR-0016), so three things targetless calibration needs move down to `lain::camera`.
+`ctest` **1247/1247** Debug and **1255/1255** Release with video, camera and Ceres on, **1138/1138**
+with all three off (unchanged); every golden untouched; warning-clean, format-check clean. Full notes
+in WORK.md's *Sub-slice 9a built* under M9 slice 4.
+
+- **`holdOut` and `bootstrapDraws`** are `camera::detail`'s (`src/resampling.{h,cpp}`), named in
+  registration by using-declarations.
+- **`refinement::Summary`** replaces registration's `RefinementSummary`, which stays as an alias.
+- **The coverage grid** is `src/calibration/coverage.{h,cpp}`, over pixels. **Deviation:** its size
+  moved to `calibration/fitness.h`, beside `minimumCoverage`, rather than staying in `board.h`, which
+  names it by using-declarations. A grid both methods share could not otherwise reach it.
+- **Two sabotages, both caught.** A 7-column grid fails two cases beyond the predicted golden, since
+  board calibration's view selection scores grid cells.
+
 ### Update 2026-10-15 — M9 slice 4, sub-slice 8: a moving camera rendered and measured
 
 One commit of test code only. The producer landed in 7a, so this is the moving camera drawn and what

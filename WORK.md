@@ -7507,6 +7507,35 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        - **Sabotages:** `bootstrapDraws` taking the engine's next value fails both registration
          goldens and nothing else; a 7-column grid fails the board calibration golden.
        - **Counts:** unchanged everywhere.
+   **Sub-slice 9a built (2026-10-15).** As planned, with one deviation:
+   - **`holdOut` (both forms) and `bootstrapDraws`** are in `camera::detail`, `src/resampling.{h,cpp}`.
+     Registration's `common.h` names them by using-declarations beside `median`, so its calls read as
+     before.
+   - **`refinement::Summary`** is in `refinement/refiner.h`, after `Solution`. Registration keeps
+     `RefinementSummary` as an alias in `registration/refiner.h`, beside `RefinementStatus`, so both
+     goldens and the Ceres refiner test read it unchanged.
+   - **`src/calibration/coverage.{h,cpp}`**, in `camera::detail`: `CoverageCells`, `coverageCell`,
+     `cover` and `coveredFraction`, over pixels. Board calibration's `cellsOf` and `coverage` go
+     through them.
+   - **Deviation: the grid's size is `calibration::kCoverageColumns` and `kCoverageRows`, in
+     `calibration/fitness.h`**, beside `minimumCoverage`, which they define. `board.h` names them by
+     using-declarations, so `board::kCoverageColumns` still answers. The plan kept them in `board.h`,
+     but a private grid shared by both methods could then reach them only by targetless calibration
+     including board's header, and a second definition would be the drift a shared grid exists to
+     prevent.
+   - **`camera::detail`, not a new `calibration::detail`.** One would hide `camera::detail` inside both
+     calibration methods, as registration's does inside registration, and board calibration's
+     `detail::forEach` would stop resolving.
+   - **Sabotages, both caught:**
+     - **`bootstrapDraws` discarding the engine's first value** fails both registration goldens and
+       nothing else, as predicted.
+     - **A 7-column grid** fails the board calibration golden, as predicted, and two cases more: the
+       coverage case, which pins 1/48, and *a fixture of one camera seen twice passes*, whose session
+       'b' drops to Exploratory on a principal-point variation of 2.55 mrad. View selection scores
+       grid cells, so another grid selects other views.
+   - **Counts unchanged:** 1247/1247 Debug and 1255/1255 Release with video, camera and Ceres on,
+     1138/1138 with all three off. Every golden untouched. Warning-clean, format-check clean.
+
    9b. **`calibration::targetless`, over stand-ins.**
        - `lain/camera/calibration/targetless.h` and `src/calibration/targetless.cpp`: the entry
          points and steps above. `reconstruction::widest` joins the module, and

@@ -155,6 +155,23 @@ namespace lain::camera::refinement
 		bool usable() const { return status == Status::Converged || status == Status::IterationLimit; }
 	};
 
+	// What a method's report says about a refinement it ran: the solution's account of itself, what
+	// the problem held, and what it was weighted by. A registration reports one; so does a calibration.
+	struct Summary
+	{
+		Status status = Status::Failed;
+		std::string detail;
+		std::uint32_t iterations = 0;
+		double initialCost = 0;
+		double finalCost = 0;
+		std::uint32_t residuals = 0; // residual blocks: one point seen by one camera
+		std::uint32_t bodies = 0;	 // rigid bodies (board poses) estimated alongside the cameras
+		std::uint32_t landmarks = 0; // scene points estimated alongside the cameras
+		core::Time elapsed;
+		NoiseModel noise;
+		RobustLoss loss;
+	};
+
 	// A refinement backend (ADR-0004's service shape). It moves cameras, bodies and landmarks to minimise the
 	// whitened, robustly weighted reprojection error through lain's own projection; what the result
 	// means is the method module's.

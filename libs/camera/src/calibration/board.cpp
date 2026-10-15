@@ -1,5 +1,6 @@
 #include "lain/camera/calibration/board.h"
 
+#include "coverage.h"
 #include "execution.h"
 #include "lain/camera/board/pose.h"
 #include "lain/camera/calibration/estimator.h"
@@ -57,27 +58,13 @@ namespace lain::camera::calibration::board
 		return out;
 	}
 
-	// The grid cell a pixel falls in, or -1 outside the image.
-	static int cellOf(const math::Vec2d& pixel, const ImageGeometry& image)
-	{
-		const double u = (pixel.x + 0.5) / double(image.width);
-		const double v = (pixel.y + 0.5) / double(image.height);
-		if (!(u >= 0 && u < 1 && v >= 0 && v < 1))
-			return -1;
-		return int(v * kCoverageRows) * kCoverageColumns + int(u * kCoverageColumns);
-	}
-
-	using CellSet = std::array<bool, kCoverageColumns * kCoverageRows>;
+	using CellSet = detail::CoverageCells;
 
 	static CellSet cellsOf(const cb::Observation& view, const ImageGeometry& image)
 	{
 		CellSet cells{};
 		for (const cb::FeatureObservation& f : view.features)
-		{
-			const int cell = cellOf(f.pixel, image);
-			if (cell >= 0)
-				cells[std::size_t(cell)] = true;
-		}
+			detail::cover(cells, f.pixel, image);
 		return cells;
 	}
 
@@ -291,7 +278,7 @@ namespace lain::camera::calibration::board
 			for (std::size_t c = 0; c < cells.size(); ++c)
 				covered[c] = covered[c] || cells[c];
 		}
-		return double(std::count(covered.begin(), covered.end(), true)) / double(covered.size());
+		return detail::coveredFraction(covered);
 	}
 
 	ViewSplit splitViews(const std::vector<cb::DetectionReport>& detections, const cb::Specification& board,

@@ -10,13 +10,18 @@
 
 namespace lain::camera::calibration
 {
+	// The grid over the image that coverage is counted on: the fraction of its cells a calibration's
+	// observations reach, a board's corners or a frame's features, whichever method gathered them.
+	constexpr int kCoverageColumns = 8;
+	constexpr int kCoverageRows = 6;
+
 	// The acceptance criteria one fitness tier applies (CONTEXT.md, "Reconstruction fitness"). Every
 	// criterion is resolution-independent: angles and fractions, not pixel counts, so one profile
 	// serves a VGA webcam and an 8K cinema camera. Raw pixel errors stay in the report for diagnosis.
 	struct FitnessThresholds
 	{
 		std::uint32_t minimumViews = 0;			   // calibration views selected
-		double minimumCoverage = 0;				   // fraction of the image grid the calibration views' corners reach
+		double minimumCoverage = 0;				   // fraction of the image grid the calibration views' observations reach
 		double maximumHeldOutAngle = 0;			   // radians: RMS angle between observed and predicted rays, held out
 		double maximumFocalVariation = 0;		   // relative standard deviation of fx and fy across resamples
 		double maximumPrincipalPointVariation = 0; // radians: standard deviation of cx and cy over the focal length

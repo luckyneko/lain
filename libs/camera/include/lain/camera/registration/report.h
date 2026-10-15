@@ -126,21 +126,6 @@ namespace lain::camera::registration
 		double rmsWhitened = 0; // standard deviations
 	};
 
-	struct RefinementSummary
-	{
-		RefinementStatus status = RefinementStatus::Failed;
-		std::string detail;
-		std::uint32_t iterations = 0;
-		double initialCost = 0;
-		double finalCost = 0;
-		std::uint32_t residuals = 0; // residual blocks: one point seen by one camera
-		std::uint32_t bodies = 0;	 // rigid bodies (board poses) estimated alongside the cameras
-		std::uint32_t landmarks = 0; // scene points estimated alongside the cameras
-		core::Time elapsed;
-		NoiseModel noise;
-		RobustLoss loss;
-	};
-
 	// The registration checked against evidence that took no part in it: each member of a held-out
 	// unit predicted from the others (CONTEXT.md, "Held-out group", "Held-out track").
 	struct HeldOutEvidence
