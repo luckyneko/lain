@@ -1400,6 +1400,38 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-15 — M9 slice 4, sub-slice 9c: targetless calibration through Ceres (**sub-slice 9 COMPLETE**)
+
+The last of sub-slice 9's three commits, test code only. It runs the method as 9b built it, refined
+by the real Ceres refiner, over 9b's stand-in scene and geometry: eight cases in `test-camera-ceres`.
+`ctest` **1270/1270** Debug and **1278/1278** Release with video, camera and Ceres on (+8 each),
+**1152/1152** with all three off (unchanged); warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 9c built* under M9 slice 4.
+
+- **What the cases pin, each bound set from a measurement written beside it:**
+  - a pinhole and a Brown-Conrady camera recovered from exact tracks;
+  - noise at the stated covariance calibrates within it and is Ready;
+  - a wrong match and moving content are named by track and frame, and leave the model in place;
+  - a principal point 3 px off is recovered when freed, and is reported `Held` and missed when held,
+    still Ready, which is what the profile cannot see;
+  - one report serially and on a pool, resampling included;
+  - one report however the tracks are named.
+- **Found by the first run, fixed in its own commit ahead of this one:** the Ceres refiner's answer
+  depended on where the heap put a free model's block (the entry below).
+- **The report printer the two suites compare with is shared** (`targetlesscalibrationtext.h`), so
+  "one report" means the same in 9b's cases as in 9c's.
+- **The probe's measurements held through the cases, with one exception.** The refiner fix moved the
+  wrong match's effect on the focal length from 2.6e-6 to 2.8e-6 of itself.
+- **Two sabotages, both caught, one prediction wrong.**
+  - The bootstrap drawn inside the parallel loop from one unlocked engine is caught through a race.
+    Over three runs the determinism case failed twice and the identities case three times. 9b's
+    stand-in refiner cannot see it.
+  - Tracks left in identity order were predicted to fail the identities case alone. They fail 6 of
+    the 8 cases and 2 of 9b's, leaving frames unplaced. The stand-in geometry scores a pose on 16
+    evenly spaced correspondences of its input, so the order decides which 16, and under a start 7%
+    short that decides whether a frame is placed.
+- Every case but the serial-against-pool one starts a pool of four: 68 s for all eight in Debug,
+  0.06 to 0.5 s each in Release.
+
 ### Update 2026-10-15 — a free model's solution no longer depends on where the heap put it (fixed ahead of M9 slice 4, sub-slice 9c)
 
 Found by 9c's first run and fixed in its own commit ahead of it. 9c's two cases that compare one

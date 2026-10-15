@@ -2446,9 +2446,8 @@ sub-slices (below), and **all eleven are built** (2026-10-09); a gui-mode eyebal
 owed. The repo owner kept the provisional values sub-slice 9 measured, and queued three changes to
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
 graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
-(as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b and 6c), 7 (as 7a, 7b and 7c) and 8
-are built, with the fixes that landed ahead of 5 and of 9c, and 9a and 9b of sub-slice 9's three
-commits.
+(as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b and 6c), 7 (as 7a, 7b and 7c), 8 and 9
+(as 9a, 9b and 9c) are built, with the fixes that landed ahead of 5 and of 9c.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -5485,8 +5484,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
           with and without the pre-screen, recorded beside its check. *(Measured per pair and scaled
           up, decided 2026-10-15: matching all 780 pairs Exact at the cap is about 2.2 core-hours.)*
    9. **`calibration::targetless`.** *(Planned in detail 2026-10-15 as three commits, 9a to 9c; see
-      below. The track-set overload takes no `image`, since a track set's views carry theirs. 9a and
-      9b built 2026-10-15.)*
+      below. The track-set overload takes no `image`, since a track set's views carry theirs. 9a, 9b
+      and 9c built 2026-10-15, 9c after a refiner fix that landed ahead of it.)*
       - `calibrate(footage, settings, request)` and `calibrate(trackSet, image, settings, request)`.
       - Steps:
         1. the checks: `NoFeatureExtractor`, `NoFeatureMatcher`, `NoGeometrySolver`, `NoRefiner`, a
@@ -7816,6 +7815,43 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      and 6), which is what the second model is there for. The layouts that catch either are glibc's
      arena behaviour, so on another allocator the case may catch fewer; with the fix it passes on any,
      since nothing then depends on an address.
+
+   **Sub-slice 9c built (2026-10-15) — sub-slice 9 is complete.** One commit of test code: eight
+   cases in `plugins/camera/ceres/test/test_targetlesscalibration.cpp`, in `test-camera-ceres`. They
+   run the method as 9b built it, refined by the real Ceres refiner, over 9b's stand-ins.
+   - `ctest` **1270/1270** Debug and **1278/1278** Release with video, camera and Ceres on
+     (+8 each), **1152/1152** with all three off (unchanged, since the cases need Ceres).
+     The Release scale case met its wall-clock bound this run. Warning-clean, format-check clean.
+   - **One report means the same in both suites.** The report printer and comparison moved out of
+     9b's `test_targetlesscalibration.cpp` into `libs/camera/test/targetlesscalibrationtext.h`, which
+     9b's determinism and identities cases and 9c's now share. 9b's cases are otherwise unchanged.
+   - **The probe's measurements held, the same in Debug and Release, with one exception.** They were
+     re-measured through the cases themselves, with temporary prints removed afterwards. The refiner
+     fix ahead of 9c moved one: the wrong match moves the focal length by 2.8e-6 of itself, not 2.6e-6,
+     and the held-out angle by 7e-5 mrad. The case's comment says so.
+   - **Every case but the one comparing serial with pooled runs starts a pool of four.** Without one
+     the resamples run inline, and the eight took about 3 minutes in Debug. With it they take 68 s:
+     - the determinism case 14 s;
+     - the noisy 24-frame section 14 s;
+     - the Brown-Conrady case 10 s;
+     - the rest 2 to 7 s each.
+
+     In Release each case takes 0.06 to 0.5 s.
+   - **The first run found the refiner defect fixed ahead of this commit** (above). Both comparison
+     cases failed in the last bits until each free model had an ordering group of its own.
+   - **Two sabotages, both caught, one prediction wrong:**
+     - **The bootstrap drawn inside the parallel loop**, from one engine shared without a lock: caught,
+       as predicted, but through a race. Over three runs the determinism case failed twice and the
+       identities case three times, since both of the identities case's runs are on the pool. 9b's
+       suite passes this sabotage, because a pass-through refiner gives every resample the same answer;
+       that is why 9c exists.
+     - **The tracks left in identity order** were predicted to fail the identities case alone. They fail
+       6 of the 8 cases (all but moving content and the determinism case) and 2 of 9b's 13, with frames
+       left unplaced. The cause is the stand-in. Its geometry scores a candidate pose on 16 evenly
+       spaced correspondences of its input, so the order the tracks arrive in decides which 16. Under a
+       start 7% short, that decides whether a frame can be placed. The method's capture order is what
+       keeps the stand-in results the same however the tracks are named. A real solver also samples by
+       order, through a seed, though less sharply; sub-slice 10 renders.
 
    **Counts:** 9a none; 9b a new executable with about a dozen cases, in every configuration, since it
    needs neither plugin, and two cases in `test-camera-nobackend`; 9c about seven cases wherever Ceres
@@ -12982,8 +13018,8 @@ row here**. A row is cheap to delete and expensive to leave.
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
        sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b
-       and 6c), 7 (as 7a, 7b and 7c) and 8, with the fixes ahead of 5 and of 9c, and 9a and 9b of
-       9's three commits. The
+       and 6c), 7 (as 7a, 7b and 7c), 8 and 9 (as 9a, 9b and 9c), with the fixes ahead of 5 and of
+       9c. The
        separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
        restated (slice 4's plan).
   2. **Owed by the repo owner.**

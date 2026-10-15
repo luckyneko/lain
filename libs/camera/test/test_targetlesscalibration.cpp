@@ -8,6 +8,7 @@
 
 #include "passthroughrefiner.h"
 #include "syntheticscene.h"
+#include "targetlesscalibrationtext.h"
 
 #include <lain/camera/calibration/targetless.h>
 #include <lain/camera/feature/sequenceextraction.h>
@@ -19,11 +20,9 @@
 
 #include <algorithm>
 #include <cmath>
-#include <iomanip>
 #include <mutex>
 #include <optional>
 #include <set>
-#include <sstream>
 #include <string>
 #include <variant>
 #include <vector>
@@ -34,6 +33,8 @@ using namespace lain::camera::calibration;
 namespace scene = lain::camera::testing::scene;
 namespace standin = lain::camera::testing;
 using Catch::Matchers::ContainsSubstring;
+using lain::camera::testing::targetlesstext::name;
+using lain::camera::testing::targetlesstext::requireSameReport;
 
 namespace
 {
@@ -124,111 +125,6 @@ namespace
 		}
 		std::reverse(out.tracks.begin(), out.tracks.end());
 		return out;
-	}
-
-	std::string number(double x)
-	{
-		std::ostringstream out;
-		out << std::setprecision(17) << x;
-		return out.str();
-	}
-
-	template <typename E>
-	std::string name(E value)
-	{
-		return std::string(meta::enums::name(value));
-	}
-
-	std::string model(const CameraModel& m)
-	{
-		const Intrinsics& k = m.intrinsics();
-		std::string text = "f(" + number(k.fx) + " " + number(k.fy) + ") c(" + number(k.cx) + " " + number(k.cy) + ") " +
-						   std::string(displayName(m.distortion())) + " (";
-		for (const double c : coefficients(m.distortion()))
-			text += " " + number(c);
-		return text + ")";
-	}
-
-	std::string positions(const std::vector<std::uint32_t>& list)
-	{
-		std::string text;
-		for (const std::uint32_t p : list)
-			text += " " + std::to_string(p);
-		return text;
-	}
-
-	// Every field of a report but its timings, its execution policy, and what only extracting adds (the
-	// extraction's report and the backends that extracted), so two reports of one calibration compare
-	// equal however it ran and whichever entry point it came through.
-	std::string describe(const Report& r)
-	{
-		std::ostringstream out;
-		out << "status " << name(r.status) << "\n";
-		for (const FailureReason& f : r.failures)
-			out << "failure " << name(f.failure) << ": " << f.detail << "\n";
-		out << "model " << (r.model ? model(*r.model) : "unset") << "\n";
-		out << "verdict " << name(r.verdict) << "\n";
-		for (const std::string& note : r.fitnessNotes)
-			out << "note " << note << "\n";
-		out << "thresholds " << r.thresholds.name << "\n";
-		if (const auto* h = std::get_if<HeldOutEvidence>(&r.heldOut))
-			out << "heldOut " << h->views << " " << h->residuals << " " << h->viewsWithoutPose << " " << number(h->rmsAngle)
-				<< " " << number(h->rmsPixels) << " " << number(h->worstPixels) << " " << h->outliers << "\n";
-		else
-			out << "heldOut unavailable: " << std::get<Unavailable>(r.heldOut).reason << "\n";
-		if (const auto* s = std::get_if<ResamplingEvidence>(&r.resampling))
-		{
-			const double* principalPoint = std::get_if<double>(&s->principalPointVariation);
-			out << "resampling " << s->resamples << " " << number(s->focalVariation) << " "
-				<< (principalPoint ? number(*principalPoint) : std::string("held")) << "\n";
-		}
-		else
-			out << "resampling unavailable: " << std::get<Unavailable>(r.resampling).reason << "\n";
-		out << "seeded";
-		for (const std::string& field : r.seededFields)
-			out << " " << field;
-		out << "\n";
-
-		const Diagnostics& d = r.diagnostics;
-		out << "views " << d.viewsSelected << " " << d.viewsHeldOut << " " << number(d.coverage) << " " << number(d.fitRmsPixels)
-			<< "\nselected" << positions(d.selected) << "\nheldOutViews" << positions(d.heldOut) << "\n";
-		const TargetlessDiagnostics& t = targetlessOf(r);
-		for (const media::FrameRef& f : t.frames)
-			out << "frame " << f.toString() << "\n";
-		out << "tracks " << t.tracks << " " << t.tracksUsable << "\n";
-		for (const SweepCandidate& c : t.sweep)
-			out << "candidate " << number(c.focalLength) << " " << c.inliers << "\n";
-		out << "swept " << (t.swept ? std::to_string(*t.swept) : "unset") << "\n";
-		out << "seed" << positions(t.seed) << " " << number(t.seedAngle) << " " << t.seedBelowFloor << "\n";
-		out << "placement" << positions(t.placement) << "\nunplaced" << positions(t.unplaced) << "\n";
-		out << "behind " << t.behind << " landmarks " << t.landmarks << " untriangulated " << t.untriangulated << "\n";
-		if (t.refinement)
-			out << "refinement " << name(t.refinement->status) << " " << t.refinement->iterations << " "
-				<< number(t.refinement->initialCost) << " " << number(t.refinement->finalCost) << " " << t.refinement->residuals
-				<< " " << t.refinement->landmarks << "\n";
-		for (const Outlier& o : t.outliers)
-			out << "outlier " << o.track << " " << o.frame << " " << number(o.rmsWhitened) << "\n";
-
-		const Reproducibility& p = r.reproducibility;
-		for (const std::string& source : p.sources)
-			out << "source " << source << "\n";
-		const TargetlessRecord& record = std::get<TargetlessRecord>(p.method);
-		out << "frames " << p.frames << " estimator " << p.estimator.backend << " geometry " << record.geometry.backend
-			<< " refiner " << record.refiner.backend << "\n";
-		out << "request " << name(p.request.model) << " " << name(p.request.importedPolicy) << " "
-			<< p.request.fitnessProfile << " " << number(p.request.heldOutFraction) << " " << p.request.resamples << " "
-			<< p.request.seed << "\n";
-		out << "settings " << record.settings.freePrincipalPoint << " " << number(record.settings.loss.scale) << "\n";
-		out << "toString " << r.toString() << "\n";
-		return out.str();
-	}
-
-	void requireSameReport(const Report& a, const Report& b)
-	{
-		const std::string x = describe(a), y = describe(b);
-		INFO(x);
-		INFO(y);
-		REQUIRE(x == y);
 	}
 
 	// The sweep's step: candidates are log-spaced, so each is this factor longer than the one before.
