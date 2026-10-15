@@ -26,6 +26,7 @@ add_library(camera STATIC
 	src/calibration/estimator.cpp
 	src/calibration/board.cpp
 	src/capture/capturegroup.cpp
+	src/feature/cells.cpp
 	src/feature/extraction.cpp
 	src/feature/features.cpp
 	src/feature/geometry.cpp

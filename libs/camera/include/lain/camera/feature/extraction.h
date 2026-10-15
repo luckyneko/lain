@@ -1,14 +1,13 @@
 #pragma once
 
 #include "lain/camera/capture/capturegroup.h"
+#include "lain/camera/feature/extractionsettings.h"
 #include "lain/camera/feature/geometry.h"
 #include "lain/camera/feature/matching.h"
 #include "lain/camera/feature/status.h"
 #include "lain/camera/feature/tracks.h"
-#include "lain/camera/method.h" // ExecutionPolicy
 #include "lain/camera/provenance.h"
 #include "lain/camera/rig.h"
-#include "lain/camera/scalepolicy.h"
 
 #include <lain/core/time.h>
 
@@ -24,35 +23,18 @@
 // propose; lain decides").
 namespace lain::camera::feature
 {
-	struct ExtractionRequest
+	// The settings every extraction shares (extractionsettings.h), and what only a fixed rig's reads.
+	// `minimumPairInliers` is at least 5 here, the fewest a relative pose needs.
+	struct ExtractionRequest : ExtractionSettings
 	{
-		// The scale each frame is searched at.
-		ScalePolicy scale = LongestSide{1920};
 		// How many capture groups every camera samples, spread evenly across the capture.
 		std::uint32_t samples = 5;
-		// The strongest features of each frame kept, each with all its orientations.
-		std::uint32_t featureCap = 8192;
-		// How features are matched: between a camera's frames, and between cameras.
-		MatchRequest matching;
 		// How a camera pair's matches are verified.
 		GeometryRequest geometry;
-		// A pair verifies with at least this many inliers (COLMAP's two-view minimum); at least 5.
-		std::uint32_t minimumPairInliers = 15;
-		// A pair is first matched on each side's strongest few features, and skipped when fewer than
-		// `prescreenMatches` survive.
-		std::uint32_t prescreenFeatures = 512;
-		std::uint32_t prescreenMatches = 5;
 		// A feature found in two of a camera's frames is one feature only within this distance, in
 		// the pixels the backend searched, and this ratio of sizes.
 		double staticDistance = 1.5;
 		double staticSizeRatio = 1.5;
-		// How precisely a feature is located: a standard deviation per unit of its size
-		// (Keypoint::size), so in source pixels whatever the scale searched. A detector finds a
-		// feature at a size it chose, and a larger one is located less precisely. 0.034 is SIFT's,
-		// measured against the truth on rendered scenes (M9 slice 3, sub-slice 7): 3.4% natively,
-		// within the same bound at half scale.
-		double localisationPerSize = 0.034;
-		ExecutionPolicy execution = ExecutionPolicy::Normal;
 	};
 
 	// What became of one camera's features: how many it found, how many left before matching and why,

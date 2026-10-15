@@ -1400,6 +1400,25 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-15 — M9 slice 4, sub-slice 7b: the extractions' shared work becomes a module
+
+The second of sub-slice 7's three commits, with no change in behaviour beyond the order in which a
+request's several problems are named. The fixed rig's per-frame, per-pair and union work, which the
+sequence extraction (7c) shares, moves out of `extraction.cpp`. `ctest` **1234/1234** Debug and
+**1242/1242** Release with video, camera and Ceres on, **1128/1128** with all three off (+1 each);
+`test_tracks.cpp` untouched; warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 7b
+built* under M9 slice 4.
+
+- **`feature::ExtractionSettings`** holds the eight settings both extractions read, and
+  `ExtractionRequest` derives from it (the repo owner's call), so the measured defaults are stated
+  once and `request.featureCap` reads as before.
+- **`src/feature/cells.{h,cpp}`, in `camera::detail`**: an image's features as cells, a pair matched
+  before verification, the union with its conflict rule, and the shared checks. Verification and how
+  a track is spelled stay each extraction's own.
+- **A rig track's identity is pinned** against a digest computed outside lain, and the pin passes on
+  the pre-change library too, so "rig identities do not change" is checked rather than argued.
+- **Sabotage, caught as predicted; timing unchanged** (3.73 s before and after, Release, alternating).
+
 ### Update 2026-10-15 — M9 slice 4, sub-slice 7a: the fundamental matrix of two images
 
 The first of sub-slice 7's three commits. Targetless calibration verifies a frame pair before any model

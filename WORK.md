@@ -2447,7 +2447,7 @@ owed. The repo owner kept the provisional values sub-slice 9 measured, and queue
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
 graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5 and 6 (as 6a, 6b and 6c) are built, with the fix that
-landed ahead of 5, and 7a of sub-slice 7.
+landed ahead of 5, and 7a and 7b of sub-slice 7.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -6961,6 +6961,42 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      the pre-change binary, in alternating order. Sub-slice 5 found that moving code between
      translation units changes what GCC inlines.
    - Counts: +1 in every configuration.
+
+   **Sub-slice 7b built (2026-10-15).** As planned:
+   - **`feature::ExtractionSettings`**, in its own public header `extractionsettings.h`, holds the eight
+     shared settings with their comments. `ExtractionRequest` derives from it and keeps `samples`,
+     `geometry`, `staticDistance` and `staticSizeRatio`.
+   - **`src/feature/cells.{h,cpp}`, in `camera::detail`**, holds:
+     - `Cells`, `cell`, `stronger`, `cellsLike`, `appendCell` and `firstCells`;
+     - `imageCells`: one decoded image extracted, grouped and capped, with its counts;
+     - `matchCells`: the pre-screen, the full match and the ambiguity rule. It fills the
+       `PairExtraction`'s counts and its TooFew or Skipped outcome, and takes the noun its TooFew
+       detail uses ("static features" for the rig);
+     - `joinTracks`: the union with its conflict rule, over `VerifiedMatches` in pair order;
+     - `settingsProblem` and `searchProblem`.
+
+     The grouping, the cell pairs and the ambiguity rule stay file-local to `cells.cpp`. `join`, the
+     union-find union keeping the lower root, moved to `unionfind.h` beside `root`.
+   - **`extraction.cpp` keeps what is the rig's**: the static consolidation, verification by relative
+     pose, and a track's observations and identity. Its call sites read as before through
+     using-declarations.
+   - **One observable difference, recorded.** A request with two problems may now name a different
+     one first. The shared settings are checked together, before the rig's inlier angle and static
+     thresholds, where the angle used to come before `minimumPairInliers` and the static thresholds
+     before `localisationPerSize`. A request with one problem is refused exactly as before.
+   - **The pin is in `test_trackidentity.cpp`**: landmark 0's track in the default two-camera scene,
+     its text spelled out in the test, and its SHA-256 computed by `sha256sum` and by Python's
+     `hashlib`, which agree. **The pin also passes against the pre-change library**, built with only
+     the test added, which is what makes "rig identities do not change" a check rather than an
+     argument.
+   - **Sabotage, caught as predicted:** the module's ambiguity rule keeping every pair fails
+     `test_tracks.cpp`'s ambiguity case alone, so the rig runs through the module.
+   - **Timing, Release, four alternating rounds** of "three cameras over a rendered scene register
+     without a target" (real SIFT through `extractTracks`): 3.73 s mean before (3.61 to 3.86) and
+     3.73 s after (3.67 to 3.76). No change.
+   - **Counts as predicted:** 1234/1234 Debug and 1242/1242 Release with video, camera and Ceres on,
+     1128/1128 with all three off (+1 each). `test_tracks.cpp`'s diff is empty. Warning-clean,
+     format-check clean.
 
    **7c: sequence extraction.**
    - As above. Tests in `test_sequencetracks.cpp`, in `test-camera-tracks`, over the moving scene:
@@ -12147,7 +12183,7 @@ row here**. A row is cheap to delete and expensive to leave.
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
        sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5 and 6 (as 6a,
-       6b and 6c), with the fix ahead of 5, and 7a. The
+       6b and 6c), with the fix ahead of 5, and 7a and 7b. The
        separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
        restated (slice 4's plan).
   2. **Owed by the repo owner.**
