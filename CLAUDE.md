@@ -1400,6 +1400,29 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-15 — M9 slice 4, sub-slice 7c: a moving camera's feature tracks (**sub-slice 7 COMPLETE**)
+
+The last of sub-slice 7's three commits. `feature::extractSequenceTracks` turns one moving camera's
+footage into feature tracks, every sampled frame its own view. A frame pair is verified by 7a's
+fundamental matrix on source pixels, since no model exists yet, and everything else runs through 7b's
+module. Nothing calls it yet; sub-slice 8 does. `ctest` **1244/1244** Debug and **1252/1252** Release
+with video, camera and Ceres on, **1138/1138** with all three off (+10 each); warning-clean,
+format-check clean. Full notes in WORK.md's *Sub-slice 7c built* under M9 slice 4.
+
+- **The threshold is stated in the pixels searched** (4.0, COLMAP's, provisional), and turned into
+  source pixels by the frames' scale before it reaches the facade, as the rig's static distance is.
+- **Frames are sampled in capture order**, at bin centres, so the order footage lists them in does
+  not matter, and a frame given twice is refused.
+- **A sequence track's identity has its own versioned text**, naming each observation's frame source
+  and ordinal as well as its camera and pixel, pinned against a digest computed outside lain. The
+  rig's text and its pin are unchanged.
+- **A frame that does not decode stays a view with no observations**, as a rig keeps a camera with
+  no tracks. The plan stated this without testing it, so it has a case.
+- **The scene stand-in gains a moving pinhole camera** and a `TruthGeometry::fundamentals` that
+  proposes the truth's matrices and logs the threshold it was handed.
+- **Two sabotages, both caught as predicted**: the frame left out of the identity text fails the pin
+  alone, and the threshold handed on unconverted fails the half-scale check alone.
+
 ### Update 2026-10-15 — M9 slice 4, sub-slice 7b: the extractions' shared work becomes a module
 
 The second of sub-slice 7's three commits, with no change in behaviour beyond the order in which a

@@ -12,6 +12,7 @@
 #include <lain/camera/feature/features.h>
 #include <lain/camera/feature/geometry.h>
 #include <lain/camera/feature/matching.h>
+#include <lain/camera/feature/sequenceextraction.h>
 #include <lain/camera/refinement/refiner.h>
 #include <lain/camera/registration/board.h>
 #include <lain/camera/registration/targetless.h>
@@ -235,4 +236,10 @@ TEST_CASE("with no backend, track extraction says the capability is missing", "[
 	CHECK(extracted.status == feature::Status::NoBackend);
 	CHECK(extracted.detail.find("no feature extractor") != std::string::npos);
 	CHECK(extracted.trackSet.tracks.empty());
+
+	// A moving camera's extraction the same: no footage is looked at.
+	const feature::SequenceExtractionResult sequence = feature::extractSequenceTracks({});
+	CHECK(sequence.status == feature::Status::NoBackend);
+	CHECK(sequence.detail.find("no feature extractor") != std::string::npos);
+	CHECK(sequence.trackSet.tracks.empty());
 }

@@ -277,6 +277,8 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   2026-10-06): its observations belong to **views**, a view being the frames one set of feature
   positions came from (one per camera here, one per frame for a moving camera), and a track holding
   two different features of one view is a conflict and is rejected whole.
+  *For a moving camera* (built 2026-10-15, M9 slice 4): every sampled frame is a view, so a track
+  spans frames, and its identity names those frames as well as its pixels.
 - **Static feature** — a feature a fixed camera sees at the same pixel in every sampled frame, or in
   at least half of them, so occlusion by a passer-by does not lose it. Only static features are
   matched between cameras in targetless registration; a transient feature is moving content and is
@@ -295,11 +297,12 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   (features, nearest neighbours, candidate poses); lain applies the matching tests, builds the
   tracks, and measures and accepts the geometry. _Avoid_: targetless calibration when only evidence
   was extracted, Ceres feature matching.
-  *Two extractions* (planned 2026-10-12, M9 slice 4): the **fixed-rig** one keeps each camera's
-  static features and verifies a camera pair by relative pose, through the cameras' known models.
-  The **sequence** one, for a moving camera that targetless calibration has no model for yet, makes
-  every sampled frame its own view and verifies a frame pair by a fundamental matrix, measured by its
-  Sampson distance in pixels.
+  *Two extractions* (planned 2026-10-12, built 2026-10-15, M9 slice 4): the **fixed-rig** one keeps
+  each camera's static features and verifies a camera pair by relative pose, through the cameras'
+  known models. The **sequence** one, for a moving camera that targetless calibration has no model
+  for yet, makes every sampled frame its own view and verifies a frame pair by a fundamental matrix,
+  measured by its Sampson distance in pixels. The two share one private module: a frame's features,
+  a pair's match before it is verified, and the union of verified pairs into tracks.
 - **Camera observation graph** — the automatically inferred graph whose vertices are cameras and whose
   edges are supported by accepted shared observations. Initial targetless registration requires this
   graph to be connected through accepted feature-track overlap; declared camera-pair relationships are

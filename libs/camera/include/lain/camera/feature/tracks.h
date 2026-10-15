@@ -19,12 +19,13 @@ namespace lain::camera::feature
 {
 	// The frames one set of feature positions came from (ADR-0016, "A track's observations belong to
 	// views"): one per camera in fixed-camera registration, where a feature's position is its median
-	// across the camera's sampled frames.
+	// across the camera's sampled frames; one per sampled frame for a moving camera
+	// (sequenceextraction.h).
 	struct View
 	{
 		capture::CameraIdentity camera;
 		ImageGeometry image;				 // the source image its pixels are in
-		std::vector<media::FrameRef> frames; // in capture order
+		std::vector<media::FrameRef> frames; // in capture order; none when its frame did not decode
 	};
 
 	// Where one view saw a track's landmark (CONTEXT.md, "Scene-feature observation").
@@ -43,8 +44,9 @@ namespace lain::camera::feature
 	// One static landmark across the capture: where each view that saw it saw it.
 	struct Track
 	{
-		// A digest of the observations' cameras and pixels (SHA-256, hex), stable across runs, input
-		// orders and execution policies, as a capture group's is.
+		// A digest of the observations' cameras and pixels, and for a moving camera their frames
+		// (SHA-256, hex), stable across runs, input orders and execution policies, as a capture group's
+		// is. Each extraction spells its own versioned text.
 		std::string identity;
 		std::vector<SceneObservation> observations; // ascending by view, one per view, at least two
 	};
@@ -52,8 +54,12 @@ namespace lain::camera::feature
 	// What feature-track extraction accepted: the frames it examined and the tracks they support.
 	struct TrackSet
 	{
-		std::vector<capture::CaptureGroup> groups; // the capture groups sampled, in capture order
-		std::vector<View> views;				   // ascending by camera identity: every camera, tracks or not
-		std::vector<Track> tracks;				   // ascending by identity
+		// The capture groups sampled, in capture order; none for a moving camera, whose frames are
+		// sampled one by one.
+		std::vector<capture::CaptureGroup> groups;
+		// Ascending by camera identity, then by frame in capture order: every camera, or every sampled
+		// frame of a moving camera, tracks or not.
+		std::vector<View> views;
+		std::vector<Track> tracks; // ascending by identity
 	};
 } // namespace lain::camera::feature

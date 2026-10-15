@@ -56,9 +56,9 @@ namespace lain::camera::feature
 
 	enum class PairOutcome
 	{
-		TooFew,		// a side has fewer than two static features
+		TooFew,		// a side has fewer than two features to match (static features, for fixed cameras)
 		Skipped,	// the pre-screen found too few matches to be worth the full match
-		Unverified, // no relative pose explains enough of its matches
+		Unverified, // nothing its verification proposes explains enough of its matches
 		Verified,	// its inliers join tracks
 	};
 
@@ -71,8 +71,10 @@ namespace lain::camera::feature
 		std::uint32_t prescreenMatches = 0;
 		std::uint32_t matches = 0;	 // from the full match
 		std::uint32_t ambiguous = 0; // dropped from it: a feature matched to two of the other camera's
-		std::uint32_t inliers = 0;	 // of `matches`, explained by the pair's relative pose
-		std::string detail;			 // why it did not verify
+		// Of `matches`, explained by the pair's verification: a relative pose for fixed cameras, a
+		// fundamental matrix for a moving camera's frames (sequenceextraction.h).
+		std::uint32_t inliers = 0;
+		std::string detail; // why it did not verify
 	};
 
 	struct ExtractionReport

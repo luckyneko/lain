@@ -31,6 +31,7 @@ add_library(camera STATIC
 	src/feature/features.cpp
 	src/feature/geometry.cpp
 	src/feature/matching.cpp
+	src/feature/sequenceextraction.cpp
 	src/feature/triangulation.cpp
 	src/refinement/refiner.cpp
 	src/registration/board.cpp

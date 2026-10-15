@@ -1,8 +1,9 @@
 #pragma once
 
-// A scene for the track-extraction tests: fixed cameras on an arc looking at scattered landmarks, and
-// stand-in feature backends answering from its truth. The scene is process-wide, as the stand-ins'
-// registries are; each case starts from scene::reset() and changes only what it is about.
+// A scene for the track-extraction tests: fixed cameras on an arc looking at scattered landmarks, or one
+// camera moving along that arc (resetMoving), and stand-in feature backends answering from its truth.
+// The scene is process-wide, as the stand-ins' registries are; each case starts from scene::reset() or
+// scene::resetMoving() and changes only what it is about.
 //
 // A frame is a blank image whose first two pixels say which camera and which frame it is, so the
 // extractor can answer from the truth without drawing anything. A landmark's descriptor is a number,
@@ -33,14 +34,19 @@
 
 namespace lain::camera::testing::scene
 {
+	// How far a dynamic landmark moves between frames, metres, unless it says otherwise.
+	inline const math::Vec3d kVelocity{0.15, 0.0, 0.05};
+
 	struct Landmark
 	{
 		math::Vec3d point{0.0};								  // reference frame
 		std::uint32_t descriptor = 0;						  // how every camera describes it, unless
-		std::map<std::size_t, std::uint32_t> descriptorIn;	  // ... a camera describes it otherwise
+		std::map<std::size_t, std::uint32_t> descriptorIn;	  // ... a camera describes it otherwise, or
+		std::map<std::size_t, std::uint32_t> descriptorAt;	  // ... a frame does (by ordinal), first
 		std::set<std::size_t> cameras;						  // who can see it; empty means every camera
 		std::set<std::pair<std::size_t, std::size_t>> hidden; // (camera, ordinal) where something covers it
-		bool dynamic = false;								  // it moves between frames
+		bool dynamic = false;								  // it moves between frames,
+		math::Vec3d velocity = kVelocity;					  // ... this far each
 		// A second orientation at its pixel, as SIFT reports a keypoint with two strong orientation
 		// peaks: described otherwise, as its rotated descriptor is (turnedOf). `duplicated` gives every
 		// camera one; `turnedIn` gives one camera one, described as it says; and a camera in
@@ -57,9 +63,13 @@ namespace lain::camera::testing::scene
 	{
 		std::vector<math::RigidTransformd> referenceFromCamera; // the truth the geometry solver knows
 		std::vector<math::RigidTransformd> renderedFrom;		// where each camera's frames were taken from
+		// One camera moving (resetMoving): where it was at each frame, referenceFromCamera. Empty for
+		// fixed cameras. A moving camera is a pinhole, since a fundamental matrix ignores distortion.
+		std::vector<math::RigidTransformd> path;
 		std::vector<Landmark> landmarks;
-		std::size_t frames = 9;	 // per camera
-		bool approximate = true; // whether the matcher runs Approximate search
+		std::size_t frames = 9;									   // per camera
+		bool approximate = true;								   // whether the matcher runs Approximate search
+		std::set<std::pair<std::size_t, std::size_t>> undecodable; // (camera, ordinal) frames that fail to decode
 		// What the backends were asked, under logMutex(): decodes per (camera, ordinal), and per
 		// nearest() call the first descriptor of each side and their sizes.
 		std::map<std::pair<std::size_t, std::size_t>, std::size_t> decodes;
@@ -69,6 +79,7 @@ namespace lain::camera::testing::scene
 			std::size_t sizeA = 0, sizeB = 0;
 		};
 		std::vector<Call> nearestCalls;
+		std::vector<double> fundamentalThresholds; // per fundamentals() call, the threshold handed
 	};
 	inline Scene& scene()
 	{
@@ -81,9 +92,6 @@ namespace lain::camera::testing::scene
 		return instance;
 	}
 
-	// How far a dynamic landmark moves between frames, metres.
-	inline const math::Vec3d kVelocity{0.15, 0.0, 0.05};
-
 	inline std::string identityOf(std::size_t camera)
 	{
 		return std::string(camera < 10 ? "cam0" : "cam") + std::to_string(camera);
@@ -95,6 +103,8 @@ namespace lain::camera::testing::scene
 
 	inline CameraModel model()
 	{
+		if (!scene().path.empty())
+			return *CameraModel::create(parametersWith(NoDistortion{})).model;
 		return *CameraModel::create(parametersWith(brownConrady())).model;
 	}
 
@@ -108,26 +118,35 @@ namespace lain::camera::testing::scene
 		return math::RigidTransformd{math::quat_cast(math::Mat3d{x, y, z}), position};
 	}
 
-	inline std::uint32_t descriptorOf(const Landmark& l, std::size_t camera)
+	inline std::uint32_t descriptorOf(const Landmark& l, std::size_t camera, std::size_t ordinal)
 	{
+		if (const auto at = l.descriptorAt.find(ordinal); at != l.descriptorAt.end())
+			return at->second;
 		const auto found = l.descriptorIn.find(camera);
 		return found != l.descriptorIn.end() ? found->second : l.descriptor;
 	}
 
-	// How `camera` describes the landmark's second orientation, if it finds one.
-	inline std::optional<std::uint32_t> turnedOf(const Landmark& l, std::size_t camera)
+	// How `camera` describes the landmark's second orientation in frame `ordinal`, if it finds one.
+	inline std::optional<std::uint32_t> turnedOf(const Landmark& l, std::size_t camera, std::size_t ordinal)
 	{
 		const auto found = l.turnedIn.find(camera);
 		if (found != l.turnedIn.end())
 			return found->second;
 		if (l.duplicated || l.turnedOnly.count(camera) > 0)
-			return descriptorOf(l, camera) + kTurned;
+			return descriptorOf(l, camera, ordinal) + kTurned;
 		return std::nullopt;
 	}
 
 	inline math::Vec3d pointAt(const Landmark& l, std::size_t ordinal)
 	{
-		return l.dynamic ? l.point + double(ordinal) * kVelocity : l.point;
+		return l.dynamic ? l.point + double(ordinal) * l.velocity : l.point;
+	}
+
+	// Where `camera` was for frame `ordinal`: a moving camera's place on its path, or a fixed camera's
+	// rendering pose.
+	inline const math::RigidTransformd& poseAt(std::size_t camera, std::size_t ordinal)
+	{
+		return scene().path.empty() ? scene().renderedFrom[camera] : scene().path[ordinal];
 	}
 
 	// Where `camera` sees landmark `l` in frame `ordinal`, or nothing when it does not.
@@ -138,7 +157,7 @@ namespace lain::camera::testing::scene
 			return std::nullopt;
 		if (landmark.hidden.count({camera, ordinal}) != 0)
 			return std::nullopt;
-		const math::Vec3d p = scene().renderedFrom[camera].inverse().apply(pointAt(landmark, ordinal));
+		const math::Vec3d p = poseAt(camera, ordinal).inverse().apply(pointAt(landmark, ordinal));
 		if (p.z <= 0)
 			return std::nullopt;
 		const CameraModel m = model();
@@ -174,6 +193,59 @@ namespace lain::camera::testing::scene
 		}
 	}
 
+	// One camera moving through the reset scene's landmarks, `frames` long: along the fixed cameras' arc
+	// from −0.4 to 0.4 rad, rising 5 cm a frame, always looking at the origin. Its frames are its own
+	// views, so every pair of them shares the landmarks both see.
+	inline void resetMoving(std::size_t frames = 12, std::size_t landmarks = 60, std::uint64_t seed = 1)
+	{
+		reset(1, landmarks, seed);
+		Scene& s = scene();
+		s.frames = frames;
+		for (std::size_t k = 0; k < frames; ++k)
+		{
+			const double angle = frames > 1 ? -0.4 + 0.8 * double(k) / double(frames - 1) : 0.0;
+			const math::Vec3d position{3.0 * std::sin(angle), -0.3 + 0.05 * double(k), -3.0 * std::cos(angle)};
+			s.path.push_back(lookingAt(position, math::Vec3d{0.0}));
+		}
+	}
+
+	// The truth's fundamental matrix from view `a` to view `b` (frames of the moving camera, or fixed
+	// cameras): K⁻ᵀ [t]ₓ R K⁻¹ for x_b = R x_a + t, so x_bᵀ F x_a = 0 in pixels. GLM is column-major.
+	inline math::Mat3d fundamentalOf(std::size_t a, std::size_t b)
+	{
+		const std::vector<math::RigidTransformd>& truth = scene().path.empty() ? scene().referenceFromCamera : scene().path;
+		const math::RigidTransformd bFromA = truth[b].inverse() * truth[a];
+		const Intrinsics in = model().intrinsics();
+		math::Mat3d k{1.0};
+		k[0][0] = in.fx;
+		k[1][1] = in.fy;
+		k[2][0] = in.cx;
+		k[2][1] = in.cy;
+		const math::Vec3d t = bFromA.translation();
+		math::Mat3d tx{0.0};
+		tx[1][0] = -t.z;
+		tx[2][0] = t.y;
+		tx[0][1] = t.z;
+		tx[2][1] = -t.x;
+		tx[0][2] = -t.y;
+		tx[1][2] = t.x;
+		const math::Mat3d kInverse = math::inverse(k);
+		return math::transpose(kInverse) * tx * math::mat3_cast(bFromA.rotation()) * kInverse;
+	}
+
+	// The Sampson distance of a pixel pair from `f`, source pixels: restated here, so the stand-in
+	// judges its candidates without asking the facade it stands behind.
+	inline double sampsonOf(const math::Mat3d& f, const feature::PixelPair& p)
+	{
+		const math::Vec3d xa{p.a.x, p.a.y, 1.0}, xb{p.b.x, p.b.y, 1.0};
+		const math::Vec3d lb = f * xa, la = math::transpose(f) * xb;
+		const double denominator = lb.x * lb.x + lb.y * lb.y + la.x * la.x + la.y * la.y;
+		return denominator > 0 ? std::abs(math::dot(xb, lb)) / std::sqrt(denominator) : 1e9;
+	}
+
+	// The moving camera's footage, named "cam00".
+	inline capture::CameraFootage sequenceFootage();
+
 	// A source of blank frames that say which camera and frame they are, counting its decodes, with its
 	// cache off so every request is a decode.
 	class SceneSource : public media::FrameSource
@@ -199,6 +271,8 @@ namespace lain::camera::testing::scene
 				std::lock_guard<std::mutex> lock(logMutex());
 				++scene().decodes[{m_camera, ordinal}];
 			}
+			if (scene().undecodable.count({m_camera, ordinal}) != 0)
+				return {};
 			image::Image frame{640, 480, image::PixelFormat::Gray8};
 			frame.data()[0] = std::uint8_t(m_camera);
 			frame.data()[1] = std::uint8_t(ordinal);
@@ -208,6 +282,11 @@ namespace lain::camera::testing::scene
 	private:
 		std::size_t m_camera;
 	};
+
+	inline capture::CameraFootage sequenceFootage()
+	{
+		return {capture::CameraIdentity{identityOf(0)}, media::FrameSequence::over(std::make_shared<SceneSource>(0, scene().frames))};
+	}
 
 	inline std::vector<RigFootage> footage()
 	{
@@ -310,8 +389,8 @@ namespace lain::camera::testing::scene
 				const double response = 1.0 + 1.0 / double(l + 1);
 				const bool first = landmark.turnedOnly.count(camera) == 0;
 				if (first)
-					add(*pixel, 0.0, response, descriptorOf(landmark, camera));
-				if (const std::optional<std::uint32_t> turned = turnedOf(landmark, camera))
+					add(*pixel, 0.0, response, descriptorOf(landmark, camera, ordinal));
+				if (const std::optional<std::uint32_t> turned = turnedOf(landmark, camera, ordinal))
 					add(*pixel, first ? 1.5 : 0.2, response, *turned);
 			}
 			return out;
@@ -366,13 +445,14 @@ namespace lain::camera::testing::scene
 		return std::atan2(math::length(math::cross(u, v)), math::dot(u, v));
 	}
 
-	// Of `scored` (a candidate's median sampled residual, its pose), the best few: the ones a robust
+	// Of `scored` (a candidate's median sampled residual, the candidate), the best few: the ones a robust
 	// estimator would return, in order of residual, ties in the order found.
-	inline std::vector<math::RigidTransformd> bestOf(std::vector<std::pair<double, math::RigidTransformd>> scored)
+	template <typename Candidate>
+	std::vector<Candidate> bestOf(std::vector<std::pair<double, Candidate>> scored)
 	{
 		std::stable_sort(scored.begin(), scored.end(), [](const auto& x, const auto& y)
 						 { return x.first < y.first; });
-		std::vector<math::RigidTransformd> out;
+		std::vector<Candidate> out;
 		for (std::size_t i = 0; i < scored.size() && i < 4; ++i)
 			out.push_back(scored[i].second);
 		return out;
@@ -472,12 +552,34 @@ namespace lain::camera::testing::scene
 			return bestOf(std::move(scored));
 		}
 
-		// No fundamental matrix: nothing asks a fixed rig's stand-in for one, since its cameras have
-		// models and verify by relative pose. The moving camera of sequence extraction is its first
-		// caller (M9 slice 4, sub-slice 7c).
-		std::vector<math::Mat3d> fundamentals(const std::vector<feature::PixelPair>&, double, std::uint64_t) const override
+		// Every ordered pair of true views' fundamental matrix (fundamentalOf) that the sampled pairs
+		// lie within the threshold of, the best four, as its poses are. Logs the threshold it was handed.
+		std::vector<math::Mat3d> fundamentals(const std::vector<feature::PixelPair>& pairs, double threshold,
+											  std::uint64_t) const override
 		{
-			return {};
+			{
+				std::lock_guard<std::mutex> lock(logMutex());
+				scene().fundamentalThresholds.push_back(threshold);
+			}
+			const std::size_t views = scene().path.empty() ? scene().referenceFromCamera.size() : scene().path.size();
+			const std::vector<std::size_t> sample = sampleOf(pairs.size());
+			std::vector<std::pair<double, math::Mat3d>> scored;
+			for (std::size_t a = 0; a < views; ++a)
+			{
+				for (std::size_t b = 0; b < views; ++b)
+				{
+					if (a == b)
+						continue;
+					const math::Mat3d f = fundamentalOf(a, b);
+					std::vector<double> distances;
+					for (const std::size_t i : sample)
+						distances.push_back(sampsonOf(f, pairs[i]));
+					const double distance = distances.empty() ? 1e9 : medianOf(distances);
+					if (distance <= threshold)
+						scored.push_back({distance, f});
+				}
+			}
+			return bestOf(std::move(scored));
 		}
 	};
 

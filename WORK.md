@@ -2446,8 +2446,8 @@ sub-slices (below), and **all eleven are built** (2026-10-09); a gui-mode eyebal
 owed. The repo owner kept the provisional values sub-slice 9 measured, and queued three changes to
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
 graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
-(as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5 and 6 (as 6a, 6b and 6c) are built, with the fix that
-landed ahead of 5, and 7a and 7b of sub-slice 7.
+(as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b and 6c) and 7 (as 7a, 7b and 7c) are
+built, with the fix that landed ahead of 5.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -5444,7 +5444,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       - Sabotage: a closure that places a view from one placed neighbour fails the chain case.
    7. **Fundamental matrices and sequence track extraction**, lain's side, over stand-ins. *(Planned
       in detail 2026-10-15 as three commits, 7a to 7c, with the OpenCV producer moved in from sub-slice
-      8; see below.)*
+      8; see below. All three built 2026-10-15.)*
       - `GeometrySolver::fundamentals` and the `feature::fundamental` facade, measuring Sampson
         distance in source pixels; at least eight pairs.
       - `feature::extractSequenceTracks(footage, request)`:
@@ -7021,6 +7021,60 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      - *Feature track*: a moving camera's track spans frames.
      - ADR-0016's *Two extractions, one feature module*, marked built.
    - Counts are recorded when built.
+
+   **Sub-slice 7c built (2026-10-15).** As planned:
+   - **`lain/camera/feature/sequenceextraction.h`** holds `SequenceExtractionRequest :
+     ExtractionSettings` (`samples = 40`, `threshold = 4.0` in the pixels searched, `seed`),
+     `FrameExtraction`, `SequenceExtractionReport`, `SequenceExtractionResult` and
+     `extractSequenceTracks(const capture::CameraFootage&, const SequenceExtractionRequest& = {})`.
+   - **`src/feature/sequenceextraction.cpp`** runs the five steps over 7b's module:
+     - the checks that need no frame, in the order planned;
+     - the frames sorted into capture order, a frame given twice refused, and `samples` taken at the
+       bin centres `(2i+1)n/(2k)`;
+     - one task per sampled frame through `imageCells`, one per pair through `matchCells`, then
+       `fundamental` on the cells' source pixels, its threshold divided by the frames' scale;
+     - `joinTracks`, each observation at its cell's pixel with support 1 and the size's covariance;
+     - the sequence's own canonical text, `lain sequence feature track 1`, then per observation the
+       camera and the frame's source (each length-prefixed), the frame's ordinal and the pixel cell.
+   - **A frame that does not decode stays a view** with no frames, its report says `failed`, and each
+     of its pairs is `TooFew`. The plan stated this and its test list did not, so it has a case.
+   - **The scene stand-in gains a moving camera** (`resetMoving`): one pinhole camera on the fixed
+     cameras' arc, `path` holding its true pose per frame. Also new:
+     - `poseAt` answers either kind of scene;
+     - `descriptorAt` describes a landmark by frame, and `velocity` sets how a dynamic one moves;
+     - `undecodable` names frames that fail to decode;
+     - `fundamentalOf` builds the truth's `K⁻ᵀ [t]ₓ R K⁻¹`, and `sampsonOf` restates Sampson
+       distance so the stand-in never asks the facade it stands behind;
+     - `TruthGeometry::fundamentals` scores every ordered pair of true views by median Sampson
+       distance over a sample, keeps the best four, and logs the threshold it was handed.
+   - **Found by the compiler:** the first cut bound `model().intrinsics()` to a reference, and the
+     model is a temporary. GCC's `-Wdangling-reference` caught it.
+   - **Ten cases in `test_sequencetracks.cpp`**, in `test-camera-tracks`, and `NoBackend` added to
+     `test-camera-nobackend`'s extraction case:
+     - six of twelve frames give one track per landmark two of them see, exactly; all fifteen pairs
+       verify with every match an inlier;
+     - the threshold reaches the backend as 4 source px natively and 8 at half scale;
+     - ten landmarks rising 10 cm a frame are matched in every pair and explained in none, worked out
+       from each pair's true matrix; the inlier counts are the static landmarks shared, exactly;
+     - halves of the footage that share nothing are skipped by the pre-screen, with no full match
+       across them;
+     - a conflict across three frames is rejected whole (1 conflict, 4 observations);
+     - an undecodable frame is a view with no observations;
+     - reversed footage (`media::reverse`) and the pool each give the deterministic run's track set;
+     - three sampled frames of twelve are decoded once each, listed backwards;
+     - one track's identity is pinned (two frames, landmark 0), its text spelled out in the test;
+     - the refusals, before any decode: Approximate under deterministic debugging, a search no
+       matcher runs, a sample count of 1, seven inliers, a threshold of 0 or NaN, a ratio of 0, one
+       frame, no identity, and a frame given twice.
+   - **Sabotages, both caught as predicted:**
+     - **The frame left out of the identity text** (source and ordinal dropped): only the pin fails, of
+       all 24 cases in `test-camera-tracks`. No two tracks collide, since no landmark sits at one pixel
+       in two frames of a moving camera.
+     - **The threshold handed on in the pixels searched**: only the half-scale section fails, the
+       backend handed 4.0 where 8.0 was due.
+   - **Counts as predicted:** 1244/1244 Debug and 1252/1252 Release with video, camera and Ceres on,
+     1138/1138 with all three off (+10 each). Warning-clean, format-check clean. `test_tracks.cpp`
+     and `test_trackidentity.cpp` are unchanged.
 
    **Docs:** each commit adds its built note here and an entry to CLAUDE.md.
 
@@ -12182,8 +12236,8 @@ row here**. A row is cheap to delete and expensive to leave.
   its detail lives:
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
-       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5 and 6 (as 6a,
-       6b and 6c), with the fix ahead of 5, and 7a and 7b. The
+       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b
+       and 6c) and 7 (as 7a, 7b and 7c), with the fix ahead of 5. The
        separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
        restated (slice 4's plan).
   2. **Owed by the repo owner.**
