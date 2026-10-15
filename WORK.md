@@ -2447,7 +2447,8 @@ owed. The repo owner kept the provisional values sub-slice 9 measured, and queue
 how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
 graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b and 6c), 7 (as 7a, 7b and 7c) and 8
-are built, with the fix that landed ahead of 5, and 9a and 9b of sub-slice 9's three commits.
+are built, with the fixes that landed ahead of 5 and of 9c, and 9a and 9b of sub-slice 9's three
+commits.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -7786,6 +7787,36 @@ The 2026-08-16 review also left these requirements and decisions visible before 
 
    **9c's counts:** about eight cases in `test-camera-ceres`, wherever Ceres builds.
 
+   **A fix built ahead of 9c (2026-10-15): a free model's solution no longer depends on the heap.**
+   9c's determinism and identities cases failed in their first run, in the last bits: the serial
+   report and the pooled one differed in the focal variation and the final cost. The cause was in the
+   refiner, not the method. The free model block shared the cameras' ordering group (ADR-0017's
+   sub-slice 5 wording). Ceres keeps a group as a set ordered by address, and the AMD ordering of the
+   reduced system breaks ties by that input order. The cameras sit in one array, so their addresses
+   keep their order, but a model block is an allocation of its own, so the solution's last bits
+   followed wherever the heap put it. A resample on a pool worker allocates from another arena than
+   one run inline, which is how the pool showed it.
+   - **Each free model has an ordering group of its own, after the cameras'** (`2 + m`). One shared
+     group for every model would still order two models by address.
+   - **A new case in `test_freemodel.cpp`**: two moving cameras' frames, each half through a model of
+     its own, both freed, through 0.5 px of noise. The problem is solved once, then under eight heap
+     layouts, each on a thread of its own after blocks of every small size are allocated and every
+     other one freed. Every solution must be the first's, bit for bit. It takes 17 s in Debug and
+     0.53 s in Release.
+   - **No golden moves**: neither registration golden frees a model, and board calibration's golden
+     runs over a stand-in estimator.
+   - ADR-0017 is amended in place.
+   - `ctest` **1262/1262** Debug and **1269/1270** Release with video, camera and Ceres on (+1
+     each), **1152/1152** with all three off (unchanged, since the case needs Ceres);
+     warning-clean, format-check clean. The Release failure is targetless registration's
+     100-camera scale case on its wall-clock bound again, 134 s against 120 beside the heaviest
+     cases under `-j8`; alone it passes in 37.2 s, as at 9b.
+   - **Two sabotages, both caught.** Each model back in the cameras' group fails 4 of the 8 layouts
+     (layouts 1, 5, 6 and 7). Every model in one shared group after the cameras fails 2 (layouts 1
+     and 6), which is what the second model is there for. The layouts that catch either are glibc's
+     arena behaviour, so on another allocator the case may catch fewer; with the fix it passes on any,
+     since nothing then depends on an address.
+
    **Counts:** 9a none; 9b a new executable with about a dozen cases, in every configuration, since it
    needs neither plugin, and two cases in `test-camera-nobackend`; 9c about seven cases wherever Ceres
    builds.
@@ -12951,8 +12982,8 @@ row here**. A row is cheap to delete and expensive to leave.
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
        sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b
-       and 6c), 7 (as 7a, 7b and 7c) and 8, with the fix ahead of 5, and 9a and 9b of 9's three
-       commits. The
+       and 6c), 7 (as 7a, 7b and 7c) and 8, with the fixes ahead of 5 and of 9c, and 9a and 9b of
+       9's three commits. The
        separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
        restated (slice 4's plan).
   2. **Owed by the repo owner.**

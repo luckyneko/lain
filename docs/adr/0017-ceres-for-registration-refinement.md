@@ -148,8 +148,8 @@ planning sub-slice 3:)* the header is `lain/camera/refinement/refiner.h`, since 
 **A problem's cameras may share a model, and a model may be free.** A moving camera's sampled frames are
 the problem's cameras, and they share one model. Each model then states which of its parameters move:
 focal length, principal point, distortion coefficients. In Ceres a free model is one parameter block,
-its held parameters on a `SubsetManifold`, in the elimination group with the cameras, so the landmarks
-are still eliminated first. The refined parameters come back unchecked, and the method passes them
+its held parameters on a `SubsetManifold`, ordered after the cameras, so the landmarks are still
+eliminated first. The refined parameters come back unchecked, and the method passes them
 through `CameraModel::create`, as it does an estimator's. Within one solve the projection's domain is the
 starting model's. A result whose distortion folds inside the image is refused by `create`, not
 reported as a model. Registration never frees a model: joint intrinsic and extrinsic registration
@@ -160,7 +160,12 @@ a new `Status::Unsupported`, naming the models, when none can. A free model is s
 observations as well as landmarks, through the one `observe()` every residual shares, and the
 linear solver is Schur when the cameras or any model is free. The free model's residuals live in a
 file of their own: in one file with the held ones they slowed the held path by 9 to 11%, through
-GCC's per-file inlining limit, measured on targetless registration's scale case.)*
+GCC's per-file inlining limit, measured on targetless registration's scale case.)* *(Amended
+2026-10-15, ahead of sub-slice 9c: each free model has an ordering group of its own after the cameras',
+where it had shared theirs. A group is a set ordered by address, and the AMD ordering of the reduced
+system breaks ties by that order. The cameras sit in one array, whose addresses keep their order, but a
+model block is an allocation of its own, so the solution's last bits followed wherever the heap put it:
+a targetless calibration's resamples came out different on a pool than serially.)*
 
 **Ceres differentiates the model's parameters through lain's projection**, never through a copy. The
 distortion formulas and intrinsics become scalar-generic in their parameters as well as their point,

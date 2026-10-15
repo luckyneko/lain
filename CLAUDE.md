@@ -1400,6 +1400,31 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-15 — a free model's solution no longer depends on where the heap put it (fixed ahead of M9 slice 4, sub-slice 9c)
+
+Found by 9c's first run and fixed in its own commit ahead of it. 9c's two cases that compare one
+report produced two ways came out different in the last bits: a targetless calibration run serially
+against one run on a pool, and tracks named to sort two ways. The Ceres refiner put a free model's
+block in the cameras' ordering group. Ceres keeps a group as a set ordered by address, and AMD's
+ordering of the reduced system breaks ties by that order. The cameras sit in one array, but a model
+block is an allocation of its own, so the answer's last bits followed wherever the heap put it. A
+resample on a pool worker allocates from another arena. `ctest` **1262/1262** Debug and
+**1269/1270** Release with video, camera and Ceres on (+1 each), **1152/1152** with all three off.
+The Release failure is the 100-camera targetless registration scale case on its wall-clock bound under
+`-j8` again (134 s against 120); alone it passes in 37.2 s. Also warning-clean, format-check clean.
+Full notes in WORK.md's *A fix built ahead of 9c* under M9 slice 4.
+
+- **Each free model now has an ordering group of its own, after the cameras' group**, at `2 + m`. A
+  single group for every model would still order two models by address.
+- **A new case in `test_freemodel.cpp`**: two models, both freed, through noise. The problem is
+  solved once, then under eight heap layouts, each on a thread of its own, and every solution must be
+  bit for bit the first's.
+- **Two sabotages, both caught.** The models back in the cameras' group fails 4 of the 8 layouts.
+  Every model in one shared group fails 2, which is what the second model is for. Which layouts
+  catch it depends on glibc's allocator; with the fix nothing depends on an address, so it passes
+  under any allocator.
+- **No golden moves**: no golden frees a model. ADR-0017 is amended in place.
+
 ### Update 2026-10-15 — M9 slice 4, sub-slice 9b: `calibration::targetless`, over stand-ins
 
 The second of sub-slice 9's three commits: the method itself, from the focal sweep to the verdict,

@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <random>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace lain;
@@ -439,6 +440,52 @@ TEST_CASE("the Ceres refiner can estimate every distortion model", "[camera][cer
 		const DistortionModel model = modelOf(everyModel(m));
 		INFO(displayName(model));
 		CHECK(canEstimate(model));
+	}
+}
+
+TEST_CASE("a free model's solution does not depend on where the heap put its block", "[camera][ceres][freemodel]")
+{
+	ensureCeres();
+	// Two moving cameras' frames, each half seeing through a model of its own, both freed, through
+	// 0.5 px of noise, so the solve's last bits are not an exact answer's. A free model's block is an
+	// allocation of its own, so where it lands against the cameras' array, and against the other
+	// model's, is the heap's business: here the heap is left in a different state before each solve,
+	// on a thread of its own as a calibration's resamples are. Every solution must be the first's,
+	// bit for bit; a resample's answer may not depend on which worker ran it.
+	const CameraModel truth = cameraWith(brownConrady());
+	const MovingScene scene = movingScene(truth, 12, 60, 8, 0.5, 11);
+	Problem problem = sharedProblem(scene, startOf(truth, 1.05), freeing(true, false, true), 0.5, 110);
+	problem.models.push_back(problem.models[0]);
+	problem.modelFreedom.push_back(problem.modelFreedom[0]);
+	for (std::size_t f = scene.cameraFromReference.size() / 2; f < scene.cameraFromReference.size(); ++f)
+		problem.modelOf[f] = 1;
+
+	const Solution first = refine(problem);
+	INFO(first.detail);
+	REQUIRE(first.status == Status::Converged);
+	REQUIRE(first.models.size() == 2);
+
+	for (std::size_t layout = 0; layout < 8; ++layout)
+	{
+		CAPTURE(layout);
+		Solution solution;
+		std::thread worker(
+			[&]
+			{
+				// Blocks of every small size, every other one freed, so later allocations land in
+				// holes whose order differs from one layout to the next.
+				std::vector<std::vector<double>> spacers;
+				for (std::size_t i = 0; i < 7 * layout + 3; ++i)
+					spacers.emplace_back(1 + (5 * i + layout) % 20, 0.0);
+				for (std::size_t i = layout % 2; i < spacers.size(); i += 2)
+					std::vector<double>().swap(spacers[i]);
+				solution = refine(problem);
+			});
+		worker.join();
+		CHECK(sameSolution(solution, first));
+		REQUIRE(solution.models.size() == 2);
+		CHECK(sameParameters(solution.models[0], first.models[0]));
+		CHECK(sameParameters(solution.models[1], first.models[1]));
 	}
 }
 

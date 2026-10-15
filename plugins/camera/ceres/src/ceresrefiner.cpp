@@ -299,10 +299,15 @@ namespace lain::camera::ceres
 					if (usedCamera[c])
 						ordering->AddElementToGroup(cameras[c].data(), 1);
 				}
+				// Every model in a group of its own, after the cameras. A group is a set ordered by
+				// address, and Ceres' AMD ordering of the reduced system breaks ties by that input
+				// order, so it decides the last bits of the answer. The cameras sit in one array, whose
+				// addresses keep their order; a model block is an allocation of its own, so sharing a
+				// group would put it wherever the heap did.
 				for (std::size_t m = 0; m < modelCount; ++m)
 				{
 					if (usedModel[m])
-						ordering->AddElementToGroup(modelBlocks[m].data(), 1);
+						ordering->AddElementToGroup(modelBlocks[m].data(), 2 + int(m));
 				}
 				options.linear_solver_ordering = ordering;
 			}
