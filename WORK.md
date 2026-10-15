@@ -5529,6 +5529,17 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        - Measured for the repo owner to decide on before sub-slice 11 exposes them: the provisional
          `reconstruction-targetless/1` numbers, the default number of sampled frames, and the
          feature cap.
+       - *(Added 2026-10-15, deferred here from 9c with the repo owner.)* Two measurements through
+         OpenCV, each with its fix named should it be owed:
+         - **a rendered pan**: whether it reconstructs as a false orbit, as one did over 9b's
+           stand-ins when its focal length fell between two sweep candidates. If it does, a
+           rotation-only check is owed: a pair most of whose matches a rotation alone explains has no
+           parallax.
+         - **rendered distorted footage**: how many frames the starting model leaves unplaced. If
+           any, a second placement round is owed: the unplaced frames posed again under the refined
+           model, then one more adjustment when a frame joins.
+       - The operator guidance says footage whose every frame looks at one point does not say its
+         focal length (9b's finding), so a camera circling an object should not keep it centred.
    11. **Attempts, and the flow nodes.**
        - `calibration::Method {Board, Targetless, BoardThenTargetless}`, `calibration::Attempts` (the
          reports in priority order, and the accepted one's position), and `calibration::accepts`.
@@ -7690,6 +7701,90 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        - the tracks left in identity order fail the identities case.
 
        Every bound is set from its measurement and written beside it.
+
+   **Sub-slice 9c planned (2026-10-15).** One commit of test code: the method as 9b built it, refined
+   by the real Ceres refiner, over 9b's stand-in scene and geometry (`resetWandering`,
+   `sequenceTrackSetOf`, `TruthGeometry`), in `plugins/camera/ceres/test/test_targetlesscalibration.cpp`
+   in `test-camera-ceres`. A scratch probe ran every case before planning, and every number below is
+   its measurement, the same in Debug and Release.
+
+   **Decided with the repo owner:**
+   - **A camera that only pans is refused in 9c only under a right model**, as 9b tests it. 9b found a
+     false orbit over the stand-ins when the true focal length falls between two sweep candidates;
+     that goes to sub-slice 10, which renders a pan and runs it through OpenCV's essential matrix,
+     since the stand-in's arbitrary sideways baseline is what fitted it. If the pan reconstructs as an
+     orbit there, a rotation-only check lands in 10: a pair most of whose matches a rotation alone
+     explains has no parallax. The alternative was building that check now, ahead of 9c.
+   - **Frames the starting model cannot place stay unplaced**, and are not retried after the
+     adjustment. Sub-slice 10 measures how many a real solver leaves out on rendered distorted
+     footage. If it leaves any, the fix is a second placement round under the refined model, with
+     one more adjustment when a frame joins. Over the stand-ins the effect is exaggerated, since
+     `TruthGeometry` proposes only true poses: a 12-frame Brown-Conrady scene left 2 of 10 frames
+     unplaced from a start 7% short, and 24 frames left none. The alternative was the second round
+     now.
+
+   **Found while planning:**
+   - **The stand-in places nothing that a starting model misses by much.** With the principal point
+     15 px off, only the seed's 2 of 10 frames could be placed, so the calibration failed TooFewViews.
+     At 6 px, 1 frame was left unplaced; at 3 px, none. A real solver would fit a pose that absorbs
+     the offset, since a principal-point shift is nearly a rotation. So the principal-point case uses
+     3 px.
+   - **Honest noise names about 0.5% of correct observations as outliers.** An outlier is an
+     observation whose whitened residual's norm exceeds the loss scale of 3, as in targetless
+     registration. Under Gaussian noise of the stated sigma, that is about 1.1% before the fit takes
+     its share. Measured: 6 of 1200 at sigma 0.136 px, the stated covariance's. So the wrong-match
+     case asserts the corrupted observation is among the outliers, not that it is the only one.
+   - **A held principal point 3 px off is still Ready.** The ray mapping is 3.87 px out, and the
+     held-out angle 0.805 mrad against Ready's 1.5. The frames' poses absorb the offset, as slice 1's
+     fixture harness found a held model's board poses absorb its error. This is what the profile cannot
+     see, and the case pins it as measured.
+   - **Brown-Conrady coefficients under noise are poorly determined while the ray mapping holds.** At
+     sigma 0.136 px over 12 frames: k2 -0.011 against -0.05, k3 -0.074 against 0.01, the ray mapping
+     1.54 px out, and Ready. Comparing by ray mapping, not coefficients, is measured here, not only
+     argued.
+   - **The cost lets every case run in Debug:**
+     - 2 to 4 s for a 12-frame calibration with 20 resamples on a 4-thread pool;
+     - 9.8 s for 24 frames and 200 landmarks;
+     - 0.05 to 0.5 s in Release.
+
+   **The cases, with what the probe measured:**
+   1. **A pinhole recovered from exact tracks.** 12 frames, 120 landmarks, f = 500, centred:
+      - the sweep starts at 465.96;
+      - the model is within 3.6e-9 of the focal length and 1.4e-6 px of the ray mapping;
+      - held out 4.7e-7 mrad, Ready.
+
+      With fx = 500, fy = 510 and the principal point 1 px off, fx and fy come within 1.8e-4, and
+      the ray mapping is 1.06 px out: the held principal point's miss.
+   2. **A Brown-Conrady camera recovered from exact tracks.** 24 frames, 200 landmarks: within 8.3e-10
+      and 5.1e-7 px, every frame placed, Ready.
+   3. **Noise, Ready.** Sigma 0.136 px, the stated covariance's:
+      - the focal length 0.245% long and the ray mapping 0.96 px out;
+      - held out 0.434 mrad, focal variation 0.105%;
+      - Ready under `reconstruction-targetless/1`.
+
+      24 frames and 300 landmarks take it to 0.048% and 0.135 px.
+   4. **A wrong match named, the model unmoved.** One observation 25 px off is named at 182 sigma by
+      its track and frame. The focal length moves by 2.6e-6 of itself, and the held-out evidence
+      does not change.
+   5. **Moving content named, the model unmoved.** With every tenth landmark moving, each of the 12
+      moving tracks is named in most of its fitted frames, at 19.8 to 495 sigma. The ray mapping is
+      0.30 px out. The held-out frames count 18 observations beyond their inlier angle and measure
+      0.842 mrad over the other 219.
+   6. **A principal point 3 px off.** Freed, it is recovered within 6e-7 px, and its variation is a
+      number. Held, it is reported `Held`, and the ray mapping is 3.87 px out, still Ready.
+   7. **Determinism through Ceres, resampling included.** DeterministicDebug and a 4-thread pool give
+      one report, under noise so the resamples differ.
+   8. **Identities that sort another way give one report.** The same tracks named in reverse order,
+      under noise, are compared with their outliers mapped back by name. Footage at another path is
+      this case, since a track's identity digests its frame's source.
+
+   **Sabotages:**
+   - **The bootstrap drawn inside the parallel loop**, from one engine shared without a lock, fails
+     the determinism case. Not under a lock: registration's slice 3 sub-slice 8b found a locked
+     shared engine only permutes the draws among the resamples, which the spread does not see.
+   - **The tracks left in identity order** fail the identities case.
+
+   **9c's counts:** about eight cases in `test-camera-ceres`, wherever Ceres builds.
 
    **Counts:** 9a none; 9b a new executable with about a dozen cases, in every configuration, since it
    needs neither plugin, and two cases in `test-camera-nobackend`; 9c about seven cases wherever Ceres
