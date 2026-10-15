@@ -5465,7 +5465,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         - each frame decoded once;
         - the refusals.
       - Sabotages: the backend's first fundamental taken; the frame left out of a track's identity.
-   8. **The OpenCV fundamental-matrix producer, and a moving camera rendered.**
+   8. **The OpenCV fundamental-matrix producer, and a moving camera rendered.** *(Planned in detail
+      2026-10-15 as one commit of test code only, since the producer moved to 7a; see below.)*
       - ~~`findFundamentalMat` with USAC (MAGSAC, an explicit seed, `isParallel = false`), every
         candidate returned.~~ *Moved to sub-slice 7a (2026-10-15): the seam method is pure virtual,
         so every backend answers it in the commit that adds it. It is tested there on two rendered
@@ -5474,9 +5475,13 @@ The 2026-08-16 review also left these requirements and decisions visible before 
       - Tests, on rendered footage of a moving Brown-Conrady camera:
         - real SIFT, its verified matches checked against the truth;
         - the threshold measured, in pixels per longest side;
-        - the peripheral matches lost to distortion at k1 = -0.1, -0.25 and -0.4;
+        - ~~the peripheral matches lost to distortion at k1 = -0.1, -0.25 and -0.4;~~ *Amended
+          2026-10-15: k1 alone at -0.25 and -0.4 folds inside the test camera's image, so
+          `CameraModel::create` refuses both. The sweep is stated by how far each lens moves the
+          image corner instead; see the detailed plan.*
         - Release only: the time to match every pair of 40 frames sampled at a 1920 longest side,
-          with and without the pre-screen, recorded beside its check.
+          with and without the pre-screen, recorded beside its check. *(Measured per pair and scaled
+          up, decided 2026-10-15: matching all 780 pairs Exact at the cap is about 2.2 core-hours.)*
    9. **`calibration::targetless`.**
       - `calibrate(footage, settings, request)` and `calibrate(trackSet, image, settings, request)`.
       - Steps:
@@ -7077,6 +7082,148 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      and `test_trackidentity.cpp` are unchanged.
 
    **Docs:** each commit adds its built note here and an entry to CLAUDE.md.
+
+   **Sub-slice 8 planned (2026-10-15) as one commit, of test code only.** The producer landed in 7a,
+   so what is left is the moving camera, drawn, and what real SIFT and the real solver make of it.
+
+   **Found while planning:**
+   - **Two of the three distortions planned are not models.** With k1 alone, `CameraModel::create`
+     refuses k1 = -0.25 and -0.4 on the test camera (640x480, f 500) with `FoldsInsideImage`, and
+     -0.3 and -0.4 on a 1920x1080 camera of the same field of view (f 1500). Measured with a probe
+     against the real `create`:
+
+     | k1 | 640x480, f 500 | 1920x1080, f 1500 |
+     | --- | --- | --- |
+     | -0.05 | 14 px (3.6%) | 32 px (2.9%) |
+     | -0.10 | 32 px (8.1%) | 72 px (6.5%) |
+     | -0.15 | 57 px (14.4%) | 122 px (11.1%) |
+     | -0.20 | 100 px (25.0%) | 193 px (17.5%) |
+     | -0.25 | refused | 317 px (28.8%) |
+     | -0.30, -0.40 | refused | refused |
+
+     Each entry is how far the lens moves the image corner from where a pinhole of the same
+     intrinsics puts that corner's ray, and that distance as a share of the half-diagonal. One k1 is
+     a different lens at each field of view, and what a fundamental matrix has to absorb is the
+     pixels distortion moves.
+   - **The threshold is in the pixels searched, and `LongestSide` never enlarges.** A 640-wide frame
+     is searched natively, so its 4 px are about 12 px at a 1920 search. A threshold "in pixels per
+     longest side" is therefore measured on 1920 frames. Scaled from the 1.25 s a 640x480 frame takes
+     in Debug, one takes about 8 s to draw there, so those cases run in Release only.
+   - **Matching every pair of 40 frames Exact at the cap is about 2.2 core-hours** when every pair
+     overlaps. That is slice 3's own measurement (10.2 s a pair on one core, at 8192 features with
+     all their orientations) times 780 pairs: 33 minutes on four cores. Approximate is about 10
+     core-minutes.
+     - So the time cannot be measured end to end at the default settings.
+     - The cost is sub-slice 10's to decide on (the sampled frames, the cap, the search). Sub-slice 8
+       measures it on a moving camera's frames.
+   - **The pre-screen reads the 512 strongest of the capped features**, so any cap of at least 512
+     skips the same pairs.
+   - **A path at one height, turning only about the vertical, is planar motion**, one of the
+     classical critical motions for self-calibration with constant intrinsics (Sturm, CVPR 1997,
+     catalogues them): more than one model explains it equally well. Which motions are critical
+     depends on which parameters are estimated, and holding the principal point narrows the set, but
+     sub-slice 10 calibrates from this path, so it avoids the case rather than relying on that.
+   - **`RenderedSource::decodeFrame` runs under the source's lock**, so a timed extraction over it
+     would also time the renders, one at a time.
+   - **`projectInto` is written twice**, in `test_features.cpp` and in `renderedrig.h`, with one body.
+
+   **Decided with the repo owner:**
+   - **The distortion sweep is stated by corner shift.** On the 1920x1080 camera (f 1500), k1 = 0,
+     -0.1, -0.2 and -0.25 move the corner 0, 72, 193 and 317 px (0, 6.5, 17.5 and 28.8% of the
+     half-diagonal). -0.25 is close to the strongest k1-only lens accepted there. The alternatives:
+     - the planned values with a positive k2 added to keep each valid, as real wide lenses have. Which
+       k2 is a second free choice, and it moves the answer;
+     - a longer focal length (about 2000) where all three are valid, -0.4 then close to its fold.
+   - **The time is measured per pair and scaled up.**
+     - One pre-screen and one full match at the cap, Exact and Approximate, timed on one core on
+       1920 frames of the fine texture, as slice 3 timed its 8192-feature pair.
+     - The pairs the pre-screen skips, counted by a production run over all 40 frames at a cap of
+       1024, which skips the pairs the default cap would.
+     - The totals with and without the pre-screen, worked out and recorded, with the share of pairs
+       sharing nothing at which the pre-screen pays for itself.
+
+     The alternatives: timing the production run with Approximate at the default cap, with only
+     Exact scaled up; or with Exact at a cap of about 2048, scaled up by the rows squared.
+   - **The default scene, with a path that rises and turns.** The camera moves along the arc in front
+     of the default scene, so every frame sees the box and every pair overlaps. The pre-screen's
+     saving is then the break-even above, not an observation. A wider scene in which distant frames
+     share nothing was the alternative.
+
+   **Taken by precedent, or decided while planning:**
+   - **`RenderedSource` takes a pose per frame.** A second constructor takes
+     `std::vector<math::RigidTransformd>`: frame f is drawn at pose f, and the frame count is the
+     poses'. The fixed camera's constructor keeps its signature and delegates, so `renderedrig.h` and
+     the rig footage case change by nothing.
+   - **`RenderedSource::drawAll()`** draws every frame not yet drawn on the process pool, one task a
+     frame, and is called before the footage is handed on. A timed run then times the extraction, not
+     the renders.
+   - **`synthetic::arcPath(frames)`** in `texturedscene.h`, the path frame by frame:
+     - along the arc from -0.35 to 0.35 rad, 3.2 m from the scene, about 2.2 m of travel;
+     - rising and falling 0.3 m about the arc's 0.5 m rise, rolling up to 0.12 rad, and aiming up to
+       0.3 m off the box's middle, each on its own period, so the turn between two frames is not about
+       one axis;
+     - the box in view in every frame, which the first case checks.
+   - **`projectInto` moves to `texturedscene.h`**, beside `truthAt`, its inverse, and both callers
+     use it.
+   - **The new cases go in `test_sequencefeatures.cpp`, in `test-camera-opencv-features`.** What
+     they share with `test_features.cpp` (`ensureBackend`, `cells`, `subset`, `strongest`, the large
+     camera) moves unchanged to `renderedfeatures.h` beside them. The large camera, `pinhole(width,
+     height)`, becomes `largeCamera(width, height, distortion)`, with no distortion by default.
+   - **The disc crosses the scene** in the first two cases, as it does in the rig footage case. The
+     moving content a fundamental matrix lets through is then counted, which is what sub-slice 9's
+     robust loss and outlier report will meet.
+   - **A match is correct when A's truth point lands within 3 px of B's feature**, `twoViews`' rule.
+     **A match's radius is its outer end's**, from the principal point, as a share of the
+     half-diagonal.
+   - **Defaults stay as they are.** The numbers are recorded beside their checks and here, for the
+     repo owner. A change to `threshold` or `samples` is its own commit, as slice 3's sub-slice 7 left
+     its own.
+   - **Every bound is set from its measurement and written beside it.**
+
+   **Tests, all in `test_sequencefeatures.cpp`:**
+   1. **A moving camera's tracks, through `extractSequenceTracks`** (Debug and Release). The test
+      camera (Brown-Conrady, 640x480) along `arcPath` over the default scene with the disc, about
+      eight of twelve frames sampled, searched natively:
+      - the source's last frame is `render()` at the path's last pose, byte for byte;
+      - the box is in view in every frame;
+      - the pool and deterministic debugging give one track set, identities and pixels;
+      - the three backends are OpenCV's;
+      - every pair of adjacent sampled frames verifies;
+      - each track's first observation is cast into the scene at its own frame. Those landing on the
+        disc are counted. The rest are projected into every other member's frame, and the share
+        within 2 px and the worst are recorded.
+   2. **The threshold, and what distortion costs** (Release only). The 1920x1080 camera (f 1500) at
+      k1 = 0, -0.1, -0.2 and -0.25, each lens's corner shift computed and recorded beside it.
+      - Each lens: a near pair (adjacent frames of a 40-frame path) and a far pair (its ends), searched
+        at `LongestSide{1920}`, so natively, matched, and every match judged against the truth.
+      - Then `fundamental` at 1, 2, 4, 8 and 16 px over seeds 0 to 4, recording for each:
+        - the correct matches kept, in all and in the outer third;
+        - the wrong matches admitted, the disc's among them.
+      - The table goes here and beside the check. The checks include the pinhole at 4 px keeping
+        nearly every correct match, and each lens's outer-third loss at 4 px.
+   3. **Matching every pair of 40 frames** (Release only). The 1920x1080 camera with no distortion
+      along `arcPath`, over the fine texture (cell 0.01) so the cap binds, the 40 frames drawn by
+      `drawAll`:
+      - on one core, on frames 0 and 1 capped at 8192 features with all their orientations: the
+        pre-screen and the full match, Exact and Approximate;
+      - `extractSequenceTracks` over all 40 frames at a cap of 1024, on the pool: the pairs it skips,
+        how many verify, and its time;
+      - recorded: the core-hours and the wall time on four cores of all 780 pairs, with and without
+        the pre-screen, Exact and Approximate, and the break-even share;
+      - the checks: the pre-screen costs a small share of a full match, Approximate is faster than
+        Exact, and the skipped count is what was measured on this path.
+
+   **Sabotages:**
+   - `RenderedSource` drawing every frame at the path's first pose. Predicted: the first case fails
+     its byte comparison and its truth checks.
+   - `extractSequenceTracks` handing `fundamental` its threshold times 1000. Predicted: the first case
+     fails on the disc's tracks and on the share within 2 px.
+
+   **Counts:** +3 in `test-camera-opencv-features` wherever the OpenCV plugin builds, in Debug and
+   Release (two of them skip in Debug). None with it off.
+
+   **Docs:** the built note here, an entry to CLAUDE.md, and ADR-0016's note that strong distortion
+   costs peripheral matches amended with what was measured.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
