@@ -363,18 +363,19 @@ namespace lain::camera::calibration::targetless
 		return candidates[*chosen].model;
 	}
 
-	// The reconstruction narrowed to the frames `keep` says: their views, renumbered in frame order, and
-	// every track that still has two observations among them.
+	// The reconstruction over `units` narrowed to the frames `keep` says: their views, renumbered in frame
+	// order, and every entry that still has two observations among them, an entry drawn twice being two.
+	// `placement` holds a landmark per entry of `units`.
 	struct Narrowed
 	{
 		Evidence evidence;
 		Units units;
 		Placement placement;
-		std::vector<std::uint32_t> frameOf; // per view: its frame
-		std::vector<std::uint32_t> trackOf; // per entry: its index in the evidence narrowed from
+		std::vector<std::uint32_t> frameOf;	  // per view: its view in the evidence narrowed from, a frame in the calibration's own
+		std::vector<std::uint32_t> fromEntry; // per entry: its entry in the units narrowed from
 	};
 
-	static Narrowed narrow(const Evidence& evidence, const Placement& placement, const std::vector<bool>& keep)
+	static Narrowed narrow(const Evidence& evidence, const Units& units, const Placement& placement, const std::vector<bool>& keep)
 	{
 		Narrowed out;
 		std::vector<std::optional<std::uint32_t>> viewOf(keep.size());
@@ -392,11 +393,11 @@ namespace lain::camera::calibration::targetless
 			if (viewOf[f])
 				out.placement.order.push_back(*viewOf[f]);
 		}
-		for (std::uint32_t e = 0; e < evidence.tracks.size(); ++e)
+		for (std::uint32_t e = 0; e < units.size(); ++e)
 		{
 			Usable usable;
-			usable.track = evidence.tracks[e].track;
-			for (Seen s : evidence.tracks[e].seen)
+			usable.track = evidence.tracks[units[e]].track;
+			for (Seen s : evidence.tracks[units[e]].seen)
 			{
 				if (!viewOf[s.view])
 					continue;
@@ -408,9 +409,43 @@ namespace lain::camera::calibration::targetless
 			out.units.push_back(std::uint32_t(out.evidence.tracks.size()));
 			out.evidence.tracks.push_back(std::move(usable));
 			out.placement.landmarks.push_back(placement.landmarks[e]);
-			out.trackOf.push_back(e);
+			out.fromEntry.push_back(e);
 		}
 		return out;
+	}
+
+	// What a bundle adjustment starts from over the frames `keep` holds (reconstruction::startFrom): the
+	// reconstruction narrowed to them, then narrowed again without every frame the start leaves seeing
+	// fewer than kPlaceLandmarks landmarks, until it leaves none. The reference is the first frame placed
+	// that is kept. Unset when fewer than kMinimumFrames frames are left; `keep` receives the frames that
+	// are. The adjustment and every bootstrap resample start through this one routine, so they cannot
+	// disagree about which observations a start can see.
+	struct Started
+	{
+		Narrowed narrowed;
+		Start start;
+		std::uint32_t reference = 0; // a view of `narrowed`
+	};
+
+	static std::optional<Started> startOver(const Evidence& evidence, const Units& units, const Placement& placement,
+											std::vector<bool>& keep)
+	{
+		for (;;)
+		{
+			if (std::size_t(std::count(keep.begin(), keep.end(), true)) < kMinimumFrames)
+				return std::nullopt;
+			Started out;
+			out.narrowed = narrow(evidence, units, placement, keep);
+			const std::uint32_t first = *std::find_if(placement.order.begin(), placement.order.end(), [&](std::uint32_t f)
+													  { return bool(keep[f]); });
+			out.reference = std::uint32_t(std::find(out.narrowed.frameOf.begin(), out.narrowed.frameOf.end(), first) -
+										  out.narrowed.frameOf.begin());
+			out.start = startFrom(out.narrowed.evidence, out.narrowed.units, out.narrowed.placement, out.reference);
+			if (out.start.starved.empty())
+				return out;
+			for (const std::uint32_t v : out.start.starved)
+				keep[out.narrowed.frameOf[v]] = false;
+		}
 	}
 
 	// The bundle adjustment's problem from `start`: every refined landmark and its kept observations,
@@ -444,80 +479,60 @@ namespace lain::camera::calibration::targetless
 		return problem;
 	}
 
-	// One bootstrap resample adjusted from the result: the drawn landmarks at their refined positions, a
-	// landmark drawn twice being two, over the frames that still see four of them, each landmark that
-	// still has two observations among those frames. The refined model's parameters, unchecked, or
-	// nothing when too few frames are left or the adjustment gives no usable solution.
-	static std::optional<CameraModelParameters> resampled(const refinement::Problem& fitted, const refinement::Solution& result,
-														  const CameraModel& model, const std::vector<std::uint32_t>& draw)
+	// The adjustment's evidence under its result, for its resamples to draw from: over its frames and the
+	// refined model, a track per refined landmark in their order, each holding the observations the
+	// adjustment fitted, their rays through the refined model; one whose pixel does not unproject through
+	// it is left out. A landmark left with fewer than two observations is still listed, since a draw
+	// names a landmark by its place; narrowing leaves it out.
+	static Evidence fittedUnder(const CameraModel& model, const Narrowed& narrowed, const Start& start,
+								const std::vector<std::uint32_t>& entryOf)
 	{
-		const std::size_t views = result.cameraFromReference.size();
-		std::vector<std::vector<const refinement::LandmarkObservation*>> observing(fitted.landmarks.size());
-		for (const refinement::LandmarkObservation& o : fitted.landmarkObservations)
-			observing[o.landmark].push_back(&o);
+		Evidence out;
+		out.models.assign(narrowed.evidence.models.size(), model);
+		for (const std::uint32_t e : entryOf)
+		{
+			const Usable& track = narrowed.evidence.tracks[narrowed.units[e]];
+			Usable fitted;
+			fitted.track = track.track;
+			for (std::size_t m = 0; m < track.seen.size(); ++m)
+			{
+				if (!start.kept[e][m])
+					continue;
+				Seen s = track.seen[m];
+				const Unprojection<double> ray = unproject(model, s.pixel.x, s.pixel.y);
+				if (!ray.ok())
+					continue;
+				s.ray = math::normalize(math::Vec3d{ray.x, ray.y, ray.z});
+				fitted.seen.push_back(s);
+			}
+			out.tracks.push_back(std::move(fitted));
+		}
+		return out;
+	}
 
-		std::vector<bool> keepView(views, true), keepEntry(draw.size(), true);
-		for (bool changed = true; changed;)
-		{
-			changed = false;
-			std::vector<std::uint32_t> seen(views, 0);
-			for (std::size_t d = 0; d < draw.size(); ++d)
-			{
-				if (!keepEntry[d])
-					continue;
-				std::uint32_t members = 0;
-				for (const refinement::LandmarkObservation* o : observing[draw[d]])
-					members += keepView[o->camera] ? 1 : 0;
-				if (members < 2)
-				{
-					keepEntry[d] = false;
-					changed = true;
-					continue;
-				}
-				for (const refinement::LandmarkObservation* o : observing[draw[d]])
-				{
-					if (keepView[o->camera])
-						++seen[o->camera];
-				}
-			}
-			for (std::size_t v = 0; v < views; ++v)
-			{
-				if (keepView[v] && seen[v] < kPlaceLandmarks)
-				{
-					keepView[v] = false;
-					changed = true;
-				}
-			}
-		}
-		std::vector<std::optional<std::uint32_t>> viewOf(views);
-		refinement::Problem problem;
-		problem.models = {model};
-		problem.modelFreedom = fitted.modelFreedom;
-		problem.loss = fitted.loss;
-		problem.noise = fitted.noise;
-		for (std::uint32_t v = 0; v < views; ++v)
-		{
-			if (!keepView[v])
-				continue;
-			viewOf[v] = std::uint32_t(problem.cameraFromReference.size());
-			problem.cameraFromReference.push_back(result.cameraFromReference[v]);
-		}
-		if (problem.cameraFromReference.size() < kMinimumFrames)
+	// One bootstrap resample adjusted from the result: the drawn landmarks at their refined positions, a
+	// landmark drawn twice being two, started as the adjustment was (startOver) but under the refined
+	// model. Its domain may end where the adjustment's start's did not, so an observation the result
+	// cannot project is left out, as the adjustment's own start leaves one out, rather than failing the
+	// resample at its first evaluation. The refined model's parameters, unchecked, or nothing when too few
+	// frames are left or the adjustment gives no usable solution.
+	static std::optional<CameraModelParameters> resampled(const Evidence& fitted, const refinement::Solution& result,
+														  const std::vector<std::uint32_t>& order,
+														  const refinement::ModelFreedom& freedom, const Settings& settings,
+														  const Units& draw)
+	{
+		Placement placement;
+		placement.viewFromWorld.assign(result.cameraFromReference.begin(), result.cameraFromReference.end());
+		placement.order = order;
+		for (const std::uint32_t l : draw)
+			placement.landmarks.push_back(result.landmarks[l]);
+		std::vector<bool> keep(fitted.models.size(), true);
+		const std::optional<Started> started = startOver(fitted, draw, placement, keep);
+		if (!started)
 			return std::nullopt;
-		problem.modelOf.assign(problem.cameraFromReference.size(), 0);
-		problem.reference = viewOf[fitted.reference] ? *viewOf[fitted.reference] : 0;
-		for (std::size_t d = 0; d < draw.size(); ++d)
-		{
-			if (!keepEntry[d])
-				continue;
-			const std::uint32_t landmark = std::uint32_t(problem.landmarks.size());
-			problem.landmarks.push_back(result.landmarks[draw[d]]);
-			for (const refinement::LandmarkObservation* o : observing[draw[d]])
-			{
-				if (viewOf[o->camera])
-					problem.landmarkObservations.push_back({*viewOf[o->camera], landmark, o->pixel, o->covariance});
-			}
-		}
+		std::vector<std::uint32_t> entryOf;
+		const refinement::Problem problem = problemOf(started->narrowed, started->start, started->reference,
+													  fitted.models.front(), freedom, settings, entryOf);
 		const refinement::Solution solution = refinement::refine(problem);
 		if (!solution.usable() || solution.models.size() != 1)
 			return std::nullopt;
@@ -769,35 +784,20 @@ namespace lain::camera::calibration::targetless
 		std::vector<bool> keep(n, false);
 		for (std::uint32_t f = 0; f < n; ++f)
 			keep[f] = placement.viewFromWorld[f].has_value();
-		Narrowed narrowed;
-		Start begin;
-		std::uint32_t reference = 0;
-		for (;;)
-		{
-			if (std::size_t(std::count(keep.begin(), keep.end(), true)) < kMinimumFrames)
-				break;
-			narrowed = narrow(evidence, placement, keep);
-			const std::uint32_t referenceFrame =
-				keep[seed->a] ? seed->a : *std::find_if(placement.order.begin(), placement.order.end(), [&](std::uint32_t f)
-														{ return bool(keep[f]); });
-			reference = std::uint32_t(std::find(narrowed.frameOf.begin(), narrowed.frameOf.end(), referenceFrame) -
-									  narrowed.frameOf.begin());
-			begin = startFrom(narrowed.evidence, narrowed.units, narrowed.placement, reference);
-			if (begin.starved.empty())
-				break;
-			for (const std::uint32_t v : begin.starved)
-				keep[narrowed.frameOf[v]] = false;
-		}
+		const std::optional<Started> started = startOver(evidence, all, placement, keep);
 		for (std::uint32_t f = 0; f < n; ++f)
 		{
 			if (!heldOut[f] && !keep[f])
 				targetless.unplaced.push_back(f);
 		}
-		const std::size_t placed = std::size_t(std::count(keep.begin(), keep.end(), true));
-		if (placed < kMinimumFrames)
+		if (!started)
 			return failed(std::move(report), start, Failure::TooFewViews,
-						  lain::string::format("{} of {} frames could be placed; a calibration needs at least {}", placed,
-											   n - diagnostics.heldOut.size(), kMinimumFrames));
+						  lain::string::format("{} of {} frames could be placed; a calibration needs at least {}",
+											   std::count(keep.begin(), keep.end(), true), n - diagnostics.heldOut.size(),
+											   kMinimumFrames));
+		const Narrowed& narrowed = started->narrowed;
+		const Start& begin = started->start;
+		const std::uint32_t reference = started->reference;
 		targetless.behind = begin.behind;
 
 		// 6. The bundle adjustment.
@@ -851,10 +851,12 @@ namespace lain::camera::calibration::targetless
 		targetless.untriangulated = targetless.tracksUsable - targetless.landmarks;
 
 		// Residuals and outliers, per fitted observation. One left out for cheirality is an outlier the
-		// adjustment could not even start from.
+		// adjustment could not even start from. The fit RMS is over the observations the result explains,
+		// those not named: a wrong match hundreds of pixels out would otherwise decide it alone, as a
+		// held-out frame's outliers would decide its RMS.
 		detail::CoverageCells fittedCells{};
 		double sumPixels = 0;
-		std::uint32_t projected = 0;
+		std::uint32_t explained = 0;
 		for (std::size_t l = 0; l < entryOf.size(); ++l)
 		{
 			const std::uint32_t e = entryOf[l];
@@ -871,16 +873,16 @@ namespace lain::camera::calibration::targetless
 				detail::cover(fittedCells, s.pixel, frames.image);
 				const math::Vec3d q = solution.cameraFromReference[s.view].apply(solution.landmarks[l]);
 				const Projection<double> predicted = project(model, q.x, q.y, q.z);
-				double rmsWhitened = std::numeric_limits<double>::infinity();
-				if (predicted.ok())
-				{
-					const math::Vec2d r = math::Vec2d{predicted.u, predicted.v} - s.pixel;
-					sumPixels += math::dot(r, r);
-					++projected;
-					rmsWhitened = std::sqrt(detail::whitenedSquared(r, s.covariance, problem.noise));
-				}
+				const math::Vec2d r = predicted.ok() ? math::Vec2d{predicted.u, predicted.v} - s.pixel : math::Vec2d{0.0};
+				const double rmsWhitened = predicted.ok() ? std::sqrt(detail::whitenedSquared(r, s.covariance, problem.noise))
+														  : std::numeric_limits<double>::infinity();
 				if (rmsWhitened > settings.loss.scale)
+				{
 					targetless.outliers.push_back({track.track->identity, frame, rmsWhitened});
+					continue;
+				}
+				sumPixels += math::dot(r, r);
+				++explained;
 			}
 		}
 		if (!hold)
@@ -888,7 +890,8 @@ namespace lain::camera::calibration::targetless
 			for (std::uint32_t v = 0; v < narrowed.frameOf.size(); ++v)
 				diagnostics.selected.push_back(narrowed.frameOf[v]);
 			diagnostics.viewsSelected = std::uint32_t(diagnostics.selected.size());
-			diagnostics.fitRmsPixels = projected > 0 ? std::sqrt(sumPixels / projected) : 0.0;
+			diagnostics.fitResiduals = explained;
+			diagnostics.fitRmsPixels = explained > 0 ? std::sqrt(sumPixels / explained) : 0.0;
 		}
 		report.status = CalibrationStatus::Succeeded;
 
@@ -900,7 +903,7 @@ namespace lain::camera::calibration::targetless
 				heldIndex[diagnostics.heldOut[h]] = h;
 			for (std::size_t l = 0; l < entryOf.size(); ++l)
 			{
-				const Ordered& t = tracks[orderedOf[narrowed.trackOf[entryOf[l]]]];
+				const Ordered& t = tracks[orderedOf[all[narrowed.fromEntry[entryOf[l]]]]];
 				for (const Observed& o : t.seen)
 				{
 					if (const std::optional<std::uint32_t> h = heldIndex[o.frame])
@@ -951,7 +954,7 @@ namespace lain::camera::calibration::targetless
 		diagnostics.coverage = detail::coveredFraction(hold ? heldCells : fittedCells);
 
 		// 8. Stability: bundle adjustments of bootstrap resamples of the refined landmarks, drawn before
-		// anything runs (detail::bootstrapDraws), each from the result.
+		// anything runs (detail::bootstrapDraws), each from the result under the refined model.
 		if (hold)
 			report.resampling = Unavailable{"the model was held, not estimated"};
 		else if (request.resamples == 0)
@@ -963,9 +966,11 @@ namespace lain::camera::calibration::targetless
 			std::vector<std::uint32_t> landmarks(entryOf.size());
 			std::iota(landmarks.begin(), landmarks.end(), 0u);
 			const std::vector<std::vector<std::uint32_t>> draws = detail::bootstrapDraws(landmarks, request.resamples, request.seed);
+			const Evidence fitted = fittedUnder(model, narrowed, begin, entryOf);
 			std::vector<std::optional<CameraModelParameters>> estimates(draws.size());
-			detail::forEach(draws.size(), request.execution, [&](std::size_t r)
-							{ estimates[r] = resampled(problem, solution, model, draws[r]); });
+			detail::forEach(draws.size(), request.execution,
+							[&](std::size_t r)
+							{ estimates[r] = resampled(fitted, solution, narrowed.placement.order, freedom, settings, draws[r]); });
 			report.resampling = detail::stability(estimates, !settings.freePrincipalPoint);
 		}
 

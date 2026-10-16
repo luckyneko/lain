@@ -122,12 +122,14 @@ namespace lain::camera::calibration
 	};
 
 	// An observation the result does not explain: its RMS whitened residual exceeds the loss scale,
-	// or it could not even be projected from the start.
+	// or it could not be projected, from the start or through the result.
 	struct Outlier
 	{
 		std::string track;		 // the feature track's identity
 		std::uint32_t frame = 0; // its position among the frames examined
-		double rmsWhitened = 0;	 // standard deviations; infinite when it was left out of the refinement
+		// Standard deviations; infinite when it was left out of the refinement, or the refined model
+		// cannot project it.
+		double rmsWhitened = 0;
 	};
 
 	// What a targetless calibration examined, beside what every calibration reports. Every frame is
@@ -164,7 +166,10 @@ namespace lain::camera::calibration
 		std::uint32_t viewsSelected = 0;
 		std::uint32_t viewsHeldOut = 0;
 		double coverage = 0;	 // of the calibration views, over the image grid
-		double fitRmsPixels = 0; // the estimate's own residual on the calibration views
+		double fitRmsPixels = 0; // the estimate's own residual on the calibration views, over `fitResiduals`
+		// The observations fitRmsPixels is taken over: in board calibration every feature of the
+		// calibration views; in targetless calibration the fitted observations not named outliers.
+		std::uint32_t fitResiduals = 0;
 		// Positions among the frames examined (in board calibration, of the detections, one per frame;
 		// in targetless calibration, of TargetlessDiagnostics::frames).
 		std::vector<std::uint32_t> selected; // the calibration views

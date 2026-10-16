@@ -50,12 +50,13 @@ namespace lain::camera::calibration::targetless
 	// 6. the bundle adjustment: one model shared by every placed frame, its focal length and
 	//    coefficients free and its principal point held unless the settings free it, under the
 	//    settings' robust loss with every observation weighted by its own covariance; then
-	//    CameraModel::create, and outliers named by track and frame. A held model refines the frames
-	//    and landmarks alone;
+	//    CameraModel::create, outliers named by track and frame, and the fit RMS over the observations
+	//    not named. A held model refines the frames and landmarks alone;
 	// 7. each held-out frame posed against the refined landmarks, and its observations within the
 	//    pose's inlier angle measured as angles through lain's projection; those beyond it counted;
-	// 8. seeded bootstrap resampling of the tracks, each resample adjusted from the result, for the
-	//    model's stability;
+	// 8. seeded bootstrap resampling of the refined landmarks, for the model's stability: each resample
+	//    adjusted from the result, started as the adjustment was but under the refined model, so an
+	//    observation the refined model cannot project is left out of it;
 	// 9. the verdict against the fitness profile, through calibration::judge.
 	//
 	// Every inlier test is 4 source pixels turned into an angle by the focal length in use. Independent

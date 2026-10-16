@@ -8061,6 +8061,46 @@ The 2026-08-16 review also left these requirements and decisions visible before 
 
    **Docs:** each commit adds its built note here and an entry to CLAUDE.md.
 
+   **Sub-slice 10a built (2026-10-16): what a resample starts from, and the fit RMS.** As planned, with
+   one addition: the fit RMS's count is a field every calibration method reports.
+   - `ctest` **1271/1271** Debug and **1279/1279** Release with video, camera and Ceres on (+1 each),
+     **1152/1152** with all three off (unchanged, since the new case needs Ceres). Warning-clean,
+     format-check clean.
+   - **A resample starts as the adjustment does, through one routine.** The loop that narrowed the
+     placed frames until none was starved is now `startOver`, over `narrow` generalised from tracks to
+     units, so an entry a bootstrap draws twice is two. The adjustment calls it with every usable track.
+     Each resample calls it with its draw, over a new `fittedUnder`: the adjustment's frames under the
+     refined model, one track per refined landmark holding the observations the adjustment fitted, and
+     the refined poses and landmarks as the placement. So `reconstruction::startFrom` decides for both
+     which observations a start can see, and a resample leaves out one the refined model cannot project
+     rather than failing at Ceres' first evaluation. The resample's own loop over views and landmarks is
+     deleted: it was `startFrom`'s starvation rule without the projection test.
+   - **Where everything projects, a resample is the problem it was.** Its views, landmarks and
+     observations come out in the old order, and every value 9c measured still holds. One difference:
+     a resample that loses the adjustment's reference frame is now referenced to the next frame placed,
+     where it was view 0.
+   - **The fit RMS is over the observations not named outliers**, and their count is a new
+     `Diagnostics::fitResiduals` beside it. The plan put the count beside the RMS; the RMS is shared, so
+     board calibration fills it too, with every feature of its calibration views, the residuals its
+     estimator's RMS is over. The board golden changes on purpose in exactly its four diagnostics lines
+     (720 = 30 views of 24 corners, 480, 0 and 0), diffed before it was copied over.
+   - **`Outlier::rmsWhitened` is documented as the code had it:** infinite when the refined model
+     cannot project the observation, as well as when the start could not.
+   - **The new case**, in 9c's file: a Brown-Conrady camera whose distortion folds 44.8 degrees off its
+     axis, its image's corner at 40.3 (k3 = -0.15 at f = 500), over 24 frames and 200 landmarks. Eight
+     landmarks half a metre in front of the last frame, 55 to 60 degrees off frame 0's axis, are each
+     matched wrongly in frame 0. The adjustment starts from a neutral model, whose domain is unbounded,
+     so it fits all eight (`behind` is 0), and the refined model cannot project one, so each is named with
+     an infinite residual. Measured: 20 of 20 resamples produce a model, and the run is Ready.
+   - **The wrong-match case** pins the fit RMS: 0.167635 px over 1194 observations clean, 0.167596 over
+     1193 with the match 25 px out.
+   - **Two sabotages, both caught as predicted:**
+     - every observation a resample's start leaves out kept anyway: the new case fails, with no
+       resampling evidence ("fewer than two resamples produced an estimate") and Exploratory, the
+       probe's failure;
+     - the RMS over every projected observation: the wrong-match case fails, the RMS moving by 0.565 px
+       and the count staying at 1200.
+
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
 failed reports as ordinary results, deterministic-debug execution, downsampling versus native

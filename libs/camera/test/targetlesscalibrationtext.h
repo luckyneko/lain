@@ -87,7 +87,7 @@ namespace lain::camera::testing::targetlesstext
 
 		const Diagnostics& d = r.diagnostics;
 		out << "views " << d.viewsSelected << " " << d.viewsHeldOut << " " << number(d.coverage) << " " << number(d.fitRmsPixels)
-			<< "\nselected" << positions(d.selected) << "\nheldOutViews" << positions(d.heldOut) << "\n";
+			<< " " << d.fitResiduals << "\nselected" << positions(d.selected) << "\nheldOutViews" << positions(d.heldOut) << "\n";
 		const TargetlessDiagnostics& t = std::get<TargetlessDiagnostics>(d.method);
 		for (const media::FrameRef& f : t.frames)
 			out << "frame " << f.toString() << "\n";

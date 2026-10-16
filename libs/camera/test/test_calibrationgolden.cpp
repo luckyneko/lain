@@ -107,7 +107,7 @@ namespace
 		out << "diagnostics.framesExamined " << examined.framesExamined << " framesUsable " << examined.framesUsable
 			<< " viewsSelected "
 			<< d.viewsSelected << " viewsHeldOut " << d.viewsHeldOut << " coverage " << number(d.coverage)
-			<< " fitRmsPixels " << number(d.fitRmsPixels) << "\n";
+			<< " fitRmsPixels " << number(d.fitRmsPixels) << " fitResiduals " << d.fitResiduals << "\n";
 		out << "selected" << positions(d.selected) << "\n";
 		out << "heldOutViews" << positions(d.heldOut) << "\n";
 		for (std::size_t i = 0; i < examined.detections.size(); ++i)

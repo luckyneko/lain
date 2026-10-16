@@ -1400,6 +1400,26 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-16 — M9 slice 4, sub-slice 10a: a resample starts as the adjustment does, and the fit RMS ignores outliers
+
+The first of sub-slice 10's five commits. `ctest` **1271/1271** Debug and **1279/1279** Release with
+video, camera and Ceres on (+1 each), **1152/1152** with all three off (unchanged); warning-clean,
+format-check clean. Full notes in WORK.md's *Sub-slice 10a built* under M9 slice 4.
+
+- **One routine starts the adjustment and every bootstrap resample** (`startOver` in
+  `calibration/targetless.cpp`, over `reconstruction::startFrom`). A resample starts under the refined
+  model, whose domain may end at its fold where the adjustment's neutral start's did not, so an
+  observation the refined model cannot project is left out instead of failing the resample at Ceres'
+  first evaluation. The resample's own view-and-landmark loop is deleted.
+- **The fit RMS is over the observations not named outliers**, and its count is a new shared
+  `Diagnostics::fitResiduals`. Board calibration fills it with every feature of its calibration views,
+  so the board golden changes on purpose in its four diagnostics lines.
+- **The new case** folds a Brown-Conrady camera's distortion 44.8 degrees off its axis, just outside its
+  image, and matches eight landmarks wrongly in a frame that sees them beyond that fold. 20 of 20
+  resamples produce a model, Ready. With every observation kept, none did, and the run was Exploratory:
+  the probe's failure, reproduced.
+- **Two sabotages, both caught as predicted.**
+
 ### Update 2026-10-16 — M9 slice 4, sub-slice 10 planned: rendered footage finds three defects in targetless calibration (nothing built yet)
 
 Sub-slice 10 is planned as **five commits, 10a to 10e**: four fix the method, and the fifth is the

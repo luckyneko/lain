@@ -1,7 +1,8 @@
 // Targetless calibration (calibration::targetless) through the Ceres refiner, over the stand-in scene
 // and geometry (syntheticscene.h): one moving camera's model recovered from its frames' tracks, exact
-// and noisy; a wrong match and moving content named and kept from moving the model; a principal point
-// freed and held; and one report however the work ran or the tracks are named. The stand-in geometry
+// and noisy; a wrong match and moving content named and kept from moving the model or the fit RMS; a
+// resample leaving out what the refined model cannot project; a principal point freed and held; and one
+// report however the work ran or the tracks are named. The stand-in geometry
 // proposes only true poses, so it cannot place a frame a starting model misses by much, which is why
 // the principal point is 3 px off rather than more (WORK.md, sub-slice 9c's plan). A model is compared
 // with the truth by its ray mapping, never by its coefficients. Every tolerance is a measurement,
@@ -235,7 +236,7 @@ TEST_CASE("noise at the stated covariance calibrates to within it, Ready", "[cam
 	}
 }
 
-TEST_CASE("a wrong match is named by its track and frame, and the model does not move", "[camera][ceres][targetless][calibration]")
+TEST_CASE("a wrong match is named by its track and frame, and neither the model nor the fit RMS moves", "[camera][ceres][targetless][calibration]")
 {
 	const lain::testing::ThreadPool pool{4};
 	const CameraModel truth = centred();
@@ -262,10 +263,76 @@ TEST_CASE("a wrong match is named by its track and frame, and the model does not
 	// Every other outlier is the noise's, which the clean run names too.
 	CHECK(outliers.size() == targetlessOf(before).outliers.size() + 1);
 
+	// The fit RMS is over the observations the result explains, so the named one, 25 px out, neither
+	// counts nor moves it. Measured: 0.167635 px over 1194 clean, 0.167596 over 1193 with it.
+	CHECK(after.diagnostics.fitResiduals + 1 == before.diagnostics.fitResiduals);
+	CHECK(std::abs(after.diagnostics.fitRmsPixels - before.diagnostics.fitRmsPixels) < 1e-3);
 	// Measured: the focal length moved by 2.8e-6 of itself, and the held-out angle by 7e-5 mrad.
 	CHECK(std::abs(after.model->intrinsics().fx / before.model->intrinsics().fx - 1) < 1e-4);
 	CHECK(std::abs(heldOutOf(after).rmsAngle - heldOutOf(before).rmsAngle) < 1e-6);
 	CHECK(after.verdict == Verdict::Ready);
+}
+
+TEST_CASE("a resample leaves out what the refined model cannot project, and keeps its evidence",
+		  "[camera][ceres][targetless][calibration]")
+{
+	const lain::testing::ThreadPool pool{4};
+	// A camera whose distortion folds 44.8 degrees off its axis, its image's corner being 40.3: just
+	// outside the image. 24 frames and 200 landmarks, as the Brown-Conrady case's.
+	const CameraModel truth = cameraOf(500, 500, 319.5, 239.5, BrownConrady5{0, 0, 0, 0, -0.15});
+	setUp(truth, 24, 200);
+	// Eight landmarks about half a metre in front of the last frame, which the frames near the end see
+	// and which lie 55 to 60 degrees off frame 0's axis, in front of it but beyond the fold; each is
+	// matched wrongly in frame 0 too, at a pixel of its own. The adjustment starts from a neutral model,
+	// whose domain is unbounded, so it fits those matches and names them; a resample starts from the
+	// refined model, whose domain ends at the fold.
+	const std::vector<math::Vec3d> offsets{{-0.4, 0.0, 0.4}, {-0.2, 0.0, 0.4}, {-0.4, -0.3, 0.5}, {-0.4, 0.0, 0.5}, {-0.2, -0.3, 0.5}, {-0.2, 0.0, 0.5}, {0.0, 0.0, 0.5}, {-0.4, -0.3, 0.6}};
+	const math::RigidTransformd& last = scene::scene().path.back();
+	const math::RigidTransformd frame0FromReference = scene::scene().path.front().inverse();
+	for (std::size_t i = 0; i < offsets.size(); ++i)
+	{
+		scene::Landmark landmark;
+		landmark.point = last.apply(offsets[i]);
+		landmark.descriptor = std::uint32_t(1000000 + 1000 * i);
+		const math::Vec3d q = frame0FromReference.apply(landmark.point);
+		REQUIRE(q.z > 0);
+		REQUIRE(project(truth, q.x, q.y, q.z).status == ProjectionStatus::OutsideDomain);
+		scene::scene().landmarks.push_back(landmark);
+	}
+	feature::TrackSet set = scene::sequenceTrackSetOf(kStatedSigma, 5);
+	std::vector<std::string> wrong;
+	for (feature::Track& track : set.tracks)
+	{
+		if (std::stoi(track.identity.substr(5)) < 200)
+			continue;
+		REQUIRE(track.observations.size() >= 3); // measured: 3 to 8 frames see each
+		feature::SceneObservation match = track.observations.front();
+		match.view = 0;
+		match.pixel = math::Vec2d{100.0 + 50.0 * double(wrong.size()), 300.0};
+		track.observations.push_back(match);
+		wrong.push_back(track.identity);
+	}
+	REQUIRE(wrong.size() == offsets.size());
+
+	const Report report = run(set, requestFor(DistortionModel::BrownConrady5));
+	INFO(report.toString());
+	REQUIRE(report.status == CalibrationStatus::Succeeded);
+	REQUIRE(std::count(report.diagnostics.heldOut.begin(), report.diagnostics.heldOut.end(), 0u) == 0);
+	// The adjustment's start left nothing out, so it fitted every wrong match; the refined model cannot
+	// project one, so each is named with an infinite residual.
+	const TargetlessDiagnostics& t = targetlessOf(report);
+	CHECK(t.behind == 0);
+	for (const std::string& track : wrong)
+	{
+		CAPTURE(track);
+		CHECK(std::any_of(t.outliers.begin(), t.outliers.end(), [&](const Outlier& o)
+						  { return o.track == track && o.frame == 0 && std::isinf(o.rmsWhitened); }));
+	}
+	// Measured: every resample produced a model. A resample keeping every observation the adjustment
+	// fitted failed at its first evaluation whenever it drew one of these landmarks, none produced a
+	// model, and the run was Exploratory for want of resampling evidence.
+	CHECK(resamplingOf(report).resamples == report.reproducibility.request.resamples);
+	CHECK(report.verdict == Verdict::Ready);
 }
 
 TEST_CASE("moving content is named, and the model does not move", "[camera][ceres][targetless][calibration]")

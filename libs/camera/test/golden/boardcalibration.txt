@@ -7,7 +7,7 @@ heldOut views 8 corners 192 withoutPose 0 rmsAngle 9.8836e-05 rmsPixels 0.098311
 resampling 20 focal 1.6857e-05 principalPoint 3.576e-06
 uncertainty 0.5 0.6 0.07 0.08 (0.001 0.002 0.0003 0.0004 0.005)
 seeded
-diagnostics.framesExamined 40 framesUsable 38 viewsSelected 30 viewsHeldOut 8 coverage 0.875 fitRmsPixels 0.0421
+diagnostics.framesExamined 40 framesUsable 38 viewsSelected 30 viewsHeldOut 8 coverage 0.875 fitRmsPixels 0.0421 fitResiduals 720
 selected 15 31 11 19 35 26 22 16 6 37 1 33 14 17 25 38 36 28 5 7 0 20 9 12 32 27 30 4 10 23
 heldOutViews 2 8 13 18 24 29 34 39
 detection 0 Detected NotRefined by truth/1 stats(0 0 0 24) transform(1 1) request(longest 480, refine native 0, detail Detailed, minimum corners 6) evidence 0 observation(frame 0 of /synthetic/calibration, 960x720, pattern bbb863628b1b, 24 corners, ids 276, u 19541.662, v 8604.87629, covariance 0)
@@ -69,7 +69,7 @@ heldOut views 10 corners 240 withoutPose 0 rmsAngle 0.009214605 rmsPixels 9.3942
 resampling 5 focal 7.2312e-05 principalPoint 0
 uncertainty unset
 seeded fx fy cx cy
-diagnostics.framesExamined 40 framesUsable 40 viewsSelected 20 viewsHeldOut 10 coverage 0.875 fitRmsPixels 0
+diagnostics.framesExamined 40 framesUsable 40 viewsSelected 20 viewsHeldOut 10 coverage 0.875 fitRmsPixels 0 fitResiduals 480
 selected 15 31 11 19 35 39 23 16 7 21 25 33 27 13 3 24 5 0 29 8
 heldOutViews 2 6 10 14 18 22 26 30 34 38
 detection 0 Detected NotRefined by truth/1 stats(0 0 0 24) transform(1 1) request(native, refine native 1, detail Summary, minimum corners 4) evidence 0 observation(frame 0 of /synthetic/calibration, 960x720, pattern bbb863628b1b, 24 corners, ids 276, u 19541.662, v 8604.87629, covariance 0)
@@ -129,7 +129,7 @@ heldOut views 38 corners 912 withoutPose 0 rmsAngle 0.000263707 rmsPixels 0.2627
 resampling unavailable: the model was held, not estimated
 uncertainty unset
 seeded
-diagnostics.framesExamined 40 framesUsable 38 viewsSelected 0 viewsHeldOut 38 coverage 0.875 fitRmsPixels 0
+diagnostics.framesExamined 40 framesUsable 38 viewsSelected 0 viewsHeldOut 38 coverage 0.875 fitRmsPixels 0 fitResiduals 0
 selected
 heldOutViews 0 1 2 3 4 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39
 detection 0 Detected NotRefined by truth/1 stats(0 0 0 24) transform(1 1) request(longest 480, refine native 0, detail Detailed, minimum corners 6) evidence 0 observation(frame 0 of /synthetic/calibration, 960x720, pattern bbb863628b1b, 24 corners, ids 276, u 19541.662, v 8604.87629, covariance 0)
@@ -189,7 +189,7 @@ heldOut unavailable: not computed
 resampling unavailable: not computed
 uncertainty unset
 seeded
-diagnostics.framesExamined 0 framesUsable 0 viewsSelected 0 viewsHeldOut 0 coverage 0 fitRmsPixels 0
+diagnostics.framesExamined 0 framesUsable 0 viewsSelected 0 viewsHeldOut 0 coverage 0 fitRmsPixels 0 fitResiduals 0
 selected
 heldOutViews
 source /synthetic/calibration

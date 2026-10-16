@@ -422,6 +422,8 @@ namespace lain::camera::calibration::board
 			}
 			report.model = std::move(created.model);
 			diagnostics.fitRmsPixels = estimate.rmsPixels;
+			for (const cb::Observation& v : calibrationViews)
+				diagnostics.fitResiduals += std::uint32_t(v.features.size());
 			report.uncertainty = estimate.uncertainty;
 		}
 		report.status = CalibrationStatus::Succeeded;
