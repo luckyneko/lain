@@ -17,9 +17,11 @@ namespace lain::camera::calibration::targetless
 		// counts as an outlier. There is no noise model: every extracted observation carries its own
 		// covariance.
 		refinement::RobustLoss loss;
-		// Whether the bundle adjustment estimates the principal point. Self-calibration conditions it
-		// poorly, so by default it is held where it started: at the image centre, or at an imported
-		// model's (CONTEXT.md, "Held parameter").
-		bool freePrincipalPoint = false;
+		// Whether the bundle adjustment estimates the principal point. Freed by default: a held one sits
+		// where it started (the image centre, or an imported model's), and the held-out frames' poses
+		// absorb its offset, so a model whose rays are pixels out would pass validation. Footage that
+		// conditions it poorly shows as its resampled variation, which the verdict judges. False holds it
+		// (CONTEXT.md, "Held parameter").
+		bool freePrincipalPoint = true;
 	};
 } // namespace lain::camera::calibration::targetless

@@ -8101,6 +8101,38 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      - the RMS over every projected observation: the wrong-match case fails, the RMS moving by 0.565 px
        and the count staying at 1200.
 
+   **Sub-slice 10b built (2026-10-16): the principal point is freed by default.** As planned.
+   - `ctest` **1271/1271** Debug and **1279/1279** Release with video, camera and Ceres on, **1152/1152**
+     with all three off (no case added: the principal-point cases were rewritten in place).
+     Warning-clean, format-check clean.
+   - **`Settings::freePrincipalPoint` defaults to true.** The setting's comment says why: a held one sits
+     where it started and the held-out frames' poses absorb its offset. The header's step 6 says the
+     principal point is free unless the settings hold it. ADR-0016 and CONTEXT.md already said so,
+     amended when this was planned.
+   - **Cases that relied on the held default now say so.** 9c's fx-and-fy case holds it explicitly, for
+     what a held 1 px miss does to the focal lengths; the stand-in suite's case is now *freed unless the
+     settings hold it*, and its imported-model case expects a freed principal point.
+   - **9c's principal-point case gains an (8, -6) px offset, recovered by default:** exactly, the ray
+     mapping 2.3e-6 px out, every frame placed. The stand-in geometry, which proposes only true poses,
+     places a start 10 px off; the case had been 3 px off for fear it would not. Held, the same footage
+     ends with the ray mapping 10.7 px out and the held-out angle at 2.17 mrad, past Ready's 1.5, so
+     Exploratory. On exact tracks a held miss that large shows; on the probe's rendered footage, under
+     noise, the held-out frames absorbed one of 10 to 18 px and the model was Ready. The held section
+     now pins Exploratory and says which.
+   - **Freeing it costs the noisy cases a little, re-measured:**
+
+     | Case | Ray mapping, held | Ray mapping, freed | Principal point's variation |
+     | --- | --- | --- | --- |
+     | 12 frames, 120 landmarks | 0.96 px | 1.11 px | 0.67 mrad |
+     | 24 frames, 300 landmarks | 0.135 px | 0.374 px | 0.36 mrad |
+     | moving content | 0.30 px | 0.85 px | 0.86 mrad |
+
+     The increase is mostly the principal point's own error, 0.14 to 0.56 px, since the truth's sits
+     where a held one would. The bounds follow the measurements, each about twice its value. The exact cases recover the
+     truth as before, now to 2.5e-11 in focal length.
+   - **Sabotage, caught as predicted:** the default left held fails the offset case, and the noisy case
+     that now reads the principal point's variation; the stand-in suite's two default cases fail too.
+
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
 failed reports as ordinary results, deterministic-debug execution, downsampling versus native

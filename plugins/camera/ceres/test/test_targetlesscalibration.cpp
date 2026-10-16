@@ -1,10 +1,10 @@
 // Targetless calibration (calibration::targetless) through the Ceres refiner, over the stand-in scene
 // and geometry (syntheticscene.h): one moving camera's model recovered from its frames' tracks, exact
 // and noisy; a wrong match and moving content named and kept from moving the model or the fit RMS; a
-// resample leaving out what the refined model cannot project; a principal point freed and held; and one
-// report however the work ran or the tracks are named. The stand-in geometry
-// proposes only true poses, so it cannot place a frame a starting model misses by much, which is why
-// the principal point is 3 px off rather than more (WORK.md, sub-slice 9c's plan). A model is compared
+// resample leaving out what the refined model cannot project; a principal point recovered as it is by
+// default, and missed when held; and one report however the work ran or the tracks are named. The
+// stand-in geometry proposes only true poses, so it cannot place a frame a starting model misses by
+// much; a principal point (8, -6) px off is placed, and recovered exactly (sub-slice 10b). A model is compared
 // with the truth by its ray mapping, never by its coefficients. Every tolerance is a measurement,
 // written beside its check; Debug and Release measure the same. Every case but the one comparing the
 // two starts a pool of four, since without one the resamples run inline on the case's thread.
@@ -132,7 +132,7 @@ namespace
 TEST_CASE("a pinhole camera is recovered from exact tracks, Ready", "[camera][ceres][targetless][calibration]")
 {
 	const lain::testing::ThreadPool pool{4};
-	SECTION("its principal point at the centre, where it is held")
+	SECTION("its principal point at the centre")
 	{
 		const CameraModel truth = centred();
 		setUp(truth);
@@ -146,7 +146,7 @@ TEST_CASE("a pinhole camera is recovered from exact tracks, Ready", "[camera][ce
 		CHECK(t.refinement->status == refinement::Status::Converged);
 		CHECK(report.reproducibility.estimator.backend == "ceres");
 		CHECK(std::get<TargetlessRecord>(report.reproducibility.method).refiner.backend == "ceres");
-		// Measured: focal 3.6e-9, the ray mapping 1.4e-6 px; held out 4.7e-7 mrad.
+		// Measured: focal 2.5e-11, the ray mapping 2.6e-7 px; held out 4.9e-8 mrad.
 		const ModelError error = errorOf(report, truth);
 		CHECK(error.focal < 1e-7);
 		CHECK(error.ray < 1e-4);
@@ -159,7 +159,9 @@ TEST_CASE("a pinhole camera is recovered from exact tracks, Ready", "[camera][ce
 	{
 		const CameraModel truth = cameraOf(500, 510, 320.5, 239.5);
 		setUp(truth);
-		const Report report = run(scene::sequenceTrackSetOf());
+		targetless::Settings settings;
+		settings.freePrincipalPoint = false; // held, for what a held miss does to the focal lengths
+		const Report report = run(scene::sequenceTrackSetOf(), requestFor(DistortionModel::None), settings);
 		INFO(report.toString());
 		REQUIRE(report.status == CalibrationStatus::Succeeded);
 		REQUIRE(report.model.has_value());
@@ -186,7 +188,7 @@ TEST_CASE("a Brown-Conrady camera is recovered from exact tracks, Ready", "[came
 	REQUIRE(report.status == CalibrationStatus::Succeeded);
 	REQUIRE(report.model.has_value());
 	CHECK(modelOf(report.model->distortion()) == DistortionModel::BrownConrady5);
-	// Measured: focal 8.3e-10, the ray mapping 5.1e-7 px.
+	// Measured: focal 3.0e-11, the ray mapping 4.1e-7 px.
 	const ModelError error = errorOf(report, truth);
 	CHECK(error.focal < 1e-7);
 	CHECK(error.ray < 1e-4);
@@ -204,8 +206,9 @@ TEST_CASE("noise at the stated covariance calibrates to within it, Ready", "[cam
 		const Report report = run(scene::sequenceTrackSetOf(kStatedSigma, 5));
 		INFO(report.toString());
 		REQUIRE(report.status == CalibrationStatus::Succeeded);
-		// Measured: the focal length 0.245% long, the ray mapping 0.96 px out; held out 0.434 mrad;
-		// focal variation 0.105%; 6 of 1200 observations named, the noise's own share.
+		// Measured: the focal length 0.246% long, the principal point 0.13 px off, the ray mapping 1.11 px
+		// out; held out 0.435 mrad; focal variation 0.106% and the principal point's 0.67 mrad; 6 of 1200
+		// observations named, the noise's own share.
 		const ModelError error = errorOf(report, truth);
 		CHECK(error.focal < 0.005);
 		CHECK(error.ray < 2.0);
@@ -215,7 +218,9 @@ TEST_CASE("noise at the stated covariance calibrates to within it, Ready", "[cam
 		const ResamplingEvidence& resampling = resamplingOf(report);
 		CHECK(resampling.focalVariation > 0);
 		CHECK(resampling.focalVariation < 0.003);
-		CHECK(std::holds_alternative<Held>(resampling.principalPointVariation));
+		REQUIRE(std::holds_alternative<double>(resampling.principalPointVariation));
+		CHECK(std::get<double>(resampling.principalPointVariation) > 0);
+		CHECK(std::get<double>(resampling.principalPointVariation) < 0.0015);
 		const TargetlessDiagnostics& t = targetlessOf(report);
 		REQUIRE(t.refinement.has_value());
 		CHECK(t.outliers.size() * 100 < t.refinement->residuals);
@@ -228,10 +233,11 @@ TEST_CASE("noise at the stated covariance calibrates to within it, Ready", "[cam
 		const Report report = run(scene::sequenceTrackSetOf(kStatedSigma, 5));
 		INFO(report.toString());
 		REQUIRE(report.status == CalibrationStatus::Succeeded);
-		// Measured: the focal length 0.048% out, the ray mapping 0.135 px.
+		// Measured: the focal length 0.049% out, the ray mapping 0.374 px, the principal point's 0.25 px
+		// error included (0.135 px when it was held at the truth).
 		const ModelError error = errorOf(report, truth);
 		CHECK(error.focal < 0.001);
-		CHECK(error.ray < 0.3);
+		CHECK(error.ray < 0.75);
 		CHECK(report.verdict == Verdict::Ready);
 	}
 }
@@ -264,7 +270,7 @@ TEST_CASE("a wrong match is named by its track and frame, and neither the model 
 	CHECK(outliers.size() == targetlessOf(before).outliers.size() + 1);
 
 	// The fit RMS is over the observations the result explains, so the named one, 25 px out, neither
-	// counts nor moves it. Measured: 0.167635 px over 1194 clean, 0.167596 over 1193 with it.
+	// counts nor moves it. Measured: 0.167625 px over 1194 clean, 0.167585 over 1193 with it.
 	CHECK(after.diagnostics.fitResiduals + 1 == before.diagnostics.fitResiduals);
 	CHECK(std::abs(after.diagnostics.fitRmsPixels - before.diagnostics.fitRmsPixels) < 1e-3);
 	// Measured: the focal length moved by 2.8e-6 of itself, and the held-out angle by 7e-5 mrad.
@@ -377,49 +383,52 @@ TEST_CASE("moving content is named, and the model does not move", "[camera][cere
 	}
 	CHECK(others < 12); // 1% of the static observations
 
-	// Measured: the ray mapping 0.30 px out; the held-out frames count 18 observations beyond their
-	// inlier angle and measure 0.842 mrad over the other 219.
+	// Measured: the ray mapping 0.85 px out; the held-out frames count 18 observations beyond their
+	// inlier angle and measure 0.846 mrad over the other 219.
 	const ModelError error = errorOf(report, truth);
-	CHECK(error.ray < 1.0);
+	CHECK(error.ray < 2.0);
 	const HeldOutEvidence& held = heldOutOf(report);
 	CHECK(held.outliers > 0);
 	CHECK(held.rmsAngle < 0.0015);
 	CHECK(report.verdict == Verdict::Ready);
 }
 
-TEST_CASE("a principal point 3 px off is recovered when freed, and missed when held", "[camera][ceres][targetless][calibration]")
+TEST_CASE("a principal point (8, -6) px off is recovered by default, and missed when held",
+		  "[camera][ceres][targetless][calibration]")
 {
 	const lain::testing::ThreadPool pool{4};
-	const CameraModel truth = cameraOf(500, 500, 322.5, 241.5);
+	const CameraModel truth = cameraOf(500, 500, 327.5, 233.5);
 	setUp(truth);
 	const feature::TrackSet set = scene::sequenceTrackSetOf();
-	SECTION("freed")
+	SECTION("freed, by default")
 	{
-		targetless::Settings settings;
-		settings.freePrincipalPoint = true;
-		const Report report = run(set, requestFor(DistortionModel::None), settings);
+		const Report report = run(set);
 		INFO(report.toString());
 		REQUIRE(report.status == CalibrationStatus::Succeeded);
-		// Measured: the principal point exactly where the truth's is, the ray mapping 6e-7 px out.
-		CHECK(std::abs(report.model->intrinsics().cx - 322.5) < 1e-4);
-		CHECK(std::abs(report.model->intrinsics().cy - 241.5) < 1e-4);
+		// Measured: the principal point exactly where the truth's is, the ray mapping 2.3e-6 px out.
+		CHECK(std::abs(report.model->intrinsics().cx - 327.5) < 1e-4);
+		CHECK(std::abs(report.model->intrinsics().cy - 233.5) < 1e-4);
 		CHECK(errorOf(report, truth).ray < 1e-4);
 		CHECK(std::holds_alternative<double>(resamplingOf(report).principalPointVariation));
 		CHECK(report.verdict == Verdict::Ready);
 	}
-	SECTION("held")
+	SECTION("held, as the settings say")
 	{
-		const Report report = run(set);
+		targetless::Settings settings;
+		settings.freePrincipalPoint = false;
+		const Report report = run(set, requestFor(DistortionModel::None), settings);
 		INFO(report.toString());
 		REQUIRE(report.status == CalibrationStatus::Succeeded);
 		CHECK(report.model->intrinsics().cx == 319.5);
 		CHECK(report.model->intrinsics().cy == 239.5);
 		CHECK(std::holds_alternative<Held>(resamplingOf(report).principalPointVariation));
-		// What the profile cannot see. Measured: the ray mapping 3.87 px out, held out 0.805 mrad
-		// against Ready's 1.5, since the frames' poses absorb the offset.
-		CHECK(errorOf(report, truth).ray > 3.0);
-		CHECK(heldOutOf(report).rmsAngle > 0.0005);
-		CHECK(report.verdict == Verdict::Ready);
+		// Measured: the ray mapping 10.7 px out, and held out 2.17 mrad, past Ready's 1.5. On exact tracks
+		// a held miss this large shows; on rendered footage, under noise, the held-out frames' poses
+		// absorbed one of 10 to 18 px (1.1 to 1.4 mrad) and the model was Ready, which is why the
+		// principal point is freed by default (sub-slice 10's probe).
+		CHECK(errorOf(report, truth).ray > 8.0);
+		CHECK(heldOutOf(report).rmsAngle > 0.0015);
+		CHECK(report.verdict == Verdict::Exploratory);
 	}
 }
 

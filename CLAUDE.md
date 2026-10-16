@@ -1400,6 +1400,22 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-16 — M9 slice 4, sub-slice 10b: the principal point is freed by default
+
+The second of sub-slice 10's five commits, reversing the 2026-10-12 decision as planned.
+`targetless::Settings::freePrincipalPoint` defaults to true. `ctest` **1271/1271** Debug and
+**1279/1279** Release with video, camera and Ceres on, **1152/1152** with all three off (no case added);
+warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 10b built* under M9 slice 4.
+
+- **9c's principal-point case is now (8, -6) px off and recovered by default**, exactly. The stand-in
+  geometry places a start 10 px off, which the case had avoided.
+- **Held, that offset is Exploratory on exact tracks** (held out 2.17 mrad against Ready's 1.5, the ray
+  mapping 10.7 px out). On the probe's rendered footage the held-out frames absorbed such an offset and
+  the model was Ready, which is the reason for the change; the case says which.
+- **Cases that relied on the held default say so**, and the noisy cases' ray-mapping bounds are
+  re-measured: freeing the principal point adds its own 0.14 to 0.56 px error.
+- **Sabotage, caught:** the default left held fails the offset case.
+
 ### Update 2026-10-16 — M9 slice 4, sub-slice 10a: a resample starts as the adjustment does, and the fit RMS ignores outliers
 
 The first of sub-slice 10's five commits. `ctest` **1271/1271** Debug and **1279/1279** Release with

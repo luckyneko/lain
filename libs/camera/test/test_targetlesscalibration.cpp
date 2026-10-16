@@ -218,7 +218,7 @@ TEST_CASE("an imported model starts the reconstruction instead of the sweep", "[
 		REQUIRE(calls[0].modelFreedom.size() == 1);
 		CHECK(calls[0].modelFreedom[0].focalLength);
 		CHECK(calls[0].modelFreedom[0].coefficients);
-		CHECK_FALSE(calls[0].modelFreedom[0].principalPoint);
+		CHECK(calls[0].modelFreedom[0].principalPoint);
 		// Exact tracks, the true model and the true poses: every held-out frame predicted exactly.
 		const HeldOutEvidence& held = std::get<HeldOutEvidence>(report.heldOut);
 		CHECK(held.views == 2);
@@ -447,11 +447,24 @@ TEST_CASE("fewer than three frames placed is too few views", "[camera][calibrati
 	CHECK(asked().empty());
 }
 
-TEST_CASE("the principal point is held unless the settings free it", "[camera][calibration][targetless]")
+TEST_CASE("the principal point is freed unless the settings hold it", "[camera][calibration][targetless]")
 {
 	setUp();
 	const feature::TrackSet set = scene::sequenceTrackSetOf();
-	const Report held = run(set);
+	const Report freed = run(set);
+	REQUIRE(freed.status == CalibrationStatus::Succeeded);
+	REQUIRE(std::holds_alternative<ResamplingEvidence>(freed.resampling));
+	CHECK(std::holds_alternative<double>(std::get<ResamplingEvidence>(freed.resampling).principalPointVariation));
+	CHECK(asked().front().modelFreedom.front().principalPoint);
+	CHECK(std::get<TargetlessRecord>(freed.reproducibility.method).settings.freePrincipalPoint);
+
+	targetless::Settings settings;
+	settings.freePrincipalPoint = false;
+	{
+		std::lock_guard<std::mutex> lock(standin::refinerScript().mutex);
+		standin::refinerScript().asked.clear();
+	}
+	const Report held = run(set, pinholeRequest(), settings);
 	REQUIRE(held.status == CalibrationStatus::Succeeded);
 	REQUIRE(std::holds_alternative<ResamplingEvidence>(held.resampling));
 	CHECK(std::holds_alternative<Held>(std::get<ResamplingEvidence>(held.resampling).principalPointVariation));
@@ -459,19 +472,7 @@ TEST_CASE("the principal point is held unless the settings free it", "[camera][c
 	for (const std::string& note : held.fitnessNotes)
 		CHECK_THAT(note, !ContainsSubstring("principal"));
 	CHECK_FALSE(asked().front().modelFreedom.front().principalPoint);
-
-	targetless::Settings settings;
-	settings.freePrincipalPoint = true;
-	{
-		std::lock_guard<std::mutex> lock(standin::refinerScript().mutex);
-		standin::refinerScript().asked.clear();
-	}
-	const Report freed = run(set, pinholeRequest(), settings);
-	REQUIRE(freed.status == CalibrationStatus::Succeeded);
-	REQUIRE(std::holds_alternative<ResamplingEvidence>(freed.resampling));
-	CHECK(std::holds_alternative<double>(std::get<ResamplingEvidence>(freed.resampling).principalPointVariation));
-	CHECK(asked().front().modelFreedom.front().principalPoint);
-	CHECK(std::get<TargetlessRecord>(freed.reproducibility.method).settings.freePrincipalPoint);
+	CHECK_FALSE(std::get<TargetlessRecord>(held.reproducibility.method).settings.freePrincipalPoint);
 }
 
 TEST_CASE("an empty profile is the method's own, and either profile may judge it", "[camera][calibration][targetless]")

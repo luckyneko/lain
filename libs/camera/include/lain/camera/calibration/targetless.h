@@ -47,8 +47,8 @@ namespace lain::camera::calibration::targetless
 	//    them, are reported and left out. A seed most of whose matches are points at infinity has no
 	//    parallax, as footage that only turns has none, and fails InitialisationFailed; fewer than three
 	//    frames left is TooFewViews;
-	// 6. the bundle adjustment: one model shared by every placed frame, its focal length and
-	//    coefficients free and its principal point held unless the settings free it, under the
+	// 6. the bundle adjustment: one model shared by every placed frame, its focal length, coefficients
+	//    and principal point free unless the settings hold the principal point, under the
 	//    settings' robust loss with every observation weighted by its own covariance; then
 	//    CameraModel::create, outliers named by track and frame, and the fit RMS over the observations
 	//    not named. A held model refines the frames and landmarks alone;
