@@ -523,7 +523,11 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   cover it. Each is reconstructed and adjusted, and the lowest final cost per residual wins, since a
   wrong minimum costs three to eight times a right one. Scoring the widest pairs and COLMAP's fixed
   prior were the alternatives. Built in sub-slice 10c; WORK.md's sub-slice 10 plan holds the
-  numbers.)*
+  numbers.)* *(Built 2026-10-16 with one addition, found by its own tests: the starts are ranked
+  first by the frames their adjustment kept, as seeds are by the frames their placement reaches, and
+  only then by cost. A cost per residual compares fits of the same footage only: over a stand-in scene
+  with eight wrong matches, a start twice the true focal length reconstructed three frames of nineteen
+  at 0.45 per residual, against the right start's 0.87 over seventeen, and cost alone chose it.)*
 - **The principal point is held by default**, at the image centre or at an imported model's, because
   self-calibration conditions it poorly. A setting of the method frees it. *(Reversed 2026-10-16,
   decided with the repo owner while planning sub-slice 10: it is FREED by default. On rendered footage

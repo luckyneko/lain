@@ -1400,6 +1400,26 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-16 — M9 slice 4, sub-slice 10c: three starts, and the one that reconstructs the most wins
+
+The third of sub-slice 10's five commits. The focal sweep's 21 two-view-scored candidates are replaced
+by three starts, each reconstructed and adjusted. `ctest` **1273/1273** Debug and **1281/1281** Release
+with video, camera and Ceres on (+2 each), **1153/1153** with all three off (+1); warning-clean,
+format-check clean. Full notes in WORK.md's *Sub-slice 10c built* under M9 slice 4.
+
+- **The starts are the centres of the sweep range's geometric thirds** (260.25, 516.41 and 1024.69 for
+  a pinhole at 640 wide). Validation and resampling run once, on the winner. An imported model is the
+  one start.
+- **Deviation, found by the tests and needing the repo owner's confirmation: the start whose
+  adjustment kept the most frames wins, and only among those the lowest cost per residual.** A cost
+  per residual compares fits of the same footage only: a start that reconstructed 3 frames of 19 cost
+  0.45 per residual against the right start's 0.87 over 17. Seeds are already ranked by reach first.
+- **A failing start is reported in `TargetlessDiagnostics::sweep`** (focal length, frames placed, cost
+  or reason). When all fail, the start that got furthest is reported first, then the others.
+- **Found, left for 10d:** the stand-in pan is now reconstructed by the long start and only rejected by
+  the verdict.
+- **Three sabotages, all caught.**
+
 ### Update 2026-10-16 — M9 slice 4, sub-slice 10b: the principal point is freed by default
 
 The second of sub-slice 10's five commits, reversing the 2026-10-12 decision as planned.

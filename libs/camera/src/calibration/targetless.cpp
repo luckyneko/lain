@@ -65,13 +65,12 @@ namespace lain::camera::calibration::targetless
 	// Fewer frames in the bundle adjustment than this and no model is estimated: two frames are posed
 	// by any focal length that explains their pair, so a model needs a third to be constrained.
 	static constexpr std::size_t kMinimumFrames = 3;
-	// The focal sweep (CONTEXT.md, "Focal sweep"): this many focal lengths, log-spaced between the ones
-	// whose neutral projection spans these fields of view across the image's longest side, scored on
-	// this many frame pairs. Provisional, as kInlierPixels is.
-	static constexpr std::size_t kSweepCandidates = 21;
+	// The focal sweep (CONTEXT.md, "Focal sweep"): this many starts, across the focal lengths whose
+	// neutral projection spans these fields of view across the image's longest side. Provisional, as
+	// kInlierPixels is.
+	static constexpr std::size_t kSweepStarts = 3;
 	static constexpr double kNarrowestField = 25.0 * 3.14159265358979323846 / 180.0;
 	static constexpr double kWidestField = 120.0 * 3.14159265358979323846 / 180.0;
-	static constexpr std::size_t kSweepPairs = 8;
 
 	// A frame's place in capture order, as the sequence extraction sorts frames.
 	static auto captureOrder(const media::FrameRef& frame)
@@ -262,24 +261,29 @@ namespace lain::camera::calibration::targetless
 			neutral(model));
 	}
 
-	// One focal length the sweep tries, and its model: fx = fy, the principal point at the image centre,
-	// and neutral distortion. A model that is not valid is left unset, and scores nothing.
+	// One focal length the reconstruction starts from, and its model. A model that is not valid is left
+	// unset, and starts nothing.
 	struct Candidate
 	{
 		double focalLength = 0;
 		std::optional<CameraModel> model;
 	};
 
-	// The focal sweep's candidates for `model` over `image`, in ascending focal length.
-	static std::vector<Candidate> sweepCandidates(DistortionModel model, const ImageGeometry& image)
+	// The focal sweep's starts for `model` over `image` (CONTEXT.md, "Focal sweep"), in ascending focal
+	// length: the centres of the geometric thirds of the range from the focal length whose neutral
+	// projection spans kWidestField across the image's longest side to the one spanning
+	// kNarrowestField, each with fx = fy, the principal point at the image centre, and neutral
+	// distortion. A bundle adjustment converges from about 0.7 to 3 times the true focal length, and
+	// every focal length in a pinhole's range is within a factor of 1.41 of a start.
+	static std::vector<Candidate> sweepStarts(DistortionModel model, const ImageGeometry& image)
 	{
 		const double half = double(std::max(image.width, image.height)) / 2;
 		const double shortest = half / neutralRadius(model, kWidestField / 2);
 		const double longest = half / neutralRadius(model, kNarrowestField / 2);
 		std::vector<Candidate> out;
-		for (std::size_t i = 0; i < kSweepCandidates; ++i)
+		for (std::size_t i = 0; i < kSweepStarts; ++i)
 		{
-			const double f = shortest * std::pow(longest / shortest, double(i) / double(kSweepCandidates - 1));
+			const double f = shortest * std::pow(longest / shortest, (double(i) + 0.5) / double(kSweepStarts));
 			CameraModelParameters p;
 			p.image = image;
 			p.intrinsics = {f, f, (double(image.width) - 1) / 2, (double(image.height) - 1) / 2};
@@ -287,80 +291,6 @@ namespace lain::camera::calibration::targetless
 			out.push_back({f, CameraModel::create(p).model});
 		}
 		return out;
-	}
-
-	// The model the reconstruction starts from when nothing imported seeds it (CONTEXT.md, "Focal
-	// sweep"): of the sweep's candidates, the one whose relative poses have the most inliers in total on
-	// the frame pairs sharing the most tracks, ties to the shorter focal length. Each candidate is scored
-	// at kInlierPixels turned into its own angle, since a fixed angle covers more pixels at a longer
-	// focal length and would favour the longest. Every score goes into the diagnostics.
-	static std::optional<CameraModel> sweep(const ImageGeometry& image, std::size_t frames, const std::vector<Ordered>& tracks,
-											const std::vector<bool>& heldOut, const Request& request,
-											TargetlessDiagnostics& diagnostics, Provenance& geometry)
-	{
-		// The pairs, from the tracks outside the held-out frames: by tracks shared, ties to (a, b).
-		const std::vector<std::vector<std::uint32_t>> units = without(framesOf(tracks), heldOut);
-		const ObservationGraph graph = observationGraph(std::uint32_t(frames), units);
-		std::vector<const GraphEdge*> pairs;
-		for (const GraphEdge& e : graph.edges)
-			pairs.push_back(&e);
-		std::stable_sort(pairs.begin(), pairs.end(), [](const GraphEdge* x, const GraphEdge* y)
-						 { return x->shared > y->shared; });
-		if (pairs.size() > kSweepPairs)
-			pairs.resize(kSweepPairs);
-
-		const std::vector<Candidate> candidates = sweepCandidates(request.model, image);
-		std::vector<std::uint32_t> scores(candidates.size(), 0);
-		std::vector<Provenance> provenance(candidates.size());
-		detail::forEach(candidates.size(), request.execution,
-						[&](std::size_t c)
-						{
-							if (!candidates[c].model)
-								return;
-							const CameraModel& model = *candidates[c].model;
-							const feature::GeometryRequest posing = geometryRequest(inlierAngle(model), request);
-							for (const GraphEdge* pair : pairs)
-							{
-								std::vector<feature::RayPair> rays;
-								for (const Ordered& t : tracks)
-								{
-									const Observed* inA = nullptr;
-									const Observed* inB = nullptr;
-									for (const Observed& o : t.seen)
-									{
-										if (o.frame == pair->a)
-											inA = &o;
-										else if (o.frame == pair->b)
-											inB = &o;
-									}
-									if (!inA || !inB)
-										continue;
-									const Unprojection<double> a = unproject(model, inA->pixel.x, inA->pixel.y);
-									const Unprojection<double> b = unproject(model, inB->pixel.x, inB->pixel.y);
-									if (a.ok() && b.ok())
-										rays.push_back({{a.x, a.y, a.z}, {b.x, b.y, b.z}});
-								}
-								const feature::GeometryResult posed = feature::relativePose(rays, posing);
-								if (provenance[c].backend.empty())
-									provenance[c] = posed.provenance;
-								if (posed.ok())
-									scores[c] += std::uint32_t(posed.inliers.size());
-							}
-						});
-
-		std::optional<std::uint32_t> chosen;
-		for (std::uint32_t c = 0; c < candidates.size(); ++c)
-		{
-			diagnostics.sweep.push_back({candidates[c].focalLength, scores[c]});
-			if (geometry.backend.empty())
-				geometry = provenance[c];
-			if (candidates[c].model && (!chosen || scores[c] > scores[*chosen]))
-				chosen = c;
-		}
-		if (!chosen)
-			return std::nullopt;
-		diagnostics.swept = chosen;
-		return candidates[*chosen].model;
 	}
 
 	// The reconstruction over `units` narrowed to the frames `keep` says: their views, renumbered in frame
@@ -705,6 +635,176 @@ namespace lain::camera::calibration::targetless
 		return std::nullopt;
 	}
 
+	// --- one start ----------------------------------------------------------------
+
+	// How far a start got before it failed. A later stage says more about the footage, so when every
+	// start fails, the one that got furthest is reported first.
+	enum class Stage
+	{
+		Started, // a starting model, and no seed posed from it
+		Seeded,	 // a seed pair posed
+		Placed,	 // enough frames placed to adjust
+		Refined, // a usable bundle adjustment
+	};
+
+	// One start's reconstruction and bundle adjustment (steps 5 and 6): everything from a starting model
+	// to the refined model the rest of the calibration validates, or why there is none.
+	struct Fit
+	{
+		Stage stage = Stage::Started;
+		std::vector<FailureReason> failures; // empty when it ended in a model, the most specific first
+		// What the reconstruction reports: the usable tracks, the seed, the placement, the frames left
+		// out, the observations behind, the landmarks and the refinement.
+		TargetlessDiagnostics diagnostics;
+		Provenance geometry; // what proposed its poses
+		Provenance refiner;
+		std::vector<std::uint32_t> orderedOf; // per usable track, which is a unit of its own: its place in capture order
+		std::optional<Started> started;
+		refinement::ModelFreedom freedom;
+		refinement::Problem problem;
+		refinement::Solution solution;
+		std::vector<std::uint32_t> entryOf; // per problem landmark: its entry
+		std::optional<CameraModel> model;
+		std::uint32_t placed = 0;	// frames placed and kept for the adjustment
+		double costPerResidual = 0; // the adjustment's final cost over its residuals
+	};
+
+	static Fit fitFrom(const CameraModel& startModel, std::size_t n, const std::vector<Ordered>& tracks,
+					   const std::vector<bool>& heldOut, const Settings& settings, const Request& request)
+	{
+		const bool hold = request.importedPolicy == ImportedModelPolicy::HoldAndValidate;
+		const double startAngle = inlierAngle(startModel);
+		Fit out;
+		TargetlessDiagnostics& d = out.diagnostics;
+		const auto fail = [&out](Failure failure, std::string detail)
+		{
+			out.failures.push_back({failure, std::move(detail)});
+			return std::move(out);
+		};
+
+		// 5. The reconstruction, through the shared module.
+		const Evidence evidence = evidenceUnder(startModel, n, tracks, heldOut, out.orderedOf);
+		d.tracksUsable = std::uint32_t(evidence.tracks.size());
+		Units all(evidence.tracks.size());
+		std::iota(all.begin(), all.end(), 0u);
+		const std::vector<std::vector<std::uint32_t>> unitFrames = viewsOf(evidence, all);
+		const std::vector<Closure> seeds = widest(observationGraph(std::uint32_t(n), unitFrames), unitFrames,
+												  unitsOf(n, unitFrames), kSeedCandidates);
+		if (seeds.empty())
+			return fail(Failure::InitialisationFailed,
+						lain::string::format("no two frames share the {} tracks a reconstruction starts from", kSeedShared));
+		const std::optional<Seed> seed = chooseSeed(evidence, all, seeds, geometryRequest(startAngle, request), out.geometry);
+		if (!seed)
+			return fail(Failure::InitialisationFailed, "no pair of frames could be posed from the tracks it shares");
+		out.stage = Stage::Seeded;
+		d.seed = {seed->a, seed->b};
+		d.seedAngle = seed->angle;
+		d.seedInliers = seed->inliers;
+		d.seedAtInfinity = seed->atInfinity;
+		d.seedBelowFloor = seed->belowFloor;
+		// The seed's median parallax over every inlier, a point at infinity counting as none, is below
+		// the least a landmark triangulates at exactly when most of its inliers are at infinity. The
+		// median over the ones that triangulate would not do: none triangulates below that least, so it
+		// clears it whenever any match triangulates, and moving content across a pan has real parallax.
+		if (2 * seed->atInfinity >= seed->inliers)
+			return fail(Failure::InitialisationFailed,
+						lain::string::format("the widest seed, frames {} and {}, has no parallax: {} of its {} matches meet at "
+											 "less than the {:.3g} mrad a landmark needs, so they are points at infinity; "
+											 "footage that only turns has nothing to reconstruct from",
+											 seed->a, seed->b, seed->atInfinity, seed->inliers,
+											 feature::GeometryRequest{}.angle * 1000));
+		const Placement placement = place(evidence, all, *seed, geometryRequest(startAngle, request));
+		d.placement = placement.order;
+
+		// The frames placed, narrowed until none is starved by the cheirality filter.
+		std::vector<bool> keep(n, false);
+		for (std::uint32_t f = 0; f < n; ++f)
+			keep[f] = placement.viewFromWorld[f].has_value();
+		out.started = startOver(evidence, all, placement, keep);
+		out.placed = std::uint32_t(std::count(keep.begin(), keep.end(), true));
+		for (std::uint32_t f = 0; f < n; ++f)
+		{
+			if (!heldOut[f] && !keep[f])
+				d.unplaced.push_back(f);
+		}
+		if (!out.started)
+			return fail(Failure::TooFewViews,
+						lain::string::format("{} of {} frames could be placed; a calibration needs at least {}", out.placed,
+											 n - std::size_t(std::count(heldOut.begin(), heldOut.end(), true)), kMinimumFrames));
+		out.stage = Stage::Placed;
+		d.behind = out.started->start.behind;
+
+		// 6. The bundle adjustment.
+		if (!hold)
+		{
+			out.freedom.focalLength = true;
+			out.freedom.coefficients = true;
+			out.freedom.principalPoint = settings.freePrincipalPoint;
+		}
+		out.problem = problemOf(out.started->narrowed, out.started->start, out.started->reference, startModel, out.freedom,
+								settings, out.entryOf);
+		out.solution = refinement::refine(out.problem);
+		const refinement::Problem& problem = out.problem;
+		const refinement::Solution& solution = out.solution;
+		out.refiner = solution.provenance;
+		refinement::Summary summary;
+		summary.status = solution.status;
+		summary.detail = solution.detail;
+		summary.iterations = solution.iterations;
+		summary.initialCost = solution.initialCost;
+		summary.finalCost = solution.finalCost;
+		summary.residuals = std::uint32_t(problem.landmarkObservations.size());
+		summary.landmarks = std::uint32_t(problem.landmarks.size());
+		summary.elapsed = solution.elapsed;
+		summary.noise = problem.noise;
+		summary.loss = problem.loss;
+		d.refinement = summary;
+		if (solution.status == refinement::Status::ResourceExhausted)
+			return fail(Failure::ResourceExhausted, solution.detail);
+		if (!solution.usable())
+			return fail(Failure::RefinementFailed,
+						solution.detail.empty() ? "the bundle adjustment produced no usable solution" : solution.detail);
+		if (solution.cameraFromReference.size() != problem.cameraFromReference.size() ||
+			solution.landmarks.size() != problem.landmarks.size() || solution.models.size() != 1)
+			return fail(Failure::RefinementFailed, "the refiner returned a solution of the wrong shape");
+		out.stage = Stage::Refined;
+		if (hold)
+			out.model = request.imported;
+		else
+		{
+			ModelResult created = CameraModel::create(solution.models.front());
+			if (!created.model)
+			{
+				for (const ModelDiagnostic& diagnostic : created.diagnostics)
+					out.failures.push_back({Failure::InvalidModel, diagnostic.detail});
+				return fail(Failure::InvalidModel, "the estimate is not a valid camera model");
+			}
+			out.model = std::move(created.model);
+		}
+		d.landmarks = std::uint32_t(out.entryOf.size());
+		d.untriangulated = d.tracksUsable - d.landmarks;
+		out.costPerResidual = summary.residuals > 0 ? solution.finalCost / double(summary.residuals) : 0.0;
+		return out;
+	}
+
+	// What a start's reconstruction reports, into the report's diagnostics: everything but the frames,
+	// the tracks given, the sweep, the extraction and the outliers, which the calibration fills.
+	static void reportReconstruction(TargetlessDiagnostics& into, const TargetlessDiagnostics& from)
+	{
+		into.tracksUsable = from.tracksUsable;
+		into.seed = from.seed;
+		into.seedAngle = from.seedAngle;
+		into.seedInliers = from.seedInliers;
+		into.seedAtInfinity = from.seedAtInfinity;
+		into.seedBelowFloor = from.seedBelowFloor;
+		into.placement = from.placement;
+		into.unplaced = from.unplaced;
+		into.behind = from.behind;
+		into.landmarks = from.landmarks;
+		into.untriangulated = from.untriangulated;
+		into.refinement = from.refinement;
+	}
+
 	// --- the calibration --------------------------------------------------------------
 
 	// Everything after the checks. `report` arrives prepared, with its frames in place.
@@ -726,129 +826,106 @@ namespace lain::camera::calibration::targetless
 		}
 		diagnostics.viewsHeldOut = std::uint32_t(diagnostics.heldOut.size());
 
-		// 4. The starting model.
-		std::optional<CameraModel> startModel;
+		// 4. The starts: an imported model alone, or the focal sweep's.
+		std::vector<Candidate> starts;
+		bool swept = false;
 		if (hold)
-			startModel = request.imported;
+			starts.push_back({request.imported->intrinsics().fx, request.imported});
 		else if (const std::optional<CameraModelParameters> initial = detail::initialFrom(report, request, frames.image))
 		{
 			ModelResult created = CameraModel::create(*initial);
 			if (!created.model)
 				return failed(std::move(report), start, Failure::InvalidModel,
 							  "the imported model, seeding the requested distortion model, is not a valid camera model");
-			startModel = std::move(created.model);
+			starts.push_back({created.model->intrinsics().fx, std::move(created.model)});
 		}
 		else
-			startModel = sweep(frames.image, n, tracks, heldOut, request, targetless, record.geometry);
-		if (!startModel)
-			return failed(std::move(report), start, Failure::InitialisationFailed,
-						  "no focal length of the sweep gives a valid " + std::string(displayName(request.model)) + " model");
-		const double startAngle = inlierAngle(*startModel);
-
-		// 5. The reconstruction, through the shared module.
-		std::vector<std::uint32_t> orderedOf;
-		const Evidence evidence = evidenceUnder(*startModel, n, tracks, heldOut, orderedOf);
-		targetless.tracksUsable = std::uint32_t(evidence.tracks.size());
-		Units all(evidence.tracks.size());
-		std::iota(all.begin(), all.end(), 0u);
-		const std::vector<std::vector<std::uint32_t>> unitFrames = viewsOf(evidence, all);
-		const std::vector<Closure> seeds = widest(observationGraph(std::uint32_t(n), unitFrames), unitFrames,
-												  unitsOf(n, unitFrames), kSeedCandidates);
-		if (seeds.empty())
-			return failed(std::move(report), start, Failure::InitialisationFailed,
-						  lain::string::format("no two frames share the {} tracks a reconstruction starts from", kSeedShared));
-		const std::optional<Seed> seed = chooseSeed(evidence, all, seeds, geometryRequest(startAngle, request), record.geometry);
-		if (!seed)
-			return failed(std::move(report), start, Failure::InitialisationFailed,
-						  "no pair of frames could be posed from the tracks it shares");
-		targetless.seed = {seed->a, seed->b};
-		targetless.seedAngle = seed->angle;
-		targetless.seedInliers = seed->inliers;
-		targetless.seedAtInfinity = seed->atInfinity;
-		targetless.seedBelowFloor = seed->belowFloor;
-		// The seed's median parallax over every inlier, a point at infinity counting as none, is below
-		// the least a landmark triangulates at exactly when most of its inliers are at infinity. The
-		// median over the ones that triangulate would not do: none triangulates below that least, so it
-		// clears it whenever any match triangulates, and moving content across a pan has real parallax.
-		if (2 * seed->atInfinity >= seed->inliers)
-			return failed(std::move(report), start, Failure::InitialisationFailed,
-						  lain::string::format("the widest seed, frames {} and {}, has no parallax: {} of its {} matches meet at "
-											   "less than the {:.3g} mrad a landmark needs, so they are points at infinity; "
-											   "footage that only turns has nothing to reconstruct from",
-											   seed->a, seed->b, seed->atInfinity, seed->inliers,
-											   feature::GeometryRequest{}.angle * 1000));
-		const Placement placement = place(evidence, all, *seed, geometryRequest(startAngle, request));
-		targetless.placement = placement.order;
-
-		// The frames placed, narrowed until none is starved by the cheirality filter.
-		std::vector<bool> keep(n, false);
-		for (std::uint32_t f = 0; f < n; ++f)
-			keep[f] = placement.viewFromWorld[f].has_value();
-		const std::optional<Started> started = startOver(evidence, all, placement, keep);
-		for (std::uint32_t f = 0; f < n; ++f)
 		{
-			if (!heldOut[f] && !keep[f])
-				targetless.unplaced.push_back(f);
+			starts = sweepStarts(request.model, frames.image);
+			swept = true;
 		}
-		if (!started)
-			return failed(std::move(report), start, Failure::TooFewViews,
-						  lain::string::format("{} of {} frames could be placed; a calibration needs at least {}",
-											   std::count(keep.begin(), keep.end(), true), n - diagnostics.heldOut.size(),
-											   kMinimumFrames));
-		const Narrowed& narrowed = started->narrowed;
-		const Start& begin = started->start;
-		const std::uint32_t reference = started->reference;
-		targetless.behind = begin.behind;
 
-		// 6. The bundle adjustment.
-		refinement::ModelFreedom freedom;
-		if (!hold)
+		// 5 and 6. Each start reconstructed and adjusted on its own. The one whose adjustment kept the most
+		// frames wins, as the seed is the one whose placement reaches the most: a cost per residual is only
+		// comparable over the same footage, and a start that reconstructs three frames of nineteen fits
+		// them more closely than the right one fits all of them. Among those, the lowest final cost per
+		// residual, since a wrong minimum costs several times a right one; ties to the shorter focal length.
+		std::vector<Fit> fits(starts.size());
+		detail::forEach(starts.size(), request.execution,
+						[&](std::size_t i)
+						{
+							if (starts[i].model)
+								fits[i] = fitFrom(*starts[i].model, n, tracks, heldOut, settings, request);
+							else
+								fits[i].failures.push_back(
+									{Failure::InitialisationFailed, lain::string::format("a focal length of {:.4g} gives no valid {} model",
+																						 starts[i].focalLength, displayName(request.model))});
+						});
+		std::optional<std::uint32_t> winner;
+		for (std::uint32_t i = 0; i < fits.size(); ++i)
 		{
-			freedom.focalLength = true;
-			freedom.coefficients = true;
-			freedom.principalPoint = settings.freePrincipalPoint;
-		}
-		std::vector<std::uint32_t> entryOf;
-		const refinement::Problem problem = problemOf(narrowed, begin, reference, *startModel, freedom, settings, entryOf);
-		const refinement::Solution solution = refinement::refine(problem);
-		record.refiner = solution.provenance;
-		refinement::Summary summary;
-		summary.status = solution.status;
-		summary.detail = solution.detail;
-		summary.iterations = solution.iterations;
-		summary.initialCost = solution.initialCost;
-		summary.finalCost = solution.finalCost;
-		summary.residuals = std::uint32_t(problem.landmarkObservations.size());
-		summary.landmarks = std::uint32_t(problem.landmarks.size());
-		summary.elapsed = solution.elapsed;
-		summary.noise = problem.noise;
-		summary.loss = problem.loss;
-		targetless.refinement = summary;
-		if (solution.status == refinement::Status::ResourceExhausted)
-			return failed(std::move(report), start, Failure::ResourceExhausted, solution.detail);
-		if (!solution.usable())
-			return failed(std::move(report), start, Failure::RefinementFailed,
-						  solution.detail.empty() ? "the bundle adjustment produced no usable solution" : solution.detail);
-		if (solution.cameraFromReference.size() != problem.cameraFromReference.size() ||
-			solution.landmarks.size() != problem.landmarks.size() || solution.models.size() != 1)
-			return failed(std::move(report), start, Failure::RefinementFailed, "the refiner returned a solution of the wrong shape");
-		if (hold)
-			report.model = request.imported;
-		else
-		{
-			ModelResult created = CameraModel::create(solution.models.front());
-			if (!created.model)
+			if (record.geometry.backend.empty())
+				record.geometry = fits[i].geometry;
+			if (fits[i].model &&
+				(!winner || fits[i].placed > fits[*winner].placed ||
+				 (fits[i].placed == fits[*winner].placed && fits[i].costPerResidual < fits[*winner].costPerResidual)))
+				winner = i;
+			if (swept)
 			{
-				for (const ModelDiagnostic& d : created.diagnostics)
-					report.failures.push_back({Failure::InvalidModel, d.detail});
-				return failed(std::move(report), start, Failure::InvalidModel, "the estimate is not a valid camera model");
+				SweepStart tried;
+				tried.focalLength = starts[i].focalLength;
+				tried.placed = fits[i].placed;
+				if (fits[i].model)
+					tried.outcome = fits[i].costPerResidual;
+				else
+					tried.outcome = fits[i].failures.front();
+				targetless.sweep.push_back(std::move(tried));
 			}
-			report.model = std::move(created.model);
-			report.reproducibility.estimator = solution.provenance;
 		}
+		if (!winner)
+		{
+			// Every start failed: the one that got furthest first, with what it reconstructed, then the
+			// others in order. A sweep's start says which it was.
+			std::uint32_t furthest = 0;
+			for (std::uint32_t i = 1; i < fits.size(); ++i)
+			{
+				if (fits[i].stage > fits[furthest].stage)
+					furthest = i;
+			}
+			reportReconstruction(targetless, fits[furthest].diagnostics);
+			record.refiner = fits[furthest].refiner;
+			std::vector<FailureReason> reasons;
+			const auto addReasons = [&](std::uint32_t i)
+			{
+				for (const FailureReason& reason : fits[i].failures)
+					reasons.push_back(swept ? FailureReason{reason.failure, lain::string::format("from the start at f = {:.1f}: {}",
+																								 starts[i].focalLength, reason.detail)}
+											: reason);
+			};
+			addReasons(furthest);
+			for (std::uint32_t i = 0; i < fits.size(); ++i)
+			{
+				if (i != furthest)
+					addReasons(i);
+			}
+			report = failed(std::move(report), start, reasons.front().failure, reasons.front().detail);
+			report.failures.insert(report.failures.end(), reasons.begin() + 1, reasons.end());
+			return report;
+		}
+		if (swept)
+			targetless.swept = winner;
+		const Fit& fit = fits[*winner];
+		reportReconstruction(targetless, fit.diagnostics);
+		record.refiner = fit.refiner;
+		if (!hold)
+			report.reproducibility.estimator = fit.solution.provenance;
+		report.model = fit.model;
 		const CameraModel& model = *report.model;
-		targetless.landmarks = std::uint32_t(entryOf.size());
-		targetless.untriangulated = targetless.tracksUsable - targetless.landmarks;
+		const Narrowed& narrowed = fit.started->narrowed;
+		const Start& begin = fit.started->start;
+		const refinement::Problem& problem = fit.problem;
+		const refinement::Solution& solution = fit.solution;
+		const std::vector<std::uint32_t>& entryOf = fit.entryOf;
 
 		// Residuals and outliers, per fitted observation. One left out for cheirality is an outlier the
 		// adjustment could not even start from. The fit RMS is over the observations the result explains,
@@ -903,7 +980,7 @@ namespace lain::camera::calibration::targetless
 				heldIndex[diagnostics.heldOut[h]] = h;
 			for (std::size_t l = 0; l < entryOf.size(); ++l)
 			{
-				const Ordered& t = tracks[orderedOf[all[narrowed.fromEntry[entryOf[l]]]]];
+				const Ordered& t = tracks[fit.orderedOf[narrowed.fromEntry[entryOf[l]]]];
 				for (const Observed& o : t.seen)
 				{
 					if (const std::optional<std::uint32_t> h = heldIndex[o.frame])
@@ -970,7 +1047,7 @@ namespace lain::camera::calibration::targetless
 			std::vector<std::optional<CameraModelParameters>> estimates(draws.size());
 			detail::forEach(draws.size(), request.execution,
 							[&](std::size_t r)
-							{ estimates[r] = resampled(fitted, solution, narrowed.placement.order, freedom, settings, draws[r]); });
+							{ estimates[r] = resampled(fitted, solution, narrowed.placement.order, fit.freedom, settings, draws[r]); });
 			report.resampling = detail::stability(estimates, !settings.freePrincipalPoint);
 		}
 

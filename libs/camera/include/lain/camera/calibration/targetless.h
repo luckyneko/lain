@@ -37,10 +37,13 @@ namespace lain::camera::calibration::targetless
 	//    its tracks are named;
 	// 3. every k-th frame held out to validate on, unless it seeds the anchor (the first widest seed
 	//    over every frame) or holding it out would cut what the anchor reaches;
-	// 4. the starting model: an imported one under Initial or HoldAndValidate, otherwise the focal sweep,
-	//    21 focal lengths from a 25° to a 120° field of view through the requested model's neutral
-	//    projection, each scored by its relative poses' inliers on the eight frame pairs sharing the
-	//    most tracks;
+	// 4. the starting models: an imported one under Initial or HoldAndValidate, otherwise the focal
+	//    sweep's three, at the centres of the geometric thirds of the focal lengths from a 120° to a 25°
+	//    field of view through the requested model's neutral projection. Steps 5 and 6 run for each,
+	//    and the result is the one whose adjustment kept the most frames, among those the one ending
+	//    with the lowest cost per residual; a start that fails is reported and the others go on. When
+	//    every one fails, the calibration does, the start that got furthest reported first and every
+	//    start's reason after it;
 	// 5. the reconstruction: the seeds whose placement reaches the most frames, the one with the most
 	//    inliers that clears 2 degrees of parallax (or, when none does, the widest), and every frame it
 	//    can place by absolute pose. Frames it cannot reach, or that see too few landmarks in front of

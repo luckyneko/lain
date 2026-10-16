@@ -1,6 +1,6 @@
 // Targetless calibration (calibration::targetless) over stand-ins answering from a known moving camera
-// (syntheticscene.h) and a refiner that hands back its start (passthroughrefiner.h): the focal sweep,
-// the starting model under each imported-model policy, the held-out frames, which frames are placed,
+// (syntheticscene.h) and a refiner that hands back its start (passthroughrefiner.h): the focal sweep's
+// starts and which of them wins, the starting model under each imported-model policy, the held-out frames, which frames are placed,
 // the refusals, and that nothing depends on the order the evidence arrives in or the execution policy.
 // The refiner refines nothing, so what a model comes out as is where the method started it; the
 // Ceres refiner's recovery is plugins/camera/ceres's to show. Every measured number is written beside
@@ -39,7 +39,7 @@ using lain::camera::testing::targetlesstext::requireSameReport;
 namespace
 {
 	// A pinhole at 640x480 with fx = fy = `f` and its principal point at the image's centre: the shape
-	// every candidate of the focal sweep has, so one at a candidate's focal length is that candidate.
+	// every start of the focal sweep has, so one at a start's focal length is that start.
 	CameraModel pinhole(double f)
 	{
 		CameraModelParameters p;
@@ -70,6 +70,7 @@ namespace
 		standin::refinerScript().asked.clear();
 		standin::refinerScript().estimates = {DistortionModel::None, DistortionModel::BrownConrady5,
 											  DistortionModel::KannalaBrandt4};
+		standin::refinerScript().finalCost = nullptr;
 	}
 
 	std::vector<standin::RefinerScript::Asked> asked()
@@ -127,27 +128,38 @@ namespace
 		return out;
 	}
 
-	// The sweep's step: candidates are log-spaced, so each is this factor longer than the one before.
+	// The sweep's step: its starts are log-spaced, so each is this factor longer than the one before.
 	double sweepStep(const TargetlessDiagnostics& t)
 	{
 		return t.sweep[1].focalLength / t.sweep[0].focalLength;
 	}
+
+	// Why a start of the sweep ended in no model, or nothing when it ended in one.
+	const FailureReason* failureOf(const SweepStart& start)
+	{
+		return std::get_if<FailureReason>(&start.outcome);
+	}
 } // namespace
 
-TEST_CASE("the focal sweep starts within one candidate of the truth, and records every score",
+TEST_CASE("the focal sweep starts three times, and the start nearest the truth is the result",
 		  "[camera][calibration][targetless]")
 {
-	// The pinhole candidates at 640x480 run from 184.75 (120 degrees across) to 1443.4 (25 degrees),
-	// 10.83% apart; the fisheye's from 305.6 to 1466.7, 8.16% apart, through its own neutral projection.
+	// The pinhole's range at 640x480 runs from 184.75 (120 degrees across) to 1443.4 (25 degrees); its
+	// starts are the centres of the range's geometric thirds, 260.25, 516.41 and 1024.69, each 1.9843
+	// times the one before. The fisheye's, through its own neutral projection, are 396.88, 669.49 and
+	// 1129.33, 1.6869 apart. The stand-in geometry proposes only true poses, so only a start near the truth poses a
+	// seed: the others fail, and are reported without ending the calibration.
 	struct Case
 	{
 		CameraModel truth;
 		DistortionModel model;
-		double step;
+		double first, step;
+		std::uint32_t nearest;
 	};
-	for (const Case& c : {Case{pinhole(500), DistortionModel::None, 1.10826}, Case{pinhole(400), DistortionModel::None, 1.10826},
-						  Case{pinhole(625), DistortionModel::None, 1.10826},
-						  Case{equidistant(500), DistortionModel::KannalaBrandt4, 1.08159}})
+	for (const Case& c : {Case{pinhole(250), DistortionModel::None, 260.25, 1.98427, 0},
+						  Case{pinhole(500), DistortionModel::None, 260.25, 1.98427, 1},
+						  Case{pinhole(1000), DistortionModel::None, 260.25, 1.98427, 2},
+						  Case{equidistant(650), DistortionModel::KannalaBrandt4, 396.88, 1.68687, 1}})
 	{
 		const double f = c.truth.intrinsics().fx;
 		DYNAMIC_SECTION(std::string(displayName(c.truth.distortion())) << " at " << f)
@@ -157,44 +169,83 @@ TEST_CASE("the focal sweep starts within one candidate of the truth, and records
 			request.model = c.model;
 			const Report report = run(scene::sequenceTrackSetOf(), request);
 			INFO(report.toString());
+			REQUIRE(report.status == CalibrationStatus::Succeeded);
 			const TargetlessDiagnostics& t = targetlessOf(report);
-			REQUIRE(t.sweep.size() == 21);
+			REQUIRE(t.sweep.size() == 3);
+			CHECK(std::abs(t.sweep[0].focalLength - c.first) < 0.01);
 			CHECK(std::abs(sweepStep(t) - c.step) < 1e-4);
-			for (std::size_t i = 1; i < t.sweep.size(); ++i)
-				CHECK(t.sweep[i].focalLength > t.sweep[i - 1].focalLength);
-			REQUIRE(t.swept.has_value());
-			const double chosen = t.sweep[*t.swept].focalLength;
-			CHECK(std::abs(std::log(chosen / f)) < std::log(c.step));
-			// The most inliers wins, and a tie goes to the shorter focal length.
-			for (std::size_t i = 0; i < t.sweep.size(); ++i)
+			CHECK(std::abs(t.sweep[2].focalLength / t.sweep[1].focalLength - c.step) < 1e-4);
+			CHECK(t.swept == std::optional<std::uint32_t>{c.nearest});
+			for (std::uint32_t i = 0; i < 3; ++i)
 			{
-				if (i < *t.swept)
-					CHECK(t.sweep[i].inliers < t.sweep[*t.swept].inliers);
+				CAPTURE(i);
+				if (i == c.nearest)
+					CHECK(std::holds_alternative<double>(t.sweep[i].outcome));
 				else
-					CHECK(t.sweep[i].inliers <= t.sweep[*t.swept].inliers);
+					CHECK(failureOf(t.sweep[i]) != nullptr);
 			}
-			// Each candidate scored at its own angle: 4 px at its focal length.
 			CHECK(report.seededFields.empty());
 			REQUIRE(report.model.has_value());
-			CHECK(report.model->intrinsics().fx == chosen);
+			CHECK(report.model->intrinsics().fx == t.sweep[c.nearest].focalLength);
 			CHECK(report.model->intrinsics().cx == 319.5);
 			CHECK(modelOf(report.model->distortion()) == c.model);
 		}
 	}
 }
 
-TEST_CASE("each sweep candidate is scored at 4 pixels of its own focal length", "[camera][calibration][targetless]")
+TEST_CASE("the start whose adjustment ends with the lowest cost per residual wins, ties to the shorter",
+		  "[camera][calibration][targetless]")
+{
+	// A camera that only slides explains its rays under any focal length, so every start reconstructs
+	// and adjusts; the refiner stand-in reports the cost a case scripts, here the distance of a
+	// problem's focal length from a chosen one times its residuals.
+	setUp();
+	scene::resetSliding(12, 120, 1, pinhole(500));
+	const feature::TrackSet set = scene::sequenceTrackSetOf();
+	const auto costFrom = [](double best)
+	{
+		return [best](const refinement::Problem& problem)
+		{ return std::abs(std::log(problem.models.front().intrinsics().fx / best)) * double(problem.landmarkObservations.size()); };
+	};
+	for (const auto& [best, winner] : {std::pair<double, std::uint32_t>{250.0, 0}, {500.0, 1}, {1000.0, 2}})
+	{
+		CAPTURE(best);
+		{
+			std::lock_guard<std::mutex> lock(standin::refinerScript().mutex);
+			standin::refinerScript().finalCost = costFrom(best);
+		}
+		const Report report = run(set);
+		INFO(report.toString());
+		REQUIRE(report.status == CalibrationStatus::Succeeded);
+		const TargetlessDiagnostics& t = targetlessOf(report);
+		REQUIRE(t.sweep.size() == 3);
+		for (std::uint32_t i = 0; i < 3; ++i)
+		{
+			CAPTURE(i);
+			REQUIRE(std::holds_alternative<double>(t.sweep[i].outcome));
+			CHECK(std::abs(std::get<double>(t.sweep[i].outcome) - std::abs(std::log(t.sweep[i].focalLength / best))) < 1e-12);
+		}
+		CHECK(t.swept == std::optional<std::uint32_t>{winner});
+		CHECK(report.model->intrinsics().fx == t.sweep[winner].focalLength);
+	}
+	{
+		std::lock_guard<std::mutex> lock(standin::refinerScript().mutex);
+		standin::refinerScript().finalCost = nullptr; // every cost zero
+	}
+	CHECK(targetlessOf(run(set)).swept == std::optional<std::uint32_t>{0});
+}
+
+TEST_CASE("each start poses at 4 pixels of its own focal length", "[camera][calibration][targetless]")
 {
 	setUp();
 	scene::scene().relativeAngles.clear();
 	const Report report = run(scene::sequenceTrackSetOf());
 	const TargetlessDiagnostics& t = targetlessOf(report);
-	REQUIRE(t.sweep.size() == 21);
-	// Every angle the stand-in was handed is 4 px at one candidate's focal length, or at the starting
-	// model's for the seed; and every candidate's appears.
+	REQUIRE(t.sweep.size() == 3);
+	// Every start, failing or not, poses its seed candidates at 4 px of its focal length.
 	std::set<double> handed(scene::scene().relativeAngles.begin(), scene::scene().relativeAngles.end());
-	for (const SweepCandidate& c : t.sweep)
-		CHECK(handed.count(4.0 / c.focalLength) == 1);
+	for (const SweepStart& tried : t.sweep)
+		CHECK(handed.count(4.0 / tried.focalLength) == 1);
 }
 
 TEST_CASE("an imported model starts the reconstruction instead of the sweep", "[camera][calibration][targetless]")
@@ -377,14 +428,13 @@ TEST_CASE("footage that only turns fails to start, naming its parallax", "[camer
 {
 	// Under a model whose rays are right, a camera that only turns sees every match as a point at
 	// infinity, whatever baseline its relative pose is given. Two such models: an imported one, and the
-	// sweep's own candidate when the camera's focal length is one (here the eleventh, 516.4).
+	// sweep's own start when the camera's focal length is one (here the middle, 516.4).
 	//
-	// Recorded, not pinned: with the truth BETWEEN candidates (500), the sweep starts at 516.4, and its
-	// rays, 3% off, are explained better by a pan of another angle plus the stand-in's arbitrary
-	// sideways baseline than by the true pan: all 120 seed matches triangulate, at a median 52 mrad,
-	// and the calibration goes on to a spurious orbit that only its verdict rejects (5.3 mrad held out).
-	// A pure rotation is told apart for any model by whether a rotation alone explains a pair, which
-	// this method does not ask yet.
+	// Recorded, not pinned: with the truth BETWEEN starts (500), the middle start's rays, 3% off, are
+	// explained better by a pan of another angle plus the stand-in's arbitrary sideways baseline than by
+	// the true pan: all 120 seed matches triangulate, at a median 52 mrad, and the calibration goes on to
+	// a spurious orbit that only its verdict rejects (5.3 mrad held out). A pure rotation is told apart
+	// for any model by whether a rotation alone explains a pair, which this method does not ask yet.
 	//
 	// Moving content is the second half: a landmark moving across a pan has real parallax, so a few
 	// matches triangulate, each at no less than the minimum parallax (a triangulation below it is a
@@ -392,7 +442,7 @@ TEST_CASE("footage that only turns fails to start, naming its parallax", "[camer
 	// so the refusal asks whether most matches are at infinity instead.
 	setUp();
 	scene::resetPanning(12, 120, 1, pinhole(500));
-	const double candidate = targetlessOf(run(scene::sequenceTrackSetOf())).sweep.at(10).focalLength;
+	const double candidate = targetlessOf(run(scene::sequenceTrackSetOf())).sweep.at(1).focalLength;
 	Request imported = pinholeRequest();
 	imported.imported = pinhole(candidate);
 	imported.importedPolicy = ImportedModelPolicy::Initial;
@@ -413,23 +463,35 @@ TEST_CASE("footage that only turns fails to start, naming its parallax", "[camer
 			const Report report = run(scene::sequenceTrackSetOf(), request);
 			INFO(report.toString());
 			INFO("moving content " << moving << ", " << name(request.importedPolicy));
-			REQUIRE(failedWith(report, Failure::InitialisationFailed));
-			CHECK_THAT(report.failures.front().detail, ContainsSubstring("no parallax"));
-			CHECK_THAT(report.failures.front().detail, ContainsSubstring("only turns"));
 			const TargetlessDiagnostics& t = targetlessOf(report);
-			CHECK(t.seed.size() == 2);
-			CHECK(t.seedInliers > 0);
-			if (!moving)
-				CHECK(t.seedAtInfinity == t.seedInliers);
-			else
+			if (request.importedPolicy == ImportedModelPolicy::Initial)
 			{
-				// Measured: 108 of 120 at infinity; the 12 moving landmarks triangulate at a median 64 mrad.
-				CHECK(t.seedAtInfinity < t.seedInliers);
-				CHECK(t.seedAngle >= feature::GeometryRequest{}.angle);
+				REQUIRE(failedWith(report, Failure::InitialisationFailed));
+				CHECK(report.failures.size() == 1);
+				CHECK_THAT(report.failures.front().detail, ContainsSubstring("no parallax"));
+				CHECK_THAT(report.failures.front().detail, ContainsSubstring("only turns"));
+				CHECK(t.seed.size() == 2);
+				CHECK(t.seedInliers > 0);
+				if (!moving)
+					CHECK(t.seedAtInfinity == t.seedInliers);
+				else
+				{
+					// Measured: 108 of 120 at infinity; the 12 moving landmarks triangulate at a median 64 mrad.
+					CHECK(t.seedAtInfinity < t.seedInliers);
+					CHECK(t.seedAngle >= feature::GeometryRequest{}.angle);
+				}
+				CHECK(asked().empty());
+				continue;
 			}
-			if (request.importedPolicy == ImportedModelPolicy::Ignore)
-				CHECK(t.swept == std::optional<std::uint32_t>{10});
-			CHECK(asked().empty());
+			// The sweep's middle start is the camera's own model, and refuses the pan for its parallax.
+			// Recorded, not pinned: the long start, twice the focal length, poses five frames of the pan
+			// as an orbit, which only the verdict rejects, and the short one places two. Sub-slice 10d's
+			// homography test refuses the pan before any start.
+			REQUIRE(t.sweep.size() == 3);
+			REQUIRE(failureOf(t.sweep[1]) != nullptr);
+			CHECK(failureOf(t.sweep[1])->failure == Failure::InitialisationFailed);
+			CHECK_THAT(failureOf(t.sweep[1])->detail, ContainsSubstring("no parallax"));
+			CHECK(report.verdict != Verdict::Ready);
 		}
 	}
 }

@@ -3,11 +3,13 @@
 // A refiner stand-in for the registration and targetless calibration tests: it hands back the starting
 // estimate, unrefined, so what a method module does around a refinement is the only thing under test,
 // and it records what it was asked. It can be told it estimates a model, and a model a problem frees
-// comes back as it went in. The Ceres refiner has its own tests, in plugins/camera/ceres.
+// comes back as it went in; a case may script the final cost it reports. The Ceres refiner has its own
+// tests, in plugins/camera/ceres.
 
 #include <lain/camera/refinement/refiner.h>
 
 #include <cstddef>
+#include <functional>
 #include <mutex>
 #include <set>
 #include <utility>
@@ -36,6 +38,8 @@ namespace lain::camera::testing
 		std::vector<Asked> asked;
 		// The models it says it can estimate: none unless a case says so.
 		std::set<DistortionModel> estimates;
+		// The final cost it reports for a problem: zero unless a case says otherwise.
+		std::function<double(const refinement::Problem&)> finalCost;
 	};
 	inline RefinerScript& refinerScript()
 	{
@@ -56,8 +60,10 @@ namespace lain::camera::testing
 
 		refinement::Solution refine(const refinement::Problem& problem) const override
 		{
+			std::function<double(const refinement::Problem&)> finalCost;
 			{
 				std::lock_guard<std::mutex> lock(refinerScript().mutex);
+				finalCost = refinerScript().finalCost;
 				std::vector<math::Vec2d> pixels;
 				for (const refinement::LandmarkObservation& o : problem.landmarkObservations)
 					pixels.push_back(o.pixel);
@@ -74,6 +80,8 @@ namespace lain::camera::testing
 			out.landmarks = problem.landmarks;
 			for (const CameraModel& model : problem.models)
 				out.models.push_back(model.parameters());
+			if (finalCost)
+				out.finalCost = finalCost(problem);
 			return out;
 		}
 	};

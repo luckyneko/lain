@@ -8133,6 +8133,56 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - **Sabotage, caught as predicted:** the default left held fails the offset case, and the noisy case
      that now reads the principal point's variation; the stand-in suite's two default cases fail too.
 
+   **Sub-slice 10c built (2026-10-16): three starts.** As planned, with one addition its own tests
+   found: the starts are ranked by the frames they reconstructed before their cost.
+   - `ctest` **1273/1273** Debug and **1281/1281** Release with video, camera and Ceres on (+2 each),
+     **1153/1153** with all three off (+1). Warning-clean, format-check clean.
+   - **The starts are the centres of the geometric thirds of the sweep's range:** 260.25, 516.41 and
+     1024.69 for a pinhole at 640 wide, 1.9843 apart, so every focal length in its range is within a
+     factor of 1.41 of one; 396.88, 669.49 and 1129.33 for an equidistant fisheye, 1.6869 apart. The
+     21-candidate two-view sweep is deleted, `SweepCandidate` with it.
+   - **Each start is reconstructed and adjusted on its own** (`fitFrom`, steps 5 and 6), the three on
+     the pool. The held-out frames are chosen once before them; outliers, validation and resampling run
+     once, on the winner. An imported model under Initial or HoldAndValidate is the one start, and the
+     sweep stays empty.
+   - **The addition: the start whose adjustment kept the most frames wins; among those, the lowest final
+     cost per residual, ties to the shorter focal length.** A cost per residual compares fits of the same
+     footage only. Over 10a's fold scene, the start twice the true focal length reconstructed 3 frames of
+     19 at 0.45 per residual, the right start 17 at 0.87, and cost alone chose the three-frame fit,
+     Rejected. Ranking by reach first is the reconstruction's own rule for seeds. ADR-0016 and
+     CONTEXT.md record it. **For the repo owner to confirm:** a right start that loses one frame to a
+     wrong start that places all of them would lose too; 10e's rendered runs are where that would show.
+   - **`TargetlessDiagnostics::sweep` holds a `SweepStart` per start:** its focal length, the frames it
+     placed (kept for the adjustment, or before it failed), and its outcome, the final cost per residual
+     or a `FailureReason`. `swept` names the winner. What the reconstruction reports (the seed,
+     placement, unplaced frames, landmarks, refinement) is the winner's.
+   - **When every start fails, the calibration does:** the start that got furthest first (a seed posed,
+     then frames placed, then a usable adjustment), with its reconstruction's diagnostics, then every
+     other start's reason, each detail opening "from the start at f = ...". An imported start's failure
+     reads as it did.
+   - **The stand-in suite** (14 cases, +1):
+     - three starts at the thirds, the one nearest the truth the result, for a pinhole at 250, 500 and
+       1000 and a fisheye at 650; the others fail, reported (the stand-in geometry proposes only true
+       poses, so they place two frames or none);
+     - the lowest cost per residual winning, ties to the shorter, over a new `scene::resetSliding`
+       (a camera that only translates, whose rays every focal length explains, so every start adjusts)
+       and a final cost the pass-through refiner now takes from a script;
+     - each start posing at 4 px of its own focal length.
+   - **Through Ceres** (10 cases, +1): the nearest start wins whether the truth is short or long. At
+     f = 250 the start at 260.25 ends 0.49% out and Rejected for coverage (the scene fills 25% of so
+     wide a lens's image); at f = 1000 the start at 1024.69 ends 0.12% out, Ready. 9c's cases now start
+     at 516.41, 3% long, where the sweep had started at 465.96; every measured value was re-taken, and
+     Debug and Release give the same.
+   - **Found, and left for 10d: three starts make the stand-in pan reconstruct.** The middle start is
+     the camera's own model and refuses it for want of parallax, as before, but the start twice as long
+     poses five frames of the pan as an orbit, which only the verdict rejects. The pan case pins the
+     middle start's refusal and records the rest; 10d's homography test refuses the pan before any
+     start.
+   - **Three sabotages, all caught:**
+     - the highest cost winning: the scripted-cost case fails in all three of its rows;
+     - a failing start ending the calibration: 11 of the stand-in suite's 14 cases and all 10 of Ceres';
+     - cost alone deciding, the frames placed ignored: 10a's fold case, which is what pins the addition.
+
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
 failed reports as ordinary results, deterministic-debug execution, downsampling versus native

@@ -92,8 +92,17 @@ namespace lain::camera::testing::targetlesstext
 		for (const media::FrameRef& f : t.frames)
 			out << "frame " << f.toString() << "\n";
 		out << "tracks " << t.tracks << " " << t.tracksUsable << "\n";
-		for (const SweepCandidate& c : t.sweep)
-			out << "candidate " << number(c.focalLength) << " " << c.inliers << "\n";
+		for (const SweepStart& tried : t.sweep)
+		{
+			out << "start " << number(tried.focalLength) << " " << tried.placed << " ";
+			if (const double* cost = std::get_if<double>(&tried.outcome))
+				out << number(*cost) << "\n";
+			else
+			{
+				const FailureReason& failure = std::get<FailureReason>(tried.outcome);
+				out << name(failure.failure) << ": " << failure.detail << "\n";
+			}
+		}
 		out << "swept " << (t.swept ? std::to_string(*t.swept) : "unset") << "\n";
 		out << "seed" << positions(t.seed) << " " << number(t.seedAngle) << " " << t.seedInliers << " " << t.seedAtInfinity
 			<< " " << t.seedBelowFloor << "\n";

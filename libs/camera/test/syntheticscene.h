@@ -1,7 +1,8 @@
 #pragma once
 
 // A scene for the track-extraction tests: fixed cameras on an arc looking at scattered landmarks, or one
-// camera moving along that arc (resetMoving), and stand-in feature backends answering from its truth.
+// camera moving (resetMoving, resetWandering, resetPanning, resetSliding), and stand-in feature
+// backends answering from its truth.
 // The scene is process-wide, as the stand-ins' registries are; each case starts from scene::reset() or
 // scene::resetMoving() and changes only what it is about.
 //
@@ -253,6 +254,25 @@ namespace lain::camera::testing::scene
 		{
 			const double x = frames > 1 ? -0.8 + 1.6 * double(k) / double(frames - 1) : 0.0;
 			s.path.push_back(lookingAt(position, math::Vec3d{x, 0.0, 0.0}));
+		}
+	}
+
+	// One camera sliding sideways without turning, `frames` long: 3 m in front of the origin, looking
+	// along +Z, from 0.8 m to one side to 0.8 m to the other. Every pair of its frames differs by a
+	// translation alone, so every focal length explains its rays: a pinhole of the wrong focal length
+	// sees the scene stretched in depth, and poses it the same. Footage that says nothing of its focal
+	// length, so every start of a focal sweep reconstructs it.
+	inline void resetSliding(std::size_t frames = 12, std::size_t landmarks = 60, std::uint64_t seed = 1,
+							 std::optional<CameraModel> camera = std::nullopt)
+	{
+		reset(1, landmarks, seed);
+		Scene& s = scene();
+		s.frames = frames;
+		s.movingModel = std::move(camera);
+		for (std::size_t k = 0; k < frames; ++k)
+		{
+			const double x = frames > 1 ? -0.8 + 1.6 * double(k) / double(frames - 1) : 0.0;
+			s.path.push_back(math::RigidTransformd{math::RigidTransformd{}.rotation(), math::Vec3d{x, -0.2, -3.0}});
 		}
 	}
 

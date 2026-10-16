@@ -113,12 +113,14 @@ namespace lain::camera::calibration
 		std::vector<camera::board::DetectionReport> detections; // one per frame, in sequence order
 	};
 
-	// One focal length the sweep tried, and what it scored: the inliers its relative poses had in total
-	// over the frame pairs sharing the most tracks (CONTEXT.md, "Focal sweep").
-	struct SweepCandidate
+	// One start the focal sweep tried (CONTEXT.md, "Focal sweep"): its focal length, the frames it
+	// reconstructed, and how its bundle adjustment ended: the final cost per residual, or why it ended in
+	// no model. The start that placed the most frames wins, and among those the lowest cost.
+	struct SweepStart
 	{
-		double focalLength = 0; // pixels, fx and fy alike
-		std::uint32_t inliers = 0;
+		double focalLength = 0;	  // pixels, fx and fy alike
+		std::uint32_t placed = 0; // frames placed and kept for the adjustment, or before it failed
+		std::variant<double, FailureReason> outcome = 0.0;
 	};
 
 	// An observation the result does not explain: its RMS whitened residual exceeds the loss scale,
@@ -133,7 +135,8 @@ namespace lain::camera::calibration
 	};
 
 	// What a targetless calibration examined, beside what every calibration reports. Every frame is
-	// named by its position among `frames`.
+	// named by its position among `frames`. What the reconstruction reports, from `tracksUsable` to
+	// `refinement`, is the winning start's; when no start ended in a model, the one that got furthest.
 	struct TargetlessDiagnostics
 	{
 		// When this calibration extracted its tracks: what extraction reported.
@@ -141,8 +144,8 @@ namespace lain::camera::calibration
 		std::vector<media::FrameRef> frames;  // the frames examined, in capture order: one per sampled frame that decoded
 		std::uint32_t tracks = 0;			  // given
 		std::uint32_t tracksUsable = 0;		  // with two observations outside the held-out frames that unproject
-		std::vector<SweepCandidate> sweep;	  // in ascending focal length; empty when an imported model started it
-		std::optional<std::uint32_t> swept;	  // the candidate that started the reconstruction
+		std::vector<SweepStart> sweep;		  // in ascending focal length; empty when an imported model started it
+		std::optional<std::uint32_t> swept;	  // the start the result came from
 		std::vector<std::uint32_t> seed;	  // the two frames the reconstruction started from
 		double seedAngle = 0;				  // the median triangulation angle of its inliers that triangulate, radians
 		std::uint32_t seedInliers = 0;		  // the matches its relative pose explains

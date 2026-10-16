@@ -1,13 +1,14 @@
 // Targetless calibration (calibration::targetless) through the Ceres refiner, over the stand-in scene
 // and geometry (syntheticscene.h): one moving camera's model recovered from its frames' tracks, exact
-// and noisy; a wrong match and moving content named and kept from moving the model or the fit RMS; a
-// resample leaving out what the refined model cannot project; a principal point recovered as it is by
-// default, and missed when held; and one report however the work ran or the tracks are named. The
-// stand-in geometry proposes only true poses, so it cannot place a frame a starting model misses by
-// much; a principal point (8, -6) px off is placed, and recovered exactly (sub-slice 10b). A model is compared
-// with the truth by its ray mapping, never by its coefficients. Every tolerance is a measurement,
-// written beside its check; Debug and Release measure the same. Every case but the one comparing the
-// two starts a pool of four, since without one the resamples run inline on the case's thread.
+// and noisy, the focal sweep's start nearest it winning; a wrong match and moving content named and
+// kept from moving the model or the fit RMS; a resample leaving out what the refined model cannot
+// project; a principal point recovered as it is by default, and missed when held; and one report
+// however the work ran or the tracks are named. The stand-in geometry proposes only true poses, so it
+// cannot place a frame a starting model misses by much; a principal point (8, -6) px off is placed, and
+// recovered exactly (sub-slice 10b). A model is compared with the truth by its ray mapping, never by
+// its coefficients. Every tolerance is a measurement, written beside its check; Debug and Release
+// measure the same. Every case but the one comparing the two starts a pool of four, since without one
+// the resamples run inline on the case's thread.
 
 #include "syntheticscene.h"
 #include "targetlesscalibrationtext.h"
@@ -141,12 +142,12 @@ TEST_CASE("a pinhole camera is recovered from exact tracks, Ready", "[camera][ce
 		REQUIRE(report.status == CalibrationStatus::Succeeded);
 		const TargetlessDiagnostics& t = targetlessOf(report);
 		REQUIRE(t.swept.has_value());
-		CHECK(t.sweep[*t.swept].focalLength < 500); // 465.96: the sweep starts 7% short
+		CHECK(t.swept == std::optional<std::uint32_t>{1}); // the middle start, 516.41: 3% long
 		REQUIRE(t.refinement.has_value());
 		CHECK(t.refinement->status == refinement::Status::Converged);
 		CHECK(report.reproducibility.estimator.backend == "ceres");
 		CHECK(std::get<TargetlessRecord>(report.reproducibility.method).refiner.backend == "ceres");
-		// Measured: focal 2.5e-11, the ray mapping 2.6e-7 px; held out 4.9e-8 mrad.
+		// Measured: focal 9.5e-12, the ray mapping 9.8e-8 px; held out 1.9e-8 mrad.
 		const ModelError error = errorOf(report, truth);
 		CHECK(error.focal < 1e-7);
 		CHECK(error.ray < 1e-4);
@@ -176,11 +177,53 @@ TEST_CASE("a pinhole camera is recovered from exact tracks, Ready", "[camera][ce
 	}
 }
 
+TEST_CASE("the start nearest the truth is the result, whether the truth is short or long",
+		  "[camera][ceres][targetless][calibration]")
+{
+	const lain::testing::ThreadPool pool{4};
+	// The stand-in geometry proposes only true poses, so the starts twice and four times off place two
+	// frames or none, and are reported; the start a few percent off reconstructs every frame.
+	struct Case
+	{
+		double f;
+		std::uint32_t nearest;
+		double focalBound, rayBound;
+		Verdict verdict;
+	};
+	// Measured: at f = 250 the first start, 260.25, ends 0.49% out in focal length and 2.09 px in ray
+	// mapping, held out 0.87 mrad, and Rejected, since the scene covers 25% of so wide a lens's image;
+	// at f = 1000 the third, 1024.69, ends 0.12% and 1.46 px out, held out 0.34 mrad, Ready.
+	for (const Case& c : {Case{250.0, 0, 0.01, 4.0, Verdict::Rejected}, Case{1000.0, 2, 0.0025, 3.0, Verdict::Ready}})
+	{
+		DYNAMIC_SECTION("f = " << c.f)
+		{
+			const CameraModel truth = cameraOf(c.f, c.f, 319.5, 239.5);
+			setUp(truth);
+			const Report report = run(scene::sequenceTrackSetOf(kStatedSigma, 5));
+			INFO(report.toString());
+			REQUIRE(report.status == CalibrationStatus::Succeeded);
+			const TargetlessDiagnostics& t = targetlessOf(report);
+			REQUIRE(t.sweep.size() == 3);
+			CHECK(t.swept == std::optional<std::uint32_t>{c.nearest});
+			for (std::uint32_t i = 0; i < 3; ++i)
+			{
+				CAPTURE(i);
+				CHECK(std::holds_alternative<double>(t.sweep[i].outcome) == (i == c.nearest));
+			}
+			CHECK(t.sweep[c.nearest].placed == 10);
+			const ModelError error = errorOf(report, truth);
+			CHECK(error.focal < c.focalBound);
+			CHECK(error.ray < c.rayBound);
+			CHECK(report.verdict == c.verdict);
+		}
+	}
+}
+
 TEST_CASE("a Brown-Conrady camera is recovered from exact tracks, Ready", "[camera][ceres][targetless][calibration]")
 {
 	const lain::testing::ThreadPool pool{4};
-	// 24 frames and 200 landmarks: on 12 frames and 120, the start 7% short left 2 of 10 frames
-	// unplaced, the stand-in's strictness rather than the method's (sub-slice 9c's plan).
+	// 24 frames and 200 landmarks: on 12 frames and 120, the 21-candidate sweep's start, 7% short, left 2
+	// of 10 frames unplaced, the stand-in's strictness rather than the method's (sub-slice 9c's plan).
 	const CameraModel truth = cameraOf(500, 500, 319.5, 239.5, BrownConrady5{0.1, -0.05, 0.001, -0.002, 0.01});
 	setUp(truth, 24, 200);
 	const Report report = run(scene::sequenceTrackSetOf(), requestFor(DistortionModel::BrownConrady5));
@@ -206,7 +249,7 @@ TEST_CASE("noise at the stated covariance calibrates to within it, Ready", "[cam
 		const Report report = run(scene::sequenceTrackSetOf(kStatedSigma, 5));
 		INFO(report.toString());
 		REQUIRE(report.status == CalibrationStatus::Succeeded);
-		// Measured: the focal length 0.246% long, the principal point 0.13 px off, the ray mapping 1.11 px
+		// Measured: the focal length 0.247% long, the principal point 0.13 px off, the ray mapping 1.11 px
 		// out; held out 0.435 mrad; focal variation 0.106% and the principal point's 0.67 mrad; 6 of 1200
 		// observations named, the noise's own share.
 		const ModelError error = errorOf(report, truth);
@@ -270,10 +313,10 @@ TEST_CASE("a wrong match is named by its track and frame, and neither the model 
 	CHECK(outliers.size() == targetlessOf(before).outliers.size() + 1);
 
 	// The fit RMS is over the observations the result explains, so the named one, 25 px out, neither
-	// counts nor moves it. Measured: 0.167625 px over 1194 clean, 0.167585 over 1193 with it.
+	// counts nor moves it. Measured: 0.167626 px over 1194 clean, 0.167585 over 1193 with it.
 	CHECK(after.diagnostics.fitResiduals + 1 == before.diagnostics.fitResiduals);
 	CHECK(std::abs(after.diagnostics.fitRmsPixels - before.diagnostics.fitRmsPixels) < 1e-3);
-	// Measured: the focal length moved by 2.8e-6 of itself, and the held-out angle by 7e-5 mrad.
+	// Measured: the focal length moved by 1.5e-6 of itself, and the held-out angle by 2e-6 mrad.
 	CHECK(std::abs(after.model->intrinsics().fx / before.model->intrinsics().fx - 1) < 1e-4);
 	CHECK(std::abs(heldOutOf(after).rmsAngle - heldOutOf(before).rmsAngle) < 1e-6);
 	CHECK(after.verdict == Verdict::Ready);

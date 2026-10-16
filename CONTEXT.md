@@ -596,7 +596,10 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   *As decided 2026-10-16, built in M9 slice 4's sub-slice 10c:* three starts at geometric thirds of that
   range, each reconstructed and adjusted, the one whose bundle adjustment ends with the lowest cost per
   residual winning. Two frames scored no candidate above another on rendered footage, and a start too
-  short ends in a wrong minimum.
+  short ends in a wrong minimum. *(Built with one addition:* a start must first have kept the most
+  frames for its adjustment, as a seed must reach the most frames. A cost per residual compares fits of
+  the same footage only, and a start that reconstructed three frames of nineteen fit them more closely
+  than the right start fit seventeen.)
 - **Held parameter** — a camera-model parameter a calibration keeps at its starting value rather than
   estimating, such as a principal point a targetless calibration's settings hold (held by default until
   sub-slice 10b, decided 2026-10-16). It has no resampled
