@@ -1400,6 +1400,36 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-16 — M9 slice 4, sub-slice 10 planned: rendered footage finds three defects in targetless calibration (nothing built yet)
+
+Sub-slice 10 is planned as **five commits, 10a to 10e**: four fix the method, and the fifth is the
+end-to-end comparison. Before planning, a scratch probe ran 9b's method through OpenCV and Ceres on
+rendered footage, and it showed what the stand-ins could not. The plan is in WORK.md's *Sub-slice 10
+planned* under M9 slice 4. ADR-0016 and CONTEXT.md are amended in place.
+
+- **The focal sweep's score is flat on real tracks.** On the pairs it scores, every candidate from
+  f = 342 to 1443 explains the same matches to within two, and ties go to the shortest. The bundle
+  adjustment converges from about 0.7 to 3 times the true focal length. At the default 40 samples, two
+  of six runs came back about 58% wrong, Rejected, and one failed to initialise.
+- **A bootstrap resample can fail on a wrong match.** The match's landmark lies beyond the refined
+  model's fold radius, and Ceres fails the resample at iteration 0. A run can lose all its resampling
+  evidence, and with it Ready.
+- **A held principal point blinds Ready.** The held-out frames' poses absorb its offset. A model 10 to
+  18 px out in ray mapping was Ready.
+- **A rendered pan is posed as an orbit and judged Ready**, unless its start is exact. 9c deferred this
+  question here.
+- **Not owed:** a second placement round. Distorted footage up to k1 = -0.25 at 1920 x 1080 left no
+  frame unplaced.
+- **Decided with the repo owner:**
+  - three starts at geometric thirds of the sweep's range, with the lowest final cost per residual
+    winning (a wrong minimum costs 3.8 to 8.8 per residual, a right one 0.82 to 1.11);
+  - a homography test refusing a seed pair that turns or sees one plane;
+  - the principal point freed by default, reversing 2026-10-12.
+- **10a** fixes what a resample starts from and the fit RMS. **10b** frees the principal point by
+  default. **10c** builds the three starts. **10d** builds the homography test. **10e** adds the
+  comparison and the measurements for the repo owner: the held-out bound (near the noise at f = 500,
+  past it at f = 250), the default samples, and the feature cap.
+
 ### Update 2026-10-15 — M9 slice 4, sub-slice 9c: targetless calibration through Ceres (**sub-slice 9 COMPLETE**)
 
 The last of sub-slice 9's three commits, test code only. It runs the method as 9b built it, refined

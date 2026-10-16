@@ -491,7 +491,11 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   angle and an arbitrary baseline, a spurious orbit only the verdict rejected; and footage whose every
   frame looks at one point does not say its focal length, since every pair's optical axes meet, so the
   sweep cannot choose among the candidates that explain it. WORK.md's sub-slice 9b note holds the
-  numbers.)*
+  numbers.)* *(Amended 2026-10-16, decided with the repo owner while planning sub-slice 10: a rendered
+  pan through OpenCV is posed as an orbit and judged Ready unless its start is exact, so a seed pair
+  most of whose matches a homography explains is not a seed. A homography explains a pan, and a single
+  plane, whatever the focal length; a rotation fit under the start model was the alternative. Built in
+  sub-slice 10d.)*
 - **Two extractions, one feature module.** `lain::camera::feature` gains a sequence extraction beside
   the fixed-rig one, sharing its per-image and per-pair work and its union. A sequence pair is verified
   by a **fundamental matrix**, since no model exists yet to turn pixels into rays. The geometry backend
@@ -510,9 +514,24 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   is scored at one pixel threshold turned into its own angle, because a fixed angle would favour the
   longest focal length. An imported model under the Initial policy skips the sweep, and HoldAndValidate
   validates an imported model against ordinary footage. Requiring a prior, and COLMAP's fixed guess of
-  1.2 times the longest side, were the alternatives.
+  1.2 times the longest side, were the alternatives. *(Amended 2026-10-16, decided with the repo owner
+  while planning sub-slice 10: the two-view score is replaced by three starts. On rendered footage
+  through OpenCV every candidate explained the same matches to within a few, since two frames of a
+  path aimed at one object barely constrain a focal length; the stand-ins had hidden it by proposing
+  only true poses. The bundle adjustment converges from about 0.7 to 3 times the true focal length, and
+  a start below that ends in a wrong minimum, so three starts at geometric thirds of the sweep's range
+  cover it. Each is reconstructed and adjusted, and the lowest final cost per residual wins, since a
+  wrong minimum costs three to eight times a right one. Scoring the widest pairs and COLMAP's fixed
+  prior were the alternatives. Built in sub-slice 10c; WORK.md's sub-slice 10 plan holds the
+  numbers.)*
 - **The principal point is held by default**, at the image centre or at an imported model's, because
-  self-calibration conditions it poorly. A setting of the method frees it. A **held parameter** is not
+  self-calibration conditions it poorly. A setting of the method frees it. *(Reversed 2026-10-16,
+  decided with the repo owner while planning sub-slice 10: it is FREED by default. On rendered footage
+  a held principal point blinds Ready: the held-out frames' poses absorb its offset, so a model whose
+  ray mapping was 10 to 18 px out was Ready, while freed it came back within 1.8 px with a resampled
+  variation inside Ready's bound. Footage that conditions it poorly shows that variation and is
+  Exploratory, which is what the stability criterion is for. A setting still holds it. Built in
+  sub-slice 10b.)* A **held parameter** is not
   estimated, so it has no resampled variation. The report says it was held, and the fitness criterion
   on it does not apply; its variation is never recorded as zero. *(Scoped 2026-10-13, while planning
   sub-slice 2:)* a held parameter is part of an estimate. A model held whole under HoldAndValidate

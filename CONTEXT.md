@@ -582,7 +582,8 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   initialisation. Every sampled frame is a view and its tracks come from the sequence extraction. The
   camera's frames and the landmarks are reconstructed incrementally from a starting model, either an
   imported one or the focal sweep's. A bundle adjustment then estimates the model, with fx, fy and the
-  distortion free and the principal point held by default. The model is validated on held-out frames,
+  distortion free and the principal point held by default *(freed by default from sub-slice 10b,
+  decided 2026-10-16: a held one blinds the verdict to its offset)*. The model is validated on held-out frames,
   and its stability measured by resampling tracks. The reconstruction is a by-product with an arbitrary
   scale, never part of the result.
 - **Focal sweep** — how targetless calibration starts when no imported model seeds it. A fixed,
@@ -592,8 +593,13 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   Every candidate is scored at one pixel threshold, turned into its own angle; a fixed angle covers more
   pixels at a longer focal length, and would favour the longest candidate. _Avoid_: focal guess (it is
   measured), self-calibration (the bundle adjustment does that).
+  *As decided 2026-10-16, built in M9 slice 4's sub-slice 10c:* three starts at geometric thirds of that
+  range, each reconstructed and adjusted, the one whose bundle adjustment ends with the lowest cost per
+  residual winning. Two frames scored no candidate above another on rendered footage, and a start too
+  short ends in a wrong minimum.
 - **Held parameter** — a camera-model parameter a calibration keeps at its starting value rather than
-  estimating, such as targetless calibration's principal point by default. It has no resampled
+  estimating, such as a principal point a targetless calibration's settings hold (held by default until
+  sub-slice 10b, decided 2026-10-16). It has no resampled
   variation, so a report says it was held and the fitness criterion on it does not apply; its variation
   is never recorded as zero. A held parameter is part of an estimate: a held MODEL (the
   HoldAndValidate policy) estimated nothing, so its resampling evidence is unavailable and it is at most

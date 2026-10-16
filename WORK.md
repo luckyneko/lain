@@ -5521,7 +5521,10 @@ The 2026-08-16 review also left these requirements and decisions visible before 
         - the held-out frames left in the bundle adjustment;
         - the bootstrap drawn inside the parallel loop;
         - a held principal point's variation reported as zero.
-   10. **End to end, and the comparison** (`test-camera-calibration-e2e`, Release).
+   10. **End to end, and the comparison** (`test-camera-calibration-e2e`, Release). *(Planned in detail
+       2026-10-16 as five commits, 10a to 10e; see below. A probe through OpenCV and Ceres found three
+       defects in 9b's method before any comparison could mean anything, so four commits fix the method
+       and the fifth is the comparison.)*
        - One rendered camera moves through the textured scene, with a board in view for part of the
          footage. Both methods calibrate it from the same frames, with both real backends.
        - Each model is compared with the truth and with the other by its ray mapping over the image
@@ -5534,10 +5537,12 @@ The 2026-08-16 review also left these requirements and decisions visible before 
          - **a rendered pan**: whether it reconstructs as a false orbit, as one did over 9b's
            stand-ins when its focal length fell between two sweep candidates. If it does, a
            rotation-only check is owed: a pair most of whose matches a rotation alone explains has no
-           parallax.
+           parallax. *(Measured 2026-10-16: it does, and is judged Ready. The check is a homography
+           test, decided with the repo owner: 10d.)*
          - **rendered distorted footage**: how many frames the starting model leaves unplaced. If
            any, a second placement round is owed: the unplaced frames posed again under the refined
-           model, then one more adjustment when a frame joins.
+           model, then one more adjustment when a frame joins. *(Measured 2026-10-16: none, through
+           k1 = -0.25 at 1920 x 1080, sub-slice 8's strongest lens. Not owed; 10e pins it.)*
        - The operator guidance says footage whose every frame looks at one point does not say its
          focal length (9b's finding), so a camera circling an object should not keep it centred.
    11. **Attempts, and the flow nodes.**
@@ -7856,6 +7861,203 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    **Counts:** 9a none; 9b a new executable with about a dozen cases, in every configuration, since it
    needs neither plugin, and two cases in `test-camera-nobackend`; 9c about seven cases wherever Ceres
    builds.
+
+   **Docs:** each commit adds its built note here and an entry to CLAUDE.md.
+
+   **Sub-slice 10 planned (2026-10-16) as five commits, 10a to 10e.** Before planning, a scratch probe ran
+   9b's method through OpenCV and Ceres on rendered footage:
+   - the test camera (640 x 480, f 500) along sub-slice 8's path over the default scene;
+   - a pan;
+   - a wide and a narrow lens;
+   - strongly distorted footage at 1920 x 1080;
+   - one camera's footage with a board standing in the scene.
+
+   It found three defects that the stand-ins could not show, so four commits fix the method and the
+   comparison comes last. Every number below is the probe's, in Release.
+
+   **Found by the probe:**
+   - **The focal sweep's score is flat on real tracks.**
+     - The eight pairs sharing the most tracks are adjacent frames, and every candidate from f = 342 to
+       1443 explains 3,637 to 3,639 of their matches.
+     - The widest pairs are no better. For a true f = 500 they rule out only f below 300, and for a
+       wide lens (f = 250) they are flat to within 1%.
+     - The path aims at the box throughout, close to the critical configuration 9b found, and there
+       two frames alone barely constrain the focal length.
+     - The stand-ins hid this: their geometry proposes only true poses, so a wrong focal length lost
+       inliers there.
+     - Ties go to the shorter focal length, which is the worst end.
+   - **The bundle adjustment converges from about 0.7 to 3 times the true focal length, and starting
+     short is what fails.**
+     - For a true f = 500, every start from 342 to 1443 ends within 0.06%. Every start of 309 or less
+       ends 43 to 54% short, Rejected.
+     - A wide lens (f = 250) converges from 185 to 779, and from 1175. Starts at 957 and 1443 end 15%
+       and 20% wrong, and are judged Exploratory.
+   - **So the default footage often fails.** Over three seeds and two lenses at the default 40 samples:
+     - 2 Ready;
+     - 1 Exploratory, for want of resampling evidence (below);
+     - 1 InitialisationFailed: the sweep chose 342, and the seed's matches met at infinity;
+     - 2 Rejected, 57.6% and 59.5% wrong: the sweep chose 185.
+
+     At 12 samples, 6 of 6 were Ready.
+   - **The lowest final cost per residual separates the right minimum from a wrong one by a wide
+     margin.**
+     - Right: 0.82 to 1.11, with 6 to 8% of observations named outliers.
+     - Wrong: 3.8 to 8.8, with 28 to 48%.
+
+     Three starts at geometric thirds of the sweep's range (f = 261, 516 and 1024 at 640 wide), with the
+     lowest cost winning, turned the three failed 40-sample runs into Ready ones, 0.003 to 0.19% out in
+     focal length.
+   - **A bootstrap resample can fail on an observation its start cannot project.**
+     - A wrong match leaves its landmark far outside the frame that saw it.
+     - The main fit starts from the sweep's neutral model, whose domain is unbounded. A resample starts
+       from the refined model, whose domain ends at its fold radius.
+     - Ceres then fails the whole resample at iteration 0, always OutsideDomain, never behind the
+       camera.
+     - In one run all 8 resamples failed, so a model 0.016% out in focal length was Exploratory for
+       want of resampling evidence. 3 of the 24 grid runs lost Ready this way.
+     - When a resample's start left out what it could not project, as the main fit does at its own
+       start, 8 of 8 succeeded and the run was Ready.
+   - **A held principal point blinds Ready.**
+     - The held-out frames' poses absorb the offset, so the held-out angle stays at 1.1 to 1.4 mrad
+       whether the true principal point is at the centre or (8, -6) px away.
+     - Held, each of six runs was Ready while its ray mapping was 10 to 18 px out.
+     - Freed, the principal point came back within 0.3 to 1.8 px. Its resampled variation was 0.55 to
+       1.5 mrad, against Ready's 2.0, and the ray mapping was within 0.8 to 3.1 px. All six were Ready.
+   - **A pan is reconstructed as an orbit and judged Ready.**
+     - Started at the sweep's 466 for a true 500, a camera that only turns was posed as one moving
+       sideways. It came out 0.5 to 1.4% wrong in focal length and 4.9 to 7.6 px out in ray mapping,
+       with a held-out angle of 0.6 to 0.8 mrad.
+     - Started at the true model, the points-at-infinity rule refuses it.
+     - Freeing the principal point does not help.
+     - A homography explains a pan whatever the focal length.
+   - **Distortion leaves no frame unplaced.** Through k1 = -0.2 and -0.25 alone at 1920 x 1080 (sub-slice
+     8's lenses: 193 and 317 px corner shifts), all 20 sampled frames were placed, the runs were Ready,
+     and the focal length was 0.06 to 0.24% out.
+   - **The targetless fit RMS is over every observation**, including wrong matches up to 571 px out. So
+     it read 18 to 28 px on footage whose held-out RMS was 0.6 px. Board calibration's is its estimate's
+     own residual, 0.17 px.
+   - **Board calibration on this footage is sensitive to coverage.**
+     - With the close views near the image's middle (56% covered), and again at 79%, OpenCV's estimate
+       folded before the image corners, and lain refused it as InvalidModel.
+     - With the board swung toward the corners (83%), both methods were Ready on the same 48 frames:
+
+       | Method | Focal error | Mean ray error |
+       | --- | --- | --- |
+       | Board | 0.038% | 0.63 px |
+       | Targetless (principal point held, 1.5 px from the truth) | 0.011% | 1.58 px |
+
+       The two models were 0.04% and 1.5 px apart.
+   - **Also measured, with no action:**
+     - **Honest noise names 6 to 8% of observations outliers** on rendered footage, against 0.5% over
+       the stand-ins. The stated covariance (3.4% of a feature's size) is too tight for the smallest
+       features, as registration found in slice 3, sub-slice 9.
+     - **A narrow lens found no good start** (f = 1100 at 640 wide, a 32° field). The best ended 0.9%
+       out with an 11 px ray error, and was judged Exploratory. A narrow field barely constrains a
+       focal length, and the operator guidance will say so.
+
+   **Decided with the repo owner:**
+   - **Three starts, the lowest cost winning**, replace the sweep's two-view score. Each start is
+     reconstructed and adjusted. Held-out validation and resampling run once, on the winner. The
+     alternatives were scoring the widest pairs, and COLMAP's fixed prior of 1.2 times the longest side.
+   - **A homography test refuses a pan.** It works on pixels, so it does not depend on the starting focal
+     length: a pair most of whose matches a homography explains is not a seed (COLMAP's
+     planar-or-panoramic rule). The alternative was a rotation fit under the start model, which needs a
+     start within a few percent of the truth.
+   - **The principal point is freed by default**, reversing the 2026-10-12 decision on this measurement.
+     Footage that conditions it poorly shows a large resampled variation and is judged Exploratory,
+     which is what the stability criterion is for. ADR-0016 and CONTEXT.md are amended in place.
+
+   **The commits:**
+   - **10a: what a resample starts from, and the fit RMS.**
+     - A resample leaves out every observation its start cannot project, through the same routine the
+       main fit's start runs, so the two cannot disagree about what a start can see.
+     - `fitRmsPixels` is taken over the observations not named outliers; their count stands beside it.
+     - Tests through Ceres, in 9c's file:
+       - a model whose distortion folds just outside the image, and a wrong match whose landmark lies
+         beyond that fold from its frame; the resampling still has evidence;
+       - the fit RMS ignores a wrong match.
+     - Sabotage: the resample keeps every observation, and loses its evidence.
+   - **10b: the principal point is freed by default.**
+     - `Settings::freePrincipalPoint` defaults to true.
+     - Cases that relied on the held default say so.
+     - 9c's principal-point case gains an (8, -6) px offset, recovered by default.
+     - Sabotage: the default left held, which fails the offset case.
+   - **10c: three starts.**
+     - Three focal lengths at geometric thirds of the sweep's field-of-view range, each reconstructed
+       and adjusted. The lowest final cost per residual wins.
+     - An imported model under Initial is the one start.
+     - A start that fails to initialise or refine is reported and does not end the calibration. All
+       three failing does, with each start's reason.
+     - `TargetlessDiagnostics::sweep` becomes the three starts, each with its focal length, outcome and
+       final cost per residual, and `swept` names the winner. The 21-candidate two-view sweep is
+       deleted.
+     - Tests over the stand-ins and through Ceres:
+       - the start nearest the truth wins, whether the truth is short or long;
+       - a failing start is reported;
+       - determinism holds.
+
+       On rendered footage (10e), the 40-sample runs that failed are Ready.
+     - Sabotages: the highest cost winning; a failing start ending the calibration.
+   - **10d: the homography test.**
+     - The geometry seam gains `homographies(pixelPairs, threshold, seed)`. Its facade,
+       `feature::homography`, measures each candidate's symmetric transfer error in source pixels and
+       chooses by the facades' rule. OpenCV's producer uses `findHomography` with USAC. The method is
+       pure virtual, so every backend answers it in this commit, as 7a's did.
+     - The seed rule: a candidate pair whose matches a homography explains, at 80% of them, is not a
+       seed (COLMAP's `max_H_inlier_ratio`, provisional). With no seed left, InitialisationFailed says
+       the footage turns or sees one plane. The test runs once, on pixels, before the three starts.
+     - **A risk, to be measured first.** At 40 samples adjacent frames are about 22 mrad apart, under
+       3 px of parallax between the wall and the box at f = 500, so a homography explains them. Seeds
+       today come from the pairs sharing the most tracks, which are those pairs. So the candidate set
+       must reach wider pairs, or dense footage has no seed.
+     - The stand-in geometry proposes each true pose pair's rotation homography.
+     - Tests:
+       - a pan refused, with that reason;
+       - a translating pair not refused;
+       - OpenCV's producer on two rendered views of a pan and of a translation.
+     - Sabotage: a test that never refuses, which the pan cases fail.
+   - **10e: end to end, and the comparison.** `test-camera-calibration-e2e`, Release only, built where
+     OpenCV and Ceres are. The camera is rendered in plain C++, so every number is judged against the
+     truth. The cases:
+     1. **One camera, both methods.**
+        - The footage: the path, a walk up to a 7 x 5 board of 120 mm squares standing in front of the
+          wall, and close views that swing the board to the corners. 48 frames, with the principal
+          point (8, -6) px off.
+        - Board and targetless calibration run on the same frames. Each is compared by ray mapping
+          with the truth and with the other.
+        - The footage must make the board Ready on every seed tried.
+     2. **The 40-sample runs that failed are now Ready**, at 640 x 480 and at 1280 x 720 (f = 1000,
+        registration-targetless/1's operating point).
+     3. **A rendered pan is refused** by 10d's test.
+     4. **Strong distortion leaves no frame unplaced** (k1 = -0.25, 1920 x 1080).
+     5. **Measured for the repo owner**, each decided in a follow-up commit before sub-slice 11 exposes
+        it:
+        - **the held-out angle across lenses.** The probe measured:
+
+          | Focal length | Held-out angle |
+          | --- | --- |
+          | 250 (wide) | 1.54 to 1.61 mrad |
+          | 500 | 1.0 to 1.55 mrad |
+          | 1000 | 0.82 mrad |
+          | 1500 | 0.6 mrad |
+
+          Against Ready's 1.5 mrad, the bound is near the noise for a normal lens and past it for a
+          wide one.
+        - **the default number of samples**: accuracy, outcome and time at 12, 20, 30 and 40.
+        - **the feature cap**: time at 1920 x 1080, over sub-slice 8's fine texture, where it binds.
+     - The operator guidance: the camera should translate as well as turn, should not keep one point
+       centred, and a narrow lens says little about its focal length.
+
+   **Cost:**
+   - At 640 x 480 the probe drew 48 frames in 7 s and calibrated in 5 to 15 s.
+   - At 1920 x 1080 it drew 24 frames in 22 s and calibrated in 10 to 12 s.
+   - Three starts multiply the reconstruction and adjustment by about three, not the resampling.
+
+   **Counts:**
+   - 10a and 10b: a case or two each, in `test-camera-ceres` and the stand-in suite;
+   - 10c: about four;
+   - 10d: about six, across the stand-in suite, `test-camera-opencv-features` and the nobackend suite;
+   - 10e: a new executable of about six cases, Release only.
 
    **Docs:** each commit adds its built note here and an entry to CLAUDE.md.
 
