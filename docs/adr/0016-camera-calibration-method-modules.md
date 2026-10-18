@@ -540,7 +540,13 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   ray mapping was 10 to 18 px out was Ready, while freed it came back within 1.8 px with a resampled
   variation inside Ready's bound. Footage that conditions it poorly shows that variation and is
   Exploratory, which is what the stability criterion is for. A setting still holds it. Built in
-  sub-slice 10b.)* A **held parameter** is not
+  sub-slice 10b.)* *(Measured 2026-10-18, sub-slice 10e: not always. Freed, the principal point
+  still came back 2 to 4 px off on some footage while the verdict was Ready: at f = 1000 on 1280 x
+  720 up to 3.9 px off against a resampled variation of 1.7 to 2.0 mrad, and with a printed board in
+  close views 2 to 4 px off on three seeds of six against 0.4 to 0.75 mrad. Each resample starts from
+  the result, so the bootstrap measures the spread around a minimum and not whether it is the right
+  one, and the held-out frames' poses still absorb the offset. Recorded for the repo owner in
+  WORK.md's sub-slice 10e note, with the options.)* A **held parameter** is not
   estimated, so it has no resampled variation. The report says it was held, and the fitness criterion
   on it does not apply; its variation is never recorded as zero. *(Scoped 2026-10-13, while planning
   sub-slice 2:)* a held parameter is part of an estimate. A model held whole under HoldAndValidate

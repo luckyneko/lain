@@ -13,6 +13,16 @@
 // result MEANS (where the reconstruction starts, which frames validate, what an outlier is, how stable
 // the model is, and what it is fit for) is here, so it is the same whichever backend runs. The
 // reconstruction it estimates through has an arbitrary scale and is a diagnostic, never the result.
+//
+// What footage calibrates (measured on rendered footage, M9 slice 4, sub-slice 10e):
+// - the camera translates as well as turns. Footage that only turns, or sees one plane, is refused;
+//   through a lens that bends a straight line by tens of pixels at the corners a pan can escape that
+//   test and be posed as a sideways move;
+// - the camera does not keep one point centred: when every frame's optical axis meets at one point,
+//   no pair of frames says the focal length;
+// - a wide field of view: a narrow lens (a 32 degree field) leaves its focal length poorly said;
+// - no repeated pattern fills the frame. A printed calibration board in close views pulled the
+//   principal point 2 to 4 px off on half the seeds tried, and the verdict did not see it.
 namespace lain::camera::calibration::targetless
 {
 	// Calibrate a camera from its footage: feature::extractSequenceTracks over `camera` as the

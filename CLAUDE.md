@@ -1400,6 +1400,46 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-18 — M9 slice 4, sub-slice 10e: calibration end to end, and what the comparison found (**sub-slice 10 COMPLETE**)
+
+The last of sub-slice 10's five commits: `test-camera-calibration-e2e`, four cases through OpenCV and
+Ceres on rendered footage, Release only, plus the measurements the plan owed the repo owner and the
+operator guidance in `targetless.h`. `ctest` **1284/1284** Debug and
+**1291/1292** Release with video, camera and Ceres on (+4 each; they SKIP in Debug), **1159/1159** with
+all three off; warning-clean, format-check clean. The Release failure is the 100-camera registration
+scale case on its wall-clock bound under `-j8` (154 s against 120; alone 36 s), more often now that this
+suite runs beside it. Its cases count as four processors to ctest, which helps but does not stop it. Full notes in WORK.md's *Sub-slice 10e built* under M9
+slice 4.
+
+- **The cases:**
+  - one camera calibrated both ways from the same 48 frames, both Ready. The targetless model is
+    0.033% out in focal length and 0.30 px mean in ray mapping, the board's 0.071% and 0.72 px, and
+    the two are 0.090% and 0.93 px apart;
+  - the default 40 sampled frames through three lenses. f = 500 and f = 1000 (HD) are Ready. f = 250 is
+    accurate but Exploratory, on its held-out angle alone;
+  - a rendered pan refused before any start;
+  - k1 = -0.25 at 1080p, with no frame unplaced and the result Ready.
+- **Deviation:** the plan wanted footage that makes the board Ready on every seed. Over six seeds it
+  is Ready on four, so the case pins seed 3 and the spread is recorded.
+- **For the repo owner, measured:**
+  - **The held-out angle:** the residual is 0.6 to 0.9 px whatever the lens, so a wide lens fails a
+    fixed angle. Options: pixels, or whitened by the stated covariance.
+  - **Sampled frames:** only 40 of 12, 20, 30 and 40 was Ready on all three seeds. Keep it.
+  - **Feature cap:** accuracy is saturated by 1024 to 2048 at 1080p. Exact matching takes 171 s at
+    2048 against 477 s at 4096. 2048 is recommended.
+- **Found, for the repo owner:**
+  - **The targetless verdict does not see a principal point several pixels off.** HD runs are Ready
+    at 1.5 to 4.7 px mean. Held-out frames' poses absorb the error, and resamples start from the
+    result.
+  - **A printed board in close views pulls the targetless fit off** on three seeds of six (2.7 to
+    4.4 px mean). Without the board it stays within 1.6 px.
+  - **Board calibration's stability is a standard deviation decided by one bad resample:** 2 of 6
+    seeds are Rejected at 89% and 32%.
+- **10c's deviation never decided anything here:** every start placed the same frames.
+- **Three sabotages, all caught.** Without 10d's homography test, case 1's targetless model also goes
+  wrong (7.0 px mean), since the board's near-planar close views then seed. With the principal point
+  held, the normal and wide lenses fail on ray mapping while still Ready, as 10b found.
+
 ### Update 2026-10-18 — M9 slice 4, sub-slice 10d: a pair a homography explains does not seed
 
 The fourth of sub-slice 10's five commits. Targetless calibration tests every pair of frames once, on

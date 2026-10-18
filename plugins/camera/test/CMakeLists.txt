@@ -84,3 +84,26 @@ if(TARGET lain::camera::opencv AND TARGET lain::camera::ceres)
 	lain_opencv_stage_runtime(test-camera-registration-e2e)
 	catch_discover_tests(test-camera-registration-e2e TEST_PREFIX "(camera::registration) ")
 endif()
+
+# Calibration end to end through both real backends, on footage drawn in plain C++: one camera
+# calibrated with a board and without one, the targetless method's default sampling through three
+# lenses, a pan refused, and a strongly distorted lens. Every case draws frames at 640x480 or more and
+# runs in Release only. Built only where both plugins are. Each case keeps the process pool busy for
+# minutes, so ctest counts it as four processors, which keeps -j8 from running more of them than there
+# are cores.
+if(TARGET lain::camera::opencv AND TARGET lain::camera::ceres)
+	add_executable(test-camera-calibration-e2e test_calibratione2e.cpp)
+	target_compile_features(test-camera-calibration-e2e PRIVATE cxx_std_17)
+	target_include_directories(test-camera-calibration-e2e PRIVATE "${lain_SOURCE_DIR}/libs/camera/test")
+	target_link_libraries(test-camera-calibration-e2e PRIVATE
+		lain::camera::backends
+		lain::io::image::codecs
+		lain::io::sequence
+		lain::io::data::codecs
+		lain::testing
+		lain::warnings
+		Catch2::Catch2WithMain
+	)
+	lain_opencv_stage_runtime(test-camera-calibration-e2e)
+	catch_discover_tests(test-camera-calibration-e2e TEST_PREFIX "(camera::calibration) " PROPERTIES PROCESSORS 4)
+endif()

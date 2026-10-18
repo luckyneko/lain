@@ -5524,7 +5524,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    10. **End to end, and the comparison** (`test-camera-calibration-e2e`, Release). *(Planned in detail
        2026-10-16 as five commits, 10a to 10e; see below. A probe through OpenCV and Ceres found three
        defects in 9b's method before any comparison could mean anything, so four commits fix the method
-       and the fifth is the comparison. 10a to 10c built 2026-10-16, 10d 2026-10-18.)*
+       and the fifth is the comparison. 10a to 10c built 2026-10-16, 10d and 10e 2026-10-18:
+       sub-slice 10 is complete.)*
        - One rendered camera moves through the textured scene, with a board in view for part of the
          footage. Both methods calibrate it from the same frames, with both real backends.
        - Each model is compared with the truth and with the other by its ray mapping over the image
@@ -8262,6 +8263,152 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - **Two sabotages, both caught as predicted:**
      - the test never refusing: the pan case and the turned-pair case fail, and nothing else;
      - the transfer measured one way only: the both-ways case fails.
+
+   **Sub-slice 10e built (2026-10-18): end to end, and the comparison. Sub-slice 10 is COMPLETE.** As
+   planned, with one deviation: over six seeds the plan's footage does not make the board Ready on
+   every seed. The case pins one seed, and the spread is recorded below.
+   - `ctest` **1284/1284** Debug and **1291/1292** Release with video, camera and Ceres on (+4 each; the
+     new cases SKIP in Debug), **1159/1159** with all three off (unchanged: the suite is built only with
+     both plugins). The Release failure is the 100-camera registration scale case below. Warning-clean,
+     format-check clean.
+   - **`test-camera-calibration-e2e`, four cases, Release only**, built where OpenCV and Ceres are. Each
+     case SKIPs in Debug, since a Debug build draws a frame in seconds. The suite takes about 3 minutes
+     on four cores. Every model is compared with the truth by its ray mapping: every 16th pixel's true
+     ray projected through the estimate, worst and mean.
+   - **Each case counts as four processors to ctest** (`PROCESSORS 4`), since each keeps the pool busy
+     for minutes. Under `-j8` without it they took 200 to 310 s each, and with it 6 to 154 s.
+   - **The 100-camera registration scale case misses its wall-clock bound under `-j8` more often now.**
+     Run beside this suite it took 181 s without the processor count and 154 s with it, against 120 s;
+     alone it takes 36 s. The bound is that case's own, recorded as a flake since 9b. A wall-clock bound
+     under parallel ctest wants the repo owner's call: a larger bound, the bound only when run alone,
+     or `PROCESSORS` on that case.
+   - **One camera, both methods** (the plan's footage, seed 3): the arc's 24 frames, 6 towards the
+     board, and 18 close views of a 7 x 5 board of 120 mm squares 1.2 m in front of the wall. The lens
+     is Brown-Conrady with k1 = -0.1 at 640 x 480, f = 500, the principal point (8, -6) px off. 48
+     frames.
+
+     | Model | Verdict | Focal error | Ray mapping, worst | Ray mapping, mean |
+     | --- | --- | --- | --- | --- |
+     | Board, against the truth | Ready | 0.071% | 1.19 px | 0.72 px |
+     | Targetless, against the truth | Ready | 0.033% | 0.56 px | 0.30 px |
+     | Targetless against the board | | 0.090% | 1.65 px | 0.93 px |
+
+     - The board is found in 33 of the 48 frames, and held out at 0.18 mrad against the targetless
+       method's 1.22.
+     - The targetless method's 40 sampled frames are all placed or held out. 170 of their 780 pairs
+       are refused as seeds, since the close views of the board in front of the wall are near one
+       plane.
+   - **The default 40 sampled frames, through three lenses** (seed 2, the arc's 40 frames, sub-slice
+     8's lens):
+
+     | Lens | Verdict | Focal error | Ray mapping, worst | Ray mapping, mean | Held out |
+     | --- | --- | --- | --- | --- | --- |
+     | f = 500 at 640 x 480 | Ready | 0.103% | 1.30 px | 0.77 px | 1.22 mrad |
+     | f = 250 at 640 x 480 | Exploratory | 0.123% | 1.83 px | 0.56 px | 2.19 mrad |
+     | f = 1000 at 1280 x 720 | Ready | 0.243% | 5.05 px | 2.33 px | 0.78 mrad |
+
+     The wide lens is Exploratory for one reason only: its held-out angle is past Ready's 1.5 mrad.
+     Over these two 640 x 480 lenses the plan's probe had seen three of six runs fail from the
+     two-view sweep: two Rejected, about 58% wrong, and one unable to start.
+   - **A rendered pan is refused before any start**: all 66 pairs of its 12 sampled frames, with
+     10d's reason.
+   - **Strong distortion leaves no frame unplaced**: k1 = -0.25 at 1920 x 1080, f = 1500, 24 frames,
+     20 sampled. The result is Ready, 0.094% out in focal length, 1.26 px worst and 0.90 px mean in
+     ray mapping. No second placement round is owed.
+   - **Each run is deterministic:** two runs of the whole suite check every value identically.
+
+   **Measured for the repo owner, each to be decided in a follow-up commit before sub-slice 11 exposes
+   it.** All are in Release, on four cores, with OpenCV and Ceres, through the probe the plan used.
+   1. **The held-out angle across lenses.** On the default texture the held-out residual is about
+      0.6 to 0.9 px whatever the lens, so the angle grows as the focal length shrinks:
+
+      | Focal length | Image | Held-out angle | Verdict |
+      | --- | --- | --- | --- |
+      | 250 | 640 x 480 | 1.54 to 2.19 mrad | Exploratory, on this alone |
+      | 500 | 640 x 480 | 1.09 to 1.35 mrad | Ready |
+      | 1000 | 1280 x 720 | 0.78 to 0.79 mrad | Ready |
+      | 1500 | 1920 x 1080 | 0.60 to 0.61 mrad | Ready |
+
+      A finer texture (4 times smaller cells) gives 0.05 to 0.40 mrad at f = 1500, depending on the
+      cap (item 3), since its features are smaller and localise better. Two options: state the bound in pixels, or as the held-out
+      residual whitened by each observation's stated covariance, which is independent of both the
+      focal length and the feature size. Either keeps a wide lens's accurate model from Exploratory.
+   2. **The default number of sampled frames**, at f = 500 on 640 x 480 over three seeds:
+
+      | Sampled frames | Verdicts | Focal error | Ray mapping, mean | Time |
+      | --- | --- | --- | --- | --- |
+      | 12 | Exploratory (principal point variation 2.27 mrad), Ready, Ready | 0.11 to 0.36% | 0.82 to 1.64 px | 3.5 to 4.2 s |
+      | 20 | Ready, Exploratory (held out 1.53 mrad), Ready | 0.10 to 0.15% | 0.56 to 2.03 px | 6.2 to 8.0 s |
+      | 30 | Ready, Exploratory (held out 1.57 mrad), Ready | 0.04 to 0.10% | 0.50 to 1.25 px | 12.8 to 15.0 s |
+      | 40 | Ready, Ready, Ready | 0.08 to 0.17% | 0.77 to 1.40 px | 19.3 to 22.7 s |
+
+      Accuracy barely improves past 20 frames; the verdict does, and only 40 was Ready on every seed.
+      The Exploratory runs at 20 and 30 fail on the held-out bound of item 1. The recommendation is to
+      keep 40 and revisit once item 1 is decided.
+   3. **The feature cap**, at 1920 x 1080 over sub-slice 8's fine texture (cell 0.01), where the cap
+      binds, 40 sampled frames, f = 1500:
+
+      | Cap and search | Verdict | Focal error | Ray mapping, mean | Held out | Pairs refused | Time |
+      | --- | --- | --- | --- | --- | --- | --- |
+      | 1024, Exact | Ready | 0.022% | 0.17 px | 0.05 mrad | 463 of 780 | 67 s |
+      | 2048, Exact | Ready | 0.006% | 0.16 px | 0.10 mrad | 318 | 171 s |
+      | 4096, Exact | Ready | 0.009% | 0.17 px | 0.20 mrad | 48 | 477 s |
+      | 8192, Approximate | Ready | 0.005% | 0.28 px | 0.40 mrad | 0 | 212 s |
+
+      8192 Exact was not run: sub-slice 8 worked its matching out at 18 minutes on four cores.
+      Accuracy is saturated by 1024 to 2048 features, and the time grows about 2.7 times a doubling.
+      The recommendation is a default cap of 2048. Also found: the homography test refuses more pairs at
+      a low cap (463 at 1024, 0 at 8192), since the strongest features of a fine texture concentrate on
+      the dominant wall. Every frame was still placed.
+   4. **Found: the targetless verdict does not see a principal point several pixels off.**
+      - At f = 1000 on 1280 x 720 all three seeds are Ready, 0.20 to 0.24% out in focal length and 1.5
+        to 4.7 px mean in ray mapping. The principal point is up to 3.9 px off, against a resampled
+        variation of 1.7 to 2.0 mrad and a held-out angle of 0.78 mrad.
+      - On the both-methods footage the targetless model is Ready on all six seeds tried. Three are
+        0.30 to 0.36 px mean in ray mapping. The other three are 2.7 to 4.4 px mean, their principal
+        point 2 to 4 px off, and their resampled variation is the same 0.4 to 0.75 mrad.
+      - The cause is what 10b found for a held principal point, in a weaker form. The held-out frames
+        are posed against the refined landmarks, so their poses absorb a principal point error. And
+        each resample starts from the result (10a), so the bootstrap measures the spread around a
+        minimum, not whether it is the right one.
+      - Options: resample frames as well as tracks; report when two of the three starts reach
+        different models at comparable costs; or require the principal point's variation to cover
+        its distance from where the other starts put it. None is built.
+   5. **Found: a printed board's repeated pattern misleads the targetless fit.** The same path without
+      the board stays within 0.27 to 1.61 px mean over the same six seeds, and with the board three of
+      the six are 2.7 to 4.4 px out (item 4). The board's corners and markers repeat, and verified
+      wrong matches between them lie on epipolar lines. The operator guidance says so.
+   6. **Found: board calibration's stability is decided by one resample.** On the both-methods footage
+      the board is Ready on four seeds of six. On the other two it is Rejected, for focal variations
+      of 89% and 32%. Each time one bootstrap resample's estimate is far out, and the variation is a
+      standard deviation. The board models themselves are 0.01% and 0.03% out in focal length. This is
+      the robust-statistic question already queued for registration's held-out evidence (Outstanding
+      index); a median absolute deviation, or a trimmed spread, would settle both.
+   7. **10c's deviation was never exercised.** In every run here all three starts placed the same
+      number of frames, so the cost alone chose. The rule that ranks by frames placed first still
+      wants the repo owner's confirmation; nothing measured here argues for or against it.
+   8. **A narrow lens is Rejected, as it should be**: f = 1100 on 640 x 480 (a 32 degree field), 6.0
+      and 7.6% out in focal length on two seeds, Rejected. The verdict catches it, so the guidance only
+      warns.
+
+   **Operator guidance** is in `targetless.h`, where a caller looks:
+   - the camera translates as well as turns;
+   - it does not keep one point centred;
+   - it uses a wide field of view;
+   - no repeated pattern fills the frame.
+
+   It also says that a pan through a strongly distorted lens can escape the homography test (10d's
+   finding).
+
+   **Three sabotages, all caught; two were wider than predicted:**
+   - the homography test never refusing (10d): predicted to fail the pan case and case 1's count of
+     refused pairs. It also fails case 1's targetless model: Exploratory, 0.46% out in focal length
+     and 7.0 px mean in ray mapping. Close views of the board seed a wrong reconstruction when they are
+     allowed to, so 10d's test protects this footage too;
+   - the highest cost per residual winning (10c): every case but the pan fails, as predicted;
+   - the principal point held by default (10b): predicted to fail case 1. It also fails the normal and
+     the wide lens on ray mapping, each still Ready, as 10b found. The HD and 1080p cases pass, since
+     their 1.3 px offset is small at their focal lengths.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -13423,7 +13570,7 @@ row here**. A row is cheap to delete and expensive to leave.
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
        sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b
        and 6c), 7 (as 7a, 7b and 7c), 8 and 9 (as 9a, 9b and 9c), with the fixes ahead of 5 and of
-       9c, and 10a to 10d of sub-slice 10 (10e, the comparison, is left). The separate
+       9c, and 10 (as 10a to 10e). The separate
        feature-extraction node slice 3 deferred to it stays deferred, with its trigger restated
        (slice 4's plan).
   2. **Owed by the repo owner.**
@@ -13446,6 +13593,19 @@ row here**. A row is cheap to delete and expensive to leave.
        another folder gives another report (0.795 against 0.966 mrad through the real binary, each
        repeatable). A capture manifest's identities would end it, or the cli binder could name each
        camera relative to the folder it was given.
+     - **Sub-slice 10e's measurements and findings for targetless calibration** (slice 4's *Sub-slice
+       10e built*), each its own commit before sub-slice 11 exposes the node:
+       - the held-out bound across lenses: in pixels, or whitened by the stated covariance;
+       - the default sampled frames: 40 recommended, revisited once the bound is decided;
+       - the default feature cap: 2048 recommended at 1080p;
+       - the verdict missing a principal point several pixels off: resample frames as well as tracks,
+         or compare the three starts' models;
+       - board calibration's stability decided by one resample: a robust spread, decided with
+         registration's robust held-out statistic above;
+       - 10c's ranking of starts by frames placed first, which rendered footage never exercised.
+     - **The 100-camera registration scale case's wall-clock bound** (120 s) fails under `ctest -j8`
+       beside the heavy end-to-end suites (154 to 181 s), while it takes 36 s alone: a larger bound,
+       the bound only when run alone, or `PROCESSORS` on that case.
      - **The feature cap's cost**: count descriptor rows rather than features, or lower the cap, if
        Exact matching's cost (16.9 core-hours for a 100-camera rig at the cap) matters more than the
        tracks. To be decided on real footage's rows per feature (sub-slice 7 follow-up B).
