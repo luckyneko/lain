@@ -211,4 +211,37 @@ namespace lain::camera::opencv
 		}
 		return out;
 	}
+
+	std::vector<math::Mat3d> OpenCVGeometrySolver::homographies(const std::vector<feature::PixelPair>& pairs,
+																double threshold, std::uint64_t seed) const
+	{
+		if (pairs.size() < 4)
+			return {};
+		// Source pixels as they are, as for a fundamental matrix.
+		std::vector<cv::Point2d> a, b;
+		for (const feature::PixelPair& p : pairs)
+		{
+			a.emplace_back(p.a.x, p.a.y);
+			b.emplace_back(p.b.x, p.b.y);
+		}
+		try
+		{
+			cv::Mat mask;
+			cv::Mat h = cv::findHomography(a, b, mask, usac(threshold, seed));
+			if (h.rows != 3 || h.cols != 3)
+				return {};
+			h.convertTo(h, CV_64F);
+			math::Mat3d out; // GLM is column-major: out[column][row]; [b; 1] ~ H [a; 1], the seam's convention
+			for (int row = 0; row < 3; ++row)
+			{
+				for (int col = 0; col < 3; ++col)
+					out[col][row] = h.at<double>(row, col);
+			}
+			return {out};
+		}
+		catch (const cv::Exception&)
+		{
+			return {};
+		}
+	}
 } // namespace lain::camera::opencv

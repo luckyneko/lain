@@ -1400,6 +1400,39 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-18 — M9 slice 4, sub-slice 10d: a pair a homography explains does not seed
+
+The fourth of sub-slice 10's five commits. Targetless calibration tests every pair of frames once, on
+pixels, before any start, and a pair whose shared tracks a homography explains may not seed.
+`ctest` **1280/1280** Debug and **1287/1288** Release with video, camera and Ceres on (+7 each),
+**1159/1159** with all three off (+6); warning-clean, format-check clean. The Release failure is
+targetless registration's 100-camera scale case on its wall-clock bound under `-j8` again (132 s
+against 120); alone it passes in 36.4 s. Full notes in WORK.md's *Sub-slice 10d built* under M9
+slice 4.
+
+- **The geometry seam gains `homographies`**, pure virtual, so every backend answers it here.
+  - Its facade `feature::homography` measures each candidate's transfer distance both ways in source
+    pixels, and chooses by the facades' rule.
+  - OpenCV's producer is `findHomography` with USAC. On a rendered pan it gives the same matrix on 20
+    seeds, at 0.025 px over exact correspondences.
+- **The rule:**
+  - A pair of frames sharing five tracks may not seed when a homography explains 80% of them within
+    4 px.
+  - When every pair is refused, the calibration fails InitialisationFailed before any start, saying
+    the camera turned without moving or saw one plane.
+  - The held-out anchor is chosen from the pairs that may seed.
+  - `TargetlessDiagnostics` counts the pairs tested and refused.
+- **The risk the plan flagged did not materialise.** At 40 samples on rendered footage, 35 to 69 of
+  780 pairs were refused, and the seeds moved to frames one or two apart. Every f = 500 run was Ready.
+- **A rendered pan is refused**, where it used to be posed as an orbit and judged Ready.
+- **Found: distortion bends a homography.** A pan through k1 = -0.2 (51 px at the corners) escapes the
+  test on 4 of 66 pairs, and is posed as an orbit and judged Ready, 0.34% out in focal length. It is
+  refused through k1 = -0.15. This is recorded for 10e's operator guidance, not fixed: the test needs no
+  model, and only a model would undistort.
+- **The parallax rule is still reachable:** a pan a quarter of whose landmarks move is explained at
+  75%, so it seeds, and is then refused for its points at infinity.
+- **Two sabotages, both caught as predicted.**
+
 ### Update 2026-10-16 — M9 slice 4, sub-slice 10c: three starts, and the one that reconstructs the most wins
 
 The third of sub-slice 10's five commits. The focal sweep's 21 two-view-scored candidates are replaced

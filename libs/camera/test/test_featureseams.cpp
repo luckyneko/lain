@@ -158,6 +158,7 @@ namespace
 	{
 		std::vector<math::RigidTransformd> candidates;
 		std::vector<math::Mat3d> fundamentals;
+		std::vector<math::Mat3d> homographies;
 		std::size_t calls = 0;
 		std::size_t handed = 0;
 	};
@@ -175,6 +176,11 @@ namespace
 	{
 		geometryScript() = {};
 		geometryScript().fundamentals = std::move(fundamentals);
+	}
+	void proposeHomographies(std::vector<math::Mat3d> homographies)
+	{
+		geometryScript() = {};
+		geometryScript().homographies = std::move(homographies);
 	}
 
 	class ScriptedGeometry : public GeometrySolver
@@ -199,6 +205,12 @@ namespace
 			++geometryScript().calls;
 			geometryScript().handed = pairs.size();
 			return geometryScript().fundamentals;
+		}
+		std::vector<math::Mat3d> homographies(const std::vector<PixelPair>& pairs, double, std::uint64_t) const override
+		{
+			++geometryScript().calls;
+			geometryScript().handed = pairs.size();
+			return geometryScript().homographies;
 		}
 	};
 
@@ -982,4 +994,172 @@ TEST_CASE("a fundamental that is not finite or is zero is skipped, and the chose
 	const double h = 1.0 / std::sqrt(2.0);
 	CHECK(sameMatrix(*result.matrix, rows({0.0, 0.0, 0.0, 0.0, 0.0, h, 0.0, -h, 0.0}), 1e-15));
 	CHECK(std::abs(frobenius(*result.matrix) - 1.0) < 1e-15);
+}
+
+// --- homography -----------------------------------------------------------------------
+
+namespace
+{
+	// Two views of one pinhole (focal 800 by 820, centre (319.5, 239.5)) that only turns, by `angle`
+	// about a fixed axis, and `count` points 2 to 9 m in front of both, as pixels; and the views' true
+	// homography, K R K⁻¹, which carries every pixel of A to B's whatever its depth.
+	struct TurnedImages
+	{
+		math::Mat3d homography;
+		std::vector<PixelPair> pairs;
+	};
+	TurnedImages turnedImages(std::size_t count, double angle = 0.15)
+	{
+		const math::Mat3d k = rows({800.0, 0.0, 319.5, 0.0, 820.0, 239.5, 0.0, 0.0, 1.0});
+		const math::Quatd r = math::angleAxis(angle, math::normalize(math::Vec3d{0.2, 1.0, 0.1}));
+		TurnedImages out;
+		out.homography = k * math::mat3_cast(r) * math::inverse(k);
+		Random random(7);
+		for (std::size_t i = 0; i < count; ++i)
+		{
+			const double depth = random.uniform(2.0, 9.0);
+			const math::Vec3d inA{random.uniform(-0.2, 0.2) * depth, random.uniform(-0.15, 0.15) * depth, depth};
+			const math::Vec3d inB = r * inA;
+			REQUIRE(inB.z > 0);
+			const math::Vec3d pa = k * (inA / inA.z);
+			const math::Vec3d pb = k * (inB / inB.z);
+			out.pairs.push_back({{pa.x, pa.y}, {pb.x, pb.y}});
+		}
+		return out;
+	}
+
+	// A homography that doubles a pixel's distance from the origin, so carrying A's pixel forward
+	// measures a gap twice what carrying B's back does.
+	const math::Mat3d kDoubling = rows({2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 1.0});
+} // namespace
+
+TEST_CASE("homography chooses by measurement, whatever order the candidates come in", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	const TurnedImages truth = turnedImages(40);
+	// Turned 1 mrad further: every pair still within 4 px, but further from it than the truth (measured:
+	// 0.82 px RMS); and turned 0.1 rad further, which explains none.
+	const TurnedImages near = turnedImages(0, 0.151);
+	const TurnedImages wrong = turnedImages(0, 0.25);
+	const std::vector<math::Mat3d> three{truth.homography, near.homography, wrong.homography};
+	const math::Mat3d expected = truth.homography * (1.0 / frobenius(truth.homography));
+	std::vector<std::size_t> order{0, 1, 2};
+	do
+	{
+		std::vector<math::Mat3d> candidates;
+		for (const std::size_t i : order)
+			candidates.push_back(three[i]);
+		proposeHomographies(candidates);
+		const HomographyResult result = homography(truth.pairs);
+		REQUIRE(result.ok());
+		CHECK(result.candidates == 3);
+		CHECK(result.inliers == upTo(40));
+		REQUIRE(result.matrix.has_value());
+		CHECK((sameMatrix(*result.matrix, expected, 1e-12) || sameMatrix(*result.matrix, -1.0 * expected, 1e-12)));
+		CHECK(result.rmsDistance < 1e-9);
+	} while (std::next_permutation(order.begin(), order.end()));
+
+	// The near candidate alone explains every pair too, so only the summed distance told them apart.
+	proposeHomographies({near.homography});
+	const HomographyResult alone = homography(truth.pairs);
+	REQUIRE(alone.ok());
+	CHECK(alone.inliers == upTo(40));
+	CHECK(alone.rmsDistance > 0.5);
+}
+
+TEST_CASE("a homography's transfer distance is in source pixels, measured both ways", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	// B's pixel is twice A's plus a gap along x: carried forward, A's pixel misses B's by the gap;
+	// carried back, B's misses A's by half of it. At the default 4 px, a gap just under 4 is an inlier
+	// and one just over is not; measured back alone, every gap up to 8 would be.
+	const std::vector<double> gaps{0.0, 1.0, -2.5, 3.0, 4.0 * (1.0 - 1e-9), 4.0 * (1.0 + 1e-9), 5.0, -6.0, 7.9, 0.5, 20.0};
+	std::vector<PixelPair> pairs;
+	for (std::size_t i = 0; i < gaps.size(); ++i)
+	{
+		const math::Vec2d a{10.0 + 37.0 * double(i), 100.0 + 11.0 * double(i)};
+		pairs.push_back({a, 2.0 * a + math::Vec2d{gaps[i], 0.0}});
+	}
+	proposeHomographies({kDoubling});
+	const HomographyResult result = homography(pairs);
+	REQUIRE(result.ok());
+	CHECK(result.inliers == std::vector<std::uint32_t>{0, 1, 2, 3, 4, 9});
+	double sum = 0;
+	for (const std::uint32_t i : result.inliers)
+		sum += gaps[i] * gaps[i] * 1.25;
+	CHECK(std::abs(result.rmsDistance - std::sqrt(sum / double(2 * result.inliers.size()))) < 1e-12);
+
+	SECTION("a tighter threshold takes fewer")
+	{
+		HomographyRequest request;
+		request.threshold = 1.0;
+		const HomographyResult tight = homography(pairs, request);
+		CHECK(tight.status == Status::NoSolution);
+		CHECK_THAT(tight.detail, ContainsSubstring("explains 3 of 11 usable pixel pairs"));
+	}
+}
+
+TEST_CASE("homography needs four usable pairs and a candidate that explains four", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	const TurnedImages scene = turnedImages(20);
+	SECTION("three usable pairs are too few, and the backend is never asked")
+	{
+		proposeHomographies({scene.homography});
+		std::vector<PixelPair> three(scene.pairs.begin(), scene.pairs.begin() + 3);
+		three.push_back({{1.0, 1.0}, {kNaN, 1.0}});
+		const HomographyResult result = homography(three);
+		CHECK(result.status == Status::TooFew);
+		CHECK_THAT(result.detail, ContainsSubstring("3 usable pixel pairs"));
+		CHECK(geometryScript().calls == 0);
+	}
+	SECTION("no candidate")
+	{
+		proposeHomographies({});
+		CHECK(homography(scene.pairs).status == Status::NoSolution);
+	}
+	SECTION("a candidate explaining three")
+	{
+		std::vector<PixelPair> pairs(scene.pairs.begin(), scene.pairs.begin() + 3);
+		for (std::size_t i = 3; i < 20; ++i)
+			pairs.push_back({scene.pairs[i].a, scene.pairs[i].b + math::Vec2d{0.0, 30.0}});
+		proposeHomographies({scene.homography});
+		const HomographyResult result = homography(pairs);
+		CHECK(result.status == Status::NoSolution);
+		CHECK_THAT(result.detail, ContainsSubstring("explains 3 of 20 usable pixel pairs"));
+	}
+	SECTION("an inlier distance that is not positive")
+	{
+		proposeHomographies({scene.homography});
+		HomographyRequest request;
+		request.threshold = 0;
+		CHECK(homography(scene.pairs, request).status == Status::Unsupported);
+	}
+}
+
+TEST_CASE("a homography that cannot be inverted is skipped, and the chosen one comes back normalised",
+		  "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	std::vector<PixelPair> pairs;
+	for (std::size_t i = 0; i < 10; ++i)
+	{
+		const math::Vec2d a{20.0 + 31.0 * double(i), 40.0 + 17.0 * double(i)};
+		pairs.push_back({a, 2.0 * a});
+	}
+	// Rank two, which carries every pixel onto one line and back nowhere; and not finite.
+	const math::Mat3d singular = rows({1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0});
+	math::Mat3d notFinite = kDoubling;
+	notFinite[2][2] = kNaN;
+	proposeHomographies({singular, notFinite, -3.0 * kDoubling});
+	const HomographyResult result = homography(pairs);
+	REQUIRE(result.ok());
+	CHECK(result.candidates == 3);
+	CHECK(result.inliers == upTo(10));
+	// −3 times the doubling matrix at unit norm, its largest-magnitude entry positive: (2, 2, 1) / 3.
+	REQUIRE(result.matrix.has_value());
+	CHECK(sameMatrix(*result.matrix, rows({2.0 / 3.0, 0.0, 0.0, 0.0, 2.0 / 3.0, 0.0, 0.0, 0.0, 1.0 / 3.0}), 1e-15));
+
+	proposeHomographies({singular});
+	CHECK(homography(pairs).status == Status::NoSolution);
 }

@@ -25,6 +25,7 @@
 #include <fstream>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <tuple>
@@ -108,10 +109,16 @@ namespace
 		std::vector<math::Vec3d> truth; // per match: what A's pixel sees
 	};
 
-	TwoViews twoViews(const ScalePolicy& scale = NativeScale{}, const CameraModel& camera = model())
+	TwoViews twoViews(const ScalePolicy& scale = NativeScale{}, const CameraModel& camera = model(),
+					  std::optional<std::pair<math::RigidTransformd, math::RigidTransformd>> poses = std::nullopt)
 	{
 		TwoViews v;
 		v.camera = camera;
+		if (poses)
+		{
+			v.a = poses->first;
+			v.b = poses->second;
+		}
 		v.scene.noise = 1.0;
 		const ExtractResult ea = extract(synthetic::render(v.scene, v.camera, v.a, 0, 2, 1), scale);
 		const ExtractResult eb = extract(synthetic::render(v.scene, v.camera, v.b, 0, 2, 2), scale);
@@ -398,6 +405,103 @@ TEST_CASE("the fundamental matrix of two views is recovered", "[camera][opencv][
 		CHECK(result.rmsDistance < 0.3);
 		CHECK(rmsSampson(*result.matrix, exact) < 0.06);
 	}
+}
+
+namespace
+{
+	// Where a homography carries a pixel.
+	math::Vec2d carried(const math::Mat3d& h, const math::Vec2d& x)
+	{
+		const math::Vec3d y = h * math::Vec3d{x.x, x.y, 1.0};
+		return {y.x / y.z, y.y / y.z};
+	}
+
+	// The transfer distance both ways, restated to judge a matrix against correspondences the facade
+	// never saw: the RMS over every pair of both directions.
+	double rmsTransfer(const math::Mat3d& h, const std::vector<PixelPair>& pairs)
+	{
+		const math::Mat3d inverse = math::inverse(h);
+		double sum = 0;
+		for (const PixelPair& p : pairs)
+		{
+			sum += math::dot(carried(h, p.a) - p.b, carried(h, p.a) - p.b);
+			sum += math::dot(carried(inverse, p.b) - p.a, carried(inverse, p.b) - p.a);
+		}
+		return std::sqrt(sum / double(2 * pairs.size()));
+	}
+} // namespace
+
+TEST_CASE("the homography of two views that only turn is recovered, and explains less of two that move",
+		  "[camera][opencv][feature]")
+{
+	ensureBackend();
+	// A homography ignores lens distortion, as a fundamental matrix does: a pinhole with the test
+	// camera's field of view. The pan stands at arcCamera(-0.15) and turns 0.1 rad to look elsewhere.
+	const CameraModel camera = largeCamera(640, 480);
+	const math::RigidTransformd a = synthetic::arcCamera(-0.15);
+	const math::RigidTransformd b{a.rotation() * math::angleAxis(0.1, math::normalize(math::Vec3d{0.2, 1.0, 0.1})),
+								  a.translation()};
+	const TwoViews pan = twoViews(NativeScale{}, camera, std::make_pair(a, b));
+	const Intrinsics& in = camera.intrinsics();
+	const math::Mat3d k = rows({in.fx, 0.0, in.cx, 0.0, in.fy, in.cy, 0.0, 0.0, 1.0});
+	const math::Mat3d truth = k * math::mat3_cast((b.inverse() * a).rotation()) * math::inverse(k);
+
+	std::vector<PixelPair> all, exact;
+	std::vector<std::uint32_t> correct;
+	for (std::size_t i = 0; i < pan.matches.matches.size(); ++i)
+	{
+		const Match& m = pan.matches.matches[i];
+		all.push_back({pan.fa.keypoints[m.a].pixel, pan.fb.keypoints[m.b].pixel});
+		if (!pan.correct[i])
+			continue;
+		correct.push_back(std::uint32_t(i));
+		const std::optional<math::Vec2d> pa = projectInto(camera, pan.a, pan.truth[i]);
+		const std::optional<math::Vec2d> pb = projectInto(camera, pan.b, pan.truth[i]);
+		if (pa && pb)
+			exact.push_back({*pa, *pb});
+	}
+	REQUIRE(correct.size() > 500);
+	// The truth explains the exact correspondences to rounding, which checks its conventions: measured
+	// 1.1e-13 px.
+	CHECK(rmsTransfer(truth, exact) < 1e-9);
+
+	// Every seed. Measured over these 20 on all 629 matches, of which 626 are correct: one candidate
+	// each, the same matrix on every seed, with 627 inliers holding every correct match, 0.34 px RMS over
+	// its inliers both ways, and 0.025 px over the exact correspondences, which it never saw.
+	for (std::uint64_t seed = 0; seed < 20; ++seed)
+	{
+		CAPTURE(seed);
+		HomographyRequest request;
+		request.seed = seed;
+		const HomographyResult result = homography(all, request);
+		REQUIRE(result.ok());
+		CHECK(result.candidates >= 1);
+		REQUIRE(result.matrix.has_value());
+		std::size_t kept = 0;
+		for (const std::uint32_t i : correct)
+			kept += std::binary_search(result.inliers.begin(), result.inliers.end(), i) ? 1 : 0;
+		CHECK(kept == correct.size());
+		CHECK(result.inliers.size() <= correct.size() + 2);
+		CHECK(result.rmsDistance < 0.5);
+		CHECK(rmsTransfer(*result.matrix, exact) < 0.05);
+	}
+
+	// Two frames of the moving camera's path, four apart, 0.24 m between them: one homography explains
+	// the back wall, where most features lie, and not the floor or the box in front of it. Measured:
+	// 338 of the 527 matches (64%), where a fundamental matrix explains 521. Targetless calibration
+	// refuses a seed pair at 80% (WORK.md, M9 slice 4, sub-slice 10d); two views 0.3 rad apart on the
+	// arc, whose matches lie almost all on the wall, reach 91%.
+	const std::vector<math::RigidTransformd> path = synthetic::arcPath(40);
+	const TwoViews moved = twoViews(NativeScale{}, camera, std::make_pair(path[10], path[14]));
+	std::vector<PixelPair> movedPairs;
+	for (const Match& m : moved.matches.matches)
+		movedPairs.push_back({moved.fa.keypoints[m.a].pixel, moved.fb.keypoints[m.b].pixel});
+	const HomographyResult plane = homography(movedPairs);
+	const FundamentalResult epipolar = fundamental(movedPairs);
+	REQUIRE(plane.ok());
+	REQUIRE(epipolar.ok());
+	CHECK(plane.inliers.size() * 10 < movedPairs.size() * 7);
+	CHECK(epipolar.inliers.size() * 100 > movedPairs.size() * 98);
 }
 
 TEST_CASE("collapsing orientations before matching loses a fifth of the correct matches", "[camera][opencv][feature]")

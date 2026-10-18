@@ -5524,7 +5524,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    10. **End to end, and the comparison** (`test-camera-calibration-e2e`, Release). *(Planned in detail
        2026-10-16 as five commits, 10a to 10e; see below. A probe through OpenCV and Ceres found three
        defects in 9b's method before any comparison could mean anything, so four commits fix the method
-       and the fifth is the comparison.)*
+       and the fifth is the comparison. 10a to 10c built 2026-10-16, 10d 2026-10-18.)*
        - One rendered camera moves through the textured scene, with a board in view for part of the
          footage. Both methods calibrate it from the same frames, with both real backends.
        - Each model is compared with the truth and with the other by its ray mapping over the image
@@ -8182,6 +8182,86 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      - the highest cost winning: the scripted-cost case fails in all three of its rows;
      - a failing start ending the calibration: 11 of the stand-in suite's 14 cases and all 10 of Ceres';
      - cost alone deciding, the frames placed ignored: 10a's fold case, which is what pins the addition.
+
+   **Sub-slice 10d built (2026-10-18): the homography test.** As planned. The risk the plan said to
+   measure first did not materialise: on rendered footage at 40 samples a seed was always left.
+   - `ctest` **1280/1280** Debug and **1287/1288** Release with video, camera and Ceres on (+7 each),
+     **1159/1159** with all three off (+6). Warning-clean, format-check clean. The Release failure is
+     targetless registration's 100-camera scale case on its 120 s wall-clock bound under `-j8` (132 s);
+     alone it passes in 36.4 s.
+   - **The seam:**
+     - `GeometrySolver::homographies(pixelPairs, threshold, seed)`, pure virtual, so every backend
+       answers it in this commit: the null backends, the scripted and stand-in geometries, and OpenCV.
+     - The facade `feature::homography`: TooFew below four usable pairs; NoSolution when no candidate
+       explains four.
+       - Each candidate is normalised as a fundamental matrix is, and one that cannot be inverted is
+         not measured. The normalisation moved into a `normalised` both facades share.
+       - A pair is an inlier when the matrix carries A's pixel within the threshold of B's, and its
+         inverse carries B's within it of A's. Both distances are its residuals.
+       - It chooses by the facades' rule.
+   - **OpenCV's producer is `findHomography` under the same USAC settings** as its fundamental matrix,
+     on source pixels.
+     - On a rendered pan of 0.1 rad: the same matrix on all 20 seeds, holding all 626 correct matches
+       of 629, at 0.34 px RMS over its inliers both ways and 0.025 px over exact correspondences it
+       never saw.
+     - On two frames of sub-slice 8's path four apart: it explains 338 of 527 matches (64%), where a
+       fundamental matrix explains 521.
+   - **The seed rule, in `calibration/targetless.cpp`:**
+     - The test runs once, on pixels, before the held-out frames and the starts. It covers every pair
+       of frames sharing at least five tracks (the least a seed needs), at the 4 px every inlier test
+       uses.
+     - A pair whose shared tracks a homography explains, 80% of them, may not seed. The denominator is
+       every shared track. The tracks were verified by fundamental matrices when extracted, so they are
+       mostly correct matches.
+     - The anchor that guards the held-out frames is chosen from the pairs that may seed too, so a
+       held-out frame still cannot decide whether the reconstruction can start.
+     - `reconstruction::widest` now takes the edges a method lets seed, rather than a whole graph.
+       Registration does not call it.
+     - When every pair is refused, the calibration fails InitialisationFailed before any start. The
+       reason says a homography explains each of the N pairs, so the camera turned without moving or
+       saw one plane.
+     - `TargetlessDiagnostics` gains `seedPairs` and `seedPairsRefused`. The record's geometry is now
+       the test's.
+   - **The risk, measured first, through the probe in Release:**
+     - At 40 samples over sub-slice 8's path, 35 to 38 of the 780 pairs are refused for f = 500, and
+       63 to 69 for f = 250. The f = 500 seeds are frames one or two apart (19-21, 21-23, 19-20).
+     - All three f = 500 runs are Ready, 0.073 to 0.14% out in focal length.
+     - The three f = 250 runs are Exploratory on the held-out angle alone (1.54 to 1.62 mrad against
+       1.5), which is 10e's measurement of that bound.
+     - The candidate set needed no widening. It already holds every pair sharing five tracks, by how
+       many they share, so refusing the adjacent pairs leaves the next widest.
+   - **A rendered pan is refused:** 66 of 66 pairs at 12 samples, 276 of 276 at 24. Before, it was
+     posed as an orbit and judged Ready.
+   - **Found: distortion bends a homography, so a strongly distorted pan escapes the test.**
+     - A pan through k1 = -0.05, -0.1 and -0.15 is refused, at about 13, 26 and 38 px of corner shift.
+     - At -0.2 (51 px), 62 of 66 pairs are refused. The other 4 may seed (frames 1 and 6 do, at
+       111 mrad), and the pan is reconstructed as an orbit, judged Ready: 0.34% out in focal length,
+       1.3 px worst in ray mapping.
+     - The test works on pixels so that it needs no model, and a model is what undistorts. Recorded
+       for 10e's operator guidance (the camera should translate as well as turn), not fixed.
+   - **Tests:**
+     - The seam's, over a scripted geometry:
+       - the choice by measurement, whatever the candidates' order;
+       - the transfer distance in source pixels, both ways (a doubling homography, where one way is
+         half the other);
+       - TooFew, NoSolution, and a threshold that is not positive;
+       - a singular or non-finite candidate skipped, and the chosen one normalised.
+     - The nobackend suite: `homography` says the capability is missing.
+     - OpenCV's: a rendered pan's homography recovered on 20 seeds; a translating pair explained at
+       under 70% by a homography and over 98% by a fundamental matrix.
+     - The stand-in suite, three cases replacing 10c's pan case:
+       - **a pan refused before any start**, swept or imported: all 66 pairs refused, no start tried,
+         nothing held out, the refiner never asked, and each pair tested once at 4 px;
+       - **the parallax rule still reachable**: with a quarter of its landmarks moving, a pan is
+         explained at 75%, under 80%, so it seeds. Under the camera's own model most of its matches are
+         then at infinity (90 of 120; the moving 30 triangulate at a median 38 mrad);
+       - **a camera that moves is not refused** (0 of 66 pairs), and a pair of its frames that only
+         turns is refused and seeds nothing, both frames still placed or held out.
+     - The stand-in geometry proposes the rotation homography `K R K^-1` of each ordered pair of true
+       views that the sampled pairs lie within the threshold of.
+   - **Two sabotages, both caught as predicted:**
+     - the test never refusing: the pan case and the turned-pair case fail, and nothing else;
+     - the transfer measured one way only: the both-ways case fails.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -13343,9 +13423,9 @@ row here**. A row is cheap to delete and expensive to leave.
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
        sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b
        and 6c), 7 (as 7a, 7b and 7c), 8 and 9 (as 9a, 9b and 9c), with the fixes ahead of 5 and of
-       9c. The
-       separate feature-extraction node slice 3 deferred to it stays deferred, with its trigger
-       restated (slice 4's plan).
+       9c, and 10a to 10d of sub-slice 10 (10e, the comparison, is left). The separate
+       feature-extraction node slice 3 deferred to it stays deferred, with its trigger restated
+       (slice 4's plan).
   2. **Owed by the repo owner.**
      - **The real-camera capture** for slice 1, sub-slice 8, guided by
        `plugins/camera/test/fixtures/README.md`. It is all that is left of slice 1.

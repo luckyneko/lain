@@ -19,10 +19,11 @@ namespace lain::camera::feature
 
 	// Five pairs fix a relative pose (the five-point problem); three point-rays fix an absolute pose up
 	// to P3P's few solutions, and a fourth chooses among them. Eight pixel pairs fix a fundamental
-	// matrix linearly (the eight-point problem); seven do up to three solutions.
+	// matrix linearly (the eight-point problem); seven do up to three solutions. Four fix a homography.
 	static constexpr std::size_t kRelativeMinimum = 5;
 	static constexpr std::size_t kAbsoluteMinimum = 4;
 	static constexpr std::size_t kFundamentalMinimum = 8;
+	static constexpr std::size_t kHomographyMinimum = 4;
 
 	static bool finite(const math::Vec3d& v)
 	{
@@ -83,10 +84,33 @@ namespace lain::camera::feature
 		return std::make_tuple(s * q.w, s * q.x, s * q.y, s * q.z, p.x, p.y, p.z);
 	}
 
-	// The same for a fundamental matrix, which is measured normalised: its entries in row-major order.
+	// The same for a fundamental matrix or a homography, which are measured normalised: its entries in
+	// row-major order.
 	static std::array<double, 9> canonical(const math::Mat3d& f)
 	{
 		return entries(f);
+	}
+
+	// A matrix whose scale and sign mean nothing, normalised so neither can reach the canonical order:
+	// unit Frobenius norm, its largest-magnitude entry positive (the first in row-major order, on a
+	// tie). One that is not finite, or is zero, says nothing.
+	static std::optional<math::Mat3d> normalised(const math::Mat3d& c)
+	{
+		const std::array<double, 9> e = entries(c);
+		double norm = 0;
+		std::size_t largest = 0;
+		for (std::size_t i = 0; i < e.size(); ++i)
+		{
+			if (!std::isfinite(e[i]))
+				return std::nullopt;
+			norm += e[i] * e[i];
+			if (std::abs(e[i]) > std::abs(e[largest]))
+				largest = i;
+		}
+		norm = std::sqrt(norm);
+		if (!(norm > 0) || !std::isfinite(norm))
+			return std::nullopt;
+		return c * ((e[largest] < 0 ? -1.0 : 1.0) / norm);
 	}
 
 	// Whether `x` (from candidate `px`) explains the input better than `y` (from `py`).
@@ -177,6 +201,43 @@ namespace lain::camera::feature
 				out.inliers.push_back(std::uint32_t(k));
 				out.sumSquared += squared;
 				out.residuals += 1;
+			}
+		}
+		return out;
+	}
+
+	// Where a homography carries a pixel, or nothing when it carries it to infinity.
+	static std::optional<math::Vec2d> transfer(const math::Mat3d& h, const math::Vec2d& pixel)
+	{
+		const math::Vec3d x = h * math::Vec3d{pixel.x, pixel.y, 1.0};
+		if (!(std::abs(x.z) > 0))
+			return std::nullopt;
+		const math::Vec2d out{x.x / x.z, x.y / x.z};
+		if (!finite(out))
+			return std::nullopt;
+		return out;
+	}
+
+	// A homography measured against pixel pairs, by transfer distance both ways: A's pixel carried into
+	// B against B's, and B's carried back by the inverse against A's. A pair is an inlier when both are
+	// within the threshold, and both count as its residuals.
+	static Measured measureHomography(const std::vector<PixelPair>& pairs, const math::Mat3d& h, double threshold)
+	{
+		Measured out;
+		const math::Mat3d inverse = math::inverse(h);
+		for (std::size_t k = 0; k < pairs.size(); ++k)
+		{
+			const std::optional<math::Vec2d> inB = transfer(h, pairs[k].a);
+			const std::optional<math::Vec2d> inA = transfer(inverse, pairs[k].b);
+			if (!inB || !inA)
+				continue;
+			const double forward = math::length(*inB - pairs[k].b);
+			const double backward = math::length(*inA - pairs[k].a);
+			if (forward <= threshold && backward <= threshold)
+			{
+				out.inliers.push_back(std::uint32_t(k));
+				out.sumSquared += forward * forward + backward * backward;
+				out.residuals += 2;
 			}
 		}
 		return out;
@@ -348,32 +409,49 @@ namespace lain::camera::feature
 			},
 			[&request](const GeometrySolver& solver, const std::vector<PixelPair>& usablePairs)
 			{ return solver.fundamentals(usablePairs, request.threshold, request.seed); },
-			// Measured normalised, so a candidate's scale and sign cannot reach the canonical order: unit
-			// Frobenius norm, its largest-magnitude entry positive (the first in row-major order, on a
-			// tie). One that is not finite, or is zero, says nothing.
-			[](const math::Mat3d& c) -> std::optional<math::Mat3d>
-			{
-				const std::array<double, 9> e = entries(c);
-				double norm = 0;
-				std::size_t largest = 0;
-				for (std::size_t i = 0; i < e.size(); ++i)
-				{
-					if (!std::isfinite(e[i]))
-						return std::nullopt;
-					norm += e[i] * e[i];
-					if (std::abs(e[i]) > std::abs(e[largest]))
-						largest = i;
-				}
-				norm = std::sqrt(norm);
-				if (!(norm > 0) || !std::isfinite(norm))
-					return std::nullopt;
-				return c * ((e[largest] < 0 ? -1.0 : 1.0) / norm);
-			},
+			// Measured normalised, so a candidate's scale and sign cannot reach the canonical order.
+			normalised,
 			[&request](const std::vector<PixelPair>& usablePairs, const math::Mat3d& f)
 			{ return measureFundamental(usablePairs, f, request.threshold); },
 			[](FundamentalResult& out, const math::Mat3d& f, double rms)
 			{
 				out.matrix = f;
+				out.rmsDistance = rms;
+			});
+	}
+
+	HomographyResult homography(const std::vector<PixelPair>& pairs, const HomographyRequest& request)
+	{
+		std::optional<std::string> problem;
+		if (!positive(request.threshold))
+			problem = string::format("an inlier distance of {} px is not positive", request.threshold);
+		return solve<HomographyResult, math::Mat3d>(
+			pairs, std::move(problem), kHomographyMinimum, "pixel pairs", "a homography",
+			[](const PixelPair& p) -> std::optional<PixelPair>
+			{
+				if (!finite(p.a) || !finite(p.b))
+					return std::nullopt;
+				return p;
+			},
+			[&request](const GeometrySolver& solver, const std::vector<PixelPair>& usablePairs)
+			{ return solver.homographies(usablePairs, request.threshold, request.seed); },
+			// Measured normalised, as a fundamental matrix is; one that cannot be inverted transfers
+			// nothing back, so it is not measured.
+			[](const math::Mat3d& c) -> std::optional<math::Mat3d>
+			{
+				const std::optional<math::Mat3d> h = normalised(c);
+				if (!h)
+					return std::nullopt;
+				const double determinant = math::determinant(*h);
+				if (!(std::abs(determinant) > 1e-12) || !std::isfinite(determinant))
+					return std::nullopt;
+				return h;
+			},
+			[&request](const std::vector<PixelPair>& usablePairs, const math::Mat3d& h)
+			{ return measureHomography(usablePairs, h, request.threshold); },
+			[](HomographyResult& out, const math::Mat3d& h, double rms)
+			{
+				out.matrix = h;
 				out.rmsDistance = rms;
 			});
 	}

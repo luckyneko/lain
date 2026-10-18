@@ -494,8 +494,13 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   numbers.)* *(Amended 2026-10-16, decided with the repo owner while planning sub-slice 10: a rendered
   pan through OpenCV is posed as an orbit and judged Ready unless its start is exact, so a seed pair
   most of whose matches a homography explains is not a seed. A homography explains a pan, and a single
-  plane, whatever the focal length; a rotation fit under the start model was the alternative. Built in
-  sub-slice 10d.)*
+  plane, whatever the focal length; a rotation fit under the start model was the alternative.)*
+  *(Built 2026-10-18, sub-slice 10d: tested once on pixels before any start, over every pair of frames
+  sharing the five tracks a seed needs, at 80% of their shared tracks within 4 px both ways; when every
+  pair is refused, the calibration fails before any start. A geometry backend proposes homographies
+  and lain measures them, as for every other two-view model. Found: distortion bends a homography, so a
+  pan through a lens moving its corners by about 50 px escapes the test and is posed as an orbit. The
+  test needs no model, and a model is what would undistort.)*
 - **Two extractions, one feature module.** `lain::camera::feature` gains a sequence extraction beside
   the fixed-rig one, sharing its per-image and per-pair work and its union. A sequence pair is verified
   by a **fundamental matrix**, since no model exists yet to turn pixels into rays. The geometry backend

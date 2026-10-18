@@ -35,8 +35,12 @@ namespace lain::camera::calibration::targetless
 	// 2. the frames in capture order (timestamp, ordinal, source), and the tracks in capture order (by
 	//    each one's first frame, then its pixel), so nothing depends on where the footage sits or how
 	//    its tracks are named;
-	// 3. every k-th frame held out to validate on, unless it seeds the anchor (the first widest seed
-	//    over every frame) or holding it out would cut what the anchor reaches;
+	// 3. the pairs of frames that may seed, tested once on their pixels: a pair whose shared tracks a
+	//    homography explains, 80% of them, may not, since its camera turned without moving or it sees
+	//    one plane, and either says nothing of the camera's model whatever focal length it is posed
+	//    with. When every pair sharing enough to seed is refused, InitialisationFailed, before any
+	//    start. Then every k-th frame held out to validate on, unless it seeds the anchor (the first
+	//    widest seed over every frame) or holding it out would cut what the anchor reaches;
 	// 4. the starting models: an imported one under Initial or HoldAndValidate, otherwise the focal
 	//    sweep's three, at the centres of the geometric thirds of the focal lengths from a 120° to a 25°
 	//    field of view through the requested model's neutral projection. Steps 5 and 6 run for each,
@@ -44,12 +48,12 @@ namespace lain::camera::calibration::targetless
 	//    with the lowest cost per residual; a start that fails is reported and the others go on. When
 	//    every one fails, the calibration does, the start that got furthest reported first and every
 	//    start's reason after it;
-	// 5. the reconstruction: the seeds whose placement reaches the most frames, the one with the most
-	//    inliers that clears 2 degrees of parallax (or, when none does, the widest), and every frame it
-	//    can place by absolute pose. Frames it cannot reach, or that see too few landmarks in front of
-	//    them, are reported and left out. A seed most of whose matches are points at infinity has no
-	//    parallax, as footage that only turns has none, and fails InitialisationFailed; fewer than three
-	//    frames left is TooFewViews;
+	// 5. the reconstruction: of the pairs that may seed, the seeds whose placement reaches the most
+	//    frames, the one with the most inliers that clears 2 degrees of parallax (or, when none does,
+	//    the widest), and every frame it can place by absolute pose. Frames it cannot reach, or that see
+	//    too few landmarks in front of them, are reported and left out. A seed most of whose matches are
+	//    points at infinity has no parallax, as footage that only turns has none, and fails
+	//    InitialisationFailed; fewer than three frames left is TooFewViews;
 	// 6. the bundle adjustment: one model shared by every placed frame, its focal length, coefficients
 	//    and principal point free unless the settings hold the principal point, under the
 	//    settings' robust loss with every observation weighted by its own covariance; then
@@ -62,8 +66,8 @@ namespace lain::camera::calibration::targetless
 	//    observation the refined model cannot project is left out of it;
 	// 9. the verdict against the fitness profile, through calibration::judge.
 	//
-	// Every inlier test is 4 source pixels turned into an angle by the focal length in use. Independent
-	// of the order views and tracks are given in, of their identities, and of the execution policy; with
-	// ExecutionPolicy::DeterministicDebug the same work runs serially.
+	// Every inlier test is 4 source pixels, turned into an angle by the focal length in use where it is
+	// one. Independent of the order views and tracks are given in, of their identities, and of the
+	// execution policy; with ExecutionPolicy::DeterministicDebug the same work runs serially.
 	Report calibrate(const feature::TrackSet& tracks, const Settings& settings, const Request& request);
 } // namespace lain::camera::calibration::targetless

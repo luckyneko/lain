@@ -256,6 +256,9 @@ TEST_CASE("with no backend, the feature facades say the capability is missing", 
 	const feature::FundamentalResult fundamental = feature::fundamental(pixelPairs);
 	CHECK(fundamental.status == feature::Status::NoBackend);
 	CHECK(fundamental.detail.find("LAIN_CAMERA_OPENCV") != std::string::npos);
+	const feature::HomographyResult homography = feature::homography(std::vector<feature::PixelPair>(4));
+	CHECK(homography.status == feature::Status::NoBackend);
+	CHECK(homography.detail.find("LAIN_CAMERA_OPENCV") != std::string::npos);
 }
 
 TEST_CASE("with no backend, track extraction says the capability is missing", "[camera][feature]")

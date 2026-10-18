@@ -579,7 +579,8 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   feature matching.
   *As planned* (2026-10-12, M9 slice 4): one moving camera's footage of a predominantly static scene,
   the camera translating as well as turning; footage that only turns has no parallax and fails
-  initialisation. Every sampled frame is a view and its tracks come from the sequence extraction. The
+  initialisation *(before any start from sub-slice 10d, 2026-10-18: a pair of frames a homography
+  explains may not seed, and footage that only turns, or sees one plane, leaves no pair that may)*. Every sampled frame is a view and its tracks come from the sequence extraction. The
   camera's frames and the landmarks are reconstructed incrementally from a starting model, either an
   imported one or the focal sweep's. A bundle adjustment then estimates the model, with fx, fy and the
   distortion free and the principal point held by default *(freed by default from sub-slice 10b,

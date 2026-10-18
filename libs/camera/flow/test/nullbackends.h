@@ -114,5 +114,10 @@ namespace lain::camera::testing::null
 		{
 			return {};
 		}
+		std::vector<math::Mat3d> homographies(const std::vector<camera::feature::PixelPair>&, double,
+											  std::uint64_t) const override
+		{
+			return {};
+		}
 	};
 } // namespace lain::camera::testing::null

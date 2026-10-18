@@ -83,6 +83,7 @@ namespace lain::camera::testing::scene
 		};
 		std::vector<Call> nearestCalls;
 		std::vector<double> fundamentalThresholds; // per fundamentals() call, the threshold handed
+		std::vector<double> homographyThresholds;  // per homographies() call, the threshold handed
 		std::vector<double> relativeAngles;		   // per relativePoses() call, the inlier angle handed
 	};
 	inline Scene& scene()
@@ -298,6 +299,34 @@ namespace lain::camera::testing::scene
 		tx[1][2] = t.x;
 		const math::Mat3d kInverse = math::inverse(k);
 		return math::transpose(kInverse) * tx * math::mat3_cast(bFromA.rotation()) * kInverse;
+	}
+
+	// The homography a rotation alone gives from view `a` to view `b` (frames of the moving camera, or
+	// fixed cameras), K R K⁻¹ for x_b = R x_a + t: what explains two views that differ by a turn. GLM is
+	// column-major.
+	inline math::Mat3d rotationHomographyOf(std::size_t a, std::size_t b)
+	{
+		const std::vector<math::RigidTransformd>& truth = scene().path.empty() ? scene().referenceFromCamera : scene().path;
+		const math::RigidTransformd bFromA = truth[b].inverse() * truth[a];
+		const Intrinsics in = model().intrinsics();
+		math::Mat3d k{1.0};
+		k[0][0] = in.fx;
+		k[1][1] = in.fy;
+		k[2][0] = in.cx;
+		k[2][1] = in.cy;
+		return k * math::mat3_cast(bFromA.rotation()) * math::inverse(k);
+	}
+
+	// The larger of a pixel pair's transfer distances under `h`, both ways, source pixels: restated
+	// here, so the stand-in judges its candidates without asking the facade it stands behind.
+	inline double transferOf(const math::Mat3d& h, const feature::PixelPair& p)
+	{
+		const auto carry = [](const math::Mat3d& m, const math::Vec2d& x)
+		{
+			const math::Vec3d y = m * math::Vec3d{x.x, x.y, 1.0};
+			return math::Vec2d{y.x / y.z, y.y / y.z};
+		};
+		return std::max(math::length(carry(h, p.a) - p.b), math::length(carry(math::inverse(h), p.b) - p.a));
 	}
 
 	// The Sampson distance of a pixel pair from `f`, source pixels: restated here, so the stand-in
@@ -705,6 +734,38 @@ namespace lain::camera::testing::scene
 					const double distance = distances.empty() ? 1e9 : medianOf(distances);
 					if (distance <= threshold)
 						scored.push_back({distance, f});
+				}
+			}
+			return bestOf(std::move(scored));
+		}
+
+		// Every ordered pair of true views' rotation homography (rotationHomographyOf) that the sampled
+		// pairs lie within the threshold of, the best four, as its poses are: it explains two views of a
+		// camera that only turns, and of one that moves only for points far away. Logs the threshold it
+		// was handed.
+		std::vector<math::Mat3d> homographies(const std::vector<feature::PixelPair>& pairs, double threshold,
+											  std::uint64_t) const override
+		{
+			{
+				std::lock_guard<std::mutex> lock(logMutex());
+				scene().homographyThresholds.push_back(threshold);
+			}
+			const std::size_t views = scene().path.empty() ? scene().referenceFromCamera.size() : scene().path.size();
+			const std::vector<std::size_t> sample = sampleOf(pairs.size());
+			std::vector<std::pair<double, math::Mat3d>> scored;
+			for (std::size_t a = 0; a < views; ++a)
+			{
+				for (std::size_t b = 0; b < views; ++b)
+				{
+					if (a == b)
+						continue;
+					const math::Mat3d h = rotationHomographyOf(a, b);
+					std::vector<double> distances;
+					for (const std::size_t i : sample)
+						distances.push_back(transferOf(h, pairs[i]));
+					const double distance = distances.empty() ? 1e9 : medianOf(distances);
+					if (distance <= threshold)
+						scored.push_back({distance, h});
 				}
 			}
 			return bestOf(std::move(scored));

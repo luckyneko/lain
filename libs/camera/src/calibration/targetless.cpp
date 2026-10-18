@@ -15,6 +15,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <iterator>
 #include <limits>
 #include <numeric>
 #include <optional>
@@ -71,6 +72,9 @@ namespace lain::camera::calibration::targetless
 	static constexpr std::size_t kSweepStarts = 3;
 	static constexpr double kNarrowestField = 25.0 * 3.14159265358979323846 / 180.0;
 	static constexpr double kWidestField = 120.0 * 3.14159265358979323846 / 180.0;
+	// A pair of frames a homography explains at this share of the tracks they share is not a seed
+	// (SeedPairs). COLMAP's max_H_inlier_ratio; provisional, as kInlierPixels is.
+	static constexpr double kHomographyShare = 0.8;
 
 	// A frame's place in capture order, as the sequence extraction sorts frames.
 	static auto captureOrder(const media::FrameRef& frame)
@@ -184,16 +188,90 @@ namespace lain::camera::calibration::targetless
 		return out;
 	}
 
-	// Which frames are held out (CONTEXT.md, "Held-out frame"): every k-th in capture order, starting
-	// half a stride in (detail::holdOut), each only while the anchor, the first of the widest seeds over
-	// every frame, still reaches every other frame it reached without it and every frame held out
-	// before it. The anchor's own two frames are never held out. A held-out frame must not decide
-	// whether the reconstruction can start.
-	static std::vector<bool> holdFramesOut(std::size_t frames, const std::vector<Ordered>& tracks, const Request& request)
+	// Where `track` is seen in frame `f`; it is known to be seen there.
+	static const math::Vec2d& pixelIn(const Ordered& track, std::uint32_t f)
+	{
+		const auto at = std::lower_bound(track.seen.begin(), track.seen.end(), f, [](const Observed& o, std::uint32_t frame)
+										 { return o.frame < frame; });
+		return at->pixel;
+	}
+
+	// The frame pairs that may not seed the reconstruction, decided once on pixels, before any start, so
+	// whether a pair seeds depends on no starting model: each pair sharing at least kSeedShared tracks
+	// whose shared pixels a homography explains, kHomographyShare of them within kInlierPixels both
+	// ways. A homography explains two frames of a camera that turned without moving, and two frames of
+	// one plane, whatever the camera's model, so such a pair says nothing about it: started from it, a
+	// focal length a few percent out poses a pan as an orbit (CONTEXT.md, "Targetless calibration").
+	struct SeedPairs
+	{
+		std::set<std::pair<std::uint32_t, std::uint32_t>> refused; // (a, b), a < b
+		std::uint32_t tested = 0;
+		Provenance geometry; // what proposed the homographies
+	};
+
+	static SeedPairs seedPairsOf(std::size_t frames, const std::vector<Ordered>& tracks, const Request& request)
 	{
 		const std::vector<std::vector<std::uint32_t>> units = framesOf(tracks);
 		const std::vector<std::vector<std::uint32_t>> ofFrame = unitsOf(frames, units);
-		const std::vector<Closure> anchors = widest(observationGraph(std::uint32_t(frames), units), units, ofFrame, 1);
+		std::vector<GraphEdge> candidates;
+		for (const GraphEdge& e : observationGraph(std::uint32_t(frames), units).edges)
+		{
+			if (e.shared >= kSeedShared)
+				candidates.push_back(e);
+		}
+		std::vector<feature::HomographyResult> results(candidates.size());
+		detail::forEach(candidates.size(), request.execution,
+						[&](std::size_t i)
+						{
+							// The pixels of every track the two frames share, in capture order.
+							const GraphEdge& e = candidates[i];
+							std::vector<std::uint32_t> shared;
+							std::set_intersection(ofFrame[e.a].begin(), ofFrame[e.a].end(), ofFrame[e.b].begin(),
+												  ofFrame[e.b].end(), std::back_inserter(shared));
+							std::vector<feature::PixelPair> pairs;
+							for (const std::uint32_t t : shared)
+								pairs.push_back({pixelIn(tracks[t], e.a), pixelIn(tracks[t], e.b)});
+							feature::HomographyRequest homography;
+							homography.threshold = kInlierPixels;
+							homography.seed = request.seed;
+							results[i] = feature::homography(pairs, homography);
+						});
+		SeedPairs out;
+		out.tested = std::uint32_t(candidates.size());
+		for (std::size_t i = 0; i < candidates.size(); ++i)
+		{
+			if (out.geometry.backend.empty())
+				out.geometry = results[i].provenance;
+			if (results[i].ok() && double(results[i].inliers.size()) >= kHomographyShare * double(candidates[i].shared))
+				out.refused.insert({candidates[i].a, candidates[i].b});
+		}
+		return out;
+	}
+
+	// The edges of `graph` that may seed: those `pairs` did not refuse.
+	static std::vector<GraphEdge> seedable(const ObservationGraph& graph, const SeedPairs& pairs)
+	{
+		std::vector<GraphEdge> out;
+		for (const GraphEdge& e : graph.edges)
+		{
+			if (pairs.refused.count({e.a, e.b}) == 0)
+				out.push_back(e);
+		}
+		return out;
+	}
+
+	// Which frames are held out (CONTEXT.md, "Held-out frame"): every k-th in capture order, starting
+	// half a stride in (detail::holdOut), each only while the anchor, the first of the widest seeds over
+	// every frame among the pairs that may seed, still reaches every other frame it reached without it
+	// and every frame held out before it. The anchor's own two frames are never held out. A held-out frame must not decide
+	// whether the reconstruction can start.
+	static std::vector<bool> holdFramesOut(std::size_t frames, const std::vector<Ordered>& tracks, const SeedPairs& seedPairs,
+										   const Request& request)
+	{
+		const std::vector<std::vector<std::uint32_t>> units = framesOf(tracks);
+		const std::vector<std::vector<std::uint32_t>> ofFrame = unitsOf(frames, units);
+		const std::vector<Closure> anchors =
+			widest(seedable(observationGraph(std::uint32_t(frames), units), seedPairs), units, ofFrame, 1);
 		std::vector<bool> removed(frames, false);
 		return detail::holdOut(frames, request.heldOutFraction, kMinimumToHoldOut,
 							   [&](std::size_t f)
@@ -670,7 +748,8 @@ namespace lain::camera::calibration::targetless
 	};
 
 	static Fit fitFrom(const CameraModel& startModel, std::size_t n, const std::vector<Ordered>& tracks,
-					   const std::vector<bool>& heldOut, const Settings& settings, const Request& request)
+					   const std::vector<bool>& heldOut, const SeedPairs& seedPairs, const Settings& settings,
+					   const Request& request)
 	{
 		const bool hold = request.importedPolicy == ImportedModelPolicy::HoldAndValidate;
 		const double startAngle = inlierAngle(startModel);
@@ -688,8 +767,8 @@ namespace lain::camera::calibration::targetless
 		Units all(evidence.tracks.size());
 		std::iota(all.begin(), all.end(), 0u);
 		const std::vector<std::vector<std::uint32_t>> unitFrames = viewsOf(evidence, all);
-		const std::vector<Closure> seeds = widest(observationGraph(std::uint32_t(n), unitFrames), unitFrames,
-												  unitsOf(n, unitFrames), kSeedCandidates);
+		const std::vector<Closure> seeds = widest(seedable(observationGraph(std::uint32_t(n), unitFrames), seedPairs),
+												  unitFrames, unitsOf(n, unitFrames), kSeedCandidates);
 		if (seeds.empty())
 			return fail(Failure::InitialisationFailed,
 						lain::string::format("no two frames share the {} tracks a reconstruction starts from", kSeedShared));
@@ -817,8 +896,21 @@ namespace lain::camera::calibration::targetless
 		TargetlessRecord& record = std::get<TargetlessRecord>(report.reproducibility.method);
 		const bool hold = request.importedPolicy == ImportedModelPolicy::HoldAndValidate;
 
+		// The pairs that may seed, once, on pixels. When a homography explains every pair that shares
+		// enough to seed, no start can: the footage turned without moving, or saw one plane.
+		const SeedPairs seedPairs = seedPairsOf(n, tracks, request);
+		targetless.seedPairs = seedPairs.tested;
+		targetless.seedPairsRefused = std::uint32_t(seedPairs.refused.size());
+		record.geometry = seedPairs.geometry;
+		if (seedPairs.tested > 0 && seedPairs.refused.size() == seedPairs.tested)
+			return failed(std::move(report), start, Failure::InitialisationFailed,
+						  lain::string::format("a homography explains {:.0f}% or more of the tracks shared by each of the {} pairs "
+											   "of frames that could seed the reconstruction, so the camera turned without "
+											   "moving, or saw one plane; footage that does neither says nothing of its model",
+											   kHomographyShare * 100, seedPairs.tested));
+
 		// 3. The held-out frames.
-		const std::vector<bool> heldOut = holdFramesOut(n, tracks, request);
+		const std::vector<bool> heldOut = holdFramesOut(n, tracks, seedPairs, request);
 		for (std::uint32_t f = 0; f < n; ++f)
 		{
 			if (heldOut[f])
@@ -855,7 +947,7 @@ namespace lain::camera::calibration::targetless
 						[&](std::size_t i)
 						{
 							if (starts[i].model)
-								fits[i] = fitFrom(*starts[i].model, n, tracks, heldOut, settings, request);
+								fits[i] = fitFrom(*starts[i].model, n, tracks, heldOut, seedPairs, settings, request);
 							else
 								fits[i].failures.push_back(
 									{Failure::InitialisationFailed, lain::string::format("a focal length of {:.4g} gives no valid {} model",

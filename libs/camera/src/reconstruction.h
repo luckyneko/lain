@@ -111,12 +111,13 @@ namespace lain::camera::reconstruction
 						  std::size_t limit);
 
 	// The seed candidates for a method that places what it can, rather than needing every view placed
-	// (targetless calibration): each pair of views sharing at least kSeedShared units, by how many they
+	// (targetless calibration): each of `pairs` sharing at least kSeedShared units, by how many they
 	// share, ties to (a, b); of their closures, those that reach the most views, at most `limit`, in
 	// that order. Empty when no pair shares enough. A pair inside a closure that reaches fewer views
 	// than the widest found so far cannot reach as far (its own closure lies inside that one), so it
-	// is skipped unexamined.
-	std::vector<Closure> widest(const ObservationGraph& graph, const std::vector<std::vector<std::uint32_t>>& units,
+	// is skipped unexamined. `pairs` are the edges of an observation graph over `units`, or those of
+	// them the method lets seed.
+	std::vector<Closure> widest(const std::vector<GraphEdge>& pairs, const std::vector<std::vector<std::uint32_t>>& units,
 								const std::vector<std::vector<std::uint32_t>>& ofView, std::size_t limit);
 
 	// --- initialisation ------------------------------------------------------------

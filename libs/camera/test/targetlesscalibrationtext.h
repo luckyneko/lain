@@ -91,7 +91,8 @@ namespace lain::camera::testing::targetlesstext
 		const TargetlessDiagnostics& t = std::get<TargetlessDiagnostics>(d.method);
 		for (const media::FrameRef& f : t.frames)
 			out << "frame " << f.toString() << "\n";
-		out << "tracks " << t.tracks << " " << t.tracksUsable << "\n";
+		out << "tracks " << t.tracks << " " << t.tracksUsable << "\nseedPairs " << t.seedPairs << " " << t.seedPairsRefused
+			<< "\n";
 		for (const SweepStart& tried : t.sweep)
 		{
 			out << "start " << number(tried.focalLength) << " " << tried.placed << " ";

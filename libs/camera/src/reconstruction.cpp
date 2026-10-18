@@ -141,11 +141,11 @@ namespace lain::camera::reconstruction
 		return out;
 	}
 
-	std::vector<Closure> widest(const ObservationGraph& graph, const std::vector<std::vector<std::uint32_t>>& units,
+	std::vector<Closure> widest(const std::vector<GraphEdge>& pairs, const std::vector<std::vector<std::uint32_t>>& units,
 								const std::vector<std::vector<std::uint32_t>>& ofView, std::size_t limit)
 	{
 		std::vector<const GraphEdge*> order;
-		for (const GraphEdge& e : graph.edges)
+		for (const GraphEdge& e : pairs)
 		{
 			if (e.shared >= kSeedShared)
 				order.push_back(&e);

@@ -6,8 +6,9 @@ namespace lain::camera::opencv
 {
 	// Candidates behind lain::camera::feature's geometry seam: OpenCV's USAC with MAGSAC++ scoring
 	// for an essential matrix, every one of its four decompositions, a USAC PnP for an absolute pose,
-	// and USAC's fundamental matrix of two images' pixels. Run serially and seeded, so the same input
-	// proposes the same candidates. It proposes; lain measures every candidate and chooses (ADR-0016).
+	// and USAC's fundamental matrix and homography of two images' pixels. Run serially and seeded, so
+	// the same input proposes the same candidates. It proposes; lain measures every candidate and
+	// chooses (ADR-0016).
 	class OpenCVGeometrySolver : public feature::GeometrySolver
 	{
 	public:
@@ -17,6 +18,8 @@ namespace lain::camera::opencv
 		std::vector<math::RigidTransformd> absolutePoses(const std::vector<feature::PointRay>& pointRays, double angle,
 														 std::uint64_t seed) const override;
 		std::vector<math::Mat3d> fundamentals(const std::vector<feature::PixelPair>& pairs, double threshold,
+											  std::uint64_t seed) const override;
+		std::vector<math::Mat3d> homographies(const std::vector<feature::PixelPair>& pairs, double threshold,
 											  std::uint64_t seed) const override;
 	};
 } // namespace lain::camera::opencv

@@ -13,12 +13,13 @@
 #include <string>
 #include <vector>
 
-// Two-view and absolute pose from rays, and the fundamental matrix of two images from pixels (ADR-0016,
-// "Producers propose; lain decides"). A geometry backend proposes candidates and nothing else; the
-// facades measure every candidate (a pose by angular residual and cheirality, through lain's own
-// triangulation; a fundamental matrix by Sampson distance), choose one, and work out its inliers. A
-// backend's own idea of its inliers is never asked for. Rays come from lain's unprojection, so no
-// camera model crosses the seam; pixels are for the one question asked before there is a model.
+// Two-view and absolute pose from rays, and the fundamental matrix and the homography of two images
+// from pixels (ADR-0016, "Producers propose; lain decides"). A geometry backend proposes candidates and
+// nothing else; the facades measure every candidate (a pose by angular residual and cheirality, through
+// lain's own triangulation; a fundamental matrix by Sampson distance; a homography by transfer distance
+// both ways), choose one, and work out its inliers. A backend's own idea of its inliers is never asked
+// for. Rays come from lain's unprojection, so no camera model crosses the seam; pixels are for the
+// questions asked before there is a model.
 namespace lain::camera::feature
 {
 	// One correspondence between two cameras: the ray to it in A and the ray to it in B, each in its
@@ -67,6 +68,12 @@ namespace lain::camera::feature
 		// source pixels, each of rank two; their scale and sign mean nothing. `threshold` is the
 		// inlier distance in source pixels. Called only with at least eight pixel pairs.
 		virtual std::vector<math::Mat3d> fundamentals(const std::vector<PixelPair>& pairs, double threshold,
+													  std::uint64_t seed) const = 0;
+
+		// Candidates for the homography H of two images, x_b ~ H x_a with x = (u, v, 1) in source
+		// pixels; their scale and sign mean nothing. `threshold` is the inlier transfer distance in
+		// source pixels. Called only with at least four pixel pairs.
+		virtual std::vector<math::Mat3d> homographies(const std::vector<PixelPair>& pairs, double threshold,
 													  std::uint64_t seed) const = 0;
 	};
 
@@ -127,6 +134,29 @@ namespace lain::camera::feature
 		bool ok() const { return status == Status::Ok; }
 	};
 
+	struct HomographyRequest
+	{
+		// An inlier is mapped within this of where the other image saw it, both ways, in source pixels.
+		double threshold = 4.0;
+		std::uint64_t seed = 0;
+	};
+
+	struct HomographyResult
+	{
+		Status status = Status::NoSolution;
+		std::string detail; // why there is no matrix, when there is none
+		// x_b ~ H x_a, normalised as a fundamental matrix is: unit Frobenius norm, its largest-magnitude
+		// entry positive. GLM's indexing is matrix[column][row].
+		std::optional<math::Mat3d> matrix;
+		std::vector<std::uint32_t> inliers; // indices into the input, ascending
+		double rmsDistance = 0;				// over the inliers' transfer distances, both ways, source pixels
+		std::uint32_t candidates = 0;		// the backend's proposals
+		Provenance provenance;
+		core::Time elapsed;
+
+		bool ok() const { return status == Status::Ok; }
+	};
+
 	// The relative pose of two cameras from rays to shared points. Each candidate is measured: a pair
 	// is triangulated and is an inlier when both rays are within the request's angle of the point and
 	// it lies in front of both cameras. A pair whose parallax is below the angle is a point at
@@ -152,4 +182,14 @@ namespace lain::camera::feature
 	//
 	// TooFew below eight usable pairs; NoSolution when no candidate has eight inliers.
 	FundamentalResult fundamental(const std::vector<PixelPair>& pairs, const FundamentalRequest& request = {});
+
+	// The homography of two images from pixel correspondences: what two images of a camera that only
+	// turns, or of one plane, share, whatever the camera's model. Each candidate is measured: a pair is
+	// an inlier when the matrix carries A's pixel within the request's threshold of B's, and its inverse
+	// carries B's within the threshold of A's. The candidate with the most inliers is chosen, then the
+	// least summed squared distance, then a canonical order over its normalised entries, whatever order
+	// the backend gave them in. One that cannot be inverted is not measured.
+	//
+	// TooFew below four usable pairs; NoSolution when no candidate has four inliers.
+	HomographyResult homography(const std::vector<PixelPair>& pairs, const HomographyRequest& request = {});
 } // namespace lain::camera::feature

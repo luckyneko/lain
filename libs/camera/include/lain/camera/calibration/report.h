@@ -141,9 +141,14 @@ namespace lain::camera::calibration
 	{
 		// When this calibration extracted its tracks: what extraction reported.
 		std::optional<feature::SequenceExtractionReport> extraction;
-		std::vector<media::FrameRef> frames;  // the frames examined, in capture order: one per sampled frame that decoded
-		std::uint32_t tracks = 0;			  // given
-		std::uint32_t tracksUsable = 0;		  // with two observations outside the held-out frames that unproject
+		std::vector<media::FrameRef> frames; // the frames examined, in capture order: one per sampled frame that decoded
+		std::uint32_t tracks = 0;			 // given
+		std::uint32_t tracksUsable = 0;		 // with two observations outside the held-out frames that unproject
+		// Pairs of frames sharing enough tracks to seed, each tested on its pixels for a homography; and
+		// of those, the ones a homography explains, which may not seed: their camera turned without
+		// moving, or they see one plane.
+		std::uint32_t seedPairs = 0;
+		std::uint32_t seedPairsRefused = 0;
 		std::vector<SweepStart> sweep;		  // in ascending focal length; empty when an imported model started it
 		std::optional<std::uint32_t> swept;	  // the start the result came from
 		std::vector<std::uint32_t> seed;	  // the two frames the reconstruction started from

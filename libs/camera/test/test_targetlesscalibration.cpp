@@ -424,75 +424,105 @@ TEST_CASE("a frame seeing too few landmarks is reported unplaced, and the calibr
 	CHECK(asked().front().poses == 9);
 }
 
-TEST_CASE("footage that only turns fails to start, naming its parallax", "[camera][calibration][targetless]")
+TEST_CASE("footage that only turns is refused before any start, since a homography explains it",
+		  "[camera][calibration][targetless]")
 {
-	// Under a model whose rays are right, a camera that only turns sees every match as a point at
-	// infinity, whatever baseline its relative pose is given. Two such models: an imported one, and the
-	// sweep's own start when the camera's focal length is one (here the middle, 516.4).
-	//
-	// Recorded, not pinned: with the truth BETWEEN starts (500), the middle start's rays, 3% off, are
-	// explained better by a pan of another angle plus the stand-in's arbitrary sideways baseline than by
-	// the true pan: all 120 seed matches triangulate, at a median 52 mrad, and the calibration goes on to
-	// a spurious orbit that only its verdict rejects (5.3 mrad held out). A pure rotation is told apart
-	// for any model by whether a rotation alone explains a pair, which this method does not ask yet.
-	//
-	// Moving content is the second half: a landmark moving across a pan has real parallax, so a few
-	// matches triangulate, each at no less than the minimum parallax (a triangulation below it is a
-	// point at infinity). A median over the ones that triangulate would then always clear the minimum,
-	// so the refusal asks whether most matches are at infinity instead.
+	// A homography explains every pair of a camera that only turns, whatever its model, so no pair may
+	// seed and no start is tried. Without the test, with the truth between starts (500), the long start
+	// posed five frames of this pan as an orbit, which only the verdict rejected.
+	setUp();
+	Request imported = pinholeRequest();
+	imported.imported = pinhole(500);
+	imported.importedPolicy = ImportedModelPolicy::Initial;
+	for (const Request& request : {pinholeRequest(), imported})
+	{
+		INFO(name(request.importedPolicy));
+		scene::resetPanning(12, 120, 1, pinhole(500));
+		scene::scene().homographyThresholds.clear();
+		const Report report = run(scene::sequenceTrackSetOf(), request);
+		INFO(report.toString());
+		REQUIRE(failedWith(report, Failure::InitialisationFailed));
+		CHECK(report.failures.size() == 1);
+		CHECK_THAT(report.failures.front().detail, ContainsSubstring("a homography explains 80%"));
+		CHECK_THAT(report.failures.front().detail, ContainsSubstring("turned without moving"));
+		const TargetlessDiagnostics& t = targetlessOf(report);
+		// Every pair of the twelve frames shares every landmark.
+		CHECK(t.seedPairs == 66);
+		CHECK(t.seedPairsRefused == 66);
+		CHECK(t.sweep.empty());
+		CHECK(t.seed.empty());
+		CHECK(report.diagnostics.heldOut.empty());
+		CHECK(std::get<TargetlessRecord>(report.reproducibility.method).geometry.backend == "truth");
+		// Tested once a pair, at the inlier distance in source pixels.
+		CHECK(scene::scene().homographyThresholds == std::vector<double>(66, 4.0));
+		CHECK(asked().empty());
+	}
+}
+
+TEST_CASE("a seed that only turns still fails for its parallax when a homography explains too little of it",
+		  "[camera][calibration][targetless]")
+{
+	// Moving content across a pan: a quarter of the landmarks move, so a homography explains 90 of each
+	// pair's 120 tracks, under the 80% that refuses a seed, and the pan seeds. Under the camera's own
+	// model (imported) most of the seed's matches are then points at infinity; the moving ones
+	// triangulate, each at no less than the minimum parallax (a triangulation below it is a point at
+	// infinity), so a median over the ones that triangulate would always clear the minimum, and the
+	// refusal asks whether most matches are at infinity instead.
 	setUp();
 	scene::resetPanning(12, 120, 1, pinhole(500));
-	const double candidate = targetlessOf(run(scene::sequenceTrackSetOf())).sweep.at(1).focalLength;
+	for (std::size_t l = 0; l < 120; l += 4)
+		scene::scene().landmarks[l].dynamic = true;
 	Request imported = pinholeRequest();
-	imported.imported = pinhole(candidate);
+	imported.imported = pinhole(500);
 	imported.importedPolicy = ImportedModelPolicy::Initial;
-	for (const bool moving : {false, true})
+	const Report report = run(scene::sequenceTrackSetOf(), imported);
+	INFO(report.toString());
+	REQUIRE(failedWith(report, Failure::InitialisationFailed));
+	CHECK(report.failures.size() == 1);
+	CHECK_THAT(report.failures.front().detail, ContainsSubstring("no parallax"));
+	CHECK_THAT(report.failures.front().detail, ContainsSubstring("only turns"));
+	const TargetlessDiagnostics& t = targetlessOf(report);
+	CHECK(t.seedPairs == 66);
+	CHECK(t.seedPairsRefused == 0);
+	REQUIRE(t.seed.size() == 2);
+	// Measured: 90 of 120 at infinity; the 30 moving landmarks triangulate at a median 38 mrad.
+	CHECK(t.seedInliers > 0);
+	CHECK(t.seedAtInfinity < t.seedInliers);
+	CHECK(2 * t.seedAtInfinity >= t.seedInliers);
+	CHECK(t.seedAngle >= feature::GeometryRequest{}.angle);
+	CHECK(asked().empty());
+}
+
+TEST_CASE("a camera that moves is not refused, and a pair that only turns among its frames does not seed",
+		  "[camera][calibration][targetless]")
+{
+	setUp();
+	const Report moving = run(scene::sequenceTrackSetOf());
+	INFO(moving.toString());
+	REQUIRE(moving.status == CalibrationStatus::Succeeded);
+	const TargetlessDiagnostics& t = targetlessOf(moving);
+	CHECK(t.seedPairs == 66);
+	CHECK(t.seedPairsRefused == 0);
+
+	// The same wandering camera, its fourth frame turned in place where the third stood: those two
+	// share their view of every landmark through a rotation alone, so the pair is refused, and the
+	// calibration seeds elsewhere and places both.
+	setUp();
+	scene::scene().path[3] = math::RigidTransformd { scene::scene().path[3].rotation(),
+													 scene::scene().path[2].translation() };
+	const Report turned = run(scene::sequenceTrackSetOf());
+	INFO(turned.toString());
+	REQUIRE(turned.status == CalibrationStatus::Succeeded);
+	const TargetlessDiagnostics& u = targetlessOf(turned);
+	CHECK(u.seedPairs == 66);
+	CHECK(u.seedPairsRefused == 1);
+	REQUIRE(u.seed.size() == 2);
+	CHECK(u.seed != std::vector<std::uint32_t>{2, 3});
+	for (const std::uint32_t f : {2u, 3u})
 	{
-		for (const Request& request : {pinholeRequest(), imported})
-		{
-			scene::resetPanning(12, 120, 1, pinhole(candidate));
-			if (moving)
-			{
-				for (std::size_t l = 0; l < 120; l += 10)
-					scene::scene().landmarks[l].dynamic = true;
-			}
-			{
-				std::lock_guard<std::mutex> lock(standin::refinerScript().mutex);
-				standin::refinerScript().asked.clear();
-			}
-			const Report report = run(scene::sequenceTrackSetOf(), request);
-			INFO(report.toString());
-			INFO("moving content " << moving << ", " << name(request.importedPolicy));
-			const TargetlessDiagnostics& t = targetlessOf(report);
-			if (request.importedPolicy == ImportedModelPolicy::Initial)
-			{
-				REQUIRE(failedWith(report, Failure::InitialisationFailed));
-				CHECK(report.failures.size() == 1);
-				CHECK_THAT(report.failures.front().detail, ContainsSubstring("no parallax"));
-				CHECK_THAT(report.failures.front().detail, ContainsSubstring("only turns"));
-				CHECK(t.seed.size() == 2);
-				CHECK(t.seedInliers > 0);
-				if (!moving)
-					CHECK(t.seedAtInfinity == t.seedInliers);
-				else
-				{
-					// Measured: 108 of 120 at infinity; the 12 moving landmarks triangulate at a median 64 mrad.
-					CHECK(t.seedAtInfinity < t.seedInliers);
-					CHECK(t.seedAngle >= feature::GeometryRequest{}.angle);
-				}
-				CHECK(asked().empty());
-				continue;
-			}
-			// The sweep's middle start is the camera's own model, and refuses the pan for its parallax.
-			// Recorded, not pinned: the long start, twice the focal length, poses five frames of the pan
-			// as an orbit, which only the verdict rejects, and the short one places two. Sub-slice 10d's
-			// homography test refuses the pan before any start.
-			REQUIRE(t.sweep.size() == 3);
-			REQUIRE(failureOf(t.sweep[1]) != nullptr);
-			CHECK(failureOf(t.sweep[1])->failure == Failure::InitialisationFailed);
-			CHECK_THAT(failureOf(t.sweep[1])->detail, ContainsSubstring("no parallax"));
-			CHECK(report.verdict != Verdict::Ready);
-		}
+		CAPTURE(f);
+		const std::vector<std::uint32_t>& heldOut = turned.diagnostics.heldOut;
+		CHECK(std::count(u.placement.begin(), u.placement.end(), f) + std::count(heldOut.begin(), heldOut.end(), f) == 1);
 	}
 }
 
