@@ -490,9 +490,9 @@ namespace lain::camera::feature
 			{
 				// A static feature's size is its median across frames, in source pixels, so the
 				// covariance is in source pixels too, and a coarser search reaches it through the size.
-				const Keypoint& k = work[v].statics.keypoint(i);
-				const double sigma = request.localisationPerSize * k.size;
-				track.observations.push_back({v, k.pixel, work[v].support[i], std::array<double, 3>{sigma * sigma, 0.0, sigma * sigma}});
+				const Keypoint& keypoint = work[v].statics.keypoint(i);
+				const double sigma = request.localisationPerSize * keypoint.size;
+				track.observations.push_back({v, keypoint.pixel, work[v].support[i], std::array<double, 3>{sigma * sigma, 0.0, sigma * sigma}});
 			}
 			track.identity = core::sha256(canonicalText(track, out.trackSet.views)).toString();
 			out.trackSet.tracks.push_back(std::move(track));

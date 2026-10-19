@@ -535,11 +535,11 @@ namespace lain::camera::registration::board
 
 		// Every k-th usable group held out, unless that would split the graph (detail::holdOut).
 		std::vector<bool> heldOut(groupCount, false);
-		const std::vector<bool> held = detail::holdOut(cameraCount, camerasOf(evidence, usableGroups),
-													   request.heldOutFraction, kMinimumToHoldOut);
+		const std::vector<bool> toHold = detail::holdOut(cameraCount, camerasOf(evidence, usableGroups),
+														 request.heldOutFraction, kMinimumToHoldOut);
 		for (std::size_t i = 0; i < usableGroups.size(); ++i)
 		{
-			if (!held[i])
+			if (!toHold[i])
 				continue;
 			heldOut[usableGroups[i]] = true;
 			diagnostics.heldOutUnits.push_back(data.groups[usableGroups[i]]->group.identity());

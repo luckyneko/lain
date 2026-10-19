@@ -236,8 +236,8 @@ TEST_CASE("a two-member track is scored against the epipolar plane, counted twic
 			const math::Vec3d point = scene::scene().landmarks[l].point;
 			for (const math::Vec3d& centre : {centre0, centre1})
 			{
-				const math::Vec3d ray = point - centre, baseline = centre1 - centre0;
-				const double f = std::atan2(math::length(math::cross(ray, baseline)), math::dot(ray, baseline));
+				const math::Vec3d ray = point - centre, truthBaseline = centre1 - centre0;
+				const double f = std::atan2(math::length(math::cross(ray, truthBaseline)), math::dot(ray, truthBaseline));
 				const double off = std::asin(std::sin(0.005) * std::sin(f));
 				sum += 2 * off * off;
 				++members;
