@@ -409,9 +409,10 @@ TEST_CASE("run registers a rig from a folder of footage and a folder of models",
 		CHECK(report.rfind("Failed: NoRefiner", 0) == 0);
 		return;
 	}
-	// Each camera is named by its footage folder, cam0 first since the folder lists by name.
+	// Each camera is named by its footage folder, cam0 first since the folder lists by name, with the
+	// platform's separator: a camera's name is its folder's path.
 	CHECK(report.rfind("Ready: 3 cameras relative to ", 0) == 0);
-	CHECK(report.find("rig/cam0") != std::string::npos);
+	CHECK(report.find((fs::path("rig") / "cam0").string()) != std::string::npos);
 	CHECK(report.find("16 of 16 groups usable") != std::string::npos);
 }
 
@@ -520,7 +521,7 @@ TEST_CASE("run registers a rig without a target from a folder of footage and a f
 	// identity order is held out, so another folder holds out other tracks. One folder gives one
 	// report, byte for byte.
 	CHECK(report.rfind("Ready: 3 cameras relative to ", 0) == 0);
-	CHECK(report.find("rig/cam") != std::string::npos);
+	CHECK(report.find((fs::path("rig") / "cam").string()) != std::string::npos);
 	CHECK(report.find("arbitrary scale") != std::string::npos);
 	CHECK(report.find("landmarks from") != std::string::npos);
 }
