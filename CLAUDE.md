@@ -1400,6 +1400,31 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-19 — a moving camera keeps 2048 features a frame
+
+The first of the commits that take 10e's recommendations, which the repo owner accepted whole on
+2026-10-19. `feature::SequenceExtractionRequest` now defaults `featureCap` to 2048, where the fixed
+rig's `ExtractionRequest` keeps 8192. Two other recommendations are recorded and need no code: 40
+sampled frames stays the default, and 10c's ranking of starts stays. `ctest` **1285/1285** Debug and
+**1293/1293** Release with video, camera and Ceres on, **1160/1160** with all three off (+1 each).
+Release ran the three 100-camera scale cases on their own, since the registration one fails its
+wall-clock bound under `-j8`; a later commit addresses that. Warning-clean, format-check clean. Full
+notes in WORK.md's *After sub-slice 10e* under M9 slice 4.
+
+- **The two extractions now differ in one default, deliberately.** The rig's 8192 is the repo owner's
+  decision of 2026-10-09: it never binds on sub-slice 9's footage, and real footage is still owed. A
+  derived aggregate cannot give a base member another default, so the moving camera's request sets it
+  in a constructor and is no longer an aggregate. Nothing brace-initialised one with values.
+- **No case moves:** the default texture never reaches the cap. Across the end-to-end suite, with the
+  cases instrumented, no frame brought more than 964 features, and every case that measures the cap
+  names the cap it measures. A new case pins the two defaults apart; with the constructor defaulted,
+  both of its 2048 checks fail.
+- **Found by the first CI run of `feature/M9`, fixed in its own commit ahead of this one:** MSVC's
+  C4456. `extraction.cpp` named a keypoint `k` inside a function whose sample count is `k`, so
+  `lain::camera` failed to build on Windows and nothing downstream of it compiled. GCC reports this
+  only under `-Wshadow`, which lain does not enable. A `-Wshadow` sweep of every camera and flowview
+  translation unit found two more, both renamed.
+
 ### Update 2026-10-18 — M9 slice 4, sub-slice 10e: calibration end to end, and what the comparison found (**sub-slice 10 COMPLETE**)
 
 The last of sub-slice 10's five commits: `test-camera-calibration-e2e`, four cases through OpenCV and

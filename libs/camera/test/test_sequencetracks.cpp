@@ -528,6 +528,18 @@ TEST_CASE("a sequence track's identity is the digest of its pinned canonical tex
 	CHECK(track->identity == "d6003598ac716838e6b3bc7be31d3b9eea126d421d0644ffa8b65c5b7bb460a7");
 }
 
+TEST_CASE("a moving camera keeps fewer features a frame than the fixed rig", "[camera][feature][sequence]")
+{
+	// Measured in M9 slice 4, sub-slice 10e for a moving camera; the rig's is the repo owner's
+	// decision of 2026-10-09. A constructor sets the sequence's, so a default-constructed request and
+	// a value-initialised one must both carry it.
+	CHECK(SequenceExtractionRequest().featureCap == 2048);
+	const SequenceExtractionRequest braced{};
+	CHECK(braced.featureCap == 2048);
+	CHECK(ExtractionRequest{}.featureCap == 8192);
+	CHECK(ExtractionSettings{}.featureCap == 8192);
+}
+
 TEST_CASE("sequence extraction refuses what it cannot run before decoding anything", "[camera][feature][sequence]")
 {
 	scene::registerStandIns();

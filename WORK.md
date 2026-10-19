@@ -8410,6 +8410,25 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      the wide lens on ray mapping, each still Ready, as 10b found. The HD and 1080p cases pass, since
      their 1.3 px offset is small at their focal lengths.
 
+   **After sub-slice 10e: the recommendations taken (decided by the repo owner, 2026-10-19).** Each
+   is its own commit:
+   - **A moving camera's feature cap is 2048** (item 3). `SequenceExtractionRequest`'s constructor
+     sets it, since a derived aggregate cannot give a base member another default. The fixed rig's
+     cap stays 8192, the repo owner's decision of 2026-10-09: sub-slice 9 measured that it never binds
+     on that footage, and real footage is still owed. The request is no longer an aggregate, and
+     nothing brace-initialised one with values.
+     - **No case moves.** The default texture never reaches the cap: across the end-to-end suite, with
+       the cases instrumented, no frame brought more than 964 features and none was capped. Every
+       case that measures the cap names the cap it measures.
+     - **A new case pins the two defaults apart**, constructed and value-initialised. Sabotage: the
+       constructor defaulted, and both of its 2048 checks fail.
+     - `ctest` 1285/1285 Debug and 1293/1293 Release with video, camera and Ceres on (the three
+       100-camera scale cases run on their own), 1160/1160 with all three off.
+   - **40 sampled frames stays the default** (item 2). Its comment now carries the measurement.
+   - **10c's ranking stays** (item 7): the start that placed the most frames wins, then the lowest
+     cost per residual. Nothing measured argues against it, and a cost per residual compares fits of
+     the same frames only.
+
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
 failed reports as ordinary results, deterministic-debug execution, downsampling versus native
@@ -13596,13 +13615,14 @@ row here**. A row is cheap to delete and expensive to leave.
      - **Sub-slice 10e's measurements and findings for targetless calibration** (slice 4's *Sub-slice
        10e built*), each its own commit before sub-slice 11 exposes the node:
        - the held-out bound across lenses: in pixels, or whitened by the stated covariance;
-       - the default sampled frames: 40 recommended, revisited once the bound is decided;
-       - the default feature cap: 2048 recommended at 1080p;
        - the verdict missing a principal point several pixels off: resample frames as well as tracks,
          or compare the three starts' models;
        - board calibration's stability decided by one resample: a robust spread, decided with
-         registration's robust held-out statistic above;
-       - 10c's ranking of starts by frames placed first, which rendered footage never exercised.
+         registration's robust held-out statistic above.
+
+       The repo owner took every recommendation on 2026-10-19. Already built: a moving camera's
+       feature cap of 2048, 40 sampled frames kept, and 10c's ranking kept (slice 4's *After
+       sub-slice 10e*).
      - **The 100-camera registration scale case's wall-clock bound** (120 s) fails under `ctest -j8`
        beside the heavy end-to-end suites (154 to 181 s), while it takes 36 s alone: a larger bound,
        the bound only when run alone, or `PROCESSORS` on that case.

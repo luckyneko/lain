@@ -25,8 +25,16 @@ namespace lain::camera::feature
 	// reads. `minimumPairInliers` is at least 8 here, the fewest a fundamental matrix needs.
 	struct SequenceExtractionRequest : ExtractionSettings
 	{
-		// How many frames are sampled, spread evenly across the footage. Provisional: M9 slice 4's
-		// sub-slice 8 times matching every pair of 40, and sub-slice 10 measures the default.
+		// A moving camera keeps the strongest 2048 features of each frame, where the fixed rig keeps
+		// 8192 (its value, kept by the repo owner on 2026-10-09 until real footage is measured). Measured
+		// on rendered 1920 x 1080 footage whose texture the cap binds on (M9 slice 4, sub-slice 10e):
+		// calibration's accuracy is saturated by 1024 to 2048 features, while matching every pair of 40
+		// frames Exact takes 171 s at 2048 against 477 s at 4096 on four cores.
+		SequenceExtractionRequest() { featureCap = 2048; }
+
+		// How many frames are sampled, spread evenly across the footage. Measured in sub-slice 10e: at
+		// 12, 20 and 30 a calibration through the default lens was Exploratory on one seed of three, and
+		// only 40 was Ready on all three; accuracy barely improves past 20.
 		std::uint32_t samples = 40;
 		// A match is an inlier within this Sampson distance of its pair's fundamental matrix, in the
 		// pixels the backend searched, so it means the same under any scale policy (as the fixed rig's

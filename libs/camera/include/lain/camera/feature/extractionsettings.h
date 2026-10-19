@@ -17,7 +17,8 @@ namespace lain::camera::feature
 	{
 		// The scale each frame is searched at.
 		ScalePolicy scale = LongestSide{1920};
-		// The strongest features of each frame kept, each with all its orientations.
+		// The strongest features of each frame kept, each with all its orientations. A moving camera's
+		// request keeps 2048 instead (sequenceextraction.h, where it was measured).
 		std::uint32_t featureCap = 8192;
 		// How features are matched: between a camera's frames, and between cameras.
 		MatchRequest matching;
