@@ -1400,6 +1400,40 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-19 — M9 slice 4, sub-slice 11 planned: attempts and the flow nodes (nothing built yet)
+
+Sub-slice 11 is planned as **three commits, 11a to 11c**, in WORK.md's *Sub-slice 11 planned* under
+M9 slice 4. It adds a targetless calibration node, the attempts and their acceptance in the library,
+and the three small nodes that switch the gates and combine the reports. ADR-0016's fallback bullet
+is amended in place, and items 11 and 12 of the slice plan are amended where they disagree.
+
+- **Decided with the repo owner:**
+  - **The node goes ahead with the HD lens open.** It is Ready 1.45 to 3.56 px out, and an honest
+    feature covariance is left to the repo owner. The node's header points at `targetless.h`'s guidance.
+  - **The report pins on `nextAttempt` and `calibrationAttempts` are dynamic, as Merge's branches
+    are.** Every pin is Optional, and the order they were added is the priority order. Fixed `board`
+    and `targetless` pins were the alternative.
+  - **The three commits:**
+    - **11a**, with no change in behaviour, adds a `CalibrationNode` base, rebases `calibrateCamera` on
+      it, and lifts two helpers out of `registerCamerasTargetless`.
+    - **11b** adds `calibrateCameraTargetless`.
+    - **11c** adds `calibration::Method`, `Attempts` and `accepts`, plus `calibrationMethod`,
+      `nextAttempt` and `calibrationAttempts`, tested through a retained Evaluation.
+- **Found while planning:**
+  - **A new camera kind reaches flowview in the commit that adds it**, since the menu and the colours
+    read the kinds table. Flowview's catalog test holds an expectation per kind and requires a codec
+    for every param, so the `calibration::Method` codec and editor move from item 12 to 11c.
+  - **The two calibration stand-ins cannot share a translation unit.** `syntheticboard.h`'s
+    `testing::scene()` clashes with `syntheticscene.h`'s namespace `testing::scene`, and the two answer
+    different footage. The board one is renamed, and the scene's frames take their extent from its
+    model, so one footage serves both.
+  - **No stand-in case reaches a Ready targetless verdict yet**, so 11c probes for one first.
+  - **`calibrateCameraTargetless` asks `canRefine()`**, as registration does. `cameraModel` becomes
+    "any calibration".
+  - **`Attempts` derives the accepted one** rather than storing its position.
+  - **With no attempt made, `calibrationAttempts` produces nothing**, so the absence propagates.
+  - **An enum on a port describes as its type name**, so `meta::toString` gains an enum arm.
+
 ### Update 2026-10-19 — a refiner covariance does not see the HD lens's error (refused)
 
 The last remedy left for the HD lens (f = 1000 at 1280x720), Ready 1.45 to 3.56 px out after the

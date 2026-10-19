@@ -615,7 +615,12 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   and names the accepted one. Editing one method's setting re-runs only that method's node. One
   fallback node, which would carry every setting of both methods, and an attempt chain threaded
   through the method nodes, were the alternatives. The method modules still contain no fallback
-  policy.
+  policy. *(Amended 2026-10-19, sub-slice 11's plan: `nextAttempt` and `calibrationAttempts` take the
+  reports on pins added as Merge's branches are, every one Optional, the order added the priority
+  order, so neither node knows which method a pin carries. The attempts value derives the accepted one
+  rather than storing its position. With no attempt made, as when the footage is missing upstream,
+  `calibrationAttempts` produces nothing, so the absence propagates rather than reading as a failed
+  fallback.)*
 - **Acceptance is stated once**: an attempt is accepted when it succeeded and is Ready under its own
   method's profile, decided by one shared function that the gating node and the combining node both
   call. A looser acceptance is a looser profile, not a second setting on the fallback.

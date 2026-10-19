@@ -5546,7 +5546,10 @@ The 2026-08-16 review also left these requirements and decisions visible before 
            k1 = -0.25 at 1920 x 1080, sub-slice 8's strongest lens. Not owed; 10e pins it.)*
        - The operator guidance says footage whose every frame looks at one point does not say its
          focal length (9b's finding), so a camera circling an object should not keep it centred.
-   11. **Attempts, and the flow nodes.**
+   11. **Attempts, and the flow nodes.** *(Planned in detail 2026-10-19 as three commits, 11a to 11c;
+       see below. The report pins are dynamic, as Merge's branches are; `Attempts` derives the accepted
+       one rather than storing its position; and the `calibration::Method` codec and editor move here
+       from item 12, since flowview's codec census sees every new param.)*
        - `calibration::Method {Board, Targetless, BoardThenTargetless}`, `calibration::Attempts` (the
          reports in priority order, and the accepted one's position), and `calibration::accepts`.
        - `CalibrationNode`, the settings both method nodes share, as `RigRegistrationNode` is for
@@ -5563,8 +5566,13 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        - Sabotages: `nextAttempt` judging by a rule of its own; the attempts value leaving out a
          failed attempt.
    12. **flowview, the fallback example, and the cli vertical.**
-       - Codecs, enum editors, and a `calibration::Method` binder (`--method board-then-targetless`).
-       - The catalog and the colours.
+       - ~~Codecs, enum editors,~~ *(moved to 11c, 2026-10-19)* and a `calibration::Method` binder
+         (`--method board-then-targetless`). An unbound boundary pin is empty, which suppresses
+         `calibrationMethod`, so its default never applies through one: the binder and the example
+         must account for that (found while planning 11).
+       - ~~The catalog and the colours.~~ *(2026-10-19: both follow the kinds table already, and the
+         catalog test's expectation for each kind lands in the commit that adds it, 11b and 11c.)*
+         Whether the fallback nodes should look like control nodes rather than camera work.
        - `apps/flowview/examples/calibrate-fallback.json`, written by the example builder and marked
          as needing a camera backend.
        - The vertical through `runGraph` and the real binary, on rendered footage.
@@ -8663,6 +8671,192 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      (`localisationPerSize`, 0.034 of a feature's size) understates the smallest features most, as
      follow-up A had found at half scale. Resampling frames, which saw 1.5 to 3.2 mrad on this lens, was
      refused earlier for its noise.
+
+   **Sub-slice 11 planned (2026-10-19) as three commits, 11a to 11c.** The fallback becomes a graph:
+   a targetless calibration node, the attempts and their acceptance in the library, and the three small
+   nodes that switch the gates and combine the reports.
+
+   **Decided with the repo owner:**
+   - **Sub-slice 11 goes ahead with the HD lens open.** 10e's last open finding, the HD lens Ready 1.45
+     to 3.56 px out with an honest feature covariance left to the repo owner, no longer blocks exposing
+     the node. `calibrateCameraTargetless`'s header points at `targetless.h`'s guidance, which already
+     says a Ready model can be a few pixels out.
+   - **The report pins are dynamic, as Merge's branches are.**
+     - `nextAttempt` and `calibrationAttempts` start with no report pins, and the canvas "+" adds
+       them, named `in<N>`.
+     - Every pin is Optional, so a skipped attempt's empty report suppresses neither node.
+     - The order the pins were added is the priority order. Neither node knows which method a pin
+       carries.
+     - The alternative was fixed `board` and `targetless` pins: simpler to wire, but a third method
+       would change both nodes.
+   - **Three commits:**
+     - **11a**, with no change in behaviour, held by the existing tests: the shared base and helpers.
+     - **11b**, `calibrateCameraTargetless`.
+     - **11c**, the attempts and the fallback nodes.
+
+   **Found while planning:**
+   - **A new kind reaches flowview in the commit that adds it.**
+     - `scene.cpp` offers `availableCameraNodeKeys()`, and `canvasstyle.cpp` colours
+       `cameraNodeKeys()`, so a kind appears without wiring.
+     - `apps/flowview/test/test_catalog.cpp` holds an expectation for every camera kind, and a census
+       that every param has a codec, a `Default{}` input's param included.
+     - So each commit that adds a kind updates `test_catalog.cpp`, `test_registration.cpp` (its
+       `kAllKinds` and staged lists) and `test_targetlesskinds.cpp`.
+     - **The `calibration::Method` codec, and with it `editEnum<Method>`, move from item 12 to 11c.**
+   - **Availability:**
+     - `calibrateCameraTargetless` asks `refinement::canRefine()`, as registration does, not whether
+       some model is estimatable: the null refiner the staging tests register estimates nothing, and
+       the board row asks only whether its backends exist.
+     - `cameraModel` is offered with board calibration alone today. It becomes "any calibration" in
+       11b, so a build with only the targetless backends offers it.
+   - **The two stand-in worlds cannot share a translation unit.**
+     - `syntheticboard.h` declares a function `testing::scene()`, and `syntheticscene.h` a namespace
+       `testing::scene`. The board one becomes `boardScene()`: 31 uses in 4 files.
+     - They also answer different footage. The board stand-ins draw on 960 x 720 blank frames, and the
+       scene stand-ins on 640 x 480 frames whose first two pixels name the camera and the frame.
+     - `SceneSource`'s `spec()` and `decodeFrame` therefore take their extent from the scene's
+       `model()`, which is still 640 x 480 by default. `resetMoving(…, camera)` through the board
+       stand-in's true camera then gives one footage both worlds answer.
+     - The board scene's frame count must equal the footage's, since the detector poses each frame by
+       `boardPose(ordinal, frames)`.
+   - **No stand-in case reaches a Ready targetless verdict today**; the only verdict asserted is
+     Exploratory. Ready needs ten fitted frames and 0.6 coverage. 11c probes the frame and landmark
+     counts first, under an imported true model with Initial.
+   - **An output `compute` does not write keeps its previous value**, so `calibrationAttempts` clears
+     `accepted` explicitly, as `cameraModel` clears its model.
+   - **Zero attempts has more than one cause:** footage missing upstream, a missing board
+     specification under Board, or a suppressed `method`.
+   - **Owed to item 12:** an unbound boundary pin is empty, which suppresses `calibrationMethod`, so its
+     default never applies through one.
+   - **An enum on a port describes as its type** (`<lain::camera::calibration::Method>`), since
+     `meta::toString` has no enum arm. `method` is the first enum carried on a port.
+   - **Not a gap: the extraction's verification seed** stays at its default in both targetless nodes.
+     The request's seed governs each method's own geometry (`calibration/targetless.cpp`'s seed and
+     homography tests), and `registerCamerasTargetless` leaves its extraction's alone too.
+
+   **11a: the shared base, with no change in behaviour.**
+   - **`CalibrationNode`**, modelled on `RigRegistrationNode`:
+     - its protected constructor declares `footage : media::FrameSequence` as input 0;
+     - `declareRequest()` declares `imported : CameraModel` (Optional), then the params `model`,
+       `importedPolicy`, `fitnessProfile`, `heldOutFraction`, `resamples`, `seed` and `deterministic`,
+       each defaulted from `calibration::Request`;
+     - `request(evaluation)` applies the existing rules: `detail::decimal`, counts clamped at 0, and a
+       seed keeps its bits.
+   - **`calibrateCamera` is rebased.**
+     - Its inputs keep their positions: footage 0, board 1, then `declareRequest()`, so imported is 2.
+     - Its own params follow: `maximumViews` (board's alone, per `request.h`), `longestSide`,
+       `refineNative` and `minimumCorners`.
+     - So `maximumViews` moves from the fourth Inspector row to the eighth. Params are saved by name,
+       and no document, golden or test reads their order. The precedent is `pixelSigma` in slice 3's
+       sub-slice 10.
+   - **Two private helpers lifted from `RegisterCamerasTargetlessNode`**, so that each has two callers:
+     - `detail::extractionSettings` maps the five `feature::ExtractionSettings` fields both targetless
+       nodes take: `longestSide`, `featureCap`, `matchSearch`, `matchRatio` and `minimumPairInliers`.
+     - `detail::identityOf(footage)` is the footage's first source, or empty, as `rig()` spells inline.
+
+     `registerCamerasTargetless` and `rig()` are rebased on them.
+   - **Held by the existing tests:** `test_nodes.cpp`'s *calibrateCamera hands its settings to the
+     method*, and `test_registertargetless.cpp`.
+   - **Sabotage:** the base reading `heldOutFraction` without `detail::decimal` fails the settings case.
+
+   **11b: `calibrateCameraTargetless`.**
+   - **The node**, on `CalibrationNode`:
+     - inputs footage 0 and imported 1;
+     - its own params, each defaulted from `feature::SequenceExtractionRequest` and
+       `targetless::Settings`: `longestSide` (1920), `sampledFrames` (40), `featureCap` (2048),
+       `matchSearch`, `matchRatio`, `inlierPixels` (4.0, the extraction's Sampson threshold),
+       `minimumPairInliers`, `loss`, `lossScale` and `freePrincipalPoint` (true);
+     - output `report`.
+   - **What it runs:** `targetless::calibrate(CameraFootage{identityOf(footage), footage}, settings,
+     request)`. The request's execution policy governs the extraction, as the method records it.
+   - **Its header** names the method and points at `targetless.h`'s guidance: the HD lens, and footage
+     that keeps one point centred.
+   - **The kinds table:**
+     - `kCalibrateCameraTargetlessKey = "calibrateCameraTargetless"`;
+     - its capability, `canCalibrateTargetless`, is extraction, matching, geometry and `canRefine()`;
+     - `cameraModel` becomes `canCalibrate || canCalibrateTargetless`.
+   - **Tests:**
+     - **the settings handed to the method**, every param read back from the report's request and
+       `TargetlessRecord`. Both are recorded before any check, so a refusal for missing backends shows
+       them as well as a run does;
+     - **calibrating through the node is calling the method**, in the scene stand-ins' executable,
+       compared through `targetlesscalibrationtext.h`'s printer;
+     - **empty footage** is the method's refusal, in a report;
+     - **availability staging**: `test_targetlesskinds.cpp` offers `calibrateCameraTargetless` and
+       `cameraModel` with no board backend;
+     - **flowview's catalog**: `calibrateCameraTargetless` is offered with OpenCV and a refiner.
+   - **Sabotages:** `freePrincipalPoint` left unmapped fails the settings case. `cameraModel` left on
+     board's capability fails the targetless staging.
+
+   **11c: the attempts, and the fallback nodes.**
+   - **The library** (`calibration/attempts.h`):
+     - `enum class Method { Board, Targetless, BoardThenTargetless }`;
+     - `includes(selected, single)`, so the priority order is stated once;
+     - `accepts(report)`: succeeded, and Ready;
+     - `Attempts { reports; accepted(); toString(); }`.
+
+     **Deviation:** `accepted()` is derived, the first report in order that `accepts`, where item 11
+     said the value holds the accepted one's position. A stored position could disagree with the
+     reports it indexes.
+   - **The nodes:**
+     - **`calibrationMethod`**: input `method : calibration::Method`, `Default{BoardThenTargetless}`;
+       outputs `board : bool` and `targetless : bool`.
+     - **`nextAttempt`**, a `DynamicPortsNode` as Select is:
+       - a static input `included : bool`, `Default{true}`, so an unwired one reads naturally;
+       - dynamic report pins, Optional, accepted by type;
+       - output `run`: included, and no live report `accepts`.
+
+       Each pin is checked with `holds<Report>()` as Merge checks its branches, since a pin added
+       through `edit::addPort` answers to no filter. No pin is tagged, since the node has no payload
+       type.
+     - **`calibrationAttempts`**, a `DynamicPortsNode`:
+       - dynamic report pins, as on `nextAttempt`;
+       - outputs `attempts : calibration::Attempts`, the live reports in pin order, and `accepted :
+         calibration::Report`, cleared when none is accepted;
+       - with no live report both outputs are cleared, since no attempt is not an outcome and the
+         absence propagates (ADR-0007).
+     - All three are offered wherever any calibration can run.
+   - **Port types:** `CalibrationMethod` and `CalibrationAttempts`.
+   - **`meta::toString` gains an enum arm**, through `meta::enums::name`, so an enum on a port describes
+     by name. It has a test of its own in `libs/meta`.
+   - **flowview:** the `calibration::Method` codec, `editEnum<Method>`, and the catalog expectations
+     for the three kinds.
+   - **Tests:**
+     - **The library:** `accepts` over a Ready, an Exploratory and a failed report; `accepted()` is
+       the first in order; `includes` for all three methods; `toString`.
+     - **The graph**, in a new `test-camera-flow-fallback` executable holding both stand-in worlds and
+       the pass-through refiner (registries only grow). The production nodes are added directly, with
+       two `GateNode`s over `media::FrameSequence`:
+       - the footage goes through a Gate switched by `calibrationMethod.board` into `calibrateCamera`,
+         and through a Gate switched by `nextAttempt` into `calibrateCameraTargetless`;
+       - `nextAttempt`'s `included` comes from `calibrationMethod.targetless`, and its one pin is the
+         board report;
+       - both reports go into `calibrationAttempts`, whose `accepted` goes into `cameraModel`.
+
+       Runs share one retained Evaluation. The witnesses are the board estimator's call count, and the
+       targetless stand-ins' refinements asked and matcher calls. The cases:
+       - each of the three methods;
+       - the board attempt accepted, and the targetless node never computed;
+       - a board attempt that succeeded but is only Exploratory (too few views): not accepted, so the
+         targetless attempt runs;
+       - a failed board attempt, then a Ready targetless one: accepted at position 1, and `cameraModel`
+         gives the targetless model;
+       - both fail: `accepted` is empty, so `cameraModel` is suppressed, while the attempts hold both.
+         It is reached from a retained run that had accepted, so a stale `accepted` would show;
+       - an edited targetless setting re-runs the targetless node alone, the board's estimates
+         unchanged;
+       - footage suppressed upstream: no attempts, and both outputs empty.
+     - `test_registration.cpp`'s port-type checks gain the two types.
+   - **Sabotages:**
+     - `nextAttempt` judging by a succeeded status alone fails the Exploratory case;
+     - the attempts leaving out a failed attempt fails the both-fail case;
+     - `accepted` not cleared fails the both-fail case;
+     - `accepted()` taking the last accepting report fails the library case.
+
+   **Verification for each commit:** `ctest` in Debug and Release with video, camera and Ceres on, and
+   with all three off; warning-clean; format-check clean; each sabotage predicted, built so that it
+   compiles, and restored. A CI run follows 11c. gui-mode is not eyeballed in sub-slice 11; it is owed
+   after item 12.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -13824,7 +14018,8 @@ row here**. A row is cheap to delete and expensive to leave.
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
        sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b
        and 6c), 7 (as 7a, 7b and 7c), 8 and 9 (as 9a, 9b and 9c), with the fixes ahead of 5 and of
-       9c, and 10 (as 10a to 10e). The separate
+       9c, and 10 (as 10a to 10e). Sub-slice 11 is planned (2026-10-19) as three commits, 11a to
+       11c, and item 12 follows it. The separate
        feature-extraction node slice 3 deferred to it stays deferred, with its trigger restated
        (slice 4's plan).
   2. **Owed by the repo owner.**
@@ -13860,6 +14055,8 @@ row here**. A row is cheap to delete and expensive to leave.
          since both inherit the features' stated noise, which understates SIFT's error 1.5 to 3.5 times
          on this footage. Left for the repo owner: an honest feature covariance (the localisation model
          understates the smallest features most), which any precision measure would then inherit.
+         The repo owner decided on 2026-10-19 that sub-slice 11 exposes the node with this open,
+         stated in `calibrateCameraTargetless`'s header.
 
        The repo owner took every recommendation on 2026-10-19. Already built: a moving camera's
        feature cap of 2048, 40 sampled frames kept, 10c's ranking kept, a robust spread for a
