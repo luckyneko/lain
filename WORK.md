@@ -8509,6 +8509,44 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        board registration 17.4 s, the free model 8.0 s and the landmarks 4.2 s.
      - Nothing else moved: the same 49 cases are discovered (45 and 4), and Debug, where the scale
        cases skip, is unchanged.
+   - **The principal-point blind spot stays open: resampling frames was measured and refused** (item 4).
+     The recommendation taken was to resample frames as well as landmarks, since a frame's observations
+     share its pose's error. It was built (each resample draws the fitted frames with replacement, a
+     frame drawn k times contributing each observation k times, from an engine of its own) and measured
+     before anything was committed:
+     - **It does not see the wrong minimum.** On the both-methods footage the three seeds whose model is
+       2.7 to 4.4 px out gave a principal-point variation of 4.49, 1.80 and 1.60 mrad against Ready's 2,
+       and the right ones 0.06 to 0.63: one of three flagged. On one of them, across ten draws (five
+       seeds at 20 and at 60 resamples) it was 0.62 to 1.80, never past the bound; a right seed's was
+       0.46 to 0.75. A prototype with another draw seed had flagged two of the three, which was luck.
+     - **It is noisy enough to change verdicts on the same footage.** The HD lens's model (2.33 px out)
+       gave 1.52 to 3.21 mrad across five draws at 20 resamples and 1.70 to 3.04 at 60, Exploratory on
+       two draws of five either way; the normal lens's right model (0.77 px) gave 0.92 to 2.38 at 20, and
+       was pushed out of Ready on one draw. Sixty resamples cost 2.2 times twenty.
+     - **Comparing the three starts does not see it either**, the other option listed. On the three
+       wrong seeds both losing starts ended in far worse minima (a cost per residual of 6.8 to 13 against
+       about 2, focal lengths 9% or more out), which say nothing about a winner a few pixels out. Where
+       two starts did agree, it did not mean right: the HD lens's two longer starts reached its 2.33 px
+       model within 0.2 px, the normal lens's its 0.77 px model within 0.1 px, while a right board seed's
+       long start ended 3.3 px from its winner.
+     - **What does differ is the winner's cost per residual**: 1.97 to 2.07 on the three wrong seeds, 1.68
+       on the right one. That points at wrong tracks from the printed pattern's repeated corners biasing
+       the fit, which the robust loss does not discount, rather than at a flat valley the bootstrap
+       fails to explore. So the remedies left are in the evidence (an outlier pass, or tracks the board
+       does not alias) or a precision the refiner states (Ceres' covariance of the principal point,
+       with its correlation to the poses), each a decision for the repo owner.
+     - **Found by the first CI run after the robust spread: macOS arm64 shows the blind spot.** OpenCV's
+       SIFT finds other features there (board calibration's numbers are bit-identical across platforms,
+       the targetless method's are not), and on the same footage the targetless model of the
+       both-methods case is Ready at 3.05 px on average (it had been Exploratory on its principal point's
+       variation as a standard deviation, 2.22 mrad), the strongly distorted lens Ready at 2.70 px, and
+       the HD lens Exploratory on 2.38 mrad. Linux gives 0.30, 0.90 and Ready. Windows' features differ
+       too: the both-methods case's targetless model is 1.23 px out there, the two models 1.80 px apart.
+     - **So the end-to-end cases pin what holds on both platforms.** The board half is unchanged. The
+       targetless half of the both-methods case is bounded by the printed board's minimum (5 px on
+       average, 0.3% in focal length), since which seeds land in it depends on the platform's features;
+       the distorted lens by 3.5 px; the HD lens may be Exploratory, but only on its principal point's
+       variation. Each case records both platforms' numbers.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -13695,8 +13733,13 @@ row here**. A row is cheap to delete and expensive to leave.
        camera relative to the folder it was given.
      - **Sub-slice 10e's measurements and findings for targetless calibration** (slice 4's *Sub-slice
        10e built*), each its own commit before sub-slice 11 exposes the node:
-       - the verdict missing a principal point several pixels off: resample frames as well as tracks,
-         or compare the three starts' models.
+       - the verdict missing a principal point several pixels off. Resampling frames and comparing the
+         three starts were both measured and refused on 2026-10-19 (slice 4's *After sub-slice 10e*):
+         neither separates the wrong minimum, and resampling frames changed verdicts with the draw seed.
+         The winner's cost per residual does differ (1.97 to 2.07 against 1.68), so what is left is an
+         outlier pass, tracks the printed board does not alias, or a covariance from the refiner. macOS
+         arm64 shows the blind spot in CI (Ready at 2.7 and 3.05 px), so the end-to-end cases are bounded
+         by it.
 
        The repo owner took every recommendation on 2026-10-19. Already built: a moving camera's
        feature cap of 2048, 40 sampled frames kept, 10c's ranking kept, a robust spread for a

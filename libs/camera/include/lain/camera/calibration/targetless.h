@@ -23,6 +23,10 @@
 // - a wide field of view: a narrow lens (a 32 degree field) leaves its focal length poorly said;
 // - no repeated pattern fills the frame. A printed calibration board in close views pulled the
 //   principal point 2 to 4 px off on half the seeds tried, and the verdict did not see it.
+//
+// A Ready model can still be a few pixels out: the verdict does not see a principal point error the
+// reconstruction absorbs. Which footage lands there depends on the features a backend finds: on macOS
+// arm64's OpenCV, footage Ready within a pixel on Linux x86-64 was Ready 2.7 to 3 px out.
 namespace lain::camera::calibration::targetless
 {
 	// Calibrate a camera from its footage: feature::extractSequenceTracks over `camera` as the

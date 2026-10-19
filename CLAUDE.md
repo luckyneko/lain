@@ -1400,6 +1400,36 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-19 — resampling frames does not see the principal-point blind spot (refused)
+
+Item 4 of 10e's recommendations, measured and **not built**. The recommendation taken was to resample
+frames as well as landmarks, so the stability evidence would see a principal point a few pixels off
+that the held-out frames' poses absorb. It was built, measured on rendered footage, and reverted. What
+lands instead is test code and documentation: the end-to-end cases now pin what holds on macOS
+arm64 too, where CI showed the blind spot. The re-pinned cases pass in Release on Linux; the library
+is unchanged. Full notes in WORK.md's *After sub-slice 10e* under M9 slice 4.
+
+- **It does not see the wrong minimum.** On the both-methods footage it flagged one of the three seeds
+  whose model is 2.7 to 4.4 px out. Across ten draws, one of those seeds measured 0.62 to 1.80 mrad,
+  never past Ready's 2. A prototype with another draw seed had flagged two of the three, by luck.
+- **It changed verdicts with the draw seed.** The HD lens was Exploratory on two of five draws at 20
+  resamples and at 60. The normal lens's right model was pushed out of Ready on one draw of five.
+- **Comparing the three starts does not see it either**: the losing starts end in far worse minima, and
+  two starts agreeing did not mean right.
+- **What differs is the winner's cost per residual**: 1.97 to 2.07 on the wrong seeds against 1.68 on a
+  right one. That points at wrong tracks from the printed board's repeated corners. What is left for
+  the repo owner: an outlier pass, tracks the board does not alias, or a covariance from the refiner.
+- **macOS arm64 shows the blind spot** (CI run of `217deac`). OpenCV's SIFT finds other features there,
+  while board calibration is bit-identical across platforms. The both-methods case's targetless model
+  is Ready at 3.05 px and the distorted lens Ready at 2.70 px, where Linux gives 0.30 and 0.90; the HD
+  lens is Exploratory on 2.38 mrad. Windows' features differ too (1.23 px on the first). The targetless bounds are now that minimum's (5 px and 3.5 px), the
+  HD lens may be Exploratory on its principal point alone, and each case records both platforms.
+  `targetless.h`'s guidance says a Ready model can still be a few pixels out.
+- **The same CI run proved the earlier fixes:** Linux Release, Debug and video-off, clang-format and
+  the subproject smoke are green, Windows builds, and the targetless scale case took 38.8 s on macOS.
+  Windows' other failure was two flowview tests searching a report for `rig/cam` where Windows names
+  the camera `rig\cam0`, fixed in its own commit ahead of this one.
+
 ### Update 2026-10-19 — the scale cases run with nothing beside them
 
 The fourth of the commits that take 10e's recommendations (item 8). The 100-camera targetless
