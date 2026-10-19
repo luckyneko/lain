@@ -13,7 +13,7 @@ namespace lain::camera::opencv
 	{
 		cv::Matx33d r;
 		cv::Rodrigues(rotation, r);
-		math::Mat3d m; // GLM is column-major: m[column][row]
+		math::Mat3d m(0.0); // GLM is column-major: m[column][row]
 		for (int row = 0; row < 3; ++row)
 		{
 			for (int col = 0; col < 3; ++col)

@@ -37,7 +37,7 @@ namespace lain::camera::opencv
 
 	static math::RigidTransformd transformOf(const cv::Matx33d& r, const cv::Vec3d& t)
 	{
-		math::Mat3d m; // GLM is column-major: m[column][row]
+		math::Mat3d m(0.0); // GLM is column-major: m[column][row]
 		for (int row = 0; row < 3; ++row)
 		{
 			for (int col = 0; col < 3; ++col)
@@ -196,7 +196,7 @@ namespace lain::camera::opencv
 			// Which of them explains the pairs is lain's to measure.
 			for (int block = 0; block + 3 <= solutions.rows && solutions.cols == 3; block += 3)
 			{
-				math::Mat3d f; // GLM is column-major: f[column][row]
+				math::Mat3d f(0.0); // GLM is column-major: f[column][row]
 				for (int row = 0; row < 3; ++row)
 				{
 					for (int col = 0; col < 3; ++col)
@@ -231,7 +231,7 @@ namespace lain::camera::opencv
 			if (h.rows != 3 || h.cols != 3)
 				return {};
 			h.convertTo(h, CV_64F);
-			math::Mat3d out; // GLM is column-major: out[column][row]; [b; 1] ~ H [a; 1], the seam's convention
+			math::Mat3d out(0.0); // GLM is column-major: out[column][row]; [b; 1] ~ H [a; 1], the seam's convention
 			for (int row = 0; row < 3; ++row)
 			{
 				for (int col = 0; col < 3; ++col)
