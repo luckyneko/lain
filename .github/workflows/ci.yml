@@ -101,6 +101,7 @@ jobs:
             video: 'ON'
             camera: 'ON'
             linux_deps: true
+            jobs: 4
             flowview: build/apps/flowview/flowview
 
           # Every optional dependency off, on the fastest runner.
@@ -110,6 +111,7 @@ jobs:
             video: 'OFF'
             camera: 'OFF'
             linux_deps: true
+            jobs: 4
             flowview: build/apps/flowview/flowview
 
           - name: Linux Debug
@@ -118,6 +120,7 @@ jobs:
             video: 'ON'
             camera: 'ON'
             linux_deps: true
+            jobs: 4
             flowview: build/apps/flowview/flowview
 
           - name: macOS Release
@@ -126,6 +129,7 @@ jobs:
             video: 'ON'
             camera: 'ON'
             linux_deps: false
+            jobs: 3
             flowview: build/apps/flowview/flowview
 
           # Visual Studio's generator is multi-config, so --config / -C carry the build type here
@@ -137,6 +141,7 @@ jobs:
             video: 'ON'
             camera: 'ON'
             linux_deps: false
+            jobs: 4
             flowview: build/apps/flowview/Release/flowview.exe
 
     steps:
@@ -182,8 +187,13 @@ jobs:
           -DLAIN_CAMERA_OPENCV=${{ matrix.camera }}
           -DLAIN_CAMERA_CERES=${{ matrix.camera }}
 
+      # A job count, never a bare --parallel: under the Makefile generator a bare one is `make -j`
+      # with no limit, and on macOS's runner (3 cores, 7 GB) as many compilers as the graph allows
+      # thrash its memory. Its Build step took 62 minutes on 2026-10-05 against 6 on Linux, and once
+      # Ceres' Eigen-heavy sources joined the build it passed the 90-minute timeout (2026-10-19). Each
+      # leg's `jobs` is its runner's core count.
       - name: Build
-        run: cmake --build build --parallel --config ${{ matrix.build_type }}
+        run: cmake --build build --parallel ${{ matrix.jobs }} --config ${{ matrix.build_type }}
 
       # PARALLEL on purpose, since 2026-09-10. It used to be serial because twenty test files each
       # wrote into the shared fs::temp_directory_path() and -j made them collide; they now take
@@ -261,4 +271,4 @@ jobs:
           -DLAIN_SOURCE_DIR=${{ github.workspace }}
 
       - name: Build parent project
-        run: cmake --build build-subproject --parallel
+        run: cmake --build build-subproject --parallel 4
