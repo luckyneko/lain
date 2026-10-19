@@ -8548,6 +8548,39 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        the distorted lens by 3.5 px; the HD lens may be Exploratory, but only on its principal point's
        variation. Each case records both platforms' numbers.
 
+   **feature/M9's first CI runs (2026-10-19).** The branch had never been built by CI (the Outstanding
+   index's *Verification owed*), so slices 2 to 4, and the 10e recommendations, were first built on
+   macOS and Windows here, through `workflow_dispatch`. Five runs; the first four found eight things,
+   each answered in its own commit:
+   - **Run 33 (`321b732`).** Linux green on all three legs. **Windows failed to build on MSVC's C4456**
+     (a local hiding another, `k` in `extraction.cpp`), which GCC reports only under `-Wshadow`; a
+     `-Wshadow` sweep of the camera and flowview sources found two more. **macOS was cancelled at the
+     leg's 90-minute timeout, still in Build**: `cmake --build --parallel` with no count is `make -j`
+     with no limit, which thrashed the runner (3 cores, 7 GB) on Ceres' Eigen-heavy sources. Every
+     build step now names its runner's core count; macOS Build went from over 92 minutes to 7.
+   - **Run 34 (`9cac016`).** **Windows failed to build on C4701** (possibly uninitialised): GLM's
+     default-constructed matrix is uninitialised, and four matrices filled in a loop in the OpenCV
+     plugin now start at zero. **macOS failed the targetless registration golden** on one word: the
+     worst camera, chosen among three equal variations by rounding noise. The printer now writes `-`
+     when the worst variation prints as zero. **Linux Release failed the 100-camera targetless scale
+     case's wall-clock bound** (139 s against 120) beside the end-to-end suites; the scale cases now run
+     serially (item 8 above). **macOS failed two end-to-end calibration cases** (below).
+   - **Run 35 (`217deac`).** Linux, clang-format and the subproject smoke green; Windows built.
+     **Windows failed two flowview verticals** searching a report for `rig/cam` where Windows names
+     the camera `rig\cam0`. **Windows and macOS failed end-to-end calibration cases** on numbers: their
+     SIFT finds other features, and the targetless method lands in the principal-point blind spot on
+     macOS (item 4 above). The cases now pin what holds on every platform.
+   - **Run 36 (`2a0e62b`).** Six of seven legs green: Linux Release 1296/1296 (the targetless scale case
+     40.7 s, serial), Linux Debug 1288/1288, video-off 1163/1163, macOS 1296/1296, clang-format and the
+     subproject smoke. **Windows failed one assertion**: the stand-in detector returned at once, so the
+     caller, which takes part in the pool, ran all 40 frames before a worker woke, and "the resampling
+     draws are seeded" saw one thread. The scene gains an opt-in detection time (2 ms in that case
+     alone, as the flow scheduler's several-threads case sleeps), and 20 Release sweeps pass here.
+   - **Run 37 (`2fe9abc`): green on all seven jobs.** Linux Release 1296/1296 (the targetless scale
+     case 40.6 s), Linux Debug 1288/1288, video-off 1163/1163, macOS 1296/1296, Windows 1296/1296,
+     clang-format and the subproject smoke; every ctest leg also passed its flowview binary and
+     example-document smokes.
+
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
 failed reports as ordinary results, deterministic-debug execution, downsampling versus native
@@ -13754,11 +13787,6 @@ row here**. A row is cheap to delete and expensive to leave.
   3. **Verification owed.**
      - **gui-mode eyeballs** of `registerCameras` and `registerCamerasTargetless`, the `matchSearch`
        combo included, on a Metal session.
-     - **A CI run of `feature/M9`.** `.github/workflows/ci.yml` runs on pushes to `main`, `master`
-       and `develop`, on pull requests and on `workflow_dispatch`, so no push to this branch has run
-       it (checked 2026-10-12: no run on the branch). develop's last run is at `66e6dff`, just before
-       slice 2's plan, so the 21 commits of slices 2 and 3 have never been built by CI, and never on
-       macOS or Windows. A `workflow_dispatch` on the branch, or a pull request, would run it.
   4. **Waiting on real footage**, the triggers sub-slices 7 to 9 carried forward (sub-slice 9's
      notes):
      - rows per descriptor on real footage, which also settles the feature cap above;

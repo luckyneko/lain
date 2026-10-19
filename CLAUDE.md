@@ -1400,6 +1400,31 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-19 — feature/M9 is green on CI, on every platform
+
+The branch had never been built by CI, so slices 2 to 4 and the 10e recommendations were first built on
+macOS and Windows here. Five `workflow_dispatch` runs; the first four found eight things, each answered
+in its own commit, and **run 37 (`2fe9abc`) is green on all seven jobs**: Linux Release, Debug and
+video-off, macOS, Windows, clang-format and the subproject smoke. The Outstanding index's owed CI run is
+retired. Full notes in WORK.md's *feature/M9's first CI runs*, under M9 slice 4.
+
+- **MSVC sees what GCC does not without flags lain does not set**: C4456 (a local hiding another; GCC
+  only under `-Wshadow`) and C4701 (possibly uninitialised: GLM's default-constructed matrix is
+  uninitialised, so a matrix filled in a loop now starts at zero).
+- **`cmake --build --parallel` with no count is `make -j` with no limit**, which thrashed macOS's runner
+  past its 90-minute timeout. Every build step now names its runner's core count; macOS builds in 7.
+- **A golden printed a worst camera chosen among equal variations by rounding noise**, and macOS chose
+  another. The printer now writes `-` when the worst variation prints as zero.
+- **The 100-camera scale case missed its wall-clock bound beside the end-to-end suites**; the scale
+  cases now run serially (item 8).
+- **OpenCV's SIFT finds other features on macOS and Windows** while board calibration is bit-identical
+  everywhere, so the targetless end-to-end numbers differ by platform, and macOS lands in the
+  principal-point blind spot. The cases now pin what holds on all three (item 4's entry).
+- **Two tests assumed a platform:** flowview's rig verticals searched for `rig/cam`, which Windows names
+  `rig\cam0`; and a case asking where detection ran used a stand-in that returned at once, so on
+  Windows the participating caller ran all 40 frames before a worker woke. It now opts into a 2 ms
+  detection, as the flow scheduler's several-threads case sleeps.
+
 ### Update 2026-10-19 — resampling frames does not see the principal-point blind spot (refused)
 
 Item 4 of 10e's recommendations, measured and **not built**. The recommendation taken was to resample
