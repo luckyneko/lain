@@ -1400,6 +1400,40 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-19 — targetless calibration adjusts again without what its result does not explain
+
+Item 4 of 10e's recommendations, the principal-point blind spot, answered for the printed board's
+footage. After a start's bundle adjustment, a second runs from its result without the observations
+whose whitened residual exceeds the loss scale, started through the routine every bootstrap resample
+uses. `ctest` **1292/1292** Debug and **1300/1300** Release with video, camera and Ceres on, **1166/1166**
+with all three off (+4, +4, +3); warning-clean, format-check clean. Full notes in WORK.md's *After
+sub-slice 10e* under M9 slice 4.
+
+- **On the both-methods footage every seed is now within 0.6 px**, where three of six were Ready 2.7 to
+  4.4 px out (seed 5: 4.43 px to 0.55, its principal point 4.2 px off to 0.53). The plain scene
+  through two lenses improved on every seed too. **Not answered: the HD lens**, which sees no board,
+  is Ready 1.45 to 3.56 px out over three seeds (1.5 to 4.7 before). The strongly distorted 1080p
+  lens moved the other way, 0.90 to 1.25 px, still Ready.
+- **A start is ranked by its first adjustment.** A second keeps whatever agrees with its own start's
+  minimum: repeated three times, the long start shed 44% of its observations and fitted the rest at
+  0.321 per residual against the right start's 0.340, and would have won.
+- **One pass, at the loss scale (3).** That is the outlier definition every method shares, so no new
+  number; twice the scale also removed the minimum. Further rounds moved the right minimum by about a
+  tenth of a pixel either way. When the result explains every observation it fitted, there is no
+  second, so a clean fit is unchanged.
+- **Reported:** `TargetlessDiagnostics::pruned` counts what the second left out, each named an outlier
+  with its residual under the first's result; one the first's start left out for cheirality is still
+  named. The refinement summary is the second's.
+- **The stand-in refiner hands back its start, which is no minimum**, so four stand-in cases about
+  something else run under an infinite loss scale; three new cases pin the pass. The Ceres
+  moving-content case's held-out frames now see none of the moving tracks (0.405 mrad, where 18
+  observations were beyond the inlier angle and the rest measured 0.846).
+- **End to end:** a new case pins seed 5, and the both-methods case's targetless bounds tighten from
+  macOS's 3.05 px minimum to 1.5 px on average. Whether macOS's features land within them is the next
+  CI run's to say.
+- **Four sabotages, all caught as predicted**, including no second adjustment: seed 5 back at 4.43 px,
+  still Ready.
+
 ### Update 2026-10-19 — feature/M9 is green on CI, on every platform
 
 The branch had never been built by CI, so slices 2 to 4 and the 10e recommendations were first built on

@@ -533,6 +533,11 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   only then by cost. A cost per residual compares fits of the same footage only: over a stand-in scene
   with eight wrong matches, a start twice the true focal length reconstructed three frames of nineteen
   at 0.45 per residual, against the right start's 0.87 over seventeen, and cost alone chose it.)*
+  *(Amended 2026-10-19, with the second adjustment below: a start is ranked by its FIRST adjustment.
+  The second leaves out whatever its own start's result does not explain, so from a wrong minimum it
+  keeps what agrees with that minimum and fits it about as closely: repeated three times on rendered
+  board footage, the long start kept 56% of the observations at 0.32 per residual against the right
+  start's 0.34, and would have won.)*
 - **The principal point is held by default**, at the image centre or at an imported model's, because
   self-calibration conditions it poorly. A setting of the method frees it. *(Reversed 2026-10-16,
   decided with the repo owner while planning sub-slice 10: it is FREED by default. On rendered footage
@@ -546,7 +551,19 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   close views 2 to 4 px off on three seeds of six against 0.4 to 0.75 mrad. Each resample starts from
   the result, so the bootstrap measures the spread around a minimum and not whether it is the right
   one, and the held-out frames' poses still absorb the offset. Recorded for the repo owner in
-  WORK.md's sub-slice 10e note, with the options.)* A **held parameter** is not
+  WORK.md's sub-slice 10e note, with the options.)* *(Amended 2026-10-19: the board's case is
+  answered in the evidence, by a **second bundle adjustment**. Resampling frames and comparing the
+  three starts were measured and refused first, since neither saw the wrong minimum; what did differ
+  was the winner's cost per residual, 1.97 to 2.07 against a right seed's 1.68. So the adjustment runs
+  again from its result without the observations whose whitened residual exceeds the loss scale, the
+  definition of an outlier every method shares, started through the same routine as a bootstrap
+  resample. On the six board seeds the model came back 0.21 to 0.55 px out on average where it had been
+  0.30 to 4.43, and on the plain scene through two lenses it improved on every seed; through the
+  strongly distorted 1080p lens it moved the other way, 0.90 to 1.25 px, still Ready. It does not
+  answer the HD lens, which sees no board: 1.45 to 3.56 px over three seeds, Ready, against 1.5 to 4.7
+  before. One pass rather than iterating to convergence: further rounds moved the right minimum by
+  about a tenth of a pixel either way, and each round lets a wrong start shed more of what disagrees
+  with it. WORK.md's slice 4, *After sub-slice 10e*, holds the numbers.)* A **held parameter** is not
   estimated, so it has no resampled variation. The report says it was held, and the fitness criterion
   on it does not apply; its variation is never recorded as zero. *(Scoped 2026-10-13, while planning
   sub-slice 2:)* a held parameter is part of an estimate. A model held whole under HoldAndValidate

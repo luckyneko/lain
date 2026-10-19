@@ -109,7 +109,8 @@ namespace lain::camera::testing::targetlesstext
 		out << "seed" << positions(t.seed) << " " << number(t.seedAngle) << " " << t.seedInliers << " " << t.seedAtInfinity
 			<< " " << t.seedBelowFloor << "\n";
 		out << "placement" << positions(t.placement) << "\nunplaced" << positions(t.unplaced) << "\n";
-		out << "behind " << t.behind << " landmarks " << t.landmarks << " untriangulated " << t.untriangulated << "\n";
+		out << "behind " << t.behind << " landmarks " << t.landmarks << " untriangulated " << t.untriangulated << " pruned "
+			<< t.pruned << "\n";
 		if (t.refinement)
 			out << "refinement " << name(t.refinement->status) << " " << t.refinement->iterations << " "
 				<< number(t.refinement->initialCost) << " " << number(t.refinement->finalCost) << " " << t.refinement->residuals

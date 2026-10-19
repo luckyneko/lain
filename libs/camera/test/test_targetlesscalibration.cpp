@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -84,6 +85,18 @@ namespace
 		Request request;
 		request.model = DistortionModel::None;
 		return request;
+	}
+
+	// Settings under which no residual is an outlier, so there is no second adjustment. The refiner
+	// stand-in hands back its start unrefined, which is no minimum: from the sweep's start at 516.41,
+	// 3% from the truth, much of the evidence sits beyond the default loss scale, and a second
+	// adjustment without it can leave frames seeing too few landmarks. A case about something else,
+	// whose frames that would move, asks for these.
+	targetless::Settings unpruned()
+	{
+		targetless::Settings settings;
+		settings.loss.scale = std::numeric_limits<double>::infinity();
+		return settings;
 	}
 
 	Report run(const feature::TrackSet& tracks, const Request& request = pinholeRequest(), const targetless::Settings& settings = {})
@@ -235,6 +248,171 @@ TEST_CASE("the start whose adjustment ends with the lowest cost per residual win
 	CHECK(targetlessOf(run(set)).swept == std::optional<std::uint32_t>{0});
 }
 
+TEST_CASE("a start is ranked by its first adjustment, not by the one without what that did not explain",
+		  "[camera][calibration][targetless]")
+{
+	// One observation moved 25 px, which no start explains, so every start adjusts twice. The refiner
+	// stand-in reports a cost that favours the shortest start while the moved observation is in the
+	// problem, and the longest once it is not: a second adjustment fits what its start's first left in,
+	// and from a wrong start that is whatever agrees with it.
+	setUp();
+	scene::resetSliding(12, 120, 1, pinhole(500));
+	feature::TrackSet set = scene::sequenceTrackSetOf();
+	feature::SceneObservation& moved = set.tracks[7].observations[1];
+	REQUIRE((moved.view != 2 && moved.view != 7)); // not a held-out frame's
+	moved.pixel.x += 25;
+	const math::Vec2d wrong = moved.pixel;
+	{
+		std::lock_guard<std::mutex> lock(standin::refinerScript().mutex);
+		standin::refinerScript().finalCost = [wrong](const refinement::Problem& problem)
+		{
+			const bool first = std::any_of(problem.landmarkObservations.begin(), problem.landmarkObservations.end(),
+										   [&](const refinement::LandmarkObservation& o)
+										   { return o.pixel == wrong; });
+			const double best = first ? 250.0 : 1000.0;
+			return std::abs(std::log(problem.models.front().intrinsics().fx / best)) * double(problem.landmarkObservations.size());
+		};
+	}
+	Request request = pinholeRequest();
+	request.resamples = 0;
+	const Report report = run(set, request);
+	INFO(report.toString());
+	REQUIRE(report.status == CalibrationStatus::Succeeded);
+	const TargetlessDiagnostics& t = targetlessOf(report);
+	REQUIRE(t.sweep.size() == 3);
+	for (std::uint32_t i = 0; i < 3; ++i)
+	{
+		CAPTURE(i);
+		REQUIRE(std::holds_alternative<double>(t.sweep[i].outcome));
+		CHECK(std::abs(std::get<double>(t.sweep[i].outcome) - std::abs(std::log(t.sweep[i].focalLength / 250.0))) < 1e-12);
+	}
+	CHECK(asked().size() == 6); // each start's two adjustments
+	CHECK(t.swept == std::optional<std::uint32_t>{0});
+	CHECK(t.pruned > 0);
+}
+
+TEST_CASE("what the adjustment's result does not explain is named, and left out of a second adjustment from it",
+		  "[camera][calibration][targetless]")
+{
+	// The truth imported as the start, so the refiner stand-in's result (its start) explains every exact
+	// observation but the one moved 25 px, and those whose landmark it pulled.
+	setUp();
+	feature::TrackSet set = scene::sequenceTrackSetOf();
+	feature::SceneObservation& moved = set.tracks[7].observations[1];
+	REQUIRE((moved.view != 2 && moved.view != 7)); // not a held-out frame's
+	moved.pixel.x += 25;
+	Request request = pinholeRequest();
+	request.imported = pinhole(500);
+	request.importedPolicy = ImportedModelPolicy::Initial;
+	request.resamples = 0;
+
+	SECTION("named, left out, and adjusted without")
+	{
+		const Report report = run(set, request);
+		INFO(report.toString());
+		REQUIRE(report.status == CalibrationStatus::Succeeded);
+		const TargetlessDiagnostics& t = targetlessOf(report);
+		const std::vector<standin::RefinerScript::Asked> calls = asked();
+		REQUIRE(calls.size() == 2);
+
+		// The second problem is the first's without the pruned observations, and nothing else.
+		const std::multiset<std::pair<double, double>> first = [&]
+		{
+			std::multiset<std::pair<double, double>> out;
+			for (const math::Vec2d& p : calls[0].pixels)
+				out.insert({p.x, p.y});
+			return out;
+		}();
+		std::multiset<std::pair<double, double>> left = first;
+		for (const math::Vec2d& p : calls[1].pixels)
+		{
+			const auto at = left.find({p.x, p.y});
+			REQUIRE(at != left.end());
+			left.erase(at);
+		}
+		CHECK(left.size() == t.pruned);
+		CHECK(left.count({moved.pixel.x, moved.pixel.y}) == 1);
+		CHECK(first.count({moved.pixel.x, moved.pixel.y}) == 1);
+
+		// The moved observation is named, with its residual under the first result; the model and the
+		// summary are the second's.
+		const auto named = std::find_if(t.outliers.begin(), t.outliers.end(), [&](const Outlier& o)
+										{ return o.track == set.tracks[7].identity && o.frame == moved.view; });
+		REQUIRE(named != t.outliers.end());
+		CHECK(std::isfinite(named->rmsWhitened));
+		CHECK(named->rmsWhitened > targetless::Settings{}.loss.scale);
+		CHECK(t.outliers.size() >= t.pruned);
+		REQUIRE(t.refinement.has_value());
+		CHECK(t.refinement->residuals == calls[1].landmarkObservations);
+		CHECK(report.diagnostics.fitResiduals <= calls[1].landmarkObservations);
+	}
+	SECTION("with nothing beyond the loss scale, there is no second adjustment")
+	{
+		const Report report = run(set, request, unpruned());
+		INFO(report.toString());
+		REQUIRE(report.status == CalibrationStatus::Succeeded);
+		CHECK(asked().size() == 1);
+		CHECK(targetlessOf(report).pruned == 0);
+		CHECK(targetlessOf(report).outliers.empty());
+	}
+}
+
+TEST_CASE("an observation the start left out is still named when a second adjustment runs",
+		  "[camera][calibration][targetless]")
+{
+	// Frame 5 stands inside the scene facing away from the others, so it sees only the landmarks beyond
+	// it; a wrong match gives it one behind it, which the start leaves out. Another observation moved
+	// 25 px, which the result does not explain, makes a second adjustment.
+	setUp();
+	scene::scene().path[5] = scene::lookingAt(math::Vec3d{0.05, -0.1, -0.2}, math::Vec3d{0.0, 0.0, 3.0});
+	feature::TrackSet set = scene::sequenceTrackSetOf();
+	feature::Track* wrong = nullptr;
+	for (feature::Track& track : set.tracks)
+	{
+		const std::size_t l = std::stoul(track.identity.substr(5));
+		const math::Vec3d inFive = scene::scene().path[5].inverse().apply(scene::scene().landmarks[l].point);
+		const auto seenBy = [&](std::uint32_t view)
+		{
+			return std::any_of(track.observations.begin(), track.observations.end(),
+							   [&](const feature::SceneObservation& o)
+							   { return o.view == view; });
+		};
+		if (inFive.z < 0 && !seenBy(5) && track.observations.size() >= 4)
+		{
+			wrong = &track;
+			break;
+		}
+	}
+	REQUIRE(wrong != nullptr);
+	feature::SceneObservation behind = wrong->observations.front();
+	behind.view = 5;
+	behind.pixel = math::Vec2d{320.0, 240.0};
+	wrong->observations.push_back(behind);
+	std::sort(wrong->observations.begin(), wrong->observations.end(),
+			  [](const feature::SceneObservation& a, const feature::SceneObservation& b)
+			  { return a.view < b.view; });
+	feature::Track& other = set.tracks[wrong == &set.tracks[7] ? 8 : 7];
+	feature::SceneObservation& moved = other.observations[1];
+	REQUIRE((moved.view != 2 && moved.view != 7 && moved.view != 5));
+	moved.pixel.x += 25;
+
+	Request request = pinholeRequest();
+	request.imported = pinhole(500);
+	request.importedPolicy = ImportedModelPolicy::Initial;
+	request.resamples = 0;
+	const Report report = run(set, request);
+	INFO(report.toString());
+	REQUIRE(report.status == CalibrationStatus::Succeeded);
+	const TargetlessDiagnostics& t = targetlessOf(report);
+	CHECK(t.behind == 1);
+	CHECK(t.pruned > 0);
+	CHECK(asked().size() == 2);
+	CHECK(std::any_of(t.outliers.begin(), t.outliers.end(), [&](const Outlier& o)
+					  { return o.track == wrong->identity && o.frame == 5 && std::isinf(o.rmsWhitened); }));
+	CHECK(std::any_of(t.outliers.begin(), t.outliers.end(), [&](const Outlier& o)
+					  { return o.track == other.identity && o.frame == moved.view && std::isfinite(o.rmsWhitened); }));
+}
+
 TEST_CASE("each start poses at 4 pixels of its own focal length", "[camera][calibration][targetless]")
 {
 	setUp();
@@ -325,7 +503,7 @@ TEST_CASE("held-out frames are every fifth in capture order, and never reach a r
 	const feature::TrackSet set = scene::sequenceTrackSetOf();
 	Request request = pinholeRequest();
 	request.resamples = 4;
-	const Report report = run(set, request);
+	const Report report = run(set, request, unpruned());
 	INFO(report.toString());
 	REQUIRE(report.status == CalibrationStatus::Succeeded);
 	CHECK(report.diagnostics.heldOut == std::vector<std::uint32_t>{2, 7});
@@ -400,7 +578,7 @@ TEST_CASE("a frame the placement cannot spare, or that seeds it, is never held o
 		onlySees(7, seventh);
 		for (std::size_t k = 8; k < 12; ++k)
 			onlySees(k, last);
-		const Report report = run(scene::sequenceTrackSetOf());
+		const Report report = run(scene::sequenceTrackSetOf(), pinholeRequest(), unpruned());
 		INFO(report.toString());
 		REQUIRE(report.status == CalibrationStatus::Succeeded);
 		CHECK(report.diagnostics.heldOut == std::vector<std::uint32_t>{2});
@@ -413,7 +591,7 @@ TEST_CASE("a frame seeing too few landmarks is reported unplaced, and the calibr
 {
 	setUp();
 	onlySees(11, {0, 1, 2});
-	const Report report = run(scene::sequenceTrackSetOf());
+	const Report report = run(scene::sequenceTrackSetOf(), pinholeRequest(), unpruned());
 	INFO(report.toString());
 	REQUIRE(report.status == CalibrationStatus::Succeeded);
 	const TargetlessDiagnostics& t = targetlessOf(report);
@@ -622,7 +800,7 @@ TEST_CASE("calibrating footage is extracting its tracks, then calibrating them",
 													// fundamental matrix sees along its epipolar lines
 	const capture::CameraFootage footage = scene::sequenceFootage();
 	const Request request = pinholeRequest();
-	const Report report = targetless::calibrate(footage, targetless::Settings{}, request);
+	const Report report = targetless::calibrate(footage, unpruned(), request);
 	INFO(report.toString());
 	REQUIRE(report.status == CalibrationStatus::Succeeded);
 
@@ -630,7 +808,7 @@ TEST_CASE("calibrating footage is extracting its tracks, then calibrating them",
 	extraction.execution = request.execution;
 	const feature::SequenceExtractionResult extracted = feature::extractSequenceTracks(footage, extraction);
 	REQUIRE(extracted.ok());
-	requireSameReport(report, run(extracted.trackSet, request));
+	requireSameReport(report, run(extracted.trackSet, request, unpruned()));
 
 	const TargetlessDiagnostics& t = targetlessOf(report);
 	REQUIRE(t.extraction.has_value());

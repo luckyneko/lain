@@ -518,24 +518,101 @@ namespace lain::camera::calibration::targetless
 		return out;
 	}
 
-	// One bootstrap resample adjusted from the result: the drawn landmarks at their refined positions, a
-	// landmark drawn twice being two, started as the adjustment was (startOver) but under the refined
-	// model. Its domain may end where the adjustment's start's did not, so an observation the result
-	// cannot project is left out, as the adjustment's own start leaves one out, rather than failing the
-	// resample at its first evaluation. The refined model's parameters, unchecked, or nothing when too few
-	// frames are left or the adjustment gives no usable solution.
+	// An outlier, keyed by its unit in the evidence the adjustment was narrowed from, which is capture
+	// order.
+	struct NamedOutlier
+	{
+		std::uint32_t unit = 0;
+		Outlier outlier;
+	};
+
+	// The adjustment's evidence under its result, as fittedUnder, without what the result does not
+	// explain: each observation whose whitened residual exceeds `scale` is left out and named into
+	// `pruned` with it, as is one the result cannot project or whose pixel the refined model cannot
+	// unproject, named with an infinite residual. An observation the adjustment's start left out is
+	// named into `leftOut`, with an infinite residual. Every landmark's track is listed, as fittedUnder
+	// lists them, however few observations it keeps; narrowing leaves out one with fewer than two.
+	static Evidence explainedUnder(const CameraModel& model, const Narrowed& narrowed, const Start& start,
+								   const std::vector<std::uint32_t>& entryOf, const refinement::Solution& result,
+								   const refinement::NoiseModel& noise, double scale, std::vector<NamedOutlier>& pruned,
+								   std::vector<NamedOutlier>& leftOut)
+	{
+		Evidence out;
+		out.models.assign(narrowed.evidence.models.size(), model);
+		for (std::size_t l = 0; l < entryOf.size(); ++l)
+		{
+			const std::uint32_t e = entryOf[l];
+			const Usable& track = narrowed.evidence.tracks[narrowed.units[e]];
+			Usable explained;
+			explained.track = track.track;
+			for (std::size_t m = 0; m < track.seen.size(); ++m)
+			{
+				Seen s = track.seen[m];
+				if (!start.kept[e][m])
+				{
+					leftOut.push_back({narrowed.fromEntry[e],
+									   {track.track->identity, narrowed.frameOf[s.view], std::numeric_limits<double>::infinity()}});
+					continue;
+				}
+				const math::Vec3d q = result.cameraFromReference[s.view].apply(result.landmarks[l]);
+				const Projection<double> predicted = project(model, q.x, q.y, q.z);
+				const Unprojection<double> ray = unproject(model, s.pixel.x, s.pixel.y);
+				const double rmsWhitened =
+					predicted.ok() && ray.ok()
+						? std::sqrt(detail::whitenedSquared(math::Vec2d{predicted.u, predicted.v} - s.pixel, s.covariance, noise))
+						: std::numeric_limits<double>::infinity();
+				if (rmsWhitened > scale)
+				{
+					pruned.push_back({narrowed.fromEntry[e], {track.track->identity, narrowed.frameOf[s.view], rmsWhitened}});
+					continue;
+				}
+				s.ray = math::normalize(math::Vec3d{ray.x, ray.y, ray.z});
+				explained.seen.push_back(s);
+			}
+			out.tracks.push_back(std::move(explained));
+		}
+		return out;
+	}
+
+	// `again`, started from evidence explainedUnder took from `first`, with its frames and entries named
+	// as `first`'s are: frames among the calibration's, entries among the units `first` was narrowed
+	// from.
+	static Started rebased(Started again, const Narrowed& first, const std::vector<std::uint32_t>& firstEntryOf)
+	{
+		for (std::uint32_t& f : again.narrowed.frameOf)
+			f = first.frameOf[f];
+		for (std::uint32_t& e : again.narrowed.fromEntry)
+			e = first.fromEntry[firstEntryOf[e]];
+		return again;
+	}
+
+	// A bundle adjustment started from an adjustment's result, over `fitted`, whose views and tracks are
+	// the result's frames and landmarks: the `units` at their refined positions, a landmark listed twice
+	// being two, started as the adjustment was (startOver) but under `fitted`'s model. Its domain may end
+	// where the adjustment's start's did not, so an observation the result cannot project is left out, as
+	// the adjustment's own start leaves one out, rather than failing at the first evaluation. Unset when
+	// fewer than kMinimumFrames frames are left.
+	static std::optional<Started> restartFrom(const Evidence& fitted, const refinement::Solution& result,
+											  const std::vector<std::uint32_t>& order, const Units& units)
+	{
+		Placement placement;
+		placement.viewFromWorld.assign(result.cameraFromReference.begin(), result.cameraFromReference.end());
+		placement.order = order;
+		for (const std::uint32_t l : units)
+			placement.landmarks.push_back(result.landmarks[l]);
+		std::vector<bool> keep(fitted.models.size(), true);
+		return startOver(fitted, units, placement, keep);
+	}
+
+	// One bootstrap resample adjusted from the result (restartFrom): the drawn landmarks, a landmark drawn
+	// twice being two. The refined model's parameters, unchecked, or nothing when too few frames are left
+	// or the adjustment gives no usable solution.
 	static std::optional<CameraModelParameters> resampled(const Evidence& fitted, const refinement::Solution& result,
 														  const std::vector<std::uint32_t>& order,
 														  const refinement::ModelFreedom& freedom, const Settings& settings,
 														  const Units& draw)
 	{
-		Placement placement;
-		placement.viewFromWorld.assign(result.cameraFromReference.begin(), result.cameraFromReference.end());
-		placement.order = order;
-		for (const std::uint32_t l : draw)
-			placement.landmarks.push_back(result.landmarks[l]);
-		std::vector<bool> keep(fitted.models.size(), true);
-		const std::optional<Started> started = startOver(fitted, draw, placement, keep);
+		const std::optional<Started> started = restartFrom(fitted, result, order, draw);
 		if (!started)
 			return std::nullopt;
 		std::vector<std::uint32_t> entryOf;
@@ -760,8 +837,12 @@ namespace lain::camera::calibration::targetless
 		refinement::Solution solution;
 		std::vector<std::uint32_t> entryOf; // per problem landmark: its entry
 		std::optional<CameraModel> model;
-		std::uint32_t placed = 0;	// frames placed and kept for the adjustment
-		double costPerResidual = 0; // the adjustment's final cost over its residuals
+		// When there is a second adjustment, the outliers its evidence no longer holds: what the first's
+		// start left out, and what the first's result did not explain.
+		std::vector<NamedOutlier> named;
+		// What the start is ranked by: its first adjustment's, over every observation it fitted.
+		std::uint32_t placed = 0;	// frames placed and kept for the first adjustment
+		double costPerResidual = 0; // its final cost over its residuals
 	};
 
 	static Fit fitFrom(const CameraModel& startModel, std::size_t n, const std::vector<Ordered>& tracks,
@@ -830,56 +911,116 @@ namespace lain::camera::calibration::targetless
 		out.stage = Stage::Placed;
 		d.behind = out.started->start.behind;
 
-		// 6. The bundle adjustment.
+		// 6. The bundle adjustment, then a second from its result without the observations it does not
+		// explain. Robust as its loss is, the first is still pulled by them: on rendered footage with a
+		// printed board in close views it ended 2.7 to 4.4 px out on half the seeds, its principal point
+		// off, an error the held-out frames' poses absorb so that the verdict does not see it; the second
+		// ended within 0.6 px on every seed. The start is ranked by its first adjustment, since a second
+		// leaves out whatever its own start's result does not explain: from a wrong minimum, that is
+		// whatever disagrees with it, and what is left is fitted about as closely as the right start fits
+		// its own (repeated, it left the long start 56% of the observations, at 0.32 per residual against
+		// the right start's 0.34).
 		if (!hold)
 		{
 			out.freedom.focalLength = true;
 			out.freedom.coefficients = true;
 			out.freedom.principalPoint = settings.freePrincipalPoint;
 		}
-		out.problem = problemOf(out.started->narrowed, out.started->start, out.started->reference, startModel, out.freedom,
-								settings, out.entryOf);
-		out.solution = refinement::refine(out.problem);
-		const refinement::Problem& problem = out.problem;
-		const refinement::Solution& solution = out.solution;
-		out.refiner = solution.provenance;
-		refinement::Summary summary;
-		summary.status = solution.status;
-		summary.detail = solution.detail;
-		summary.iterations = solution.iterations;
-		summary.initialCost = solution.initialCost;
-		summary.finalCost = solution.finalCost;
-		summary.residuals = std::uint32_t(problem.landmarkObservations.size());
-		summary.landmarks = std::uint32_t(problem.landmarks.size());
-		summary.elapsed = solution.elapsed;
-		summary.noise = problem.noise;
-		summary.loss = problem.loss;
-		d.refinement = summary;
-		if (solution.status == refinement::Status::ResourceExhausted)
-			return fail(Failure::ResourceExhausted, solution.detail);
-		if (!solution.usable())
-			return fail(Failure::RefinementFailed,
-						solution.detail.empty() ? "the bundle adjustment produced no usable solution" : solution.detail);
-		if (solution.cameraFromReference.size() != problem.cameraFromReference.size() ||
-			solution.landmarks.size() != problem.landmarks.size() || solution.models.size() != 1)
-			return fail(Failure::RefinementFailed, "the refiner returned a solution of the wrong shape");
-		out.stage = Stage::Refined;
-		if (hold)
-			out.model = request.imported;
-		else
+		const auto adjusted = [&](const Started& started)
 		{
-			ModelResult created = CameraModel::create(solution.models.front());
-			if (!created.model)
+			out.entryOf.clear();
+			out.problem = problemOf(started.narrowed, started.start, started.reference, *out.model, out.freedom, settings,
+									out.entryOf);
+			out.solution = refinement::refine(out.problem);
+			out.refiner = out.solution.provenance;
+			refinement::Summary summary;
+			summary.status = out.solution.status;
+			summary.detail = out.solution.detail;
+			summary.iterations = out.solution.iterations;
+			summary.initialCost = out.solution.initialCost;
+			summary.finalCost = out.solution.finalCost;
+			summary.residuals = std::uint32_t(out.problem.landmarkObservations.size());
+			summary.landmarks = std::uint32_t(out.problem.landmarks.size());
+			summary.elapsed = out.solution.elapsed;
+			summary.noise = out.problem.noise;
+			summary.loss = out.problem.loss;
+			d.refinement = summary;
+			std::optional<FailureReason> failure;
+			if (out.solution.status == refinement::Status::ResourceExhausted)
+				failure = FailureReason{Failure::ResourceExhausted, out.solution.detail};
+			else if (!out.solution.usable())
+				failure = FailureReason{Failure::RefinementFailed, out.solution.detail.empty()
+																	   ? "the bundle adjustment produced no usable solution"
+																	   : out.solution.detail};
+			else if (out.solution.cameraFromReference.size() != out.problem.cameraFromReference.size() ||
+					 out.solution.landmarks.size() != out.problem.landmarks.size() || out.solution.models.size() != 1)
+				failure = FailureReason{Failure::RefinementFailed, "the refiner returned a solution of the wrong shape"};
+			else
+				out.stage = Stage::Refined;
+			if (!failure && !hold)
 			{
-				for (const ModelDiagnostic& diagnostic : created.diagnostics)
-					out.failures.push_back({Failure::InvalidModel, diagnostic.detail});
-				return fail(Failure::InvalidModel, "the estimate is not a valid camera model");
+				ModelResult created = CameraModel::create(out.solution.models.front());
+				if (!created.model)
+				{
+					for (const ModelDiagnostic& diagnostic : created.diagnostics)
+						out.failures.push_back({Failure::InvalidModel, diagnostic.detail});
+					failure = FailureReason{Failure::InvalidModel, "the estimate is not a valid camera model"};
+				}
+				else
+					out.model = std::move(created.model);
 			}
-			out.model = std::move(created.model);
+			return failure;
+		};
+		out.model = hold ? request.imported : std::optional<CameraModel>{startModel};
+		if (std::optional<FailureReason> failure = adjusted(*out.started))
+		{
+			out.model.reset();
+			return fail(failure->failure, std::move(failure->detail));
+		}
+		out.costPerResidual = out.problem.landmarkObservations.empty()
+								  ? 0.0
+								  : out.solution.finalCost / double(out.problem.landmarkObservations.size());
+
+		std::vector<NamedOutlier> pruned, leftOut;
+		const Evidence explained = explainedUnder(*out.model, out.started->narrowed, out.started->start, out.entryOf,
+												  out.solution, out.problem.noise, settings.loss.scale, pruned, leftOut);
+		d.pruned = std::uint32_t(pruned.size());
+		if (!pruned.empty())
+		{
+			out.named = std::move(pruned);
+			out.named.insert(out.named.end(), leftOut.begin(), leftOut.end());
+			Units fitted(explained.tracks.size());
+			std::iota(fitted.begin(), fitted.end(), 0u);
+			std::optional<Started> again =
+				restartFrom(explained, out.solution, out.started->narrowed.placement.order, fitted);
+			if (!again)
+			{
+				out.model.reset();
+				return fail(Failure::TooFewViews,
+							lain::string::format("without the {} observations the bundle adjustment's result does not explain, "
+												 "fewer than {} frames see enough landmarks to adjust again",
+												 d.pruned, kMinimumFrames));
+			}
+			out.started = rebased(std::move(*again), out.started->narrowed, out.entryOf);
+			if (std::optional<FailureReason> failure = adjusted(*out.started))
+			{
+				out.model.reset();
+				return fail(failure->failure, std::move(failure->detail));
+			}
+			// A frame the second start left seeing too few landmarks is left out of the result.
+			d.unplaced.clear();
+			std::vector<bool> adjustedFrame(n, false);
+			for (const std::uint32_t f : out.started->narrowed.frameOf)
+				adjustedFrame[f] = true;
+			for (std::uint32_t f = 0; f < n; ++f)
+			{
+				if (!heldOut[f] && !adjustedFrame[f])
+					d.unplaced.push_back(f);
+			}
+			d.behind += out.started->start.behind;
 		}
 		d.landmarks = std::uint32_t(out.entryOf.size());
 		d.untriangulated = d.tracksUsable - d.landmarks;
-		out.costPerResidual = summary.residuals > 0 ? solution.finalCost / double(summary.residuals) : 0.0;
 		return out;
 	}
 
@@ -898,6 +1039,7 @@ namespace lain::camera::calibration::targetless
 		into.behind = from.behind;
 		into.landmarks = from.landmarks;
 		into.untriangulated = from.untriangulated;
+		into.pruned = from.pruned;
 		into.refinement = from.refinement;
 	}
 
@@ -1036,10 +1178,12 @@ namespace lain::camera::calibration::targetless
 		const refinement::Solution& solution = fit.solution;
 		const std::vector<std::uint32_t>& entryOf = fit.entryOf;
 
-		// Residuals and outliers, per fitted observation. One left out for cheirality is an outlier the
-		// adjustment could not even start from. The fit RMS is over the observations the result explains,
-		// those not named: a wrong match hundreds of pixels out would otherwise decide it alone, as a
-		// held-out frame's outliers would decide its RMS.
+		// Residuals and outliers, per fitted observation. One left out for cheirality is an outlier an
+		// adjustment could not even start from, and one the first adjustment's result did not explain is
+		// named with its residual there. The fit RMS is over the observations the result explains, those
+		// not named: a wrong match hundreds of pixels out would otherwise decide it alone, as a held-out
+		// frame's outliers would decide its RMS.
+		std::vector<NamedOutlier> named = fit.named;
 		detail::CoverageCells fittedCells{};
 		double sumPixels = 0;
 		std::uint32_t explained = 0;
@@ -1053,7 +1197,7 @@ namespace lain::camera::calibration::targetless
 				const std::uint32_t frame = narrowed.frameOf[s.view];
 				if (!begin.kept[e][m])
 				{
-					targetless.outliers.push_back({track.track->identity, frame, std::numeric_limits<double>::infinity()});
+					named.push_back({narrowed.fromEntry[e], {track.track->identity, frame, std::numeric_limits<double>::infinity()}});
 					continue;
 				}
 				detail::cover(fittedCells, s.pixel, frames.image);
@@ -1064,13 +1208,17 @@ namespace lain::camera::calibration::targetless
 														  : std::numeric_limits<double>::infinity();
 				if (rmsWhitened > settings.loss.scale)
 				{
-					targetless.outliers.push_back({track.track->identity, frame, rmsWhitened});
+					named.push_back({narrowed.fromEntry[e], {track.track->identity, frame, rmsWhitened}});
 					continue;
 				}
 				sumPixels += math::dot(r, r);
 				++explained;
 			}
 		}
+		std::sort(named.begin(), named.end(), [](const NamedOutlier& a, const NamedOutlier& b)
+				  { return std::tie(a.unit, a.outlier.frame) < std::tie(b.unit, b.outlier.frame); });
+		for (NamedOutlier& p : named)
+			targetless.outliers.push_back(std::move(p.outlier));
 		if (!hold)
 		{
 			for (std::uint32_t v = 0; v < narrowed.frameOf.size(); ++v)

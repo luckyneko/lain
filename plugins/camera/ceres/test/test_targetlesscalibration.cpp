@@ -430,13 +430,16 @@ TEST_CASE("moving content is named, and the model does not move", "[camera][cere
 	}
 	CHECK(others < 12); // 1% of the static observations
 
-	// Measured: the ray mapping 0.85 px out; the held-out frames count 18 observations beyond their
-	// inlier angle and measure 0.846 mrad over the other 219.
+	// Measured: the ray mapping 0.83 px out. Each moving track keeps one observation the first
+	// adjustment's result explains, so the second refines none of their landmarks, and the held-out
+	// frames see none of them: none beyond the inlier angle, and 0.405 mrad over 216. Adjusted once
+	// with every observation, the held-out frames counted 18 beyond it and measured 0.846 mrad.
 	const ModelError error = errorOf(report, truth);
 	CHECK(error.ray < 2.0);
+	CHECK(targetlessOf(report).pruned > 0);
 	const HeldOutEvidence& held = heldOutOf(report);
-	CHECK(held.outliers > 0);
-	CHECK(held.rmsAngle < 0.0015);
+	CHECK(held.outliers == 0);
+	CHECK(held.rmsAngle < 0.0008);
 	CHECK(report.verdict == Verdict::Ready);
 }
 

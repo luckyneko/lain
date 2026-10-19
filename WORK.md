@@ -8581,6 +8581,55 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      clang-format and the subproject smoke; every ctest leg also passed its flowview binary and
      example-document smokes.
 
+   **A second adjustment without what the first's result does not explain (item 4, 2026-10-19).** Of
+   the remedies item 4 left, the outlier pass was tried first and built. After a start's bundle
+   adjustment, a second runs from its result without the observations whose whitened residual exceeds
+   the loss scale (3), the definition of an outlier every method shares, so no new number. It starts
+   through the routine every bootstrap resample starts through (`restartFrom`, factored out of
+   `resampled`): the result's frames and landmarks, a landmark left with fewer than two observations not
+   refined, a frame left seeing too few landmarks reported unplaced, fewer than three frames left
+   `TooFewViews`. When the first result explains every observation it fitted there is no second, so a
+   clean fit is unchanged bit for bit. The report counts `TargetlessDiagnostics::pruned`, its
+   refinement summary is the second's, and each observation the second left out is named an outlier
+   with its residual under the first's result; one the first's start left out for cheirality is still
+   named, with an infinite residual. Outliers are listed in capture order of their tracks, then of
+   their frames.
+   - **Measured on the both-methods footage, six seeds** (mean ray-mapping error, before and after):
+     0.35 and 0.46 px, **3.28 and 0.22**, 0.30 and 0.23, **2.69 and 0.21**, **4.43 and 0.55**, 0.34 and
+     0.44. Every seed is within 0.6 px and 0.045% in focal length, its principal point within 0.6 px of
+     the truth. Each second adjustment left out 1231 to 1623 observations of about 14,000.
+   - **The plain scene through two lenses improved on every seed:** f = 250, 1.34, 0.56 and 0.42 px to
+     0.68, 0.40 and 0.21 (the first seed's worst from 8.77 to 1.50); f = 500, 1.35, 0.77 and 1.40 to
+     1.18, 0.47 and 0.62, with the resampled principal-point variation tighter on every one.
+   - **It does not answer the HD lens**, which sees no board: f = 1000 at 1280x720, 4.71, 2.33 and 1.47
+     px to 3.56, 2.08 and 1.45, Ready on all three (the third had been Exploratory). That lens's error
+     has another cause, and stays open.
+   - **The strongly distorted 1080p lens moved the other way**: 0.90 to 1.25 px on average, 1.26 to
+     1.56 at worst, still Ready.
+   - **A start is ranked by its first adjustment.** Repeating the pass three times on seed 2 let the
+     long start shed 44% of its observations and fit the rest at 0.321 per residual, against the right
+     start's 0.340: ranked by the last adjustment, it would have won. A second adjustment keeps
+     whatever agrees with its own start's minimum.
+   - **One pass, not repeated to convergence.** Further rounds moved the right minimum by about a tenth
+     of a pixel either way (seed 1, 0.46 to 0.56; seed 5, 0.55 to 0.43), and each lets a wrong start
+     shed more. A cut at twice the loss scale also removed the minimum (seed 2, 0.48 px), so the result
+     does not hang on the scale.
+   - **The stand-in refiner hands back its start, which is no minimum**, so on the stand-in scene a
+     second adjustment leaves out much of the evidence (1078 observations from the start 3% short). The
+     four stand-in cases about something else run under an infinite loss scale, named for why; three
+     new cases pin the pass itself (what it leaves out and names, the ranking, a left-out observation
+     still named). The Ceres moving-content case now sees none of the moving tracks in its held-out
+     frames (each keeps one observation, so its landmark is not refined): 0.405 mrad over 216 held-out
+     observations, where 18 were beyond the inlier angle and the rest measured 0.846.
+   - **End to end:** a new case pins seed 5 (0.55 px, 1.03 at worst, its principal point 0.53 px off);
+     the both-methods case's targetless bounds tighten to 1.5 px on average and 3 at worst, where they
+     had been set by macOS's 3.05 px minimum. Whether macOS's features land within them is the next CI
+     run's to say.
+   - **Four sabotages, all caught as predicted.** Ranking by the second adjustment fails only the
+     ranking case. No second adjustment fails the two new stand-in cases, the Ceres moving-content case
+     (18 held-out outliers, 0.846 mrad) and, in Release, the seed-5 case at 4.43 px, Ready. Not naming
+     the first start's left-out observations fails only the case that makes one.
+
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
 failed reports as ordinary results, deterministic-debug execution, downsampling versus native
@@ -13769,10 +13818,11 @@ row here**. A row is cheap to delete and expensive to leave.
        - the verdict missing a principal point several pixels off. Resampling frames and comparing the
          three starts were both measured and refused on 2026-10-19 (slice 4's *After sub-slice 10e*):
          neither separates the wrong minimum, and resampling frames changed verdicts with the draw seed.
-         The winner's cost per residual does differ (1.97 to 2.07 against 1.68), so what is left is an
-         outlier pass, tracks the printed board does not alias, or a covariance from the refiner. macOS
-         arm64 shows the blind spot in CI (Ready at 2.7 and 3.05 px), so the end-to-end cases are bounded
-         by it.
+         The outlier pass was built the same day, as a second adjustment without what the first's result
+         does not explain: on the printed board's footage every seed is now within 0.6 px. **Still
+         open:** the HD lens, which sees no board, is Ready 1.45 to 3.56 px out over three seeds; and
+         whether macOS's features land within the tightened end-to-end bounds is the next CI run's to
+         say. Left for the repo owner: a covariance from the refiner, for the HD lens's case.
 
        The repo owner took every recommendation on 2026-10-19. Already built: a moving camera's
        feature cap of 2048, 40 sampled frames kept, 10c's ranking kept, a robust spread for a

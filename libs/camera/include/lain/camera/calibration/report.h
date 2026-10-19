@@ -171,8 +171,12 @@ namespace lain::camera::calibration
 		std::uint32_t behind = 0;		  // observations left out: behind their frame, or unprojectable
 		std::uint32_t landmarks = 0;	  // tracks triangulated and refined
 		std::uint32_t untriangulated = 0; // usable tracks that never became a refined landmark
-		std::optional<refinement::Summary> refinement;
-		std::vector<Outlier> outliers; // in capture order of their tracks
+		// Observations the first bundle adjustment's result does not explain, each named an outlier and
+		// left out of a second adjustment from that result, which the model comes from. Zero when the
+		// result explains every observation it fitted: then there is no second.
+		std::uint32_t pruned = 0;
+		std::optional<refinement::Summary> refinement; // the adjustment the model comes from
+		std::vector<Outlier> outliers;				   // in capture order of their tracks, then of their frames
 	};
 
 	// What every calibration reports about how it got its result, and in `method`, what its method

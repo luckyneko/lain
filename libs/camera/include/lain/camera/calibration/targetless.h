@@ -21,12 +21,15 @@
 // - the camera does not keep one point centred: when every frame's optical axis meets at one point,
 //   no pair of frames says the focal length;
 // - a wide field of view: a narrow lens (a 32 degree field) leaves its focal length poorly said;
-// - no repeated pattern fills the frame. A printed calibration board in close views pulled the
-//   principal point 2 to 4 px off on half the seeds tried, and the verdict did not see it.
+// - a repeated pattern is a part of the scene, not all of it. A printed calibration board in close
+//   views, seen in a third of the frames, pulled one adjustment's principal point 2 to 4 px off on half
+//   the seeds tried; the second adjustment leaves out the tracks its repeated corners alias, and kept
+//   all six within 0.6 px.
 //
 // A Ready model can still be a few pixels out: the verdict does not see a principal point error the
-// reconstruction absorbs. Which footage lands there depends on the features a backend finds: on macOS
-// arm64's OpenCV, footage Ready within a pixel on Linux x86-64 was Ready 2.7 to 3 px out.
+// reconstruction absorbs. An HD lens seeing no board (f = 1000 at 1280x720) was Ready 1.5 to 3.6 px out
+// over three seeds. Which footage lands there depends on the features a backend finds: adjusted once,
+// on macOS arm64's OpenCV, footage Ready within a pixel on Linux x86-64 was Ready 2.7 to 3 px out.
 namespace lain::camera::calibration::targetless
 {
 	// Calibrate a camera from its footage: feature::extractSequenceTracks over `camera` as the
@@ -58,8 +61,9 @@ namespace lain::camera::calibration::targetless
 	// 4. the starting models: an imported one under Initial or HoldAndValidate, otherwise the focal
 	//    sweep's three, at the centres of the geometric thirds of the focal lengths from a 120° to a 25°
 	//    field of view through the requested model's neutral projection. Steps 5 and 6 run for each,
-	//    and the result is the one whose adjustment kept the most frames, among those the one ending
-	//    with the lowest cost per residual; a start that fails is reported and the others go on. When
+	//    and the result is the one whose first adjustment kept the most frames, among those the one
+	//    whose first adjustment ended with the lowest cost per residual; a start that fails is reported
+	//    and the others go on. When
 	//    every one fails, the calibration does, the start that got furthest reported first and every
 	//    start's reason after it;
 	// 5. the reconstruction: of the pairs that may seed, the seeds whose placement reaches the most
@@ -70,9 +74,14 @@ namespace lain::camera::calibration::targetless
 	//    InitialisationFailed; fewer than three frames left is TooFewViews;
 	// 6. the bundle adjustment: one model shared by every placed frame, its focal length, coefficients
 	//    and principal point free unless the settings hold the principal point, under the
-	//    settings' robust loss with every observation weighted by its own covariance; then
-	//    CameraModel::create, outliers named by track and frame, and the fit RMS over the observations
-	//    not named. A held model refines the frames and landmarks alone;
+	//    settings' robust loss with every observation weighted by its own covariance. When its result
+	//    does not explain every observation it fitted (a whitened residual beyond the loss scale), a
+	//    second from that result without them, started as the first was: a landmark left with fewer than
+	//    two observations is not refined, a frame left seeing too few landmarks is reported unplaced, and
+	//    fewer than three frames left is TooFewViews. Then CameraModel::create, outliers named by track
+	//    and frame (those the second adjustment left out with their residual under the first's result),
+	//    and the fit RMS over the observations not named. A held model refines the frames and landmarks
+	//    alone;
 	// 7. each held-out frame posed against the refined landmarks, and its observations within the
 	//    pose's inlier angle measured through lain's projection, as angles, as pixels, and whitened by
 	//    each observation's stated covariance; those beyond it counted;
