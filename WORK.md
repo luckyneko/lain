@@ -8495,6 +8495,20 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        sections and leaves the held principal point Ready.
      - `ctest` 1288/1288 Debug and 1296/1296 Release with video, camera and Ceres on, 1163/1163 with
        all three off.
+   - **The scale cases run with nothing beside them** (item 8). `test-camera-ceres`'s four `[scale]`
+     cases are discovered apart from the rest of the executable, with `RUN_SERIAL`, so ctest starts
+     nothing else while one runs. Each keeps the process pool busy, and the 100-camera targetless
+     registration bounds its wall-clock time at 120 s, a bound that means something only while the case
+     has the cores: under `ctest -j8` beside the end-to-end suites it took 154 to 181 s, and 36 s alone.
+     The other options were a larger bound, which would stop catching a real slowdown, or `PROCESSORS`
+     on the case, which reserves slots out of whatever `-j` the caller chose and so leaves it alone only
+     when its count reaches that `-j`. A second `catch_discover_tests` call with a `TEST_SPEC` is the whole change: Catch2's
+     discovery names its include file after a hash of its arguments, so the two calls do not collide.
+     - **Measured:** the whole Release suite at `-j8` passes 1296/1296 with the end-to-end suites
+       running, the four scale cases last and alone: the 100-camera targetless registration in 35.5 s,
+       board registration 17.4 s, the free model 8.0 s and the landmarks 4.2 s.
+     - Nothing else moved: the same 49 cases are discovered (45 and 4), and Debug, where the scale
+       cases skip, is unchanged.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -13686,13 +13700,11 @@ row here**. A row is cheap to delete and expensive to leave.
 
        The repo owner took every recommendation on 2026-10-19. Already built: a moving camera's
        feature cap of 2048, 40 sampled frames kept, 10c's ranking kept, a robust spread for a
-       calibration's stability, and the targetless held-out residual judged whitened by the stated
-       covariance rather than as an angle (slice 4's *After sub-slice 10e*). Registration's own resampling
+       calibration's stability, the targetless held-out residual judged whitened by the stated
+       covariance rather than as an angle, and the scale cases run with nothing beside them (slice
+       4's *After sub-slice 10e*). Registration's own resampling
        spread, an RMS about the result, is still a candidate for the same treatment, with its robust
        held-out statistic above.
-     - **The 100-camera registration scale case's wall-clock bound** (120 s) fails under `ctest -j8`
-       beside the heavy end-to-end suites (154 to 181 s), while it takes 36 s alone: a larger bound,
-       the bound only when run alone, or `PROCESSORS` on that case.
      - **The feature cap's cost**: count descriptor rows rather than features, or lower the cap, if
        Exact matching's cost (16.9 core-hours for a 100-camera rig at the cap) matters more than the
        tracks. To be decided on real footage's rows per feature (sub-slice 7 follow-up B).

@@ -1400,6 +1400,22 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-19 — the scale cases run with nothing beside them
+
+The fourth of the commits that take 10e's recommendations (item 8). The 100-camera targetless
+registration bounds its wall-clock time at 120 s, and under `ctest -j8` beside the end-to-end suites
+it took 154 to 181 s, against 36 s alone. `test-camera-ceres`'s four `[scale]` cases are now
+discovered by a second `catch_discover_tests` call with `RUN_SERIAL`, so ctest starts nothing else
+while one runs. The whole Release suite at `-j8` passes **1296/1296**, the targetless scale case in
+35.5 s. Debug, where the scale cases skip, and the all-off build are unchanged. Full notes in WORK.md's
+*After sub-slice 10e* under M9 slice 4.
+
+- **The bound stays where it was.** A larger one would stop catching a real slowdown, and
+  `PROCESSORS` reserves slots out of whatever `-j` the caller chose, so it leaves a case alone only
+  when its count reaches that `-j`.
+- **Two discovery calls on one executable do not collide**: Catch2 names each include file after a
+  hash of its arguments. The same 49 cases are discovered, 45 and 4.
+
 ### Update 2026-10-19 — targetless calibration judges its held-out residual whitened
 
 The third of the commits that take 10e's recommendations (item 1). A scene feature is located to a

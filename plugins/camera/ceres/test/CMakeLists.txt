@@ -27,4 +27,9 @@ target_link_libraries(test-camera-ceres
 	PRIVATE lain::testing lain::warnings Catch2::Catch2WithMain
 )
 
-catch_discover_tests(test-camera-ceres TEST_PREFIX "(camera::ceres) ")
+catch_discover_tests(test-camera-ceres TEST_PREFIX "(camera::ceres) " TEST_SPEC "~[scale]")
+# The scale cases each keep the process pool busy, and one bounds its wall-clock time, a bound that
+# means something only while the case has the cores: under `ctest -j8` beside the end-to-end suites the
+# 100-camera targetless registration took 154 to 181 s against its 120, and 36 s alone. So ctest runs
+# them with nothing beside them.
+catch_discover_tests(test-camera-ceres TEST_PREFIX "(camera::ceres) " TEST_SPEC "[scale]" PROPERTIES RUN_SERIAL TRUE)
