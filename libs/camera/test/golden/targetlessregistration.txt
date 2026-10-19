@@ -13,7 +13,7 @@ heldOut camera cam00 0
 heldOut camera cam01 0
 heldOut camera cam02 0
 heldOut camera cam03 0
-resampling 10 rotation 0 translation 0 absolute 0 worst cam03
+resampling 10 rotation 0 translation 0 absolute 0 worst -
 edge cam00-cam01 shared 240 bridge 0
 edge cam00-cam02 shared 240 bridge 0
 edge cam00-cam03 shared 240 bridge 0
@@ -117,7 +117,7 @@ heldOut camera cam00 0.001211936
 heldOut camera cam01 0.001015898
 heldOut camera cam02 0.000988732
 heldOut camera cam03 0.001253496
-resampling 6 rotation 0 translation 0.000720962 absolute 0.000719676 worst cam02
+resampling 6 rotation 0 translation 0.000720962 absolute 0.000719676 worst -
 edge cam00-cam01 shared 225 bridge 0
 edge cam00-cam02 shared 225 bridge 0
 edge cam00-cam03 shared 225 bridge 0
@@ -758,7 +758,7 @@ heldOut camera cam00 0
 heldOut camera cam01 0
 heldOut camera cam02 0
 heldOut camera cam03 0
-resampling 10 rotation 0 translation 0 absolute 0 worst cam00
+resampling 10 rotation 0 translation 0 absolute 0 worst -
 edge cam00-cam01 shared 160 bridge 0
 edge cam00-cam02 shared 160 bridge 0
 edge cam00-cam03 shared 13 bridge 0
@@ -839,7 +839,7 @@ heldOut units 40 predictions 120 unpredicted 0 residuals 120 epipolar 0 rmsAngle
 heldOut camera cam00 0
 heldOut camera cam01 0
 heldOut camera cam02 0
-resampling 10 rotation 0 translation 0 absolute 0 worst cam00
+resampling 10 rotation 0 translation 0 absolute 0 worst -
 edge cam00-cam01 shared 160 bridge 0
 edge cam00-cam02 shared 160 bridge 0
 edge cam01-cam02 shared 160 bridge 0
@@ -915,7 +915,7 @@ note Ready: no held-out evidence: no tracks were held out
 note Exploratory: 4 of 4 cameras in fewer than 30 shared tracks (fewest: cam02, in 18)
 thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.005 0.05) exploratory(30 15 0.006 0.005 0.02 0.15)
 heldOut unavailable: no tracks were held out
-resampling 4 rotation 0 translation 0 absolute 0 worst cam03
+resampling 4 rotation 0 translation 0 absolute 0 worst -
 edge cam00-cam01 shared 20 bridge 0
 edge cam00-cam02 shared 4 bridge 0
 edge cam00-cam03 shared 4 bridge 0

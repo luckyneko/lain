@@ -54,6 +54,15 @@ namespace lain::camera::testing::golden
 		return std::string(meta::enums::name(value));
 	}
 
+	// The camera a registration's resampling names as worst, or "-" when every camera's rotation
+	// variation prints as 0: the choice is then made by rounding noise, which differs between
+	// platforms (cam01 on macOS arm64 where linux-x86_64 gave cam02), so it is no part of what a
+	// golden pins.
+	inline std::string worstCamera(double rotationVariation, const std::string& camera)
+	{
+		return number(rotationVariation) == "0" ? "-" : camera;
+	}
+
 	inline std::string provenance(const Provenance& p)
 	{
 		return p.backend + "/" + p.version;

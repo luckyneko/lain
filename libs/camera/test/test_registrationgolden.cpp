@@ -61,7 +61,7 @@ namespace
 		if (const auto* s = std::get_if<ResamplingEvidence>(&r.resampling))
 			out << "resampling " << s->resamples << " rotation " << number(s->rotationVariation) << " translation "
 				<< number(s->translationVariation) << " metres " << number(s->translationVariationAbsolute) << " worst "
-				<< s->worstCamera.value << "\n";
+				<< worstCamera(s->rotationVariation, s->worstCamera.value) << "\n";
 		else
 			out << "resampling unavailable: " << std::get<Unavailable>(r.resampling).reason << "\n";
 
