@@ -1400,6 +1400,28 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-19 — a refiner covariance does not see the HD lens's error (refused)
+
+The last remedy left for the HD lens (f = 1000 at 1280x720), Ready 1.45 to 3.56 px out after the
+second adjustment. Measured and **not built**: a probe computed the free model's marginal covariance
+from the final adjustment's Jacobian, the landmarks eliminated and the reduced system pseudo-inverted
+over its one null direction, the scale. Nothing in the library changed; WORK.md, ADR-0016 and this
+file record the measurement. Full notes in WORK.md's *After sub-slice 10e* under M9 slice 4.
+
+- **It agrees with the landmark bootstrap and is as blind**: 0.6 and 0.7 px per axis on HD (0.95 mrad,
+  inside Ready's 2), against errors up to 3.05 px, five of its standard deviations. The f = 250, f =
+  500 and board footage show the same understatement, errors of 2 to 4 of its standard deviations, so
+  it is not the HD lens's.
+- **The data puts the minimum there**: started at the truth, the adjustment ends within 0.3 px of the
+  free one on every HD and lens seed, and the truth held costs as much per residual.
+- **The observations carry no systematic bias but more noise than they state.** Against each track's
+  consensus point through the truth there is no mean offset, trend or radial component, while the
+  smallest quarter of HD features errs about 3.5 times its stated sigma and the rest 1.5 times. Both
+  the covariance and the landmark bootstrap inherit that.
+- **What is left for the repo owner: an honest feature covariance.** The localisation model (0.034 of a
+  feature's size) understates the smallest features most, and any precision measure inherits it.
+  Resampling frames saw 1.5 to 3.2 mrad on this lens, but was refused earlier for its noise.
+
 ### Update 2026-10-19 — targetless calibration adjusts again without what its result does not explain
 
 Item 4 of 10e's recommendations, the principal-point blind spot, answered for the printed board's

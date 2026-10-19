@@ -8633,6 +8633,37 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      (18 held-out outliers, 0.846 mrad) and, in Release, the seed-5 case at 4.43 px, Ready. Not naming
      the first start's left-out observations fails only the case that makes one.
 
+   **The HD lens: a covariance from the refiner was measured and refused (item 4, 2026-10-19).** The
+   last remedy left for the HD lens (f = 1000 at 1280x720), Ready 1.45 to 3.56 px out over three seeds.
+   A probe computed the free model's marginal covariance from the final adjustment's Jacobian, robust
+   weights applied: the landmarks eliminated, the reduced system over the frames and the model
+   pseudo-inverted (its one null direction is the scale, which has no model component). Nothing was
+   committed.
+   - **It agrees with the landmark bootstrap, and is as blind.** On HD it gives the principal point 0.59
+     to 0.65 px in x and 0.71 to 0.74 in y (0.95 mrad together), where the bootstrap gave 0.7 to 1.0
+     mrad. The errors are 3.05, 1.44 and 0.90 px, the worst five of its standard deviations, and inside
+     Ready's 2 mrad it would leave every verdict as it is. Scaled by its own variance factor (0.36 to
+     0.50) it is smaller still.
+   - **The understatement is not the HD lens's.** At f = 250 it gives 0.07 and 0.10 px against errors
+     up to 4 of them; at f = 500, 0.28 and 0.35 px against errors up to 3; on the board footage 0.17
+     and 0.21 px against errors up to 2.
+   - **The data puts the minimum there.** Started at the truth, the adjustment ended within 0.3 px of
+     where the free one did on every HD and lens seed (0.36 and 0.73 px on the two board seeds), and the
+     truth held costs as much per residual (HD seed 1: 0.3290 against 0.3281) and validates no better. On HD the principal point trades against tangential distortion: cx
+     correlates 0.91 with p2, cy 0.87 with p1.
+   - **The observations carry no systematic bias, but more noise than they state.** Against each
+     track's consensus surface point through the truth, the HD residuals have no mean offset (under 0.01
+     px), no linear trend across the image and no radial component; so do f = 500 and the board
+     footage. Per axis, though, the smallest quarter of HD features errs 0.56 px against a stated 0.06
+     to 0.23 (about 3.5 times), and the rest 1.5 to 1.6 times their stated sigma; the smallest features
+     err more than the middle ones while weighing the most. The covariance inherits that understatement,
+     and the landmark bootstrap, which treats landmarks as independent, does not see past it.
+   - **So the HD error is imprecision the stated noise hides, not a bias the data could reveal.** What
+     would let a precision measure see it is an honest feature covariance: the localisation model
+     (`localisationPerSize`, 0.034 of a feature's size) understates the smallest features most, as
+     follow-up A had found at half scale. Resampling frames, which saw 1.5 to 3.2 mrad on this lens, was
+     refused earlier for its noise.
+
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
 failed reports as ordinary results, deterministic-debug execution, downsampling versus native
@@ -13824,8 +13855,11 @@ row here**. A row is cheap to delete and expensive to leave.
          The outlier pass was built the same day, as a second adjustment without what the first's result
          does not explain: on the printed board's footage every seed is now within 0.6 px, and CI run
          38 holds macOS and Windows within the tightened end-to-end bounds. **Still open:** the HD
-         lens, which sees no board, is Ready 1.45 to 3.56 px out over three seeds. Left for the repo
-         owner: a covariance from the refiner, for the HD lens's case.
+         lens, which sees no board, is Ready 1.45 to 3.56 px out over three seeds. A covariance from the
+         refiner was measured and refused the same day: it agrees with the landmark bootstrap (0.95 mrad),
+         since both inherit the features' stated noise, which understates SIFT's error 1.5 to 3.5 times
+         on this footage. Left for the repo owner: an honest feature covariance (the localisation model
+         understates the smallest features most), which any precision measure would then inherit.
 
        The repo owner took every recommendation on 2026-10-19. Already built: a moving camera's
        feature cap of 2048, 40 sampled frames kept, 10c's ranking kept, a robust spread for a

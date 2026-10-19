@@ -563,7 +563,14 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   answer the HD lens, which sees no board: 1.45 to 3.56 px over three seeds, Ready, against 1.5 to 4.7
   before. One pass rather than iterating to convergence: further rounds moved the right minimum by
   about a tenth of a pixel either way, and each round lets a wrong start shed more of what disagrees
-  with it. WORK.md's slice 4, *After sub-slice 10e*, holds the numbers.)* A **held parameter** is not
+  with it. WORK.md's slice 4, *After sub-slice 10e*, holds the numbers.)* *(Measured and refused
+  2026-10-19 for the HD lens: a covariance from the refiner. The model's marginal covariance from the
+  final adjustment agrees with the landmark bootstrap, 0.95 mrad on the HD lens against errors up to 3
+  mrad, and understates the error the same way through the lenses and the board footage (errors of 2 to
+  5 of its standard deviations). Both inherit the features' stated noise, which understates SIFT's
+  error 1.5 to 3.5 times on rendered footage, most for the smallest features. The observations carry no
+  systematic bias, so the HD lens's error is imprecision the stated noise hides; what would let a
+  precision measure see it is an honest feature covariance.)* A **held parameter** is not
   estimated, so it has no resampled variation. The report says it was held, and the fitness criterion
   on it does not apply; its variation is never recorded as zero. *(Scoped 2026-10-13, while planning
   sub-slice 2:)* a held parameter is part of an estimate. A model held whole under HoldAndValidate
