@@ -1429,8 +1429,8 @@ sub-slice 10e* under M9 slice 4.
   moving-content case's held-out frames now see none of the moving tracks (0.405 mrad, where 18
   observations were beyond the inlier angle and the rest measured 0.846).
 - **End to end:** a new case pins seed 5, and the both-methods case's targetless bounds tighten from
-  macOS's 3.05 px minimum to 1.5 px on average. Whether macOS's features land within them is the next
-  CI run's to say.
+  macOS's 3.05 px minimum to 1.5 px on average. **CI run 38 (`f343276`) is green on all seven jobs**,
+  1300/1300 on each Release leg, so macOS and Windows land within them too.
 - **Four sabotages, all caught as predicted**, including no second adjustment: seed 5 back at 4.43 px,
   still Ready.
 

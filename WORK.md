@@ -8623,8 +8623,11 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      observations, where 18 were beyond the inlier angle and the rest measured 0.846.
    - **End to end:** a new case pins seed 5 (0.55 px, 1.03 at worst, its principal point 0.53 px off);
      the both-methods case's targetless bounds tighten to 1.5 px on average and 3 at worst, where they
-     had been set by macOS's 3.05 px minimum. Whether macOS's features land within them is the next CI
-     run's to say.
+     had been set by macOS's 3.05 px minimum. **CI run 38 (`f343276`) is green on all seven jobs**, the
+     end-to-end cases run on each Release leg (1300/1300 on Linux, macOS and Windows), so macOS's and
+     Windows' features land within the tightened bounds too: on macOS the both-methods case's model is
+     within 1.5 px where it had been 3.05 px out, and seed 5 within 1.5 px. The values themselves are
+     not printed on a pass.
    - **Four sabotages, all caught as predicted.** Ranking by the second adjustment fails only the
      ranking case. No second adjustment fails the two new stand-in cases, the Ceres moving-content case
      (18 held-out outliers, 0.846 mrad) and, in Release, the seed-5 case at 4.43 px, Ready. Not naming
@@ -13819,10 +13822,10 @@ row here**. A row is cheap to delete and expensive to leave.
          three starts were both measured and refused on 2026-10-19 (slice 4's *After sub-slice 10e*):
          neither separates the wrong minimum, and resampling frames changed verdicts with the draw seed.
          The outlier pass was built the same day, as a second adjustment without what the first's result
-         does not explain: on the printed board's footage every seed is now within 0.6 px. **Still
-         open:** the HD lens, which sees no board, is Ready 1.45 to 3.56 px out over three seeds; and
-         whether macOS's features land within the tightened end-to-end bounds is the next CI run's to
-         say. Left for the repo owner: a covariance from the refiner, for the HD lens's case.
+         does not explain: on the printed board's footage every seed is now within 0.6 px, and CI run
+         38 holds macOS and Windows within the tightened end-to-end bounds. **Still open:** the HD
+         lens, which sees no board, is Ready 1.45 to 3.56 px out over three seeds. Left for the repo
+         owner: a covariance from the refiner, for the HD lens's case.
 
        The repo owner took every recommendation on 2026-10-19. Already built: a moving camera's
        feature cap of 2048, 40 sampled frames kept, 10c's ranking kept, a robust spread for a
