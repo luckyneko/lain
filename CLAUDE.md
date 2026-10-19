@@ -1400,6 +1400,31 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-19 — a calibration's stability is a robust spread
+
+The second of the commits that take 10e's recommendations. `calibration::detail::stability`, shared by
+board and targetless calibration, measured the resampled fx, fy, cx and cy by their standard
+deviation, so one bootstrap draw that left too few views to condition the model decided the verdict.
+It now takes the median absolute deviation from the median, scaled by 1.4826 so that for normally
+spread estimates it equals the standard deviation and the profiles' bounds keep their meaning.
+`ctest` **1286/1286** Debug and **1294/1294** Release with video, camera and Ceres on, **1161/1161**
+with all three off (+1 each); warning-clean, format-check clean. Full notes in WORK.md's *After
+sub-slice 10e* under M9 slice 4.
+
+- **Board calibration on 10e's both-methods footage is Ready on all six seeds**, where it was Rejected
+  on two at focal variations of 89% and 32%. Focal variation is now 0.08 to 0.15% and principal-point
+  variation 0.9 to 1.5 mrad, and each model is 0.009 to 0.071% out in focal length.
+- **Targetless calibration's spread shrank where its resamples agree**: principal-point variation is
+  0.025 to 0.43 mrad on the seeds whose model is right, and 0.29 to 0.68 mrad on the three that are
+  2.7 to 4.4 px out (item 4, still open). As a standard deviation it was 0.4 to 0.75 mrad.
+- **The golden changes in its two resampling lines only**, by a few percent on well-behaved resamples.
+- **A new case**: one resample of twenty answered half as long again leaves the result Ready, with a
+  variation of 4.4e-6. Sabotage: restoring the standard deviation gives 10.9% and Rejected.
+- **The seeded-draws case needed a finer fingerprint**: its stand-in's focal length was a count of
+  views, and the median absolute deviation of whole numbers matched across seeds.
+- Registration's resampling spread, an RMS about the result per camera, is unchanged and stays queued
+  with its robust held-out statistic.
+
 ### Update 2026-10-19 — a moving camera keeps 2048 features a frame
 
 The first of the commits that take 10e's recommendations, which the repo owner accepted whole on

@@ -2,27 +2,26 @@
 
 #include <cmath>
 #include <utility>
+#include <vector>
 
 namespace lain::camera::calibration::detail
 {
-	// Sample standard deviation.
-	static double deviation(const std::vector<double>& values)
+	// How far resampled estimates spread, which one far resample cannot decide: the median absolute
+	// deviation from the median, scaled by 1.4826 (one over the standard normal's third quartile) so
+	// it is the standard deviation of normally spread estimates, and the profiles' bounds keep their
+	// meaning. A bootstrap draw can leave too few views to condition the model, and its estimate then
+	// lies far from every other; as a standard deviation, one such draw of twenty decided board
+	// calibration's verdict (measured in M9 slice 4, sub-slice 10e: Rejected at 89% and 32% on two
+	// seeds, while the model was 0.01% and 0.03% out). Fewer than half the resamples can lie anywhere
+	// without moving it, so it measures the typical resample, not the worst one.
+	static double spread(const std::vector<double>& values)
 	{
-		double mean = 0;
+		const double centre = median(values);
+		std::vector<double> deviations;
+		deviations.reserve(values.size());
 		for (const double v : values)
-			mean += v / double(values.size());
-		double sum = 0;
-		for (const double v : values)
-			sum += (v - mean) * (v - mean);
-		return std::sqrt(sum / double(values.size() - 1));
-	}
-
-	static double average(const std::vector<double>& values)
-	{
-		double mean = 0;
-		for (const double v : values)
-			mean += v / double(values.size());
-		return mean;
+			deviations.push_back(std::abs(v - centre));
+		return 1.482602218505602 * median(deviations);
 	}
 
 	Report failed(Report report, core::Time start, Failure failure, std::string detail)
@@ -88,13 +87,13 @@ namespace lain::camera::calibration::detail
 
 		ResamplingEvidence evidence;
 		evidence.resamples = std::uint32_t(fx.size());
-		evidence.focalVariation = std::max(deviation(fx) / average(fx), deviation(fy) / average(fy));
+		evidence.focalVariation = std::max(spread(fx) / median(fx), spread(fy) / median(fy));
 		if (principalPointHeld)
 			evidence.principalPointVariation = Held{};
 		else
 		{
-			const double focal = (average(fx) + average(fy)) / 2;
-			evidence.principalPointVariation = std::max(deviation(cx), deviation(cy)) / focal;
+			const double focal = (median(fx) + median(fy)) / 2;
+			evidence.principalPointVariation = std::max(spread(cx), spread(cy)) / focal;
 		}
 		return evidence;
 	}

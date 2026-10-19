@@ -87,13 +87,15 @@ namespace lain::camera::calibration
 	{
 	};
 
-	// How much the estimate moves when the calibration views are resampled with replacement.
+	// How much the estimate moves when the calibration views are resampled with replacement. Each
+	// spread is robust: the median absolute deviation from the median, scaled to the standard deviation
+	// of normally spread estimates, so one resample far from the others does not decide it.
 	struct ResamplingEvidence
 	{
 		std::uint32_t resamples = 0; // that produced a model
-		double focalVariation = 0;	 // relative standard deviation, the larger of fx's and fy's
-		// Radians, the larger of cx's and cy's over the mean focal; or Held, when the estimate held the
-		// principal point. Board calibration always measures it.
+		double focalVariation = 0;	 // the larger of fx's and fy's spread, each over its median
+		// Radians, the larger of cx's and cy's spread over the median focal; or Held, when the estimate
+		// held the principal point. Board calibration always measures it.
 		std::variant<double, Held> principalPointVariation = 0.0;
 	};
 

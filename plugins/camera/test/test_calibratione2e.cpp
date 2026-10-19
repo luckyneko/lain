@@ -250,13 +250,14 @@ TEST_CASE("one camera calibrated with a board and without one agrees with itself
 	CHECK(t.unplaced.empty());
 	CHECK(t.seedPairsRefused > 0);
 	CHECK(2 * t.seedPairsRefused < t.seedPairs);
-	// Recorded, not pinned (WORK.md, M9 slice 4, sub-slice 10e): over six seeds of this footage the board
-	// is Ready on four and Rejected on two, each time for one resample whose focal length is far out
-	// (variation 32% and 89%), since the stability evidence is a standard deviation. The targetless model
-	// is Ready on all six, but on three of them 2.7 to 4.4 px out on average, its principal point 2 to 4
-	// px off and its resampled variation the same 0.4 to 0.75 mrad as on the other three. Without the
-	// board the same path stays within 0.3 to 1.6 px: the printed pattern's repeated corners mislead the
-	// fit, and resampling from the result cannot see a wrong minimum.
+	// Recorded, not pinned (WORK.md, M9 slice 4, sub-slice 10e and after): over six seeds of this footage
+	// the board is Ready on all six, 0.009 to 0.071% out in focal length. It was Rejected on two while the
+	// stability evidence was a standard deviation, each time for one resample whose focal length was far
+	// out (variation 32% and 89%); it is now a robust spread, 0.08 to 0.15%. The targetless model is
+	// Ready on all six, but on three of them 2.7 to 4.4 px out on average, its principal point 2 to 4 px
+	// off, with a resampled principal-point variation of 0.29 to 0.68 mrad against 0.025 to 0.43 on the
+	// other three. Without the board the same path stays within 0.3 to 1.6 px: the printed pattern's
+	// repeated corners mislead the fit, and resampling from the result cannot see a wrong minimum.
 }
 
 TEST_CASE("the default sampled frames calibrate a moving camera through a normal, a wide and an HD lens",

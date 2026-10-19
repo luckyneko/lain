@@ -218,7 +218,8 @@ TEST_CASE("a model whose held-out rays miss is not Ready, and the notes say why"
 TEST_CASE("the resampling draws are seeded, and the same under either execution policy", "[camera][calibration]")
 {
 	// The stand-in's focal length depends on WHICH views it was handed, so the stability evidence is
-	// a fingerprint of the draws.
+	// a fingerprint of the draws. Through the views' ordinals too, not their count alone: the spread
+	// is a median absolute deviation, and over whole numbers two seeds' draws would often give the same.
 	resetScene();
 	script().answer = [](const std::vector<camera::board::Observation>& views)
 	{
@@ -227,6 +228,8 @@ TEST_CASE("the resampling draws are seeded, and the same under either execution 
 			distinct.insert(v.frame.ordinal);
 		CameraModelParameters p = trueCamera();
 		p.intrinsics.fx += double(distinct.size());
+		for (const std::size_t ordinal : distinct)
+			p.intrinsics.fx += 1e-3 * double(ordinal * ordinal);
 		return std::optional<CameraModelParameters>{p};
 	};
 	Request request;
@@ -254,6 +257,38 @@ TEST_CASE("the resampling draws are seeded, and the same under either execution 
 	CHECK(a != c);
 	CHECK(normal.diagnostics.selected == serial.diagnostics.selected);
 	CHECK(normal.diagnostics.heldOut == serial.diagnostics.heldOut);
+}
+
+TEST_CASE("one resample far from the others does not decide the stability", "[camera][calibration]")
+{
+	// A bootstrap draw can leave too few views to condition the model, and its estimate then lies far
+	// from every other: on rendered footage one draw of twenty was 89% out, and as a standard deviation
+	// it decided the verdict (M9 slice 4, sub-slice 10e). The stand-in answers each draw a little
+	// differently, by which views it was handed, and one resample half as long again.
+	resetScene();
+	std::size_t calls = 0;
+	script().answer = [&calls](const std::vector<camera::board::Observation>& views)
+	{
+		std::set<std::size_t> distinct;
+		for (const camera::board::Observation& v : views)
+			distinct.insert(v.frame.ordinal);
+		CameraModelParameters p = trueCamera();
+		for (const std::size_t ordinal : distinct)
+			p.intrinsics.fx += 1e-4 * double(ordinal);
+		if (++calls == 5) // the estimate, then the fourth resample
+			p.intrinsics.fx *= 1.5;
+		return std::optional<CameraModelParameters>{p};
+	};
+	Request request;
+	request.execution = ExecutionPolicy::DeterministicDebug;
+	const Report report = run(request);
+	REQUIRE(report.model);
+	CHECK(report.model->intrinsics().fx == Catch::Approx(900.0).margin(0.1));
+	const ResamplingEvidence& e = std::get<ResamplingEvidence>(report.resampling);
+	CAPTURE(e.focalVariation, report.fitnessNotes);
+	CHECK(e.resamples == 20);
+	CHECK(e.focalVariation < 1e-4);
+	CHECK(report.verdict == Verdict::Ready);
 }
 
 TEST_CASE("frames without a board are examined and never chosen", "[camera][calibration]")

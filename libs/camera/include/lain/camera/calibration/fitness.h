@@ -23,8 +23,8 @@ namespace lain::camera::calibration
 		std::uint32_t minimumViews = 0;			   // calibration views selected
 		double minimumCoverage = 0;				   // fraction of the image grid the calibration views' observations reach
 		double maximumHeldOutAngle = 0;			   // radians: RMS angle between observed and predicted rays, held out
-		double maximumFocalVariation = 0;		   // relative standard deviation of fx and fy across resamples
-		double maximumPrincipalPointVariation = 0; // radians: standard deviation of cx and cy over the focal length
+		double maximumFocalVariation = 0;		   // relative spread of fx and fy across resamples (ResamplingEvidence)
+		double maximumPrincipalPointVariation = 0; // radians: spread of cx and cy over the focal length
 	};
 
 	// Explicit request overrides, applied to the Ready tier. Unset keeps the profile's value.

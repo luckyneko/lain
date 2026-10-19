@@ -4,7 +4,7 @@ model 960x720 f(900.3 905.24) c(479.507 359.5) Brown-Conrady 5 (-0.1 0.05 0.001 
 verdict Ready
 thresholds reconstruction/1 ready(10 0.6 0.0006 0.005 0.002) exploratory(6 0.3 0.002 0.02 0.01)
 heldOut views 8 corners 192 withoutPose 0 rmsAngle 9.8836e-05 rmsPixels 0.098311706 worstPixels 0.162399362
-resampling 20 focal 1.6857e-05 principalPoint 3.576e-06
+resampling 20 focal 1.647e-05 principalPoint 3.696e-06
 uncertainty 0.5 0.6 0.07 0.08 (0.001 0.002 0.0003 0.0004 0.005)
 seeded
 diagnostics.framesExamined 40 framesUsable 38 viewsSelected 30 viewsHeldOut 8 coverage 0.875 fitRmsPixels 0.0421 fitResiduals 720
@@ -66,7 +66,7 @@ note Ready: held-out RMS angle 0.009215 rad exceeds 0.001000
 note Exploratory: held-out RMS angle 0.009215 rad exceeds 0.002000
 thresholds reconstruction/1 ready(35 0.6 0.001 0.005 0.002) exploratory(6 0.3 0.002 0.02 0.01)
 heldOut views 10 corners 240 withoutPose 0 rmsAngle 0.009214605 rmsPixels 9.39421753 worstPixels 14.6345
-resampling 5 focal 7.2312e-05 principalPoint 0
+resampling 5 focal 7.9912e-05 principalPoint 0
 uncertainty unset
 seeded fx fy cx cy
 diagnostics.framesExamined 40 framesUsable 40 viewsSelected 20 viewsHeldOut 10 coverage 0.875 fitRmsPixels 0 fitResiduals 480

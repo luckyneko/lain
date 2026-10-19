@@ -8428,6 +8428,32 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - **10c's ranking stays** (item 7): the start that placed the most frames wins, then the lowest
      cost per residual. Nothing measured argues against it, and a cost per residual compares fits of
      the same frames only.
+   - **A calibration's stability is a robust spread** (item 6). `calibration::detail::stability`, which
+     both methods share, took the standard deviation of the resampled fx, fy, cx and cy. It now takes
+     the median absolute deviation from the median, times 1.4826 (one over the standard normal's third
+     quartile), so for normally spread estimates it is the standard deviation and the profiles' bounds
+     keep their meaning; the focal and principal-point variations are over the median focal length. A
+     bootstrap draw that leaves too few views to condition the model gives an estimate far from every
+     other, and fewer than half the resamples can now lie anywhere without moving the spread.
+     - **Measured on the both-methods footage, six seeds:** board calibration is Ready on all six,
+       where it was Rejected on two (focal variations of 89% and 32%). Its focal variation is now
+       0.081 to 0.147% and its principal-point variation 0.91 to 1.52 mrad, the models 0.009 to 0.071%
+       out in focal length.
+     - **Targetless calibration's spread shrank where its resamples agree**: its principal-point
+       variation on that footage is 0.025 to 0.43 mrad on the seeds whose model is right and 0.29 to
+       0.68 on the three 2.7 to 4.4 px out (item 4, still open), against 0.4 to 0.75 as a standard
+       deviation. Most resamples land on one answer and a few far from it.
+     - **The golden changes in its two resampling lines only** (focal 1.6857e-05 to 1.647e-05,
+       principal point 3.576e-06 to 3.696e-06; the held model's focal 7.2312e-05 to 7.9912e-05): on
+       well-behaved resamples the two statistics agree within a few percent.
+     - **A new case** (`test_calibration.cpp`): the stand-in answers one resample of twenty half as
+       long again, and the result must stay Ready with a variation under 1e-4 (4.4e-6 measured).
+       Sabotage: the standard deviation restored gives 10.9% and Rejected.
+     - **The seeded-draws case needed a finer fingerprint.** Its stand-in's focal length was the
+       number of distinct views drawn, and the median absolute deviation of whole numbers came out the
+       same for two seeds. It now adds a term for which views were drawn.
+     - Registration's resampling evidence (an RMS about the result per camera) is unchanged; it is
+       queued with registration's robust held-out statistic in the Outstanding index.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -13616,13 +13642,13 @@ row here**. A row is cheap to delete and expensive to leave.
        10e built*), each its own commit before sub-slice 11 exposes the node:
        - the held-out bound across lenses: in pixels, or whitened by the stated covariance;
        - the verdict missing a principal point several pixels off: resample frames as well as tracks,
-         or compare the three starts' models;
-       - board calibration's stability decided by one resample: a robust spread, decided with
-         registration's robust held-out statistic above.
+         or compare the three starts' models.
 
        The repo owner took every recommendation on 2026-10-19. Already built: a moving camera's
-       feature cap of 2048, 40 sampled frames kept, and 10c's ranking kept (slice 4's *After
-       sub-slice 10e*).
+       feature cap of 2048, 40 sampled frames kept, 10c's ranking kept, and a robust spread for a
+       calibration's stability (slice 4's *After sub-slice 10e*). Registration's own resampling
+       spread, an RMS about the result, is still a candidate for the same treatment, with its robust
+       held-out statistic above.
      - **The 100-camera registration scale case's wall-clock bound** (120 s) fails under `ctest -j8`
        beside the heavy end-to-end suites (154 to 181 s), while it takes 36 s alone: a larger bound,
        the bound only when run alone, or `PROCESSORS` on that case.
