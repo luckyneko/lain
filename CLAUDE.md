@@ -1400,6 +1400,36 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-19 — targetless calibration judges its held-out residual whitened
+
+The third of the commits that take 10e's recommendations (item 1). A scene feature is located to a
+fraction of a pixel whatever the lens, so `reconstruction-targetless/1`'s fixed held-out angle held a
+wide lens to a tighter bound than a long one: through f = 250, a model 0.12% out in focal length was
+Exploratory on its 2.19 mrad alone. The profile now judges the held-out residual **whitened by each
+observation's stated covariance**, RMS per axis, at 4 for Ready and 8 for Exploratory, and leaves the
+angle unjudged. `ctest` **1288/1288** Debug and **1296/1296** Release with video, camera and Ceres on,
+**1163/1163** with all three off (+2 each); warning-clean, format-check clean. Full notes in WORK.md's
+*After sub-slice 10e* under M9 slice 4.
+
+- **Whitened rather than pixels**, because the profile's contract is that every criterion is
+  resolution-independent: a pixel bound would hold an 8K camera's features to a VGA camera's.
+- **`HeldOutEvidence::rmsWhitened`** goes through the `whitenedSquared` the refinement already uses,
+  divided by twice the count, so 1 means as precise as stated. Absent when an observation states no
+  covariance; board calibration does not measure it, and `reconstruction/1` does not judge it.
+- **A new criterion, `maximumHeldOutWhitened`**, infinite unless a tier judges it, with an override.
+  A tier that judges it needs the evidence to be Ready.
+- **Measured:** the right models are 1.80 to 2.87 at focal lengths of 250 to 1500, where their angles
+  went from 0.61 to 2.19 mrad. They sit above 1 because a small feature states less than its true
+  error. Noise at the stated covariance through Ceres measures 1.18.
+- **Neither statistic sees a wrong model the reconstruction absorbs**: a principal point held 10 px
+  off, or no distortion model on a distorted lens, validated as well as the truth on rendered footage.
+  That is item 4's; this commit only stops holding a wide lens to a tighter bound.
+- **The board golden changes in eleven lines, one printed field each**, and no number moves.
+- **Two sabotages, both caught as predicted.** The RMS taken over residuals rather than axes reads
+  each value 1.41 times high: it fails the Ceres noise case's upper bound (1.67) and turns the held
+  principal point Rejected (8.53). A judge that ignores the bound fails the stand-in tiers' two
+  sections and leaves the held principal point Ready.
+
 ### Update 2026-10-19 — a calibration's stability is a robust spread
 
 The second of the commits that take 10e's recommendations. `calibration::detail::stability`, shared by

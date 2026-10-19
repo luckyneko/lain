@@ -2,8 +2,8 @@
 status Succeeded
 model 960x720 f(900.3 905.24) c(479.507 359.5) Brown-Conrady 5 (-0.1 0.05 0.001 -0.0005 0) domain(inf inf)
 verdict Ready
-thresholds reconstruction/1 ready(10 0.6 0.0006 0.005 0.002) exploratory(6 0.3 0.002 0.02 0.01)
-heldOut views 8 corners 192 withoutPose 0 rmsAngle 9.8836e-05 rmsPixels 0.098311706 worstPixels 0.162399362
+thresholds reconstruction/1 ready(10 0.6 0.0006 0.005 0.002 inf) exploratory(6 0.3 0.002 0.02 0.01 inf)
+heldOut views 8 corners 192 withoutPose 0 rmsAngle 9.8836e-05 rmsPixels 0.098311706 worstPixels 0.162399362 rmsWhitened unset
 resampling 20 focal 1.647e-05 principalPoint 3.696e-06
 uncertainty 0.5 0.6 0.07 0.08 (0.001 0.002 0.0003 0.0004 0.005)
 seeded
@@ -53,7 +53,7 @@ detection 39 Detected NotRefined by truth/1 stats(0 0 0 24) transform(1 1) reque
 source /synthetic/calibration
 frames 40 detector truth/1 estimator scripted/1 poseSolver truth/1
 request model BrownConrady5 imported unset policy Ignore profile (method's)
-request overrides unset unset unset unset unset
+request overrides unset unset unset unset unset unset
 request detection longest 480, refine native 0, detail Detailed, minimum corners 6
 request maximumViews 30 heldOutFraction 0.2 resamples 20 seed 1 execution Normal
 toString Ready: Brown-Conrady 5 at 960x720, held out 0.0983 px RMS over 8 views, 30 views covering 88% of the image, 38 of 40 frames usable
@@ -64,8 +64,8 @@ verdict Rejected
 note Ready: 20 views, fewer than 35
 note Ready: held-out RMS angle 0.009215 rad exceeds 0.001000
 note Exploratory: held-out RMS angle 0.009215 rad exceeds 0.002000
-thresholds reconstruction/1 ready(35 0.6 0.001 0.005 0.002) exploratory(6 0.3 0.002 0.02 0.01)
-heldOut views 10 corners 240 withoutPose 0 rmsAngle 0.009214605 rmsPixels 9.39421753 worstPixels 14.6345
+thresholds reconstruction/1 ready(35 0.6 0.001 0.005 0.002 inf) exploratory(6 0.3 0.002 0.02 0.01 inf)
+heldOut views 10 corners 240 withoutPose 0 rmsAngle 0.009214605 rmsPixels 9.39421753 worstPixels 14.6345 rmsWhitened unset
 resampling 5 focal 7.9912e-05 principalPoint 0
 uncertainty unset
 seeded fx fy cx cy
@@ -115,7 +115,7 @@ detection 39 Detected NotRefined by truth/1 stats(0 0 0 24) transform(1 1) reque
 source /synthetic/calibration
 frames 40 detector truth/1 estimator scripted/1 poseSolver truth/1
 request model BrownConrady5 imported 960x720 f(900 905) c(479.5 359.5) Inverse Brown-Conrady 5 (0.1 -0.05 0.001 -0.0005 0) domain(1.63953082 1.48791103) policy Initial profile (method's)
-request overrides 35 unset 0.001 unset unset
+request overrides 35 unset 0.001 unset unset unset
 request detection native, refine native 1, detail Summary, minimum corners 4
 request maximumViews 20 heldOutFraction 0.25 resamples 5 seed 9 execution Normal
 toString Rejected: Brown-Conrady 5 at 960x720, held out 9.39 px RMS over 10 views, 20 views covering 88% of the image, 40 of 40 frames usable; short of the next verdict: Ready: 20 views, fewer than 35
@@ -124,8 +124,8 @@ status Succeeded
 model 960x720 f(900.9 905.4525) c(479.5 359.5) Brown-Conrady 5 (-0.1 0.05 0.001 -0.0005 0) domain(inf inf)
 verdict Exploratory
 note Ready: no resampling evidence: the model was held, not estimated
-thresholds reconstruction/1 ready(10 0.6 0.0006 0.005 0.002) exploratory(6 0.3 0.002 0.02 0.01)
-heldOut views 38 corners 912 withoutPose 0 rmsAngle 0.000263707 rmsPixels 0.262744301 worstPixels 0.464731137
+thresholds reconstruction/1 ready(10 0.6 0.0006 0.005 0.002 inf) exploratory(6 0.3 0.002 0.02 0.01 inf)
+heldOut views 38 corners 912 withoutPose 0 rmsAngle 0.000263707 rmsPixels 0.262744301 worstPixels 0.464731137 rmsWhitened unset
 resampling unavailable: the model was held, not estimated
 uncertainty unset
 seeded
@@ -175,7 +175,7 @@ detection 39 Detected NotRefined by truth/1 stats(0 0 0 24) transform(1 1) reque
 source /synthetic/calibration
 frames 40 detector truth/1 estimator / poseSolver truth/1
 request model BrownConrady5 imported 960x720 f(900.9 905.4525) c(479.5 359.5) Brown-Conrady 5 (-0.1 0.05 0.001 -0.0005 0) domain(inf inf) policy HoldAndValidate profile (method's)
-request overrides unset unset unset unset unset
+request overrides unset unset unset unset unset unset
 request detection longest 480, refine native 0, detail Detailed, minimum corners 6
 request maximumViews 30 heldOutFraction 0.2 resamples 20 seed 1 execution DeterministicDebug
 toString Exploratory: Brown-Conrady 5 at 960x720, held out 0.263 px RMS over 38 views, 38 of 40 frames usable; short of the next verdict: Ready: no resampling evidence: the model was held, not estimated
@@ -184,7 +184,7 @@ status Failed
 failure UnknownFitnessProfile: no fitness profile is named "reconstruction/99"
 model unset
 verdict Rejected
-thresholds  ready(0 0 0 0 0) exploratory(0 0 0 0 0)
+thresholds  ready(0 0 0 0 0 inf) exploratory(0 0 0 0 0 inf)
 heldOut unavailable: not computed
 resampling unavailable: not computed
 uncertainty unset
@@ -195,7 +195,7 @@ heldOutViews
 source /synthetic/calibration
 frames 40 detector / estimator / poseSolver /
 request model BrownConrady5 imported unset policy Ignore profile reconstruction/99
-request overrides unset unset unset unset unset
+request overrides unset unset unset unset unset unset
 request detection longest 480, refine native 0, detail Detailed, minimum corners 6
 request maximumViews 30 heldOutFraction 0.2 resamples 20 seed 1 execution Normal
 toString Failed: UnknownFitnessProfile (no fitness profile is named "reconstruction/99")

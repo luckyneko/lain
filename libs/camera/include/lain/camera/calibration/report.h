@@ -76,6 +76,12 @@ namespace lain::camera::calibration
 		// Counted, and named nowhere else. Always 0 in board calibration, whose corners are measured
 		// whatever their residual.
 		std::uint32_t outliers = 0;
+		// The residuals each whitened by its observation's stated covariance, RMS per axis: 1 when
+		// every observation is exactly as precise as it states. Unlike an angle it does not depend on
+		// the focal length, the resolution or the size of the features. Over the residuals that
+		// project; absent when an observation states no covariance, as a board's corners rarely do,
+		// so board calibration does not measure it.
+		std::optional<double> rmsWhitened = std::nullopt;
 	};
 
 	// A parameter the estimate kept at its starting value rather than estimating (CONTEXT.md, "Held

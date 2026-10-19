@@ -573,8 +573,15 @@ TEST_CASE("an empty profile is the method's own, and either profile may judge it
 	const std::optional<FitnessProfile> own = fitnessProfile("reconstruction-targetless/1");
 	REQUIRE(own.has_value());
 	CHECK(own->ready.minimumViews == 10);
-	CHECK(own->ready.maximumHeldOutAngle == 0.0015);
-	CHECK(own->exploratory.maximumHeldOutAngle == 0.005);
+	// The held-out residual is judged whitened by each feature's stated covariance, never as an angle.
+	CHECK(std::isinf(own->ready.maximumHeldOutAngle));
+	CHECK(std::isinf(own->exploratory.maximumHeldOutAngle));
+	CHECK(own->ready.maximumHeldOutWhitened == 4.0);
+	CHECK(own->exploratory.maximumHeldOutWhitened == 8.0);
+	const std::optional<FitnessProfile> boards = fitnessProfile("reconstruction/1");
+	REQUIRE(boards.has_value());
+	CHECK(boards->ready.maximumHeldOutAngle == 0.0006);
+	CHECK(std::isinf(boards->ready.maximumHeldOutWhitened));
 
 	setUp();
 	const feature::TrackSet set = scene::sequenceTrackSetOf();

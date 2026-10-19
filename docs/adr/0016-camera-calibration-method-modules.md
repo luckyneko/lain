@@ -571,7 +571,16 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   angle alone)*. So the calibration fitness criteria keep their
   meaning in both methods (views, coverage, held-out angle, focal and principal-point variation), and
   the targetless profile, `reconstruction-targetless/1`, differs only in its numbers: a scene feature
-  is located less precisely than a board corner. An empty profile in a request is the method's own.
+  is located less precisely than a board corner. *(Amended 2026-10-19: it differs in one criterion as
+  well. A scene feature is located to a fraction of a pixel whatever the lens, so a fixed held-out angle
+  held a wide lens to a tighter bound than a long one: measured in sub-slice 10e, the residual was 0.6 to
+  0.9 px from f = 250 to 1500, and an accurate model through f = 250 failed Ready on its angle alone.
+  The targetless profile judges the held-out residual whitened by each observation's stated covariance
+  instead, RMS per axis, at 4 for Ready and 8 for Exploratory, and leaves the angle unjudged; board
+  calibration keeps the angle, since its corners rarely state a covariance. The right models measured
+  1.2 to 2.9, since small features state less than their true error. Neither statistic sees a wrong
+  model whose error the reconstruction absorbs, a principal point held 10 px off or a distortion model
+  left out, which validated as well as the truth.)* An empty profile in a request is the method's own.
   The bootstrap resamples tracks. The reconstruction's poses and landmarks are diagnostics with an
   arbitrary scale, never part of the result.
 - **The fallback is a graph of gates and small nodes**, the shape the 2026-08-16 review asked for. Each

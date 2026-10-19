@@ -70,11 +70,13 @@ namespace lain::camera::calibration::targetless
 	//    CameraModel::create, outliers named by track and frame, and the fit RMS over the observations
 	//    not named. A held model refines the frames and landmarks alone;
 	// 7. each held-out frame posed against the refined landmarks, and its observations within the
-	//    pose's inlier angle measured as angles through lain's projection; those beyond it counted;
+	//    pose's inlier angle measured through lain's projection, as angles, as pixels, and whitened by
+	//    each observation's stated covariance; those beyond it counted;
 	// 8. seeded bootstrap resampling of the refined landmarks, for the model's stability: each resample
 	//    adjusted from the result, started as the adjustment was but under the refined model, so an
 	//    observation the refined model cannot project is left out of it;
-	// 9. the verdict against the fitness profile, through calibration::judge.
+	// 9. the verdict against the fitness profile, through calibration::judge. The method's own profile
+	//    judges the held-out residual whitened, so a wide lens is held to the same bound as a long one.
 	//
 	// Every inlier test is 4 source pixels, turned into an angle by the focal length in use where it is
 	// one. Independent of the order views and tracks are given in, of their identities, and of the

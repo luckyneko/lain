@@ -69,7 +69,8 @@ namespace lain::camera::testing::targetlesstext
 		out << "thresholds " << r.thresholds.name << "\n";
 		if (const auto* h = std::get_if<HeldOutEvidence>(&r.heldOut))
 			out << "heldOut " << h->views << " " << h->residuals << " " << h->viewsWithoutPose << " " << number(h->rmsAngle)
-				<< " " << number(h->rmsPixels) << " " << number(h->worstPixels) << " " << h->outliers << "\n";
+				<< " " << number(h->rmsPixels) << " " << number(h->worstPixels) << " " << h->outliers << " "
+				<< (h->rmsWhitened ? number(*h->rmsWhitened) : std::string("-")) << "\n";
 		else
 			out << "heldOut unavailable: " << std::get<Unavailable>(r.heldOut).reason << "\n";
 		if (const auto* s = std::get_if<ResamplingEvidence>(&r.resampling))

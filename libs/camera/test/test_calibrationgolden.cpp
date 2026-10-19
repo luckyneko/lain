@@ -46,7 +46,8 @@ namespace
 	std::string thresholds(const FitnessThresholds& t)
 	{
 		return std::to_string(t.minimumViews) + " " + number(t.minimumCoverage) + " " + number(t.maximumHeldOutAngle) +
-			   " " + number(t.maximumFocalVariation) + " " + number(t.maximumPrincipalPointVariation);
+			   " " + number(t.maximumFocalVariation) + " " + number(t.maximumPrincipalPointVariation) + " " +
+			   number(t.maximumHeldOutWhitened);
 	}
 
 	std::string positions(const std::vector<std::uint32_t>& list)
@@ -75,7 +76,7 @@ namespace
 		if (const auto* h = std::get_if<HeldOutEvidence>(&r.heldOut))
 			out << "heldOut views " << h->views << " corners " << h->residuals << " withoutPose " << h->viewsWithoutPose
 				<< " rmsAngle " << number(h->rmsAngle) << " rmsPixels " << number(h->rmsPixels) << " worstPixels "
-				<< number(h->worstPixels) << "\n";
+				<< number(h->worstPixels) << " rmsWhitened " << optional(h->rmsWhitened) << "\n";
 		else
 			out << "heldOut unavailable: " << std::get<Unavailable>(r.heldOut).reason << "\n";
 		if (const auto* s = std::get_if<ResamplingEvidence>(&r.resampling))
@@ -126,7 +127,7 @@ namespace
 		const FitnessOverrides& o = q.overrides;
 		out << "request overrides " << optional(o.minimumViews) << " " << optional(o.minimumCoverage) << " "
 			<< optional(o.maximumHeldOutAngle) << " " << optional(o.maximumFocalVariation) << " "
-			<< optional(o.maximumPrincipalPointVariation) << "\n";
+			<< optional(o.maximumPrincipalPointVariation) << " " << optional(o.maximumHeldOutWhitened) << "\n";
 		// Printed where it was when the request held it (sub-slice 1b moved it to the board record).
 		out << "request detection " << (record.detection ? detectionRequest(*record.detection) : "unset") << "\n";
 		out << "request maximumViews " << q.maximumViews << " heldOutFraction " << number(q.heldOutFraction)

@@ -110,6 +110,15 @@ namespace
 		return std::get<calibration::HeldOutEvidence>(report.heldOut);
 	}
 
+	// The held-out residual whitened by each feature's stated covariance, which a targetless report
+	// always measures: every extracted observation states one.
+	double whitenedOf(const calibration::Report& report)
+	{
+		const calibration::HeldOutEvidence& heldOut = heldOutOf(report);
+		REQUIRE(heldOut.rmsWhitened.has_value());
+		return *heldOut.rmsWhitened;
+	}
+
 	// The frames neither placed nor held out.
 	std::size_t unplacedOf(const calibration::Report& report)
 	{
@@ -225,13 +234,16 @@ TEST_CASE("one camera calibrated with a board and without one agrees with itself
 	const ModelError targetlessError = errorOf(targetless, truth);
 	const ModelError between = errorOf(*targetless.model, *board.model);
 	CAPTURE(boardError.focal, boardError.worst, boardError.mean, targetlessError.focal, targetlessError.worst,
-			targetlessError.mean, between.focal, between.worst, between.mean);
+			targetlessError.mean, between.focal, between.worst, between.mean, whitenedOf(targetless));
 	// Both Ready on these frames. The board's own residuals are about a tenth of a pixel: held out 0.18
-	// mrad against the targetless method's 1.22, which a feature track's localisation sets.
+	// mrad against the targetless method's 1.22, which a feature track's localisation sets. Each is
+	// judged by its own profile: the board's angle, the targetless residual whitened by its features'
+	// stated covariances, 2.16 measured, against a Ready bound of 4.
 	CHECK(board.verdict == calibration::Verdict::Ready);
 	CHECK(targetless.verdict == calibration::Verdict::Ready);
 	CHECK(heldOutOf(board).rmsAngle < 0.0004);
 	CHECK(heldOutOf(targetless).rmsAngle < 0.0015);
+	CHECK(whitenedOf(targetless) < 4.0);
 	// Measured: the board 0.071% out in focal length and its ray mapping 1.19 px out at worst, 0.72 px on
 	// average (its principal point 0.6 px off); the targetless model 0.033%, 0.56 px and 0.30 px; the two
 	// 0.090%, 1.65 px and 0.93 px apart. The board is found in 33 of the 48 frames; the targetless
@@ -281,9 +293,9 @@ TEST_CASE("the default sampled frames calibrate a moving camera through a normal
 		INFO(report.toString());
 		REQUIRE(report.status == calibration::CalibrationStatus::Succeeded);
 		const ModelError error = errorOf(report, truth);
-		CAPTURE(error.focal, error.worst, error.mean, heldOutOf(report).rmsAngle);
+		CAPTURE(error.focal, error.worst, error.mean, heldOutOf(report).rmsAngle, whitenedOf(report));
 		// Measured: 0.103% out in focal length, the ray mapping 1.30 px at worst and 0.77 px on average,
-		// held out 1.22 mrad.
+		// held out 1.22 mrad, 2.35 whitened.
 		CHECK(report.verdict == calibration::Verdict::Ready);
 		CHECK(error.focal < 0.002);
 		CHECK(error.worst < 2.5);
@@ -297,15 +309,15 @@ TEST_CASE("the default sampled frames calibrate a moving camera through a normal
 		INFO(report.toString());
 		REQUIRE(report.status == calibration::CalibrationStatus::Succeeded);
 		const ModelError error = errorOf(report, truth);
-		CAPTURE(error.focal, error.worst, error.mean, heldOutOf(report).rmsAngle);
+		CAPTURE(error.focal, error.worst, error.mean, heldOutOf(report).rmsAngle, whitenedOf(report));
 		// Measured: 0.123% out in focal length, the ray mapping 1.83 px at worst and 0.56 px on average,
-		// and Exploratory for one reason: held out 2.19 mrad, past Ready's 1.5. The held-out residual is
-		// 0.74 px, about the normal lens's 0.61, and a pixel subtends twice the angle at half the focal
-		// length. The bound is the repo owner's to decide (WORK.md, M9 slice 4, sub-slice 10e).
-		CHECK(report.verdict == calibration::Verdict::Exploratory);
-		REQUIRE(report.fitnessNotes.size() == 1);
-		CHECK_THAT(report.fitnessNotes.front(), ContainsSubstring("held-out RMS angle"));
+		// held out 0.74 px, about the normal lens's 0.61, and 2.87 whitened. A pixel subtends twice the
+		// angle at half the focal length, so as an angle that is 2.19 mrad, which failed the 1.5 mrad
+		// Ready bound the profile had until the held-out residual was judged whitened instead (WORK.md,
+		// M9 slice 4, after sub-slice 10e).
+		CHECK(report.verdict == calibration::Verdict::Ready);
 		CHECK(heldOutOf(report).rmsAngle > 0.0015);
+		CHECK(whitenedOf(report) < 4.0);
 		CHECK(error.focal < 0.0025);
 		CHECK(error.worst < 3.5);
 		CHECK(error.mean < 1.2);
@@ -318,9 +330,9 @@ TEST_CASE("the default sampled frames calibrate a moving camera through a normal
 		INFO(report.toString());
 		REQUIRE(report.status == calibration::CalibrationStatus::Succeeded);
 		const ModelError error = errorOf(report, truth);
-		CAPTURE(error.focal, error.worst, error.mean, heldOutOf(report).rmsAngle);
+		CAPTURE(error.focal, error.worst, error.mean, heldOutOf(report).rmsAngle, whitenedOf(report));
 		// Measured: 0.243% out in focal length, the ray mapping 5.05 px at worst and 2.33 px on average,
-		// held out 0.78 mrad, Ready. Over three seeds 0.20 to 0.24% and 1.5 to 4.7 px on average, the
+		// held out 0.78 mrad and 1.96 whitened, Ready. Over three seeds 0.20 to 0.24% and 1.5 to 4.7 px on average, the
 		// principal point up to 3.9 px off and its resampled variation 1.7 to 2.0 mrad: Ready with an error
 		// the held-out frames' poses absorb (WORK.md, M9 slice 4, sub-slice 10e).
 		CHECK(report.verdict == calibration::Verdict::Ready);
@@ -379,9 +391,9 @@ TEST_CASE("a strongly distorted lens leaves no frame unplaced", "[camera][calibr
 	CHECK(t.unplaced.empty());
 	CHECK(t.placement.size() + report.diagnostics.heldOut.size() == t.frames.size());
 	const ModelError error = errorOf(report, truth);
-	CAPTURE(error.focal, error.worst, error.mean, heldOutOf(report).rmsAngle);
+	CAPTURE(error.focal, error.worst, error.mean, heldOutOf(report).rmsAngle, whitenedOf(report));
 	// Measured: 0.094% out in focal length, the ray mapping 1.26 px at worst and 0.90 px on average,
-	// held out 0.61 mrad, Ready.
+	// held out 0.61 mrad and 1.80 whitened, Ready.
 	CHECK(report.verdict == calibration::Verdict::Ready);
 	CHECK(error.focal < 0.002);
 	CHECK(error.worst < 2.5);

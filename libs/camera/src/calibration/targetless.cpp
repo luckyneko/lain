@@ -547,11 +547,13 @@ namespace lain::camera::calibration::targetless
 		return solution.models.front();
 	}
 
-	// One held-out frame's evidence: the landmarks it sees and where it saw them.
+	// One held-out frame's evidence: the landmarks it sees, where it saw them, and how precisely each
+	// observation says it was located.
 	struct HeldOutFrame
 	{
 		std::vector<math::Vec3d> points; // in the reference frame
 		std::vector<math::Vec2d> pixels;
+		std::vector<std::optional<std::array<double, 3>>> covariances;
 	};
 
 	struct FrameMeasure
@@ -559,6 +561,11 @@ namespace lain::camera::calibration::targetless
 		bool posed = false;
 		std::uint32_t residuals = 0, outliers = 0;
 		double sumAngles = 0, sumPixels = 0, worstPixels = 0;
+		// The squared residuals that project, whitened by their covariances; `unstated` when one of
+		// the frame's measured observations states none.
+		double sumWhitened = 0;
+		std::uint32_t whitened = 0;
+		bool unstated = false;
 		std::vector<math::Vec2d> measured; // the pixels within the inlier angle
 	};
 
@@ -571,6 +578,7 @@ namespace lain::camera::calibration::targetless
 		const double angle = inlierAngle(model);
 		std::vector<feature::PointRay> pointRays;
 		std::vector<math::Vec2d> pixels;
+		std::vector<std::optional<std::array<double, 3>>> covariances;
 		for (std::size_t i = 0; i < frame.points.size(); ++i)
 		{
 			const Unprojection<double> ray = unproject(model, frame.pixels[i].x, frame.pixels[i].y);
@@ -578,6 +586,7 @@ namespace lain::camera::calibration::targetless
 				continue;
 			pointRays.push_back({frame.points[i], {ray.x, ray.y, ray.z}});
 			pixels.push_back(frame.pixels[i]);
+			covariances.push_back(frame.covariances[i]);
 		}
 		const feature::GeometryResult posed = feature::absolutePose(pointRays, geometryRequest(angle, request));
 		if (!posed.ok())
@@ -598,9 +607,17 @@ namespace lain::camera::calibration::targetless
 			const Projection<double> predicted = project(model, q.x, q.y, q.z);
 			if (predicted.ok())
 			{
-				const double d = math::length(math::Vec2d{predicted.u, predicted.v} - pixels[i]);
+				const math::Vec2d r = math::Vec2d{predicted.u, predicted.v} - pixels[i];
+				const double d = math::length(r);
 				out.sumPixels += d * d;
 				out.worstPixels = std::max(out.worstPixels, d);
+				if (covariances[i])
+				{
+					out.sumWhitened += detail::whitenedSquared(r, covariances[i], refinement::NoiseModel{});
+					++out.whitened;
+				}
+				else
+					out.unstated = true;
 			}
 		}
 		return out;
@@ -1079,6 +1096,7 @@ namespace lain::camera::calibration::targetless
 					{
 						held[*h].points.push_back(solution.landmarks[l]);
 						held[*h].pixels.push_back(o.pixel);
+						held[*h].covariances.push_back(o.covariance);
 					}
 				}
 			}
@@ -1094,7 +1112,9 @@ namespace lain::camera::calibration::targetless
 		{
 			HeldOutEvidence evidenceOut;
 			evidenceOut.views = std::uint32_t(held.size());
-			double angles = 0, pixels = 0;
+			double angles = 0, pixels = 0, whitened = 0;
+			std::uint32_t whitenedResiduals = 0;
+			bool unstated = false;
 			for (const FrameMeasure& m : measures)
 			{
 				if (!m.posed)
@@ -1107,6 +1127,9 @@ namespace lain::camera::calibration::targetless
 				evidenceOut.outliers += m.outliers;
 				angles += m.sumAngles;
 				pixels += m.sumPixels;
+				whitened += m.sumWhitened;
+				whitenedResiduals += m.whitened;
+				unstated = unstated || m.unstated;
 				evidenceOut.worstPixels = std::max(evidenceOut.worstPixels, m.worstPixels);
 				for (const math::Vec2d& p : m.measured)
 					detail::cover(heldCells, p, frames.image);
@@ -1117,6 +1140,9 @@ namespace lain::camera::calibration::targetless
 			{
 				evidenceOut.rmsAngle = std::sqrt(angles / evidenceOut.residuals);
 				evidenceOut.rmsPixels = std::sqrt(pixels / evidenceOut.residuals);
+				// Per axis: a squared whitened residual has two degrees of freedom.
+				if (!unstated && whitenedResiduals > 0)
+					evidenceOut.rmsWhitened = std::sqrt(whitened / (2.0 * whitenedResiduals));
 				report.heldOut = evidenceOut;
 			}
 		}

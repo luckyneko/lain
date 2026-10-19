@@ -250,14 +250,18 @@ TEST_CASE("noise at the stated covariance calibrates to within it, Ready", "[cam
 		INFO(report.toString());
 		REQUIRE(report.status == CalibrationStatus::Succeeded);
 		// Measured: the focal length 0.247% long, the principal point 0.13 px off, the ray mapping 1.11 px
-		// out; held out 0.435 mrad; focal variation 0.106% and the principal point's 0.67 mrad; 6 of 1200
-		// observations named, the noise's own share.
+		// out; held out 0.435 mrad, and 1.18 per axis whitened, since noise drawn at the stated covariance
+		// is as precise as it states; focal variation 0.106% and the principal point's 0.67 mrad; 6 of
+		// 1200 observations named, the noise's own share.
 		const ModelError error = errorOf(report, truth);
 		CHECK(error.focal < 0.005);
 		CHECK(error.ray < 2.0);
 		const HeldOutEvidence& held = heldOutOf(report);
 		CHECK(held.rmsAngle < 0.001);
 		CHECK(held.outliers == 0);
+		REQUIRE(held.rmsWhitened.has_value());
+		CHECK(*held.rmsWhitened > 0.8);
+		CHECK(*held.rmsWhitened < 1.5);
 		const ResamplingEvidence& resampling = resamplingOf(report);
 		CHECK(resampling.focalVariation > 0);
 		CHECK(resampling.focalVariation < 0.003);
@@ -465,12 +469,14 @@ TEST_CASE("a principal point (8, -6) px off is recovered by default, and missed 
 		CHECK(report.model->intrinsics().cx == 319.5);
 		CHECK(report.model->intrinsics().cy == 239.5);
 		CHECK(std::holds_alternative<Held>(resamplingOf(report).principalPointVariation));
-		// Measured: the ray mapping 10.7 px out, and held out 2.17 mrad, past Ready's 1.5. On exact tracks
-		// a held miss this large shows; on rendered footage, under noise, the held-out frames' poses
-		// absorbed one of 10 to 18 px (1.1 to 1.4 mrad) and the model was Ready, which is why the
-		// principal point is freed by default (sub-slice 10's probe).
+		// Measured: the ray mapping 10.7 px out, and held out 2.17 mrad and 6.03 whitened, past Ready's 4.
+		// On exact tracks a held miss this large shows; on rendered footage, under noise, the held-out
+		// frames' poses absorbed one of 10 to 18 px (1.1 to 1.4 mrad) and the model was Ready, which is
+		// why the principal point is freed by default (sub-slice 10's probe).
 		CHECK(errorOf(report, truth).ray > 8.0);
 		CHECK(heldOutOf(report).rmsAngle > 0.0015);
+		REQUIRE(heldOutOf(report).rmsWhitened.has_value());
+		CHECK(*heldOutOf(report).rmsWhitened > 4.0);
 		CHECK(report.verdict == Verdict::Exploratory);
 	}
 }

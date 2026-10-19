@@ -503,7 +503,66 @@ namespace
 	{
 		return text.compare(0, prefix.size(), prefix) == 0;
 	}
+
+	FitnessProfile targetless1()
+	{
+		const std::optional<FitnessProfile> profile = fitnessProfile("reconstruction-targetless/1");
+		REQUIRE(profile.has_value());
+		return *profile;
+	}
+
+	// A wide lens's held-out evidence: 2.2 mrad, which an angle bound of 1.5 refused, at a whitened
+	// RMS of `whitened` (unset: an observation stated no covariance).
+	std::variant<HeldOutEvidence, Unavailable> wideHeldOut(std::optional<double> whitened)
+	{
+		HeldOutEvidence evidence{8, 4500, 0, 0.0022, 0.74, 3.5};
+		evidence.rmsWhitened = whitened;
+		return evidence;
+	}
+
+	const std::variant<ResamplingEvidence, Unavailable> stableResampling{ResamplingEvidence{20, 0.001, 0.0008}};
 } // namespace
+
+TEST_CASE("the targetless profile judges the held-out residual whitened, not its angle", "[camera][calibration][judge]")
+{
+	SECTION("within 4 of the stated precision is Ready, whatever the angle")
+	{
+		const Judgement judgement = judge(targetless1(), 30, 0.9, wideHeldOut(2.9), stableResampling);
+		INFO("notes: " << (judgement.notes.empty() ? std::string("none") : judgement.notes.front()));
+		CHECK(judgement.verdict == Verdict::Ready);
+		CHECK(judgement.notes.empty());
+	}
+	SECTION("past 4 is Exploratory, noted for the whitened residual alone")
+	{
+		const Judgement judgement = judge(targetless1(), 30, 0.9, wideHeldOut(5.0), stableResampling);
+		CHECK(judgement.verdict == Verdict::Exploratory);
+		REQUIRE(judgement.notes.size() == 1);
+		CHECK(startsWith(judgement.notes[0], "Ready: held-out whitened RMS "));
+	}
+	SECTION("past 8 is Rejected")
+	{
+		const Judgement judgement = judge(targetless1(), 30, 0.9, wideHeldOut(9.0), stableResampling);
+		CHECK(judgement.verdict == Verdict::Rejected);
+		REQUIRE(judgement.notes.size() == 2);
+		CHECK(startsWith(judgement.notes[1], "Exploratory: held-out whitened RMS "));
+	}
+	SECTION("board's profile judges the angle and leaves the whitened residual alone")
+	{
+		const Judgement judgement = judge(reconstruction1(), 30, 0.9, wideHeldOut(9.0), stableResampling);
+		CHECK(judgement.verdict == Verdict::Rejected);
+		for (const std::string& note : judgement.notes)
+			CHECK(note.find("whitened") == std::string::npos);
+	}
+}
+
+TEST_CASE("missing whitened evidence refuses the targetless profile's Ready and leaves Exploratory open",
+		  "[camera][calibration][judge]")
+{
+	const Judgement judgement = judge(targetless1(), 30, 0.9, wideHeldOut(std::nullopt), stableResampling);
+	CHECK(judgement.verdict == Verdict::Exploratory);
+	REQUIRE(judgement.notes.size() == 1);
+	CHECK(judgement.notes[0] == "Ready: no whitened held-out evidence: an observation states no covariance");
+}
 
 TEST_CASE("a held principal point does not keep an estimate from Ready", "[camera][calibration][judge]")
 {

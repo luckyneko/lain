@@ -4,6 +4,7 @@
 #include <lain/string/format.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <string>
 #include <utility>
@@ -49,6 +50,18 @@ namespace lain::camera::calibration
 		{
 			if (e->rmsAngle > t.maximumHeldOutAngle)
 				note("held-out RMS angle " + std::to_string(e->rmsAngle) + " rad exceeds " + std::to_string(t.maximumHeldOutAngle));
+			// Judged only where a tier bounds it; a tier that does needs it measured to be Ready.
+			if (std::isfinite(t.maximumHeldOutWhitened))
+			{
+				if (!e->rmsWhitened)
+				{
+					if (complete)
+						note("no whitened held-out evidence: an observation states no covariance");
+				}
+				else if (*e->rmsWhitened > t.maximumHeldOutWhitened)
+					note("held-out whitened RMS " + std::to_string(*e->rmsWhitened) + " exceeds " +
+						 std::to_string(t.maximumHeldOutWhitened));
+			}
 		}
 		else if (complete)
 			note("no held-out evidence: " + std::get<Unavailable>(heldOut).reason);

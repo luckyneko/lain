@@ -8454,6 +8454,47 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        same for two seeds. It now adds a term for which views were drawn.
      - Registration's resampling evidence (an RMS about the result per camera) is unchanged; it is
        queued with registration's robust held-out statistic in the Outstanding index.
+   - **Targetless calibration judges its held-out residual whitened, not as an angle** (item 1). A
+     scene feature is located to a fraction of a pixel whatever the lens, so a fixed angle held a wide
+     lens to a tighter bound than a long one: through f = 250, an accurate model (0.12% in focal
+     length) was Exploratory on its held-out 2.19 mrad alone. Whitening by the stated covariance, per
+     axis, was chosen over pixels, since the profile's contract is that every criterion is
+     resolution-independent, and a pixel bound would hold an 8K camera's features to a VGA camera's.
+     - **`HeldOutEvidence::rmsWhitened`**: each held-out residual whitened by its observation's
+       covariance, through the same `whitenedSquared` the refinement and registration's validation
+       use, summed, and divided by twice the count (two degrees of freedom a residual), so 1 means as
+       precise as stated. Absent when an observation states no covariance, and board calibration does
+       not measure it: its corners rarely state one.
+     - **A new criterion, `FitnessThresholds::maximumHeldOutWhitened`**, infinite unless a tier judges
+       it, with an override. `reconstruction-targetless/1` judges it at 4 for Ready and 8 for
+       Exploratory and leaves the angle unjudged (infinite); `reconstruction/1` is unchanged. A tier
+       that judges it needs the evidence to be Ready, as every other criterion does. The targetless
+       profile was provisional until sub-slice 10 measured it, so its numbers change under the same
+       name.
+     - **Measured** (the end-to-end suite, Release): the right models are 1.80 to 2.87 whitened at
+       focal lengths of 250 to 1500 and on the both-methods footage (2.16), where their angles went
+       from 0.61 to 2.19 mrad; the probe's wider set of lenses, resolutions and textures ranged 1.2 to
+       2.9. Above 1 because a small feature states less than its true error (sub-slice 7's follow-up
+       A). Through Ceres on stand-in tracks, noise at the stated covariance measures 1.18, and a
+       principal point held 10.7 px off 6.03, so that case is still Exploratory, now on this criterion.
+     - **Neither statistic sees a wrong model whose error the reconstruction absorbs.** On rendered
+       footage, a principal point held 10 px off and no distortion model on a distorted lens each
+       validated as well as the truth, whitened and as an angle: the held-out frames' poses take up
+       the error. Item 4 is where that is addressed; this criterion only stops holding a wide lens to a
+       tighter bound. Said in the profile's comment and ADR-0016's amendment.
+     - **The wide lens is Ready now**, and the end-to-end case says so; every case pins its whitened
+       residual. Two Ceres cases check it: the noise case bounds it to 0.8 to 1.5, and the held
+       principal point's must exceed 4. Stand-in cases (`test_calibration.cpp`) judge each tier on
+       hand-built evidence, and a targetless report without the evidence is at most Exploratory.
+     - **The board golden changes in eleven lines, each by one printed field**: its four thresholds
+       lines gain an `inf` a tier, its three held-out lines `rmsWhitened unset`, and its four overrides
+       lines an `unset`. No number moves.
+     - **Two sabotages, both caught as predicted.** The RMS over residuals rather than axes reads each
+       value 1.41 times high, failing the Ceres noise case's upper bound (1.67) and turning the held
+       principal point Rejected (8.53). A judge that ignores the bound fails the stand-in tiers' two
+       sections and leaves the held principal point Ready.
+     - `ctest` 1288/1288 Debug and 1296/1296 Release with video, camera and Ceres on, 1163/1163 with
+       all three off.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -13640,13 +13681,13 @@ row here**. A row is cheap to delete and expensive to leave.
        camera relative to the folder it was given.
      - **Sub-slice 10e's measurements and findings for targetless calibration** (slice 4's *Sub-slice
        10e built*), each its own commit before sub-slice 11 exposes the node:
-       - the held-out bound across lenses: in pixels, or whitened by the stated covariance;
        - the verdict missing a principal point several pixels off: resample frames as well as tracks,
          or compare the three starts' models.
 
        The repo owner took every recommendation on 2026-10-19. Already built: a moving camera's
-       feature cap of 2048, 40 sampled frames kept, 10c's ranking kept, and a robust spread for a
-       calibration's stability (slice 4's *After sub-slice 10e*). Registration's own resampling
+       feature cap of 2048, 40 sampled frames kept, 10c's ranking kept, a robust spread for a
+       calibration's stability, and the targetless held-out residual judged whitened by the stated
+       covariance rather than as an angle (slice 4's *After sub-slice 10e*). Registration's own resampling
        spread, an RMS about the result, is still a candidate for the same treatment, with its robust
        held-out statistic above.
      - **The 100-camera registration scale case's wall-clock bound** (120 s) fails under `ctest -j8`

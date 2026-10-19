@@ -693,8 +693,8 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   rejected, exploratory, or ready for reconstruction. It summarizes explicit acceptance criteria
   without replacing the calibration report's raw evidence, claiming metric scene scale, or implying
   that independent validation has run. Cross-resolution criteria emphasize normalized or angular
-  ray error, held-out evidence, coverage, and parameter stability while retaining raw pixel error for
-  diagnosis. Criteria come from a named versioned profile with optional explicit overrides. _Avoid_:
+  ray error (or a residual whitened by each observation's stated precision), held-out evidence,
+  coverage, and parameter stability while retaining raw pixel error for diagnosis. Criteria come from a named versioned profile with optional explicit overrides. _Avoid_:
   accuracy, quality, validated calibration, metric-ready calibration, universal RMS threshold.
 - **Calibration validation** — an offline assessment of a camera model against a paired validation
   dataset, producing evidence without controlling whether downstream processing continues. Validation
