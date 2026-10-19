@@ -12,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <set>
 
 using namespace lain;
@@ -236,11 +237,15 @@ TEST_CASE("the resampling draws are seeded, and the same under either execution 
 	std::size_t normalThreads = 0;
 	Report normal;
 	{
-		// A started pool, or "Normal" would run inline and prove nothing about parallel execution.
+		// A started pool, or "Normal" would run inline and prove nothing about parallel execution; and
+		// detections that take a moment, as the flow scheduler's own case does, so its workers have
+		// work left to take when they wake (on Windows CI the caller once ran all 40 frames alone).
 		const lain::testing::ThreadPool pool{3};
+		scene().detectionTime = std::chrono::milliseconds{2};
 		normal = run(request);
 		normalThreads = scene().threads.size();
 	}
+	scene().detectionTime = std::chrono::milliseconds{0};
 	scene().threads.clear();
 	request.execution = ExecutionPolicy::DeterministicDebug;
 	const Report serial = run(request);

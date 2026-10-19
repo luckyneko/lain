@@ -17,6 +17,7 @@
 #include <lain/media/framesequence.h>
 #include <lain/media/framesource.h>
 
+#include <chrono>
 #include <cmath>
 #include <functional>
 #include <memory>
@@ -87,6 +88,10 @@ namespace lain::camera::testing
 
 		std::mutex mutex;
 		std::set<std::thread::id> threads; // every thread the detector ran on
+		// How long each detection takes. Zero for every case but the one asking where detection ran: a
+		// detection that returns at once can leave a started pool's workers asleep while the caller,
+		// which takes part in the pool, runs every frame itself.
+		std::chrono::milliseconds detectionTime{0};
 	};
 	inline Scene& scene()
 	{
@@ -101,6 +106,8 @@ namespace lain::camera::testing
 		board::DetectionReport detect(const image::Image&, const media::FrameRef& frame, const board::Specification& spec,
 									  const board::DetectionRequest&, double) const override
 		{
+			if (scene().detectionTime.count() > 0)
+				std::this_thread::sleep_for(scene().detectionTime);
 			{
 				std::lock_guard<std::mutex> lock(scene().mutex);
 				scene().threads.insert(std::this_thread::get_id());
@@ -222,6 +229,7 @@ namespace lain::camera::testing
 		s0.frames = 40;
 		s0.boardless.clear();
 		s0.threads.clear();
+		s0.detectionTime = std::chrono::milliseconds{0};
 		EstimatorScript& s = script();
 		s.estimatable = {DistortionModel::BrownConrady5};
 		s.answer = [](const std::vector<board::Observation>&)
