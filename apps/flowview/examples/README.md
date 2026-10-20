@@ -2,13 +2,15 @@
 
 Graph documents to open in flowview (**File ▸ Open**), to run headless, and for the test suite.
 Every example opens and shows a result on its own, except `sequence-render`, which is driven by a
-frame position. Media paths are stored relative to this folder, so it can be opened from any clone
+frame position, and `calibrate-fallback`, which calibrates footage and a method you bind. Media paths are stored relative to this folder, so it can be opened from any clone
 or copied elsewhere whole.
 
 ```sh
 flowview                                   # then File ▸ Open an example
 flowview run -g apps/flowview/examples/folder-average.json
 flowview run -g apps/flowview/examples/sequence-render.json --frame 0-23 --result 'out.<frame:04>.png'
+flowview run -g apps/flowview/examples/calibrate-fallback.json --footage frames/ --method board-then-targetless \
+    --attempts attempts.txt --model model.json
 ```
 
 The root flags (`--size`, `--threads`, `-v`) go before `run`.
@@ -34,6 +36,7 @@ The root flags (`--size`, `--threads`, `-v`) go before `run`.
 | `video` | `data/shot.mp4` as a sequence, and its frame at position 12 (needs a video build) |
 | `bagel` | an inline group holding a map, whose elements run a linked template and a loop |
 | `render-board` | a ChArUco board to print for a real-camera fixture: 9 x 6 squares of 30 mm (needs a camera build); see `plugins/camera/test/fixtures/README.md` |
+| `calibrate-fallback` | board calibration, then targetless calibration when the board's attempt is not accepted (needs a camera build). Bind `--footage` and `--method board-then-targetless`; with no method nothing is attempted. It expects a pinhole and a 7 x 5 board of 24 mm squares, so change the specification and both calibrations' `model` for real footage |
 
 ## Broken on purpose
 

@@ -3,6 +3,9 @@
 #include "graphio.h" // saveGraph / sceneCodecs / templateResolver: the production save path
 
 #include <lain/camera/board/pattern.h>
+#include <lain/camera/calibration/attempts.h>
+#include <lain/camera/cameramodel.h>
+#include <lain/camera/distortion.h>
 #include <lain/camera/flow/register.h>
 #include <lain/core/uri.h>
 #include <lain/data/value.h>
@@ -13,6 +16,7 @@
 #include <lain/flow/group.h>
 #include <lain/flow/nodes/cast.h>
 #include <lain/flow/nodes/constant.h>
+#include <lain/flow/nodes/gate.h>
 #include <lain/flow/porttype.h>
 #include <lain/flow/porttyperegistry.h>
 #include <lain/flow/serialize/serialize.h>
@@ -861,6 +865,68 @@ namespace flowview::examples
 		return doc;
 	}
 
+	// The calibration fallback (ADR-0016): board calibration first, and targetless calibration only
+	// when the board's attempt is not accepted. Each method is its own node behind a Gate on the
+	// footage, so a method that is not needed never runs. The caller binds the footage and the method
+	// (`--method board-then-targetless`): an unbound method leaves both gates shut, and nothing is
+	// attempted. Both calibrations ask for a pinhole and a 7 x 5 board of 24 mm squares, which is
+	// what the test footage is; calibrating real footage means changing them to its lens and board.
+	static Document calibrateFallback(const Context& ctx)
+	{
+		Document doc;
+		Level root{ctx, doc.graph, doc.layout};
+		root.inputPin<media::FrameSequence>("footage");
+		root.inputPin<camera::calibration::Method>("method");
+		root.outputPin<camera::calibration::Attempts>("attempts");
+		root.outputPin<camera::CameraModel>("model");
+
+		const NodeId in = root.input(0, 1);
+		const NodeId method = root.add(camera::kCalibrationMethodKey, 1, 0);
+		const NodeId spec = root.add(camera::kBoardSpecificationKey, 1, 2);
+		root.set<int>(spec, "squaresX", 7);
+		root.set<int>(spec, "squaresY", 5);
+		root.set<float>(spec, "squareLengthMm", 24.0f);
+
+		const NodeId boardGate = root.add("gate", 2, 1);
+		root.retype(boardGate, flow::GateNode::kValuePayload, flow::portType<media::FrameSequence>());
+		const NodeId board = root.add(camera::kCalibrateCameraKey, 3, 1);
+		root.set(board, "model", camera::DistortionModel::None);
+
+		// Run the targetless attempt only when it is included and no attempt before it was accepted.
+		const NodeId next = root.add(camera::kNextAttemptKey, 4, 2);
+		root.branch(next, "CalibrationReport", "board");
+		const NodeId targetlessGate = root.add("gate", 5, 2);
+		root.retype(targetlessGate, flow::GateNode::kValuePayload, flow::portType<media::FrameSequence>());
+		const NodeId targetless = root.add(camera::kCalibrateCameraTargetlessKey, 6, 2);
+		root.set(targetless, "model", camera::DistortionModel::None);
+
+		// The attempts in priority order: the board's, then the targetless one.
+		const NodeId attempts = root.add(camera::kCalibrationAttemptsKey, 7, 1);
+		root.branch(attempts, "CalibrationReport", "board");
+		root.branch(attempts, "CalibrationReport", "targetless");
+		const NodeId model = root.add(camera::kCameraModelKey, 8, 1);
+		const NodeId out = root.output(9, 1);
+
+		root.wire(in, "method", method, "method");
+		root.wire(method, "board", boardGate, "enable");
+		root.wire(in, "footage", boardGate, "value");
+		root.wire(boardGate, "out", board, "footage");
+		root.wire(spec, "board", board, "board");
+
+		root.wire(method, "targetless", next, "included");
+		root.wire(board, "report", next, "board");
+		root.wire(next, "run", targetlessGate, "enable");
+		root.wire(in, "footage", targetlessGate, "value");
+		root.wire(targetlessGate, "out", targetless, "footage");
+
+		root.wire(board, "report", attempts, "board");
+		root.wire(targetless, "report", attempts, "targetless");
+		root.wire(attempts, "accepted", model, "report");
+		root.wire(attempts, "attempts", out, "attempts");
+		root.wire(model, "model", out, "model");
+		return doc;
+	}
+
 	const std::vector<Example>& catalog()
 	{
 		static const std::vector<Example> examples = {
@@ -881,6 +947,7 @@ namespace flowview::examples
 			{"video", "data/shot.mp4 as a sequence, and its frame at position 12", true, "", &video},
 			{"bagel", "an inline group holding a map, whose elements run a linked template and a loop", false, "", &bagel},
 			{"render-board", "a ChArUco board to print for a real-camera fixture: 9 x 6 squares of 30 mm", false, "", &renderBoard, true},
+			{"calibrate-fallback", "board calibration, then targetless when the board's attempt is not accepted (bind --footage and --method)", false, "", &calibrateFallback, true, true},
 			{"broken-missing-template", "a link to a template that is not there", false, "could not be resolved", &brokenMissingTemplate},
 			{"broken-map-hole", "folder-average over a folder holding one unreadable file", false, "elements produced no", &brokenMapHole},
 			{"broken-cast-pair", "a Cast from Image to Int, a pair nothing converts", false, "no conversion from", &brokenCastPair},

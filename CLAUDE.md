@@ -1400,6 +1400,19 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-20 — M9 slice 4, sub-slice 12b: `calibrate-fallback.json`
+
+The second of sub-slice 12's three commits. `ctest` **1313/1313** Debug and **1321/1321** Release with
+video, camera and Ceres on, **1187/1187** with all three off (unchanged); warning-clean, format-check
+clean. Full notes in WORK.md's *Sub-slice 12b built* under M9 slice 4.
+
+- **The fallback as a committed example**: inputs `footage` and `method`, outputs `attempts` and
+  `model`, a 7 x 5 board of 24 mm squares, and `None` models. The report pins are named `board` and
+  `targetless`. No other example's bytes moved.
+- **`Example::needsInputs`**: `test_examples` loads such an example and requires a binder for each of
+  its inputs, rather than running it. The real binary's `list` names the method's choices.
+- **Sabotage, caught:** the `Method` binder unregistered fails the example's section.
+
 ### Update 2026-10-20 — M9 slice 4, sub-slice 12a: a calibration method binds by name
 
 The first of sub-slice 12's three commits. `ctest` **1313/1313** Debug and **1321/1321** Release with

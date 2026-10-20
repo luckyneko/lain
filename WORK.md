@@ -9123,6 +9123,23 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    - **Two sabotages, both caught.** A case-sensitive fold fails the spellings case (four lines) and
      the bind-back case, as predicted. `list` without the choices fails the listing case alone.
 
+   **Sub-slice 12b built (2026-10-20): the example document.** `ctest` **1313/1313** Debug and
+   **1321/1321** Release with video, camera and Ceres on, **1187/1187** with all three off (unchanged:
+   the example is a section of the existing case); warning-clean, format-check clean.
+   - **`apps/flowview/examples/calibrate-fallback.json`**, written by `flowview-examples`: inputs
+     `footage` and `method`, outputs `attempts` and `model`. The board specification is 7 x 5 squares
+     of 24 mm, and both calibrations ask for a `None` model, as planned. The report pins are named
+     `board` and `targetless` rather than the canvas's `in<N>`, so the canvas says which is which.
+     Regenerating wrote only the new file: every other example is byte for byte unchanged.
+   - **`Example::needsInputs`.** `test_examples` loads such an example before the backend checks,
+     requires it to raise nothing, and requires a binder for every boundary input. It is also marked
+     `needsCamera`, which the needs-inputs branch takes precedence over.
+   - **The README** names it as the second example that needs something bound, with a `run` line.
+   - **The real binary lists it**, from another folder: `--footage : lain::media::FrameSequence` and
+     `--method : lain::camera::calibration::Method  (board | targetless | board-then-targetless)`.
+   - **Sabotage, caught:** the `Method` binder unregistered fails the example's section on its
+     `method` input.
+
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
 failed reports as ordinary results, deterministic-debug execution, downsampling versus native
