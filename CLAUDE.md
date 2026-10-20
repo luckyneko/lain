@@ -1400,6 +1400,45 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-20 — M9: the gui binds a camera model and a rig, and saves a model
+
+A review found the gui could not bind a `CameraModel`, a rig's footage or a rig's models (each read
+"(no editor)" in the Interface pane) or save a model, while the cli did all four. That blocked the owed
+gui-mode checks of the registration nodes. `ctest -j8` **1323/1323** Debug and **1331/1331** Release with
+video, camera and Ceres on, **1189/1189** Debug and **1197/1197** Release with all three off (+5 each);
+warning-clean, format-check clean. **gui-mode NOT driven:** a six-step checklist is owed. Full notes in
+WORK.md's *The gui binds and saves camera values*, under M9.
+
+- **Decided with the repo owner:** editors only, with a `loadCameraModel` node deferred; one reading per
+  type in a driver-free flowview unit; a model's Save... beside an image's, in both panes; and `listDir`
+  listing folders deferred. Both deferrals are in the Outstanding index with their triggers.
+- **`apps/flowview/src/camerafiles.{h,cpp}`**: `loadCameraModel`, `saveCameraModel`, `loadRigModels` and
+  `openRigFootage`, each load returning the value or every problem, each problem naming its file. The
+  cli's three binders and `run --model` call it, and so do the gui's three new editors and its Save....
+  The rig-folder rule (entries not starting with '.', sorted by name) is stated once.
+- **`panes/imagesave` became `panes/valuesave`** (`renderValueSave`), which dispatches on the value's type
+  (ADR-0008 amended).
+- **The cli changed in three small ways**, from sharing the rule: an empty or unlistable rig folder says
+  why, every bad entry is logged rather than only the first, and a hidden `.json` in a models folder is
+  skipped.
+- **Five cases** in `test_camerafiles.cpp` hold the routines and the cli's binders to one answer, and
+  **eight sabotages** were each caught as predicted. An unsorted rig folder was caught by the footage
+  case only: this file system listed the models case's six files in name order anyway.
+- **The checklist's data** (a board calibration's footage and documents, a board rig, a targetless rig
+  and a moving camera's footage for the fallback) was rendered by an uncommitted probe through
+  `test_cameravertical.cpp`'s writers. Both are in the session notes folder,
+  `~/Library/Application Support/Claude/side-session-notes/local_c6e38da9-13ea-47f1-9f44-1213e6108518/`,
+  as `gui-check/` and `gui-check-probe.cpp.txt`. Through the real binary the data gives *Ready* for both
+  rigs and the calibration, and the model `run --model` saved binds back through `--imported` to an
+  *Exploratory* held report, byte-identical out.
+- **Another session was editing `register.cpp` and `runmode.cpp` at the same time**, so this change
+  touches `runmode.cpp` by one call and one include only, and `register.cpp` not at all.
+- **Earlier entries' all-off counts are Release ones**: Debug lacks eight `NDEBUG`-only cases in `core`,
+  `image` and `log`, which is why 1184 + 5 here sits beside the recorded 1192.
+- **Merged with the registered rig the same day:** `camerafiles` also reads and writes a rig
+  document, so `--rig` and `run --rig` go through it, and a `RegisteredRig` output gets the same
+  Save... as a camera model. That Save... is gui code; checklist step 7 covers it.
+
 ### Update 2026-10-20 — M9: a registration's rig leaves the process
 
 A gap the 2026-10-20 review found, recorded nowhere: every camera's `referenceFromCamera` was in the

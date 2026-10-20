@@ -27,7 +27,7 @@ add_executable(flowview
 	src/panes/interfacepane.cpp
 	src/panes/inspectorpane.cpp
 	src/panes/graphpane.cpp
-	src/panes/imagesave.cpp
+	src/panes/valuesave.cpp
 	src/panes/canvasstate.cpp
 	src/panes/statusbar.cpp
 	src/canvasids.cpp
@@ -37,6 +37,7 @@ add_executable(flowview
 	src/framepattern.cpp
 	src/runmode.cpp
 	src/clibinders.cpp
+	src/camerafiles.cpp
 	src/canvasstyle.cpp
 	src/dump.cpp
 )

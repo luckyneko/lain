@@ -1,12 +1,10 @@
 #include "clibinders.h"
 
-#include <lain/camera/calibration/attempts.h>	 // calibration::Method, bound by name
-#include <lain/camera/serialize/cameramodel.h>	 // cameraModelFromValue — a model file's reader
-#include <lain/camera/serialize/registeredrig.h> // registeredRigFromValue — a rig file's reader
+#include "camerafiles.h" // a model file and a rig's folders, read as the gui reads them
+
+#include <lain/camera/calibration/attempts.h> // calibration::Method, bound by name
 #include <lain/core/parse.h>
-#include <lain/core/uri.h>
 #include <lain/image/image.h>
-#include <lain/io/data/load.h>
 #include <lain/io/image/load.h>
 #include <lain/io/sequence/open.h>
 #include <lain/log/log.h>
@@ -18,10 +16,8 @@
 #include <cassert>
 #include <cctype>
 #include <cstddef>
-#include <filesystem>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -182,102 +178,45 @@ namespace flowview
 		return pv;
 	}
 
-	// A camera model binds by READING a camera-model document, the way an image binds by loading one:
-	// what a calibration's `run --model model.json` wrote, or a manufacturer's model typed out. The
-	// reader is strict, and its problems are logged here, since a binder can only say yes or no and
-	// "could not parse" alone would leave a typo in a coefficient name to be found by hand.
+	// A binder can only say yes or no, so the problems a file was refused for are logged here: "could not
+	// parse" alone would leave a typo in a coefficient name to be found by hand. The reading itself is
+	// camerafiles', which the gui's editors call too.
+	template <typename T>
+	static std::optional<flow::PortValue> bindLoaded(FileResult<T> loaded)
+	{
+		for (const std::string& problem : loaded.problems)
+			log::error("flowview: {}", problem);
+		if (!loaded.value)
+			return std::nullopt;
+		flow::PortValue pv;
+		pv.set<T>(std::move(*loaded.value));
+		return pv;
+	}
+
+	// A camera model binds by LOADING a camera-model document, the way an image binds by loading one:
+	// what a calibration's `run --model model.json` wrote, or a manufacturer's model typed out.
 	static std::optional<flow::PortValue> bindCameraModel(const std::string& s)
 	{
-		const std::optional<data::Value> document = io::data::load(s);
-		if (!document)
-			return std::nullopt;
-		camera::CameraModelRead read = camera::cameraModelFromValue(*document);
-		for (const std::string& problem : read.problems)
-			log::error("flowview: {}: {}", s, problem);
-		if (!read.model)
-			return std::nullopt;
-		flow::PortValue pv;
-		pv.set<camera::CameraModel>(std::move(*read.model));
-		return pv;
+		return bindLoaded(loadCameraModel(s));
 	}
 
-	// A registered rig binds by READING a rig document: what a registration's `run --rig rig.json` wrote.
-	// Strict, with its problems logged, as a camera model's is.
+	// A registered rig binds by LOADING a rig document: what a registration's `run --rig rig.json` wrote.
 	static std::optional<flow::PortValue> bindRegisteredRig(const std::string& s)
 	{
-		const std::optional<data::Value> document = io::data::load(s);
-		if (!document)
-			return std::nullopt;
-		camera::registration::RegisteredRigRead read = camera::registration::registeredRigFromValue(*document);
-		for (const std::string& problem : read.problems)
-			log::error("flowview: {}: {}", s, problem);
-		if (!read.rig)
-			return std::nullopt;
-		flow::PortValue pv;
-		pv.set<camera::registration::RegisteredRig>(std::move(*read.rig));
-		return pv;
+		return bindLoaded(loadRegisteredRig(s));
 	}
 
-	// The entries of a folder, sorted by name, so element i is the same camera on every run, as
-	// listDir's are. Empty when the folder cannot be listed.
-	static std::vector<std::filesystem::path> sortedEntries(const std::string& folder, bool (*keep)(const std::filesystem::path&))
-	{
-		std::error_code ec;
-		std::vector<std::filesystem::path> entries;
-		if (!std::filesystem::is_directory(folder, ec))
-			return entries;
-		for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(folder, ec))
-		{
-			if (keep(entry.path()))
-				entries.push_back(entry.path());
-		}
-		std::sort(entries.begin(), entries.end());
-		return entries;
-	}
-
-	// A rig's footage binds from a FOLDER: every entry in it, by name, opened as one camera's
-	// sequence (a folder of stills, or a video file). Pairs by position with a models folder named
-	// the same way. Hidden entries are skipped.
+	// A rig's footage binds from a FOLDER: every entry in it, by name, opened as one camera's sequence (a
+	// folder of stills, or a video file). Pairs by position with a models folder named the same way.
 	static std::optional<flow::PortValue> bindFootageList(const std::string& s)
 	{
-		std::vector<media::FrameSequence> footage;
-		for (const std::filesystem::path& entry :
-			 sortedEntries(s, [](const std::filesystem::path& p)
-						   { return p.filename().string().rfind('.', 0) != 0; }))
-		{
-			std::optional<media::FrameSequence> sequence = io::sequence::open(core::Uri::fromPath(entry));
-			if (!sequence)
-			{
-				log::error("flowview: {} is not a frame sequence", entry.string());
-				return std::nullopt;
-			}
-			footage.push_back(std::move(*sequence));
-		}
-		if (footage.empty())
-			return std::nullopt;
-		flow::PortValue pv;
-		pv.set(std::move(footage));
-		return pv;
+		return bindLoaded(openRigFootage(s));
 	}
 
 	// A rig's camera models bind from a FOLDER of camera-model documents: every .json in it, by name.
 	static std::optional<flow::PortValue> bindModelList(const std::string& s)
 	{
-		std::vector<camera::CameraModel> models;
-		for (const std::filesystem::path& file :
-			 sortedEntries(s, [](const std::filesystem::path& p)
-						   { return p.extension() == ".json"; }))
-		{
-			std::optional<flow::PortValue> model = bindCameraModel(file.string());
-			if (!model)
-				return std::nullopt;
-			models.push_back(model->get<camera::CameraModel>());
-		}
-		if (models.empty())
-			return std::nullopt;
-		flow::PortValue pv;
-		pv.set(std::move(models));
-		return pv;
+		return bindLoaded(loadRigModels(s));
 	}
 
 	// An enum binds by NAME, whatever its spelling (see folded), and never by number: a number is how

@@ -1,11 +1,14 @@
 #include "parameditors.h"
 
+#include "camerafiles.h" // a model file and a rig's folders, read as the cli reads them
+
 #include <lain/camera/board/pattern.h>		  // Dictionary, CharucoLayout
 #include <lain/camera/calibration/attempts.h> // Method
 #include <lain/camera/calibration/request.h>  // ImportedModelPolicy
 #include <lain/camera/distortion.h>			  // DistortionModel
 #include <lain/camera/feature/matching.h>	  // MatchSearch
 #include <lain/camera/registration/request.h> // ApplicabilityPolicy, LossFamily
+#include <lain/core/uri.h>					  // a picked file, as a model document is loaded from it
 #include <lain/flow/example/comparenode.h>	  // Comparison — CompareNode's operator param
 #include <lain/flow/portvalue.h>
 #include <lain/gui/dialogs.h>
@@ -15,6 +18,7 @@
 #include <lain/image/colorspace.h>
 #include <lain/image/image.h>
 #include <lain/image/pixelformat.h>
+#include <lain/io/data/load.h> // readerRegistry — what a model document may be written in
 #include <lain/io/image/load.h>
 #include <lain/io/sequence/open.h>
 #include <lain/io/video/open.h> // videoExtensions — the one list of what counts as video
@@ -239,6 +243,127 @@ namespace flowview
 		return bound;
 	}
 
+	// Several lines as one text, for a message box or a tooltip.
+	static std::string lines(const std::vector<std::string>& each)
+	{
+		std::string out;
+		for (const std::string& line : each)
+			out += (out.empty() ? "" : "\n") + line;
+		return out;
+	}
+
+	// A camera model, or a rig's footage or models, binds through camerafiles: the reading the cli's
+	// binders do, so a file one medium accepts the other cannot refuse, and a folder's cameras come in
+	// the same order through either. A refusal is said out loud with every problem the reading found:
+	// a misspelled coefficient named in a message is found at once, and silence reads as a broken button.
+	template <typename T>
+	static bool bindLoaded(FileResult<T> loaded, flow::PortValue& value, const std::string& title)
+	{
+		if (!loaded.value)
+		{
+			gui::message(title, lines(loaded.problems), true);
+			return false;
+		}
+		value.set<T>(std::move(*loaded.value));
+		return true;
+	}
+
+	// What a bound rig collection shows: a count, and hovering it lists the elements in order. That is
+	// the order footage and models pair in, so it is what to check before trusting the pairing.
+	static void collectionSummary(std::size_t count, const char* one, const char* many, const std::vector<std::string>& each)
+	{
+		gui::TextDisabled("%zu %s", count, count == 1 ? one : many);
+		gui::SetItemTooltip("%s", lines(each).c_str());
+	}
+
+	// The filters a "pick a camera model" dialog offers: every data format this build reads, since a
+	// model document is read by its extension, then "All files".
+	static std::vector<gui::FileFilter> modelFilters()
+	{
+		std::vector<std::string> documents;
+		for (const std::string& key : io::data::readerRegistry().keys())
+			documents.push_back("*." + key);
+		return {{"Camera models", std::move(documents)}, {"All files", {"*"}}};
+	}
+
+	// A CAMERA MODEL is loaded from a camera-model document: what a calibration's model output was saved
+	// as, or a manufacturer's model typed out. What is bound shows as the model's own line, wrapped,
+	// since it names every coefficient.
+	static bool editCameraModel(const std::string& label, flow::PortValue& value)
+	{
+		gui::PushTextWrapPos(0.0f);
+		gui::TextDisabled("%s", value.holds<camera::CameraModel>() ? value.get<camera::CameraModel>().toString().c_str()
+																   : "(nothing bound)");
+		gui::PopTextWrapPos();
+
+		gui::PushID(label.c_str());
+		bool bound = false;
+		if (gui::Button("File..."))
+		{
+			if (const auto picked = gui::openFile("Open camera model", {}, modelFilters()))
+				bound = bindLoaded(loadCameraModel(core::Uri::fromPath(*picked)), value, "Load failed");
+		}
+		gui::PopID();
+		return bound;
+	}
+
+	// A RIG's footage binds from a folder holding one entry per camera (a folder of stills, or a video
+	// file). Each camera is listed by the source it was opened from, which is also how the registration
+	// nodes name it.
+	static bool editRigFootage(const std::string& label, flow::PortValue& value)
+	{
+		using Footage = std::vector<media::FrameSequence>;
+		if (value.holds<Footage>())
+		{
+			std::vector<std::string> cameras;
+			for (const media::FrameSequence& footage : value.get<Footage>())
+				cameras.push_back(footage.frame(0).source.toString() + "  (" + footage.toString() + ")");
+			collectionSummary(cameras.size(), "camera's footage", "cameras' footage", cameras);
+		}
+		else
+		{
+			gui::TextDisabled("(nothing bound)");
+		}
+
+		gui::PushID(label.c_str());
+		bool bound = false;
+		if (gui::Button("Folder..."))
+		{
+			if (const auto picked = gui::selectFolder("Select the rig's footage folder", {}))
+				bound = bindLoaded(openRigFootage(*picked), value, "Open failed");
+		}
+		gui::PopID();
+		return bound;
+	}
+
+	// ... and its camera models from a folder of camera-model documents, one per camera, named as the
+	// footage is so the two pair by position.
+	static bool editRigModels(const std::string& label, flow::PortValue& value)
+	{
+		using Models = std::vector<camera::CameraModel>;
+		if (value.holds<Models>())
+		{
+			std::vector<std::string> models;
+			for (const camera::CameraModel& model : value.get<Models>())
+				models.push_back(model.toString());
+			collectionSummary(models.size(), "camera model", "camera models", models);
+		}
+		else
+		{
+			gui::TextDisabled("(nothing bound)");
+		}
+
+		gui::PushID(label.c_str());
+		bool bound = false;
+		if (gui::Button("Folder..."))
+		{
+			if (const auto picked = gui::selectFolder("Select the rig's models folder", {}))
+				bound = bindLoaded(loadRigModels(*picked), value, "Load failed");
+		}
+		gui::PopID();
+		return bound;
+	}
+
 	// A FRAME POSITION is a plain drag over its ordinal — deliberately not a slider bounded by the
 	// sequence's length. An editor is handed only (label, type, value): it has no way to know WHICH
 	// sequence this position indexes, and a bound taken from the wrong one is worse than none. That
@@ -309,6 +434,10 @@ namespace flowview
 		editors.add(typeid(image::Image), &editImage);
 		editors.add(typeid(media::FrameSequence), &editFrameSequence);
 		editors.add(typeid(media::FramePosition), &editFramePosition);
+		// The camera values a boundary input binds from files (M9), through the cli's own reading.
+		editors.add(typeid(camera::CameraModel), &editCameraModel);
+		editors.add(typeid(std::vector<media::FrameSequence>), &editRigFootage);
+		editors.add(typeid(std::vector<camera::CameraModel>), &editRigModels);
 		editors.add(typeid(image::PixelFormat), &editEnum<image::PixelFormat>);
 		editors.add(typeid(image::ColorSpace), &editEnum<image::ColorSpace>);
 		// Compare's operator (M11). An example node's enum reaching this list is not a layering

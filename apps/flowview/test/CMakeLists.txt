@@ -8,6 +8,7 @@ add_executable(test-flowview
 	test_groupnav.cpp
 	test_canvasids.cpp
 	test_clibinders.cpp
+	test_camerafiles.cpp
 	test_graphio.cpp
 	test_mapscene.cpp
 	test_loopscene.cpp
@@ -39,6 +40,7 @@ add_executable(test-flowview
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/scene.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/dump.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/clibinders.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/camerafiles.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/valueviews.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/imagecanvas.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/imageview.cpp"

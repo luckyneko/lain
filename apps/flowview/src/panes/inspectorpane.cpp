@@ -7,7 +7,7 @@
 #include "../parameditors.h"
 #include "../previewcache.h"
 #include "canvasstate.h" // selectedNodes
-#include "imagesave.h"	 // renderImageSave
+#include "valuesave.h"	 // renderValueSave
 
 #include <lain/flow/boundary.h> // GroupInputNode / GroupOutputNode (dynamic_cast)
 #include <lain/flow/edit.h>		// setPayloadType — the only safe way to change a node's type
@@ -19,7 +19,6 @@
 #include <lain/flow/porttyperegistry.h> // portTypeKeys / portTypeFor — what the dropdown offers
 #include <lain/flow/portvalue.h>
 #include <lain/gui/gui.h>
-#include <lain/image/image.h>
 #include <lain/math/types.h>
 #include <lain/string/format.h>
 
@@ -229,13 +228,13 @@ namespace flowview
 						if (gui::IsItemClicked())
 							ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 					}
-					// Saving stays image-only: it writes the value, not the thumbnail, and only an
-					// Image has a still-image encoder behind it. Outputs are the results you'd
-					// export; inputs are just what was fed in.
-					if (output && value.holds<image::Image>())
+					// Saving writes the value, not the thumbnail, so it is offered for a type with a
+					// file format behind it: an image, or a camera model (renderValueSave says which).
+					// Outputs are the results you'd export; inputs are just what was fed in.
+					if (output)
 					{
 						gui::PushID(ctx.canvas.pin(address, output));
-						renderImageSave(ctx, key, value.get<image::Image>());
+						renderValueSave(ctx, key, value);
 						gui::PopID();
 					}
 				};

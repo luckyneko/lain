@@ -6,7 +6,7 @@
 #include "../imagecanvas.h" // previewFit / thumbnailBox (the shared thumbnail sizing)
 #include "../parameditors.h"
 #include "../previewcache.h"
-#include "imagesave.h"
+#include "valuesave.h"
 
 #include <lain/flow/boundary.h> // GroupInputNode / GroupOutputNode
 #include <lain/flow/dynamicports.h>
@@ -18,7 +18,6 @@
 #include <lain/flow/port.h>
 #include <lain/flow/porttyperegistry.h> // portTypeKeys
 #include <lain/gui/gui.h>
-#include <lain/image/image.h>
 #include <lain/math/types.h>
 
 #include <string>
@@ -375,8 +374,7 @@ namespace flowview
 						if (gui::IsItemClicked())
 							ctx.previewAsset(key); // click a thumbnail -> full-size in the Preview pane
 					}
-					if (delivered.holds<image::Image>())
-						renderImageSave(ctx, key, delivered.get<image::Image>());
+					renderValueSave(ctx, key, delivered); // an image or a camera model; nothing else saves
 				}
 				gui::SameLine();
 				removePinButton(node.id(), pin);

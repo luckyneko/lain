@@ -9242,7 +9242,8 @@ each package in a session of its own (2026-10-20).
 
    This is the compiled-linked-unreachable shape: registration's deliverable is reachable only by
    calling the library.
-2. **The gui cannot load or save camera values; the cli can.**
+2. **The gui cannot load or save camera values; the cli can.** *(**Built 2026-10-20**: see *The gui binds and saves camera
+   values*, below.)*
    - `ParamEditors` has no editor for `CameraModel`, `std::vector<FrameSequence>` or
      `std::vector<CameraModel>`, though `clibinders.cpp` binds all three.
    - No node reads a camera-model document.
@@ -9390,6 +9391,114 @@ uncommitted probe:
 Ceres on, and **1188/1188** Debug and **1196/1196** Release with all three off (+4 each). Debug lists
 8 fewer cases than Release in either configuration. Warning-clean, format-check clean. **gui-mode NOT eyeballed**: the node on the canvas and its port's
 description are added to the eyeball owed for both registration nodes (Outstanding index, item 3).
+
+### The gui binds and saves camera values (built 2026-10-20)
+
+A review on 2026-10-20 found gui-mode short of what the cli does with camera values. A `CameraModel`, a
+rig's footage (`ListOfFrameSequence`) and a rig's models (`ListOfCameraModel`) each read "(no editor)" in
+the Interface pane, so none could be bound, and only an image output had a Save.... The owed gui-mode
+eyeballs of `registerCameras` and `registerCamerasTargetless` could not be walked, nor the calibration
+round trip of estimating a model, saving it and holding it through `imported`.
+
+**Decided with the repo owner (2026-10-20):**
+- **Editors only, with no `loadCameraModel` node.** Interface-pane editors close every gap. A node would
+  make `camera-flow` link `io::data`, `camera-serialize` and a codec, for a kind (in `register.cpp`), a
+  document-relative path and a catalog row that nothing here needs. Deferred, with its trigger
+  (Outstanding index).
+- **One reading per type, in a driver-free flowview unit**, `apps/flowview/src/camerafiles.{h,cpp}`,
+  which the cli's binders and the gui's editors both call, so the two cannot disagree about a folder's
+  order or a file's strictness. Each load hands back the value or every problem, each naming its file;
+  a binder logs them, and an editor shows them in a message box.
+- **A camera model saves beside an image**, in the Inspector's output ports and the Interface pane's
+  outputs. `panes/imagesave` became `panes/valuesave` (`renderValueSave`), which dispatches on the
+  value's type (ADR-0008 amended), and the write is the routine `run --model` writes with.
+- **`listDir` gains no directories option here.** Recorded with its trigger (Outstanding index).
+
+**Built:**
+- **`camerafiles`**: `loadCameraModel` (a camera-model document, read strictly), `saveCameraModel`,
+  `loadRigModels` and `openRigFootage`. A rig folder's cameras are its entries whose names do not start
+  with '.', sorted by name as `listDir` sorts, and a models folder keeps the `.json` ones. Every entry
+  is tried, so a refused rig names each bad one. A path that is not a folder, or a folder with no
+  camera in it, says so.
+- **The cli's `--imported`, `--footage` and `--models` binders** are one line each over it, and `run
+  --model` writes through `saveCameraModel`. Sharing the rule changed three things the cli does: an
+  empty or unlistable rig folder logs why (it was refused without a word); every bad entry is logged,
+  not only the first; and a hidden `.json` in a models folder is skipped, as hidden entries already
+  were in a footage folder.
+- **Three Interface-pane editors.** A `CameraModel` picks a file (`File...`, filtered to the data
+  formats this build reads) and shows the model's own line, wrapped. A rig's footage and its models
+  each pick a folder (`Folder...`) and show a count, and hovering the count lists the cameras in
+  pairing order: footage by its source, which is also the camera's name in a registration report.
+- **Save... for a camera model**: a format dropdown over the data writers (json here) and a save
+  dialog, with the format's extension forced on, as an image's is.
+- **Tests:** five cases in `test_camerafiles.cpp` (`[camerafiles]`). The gui's editors call the routine
+  and have no ImGui-free half to test, so each case also holds the cli binder to the routine's answer.
+  - a model saved by `saveCameraModel` is the model loaded and the one `--imported` binds, and a
+    misspelled coefficient is refused with the file and the key named;
+  - six models written out of name order load by name, skipping a hidden document that is not one
+    and a note;
+  - a models folder with a misspelled and an unreadable document is refused, naming both and not the
+    good ones;
+  - a missing folder, a folder holding only a note and one holding only `.DS_Store` each say why;
+  - three cameras' still folders open by name (their widths and sources in order), skipping
+    `.DS_Store`, and a note left among them refuses the rig, named.
+- `ctest -j8` **1323/1323** Debug and **1331/1331** Release with video, camera and Ceres on, **1189/1189**
+  Debug and **1197/1197** Release with all three off (+5 each); warning-clean, format-check clean.
+  (Earlier entries' all-off counts are Release ones: Debug lacks eight `NDEBUG`-only cases in `core`,
+  `image` and `log`.)
+- **Eight sabotages, each caught as predicted:**
+  - `saveCameraModel` writing an empty document;
+  - a model's problems not naming their file;
+  - a rig folder left unsorted, caught by the footage case. The models case passed it, because this
+    file system happened to list its six files in name order. One `rigEntries` serves both;
+  - hidden entries not skipped;
+  - a rig stopping at its first bad file;
+  - an empty folder binding an empty rig;
+  - the cli's footage binder reversing the rig;
+  - the cli's models binder dropping a camera.
+- **gui-mode NOT driven.** Nothing here ran in a window. The editors and the save widget are thin over
+  the tested routines, but the gestures themselves are owed, as the checklist below, for the repo owner
+  on a Metal session.
+
+- **Merged with the registered rig the same day** (*After slice 4: the registered rig*). `camerafiles`
+  also reads and writes a rig document (`loadRegisteredRig`, `saveRegisteredRig`), so the `--rig`
+  binder and `run --rig` go through it as the model's do, and a `RegisteredRig` output gets the same
+  format dropdown and Save... as a camera model (`renderDocumentSave` serves both). The rig's Save...
+  is gui code that ctest does not reach (`valuesave.cpp` needs a `gui::Context`), so checklist step 7
+  is owed with the rest.
+
+**gui-mode checklist (owed; Outstanding index, item 3).** The footage, rigs and documents it uses are
+rendered by an uncommitted probe through `test_cameravertical.cpp`'s own writers, as sub-slice 12c's
+were. This session's notes folder holds them, with the probe to render them again (CLAUDE.md's entry of
+this date names it), under `calibration/`, `board-rig/`, `targetless-rig/` and `fallback-moving/`.
+1. **A rig bound by hand.** In a new document, add `boardSpecification` (squares 24 mm) and
+   `registerCameras`. Add Interface inputs `ListOfFrameSequence` and `ListOfCameraModel` and an output
+   `RegistrationReport`, then wire them. Each input shows *(nothing bound)* and `Folder...`, not *(no
+   editor)*. Bind `board-rig/rig`: *3 cameras' footage*, and hovering lists `cam0`, `cam1`, `cam2` in
+   that order. Bind `board-rig/models`: *3 camera models*. The report reads *Ready: 3 cameras relative
+   to …/rig/cam0, metric, …*, as `flowview run` gives.
+2. **Refusals keep the binding.** Bind `board-rig/rig` as the models: a message names the folder as
+   holding no camera-model documents. Bind `board-rig/models` as the footage: a message names each
+   `.json` as not footage. Either way the earlier binding stays.
+3. **The targetless rig.** Open `targetless-rig/register-targetless.json`, bind its `rig` and `models`
+   folders, and check the `matchSearch` combo in the Inspector. The report reads *Ready: 3 cameras
+   relative to …, arbitrary scale*.
+4. **The calibration round trip.** Open `calibration/calibrate.json` and bind `calibration/footage`.
+   The `model` output (Interface pane), and the `cameraModel` node's `model` port (Inspector), each
+   show a `json` dropdown and `Save...`. A report output shows neither. Save as `saved`, which writes
+   `saved.json`. Open `calibration/validate.json`, bind the footage, then `imported` with `File...` →
+   `saved.json`. The model's line shows under the pin, and the report reads *Exploratory: …*, a held
+   model. Then, in a terminal, `flowview run --graph calibration/validate.json --footage
+   calibration/footage --imported saved.json --report held.txt` exits 0 with the same report: the
+   document the gui saved is one `--imported` reads.
+5. **A misspelled model is named.** Copy `saved.json`, rename `"fx"` in it to `"fxx"`, and bind the
+   copy: the message names the file and the key, and the earlier model stays bound.
+6. **Image saving is unchanged.** On any example with an image output (`tint-blur.json`), the format
+   dropdown, compression and quality controls and `Save...` behave as before.
+7. **A rig saved.** In step 1's graph, add `registeredRig` after `registerCameras` and an Interface
+   output of type `RegisteredRig`, and wire it. Its port describes the three cameras and where each
+   sits, and the output shows a `json` dropdown and `Save...`. Save as `rig`, which writes `rig.json`:
+   the same document `flowview run --graph … --rig rig.json` writes for that graph.
 
 ### Not in this milestone
 
@@ -14551,9 +14660,9 @@ row here**. A row is cheap to delete and expensive to leave.
      the fixes ahead of 5 and of 9c. The separate feature-extraction node slice 3 deferred to it stays
      deferred, with its trigger restated (slice 4's plan).
      **Build work the 2026-10-20 review found** (M9's *The 2026-10-20 review*, by priority):
-     - **P1:** a registration's result leaving the process is **built** (*After slice 4: the
-       registered rig*); the gui loading and saving camera values is in progress in a session of its
-       own.
+     - **P1, both built 2026-10-20:** a registration's result leaving the process (*After slice 4:
+       the registered rig*), and the gui loading and saving camera values (*The gui binds and saves
+       camera values*). Their gui-mode checks are in item 3.
      - **P2:** a camera's identity independent of where its footage sits, by the interim cli fix (the
        held-out changes are in item 2).
      - **P3:** a footage generator; example documents for board calibration, `detectBoard` and both
@@ -14607,8 +14716,8 @@ row here**. A row is cheap to delete and expensive to leave.
        Exact matching's cost (16.9 core-hours for a 100-camera rig at the cap) matters more than the
        tracks. To be decided on real footage's rows per feature (sub-slice 7 follow-up B).
   3. **Verification owed.** All of it on a Metal session, best done as one sitting once the review's
-     P1 and P3 have landed (its item 7), since today the gui cannot bind a rig and no footage is
-     committed.
+     P3 has landed (its item 7). Footage for the checklists below was rendered on 2026-10-20 by an
+     uncommitted probe (*The gui binds and saves camera values*); none is committed.
      - **gui-mode eyeballs of slice 1's surfaces**, never recorded as done (slice 1, sub-slice 7): the
        Camera menu, the enum editors and the port colours, over the five slice-1 kinds.
      - **The refusal to open a document that did not load as saved** (slice 1, sub-slice 0, *the gui
@@ -14617,14 +14726,20 @@ row here**. A row is cheap to delete and expensive to leave.
      - **A node's Failed mark from `NodeEvaluation::fail`** (*A node could only report a failure by
        throwing*): the canvas mark and the Issues row, on `render-board.json` in a build without a
        renderer.
+     - **The gui-mode checklist for binding and saving camera values**: a rig bound from folders by
+       hand, refusals that keep the binding, a model saved and bound back through `imported`, image
+       saving unchanged, and a registered rig saved (*The gui binds and saves camera values*, its
+       seven steps).
      - **gui-mode eyeballs** of `registerCameras` and `registerCamerasTargetless`, the `matchSearch`
-       combo included, and of `registeredRig` after either, its port describing the transforms, on a
-       Metal session.
+       combo included, and of `registeredRig` after either, its port describing the transforms. Steps
+       1, 3 and 7 of that checklist walk them.
      - **gui-mode eyeball of slice 4's fallback** on a Metal session: `calibrate-fallback.json` opened,
        the method picked in the Interface pane (nothing runs until one is), footage bound, and the
        attempts and the model read; the `calibrateCameraTargetless`, `calibrationMethod`,
        `nextAttempt` and `calibrationAttempts` nodes on the canvas, their "+" report pins included.
-       Footage has to be rendered for it, since none is committed (slice 4's *Sub-slice 12c built*).
+       None is committed (slice 4's *Sub-slice 12c built*), but footage was rendered on 2026-10-20 with
+       the checklist's: `calibration/footage` for the board's attempt, and `fallback-moving/footage`
+       for the targetless one.
   4. **Waiting on real footage**, the triggers sub-slices 7 to 9 carried forward (sub-slice 9's
      notes):
      - rows per descriptor on real footage, which also settles the feature cap above;
@@ -14656,6 +14771,13 @@ row here**. A row is cheap to delete and expensive to leave.
        takes one, so a bound rig can only be passed through. Trigger: the first consumer, such as
        world-frame alignment (excluded from M9) or a registration seeded from a prior rig (*After slice
        4: the registered rig*).
+     - **A `loadCameraModel` node** (a path in, a `CameraModel` out, as `loadImage` is): the first
+       document that must name its own model file, so it runs with no binding. The gui binds one from
+       a file instead (*The gui binds and saves camera values*).
+     - **`listDir` listing folders**, so `listDir → map(openSequence)` builds a rig of per-camera still
+       folders in the graph: the first rig whose cameras must be chosen or computed in the graph
+       rather than taken whole from one folder. Until then a rig binds from a folder through
+       `camerafiles`, in the cli and the gui alike (slice 2's *Sub-slice 6 built*, its deviation).
   *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
