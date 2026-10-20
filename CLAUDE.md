@@ -1405,8 +1405,8 @@ extraction*, *Calibration method* and *Calibration attempt*.
 The last of sub-slice 12's three commits, and the last of slice 4. `ctest` **1318/1318** Debug and
 **1326/1326** Release with video, camera and Ceres on, **1192/1192** with all three off (+5 each), and
 **1267/1267** with OpenCV on but Ceres off; warning-clean, format-check clean. **gui-mode NOT eyeballed**:
-that is owed now, with footage rendered for it. Full notes in WORK.md's *Sub-slice 12c built* under M9
-slice 4.
+that is owed now, with footage rendered for it. **CI run 40 (`b952e1d`) is green on all seven jobs**,
+1326/1326 on macOS and Windows. Full notes in WORK.md's *Sub-slice 12c built* under M9 slice 4.
 
 - **Five cases run the committed `calibrate-fallback.json` through `runGraph`**, reading which attempts
   were made from the attempts text:

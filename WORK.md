@@ -9176,6 +9176,10 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      2 accepted*: the targetless attempt was made after the board's was accepted.
    - **An OpenCV-on, Ceres-off build** (`build-noceres` here) was configured for this commit, since none
      was left from slice 3's sub-slice 10.
+   - **CI run 40 (`b952e1d`) is green on all seven jobs**, 1326/1326 on macOS and Windows and every
+     Release leg passing, so the fallback's five cases hold on every platform: the moving camera is
+     accepted at attempt 2 within its 1% and 3 px bounds on macOS's and Windows' SIFT features too.
+     The enum binder's cases pass there as well.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
