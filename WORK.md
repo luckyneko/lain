@@ -2434,20 +2434,24 @@ adds a pin to the canvas.
 
 ## Milestone 9 — camera calibration and fixed registration (grilled 2026-08-14 to 08-15)
 
-**Designed, not started** — the only milestone from 5 onward that is. M10 was numbered after it and
-built before it, discharging its frame-sequence prerequisite. How OpenCV is obtained was settled
-2026-09-29 ([ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md)), and slice 0 below
-(OpenCV lands, nothing depending on it) is built. **Slice 1 is in progress** as nine sub-slices
-(below): 0 to 7 are built, and 8 (the real-camera fixture) has its machinery built; what is left of
-it is the capture, which only the repo owner can make. **Slice 2** (fixed-camera board registration) was planned
-2026-10-05 as seven sub-slices (below), and **all seven are built**; its gui-mode eyeball is owed.
-**Slice 3** (targetless registration with known intrinsics) was planned 2026-10-06 as eleven
-sub-slices (below), and **all eleven are built** (2026-10-09); a gui-mode eyeball of its node is
-owed. The repo owner kept the provisional values sub-slice 9 measured, and queued three changes to
-how held-out evidence is judged (Outstanding work). **Slice 4** (targetless calibration and the
-graph fallback) was planned 2026-10-12 as thirteen sub-slices (below). Sub-slices 0 (the plan), 1
-(as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b and 6c), 7 (as 7a, 7b and 7c), 8 and 9
-(as 9a, 9b and 9c) are built, with the fixes that landed ahead of 5 and of 9c.
+**Every slice is built; M9 is not complete.** M10 was numbered after it and built before it,
+discharging its frame-sequence prerequisite. How OpenCV is obtained was settled 2026-09-29
+([ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md)). The slices, each planned as
+sub-slices below:
+- **Slice 0** (OpenCV lands, nothing depending on it) is built.
+- **Slice 1** (camera geometry and ChArUco calibration): sub-slices 0 to 7 are built, and 8 (the
+  real-camera fixture) has its machinery built. What is left of it is the capture, which only the repo
+  owner can make.
+- **Slice 2** (fixed-camera board registration), planned 2026-10-05: all seven sub-slices are built.
+- **Slice 3** (targetless registration with known intrinsics), planned 2026-10-06: all eleven
+  sub-slices are built (2026-10-09). The repo owner kept the provisional values sub-slice 9 measured,
+  and queued three changes to how held-out evidence is judged.
+- **Slice 4** (targetless calibration and the graph fallback), planned 2026-10-12: all thirteen
+  sub-slices are built (2026-10-20), with the fixes that landed ahead of 5 and of 9c.
+
+What stands between this and a complete milestone is in **the 2026-10-20 review** at the end of the
+build order: gaps the slice plans did not cover, the gui-mode eyeballs, and the capture. The
+Outstanding work index lists every open item.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -2476,7 +2480,9 @@ to a separate grill.
 spec's homogeneity guarantee, and the production path from files or video into calibration. Camera
 work may define the evidence it needs from a sequence, but must consume the sequence contract
 established there rather than inventing a temporary loader or observation-only node path. Capture
-manifests and capture datasets remain M9's (M10 explicitly excludes them).
+manifests and capture datasets remain M9's (M10 explicitly excludes them). *(**Changed 2026-10-20**,
+decided with the repo owner in the M9 review: they come after M9. The review records the interim
+fix for the one finding that needs them.)*
 
 The 2026-08-16 review also left these requirements and decisions visible before implementation:
 
@@ -2504,7 +2510,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
   keys, dynamic/boundary port types, codecs for serialized params or defaults, host binders, and
   flowview catalog entries. Disabled camera plugins neither register unavailable node kinds nor fetch
   third-party dependencies, and saved graphs fail clearly when a required optional implementation is
-  absent.
+  absent. *(**Reversed 2026-10-02** (ADR-0016, amended): every camera node kind registers whatever
+  the build, so a camera document loads whole; a node with no backend fails with the reason when it
+  runs, and flowview's menu offers only the kinds a backend can run.)*
 - **Fallback needs an explicit graph shape.** Gate targetless work upstream from a board-result
   fitness predicate, then combine attempt reports separately from selecting the accepted camera model.
   The final report retains every attempted path, including a failed board attempt; a downstream
@@ -2522,7 +2530,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
   should leave a clean generalization path when a second measured-quantity caller exists.
 - **Dependency footprint is an acceptance criterion.** OpenCV and Ceres camera plugins are opt-in;
   an all-disabled configure performs no dependency fetch. *(Since 2026-10-02 OpenCV defaults ON
-  for a top-level build, so "all-disabled" is `-DLAIN_CAMERA_OPENCV=OFF` explicitly.)* Record exact versions, enabled modules,
+  for a top-level build, and Ceres has defaulted ON there since it landed (2026-10-05), so
+  "all-disabled" means `-DLAIN_CAMERA_OPENCV=OFF -DLAIN_CAMERA_CERES=OFF` explicitly. A bundled lain
+  still builds neither unasked.)* Record exact versions, enabled modules,
   transitive licenses, configure/build time, and representative static and dynamic binary sizes so
   dependency containment is measured rather than inferred from target boundaries.
 - **The D455 fixture records capture provenance.** Store RGB stream profile, resolution and format,
@@ -9187,9 +9197,102 @@ failed reports as ordinary results, deterministic-debug execution, downsampling 
 refinement, imported-model policies, held-out validation, and dependency-disabled builds. No slice
 lands with copied solver/detector logic or a second production path.
 
+### The 2026-10-20 review — what the slice plans left out
+
+Once sub-slice 12c landed, every slice was built. A review then checked the milestone against its own
+plan, ADR-0016, ADR-0017 and the code, and found gaps that nothing recorded. The repo owner grouped
+them into priorities, and the rows in the Outstanding work index point here. **P1 is in progress**,
+each package in a session of its own (2026-10-20).
+
+**P0 — the documents, done with this entry:**
+- This milestone's status line said "Designed, not started", and its list of built sub-slices stopped
+  at 9.
+- Two prerequisite notes were out of date. One said a camera node kind registers only when it can
+  run, which was reversed on 2026-10-02. The other said Ceres is opt-in, when it defaults ON for a
+  top-level build.
+- The README's OpenCV row said the camera node kinds register only in a build with it, and named
+  neither the feature nor the geometry work the plugin does. Its Ceres row said "today a build probe".
+- ADR-0016 counted seven camera node kinds. There are eleven.
+- Four questions were settled with the repo owner:
+  - **Debug overlays: deferred.** The OpenCV detector fills `DetectionEvidence` for
+    `DetailLevel::Detailed`, but `detectBoard` has no setting that asks for it, and nothing draws a
+    detection. Trigger: the first real capture whose detections need inspecting. ADR-0016 is amended.
+  - **Bulk projection: deferred.** ADR-0016 promised bulk operations that keep a result per element
+    and count failures. None is built, since every caller projects one point at a time and counts its
+    own failures. Trigger: the first caller that projects many points and must report per-element
+    failures, such as a reprojection-error view. ADR-0016 is amended.
+  - **A board's measured-length bounds are vocabulary waiting for a consumer.** `MeasuredLength`'s
+    bounds are stored, validated (`BoundsDoNotContainValue`) and serialised. Nothing reads them, and
+    `boardSpecification` has no setting for them. The likely first consumer is a registration's
+    metric-scale uncertainty. No change.
+  - **Capture manifests and capture datasets come after M9**, with clock-domain identity and timestamp
+    grouping. The prerequisite note that called them M9's is amended. The one finding that needs them
+    takes an interim fix, item 4 below.
+
+**P1 — make M9's outputs usable:**
+1. **A registration's result cannot leave the process.**
+   - The per-camera `referenceFromCamera` transforms live only in `registration::Report`, and
+     `Report::toString()` omits them.
+   - `flowview run` writes a camera model as a document and every other output as its described text,
+     so a registration report reaches disk as one summary line.
+   - `libs/camera/serialize` covers camera models, board specifications and capture records only.
+   - No node takes the transforms out of a report, as `cameraModel` takes a model out of a
+     calibration report.
+
+   This is the compiled-linked-unreachable shape: registration's deliverable is reachable only by
+   calling the library.
+2. **The gui cannot load or save camera values; the cli can.**
+   - `ParamEditors` has no editor for `CameraModel`, `std::vector<FrameSequence>` or
+     `std::vector<CameraModel>`, though `clibinders.cpp` binds all three.
+   - No node reads a camera-model document.
+   - The gui saves image outputs only.
+   - `listDir` lists regular files, so a rig of per-camera still folders cannot be built in a graph
+     either.
+
+   So the owed gui-mode eyeballs of both registration nodes could only feed a root-level rig with one
+   video file per camera, and calibrate inside the graph.
+
+**P2 — verdicts to trust:**
+
+3. **The three changes to how held-out evidence is judged**, queued on 2026-10-09 (Outstanding work).
+   On sub-slice 9's footage, one wrong held-out track fails Ready about one run in three. Registration's
+   resampling spread, an RMS about the result, is a candidate for the same robust treatment.
+4. **A camera's identity should not depend on where its footage sits.** The full fix is the capture
+   manifest, which is after M9. The interim fix: the cli binder names each camera relative to the
+   folder it was given, rather than by its canonical uri.
+
+**P3 — demonstrable, then verified:**
+
+5. **A footage generator**: a build target that renders board footage, a moving camera's scene and a
+   rig into a folder, through the test helpers that render them now. Sub-slice 12c rendered its
+   eyeball footage with an uncommitted probe, and the Outstanding index only says footage "has to be
+   rendered".
+6. **Example documents, and a composition test.**
+   - No example covers board calibration alone, `detectBoard`, or either registration;
+     `register.json` exists only in a test's scratch folder.
+   - Slice 2's plan says the rig inputs compose with `map(calibrateCamera → cameraModel)`, and nothing
+     tests or shows a graph that calibrates every camera and registers them.
+
+   Needs 5 for its data, and the registration examples should use item 1's output.
+7. **One gui-mode session on a Metal machine, after 2, 5 and 6**, walking every M9 eyeball listed in
+   the Outstanding index.
+
+**P4 — cheap, any time:**
+
+8. **A CI leg with OpenCV on and Ceres off.** One `camera` field drives both options, so that build
+   (the one where targetless methods report `NoRefiner`) has been checked locally only.
+9. **The dependency footprint, measured again.** The last record says "flowview grows by 88 bytes,
+   since nothing references Ceres yet" (slice 2, sub-slice 1). flowview now links Ceres and OpenCV in
+   earnest.
+
+**Suggested bar for calling M9 complete:** P0 to P3 and the real-camera capture. P4 and the items
+waiting on real footage may carry over.
+
 ### Not in this milestone
 
 - Video/image-sequence loading, capture-manifest persistence, and temporal grouping I/O details.
+  *(Confirmed 2026-10-20 in the review above: capture manifests and capture datasets come after M9
+  too, with clock-domain identity and timestamp grouping.)*
 - Joint intrinsic/extrinsic optimization, multi-board calibration, or mutable intrinsics during
   registration.
 - Moving-camera pose tracking, temporal-alignment estimation, and world-frame alignment.
@@ -10166,7 +10269,8 @@ the part worth keeping, because it is what someone would otherwise "fix" later:
 
 ### Not in this milestone
 
-- **Capture manifests and capture datasets** — M9's, built on this contract.
+- **Capture manifests and capture datasets** — M9's, built on this contract. *(Moved after M9 by the
+  M9 review of 2026-10-20.)*
 - **A driving timeline in the gui.** Slice 7 is an *inspection* player on a sequence pin; a transport
   that binds a `FramePosition` boundary input and re-runs the graph is the follow-on. `FramePosition`
   being a distinct type is what keeps it a one-widget change.
@@ -14338,11 +14442,20 @@ row here**. A row is cheap to delete and expensive to leave.
   known intrinsics, all eleven sub-slices, 2026-10-09) and slice 4 (targetless calibration and the
   graph fallback, all thirteen sub-slices, 2026-10-20). **Left in M9**, each item pointing at where
   its detail lives:
-  1. **Build work: none left.** Slice 4 was the last slice, built as 0 (the plan), 1 (as 1a and 1b), 2
-     (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b and 6c), 7 (as 7a, 7b and 7c), 8, 9 (as 9a, 9b and 9c), 10
-     (as 10a to 10e), 11 (as 11a to 11c) and 12 (as 12a to 12c, 2026-10-20), with the fixes ahead of
-     5 and of 9c. The separate feature-extraction node slice 3 deferred to it stays deferred, with its
-     trigger restated (slice 4's plan).
+  1. **Build work from the slice plans: none left.** Slice 4 was the last slice, built as 0 (the plan),
+     1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b and 6c), 7 (as 7a, 7b and 7c), 8, 9 (as
+     9a, 9b and 9c), 10 (as 10a to 10e), 11 (as 11a to 11c) and 12 (as 12a to 12c, 2026-10-20), with
+     the fixes ahead of 5 and of 9c. The separate feature-extraction node slice 3 deferred to it stays
+     deferred, with its trigger restated (slice 4's plan).
+     **Build work the 2026-10-20 review found** (M9's *The 2026-10-20 review*, by priority):
+     - **P1, in progress in sessions of their own:** a registration's result leaving the process (a
+       document for the transforms, written by `run`, and a node that takes them out of a report); the
+       gui loading and saving camera values.
+     - **P2:** a camera's identity independent of where its footage sits, by the interim cli fix (the
+       held-out changes are in item 2).
+     - **P3:** a footage generator; example documents for board calibration, `detectBoard` and both
+       registrations, and a test of calibrating every camera then registering them in one graph.
+     - **P4:** a CI leg with OpenCV on and Ceres off; the dependency footprint measured again.
   2. **Owed by the repo owner.**
      - **The real-camera capture** for slice 1, sub-slice 8, guided by
        `plugins/camera/test/fixtures/README.md`. It is all that is left of slice 1.
@@ -14362,7 +14475,8 @@ row here**. A row is cheap to delete and expensive to leave.
        identity digests it, and every k-th one in identity order is held out, so the same rig in
        another folder gives another report (0.795 against 0.966 mrad through the real binary, each
        repeatable). A capture manifest's identities would end it, or the cli binder could name each
-       camera relative to the folder it was given.
+       camera relative to the folder it was given. *(2026-10-20: the manifest is after M9, so the
+       interim cli fix is the review's P2.)*
      - **Sub-slice 10e's measurements and findings for targetless calibration** (slice 4's *Sub-slice
        10e built*), each its own commit before sub-slice 11 exposes the node:
        - the verdict missing a principal point several pixels off. Resampling frames and comparing the
@@ -14389,7 +14503,17 @@ row here**. A row is cheap to delete and expensive to leave.
      - **The feature cap's cost**: count descriptor rows rather than features, or lower the cap, if
        Exact matching's cost (16.9 core-hours for a 100-camera rig at the cap) matters more than the
        tracks. To be decided on real footage's rows per feature (sub-slice 7 follow-up B).
-  3. **Verification owed.**
+  3. **Verification owed.** All of it on a Metal session, best done as one sitting once the review's
+     P1 and P3 have landed (its item 7), since today the gui cannot bind a rig and no footage is
+     committed.
+     - **gui-mode eyeballs of slice 1's surfaces**, never recorded as done (slice 1, sub-slice 7): the
+       Camera menu, the enum editors and the port colours, over the five slice-1 kinds.
+     - **The refusal to open a document that did not load as saved** (slice 1, sub-slice 0, *the gui
+       follows*): the transient message, the Issues rows, and the current document staying on screen
+       after Open, Open Recent, Return and Edit Template….
+     - **A node's Failed mark from `NodeEvaluation::fail`** (*A node could only report a failure by
+       throwing*): the canvas mark and the Issues row, on `render-board.json` in a build without a
+       renderer.
      - **gui-mode eyeballs** of `registerCameras` and `registerCamerasTargetless`, the `matchSearch`
        combo included, on a Metal session.
      - **gui-mode eyeball of slice 4's fallback** on a Metal session: `calibrate-fallback.json` opened,
@@ -14417,6 +14541,13 @@ row here**. A row is cheap to delete and expensive to leave.
      - **`flow::serialize::toValue` reporting a param it has no codec for**: its own change, since it
        changes the result's shape; the catalog census test guards it until then (slice 1,
        sub-slice 7).
+     - **Debug overlays of detection evidence**: the first real capture whose detections need
+       inspecting (M9's *The 2026-10-20 review*; ADR-0016, amended).
+     - **Bulk projection with per-element outcomes**: the first caller that projects many points and
+       must report per-element failures, such as a reprojection-error view (the same review;
+       ADR-0016, amended).
+     - **A consumer for a board's measured-length bounds**, which are stored, validated and serialised
+       but read by nothing; likely a registration's metric-scale uncertainty (the same review).
   *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
@@ -14426,7 +14557,8 @@ row here**. A row is cheap to delete and expensive to leave.
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not.**
 
 - **Example documents** — all four commits built. Owed: a gui-mode eyeball of every example (the
-  primary purpose), and the first CI run of the new smoke step. *(§Example documents.)*
+  primary purpose). The smoke step has run in CI since it landed, and was green on every leg in
+  feature/M9's runs 37 to 40 (found by the M9 review, 2026-10-20). *(§Example documents.)*
 
 ### Deferred — engine / `flow` core
 
@@ -14560,7 +14692,8 @@ M12 §Not in this milestone.)*
 Joint intrinsic/extrinsic optimization, multi-board calibration, mutable intrinsics during
 registration; moving-camera pose tracking, temporal-alignment estimation, world-frame alignment; a
 generic `Measurement<T>` without a second caller; runtime-defined distortion-model plugins and
-SuiteSparse-enabled Ceres; capture manifests and capture datasets (which M10 hands to M9).
+SuiteSparse-enabled Ceres; capture manifests and capture datasets (which M10 handed to M9, and the M9
+review of 2026-10-20 moved after it), with clock-domain identity and timestamp grouping.
 *(M9 §Not in this milestone; M10 §Not in this milestone.)*
 
 ### Known defects, each owed its own commit

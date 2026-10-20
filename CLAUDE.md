@@ -1400,6 +1400,42 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-20 — the M9 review: what the slice plans left out
+
+Once 12c landed, a review checked M9 against its plan, ADR-0016, ADR-0017 and the code. It found gaps
+that nothing recorded, which the repo owner grouped into priorities. They are in WORK.md's new
+*The 2026-10-20 review* at the end of M9's build order, and the Outstanding index points at them.
+**12c's "M9's build work is done" holds for the slice plans only.** This entry is the P0 pass: no code
+changed.
+
+- **P1, in progress in two sessions of their own:**
+  - a registration's result cannot leave the process. `Report::toString()` omits the per-camera
+    transforms, `run` writes the report as that line, nothing serialises a result, and no node takes
+    the transforms out;
+  - the gui cannot load or save camera values that the cli can: no editors for a camera model or a
+    rig's footage or models, no node reads a model document, the gui saves images only, and
+    `listDir` lists files only.
+- **P2:** the held-out changes queued on 2026-10-09, and a camera's identity independent of where its
+  footage sits, by an interim cli fix.
+- **P3:** a footage generator, example documents with a calibrate-then-register composition test,
+  then one gui-mode session covering every M9 eyeball.
+- **P4:** a CI leg with OpenCV on and Ceres off, and the footprint measured again.
+- **Decided with the repo owner:**
+  - debug overlays of detection evidence are deferred, with a trigger (ADR-0016 amended);
+  - so is bulk projection, which ADR-0016 had promised;
+  - a board's measured-length bounds are vocabulary waiting for a consumer;
+  - capture manifests, capture datasets, clock domains and timestamp grouping come after M9 (WORK.md's
+    prerequisite note and ADR-0016 amended).
+- **Out-of-date claims corrected:**
+  - M9's status line ("Designed, not started");
+  - two prerequisite notes (node kinds register only when they can run; Ceres opt-in);
+  - the README's OpenCV and Ceres rows ("today a build probe");
+  - ADR-0016's count of node kinds (eleven, not seven);
+  - the Outstanding index's "first CI run of the smoke step", which has run since 2026-09-30.
+- **Three gui-mode checks recorded nowhere** joined the Outstanding index's *Verification owed*: slice
+  1's Camera menu, enum editors and colours; the refusal to open a damaged document; and the Failed
+  mark from `NodeEvaluation::fail`.
+
 ### Update 2026-10-20 — M9 slice 4, sub-slice 12c: the fallback end to end (**slice 4 COMPLETE**)
 
 The last of sub-slice 12's three commits, and the last of slice 4. `ctest` **1318/1318** Debug and

@@ -10,6 +10,10 @@ methods.
 `lain::camera::capture` owns timestamped camera frames, clock-domain identity, capture groups, and
 grouping reports. `lain::camera::registration` consumes explicit capture groups and owns spatial
 registration; it does not own timestamp-association policy.
+*(Amended 2026-10-20, from the M9 review: M9 builds capture groups and by-position grouping only.
+Timestamp grouping, clock-domain identity and the capture manifest that would assign durable camera
+identities come after M9, decided with the repo owner. Until then a graph names each camera by its
+footage's source uri.)*
 
 Registration follows the same optional-method structure as calibration:
 `lain::camera::registration` owns the shared request, report, transforms, diagnostics, and fitness
@@ -76,6 +80,10 @@ The detection request selects summary or detailed diagnostics. Summary is the pr
 detailed diagnostics may retain rejected marker and corner candidates plus refinement evidence for
 debug overlays. Neither level retains source pixels, and choosing a detail level does not change the
 accepted observation supplied to calibration or registration.
+*(Amended 2026-10-20, from the M9 review: the debug overlays are **not built**. The OpenCV detector
+fills `DetectionEvidence` for `DetailLevel::Detailed`, but `detectBoard` has no setting that asks for
+it and nothing in flowview draws a detection. Deferred, decided with the repo owner. **Trigger:** the
+first real capture whose detections need inspecting.)*
 
 Detection may operate on a configurable downsampled image, but board observations always use the
 original source-image pixel coordinate system. The request exposes the scale policy, and the report's
@@ -136,6 +144,10 @@ Projection and unprojection return a lain-owned value plus structured status. Or
 behind-camera geometry, model-domain violations, and iterative non-convergence
 do not produce NaN sentinels or throw exceptions. Bulk operations retain per-element outcomes and
 summarize failure counts for reports and validation.
+*(Amended 2026-10-20, from the M9 review: **no bulk operation is built.** Calibration, registration
+and validation project one point at a time, and each counts its own failures where it reports them.
+Deferred, decided with the repo owner. **Trigger:** the first caller that projects many points and
+must report per-element failures, such as a reprojection-error view.)*
 
 Projection success is independent of image containment. A mathematically valid off-image pixel is
 returned successfully, while a separate containment query tests the camera model's image rectangle.
@@ -254,7 +266,8 @@ reports a missing backend ("this build has no board renderer", a Failed report w
 `Rejection::NoBackend`, `Failure::NoDetector`). So ADR-0019's rule applies here unchanged: whether a
 build can RUN a node is a capability, whether a document can NAME it is vocabulary, and a missing
 capability must not cost a document its vocabulary. `registerCameraNodes` now registers all five
-kinds *(seven by 2026-10-09: both registration nodes joined, under the same rule)*; `availableCameraNodeKeys` still answers which can run, and flowview's menu offers only those,
+kinds *(seven by 2026-10-09: both registration nodes joined, under the same rule; eleven by
+2026-10-20: targetless calibration and the three fallback nodes joined)*; `availableCameraNodeKeys` still answers which can run, and flowview's menu offers only those,
 so "a node that cannot function should not be offered" survives as a rule about the menu rather than
 about loading. A camera document opened without a backend loads whole, saves back unchanged, and its
 nodes say what is missing when run. The same day the OpenCV plugin began defaulting ON for a
