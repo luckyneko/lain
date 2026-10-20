@@ -48,17 +48,22 @@
 #include <lain/io/video/codecs.h>
 #include <lain/math/rigidtransform.h>
 #include <lain/media/framesequence.h>
+#include <lain/task/task.h>
 #include <lain/testing/scratch.h>
+#include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <optional>
 #include <string>
 #include <variant>
+#include <vector>
 
 using namespace lain;
 namespace fs = std::filesystem;
@@ -556,4 +561,221 @@ TEST_CASE("a targetless registration's matching travels in its document by name"
 		}
 	}
 	CHECK(found == 1);
+}
+
+// The calibration fallback end to end: the committed calibrate-fallback.json (apps/flowview/examples),
+// run through runGraph as a user runs it, with --footage and --method bound and the attempts and the
+// model written out. Which attempts were made is read from the attempts text: board calibration first,
+// and targetless calibration only when the board's attempt is not accepted.
+
+namespace
+{
+	const fs::path kFallbackDocument = fs::path(LAIN_FLOWVIEW_EXAMPLES_DIR) / "calibrate-fallback.json";
+
+	struct FallbackRun
+	{
+		int status = 0;
+		std::optional<std::string> attempts; // the attempts text, when it was written
+		bool wroteModel = false;
+		std::optional<camera::CameraModel> model;
+	};
+
+	// One run of the example document. `method` unset leaves --method unbound.
+	FallbackRun runFallback(const fs::path& dir, const fs::path& footage, const std::optional<std::string>& method)
+	{
+		core::Factory<flow::Node> factory;
+		flowview::registerExampleNodes(factory, 8);
+		flowview::BoundaryBinders binders;
+		flowview::registerBoundaryBinders(binders);
+		flowview::RunOptions options;
+		options.graphPath = kFallbackDocument.string();
+		const fs::path attempts = dir / "attempts.txt";
+		const fs::path model = dir / "model.json";
+		fs::remove(attempts);
+		fs::remove(model);
+		options.bindings = {"--footage", footage.string(), "--attempts", attempts.string(), "--model", model.string()};
+		if (method)
+		{
+			options.bindings.push_back("--method");
+			options.bindings.push_back(*method);
+		}
+
+		FallbackRun run;
+		run.status = flowview::runGraph(options, factory, binders);
+		if (fs::exists(attempts))
+			run.attempts = readText(attempts);
+		run.wroteModel = fs::exists(model);
+		if (run.wroteModel)
+			run.model = readModel(model);
+		return run;
+	}
+
+	fs::path fallbackDir(const std::string& name)
+	{
+		const fs::path dir = lain::testing::scratchDir() / ("fallback-" + name);
+		fs::remove_all(dir);
+		fs::create_directories(dir);
+		return dir;
+	}
+
+	bool startsWith(const std::string& text, const std::string& prefix)
+	{
+		return text.rfind(prefix, 0) == 0;
+	}
+
+	// kCamera, the pinhole the board footage is seen through, as a camera model.
+	camera::CameraModel pinholeModel()
+	{
+		camera::CameraModelParameters p;
+		p.image = {std::uint32_t(kCamera.width), std::uint32_t(kCamera.height)};
+		p.intrinsics = {kCamera.fx, kCamera.fy, kCamera.cx, kCamera.cy};
+		p.distortion = camera::NoDistortion{};
+		return *camera::CameraModel::create(p).model;
+	}
+
+	// A moving camera's footage of a scene with no board in it: kCamera along texturedscene.h's arc
+	// round the default scene, as `frames` stills, drawn on the process pool. Seed 2 and one grey level
+	// of noise, as the end-to-end calibration suite draws the same path.
+	fs::path writeMovingFootage(const fs::path& dir, std::size_t frames)
+	{
+		camera::synthetic::Scene scene = camera::synthetic::defaultScene(2);
+		scene.noise = 1.0;
+		const camera::CameraModel model = pinholeModel();
+		const std::vector<math::RigidTransformd> poses = camera::synthetic::arcPath(frames);
+		std::vector<image::Image> drawn(frames);
+		task::range(std::ptrdiff_t{0}, std::ptrdiff_t(frames),
+					[&](std::ptrdiff_t i)
+					{ drawn[std::size_t(i)] = camera::synthetic::render(scene, model, poses[std::size_t(i)], std::size_t(i), 2, 2); });
+
+		const fs::path folder = dir / "footage";
+		fs::create_directories(folder);
+		for (std::size_t i = 0; i < frames; ++i)
+		{
+			const std::string name = "frame." + std::string(4 - std::to_string(i).size(), '0') + std::to_string(i) + ".png";
+			REQUIRE(io::image::save(core::Uri::fromPath(folder / name), drawn[i]));
+		}
+		return folder;
+	}
+} // namespace
+
+TEST_CASE("the calibration fallback accepts the board's attempt and never makes the targetless one", "[camera][runmode][fallback]")
+{
+	ensureRegistered();
+	const fs::path dir = fallbackDir("board");
+	const fs::path footage = haveCameraBackend() ? writeFootage(dir, 24) : writePlainFootage(dir, 2);
+	const FallbackRun run = runFallback(dir, footage, std::string{"board-then-targetless"});
+	REQUIRE(run.status == 0);
+	REQUIRE(run.attempts.has_value());
+	INFO("attempts: " << *run.attempts);
+
+	if (!haveCameraBackend())
+	{
+		// No backend: the document loads whole and runs, both attempts are made, and each says what
+		// this build is missing. Nothing is accepted, so no model is written.
+		CHECK(startsWith(*run.attempts, "No attempt of 2 accepted; 1: Failed: NoDetector"));
+		CHECK(run.attempts->find("; 2: Failed: NoFeatureExtractor") != std::string::npos);
+		CHECK_FALSE(run.wroteModel);
+		return;
+	}
+
+	// One attempt, accepted: the targetless attempt was gated off, so the attempts hold the board's
+	// alone. A targetless attempt made anyway would read "Attempt 1 of 2".
+	CHECK(startsWith(*run.attempts, "Attempt 1 of 1 accepted: Ready: "));
+	REQUIRE(run.model.has_value());
+	INFO("model: " << run.model->toString());
+	// Measured 0.14% and 0.3 px off, as the board vertical above measures; the same bounds.
+	CHECK(std::holds_alternative<camera::NoDistortion>(run.model->distortion()));
+	CHECK(std::abs(run.model->intrinsics().fx - kCamera.fx) < 0.005 * kCamera.fx);
+	CHECK(std::abs(run.model->intrinsics().fy - kCamera.fy) < 0.005 * kCamera.fy);
+	CHECK(std::abs(run.model->intrinsics().cx - kCamera.cx) < 1.0);
+	CHECK(std::abs(run.model->intrinsics().cy - kCamera.cy) < 1.0);
+}
+
+TEST_CASE("the calibration fallback falls back to targetless calibration when the board's attempt fails", "[camera][runmode][fallback]")
+{
+	ensureRegistered();
+	if (!camera::feature::canExtract())
+		SKIP("a build with no camera backend: the board case runs both attempts to their missing backends");
+	const fs::path dir = fallbackDir("targetless");
+
+	if (!camera::refinement::canRefine())
+	{
+		// OpenCV without Ceres. Board calibration needs no refiner, so it runs and fails for footage
+		// with no board in it; only then is the targetless attempt made, and it says what it lacks.
+		const FallbackRun run = runFallback(dir, writePlainFootage(dir, 2), std::string{"board-then-targetless"});
+		REQUIRE(run.status == 0);
+		REQUIRE(run.attempts.has_value());
+		INFO("attempts: " << *run.attempts);
+		CHECK(startsWith(*run.attempts, "No attempt of 2 accepted; 1: Failed: "));
+		CHECK(run.attempts->find("; 2: Failed: NoRefiner") != std::string::npos);
+		CHECK_FALSE(run.wroteModel);
+		return;
+	}
+
+#ifndef NDEBUG
+	SKIP("the targetless fallback runs in Release builds: a Debug build takes seconds to draw each frame");
+#endif
+	const lain::testing::ThreadPool pool;
+	const fs::path footage = writeMovingFootage(dir, 40);
+	const FallbackRun run = runFallback(dir, footage, std::string{"board-then-targetless"});
+	REQUIRE(run.status == 0);
+	REQUIRE(run.attempts.has_value());
+	INFO("attempts: " << *run.attempts);
+
+	// The board's attempt failed (there is no board), so the targetless one was made, and accepted.
+	CHECK(startsWith(*run.attempts, "Attempt 2 of 2 accepted: Ready: "));
+	REQUIRE(run.model.has_value());
+	INFO("model: " << run.model->toString());
+	// Measured on Linux: 32 frames placed, held out 0.737 px RMS, the model 0.18% out in focal length
+	// and 0.7 px in its principal point; 20 s in Release with four workers. The bounds leave room for
+	// another platform's features, since macOS's and Windows' SIFT find others (after sub-slice 10e),
+	// and still catch a model that is not this camera's.
+	CHECK(std::holds_alternative<camera::NoDistortion>(run.model->distortion()));
+	CHECK(std::abs(run.model->intrinsics().fx - kCamera.fx) < 0.01 * kCamera.fx);
+	CHECK(std::abs(run.model->intrinsics().fy - kCamera.fy) < 0.01 * kCamera.fy);
+	CHECK(std::abs(run.model->intrinsics().cx - kCamera.cx) < 3.0);
+	CHECK(std::abs(run.model->intrinsics().cy - kCamera.cy) < 3.0);
+}
+
+TEST_CASE("the calibration fallback makes only the attempts its method includes", "[camera][runmode][fallback]")
+{
+	// --method board, on footage the board cannot be found in: one attempt, failed, and no fallback,
+	// since the method did not include one. Blank footage, so this runs in every build.
+	ensureRegistered();
+	const fs::path dir = fallbackDir("board-only");
+	const FallbackRun run = runFallback(dir, writePlainFootage(dir, 2), std::string{"board"});
+	REQUIRE(run.status == 0);
+	REQUIRE(run.attempts.has_value());
+	INFO("attempts: " << *run.attempts);
+	// With a backend the board's attempt is TooFewViews (no usable view of 2 frames); without one,
+	// NoDetector. Either way it is the only attempt.
+	CHECK(startsWith(*run.attempts, "No attempt of 1 accepted; 1: Failed: "));
+	CHECK(run.attempts->find("; 2: ") == std::string::npos);
+	CHECK_FALSE(run.wroteModel);
+}
+
+TEST_CASE("with no --method the calibration fallback attempts nothing", "[camera][runmode][fallback]")
+{
+	// The cost of having no graph input defaults (WORK.md, M9 slice 4, sub-slice 12 planned): an
+	// unbound method is empty, calibrationMethod is suppressed, both gates stay shut and nothing is
+	// attempted. The run warns that --method was not bound and still exits 0, as any unbound input
+	// does, and writes neither output.
+	ensureRegistered();
+	const fs::path dir = fallbackDir("unbound");
+	const FallbackRun run = runFallback(dir, writePlainFootage(dir, 2), std::nullopt);
+	CHECK(run.status == 0);
+	CHECK_FALSE(run.attempts.has_value());
+	CHECK_FALSE(run.wroteModel);
+}
+
+TEST_CASE("a mistyped --method is refused", "[camera][runmode][fallback]")
+{
+	// Refused at the binding, which fails the run: an unparsable method is not left to look like an
+	// unbound one. The error names the spellings that would have bound.
+	ensureRegistered();
+	const fs::path dir = fallbackDir("mistyped");
+	const FallbackRun run = runFallback(dir, writePlainFootage(dir, 2), std::string{"board-then"});
+	CHECK(run.status != 0);
+	CHECK_FALSE(run.attempts.has_value());
+	CHECK_FALSE(run.wroteModel);
 }

@@ -1400,6 +1400,33 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-20 — M9 slice 4, sub-slice 12c: the fallback end to end (**slice 4 COMPLETE**)
+
+The last of sub-slice 12's three commits, and the last of slice 4. `ctest` **1318/1318** Debug and
+**1326/1326** Release with video, camera and Ceres on, **1192/1192** with all three off (+5 each), and
+**1267/1267** with OpenCV on but Ceres off; warning-clean, format-check clean. **gui-mode NOT eyeballed**:
+that is owed now, with footage rendered for it. Full notes in WORK.md's *Sub-slice 12c built* under M9
+slice 4.
+
+- **Five cases run the committed `calibrate-fallback.json` through `runGraph`**, reading which attempts
+  were made from the attempts text:
+  - board footage: *Attempt 1 of 1 accepted*, the pinhole 0.14% and 0.3 px out, the targetless attempt
+    gated off;
+  - a moving camera with no board in view: *Attempt 2 of 2 accepted*, 0.18% and 0.7 px out, 20 s in
+    Release. It skips in Debug, since drawing takes seconds a frame;
+  - `--method board`: one failed attempt, no fallback;
+  - no `--method`: nothing attempted, exit 0, the cost of the deferred graph input defaults pinned;
+  - a mistyped `--method`: exit 1.
+- **Each build's missing backend is reported:** with none, `NoDetector` then `NoFeatureExtractor`. With
+  OpenCV but no Ceres, `TooFewViews` then `NoRefiner`, which a new Ceres-off build here checks.
+- **The real binary gives the same reports and models to the last digit**, on the vertical's footage
+  written into the scratchpad by an uncommitted probe. The mistyped run names the three spellings.
+- **Sabotage, caught as predicted:** the targetless gate enabled straight from the method, skipping
+  `nextAttempt`, reads *Attempt 1 of 2 accepted* on board footage.
+- **M9's build work is done.** What is left is owed by the repo owner (the real-camera capture, the
+  held-out judgements, an honest feature covariance) or waits on real footage, plus the gui-mode
+  eyeballs.
+
 ### Update 2026-10-20 — M9 slice 4, sub-slice 12b: `calibrate-fallback.json`
 
 The second of sub-slice 12's three commits. `ctest` **1313/1313** Debug and **1321/1321** Release with

@@ -5582,7 +5582,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        - The vertical through `runGraph` and the real binary, on rendered footage.
        - A build without Ceres offers no targetless kind, and its document reports `NoRefiner`.
 
-       **Slice 4 is COMPLETE** when this lands. A gui-mode eyeball is then owed.
+       **Slice 4 is COMPLETE** when this lands. A gui-mode eyeball is then owed. *(Landed 2026-10-20
+       with 12c: slice 4 is complete, and its eyeball is in the Outstanding index.)*
 
    **Sub-slice 1 planned (2026-10-12) as two commits**, decided with the repo owner:
    - **1a:** the golden alone, produced by the unchanged code.
@@ -9139,6 +9140,42 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      `--method : lain::camera::calibration::Method  (board | targetless | board-then-targetless)`.
    - **Sabotage, caught:** the `Method` binder unregistered fails the example's section on its
      `method` input.
+
+   **Sub-slice 12c built (2026-10-20): the vertical. Sub-slice 12, and with it slice 4, is COMPLETE.**
+   `ctest` **1318/1318** Debug and **1326/1326** Release with video, camera and Ceres on, **1192/1192** with all
+   three off (+5 each), and **1267/1267** with OpenCV on but Ceres off; warning-clean, format-check clean.
+   **gui-mode NOT eyeballed**; that is owed now (Outstanding index, item 3).
+   - **Five cases in `test_cameravertical.cpp`**, each running the committed `calibrate-fallback.json`
+     through `runGraph`, with `--footage` bound to scratch footage and `--attempts` and `--model`
+     written. Which attempts were made is read from the attempts text.
+     - **Board footage** (the existing vertical's 24 frames), `--method board-then-targetless`:
+       *Attempt 1 of 1 accepted*, so the targetless attempt was gated off, and the model is the
+       pinhole, 0.14% and 0.3 px out. 2 s in Release. With no backend, plain footage: *No attempt of 2
+       accepted*, `NoDetector` then `NoFeatureExtractor`, no model.
+     - **A moving camera with no board in view** (`texturedscene.h`'s `arcPath(40)` round the default
+       scene, through the same pinhole, seed 2, one grey level of noise): the board's attempt fails
+       and *Attempt 2 of 2 accepted*, 32 frames placed, held out 0.737 px RMS, the model 0.18% and
+       0.7 px out. 20 s in Release with four workers; it **skips in Debug**, where drawing takes
+       seconds a frame, as the end-to-end suite does. The bounds are 1% and 3 px, room for macOS's
+       and Windows' SIFT. **OpenCV without Ceres** runs this case on plain footage instead: the board's
+       attempt is `TooFewViews`, then the targetless one `NoRefiner`, since board calibration needs no
+       refiner. With no feature backend it skips: the board case covers that build.
+     - **`--method board`** on plain footage: one failed attempt (`TooFewViews` with a backend,
+       `NoDetector` without), no second, no model. Every build, Debug included.
+     - **No `--method`**: exit 0, neither output written. This is the cost of the deferred graph input
+       defaults, pinned.
+     - **A mistyped `--method`**: exit 1, nothing written.
+   - **Driven through the real binary**, Release, from the scratchpad, on the vertical's own footage
+     written there by a probe case that was not committed: the same two attempts texts and the same
+     models to the last digit (0.5 s for the board footage, 27 s for the moving camera while another
+     build ran). Unbound, it warns *input --method not bound — leaving it empty* and that each output
+     produced nothing, exit 0. Mistyped, *could not parse 'board-then' for --method as
+     lain::camera::calibration::Method: one of board | targetless | board-then-targetless*, exit 1.
+   - **Sabotage, caught as predicted:** the example's targetless Gate enabled straight from
+     `calibrationMethod`'s `targetless`, skipping `nextAttempt`. The board case then reads *Attempt 1 of
+     2 accepted*: the targetless attempt was made after the board's was accepted.
+   - **An OpenCV-on, Ceres-off build** (`build-noceres` here) was configured for this commit, since none
+     was left from slice 3's sub-slice 10.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -14293,17 +14330,15 @@ row here**. A row is cheap to delete and expensive to leave.
 
 - **M9 — camera calibration and fixed registration.** Designed 2026-08-14/15 with three ADRs.
   **Built:** slice 0 (OpenCV lands), slice 1 sub-slices 0 to 7 plus the fixture machinery (8a to 8c),
-  slice 2 (fixed-camera board registration, with Ceres) and slice 3 (targetless registration with
-  known intrinsics, all eleven sub-slices, 2026-10-09). **Left in M9**, each item pointing at where
+  slice 2 (fixed-camera board registration, with Ceres), slice 3 (targetless registration with
+  known intrinsics, all eleven sub-slices, 2026-10-09) and slice 4 (targetless calibration and the
+  graph fallback, all thirteen sub-slices, 2026-10-20). **Left in M9**, each item pointing at where
   its detail lives:
-  1. **Build work.**
-     - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
-       sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b
-       and 6c), 7 (as 7a, 7b and 7c), 8, 9 (as 9a, 9b and 9c), 10 (as 10a to 10e) and 11 (as 11a to
-       11c, 2026-10-20), with the fixes ahead of 5 and of 9c. Item 12 (flowview, the fallback example
-       and the cli vertical) is what is left of slice 4, planned 2026-10-20 as 12a to 12c. The separate
-       feature-extraction node slice 3 deferred to it stays deferred, with its trigger restated
-       (slice 4's plan).
+  1. **Build work: none left.** Slice 4 was the last slice, built as 0 (the plan), 1 (as 1a and 1b), 2
+     (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b and 6c), 7 (as 7a, 7b and 7c), 8, 9 (as 9a, 9b and 9c), 10
+     (as 10a to 10e), 11 (as 11a to 11c) and 12 (as 12a to 12c, 2026-10-20), with the fixes ahead of
+     5 and of 9c. The separate feature-extraction node slice 3 deferred to it stays deferred, with its
+     trigger restated (slice 4's plan).
   2. **Owed by the repo owner.**
      - **The real-camera capture** for slice 1, sub-slice 8, guided by
        `plugins/camera/test/fixtures/README.md`. It is all that is left of slice 1.
@@ -14353,6 +14388,11 @@ row here**. A row is cheap to delete and expensive to leave.
   3. **Verification owed.**
      - **gui-mode eyeballs** of `registerCameras` and `registerCamerasTargetless`, the `matchSearch`
        combo included, on a Metal session.
+     - **gui-mode eyeball of slice 4's fallback** on a Metal session: `calibrate-fallback.json` opened,
+       the method picked in the Interface pane (nothing runs until one is), footage bound, and the
+       attempts and the model read; the `calibrateCameraTargetless`, `calibrationMethod`,
+       `nextAttempt` and `calibrationAttempts` nodes on the canvas, their "+" report pins included.
+       Footage has to be rendered for it, since none is committed (slice 4's *Sub-slice 12c built*).
   4. **Waiting on real footage**, the triggers sub-slices 7 to 9 carried forward (sub-slice 9's
      notes):
      - rows per descriptor on real footage, which also settles the feature cap above;

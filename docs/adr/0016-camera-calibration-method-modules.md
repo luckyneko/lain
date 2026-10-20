@@ -621,7 +621,11 @@ planning M9 slice 4. Nothing below is built yet; WORK.md's slice 4 plan holds th
   rather than storing its position. With no attempt made, as when the footage is missing upstream,
   `calibrationAttempts` produces nothing, so the absence propagates rather than reading as a failed
   fallback. Built 2026-10-20, sub-slice 11c: the two nodes share an `AttemptReportsNode` base, which
-  reads the live reports in pin order once for both.)*
+  reads the live reports in pin order once for both. Shipped 2026-10-20, sub-slice 12, as
+  `apps/flowview/examples/calibrate-fallback.json`, run end to end on rendered footage. Its `method`
+  is a boundary input the caller must bind (`--method board-then-targetless`): an unbound boundary
+  input is empty, so `calibrationMethod`'s own default never applies through one, and the graph input
+  defaults that would let it were deferred as a feature of their own.)*
 - **Acceptance is stated once**: an attempt is accepted when it succeeded and is Ready under its own
   method's profile, decided by one shared function that the gating node and the combining node both
   call. A looser acceptance is a looser profile, not a second setting on the fallback.
