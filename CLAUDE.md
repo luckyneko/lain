@@ -1405,8 +1405,9 @@ extraction*, *Calibration method* and *Calibration attempt*.
 The last of sub-slice 11's three commits: the attempts in the library, and the three small nodes that
 switch the gates and combine the reports (ADR-0016). `ctest` **1309/1309** Debug and **1317/1317**
 Release with video, camera and Ceres on, **1183/1183** with all three off (+12 each); warning-clean,
-format-check clean. **gui-mode NOT eyeballed**; that is owed after item 12. Full notes in WORK.md's
-*Sub-slice 11c built* under M9 slice 4.
+format-check clean. **gui-mode NOT eyeballed**; that is owed after item 12. **CI run 39 (`9f37938`) is
+green on all seven jobs**, 1317/1317 on macOS and Windows. Full notes in WORK.md's *Sub-slice 11c
+built* under M9 slice 4.
 
 - **`calibration/attempts.h`**: `Method`, `includes`, `accepts` (succeeded and Ready, the one rule both
   the gate and the record ask) and `Attempts`, whose `accepted()` is derived, the first that accepts.

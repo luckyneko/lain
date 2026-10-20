@@ -8960,6 +8960,10 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      library case alone. The attempts leaving out a failed attempt fails three cases, not the plan's one:
      both-fail, and the failed-board and edited-setting cases, each of which lists the failed board
      report too.
+   - **CI run 39 (`9f37938`) is green on all seven jobs**, 1317/1317 on macOS and Windows and every
+     Release leg passing, so the fallback graph's seven cases and the stand-in worlds' rename hold on
+     every platform. The end-to-end calibration cases pass there too, where macOS's and Windows' SIFT
+     features differ from Linux's.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
