@@ -5549,7 +5549,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    11. **Attempts, and the flow nodes.** *(Planned in detail 2026-10-19 as three commits, 11a to 11c;
        see below. The report pins are dynamic, as Merge's branches are; `Attempts` derives the accepted
        one rather than storing its position; and the `calibration::Method` codec and editor move here
-       from item 12, since flowview's codec census sees every new param. 11a built 2026-10-20.)*
+       from item 12, since flowview's codec census sees every new param. 11a and 11b built
+       2026-10-20.)*
        - `calibration::Method {Board, Targetless, BoardThenTargetless}`, `calibration::Attempts` (the
          reports in priority order, and the accepted one's position), and `calibration::accepts`.
        - `CalibrationNode`, the settings both method nodes share, as `RigRegistrationNode` is for
@@ -8879,6 +8880,39 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      fails *calibrateCamera hands its settings to the method*, on its defaults section (0.2 is
      0.200000003 as a float). Its every-parameter section alone would not see it: it sets 0.25, which a
      float holds exactly.
+
+   **Sub-slice 11b built (2026-10-20): `calibrateCameraTargetless`.** `ctest` **1297/1297** Debug and
+   **1305/1305** Release with video, camera and Ceres on, **1171/1171** with all three off (+5 each: the
+   new executable's cases); warning-clean, format-check clean.
+   - **The node** (`calibratecameratargetlessnode.{h,cpp}`), on `CalibrationNode`: footage 0 and imported
+     1, the ten settings of the plan each defaulted from `targetless::Settings`, and `report`. It runs
+     `targetless::calibrate({identityOf(footage), footage}, settings, request)`; the method's own
+     `startReport` sets the extraction's execution policy from the request, so the node does not.
+     `inlierPixels` becomes the extraction's Sampson `threshold`, and `loss` is `refinement::LossFamily`,
+     the type registration's `loss` already is, so flowview's codec and editor for it already exist. Its
+     header points at `targetless.h`'s operator guidance.
+   - **The kinds table** gains the kind after `calibrateCamera`, its capability `canCalibrateTargetless`
+     (the three feature backends and `refinement::canRefine()`), and `canUseCalibration` (either method)
+     beside `canUseBoard`, now `cameraModel`'s.
+   - **`test-camera-flow-calibratetargetless`**, its own executable over the scene stand-ins, five cases:
+     - the settings handed to the method: the defaults (the moving camera's 2048 features and 40
+       frames, the method's own profile, what the node does not expose left at the library's); every
+       param non-default, each float one a float does not hold exactly, read back from the request and
+       `TargetlessRecord::settings` of a refusal (HoldAndValidate with nothing held is refused before a
+       frame decodes, and records both all the same); and a longest side of 0 searching natively;
+     - no `maximumViews` param;
+     - the node's report equal, through `targetlesscalibrationtext.h`'s printer, to the method's own for
+       the same footage named `/scene/cam00`;
+     - empty footage as `NoFootage`;
+     - an imported model held exactly with no start swept, and unwired, three starts.
+   - **Staging:** `test_targetlesskinds.cpp` (renamed *the targetless kinds are offered …*) offers
+     `calibrateCameraTargetless`, `cameraModel` and `registerCamerasTargetless` with no board backend;
+     `test_registration.cpp`'s `kAllKinds` gains the kind; flowview's catalog offers it with OpenCV and a
+     refiner.
+   - **Two sabotages, both caught as predicted.** `freePrincipalPoint` left unmapped fails the settings
+     case alone. `cameraModel` left on board calibration's capability fails the targetless staging alone;
+     its first cut moved the table row and left `canUseCalibration` unused, which `-Werror` refused, so
+     the old binaries answered until it was redone as `canUseCalibration` answering board's alone.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -14041,7 +14075,7 @@ row here**. A row is cheap to delete and expensive to leave.
        sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b
        and 6c), 7 (as 7a, 7b and 7c), 8 and 9 (as 9a, 9b and 9c), with the fixes ahead of 5 and of
        9c, and 10 (as 10a to 10e). Sub-slice 11 is planned (2026-10-19) as three commits, 11a to
-       11c, of which 11a is built (2026-10-20); item 12 follows it. The separate
+       11c, of which 11a and 11b are built (2026-10-20); item 12 follows it. The separate
        feature-extraction node slice 3 deferred to it stays deferred, with its trigger restated
        (slice 4's plan).
   2. **Owed by the repo owner.**

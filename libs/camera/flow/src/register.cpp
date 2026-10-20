@@ -2,6 +2,7 @@
 
 #include "lain/camera/flow/boardspecificationnode.h"
 #include "lain/camera/flow/calibratecameranode.h"
+#include "lain/camera/flow/calibratecameratargetlessnode.h"
 #include "lain/camera/flow/cameramodelnode.h"
 #include "lain/camera/flow/detectboardnode.h"
 #include "lain/camera/flow/registercamerasnode.h"
@@ -22,7 +23,8 @@
 namespace lain::camera
 {
 	// What each kind needs to run. A specification is only worth making for something that uses one;
-	// calibration detects and then estimates; and a model only ever comes out of a calibration.
+	// board calibration detects and then estimates; and a model only ever comes out of a calibration,
+	// of either method.
 	static bool canUseBoard()
 	{
 		return board::canRender() || board::canDetect();
@@ -31,6 +33,20 @@ namespace lain::camera
 	static bool canCalibrate()
 	{
 		return board::canDetect() && calibration::canEstimate();
+	}
+
+	// Targetless calibration extracts and matches features, poses frames from them, and adjusts the
+	// model: whether the refiner can estimate the model asked for is the method's to say, with the
+	// reason, as registration's refiner is asked only whether it exists.
+	static bool canCalibrateTargetless()
+	{
+		return feature::canExtract() && feature::canMatch() && feature::canSolveGeometry() && refinement::canRefine();
+	}
+
+	// Either calibration: what a model comes out of.
+	static bool canUseCalibration()
+	{
+		return canCalibrate() || canCalibrateTargetless();
 	}
 
 	// Registration detects, poses each board, and refines the rig: three backends.
@@ -66,7 +82,8 @@ namespace lain::camera
 		{kRenderBoardKey, &board::canRender, &add<RenderBoardNode>},
 		{kDetectBoardKey, &board::canDetect, &add<DetectBoardNode>},
 		{kCalibrateCameraKey, &canCalibrate, &add<CalibrateCameraNode>},
-		{kCameraModelKey, &canCalibrate, &add<CameraModelNode>},
+		{kCalibrateCameraTargetlessKey, &canCalibrateTargetless, &add<CalibrateCameraTargetlessNode>},
+		{kCameraModelKey, &canUseCalibration, &add<CameraModelNode>},
 		{kRegisterCamerasKey, &canRegister, &add<RegisterCamerasNode>},
 		{kRegisterCamerasTargetlessKey, &canRegisterTargetless, &add<RegisterCamerasTargetlessNode>},
 	};

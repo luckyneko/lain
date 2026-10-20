@@ -1400,6 +1400,25 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-20 — M9 slice 4, sub-slice 11b: `calibrateCameraTargetless`
+
+The second of sub-slice 11's three commits: targetless calibration as a node. `ctest` **1297/1297**
+Debug and **1305/1305** Release with video, camera and Ceres on, **1171/1171** with all three off (+5
+each); warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 11b built* under M9 slice 4.
+
+- **The node runs `targetless::calibrate`** over its footage, the camera named by the footage's source,
+  under ten settings each defaulted from `targetless::Settings`, plus `CalibrationNode`'s. Its header
+  points at `targetless.h`'s guidance (the HD lens; footage that keeps one point centred).
+- **Kinds table:** `canCalibrateTargetless` is the three feature backends and a refiner, as targetless
+  registration's is; `cameraModel` now follows `canUseCalibration`, either method. A build with no board
+  backend offers both, and `registerCamerasTargetless`.
+- **Its own test executable**, over the scene stand-ins: the settings read back from a refusal's record
+  as well as a run's, the node's report equal to the method's through the shared printer, empty footage,
+  and an imported model.
+- **Two sabotages, both caught as predicted.** The first cut of one did not build under `-Werror` (an
+  unused capability function), so the old binaries answered until it was redone: a sabotage that does
+  not build proves nothing, again.
+
 ### Update 2026-10-20 — M9 slice 4, sub-slice 11a: the calibration nodes share a base
 
 The first of sub-slice 11's three commits, with no change in behaviour. `ctest` **1292/1292** Debug and

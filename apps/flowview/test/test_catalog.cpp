@@ -90,10 +90,10 @@ TEST_CASE("the camera kinds always load, and are on the menu exactly when a back
 	//
 	// What each kind needs is written HERE, per kind, rather than read from the library, so the
 	// library's rule is held to the configuration and not to itself. The board kinds run on OpenCV's
-	// backends; both registrations also refine the rig, which is Ceres'. Every kind the library has
-	// is asked about, so a kind added there without an expectation here fails rather than going
-	// unchecked. The single OpenCV flag this replaced could not say what registerCameras needs, so
-	// that kind was left off the list it kept, and nothing noticed.
+	// backends; both registrations also refine the rig, and targetless calibration the model, which is
+	// Ceres'. Every kind the library has is asked about, so a kind added there without an expectation
+	// here fails rather than going unchecked. The single OpenCV flag this replaced could not say what
+	// registerCameras needs, so that kind was left off the list it kept, and nothing noticed.
 	camera::registerCameraBackends();
 	core::Factory<flow::Node> factory;
 	flowview::registerExampleNodes(factory, 8);
@@ -105,6 +105,7 @@ TEST_CASE("the camera kinds always load, and are on the menu exactly when a back
 		{camera::kRenderBoardKey, opencv},
 		{camera::kDetectBoardKey, opencv},
 		{camera::kCalibrateCameraKey, opencv},
+		{camera::kCalibrateCameraTargetlessKey, opencv && refiner},
 		{camera::kCameraModelKey, opencv},
 		{camera::kRegisterCamerasKey, opencv && refiner},
 		{camera::kRegisterCamerasTargetlessKey, opencv && refiner},

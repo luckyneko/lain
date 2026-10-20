@@ -25,8 +25,13 @@ namespace
 {
 	// Every camera kind, in display order: what registerCameraNodes must ALWAYS put in a factory.
 	// Written out rather than read from cameraNodeKeys(), which is checked against it below.
-	const std::vector<std::string> kAllKinds{"boardSpecification", "renderBoard", "detectBoard",
-											 "calibrateCamera", "cameraModel", "registerCameras",
+	const std::vector<std::string> kAllKinds{"boardSpecification",
+											 "renderBoard",
+											 "detectBoard",
+											 "calibrateCamera",
+											 "calibrateCameraTargetless",
+											 "cameraModel",
+											 "registerCameras",
 											 "registerCamerasTargetless"};
 
 	// The kinds registerCameraNodes put in a fresh factory that it can build.
@@ -76,9 +81,10 @@ TEST_CASE("camera node kinds register always, and are offered as backends can ru
 	registering.push_back("registerCameras");
 	CHECK(camera::availableCameraNodeKeys() == registering);
 
-	// Targetless registration extracts, matches and poses cameras from what it matched: with a
-	// refiner already here, none of the three alone will do. That it needs the refiner and no board
-	// backend is test_targetlesskinds.cpp's, from a process with no board backend at all.
+	// The targetless methods extract, match and pose from what they matched: with a refiner already
+	// here, none of the three alone will do, and the three bring targetless calibration and
+	// registration both. That they need the refiner and no board backend is test_targetlesskinds.cpp's,
+	// from a process with no board backend at all.
 	camera::feature::extractorRegistry().registerType<NullExtractor>("null");
 	CHECK(camera::availableCameraNodeKeys() == registering);
 	camera::feature::matcherRegistry().registerType<NullMatcher>("null");

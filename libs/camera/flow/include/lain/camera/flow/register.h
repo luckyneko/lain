@@ -15,6 +15,7 @@ namespace lain::camera
 	inline constexpr const char* kRenderBoardKey = "renderBoard";
 	inline constexpr const char* kDetectBoardKey = "detectBoard";
 	inline constexpr const char* kCalibrateCameraKey = "calibrateCamera";
+	inline constexpr const char* kCalibrateCameraTargetlessKey = "calibrateCameraTargetless";
 	inline constexpr const char* kCameraModelKey = "cameraModel";
 	inline constexpr const char* kRegisterCamerasKey = "registerCameras";
 	inline constexpr const char* kRegisterCamerasTargetlessKey = "registerCamerasTargetless";
