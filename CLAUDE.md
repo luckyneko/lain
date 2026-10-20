@@ -1400,6 +1400,31 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-20 — M9 slice 4, sub-slice 11c: the calibration fallback is a graph (**sub-slice 11 COMPLETE**)
+
+The last of sub-slice 11's three commits: the attempts in the library, and the three small nodes that
+switch the gates and combine the reports (ADR-0016). `ctest` **1309/1309** Debug and **1317/1317**
+Release with video, camera and Ceres on, **1183/1183** with all three off (+12 each); warning-clean,
+format-check clean. **gui-mode NOT eyeballed**; that is owed after item 12. Full notes in WORK.md's
+*Sub-slice 11c built* under M9 slice 4.
+
+- **`calibration/attempts.h`**: `Method`, `includes`, `accepts` (succeeded and Ready, the one rule both
+  the gate and the record ask) and `Attempts`, whose `accepted()` is derived, the first that accepts.
+- **`calibrationMethod`, `nextAttempt`, `calibrationAttempts`**, offered wherever either calibration
+  can run. The two that read attempts take them on "+"-added report pins, every one Optional, the order
+  added the priority order, and **share an `AttemptReportsNode` base** (an addition to the plan) so they
+  read the attempts one way. `calibrationAttempts` clears `accepted` when nothing is accepted, and both
+  outputs when nothing was attempted.
+- **`meta::toString` names an enum**, so `method` describes as `BoardThenTargetless` on a port.
+- **flowview:** the `calibrationMethod` codec, its editor, two port colours, the catalog's expectations.
+- **The fallback test holds both stand-in worlds**, `boardScene()` renamed from `scene()` to let it. One
+  deviation: the scene's camera is a pinhole of the board camera's geometry, not the board's true
+  camera, since the scene stand-ins' fundamentals ignore distortion. Seven cases over a retained
+  Evaluation, each method, acceptance, an Exploratory or failed board falling back, both failing after a
+  run that had accepted, an edit re-running one attempt, and footage missing upstream.
+- **Four sabotages, all caught.** One caught more than the plan predicted: attempts leaving out a failed
+  report fail three cases, since every fallback case after a failed board lists it.
+
 ### Update 2026-10-20 — M9 slice 4, sub-slice 11b: `calibrateCameraTargetless`
 
 The second of sub-slice 11's three commits: targetless calibration as a node. `ctest` **1297/1297**

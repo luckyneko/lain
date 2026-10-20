@@ -93,7 +93,9 @@ namespace lain::camera::testing
 		// which takes part in the pool, runs every frame itself.
 		std::chrono::milliseconds detectionTime{0};
 	};
-	inline Scene& scene()
+	// Not scene(): syntheticscene.h's stand-ins are namespace testing::scene, and the calibration
+	// fallback's test holds both worlds in one translation unit.
+	inline Scene& boardScene()
 	{
 		static Scene instance;
 		return instance;
@@ -106,15 +108,15 @@ namespace lain::camera::testing
 		board::DetectionReport detect(const image::Image&, const media::FrameRef& frame, const board::Specification& spec,
 									  const board::DetectionRequest&, double) const override
 		{
-			if (scene().detectionTime.count() > 0)
-				std::this_thread::sleep_for(scene().detectionTime);
+			if (boardScene().detectionTime.count() > 0)
+				std::this_thread::sleep_for(boardScene().detectionTime);
 			{
-				std::lock_guard<std::mutex> lock(scene().mutex);
-				scene().threads.insert(std::this_thread::get_id());
+				std::lock_guard<std::mutex> lock(boardScene().mutex);
+				boardScene().threads.insert(std::this_thread::get_id());
 			}
 			board::DetectionReport report;
 			report.provenance = {"truth", "1"};
-			for (const std::size_t skip : scene().boardless)
+			for (const std::size_t skip : boardScene().boardless)
 			{
 				if (skip == frame.ordinal)
 				{
@@ -123,7 +125,7 @@ namespace lain::camera::testing
 				}
 			}
 			const CameraModel camera = *CameraModel::create(trueCamera()).model;
-			const math::RigidTransformd pose = boardPose(frame.ordinal, scene().frames);
+			const math::RigidTransformd pose = boardPose(frame.ordinal, boardScene().frames);
 			board::Observation observation;
 			observation.frame = frame;
 			observation.image = trueCamera().image;
@@ -205,7 +207,7 @@ namespace lain::camera::testing
 		std::vector<math::RigidTransformd> solve(const CameraModel&, const board::Specification&,
 												 const board::Observation& view) const override
 		{
-			return {testing::boardPose(view.frame.ordinal, scene().frames)};
+			return {testing::boardPose(view.frame.ordinal, boardScene().frames)};
 		}
 	};
 
@@ -225,7 +227,7 @@ namespace lain::camera::testing
 	inline void resetScene()
 	{
 		registerStandIns();
-		Scene& s0 = scene();
+		Scene& s0 = boardScene();
 		s0.frames = 40;
 		s0.boardless.clear();
 		s0.threads.clear();

@@ -343,7 +343,8 @@ namespace lain::camera::testing::scene
 	inline capture::CameraFootage sequenceFootage();
 
 	// A source of blank frames that say which camera and frame they are, counting its decodes, with its
-	// cache off so every request is a decode.
+	// cache off so every request is a decode. Its frames are the size of the scene's model(), so a
+	// moving camera seen through another geometry has footage of that size.
 	class SceneSource : public media::FrameSource
 	{
 	public:
@@ -354,8 +355,9 @@ namespace lain::camera::testing::scene
 		}
 		static media::FrameSpec spec()
 		{
+			const ImageGeometry geometry = model().image();
 			media::FrameSpec s;
-			s.extent = {640, 480};
+			s.extent = {int(geometry.width), int(geometry.height)};
 			s.pixelFormat = image::PixelFormat::Gray8;
 			return s;
 		}
@@ -369,7 +371,7 @@ namespace lain::camera::testing::scene
 			}
 			if (scene().undecodable.count({m_camera, ordinal}) != 0)
 				return {};
-			image::Image frame{640, 480, image::PixelFormat::Gray8};
+			image::Image frame{spec().extent.x, spec().extent.y, image::PixelFormat::Gray8};
 			frame.data()[0] = std::uint8_t(m_camera);
 			frame.data()[1] = std::uint8_t(ordinal);
 			return frame;

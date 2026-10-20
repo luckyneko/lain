@@ -3,8 +3,11 @@
 #include "lain/camera/flow/boardspecificationnode.h"
 #include "lain/camera/flow/calibratecameranode.h"
 #include "lain/camera/flow/calibratecameratargetlessnode.h"
+#include "lain/camera/flow/calibrationattemptsnode.h"
+#include "lain/camera/flow/calibrationmethodnode.h"
 #include "lain/camera/flow/cameramodelnode.h"
 #include "lain/camera/flow/detectboardnode.h"
+#include "lain/camera/flow/nextattemptnode.h"
 #include "lain/camera/flow/registercamerasnode.h"
 #include "lain/camera/flow/registercamerastargetlessnode.h"
 #include "lain/camera/flow/renderboardnode.h"
@@ -12,6 +15,7 @@
 #include <lain/camera/board/detection.h>
 #include <lain/camera/board/pose.h>
 #include <lain/camera/board/rendering.h>
+#include <lain/camera/calibration/attempts.h>
 #include <lain/camera/calibration/estimator.h>
 #include <lain/camera/feature/features.h>
 #include <lain/camera/feature/geometry.h>
@@ -43,7 +47,7 @@ namespace lain::camera
 		return feature::canExtract() && feature::canMatch() && feature::canSolveGeometry() && refinement::canRefine();
 	}
 
-	// Either calibration: what a model comes out of.
+	// Either calibration: what a model comes out of, and what a fallback chooses between.
 	static bool canUseCalibration()
 	{
 		return canCalibrate() || canCalibrateTargetless();
@@ -83,6 +87,9 @@ namespace lain::camera
 		{kDetectBoardKey, &board::canDetect, &add<DetectBoardNode>},
 		{kCalibrateCameraKey, &canCalibrate, &add<CalibrateCameraNode>},
 		{kCalibrateCameraTargetlessKey, &canCalibrateTargetless, &add<CalibrateCameraTargetlessNode>},
+		{kCalibrationMethodKey, &canUseCalibration, &add<CalibrationMethodNode>},
+		{kNextAttemptKey, &canUseCalibration, &add<NextAttemptNode>},
+		{kCalibrationAttemptsKey, &canUseCalibration, &add<CalibrationAttemptsNode>},
 		{kCameraModelKey, &canUseCalibration, &add<CameraModelNode>},
 		{kRegisterCamerasKey, &canRegister, &add<RegisterCamerasNode>},
 		{kRegisterCamerasTargetlessKey, &canRegisterTargetless, &add<RegisterCamerasTargetlessNode>},
@@ -118,6 +125,8 @@ namespace lain::camera
 		flow::registerPortType<board::Specification>("BoardSpecification");
 		flow::registerPortType<board::DetectionReport>("BoardDetectionReport");
 		flow::registerPortType<calibration::Report>("CalibrationReport");
+		flow::registerPortType<calibration::Method>("CalibrationMethod");
+		flow::registerPortType<calibration::Attempts>("CalibrationAttempts");
 		flow::registerPortType<CameraModel>("CameraModel");
 		flow::registerPortType<std::vector<CameraModel>>("ListOfCameraModel");
 		flow::registerPortType<registration::Report>("RegistrationReport");

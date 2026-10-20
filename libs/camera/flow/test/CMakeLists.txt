@@ -41,6 +41,14 @@ target_link_libraries(test-camera-flow-calibratetargetless
 	PRIVATE lain::camera::flow lain::meta lain::warnings Catch2::Catch2WithMain)
 catch_discover_tests(test-camera-flow-calibratetargetless TEST_PREFIX "(camera::flow) ")
 
+# The calibration fallback as a graph: both calibration stand-in worlds, the board's and the moving
+# camera's, which register under different registries, and the pass-through refiner.
+add_executable(test-camera-flow-fallback test_fallback.cpp)
+target_compile_features(test-camera-flow-fallback PRIVATE cxx_std_17)
+target_include_directories(test-camera-flow-fallback PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../test")
+target_link_libraries(test-camera-flow-fallback PRIVATE lain::camera::flow lain::warnings Catch2::Catch2WithMain)
+catch_discover_tests(test-camera-flow-fallback TEST_PREFIX "(camera::flow) ")
+
 # registerCamerasTargetless over the targetless method module's stand-in scene.
 add_executable(test-camera-flow-registertargetless test_registertargetless.cpp)
 target_compile_features(test-camera-flow-registertargetless PRIVATE cxx_std_17)

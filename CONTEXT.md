@@ -475,19 +475,23 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   calibration attempt while all methods yield the same calibration report. Fallback methods run in
   priority order and stop at the first attempt that meets the requested reconstruction fitness;
   evaluating every successful method is comparison, not fallback. _Avoid_: calibration type.
-  *In a graph* (planned 2026-10-12, M9 slice 4): a `method` input, and the fallback is wired from gates
-  and small nodes rather than one node. Each method's footage passes through a gate, switched from the
-  method and the earlier attempts' reports, so a method that is not needed is never run. "Meets the
-  requested reconstruction fitness" means accepted (below), and a looser acceptance is a looser profile.
+  *In a graph* (planned 2026-10-12, built 2026-10-20, M9 slice 4): a `method` input, and the fallback is
+  wired from gates and small nodes rather than one node. Each method's footage passes through a gate,
+  switched from the method (`calibrationMethod`) and the earlier attempts' reports (`nextAttempt`), so a
+  method that is not needed is never run. "Meets the requested reconstruction fitness" means accepted
+  (below), and a looser acceptance is a looser profile. The type is `calibration::Method`.
 - **Calibration attempt** — the result and evidence produced by one calibration method within a
   request. A fallback report retains every attempt made and fails only after all configured methods
   have failed to meet the requested reconstruction fitness. _Avoid_: fallback result when referring
   to the individual method outcome.
-  *The attempts made* (planned 2026-10-12): a method that was skipped because an earlier attempt was
-  accepted made no attempt, and is not listed.
+  *The attempts made* (planned 2026-10-12, built 2026-10-20 as `calibration::Attempts`, which
+  `calibrationAttempts` produces): a method that was skipped because an earlier attempt was accepted
+  made no attempt, and is not listed. With no attempt made at all there is no attempts value, so the
+  absence propagates rather than reading as a failed fallback.
 - **Accepted attempt** — the first calibration attempt, in priority order, that succeeded and is Ready
-  under its own method's fitness profile. One shared function decides it, and both the gate that skips
-  a later method and the record of the attempts call it, so the two cannot disagree. A fallback with
+  under its own method's fitness profile. One shared function decides it (`calibration::accepts`), and
+  both the gate that skips a later method and the record of the attempts call it, so the two cannot
+  disagree. The record derives which attempt it is rather than storing a position. A fallback with
   no accepted attempt produces no camera model, and its attempts still say why. _Avoid_: best attempt
   (nothing is compared), winning method.
 - **Calibration request** — the graph-boundary description of a calibration attempt: its method,

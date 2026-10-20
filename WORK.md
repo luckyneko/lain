@@ -5549,8 +5549,8 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    11. **Attempts, and the flow nodes.** *(Planned in detail 2026-10-19 as three commits, 11a to 11c;
        see below. The report pins are dynamic, as Merge's branches are; `Attempts` derives the accepted
        one rather than storing its position; and the `calibration::Method` codec and editor move here
-       from item 12, since flowview's codec census sees every new param. 11a and 11b built
-       2026-10-20.)*
+       from item 12, since flowview's codec census sees every new param. 11a to 11c built
+       2026-10-20: sub-slice 11 is complete.)*
        - `calibration::Method {Board, Targetless, BoardThenTargetless}`, `calibration::Attempts` (the
          reports in priority order, and the accepted one's position), and `calibration::accepts`.
        - `CalibrationNode`, the settings both method nodes share, as `RigRegistrationNode` is for
@@ -8913,6 +8913,53 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      case alone. `cameraModel` left on board calibration's capability fails the targetless staging alone;
      its first cut moved the table row and left `canUseCalibration` unused, which `-Werror` refused, so
      the old binaries answered until it was redone as `canUseCalibration` answering board's alone.
+
+   **Sub-slice 11c built (2026-10-20): the attempts, and the fallback nodes. Sub-slice 11 is
+   complete.** `ctest` **1309/1309** Debug and **1317/1317** Release with video, camera and Ceres on,
+   **1183/1183** with all three off (+12 each: four library cases, one `meta` case, seven graph cases);
+   warning-clean, format-check clean.
+   - **`calibration/attempts.h`**: `Method {Board, Targetless, BoardThenTargetless}`, `includes`,
+     `accepts` (succeeded and Ready) and `Attempts {reports; accepted(); toString();}`, `accepted()` the
+     first that `accepts`, as planned.
+   - **`meta::toString` names an enum**, through `enums::name`, ahead of the ostream arm so an unscoped
+     enum is named too; a value no enumerator names is its number. `method` is the first enum on a port.
+   - **The nodes:** `calibrationMethod` (`method` defaulting to BoardThenTargetless, `board` and
+     `targetless` through `includes`); `nextAttempt` (`included` defaulting to true, `run`); and
+     `calibrationAttempts` (`attempts`, `accepted`, each cleared explicitly). **One addition to the plan:
+     the two attempt-reading nodes share an `AttemptReportsNode` base**, a `DynamicPortsNode` holding
+     the "+" filter (`CalibrationReport` alone), the Optional pins, and the one reading of the live
+     reports in pin order, static pins skipped and each pin checked with `holds<Report>()`. The two
+     nodes then cannot read the attempts in different orders. All three are offered with
+     `canUseCalibration`, and sit in the table between the calibrations and `cameraModel`.
+   - **Port types `CalibrationMethod` and `CalibrationAttempts`**; flowview's `calibrationMethod` codec,
+     `editEnum<Method>`, two port colours, and the catalog's expectations (offered with OpenCV).
+   - **The stand-ins:** `syntheticboard.h`'s `scene()` is `boardScene()` (31 uses in 4 files, the golden
+     untouched), and `SceneSource`'s frames take the scene model's size. **Deviation from the plan:**
+     the shared footage is the scene's wandering camera through a PINHOLE of the board camera's geometry
+     (960x720, {900, 905, 479.5, 359.5}), not through `trueCamera()` itself: the scene stand-ins'
+     fundamental matrices and homographies use K alone, and `trueCamera()`'s k1 = -0.1 moves its
+     corners about 20 px. The board stand-ins never read a pixel, so they keep the true camera, and the
+     two models stay apart, which the case that wants the targetless model needs.
+   - **`test-camera-flow-fallback`**, the graph through the production nodes, two `GateNode`s over
+     `media::FrameSequence`, and one retained Evaluation per case, witnessed by the board estimator's
+     calls, the targetless method's refinements and its matcher's searches. Seven cases: the three
+     methods in turn over one evaluation; an accepted board attempt with the targetless method unrun; an
+     Exploratory board attempt (eight views) not accepted; a failed board attempt then a Ready targetless
+     one, accepted at position 1, `cameraModel` giving the pinhole; both failing after a run that had
+     accepted, so `accepted` and the model are empty while the attempts hold both; an edited targetless
+     setting re-running that attempt alone; and footage missing upstream, no attempt and both outputs
+     empty.
+   - **The probe** (an imported true pinhole under Initial, which the pass-through refiner hands back):
+     at 16 frames and 240 landmarks the targetless attempt fits 13 frames against Ready's 10, covers the
+     whole image against 0.6, places every frame, and validates exactly. 24 frames fit 19, at three
+     times the cost (47 s against 14 s in Debug). The board attempt at eight views is short of Ready
+     on that alone.
+   - **Four sabotages, all caught as predicted.** `nextAttempt` judging by a succeeded status alone fails
+     the Exploratory case alone. `accepted` not cleared fails the both-fail case alone, on the stale
+     acceptance and the stale model behind it. `accepted()` taking the last accepting report fails the
+     library case alone. The attempts leaving out a failed attempt fails three cases, not the plan's one:
+     both-fail, and the failed-board and edited-setting cases, each of which lists the failed board
+     report too.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -14073,9 +14120,9 @@ row here**. A row is cheap to delete and expensive to leave.
   1. **Build work.**
      - **Slice 4, targetless calibration and the graph fallback.** Planned 2026-10-12 as thirteen
        sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b
-       and 6c), 7 (as 7a, 7b and 7c), 8 and 9 (as 9a, 9b and 9c), with the fixes ahead of 5 and of
-       9c, and 10 (as 10a to 10e). Sub-slice 11 is planned (2026-10-19) as three commits, 11a to
-       11c, of which 11a and 11b are built (2026-10-20); item 12 follows it. The separate
+       and 6c), 7 (as 7a, 7b and 7c), 8, 9 (as 9a, 9b and 9c), 10 (as 10a to 10e) and 11 (as 11a to
+       11c, 2026-10-20), with the fixes ahead of 5 and of 9c. Item 12 (flowview, the fallback example
+       and the cli vertical) is what is left of slice 4. The separate
        feature-extraction node slice 3 deferred to it stays deferred, with its trigger restated
        (slice 4's plan).
   2. **Owed by the repo owner.**

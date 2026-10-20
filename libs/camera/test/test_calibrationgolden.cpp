@@ -179,7 +179,7 @@ namespace
 		// little off the truth in a way that depends on which views it was handed.
 		{
 			resetScene();
-			scene().boardless = {3, 21};
+			boardScene().boardless = {3, 21};
 			script().answer = [](const std::vector<cb::Observation>& views)
 			{
 				const Handed h = handed(views);
@@ -192,7 +192,7 @@ namespace
 			};
 			script().rmsPixels = 0.0421;
 			script().uncertainty = ParameterUncertainty{0.5, 0.6, 0.07, 0.08, {0.001, 0.002, 0.0003, 0.0004, 0.005}};
-			text += section("ready", method::calibrate(footage(scene().frames), specification(), unusualSearch(), Request{}));
+			text += section("ready", method::calibrate(footage(boardScene().frames), specification(), unusualSearch(), Request{}));
 		}
 
 		// Rejected, through the footage: an estimate 3% long, seeded from an imported model of
@@ -218,15 +218,15 @@ namespace
 			request.resamples = 5;
 			request.seed = 9;
 			text += section("rejected",
-							method::calibrate(footage(scene().frames), specification(), cb::DetectionRequest{}, request));
+							method::calibrate(footage(boardScene().frames), specification(), cb::DetectionRequest{}, request));
 		}
 
 		// A held model, over detections already made with the unusual search: validated, never
 		// estimated.
 		{
 			resetScene();
-			scene().boardless = {5, 6};
-			const media::FrameSequence frames = footage(scene().frames);
+			boardScene().boardless = {5, 6};
+			const media::FrameSequence frames = footage(boardScene().frames);
 			std::vector<cb::DetectionReport> detections;
 			for (std::size_t i = 0; i < frames.size(); ++i)
 				detections.push_back(cb::detect(frames.image(i), frames.frame(i), specification(), unusualSearch()));
@@ -245,7 +245,7 @@ namespace
 			resetScene();
 			Request request;
 			request.fitnessProfile = "reconstruction/99";
-			text += section("refused", method::calibrate(footage(scene().frames), specification(), unusualSearch(), request));
+			text += section("refused", method::calibrate(footage(boardScene().frames), specification(), unusualSearch(), request));
 		}
 
 		return text;

@@ -118,7 +118,7 @@ namespace
 		configure(graph, calibrate);
 
 		flow::Evaluation evaluation{graph};
-		bind(evaluation, footagePin, footage(scene().frames));
+		bind(evaluation, footagePin, footage(boardScene().frames));
 		flow::SerialScheduler{}.run(graph, evaluation);
 		const flow::PortValue& report = evaluation.value(output(graph, calibrate));
 		REQUIRE(report.holds<Report>());
@@ -390,7 +390,7 @@ TEST_CASE("an imported model takes part through the node's policy", "[camera][fl
 	setParam(graph, calibrate, "importedPolicy", camera::calibration::ImportedModelPolicy::HoldAndValidate);
 
 	flow::Evaluation evaluation{graph};
-	bind(evaluation, footagePin, footage(scene().frames));
+	bind(evaluation, footagePin, footage(boardScene().frames));
 	const CameraModel truth = *CameraModel::create(trueCamera()).model;
 	bind(evaluation, importedPin, truth);
 	flow::SerialScheduler{}.run(graph, evaluation);
@@ -418,7 +418,7 @@ TEST_CASE("cameraModel passes a calibration's model on, and suppresses without o
 	setParam(graph, calibrate, "resamples", 2);
 
 	flow::Evaluation evaluation{graph};
-	bind(evaluation, footagePin, footage(scene().frames));
+	bind(evaluation, footagePin, footage(boardScene().frames));
 	flow::SerialScheduler{}.run(graph, evaluation);
 	const flow::PortValue& found = evaluation.value(output(graph, model));
 	REQUIRE(found.holds<CameraModel>());

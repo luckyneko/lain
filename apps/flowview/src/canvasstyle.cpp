@@ -2,6 +2,7 @@
 
 #include <lain/camera/board/detection.h>
 #include <lain/camera/board/specification.h>
+#include <lain/camera/calibration/attempts.h>
 #include <lain/camera/calibration/report.h>
 #include <lain/camera/cameramodel.h>
 #include <lain/camera/flow/register.h> // every camera kind
@@ -84,6 +85,9 @@ namespace flowview
 		style.addPortColor(typeid(camera::board::DetectionReport), image::ColorRGBA8(150, 160, 175, 255)); // slate
 		style.addPortColor(typeid(camera::calibration::Report), image::ColorRGBA8(170, 180, 200, 255));	   // pale slate
 		style.addPortColor(typeid(camera::registration::Report), image::ColorRGBA8(160, 175, 215, 255));   // pale blue-slate
+		// A fallback's attempts are reports too; the method it tries is a choice, not a result.
+		style.addPortColor(typeid(camera::calibration::Attempts), image::ColorRGBA8(185, 175, 200, 255)); // lilac slate
+		style.addPortColor(typeid(camera::calibration::Method), image::ColorRGBA8(205, 160, 120, 255));	  // tan
 
 		// Node title colours by factory kind — categories are emergent from shared colour (no Category
 		// enum). These keys must match scene.cpp's registrations.

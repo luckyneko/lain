@@ -1,6 +1,7 @@
 #include "parameditors.h"
 
 #include <lain/camera/board/pattern.h>		  // Dictionary, CharucoLayout
+#include <lain/camera/calibration/attempts.h> // Method
 #include <lain/camera/calibration/request.h>  // ImportedModelPolicy
 #include <lain/camera/distortion.h>			  // DistortionModel
 #include <lain/camera/feature/matching.h>	  // MatchSearch
@@ -320,6 +321,7 @@ namespace flowview
 		editors.add(typeid(camera::DistortionModel), &editEnum<camera::DistortionModel>);
 		editors.add(typeid(camera::calibration::ImportedModelPolicy),
 					&editEnum<camera::calibration::ImportedModelPolicy>);
+		editors.add(typeid(camera::calibration::Method), &editEnum<camera::calibration::Method>);
 		editors.add(typeid(camera::registration::ApplicabilityPolicy),
 					&editEnum<camera::registration::ApplicabilityPolicy>);
 		editors.add(typeid(camera::registration::LossFamily), &editEnum<camera::registration::LossFamily>);

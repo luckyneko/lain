@@ -7,6 +7,7 @@
 
 #include "nullbackends.h"
 
+#include <lain/camera/calibration/attempts.h>
 #include <lain/camera/flow/register.h>
 #include <lain/camera/refinement/refiner.h>
 #include <lain/core/factory.h>
@@ -30,6 +31,9 @@ namespace
 											 "detectBoard",
 											 "calibrateCamera",
 											 "calibrateCameraTargetless",
+											 "calibrationMethod",
+											 "nextAttempt",
+											 "calibrationAttempts",
 											 "cameraModel",
 											 "registerCameras",
 											 "registerCamerasTargetless"};
@@ -68,9 +72,11 @@ TEST_CASE("camera node kinds register always, and are offered as backends can ru
 	camera::calibration::estimatorRegistry().registerType<NullEstimator>("null");
 	CHECK(camera::availableCameraNodeKeys() == Keys{"boardSpecification", "renderBoard"});
 
-	// With a detector, detection and calibration, and the model a calibration produces.
+	// With a detector, detection and calibration, the fallback's nodes, and the model a calibration
+	// produces.
 	camera::board::detectorRegistry().registerType<NullDetector>("null");
-	const Keys calibrating{"boardSpecification", "renderBoard", "detectBoard", "calibrateCamera", "cameraModel"};
+	const Keys calibrating{"boardSpecification", "renderBoard", "detectBoard", "calibrateCamera",
+						   "calibrationMethod", "nextAttempt", "calibrationAttempts", "cameraModel"};
 	CHECK(camera::availableCameraNodeKeys() == calibrating);
 
 	// Registration also needs a pose for each view and a refinement of the rig: neither alone will do.
@@ -104,6 +110,9 @@ TEST_CASE("camera port types register whatever the backends", "[camera][flow]")
 	CHECK(flow::portTypeRegistered("BoardSpecification"));
 	CHECK(flow::portTypeRegistered("BoardDetectionReport"));
 	CHECK(flow::portTypeRegistered("CalibrationReport"));
+	// What a fallback chooses between and what it made, so a document's boundary can carry either.
+	CHECK(flow::portTypeKey(typeid(camera::calibration::Method)) == "CalibrationMethod");
+	CHECK(flow::portTypeKey(typeid(camera::calibration::Attempts)) == "CalibrationAttempts");
 	CHECK(flow::portTypeRegistered("CameraModel"));
 	CHECK(flow::portTypeKey(typeid(camera::CameraModel)) == "CameraModel");
 	CHECK(flow::portTypeRegistered("RegistrationReport"));

@@ -1,6 +1,7 @@
 #include "graphio.h"
 
 #include <lain/camera/board/pattern.h>		  // Dictionary, CharucoLayout — board parameters
+#include <lain/camera/calibration/attempts.h> // Method — which calibration methods a fallback tries
 #include <lain/camera/calibration/request.h>  // ImportedModelPolicy — a calibration parameter
 #include <lain/camera/distortion.h>			  // DistortionModel — which model a calibration estimates
 #include <lain/camera/feature/matching.h>	  // MatchSearch — how targetless registration matches
@@ -92,6 +93,7 @@ namespace flowview
 		codecs.registerType<camera::board::CharucoLayout>("charucoLayout");
 		codecs.registerType<camera::DistortionModel>("distortionModel");
 		codecs.registerType<camera::calibration::ImportedModelPolicy>("importedModelPolicy");
+		codecs.registerType<camera::calibration::Method>("calibrationMethod");
 		codecs.registerType<camera::registration::ApplicabilityPolicy>("applicabilityPolicy");
 		codecs.registerType<camera::registration::LossFamily>("lossFamily");
 		codecs.registerType<camera::feature::MatchSearch>("matchSearch");

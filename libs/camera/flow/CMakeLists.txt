@@ -1,8 +1,9 @@
 # lain::camera::flow — the camera work as node kinds (M9, ADR-0016): a board specification, its
-# rendering, detection in one frame, calibration over footage by a board or targetless, the model a
-# calibration found, and fixed-camera registration over a rig's footage, by a board or targetless. A
-# separate target over lain::camera + lain::flow by the boundary rule lain::media::serialize follows:
-# camera stays free of the graph engine, and flow core names no camera type.
+# rendering, detection in one frame, calibration over footage by a board or targetless, the fallback
+# between the two (which methods, the next attempt, the attempts made), the model a calibration
+# found, and fixed-camera registration over a rig's footage, by a board or targetless. A separate
+# target over lain::camera + lain::flow by the boundary rule lain::media::serialize follows: camera
+# stays free of the graph engine, and flow core names no camera type.
 #
 # The namespace is lain::camera, as lain::media::serialize's is lain::media. A lain::camera::flow
 # NAMESPACE would make every `flow::` written inside lain::camera resolve to it rather than to
@@ -19,6 +20,10 @@ add_library(camera-flow STATIC
 	src/calibrationnode.cpp
 	src/calibratecameranode.cpp
 	src/calibratecameratargetlessnode.cpp
+	src/calibrationmethodnode.cpp
+	src/attemptreportsnode.cpp
+	src/nextattemptnode.cpp
+	src/calibrationattemptsnode.cpp
 	src/cameramodelnode.cpp
 	src/rigregistrationnode.cpp
 	src/registercamerasnode.cpp

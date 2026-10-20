@@ -30,9 +30,10 @@ TEST_CASE("the targetless kinds are offered with feature backends and a refiner,
 	camera::feature::geometryRegistry().registerType<NullGeometry>("null");
 	CHECK(camera::availableCameraNodeKeys().empty());
 
-	// With it, targetless calibration and registration, the model a calibration produces, and nothing
-	// that needs a board.
+	// With it, targetless calibration and registration, the fallback's nodes, the model a calibration
+	// produces, and nothing that needs a board.
 	camera::refinement::refinerRegistry().registerType<NullRefiner>("null");
-	CHECK(camera::availableCameraNodeKeys() == Keys{camera::kCalibrateCameraTargetlessKey, camera::kCameraModelKey,
-													camera::kRegisterCamerasTargetlessKey});
+	CHECK(camera::availableCameraNodeKeys() == Keys{camera::kCalibrateCameraTargetlessKey, camera::kCalibrationMethodKey,
+													camera::kNextAttemptKey, camera::kCalibrationAttemptsKey,
+													camera::kCameraModelKey, camera::kRegisterCamerasTargetlessKey});
 }

@@ -25,7 +25,7 @@ namespace
 {
 	Report run(const Request& request = {})
 	{
-		return method::calibrate(footage(scene().frames), specification(), camera::board::DetectionRequest{}, request);
+		return method::calibrate(footage(boardScene().frames), specification(), camera::board::DetectionRequest{}, request);
 	}
 
 	// A search unlike the default in every field.
@@ -155,7 +155,7 @@ TEST_CASE("a clean scene calibrates Ready, with every section present", "[camera
 TEST_CASE("footage is searched as asked, and the record says how", "[camera][calibration]")
 {
 	resetScene();
-	const Report report = method::calibrate(footage(scene().frames), specification(), unusualSearch(), Request{});
+	const Report report = method::calibrate(footage(boardScene().frames), specification(), unusualSearch(), Request{});
 	REQUIRE(report.status == CalibrationStatus::Succeeded);
 
 	// The search reaches every frame's detection, and the record says what it was.
@@ -169,7 +169,7 @@ TEST_CASE("footage is searched as asked, and the record says how", "[camera][cal
 	{
 		Request request;
 		request.fitnessProfile = "reconstruction/99";
-		const Report refused = method::calibrate(footage(scene().frames), specification(), unusualSearch(), request);
+		const Report refused = method::calibrate(footage(boardScene().frames), specification(), unusualSearch(), request);
 		REQUIRE(failedWith(refused, Failure::UnknownFitnessProfile));
 		CHECK(boardDiagnostics(refused).detections.empty());
 		REQUIRE(boardRecord(refused).detection.has_value());
@@ -180,7 +180,7 @@ TEST_CASE("footage is searched as asked, and the record says how", "[camera][cal
 TEST_CASE("a calibration over given detections records the search they report", "[camera][calibration]")
 {
 	resetScene();
-	const media::FrameSequence frames = footage(scene().frames);
+	const media::FrameSequence frames = footage(boardScene().frames);
 	std::vector<camera::board::DetectionReport> detections;
 	for (std::size_t i = 0; i < frames.size(); ++i)
 		detections.push_back(camera::board::detect(frames.image(i), frames.frame(i), specification(), unusualSearch()));
@@ -241,16 +241,16 @@ TEST_CASE("the resampling draws are seeded, and the same under either execution 
 		// detections that take a moment, as the flow scheduler's own case does, so its workers have
 		// work left to take when they wake (on Windows CI the caller once ran all 40 frames alone).
 		const lain::testing::ThreadPool pool{3};
-		scene().detectionTime = std::chrono::milliseconds{2};
+		boardScene().detectionTime = std::chrono::milliseconds{2};
 		normal = run(request);
-		normalThreads = scene().threads.size();
+		normalThreads = boardScene().threads.size();
 	}
-	scene().detectionTime = std::chrono::milliseconds{0};
-	scene().threads.clear();
+	boardScene().detectionTime = std::chrono::milliseconds{0};
+	boardScene().threads.clear();
 	request.execution = ExecutionPolicy::DeterministicDebug;
 	const Report serial = run(request);
-	CHECK(normalThreads > 1);			// frames really were detected on several threads...
-	CHECK(scene().threads.size() == 1); // ...and deterministic-debug really is serial
+	CHECK(normalThreads > 1);				 // frames really were detected on several threads...
+	CHECK(boardScene().threads.size() == 1); // ...and deterministic-debug really is serial
 	request.seed = 2;
 	const Report reseeded = run(request);
 
@@ -299,12 +299,12 @@ TEST_CASE("one resample far from the others does not decide the stability", "[ca
 TEST_CASE("frames without a board are examined and never chosen", "[camera][calibration]")
 {
 	resetScene();
-	scene().boardless = {0, 1, 2, 17, 33};
+	boardScene().boardless = {0, 1, 2, 17, 33};
 	const Report report = run();
 	REQUIRE(report.status == CalibrationStatus::Succeeded);
 	CHECK(boardDiagnostics(report).framesExamined == 40);
 	CHECK(boardDiagnostics(report).framesUsable == 35);
-	for (const std::size_t skip : scene().boardless)
+	for (const std::size_t skip : boardScene().boardless)
 	{
 		const std::uint32_t position = std::uint32_t(skip);
 		CHECK(std::find(report.diagnostics.selected.begin(), report.diagnostics.selected.end(), position) ==
@@ -386,7 +386,7 @@ TEST_CASE("every failure is a report with a reason, never a throw", "[camera][ca
 	SECTION("no footage")
 	{
 		resetScene();
-		scene().frames = 0;
+		boardScene().frames = 0;
 		CHECK(failedWith(run(), Failure::NoFootage));
 	}
 	SECTION("holding a model that was not given")
@@ -409,7 +409,7 @@ TEST_CASE("every failure is a report with a reason, never a throw", "[camera][ca
 	SECTION("too few usable views")
 	{
 		resetScene();
-		scene().frames = 2;
+		boardScene().frames = 2;
 		CHECK(failedWith(run(), Failure::TooFewViews));
 	}
 	SECTION("an estimator that fails")
