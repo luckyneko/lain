@@ -6,6 +6,7 @@
 #include "clibinders.h"
 #include "graphio.h"
 
+#include <lain/camera/calibration/attempts.h>
 #include <lain/camera/serialize/cameramodel.h>
 #include <lain/core/uri.h>
 #include <lain/flow/porttype.h>
@@ -23,6 +24,7 @@
 #include <string>
 #include <typeindex>
 #include <typeinfo>
+#include <vector>
 
 using namespace lain;
 
@@ -153,4 +155,73 @@ TEST_CASE("a camera model binds from a camera-model document, and a typo is refu
 	CHECK_FALSE(binders.bind(typeid(camera::CameraModel), typo.string()).has_value());
 
 	CHECK_FALSE(binders.bind(typeid(camera::CameraModel), (dir / "absent.json").string()).has_value());
+}
+
+TEST_CASE("a calibration method binds by name, however the name is spelled", "[flowview][binder]")
+{
+	// `--method board-then-targetless` is what the fallback example asks for. Case, '-' and '_' do not
+	// matter, so the enumerator's own name and a shell-friendly one both bind.
+	using camera::calibration::Method;
+	const flowview::BoundaryBinders binders = builtIn();
+	const auto method = [&](const std::string& text) -> std::optional<Method>
+	{
+		const std::optional<flow::PortValue> bound = binders.bind(typeid(Method), text);
+		if (!bound.has_value())
+			return std::nullopt;
+		REQUIRE(bound->holds<Method>());
+		return bound->get<Method>();
+	};
+
+	CHECK(method("board-then-targetless") == Method::BoardThenTargetless);
+	CHECK(method("BoardThenTargetless") == Method::BoardThenTargetless);
+	CHECK(method("BOARD_THEN_TARGETLESS") == Method::BoardThenTargetless);
+	CHECK(method("board_then-Targetless") == Method::BoardThenTargetless);
+	CHECK(method("board") == Method::Board);
+	CHECK(method("Targetless") == Method::Targetless);
+
+	// A name, whole, or nothing: no prefix, no number (an enum is stored as one, but nobody means a
+	// choice by it), no empty string.
+	CHECK_FALSE(method("board-then").has_value());
+	CHECK_FALSE(method("board-then-targetless-please").has_value());
+	CHECK_FALSE(method("2").has_value());
+	CHECK_FALSE(method("").has_value());
+	CHECK_FALSE(method("board then targetless").has_value());
+}
+
+TEST_CASE("an enum binder lists its choices, and every choice it lists binds", "[flowview][binder]")
+{
+	using camera::calibration::Method;
+	const flowview::BoundaryBinders binders = builtIn();
+
+	// In declaration order, which is the order `list` prints them.
+	const std::vector<std::string> expected{"board", "targetless", "board-then-targetless"};
+	CHECK(binders.spellings(typeid(Method)) == expected);
+
+	// A listed spelling that did not bind would be a choice `list` offers and `run` refuses.
+	const std::vector<Method> declared{Method::Board, Method::Targetless, Method::BoardThenTargetless};
+	REQUIRE(binders.spellings(typeid(Method)).size() == declared.size());
+	for (std::size_t i = 0; i < declared.size(); ++i)
+	{
+		const std::optional<flow::PortValue> bound = binders.bind(typeid(Method), binders.spellings(typeid(Method))[i]);
+		REQUIRE(bound.has_value());
+		CHECK(bound->get<Method>() == declared[i]);
+	}
+
+	// Open text has nothing to list, and neither has a type with no binder.
+	CHECK(binders.spellings(typeid(int)).empty());
+	CHECK(binders.spellings(typeid(media::FramePosition)).empty());
+	CHECK(binders.spellings(typeid(std::vector<int>)).empty());
+}
+
+TEST_CASE("kebab case splits a name into its words", "[flowview][binder]")
+{
+	CHECK(flowview::kebabCase("BoardThenTargetless") == "board-then-targetless");
+	CHECK(flowview::kebabCase("Board") == "board");
+	CHECK(flowview::kebabCase("boardThen") == "board-then");
+	// A run of capitals is one word, and its last capital starts the next word when a lower-case letter
+	// follows it.
+	CHECK(flowview::kebabCase("HTTPServer") == "http-server");
+	CHECK(flowview::kebabCase("BT709") == "bt709");
+	CHECK(flowview::kebabCase("RGBA8") == "rgba8");
+	CHECK(flowview::kebabCase("") == "");
 }

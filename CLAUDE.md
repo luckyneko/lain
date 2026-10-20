@@ -1400,6 +1400,20 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-20 — M9 slice 4, sub-slice 12a: a calibration method binds by name
+
+The first of sub-slice 12's three commits. `ctest` **1313/1313** Debug and **1321/1321** Release with
+video, camera and Ceres on, **1187/1187** with all three off (+4 each); warning-clean, format-check
+clean. Full notes in WORK.md's *Sub-slice 12a built* under M9 slice 4.
+
+- **`bindEnum<E>`** binds an enumerator by name, ignoring case, `-` and `_`, never by number, and is
+  registered for `calibration::Method` by one `addEnum<E>` line.
+- **`BoundaryBinders::spellings(type)`** lists an enum's choices in `kebabCase`. `list` prints them
+  after the type, and a refused `--method` is told them. Each listed choice is tested to bind back to
+  its own enumerator.
+- **Found by the first run:** `kebabCase` split an acronym from its digits (`BT709` as `b-t709`).
+- **Two sabotages, both caught as predicted.**
+
 ### Update 2026-10-20 — M9 slice 4, sub-slice 12 planned: the fallback a user runs (nothing built yet)
 
 The last of slice 4, planned as **three commits, 12a to 12c**, in WORK.md's *Sub-slice 12 planned* under

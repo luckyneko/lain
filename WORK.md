@@ -9102,6 +9102,27 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        amending.
      - **Left out of a first cut:** mirroring a default onto a group's outer port.
 
+   **Sub-slice 12a built (2026-10-20): the enum binder.** `ctest` **1313/1313** Debug and **1321/1321**
+   Release with video, camera and Ceres on, **1187/1187** with all three off (+4 each); warning-clean,
+   format-check clean.
+   - **`bindEnum<E>`** (`clibinders.cpp`) binds an enumerator by name, ignoring case, `-` and `_`, and
+     never by number. **`addEnum<E>`** is the one line per enum, registered for `calibration::Method`.
+     It asserts that folding does not join two enumerators, since one spelling would then name both.
+   - **`BoundaryBinders::spellings(type)`**: a binder may list what it accepts, an enum's names in
+     **`kebabCase`** (public, so the test reads the production rule) and declaration order. `list`
+     prints them after the type, `--method : lain::camera::calibration::Method  (board | targetless |
+     board-then-targetless)`, and a refused value is told them (`one of …`). Open text lists nothing.
+   - **Found by the first run: an acronym kept its digits apart.** The first `kebabCase` treated a digit
+     as lower case, so `BT709` became `b-t709` and `RGBA8` `rgb-a8`. A digit after capitals now
+     belongs to them; a capital after a digit still starts a word.
+   - **Tests:** every spelling of `board-then-targetless` binds and a prefix, a number, an empty string
+     or spaces do not; the spellings are the three enumerators in order and **each binds back to its
+     own**, so `list` cannot offer what `run` refuses; `kebabCase` on words, an acronym and digits; and
+     `listGraph` through the production path, its stdout captured, on a saved graph with a `Method`
+     and an `int` input.
+   - **Two sabotages, both caught.** A case-sensitive fold fails the spellings case (four lines) and
+     the bind-back case, as predicted. `list` without the choices fails the listing case alone.
+
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
 failed reports as ordinary results, deterministic-debug execution, downsampling versus native

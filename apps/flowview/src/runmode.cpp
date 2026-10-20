@@ -127,6 +127,16 @@ namespace flowview
 		}
 	}
 
+	// A type's accepted spellings as one line, "board | targetless | board-then-targetless": what `list`
+	// prints after an enum input's type, and what a refused value is told it could have been.
+	static std::string choiceList(const std::vector<std::string>& choices)
+	{
+		std::string line;
+		for (const std::string& choice : choices)
+			line += (line.empty() ? "" : " | ") + choice;
+		return line;
+	}
+
 	// Bind one boundary input from a cli value via the type's registered binder. A failed parse and
 	// an unbindable type are distinct diagnostics.
 	static bool bindBoundaryInput(flow::Evaluation& evaluation, const flow::BoundaryInput& in,
@@ -138,7 +148,14 @@ namespace flowview
 			return true;
 		}
 		if (binders.has(in.type))
-			log::error("flowview: could not parse '{}' for --{} as {}", value, in.name, in.typeName);
+		{
+			const std::vector<std::string>& choices = binders.spellings(in.type);
+			if (choices.empty())
+				log::error("flowview: could not parse '{}' for --{} as {}", value, in.name, in.typeName);
+			else
+				log::error("flowview: could not parse '{}' for --{} as {}: one of {}", value, in.name, in.typeName,
+						   choiceList(choices));
+		}
 		else
 			log::error("flowview: --{} has type {}, which is not cli-bindable", in.name, in.typeName);
 		return false;
@@ -738,6 +755,8 @@ namespace flowview
 			std::cout << "  --" << in.name << " : " << in.typeName;
 			if (!binders.has(in.type))
 				std::cout << "  (not cli-bindable)";
+			else if (!binders.spellings(in.type).empty())
+				std::cout << "  (" << choiceList(binders.spellings(in.type)) << ")";
 			std::cout << "\n";
 		}
 		std::cout << "outputs:\n";

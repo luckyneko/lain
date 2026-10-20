@@ -13,6 +13,10 @@
 #include "runmode.h"
 #include "scene.h"
 
+#include <lain/camera/calibration/attempts.h>
+#include <lain/core/uri.h>
+#include <lain/flow/boundary.h>
+#include <lain/flow/graph.h>
 #include <lain/io/image/codecs.h>
 #include <lain/io/sequence/openers.h>
 #include <lain/io/video/codecs.h>
@@ -22,7 +26,9 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <iterator>
+#include <sstream>
 #include <string>
 
 using namespace lain;
@@ -162,4 +168,31 @@ TEST_CASE("a load that only WARNED still runs", "[runmode]")
 
 	CHECK(flowview::runGraph(runOf(stale), factory, binders) == 0);
 	CHECK(flowview::listGraph(stale.string(), factory, binders) == 0);
+}
+
+TEST_CASE("list names the choices an enum input accepts", "[runmode]")
+{
+	// A choice is something to type, so `list` says which: an enum input's type name alone does not.
+	const core::Factory<flow::Node> factory = exampleFactory();
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+
+	flow::Graph graph;
+	graph.boundaryInputNode().addBoundary<camera::calibration::Method>("method");
+	graph.boundaryInputNode().addBoundary<int>("count");
+	const fs::path file = scratchDir("choices") / "choices.json";
+	REQUIRE(flowview::saveGraph(core::Uri::fromPath(file), graph, factory));
+
+	std::ostringstream captured;
+	std::streambuf* const previous = std::cout.rdbuf(captured.rdbuf());
+	const int status = flowview::listGraph(file.string(), factory, binders);
+	std::cout.rdbuf(previous);
+	REQUIRE(status == 0);
+
+	const std::string listing = captured.str();
+	INFO(listing);
+	CHECK(listing.find("--method : lain::camera::calibration::Method  (board | targetless | board-then-targetless)\n") !=
+		  std::string::npos);
+	// Open text lists nothing: an int input's line ends at its type.
+	CHECK(listing.find("--count : int\n") != std::string::npos);
 }
