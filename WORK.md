@@ -5566,16 +5566,19 @@ The 2026-08-16 review also left these requirements and decisions visible before 
          - an edited targetless setting re-running the targetless node alone.
        - Sabotages: `nextAttempt` judging by a rule of its own; the attempts value leaving out a
          failed attempt.
-   12. **flowview, the fallback example, and the cli vertical.**
+   12. **flowview, the fallback example, and the cli vertical.** *(Planned 2026-10-20 as 12a to 12c:
+       see Sub-slice 12 planned.)*
        - ~~Codecs, enum editors,~~ *(moved to 11c, 2026-10-19)* and a `calibration::Method` binder
          (`--method board-then-targetless`). An unbound boundary pin is empty, which suppresses
          `calibrationMethod`, so its default never applies through one: the binder and the example
-         must account for that (found while planning 11).
+         must account for that (found while planning 11). *(2026-10-20: `--method` is required, and
+         graph input defaults are deferred as a feature of their own.)*
        - ~~The catalog and the colours.~~ *(2026-10-19: both follow the kinds table already, and the
          catalog test's expectation for each kind lands in the commit that adds it, 11b and 11c.)*
-         Whether the fallback nodes should look like control nodes rather than camera work.
+         ~~Whether the fallback nodes should look like control nodes rather than camera work.~~
+         *(2026-10-20: they keep the camera colour.)*
        - `apps/flowview/examples/calibrate-fallback.json`, written by the example builder and marked
-         as needing a camera backend.
+         as needing a camera backend *(and, 2026-10-20, as needing inputs from its caller)*.
        - The vertical through `runGraph` and the real binary, on rendered footage.
        - A build without Ceres offers no targetless kind, and its document reports `NoRefiner`.
 
@@ -8964,6 +8967,140 @@ The 2026-08-16 review also left these requirements and decisions visible before 
      Release leg passing, so the fallback graph's seven cases and the stand-in worlds' rename hold on
      every platform. The end-to-end calibration cases pass there too, where macOS's and Windows' SIFT
      features differ from Linux's.
+
+   **Sub-slice 12 planned (2026-10-20) as three commits, 12a to 12c.** The last of slice 4: the fallback
+   graph becomes something a user runs. It needs a `--method` binder, a committed example document,
+   and a vertical that runs that document on rendered footage.
+
+   **Decided with the repo owner:**
+   - **No graph input defaults here.** The planned fix for the finding owed from 11 was to let a root
+     boundary input carry a value used when the host binds none. The repo owner called that a
+     different feature, and it is deferred whole, with its design notes below.
+   - **The footage is rendered by the test, never committed.** The vertical writes it into scratch and
+     binds it as `--footage`.
+   - **The fallback nodes keep the camera colour.** They read camera reports and switch camera work.
+     Colouring them as control nodes would split one category's nodes across two colours by mechanism.
+   - **Three commits.**
+
+   **Taken as the consequence of deferring defaults** (not put to the repo owner, and a one-edge change
+   in 12b if they would rather):
+   - **`method` stays a boundary input, and `--method` is required.** An unbound `--method` leaves the
+     pin empty, `calibrationMethod` is suppressed, both gates close, nothing is attempted, and no
+     output is written. The run warns that `--method` was not bound, and still exits 0, as every
+     unbound input does today. The vertical pins this, so the cost the deferred feature would remove
+     is a test rather than a sentence.
+   - **The alternative:** leave `method` unwired inside the document, so `calibrationMethod`'s own
+     `Default{BoardThenTargetless}` applies and the example runs on `--footage` alone. Then nothing in
+     the tree would bind a `calibration::Method` from a command line, and the binder would land with
+     no caller.
+
+   **Found while planning:**
+   - **flowview has no enum boundary binder**, and `calibration::Method` is the first enum carried on a
+     port, so nothing has needed one.
+   - **`list` prints a type name for an enum** (`--method : lain::camera::calibration::Method`), which
+     does not say what to type.
+   - **The gui can already bind `method`.** The Interface pane binds a root input through
+     `ParamEditors`, and 11c registered `editEnum<Method>`. So gui-mode needs nothing new. But until a
+     method is picked, nothing runs, and no Issues row says why. That is the gui half of the deferred
+     feature's cost.
+   - **`test_examples` cannot run this example.** Its generic branch binds a stand-in image and frame
+     position and requires every output non-empty. Its no-backend branch requires `render-board`'s
+     failure text. With its inputs unbound, this example would fail both, since it attempts nothing.
+     A catalog flag says an example needs inputs from its caller, and such an example is loaded and
+     listed, not run.
+   - **The example's board is the vertical's:** 7 x 5 squares of 24 mm, markers three quarters of a
+     square, from the default dictionary. Both calibrations ask for a `None` model, because the
+     rendered camera is a pinhole. That is the existing vertical's reason: asked to fit distortion to
+     a lens with none, the board attempt is rightly withheld from Ready. A user calibrating their own
+     footage changes the specification and the model in the Inspector, and the README row says so.
+   - **Without Ceres, but with OpenCV, board calibration still runs.** So `NoRefiner` is seen only
+     after a board attempt fails. The case uses board-less textured footage, and expects board to fail
+     first, then targetless to report `NoRefiner`.
+   - **The gui eyeball owed after this item needs footage, and none is committed.** It is rendered for
+     the eyeball into the scratchpad from the vertical's helpers, as the vertical renders it.
+
+   **12a: the enum binder.**
+   - **`bindEnum<E>`** in `clibinders.cpp`, built on `meta::enums`.
+     - It accepts an enumerator's name ignoring case, `-` and `_`, so `board-then-targetless`,
+       `BoardThenTargetless` and `BOARD_THEN_TARGETLESS` all bind.
+     - It is registered for `calibration::Method`. The next enum carried on a port is one line.
+   - **`BoundaryBinders` gains the accepted spellings per type.** For an enum these are its
+     enumerators in kebab case, `board | targetless | board-then-targetless`.
+     - `list` prints them after the type.
+     - A failed parse appends them to its error, so a mistyped `--method` says what would have bound.
+   - **Tests, in `test_clibinders.cpp`:**
+     - each spelling binds the same `Method`;
+     - a partial name and an empty string are refused;
+     - the spellings listed are the three enumerators, in enum order;
+     - a `list` of a graph with a `method` input prints them.
+   - **Sabotage:** a binder comparing case-sensitively fails the kebab and upper-case spellings.
+
+   **12b: the example document.**
+   - **`calibrate-fallback.json`**, written by `flowview-examples`.
+     - Inputs: `footage : FrameSequence` and `method : Method`.
+     - The board specification above, and two Gates retyped to `FrameSequence`.
+     - `calibrationMethod`, then `nextAttempt` with the board report on its one pin.
+     - `calibrateCamera`, `calibrateCameraTargetless`, `calibrationAttempts` (board pin first, then
+       targetless) and `cameraModel`.
+     - Outputs: `attempts : CalibrationAttempts`, written as text through its `toString`, and
+       `model : CameraModel`, written as a camera-model document.
+   - **The catalog** gains `needsInputs`.
+     - `test_examples` loads such an example, requires it to raise nothing, and requires every
+       boundary input to have a binder. It does not run it; the vertical does.
+     - The entry is also marked `needsCamera`.
+   - **The README** gains its row, and the line saying every example shows a result on its own names
+     it as the second exception, beside `sequence-render`.
+   - **Held by** `test_examples`' byte comparison and the catalog test, which already expect every
+     kind it uses.
+
+   **12c: the vertical.** In `test_cameravertical.cpp`, through `runGraph`, on the committed
+   `calibrate-fallback.json` with `--footage` bound to scratch footage and `--attempts` and `--model`
+   written. Each case asserts which attempts ran (by the attempts text) and whether a model was written.
+   - Board footage, `--method board-then-targetless`: accepted at attempt 1, the targetless method
+     never run, and the model is the pinhole.
+   - Board-less textured footage from a moving camera (`texturedscene.h`'s `arcPath`), the same
+     method: the board attempt fails, the targetless one is Ready, and it is accepted at attempt 2.
+     It is measured first. If it is too slow in Debug, it runs in Release only, as the end-to-end
+     calibration suite does.
+   - The same footage with `--method board`: one failed attempt, no model written, exit 0. This
+     exercises the binder on a value away from the default.
+   - **No `--method`:** the warning, nothing attempted, nothing written, exit 0. This is the deferred
+     feature's cost, pinned.
+   - **A mistyped `--method`:** exit 1, and the error names the spellings.
+   - **No backend:** plain footage, both attempts Failed (`NoDetector`, then `NoFeatureExtractor`),
+     no model.
+   - **OpenCV without Ceres:** textured footage, the board attempt Failed, then the targetless attempt
+     `NoRefiner`.
+   - **Verified in four builds:** Debug and Release with video, camera and Ceres on; all three off;
+     and OpenCV on with Ceres off.
+   - **The real binary** is driven by hand, from another folder, and recorded.
+   - **Sabotage:** the targetless Gate's `enable` wired from `calibrationMethod`'s `targetless`
+     directly, skipping `nextAttempt`. The first case then attempts targetless after an accepted
+     board attempt, and its attempts text holds two reports. (Wiring `nextAttempt` to the targetless
+     report instead is not a sabotage that builds: it is a cycle, which `connect` refuses.)
+
+   **Slice 4 is COMPLETE when 12c lands.** The gui-mode eyeball of the fallback is then owed.
+
+   **Deferred to later consideration: graph input defaults** (the repo owner, 2026-10-20: *"a completely
+   different feature"*). A root boundary input would carry a value the run uses when the host binds
+   none.
+   - **Its first caller is `calibrate-fallback`'s `method`.** Its cost today: `run --footage f` alone
+     produces nothing, and the gui runs nothing until a method is picked in the Interface pane. 12c's
+     unbound case pins that cost, and is the trigger to revisit.
+   - **Design notes gathered while planning:**
+     - **The value is seeded at the root only**, by the scheduler's session after `prepare`, never
+       inside a group. A group's input is fed by its parent's edge, as today.
+     - **A per-pin "host-bound" flag** tells a default from a binding, so a later binding wins and an
+       unbinding falls back. `PortValue::samePayload` detects a change.
+     - **On disk, it is a `defaults` section on the GroupInput node**, through `ValueCodecs`. No format
+       version bump: an absent section means no defaults.
+     - **The gui:** an Interface pane control to set or clear a default. An unbind gesture would need
+       `PendingBindings` to carry an unbind as well as a bind.
+     - **Amendments owed:** CONTEXT.md's *The recipe, not the cooked data* says host-bound boundary
+       values never serialize, and a default is not one, so the entry should say so. ADR-0005 (a
+       default is a param underneath) and ADR-0010 (a linked group's interface cache) also need
+       amending.
+     - **Left out of a first cut:** mirroring a default onto a group's outer port.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -14126,7 +14263,7 @@ row here**. A row is cheap to delete and expensive to leave.
        sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b
        and 6c), 7 (as 7a, 7b and 7c), 8, 9 (as 9a, 9b and 9c), 10 (as 10a to 10e) and 11 (as 11a to
        11c, 2026-10-20), with the fixes ahead of 5 and of 9c. Item 12 (flowview, the fallback example
-       and the cli vertical) is what is left of slice 4. The separate
+       and the cli vertical) is what is left of slice 4, planned 2026-10-20 as 12a to 12c. The separate
        feature-extraction node slice 3 deferred to it stays deferred, with its trigger restated
        (slice 4's plan).
   2. **Owed by the repo owner.**
@@ -14236,6 +14373,9 @@ M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that i
   *(M4, deferred as planned.)*
 - **Port reorder.** Ids ride along, so edges are untouched by a permutation — but nothing performs
   one. *(M4, deferred as planned; see also the storage note in M4's mutation design.)*
+- **Graph input defaults** — a root boundary input carrying the value a run uses when the host
+  binds none. Deferred as a feature of its own; its first caller is `calibrate-fallback`'s `method`,
+  whose unbound run produces nothing. *(M9 slice 4, §Sub-slice 12 planned.)*
 - **`LoadImage` and `OpenSequence` failing with a reason** (`NodeEvaluation::fail`) instead of
   suppressing while the io layer logs why. A missing or undecodable file is plainly a failure; an
   EMPTY path on a fresh palette node is the judgement to make first, or every new LoadImage lands

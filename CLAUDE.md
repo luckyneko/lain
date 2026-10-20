@@ -1400,6 +1400,46 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-20 — M9 slice 4, sub-slice 12 planned: the fallback a user runs (nothing built yet)
+
+The last of slice 4, planned as **three commits, 12a to 12c**, in WORK.md's *Sub-slice 12 planned* under
+M9 slice 4. Item 12 of the slice plan and the Outstanding index are amended in place.
+
+- **Decided with the repo owner:**
+  - **Graph input defaults are deferred as a feature of their own**, not built here. They were the
+    planned answer to 11's finding: an unbound boundary pin is empty, so `calibrationMethod`'s default
+    never applies through one. Their design notes are recorded with the plan, and the Outstanding
+    index points at them.
+  - **The footage is rendered by the test**, never committed.
+  - **The fallback nodes keep the camera colour.**
+- **Taken as the consequence, not put to the repo owner:** `method` stays a boundary input, and
+  `--method` is required. An unbound one attempts nothing and writes nothing, with a warning and
+  exit 0, as any unbound input does, and 12c pins that cost. Leaving `method` unwired in the document
+  would let its default apply, but the binder would then land with no caller. Either is a one-edge
+  change in 12b.
+- **12a, the enum binder:**
+  - `bindEnum<E>` accepts an enumerator's name ignoring case, `-` and `_`, and is registered for
+    `calibration::Method`.
+  - `BoundaryBinders` carries each type's accepted spellings, in kebab case. `list` prints them, and
+    a failed parse names them.
+- **12b, the example:** `calibrate-fallback.json`, with inputs `footage` and `method` and outputs
+  `attempts` and `model`. A new catalog flag, `needsInputs`, has `test_examples` load and list it
+  rather than run it.
+- **12c, the vertical:** the committed document through `runGraph`, on rendered footage.
+  - Board footage is accepted at attempt 1.
+  - Board-less textured footage from a moving camera is accepted at attempt 2, Release-only if Debug
+    is too slow.
+  - `--method board`, an unbound `--method`, and a mistyped one.
+  - No backend.
+  - OpenCV without Ceres, where the targetless attempt reports `NoRefiner`, but only after board
+    fails, since board calibration needs no refiner.
+- **Found while planning:**
+  - The gui needs nothing new, since the Interface pane already binds `method` through 11c's
+    `editEnum<Method>`. But until a method is picked nothing runs, and no Issues row says why.
+  - `test_examples` could not run this example as it stands: its generic branch requires every output
+    non-empty.
+  - The gui eyeball owed after 12c needs footage rendered for it.
+
 ### Update 2026-10-20 — M9 slice 4, sub-slice 11c: the calibration fallback is a graph (**sub-slice 11 COMPLETE**)
 
 The last of sub-slice 11's three commits: the attempts in the library, and the three small nodes that
