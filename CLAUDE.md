@@ -1400,6 +1400,36 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-20 — M9: a registration's rig leaves the process
+
+A gap the 2026-10-20 review found, recorded nowhere: every camera's `referenceFromCamera` was in the
+registration report and reached no file, since `run` writes a report as its one line. Now it leaves as
+a **registered rig**, the way a calibration's model does. ADR-0016 is amended, and CONTEXT.md gains
+*Registered rig* and *Rig document*. `ctest` **1322/1322** Debug and **1330/1330** Release with video,
+camera and Ceres on, **1188/1188** Debug and **1196/1196** Release with all three off (+4 each).
+Warning-clean, format-check clean. **gui-mode NOT eyeballed.** Full notes in WORK.md's *After slice 4:
+the registered rig* under M9.
+
+- **Decided with the repo owner:**
+  - a value, a node and a document, with the report left as its line;
+  - the reference and scale status travel with the transforms, and no verdict or evidence does;
+  - a `--rig` binder now, though nothing consumes a rig yet (Outstanding index);
+  - `Report::toString()` unchanged.
+- **`registration::RegisteredRig` and `Report::rig()`**, set only on success, whatever the verdict.
+  The node is **`registeredRig`**, offered when either registration can run.
+- **The rig document** (`lain::camera::serialize`, `registeredrig.h`): versioned, rotation as the
+  stored unit quaternion `{w, x, y, z}`, read strictly by path. Then it is read as a rig: a camera at
+  least, none twice, the reference among them at the identity, unit rotations (a zero quaternion is
+  caught before `RigidTransform`'s assert). Its version handling is shared with the camera-model
+  reader (`serialize/src/versioned.{h,cpp}`).
+- **flowview:** `run` writes a rig output as the document, and `--rig` binds one.
+- **Found:** a rotation read back can differ from the one written by one ulp, because `RigidTransform`
+  renormalises on construction. Round trips hold rotations to 1e-15, and `lain::math` is left alone.
+- **The real binary**, on the verticals' footage written by an uncommitted probe, writes all three
+  transforms for both registrations. cam1 comes out turned −0.25 rad and 104 mm across, as drawn.
+- **Eleven sabotages, all caught.** Two first failed to build under `-Werror`, so they were redone to
+  build before they counted.
+
 ### Update 2026-10-20 — the M9 review: what the slice plans left out
 
 Once 12c landed, a review checked M9 against its plan, ADR-0016, ADR-0017 and the code. It found gaps

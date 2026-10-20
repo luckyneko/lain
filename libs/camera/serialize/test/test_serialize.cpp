@@ -1,15 +1,21 @@
-// Camera values as documents: camera models, board specifications and capture records, written and
-// read back in memory. The reader is strict where lain::data is best-effort, so most cases here are
-// about what it REFUSES, by name, instead of loading a default.
+// Camera values as documents: camera models, board specifications, capture records and registered
+// rigs, written and read back in memory. The reader is strict where lain::data is best-effort, so most
+// cases here are about what it REFUSES, by name, instead of loading a default.
 
 #include <lain/camera/serialize/board.h>
 #include <lain/camera/serialize/cameramodel.h>
 #include <lain/camera/serialize/capturerecord.h>
+#include <lain/camera/serialize/registeredrig.h>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
 #include <string>
+#include <utility>
 #include <variant>
+#include <vector>
 
 using namespace lain;
 using namespace lain::camera;
@@ -249,4 +255,195 @@ TEST_CASE("a capture record round-trips, with and without an imported model", "[
 	REQUIRE(readBare.has_value());
 	CHECK_FALSE(readBare->importedModel.has_value());
 	CHECK_FALSE(readBare->stream.framesPerSecond.has_value());
+}
+
+// A rig of three cameras about the first, each turned about another axis, so no component of a
+// rotation or a translation is one that a reader could get right by defaulting it.
+static registration::RegisteredRig threeCameraRig()
+{
+	using capture::CameraIdentity;
+	registration::RegisteredRig rig;
+	rig.reference = CameraIdentity{"/rig/cam0"};
+	rig.scale = {registration::Scale::Metric, "the board's measured square, 24 mm (board)"};
+	rig.cameras = {
+		{CameraIdentity{"/rig/cam0"}, math::RigidTransformd{}},
+		{CameraIdentity{"/rig/cam1"},
+		 math::RigidTransformd{math::angleAxis(0.25, math::Vec3d{0, 1, 0}), math::Vec3d{0.1, -0.004, 0.02}}},
+		{CameraIdentity{"/rig/cam2"}, math::RigidTransformd{math::angleAxis(-0.3, math::normalize(math::Vec3d{1, 2, 3})),
+															math::Vec3d{-0.12, 0.03, 0.05}}},
+	};
+	return rig;
+}
+
+// The largest difference between two rotations' components. A rig read back differs from the one
+// written in the last bit of a rotation at most: RigidTransform renormalises its quaternion when it is
+// built, and normalising a unit quaternion again is not exact in floating point.
+static double rotationDifference(const math::RigidTransformd& a, const math::RigidTransformd& b)
+{
+	const math::Quatd d = a.rotation() - b.rotation();
+	return std::max({std::abs(d.w), std::abs(d.x), std::abs(d.y), std::abs(d.z)});
+}
+
+// A member of an object document, to edit in place.
+static Value& memberOf(Value& document, const std::string& key)
+{
+	for (auto& [name, value] : *document.asObject())
+	{
+		if (name == key)
+			return value;
+	}
+	FAIL("no member " << key);
+	return document;
+}
+
+// cameras[index] of a rig document.
+static Value& cameraOf(Value& document, std::size_t index)
+{
+	return (*memberOf(document, "cameras").asArray())[index];
+}
+
+TEST_CASE("a registered rig round-trips, every transform as it was written", "[camera][serialize]")
+{
+	const registration::RegisteredRig rig = threeCameraRig();
+	const Value document = registration::registeredRigToValue(rig);
+	CHECK(document.find("version")->asUInt64() == registration::kRegisteredRigDocumentVersion);
+	CHECK(*document.find("reference")->asString() == "/rig/cam0");
+	CHECK(*document.find("scale")->find("scale")->asString() == "Metric"); // by name
+	REQUIRE(document.find("cameras")->asArray()->size() == 3);
+	const Value& second = (*document.find("cameras")->asArray())[1];
+	CHECK(*second.find("camera")->asString() == "/rig/cam1");
+	CHECK(second.find("referenceFromCamera")->find("rotation")->find("w")->asDouble() ==
+		  rig.cameras[1].referenceFromCamera.rotation().w);
+	CHECK(second.find("referenceFromCamera")->find("translation")->find("y")->asDouble() == -0.004);
+
+	const registration::RegisteredRigRead read = registration::registeredRigFromValue(document);
+	INFO("problems:" << joined(read.problems));
+	REQUIRE(read.rig.has_value());
+	CHECK(read.problems.empty());
+	CHECK(read.rig->reference == rig.reference);
+	CHECK(read.rig->scale.scale == rig.scale.scale);
+	CHECK(read.rig->scale.evidence == rig.scale.evidence);
+	REQUIRE(read.rig->cameras.size() == rig.cameras.size());
+	for (std::size_t c = 0; c < rig.cameras.size(); ++c)
+	{
+		INFO("camera " << rig.cameras[c].camera.value);
+		CHECK(read.rig->cameras[c].camera == rig.cameras[c].camera);
+		CHECK(read.rig->cameras[c].referenceFromCamera.translation() == rig.cameras[c].referenceFromCamera.translation());
+		CHECK(rotationDifference(read.rig->cameras[c].referenceFromCamera, rig.cameras[c].referenceFromCamera) <= 1e-15);
+	}
+
+	SECTION("an arbitrary scale says so by name")
+	{
+		registration::RegisteredRig arbitrary = rig;
+		arbitrary.scale = {registration::Scale::Arbitrary, "the median landmark depth from /rig/cam0 is 1"};
+		const Value written = registration::registeredRigToValue(arbitrary);
+		CHECK(*written.find("scale")->find("scale")->asString() == "Arbitrary");
+		const registration::RegisteredRigRead back = registration::registeredRigFromValue(written);
+		REQUIRE(back.rig.has_value());
+		CHECK(back.rig->scale.scale == registration::Scale::Arbitrary);
+	}
+	SECTION("cameras listed in another order are read in the rig's")
+	{
+		Value shuffled = document;
+		std::swap(cameraOf(shuffled, 0), cameraOf(shuffled, 2));
+		const registration::RegisteredRigRead back = registration::registeredRigFromValue(shuffled);
+		INFO("problems:" << joined(back.problems));
+		REQUIRE(back.rig.has_value());
+		// The same numbers read, so the same rig to the last bit as the document in order gave.
+		CHECK(registration::registeredRigToValue(*back.rig) == registration::registeredRigToValue(*read.rig));
+	}
+}
+
+TEST_CASE("a rig document is read strictly", "[camera][serialize]")
+{
+	const Value good = registration::registeredRigToValue(threeCameraRig());
+	REQUIRE(registration::registeredRigFromValue(good).rig.has_value());
+	const auto refused = [](const Value& document)
+	{
+		const registration::RegisteredRigRead read = registration::registeredRigFromValue(document);
+		CHECK_FALSE(read.rig.has_value());
+		CHECK_FALSE(read.problems.empty());
+		return read.problems;
+	};
+
+	SECTION("a misspelled key is named, not read as a zero translation")
+	{
+		Value document = good;
+		Value& transform = memberOf(cameraOf(document, 1), "referenceFromCamera");
+		Value renamed = Value::object();
+		for (const auto& [name, part] : *transform.asObject())
+			renamed.set(name == "translation" ? "translaton" : name, part);
+		transform = renamed;
+		const std::vector<std::string> problems = refused(document);
+		INFO("problems:" << joined(problems));
+		CHECK(mentions(problems, "'cameras[1].referenceFromCamera.translaton' is not a known key"));
+		CHECK(mentions(problems, "'cameras[1].referenceFromCamera.translation' is missing"));
+	}
+	SECTION("an unknown scale is named, not read as arbitrary")
+	{
+		Value document = good;
+		memberOf(document, "scale").set("scale", Value("metric"));
+		const std::vector<std::string> problems = refused(document);
+		INFO("problems:" << joined(problems));
+		CHECK(mentions(problems, "'scale.scale' is 'metric'"));
+	}
+	SECTION("a value of the wrong kind is named")
+	{
+		Value document = good;
+		memberOf(memberOf(cameraOf(document, 2), "referenceFromCamera"), "translation").set("x", Value("-0.12"));
+		const std::vector<std::string> problems = refused(document);
+		INFO("problems:" << joined(problems));
+		CHECK(mentions(problems, "'cameras[2].referenceFromCamera.translation.x' is a string"));
+	}
+	SECTION("a rotation that is not a unit quaternion is refused, not normalised")
+	{
+		Value document = good;
+		memberOf(memberOf(cameraOf(document, 1), "referenceFromCamera"), "rotation").set("w", Value(2.0));
+		const std::vector<std::string> problems = refused(document);
+		INFO("problems:" << joined(problems));
+		CHECK(mentions(problems, "'cameras[1].referenceFromCamera.rotation' is not a unit quaternion"));
+
+		// Nor a zero one, which RigidTransform could not even hold.
+		Value zero = Value::object();
+		for (const char* part : {"w", "x", "y", "z"})
+			zero.set(part, Value(0.0));
+		memberOf(cameraOf(document, 1), "referenceFromCamera").set("rotation", zero);
+		CHECK(mentions(refused(document), "its norm is 0"));
+	}
+	SECTION("the reference must be one of the cameras, and its transform the identity")
+	{
+		Value elsewhere = good;
+		elsewhere.set("reference", Value("/rig/cam9"));
+		CHECK(mentions(refused(elsewhere), "'reference' is '/rig/cam9', which is not one of the rig's cameras"));
+
+		Value moved = good;
+		moved.set("reference", Value("/rig/cam1"));
+		CHECK(mentions(refused(moved), "'cameras[1].referenceFromCamera' is not the identity, and '/rig/cam1' is the reference"));
+	}
+	SECTION("a camera listed twice, or with no identity, is named")
+	{
+		Value twice = good;
+		cameraOf(twice, 2).set("camera", Value("/rig/cam0"));
+		CHECK(mentions(refused(twice), "'cameras[2].camera' is '/rig/cam0', as 'cameras[0].camera' is"));
+
+		Value nameless = good;
+		cameraOf(nameless, 2).set("camera", Value(""));
+		CHECK(mentions(refused(nameless), "'cameras[2].camera' is empty"));
+
+		Value none = good;
+		none.set("cameras", Value::array());
+		CHECK(mentions(refused(none), "'cameras' is empty"));
+	}
+	SECTION("a document with no version, or a newer one, is refused")
+	{
+		Value unversioned = Value::object();
+		for (const auto& [name, member] : *good.asObject())
+		{
+			if (name != "version")
+				unversioned.set(name, member);
+		}
+		CHECK(mentions(refused(unversioned), "no version"));
+		CHECK(mentions(refused(edited(good, {"version"}, Value(std::uint64_t{2}))), "newer"));
+		CHECK(mentions(refused(Value("rig")), "a rig document is an object"));
+	}
 }

@@ -10,6 +10,7 @@
 #include "lain/camera/flow/nextattemptnode.h"
 #include "lain/camera/flow/registercamerasnode.h"
 #include "lain/camera/flow/registercamerastargetlessnode.h"
+#include "lain/camera/flow/registeredrignode.h"
 #include "lain/camera/flow/renderboardnode.h"
 
 #include <lain/camera/board/detection.h>
@@ -66,6 +67,12 @@ namespace lain::camera
 		return feature::canExtract() && feature::canMatch() && feature::canSolveGeometry() && refinement::canRefine();
 	}
 
+	// Either registration: what a rig comes out of.
+	static bool canUseRegistration()
+	{
+		return canRegister() || canRegisterTargetless();
+	}
+
 	template <typename T>
 	static void add(core::Factory<flow::Node>& factory, const char* key)
 	{
@@ -93,6 +100,7 @@ namespace lain::camera
 		{kCameraModelKey, &canUseCalibration, &add<CameraModelNode>},
 		{kRegisterCamerasKey, &canRegister, &add<RegisterCamerasNode>},
 		{kRegisterCamerasTargetlessKey, &canRegisterTargetless, &add<RegisterCamerasTargetlessNode>},
+		{kRegisteredRigKey, &canUseRegistration, &add<RegisteredRigNode>},
 	};
 
 	std::vector<std::string> cameraNodeKeys()
@@ -130,5 +138,6 @@ namespace lain::camera
 		flow::registerPortType<CameraModel>("CameraModel");
 		flow::registerPortType<std::vector<CameraModel>>("ListOfCameraModel");
 		flow::registerPortType<registration::Report>("RegistrationReport");
+		flow::registerPortType<registration::RegisteredRig>("RegisteredRig");
 	}
 } // namespace lain::camera

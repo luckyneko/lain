@@ -246,6 +246,11 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   registration report carries metric scale evidence; otherwise all translations share one explicit
   arbitrary global scale. _Avoid_: extrinsic matrix without a named direction, camera transform,
   metre translation without metric evidence.
+- **Registered rig** — what a successful registration found, apart from how well: every camera's
+  registered transform, the registration reference, and the scale status, which a reader needs to
+  know what the translations are in. It holds no verdict and no evidence, as a camera model holds
+  none: whether it is fit for use is the registration report's to say. A failed registration has
+  none. _Avoid_: extrinsics list (a rig is not the report), registered rig without its scale status.
 - **Registration scale status** — whether registered camera translations are metric or share an
   unresolved arbitrary global scale. Scale-ambiguous registration may be geometrically usable, but
   metric reconstruction requires separate metric scale evidence. _Avoid_: normalized metres,
@@ -638,6 +643,14 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   strictly: an unknown or missing key, an unrecognised name or a value of the wrong kind is a named
   problem, never a default, since a hand-typed manufacturer model is exactly where a misspelled
   coefficient would otherwise load as zero. _Avoid_: calibration file (a report is not a model).
+- **Rig document** — a registered rig written as a versioned document: `{version, reference, scale:
+  {scale, evidence}, cameras: [{camera, referenceFromCamera: {rotation: {w, x, y, z}, translation:
+  {x, y, z}}}]}`, each transform in the camera frame, its rotation the unit quaternion the rigid
+  transform holds. What a registration's rig output writes and a later run binds back. Read strictly,
+  as a camera-model document is, and then as a rig: a camera at least, none twice, the reference among
+  them with the identity transform, every rotation a unit quaternion. A rotation read back may differ
+  from the one written in its last bit, since the rigid transform renormalises what it is built from.
+  _Avoid_: extrinsics file, registration file (a rig is not the report).
 - **Distortion direction** — which mapping a distortion model and its coefficients define between
   ideal normalized coordinates and observed image coordinates. Forward and inverse Brown-Conrady
   models are distinct even when their coefficient sets have the same shape; projection and

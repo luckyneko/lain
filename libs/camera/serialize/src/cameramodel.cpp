@@ -1,22 +1,17 @@
 #include "lain/camera/serialize/cameramodel.h"
 
+#include "versioned.h"
+
 #include <lain/data/strict.h>
-#include <lain/string/format.h>
 
 #include <utility>
 
 namespace lain::camera
 {
-	// {version, image, intrinsics, distortion}: the version first, so a reader meets it before anything
-	// it might not understand.
+	// {version, image, intrinsics, distortion}.
 	static data::Value documentOf(const CameraModelParameters& parameters)
 	{
-		data::Value document = data::Value::object();
-		document.set("version", data::Value(std::uint64_t{kCameraModelDocumentVersion}));
-		data::Value body = data::toValue(parameters);
-		for (auto& [key, value] : *body.asObject())
-			document.set(key, std::move(value));
-		return document;
+		return versionedDocument(kCameraModelDocumentVersion, data::toValue(parameters));
 	}
 
 	data::Value cameraModelToValue(const CameraModel& model)
@@ -27,24 +22,9 @@ namespace lain::camera
 	CameraModelRead cameraModelFromValue(const data::Value& document)
 	{
 		CameraModelRead result;
-		if (!document.isObject())
-		{
-			result.problems.push_back("a camera-model document is an object");
+		result.problems = versionProblems(document, "camera-model", kCameraModelDocumentVersion);
+		if (!result.problems.empty())
 			return result;
-		}
-		const data::Value* version = document.find("version");
-		const std::optional<std::uint64_t> number = version ? version->asUInt64() : std::nullopt;
-		if (!number)
-		{
-			result.problems.push_back("the document has no version");
-			return result;
-		}
-		if (*number > kCameraModelDocumentVersion)
-		{
-			result.problems.push_back(lain::string::format(
-				"the document is version {}, newer than this build reads ({})", *number, kCameraModelDocumentVersion));
-			return result;
-		}
 
 		const std::optional<CameraModelParameters> parameters = data::fromValue<CameraModelParameters>(document);
 		if (!parameters)

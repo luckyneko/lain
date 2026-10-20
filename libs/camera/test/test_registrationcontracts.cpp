@@ -177,6 +177,9 @@ TEST_CASE("a registration report reads its own result", "[camera][registration]"
 		report.failures.push_back({Failure::TooFewCameras, "never"});
 		CHECK(report.toString() == "Failed: Disconnected (2 components)");
 		CHECK_FALSE(report.referenceFromCamera(camera::capture::CameraIdentity{"a"}).has_value());
+		// A registration that fails after choosing its reference still names it, and has no rig.
+		report.reference = camera::capture::CameraIdentity{"a"};
+		CHECK_FALSE(report.rig().has_value());
 	}
 	SECTION("a registered camera's transform is looked up by identity")
 	{
@@ -199,5 +202,31 @@ TEST_CASE("a registration report reads its own result", "[camera][registration]"
 		CHECK(report.toString() ==
 			  "Exploratory: 2 cameras relative to a, metric, no held-out evidence (not computed), 10 of 12 groups "
 			  "usable; short of the next verdict: held-out angle 2.1 mrad above 1 mrad");
+	}
+	SECTION("its rig is the transforms, the reference and the scale, whatever the verdict")
+	{
+		Report report;
+		report.status = RegistrationStatus::Succeeded;
+		report.verdict = camera::Verdict::Rejected;
+		report.reference = camera::capture::CameraIdentity{"a"};
+		report.scale = {Scale::Arbitrary, "the median landmark depth from a is 1"};
+		const math::RigidTransformd turned{math::angleAxis(math::radians(30.0), math::Vec3d{0, 1, 0}),
+										   math::Vec3d{0.5, 0, 0.1}};
+		report.cameras = {{camera::capture::CameraIdentity{"a"}, math::RigidTransformd{}},
+						  {camera::capture::CameraIdentity{"b"}, turned}};
+		const std::optional<RegisteredRig> rig = report.rig();
+		REQUIRE(rig.has_value());
+		CHECK(rig->reference.value == "a");
+		CHECK(rig->scale.scale == Scale::Arbitrary);
+		CHECK(rig->scale.evidence == report.scale.evidence);
+		REQUIRE(rig->cameras.size() == 2);
+		CHECK(rig->referenceFromCamera(camera::capture::CameraIdentity{"b"})->translation() == turned.translation());
+		CHECK_FALSE(rig->referenceFromCamera(camera::capture::CameraIdentity{"c"}).has_value());
+		// An arbitrary scale has no unit to print.
+		CHECK(rig->toString() ==
+			  "2 cameras relative to a, arbitrary scale; a at (0, 0, 0) turned 0 deg; b at (0.5, 0, 0.1) turned 30 deg");
+		report.scale.scale = Scale::Metric;
+		CHECK(report.rig()->toString() ==
+			  "2 cameras relative to a, metric; a at (0, 0, 0) m turned 0 deg; b at (0.5, 0, 0.1) m turned 30 deg");
 	}
 }

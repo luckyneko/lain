@@ -80,6 +80,24 @@ namespace lain::camera::registration
 		math::RigidTransformd referenceFromCamera;
 	};
 
+	// What a successful registration found, apart from how well (CONTEXT.md, "Registered rig"): every
+	// camera's transform, the reference they are relative to, and whether their translations are
+	// metric. What leaves a registration as a rig document (lain::camera::serialize, registeredrig.h);
+	// whether it is fit for use is the report's to say, as a camera model's is.
+	struct RegisteredRig
+	{
+		capture::CameraIdentity reference; // one of `cameras`, its transform the identity
+		ScaleStatus scale;
+		std::vector<RegisteredCamera> cameras; // ascending by identity
+
+		// `camera`'s registered transform, or nullopt when it is not in the rig.
+		std::optional<math::RigidTransformd> referenceFromCamera(const capture::CameraIdentity& camera) const;
+
+		// One line for a person: the reference and the scale, then each camera's position and how far
+		// it is turned from the reference.
+		std::string toString() const;
+	};
+
 	// What each camera brought to the registration, and how well the result explains it. An
 	// observation is one camera's view of one evidence unit; a residual is one point of it: a board
 	// corner, or a track's member.
@@ -263,6 +281,9 @@ namespace lain::camera::registration
 
 		// `camera`'s registered transform, or nullopt when it has none.
 		std::optional<math::RigidTransformd> referenceFromCamera(const capture::CameraIdentity& camera) const;
+
+		// The rig this registration found, whatever its verdict, or nullopt unless it Succeeded.
+		std::optional<RegisteredRig> rig() const;
 
 		// One line for a person: the verdict, the cameras and the evidence; or the first reason
 		// there is no registration.

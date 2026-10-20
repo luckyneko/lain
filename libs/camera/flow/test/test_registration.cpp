@@ -10,6 +10,7 @@
 #include <lain/camera/calibration/attempts.h>
 #include <lain/camera/flow/register.h>
 #include <lain/camera/refinement/refiner.h>
+#include <lain/camera/registration/report.h>
 #include <lain/core/factory.h>
 #include <lain/flow/node.h>
 #include <lain/flow/porttyperegistry.h>
@@ -36,7 +37,8 @@ namespace
 											 "calibrationAttempts",
 											 "cameraModel",
 											 "registerCameras",
-											 "registerCamerasTargetless"};
+											 "registerCamerasTargetless",
+											 "registeredRig"};
 
 	// The kinds registerCameraNodes put in a fresh factory that it can build.
 	std::vector<std::string> registered()
@@ -80,11 +82,13 @@ TEST_CASE("camera node kinds register always, and are offered as backends can ru
 	CHECK(camera::availableCameraNodeKeys() == calibrating);
 
 	// Registration also needs a pose for each view and a refinement of the rig: neither alone will do.
+	// With both, registration and the rig a registration finds.
 	camera::board::poseSolverRegistry().registerType<NullPoseSolver>("null");
 	CHECK(camera::availableCameraNodeKeys() == calibrating);
 	camera::refinement::refinerRegistry().registerType<NullRefiner>("null");
 	Keys registering = calibrating;
 	registering.push_back("registerCameras");
+	registering.push_back("registeredRig");
 	CHECK(camera::availableCameraNodeKeys() == registering);
 
 	// The targetless methods extract, match and pose from what they matched: with a refiner already
@@ -116,6 +120,7 @@ TEST_CASE("camera port types register whatever the backends", "[camera][flow]")
 	CHECK(flow::portTypeRegistered("CameraModel"));
 	CHECK(flow::portTypeKey(typeid(camera::CameraModel)) == "CameraModel");
 	CHECK(flow::portTypeRegistered("RegistrationReport"));
+	CHECK(flow::portTypeKey(typeid(camera::registration::RegisteredRig)) == "RegisteredRig");
 	// The list form, so a map can lift a camera model: registerCameras takes the rig's models as one.
 	CHECK(flow::portTypeKey(typeid(std::vector<camera::CameraModel>)) == "ListOfCameraModel");
 }

@@ -89,6 +89,9 @@ namespace flowview
 		style.addPortColor(typeid(camera::calibration::Attempts), image::ColorRGBA8(185, 175, 200, 255)); // lilac slate
 		style.addPortColor(typeid(camera::calibration::Method), image::ColorRGBA8(205, 160, 120, 255));	  // tan
 
+		// The rig a registration found is a result passed on, as a camera model is: the camera's family.
+		style.addPortColor(typeid(camera::registration::RegisteredRig), image::ColorRGBA8(190, 155, 60, 255)); // deep gold
+
 		// Node title colours by factory kind — categories are emergent from shared colour (no Category
 		// enum). These keys must match scene.cpp's registrations.
 		const image::ColorRGBA8 source(46, 86, 120, 255);	  // sources: emit a value

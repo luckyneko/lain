@@ -10,6 +10,7 @@
 #include <lain/camera/flow/calibratecameranode.h>
 #include <lain/camera/flow/cameramodelnode.h>
 #include <lain/camera/flow/detectboardnode.h>
+#include <lain/camera/flow/registeredrignode.h>
 #include <lain/camera/flow/renderboardnode.h>
 #include <lain/flow/boundary.h>
 #include <lain/flow/evaluation.h>
@@ -437,5 +438,46 @@ TEST_CASE("cameraModel passes a calibration's model on, and suppresses without o
 			  camera::calibration::CalibrationStatus::Failed);
 		CHECK(evaluation.value(output(graph, model)).empty());
 		CHECK(evaluation.describe(output(graph, calibrate)).rfind("Failed: EstimationFailed", 0) == 0);
+	}
+}
+
+TEST_CASE("registeredRig passes a registration's rig on, and suppresses without one", "[camera][flow]")
+{
+	namespace registration = camera::registration;
+	flow::Graph graph;
+	const flow::NodeId rig = graph.add<camera::RegisteredRigNode>();
+	const flow::PortAddress reportPin = feed<registration::Report>(graph, "report", rig, 0);
+
+	// An Exploratory registration still has a rig: whether it is fit for use is the report's to say.
+	registration::Report report;
+	report.status = registration::RegistrationStatus::Succeeded;
+	report.verdict = camera::Verdict::Exploratory;
+	report.reference = camera::capture::CameraIdentity{"/rig/cam00"};
+	report.scale = {registration::Scale::Metric, "the board's measured square, 24 mm (board)"};
+	const math::RigidTransformd moved{math::angleAxis(0.25, math::Vec3d{0, 1, 0}), math::Vec3d{0.1, 0, 0.02}};
+	report.cameras = {{camera::capture::CameraIdentity{"/rig/cam00"}, math::RigidTransformd{}},
+					  {camera::capture::CameraIdentity{"/rig/cam01"}, moved}};
+
+	flow::Evaluation evaluation{graph};
+	bind(evaluation, reportPin, report);
+	flow::SerialScheduler{}.run(graph, evaluation);
+	const flow::PortValue& found = evaluation.value(output(graph, rig));
+	REQUIRE(found.holds<registration::RegisteredRig>());
+	const registration::RegisteredRig& passed = found.get<registration::RegisteredRig>();
+	CHECK(passed.reference.value == "/rig/cam00");
+	CHECK(passed.scale.scale == registration::Scale::Metric);
+	REQUIRE(passed.cameras.size() == 2);
+	CHECK(passed.referenceFromCamera(camera::capture::CameraIdentity{"/rig/cam01"})->translation() ==
+		  moved.translation());
+	// The rig's port describes the transforms, which the report's line does not.
+	CHECK(evaluation.describe(output(graph, rig)).find("/rig/cam01 at (0.1, 0, 0.02) m") != std::string::npos);
+
+	SECTION("a failed registration clears the rig")
+	{
+		registration::Report failed;
+		failed.failures.push_back({registration::Failure::Disconnected, "2 components"});
+		bind(evaluation, reportPin, failed);
+		flow::SerialScheduler{}.run(graph, evaluation);
+		CHECK(evaluation.value(output(graph, rig)).empty());
 	}
 }

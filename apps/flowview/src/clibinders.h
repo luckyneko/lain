@@ -47,8 +47,9 @@ namespace flowview
 
 	// Register the built-in binders: the scalars (int / float / bool / string), an image (loads the
 	// path), a frame sequence (opens the uri), a frame position, a camera model (reads a camera-model
-	// document), a rig's footage and models, each from a folder whose entries, by name, are one
-	// camera each, and a calibration method by name (`--method board-then-targetless`).
+	// document), a registered rig (reads a rig document), a rig's footage and models, each from a
+	// folder whose entries, by name, are one camera each, and a calibration method by name
+	// (`--method board-then-targetless`).
 	void registerBoundaryBinders(BoundaryBinders& binders);
 
 	// An enumerator's name as a command line spells it: lower case, words joined by '-', so

@@ -1,15 +1,17 @@
 # lain::camera::serialize — camera values as documents (M9 slice 1, sub-slice 8): camera models, board
-# specifications and capture records. A separate target over lain::camera + lain::data by the boundary
-# rule lain::media::serialize follows: lain::camera stays free of lain::data, as no foundational
-# library in the set links it.
+# specifications and capture records, and the rig a registration found. A separate target over
+# lain::camera + lain::data by the boundary rule lain::media::serialize follows: lain::camera stays free
+# of lain::data, as no foundational library in the set links it.
 #
-# Its namespace is lain::camera, not a serialize sub-namespace: a serialize() must sit in its type's
-# own namespace for ADL to find it, and a namespace cannot share a name with a function in the same
-# scope (the media::serialize note).
+# Its namespace is lain::camera (lain::camera::registration for a rig), not a serialize sub-namespace:
+# a serialize() must sit in its type's own namespace for ADL to find it, and a namespace cannot share a
+# name with a function in the same scope (the media::serialize note).
 
 add_library(camera-serialize STATIC
+	src/versioned.cpp
 	src/cameramodel.cpp
 	src/board.cpp
+	src/registeredrig.cpp
 )
 add_library(lain::camera::serialize ALIAS camera-serialize)
 

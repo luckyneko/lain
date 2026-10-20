@@ -13,10 +13,12 @@
 // vocabulary (ADR-0016, amended), and runs to a report that names the backend it is missing.
 //
 // The same holds for a rig: registered by a board, and without a target from the scene its cameras
-// share.
+// share. Its transforms are written out as a rig document, read back by the production reader and
+// held to the rig the footage was drawn from, and the file binds back into a later run.
 
 #include "clibinders.h"
 #include "graphio.h"
+#include "rigcompare.h" // a registered rig against its truth
 #include "runmode.h"
 #include "scene.h"
 #include "syntheticfootage.h" // the footage, drawn in plain C++
@@ -37,6 +39,7 @@
 #include <lain/camera/refinement/refiner.h>
 #include <lain/camera/registration/report.h>
 #include <lain/camera/serialize/cameramodel.h>
+#include <lain/camera/serialize/registeredrig.h>
 #include <lain/core/uri.h>
 #include <lain/flow/boundary.h>
 #include <lain/flow/graph.h>
@@ -293,7 +296,7 @@ TEST_CASE("run calibrates a camera from a folder of footage", "[camera][runmode]
 namespace
 {
 	// footage + models (two collections, a camera each, paired by position) -> registerCameras (board
-	// from a boardSpecification of 24 mm squares) -> report.
+	// from a boardSpecification of 24 mm squares) -> report, and -> registeredRig -> rig.
 	fs::path writeRigDocument(const fs::path& file)
 	{
 		core::Factory<flow::Node> factory;
@@ -304,9 +307,11 @@ namespace
 		const flow::PortId footage = input.addBoundary<std::vector<media::FrameSequence>>("footage");
 		const flow::PortId models = input.addBoundary<std::vector<camera::CameraModel>>("models");
 		const flow::PortId report = output.addBoundary<camera::registration::Report>("report");
+		const flow::PortId rig = output.addBoundary<camera::registration::RegisteredRig>("rig");
 
 		const flow::NodeId spec = graph.add(factory.create(camera::kBoardSpecificationKey));
 		const flow::NodeId registerCameras = graph.add(factory.create(camera::kRegisterCamerasKey));
+		const flow::NodeId extract = graph.add(factory.create(camera::kRegisteredRigKey));
 		setParam(graph, spec, "squareLengthMm", 24.0f);
 		setParam(graph, registerCameras, "resamples", 4);
 		REQUIRE(graph.connect(flow::PortAddress{input.id(), footage}, in(graph, registerCameras, 0)) ==
@@ -314,8 +319,25 @@ namespace
 		REQUIRE(graph.connect(flow::PortAddress{input.id(), models}, in(graph, registerCameras, 1)) ==
 				flow::Connection::Ok);
 		REQUIRE(graph.connect(out(graph, spec), in(graph, registerCameras, 2)) == flow::Connection::Ok);
+		REQUIRE(graph.connect(out(graph, registerCameras), in(graph, extract, 0)) == flow::Connection::Ok);
 		REQUIRE(graph.connect(out(graph, registerCameras), flow::PortAddress{output.id(), report}) ==
 				flow::Connection::Ok);
+		REQUIRE(graph.connect(out(graph, extract), flow::PortAddress{output.id(), rig}) == flow::Connection::Ok);
+		REQUIRE(flowview::saveGraph(core::Uri::fromPath(file), graph, factory));
+		return file;
+	}
+
+	// rig -> copy: a rig bound from a file and written straight back out, which is all a run can do
+	// with one until a node consumes a rig.
+	fs::path writeRigCopyDocument(const fs::path& file)
+	{
+		core::Factory<flow::Node> factory;
+		flowview::registerExampleNodes(factory, 8);
+		flow::Graph graph;
+		const flow::PortId rig = graph.boundaryInputNode().addBoundary<camera::registration::RegisteredRig>("rig");
+		const flow::PortId copy = graph.boundaryOutputNode().addBoundary<camera::registration::RegisteredRig>("copy");
+		REQUIRE(graph.connect(flow::PortAddress{graph.boundaryInputNode().id(), rig},
+							  flow::PortAddress{graph.boundaryOutputNode().id(), copy}) == flow::Connection::Ok);
 		REQUIRE(flowview::saveGraph(core::Uri::fromPath(file), graph, factory));
 		return file;
 	}
@@ -334,6 +356,9 @@ namespace
 		const math::Quatd turn = math::angleAxis(angle, math::Vec3d{0, 1, 0});
 		return math::RigidTransformd{turn, pivot - turn * pivot};
 	}
+
+	// Where writeRig puts cam0..cam2, relative to cam0.
+	const double kRigAngles[] = {0.0, -0.25, 0.25};
 
 	// A rig of three cameras as a user would bind it: rig/cam0..cam2, each a folder of stills of one
 	// board sweeping through their shared view, and models/cam0..cam2.json, each camera's model.
@@ -359,14 +384,13 @@ namespace
 		p.intrinsics = {kCamera.fx, kCamera.fy, kCamera.cx, kCamera.cy};
 		const camera::CameraModel model = *camera::CameraModel::create(p).model;
 
-		const double angles[] = {0.0, -0.25, 0.25};
 		fs::create_directories(dir / "models");
 		for (std::size_t c = 0; c < 3; ++c)
 		{
 			const std::string name = "cam" + std::to_string(c);
 			const fs::path folder = dir / "rig" / name;
 			fs::create_directories(folder);
-			const math::RigidTransformd cameraFromReference = rigCamera(angles[c]).inverse();
+			const math::RigidTransformd cameraFromReference = rigCamera(kRigAngles[c]).inverse();
 			for (std::size_t i = 0; i < frames; ++i)
 			{
 				const std::string still = "frame." + std::string(4 - std::to_string(i).size(), '0') + std::to_string(i) + ".png";
@@ -380,6 +404,39 @@ namespace
 		}
 	}
 } // namespace
+
+// A rig document on disk, read back through the production reader.
+static std::optional<camera::registration::RegisteredRig> readRig(const fs::path& file)
+{
+	const std::optional<data::Value> document = io::data::load(core::Uri::fromPath(file));
+	if (!document)
+		return std::nullopt;
+	const camera::registration::RegisteredRigRead read = camera::registration::registeredRigFromValue(*document);
+	INFO("problems: " << read.problems.size() << (read.problems.empty() ? "" : ", the first " + read.problems.front()));
+	CHECK(read.problems.empty());
+	return read.rig;
+}
+
+// How far a written rig is from `worldFromCamera`, the poses its cam0..cam2 footage was drawn from,
+// once the truth is made relative to the rig's own reference. Each camera is named by its footage
+// folder, so the rig lists them in that order.
+static camera::testing::RigDifference rigAgainstTruth(const camera::registration::RegisteredRig& rig,
+													  const std::vector<math::RigidTransformd>& worldFromCamera)
+{
+	REQUIRE(rig.cameras.size() == worldFromCamera.size());
+	std::optional<std::size_t> reference;
+	std::vector<math::RigidTransformd> found;
+	for (std::size_t c = 0; c < rig.cameras.size(); ++c)
+	{
+		CHECK(rig.cameras[c].camera.value.find((fs::path("rig") / ("cam" + std::to_string(c))).string()) !=
+			  std::string::npos);
+		if (rig.cameras[c].camera == rig.reference)
+			reference = c;
+		found.push_back(rig.cameras[c].referenceFromCamera);
+	}
+	REQUIRE(reference.has_value());
+	return camera::testing::compare(camera::testing::rebased(worldFromCamera, *reference), found);
+}
 
 TEST_CASE("run registers a rig from a folder of footage and a folder of models", "[camera][runmode]")
 {
@@ -397,8 +454,9 @@ TEST_CASE("run registers a rig from a folder of footage and a folder of models",
 	flowview::RunOptions options;
 	options.graphPath = document.string();
 	const fs::path reportText = dir / "report.txt";
+	const fs::path rigFile = dir / "rig.json";
 	options.bindings = {"--footage", (dir / "rig").string(), "--models", (dir / "models").string(), "--report",
-						reportText.string()};
+						reportText.string(), "--rig", rigFile.string()};
 	REQUIRE(flowview::runGraph(options, factory, binders) == 0);
 
 	const std::string report = readText(reportText);
@@ -406,12 +464,15 @@ TEST_CASE("run registers a rig from a folder of footage and a folder of models",
 	if (!camera::board::canDetect())
 	{
 		// The document loads whole and runs without a backend, and the report says what is missing.
+		// No rig: a failed registration has none, so nothing is written.
 		CHECK(report.rfind("Failed: NoDetector", 0) == 0);
+		CHECK_FALSE(fs::exists(rigFile));
 		return;
 	}
 	if (!haveRegistrationBackends())
 	{
 		CHECK(report.rfind("Failed: NoRefiner", 0) == 0);
+		CHECK_FALSE(fs::exists(rigFile));
 		return;
 	}
 	// Each camera is named by its footage folder, cam0 first since the folder lists by name, with the
@@ -419,13 +480,53 @@ TEST_CASE("run registers a rig from a folder of footage and a folder of models",
 	CHECK(report.rfind("Ready: 3 cameras relative to ", 0) == 0);
 	CHECK(report.find((fs::path("rig") / "cam0").string()) != std::string::npos);
 	CHECK(report.find("16 of 16 groups usable") != std::string::npos);
+
+	// The rig output is a rig DOCUMENT holding every camera's transform, which the report's line does
+	// not, in metres since a board measured the rig.
+	const std::optional<camera::registration::RegisteredRig> rig = readRig(rigFile);
+	REQUIRE(rig.has_value());
+	INFO("rig: " << rig->toString());
+	CHECK(rig->scale.scale == camera::registration::Scale::Metric);
+	CHECK(report.find("relative to " + rig->reference.value) != std::string::npos);
+	const camera::testing::RigDifference difference =
+		rigAgainstTruth(*rig, {rigCamera(kRigAngles[0]), rigCamera(kRigAngles[1]), rigCamera(kRigAngles[2])});
+	INFO("scale " << difference.scale << ", worst rotation " << difference.worstRotation * 1000.0
+				  << " mrad, worst centre " << difference.worstCentre * 1000.0 << " mm");
+	// Measured 0.07% in scale, 0.2 mrad and 0.05 mm out. The bounds leave room for another platform's
+	// arithmetic, and still catch a transform written the wrong way round (cameraFromReference turns
+	// each camera 0.25 rad the wrong way).
+	CHECK(std::abs(difference.scale - 1.0) < 0.005);
+	CHECK(difference.worstRotation < 0.002);
+	CHECK(difference.worstCentre < 0.001);
+
+	SECTION("the rig file binds back")
+	{
+		flowview::RunOptions copy;
+		copy.graphPath = writeRigCopyDocument(dir / "copy.json").string();
+		const fs::path copied = dir / "copied.json";
+		copy.bindings = {"--rig", rigFile.string(), "--copy", copied.string()};
+		REQUIRE(flowview::runGraph(copy, factory, binders) == 0);
+		const std::optional<camera::registration::RegisteredRig> back = readRig(copied);
+		REQUIRE(back.has_value());
+		CHECK(back->reference == rig->reference);
+		CHECK(back->scale.evidence == rig->scale.evidence);
+		REQUIRE(back->cameras.size() == rig->cameras.size());
+		for (std::size_t c = 0; c < rig->cameras.size(); ++c)
+		{
+			CHECK(back->cameras[c].camera == rig->cameras[c].camera);
+			CHECK(back->cameras[c].referenceFromCamera.translation() == rig->cameras[c].referenceFromCamera.translation());
+			// To the last bit a renormalised rotation can move (RigidTransform normalises what it is built from).
+			CHECK(camera::testing::rotationBetween(back->cameras[c].referenceFromCamera, rig->cameras[c].referenceFromCamera) <=
+				  1e-15);
+		}
+	}
 }
 
 namespace
 {
 	// footage + models (two collections, a camera each, paired by position) ->
-	// registerCamerasTargetless -> report. Three sampled groups, since the rig's footage is three
-	// frames a camera, and `search` the matching asked for.
+	// registerCamerasTargetless -> report, and -> registeredRig -> rig. Three sampled groups, since the
+	// rig's footage is three frames a camera, and `search` the matching asked for.
 	fs::path writeTargetlessDocument(const fs::path& file,
 									 camera::feature::MatchSearch search = camera::feature::MatchSearch::Exact)
 	{
@@ -437,8 +538,10 @@ namespace
 		const flow::PortId footage = input.addBoundary<std::vector<media::FrameSequence>>("footage");
 		const flow::PortId models = input.addBoundary<std::vector<camera::CameraModel>>("models");
 		const flow::PortId report = output.addBoundary<camera::registration::Report>("report");
+		const flow::PortId rig = output.addBoundary<camera::registration::RegisteredRig>("rig");
 
 		const flow::NodeId registerCameras = graph.add(factory.create(camera::kRegisterCamerasTargetlessKey));
+		const flow::NodeId extract = graph.add(factory.create(camera::kRegisteredRigKey));
 		setParam(graph, registerCameras, "resamples", 4);
 		setParam(graph, registerCameras, "sampledGroups", 3);
 		setParam(graph, registerCameras, "matchSearch", search);
@@ -446,8 +549,10 @@ namespace
 				flow::Connection::Ok);
 		REQUIRE(graph.connect(flow::PortAddress{input.id(), models}, in(graph, registerCameras, 1)) ==
 				flow::Connection::Ok);
+		REQUIRE(graph.connect(out(graph, registerCameras), in(graph, extract, 0)) == flow::Connection::Ok);
 		REQUIRE(graph.connect(out(graph, registerCameras), flow::PortAddress{output.id(), report}) ==
 				flow::Connection::Ok);
+		REQUIRE(graph.connect(out(graph, extract), flow::PortAddress{output.id(), rig}) == flow::Connection::Ok);
 		REQUIRE(flowview::saveGraph(core::Uri::fromPath(file), graph, factory));
 		return file;
 	}
@@ -458,6 +563,9 @@ namespace
 			   camera::refinement::canRefine();
 	}
 
+	// Where writeTexturedRig puts cam0..cam2 on arcCamera's arc.
+	const double kTexturedRigAngles[] = {-0.25, 0.0, 0.25};
+
 	// A rig of three fixed cameras as a user would bind it: rig/cam0..cam2, each a folder of three
 	// stills of the default textured scene (texturedscene.h) from a point on an arc round it, and
 	// models/cam0..cam2.json, each camera's model. A still scene draws the same frame every time, so
@@ -467,14 +575,13 @@ namespace
 	{
 		const camera::CameraModel model = camera::testing::cameraWith(camera::testing::brownConrady());
 		const camera::synthetic::Scene scene = camera::synthetic::defaultScene();
-		const double angles[] = {-0.25, 0.0, 0.25};
 		fs::create_directories(dir / "models");
 		for (std::size_t c = 0; c < 3; ++c)
 		{
 			const std::string name = "cam" + std::to_string(c);
 			const fs::path folder = dir / "rig" / name;
 			fs::create_directories(folder);
-			const image::Image frame = rendered ? camera::synthetic::render(scene, model, camera::synthetic::arcCamera(angles[c]))
+			const image::Image frame = rendered ? camera::synthetic::render(scene, model, camera::synthetic::arcCamera(kTexturedRigAngles[c]))
 												: image::Image(int(model.image().width), int(model.image().height));
 			for (std::size_t i = 0; i < 3; ++i)
 				REQUIRE(io::image::save(core::Uri::fromPath(folder / ("frame.000" + std::to_string(i) + ".png")), frame));
@@ -499,8 +606,9 @@ TEST_CASE("run registers a rig without a target from a folder of footage and a f
 	flowview::RunOptions options;
 	options.graphPath = document.string();
 	const fs::path reportText = dir / "report.txt";
+	const fs::path rigFile = dir / "rig.json";
 	options.bindings = {"--footage", (dir / "rig").string(), "--models", (dir / "models").string(), "--report",
-						reportText.string()};
+						reportText.string(), "--rig", rigFile.string()};
 	REQUIRE(flowview::runGraph(options, factory, binders) == 0);
 
 	const std::string report = readText(reportText);
@@ -509,11 +617,13 @@ TEST_CASE("run registers a rig without a target from a folder of footage and a f
 	{
 		// The document loads whole and runs without a backend, and the report says what is missing.
 		CHECK(report.rfind("Failed: NoFeatureExtractor", 0) == 0);
+		CHECK_FALSE(fs::exists(rigFile));
 		return;
 	}
 	if (!haveTargetlessBackends())
 	{
 		CHECK(report.rfind("Failed: NoRefiner", 0) == 0);
+		CHECK_FALSE(fs::exists(rigFile));
 		return;
 	}
 	// Each camera is named by its footage folder; the reference is whichever shares the most, and
@@ -529,6 +639,23 @@ TEST_CASE("run registers a rig without a target from a folder of footage and a f
 	CHECK(report.find((fs::path("rig") / "cam").string()) != std::string::npos);
 	CHECK(report.find("arbitrary scale") != std::string::npos);
 	CHECK(report.find("landmarks from") != std::string::npos);
+
+	// The rig document holds every camera's transform, at the arbitrary scale the report names, so its
+	// centres are held to the truth after a scale fit.
+	const std::optional<camera::registration::RegisteredRig> rig = readRig(rigFile);
+	REQUIRE(rig.has_value());
+	INFO("rig: " << rig->toString());
+	CHECK(rig->scale.scale == camera::registration::Scale::Arbitrary);
+	CHECK(report.find("relative to " + rig->reference.value) != std::string::npos);
+	const camera::testing::RigDifference difference =
+		rigAgainstTruth(*rig, {camera::synthetic::arcCamera(kTexturedRigAngles[0]), camera::synthetic::arcCamera(kTexturedRigAngles[1]),
+							   camera::synthetic::arcCamera(kTexturedRigAngles[2])});
+	INFO("scale " << difference.scale << ", worst rotation " << difference.worstRotation * 1000.0
+				  << " mrad, worst centre " << difference.worstCentre * 1000.0 << " mm");
+	// Measured over five runs, which hold out different tracks (above): 0.18 to 0.51 mrad, and 0.7 to
+	// 1.7 mm on cameras 3.2 m from the scene.
+	CHECK(difference.worstRotation < 0.003);
+	CHECK(difference.worstCentre < 0.01);
 }
 
 TEST_CASE("a targetless registration's matching travels in its document by name", "[camera][runmode]")

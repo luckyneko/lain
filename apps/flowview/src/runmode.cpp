@@ -7,7 +7,8 @@
 #include "scene.h"
 #include "validation.h" // collectFailures — the Issues pane's failure rows, reused for stderr
 
-#include <lain/camera/serialize/cameramodel.h> // cameraModelToValue — a model output's document
+#include <lain/camera/serialize/cameramodel.h>	 // cameraModelToValue — a model output's document
+#include <lain/camera/serialize/registeredrig.h> // registeredRigToValue — a rig output's document
 #include <lain/flow/boundary.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
@@ -247,6 +248,17 @@ namespace flowview
 			if (io::data::save(path, camera::cameraModelToValue(delivered.get<camera::CameraModel>())))
 				return true;
 			log::error("flowview: could not write --{} camera model to {}", out.name, path);
+			return false;
+		}
+
+		// A registered rig likewise, as a rig DOCUMENT: every camera's transform is what a registration
+		// is run for, and its report's one line holds none of them.
+		if (delivered.holds<camera::registration::RegisteredRig>())
+		{
+			if (io::data::save(path, camera::registration::registeredRigToValue(
+										 delivered.get<camera::registration::RegisteredRig>())))
+				return true;
+			log::error("flowview: could not write --{} rig to {}", out.name, path);
 			return false;
 		}
 

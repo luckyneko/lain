@@ -5,8 +5,10 @@
 #include <lain/meta/enums.h>
 #include <lain/string/format.h>
 
+#include <optional>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace lain::camera::registration
 {
@@ -22,7 +24,9 @@ namespace lain::camera::registration
 		return lain::string::format(", {} landmarks from {} usable tracks", targetless.landmarks, targetless.tracksUsable);
 	}
 
-	std::optional<math::RigidTransformd> Report::referenceFromCamera(const capture::CameraIdentity& camera) const
+	// `camera`'s transform among `cameras`, which a report and a rig each hold.
+	static std::optional<math::RigidTransformd> transformOf(const std::vector<RegisteredCamera>& cameras,
+															const capture::CameraIdentity& camera)
 	{
 		for (const RegisteredCamera& c : cameras)
 		{
@@ -30,6 +34,40 @@ namespace lain::camera::registration
 				return c.referenceFromCamera;
 		}
 		return std::nullopt;
+	}
+
+	std::optional<math::RigidTransformd> RegisteredRig::referenceFromCamera(const capture::CameraIdentity& camera) const
+	{
+		return transformOf(cameras, camera);
+	}
+
+	std::string RegisteredRig::toString() const
+	{
+		const bool metric = scale.scale == Scale::Metric;
+		std::string text = lain::string::format("{} cameras relative to {}, {}", cameras.size(), reference.value,
+												metric ? "metric" : "arbitrary scale");
+		// Where each camera's centre is in the reference's frame, which is its transform's translation,
+		// and its rotation from the reference as one angle.
+		for (const RegisteredCamera& c : cameras)
+		{
+			const math::Vec3d& centre = c.referenceFromCamera.translation();
+			text += lain::string::format("; {} at ({:.4g}, {:.4g}, {:.4g}){} turned {:.3g} deg", c.camera.value, centre.x,
+										 centre.y, centre.z, metric ? " m" : "",
+										 math::degrees(detail::rotationBetween(math::RigidTransformd{}, c.referenceFromCamera)));
+		}
+		return text;
+	}
+
+	std::optional<math::RigidTransformd> Report::referenceFromCamera(const capture::CameraIdentity& camera) const
+	{
+		return transformOf(cameras, camera);
+	}
+
+	std::optional<RegisteredRig> Report::rig() const
+	{
+		if (status != RegistrationStatus::Succeeded || !reference)
+			return std::nullopt;
+		return RegisteredRig{*reference, scale, cameras};
 	}
 
 	std::string Report::toString() const

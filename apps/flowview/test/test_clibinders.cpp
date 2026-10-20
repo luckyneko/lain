@@ -5,9 +5,11 @@
 
 #include "clibinders.h"
 #include "graphio.h"
+#include "rigcompare.h" // rotationBetween
 
 #include <lain/camera/calibration/attempts.h>
 #include <lain/camera/serialize/cameramodel.h>
+#include <lain/camera/serialize/registeredrig.h>
 #include <lain/core/uri.h>
 #include <lain/flow/porttype.h>
 #include <lain/flow/porttyperegistry.h>
@@ -155,6 +157,49 @@ TEST_CASE("a camera model binds from a camera-model document, and a typo is refu
 	CHECK_FALSE(binders.bind(typeid(camera::CameraModel), typo.string()).has_value());
 
 	CHECK_FALSE(binders.bind(typeid(camera::CameraModel), (dir / "absent.json").string()).has_value());
+}
+
+TEST_CASE("a registered rig binds from a rig document, and a typo is refused", "[flowview][binder]")
+{
+	// What `run --rig rig.json` reads: a registration's rig output, written by the real json codec.
+	flowview::registerSceneSerialization(); // the json codec
+	const flowview::BoundaryBinders binders = builtIn();
+	const std::filesystem::path dir = lain::testing::scratchDir() / "rig-binder";
+	std::filesystem::create_directories(dir);
+
+	camera::registration::RegisteredRig rig;
+	rig.reference = camera::capture::CameraIdentity{"/rig/cam0"};
+	rig.scale = {camera::registration::Scale::Arbitrary, "the median landmark depth from /rig/cam0 is 1"};
+	rig.cameras = {{camera::capture::CameraIdentity{"/rig/cam0"}, math::RigidTransformd{}},
+				   {camera::capture::CameraIdentity{"/rig/cam1"},
+					math::RigidTransformd{math::angleAxis(0.25, math::Vec3d{0, 1, 0}), math::Vec3d{0.4, 0, 0.1}}}};
+	const std::filesystem::path file = dir / "rig.json";
+	REQUIRE(io::data::save(core::Uri::fromPath(file), camera::registration::registeredRigToValue(rig)));
+
+	const std::optional<flow::PortValue> bound = binders.bind(typeid(camera::registration::RegisteredRig), file.string());
+	REQUIRE(bound.has_value());
+	REQUIRE(bound->holds<camera::registration::RegisteredRig>());
+	const camera::registration::RegisteredRig& read = bound->get<camera::registration::RegisteredRig>();
+	CHECK(read.reference == rig.reference);
+	CHECK(read.scale.scale == rig.scale.scale);
+	REQUIRE(read.cameras.size() == 2);
+	CHECK(read.cameras[1].camera == rig.cameras[1].camera);
+	CHECK(read.cameras[1].referenceFromCamera.translation() == rig.cameras[1].referenceFromCamera.translation());
+	// To the last bit a renormalised rotation can move (RigidTransform normalises what it is built from).
+	CHECK(camera::testing::rotationBetween(read.cameras[1].referenceFromCamera, rig.cameras[1].referenceFromCamera) <= 1e-15);
+
+	// A part of a transform typed wrong. lain::data alone would read the translation as zero and say
+	// nothing; the rig reader names the key, and the binder refuses.
+	std::ifstream in(file);
+	std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+	const std::size_t at = text.rfind("\"translation\"");
+	REQUIRE(at != std::string::npos);
+	text.replace(at, 13, "\"translaton\"");
+	const std::filesystem::path typo = dir / "typo.json";
+	std::ofstream(typo) << text;
+	CHECK_FALSE(binders.bind(typeid(camera::registration::RegisteredRig), typo.string()).has_value());
+
+	CHECK_FALSE(binders.bind(typeid(camera::registration::RegisteredRig), (dir / "absent.json").string()).has_value());
 }
 
 TEST_CASE("a calibration method binds by name, however the name is spelled", "[flowview][binder]")

@@ -112,6 +112,7 @@ TEST_CASE("the camera kinds always load, and are on the menu exactly when a back
 		{camera::kCameraModelKey, opencv},
 		{camera::kRegisterCamerasKey, opencv && refiner},
 		{camera::kRegisterCamerasTargetlessKey, opencv && refiner},
+		{camera::kRegisteredRigKey, opencv && refiner},
 	};
 	const std::vector<std::string> kinds = camera::cameraNodeKeys();
 	CHECK(kinds.size() == expected.size());

@@ -1,7 +1,8 @@
 #include "clibinders.h"
 
-#include <lain/camera/calibration/attempts.h>  // calibration::Method, bound by name
-#include <lain/camera/serialize/cameramodel.h> // cameraModelFromValue — a model file's reader
+#include <lain/camera/calibration/attempts.h>	 // calibration::Method, bound by name
+#include <lain/camera/serialize/cameramodel.h>	 // cameraModelFromValue — a model file's reader
+#include <lain/camera/serialize/registeredrig.h> // registeredRigFromValue — a rig file's reader
 #include <lain/core/parse.h>
 #include <lain/core/uri.h>
 #include <lain/image/image.h>
@@ -200,6 +201,23 @@ namespace flowview
 		return pv;
 	}
 
+	// A registered rig binds by READING a rig document: what a registration's `run --rig rig.json` wrote.
+	// Strict, with its problems logged, as a camera model's is.
+	static std::optional<flow::PortValue> bindRegisteredRig(const std::string& s)
+	{
+		const std::optional<data::Value> document = io::data::load(s);
+		if (!document)
+			return std::nullopt;
+		camera::registration::RegisteredRigRead read = camera::registration::registeredRigFromValue(*document);
+		for (const std::string& problem : read.problems)
+			log::error("flowview: {}: {}", s, problem);
+		if (!read.rig)
+			return std::nullopt;
+		flow::PortValue pv;
+		pv.set<camera::registration::RegisteredRig>(std::move(*read.rig));
+		return pv;
+	}
+
 	// The entries of a folder, sorted by name, so element i is the same camera on every run, as
 	// listDir's are. Empty when the folder cannot be listed.
 	static std::vector<std::filesystem::path> sortedEntries(const std::string& folder, bool (*keep)(const std::filesystem::path&))
@@ -307,6 +325,7 @@ namespace flowview
 		binders.add(typeid(media::FrameSequence), &bindFrameSequence);
 		binders.add(typeid(media::FramePosition), &bindFramePosition);
 		binders.add(typeid(camera::CameraModel), &bindCameraModel);
+		binders.add(typeid(camera::registration::RegisteredRig), &bindRegisteredRig);
 		binders.add(typeid(std::vector<media::FrameSequence>), &bindFootageList);
 		binders.add(typeid(std::vector<camera::CameraModel>), &bindModelList);
 		addEnum<camera::calibration::Method>(binders);

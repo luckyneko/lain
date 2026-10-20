@@ -9230,7 +9230,8 @@ each package in a session of its own (2026-10-20).
     takes an interim fix, item 4 below.
 
 **P1 — make M9's outputs usable:**
-1. **A registration's result cannot leave the process.**
+1. **A registration's result cannot leave the process.** *(**Built 2026-10-20**: a registered rig, its
+   node and its document; see *After slice 4: the registered rig*, below.)*
    - The per-camera `referenceFromCamera` transforms live only in `registration::Report`, and
      `Report::toString()` omits them.
    - `flowview run` writes a camera model as a document and every other output as its described text,
@@ -9287,6 +9288,108 @@ each package in a session of its own (2026-10-20).
 
 **Suggested bar for calling M9 complete:** P0 to P3 and the real-camera capture. P4 and the items
 waiting on real footage may carry over.
+
+### After slice 4: the registered rig (2026-10-20)
+
+**Found by the 2026-10-20 review, and recorded nowhere until now:** a registration's deliverable could
+not leave the process. `Report` held every camera's `referenceFromCamera`, but `toString()` printed
+none of them. `run` wrote a report output as that one line. `lain::camera::serialize` had no document
+for transforms, and no node took them out of a report, the way `cameraModel` takes a model out of a
+calibration report. The transforms were built, linked and unreachable: the shape CLAUDE.md warns
+about.
+
+**Decided with the repo owner**, each the recommended option:
+- **Calibration's shape.** A value, a node, and a document for the value. The report stays its one
+  line. Writing the report as a document was refused: it would be the only report written as one, and
+  `--report report.txt` would stop working, since `io::data` picks a format by the extension.
+- **The rig carries the reference and the scale status**, which a reader needs to know what the
+  translations are in, and no verdict or evidence, as a camera-model document carries none.
+- **A binder now.** The strict reader has a production caller, and the document works both ways.
+  Nothing consumes a rig yet, so only a pass-through graph can use a bound one (Outstanding index).
+- **`Report::toString()` is unchanged.** The rig's own `toString()` lists each camera's position and
+  turn, so a rig port describes them.
+
+**Built:**
+- **`registration::RegisteredRig`** (`report.h`, CONTEXT.md *Registered rig*): the reference, the
+  scale status and the cameras, with `referenceFromCamera(camera)` and `toString()`.
+  **`Report::rig()`** is set only when the registration succeeded, whatever its verdict. A
+  registration that fails after choosing its reference still names that reference, so the check is on
+  the status, and a test pins it.
+- **The rig document** (`serialize/registeredrig.h`, CONTEXT.md *Rig document*), version 1. Rotation
+  is the unit quaternion `RigidTransform` holds, `{w, x, y, z}`, since a matrix would need
+  `fromMatrix`'s tolerance on the way back. The camera frame is stated in CONTEXT.md, not written per
+  document.
+  - It is read as strictly as a camera model: an unknown or missing key, an unknown scale or a value
+    of the wrong kind is a problem named by its path.
+  - Then it is read as a rig: a camera at least, none twice, the reference among them with the
+    identity transform, and every rotation a unit quaternion to 1e-6. A rotation that is not one is
+    refused, not normalised, as `fromMatrix` refuses a matrix that is not rigid. A zero quaternion is
+    caught before `RigidTransform`'s assert can fire.
+  - The cameras are read in the rig's order, whatever order the document lists them in.
+- **Shared version handling.** The camera-model reader's version handling moves to a private
+  `serialize/src/versioned.{h,cpp}`, so the two documents check a version one way, with the same
+  words.
+- **`registeredRig`** (`RegisteredRigNode`): report in, rig out, the output cleared with no rig.
+  - Registered through `kKinds` and offered when either registration can run. Port type
+    `RegisteredRig`.
+  - Coloured with the camera kinds, its port deep gold, in a block of its own so the other colour lines
+    keep their alignment.
+  - Added to the catalog census and both kinds-staging tests. It has no params, so it needs no codec.
+- **flowview:** `run` writes a rig output as a rig document, as it writes a camera model. `--rig`
+  binds one back, logging the reader's problems.
+
+**Found while building: a rotation read back is the one written to its last bit.** `RigidTransform`
+renormalises the quaternion it is built from, and normalising a unit quaternion again is not exact in
+floating point. Translations, identities and scale round-trip exactly. A rotation differs by at most
+one ulp, 2.2e-16 in `w` through the real binary. So the round-trip tests hold rotations to 1e-15
+rather than byte for byte. Making the renormalisation idempotent would move every composition in the
+tree, a change to `lain::math` with no caller asking for it.
+
+**Tests:**
+- `test_serialize`: the round trip, an arbitrary scale by name, and cameras out of order. The strict
+  reader names a misspelt `translation`, a lower-case `metric`, a string for a number, a non-unit and
+  a zero rotation, a reference that is not a camera or not the identity, a camera listed twice or
+  nameless, no cameras, and no or a newer version.
+- `test_registrationcontracts`: `rig()` and its `toString()`.
+- `test_nodes`: the node, run and then failed.
+- `test_clibinders`: the binder, with a typo refused.
+- **The cli vertical:** both registrations now write `--rig` through `runGraph`, and the production
+  reader reads it back.
+  - Each rig is held to the poses its footage was drawn from. The board's, measured: 0.07% in scale,
+    0.2 mrad and 0.05 mm out. The targetless rig, after a scale fit, over five runs: 0.18 to
+    0.51 mrad and 0.7 to 1.7 mm.
+  - A rig file binds back into a `rig -> copy` document.
+  - With no backend nothing is written, since a failed registration has no rig.
+
+**Sabotage, each caught as predicted:**
+- the writer swapping x and y;
+- the reader skipping its shape check (three sections);
+- the reader skipping the unit check (zero rotation aborts);
+- the reader skipping the reference and duplicate checks;
+- `rig()` without its status check;
+- the node setting an empty rig instead of clearing;
+- `run` without its rig branch;
+- `rig()` handing out `cameraFromReference` (both verticals, about 500 mrad);
+- the binder unregistered (its case and the bind-back);
+- the kind offered with calibration (the board kinds staging);
+- the kind's row dropped (the catalog census).
+
+Two sabotages first failed to build under `-Werror` (an unused function, a tautology), so the old
+binaries answered. Each was redone to build before it counted.
+
+**Driven through the real binary**, Debug, on the verticals' footage written into the scratchpad by an
+uncommitted probe:
+- `flowview run --graph register.json --footage rig --models models --report report.txt --rig rig.json`
+  writes the three transforms, cam1 turned -0.25 rad about y and 104 mm across, as drawn. The
+  targetless document does the same at arbitrary scale.
+- `list` names `--rig : lain::camera::registration::RegisteredRig`.
+- A copy through `--rig` keeps every translation exactly.
+- A misspelt `translaton` names each path and exits 1.
+
+**Verification:** `ctest -j8` **1322/1322** Debug and **1330/1330** Release with video, camera and
+Ceres on, and **1188/1188** Debug and **1196/1196** Release with all three off (+4 each). Debug lists
+8 fewer cases than Release in either configuration. Warning-clean, format-check clean. **gui-mode NOT eyeballed**: the node on the canvas and its port's
+description are added to the eyeball owed for both registration nodes (Outstanding index, item 3).
 
 ### Not in this milestone
 
@@ -14448,9 +14551,9 @@ row here**. A row is cheap to delete and expensive to leave.
      the fixes ahead of 5 and of 9c. The separate feature-extraction node slice 3 deferred to it stays
      deferred, with its trigger restated (slice 4's plan).
      **Build work the 2026-10-20 review found** (M9's *The 2026-10-20 review*, by priority):
-     - **P1, in progress in sessions of their own:** a registration's result leaving the process (a
-       document for the transforms, written by `run`, and a node that takes them out of a report); the
-       gui loading and saving camera values.
+     - **P1:** a registration's result leaving the process is **built** (*After slice 4: the
+       registered rig*); the gui loading and saving camera values is in progress in a session of its
+       own.
      - **P2:** a camera's identity independent of where its footage sits, by the interim cli fix (the
        held-out changes are in item 2).
      - **P3:** a footage generator; example documents for board calibration, `detectBoard` and both
@@ -14515,7 +14618,8 @@ row here**. A row is cheap to delete and expensive to leave.
        throwing*): the canvas mark and the Issues row, on `render-board.json` in a build without a
        renderer.
      - **gui-mode eyeballs** of `registerCameras` and `registerCamerasTargetless`, the `matchSearch`
-       combo included, on a Metal session.
+       combo included, and of `registeredRig` after either, its port describing the transforms, on a
+       Metal session.
      - **gui-mode eyeball of slice 4's fallback** on a Metal session: `calibrate-fallback.json` opened,
        the method picked in the Interface pane (nothing runs until one is), footage bound, and the
        attempts and the model read; the `calibrateCameraTargetless`, `calibrationMethod`,
@@ -14548,6 +14652,10 @@ row here**. A row is cheap to delete and expensive to leave.
        ADR-0016, amended).
      - **A consumer for a board's measured-length bounds**, which are stored, validated and serialised
        but read by nothing; likely a registration's metric-scale uncertainty (the same review).
+     - **A node that consumes a registered rig.** A rig document binds back (`--rig`), but nothing
+       takes one, so a bound rig can only be passed through. Trigger: the first consumer, such as
+       world-frame alignment (excluded from M9) or a registration seeded from a prior rig (*After slice
+       4: the registered rig*).
   *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),

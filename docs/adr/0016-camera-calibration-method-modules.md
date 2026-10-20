@@ -20,6 +20,14 @@ Registration follows the same optional-method structure as calibration:
 contracts, while `lain::camera::registration::{board,targetless}` own the optional implementations.
 Both return the same registration report; method selection and ordered, short-circuit fallback remain
 graph orchestration concerns.
+*(Amended 2026-10-20: a registration's result leaves the process as a **registered rig**, taken the
+way a calibration's model is. `Report::rig()` is every camera's `referenceFromCamera`, the reference
+and the scale status, set only when the registration succeeded, whatever its verdict. The
+`registeredRig` node passes it on and clears its output when there is none. The **rig document** is
+`lain::camera::serialize`'s, versioned and read strictly, written by flowview's `run` for a rig output
+and bound back by `--rig`. The report itself stays a one-line summary. Until then the transforms
+reached no file at all, since `run` writes a report as that line. Decided with the repo owner; see
+WORK.md's *After slice 4: the registered rig* under Milestone 9.)*
 
 ## Consequences
 
