@@ -1400,6 +1400,23 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-20 — M9 slice 4, sub-slice 11a: the calibration nodes share a base
+
+The first of sub-slice 11's three commits, with no change in behaviour. `ctest` **1292/1292** Debug and
+**1300/1300** Release with video, camera and Ceres on, **1166/1166** with all three off, each unchanged;
+warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 11a built* under M9 slice 4.
+
+- **`CalibrationNode`**, as `RigRegistrationNode` is for registration: `footage` as input 0, then
+  through `declareRequest()` the optional `imported` model and the seven settings every calibration
+  takes, read back by `request(evaluation)`. `calibrateCamera` is rebased on it and keeps its inputs;
+  `maximumViews`, board calibration's alone, moves from the fourth Inspector row to the eighth.
+- **Two private helpers with two callers each**: `detail::identityOf` (a camera named by its footage's
+  first source, which `rig()` spelled inline) and `detail::extractionSettings` (the five extraction
+  settings both targetless nodes expose). `registerCamerasTargetless` and `rig()` are rebased on them.
+- **Sabotage, caught as predicted:** reading `heldOutFraction` without `detail::decimal` fails the
+  existing settings case, on its defaults (0.2 is not exact in a float). Its every-parameter section
+  alone would not see it, since 0.25 is.
+
 ### Update 2026-10-19 — M9 slice 4, sub-slice 11 planned: attempts and the flow nodes (nothing built yet)
 
 Sub-slice 11 is planned as **three commits, 11a to 11c**, in WORK.md's *Sub-slice 11 planned* under

@@ -1,6 +1,7 @@
 #include "lain/camera/flow/rigregistrationnode.h"
 
 #include "decimal.h"
+#include "identity.h"
 
 #include <lain/media/framesequence.h>
 
@@ -70,9 +71,9 @@ namespace lain::camera
 		std::vector<capture::CameraFootage> byPosition;
 		for (std::size_t c = 0; c < footage.size(); ++c)
 		{
-			const std::string source = footage[c].size() > 0 ? footage[c].frame(0).source.toString() : std::string{};
-			rig.cameras.push_back({capture::CameraIdentity{source}, models[c], footage[c]});
-			byPosition.push_back({capture::CameraIdentity{source}, footage[c]});
+			const capture::CameraIdentity camera = detail::identityOf(footage[c]);
+			rig.cameras.push_back({camera, models[c], footage[c]});
+			byPosition.push_back({camera, footage[c]});
 		}
 		capture::GroupingResult grouping = capture::groupsByPosition(byPosition);
 		if (!grouping.diagnostics.empty())

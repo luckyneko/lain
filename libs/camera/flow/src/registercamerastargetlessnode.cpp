@@ -1,6 +1,6 @@
 #include "lain/camera/flow/registercamerastargetlessnode.h"
 
-#include "decimal.h"
+#include "extraction.h"
 
 #include <lain/camera/registration/targetless.h>
 
@@ -34,21 +34,15 @@ namespace lain::camera
 	feature::ExtractionRequest RegisterCamerasTargetlessNode::extraction() const
 	{
 		feature::ExtractionRequest request;
-		const int longestSide = param(m_longestSide).get<int>();
-		if (longestSide > 0)
-			request.scale = LongestSide{std::uint32_t(longestSide)};
-		else
-			request.scale = NativeScale{};
+		detail::extractionSettings(request, param(m_longestSide).get<int>(), param(m_featureCap).get<int>(),
+								   param(m_matchSearch).get<feature::MatchSearch>(), param(m_matchRatio).get<float>(),
+								   param(m_minimumPairInliers).get<int>());
 		request.samples = std::uint32_t(std::max(0, param(m_sampledGroups).get<int>()));
-		request.featureCap = std::uint32_t(std::max(0, param(m_featureCap).get<int>()));
-		request.matching.search = param(m_matchSearch).get<feature::MatchSearch>();
-		request.matching.ratio = detail::decimal(param(m_matchRatio).get<float>());
 		// Milliradians as the decimal typed, to a millionth of one, in radians: 4 is exactly 0.004.
 		// A whole number of nanoradians over 1e9 is the double nearest that decimal. Dividing
 		// detail::decimal's answer by 1000 rounds twice, and misses it for a quarter of the values
 		// (50,390 of the 200,000 from 0.000001 to 0.2 mrad, measured).
 		request.geometry.angle = std::round(double(param(m_inlierAngleMrad).get<float>()) * 1e6) / 1e9;
-		request.minimumPairInliers = std::uint32_t(std::max(0, param(m_minimumPairInliers).get<int>()));
 		// A value the method cannot use is refused there, with the reason (an ExtractionFailed report),
 		// rather than quietly corrected here.
 		return request;

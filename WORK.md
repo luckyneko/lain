@@ -5549,7 +5549,7 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    11. **Attempts, and the flow nodes.** *(Planned in detail 2026-10-19 as three commits, 11a to 11c;
        see below. The report pins are dynamic, as Merge's branches are; `Attempts` derives the accepted
        one rather than storing its position; and the `calibration::Method` codec and editor move here
-       from item 12, since flowview's codec census sees every new param.)*
+       from item 12, since flowview's codec census sees every new param. 11a built 2026-10-20.)*
        - `calibration::Method {Board, Targetless, BoardThenTargetless}`, `calibration::Attempts` (the
          reports in priority order, and the accepted one's position), and `calibration::accepts`.
        - `CalibrationNode`, the settings both method nodes share, as `RigRegistrationNode` is for
@@ -8857,6 +8857,28 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    with all three off; warning-clean; format-check clean; each sabotage predicted, built so that it
    compiles, and restored. A CI run follows 11c. gui-mode is not eyeballed in sub-slice 11; it is owed
    after item 12.
+
+   **Sub-slice 11a built (2026-10-20): `CalibrationNode`, with no change in behaviour.** No test changed,
+   so the existing suite is the regression test: `ctest` **1292/1292** Debug and **1300/1300** Release
+   with video, camera and Ceres on, **1166/1166** with all three off, each unchanged; warning-clean,
+   format-check clean.
+   - **`CalibrationNode`** (`calibrationnode.{h,cpp}`) declares `footage` as input 0, and through
+     `declareRequest()` the Optional `imported` input and the seven params every calibration takes;
+     `request(evaluation)` reads them back by the rules the node already had, and `footage(evaluation)`
+     keeps the port private. `maximumViews` is not among them: a targetless calibration selects no views.
+   - **`calibrateCamera` keeps its inputs** (footage 0, board 1, imported 2). Its own params follow the
+     shared ones, so `maximumViews` moves from the fourth Inspector row to the eighth. Params are saved
+     by name, and no committed document, golden or test reads their order.
+   - **Two private helpers, each with two callers now:** `detail::identityOf(footage)` (`src/identity.h`),
+     a camera named by its footage's first source, which `rig()` spelled inline; and
+     `detail::extractionSettings` (`src/extraction.h`), which writes the five `feature::ExtractionSettings`
+     fields both targetless nodes expose into the request it is handed. It writes into a reference
+     because both requests derive from that struct, and a returned value would be assigned to a base
+     slice.
+   - **Sabotage, caught as predicted:** the base reading `heldOutFraction` without `detail::decimal`
+     fails *calibrateCamera hands its settings to the method*, on its defaults section (0.2 is
+     0.200000003 as a float). Its every-parameter section alone would not see it: it sets 0.25, which a
+     float holds exactly.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -14019,7 +14041,7 @@ row here**. A row is cheap to delete and expensive to leave.
        sub-slices. Built: 0 (the plan), 1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b
        and 6c), 7 (as 7a, 7b and 7c), 8 and 9 (as 9a, 9b and 9c), with the fixes ahead of 5 and of
        9c, and 10 (as 10a to 10e). Sub-slice 11 is planned (2026-10-19) as three commits, 11a to
-       11c, and item 12 follows it. The separate
+       11c, of which 11a is built (2026-10-20); item 12 follows it. The separate
        feature-extraction node slice 3 deferred to it stays deferred, with its trigger restated
        (slice 4's plan).
   2. **Owed by the repo owner.**

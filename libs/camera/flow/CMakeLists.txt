@@ -16,6 +16,7 @@ add_library(camera-flow STATIC
 	src/boardspecificationnode.cpp
 	src/renderboardnode.cpp
 	src/detectboardnode.cpp
+	src/calibrationnode.cpp
 	src/calibratecameranode.cpp
 	src/cameramodelnode.cpp
 	src/rigregistrationnode.cpp
