@@ -3375,7 +3375,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
        longer, which is why they are off.
      - `libceres.a` is **7.3 MB** in Release (410 MB in Debug, nearly all of it debug info), and the
        test executable 4.1 MB.
-     - flowview grows by 88 bytes, since nothing references Ceres yet.
+     - flowview grows by 88 bytes, since nothing references Ceres yet. *(Measured again on
+       2026-10-21, once flowview linked it in earnest: Ceres adds 2.5 MB to it; see M9's *A no-refiner
+       CI leg, and the footprint measured again*.)*
      - A Ceres-off configure fetches neither library: CMake reports
        `FETCHCONTENT_SOURCE_DIR_CERES` as unused.
    - `ctest -j4` **1055/1055** Debug and **1063/1063** Release with video, camera and Ceres on (+5
@@ -9288,10 +9290,11 @@ each package in a session of its own (2026-10-20).
 **P4 — cheap, any time:**
 
 8. **A CI leg with OpenCV on and Ceres off.** One `camera` field drives both options, so that build
-   (the one where targetless methods report `NoRefiner`) has been checked locally only.
+   (the one where targetless methods report `NoRefiner`) has been checked locally only. *(**Built
+   2026-10-21**: see *A no-refiner CI leg, and the footprint measured again*, below.)*
 9. **The dependency footprint, measured again.** The last record says "flowview grows by 88 bytes,
    since nothing references Ceres yet" (slice 2, sub-slice 1). flowview now links Ceres and OpenCV in
-   earnest.
+   earnest. *(**Measured 2026-10-21**: the same section, below.)*
 
 **Suggested bar for calling M9 complete:** P0 to P3 and the real-camera capture. P4 and the items
 waiting on real footage may carry over.
@@ -9688,6 +9691,43 @@ method, and a test of calibrating every camera of a rig then registering it with
   register vertical and the composition vertical. It would have passed with one shared pinhole.
 - `ctest -j8` **1342/1342** Release with video, camera and Ceres on (+1); warning-clean, format-check
   clean. Not run: the builds with video, camera and Ceres off.
+
+### A no-refiner CI leg, and the footprint measured again (built 2026-10-21)
+
+The review's P4 items 8 and 9.
+
+**The CI leg.** CI's `camera` field drove both `LAIN_CAMERA_OPENCV` and `LAIN_CAMERA_CERES`, so no leg
+built OpenCV without Ceres. That is a build which can detect, calibrate by board and extract features,
+but refines nothing, and every camera test has a branch for it. Only a local build had ever run one.
+- **A `ceres` field** joins the matrix, stated on every leg like `video` and `camera`, and in the
+  cache key. It follows `camera` everywhere but on the new **Linux Release (no refiner)** leg: video
+  and OpenCV on, Ceres off. It skips Ceres' source build, so it should be cheaper than the full Linux
+  leg.
+- **The leg found a bug at once, run locally before pushing.** The composition vertical drew 2
+  frames a camera whenever registration could not run, so without Ceres every calibration failed for
+  lack of views, the gathered models were cleared, and nothing was written, where the test expected
+  `Failed: NoRefiner`. It now draws full footage wherever detection runs: the calibrations need no
+  refiner, so they run, and the registration reports what it lacks.
+- **All three configurations green on macOS arm64, Release:** everything on 1342/1342, OpenCV without
+  Ceres 1283/1283, everything off 1208/1208, the last fetching no OpenCV, FFmpeg, Ceres or Eigen.
+  CI's first run of the new leg is owed (Outstanding index, item 3).
+
+**The footprint, macOS arm64, Release (AppleClang, 2026-10-21).** The last record, "flowview grows by
+88 bytes", dates from before anything referenced Ceres.
+
+| Build | `flowview` | stripped (`strip -x`) |
+|---|---|---|
+| everything off | 6.46 MB | 5.02 MB |
+| video and OpenCV, no Ceres | 6.64 MB | 5.14 MB |
+| everything on | 9.19 MB | 6.75 MB |
+
+- **Ceres adds 2.55 MB to flowview** (1.61 MB stripped), linked statically: `libceres.a` is 6.0 MB.
+- **FFmpeg and OpenCV add 0.18 MB together**, since flowview links them as shared libraries. Beside
+  it they weigh 20.0 MB (FFmpeg) and 10.7 MB (OpenCV's six libraries: imgproc 3.5, core 3.1, calib3d
+  1.8, objdetect 1.1, features2d 0.7, flann 0.5).
+- **Configure and build time** were measured when each landed and are not repeated here: OpenCV and
+  FFmpeg are one fetch each, and Ceres' source build took 1m13s wall in Debug on four Linux cores (slice
+  2, sub-slice 1).
 
 ### Not in this milestone
 
@@ -14857,7 +14897,9 @@ row here**. A row is cheap to delete and expensive to leave.
        footage sits*).
      - **P3, built 2026-10-21 but for its gui session:** the footage generator, the camera examples and
        the composition test (*Camera footage, examples and the composition*). The gui session is item 3.
-     - **P4:** a CI leg with OpenCV on and Ceres off; the dependency footprint measured again.
+     - **P4, built 2026-10-21:** a CI leg with OpenCV on and Ceres off, and the dependency footprint
+       measured again (*A no-refiner CI leg, and the footprint measured again*). Its first CI run is
+       owed (item 3).
   2. **Owed by the repo owner.**
      - **The real-camera capture** for slice 1, sub-slice 8, guided by
        `plugins/camera/test/fixtures/README.md`. It is all that is left of slice 1.
@@ -14911,6 +14953,8 @@ row here**. A row is cheap to delete and expensive to leave.
        `nextAttempt` and `calibrationAttempts` nodes on the canvas, their "+" report pins included.
        `camera-footage` draws `board/footage` for the board's attempt and `moving/footage` for the
        targetless one.
+     - **CI's first run of the no-refiner leg**, Linux Release with OpenCV and no Ceres (*A no-refiner
+       CI leg, and the footprint measured again*). Its configuration was run locally on macOS only.
      - **gui-mode eyeball of the camera examples** (*Camera footage, examples and the composition*):
        `calibrate`, `register`, `register-targetless` and `calibrate-and-register` opened, their footage
        bound from `build/camera-footage`, and the map's elements stepped through in

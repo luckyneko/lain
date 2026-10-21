@@ -1400,6 +1400,25 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-21 — M9: a no-refiner CI leg, and the footprint measured again (P4)
+
+The review's P4 items 8 and 9. Full notes in WORK.md's *A no-refiner CI leg, and the footprint measured
+again*, under M9.
+
+- **CI gains a `ceres` field and a Linux Release (no refiner) leg**: video and OpenCV on, Ceres off. The
+  `camera` field used to drive both options, so no leg built OpenCV without Ceres. CI's first run of
+  the leg is owed.
+- **Run locally first, the leg found a bug in P3's composition vertical.** It drew 2 frames a camera
+  whenever registration could not run, so without Ceres every calibration failed and nothing was
+  written, where `Failed: NoRefiner` was expected. It now draws full footage wherever detection runs.
+- **Three configurations green on macOS arm64, Release:** everything on 1342/1342, OpenCV without Ceres
+  1283/1283, everything off 1208/1208. The last fetches no OpenCV, FFmpeg, Ceres or Eigen.
+- **The footprint, macOS arm64, Release:** `flowview` is 6.46 MB with everything off, 6.64 MB with
+  video and OpenCV, and 9.19 MB with Ceres too.
+  - Ceres adds 2.55 MB, statically; `libceres.a` is 6.0 MB.
+  - FFmpeg's 20.0 MB and OpenCV's 10.7 MB are shared libraries beside it.
+  - The last record, "flowview grows by 88 bytes", predated anything referencing Ceres.
+
 ### Update 2026-10-21 — M9: camera footage, examples and the composition (P3, but for its gui session)
 
 The review's P3 items 5 and 6. `ctest -j8` **1342/1342** Release with video, camera and Ceres on (+1);

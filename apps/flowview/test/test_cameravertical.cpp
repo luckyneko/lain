@@ -564,7 +564,9 @@ TEST_CASE("run calibrates every camera of a rig and registers it with those mode
 	const fs::path dir = lain::testing::scratchDir() / "calibrate-and-register";
 	fs::remove_all(dir);
 	fs::create_directories(dir);
-	cameraFootage::writeBoardRig(dir, haveRegistrationBackends() ? 24 : 2, camera::board::canRender());
+	// Full footage wherever the cameras can be calibrated, a refiner or not: without one the
+	// calibrations still run, and only the registration says what it lacks.
+	cameraFootage::writeBoardRig(dir, camera::board::canDetect() ? 24 : 2, camera::board::canRender());
 
 	core::Factory<flow::Node> factory;
 	flowview::registerExampleNodes(factory, 8);
@@ -589,7 +591,9 @@ TEST_CASE("run calibrates every camera of a rig and registers it with those mode
 	INFO("report: " << report);
 	if (!haveRegistrationBackends())
 	{
-		// The calibrations need no refiner, so they run; the registration then says what it lacks.
+		// The calibrations need no refiner, so they run and are gathered; the registration then says
+		// what it lacks. (Found by the no-refiner build on 2026-10-21: drawn with 2 frames a camera, as
+		// it first was, every calibration failed and nothing was written.)
 		CHECK(report.rfind("Failed: NoRefiner", 0) == 0);
 		CHECK_FALSE(fs::exists(rigFile));
 		return;
