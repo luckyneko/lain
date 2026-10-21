@@ -3,10 +3,13 @@
 #include "graphio.h" // saveGraph / sceneCodecs / templateResolver: the production save path
 
 #include <lain/camera/board/pattern.h>
+#include <lain/camera/board/specification.h>
 #include <lain/camera/calibration/attempts.h>
+#include <lain/camera/calibration/report.h>
 #include <lain/camera/cameramodel.h>
 #include <lain/camera/distortion.h>
 #include <lain/camera/flow/register.h>
+#include <lain/camera/registration/report.h>
 #include <lain/core/uri.h>
 #include <lain/data/value.h>
 #include <lain/flow/dynamicports.h>
@@ -865,6 +868,17 @@ namespace flowview::examples
 		return doc;
 	}
 
+	// A 7 x 5 board of 24 mm squares, as every camera example's footage shows (camerafootage.h): real
+	// footage means changing it to the board that was filmed.
+	static NodeId boardSpecification(Level& at, int col, int row)
+	{
+		const NodeId spec = at.add(camera::kBoardSpecificationKey, col, row);
+		at.set<int>(spec, "squaresX", 7);
+		at.set<int>(spec, "squaresY", 5);
+		at.set<float>(spec, "squareLengthMm", 24.0f);
+		return spec;
+	}
+
 	// The calibration fallback (ADR-0016): board calibration first, and targetless calibration only
 	// when the board's attempt is not accepted. Each method is its own node behind a Gate on the
 	// footage, so a method that is not needed never runs. The caller binds the footage and the method
@@ -882,10 +896,7 @@ namespace flowview::examples
 
 		const NodeId in = root.input(0, 1);
 		const NodeId method = root.add(camera::kCalibrationMethodKey, 1, 0);
-		const NodeId spec = root.add(camera::kBoardSpecificationKey, 1, 2);
-		root.set<int>(spec, "squaresX", 7);
-		root.set<int>(spec, "squaresY", 5);
-		root.set<float>(spec, "squareLengthMm", 24.0f);
+		const NodeId spec = boardSpecification(root, 1, 2);
 
 		const NodeId boardGate = root.add("gate", 2, 1);
 		root.retype(boardGate, flow::GateNode::kValuePayload, flow::portType<media::FrameSequence>());
@@ -927,6 +938,131 @@ namespace flowview::examples
 		return doc;
 	}
 
+	// Board calibration: footage -> calibrateCamera -> the report, and -> cameraModel -> the model. It
+	// asks for a pinhole, which the footage's camera is; asked to fit distortion to a lens with none, the
+	// extra freedom trades against the principal point and the verdict rightly withholds Ready. Real
+	// footage means asking for its lens's model.
+	static Document calibrate(const Context& ctx)
+	{
+		Document doc;
+		Level root{ctx, doc.graph, doc.layout};
+		root.inputPin<media::FrameSequence>("footage");
+		root.outputPin<camera::calibration::Report>("report");
+		root.outputPin<camera::CameraModel>("model");
+		const NodeId in = root.input(0, 0);
+		const NodeId spec = boardSpecification(root, 0, 1);
+		const NodeId calibrateCamera = root.add(camera::kCalibrateCameraKey, 1, 0);
+		root.set(calibrateCamera, "model", camera::DistortionModel::None);
+		const NodeId model = root.add(camera::kCameraModelKey, 2, 1);
+		const NodeId out = root.output(3, 0);
+		root.wire(in, "footage", calibrateCamera, "footage");
+		root.wire(spec, "board", calibrateCamera, "board");
+		root.wire(calibrateCamera, "report", model, "report");
+		root.wire(calibrateCamera, "report", out, "report");
+		root.wire(model, "model", out, "model");
+		return doc;
+	}
+
+	// Fixed-camera board registration: a rig's footage and models, two collections paired by position
+	// (a folder of per-camera folders, and a folder of camera-model documents named alike) ->
+	// registerCameras -> the report, and -> registeredRig -> the rig.
+	static Document registerRig(const Context& ctx)
+	{
+		Document doc;
+		Level root{ctx, doc.graph, doc.layout};
+		root.inputPin<std::vector<media::FrameSequence>>("footage");
+		root.inputPin<std::vector<camera::CameraModel>>("models");
+		root.outputPin<camera::registration::Report>("report");
+		root.outputPin<camera::registration::RegisteredRig>("rig");
+		const NodeId in = root.input(0, 0);
+		const NodeId spec = boardSpecification(root, 0, 1);
+		const NodeId registerCameras = root.add(camera::kRegisterCamerasKey, 1, 0);
+		const NodeId rig = root.add(camera::kRegisteredRigKey, 2, 1);
+		const NodeId out = root.output(3, 0);
+		root.wire(in, "footage", registerCameras, "footage");
+		root.wire(in, "models", registerCameras, "models");
+		root.wire(spec, "board", registerCameras, "board");
+		root.wire(registerCameras, "report", rig, "report");
+		root.wire(registerCameras, "report", out, "report");
+		root.wire(rig, "rig", out, "rig");
+		return doc;
+	}
+
+	// Fixed-camera targetless registration: the same rig inputs and outputs as register, and no board,
+	// the cameras placed from the scene they share.
+	static Document registerTargetless(const Context& ctx)
+	{
+		Document doc;
+		Level root{ctx, doc.graph, doc.layout};
+		root.inputPin<std::vector<media::FrameSequence>>("footage");
+		root.inputPin<std::vector<camera::CameraModel>>("models");
+		root.outputPin<camera::registration::Report>("report");
+		root.outputPin<camera::registration::RegisteredRig>("rig");
+		const NodeId in = root.input(0, 0);
+		const NodeId registerCameras = root.add(camera::kRegisterCamerasTargetlessKey, 1, 0);
+		const NodeId rig = root.add(camera::kRegisteredRigKey, 2, 1);
+		const NodeId out = root.output(3, 0);
+		root.wire(in, "footage", registerCameras, "footage");
+		root.wire(in, "models", registerCameras, "models");
+		root.wire(registerCameras, "report", rig, "report");
+		root.wire(registerCameras, "report", out, "report");
+		root.wire(rig, "rig", out, "rig");
+		return doc;
+	}
+
+	// Calibration preflight and registration in one graph: each camera of the rig calibrated from its
+	// own footage through a map (the footage split across the elements, the board broadcast to every
+	// one), and the models it gathers, one per camera in footage order, registering the rig by the same
+	// board. A camera whose calibration fails leaves a hole, which clears the models (ADR-0014) and
+	// suppresses the registration rather than registering with a camera missing.
+	static Document calibrateAndRegister(const Context& ctx)
+	{
+		Document doc;
+		Level root{ctx, doc.graph, doc.layout};
+		root.inputPin<std::vector<media::FrameSequence>>("footage");
+		root.outputPin<camera::registration::Report>("report");
+		root.outputPin<camera::registration::RegisteredRig>("rig");
+		const NodeId in = root.input(0, 0);
+		const NodeId spec = boardSpecification(root, 0, 1);
+
+		const NodeId map = root.add("map", 1, 0);
+		{
+			Level inner = root.interior(map);
+			inner.inputPin<media::FrameSequence>("footage");
+			inner.inputPin<camera::board::Specification>("board");
+			// BROADCAST: one board to every camera. Declared by mirroring the pin un-lifted before the
+			// sync, which leaves an already-mirrored pin alone; a board has no list form anyway.
+			auto& node = static_cast<flow::MapNode&>(root.graph().node(map));
+			const Port& board = inner.port(inner.graph().boundaryInputNode().id(), Port::Direction::Output, "board");
+			if (node.exposeBroadcast(Port::Direction::Input, board) == PortId{})
+				fail("could not broadcast the board");
+			inner.outputPin<camera::CameraModel>("model");
+			const NodeId innerIn = inner.input(0, 0);
+			const NodeId calibrateCamera = inner.add(camera::kCalibrateCameraKey, 1, 0);
+			inner.set(calibrateCamera, "model", camera::DistortionModel::None);
+			const NodeId model = inner.add(camera::kCameraModelKey, 2, 0);
+			const NodeId innerOut = inner.output(3, 0);
+			inner.wire(innerIn, "footage", calibrateCamera, "footage");
+			inner.wire(innerIn, "board", calibrateCamera, "board");
+			inner.wire(calibrateCamera, "report", model, "report");
+			inner.wire(model, "model", innerOut, "model");
+		}
+		root.sync(map);
+
+		const NodeId registerCameras = root.add(camera::kRegisterCamerasKey, 2, 0);
+		const NodeId rig = root.add(camera::kRegisteredRigKey, 3, 1);
+		const NodeId out = root.output(4, 0);
+		root.wire(in, "footage", map, "footage");
+		root.wire(spec, "board", map, "board");
+		root.wire(in, "footage", registerCameras, "footage");
+		root.wire(map, "model", registerCameras, "models");
+		root.wire(spec, "board", registerCameras, "board");
+		root.wire(registerCameras, "report", rig, "report");
+		root.wire(registerCameras, "report", out, "report");
+		root.wire(rig, "rig", out, "rig");
+		return doc;
+	}
+
 	const std::vector<Example>& catalog()
 	{
 		static const std::vector<Example> examples = {
@@ -947,7 +1083,11 @@ namespace flowview::examples
 			{"video", "data/shot.mp4 as a sequence, and its frame at position 12", true, "", &video},
 			{"bagel", "an inline group holding a map, whose elements run a linked template and a loop", false, "", &bagel},
 			{"render-board", "a ChArUco board to print for a real-camera fixture: 9 x 6 squares of 30 mm", false, "", &renderBoard, true},
+			{"calibrate", "board calibration of one camera's footage: its report and its model (bind --footage)", false, "", &calibrate, true, true},
 			{"calibrate-fallback", "board calibration, then targetless when the board's attempt is not accepted (bind --footage and --method)", false, "", &calibrateFallback, true, true},
+			{"register", "a rig registered by a board: its report and its rig (bind --footage and --models, two folders)", false, "", &registerRig, true, true},
+			{"register-targetless", "a rig registered from the scene its cameras share, no board (bind --footage and --models)", false, "", &registerTargetless, true, true},
+			{"calibrate-and-register", "each camera of a rig calibrated through a map, then the rig registered with those models (bind --footage)", false, "", &calibrateAndRegister, true, true},
 			{"broken-missing-template", "a link to a template that is not there", false, "could not be resolved", &brokenMissingTemplate},
 			{"broken-map-hole", "folder-average over a folder holding one unreadable file", false, "elements produced no", &brokenMapHole},
 			{"broken-cast-pair", "a Cast from Image to Int, a pair nothing converts", false, "no conversion from", &brokenCastPair},

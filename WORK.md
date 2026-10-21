@@ -9272,14 +9272,16 @@ each package in a session of its own (2026-10-20).
 5. **A footage generator**: a build target that renders board footage, a moving camera's scene and a
    rig into a folder, through the test helpers that render them now. Sub-slice 12c rendered its
    eyeball footage with an uncommitted probe, and the Outstanding index only says footage "has to be
-   rendered".
+   rendered". *(**Built 2026-10-21**: see *Camera footage, examples and the composition*, below.)*
 6. **Example documents, and a composition test.**
    - No example covers board calibration alone, `detectBoard`, or either registration;
      `register.json` exists only in a test's scratch folder.
    - Slice 2's plan says the rig inputs compose with `map(calibrateCamera → cameraModel)`, and nothing
      tests or shows a graph that calibrates every camera and registers them.
 
-   Needs 5 for its data, and the registration examples should use item 1's output.
+   Needs 5 for its data, and the registration examples should use item 1's output. *(**Built
+   2026-10-21**, without `detectBoard`, decided with the repo owner: see *Camera footage, examples and
+   the composition*, below.)*
 7. **One gui-mode session on a Metal machine, after 2, 5 and 6**, walking every M9 eyeball listed in
    the Outstanding index.
 
@@ -9630,6 +9632,61 @@ have fixed targetless registration only, and left the gui's bindings out.
     calibration vertical, whose numbers never depended on them (above), so only the pinned digest case
     stands guard over them.
 - `ctest -j8` **1341/1341** Release with video, camera and Ceres on (+3); warning-clean, format-check
+  clean. Not run: the builds with video, camera and Ceres off.
+
+### Camera footage, examples and the composition (built 2026-10-21)
+
+The review's P3 items 5 and 6: a way to draw the camera examples' footage, committed examples of each
+method, and a test of calibrating every camera of a rig then registering it with those models.
+
+**Decided with the repo owner:**
+- **The generator is a mode of the examples builder**, `flowview-examples --camera-footage <folder>`,
+  with a `camera-footage` target drawing into `build/camera-footage`. It is never committed.
+- **The examples are `calibrate`, `register`, `register-targetless` and `calibrate-and-register`.**
+  `detectBoard` is left out: one frame's detection has little to show before the deferred detection
+  overlays exist.
+- **The camera verticals run the committed examples**, as the fallback's already did: one document,
+  two callers, so a broken example fails its vertical. The documents the verticals built in code are
+  deleted, except the two that are a test's own (calibrate.json held against an imported model, and a
+  rig copied straight through).
+
+**Built:**
+- **`examples/src/camerafootage.{h,cpp}`** holds every footage writer the verticals had: one camera's
+  board footage, a moving camera's footage with no board, a board rig, and a textured rig, each with
+  its truth (`boardRigCamera`, `texturedRigCamera`, `boardRigModel`). Both `flowview-examples` and
+  `test-flowview` compile it. `REQUIRE` became exceptions, and libs/camera/test's camera parameters
+  moved to a Catch2-free `testcameraparameters.h`, which `testcamera.h` includes.
+- **`writeAll`** draws board/footage (24 frames), moving/footage (40), board-rig (24 frames a camera)
+  and textured-rig, about 8 MB in 5 s in Release, with a README.txt naming each folder's example and
+  the command that runs it.
+- **The board rig's cameras have their own pinholes**: cam1 a tenth longer than cam0 and cam2 a tenth
+  shorter, with their principal points moved. With one shared pinhole a camera paired with another's
+  model was invisible to every test.
+- **Four examples**, every one `needsCamera` and `needsInputs`, so test_examples loads them and checks
+  that a command line can bind each input:
+  - `calibrate`: footage, a 7 x 5 board of 24 mm squares and a pinhole model, to the report and the
+    model;
+  - `register` and `register-targetless`: a rig's footage and models folders, to the report and the
+    rig document;
+  - `calibrate-and-register`: a map over the rig's footage, the board broadcast to every element, each
+    element `calibrateCamera` then `cameraModel`; the gathered models feed `registerCameras` with the
+    same footage and board. A calibration that fails leaves a hole, which clears the models (ADR-0014)
+    and suppresses the registration rather than registering with a camera missing.
+  
+  `calibrate-fallback` now shares the board specification's helper, and is written byte for byte as
+  before.
+- **A new vertical runs `calibrate-and-register`** on a board rig of 24 frames a camera, with only the
+  footage bound. Ready, 24 of 24 groups usable, and the rig 0.05% from the truth in scale, 0.87 mrad
+  and 0.24 mm, held to the register vertical's bounds, in 2 s in Release. At 16 frames a camera the
+  calibrations were too loose for those bounds. Its no-detector and no-refiner branches are written
+  but run only in builds without them, which CI's camera-off leg is.
+- **Through the real binary**, on `build/camera-footage`: `calibrate-and-register` and `register` both
+  Ready, their rigs within 0.3 mm of each other and of the truth.
+
+**Verification:**
+- **Sabotage:** registering each camera with the next camera's model fails four checks in both the
+  register vertical and the composition vertical. It would have passed with one shared pinhole.
+- `ctest -j8` **1342/1342** Release with video, camera and Ceres on (+1); warning-clean, format-check
   clean. Not run: the builds with video, camera and Ceres off.
 
 ### Not in this milestone
@@ -14798,8 +14855,8 @@ row here**. A row is cheap to delete and expensive to leave.
      - **P2, both built 2026-10-21:** the held-out changes (*Held-out evidence judged from medians*),
        and identities independent of where footage sits (*Identities that do not depend on where
        footage sits*).
-     - **P3:** a footage generator; example documents for board calibration, `detectBoard` and both
-       registrations, and a test of calibrating every camera then registering them in one graph.
+     - **P3, built 2026-10-21 but for its gui session:** the footage generator, the camera examples and
+       the composition test (*Camera footage, examples and the composition*). The gui session is item 3.
      - **P4:** a CI leg with OpenCV on and Ceres off; the dependency footprint measured again.
   2. **Owed by the repo owner.**
      - **The real-camera capture** for slice 1, sub-slice 8, guided by
@@ -14829,9 +14886,10 @@ row here**. A row is cheap to delete and expensive to leave.
      - **The feature cap's cost**: count descriptor rows rather than features, or lower the cap, if
        Exact matching's cost (16.9 core-hours for a 100-camera rig at the cap) matters more than the
        tracks. To be decided on real footage's rows per feature (sub-slice 7 follow-up B).
-  3. **Verification owed.** All of it on a Metal session, best done as one sitting once the review's
-     P3 has landed (its item 7). Footage for the checklists below was rendered on 2026-10-20 by an
-     uncommitted probe (*The gui binds and saves camera values*); none is committed.
+  3. **Verification owed.** All of it on a Metal session, best done as one sitting (the review's item
+     7). `cmake --build build --target camera-footage` draws footage for every camera example into
+     `build/camera-footage`; the gui load-and-save checklist's own data was rendered on 2026-10-20 by an
+     uncommitted probe (*The gui binds and saves camera values*). None is committed.
      - **gui-mode eyeballs of slice 1's surfaces**, never recorded as done (slice 1, sub-slice 7): the
        Camera menu, the enum editors and the port colours, over the five slice-1 kinds.
      - **The refusal to open a document that did not load as saved** (slice 1, sub-slice 0, *the gui
@@ -14851,9 +14909,12 @@ row here**. A row is cheap to delete and expensive to leave.
        the method picked in the Interface pane (nothing runs until one is), footage bound, and the
        attempts and the model read; the `calibrateCameraTargetless`, `calibrationMethod`,
        `nextAttempt` and `calibrationAttempts` nodes on the canvas, their "+" report pins included.
-       None is committed (slice 4's *Sub-slice 12c built*), but footage was rendered on 2026-10-20 with
-       the checklist's: `calibration/footage` for the board's attempt, and `fallback-moving/footage`
-       for the targetless one.
+       `camera-footage` draws `board/footage` for the board's attempt and `moving/footage` for the
+       targetless one.
+     - **gui-mode eyeball of the camera examples** (*Camera footage, examples and the composition*):
+       `calibrate`, `register`, `register-targetless` and `calibrate-and-register` opened, their footage
+       bound from `build/camera-footage`, and the map's elements stepped through in
+       `calibrate-and-register`.
   4. **Waiting on real footage**, the triggers sub-slices 7 to 9 carried forward (sub-slice 9's
      notes):
      - rows per descriptor on real footage, which also settles the feature cap above;

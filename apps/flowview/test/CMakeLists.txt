@@ -27,6 +27,7 @@ add_executable(test-flowview
 	test_examples.cpp
 	test_cameravertical.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../examples/src/examples.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../examples/src/camerafootage.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/undo.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runner.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runpolicy.cpp"

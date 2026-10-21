@@ -1400,6 +1400,34 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-21 — M9: camera footage, examples and the composition (P3, but for its gui session)
+
+The review's P3 items 5 and 6. `ctest -j8` **1342/1342** Release with video, camera and Ceres on (+1);
+warning-clean, format-check clean. The builds with all three off were not run. Full notes in WORK.md's
+*Camera footage, examples and the composition*, under M9.
+
+- **`flowview-examples --camera-footage <folder>`**, and a `camera-footage` target into
+  `build/camera-footage`, draws footage for every camera example, with a README.txt of the commands. It
+  takes about 5 s and 8 MB, and is never committed.
+- **The writers moved out of the vertical** into `examples/src/camerafootage.{h,cpp}`, which the builder
+  and the verticals both compile, with exceptions in place of `REQUIRE`. libs/camera/test's camera
+  parameters moved to a Catch2-free `testcameraparameters.h`.
+- **Four committed examples**, every one `needsCamera` and `needsInputs`:
+  - `calibrate`;
+  - `register` and `register-targetless`;
+  - `calibrate-and-register`: a map calibrates each camera with the board broadcast, and the gathered
+    models register the rig.
+
+  `detectBoard` was left out, decided with the repo owner.
+- **The camera verticals run the committed documents.** The in-test document builders are gone, except
+  the two that are a test's own.
+- **A composition vertical**: footage alone bound, Ready, the rig 0.05%, 0.87 mrad and 0.24 mm from the
+  truth.
+- **The board rig's cameras have their own pinholes.** Registering a camera with the next one's model
+  now fails four checks in both rig verticals. With one shared pinhole it was invisible.
+- **Owed:** the gui eyeball of the four examples on footage from `camera-footage`, in the Outstanding
+  index's item 3.
+
 ### Update 2026-10-21 — M9: identities that do not depend on where footage sits (**P2 COMPLETE**)
 
 The review's P2 item 4. A camera was named by its footage's absolute path, track and group identities

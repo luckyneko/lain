@@ -2,7 +2,7 @@
 
 Graph documents to open in flowview (**File ▸ Open**), to run headless, and for the test suite.
 Every example opens and shows a result on its own, except `sequence-render`, which is driven by a
-frame position, and `calibrate-fallback`, which calibrates footage and a method you bind. Media paths are stored relative to this folder, so it can be opened from any clone
+frame position, and the camera examples, which calibrate or register footage you bind. Media paths are stored relative to this folder, so it can be opened from any clone
 or copied elsewhere whole.
 
 ```sh
@@ -36,7 +36,21 @@ The root flags (`--size`, `--threads`, `-v`) go before `run`.
 | `video` | `data/shot.mp4` as a sequence, and its frame at position 12 (needs a video build) |
 | `bagel` | an inline group holding a map, whose elements run a linked template and a loop |
 | `render-board` | a ChArUco board to print for a real-camera fixture: 9 x 6 squares of 30 mm (needs a camera build); see `plugins/camera/test/fixtures/README.md` |
-| `calibrate-fallback` | board calibration, then targetless calibration when the board's attempt is not accepted (needs a camera build). Bind `--footage` and `--method board-then-targetless`; with no method nothing is attempted. It expects a pinhole and a 7 x 5 board of 24 mm squares, so change the specification and both calibrations' `model` for real footage |
+| `calibrate` | board calibration of one camera's footage: its report and its model (needs a camera build). Bind `--footage` |
+| `calibrate-fallback` | board calibration, then targetless calibration when the board's attempt is not accepted (needs a camera build). Bind `--footage` and `--method board-then-targetless`; with no method nothing is attempted |
+| `register` | a rig registered by a board: its report and its rig document (needs a camera build). Bind `--footage` (a folder of per-camera folders or videos) and `--models` (a folder of camera-model documents named alike) |
+| `register-targetless` | a rig registered from the scene its cameras share, no board (needs a camera build). Bind `--footage` and `--models` |
+| `calibrate-and-register` | each camera of a rig calibrated through a map, then the rig registered with those models (needs a camera build). Bind `--footage` |
+
+The camera examples expect a pinhole and a 7 x 5 board of 24 mm squares, which is what their footage
+shows. For real footage, change the board specification and each calibration's `model`. Their footage
+is not committed: draw it into the build folder with
+
+```sh
+cmake --build build --target camera-footage
+```
+
+and `build/camera-footage/README.txt` lists each folder and the command that runs its example.
 
 ## Broken on purpose
 

@@ -16,6 +16,7 @@
 // share. Its transforms are written out as a rig document, read back by the production reader and
 // held to the rig the footage was drawn from, and the file binds back into a later run.
 
+#include "camerafootage.h" // the footage, drawn in plain C++ and shared with flowview-examples
 #include "clibinders.h"
 #include "graphio.h"
 #include "rigcompare.h" // a registered rig against its truth
@@ -70,6 +71,7 @@
 
 using namespace lain;
 namespace fs = std::filesystem;
+namespace cameraFootage = flowview::examples::footage;
 
 namespace
 {
@@ -85,6 +87,12 @@ namespace
 			return true;
 		}();
 		(void)once;
+	}
+
+	// A committed example document (apps/flowview/examples): what the verticals run, as a user would.
+	fs::path exampleDocument(const std::string& name)
+	{
+		return fs::path(LAIN_FLOWVIEW_EXAMPLES_DIR) / (name + ".json");
 	}
 
 	bool haveCameraBackend()
@@ -117,10 +125,10 @@ namespace
 		return {id, graph.node(id).output(index).id()};
 	}
 
-	// footage -> calibrateCamera (board from a boardSpecification of 24 mm squares) -> report, and
-	// -> cameraModel -> model. `held` adds an `imported` model input and holds it (HoldAndValidate):
-	// the document that checks a model file against footage instead of estimating one.
-	fs::path writeDocument(const fs::path& file, bool held = false)
+	// calibrate.json's graph, with an `imported` model input held (HoldAndValidate): the document that
+	// checks a model file against footage instead of estimating one. Built here: it is this test's
+	// round trip, not an example.
+	fs::path writeHeldDocument(const fs::path& file)
 	{
 		// The production palette, which has the camera kinds whatever this build's backends, so the
 		// document is written the same in a build that cannot run it.
@@ -143,13 +151,9 @@ namespace
 		// the verdict rightly withholds Ready. It is also a param away from its default, so the
 		// document has to carry an enum by name for the run to ask for it.
 		setParam(graph, calibrate, "model", camera::DistortionModel::None);
-		if (held)
-		{
-			const flow::PortId imported = input.addBoundary<camera::CameraModel>("imported");
-			REQUIRE(graph.connect(flow::PortAddress{input.id(), imported}, in(graph, calibrate, 2)) ==
-					flow::Connection::Ok);
-			setParam(graph, calibrate, "importedPolicy", camera::calibration::ImportedModelPolicy::HoldAndValidate);
-		}
+		const flow::PortId imported = input.addBoundary<camera::CameraModel>("imported");
+		REQUIRE(graph.connect(flow::PortAddress{input.id(), imported}, in(graph, calibrate, 2)) == flow::Connection::Ok);
+		setParam(graph, calibrate, "importedPolicy", camera::calibration::ImportedModelPolicy::HoldAndValidate);
 
 		REQUIRE(graph.connect(flow::PortAddress{input.id(), footage}, in(graph, calibrate, 0)) == flow::Connection::Ok);
 		REQUIRE(graph.connect(out(graph, spec), in(graph, calibrate, 1)) == flow::Connection::Ok);
@@ -160,49 +164,8 @@ namespace
 		return file;
 	}
 
-	// The camera the footage is seen through: a 640x480 pinhole with distinct intrinsics.
-	const camera::synthetic::Pinhole kCamera{};
-
-	// The footage, as a folder of stills: what a user would bind.
-	fs::path writeFootage(const fs::path& dir, std::size_t frames)
-	{
-		camera::board::PatternParameters parameters;
-		parameters.squaresX = 7;
-		parameters.squaresY = 5;
-		parameters.markerToSquare = 0.75;
-		camera::board::Instance instance{"board", {core::Length::from<core::Length::Millimetres>(24), std::nullopt, std::nullopt}};
-		const camera::board::Specification spec =
-			*camera::board::Specification::create(*camera::board::Pattern::create(parameters).pattern, instance)
-				 .specification;
-		const std::optional<camera::board::Rendering> rendering =
-			camera::board::render(spec.pattern(), camera::board::RenderRequest{60, 20}).rendering;
-		REQUIRE(rendering.has_value());
-
-		const fs::path folder = dir / "footage";
-		fs::create_directories(folder);
-		for (std::size_t i = 0; i < frames; ++i)
-		{
-			const std::string name = "frame." + std::string(4 - std::to_string(i).size(), '0') + std::to_string(i) + ".png";
-			REQUIRE(io::image::save(core::Uri::fromPath(folder / name),
-									camera::synthetic::view(*rendering, spec, kCamera,
-															camera::synthetic::sweepPose(spec, i, frames))));
-		}
-		return folder;
-	}
-
-	// Footage with no board in it, for a build that cannot render one: enough frames to be a sequence,
-	// which is all a calibration with no detector looks at before it says so.
-	fs::path writePlainFootage(const fs::path& dir, std::size_t frames)
-	{
-		const fs::path folder = dir / "footage";
-		fs::create_directories(folder);
-		for (std::size_t i = 0; i < frames; ++i)
-		{
-			const std::string name = "frame." + std::string(4 - std::to_string(i).size(), '0') + std::to_string(i) + ".png";
-			REQUIRE(io::image::save(core::Uri::fromPath(folder / name), image::Image(kCamera.width, kCamera.height)));
-		}
-		return folder;
-	}
+	// The camera the board footage is seen through, the footage writers' own (camerafootage.h).
+	const camera::synthetic::Pinhole kCamera = cameraFootage::boardCamera();
 
 	std::string readText(const fs::path& file)
 	{
@@ -238,7 +201,7 @@ TEST_CASE("run calibrates a camera from a folder of footage", "[camera][runmode]
 	const fs::path dir = lain::testing::scratchDir() / "camera-vertical";
 	fs::remove_all(dir);
 	fs::create_directories(dir);
-	const fs::path document = writeDocument(dir / "calibrate.json");
+	const fs::path document = exampleDocument("calibrate");
 
 	core::Factory<flow::Node> factory;
 	flowview::registerExampleNodes(factory, 8);
@@ -248,7 +211,7 @@ TEST_CASE("run calibrates a camera from a folder of footage", "[camera][runmode]
 	flowview::RunOptions options;
 	options.graphPath = document.string();
 
-	const fs::path footage = haveCameraBackend() ? writeFootage(dir, 24) : writePlainFootage(dir, 2);
+	const fs::path footage = cameraFootage::writeBoardFootage(dir, haveCameraBackend() ? 24 : 2, haveCameraBackend());
 	const fs::path reportText = dir / "report.txt";
 	const fs::path modelFile = dir / "model.json";
 	options.bindings = {"--footage", footage.string(), "--report", reportText.string(), "--model", modelFile.string()};
@@ -287,7 +250,7 @@ TEST_CASE("run calibrates a camera from a folder of footage", "[camera][runmode]
 		// The round trip a user makes: calibrate once, keep model.json, then check it against other
 		// footage. `--imported` reads the file the first run wrote.
 		flowview::RunOptions held;
-		held.graphPath = writeDocument(dir / "validate.json", true).string();
+		held.graphPath = writeHeldDocument(dir / "validate.json").string();
 		const fs::path heldReport = dir / "held.txt";
 		const fs::path heldModel = dir / "held.json";
 		held.bindings = {"--footage", footage.string(), "--imported", modelFile.string(),
@@ -307,38 +270,6 @@ TEST_CASE("run calibrates a camera from a folder of footage", "[camera][runmode]
 
 namespace
 {
-	// footage + models (two collections, a camera each, paired by position) -> registerCameras (board
-	// from a boardSpecification of 24 mm squares) -> report, and -> registeredRig -> rig.
-	fs::path writeRigDocument(const fs::path& file)
-	{
-		core::Factory<flow::Node> factory;
-		flowview::registerExampleNodes(factory, 8);
-		flow::Graph graph;
-		flow::GroupInputNode& input = graph.boundaryInputNode();
-		flow::GroupOutputNode& output = graph.boundaryOutputNode();
-		const flow::PortId footage = input.addBoundary<std::vector<media::FrameSequence>>("footage");
-		const flow::PortId models = input.addBoundary<std::vector<camera::CameraModel>>("models");
-		const flow::PortId report = output.addBoundary<camera::registration::Report>("report");
-		const flow::PortId rig = output.addBoundary<camera::registration::RegisteredRig>("rig");
-
-		const flow::NodeId spec = graph.add(factory.create(camera::kBoardSpecificationKey));
-		const flow::NodeId registerCameras = graph.add(factory.create(camera::kRegisterCamerasKey));
-		const flow::NodeId extract = graph.add(factory.create(camera::kRegisteredRigKey));
-		setParam(graph, spec, "squareLengthMm", 24.0f);
-		setParam(graph, registerCameras, "resamples", 4);
-		REQUIRE(graph.connect(flow::PortAddress{input.id(), footage}, in(graph, registerCameras, 0)) ==
-				flow::Connection::Ok);
-		REQUIRE(graph.connect(flow::PortAddress{input.id(), models}, in(graph, registerCameras, 1)) ==
-				flow::Connection::Ok);
-		REQUIRE(graph.connect(out(graph, spec), in(graph, registerCameras, 2)) == flow::Connection::Ok);
-		REQUIRE(graph.connect(out(graph, registerCameras), in(graph, extract, 0)) == flow::Connection::Ok);
-		REQUIRE(graph.connect(out(graph, registerCameras), flow::PortAddress{output.id(), report}) ==
-				flow::Connection::Ok);
-		REQUIRE(graph.connect(out(graph, extract), flow::PortAddress{output.id(), rig}) == flow::Connection::Ok);
-		REQUIRE(flowview::saveGraph(core::Uri::fromPath(file), graph, factory));
-		return file;
-	}
-
 	// rig -> copy: a rig bound from a file and written straight back out, which is all a run can do
 	// with one until a node consumes a rig.
 	fs::path writeRigCopyDocument(const fs::path& file)
@@ -360,61 +291,6 @@ namespace
 			   camera::refinement::canRefine();
 	}
 
-	// Camera c of the rig, turned about the board's mean position (0.42 m ahead of camera 0) by
-	// `angle` about the vertical: referenceFromCamera.
-	math::RigidTransformd rigCamera(double angle)
-	{
-		const math::Vec3d pivot{0, 0, 0.42};
-		const math::Quatd turn = math::angleAxis(angle, math::Vec3d{0, 1, 0});
-		return math::RigidTransformd{turn, pivot - turn * pivot};
-	}
-
-	// Where writeRig puts cam0..cam2, relative to cam0.
-	const double kRigAngles[] = {0.0, -0.25, 0.25};
-
-	// A rig of three cameras as a user would bind it: rig/cam0..cam2, each a folder of stills of one
-	// board sweeping through their shared view, and models/cam0..cam2.json, each camera's model.
-	void writeRig(const fs::path& dir, std::size_t frames, bool rendered)
-	{
-		camera::board::PatternParameters parameters;
-		parameters.squaresX = 7;
-		parameters.squaresY = 5;
-		parameters.markerToSquare = 0.75;
-		camera::board::Instance instance{"board", {core::Length::from<core::Length::Millimetres>(24), std::nullopt, std::nullopt}};
-		const camera::board::Specification spec =
-			*camera::board::Specification::create(*camera::board::Pattern::create(parameters).pattern, instance)
-				 .specification;
-		std::optional<camera::board::Rendering> rendering;
-		if (rendered)
-		{
-			rendering = camera::board::render(spec.pattern(), camera::board::RenderRequest{60, 20}).rendering;
-			REQUIRE(rendering.has_value());
-		}
-
-		camera::CameraModelParameters p;
-		p.image = {std::uint32_t(kCamera.width), std::uint32_t(kCamera.height)};
-		p.intrinsics = {kCamera.fx, kCamera.fy, kCamera.cx, kCamera.cy};
-		const camera::CameraModel model = *camera::CameraModel::create(p).model;
-
-		fs::create_directories(dir / "models");
-		for (std::size_t c = 0; c < 3; ++c)
-		{
-			const std::string name = "cam" + std::to_string(c);
-			const fs::path folder = dir / "rig" / name;
-			fs::create_directories(folder);
-			const math::RigidTransformd cameraFromReference = rigCamera(kRigAngles[c]).inverse();
-			for (std::size_t i = 0; i < frames; ++i)
-			{
-				const std::string still = "frame." + std::string(4 - std::to_string(i).size(), '0') + std::to_string(i) + ".png";
-				const image::Image frame =
-					rendered ? camera::synthetic::view(*rendering, spec, kCamera,
-													   cameraFromReference * camera::synthetic::sweepPose(spec, i, frames))
-							 : image::Image(kCamera.width, kCamera.height);
-				REQUIRE(io::image::save(core::Uri::fromPath(folder / still), frame));
-			}
-			REQUIRE(io::data::save(core::Uri::fromPath(dir / "models" / (name + ".json")), camera::cameraModelToValue(model)));
-		}
-	}
 } // namespace
 
 // A rig document on disk, read back through the production reader.
@@ -455,8 +331,8 @@ TEST_CASE("run registers a rig from a folder of footage and a folder of models",
 	const fs::path dir = lain::testing::scratchDir() / "rig-vertical";
 	fs::remove_all(dir);
 	fs::create_directories(dir);
-	const fs::path document = writeRigDocument(dir / "register.json");
-	writeRig(dir, haveRegistrationBackends() ? 16 : 2, camera::board::canRender());
+	const fs::path document = exampleDocument("register");
+	cameraFootage::writeBoardRig(dir, haveRegistrationBackends() ? 16 : 2, camera::board::canRender());
 
 	core::Factory<flow::Node> factory;
 	flowview::registerExampleNodes(factory, 8);
@@ -499,12 +375,13 @@ TEST_CASE("run registers a rig from a folder of footage and a folder of models",
 	CHECK(rig->scale.scale == camera::registration::Scale::Metric);
 	CHECK(report.find("relative to " + rig->reference.value) != std::string::npos);
 	const camera::testing::RigDifference difference =
-		rigAgainstTruth(*rig, {rigCamera(kRigAngles[0]), rigCamera(kRigAngles[1]), rigCamera(kRigAngles[2])});
+		rigAgainstTruth(*rig, {cameraFootage::boardRigCamera(0), cameraFootage::boardRigCamera(1), cameraFootage::boardRigCamera(2)});
 	INFO("scale " << difference.scale << ", worst rotation " << difference.worstRotation * 1000.0
 				  << " mrad, worst centre " << difference.worstCentre * 1000.0 << " mm");
-	// Measured 0.07% in scale, 0.2 mrad and 0.05 mm out. The bounds leave room for another platform's
+	// Measured 0.05% in scale, 0.29 mrad and 0.08 mm out. The bounds leave room for another platform's
 	// arithmetic, and still catch a transform written the wrong way round (cameraFromReference turns
-	// each camera 0.25 rad the wrong way).
+	// each camera 0.25 rad the wrong way), or a camera given another's model: each has its own pinhole
+	// (camerafootage.h), and pairing them one off fails four of these checks.
 	CHECK(std::abs(difference.scale - 1.0) < 0.005);
 	CHECK(difference.worstRotation < 0.002);
 	CHECK(difference.worstCentre < 0.001);
@@ -545,70 +422,12 @@ TEST_CASE("run registers a rig from a folder of footage and a folder of models",
 
 namespace
 {
-	// footage + models (two collections, a camera each, paired by position) ->
-	// registerCamerasTargetless -> report, and -> registeredRig -> rig. Three sampled groups, since the
-	// rig's footage is three frames a camera, and `search` the matching asked for.
-	fs::path writeTargetlessDocument(const fs::path& file,
-									 camera::feature::MatchSearch search = camera::feature::MatchSearch::Exact)
-	{
-		core::Factory<flow::Node> factory;
-		flowview::registerExampleNodes(factory, 8);
-		flow::Graph graph;
-		flow::GroupInputNode& input = graph.boundaryInputNode();
-		flow::GroupOutputNode& output = graph.boundaryOutputNode();
-		const flow::PortId footage = input.addBoundary<std::vector<media::FrameSequence>>("footage");
-		const flow::PortId models = input.addBoundary<std::vector<camera::CameraModel>>("models");
-		const flow::PortId report = output.addBoundary<camera::registration::Report>("report");
-		const flow::PortId rig = output.addBoundary<camera::registration::RegisteredRig>("rig");
-
-		const flow::NodeId registerCameras = graph.add(factory.create(camera::kRegisterCamerasTargetlessKey));
-		const flow::NodeId extract = graph.add(factory.create(camera::kRegisteredRigKey));
-		setParam(graph, registerCameras, "resamples", 4);
-		setParam(graph, registerCameras, "sampledGroups", 3);
-		setParam(graph, registerCameras, "matchSearch", search);
-		REQUIRE(graph.connect(flow::PortAddress{input.id(), footage}, in(graph, registerCameras, 0)) ==
-				flow::Connection::Ok);
-		REQUIRE(graph.connect(flow::PortAddress{input.id(), models}, in(graph, registerCameras, 1)) ==
-				flow::Connection::Ok);
-		REQUIRE(graph.connect(out(graph, registerCameras), in(graph, extract, 0)) == flow::Connection::Ok);
-		REQUIRE(graph.connect(out(graph, registerCameras), flow::PortAddress{output.id(), report}) ==
-				flow::Connection::Ok);
-		REQUIRE(graph.connect(out(graph, extract), flow::PortAddress{output.id(), rig}) == flow::Connection::Ok);
-		REQUIRE(flowview::saveGraph(core::Uri::fromPath(file), graph, factory));
-		return file;
-	}
-
 	bool haveTargetlessBackends()
 	{
 		return camera::feature::canExtract() && camera::feature::canMatch() && camera::feature::canSolveGeometry() &&
 			   camera::refinement::canRefine();
 	}
 
-	// Where writeTexturedRig puts cam0..cam2 on arcCamera's arc.
-	const double kTexturedRigAngles[] = {-0.25, 0.0, 0.25};
-
-	// A rig of three fixed cameras as a user would bind it: rig/cam0..cam2, each a folder of three
-	// stills of the default textured scene (texturedscene.h) from a point on an arc round it, and
-	// models/cam0..cam2.json, each camera's model. A still scene draws the same frame every time, so
-	// each camera's is drawn once. Unrendered, the frames are blank but the models' size, so a build
-	// that cannot register fails for the backend it lacks rather than for the footage.
-	void writeTexturedRig(const fs::path& dir, bool rendered)
-	{
-		const camera::CameraModel model = camera::testing::cameraWith(camera::testing::brownConrady());
-		const camera::synthetic::Scene scene = camera::synthetic::defaultScene();
-		fs::create_directories(dir / "models");
-		for (std::size_t c = 0; c < 3; ++c)
-		{
-			const std::string name = "cam" + std::to_string(c);
-			const fs::path folder = dir / "rig" / name;
-			fs::create_directories(folder);
-			const image::Image frame = rendered ? camera::synthetic::render(scene, model, camera::synthetic::arcCamera(kTexturedRigAngles[c]))
-												: image::Image(int(model.image().width), int(model.image().height));
-			for (std::size_t i = 0; i < 3; ++i)
-				REQUIRE(io::image::save(core::Uri::fromPath(folder / ("frame.000" + std::to_string(i) + ".png")), frame));
-			REQUIRE(io::data::save(core::Uri::fromPath(dir / "models" / (name + ".json")), camera::cameraModelToValue(model)));
-		}
-	}
 } // namespace
 
 TEST_CASE("run registers a rig without a target from a folder of footage and a folder of models", "[camera][runmode]")
@@ -617,8 +436,8 @@ TEST_CASE("run registers a rig without a target from a folder of footage and a f
 	const fs::path dir = lain::testing::scratchDir() / "targetless-vertical";
 	fs::remove_all(dir);
 	fs::create_directories(dir);
-	const fs::path document = writeTargetlessDocument(dir / "register-targetless.json");
-	writeTexturedRig(dir, haveTargetlessBackends());
+	const fs::path document = exampleDocument("register-targetless");
+	cameraFootage::writeTexturedRig(dir, haveTargetlessBackends());
 
 	core::Factory<flow::Node> factory;
 	flowview::registerExampleNodes(factory, 8);
@@ -668,8 +487,7 @@ TEST_CASE("run registers a rig without a target from a folder of footage and a f
 	CHECK(rig->scale.scale == camera::registration::Scale::Arbitrary);
 	CHECK(report.find("relative to " + rig->reference.value) != std::string::npos);
 	const camera::testing::RigDifference difference =
-		rigAgainstTruth(*rig, {camera::synthetic::arcCamera(kTexturedRigAngles[0]), camera::synthetic::arcCamera(kTexturedRigAngles[1]),
-							   camera::synthetic::arcCamera(kTexturedRigAngles[2])});
+		rigAgainstTruth(*rig, {cameraFootage::texturedRigCamera(0), cameraFootage::texturedRigCamera(1), cameraFootage::texturedRigCamera(2)});
 	INFO("scale " << difference.scale << ", worst rotation " << difference.worstRotation * 1000.0
 				  << " mrad, worst centre " << difference.worstCentre * 1000.0 << " mm");
 	// Measured over five runs, which held out different tracks before 2026-10-21 (above): 0.18 to 0.51
@@ -689,16 +507,35 @@ TEST_CASE("run registers a rig without a target from a folder of footage and a f
 TEST_CASE("a targetless registration's matching travels in its document by name", "[camera][runmode]")
 {
 	// The vertical runs Exact, the default, since Approximate's tracks vary from run to run. So the
-	// enum a document must carry by name is checked here: saved as Approximate, loaded through the
-	// production path, and Approximate again rather than the default.
+	// enum a document must carry by name is checked here: register-targetless.json set to Approximate,
+	// saved, loaded through the production path, and Approximate again rather than the default.
 	ensureRegistered();
 	const fs::path dir = lain::testing::scratchDir() / "targetless-document";
 	fs::remove_all(dir);
 	fs::create_directories(dir);
-	const fs::path document = writeTargetlessDocument(dir / "approximate.json", camera::feature::MatchSearch::Approximate);
+	const fs::path document = dir / "approximate.json";
 
 	core::Factory<flow::Node> factory;
 	flowview::registerExampleNodes(factory, 8);
+	{
+		flow::serialize::LoadResult example = flowview::loadGraph(core::Uri::fromPath(exampleDocument("register-targetless")), factory, nullptr);
+		REQUIRE(example.clean());
+		std::size_t set = 0;
+		for (const flow::NodeId id : example.graph.nodeIds())
+		{
+			flow::Node& node = example.graph.node(id);
+			for (std::size_t i = 0; i < node.paramCount(); ++i)
+			{
+				if (node.param(i).name() == "matchSearch")
+				{
+					REQUIRE(node.setParam(node.param(i).id(), camera::feature::MatchSearch::Approximate));
+					++set;
+				}
+			}
+		}
+		REQUIRE(set == 1);
+		REQUIRE(flowview::saveGraph(core::Uri::fromPath(document), example.graph, factory));
+	}
 	flow::serialize::LoadResult loaded = flowview::loadGraph(core::Uri::fromPath(document), factory, nullptr);
 	INFO(loaded.issues.size() << " load issues");
 	REQUIRE(loaded.clean());
@@ -718,6 +555,65 @@ TEST_CASE("a targetless registration's matching travels in its document by name"
 	CHECK(found == 1);
 }
 
+TEST_CASE("run calibrates every camera of a rig and registers it with those models", "[camera][runmode]")
+{
+	// The committed calibrate-and-register.json: the rig's footage alone is bound, each camera is
+	// calibrated through a map, and the models it gathers register the rig by the same board. Nothing
+	// tells it the cameras' models, so a rig that matches its truth is one the calibrations got right.
+	ensureRegistered();
+	const fs::path dir = lain::testing::scratchDir() / "calibrate-and-register";
+	fs::remove_all(dir);
+	fs::create_directories(dir);
+	cameraFootage::writeBoardRig(dir, haveRegistrationBackends() ? 24 : 2, camera::board::canRender());
+
+	core::Factory<flow::Node> factory;
+	flowview::registerExampleNodes(factory, 8);
+	flowview::BoundaryBinders binders;
+	flowview::registerBoundaryBinders(binders);
+	flowview::RunOptions options;
+	options.graphPath = exampleDocument("calibrate-and-register").string();
+	const fs::path reportText = dir / "report.txt";
+	const fs::path rigFile = dir / "rig.json";
+	options.bindings = {"--footage", (dir / "rig").string(), "--report", reportText.string(), "--rig", rigFile.string()};
+	REQUIRE(flowview::runGraph(options, factory, binders) == 0);
+
+	if (!camera::board::canDetect())
+	{
+		// No detector: every calibration fails, each element leaves a hole, the gathered models are
+		// cleared (ADR-0014), and the registration is suppressed, so nothing is written.
+		CHECK_FALSE(fs::exists(reportText));
+		CHECK_FALSE(fs::exists(rigFile));
+		return;
+	}
+	const std::string report = readText(reportText);
+	INFO("report: " << report);
+	if (!haveRegistrationBackends())
+	{
+		// The calibrations need no refiner, so they run; the registration then says what it lacks.
+		CHECK(report.rfind("Failed: NoRefiner", 0) == 0);
+		CHECK_FALSE(fs::exists(rigFile));
+		return;
+	}
+	CHECK(report.rfind("Ready: 3 cameras relative to cam0, metric", 0) == 0);
+	CHECK(report.find("24 of 24 groups usable") != std::string::npos);
+
+	const std::optional<camera::registration::RegisteredRig> rig = readRig(rigFile);
+	REQUIRE(rig.has_value());
+	INFO("rig: " << rig->toString());
+	const camera::testing::RigDifference difference =
+		rigAgainstTruth(*rig, {cameraFootage::boardRigCamera(0), cameraFootage::boardRigCamera(1), cameraFootage::boardRigCamera(2)});
+	INFO("scale " << difference.scale << ", worst rotation " << difference.worstRotation * 1000.0
+				  << " mrad, worst centre " << difference.worstCentre * 1000.0 << " mm");
+	// Held to the bounds the register vertical holds a rig with its true models to. Measured: 0.05% in
+	// scale, 0.87 mrad and 0.24 mm out, in 2 s in Release. At 16 frames a camera, as the register
+	// vertical draws, the calibrations were looser (0.44%, 1.3 mrad and 0.87 mm with one shared
+	// pinhole), too near the bounds. Each camera has its own pinhole (camerafootage.h), so a camera
+	// registered with another's model fails here: pairing them one off fails four of these checks.
+	CHECK(std::abs(difference.scale - 1.0) < 0.005);
+	CHECK(difference.worstRotation < 0.002);
+	CHECK(difference.worstCentre < 0.001);
+}
+
 // The calibration fallback end to end: the committed calibrate-fallback.json (apps/flowview/examples),
 // run through runGraph as a user runs it, with --footage and --method bound and the attempts and the
 // model written out. Which attempts were made is read from the attempts text: board calibration first,
@@ -725,7 +621,7 @@ TEST_CASE("a targetless registration's matching travels in its document by name"
 
 namespace
 {
-	const fs::path kFallbackDocument = fs::path(LAIN_FLOWVIEW_EXAMPLES_DIR) / "calibrate-fallback.json";
+	const fs::path kFallbackDocument = exampleDocument("calibrate-fallback");
 
 	struct FallbackRun
 	{
@@ -778,46 +674,13 @@ namespace
 		return text.rfind(prefix, 0) == 0;
 	}
 
-	// kCamera, the pinhole the board footage is seen through, as a camera model.
-	camera::CameraModel pinholeModel()
-	{
-		camera::CameraModelParameters p;
-		p.image = {std::uint32_t(kCamera.width), std::uint32_t(kCamera.height)};
-		p.intrinsics = {kCamera.fx, kCamera.fy, kCamera.cx, kCamera.cy};
-		p.distortion = camera::NoDistortion{};
-		return *camera::CameraModel::create(p).model;
-	}
-
-	// A moving camera's footage of a scene with no board in it: kCamera along texturedscene.h's arc
-	// round the default scene, as `frames` stills, drawn on the process pool. Seed 2 and one grey level
-	// of noise, as the end-to-end calibration suite draws the same path.
-	fs::path writeMovingFootage(const fs::path& dir, std::size_t frames)
-	{
-		camera::synthetic::Scene scene = camera::synthetic::defaultScene(2);
-		scene.noise = 1.0;
-		const camera::CameraModel model = pinholeModel();
-		const std::vector<math::RigidTransformd> poses = camera::synthetic::arcPath(frames);
-		std::vector<image::Image> drawn(frames);
-		task::range(std::ptrdiff_t{0}, std::ptrdiff_t(frames),
-					[&](std::ptrdiff_t i)
-					{ drawn[std::size_t(i)] = camera::synthetic::render(scene, model, poses[std::size_t(i)], std::size_t(i), 2, 2); });
-
-		const fs::path folder = dir / "footage";
-		fs::create_directories(folder);
-		for (std::size_t i = 0; i < frames; ++i)
-		{
-			const std::string name = "frame." + std::string(4 - std::to_string(i).size(), '0') + std::to_string(i) + ".png";
-			REQUIRE(io::image::save(core::Uri::fromPath(folder / name), drawn[i]));
-		}
-		return folder;
-	}
 } // namespace
 
 TEST_CASE("the calibration fallback accepts the board's attempt and never makes the targetless one", "[camera][runmode][fallback]")
 {
 	ensureRegistered();
 	const fs::path dir = fallbackDir("board");
-	const fs::path footage = haveCameraBackend() ? writeFootage(dir, 24) : writePlainFootage(dir, 2);
+	const fs::path footage = cameraFootage::writeBoardFootage(dir, haveCameraBackend() ? 24 : 2, haveCameraBackend());
 	const FallbackRun run = runFallback(dir, footage, std::string{"board-then-targetless"});
 	REQUIRE(run.status == 0);
 	REQUIRE(run.attempts.has_value());
@@ -865,7 +728,7 @@ TEST_CASE("the calibration fallback falls back to targetless calibration when th
 	{
 		// OpenCV without Ceres. Board calibration needs no refiner, so it runs and fails for footage
 		// with no board in it; only then is the targetless attempt made, and it says what it lacks.
-		const FallbackRun run = runFallback(dir, writePlainFootage(dir, 2), std::string{"board-then-targetless"});
+		const FallbackRun run = runFallback(dir, cameraFootage::writeBoardFootage(dir, 2, false), std::string{"board-then-targetless"});
 		REQUIRE(run.status == 0);
 		REQUIRE(run.attempts.has_value());
 		INFO("attempts: " << *run.attempts);
@@ -879,7 +742,7 @@ TEST_CASE("the calibration fallback falls back to targetless calibration when th
 	SKIP("the targetless fallback runs in Release builds: a Debug build takes seconds to draw each frame");
 #endif
 	const lain::testing::ThreadPool pool;
-	const fs::path footage = writeMovingFootage(dir, 40);
+	const fs::path footage = cameraFootage::writeMovingFootage(dir, 40);
 	const FallbackRun run = runFallback(dir, footage, std::string{"board-then-targetless"});
 	REQUIRE(run.status == 0);
 	REQUIRE(run.attempts.has_value());
@@ -915,7 +778,7 @@ TEST_CASE("the calibration fallback makes only the attempts its method includes"
 	// since the method did not include one. Blank footage, so this runs in every build.
 	ensureRegistered();
 	const fs::path dir = fallbackDir("board-only");
-	const FallbackRun run = runFallback(dir, writePlainFootage(dir, 2), std::string{"board"});
+	const FallbackRun run = runFallback(dir, cameraFootage::writeBoardFootage(dir, 2, false), std::string{"board"});
 	REQUIRE(run.status == 0);
 	REQUIRE(run.attempts.has_value());
 	INFO("attempts: " << *run.attempts);
@@ -934,7 +797,7 @@ TEST_CASE("with no --method the calibration fallback attempts nothing", "[camera
 	// does, and writes neither output.
 	ensureRegistered();
 	const fs::path dir = fallbackDir("unbound");
-	const FallbackRun run = runFallback(dir, writePlainFootage(dir, 2), std::nullopt);
+	const FallbackRun run = runFallback(dir, cameraFootage::writeBoardFootage(dir, 2, false), std::nullopt);
 	CHECK(run.status == 0);
 	CHECK_FALSE(run.attempts.has_value());
 	CHECK_FALSE(run.wroteModel);
@@ -946,7 +809,7 @@ TEST_CASE("a mistyped --method is refused", "[camera][runmode][fallback]")
 	// unbound one. The error names the spellings that would have bound.
 	ensureRegistered();
 	const fs::path dir = fallbackDir("mistyped");
-	const FallbackRun run = runFallback(dir, writePlainFootage(dir, 2), std::string{"board-then"});
+	const FallbackRun run = runFallback(dir, cameraFootage::writeBoardFootage(dir, 2, false), std::string{"board-then"});
 	CHECK(run.status != 0);
 	CHECK_FALSE(run.attempts.has_value());
 	CHECK_FALSE(run.wroteModel);
