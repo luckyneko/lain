@@ -86,8 +86,14 @@ namespace
 		configure(graph, node);
 
 		flow::Evaluation evaluation{graph};
+		// Set in two branches, not through a conditional's temporary: GCC 13 at -O3 calls the
+		// temporary copied from an empty `footage` maybe uninitialized, though that arm is never taken
+		// (CI, 2026-10-21).
 		flow::PortValue f;
-		f.set(footage ? *footage : scene::sequenceFootage().footage);
+		if (footage)
+			f.set(*footage);
+		else
+			f.set(scene::sequenceFootage().footage);
 		evaluation.bind({in.id(), footagePin}, std::move(f));
 		if (imported)
 		{
