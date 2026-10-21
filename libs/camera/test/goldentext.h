@@ -137,7 +137,14 @@ namespace lain::camera::testing::golden
 	{
 		return std::to_string(t.minimumSharedPerCamera) + " " + std::to_string(t.minimumBridgeShared) + " " +
 			   number(t.maximumHeldOutAngle) + " " + number(t.maximumRotationVariation) + " " +
-			   number(t.maximumTranslationVariation) + " " + number(t.maximumOutlierFraction);
+			   number(t.maximumTranslationVariation) + " " + number(t.maximumOutlierFraction) + " " +
+			   std::to_string(t.minimumHeldOutPerCamera);
+	}
+
+	inline std::string heldOutCamera(const registration::HeldOutCamera& c)
+	{
+		return c.camera.value + " predictions " + std::to_string(c.predictions) + " residuals " +
+			   std::to_string(c.residuals) + " robustAngle " + number(c.robustAngle) + " rmsAngle " + number(c.rmsAngle);
 	}
 
 	inline std::string edge(const registration::GraphEdgeReport& e)

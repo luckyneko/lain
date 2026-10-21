@@ -113,12 +113,14 @@ namespace
 		return *e;
 	}
 
+	// A camera's RMS transfer residual over every member it saw: what a camera's error does to its
+	// evidence.
 	double perCamera(const registration::HeldOutEvidence& e, const capture::CameraIdentity& camera)
 	{
-		for (const auto& [id, angle] : e.perCamera)
+		for (const registration::HeldOutCamera& c : e.perCamera)
 		{
-			if (id == camera)
-				return angle;
+			if (c.camera == camera)
+				return c.rmsAngle;
 		}
 		FAIL("no evidence for " << camera.value);
 		return 0;
@@ -322,8 +324,9 @@ TEST_CASE("one rig registered with a board and without one agrees with itself an
 	//   0.62 -> 5.07;
 	// - tilt: cam02 5.75 mrad, the rig 4.12; in two-member tracks 0.53 -> 6.63, in longer ones
 	//   0.62 -> 4.90.
-	// Either way the rig's RMS crosses Ready's 2 mrad, but only because it has four cameras: fitness
-	// judges the rig-wide RMS, so one such camera among many would pass (WORK.md, sub-slice 9).
+	// Either way the rig's RMS crosses Ready's 2 mrad, but only because it has four cameras. That is why
+	// fitness judges each camera's held-out residual too since 2026-10-20 (FitnessThresholds), so one
+	// such camera among many is seen.
 	const std::vector<std::string> pairs = withMembers(tracks, held, 2, false);
 	const std::vector<std::string> longer = withMembers(tracks, held, 3, true);
 	for (const bool tilt : {false, true})

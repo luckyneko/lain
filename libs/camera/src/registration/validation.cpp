@@ -269,48 +269,37 @@ namespace lain::camera::registration
 								scoreTransfers(registered, usable, usableScores);
 						});
 
-		// Gathered serially, in track identity order.
-		HeldOutEvidence evidence;
-		evidence.units = std::uint32_t(held.size());
-		std::vector<double> cameraAngles(registered.size(), 0);
-		std::vector<std::uint32_t> cameraPredictions(registered.size(), 0);
-		double angles = 0, pixels = 0;
-		std::uint32_t pixelCount = 0;
+		// Gathered serially, in track identity order, as board registration gathers its held-out groups.
+		std::uint32_t unpredicted = 0;
+		std::vector<detail::HeldOutMember> members;
 		for (const std::vector<Scored>& track : scores)
 		{
 			for (const Scored& s : track)
 			{
 				if (s.scoring == Scoring::Unpredicted)
 				{
-					++evidence.unpredicted;
+					++unpredicted;
 					continue;
 				}
-				++evidence.predictions;
-				++evidence.residuals;
+				detail::HeldOutMember m;
+				m.camera = s.camera;
+				m.residuals = 1;
 				// An epipolar residual has one degree of freedom, a transfer residual two.
-				const std::uint32_t weight = s.scoring == Scoring::Epipolar ? 2 : 1;
-				if (s.scoring == Scoring::Epipolar)
-					++evidence.epipolar;
-				angles += weight * s.angle * s.angle;
-				cameraAngles[s.camera] += weight * s.angle * s.angle;
-				++cameraPredictions[s.camera];
+				const bool epipolar = s.scoring == Scoring::Epipolar;
+				m.kind = epipolar ? detail::HeldOutKind::Epipolar : detail::HeldOutKind::Transfer;
+				m.sumSquaredAngle = (epipolar ? 2 : 1) * s.angle * s.angle;
 				if (s.pixels)
 				{
-					pixels += *s.pixels * *s.pixels;
-					++pixelCount;
-					evidence.worstPixels = std::max(evidence.worstPixels, *s.pixels);
+					m.pixelPoints = 1;
+					m.sumSquaredPixels = *s.pixels * *s.pixels;
+					m.worstPixels = *s.pixels;
 				}
+				members.push_back(m);
 			}
 		}
-		if (evidence.predictions == 0)
-			return Unavailable{"no held-out member could be predicted from the others"};
-		evidence.rmsAngle = std::sqrt(angles / evidence.predictions);
-		evidence.rmsPixels = pixelCount > 0 ? std::sqrt(pixels / pixelCount) : 0.0;
-		for (std::size_t c = 0; c < registered.size(); ++c)
-		{
-			if (cameraPredictions[c] > 0)
-				evidence.perCamera.push_back({registered[c].camera, std::sqrt(cameraAngles[c] / cameraPredictions[c])});
-		}
-		return evidence;
+		std::vector<capture::CameraIdentity> identities;
+		for (const Registered& c : registered)
+			identities.push_back(c.camera);
+		return detail::heldOutEvidence(std::uint32_t(held.size()), unpredicted, members, identities);
 	}
 } // namespace lain::camera::registration

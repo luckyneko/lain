@@ -40,6 +40,9 @@ namespace lain::camera::testing
 		std::set<DistortionModel> estimates;
 		// The final cost it reports for a problem: zero unless a case says otherwise.
 		std::function<double(const refinement::Problem&)> finalCost;
+		// A change a case makes to an answer before it is handed back, the call's index among those this
+		// refiner has answered with it: none unless a case says so.
+		std::function<void(std::size_t, const refinement::Problem&, refinement::Solution&)> adjust;
 	};
 	inline RefinerScript& refinerScript()
 	{
@@ -61,9 +64,13 @@ namespace lain::camera::testing
 		refinement::Solution refine(const refinement::Problem& problem) const override
 		{
 			std::function<double(const refinement::Problem&)> finalCost;
+			std::function<void(std::size_t, const refinement::Problem&, refinement::Solution&)> adjust;
+			std::size_t call = 0;
 			{
 				std::lock_guard<std::mutex> lock(refinerScript().mutex);
 				finalCost = refinerScript().finalCost;
+				adjust = refinerScript().adjust;
+				call = refinerScript().asked.size();
 				std::vector<math::Vec2d> pixels;
 				for (const refinement::LandmarkObservation& o : problem.landmarkObservations)
 					pixels.push_back(o.pixel);
@@ -82,6 +89,8 @@ namespace lain::camera::testing
 				out.models.push_back(model.parameters());
 			if (finalCost)
 				out.finalCost = finalCost(problem);
+			if (adjust)
+				adjust(call, problem, out);
 			return out;
 		}
 	};

@@ -586,7 +586,8 @@ namespace lain::camera::registration::targetless
 			detail::forEach(draws.size(), request.execution, [&](std::size_t r)
 							{ registrations[r] = registerUnits(evidence, draws[r], reference, request); });
 
-			std::vector<double> rotation(n, 0), translation(n, 0);
+			// Each camera's distance from the result in every resample, its spread taken robustly below.
+			std::vector<std::vector<double>> rotation(n), translation(n);
 			std::uint32_t produced = 0;
 			for (const auto& registration : registrations)
 			{
@@ -609,8 +610,8 @@ namespace lain::camera::registration::targetless
 					const math::RigidTransformd& result = report.cameras[c].referenceFromCamera;
 					const double angle = rotationBetween(resampled, result);
 					const math::Vec3d moved = resampled.translation() * s - result.translation();
-					rotation[c] += angle * angle;
-					translation[c] += math::dot(moved, moved);
+					rotation[c].push_back(angle);
+					translation[c].push_back(math::length(moved));
 				}
 			}
 			if (produced < 2)
@@ -621,7 +622,7 @@ namespace lain::camera::registration::targetless
 				out.resamples = produced;
 				for (std::size_t c = 0; c < n; ++c)
 				{
-					const double r = std::sqrt(rotation[c] / produced), t = std::sqrt(translation[c] / produced);
+					const double r = detail::resampledSpread(rotation[c]), t = detail::resampledSpread(translation[c]);
 					if (r > out.rotationVariation)
 					{
 						out.rotationVariation = r;

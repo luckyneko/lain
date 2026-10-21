@@ -1400,6 +1400,35 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-21 — M9: held-out evidence judged from medians, and per camera
+
+The review's P2 item 3: the three held-out changes queued on 2026-10-09, plus registration's
+resampling spread. `ctest -j8` **1338/1338** Release with video, camera and Ceres on (+3);
+warning-clean, format-check clean. The builds with all three off were not run. Full notes in WORK.md's
+*Held-out evidence judged from medians*, under M9.
+
+- **Fitness judges a median-based held-out residual**, `HeldOutEvidence::robustAngle`. Per kind of
+  member (a track member against its predicted point, against an epipolar plane, a board view), it is
+  the median mean squared residual per point times that kind's mean-to-median ratio under normal errors.
+  It reads as the RMS under normal errors (0.52 against 0.55 mrad), and a few wrong members cannot decide
+  it. The RMS stays, for diagnosis.
+- **Leaving out outliers was the repo owner's first choice, and measuring refused it twice.**
+  - The fit's rule flagged 6% to 14% of correct registrations' held-out members, since a held-out
+    residual also carries its prediction's error.
+  - A self-normalising rule flagged about a fifth on SIFT features, whose held-out residuals are
+    heavy-tailed.
+  - The median-based residual reads 0.23 to 0.31 mrad on those rigs, where the RMS reads 0.64 to 0.91,
+    and 2.9 to 9.0 with a camera turned 5 mrad. The bounds are unchanged.
+- **Each camera is judged on its own** once it has ten held-out points (`minimumHeldOutPerCamera`).
+- **The resampling spread is median-based**, scaled to read as the RMS.
+- **The profiles are amended in place**, provisional until real footage, and
+  `registration-targetless/1` holds position to 0.2%.
+- **One private routine gathers held-out evidence for both methods**
+  (`registration::detail::heldOutEvidence`). `HeldOutCamera` replaces the name-and-RMS pairs.
+- **Both goldens change on purpose**: every RMS line holds and no verdict moves.
+- **Three new board cases and three sabotages**, each caught by the case aimed at it. The pass-through
+  refiner gained an `adjust` hook to move one resample.
+
 ### Update 2026-10-20 — M9: the gui binds a camera model and a rig, and saves a model
 
 A review found the gui could not bind a `CameraModel`, a rig's footage or a rig's models (each read

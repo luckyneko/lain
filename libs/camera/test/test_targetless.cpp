@@ -86,12 +86,14 @@ namespace
 		return std::get<HeldOutEvidence>(result);
 	}
 
+	// A camera's RMS transfer residual over every member it saw: what a camera's error does to its
+	// evidence.
 	double perCamera(const HeldOutEvidence& e, std::size_t camera)
 	{
-		for (const auto& [id, angle] : e.perCamera)
+		for (const HeldOutCamera& c : e.perCamera)
 		{
-			if (id.value == scene::identityOf(camera))
-				return angle;
+			if (c.camera.value == scene::identityOf(camera))
+				return c.rmsAngle;
 		}
 		return -1;
 	}
@@ -109,14 +111,16 @@ namespace
 		CHECK(a.unpredicted == b.unpredicted);
 		CHECK(a.residuals == b.residuals);
 		CHECK(a.epipolar == b.epipolar);
+		CHECK(a.robustAngle == b.robustAngle);
 		CHECK(a.rmsAngle == b.rmsAngle);
 		CHECK(a.rmsPixels == b.rmsPixels);
 		CHECK(a.worstPixels == b.worstPixels);
 		REQUIRE(a.perCamera.size() == b.perCamera.size());
 		for (std::size_t i = 0; i < a.perCamera.size(); ++i)
 		{
-			CHECK(a.perCamera[i].first == b.perCamera[i].first);
-			CHECK(a.perCamera[i].second == b.perCamera[i].second);
+			CHECK(a.perCamera[i].camera == b.perCamera[i].camera);
+			CHECK(a.perCamera[i].robustAngle == b.perCamera[i].robustAngle);
+			CHECK(a.perCamera[i].rmsAngle == b.perCamera[i].rmsAngle);
 		}
 	}
 } // namespace

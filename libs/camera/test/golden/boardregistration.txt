@@ -7,14 +7,15 @@ camera cam02 q(0.892815493 -0.000195798 -0.450422501 0.000169409) t(0.804273401 
 camera cam03 q(0.764024388 -0.038266511 -0.643218977 -0.032737699) t(0.985298997 -0.101189962 0.829530294)
 scale Metric: the board's measured square, 24 mm (test board)
 verdict Exploratory
-note Ready: rotation variation 1.7 mrad exceeds 1 (cam03)
-thresholds registration/1 ready(10 5 0.001 0.001 0.002 0.02) exploratory(4 2 0.004 0.005 0.01 0.1)
+note Ready: rotation variation 1.84 mrad exceeds 1 (cam03)
+thresholds registration/1 ready(10 5 0.001 0.001 0.002 0.02 10) exploratory(4 2 0.004 0.005 0.01 0.1 10)
 heldOut groups 8 predictions 32 unpredicted 0 corners 768 rmsAngle 0.000734507 rmsPixels 0.371755752 worstPixels 1.04391943
-heldOut camera cam00 0.000780855
-heldOut camera cam01 0.000715752
-heldOut camera cam02 0.000756037
-heldOut camera cam03 0.000681449
-resampling 10 rotation 0.001697564 translation 0.001658705 metres 0.001652174 worst cam03
+heldOut robustAngle 0.000721363
+heldOut camera cam00 predictions 8 residuals 192 robustAngle 0.000755334 rmsAngle 0.000780855
+heldOut camera cam01 predictions 8 residuals 192 robustAngle 0.000713922 rmsAngle 0.000715752
+heldOut camera cam02 predictions 8 residuals 192 robustAngle 0.000729362 rmsAngle 0.000756037
+heldOut camera cam03 predictions 8 residuals 192 robustAngle 0.000654529 rmsAngle 0.000681449
+resampling 10 rotation 0.001838325 translation 0.001788594 metres 0.001781552 worst cam03
 diagnostics.groupsExamined 40 groupsUsable 40 observations 160 observationsWithoutPose 0
 edge cam00-cam01 shared 32 bridge 0
 edge cam00-cam02 shared 32 bridge 0
@@ -203,7 +204,7 @@ source /rig/cam02
 source /rig/cam03
 frames 160 detector truth/1 poseSolver truth/1 refiner passthrough/1
 request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
-request overrides unset unset unset unset unset unset
+request overrides unset unset unset unset unset unset unset
 request detection native, refine native 1, detail Summary, minimum corners 4
 request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal
 == flipped
@@ -216,13 +217,14 @@ camera cam03 q(0.971690706 -0.048472337 -0.230939727 -0.011595147) t(0.449886558
 scale Metric: the board's measured square, 24 mm (test board)
 verdict Exploratory
 note Ready: 4 of 4 cameras in fewer than 30 shared groups (fewest: cam00, in 19)
-thresholds registration/1 ready(30 5 0.001 0.001 0.002 0.02) exploratory(4 2 0.004 0.005 0.01 0.1)
+thresholds registration/1 ready(30 5 0.001 0.001 0.002 0.02 10) exploratory(4 2 0.004 0.005 0.01 0.1 10)
 heldOut groups 5 predictions 20 unpredicted 0 corners 480 rmsAngle 2.6997e-05 rmsPixels 0.013678587 worstPixels 0.035900223
-heldOut camera cam00 2.0018e-05
-heldOut camera cam01 2.2299e-05
-heldOut camera cam02 3.0312e-05
-heldOut camera cam03 3.3145e-05
-resampling 10 rotation 0.000629178 translation 0.000469885 metres 0.000469736 worst cam01
+heldOut robustAngle 2.6107e-05
+heldOut camera cam00 predictions 5 residuals 120 robustAngle 2.084e-05 rmsAngle 2.0018e-05
+heldOut camera cam01 predictions 5 residuals 120 robustAngle 2.5834e-05 rmsAngle 2.2299e-05
+heldOut camera cam02 predictions 5 residuals 120 robustAngle 2.9056e-05 rmsAngle 3.0312e-05
+heldOut camera cam03 predictions 5 residuals 120 robustAngle 3.3086e-05 rmsAngle 3.3145e-05
+resampling 10 rotation 0.000615296 translation 0.000533692 metres 0.000533524 worst cam03
 diagnostics.groupsExamined 24 groupsUsable 24 observations 96 observationsWithoutPose 0
 edge cam00-cam01 shared 19 bridge 0
 edge cam00-cam02 shared 19 bridge 0
@@ -363,7 +365,7 @@ source /rig/cam02
 source /rig/cam03
 frames 96 detector truth/1 poseSolver truth/1 refiner passthrough/1
 request reference cam02 unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
-request overrides 30 unset unset unset unset unset
+request overrides 30 unset unset unset unset unset unset
 request detection native, refine native 1, detail Summary, minimum corners 4
 request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal
 == stray
@@ -375,15 +377,15 @@ camera cam02 q(0.892877025 0.000228044 -0.450300527 4.1721e-05) t(0.804193112 0.
 camera cam03 q(0.764050247 -0.037915513 -0.643246085 -0.032001695) t(0.985402711 -0.099607103 0.8295684)
 scale Metric: the board's measured square, 24 mm (test board)
 verdict Exploratory
-note Ready: rotation variation 2.86 mrad exceeds 1 (cam01)
-note Ready: translation variation 0.00234 of the median depth exceeds 0.002 (cam01)
-thresholds registration/1 ready(10 5 0.001 0.001 0.002 0.02) exploratory(4 2 0.004 0.005 0.01 0.1)
+note Ready: rotation variation 2.64 mrad exceeds 1 (cam01)
+thresholds registration/1 ready(10 5 0.001 0.001 0.002 0.02 10) exploratory(4 2 0.004 0.005 0.01 0.1 10)
 heldOut groups 6 predictions 24 unpredicted 0 corners 576 rmsAngle 0.000704509 rmsPixels 0.357952267 worstPixels 0.915233281
-heldOut camera cam00 0.00076367
-heldOut camera cam01 0.000632503
-heldOut camera cam02 0.000719276
-heldOut camera cam03 0.000696219
-resampling 6 rotation 0.002860985 translation 0.002343418 metres 0.002299754 worst cam01
+heldOut robustAngle 0.000665526
+heldOut camera cam00 predictions 6 residuals 144 robustAngle 0.000763278 rmsAngle 0.00076367
+heldOut camera cam01 predictions 6 residuals 144 robustAngle 0.000640676 rmsAngle 0.000632503
+heldOut camera cam02 predictions 6 residuals 144 robustAngle 0.000718542 rmsAngle 0.000719276
+heldOut camera cam03 predictions 6 residuals 144 robustAngle 0.000651657 rmsAngle 0.000696219
+resampling 6 rotation 0.002643389 translation 0.001861254 metres 0.001826574 worst cam01
 diagnostics.groupsExamined 24 groupsUsable 24 observations 96 observationsWithoutPose 0
 edge cam00-cam01 shared 18 bridge 0
 edge cam00-cam02 shared 18 bridge 0
@@ -507,7 +509,7 @@ source /rig/cam02
 source /rig/cam03
 frames 96 detector truth/1 poseSolver truth/1 refiner passthrough/1
 request reference unset unknownApplicability Accept noise 0.5 loss Huber 3 profile (method's)
-request overrides unset unset unset unset unset unset
+request overrides unset unset unset unset unset unset unset
 request detection native, refine native 1, detail Summary, minimum corners 4
 request heldOutFraction 0.25 resamples 6 seed 17 maximumIterations 100 execution Normal
 == disconnected
@@ -516,7 +518,7 @@ failure Disconnected: the cameras fall into 2 groups that never saw the board to
 reference unset requested 0
 scale Arbitrary
 verdict Rejected
-thresholds registration/1 ready(10 5 0.001 0.001 0.002 0.02) exploratory(4 2 0.004 0.005 0.01 0.1)
+thresholds registration/1 ready(10 5 0.001 0.001 0.002 0.02 10) exploratory(4 2 0.004 0.005 0.01 0.1 10)
 heldOut unavailable: not computed
 resampling unavailable: not computed
 diagnostics.groupsExamined 24 groupsUsable 24 observations 48 observationsWithoutPose 0
@@ -643,6 +645,6 @@ source /rig/cam02
 source /rig/cam03
 frames 96 detector truth/1 poseSolver truth/1 refiner /
 request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
-request overrides unset unset unset unset unset unset
+request overrides unset unset unset unset unset unset unset
 request detection native, refine native 1, detail Summary, minimum corners 4
 request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal

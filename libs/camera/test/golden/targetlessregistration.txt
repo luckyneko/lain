@@ -7,12 +7,13 @@ camera cam02 q(0.955204492 0.015880385 -0.295151701 -0.014753497) t(0.556148599 
 camera cam03 q(0.900166817 0.022465193 -0.43458892 -0.018096581) t(0.771543382 0.024347279 0.37514839)
 scale Arbitrary: normalised: the median depth of the 240 landmarks the reference sees is 1
 verdict Ready
-thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.005 0.05) exploratory(30 15 0.006 0.005 0.02 0.15)
+thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.002 0.05 10) exploratory(30 15 0.006 0.005 0.02 0.15 10)
 heldOut units 60 predictions 240 unpredicted 0 residuals 240 epipolar 0 rmsAngle 0 rmsPixels 0 worstPixels 0
-heldOut camera cam00 0
-heldOut camera cam01 0
-heldOut camera cam02 0
-heldOut camera cam03 0
+heldOut robustAngle 0
+heldOut camera cam00 predictions 60 residuals 60 robustAngle 0 rmsAngle 0
+heldOut camera cam01 predictions 60 residuals 60 robustAngle 0 rmsAngle 0
+heldOut camera cam02 predictions 60 residuals 60 robustAngle 0 rmsAngle 0
+heldOut camera cam03 predictions 60 residuals 60 robustAngle 0 rmsAngle 0
 resampling 10 rotation 0 translation 0 absolute 0 worst -
 edge cam00-cam01 shared 240 bridge 0
 edge cam00-cam02 shared 240 bridge 0
@@ -98,7 +99,7 @@ source /scene/cam02
 source /scene/cam03
 frames 4 geometry truth/1 extractor / matcher / refiner passthrough/1 extraction unset
 request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
-request overrides unset unset unset unset unset unset
+request overrides unset unset unset unset unset unset unset
 request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal
 == noisy
 status Succeeded
@@ -111,13 +112,14 @@ scale Arbitrary: normalised: the median depth of the 225 landmarks the reference
 verdict Rejected
 note Ready: 376 of 900 observations are outliers, above 0.05
 note Exploratory: 376 of 900 observations are outliers, above 0.15
-thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.005 0.05) exploratory(30 15 0.006 0.005 0.02 0.15)
+thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.002 0.05 10) exploratory(30 15 0.006 0.005 0.02 0.15 10)
 heldOut units 75 predictions 300 unpredicted 0 residuals 300 epipolar 0 rmsAngle 0.001123575 rmsPixels 0.594633139 worstPixels 2.26687922
-heldOut camera cam00 0.001211936
-heldOut camera cam01 0.001015898
-heldOut camera cam02 0.000988732
-heldOut camera cam03 0.001253496
-resampling 6 rotation 0 translation 0.000720962 absolute 0.000719676 worst -
+heldOut robustAngle 0.001091371
+heldOut camera cam00 predictions 75 residuals 75 robustAngle 0.001116089 rmsAngle 0.001211936
+heldOut camera cam01 predictions 75 residuals 75 robustAngle 0.001076157 rmsAngle 0.001015898
+heldOut camera cam02 predictions 75 residuals 75 robustAngle 0.001058488 rmsAngle 0.000988732
+heldOut camera cam03 predictions 75 residuals 75 robustAngle 0.001153661 rmsAngle 0.001253496
+resampling 6 rotation 0 translation 0.000809082 absolute 0.000807638 worst -
 edge cam00-cam01 shared 225 bridge 0
 edge cam00-cam02 shared 225 bridge 0
 edge cam00-cam03 shared 225 bridge 0
@@ -593,7 +595,7 @@ source /scene/cam02
 source /scene/cam03
 frames 4 geometry truth/1 extractor / matcher / refiner passthrough/1 extraction unset
 request reference cam02 unknownApplicability Accept noise 0.5 loss Huber 3 profile (method's)
-request overrides unset unset unset unset unset unset
+request overrides unset unset unset unset unset unset unset
 request heldOutFraction 0.25 resamples 6 seed 17 maximumIterations 100 execution Normal
 == chain
 status Failed
@@ -601,7 +603,7 @@ failure Disconnected: cameras cam02, cam03 share no triangulable landmark with t
 reference cam01 requested 0
 scale Arbitrary
 verdict Rejected
-thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.005 0.05) exploratory(30 15 0.006 0.005 0.02 0.15)
+thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.002 0.05 10) exploratory(30 15 0.006 0.005 0.02 0.15 10)
 heldOut unavailable: not computed
 resampling unavailable: not computed
 edge cam00-cam01 shared 40 bridge 1
@@ -661,7 +663,7 @@ source /scene/cam02
 source /scene/cam03
 frames 4 geometry / extractor / matcher / refiner / extraction unset
 request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
-request overrides unset unset unset unset unset unset
+request overrides unset unset unset unset unset unset unset
 request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal
 == disconnected
 status Failed
@@ -669,7 +671,7 @@ failure Disconnected: the cameras fall into 2 groups that share no track: {cam00
 reference unset requested 0
 scale Arbitrary
 verdict Rejected
-thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.005 0.05) exploratory(30 15 0.006 0.005 0.02 0.15)
+thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.002 0.05 10) exploratory(30 15 0.006 0.005 0.02 0.15 10)
 heldOut unavailable: not computed
 resampling unavailable: not computed
 edge cam00-cam01 shared 80 bridge 1
@@ -739,7 +741,7 @@ source /scene/cam02
 source /scene/cam03
 frames 4 geometry / extractor / matcher / refiner / extraction unset
 request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
-request overrides unset unset unset unset unset unset
+request overrides unset unset unset unset unset unset unset
 request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal
 == behind
 status Succeeded
@@ -752,12 +754,13 @@ scale Arbitrary: normalised: the median depth of the 160 landmarks the reference
 verdict Rejected
 note Ready: 1 of 4 cameras in fewer than 100 shared tracks (fewest: cam03, in 13)
 note Exploratory: 1 of 4 cameras in fewer than 30 shared tracks (fewest: cam03, in 13)
-thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.005 0.05) exploratory(30 15 0.006 0.005 0.02 0.15)
+thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.002 0.05 10) exploratory(30 15 0.006 0.005 0.02 0.15 10)
 heldOut units 40 predictions 123 unpredicted 0 residuals 123 epipolar 0 rmsAngle 0 rmsPixels 0 worstPixels 0
-heldOut camera cam00 0
-heldOut camera cam01 0
-heldOut camera cam02 0
-heldOut camera cam03 0
+heldOut robustAngle 0
+heldOut camera cam00 predictions 40 residuals 40 robustAngle 0 rmsAngle 0
+heldOut camera cam01 predictions 40 residuals 40 robustAngle 0 rmsAngle 0
+heldOut camera cam02 predictions 40 residuals 40 robustAngle 0 rmsAngle 0
+heldOut camera cam03 predictions 3 residuals 3 robustAngle 0 rmsAngle 0
 resampling 10 rotation 0 translation 0 absolute 0 worst -
 edge cam00-cam01 shared 160 bridge 0
 edge cam00-cam02 shared 160 bridge 0
@@ -824,7 +827,7 @@ source /scene/cam02
 source /scene/cam03
 frames 4 geometry truth/1 extractor / matcher / refiner passthrough/1 extraction unset
 request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
-request overrides unset unset unset unset unset unset
+request overrides unset unset unset unset unset unset unset
 request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal
 == narrow
 status Succeeded
@@ -834,11 +837,12 @@ camera cam01 q(0.999987501 1.659e-06 -0.004988739 -0.000332574) t(0.010038688 0 
 camera cam02 q(0.999950014 6.635e-06 -0.00997636 -0.000665024) t(0.020077376 0 0)
 scale Arbitrary: normalised: the median depth of the 160 landmarks the reference sees is 1
 verdict Ready
-thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.005 0.05) exploratory(30 15 0.006 0.005 0.02 0.15)
+thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.002 0.05 10) exploratory(30 15 0.006 0.005 0.02 0.15 10)
 heldOut units 40 predictions 120 unpredicted 0 residuals 120 epipolar 0 rmsAngle 0 rmsPixels 0 worstPixels 0
-heldOut camera cam00 0
-heldOut camera cam01 0
-heldOut camera cam02 0
+heldOut robustAngle 0
+heldOut camera cam00 predictions 40 residuals 40 robustAngle 0 rmsAngle 0
+heldOut camera cam01 predictions 40 residuals 40 robustAngle 0 rmsAngle 0
+heldOut camera cam02 predictions 40 residuals 40 robustAngle 0 rmsAngle 0
 resampling 10 rotation 0 translation 0 absolute 0 worst -
 edge cam00-cam01 shared 160 bridge 0
 edge cam00-cam02 shared 160 bridge 0
@@ -899,7 +903,7 @@ source /scene/cam01
 source /scene/cam02
 frames 3 geometry truth/1 extractor / matcher / refiner passthrough/1 extraction unset
 request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
-request overrides unset unset unset unset unset unset
+request overrides unset unset unset unset unset unset unset
 request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal
 == spare
 status Succeeded
@@ -913,7 +917,7 @@ verdict Rejected
 note Ready: 4 of 4 cameras in fewer than 100 shared tracks (fewest: cam02, in 18)
 note Ready: no held-out evidence: no tracks were held out
 note Exploratory: 4 of 4 cameras in fewer than 30 shared tracks (fewest: cam02, in 18)
-thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.005 0.05) exploratory(30 15 0.006 0.005 0.02 0.15)
+thresholds registration-targetless/1 unit Track ready(100 50 0.002 0.001 0.002 0.05 10) exploratory(30 15 0.006 0.005 0.02 0.15 10)
 heldOut unavailable: no tracks were held out
 resampling 4 rotation 0 translation 0 absolute 0 worst -
 edge cam00-cam01 shared 20 bridge 0
@@ -940,5 +944,5 @@ source /scene/cam02
 source /scene/cam03
 frames 4 geometry truth/1 extractor / matcher / refiner passthrough/1 extraction unset
 request reference unset unknownApplicability Accept noise 0.5 loss Cauchy 3 profile (method's)
-request overrides unset unset unset unset unset unset
+request overrides unset unset unset unset unset unset unset
 request heldOutFraction 0.2 resamples 10 seed 1 maximumIterations 100 execution Normal

@@ -9258,7 +9258,9 @@ each package in a session of its own (2026-10-20).
 
 3. **The three changes to how held-out evidence is judged**, queued on 2026-10-09 (Outstanding work).
    On sub-slice 9's footage, one wrong held-out track fails Ready about one run in three. Registration's
-   resampling spread, an RMS about the result, is a candidate for the same robust treatment.
+   resampling spread, an RMS about the result, is a candidate for the same robust treatment. *(**Built
+   2026-10-21**, the held-out statistic median-based rather than by leaving out outliers, which was
+   measured and refused: see *Held-out evidence judged from medians*, below.)*
 4. **A camera's identity should not depend on where its footage sits.** The full fix is the capture
    manifest, which is after M9. The interim fix: the cli binder names each camera relative to the
    folder it was given, rather than by its canonical uri.
@@ -9499,6 +9501,69 @@ this date names it), under `calibration/`, `board-rig/`, `targetless-rig/` and `
    output of type `RegisteredRig`, and wire it. Its port describes the three cameras and where each
    sits, and the output shows a `json` dropdown and `Save...`. Save as `rig`, which writes `rig.json`:
    the same document `flowview run --graph … --rig rig.json` writes for that graph.
+
+### Held-out evidence judged from medians (built 2026-10-21)
+
+The review's P2 item 3: the three changes to how held-out evidence is judged, queued on 2026-10-09, and
+registration's resampling spread given the treatment calibration's stability got on 2026-10-19.
+
+**Decided with the repo owner**, the first two choices reversed by measurement:
+- **The held-out statistic is median-based** (`HeldOutEvidence::robustAngle`): for each kind of member
+  (a track member against its predicted point, against an epipolar plane, or a board view), the median
+  of its members' mean squared residual per point times that kind's mean-to-median ratio under normal
+  errors, the kinds weighted by their points. Under normal errors it reads as the RMS. The RMS stays,
+  for diagnosis. The owner first chose to leave out what an outlier rule rejects, and two rules were
+  built and measured before this:
+  - **The fit's rule** (a whitened residual over the loss scale, 3) flagged 46 of 320 held-out members
+    (14%) on the Ceres noisy rig, whose noise is drawn at the stated covariance, 12 of 215 (5.6%) on the
+    rendered rig, and up to 4 of 61 of one camera's in the flowview vertical: every one a correct
+    registration, made Rejected or Exploratory. A held-out residual also carries its prediction's error,
+    which the fit's residuals do not.
+  - **A self-normalising rule** (a member over 3 times the standard deviation its kind's median
+    implies) flagged 43 of 215 on the rendered rig and 51 to 55 of 257 on the comparison rig, pooled or
+    per camera and kind. SIFT's held-out residuals are heavy-tailed, since a feature's precision follows
+    its size.
+  - **The median-based statistic, measured with the same footage:** 0.52 mrad against the RMS's 0.55 on
+    the noisy rig; 0.30 against 0.64 on the rendered rig; 0.23 against 0.91 on the comparison rig's
+    targetless result; 2.9 to 9.0 mrad (the RMS 3.3 to 6.1) with one camera turned 5 mrad. It still
+    separates right from wrong, and the bounds were not changed.
+- **Each camera is judged on its own** against the same held-out bound, once it has ten held-out
+  points (`minimumHeldOutPerCamera`, in both tiers of both profiles, overridable).
+- **The resampling spread is median-based**: each camera's median distance from the result, times
+  sqrt(3) over the median of a chi distribution of three degrees of freedom (1.126), so normally
+  scattered resamples read as their RMS and the bounds keep their meaning.
+- **The profiles are amended in place**, being provisional until real footage (their header says so
+  now), and `registration-targetless/1`'s Ready holds position to 0.2% of the median depth.
+
+**Built:**
+- **`HeldOutEvidence::robustAngle`** and **`HeldOutCamera`** (`report.h`), each camera's predictions,
+  points, median-based residual and RMS. `perCamera` was a list of name-and-RMS pairs.
+- **One routine gathers held-out evidence for both methods**, `registration::detail::heldOutEvidence`
+  (`src/registration/common.{h,cpp}`), from each method's scored members: board registration's views and
+  `registration::validate`'s track members. **`detail::resampledSpread`** serves both methods' stability.
+- **The judge** reads `robustAngle`, rig-wide and per camera. A camera over the bound is named in the
+  note, with how many of the judged cameras are over it.
+- **The report's line** says `held out 0.3 mrad (median-based; RMS 0.64) over 86 tracks`.
+- **Tests**, three new cases over the board stand-ins in `test_registration.cpp`:
+  - a stray view in one held-out group moves the held-out RMS to 11.6 mrad (camera 2's 23.2) and the
+    median-based residual not at all (1.2e-13), and the verdict stays Ready;
+  - in an eight-camera rig with camera 2 3 mm off in every held-out group, camera 2 reads 2.80 mrad
+    and the rig 1.1e-13: not Ready, with camera 2 named, and Ready again when no camera is judged on
+    its own;
+  - of ten resamples, one with camera 1 turned 50 mrad leaves the spread at 1.5e-16 and the verdict
+    Ready, where an RMS would read 16 mrad. The pass-through refiner gained an `adjust` hook for it.
+  
+  Plus the profile contract (the per-camera minimum, the 0.2%, the override), and the parallel-and-serial
+  case comparing the median-based residual too.
+- **Three sabotages, each caught by the case aimed at it:** judging the plain RMS (the stray case, and
+  the per-camera case, whose rig RMS then crosses the bound); judging no camera on its own (the
+  per-camera case); the spread an RMS again (the resample case).
+- **Both goldens change on purpose**: new lines for the median-based residual and each camera's, the
+  thresholds' per-camera minimum, the overrides' new field, and the resampling spreads, now taken from
+  medians. Every RMS line is unchanged and no verdict changes; one translation-spread note goes, its
+  spread now under the bound.
+- `ctest -j8` **1338/1338** Release with video, camera and Ceres on (+3); warning-clean, format-check
+  clean. Not run: the builds with video, camera and Ceres off.
 
 ### Not in this milestone
 
@@ -14663,25 +14728,14 @@ row here**. A row is cheap to delete and expensive to leave.
      - **P1, both built 2026-10-20:** a registration's result leaving the process (*After slice 4:
        the registered rig*), and the gui loading and saving camera values (*The gui binds and saves
        camera values*). Their gui-mode checks are in item 3.
-     - **P2:** a camera's identity independent of where its footage sits, by the interim cli fix (the
-       held-out changes are in item 2).
+     - **P2:** a camera's identity independent of where its footage sits, in all three methods (decided
+       2026-10-21). The held-out changes are built (*Held-out evidence judged from medians*).
      - **P3:** a footage generator; example documents for board calibration, `detectBoard` and both
        registrations, and a test of calibrating every camera then registering them in one graph.
      - **P4:** a CI leg with OpenCV on and Ceres off; the dependency footprint measured again.
   2. **Owed by the repo owner.**
      - **The real-camera capture** for slice 1, sub-slice 8, guided by
        `plugins/camera/test/fixtures/README.md`. It is all that is left of slice 1.
-     - **Three changes to how held-out evidence is judged**, queued on 2026-10-09 from sub-slice 9's
-       measurements, each its own commit:
-       - **A robust held-out statistic.** `registration::validate`'s RMS has no robust loss, so one
-         wrong held-out track decides it: about one run in three on footage with 2 wrong tracks in
-         503 would fail Ready on that track alone. The alternatives: count members beyond the
-         outlier rule apart and take the RMS over the rest, or report a robust statistic beside the
-         RMS.
-       - **A per-camera held-out criterion.** Fitness judges the rig-wide RMS, so one camera 5 mrad
-         out passes in a rig of seven or more; the worst camera's transfer would catch it at any size.
-       - **Translation spread 0.5% → 0.2%** in `registration-targetless/1`, as `registration/1` has;
-         the measured spread was 0.034%.
      - **Which evidence is held out depends on where the footage sits** (found in sub-slice 10). A
        camera's identity in a graph is its footage's canonical source uri, a track's or a group's
        identity digests it, and every k-th one in identity order is held out, so the same rig in
@@ -14709,9 +14763,8 @@ row here**. A row is cheap to delete and expensive to leave.
        feature cap of 2048, 40 sampled frames kept, 10c's ranking kept, a robust spread for a
        calibration's stability, the targetless held-out residual judged whitened by the stated
        covariance rather than as an angle, and the scale cases run with nothing beside them (slice
-       4's *After sub-slice 10e*). Registration's own resampling
-       spread, an RMS about the result, is still a candidate for the same treatment, with its robust
-       held-out statistic above.
+       4's *After sub-slice 10e*). Registration's resampling spread and held-out statistic got the
+       same treatment on 2026-10-21 (M9's *Held-out evidence judged from medians*).
      - **The feature cap's cost**: count descriptor rows rather than features, or lower the cap, if
        Exact matching's cost (16.9 core-hours for a 100-camera rig at the cap) matters more than the
        tracks. To be decided on real footage's rows per feature (sub-slice 7 follow-up B).

@@ -479,6 +479,30 @@ repo owner while planning M9 slice 3.)*
     - **Its RMS has no robust loss.** One wrong track among the held-out ones moves it more than every
       right track together. WORK.md's sub-slice 9 notes put this to the repo owner, with the
       alternatives.
+
+  *Judged from medians, and per camera (2026-10-21, decided with the repo owner):*
+  - **Fitness judges a median-based held-out residual**, `HeldOutEvidence::robustAngle`: for each kind
+    of member (a track member against its predicted point, against an epipolar plane, or a board
+    view), the median of its members' mean squared residual per point, scaled by that kind's
+    mean-to-median ratio under normal errors, the kinds weighted by their points. Under normal errors it
+    reads as the RMS (0.52 against 0.55 mrad on noise drawn at the stated covariance), and a few wrong
+    members cannot decide it. The RMS stays in the report for diagnosis. Both methods' held-out evidence
+    is gathered by one private routine.
+  - **No held-out member is classed an outlier.** Leaving out what an outlier rule rejects was the
+    owner's first choice, and was measured and refused. The fit's rule (whitened residual over the loss
+    scale) flagged 6% to 14% of correct registrations' held-out members, since a held-out residual also
+    carries its prediction's error. Self-normalising rules, pooled or per camera, flagged about a fifth
+    on SIFT features, whose held-out residuals are heavy-tailed because a feature's precision follows its
+    size. On those features the median-based residual reads 0.23 to 0.31 mrad where the RMS reads 0.64
+    to 0.91, while a camera turned 5 mrad reads 2.9 to 9.0, so it still separates right from wrong.
+  - **Each camera is judged on its own** against the same held-out bound, once it has ten held-out
+    points (`FitnessThresholds::minimumHeldOutPerCamera`), so one bad camera is seen however many good
+    ones the rig has.
+  - **The resampling spread is median-based too**: each camera's median distance from the result,
+    scaled so that normally scattered resamples read as their RMS, as calibration's stability became on
+    2026-10-19.
+  - **The profiles are amended in place**, being provisional until real footage, and
+    `registration-targetless/1` holds position to 0.2% of the median depth, as `registration/1` does.
 - **A scale-ambiguous result is normalised** so the median depth of the landmarks seen from the
   reference is 1, and its report says so.
 - **SIFT** fills the OpenCV extractor. **Matching is a request choice between Exact and

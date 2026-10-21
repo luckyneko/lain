@@ -25,10 +25,13 @@ namespace lain::camera::registration
 	{
 		std::uint32_t minimumSharedPerCamera = 0; // units a camera shares with another camera
 		std::uint32_t minimumBridgeShared = 0;	  // shared units a bridge edge needs, or it is a weak bridge
-		double maximumHeldOutAngle = 0;			  // radians: RMS transfer residual on held-out units
+		double maximumHeldOutAngle = 0;			  // radians: held-out transfer residual, median-based (HeldOutEvidence)
 		double maximumRotationVariation = 0;	  // radians: the worst camera's rotation spread across resamples
 		double maximumTranslationVariation = 0;	  // the worst camera's translation spread over the median observation depth
 		double maximumOutlierFraction = 0;		  // of the camera-unit observations, flagged as outliers
+		// A camera's own held-out residual is judged against maximumHeldOutAngle too, once it has this many
+		// points predicted, so one bad camera is seen however many good ones the rig has.
+		std::uint32_t minimumHeldOutPerCamera = 0;
 	};
 
 	// Explicit request overrides, applied to the Ready tier. Unset keeps the profile's value.
@@ -40,10 +43,14 @@ namespace lain::camera::registration
 		std::optional<double> maximumRotationVariation;
 		std::optional<double> maximumTranslationVariation;
 		std::optional<double> maximumOutlierFraction;
+		std::optional<std::uint32_t> minimumHeldOutPerCamera;
 	};
 
-	// A named, VERSIONED pair of tiers ("registration/1"). A published profile's numbers never
-	// change: different numbers are a new version. Reports record the resolved thresholds anyway.
+	// A named, VERSIONED pair of tiers ("registration/1"). Once real footage has confirmed a profile its
+	// numbers never change: different numbers are a new version. Until then both profiles are
+	// provisional, and the repo owner has amended them in place (2026-10-20: a median-based held-out
+	// residual, judged per camera too, and a median-based resampling spread; WORK.md, M9). Reports record
+	// the resolved thresholds anyway.
 	struct FitnessProfile
 	{
 		std::string name;

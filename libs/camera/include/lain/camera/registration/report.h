@@ -144,8 +144,29 @@ namespace lain::camera::registration
 		double rmsWhitened = 0; // standard deviations
 	};
 
+	// One camera's share of the held-out evidence: the members it saw, and how well they were predicted.
+	struct HeldOutCamera
+	{
+		capture::CameraIdentity camera;
+		std::uint32_t predictions = 0; // its members predicted
+		std::uint32_t residuals = 0;   // their points
+		double robustAngle = 0;		   // radians: its held-out residual, median-based, as HeldOutEvidence's
+		double rmsAngle = 0;		   // radians: its RMS transfer residual, for diagnosis only
+	};
+
 	// The registration checked against evidence that took no part in it: each member of a held-out
 	// unit predicted from the others (CONTEXT.md, "Held-out group", "Held-out track").
+	//
+	// What fitness judges is robustAngle, taken from medians (2026-10-20): for each kind of member (a track
+	// member against its predicted point, against an epipolar plane, or a board view), the median of its
+	// members' mean squared residual per point, times the mean-to-median ratio that kind's residual has
+	// when its errors are normal, the kinds weighted by their points. So for normal errors it equals
+	// rmsAngle, and a few wrong members cannot decide it: one wrong held-out track used to fail a Ready
+	// registration about one run in three. On SIFT features held-out residuals are heavy-tailed, since a
+	// feature's precision follows its size, so robustAngle reads well under rmsAngle there: 0.23 to 0.31
+	// mrad against 0.64 to 0.91 on correct rendered rigs, while a camera turned 5 mrad reads 2.9 to 9.0.
+	// No member is classed an outlier: every per-member rule tried flagged about a fifth of a correct
+	// rig's members on those features (WORK.md, M9's 2026-10-20 review).
 	struct HeldOutEvidence
 	{
 		std::uint32_t units = 0;
@@ -156,18 +177,22 @@ namespace lain::camera::registration
 		// two-member track's (validation.h). Each counts twice in the RMS angles, since its residual
 		// has one degree of freedom where a transfer residual has two.
 		std::uint32_t epipolar = 0;
-		double rmsAngle = 0;  // radians: the transfer residual
-		double rmsPixels = 0; // raw, for diagnosis only, over the predictions with a predicted pixel
+		double robustAngle = 0; // radians: the held-out transfer residual, median-based, which fitness judges
+		double rmsAngle = 0;	// radians: the RMS transfer residual, for diagnosis
+		double rmsPixels = 0;	// raw, for diagnosis only, over the predictions with a predicted pixel
 		double worstPixels = 0;
-		std::vector<std::pair<capture::CameraIdentity, double>> perCamera; // RMS transfer angle
+		std::vector<HeldOutCamera> perCamera; // the cameras with a member predicted, in identity order
 	};
 
-	// How much the registration moves when its evidence units are resampled with replacement.
+	// How much the registration moves when its evidence units are resampled with replacement. Each
+	// camera's spread is the median of its resamples' distances from the result, scaled to equal their
+	// RMS distance for normally scattered resamples (2026-10-20), so one poorly conditioned resample
+	// cannot decide it.
 	struct ResamplingEvidence
 	{
 		std::uint32_t resamples = 0;			 // that produced a registration
-		double rotationVariation = 0;			 // radians: the worst camera's RMS rotation from the result
-		double translationVariation = 0;		 // the worst camera's RMS translation over the median observation depth
+		double rotationVariation = 0;			 // radians: the worst camera's rotation spread about the result
+		double translationVariation = 0;		 // the worst camera's translation spread over the median observation depth
 		double translationVariationAbsolute = 0; // the same in the registration's units, for diagnosis
 		capture::CameraIdentity worstCamera;
 	};

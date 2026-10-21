@@ -12,6 +12,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstdint>
+#include <limits>
+#include <mutex>
 #include <string>
 #include <variant>
 
@@ -104,6 +107,30 @@ namespace
 	std::string groupIdentity(std::size_t g)
 	{
 		return rig::group(g).identity();
+	}
+
+	// The rig's groups the registration held out, by index.
+	std::vector<std::size_t> heldOutGroups(const Report& report)
+	{
+		std::vector<std::size_t> out;
+		for (std::size_t g = 0; g < rig::scene().referenceFromBoard.size(); ++g)
+		{
+			const std::vector<std::string>& held = report.diagnostics.heldOutUnits;
+			if (std::find(held.begin(), held.end(), groupIdentity(g)) != held.end())
+				out.push_back(g);
+		}
+		return out;
+	}
+
+	const HeldOutCamera& heldOutCamera(const HeldOutEvidence& e, const std::string& camera)
+	{
+		for (const HeldOutCamera& c : e.perCamera)
+		{
+			if (c.camera.value == camera)
+				return c;
+		}
+		FAIL("no held-out evidence for " << camera);
+		return e.perCamera.front();
 	}
 } // namespace
 
@@ -387,6 +414,100 @@ TEST_CASE("a noisy rig is measured: held-out transfer and stability report the n
 	CHECK(resampled->translationVariation < 0.01);
 }
 
+TEST_CASE("one stray view in a held-out group moves the held-out RMS and not the verdict", "[camera][registration]")
+{
+	// In one held-out group camera 2's frame shows the board 6 cm and 0.2 rad from where the others saw
+	// it, as in the stray-capture case above, but in evidence that took no part in the fit. Held-out
+	// evidence is judged from medians (HeldOutEvidence), so one wrong member cannot decide a verdict; its
+	// RMS, kept for diagnosis, sees it.
+	rig::reset();
+	const std::vector<std::size_t> held = heldOutGroups(run());
+	REQUIRE(held.size() == 5);
+	const std::size_t g = held[2];
+	rig::scene().elsewhere[{2, g}] =
+		math::RigidTransformd{math::angleAxis(0.2, math::Vec3d{0, 0, 1}), math::Vec3d{0.06, 0, 0}} *
+		rig::scene().referenceFromBoard[g];
+	const Report report = run();
+	requireTruth(report, 1e-9, 1e-9);
+	CHECK(report.diagnostics.outliers.empty()); // the fit never saw it
+	const auto* e = std::get_if<HeldOutEvidence>(&report.heldOut);
+	REQUIRE(e != nullptr);
+	// Measured: the RMS 11.6 mrad (camera 2's 23.2), the median-based residual 1.2e-13.
+	CHECK(e->rmsAngle > report.thresholds.ready.maximumHeldOutAngle);
+	CHECK(e->robustAngle < 1e-6);
+	CHECK(heldOutCamera(*e, "cam02").rmsAngle > report.thresholds.ready.maximumHeldOutAngle);
+	CHECK(heldOutCamera(*e, "cam02").robustAngle < 1e-6);
+	CHECK(report.verdict == Verdict::Ready);
+}
+
+TEST_CASE("one camera off in every held-out group is judged on its own, however many cameras are right",
+		  "[camera][registration]")
+{
+	// Eight cameras, and in every held-out group camera 2 sees the board 3 mm off at 1 m: about 3 mrad,
+	// over Ready's 1, while the other seven predict well. The rig's median-based residual stays under the
+	// bound, so only judging each camera on its own sees camera 2.
+	rig::reset(8, 30);
+	const std::vector<std::size_t> held = heldOutGroups(run());
+	REQUIRE(held.size() >= 5);
+	for (const std::size_t g : held)
+		rig::scene().elsewhere[{2, g}] =
+			math::RigidTransformd{math::Quatd{1, 0, 0, 0}, math::Vec3d{0.003, 0, 0}} * rig::scene().referenceFromBoard[g];
+
+	const Report report = run();
+	requireTruth(report, 1e-9, 1e-9);
+	const auto* e = std::get_if<HeldOutEvidence>(&report.heldOut);
+	REQUIRE(e != nullptr);
+	const double bound = report.thresholds.ready.maximumHeldOutAngle;
+	// Measured: camera 2 at 2.80 mrad, the rig at 1.1e-13.
+	CHECK(heldOutCamera(*e, "cam02").robustAngle > bound);
+	CHECK(e->robustAngle < bound);
+	CHECK(report.verdict != Verdict::Ready);
+	REQUIRE_FALSE(report.fitnessNotes.empty());
+	CHECK(report.fitnessNotes.front().find("cameras' held-out transfer exceeds") != std::string::npos);
+	CHECK(report.fitnessNotes.front().find("cam02") != std::string::npos);
+
+	// The per-camera criterion is what refuses it: with no camera judged on its own, it is Ready.
+	Request unjudged;
+	unjudged.overrides.minimumHeldOutPerCamera = std::numeric_limits<std::uint32_t>::max();
+	CHECK(run(unjudged).verdict == Verdict::Ready);
+}
+
+TEST_CASE("one resample far off moves no camera's spread", "[camera][registration]")
+{
+	// Of ten resamples, the first answers with camera 1 turned 50 mrad: a resample that left the rig
+	// poorly conditioned. The spread is a median (ResamplingEvidence), so it cannot decide the verdict;
+	// as an RMS it would read 50 over the square root of 10, 16 mrad, over Ready's 1.
+	rig::reset();
+	Request request;
+	request.execution = ExecutionPolicy::DeterministicDebug; // so the resamples are answered in order
+	std::size_t fits = 0;
+	{
+		std::lock_guard<std::mutex> lock(rig::refinerScript().mutex);
+		rig::refinerScript().adjust = [&fits](std::size_t, const refinement::Problem& problem, refinement::Solution& out)
+		{
+			if (!problem.freeCameras || problem.cameraFromReference.size() != 4)
+				return;
+			// The first free-camera solve is the registration's own; the next is the first resample.
+			if (fits++ == 1)
+				out.cameraFromReference[1] =
+					math::RigidTransformd{math::angleAxis(0.05, math::Vec3d{0, 1, 0}), math::Vec3d{0.0}} *
+					out.cameraFromReference[1];
+		};
+	}
+	const Report report = run(request);
+	{
+		std::lock_guard<std::mutex> lock(rig::refinerScript().mutex);
+		rig::refinerScript().adjust = nullptr;
+	}
+	REQUIRE(fits > 2);
+	requireTruth(report, 1e-9, 1e-9);
+	const auto* resampled = std::get_if<ResamplingEvidence>(&report.resampling);
+	REQUIRE(resampled != nullptr);
+	CHECK(resampled->resamples == 10);
+	CHECK(resampled->rotationVariation < 1e-9);
+	CHECK(report.verdict == Verdict::Ready);
+}
+
 TEST_CASE("the same work in parallel, serially, or listed in another order gives the same report", "[camera][registration]")
 {
 	rig::reset();
@@ -418,6 +539,7 @@ TEST_CASE("the same work in parallel, serially, or listed in another order gives
 		}
 		CHECK(other->diagnostics.heldOutUnits == a.diagnostics.heldOutUnits);
 		CHECK(std::get<HeldOutEvidence>(other->heldOut).rmsAngle == std::get<HeldOutEvidence>(a.heldOut).rmsAngle);
+		CHECK(std::get<HeldOutEvidence>(other->heldOut).robustAngle == std::get<HeldOutEvidence>(a.heldOut).robustAngle);
 		const auto& ra = std::get<ResamplingEvidence>(a.resampling);
 		const auto& rb = std::get<ResamplingEvidence>(other->resampling);
 		CHECK(rb.rotationVariation == ra.rotationVariation);

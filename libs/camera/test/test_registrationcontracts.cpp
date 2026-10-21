@@ -154,14 +154,22 @@ TEST_CASE("both registration profiles are known, and overrides change only their
 		CHECK(p.ready.maximumRotationVariation < p.exploratory.maximumRotationVariation);
 		CHECK(p.ready.maximumTranslationVariation < p.exploratory.maximumTranslationVariation);
 		CHECK(p.ready.maximumOutlierFraction < p.exploratory.maximumOutlierFraction);
+		// Each camera is judged on its own once it has ten held-out points, in either tier.
+		CHECK(p.ready.minimumHeldOutPerCamera == 10);
+		CHECK(p.exploratory.minimumHeldOutPerCamera == 10);
 	}
+	// Targetless position steady to 0.2% of the median depth, as board registration's (2026-10-20).
+	CHECK(targetless->ready.maximumTranslationVariation == profile->ready.maximumTranslationVariation);
 
 	FitnessOverrides overrides;
 	overrides.minimumBridgeShared = 2;
 	overrides.maximumHeldOutAngle = 0.003;
+	overrides.minimumHeldOutPerCamera = 40;
 	const FitnessProfile resolved = resolve(*profile, overrides);
 	CHECK(resolved.ready.minimumBridgeShared == 2);
 	CHECK(resolved.ready.maximumHeldOutAngle == 0.003);
+	CHECK(resolved.ready.minimumHeldOutPerCamera == 40);
+	CHECK(resolved.exploratory.minimumHeldOutPerCamera == profile->exploratory.minimumHeldOutPerCamera);
 	CHECK(resolved.ready.minimumSharedPerCamera == profile->ready.minimumSharedPerCamera);
 	CHECK(resolved.exploratory.minimumBridgeShared == profile->exploratory.minimumBridgeShared);
 	CHECK(resolved.exploratory.maximumHeldOutAngle == profile->exploratory.maximumHeldOutAngle);

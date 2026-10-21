@@ -53,8 +53,9 @@ namespace
 			out << "heldOut groups " << h->units << " predictions " << h->predictions << " unpredicted " << h->unpredicted
 				<< " corners " << h->residuals << " rmsAngle " << number(h->rmsAngle) << " rmsPixels " << number(h->rmsPixels)
 				<< " worstPixels " << number(h->worstPixels) << "\n";
-			for (const auto& [camera, angle] : h->perCamera)
-				out << "heldOut camera " << camera.value << " " << number(angle) << "\n";
+			out << "heldOut robustAngle " << number(h->robustAngle) << "\n";
+			for (const HeldOutCamera& c : h->perCamera)
+				out << "heldOut camera " << heldOutCamera(c) << "\n";
 		}
 		else
 			out << "heldOut unavailable: " << std::get<Unavailable>(r.heldOut).reason << "\n";
@@ -127,7 +128,8 @@ namespace
 		const FitnessOverrides& o = q.overrides;
 		out << "request overrides " << optional(o.minimumSharedPerCamera) << " " << optional(o.minimumBridgeShared) << " "
 			<< optional(o.maximumHeldOutAngle) << " " << optional(o.maximumRotationVariation) << " "
-			<< optional(o.maximumTranslationVariation) << " " << optional(o.maximumOutlierFraction) << "\n";
+			<< optional(o.maximumTranslationVariation) << " " << optional(o.maximumOutlierFraction) << " "
+			<< optional(o.minimumHeldOutPerCamera) << "\n";
 		// Printed where it was when the request held it (sub-slice 2 moved it to the board record).
 		out << "request detection " << (record.detection ? detectionRequest(*record.detection) : "unset") << "\n";
 		out << "request heldOutFraction " << number(q.heldOutFraction) << " resamples " << q.resamples << " seed " << q.seed

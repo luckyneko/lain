@@ -84,8 +84,11 @@ namespace lain::camera::registration
 												cameras.size(), reference ? reference->value : std::string("?"),
 												scale.scale == Scale::Metric ? "metric" : "arbitrary scale");
 		if (const auto* held = std::get_if<HeldOutEvidence>(&heldOut))
-			text += lain::string::format(", held out {:.3g} mrad RMS over {} {}", held->rmsAngle * 1000.0, held->units,
+		{
+			text += lain::string::format(", held out {:.3g} mrad (median-based; RMS {:.3g}) over {} {}",
+										 held->robustAngle * 1000.0, held->rmsAngle * 1000.0, held->units,
 										 detail::unitsWord(thresholds.unit));
+		}
 		else
 			text += lain::string::format(", no held-out evidence ({})", std::get<Unavailable>(heldOut).reason);
 		text += std::visit([](const auto& method)

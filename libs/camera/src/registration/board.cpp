@@ -788,39 +788,30 @@ namespace lain::camera::registration::board
 												cameraFromReference[target.camera] * placed.referenceFromBody[0]);
 							});
 
-			HeldOutEvidence held;
-			held.units = std::uint32_t(validating.size());
-			std::vector<double> cameraAngles(cameraCount, 0);
-			std::vector<std::uint32_t> cameraCorners(cameraCount, 0);
-			double angles = 0, pixels = 0;
+			// Gathered as registration::validate gathers its held-out tracks (detail::heldOutEvidence).
+			std::uint32_t unpredicted = 0;
+			std::vector<detail::HeldOutMember> members;
 			for (const Prediction& p : predictions)
 			{
 				if (!p.predicted || p.residual.corners == 0)
 				{
-					++held.unpredicted;
+					++unpredicted;
 					continue;
 				}
-				++held.predictions;
-				held.residuals += p.residual.corners;
-				angles += p.residual.sumSquaredAngle;
-				pixels += p.residual.sumSquaredPixels;
-				held.worstPixels = std::max(held.worstPixels, p.residual.worstPixels);
-				cameraAngles[p.camera] += p.residual.sumSquaredAngle;
-				cameraCorners[p.camera] += p.residual.corners;
+				detail::HeldOutMember m;
+				m.camera = p.camera;
+				m.kind = detail::HeldOutKind::View;
+				m.residuals = p.residual.corners;
+				m.sumSquaredAngle = p.residual.sumSquaredAngle;
+				m.pixelPoints = p.residual.corners;
+				m.sumSquaredPixels = p.residual.sumSquaredPixels;
+				m.worstPixels = p.residual.worstPixels;
+				members.push_back(m);
 			}
-			if (held.residuals == 0)
-				report.heldOut = Unavailable{"no held-out member could be predicted from the others"};
-			else
-			{
-				held.rmsAngle = std::sqrt(angles / held.residuals);
-				held.rmsPixels = std::sqrt(pixels / held.residuals);
-				for (std::size_t c = 0; c < cameraCount; ++c)
-				{
-					if (cameraCorners[c] > 0)
-						held.perCamera.push_back({data.cameras[c].camera, std::sqrt(cameraAngles[c] / cameraCorners[c])});
-				}
-				report.heldOut = held;
-			}
+			std::vector<capture::CameraIdentity> identities;
+			for (const RigCamera& c : data.cameras)
+				identities.push_back(c.camera);
+			report.heldOut = detail::heldOutEvidence(std::uint32_t(validating.size()), unpredicted, members, identities);
 		}
 
 		// 8. Stability: registrations of bootstrap resamples of the fitting groups. The draws are made
@@ -837,7 +828,8 @@ namespace lain::camera::registration::board
 							[&](std::size_t r)
 							{ registrations[r] = registerGroups(evidence, data.cameras, draws[r], reference, board, request); });
 
-			std::vector<double> rotation(cameraCount, 0), translation(cameraCount, 0);
+			// Each camera's distance from the result in every resample, its spread taken robustly below.
+			std::vector<std::vector<double>> rotation(cameraCount), translation(cameraCount);
 			std::uint32_t produced = 0;
 			for (const auto& registration : registrations)
 			{
@@ -850,8 +842,8 @@ namespace lain::camera::registration::board
 					const math::RigidTransformd& result = report.cameras[c].referenceFromCamera;
 					const double angle = rotationBetween(resampled, result);
 					const math::Vec3d moved = resampled.translation() - result.translation();
-					rotation[c] += angle * angle;
-					translation[c] += math::dot(moved, moved);
+					rotation[c].push_back(angle);
+					translation[c].push_back(math::length(moved));
 				}
 			}
 			if (produced < 2)
@@ -862,7 +854,7 @@ namespace lain::camera::registration::board
 				evidenceOut.resamples = produced;
 				for (std::size_t c = 0; c < cameraCount; ++c)
 				{
-					const double r = std::sqrt(rotation[c] / produced), t = std::sqrt(translation[c] / produced);
+					const double r = detail::resampledSpread(rotation[c]), t = detail::resampledSpread(translation[c]);
 					if (r > evidenceOut.rotationVariation)
 					{
 						evidenceOut.rotationVariation = r;

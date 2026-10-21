@@ -375,6 +375,11 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   *One procedure for every report* (2026-10-07): the prediction weighs each observation by the
   track's own covariance, with no robust loss, whatever the report's request asked of its own
   refinement. Two registrations are judged by what they registered, never by how they were refined.
+  *Judged from medians* (2026-10-21): held-out evidence, a group's or a track's, is judged by a
+  median-based residual, scaled to read as the RMS under normal errors, rig-wide and for each camera
+  on its own. No held-out member is classed an outlier, since a held-out residual carries its
+  prediction's error and SIFT's are heavy-tailed. The RMS stays, for diagnosis. _Avoid_: held-out
+  outlier.
 - **Global registration refinement** — joint reprojection optimization of all registered camera
   transforms and the method-specific latent geometry while holding the registration reference fixed:
   board poses for board registration or scene landmarks induced by accepted feature tracks for
