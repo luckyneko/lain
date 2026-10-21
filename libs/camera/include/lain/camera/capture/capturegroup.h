@@ -5,6 +5,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // Which frames were captured together (ADR-0016: lain::camera::capture owns capture association,
@@ -60,6 +61,10 @@ namespace lain::camera::capture
 	{
 	public:
 		static CaptureGroupResult create(std::vector<CaptureMember> members);
+		// The same, with each frame's source spelled relative to `root` in the identity (location.h), so
+		// the group has one identity wherever its footage sits. An empty root spells each source whole,
+		// as the overload above does.
+		static CaptureGroupResult create(std::vector<CaptureMember> members, std::string_view root);
 
 		// A digest of the members' camera identities and frame identities (SHA-256, hex), stable
 		// across runs and input orders.
@@ -105,6 +110,8 @@ namespace lain::camera::capture
 	// By-position grouping (CONTEXT.md): frame k of every camera is group k, and a camera with fewer
 	// frames is absent from the groups past its end. It reads no timestamp, so it is right only when
 	// the cameras were triggered together, as a frame-locked rig is. Two cameras with one identity
-	// make every position fail, with the reason.
+	// make every position fail, with the reason. Each group's identity spells its frames' sources
+	// relative to the cameras' footage root (location.h), so it does not depend on where the footage
+	// sits.
 	GroupingResult groupsByPosition(const std::vector<CameraFootage>& cameras);
 } // namespace lain::camera::capture

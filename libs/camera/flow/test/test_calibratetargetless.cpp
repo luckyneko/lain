@@ -2,7 +2,7 @@
 // targetless method module's stand-in scene (syntheticscene.h): an extractor, a matcher and a geometry
 // solver answering from a known moving camera, and a refiner handing back its start
 // (passthroughrefiner.h). What is checked is the NODE: that it hands the method what its parameters
-// say, names the camera by its footage's source, and passes on what comes back. Calibration itself is
+// say, names the camera by where its footage lies, and passes on what comes back. Calibration itself is
 // the method module's and the plugins' tests'.
 //
 // Its own executable, as each method node's test has: these stand-ins answer from a process-wide scene
@@ -238,7 +238,7 @@ TEST_CASE("calibrateCameraTargetless selects no views, so has no maximumViews", 
 TEST_CASE("calibrating through calibrateCameraTargetless is calling the method", "[camera][flow]")
 {
 	// The node's report is the one targetless::calibrate gives for the same footage, the camera named
-	// by its footage's source, under the settings and request its parameters say: every field but the
+	// by where its footage lies, under the settings and request its parameters say: every field but the
 	// timings, through the printer the method's own cases compare with.
 	setUp();
 	const Report node = calibrateScene(
@@ -253,7 +253,8 @@ TEST_CASE("calibrating through calibrateCameraTargetless is calling the method",
 	camera::calibration::Request request;
 	request.model = camera::DistortionModel::None;
 	request.resamples = 4;
-	const camera::capture::CameraFootage camera{camera::capture::CameraIdentity{scene::sourceOf(0)}, scene::sequenceFootage().footage};
+	// The node names the camera by where its footage lies, "cam00" within /scene (capture/location.h).
+	const camera::capture::CameraFootage camera{camera::capture::CameraIdentity{"cam00"}, scene::sequenceFootage().footage};
 	const Report method = targetless::calibrate(camera, targetless::Settings{}, request);
 	standin::targetlesstext::requireSameReport(node, method);
 }

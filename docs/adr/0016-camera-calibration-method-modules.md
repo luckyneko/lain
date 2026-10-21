@@ -12,8 +12,8 @@ grouping reports. `lain::camera::registration` consumes explicit capture groups 
 registration; it does not own timestamp-association policy.
 *(Amended 2026-10-20, from the M9 review: M9 builds capture groups and by-position grouping only.
 Timestamp grouping, clock-domain identity and the capture manifest that would assign durable camera
-identities come after M9, decided with the repo owner. Until then a graph names each camera by its
-footage's source uri.)*
+identities come after M9, decided with the repo owner. Until then a graph names each camera by where its
+footage lies (amended 2026-10-21, below).)*
 
 Registration follows the same optional-method structure as calibration:
 `lain::camera::registration` owns the shared request, report, transforms, diagnostics, and fitness
@@ -326,6 +326,16 @@ while planning M9 slice 2.)*
   wire carries a hundred cameras, and the input composes with `listDir → map(openSequence)` and
   `map(calibrateCamera)` (M8). Until a capture manifest assigns camera identities, a camera's
   identity in a graph is its footage's canonical source uri.
+  *(Amended 2026-10-21, decided with the repo owner in the M9 review: a camera is named by where its
+  footage lies within the folder the rig lies in, `cam0` for a folder of stills and `cam0.mp4` for a
+  video (`capture::identitiesByLocation`, `capture/location.h`), and a by-position group's identity,
+  and a moving camera's track identities, spell their frames' sources relative to that folder. Before,
+  a camera was named by its absolute source, a track's or group's identity digested it, and every k-th
+  one in identity order was held out, so the same rig in another folder held out other evidence (0.795
+  against 0.966 mrad). Board registration's group order and targetless registration's track order
+  followed the absolute paths; board calibration and targetless calibration already ordered their
+  evidence by capture order, so only their reported identities change. The flowview verticals run
+  each method from a second folder and require the same bytes.)*
   *(Amended 2026-10-09, M9 slice 3, sub-slice 10: `registerCamerasTargetless` takes the same two
   collections and no board. A node per method, sharing the pairing, the naming, the grouping and
   the registration request's settings through one base, `RigRegistrationNode`, so the two methods

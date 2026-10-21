@@ -1,13 +1,18 @@
 // Capture groups: what makes one, what refuses one, the identity that does not depend on the order
-// its members were listed in, and by-position grouping of frame-locked footage.
+// its members were listed in, and by-position grouping of frame-locked footage. And where footage lies
+// (location.h): the names and identities that do not depend on where it sits on disk.
 
 #include <lain/camera/capture/capturegroup.h>
+#include <lain/camera/capture/location.h>
 #include <lain/media/framesource.h>
+#include <lain/media/operations.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 using namespace lain;
 using namespace lain::camera::capture;
@@ -36,6 +41,27 @@ namespace
 	media::FrameSequence footage(const std::string& uri, std::size_t frames)
 	{
 		return media::FrameSequence::over(std::make_shared<BlankSource>(uri, frames));
+	}
+
+	// A folder of stills: one single-frame source per frame, `folder`/0000.png onwards.
+	media::FrameSequence stills(const std::string& folder, std::size_t frames)
+	{
+		std::optional<media::FrameSequence> out;
+		for (std::size_t i = 0; i < frames; ++i)
+		{
+			const media::FrameSequence one = footage(folder + "/000" + std::to_string(i) + ".png", 1);
+			out = out ? media::concat(*out, one) : one;
+			REQUIRE(out.has_value());
+		}
+		return *out;
+	}
+
+	std::vector<std::string> names(const std::vector<media::FrameSequence>& footage)
+	{
+		std::vector<std::string> out;
+		for (const CameraIdentity& c : identitiesByLocation(footage))
+			out.push_back(c.value);
+		return out;
 	}
 
 	media::FrameRef frame(const std::string& source, std::size_t ordinal)
@@ -179,4 +205,95 @@ TEST_CASE("by-position grouping says why a position made no group", "[camera][ca
 	CHECK(result.diagnostics[0].problem == GroupProblem::CameraTwice);
 	CHECK(result.diagnostics[0].detail.find("position 0") == 0);
 	CHECK(result.diagnostics[1].detail.find("position 1") == 0);
+}
+
+TEST_CASE("a camera is named by where its footage lies within the folder its rig lies in", "[camera][capture][location]")
+{
+	SECTION("video files")
+	{
+		const std::vector<media::FrameSequence> rig{footage("/data/rig/cam0.mp4", 3), footage("/data/rig/cam1.mp4", 3)};
+		CHECK(footageRoot(rig) == "/data/rig");
+		CHECK(names(rig) == std::vector<std::string>{"cam0.mp4", "cam1.mp4"});
+	}
+	SECTION("folders of stills")
+	{
+		const std::vector<media::FrameSequence> rig{stills("/data/rig/cam0", 3), stills("/data/rig/cam1", 3)};
+		CHECK(footageRoot(rig) == "/data/rig");
+		CHECK(names(rig) == std::vector<std::string>{"cam0", "cam1"});
+	}
+	SECTION("cameras at different depths keep their paths below the root")
+	{
+		const std::vector<media::FrameSequence> rig{stills("/data/rig/left/cam0", 2), footage("/data/rig/cam1.mp4", 2)};
+		CHECK(footageRoot(rig) == "/data/rig");
+		CHECK(names(rig) == std::vector<std::string>{"left/cam0", "cam1.mp4"});
+	}
+	SECTION("one camera is named within the folder holding it")
+	{
+		CHECK(names({stills("/data/rig/cam0", 3)}) == std::vector<std::string>{"cam0"});
+		CHECK(names({footage("/data/clip.mp4", 3)}) == std::vector<std::string>{"clip.mp4"});
+		CHECK(footageRoot({footage("/data/clip.mp4", 3)}) == "/data");
+	}
+	SECTION("two cameras sharing a folder are told apart by their first frame")
+	{
+		// Two numbered patterns in one folder: both cameras' location is the folder.
+		std::optional<media::FrameSequence> a = media::concat(footage("/shots/a.0001.png", 1), footage("/shots/a.0002.png", 1));
+		std::optional<media::FrameSequence> b = media::concat(footage("/shots/b.0001.png", 1), footage("/shots/b.0002.png", 1));
+		REQUIRE(a.has_value());
+		REQUIRE(b.has_value());
+		CHECK(names({*a, *b}) == std::vector<std::string>{"shots/a.0001.png", "shots/b.0001.png"});
+	}
+	SECTION("empty footage names nobody, and the others are still named")
+	{
+		CHECK(names({footage("/data/rig/cam0.mp4", 2), media::FrameSequence{}, footage("/data/rig/cam1.mp4", 2)}) ==
+			  std::vector<std::string>{"cam0.mp4", "", "cam1.mp4"});
+		CHECK(footageRoot({}).empty());
+	}
+}
+
+TEST_CASE("the same footage somewhere else has the same names and the same groups", "[camera][capture][location]")
+{
+	const std::vector<media::FrameSequence> here{stills("/home/a/rig/cam0", 3), stills("/home/a/rig/cam1", 3)};
+	const std::vector<media::FrameSequence> there{stills("/mnt/backup/b/c/rig/cam0", 3), stills("/mnt/backup/b/c/rig/cam1", 3)};
+	CHECK(names(here) == names(there));
+
+	const auto grouped = [](const std::vector<media::FrameSequence>& footage)
+	{
+		const std::vector<CameraIdentity> cameras = identitiesByLocation(footage);
+		return groupsByPosition({{cameras[0], footage[0]}, {cameras[1], footage[1]}});
+	};
+	const GroupingResult a = grouped(here);
+	const GroupingResult b = grouped(there);
+	REQUIRE(a.groups.size() == 3);
+	REQUIRE(b.groups.size() == 3);
+	for (std::size_t k = 0; k < 3; ++k)
+	{
+		CHECK(a.groups[k].identity() == b.groups[k].identity());
+		// Its members still name the frames themselves, where they are.
+		CHECK(a.groups[k].members()[0].frame.source.toString() == "/home/a/rig/cam0/000" + std::to_string(k) + ".png");
+	}
+
+	// A group made with no root spells its frames whole, so it does depend on where they are: the
+	// identity by-position grouping gave up.
+	const std::vector<CameraIdentity> cameras = identitiesByLocation(here);
+	const CaptureGroupResult whole =
+		CaptureGroup::create({{cameras[0], here[0].frame(0)}, {cameras[1], here[1].frame(0)}});
+	REQUIRE(whole.group.has_value());
+	CHECK(whole.group->identity() != a.groups[0].identity());
+	const CaptureGroupResult rooted =
+		CaptureGroup::create({{cameras[0], here[0].frame(0)}, {cameras[1], here[1].frame(0)}}, footageRoot(here));
+	REQUIRE(rooted.group.has_value());
+	CHECK(rooted.group->identity() == a.groups[0].identity());
+}
+
+TEST_CASE("a source is spelled relative to a root it lies within, and whole otherwise", "[camera][capture][location]")
+{
+	CHECK(relativeTo(core::Uri{"/data/rig/cam0/0001.png"}, "/data/rig") == "cam0/0001.png");
+	CHECK(relativeTo(core::Uri{"/data/rig/cam0/0001.png"}, "/data/rig/") == "cam0/0001.png");
+	CHECK(relativeTo(core::Uri{"/elsewhere/cam0.mp4"}, "/data/rig") == "/elsewhere/cam0.mp4");
+	CHECK(relativeTo(core::Uri{"/data/rigs/cam0.mp4"}, "/data/rig") == "/data/rigs/cam0.mp4"); // a component, not a prefix
+	CHECK(relativeTo(core::Uri{"/data/rig"}, "/data/rig") == "/data/rig");					   // strictly within
+	CHECK(relativeTo(core::Uri{"/data/rig/cam0.mp4"}, "") == "/data/rig/cam0.mp4");
+	CHECK(relativeTo(core::Uri{"/cam0.mp4"}, "/") == "cam0.mp4");
+	CHECK(relativeTo(core::Uri{"C:\\data\\rig\\cam0.mp4"}, "C:/data/rig") == "cam0.mp4");
+	CHECK(relativeTo(core::Uri{"s3://bucket/rig/cam0.mp4"}, "s3://bucket/rig") == "cam0.mp4");
 }

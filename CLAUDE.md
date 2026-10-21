@@ -1400,6 +1400,39 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-21 — M9: identities that do not depend on where footage sits (**P2 COMPLETE**)
+
+The review's P2 item 4. A camera was named by its footage's absolute path, track and group identities
+digested it, and every k-th unit in identity order is held out, so the same rig in another folder held
+out other evidence (0.795 against 0.966 mrad). `ctest -j8` **1341/1341** Release with video, camera
+and Ceres on (+3); warning-clean, format-check clean. The builds with all three off were not run. Full
+notes in WORK.md's *Identities that do not depend on where footage sits*, under M9.
+
+- **`capture/location.h`**, one rule:
+  - a camera's location is its one source (a video) or the deepest folder holding its stills;
+  - the footage's root is the deepest folder holding every location strictly within it;
+  - `identitiesByLocation` names each camera by its location under the root (`cam0`, `cam0.mp4`);
+  - `relativeTo` spells a source under a root.
+- **Where it is applied:**
+  - the nodes name cameras with it, so the cli's and the gui's bindings both get it;
+  - `groupsByPosition` passes the root to a new `CaptureGroup::create(members, root)`, whose old overload
+    and pinned digest are unchanged;
+  - a moving camera's track identities spell their frames under the root, with the pinned digest
+    recomputed outside lain.
+- **What each method needed, found by reading:**
+  - targetless registration only the names;
+  - board registration the names and the groups' frames;
+  - targetless calibration's numbers never depended on the folder, since it orders tracks by capture
+    order, so only its reported identities change;
+  - board calibration was already location-free.
+- **Proved end to end**: the flowview verticals run every method again from a copy three folders down
+  and require the same bytes (both registrations' reports and rig documents, both calibrations'
+  attempts and models).
+- **Three sabotages.** Groups spelling frames whole fails the board registration vertical; dropping the
+  root's "strictly within" fails the location cases; track identities spelling frames whole is caught by
+  the pinned digest only, as it should be.
+- **Reports read `relative to cam0`**, which retires the verticals' `rig\cam0` Windows searches.
+
 ### Update 2026-10-21 — M9: held-out evidence judged from medians, and per camera
 
 The review's P2 item 3: the three held-out changes queued on 2026-10-09, plus registration's

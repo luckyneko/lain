@@ -2,6 +2,7 @@
 
 #include "cells.h"
 #include "execution.h"
+#include "lain/camera/capture/location.h"
 #include "lain/camera/feature/geometry.h"
 
 #include <lain/core/sha256.h>
@@ -14,6 +15,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 
@@ -47,16 +49,17 @@ namespace lain::camera::feature
 	// The text a sequence track's identity is the digest of: a version line, then each observation's
 	// camera and its frame's source, length-prefixed so no two different lists spell the same text, its
 	// frame's ordinal, and its pixel on the 1/64-pixel grid, as integers so the text does not depend on
-	// how a double prints. The fixed rig's text (extraction.cpp) is its own, so neither changes the
-	// other's identities, and the version line changes if this does.
-	static std::string canonicalText(const Track& track, const std::vector<View>& views)
+	// how a double prints. The source is spelled relative to the footage's root (capture/location.h), so
+	// a track has one identity wherever its footage sits. The fixed rig's text (extraction.cpp) is its
+	// own, so neither changes the other's identities, and the version line changes if this does.
+	static std::string canonicalText(const Track& track, const std::vector<View>& views, std::string_view root)
 	{
 		std::string text = "lain sequence feature track 1\n";
 		for (const SceneObservation& o : track.observations)
 		{
 			const View& view = views[o.view];
 			const std::string& camera = view.camera.value;
-			const std::string source = view.frames.front().source.toString();
+			const std::string source = capture::relativeTo(view.frames.front().source, root);
 			text += std::to_string(camera.size()) + ":" + camera + " ";
 			text += std::to_string(source.size()) + ":" + source + " " + std::to_string(view.frames.front().ordinal) + " ";
 			text += std::to_string(cell(o.pixel.x)) + " " + std::to_string(cell(o.pixel.y)) + "\n";
@@ -268,6 +271,7 @@ namespace lain::camera::feature
 		const detail::JoinedTracks joined = detail::joinTracks(cellsPerView, verified);
 		out.report.conflicts = joined.conflicts;
 		out.report.conflictObservations = joined.conflictObservations;
+		const std::string root = capture::footageRoot({camera.footage});
 		for (const std::vector<CellPair>& members : joined.tracks)
 		{
 			Track track;
@@ -279,7 +283,7 @@ namespace lain::camera::feature
 				const double sigma = request.localisationPerSize * key.size;
 				track.observations.push_back({v, key.pixel, 1, std::array<double, 3>{sigma * sigma, 0.0, sigma * sigma}});
 			}
-			track.identity = core::sha256(canonicalText(track, out.trackSet.views)).toString();
+			track.identity = core::sha256(canonicalText(track, out.trackSet.views, root)).toString();
 			out.trackSet.tracks.push_back(std::move(track));
 		}
 		std::sort(out.trackSet.tracks.begin(), out.trackSet.tracks.end(), [](const Track& a, const Track& b)

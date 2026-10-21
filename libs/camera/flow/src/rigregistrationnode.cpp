@@ -66,14 +66,14 @@ namespace lain::camera
 												   std::to_string(models.size()) + " camera models: they pair by position"};
 		}
 
-		// Each camera named by its footage's source, and grouped by position.
+		// Each camera named by where its footage lies within the rig's folder, and grouped by position.
 		Rig rig;
 		std::vector<capture::CameraFootage> byPosition;
+		const std::vector<capture::CameraIdentity> cameras = detail::identitiesOf(footage);
 		for (std::size_t c = 0; c < footage.size(); ++c)
 		{
-			const capture::CameraIdentity camera = detail::identityOf(footage[c]);
-			rig.cameras.push_back({camera, models[c], footage[c]});
-			byPosition.push_back({camera, footage[c]});
+			rig.cameras.push_back({cameras[c], models[c], footage[c]});
+			byPosition.push_back({cameras[c], footage[c]});
 		}
 		capture::GroupingResult grouping = capture::groupsByPosition(byPosition);
 		if (!grouping.diagnostics.empty())

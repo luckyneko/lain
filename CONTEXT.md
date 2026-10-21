@@ -473,6 +473,11 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
 - **Camera identity** — the durable opaque identity assigned by the loader to one physical or logical
   capture source and preserved through calibration, grouping, registration, serialization, and
   reports. It is distinct from a mutable path or display label. _Avoid_: camera index, filename.
+  *Until a capture manifest assigns one* (2026-10-21): a graph names a camera by where its footage
+  lies within the folder its rig lies in, `cam0` for a folder of stills and `cam0.mp4` for a video, and
+  an identity that digests a frame spells its source relative to that folder too
+  (`capture/location.h`). So the same footage gets the same identities, and the same held-out evidence,
+  wherever it sits on disk; where it sits is still a path, and not durable across a rename.
 - **Frame identity** — the loader-assigned opaque identity of one frame within its camera source,
   stable across repeated processing and paired with camera identity for global uniqueness. It is not
   inferred from container position or timestamp. _Avoid_: frame index when decoding order is not the

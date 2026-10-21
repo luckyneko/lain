@@ -9263,7 +9263,9 @@ each package in a session of its own (2026-10-20).
    measured and refused: see *Held-out evidence judged from medians*, below.)*
 4. **A camera's identity should not depend on where its footage sits.** The full fix is the capture
    manifest, which is after M9. The interim fix: the cli binder names each camera relative to the
-   folder it was given, rather than by its canonical uri.
+   folder it was given, rather than by its canonical uri. *(**Built 2026-10-21** in every method, the
+   names given by the nodes rather than the binder so the gui gets them too: see *Identities that do
+   not depend on where footage sits*, below.)*
 
 **P3 — demonstrable, then verified:**
 
@@ -9563,6 +9565,71 @@ registration's resampling spread given the treatment calibration's stability got
   medians. Every RMS line is unchanged and no verdict changes; one translation-spread note goes, its
   spread now under the bound.
 - `ctest -j8` **1338/1338** Release with video, camera and Ceres on (+3); warning-clean, format-check
+  clean. Not run: the builds with video, camera and Ceres off.
+
+### Identities that do not depend on where footage sits (built 2026-10-21)
+
+The review's P2 item 4. A camera in a graph was named by its footage's absolute source uri; a track's
+or a capture group's identity digested that; and every k-th unit in identity order is held out. So the
+same rig in another folder held out other evidence: 0.795 against 0.966 mrad through the real binary,
+each repeatable (sub-slice 10). The full fix, a capture manifest, comes after M9 (2026-10-20).
+
+**Decided with the repo owner:** all three methods, by spelling camera names and frame sources relative
+to the folder the footage lies in. The review's suggestion, the cli binder naming each camera, would
+have fixed targetless registration only, and left the gui's bindings out.
+
+**Where absolute paths entered an identity that decides something**, found by reading each method:
+- **Targetless registration:** a track digests its cameras' names and pixel cells. Relative names fix it.
+- **Board registration:** a capture group digests each member's camera name, frame source and ordinal,
+  and groups are held out in identity order. It needs relative names and relative frame sources.
+- **Targetless calibration:** a track digests its frames' sources, but tracks are ordered by capture
+  order (first frame, then pixel; `calibration/targetless.cpp`), with the identity only a last
+  tie-breaker. Its numbers never depended on the folder; only its reported identities did.
+- **Board calibration:** views are ordered by source then ordinal, and every frame of one camera shares
+  its folder's prefix, so the order holds wherever the folder is. Already location-free.
+
+**Built:**
+- **`capture/location.h`** (`lain::camera::capture`), one rule in one place:
+  - a camera's **location** is the one source all its frames come from (a video file), or else the
+    deepest folder holding all its frames' sources (a folder of stills);
+  - the footage's **root** (`footageRoot`) is the deepest folder holding every camera's location
+    strictly within it, so one camera's root is the folder its location is in;
+  - **`identitiesByLocation`** names each camera by its location relative to the root: `cam0`, or
+    `cam0.mp4`, or `left/cam0` for cameras at different depths. Two cameras sharing a location (two
+    numbered patterns in one folder) are named by their first frame relative to the root instead;
+  - **`relativeTo`** spells a source relative to a root it lies strictly within, and whole otherwise.
+
+  A uri is read as components split at '/' and '\', whatever its scheme, so no filesystem is touched.
+- **`CaptureGroup::create(members, root)`**, an overload that spells frames relative to `root`. The
+  existing `create(members)` spells them whole, and its pinned digest is unchanged.
+- **`groupsByPosition`** passes its cameras' footage root, so a by-position group has one identity
+  wherever its footage sits.
+- **A moving camera's track identities** spell their frames relative to the footage's root. The text's
+  version line is unchanged (its format is the same), and the pinned digest is recomputed outside lain,
+  by shasum and by Python's hashlib, which agree.
+- **The nodes name cameras by location** (`identity.h`), so the cli's folder binders and the gui's
+  editors both get it: the registration nodes' rig, and both calibration nodes' camera.
+- **Reports now read `relative to cam0`** rather than an absolute path, which also retires the flowview
+  verticals' platform-separator searches (`rig\cam0` on Windows).
+
+**Tests:**
+- **Three location cases** in `test_capturegroup.cpp`: video files, folders of stills, cameras at
+  different depths, one camera, two sharing a folder, empty footage; the same rig at two depths in two
+  places giving the same names and the same groups, while a group made with no root does not; and
+  `relativeTo` on a root's own path, a component that is only a prefix, a Windows path and an `s3://`
+  uri.
+- **Every method from a second folder.** The flowview verticals copy the rendered footage three folders
+  down and run again, and require the same bytes: the board and targetless registration reports and rig
+  documents, and the board and targetless calibration attempts and models.
+- **Three sabotages:**
+  - by-position groups spelling their frames whole: the board registration vertical's report and rig
+    differ from the second folder, so group identities did decide what was held out;
+  - the root's "strictly within" dropped: one camera is named by nothing, and two cameras sharing a
+    folder collide, both caught by the location cases;
+  - a moving camera's track identities spelling their frames whole: **not caught** by the targetless
+    calibration vertical, whose numbers never depended on them (above), so only the pinned digest case
+    stands guard over them.
+- `ctest -j8` **1341/1341** Release with video, camera and Ceres on (+3); warning-clean, format-check
   clean. Not run: the builds with video, camera and Ceres off.
 
 ### Not in this milestone
@@ -14728,21 +14795,15 @@ row here**. A row is cheap to delete and expensive to leave.
      - **P1, both built 2026-10-20:** a registration's result leaving the process (*After slice 4:
        the registered rig*), and the gui loading and saving camera values (*The gui binds and saves
        camera values*). Their gui-mode checks are in item 3.
-     - **P2:** a camera's identity independent of where its footage sits, in all three methods (decided
-       2026-10-21). The held-out changes are built (*Held-out evidence judged from medians*).
+     - **P2, both built 2026-10-21:** the held-out changes (*Held-out evidence judged from medians*),
+       and identities independent of where footage sits (*Identities that do not depend on where
+       footage sits*).
      - **P3:** a footage generator; example documents for board calibration, `detectBoard` and both
        registrations, and a test of calibrating every camera then registering them in one graph.
      - **P4:** a CI leg with OpenCV on and Ceres off; the dependency footprint measured again.
   2. **Owed by the repo owner.**
      - **The real-camera capture** for slice 1, sub-slice 8, guided by
        `plugins/camera/test/fixtures/README.md`. It is all that is left of slice 1.
-     - **Which evidence is held out depends on where the footage sits** (found in sub-slice 10). A
-       camera's identity in a graph is its footage's canonical source uri, a track's or a group's
-       identity digests it, and every k-th one in identity order is held out, so the same rig in
-       another folder gives another report (0.795 against 0.966 mrad through the real binary, each
-       repeatable). A capture manifest's identities would end it, or the cli binder could name each
-       camera relative to the folder it was given. *(2026-10-20: the manifest is after M9, so the
-       interim cli fix is the review's P2.)*
      - **Sub-slice 10e's measurements and findings for targetless calibration** (slice 4's *Sub-slice
        10e built*), each its own commit before sub-slice 11 exposes the node:
        - the verdict missing a principal point several pixels off. Resampling frames and comparing the

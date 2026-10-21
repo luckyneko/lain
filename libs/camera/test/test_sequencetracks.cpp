@@ -521,11 +521,13 @@ TEST_CASE("a sequence track's identity is the digest of its pinned canonical tex
 
 	// The text, a version line and then each observation's camera and its frame's source (each
 	// length-prefixed), its frame's ordinal and its pixel cell:
-	//   "lain sequence feature track 1\n5:cam00 12:/scene/cam00 0 12635 10355\n"
-	//   "5:cam00 12:/scene/cam00 1 13434 10693\n"
-	// and its SHA-256, computed by sha256sum and by Python's hashlib, which agree. One camera's two
-	// frames, so only the ordinal tells the two observations apart.
-	CHECK(track->identity == "d6003598ac716838e6b3bc7be31d3b9eea126d421d0644ffa8b65c5b7bb460a7");
+	//   "lain sequence feature track 1\n5:cam00 5:cam00 0 12635 10355\n"
+	//   "5:cam00 5:cam00 1 13434 10693\n"
+	// and its SHA-256, computed by shasum and by Python's hashlib, which agree. The source is spelled
+	// relative to the folder the footage lies in (capture/location.h): /scene/cam00 within /scene is
+	// cam00, wherever /scene is (2026-10-21; before, it was spelled whole). One camera's two frames, so
+	// only the ordinal tells the two observations apart.
+	CHECK(track->identity == "0977997124cf9ad30169a08b3546e913cfd0c4e8b5ffd6dfff2126b9153a0fb2");
 }
 
 TEST_CASE("a moving camera keeps fewer features a frame than the fixed rig", "[camera][feature][sequence]")

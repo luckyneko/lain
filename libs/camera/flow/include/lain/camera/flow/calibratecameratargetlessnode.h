@@ -15,7 +15,8 @@ namespace lain::camera
 	//
 	// ONE node for the whole method, extraction included, as calibrateCamera is for detection: where
 	// the reconstruction starts, which frames validate, what an outlier is and what the verdict is held
-	// to are decisions taken together. The camera is named by its footage's source.
+	// to are decisions taken together. The camera is named by where its footage lies, as a rig's are
+	// (capture::identitiesByLocation).
 	//
 	// What footage calibrates, and what a Ready verdict does not see, is targetless.h's operator
 	// guidance: the camera translates as well as turns, does not keep one point centred, and sees a

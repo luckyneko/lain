@@ -20,8 +20,11 @@ namespace lain::camera
 	// camera is capture group k (by-position grouping), which is right for a frame-locked rig and only
 	// for one.
 	//
-	// Each camera's identity is its footage's canonical source uri, a stand-in until a capture manifest
-	// assigns identities. `reference` names one by that uri; empty chooses automatically.
+	// Each camera is named by where its footage lies within the rig's folder (capture::identitiesByLocation:
+	// "cam0" for a folder of stills, "cam0.mp4" for a video), a stand-in until a capture manifest assigns
+	// identities. Since 2026-10-21 the name does not depend on where the rig sits on disk, so neither do
+	// the evidence held out or the resamples. `reference` names one by that name; empty chooses
+	// automatically.
 	//
 	// Abstract: a method's node declares its own inputs after the two here, calls declareRequest(),
 	// declares what only its method needs and its report, and builds the report from request() and
@@ -50,7 +53,7 @@ namespace lain::camera
 			std::vector<capture::CaptureGroup> groups; // by position
 		};
 
-		// The rig on the two inputs, each camera named by its footage's source and grouped by
+		// The rig on the two inputs, each camera named by where its footage lies and grouped by
 		// position; or why there is none (InvalidDataset: footage and models that do not pair, or
 		// footage that does not group), which the method's report says like any other refusal.
 		std::variant<Rig, registration::FailureReason> rig(const flow::NodeEvaluation& evaluation) const;

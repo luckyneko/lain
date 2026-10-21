@@ -218,6 +218,18 @@ namespace
 			return std::nullopt;
 		return camera::cameraModelFromValue(*document).model;
 	}
+
+	// `entries` of `dir` copied whole into a folder three levels further down, which is returned: the
+	// same footage somewhere else on disk.
+	fs::path copyElsewhere(const fs::path& dir, const std::vector<std::string>& entries)
+	{
+		const fs::path elsewhere = dir / "elsewhere" / "on" / "disk";
+		fs::remove_all(dir / "elsewhere");
+		fs::create_directories(elsewhere);
+		for (const std::string& entry : entries)
+			fs::copy(dir / entry, elsewhere / entry, fs::copy_options::recursive);
+		return elsewhere;
+	}
 } // namespace
 
 TEST_CASE("run calibrates a camera from a folder of footage", "[camera][runmode]")
@@ -419,7 +431,7 @@ static std::optional<camera::registration::RegisteredRig> readRig(const fs::path
 
 // How far a written rig is from `worldFromCamera`, the poses its cam0..cam2 footage was drawn from,
 // once the truth is made relative to the rig's own reference. Each camera is named by its footage
-// folder, so the rig lists them in that order.
+// folder within the rig's folder, so the rig lists them in that order.
 static camera::testing::RigDifference rigAgainstTruth(const camera::registration::RegisteredRig& rig,
 													  const std::vector<math::RigidTransformd>& worldFromCamera)
 {
@@ -428,8 +440,7 @@ static camera::testing::RigDifference rigAgainstTruth(const camera::registration
 	std::vector<math::RigidTransformd> found;
 	for (std::size_t c = 0; c < rig.cameras.size(); ++c)
 	{
-		CHECK(rig.cameras[c].camera.value.find((fs::path("rig") / ("cam" + std::to_string(c))).string()) !=
-			  std::string::npos);
+		CHECK(rig.cameras[c].camera.value == "cam" + std::to_string(c));
 		if (rig.cameras[c].camera == rig.reference)
 			reference = c;
 		found.push_back(rig.cameras[c].referenceFromCamera);
@@ -475,10 +486,9 @@ TEST_CASE("run registers a rig from a folder of footage and a folder of models",
 		CHECK_FALSE(fs::exists(rigFile));
 		return;
 	}
-	// Each camera is named by its footage folder, cam0 first since the folder lists by name, with the
-	// platform's separator: a camera's name is its folder's path.
-	CHECK(report.rfind("Ready: 3 cameras relative to ", 0) == 0);
-	CHECK(report.find((fs::path("rig") / "cam0").string()) != std::string::npos);
+	// Each camera is named by its footage folder within the rig's folder, cam0 first since the folder
+	// lists by name, and the reference is cam0, every camera sharing every group.
+	CHECK(report.rfind("Ready: 3 cameras relative to cam0, metric", 0) == 0);
 	CHECK(report.find("16 of 16 groups usable") != std::string::npos);
 
 	// The rig output is a rig DOCUMENT holding every camera's transform, which the report's line does
@@ -498,6 +508,17 @@ TEST_CASE("run registers a rig from a folder of footage and a folder of models",
 	CHECK(std::abs(difference.scale - 1.0) < 0.005);
 	CHECK(difference.worstRotation < 0.002);
 	CHECK(difference.worstCentre < 0.001);
+
+	// The same footage somewhere else on disk registers the same, byte for byte: each camera is named,
+	// and each group's frames are spelled, relative to the folder the rig lies in (capture/location.h),
+	// so the same groups are held out and resampled. Before 2026-10-21 a camera was named by its
+	// footage's absolute path, and another folder held out other evidence.
+	const fs::path elsewhere = copyElsewhere(dir, {"rig", "models"});
+	options.bindings = {"--footage", (elsewhere / "rig").string(), "--models", (elsewhere / "models").string(),
+						"--report", (elsewhere / "report.txt").string(), "--rig", (elsewhere / "rig.json").string()};
+	REQUIRE(flowview::runGraph(options, factory, binders) == 0);
+	CHECK(readText(elsewhere / "report.txt") == report);
+	CHECK(readText(elsewhere / "rig.json") == readText(rigFile));
 
 	SECTION("the rig file binds back")
 	{
@@ -626,17 +647,16 @@ TEST_CASE("run registers a rig without a target from a folder of footage and a f
 		CHECK_FALSE(fs::exists(rigFile));
 		return;
 	}
-	// Each camera is named by its footage folder; the reference is whichever shares the most, and
-	// nothing measured the rig, so its scale is arbitrary.
+	// Each camera is named by its footage folder within the rig's folder; the reference is whichever
+	// shares the most, and nothing measured the rig, so its scale is arbitrary.
 	//
-	// Measured: 432 usable tracks, 346 landmarks, 86 held out, relative to cam1. Over 20 runs the
-	// held-out transfer was 0.68 to 1.26 mrad against Ready's 2, with 4 to 8 outliers, Ready every
-	// time; 12 s in Debug. It varies because a camera's name is its folder's path, which holds this
-	// run's scratch directory: a track's identity digests its cameras' names, and every k-th track in
-	// identity order is held out, so another folder holds out other tracks. One folder gives one
-	// report, byte for byte.
-	CHECK(report.rfind("Ready: 3 cameras relative to ", 0) == 0);
-	CHECK(report.find((fs::path("rig") / "cam").string()) != std::string::npos);
+	// Measured: 432 usable tracks, 346 landmarks, 86 held out, relative to cam1; 12 s in Debug. Until
+	// 2026-10-21 a camera's name was its folder's absolute path, which held this run's scratch
+	// directory: a track's identity digests its cameras' names, and every k-th track in identity order
+	// is held out, so each run held out other tracks (over 20 runs 0.68 to 1.26 mrad held out, Ready
+	// every time). Now the same footage gives the same report wherever it is, which the end of this
+	// case checks.
+	CHECK(report.rfind("Ready: 3 cameras relative to cam", 0) == 0);
 	CHECK(report.find("arbitrary scale") != std::string::npos);
 	CHECK(report.find("landmarks from") != std::string::npos);
 
@@ -652,10 +672,18 @@ TEST_CASE("run registers a rig without a target from a folder of footage and a f
 							   camera::synthetic::arcCamera(kTexturedRigAngles[2])});
 	INFO("scale " << difference.scale << ", worst rotation " << difference.worstRotation * 1000.0
 				  << " mrad, worst centre " << difference.worstCentre * 1000.0 << " mm");
-	// Measured over five runs, which hold out different tracks (above): 0.18 to 0.51 mrad, and 0.7 to
-	// 1.7 mm on cameras 3.2 m from the scene.
+	// Measured over five runs, which held out different tracks before 2026-10-21 (above): 0.18 to 0.51
+	// mrad, and 0.7 to 1.7 mm on cameras 3.2 m from the scene.
 	CHECK(difference.worstRotation < 0.003);
 	CHECK(difference.worstCentre < 0.01);
+
+	// The same footage somewhere else on disk registers the same, byte for byte (capture/location.h).
+	const fs::path elsewhere = copyElsewhere(dir, {"rig", "models"});
+	options.bindings = {"--footage", (elsewhere / "rig").string(), "--models", (elsewhere / "models").string(),
+						"--report", (elsewhere / "report.txt").string(), "--rig", (elsewhere / "rig.json").string()};
+	REQUIRE(flowview::runGraph(options, factory, binders) == 0);
+	CHECK(readText(elsewhere / "report.txt") == report);
+	CHECK(readText(elsewhere / "rig.json") == readText(rigFile));
 }
 
 TEST_CASE("a targetless registration's matching travels in its document by name", "[camera][runmode]")
@@ -816,6 +844,14 @@ TEST_CASE("the calibration fallback accepts the board's attempt and never makes 
 	CHECK(std::abs(run.model->intrinsics().fy - kCamera.fy) < 0.005 * kCamera.fy);
 	CHECK(std::abs(run.model->intrinsics().cx - kCamera.cx) < 1.0);
 	CHECK(std::abs(run.model->intrinsics().cy - kCamera.cy) < 1.0);
+
+	// The same footage somewhere else on disk calibrates the same, byte for byte: board calibration
+	// orders its views by their sources, which keep their order wherever the folder is.
+	const fs::path elsewhere = copyElsewhere(dir, {footage.filename().string()});
+	const FallbackRun moved = runFallback(elsewhere, elsewhere / footage.filename(), std::string{"board-then-targetless"});
+	REQUIRE(moved.status == 0);
+	CHECK(moved.attempts == run.attempts);
+	CHECK(readText(elsewhere / "model.json") == readText(dir / "model.json"));
 }
 
 TEST_CASE("the calibration fallback falls back to targetless calibration when the board's attempt fails", "[camera][runmode][fallback]")
@@ -862,6 +898,15 @@ TEST_CASE("the calibration fallback falls back to targetless calibration when th
 	CHECK(std::abs(run.model->intrinsics().fy - kCamera.fy) < 0.01 * kCamera.fy);
 	CHECK(std::abs(run.model->intrinsics().cx - kCamera.cx) < 3.0);
 	CHECK(std::abs(run.model->intrinsics().cy - kCamera.cy) < 3.0);
+
+	// The same footage somewhere else on disk calibrates the same, byte for byte: the camera is named,
+	// and each track's frames are spelled, relative to the folder its footage lies in
+	// (capture/location.h), so the same tracks are resampled.
+	const fs::path elsewhere = copyElsewhere(dir, {footage.filename().string()});
+	const FallbackRun moved = runFallback(elsewhere, elsewhere / footage.filename(), std::string{"board-then-targetless"});
+	REQUIRE(moved.status == 0);
+	CHECK(moved.attempts == run.attempts);
+	CHECK(readText(elsewhere / "model.json") == readText(dir / "model.json"));
 }
 
 TEST_CASE("the calibration fallback makes only the attempts its method includes", "[camera][runmode][fallback]")

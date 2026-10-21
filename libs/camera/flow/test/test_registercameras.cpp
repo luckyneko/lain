@@ -1,7 +1,7 @@
 // The registerCameras node through a real graph and the production scheduler, over the registration
 // method module's stand-in rig (syntheticrig.h): a detector and a pose solver answering from a known
 // truth, and a refiner handing back its start. What is checked is the NODE: that it pairs footage
-// with models, names each camera by its footage's source, groups by position, and hands the method
+// with models, names each camera by where its footage lies, groups by position, and hands the method
 // what its parameters say. Registration itself is the method module's and the Ceres plugin's tests'.
 // Its own executable: these stand-ins share keys with the calibration scene's.
 
@@ -89,18 +89,19 @@ namespace
 	}
 } // namespace
 
-TEST_CASE("registerCameras pairs footage with models and names each camera by its source", "[camera][flow]")
+TEST_CASE("registerCameras pairs footage with models and names each camera by where it lies", "[camera][flow]")
 {
 	rig::reset(3, 20);
 	rig::registerPassThroughRefiner();
 	const Report report = registerRig([](flow::Graph&, flow::NodeId) {});
 	REQUIRE(report.status == camera::registration::RegistrationStatus::Succeeded);
 	REQUIRE(report.cameras.size() == 3);
-	CHECK(report.cameras[0].camera.value == "/rig/cam00");
-	CHECK(report.cameras[1].camera.value == "/rig/cam01");
-	CHECK(report.cameras[2].camera.value == "/rig/cam02");
+	// Each named by where its footage lies within the folder the rig lies in, /rig (capture/location.h).
+	CHECK(report.cameras[0].camera.value == "cam00");
+	CHECK(report.cameras[1].camera.value == "cam01");
+	CHECK(report.cameras[2].camera.value == "cam02");
 	CHECK(std::get<camera::registration::BoardDiagnostics>(report.diagnostics.method).groupsExamined == 20); // frame k of every camera, group k
-	CHECK(report.reference->value == "/rig/cam00");
+	CHECK(report.reference->value == "cam00");
 }
 
 TEST_CASE("registerCameras hands its settings to the method", "[camera][flow]")
@@ -135,7 +136,7 @@ TEST_CASE("registerCameras hands its settings to the method", "[camera][flow]")
 		const Report report = registerRig(
 			[](flow::Graph& graph, flow::NodeId id)
 			{
-				setParam(graph, id, "reference", std::string("/rig/cam02"));
+				setParam(graph, id, "reference", std::string("cam02"));
 				setParam(graph, id, "unknownApplicability", camera::registration::ApplicabilityPolicy::Accept);
 				setParam(graph, id, "pixelSigma", 0.7f);
 				setParam(graph, id, "loss", camera::registration::LossFamily::Huber);
@@ -151,8 +152,8 @@ TEST_CASE("registerCameras hands its settings to the method", "[camera][flow]")
 			});
 		const camera::registration::Request& asked = report.reproducibility.request;
 		REQUIRE(asked.reference.has_value());
-		CHECK(asked.reference->value == "/rig/cam02");
-		CHECK(report.reference->value == "/rig/cam02");
+		CHECK(asked.reference->value == "cam02");
+		CHECK(report.reference->value == "cam02");
 		CHECK(asked.noise.pixelSigma == 0.7);
 		CHECK(asked.loss.family == camera::registration::LossFamily::Huber);
 		CHECK(asked.loss.scale == 2.5);

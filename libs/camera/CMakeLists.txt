@@ -31,6 +31,7 @@ add_library(camera STATIC
 	src/calibration/common.cpp
 	src/calibration/coverage.cpp
 	src/capture/capturegroup.cpp
+	src/capture/location.cpp
 	src/feature/cells.cpp
 	src/feature/extraction.cpp
 	src/feature/features.cpp

@@ -1,5 +1,7 @@
 #include "lain/camera/capture/capturegroup.h"
 
+#include "lain/camera/capture/location.h"
+
 #include <lain/core/sha256.h>
 
 #include <algorithm>
@@ -10,14 +12,15 @@
 namespace lain::camera::capture
 {
 	// The text a group's identity is the digest of: a version line, then each member's camera
-	// identity, source and ordinal, each length-prefixed so no two different member lists can spell
-	// the same text. The version line changes if this does, and a group's identity with it.
-	static std::string canonicalText(const std::vector<CaptureMember>& members)
+	// identity, source (relative to `root`, or whole when it is empty) and ordinal, each length-prefixed
+	// so no two different member lists can spell the same text. The version line changes if this does,
+	// and a group's identity with it.
+	static std::string canonicalText(const std::vector<CaptureMember>& members, std::string_view root)
 	{
 		std::string text = "lain capture group 1\n";
 		for (const CaptureMember& m : members)
 		{
-			const std::string source = m.frame.source.toString();
+			const std::string source = relativeTo(m.frame.source, root);
 			text += std::to_string(m.camera.value.size()) + ":" + m.camera.value + " ";
 			text += std::to_string(source.size()) + ":" + source + " ";
 			text += std::to_string(m.frame.ordinal) + "\n";
@@ -26,6 +29,11 @@ namespace lain::camera::capture
 	}
 
 	CaptureGroupResult CaptureGroup::create(std::vector<CaptureMember> members)
+	{
+		return create(std::move(members), {});
+	}
+
+	CaptureGroupResult CaptureGroup::create(std::vector<CaptureMember> members, std::string_view root)
 	{
 		CaptureGroupResult out;
 		if (members.empty())
@@ -69,7 +77,7 @@ namespace lain::camera::capture
 		}
 		if (!out.diagnostics.empty())
 			return out;
-		std::string identity = core::sha256(canonicalText(members)).toString();
+		std::string identity = core::sha256(canonicalText(members, root)).toString();
 		out.group = CaptureGroup{std::move(identity), std::move(members)};
 		return out;
 	}
@@ -98,8 +106,13 @@ namespace lain::camera::capture
 	{
 		GroupingResult out;
 		std::size_t longest = 0;
+		std::vector<media::FrameSequence> footage;
 		for (const CameraFootage& c : cameras)
+		{
 			longest = std::max(longest, c.footage.size());
+			footage.push_back(c.footage);
+		}
+		const std::string root = footageRoot(footage);
 		for (std::size_t k = 0; k < longest; ++k)
 		{
 			std::vector<CaptureMember> members;
@@ -108,7 +121,7 @@ namespace lain::camera::capture
 				if (k < c.footage.size())
 					members.push_back({c.camera, c.footage.frame(k)});
 			}
-			CaptureGroupResult group = CaptureGroup::create(std::move(members));
+			CaptureGroupResult group = CaptureGroup::create(std::move(members), root);
 			if (group.group)
 				out.groups.push_back(std::move(*group.group));
 			for (GroupDiagnostic& d : group.diagnostics)

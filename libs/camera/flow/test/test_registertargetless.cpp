@@ -2,7 +2,7 @@
 // targetless method module's stand-in scene (syntheticscene.h): an extractor, a matcher and a
 // geometry solver answering from a known truth, and a refiner handing back its start
 // (passthroughrefiner.h). What is checked is the NODE: that it pairs footage with models, names each
-// camera by its footage's source, groups by position, hands the method what its parameters say, and
+// camera by where its footage lies, groups by position, hands the method what its parameters say, and
 // that a refusal of its own is a targetless report. Registration itself is the method module's and
 // the plugins' tests'.
 //
@@ -102,17 +102,18 @@ namespace
 	}
 } // namespace
 
-TEST_CASE("registerCamerasTargetless pairs footage with models and names each camera by its source", "[camera][flow]")
+TEST_CASE("registerCamerasTargetless pairs footage with models and names each camera by where it lies", "[camera][flow]")
 {
 	setUp();
 	const Report report = registerScene([](flow::Graph&, flow::NodeId) {});
 	INFO(report.toString());
 	REQUIRE(report.status == camera::registration::RegistrationStatus::Succeeded);
 	REQUIRE(report.cameras.size() == 4);
-	CHECK(report.cameras[0].camera.value == "/scene/cam00");
-	CHECK(report.cameras[1].camera.value == "/scene/cam01");
-	CHECK(report.cameras[2].camera.value == "/scene/cam02");
-	CHECK(report.cameras[3].camera.value == "/scene/cam03");
+	// Each named by where its footage lies within the folder the rig lies in, /scene (capture/location.h).
+	CHECK(report.cameras[0].camera.value == "cam00");
+	CHECK(report.cameras[1].camera.value == "cam01");
+	CHECK(report.cameras[2].camera.value == "cam02");
+	CHECK(report.cameras[3].camera.value == "cam03");
 	CHECK(report.scale.scale == camera::registration::Scale::Arbitrary);
 	// Every camera sampled the same groups, so the frames came by position: frame k of every camera.
 	const auto& targetless = std::get<camera::registration::TargetlessDiagnostics>(report.diagnostics.method);
@@ -167,7 +168,7 @@ TEST_CASE("registerCamerasTargetless hands its settings to the method", "[camera
 		const Report report = registerScene(
 			[](flow::Graph& graph, flow::NodeId id)
 			{
-				setParam(graph, id, "reference", std::string("/scene/cam02"));
+				setParam(graph, id, "reference", std::string("cam02"));
 				setParam(graph, id, "loss", camera::registration::LossFamily::Huber);
 				setParam(graph, id, "lossScale", 2.5f);
 				setParam(graph, id, "fitnessProfile", std::string("registration-targetless/1"));
@@ -186,9 +187,9 @@ TEST_CASE("registerCamerasTargetless hands its settings to the method", "[camera
 		INFO(report.toString());
 		const camera::registration::Request& asked = report.reproducibility.request;
 		REQUIRE(asked.reference.has_value());
-		CHECK(asked.reference->value == "/scene/cam02");
+		CHECK(asked.reference->value == "cam02");
 		REQUIRE(report.reference.has_value());
-		CHECK(report.reference->value == "/scene/cam02");
+		CHECK(report.reference->value == "cam02");
 		CHECK(asked.loss.family == camera::registration::LossFamily::Huber);
 		CHECK(asked.loss.scale == 2.5);
 		CHECK(asked.fitnessProfile == "registration-targetless/1");
