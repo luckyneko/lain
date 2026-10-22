@@ -1,8 +1,7 @@
 #include "lain/camera/serialize/cameramodel.h"
 
-#include "versioned.h"
-
 #include <lain/data/strict.h>
+#include <lain/data/versioned.h>
 
 #include <utility>
 
@@ -11,7 +10,7 @@ namespace lain::camera
 	// {version, image, intrinsics, distortion}.
 	static data::Value documentOf(const CameraModelParameters& parameters)
 	{
-		return versionedDocument(kCameraModelDocumentVersion, data::toValue(parameters));
+		return data::versionedDocument(kCameraModelDocumentVersion, data::toValue(parameters));
 	}
 
 	data::Value cameraModelToValue(const CameraModel& model)
@@ -22,7 +21,7 @@ namespace lain::camera
 	CameraModelRead cameraModelFromValue(const data::Value& document)
 	{
 		CameraModelRead result;
-		result.problems = versionProblems(document, "camera-model", kCameraModelDocumentVersion);
+		result.problems = data::versionProblems(document, "camera-model", kCameraModelDocumentVersion);
 		if (!result.problems.empty())
 			return result;
 
