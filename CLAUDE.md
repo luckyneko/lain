@@ -1400,6 +1400,70 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-22 — M15 designed: rig design, rig plans and synthetic captures (nothing built yet)
+
+A new app for designing camera rigs as they would be installed (a room, props, poles carrying
+cameras and lights, a board waved through), which renders **synthetic captures**: footage in the
+shape M9 already binds, plus the ground truth it was rendered with. A layout is judged by running
+M9 on its capture and scoring the result against the truth, so the app never registers anything
+itself. Grilled 2026-10-21 to 10-22; decisions in
+**[ADR-0028](docs/adr/0028-one-raster-renderer-capture-by-ray-table-remap.md)** and
+**[ADR-0029](docs/adr/0029-rig-plans-are-nominal-captures-are-seeded-realisations.md)**, build order
+in WORK.md's **Milestone 15**, vocabulary in CONTEXT.md's new *Rig design* section plus *Model
+comparison* and *Rig comparison*. **Built on `feature/M15`, branched from `feature/M9`.** Nothing is
+built.
+
+- **One raster renderer, `lain::render` over archimedes, for both views.** The viewport is a
+  pinhole preview. A capture render rasterises into an intermediate image and remaps it through a
+  ray table that lain's own `unproject` builds, so shading is written once and the camera model is
+  never ported to GLSL. A CPU ray-caster was the first recommendation and was refused for
+  duplicating the shading. The remap biases no geometry, and slice 4 measures it: a rendered
+  board's corners against lain's projection, through all six distortion models. CI renders through
+  **lavapipe** on a Linux leg.
+- **A rig plan is nominal; a capture renders one seeded realisation of it.**
+  - Tolerances are symmetric bounds in their part's own unit, drawn uniformly.
+  - Each draw is seeded by the rig plan's seed, the owner's UUID and the parameter's key, so an edit
+    or a rename re-rolls nothing else.
+  - Two deviation scales, intrinsic and installation, run 0 to 1 and are locked by default.
+  - A draw that makes no valid model is refused, never redrawn.
+- **Specifications are a sensor plus a lens**, so each tolerance stays in the unit of the part that
+  causes it. The nominal model is derived from the pair. A lens's distortion tolerance is one
+  percentage on its strength, not per coefficient, because independent coefficient draws fold
+  inside the image. Lights follow the same pattern as cameras, minimal in the first cut.
+- **The sensor model runs in C++ after readback**: a fixed gain, read and shot noise under a third
+  scale, then encoding. So the bytes are identical on every machine. **Auto-exposure and every
+  automatic adjustment are refused, not deferred**: a detector's evidence must not change with what
+  is in view.
+- **Every capture writes both the nominal and the realised models**, so "register an uncalibrated
+  rig" and "register a perfectly calibrated one" are a binding choice, not a regeneration. The truth
+  is plan-frame poses, from which a rig document is derived for whatever reference camera the
+  registration chose.
+- **Scoring is camera geometry.** Rig comparison and model comparison are promoted from test code
+  (`rigcompare.h`) into `lain::camera`, with `compareRigs` / `compareModels` nodes. This discharges
+  M9's deferred *"a node that consumes a registered rig"*.
+- **The plan frame is `XRightYForwardZUp`, in metres, with the floor at Z = 0.** It is one named
+  convention, never stored per document, and an asset's up axis is converted once at import.
+- **Movers only**: a board mover or a prop mover, on paths keyed at frames. A prop may loop a mesh
+  clip, first from an OBJ sequence; skinned glTF comes later, and FBX is refused. Cameras are fixed,
+  genlocked, and each frame is an instant.
+- **Specifications are copied into a rig plan, never linked**, so rig plan plus seed always
+  reproduces a capture.
+- **ImGuizmo** handles manipulation. Overlays are a depth-tested line pass in `lain::render`.
+- **flowview's undo, session and document guard are hoisted into `lain::editor`** as slice 0,
+  since this app is their second consumer.
+- **Ten slices**, the headless vertical (slice 7: render a rig plan, then `flowview run
+  register.json` + `compareRigs` against the truth, in CI) before either gui slice.
+- **Deferred:**
+  - shadows and area lights (needed);
+  - moving cameras;
+  - a capture manifest (after the basic version, with the generator as its first writer);
+  - a camera-authoring view and multi-sensor devices;
+  - video capture output;
+  - a predicted observation graph.
+
+  The repo owner also wants a **CPU fallback backend for archimedes** planned separately, as
+  archimedes work; it is in the Outstanding index.
+
 ### Update 2026-10-21 — M9: a no-refiner CI leg, and the footprint measured again (P4)
 
 The review's P4 items 8 and 9. Full notes in WORK.md's *A no-refiner CI leg, and the footprint measured

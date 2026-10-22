@@ -14859,6 +14859,162 @@ algorithm**. `ctest -j8` **1050/1050** Debug and **1058/1058** Release, both wit
   expression. The golden values, the OpenCV agreement test (1e-6 px) and the camera vertical are
   what pin the behaviour.
 
+## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; nothing built)
+
+An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
+and lights, a board waved through) that renders **synthetic captures**: footage in the shape M9
+already binds, together with the ground truth it was rendered with. A layout is judged by running
+M9's methods on its capture and scoring the result against that truth, so the app itself never
+registers or reconstructs anything. In-app registration is a separate app, later. Decisions in
+**[ADR-0028](docs/adr/0028-one-raster-renderer-capture-by-ray-table-remap.md)** (the renderer) and
+**[ADR-0029](docs/adr/0029-rig-plans-are-nominal-captures-are-seeded-realisations.md)** (tolerances,
+realisation, the sensor model, reproducibility); vocabulary in CONTEXT.md's *Rig design*, plus
+*Model comparison* and *Rig comparison* under *Camera geometry*. **Built on `feature/M15`, branched
+from `feature/M9`** before M9's owed items land: nothing here edits M9's methods, and slice 6 only
+promotes test code and adds nodes.
+
+### The shape
+
+- **A rig plan is nominal; a capture renders one seeded realisation of it** (ADR-0029). Tolerances
+  are symmetric bounds in their part's unit, drawn uniformly, seeded by the rig plan's seed, the
+  owner's UUID and the parameter's key. Two deviation scales (intrinsic, installation), locked
+  together by default, multiply the draws. A draw that makes no valid model is refused, never
+  redrawn. Specifications are copied into a rig plan, never linked.
+- **Specifications split into sensor and lens**, and a camera specification pairs them; its
+  nominal model is derived (focal length over pixel pitch, the principal point at the sensor's
+  centre). A lens's distortion tolerance is one percentage on its strength. Lights follow the same
+  pattern as cameras: a light specification and a placed light, minimal in the first cut.
+- **One raster renderer** (ADR-0028). The viewport is a pinhole preview. A capture render
+  rasterises into an intermediate image (a wide pinhole, or a cubemap past 180°) and remaps it
+  through a ray table that lain's `unproject` builds, s × s rays a pixel. Shading is written once,
+  and the camera model is never ported to GLSL. CI renders through **lavapipe** on a Linux leg.
+- **The sensor model runs in C++ after readback**: a fixed gain (auto-anything is refused), read and
+  shot noise under its own noise scale, then quantisation and encoding. So the bytes are identical
+  everywhere, whatever GPU rendered the light.
+- **The capture on disk**: `rig/<camera>/frame.<frame:04>.png`, `nominal/<camera>.json`,
+  `truth/models/<camera>.json`, `truth/poses.json` (plan frame), `truth/rig.json` (for the rig plan's
+  reference camera; another reference derives the truth again from `poses.json`), `truth/board.json`
+  (per frame, the board's pose and every corner's true pixel in each camera that sees it), and
+  `capture.json` (the rig plan copied, the seed, the scales, rate and count, generator version, GPU
+  device, the global-shutter statement, and a capture record per camera whose imported
+  manufacturer model is the nominal one).
+- **The plan frame is `XRightYForwardZUp`, metres, floor at Z = 0**: one named convention beside
+  `kCameraFrame`, never stored per document. An asset's up axis (Y-up by default for OBJ) is
+  converted once at import. Making the up axis a user setting later changes presentation only.
+- **What moves**: only movers, a board mover (M9's board renderer onto a sheet) or a prop mover, on
+  paths keyed at frames. Cameras and mounts are fixed, every camera fires at once, and each frame is
+  an instant. A prop may loop a mesh clip, first from an OBJ sequence named by a frame pattern.
+- **Design aids**: frustums; looking through a camera, which is a live, reduced capture render
+  through its nominal or realised model; and a **visibility map** over a plane, counting the
+  cameras that see each cell unoccluded, over static geometry only.
+- **Scoring is camera geometry**: rig comparison and model comparison are promoted from
+  `libs/camera/test/rigcompare.h` into `lain::camera`, with `compareRigs` / `compareModels` nodes in
+  `camera::flow`. `compareRigs` is the first consumer of a bound rig document, which discharges M9's
+  deferred *"a node that consumes a registered rig"*.
+- **Units**: `lain::rigplan` (+ `/serialize`) for everything that decides what a capture means, with
+  no GPU; `lain::io::mesh` + `plugins/io/mesh/obj` (tinyobjloader, MIT); `lain::render` over
+  archimedes, which knows nothing of rig plans; `lain::editor`, hoisted from flowview; and
+  `apps/rigplan`, whose cli `render` subcommand writes captures as flowview's `run` runs graphs.
+  Manipulation is **ImGuizmo** (MIT, through ImGui's draw list). Overlays (frustums, cones, paths,
+  the grid) are a depth-tested line pass in `lain::render`, since a 2D draw list cannot hide a
+  frustum behind a wall.
+
+### Build order
+
+Headless before gui, one commit or a few per slice, a sabotage per claim.
+
+0. **Hoist `lain::editor`** out of flowview: `UndoStack`, the recent-documents and folder session,
+   the document guard (dirty tracking, the single pending-swap path, a cancelled Save cancelling the
+   swap). No behaviour change; flowview's undo tests move with it. flowview keeps what is
+   graph-specific: canvas ids, selection ordinals, the graph's snapshot and restore.
+1. **`lain::rigplan` core**: sensor, lens, camera and light specifications; the rig plan and its
+   document (`/serialize`, versioned, read strictly as M9's documents are, media paths per ADR-0027);
+   the specification catalogue document; realisation and the two deviation scales; nominal and
+   realised models; the invalid-draw refusal. Proves: a draw is stable under adding, removing,
+   reordering and renaming other cameras; scale 0 is exactly nominal; a duplicate draws anew.
+2. **`io::mesh` + the OBJ/MTL plugin**: meshes, MTL onto the three materials, mesh clips from OBJ
+   sequences, the up-axis conversion at import. **The procedural texture lifted** out of
+   `texturedscene.h` into the library, with M9's verticals unchanged byte for byte.
+3. **`lain::render`**: the render scene, an offscreen raster pass, the viewport pass, the line pass.
+   **The lavapipe CI leg lands here.** Proves: a plain scene renders in CI.
+4. **The capture pass**: the intermediate image, the ray table, the remap with s × s rays. Proves the
+   ADR-0028 claim: a rendered board's detected corners against lain's projection of the truth,
+   through all six distortion models, near the CPU renderer's ~0.07 px.
+5. **The sensor model and the capture writer**: `rigplan render <plan> --out <capture> [--seed
+   --deviation --noise]`, streaming one camera-frame at a time with sensor, encode and write on the
+   process pool; the folder layout and ground truth; `capture.json`; the pre-render size estimate,
+   which says plainly when noise defeats compression. Proves: the noise is identical on every
+   machine (it is CPU-only); memory is bounded at 100 cameras (a low-resolution scale test).
+6. **Rig and model comparison** promoted to `lain::camera`; the `compareRigs` and `compareModels`
+   nodes; `rigcompare.h` over them. Proves: M9's verticals change by zero numbers.
+7. **The vertical**: a committed example rig plan, written by a C++ builder as flowview's examples
+   are (a room with procedural walls, three poles of two cameras, a board mover), through
+   `rigplan render`, then `flowview run register.json` plus `compareRigs` against the truth, in CI on
+   lavapipe. Proves: at scale 0 it registers near-exactly; with nominal models at intrinsic scale 1
+   the error rises measurably.
+8. **The gui, part 1**: the app shell and docking, the Viewport, Outliner and Inspector, ImGuizmo,
+   frustums, undo through `lain::editor`. Live-verified by the repo owner.
+9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
+   specification catalogue (copy in, save out). Live-verified by the repo owner.
+
+### Found while grilling — each owes a check
+
+- **Noise defeats PNG compression.** A noisy 8K frame is about 100 MB, so 100 cameras × 40 frames is
+  hundreds of gigabytes. The app never lowers quality silently; it estimates before rendering.
+  Output format is per sensor: 8-bit PNG by default, 16-bit TIFF for a deeper sensor, JPEG accepted
+  but recorded as lossy, through `io::image` and M13's encoder options.
+- **A board mover needs a board renderer.** A rig plan holding one loads and saves in any build, but
+  rendering a capture is refused where no renderer exists, naming it, never drawn blank, since
+  `truth/board.json` would then describe corners the pixels lack.
+- **Camera names become folder names and M9's camera identities** (a camera's location under the rig
+  folder), so they must be unique among cameras and valid file names on every platform.
+- **lavapipe must be selectable.** Check that archimedes' `graphicsOptions()` offers a CPU device
+  when it is the only one, rather than ranking it out.
+- **The viewport is an offscreen render shown in a docked pane**, so ImGui samples a render target.
+  Check what `gui::Texture` and archimedes need for a texture that is both.
+- **ImGuizmo is pinned to a commit** checked against `IMGUI_REF` (`162ce49`, 1.92.9 WIP), as imnodes
+  was.
+- **The renderer's results differ by device**, so no capture test asserts pixel bytes; they assert
+  against ground truth with tolerances. The sensor model's noise and the ground truth are exact
+  everywhere.
+
+### Not in this milestone
+
+Each with its trigger, or refused outright.
+
+- **Moving cameras**, for targetless calibration footage: the first targetless-calibration test that
+  needs more than `texturedscene.h`'s arc.
+- **Clock skew between cameras**, footage that is not frame-locked: with M9's deferred timestamp
+  grouping, which it would be the first footage for.
+- **Generating a board path automatically**, visiting every camera's view with varied tilt: the
+  first rig too large to key by hand.
+- **A capture manifest**: after the basic version runs. The generator becomes its first writer.
+- **Skinned glTF clips** (cgltf or tinygltf, both MIT), and physically based materials with them: the
+  first character that only exists as a skinned asset. **FBX is refused** (a proprietary SDK,
+  ADR-0015).
+- **Shadows and area lights** (needed, deferred), **lights in physical units with colour
+  temperature**, light tolerances, indirect light. Each lands as a field of the light specification.
+- **Vignetting, defocus and depth of field, chromatic aberration, flare, motion blur, rolling
+  shutter, demosaicing.**
+- **Auto-exposure, auto-white-balance, every automatic adjustment: refused** (ADR-0029).
+- **Video capture output** through M10's writer: the first capture too large as stills, and only
+  after a lossy codec's effect on detection is measured.
+- **A predicted observation graph**, with weak bridges flagged: a rig large enough that rendering a
+  capture to find out is too slow to iterate on.
+- **Capture rendering in a graph**: a rendered camera is a legitimate frame source (ADR-0018), but
+  wiring one into graphs is its own design. Trigger: the first graph that should generate its own
+  footage.
+- **A camera-authoring view**: body meshes beyond a default shape, sensors placed in a body, and
+  multi-sensor devices such as a D455 (several specifications in one body).
+- **Linked specifications**: the first lens edited by hand in several rig plans.
+- **Per-coefficient distortion tolerances; normal draws; non-square pixels; doors and windows in a
+  room's walls; eased or curved paths.** Each is an addition that changes nothing already drawn.
+- **The plan frame's up axis as a user setting**, which changes presentation only.
+- **In-app registration and reconstruction**: a separate app, later.
+- **A CPU fallback backend for archimedes**, for when no driver exists, through third-party
+  libraries. The repo owner wants a planning pass of its own, in archimedes, as archimedes work
+  (ADR-0028, *Considered options*). lavapipe answers CI without it.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -14990,6 +15146,7 @@ row here**. A row is cheap to delete and expensive to leave.
        takes one, so a bound rig can only be passed through. Trigger: the first consumer, such as
        world-frame alignment (excluded from M9) or a registration seeded from a prior rig (*After slice
        4: the registered rig*).
+       **Planned:** M15 slice 6's `compareRigs` is that first consumer (Milestone 15).
      - **A `loadCameraModel` node** (a path in, a `CameraModel` out, as `loadImage` is): the first
        document that must name its own model file, so it runs with no binding. The gui binds one from
        a file instead (*The gui binds and saves camera values*).
@@ -15003,7 +15160,15 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md),
   [ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md).)*
 
-M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not.**
+- **M15 — rig design: rig plans and synthetic captures.** Grilled 2026-10-21 to 10-22 with two ADRs
+  (0028, 0029); **nothing built**. Ten slices, 0 to 9, on `feature/M15`; the build order and every
+  exclusion are in M15's own sections. *(Milestone 15.)*
+- **A CPU fallback backend for archimedes**, for when no Vulkan driver exists: a planning pass of its
+  own, in archimedes, as archimedes work. Not decided; lavapipe answers M15's CI without it.
+  *(M15 §Not in this milestone; ADR-0028 §Considered options.)*
+
+M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not**, and M15 is
+designed but not started.
 
 - **Example documents** — all four commits built. Owed: a gui-mode eyeball of every example (the
   primary purpose). The smoke step has run in CI since it landed, and was green on every leg in
