@@ -42,8 +42,19 @@ TEST_CASE("handedness is measured physically", "[axisconvention]")
 	REQUIRE(AxisConvention::XRightYDownZForward().rightHanded()); // the camera frame
 	REQUIRE(AxisConvention::XRightYUpZBackward().rightHanded());
 	REQUIRE(convention(D::Forward, D::Left, D::Up).rightHanded()); // a Z-up vehicle frame
+	REQUIRE(AxisConvention::XRightYForwardZUp().rightHanded());	   // a floor plan with height
 	REQUIRE_FALSE(convention(D::Right, D::Up, D::Forward).rightHanded());
 	REQUIRE_FALSE(convention(D::Down, D::Right, D::Forward).rightHanded());
+}
+
+TEST_CASE("a camera at rest in a Z-up floor plan looks along +Y with its image's down along -Z", "[axisconvention]")
+{
+	// The rest orientation a rig plan places every camera in before aiming it.
+	const lain::math::Mat3d planFromCamera = lain::math::basisChange<double>(AxisConvention::XRightYDownZForward(),
+																			 AxisConvention::XRightYForwardZUp());
+	REQUIRE(planFromCamera * lain::math::Vec3d(0, 0, 1) == lain::math::Vec3d(0, 1, 0));	 // forward
+	REQUIRE(planFromCamera * lain::math::Vec3d(1, 0, 0) == lain::math::Vec3d(1, 0, 0));	 // right
+	REQUIRE(planFromCamera * lain::math::Vec3d(0, 1, 0) == lain::math::Vec3d(0, 0, -1)); // the image's down
 }
 
 TEST_CASE("basisChange re-expresses a point in the other convention", "[axisconvention]")

@@ -2,6 +2,7 @@
 
 #include <lain/camera/cameramodel.h>
 #include <lain/core/length.h>
+#include <lain/image/color.h>
 #include <lain/math/types.h>
 
 #include <string>
@@ -64,6 +65,27 @@ namespace lain::rigplan
 		std::string lens;
 	};
 
+	enum class LightKind
+	{
+		Point, // shines every way from a point
+		Spot,  // a point shining into a cone along its forward axis
+	};
+
+	// What a datasheet states about one kind of light (CONTEXT.md, "Light specification"). The first
+	// cut states little more than a kind, an intensity and a colour; physical units, colour
+	// temperature and area lights each arrive later as a field of this. No tolerances yet.
+	struct LightSpecification
+	{
+		std::string name; // unique among the lights of one set of specifications
+		LightKind kind = LightKind::Point;
+		double intensity = 1;					   // linear, in the renderer's own scale until lights gain physical units
+		image::ColorRGBf colour{1.0f, 1.0f, 1.0f}; // linear RGB
+		// A spot's cone: full intensity inside the inner angle, falling to none at the outer one, each
+		// measured from the forward axis. Unused by a point light.
+		double innerConeDegrees = 20;
+		double outerConeDegrees = 30;
+	};
+
 	// A set of specifications: what a rig plan holds its own copy of, and what a specification
 	// catalogue is a document of.
 	struct Specifications
@@ -71,12 +93,14 @@ namespace lain::rigplan
 		std::vector<SensorSpecification> sensors;
 		std::vector<LensSpecification> lenses;
 		std::vector<CameraSpecification> cameras;
+		std::vector<LightSpecification> lights;
 	};
 
 	// The named specification, or null.
 	const SensorSpecification* findSensor(const Specifications& specifications, std::string_view name);
 	const LensSpecification* findLens(const Specifications& specifications, std::string_view name);
 	const CameraSpecification* findCamera(const Specifications& specifications, std::string_view name);
+	const LightSpecification* findLight(const Specifications& specifications, std::string_view name);
 
 	// The camera model a sensor and a lens make as a datasheet states them: fx = fy = focal length
 	// over pixel pitch, the principal point at the sensor's centre ((width - 1) / 2, (height - 1) / 2,
@@ -97,6 +121,7 @@ namespace lain::rigplan
 		NonPositiveFocalLength, // a lens's focal length is zero or negative
 		InvalidTolerance,		// a tolerance that is negative, not finite, or (for focal length) 1 or more
 		InvalidNominalModel,	// a camera's sensor and lens make no camera model
+		InvalidLight,			// a negative or non-finite intensity or colour, or a spot's cone out of order
 	};
 
 	struct SpecificationDiagnostic
@@ -105,8 +130,8 @@ namespace lain::rigplan
 		std::string detail; // which specification and what about it, for a person
 	};
 
-	// Every problem with `specifications`, in the order the set lists them: sensors, lenses, then
-	// cameras. Empty when every specification can be used. A camera whose sensor or lens is unknown or
+	// Every problem with `specifications`, in the order the set lists them: sensors, lenses, cameras,
+	// then lights. Empty when every specification can be used. A camera whose sensor or lens is unknown or
 	// itself has a problem is not also reported for its nominal model.
 	std::vector<SpecificationDiagnostic> check(const Specifications& specifications);
 } // namespace lain::rigplan

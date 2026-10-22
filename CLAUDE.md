@@ -1400,6 +1400,32 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-22 — M15 slice 1b built: the rig plan and realisation
+
+The second of slice 1's three commits. `ctest -j8` **1391/1391** Release with video, camera and Ceres
+on (+22); warning-clean, format-check clean. Full notes in WORK.md's *Slice 1 planned*, under M15.
+
+- **What it adds:**
+  - **`lain::rigplan`'s model**: mounts (a pole or a fixed point), placed cameras and lights, the
+    capture timeline, the seed and scales, and `check(plan)`.
+  - **`realise(plan)`**, one seeded build.
+  - **`math::AxisConvention::XRightYForwardZUp()`**, behind `rigplan::kPlanFrame`.
+- **A draw is SHA-256 of a canonical text** (seed, owner UUID, parameter key). It is pinned exactly
+  against values computed by Python's `hashlib`, so it is the same on every platform, and keyed by
+  the owner's identity, so adding, removing, reordering or renaming a camera re-rolls no other.
+- **The aim convention is pinned** against a camera placed by hand: roll, tilt, then pan, in the
+  mount's frame. CONTEXT.md gains *Aim*.
+- **At scales of 0 a realisation is the nominal plan exactly**, to the last bit.
+- **The plan's sweep claim was corrected**: intrinsics move exactly in proportion to a scale, a pose
+  only to first order (about 1e-4 m).
+- **Added beyond the plan:**
+  - camera names unique ignoring case;
+  - Windows' reserved names refused;
+  - identities unique across every kind of owner.
+- **Two bugs in the new tests, found by their first run:** a reference into a temporary, and a fold
+  bound computed from the wrong radius.
+- **Five sabotages, all caught.**
+
 ### Update 2026-10-22 — M15 slice 1 planned; 1a built: specifications and the nominal model
 
 Slice 1 is three commits: **1a** specifications, **1b** the rig plan and realisation, **1c** the

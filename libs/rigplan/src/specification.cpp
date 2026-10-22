@@ -31,6 +31,11 @@ namespace lain::rigplan
 		return findNamed(specifications.cameras, name);
 	}
 
+	const LightSpecification* findLight(const Specifications& specifications, std::string_view name)
+	{
+		return findNamed(specifications.lights, name);
+	}
+
 	camera::ModelResult nominalModel(const SensorSpecification& sensor, const LensSpecification& lens)
 	{
 		camera::CameraModelParameters parameters;
@@ -159,6 +164,26 @@ namespace lain::rigplan
 				out.push_back({SpecificationProblem::InvalidNominalModel,
 							   string::format("camera '{}' (sensor '{}', lens '{}') makes no camera model: {}", c.name,
 											  c.sensor, c.lens, why)});
+			}
+		}
+		seen.clear();
+		for (const LightSpecification& l : specifications.lights)
+		{
+			checkName(l, "light", seen, out);
+			const bool colour = validBound(l.colour.r) && validBound(l.colour.g) && validBound(l.colour.b);
+			if (!validBound(l.intensity) || !colour)
+			{
+				out.push_back({SpecificationProblem::InvalidLight,
+							   string::format("light '{}' needs a finite, non-negative intensity and colour", l.name)});
+			}
+			const bool cone = std::isfinite(l.innerConeDegrees) && std::isfinite(l.outerConeDegrees) &&
+							  l.innerConeDegrees >= 0 && l.innerConeDegrees <= l.outerConeDegrees && l.outerConeDegrees > 0 &&
+							  l.outerConeDegrees < 180;
+			if (l.kind == LightKind::Spot && !cone)
+			{
+				out.push_back({SpecificationProblem::InvalidLight,
+							   string::format("spot light '{}' has a cone of {} to {} degrees, which must rise from 0 to below 180",
+											  l.name, l.innerConeDegrees, l.outerConeDegrees)});
 			}
 		}
 		return out;

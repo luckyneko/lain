@@ -49,6 +49,12 @@ namespace lain::math
 		{
 			return {AxisDirection::Right, AxisDirection::Up, AxisDirection::Backward};
 		}
+		// A Z-up world laid out as a floor plan: X right, Y forward across the floor, Z up. A rig plan
+		// is stored in it (rigplan::kPlanFrame), as CAD, ROS and Blender's scene space are.
+		static constexpr AxisConvention XRightYForwardZUp()
+		{
+			return {AxisDirection::Right, AxisDirection::Forward, AxisDirection::Up};
+		}
 
 		constexpr AxisDirection x() const { return m_x; }
 		constexpr AxisDirection y() const { return m_y; }

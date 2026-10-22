@@ -15062,7 +15062,11 @@ clean.
 - **Two sabotages, each caught by the case aimed at it**: the principal point at w / 2 (off by half a
   pixel), and a camera on a broken part also checked for its model.
 
-**1b, planned: the rig plan and realisation.**
+**1b, built (2026-10-22): the rig plan and realisation.** Planned as below; built as planned, with
+the notes after the plan. `ctest -j8` **1391/1391** Release with video, camera and Ceres on (+22: 21
+in `test-rigplan`, 1 in `test-math`); warning-clean, format-check clean.
+
+*The plan:*
 - **The plan frame** gets a named convention, `AxisConvention::XRightYForwardZUp()`, beside
   `XRightYDownZForward()`, and one constant, `rigplan::kPlanFrame`.
 - **Light specifications** join the set (kind point or spot, intensity, linear RGB colour, the
@@ -15088,6 +15092,45 @@ clean.
 - **Proves**: stability under adding, removing, reordering and renaming other cameras; scale 0 is
   exactly nominal; a duplicate (a new UUID) draws anew; a sweep of the scale moves each parameter
   monotonically along one direction.
+
+*As built:*
+- **`rigplan.h`**: `kPlanFrame`, `Aim`, `Pole`, `FixedPoint`, `Mount` and `MountTolerance`,
+  `PlacedCamera` and `PlacementTolerance`, `PlacedLight`, `CaptureTimeline`, `Scales` and `RigPlan`,
+  with `check(plan)` and `validFileName(name)`. **`realisation.h`**: `unitDeviation`, `realise(plan)`
+  and `mountFromPlacement(offset, aim)`. Light specifications join the set, with a cone checked for a
+  spot only.
+- **Two deviations from the plan's shape:**
+  - A fixed point is a position plus a yaw, not a full pose. A placement's aim supplies everything
+    else, so a mount never carries a tilt that its cameras' tilts would then compose with.
+  - Installation tolerances are a mount's position (each floor axis, and a fixed point's height too)
+    and its yaw, and a placement's offset (each axis) and its pan, tilt and roll. The plan's "height"
+    tolerance on a mount is a camera's `offset.z` on its pole, since a pole stands on the floor.
+- **The draw is pinned outside lain**: three values computed by Python's `hashlib` from the canonical
+  text `lain-rigplan-draw/1\n<seed>\n<uuid>\n<key>\n` are asserted exactly, as hex floats.
+- **The aim convention is pinned** against hand-worked directions, and against a camera placed by
+  hand: a pole turned 90 degrees, 1.5 m up, tilted 10 degrees down, its optical centre 5 cm forward.
+- **Additions beyond the plan, each with a case:**
+  - Camera names are unique **ignoring case**, since "Cam0" and "cam0" are one folder on macOS and
+    Windows.
+  - `validFileName` refuses Windows' reserved names (`CON`, `COM1`, `lpt9.txt`, ...).
+  - Identities are unique **across** mounts, cameras and lights, since a draw is keyed by its owner's.
+- **Corrected in the plan: "a sweep moves each parameter monotonically along one direction."** That
+  holds exactly for the intrinsics, which are the drawn parameters themselves. A pose moves in
+  proportion only to first order: a yaw deviation turns an offset deviation, which leaves a
+  second-order part of about 1e-4 m at full scale. The case asserts proportion to 1e-4 m and the same
+  direction.
+- **Two bugs in the new tests, found by their first run and fixed:**
+  - A reference bound into a temporary realisation read freed memory and saw an identity pose.
+  - The refusal case's lens already folded nominally. Its comment compared the fold's ideal radius
+    with the corner's distorted one, when the bound is the largest distorted radius a ray reaches,
+    (2/3) sqrt(-1 / (3 k1)). 1a's comment made the same comparison, and is corrected too.
+- **Five sabotages, each caught:**
+  - intrinsic draws keyed by the mount, which fails the duplicate case and the refusal case's seed
+    search;
+  - pan applied before tilt;
+  - a pole given a vertical draw;
+  - a refused unit replaced by its nominal model;
+  - a spot's cone left unchecked.
 
 **1c, planned: the documents.** `lain::rigplan::serialize` holds the rig plan document and the
 specification catalogue document, versioned and read strictly, as M9's camera-model and rig documents

@@ -864,6 +864,11 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   and a diameter, and is real geometry: it is in every capture render and occludes what is behind
   it. A **fixed point** is a bare frame with no geometry, for a camera fixed to a wall or ceiling.
   _Avoid_: rig (a rig is the cameras), stand, bracket.
+- **Aim** — how a placed camera or light is turned on its mount, in degrees and in the mount's frame.
+  At rest it looks along the mount's +Y with its image's down along -Z; then it rolls about its
+  forward axis (clockwise as seen from behind), tilts about the mount's +X (positive looks up), and
+  pans about the mount's +Z (positive turns left), in that order, so a pan never changes what tilt
+  and roll mean. _Avoid_: orientation (it is three named turns, not a quaternion), direction.
 - **Installation tolerance** — a tolerance on where a mount stands or how a camera is aimed on it:
   millimetres of position, degrees of pan, tilt and roll. A realisation draws them as it draws
   intrinsic ones, so a capture's ground truth is the realised pose of every camera, never the

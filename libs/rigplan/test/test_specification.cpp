@@ -1,5 +1,7 @@
 // Specifications, and the nominal camera model a sensor and a lens derive.
 
+#include "testplan.h"
+
 #include <lain/rigplan/specification.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -19,28 +21,8 @@ using lain::rigplan::SpecificationDiagnostic;
 using lain::rigplan::SpecificationProblem;
 using lain::rigplan::Specifications;
 
-// A 1280 x 720 sensor of 2 um pixels.
-static SensorSpecification sensor(std::string name = "hd")
-{
-	SensorSpecification s;
-	s.name = std::move(name);
-	s.image = {1280, 720};
-	s.pixelPitch = Length::from<Length::Micrometres>(2.0);
-	s.principalPointTolerance = Length::from<Length::Micrometres>(20.0);
-	return s;
-}
-
-// A 4 mm lens with mild barrel distortion.
-static LensSpecification lens(std::string name = "4mm")
-{
-	LensSpecification l;
-	l.name = std::move(name);
-	l.focalLength = Length::from<Length::Millimetres>(4.0);
-	l.distortion = lain::camera::BrownConrady5{-0.05, 0.01, 0.0, 0.0, 0.0};
-	l.focalLengthTolerance = 0.01;
-	l.distortionTolerance = 0.1;
-	return l;
-}
+using testplan::lens;
+using testplan::sensor;
 
 static Specifications valid()
 {
@@ -80,8 +62,8 @@ TEST_CASE("a nominal model is the lens's focal length over the sensor's pitch, c
 
 TEST_CASE("a lens whose distortion folds inside the sensor's image makes no nominal model", "[rigplan][specification]")
 {
-	// k1 = -0.5 folds at a normalised radius of 0.816, and a 1 mm lens on this sensor (fx = 500)
-	// reaches 1.47 at the corner.
+	// Under k1 alone a ray reaches a distorted radius of at most (2/3) sqrt(-1 / (3 k1)): 0.54 for
+	// k1 = -0.5, far short of a 1 mm lens's corner on this sensor at 1.47 (fx = 500).
 	LensSpecification wide = lens("1mm");
 	wide.focalLength = Length::from<Length::Millimetres>(1.0);
 	wide.distortion = lain::camera::BrownConrady5{-0.5, 0.0, 0.0, 0.0, 0.0};
@@ -162,6 +144,42 @@ TEST_CASE("a tolerance is a bound: never negative, always finite, and a focal on
 	{
 		Specifications s = valid();
 		s.lenses[0].distortionTolerance = 1.5;
+		REQUIRE(problems(s).empty());
+	}
+}
+
+TEST_CASE("a light needs a finite, non-negative output, and a spot a cone that widens", "[rigplan][specification]")
+{
+	Specifications s = valid();
+	lain::rigplan::LightSpecification point;
+	point.name = "bulb";
+	point.innerConeDegrees = 90.0; // a point light has no cone, so its numbers are not checked
+	point.outerConeDegrees = 10.0;
+	s.lights.push_back(point);
+	REQUIRE(problems(s).empty());
+
+	SECTION("a negative intensity")
+	{
+		s.lights[0].intensity = -1.0;
+		REQUIRE(problems(s) == std::vector<SpecificationProblem>{SpecificationProblem::InvalidLight});
+	}
+	SECTION("a spot whose cone narrows")
+	{
+		s.lights[0].kind = lain::rigplan::LightKind::Spot;
+		REQUIRE(problems(s) == std::vector<SpecificationProblem>{SpecificationProblem::InvalidLight});
+	}
+	SECTION("a spot that shines behind itself")
+	{
+		s.lights[0].kind = lain::rigplan::LightKind::Spot;
+		s.lights[0].innerConeDegrees = 30.0;
+		s.lights[0].outerConeDegrees = 180.0;
+		REQUIRE(problems(s) == std::vector<SpecificationProblem>{SpecificationProblem::InvalidLight});
+	}
+	SECTION("a spot of 20 to 30 degrees is fine")
+	{
+		s.lights[0].kind = lain::rigplan::LightKind::Spot;
+		s.lights[0].innerConeDegrees = 20.0;
+		s.lights[0].outerConeDegrees = 30.0;
 		REQUIRE(problems(s).empty());
 	}
 }
