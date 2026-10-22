@@ -1,7 +1,8 @@
 # One raster renderer; a capture render is a remap through lain's own camera model
 
 ---
-Status: accepted (designed 2026-10-21, Milestone 15; nothing built yet)
+Status: accepted (designed 2026-10-21, Milestone 15; nothing built yet). Amended 2026-10-22: CI
+renders on archimedes' CPU device (SwiftShader), not lavapipe.
 ---
 
 Milestone 15's rig design app needs two kinds of image. The **viewport** is the designer's own
@@ -34,9 +35,15 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
   detected and compared with lain's projection of the truth. M9's CPU renderer reaches about
   0.07 px on that test, which sets the target.
 - **Shading is written once, in GLSL**, for both views.
-- **CI renders on the CPU through lavapipe** (Mesa's software Vulkan driver, MIT), with a Linux leg
-  that installs `mesa-vulkan-drivers`. Without it, nothing that writes a capture could be tested,
-  because CI has no GPU.
+- **CI renders on archimedes' CPU device**: SwiftShader (Apache-2.0), a CPU implementation of
+  Vulkan 1.3 that archimedes stages beside every runnable target and loads directly, through
+  `VK_LUNARG_direct_driver_loading`, so no environment or registry is involved (archimedes PRs #1
+  and #2). Without it, nothing that writes a capture could be tested, because CI has no GPU.
+  *(Amended 2026-10-22. This said lavapipe, Mesa's software driver, installed on one Linux leg with
+  `apt`. archimedes' device covers Linux, Windows and macOS with no install step and runs the same
+  SPIR-V, so every CI leg can render. Verified against the PRs' head on macOS: lain builds
+  unchanged, the default ranking still picks the hardware GPU, and with the hardware driver hidden
+  `lain::app`'s headless path picks SwiftShader and reads a float texture back exactly.)*
 - **Captures are reproducible on one device, not byte-identical across devices.** M9 already lives
   with this, because OpenCV's SIFT finds different features on macOS and Windows from the same
   pixels. Tests over captures assert against ground truth with tolerances, never against pixel
@@ -59,9 +66,9 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
 - **Porting the camera models to GLSL.** Refused by ADR-0016's one implementation of projection: a
   second copy is a second answer to where a point lands.
 - **A CPU backend inside archimedes.** That would be a software rasteriser plus a SPIR-V
-  interpreter, which is what lavapipe and SwiftShader already are. A CPU fallback for archimedes
-  when no driver exists is worth its own planning pass, in archimedes, as archimedes work; it is
-  recorded as a follow-up, not decided here.
+  interpreter, which is what lavapipe and SwiftShader already are. *(Resolved 2026-10-22 in
+  archimedes' own planning pass, its ADR-0001: archimedes stages SwiftShader as a CPU device and
+  keeps one compile-time Vulkan backend.)*
 
 ## Consequences
 
@@ -70,3 +77,11 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
   camera, whatever the rig's size.
 - Shadows, area lights and physically based materials arrive as shader work in one place, for
   both views.
+- **The CPU device runs its own worker pool**, beside lain's one process pool (ADR-0024). Measured
+  on 14 logical cores: SwiftShader adds 15 threads beside lain's 13 workers when uncapped, and 3
+  with a cap of 2. `lain::app` passes archimedes' `RuntimeConfig::cpuDeviceThreads` when it sets
+  up Vulkan, after `--threads` is parsed; how the cores are split is M15's decision.
+- **archimedes' renderer shapes three choices.** Its depth attachment is discarded after a pass,
+  so a camera's depth for the visibility map is rendered as distance into an R32F colour target.
+  It has no cube or array-layer texture, so an intermediate image past 180° is six 2D textures in
+  a descriptor array. Neither SwiftShader nor MoltenVK has `wideLines`, so overlay lines are 1 px.

@@ -1418,8 +1418,9 @@ built.
   ray table that lain's own `unproject` builds, so shading is written once and the camera model is
   never ported to GLSL. A CPU ray-caster was the first recommendation and was refused for
   duplicating the shading. The remap biases no geometry, and slice 4 measures it: a rendered
-  board's corners against lain's projection, through all six distortion models. CI renders through
-  **lavapipe** on a Linux leg.
+  board's corners against lain's projection, through all six distortion models. CI renders on
+  **archimedes' CPU device** (SwiftShader), on every leg *(amended 2026-10-22; this said lavapipe on
+  a Linux leg)*.
 - **A rig plan is nominal; a capture renders one seeded realisation of it.**
   - Tolerances are symmetric bounds in their part's own unit, drawn uniformly.
   - Each draw is seeded by the rig plan's seed, the owner's UUID and the parameter's key, so an edit
@@ -1461,8 +1462,17 @@ built.
   - video capture output;
   - a predicted observation graph.
 
-  The repo owner also wants a **CPU fallback backend for archimedes** planned separately, as
-  archimedes work; it is in the Outstanding index.
+  The repo owner had a **CPU fallback for archimedes** planned separately, as archimedes work. It
+  became archimedes' CPU device (PRs #1 and #2), verified against lain on 2026-10-22:
+  - **What works.** lain builds unchanged (1208/1208), Metal still ranks first, and a GPU-less
+    probe through `lain::app` got SwiftShader and an exact float readback.
+  - **Two archimedes fixes it found are in** (`2eb294b`), and re-verified from lain: the
+    SwiftShader pins were invisible to a consumer's scope (a blocker), and the licence texts were
+    not exposed (`ACM_SWIFTSHADER_LICENSES` now names them).
+  - **Owed by lain, in M15 slice 3.** The licence notice, a thread split with the CPU device, a
+    `--device gpu|cpu` choice, and three renderer limits to design around.
+
+  All of it is in WORK.md's *Verified against archimedes' CPU device*.
 
 ### Update 2026-10-21 — M9: a no-refiner CI leg, and the footprint measured again (P4)
 

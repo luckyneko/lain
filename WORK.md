@@ -14887,7 +14887,8 @@ promotes test code and adds nodes.
 - **One raster renderer** (ADR-0028). The viewport is a pinhole preview. A capture render
   rasterises into an intermediate image (a wide pinhole, or a cubemap past 180°) and remaps it
   through a ray table that lain's `unproject` builds, s × s rays a pixel. Shading is written once,
-  and the camera model is never ported to GLSL. CI renders through **lavapipe** on a Linux leg.
+  and the camera model is never ported to GLSL. CI renders on **archimedes' CPU device**
+  (SwiftShader, staged beside every runnable target), on every leg.
 - **The sensor model runs in C++ after readback**: a fixed gain (auto-anything is refused), read and
   shot noise under its own noise scale, then quantisation and encoding. So the bytes are identical
   everywhere, whatever GPU rendered the light.
@@ -14936,7 +14937,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    sequences, the up-axis conversion at import. **The procedural texture lifted** out of
    `texturedscene.h` into the library, with M9's verticals unchanged byte for byte.
 3. **`lain::render`**: the render scene, an offscreen raster pass, the viewport pass, the line pass.
-   **The lavapipe CI leg lands here.** Proves: a plain scene renders in CI.
+   **lain's archimedes pin moves to the CPU device here** (see *Verified against archimedes' CPU
+   device* below for what that commit owes). Proves: a plain scene renders in CI, on every leg.
 4. **The capture pass**: the intermediate image, the ray table, the remap with s × s rays. Proves the
    ADR-0028 claim: a rendered board's detected corners against lain's projection of the truth,
    through all six distortion models, near the CPU renderer's ~0.07 px.
@@ -14950,7 +14952,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
 7. **The vertical**: a committed example rig plan, written by a C++ builder as flowview's examples
    are (a room with procedural walls, three poles of two cameras, a board mover), through
    `rigplan render`, then `flowview run register.json` plus `compareRigs` against the truth, in CI on
-   lavapipe. Proves: at scale 0 it registers near-exactly; with nominal models at intrinsic scale 1
+   the CPU device. Proves: at scale 0 it registers near-exactly; with nominal models at intrinsic scale 1
    the error rises measurably.
 8. **The gui, part 1**: the app shell and docking, the Viewport, Outliner and Inspector, ImGuizmo,
    frustums, undo through `lain::editor`. Live-verified by the repo owner.
@@ -14968,8 +14970,6 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
   `truth/board.json` would then describe corners the pixels lack.
 - **Camera names become folder names and M9's camera identities** (a camera's location under the rig
   folder), so they must be unique among cameras and valid file names on every platform.
-- **lavapipe must be selectable.** Check that archimedes' `graphicsOptions()` offers a CPU device
-  when it is the only one, rather than ranking it out.
 - **The viewport is an offscreen render shown in a docked pane**, so ImGui samples a render target.
   Check what `gui::Texture` and archimedes need for a texture that is both.
 - **ImGuizmo is pinned to a commit** checked against `IMGUI_REF` (`162ce49`, 1.92.9 WIP), as imnodes
@@ -14977,6 +14977,58 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
 - **The renderer's results differ by device**, so no capture test asserts pixel bytes; they assert
   against ground truth with tolerances. The sensor model's noise and the ground truth are exact
   everywhere.
+
+### Verified against archimedes' CPU device (2026-10-22)
+
+The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
+device**: SwiftShader, a CPU implementation of Vulkan 1.3, staged beside every runnable target and
+loaded directly by `acm::Instance` (archimedes PRs #1 and #2, its ADR-0001). It replaces lavapipe in
+ADR-0028 (amended). Verified against PR #2's head (`6940aa2`) on macOS arm64, with lain's submodule
+detached there and restored afterwards:
+
+- **lain builds against it unchanged**, and `ctest` passes 1208/1208 (video and camera off).
+- **The Metal path is untouched**: the default ranking (hardware first) picks the M4 Pro, and the
+  two windowed `[gpu]` smokes (`LAIN_GUI_SMOKE=1`) pass on it.
+- **A GPU-less machine needs no setup.** A throwaway probe through `lain::app`'s headless path, with
+  the hardware driver hidden (`VK_ICD_FILENAMES=/nonexistent.json`), picked SwiftShader through
+  direct loading, and an RGBA32F upload and `copyTextureToBuffer` readback came back exact. That is
+  the path `rigplan render` takes, and lain had no headless GPU test of it.
+
+What adopting it owes, in the commit that moves lain's archimedes pin (slice 3):
+
+1. **A consumer got no CPU driver — fixed in archimedes.** The SwiftShader pins were plain
+   variables in `acmVulkan.cmake`'s directory scope, and a function resolves variables in its
+   caller's scope, so `acm_require_vulkan_runtime()` called from lain's root saw none and warned
+   "no SwiftShader prebuilt". Reproduced from lain and from a separate parent project. Sent to the
+   archimedes session, which moved the pins inside the function (`dd65fc7`, merged into PR #2 as
+   `2eb294b`) and made its subproject smoke call the runtime getters, stage a probe and run it.
+   **Re-verified from lain's side 2026-10-22**: with no workaround, the same parent project now
+   fetches the hash-checked prebuilt.
+2. **The licence texts were not exposed — fixed in archimedes.** `ACM_SWIFTSHADER_LICENSES` now
+   names the archive's `LICENSE.txt` (Apache-2.0) and `THIRD_PARTY_LICENSES.txt` (LLVM 10, marl,
+   SPIRV-Tools, SPIRV-Headers, astc-encoder), empty for a local build that lacks them, and
+   `acm_stage_vulkan_runtime` stages both as `vulkan/vk_swiftshader.*.txt` beside the driver.
+   Re-verified the same way. **Still owed by lain:** feeding `ACM_SWIFTSHADER_LICENSES` into its
+   `--licenses` notice, in the commit that moves its pin.
+3. **lain splits the cores with the CPU device.** Uncapped, SwiftShader adds 15 threads beside
+   lain's 13 pool workers on 14 logical cores; capped at 2, it adds 3. `lain::app` passes
+   `RuntimeConfig::cpuDeviceThreads` to `useStagedVulkanRuntime`, which it calls after `--threads`
+   is parsed. The split itself is a decision of its own: a capture render keeps the device busy
+   while the pool runs the sensor model and encodes.
+4. **`lain::app` gains a device choice**, a reserved `--device gpu|cpu` over
+   `DevicePreferences::Default()` / `Cpu()`, as archimedes' testbed has. Today it always takes the
+   first-ranked device, so a capture rendered in CI cannot be reproduced locally on the same kind of
+   device, and lain's own GPU tests cannot run on both kinds as archimedes' do.
+5. **Three renderer limits become design choices**, recorded in ADR-0028: a depth attachment is
+   discarded after its pass, so the visibility map renders distance into an R32F colour target;
+   there is no cube or array-layer texture, so an intermediate image past 180° is six 2D textures in
+   a descriptor array; neither SwiftShader nor MoltenVK has `wideLines`, so overlay lines are 1 px.
+
+Not verified here: lain against the PRs on Linux or Windows (archimedes' own CI is green on both
+at the first heads; at the fixed heads the subproject smoke and clang-format had passed and the
+build legs were still running),
+and `lain::gui` on the CPU device (a windowed CPU device on macOS still needs Metal, and M15 does
+not need it).
 
 ### Not in this milestone
 
@@ -15011,9 +15063,6 @@ Each with its trigger, or refused outright.
   room's walls; eased or curved paths.** Each is an addition that changes nothing already drawn.
 - **The plan frame's up axis as a user setting**, which changes presentation only.
 - **In-app registration and reconstruction**: a separate app, later.
-- **A CPU fallback backend for archimedes**, for when no driver exists, through third-party
-  libraries. The repo owner wants a planning pass of its own, in archimedes, as archimedes work
-  (ADR-0028, *Considered options*). lavapipe answers CI without it.
 
 ## Outstanding work — one index
 
@@ -15163,9 +15212,11 @@ row here**. A row is cheap to delete and expensive to leave.
 - **M15 — rig design: rig plans and synthetic captures.** Grilled 2026-10-21 to 10-22 with two ADRs
   (0028, 0029); **nothing built**. Ten slices, 0 to 9, on `feature/M15`; the build order and every
   exclusion are in M15's own sections. *(Milestone 15.)*
-- **A CPU fallback backend for archimedes**, for when no Vulkan driver exists: a planning pass of its
-  own, in archimedes, as archimedes work. Not decided; lavapipe answers M15's CI without it.
-  *(M15 §Not in this milestone; ADR-0028 §Considered options.)*
+- **archimedes' CPU device**, which M15 renders its CI captures on: built in archimedes (PRs #1 and
+  #2), verified against lain on 2026-10-22. The two archimedes fixes that verification found are
+  in (`2eb294b`) and re-verified from lain. Left: the PRs merging, then lain moving its pin in M15
+  slice 3, with the licence notice, the thread split and a device choice. *(M15 §Verified against
+  archimedes' CPU device.)*
 
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not**, and M15 is
 designed but not started.
