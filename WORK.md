@@ -14939,6 +14939,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
 2. **`io::mesh` + the OBJ/MTL plugin**: meshes, MTL onto the three materials, mesh clips from OBJ
    sequences, the up-axis conversion at import. **The procedural texture lifted** out of
    `texturedscene.h` into the library, with M9's verticals unchanged byte for byte.
+   **Planned 2026-10-22 as four commits, 2a to 2d** (*Slice 2 planned* below); **2a built**.
 3. **`lain::render`**: the render scene, an offscreen raster pass, the viewport pass, the line pass.
    **lain's archimedes pin moves to the CPU device here** (see *Verified against archimedes' CPU
    device* below for what that commit owes). Proves: a plain scene renders in CI, on every leg.
@@ -15171,6 +15172,51 @@ document, versioned and read strictly, as M9's camera-model and rig documents ar
 per ADR-0027. **The rig plan document stays at version 1 until slice 7 commits
 the first example rig plan**: no rig plan exists outside the tests until then, so its shape may change
 without a migration.
+
+### Slice 2 planned (2026-10-22), and 2a built
+
+Four commits. Defaults recorded here, as slice 1's were, so they can be objected to first:
+
+- **2a: the procedural texture moves into `lain::image`** (`image/procedural.h`), as a function of
+  position in metres plus a bake to an image. It is generic image generation, and M9's test renderer
+  (libs/camera/test) already links `lain::image`, so its home costs no new dependency in either
+  direction.
+- **2b: a mesh type and the `io::mesh` seam.**
+  - `libs/mesh` (`lain::mesh`) holds the data model, as `lain::image` holds `Image`: an indexed
+    triangle mesh (positions, normals, UVs), its parts by material, and each material as the file
+    states it (MTL's diffuse colour or texture, specular colour and shininess). It also holds a
+    `MeshClip`: meshes at a frame rate, a static mesh being a clip of one.
+  - `lain::io::mesh` mirrors `io::image`: a format-keyed reader registry. By CONTEXT.md's four verbs,
+    `load(uri)` reads a mesh and `loadClip(pattern)` an OBJ sequence named by a frame pattern; both
+    are whole assets.
+  - A mesh stays in its file's own frame and units. The prop that places it declares its up axis and
+    scale, and the conversion to the plan frame happens once, where a render scene is built.
+- **2c: `plugins/io/mesh/obj`** over tinyobjloader (MIT, pinned to a release tag, FetchContent'd as
+  every source-built dependency is). MTL's `Kd`, `map_Kd`, `Ks` and `Ns` map onto the mesh's
+  materials, and a texture path resolves against the OBJ's own folder and is held absolute in memory.
+- **2d: the rig plan gains its room, planes, boxes and props.** Rig plan materials become a closed
+  set (colour, image texture with a physical tile size, procedural texture), and a mesh's materials
+  map onto it. A prop gets its own up axis, scale and pose, plus an optional clip. The document's
+  first paths (meshes, textures) follow ADR-0027: absolute in memory, relative on disk inside the
+  document's folder tree.
+
+**2a, built.** `lain::image` gains `ProceduralTexture`, `proceduralGrey(texture, u, v)` and
+`bakeProceduralTexture(texture, width, height, texelsPerMetre)`, the last a linear Gray32F image of
+each texel centre's grey over 255. `texturedscene.h`'s texture is now an alias for it and a one-line
+forward. `ctest -j8` **1402/1402** Release with video, camera and Ceres on (+3); warning-clean,
+format-check clean.
+- **Moved verbatim, and proved to have moved verbatim.** Before the change, all 152 files the
+  `camera-footage` target draws were hashed, and a second draw confirmed the baseline is
+  deterministic. After it, all 152 are byte-identical.
+- **`mix` stays in `texturedscene.h` too**: the test renderer seeds each frame's noise from it, which
+  is not the texture's business.
+- **The tests pin the function against an independent Python reimplementation**, to 1e-9, since a
+  compiler may fuse a multiply-add where Python cannot; the footage comparison is what proves no bit
+  moved.
+- **Found by its sabotage: the first pinned values could not see the discs.** Placing the discs on a
+  6-cell lattice instead of 5 changed 49 of the 152 footage files, and all four pinned values still
+  matched. The discs cover a few percent of a surface, and four points chosen at random missed them
+  all. Two pinned points now sit in a disc's soft edge, and the same sabotage fails them.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 

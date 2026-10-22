@@ -1400,6 +1400,25 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-22 — M15 slice 2 planned; 2a built: the procedural texture in `lain::image`
+
+Slice 2 is four commits:
+- **2a** the procedural texture, built here;
+- **2b** a `lain::mesh` data model and the `io::mesh` seam;
+- **2c** the OBJ/MTL plugin, over tinyobjloader;
+- **2d** the room, planes, boxes and props in the rig plan, with its first document paths, per
+  ADR-0027.
+
+The plan and its defaults are in WORK.md's *Slice 2 planned*. `ctest -j8` **1402/1402** Release with
+video, camera and Ceres on (+3); warning-clean, format-check clean.
+
+- **`image::proceduralGrey` / `bakeProceduralTexture`**, the M9 test renderer's texture moved verbatim:
+  `texturedscene.h` now forwards to it.
+- **Proved byte for byte on M9's footage**: all 152 files `camera-footage` draws were hashed before
+  the change (and drawn twice, to show the baseline is deterministic), and are identical after it.
+- **Found by its sabotage: random pinned points miss the texture's discs**, so the first pins passed
+  a change that altered 49 footage files. Two pins now sit in a disc's soft edge.
+
 ### Update 2026-10-22 — M15 slice 1c built: the documents (**slice 1 COMPLETE**)
 
 The last of slice 1's three commits, after a no-behaviour-change hoist. `ctest -j8` **1399/1399**
