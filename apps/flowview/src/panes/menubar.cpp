@@ -6,11 +6,13 @@
 #include "../groupedit.h" // the group-authoring gestures (Edit menu)
 #include "../groupnav.h"  // enclosingLinkedGroup (Edit Template...)
 #include "../scene.h"	  // nodeCatalog (the Add menu grouping) + buildNewScene
-#include "../session.h"	  // noteGraphPath / saveSession (Open Recent + reopen-on-launch)
+#include "../session.h"	  // saveSession (Open Recent + reopen-on-launch)
 #include "canvasstate.h"  // collectLayout (saved canvas positions), selectedNodesIn (Run Selection)
 
 #include <lain/app/application.h>
-#include <lain/data/value.h> // Value (undo/redo snapshot restored via applyRestore)
+#include <lain/data/value.h>	 // Value (undo/redo snapshot restored via applyRestore)
+#include <lain/editor/guard.h>	 // UnsavedAnswer — the modal's three answers
+#include <lain/editor/recents.h> // noteDocument / forgetDocument (Open Recent + reopen-on-launch)
 #include <lain/flow/edit.h>
 #include <lain/flow/graph.h>
 #include <lain/flow/group.h>
@@ -45,23 +47,19 @@ namespace flowview
 		ctx.currentPath.clear();													   // an untitled document
 		ctx.dirty = false;
 		ctx.loadIssues.clear();
-		ctx.templates.clear();		   // a different document: whatever it links is read afresh
-		ctx.returnStack.clear();	   // a new document is a new lineage — nothing to go back to
-		ctx.session.lastGraph.clear(); // nothing to reopen next launch (the recents keep their history)
+		ctx.templates.clear();			 // a different document: whatever it links is read afresh
+		ctx.returnStack.clear();		 // a new document is a new lineage — nothing to go back to
+		ctx.session.graphs.last.clear(); // nothing to reopen next launch (the recents keep their history)
 		saveSession(ctx.session);
 	}
 
 	// Ask for a document swap, guarding unsaved work. Both entry points funnel here so New and Open
-	// can't diverge: with nothing unsaved the swap happens now, otherwise it waits for the modal.
+	// can't diverge: with nothing unsaved the guard hands the swap straight back, otherwise it holds
+	// it for the modal (drawConfirmModal opens it next time it runs).
 	void MenuBarPane::requestSwap(AppContext& ctx, PendingSwap swap)
 	{
-		if (!ctx.dirty)
-		{
-			performSwap(ctx, swap);
-			return;
-		}
-		ctx.pendingSwap = std::move(swap);
-		ctx.confirmSwap = true; // drawConfirmModal opens the modal next time it runs
+		if (std::optional<PendingSwap> now = ctx.guard.request(std::move(swap), ctx.dirty))
+			performSwap(ctx, *now);
 	}
 
 	void MenuBarPane::requestNew(AppContext& ctx)
@@ -131,41 +129,36 @@ namespace flowview
 
 	void MenuBarPane::drawConfirmModal(AppContext& ctx, const flow::Graph& graph)
 	{
-		if (ctx.confirmSwap)
-		{
+		if (ctx.guard.takePrompt())
 			gui::OpenPopup("Unsaved changes");
-			ctx.confirmSwap = false; // the request is consumed; ctx.pendingSwap carries the action
-		}
 		if (gui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
 		{
-			// Escape closes the modal without resolving; the stale pendingSwap is harmless (nothing
-			// reads it outside this block, and the next request overwrites it).
-			const PendingSwap swap = ctx.pendingSwap.value_or(PendingSwap{});
-			gui::TextUnformatted(swap.kind == DocumentSwap::New
+			// Escape closes the modal without resolving; the request left in the guard is harmless
+			// (nothing reads it outside this block, and the next request replaces it).
+			const PendingSwap* pending = ctx.guard.pending();
+			gui::TextUnformatted(!pending || pending->kind == DocumentSwap::New
 									 ? "Discard the current graph? Unsaved changes will be lost."
 									 : "Open another graph? Unsaved changes to the current one will be lost.");
-			const auto resolve = [&](bool save)
+			const auto resolve = [&](editor::UnsavedAnswer answer)
 			{
 				// Save may prompt for a path if the document is untitled. Cancelling that panel — or a
-				// failed write — cancels the whole swap: never discard work the user just asked to keep.
-				const bool proceed = !save || saveToCurrentPath(ctx, graph);
-				ctx.pendingSwap.reset();
+				// failed write — cancels the whole swap (the guard's rule): never discard work the user
+				// just asked to keep.
+				const std::optional<PendingSwap> swap = ctx.guard.answer(answer, [&]
+																		 { return saveToCurrentPath(ctx, graph); });
 				gui::CloseCurrentPopup();
-				if (proceed)
-					performSwap(ctx, swap); // last: an Open... prompts with a native dialog
+				if (swap)
+					performSwap(ctx, *swap); // last: an Open... prompts with a native dialog
 			};
 
 			if (gui::Button("Save"))
-				resolve(true);
+				resolve(editor::UnsavedAnswer::Save);
 			gui::SameLine();
 			if (gui::Button("Discard"))
-				resolve(false);
+				resolve(editor::UnsavedAnswer::Discard);
 			gui::SameLine();
 			if (gui::Button("Cancel"))
-			{
-				ctx.pendingSwap.reset();
-				gui::CloseCurrentPopup();
-			}
+				resolve(editor::UnsavedAnswer::Cancel);
 			gui::EndPopup();
 		}
 	}
@@ -206,7 +199,7 @@ namespace flowview
 			std::error_code ec;
 			if (!std::filesystem::exists(path, ec))
 			{
-				forgetGraphPath(ctx.session, path);
+				editor::forgetDocument(ctx.session.graphs, path);
 				saveSession(ctx.session);
 			}
 			return false;
@@ -224,7 +217,7 @@ namespace flowview
 		ctx.pendingOptions = options; // this document's own trigger, from the file
 		ctx.currentPath = path;		  // remember for plain Save
 		ctx.dirty = false;
-		noteGraphPath(ctx.session, path); // now the document to reopen + the head of Open Recent
+		editor::noteDocument(ctx.session.graphs, path); // now the document to reopen + the head of Open Recent
 		saveSession(ctx.session);
 		return true;
 	}
@@ -385,7 +378,7 @@ namespace flowview
 
 	void MenuBarPane::drawOpenRecent(AppContext& ctx)
 	{
-		const std::vector<std::filesystem::path>& recent = ctx.session.recentGraphs;
+		const std::vector<std::filesystem::path>& recent = ctx.session.graphs.recent;
 		if (!gui::BeginMenu("Open Recent", !recent.empty())) // greyed out with no history
 			return;
 
@@ -408,7 +401,7 @@ namespace flowview
 
 		if (clear)
 		{
-			ctx.session.recentGraphs.clear();
+			ctx.session.graphs.recent.clear();
 			saveSession(ctx.session);
 		}
 		else if (!chosen.empty())
@@ -445,7 +438,7 @@ namespace flowview
 			// quietly serve it instead.
 			ctx.templates.invalidate(templateKey(ctx.currentPath).toString());
 			ctx.dirty = false;
-			noteGraphPath(ctx.session, ctx.currentPath); // saving makes it the current document too
+			editor::noteDocument(ctx.session.graphs, ctx.currentPath); // saving makes it the current document too
 			saveSession(ctx.session);
 			return true;
 		}
@@ -470,7 +463,7 @@ namespace flowview
 		ctx.templates.invalidate(templateKey(file).toString()); // as for Save: the file written may be a template
 		ctx.currentPath = file;									// remember for plain Save
 		ctx.dirty = false;
-		noteGraphPath(ctx.session, file);
+		editor::noteDocument(ctx.session.graphs, file);
 		saveSession(ctx.session);
 		return true;
 	}

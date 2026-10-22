@@ -1,17 +1,16 @@
-// UndoStack — the flowview graph-document history. Driver-free: it operates on data::Value states
-// (here, plain integers stand in for graph snapshots), so it exercises the real push/undo/redo/
-// truncate/dedup/cap logic without a graph or a gui.
-
-#include "undo.h"
+// UndoStack — an editor's document history. Driver-free: it operates on data::Value states (here,
+// plain integers stand in for document snapshots), so it exercises the real push/undo/redo/truncate/
+// dedup/cap logic without a document or a gui.
 
 #include <lain/data/value.h>
+#include <lain/editor/undo.h>
 
 #include <catch2/catch_test_macros.hpp>
 
-using flowview::UndoStack;
 using lain::data::Value;
+using lain::editor::UndoStack;
 
-// A distinct state, labelled by an int (stands in for a serialized graph document).
+// A distinct state, labelled by an int (stands in for a serialized document).
 static Value state(int n)
 {
 	return Value(n);

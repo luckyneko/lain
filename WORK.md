@@ -14859,7 +14859,7 @@ algorithm**. `ctest -j8` **1050/1050** Debug and **1058/1058** Release, both wit
   expression. The golden values, the OpenCV agreement test (1e-6 px) and the camera vertical are
   what pin the behaviour.
 
-## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; nothing built)
+## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slice 0 built)
 
 An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
 and lights, a board waved through) that renders **synthetic captures**: footage in the shape M9
@@ -14925,9 +14925,10 @@ promotes test code and adds nodes.
 Headless before gui, one commit or a few per slice, a sabotage per claim.
 
 0. **Hoist `lain::editor`** out of flowview: `UndoStack`, the recent-documents and folder session,
-   the document guard (dirty tracking, the single pending-swap path, a cancelled Save cancelling the
-   swap). No behaviour change; flowview's undo tests move with it. flowview keeps what is
-   graph-specific: canvas ids, selection ordinals, the graph's snapshot and restore.
+   the document guard (the single pending-swap path, a cancelled Save cancelling the swap). No
+   behaviour change; flowview's undo tests move with it. flowview keeps what is graph-specific:
+   canvas ids, the return stack, the graph's snapshot and restore. **Built 2026-10-22**; see *Slice 0
+   built* below. *(Corrected: this said flowview keeps "selection ordinals", which M6 retired.)*
 1. **`lain::rigplan` core**: sensor, lens, camera and light specifications; the rig plan and its
    document (`/serialize`, versioned, read strictly as M9's documents are, media paths per ADR-0027);
    the specification catalogue document; realisation and the two deviation scales; nominal and
@@ -14977,6 +14978,58 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
 - **The renderer's results differ by device**, so no capture test asserts pixel bytes; they assert
   against ground truth with tolerances. The sensor model's noise and the ground truth are exact
   everywhere.
+
+### Slice 0 built (2026-10-22): `lain::editor`
+
+`libs/editor` (`lain::editor`, driver-free and gui-free) holds what every document editor in lain
+needs and no document type owns. flowview is now its first consumer, and `rigplan` will be its
+second. `ctest -j8` **1362/1362** Release with video, camera and Ceres on, against 1342 before: +18
+in the new `test-editor`, +2 in flowview's new session-shape test, and the 8 undo cases moved, not
+added. Warning-clean, format-check clean. The Debug build was not run.
+
+- **`UndoStack`** moved verbatim (the bodies diff identical), namespace and doc comment aside, with its
+  8 test cases.
+- **`RecentDocuments` + `noteDocument` / `forgetDocument`**: flowview's `noteGraphPath` /
+  `forgetGraphPath`, with the cap a parameter defaulting to `maxRecentDocuments` (10, as before).
+- **`sessionFile(app)`, `loadSession<T>(file)`, `saveSession(file, T)`**: the best-effort
+  `~/.<app>/session.json` persistence over any struct, with the log lines unchanged. **Deviation:**
+  it takes a file path, with `sessionFile` deriving the path from the app's name. A name-only API
+  would have made every session test write into the real home directory.
+- **`DocumentGuard<Request>` + `UnsavedAnswer`**: the unsaved-changes rule as a small state machine.
+  - A request with nothing unsaved comes straight back.
+  - Otherwise it is held, and `takePrompt()` says once that the app should ask.
+  - Only a Save that went through, or a Discard, lets it out; Cancel drops it.
+  - A new request replaces one left unanswered.
+
+  The ImGui modal stays in flowview. **These rules had never been under test**, since `menubar.cpp`
+  needs a gui; they now have 8 cases.
+- **Deviation: dirty tracking stays in the app.** What marks a document changed, and when a drag
+  ends, is the app's (flowview's `markChanged`, its end-of-frame snapshot); the guard takes
+  `unsaved` from it.
+- **flowview's session file keeps its exact shape.** `Session` now holds an
+  `editor::RecentDocuments graphs`, and a hand-written `serialize` writes it flat under the old keys
+  (`lastGraph`, `recentGraphs`, `lastDialogDir`, `scheduler`, in that order). A test pins the keys
+  and reads a file in the old shape. **Driven through the real binary:** a copy of the repo owner's own
+  session file, in a scratch `HOME`, loaded in gui-mode (`--frames 30`, exit 0) and was written back
+  byte-identical; the real file was untouched.
+- **Found while wiring, in the new guard, fixed before commit:** a request with nothing unsaved,
+  arriving while an earlier one was held but its question not yet opened, dropped the request and
+  left the prompt flag set, so the modal would open asking about nothing. The replacement case now
+  asserts no prompt.
+- **One impossible path behaves differently.** flowview's modal read `pendingSwap.value_or({})`, so an
+  answer given with nothing pending would have carried out a New. With nothing held, the guard
+  answers nothing.
+- **Found in the new test file, fixed before commit:** a `static` helper used only by the json-gated
+  cases would fail a json-off build under `-Werror`. It moved inside the gate, and that variant was
+  compiled with the define at 0.
+- **Four sabotages, each caught by the case aimed at it:**
+  - Save carrying the swap out even when it did not go through;
+  - a replaced request keeping its prompt;
+  - flowview writing its recents under a new key (both session cases fail);
+  - noting a listed document without deduplicating.
+- **gui-mode NOT eyeballed beyond the `--frames` smoke.** The unsaved-changes modal (New and Open with
+  unsaved work, then Save, Discard, Cancel, and a Save panel cancelled) changed code path and needs a
+  live check.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
@@ -15210,7 +15263,8 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md).)*
 
 - **M15 — rig design: rig plans and synthetic captures.** Grilled 2026-10-21 to 10-22 with two ADRs
-  (0028, 0029); **nothing built**. Ten slices, 0 to 9, on `feature/M15`; the build order and every
+  (0028, 0029). **Slice 0 built 2026-10-22** (`lain::editor`); its gui-mode check of the
+  unsaved-changes modal is owed. Ten slices, 0 to 9, on `feature/M15`; the build order and every
   exclusion are in M15's own sections. *(Milestone 15.)*
 - **archimedes' CPU device**, which M15 renders its CI captures on: built in archimedes (PRs #1 and
   #2), verified against lain on 2026-10-22. The two archimedes fixes that verification found are
@@ -15218,8 +15272,8 @@ row here**. A row is cheap to delete and expensive to leave.
   slice 3, with the licence notice, the thread split and a device choice. *(M15 §Verified against
   archimedes' CPU device.)*
 
-M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not**, and M15 is
-designed but not started.
+M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not**, and M15 has
+its first slice.
 
 - **Example documents** — all four commits built. Owed: a gui-mode eyeball of every example (the
   primary purpose). The smoke step has run in CI since it landed, and was green on every leg in

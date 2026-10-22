@@ -5,14 +5,13 @@
 #include <cstddef>
 #include <vector>
 
-namespace flowview
+namespace lain::editor
 {
-	// A snapshot-based undo/redo history for the graph document. A snapshot is the graph serialized
-	// to a data::Value (structure, params, node/pin names, dynamic pins, canvas layout) — the same
-	// form Save writes (graphio::snapshotGraph), so undo is Load-from-RAM. Runtime-only state (a
-	// bound boundary value — a loaded image, a scalar input) is NOT in the document and so not
-	// covered; because push() ignores a snapshot equal to the current one, an edit that touches only
-	// such state records no history entry rather than a confusing no-op undo step.
+	// A snapshot-based undo/redo history for one document. A snapshot is the document serialized to
+	// a data::Value — the same form Save writes, so undo is Load-from-RAM. Runtime-only state (a
+	// value bound to a graph's boundary, say) is NOT in the document and so not covered; because
+	// push() ignores a snapshot equal to the current one, an edit that touches only such state
+	// records no history entry rather than a confusing no-op undo step.
 	//
 	// The model is a list of full document states with a cursor at the current one. reset() seeds the
 	// baseline (a fresh / loaded document — a New or Open resets the history rather than extending
@@ -21,8 +20,8 @@ namespace flowview
 	class UndoStack
 	{
 	public:
-		// Deepest history kept. A snapshot is a small data::Value (a prototyping graph), so this is a
-		// generous bound whose only cost is memory; the oldest state is dropped past it.
+		// Deepest history kept. A snapshot is a small data::Value (a prototyping document), so this is
+		// a generous bound whose only cost is memory; the oldest state is dropped past it.
 		static constexpr std::size_t maxDepth = 100;
 
 		// Whether a baseline has been established (reset/push has run at least once).
@@ -48,4 +47,4 @@ namespace flowview
 		std::vector<lain::data::Value> m_states;
 		std::size_t m_cursor = 0; // index of the current state within m_states
 	};
-} // namespace flowview
+} // namespace lain::editor

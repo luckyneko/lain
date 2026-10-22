@@ -1,10 +1,11 @@
 # flowview unit tests (Catch2). Driver-free — no window, no device. Compiles the production
-# undo.cpp / groupnav.cpp / canvasids.cpp / validation.cpp / runner.cpp / runpolicy.cpp directly (not
-# copies), so the tests exercise the real UndoStack, the real group-navigation model, the real imnodes id
-# mapping, the real Issues-panel rules, the real coordinator thread and the real run triggers.
+# session.cpp / groupnav.cpp / canvasids.cpp / validation.cpp / runner.cpp / runpolicy.cpp directly (not
+# copies), so the tests exercise the real session file shape, the real group-navigation model, the real
+# imnodes id mapping, the real Issues-panel rules, the real coordinator thread and the real run triggers.
+# (The undo stack moved to lain::editor, and its tests with it.)
 
 add_executable(test-flowview
-	test_undo.cpp
+	test_session.cpp
 	test_groupnav.cpp
 	test_canvasids.cpp
 	test_clibinders.cpp
@@ -28,7 +29,7 @@ add_executable(test-flowview
 	test_cameravertical.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../examples/src/examples.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../examples/src/camerafootage.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/../src/undo.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/session.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runner.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runpolicy.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/freshness.cpp"
@@ -80,6 +81,7 @@ target_link_libraries(test-flowview PRIVATE
 	lain::io::video::codecs
 	lain::camera::flow lain::camera::backends lain::camera::serialize
 	lain::log lain::string lain::testing
+	lain::editor # session.cpp's recents and file, and the undo stack AppContext holds
 	lain::gui Vulkan::Loader
 	lain::warnings Catch2::Catch2WithMain
 )

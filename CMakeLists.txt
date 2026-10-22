@@ -126,6 +126,7 @@ add_subdirectory(libs/data)             # serialization DOM (Value) + reflection
 add_subdirectory(libs/camera)           # camera geometry: models, distortion, projection (WORK.md M9)
 add_subdirectory(libs/task)
 add_subdirectory(libs/flow)             # the node-graph engine (WORK.md M1)
+add_subdirectory(libs/editor)           # document editors' undo, recents, session, unsaved guard (WORK.md M15)
 
 # Test-support, built only when there are tests to support (see libs/testing/scratch.h).
 if(LAIN_BUILD_TESTING)

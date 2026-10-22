@@ -6,9 +6,10 @@
 #include "groupnav.h"  // PinRefusal, and the path helpers the panes are pointed with
 #include "pinkey.h"
 #include "session.h" // what persists between runs (last graph, recents, dialog folder)
-#include "undo.h"	 // UndoStack (the graph-document history)
 
 #include <lain/data/value.h>				   // Value (pendingBaseline)
+#include <lain/editor/guard.h>				   // DocumentGuard — a swap waits while work is unsaved
+#include <lain/editor/undo.h>				   // UndoStack (the graph-document history)
 #include <lain/flow/serialize/loadresult.h>	   // EditorData (a value member) + Graph (loadedGraph target)
 #include <lain/flow/serialize/templatecache.h> // TemplateCache — one definition per template file
 #include <lain/flow/types.h>				   // NodeId
@@ -90,7 +91,7 @@ namespace flowview
 		Open,
 	};
 
-	// A requested swap, held while the guard modal is up.
+	// A requested swap, held by the document guard while the unsaved-changes modal is up.
 	struct PendingSwap
 	{
 		DocumentSwap kind = DocumentSwap::New;
@@ -268,10 +269,10 @@ namespace flowview
 		// dirty but is NOT an undo step, so an undo or a template reload leaves them alone.
 		DocumentOptions options;
 		bool dirty = false; // unsaved changes since the last save / load / new (drives the discard guard)
-		// A swap the user asked for while there were unsaved changes: it waits here until the guard
-		// modal resolves it (Save / Discard / Cancel).
-		std::optional<PendingSwap> pendingSwap; // what to do once confirmed
-		bool confirmSwap = false;				// open the modal next frame (the request* helpers set it)
+		// Every New / Open goes through this. With unsaved changes the swap waits here until the
+		// unsaved-changes modal answers it (Save / Discard / Cancel); a Save that does not go through
+		// cancels the swap (lain::editor's rule, shared with every editor).
+		lain::editor::DocumentGuard<PendingSwap> guard;
 
 		// Mark that the graph document changed this frame (any topology / param / name edit). Sets the
 		// unsaved-changes flag AND asks for an undo snapshot; the snapshot is deferred to end of frame
@@ -286,7 +287,7 @@ namespace flowview
 		// The graph-document history (snapshot per committed edit). MainWindow drives it: it pushes a
 		// snapshot at end of frame when pendingSnapshot is set and no widget is active, and restores a
 		// state through the pending-load path below on Undo/Redo.
-		UndoStack undo;
+		lain::editor::UndoStack undo;
 		bool pendingSnapshot = false; // an edit is awaiting its end-of-frame snapshot (coalesces drags)
 
 		// Pending Load: applied at the END of onRender (after every panel drew with the current graph),

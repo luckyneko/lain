@@ -1,13 +1,11 @@
-#include "undo.h"
+#include "lain/editor/undo.h"
 
 #include <cassert>
 #include <cstddef>
 #include <utility>
 
-namespace flowview
+namespace lain::editor
 {
-	using namespace lain;
-
 	void UndoStack::reset(data::Value baseline)
 	{
 		m_states.clear();
@@ -52,4 +50,4 @@ namespace flowview
 		++m_cursor;
 		return m_states[m_cursor];
 	}
-} // namespace flowview
+} // namespace lain::editor

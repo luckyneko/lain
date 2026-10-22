@@ -2,32 +2,29 @@
 
 #include "runpolicy.h" // RunStrategy — the scheduler is remembered per session
 
-#include <cstddef>
+#include <lain/editor/recents.h> // RecentDocuments — the last graph and Open Recent
+
 #include <filesystem>
-#include <vector>
+
+namespace lain::data
+{
+	class Archive;
+}
 
 namespace flowview
 {
-	// What flowview remembers *between* runs — the small conveniences a document app is expected to
-	// have: reopen what you had open, list what you had open before that, and put the file dialogs
-	// back where you left them. Stored as JSON in ~/.flowview/session.json (core::configDir),
-	// alongside the dock layout's imgui.ini — one findable, clearable place for the app's state.
-	//
-	// This is user convenience, NOT document data: a lost or malformed session file costs nothing
-	// (every field falls back to its default and the app opens blank), so load never errors and the
-	// file is written best-effort. Deliberately not a "settings" store — when real preferences turn
-	// up they can join this struct or take their own file; nothing here presumes either.
+	// What flowview remembers *between* runs (lain::editor's session: reopen what you had open, list
+	// what you had open before that, put the file dialogs back where you left them). Stored as JSON in
+	// ~/.flowview/session.json (editor::sessionFile), alongside the dock layout's imgui.ini — one
+	// findable, clearable place for the app's state. Convenience state, so a lost or malformed file
+	// costs nothing.
 	struct Session
 	{
-		// The graph the last run was working on, reopened at the next launch (unless --example). Empty
-		// for an untitled document — New clears it, since there is nothing to reopen.
-		std::filesystem::path lastGraph;
-
-		// Graphs opened / saved, most recent first, deduplicated, capped at maxRecentGraphs — the
-		// File ▸ Open Recent list. Entries are kept as written; a path that has since vanished is
-		// pruned when opening it fails, not eagerly on load (the file may live on a volume that
-		// isn't mounted right now).
-		std::vector<std::filesystem::path> recentGraphs;
+		// The graph to reopen at the next launch (unless --example) and File ▸ Open Recent, changed
+		// only through editor::noteDocument / forgetDocument. Written under the keys `lastGraph` and
+		// `recentGraphs`, which the file has always used, so a session written before the hoist into
+		// lain::editor still reads.
+		lain::editor::RecentDocuments graphs;
 
 		// The directory the file dialogs should start in — lain::gui's dialog seam owns this within a
 		// session (gui::lastDirectory()); persisting it is what makes it survive a restart.
@@ -40,8 +37,9 @@ namespace flowview
 		RunStrategy scheduler = RunStrategy::Parallel;
 	};
 
-	// How many entries File ▸ Open Recent keeps.
-	inline constexpr std::size_t maxRecentGraphs = 10;
+	// How a Session maps to and from its file (lain::data's hook, found by ADL). Declared here so a
+	// test can hold the file's shape still; the recents are written flat, under their old keys.
+	void serialize(lain::data::Archive& ar, Session& session);
 
 	// Read ~/.flowview/session.json. A missing, unreadable, or malformed file is not an error — it
 	// yields a default Session (first run looks exactly like a cleared one).
@@ -50,13 +48,4 @@ namespace flowview
 	// Write ~/.flowview/session.json. Best-effort: a failure is logged, never surfaced to the user —
 	// losing convenience state must not interrupt what they were doing.
 	void saveSession(const Session& session);
-
-	// Record that `path` is now the current document: it becomes lastGraph and moves to the front of
-	// recentGraphs (deduplicated, capped). Call for both Open and Save — either makes it the file the
-	// user is working on.
-	void noteGraphPath(Session& session, const std::filesystem::path& path);
-
-	// Drop `path` from the recents (and from lastGraph if it is that) — for a file that failed to
-	// open, so a stale entry doesn't linger in the menu.
-	void forgetGraphPath(Session& session, const std::filesystem::path& path);
 } // namespace flowview

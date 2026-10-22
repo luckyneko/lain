@@ -1400,6 +1400,31 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-22 — M15 slice 0 built: `lain::editor`
+
+What every document editor needs and no document type owns, hoisted out of flowview so `rigplan`
+cannot disagree with it. `libs/editor` is driver-free and gui-free. `ctest -j8` **1362/1362**
+Release with video, camera and Ceres on (+20: 18 in `test-editor`, 2 in flowview; the 8 undo cases
+moved). Warning-clean, format-check clean. **gui-mode NOT eyeballed** beyond a `--frames` smoke.
+Full notes in WORK.md's *Slice 0 built*, under M15.
+
+- **`UndoStack`** moved verbatim with its tests. **`RecentDocuments`** with `noteDocument` /
+  `forgetDocument` is flowview's recents rule. **`loadSession<T>(file)` / `saveSession`** is the
+  best-effort session file over any struct; `sessionFile(app)` derives the path separately, so the
+  tests never write into the real home directory.
+- **`DocumentGuard<Request>`** is the unsaved-changes rule as a state machine: a cancelled or failed
+  Save cancels the swap, and a new request replaces an unanswered one. These rules were never under
+  test before, because they lived in `menubar.cpp`, which needs a gui. The modal stays flowview's,
+  and so does dirty tracking: what marks a document changed is the app's.
+- **flowview's session file keeps its shape**: a hand-written `serialize` writes the recents flat,
+  under the old keys. A copy of the repo owner's real session file, in a scratch `HOME`, loaded in
+  gui-mode and was written back byte-identical.
+- **Two defects in this slice's own new code, found while wiring and fixed before commit**:
+  - a stale prompt flag that would have opened the modal asking about nothing;
+  - a json-only test helper that would have failed a json-off build under `-Werror`.
+- **Four sabotages, all caught.** Owed: a live check of the unsaved-changes modal (New and Open with
+  unsaved work; Save, Discard and Cancel; a cancelled Save panel).
+
 ### Update 2026-10-22 — M15 designed: rig design, rig plans and synthetic captures (nothing built yet)
 
 A new app for designing camera rigs as they would be installed (a room, props, poles carrying

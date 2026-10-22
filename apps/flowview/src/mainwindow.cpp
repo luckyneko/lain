@@ -51,8 +51,8 @@ namespace flowview
 		m_ctx.session = loadSession();
 		gui::setLastDirectory(m_ctx.session.lastDialogDir);
 		appDelegate.setStrategy(m_ctx.session.scheduler); // the scheduler the last session ran with
-		if (!appDelegate.useExample() && !m_ctx.session.lastGraph.empty())
-			m_menuBar.openGraphPath(m_ctx, m_ctx.session.lastGraph);
+		if (!appDelegate.useExample() && !m_ctx.session.graphs.last.empty())
+			m_menuBar.openGraphPath(m_ctx, m_ctx.session.graphs.last);
 		return true;
 	}
 
