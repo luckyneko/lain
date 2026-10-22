@@ -1,0 +1,166 @@
+#include "lain/rigplan/specification.h"
+
+#include <lain/string/format.h>
+
+#include <algorithm>
+#include <cmath>
+#include <set>
+
+namespace lain::rigplan
+{
+	template <typename Specification>
+	static const Specification* findNamed(const std::vector<Specification>& list, std::string_view name)
+	{
+		const auto it = std::find_if(list.begin(), list.end(), [&](const Specification& s)
+									 { return s.name == name; });
+		return it == list.end() ? nullptr : &*it;
+	}
+
+	const SensorSpecification* findSensor(const Specifications& specifications, std::string_view name)
+	{
+		return findNamed(specifications.sensors, name);
+	}
+
+	const LensSpecification* findLens(const Specifications& specifications, std::string_view name)
+	{
+		return findNamed(specifications.lenses, name);
+	}
+
+	const CameraSpecification* findCamera(const Specifications& specifications, std::string_view name)
+	{
+		return findNamed(specifications.cameras, name);
+	}
+
+	camera::ModelResult nominalModel(const SensorSpecification& sensor, const LensSpecification& lens)
+	{
+		camera::CameraModelParameters parameters;
+		parameters.image = sensor.image;
+		// A ratio of two exact counts of nanometres, so a 4 mm lens on a 2 um sensor is exactly 2000.
+		const double focal = double(lens.focalLength.nanometres()) / double(sensor.pixelPitch.nanometres());
+		parameters.intrinsics.fx = focal;
+		parameters.intrinsics.fy = focal;
+		parameters.intrinsics.cx = (double(sensor.image.width) - 1.0) / 2.0;
+		parameters.intrinsics.cy = (double(sensor.image.height) - 1.0) / 2.0;
+		parameters.distortion = lens.distortion;
+		return camera::CameraModel::create(parameters);
+	}
+
+	static bool validBound(double tolerance)
+	{
+		return std::isfinite(tolerance) && tolerance >= 0;
+	}
+
+	// The checks every kind of specification shares: a name, and one that no earlier entry of the same
+	// kind took. Returns whether this entry passed them.
+	template <typename Specification>
+	static bool checkName(const Specification& s, std::string_view kind, std::set<std::string>& seen,
+						  std::vector<SpecificationDiagnostic>& out)
+	{
+		if (s.name.empty())
+		{
+			out.push_back({SpecificationProblem::Unnamed, string::format("a {} has no name", kind)});
+			return false;
+		}
+		if (!seen.insert(s.name).second)
+		{
+			out.push_back({SpecificationProblem::DuplicateName, string::format("two {}s are named '{}'", kind, s.name)});
+			return false;
+		}
+		return true;
+	}
+
+	std::vector<SpecificationDiagnostic> check(const Specifications& specifications)
+	{
+		std::vector<SpecificationDiagnostic> out;
+		// The entries a camera may be built from: those that passed their own checks. A camera on a
+		// broken part is reported for naming it, not again for the model it cannot make.
+		std::set<const SensorSpecification*> usableSensors;
+		std::set<const LensSpecification*> usableLenses;
+
+		std::set<std::string> seen;
+		for (const SensorSpecification& s : specifications.sensors)
+		{
+			bool usable = checkName(s, "sensor", seen, out);
+			if (s.image.width == 0 || s.image.height == 0)
+			{
+				out.push_back({SpecificationProblem::EmptyImage,
+							   string::format("sensor '{}' has a {} x {} image", s.name, s.image.width, s.image.height)});
+				usable = false;
+			}
+			if (s.pixelPitch.nanometres() <= 0)
+			{
+				out.push_back({SpecificationProblem::NonPositivePixelPitch,
+							   string::format("sensor '{}' has a pixel pitch of {} nm", s.name, s.pixelPitch.nanometres())});
+				usable = false;
+			}
+			if (s.principalPointTolerance.nanometres() < 0)
+			{
+				out.push_back({SpecificationProblem::InvalidTolerance,
+							   string::format("sensor '{}' has a negative principal-point tolerance", s.name)});
+				usable = false;
+			}
+			if (usable)
+				usableSensors.insert(&s);
+		}
+
+		seen.clear();
+		for (const LensSpecification& l : specifications.lenses)
+		{
+			bool usable = checkName(l, "lens", seen, out);
+			if (l.focalLength.nanometres() <= 0)
+			{
+				out.push_back({SpecificationProblem::NonPositiveFocalLength,
+							   string::format("lens '{}' has a focal length of {} nm", l.name, l.focalLength.nanometres())});
+				usable = false;
+			}
+			if (!validBound(l.focalLengthTolerance) || l.focalLengthTolerance >= 1)
+			{
+				out.push_back({SpecificationProblem::InvalidTolerance,
+							   string::format("lens '{}' has a focal-length tolerance of {}, which must be at least 0 and below 1",
+											  l.name, l.focalLengthTolerance)});
+				usable = false;
+			}
+			if (!validBound(l.distortionTolerance))
+			{
+				out.push_back({SpecificationProblem::InvalidTolerance,
+							   string::format("lens '{}' has a distortion tolerance of {}, which must be at least 0", l.name,
+											  l.distortionTolerance)});
+				usable = false;
+			}
+			if (usable)
+				usableLenses.insert(&l);
+		}
+
+		seen.clear();
+		for (const CameraSpecification& c : specifications.cameras)
+		{
+			checkName(c, "camera", seen, out);
+			const SensorSpecification* sensor = findSensor(specifications, c.sensor);
+			const LensSpecification* lens = findLens(specifications, c.lens);
+			if (!sensor)
+			{
+				out.push_back({SpecificationProblem::UnknownSensor,
+							   string::format("camera '{}' names a sensor '{}' that is not specified", c.name, c.sensor)});
+			}
+			if (!lens)
+			{
+				out.push_back({SpecificationProblem::UnknownLens,
+							   string::format("camera '{}' names a lens '{}' that is not specified", c.name, c.lens)});
+			}
+			if (!sensor || !lens || !usableSensors.count(sensor) || !usableLenses.count(lens))
+				continue;
+
+			const camera::ModelResult nominal = nominalModel(*sensor, *lens);
+			if (!nominal.model)
+			{
+				std::string why;
+				for (const camera::ModelDiagnostic& d : nominal.diagnostics)
+					why += (why.empty() ? "" : "; ") + d.detail;
+				out.push_back({SpecificationProblem::InvalidNominalModel,
+							   string::format("camera '{}' (sensor '{}', lens '{}') makes no camera model: {}", c.name,
+											  c.sensor, c.lens, why)});
+			}
+		}
+		return out;
+	}
+} // namespace lain::rigplan

@@ -14934,6 +14934,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    the specification catalogue document; realisation and the two deviation scales; nominal and
    realised models; the invalid-draw refusal. Proves: a draw is stable under adding, removing,
    reordering and renaming other cameras; scale 0 is exactly nominal; a duplicate draws anew.
+   **Planned 2026-10-22 as three commits, 1a to 1c** (*Slice 1 planned* below); **1a built**.
 2. **`io::mesh` + the OBJ/MTL plugin**: meshes, MTL onto the three materials, mesh clips from OBJ
    sequences, the up-axis conversion at import. **The procedural texture lifted** out of
    `texturedscene.h` into the library, with M9's verticals unchanged byte for byte.
@@ -15030,6 +15031,69 @@ added. Warning-clean, format-check clean. The Debug build was not run.
 - **gui-mode NOT eyeballed beyond the `--frames` smoke.** The unsaved-changes modal (New and Open with
   unsaved work, then Save, Discard, Cancel, and a Save panel cancelled) changed code path and needs a
   live check.
+
+### Slice 1 planned (2026-10-22), and 1a built
+
+Three commits, each with its tests and sabotages. Decisions taken as defaults, each easy to reverse,
+recorded here so they can be objected to before they are built on:
+
+- **Units.** Lengths a datasheet quotes (focal length, pixel pitch, decentring) are `core::Length`.
+  Positions and body geometry are `Vec3d` metres. A focal or distortion tolerance is a **fraction**
+  (0.01 is +/-1%; the glossary's "percentage" is how a person reads it). **Angles are degrees**, in
+  the types and the documents alike, with `Degrees` in each field's name, converted once at
+  realisation: a rig plan is edited by hand as well as by the app, and a pan of 30 reads better than
+  0.5236.
+- **A specification set** (`Specifications`: sensors, lenses, cameras, and lights from 1b) is what a
+  rig plan holds its own copy of and what a catalogue is a document of. A camera specification names
+  its sensor and lens, and names are unique per kind.
+
+**1a, built.** `libs/rigplan` (`lain::rigplan`, links `camera`, `core`, `math`; no data, no GPU):
+`SensorSpecification` (image, pitch, principal-point tolerance, `SensorBody` with the optical
+centre's offset from the mounting point), `LensSpecification` (focal length, distortion, focal and
+distortion tolerances), `CameraSpecification`, `nominalModel(sensor, lens)` and `check(specs)`.
+`ctest -j8` **1369/1369** Release with video, camera and Ceres on (+7); warning-clean, format-check
+clean.
+- **The nominal model is derived exactly**: a ratio of two whole numbers of nanometres, so a 4 mm
+  lens on a 2 um sensor is exactly 2000 px, with the principal point at ((w - 1) / 2, (h - 1) / 2)
+  under the pixel-centre convention. It goes through `CameraModel::create`, so a lens that folds
+  inside a sensor's image makes no model, and `check` names the camera that pairs them.
+- **`check` reports one problem per fault**: a camera on a sensor or lens that failed its own checks
+  is not reported again for the model it cannot make.
+- **Two sabotages, each caught by the case aimed at it**: the principal point at w / 2 (off by half a
+  pixel), and a camera on a broken part also checked for its model.
+
+**1b, planned: the rig plan and realisation.**
+- **The plan frame** gets a named convention, `AxisConvention::XRightYForwardZUp()`, beside
+  `XRightYDownZForward()`, and one constant, `rigplan::kPlanFrame`.
+- **Light specifications** join the set (kind point or spot, intensity, linear RGB colour, the
+  spot's cone angles). They have no tolerances.
+- **The rig plan's first contents**: mounts (a pole: floor position, height, diameter, yaw; a fixed
+  point: a full pose), placed cameras and placed lights (each a UUID, a name, a specification, a
+  mount, an offset and pan / tilt / roll on it), the capture timeline (frame count and
+  `media::FrameRate`), the seed, and the scales (intrinsic, installation, locked, noise). The room,
+  props and movers land with the slices that consume them (2 and 5).
+- **Installation tolerances**: millimetres on a mount's floor position and on its height, and
+  degrees on each placement's pan, tilt and roll.
+- **A draw** is a unit deviation in [-1, 1], from SHA-256 over a versioned canonical text of the
+  seed, the owner's UUID and the parameter's key, so it is identical on every platform: the capture
+  group identity's precedent. Realisation multiplies it by the category's scale and the tolerance.
+  - The focal length scales fx and fy together.
+  - Decentring moves the principal point by micrometres over the pitch.
+  - Distortion scales every coefficient.
+  - The result goes through `CameraModel::create`; a refusal names the camera and is never drawn
+    again.
+- **The realised pose** chains mount, then placement, then the sensor body's optical-centre offset,
+  in the plan frame. Pan, tilt and roll are defined in the mount's frame and pinned by a test against
+  a hand-placed camera, because this is the one convention a wrong guess would make silently wrong.
+- **Proves**: stability under adding, removing, reordering and renaming other cameras; scale 0 is
+  exactly nominal; a duplicate (a new UUID) draws anew; a sweep of the scale moves each parameter
+  monotonically along one direction.
+
+**1c, planned: the documents.** `lain::rigplan::serialize` holds the rig plan document and the
+specification catalogue document, versioned and read strictly, as M9's camera-model and rig documents
+are, with media paths per ADR-0027. **The rig plan document stays at version 1 until slice 7 commits
+the first example rig plan**: no rig plan exists outside the tests until then, so its shape may change
+without a migration.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 

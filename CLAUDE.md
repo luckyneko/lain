@@ -1400,6 +1400,25 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-22 — M15 slice 1 planned; 1a built: specifications and the nominal model
+
+Slice 1 is three commits: **1a** specifications, **1b** the rig plan and realisation, **1c** the
+documents. The plan and the decisions taken as defaults are in WORK.md's *Slice 1 planned*:
+- units: `Length` for datasheet lengths, a fraction for a tolerance, degrees for an angle;
+- a draw from SHA-256 of a canonical text;
+- a version-1 document that may change shape until slice 7 commits an example.
+
+**1a is built**: `libs/rigplan` (`lain::rigplan`, no data, no GPU) holds `SensorSpecification`,
+`LensSpecification`, `CameraSpecification`, `nominalModel(sensor, lens)` and `check(specs)`.
+`ctest -j8` **1369/1369** Release with video, camera and Ceres on (+7); warning-clean, format-check
+clean.
+
+- **The nominal model is derived exactly**: a ratio of whole nanometres, so 4 mm over 2 um is exactly
+  2000, and the principal point is ((w - 1) / 2, (h - 1) / 2). It goes through `CameraModel::create`,
+  so a lens that folds inside a sensor's image makes no model, and `check` names the camera.
+- **`check` reports one problem per fault.**
+- **Two sabotages, both caught.**
+
 ### Update 2026-10-22 — M15 slice 0 built: `lain::editor`
 
 What every document editor needs and no document type owns, hoisted out of flowview so `rigplan`

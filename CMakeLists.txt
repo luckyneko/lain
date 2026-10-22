@@ -124,6 +124,7 @@ add_subdirectory(libs/media)            # frame sequences: finite lazy footage (
 add_subdirectory(libs/io)               # transport seam: read(uri) -> Buffer (WORK.md M3)
 add_subdirectory(libs/data)             # serialization DOM (Value) + reflection (WORK.md Tier A #1)
 add_subdirectory(libs/camera)           # camera geometry: models, distortion, projection (WORK.md M9)
+add_subdirectory(libs/rigplan)          # rig design: specifications, rig plans, realisations (WORK.md M15)
 add_subdirectory(libs/task)
 add_subdirectory(libs/flow)             # the node-graph engine (WORK.md M1)
 add_subdirectory(libs/editor)           # document editors' undo, recents, session, unsaved guard (WORK.md M15)
