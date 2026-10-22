@@ -1400,6 +1400,27 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-22 — M15 slice 1c built: the documents (**slice 1 COMPLETE**)
+
+The last of slice 1's three commits, after a no-behaviour-change hoist. `ctest -j8` **1399/1399**
+Release with video, camera and Ceres on (+8); warning-clean, format-check clean. Full notes in
+WORK.md's *Slice 1 planned*, under M15.
+
+- **`lain::rigplan::serialize`**: the rig plan document and the specification catalogue document,
+  versioned and in the camera documents' conventions (a unit in a length's key, `Degrees` in an
+  angle's, `{x, y, z}` positions, uuid strings). A distortion is spelled exactly as the camera-model
+  document spells it, since the lens's reuses camera::serialize's mapping.
+- **A read is strict about shape and not about content.** A misspelled key, an unknown name or a
+  non-uuid identity is a named problem; a rig plan `check()` refuses still reads, so it can be opened
+  and fixed. CONTEXT.md gains *Rig plan document*.
+- **Found: `core::Length` asserts on a value it cannot hold**, so the reader range-checks every
+  length first. Without the guard, in Release, a 1e300 mm focal length read as a plan.
+- **`data::versionedDocument` / `versionProblems`** moved from camera::serialize's private files into
+  `lain::data`, as their second user arrived. Their messages are unchanged and are now pinned by tests.
+- **The round trip is checked by what it builds**, not only by writing back the same document, which
+  could hide a field both directions drop. Four sabotages, all caught.
+- **The rig plan document stays at version 1** until slice 7 commits the first example.
+
 ### Update 2026-10-22 — M15 slice 1b built: the rig plan and realisation
 
 The second of slice 1's three commits. `ctest -j8` **1391/1391** Release with video, camera and Ceres

@@ -14859,7 +14859,7 @@ algorithm**. `ctest -j8` **1050/1050** Debug and **1058/1058** Release, both wit
   expression. The golden values, the OpenCV agreement test (1e-6 px) and the camera vertical are
   what pin the behaviour.
 
-## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slice 0 built)
+## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 and 1 built)
 
 An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
 and lights, a board waved through) that renders **synthetic captures**: footage in the shape M9
@@ -14934,7 +14934,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    the specification catalogue document; realisation and the two deviation scales; nominal and
    realised models; the invalid-draw refusal. Proves: a draw is stable under adding, removing,
    reordering and renaming other cameras; scale 0 is exactly nominal; a duplicate draws anew.
-   **Planned 2026-10-22 as three commits, 1a to 1c** (*Slice 1 planned* below); **1a built**.
+   **Planned 2026-10-22 as three commits, 1a to 1c** (*Slice 1 planned* below); **all three built
+   2026-10-22, slice 1 COMPLETE**.
 2. **`io::mesh` + the OBJ/MTL plugin**: meshes, MTL onto the three materials, mesh clips from OBJ
    sequences, the up-axis conversion at import. **The procedural texture lifted** out of
    `texturedscene.h` into the library, with M9's verticals unchanged byte for byte.
@@ -15132,9 +15133,42 @@ in `test-rigplan`, 1 in `test-math`); warning-clean, format-check clean.
   - a refused unit replaced by its nominal model;
   - a spot's cone left unchecked.
 
-**1c, planned: the documents.** `lain::rigplan::serialize` holds the rig plan document and the
-specification catalogue document, versioned and read strictly, as M9's camera-model and rig documents
-are, with media paths per ADR-0027. **The rig plan document stays at version 1 until slice 7 commits
+**1c, built (2026-10-22): the documents.** Planned as below, built as planned. `ctest -j8`
+**1399/1399** Release with video, camera and Ceres on (+8: 5 in the new `test-rigplan-serialize`, 3
+in `test-data`); warning-clean, format-check clean.
+- **`libs/rigplan/serialize`** (`lain::rigplan::serialize`): `rigPlanToValue` / `rigPlanFromValue` and
+  `catalogueToValue` / `catalogueFromValue`, over private "parts" structs read tolerantly and then
+  written back and compared (`data::shapeDifferences`), the rig document's arrangement. It reuses
+  `camera::serialize`'s distortion and image geometry and `media::serialize`'s frame rate, so a lens's
+  distortion is spelled exactly as a camera-model document spells it.
+- **A read judges SHAPE, not CONTENT.** An unknown, missing or misspelled key, an unknown light kind or
+  distortion, an identity that is not a uuid, or a newer version is a problem named by its path. A
+  rig plan `check()` would refuse still reads, so the app can open it to be fixed. CONTEXT.md gains
+  *Rig plan document*.
+- **Found while writing it: `core::Length` asserts on a value it cannot hold**, and a hand-edited
+  document can hold any number. Each length is range-checked before conversion and refused by path;
+  in Release, without the guard, a 1e300 mm focal length read as a plan.
+- **`data::versionedDocument` / `versionProblems` hoisted** out of `camera::serialize`'s private
+  `versioned.{h,cpp}` into `lain::data` (`data/versioned.h`), in its own no-behaviour-change commit
+  first: the rig plan document is their second user. Written with `std::to_string` rather than
+  `lain::string::format`, so `lain::data` gains no dependency, and with every message unchanged. No
+  camera test pinned those messages, so `test-data` now does (3 cases).
+- **The round trip is checked by what it builds**: a written-then-read rig plan writes back the same
+  document, AND realises to the same cameras, poses and light. Writing back the same could hide a
+  field both directions drop.
+- **Four sabotages, each caught:**
+  - a tolerant read (all five strict cases, and the catalogue's);
+  - a mount's yaw tolerance written as 0, caught by the realisation comparison;
+  - no range guard on a length;
+  - no newer-version refusal in `lain::data`.
+
+  The guard's first cut did not build under `-Werror` (an unused variable), so it proved nothing until
+  it was redone.
+- **Media paths per ADR-0027** arrive with the first path a rig plan holds: a prop's mesh, in slice 2.
+
+*The plan:* `lain::rigplan::serialize` holds the rig plan document and the specification catalogue
+document, versioned and read strictly, as M9's camera-model and rig documents are, with media paths
+per ADR-0027. **The rig plan document stays at version 1 until slice 7 commits
 the first example rig plan**: no rig plan exists outside the tests until then, so its shape may change
 without a migration.
 
@@ -15370,8 +15404,8 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md).)*
 
 - **M15 — rig design: rig plans and synthetic captures.** Grilled 2026-10-21 to 10-22 with two ADRs
-  (0028, 0029). **Slice 0 built 2026-10-22** (`lain::editor`); its gui-mode check of the
-  unsaved-changes modal is owed. Ten slices, 0 to 9, on `feature/M15`; the build order and every
+  (0028, 0029). **Slices 0 and 1 built 2026-10-22** (`lain::editor`; `lain::rigplan` and its
+  documents); slice 0's gui-mode check of the unsaved-changes modal is owed. Ten slices, 0 to 9, on `feature/M15`; the build order and every
   exclusion are in M15's own sections. *(Milestone 15.)*
 - **archimedes' CPU device**, which M15 renders its CI captures on: built in archimedes (PRs #1 and
   #2), verified against lain on 2026-10-22. The two archimedes fixes that verification found are

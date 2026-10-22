@@ -768,6 +768,13 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   rig plan and seed always render the same capture. It is nominal: what was meant, before any
   realisation. _Avoid_: plan alone (an execution plan is the scheduler's), layout (a canvas's node
   positions), scene, rig (a registered rig is a result).
+- **Rig plan document** — a rig plan written as a versioned document, in the camera documents'
+  conventions: a datasheet length is a number with its unit in its key (`focalLengthMm`,
+  `pixelPitchUm`), an angle has `Degrees` in its key, a position is `{x, y, z}` in metres, an identity
+  a uuid string, and a distortion the camera-model document's `{type, value}`. A read is strict about
+  its SHAPE (an unknown or missing key, an unknown name, an identity that is not a uuid is a named
+  problem) and not about its CONTENT: a rig plan with a mistake in it still opens, so it can be fixed,
+  and only realising it refuses. _Avoid_: plan file, scene file.
 - **Specification catalogue** — a document of camera, sensor, lens and light specifications kept for
   reuse. A rig plan copies a specification in from one, and can save one back out; it never links to
   one, so a catalogue edit changes no rig plan behind its back. _Avoid_: library, linked spec.

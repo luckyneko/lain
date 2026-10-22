@@ -17,6 +17,8 @@ target_link_libraries(rigplan
 	PRIVATE lain::string lain::warnings
 )
 
+add_subdirectory(serialize) # rig plans and catalogues as documents
+
 if(LAIN_BUILD_TESTING)
 	add_subdirectory(test)
 endif()
