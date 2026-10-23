@@ -39,6 +39,7 @@ a video keeps its nodes and edges and reports a missing capability when run.
 | [magic_enum](https://github.com/Neargye/magic_enum) | 0.9.8, current | [MIT] | Enum reflection |
 | [nlohmann/json](https://github.com/nlohmann/json) | 3.11.3, current | [MIT] | JSON codec plugin |
 | [stb](https://github.com/nothings/stb) | `31c1ad3`, current | [MIT] OR public domain | JPEG codec plugin |
+| [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader) | `v2.0.0rc13`, current | [MIT] | OBJ / MTL mesh codec plugin |
 | [libpng](https://github.com/pnggroup/libpng) | 1.6.44, current | [libpng-2.0] | PNG codec plugin |
 | [zlib](https://github.com/madler/zlib) | 1.3.1, current | [Zlib] | PNG/TIFF codec dependency |
 | [libtiff](https://gitlab.com/libtiff/libtiff) | 4.7.0, current | [libtiff] | TIFF codec plugin |

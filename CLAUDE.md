@@ -1400,6 +1400,26 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-23 — M15 slice 2c built: the OBJ / MTL plugin
+
+The third of slice 2's four commits. `ctest -j8` **1418/1418** Release with video, camera and Ceres on
+(+7); warning-clean, format-check clean. Full notes in WORK.md's *Slice 2 planned*, under M15.
+
+- **`plugins/io/mesh`**, with a generated `registerMeshCodecs()` aggregator, and
+  **`plugins/io/mesh/obj`** over **tinyobjloader `v2.0.0rc13`** (MIT). The pin is a tag, since the
+  project's releases stop at 2019.
+- **The MTL is read through the `MeshFolder`**, never opened by the plugin.
+- **What an OBJ leaves open**:
+  - normals are all or none;
+  - a corner without a texture coordinate gets (0, 0);
+  - a face without a material gets a plain default, which also keeps a mesh whose MTL went missing
+    visible.
+- **Corners are shared only where the file shares them**, so a cube with face normals is 24
+  vertices. Four sabotages, all caught.
+- **Noted for the repo owner:** `--licenses` covers only dependencies that register a notice, and the
+  statically linked MIT and zlib ones are in the README alone. ADR-0015 does not say whether that is
+  enough.
+
 ### Update 2026-10-22 — M15 slice 2b built: `lain::mesh` and the `io::mesh` seam
 
 The second of slice 2's four commits, after a no-behaviour-change hoist. `ctest -j8` **1411/1411**

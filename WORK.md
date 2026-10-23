@@ -14939,7 +14939,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
 2. **`io::mesh` + the OBJ/MTL plugin**: meshes, MTL onto the three materials, mesh clips from OBJ
    sequences, the up-axis conversion at import. **The procedural texture lifted** out of
    `texturedscene.h` into the library, with M9's verticals unchanged byte for byte.
-   **Planned 2026-10-22 as four commits, 2a to 2d** (*Slice 2 planned* below); **2a and 2b built**.
+   **Planned 2026-10-22 as four commits, 2a to 2d** (*Slice 2 planned* below); **2a to 2c built**.
 3. **`lain::render`**: the render scene, an offscreen raster pass, the viewport pass, the line pass.
    **lain's archimedes pin moves to the CPU device here** (see *Verified against archimedes' CPU
    device* below for what that commit owes). Proves: a plain scene renders in CI, on every leg.
@@ -15249,6 +15249,39 @@ format-check clean.
   left unconverted, the per-part check removed, and a clip that skips a broken frame.
 - **The codec aggregator lands with its first member, in 2c** (the camera backends' precedent), so
   nothing registers a mesh reader yet outside the tests.
+
+**2c, built (2026-10-23): the OBJ / MTL plugin.** `ctest -j8` **1418/1418** Release with video,
+camera and Ceres on (+7: 6 in `test-io-mesh-obj`, 1 in `test-io-mesh-codecs`); warning-clean,
+format-check clean.
+- **`plugins/io/mesh`**: the generated aggregator `lain::io::mesh::codecs` (`registerMeshCodecs()`,
+  build-discovered from `LAIN_MESH_CODECS`, as the data codecs' is), and **`plugins/io/mesh/obj`**
+  (`LAIN_IO_MESH_OBJ`, default ON as source-built plugins are) with its `ObjReader`.
+- **tinyobjloader pinned to the tag `v2.0.0rc13`** (2024-01-26), MIT, confirmed from its LICENSE
+  file. Its GitHub "releases" stop at 2019 while its tags carry on, so the pin is a tag.
+  `cmake/addTinyObjLoader.cmake` populates the source without running its CMake (a `SOURCE_SUBDIR`
+  naming no CMakeLists) and compiles the implementation in its own warnings-off TU, as stb's is.
+  README gains its row.
+- **The MTL is read through the `MeshFolder`**, by a `tinyobj::MaterialReader` that hands
+  `LoadMtl` the bytes, so the plugin opens no file.
+- **Three readings of what an OBJ leaves open**, each a case:
+  - normals all or none (a corner without one drops them all, and a renderer derives face normals);
+  - a corner without a texture coordinate gets (0, 0) when others have them;
+  - a face with no material, or one its MTL lacks, gets a plain default, so a mesh whose MTL went
+    missing still shows its shape.
+
+  A face naming a vertex the file lacks is refused.
+- **Corners are shared where the file shares them**: one vertex per distinct (position, normal,
+  texture coordinate), so a cube with face normals is 24 vertices, pinned.
+- **Four sabotages, each caught:**
+  - the MTL not read through the folder (its first cut did not build, under `-Werror`, so it was
+    redone);
+  - corners shared by position alone;
+  - no default material;
+  - partial normals kept, which crashes on the -1 index the real code never reads.
+- **Noted, not changed:** `--licenses` prints only the four dependencies that register a notice
+  (FFmpeg, OpenCV, Eigen, Ceres). Statically linked MIT and zlib dependencies (stb, nlohmann, fmt,
+  spdlog, GLFW, ImGui, now tinyobjloader) are listed in the README only, and ADR-0015 does not say
+  whether that is enough. A repo-wide question, not this slice's.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
