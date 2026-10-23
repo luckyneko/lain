@@ -30,3 +30,8 @@ target_include_directories(imnodes SYSTEM PUBLIC "${imnodes_SOURCE_DIR}")
 # imnodes is ImGui code: it needs the imgui headers + our IMGUI_USER_CONFIG, both of
 # which ride in on imgui's PUBLIC usage requirements (the config is applied by libs/gui).
 target_link_libraries(imnodes PUBLIC imgui)
+
+# imnodes' notice for --licenses (lainNotices.cmake).
+include(lainNotices)
+lain_register_notice(imnodes NAME "imnodes" VERSION "${IMNODES_REF}" SPDX "MIT"
+	SOURCE_DIR "${imnodes_SOURCE_DIR}" FILES LICENSE.md)

@@ -50,3 +50,8 @@ target_include_directories(tiff SYSTEM PUBLIC
 if(NOT TARGET TIFF::tiff)
 	add_library(TIFF::tiff ALIAS tiff)
 endif()
+
+# libtiff's notice for --licenses (lainNotices.cmake).
+include(lainNotices)
+lain_register_notice(libtiff NAME "libtiff" VERSION "${LIBTIFF_VER}" SPDX "libtiff"
+	SOURCE_DIR "${libtiff_SOURCE_DIR}" FILES LICENSE.md)

@@ -251,8 +251,9 @@ jobs:
           "$root/${{ matrix.flowview }}" run -g "$example" --result "$root/smoke-elsewhere/folder-average.png"
           test -s "$root/smoke-elsewhere/folder-average.png"
 
+      # Every leg: each one's notices differ by what it built (ADR-0015, amended 2026-10-23), and
+      # this is the shipped executable's text, which test_notices.cpp checks through lain::app.
       - name: Report third-party licences
-        if: ${{ matrix.video == 'ON' }}
         run: ${{ matrix.flowview }} --licenses
 
   # Proves TWO claims with one job, because LAIN_BUILD_TESTING / _APPS / _FORMAT all default to

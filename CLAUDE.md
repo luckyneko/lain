@@ -1400,6 +1400,26 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-23 — every built dependency's notice in `--licenses`
+
+A repo-wide licensing question M15 slice 2c raised, decided with the repo owner and built on a branch of
+its own off `feature/M15` (so tinyobjloader is covered). `ctest -j8` **1420/1420** Release with video,
+camera and Ceres on (+2); warning-clean, format-check clean. Full notes in WORK.md's *Every built
+dependency's notice in `--licenses`*; the decision is ADR-0015's, amended in place.
+
+- **`flowview --licenses` prints 25 notices**: lain, archimedes and multi first, then every dependency
+  the build contains, each a header line plus its own licence file verbatim, read at configure time.
+  The Apache-2.0-only ones (the Vulkan loader, MoltenVK) stage their text in `third-party/<id>/`, as
+  OpenCV's does. A system package is named, with where it is.
+- **Adding a dependency now means one `lain_register_notice` call** in its `add<Dep>.cmake`, and one
+  row in `libs/app/test/test_notices.cpp`. The test fails both ways: a built dependency with no notice,
+  or a notice the table does not expect.
+- **Findings:** Ceres also carries Apache-2.0 (two Abseil-derived headers), and the README row is
+  corrected. fmt, zlib, GLFW, libpng, stb and portable-file-dialogs do not strictly need a notice in a
+  binary; they print one anyway, by the owner's uniform rule.
+- **The generated source is now pieces**, because MSVC refuses a literal over 16380 bytes and the text
+  is about 48 KB. Not yet built on Windows: CI's first run is owed.
+
 ### Update 2026-10-23 — M15 slice 2c built: the OBJ / MTL plugin
 
 The third of slice 2's four commits. `ctest -j8` **1418/1418** Release with video, camera and Ceres on
@@ -1418,7 +1438,7 @@ The third of slice 2's four commits. `ctest -j8` **1418/1418** Release with vide
   vertices. Four sabotages, all caught.
 - **Noted for the repo owner:** `--licenses` covers only dependencies that register a notice, and the
   statically linked MIT and zlib ones are in the README alone. ADR-0015 does not say whether that is
-  enough.
+  enough. *(Settled the same day; see the entry above.)*
 
 ### Update 2026-10-22 — M15 slice 2b built: `lain::mesh` and the `io::mesh` seam
 
