@@ -1,4 +1,4 @@
-// The output side of a render: a pattern naming io::image::frameKey turned into one frame's path.
+// The output side of a render: a pattern naming io::frameKey turned into one frame's path.
 //
 // The grammar itself is lain::string's and is tested there; what is tested here is the app's half
 // of the agreement — that the sweep names the key the opener matches, and that a pattern which

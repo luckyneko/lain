@@ -133,7 +133,7 @@ namespace
 TEST_CASE("what a sweep writes, the opener reads back", "[flowview][sweep]")
 {
 	// The property io::NumberField used to hold STRUCTURALLY, by being the one function both
-	// directions called. M13 slice 2 split it: lain::string owns the grammar, io::image::frameKey
+	// directions called. M13 slice 2 split it: lain::string owns the grammar, io::frameKey
 	// owns the key, and the sweep names that constant. So the agreement is now a property to
 	// assert — and this is the only test that spans both halves of it.
 	const fs::path dir = scratchDir("readback");

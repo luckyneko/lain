@@ -14,6 +14,7 @@ add_library(io STATIC
 	src/stream.cpp
 	src/localstream.cpp
 	src/uri.cpp
+	src/framepattern.cpp
 )
 add_library(lain::io ALIAS io)
 
@@ -23,6 +24,7 @@ target_link_libraries(io
 	PUBLIC lain::memory
 	PUBLIC lain::core				# core::Uri is the name every entry point takes (ADR-0023)
 	PRIVATE lain::log lain::warnings
+	PRIVATE lain::string			# the <key> pattern grammar a numbered run of files matches by (framepattern.cpp)
 )
 
 # The per-media codec-loader seams nest under io (lain::io::image, lain::io::video,

@@ -14,7 +14,7 @@
 #include <lain/flow/scheduler.h>
 #include <lain/image/image.h>
 #include <lain/io/data/save.h>
-#include <lain/io/image/open.h> // frameKey — the one spelling a sweep and the opener share
+#include <lain/io/framepattern.h> // frameKey — the one spelling a sweep and the openers share
 #include <lain/io/image/save.h>
 #include <lain/io/image/writer.h> // ImageWriterOptions — how a still output is encoded
 #include <lain/io/uri.h>
@@ -526,14 +526,14 @@ namespace flowview
 			{
 				log::error("flowview: --{} is '{}', but a video holds the whole range in one file — "
 						   "drop the <{}> field",
-						   write.out.name, write.path, io::image::frameKey);
+						   write.out.name, write.path, io::frameKey);
 				return 1;
 			}
 			if (!write.video && range.count() > 1 && !isFramePattern(write.path))
 			{
 				log::error("flowview: --{} is '{}', which names no <{}> field — a {}-frame render needs "
 						   "one file per frame, so write it as 'out.<{}:04>.png'",
-						   write.out.name, write.path, io::image::frameKey, range.count(), io::image::frameKey);
+						   write.out.name, write.path, io::frameKey, range.count(), io::frameKey);
 				return 1;
 			}
 		}
