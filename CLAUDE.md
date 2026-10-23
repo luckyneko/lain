@@ -1400,6 +1400,22 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-22 — M15 slice 2b built: `lain::mesh` and the `io::mesh` seam
+
+The second of slice 2's four commits, after a no-behaviour-change hoist. `ctest -j8` **1411/1411**
+Release with video, camera and Ceres on (+9); warning-clean, format-check clean. Full notes in WORK.md's
+*Slice 2 planned*, under M15.
+
+- **Hoisted first: `io::frameKey` and `io::numberedFiles(pattern)`**, out of `io::image`'s private
+  matcher, since a mesh clip is its second reader. flowview names `io::frameKey` now.
+- **`lain::mesh`** (the data model): `Mesh`, `Material` as the file states it, `validate`, `MeshClip`,
+  and `clipFrame`, which picks the nearest clip frame, looping, in exact integers.
+- **`lain::io::mesh`** (the seam): `MeshReader` and its registry, and `decode` / `load` / `loadClip`.
+  A reader is handed bytes and a `MeshFolder` to read what the mesh names beside itself, never a path
+  (ADR-0004's split). A clip with a frame that will not load is refused, naming the frame.
+- **Found by a sabotage: the per-part check had no case only it could catch**; two now exist.
+  Four sabotages, all caught.
+
 ### Update 2026-10-22 — M15 slice 2 planned; 2a built: the procedural texture in `lain::image`
 
 Slice 2 is four commits:

@@ -32,6 +32,7 @@ target_link_libraries(io
 add_subdirectory(image)
 add_subdirectory(video)
 add_subdirectory(data)
+add_subdirectory(mesh)     # meshes and mesh clips, for rig design (WORK.md M15)
 add_subdirectory(sequence) # the medium-neutral frame-sequence opener over them (WORK.md M10)
 
 if(LAIN_BUILD_TESTING)

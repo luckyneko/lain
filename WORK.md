@@ -14939,7 +14939,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
 2. **`io::mesh` + the OBJ/MTL plugin**: meshes, MTL onto the three materials, mesh clips from OBJ
    sequences, the up-axis conversion at import. **The procedural texture lifted** out of
    `texturedscene.h` into the library, with M9's verticals unchanged byte for byte.
-   **Planned 2026-10-22 as four commits, 2a to 2d** (*Slice 2 planned* below); **2a built**.
+   **Planned 2026-10-22 as four commits, 2a to 2d** (*Slice 2 planned* below); **2a and 2b built**.
 3. **`lain::render`**: the render scene, an offscreen raster pass, the viewport pass, the line pass.
    **lain's archimedes pin moves to the CPU device here** (see *Verified against archimedes' CPU
    device* below for what that commit owes). Proves: a plain scene renders in CI, on every leg.
@@ -15217,6 +15217,38 @@ format-check clean.
   6-cell lattice instead of 5 changed 49 of the 152 footage files, and all four pinned values still
   matched. The discs cover a few percent of a surface, and four points chosen at random missed them
   all. Two pinned points now sit in a disc's soft edge, and the same sabotage fails them.
+
+**2b, built (2026-10-22): the mesh type and the `io::mesh` seam**, after a no-behaviour-change hoist.
+`ctest -j8` **1411/1411** Release with video, camera and Ceres on (+9: 2 for the hoist, 3 in the new
+`test-mesh`, 4 in the new `test-io-mesh`); warning-clean, format-check clean.
+- **The hoist, its own commit first: numbered-file matching moves into `lain::io`**
+  (`io/framepattern.h`: `frameKey` and `numberedFiles(pattern)`). It was private to `io::image`'s
+  `open()`, and a mesh clip is its second reader. One matcher for every reader of a numbered run,
+  for the reason `frameKey` exists: two spellings would mean what a sweep writes cannot be read back.
+  flowview's three uses of `io::image::frameKey` became `io::frameKey`. `lain::io` gains a private
+  dependency on `lain::string`. The suite stayed at 1402 through the move, and 2 direct cases now pin
+  numeric order. Sabotage: sorting by name fails them.
+- **`libs/mesh` (`lain::mesh`)**: `Mesh` (positions, normals, uvs, indices, parts by material),
+  `Material` as the file states it (MTL's `Kd`, `map_Kd` held as an absolute uri, `Ks`, `Ns`),
+  `validate(mesh)`, `MeshClip`, and `clipFrame(clip, captureFrame, captureRate)`, the nearest clip
+  frame, looping, in exact integer arithmetic so no rate drifts (pinned on a day of 29.97 frames over
+  a 24 fps clip).
+- **`libs/io/mesh` (`lain::io::mesh`)**: `MeshReader`, the reader registry, and `decode` / `load` /
+  `loadClip`. **A reader is never handed a path.** It gets the bytes and a `MeshFolder` through which
+  the facade reads and locates what the mesh names beside itself (an OBJ's MTL, an MTL's textures),
+  which is ADR-0004's split, as a video reader is handed a stream. A backslash separates folders, for
+  meshes written on Windows. `NoFolder` is public, for a decode from memory. What a reader produces is
+  validated before it is handed on, so a reader never logs.
+- **`loadClip` refuses a clip with a frame that will not load**, rather than letting it jump, and
+  names the frame.
+- **Found by a sabotage: the per-part check was never the one deciding.** Every broken-part case also
+  failed the index count or the final coverage check, so removing the per-part check passed. Two
+  layouts only it can see are now cases: overlapping parts that still end at the last index, and a
+  part that splits a triangle while the indices stay whole triangles.
+- **Four sabotages in all, each caught once the cases were right:** a clip frame floored, a backslash
+  left unconverted, the per-part check removed, and a clip that skips a broken frame.
+- **The codec aggregator lands with its first member, in 2c** (the camera backends' precedent), so
+  nothing registers a mesh reader yet outside the tests.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
