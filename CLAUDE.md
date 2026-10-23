@@ -1400,6 +1400,27 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-23 — M15 slice 2d built: the room, planes, boxes and props (**slice 2 COMPLETE**)
+
+The last of slice 2's four commits, after a no-behaviour-change hoist. `ctest -j8` **1430/1430**
+Release with video, camera and Ceres on (+12); warning-clean, format-check clean. Full notes in
+WORK.md's *Slice 2 planned*, under M15.
+
+- **Hoisted first: ADR-0027's rule for one path** (`io::relativizePath` / `io::resolvePath`), out of
+  `flow::serialize`, so a graph document and a rig plan document share every subtlety of it. A
+  sabotage writing `../` fails the graph cases too, which proves they go through it.
+- **The rig plan gains its surroundings**:
+  - `Material`: a colour, a picture with a tile, or a procedural texture, plus MTL's specular;
+  - a `Room` with six switchable surfaces;
+  - `Plane`, `Box` and `Prop`. A prop states its up axis, its metres per unit and whether its mesh is
+    a clip, and `planFromProp` converts its mesh to the plan frame once.
+
+  `rigplan::serialize` writes them, and walks them with its own `relativizePaths` / `resolvePaths`.
+- **Deviations:**
+  - the mesh-to-rig-plan material mapping moves to slice 3, its first caller;
+  - a prop's clip is stated, not detected from its name.
+- **Four sabotages, all caught.** CONTEXT.md's *Room*, *Prop* and *Material* are amended.
+
 ### Update 2026-10-23 — M15 slice 2c built: the OBJ / MTL plugin
 
 The third of slice 2's four commits. `ctest -j8` **1418/1418** Release with video, camera and Ceres on

@@ -4,6 +4,7 @@
 #include <lain/data/data.h>
 #include <lain/data/strict.h>
 #include <lain/data/versioned.h>
+#include <lain/io/documentpath.h>		   // the document-path rule for one path (ADR-0027)
 #include <lain/media/serialize/manifest.h> // FrameRate as {numerator, denominator}
 #include <lain/string/format.h>
 
@@ -165,9 +166,100 @@ namespace lain::rigplan
 
 	LAIN_SERIALIZE(Scales, intrinsic, installation, locked, noise)
 
+	struct SolidColourDoc
+	{
+		ColourDoc colour;
+	};
+	LAIN_SERIALIZE(SolidColourDoc, colour)
+	LAIN_SERIALIZE_VARIANT_ARM(SolidColourDoc, "colour")
+
+	struct ImageTextureDoc
+	{
+		std::string image; // a path, which relativizePaths / resolvePaths rebase at the file boundary
+		Vec2Doc tile;
+	};
+	LAIN_SERIALIZE(ImageTextureDoc, image, tile)
+	LAIN_SERIALIZE_VARIANT_ARM(ImageTextureDoc, "image")
+
+	struct ProceduralDoc
+	{
+		std::uint64_t seed = 0;
+		double cell = 0; // metres, as every position is
+	};
+	LAIN_SERIALIZE(ProceduralDoc, seed, cell)
+	LAIN_SERIALIZE_VARIANT_ARM(ProceduralDoc, "procedural")
+
+	struct MaterialDoc
+	{
+		std::variant<SolidColourDoc, ImageTextureDoc, ProceduralDoc> surface;
+		ColourDoc specular;
+		double shininess = 0;
+	};
+	LAIN_SERIALIZE(MaterialDoc, surface, specular, shininess)
+
+	struct RoomSurfaceDoc
+	{
+		bool present = true;
+		MaterialDoc material;
+	};
+	LAIN_SERIALIZE(RoomSurfaceDoc, present, material)
+
+	struct RoomDoc
+	{
+		Vec2Doc centre;
+		Vec3Doc size;
+		RoomSurfaceDoc floor;
+		RoomSurfaceDoc ceiling;
+		RoomSurfaceDoc north;
+		RoomSurfaceDoc south;
+		RoomSurfaceDoc east;
+		RoomSurfaceDoc west;
+	};
+	LAIN_SERIALIZE(RoomDoc, centre, size, floor, ceiling, north, south, east, west)
+
+	struct PlaneDoc
+	{
+		std::string id;
+		std::string name;
+		Vec3Doc centre;
+		Aim aim;
+		Vec2Doc size;
+		MaterialDoc material;
+	};
+	LAIN_SERIALIZE(PlaneDoc, id, name, centre, aim, size, material)
+
+	struct BoxDoc
+	{
+		std::string id;
+		std::string name;
+		Vec3Doc centre;
+		Vec3Doc size;
+		double yawDegrees = 0;
+		MaterialDoc material;
+	};
+	LAIN_SERIALIZE(BoxDoc, id, name, centre, size, yawDegrees, material)
+
+	struct PropDoc
+	{
+		std::string id;
+		std::string name;
+		std::string mesh; // a path, rebased at the file boundary
+		bool clip = false;
+		media::FrameRate clipRate;
+		UpAxis up = UpAxis::Y; // its name: "Y", "Z"
+		double unitMetres = 1;
+		Vec3Doc position;
+		double yawDegrees = 0;
+	};
+	LAIN_SERIALIZE(PropDoc, id, name, mesh, clip, clipRate, up, unitMetres, position, yawDegrees)
+
 	struct RigPlanDoc
 	{
 		SpecificationsDoc specifications;
+		std::optional<RoomDoc> room; // absent when the rig plan stands in no room
+		std::vector<PlaneDoc> planes;
+		std::vector<BoxDoc> boxes;
+		std::vector<PropDoc> props;
 		std::vector<MountDoc> mounts;
 		std::vector<CameraDoc> cameras;
 		std::vector<LightPlacementDoc> lights;
@@ -175,7 +267,7 @@ namespace lain::rigplan
 		std::uint64_t seed = 0;
 		Scales scales;
 	};
-	LAIN_SERIALIZE(RigPlanDoc, specifications, mounts, cameras, lights, timeline, seed, scales)
+	LAIN_SERIALIZE(RigPlanDoc, specifications, room, planes, boxes, props, mounts, cameras, lights, timeline, seed, scales)
 
 	// --- to a document ---------------------------------------------------------------------
 
@@ -209,10 +301,49 @@ namespace lain::rigplan
 		return doc;
 	}
 
+	static ColourDoc docOf(const image::ColorRGBf& c)
+	{
+		return {c.r, c.g, c.b};
+	}
+
+	static MaterialDoc docOf(const Material& m)
+	{
+		MaterialDoc doc;
+		if (const auto* colour = std::get_if<SolidColour>(&m.surface))
+			doc.surface = SolidColourDoc{docOf(colour->colour)};
+		else if (const auto* picture = std::get_if<ImageTexture>(&m.surface))
+			doc.surface = ImageTextureDoc{picture->image.toString(), docOf(picture->tile)};
+		else
+			doc.surface = ProceduralDoc{std::get<image::ProceduralTexture>(m.surface).seed, std::get<image::ProceduralTexture>(m.surface).cell};
+		doc.specular = docOf(m.specular);
+		doc.shininess = m.shininess;
+		return doc;
+	}
+
+	static RoomSurfaceDoc docOf(const RoomSurface& s)
+	{
+		return {s.present, docOf(s.material)};
+	}
+
 	static RigPlanDoc docOf(const RigPlan& plan)
 	{
 		RigPlanDoc doc;
 		doc.specifications = docOf(plan.specifications);
+		if (plan.room)
+		{
+			const Room& r = *plan.room;
+			doc.room = RoomDoc{docOf(r.centre), docOf(r.size), docOf(r.floor), docOf(r.ceiling), docOf(r.north),
+							   docOf(r.south), docOf(r.east), docOf(r.west)};
+		}
+		for (const Plane& p : plan.planes)
+			doc.planes.push_back({p.id.toString(), p.name, docOf(p.centre), p.aim, docOf(p.size), docOf(p.material)});
+		for (const Box& b : plan.boxes)
+			doc.boxes.push_back({b.id.toString(), b.name, docOf(b.centre), docOf(b.size), b.yawDegrees, docOf(b.material)});
+		for (const Prop& p : plan.props)
+		{
+			doc.props.push_back({p.id.toString(), p.name, p.mesh.toString(), p.clip, p.clipRate, p.up, p.unitMetres,
+								 docOf(p.position), p.yawDegrees});
+		}
 		for (const Mount& m : plan.mounts)
 		{
 			MountDoc mount{m.id.toString(), m.name, PoleDoc{}, m.yawDegrees, {m.tolerance.position.as<core::Length::Millimetres>(), m.tolerance.yawDegrees}};
@@ -329,10 +460,58 @@ namespace lain::rigplan
 		return out;
 	}
 
+	static image::ColorRGBf colourOf(const ColourDoc& d)
+	{
+		return image::ColorRGBf{float(d.r), float(d.g), float(d.b)};
+	}
+
+	static Material materialOf(const MaterialDoc& doc)
+	{
+		Material m;
+		if (const auto* colour = std::get_if<SolidColourDoc>(&doc.surface))
+			m.surface = SolidColour{colourOf(colour->colour)};
+		else if (const auto* picture = std::get_if<ImageTextureDoc>(&doc.surface))
+			m.surface = ImageTexture{core::Uri{picture->image}, vecOf(picture->tile)};
+		else
+			m.surface = image::ProceduralTexture{std::get<ProceduralDoc>(doc.surface).seed, std::get<ProceduralDoc>(doc.surface).cell};
+		m.specular = colourOf(doc.specular);
+		m.shininess = doc.shininess;
+		return m;
+	}
+
+	static RoomSurface surfaceOf(const RoomSurfaceDoc& doc)
+	{
+		return {doc.present, materialOf(doc.material)};
+	}
+
 	static RigPlan planOf(const RigPlanDoc& doc, Conversion& convert)
 	{
 		RigPlan plan;
 		plan.specifications = specificationsOf(doc.specifications, "specifications.", convert);
+		if (doc.room)
+		{
+			const RoomDoc& r = *doc.room;
+			plan.room = Room{vecOf(r.centre), vecOf(r.size), surfaceOf(r.floor), surfaceOf(r.ceiling),
+							 surfaceOf(r.north), surfaceOf(r.south), surfaceOf(r.east), surfaceOf(r.west)};
+		}
+		for (std::size_t i = 0; i < doc.planes.size(); ++i)
+		{
+			const PlaneDoc& p = doc.planes[i];
+			plan.planes.push_back({convert.identity(p.id, string::format("planes[{}].id", i)), p.name, vecOf(p.centre), p.aim,
+								   vecOf(p.size), materialOf(p.material)});
+		}
+		for (std::size_t i = 0; i < doc.boxes.size(); ++i)
+		{
+			const BoxDoc& b = doc.boxes[i];
+			plan.boxes.push_back({convert.identity(b.id, string::format("boxes[{}].id", i)), b.name, vecOf(b.centre), vecOf(b.size),
+								  b.yawDegrees, materialOf(b.material)});
+		}
+		for (std::size_t i = 0; i < doc.props.size(); ++i)
+		{
+			const PropDoc& p = doc.props[i];
+			plan.props.push_back({convert.identity(p.id, string::format("props[{}].id", i)), p.name, core::Uri{p.mesh}, p.clip,
+								  p.clipRate, p.up, p.unitMetres, vecOf(p.position), p.yawDegrees});
+		}
 		for (std::size_t i = 0; i < doc.mounts.size(); ++i)
 		{
 			const MountDoc& m = doc.mounts[i];
@@ -432,5 +611,74 @@ namespace lain::rigplan
 		if (result.problems.empty())
 			result.specifications = std::move(specifications);
 		return result;
+	}
+	// --- paths at the file boundary (ADR-0027) ---------------------------------------------
+
+	// A member of an object Value, mutably. data::Value::find is const-only.
+	static data::Value* member(data::Value& object, std::string_view key)
+	{
+		data::Value::Object* entries = object.asObject();
+		if (!entries)
+			return nullptr;
+		for (auto& [name, value] : *entries)
+		{
+			if (name == key)
+				return &value;
+		}
+		return nullptr;
+	}
+
+	// Rewrite, through `rewrite`, every path a rig plan document holds: an image material's picture,
+	// wherever a material is (the room's surfaces, every plane and box), and every prop's mesh. A
+	// document that is not one is left as it is: reading it is what reports that.
+	template <typename Rewrite>
+	static void rewritePaths(data::Value& document, const Rewrite& rewrite)
+	{
+		const auto rewriteString = [&](data::Value* value)
+		{
+			if (value && value->asString())
+				*value = data::Value(rewrite(*value->asString()));
+		};
+		const auto rewriteMaterial = [&](data::Value* material)
+		{
+			data::Value* surface = material ? member(*material, "surface") : nullptr;
+			const data::Value* type = surface ? surface->find("type") : nullptr;
+			data::Value* value = surface ? member(*surface, "value") : nullptr;
+			if (type && type->asString() && *type->asString() == "image" && value)
+				rewriteString(member(*value, "image"));
+		};
+		if (data::Value* room = member(document, "room"))
+		{
+			for (const char* side : {"floor", "ceiling", "north", "south", "east", "west"})
+			{
+				if (data::Value* surface = member(*room, side))
+					rewriteMaterial(member(*surface, "material"));
+			}
+		}
+		for (const char* list : {"planes", "boxes"})
+		{
+			data::Value* items = member(document, list);
+			if (!items || !items->asArray())
+				continue;
+			for (data::Value& item : *items->asArray())
+				rewriteMaterial(member(item, "material"));
+		}
+		if (data::Value* props = member(document, "props"); props && props->asArray())
+		{
+			for (data::Value& prop : *props->asArray())
+				rewriteString(member(prop, "mesh"));
+		}
+	}
+
+	void relativizePaths(data::Value& document, const std::filesystem::path& folder)
+	{
+		rewritePaths(document, [&folder](const std::string& text)
+					 { return io::relativizePath(text, folder); });
+	}
+
+	void resolvePaths(data::Value& document, const std::filesystem::path& folder)
+	{
+		rewritePaths(document, [&folder](const std::string& text)
+					 { return io::resolvePath(text, folder); });
 	}
 } // namespace lain::rigplan

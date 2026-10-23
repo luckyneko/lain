@@ -6,6 +6,7 @@
 #include <lain/core/uuid.h>
 #include <lain/rigplan/rigplan.h>
 
+#include <filesystem>
 #include <string>
 
 namespace testplan
@@ -109,6 +110,52 @@ namespace testplan
 		p.timeline.frames = 24;
 		p.seed = 7;
 		p.scales.intrinsic = 1.0;
+		return p;
+	}
+	inline const lain::core::Uuid partitionId = id("0193a6f0-0000-7000-8000-00000000e001");
+	inline const lain::core::Uuid crateId = id("0193a6f0-0000-7000-8000-00000000e002");
+	inline const lain::core::Uuid walkerId = id("0193a6f0-0000-7000-8000-00000000e003");
+
+	// The test plan in a room, with a partition, a crate and a walking figure: every kind of material
+	// once, and a path of each kind under `folder` (which need not exist; the path rule is lexical).
+	inline lain::rigplan::RigPlan furnished(const std::filesystem::path& folder = "/projects/hall")
+	{
+		lain::rigplan::RigPlan p = plan();
+		lain::rigplan::Room room;
+		room.size = {10.0, 8.0, 3.2};
+		room.floor.material.surface = lain::image::ProceduralTexture{11, 0.05};
+		room.north.material.surface = lain::rigplan::ImageTexture{lain::core::Uri::fromPath(folder / "textures" / "brick.png"), {0.5, 0.25}};
+		room.ceiling.present = false;
+		p.room = room;
+
+		lain::rigplan::Plane partition;
+		partition.id = partitionId;
+		partition.name = "partition";
+		partition.centre = {1.0, 2.0, 1.0};
+		partition.size = {2.0, 2.0};
+		partition.aim = {30.0, 0.0, 0.0};
+		partition.material.surface = lain::rigplan::SolidColour{{0.2f, 0.4f, 0.6f}};
+		partition.material.specular = {0.5f, 0.5f, 0.5f};
+		partition.material.shininess = 16.0;
+		p.planes.push_back(partition);
+
+		lain::rigplan::Box crate;
+		crate.id = crateId;
+		crate.name = "crate";
+		crate.centre = {-2.0, 1.0, 0.4};
+		crate.size = {0.8, 0.8, 0.8};
+		crate.yawDegrees = 15.0;
+		p.boxes.push_back(crate);
+
+		lain::rigplan::Prop walker;
+		walker.id = walkerId;
+		walker.name = "walker";
+		walker.mesh = lain::core::Uri::fromPath("/assets/people/walk.<frame:04>.obj"); // outside the folder
+		walker.clip = true;
+		walker.clipRate = {24, 1};
+		walker.unitMetres = 0.01; // modelled in centimetres
+		walker.position = {0.5, -1.0, 0.0};
+		p.props.push_back(walker);
 		return p;
 	}
 } // namespace testplan

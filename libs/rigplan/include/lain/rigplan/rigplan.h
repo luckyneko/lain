@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lain/rigplan/aim.h"
+#include "lain/rigplan/environment.h"
 #include "lain/rigplan/specification.h"
 
 #include <lain/core/uuid.h>
@@ -8,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -18,19 +21,6 @@ namespace lain::rigplan
 	// forward across the floor, Z up, metres, the floor at Z = 0. One named convention, never metadata
 	// on a plan; an asset's own up axis is converted to it at import.
 	inline constexpr math::AxisConvention kPlanFrame = math::AxisConvention::XRightYForwardZUp();
-
-	// How a camera or light is aimed on its mount, degrees, in the mount's frame (which is the plan
-	// frame turned by the mount's yaw). At rest, every aim zero, it looks along the mount's +Y with its
-	// image's right along +X and its image's down along -Z. Then, in this order:
-	//   * roll turns it about its forward axis — positive is clockwise as seen from behind it;
-	//   * tilt turns it about the mount's +X — positive looks up;
-	//   * pan turns it about the mount's +Z — positive turns left, counter-clockwise from above.
-	struct Aim
-	{
-		double panDegrees = 0;
-		double tiltDegrees = 0;
-		double rollDegrees = 0;
-	};
 
 	// A pole standing on the floor. It is real geometry, in every capture render.
 	struct Pole
@@ -121,6 +111,10 @@ namespace lain::rigplan
 	struct RigPlan
 	{
 		Specifications specifications;
+		std::optional<Room> room; // a rig plan may stand in none, among props alone
+		std::vector<Plane> planes;
+		std::vector<Box> boxes;
+		std::vector<Prop> props;
 		std::vector<Mount> mounts;
 		std::vector<PlacedCamera> cameras;
 		std::vector<PlacedLight> lights;
@@ -145,6 +139,7 @@ namespace lain::rigplan
 		InvalidTolerance,	  // a negative or non-finite tolerance
 		InvalidTimeline,	  // a timeline of no frames
 		InvalidScale,		  // a scale outside [0, 1]
+		InvalidEnvironment,	  // a room, plane or box of no extent, a prop with no mesh or unit, or a material that cannot be one
 	};
 
 	struct PlanDiagnostic
@@ -153,8 +148,8 @@ namespace lain::rigplan
 		std::string detail; // which part and what about it, for a person
 	};
 
-	// Every problem with `plan`: its specifications first, then its mounts, cameras, lights, timeline
-	// and scales. Empty when the rig plan can be realised (though a realisation may still refuse a
+	// Every problem with `plan`: its specifications first, then its room, planes, boxes and props, then
+	// its mounts, cameras, lights, timeline and scales. Empty when the rig plan can be realised (though a realisation may still refuse a
 	// draw; see realise()).
 	std::vector<PlanDiagnostic> check(const RigPlan& plan);
 

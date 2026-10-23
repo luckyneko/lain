@@ -14939,7 +14939,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
 2. **`io::mesh` + the OBJ/MTL plugin**: meshes, MTL onto the three materials, mesh clips from OBJ
    sequences, the up-axis conversion at import. **The procedural texture lifted** out of
    `texturedscene.h` into the library, with M9's verticals unchanged byte for byte.
-   **Planned 2026-10-22 as four commits, 2a to 2d** (*Slice 2 planned* below); **2a to 2c built**.
+   **Planned 2026-10-22 as four commits, 2a to 2d** (*Slice 2 planned* below); **all four built
+   2026-10-23, slice 2 COMPLETE**.
 3. **`lain::render`**: the render scene, an offscreen raster pass, the viewport pass, the line pass.
    **lain's archimedes pin moves to the CPU device here** (see *Verified against archimedes' CPU
    device* below for what that commit owes). Proves: a plain scene renders in CI, on every leg.
@@ -15282,6 +15283,42 @@ format-check clean.
   (FFmpeg, OpenCV, Eigen, Ceres). Statically linked MIT and zlib dependencies (stb, nlohmann, fmt,
   spdlog, GLFW, ImGui, now tinyobjloader) are listed in the README only, and ADR-0015 does not say
   whether that is enough. A repo-wide question, not this slice's.
+
+**2d, built (2026-10-23): the room, planes, boxes and props**, after a no-behaviour-change hoist.
+`ctest -j8` **1430/1430** Release with video, camera and Ceres on (+12: 4 for the hoist, 4 in
+`test-rigplan`, 4 in `test-rigplan-serialize`); warning-clean, format-check clean.
+- **The hoist, its own commit first: ADR-0027's rule for one path moves into `lain::io`**
+  (`io/documentpath.h`: `relativizePath(text, folder)` and `resolvePath(text, folder)`), out of
+  `flow::serialize`'s `documentpaths.cpp`, which keeps only where a graph document's paths are. The
+  rule's subtleties were each a bug fixed once (a folder's one spelling, a relative in-memory path
+  meaning the working directory, `../` never written, a uri never passed through
+  `std::filesystem`), so the rig plan document shares them rather than copying them. `flow::serialize`
+  gains a private link to `lain::io`. The suite stayed at 1418 through the move, with the six graph
+  document-path cases and the examples' byte comparison among it; 4 direct cases now pin the rule.
+  Sabotage: writing `../` fails 2 of them AND 2 of the graph cases, so the graph documents really go
+  through it.
+- **`lain/rigplan/environment.h`**: `Material` (a `SolidColour`, an `ImageTexture` with a tile in
+  metres, or an `image::ProceduralTexture`, plus MTL's specular colour and shininess), `Room` (centre,
+  size, six switchable surfaces, the walls named north +Y, east +X), `Plane` (centre, aim, size;
+  upright facing -Y at rest, both faces shown), `Box` (centre, size, yaw) and `Prop` (a mesh uri, a
+  clip flag and rate, its up axis, metres per unit, position and yaw), with `conventionOf(UpAxis)`
+  and `planFromProp(prop)`, the matrix that puts a prop's mesh in the plan frame once. `RigPlan`
+  holds an optional room and lists of planes, boxes and props, and `check` covers them. `Aim` moved
+  to its own `aim.h`, since the environment and the rig plan both need it.
+- **The rig plan document holds them**, and `rigplan::serialize` gains `relativizePaths` /
+  `resolvePaths` over a rig plan document, applied by a host only where a document meets a file, as
+  ADR-0027 has it for graph documents. They walk every place a path lives: an image material's
+  picture (the room's surfaces, every plane, every box) and every prop's mesh. The plain rig plan's
+  pinned key list grew `planes`, `boxes` and `props`, deliberately, while the document is still
+  version 1.
+- **Two deviations from the plan:**
+  - **The mapping from a mesh's materials onto the rig plan's moves to slice 3**, where a render
+    scene first consumes it. Here it would have had no caller and made `lain::rigplan` depend on
+    `lain::mesh` for nothing.
+  - **A prop states whether its mesh is a clip** instead of having it detected from a frame
+    pattern in the name, which would also have needed `io::frameKey`, and `lain::rigplan` links no io.
+- **Four sabotages, each caught:** the path walk skipping boxes, a Y-up mesh given the plan's
+  convention, a switched-off room surface still judged, and a clip's rate dropped on write.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 

@@ -7,6 +7,7 @@ add_library(rigplan STATIC
 	src/specification.cpp
 	src/rigplan.cpp
 	src/realisation.cpp
+	src/environment.cpp
 )
 add_library(lain::rigplan ALIAS rigplan)
 

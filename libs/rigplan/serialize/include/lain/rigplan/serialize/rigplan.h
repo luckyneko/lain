@@ -4,6 +4,7 @@
 #include <lain/rigplan/rigplan.h>
 
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
@@ -43,6 +44,14 @@ namespace lain::rigplan
 	// is not judged: a rig plan naming a specification it lacks still reads, so it can be opened and
 	// fixed, and check() is what says it cannot be realised.
 	RigPlanRead rigPlanFromValue(const data::Value& document);
+
+	// ADR-0027 at the file boundary, for a rig plan document: every path it holds (an image material's
+	// picture, a prop's mesh) rewritten relative to `folder` when inside its tree (relativizePaths, after
+	// rigPlanToValue when saving to a file there), or read against it (resolvePaths, before
+	// rigPlanFromValue when loading from one). Never applied to an undo snapshot, which meets no file,
+	// so the conversions themselves need no idea where a document lives (ADR-0027's reason).
+	void relativizePaths(data::Value& document, const std::filesystem::path& folder);
+	void resolvePaths(data::Value& document, const std::filesystem::path& folder);
 
 	// A specification catalogue as a document: {version, sensors, lenses, cameras, lights}.
 	data::Value catalogueToValue(const Specifications& specifications);

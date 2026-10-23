@@ -893,16 +893,20 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   new one. _Avoid_: lamp, light source when the product is meant.
 - **Room** — a parametric axis-aligned box in the plan frame, its floor, ceiling and four walls each
   switchable and each with its own material; resizing it moves its walls. Planes and boxes stand
-  beside it for partitions and furniture, and anything more complex is a prop. _Avoid_: environment
-  map, level, set.
-- **Prop** — a mesh asset placed in a rig plan, static unless it follows a path, when it is a prop
-  mover. _Avoid_: model (a camera model is something else), object, asset when the placement is
+  beside it for partitions and furniture, and anything more complex is a prop. The walls are named
+  as a floor plan is drawn: north is +Y, east is +X. _Avoid_: environment map, level, set.
+- **Prop** — a mesh asset placed in a rig plan, in its file's own materials, static unless it
+  follows a path, when it is a prop mover. Its mesh keeps its file's own frame and units, and the
+  prop states its up axis and how many metres a unit is, so the conversion to the plan frame happens
+  once; it states too whether its mesh is a clip, rather than having that guessed from the file's
+  name. _Avoid_: model (a camera model is something else), object, asset when the placement is
   meant.
 - **Material** — how a surface looks, from a closed set: a flat **colour**, an **image texture**
   with a stated physical size per tile, or a seeded **procedural texture** with a scale in metres,
   rich in the features targetless methods need. A mesh's MTL file maps onto the same set. A
   procedural texture is made into an image once, in lain's own code, so it has one implementation
-  however it is drawn. _Avoid_: shader, texture when the whole surface response is meant.
+  however it is drawn. Any of them may add a specular sheen, as MTL states one, and is matte
+  otherwise. _Avoid_: shader, texture when the whole surface response is meant.
 - **Mover** — something in a rig plan that changes from one frame to the next: a **board mover**
   shows a board specification through the board renderer, so the board in a capture is the pattern a
   detector expects; a **prop mover** shows a prop, for moving content. A mover follows a **path**:

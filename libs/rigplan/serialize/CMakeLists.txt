@@ -16,6 +16,7 @@ target_link_libraries(rigplan-serialize
 	PUBLIC lain::rigplan lain::data
 	PRIVATE lain::camera::serialize # ImageGeometry and Distortion as the camera-model document writes them
 	PRIVATE lain::media::serialize	# FrameRate as {numerator, denominator}
+	PRIVATE lain::io				# the document-path rule for one path (ADR-0027, io/documentpath.h)
 	PRIVATE lain::string lain::warnings
 )
 

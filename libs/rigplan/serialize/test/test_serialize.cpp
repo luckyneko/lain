@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -111,8 +112,9 @@ TEST_CASE("a rig plan document's shape", "[rigplan][serialize]")
 {
 	// Pinned, since a document is read by people and by later builds: renaming a key is a migration.
 	Value document = lain::rigplan::rigPlanToValue(testplan::plan());
-	REQUIRE(keysOf(document) ==
-			std::vector<std::string>{"version", "specifications", "mounts", "cameras", "lights", "timeline", "seed", "scales"});
+	// A rig plan in no room writes no room; its lists of planes, boxes and props are there, empty.
+	REQUIRE(keysOf(document) == std::vector<std::string>{"version", "specifications", "planes", "boxes", "props", "mounts",
+														 "cameras", "lights", "timeline", "seed", "scales"});
 
 	Value& lens = element(member(member(document, "specifications"), "lenses"), 0);
 	REQUIRE(keysOf(lens) == std::vector<std::string>{"name", "focalLengthMm", "distortion", "focalLengthTolerance", "distortionTolerance"});
@@ -223,4 +225,88 @@ TEST_CASE("a specification catalogue is a document of specifications", "[rigplan
 	REQUIRE_FALSE(wrong.specifications.has_value());
 	REQUIRE(lain::rigplan::catalogueFromValue(Value(std::uint64_t{1})).problems ==
 			std::vector<std::string>{"a specification-catalogue document is an object"});
+}
+
+// --- the environment, and its paths ---------------------------------------------------------
+
+TEST_CASE("a furnished rig plan reads back as it was written", "[rigplan][serialize][environment]")
+{
+	const lain::rigplan::RigPlan original = testplan::furnished();
+	const Value document = lain::rigplan::rigPlanToValue(original);
+	const lain::rigplan::RigPlanRead read = lain::rigplan::rigPlanFromValue(document);
+	for (const std::string& p : read.problems)
+		UNSCOPED_INFO(p);
+	REQUIRE(read.plan.has_value());
+	REQUIRE(lain::rigplan::rigPlanToValue(*read.plan) == document);
+
+	const lain::rigplan::RigPlan& p = *read.plan;
+	REQUIRE(p.room.has_value());
+	REQUIRE(p.room->size == original.room->size);
+	REQUIRE_FALSE(p.room->ceiling.present);
+	REQUIRE(std::get<lain::image::ProceduralTexture>(p.room->floor.material.surface).seed == 11);
+	REQUIRE(std::get<lain::rigplan::ImageTexture>(p.room->north.material.surface).image ==
+			std::get<lain::rigplan::ImageTexture>(original.room->north.material.surface).image);
+	REQUIRE(std::get<lain::rigplan::ImageTexture>(p.room->north.material.surface).tile == lain::math::Vec2d{0.5, 0.25});
+	REQUIRE(p.planes[0].aim.panDegrees == 30.0);
+	REQUIRE(p.planes[0].material.shininess == 16.0);
+	REQUIRE(p.boxes[0].yawDegrees == 15.0);
+	REQUIRE(p.props[0].clip);
+	REQUIRE(p.props[0].clipRate == lain::media::FrameRate{24, 1});
+	REQUIRE(p.props[0].unitMetres == 0.01);
+	REQUIRE(p.props[0].up == lain::rigplan::UpAxis::Y);
+
+	// And a rig plan with no room writes none, and reads back with none.
+	REQUIRE_FALSE(lain::rigplan::rigPlanToValue(testplan::plan()).find("room"));
+}
+
+TEST_CASE("a furnished rig plan document's shape", "[rigplan][serialize][environment]")
+{
+	Value document = lain::rigplan::rigPlanToValue(testplan::furnished());
+	REQUIRE(keysOf(document) == std::vector<std::string>{"version", "specifications", "room", "planes", "boxes", "props",
+														 "mounts", "cameras", "lights", "timeline", "seed", "scales"});
+	Value& room = member(document, "room");
+	REQUIRE(keysOf(room) == std::vector<std::string>{"centre", "size", "floor", "ceiling", "north", "south", "east", "west"});
+	Value& floor = member(member(member(room, "floor"), "material"), "surface");
+	REQUIRE(member(floor, "type") == Value(std::string("procedural")));
+	REQUIRE(keysOf(member(floor, "value")) == std::vector<std::string>{"seed", "cell"});
+	Value& prop = element(member(document, "props"), 0);
+	REQUIRE(keysOf(prop) ==
+			std::vector<std::string>{"id", "name", "mesh", "clip", "clipRate", "up", "unitMetres", "position", "yawDegrees"});
+	REQUIRE(member(prop, "up") == Value(std::string("Y")));
+}
+
+TEST_CASE("a rig plan document's paths are relative inside its folder, and absolute outside it", "[rigplan][serialize][environment]")
+{
+	// The brick texture lies under the document's folder and the walking figure outside it.
+	const std::filesystem::path folder = "/projects/hall";
+	Value document = lain::rigplan::rigPlanToValue(testplan::furnished(folder));
+	lain::rigplan::relativizePaths(document, folder);
+
+	Value& north = member(member(member(member(document, "room"), "north"), "material"), "surface");
+	REQUIRE(member(member(north, "value"), "image") == Value(std::string("textures/brick.png")));
+	REQUIRE(member(element(member(document, "props"), 0), "mesh") == Value(std::string("/assets/people/walk.<frame:04>.obj")));
+
+	// Read back from the folder, every path is what the rig plan held.
+	lain::rigplan::resolvePaths(document, folder);
+	const auto read = lain::rigplan::rigPlanFromValue(document);
+	REQUIRE(read.plan.has_value());
+	REQUIRE(lain::rigplan::rigPlanToValue(*read.plan) == lain::rigplan::rigPlanToValue(testplan::furnished(folder)));
+}
+
+TEST_CASE("relativizing reaches every material a rig plan holds", "[rigplan][serialize][environment]")
+{
+	// A picture on a plane and on a box too, not only on the room, so each place a material lives is
+	// walked.
+	const std::filesystem::path folder = "/projects/hall";
+	lain::rigplan::RigPlan plan = testplan::furnished(folder);
+	plan.planes[0].material.surface = lain::rigplan::ImageTexture{lain::core::Uri::fromPath(folder / "poster.png"), {1.0, 1.0}};
+	plan.boxes[0].material.surface = lain::rigplan::ImageTexture{lain::core::Uri::fromPath(folder / "wood.png"), {1.0, 1.0}};
+	Value document = lain::rigplan::rigPlanToValue(plan);
+	lain::rigplan::relativizePaths(document, folder);
+	const auto pictureOf = [&](Value& item)
+	{
+		return member(member(member(member(item, "material"), "surface"), "value"), "image");
+	};
+	REQUIRE(pictureOf(element(member(document, "planes"), 0)) == Value(std::string("poster.png")));
+	REQUIRE(pictureOf(element(member(document, "boxes"), 0)) == Value(std::string("wood.png")));
 }

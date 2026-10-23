@@ -4,6 +4,7 @@ add_executable(test-rigplan
 	test_specification.cpp
 	test_rigplan.cpp
 	test_realisation.cpp
+	test_environment.cpp
 )
 
 target_compile_features(test-rigplan PRIVATE cxx_std_17)

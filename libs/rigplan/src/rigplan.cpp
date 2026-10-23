@@ -27,6 +27,16 @@ namespace lain::rigplan
 		return std::isfinite(aim.panDegrees) && std::isfinite(aim.tiltDegrees) && std::isfinite(aim.rollDegrees);
 	}
 
+	static bool positive(const math::Vec2d& v)
+	{
+		return finite(v) && v.x > 0 && v.y > 0;
+	}
+
+	static bool positive(const math::Vec3d& v)
+	{
+		return finite(v) && v.x > 0 && v.y > 0 && v.z > 0;
+	}
+
 	static bool validBound(double tolerance)
 	{
 		return std::isfinite(tolerance) && tolerance >= 0;
@@ -84,6 +94,73 @@ namespace lain::rigplan
 			else if (!identities.insert(id).second)
 				out.push_back({PlanProblem::DuplicateIdentity, string::format("{} '{}' shares the identity {}", kind, name, id.toString())});
 		};
+
+		const auto environment = [&](std::string detail)
+		{
+			out.push_back({PlanProblem::InvalidEnvironment, std::move(detail)});
+		};
+		const auto checkMaterial = [&](const Material& material, std::string_view where)
+		{
+			bool valid = validBound(material.specular.r) && validBound(material.specular.g) && validBound(material.specular.b) &&
+						 validBound(material.shininess);
+			if (const auto* colour = std::get_if<SolidColour>(&material.surface))
+			{
+				valid = valid && validBound(colour->colour.r) && validBound(colour->colour.g) && validBound(colour->colour.b);
+			}
+			else if (const auto* picture = std::get_if<ImageTexture>(&material.surface))
+			{
+				valid = valid && !picture->image.empty() && positive(picture->tile);
+			}
+			else
+			{
+				const double cell = std::get<image::ProceduralTexture>(material.surface).cell;
+				valid = valid && std::isfinite(cell) && cell > 0;
+			}
+			if (!valid)
+			{
+				environment(string::format("{} has a material that cannot be one: a colour or specular must be finite and not "
+										   "negative, a picture needs a file and a positive tile, a texture a positive cell",
+										   where));
+			}
+		};
+
+		if (plan.room)
+		{
+			const Room& room = *plan.room;
+			if (!finite(room.centre) || !positive(room.size))
+				environment("the room needs a finite centre and a positive size");
+			for (const auto& [surface, name] : {std::pair<const RoomSurface*, const char*>{&room.floor, "floor"},
+												{&room.ceiling, "ceiling"},
+												{&room.north, "north wall"},
+												{&room.south, "south wall"},
+												{&room.east, "east wall"},
+												{&room.west, "west wall"}})
+			{
+				if (surface->present)
+					checkMaterial(surface->material, string::format("the room's {}", name));
+			}
+		}
+		for (const Plane& p : plan.planes)
+		{
+			identify(p.id, "plane", p.name);
+			if (!finite(p.centre) || !finite(p.aim) || !positive(p.size))
+				environment(string::format("plane '{}' needs a finite centre and aim and a positive size", p.name));
+			checkMaterial(p.material, string::format("plane '{}'", p.name));
+		}
+		for (const Box& b : plan.boxes)
+		{
+			identify(b.id, "box", b.name);
+			if (!finite(b.centre) || !std::isfinite(b.yawDegrees) || !positive(b.size))
+				environment(string::format("box '{}' needs a finite centre and yaw and a positive size", b.name));
+			checkMaterial(b.material, string::format("box '{}'", b.name));
+		}
+		for (const Prop& p : plan.props)
+		{
+			identify(p.id, "prop", p.name);
+			if (p.mesh.empty() || !std::isfinite(p.unitMetres) || p.unitMetres <= 0 || !finite(p.position) ||
+				!std::isfinite(p.yawDegrees))
+				environment(string::format("prop '{}' needs a mesh, a positive unit and a finite position and yaw", p.name));
+		}
 
 		std::unordered_map<core::Uuid, const Mount*> mounts;
 		for (const Mount& m : plan.mounts)
