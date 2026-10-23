@@ -1,18 +1,12 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 
 // A scene's surfaces, shaded (lain::render::Material, ADR-0028): Lambert's diffuse times the
 // material's texture, plus Blinn-Phong's specular, under point and spot lights whose light falls
 // with the square of the distance, plus the scene's ambient light. Lit from whichever side the
-// camera sees. The blocks here must match renderer.cpp's.
+// camera sees. The blocks here must match state.h's.
 
-layout(set = 0, binding = 0) uniform Frame
-{
-	mat4 clipFromWorld;
-	vec4 eye;
-	vec4 ambient;
-	uint lightCount;
-}
-frame;
+#include "frame.glsl"
 
 layout(set = 0, binding = 1) uniform Object
 {
@@ -85,5 +79,5 @@ void main()
 			colour += material.specular.rgb * irradiance * pow(max(dot(n, h), 0.0), material.specular.w);
 		}
 	}
-	outColour = vec4(colour, 1.0);
+	outColour = vec4(forTarget(colour), 1.0);
 }

@@ -1,9 +1,10 @@
 # A library's GLSL, compiled to SPIR-V at build time and embedded in the library, so it carries its
 # own shaders and no .spv file has to be staged beside an executable that links it.
 #
-#   lain_embed_shaders(<target> NAMESPACE <namespace> SHADERS <shader>...)
+#   lain_embed_shaders(<target> NAMESPACE <namespace> SHADERS <shader>... [INCLUDES <file>...])
 #
-# compiles each shader (a path relative to the calling CMakeLists, named <stem>.<stage>) and adds a
+# compiles each shader (a path relative to the calling CMakeLists, named <stem>.<stage>; INCLUDES names
+# the files they #include, through GL_GOOGLE_include_directive, so editing one recompiles) and adds a
 # generated source to <target> defining, in <namespace>, one function per shader returning its
 # SPIR-V as acm::Device::createShader takes it:
 #
@@ -34,7 +35,7 @@ function(_lain_shader_function out shader)
 endfunction()
 
 function(lain_embed_shaders target)
-	cmake_parse_arguments(PARSE_ARGV 1 _arg "" "NAMESPACE" "SHADERS")
+	cmake_parse_arguments(PARSE_ARGV 1 _arg "" "NAMESPACE" "SHADERS;INCLUDES")
 	if(NOT _arg_NAMESPACE OR NOT _arg_SHADERS)
 		message(FATAL_ERROR "lain_embed_shaders(${target}): NAMESPACE and SHADERS are required")
 	endif()
@@ -45,6 +46,11 @@ function(lain_embed_shaders target)
 	else()
 		set(_env --target-env vulkan1.3)
 	endif()
+
+	set(_includes "")
+	foreach(_include IN LISTS _arg_INCLUDES)
+		list(APPEND _includes "${CMAKE_CURRENT_SOURCE_DIR}/${_include}")
+	endforeach()
 
 	set(_dir "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 	set(_spvs "")
@@ -57,7 +63,7 @@ function(lain_embed_shaders target)
 			OUTPUT "${_spv}"
 			COMMAND ${CMAKE_COMMAND} -E make_directory "${_dir}"
 			COMMAND ${ACM_GLSL_COMPILER} ${ACM_GLSL_COMPILER_FLAG} ${_env} "${CMAKE_CURRENT_SOURCE_DIR}/${_shader}" -o "${_spv}"
-			DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${_shader}"
+			DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${_shader}" ${_includes}
 			COMMENT "Compiling shader ${_name}"
 			VERBATIM)
 		_lain_shader_function(_function "${_shader}")

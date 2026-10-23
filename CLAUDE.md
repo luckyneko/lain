@@ -1400,6 +1400,28 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-23 — M15 slice 3b built: the viewport and its overlay lines
+
+The second of slice 3's four commits. `ctest -j8` **1450/1450** Release with video, camera and Ceres on
+(+7); warning-clean, format-check clean. The cases ran on Metal. Full notes in WORK.md's *Sub-slice 3b
+built*, under M15.
+
+- **`render::Viewport` records into a window's frame**, in the pre-pass `acm::Renderer` hands a frame
+  index, and never waits for the device. It keeps everything it writes per frame in flight: its
+  constants, target, line vertices and descriptor sets. So two viewports of one scene in one frame
+  share nothing, and the sets follow a new upload by its serial, not its address.
+- **Display-encoded in the shaders** (lain's sRGB curve into 8-bit UNORM, as ImGui composes),
+  multisampled at up to 4x.
+- **Overlay lines (`render::Segment`)** are drawn in the scene's rendering scope, depth-tested and
+  1 px. Their vertices come from a storage buffer by index, since a vertex buffer's write waits for
+  the device.
+- **Found by a probe: a line on an oblique surface loses half its samples**, since a 1 px line's
+  depth is constant across its width and a floor's is not. A pull toward the camera of 1e-4 of the
+  depth buffer fixes it: 0 of 26 floor points drawn whole with no pull, 15 at 2e-6, all from 2e-5.
+  The pull stays small enough that a line 5 cm behind a wall at 2 m is still hidden, up to 1e-3.
+  Two cases bracket it.
+- **Eight sabotages, all caught.** Showing the texture in a pane is `lain::gui`'s, with slice 8.
+
 ### Update 2026-10-23 — M15 slice 3 planned; 3a built: `lain::render`'s offscreen raster pass
 
 Slice 3 is four commits:

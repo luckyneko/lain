@@ -14,9 +14,16 @@
 
 namespace lain::render
 {
+	namespace detail
+	{
+		struct RendererState;
+		struct SceneState;
+	} // namespace detail
+
 	// A scene's copy on the device: its meshes, textures and materials uploaded once, so it can be
-	// drawn from any number of views. Move-only. Drawing writes its per-view constants, so one is
-	// drawn by one thread at a time; the device it was uploaded to must outlive it.
+	// drawn from any number of views. Move-only. Renderer::render writes the scene's own per-view
+	// constants, so it draws one view of a scene at a time; a Viewport keeps its own. The device it was
+	// uploaded to must outlive it.
 	class GpuScene
 	{
 	public:
@@ -26,9 +33,9 @@ namespace lain::render
 
 	private:
 		friend class Renderer;
-		struct Impl;
-		explicit GpuScene(std::unique_ptr<Impl> impl);
-		std::unique_ptr<Impl> m;
+		friend class Viewport;
+		explicit GpuScene(std::unique_ptr<detail::SceneState> state);
+		std::unique_ptr<detail::SceneState> m;
 	};
 
 	// An upload's outcome: the scene on the device, or why not.
@@ -49,8 +56,9 @@ namespace lain::render
 	};
 
 	// The raster renderer (ADR-0028) on one device: its pipelines are built once, then any number of
-	// scenes is uploaded and drawn. The device must outlive it and every scene it uploads. A drawing
-	// is synchronous: it waits for the device and reads the picture back.
+	// scenes is uploaded and drawn. The device must outlive it and every scene it uploads. render() is
+	// synchronous: it waits for the device and reads the picture back. A Viewport draws on its behalf
+	// into a window's frame instead (viewport.h).
 	class Renderer
 	{
 	public:
@@ -70,7 +78,7 @@ namespace lain::render
 		RenderResult render(GpuScene& scene, const View& view);
 
 	private:
-		struct Impl;
-		std::unique_ptr<Impl> m;
+		friend class Viewport;
+		std::unique_ptr<detail::RendererState> m;
 	};
 } // namespace lain::render

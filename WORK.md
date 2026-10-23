@@ -15003,7 +15003,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
 3. **`lain::render`**: the render scene, an offscreen raster pass, the viewport pass, the line pass.
    **lain's archimedes pin moves to the CPU device here** (see *Verified against archimedes' CPU
    device* below for what that commit owes). Proves: a plain scene renders in CI, on every leg.
-   **Planned 2026-10-23 as four commits, 3a to 3d** (*Slice 3 planned* below); **3a built
+   **Planned 2026-10-23 as four commits, 3a to 3d** (*Slice 3 planned* below); **3a and 3b built
    2026-10-23**. 3d waits on archimedes PRs #1 and #2 being merged.
 4. **The capture pass**: the intermediate image, the ray table, the remap with s × s rays. Proves the
    ADR-0028 claim: a rendered board's detected corners against lain's projection of the truth,
@@ -15478,6 +15478,60 @@ MoltenVK.
   - no depth test fails the depth case;
   - 1 / d falloff fails the lit and spot cases;
   - uploading textures as UNORM (no decode) fails the texture case.
+
+#### Sub-slice 3b built (2026-10-23)
+
+`render::Viewport` and `render::Segment`. `ctest -j8` **1450/1450** Release with video, camera and Ceres
+on (+7); warning-clean, format-check clean. The cases ran on Metal through MoltenVK.
+
+- **A viewport records into a window's frame, never waiting.** `record(cmd, frame, scene, view,
+  lines)` goes in the pre-pass acm::Renderer hands a frame index. That frame's `texture()` is then
+  ready to sample in the same command buffer. It keeps everything it writes per frame in flight:
+  its constants, its target, its line vertices, and its descriptor sets. The sets are rebuilt when
+  a different upload arrives, keyed by a per-process upload serial, never by address. So two
+  viewports of one scene in one frame never share a buffer, and the GpuScene's own constants stay
+  the synchronous `render()`'s. `read(frame)` reads back what a pane would show.
+- **Display-encoded in the shaders**: lain's sRGB curve into R8G8B8A8_Unorm, since ImGui composes
+  sRGB-encoded UNORM. The clear colour is encoded in C++ through `image::transferCurve`.
+  Multisampled at the device's maximum, clamped to 4x.
+- **Overlay lines** are drawn in the same rendering scope as the scene, since archimedes discards the
+  depth attachment after a pass. They are depth-tested but not written, and 1 px.
+  - **Their vertices come from a storage buffer by vertex index**, because a vertex buffer is
+    device-local and written through a staging copy that waits for the device, and lines change
+    every frame.
+  - **Pulled toward the camera by 1e-4 of the depth buffer**, so a line on a surface is drawn on it.
+    The plan took this for a hair against coplanar z-fighting, and a probe said otherwise. A 1 px
+    line's depth is the same across its width while an oblique floor's is not, so a multisampled
+    line on a floor loses about half its samples. Measured on Metal over 26 points along lines on a
+    floor: 0 drawn whole with no pull, 15 at 2e-6, all from 2e-5 up. A line 5 cm behind a wall 2 m
+    away stays hidden up to 1e-3. Two cases bracket the value, and `LessOrEqual` turned out not to
+    be needed once the pull was there.
+  - **For slice 8:** the pull is a constant in depth-buffer units, so in metres it grows as Z² over
+    near (4 mm at 2 m with a 0.1 m near plane, 10 cm at 10 m). A line that close behind a surface
+    shows through it. The grid is the one overlay that lies on a surface, so if this shows, the grid
+    is drawn as its own pass on the floor.
+- **Showing a viewport's texture in a pane** needs `lain::gui` to take an archimedes texture it did
+  not upload. That lands with its first caller in slice 8, as planned.
+- **The cases:**
+  - the scene comes out through lain's sRGB curve, the background included, each within one code;
+  - a line in front of a wall is drawn, one 5 cm behind it is hidden but shows past its edge, one
+    on it is drawn, and a line is 1 px wide;
+  - lines lying on a floor seen obliquely are drawn wherever lain's projection puts them;
+  - one command buffer recording frame 0 and frame 1 with different views (and sizes) keeps both
+    pictures;
+  - two viewports of one scene in one frame keep their own views;
+  - a viewport given another upload draws it, not the one its sets were made for;
+  - refusals: a frame out of range, another renderer's scene, an invalid view, and nothing to read
+    before a record.
+- **Eight sabotages, all caught:**
+  - frames sharing one constants buffer fails the frames case;
+  - sets never rebuilt for a new upload fails the new-upload case;
+  - lines not depth-tested fails the line case;
+  - no encoding fails four cases;
+  - the clear colour not encoded fails three;
+  - no pull fails both line-on-surface cases;
+  - a pull of 3e-3 shows the line behind the wall;
+  - `Less` with no pull loses the line on the wall (checked before the pull was settled).
 
 ### Verified against archimedes' CPU device (2026-10-22)
 

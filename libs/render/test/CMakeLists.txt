@@ -1,11 +1,12 @@
 # lain::render tests (Catch2). test_view.cpp and test_scene.cpp are pure CPU checks. test_renderer.cpp
-# draws on the first device archimedes ranks, and SKIPs where there is none: Metal through MoltenVK
-# on macOS, or archimedes' CPU device once lain's pin carries it (WORK.md M15 slice 3d).
+# and test_viewport.cpp draw on the first device archimedes ranks, and SKIP where there is none: Metal
+# through MoltenVK on macOS, or archimedes' CPU device once lain's pin carries it (WORK.md M15 slice 3d).
 
 add_executable(test-render
 	test_view.cpp
 	test_scene.cpp
 	test_renderer.cpp
+	test_viewport.cpp
 )
 
 target_compile_features(test-render PRIVATE cxx_std_17)
