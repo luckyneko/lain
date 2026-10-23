@@ -172,6 +172,7 @@ add_subdirectory(libs/editor)           # document editors' undo, recents, sessi
 # compiles its GLSL at build time, and a headless consumer of lain::flow should not build a compiler.
 if(LAIN_BUILD_TESTING OR LAIN_BUILD_APPS)
 	add_subdirectory(libs/render)
+	add_subdirectory(libs/rigplan/scene) # a rig plan as a render scene, beside the renderer it is for
 endif()
 
 # Test-support, built only when there are tests to support (see libs/testing/scratch.h).

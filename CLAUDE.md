@@ -1400,6 +1400,28 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-23 — M15 slice 3c built: a rig plan's render scene
+
+The third of slice 3's four commits; only 3d, the archimedes pin, is left, and it waits on archimedes'
+PRs. `ctest -j8` **1459/1459** Release with video, camera and Ceres on (+9); warning-clean, format-check
+clean. Full notes in WORK.md's *Sub-slice 3c built*, under M15.
+
+- **`lain::rigplan::scene`**: `loadSceneAssets(plan)` reads meshes and pictures and bakes procedural
+  surfaces once, then `renderScene(plan, realisation, assets, frame)` builds each frame's scene.
+  One walk over the surfaces serves both. What will not load is named, by owner and file.
+- **Surfaces read upright from the side they face**: the room's walls from inside, the floor with
+  north at its top, a plane as a camera aimed the same way sees it. Pictures repeat every tile.
+- **A procedural surface is baked to its own extent**: 20 texels to the finest cell, capped at 8192 a
+  side. **Added: its seed is mixed with the surface's identity**, so walls of one material do not
+  repeat each other (M9 found repeated patterns make wrong tracks). The repo owner may object.
+- **Props play their clip frame**, shared without a copy, with their MTL kept (Kd × map_Kd, Ks, Ns),
+  the mapping 2d deferred. Lights are their specifications at their realised poses.
+- **Bodies are not drawn yet.** A drawn pole needs a rule keeping a camera clear of it: the test
+  plan's cameras sit on their pole's axis. That rule is the repo owner's call.
+- **On the device**, a camera at rest in a room sees the north wall at the bulb's inverse square
+  (0.25 at 4 m), holding the plan frame, the camera frame and the renderer to one another.
+- **Eight sabotages, all caught**; two first failed to build and were redone.
+
 ### Update 2026-10-23 — M15 slice 3b built: the viewport and its overlay lines
 
 The second of slice 3's four commits. `ctest -j8` **1450/1450** Release with video, camera and Ceres on

@@ -908,10 +908,13 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   meant.
 - **Material** — how a surface looks, from a closed set: a flat **colour**, an **image texture**
   with a stated physical size per tile, or a seeded **procedural texture** with a scale in metres,
-  rich in the features targetless methods need. A mesh's MTL file maps onto the same set. A
-  procedural texture is made into an image once, in lain's own code, so it has one implementation
-  however it is drawn. Any of them may add a specular sheen, as MTL states one, and is matte
-  otherwise. _Avoid_: shader, texture when the whole surface response is meant.
+  rich in the features targetless methods need. A prop's mesh keeps its own MTL materials, drawn as
+  the file states them: its diffuse colour times its picture, and its specular. A procedural
+  texture is made into an image once per surface it covers, in lain's own code, so it has one
+  implementation however it is drawn; its seed is mixed with that surface's identity, so two
+  surfaces of one material never show the same pattern, which a targetless method would match as
+  one. Any of them may add a specular sheen, as MTL states one, and is matte otherwise. _Avoid_:
+  shader, texture when the whole surface response is meant.
 - **Mover** — something in a rig plan that changes from one frame to the next: a **board mover**
   shows a board specification through the board renderer, so the board in a capture is the pattern a
   detector expects; a **prop mover** shows a prop, for moving content. A mover follows a **path**:

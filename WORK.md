@@ -15003,7 +15003,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
 3. **`lain::render`**: the render scene, an offscreen raster pass, the viewport pass, the line pass.
    **lain's archimedes pin moves to the CPU device here** (see *Verified against archimedes' CPU
    device* below for what that commit owes). Proves: a plain scene renders in CI, on every leg.
-   **Planned 2026-10-23 as four commits, 3a to 3d** (*Slice 3 planned* below); **3a and 3b built
+   **Planned 2026-10-23 as four commits, 3a to 3d** (*Slice 3 planned* below); **3a to 3c built
    2026-10-23**. 3d waits on archimedes PRs #1 and #2 being merged.
 4. **The capture pass**: the intermediate image, the ray table, the remap with s × s rays. Proves the
    ADR-0028 claim: a rendered board's detected corners against lain's projection of the truth,
@@ -15532,6 +15532,71 @@ on (+7); warning-clean, format-check clean. The cases ran on Metal through Molte
   - no pull fails both line-on-surface cases;
   - a pull of 3e-3 shows the line behind the wall;
   - `Less` with no pull loses the line on the wall (checked before the pull was settled).
+
+#### Sub-slice 3c built (2026-10-23)
+
+`lain::rigplan::scene` (`libs/rigplan/scene`, built beside `lain::render`): a rig plan as a render
+scene. `ctest -j8` **1459/1459** Release with video, camera and Ceres on (+9); warning-clean,
+format-check clean. The render case ran on Metal.
+
+- **`loadSceneAssets(plan)`** reads every prop's mesh or clip and every picture once, and bakes every
+  procedural surface. `renderScene(plan, realisation, assets, frame)` builds the scene of one frame
+  from them. One walk over the plan's surfaces (`surfacesOf`) serves both, so what is loaded and
+  what is drawn cannot disagree. What will not load is a problem naming its owner and file. The
+  rest still loads, and a scene drawn from it names the missing pieces again and is still drawable.
+- **Surfaces** are a rectangle each: the room's present ones facing in, planes, and six faces a box.
+  - **A picture reads upright from the side it faces**: across is up × facing. A wall reads from
+    inside, a floor with north at its top, a ceiling from below.
+  - **A plane faces the camera that would see it face on**: aimed as a camera is.
+  - **A picture repeats every tile**, its coordinates in metres over the tile.
+- **A procedural surface is baked once, to its own extent**, so its texel `(i, j)` is
+  `proceduralGrey` at `((i + 0.5) / d, (j + 0.5) / d)` metres from the surface's corner.
+  - **Density:** 20 texels to the finest cell, two across the narrowest soft disc edge (a tenth of a
+    cell). It is capped so no side passes 8192 texels, which every device lain renders on holds.
+    Slice 4 measures whether detection sees the density.
+  - **Added beyond the plan: the seed is mixed with the surface's identity** (FNV-1a over a stable
+    key, then splitmix64), so four walls of one material are four patterns. M9 found that repeated
+    patterns make wrong tracks, and a targetless method would match repeated walls as one. The repo
+    owner may object; the alternative is one pattern per material, offset by where each surface sits.
+- **Props**: the clip frame `mesh::clipFrame` picks, shared with the loaded clip by `shared_ptr`
+  aliasing (no copy), placed by `planFromProp`. Its file's materials are kept one for one: MTL's Kd
+  times map_Kd, as the renderer multiplies them, plus Ks and Ns. This is the mapping 2d deferred.
+- **Lights**: each specification's kind, colour, intensity and cone at its realised pose, shining
+  along the pose's +Z.
+- **A picture that states no colour space is taken as sRGB**, with a warning in the log, since the
+  renderer refuses one untagged.
+- **Not drawn yet: bodies.** Poles, camera housings and light housings occlude in a real rig, but
+  drawing them needs a placement rule that keeps a camera clear of its own pole or housing. The test
+  plan's own cameras sit on their pole's axis, so a drawn pole would fill their whole view. That
+  rule is the repo owner's call.
+- **Found, not changed:** tinyobjloader reads a missing `Kd` as 0, so an MTL naming `map_Kd` with no
+  `Kd` draws black, since MTL multiplies the two. The reader states what the file says (2c), so a
+  default would be a decision of its own.
+- **The cases**, nine:
+  - a room's present surfaces face in, with the floor over the room's extent;
+  - a picture repeats every tile and reads upright, and the untagged picture is taken as sRGB;
+  - a procedural floor's corners map to the bake's corners, and a texel is `proceduralGrey` under
+    the mixed seed;
+  - six surfaces of one material get six patterns, the same on every load;
+  - a plane faces as a camera aimed the same way looks, and each of a box's faces faces out by half
+    its size;
+  - a prop is placed by `planFromProp`, plays its clip at half the capture's rate (frames 0, 1, 1, 2,
+    2, 0), shares the clip's frame, and shows its MTL;
+  - a light is its specification at its realised pose;
+  - what will not load is named, by owner and file;
+  - **on the device**, a camera at rest in a room sees the north wall ahead at the bulb's inverse
+    square (0.25 at 4 m), the floor below, and nothing through the absent ceiling. That holds the
+    plan frame, the camera frame and the renderer to one another.
+- **Eight sabotages, all caught.** Two first failed to build under `-Werror` (an unused function, an
+  unused parameter), so the old binary answered until they were redone:
+  - across mirrored fails the picture and procedural cases;
+  - the north wall facing out fails the room and picture cases;
+  - the procedural v unflipped fails the procedural case;
+  - the seed not mixed fails the procedural and no-repeat cases;
+  - the clip frozen fails the prop case;
+  - the light reversed fails the light case;
+  - the untagged picture kept untagged fails the picture and prop cases;
+  - a plane facing away fails the plane case.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
