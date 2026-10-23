@@ -14859,6 +14859,65 @@ algorithm**. `ctest -j8` **1050/1050** Debug and **1058/1058** Release, both wit
   expression. The golden values, the OpenCV agreement test (1e-6 px) and the camera vertical are
   what pin the behaviour.
 
+## Every built dependency's notice in `--licenses` (decided + built 2026-10-23)
+
+M15 slice 2c noted that `--licenses` printed only FFmpeg, OpenCV, Eigen and Ceres, while the statically
+linked MIT, BSD and zlib-style dependencies were in the README alone, and ADR-0015 did not say whether
+that was enough for a distributed binary. **Decided with the repo owner, four questions, each as
+recommended** ([ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), amended in
+place):
+- every dependency compiled or linked into a `lain::app` binary prints a notice, whether or not its
+  licence asks for one;
+- the notice is the dependency's own licence file, verbatim;
+- the Vulkan stack, lain, archimedes and multi are included;
+- a system package is named rather than transcribed.
+
+`ctest -j8` **1420/1420** Release with video, camera and Ceres on (+2); warning-clean, format-check
+clean. `flowview --licenses` prints 25 notices (48.6 KB) on macOS arm64.
+
+- **The inventory, read from each licence file rather than from the brief:**
+  - **Ask for a notice in a binary:** spdlog, magic_enum, nlohmann/json, Dear ImGui, imnodes and
+    tinyobjloader (MIT); GLM (MIT or Happy Bunny); CLI11 (BSD-3-Clause); libtiff; Vulkan-Headers
+    (Apache-2.0 OR MIT); the Vulkan loader and MoltenVK (Apache-2.0).
+  - **Do not:** fmt, whose licence waives the notice for object code; zlib, GLFW and libpng, whose
+    terms bind source distributions only; stb, which offers public domain; portable-file-dialogs
+    (WTFPL). So "MIT and zlib both ask for the notice" held for MIT only.
+  - **Ceres is BSD-3-Clause AND Apache-2.0.** Its LICENSE also carries Apache-2.0 for the
+    Abseil-derived `include/ceres/internal/fixed_array.h` and `memory.h`, which its public headers
+    include. The README row said BSD-3-Clause; corrected.
+  - **Dear ImGui compiles in its default fonts** (ProggyClean, ProggyForever), MIT by their own
+    authors. Their copyright lines are read from `imgui_draw.cpp` at configure time, and finding none
+    fails configure.
+  - **Not distributed:** Catch2 (tests), glslang and clang-format (build tools).
+- **One call, `lain_register_notice` (`cmake/lainNotices.cmake`), in each `add<Dep>.cmake`** beside
+  what it fetches, so a dependency that is not built registers nothing. A licence file missing from a
+  fetched source fails configure. Ceres moved onto it; FFmpeg, OpenCV and Eigen keep their own
+  notices, which carry corresponding-source and manifest facts beyond a licence.
+- **The Vulkan stack registers from the root `CMakeLists.txt`**, asked of `FetchContent_GetProperties`,
+  since archimedes fetches inside functions. Only what archimedes fetched registers, so a consumer
+  supplying its own Vulkan targets owns their notices. archimedes' and multi's versions are read from
+  their own `project()` calls.
+- **Found while building it: the keyword `LICENSE` swallowed the file name `LICENSE`.** `FILES` came
+  out empty and every verbatim notice printed its header alone; the verbatim case caught it. The
+  keyword is `SPDX`.
+- **MSVC refuses one string literal over 16380 bytes** (C2026), and the text is now about 48 KB. The
+  generated source holds it as pieces of at most 8000 bytes, each cut at a line end so that no UTF-8
+  character is split, joined once on first use. The pieces were checked to reassemble into exactly
+  what `--licenses` prints.
+- **A system package is named, not transcribed.** Verified with a stand-in `magic_enum` package
+  (`-Dmagic_enum_DIR=`). The same build had TIFF, OBJ, FFmpeg, OpenCV and Ceres off, so it also ran
+  the test with their notices absent: green.
+- **Two sabotages, both caught.** Removing tinyobjloader's registration fails *a built dependency has
+  a notice*, and a bogus registration fails *every notice is one this table expects*.
+- **Also changed:**
+  - `lain_generate_notices` reads its template beside itself, not under `CMAKE_SOURCE_DIR`, which is
+    a consumer's root when lain is bundled.
+  - CI reports `--licenses` on every leg, not only the video ones.
+  - `notices.h` no longer says FFmpeg is the only contributor.
+- **Not covered.** Each is in the Outstanding index: staged texts reach a recipient only if
+  `third-party/` ships; MoltenVK's compiled-in SPIRV-Cross has no licence text to read; and nothing
+  was built on Linux or Windows (MSVC's literal limit included), so CI's first run is owed.
+
 ## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 and 1 built)
 
 An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
@@ -15282,7 +15341,9 @@ format-check clean.
 - **Noted, not changed:** `--licenses` prints only the four dependencies that register a notice
   (FFmpeg, OpenCV, Eigen, Ceres). Statically linked MIT and zlib dependencies (stb, nlohmann, fmt,
   spdlog, GLFW, ImGui, now tinyobjloader) are listed in the README only, and ADR-0015 does not say
-  whether that is enough. A repo-wide question, not this slice's.
+  whether that is enough. A repo-wide question, not this slice's. *(Settled 2026-10-23: every built
+  dependency prints its own notice; ADR-0015, amended, and §Every built dependency's notice in
+  `--licenses`.)*
 
 **2d, built (2026-10-23): the room, planes, boxes and props**, after a no-behaviour-change hoist.
 `ctest -j8` **1430/1430** Release with video, camera and Ceres on (+12: 4 for the hoist, 4 in
@@ -15351,7 +15412,8 @@ What adopting it owes, in the commit that moves lain's archimedes pin (slice 3):
    SPIRV-Tools, SPIRV-Headers, astc-encoder), empty for a local build that lacks them, and
    `acm_stage_vulkan_runtime` stages both as `vulkan/vk_swiftshader.*.txt` beside the driver.
    Re-verified the same way. **Still owed by lain:** feeding `ACM_SWIFTSHADER_LICENSES` into its
-   `--licenses` notice, in the commit that moves its pin.
+   `--licenses` notice, in the commit that moves its pin (a `lain_register_notice` beside the Vulkan
+   stack's, in the root `CMakeLists.txt`).
 3. **lain splits the cores with the CPU device.** Uncapped, SwiftShader adds 15 threads beside
    lain's 13 pool workers on 14 logical cores; capped at 2, it adds 3. `lain::app` passes
    `RuntimeConfig::cpuDeviceThreads` to `useStagedVulkanRuntime`, which it calls after `--threads`
@@ -15686,6 +15748,16 @@ M12 §Not in this milestone.)*
 - **Encoder options in a saved document.** Saving is a host action on an image port, not a node (M3
   step 4), so nothing on disk carries them today. Trigger: an `ImageWriteNode`, which that decision
   refused for other reasons. *(§Milestone 13 slice 5.)*
+
+### Deferred — licence notices
+
+- **A packaging step**, so the texts staged in `third-party/` (the Vulkan loader, MoltenVK, OpenCV,
+  FFmpeg, Eigen) ship beside a binary. Until one exists they reach only someone given the build tree.
+  *(ADR-0015, amended 2026-10-23.)*
+- **MoltenVK's compiled-in SPIRV-Cross.** MoltenVK's release archive carries only MoltenVK's own
+  licence, so there is no SPIRV-Cross text for a notice to read. *(Same.)*
+- **CI's first run of the notices**, on Linux and on Windows, where MSVC's literal limit applies.
+  *(§Every built dependency's notice in `--licenses`.)*
 
 ### Backlog tiers — speculative and foundational
 

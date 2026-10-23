@@ -46,3 +46,20 @@ target_include_directories(imgui SYSTEM PUBLIC
 # The backends compile against the Vulkan headers + GLFW; the loader is the linking
 # executable's concern (like archimedes, imgui leaves vk* unresolved).
 target_link_libraries(imgui PUBLIC Vulkan::Headers glfw)
+
+# Dear ImGui's notice for --licenses (lainNotices.cmake). imgui_draw.cpp compiles in its default fonts,
+# MIT-licensed by their own authors, whose copyright lines are read from that file rather than copied
+# here; their absence fails configure, so a bump that reshapes them is looked at. Its imstb_*.h are
+# stb's own, MIT or public domain.
+file(STRINGS "${imgui_SOURCE_DIR}/imgui_draw.cpp" _imgui_font_copyrights REGEX "^// MIT [Ll]icense / Copyright")
+if(NOT _imgui_font_copyrights)
+	message(FATAL_ERROR "addImGui.cmake: no font copyright lines in imgui_draw.cpp; the notice would omit them")
+endif()
+list(TRANSFORM _imgui_font_copyrights REPLACE "^// MIT [Ll]icense / " "  ")
+include(lainNotices)
+lain_register_notice(imgui NAME "Dear ImGui" VERSION "${IMGUI_REF}" SPDX "MIT"
+	SOURCE_DIR "${imgui_SOURCE_DIR}" FILES LICENSE.txt
+	DETAILS
+		"Its embedded default fonts are under the same MIT terms as the text below:"
+		${_imgui_font_copyrights}
+		"Its imstb_*.h files are copies of stb (MIT OR Unlicense, Sean Barrett).")

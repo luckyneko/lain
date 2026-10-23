@@ -40,3 +40,8 @@ target_include_directories(png_static SYSTEM PUBLIC "${libpng_SOURCE_DIR}" "${li
 if(NOT TARGET PNG::png)
 	add_library(PNG::png ALIAS png_static)
 endif()
+
+# libpng's notice for --licenses (lainNotices.cmake).
+include(lainNotices)
+lain_register_notice(libpng NAME "libpng" VERSION "${LIBPNG_VER}" SPDX "libpng-2.0"
+	SOURCE_DIR "${libpng_SOURCE_DIR}" FILES LICENSE)

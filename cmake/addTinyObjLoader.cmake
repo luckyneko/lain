@@ -33,3 +33,8 @@ else()
 endif()
 
 add_library(tinyobjloader::tinyobjloader ALIAS tinyobjloader_impl)
+
+# tinyobjloader's notice for --licenses (lainNotices.cmake).
+include(lainNotices)
+lain_register_notice(tinyobjloader NAME "tinyobjloader" VERSION "${TINYOBJLOADER_TAG}" SPDX "MIT"
+	SOURCE_DIR "${tinyobjloader_SOURCE_DIR}" FILES LICENSE)

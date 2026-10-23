@@ -32,3 +32,9 @@ if(magic_enum_SOURCE_DIR AND TARGET magic_enum)
 		target_include_directories(magic_enum SYSTEM INTERFACE ${_me_inc})
 	endif()
 endif()
+
+# magic_enum's notice for --licenses (lainNotices.cmake).
+include(lainNotices)
+lain_register_notice(magic_enum NAME "magic_enum" VERSION "${MAGICENUM_VER}" SPDX "MIT"
+	SOURCE_DIR "${magic_enum_SOURCE_DIR}" FILES LICENSE
+	PACKAGE_DIR "${magic_enum_DIR}" PACKAGE_VERSION "${magic_enum_VERSION}")

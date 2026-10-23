@@ -50,6 +50,19 @@ add_subdirectory(extern/archimedes)     # acm:: Vulkan renderer (for flow + flow
 add_subdirectory(extern/multi)          # multi:: work-stealing pool (behind lain::task)
 # add_subdirectory(extern/thorax)       # deferred — no M1 consumer yet
 
+# lain's own notice and its submodules', first in --licenses (lainNotices.cmake): they are MIT too, and
+# whoever redistributes a lain binary owes them as much as any third party's. A submodule's version is
+# read from its own project() call.
+include(lainNotices)
+lain_register_notice(lain NAME "lain" VERSION "${lain_VERSION}" SPDX "MIT"
+	SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}" FILES LICENSE)
+get_directory_property(_lain_archimedes_version DIRECTORY extern/archimedes DEFINITION archimedes_VERSION)
+lain_register_notice(archimedes NAME "archimedes" VERSION "${_lain_archimedes_version}" SPDX "MIT"
+	SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/extern/archimedes" FILES LICENSE)
+get_directory_property(_lain_multi_version DIRECTORY extern/multi DEFINITION multi_VERSION)
+lain_register_notice(multi NAME "multi" VERSION "${_lain_multi_version}" SPDX "MIT"
+	SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/extern/multi" FILES LICENSE.md)
+
 # Third-party deps via cmake/addXXX.cmake FetchContent modules (prefer system
 # package, else pinned release; headers re-exposed SYSTEM under strict flags).
 include(addGLM)
@@ -64,6 +77,32 @@ include(addmagicenum)  # enum reflection behind lain::meta
 # and pulls MoltenVK on macOS.
 if(LAIN_BUILD_TESTING OR LAIN_BUILD_APPS)
 	acm_require_vulkan_runtime()
+
+	# The Vulkan stack's notices for --licenses (lainNotices.cmake), asked of FetchContent again because
+	# archimedes fetches inside functions whose scope keeps the source directories to themselves. The
+	# headers are Apache-2.0 OR MIT and printed under MIT; the loader and, on macOS, MoltenVK are
+	# Apache-2.0 only, and their texts are staged instead. Each registers only when archimedes fetched
+	# it (or, for the headers, a system package satisfied it): a consumer that supplied its own Vulkan
+	# targets owns their notices.
+	include(FetchContent)
+	FetchContent_GetProperties(VulkanHeaders)
+	if(vulkanheaders_POPULATED OR VulkanHeaders_DIR)
+		lain_register_notice(vulkan_headers NAME "Vulkan-Headers" VERSION "${ARCHIMEDES_VULKAN_SDK}" SPDX "Apache-2.0 OR MIT"
+			SOURCE_DIR "${vulkanheaders_SOURCE_DIR}" FILES LICENSE.md LICENSES/MIT.txt
+			PACKAGE_DIR "${VulkanHeaders_DIR}")
+	endif()
+	FetchContent_GetProperties(VulkanLoader)
+	if(vulkanloader_POPULATED)
+		lain_register_notice(vulkan_loader NAME "Vulkan-Loader" VERSION "${ARCHIMEDES_VULKAN_SDK}" SPDX "Apache-2.0"
+			SOURCE_DIR "${vulkanloader_SOURCE_DIR}" FILES LICENSE.txt STAGE
+			DETAILS "This software uses the Khronos Vulkan loader, built from source, linked dynamically and unmodified.")
+	endif()
+	FetchContent_GetProperties(MoltenVK)
+	if(moltenvk_POPULATED)
+		lain_register_notice(moltenvk NAME "MoltenVK" VERSION "${ARCHIMEDES_MOLTENVK_VERSION}" SPDX "Apache-2.0"
+			SOURCE_DIR "${moltenvk_SOURCE_DIR}" FILES LICENSE STAGE
+			DETAILS "This software ships MoltenVK's prebuilt release dylib, unmodified, as its Vulkan driver on macOS.")
+	endif()
 
 	# Say which assembler owns the loader's .asm, because in this tree two languages claim that
 	# extension. The loader enables ASM_MASM for its unknown-function trampolines; libpng then

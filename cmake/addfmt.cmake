@@ -33,3 +33,10 @@ if(fmt_SOURCE_DIR AND TARGET fmt)
 		target_include_directories(fmt SYSTEM INTERFACE ${_fmt_inc})
 	endif()
 endif()
+
+# fmt's notice for --licenses (lainNotices.cmake). Its licence waives the notice for compiled object
+# code, so this is the uniform rule rather than an obligation.
+include(lainNotices)
+lain_register_notice(fmt NAME "{fmt}" VERSION "${FMT_VER}" SPDX "MIT"
+	SOURCE_DIR "${fmt_SOURCE_DIR}" FILES LICENSE
+	PACKAGE_DIR "${fmt_DIR}" PACKAGE_VERSION "${fmt_VERSION}")

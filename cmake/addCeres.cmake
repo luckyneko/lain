@@ -75,20 +75,16 @@ if(_ceres_inc)
 endif()
 
 # ---- Distribution obligations -----------------------------------------------
-# BSD-3-Clause asks a redistributor to reproduce the copyright notice and licence. Ceres is linked
-# statically, so the text travels with the binaries and the notice reaches whoever runs one.
-set(_ceres_notice_dir "${CMAKE_BINARY_DIR}/third-party/ceres")
-file(MAKE_DIRECTORY "${_ceres_notice_dir}")
-configure_file("${ceres_SOURCE_DIR}/LICENSE" "${_ceres_notice_dir}/LICENSE" COPYONLY)
-
-set(_ceres_notice "${CMAKE_BINARY_DIR}/notices/ceres.txt")
-file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/notices")
-file(WRITE "${_ceres_notice}"
-"Ceres Solver ${LAIN_CERES_VERSION} — BSD-3-Clause\n"
-"  This software uses Ceres Solver (http://ceres-solver.org), linked statically and unmodified,\n"
-"  with its bundled miniglog. Built without SuiteSparse, METIS, LAPACK, CUDA or gflags.\n"
-"  Source: https://${CERES_FILE}\n"
-"  Full licence text: third-party/ceres/\n")
-set_property(GLOBAL APPEND PROPERTY LAIN_THIRD_PARTY_NOTICES "${_ceres_notice}")
+# BSD-3-Clause asks a redistributor to reproduce the copyright notice and licence in the binary's
+# materials, and the Abseil-derived headers Ceres compiles in (include/ceres/internal/fixed_array.h and
+# memory.h) are Apache-2.0, whose text Ceres' LICENSE also carries. Ceres is linked statically, so the
+# whole file is printed with --licenses (lainNotices.cmake).
+include(lainNotices)
+lain_register_notice(ceres NAME "Ceres Solver" VERSION "${LAIN_CERES_VERSION}" SPDX "BSD-3-Clause AND Apache-2.0"
+	SOURCE_DIR "${ceres_SOURCE_DIR}" FILES LICENSE
+	DETAILS
+		"This software uses Ceres Solver (http://ceres-solver.org), linked statically and unmodified,"
+		"with its bundled miniglog. Built without SuiteSparse, METIS, LAPACK, CUDA or gflags."
+		"Source: https://${CERES_FILE}")
 
 set(LAIN_CERES_FOUND TRUE)
