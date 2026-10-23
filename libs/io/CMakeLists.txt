@@ -15,6 +15,7 @@ add_library(io STATIC
 	src/localstream.cpp
 	src/uri.cpp
 	src/framepattern.cpp
+	src/documentpath.cpp
 )
 add_library(lain::io ALIAS io)
 

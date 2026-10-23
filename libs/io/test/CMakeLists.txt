@@ -6,6 +6,7 @@ add_executable(test-io
 	test_stream.cpp
 	test_uri.cpp
 	test_framepattern.cpp
+	test_documentpath.cpp
 )
 
 target_compile_features(test-io PRIVATE cxx_std_17)
