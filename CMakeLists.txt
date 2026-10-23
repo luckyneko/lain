@@ -168,6 +168,11 @@ add_subdirectory(libs/rigplan)          # rig design: specifications, rig plans,
 add_subdirectory(libs/task)
 add_subdirectory(libs/flow)             # the node-graph engine (WORK.md M1)
 add_subdirectory(libs/editor)           # document editors' undo, recents, session, unsaved guard (WORK.md M15)
+# The raster renderer (WORK.md M15, ADR-0028), only where the Vulkan runtime is set up above: it
+# compiles its GLSL at build time, and a headless consumer of lain::flow should not build a compiler.
+if(LAIN_BUILD_TESTING OR LAIN_BUILD_APPS)
+	add_subdirectory(libs/render)
+endif()
 
 # Test-support, built only when there are tests to support (see libs/testing/scratch.h).
 if(LAIN_BUILD_TESTING)

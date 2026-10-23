@@ -804,6 +804,11 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   Looking through a camera while designing is a live capture render at reduced resolution, through
   its nominal or its realised model, so what it shows is what the capture will hold. _Avoid_:
   viewport render, camera preview.
+- **Render scene** — what `lain::render` draws: meshes placed in a world, the materials their surfaces
+  show and the lights that light them, in metres, with no axis convention of its own (a view states
+  its camera in the same axes). It knows nothing of rig plans: a rig plan's realisation at one frame
+  is turned into one, and the viewport and every capture render of that frame draw the same one.
+  _Avoid_: scene graph (nothing in it is a hierarchy), world when the drawable content is meant.
 - **Visibility map** — a count over a plane of the rig plan (the floor, or a chosen height), of how
   many cameras see each cell unoccluded. Registration needs shared views, so a cell one camera sees
   is still a blind spot for it. It is geometry alone, of what never moves, read from each camera's

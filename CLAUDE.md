@@ -1400,6 +1400,38 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-23 — M15 slice 3 planned; 3a built: `lain::render`'s offscreen raster pass
+
+Slice 3 is four commits:
+- **3a**, `lain::render` and the offscreen raster pass, built here;
+- **3b**, the viewport pass and the line pass;
+- **3c**, a rig plan's scene (`lain::rigplan::scene`), with the mapping of a mesh's MTL materials that
+  2d deferred;
+- **3d**, lain's archimedes pin moving to the CPU device.
+
+**3d waits on archimedes PRs #1 and #2, still open.** They change nothing the renderer records with,
+so 3a to 3c are built against the current pin. The plan and its defaults are in WORK.md's *Slice 3
+planned*. `ctest -j8` **1443/1443** Release with video, camera and Ceres on (+11); warning-clean,
+format-check clean. The GPU cases ran on Metal through MoltenVK.
+
+- **A render scene, a pinhole view, a renderer.**
+  - `Scene` holds meshes and textures as `shared_ptr<const>`, plus materials, instances, point and
+    spot lights, ambient light and a background.
+  - `View` is a rigid pose plus `camera::Intrinsics`, so no distortion can be stated and ignored.
+  - `Renderer::upload` gives a `GpuScene`, and `render` reads back RGBA32F linear light, with alpha
+    as coverage.
+- **The SPIR-V is embedded in the library**, compiled at build time by archimedes' glslang setup
+  (`cmake/lainShaders.cmake`), so nothing is staged beside an executable. Built from source here,
+  glslang costs 7.5 s wall.
+- **Shading:** two-sided Lambert times a texture, plus Blinn-Phong, under inverse-square point and
+  spot lights. No shadows yet.
+- **Textures** are uploaded as 8-bit sRGB with mips, after lain's own `convert`, so the device
+  decodes before it filters. The renderer refuses one that states no colour space.
+- **The cases judge against lain's geometry and the shading model, never stored pixels**: coverage
+  against `camera::project`'s outline of a tilted square, exact away from the edges; lighting within
+  1e-4 at every pixel; depth order; texture orientation, repeat and decode.
+- **Six sabotages, all caught.** The half pixel dropped from `clipFromCamera` fails four cases.
+
 ### Update 2026-10-23 — every built dependency's notice in `--licenses`
 
 A repo-wide licensing question M15 slice 2c raised, decided with the repo owner and built on a branch of

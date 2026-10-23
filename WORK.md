@@ -14918,7 +14918,7 @@ clean. `flowview --licenses` prints 25 notices (48.6 KB) on macOS arm64.
   `third-party/` ships; MoltenVK's compiled-in SPIRV-Cross has no licence text to read; and nothing
   was built on Linux or Windows (MSVC's literal limit included), so CI's first run is owed.
 
-## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 and 1 built)
+## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 2 built, slice 3 in progress)
 
 An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
 and lights, a board waved through) that renders **synthetic captures**: footage in the shape M9
@@ -15003,6 +15003,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
 3. **`lain::render`**: the render scene, an offscreen raster pass, the viewport pass, the line pass.
    **lain's archimedes pin moves to the CPU device here** (see *Verified against archimedes' CPU
    device* below for what that commit owes). Proves: a plain scene renders in CI, on every leg.
+   **Planned 2026-10-23 as four commits, 3a to 3d** (*Slice 3 planned* below); **3a built
+   2026-10-23**. 3d waits on archimedes PRs #1 and #2 being merged.
 4. **The capture pass**: the intermediate image, the ray table, the remap with s × s rays. Proves the
    ADR-0028 claim: a rendered board's detected corners against lain's projection of the truth,
    through all six distortion models, near the CPU renderer's ~0.07 px.
@@ -15380,6 +15382,102 @@ format-check clean.
     pattern in the name, which would also have needed `io::frameKey`, and `lain::rigplan` links no io.
 - **Four sabotages, each caught:** the path walk skipping boxes, a Y-up mesh given the plan's
   convention, a switched-off room surface still judged, and a clip's rate dropped on write.
+
+### Slice 3 planned (2026-10-23), and 3a built
+
+Four commits. Defaults recorded here, as slices 1 and 2's were, so they can be objected to first.
+**archimedes' CPU-device PRs (#1 and #2) are still open**, so the pin cannot move yet; but they change
+nothing the renderer records with (their diff touches `acmVulkan.cmake`, `acmDeviceInfo.h`,
+`acmInstance.h` and `acmRuntime.h` only), so 3a to 3c are built against the current pin and carry over.
+
+- **3a: `lain::render` and the offscreen raster pass.** A render scene, a pinhole view, a renderer
+  that uploads a scene once and draws it from any number of views, reading each picture back.
+  Built; see below.
+- **3b: the viewport pass and the line pass.** Overlay segments (frustums, cones, paths, the grid),
+  drawn depth-tested in the same rendering scope as the scene, since archimedes discards a depth
+  attachment after its pass; 1 px, since neither SwiftShader nor MoltenVK has `wideLines`. The
+  viewport's target is display-encoded (lain's sRGB curve applied in the shader into an 8-bit UNORM
+  texture, since ImGui composes in sRGB-encoded UNORM), multisampled where the device allows, and
+  finished for sampling so a pane can show it. Showing it in a pane without a CPU round trip is
+  `lain::gui`'s change, and lands with its first caller in slice 8. Proves: a line behind a wall is
+  hidden and one in front of it drawn; the encoding is lain's sRGB curve.
+- **3c: a rig plan's scene.** A new `lain::rigplan::scene` (rigplan, render, `io::mesh`,
+  `io::image`): load a rig plan's assets once (every prop's mesh or clip, every image texture,
+  reporting what will not load), then turn a realisation at a frame into a render scene. The room's
+  present surfaces become inward-facing quads, with planes, boxes, props (`planFromProp`, then the
+  clip frame `clipFrame` picks), and lights from their specifications and realised poses. Materials
+  map as follows: a colour to a colour; a picture to a texture whose coordinates run in metres over
+  its tile; a procedural texture baked by `bakeProceduralTexture` at a texel density recorded there
+  and measured in slice 4. A mesh's MTL materials (`Kd`, `map_Kd`, `Ks`, `Ns`) map too; this is the
+  mapping 2d deferred to its first caller. A texture file that states no colour space is taken as
+  sRGB with a log line, since the renderer refuses one untagged. Movers are not in the rig plan
+  yet, so the frame picks only a clip frame for now. Proves the scene's contents on the CPU, plus
+  one render of a furnished plan.
+- **3d: lain's archimedes pin moves to the CPU device**, once the PRs merge. It owes the five items
+  in *Verified against archimedes' CPU device* below: the SwiftShader notice in `--licenses`, the
+  core split through `RuntimeConfig::cpuDeviceThreads`, `--device gpu|cpu` in `lain::app`, and the
+  renderer limits (already in ADR-0028). It also proves the slice's claim: `test-render` runs on the
+  CPU device on every CI leg, where today it skips.
+
+#### Sub-slice 3a built (2026-10-23)
+
+`libs/render` (`lain::render`, linking archimedes, camera, image, math and mesh), built only where
+the Vulkan runtime is set up (tests or apps). `ctest -j8` **1443/1443** Release with video, camera and
+Ceres on (+11); warning-clean, format-check clean. `test-render`'s six GPU cases ran on Metal through
+MoltenVK.
+
+- **`render::Scene`**: meshes and textures held as `shared_ptr<const>`, since one loaded asset backs
+  every frame's scene and a clip's frames swap in without a copy. It also holds materials, instances
+  (a mesh with a 4x4 placement, which need not be rigid, and one scene material per material of the
+  mesh), point and spot lights, an ambient light and a background. `validate(scene)` gives one
+  problem per fault.
+- **`render::View`** is a pinhole: a rigid pose of lain's camera frame, plus `camera::Intrinsics` and
+  `camera::ImageGeometry`, so no distortion can be stated and silently ignored. `clipFromCamera`
+  puts lain's pixel `u` (a centre) at framebuffer `u + 0.5`, where the rasteriser samples it.
+- **`render::Renderer`**: one per device, pipelines built once. `upload(scene)` returns a `GpuScene`
+  (move-only); `render(gpuScene, view)` returns RGBA32F linear light, with alpha as coverage.
+  Drawing is synchronous (`submitSync`) and takes the `GpuScene` non-const, since it rewrites the
+  per-view constants.
+- **Defaults taken:**
+  - **The SPIR-V is embedded in the library**, compiled at build time by archimedes' own glslang
+    setup (`cmake/lainShaders.cmake`, `lain_embed_shaders`), so nothing is staged beside an
+    executable and lain pins no second compiler. Here there is no system compiler, so glslang is
+    built from source: 40 s of CPU, 7.5 s wall on 14 cores.
+  - **Shading** is two-sided Lambert times the texture, plus Blinn-Phong (a shininess of 0 is no
+    highlight), under inverse-square point and spot lights (a smoothstep between the cones) and the
+    ambient light. No shadows. A mesh without normals is shaded by its face.
+  - **Textures** are uploaded as 8-bit sRGB with mips, narrowed once by lain's own `convert`, so
+    the device decodes before it filters. Repeat is `fract`, with the unrepeated coordinates'
+    gradients, so the mip level holds across the seam. archimedes' sampler clamps, which leaves a
+    half-texel seam at each repeat. An untagged texture is refused.
+  - **No multisampling in the offscreen pass**: a pixel samples its centre, which the coverage case
+    pins exactly. The capture pass (slice 4) integrates a pixel's footprint with s × s rays.
+  - **Each drawing allocates its target and readback.** Caching them by size waits for a
+    measurement that says it matters.
+- **The cases, against lain's geometry and the shading model**, not against stored pixels:
+  - a tilted, stretched square seen off-centre covers exactly the pixel centres its corners'
+    `camera::project` outline encloses, with none wrong among the pixels more than 1e-3 px from an
+    edge;
+  - the nearer of two surfaces wins whichever is drawn first;
+  - a lit plane matches the inverse square and the angle of incidence at every pixel, within 1e-4,
+    with normals, without them, and with normals facing away; a light behind the plane lights
+    nothing;
+  - a spot's full, partial and dark regions and a Blinn-Phong highlight agree to within 1e-4 of
+    the light with no cone;
+  - a texture is upright, repeats, and is decoded (128 reads as 0.2159, not 0.502); a linear
+    texture comes back within half an 8-bit sRGB step;
+  - refusals: an invalid scene, an invalid view, and a scene uploaded by another renderer.
+- **Found by the first run:** the spot case's relative error was 1.7e-3 near the outer edge of the
+  cone, where the expected light tends to zero and a difference of float cosines dominates. That
+  was the measure's fault, not the renderer's: the case now measures the error against the light
+  with no cone, and is within 1e-4.
+- **Six sabotages, all caught:**
+  - dropping the half pixel from `clipFromCamera` fails four cases;
+  - one-sided lighting fails the lit case;
+  - no v flip fails the texture case;
+  - no depth test fails the depth case;
+  - 1 / d falloff fails the lit and spot cases;
+  - uploading textures as UNORM (no decode) fails the texture case.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
