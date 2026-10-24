@@ -14918,7 +14918,7 @@ clean. `flowview --licenses` prints 25 notices (48.6 KB) on macOS arm64.
   `third-party/` ships; MoltenVK's compiled-in SPIRV-Cross has no licence text to read; and nothing
   was built on Linux or Windows (MSVC's literal limit included), so CI's first run is owed.
 
-## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 3 built, 4a and 4b built)
+## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 3 built, 4a to 4c built)
 
 An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
 and lights, a board waved through) that renders **synthetic captures**: footage in the shape M9
@@ -15010,7 +15010,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    ADR-0028 claim: a rendered board's detected corners against lain's projection of the truth,
    through all six distortion models, near the CPU renderer's ~0.07 px. *(That figure was measured
    on a pinhole only; 4c measures each model's own CPU baseline.)* **Planned 2026-10-24 as four
-   commits, 4a to 4d** (*Slice 4 planned* below); **4a and 4b built 2026-10-24.**
+   commits, 4a to 4d** (*Slice 4 planned* below); **4a to 4c built 2026-10-24**, the ADR-0028 claim
+   measured in 4c.
 5. **The sensor model, movers and the capture writer**: the board and prop movers on their keyed
    paths (slice 1's plan put them here), and `rigplan render <plan> --out <capture> [--seed
    --deviation --noise]`, streaming one camera-frame at a time with sensor, encode and write on the
@@ -15818,7 +15819,7 @@ here, as slices 1 to 3's were, so they can be objected to.
     - coverage is exact away from edges;
     - tiled equals untiled away from edges;
     - silhouette error is measured.
-- **4c: the ADR-0028 claim.**
+- **4c: the ADR-0028 claim** (built, below).
   - `test-camera-capture` in `plugins/camera/test`, built where both `lain::render` and the OpenCV
     plugin exist, Release only, with the m × s sweep under a hidden tag.
   - Each model at 960×720, with M9's board at the centre and toward a corner, through the capture pass
@@ -15973,6 +15974,72 @@ format-check clean. Every case ran on Metal and on the CPU device.
     next's reads. The wait between submissions covers it in practice.
   - The other three guard against float disagreements larger than any these cameras produce.
   - All four stay, as their comments say.
+
+#### Sub-slice 4c built (2026-10-24): the ADR-0028 claim, measured
+
+`test-camera-capture` (`plugins/camera/test/test_capture.cpp`), built where `lain::render` and the
+OpenCV plugin both are, Release only. The capture cases run on every kind of device the machine offers.
+`ctest -j8` **1486/1486** Release with video, camera and Ceres on (+3). With all three off, 1349/1349:
+the executable is not built there. Warning-clean, format-check clean.
+
+- **The scene.**
+  - M9's board (`testboard.h`: 7×5, ARUCO_5X5_100, 24 mm squares, a raster of 80 px a square with a
+    20 px margin) on `testscene.h`'s square, spanning the raster from its first texel's edge to its
+    last's. So texel centres sit where `texturedscene.h`'s sheet puts them.
+  - Ambient light 1 on a white material, so a texel sends its decoded value. The background is code
+    128, decoded.
+  - A capture is encoded RGBA32F Linear → Gray32F → sRGB → Gray8 before `board::detect`, since the
+    detector narrows a float picture without encoding it.
+  - Each of the six strong cameras (`testcameras.h` at 960×720, the fisheye at about 168°) sees two
+    poses. One is ahead, turned 0.35 rad and −0.2 rad as M9's scene is. The other is halfway toward the
+    lower right corner, facing the camera and turned a little. Squares are about 62 px across ahead,
+    as in M9's scene.
+- **Found by the first run: the scene, not the renderer, set the error.** At 45 px squares and a raster
+  of 60 px a square, every mean was 0.11 to 0.23 px, and the CPU baseline no better. Matching M9's
+  geometry (62 px squares, 80 px a square) brought both renderers to M9's accuracy. So the raster is
+  magnified both in the intermediate image (m = 2 doubles 62) and between the CPU's 4×4 rays.
+- **Measured** (mean / worst in px; Metal and the CPU device agree to 0.002):
+
+  | Model | Capture, ahead | Capture, toward the corner | CPU, ahead | CPU, toward the corner |
+  |---|---|---|---|---|
+  | none | 0.073 / 0.18 | 0.076 / 0.21 (17 corners) | 0.083 / 0.18 | 0.094 / 0.26 (17) |
+  | Brown-Conrady 5 | 0.071 / 0.17 | 0.070 / 0.25 | 0.076 / 0.21 | 0.075 / 0.18 |
+  | inverse Brown-Conrady 5 | 0.069 / 0.20 | 0.086 / 0.37 (15) | 0.089 / 0.21 | 0.099 / 0.17 (15) |
+  | modified Brown-Conrady 5 | 0.070 / 0.16 | 0.068 / 0.24 | 0.076 / 0.21 | 0.076 / 0.17 |
+  | rational 8 | 0.085 / 0.19 | 0.071 / 0.15 | 0.071 / 0.19 | 0.089 / 0.20 |
+  | Kannala-Brandt 4 | 0.071 / 0.23 | 0.078 / 0.22 | 0.067 / 0.18 | 0.077 / 0.33 |
+
+  - **The capture's means are 0.068 to 0.086 px, the CPU baseline's 0.067 to 0.099**, so the capture
+    pass adds nothing a detector sees. Each renderer's worst corner falls at a different pose: the
+    detector's outliers, not the renderer's.
+  - **M9's own pinhole scene through the capture pass** gives mean 0.067 and worst 0.177, against M9's
+    0.068 and 0.136 from an OpenCV warp.
+- **Asserted:**
+  - at least 12 corners;
+  - a mean under 0.1 px (M9's bound, which holds everywhere);
+  - a worst corner under 0.4 px. M9's 0.25 does not hold for either renderer at a pose the frame cuts.
+  - M9's scene keeps M9's own bounds.
+- **The m × s sweep** (`[.sweep]`, hidden; 288 captures over both devices in 36 s): the mean of means
+  over every model, pose and device.
+
+  | | s = 1 | s = 2 | s = 4 |
+  |---|---|---|---|
+  | m = 1 | 0.114 | 0.081 | 0.073 |
+  | m = 1.5 | 0.146 | 0.091 | 0.078 |
+  | m = 2 | 0.130 | 0.086 | 0.074 |
+  | m = 3 | 0.127 | 0.086 | 0.071 |
+
+  - **The rays a pixel decide it.** One ray aliases, two nearly do the job, four reach the CPU
+    baseline.
+  - **At s = 4 the oversampling barely matters for a board**, which is texture. So m = 1 would serve a
+    board-only capture at a quarter of the texels.
+  - **The defaults stand at s = 4 and m = 2**, since 4b showed a silhouette is placed to half a texel,
+    which m = 1 would double.
+- **Two sabotages, both caught:**
+  - **a table built through a pinhole, its self-check fooled the same way**, fails every distorted
+    model: corners 1.2 to 33 px off;
+  - **every ray taken from its pixel's corner instead of blended** fails the six-model case and M9's
+    scene: a 0.7 px slip.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
@@ -16212,7 +16279,7 @@ row here**. A row is cheap to delete and expensive to leave.
 - **M15 — rig design: rig plans and synthetic captures.** Grilled 2026-10-21 to 10-22 with two ADRs
   (0028, 0029). **Slices 0 to 3 built 2026-10-22 to 10-24** (`lain::editor`; `lain::rigplan` and its
   documents; `io::mesh` and the OBJ plugin; `lain::render` on the CPU device, CI green on every
-  platform). **Slice 4 planned 2026-10-24, 4a and 4b built.** Slice 0's gui-mode check of the unsaved-changes
+  platform). **Slice 4 planned 2026-10-24, 4a to 4c built.** Slice 0's gui-mode check of the unsaved-changes
   modal is owed. Ten slices, 0 to 9, on `feature/M15`; the build order and every exclusion are in
   M15's own sections. *(Milestone 15.)*
 - **archimedes' CPU device**, which M15 renders its CI captures on: **adopted by M15 slice 3d

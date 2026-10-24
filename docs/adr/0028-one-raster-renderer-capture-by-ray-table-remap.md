@@ -50,7 +50,12 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
   through a pinhole only, by an OpenCV warp of the board (`test_charuco.cpp`'s angled scene), and no
   test detected a board through the other five models. M15 slice 4 measures each model's own CPU
   baseline with `texturedscene.h` and judges both renderers against the truth, since the two
-  average light differently: the CPU in 8-bit sRGB codes, the GPU in linear light.)*
+  average light differently: the CPU in 8-bit sRGB codes, the GPU in linear light.)* *(Measured
+  2026-10-24, M15 sub-slice 4c: through all six models, with the board ahead and toward a corner, the
+  capture's mean corner error is 0.068 to 0.086 px and the CPU baseline's 0.067 to 0.099, on Metal and
+  on the CPU device alike. M9's own pinhole scene through the capture pass gives 0.067 px against
+  M9's 0.068. The claim holds. The rays a pixel decide the result, one ray aliasing and four reaching
+  the baseline; at four the oversampling barely matters for a board, which is texture.)*
 - **"Finer than the camera's angular resolution" is a stated rule** *(added 2026-10-24)*: every step
   of one camera pixel, in any direction, spans at least m texels of the intermediate image (m = 2 by
   default). That is the least singular value of the pixel-to-face Jacobian, taken per pixel. The

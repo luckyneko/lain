@@ -107,3 +107,26 @@ if(TARGET lain::camera::opencv AND TARGET lain::camera::ceres)
 	lain_opencv_stage_runtime(test-camera-calibration-e2e)
 	catch_discover_tests(test-camera-calibration-e2e TEST_PREFIX "(camera::calibration) " PROPERTIES PROCESSORS 4)
 endif()
+
+# The capture pass's claim (ADR-0028, M15 slice 4c): a board rendered through each of the six
+# distortion models, by lain::render on every kind of device the machine offers and by
+# texturedscene.h on the CPU, detected where lain projects the truth. Release only. Built only where
+# the renderer and the OpenCV plugin both are.
+if(TARGET lain::render AND TARGET lain::camera::opencv)
+	add_executable(test-camera-capture test_capture.cpp)
+	target_compile_features(test-camera-capture PRIVATE cxx_std_17)
+	target_include_directories(test-camera-capture PRIVATE "${lain_SOURCE_DIR}/libs/camera/test" "${lain_SOURCE_DIR}/libs/render/test")
+	target_link_libraries(test-camera-capture PRIVATE
+		lain::render
+		lain::camera::backends
+		lain::testing
+		lain::warnings
+		Catch2::Catch2WithMain
+	)
+	lain_opencv_stage_runtime(test-camera-capture)
+	acm_stage_vulkan_runtime(test-camera-capture)
+	if(ACM_SWIFTSHADER_ICD)
+		target_compile_definitions(test-camera-capture PRIVATE LAIN_EXPECT_CPU_DEVICE)
+	endif()
+	catch_discover_tests(test-camera-capture TEST_PREFIX "(camera::capture) " ${LAIN_TEST_DL_PATHS})
+endif()

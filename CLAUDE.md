@@ -1400,6 +1400,38 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-24 — M15 slice 4, sub-slice 4c built: the ADR-0028 claim holds
+
+A board rendered through each of the six distortion models is detected where lain projects the truth,
+as accurately as the CPU renderer manages. The capture pass is run on Metal and on the CPU device, and
+the baseline is `texturedscene.h`'s ray per sub-sample. The test is `test-camera-capture`
+(`plugins/camera/test`), built where `lain::render` and the OpenCV plugin both are, Release only.
+`ctest -j8` **1486/1486** Release with video, camera and Ceres on (+3), **1349/1349** with all three
+off; warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 4c built*.
+
+- **Measured with M9's board**, its squares about 62 px across, ahead and toward a corner:
+  - **the capture's mean corner error is 0.068 to 0.086 px; the CPU baseline's is 0.067 to 0.099**;
+  - Metal and the CPU device agree to 0.002;
+  - M9's own pinhole scene through the capture pass gives 0.067 px, against M9's 0.068.
+
+  Each renderer's worst corner falls at a different pose, so those outliers are the detector's. The
+  test asserts a mean under 0.1 and a worst corner under 0.4; M9's 0.25 holds for neither renderer
+  where the frame cuts the board.
+- **Found by the first run: the scene set the error, not the renderer.** At 45 px squares on a raster of
+  60 px a square, both renderers sat at 0.11 to 0.23 px. Matching M9's geometry brought both to M9's
+  accuracy.
+- **Encoded before detecting**: RGBA32F Linear → Gray32F → sRGB → Gray8, since `board::detect` narrows a
+  float picture without encoding it.
+- **The m × s sweep** (hidden, `[.sweep]`):
+  - one ray a pixel aliases (0.11 to 0.15 px);
+  - four reach the baseline (0.071 to 0.078);
+  - at four, the oversampling barely matters for a board, which is texture.
+
+  The defaults stay at s = 4 and m = 2, since a silhouette is placed to half a texel (4b).
+- **Two sabotages, both caught**: a table built through a pinhole with its self-check fooled the same
+  way (corners 1.2 to 33 px off), and every ray taken from its pixel's corner (0.7 px).
+- ADR-0028 records the result. Left of slice 4: **4d**, the procedural bake density.
+
 ### Update 2026-10-24 — M15 slice 4, sub-slice 4b built: the capture pass on the device
 
 `Renderer::upload(RayTable)` → `GpuRayTable` and `Renderer::capture(scene, table, CaptureView)`, over
