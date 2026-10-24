@@ -24,7 +24,9 @@ namespace lain::rigplan
 
 	// How finely a procedural texture is baked: this many texels to its finest noise cell, which is two
 	// across the narrowest soft edge of its discs (a tenth of a cell wide). Capped so that no baked
-	// side is longer than kMaxBakedTexels, which every device lain renders on can hold.
+	// side is longer than kMaxBakedTexels, which every device lain renders on can hold. Measured enough
+	// (M15 slice 4d, test-camera-capture): doubling it moves a capture by under half a grey level and
+	// changes how many of its SIFT features the exact texture also gives by at most 4%.
 	inline constexpr double kBakedTexelsPerCell = 20;
 	inline constexpr int kMaxBakedTexels = 8192;
 

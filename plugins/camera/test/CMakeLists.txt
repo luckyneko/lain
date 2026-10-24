@@ -118,6 +118,7 @@ if(TARGET lain::render AND TARGET lain::camera::opencv)
 	target_include_directories(test-camera-capture PRIVATE "${lain_SOURCE_DIR}/libs/camera/test" "${lain_SOURCE_DIR}/libs/render/test")
 	target_link_libraries(test-camera-capture PRIVATE
 		lain::render
+		lain::rigplan::scene # its bake density, which 4d measures
 		lain::camera::backends
 		lain::testing
 		lain::warnings

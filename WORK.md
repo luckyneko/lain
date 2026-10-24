@@ -14918,7 +14918,7 @@ clean. `flowview --licenses` prints 25 notices (48.6 KB) on macOS arm64.
   `third-party/` ships; MoltenVK's compiled-in SPIRV-Cross has no licence text to read; and nothing
   was built on Linux or Windows (MSVC's literal limit included), so CI's first run is owed.
 
-## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 3 built, 4a to 4c built)
+## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 4 built)
 
 An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
 and lights, a board waved through) that renders **synthetic captures**: footage in the shape M9
@@ -15010,8 +15010,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    ADR-0028 claim: a rendered board's detected corners against lain's projection of the truth,
    through all six distortion models, near the CPU renderer's ~0.07 px. *(That figure was measured
    on a pinhole only; 4c measures each model's own CPU baseline.)* **Planned 2026-10-24 as four
-   commits, 4a to 4d** (*Slice 4 planned* below); **4a to 4c built 2026-10-24**, the ADR-0028 claim
-   measured in 4c.
+   commits, 4a to 4d** (*Slice 4 planned* below); **all four built 2026-10-24, slice 4 COMPLETE**:
+   the ADR-0028 claim holds (4c), and the procedural bake density is enough (4d).
 5. **The sensor model, movers and the capture writer**: the board and prop movers on their keyed
    paths (slice 1's plan put them here), and `rigplan render <plan> --out <capture> [--seed
    --deviation --noise]`, streaming one camera-frame at a time with sensor, encode and write on the
@@ -15564,7 +15564,7 @@ format-check clean. The render case ran on Metal.
   `proceduralGrey` at `((i + 0.5) / d, (j + 0.5) / d)` metres from the surface's corner.
   - **Density:** 20 texels to the finest cell, two across the narrowest soft disc edge (a tenth of a
     cell). It is capped so no side passes 8192 texels, which every device lain renders on holds.
-    Slice 4 measures whether detection sees the density.
+    Slice 4 measures whether detection sees the density. *(Measured in 4d: it does not.)*
   - **Added beyond the plan: the seed is mixed with the surface's identity** (FNV-1a over a stable
     key, then splitmix64), so four walls of one material are four patterns. M9 found that repeated
     patterns make wrong tracks, and a targetless method would match repeated walls as one. The repo
@@ -15825,7 +15825,7 @@ here, as slices 1 to 3's were, so they can be objected to.
   - Each model at 960×720, with M9's board at the centre and toward a corner, through the capture pass
     and through `texturedscene.h`. Both are measured against the truth, then bounds are set.
   - M9's own pinhole scene is compared with its 0.068 / 0.136 px.
-- **4d: the procedural bake density** 3c left owed: a plane at the bake density and at twice it, with
+- **4d: the procedural bake density** (built, below) 3c left owed: a plane at the bake density and at twice it, with
   8-bit differences and SIFT agreement recorded.
 
 #### Sub-slice 4a built (2026-10-24)
@@ -16040,6 +16040,43 @@ the executable is not built there. Warning-clean, format-check clean.
     model: corners 1.2 to 33 px off;
   - **every ray taken from its pixel's corner instead of blended** fails the six-model case and M9's
     scene: a 0.7 px slip.
+
+#### Sub-slice 4d built (2026-10-24): the procedural bake density (**slice 4 COMPLETE**)
+
+The measurement 3c left owed: does SIFT see the density `rigplan::scene` bakes a procedural surface at
+(`kBakedTexelsPerCell`, 20 texels to the finest noise cell)? **It does not.** The density stands, and
+`scene.h` says so beside the constant. The measurement is a fourth case in `test-camera-capture`.
+`ctest -j8` **1487/1487** Release with video, camera and Ceres on (+1), and **1349/1349** with all three
+off. Warning-clean, format-check clean.
+
+- **The scene.** rigplan's default procedural texture (cell 0.04 m) on a plane turned 0.3 rad. It is seen
+  by the pinhole and by Brown-Conrady 5, at 960×720, from two distances:
+  - **near** (0.6 m): a pixel is a fortieth of a cell and the bake is magnified, which is where its
+    density shows;
+  - **far** (3 m): a pixel is an eighth of a cell.
+
+  The plane is captured baked at the density and at twice it, through the capture pass on both
+  devices, and drawn exactly per ray by `texturedscene.h`. They are compared as grey levels, linear
+  light times 255, which is the quantity the CPU averages, with SIFT features matched within 0.5 px
+  and a quarter of their size.
+- **Measured, the same on Metal and the CPU device:**
+  - **baked against twice the density:** 0.31 to 0.47 grey levels RMS, worst 3 to 7. 85 to 100% of the
+    baked capture's features are in the finer one;
+  - **against the exact texture:** 0.57 to 1.0 RMS baked, and 0.45 to 1.08 finer. Finer is a little
+    nearer near and a little farther far;
+  - **the share of features the exact texture also finds** is 0.95 to 0.98 baked and 0.94 to 1.0 finer.
+
+  So the density is not what parts a capture from its texture: what does is the 8-bit sRGB texture store
+  and averaging light rather than grey codes, which doubling the density leaves alone. Near, SIFT finds
+  only 34 to 55 features, its finest scale against 1.6 cm cells.
+- **Asserted:**
+  - more than 30 features;
+  - baked against finer under 1.0 grey level RMS, and over 80% of features found in both;
+  - baked against exact under 1.5 RMS;
+  - the two shares found in the exact texture within 0.06 of each other.
+- **Sabotage, caught:** baking at a quarter of the density fails all four comparisons in all eight runs,
+  so the case can tell an inadequate density apart.
+- **Slice 4 is complete.** Next is slice 5: the sensor model, the movers, and the capture writer.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
@@ -16279,7 +16316,7 @@ row here**. A row is cheap to delete and expensive to leave.
 - **M15 — rig design: rig plans and synthetic captures.** Grilled 2026-10-21 to 10-22 with two ADRs
   (0028, 0029). **Slices 0 to 3 built 2026-10-22 to 10-24** (`lain::editor`; `lain::rigplan` and its
   documents; `io::mesh` and the OBJ plugin; `lain::render` on the CPU device, CI green on every
-  platform). **Slice 4 planned 2026-10-24, 4a to 4c built.** Slice 0's gui-mode check of the unsaved-changes
+  platform). **Slice 4 built 2026-10-24** (the capture pass; the ADR-0028 claim holds). Slice 0's gui-mode check of the unsaved-changes
   modal is owed. Ten slices, 0 to 9, on `feature/M15`; the build order and every exclusion are in
   M15's own sections. *(Milestone 15.)*
 - **archimedes' CPU device**, which M15 renders its CI captures on: **adopted by M15 slice 3d

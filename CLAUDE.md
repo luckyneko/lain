@@ -1400,6 +1400,26 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-24 — M15 slice 4, sub-slice 4d built: the bake density is enough (**slice 4 COMPLETE**)
+
+The measurement 3c left owed: does SIFT see the density `rigplan::scene` bakes a procedural surface at
+(20 texels to the finest noise cell)? **It does not**, so the density stands; `scene.h` says so beside
+the constant. A fourth case in `test-camera-capture`. `ctest -j8` **1487/1487** Release with video,
+camera and Ceres on (+1), **1349/1349** with all three off; warning-clean, format-check clean.
+
+- **The setup.** A procedural plane, seen by the pinhole and by Brown-Conrady 5 near (a pixel a fortieth
+  of a cell, the bake magnified) and far. It is captured at the density and at twice it on both
+  devices, and drawn exactly per ray on the CPU.
+- **Doubling the density moves a capture by 0.31 to 0.47 grey levels RMS**, and 85 to 100% of features
+  are found in both.
+- **Against the exact texture**, the share of features also found is 0.95 to 0.98 at the density and
+  0.94 to 1.0 at twice it. What parts a capture from its texture is the 8-bit sRGB texture store and
+  averaging light, which the density leaves alone.
+- **Sabotage, caught:** a quarter of the density fails every comparison in all eight runs.
+- **Slice 4 is complete:** the capture pass is built (4a, 4b), its claim holds through all six models
+  (4c), and the bake density is enough (4d). Next is slice 5: the sensor model, the movers, and the
+  capture writer.
+
 ### Update 2026-10-24 — M15 slice 4, sub-slice 4c built: the ADR-0028 claim holds
 
 A board rendered through each of the six distortion models is detected where lain projects the truth,
@@ -1430,7 +1450,7 @@ off; warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 4c bu
   The defaults stay at s = 4 and m = 2, since a silhouette is placed to half a texel (4b).
 - **Two sabotages, both caught**: a table built through a pinhole with its self-check fooled the same
   way (corners 1.2 to 33 px off), and every ray taken from its pixel's corner (0.7 px).
-- ADR-0028 records the result. Left of slice 4: **4d**, the procedural bake density.
+- ADR-0028 records the result. Left of slice 4: **4d**, the procedural bake density. *(Built the same day; see above.)*
 
 ### Update 2026-10-24 — M15 slice 4, sub-slice 4b built: the capture pass on the device
 

@@ -2,7 +2,8 @@
 // capture pass on a device and by texturedscene.h's ray per sub-sample on the CPU, is detected where
 // lain projects the truth, through all six distortion models. Each renderer is judged against the
 // truth, never against the other: the CPU averages 8-bit sRGB codes and the GPU linear light, so
-// their edges differ while their corners need not. Release only, since the CPU draws 11 million rays
+// their edges differ while their corners need not. And whether the density rigplan::scene bakes a
+// procedural surface at is one SIFT can see (4d). Release only, since the CPU draws 11 million rays
 // a picture.
 
 #include "gpu.h"		   // libs/render/test
@@ -14,17 +15,22 @@
 #include <lain/camera/backends.h>
 #include <lain/camera/board/detection.h>
 #include <lain/camera/board/rendering.h>
+#include <lain/camera/feature/features.h>
 #include <lain/camera/projection.h>
 #include <lain/image/convert.h>
+#include <lain/image/procedural.h>
 #include <lain/image/transfercurve.h>
 #include <lain/render/capture.h>
 #include <lain/render/renderer.h>
+#include <lain/rigplan/scene.h>
 
 #include <catch2/catch_message.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -309,5 +315,176 @@ TEST_CASE("how the corner error follows the oversampling and the rays a pixel", 
 				}
 			}
 		}
+	}
+}
+
+// --- 4d: the procedural bake density -----------------------------------------------------------
+
+// A procedural plane, `width` x `height` metres, its corner at `cameraFromPlane`'s origin and its sides
+// along that pose's X (right) and Y (down), facing the camera. On the device it is the texture baked at
+// `texelsPerMetre`, sampled as rigplan::scene samples a bake: texel (i, j) is the texture at
+// ((i + 0.5) / density, (j + 0.5) / density) metres from the corner, lit to send its value.
+static render::Scene proceduralScene(const image::ProceduralTexture& texture, double width, double height, double texelsPerMetre,
+									 const math::RigidTransformd& cameraFromPlane)
+{
+	const int texelsAcross = int(std::lround(width * texelsPerMetre));
+	const int texelsDown = int(std::lround(height * texelsPerMetre));
+	math::Mat4d planeFromMesh{1.0};
+	planeFromMesh[0][0] = width / 2;
+	planeFromMesh[1][1] = height / 2;
+	planeFromMesh[3][0] = width / 2;
+	planeFromMesh[3][1] = height / 2;
+
+	render::Scene scene;
+	scene.meshes = {render::testing::square()};
+	scene.textures = {std::make_shared<const image::Image>(image::bakeProceduralTexture(texture, texelsAcross, texelsDown, texelsPerMetre))};
+	render::Material material;
+	material.diffuse = image::ColorRGBf{1.0f, 1.0f, 1.0f};
+	material.texture = 0;
+	scene.materials = {material};
+	render::Instance instance;
+	instance.mesh = 0;
+	instance.materials = {0};
+	instance.worldFromMesh = cameraFromPlane.matrix() * planeFromMesh;
+	scene.instances = {instance};
+	scene.ambient = image::ColorRGBf{1.0f, 1.0f, 1.0f};
+	scene.background = image::ColorRGBf{128.0f / 255, 128.0f / 255, 128.0f / 255}; // texturedscene.h's, as a grey level
+	return scene;
+}
+
+// A capture as grey levels, linear light times 255: the quantity texturedscene.h averages, since it
+// treats the procedural texture's grey as the value a pixel records.
+static image::Image greyLevels(render::Renderer& renderer, const render::Scene& scene, const CameraModel& model)
+{
+	render::RayTableResult table = render::RayTable::build(model);
+	REQUIRE(table.table.has_value());
+	render::UploadResult uploaded = renderer.upload(scene);
+	REQUIRE(uploaded.problems.empty());
+	render::GpuRayTableResult rays = renderer.upload(*table.table);
+	REQUIRE(rays.problems.empty());
+	const render::RenderResult picture = renderer.capture(*uploaded.scene, *rays.table, {});
+	REQUIRE(picture.problems.empty());
+	image::Image grey(picture.image.width(), picture.image.height(), image::PixelFormat::Gray8, image::ColorSpace::sRGB);
+	const float* light = reinterpret_cast<const float*>(picture.image.data());
+	for (std::size_t p = 0; p < std::size_t(grey.width()) * std::size_t(grey.height()); ++p)
+		grey.data()[p] = std::uint8_t(std::clamp(std::lround(light[4 * p] * 255.0f), 0L, 255L));
+	return grey;
+}
+
+struct GreyDifference
+{
+	double rms = 0;
+	int worst = 0;
+};
+
+static GreyDifference difference(const image::Image& a, const image::Image& b)
+{
+	GreyDifference d;
+	const std::size_t n = std::size_t(a.width()) * std::size_t(a.height());
+	for (std::size_t p = 0; p < n; ++p)
+	{
+		const int e = int(a.data()[p]) - int(b.data()[p]);
+		d.rms += double(e) * e;
+		d.worst = std::max(d.worst, std::abs(e));
+	}
+	d.rms = std::sqrt(d.rms / double(n));
+	return d;
+}
+
+// How many of `a`'s features `b` found too: one within `radius` px, its size within a quarter of
+// a's. The rest are where the two pictures disagree enough to move a detector.
+static double agreement(const feature::Features& a, const feature::Features& b, double radius)
+{
+	if (a.size() == 0)
+		return 0;
+	std::size_t found = 0;
+	for (const feature::Keypoint& k : a.keypoints)
+	{
+		for (const feature::Keypoint& m : b.keypoints)
+		{
+			if (math::length(k.pixel - m.pixel) <= radius && std::abs(m.size - k.size) <= 0.25 * k.size)
+			{
+				++found;
+				break;
+			}
+		}
+	}
+	return double(found) / double(a.size());
+}
+
+static feature::Features featuresOf(const image::Image& grey)
+{
+	const feature::ExtractResult result = feature::extract(grey);
+	REQUIRE(result.ok());
+	return result.features;
+}
+
+TEST_CASE("a procedural surface baked at rigplan's density captures as it does at twice it", "[camera][capture][gpu]")
+{
+#ifndef NDEBUG
+	SKIP("Release only: the CPU draws the texture exactly, 11 million rays a picture");
+#endif
+	ensureBackends();
+	acm::Device& device = render::testing::device();
+	render::Renderer renderer(device);
+	REQUIRE(renderer.problems().empty());
+
+	// rigplan::scene's default texture and its bake density, against twice it and against the texture
+	// drawn exactly. Near, a camera pixel is a fortieth of the finest noise cell and the bake is
+	// magnified, which is where its density shows; far, five times as far, a pixel is an eighth of a cell.
+	const image::ProceduralTexture texture{11, 0.04};
+	const double density = rigplan::kBakedTexelsPerCell / texture.cell;
+	struct Setting
+	{
+		std::string name;
+		int model;
+		double distance;
+		double width, height;
+	};
+	const std::vector<Setting> settings = {{"pinhole, near", 0, 0.6, 1.2, 1.0},
+										   {"pinhole, far", 0, 3.0, 6.0, 4.5},
+										   {"Brown-Conrady, near", 1, 0.6, 1.4, 1.1},
+										   {"Brown-Conrady, far", 1, 3.0, 7.0, 5.5}};
+	for (const Setting& setting : settings)
+	{
+		const CameraModel model = modelOf(render::testing::strongCamera(setting.model, 1.5));
+		const math::Quatd turn = math::angleAxis(0.3, math::Vec3d{0, 1, 0});
+		const math::Vec3d centre{0.0, 0.0, setting.distance};
+		const math::RigidTransformd cameraFromPlane{turn, centre - turn * math::Vec3d{setting.width / 2, setting.height / 2, 0.0}};
+
+		const image::Image baked = greyLevels(renderer, proceduralScene(texture, setting.width, setting.height, density, cameraFromPlane), model);
+		const image::Image finer =
+			greyLevels(renderer, proceduralScene(texture, setting.width, setting.height, 2 * density, cameraFromPlane), model);
+		// The CPU's exact drawing does not depend on the device, so it is drawn once a setting.
+		static std::map<std::string, image::Image> exact;
+		if (exact.count(setting.name) == 0)
+		{
+			synthetic::Scene cpu;
+			cpu.planes.push_back({cameraFromPlane.translation(), cameraFromPlane.rotate(math::Vec3d{1, 0, 0}),
+								  cameraFromPlane.rotate(math::Vec3d{0, 1, 0}), setting.width, setting.height, texture});
+			exact.emplace(setting.name, synthetic::render(cpu, model, math::RigidTransformd{}, 0, 4));
+		}
+		const image::Image& drawnExactly = exact.at(setting.name);
+
+		const GreyDifference bakedToFiner = difference(baked, finer);
+		const GreyDifference bakedToExact = difference(baked, drawnExactly);
+		const GreyDifference finerToExact = difference(finer, drawnExactly);
+		const feature::Features fBaked = featuresOf(baked), fFiner = featuresOf(finer), fExact = featuresOf(drawnExactly);
+		const double bakedAgrees = agreement(fBaked, fExact, 0.5), finerAgrees = agreement(fFiner, fExact, 0.5);
+		INFO(setting.name << ": grey levels baked to finer rms " << bakedToFiner.rms << " worst " << bakedToFiner.worst
+						  << "; baked to exact rms " << bakedToExact.rms << "; finer to exact rms " << finerToExact.rms << ". Features "
+						  << fBaked.size() << ", " << fFiner.size() << ", " << fExact.size() << "; baked found in finer "
+						  << agreement(fBaked, fFiner, 0.5) << "; found in exact: baked " << bakedAgrees << ", finer " << finerAgrees);
+		// Measured on Metal and the CPU device: baked to finer 0.31 to 0.47 grey levels rms, 85 to 100% of the
+		// baked capture's features within 0.5 px in the finer; to the exact texture 0.57 to 1.0 rms baked and
+		// 0.45 to 1.08 finer; and the share of features the exact texture also finds is 0.95 to 0.98 baked,
+		// 0.94 to 1.0 finer. So the density is not what parts the capture from the texture: what does is the
+		// 8-bit sRGB texture store and the averaging of light rather than grey codes, which doubling it
+		// leaves alone. Near, a pixel being a fortieth of a cell, SIFT finds only 34 to 55 features.
+		CHECK(fBaked.size() > 30);
+		CHECK(bakedToFiner.rms < 1.0);
+		CHECK(agreement(fBaked, fFiner, 0.5) > 0.8);
+		CHECK(bakedToExact.rms < 1.5);
+		CHECK(std::abs(bakedAgrees - finerAgrees) < 0.06);
 	}
 }
