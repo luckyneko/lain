@@ -1,0 +1,146 @@
+#version 450
+
+// A capture render's remap (ADR-0028): each camera pixel adds the bilinear blend, from one tile of the
+// intermediate image, of every one of its s x s rays that the tile takes. One dispatch per tile and
+// band; the host divides by s * s once every tile has added its share. Its rules are RayTable's
+// (capture.h, capture.cpp), stated again here: a ray is its pixel's four corner rays blended; its face
+// is its major axis, ties to the earlier face; a tile takes it when the floor of where it lands lies
+// in the tile's interior. The blocks must match state.h's.
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform Tile
+{
+	vec4 face;	  // x: focal length, yz: principal point, both in face texels
+	ivec4 texels; // the tile's first texel column and row, then its last, of the face
+	ivec4 open;	  // whether its left, top, right and bottom edges are open
+	ivec4 pixels; // the camera pixels it serves: first column and row, then end
+	ivec4 rule;	  // x: its face's axis (FaceAxis), y: 1 when faces are chosen by major axis, z: s, w: image width
+}
+tile;
+
+layout(set = 0, binding = 1) uniform Band
+{
+	ivec4 rows; // x: the band's first camera row, y: its end
+}
+band;
+
+layout(set = 0, binding = 2, rgba32f) uniform readonly image2D intermediate;
+
+layout(std430, set = 0, binding = 3) readonly buffer Corners
+{
+	vec4 corners[]; // the band's pixel-corner rays, its rows and one more, width + 1 a row
+};
+
+layout(std430, set = 0, binding = 4) buffer Sums
+{
+	vec4 sums[]; // the band's pixels, each the sum so far of its rays' blends
+};
+
+const int kFront = 0;
+const int kRight = 1;
+const int kLeft = 2;
+const int kDown = 3;
+const int kUp = 4;
+
+int majorAxis(vec3 d)
+{
+	int axis = kFront;
+	float best = d.z;
+	if (d.x > best)
+	{
+		axis = kRight;
+		best = d.x;
+	}
+	if (-d.x > best)
+	{
+		axis = kLeft;
+		best = -d.x;
+	}
+	if (d.y > best)
+	{
+		axis = kDown;
+		best = d.y;
+	}
+	if (-d.y > best)
+		axis = kUp;
+	return axis;
+}
+
+// `d` in the frame of the face along `axis`: choosing and negating components, as capture.cpp's inFace.
+vec3 inFace(int axis, vec3 d)
+{
+	if (axis == kRight)
+		return vec3(-d.z, d.y, d.x);
+	if (axis == kLeft)
+		return vec3(d.z, d.y, -d.x);
+	if (axis == kDown)
+		return vec3(d.x, -d.z, d.y);
+	if (axis == kUp)
+		return vec3(d.x, d.z, -d.y);
+	return d;
+}
+
+bool accepts(ivec2 at)
+{
+	return (tile.open.x != 0 || at.x >= tile.texels.x) && (tile.open.z != 0 || at.x < tile.texels.z) &&
+		   (tile.open.y != 0 || at.y >= tile.texels.y) && (tile.open.w != 0 || at.y < tile.texels.w);
+}
+
+vec4 texel(ivec2 at)
+{
+	// A ray lands at least the guard band inside its face, so this only keeps a read inside the tile.
+	return imageLoad(intermediate, clamp(at, ivec2(0), tile.texels.zw - tile.texels.xy));
+}
+
+void main()
+{
+	const int first = max(tile.pixels.y, band.rows.x);
+	const int end = min(tile.pixels.w, band.rows.y);
+	const ivec2 pixel = ivec2(tile.pixels.x, first) + ivec2(gl_GlobalInvocationID.xy);
+	if (pixel.x >= tile.pixels.z || pixel.y >= end)
+		return;
+
+	const int width = tile.rule.w;
+	const int row = pixel.y - band.rows.x;
+	const vec3 c00 = corners[row * (width + 1) + pixel.x].xyz;
+	const vec3 c10 = corners[row * (width + 1) + pixel.x + 1].xyz;
+	const vec3 c01 = corners[(row + 1) * (width + 1) + pixel.x].xyz;
+	const vec3 c11 = corners[(row + 1) * (width + 1) + pixel.x + 1].xyz;
+
+	const int s = tile.rule.z;
+	vec4 sum = vec4(0.0);
+	for (int j = 0; j < s; ++j)
+	{
+		const float b = (float(j) + 0.5) / float(s);
+		for (int k = 0; k < s; ++k)
+		{
+			const float a = (float(k) + 0.5) / float(s);
+			// Not normalised: choosing a face and projecting onto it are both ratios.
+			const vec3 top = c00 + a * (c10 - c00);
+			const vec3 bottom = c01 + a * (c11 - c01);
+			const vec3 d = top + b * (bottom - top);
+			const int axis = tile.rule.y != 0 ? majorAxis(d) : kFront;
+			if (axis != tile.rule.x)
+				continue;
+			const vec3 f = inFace(axis, d);
+			const vec2 q = tile.face.x * (f.xy / f.z) + tile.face.yz;
+			const vec2 low = floor(q);
+			const ivec2 at = ivec2(low);
+			if (!accepts(at))
+				continue;
+			// Texel i of the face sits at face coordinate i. Written a + t (b - a), so equal texels blend
+			// to themselves exactly.
+			const vec2 t = q - low;
+			const ivec2 local = at - tile.texels.xy;
+			const vec4 t00 = texel(local);
+			const vec4 t10 = texel(local + ivec2(1, 0));
+			const vec4 t01 = texel(local + ivec2(0, 1));
+			const vec4 t11 = texel(local + ivec2(1, 1));
+			const vec4 upper = t00 + t.x * (t10 - t00);
+			const vec4 lower = t01 + t.x * (t11 - t01);
+			sum += upper + t.y * (lower - upper);
+		}
+	}
+	sums[row * width + pixel.x] += sum;
+}

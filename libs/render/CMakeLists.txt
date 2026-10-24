@@ -22,6 +22,7 @@ lain_embed_shaders(render NAMESPACE lain::render SHADERS
 	shaders/scene.frag
 	shaders/lines.vert
 	shaders/lines.frag
+	shaders/capture.comp
 	INCLUDES shaders/frame.glsl
 )
 

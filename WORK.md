@@ -14918,7 +14918,7 @@ clean. `flowview --licenses` prints 25 notices (48.6 KB) on macOS arm64.
   `third-party/` ships; MoltenVK's compiled-in SPIRV-Cross has no licence text to read; and nothing
   was built on Linux or Windows (MSVC's literal limit included), so CI's first run is owed.
 
-## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 3 built, 4a built)
+## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 3 built, 4a and 4b built)
 
 An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
 and lights, a board waved through) that renders **synthetic captures**: footage in the shape M9
@@ -15010,7 +15010,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    ADR-0028 claim: a rendered board's detected corners against lain's projection of the truth,
    through all six distortion models, near the CPU renderer's ~0.07 px. *(That figure was measured
    on a pinhole only; 4c measures each model's own CPU baseline.)* **Planned 2026-10-24 as four
-   commits, 4a to 4d** (*Slice 4 planned* below); **4a built 2026-10-24.**
+   commits, 4a to 4d** (*Slice 4 planned* below); **4a and 4b built 2026-10-24.**
 5. **The sensor model, movers and the capture writer**: the board and prop movers on their keyed
    paths (slice 1's plan put them here), and `rigplan render <plan> --out <capture> [--seed
    --deviation --noise]`, streaming one camera-frame at a time with sensor, encode and write on the
@@ -15791,9 +15791,10 @@ here, as slices 1 to 3's were, so they can be objected to.
   4. **The face pass is aliased at silhouettes.** It has no MSAA, so a geometric edge is placed to
      ±0.5 texel, ±0.5 / m camera px. ADR-0028's "biases no ground truth" holds for texture features,
      such as a board on a sheet, and not for silhouettes. 4b measures it.
-  5. **One submit per tile is required.** `beginRendering` transitions from UNDEFINED with no source
+  5. **A submit per tile is required.** `beginRendering` transitions from UNDEFINED with no source
      stage, so re-rendering a tile texture in one command buffer races the previous dispatch's reads.
-     A depth attachment cannot be fenced through archimedes at all.
+     A depth attachment cannot be fenced through archimedes at all. *(4b found it is two a tile: see
+     *Sub-slice 4b built*.)*
   6. **Nothing connects a `RealisedCamera` to a render yet.** `planFromCamera` is lain's camera frame
      already, so it is a capture's `worldFromCamera` unchanged. Wiring it is slice 5's, with its
      writer.
@@ -15805,11 +15806,11 @@ here, as slices 1 to 3's were, so they can be objected to.
     coordinates with open outer edges. So every sub-sample has exactly one tile, which draws its
     footprint, without the CPU and GPU having to agree.
   - The table measures its own interpolation error and refuses one above a tolerance.
-- **4b: the capture pass on the device.**
+- **4b: the capture pass on the device** (built, below).
   - `Renderer::upload(RayTable)` and `Renderer::capture`, over `shaders/capture.comp`.
-  - One `submitSync` per tile: render the tile, transition it, then one dispatch per band adding each
-    sub-sample's manual bilinear blend (`imageLoad`; RGBA32F filtering is not guaranteed) into a
-    banded accumulator.
+  - Each tile drawn, then remapped, in two waited submissions. *(Corrected in 4b: the plan said one,
+    and one raced.)* Each band adds each sub-sample's manual bilinear blend (`imageLoad`; RGBA32F
+    filtering is not guaranteed) into its accumulator.
   - **Cases on both devices:**
     - a pinhole at m = 1 and s = 1 equals `render()`;
     - a lit plane through a distorted model matches the analytic shading;
@@ -15893,6 +15894,85 @@ no Debug tree here.
   - The guard band keeps every ray inside its face.
 
   They stay, as `capture.cpp` says, and 4b's device cases are where they can be seen.
+
+#### Sub-slice 4b built (2026-10-24)
+
+The capture pass on the device: `Renderer::upload(RayTable)` → `GpuRayTable`, `Renderer::capture(scene,
+table, CaptureView)` → the `RenderResult` contract, and `shaders/capture.comp`. `ctest -j8` **1483/1483**
+Release with video, camera and Ceres on (+7), and **1349/1349** with all three off. Warning-clean,
+format-check clean. Every case ran on Metal and on the CPU device.
+
+- **What a capture does.** A `GpuRayTable` holds each band's corners, sums and constants, and one
+  RGBA32F texture, a storage image as well as a target, sized for the largest tile. Each tile is a
+  `View`:
+  - its pose is `worldFromCamera · cameraFromFace`;
+  - its principal point is moved to the tile;
+  - its near plane is scaled by its face's `nearScale`;
+  - it is drawn through the existing scene pipeline, reusing `GpuScene`'s frame constants and sets as
+    `render()` does.
+
+  The remap adds each ray's manual bilinear blend, through `imageLoad`, into the band's sums. The host
+  divides by s² after the last tile: divided, not multiplied by a reciprocal, so a pixel every ray of
+  which sees one value keeps it exactly.
+- **Found: one submission a tile raced, on both devices.** The plan had a tile drawn and remapped in
+  one waited submission, ordered by `CopySrc`'s finish and then a transition to `General`, the only
+  chain archimedes offers to compute.
+  - archimedes records it in a valid order: `vkCmdEndRendering`, then COLOR_ATTACHMENT_OUTPUT to
+    TRANSFER, then TRANSFER to COMPUTE.
+  - Even so, some rays read texels not yet drawn, on MoltenVK and on SwiftShader. Pixels came back
+    missing one or two of their sixteen rays, in a different place on each device.
+  - **Each tile is now two waited submissions**, a drawing and then a remap. That costs one more queue
+    wait a tile and needs no chain at all.
+  - The plan's 4b bullet is corrected in place. The finding joins the archimedes todo in the
+    Outstanding index.
+- **Measured on both devices**, at 160×120 with the strong camera set:
+
+  | Case | Measured | Bound |
+  |---|---|---|
+  | Pinhole at one ray a pixel against `render()` | 9.8e-5, 1.1e-4 | 3e-4 |
+  | Lit plane through every model | 3.4e-5 to 1.3e-4 (the fisheye) | 3e-4 |
+  | Fisheye in a turned box room, away from its creases | 3.1e-5 to 3.6e-5 | 2e-4 |
+  | 102 tiles against 5 | 1.4e-5 to 4.8e-5 | 1e-4 |
+
+  - The pinhole is limited by the bilinear blend of a curved light between texels half a pixel apart.
+  - The room is the same whether its five faces are five tiles or 102, and it shows no seam where they
+    meet.
+  - Tiled and untiled differ only through float: each tile draws the plane's 200 m triangles through
+    its own clip mapping.
+  - **A square 1 m across is exact away from its edges.** Over 18647 to 18735 pixels per model, its
+    light and coverage are exactly the surface's or the background's.
+  - **Silhouette coverage error at the square's edges** is 0.13 (Brown-Conrady) to 0.34 (modified
+    Brown-Conrady): an edge placed to half a texel, a quarter of a pixel at m = 2. That is the
+    silhouette aliasing recorded at planning time. A board on a sheet is texture and does not feel it.
+  - **The near plane:** in a room nearer than the near plane in the middle of each wall and farther
+    toward its corners, 12042 pixels see only walls farther than 1.05 m, and none is uncovered.
+- **Found by the room case, in the test:** a wall crease can pass between two pixels' rays, so a pixel's
+  own rays do not find it. Creases are now found from each pixel's rays and its neighbours'.
+- **The cases**, seven:
+  - the pinhole against `render()`;
+  - the lit plane through every model, every pixel covered exactly;
+  - the fisheye room at two tilings;
+  - the near plane at every angle off a face's axis;
+  - the square's exact coverage, with the silhouettes measured;
+  - fine tiles against coarse;
+  - refusals: another renderer's scene, another renderer's table, a depth range, a pose.
+- **Eleven sabotages; seven caught:**
+  - bilinear weights swapped fails 3 cases;
+  - texel centres half a texel off fails 4;
+  - a face's sign flipped fails 3;
+  - dividing by s, not s², fails 4;
+  - one near plane for every face fails the near-plane case;
+  - one submission a tile fails 6, which is the race again.
+
+  A first cut of the half-texel sabotage, `floor(q + 0.5)`, passed every case, rightly: it only changes
+  which two texels the blend extrapolates from, and the line through them gives the same value. A
+  real slip moves q.
+- **Four not caught on either device:** no accumulator barrier, edges never open in the shader, no
+  widening of membership, and unwidened pixel rectangles.
+  - The barrier is what Vulkan's memory model asks for between one submission's storage writes and the
+    next's reads. The wait between submissions covers it in practice.
+  - The other three guard against float disagreements larger than any these cameras produce.
+  - All four stay, as their comments say.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
@@ -16132,7 +16212,7 @@ row here**. A row is cheap to delete and expensive to leave.
 - **M15 — rig design: rig plans and synthetic captures.** Grilled 2026-10-21 to 10-22 with two ADRs
   (0028, 0029). **Slices 0 to 3 built 2026-10-22 to 10-24** (`lain::editor`; `lain::rigplan` and its
   documents; `io::mesh` and the OBJ plugin; `lain::render` on the CPU device, CI green on every
-  platform). **Slice 4 planned 2026-10-24, 4a built.** Slice 0's gui-mode check of the unsaved-changes
+  platform). **Slice 4 planned 2026-10-24, 4a and 4b built.** Slice 0's gui-mode check of the unsaved-changes
   modal is owed. Ten slices, 0 to 9, on `feature/M15`; the build order and every exclusion are in
   M15's own sections. *(Milestone 15.)*
 - **archimedes' CPU device**, which M15 renders its CI captures on: **adopted by M15 slice 3d
@@ -16243,10 +16323,15 @@ M12 §Not in this milestone.)*
      a tile at most 4096 a side, a band at most 2^27 bytes.
   2. **A `Sampled` finish and a `ShaderReadOnly` transition whose barriers reach the compute stage.**
      Both are fragment-only (`RenderTarget.cpp`, `Convert.cpp`), so a capture renders with `CopySrc`,
-     transitions to `General`, and reads with `imageLoad`.
+     transitions to `General`, and reads with `imageLoad`. **And that chain, recorded in one command
+     buffer, did not order the reads after the drawing** on MoltenVK or SwiftShader (M15 sub-slice
+     4b), though archimedes records its barriers in a valid order. So a capture draws and remaps
+     each tile in two waited submissions. Whether the cause is the drivers or the chain wants its
+     own archimedes test: a compute read of a target finished with `CopySrc` in the same command
+     buffer.
 
-  **Once they land**, lain drops the fixed limits (sizing tiles and bands to the device) and the
-  storage-image chain (sampling a `Sampled` target directly). **Trigger:** the first capture the fixed
+  **Once they land**, lain drops the fixed limits (sizing tiles and bands to the device), the
+  storage-image chain (sampling a `Sampled` target directly), and the second submission a tile. **Trigger:** the first capture the fixed
   limits measurably slow, or a second compute pass that reads a rendered target. *(M15 §Slice 4
   planned; ADR-0028.)*
 - **MSAA in a capture's face pass.** Without it a silhouette is placed to ±0.5 / m camera px; a texture

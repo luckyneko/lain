@@ -109,6 +109,14 @@ namespace lain::render
 	GpuScene& GpuScene::operator=(GpuScene&&) noexcept = default;
 	GpuScene::~GpuScene() = default;
 
+	GpuRayTable::GpuRayTable(std::unique_ptr<detail::RayTableState> state)
+		: m(std::move(state))
+	{
+	}
+	GpuRayTable::GpuRayTable(GpuRayTable&&) noexcept = default;
+	GpuRayTable& GpuRayTable::operator=(GpuRayTable&&) noexcept = default;
+	GpuRayTable::~GpuRayTable() = default;
+
 	Renderer::Renderer(acm::Device& device)
 		: m(std::make_unique<detail::RendererState>())
 	{
@@ -135,6 +143,15 @@ namespace lain::render
 		m->sceneFragment = device.createShader(sceneFrag());
 		m->lineVertex = device.createShader(linesVert());
 		m->lineFragment = device.createShader(linesFrag());
+		m->captureLayout = device.createDescriptorSetLayout({
+			{0, acm::DescriptorType::UniformBuffer, acm::ShaderStage::Compute},
+			{1, acm::DescriptorType::UniformBuffer, acm::ShaderStage::Compute},
+			{2, acm::DescriptorType::StorageImage, acm::ShaderStage::Compute},
+			{3, acm::DescriptorType::StorageBuffer, acm::ShaderStage::Compute},
+			{4, acm::DescriptorType::StorageBuffer, acm::ShaderStage::Compute},
+		});
+		m->captureShader = device.createShader(captureComp());
+		m->capturePipeline = device.createComputePipeline(m->captureShader, m->captureLayout);
 
 		// A pipeline is built against a target's formats, not its size, so a 1 x 1 one stands for
 		// every view's.
@@ -145,7 +162,8 @@ namespace lain::render
 
 		for (const acm::Error& error : {m->sceneLayout.error(), m->lineLayout.error(), m->sampler.error(), m->sceneVertex.error(),
 										m->sceneFragment.error(), m->lineVertex.error(), m->lineFragment.error(), target.error(),
-										m->pipeline.error()})
+										m->pipeline.error(), m->captureLayout.error(), m->captureShader.error(),
+										m->capturePipeline.error()})
 		{
 			if (error)
 			{
@@ -155,6 +173,8 @@ namespace lain::render
 		}
 		if (!m->pipeline.valid())
 			m->problems.push_back("the device refused the scene pipeline");
+		else if (!m->capturePipeline.valid())
+			m->problems.push_back("the device refused the capture pipeline");
 	}
 
 	Renderer::Renderer(Renderer&&) noexcept = default;
@@ -384,6 +404,208 @@ namespace lain::render
 			return {{}, {"the picture could not be read back"}};
 		std::memcpy(picture.data(), mapped, bytes);
 		readback.unmap();
+		return {std::move(picture), {}};
+	}
+
+	GpuRayTableResult Renderer::upload(const RayTable& table)
+	{
+		if (!m->problems.empty())
+			return {std::nullopt, m->problems};
+
+		acm::Device& device = *m->device;
+		auto gpu = std::make_unique<detail::RayTableState>();
+		gpu->owner = m.get();
+		gpu->width = table.model().image().width;
+		gpu->height = table.model().image().height;
+		gpu->samples = table.settings().samples;
+		gpu->cube = table.cube();
+		gpu->faces = table.faces();
+		gpu->tiles = table.tiles();
+
+		const auto refused = [](const std::string& what, const acm::Error& error)
+		{ return GpuRayTableResult{std::nullopt, {string::format("the device refused {}: {}", what, error.message())}}; };
+
+		// One texture for every tile, drawn into in turn, so it is as large as the largest. A storage image
+		// too, since the remap reads it as one: archimedes orders a compute read after a drawing only that way.
+		acm::Extent2D largest{1, 1};
+		for (const CaptureTile& tile : gpu->tiles)
+		{
+			largest.width = std::max(largest.width, std::uint32_t(tile.last.x - tile.first.x + 1));
+			largest.height = std::max(largest.height, std::uint32_t(tile.last.y - tile.first.y + 1));
+		}
+		acm::TextureConfig storage;
+		storage.storage = true;
+		gpu->texels = device.createTexture(kColourFormat, largest, storage);
+		if (!gpu->texels.valid())
+			return refused("the intermediate image", gpu->texels.error());
+		gpu->target = device.createRenderTarget(gpu->texels, acm::RenderTargetConfig{acm::RenderTargetFinish::CopySrc, true});
+		if (!gpu->target.valid())
+			return refused("the intermediate image's target", gpu->target.error());
+		gpu->tileConstants = device.createBuffer(sizeof(detail::TileConstants), acm::BufferUsage::Uniform);
+		if (!gpu->tileConstants.valid())
+			return refused("the tiles' constants", gpu->tileConstants.error());
+
+		// The corners and sums in bands, each within the least storage buffer every device binds.
+		const std::size_t row = std::size_t(gpu->width) + 1;
+		const std::uint32_t bandRows = RayTable::bandRowsFor(gpu->width);
+		for (std::uint32_t first = 0; first < gpu->height; first += bandRows)
+		{
+			detail::RayTableState::Band band;
+			band.first = first;
+			band.end = std::min(first + bandRows, gpu->height);
+			const std::size_t corners = (std::size_t(band.end - band.first) + 1) * row;
+			std::vector<float> values(4 * corners, 1.0f);
+			for (std::size_t c = 0; c < corners; ++c)
+			{
+				const math::Vec3f& d = table.corners()[std::size_t(band.first) * row + c];
+				values[4 * c + 0] = d.x;
+				values[4 * c + 1] = d.y;
+				values[4 * c + 2] = d.z;
+			}
+			const std::string name = string::format("band {} of the ray table", gpu->bands.size());
+			band.corners = device.createBuffer(values.size() * sizeof(float), acm::BufferUsage::Storage);
+			if (!band.corners.valid())
+				return refused(name, band.corners.error());
+			if (const acm::Error error = band.corners.write(values.data(), values.size() * sizeof(float)))
+				return refused(name, error);
+			band.sums = device.createBuffer(std::size_t(band.end - band.first) * gpu->width * 4 * sizeof(float), acm::BufferUsage::Storage);
+			if (!band.sums.valid())
+				return refused(name + "'s sums", band.sums.error());
+			const detail::BandConstants constants{{std::int32_t(band.first), std::int32_t(band.end), 0, 0}};
+			band.constants = device.createBuffer(sizeof(constants), acm::BufferUsage::Uniform);
+			if (!band.constants.valid())
+				return refused(name + "'s constants", band.constants.error());
+			if (const acm::Error error = band.constants.write(&constants, sizeof(constants)))
+				return refused(name + "'s constants", error);
+			band.set = device.createDescriptorSet(m->captureLayout);
+			if (!band.set.valid())
+				return refused(name + "'s descriptors", band.set.error());
+			band.set.setBuffer(0, gpu->tileConstants);
+			band.set.setBuffer(1, band.constants);
+			band.set.setStorageImage(2, gpu->texels);
+			band.set.setBuffer(3, band.corners);
+			band.set.setBuffer(4, band.sums);
+			gpu->bands.push_back(std::move(band));
+		}
+		return {GpuRayTable{std::move(gpu)}, {}};
+	}
+
+	RenderResult Renderer::capture(GpuScene& scene, GpuRayTable& table, const CaptureView& view)
+	{
+		if (!m->problems.empty())
+			return {{}, m->problems};
+		std::vector<std::string> problems = validate(view);
+		if (scene.m->owner != m.get())
+			problems.push_back("the scene was uploaded by another renderer");
+		if (table.m->owner != m.get())
+			problems.push_back("the ray table was uploaded by another renderer");
+		if (!problems.empty())
+			return {{}, std::move(problems)};
+
+		acm::Device& device = *m->device;
+		detail::SceneState& gpu = *scene.m;
+		detail::RayTableState& rays = *table.m;
+
+		// Every pixel's sum starts at nothing; each tile adds the rays it takes.
+		for (detail::RayTableState::Band& band : rays.bands)
+		{
+			void* sums = band.sums.map();
+			if (!sums)
+				return {{}, {"the capture's sums could not be cleared"}};
+			std::memset(sums, 0, std::size_t(band.end - band.first) * rays.width * 4 * sizeof(float));
+			band.sums.unmap();
+		}
+
+		for (const CaptureTile& tile : rays.tiles)
+		{
+			if (tile.pixelFirst.x >= tile.pixelEnd.x || tile.pixelFirst.y >= tile.pixelEnd.y)
+				continue; // no ray of the image reaches it
+			const CaptureFace& face = rays.faces[tile.face];
+
+			// The tile is a pinhole turned to look along its face's axis, its principal point moved to the
+			// tile, and its near plane pulled in as far as the widest ray its face serves needs.
+			View tileView;
+			tileView.worldFromCamera = view.worldFromCamera * math::RigidTransformd{math::quat_cast(cameraFromFace(face.axis)), math::Vec3d{0.0}};
+			tileView.image = {std::uint32_t(tile.last.x - tile.first.x + 1), std::uint32_t(tile.last.y - tile.first.y + 1)};
+			tileView.intrinsics = {face.focal, face.focal, face.principalPoint.x - tile.first.x, face.principalPoint.y - tile.first.y};
+			tileView.near = view.near * face.nearScale;
+			tileView.far = view.far;
+			const detail::FrameConstants frame = detail::frameConstants(gpu, tileView, false);
+			if (const acm::Error error = gpu.frame.write(&frame, sizeof(frame)))
+				return {{}, {"the device refused a tile's view: " + error.message()}};
+
+			const detail::TileConstants constants{
+				{float(face.focal), float(face.principalPoint.x), float(face.principalPoint.y), 0.0f},
+				{tile.first.x, tile.first.y, tile.last.x, tile.last.y},
+				{tile.openLeft ? 1 : 0, tile.openTop ? 1 : 0, tile.openRight ? 1 : 0, tile.openBottom ? 1 : 0},
+				{tile.pixelFirst.x, tile.pixelFirst.y, tile.pixelEnd.x, tile.pixelEnd.y},
+				{std::int32_t(face.axis), rays.cube ? 1 : 0, std::int32_t(rays.samples), std::int32_t(rays.width)},
+			};
+			if (const acm::Error error = rays.tileConstants.write(&constants, sizeof(constants)))
+				return {{}, {"the device refused a tile's constants: " + error.message()}};
+
+			// Each tile is drawn and waited for, then remapped and waited for: two submissions, not one.
+			// Re-rendering the one texture in a single command buffer would race the previous tile's
+			// remap, and archimedes cannot fence a depth attachment. And within one command buffer,
+			// CopySrc's finish followed by a transition to General (the only chain archimedes offers to
+			// the compute stage) did not, measured, order the remap's reads after the drawing on MoltenVK
+			// or on the CPU device: some rays read texels not yet drawn. The wait between the two does.
+			const acm::Extent2D extent{tileView.image.width, tileView.image.height};
+			acm::Error recording;
+			acm::Error submitted = device.submitSync(
+				[&](acm::CommandBuffer& cmd)
+				{
+					recording = cmd.beginRendering(rays.target, gpu.background.r, gpu.background.g, gpu.background.b, 0.0f);
+					if (recording)
+						return;
+					cmd.setViewportAndScissor(extent);
+					recording = detail::recordScene(cmd, m->pipeline, gpu, gpu.sets);
+					cmd.endRendering();
+				});
+			if (recording)
+				return {{}, {"the device refused a tile's drawing: " + recording.message()}};
+			if (submitted)
+				return {{}, {"the device failed a tile's drawing: " + submitted.message()}};
+
+			submitted = device.submitSync(
+				[&](acm::CommandBuffer& cmd)
+				{
+					// The previous tile's additions, made visible to this one's, and the drawing to its reads.
+					for (const detail::RayTableState::Band& band : rays.bands)
+						cmd.bufferBarrier(band.sums, acm::ShaderStage::Compute, acm::ShaderStage::Compute);
+					cmd.transitionImage(rays.texels, acm::ImageLayout::TransferSrc, acm::ImageLayout::General);
+					cmd.bindComputePipeline(m->capturePipeline);
+					for (const detail::RayTableState::Band& band : rays.bands)
+					{
+						const int first = std::max(tile.pixelFirst.y, int(band.first));
+						const int end = std::min(tile.pixelEnd.y, int(band.end));
+						if (first >= end)
+							continue;
+						cmd.bindComputeDescriptorSet(m->capturePipeline, band.set);
+						cmd.dispatch(std::uint32_t(tile.pixelEnd.x - tile.pixelFirst.x + 7) / 8, std::uint32_t(end - first + 7) / 8);
+					}
+				});
+			if (submitted)
+				return {{}, {"the device failed a tile's remap: " + submitted.message()}};
+		}
+
+		image::Image picture(int(rays.width), int(rays.height), image::PixelFormat::RGBA32F, image::ColorSpace::Linear,
+							 image::AlphaMode::Straight);
+		float* out = reinterpret_cast<float*>(picture.data());
+		// Divided rather than multiplied by a reciprocal, so a pixel every ray of which sees one value
+		// keeps it exactly, whatever s is.
+		const float perPixel = float(rays.samples * rays.samples);
+		for (detail::RayTableState::Band& band : rays.bands)
+		{
+			const float* sums = static_cast<const float*>(band.sums.map());
+			if (!sums)
+				return {{}, {"the capture could not be read back"}};
+			const std::size_t values = std::size_t(band.end - band.first) * rays.width * 4;
+			float* at = out + std::size_t(band.first) * rays.width * 4;
+			for (std::size_t v = 0; v < values; ++v)
+				at[v] = sums[v] / perPixel;
+			band.sums.unmap();
+		}
 		return {std::move(picture), {}};
 	}
 } // namespace lain::render

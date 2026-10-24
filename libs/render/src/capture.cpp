@@ -112,6 +112,19 @@ namespace lain::render
 		return own - other;
 	}
 
+	std::vector<std::string> validate(const CaptureView& view)
+	{
+		std::vector<std::string> problems;
+		const math::Quatd& q = view.worldFromCamera.rotation();
+		const math::Vec3d& t = view.worldFromCamera.translation();
+		if (!(std::isfinite(q.w) && std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(t.x) &&
+			  std::isfinite(t.y) && std::isfinite(t.z)))
+			problems.push_back("the capture's pose is not finite");
+		if (!(std::isfinite(view.near) && std::isfinite(view.far) && view.near > 0 && view.near < view.far))
+			problems.push_back("the capture's depth range is not 0 < near < far");
+		return problems;
+	}
+
 	bool CaptureTile::accepts(const math::Vec2d& texel) const
 	{
 		const double u = std::floor(texel.x);

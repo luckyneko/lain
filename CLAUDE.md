@@ -1400,6 +1400,49 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-24 — M15 slice 4, sub-slice 4b built: the capture pass on the device
+
+`Renderer::upload(RayTable)` → `GpuRayTable` and `Renderer::capture(scene, table, CaptureView)`, over
+`shaders/capture.comp`. A capture returns render()'s contract: RGBA32F linear light at the camera's
+size, with alpha as the share of a pixel's rays that met a surface. `ctest -j8` **1483/1483** Release
+with video, camera and Ceres on (+7), **1349/1349** with all three off; warning-clean, format-check
+clean. Every case ran on Metal and on the CPU device. Full notes in WORK.md's *Sub-slice 4b built*.
+
+- **Each tile is a pinhole `View`**: turned to its face, its principal point moved to the tile, its
+  near plane scaled by `nearScale`. It is drawn through the existing scene pipeline into one RGBA32F
+  storage texture.
+- **The remap adds each ray's manual bilinear blend** (`imageLoad`) into banded sums. The host divides
+  by s², dividing rather than multiplying by a reciprocal, so a pixel every ray of which sees one value
+  keeps it exactly.
+- **Found: drawing and remapping in one submission raced, on both devices.** archimedes' `CopySrc`
+  finish then a transition to `General` is recorded in a valid order, yet some rays read texels not
+  yet drawn: pixels missing one or two of sixteen rays, in a different place per device. **Each tile
+  is two waited submissions now.** The finding joins the archimedes todo in the Outstanding index.
+  The plan is corrected in place, and so is ADR-0028.
+- **Measured on both devices** (160×120, the strong camera set):
+  - a pinhole against `render()`: 1.1e-4;
+  - a lit plane through every model: 3.4e-5 to 1.3e-4;
+  - a fisheye in a turned box room, with no seam where faces meet: 3.6e-5;
+  - 102 tiles against 5: 4.8e-5;
+  - a square is exact away from its edges;
+  - nothing farther than the near plane is lost, at any angle off a face's axis.
+- **Silhouettes are placed to half a texel**: coverage at a square's edges is up to 0.34 off the exact
+  area. A board on a sheet is texture and does not feel it; ADR-0028 says so, and MSAA in the face
+  pass is deferred.
+- **Eleven sabotages; seven caught.** The single-submission race is among them, failing 6 cases. A
+  first half-texel sabotage, `floor(q + 0.5)`, rightly passed: it only changes which two texels the
+  blend extrapolates from.
+- **Four not caught on either device**: the accumulator barrier, the open edges, widened membership and
+  widened pixel rectangles.
+  - The barrier is Vulkan's rule between submissions, and the wait between them covers it in practice.
+  - The other three guard against float disagreements larger than any measured here.
+  - All four stay, as their comments say.
+- **Found by the room case, in the test:** a wall crease can pass between two pixels' rays, so creases
+  are found from neighbours too.
+- **One unrelated timing flake, recorded:** the OpenCV pair-matching scale case failed once under
+  `-j8` on its timing ratios. It took 41.9 s there against 23.7 s alone, and passed on the rerun and
+  on its own.
+
 ### Update 2026-10-24 — M15 slice 4 planned; 4a built: the capture pass's ray table
 
 Slice 4 (the capture pass, ADR-0028) is four commits, planned after a design review checked the first

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lain/render/capture.h"
 #include "lain/render/scene.h"
 #include "lain/render/view.h"
 
@@ -18,6 +19,7 @@ namespace lain::render
 	{
 		struct RendererState;
 		struct SceneState;
+		struct RayTableState;
 	} // namespace detail
 
 	// A scene's copy on the device: its meshes, textures and materials uploaded once, so it can be
@@ -43,6 +45,30 @@ namespace lain::render
 	{
 		std::optional<GpuScene> scene;
 		std::vector<std::string> problems; // empty exactly when there is a scene
+	};
+
+	// A ray table's copy on the device: its pixel-corner rays and its pixels' sums, in bands, and the
+	// texture each tile of the intermediate image is drawn into. Move-only, and written by every
+	// capture through it, so it serves one capture at a time. Uploaded once per camera model, it serves
+	// every frame. The device it was uploaded to must outlive it.
+	class GpuRayTable
+	{
+	public:
+		GpuRayTable(GpuRayTable&&) noexcept;
+		GpuRayTable& operator=(GpuRayTable&&) noexcept;
+		~GpuRayTable();
+
+	private:
+		friend class Renderer;
+		explicit GpuRayTable(std::unique_ptr<detail::RayTableState> state);
+		std::unique_ptr<detail::RayTableState> m;
+	};
+
+	// A ray table upload's outcome: the table on the device, or why not.
+	struct GpuRayTableResult
+	{
+		std::optional<GpuRayTable> table;
+		std::vector<std::string> problems; // empty exactly when there is a table
 	};
 
 	// A drawing's outcome: the picture, or why not.
@@ -76,6 +102,16 @@ namespace lain::render
 
 		// `scene` seen through `view`'s pinhole. `scene` must have been uploaded by this renderer.
 		RenderResult render(GpuScene& scene, const View& view);
+
+		// Copies `table` to the device, for any number of captures through its camera model.
+		GpuRayTableResult upload(const RayTable& table);
+
+		// What the camera `table` was built for records of `scene` from `view` (a capture render,
+		// ADR-0028): each tile of the intermediate image drawn and waited for in turn, then remapped,
+		// each pixel the mean of the table's s x s rays. The same contract as render(): RGBA32F linear
+		// light at the camera's image size, with alpha as the share of the pixel's rays a surface
+		// covers. Both `scene` and `table` must have been uploaded by this renderer.
+		RenderResult capture(GpuScene& scene, GpuRayTable& table, const CaptureView& view);
 
 	private:
 		friend class Viewport;

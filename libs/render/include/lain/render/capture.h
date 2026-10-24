@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lain/camera/cameramodel.h>
+#include <lain/math/rigidtransform.h>
 #include <lain/math/types.h>
 
 #include <cstddef>
@@ -155,4 +156,20 @@ namespace lain::render
 		std::optional<RayTable> table;
 		std::vector<std::string> problems; // empty exactly when there is a table
 	};
+
+	// Where a captured camera is, and what it draws: lain's camera frame placed in the world, as a
+	// View's is, and its depth range. Everything farther than `near` and nearer than `far` along the
+	// camera's rays is drawn. Each face of the intermediate image measures depth along its own axis, so
+	// it is drawn with its near plane pulled in by its nearScale, and may also draw a little nearer than
+	// `near` toward its axis.
+	struct CaptureView
+	{
+		math::RigidTransformd worldFromCamera;
+		double near = 0.05;
+		double far = 100;
+	};
+
+	// Why `view` cannot be drawn: a pose that is not finite, or a depth range that is not
+	// 0 < near < far. Empty when it can be.
+	std::vector<std::string> validate(const CaptureView& view);
 } // namespace lain::render

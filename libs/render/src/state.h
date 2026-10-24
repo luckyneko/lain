@@ -3,6 +3,7 @@
 // What a Renderer, a GpuScene and a Viewport hold on the device, and the recording they share.
 // Private to lain::render.
 
+#include "lain/render/capture.h"
 #include "lain/render/scene.h"
 #include "lain/render/view.h"
 
@@ -60,6 +61,22 @@ namespace lain::render::detail
 	};
 	static_assert(sizeof(LineVertex) == 32, "a LineVertex is 32 bytes under std430");
 
+	// A capture's per-tile and per-band constants (capture.comp), std140.
+	struct TileConstants
+	{
+		float face[4];			// focal length, principal point x and y
+		std::int32_t texels[4]; // the tile's first texel column and row, then its last
+		std::int32_t open[4];	// its left, top, right and bottom edges, 1 when open
+		std::int32_t pixels[4]; // the camera pixels it serves: first column and row, then end
+		std::int32_t rule[4];	// its face's axis, 1 when faces are chosen by major axis, s, the image's width
+	};
+	static_assert(sizeof(TileConstants) == 80, "the Tile block is 80 bytes under std140");
+
+	struct BandConstants
+	{
+		std::int32_t rows[4]; // the band's first camera row, then its end
+	};
+
 	struct Vertex
 	{
 		float position[3];
@@ -81,6 +98,9 @@ namespace lain::render::detail
 		acm::Shader sceneFragment;
 		acm::Shader lineVertex;
 		acm::Shader lineFragment;
+		acm::DescriptorSetLayout captureLayout; // a remap's: its tile, its band, the tile's texels, the band's corners and sums
+		acm::Shader captureShader;
+		acm::ComputePipeline capturePipeline;
 	};
 
 	struct SceneState
@@ -120,6 +140,34 @@ namespace lain::render::detail
 		image::ColorRGBf ambient;
 		image::ColorRGBf background;
 		std::uint32_t lightCount = 0;
+	};
+
+	// A ray table's copy on the device (RayTable, ADR-0028): its corners and sums in bands, and the one
+	// texture every tile is drawn into in turn, sized for the largest.
+	struct RayTableState
+	{
+		const RendererState* owner = nullptr;
+		std::uint32_t width = 0;
+		std::uint32_t height = 0;
+		std::uint32_t samples = 1;
+		bool cube = false;
+		std::vector<CaptureFace> faces;
+		std::vector<CaptureTile> tiles;
+
+		struct Band
+		{
+			std::uint32_t first = 0; // its first camera row
+			std::uint32_t end = 0;	 // and its end
+			acm::Buffer corners;	 // (end - first + 1) x (width + 1) vec4s
+			acm::Buffer sums;		 // (end - first) x width vec4s
+			acm::Buffer constants;	 // its BandConstants
+			acm::DescriptorSet set;
+		};
+		std::vector<Band> bands;
+
+		acm::Buffer tileConstants; // rewritten before each tile's submission
+		acm::Texture texels;	   // a tile's picture: RGBA32F, a storage image as well as a target
+		acm::RenderTarget target;
 	};
 
 	// A surface's descriptor set for `material`, reading its per-view constants from `frame`.

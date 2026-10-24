@@ -110,7 +110,14 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
   renders a tile with `CopySrc`, transitions it to `General`, and reads it in compute with
   `imageLoad`, blending bilinearly by hand, since linear filtering of RGBA32F is not guaranteed. Both
   archimedes changes, limit queries and a compute-visible `Sampled` finish, are deferred with a
-  trigger in WORK.md's Outstanding index.
+  trigger in WORK.md's Outstanding index. *(Found building it, 2026-10-24: that chain in one command
+  buffer did not order the remap's reads after the drawing on MoltenVK or SwiftShader, so a capture
+  draws each tile and remaps it in two waited submissions.)*
+- **A silhouette is placed to half a texel** *(measured 2026-10-24)*. The face pass takes one sample
+  a texel, so a geometric edge lands within ±0.5 texel, a quarter of a camera pixel at m = 2; at a
+  square's edges the coverage differs from the exact area by up to 0.34. The claim that the remap
+  biases no ground truth holds for texture features, a board on a sheet among them, and not for
+  silhouettes. MSAA in the face pass is deferred with a trigger.
 - **archimedes' renderer shapes three choices.** Its depth attachment is discarded after a pass,
   so a camera's depth for the visibility map is rendered as distance into an R32F colour target.
   It has no cube or array-layer texture, so an intermediate image past 180° is six 2D textures in
