@@ -16077,6 +16077,15 @@ off. Warning-clean, format-check clean.
 - **Sabotage, caught:** baking at a quarter of the density fails all four comparisons in all eight runs,
   so the case can tell an inadequate density apart.
 - **Slice 4 is complete.** Next is slice 5: the sensor model, the movers, and the capture writer.
+- **On CI** ([run 40094754758](https://github.com/luckyneko/lain/actions/runs/40094754758), on `6db4592`,
+  dispatched by hand): **green on all eight jobs**.
+  - Linux Release and Windows Release passed 1487/1487, Linux Debug 1479/1479, without the refiner
+    1428/1428, and video off 1349/1349.
+  - Neither runner has a GPU, so every capture case drew on the CPU device alone, and the timings show
+    they drew. Linux and Windows took: M9's scene 3.7 s and 10 s; the six models captured 32 s and 52 s;
+    drawn on the CPU 57 s and 69 s; the bake density 121 s and 117 s. The last is the suite's slowest
+    case, mostly the CPU drawing the exact texture eight times.
+  - Slice 4's claim holds on all three platforms.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 

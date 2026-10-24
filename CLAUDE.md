@@ -1419,6 +1419,9 @@ camera and Ceres on (+1), **1349/1349** with all three off; warning-clean, forma
 - **Slice 4 is complete:** the capture pass is built (4a, 4b), its claim holds through all six models
   (4c), and the bake density is enough (4d). Next is slice 5: the sensor model, the movers, and the
   capture writer.
+- **CI is green on all eight jobs** ([run 40094754758](https://github.com/luckyneko/lain/actions/runs/40094754758)):
+  Linux and Windows Release passed 1487/1487, every capture case drawn on the CPU device alone, since
+  neither runner has a GPU. So slice 4's claim holds on all three platforms.
 
 ### Update 2026-10-24 — M15 slice 4, sub-slice 4c built: the ADR-0028 claim holds
 
