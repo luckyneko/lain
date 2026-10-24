@@ -19,8 +19,8 @@
 namespace lain::rigplan
 {
 	// A rig plan as lain::render draws it (CONTEXT.md, "Render scene"; ADR-0028): its room, planes,
-	// boxes and props, in the plan frame, lit by its lights. Mounts, cameras and lights have no bodies
-	// in it yet: a body would need a rule keeping a camera clear of its own pole or housing.
+	// boxes, props and poles, in the plan frame, lit by its lights. Camera and light housings are not in
+	// it yet; check() keeps a camera clear of its own pole (PlanProblem::InsidePole).
 
 	// How finely a procedural texture is baked: this many texels to its finest noise cell, which is two
 	// across the narrowest soft edge of its discs (a tenth of a cell wide). Capped so that no baked
@@ -77,6 +77,7 @@ namespace lain::rigplan
 	//     face whose picture reads upright from the side it faces (a floor's with north at its top);
 	//   * each prop's mesh, or the frame of its clip the capture frame shows (mesh::clipFrame), placed
 	//     by planFromProp, its file's own materials mapped one for one (MTL's Kd, map_Kd, Ks, Ns);
+	//   * each pole, a cylinder from the floor to its top at its realised mount, a matte mid grey;
 	//   * each light, its specification's kind, colour, intensity and cone at its realised pose.
 	// A picture repeats every tile, in metres; a procedural texture is baked once per surface at the
 	// surface's own extent, so it reads proceduralGrey at each point of it, in metres from the

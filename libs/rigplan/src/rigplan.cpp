@@ -1,5 +1,7 @@
 #include "lain/rigplan/rigplan.h"
 
+#include "lain/rigplan/realisation.h" // mountFromPlacement
+
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -35,6 +37,22 @@ namespace lain::rigplan
 	static bool positive(const math::Vec3d& v)
 	{
 		return finite(v) && v.x > 0 && v.y > 0 && v.z > 0;
+	}
+
+	// Whether `centre`, a point in a pole mount's frame, could be inside the pole once tolerances move it
+	// up to `reach` metres: nearer its axis than its radius, between the floor and its top. A pole is
+	// drawn in every capture, so a camera inside one would see nothing but its inside.
+	static bool insidePole(const Pole& pole, const math::Vec3d& centre, double reach)
+	{
+		return std::hypot(centre.x, centre.y) < pole.diameter / 2 + reach && centre.z > -reach && centre.z < pole.height + reach;
+	}
+
+	// The pole `mount` is, when it is a usable one.
+	static const Pole* usablePole(const Mount& mount)
+	{
+		const auto* pole = std::get_if<Pole>(&mount.kind);
+		return pole && std::isfinite(pole->height) && pole->height > 0 && std::isfinite(pole->diameter) && pole->diameter > 0 ? pole
+																															  : nullptr;
 	}
 
 	static bool validBound(double tolerance)
@@ -216,6 +234,26 @@ namespace lain::rigplan
 			const PlacementTolerance& t = c.tolerance;
 			if (t.offset.nanometres() < 0 || !validBound(t.panDegrees) || !validBound(t.tiltDegrees) || !validBound(t.rollDegrees))
 				out.push_back({PlanProblem::InvalidTolerance, string::format("camera '{}' has a negative tolerance", c.name)});
+
+			// Its optical centre, where its rays start, as far as its placement's tolerances could move it at
+			// full scale: the offset on each axis, and the aim swinging the centre about the mounting point.
+			const auto mount = mounts.find(c.mount);
+			const CameraSpecification* specification = findCamera(plan.specifications, c.camera);
+			const SensorSpecification* sensor = specification ? findSensor(plan.specifications, specification->sensor) : nullptr;
+			const Pole* pole = mount != mounts.end() ? usablePole(*mount->second) : nullptr;
+			if (pole && sensor)
+			{
+				const math::Vec3d centre = mountFromPlacement(c.offset, c.aim).apply(sensor->body.opticalCentre);
+				const double swing = math::radians(std::abs(t.panDegrees) + std::abs(t.tiltDegrees) + std::abs(t.rollDegrees));
+				const double reach = std::sqrt(3.0) * t.offset.metres() + math::length(sensor->body.opticalCentre) * swing;
+				if (insidePole(*pole, centre, reach))
+				{
+					out.push_back({PlanProblem::InsidePole,
+								   string::format("camera '{}' could see from inside pole '{}': its optical centre is {:.3f} m from the "
+												  "pole's axis, its tolerances move it up to {:.3f} m, and the pole's radius is {:.3f} m",
+												  c.name, mount->second->name, std::hypot(centre.x, centre.y), reach, pole->diameter / 2)});
+				}
+			}
 		}
 
 		for (const PlacedLight& l : plan.lights)
@@ -231,6 +269,12 @@ namespace lain::rigplan
 				out.push_back({PlanProblem::UnknownMount, string::format("light '{}' is on a mount the rig plan does not have", l.name)});
 			if (!finite(l.offset) || !finite(l.aim))
 				out.push_back({PlanProblem::InvalidPlacement, string::format("light '{}' has an offset or aim that is not finite", l.name)});
+			const auto mount = mounts.find(l.mount);
+			if (const Pole* pole = mount != mounts.end() ? usablePole(*mount->second) : nullptr; pole && insidePole(*pole, l.offset, 0))
+			{
+				out.push_back({PlanProblem::InsidePole, string::format("light '{}' is inside pole '{}', which would hide it", l.name,
+																	   mount->second->name)});
+			}
 		}
 
 		if (plan.timeline.frames == 0)

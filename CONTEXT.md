@@ -874,7 +874,9 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
 - **Mount** — a rigid fixture with a pose in the plan frame, carrying any number of placed cameras
   and placed lights, whose poses are relative to it. A **pole** stands on the floor, with a height
   and a diameter, and is real geometry: it is in every capture render and occludes what is behind
-  it. A **fixed point** is a bare frame with no geometry, for a camera fixed to a wall or ceiling.
+  it. So a camera's optical centre, or a light, may not lie inside its own pole, as far as its
+  tolerances could move it; a rig plan placing one there is refused. A **fixed point** is a bare
+  frame with no geometry, for a camera fixed to a wall or ceiling.
   _Avoid_: rig (a rig is the cameras), stand, bracket.
 - **Aim** — how a placed camera or light is turned on its mount, in degrees and in the mount's frame.
   At rest it looks along the mount's +Y with its image's down along -Z; then it rolls about its

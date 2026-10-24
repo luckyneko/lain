@@ -109,8 +109,9 @@ TEST_CASE("an aim is roll, then tilt, then pan, in the mount's frame", "[rigplan
 
 TEST_CASE("a hand-placed camera is where it was put", "[rigplan][realisation]")
 {
-	// A pole at (2, 3) turned 90 degrees, a camera 1.5 m up it tilted 10 degrees down, its optical
-	// centre 5 cm in front of its mounting point. Turned 90, the pole's +Y is the plan's -X.
+	// A pole at (2, 3) turned 90 degrees, a camera 1.5 m up it and 12.5 cm out along its +Y, tilted 10
+	// degrees down, its optical centre 5 cm in front of its mounting point. Turned 90, the pole's +Y is
+	// the plan's -X.
 	RigPlan p = testplan::plan();
 	p.scales = {};
 	p.mounts[0].yawDegrees = 90.0;
@@ -122,7 +123,7 @@ TEST_CASE("a hand-placed camera is where it was put", "[rigplan][realisation]")
 	const double c = std::cos(lain::math::radians(10.0)), s = std::sin(lain::math::radians(10.0));
 	const Vec3d forward{-c, 0.0, -s};
 	REQUIRE(near(cam0.planFromCamera.rotate({0.0, 0.0, 1.0}), forward));
-	REQUIRE(near(cam0.planFromCamera.translation(), Vec3d{2.0, 3.0, 1.5} + 0.05 * forward));
+	REQUIRE(near(cam0.planFromCamera.translation(), Vec3d{1.875, 3.0, 1.5} + 0.05 * forward));
 }
 
 TEST_CASE("at scales of 0 a realisation is the nominal rig plan exactly", "[rigplan][realisation]")
@@ -153,7 +154,7 @@ TEST_CASE("at scales of 0 a realisation is the nominal rig plan exactly", "[rigp
 	const lain::rigplan::Realisation untoleranced = realised(exact);
 	for (std::size_t i = 0; i < zero.cameras.size(); ++i)
 		requireIdentical(zero.cameras[i], untoleranced.cameras[i]);
-	REQUIRE(zero.cameras[0].planFromCamera.translation() == Vec3d{2.0, 3.0, 1.5});
+	REQUIRE(zero.cameras[0].planFromCamera.translation() == Vec3d{2.0, 3.125, 1.5});
 }
 
 TEST_CASE("an edit to one camera re-rolls no other", "[rigplan][realisation]")
@@ -165,7 +166,7 @@ TEST_CASE("an edit to one camera re-rolls no other", "[rigplan][realisation]")
 	{
 		RigPlan p = base;
 		p.cameras.insert(p.cameras.begin(), testplan::camera(testplan::id("0193a6f0-0000-7000-8000-00000000c009"), "cam9",
-															 testplan::poleId, {0.0, 0.0, 0.5}, {}));
+															 testplan::poleId, {0.0, 0.125, 0.5}, {}));
 		const lain::rigplan::Realisation after = realised(p);
 		for (const char* name : {"cam0", "cam1", "cam2"})
 			requireIdentical(cameraNamed(before, name), cameraNamed(after, name));

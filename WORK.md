@@ -15008,7 +15008,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
 4. **The capture pass**: the intermediate image, the ray table, the remap with s × s rays. Proves the
    ADR-0028 claim: a rendered board's detected corners against lain's projection of the truth,
    through all six distortion models, near the CPU renderer's ~0.07 px.
-5. **The sensor model and the capture writer**: `rigplan render <plan> --out <capture> [--seed
+5. **The sensor model, movers and the capture writer**: the board and prop movers on their keyed
+   paths (slice 1's plan put them here), and `rigplan render <plan> --out <capture> [--seed
    --deviation --noise]`, streaming one camera-frame at a time with sensor, encode and write on the
    process pool; the folder layout and ground truth; `capture.json`; the pre-render size estimate,
    which says plainly when noise defeats compression. Proves: the noise is identical on every
@@ -15570,7 +15571,8 @@ format-check clean. The render case ran on Metal.
 - **Not drawn yet: bodies.** Poles, camera housings and light housings occlude in a real rig, but
   drawing them needs a placement rule that keeps a camera clear of its own pole or housing. The test
   plan's own cameras sit on their pole's axis, so a drawn pole would fill their whole view. That
-  rule is the repo owner's call.
+  rule is the repo owner's call. *(**Answered the same day:** poles are drawn, and a camera inside
+  its own pole is refused; see *After 3c* below.)*
 - **Found, and corrected the same day:** this said tinyobjloader reads a missing `Kd` as 0, so a
   texture with no `Kd` draws black. That came from reading only tinyobjloader's initialiser. Its
   parser gives such a material a 0.6 grey, so the texture draws at 60%, and only an explicit
@@ -15616,6 +15618,24 @@ The repo owner reviewed the questions the slices so far had left open.
   which `newmtl` blocks state a `Kd` as it hands tinyobjloader the file. One case covers all four
   materials. Three sabotages, all caught: ignoring what was stated, keeping the black, and an
   untrimmed material name. The last first failed to build and was redone.
+- **Poles are drawn, and a camera or light inside its own pole is refused.** CONTEXT.md's *Mount*
+  already said a pole is real geometry in every capture render, so 3c's "not drawn" fell short of the
+  design.
+  - **Drawn:** a cylinder of 32 sides from the floor to the pole's top, capped, at its realised mount,
+    a matte mid grey since a pole states no material yet. Poles come after props in the scene.
+  - **`PlanProblem::InsidePole`:** `check()` refuses a camera whose optical centre, or a light whose
+    position, could lie inside its own pole: nearer the axis than the radius, between the floor and
+    the top. "Could" means as far as its tolerances move it at full scale, which is √3 × the offset
+    tolerance plus the optical centre's lever arm × the sum of the aim tolerances. A camera on top of
+    its pole is fine.
+  - **The test plan's two pole cameras move 12.5 cm out from the axis**, where they had sat on it.
+    Two realisation cases that pin cam0's position follow, and a camera one case adds moves too.
+  - **Proved on the device:** a pole 2 m ahead hides the wall behind it at its centre, lit as the
+    bulb says (0.5 × 4 / 1.9²), with the wall beside it.
+  - **Five sabotages, all caught:** checking the mounting point instead of the optical centre;
+    ignoring the tolerances; leaving lights unchecked; not drawing poles (five cases fail); and
+    drawing a pole at its nominal place instead of its realised one.
+  - Camera and light housings are still not drawn; they wait for the camera-authoring view.
 - **Each surface keeps its own procedural pattern**, as 3c built it.
 - **Pushing `feature/M15` waits for 3d**, so the first CI run of the branch has the render tests
   running on the CPU device. Until then nothing on this branch has been built on Linux or Windows.

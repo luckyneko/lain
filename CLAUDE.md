@@ -1400,6 +1400,22 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-23 — poles are drawn, and a camera inside its own pole is refused
+
+From the same review. CONTEXT.md's *Mount* already said a pole is real geometry in every capture
+render, so 3c's "not drawn" fell short of the design. `ctest -j8` **1463/1463** Release with video,
+camera and Ceres on (+4, with the MTL change); warning-clean, format-check clean. Full notes in WORK.md's
+*After 3c: what the review settled*, under M15.
+
+- **Drawn:** a 32-sided cylinder from the floor to the top at the realised mount, a matte mid grey.
+  On the device, a pole 2 m ahead hides the wall behind it, lit as the bulb says.
+- **Refused: `PlanProblem::InsidePole`.** A camera whose optical centre, or a light, could lie inside
+  its own pole, as far as its tolerances move it at full scale. A camera on top of its pole is fine.
+- **The test plan's pole cameras moved 12.5 cm off the axis**, and the cases pinning cam0's position
+  follow.
+- **Five sabotages, all caught.** The build order's slice 5 now names the movers, as slice 1's plan
+  had.
+
 ### Update 2026-10-23 — a textured MTL material shows its texture as it is
 
 From the repo owner's review of the open questions after M15 slice 3c. Full notes in WORK.md's *After
@@ -1431,7 +1447,8 @@ clean. Full notes in WORK.md's *Sub-slice 3c built*, under M15.
 - **Props play their clip frame**, shared without a copy, with their MTL kept (Kd × map_Kd, Ks, Ns),
   the mapping 2d deferred. Lights are their specifications at their realised poses.
 - **Bodies are not drawn yet.** A drawn pole needs a rule keeping a camera clear of it: the test
-  plan's cameras sit on their pole's axis. That rule is the repo owner's call.
+  plan's cameras sit on their pole's axis. That rule is the repo owner's call. *(**Answered the same
+  day:** poles are drawn and a camera inside its pole is refused; see the entry above.)*
 - **On the device**, a camera at rest in a room sees the north wall at the bulb's inverse square
   (0.25 at 4 m), holding the plan frame, the camera frame and the renderer to one another.
 - **Eight sabotages, all caught**; two first failed to build and were redone.

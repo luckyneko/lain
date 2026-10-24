@@ -107,7 +107,7 @@ TEST_CASE("a room's present surfaces are drawn, each facing in", "[rigplan][scen
 	REQUIRE(result.problems.empty());
 	const render::Scene& scene = result.scene;
 	CHECK(render::validate(scene).empty());
-	REQUIRE(scene.instances.size() == 5);
+	REQUIRE(scene.instances.size() == 6); // and the test plan's pole, last
 
 	const math::Vec3d middle{1.0, -2.0, 1.6};
 	for (std::size_t i = 0; i < 5; ++i)
@@ -241,7 +241,7 @@ TEST_CASE("a plane faces as a camera aimed the same way looks, and a box's faces
 	const SceneResult result = sceneOf(plan);
 	REQUIRE(result.problems.empty());
 	const render::Scene& scene = result.scene;
-	REQUIRE(scene.instances.size() == 7);
+	REQUIRE(scene.instances.size() == 8); // and the test plan's pole, last
 
 	// The plane faces the camera that would see it face on: one panned the same way looks along -X,
 	// so the plane faces +X, upright, and spans its size across Y and up Z.
@@ -307,7 +307,7 @@ TEST_CASE("a prop is placed by planFromProp, plays its clip, and shows its file'
 		const SceneResult result = renderScene(plan, *realised.realisation, assets.assets, frame);
 		REQUIRE(result.problems.empty());
 		const render::Scene& scene = result.scene;
-		REQUIRE(scene.instances.size() == 1);
+		REQUIRE(scene.instances.size() == 2); // and the test plan's pole, after it
 		CHECK(scene.meshes[0]->positions[0].x == float(expected[frame]));
 		// The clip's own frame, shared rather than copied.
 		CHECK(scene.meshes[0].get() == &assets.assets.props.at(walker.id)->frames[std::size_t(expected[frame])]);
@@ -323,6 +323,33 @@ TEST_CASE("a prop is placed by planFromProp, plays its clip, and shows its file'
 	REQUIRE(material.texture);
 	CHECK(result.scene.textures[*material.texture].get() == assets.assets.pictures.at(skin).get());
 	CHECK(render::validate(result.scene).empty());
+}
+
+TEST_CASE("a pole is drawn from the floor to its top where its mount is realised", "[rigplan][scene]")
+{
+	const RigPlan plan = testplan::plan(); // a pole 2.5 m high and 5 cm across, with 10 mm of tolerance
+	const RealisationResult realised = realise(plan);
+	REQUIRE(realised.realisation);
+	const SceneResult result = sceneOf(plan);
+	REQUIRE(result.problems.empty());
+	const render::Scene& scene = result.scene;
+	CHECK(render::validate(scene).empty());
+	REQUIRE(scene.instances.size() == 1);
+
+	const math::Vec3d axis = realised.realisation->mounts[0].planFromMount.translation();
+	CHECK(math::distance(math::Vec2d{axis}, math::Vec2d{2.0, 3.0}) > 0); // moved by its draw
+	double lowest = 1e9, highest = -1e9, widest = 0;
+	for (const math::Vec3f& p : meshOf(scene, 0).positions)
+	{
+		const math::Vec3d at{scene.instances[0].worldFromMesh * math::Vec4d{math::Vec3d{p}, 1.0}};
+		lowest = std::min(lowest, at.z);
+		highest = std::max(highest, at.z);
+		widest = std::max(widest, math::distance(math::Vec2d{at}, math::Vec2d{axis}));
+	}
+	CHECK(lowest == Catch::Approx(0.0).margin(1e-6));
+	CHECK(highest == Catch::Approx(2.5));
+	CHECK(widest == Catch::Approx(0.025).epsilon(1e-6));
+	CHECK(scene.materials[scene.instances[0].materials[0]].diffuse.r == 0.5f);
 }
 
 TEST_CASE("a light is its specification at its realised pose", "[rigplan][scene]")

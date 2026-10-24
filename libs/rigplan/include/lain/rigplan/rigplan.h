@@ -140,6 +140,7 @@ namespace lain::rigplan
 		InvalidTimeline,	  // a timeline of no frames
 		InvalidScale,		  // a scale outside [0, 1]
 		InvalidEnvironment,	  // a room, plane or box of no extent, a prop with no mesh or unit, or a material that cannot be one
+		InsidePole,			  // a camera's optical centre or a light inside its own pole, as far as its tolerances could move it
 	};
 
 	struct PlanDiagnostic

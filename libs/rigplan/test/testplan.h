@@ -95,8 +95,9 @@ namespace testplan
 		wall.tolerance.yawDegrees = 1.0;
 		p.mounts.push_back(wall);
 
-		p.cameras.push_back(camera(cam0Id, "cam0", poleId, {0.0, 0.0, 1.5}, {}));
-		p.cameras.push_back(camera(cam1Id, "cam1", poleId, {0.0, 0.0, 2.2}, {0.0, -15.0, 0.0}));
+		// Out from the pole's axis, on its side: a camera inside the pole would see nothing else.
+		p.cameras.push_back(camera(cam0Id, "cam0", poleId, {0.0, 0.125, 1.5}, {}));
+		p.cameras.push_back(camera(cam1Id, "cam1", poleId, {0.0, 0.125, 2.2}, {0.0, -15.0, 0.0}));
 		p.cameras.push_back(camera(cam2Id, "cam2", wallId, {0.0, 0.1, 0.0}, {0.0, -30.0, 0.0}));
 
 		lain::rigplan::PlacedLight light;

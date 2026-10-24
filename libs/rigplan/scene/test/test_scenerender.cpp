@@ -9,6 +9,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
+
 using namespace lain;
 using namespace lain::rigplan;
 
@@ -75,4 +77,68 @@ TEST_CASE("a camera at rest in a room sees its north wall ahead and its floor be
 	CHECK(below[1] > 0.0f);
 	CHECK(below[0] == 0.0f);
 	CHECK(at(32, 2)[3] == 0.0f);
+}
+
+TEST_CASE("a pole hides what is behind it", "[rigplan][scene][gpu]")
+{
+	acm::Device* device = render::testing::device();
+	if (!device)
+		SKIP("no Vulkan device on this machine");
+	render::Renderer renderer(*device);
+	REQUIRE(renderer.problems().empty());
+
+	// A red wall 4 m north of a bulb, and a pole 20 cm across standing 2 m north of it, between them.
+	RigPlan plan;
+	Room room;
+	room.size = {8.0, 8.0, 3.0};
+	room.north.material.surface = SolidColour{{1.0f, 0.0f, 0.0f}};
+	plan.room = room;
+	LightSpecification bulb;
+	bulb.name = "bulb";
+	bulb.intensity = 4;
+	plan.specifications.lights.push_back(bulb);
+	Mount hook;
+	hook.id = core::Uuid::generate();
+	hook.name = "hook";
+	hook.kind = FixedPoint{{0.0, 0.0, 1.5}};
+	Mount pole;
+	pole.id = core::Uuid::generate();
+	pole.name = "pole";
+	pole.kind = Pole{{0.0, 2.0}, 2.5, 0.2};
+	plan.mounts = {hook, pole};
+	PlacedLight light;
+	light.id = core::Uuid::generate();
+	light.name = "bulb";
+	light.light = "bulb";
+	light.mount = hook.id;
+	plan.lights.push_back(light);
+
+	const RealisationResult realised = realise(plan);
+	REQUIRE(realised.realisation);
+	const AssetsResult assets = loadSceneAssets(plan);
+	const SceneResult scene = renderScene(plan, *realised.realisation, assets.assets, 0);
+	REQUIRE(scene.problems.empty());
+	render::UploadResult uploaded = renderer.upload(scene.scene);
+	REQUIRE(uploaded.problems.empty());
+
+	render::View view;
+	view.worldFromCamera = mountFromPlacement({0.0, 0.0, 1.5}, {});
+	view.image = {64, 64};
+	view.intrinsics = {32.0, 32.0, 32.0, 32.0}; // pixel (32, 32) looks straight along the axis
+	const render::RenderResult drawn = renderer.render(*uploaded.scene, view);
+	REQUIRE(drawn.problems.empty());
+	auto at = [&](int x, int y)
+	{
+		const float* p = reinterpret_cast<const float*>(drawn.image.data()) + 4 * (y * 64 + x);
+		return std::array<float, 4>{p[0], p[1], p[2], p[3]};
+	};
+
+	// Straight ahead, the pole's nearest point 1.9 m away, facing the bulb: 0.5 x 4 / 1.9^2. To the
+	// side, the wall.
+	const std::array<float, 4> ahead = at(32, 32);
+	CHECK(ahead[0] == Catch::Approx(0.5 * 4 / (1.9 * 1.9)).epsilon(2e-3));
+	CHECK(ahead[1] == ahead[0]);
+	const std::array<float, 4> beside = at(48, 32);
+	CHECK(beside[0] > 0.0f);
+	CHECK(beside[1] == 0.0f);
 }

@@ -130,6 +130,45 @@ namespace lain::rigplan
 		return std::make_shared<const mesh::Mesh>(std::move(mesh));
 	}
 
+	// A pole as a mesh in its mount's frame: a cylinder of `segments` sides from the floor (Z = 0) to its
+	// top, capped there, its normals pointing out. 32 sides keep a 5 cm pole within 0.12 mm of round.
+	static std::shared_ptr<const mesh::Mesh> cylinder(const Pole& pole)
+	{
+		constexpr int segments = 32;
+		const float radius = float(pole.diameter / 2);
+		const float height = float(pole.height);
+		mesh::Mesh mesh;
+		for (int i = 0; i < segments; ++i)
+		{
+			const double angle = 2 * 3.14159265358979323846 * i / segments;
+			const math::Vec3f out{float(std::cos(angle)), float(std::sin(angle)), 0.0f};
+			mesh.positions.push_back(out * radius);
+			mesh.positions.push_back(out * radius + math::Vec3f{0.0f, 0.0f, height});
+			mesh.normals.push_back(out);
+			mesh.normals.push_back(out);
+		}
+		const auto top = std::uint32_t(mesh.positions.size());
+		mesh.positions.push_back({0.0f, 0.0f, height});
+		mesh.normals.push_back({0.0f, 0.0f, 1.0f});
+		for (int i = 0; i < segments; ++i)
+		{
+			mesh.positions.push_back(mesh.positions[std::size_t(2 * i + 1)]);
+			mesh.normals.push_back({0.0f, 0.0f, 1.0f});
+		}
+		for (std::uint32_t i = 0; i < segments; ++i)
+		{
+			const std::uint32_t next = (i + 1) % segments;
+			const std::uint32_t side[6] = {2 * i, 2 * next, 2 * next + 1, 2 * i, 2 * next + 1, 2 * i + 1};
+			mesh.indices.insert(mesh.indices.end(), std::begin(side), std::end(side));
+			const std::uint32_t cap[3] = {top, top + 1 + i, top + 1 + next};
+			mesh.indices.insert(mesh.indices.end(), std::begin(cap), std::end(cap));
+		}
+		mesh.uvs.assign(mesh.positions.size(), math::Vec2f{0.0f});
+		mesh.parts = {{0, 0, std::uint32_t(mesh.indices.size())}};
+		mesh.materials = {mesh::Material{}};
+		return std::make_shared<const mesh::Mesh>(std::move(mesh));
+	}
+
 	AssetsResult loadSceneAssets(const RigPlan& plan)
 	{
 		AssetsResult result;
@@ -288,6 +327,24 @@ namespace lain::rigplan
 				scene.materials.push_back(material);
 			}
 			place(std::move(mesh), planFromProp(prop), std::move(materials));
+		}
+
+		// Each pole, floor to top at its realised mount (CONTEXT.md, "Mount"): real geometry, occluding what
+		// is behind it. A pole states no material yet, so it is a matte mid grey.
+		if (realisation.mounts.size() != plan.mounts.size())
+			result.problems.push_back("the realisation is not of this rig plan: its mounts differ");
+		else
+		{
+			for (std::size_t i = 0; i < plan.mounts.size(); ++i)
+			{
+				const auto* pole = std::get_if<Pole>(&plan.mounts[i].kind);
+				if (!pole)
+					continue;
+				render::Material grey;
+				grey.diffuse = {0.5f, 0.5f, 0.5f};
+				scene.materials.push_back(grey);
+				place(cylinder(*pole), realisation.mounts[i].planFromMount.matrix(), {scene.materials.size() - 1});
+			}
 		}
 
 		if (realisation.lights.size() != plan.lights.size())
