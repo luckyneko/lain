@@ -1402,9 +1402,11 @@ extraction*, *Calibration method* and *Calibration attempt*.
 
 ### Update 2026-10-24 — feature/M15's first CI runs: the CPU device renders on every platform
 
-[Runs 40057291780](https://github.com/luckyneko/lain/actions/runs/40057291780) and
-[40062334857](https://github.com/luckyneko/lain/actions/runs/40062334857), dispatched by hand, since CI
-runs by itself only on master, main and develop. Full notes in WORK.md's *feature/M15's first CI
+[Runs 40057291780](https://github.com/luckyneko/lain/actions/runs/40057291780),
+[40062334857](https://github.com/luckyneko/lain/actions/runs/40062334857) and
+[40064440056](https://github.com/luckyneko/lain/actions/runs/40064440056), dispatched by hand, since CI
+runs by itself only on master, main and develop. **The third, on `c293ba8`, is green on all eight
+jobs** (1465/1465 on Linux Release and Windows). Full notes in WORK.md's *feature/M15's first CI
 runs*, under M15.
 
 - **3d's claim holds on all three platforms.** Neither the Windows nor the Linux runner has a GPU,
@@ -1412,8 +1414,7 @@ runs*, under M15.
 - **GCC 13 failed the Linux builds on two false positives** that clang does not raise:
   `-Wdangling-reference` on a test helper (its name is now a `string_view`), and, in Release only,
   `-Wmaybe-uninitialized` in `DocumentGuard::request`. `emplace` raised the second as `=` did, so the
-  held request is now a `std::unique_ptr`. The Release legs stopped there both times, so their
-  optimised build of the rest is still unproven.
+  held request is now a `std::unique_ptr`. Past it, GCC found nothing else in the optimised build.
 - **Three Windows failures were tests that took `/projects/hall` for an absolute path.** It has no
   drive there. New `lain::testing::rootedPath` roots a path at this platform's root.
 - **Found, not fixed: on Windows a rig plan's uris change spelling across a save and a load**

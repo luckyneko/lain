@@ -15730,9 +15730,12 @@ subproject smoke are green. The four Linux legs failed at Build, and Windows at 
     its first argument and was called with a literal bound to `const std::string&`. The name is now
     a `string_view`, so no temporary reaches a reference.
 
-  The second run's Linux Debug build went through the whole tree, so GCC 13 at `-O0` is clean
-  everywhere. The Release legs stopped at `guard.h` again, at 67%, so the optimised build of the
-  rest has still not been through GCC.
+  The second run's Linux Debug build went through the whole tree, while the Release legs stopped at
+  `guard.h` again, at 67%. **The third run
+  ([40064440056](https://github.com/luckyneko/lain/actions/runs/40064440056), on `c293ba8`) is green
+  on all eight jobs.** GCC found nothing else in the optimised build. Linux Release and Windows
+  Release passed 1465/1465, Linux Debug 1457/1457, Linux Release without the refiner 1406/1406,
+  and Linux Release with video off 1331/1331.
 - **Three tests assumed `/projects/hall` is absolute.** On Windows it has no drive, so
   `std::filesystem` read it against the runner's: io's two document-path cases, and the rig plan's
   path round trip. The library was right. New **`lain::testing::rootedPath(rest)`** roots a path at
