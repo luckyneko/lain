@@ -15004,8 +15004,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    **lain's archimedes pin moves to the CPU device here** (see *Verified against archimedes' CPU
    device* below for what that commit owes). Proves: a plain scene renders in CI, on every leg.
    **Planned 2026-10-23 as four commits, 3a to 3d** (*Slice 3 planned* below); **all four built,
-   3d on 2026-10-24.** The first CI run proved it on macOS and Windows; Linux's leg is owed by
-   the re-run (*feature/M15's first CI run*, below 3d).
+   3d on 2026-10-24.** CI proved it on all three platforms on 2026-10-24 (*feature/M15's first
+   CI runs*, below 3d).
 4. **The capture pass**: the intermediate image, the ray table, the remap with s × s rays. Proves the
    ADR-0028 claim: a rendered board's detected corners against lain's projection of the truth,
    through all six distortion models, near the CPU renderer's ~0.07 px.
@@ -15654,8 +15654,8 @@ API is what was verified on 2026-10-22 (`DevicePreferences`, `RuntimeConfig::cpu
 plus one refactor that moves platform glue out of the surface seam. `ctest -j8` **1465/1465** Release
 with video, camera and Ceres on (+2); warning-clean, format-check clean. **The slice's claim, a plain
 scene rendering in CI on every leg, is owed by the first push**, which the repo owner held until now.
-*(The first push came on 2026-10-24: proved on macOS and Windows, Linux owed. See *feature/M15's
-first CI run*, below.)*
+*(Proved on 2026-10-24 on all three platforms, each GPU-less leg on the CPU device alone. See
+*feature/M15's first CI runs*, below.)*
 
 - **The render tests run on every kind of device the machine offers**, as archimedes' own do: each
   `[gpu]` case is a Catch2 generator over hardware and the CPU device (`libs/render/test/gpu.h`).
@@ -15708,26 +15708,31 @@ first CI run*, below.)*
   - sampling the white texture fails four cases on the CPU device;
   - the CPU device unseen by the test helper fails 14 render cases, through `LAIN_EXPECT_CPU_DEVICE`.
 
-#### feature/M15's first CI run (2026-10-24)
+#### feature/M15's first CI runs (2026-10-24)
 
 [Run 40057291780](https://github.com/luckyneko/lain/actions/runs/40057291780), on `a2e3e60`, dispatched by
 hand: CI runs by itself only on pushes to master, main and develop. macOS, clang-format and the
 subproject smoke are green. The four Linux legs failed at Build, and Windows at Test (1462/1465).
 
-- **The CPU device renders in CI on two of the three platforms.** Windows' runner has no GPU, so its
+- **The CPU device renders in CI on all three platforms.** Windows' runner has no GPU, so its
   render and scene cases ran on the CPU device alone, and every one passed in 0.3 to 0.9 s, so they
-  drew rather than skipped. macOS passed too. Linux built no tests, so its leg of 3d's claim is
-  owed by the re-run.
+  drew rather than skipped. macOS passed too. Linux built no tests in this run. In the second
+  ([run 40062334857](https://github.com/luckyneko/lain/actions/runs/40062334857), on `9305286`), Linux
+  Debug passed 1457/1457, its 30 render and scene cases among them, also with no GPU.
 - **GCC 13 raised two warnings clang does not**, both false positives, both fatal under `-Werror`,
   and both fixed at the site:
-  - `-Wmaybe-uninitialized` in `DocumentGuard::request` (`guard.h`), from assigning into an
-    `optional<std::string>` straight after `reset()`. `emplace` never reads the old storage.
+  - `-Wmaybe-uninitialized` in `DocumentGuard::request` (`guard.h`), Release only, from refilling
+    an `optional<std::string>` straight after `reset()`. **The second run showed `emplace` raises it
+    too**, from inside its own reset, as M9 found for a reassigned variant. The held request is now
+    a `std::unique_ptr`, which has no union storage for GCC to doubt, and `pending()` already
+    answered a pointer.
   - `-Wdangling-reference` on `test_realisation.cpp`'s `cameraNamed`, which returns a reference into
     its first argument and was called with a literal bound to `const std::string&`. The name is now
     a `string_view`, so no temporary reaches a reference.
 
-  Each Linux build stopped at its first failing target (68% in Release, 85% in Debug), so these are
-  what GCC reached, not necessarily all it would find.
+  The second run's Linux Debug build went through the whole tree, so GCC 13 at `-O0` is clean
+  everywhere. The Release legs stopped at `guard.h` again, at 67%, so the optimised build of the
+  rest has still not been through GCC.
 - **Three tests assumed `/projects/hall` is absolute.** On Windows it has no drive, so
   `std::filesystem` read it against the runner's: io's two document-path cases, and the rig plan's
   path round trip. The library was right. New **`lain::testing::rootedPath(rest)`** roots a path at

@@ -1400,18 +1400,20 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
-### Update 2026-10-24 — feature/M15's first CI run: the CPU device renders on Windows and macOS
+### Update 2026-10-24 — feature/M15's first CI runs: the CPU device renders on every platform
 
-[Run 40057291780](https://github.com/luckyneko/lain/actions/runs/40057291780), dispatched by hand,
-since CI runs by itself only on master, main and develop. macOS, clang-format and the subproject smoke
-are green. Full notes in WORK.md's *feature/M15's first CI run*, under M15.
+[Runs 40057291780](https://github.com/luckyneko/lain/actions/runs/40057291780) and
+[40062334857](https://github.com/luckyneko/lain/actions/runs/40062334857), dispatched by hand, since CI
+runs by itself only on master, main and develop. Full notes in WORK.md's *feature/M15's first CI
+runs*, under M15.
 
-- **3d's claim holds on two platforms.** Windows' runner has no GPU, and every render and scene case
-  passed there on the CPU device alone. Linux built no tests, so its leg is owed by the re-run.
-- **GCC 13 failed the four Linux builds on two false positives** that clang does not raise:
-  `-Wmaybe-uninitialized` in `DocumentGuard::request` (now `emplace`), and `-Wdangling-reference` on
-  a test helper (its name is now a `string_view`). Each build stopped at its first failing target, so
-  GCC may find more.
+- **3d's claim holds on all three platforms.** Neither the Windows nor the Linux runner has a GPU,
+  and every render and scene case passed on both, on the CPU device alone (Linux Debug 1457/1457).
+- **GCC 13 failed the Linux builds on two false positives** that clang does not raise:
+  `-Wdangling-reference` on a test helper (its name is now a `string_view`), and, in Release only,
+  `-Wmaybe-uninitialized` in `DocumentGuard::request`. `emplace` raised the second as `=` did, so the
+  held request is now a `std::unique_ptr`. The Release legs stopped there both times, so their
+  optimised build of the rest is still unproven.
 - **Three Windows failures were tests that took `/projects/hall` for an absolute path.** It has no
   drive there. New `lain::testing::rootedPath` roots a path at this platform's root.
 - **Found, not fixed: on Windows a rig plan's uris change spelling across a save and a load**
@@ -1425,7 +1427,7 @@ archimedes PRs #1 and #2 merged, and `extern/archimedes` moves to `develop` (`82
 **1465/1465** Release with video, camera and Ceres on (+2); warning-clean, format-check clean. **Not yet
 on CI:** the slice's claim, a plain scene rendering in CI on every leg, is owed by the first push of
 `feature/M15`. Full notes in WORK.md's *Sub-slice 3d built*, under M15; ADR-0028 is amended.
-*(First pushed 2026-10-24: proved on macOS and Windows, Linux owed; see the entry above.)*
+*(Proved on 2026-10-24 on all three platforms; see the entry above.)*
 
 - **Every `[gpu]` render case runs on hardware and on the CPU device**, a Catch2 generator as in
   archimedes. Where the CPU driver is staged, a missing CPU device fails rather than skips.
