@@ -1400,12 +1400,32 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-24 — feature/M15's first CI run: the CPU device renders on Windows and macOS
+
+[Run 40057291780](https://github.com/luckyneko/lain/actions/runs/40057291780), dispatched by hand,
+since CI runs by itself only on master, main and develop. macOS, clang-format and the subproject smoke
+are green. Full notes in WORK.md's *feature/M15's first CI run*, under M15.
+
+- **3d's claim holds on two platforms.** Windows' runner has no GPU, and every render and scene case
+  passed there on the CPU device alone. Linux built no tests, so its leg is owed by the re-run.
+- **GCC 13 failed the four Linux builds on two false positives** that clang does not raise:
+  `-Wmaybe-uninitialized` in `DocumentGuard::request` (now `emplace`), and `-Wdangling-reference` on
+  a test helper (its name is now a `string_view`). Each build stopped at its first failing target, so
+  GCC may find more.
+- **Three Windows failures were tests that took `/projects/hall` for an absolute path.** It has no
+  drive there. New `lain::testing::rootedPath` roots a path at this platform's root.
+- **Found, not fixed: on Windows a rig plan's uris change spelling across a save and a load**
+  (`Uri::fromPath` keeps `\`, a document stores `/`). Graph documents hold `std::filesystem::path`
+  and do not see it. This is predicted from the code, not observed. Trigger: the first comparison of
+  a rig plan's uris across a load.
+
 ### Update 2026-10-24 — M15 slice 3d built: lain's pin moves to the CPU device (**slice 3 COMPLETE**)
 
 archimedes PRs #1 and #2 merged, and `extern/archimedes` moves to `develop` (`828c3e2`). `ctest -j8`
 **1465/1465** Release with video, camera and Ceres on (+2); warning-clean, format-check clean. **Not yet
 on CI:** the slice's claim, a plain scene rendering in CI on every leg, is owed by the first push of
 `feature/M15`. Full notes in WORK.md's *Sub-slice 3d built*, under M15; ADR-0028 is amended.
+*(First pushed 2026-10-24: proved on macOS and Windows, Linux owed; see the entry above.)*
 
 - **Every `[gpu]` render case runs on hardware and on the CPU device**, a Catch2 generator as in
   archimedes. Where the CPU driver is staged, a missing CPU device fails rather than skips.

@@ -36,7 +36,9 @@ namespace lain::editor
 			m_prompt = false; // a question not yet opened was about the request just replaced
 			if (!unsaved)
 				return std::optional<Request>(std::move(request));
-			m_pending = std::move(request);
+			// emplace, not =: GCC 13 at -O2 follows the assignment's engaged branch into the string
+			// the reset() above just destroyed, and fails -Werror on -Wmaybe-uninitialized.
+			m_pending.emplace(std::move(request));
 			m_prompt = true;
 			return std::nullopt;
 		}

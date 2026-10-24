@@ -5,6 +5,7 @@
 
 #include <lain/core/uuid.h>
 #include <lain/rigplan/rigplan.h>
+#include <lain/testing/rootedpath.h>
 
 #include <filesystem>
 #include <string>
@@ -119,13 +120,17 @@ namespace testplan
 
 	// The test plan in a room, with a partition, a crate and a walking figure: every kind of material
 	// once, and a path of each kind under `folder` (which need not exist; the path rule is lexical).
-	inline lain::rigplan::RigPlan furnished(const std::filesystem::path& folder = "/projects/hall")
+	//
+	// Its paths are spelled generic, as a document stores them. Uri::fromPath keeps the native
+	// separators, so on Windows a plan built that way would come back from a save and load as the
+	// same files under another spelling, and a round trip compared as text would differ.
+	inline lain::rigplan::RigPlan furnished(const std::filesystem::path& folder = lain::testing::rootedPath("projects/hall"))
 	{
 		lain::rigplan::RigPlan p = plan();
 		lain::rigplan::Room room;
 		room.size = {10.0, 8.0, 3.2};
 		room.floor.material.surface = lain::image::ProceduralTexture{11, 0.05};
-		room.north.material.surface = lain::rigplan::ImageTexture{lain::core::Uri::fromPath(folder / "textures" / "brick.png"), {0.5, 0.25}};
+		room.north.material.surface = lain::rigplan::ImageTexture{lain::core::Uri{(folder / "textures" / "brick.png").generic_string()}, {0.5, 0.25}};
 		room.ceiling.present = false;
 		p.room = room;
 
@@ -151,7 +156,7 @@ namespace testplan
 		lain::rigplan::Prop walker;
 		walker.id = walkerId;
 		walker.name = "walker";
-		walker.mesh = lain::core::Uri::fromPath("/assets/people/walk.<frame:04>.obj"); // outside the folder
+		walker.mesh = lain::core::Uri{lain::testing::rootedPath("assets/people/walk.<frame:04>.obj").generic_string()}; // outside the folder
 		walker.clip = true;
 		walker.clipRate = {24, 1};
 		walker.unitMetres = 0.01; // modelled in centimetres

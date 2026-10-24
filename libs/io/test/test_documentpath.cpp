@@ -1,6 +1,7 @@
 // ADR-0027 for one path: relative on disk inside a document's folder tree, absolute in memory.
 
 #include <lain/io/documentpath.h>
+#include <lain/testing/rootedpath.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -9,22 +10,28 @@
 
 namespace fs = std::filesystem;
 
+// Absolute on this platform, whose root need not be "/" (see rootedpath.h).
+static std::string rooted(const char* rest)
+{
+	return lain::testing::rootedPath(rest).generic_string();
+}
+
 // A folder that need not exist: the rule is lexical.
-static const fs::path kFolder = fs::path("/projects/hall");
+static const fs::path kFolder = rooted("projects/hall");
 
 TEST_CASE("inside the document's folder tree a path is written relative, and reads back absolute", "[io][documentpath]")
 {
-	REQUIRE(lain::io::relativizePath("/projects/hall/meshes/pole.obj", kFolder) == "meshes/pole.obj");
-	REQUIRE(lain::io::resolvePath("meshes/pole.obj", kFolder) == "/projects/hall/meshes/pole.obj");
+	REQUIRE(lain::io::relativizePath(rooted("projects/hall/meshes/pole.obj"), kFolder) == "meshes/pole.obj");
+	REQUIRE(lain::io::resolvePath("meshes/pole.obj", kFolder) == rooted("projects/hall/meshes/pole.obj"));
 	// One spelling of the folder, so a trailing separator or a "." changes nothing.
-	REQUIRE(lain::io::relativizePath("/projects/hall/meshes/pole.obj", "/projects/hall/./") == "meshes/pole.obj");
+	REQUIRE(lain::io::relativizePath(rooted("projects/hall/meshes/pole.obj"), rooted("projects/hall/./")) == "meshes/pole.obj");
 }
 
 TEST_CASE("outside the tree a path stays absolute, and ../ is never written", "[io][documentpath]")
 {
-	REQUIRE(lain::io::relativizePath("/footage/take1/cam0.mp4", kFolder) == "/footage/take1/cam0.mp4");
-	REQUIRE(lain::io::relativizePath("/projects/other/wall.png", kFolder) == "/projects/other/wall.png");
-	REQUIRE(lain::io::resolvePath("/footage/take1/cam0.mp4", kFolder) == "/footage/take1/cam0.mp4");
+	REQUIRE(lain::io::relativizePath(rooted("footage/take1/cam0.mp4"), kFolder) == rooted("footage/take1/cam0.mp4"));
+	REQUIRE(lain::io::relativizePath(rooted("projects/other/wall.png"), kFolder) == rooted("projects/other/wall.png"));
+	REQUIRE(lain::io::resolvePath(rooted("footage/take1/cam0.mp4"), kFolder) == rooted("footage/take1/cam0.mp4"));
 }
 
 TEST_CASE("an empty path and a uri with a scheme are left as written", "[io][documentpath]")

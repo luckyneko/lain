@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -26,7 +27,9 @@ static lain::rigplan::Realisation realised(const RigPlan& plan)
 	return std::move(*result.realisation);
 }
 
-static const RealisedCamera& cameraNamed(const lain::rigplan::Realisation& r, const std::string& name)
+// The name by value: a string literal bound to a const std::string& is a temporary, and GCC 13's
+// -Wdangling-reference then calls the returned reference dangling, though it points into `r`.
+static const RealisedCamera& cameraNamed(const lain::rigplan::Realisation& r, std::string_view name)
 {
 	const auto it = std::find_if(r.cameras.begin(), r.cameras.end(), [&](const RealisedCamera& c)
 								 { return c.name == name; });

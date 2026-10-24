@@ -8,6 +8,6 @@ add_executable(test-rigplan
 )
 
 target_compile_features(test-rigplan PRIVATE cxx_std_17)
-target_link_libraries(test-rigplan PRIVATE lain::rigplan lain::warnings Catch2::Catch2WithMain)
+target_link_libraries(test-rigplan PRIVATE lain::rigplan lain::testing lain::warnings Catch2::Catch2WithMain)
 
 catch_discover_tests(test-rigplan TEST_PREFIX "(rigplan) ")

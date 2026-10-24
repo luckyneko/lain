@@ -4,6 +4,7 @@
 
 #include <lain/rigplan/realisation.h>
 #include <lain/rigplan/serialize/rigplan.h>
+#include <lain/testing/rootedpath.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -278,13 +279,13 @@ TEST_CASE("a furnished rig plan document's shape", "[rigplan][serialize][environ
 TEST_CASE("a rig plan document's paths are relative inside its folder, and absolute outside it", "[rigplan][serialize][environment]")
 {
 	// The brick texture lies under the document's folder and the walking figure outside it.
-	const std::filesystem::path folder = "/projects/hall";
+	const std::filesystem::path folder = lain::testing::rootedPath("projects/hall");
 	Value document = lain::rigplan::rigPlanToValue(testplan::furnished(folder));
 	lain::rigplan::relativizePaths(document, folder);
 
 	Value& north = member(member(member(member(document, "room"), "north"), "material"), "surface");
 	REQUIRE(member(member(north, "value"), "image") == Value(std::string("textures/brick.png")));
-	REQUIRE(member(element(member(document, "props"), 0), "mesh") == Value(std::string("/assets/people/walk.<frame:04>.obj")));
+	REQUIRE(member(element(member(document, "props"), 0), "mesh") == Value(lain::testing::rootedPath("assets/people/walk.<frame:04>.obj").generic_string()));
 
 	// Read back from the folder, every path is what the rig plan held.
 	lain::rigplan::resolvePaths(document, folder);
@@ -297,7 +298,7 @@ TEST_CASE("relativizing reaches every material a rig plan holds", "[rigplan][ser
 {
 	// A picture on a plane and on a box too, not only on the room, so each place a material lives is
 	// walked.
-	const std::filesystem::path folder = "/projects/hall";
+	const std::filesystem::path folder = lain::testing::rootedPath("projects/hall");
 	lain::rigplan::RigPlan plan = testplan::furnished(folder);
 	plan.planes[0].material.surface = lain::rigplan::ImageTexture{lain::core::Uri::fromPath(folder / "poster.png"), {1.0, 1.0}};
 	plan.boxes[0].material.surface = lain::rigplan::ImageTexture{lain::core::Uri::fromPath(folder / "wood.png"), {1.0, 1.0}};
