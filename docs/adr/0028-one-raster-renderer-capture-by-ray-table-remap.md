@@ -3,7 +3,9 @@
 ---
 Status: accepted (designed 2026-10-21, Milestone 15). Amended 2026-10-22: CI renders on archimedes'
 CPU device (SwiftShader), not lavapipe. Amended 2026-10-24: the renderer is built (slice 3), lain's
-pin carries the CPU device, and what running on it found is under *Consequences*.
+pin carries the CPU device, and what running on it found is under *Consequences*. Amended 2026-10-24
+again, planning slice 4: the ray table is a pixel-corner lattice, the intermediate image is chosen by
+texel count, a capture keeps to Vulkan's guaranteed limits, and the 0.07 px target was a pinhole's.
 ---
 
 Milestone 15's rig design app needs two kinds of image. The **viewport** is the designer's own
@@ -25,8 +27,18 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
 - **A capture render** has three steps:
   1. Rasterise the same scene, with the same shading, into an intermediate image that covers the
      camera's field of view: a wide pinhole for ordinary lenses, a cubemap past 180°.
+     *(Amended 2026-10-24: no lain model reaches 180°, since every one needs Z > 0, but a pinhole's
+     tan φ makes one face wasteful long before. So the intermediate image is the front face alone or
+     the cube's faces, front and four sides, whichever takes fewer texels at the density below. Each
+     face is cut into tiles of at most 4096 a side.)*
   2. Build a **ray table** on the CPU: lain's `unproject` gives a direction for each output pixel's
-     sub-samples.
+     sub-samples. *(Amended 2026-10-24, decided with the repo owner: for every pixel CORNER, and a
+     sub-sample's direction is its pixel's four corner directions blended. A direction per sub-sample
+     is 16× larger at s = 4 (6.4 GB at 8K), and M9's `distortedView` already interpolates on an 8 px
+     grid. The blend is the one approximation of the model a capture makes. The table measures it,
+     projecting each pixel centre's blended ray back through the model, and refuses a table past a
+     tolerance (0.01 px by default). Measured on strongly distorted cameras of all six models at
+     640×480: 2.5e-4 to 2.4e-3 px.)*
   3. A compute pass samples the intermediate image along each ray and averages s × s rays per pixel,
      which integrates the pixel's footprint as `libs/camera/test/texturedscene.h` does on the CPU.
 - **The remap does not bias the ground truth.** A scene point still lands at `project(X)` under
@@ -34,7 +46,16 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
   sensor's resolution by making the intermediate image finer than the camera's angular resolution.
   This is measured, not argued: board corners rendered through every distortion model are
   detected and compared with lain's projection of the truth. M9's CPU renderer reaches about
-  0.07 px on that test, which sets the target.
+  0.07 px on that test, which sets the target. *(Corrected 2026-10-24: that 0.068 px was measured
+  through a pinhole only, by an OpenCV warp of the board (`test_charuco.cpp`'s angled scene), and no
+  test detected a board through the other five models. M15 slice 4 measures each model's own CPU
+  baseline with `texturedscene.h` and judges both renderers against the truth, since the two
+  average light differently: the CPU in 8-bit sRGB codes, the GPU in linear light.)*
+- **"Finer than the camera's angular resolution" is a stated rule** *(added 2026-10-24)*: every step
+  of one camera pixel, in any direction, spans at least m texels of the intermediate image (m = 2 by
+  default). That is the least singular value of the pixel-to-face Jacobian, taken per pixel. The
+  cube's faces share one focal length, so neither the density nor a texture's mip level steps at a
+  seam.
 - **Shading is written once, in GLSL**, for both views.
 - **CI renders on archimedes' CPU device**: SwiftShader (Apache-2.0), a CPU implementation of
   Vulkan 1.3 that archimedes stages beside every runnable target and loads directly, through
@@ -82,6 +103,14 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
   on 14 logical cores: SwiftShader adds 15 threads beside lain's 13 workers when uncapped, and 3
   with a cap of 2. `lain::app` passes archimedes' `RuntimeConfig::cpuDeviceThreads` when it sets
   up Vulkan, after `--threads` is parsed; how the cores are split is M15's decision.
+- **A capture keeps to Vulkan's guaranteed limits** *(added 2026-10-24, decided with the repo owner)*.
+  archimedes exposes no device limits, so a tile is at most 4096 a side and a band of the ray table
+  at most 2^27 bytes. A capture is then tiled and banded the same way on every device, and only
+  rasterisation differs. archimedes' `Sampled` finish orders only the fragment stage, so a capture
+  renders a tile with `CopySrc`, transitions it to `General`, and reads it in compute with
+  `imageLoad`, blending bilinearly by hand, since linear filtering of RGBA32F is not guaranteed. Both
+  archimedes changes, limit queries and a compute-visible `Sampled` finish, are deferred with a
+  trigger in WORK.md's Outstanding index.
 - **archimedes' renderer shapes three choices.** Its depth attachment is discarded after a pass,
   so a camera's depth for the visibility map is rendered as distance into an R32F colour target.
   It has no cube or array-layer texture, so an intermediate image past 180° is six 2D textures in

@@ -13,6 +13,7 @@ add_library(render STATIC
 	src/view.cpp
 	src/renderer.cpp
 	src/viewport.cpp
+	src/capture.cpp
 )
 add_library(lain::render ALIAS render)
 
@@ -30,7 +31,7 @@ target_link_libraries(render
 	PUBLIC archimedes  # acm::Device, which a renderer is made on (renderer.h)
 	PUBLIC lain::camera # camera::Intrinsics and ImageGeometry describe a view (view.h)
 	PUBLIC lain::image lain::math lain::mesh
-	PRIVATE lain::string lain::warnings
+	PRIVATE lain::string lain::task lain::warnings # lain::task: a ray table is built on the process pool (capture.h)
 )
 
 if(LAIN_BUILD_TESTING)

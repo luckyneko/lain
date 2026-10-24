@@ -14918,7 +14918,7 @@ clean. `flowview --licenses` prints 25 notices (48.6 KB) on macOS arm64.
   `third-party/` ships; MoltenVK's compiled-in SPIRV-Cross has no licence text to read; and nothing
   was built on Linux or Windows (MSVC's literal limit included), so CI's first run is owed.
 
-## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 3 built)
+## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 3 built, 4a built)
 
 An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
 and lights, a board waved through) that renders **synthetic captures**: footage in the shape M9
@@ -15008,7 +15008,9 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    CI runs*, below 3d).
 4. **The capture pass**: the intermediate image, the ray table, the remap with s × s rays. Proves the
    ADR-0028 claim: a rendered board's detected corners against lain's projection of the truth,
-   through all six distortion models, near the CPU renderer's ~0.07 px.
+   through all six distortion models, near the CPU renderer's ~0.07 px. *(That figure was measured
+   on a pinhole only; 4c measures each model's own CPU baseline.)* **Planned 2026-10-24 as four
+   commits, 4a to 4d** (*Slice 4 planned* below); **4a built 2026-10-24.**
 5. **The sensor model, movers and the capture writer**: the board and prop movers on their keyed
    paths (slice 1's plan put them here), and `rigplan render <plan> --out <capture> [--seed
    --deviation --noise]`, streaming one camera-frame at a time with sensor, encode and write on the
@@ -15751,6 +15753,147 @@ subproject smoke are green. The four Linux legs failed at Build, and Windows at 
   - Comparing a rig plan's uris across a load (slice 8's undo snapshots, or an asset cache keyed by
     uri) would see a difference on Windows only. **Trigger:** the first such comparison.
 
+### Slice 4 planned (2026-10-24), and 4a built
+
+Four commits, after a design review checked the first draft against the code. Defaults are recorded
+here, as slices 1 to 3's were, so they can be objected to.
+
+- **Decided with the repo owner:**
+  - **The ray table is a pixel-corner lattice.** `unproject` runs at the (w + 1) × (h + 1) pixel
+    corners, and a remap blends a pixel's four corner directions for each of its s × s sub-samples.
+    - A table with a direction per sub-sample is 12 bytes × w × h × s²: 133 MB at 960×720 with s = 4,
+      6.4 GB at 8K. Past 2^27 bytes it would need bands anyway.
+    - The lattice is 16× smaller, s becomes a remap setting, and M9's `distortedView` already
+      interpolates on an 8 px grid.
+    - ADR-0028 is amended.
+  - **No archimedes change in slice 4.**
+    - Tiles and buffers keep to Vulkan's guaranteed minimums: a tile at most 4096 a side as drawn
+      (`maxImageDimension2D`), a buffer at most 2^27 bytes (`maxStorageBufferRange`). So a capture is
+      tiled and banded the same way on every device.
+    - The compute read goes through the one archimedes path that orders it: `CopySrc` finish, then
+      `transitionImage(TransferSrc → General)`, then `imageLoad` from a storage image.
+    - The two archimedes changes are a todo in the Outstanding index (*Deferred — serialization,
+      params, graphics*).
+- **Found while planning:**
+  1. **No lain model reaches 180°.** Every model needs Z > 0, and Kannala-Brandt's domain stops at π/2.
+     So ADR-0028's "a cubemap past 180°" never fires. A pinhole face's tan φ blows up well before
+     then, so a capture chooses between one front face and the cube's faces by texel count.
+  2. **The ~0.07 px target was measured on a pinhole only** (`test_charuco.cpp`'s angled scene,
+     through `syntheticview.h`'s OpenCV warp). No test detects a board through the other five models,
+     so 4c measures a CPU baseline per model.
+  3. **`texturedscene.h` and the GPU form images differently.**
+     - The CPU filters and averages 8-bit sRGB codes, where the GPU decodes first and averages linear
+       light: a half-covered black/white pixel reads 128 on one and 188 on the other once encoded.
+     - **`board::detect` narrows RGBA32F without encoding it** (`imageprep.cpp`).
+
+     So 4c judges both against the truth, never against each other, and encodes a capture
+     explicitly before detecting it.
+  4. **The face pass is aliased at silhouettes.** It has no MSAA, so a geometric edge is placed to
+     ±0.5 texel, ±0.5 / m camera px. ADR-0028's "biases no ground truth" holds for texture features,
+     such as a board on a sheet, and not for silhouettes. 4b measures it.
+  5. **One submit per tile is required.** `beginRendering` transitions from UNDEFINED with no source
+     stage, so re-rendering a tile texture in one command buffer races the previous dispatch's reads.
+     A depth attachment cannot be fenced through archimedes at all.
+  6. **Nothing connects a `RealisedCamera` to a render yet.** `planFromCamera` is lain's camera frame
+     already, so it is a capture's `worldFromCamera` unchanged. Wiring it is slice 5's, with its
+     writer.
+- **4a: the ray table**, on the CPU (built, below).
+  - The faces are signed permutations of the camera frame, and each face's focal length follows the
+    direct Jacobian rule: every step of a camera pixel spans at least m texels.
+  - The cube's faces share one focal length, so nothing steps at a seam.
+  - Membership is widened, and the tiles' interiors are half-open integer ranges in face-global
+    coordinates with open outer edges. So every sub-sample has exactly one tile, which draws its
+    footprint, without the CPU and GPU having to agree.
+  - The table measures its own interpolation error and refuses one above a tolerance.
+- **4b: the capture pass on the device.**
+  - `Renderer::upload(RayTable)` and `Renderer::capture`, over `shaders/capture.comp`.
+  - One `submitSync` per tile: render the tile, transition it, then one dispatch per band adding each
+    sub-sample's manual bilinear blend (`imageLoad`; RGBA32F filtering is not guaranteed) into a
+    banded accumulator.
+  - **Cases on both devices:**
+    - a pinhole at m = 1 and s = 1 equals `render()`;
+    - a lit plane through a distorted model matches the analytic shading;
+    - a fisheye in a lit box room shows no seam;
+    - coverage is exact away from edges;
+    - tiled equals untiled away from edges;
+    - silhouette error is measured.
+- **4c: the ADR-0028 claim.**
+  - `test-camera-capture` in `plugins/camera/test`, built where both `lain::render` and the OpenCV
+    plugin exist, Release only, with the m × s sweep under a hidden tag.
+  - Each model at 960×720, with M9's board at the centre and toward a corner, through the capture pass
+    and through `texturedscene.h`. Both are measured against the truth, then bounds are set.
+  - M9's own pinhole scene is compared with its 0.068 / 0.136 px.
+- **4d: the procedural bake density** 3c left owed: a plane at the bake density and at twice it, with
+  8-bit differences and SIFT agreement recorded.
+
+#### Sub-slice 4a built (2026-10-24)
+
+`lain/render/capture.h` and `src/capture.cpp`; `lain::render` now links `lain::task`, since the table is
+built on the process pool. `ctest -j8` **1476/1476** Release with video, camera and Ceres on (+11), and
+**1342/1342** with all three off. Warning-clean, format-check clean. A Debug build was not run: there is
+no Debug tree here.
+
+- **What a ray table holds:**
+  - `CaptureSettings`: samples 4, oversampling 2, interpolation tolerance 0.01 px, and a tile side of
+    at most 4096. The tile side is a setting, beyond the plan, only so the tests can force tiling.
+  - `FaceAxis` and `cameraFromFace` (a proper rotation per face), `majorAxis` (ties to the earlier
+    face), `CaptureFace`, `CaptureTile`, and `RayTable::build`.
+  - **The corners are stored as floats**, which is what a remap reads, so the measured error includes
+    their storage.
+- **The interpolation error is measured by projection**: a pixel centre's interpolated ray, projected
+  back through the model, against the centre.
+  - That is a distance in pixels directly, with no second unprojection.
+  - A pixel's centre is where a bilinear blend is least exact. The tests confirm no sub-sample is
+    worse.
+- **Measured, at 640×480 with the strong camera set** (`libs/render/test/testcameras.h`, which 4b and 4c
+  reuse):
+
+  | Model | Interpolation error | Intermediate image |
+  |---|---|---|
+  | none | 3.3e-4 px | front face alone |
+  | Brown-Conrady 5 | 1.5e-3 px | front face alone |
+  | inverse Brown-Conrady 5 | 5.3e-4 px | front face alone, 1773×1381 |
+  | modified Brown-Conrady 5 | 1.5e-3 px | front face alone |
+  | rational 8 | 2.4e-3 px | front face alone, 2139×1589 |
+  | Kannala-Brandt 4 (168° fisheye) | 2.5e-4 px | all five cube faces, near scale 0.567 |
+
+  - Every error is 30× or more under a detector's 0.07 px.
+  - **The inverse model needs a focal length of 3.1 f** where m f would be 2 f, because its edges
+    compress. The density rule sees that.
+  - **The least stretch of a pixel step is exactly m**, to 1e-6, for every model, at the cell that sets
+    the focal length.
+  - **A Brown-Conrady camera 0.6% inside its fold interpolates 0.017 px off**, so the default
+    tolerance refuses it, naming the error. `CameraModel::create` checks only the image's corners, so
+    such a camera is valid.
+- **The cases**, eleven:
+  - each face is a proper rotation looking along its axis, and ties go to the earlier face;
+  - a pinhole is one front face at m times its longer focal length;
+  - every model's error is measured, and no sub-sample is worse;
+  - a model near its fold is refused;
+  - a narrow lens keeps the front face, and the fisheye takes the cube's faces at one focal length;
+  - every pixel step spans at least m texels, with equality where the focal length is set;
+  - every sub-sample (s = 4) belongs to exactly one tile of every face its float choice might give it
+    to (within 1e-6), which draws its footprint and visits its pixel. This is run with tiles of 4096
+    and of 64 a side;
+  - a ray exactly on a seam, or where three faces meet, is drawn by each face;
+  - a band fits 2^27 bytes, and no more;
+  - a table is the same however many threads build it;
+  - refusals name the setting.
+- **Eight sabotages; five caught:**
+  - unprojecting through a pinhole fails 7 cases;
+  - corners half a pixel off fail 8;
+  - axis-aligned steps for the stretch fail 2 (the inverse and rational models at 0.91 m and 0.70 m);
+  - one focal length per cube face fails 1;
+  - always choosing the cube fails 3. Its first cut did not build under `-Werror` and was redone.
+- **Three are not caught, as reasoned:** no widening of membership, closed edge tiles, and no texel
+  either side of a tile's pixel rectangle. Each guards the shader's float arithmetic.
+  - A CPU case cannot make the shader's float choices.
+  - No ray of the test cameras reaches a face that none of its cell's corners belongs to, and for a
+    pinhole none can.
+  - The guard band keeps every ray inside its face.
+
+  They stay, as `capture.cpp` says, and 4b's device cases are where they can be seen.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -15987,17 +16130,17 @@ row here**. A row is cheap to delete and expensive to leave.
   [ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md).)*
 
 - **M15 — rig design: rig plans and synthetic captures.** Grilled 2026-10-21 to 10-22 with two ADRs
-  (0028, 0029). **Slices 0 and 1 built 2026-10-22** (`lain::editor`; `lain::rigplan` and its
-  documents); slice 0's gui-mode check of the unsaved-changes modal is owed. Ten slices, 0 to 9, on `feature/M15`; the build order and every
-  exclusion are in M15's own sections. *(Milestone 15.)*
-- **archimedes' CPU device**, which M15 renders its CI captures on: built in archimedes (PRs #1 and
-  #2), verified against lain on 2026-10-22. The two archimedes fixes that verification found are
-  in (`2eb294b`) and re-verified from lain. Left: the PRs merging, then lain moving its pin in M15
-  slice 3, with the licence notice, the thread split and a device choice. *(M15 §Verified against
-  archimedes' CPU device.)*
+  (0028, 0029). **Slices 0 to 3 built 2026-10-22 to 10-24** (`lain::editor`; `lain::rigplan` and its
+  documents; `io::mesh` and the OBJ plugin; `lain::render` on the CPU device, CI green on every
+  platform). **Slice 4 planned 2026-10-24, 4a built.** Slice 0's gui-mode check of the unsaved-changes
+  modal is owed. Ten slices, 0 to 9, on `feature/M15`; the build order and every exclusion are in
+  M15's own sections. *(Milestone 15.)*
+- **archimedes' CPU device**, which M15 renders its CI captures on: **adopted by M15 slice 3d
+  (2026-10-24)**. The PRs merged, lain's pin moved, and the licence notice, the thread split and
+  `--device` landed. *(M15 §Sub-slice 3d built.)*
 
-M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not**, and M15 has
-its first slice.
+M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not**, and M15 is under
+way (slices 0 to 3 built).
 
 - **Example documents** — all four commits built. Owed: a gui-mode eyeball of every example (the
   primary purpose). The smoke step has run in CI since it landed, and was green on every leg in
@@ -16094,6 +16237,25 @@ M12 §Not in this milestone.)*
   sequence), and **keyboard-search add**. *(ADR-0005.)*
 - **The non-encoding swapchain** — designed, dormant on MoltenVK; an archimedes change for when a
   target surface actually forces sRGB. *(ADR-0002.)*
+- **Two archimedes changes the capture pass works around** (decided 2026-10-24: not in M15 slice 4):
+  1. **Device-limit queries:** `maxImageDimension2D`, `maxStorageBufferRange`, and the per-stage
+     storage-image count. Today none is exposed, so a capture keeps to Vulkan's guaranteed minimums:
+     a tile at most 4096 a side, a band at most 2^27 bytes.
+  2. **A `Sampled` finish and a `ShaderReadOnly` transition whose barriers reach the compute stage.**
+     Both are fragment-only (`RenderTarget.cpp`, `Convert.cpp`), so a capture renders with `CopySrc`,
+     transitions to `General`, and reads with `imageLoad`.
+
+  **Once they land**, lain drops the fixed limits (sizing tiles and bands to the device) and the
+  storage-image chain (sampling a `Sampled` target directly). **Trigger:** the first capture the fixed
+  limits measurably slow, or a second compute pass that reads a rendered target. *(M15 §Slice 4
+  planned; ADR-0028.)*
+- **MSAA in a capture's face pass.** Without it a silhouette is placed to ±0.5 / m camera px; a texture
+  feature such as a board is not affected. Per-format multisample support needs checking first, since
+  archimedes clamps the sample count per device. **Trigger:** a measurement that needs silhouettes
+  placed better than 4b records. *(M15 §Slice 4 planned.)*
+- **A finer ray-table lattice near a fold**, at a half or quarter pixel, for a camera whose pixel-corner
+  lattice interpolates it worse than the tolerance. **Trigger:** the first realised camera refused for
+  it. *(M15 §Sub-slice 4a built.)*
 
 ### Deferred — from the notes.txt triage
 

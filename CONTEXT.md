@@ -758,8 +758,8 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
 
 ## Rig design — rig plans and the synthetic captures they produce
 
-*(Designed 2026-10-21 to 10-22 as Milestone 15, nothing built yet; ADR-0028 and ADR-0029. A rig
-is planned as it would be installed, and a synthetic capture is what that rig plan would have
+*(Designed 2026-10-21 to 10-22 as Milestone 15, being built on `feature/M15`; ADR-0028 and ADR-0029.
+A rig is planned as it would be installed, and a synthetic capture is what that rig plan would have
 recorded: camera geometry's methods run on it unchanged, and its ground truth scores them.)*
 
 - **Rig plan** — the document a rig is designed in: the room, props and movers, the mounts with
@@ -804,6 +804,17 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   Looking through a camera while designing is a live capture render at reduced resolution, through
   its nominal or its realised model, so what it shows is what the capture will hold. _Avoid_:
   viewport render, camera preview.
+- **Intermediate image** — what a capture render rasterises before it remaps: pinhole **faces** at
+  the camera's optical centre, each cut into **tiles** at most 4096 a side. It is either the front
+  face alone or the cube's faces (front and four sides, never the back, since every camera model sees
+  only Z > 0), whichever takes fewer texels. Either way it is fine enough that every step of a camera
+  pixel spans at least m of its texels. It is shaded like the viewport and never written anywhere.
+  _Avoid_: cubemap (a cube texture is what archimedes lacks, and a narrow lens uses one face), canvas.
+- **Ray table** — what lain's own `unproject` gives a capture render, built once per camera model: the
+  ray through every pixel corner. A sub-sample's ray is its pixel's four corner rays blended, which is
+  the one approximation of the camera model a capture makes, and the table measures it (the
+  interpolation error, in pixels) and is refused past a tolerance. _Avoid_: remap table, lookup table,
+  distortion map (it maps pixels to rays, not pixels to pixels).
 - **Render scene** — what `lain::render` draws: meshes placed in a world, the materials their surfaces
   show and the lights that light them, in metres, with no axis convention of its own (a view states
   its camera in the same axes). It knows nothing of rig plans: a rig plan's realisation at one frame

@@ -1400,6 +1400,60 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-24 — M15 slice 4 planned; 4a built: the capture pass's ray table
+
+Slice 4 (the capture pass, ADR-0028) is four commits, planned after a design review checked the first
+draft against the code: **4a** the ray table on the CPU, built here; **4b** the remap on the device;
+**4c** the board-corner claim through all six models; **4d** the procedural bake density 3c left
+owed. The plan and its defaults are in WORK.md's *Slice 4 planned*; ADR-0028 and CONTEXT.md are
+amended. `ctest -j8` **1476/1476** Release with video, camera and Ceres on (+11), **1342/1342** with all
+three off; warning-clean, format-check clean. Debug not run (no Debug tree here).
+
+- **Decided with the repo owner:**
+  - **The ray table is a pixel-corner lattice**: `unproject` at the (w + 1) × (h + 1) corners, and a
+    sub-sample's ray is its pixel's four corner rays blended. A direction per sub-sample is 16×
+    larger at s = 4, 6.4 GB at 8K.
+  - **No archimedes change in slice 4.** A capture keeps to Vulkan's guaranteed limits: tiles at most
+    4096 a side, bands of at most 2^27 bytes. It reads a rendered tile through `CopySrc`, then
+    `General`, then `imageLoad`, since archimedes' `Sampled` finish orders only the fragment stage.
+    Both archimedes changes (limit queries, a compute-visible finish) are a todo in WORK.md's
+    Outstanding index, with what lain drops once they land.
+- **Found while planning:**
+  - **No lain model reaches 180°** (every one needs Z > 0), so "a cubemap past 180°" never fires. The
+    intermediate image is the front face alone or the cube's five faces, whichever takes fewer texels.
+  - **The ~0.07 px target was a pinhole's.** No test detects a board through the other five models, so
+    4c measures each one's CPU baseline.
+  - **`texturedscene.h` averages 8-bit sRGB codes and the GPU averages linear light**, and
+    `board::detect` narrows RGBA32F without encoding it. So 4c judges both against the truth, never
+    against each other.
+  - **The face pass is aliased at silhouettes** (no MSAA): ±0.5 / m camera px, which a board on a sheet
+    does not feel. 4b measures it.
+- **`lain/render/capture.h`:**
+  - `CaptureSettings`;
+  - `FaceAxis`, `cameraFromFace` (signed permutations) and `majorAxis`;
+  - `CaptureFace` and `CaptureTile`;
+  - `RayTable::build`, run on the process pool, so `lain::render` links `lain::task`.
+- **Its rules:**
+  - A face's focal length is m over the least singular value of any cell's pixel-to-face Jacobian, one
+    focal length for every cube face.
+  - Membership is widened, and tile interiors are half-open face-global texel ranges with open outer
+    edges.
+  - The table measures its interpolation error by projecting each pixel centre's blended ray back
+    through the model, and refuses one past 0.01 px.
+- **Measured at 640×480 on strong sets of all six models** (`libs/render/test/testcameras.h`, for 4b
+  and 4c too):
+  - the interpolation error is 2.5e-4 to 2.4e-3 px, and no sub-sample is worse than its pixel's
+    centre;
+  - the least stretch of a pixel step is exactly m;
+  - the Brown-Conrady family keeps the front face (up to 2139×1589 texels), and the 168° fisheye takes
+    all five cube faces;
+  - a Brown-Conrady camera 0.6% inside its fold interpolates 0.017 px off and is refused.
+- **Eight sabotages; five caught.** The three not caught (no widening, closed edge tiles, unwidened
+  pixel rectangles) guard the shader's float arithmetic, which a CPU case cannot exercise. They stay,
+  and 4b is where they can be seen.
+- **Corrected in passing:** WORK.md's Outstanding index still had M15 at slices 0 and 1, and the CPU
+  device's adoption as owed; and CONTEXT.md's *Rig design* still said nothing was built.
+
 ### Update 2026-10-24 — feature/M15's first CI runs: the CPU device renders on every platform
 
 [Runs 40057291780](https://github.com/luckyneko/lain/actions/runs/40057291780),
