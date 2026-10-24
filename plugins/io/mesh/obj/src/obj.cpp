@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -37,13 +38,42 @@ namespace lain::io::mesh::obj
 					*warn += "material file '" + name + "' could not be read\n";
 				return false;
 			}
-			std::istringstream in(textOf(*bytes));
+			const std::string text = textOf(*bytes);
+			noteStatedColours(text);
+			std::istringstream in(text);
 			tinyobj::LoadMtl(names, materials, &in, warn, err);
 			return true;
 		}
 
+		// Whether the MTL defining material `name` gave it a Kd. tinyobjloader gives a material with a
+		// texture and no Kd a grey of its own, which only the file's text can tell from a stated one.
+		bool statesColour(const std::string& name) const { return m_statedColours.count(name) != 0; }
+
 	private:
+		// Notes, for each `newmtl`, whether a `Kd` line follows it before the next.
+		void noteStatedColours(const std::string& text)
+		{
+			std::istringstream lines(text);
+			std::string line, current;
+			while (std::getline(lines, line))
+			{
+				const std::size_t start = line.find_first_not_of(" \t");
+				if (start == std::string::npos)
+					continue;
+				const std::string token = line.substr(start, line.find_first_of(" \t\r", start) - start);
+				if (token == "newmtl")
+				{
+					const std::size_t from = line.find_first_not_of(" \t", start + token.size());
+					const std::size_t to = line.find_last_not_of(" \t\r");
+					current = from == std::string::npos ? std::string() : line.substr(from, to - from + 1);
+				}
+				else if (token == "Kd")
+					m_statedColours.insert(current);
+			}
+		}
+
 		const MeshFolder& m_folder;
+		std::set<std::string> m_statedColours;
 	};
 
 	static image::ColorRGBf colourOf(const tinyobj::real_t (&rgb)[3])
@@ -61,7 +91,10 @@ namespace lain::io::mesh::obj
 	//   * a corner with no texture coordinate gets (0, 0) when others have them, since untextured parts
 	//     of a textured mesh are common;
 	//   * a face with no material, or a material its MTL lacks (an MTL that cannot be read included),
-	//     gets a default one: a plain grey, so a mesh whose MTL went missing still shows its shape.
+	//     gets a default one: a plain grey, so a mesh whose MTL went missing still shows its shape;
+	//   * a material naming a texture (map_Kd) shows the texture as it is: its colour reads as white
+	//     when its Kd is missing (tinyobjloader would give it a 0.6 grey, drawing the texture at 60%) or
+	//     black (MTL multiplies the two, so the texture would draw black, which no author means).
 	// A face naming a vertex the file does not have is not a mesh at all.
 	class ObjReader : public MeshReader
 	{
@@ -87,7 +120,11 @@ namespace lain::io::mesh::obj
 				material.specular = colourOf(m.specular);
 				material.shininess = m.shininess;
 				if (!m.diffuse_texname.empty())
+				{
 					material.diffuseTexture = folder.locate(m.diffuse_texname);
+					if (!readMaterials.statesColour(m.name) || material.diffuse == image::ColorRGBf{0.0f, 0.0f, 0.0f})
+						material.diffuse = image::ColorRGBf{1.0f, 1.0f, 1.0f};
+				}
 				mesh.materials.push_back(material);
 			}
 

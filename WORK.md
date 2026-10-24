@@ -15331,6 +15331,8 @@ format-check clean.
   - a face with no material, or one its MTL lacks, gets a plain default, so a mesh whose MTL went
     missing still shows its shape.
 
+  A fourth joined after 3c: a textured material shows its texture as it is (*After 3c* below).
+
   A face naming a vertex the file lacks is refused.
 - **Corners are shared where the file shares them**: one vertex per distinct (position, normal,
   texture coordinate), so a cube with face normals is 24 vertices, pinned.
@@ -15569,9 +15571,10 @@ format-check clean. The render case ran on Metal.
   drawing them needs a placement rule that keeps a camera clear of its own pole or housing. The test
   plan's own cameras sit on their pole's axis, so a drawn pole would fill their whole view. That
   rule is the repo owner's call.
-- **Found, not changed:** tinyobjloader reads a missing `Kd` as 0, so an MTL naming `map_Kd` with no
-  `Kd` draws black, since MTL multiplies the two. The reader states what the file says (2c), so a
-  default would be a decision of its own.
+- **Found, and corrected the same day:** this said tinyobjloader reads a missing `Kd` as 0, so a
+  texture with no `Kd` draws black. That came from reading only tinyobjloader's initialiser. Its
+  parser gives such a material a 0.6 grey, so the texture draws at 60%, and only an explicit
+  `Kd 0 0 0` with a texture draws black. Both now read white (*After 3c* below).
 - **The cases**, nine:
   - a room's present surfaces face in, with the floor over the room's extent;
   - a picture repeats every tile and reads upright, and the untagged picture is taken as sRGB;
@@ -15597,6 +15600,27 @@ format-check clean. The render case ran on Metal.
   - the light reversed fails the light case;
   - the untagged picture kept untagged fails the picture and prop cases;
   - a plane facing away fails the plane case.
+
+#### After 3c: what the review settled (2026-10-23)
+
+The repo owner reviewed the questions the slices so far had left open.
+
+- **A textured MTL material shows its texture as it is** (`plugins/io/mesh/obj`). MTL multiplies
+  `Kd` by `map_Kd`, so a material naming a texture now reads white wherever its colour would hide
+  the texture.
+  - **A missing `Kd`** reads white, where tinyobjloader would give a 0.6 grey.
+  - **An explicit `Kd 0 0 0`** with a texture reads white too.
+  - **A stated `Kd` is kept**, 0.6 included, and black stays black without a texture.
+
+  Telling a missing `Kd` from a stated 0.6 takes the MTL's own text, so the material reader notes
+  which `newmtl` blocks state a `Kd` as it hands tinyobjloader the file. One case covers all four
+  materials. Three sabotages, all caught: ignoring what was stated, keeping the black, and an
+  untrimmed material name. The last first failed to build and was redone.
+- **Each surface keeps its own procedural pattern**, as 3c built it.
+- **Pushing `feature/M15` waits for 3d**, so the first CI run of the branch has the render tests
+  running on the CPU device. Until then nothing on this branch has been built on Linux or Windows.
+- **The defaults the slices recorded stand**: 8-bit sRGB textures, the bake density, the line pull,
+  an untagged picture taken as sRGB.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 

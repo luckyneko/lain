@@ -136,6 +136,24 @@ TEST_CASE("an OBJ whose MTL is missing still shows its shape, in the default mat
 	REQUIRE(mesh->indices.size() == 36);
 }
 
+TEST_CASE("a material naming a texture but no colour shows its texture, not black", "[io][mesh][obj]")
+{
+	const fs::path dir = lain::testing::scratchPath("textured");
+	// MTL multiplies Kd by map_Kd. tinyobjloader gives a texture with no Kd a 0.6 grey; a stated 0.6
+	// must stay 0.6, so the reader tells the two apart from the MTL's text.
+	write(dir / "quad.obj", "mtllib quad.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl only\nf 1 2 3\nusemtl zero\nf 1 3 2\n"
+							"usemtl dark\nf 2 3 1\nusemtl grey\nf 3 2 1\n");
+	write(dir / "quad.mtl", "newmtl only\nmap_Kd skin.png\nnewmtl zero\nKd 0 0 0\nmap_Kd skin.png\nnewmtl dark\nKd 0 0 0\n"
+							"  newmtl grey \n\tKd 0.6 0.6 0.6\nmap_Kd skin.png\n");
+	const auto mesh = loaded(dir / "quad.obj");
+	REQUIRE(mesh.has_value());
+	REQUIRE(mesh->materials.size() == 4);
+	CHECK(mesh->materials[0].diffuse == lain::image::ColorRGBf{1.0f, 1.0f, 1.0f}); // a texture, no Kd
+	CHECK(mesh->materials[1].diffuse == lain::image::ColorRGBf{1.0f, 1.0f, 1.0f}); // a texture, Kd black
+	CHECK(mesh->materials[2].diffuse == lain::image::ColorRGBf{0.0f, 0.0f, 0.0f}); // no texture: black as stated
+	CHECK(mesh->materials[3].diffuse == lain::image::ColorRGBf{0.6f, 0.6f, 0.6f}); // a texture, a Kd of 0.6 stated
+}
+
 TEST_CASE("what is not an OBJ, or names a vertex it does not have, is refused", "[io][mesh][obj]")
 {
 	const fs::path dir = lain::testing::scratchPath("bad");

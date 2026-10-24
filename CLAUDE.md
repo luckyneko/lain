@@ -1400,6 +1400,20 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-23 — a textured MTL material shows its texture as it is
+
+From the repo owner's review of the open questions after M15 slice 3c. Full notes in WORK.md's *After
+3c: what the review settled*, under M15.
+
+- **MTL multiplies Kd by map_Kd, and the OBJ reader now keeps a texture visible.** A missing `Kd` or
+  an explicit `Kd 0 0 0` with a texture reads white; a stated `Kd` (0.6 included) is kept.
+- **3c's finding was wrong and is corrected in place.** It said a missing `Kd` reads black. That came
+  from tinyobjloader's initialiser alone; its parser gives such a material a 0.6 grey, so the texture
+  drew at 60%. Telling a missing `Kd` from a stated 0.6 needs the MTL's text, which the reader now
+  scans as it hands the file over.
+- **Also settled:** each surface keeps its own procedural pattern, and pushing `feature/M15` waits
+  for 3d.
+
 ### Update 2026-10-23 — M15 slice 3c built: a rig plan's render scene
 
 The third of slice 3's four commits; only 3d, the archimedes pin, is left, and it waits on archimedes'
