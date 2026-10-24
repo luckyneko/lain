@@ -24,11 +24,12 @@ void main()
 {
 	const LineVertex vertex = vertices[gl_VertexIndex];
 	gl_Position = frame.clipFromWorld * vec4(vertex.position.xyz, 1.0);
-	// Pulled toward the camera by 1e-4 of the depth buffer, so a line on a surface is drawn on it. A
-	// 1 px line's depth is the same across its width while an oblique surface's is not, so with no
-	// pull a multisampled line on a floor loses about half its samples. Measured on Metal: 0 of 26
-	// points along floor lines drawn whole with no pull, 15 at 2e-6, all from 2e-5; a line 5 cm behind
-	// a wall 2 m away stays hidden up to 1e-3 (test_viewport.cpp brackets it from both sides).
+	// Pulled toward the camera by 1e-4 of the depth buffer, so a line on a surface facing the camera is
+	// drawn on it rather than lost in it (test_viewport.cpp brackets the value: with no pull the line on
+	// the wall is hidden, and at 3e-3 the line 5 cm behind it shows). It does not help a line on a
+	// surface seen obliquely: there a multisampled line loses samples to the surface whatever the pull
+	// (measured to 2e-3), because its samples lie up to 0.375 px off its centre, where the surface is
+	// nearer. Such a line keeps at least a quarter of its coverage, but is never drawn whole.
 	gl_Position.z -= 1e-4 * gl_Position.w;
 	colour = vertex.colour.rgb;
 }

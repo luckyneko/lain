@@ -21,11 +21,12 @@ namespace lain::render::detail
 		float clipFromWorld[16];
 		float eye[4];
 		float ambient[4];
+		float cameraAxis[4]; // the camera's +Z in clip space: clipFromCamera's third column
 		std::uint32_t lightCount;
 		std::uint32_t encode; // 1: lain's sRGB curve, for a display
 		std::uint32_t padding[2];
 	};
-	static_assert(sizeof(FrameConstants) == 112, "the Frame block is 112 bytes under std140");
+	static_assert(sizeof(FrameConstants) == 128, "the Frame block is 128 bytes under std140");
 
 	struct ObjectConstants
 	{
@@ -39,8 +40,8 @@ namespace lain::render::detail
 
 	struct MaterialConstants
 	{
-		float diffuse[4];
-		float specular[4];
+		float diffuse[4];  // w: 1 when the material has a texture
+		float specular[4]; // w: Blinn-Phong's exponent
 	};
 
 	struct LightConstants
@@ -94,7 +95,7 @@ namespace lain::render::detail
 		};
 		std::vector<Mesh> meshes;
 		std::vector<acm::Texture> textures; // the scene's, in its order
-		acm::Texture white;					// what a material without a texture samples
+		acm::Texture white;					// fills the binding of a material without a texture
 		acm::Buffer objects;				// an ObjectConstants per instance, `objectStride` apart
 		acm::Buffer lights;
 		std::vector<acm::Buffer> materials;

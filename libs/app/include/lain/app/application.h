@@ -105,9 +105,11 @@ namespace lain::app
 		// was spread through run(); still a gap, because those paths have no run to report on.
 		void exit(int code = EXIT_SUCCESS);
 
-		// The shared device, created on demand (for windows or headless compute).
-		// Returned by reference: acm::Device is a move-only owning root, so the app
-		// holds the one instance and hands out access to it.
+		// The shared device, created on demand (for windows or headless compute), of the kind
+		// --device asks for: the best hardware device (falling back to the CPU device where there is
+		// none), or the CPU device. Invalid when --device cpu finds no CPU device. Returned by
+		// reference: acm::Device is a move-only owning root, so the app holds the one instance and
+		// hands out access to it.
 		acm::Device& device();
 
 		// The Vulkan instance (created on demand) — for a GUI backend that needs the

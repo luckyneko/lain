@@ -1400,6 +1400,29 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-24 — M15 slice 3d built: lain's pin moves to the CPU device (**slice 3 COMPLETE**)
+
+archimedes PRs #1 and #2 merged, and `extern/archimedes` moves to `develop` (`828c3e2`). `ctest -j8`
+**1465/1465** Release with video, camera and Ceres on (+2); warning-clean, format-check clean. **Not yet
+on CI:** the slice's claim, a plain scene rendering in CI on every leg, is owed by the first push of
+`feature/M15`. Full notes in WORK.md's *Sub-slice 3d built*, under M15; ADR-0028 is amended.
+
+- **Every `[gpu]` render case runs on hardware and on the CPU device**, a Catch2 generator as in
+  archimedes. Where the CPU driver is staged, a missing CPU device fails rather than skips.
+- **The CPU device found three things:**
+  - its texture filtering is about 1e-4 short, so an untextured material no longer multiplies by a
+    sampled white;
+  - it draws depth wrong for a triangle with a vertex almost in the camera's plane, as a camera flush
+    on a wall would make. `offPlane` moves such a vertex a few millimetres along the camera's axis
+    first;
+  - a 1 px line on a surface seen obliquely loses samples to it on both devices, whatever the pull,
+    so **3b's claim that a line on a surface is drawn on it was an overclaim** (corrected in place).
+    The grid needs its own pass in slice 8.
+- **`--device gpu|cpu`** is a reserved `lain::app` flag, and **the CPU device gets half the logical
+  cores** (the repo owner's call), the pool keeping its own workers.
+- **SwiftShader's notice is in `--licenses`**, naming its upstream commit and its one patch.
+- **Six sabotages, all caught.**
+
 ### Update 2026-10-23 — poles are drawn, and a camera inside its own pole is refused
 
 From the same review. CONTEXT.md's *Mount* already said a pole is real geometry in every capture
@@ -1472,7 +1495,9 @@ built*, under M15.
   depth is constant across its width and a floor's is not. A pull toward the camera of 1e-4 of the
   depth buffer fixes it: 0 of 26 floor points drawn whole with no pull, 15 at 2e-6, all from 2e-5.
   The pull stays small enough that a line 5 cm behind a wall at 2 m is still hidden, up to 1e-3.
-  Two cases bracket it.
+  Two cases bracket it. *(**Corrected in 3d:** "drawn whole" was a loose criterion; on an oblique
+  surface the pull changes nothing on either device. It does draw a line on a surface facing the
+  camera. See the 3d entry above.)*
 - **Eight sabotages, all caught.** Showing the texture in a pane is `lain::gui`'s, with slice 8.
 
 ### Update 2026-10-23 — M15 slice 3 planned; 3a built: `lain::render`'s offscreen raster pass

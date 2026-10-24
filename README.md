@@ -55,6 +55,7 @@ a video keeps its nodes and edges and reports a missing capability when run.
 | [Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers) | SDK 1.4.341.0, current | [Apache-2.0] OR [MIT] | Vulkan API headers |
 | [Vulkan-Loader](https://github.com/KhronosGroup/Vulkan-Loader) | SDK 1.4.341.0, current | [Apache-2.0] | Vulkan runtime loader |
 | [MoltenVK](https://github.com/KhronosGroup/MoltenVK) | 1.4.1, current on macOS | [Apache-2.0] | Vulkan portability runtime |
+| [SwiftShader](https://swiftshader.googlesource.com/SwiftShader) | 2026.10.14-cddb5c91, a [prebuilt](https://github.com/luckyneko/swiftshader-prebuilt) with one patch (its thread count from the environment), staged by archimedes | [Apache-2.0] | CPU Vulkan driver (archimedes' CPU device), in `vulkan/` beside every runnable target: what CI renders on, and `--device cpu` |
 | [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) | selected by MoltenVK, current on macOS | [MIT] | MoltenVK shader translation |
 | [Catch2](https://github.com/catchorg/Catch2) | 3.14.0, test only | [BSL-1.0] | Unit and integration tests |
 | [glslang](https://github.com/KhronosGroup/glslang) | SDK 1.4.341.0, build only | [BSD-3-Clause] | GLSL to SPIR-V for `lain::render`'s embedded shaders (and archimedes' testbed), through archimedes' setup: built from source when no system `glslc` or `glslang` is found |

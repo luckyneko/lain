@@ -68,8 +68,10 @@ TEST_CASE("the notices name each dependency this build contains, and only those"
 		{"Dear ImGui", true},
 		{"imnodes", true},
 		{"portable-file-dialogs", true},
-		// Where archimedes vendors a driver (macOS).
+		// Where archimedes vendors a driver: MoltenVK on macOS, and the CPU device's SwiftShader
+		// wherever a prebuilt exists.
 		{"MoltenVK", LAIN_BUILT_MOLTENVK != 0},
+		{"SwiftShader", LAIN_BUILT_SWIFTSHADER != 0},
 		// Each with the plugin that brings it in.
 		{"nlohmann/json", LAIN_BUILT_JSON != 0},
 		{"stb", LAIN_BUILT_JPEG != 0},

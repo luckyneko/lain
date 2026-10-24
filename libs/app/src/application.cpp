@@ -23,6 +23,8 @@
 #include <cstdlib> // EXIT_SUCCESS / EXIT_FAILURE
 #include <iostream>
 #include <memory>
+#include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -123,9 +125,10 @@ namespace lain::app
 
 		ApplicationDelegate& delegate;
 		AppInfo info;
-		int verbosity{0}; // -v/--verbose count, filled in by initialise()'s parse
-		int threads{-1};  // --threads, filled in by initialise()'s parse; -1 = hardware_concurrency() - 1
-		int exitCode{0};  // what run() returns; a delegate sets it when its own work fails
+		int verbosity{0};				 // -v/--verbose count, filled in by initialise()'s parse
+		int threads{-1};				 // --threads, filled in by initialise()'s parse; -1 = hardware_concurrency() - 1
+		std::string deviceChoice{"gpu"}; // --device, filled in by initialise()'s parse: "gpu" or "cpu"
+		int exitCode{0};				 // what run() returns; a delegate sets it when its own work fails
 
 		// How far the lifecycle got. `Initialised` is reached ONLY by an initialise() that
 		// returned nullopt, so an early exit (--version, a bad command line) leaves it at
@@ -184,6 +187,27 @@ namespace lain::app
 		shutdown();
 	}
 
+	// What the CPU device may run its shaders on: half the logical cores, the pool keeping its own
+	// workers (--threads). A capture render keeps the device busy while the pool runs the sensor model
+	// and encodes, so both are busy at once, and the split keeps that within 1.5x of the machine rather
+	// than 2x. Revisit with slice 5's measurements (WORK.md M15).
+	static acm::RuntimeConfig runtimeConfig()
+	{
+		return acm::RuntimeConfig{std::max(1u, std::thread::hardware_concurrency() / 2)};
+	}
+
+	static acm::DevicePreferences devicePreferences(const std::string& device)
+	{
+		return device == "cpu" ? acm::DevicePreferences::Cpu() : acm::DevicePreferences::Default();
+	}
+
+	// The options that can draw to `surface`, ranked by --device first.
+	static std::vector<acm::SurfaceOption> rankedSurfaceOptions(const acm::Instance& instance, const acm::Surface& surface,
+																const std::string& device)
+	{
+		return instance.surfaceOptions(std::vector<acm::Surface>{surface}, acm::SurfacePreferences::Default(), devicePreferences(device));
+	}
+
 	Window& Application::createWindow(const WindowSpec& spec, WindowDelegate& delegate)
 	{
 		impl& s = *m;
@@ -198,7 +222,7 @@ namespace lain::app
 
 		// The same ranked options acm used to pick the device also carry the swapchain's
 		// format / present mode / capabilities; front() is the best per SurfacePreferences.
-		const std::vector<acm::SurfaceOption> options = s.instance.surfaceOptions(window->surface());
+		const std::vector<acm::SurfaceOption> options = rankedSurfaceOptions(s.instance, window->surface(), s.deviceChoice);
 		if (options.empty() || !window->createSwapChain(s.device, options.front()))
 			lain::log::error("swapchain creation failed for '{}'", spec.title);
 
@@ -256,6 +280,12 @@ namespace lain::app
 			// the parent, which then REFUSES them, so flowview's --<boundary> bindings stop
 			// working entirely. Measured, not assumed.
 			cliApp.add_option("--threads", s.threads, "worker threads, before any subcommand (-1: one per core less this one, 0: run inline)")->capture_default_str();
+			// Which device draws (ADR-0028), over archimedes' rankings: the best hardware device, falling
+			// back to the CPU device where there is none, or the CPU device on purpose, so a capture
+			// rendered in CI can be reproduced on the same kind of device anywhere.
+			cliApp.add_option("--device", s.deviceChoice, "the device to draw on, before any subcommand (gpu: the best hardware device, else the CPU device; cpu: the CPU device)")
+				->check(cli::IsMember({"gpu", "cpu"}))
+				->capture_default_str();
 			if (!s.delegate.onInit(*this, cliApp))
 				return EXIT_FAILURE;
 		}
@@ -461,7 +491,7 @@ namespace lain::app
 		// Point the loader at the staged ICD BEFORE glfwVulkanSupported(), which triggers
 		// GLFW's one-time Vulkan/surface-extension probe. If the ICD isn't set yet, GLFW
 		// caches "no metal surface" and every later glfwCreateWindowSurface fails.
-		acm::useStagedVulkanRuntime();
+		acm::useStagedVulkanRuntime(runtimeConfig());
 		glfwInitVulkanLoader(reinterpret_cast<PFN_vkGetInstanceProcAddr>(vkGetInstanceProcAddr));
 		if (glfwInit() != GLFW_TRUE || glfwVulkanSupported() != GLFW_TRUE)
 		{
@@ -476,7 +506,7 @@ namespace lain::app
 		impl& s = *m;
 		if (s.instance.valid())
 			return;
-		acm::useStagedVulkanRuntime();
+		acm::useStagedVulkanRuntime(runtimeConfig());
 		s.instance = acm::Instance(s.info.name.c_str(), toAcmVersion(s.info.version));
 		if (!s.instance.valid())
 			lain::log::error("Vulkan instance creation failed — no driver/ICD found (macOS: the MoltenVK ICD must be staged next to the binary via acm_stage_vulkan_runtime)");
@@ -490,11 +520,11 @@ namespace lain::app
 		ensureInstance();
 
 		// A window needs a device+queue that can present to its surface; a headless app
-		// just needs any graphics queue. acm ranks both, so front() is the pick.
+		// just needs any graphics queue. acm ranks both, by --device first, so front() is the pick.
 		acm::DeviceOption option;
 		if (present.valid())
 		{
-			const std::vector<acm::SurfaceOption> options = s.instance.surfaceOptions(present);
+			const std::vector<acm::SurfaceOption> options = rankedSurfaceOptions(s.instance, present, s.deviceChoice);
 			if (options.empty())
 			{
 				lain::log::error("no GPU / queue can present to the window surface");
@@ -504,13 +534,19 @@ namespace lain::app
 		}
 		else
 		{
-			const std::vector<acm::DeviceOption> options = s.instance.graphicsOptions();
+			const std::vector<acm::DeviceOption> options = s.instance.graphicsOptions(devicePreferences(s.deviceChoice));
 			if (options.empty())
 			{
 				lain::log::error("no graphics-capable GPU / queue found");
 				return s.device;
 			}
 			option = options.front();
+		}
+		// The CPU ranking still lists hardware after the CPU device, so --device cpu must be checked.
+		if (s.deviceChoice == "cpu" && s.instance.devices()[option.deviceIndex].type != acm::PhysicalDeviceType::Cpu)
+		{
+			lain::log::error("--device cpu: there is no CPU device (no CPU driver is staged in this executable's vulkan/ folder)");
+			return s.device;
 		}
 
 		s.device = s.instance.createDevice(option);

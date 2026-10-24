@@ -28,5 +28,5 @@ void main()
 	worldPosition = world.xyz;
 	worldNormal = mat3(object.normalFromMesh) * inNormal;
 	uv = inUv;
-	gl_Position = frame.clipFromWorld * world;
+	gl_Position = offPlane(frame.clipFromWorld * world);
 }

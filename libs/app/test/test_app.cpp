@@ -593,6 +593,67 @@ TEST_CASE("the task pool is running by onProcess, and --threads sizes it", "[app
 	}
 }
 
+TEST_CASE("the device flag chooses the kind of device, and the CPU device gets half the cores", "[app]")
+{
+	// A headless app's device, as onProcess finds it. The CPU device is archimedes' SwiftShader,
+	// staged beside this test; where none is staged the CPU sections have nothing to choose and say so.
+	struct DeviceApp : app::ApplicationDelegate
+	{
+		std::optional<acm::PhysicalDeviceType> type;
+		std::string threads;
+		bool onStart(app::Application&) override { return true; } // no windows -> headless
+		int onProcess(app::Application& app) override
+		{
+			acm::Device& device = app.device();
+			if (device.valid())
+				type = device.deviceInfo().type;
+			const char* cap = std::getenv("SWIFTSHADER_THREAD_COUNT");
+			threads = cap ? cap : "";
+			return 0;
+		}
+	} delegate;
+
+	char arg0[] = "test-app";
+	char flag[] = "--device";
+
+	SECTION("cpu draws on the CPU device, which runs on half the cores")
+	{
+		char cpu[] = "cpu";
+		char* argv[] = {arg0, flag, cpu};
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		REQUIRE(runApp(app, 3, argv) == 0);
+#ifdef LAIN_EXPECT_CPU_DEVICE
+		REQUIRE(delegate.type == acm::PhysicalDeviceType::Cpu);
+#else
+		if (!delegate.type)
+			SKIP("no CPU driver is staged beside this test");
+#endif
+		CHECK(delegate.threads == std::to_string(std::max(1u, std::thread::hardware_concurrency() / 2)));
+	}
+	SECTION("gpu, the default, draws on hardware wherever there is any")
+	{
+		char* argv[] = {arg0};
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		REQUIRE(runApp(app, 1, argv) == 0);
+		if (!delegate.type)
+			SKIP("no Vulkan device on this machine");
+		acm::useStagedVulkanRuntime();
+		acm::Instance probe("test-app-probe", acm::Version{0, 1, 0});
+		bool hardware = false;
+		for (const acm::DeviceInfo& info : probe.devices())
+			hardware = hardware || info.type != acm::PhysicalDeviceType::Cpu;
+		CHECK((delegate.type != acm::PhysicalDeviceType::Cpu) == hardware); // the CPU device only when there is nothing else
+	}
+	SECTION("any other device is refused")
+	{
+		char tpu[] = "tpu";
+		char* argv[] = {arg0, flag, tpu};
+		app::Application app(delegate, {"test-app", {0, 0, 0}});
+		CHECK(runApp(app, 3, argv) != 0);
+		CHECK_FALSE(delegate.type);
+	}
+}
+
 TEST_CASE("cli: a custom option type converts through its own lexical_cast", "[app]")
 {
 	// core::Range is a TYPED option, the same way an enum is: the value type carries its own

@@ -26,6 +26,7 @@ function(_lain_expect_built definition)
 	endif()
 endfunction()
 _lain_expect_built(LAIN_BUILT_MOLTENVK DEFINED ACM_MOLTENVK_DYLIB)
+_lain_expect_built(LAIN_BUILT_SWIFTSHADER ACM_SWIFTSHADER_ICD AND ACM_SWIFTSHADER_LICENSES)
 _lain_expect_built(LAIN_BUILT_JSON TARGET lain::io::data::json)
 _lain_expect_built(LAIN_BUILT_JPEG TARGET lain::io::image::jpeg)
 _lain_expect_built(LAIN_BUILT_PNG TARGET lain::io::image::png)
@@ -50,5 +51,9 @@ target_link_libraries(test-app PRIVATE
 # MoltenVK ICD sits beside the executable — without it they fail on the instance before a window
 # exists, however LAIN_GUI_SMOKE is set. No-op elsewhere.
 acm_stage_vulkan_runtime(test-app)
+# Where the CPU driver is staged beside it, --device cpu must find the CPU device rather than skip.
+if(ACM_SWIFTSHADER_ICD)
+	target_compile_definitions(test-app PRIVATE LAIN_EXPECT_CPU_DEVICE)
+endif()
 
 catch_discover_tests(test-app TEST_PREFIX "(app) " ${LAIN_TEST_DL_PATHS})

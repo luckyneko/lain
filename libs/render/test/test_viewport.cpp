@@ -9,6 +9,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -18,11 +19,10 @@
 using namespace lain;
 using namespace lain::render;
 
-#define REQUIRE_RENDERER(name)                    \
-	acm::Device* device = testing::device();      \
-	if (!device)                                  \
-		SKIP("no Vulkan device on this machine"); \
-	Renderer name(*device);                       \
+// The renderer under test, on each kind of device this machine offers (testing::device()).
+#define REQUIRE_RENDERER(name)                \
+	acm::Device* device = &testing::device(); \
+	Renderer name(*device);                   \
 	REQUIRE(name.problems().empty())
 
 static GpuScene uploaded(Renderer& renderer, const Scene& scene)
@@ -155,37 +155,63 @@ TEST_CASE("a line in front of a surface is drawn, one behind it hidden, and one 
 	CHECK(near(below[2], grey));
 }
 
-TEST_CASE("a line drawn on a surface seen obliquely is drawn along its whole length", "[render][gpu]")
+TEST_CASE("a line drawn on a surface seen obliquely is never lost to it", "[render][gpu]")
 {
 	REQUIRE_RENDERER(renderer);
 	Viewport viewport(renderer);
 
-	// A floor 0.5 m below the camera, running away from it, as a viewport's grid lies on the floor.
-	Scene scene;
-	scene.meshes = {testing::square()};
-	Material floor;
-	floor.diffuse = {0.5f, 0.5f, 0.5f};
-	scene.materials = {floor};
-	math::Mat4d placement = math::translate(math::Mat4d{1.0}, math::Vec3d{0.0, 0.5, 4.0});
-	placement = math::rotate(placement, 3.14159265358979323846 / 2, math::Vec3d{1.0, 0.0, 0.0});
-	placement = math::scale(placement, math::Vec3d{3.0});
-	scene.instances = {Instance{0, placement, {0}}};
-	scene.ambient = {1.0f, 1.0f, 1.0f};
-	const GpuScene gpu = uploaded(renderer, scene);
-	const View view = testing::view(128, 128, 96, 63.5, 63.5);
-
-	// Lines on the floor: one running away from the camera, and one across it.
-	const std::vector<Segment> lines = {
-		{{0.3, 0.5, 1.2}, {0.3, 0.5, 6.8}, {1.0f, 0.0f, 0.0f}},
-		{{-2.5, 0.5, 2.5}, {2.5, 0.5, 2.5}, {1.0f, 0.0f, 0.0f}},
+	// A floor `drop` metres below lines 0.5 m below the camera, running away from it, as a viewport's
+	// grid lies on the floor. Unlit, so it is one grey everywhere.
+	auto floorAt = [&](double drop)
+	{
+		Scene scene;
+		scene.meshes = {testing::square()};
+		Material floor;
+		floor.diffuse = {0.5f, 0.5f, 0.5f};
+		scene.materials = {floor};
+		// 8 m across and from 1 m to 12 m ahead, so its edges are pixels away from the lines in the
+		// picture and the drop moves none of them through a pixel compared.
+		math::Mat4d placement = math::translate(math::Mat4d{1.0}, math::Vec3d{0.0, 0.5 + drop, 6.5});
+		placement = math::rotate(placement, 3.14159265358979323846 / 2, math::Vec3d{1.0, 0.0, 0.0});
+		placement = math::scale(placement, math::Vec3d{4.0, 5.5, 1.0});
+		scene.instances = {Instance{0, placement, {0}}};
+		scene.ambient = {1.0f, 1.0f, 1.0f};
+		return scene;
 	};
-	submit(*device, gpu, {{&viewport, 0, &view, lines}});
-	const image::Image picture = viewport.read(0);
-	REQUIRE(picture.valid());
+	const View view = testing::view(128, 128, 96, 63.5, 63.5);
+	const std::vector<Segment> lines = {
+		{{0.3, 0.5, 1.2}, {0.3, 0.5, 6.8}, {1.0f, 0.0f, 0.0f}},	 // away from the camera
+		{{-2.5, 0.5, 2.5}, {2.5, 0.5, 2.5}, {1.0f, 0.0f, 0.0f}}, // across
+	};
+	auto drawn = [&](double drop)
+	{
+		const GpuScene scene = uploaded(renderer, floorAt(drop));
+		submit(*device, scene, {{&viewport, 0, &view, lines}});
+		return viewport.read(0);
+	};
+	// The floor under the lines, and 5 cm below them, where it cannot hide any part of them. A device
+	// may spread a 1 px line's coverage over neighbouring pixels (the CPU device does), so the line is
+	// compared with itself rather than judged against a full pixel of red.
+	const image::Image on = drawn(0.0);
+	const image::Image clear = drawn(0.05);
+	REQUIRE(on.valid());
+	REQUIRE(clear.valid());
 
-	// Every pixel lain's projection puts each line through, away from its ends, shows it.
+	// A 1 px line's depth is the same across its width while an oblique floor's is not, and under
+	// multisampling a line's samples lie up to 0.375 px off its centre, where the floor is nearer. So
+	// the floor wins some of them, on every device, with the pull or without (shaders/lines.vert):
+	// measured, Metal loses up to half a pixel's coverage and the CPU device three quarters. The grid
+	// is therefore not drawn as lines on the floor (slice 8). What is guaranteed is that such a line is
+	// never lost: at every point along it, its 3 x 3 pixels keep a quarter of the coverage they have
+	// with the floor out of its way. Coverage is read from the green channel, which the red line lacks:
+	// the picture is resolved in its encoded values, so a pixel the line covers a fraction c of is
+	// (1 - c) of the floor's green.
 	const camera::CameraModel model = testing::pinholeOf(view);
-	int samples = 0, drawn = 0;
+	const double floorGreen = encoded(0.5f);
+	auto coverage = [&](const image::Image& picture, int x, int y)
+	{ return 1 - pixel(picture, x, y)[1] / floorGreen; };
+	int points = 0;
+	double worstKept = 1;
 	for (const Segment& line : lines)
 	{
 		for (int i = 5; i <= 95; ++i)
@@ -193,16 +219,27 @@ TEST_CASE("a line drawn on a surface seen obliquely is drawn along its whole len
 			const math::Vec3d p = line.from + (line.to - line.from) * (i / 100.0);
 			const camera::Projection<double> at = camera::project(model, p.x, p.y, p.z);
 			REQUIRE(at.ok());
-			const int x = int(std::lround(at.u));
-			const int y = int(std::lround(at.v));
-			if (std::abs(at.u - x) > 0.25 || std::abs(at.v - y) > 0.25 || x < 0 || y < 0 || x >= 128 || y >= 128)
-				continue; // between pixels, where a 1 px line may fall either side
-			++samples;
-			drawn += pixel(picture, x, y)[0] > 200 && pixel(picture, x, y)[1] < 60 ? 1 : 0;
+			double kept = 0, there = 0;
+			for (int dy = -1; dy <= 1; ++dy)
+			{
+				for (int dx = -1; dx <= 1; ++dx)
+				{
+					const int x = int(std::lround(at.u)) + dx;
+					const int y = int(std::lround(at.v)) + dy;
+					if (x < 0 || y < 0 || x >= 128 || y >= 128)
+						continue;
+					kept += coverage(on, x, y);
+					there += coverage(clear, x, y);
+				}
+			}
+			if (there < 0.5)
+				continue; // off the picture's edge
+			++points;
+			worstKept = std::min(worstKept, kept / there);
 		}
 	}
-	CHECK(samples > 20);
-	CHECK(drawn == samples);
+	CHECK(points > 100);
+	CHECK(worstKept >= 0.25);
 }
 
 TEST_CASE("a viewport's frames in flight each keep their own picture", "[render][gpu]")

@@ -47,7 +47,10 @@ namespace lain::render
 		FrameConstants frameConstants(const SceneState& scene, const View& view, bool encode)
 		{
 			FrameConstants frame{};
-			copyMatrix(clipFromCamera(view) * view.worldFromCamera.inverse().matrix(), frame.clipFromWorld);
+			const math::Mat4d clip = clipFromCamera(view);
+			copyMatrix(clip * view.worldFromCamera.inverse().matrix(), frame.clipFromWorld);
+			for (math::length_t r = 0; r < 4; ++r)
+				frame.cameraAxis[r] = float(clip[2][r]);
 			const math::Vec3d& eye = view.worldFromCamera.translation();
 			frame.eye[0] = float(eye.x);
 			frame.eye[1] = float(eye.y);
@@ -241,8 +244,9 @@ namespace lain::render
 				return refused(string::format("texture {}", i), error);
 			gpu->textures.push_back(std::move(texture));
 		}
+		// Only fills the binding of a material with no texture: the shader does not use what it samples.
 		const std::uint8_t white[4] = {255, 255, 255, 255};
-		gpu->white = device.createTexture(acm::Format::R8G8B8A8_Srgb, acm::Extent2D{1, 1});
+		gpu->white = device.createTexture(acm::Format::R8G8B8A8_Unorm, acm::Extent2D{1, 1});
 		if (!gpu->white.valid())
 			return refused("the white texture", gpu->white.error());
 		if (const acm::Error error = gpu->white.upload(white, sizeof(white)))
@@ -300,7 +304,7 @@ namespace lain::render
 		{
 			const Material& material = scene.materials[i];
 			const detail::MaterialConstants constants{
-				{material.diffuse.r, material.diffuse.g, material.diffuse.b, 1.0f},
+				{material.diffuse.r, material.diffuse.g, material.diffuse.b, material.texture ? 1.0f : 0.0f},
 				{material.specular.r, material.specular.g, material.specular.b, material.shininess},
 			};
 			acm::Buffer buffer = device.createBuffer(sizeof(constants), acm::BufferUsage::Uniform);

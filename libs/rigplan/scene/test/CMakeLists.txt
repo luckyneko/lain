@@ -17,5 +17,10 @@ target_link_libraries(test-rigplan-scene PRIVATE
 )
 
 acm_stage_vulkan_runtime(test-rigplan-scene)
+# Where the CPU driver is staged beside it, a missing CPU device fails the cases rather than skipping
+# them (gpu.h), so a build whose staging broke cannot pass by drawing nothing.
+if(ACM_SWIFTSHADER_ICD)
+	target_compile_definitions(test-rigplan-scene PRIVATE LAIN_EXPECT_CPU_DEVICE)
+endif()
 
 catch_discover_tests(test-rigplan-scene TEST_PREFIX "(rigplan::scene) " ${LAIN_TEST_DL_PATHS})

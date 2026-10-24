@@ -16,10 +16,7 @@ using namespace lain::rigplan;
 
 TEST_CASE("a camera at rest in a room sees its north wall ahead and its floor below", "[rigplan][scene][gpu]")
 {
-	acm::Device* device = render::testing::device();
-	if (!device)
-		SKIP("no Vulkan device on this machine");
-	render::Renderer renderer(*device);
+	render::Renderer renderer(render::testing::device());
 	REQUIRE(renderer.problems().empty());
 
 	// An 8 m room with no ceiling: a red north wall, a green floor, and a bulb where the camera stands.
@@ -81,10 +78,7 @@ TEST_CASE("a camera at rest in a room sees its north wall ahead and its floor be
 
 TEST_CASE("a pole hides what is behind it", "[rigplan][scene][gpu]")
 {
-	acm::Device* device = render::testing::device();
-	if (!device)
-		SKIP("no Vulkan device on this machine");
-	render::Renderer renderer(*device);
+	render::Renderer renderer(render::testing::device());
 	REQUIRE(renderer.problems().empty());
 
 	// A red wall 4 m north of a bulb, and a pole 20 cm across standing 2 m north of it, between them.

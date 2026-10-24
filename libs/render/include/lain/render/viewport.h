@@ -25,7 +25,9 @@ namespace lain::render
 	// A straight line drawn over a viewport, for what a designer sees but a camera never records:
 	// frustums, cones, paths, the grid. In its own colour (linear light), unlit, 1 px wide whatever the
 	// device (neither SwiftShader nor MoltenVK has wide lines), and hidden where a surface is nearer. A
-	// line lying on a surface is drawn on it, by a small pull toward the camera (shaders/lines.vert).
+	// line lying on a surface facing the camera is drawn on it, by a small pull toward the camera; one on
+	// a surface seen obliquely loses some of its multisampled coverage to it (shaders/lines.vert), so a
+	// grid on a floor wants a pass of its own.
 	struct Segment
 	{
 		math::Vec3d from{0.0, 0.0, 0.0};

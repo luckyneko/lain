@@ -1,8 +1,9 @@
 # One raster renderer; a capture render is a remap through lain's own camera model
 
 ---
-Status: accepted (designed 2026-10-21, Milestone 15; nothing built yet). Amended 2026-10-22: CI
-renders on archimedes' CPU device (SwiftShader), not lavapipe.
+Status: accepted (designed 2026-10-21, Milestone 15). Amended 2026-10-22: CI renders on archimedes'
+CPU device (SwiftShader), not lavapipe. Amended 2026-10-24: the renderer is built (slice 3), lain's
+pin carries the CPU device, and what running on it found is under *Consequences*.
 ---
 
 Milestone 15's rig design app needs two kinds of image. The **viewport** is the designer's own
@@ -85,3 +86,15 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
   so a camera's depth for the visibility map is rendered as distance into an R32F colour target.
   It has no cube or array-layer texture, so an intermediate image past 180° is six 2D textures in
   a descriptor array. Neither SwiftShader nor MoltenVK has `wideLines`, so overlay lines are 1 px.
+- **What the CPU device found, once lain ran on it (2026-10-24, slice 3d).** Every `[gpu]` case runs
+  on each kind of device the machine offers, and three differences showed:
+  - its filtered sampling of 8-bit texels is about 1e-4 short of exact, so a material with no
+    texture ignores what it samples rather than multiplying by a white one;
+  - it draws a triangle's depth wrong when a vertex lies almost in the camera's plane (a camera
+    flush on a wall puts that wall's corners there), so the vertex shader moves such a vertex a few
+    millimetres along the camera's axis first (`offPlane`);
+  - a 1 px line lying on a surface seen obliquely loses some of its multisampled coverage to it, on
+    both devices, whatever a constant depth pull does, so overlay lines are for what is in the air,
+    and a grid on the floor is drawn as its own pass.
+  The core split is half the logical cores to the CPU device, the pool keeping its own workers, and
+  `--device gpu|cpu` chooses the kind of device.

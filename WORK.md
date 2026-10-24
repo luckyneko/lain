@@ -14918,7 +14918,7 @@ clean. `flowview --licenses` prints 25 notices (48.6 KB) on macOS arm64.
   `third-party/` ships; MoltenVK's compiled-in SPIRV-Cross has no licence text to read; and nothing
   was built on Linux or Windows (MSVC's literal limit included), so CI's first run is owed.
 
-## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 2 built, slice 3 in progress)
+## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 3 built)
 
 An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
 and lights, a board waved through) that renders **synthetic captures**: footage in the shape M9
@@ -15003,8 +15003,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
 3. **`lain::render`**: the render scene, an offscreen raster pass, the viewport pass, the line pass.
    **lain's archimedes pin moves to the CPU device here** (see *Verified against archimedes' CPU
    device* below for what that commit owes). Proves: a plain scene renders in CI, on every leg.
-   **Planned 2026-10-23 as four commits, 3a to 3d** (*Slice 3 planned* below); **3a to 3c built
-   2026-10-23**. 3d waits on archimedes PRs #1 and #2 being merged.
+   **Planned 2026-10-23 as four commits, 3a to 3d** (*Slice 3 planned* below); **all four built,
+   3d on 2026-10-24.** What it proves in CI is owed by the first push of `feature/M15`.
 4. **The capture pass**: the intermediate image, the ray table, the remap with s × s rays. Proves the
    ADR-0028 claim: a rendered board's detected corners against lain's projection of the truth,
    through all six distortion models, near the CPU renderer's ~0.07 px.
@@ -15508,7 +15508,10 @@ on (+7); warning-clean, format-check clean. The cases ran on Metal through Molte
     line on a floor loses about half its samples. Measured on Metal over 26 points along lines on a
     floor: 0 drawn whole with no pull, 15 at 2e-6, all from 2e-5 up. A line 5 cm behind a wall 2 m
     away stays hidden up to 1e-3. Two cases bracket the value, and `LessOrEqual` turned out not to
-    be needed once the pull was there.
+    be needed once the pull was there. *(**Corrected in 3d:** "drawn whole" was "mostly red", a
+    criterion that passed a line still missing one or two of its four samples. Measured against the
+    same line with the floor out of its way, the pull does not help an oblique surface at all, on
+    either device: see *Sub-slice 3d built*. It does draw a line on a surface facing the camera.)*
   - **For slice 8:** the pull is a constant in depth-buffer units, so in metres it grows as Z² over
     near (4 mm at 2 m with a 0.1 m near plane, 10 cm at 10 m). A line that close behind a surface
     shows through it. The grid is the one overlay that lies on a surface, so if this shows, the grid
@@ -15519,7 +15522,8 @@ on (+7); warning-clean, format-check clean. The cases ran on Metal through Molte
   - the scene comes out through lain's sRGB curve, the background included, each within one code;
   - a line in front of a wall is drawn, one 5 cm behind it is hidden but shows past its edge, one
     on it is drawn, and a line is 1 px wide;
-  - lines lying on a floor seen obliquely are drawn wherever lain's projection puts them;
+  - lines lying on a floor seen obliquely are drawn wherever lain's projection puts them *(an
+    overclaim, corrected in 3d: they keep at least a quarter of their coverage, never all of it)*;
   - one command buffer recording frame 0 and frame 1 with different views (and sizes) keeps both
     pictures;
   - two viewports of one scene in one frame keep their own views;
@@ -15642,6 +15646,65 @@ The repo owner reviewed the questions the slices so far had left open.
 - **The defaults the slices recorded stand**: 8-bit sRGB textures, the bake density, the line pull,
   an untagged picture taken as sRGB.
 
+#### Sub-slice 3d built (2026-10-24): lain's pin moves to the CPU device
+
+archimedes PRs #1 and #2 merged into its `develop` (`828c3e2`), and lain's pin moves there. Its public
+API is what was verified on 2026-10-22 (`DevicePreferences`, `RuntimeConfig::cpuDeviceThreads`),
+plus one refactor that moves platform glue out of the surface seam. `ctest -j8` **1465/1465** Release
+with video, camera and Ceres on (+2); warning-clean, format-check clean. **The slice's claim, a plain
+scene rendering in CI on every leg, is owed by the first push**, which the repo owner held until now.
+
+- **The render tests run on every kind of device the machine offers**, as archimedes' own do: each
+  `[gpu]` case is a Catch2 generator over hardware and the CPU device (`libs/render/test/gpu.h`).
+  Where the CPU driver is staged (`LAIN_EXPECT_CPU_DEVICE`), a missing CPU device fails rather than
+  skips, so a CI leg whose staging broke cannot pass by drawing nothing. The CPU device's own pool
+  is capped at 2 threads in tests, since ctest runs several processes at once.
+- **Running on the CPU device found three things:**
+  - **Its filtered sampling of 8-bit texels is about 1e-4 short of exact**: the 1×1 white texture
+    an untextured material sampled read 0.99989, dimming every plain surface. **A material with no
+    texture now ignores what it samples**, through a flag in its spare channel, so plain surfaces
+    are exact everywhere. Textured surfaces carry the device's error, within every tolerance.
+  - **It draws a triangle's depth wrong when a vertex lies almost in the camera's plane**, and the
+    surface then hides everything. A floor reaching the camera's plane did, wherever |w| was under
+    about 1e-5 of the vertex's clip |x| or |y|; a wider floor failed further from the plane. That is
+    exactly where a camera mounted flush on a wall puts the wall's corners. **`offPlane`**
+    (`shaders/frame.glsl`) moves such a vertex along the camera's axis to 1e-4 of that, ten times
+    clear. The move is a real one, of a few millimetres for a vertex 10 m from the axis, which the
+    camera cannot see. A case with floors 20 m and 80 m wide, their near edges from 0 to 3e-4 m off
+    the plane, holds it on both devices.
+  - **A 1 px line on a surface seen obliquely loses samples to it on both devices, pull or not.**
+    Under multisampling a line's samples lie up to 0.375 px off its centre, where an oblique floor is
+    nearer. Against the same line with the floor 5 cm below it: Metal loses up to half a pixel's
+    coverage, the CPU device three quarters, and every pull from 0 to 2e-3 changes nothing. An exact
+    match on Metal needed about 1e-3 and the line behind the wall shows by 2e-3, a window that
+    depends on the near plane, focal length and camera height. So the pull stays at 1e-4 for
+    surfaces facing the camera, and **the grid needs a pass of its own in slice 8**. The case now
+    guards what holds: every point along such a line keeps at least a quarter of its coverage
+    (measured 0.5 on Metal, 0.43 on the CPU device). That catches a line lost outright, as these
+    were on the CPU device while the floor reached the camera's plane.
+- **`--device gpu|cpu`** is a reserved `lain::app` flag beside `--threads`. `gpu`, the default, is
+  archimedes' `DevicePreferences::Default()`: the best hardware device, else the CPU device. `cpu` is
+  `DevicePreferences::Cpu()`, checked to be the CPU device, since that ranking still lists hardware
+  after it. A window's swapchain is chosen under the same ranking as its device.
+- **The core split, decided by the repo owner: half to each.** `lain::app` gives the CPU device half
+  the logical cores (`RuntimeConfig::cpuDeviceThreads`, 7 here), and the pool keeps its own workers.
+  A capture render keeps the device busy while the pool runs the sensor model and encodes, so the
+  split keeps both busy within 1.5x of the machine. Revisit with slice 5's measurements.
+- **SwiftShader's notice is in `--licenses`**: Apache-2.0, its texts staged in
+  `third-party/swiftshader/`. The prebuilt's manifest names its upstream commit and its one patch
+  (the thread count read from the environment), and the notice states both, as Apache-2.0 asks a
+  modified build to. A local build staged through `ARCHIMEDES_SWIFTSHADER_DIR` carries no texts and
+  prints no notice. The README gains its row.
+- **Verified through the real binary:** `flowview --device cpu run --example` exits 0, `--device tpu`
+  is refused, and `flowview --licenses` prints the SwiftShader notice.
+- **Six sabotages, all caught:**
+  - `--device` ignored fails the device case;
+  - no core split fails it too, on `SWIFTSHADER_THREAD_COUNT`;
+  - no SwiftShader notice fails the notices case;
+  - no `offPlane` fails the camera-plane case;
+  - sampling the white texture fails four cases on the CPU device;
+  - the CPU device unseen by the test helper fails 14 render cases, through `LAIN_EXPECT_CPU_DEVICE`.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -15659,6 +15722,9 @@ detached there and restored afterwards:
   the path `rigplan render` takes, and lain had no headless GPU test of it.
 
 What adopting it owes, in the commit that moves lain's archimedes pin (slice 3):
+
+**All five are discharged by 3d (2026-10-24)**, the first two by archimedes and the rest in lain; see
+*Sub-slice 3d built*.
 
 1. **A consumer got no CPU driver — fixed in archimedes.** The SwiftShader pins were plain
    variables in `acmVulkan.cmake`'s directory scope, and a function resolves variables in its

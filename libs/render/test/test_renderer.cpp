@@ -17,12 +17,10 @@
 using namespace lain;
 using namespace lain::render;
 
-// The renderer under test, or a SKIP.
-#define REQUIRE_RENDERER(name)                    \
-	acm::Device* device = testing::device();      \
-	if (!device)                                  \
-		SKIP("no Vulkan device on this machine"); \
-	Renderer name(*device);                       \
+// The renderer under test, on each kind of device this machine offers (testing::device()).
+#define REQUIRE_RENDERER(name)                \
+	acm::Device* device = &testing::device(); \
+	Renderer name(*device);                   \
 	REQUIRE(name.problems().empty())
 
 static image::Image draw(Renderer& renderer, const Scene& scene, const View& view)
@@ -149,6 +147,39 @@ TEST_CASE("a nearer surface hides a farther one whichever is drawn first", "[ren
 		const image::ColorRGBAf rim = testing::pixel(picture, 4, 32); // beyond the near square's edge
 		CHECK(rim.r == 0.0f);
 		CHECK(rim.g == 1.0f);
+	}
+}
+
+TEST_CASE("a surface reaching into the camera's own plane hides nothing in front of it", "[render][gpu]")
+{
+	REQUIRE_RENDERER(renderer);
+
+	// A floor whose near edge lies at the camera's plane, or within a hair of it, as a wall's corners do
+	// for a camera mounted flush on it, and a red square standing on the floor 3 m ahead. The CPU device
+	// drew the floor over the square wherever the edge came within about 1e-5 of the floor's width of
+	// the plane, until offPlane (shaders/frame.glsl) moved such vertices off it.
+	const View view = testing::view(128, 128, 96, 63.5, 63.5);
+	for (const double width : {10.0, 40.0})
+	{
+		for (const double edge : {0.0, 1e-6, -1e-6, 1e-4, -1e-4, 3e-4})
+		{
+			INFO("a floor " << 2 * width << " m wide, its near edge " << edge << " m from the camera's plane");
+			Scene scene;
+			scene.meshes = {testing::square()};
+			scene.materials = {plain({0.5f, 0.5f, 0.5f}), plain({1.0f, 0.0f, 0.0f})};
+			const double half = (20.0 - edge) / 2;
+			math::Mat4d floor = math::translate(math::Mat4d{1.0}, math::Vec3d{0.0, 0.55, edge + half});
+			floor = math::rotate(floor, 3.14159265358979323846 / 2, math::Vec3d{1.0, 0.0, 0.0});
+			floor = math::scale(floor, math::Vec3d{width, half, 1.0});
+			const math::Mat4d square = math::scale(math::translate(math::Mat4d{1.0}, math::Vec3d{0.0, 0.3, 3.0}), math::Vec3d{0.3});
+			scene.instances = {Instance{0, floor, {0}}, Instance{0, square, {1}}};
+			scene.ambient = {1.0f, 1.0f, 1.0f};
+			const image::Image picture = draw(renderer, scene, view);
+			const image::ColorRGBAf ahead = testing::pixel(picture, 64, 72); // the square's middle
+			CHECK(ahead.r == 1.0f);
+			CHECK(ahead.g == 0.0f);
+			CHECK(testing::pixel(picture, 64, 110).g == 0.5f); // and the floor below it
+		}
 	}
 }
 

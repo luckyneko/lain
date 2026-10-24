@@ -103,6 +103,41 @@ if(LAIN_BUILD_TESTING OR LAIN_BUILD_APPS)
 			SOURCE_DIR "${moltenvk_SOURCE_DIR}" FILES LICENSE STAGE
 			DETAILS "This software ships MoltenVK's prebuilt release dylib, unmodified, as its Vulkan driver on macOS.")
 	endif()
+	# The CPU driver (archimedes' CPU device, ADR-0028), staged beside every runnable target. The prebuilt
+	# carries its licence texts and a manifest naming its upstream commit and patches, which Apache-2.0
+	# asks a modified build to state. A local build staged through ARCHIMEDES_SWIFTSHADER_DIR usually
+	# carries no licence texts, and then no notice is printed: such a build is a developer's own.
+	if(ACM_SWIFTSHADER_ICD AND ACM_SWIFTSHADER_LICENSES)
+		list(GET ACM_SWIFTSHADER_LICENSES 0 _lain_swiftshader_first)
+		get_filename_component(_lain_swiftshader_dir "${_lain_swiftshader_first}" DIRECTORY)
+		set(_lain_swiftshader_files "")
+		foreach(_license IN LISTS ACM_SWIFTSHADER_LICENSES)
+			get_filename_component(_name "${_license}" NAME)
+			list(APPEND _lain_swiftshader_files "${_name}")
+		endforeach()
+		set(_lain_swiftshader_release "")
+		set(_lain_swiftshader_details "This software ships SwiftShader as its CPU Vulkan driver, staged beside it in vulkan/.")
+		if(EXISTS "${_lain_swiftshader_dir}/MANIFEST.txt")
+			file(STRINGS "${_lain_swiftshader_dir}/MANIFEST.txt" _lain_manifest)
+			set(_lain_patches "")
+			foreach(_line IN LISTS _lain_manifest)
+				if(_line MATCHES "^  release +([^ ]+)")
+					set(_lain_swiftshader_release "${CMAKE_MATCH_1}")
+				elseif(_line MATCHES "^  commit +([0-9a-f]+)")
+					set(_lain_swiftshader_commit "${CMAKE_MATCH_1}")
+				elseif(_line MATCHES "^  ([0-9][0-9][0-9][0-9]-[^ ]+\\.patch)")
+					list(APPEND _lain_patches "${CMAKE_MATCH_1}")
+				endif()
+			endforeach()
+			list(JOIN _lain_patches ", " _lain_patches)
+			set(_lain_swiftshader_details
+				"This software ships SwiftShader as its CPU Vulkan driver, staged beside it in vulkan/: luckyneko/swiftshader-prebuilt ${_lain_swiftshader_release},"
+				"built from upstream commit ${_lain_swiftshader_commit} and modified by ${_lain_patches} (in that repository).")
+		endif()
+		lain_register_notice(swiftshader NAME "SwiftShader" VERSION "${_lain_swiftshader_release}" SPDX "Apache-2.0"
+			SOURCE_DIR "${_lain_swiftshader_dir}" FILES ${_lain_swiftshader_files} STAGE
+			DETAILS ${_lain_swiftshader_details})
+	endif()
 
 	# Say which assembler owns the loader's .asm, because in this tree two languages claim that
 	# extension. The loader enables ASM_MASM for its unknown-function trampolines; libpng then
