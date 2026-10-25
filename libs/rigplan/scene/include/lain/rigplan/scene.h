@@ -46,14 +46,26 @@ namespace lain::rigplan
 		}
 	};
 
+	// A board mover's printed sheet: the board renderer's raster, and the print and the plain back as
+	// meshes in the board frame (camera::board::Specification), so a frame places them by planFromBoard.
+	// The print spans the raster from its first texel's edge to its last's, so a texel centre sits where
+	// the board frame puts it; the back is `backing` behind it.
+	struct BoardSheet
+	{
+		std::shared_ptr<const image::Image> raster; // 8-bit grey, sRGB as printed
+		std::shared_ptr<const mesh::Mesh> print;
+		std::shared_ptr<const mesh::Mesh> back;
+	};
+
 	// What a rig plan draws that is not in the plan itself, read and baked once so a render scene at
 	// any frame shares it: each prop's mesh (a clip of one) or mesh clip, each picture a material or a
-	// mesh's material names, and each procedural surface baked to its extent.
+	// mesh's material names, each procedural surface baked to its extent, and each board drawn.
 	struct SceneAssets
 	{
 		std::map<core::Uuid, std::shared_ptr<const mesh::MeshClip>> props;
 		std::map<core::Uri, std::shared_ptr<const image::Image>> pictures;
 		std::map<BakeKey, std::shared_ptr<const image::Image>> baked;
+		std::map<core::Uuid, BoardSheet> boards;
 	};
 
 	struct AssetsResult
@@ -63,8 +75,11 @@ namespace lain::rigplan
 	};
 
 	// Every asset `plan` draws, its paths absolute (a document's are resolved when it is read). A prop
-	// whose mesh or clip will not load, or a picture that will not, is a problem naming it, and the
-	// rest still loads. A picture that states no colour space is taken as sRGB, as the web takes one,
+	// whose mesh or clip will not load, a picture that will not, or a board the board renderer will not
+	// draw (a build with none is the commonest) is a problem naming it, and the rest still loads. A rig
+	// plan with a board holds it in any build; only drawing it needs a renderer, and a capture is
+	// refused rather than drawn without the board, whose ground truth would then describe corners its
+	// pixels lack. A picture that states no colour space is taken as sRGB, as the web takes one,
 	// with a warning in the log, since the renderer refuses an untagged texture.
 	AssetsResult loadSceneAssets(const RigPlan& plan);
 
@@ -78,7 +93,9 @@ namespace lain::rigplan
 	//   * the room's present surfaces, each facing in, and the planes and boxes, each a rectangle per
 	//     face whose picture reads upright from the side it faces (a floor's with north at its top);
 	//   * each prop's mesh, or the frame of its clip the capture frame shows (mesh::clipFrame), placed
-	//     by planFromProp, its file's own materials mapped one for one (MTL's Kd, map_Kd, Ks, Ns);
+	//     by planFromProp at that frame, its file's own materials mapped one for one (MTL's Kd, map_Kd,
+	//     Ks, Ns);
+	//   * each board's sheet at planFromBoard: its print white under its raster, its back plain white;
 	//   * each pole, a cylinder from the floor to its top at its realised mount, a matte mid grey;
 	//   * each light, its specification's kind, colour, intensity and cone at its realised pose.
 	// A picture repeats every tile, in metres; a procedural texture is baked once per surface at the

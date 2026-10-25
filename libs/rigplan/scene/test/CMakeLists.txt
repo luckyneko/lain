@@ -24,3 +24,17 @@ if(ACM_SWIFTSHADER_ICD)
 endif()
 
 catch_discover_tests(test-rigplan-scene TEST_PREFIX "(rigplan::scene) " ${LAIN_TEST_DL_PATHS})
+
+# A board mover, drawn by a stand-in board renderer: an executable of its own, since a renderer
+# registry only grows and test-rigplan-scene's must stay empty (a board with no renderer is named).
+add_executable(test-rigplan-scene-board
+	test_sceneboard.cpp
+)
+target_compile_features(test-rigplan-scene-board PRIVATE cxx_std_17)
+target_include_directories(test-rigplan-scene-board PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../test" "${PROJECT_SOURCE_DIR}/libs/render/test")
+target_link_libraries(test-rigplan-scene-board PRIVATE lain::rigplan::scene lain::testing lain::warnings Catch2::Catch2WithMain)
+acm_stage_vulkan_runtime(test-rigplan-scene-board)
+if(ACM_SWIFTSHADER_ICD)
+	target_compile_definitions(test-rigplan-scene-board PRIVATE LAIN_EXPECT_CPU_DEVICE)
+endif()
+catch_discover_tests(test-rigplan-scene-board TEST_PREFIX "(rigplan::scene) " ${LAIN_TEST_DL_PATHS})

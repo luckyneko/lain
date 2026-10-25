@@ -311,7 +311,7 @@ TEST_CASE("a prop is placed by planFromProp, plays its clip, and shows its file'
 		CHECK(scene.meshes[0]->positions[0].x == float(expected[frame]));
 		// The clip's own frame, shared rather than copied.
 		CHECK(scene.meshes[0].get() == &assets.assets.props.at(walker.id)->frames[std::size_t(expected[frame])]);
-		CHECK(scene.instances[0].worldFromMesh == planFromProp(walker));
+		CHECK(scene.instances[0].worldFromMesh == planFromProp(walker, 0));
 	}
 
 	const SceneResult result = renderScene(plan, *realised.realisation, assets.assets, 0);
@@ -391,4 +391,25 @@ TEST_CASE("what will not load is a problem naming its owner and its file", "[rig
 	const SceneResult result = renderScene(plan, *realised.realisation, assets.assets, 0);
 	CHECK(result.problems.size() == 2);
 	CHECK(render::validate(result.scene).empty()); // what is there can still be drawn
+}
+
+TEST_CASE("a board needs a board renderer, and without one its load names it", "[rigplan][scene][mover]")
+{
+	// This executable registers no board renderer, as a build without the OpenCV plugin has none. The rig
+	// plan still holds its board; only drawing it is refused, and the rest of the scene still loads.
+	RigPlan plan = testplan::plan();
+	plan.boards.push_back(testplan::board());
+	REQUIRE(check(plan).empty());
+	const AssetsResult assets = loadSceneAssets(plan);
+	REQUIRE(assets.problems.size() == 1);
+	CHECK(assets.problems[0].find("board 'charuco'") != std::string::npos);
+	CHECK(assets.problems[0].find("no board renderer") != std::string::npos);
+	CHECK(assets.assets.boards.empty());
+
+	const RealisationResult realised = realise(plan);
+	REQUIRE(realised.realisation);
+	const SceneResult result = renderScene(plan, *realised.realisation, assets.assets, 0);
+	REQUIRE(result.problems.size() == 1);
+	CHECK(result.problems[0].find("board 'charuco'") != std::string::npos);
+	CHECK(render::validate(result.scene).empty());
 }

@@ -1,5 +1,6 @@
 #include "lain/rigplan/serialize/rigplan.h"
 
+#include <lain/camera/serialize/board.h>	   // a board as a board specification document spells it
 #include <lain/camera/serialize/cameramodel.h> // ImageGeometry and Distortion as the camera-model document has them
 #include <lain/data/data.h>
 #include <lain/data/strict.h>
@@ -245,6 +246,20 @@ namespace lain::rigplan
 	};
 	LAIN_SERIALIZE(BoxDoc, id, name, centre, size, yawDegrees, material)
 
+	struct PathKeyDoc
+	{
+		std::uint64_t frame = 0;
+		Vec3Doc position;
+		Aim aim;
+	};
+	LAIN_SERIALIZE(PathKeyDoc, frame, position, aim)
+
+	struct PathDoc
+	{
+		std::vector<PathKeyDoc> keys;
+	};
+	LAIN_SERIALIZE(PathDoc, keys)
+
 	struct PropDoc
 	{
 		std::string id;
@@ -256,8 +271,22 @@ namespace lain::rigplan
 		double unitMetres = 1;
 		Vec3Doc position;
 		double yawDegrees = 0;
+		std::optional<PathDoc> path; // absent for a prop that stands still
 	};
-	LAIN_SERIALIZE(PropDoc, id, name, mesh, clip, clipRate, up, unitMetres, position, yawDegrees)
+	LAIN_SERIALIZE(PropDoc, id, name, mesh, clip, clipRate, up, unitMetres, position, yawDegrees, path)
+
+	struct BoardDoc
+	{
+		std::string id;
+		std::string name;
+		camera::board::PatternParameters pattern;
+		camera::board::Instance instance;
+		double margin = 0;
+		std::uint32_t pixelsPerSquare = 0;
+		double backing = 0;
+		PathDoc path;
+	};
+	LAIN_SERIALIZE(BoardDoc, id, name, pattern, instance, margin, pixelsPerSquare, backing, path)
 
 	struct RigPlanDoc
 	{
@@ -266,6 +295,7 @@ namespace lain::rigplan
 		std::vector<PlaneDoc> planes;
 		std::vector<BoxDoc> boxes;
 		std::vector<PropDoc> props;
+		std::vector<BoardDoc> boards;
 		std::vector<MountDoc> mounts;
 		std::vector<CameraDoc> cameras;
 		std::vector<LightPlacementDoc> lights;
@@ -273,7 +303,7 @@ namespace lain::rigplan
 		std::uint64_t seed = 0;
 		Scales scales;
 	};
-	LAIN_SERIALIZE(RigPlanDoc, specifications, room, planes, boxes, props, mounts, cameras, lights, timeline, seed, scales)
+	LAIN_SERIALIZE(RigPlanDoc, specifications, room, planes, boxes, props, boards, mounts, cameras, lights, timeline, seed, scales)
 
 	// --- to a document ---------------------------------------------------------------------
 
@@ -285,6 +315,14 @@ namespace lain::rigplan
 	static Vec3Doc docOf(const math::Vec3d& v)
 	{
 		return {v.x, v.y, v.z};
+	}
+
+	static PathDoc docOf(const Path& path)
+	{
+		PathDoc doc;
+		for (const PathKey& key : path.keys)
+			doc.keys.push_back({std::uint64_t(key.frame), docOf(key.position), key.aim});
+		return doc;
 	}
 
 	static SpecificationsDoc docOf(const Specifications& specifications)
@@ -347,8 +385,15 @@ namespace lain::rigplan
 			doc.boxes.push_back({b.id.toString(), b.name, docOf(b.centre), docOf(b.size), b.yawDegrees, docOf(b.material)});
 		for (const Prop& p : plan.props)
 		{
+			std::optional<PathDoc> path;
+			if (p.path)
+				path = docOf(*p.path);
 			doc.props.push_back({p.id.toString(), p.name, p.mesh.toString(), p.clip, p.clipRate, p.up, p.unitMetres,
-								 docOf(p.position), p.yawDegrees});
+								 docOf(p.position), p.yawDegrees, std::move(path)});
+		}
+		for (const BoardMover& b : plan.boards)
+		{
+			doc.boards.push_back({b.id.toString(), b.name, b.pattern, b.instance, b.margin, b.pixelsPerSquare, b.backing, docOf(b.path)});
 		}
 		for (const Mount& m : plan.mounts)
 		{
@@ -421,6 +466,14 @@ namespace lain::rigplan
 	static math::Vec3d vecOf(const Vec3Doc& d)
 	{
 		return {d.x, d.y, d.z};
+	}
+
+	static Path pathOf(const PathDoc& doc)
+	{
+		Path path;
+		for (const PathKeyDoc& key : doc.keys)
+			path.keys.push_back({std::size_t(key.frame), vecOf(key.position), key.aim});
+		return path;
 	}
 
 	static Specifications specificationsOf(const SpecificationsDoc& doc, const std::string& at, Conversion& convert)
@@ -516,8 +569,17 @@ namespace lain::rigplan
 		for (std::size_t i = 0; i < doc.props.size(); ++i)
 		{
 			const PropDoc& p = doc.props[i];
+			std::optional<Path> path;
+			if (p.path)
+				path = pathOf(*p.path);
 			plan.props.push_back({convert.identity(p.id, string::format("props[{}].id", i)), p.name, core::Uri{p.mesh}, p.clip,
-								  p.clipRate, p.up, p.unitMetres, vecOf(p.position), p.yawDegrees});
+								  p.clipRate, p.up, p.unitMetres, vecOf(p.position), p.yawDegrees, std::move(path)});
+		}
+		for (std::size_t i = 0; i < doc.boards.size(); ++i)
+		{
+			const BoardDoc& b = doc.boards[i];
+			plan.boards.push_back({convert.identity(b.id, string::format("boards[{}].id", i)), b.name, b.pattern, b.instance, b.margin,
+								   b.pixelsPerSquare, b.backing, pathOf(b.path)});
 		}
 		for (std::size_t i = 0; i < doc.mounts.size(); ++i)
 		{

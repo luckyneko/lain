@@ -102,8 +102,8 @@ namespace lain::rigplan
 		for (const SpecificationDiagnostic& d : check(plan.specifications))
 			out.push_back({PlanProblem::InvalidSpecification, d.detail});
 
-		// Every identity, across mounts, cameras and lights: a draw is keyed by its owner's, so two
-		// owners sharing one would draw alike.
+		// Every identity, across everything that has one: a draw is keyed by its owner's, so two owners
+		// sharing one would draw alike, and a mover's ground truth is filed under its own.
 		std::set<core::Uuid> identities;
 		const auto identify = [&](const core::Uuid& id, std::string_view kind, std::string_view name)
 		{
@@ -178,6 +178,20 @@ namespace lain::rigplan
 			if (p.mesh.empty() || !std::isfinite(p.unitMetres) || p.unitMetres <= 0 || !finite(p.position) ||
 				!std::isfinite(p.yawDegrees))
 				environment(string::format("prop '{}' needs a mesh, a positive unit and a finite position and yaw", p.name));
+			if (p.path)
+			{
+				for (const std::string& problem : pathProblems(*p.path))
+					out.push_back({PlanProblem::InvalidMover, string::format("prop '{}' cannot follow its path: {}", p.name, problem)});
+			}
+		}
+		std::set<std::string> boardNames;
+		for (const BoardMover& b : plan.boards)
+		{
+			identify(b.id, "board", b.name);
+			if (!boardNames.insert(b.name).second)
+				out.push_back({PlanProblem::InvalidMover, string::format("two boards are named '{}'", b.name)});
+			for (const std::string& problem : boardProblems(b))
+				out.push_back({PlanProblem::InvalidMover, string::format("board '{}' cannot be shown: {}", b.name, problem)});
 		}
 
 		std::unordered_map<core::Uuid, const Mount*> mounts;

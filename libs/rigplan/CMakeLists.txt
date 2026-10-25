@@ -9,6 +9,7 @@ add_library(rigplan STATIC
 	src/realisation.cpp
 	src/environment.cpp
 	src/sensor.cpp
+	src/mover.cpp
 )
 add_library(lain::rigplan ALIAS rigplan)
 

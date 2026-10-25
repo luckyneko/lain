@@ -15018,7 +15018,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    process pool; the folder layout and ground truth; `capture.json`; the pre-render size estimate,
    which says plainly when noise defeats compression. Proves: the noise is identical on every
    machine (it is CPU-only); memory is bounded at 100 cameras (a low-resolution scale test).
-   **Planned 2026-10-25 as five commits, 5a to 5e** (*Slice 5 planned* below); **5a built
+   **Planned 2026-10-25 as five commits, 5a to 5e** (*Slice 5 planned* below); **5a and 5b built
    2026-10-25**.
 6. **Rig and model comparison** promoted to `lain::camera`; the `compareRigs` and `compareModels`
    nodes; `rigcompare.h` over them. Proves: M9's verticals change by zero numbers.
@@ -16223,6 +16223,71 @@ all three off. Warning-clean, format-check clean.
     changes **the 16-bit sRGB output table** on arm64. Its `encoded · outputMax + 0.5` is then one
     rounding. The pinned table catches it. The two pinned recordings happened not to move. x86-64
     never fuses, so that table is what the first CI run compares across platforms.
+
+#### Sub-slice 5b built (2026-10-25): movers and paths
+
+`rigplan/mover.h` and `src/mover.cpp`; `RigPlan::boards`; `Prop::path`; both in the rig plan document;
+and `rigplan::scene` draws them. `ctest -j8` **1514/1514** Release with video, camera and Ceres on (+13), and
+**1376/1376** with all three off (+13). Warning-clean, format-check clean.
+
+- **A path** is `PathKey{frame, position, aim}` in frame order, with `pathProblems`. `poseAt(path,
+  frame)` gives a key's own pose at its frame, holds the first before it and the last after it, and
+  between two is linear in position and slerps in rotation the shorter way. A key is aimed as a camera
+  is, `mountFromPlacement` with the plan as the mount, which is the `Plane` convention.
+- **`BoardMover`**: a pattern, an instance, a margin, pixels a square, a backing, and a path.
+  - `boardProblems` gives one line per fault.
+  - `specificationOf` gives its `camera::board::Specification`.
+  - `planFromBoard(board, frame)` is the path's pose less half the squares' extent, so **a key places
+    the centre of the squares**, and the camera sharing the key's aim sees the board face on and
+    upright. The case pins the camera frame to the board frame exactly.
+- **A prop mover is a prop with a path** (CONTEXT.md's *Prop*). `planFromProp(prop, frame)` takes the
+  frame, and a path's pose has the camera's rest turn undone, so a key with only a pan equals a static
+  prop at that yaw (to 1e-12). With a path, `position` and `yawDegrees` stand unused, and the header
+  says so.
+- **`check()`** reports `InvalidMover` for a board `boardProblems` refuses, a prop's path that cannot be
+  followed, and two boards of one name. A board is an owner, so its identity is unique among all of
+  them.
+- **The document** writes `boards` after `props`. A board's pattern and instance are spelled as a
+  board specification document spells them (`camera::serialize`'s `PatternParameters` and
+  `Instance`), and a path is `{keys: [{frame, position, aim}]}`. A static prop writes no `path`.
+- **`rigplan::scene`:**
+  - `loadSceneAssets` draws each board once into a `BoardSheet`: the raster, plus the print and the
+    back as meshes in the board frame, using 4c's mapping. The margin goes to the nearest pixel (10 mm
+    at 100 px a square of 24 mm is 42). Anything the renderer will not draw is a problem naming the
+    board, and a build with no renderer says so.
+  - `renderScene` places both at `planFromBoard`: the print white under the raster, the back plain
+    white and `backing` behind it.
+  - A prop on a path is placed at its frame.
+  - **The sheet meshes live in the assets** already, so 5d's update finds them shared across frames.
+- **The cases:**
+  - seven in `test-rigplan`: keys held and interpolated at a constant rate, the shorter way, one key,
+    path refusals, a board centred and facing, a prop on a path, and `check()`'s refusals;
+  - one in `test-rigplan-serialize`: a round trip that also compares every frame's poses, with the
+    keys pinned;
+  - one in `test-rigplan-scene`: with no renderer registered, the load names the board and the rest
+    still draws;
+  - four in a new `test-rigplan-scene-board`, with a stand-in renderer, since a registry only grows:
+    - the print spans the raster, with every corner on the pixel boundary that draws it;
+    - the sheets follow the path;
+    - a failing renderer is named;
+    - on the device, a camera behind the board sees its white back where the front shows the black
+      print.
+- **Nine sabotages, all caught:**
+  - the position held instead of interpolated;
+  - the rotation interpolated toward the negated end, so it takes the long way wherever the shorter
+    one was right, which fails the constant-rate and prop cases;
+  - glm's `mix` in place of `slerp` (no short-path check), which only the short-way case catches;
+  - the board placed by its corner instead of its centre;
+  - a prop's path keeping the camera's rest turn;
+  - `check()` skipping `boardProblems`;
+  - no back drawn, which fails the device case;
+  - the raster read upside down;
+  - the sheet ignoring the margin.
+
+  The negated end could not reach the short-way case: there the quaternions' dot product is already
+  negative, so negating one end takes the shorter way. `mix` is the sabotage that case exists for.
+- **Found by the first run, in the test:** it took a board's sheets to be the scene's last two
+  instances, but boards are drawn before poles. The test now finds them by their meshes.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 

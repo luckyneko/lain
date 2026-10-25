@@ -105,7 +105,7 @@ TEST_CASE("a prop's mesh is put in the plan frame once: its up axis, its unit, i
 	lain::rigplan::Prop prop;
 	SECTION("a Y-up mesh stands up in the Z-up plan")
 	{
-		const auto m = lain::rigplan::planFromProp(prop);
+		const auto m = lain::rigplan::planFromProp(prop, 0);
 		REQUIRE(near(mapped(m, {0.0, 1.0, 0.0}), {0.0, 0.0, 1.0}));	 // the file's up is the plan's up
 		REQUIRE(near(mapped(m, {0.0, 0.0, -1.0}), {0.0, 1.0, 0.0})); // the file's forward (-Z) is the plan's
 		REQUIRE(near(mapped(m, {1.0, 0.0, 0.0}), {1.0, 0.0, 0.0}));
@@ -113,7 +113,7 @@ TEST_CASE("a prop's mesh is put in the plan frame once: its up axis, its unit, i
 	SECTION("a Z-up mesh is already in the plan's axes")
 	{
 		prop.up = lain::rigplan::UpAxis::Z;
-		REQUIRE(near(mapped(lain::rigplan::planFromProp(prop), {1.0, 2.0, 3.0}), {1.0, 2.0, 3.0}));
+		REQUIRE(near(mapped(lain::rigplan::planFromProp(prop, 0), {1.0, 2.0, 3.0}), {1.0, 2.0, 3.0}));
 	}
 	SECTION("centimetres, turned a quarter left and stood elsewhere")
 	{
@@ -122,8 +122,8 @@ TEST_CASE("a prop's mesh is put in the plan frame once: its up axis, its unit, i
 		prop.yawDegrees = 90.0;
 		prop.position = {5.0, 6.0, 0.0};
 		// 100 units along the file's +X is a metre, which a quarter turn left points along +Y.
-		REQUIRE(near(mapped(lain::rigplan::planFromProp(prop), {100.0, 0.0, 0.0}), {5.0, 7.0, 0.0}));
-		REQUIRE(near(mapped(lain::rigplan::planFromProp(prop), {0.0, 0.0, 170.0}), {5.0, 6.0, 1.7}));
+		REQUIRE(near(mapped(lain::rigplan::planFromProp(prop, 0), {100.0, 0.0, 0.0}), {5.0, 7.0, 0.0}));
+		REQUIRE(near(mapped(lain::rigplan::planFromProp(prop, 0), {0.0, 0.0, 170.0}), {5.0, 6.0, 1.7}));
 	}
 	SECTION("both conventions are right-handed, so no mesh comes out mirrored")
 	{

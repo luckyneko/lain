@@ -148,7 +148,7 @@ TEST_CASE("a rig plan document's shape", "[rigplan][serialize]")
 	// Pinned, since a document is read by people and by later builds: renaming a key is a migration.
 	Value document = lain::rigplan::rigPlanToValue(testplan::plan());
 	// A rig plan in no room writes no room; its lists of planes, boxes and props are there, empty.
-	REQUIRE(keysOf(document) == std::vector<std::string>{"version", "specifications", "planes", "boxes", "props", "mounts",
+	REQUIRE(keysOf(document) == std::vector<std::string>{"version", "specifications", "planes", "boxes", "props", "boards", "mounts",
 														 "cameras", "lights", "timeline", "seed", "scales"});
 
 	Value& lens = element(member(member(document, "specifications"), "lenses"), 0);
@@ -225,6 +225,14 @@ TEST_CASE("a strict read names what a hand edit got wrong", "[rigplan][serialize
 		const auto read = lain::rigplan::rigPlanFromValue(document);
 		REQUIRE_FALSE(read.plan.has_value());
 		REQUIRE(mentions(read.problems, "fullWell"));
+	}
+	SECTION("a board dictionary that does not exist")
+	{
+		lain::rigplan::RigPlan withBoard = testplan::plan();
+		withBoard.boards.push_back(testplan::board());
+		document = lain::rigplan::rigPlanToValue(withBoard);
+		member(member(element(member(document, "boards"), 0), "pattern"), "dictionary") = Value(std::string("Aruco5x5_99"));
+		REQUIRE_FALSE(lain::rigplan::rigPlanFromValue(document).plan.has_value());
 	}
 	SECTION("an identity that is not a uuid")
 	{
@@ -314,11 +322,56 @@ TEST_CASE("a furnished rig plan reads back as it was written", "[rigplan][serial
 	REQUIRE_FALSE(lain::rigplan::rigPlanToValue(testplan::plan()).find("room"));
 }
 
+TEST_CASE("movers read back as they were written", "[rigplan][serialize][mover]")
+{
+	lain::rigplan::RigPlan original = testplan::furnished();
+	original.boards.push_back(testplan::board());
+	original.boards[0].margin = 0.015;
+	original.boards[0].pixelsPerSquare = 120;
+	original.boards[0].backing = 0.005;
+	original.boards[0].instance.squareLength.lowerBound = lain::core::Length::from<lain::core::Length::Millimetres>(23.9);
+	original.props[0].path = lain::rigplan::Path{{{3, {0.5, -1.0, 0.0}, {10.0, 0.0, 0.0}}, {9, {1.5, -0.5, 0.0}, {40.0, 0.0, 0.0}}}};
+
+	Value document = lain::rigplan::rigPlanToValue(original);
+	const lain::rigplan::RigPlanRead read = lain::rigplan::rigPlanFromValue(document);
+	for (const std::string& p : read.problems)
+		UNSCOPED_INFO(p);
+	REQUIRE(read.plan.has_value());
+	REQUIRE(lain::rigplan::rigPlanToValue(*read.plan) == document);
+
+	// What the movers do, not only what they write: the same pose at every frame.
+	const lain::rigplan::RigPlan& p = *read.plan;
+	REQUIRE(p.boards.size() == 1);
+	REQUIRE(p.boards[0].pattern.squaresX == 7);
+	REQUIRE(p.boards[0].instance.squareLength.value == original.boards[0].instance.squareLength.value);
+	REQUIRE(p.boards[0].instance.squareLength.lowerBound == original.boards[0].instance.squareLength.lowerBound);
+	REQUIRE(p.boards[0].pixelsPerSquare == 120);
+	REQUIRE(p.boards[0].margin == 0.015);
+	REQUIRE(p.boards[0].backing == 0.005);
+	for (std::size_t f = 0; f < 24; ++f)
+	{
+		const auto a = lain::rigplan::planFromBoard(original.boards[0], f);
+		const auto b = lain::rigplan::planFromBoard(p.boards[0], f);
+		REQUIRE(a.rotation() == b.rotation());
+		REQUIRE(a.translation() == b.translation());
+		REQUIRE(lain::rigplan::planFromProp(original.props[0], f) == lain::rigplan::planFromProp(p.props[0], f));
+	}
+
+	// A prop that stands still writes no path; one that moves writes its keys.
+	Value& prop = element(member(document, "props"), 0);
+	REQUIRE(keysOf(member(member(prop, "path"), "keys").asArray()->front()) == std::vector<std::string>{"frame", "position", "aim"});
+	REQUIRE_FALSE(lain::rigplan::rigPlanToValue(testplan::furnished()).find("props")->asArray()->front().find("path"));
+	Value& board = element(member(document, "boards"), 0);
+	REQUIRE(keysOf(board) ==
+			std::vector<std::string>{"id", "name", "pattern", "instance", "margin", "pixelsPerSquare", "backing", "path"});
+	REQUIRE(member(member(board, "pattern"), "dictionary") == Value(std::string("Aruco5x5_100"))); // as a board document spells it
+}
+
 TEST_CASE("a furnished rig plan document's shape", "[rigplan][serialize][environment]")
 {
 	Value document = lain::rigplan::rigPlanToValue(testplan::furnished());
 	REQUIRE(keysOf(document) == std::vector<std::string>{"version", "specifications", "room", "planes", "boxes", "props",
-														 "mounts", "cameras", "lights", "timeline", "seed", "scales"});
+														 "boards", "mounts", "cameras", "lights", "timeline", "seed", "scales"});
 	Value& room = member(document, "room");
 	REQUIRE(keysOf(room) == std::vector<std::string>{"centre", "size", "floor", "ceiling", "north", "south", "east", "west"});
 	Value& floor = member(member(member(room, "floor"), "material"), "surface");

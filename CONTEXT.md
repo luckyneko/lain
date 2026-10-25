@@ -940,10 +940,14 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   detector expects; a **prop mover** shows a prop, for moving content. A mover follows a **path**:
   poses keyed at frames of the capture timeline (never at times, so a change of frame rate moves no
   key off its frame), interpolated between keys linearly in position and by slerp in rotation, and
-  held before the first key and after the last. Cameras and mounts never move. A rig plan with a
-  board mover renders a capture only where a board renderer exists, and is refused elsewhere rather
-  than drawn without its board, whose ground truth would then describe corners the pixels lack.
-  _Avoid_: animated object, actor, dynamic object.
+  held before the first key and after the last. A key aims its mover as a camera is aimed, so a
+  camera with the same aim sees it face on and upright: a board's key places the centre of its
+  squares, and a prop's stands it upright at rest, a pan being its yaw. A board is a printed sheet
+  with a plain back, since the renderer lights both faces of a surface and a board seen from behind
+  must not show its pattern mirrored. Cameras and mounts never move. A rig plan with a board mover
+  renders a capture only where a board renderer exists, and is refused elsewhere rather than drawn
+  without its board, whose ground truth would then describe corners the pixels lack. _Avoid_:
+  animated object, actor, dynamic object.
 - **Mesh clip** — a finite run of meshes at a frame rate, which a prop mover may play on a loop in
   place while its path moves it; a static mesh is a clip of one. A capture frame shows the clip
   frame nearest its time, never a blend, since the meshes of a clip need not share a topology. The

@@ -115,6 +115,7 @@ namespace lain::rigplan
 		std::vector<Plane> planes;
 		std::vector<Box> boxes;
 		std::vector<Prop> props;
+		std::vector<BoardMover> boards; // board movers; a prop mover is a prop with a path
 		std::vector<Mount> mounts;
 		std::vector<PlacedCamera> cameras;
 		std::vector<PlacedLight> lights;
@@ -141,6 +142,7 @@ namespace lain::rigplan
 		InvalidScale,		  // a scale outside [0, 1]
 		InvalidEnvironment,	  // a room, plane or box of no extent, a prop with no mesh or unit, or a material that cannot be one
 		InsidePole,			  // a camera's optical centre or a light inside its own pole, as far as its tolerances could move it
+		InvalidMover,		  // a board that cannot be shown (boardProblems), a path that cannot be followed, or two boards of one name
 	};
 
 	struct PlanDiagnostic
@@ -149,8 +151,8 @@ namespace lain::rigplan
 		std::string detail; // which part and what about it, for a person
 	};
 
-	// Every problem with `plan`: its specifications first, then its room, planes, boxes and props, then
-	// its mounts, cameras, lights, timeline and scales. Empty when the rig plan can be realised (though a realisation may still refuse a
+	// Every problem with `plan`: its specifications first, then its room, planes, boxes, props and
+	// boards, then its mounts, cameras, lights, timeline and scales. Empty when the rig plan can be realised (though a realisation may still refuse a
 	// draw; see realise()).
 	std::vector<PlanDiagnostic> check(const RigPlan& plan);
 

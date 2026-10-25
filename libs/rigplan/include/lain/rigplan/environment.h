@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lain/rigplan/aim.h"
+#include "lain/rigplan/mover.h"
 
 #include <lain/core/uri.h>
 #include <lain/core/uuid.h>
@@ -10,6 +11,8 @@
 #include <lain/math/types.h>
 #include <lain/media/framespec.h>
 
+#include <cstddef>
+#include <optional>
 #include <string>
 #include <variant>
 
@@ -105,7 +108,9 @@ namespace lain::rigplan
 
 	// A mesh asset placed in a rig plan (CONTEXT.md, "Prop"), in its file's own materials. Its mesh is
 	// converted to the plan frame once, where a render scene is built: its up axis to the plan frame's,
-	// each unit to `unitMetres` metres, turned by `yawDegrees` about +Z and stood at `position`.
+	// each unit to `unitMetres` metres, turned by `yawDegrees` about +Z and stood at `position`. A prop
+	// that follows a path is a prop mover: its path places it at every frame instead, and its position
+	// and yaw stand unused.
 	struct Prop
 	{
 		core::Uuid id;
@@ -120,10 +125,13 @@ namespace lain::rigplan
 		double unitMetres = 1.0;
 		math::Vec3d position{0.0, 0.0, 0.0};
 		double yawDegrees = 0;
+		// Where it is at each frame, aimed as a camera is but upright at rest (a pan is a yaw, so a key
+		// with only a pan stands it as `position` and `yawDegrees` would).
+		std::optional<Path> path;
 	};
 
-	// The prop's mesh coordinates into the plan frame: the basis change from its up axis, the unit
-	// scale, the yaw, then the position. Not rigid, so a matrix: a point (x, y, z, 1) of the file maps to
-	// the plan.
-	math::Mat4d planFromProp(const Prop& prop);
+	// The prop's mesh coordinates into the plan frame at capture frame `frame`: the basis change from
+	// its up axis, the unit scale, then its yaw and position, or its path's pose at `frame`. Not rigid,
+	// so a matrix: a point (x, y, z, 1) of the file maps to the plan.
+	math::Mat4d planFromProp(const Prop& prop, std::size_t frame);
 } // namespace lain::rigplan

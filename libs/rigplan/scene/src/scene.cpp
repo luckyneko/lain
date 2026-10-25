@@ -1,5 +1,6 @@
 #include "lain/rigplan/scene.h"
 
+#include <lain/camera/board/rendering.h>
 #include <lain/image/procedural.h>
 #include <lain/io/image/load.h>
 #include <lain/io/mesh/load.h>
@@ -169,6 +170,56 @@ namespace lain::rigplan
 		return std::make_shared<const mesh::Mesh>(std::move(mesh));
 	}
 
+	// A rectangle of the board frame's plane at depth `z`, from (x0, y0) to (x1, y1), facing along
+	// `facing` (-1 toward a camera in front of the board, +1 behind it). With `textured`, the raster maps
+	// onto it upright: its top row at y0, since the board frame's Y runs down and OBJ's v up.
+	static std::shared_ptr<const mesh::Mesh> sheet(double x0, double y0, double x1, double y1, double z, float facing, bool textured)
+	{
+		mesh::Mesh mesh;
+		const std::pair<double, double> corners[4] = {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}};
+		const math::Vec2f uvs[4] = {{0.0f, 1.0f}, {1.0f, 1.0f}, {1.0f, 0.0f}, {0.0f, 0.0f}};
+		for (int i = 0; i < 4; ++i)
+		{
+			mesh.positions.push_back(math::Vec3f{float(corners[i].first), float(corners[i].second), float(z)});
+			mesh.normals.push_back(math::Vec3f{0.0f, 0.0f, facing});
+			mesh.uvs.push_back(textured ? uvs[i] : math::Vec2f{0.0f});
+		}
+		mesh.indices = {0, 1, 2, 0, 2, 3};
+		mesh.parts = {{0, 0, 6}};
+		mesh.materials = {mesh::Material{}};
+		return std::make_shared<const mesh::Mesh>(std::move(mesh));
+	}
+
+	// `board` drawn, or why not.
+	static std::optional<BoardSheet> drawBoard(const BoardMover& board, std::vector<std::string>& problems)
+	{
+		const std::string owner = string::format("board '{}'", board.name);
+		const std::optional<camera::board::Specification> specification = specificationOf(board);
+		if (!specification || board.pixelsPerSquare == 0)
+		{
+			problems.push_back(string::format("{}: its pattern and instance make no board to draw", owner));
+			return std::nullopt;
+		}
+		const double square = specification->instance().squareLength.value.metres();
+		const double perMetre = board.pixelsPerSquare / square;
+		// The margin to the nearest pixel, since the raster is whole pixels; the corners do not depend on it.
+		const auto margin = std::uint32_t(std::lround(std::max(board.margin, 0.0) * perMetre));
+		camera::board::RenderResult rendered = camera::board::render(specification->pattern(), {board.pixelsPerSquare, margin});
+		if (!rendered.rendering)
+		{
+			for (const camera::board::RenderDiagnostic& d : rendered.diagnostics)
+				problems.push_back(string::format("{}: {}", owner, d.detail));
+			return std::nullopt;
+		}
+		image::Image raster = std::move(rendered.rendering->raster);
+		if (raster.colorSpace() == image::ColorSpace::Unspecified)
+			raster.setColorSpace(image::ColorSpace::sRGB); // codes as printed
+		const double x0 = -double(margin) / perMetre, x1 = (raster.width() - double(margin)) / perMetre;
+		const double y0 = -double(margin) / perMetre, y1 = (raster.height() - double(margin)) / perMetre;
+		return BoardSheet{std::make_shared<const image::Image>(std::move(raster)), sheet(x0, y0, x1, y1, 0.0, -1.0f, true),
+						  sheet(x0, y0, x1, y1, board.backing, 1.0f, false)};
+	}
+
 	AssetsResult loadSceneAssets(const RigPlan& plan)
 	{
 		AssetsResult result;
@@ -229,6 +280,12 @@ namespace lain::rigplan
 				}
 			}
 			assets.props.emplace(prop.id, std::make_shared<const mesh::MeshClip>(std::move(*clip)));
+		}
+
+		for (const BoardMover& board : plan.boards)
+		{
+			if (std::optional<BoardSheet> drawn = drawBoard(board, result.problems))
+				assets.boards.emplace(board.id, std::move(*drawn));
 		}
 		return result;
 	}
@@ -326,7 +383,28 @@ namespace lain::rigplan
 				materials.push_back(scene.materials.size());
 				scene.materials.push_back(material);
 			}
-			place(std::move(mesh), planFromProp(prop), std::move(materials));
+			place(std::move(mesh), planFromProp(prop, frame), std::move(materials));
+		}
+
+		for (const BoardMover& board : plan.boards)
+		{
+			const auto found = assets.boards.find(board.id);
+			if (found == assets.boards.end())
+			{
+				result.problems.push_back(string::format("board '{}': the assets hold no drawing of it", board.name));
+				continue;
+			}
+			const BoardSheet& drawn = found->second;
+			const math::Mat4d planFromSheet = planFromBoard(board, frame).matrix();
+			render::Material print;
+			print.diffuse = {1.0f, 1.0f, 1.0f};
+			print.texture = texture(drawn.raster);
+			scene.materials.push_back(print);
+			place(drawn.print, planFromSheet, {scene.materials.size() - 1});
+			render::Material back;
+			back.diffuse = {1.0f, 1.0f, 1.0f};
+			scene.materials.push_back(back);
+			place(drawn.back, planFromSheet, {scene.materials.size() - 1});
 		}
 
 		// Each pole, floor to top at its realised mount (CONTEXT.md, "Mount"): real geometry, occluding what

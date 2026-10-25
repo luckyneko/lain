@@ -1400,6 +1400,30 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-25 — M15 slice 5, sub-slice 5b built: movers and paths
+
+A rig plan's boards and moving props. `ctest -j8` **1514/1514** Release with video, camera and Ceres
+on (+13), **1376/1376** with all three off (+13); warning-clean, format-check clean. Full notes in WORK.md's
+*Sub-slice 5b built*.
+
+- **`rigplan/mover.h`:** `PathKey` / `Path` / `poseAt`, and `BoardMover` with `planFromBoard`.
+  - `poseAt` holds a key at its frame, holds the first before it and the last after it, and between
+    two keys is linear in position and slerps in rotation the shorter way.
+  - A key is aimed as a camera is, so a board's key places the centre of its squares, seen face on
+    and upright by the camera sharing its aim.
+- **A prop mover is a prop with a path.** `planFromProp(prop, frame)` undoes the camera's rest turn,
+  so a pan is a yaw.
+- **`check()`** reports `InvalidMover`. The document gains `boards` and an optional prop `path`, and
+  a board is spelled as a board specification document spells it.
+- **`rigplan::scene` draws a board's sheet**, using 4c's mapping, **over a plain back**: the renderer
+  lights both faces, so without one a camera behind the board would see the pattern mirrored, and a
+  mirrored marker can read as another id. The device case shows the back. With no board renderer,
+  the load names the board, and the rest still draws. The sheet meshes live in `SceneAssets`, ready
+  for 5d's update.
+- **A new `test-rigplan-scene-board`** holds a stand-in renderer, since a registry only grows.
+- **Nine sabotages, all caught.** glm's `mix` in place of `slerp` (no short-path check) is caught
+  only by the short-way case, which is why that case exists.
+
 ### Update 2026-10-25 — M15 slice 5 planned; 5a built: the sensor model
 
 Slice 5 (the sensor model, movers and the capture writer) is five commits, 5a to 5e, in one
