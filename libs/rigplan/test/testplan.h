@@ -168,7 +168,8 @@ namespace testplan
 	inline const lain::core::Uuid boardId = id("0193a6f0-0000-7000-8000-00000000b001");
 
 	// M9's board (7 x 5 squares of 24 mm, ARUCO_5X5_100) carried across in front of the pole's cameras:
-	// held at frame 0, turned and moved by frame 12, and held again from frame 20.
+	// face on to cam0 at frame 0, 0.875 m straight ahead of it, then turned and moved by frame 12 to
+	// where it leaves cam0's image on the right, and held there from frame 20.
 	inline lain::rigplan::BoardMover board()
 	{
 		lain::rigplan::BoardMover b;
@@ -180,9 +181,9 @@ namespace testplan
 		b.pattern.markerToSquare = 0.75;
 		b.instance.identity = "board-1";
 		b.instance.squareLength.value = Length::from<Length::Millimetres>(24.0);
-		b.path.keys = {{0, {1.6, 4.0, 1.5}, {180.0, 0.0, 0.0}},
-					   {12, {2.4, 4.2, 1.6}, {160.0, 10.0, 5.0}},
-					   {20, {2.4, 4.2, 1.6}, {160.0, 10.0, 5.0}}};
+		b.path.keys = {{0, {2.0, 4.0, 1.5}, {0.0, 0.0, 0.0}},
+					   {12, {2.3, 4.2, 1.6}, {-20.0, 10.0, 5.0}},
+					   {20, {2.3, 4.2, 1.6}, {-20.0, 10.0, 5.0}}};
 		return b;
 	}
 } // namespace testplan

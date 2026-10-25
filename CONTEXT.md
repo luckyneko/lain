@@ -786,10 +786,14 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   is meant.
 - **Ground truth** — what a synthetic capture was actually rendered with: every camera's realised
   camera model and realised plan-frame pose, and per frame the board's realised pose and each
-  corner's true pixel in every camera that sees it. A rig document relative to one reference camera
-  is derived from the poses; scoring a registration that chose another reference derives the truth
-  again for that reference rather than rebasing the result. _Avoid_: expected result, reference
-  data, nominal model (that is what the datasheet says, written beside the truth).
+  corner's true pixel in every camera that sees it. "Sees" means **in view**: the corner projects
+  inside the image through the realised model, and the camera stands on the board's printed side.
+  Occlusion by a pole or a prop is not tested, so a consumer matching detections by corner id finds
+  no detection of a hidden corner rather than a wrong one. A rig document relative to one reference
+  camera (the rig plan's reference, its first camera unless it names one) is derived from the poses;
+  scoring a registration that chose another reference derives the truth again for that reference
+  rather than rebasing the result. _Avoid_: expected result, reference data, nominal model (that is
+  what the datasheet says, written beside the truth).
 - **Nominal model** — the camera model a camera specification derives, as a datasheet would state
   it, written with every synthetic capture beside the realised ones. Registering with nominal models
   is registering an uncalibrated rig; registering with the realised ones is registering a perfectly

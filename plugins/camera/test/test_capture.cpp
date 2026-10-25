@@ -3,8 +3,9 @@
 // lain projects the truth, through all six distortion models. Each renderer is judged against the
 // truth, never against the other: the CPU averages 8-bit sRGB codes and the GPU linear light, so
 // their edges differ while their corners need not. And whether the density rigplan::scene bakes a
-// procedural surface at is one SIFT can see (4d). Release only, since the CPU draws 11 million rays
-// a picture.
+// procedural surface at is one SIFT can see (4d). And a rig plan's board mover, captured through its
+// realised cameras and recorded by their sensors, is detected where its ground truth says (M15 slice
+// 5c). Release only, since the CPU draws 11 million rays a picture.
 
 #include "gpu.h"		   // libs/render/test
 #include "testboard.h"	   // libs/camera/test
@@ -22,7 +23,11 @@
 #include <lain/image/transfercurve.h>
 #include <lain/render/capture.h>
 #include <lain/render/renderer.h>
+#include <lain/rigplan/mover.h>
+#include <lain/rigplan/realisation.h>
 #include <lain/rigplan/scene.h>
+#include <lain/rigplan/sensor.h>
+#include <lain/rigplan/truth.h>
 
 #include <catch2/catch_message.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -486,5 +491,157 @@ TEST_CASE("a procedural surface baked at rigplan's density captures as it does a
 		CHECK(agreement(fBaked, fFiner, 0.5) > 0.8);
 		CHECK(bakedToExact.rms < 1.5);
 		CHECK(std::abs(bakedAgrees - finerAgrees) < 0.06);
+	}
+}
+
+// Two cameras side by side on one bracket, a pinhole and a barrel lens, each realised at full scale of a
+// 2% focal tolerance and 10 px of decentring, so the realised models part from the datasheet's by pixels.
+// Squares are about 62 px across at the board's 0.6 m, as in M9's scene. The board, M9's, turned at
+// frame 0 and moved toward the corner by frame 1, lit by a bulb on the bracket.
+static rigplan::RigPlan rigWithBoard()
+{
+	const auto id = [](const char* text)
+	{ return *core::Uuid::parse(text); };
+	rigplan::RigPlan plan;
+	rigplan::SensorSpecification sensor;
+	sensor.name = "vga";
+	sensor.image = {960, 720};
+	sensor.pixelPitch = core::Length::from<core::Length::Micrometres>(3.0);
+	sensor.principalPointTolerance = core::Length::from<core::Length::Micrometres>(30.0);
+	sensor.sensorModel.channels = rigplan::SensorChannels::Grey;
+	plan.specifications.sensors.push_back(sensor);
+	const std::pair<const char*, Distortion> lenses[] = {{"pinhole", NoDistortion{}}, {"barrel", BrownConrady5{-0.25, 0.05, 0.001, -0.001, 0.0}}};
+	for (const auto& [name, distortion] : lenses)
+	{
+		rigplan::LensSpecification lens;
+		lens.name = name;
+		lens.focalLength = core::Length::from<core::Length::Micrometres>(4650.0); // 1550 px
+		lens.distortion = distortion;
+		lens.focalLengthTolerance = 0.02;
+		lens.distortionTolerance = 0.1;
+		plan.specifications.lenses.push_back(lens);
+		plan.specifications.cameras.push_back({name, "vga", name});
+	}
+	rigplan::LightSpecification bulb;
+	bulb.name = "bulb";
+	bulb.intensity = 0.3; // 0.83 of full scale on the board, face on
+	plan.specifications.lights.push_back(bulb);
+
+	rigplan::Mount bracket;
+	bracket.id = id("0193a6f0-0000-7000-8000-0000000c0001");
+	bracket.name = "bracket";
+	bracket.kind = rigplan::FixedPoint{{0.0, 0.0, 1.5}};
+	plan.mounts.push_back(bracket);
+	const std::pair<const char*, const char*> placed[] = {{"pinhole", "0193a6f0-0000-7000-8000-0000000c0002"},
+														  {"barrel", "0193a6f0-0000-7000-8000-0000000c0003"}};
+	double x = -0.04;
+	for (const auto& [name, uuid] : placed)
+	{
+		rigplan::PlacedCamera camera;
+		camera.id = id(uuid);
+		camera.name = name;
+		camera.camera = name;
+		camera.mount = bracket.id;
+		camera.offset = {x, 0.0, 0.0};
+		plan.cameras.push_back(camera);
+		x += 0.08;
+	}
+	rigplan::PlacedLight light;
+	light.id = id("0193a6f0-0000-7000-8000-0000000c0004");
+	light.name = "bulb";
+	light.light = "bulb";
+	light.mount = bracket.id;
+	plan.lights.push_back(light);
+
+	const board::Specification spec = testing::specification();
+	rigplan::BoardMover board;
+	board.id = id("0193a6f0-0000-7000-8000-0000000c0005");
+	board.name = "charuco";
+	board.pattern = spec.pattern().parameters();
+	board.instance = spec.instance();
+	board.pixelsPerSquare = 80; // as 4c draws it
+	board.margin = 0.006;		// 20 pixels
+	board.path.keys = {{0, {0.0, 0.6, 1.5}, {15.0, -10.0, 3.0}}, {1, {0.06, 0.62, 1.46}, {-20.0, 8.0, -5.0}}};
+	plan.boards.push_back(board);
+
+	plan.timeline.frames = 2;
+	plan.seed = 3;
+	plan.scales.intrinsic = 1.0;
+	return plan;
+}
+
+TEST_CASE("a rig plan's board, captured through its realised cameras, is detected where its truth says", "[camera][capture][gpu]")
+{
+#ifndef NDEBUG
+	SKIP("Release only: the capture is detected at full resolution");
+#endif
+	ensureBackends();
+	acm::Device& device = render::testing::device();
+	render::Renderer renderer(device);
+	REQUIRE(renderer.problems().empty());
+
+	const rigplan::RigPlan plan = rigWithBoard();
+	REQUIRE(rigplan::check(plan).empty());
+	const rigplan::RealisationResult realised = rigplan::realise(plan);
+	REQUIRE(realised.realisation);
+	const rigplan::Realisation& realisation = *realised.realisation;
+	const rigplan::AssetsResult assets = rigplan::loadSceneAssets(plan);
+	REQUIRE(assets.problems.empty());
+	const board::Specification spec = *rigplan::specificationOf(plan.boards[0]);
+
+	for (std::size_t frame = 0; frame < plan.timeline.frames; ++frame)
+	{
+		const rigplan::SceneResult scene = rigplan::renderScene(plan, realisation, assets.assets, frame);
+		REQUIRE(scene.problems.empty());
+		render::UploadResult uploaded = renderer.upload(scene.scene);
+		REQUIRE(uploaded.problems.empty());
+		const std::vector<rigplan::BoardTruth> truth = rigplan::boardTruth(plan, realisation, frame);
+		REQUIRE(truth.size() == 1);
+
+		for (std::size_t c = 0; c < realisation.cameras.size(); ++c)
+		{
+			// The capture as the rig records it: through the realised model at the realised pose (a
+			// capture's world is the plan frame, and planFromCamera is lain's camera frame already), then
+			// the camera's own sensor, without noise.
+			const rigplan::RealisedCamera& camera = realisation.cameras[c];
+			render::RayTableResult table = render::RayTable::build(camera.model);
+			REQUIRE(table.table.has_value());
+			render::GpuRayTableResult rays = renderer.upload(*table.table);
+			REQUIRE(rays.problems.empty());
+			const render::RenderResult light = renderer.capture(*uploaded.scene, *rays.table, {camera.planFromCamera});
+			REQUIRE(light.problems.empty());
+			const rigplan::SensorSpecification& sensor = plan.specifications.sensors[0];
+			const rigplan::Recorder recorder = *rigplan::Recorder::create(sensor.sensorModel);
+			const image::Image recorded = recorder.record(light.image, {plan.seed, camera.id, frame}, 0.0);
+			REQUIRE(recorded.pixelFormat() == image::PixelFormat::Gray8);
+
+			media::FrameRef ref;
+			ref.source = core::Uri{"/synthetic/rig"};
+			const board::DetectionReport report = board::detect(recorded, ref, spec);
+			REQUIRE(report.observation.has_value());
+
+			// Every detected corner is one the truth has in view, where the truth puts it.
+			const rigplan::CameraCorners& inView = truth[0].cameras[c];
+			std::map<std::uint32_t, math::Vec2d> truePixel;
+			for (const rigplan::CornerTruth& t : inView.inView)
+				truePixel.emplace(t.corner, t.pixel);
+			CornerError error;
+			for (const board::FeatureObservation& f : report.observation->features)
+			{
+				const auto found = truePixel.find(f.id);
+				REQUIRE(found != truePixel.end());
+				const double distance = math::length(f.pixel - found->second);
+				error.mean += distance;
+				error.worst = std::max(error.worst, distance);
+				++error.corners;
+			}
+			error.mean /= double(std::max<std::size_t>(error.corners, 1));
+			INFO(camera.name << " at frame " << frame << ": " << error.corners << " of " << inView.inView.size()
+							 << " corners in view detected, mean " << error.mean << " px, worst " << error.worst << " px");
+			// 4c's bounds, which the capture pass meets through every model.
+			CHECK(error.corners >= 12);
+			CHECK(error.mean < 0.1);
+			CHECK(error.worst < 0.4);
+		}
 	}
 }

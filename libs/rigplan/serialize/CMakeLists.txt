@@ -7,6 +7,7 @@
 
 add_library(rigplan-serialize STATIC
 	src/rigplan.cpp
+	src/truth.cpp
 )
 add_library(lain::rigplan::serialize ALIAS rigplan-serialize)
 

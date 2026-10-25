@@ -1400,6 +1400,28 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-25 — M15 slice 5, sub-slice 5c built: ground truth
+
+What a synthetic capture was rendered with, computed through lain's own projection from the realisation.
+`ctest -j8` **1524/1524** Release with video, camera and Ceres on (+10), **1385/1385** with all three
+off (+9); warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 5c built*.
+
+- **`rigplan/truth.h`:**
+  - `boardTruth` gives each board's corners **in view** per camera: inside the image through the
+    **realised** model, from the printed side. No occlusion test, as decided.
+  - `cameraPoses`, and `rigRelativeTo(poses, reference)`, the one routine slice 6 will use to derive
+    the truth for whichever reference a registration chose. `truthRig` is that relative to
+    `RigPlan::reference`, a new optional camera uuid defaulting to the first camera.
+- **Documents:** `truth/poses.json` and `truth/board.json` in `rigplan::serialize`, versioned and read
+  strictly. A transform is spelled as the rig document spells it.
+- **On the device, a realisation reaches a capture for the first time** (slice 4's finding 6). Two
+  realised cameras (pinhole and Brown-Conrady, 2% focal and 10 px of decentring at full scale)
+  capture a moving board through their own models and grey sensors. All 24 corners in view are
+  detected at means of 0.057 to 0.090 px, on Metal and on the CPU device.
+- **The test plan's board faced away from the pole's cameras**, and is turned to face cam0.
+- **Four sabotages, all caught.** The truth projected through the nominal model puts the detected
+  corners 11 px from it on the device.
+
 ### Update 2026-10-25 — M15 slice 5, sub-slice 5b built: movers and paths
 
 A rig plan's boards and moving props. `ctest -j8` **1514/1514** Release with video, camera and Ceres

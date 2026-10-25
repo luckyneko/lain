@@ -298,12 +298,13 @@ namespace lain::rigplan
 		std::vector<BoardDoc> boards;
 		std::vector<MountDoc> mounts;
 		std::vector<CameraDoc> cameras;
+		std::optional<std::string> reference; // absent when the first camera is the reference
 		std::vector<LightPlacementDoc> lights;
 		TimelineDoc timeline;
 		std::uint64_t seed = 0;
 		Scales scales;
 	};
-	LAIN_SERIALIZE(RigPlanDoc, specifications, room, planes, boxes, props, boards, mounts, cameras, lights, timeline, seed, scales)
+	LAIN_SERIALIZE(RigPlanDoc, specifications, room, planes, boxes, props, boards, mounts, cameras, reference, lights, timeline, seed, scales)
 
 	// --- to a document ---------------------------------------------------------------------
 
@@ -409,6 +410,8 @@ namespace lain::rigplan
 			const PlacementTolerance& t = c.tolerance;
 			doc.cameras.push_back({c.id.toString(), c.name, c.camera, c.mount.toString(), docOf(c.offset), c.aim, {t.offset.as<core::Length::Millimetres>(), t.panDegrees, t.tiltDegrees, t.rollDegrees}});
 		}
+		if (plan.reference)
+			doc.reference = plan.reference->toString();
 		for (const PlacedLight& l : plan.lights)
 			doc.lights.push_back({l.id.toString(), l.name, l.light, l.mount.toString(), docOf(l.offset), l.aim});
 		doc.timeline = {plan.timeline.frames, plan.timeline.rate};
@@ -616,6 +619,8 @@ namespace lain::rigplan
 			camera.tolerance.rollDegrees = c.tolerance.rollDegrees;
 			plan.cameras.push_back(std::move(camera));
 		}
+		if (doc.reference)
+			plan.reference = convert.identity(*doc.reference, "reference");
 		for (std::size_t i = 0; i < doc.lights.size(); ++i)
 		{
 			const LightPlacementDoc& l = doc.lights[i];

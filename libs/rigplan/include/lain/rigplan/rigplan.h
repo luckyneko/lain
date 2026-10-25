@@ -118,6 +118,8 @@ namespace lain::rigplan
 		std::vector<BoardMover> boards; // board movers; a prop mover is a prop with a path
 		std::vector<Mount> mounts;
 		std::vector<PlacedCamera> cameras;
+		// The camera a capture's truth/rig.json is relative to; none is the first camera.
+		std::optional<core::Uuid> reference;
 		std::vector<PlacedLight> lights;
 		CaptureTimeline timeline;
 		std::uint64_t seed = 1;
@@ -143,6 +145,7 @@ namespace lain::rigplan
 		InvalidEnvironment,	  // a room, plane or box of no extent, a prop with no mesh or unit, or a material that cannot be one
 		InsidePole,			  // a camera's optical centre or a light inside its own pole, as far as its tolerances could move it
 		InvalidMover,		  // a board that cannot be shown (boardProblems), a path that cannot be followed, or two boards of one name
+		UnknownReference,	  // a reference that names no camera of the rig plan
 	};
 
 	struct PlanDiagnostic

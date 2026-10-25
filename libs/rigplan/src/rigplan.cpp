@@ -270,6 +270,13 @@ namespace lain::rigplan
 			}
 		}
 
+		if (plan.reference && std::none_of(plan.cameras.begin(), plan.cameras.end(), [&](const PlacedCamera& c)
+										   { return c.id == *plan.reference; }))
+		{
+			out.push_back({PlanProblem::UnknownReference,
+						   string::format("the reference {} is not one of the rig plan's cameras", plan.reference->toString())});
+		}
+
 		for (const PlacedLight& l : plan.lights)
 		{
 			identify(l.id, "light", l.name);

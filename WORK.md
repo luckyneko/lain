@@ -15018,7 +15018,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    process pool; the folder layout and ground truth; `capture.json`; the pre-render size estimate,
    which says plainly when noise defeats compression. Proves: the noise is identical on every
    machine (it is CPU-only); memory is bounded at 100 cameras (a low-resolution scale test).
-   **Planned 2026-10-25 as five commits, 5a to 5e** (*Slice 5 planned* below); **5a and 5b built
+   **Planned 2026-10-25 as five commits, 5a to 5e** (*Slice 5 planned* below); **5a to 5c built
    2026-10-25**.
 6. **Rig and model comparison** promoted to `lain::camera`; the `compareRigs` and `compareModels`
    nodes; `rigcompare.h` over them. Proves: M9's verticals change by zero numbers.
@@ -16289,6 +16289,63 @@ and `rigplan::scene` draws them. `ctest -j8` **1514/1514** Release with video, c
 - **Found by the first run, in the test:** it took a board's sheets to be the scene's last two
   instances, but boards are drawn before poles. The test now finds them by their meshes.
 
+#### Sub-slice 5c built (2026-10-25): ground truth
+
+`rigplan/truth.h` and `src/truth.cpp`; `RigPlan::reference`; `lain/rigplan/serialize/truth.h`; and a
+device case in `test-camera-capture`. `ctest -j8` **1524/1524** Release with video, camera and Ceres on
+(+10), and **1385/1385** with all three off (+9: the device case needs OpenCV). Warning-clean,
+format-check clean.
+
+- **`boardTruth(plan, realisation, frame)`** gives, per board, its `planFromBoard` and, per camera,
+  its corners **in view**: projected through the camera's **realised** model inside its image (pixel
+  centres, so the image is [-0.5, w - 0.5)), with the camera on the printed side (its centre at
+  board-frame Z < 0). The header says occlusion is not tested.
+- **`cameraPoses`, `rigRelativeTo(poses, reference)` and `truthRig`.** The rig is metric, its
+  identities the camera names (the identity M9 gives `rig/<name>`), ascending, with the reference at
+  the identity exactly rather than a product that rounds to it.
+  - `rigRelativeTo` is the one routine, so slice 6 can derive the truth again for whichever reference
+    a registration chose, from `truth/poses.json`.
+  - `RigPlan::reference` (an optional camera uuid; none is the first camera) is in the document as an
+    optional `reference`, and `check()` refuses one naming no camera (`UnknownReference`).
+- **Two documents in `rigplan::serialize`, versioned and read strictly:**
+  - `truth/poses.json` is `{version, cameras: [{id, name, planFromCamera}]}`;
+  - `truth/board.json` is `{version, frames: [{frame, boards: [{id, name, planFromBoard, cameras: [{id,
+    name, inView: [{corner, u, v}]}]}]}]}`, with frames ascending whatever order they are given in.
+
+  A transform is spelled as the rig document spells one, `{rotation: {w, x, y, z}, translation}`, and
+  a rotation must be unit to within the rig reader's 1e-6. The models and the rig themselves are
+  camera documents, through `camera::serialize`.
+- **The test plan's board was facing away from the pole's cameras** (a pan of 180, so cam0 saw its
+  back). It now faces cam0 0.875 m ahead at frame 0 and leaves its image to the right by frame 12, and
+  so serves as the "partly in view" case too.
+- **On the device** (`test-camera-capture`, Release only), this is the first time a realisation reaches
+  a capture: slice 4's finding 6, closed. A rig plan with two cameras on a bracket, a pinhole and a
+  Brown-Conrady lens, is realised at a full-scale 2% focal tolerance and 10 px of decentring. M9's
+  board moves through two frames, lit by a bulb. Each camera is captured at `planFromCamera`, recorded
+  by its grey sensor without noise, and detected.
+  - **All 24 corners in view are detected in every case**, at means of 0.057 to 0.090 px and worst
+    corners of 0.13 to 0.16 px, on Metal and on the CPU device alike. That is inside 4c's bounds.
+- **The cases:**
+  - five in `test-rigplan`:
+    - the poses;
+    - corners in view equal to the realised projection, more than a pixel from the nominal one;
+    - a camera behind the board seeing none;
+    - the rig relative to the first camera and to a named one;
+    - an unknown reference refused;
+  - four in `test-rigplan-serialize`: both documents' round trips, with their keys pinned; strict
+    refusals of a non-uuid, a non-unit rotation, a misspelled key and a newer version; and the
+    reference in the rig plan document;
+  - one on the device.
+- **Four sabotages, all caught:**
+  - **the truth through the nominal model** fails the unit case, and on the device puts the detected
+    corners **11 px** from the truth;
+  - the printed side flipped fails two cases;
+  - the rig left in the plan frame fails the rig case;
+  - poses written camera-from-plan fail the poses round trip.
+
+  The sabotage runner first passed two build targets as one name, so nothing was built or tested.
+  That one was redone by hand.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -16528,7 +16585,7 @@ row here**. A row is cheap to delete and expensive to leave.
   (0028, 0029). **Slices 0 to 3 built 2026-10-22 to 10-24** (`lain::editor`; `lain::rigplan` and its
   documents; `io::mesh` and the OBJ plugin; `lain::render` on the CPU device, CI green on every
   platform). **Slice 4 built 2026-10-24** (the capture pass; the ADR-0028 claim holds). **Slice 5
-  planned 2026-10-25 as five commits; 5a built** (the sensor model). The first CI run of 5a's pinned
+  planned 2026-10-25 as five commits; 5a to 5c built** (the sensor model, movers, ground truth). The first CI run of 5a's pinned
   output tables and recordings on Linux and Windows is owed. Slice 0's gui-mode check of the unsaved-changes
   modal is owed. Ten slices, 0 to 9, on `feature/M15`; the build order and every exclusion are in
   M15's own sections. *(Milestone 15.)*

@@ -10,6 +10,7 @@ add_library(rigplan STATIC
 	src/environment.cpp
 	src/sensor.cpp
 	src/mover.cpp
+	src/truth.cpp
 )
 add_library(lain::rigplan ALIAS rigplan)
 

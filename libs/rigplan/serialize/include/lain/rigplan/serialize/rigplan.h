@@ -28,8 +28,8 @@ namespace lain::rigplan
 	constexpr std::uint32_t kCatalogueDocumentVersion = 1;
 
 	// A rig plan as a document: {version, specifications: {sensors, lenses, cameras, lights}, room, planes,
-	// boxes, props, boards, mounts, cameras, lights, timeline: {frames, rate: {numerator, denominator}},
-	// seed, scales}. A board's pattern and instance are spelled as a board specification document
+	// boxes, props, boards, mounts, cameras, reference, lights, timeline: {frames, rate: {numerator,
+	// denominator}}, seed, scales}, the room and the reference absent when there is none. A board's pattern and instance are spelled as a board specification document
 	// spells them, and a path is {keys: [{frame, position, aim}]}.
 	data::Value rigPlanToValue(const RigPlan& plan);
 
