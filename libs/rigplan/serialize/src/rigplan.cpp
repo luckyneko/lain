@@ -48,6 +48,11 @@ namespace lain::rigplan
 	};
 	LAIN_SERIALIZE(BodyDoc, size, opticalCentre)
 
+	// A sensor model's numbers need no conversion (each key names its unit, or has none), so the types
+	// are their own parts. Enums by name: "Png", "Grey", "sRGB".
+	LAIN_SERIALIZE(SensorOutput, format, bits, curve, quality)
+	LAIN_SERIALIZE(SensorModel, gain, fullWellElectrons, readNoiseElectrons, adcBits, channels, output)
+
 	struct SensorDoc
 	{
 		std::string name;
@@ -55,8 +60,9 @@ namespace lain::rigplan
 		double pixelPitchUm = 0;
 		double principalPointToleranceUm = 0;
 		BodyDoc body;
+		SensorModel sensorModel;
 	};
-	LAIN_SERIALIZE(SensorDoc, name, image, pixelPitchUm, principalPointToleranceUm, body)
+	LAIN_SERIALIZE(SensorDoc, name, image, pixelPitchUm, principalPointToleranceUm, body, sensorModel)
 
 	struct LensDoc
 	{
@@ -286,7 +292,7 @@ namespace lain::rigplan
 		SpecificationsDoc doc;
 		for (const SensorSpecification& s : specifications.sensors)
 		{
-			doc.sensors.push_back({s.name, s.image, s.pixelPitch.as<core::Length::Micrometres>(), s.principalPointTolerance.as<core::Length::Micrometres>(), {docOf(s.body.size), docOf(s.body.opticalCentre)}});
+			doc.sensors.push_back({s.name, s.image, s.pixelPitch.as<core::Length::Micrometres>(), s.principalPointTolerance.as<core::Length::Micrometres>(), {docOf(s.body.size), docOf(s.body.opticalCentre)}, s.sensorModel});
 		}
 		for (const LensSpecification& l : specifications.lenses)
 		{
@@ -431,6 +437,7 @@ namespace lain::rigplan
 			sensor.principalPointTolerance =
 				convert.length<core::Length::Micrometres>(s.principalPointToleranceUm, path + ".principalPointToleranceUm");
 			sensor.body = {vecOf(s.body.size), vecOf(s.body.opticalCentre)};
+			sensor.sensorModel = s.sensorModel;
 			out.sensors.push_back(std::move(sensor));
 		}
 		for (std::size_t i = 0; i < doc.lenses.size(); ++i)

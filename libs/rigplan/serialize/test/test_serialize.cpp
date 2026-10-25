@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -109,6 +110,39 @@ TEST_CASE("a rig plan reads back as it was written, and writes back the same", "
 	REQUIRE(p.scales.noise == original.scales.noise);
 }
 
+TEST_CASE("a sensor's sensor model reads back as it was written", "[rigplan][serialize]")
+{
+	// Every field away from its default, so a field both directions dropped could not hide behind the
+	// default the read would give it.
+	lain::rigplan::RigPlan original = testplan::plan();
+	lain::rigplan::SensorModel& model = original.specifications.sensors[0].sensorModel;
+	model.gain = 0.75;
+	model.fullWellElectrons = 4500;
+	model.readNoiseElectrons = 2.25;
+	model.adcBits = 10;
+	model.channels = lain::rigplan::SensorChannels::Grey;
+	model.output.format = lain::rigplan::OutputFormat::Jpeg;
+	model.output.curve = lain::image::ColorSpace::BT709;
+	model.output.quality = 85;
+
+	const Value document = lain::rigplan::rigPlanToValue(original);
+	const lain::rigplan::RigPlanRead read = lain::rigplan::rigPlanFromValue(document);
+	for (const std::string& p : read.problems)
+		UNSCOPED_INFO(p);
+	REQUIRE(read.plan.has_value());
+	REQUIRE(lain::rigplan::rigPlanToValue(*read.plan) == document);
+	const lain::rigplan::SensorModel& back = read.plan->specifications.sensors[0].sensorModel;
+	REQUIRE(back.gain == 0.75);
+	REQUIRE(back.fullWellElectrons == 4500);
+	REQUIRE(back.readNoiseElectrons == 2.25);
+	REQUIRE(back.adcBits == 10);
+	REQUIRE(back.channels == lain::rigplan::SensorChannels::Grey);
+	REQUIRE(back.output.format == lain::rigplan::OutputFormat::Jpeg);
+	REQUIRE(back.output.bits == 8);
+	REQUIRE(back.output.curve == lain::image::ColorSpace::BT709);
+	REQUIRE(back.output.quality == std::optional<std::uint8_t>(85));
+}
+
 TEST_CASE("a rig plan document's shape", "[rigplan][serialize]")
 {
 	// Pinned, since a document is read by people and by later builds: renaming a key is a migration.
@@ -124,6 +158,12 @@ TEST_CASE("a rig plan document's shape", "[rigplan][serialize]")
 
 	Value& sensor = element(member(member(document, "specifications"), "sensors"), 0);
 	REQUIRE(member(sensor, "pixelPitchUm") == Value(2.0));
+	REQUIRE(keysOf(member(sensor, "sensorModel")) ==
+			std::vector<std::string>{"gain", "fullWellElectrons", "readNoiseElectrons", "adcBits", "channels", "output"});
+	REQUIRE(member(member(sensor, "sensorModel"), "channels") == Value(std::string("Rgb")));
+	Value& output = member(member(sensor, "sensorModel"), "output");
+	REQUIRE(member(output, "format") == Value(std::string("Png")));
+	REQUIRE(member(output, "curve") == Value(std::string("sRGB")));
 
 	Value& pole = element(member(document, "mounts"), 0);
 	REQUIRE(member(pole, "id") == Value(testplan::poleId.toString()));
@@ -171,6 +211,20 @@ TEST_CASE("a strict read names what a hand edit got wrong", "[rigplan][serialize
 		Value& distortion = member(element(member(member(document, "specifications"), "lenses"), 0), "distortion");
 		member(distortion, "type") = Value(std::string("brownConrady6"));
 		REQUIRE_FALSE(lain::rigplan::rigPlanFromValue(document).plan.has_value());
+	}
+	SECTION("an output format that does not exist")
+	{
+		Value& sensor = element(member(member(document, "specifications"), "sensors"), 0);
+		member(member(member(sensor, "sensorModel"), "output"), "format") = Value(std::string("Webp"));
+		REQUIRE_FALSE(lain::rigplan::rigPlanFromValue(document).plan.has_value());
+	}
+	SECTION("a misspelled sensor-model key")
+	{
+		Value& sensor = element(member(member(document, "specifications"), "sensors"), 0);
+		rename(member(sensor, "sensorModel"), "fullWellElectrons", "fullWell");
+		const auto read = lain::rigplan::rigPlanFromValue(document);
+		REQUIRE_FALSE(read.plan.has_value());
+		REQUIRE(mentions(read.problems, "fullWell"));
 	}
 	SECTION("an identity that is not a uuid")
 	{

@@ -15018,6 +15018,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    process pool; the folder layout and ground truth; `capture.json`; the pre-render size estimate,
    which says plainly when noise defeats compression. Proves: the noise is identical on every
    machine (it is CPU-only); memory is bounded at 100 cameras (a low-resolution scale test).
+   **Planned 2026-10-25 as five commits, 5a to 5e** (*Slice 5 planned* below); **5a built
+   2026-10-25**.
 6. **Rig and model comparison** promoted to `lain::camera`; the `compareRigs` and `compareModels`
    nodes; `rigcompare.h` over them. Proves: M9's verticals change by zero numbers.
 7. **The vertical**: a committed example rig plan, written by a C++ builder as flowview's examples
@@ -16087,6 +16089,141 @@ off. Warning-clean, format-check clean.
     case, mostly the CPU drawing the exact texture eight times.
   - Slice 4's claim holds on all three platforms.
 
+### Slice 5 planned (2026-10-25), and 5a built
+
+Five commits, in order, in one session: every sub-slice edits this file, CONTEXT.md and the rig plan
+documents, so none can run beside another. The rig plan document stays at version 1, so each field
+added here changes its shape without a migration (slice 1c's rule).
+
+- **Decided with the repo owner:**
+  - **The sensor model is physical**: a gain to full scale, full well and read noise in electrons,
+    ADC bits, then an output curve and depth. A tolerance in pixels was refused in ADR-0029 for
+    meaning something else on another sensor, and noise in output codes would mean something else
+    on another depth and curve.
+  - **Noise is Irwin-Hall**: twelve uniforms summed in integers, less six. It is exact everywhere,
+    over a true Gaussian through a log lain would own, and over libm's Box-Muller with the claim
+    weakened to "within an ulp".
+  - **A capture streams camera by camera, over a new `Renderer::update`** (5d). One ray table is on
+    the device at a time, each holding a tile texture of up to 256 MB, so each frame's scene reaches
+    the device once per camera. An update re-uploads only the meshes and textures whose `shared_ptr`
+    changed. Re-uploading everything and measuring first was refused, and so was every table
+    resident at once, which grows GPU memory with the camera count.
+  - **The board truth is "in view"**: a corner projects inside the image through the realised model,
+    and the camera is on the printed side. Occlusion is not tested, and the field says so. A ray
+    cast per corner per camera per frame was refused. A depth pass is no option either, since
+    archimedes discards depth after a pass.
+- **5a: the sensor model** (built, below).
+- **5b: movers and paths.**
+  - `rigplan/path.h`: `PathKey{frame, position, aim}`, `Path`, and `poseAt(path, frame)`, which is
+    linear in position, slerp in rotation, and held before the first key and after the last.
+  - A pose is aimed as a camera is, the `Plane` convention, so a board's frame at an aim is the
+    camera frame at that aim.
+  - `BoardMover` in `RigPlan::boards`: a pattern and an instance spelled as `camera::serialize`
+    spells them, a margin, pixels a square, a backing, and a path.
+  - `Prop` gains an optional `Path`, as CONTEXT.md's *Prop* says.
+  - `rigplan::scene` draws a board's raster on its sheet with 4c's mapping, over a plain back. The
+    renderer is two-sided, so without a back a camera behind the board would see the pattern
+    mirrored, and a mirrored marker can decode as another id.
+  - Without a board renderer, the load names the mover.
+- **5c: ground truth** (`rigplan/truth.h`).
+  - `boardTruth` gives the in-view corners per board, camera and frame. `truthRig` gives a metric
+    `RegisteredRig` relative to the reference camera, with identities equal to the camera names.
+    `RigPlan` gains `reference`, which defaults to the first camera.
+  - `truth/poses.json` and `truth/board.json` join `rigplan::serialize`.
+  - On the device, a board mover through `rigplan::scene`, a capture at `planFromCamera`, and
+    `board::detect` agree with `boardTruth` under 4c's bounds. That is the first time a realisation
+    reaches a capture (slice 4's finding 6).
+- **5d: `Renderer::update`**, and `rigplan::scene`'s generated geometry moves into `SceneAssets`, so
+  two frames' scenes share every mesh and texture.
+- **5e: the capture writer and `apps/rigplan`.**
+  - `lain::rigplan::capture` refuses before it writes anything, then writes the truth, then renders
+    camera-major with a bounded number of pool tasks in flight, then writes `capture.json` last.
+  - It gives the size estimate.
+  - `rigplan render <plan> --out <capture> [--seed --deviation --noise --estimate]`.
+  - Found while planning: flowview pairs a rig's footage with its models **by sorted position**
+    (`camerafiles.cpp`). Names `a` and `a-b` sort one way as folders and the other way as `a.json`
+    and `a-b.json`, since `-` sorts below `.`. So the writer refuses such names, and the binder fix
+    is owed to M9.
+
+#### Sub-slice 5a built (2026-10-25): the sensor model
+
+`rigplan/sensor.h` and `src/sensor.cpp`, plus the sensor model's fields in `SensorSpecification` and in
+both documents. `ctest -j8` **1501/1501** Release with video, camera and Ceres on (+14), and **1363/1363** with
+all three off. Warning-clean, format-check clean.
+
+- **The specification gains a `SensorModel`** (`SensorSpecification::sensorModel`):
+
+  | Field | Default |
+  |---|---|
+  | `gain` | 1 |
+  | `fullWellElectrons` | 10000 |
+  | `readNoiseElectrons` | 3 |
+  | `adcBits` | 12 |
+  | `channels` | Rgb, or Grey |
+  | `output.format` | Png, Tiff or Jpeg |
+  | `output.bits` | 8 or 16 |
+  | `output.curve` | sRGB, Linear or BT709 |
+  | `output.quality` | none; JPEG only |
+
+  - `sensorModelProblems` gives one line per fault. `check()` reports them as `InvalidSensorModel`,
+    naming the sensor.
+  - Both documents write it under `sensorModel`, with enums by name.
+- **A `Recorder`** is a sensor model prepared to record: `Recorder::create(model)`, then
+  `record(light, NoiseKey{seed, camera, frame}, noiseScale)`. Per sample:
+  - electrons are the light times gain times full well;
+  - shot and read noise add in quadrature;
+  - the ADC level is `floor(e' · (2^b − 1) / W + 0.5)`, clamped, so the ADC saturates at the full
+    well;
+  - then a table maps the ADC level to its output code.
+
+  Rows run on the process pool. The recording has no alpha and is tagged with its curve.
+- **Deviations from the plan:**
+  - **The ADC depth and the output depth are separate.** The plan made the container the smallest
+    depth that holds the ADC's. But an 8-bit linear ADC encoded as sRGB posterises the shadows
+    (linear code 1 encodes to sRGB code 13). So the default is a 12-bit ADC written as 8-bit sRGB,
+    which is what a typical camera does, and "8-bit PNG by default" still holds.
+  - **Named for the glossary.** The plan's `SensorResponse` became `SensorModel`, since CONTEXT.md's
+    *Sensor model* lists "camera response" under *Avoid*. The prepared object is a `Recorder`.
+- **"Identical on every machine" is built in four ways, none of them argued:**
+  - an Irwin-Hall draw taken in integers;
+  - SplitMix64 outputs addressed by sample, from a SHA-256 seed;
+  - `src/sensor.cpp` compiled with `-ffp-contract=off`;
+  - the curve as a finite table.
+- **The cases**, thirteen in `test-rigplan` and one in `test-rigplan-serialize`:
+  - **Pinned outside lain:** the noise seed and four draws, computed by Python's `hashlib` and
+    integer arithmetic from the rule `sensor.h` states.
+  - **The draws are a standard normal:** mean and variance over 200001 draws, none past six sigma,
+    and no correlation with the next sample, the next frame or another camera.
+  - **Exact without noise**, light k / 4096 against an integer formula, with negative light and NaN
+    recording nothing.
+  - **The output tables' digests are pinned** for four (curve, ADC, output) combinations, with
+    mid-grey at sRGB code 188.
+  - **Variance is the charge plus R²,** within 2% at three levels and two scales, the mean within
+    five standard errors.
+  - **Each channel draws its own noise.**
+  - **Saturation**: light 2, 1e30 and infinity all record the top code.
+  - **A grey sensor records luminance.**
+  - **The same bytes on one thread and on a pool of four.**
+  - **A whole recording's digest is pinned**, in RGB8 and in Gray16. Run on every CI leg, this is the
+    cross-platform proof. *(Owed: the first CI run of these pins on Linux and Windows.)*
+  - **Refusals**, and `check()` naming the sensor.
+  - **The documents**: a round trip with every field away from its default, the keys pinned, and a
+    strict read refusing an unknown format and a misspelled key.
+- **Found by its first run, in the test:** a lambda hashed `modelOf(r).outputCodes()`, a reference
+  into a temporary, so one table's digest changed between two runs. It is slice 1b's bug again. The
+  recorder is now held.
+- **Five sabotages, all caught.** One first failed to build under `-Werror` (an unused variable), so
+  the previous sabotage's binary answered until it was redone:
+  - **the frame left out of the noise key** fails four cases: the pinned draws, the seed's
+    identity, the independence of frames, and the pinned recording;
+  - **one draw shared across a pixel's channels** fails the channel case and the pinned recording;
+  - **read noise dropped** fails the quadrature case and the pinned recording;
+  - **an ADC that truncates instead of rounding** fails the exactness case and the pinned recording;
+  - **`-ffp-contract=off` removed** emits 9 fused multiply-adds in `sensor.o` (none with it) and
+    changes **the 16-bit sRGB output table** on arm64. Its `encoded · outputMax + 0.5` is then one
+    rounding. The pinned table catches it. The two pinned recordings happened not to move. x86-64
+    never fuses, so that table is what the first CI run compares across platforms.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -16325,7 +16462,9 @@ row here**. A row is cheap to delete and expensive to leave.
 - **M15 — rig design: rig plans and synthetic captures.** Grilled 2026-10-21 to 10-22 with two ADRs
   (0028, 0029). **Slices 0 to 3 built 2026-10-22 to 10-24** (`lain::editor`; `lain::rigplan` and its
   documents; `io::mesh` and the OBJ plugin; `lain::render` on the CPU device, CI green on every
-  platform). **Slice 4 built 2026-10-24** (the capture pass; the ADR-0028 claim holds). Slice 0's gui-mode check of the unsaved-changes
+  platform). **Slice 4 built 2026-10-24** (the capture pass; the ADR-0028 claim holds). **Slice 5
+  planned 2026-10-25 as five commits; 5a built** (the sensor model). The first CI run of 5a's pinned
+  output tables and recordings on Linux and Windows is owed. Slice 0's gui-mode check of the unsaved-changes
   modal is owed. Ten slices, 0 to 9, on `feature/M15`; the build order and every exclusion are in
   M15's own sections. *(Milestone 15.)*
 - **archimedes' CPU device**, which M15 renders its CI captures on: **adopted by M15 slice 3d

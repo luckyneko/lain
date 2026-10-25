@@ -1400,6 +1400,41 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-25 — M15 slice 5 planned; 5a built: the sensor model
+
+Slice 5 (the sensor model, movers and the capture writer) is five commits, 5a to 5e, in one
+session; the plan is in WORK.md's *Slice 5 planned*. **5a is built**: `rigplan/sensor.h`, a
+`SensorModel` in each `SensorSpecification`, and a `Recorder` that turns a capture's linear light
+into the codes a sensor records. `ctest -j8` **1501/1501** Release with video, camera and Ceres on
+(+14), **1363/1363** with all three off (+14); warning-clean, format-check clean. Full notes in WORK.md's
+*Sub-slice 5a built*.
+
+- **Decided with the repo owner:**
+  - the sensor model is physical (electrons, ADC bits, an output curve and depth);
+  - noise is Irwin-Hall, exact by construction;
+  - a capture streams camera by camera over a new `Renderer::update` (5d);
+  - the board truth is "in view", with no occlusion test.
+- **"The same light records the same codes on every machine," built four ways:**
+  - an Irwin-Hall draw summed in integers;
+  - SplitMix64 outputs addressed by sample from a SHA-256 seed;
+  - `sensor.cpp` compiled with `-ffp-contract=off`, since clang fuses a·b+c on arm64;
+  - the output curve as a finite table, so its `pow` is a fixed set whose digest a test pins.
+
+  ADR-0029's claim that a capture's bytes are identical "whatever GPU rendered the light" is
+  corrected: the light differs by device.
+- **Pinned outside lain:** the noise seed and draws, computed in Python. Also pinned on this
+  machine: four output tables and two whole recordings. **The first CI run of those pins on Linux
+  and Windows is owed**, and is what proves the claim.
+- **Deviation:** the ADC depth and the output depth are separate (a 12-bit ADC written as 8-bit sRGB
+  by default). An 8-bit linear ADC encoded as sRGB posterises the shadows.
+- **Named for the glossary:** `SensorModel` and `Recorder`, since CONTEXT.md's *Sensor model* lists
+  "camera response" under *Avoid*.
+- **Found by the first run, in the test:** a digest taken through a reference into a temporary,
+  slice 1b's bug again.
+- **Five sabotages, all caught.** One is a measurement: without `-ffp-contract=off`, clang emits 9
+  fused multiply-adds in `sensor.o` and the 16-bit sRGB output table changes on arm64. So the flag is
+  load-bearing, and the pinned table is what sees it.
+
 ### Update 2026-10-24 — M15 slice 4, sub-slice 4d built: the bake density is enough (**slice 4 COMPLETE**)
 
 The measurement 3c left owed: does SIFT see the density `rigplan::scene` bakes a procedural surface at

@@ -831,15 +831,22 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   and its sensor model. Pixels are square until a sensor needs otherwise. _Avoid_: camera body when
   the imager's geometry is meant.
 - **Sensor model** — how a sensor turns the scene light a capture render produced into the image it
-  records: a fixed gain to its full scale, read and shot noise, then quantisation and encoding. It
-  runs in lain's own code after the light is rendered, so its output is the same on every machine.
-  The gain is fixed per sensor and never metered from the scene: auto-exposure, auto-white-balance
-  and every other automatic adjustment are refused, since a detector's evidence must not change with
-  what happens to be in view. _Avoid_: camera response, ISP, post-processing.
+  records: a fixed gain to its full scale, read and shot noise, then quantisation and encoding. In
+  a datasheet's terms: the gain turns light into a charge in electrons against the full well; shot
+  noise (the square root of the charge) and read noise add in quadrature; a linear ADC quantises the
+  charge at its depth and saturates at the full well; and each ADC code is encoded through the output
+  curve (sRGB, Rec.709 or linear) at the output depth (8 or 16 bits), in grey or colour. It runs in
+  lain's own code after the light is rendered, so the same light records the same codes on every
+  machine: every step is exact arithmetic, and the curve is a fixed table. The light itself differs
+  by device; the sensor model does not. The gain is fixed per sensor and never metered from the
+  scene: auto-exposure, auto-white-balance and every other automatic adjustment are refused, since a
+  detector's evidence must not change with what happens to be in view. _Avoid_: camera response, ISP,
+  post-processing.
 - **Noise scale** — the 0-to-1 number a realisation multiplies a sensor model's noise by, beside the
   deviation scales: 0 records the rendered light exactly. Each pixel's noise is drawn from the rig
-  plan's seed, the camera, the frame and the pixel. _Avoid_: deviation scale (a deviation is fixed
-  for the life of a unit; noise is new every frame).
+  plan's seed, the camera, the frame and the pixel, by a counter rather than a running generator, so
+  a pixel's noise is the same on every machine and however many threads record the frame. _Avoid_:
+  deviation scale (a deviation is fixed for the life of a unit; noise is new every frame).
 - **Lens specification** — the optical half of a camera: a fixed focal length, a distortion model
   and its coefficients, and their tolerances. Its distortion is stated in normalised image
   coordinates, so one lens means the same on any sensor. Its distortion tolerance is one percentage

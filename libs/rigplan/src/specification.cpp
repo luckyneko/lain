@@ -55,6 +55,37 @@ namespace lain::rigplan
 		return std::isfinite(tolerance) && tolerance >= 0;
 	}
 
+	std::vector<std::string> sensorModelProblems(const SensorModel& model)
+	{
+		std::vector<std::string> out;
+		if (!std::isfinite(model.gain) || model.gain <= 0)
+			out.push_back(string::format("a gain of {}, which must be positive", model.gain));
+		if (!std::isfinite(model.fullWellElectrons) || model.fullWellElectrons <= 0)
+			out.push_back(string::format("a full well of {} electrons, which must be positive", model.fullWellElectrons));
+		if (!validBound(model.readNoiseElectrons))
+			out.push_back(string::format("a read noise of {} electrons, which must be at least 0", model.readNoiseElectrons));
+		if (model.adcBits < 1 || model.adcBits > 16)
+			out.push_back(string::format("{} ADC bits, which must be 1 to 16", model.adcBits));
+		const SensorOutput& output = model.output;
+		if (output.bits != 8 && output.bits != 16)
+			out.push_back(string::format("an output of {} bits, which must be 8 or 16", output.bits));
+		else if (output.format == OutputFormat::Jpeg && output.bits != 8)
+			out.push_back(string::format("a JPEG output of {} bits, where JPEG holds 8", output.bits));
+		if (output.curve != image::ColorSpace::Linear && output.curve != image::ColorSpace::sRGB &&
+			output.curve != image::ColorSpace::BT709)
+		{
+			out.push_back("an output curve that is not Linear, sRGB or BT709");
+		}
+		if (output.quality)
+		{
+			if (output.format != OutputFormat::Jpeg)
+				out.push_back("a quality for a lossless format, which has none to set");
+			else if (*output.quality < 1 || *output.quality > 100)
+				out.push_back(string::format("a quality of {}, which must be 1 to 100", *output.quality));
+		}
+		return out;
+	}
+
 	// The checks every kind of specification shares: a name, and one that no earlier entry of the same
 	// kind took. Returns whether this entry passed them.
 	template <typename Specification>
@@ -102,6 +133,11 @@ namespace lain::rigplan
 			{
 				out.push_back({SpecificationProblem::InvalidTolerance,
 							   string::format("sensor '{}' has a negative principal-point tolerance", s.name)});
+				usable = false;
+			}
+			for (const std::string& problem : sensorModelProblems(s.sensorModel))
+			{
+				out.push_back({SpecificationProblem::InvalidSensorModel, string::format("sensor '{}': {}", s.name, problem)});
 				usable = false;
 			}
 			if (usable)

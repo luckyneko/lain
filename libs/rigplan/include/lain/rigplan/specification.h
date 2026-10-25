@@ -3,8 +3,11 @@
 #include <lain/camera/cameramodel.h>
 #include <lain/core/length.h>
 #include <lain/image/color.h>
+#include <lain/image/colorspace.h>
 #include <lain/math/types.h>
 
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -30,6 +33,45 @@ namespace lain::rigplan
 		math::Vec3d opticalCentre{0.0, 0.0, 0.0};
 	};
 
+	// What a sensor records: every colour channel of the light, or its luminance alone.
+	enum class SensorChannels
+	{
+		Rgb,
+		Grey, // Rec709 luminance of the linear light, as a monochrome sensor sees it
+	};
+
+	// The file format a sensor's frames are written in, through io::image.
+	enum class OutputFormat
+	{
+		Png,
+		Tiff,
+		Jpeg, // lossy, and recorded as lossy: the codec's loss is the only loss a capture accepts
+	};
+
+	// How a sensor's frames are stored: a format, a depth and the curve their codes are encoded with.
+	struct SensorOutput
+	{
+		OutputFormat format = OutputFormat::Png;
+		std::uint32_t bits = 8;							   // 8 or 16 per channel; JPEG holds 8
+		image::ColorSpace curve = image::ColorSpace::sRGB; // Linear, sRGB or BT709
+		std::optional<std::uint8_t> quality;			   // 1 to 100, JPEG only; unset is the codec's default
+	};
+
+	// How a sensor turns the light a capture render produced into the codes it records (CONTEXT.md,
+	// "Sensor model"), as a datasheet states it. The gain is fixed: nothing here is metered from the
+	// scene (ADR-0029). A Recorder in sensor.h is what records through it.
+	struct SensorModel
+	{
+		// The fraction of full scale one unit of the renderer's linear light fills: 1 puts light 1 at
+		// full scale.
+		double gain = 1;
+		double fullWellElectrons = 10000; // the charge at full scale, which sets the shot noise
+		double readNoiseElectrons = 3;	  // the noise of reading a pixel, whatever its charge
+		std::uint32_t adcBits = 12;		  // 1 to 16: the depth the charge is quantised at, linearly
+		SensorChannels channels = SensorChannels::Rgb;
+		SensorOutput output;
+	};
+
 	// The body half of a camera (CONTEXT.md, "Sensor specification").
 	struct SensorSpecification
 	{
@@ -40,7 +82,16 @@ namespace lain::rigplan
 		// decentring and sensor placement together.
 		core::Length principalPointTolerance;
 		SensorBody body;
+		SensorModel sensorModel;
 	};
+
+	// Why `model` is no usable sensor model: a gain or full well that is not positive and finite, a read
+	// noise that is negative or not finite, ADC bits outside 1 to 16, an output that is not 8 or 16 bits,
+	// a JPEG deeper than 8, a curve that is not Linear, sRGB or BT709, or a quality outside 1 to 100 or
+	// given to a lossless format. One line per fault, each starting with what is wrong; empty when it is
+	// usable. Whether the format's codec can state the curve is the capture writer's question, asked of
+	// the codec itself.
+	std::vector<std::string> sensorModelProblems(const SensorModel& model);
 
 	// The optical half of a camera (CONTEXT.md, "Lens specification"). Its distortion is in normalised
 	// image coordinates, so it means the same on any sensor.
@@ -122,6 +173,7 @@ namespace lain::rigplan
 		InvalidTolerance,		// a tolerance that is negative, not finite, or (for focal length) 1 or more
 		InvalidNominalModel,	// a camera's sensor and lens make no camera model
 		InvalidLight,			// a negative or non-finite intensity or colour, or a spot's cone out of order
+		InvalidSensorModel,		// a sensor's sensor model is not usable (sensorModelProblems)
 	};
 
 	struct SpecificationDiagnostic

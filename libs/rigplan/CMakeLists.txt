@@ -8,6 +8,7 @@ add_library(rigplan STATIC
 	src/rigplan.cpp
 	src/realisation.cpp
 	src/environment.cpp
+	src/sensor.cpp
 )
 add_library(lain::rigplan ALIAS rigplan)
 
@@ -15,7 +16,14 @@ target_compile_features(rigplan PUBLIC cxx_std_17)
 target_include_directories(rigplan PUBLIC include)
 target_link_libraries(rigplan
 	PUBLIC lain::camera lain::core lain::image lain::math lain::media
-	PRIVATE lain::string lain::warnings
+	PRIVATE lain::string lain::task lain::warnings
+)
+
+# The sensor model's codes must be the same on every machine (ADR-0029), so its arithmetic is one IEEE
+# operation at a time: no fused multiply-add, which clang emits for a * b + c on arm64 and not on
+# x86-64. MSVC's default /fp:precise does not contract.
+set_source_files_properties(src/sensor.cpp PROPERTIES
+	COMPILE_OPTIONS "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-ffp-contract=off>"
 )
 
 add_subdirectory(serialize) # rig plans and catalogues as documents

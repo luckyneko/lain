@@ -1,7 +1,8 @@
 # A rig plan is nominal; a synthetic capture renders one seeded realisation of it
 
 ---
-Status: accepted (designed 2026-10-21 to 10-22, Milestone 15; nothing built yet)
+Status: accepted (designed 2026-10-21 to 10-22, Milestone 15; realisation built in slice 1, the
+sensor model in slice 5a, 2026-10-25)
 ---
 
 Milestone 15 renders synthetic captures from rig plans, so that calibration and registration can
@@ -43,8 +44,28 @@ realisation, never the plan. A capture is reproducible from the rig plan and the
 - **Noise is not a tolerance.** A deviation is fixed for the life of a unit, while noise is new
   every frame. The **sensor model** (a fixed gain, read and shot noise, quantisation, encoding) runs
   in lain's C++ code after the GPU's radiance is read back. Its noise is drawn from the seed, camera,
-  frame and pixel, and scaled by its own **noise scale**. So the recorded bytes are identical on every
-  machine, whatever GPU rendered the light, and the sensor model is testable in CI without one.
+  frame and pixel, and scaled by its own **noise scale**. So the same light records the same bytes on
+  every machine, and the sensor model is testable in CI without a GPU. *(Corrected 2026-10-25: this
+  said "the recorded bytes are identical on every machine, whatever GPU rendered the light". The
+  light itself differs by device (ADR-0028), so a capture's bytes do too. What is identical is what
+  the sensor model does to a given light, noise included.)*
+  - *Amended 2026-10-25 (M15 slice 5a), on how "identical" is made true.* libm's `log` and `cos` are
+    not correctly rounded, so a Box-Muller draw differs by platform in its last bits. clang also
+    fuses `a * b + c` into one rounding on arm64 and not on x86-64. Either could move a sample across
+    a rounding boundary. So:
+    - **A draw is Irwin-Hall**: twelve 32-bit uniforms summed in integers, less six. It is exact,
+      with mean exactly 0, variance 1, and a bound at six sigma that a sensor's noise never needs.
+    - **It is counter-based**: sample *i* takes SplitMix64's outputs 6i + 1 to 6i + 6 from a seed
+      that SHA-256 makes of the rig plan's seed, the camera's uuid and the frame. A draw needs no
+      state from the one before it, so a frame records the same however its rows are split across
+      threads.
+    - **The sensor model's arithmetic is compiled without contraction**, so every step is one IEEE
+      operation.
+    - **The output curve is a table** of every ADC code's output code, found once. The curve's `pow`
+      is then a fixed, finite set of values, and a test pins its digest on every platform.
+
+    The decision was the repo owner's, over a true Gaussian through a log lain would own, and over
+    libm with the claim weakened to "within an ulp".
 - **Gain is fixed per sensor and never metered.** Auto-exposure, auto-white-balance and every other
   automatic adjustment are **refused, not deferred**: a detector's evidence must not change with
   what happens to be in view.
