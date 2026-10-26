@@ -1400,6 +1400,30 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-26 — M15 slice 6 planned; 6a built: `lain/camera/comparison.h`
+
+Slice 6 (rig and model comparison promoted to `lain::camera`, and their nodes) is three commits, 6a to
+6c; the plan is in WORK.md's *Slice 6 planned*. **6a is built**: `camera::compareModels` and
+`camera::compareRigs`. `ctest -j8` **1553/1553** Release with video, camera and Ceres on (+11), and
+**1414/1414** with all three off (+11); warning-clean, format-check clean. Full notes in WORK.md's
+*Sub-slice 6a built*; CONTEXT.md's *Model comparison* and *Rig comparison* and ADR-0029's
+consequence are amended.
+
+- **Decided with the repo owner:**
+  - **Model comparison's grid reaches the edges**: every 16th pixel centre and the last row and
+    column. The three test helpers it replaces sampled only the top-left corner, so the model numbers
+    move and are re-measured in 6b; the zero-numbers claim is the rig verticals';
+  - rigs with different cameras compare the shared ones and name the rest;
+  - example documents land in slice 6;
+  - the fixture's manufacturer comparison gains a model comparison.
+- **`compareModels`** sends the expected model's rays through the found one, and says so, since the
+  measure is not symmetric. A ray the found model cannot project makes the comparison infinite.
+- **`compareRigs`** derives an expected rig of another reference again, never rebasing the found one,
+  with the reference the identity exactly, as `rigplan::rigRelativeTo` does (camera cannot call it).
+- **`rotationBetween` moved to `camera::detail`**, the arithmetic rigcompare.h already used.
+- **Three sabotages, all caught.** One first failed to build, so the previous binary answered until it
+  was redone.
+
 ### Update 2026-10-26 — feature/M15's CI run after slice 5: the sensor's output table is decided without libm
 
 [Run 40259562592](https://github.com/luckyneko/lain/actions/runs/40259562592) on `5637dcf`: macOS green,

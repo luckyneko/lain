@@ -12,6 +12,7 @@
 
 add_library(camera STATIC
 	src/cameramodel.cpp
+	src/comparison.cpp
 	src/distortion.cpp
 	src/observationgraph.cpp
 	src/reconstruction.cpp

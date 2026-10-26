@@ -14918,7 +14918,7 @@ clean. `flowview --licenses` prints 25 notices (48.6 KB) on macOS arm64.
   `third-party/` ships; MoltenVK's compiled-in SPIRV-Cross has no licence text to read; and nothing
   was built on Linux or Windows (MSVC's literal limit included), so CI's first run is owed.
 
-## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 4 built)
+## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 5 built, 6 under way)
 
 An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
 and lights, a board waved through) that renders **synthetic captures**: footage in the shape M9
@@ -15022,6 +15022,9 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    2026-10-25, 5e on 2026-10-26: slice 5 COMPLETE.**
 6. **Rig and model comparison** promoted to `lain::camera`; the `compareRigs` and `compareModels`
    nodes; `rigcompare.h` over them. Proves: M9's verticals change by zero numbers.
+   **Planned 2026-10-26 as three commits, 6a to 6c** (*Slice 6 planned* below); **6a built
+   2026-10-26.** *(Amended while planning: model comparison's grid now reaches the image's edges, so
+   the zero-numbers claim is the rig verticals'; the model numbers are re-measured in 6b.)*
 7. **The vertical**: a committed example rig plan, written by a C++ builder as flowview's examples
    are (a room with procedural walls, three poles of two cameras, a board mover), through
    `rigplan render`, then `flowview run register.json` plus `compareRigs` against the truth, in CI on
@@ -16578,6 +16581,96 @@ off (+1). Warning-clean, format-check clean.
   `farPlane`. Checked here by compiling the app with `-Dnear= -Dfar=`: it builds, and the old tree gives
   MSVC's error at the same two lines. Slice 8's gui would have hit it next.
 
+### Slice 6 planned (2026-10-26), and 6a built
+
+Three commits, in order, in one session: 6b and 6c both stand on 6a.
+
+- **What existed:**
+  - **Rig comparison** was `libs/camera/test/rigcompare.h`, used by flowview's camera verticals,
+    `test_clibinders.cpp`, and the both-methods and targetless end-to-end cases.
+  - **Model comparison** was three test-local copies of one helper, `errorOf`, in
+    `test_calibratione2e.cpp`, `test_freemodel.cpp` and `test_targetlesscalibration.cpp`. All sampled
+    every 16th pixel centre from 0, which stops up to 15 px short of the right and bottom edges, so
+    of the four corners only the top-left was sampled.
+- **Decided with the repo owner:**
+  - **The model grid reaches the edges**: every 16th pixel centre from 0, plus the last row and
+    column, so the corners are sampled. So the model numbers move, and 6b re-measures them; the
+    zero-numbers claim is the rig verticals'.
+  - **Rigs with different cameras**: the cameras both hold are compared and the rest named, so a
+    survey of some cameras still scores a rig. Refused only when the found rig's reference is not in
+    the expected one.
+  - **Example documents land in slice 6** (6c), so the nodes are reachable from the commit they land
+    in.
+  - **The fixture's manufacturer comparison gains a model comparison** (6b), as CONTEXT.md's
+    *Factory-model comparison* already said it is measured.
+- **6a: the library** (built, below).
+- **6b: the test helpers over the library.** `rigcompare.h` keeps test conveniences only and the four
+  users call `compareRigs`, proved to change no number by printing every asserted quantity exactly
+  before and after and diffing. The three `errorOf` copies become `compareModels`, their recorded
+  numbers re-measured on the new grid. The fixture's manufacturer comparison gains a model comparison.
+- **6c: the nodes, flowview and examples.** `compareRigs` and `compareModels` in `camera::flow`, offered
+  where a registration or a calibration can run (`canUseRegistration`, `canUseCalibration`), since
+  several tests take an empty camera menu to mean no backend. `compare-rigs.json` and
+  `compare-models.json`, and a cli vertical whose truth is relative to another reference than the
+  registration chose.
+- **Found while planning, recorded for slice 7:**
+  - footage of one frame names its camera by the file (`location.cpp`), as `cam0/frame.0000.png`,
+    which would not pair with the truth's `cam0`;
+  - there is no gui editor for a `RegisteredRig` input, so a truth rig binds from the cli only.
+
+#### Sub-slice 6a built (2026-10-26): `lain/camera/comparison.h`
+
+`camera::compareModels` and `camera::compareRigs`, in `src/comparison.cpp`. `ctest -j8` **1553/1553**
+Release with video, camera and Ceres on (+11), and **1414/1414** with all three off (+11).
+Warning-clean, format-check clean.
+
+- **`compareModels(expected, found) → ModelComparison`**: `samples`, `unreached`, `meanPixels`,
+  `worstPixels` and `worstAt`, and `focalDifference`, the larger of the focal lengths' relative
+  differences. The rays are the expected model's, projected through the found one, which the header
+  states, since the measure is not symmetric. A sample the expected model has no ray at, or the found
+  one cannot project, is counted in `unreached` and makes the mean and the worst infinite. Two models
+  of different images are refused (`DifferentImages`), naming both sizes.
+- **`compareRigs(expected, found) → RigComparison`**: per camera both hold, the rotation between them
+  and the distance between their centres after the scale-only fit, plus the scale, both rigs' scale
+  statuses, the cameras only one holds, and whether the expected rig was derived again.
+  `worstRotation()` and `worstCentre()` are derived, not stored.
+  - **An expected rig of another reference is derived again** from its own transforms, for the found
+    rig's reference, which is set to the identity exactly, `rigplan::rigRelativeTo`'s rule.
+    `lain::camera` cannot call that routine, since rigplan depends on camera, so the rule is stated
+    twice; each says so.
+  - Refused (`UnknownReference`) when the found rig's reference is not in the expected one. So a
+    comparison always shares at least the reference, and no "nothing shared" refusal is needed.
+- **`rotationBetween` moved to `camera::detail`** (`src/angles.h`, beside `angleBetween`), and
+  registration names it by a using-declaration, as it names `angleBetween`. The arithmetic is
+  rigcompare.h's, which is what lets 6b change no rig number. Both registration goldens are untouched.
+- **The cases**, eleven in `test-camera`:
+  - a model against itself, 1271 samples at 640x480, all within 1e-8 px;
+  - a 1% focal scale about a principal point at the top-left pixel, whose worst ray is the bottom-right
+    corner (the case the old grid could not see), its distance and the mean worked out from the
+    geometry;
+  - a narrow lens folding inside a wide camera's view, so some rays are unreached and the comparison
+    infinite;
+  - different images refused;
+  - a rig against itself;
+  - one camera turned, seen in that camera alone;
+  - a rig at a quarter of the scale, recovered at 4;
+  - an expected rig of another reference derived again, its error on the turned camera alone, and
+    equal to the truth built for that reference directly;
+  - cameras only one rig holds, named;
+  - an unknown reference refused;
+  - the line naming the worst cameras.
+- **Found by the first run, in the test**: a rotation against itself reads about 1e-17, not 0, since
+  conj(q) q of a quaternion an ulp off unit length is not the identity. The checks allow 1e-15.
+- **Three sabotages, all caught:**
+  - the grid without the last row and column fails the focal-scale case and the sample count;
+  - the rays taken from the found model and projected through the expected one fails the focal-scale
+    case and the unreached case;
+  - the found rig rebased onto the expected rig's reference fails the derived-again case on all three
+    cameras, where deriving the expected rig again puts the error on the turned camera alone.
+
+  The rebase sabotage's first cut failed to build, so the previous sabotage's binary answered until it
+  was redone to compile.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -16820,7 +16913,9 @@ row here**. A row is cheap to delete and expensive to leave.
   built 2026-10-25 to 10-26** (the sensor model, movers, ground truth, `Renderer::update`, and the
   capture writer with `rigplan render`). CI's first run since slice 5 found three things, each fixed:
   the 16-bit sRGB output table differed by platform (it is now decided without libm), a test's angle,
-  and `near`/`far` against `<windows.h>`. The fixes are green on all eight jobs (run 40265665844). Slice 0's gui-mode check of the unsaved-changes modal is owed. Two
+  and `near`/`far` against `<windows.h>`. The fixes are green on all eight jobs (run 40265665844).
+  **Slice 6 planned 2026-10-26 as 6a to 6c; 6a built** (`camera::compareModels` / `compareRigs`).
+  Slice 0's gui-mode check of the unsaved-changes modal is owed. Two
   findings of 5e wait on decisions: M9's rig binder pairs footage with models by sorted position (the
   writer refuses names that sort differently as folders and as documents; the binder fix is M9's), and
   the CPU device's share of the cores during a capture (measured, for the repo owner). Ten slices, 0 to 9, on `feature/M15`; the build order and every exclusion are in
@@ -16830,7 +16925,7 @@ row here**. A row is cheap to delete and expensive to leave.
   `--device` landed. *(M15 §Sub-slice 3d built.)*
 
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not**, and M15 is under
-way (slices 0 to 5 built).
+way (slices 0 to 5 built, slice 6's 6a).
 
 - **Example documents** — all four commits built. Owed: a gui-mode eyeball of every example (the
   primary purpose). The smoke step has run in CI since it landed, and was green on every leg in

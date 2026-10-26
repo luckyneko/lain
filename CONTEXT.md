@@ -739,15 +739,21 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
 - **Model comparison** — how far apart two camera models of one image geometry are, measured as
   where each sends the same rays: the mean and worst pixel distance over the image. It knows nothing
   of where either model came from, so it scores a calibration against a synthetic capture's ground
-  truth and against a manufacturer's model alike. _Avoid_: coefficient difference (two coefficient
-  sets can differ while projecting alike, as a rational model's do), model error.
+  truth and against a manufacturer's model alike. The rays are the EXPECTED model's, at every 16th
+  pixel centre and the last row and column (so the corners, where distortion is strongest), each
+  projected through the found model; a ray the found model cannot project makes the comparison
+  infinite. The focal lengths' relative difference is reported beside it, not as part of it.
+  `camera::compareModels` (`lain/camera/comparison.h`). _Avoid_: coefficient difference (two
+  coefficient sets can differ while projecting alike, as a rational model's do), model error.
 - **Rig comparison** — how far a registered rig is from an expected one, relative to the same
   reference camera: per camera, the angle between their rotations and the distance between their
   centres after the found rig's centres are scaled onto the expected one's by least squares. A
   scale-only fit is the whole alignment, since both pin the reference to the identity; a similarity
   fit could hide the reference camera's own error. An expected rig of another reference is derived
-  again for the found rig's, never the found one rebased. It scores against a synthetic capture's
-  ground truth or a survey alike. _Avoid_: rig error, alignment error.
+  again for the found rig's, never the found one rebased. Cameras are paired by identity; one only
+  one rig holds is named and the rest compared, so a survey of some of a rig's cameras still scores
+  it. It scores against a synthetic capture's ground truth or a survey alike.
+  `camera::compareRigs` (`lain/camera/comparison.h`). _Avoid_: rig error, alignment error.
 - **Validation dataset** — observations paired with a camera model for offline validation and kept
   independent of the observations used to estimate that model. _Avoid_: calibration dataset when the
   same evidence was used for fitting.

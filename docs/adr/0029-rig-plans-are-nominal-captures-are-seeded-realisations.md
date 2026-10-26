@@ -93,5 +93,9 @@ realisation, never the plan. A capture is reproducible from the rig plan and the
   and identical on every machine, even where the pixels are not.
 - Scoring a result against ground truth is camera geometry, not rig design: rig comparison and model
   comparison live in `lain::camera`, and score a survey or a manufacturer's model alike.
+  *(Built 2026-10-26, M15 slice 6: `camera::compareRigs` / `camera::compareModels` in
+  `lain/camera/comparison.h`. An expected rig of another reference is derived again inside
+  `compareRigs`, from the expected rig's own transforms, since `lain::camera` cannot reach
+  `rigplan::rigRelativeTo`; both set the reference to the identity exactly.)*
 - A per-coefficient distortion tolerance, a normal draw and linked specifications each remain
   available later as additions. None of them needs a change to what is already drawn.

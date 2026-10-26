@@ -35,10 +35,10 @@ namespace lain::camera::registration::detail
 {
 	// How a method module runs independent work, shared with calibration (execution.h), finds a
 	// member's frame in its footage, shared with feature extraction (footageindex.h), measures an angle
-	// (angles.h), takes a median (median.h), finds a union-find root (unionfind.h), and holds evidence
-	// out and draws bootstrap resamples, shared with calibration (resampling.h); named here too, since
-	// inside registration this namespace hides lain::camera::detail. A residual is whitened as every
-	// method whitens one (whitening.h).
+	// or a rotation (angles.h), takes a median (median.h), finds a union-find root (unionfind.h), and
+	// holds evidence out and draws bootstrap resamples, shared with calibration (resampling.h); named
+	// here too, since inside registration this namespace hides lain::camera::detail. A residual is
+	// whitened as every method whitens one (whitening.h).
 	using camera::detail::angleBetween;
 	using camera::detail::bootstrapDraws;
 	using camera::detail::FootageIndex;
@@ -46,11 +46,8 @@ namespace lain::camera::registration::detail
 	using camera::detail::holdOut;
 	using camera::detail::median;
 	using camera::detail::root;
+	using camera::detail::rotationBetween;
 	using camera::detail::whitenedSquared;
-
-	// The rotation between two transforms, radians: 2 atan2(|v|, |w|) of the relative quaternion,
-	// which keeps its precision for the tiny angles stability is measured in, where acos does not.
-	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b);
 
 	// How a person reads a count of `unit`s, plural: "groups", "tracks".
 	std::string_view unitsWord(EvidenceUnit unit);
