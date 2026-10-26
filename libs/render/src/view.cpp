@@ -19,7 +19,7 @@ namespace lain::render
 		if (!(std::isfinite(q.w) && std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(t.x) &&
 			  std::isfinite(t.y) && std::isfinite(t.z)))
 			problems.push_back("the view's pose is not finite");
-		if (!(std::isfinite(view.near) && std::isfinite(view.far) && view.near > 0 && view.near < view.far))
+		if (!(std::isfinite(view.nearPlane) && std::isfinite(view.farPlane) && view.nearPlane > 0 && view.nearPlane < view.farPlane))
 			problems.push_back("the view's depth range is not 0 < near < far");
 		return problems;
 	}
@@ -32,8 +32,8 @@ namespace lain::render
 		const camera::Intrinsics& k = view.intrinsics;
 		const double w = view.image.width;
 		const double h = view.image.height;
-		const double n = view.near;
-		const double f = view.far;
+		const double n = view.nearPlane;
+		const double f = view.farPlane;
 		math::Mat4d m{0.0}; // GLM is column-major: m[column][row]
 		m[0][0] = 2 * k.fx / w;
 		m[2][0] = 2 * (k.cx + 0.5) / w - 1;

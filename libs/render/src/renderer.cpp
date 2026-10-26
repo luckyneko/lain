@@ -613,8 +613,8 @@ namespace lain::render
 			tileView.worldFromCamera = view.worldFromCamera * math::RigidTransformd{math::quat_cast(cameraFromFace(face.axis)), math::Vec3d{0.0}};
 			tileView.image = {std::uint32_t(tile.last.x - tile.first.x + 1), std::uint32_t(tile.last.y - tile.first.y + 1)};
 			tileView.intrinsics = {face.focal, face.focal, face.principalPoint.x - tile.first.x, face.principalPoint.y - tile.first.y};
-			tileView.near = view.near * face.nearScale;
-			tileView.far = view.far;
+			tileView.nearPlane = view.nearPlane * face.nearScale;
+			tileView.farPlane = view.farPlane;
 			const detail::FrameConstants frame = detail::frameConstants(gpu, tileView, false);
 			if (const acm::Error error = gpu.frame.write(&frame, sizeof(frame)))
 				return {{}, {"the device refused a tile's view: " + error.message()}};

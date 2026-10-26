@@ -53,9 +53,12 @@ namespace lain::rigplan
 		image::PixelFormat pixelFormat() const;
 
 		// The output code of each ADC code, in order: the code's linear fraction of full scale encoded
-		// through the output curve (image::transferCurve) and rounded to the output depth. A finite table,
-		// so the only arithmetic here that is not exact IEEE (the curve's pow) is a fixed set of values
-		// that a test can pin on every platform.
+		// through the output curve (lain::image's sRGB, BT.709 or linear) and rounded to the nearest code
+		// at the output depth. Decided without libm: each curve's power is a ratio of whole numbers
+		// (sRGB's 5/12, BT.709's 9/20), so whether it reaches a rounding boundary is a comparison of two
+		// products of repeated multiplication. So the table is the same on every machine, as the noise
+		// is. It used to be the float curve rounded, until CI found Apple's and glibc's powf differ:
+		// 904 entries of the 16-bit sRGB table sit within two float ulps of a boundary.
 		const std::vector<std::uint16_t>& outputCodes() const { return m_codes; }
 
 		// What the sensor records of `light`, RGBA32F linear light as a capture returns it (its alpha,

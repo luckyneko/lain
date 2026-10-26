@@ -209,8 +209,9 @@ TEST_CASE("a sensor's output codes are its curve, and pinned", "[rigplan][sensor
 	// Mid-grey in linear light is code 188 in sRGB, as 4c found a half-covered pixel reads.
 	REQUIRE(codes[2048] == 188);
 
-	// Each table is a fixed set of values, so pinning its bytes is what proves the curve's pow agrees on
-	// every platform: the one part of a recording that is not exact IEEE arithmetic.
+	// Each table is decided without libm, so it is the same on every platform; pinning its bytes is what
+	// the CI legs compare. The 16-bit sRGB table is the one a float curve could not hold: CI found
+	// Apple's and glibc's powf give it different bytes.
 	const auto digest = [](const SensorModel& r)
 	{
 		const Recorder recorder = recorderOf(r); // held: its table is the recorder's own
@@ -232,7 +233,83 @@ TEST_CASE("a sensor's output codes are its curve, and pinned", "[rigplan][sensor
 	SensorModel srgb16;
 	srgb16.adcBits = 16;
 	srgb16.output.bits = 16;
-	CHECK(digest(srgb16) == "b1d82bc4a32b08e128299f585c5d0e4f202a25168368b9969605c6956f9e1493");
+	CHECK(digest(srgb16) == "f5563d46f55cf17039308945adf61a330367464996394c7cd25936f3dd3f569d");
+}
+
+// The curve in double through std::pow, which is within an ulp of exact on every platform lain builds on.
+static double encodedInDouble(lain::image::ColorSpace curve, double x)
+{
+	switch (curve)
+	{
+		case lain::image::ColorSpace::sRGB:
+			return x <= 0.0031308 ? x * 12.92 : 1.055 * std::pow(x, 5.0 / 12.0) - 0.055;
+		case lain::image::ColorSpace::BT709:
+			return x <= 0.018 ? x * 4.5 : 1.099 * std::pow(x, 9.0 / 20.0) - 0.099;
+		default:
+			return x;
+	}
+}
+
+TEST_CASE("every output table a sensor can have is its curve correctly rounded", "[rigplan][sensor]")
+{
+	// Every table lain can build: 16 ADC depths, two output depths, three curves. Each entry must be the
+	// curve rounded to the nearest code. Against the curve in double (std::pow) wherever the double value
+	// is clear of a rounding boundary, which is every entry on a power segment (measured: no entry of any
+	// table is within 1e-9 of a code of one, so an ulp of pow can decide none of them). An exact tie lies
+	// on a linear segment, rational in the codes, and must round up, as floor(x + 0.5) does. Only BT.709's
+	// slope of 4.5 makes one: with both maxima odd, a slope of 1 or of 12.92 (323 / 25) never lands a code
+	// exactly half way. The table is decided without pow at all; this is what says each decision is right.
+	std::size_t entries = 0, ties = 0, fromFloat = 0;
+	for (const lain::image::ColorSpace curve :
+		 {lain::image::ColorSpace::Linear, lain::image::ColorSpace::sRGB, lain::image::ColorSpace::BT709})
+	{
+		for (const std::uint32_t bits : {8u, 16u})
+		{
+			for (std::uint32_t adcBits = 1; adcBits <= 16; ++adcBits)
+			{
+				SensorModel model;
+				model.adcBits = adcBits;
+				model.output.bits = bits;
+				model.output.curve = curve;
+				const Recorder recorder = recorderOf(model);
+				const std::vector<std::uint16_t>& codes = recorder.outputCodes();
+				const std::uint64_t adcMax = (1u << adcBits) - 1u;
+				const std::uint64_t outputMax = (1u << bits) - 1u;
+				const lain::image::TransferCurve floatCurve = lain::image::transferCurve(curve);
+				REQUIRE(codes.size() == (std::size_t(1) << adcBits));
+				for (std::uint64_t adc = 0; adc < codes.size(); ++adc)
+				{
+					const double x = double(adc) / double(adcMax);
+					const double rounded = encodedInDouble(curve, x) * double(outputMax) + 0.5;
+					INFO("curve " << int(curve) << ", ADC " << adcBits << " bits, output " << bits << " bits, ADC code " << adc);
+					if (std::abs(rounded - std::round(rounded)) > 1e-9)
+					{
+						REQUIRE(codes[adc] == std::uint16_t(std::floor(rounded)));
+					}
+					else
+					{
+						// A tie: on a linear segment of slope p / q (1, 12.92 or 4.5), code + 0.5 is exactly
+						// adc p out / (adcMax q), so the half-up code is that plus a half, floored, in integers.
+						const bool linear = curve == lain::image::ColorSpace::Linear;
+						const bool srgb = curve == lain::image::ColorSpace::sRGB;
+						REQUIRE((linear || (srgb ? adc * 10000000 <= 31308 * adcMax : adc * 1000 <= 18 * adcMax)));
+						const std::uint64_t p = linear ? 1 : srgb ? 1292
+																  : 9;
+						const std::uint64_t q = linear ? 1 : srgb ? 100
+																  : 2;
+						REQUIRE(codes[adc] == (2 * adc * p * outputMax + q * adcMax) / (2 * q * adcMax));
+						++ties;
+					}
+					const double floatCode = std::floor(double(floatCurve.fromLinear(float(x))) * double(outputMax) + 0.5);
+					fromFloat += double(codes[adc]) != floatCode ? 1 : 0;
+					++entries;
+				}
+			}
+		}
+	}
+	INFO(fromFloat << " of " << entries << " entries differ from lain::image's float curve rounded; " << ties << " are exact ties");
+	CHECK(ties > 0);	  // the tie rule is exercised
+	CHECK(fromFloat > 0); // and the float curve is a start, not the answer
 }
 
 TEST_CASE("shot and read noise add in quadrature, at their scale", "[rigplan][sensor]")

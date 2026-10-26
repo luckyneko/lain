@@ -13,7 +13,8 @@
 
 // This file is compiled with floating-point contraction off (CMakeLists.txt): clang fuses a * b + c
 // into one rounding on arm64 and not on x86-64, which would make a recording's codes differ by platform
-// at a rounding boundary. Every expression below is then one IEEE operation at a time.
+// at a rounding boundary. Every expression below is then one IEEE operation at a time, and nothing a
+// code depends on calls libm, whose pow and powf are not correctly rounded and differ by platform.
 
 namespace lain::rigplan
 {
@@ -59,18 +60,80 @@ namespace lain::rigplan
 		return (double(sum) + 6.0) * 0x1.0p-32 - 6.0;
 	}
 
+	// Whether `curve` encodes ADC code `adc` of `adcMax` to at least the rounding boundary below output
+	// code `code` of `outputMax`, (code - 0.5) / outputMax: so whether the code is reached. Decided with
+	// no libm call, so the answer is the same on every machine:
+	//   * a linear segment, and where a breakpoint falls, is rational in the codes, so it is compared
+	//     exactly in integers, and a code exactly half way rounds up;
+	//   * a power segment's power is a ratio of whole numbers (sRGB encodes with 1.055 x^(5/12) - 0.055,
+	//     BT.709 with 1.099 x^(9/20) - 0.099), so comparing x^(p/q) against w compares x^p against w^q,
+	//     both by repeated IEEE multiplication. Each step's rounding is monotone, so the answer is
+	//     monotone in the code, which is what makes the search below land on one code wherever it starts.
+	// The constants and breakpoints are lain::image's (transfercurve.inl).
+	static bool reaches(image::ColorSpace curve, std::uint32_t adc, std::uint32_t adcMax, std::uint32_t code, std::uint32_t outputMax)
+	{
+		if (code == 0)
+			return true;
+		const std::uint64_t a = adc;
+		const std::uint64_t full = adcMax;
+		const std::uint64_t out = outputMax;
+		const std::uint64_t boundary = 2 * std::uint64_t(code) - 1; // the boundary is boundary / (2 out)
+		const double x = double(a) / double(full);
+		const double v = double(boundary) / double(2 * out);
+		switch (curve)
+		{
+			case image::ColorSpace::sRGB:
+			{
+				if (a * 10000000 <= 31308 * full) // x <= 0.0031308, encoded x * 12.92 = x * 1292 / 100
+					return 2 * a * 1292 * out >= 100 * boundary * full;
+				const double w = (v + 0.055) / 1.055; // x^(5/12) >= w
+				const double x2 = x * x;
+				const double x5 = x2 * x2 * x;
+				const double w2 = w * w;
+				const double w4 = w2 * w2;
+				const double w12 = w4 * w4 * w4;
+				return x5 >= w12;
+			}
+			case image::ColorSpace::BT709:
+			{
+				if (a * 1000 <= 18 * full) // x <= 0.018, encoded x * 4.5 = x * 9 / 2
+					return 2 * a * 9 * out >= 2 * boundary * full;
+				const double w = (v + 0.099) / 1.099; // x^(9/20) >= w
+				const double x2 = x * x;
+				const double x4 = x2 * x2;
+				const double x9 = x4 * x4 * x;
+				const double w2 = w * w;
+				const double w4 = w2 * w2;
+				const double w16 = w4 * w4 * w4 * w4;
+				const double w20 = w16 * w4;
+				return x9 >= w20;
+			}
+			case image::ColorSpace::Linear:
+			case image::ColorSpace::Unspecified: // sensorModelProblems refuses it; total all the same
+				break;
+		}
+		return 2 * a * out >= boundary * full;
+	}
+
 	Recorder::Recorder(const SensorModel& model)
 		: m_model(model)
 	{
 		const std::uint32_t adcMax = (1u << model.adcBits) - 1u;
-		const double outputMax = double((1u << model.output.bits) - 1u);
+		const std::uint32_t outputMax = (1u << model.output.bits) - 1u;
 		const image::TransferCurve curve = image::transferCurve(model.output.curve);
 		m_codes.resize(std::size_t(adcMax) + 1);
 		for (std::uint32_t adc = 0; adc <= adcMax; ++adc)
 		{
-			const float encoded = curve.fromLinear(float(double(adc) / double(adcMax)));
-			const double code = std::floor(double(encoded) * outputMax + 0.5);
-			m_codes[adc] = std::uint16_t(std::clamp(code, 0.0, outputMax));
+			// The output code is the largest whose lower rounding boundary the curve reaches. lain::image's
+			// float curve (libm's powf, which differs by platform) gives a start within a code of it; the
+			// answer is reaches()'s, wherever the search starts.
+			const double estimate = std::floor(double(curve.fromLinear(float(double(adc) / double(adcMax)))) * double(outputMax) + 0.5);
+			std::uint32_t code = std::uint32_t(std::clamp(estimate, 0.0, double(outputMax)));
+			while (code < outputMax && reaches(model.output.curve, adc, adcMax, code + 1, outputMax))
+				++code;
+			while (!reaches(model.output.curve, adc, adcMax, code, outputMax))
+				--code;
+			m_codes[adc] = std::uint16_t(code);
 		}
 	}
 

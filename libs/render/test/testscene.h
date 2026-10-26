@@ -42,8 +42,8 @@ namespace lain::render::testing
 		View v;
 		v.image = {width, height};
 		v.intrinsics = {f, f, cx, cy};
-		v.near = 0.1;
-		v.far = 20;
+		v.nearPlane = 0.1;
+		v.farPlane = 20;
 		return v;
 	}
 

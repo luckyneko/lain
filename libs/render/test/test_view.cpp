@@ -18,8 +18,8 @@ TEST_CASE("a view's clip space puts a point where lain's projection does", "[ren
 	View v;
 	v.image = {640, 480};
 	v.intrinsics = {500.0, 520.0, 319.2, 241.7};
-	v.near = 0.1;
-	v.far = 50;
+	v.nearPlane = 0.1;
+	v.farPlane = 50;
 	const camera::CameraModel model = testing::pinholeOf(v);
 	const math::Mat4d clip = clipFromCamera(v);
 
@@ -40,8 +40,8 @@ TEST_CASE("a view's clip space puts a point where lain's projection does", "[ren
 TEST_CASE("a view's depth runs from 0 at near to 1 at far", "[render][view]")
 {
 	View v = testing::view(64, 48, 40, 31.5, 23.5);
-	v.near = 0.25;
-	v.far = 12;
+	v.nearPlane = 0.25;
+	v.farPlane = 12;
 	const math::Mat4d clip = clipFromCamera(v);
 	auto depth = [&](double z)
 	{
@@ -71,11 +71,11 @@ TEST_CASE("a view that cannot be drawn says why", "[render][view]")
 	CHECK(validate(lost).size() == 1);
 
 	View inverted = good;
-	inverted.near = 5;
-	inverted.far = 1;
+	inverted.nearPlane = 5;
+	inverted.farPlane = 1;
 	CHECK(validate(inverted).size() == 1);
 
 	View touching = good;
-	touching.near = 0;
+	touching.nearPlane = 0;
 	CHECK(validate(touching).size() == 1);
 }

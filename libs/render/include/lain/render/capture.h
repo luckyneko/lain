@@ -158,15 +158,15 @@ namespace lain::render
 	};
 
 	// Where a captured camera is, and what it draws: lain's camera frame placed in the world, as a
-	// View's is, and its depth range. Everything farther than `near` and nearer than `far` along the
-	// camera's rays is drawn. Each face of the intermediate image measures depth along its own axis, so
-	// it is drawn with its near plane pulled in by its nearScale, and may also draw a little nearer than
-	// `near` toward its axis.
+	// View's is, and its depth range. Everything farther than `nearPlane` and nearer than `farPlane`
+	// along the camera's rays is drawn. Each face of the intermediate image measures depth along its own
+	// axis, so it is drawn with its near plane pulled in by its nearScale, and may also draw a little
+	// nearer than `nearPlane` toward its axis. Named as View's are, for the same reason (<windows.h>).
 	struct CaptureView
 	{
 		math::RigidTransformd worldFromCamera;
-		double near = 0.05;
-		double far = 100;
+		double nearPlane = 0.05;
+		double farPlane = 100;
 	};
 
 	// Why `view` cannot be drawn: a pose that is not finite, or a depth range that is not

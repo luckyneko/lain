@@ -308,7 +308,7 @@ TEST_CASE("a viewport refuses what it cannot draw, and says why", "[render][gpu]
 	Renderer other(*device);
 	const GpuScene stranger = uploaded(other, wall());
 	View blind = testing::view(64, 64, 64, 31.5, 31.5);
-	blind.near = 0;
+	blind.nearPlane = 0;
 	const View view = testing::view(64, 64, 64, 31.5, 31.5);
 
 	std::vector<std::vector<std::string>> problems;

@@ -120,7 +120,7 @@ namespace lain::render
 		if (!(std::isfinite(q.w) && std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(t.x) &&
 			  std::isfinite(t.y) && std::isfinite(t.z)))
 			problems.push_back("the capture's pose is not finite");
-		if (!(std::isfinite(view.near) && std::isfinite(view.far) && view.near > 0 && view.near < view.far))
+		if (!(std::isfinite(view.nearPlane) && std::isfinite(view.farPlane) && view.nearPlane > 0 && view.nearPlane < view.farPlane))
 			problems.push_back("the capture's depth range is not 0 < near < far");
 		return problems;
 	}

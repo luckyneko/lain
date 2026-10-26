@@ -312,7 +312,7 @@ TEST_CASE("a capture draws everything farther than its near plane, at any angle 
 	const double half = 0.9;
 	const RayTable table = tableOf(modelOf(testing::strongCamera(5, 0.25)));
 	CaptureView view;
-	view.near = 1.0;
+	view.nearPlane = 1.0;
 	const image::Image captured = capture(renderer, boxRoom(lighting, half, turn), table, view);
 
 	const int w = captured.width(), h = captured.height(), s = int(table.settings().samples);
@@ -474,7 +474,7 @@ TEST_CASE("a capture refuses a table or scene another renderer uploaded, and a v
 	CHECK(refusal(renderer.capture(*theirs.scene, *myTable.table, {})).find("scene") != std::string::npos);
 	CHECK(refusal(renderer.capture(*mine.scene, *theirTable.table, {})).find("ray table") != std::string::npos);
 	CaptureView view;
-	view.near = 0;
+	view.nearPlane = 0;
 	CHECK(refusal(renderer.capture(*mine.scene, *myTable.table, view)).find("depth range") != std::string::npos);
 	view = {};
 	view.worldFromCamera = math::RigidTransformd{math::Quatd{1, 0, 0, 0}, math::Vec3d{std::nan(""), 0, 0}};

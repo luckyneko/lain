@@ -1400,6 +1400,31 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-26 — feature/M15's CI run after slice 5: the sensor's output table is decided without libm
+
+[Run 40259562592](https://github.com/luckyneko/lain/actions/runs/40259562592) on `5637dcf`: macOS green,
+every Linux leg failed two tests, Windows failed to build `apps/rigplan`. All three findings are fixed in
+one commit. `ctest -j8` **1542/1542** Release with video, camera and Ceres on (+1), **1403/1403** with all
+three off (+1); warning-clean, format-check clean. A green CI run of the fixes is owed. Full notes in
+WORK.md's *feature/M15's CI run after slice 5*; ADR-0029 is amended.
+
+- **The 16-bit sRGB output table differed between macOS and Linux**, which is what 5a's pins were for.
+  It was lain::image's float curve rounded, and Apple's and glibc's `powf` round some inputs
+  differently. 904 of its 65,536 entries sit within two float ulps of a rounding boundary.
+- **Decided with the repo owner: exact by construction.** The table is decided without libm:
+  - linear segments and breakpoints are compared exactly in integers, an exact tie rounding up;
+  - a power segment compares x^5 with w^12 (sRGB's 5/12) or x^9 with w^20 (BT.709's 9/20), by repeated
+    IEEE multiplication, monotone in the code, so a search from the float estimate lands on one answer.
+- **A new case holds every table lain can build to the curve correctly rounded** (786,420 entries).
+  813 entries differ from the float curve's rounding, and 596 are exact ties, all BT.709's. Only the
+  16-bit sRGB pin moved.
+- **The truth rig test's angle** used `2 acos(|a · b|)`, which reads one ulp as 3e-8 rad. It now uses
+  `atan2` of the relative rotation; the library was right.
+- **`View` and `CaptureView`'s `near` / `far` are now `nearPlane` / `farPlane`**, since `<windows.h>`
+  (through CLI11) defines both as empty macros. Checked by compiling the app with `-Dnear= -Dfar=`.
+- **Five sabotages; four caught**, and the fifth (an sRGB tie rounded down) correctly finds no tie to
+  break.
+
 ### Update 2026-10-26 — M15 slice 5, sub-slice 5e built: the capture writer and `rigplan render` (**slice 5 COMPLETE**)
 
 A rig plan's synthetic capture now reaches disk: `lain::rigplan::capture`, `capture.json` in

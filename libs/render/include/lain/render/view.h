@@ -18,8 +18,11 @@ namespace lain::render
 		math::RigidTransformd worldFromCamera;
 		camera::ImageGeometry image;
 		camera::Intrinsics intrinsics;
-		double near = 0.05; // metres in front of the camera: nothing nearer is drawn
-		double far = 100;	// and nothing farther
+		// Metres in front of the camera: nothing nearer than the near plane is drawn, nothing farther
+		// than the far one. Not `near` and `far`, which <windows.h> defines as empty macros, so a
+		// consumer including it first (CLI11 does) could not compile this header.
+		double nearPlane = 0.05;
+		double farPlane = 100;
 	};
 
 	// Why `view` cannot be drawn: an empty image, a focal length that is not positive and finite, a

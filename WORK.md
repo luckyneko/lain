@@ -16190,7 +16190,9 @@ all three off. Warning-clean, format-check clean.
   - an Irwin-Hall draw taken in integers;
   - SplitMix64 outputs addressed by sample, from a SHA-256 seed;
   - `src/sensor.cpp` compiled with `-ffp-contract=off`;
-  - the curve as a finite table.
+  - the curve as a finite table. *(Not enough, as CI found on 2026-10-26: the 16-bit sRGB table,
+    the float curve rounded, differed between macOS and Linux. The table is now decided without libm;
+    see feature/M15's CI run after slice 5, below 5e.)*
 - **The cases**, thirteen in `test-rigplan` and one in `test-rigplan-serialize`:
   - **Pinned outside lain:** the noise seed and four draws, computed by Python's `hashlib` and
     integer arithmetic from the rule `sensor.h` states.
@@ -16518,7 +16520,58 @@ camera and Ceres on (+6), and **1391/1391** with all three off (+6). Warning-cle
   in the delegate and the `AppInfo`, so a macro writing `main` still saves nothing, and the comment
   says so.
 - **Owed:** the first CI run of `feature/M15` since slice 5. It proves 5a's pinned digests on Linux and
-  Windows, and builds `apps/rigplan` there.
+  Windows, and builds `apps/rigplan` there. *(Run, and it found three things; see the next section.)*
+
+#### feature/M15's CI run after slice 5 (2026-10-26)
+
+[Run 40259562592](https://github.com/luckyneko/lain/actions/runs/40259562592), dispatched by hand on
+`5637dcf`. macOS, clang-format and the subproject smoke were green. Every Linux leg failed the same two
+tests, and Windows failed to build `apps/rigplan`. Each finding is fixed in the commit after 5e.
+`ctest -j8` **1542/1542** Release with video, camera and Ceres on (+1), **1403/1403** with all three
+off (+1). Warning-clean, format-check clean.
+
+- **The 16-bit sRGB output table differed between macOS and Linux**, the claim 5a's pins existed to
+  test. The other three pinned tables and both whole recordings agreed.
+  - **The cause:** the table was lain::image's float curve rounded, through libm's `powf`, which Apple
+    and glibc round differently on some inputs. A float has about 8 bits to spare above a 16-bit code,
+    and 904 of that table's 65,536 entries sit within two float ulps of a rounding boundary. The default
+    12-bit to 8-bit table has none, which is why only that pin moved.
+  - **Decided with the repo owner: exact by construction**, over the curve in double with a margin test,
+    which would have weakened the claim to "wherever pow is within an ulp", the form Irwin-Hall was
+    chosen to avoid.
+  - **The table is decided without libm.**
+    - A linear segment and a breakpoint are rational in the codes, so they are compared exactly in
+      integers, and an exact tie rounds up as `floor(x + 0.5)` does.
+    - A power segment's power is a ratio of whole numbers (sRGB's 5/12, BT.709's 9/20), so whether the
+      curve reaches a rounding boundary compares x^5 with w^12 (or x^9 with w^20), both by repeated IEEE
+      multiplication.
+    - Each step's rounding is monotone, so the decision is monotone in the code. A search from the float
+      curve's estimate therefore lands on one code wherever it starts.
+  - **A new case holds every table lain can build** (16 ADC depths, two output depths, three curves,
+    786,420 entries) to the curve correctly rounded. Off a tie it is checked against the curve in double:
+    no entry of a power segment is within 1e-9 of a code of a boundary, so an ulp of `pow` decides none.
+    At a tie it is checked against the half-up code in integers.
+    - 813 entries differ from the float curve's rounding.
+    - 596 are exact ties, all BT.709's. With both maxima odd, a slope of 1 or of 12.92 (323/25) never
+      lands a code exactly half way.
+  - **Only the 16-bit sRGB pin changes.** The other tables and both recordings keep their digests, so
+    they were already right.
+  - **Five sabotages; four caught.**
+    - The float estimate taken as the answer fails the pinned-tables case and the every-table case.
+    - sRGB compared at x^4 fails three cases.
+    - No downward search fails two.
+    - A BT.709 tie rounded down fails the every-table case.
+    - An sRGB tie rounded down is NOT caught, correctly: there is none.
+- **Every Linux leg failed the truth rig's rotation check**, at 2.98e-8 rad against 1e-12. The test
+  compared the reference camera's exact identity with `cam0⁻¹ · cam0` computed in floating point, through
+  `2 acos(|a · b|)`, and acos is flat at 1, so one ulp of the dot product reads as 3e-8. macOS happened to
+  compute the identity exactly. The test's angle is now `2 atan2(|v|, |w|)` of the relative rotation.
+  The library was right.
+- **Windows failed to build `apps/rigplan`**: `CaptureView` and `View` named their depth range `near` and
+  `far`, which `<windows.h>` defines as empty macros. The app includes CLI11, which pulls in
+  `<windows.h>`, before the render header, and no earlier consumer had. Both are now `nearPlane` and
+  `farPlane`. Checked here by compiling the app with `-Dnear= -Dfar=`: it builds, and the old tree gives
+  MSVC's error at the same two lines. Slice 8's gui would have hit it next.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
@@ -16760,8 +16813,9 @@ row here**. A row is cheap to delete and expensive to leave.
   documents; `io::mesh` and the OBJ plugin; `lain::render` on the CPU device, CI green on every
   platform). **Slice 4 built 2026-10-24** (the capture pass; the ADR-0028 claim holds). **Slice 5
   built 2026-10-25 to 10-26** (the sensor model, movers, ground truth, `Renderer::update`, and the
-  capture writer with `rigplan render`). The first CI run of 5a's pinned output tables and recordings
-  on Linux and Windows is owed. Slice 0's gui-mode check of the unsaved-changes modal is owed. Two
+  capture writer with `rigplan render`). CI's first run since slice 5 found three things, each fixed:
+  the 16-bit sRGB output table differed by platform (it is now decided without libm), a test's angle,
+  and `near`/`far` against `<windows.h>`. A green run of the fixes is owed. Slice 0's gui-mode check of the unsaved-changes modal is owed. Two
   findings of 5e wait on decisions: M9's rig binder pairs footage with models by sorted position (the
   writer refuses names that sort differently as folders and as documents; the binder fix is M9's), and
   the CPU device's share of the cores during a capture (measured, for the repo owner). Ten slices, 0 to 9, on `feature/M15`; the build order and every exclusion are in

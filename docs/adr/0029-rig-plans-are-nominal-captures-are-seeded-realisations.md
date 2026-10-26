@@ -63,6 +63,15 @@ realisation, never the plan. A capture is reproducible from the rig plan and the
       operation.
     - **The output curve is a table** of every ADC code's output code, found once. The curve's `pow`
       is then a fixed, finite set of values, and a test pins its digest on every platform.
+      *(Amended 2026-10-26, after feature/M15's first CI run of slice 5: a pin detects a difference
+      and does not prevent one. The 16-bit sRGB table, built from lain::image's float curve, differed
+      between macOS and Linux, since Apple's and glibc's `powf` round differently and 904 of its 65,536
+      entries sit within two float ulps of a rounding boundary. So the table is decided without libm,
+      as the noise is, by the repo owner's choice over the curve in double with a margin test. A
+      linear segment and a breakpoint are rational in the codes and are compared exactly in integers;
+      a power segment's power is a ratio of whole numbers, so x^(5/12) against w is x^5 against w^12,
+      both by repeated IEEE multiplication. A test holds every table lain can build to the curve
+      correctly rounded.)*
 
     The decision was the repo owner's, over a true Gaussian through a log lain would own, and over
     libm with the claim weakened to "within an ulp".
