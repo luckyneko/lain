@@ -15022,7 +15022,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    2026-10-25, 5e on 2026-10-26: slice 5 COMPLETE.**
 6. **Rig and model comparison** promoted to `lain::camera`; the `compareRigs` and `compareModels`
    nodes; `rigcompare.h` over them. Proves: M9's verticals change by zero numbers.
-   **Planned 2026-10-26 as three commits, 6a to 6c** (*Slice 6 planned* below); **6a built
+   **Planned 2026-10-26 as three commits, 6a to 6c** (*Slice 6 planned* below); **6a and 6b built
    2026-10-26.** *(Amended while planning: model comparison's grid now reaches the image's edges, so
    the zero-numbers claim is the rig verticals'; the model numbers are re-measured in 6b.)*
 7. **The vertical**: a committed example rig plan, written by a C++ builder as flowview's examples
@@ -16671,6 +16671,58 @@ Warning-clean, format-check clean.
   The rebase sabotage's first cut failed to build, so the previous sabotage's binary answered until it
   was redone to compile.
 
+#### Sub-slice 6b built (2026-10-26): the tests compare through the library
+
+The rig and model comparisons the tests made by hand now go through `camera::compareRigs` and
+`camera::compareModels`, and the real-camera fixture's manufacturer comparison gains a model
+comparison. `ctest -j8` **1553/1553** Release with video, camera and Ceres on, and **1414/1414** with
+all three off, both unchanged (no case added). Warning-clean, format-check clean.
+
+- **`rigcompare.h` keeps only the truth.** `compare`, `RigDifference`, `posesOf` and `rotationBetween`
+  are gone; `truthRig(identities, worldFromCamera, reference)` builds the truth as a registered rig,
+  over `rebased`, with the reference the identity exactly. `rebased` and `truthReport` stay, for
+  `registration::validate`'s truth.
+- **Its users:**
+  - flowview's camera verticals (`rigAgainstTruth`, now a `RigComparison` built for the rig's own
+    reference) and the rig document's bind-back;
+  - the rig binder's test, which compared one rotation by hand;
+  - the both-methods case and the targetless end-to-end case, through each report's `rig()`. Both now
+    check that the registration chose cam01, which the old `rebased(..., 1)` assumed silently, and that
+    no camera is only in one rig.
+- **The rig verticals change by zero numbers.** Every asserted scale, worst rotation and worst centre at
+  the seven sites (three in flowview's verticals, three in the both-methods case, one in the targetless
+  end-to-end case) was printed as a hexfloat on the unchanged tree and on the changed one (Release,
+  video, camera and Ceres on, macOS arm64), and the two are identical. The scratch prints are not
+  committed. The truth's reference row is now the identity exactly rather than a product a rounding
+  away from it, which the sums never saw: the found rig's reference translation is exactly zero, and
+  no reference row was ever the worst.
+  - **The check can see a change**: with the rotation measured through acos (`board/pose.cpp`'s way)
+    and the scale summed in reverse order, all seven worst rotations differ, and the scene result's
+    scale moves by one ulp along with its worst centre.
+- **The three model helpers are `compareModels` with the tests' own `REQUIRE`s**: the two Ceres copies
+  still abort on a ray the estimate cannot reach (`unreached == 0`), and the end-to-end copy keeps its
+  infinity. A failing case captures each comparison's line.
+- **The model numbers on the new grid**, measured beside the old grid's on the same models (macOS
+  arm64):
+  - the board's calibration 1.19 to 1.44 px at worst, its top-right corner; its mean unchanged at
+    0.72. The board's numbers are the same on every platform, so its comment is updated;
+  - every other end-to-end model by at most 0.19 px at worst (the two methods' models against each
+    other, 1.33 to 1.51) and 0.02 px on average. The targetless numbers in the comments are Linux
+    x86-64's, which this machine cannot re-measure, so they stand, and each helper says which grid
+    they were measured on;
+  - the rational model's free ray mapping 2.8e-6 to 3.1e-6 px; nothing else in the Ceres cases by
+    more than 0.015 px (moving content 0.83 to 0.84, the held principal point 10.51 to 10.52).
+
+  No bound moved.
+- **The fixture's manufacturer comparison** gains `mapping`, the estimate's rays through the imported
+  model, when the session produced an estimate, and its report prints the line. Still a diagnostic:
+  the fixture case checks that a model 2% long is reported several pixels out at the corners, and the
+  fixture still passes. CONTEXT.md's *Factory-model comparison* is amended.
+- **Found, recorded, not changed:** several Ceres targetless-calibration comments record numbers this
+  machine does not reproduce on either grid (the start cases' 2.09 and 1.46 px against 2.13 and 1.43,
+  the 24-frame noise case's 0.374 against 0.384). The grid did not move them; they read like another
+  platform's or an earlier commit's.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -16914,7 +16966,8 @@ row here**. A row is cheap to delete and expensive to leave.
   capture writer with `rigplan render`). CI's first run since slice 5 found three things, each fixed:
   the 16-bit sRGB output table differed by platform (it is now decided without libm), a test's angle,
   and `near`/`far` against `<windows.h>`. The fixes are green on all eight jobs (run 40265665844).
-  **Slice 6 planned 2026-10-26 as 6a to 6c; 6a built** (`camera::compareModels` / `compareRigs`).
+  **Slice 6 planned 2026-10-26 as 6a to 6c; 6a and 6b built** (`camera::compareModels` /
+  `compareRigs`, and the tests comparing through them).
   Slice 0's gui-mode check of the unsaved-changes modal is owed. Two
   findings of 5e wait on decisions: M9's rig binder pairs footage with models by sorted position (the
   writer refuses names that sort differently as folders and as documents; the binder fix is M9's), and
@@ -16925,7 +16978,7 @@ row here**. A row is cheap to delete and expensive to leave.
   `--device` landed. *(M15 §Sub-slice 3d built.)*
 
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not**, and M15 is under
-way (slices 0 to 5 built, slice 6's 6a).
+way (slices 0 to 5 built, slice 6's 6a and 6b).
 
 - **Example documents** — all four commits built. Owed: a gui-mode eyeball of every example (the
   primary purpose). The smoke step has run in CI since it landed, and was green on every leg in

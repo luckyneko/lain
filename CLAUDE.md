@@ -1400,6 +1400,24 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-26 — M15 slice 6, sub-slice 6b built: the tests compare through the library
+
+The rig and model comparisons the tests made by hand go through `camera::compareRigs` and
+`camera::compareModels`. `ctest -j8` **1553/1553** with video, camera and Ceres on and **1414/1414**
+with all three off, unchanged; warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice
+6b built*.
+
+- **The rig verticals change by zero numbers**, measured rather than argued: every asserted scale,
+  worst rotation and worst centre at all seven sites, printed as hexfloats on the unchanged tree and
+  the changed one, is identical. A sabotage shows the check can see a change: through acos, all seven
+  worst rotations differ. `rigcompare.h` keeps only the truth (`truthRig`, `rebased`, `truthReport`).
+- **The model numbers move on purpose**, since the grid now reaches the edges: the board's calibration
+  1.19 to 1.44 px at worst, everything else by at most 0.19 px, no bound moved. Comments this machine
+  can re-measure are updated; the Linux-recorded targetless ones say which grid they are on.
+- **The fixture's manufacturer comparison reports a model comparison**, still never gating.
+- **Two cases now check what they assumed**: the both-methods and targetless end-to-end cases took the
+  truth relative to cam01 without asking the registration which reference it chose.
+
 ### Update 2026-10-26 — M15 slice 6 planned; 6a built: `lain/camera/comparison.h`
 
 Slice 6 (rig and model comparison promoted to `lain::camera`, and their nodes) is three commits, 6a to

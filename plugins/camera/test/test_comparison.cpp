@@ -15,6 +15,7 @@
 #include "testcamera.h"
 
 #include <lain/camera/board/rendering.h>
+#include <lain/camera/comparison.h>
 #include <lain/camera/feature/extraction.h>
 #include <lain/camera/projection.h>
 #include <lain/camera/registration/board.h>
@@ -280,22 +281,35 @@ TEST_CASE("one rig registered with a board and without one agrees with itself an
 	// scale of 1.00004); the targetless result 0.74 mrad and 1.8 mm, once scaled; the two 0.55 mrad
 	// and 1.3 mm apart, the board's scale making the targetless result metric (one normalised unit is
 	// 4.18 m). The cameras stand 3.2 m from the scene and 0.6 m apart, the board 1.6 m away.
-	const std::vector<math::RigidTransformd> truth = compare::rebased(rig.worldFromCamera, 1);
-	const std::vector<math::RigidTransformd> byBoard = compare::posesOf(board, rig.identities);
-	const std::vector<math::RigidTransformd> byScene = compare::posesOf(targetless, rig.identities);
-	const compare::RigDifference boardTruth = compare::compare(truth, byBoard);
+	const std::optional<registration::RegisteredRig> byBoard = board.rig();
+	const std::optional<registration::RegisteredRig> byScene = targetless.rig();
+	REQUIRE(byBoard.has_value());
+	REQUIRE(byScene.has_value());
+	// Both chose cam01, which every camera shares the most with.
+	CHECK(byBoard->reference == rig.identities[1]);
+	CHECK(byScene->reference == rig.identities[1]);
+	const registration::RegisteredRig truth = compare::truthRig(rig.identities, rig.worldFromCamera, byBoard->reference);
+	const RigComparison boardTruth = compareRigs(truth, *byBoard);
 	double unscaled = 0;
-	for (std::size_t c = 0; c < truth.size(); ++c)
-		unscaled = std::max(unscaled, math::length(byBoard[c].translation() - truth[c].translation()));
+	for (std::size_t c = 0; c < truth.cameras.size(); ++c)
+	{
+		unscaled = std::max(unscaled, math::length(byBoard->cameras[c].referenceFromCamera.translation() -
+												   truth.cameras[c].referenceFromCamera.translation()));
+	}
 	CHECK(std::abs(boardTruth.scale - 1.0) < 0.001);
-	CHECK(boardTruth.worstRotation < 0.001);
+	CHECK(boardTruth.worstRotation()->rotation < 0.001);
 	CHECK(unscaled < 0.002);
-	const compare::RigDifference sceneTruth = compare::compare(truth, byScene);
-	CHECK(sceneTruth.worstRotation < 0.0015);
-	CHECK(sceneTruth.worstCentre < 0.004);
-	const compare::RigDifference between = compare::compare(byBoard, byScene);
-	CHECK(between.worstRotation < 0.0015);
-	CHECK(between.worstCentre < 0.004);
+	const RigComparison sceneTruth = compareRigs(truth, *byScene);
+	CHECK(sceneTruth.worstRotation()->rotation < 0.0015);
+	CHECK(sceneTruth.worstCentre()->centre < 0.004);
+	const RigComparison between = compareRigs(*byBoard, *byScene);
+	CHECK(between.worstRotation()->rotation < 0.0015);
+	CHECK(between.worstCentre()->centre < 0.004);
+	for (const RigComparison* c : {&boardTruth, &sceneTruth, &between})
+	{
+		CHECK(c->onlyExpected.empty());
+		CHECK(c->onlyFound.empty());
+	}
 
 	// 3. Both validated on the tracks the targetless registration held out: the same predictions of
 	// the same members, so the two numbers compare one method with the other. Measured: 101 tracks,

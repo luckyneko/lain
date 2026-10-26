@@ -15,6 +15,7 @@
 
 #include <lain/camera/calibration/targetless.h>
 #include <lain/camera/ceres/register.h>
+#include <lain/camera/comparison.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -82,33 +83,22 @@ namespace
 		return std::get<TargetlessDiagnostics>(report.diagnostics.method);
 	}
 
-	// How far an estimate is from the truth: the focal lengths' relative error, and the ray mapping's,
-	// every 16th pixel's true ray projected through the estimate, in pixels (test_freemodel.cpp's).
-	struct ModelError
+	// How far an estimate is from the truth: where it sends the truth's rays (camera::compareModels),
+	// and its focal lengths' relative difference (test_freemodel.cpp's). Every ray must reach the
+	// estimate, since every estimate here is near the truth.
+	//
+	// Until 2026-10-26 these cases measured on a grid that stopped short of the right and bottom edges.
+	// Reaching them moved no ray mapping here by more than 0.015 px: moving content's from 0.83 px to
+	// 0.84, the held principal point's from 10.51 to 10.52.
+	ModelComparison errorOf(const CameraModel& estimate, const CameraModel& truth)
 	{
-		double focal = 0;
-		double ray = 0;
-	};
-	ModelError errorOf(const CameraModel& estimate, const CameraModel& truth)
-	{
-		ModelError out;
-		out.focal = std::max(std::abs(estimate.intrinsics().fx / truth.intrinsics().fx - 1),
-							 std::abs(estimate.intrinsics().fy / truth.intrinsics().fy - 1));
-		for (double v = 0; v < double(truth.image().height); v += 16)
-		{
-			for (double u = 0; u < double(truth.image().width); u += 16)
-			{
-				const Unprojection<double> ray = unproject(truth, u, v);
-				REQUIRE(ray.ok());
-				const Projection<double> p = project(estimate, ray.x, ray.y, ray.z);
-				REQUIRE(p.ok());
-				out.ray = std::max(out.ray, std::hypot(p.u - u, p.v - v));
-			}
-		}
-		return out;
+		const ModelComparison c = compareModels(truth, estimate);
+		REQUIRE(c.compared());
+		REQUIRE(c.unreached == 0);
+		return c;
 	}
 
-	ModelError errorOf(const Report& report, const CameraModel& truth)
+	ModelComparison errorOf(const Report& report, const CameraModel& truth)
 	{
 		REQUIRE(report.model.has_value());
 		return errorOf(*report.model, truth);
@@ -148,9 +138,9 @@ TEST_CASE("a pinhole camera is recovered from exact tracks, Ready", "[camera][ce
 		CHECK(report.reproducibility.estimator.backend == "ceres");
 		CHECK(std::get<TargetlessRecord>(report.reproducibility.method).refiner.backend == "ceres");
 		// Measured: focal 9.5e-12, the ray mapping 9.8e-8 px; held out 1.9e-8 mrad.
-		const ModelError error = errorOf(report, truth);
-		CHECK(error.focal < 1e-7);
-		CHECK(error.ray < 1e-4);
+		const ModelComparison error = errorOf(report, truth);
+		CHECK(error.focalDifference < 1e-7);
+		CHECK(error.worstPixels < 1e-4);
 		CHECK(heldOutOf(report).rmsAngle < 1e-8);
 		CHECK(t.outliers.empty());
 		CHECK(t.unplaced.empty());
@@ -169,10 +159,10 @@ TEST_CASE("a pinhole camera is recovered from exact tracks, Ready", "[camera][ce
 		CHECK(report.model->intrinsics().cx == 319.5);
 		// Measured: fx and fy within 1.8e-4 of their own; the ray mapping 1.06 px out, the held
 		// principal point's 1 px miss.
-		const ModelError error = errorOf(report, truth);
-		CHECK(error.focal < 1e-3);
-		CHECK(error.ray > 0.5);
-		CHECK(error.ray < 1.5);
+		const ModelComparison error = errorOf(report, truth);
+		CHECK(error.focalDifference < 1e-3);
+		CHECK(error.worstPixels > 0.5);
+		CHECK(error.worstPixels < 1.5);
 		CHECK(report.verdict == Verdict::Ready);
 	}
 }
@@ -211,9 +201,9 @@ TEST_CASE("the start nearest the truth is the result, whether the truth is short
 				CHECK(std::holds_alternative<double>(t.sweep[i].outcome) == (i == c.nearest));
 			}
 			CHECK(t.sweep[c.nearest].placed == 10);
-			const ModelError error = errorOf(report, truth);
-			CHECK(error.focal < c.focalBound);
-			CHECK(error.ray < c.rayBound);
+			const ModelComparison error = errorOf(report, truth);
+			CHECK(error.focalDifference < c.focalBound);
+			CHECK(error.worstPixels < c.rayBound);
 			CHECK(report.verdict == c.verdict);
 		}
 	}
@@ -232,9 +222,9 @@ TEST_CASE("a Brown-Conrady camera is recovered from exact tracks, Ready", "[came
 	REQUIRE(report.model.has_value());
 	CHECK(modelOf(report.model->distortion()) == DistortionModel::BrownConrady5);
 	// Measured: focal 3.0e-11, the ray mapping 4.1e-7 px.
-	const ModelError error = errorOf(report, truth);
-	CHECK(error.focal < 1e-7);
-	CHECK(error.ray < 1e-4);
+	const ModelComparison error = errorOf(report, truth);
+	CHECK(error.focalDifference < 1e-7);
+	CHECK(error.worstPixels < 1e-4);
 	CHECK(targetlessOf(report).unplaced.empty());
 	CHECK(report.verdict == Verdict::Ready);
 }
@@ -253,9 +243,9 @@ TEST_CASE("noise at the stated covariance calibrates to within it, Ready", "[cam
 		// out; held out 0.435 mrad, and 1.18 per axis whitened, since noise drawn at the stated covariance
 		// is as precise as it states; focal variation 0.106% and the principal point's 0.67 mrad; 6 of
 		// 1200 observations named, the noise's own share.
-		const ModelError error = errorOf(report, truth);
-		CHECK(error.focal < 0.005);
-		CHECK(error.ray < 2.0);
+		const ModelComparison error = errorOf(report, truth);
+		CHECK(error.focalDifference < 0.005);
+		CHECK(error.worstPixels < 2.0);
 		const HeldOutEvidence& held = heldOutOf(report);
 		CHECK(held.rmsAngle < 0.001);
 		CHECK(held.outliers == 0);
@@ -282,9 +272,9 @@ TEST_CASE("noise at the stated covariance calibrates to within it, Ready", "[cam
 		REQUIRE(report.status == CalibrationStatus::Succeeded);
 		// Measured: the focal length 0.049% out, the ray mapping 0.374 px, the principal point's 0.25 px
 		// error included (0.135 px when it was held at the truth).
-		const ModelError error = errorOf(report, truth);
-		CHECK(error.focal < 0.001);
-		CHECK(error.ray < 0.75);
+		const ModelComparison error = errorOf(report, truth);
+		CHECK(error.focalDifference < 0.001);
+		CHECK(error.worstPixels < 0.75);
 		CHECK(report.verdict == Verdict::Ready);
 	}
 }
@@ -430,12 +420,12 @@ TEST_CASE("moving content is named, and the model does not move", "[camera][cere
 	}
 	CHECK(others < 12); // 1% of the static observations
 
-	// Measured: the ray mapping 0.83 px out. Each moving track keeps one observation the first
+	// Measured: the ray mapping 0.84 px out. Each moving track keeps one observation the first
 	// adjustment's result explains, so the second refines none of their landmarks, and the held-out
 	// frames see none of them: none beyond the inlier angle, and 0.405 mrad over 216. Adjusted once
 	// with every observation, the held-out frames counted 18 beyond it and measured 0.846 mrad.
-	const ModelError error = errorOf(report, truth);
-	CHECK(error.ray < 2.0);
+	const ModelComparison error = errorOf(report, truth);
+	CHECK(error.worstPixels < 2.0);
 	CHECK(targetlessOf(report).pruned > 0);
 	const HeldOutEvidence& held = heldOutOf(report);
 	CHECK(held.outliers == 0);
@@ -458,7 +448,7 @@ TEST_CASE("a principal point (8, -6) px off is recovered by default, and missed 
 		// Measured: the principal point exactly where the truth's is, the ray mapping 2.3e-6 px out.
 		CHECK(std::abs(report.model->intrinsics().cx - 327.5) < 1e-4);
 		CHECK(std::abs(report.model->intrinsics().cy - 233.5) < 1e-4);
-		CHECK(errorOf(report, truth).ray < 1e-4);
+		CHECK(errorOf(report, truth).worstPixels < 1e-4);
 		CHECK(std::holds_alternative<double>(resamplingOf(report).principalPointVariation));
 		CHECK(report.verdict == Verdict::Ready);
 	}
@@ -472,11 +462,11 @@ TEST_CASE("a principal point (8, -6) px off is recovered by default, and missed 
 		CHECK(report.model->intrinsics().cx == 319.5);
 		CHECK(report.model->intrinsics().cy == 239.5);
 		CHECK(std::holds_alternative<Held>(resamplingOf(report).principalPointVariation));
-		// Measured: the ray mapping 10.7 px out, and held out 2.17 mrad and 6.03 whitened, past Ready's 4.
+		// Measured: the ray mapping 10.5 px out, and held out 2.17 mrad and 6.03 whitened, past Ready's 4.
 		// On exact tracks a held miss this large shows; on rendered footage, under noise, the held-out
 		// frames' poses absorbed one of 10 to 18 px (1.1 to 1.4 mrad) and the model was Ready, which is
 		// why the principal point is freed by default (sub-slice 10's probe).
-		CHECK(errorOf(report, truth).ray > 8.0);
+		CHECK(errorOf(report, truth).worstPixels > 8.0);
 		CHECK(heldOutOf(report).rmsAngle > 0.0015);
 		REQUIRE(heldOutOf(report).rmsWhitened.has_value());
 		CHECK(*heldOutOf(report).rmsWhitened > 4.0);

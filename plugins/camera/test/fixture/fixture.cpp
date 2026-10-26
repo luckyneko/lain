@@ -317,6 +317,7 @@ namespace lain::camera::fixture
 			{
 				comparison.estimated = out.sessions[i].report.model->intrinsics();
 				comparison.difference = differenceOf(comparison.imported, *comparison.estimated);
+				comparison.mapping = compareModels(*out.sessions[i].report.model, *session.imported);
 			}
 			out.manufacturer.push_back(std::move(comparison));
 		}
@@ -347,6 +348,8 @@ namespace lain::camera::fixture
 				text += "    estimated: " + describe(*m.estimated) + "\n";
 			if (m.difference)
 				text += "    " + describe(*m.difference) + " (a diagnostic, never a failure)\n";
+			if (m.mapping)
+				text += "    the estimate's rays through the imported model: " + m.mapping->toString() + "\n";
 		}
 		return text;
 	}

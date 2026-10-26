@@ -19,7 +19,7 @@
 #include "camerafootage.h" // the footage, drawn in plain C++ and shared with flowview-examples
 #include "clibinders.h"
 #include "graphio.h"
-#include "rigcompare.h" // a registered rig against its truth
+#include "rigcompare.h" // the truth as a registered rig
 #include "runmode.h"
 #include "scene.h"
 #include "syntheticfootage.h" // the footage, drawn in plain C++
@@ -33,6 +33,7 @@
 #include <lain/camera/calibration/estimator.h>
 #include <lain/camera/calibration/report.h>
 #include <lain/camera/cameramodel.h>
+#include <lain/camera/comparison.h>
 #include <lain/camera/feature/features.h>
 #include <lain/camera/feature/geometry.h>
 #include <lain/camera/feature/matching.h>
@@ -305,24 +306,24 @@ static std::optional<camera::registration::RegisteredRig> readRig(const fs::path
 	return read.rig;
 }
 
-// How far a written rig is from `worldFromCamera`, the poses its cam0..cam2 footage was drawn from,
-// once the truth is made relative to the rig's own reference. Each camera is named by its footage
-// folder within the rig's folder, so the rig lists them in that order.
-static camera::testing::RigDifference rigAgainstTruth(const camera::registration::RegisteredRig& rig,
-													  const std::vector<math::RigidTransformd>& worldFromCamera)
+// How far a written rig is from `worldFromCamera`, the poses its cam0..cam2 footage was drawn from:
+// the truth built for the rig's own reference, so nothing is derived again. Each camera is named by
+// its footage folder within the rig's folder, so the truth names them cam0..cam2, and a rig that
+// named them otherwise shares no camera with it but its reference.
+static camera::RigComparison rigAgainstTruth(const camera::registration::RegisteredRig& rig,
+											 const std::vector<math::RigidTransformd>& worldFromCamera)
 {
-	REQUIRE(rig.cameras.size() == worldFromCamera.size());
-	std::optional<std::size_t> reference;
-	std::vector<math::RigidTransformd> found;
-	for (std::size_t c = 0; c < rig.cameras.size(); ++c)
-	{
-		CHECK(rig.cameras[c].camera.value == "cam" + std::to_string(c));
-		if (rig.cameras[c].camera == rig.reference)
-			reference = c;
-		found.push_back(rig.cameras[c].referenceFromCamera);
-	}
-	REQUIRE(reference.has_value());
-	return camera::testing::compare(camera::testing::rebased(worldFromCamera, *reference), found);
+	std::vector<camera::capture::CameraIdentity> identities;
+	for (std::size_t c = 0; c < worldFromCamera.size(); ++c)
+		identities.push_back(camera::capture::CameraIdentity{"cam" + std::to_string(c)});
+	const camera::RigComparison comparison =
+		camera::compareRigs(camera::testing::truthRig(identities, worldFromCamera, rig.reference), rig);
+	INFO("comparison: " << comparison.toString());
+	REQUIRE(comparison.compared());
+	CHECK_FALSE(comparison.derivedAgain);
+	CHECK(comparison.onlyExpected.empty());
+	CHECK(comparison.onlyFound.empty());
+	return comparison;
 }
 
 TEST_CASE("run registers a rig from a folder of footage and a folder of models", "[camera][runmode]")
@@ -374,17 +375,16 @@ TEST_CASE("run registers a rig from a folder of footage and a folder of models",
 	INFO("rig: " << rig->toString());
 	CHECK(rig->scale.scale == camera::registration::Scale::Metric);
 	CHECK(report.find("relative to " + rig->reference.value) != std::string::npos);
-	const camera::testing::RigDifference difference =
+	const camera::RigComparison difference =
 		rigAgainstTruth(*rig, {cameraFootage::boardRigCamera(0), cameraFootage::boardRigCamera(1), cameraFootage::boardRigCamera(2)});
-	INFO("scale " << difference.scale << ", worst rotation " << difference.worstRotation * 1000.0
-				  << " mrad, worst centre " << difference.worstCentre * 1000.0 << " mm");
+	INFO("comparison: " << difference.toString());
 	// Measured 0.05% in scale, 0.29 mrad and 0.08 mm out. The bounds leave room for another platform's
 	// arithmetic, and still catch a transform written the wrong way round (cameraFromReference turns
 	// each camera 0.25 rad the wrong way), or a camera given another's model: each has its own pinhole
 	// (camerafootage.h), and pairing them one off fails four of these checks.
 	CHECK(std::abs(difference.scale - 1.0) < 0.005);
-	CHECK(difference.worstRotation < 0.002);
-	CHECK(difference.worstCentre < 0.001);
+	CHECK(difference.worstRotation()->rotation < 0.002);
+	CHECK(difference.worstCentre()->centre < 0.001);
 
 	// The same footage somewhere else on disk registers the same, byte for byte: each camera is named,
 	// and each group's frames are spelled, relative to the folder the rig lies in (capture/location.h),
@@ -413,10 +413,12 @@ TEST_CASE("run registers a rig from a folder of footage and a folder of models",
 		{
 			CHECK(back->cameras[c].camera == rig->cameras[c].camera);
 			CHECK(back->cameras[c].referenceFromCamera.translation() == rig->cameras[c].referenceFromCamera.translation());
-			// To the last bit a renormalised rotation can move (RigidTransform normalises what it is built from).
-			CHECK(camera::testing::rotationBetween(back->cameras[c].referenceFromCamera, rig->cameras[c].referenceFromCamera) <=
-				  1e-15);
 		}
+		// Rotations to the last bit a renormalised rotation can move (RigidTransform normalises what it is
+		// built from).
+		const camera::RigComparison same = camera::compareRigs(*rig, *back);
+		REQUIRE(same.compared());
+		CHECK(same.worstRotation()->rotation <= 1e-15);
 	}
 }
 
@@ -486,14 +488,13 @@ TEST_CASE("run registers a rig without a target from a folder of footage and a f
 	INFO("rig: " << rig->toString());
 	CHECK(rig->scale.scale == camera::registration::Scale::Arbitrary);
 	CHECK(report.find("relative to " + rig->reference.value) != std::string::npos);
-	const camera::testing::RigDifference difference =
+	const camera::RigComparison difference =
 		rigAgainstTruth(*rig, {cameraFootage::texturedRigCamera(0), cameraFootage::texturedRigCamera(1), cameraFootage::texturedRigCamera(2)});
-	INFO("scale " << difference.scale << ", worst rotation " << difference.worstRotation * 1000.0
-				  << " mrad, worst centre " << difference.worstCentre * 1000.0 << " mm");
+	INFO("comparison: " << difference.toString());
 	// Measured over five runs, which held out different tracks before 2026-10-21 (above): 0.18 to 0.51
 	// mrad, and 0.7 to 1.7 mm on cameras 3.2 m from the scene.
-	CHECK(difference.worstRotation < 0.003);
-	CHECK(difference.worstCentre < 0.01);
+	CHECK(difference.worstRotation()->rotation < 0.003);
+	CHECK(difference.worstCentre()->centre < 0.01);
 
 	// The same footage somewhere else on disk registers the same, byte for byte (capture/location.h).
 	const fs::path elsewhere = copyElsewhere(dir, {"rig", "models"});
@@ -604,18 +605,17 @@ TEST_CASE("run calibrates every camera of a rig and registers it with those mode
 	const std::optional<camera::registration::RegisteredRig> rig = readRig(rigFile);
 	REQUIRE(rig.has_value());
 	INFO("rig: " << rig->toString());
-	const camera::testing::RigDifference difference =
+	const camera::RigComparison difference =
 		rigAgainstTruth(*rig, {cameraFootage::boardRigCamera(0), cameraFootage::boardRigCamera(1), cameraFootage::boardRigCamera(2)});
-	INFO("scale " << difference.scale << ", worst rotation " << difference.worstRotation * 1000.0
-				  << " mrad, worst centre " << difference.worstCentre * 1000.0 << " mm");
+	INFO("comparison: " << difference.toString());
 	// Held to the bounds the register vertical holds a rig with its true models to. Measured: 0.05% in
 	// scale, 0.87 mrad and 0.24 mm out, in 2 s in Release. At 16 frames a camera, as the register
 	// vertical draws, the calibrations were looser (0.44%, 1.3 mrad and 0.87 mm with one shared
 	// pinhole), too near the bounds. Each camera has its own pinhole (camerafootage.h), so a camera
 	// registered with another's model fails here: pairing them one off fails four of these checks.
 	CHECK(std::abs(difference.scale - 1.0) < 0.005);
-	CHECK(difference.worstRotation < 0.002);
-	CHECK(difference.worstCentre < 0.001);
+	CHECK(difference.worstRotation()->rotation < 0.002);
+	CHECK(difference.worstCentre()->centre < 0.001);
 }
 
 // The calibration fallback end to end: the committed calibrate-fallback.json (apps/flowview/examples),

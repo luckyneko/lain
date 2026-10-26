@@ -19,7 +19,7 @@
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/calibration/board.h>
 #include <lain/camera/calibration/targetless.h>
-#include <lain/camera/projection.h>
+#include <lain/camera/comparison.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -28,7 +28,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <limits>
 #include <memory>
 #include <string>
 #include <variant>
@@ -55,43 +54,20 @@ namespace
 		return *result.model;
 	}
 
-	// How far a model is from another: the larger of its focal lengths' relative errors, and the ray
-	// mapping's worst and mean, every 16th pixel's ray through `truth` projected through `estimate`, in
-	// pixels. A pixel `estimate` cannot project counts as infinitely far.
-	struct ModelError
-	{
-		double focal = 0;
-		double worst = 0;
-		double mean = 0;
-	};
-	ModelError errorOf(const CameraModel& estimate, const CameraModel& truth)
-	{
-		ModelError out;
-		out.focal = std::max(std::abs(estimate.intrinsics().fx / truth.intrinsics().fx - 1),
-							 std::abs(estimate.intrinsics().fy / truth.intrinsics().fy - 1));
-		double sum = 0;
-		std::size_t count = 0;
-		for (double v = 0; v < double(truth.image().height); v += 16)
-		{
-			for (double u = 0; u < double(truth.image().width); u += 16)
-			{
-				const Unprojection<double> ray = unproject(truth, u, v);
-				REQUIRE(ray.ok());
-				const Projection<double> p = project(estimate, ray.x, ray.y, ray.z);
-				const double d = p.ok() ? std::hypot(p.u - u, p.v - v) : std::numeric_limits<double>::infinity();
-				out.worst = std::max(out.worst, d);
-				sum += d;
-				++count;
-			}
-		}
-		out.mean = sum / double(count);
-		return out;
-	}
-
-	ModelError errorOf(const calibration::Report& report, const CameraModel& truth)
+	// How far a calibration's model is from the truth: where it sends the truth's rays
+	// (camera::compareModels), every 16th pixel centre and the last row and column, and its focal
+	// lengths' relative difference. A ray the model cannot project makes it infinitely far.
+	//
+	// Until 2026-10-26 these cases measured on a grid that stopped short of the right and bottom edges.
+	// Reaching them moved the board's model from 1.19 px to 1.44 px at worst, the same on every platform,
+	// and on macOS arm64 every other model here by at most 0.19 px at worst and 0.02 px on average,
+	// inside every bound. The targetless numbers recorded below are Linux x86-64's, on the old grid.
+	ModelComparison errorOf(const calibration::Report& report, const CameraModel& truth)
 	{
 		REQUIRE(report.model.has_value());
-		return errorOf(*report.model, truth);
+		const ModelComparison c = compareModels(truth, *report.model);
+		REQUIRE(c.compared());
+		return c;
 	}
 
 	capture::CameraFootage footageOf(std::shared_ptr<synthetic::RenderedSource> source)
@@ -230,11 +206,11 @@ TEST_CASE("one camera calibrated with a board and without one agrees with itself
 	REQUIRE(board.status == calibration::CalibrationStatus::Succeeded);
 	REQUIRE(targetless.status == calibration::CalibrationStatus::Succeeded);
 
-	const ModelError boardError = errorOf(board, truth);
-	const ModelError targetlessError = errorOf(targetless, truth);
-	const ModelError between = errorOf(*targetless.model, *board.model);
-	CAPTURE(boardError.focal, boardError.worst, boardError.mean, targetlessError.focal, targetlessError.worst,
-			targetlessError.mean, between.focal, between.worst, between.mean, whitenedOf(targetless));
+	const ModelComparison boardError = errorOf(board, truth);
+	const ModelComparison targetlessError = errorOf(targetless, truth);
+	const ModelComparison between = compareModels(*board.model, *targetless.model);
+	REQUIRE(between.compared());
+	CAPTURE(boardError.toString(), targetlessError.toString(), between.toString(), whitenedOf(targetless));
 	// Both Ready on these frames. The board's own residuals are about a tenth of a pixel: held out 0.18
 	// mrad against the targetless method's 1.28, which a feature track's localisation sets. Each is
 	// judged by its own profile: the board's angle, the targetless residual whitened by its features'
@@ -244,8 +220,8 @@ TEST_CASE("one camera calibrated with a board and without one agrees with itself
 	CHECK(heldOutOf(board).rmsAngle < 0.0004);
 	CHECK(heldOutOf(targetless).rmsAngle < 0.0015);
 	CHECK(whitenedOf(targetless) < 4.0);
-	// Measured on Linux x86-64: the board 0.071% out in focal length and its ray mapping 1.19 px out at
-	// worst, 0.72 px on average (its principal point 0.6 px off); the targetless model 0.0094%, 0.33 px
+	// Measured on Linux x86-64: the board 0.071% out in focal length and its ray mapping 1.44 px out at
+	// worst (the top-right corner), 0.72 px on average (its principal point 0.6 px off); the targetless model 0.0094%, 0.33 px
 	// and 0.23 px; the two 0.062%, 1.19 px and 0.69 px apart. The board is found in 33 of the 48 frames;
 	// the targetless method's 40 sampled frames are all placed or held out, 170 of their 780 pairs are
 	// refused as seeds, since close views of the board in front of the wall are near one plane, and its
@@ -256,15 +232,15 @@ TEST_CASE("one camera calibrated with a board and without one agrees with itself
 	// model 0.081% out, 1.87 px at worst and 1.23 px on average; on macOS arm64 0.21%, 5.04 px and 3.05
 	// px, still Ready: the printed board's minimum recorded below, which the second adjustment is what
 	// keeps the fit out of. The targetless bounds hold every platform's model out of it.
-	CHECK(boardError.focal < 0.0015);
-	CHECK(boardError.worst < 2.5);
-	CHECK(boardError.mean < 1.5);
-	CHECK(targetlessError.focal < 0.002);
-	CHECK(targetlessError.worst < 3.0);
-	CHECK(targetlessError.mean < 1.5);
-	CHECK(between.focal < 0.003);
-	CHECK(between.worst < 3.5);
-	CHECK(between.mean < 2.0);
+	CHECK(boardError.focalDifference < 0.0015);
+	CHECK(boardError.worstPixels < 2.5);
+	CHECK(boardError.meanPixels < 1.5);
+	CHECK(targetlessError.focalDifference < 0.002);
+	CHECK(targetlessError.worstPixels < 3.0);
+	CHECK(targetlessError.meanPixels < 1.5);
+	CHECK(between.focalDifference < 0.003);
+	CHECK(between.worstPixels < 3.5);
+	CHECK(between.meanPixels < 2.0);
 	const calibration::TargetlessDiagnostics& t = targetlessOf(targetless);
 	CHECK(t.unplaced.empty());
 	CHECK(t.seedPairsRefused > 0);
@@ -297,17 +273,17 @@ TEST_CASE("a printed board's repeated corners do not pull the targetless model o
 		calibration::targetless::calibrate(footageOf(drawn(footage.scene, truth, footage.poses, 5)), {}, {});
 	INFO(report.toString());
 	REQUIRE(report.status == calibration::CalibrationStatus::Succeeded);
-	const ModelError error = errorOf(report, truth);
+	const ModelComparison error = errorOf(report, truth);
 	const math::Vec2d principal{report.model->intrinsics().cx - truth.intrinsics().cx,
 								report.model->intrinsics().cy - truth.intrinsics().cy};
-	CAPTURE(error.focal, error.worst, error.mean, principal.x, principal.y, targetlessOf(report).pruned, whitenedOf(report));
+	CAPTURE(error.toString(), principal.x, principal.y, targetlessOf(report).pruned, whitenedOf(report));
 	// Measured on Linux x86-64: the second adjustment, without the 1615 observations the first's result
 	// did not explain, is 0.035% out in focal length, its ray mapping 1.03 px at worst and 0.55 px on
 	// average, its principal point 0.53 px off, Ready.
 	CHECK(report.verdict == calibration::Verdict::Ready);
 	CHECK(targetlessOf(report).pruned > 0);
-	CHECK(error.mean < 1.5);
-	CHECK(error.worst < 2.5);
+	CHECK(error.meanPixels < 1.5);
+	CHECK(error.worstPixels < 2.5);
 	CHECK(math::length(principal) < 1.5);
 }
 
@@ -331,14 +307,14 @@ TEST_CASE("the default sampled frames calibrate a moving camera through a normal
 		const calibration::Report report = calibrate(truth);
 		INFO(report.toString());
 		REQUIRE(report.status == calibration::CalibrationStatus::Succeeded);
-		const ModelError error = errorOf(report, truth);
-		CAPTURE(error.focal, error.worst, error.mean, heldOutOf(report).rmsAngle, whitenedOf(report));
+		const ModelComparison error = errorOf(report, truth);
+		CAPTURE(error.toString(), heldOutOf(report).rmsAngle, whitenedOf(report));
 		// Measured: 0.021% out in focal length, the ray mapping 0.76 px at worst and 0.47 px on average,
 		// held out 1.16 mrad, 2.00 whitened. Adjusted once: 0.103%, 1.30 px and 0.77 px.
 		CHECK(report.verdict == calibration::Verdict::Ready);
-		CHECK(error.focal < 0.002);
-		CHECK(error.worst < 2.5);
-		CHECK(error.mean < 1.5);
+		CHECK(error.focalDifference < 0.002);
+		CHECK(error.worstPixels < 2.5);
+		CHECK(error.meanPixels < 1.5);
 		CHECK(unplacedOf(report) == 0);
 	}
 	SECTION("a wide lens: f = 250 at 640x480")
@@ -347,8 +323,8 @@ TEST_CASE("the default sampled frames calibrate a moving camera through a normal
 		const calibration::Report report = calibrate(truth);
 		INFO(report.toString());
 		REQUIRE(report.status == calibration::CalibrationStatus::Succeeded);
-		const ModelError error = errorOf(report, truth);
-		CAPTURE(error.focal, error.worst, error.mean, heldOutOf(report).rmsAngle, whitenedOf(report));
+		const ModelComparison error = errorOf(report, truth);
+		CAPTURE(error.toString(), heldOutOf(report).rmsAngle, whitenedOf(report));
 		// Measured: 0.087% out in focal length, the ray mapping 1.43 px at worst and 0.40 px on average,
 		// held out 1.84 mrad and 2.35 whitened. A pixel subtends twice the angle at half the focal length,
 		// so the held-out angle fails the 1.5 mrad Ready bound the profile had until the held-out residual
@@ -357,9 +333,9 @@ TEST_CASE("the default sampled frames calibrate a moving camera through a normal
 		CHECK(report.verdict == calibration::Verdict::Ready);
 		CHECK(heldOutOf(report).rmsAngle > 0.0015);
 		CHECK(whitenedOf(report) < 4.0);
-		CHECK(error.focal < 0.0025);
-		CHECK(error.worst < 3.5);
-		CHECK(error.mean < 1.2);
+		CHECK(error.focalDifference < 0.0025);
+		CHECK(error.worstPixels < 3.5);
+		CHECK(error.meanPixels < 1.2);
 		CHECK(unplacedOf(report) == 0);
 	}
 	SECTION("an HD lens: f = 1000 at 1280x720")
@@ -368,8 +344,8 @@ TEST_CASE("the default sampled frames calibrate a moving camera through a normal
 		const calibration::Report report = calibrate(truth);
 		INFO(report.toString());
 		REQUIRE(report.status == calibration::CalibrationStatus::Succeeded);
-		const ModelError error = errorOf(report, truth);
-		CAPTURE(error.focal, error.worst, error.mean, heldOutOf(report).rmsAngle, whitenedOf(report));
+		const ModelComparison error = errorOf(report, truth);
+		CAPTURE(error.toString(), heldOutOf(report).rmsAngle, whitenedOf(report));
 		// Measured: 0.325% out in focal length, the ray mapping 5.19 px at worst and 2.08 px on average,
 		// held out 0.74 mrad and 1.76 whitened, Ready. Over three seeds 0.19 to 0.33% and 1.45 to 3.56 px
 		// on average, the principal point up to 3.1 px off: Ready with an error the held-out frames' poses
@@ -384,9 +360,9 @@ TEST_CASE("the default sampled frames calibrate a moving camera through a normal
 			REQUIRE(report.fitnessNotes.size() == 1);
 			CHECK_THAT(report.fitnessNotes.front(), ContainsSubstring("principal point variation"));
 		}
-		CHECK(error.focal < 0.004);
-		CHECK(error.worst < 8.0);
-		CHECK(error.mean < 4.0);
+		CHECK(error.focalDifference < 0.004);
+		CHECK(error.worstPixels < 8.0);
+		CHECK(error.meanPixels < 4.0);
 		CHECK(unplacedOf(report) == 0);
 	}
 }
@@ -438,15 +414,15 @@ TEST_CASE("a strongly distorted lens leaves no frame unplaced", "[camera][calibr
 	const calibration::TargetlessDiagnostics& t = targetlessOf(report);
 	CHECK(t.unplaced.empty());
 	CHECK(t.placement.size() + report.diagnostics.heldOut.size() == t.frames.size());
-	const ModelError error = errorOf(report, truth);
-	CAPTURE(error.focal, error.worst, error.mean, heldOutOf(report).rmsAngle, whitenedOf(report));
+	const ModelComparison error = errorOf(report, truth);
+	CAPTURE(error.toString(), heldOutOf(report).rmsAngle, whitenedOf(report));
 	// Measured on Linux x86-64: 0.070% out in focal length, the ray mapping 1.56 px at worst and 1.25 px
 	// on average, held out 0.59 mrad and 1.58 whitened, Ready; adjusted once, 0.094%, 1.26 px and 0.90
 	// px. On macOS arm64's features, adjusted once: 0.113%, 3.11 px and 2.70 px, held out 1.79 whitened,
 	// still Ready, a model a few pixels out that the verdict does not see (WORK.md, M9 slice 4, after
 	// sub-slice 10e, item 4); the bounds hold both.
 	CHECK(report.verdict == calibration::Verdict::Ready);
-	CHECK(error.focal < 0.002);
-	CHECK(error.worst < 4.5);
-	CHECK(error.mean < 3.5);
+	CHECK(error.focalDifference < 0.002);
+	CHECK(error.worstPixels < 4.5);
+	CHECK(error.meanPixels < 3.5);
 }

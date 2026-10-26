@@ -8,11 +8,13 @@
 #include "rigcompare.h"
 #include "testcamera.h"
 
+#include <lain/camera/comparison.h>
 #include <lain/camera/registration/targetless.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -49,16 +51,20 @@ TEST_CASE("three cameras over a rendered scene register without a target", "[cam
 	const registration::TargetlessDiagnostics& t = std::get<registration::TargetlessDiagnostics>(report.diagnostics.method);
 	REQUIRE(t.trackSet.has_value());
 
-	const camera::testing::RigDifference truth =
-		camera::testing::compare(camera::testing::rebased(poses, 1), camera::testing::posesOf(report, rig.identities));
+	const std::optional<registration::RegisteredRig> found = report.rig();
+	REQUIRE(found.has_value());
+	CHECK(found->reference == rig.identities[1]);
+	const RigComparison truth = compareRigs(camera::testing::truthRig(rig.identities, poses, found->reference), *found);
+	CHECK(truth.onlyExpected.empty());
+	CHECK(truth.onlyFound.empty());
 	const auto* held = std::get_if<registration::HeldOutEvidence>(&report.heldOut);
 	REQUIRE(held != nullptr);
 	// Measured: 429 tracks, as the footage case extracts, 86 of them held out; the worst camera
 	// 0.37 mrad and 1.6 mm from the truth (the cameras stand 3.2 m from the scene and 0.8 m apart),
 	// a held-out transfer of 1.06 mrad (about half a pixel at this focal length of 500), 6 outliers,
 	// Ready. 13.6 s in Debug, nearly all of it drawing the 15 sampled frames.
-	CHECK(truth.worstRotation < 0.001);
-	CHECK(truth.worstCentre < 0.004);
+	CHECK(truth.worstRotation()->rotation < 0.001);
+	CHECK(truth.worstCentre()->centre < 0.004);
 	CHECK(held->rmsAngle < 0.002);
 	CHECK(report.verdict == Verdict::Ready);
 	// Every track is a point of the scene behind the disc: what crossed it is not in the rig.

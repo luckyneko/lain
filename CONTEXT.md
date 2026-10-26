@@ -735,7 +735,8 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   and an independently estimated or validated model. Manufacturer parameters are not ground truth;
   readiness is determined from held-out geometric evidence and stability rather than agreement with
   the factory values alone. _Avoid_: factory ground truth, manufacturer accuracy test.
-  *Measured by model comparison* (designed 2026-10-21, with rig design).
+  *Measured by model comparison*: the real-camera fixture's manufacturer comparison reports the
+  estimate's rays through the imported model (M15 slice 6, 2026-10-26).
 - **Model comparison** — how far apart two camera models of one image geometry are, measured as
   where each sends the same rays: the mean and worst pixel distance over the image. It knows nothing
   of where either model came from, so it scores a calibration against a synthetic capture's ground

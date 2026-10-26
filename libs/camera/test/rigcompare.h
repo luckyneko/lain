@@ -1,11 +1,9 @@
 #pragma once
 
-// Comparing registered rigs, for the tests that register real footage: one rig against its truth, or
-// one method's result against another's. Every rig here is relative to one reference camera, which
-// each method pins to the identity, so two results of the same rig can differ in rotation and in
-// the scale of their centres and in nothing else: a targetless registration is scale-normalised,
-// a board registration metric. A scale-only fit is therefore the whole alignment, and stricter than
-// a similarity fit, which could hide a reference camera's own error.
+// The truth, as a registered rig, for the tests that register rendered footage. What a result is
+// scored by is the library's rig comparison (lain/camera/comparison.h): camera::compareRigs against
+// the truthRig built here. What is left here builds the truth from the world poses a test drew its
+// footage from, which a rig plan's capture does from its poses (rigplan's rigRelativeTo).
 
 #include <lain/camera/capture/capturegroup.h>
 #include <lain/camera/registration/report.h>
@@ -14,33 +12,11 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <vector>
 
 namespace lain::camera::testing
 {
-	// The angle between two poses' rotations, radians.
-	inline double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
-	{
-		const math::Quatd r = math::conjugate(a.rotation()) * b.rotation();
-		return 2.0 * std::atan2(std::sqrt(r.x * r.x + r.y * r.y + r.z * r.z), std::abs(r.w));
-	}
-
-	// The registered pose of each of `identities`, in that order. Each must be registered.
-	inline std::vector<math::RigidTransformd> posesOf(const registration::Report& report,
-													  const std::vector<capture::CameraIdentity>& identities)
-	{
-		std::vector<math::RigidTransformd> poses;
-		for (const capture::CameraIdentity& id : identities)
-		{
-			const std::optional<math::RigidTransformd> pose = report.referenceFromCamera(id);
-			REQUIRE(pose.has_value());
-			poses.push_back(*pose);
-		}
-		return poses;
-	}
-
 	// Poses given in some world frame, made relative to camera `reference`: what a registration
 	// reports for them.
 	inline std::vector<math::RigidTransformd> rebased(const std::vector<math::RigidTransformd>& worldFromCamera,
@@ -53,38 +29,29 @@ namespace lain::camera::testing
 		return out;
 	}
 
-	struct RigDifference
+	// The truth as a registered rig: `identities[c]` at `worldFromCamera[c]`, relative to `reference`,
+	// metric, cameras ascending by identity as a registration reports them. The reference is the
+	// identity exactly, as a rig document requires, rather than a product that rounds to it. Build it
+	// for the reference the registration chose, so compareRigs has nothing to derive again.
+	inline registration::RegisteredRig truthRig(const std::vector<capture::CameraIdentity>& identities,
+												const std::vector<math::RigidTransformd>& worldFromCamera,
+												const capture::CameraIdentity& reference)
 	{
-		double scale = 1;			  // what `found`'s centres were multiplied by
-		std::vector<double> rotation; // per camera, radians
-		std::vector<double> centre;	  // per camera, in `expected`'s units
-		double worstRotation = 0;
-		double worstCentre = 0;
-	};
+		REQUIRE(identities.size() == worldFromCamera.size());
+		const auto found = std::find(identities.begin(), identities.end(), reference);
+		REQUIRE(found != identities.end());
+		const std::size_t r = std::size_t(found - identities.begin());
+		const std::vector<math::RigidTransformd> poses = rebased(worldFromCamera, r);
 
-	// How far `found` is from `expected`, both relative to the same reference camera: rotations
-	// directly, centres after `found`'s are scaled onto `expected`'s by least squares, s = sum f.e /
-	// sum f.f, the bootstrap's own alignment (targetless.cpp).
-	inline RigDifference compare(const std::vector<math::RigidTransformd>& expected,
-								 const std::vector<math::RigidTransformd>& found)
-	{
-		REQUIRE(expected.size() == found.size());
-		double across = 0, along = 0;
-		for (std::size_t c = 0; c < expected.size(); ++c)
-		{
-			across += math::dot(found[c].translation(), expected[c].translation());
-			along += math::dot(found[c].translation(), found[c].translation());
-		}
-		RigDifference d;
-		d.scale = along > 0 ? across / along : 1.0;
-		for (std::size_t c = 0; c < expected.size(); ++c)
-		{
-			d.rotation.push_back(rotationBetween(expected[c], found[c]));
-			d.centre.push_back(math::length(found[c].translation() * d.scale - expected[c].translation()));
-			d.worstRotation = std::max(d.worstRotation, d.rotation.back());
-			d.worstCentre = std::max(d.worstCentre, d.centre.back());
-		}
-		return d;
+		registration::RegisteredRig rig;
+		rig.reference = reference;
+		rig.scale = {registration::Scale::Metric, "the poses the test's footage was drawn from"};
+		for (std::size_t c = 0; c < identities.size(); ++c)
+			rig.cameras.push_back({identities[c], c == r ? math::RigidTransformd{} : poses[c]});
+		std::sort(rig.cameras.begin(), rig.cameras.end(),
+				  [](const registration::RegisteredCamera& a, const registration::RegisteredCamera& b)
+				  { return a.camera < b.camera; });
+		return rig;
 	}
 
 	// A successful report holding nothing but `identities` at `poses`, which is all
