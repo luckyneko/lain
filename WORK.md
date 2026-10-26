@@ -16567,6 +16567,11 @@ off (+1). Warning-clean, format-check clean.
   `2 acos(|a · b|)`, and acos is flat at 1, so one ulp of the dot product reads as 3e-8. macOS happened to
   compute the identity exactly. The test's angle is now `2 atan2(|v|, |w|)` of the relative rotation.
   The library was right.
+- **The fixes are green on all eight jobs** ([run 40265665844](https://github.com/luckyneko/lain/actions/runs/40265665844),
+  `9a65a07`): 1542/1542 on Linux Release, macOS and Windows, 1534/1534 on Linux Debug, 1483/1483 on the
+  no-refiner leg and 1403/1403 with everything off, and `rigplan` launches on every leg. So the sensor's
+  output tables and recordings are now proved identical on Linux x86-64, macOS arm64 and Windows, and
+  every capture case ran on the CPU device alone on Linux and Windows.
 - **Windows failed to build `apps/rigplan`**: `CaptureView` and `View` named their depth range `near` and
   `far`, which `<windows.h>` defines as empty macros. The app includes CLI11, which pulls in
   `<windows.h>`, before the render header, and no earlier consumer had. Both are now `nearPlane` and
@@ -16815,7 +16820,7 @@ row here**. A row is cheap to delete and expensive to leave.
   built 2026-10-25 to 10-26** (the sensor model, movers, ground truth, `Renderer::update`, and the
   capture writer with `rigplan render`). CI's first run since slice 5 found three things, each fixed:
   the 16-bit sRGB output table differed by platform (it is now decided without libm), a test's angle,
-  and `near`/`far` against `<windows.h>`. A green run of the fixes is owed. Slice 0's gui-mode check of the unsaved-changes modal is owed. Two
+  and `near`/`far` against `<windows.h>`. The fixes are green on all eight jobs (run 40265665844). Slice 0's gui-mode check of the unsaved-changes modal is owed. Two
   findings of 5e wait on decisions: M9's rig binder pairs footage with models by sorted position (the
   writer refuses names that sort differently as folders and as documents; the binder fix is M9's), and
   the CPU device's share of the cores during a capture (measured, for the repo owner). Ten slices, 0 to 9, on `feature/M15`; the build order and every exclusion are in

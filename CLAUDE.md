@@ -1405,7 +1405,9 @@ extraction*, *Calibration method* and *Calibration attempt*.
 [Run 40259562592](https://github.com/luckyneko/lain/actions/runs/40259562592) on `5637dcf`: macOS green,
 every Linux leg failed two tests, Windows failed to build `apps/rigplan`. All three findings are fixed in
 one commit. `ctest -j8` **1542/1542** Release with video, camera and Ceres on (+1), **1403/1403** with all
-three off (+1); warning-clean, format-check clean. A green CI run of the fixes is owed. Full notes in
+three off (+1); warning-clean, format-check clean. **The fixes are green on all eight jobs**
+([run 40265665844](https://github.com/luckyneko/lain/actions/runs/40265665844)), so the sensor's tables
+and recordings are proved identical on Linux, macOS and Windows. Full notes in
 WORK.md's *feature/M15's CI run after slice 5*; ADR-0029 is amended.
 
 - **The 16-bit sRGB output table differed between macOS and Linux**, which is what 5a's pins were for.
