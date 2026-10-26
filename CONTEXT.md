@@ -781,9 +781,14 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
 - **Synthetic capture** — footage rendered from a rig plan, in the same shape as footage of a real
   rig, together with its ground truth: the camera models and poses the footage was actually rendered
   with. Judging a rig plan means running calibration or registration on its synthetic capture and
-  scoring the result against that truth; the design tool itself does no reconstruction. _Avoid_:
-  synthetic dataset (it is a capture, consumed as one), simulation, test data when the ground truth
-  is meant.
+  scoring the result against that truth; the design tool itself does no reconstruction. On disk it is
+  a folder: `rig/<camera>/frame.<n>.<ext>` (the footage, bound as M9 binds a rig's), `nominal/` and
+  `truth/models/` (a camera-model document per camera, so either binds as the rig's models),
+  `truth/poses.json`, `truth/rig.json` and `truth/board.json`, and `capture.json`, the manifest. The
+  manifest is written last, only when every frame was, so **a folder without `capture.json` is an
+  incomplete capture** and nothing reads it as footage. The manifest embeds the rig plan as rendered,
+  its seed and scales the ones used, so that plan alone reproduces the capture. _Avoid_: synthetic
+  dataset (it is a capture, consumed as one), simulation, test data when the ground truth is meant.
 - **Ground truth** — what a synthetic capture was actually rendered with: every camera's realised
   camera model and realised plan-frame pose, and per frame the board's realised pose and each
   corner's true pixel in every camera that sees it. "Sees" means **in view**: the corner projects

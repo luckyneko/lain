@@ -1,5 +1,7 @@
 #include "lain/rigplan/serialize/truth.h"
 
+#include "strict.h"
+
 #include <lain/data/data.h>
 #include <lain/data/strict.h>
 #include <lain/data/versioned.h>
@@ -125,27 +127,6 @@ namespace lain::rigplan
 		}
 	};
 
-	// The parts of a `kind` document, its shape read strictly: the version first, then the parts, then
-	// what writing the parts back gives compared with the document.
-	template <typename Parts>
-	static std::optional<Parts> partsOf(const data::Value& document, const char* kind, std::uint32_t newest,
-										std::vector<std::string>& problems)
-	{
-		problems = data::versionProblems(document, kind, newest);
-		if (!problems.empty())
-			return std::nullopt;
-		std::optional<Parts> parts = data::fromValue<Parts>(document);
-		if (!parts)
-		{
-			problems.push_back("the document does not have the expected shape");
-			return std::nullopt;
-		}
-		problems = data::shapeDifferences(document, data::versionedDocument(newest, data::toValue(*parts)));
-		if (!problems.empty())
-			return std::nullopt;
-		return parts;
-	}
-
 	data::Value posesToValue(const std::vector<CameraPose>& poses)
 	{
 		PosesDoc doc;
@@ -157,7 +138,7 @@ namespace lain::rigplan
 	PosesRead posesFromValue(const data::Value& document)
 	{
 		PosesRead result;
-		const std::optional<PosesDoc> parts = partsOf<PosesDoc>(document, "poses", kPosesDocumentVersion, result.problems);
+		const std::optional<PosesDoc> parts = detail::readStrictly<PosesDoc>(document, "poses", kPosesDocumentVersion, result.problems);
 		if (!parts)
 			return result;
 		Reading read;
@@ -201,7 +182,7 @@ namespace lain::rigplan
 	{
 		BoardTruthRead result;
 		const std::optional<BoardTruthDoc> parts =
-			partsOf<BoardTruthDoc>(document, "board truth", kBoardTruthDocumentVersion, result.problems);
+			detail::readStrictly<BoardTruthDoc>(document, "board truth", kBoardTruthDocumentVersion, result.problems);
 		if (!parts)
 			return result;
 		Reading read;

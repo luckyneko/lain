@@ -27,7 +27,7 @@ endif()
 # Tests and apps only when lain is the top-level project (consumed via
 # add_subdirectory they stay off, matching the siblings).
 option(LAIN_BUILD_TESTING "Build the unit/integration tests" ${LAIN_NOT_SUBPROJECT})
-option(LAIN_BUILD_APPS "Build the runnable apps (flowview)" ${LAIN_NOT_SUBPROJECT})
+option(LAIN_BUILD_APPS "Build the runnable apps (flowview, rigplan)" ${LAIN_NOT_SUBPROJECT})
 option(LAIN_FORMAT "Provide clang-format format / format-check targets" ${LAIN_NOT_SUBPROJECT})
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
@@ -208,6 +208,7 @@ add_subdirectory(libs/editor)           # document editors' undo, recents, sessi
 if(LAIN_BUILD_TESTING OR LAIN_BUILD_APPS)
 	add_subdirectory(libs/render)
 	add_subdirectory(libs/rigplan/scene) # a rig plan as a render scene, beside the renderer it is for
+	add_subdirectory(libs/rigplan/capture) # a rig plan's synthetic capture written to disk
 endif()
 
 # Test-support, built only when there are tests to support (see libs/testing/scratch.h).
@@ -234,6 +235,7 @@ if(LAIN_BUILD_APPS)
 	add_subdirectory(libs/app)            # GLFW + CLI11 app harness
 	add_subdirectory(libs/gui)            # Dear ImGui + imnodes wrapper
 	add_subdirectory(apps/flowview)       # the inspector (step 9)
+	add_subdirectory(apps/rigplan)        # rig design: synthetic captures of rig plans (WORK.md M15)
 endif()
 
 # What this configure built, last, where an option that was asked for but could not be honoured is

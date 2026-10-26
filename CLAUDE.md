@@ -1400,6 +1400,46 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-26 — M15 slice 5, sub-slice 5e built: the capture writer and `rigplan render` (**slice 5 COMPLETE**)
+
+A rig plan's synthetic capture now reaches disk: `lain::rigplan::capture`, `capture.json` in
+`rigplan::serialize`, and `apps/rigplan`, lain's second app. `ctest -j8` **1541/1541** Release with
+video, camera and Ceres on (+11), **1402/1402** with all three off (+11); warning-clean, format-check
+clean. Full notes in WORK.md's *Sub-slice 5e built*; ADR-0028 and CONTEXT.md's *Synthetic capture*
+are amended.
+
+- **`writeCapture(plan, device, options)`, in four steps:**
+  1. Refuse before writing anything: a non-empty folder; check(); a refused draw; an asset, scene or
+     ray table that will not be; a codec that cannot hold its camera's recording; names a rig folder
+     would hide or pair wrongly with their models; no json writer.
+  2. Write the truth and the nominal models.
+  3. Render camera by camera through one `GpuScene` (`update`), each frame recorded, encoded and
+     written on the pool, at most `maxInFlight` at once.
+  4. Write `capture.json` last. A folder without it is an incomplete capture.
+- **`estimateSize`** gives a ceiling (uncompressed) and a floor (a flat picture with the capture's
+  noise), and says when noise defeats compression.
+- **`rigplan render <plan> --out <folder> [--seed --deviation --noise --in-flight --estimate]`.** Its
+  library target is now `lain_rigplan`, so the executable can be `rigplan`.
+- **Three deviations, each measured:**
+  - **`Recorder::record` is serial**, since rows dispatched inside one of many frame tasks let a
+    waiting worker steal a whole other frame. At 1080p, 26 frames in flight took 7.2 s with rows on
+    the pool and 1.8 s without.
+  - **`maxInFlight` defaults to one a pool worker.** At 1080p, 4 in flight took 4.1 s and 13 took
+    1.9 s, since encoding is the slow part. `--in-flight` is the knob.
+  - **The estimate separates a file's overhead from its cost a pixel.** A 16-bit TIFF carries a 128 kB
+    transfer function in every file.
+- **Measured at 1080p:**
+  - On Metal a capture takes about 7 ms a camera-frame.
+  - On the CPU device it takes about 260 ms, with the pool idle behind it. 7 device threads (3d's half
+    of 14) took 8.0 s and 10 took 6.2 s. **Recorded for the repo owner in ADR-0028; the split is
+    unchanged.**
+  - 100 cameras peak at 81 MB.
+- **Six sabotages, all caught.** One case exists only because of one: noise keyed by list position
+  passed everything until a case reversed the plan's cameras.
+- **Found, owed to M9:** its rig binder pairs footage with models by sorted position, so `a` and `a-b`
+  would pair wrongly; the writer refuses such names.
+- **Owed:** the first CI run since slice 5, which proves 5a's pinned digests on Linux and Windows.
+
 ### Update 2026-10-25 — M15 slice 5, sub-slice 5d built: `Renderer::update`
 
 A `GpuScene` follows a changing scene, so a capture can stream camera by camera, as decided, without

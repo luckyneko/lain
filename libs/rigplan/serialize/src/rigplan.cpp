@@ -1,5 +1,7 @@
 #include "lain/rigplan/serialize/rigplan.h"
 
+#include "strict.h"
+
 #include <lain/camera/serialize/board.h>	   // a board as a board specification document spells it
 #include <lain/camera/serialize/cameramodel.h> // ImageGeometry and Distortion as the camera-model document has them
 #include <lain/data/data.h>
@@ -634,34 +636,11 @@ namespace lain::rigplan
 		return plan;
 	}
 
-	// The read every document here shares: the version, then the parts read tolerantly, then written
-	// back and compared with what was stored, so anything the tolerant read passed over is a problem.
-	template <typename Doc>
-	static std::optional<Doc> readStrictly(const data::Value& document, const char* kind, std::uint32_t newest,
-										   std::vector<std::string>& problems)
-	{
-		problems = data::versionProblems(document, kind, newest);
-		if (!problems.empty())
-			return std::nullopt;
-		std::optional<Doc> parts = data::fromValue<Doc>(document);
-		if (!parts)
-		{
-			problems.push_back(string::format("the document is not a {}", kind));
-			return std::nullopt;
-		}
-		// Not fromValueStrict: the version is a document field outside the parts, so the comparison is
-		// against the whole document written back.
-		problems = data::shapeDifferences(document, data::versionedDocument(newest, data::toValue(*parts)));
-		if (!problems.empty())
-			return std::nullopt;
-		return parts;
-	}
-
 	RigPlanRead rigPlanFromValue(const data::Value& document)
 	{
 		RigPlanRead result;
 		const std::optional<RigPlanDoc> parts =
-			readStrictly<RigPlanDoc>(document, "rig-plan", kRigPlanDocumentVersion, result.problems);
+			detail::readStrictly<RigPlanDoc>(document, "rig-plan", kRigPlanDocumentVersion, result.problems);
 		if (!parts)
 			return result;
 		Conversion convert;
@@ -676,7 +655,7 @@ namespace lain::rigplan
 	{
 		CatalogueRead result;
 		const std::optional<SpecificationsDoc> parts =
-			readStrictly<SpecificationsDoc>(document, "specification-catalogue", kCatalogueDocumentVersion, result.problems);
+			detail::readStrictly<SpecificationsDoc>(document, "specification-catalogue", kCatalogueDocumentVersion, result.problems);
 		if (!parts)
 			return result;
 		Conversion convert;

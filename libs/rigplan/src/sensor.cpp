@@ -4,7 +4,6 @@
 #include <lain/image/color.h>
 #include <lain/image/imageview.h>
 #include <lain/image/transfercurve.h>
-#include <lain/task/task.h>
 
 #include <algorithm>
 #include <cmath>
@@ -110,54 +109,53 @@ namespace lain::rigplan
 		const bool noisy = noiseScale > 0;
 
 		const image::ConstImageView<image::ColorRGBAf> view = light.as<image::ColorRGBAf>();
-		task::range(std::ptrdiff_t{0}, std::ptrdiff_t(height),
-					[&](std::ptrdiff_t y)
+		for (int y = 0; y < height; ++y)
+		{
+			for (int x = 0; x < width; ++x)
+			{
+				const image::ColorRGBAf& pixel = view(x, y);
+				for (std::size_t c = 0; c < channels; ++c)
+				{
+					double value = 0;
+					if (grey)
 					{
-						for (int x = 0; x < width; ++x)
+						// Rec709 luminance, as image::luminance weighs it, taken in double here.
+						value = 0.2126 * double(pixel[0]);
+						value = value + 0.7152 * double(pixel[1]);
+						value = value + 0.0722 * double(pixel[2]);
+					}
+					else
+					{
+						value = double(pixel[int(c)]);
+					}
+
+					const std::size_t sample = (std::size_t(y) * std::size_t(width) + std::size_t(x)) * channels + c;
+					std::uint16_t adc = 0;
+					double electrons = value > 0 ? value * electronsPerUnit : 0.0;
+					if (electrons == std::numeric_limits<double>::infinity())
+					{
+						adc = std::uint16_t(adcMax); // saturated, past anything noise could move
+					}
+					else
+					{
+						if (noisy)
 						{
-							const image::ColorRGBAf& pixel = view(x, int(y));
-							for (std::size_t c = 0; c < channels; ++c)
-							{
-								double value = 0;
-								if (grey)
-								{
-									// Rec709 luminance, as image::luminance weighs it, taken in double here.
-									value = 0.2126 * double(pixel[0]);
-									value = value + 0.7152 * double(pixel[1]);
-									value = value + 0.0722 * double(pixel[2]);
-								}
-								else
-								{
-									value = double(pixel[int(c)]);
-								}
-
-								const std::size_t sample = (std::size_t(y) * std::size_t(width) + std::size_t(x)) * channels + c;
-								std::uint16_t adc = 0;
-								double electrons = value > 0 ? value * electronsPerUnit : 0.0;
-								if (electrons == std::numeric_limits<double>::infinity())
-								{
-									adc = std::uint16_t(adcMax); // saturated, past anything noise could move
-								}
-								else
-								{
-									if (noisy)
-									{
-										const double sigma = std::sqrt(electrons + readVariance);
-										const double z = standardNormal(seed, std::uint64_t(sample));
-										electrons = electrons + noiseScale * sigma * z;
-									}
-									const double level = std::floor(electrons * adcPerElectron + 0.5);
-									adc = std::uint16_t(std::clamp(level, 0.0, adcMax));
-								}
-
-								const std::uint16_t code = m_codes[adc];
-								if (deep)
-									reinterpret_cast<std::uint16_t*>(out.data())[sample] = code;
-								else
-									out.data()[sample] = std::uint8_t(code);
-							}
+							const double sigma = std::sqrt(electrons + readVariance);
+							const double z = standardNormal(seed, std::uint64_t(sample));
+							electrons = electrons + noiseScale * sigma * z;
 						}
-					});
+						const double level = std::floor(electrons * adcPerElectron + 0.5);
+						adc = std::uint16_t(std::clamp(level, 0.0, adcMax));
+					}
+
+					const std::uint16_t code = m_codes[adc];
+					if (deep)
+						reinterpret_cast<std::uint16_t*>(out.data())[sample] = code;
+					else
+						out.data()[sample] = std::uint8_t(code);
+				}
+			}
+		}
 		return out;
 	}
 } // namespace lain::rigplan

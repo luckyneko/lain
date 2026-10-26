@@ -109,6 +109,7 @@ jobs:
             linux_deps: true
             jobs: 4
             flowview: build/apps/flowview/flowview
+            rigplan: build/apps/rigplan/rigplan
 
           # Every optional dependency off, on the fastest runner.
           - name: Linux Release (video off)
@@ -120,6 +121,7 @@ jobs:
             linux_deps: true
             jobs: 4
             flowview: build/apps/flowview/flowview
+            rigplan: build/apps/rigplan/rigplan
 
           # OpenCV without Ceres, the one leg where `ceres` does not follow `camera` (above).
           - name: Linux Release (no refiner)
@@ -131,6 +133,7 @@ jobs:
             linux_deps: true
             jobs: 4
             flowview: build/apps/flowview/flowview
+            rigplan: build/apps/rigplan/rigplan
 
           - name: Linux Debug
             os: ubuntu-24.04
@@ -141,6 +144,7 @@ jobs:
             linux_deps: true
             jobs: 4
             flowview: build/apps/flowview/flowview
+            rigplan: build/apps/rigplan/rigplan
 
           - name: macOS Release
             os: macos-15
@@ -151,6 +155,7 @@ jobs:
             linux_deps: false
             jobs: 3
             flowview: build/apps/flowview/flowview
+            rigplan: build/apps/rigplan/rigplan
 
           # Visual Studio's generator is multi-config, so --config / -C carry the build type here
           # and CMAKE_BUILD_TYPE is ignored; both are passed so one command shape serves every leg.
@@ -164,6 +169,7 @@ jobs:
             linux_deps: false
             jobs: 4
             flowview: build/apps/flowview/Release/flowview.exe
+            rigplan: build/apps/rigplan/Release/rigplan.exe
 
     steps:
       # submodules: recursive is the one thing this workflow needs that archimedes' does not —
@@ -236,6 +242,14 @@ jobs:
           ${{ matrix.flowview }} --version
           ${{ matrix.flowview }} list
           ${{ matrix.flowview }} run
+
+      # The same question for rigplan, whose dynamic dependencies are its own list (the Vulkan runtime,
+      # OpenCV's DLLs for the board renderer). It renders nothing yet: no rig plan is committed until
+      # M15 slice 7, whose vertical renders one here.
+      - name: Smoke the rigplan binary
+        run: |
+          ${{ matrix.rigplan }} --version
+          ${{ matrix.rigplan }} render --help
 
       # An example document, run from a folder that is NOT the document's: its data paths are
       # stored relative to the document (ADR-0027), so this checks the shipped binary resolves them

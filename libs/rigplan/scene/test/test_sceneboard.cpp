@@ -4,6 +4,7 @@
 // moving board's frames share every other mesh and texture, so an update between them uploads none.
 
 #include "gpu.h"
+#include "standinboard.h"
 #include "testplan.h"
 
 #include <lain/camera/board/rendering.h>
@@ -19,43 +20,6 @@
 
 using namespace lain;
 using namespace lain::rigplan;
-
-// A board of the requested size, black squares inside a white margin, or nothing when asked to fail.
-class StandInBoard : public camera::board::Renderer
-{
-public:
-	static inline bool fail = false;
-
-	image::Image raster(const camera::board::Pattern& pattern, const camera::board::RenderRequest& request) const override
-	{
-		if (fail)
-			return {};
-		const camera::board::PatternParameters& p = pattern.parameters();
-		const int width = int(p.squaresX * request.pixelsPerSquare + 2 * request.marginPixels);
-		const int height = int(p.squaresY * request.pixelsPerSquare + 2 * request.marginPixels);
-		image::Image out(width, height, image::PixelFormat::Gray8, image::ColorSpace::sRGB);
-		const int margin = int(request.marginPixels);
-		for (int y = 0; y < height; ++y)
-		{
-			for (int x = 0; x < width; ++x)
-			{
-				const bool inside = x >= margin && x < width - margin && y >= margin && y < height - margin;
-				out.data()[std::size_t(y) * std::size_t(width) + std::size_t(x)] = inside ? 0 : 255;
-			}
-		}
-		return out;
-	}
-};
-
-static void registerStandIn()
-{
-	static const bool once = []
-	{
-		camera::board::rendererRegistry().registerType<StandInBoard>("stand-in");
-		return true;
-	}();
-	(void)once;
-}
 
 static RigPlan planWithBoard()
 {

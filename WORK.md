@@ -15019,7 +15019,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    which says plainly when noise defeats compression. Proves: the noise is identical on every
    machine (it is CPU-only); memory is bounded at 100 cameras (a low-resolution scale test).
    **Planned 2026-10-25 as five commits, 5a to 5e** (*Slice 5 planned* below); **5a to 5d built
-   2026-10-25**.
+   2026-10-25, 5e on 2026-10-26: slice 5 COMPLETE.**
 6. **Rig and model comparison** promoted to `lain::camera`; the `compareRigs` and `compareModels`
    nodes; `rigcompare.h` over them. Proves: M9's verticals change by zero numbers.
 7. **The vertical**: a committed example rig plan, written by a C++ builder as flowview's examples
@@ -16176,7 +16176,9 @@ all three off. Warning-clean, format-check clean.
     well;
   - then a table maps the ADC level to its output code.
 
-  Rows run on the process pool. The recording has no alpha and is tagged with its curve.
+  Rows run on the process pool. The recording has no alpha and is tagged with its curve. *(Changed in
+  5e: `record` is serial, since a capture records many frames at once on the pool and rows dispatched
+  inside one let a waiting worker steal a whole other frame. See 5e.)*
 - **Deviations from the plan:**
   - **The ADC depth and the output depth are separate.** The plan made the container the smallest
     depth that holds the ADC's. But an 8-bit linear ADC encoded as sRGB posterises the shadows
@@ -16203,7 +16205,8 @@ all three off. Warning-clean, format-check clean.
   - **Each channel draws its own noise.**
   - **Saturation**: light 2, 1e30 and infinity all record the top code.
   - **A grey sensor records luminance.**
-  - **The same bytes on one thread and on a pool of four.**
+  - **The same bytes on one thread and on a pool of four.** *(5e: eight recordings on pool workers
+    against one inline, now that `record` itself is serial.)*
   - **A whole recording's digest is pinned**, in RGB8 and in Gray16. Run on every CI leg, this is the
     cross-platform proof. *(Owed: the first CI run of these pins on Linux and Windows.)*
   - **Refusals**, and `check()` naming the sensor.
@@ -16389,6 +16392,133 @@ camera and Ceres on (+6), and **1391/1391** with all three off (+6). Warning-cle
     material;
   - textures reused by position instead of by pointer fail the new-assets case;
   - the scene rebuilding its surfaces every frame fails both of the plan's cases.
+
+#### Sub-slice 5e built (2026-10-26): the capture writer and `rigplan render` (**slice 5 COMPLETE**)
+
+`lain::rigplan::capture` (`libs/rigplan/capture`), `capture.json` in `rigplan::serialize`, and
+`apps/rigplan`. `ctest -j8` **1541/1541** Release with video, camera and Ceres on (+11), and
+**1402/1402** with all three off (+11). Warning-clean, format-check clean.
+
+- **`writeCapture(plan, device, CaptureOptions)`**, in order:
+  1. **It refuses before writing anything**:
+     - a folder that exists and is not empty;
+     - what `check()` refuses of the plan with the options applied (`capturedPlan`);
+     - a refused draw;
+     - an asset that will not load (a board with no renderer among them);
+     - an incomplete scene at any frame;
+     - a camera whose ray table cannot be built;
+     - a camera whose codec cannot hold what its sensor records, asked of the codec on a recording
+       of the camera's own format and tag;
+     - names a rig folder would hide (a leading `.`), or names that sort one way as folders and the
+       other as documents;
+     - no json writer.
+  2. **The truth is written next**: the nominal models, the realised models, the poses, the rig and
+     the board truth.
+  3. **Then it renders camera by camera.** Each frame's scene goes through one `GpuScene` by `update`.
+     Its light goes to a pool task (`task::async`) to be recorded, encoded and written, at most
+     `maxInFlight` at once (`task::waitUntil`). A failed write stops the rendering.
+  4. **`capture.json` is written last**, only when every frame was.
+
+  Frames are named `frame.<frame:0N>.<ext>` through `lain::string::Pattern` and `io::frameKey`, N being
+  the last frame's digits (at least four), since a folder of stills opens in name order.
+- **`capture.json`** (`rigplan/serialize/capture.h`) holds:
+  - the generator;
+  - the device's name and kind;
+  - `shutter: "Global"`;
+  - the rig plan as rendered, embedded as its own versioned document with its paths relative to the
+    capture folder;
+  - per camera, its output (with `lossy`) and a `CaptureRecord` whose imported model is the nominal
+    one.
+
+  It is read strictly. The strict read the three serialize files each had is now one private
+  `src/strict.h`.
+- **`estimateSize`**: per camera, a ceiling (uncompressed) and a floor (a flat half-scale picture at
+  the capture's noise, through the camera's own codec). It says when noise defeats compression.
+  `rigplan render` prints it before every capture, and `--estimate` prints it alone.
+- **`rigplan render <plan> --out <folder> [--seed --deviation --noise --in-flight --estimate]`**, with
+  `lain::app`'s `--device` and `--threads`. The executable is `rigplan`, so the library's target is
+  now `lain_rigplan` (its alias `lain::rigplan` is unchanged).
+- **Deviations, each measured or found:**
+  - **`Recorder::record` is serial** (it ran rows on the pool in 5a). A capture records many frames at
+    once on the pool, and rows dispatched inside one let a worker waiting on its own rows steal a
+    whole other frame. 1080p, 30 frames at noise 1, by frames in flight:
+
+    | in flight | rows on the pool | serial |
+    |---|---|---|
+    | 1 | 15.4 s | 15.3 s |
+    | 4 | 4.0 s | 4.1 s |
+    | 8 | 2.6 s | 2.5 s |
+    | 13 | 3.5 s | 1.9 s |
+    | 26 | 7.2 s | 1.8 s |
+
+  - **`maxInFlight` is optional, and unset is one a pool worker** (the plan said 4), since encoding is
+    the slow part: 4 took 4.1 s and 13 took 1.9 s.
+    - A frame lets go of its light (16 bytes a pixel) once recorded, so for most of its life it holds
+      the recording. Peak memory at 13 in flight fell from 862 MB to 566 MB.
+    - `--in-flight` is the knob, and it was not in the plan's flags.
+  - **The estimate tells a file's overhead from its cost a pixel**, measuring a tile and half of it.
+    Found by the first run: a 16-bit TIFF states its curve as a transfer function of 65536 codes, 128
+    kB in every file, and scaling a whole tile by pixel count multiplied that too. The ceiling
+    includes the overhead.
+  - **`writeCapture` takes the device**, not a renderer, so the manifest can name it.
+  - **Every camera's ray table is built once before writing**, to refuse what cannot be, and again
+    when its camera renders. Three 1080p tables cost 0.1 s.
+  - **`CaptureReport` gains** `refused`, `maxInFlight`, and the seconds spent capturing and waiting
+    for room, so a capture says whether the device or the pool is its bottleneck.
+  - **The stand-in board renderer** moved into `scene/test/standinboard.h`, shared with the capture
+    tests.
+- **Measured, 1080p, 3 cameras x 10 frames:**
+  - **On Metal**, a capture takes about 7 ms a camera-frame (0.2 s of 1.9 s), and writing is the
+    bottleneck. 30 frames are 79 MB at noise 1 and 23 MB at noise 0.
+  - **On the CPU device**, a capture takes about 260 ms a camera-frame and the writes hide entirely
+    behind it. The device's threads: 4 took 10.6 s, 7 (3d's half) 8.0 s, 10 took 6.2 s, 14 took
+    6.3 s. Giving the CPU device more of the cores during a capture would save about a fifth.
+    **Recorded in ADR-0028 for the repo owner; the split is unchanged.**
+  - **The scale case** (100 cameras of 16 x 12, 3 frames each, a write slowed to 20 ms): at most 4 in
+    flight, 4 reached, one ray table, and a peak RSS of 81 MB for the whole test process, both devices
+    included.
+- **The cases**, eight in `test-rigplan-capture` and three in `test-rigplan-serialize`:
+  - **end to end:** a three-camera plan in a room, with a board, two RGB 8-bit sRGB PNG cameras and a
+    grey 16-bit linear TIFF pinhole. It checks:
+    - the exact file list;
+    - each frame's format and tag;
+    - `rig/` opening through `io::sequence::open`;
+    - every truth document read back equal to the realisation;
+    - the manifest read back, its imported model the nominal one;
+  - **the noise:** no pool against a pool of four gives identical decoded bytes, and another seed
+    changes every frame;
+  - **identity:** reversing the plan's cameras leaves every camera's frames identical to the byte;
+  - **the scale case;**
+  - **a write that fails** partway leaves the truth and no manifest;
+  - **eight refusals**, each with nothing written;
+  - **the estimate:** its ceiling, its floor without noise, and a shallow well's noise flagged;
+  - **the floor measured on a tile** is within 2% of a whole 1024 x 576 frame's encoded size, PNG and
+    TIFF;
+  - **the manifest document**: a round trip, its paths relative to the capture folder, and four
+    refused hand edits.
+- **Through the real binary**, from another folder:
+  - `render --estimate` writes nothing and exits 0;
+  - a render writes the 19 files and exits 0;
+  - the same seed gives identical frames, another seed other frames, and `--threads 0` the same rig
+    folder;
+  - a non-empty `--out` is refused with exit 1;
+  - a relative `--out` is written where it names. Found reviewing the writer: it now works in the
+    absolute folder from the start, since the manifest's rig plan is written relative to it.
+- **Six sabotages, all caught:**
+  - no back-pressure fails the scale case;
+  - `capture.json` written first fails the failing-write case;
+  - a camera's frames written into another's folder fails three cases;
+  - the noise keyed by list position fails the identity case, and nothing else could see it;
+  - the floor scaled from the whole tile fails the tile case, on its TIFF camera;
+  - the naming rule comparing folders with folders fails its refusal.
+- **Found:** M9's rig binder (`apps/flowview/src/camerafiles.cpp`) pairs footage with models by sorted
+  position, so names like `a` and `a-b` would pair wrongly. The writer refuses them, and the binder
+  pairing by name is owed to M9.
+- **`application.h`'s trigger fired**: rigplan is the second app. Its `main` and flowview's differ only
+  in the delegate and the `AppInfo`, so a macro writing `main` still saves nothing, and the comment
+  says so.
+- **Owed:** the first CI run of `feature/M15` since slice 5. It proves 5a's pinned digests on Linux and
+  Windows, and builds `apps/rigplan` there.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
@@ -16629,17 +16759,19 @@ row here**. A row is cheap to delete and expensive to leave.
   (0028, 0029). **Slices 0 to 3 built 2026-10-22 to 10-24** (`lain::editor`; `lain::rigplan` and its
   documents; `io::mesh` and the OBJ plugin; `lain::render` on the CPU device, CI green on every
   platform). **Slice 4 built 2026-10-24** (the capture pass; the ADR-0028 claim holds). **Slice 5
-  planned 2026-10-25 as five commits; 5a to 5d built** (the sensor model, movers, ground truth,
-  `Renderer::update`). The first CI run of 5a's pinned
-  output tables and recordings on Linux and Windows is owed. Slice 0's gui-mode check of the unsaved-changes
-  modal is owed. Ten slices, 0 to 9, on `feature/M15`; the build order and every exclusion are in
+  built 2026-10-25 to 10-26** (the sensor model, movers, ground truth, `Renderer::update`, and the
+  capture writer with `rigplan render`). The first CI run of 5a's pinned output tables and recordings
+  on Linux and Windows is owed. Slice 0's gui-mode check of the unsaved-changes modal is owed. Two
+  findings of 5e wait on decisions: M9's rig binder pairs footage with models by sorted position (the
+  writer refuses names that sort differently as folders and as documents; the binder fix is M9's), and
+  the CPU device's share of the cores during a capture (measured, for the repo owner). Ten slices, 0 to 9, on `feature/M15`; the build order and every exclusion are in
   M15's own sections. *(Milestone 15.)*
 - **archimedes' CPU device**, which M15 renders its CI captures on: **adopted by M15 slice 3d
   (2026-10-24)**. The PRs merged, lain's pin moved, and the licence notice, the thread split and
   `--device` landed. *(M15 §Sub-slice 3d built.)*
 
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not**, and M15 is under
-way (slices 0 to 3 built).
+way (slices 0 to 5 built).
 
 - **Example documents** — all four commits built. Owed: a gui-mode eyeball of every example (the
   primary purpose). The smoke step has run in CI since it landed, and was green on every leg in

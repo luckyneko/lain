@@ -9,6 +9,7 @@
 #include <lain/image/transfercurve.h>
 #include <lain/rigplan/sensor.h>
 #include <lain/rigplan/specification.h>
+#include <lain/task/task.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -326,18 +327,23 @@ TEST_CASE("a grey sensor records luminance", "[rigplan][sensor]")
 	REQUIRE(codeAt(recorded, 2) == codes[std::size_t(std::floor(0.0722 * 4095 + 0.5))]);
 }
 
-TEST_CASE("a recording is the same however many threads make it", "[rigplan][sensor]")
+TEST_CASE("a recording is the same on whatever thread makes it", "[rigplan][sensor]")
 {
+	// A capture records its frames on pool workers, in no particular order (lain::rigplan::capture).
 	const Recorder recorder = recorderOf(SensorModel{});
 	const lain::image::Image light = patternLight(333, 97);
 	const lain::image::Image alone = recorder.record(light, NoiseKey{7, kCamera, 3}, 1.0);
-	lain::image::Image pooled;
+	std::vector<lain::image::Image> pooled(8);
 	{
 		lain::testing::ThreadPool pool(4);
-		pooled = recorder.record(light, NoiseKey{7, kCamera, 3}, 1.0);
+		lain::task::range(std::ptrdiff_t{0}, std::ptrdiff_t(pooled.size()), [&](std::ptrdiff_t i)
+						  { pooled[std::size_t(i)] = recorder.record(light, NoiseKey{7, kCamera, 3}, 1.0); });
 	}
-	REQUIRE(alone.byteSize() == pooled.byteSize());
-	REQUIRE(std::memcmp(alone.data(), pooled.data(), alone.byteSize()) == 0);
+	for (const lain::image::Image& recorded : pooled)
+	{
+		REQUIRE(alone.byteSize() == recorded.byteSize());
+		REQUIRE(std::memcmp(alone.data(), recorded.data(), alone.byteSize()) == 0);
+	}
 }
 
 TEST_CASE("a whole recording is pinned", "[rigplan][sensor]")

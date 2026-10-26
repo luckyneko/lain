@@ -120,6 +120,13 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
   on 14 logical cores: SwiftShader adds 15 threads beside lain's 13 workers when uncapped, and 3
   with a cap of 2. `lain::app` passes archimedes' `RuntimeConfig::cpuDeviceThreads` when it sets
   up Vulkan, after `--threads` is parsed; how the cores are split is M15's decision.
+  - *Measured 2026-10-26 (M15 slice 5e), 1080p, 30 camera-frames, 14 logical cores (10 performance):*
+    on the CPU device a capture takes about 260 ms a camera-frame, and the pool's recording and
+    encoding hide entirely behind it, so the pool is idle for most of a capture. The device's own
+    threads: 4 took 10.6 s, 7 (the half 3d chose) 8.0 s, 10 took 6.2 s, 14 took 6.3 s. On Metal a
+    capture takes about 7 ms and encoding is the bottleneck instead. So giving the CPU device more
+    of the cores during a capture would save about a fifth; the split is unchanged, for the repo
+    owner to decide.
 - **A capture keeps to Vulkan's guaranteed limits** *(added 2026-10-24, decided with the repo owner)*.
   archimedes exposes no device limits, so a tile is at most 4096 a side and a band of the ray table
   at most 2^27 bytes. A capture is then tiled and banded the same way on every device, and only

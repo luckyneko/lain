@@ -67,8 +67,14 @@ namespace lain::rigplan
 		//   code = outputCodes()[adc]
 		// A Grey sensor's sample is the Rec709 luminance of the pixel's light, a Rgb sensor's each colour.
 		// Sample i of a frame is channel c of pixel (x, y) at i = (y * width + x) * channels + c. The
-		// recording is tagged with the output curve and has no alpha. Rows run on the process pool, and a
-		// draw depends only on its sample, so the codes are the same however many threads record them.
+		// recording is tagged with the output curve and has no alpha. A draw depends only on its sample, so
+		// the codes are the same on whatever thread records them.
+		//
+		// SERIAL, on purpose: the unit of parallelism is the frame. A capture records many frames at once
+		// on the process pool (lain::rigplan::capture), and rows dispatched from inside one of them let a
+		// worker waiting on its own rows steal a whole other frame and hold it. Measured (M15 slice 5e,
+		// 1080p at noise 1): 26 frames in flight took 7.2 s with rows on the pool and 1.8 s without.
+		//
 		// An invalid image when `light` is not valid RGBA32F linear light.
 		image::Image record(const image::Image& light, const NoiseKey& key, double noiseScale) const;
 
