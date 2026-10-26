@@ -26,10 +26,12 @@ add_library(camera-flow STATIC
 	src/nextattemptnode.cpp
 	src/calibrationattemptsnode.cpp
 	src/cameramodelnode.cpp
+	src/comparemodelsnode.cpp
 	src/rigregistrationnode.cpp
 	src/registercamerasnode.cpp
 	src/registercamerastargetlessnode.cpp
 	src/registeredrignode.cpp
+	src/comparerigsnode.cpp
 	src/register.cpp
 )
 add_library(lain::camera::flow ALIAS camera-flow)

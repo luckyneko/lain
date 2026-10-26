@@ -9,6 +9,8 @@
 #include <lain/camera/flow/boardspecificationnode.h>
 #include <lain/camera/flow/calibratecameranode.h>
 #include <lain/camera/flow/cameramodelnode.h>
+#include <lain/camera/flow/comparemodelsnode.h>
+#include <lain/camera/flow/comparerigsnode.h>
 #include <lain/camera/flow/detectboardnode.h>
 #include <lain/camera/flow/registeredrignode.h>
 #include <lain/camera/flow/renderboardnode.h>
@@ -20,6 +22,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include <cmath>
+#include <cstdint>
 #include <string>
 #include <variant>
 
@@ -479,5 +483,94 @@ TEST_CASE("registeredRig passes a registration's rig on, and suppresses without 
 		bind(evaluation, reportPin, failed);
 		flow::SerialScheduler{}.run(graph, evaluation);
 		CHECK(evaluation.value(output(graph, rig)).empty());
+	}
+}
+
+TEST_CASE("compareRigs scores a found rig against an expected one, and fails one it cannot compare", "[camera][flow]")
+{
+	namespace registration = camera::registration;
+	flow::Graph graph;
+	const flow::NodeId compare = graph.add<camera::CompareRigsNode>();
+	const flow::PortAddress expectedPin = feed<registration::RegisteredRig>(graph, "expected", compare, 0);
+	const flow::PortAddress foundPin = feed<registration::RegisteredRig>(graph, "found", compare, 1);
+
+	// The truth relative to cam00; a registration relative to cam01, cam00 turned 2 mrad. The node
+	// derives the truth again for cam01 and puts the error on cam00 alone.
+	const math::RigidTransformd cam01{math::angleAxis(0.25, math::Vec3d{0, 1, 0}), math::Vec3d{0.6, 0, 0.1}};
+	registration::RegisteredRig expected;
+	expected.reference = camera::capture::CameraIdentity{"cam00"};
+	expected.scale = {registration::Scale::Metric, "the truth"};
+	expected.cameras = {{camera::capture::CameraIdentity{"cam00"}, math::RigidTransformd{}},
+						{camera::capture::CameraIdentity{"cam01"}, cam01}};
+	registration::RegisteredRig found;
+	found.reference = camera::capture::CameraIdentity{"cam01"};
+	found.scale = {registration::Scale::Metric, "a board"};
+	found.cameras = {{camera::capture::CameraIdentity{"cam00"},
+					  cam01.inverse() * math::RigidTransformd{math::angleAxis(0.002, math::Vec3d{1, 0, 0}), {}}},
+					 {camera::capture::CameraIdentity{"cam01"}, math::RigidTransformd{}}};
+
+	flow::Evaluation evaluation{graph};
+	bind(evaluation, expectedPin, expected);
+	bind(evaluation, foundPin, found);
+	flow::SerialScheduler{}.run(graph, evaluation);
+	const flow::PortValue& out = evaluation.value(output(graph, compare));
+	REQUIRE(out.holds<camera::RigComparison>());
+	const camera::RigComparison& comparison = out.get<camera::RigComparison>();
+	CHECK(comparison.derivedAgain);
+	CHECK(comparison.worstRotation()->camera.value == "cam00");
+	CHECK(std::abs(comparison.worstRotation()->rotation - 0.002) < 1e-9);
+	// The port describes the comparison in one line, which is what `run` writes for it.
+	CHECK(evaluation.describe(output(graph, compare)).rfind("2 cameras relative to cam01", 0) == 0);
+
+	SECTION("a found rig relative to a camera the expected one lacks fails, naming it")
+	{
+		registration::RegisteredRig elsewhere = found;
+		elsewhere.reference = camera::capture::CameraIdentity{"cam02"};
+		elsewhere.cameras[1].camera = camera::capture::CameraIdentity{"cam02"};
+		bind(evaluation, foundPin, elsewhere);
+		flow::SerialScheduler{}.run(graph, evaluation);
+		CHECK(evaluation.value(output(graph, compare)).empty());
+		const std::string* failure = evaluation.failure(compare);
+		REQUIRE(failure != nullptr);
+		CHECK(failure->find("relative to cam02") != std::string::npos);
+	}
+}
+
+TEST_CASE("compareModels scores a found model against an expected one, and fails one of another image",
+		  "[camera][flow]")
+{
+	flow::Graph graph;
+	const flow::NodeId compare = graph.add<camera::CompareModelsNode>();
+	const flow::PortAddress expectedPin = feed<CameraModel>(graph, "expected", compare, 0);
+	const flow::PortAddress foundPin = feed<CameraModel>(graph, "found", compare, 1);
+
+	const auto modelOf = [](std::uint32_t width, std::uint32_t height, double f)
+	{
+		camera::CameraModelParameters p;
+		p.image = {width, height};
+		p.intrinsics = {f, f, 0.5 * width - 0.5, 0.5 * height - 0.5};
+		p.distortion = camera::NoDistortion{};
+		camera::ModelResult result = CameraModel::create(p);
+		REQUIRE(result.model.has_value());
+		return *result.model;
+	};
+
+	flow::Evaluation evaluation{graph};
+	bind(evaluation, expectedPin, modelOf(640, 480, 500.0));
+	bind(evaluation, foundPin, modelOf(640, 480, 505.0));
+	flow::SerialScheduler{}.run(graph, evaluation);
+	const flow::PortValue& out = evaluation.value(output(graph, compare));
+	REQUIRE(out.holds<camera::ModelComparison>());
+	CHECK(std::abs(out.get<camera::ModelComparison>().focalDifference - 0.01) < 1e-12);
+	CHECK(evaluation.describe(output(graph, compare)).rfind("mean ", 0) == 0);
+
+	SECTION("a model of another image fails, naming both")
+	{
+		bind(evaluation, foundPin, modelOf(320, 240, 250.0));
+		flow::SerialScheduler{}.run(graph, evaluation);
+		CHECK(evaluation.value(output(graph, compare)).empty());
+		const std::string* failure = evaluation.failure(compare);
+		REQUIRE(failure != nullptr);
+		CHECK(failure->find("320x240") != std::string::npos);
 	}
 }

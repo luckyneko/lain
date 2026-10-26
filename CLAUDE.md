@@ -1400,6 +1400,25 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-26 — M15 slice 6, sub-slice 6c built: `compareRigs` and `compareModels` (**slice 6 COMPLETE**)
+
+The two comparisons as `camera::flow` nodes, with `compare-rigs.json` and `compare-models.json`.
+`ctest -j8` **1555/1555** with video, camera and Ceres on and **1416/1416** with all three off (+2
+each); warning-clean, format-check clean. **gui-mode NOT eyeballed**: added to the camera examples'
+eyeball in the Outstanding index. Full notes in WORK.md's *Sub-slice 6c built*.
+
+- **A refused comparison fails the node with its reason**, so `run` logs it and writes nothing; a
+  comparison's port and `run`'s output are its one line.
+- **Offered beside what makes their inputs** (`canUseCalibration`, `canUseRegistration`), not always:
+  three tests take an empty camera menu to mean no backend. Both register in every build.
+- **`compareRigs` is the first consumer of a registered rig**, discharging M9's deferred item.
+- **The camera footage now carries its truths** (`board/truth.json`, each rig's `truth.json`), an
+  addition, so both documents can be run on drawn footage; its README gives the commands.
+- **Through the real binary**: the board rig 0.36 mrad and 0.08 mm from its truth; the targetless rig,
+  relative to cam1 against a truth relative to cam0, derived again and scaled by 4.18 onto metres; the
+  board camera's model 0.38 px mean, 0.81 px worst. Both refusals fail the node, naming why.
+- **Two sabotages, both caught.**
+
 ### Update 2026-10-26 — M15 slice 6, sub-slice 6b built: the tests compare through the library
 
 The rig and model comparisons the tests made by hand go through `camera::compareRigs` and

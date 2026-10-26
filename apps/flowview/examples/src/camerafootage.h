@@ -54,6 +54,8 @@ namespace flowview::examples::footage
 
 	// Everything above, for a person to bind by hand, under `folder`: board/footage (24 frames),
 	// moving/footage (40), board-rig (24 frames a camera) and textured-rig, with a README.txt saying
-	// which example each is for and the command that runs it.
+	// which example each is for and the command that runs it. Beside them, what each was drawn with, for
+	// compare-models.json and compare-rigs.json to score a result against: board/truth.json (the board
+	// camera's model) and each rig's truth.json (its poses, relative to cam0).
 	void writeAll(const std::filesystem::path& folder);
 } // namespace flowview::examples::footage

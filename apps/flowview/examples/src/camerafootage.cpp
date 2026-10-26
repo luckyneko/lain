@@ -6,6 +6,7 @@
 #include <lain/camera/board/pattern.h>
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/serialize/cameramodel.h>
+#include <lain/camera/serialize/registeredrig.h>
 #include <lain/core/length.h>
 #include <lain/core/uri.h>
 #include <lain/image/image.h>
@@ -203,6 +204,23 @@ namespace flowview::examples::footage
 		}
 	}
 
+	// The rig three cameras were drawn from, at `worldFromCamera`, as the rig document a registration
+	// of them is scored against (compare-rigs.json): relative to cam0, the identity exactly, metric.
+	static void saveTruthRig(const fs::path& file, const std::vector<math::RigidTransformd>& worldFromCamera)
+	{
+		const math::RigidTransformd cam0FromWorld = worldFromCamera.front().inverse();
+		camera::registration::RegisteredRig rig;
+		rig.reference = camera::capture::CameraIdentity{"cam0"};
+		rig.scale = {camera::registration::Scale::Metric, "the poses the footage was drawn from"};
+		for (std::size_t c = 0; c < worldFromCamera.size(); ++c)
+		{
+			rig.cameras.push_back({camera::capture::CameraIdentity{"cam" + std::to_string(c)},
+								   c == 0 ? math::RigidTransformd{} : cam0FromWorld * worldFromCamera[c]});
+		}
+		if (!io::data::save(core::Uri::fromPath(file), camera::registration::registeredRigToValue(rig)))
+			fail("could not write " + file.string());
+	}
+
 	void writeAll(const fs::path& folder)
 	{
 		writeBoardFootage(folder / "board", 24);
@@ -210,24 +228,38 @@ namespace flowview::examples::footage
 		writeBoardRig(folder / "board-rig", 24, true);
 		writeTexturedRig(folder / "textured-rig", true);
 
+		// What each was drawn with, for the comparison examples to score a result against: the board
+		// camera's model, and each rig's poses.
+		saveModel(folder / "board" / "truth.json", boardCameraModel());
+		saveTruthRig(folder / "board-rig" / "truth.json", {boardRigCamera(0), boardRigCamera(1), boardRigCamera(2)});
+		saveTruthRig(folder / "textured-rig" / "truth.json",
+					 {texturedRigCamera(0), texturedRigCamera(1), texturedRigCamera(2)});
+
 		std::ofstream readme(folder / "README.txt");
 		readme << "Camera footage for apps/flowview/examples, drawn by flowview-examples --camera-footage.\n"
 				  "Run from this folder, with EX standing for the examples folder; or open the example in\n"
 				  "flowview and bind the same folders in the Interface pane.\n\n"
-				  "board/footage         one camera, a 7 x 5 board of 24 mm squares, 24 frames\n"
+				  "board/footage         one camera, a 7 x 5 board of 24 mm squares, 24 frames; board/truth.json its model\n"
 				  "  flowview run -g EX/calibrate.json --footage board/footage --report report.txt --model model.json\n"
+				  "  flowview run -g EX/compare-models.json --expected board/truth.json --found model.json\n"
+				  "      --comparison comparison.txt\n"
 				  "  flowview run -g EX/calibrate-fallback.json --footage board/footage --method board-then-targetless\n"
 				  "      --attempts attempts.txt --model model.json\n\n"
 				  "moving/footage        one camera moving round a textured scene, no board, 40 frames\n"
 				  "  flowview run -g EX/calibrate-fallback.json --footage moving/footage --method board-then-targetless\n"
 				  "      --attempts attempts.txt --model model.json\n\n"
-				  "board-rig/            three cameras watching one board, 24 frames each, and their models\n"
+				  "board-rig/            three cameras watching one board, 24 frames each, their models, and truth.json\n"
+				  "                      the rig they were drawn from\n"
 				  "  flowview run -g EX/register.json --footage board-rig/rig --models board-rig/models\n"
 				  "      --report report.txt --rig rig.json\n"
-				  "  flowview run -g EX/calibrate-and-register.json --footage board-rig/rig --report report.txt --rig rig.json\n\n"
-				  "textured-rig/         three fixed cameras round a textured scene, and their models\n"
+				  "  flowview run -g EX/calibrate-and-register.json --footage board-rig/rig --report report.txt --rig rig.json\n"
+				  "  flowview run -g EX/compare-rigs.json --expected board-rig/truth.json --found rig.json\n"
+				  "      --comparison comparison.txt\n\n"
+				  "textured-rig/         three fixed cameras round a textured scene, their models, and truth.json\n"
 				  "  flowview run -g EX/register-targetless.json --footage textured-rig/rig --models textured-rig/models\n"
-				  "      --report report.txt --rig rig.json\n";
+				  "      --report report.txt --rig rig.json\n"
+				  "  flowview run -g EX/compare-rigs.json --expected textured-rig/truth.json --found rig.json\n"
+				  "      --comparison comparison.txt\n";
 		if (!readme)
 			fail("could not write " + (folder / "README.txt").string());
 	}

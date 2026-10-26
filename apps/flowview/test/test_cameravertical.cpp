@@ -397,6 +397,34 @@ TEST_CASE("run registers a rig from a folder of footage and a folder of models",
 	CHECK(readText(elsewhere / "report.txt") == report);
 	CHECK(readText(elsewhere / "rig.json") == readText(rigFile));
 
+	// The rig scored against its truth through compare-rigs.json, as a synthetic capture's is: the truth
+	// written as a rig document relative to cam2, another camera than the registration chose, so the
+	// comparison derives it again for cam0. What `run` writes is the comparison's line, the same as one
+	// made here from the same two documents, and within the bounds above.
+	const fs::path truthFile = dir / "truth.json";
+	REQUIRE(io::data::save(core::Uri::fromPath(truthFile),
+						   camera::registration::registeredRigToValue(camera::testing::truthRig(
+							   {camera::capture::CameraIdentity{"cam0"}, camera::capture::CameraIdentity{"cam1"},
+								camera::capture::CameraIdentity{"cam2"}},
+							   {cameraFootage::boardRigCamera(0), cameraFootage::boardRigCamera(1), cameraFootage::boardRigCamera(2)},
+							   camera::capture::CameraIdentity{"cam2"}))));
+	flowview::RunOptions scoring;
+	scoring.graphPath = exampleDocument("compare-rigs").string();
+	const fs::path comparisonFile = dir / "comparison.txt";
+	scoring.bindings = {"--expected", truthFile.string(), "--found", rigFile.string(), "--comparison",
+						comparisonFile.string()};
+	REQUIRE(flowview::runGraph(scoring, factory, binders) == 0);
+	const std::optional<camera::registration::RegisteredRig> truth = readRig(truthFile);
+	REQUIRE(truth.has_value());
+	const camera::RigComparison scored = camera::compareRigs(*truth, *rig);
+	INFO("scored: " << scored.toString());
+	REQUIRE(scored.compared());
+	CHECK(scored.derivedAgain);
+	CHECK(readText(comparisonFile) == scored.toString() + "\n");
+	CHECK(std::abs(scored.scale - 1.0) < 0.005);
+	CHECK(scored.worstRotation()->rotation < 0.002);
+	CHECK(scored.worstCentre()->centre < 0.001);
+
 	SECTION("the rig file binds back")
 	{
 		flowview::RunOptions copy;

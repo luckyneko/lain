@@ -14918,7 +14918,7 @@ clean. `flowview --licenses` prints 25 notices (48.6 KB) on macOS arm64.
   `third-party/` ships; MoltenVK's compiled-in SPIRV-Cross has no licence text to read; and nothing
   was built on Linux or Windows (MSVC's literal limit included), so CI's first run is owed.
 
-## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 5 built, 6 under way)
+## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 6 built)
 
 An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
 and lights, a board waved through) that renders **synthetic captures**: footage in the shape M9
@@ -15022,8 +15022,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    2026-10-25, 5e on 2026-10-26: slice 5 COMPLETE.**
 6. **Rig and model comparison** promoted to `lain::camera`; the `compareRigs` and `compareModels`
    nodes; `rigcompare.h` over them. Proves: M9's verticals change by zero numbers.
-   **Planned 2026-10-26 as three commits, 6a to 6c** (*Slice 6 planned* below); **6a and 6b built
-   2026-10-26.** *(Amended while planning: model comparison's grid now reaches the image's edges, so
+   **Planned 2026-10-26 as three commits, 6a to 6c** (*Slice 6 planned* below); **all three built
+   2026-10-26, slice 6 COMPLETE.** *(Amended while planning: model comparison's grid now reaches the image's edges, so
    the zero-numbers claim is the rig verticals'; the model numbers are re-measured in 6b.)*
 7. **The vertical**: a committed example rig plan, written by a C++ builder as flowview's examples
    are (a room with procedural walls, three poles of two cameras, a board mover), through
@@ -16723,6 +16723,53 @@ all three off, both unchanged (no case added). Warning-clean, format-check clean
   the 24-frame noise case's 0.374 against 0.384). The grid did not move them; they read like another
   platform's or an earlier commit's.
 
+#### Sub-slice 6c built (2026-10-26): the nodes and their documents (**slice 6 COMPLETE**)
+
+`compareRigs` and `compareModels` in `camera::flow`, their example documents, and the camera footage's
+truths. `ctest -j8` **1555/1555** Release with video, camera and Ceres on (+2), and **1416/1416** with
+all three off (+2). Warning-clean, format-check clean. **gui-mode NOT eyeballed**: added
+to the camera examples' eyeball (Outstanding index, M9's item 3).
+
+- **The nodes** (`comparerigsnode.h`, `comparemodelsnode.h`): `expected` and `found` in, `comparison`
+  out. A comparison the library refuses fails the node with its reason (`NodeEvaluation::fail`), so
+  the canvas marks it Failed and `run` logs why, rather than passing on a comparison that says nothing.
+  A comparison's port describes it in its one line, which is also what `run` writes for it.
+- **Offered beside what makes what they compare**: `compareModels` where a calibration can run
+  (`canUseCalibration`), `compareRigs` where a registration can (`canUseRegistration`), each listed
+  right after the node that makes its input. Neither needs a backend, but an always-true row would make
+  a no-backend build's camera menu non-empty, which three tests take to mean a backend is present. Both
+  register in every build, as every camera kind does. `ModelComparison` and `RigComparison` are port
+  types.
+- **The first consumer of a registered rig**, which discharges M9's deferred item.
+- **flowview**: the catalog's expectations and two port colours (the reports' family). Node colour,
+  menu, binders and `run`'s output needed nothing: a kind is coloured from `cameraNodeKeys()`, both
+  input types already bind from a document, and an unrecognised output is written as its description.
+- **`compare-rigs.json` and `compare-models.json`**, flagged `needsInputs` and not `needsCamera`, since
+  neither needs a backend to run. Regenerating the examples changed no other file.
+- **The camera footage gains its truths** (`flowview-examples --camera-footage`), an addition to the
+  plan: `board/truth.json` is the board camera's model, and each rig's `truth.json` its poses relative
+  to cam0, with the comparison commands in its README. Without them the two documents had nothing
+  drawn to score against. The verticals' own footage is unchanged: only `writeAll` writes them.
+- **The cli vertical**: the board rig registered, its truth written relative to cam2, another camera
+  than the registration chose, and `compare-rigs.json` run through `runGraph`. What it writes is the
+  line of the comparison made in the test from the same two documents, and within the rig vertical's
+  bounds.
+- **Through the real binary**, from another folder, on the footage's truths:
+  - the board rig, 0.355 mrad and 0.080 mm from its truth at a scale of 0.99935;
+  - the rig calibrated and registered in one graph against the one registered with true models,
+    0.73 mrad and 0.23 mm apart;
+  - the targetless rig, relative to cam1 against a truth relative to cam0, so derived again, scaled by
+    4.18 onto metres, 0.36 mrad and 1.1 mm out;
+  - the board camera's calibrated model against its truth: mean 0.38 px, worst 0.81 px at the
+    bottom-right corner, focal 0.14%;
+  - a model of another image and a rig relative to a camera the truth lacks each fail the node,
+    naming why, write nothing, and exit 0, as any node failure under `run` does.
+- **Two sabotages, both caught:**
+  - the node comparing its inputs the other way round fails the node case (the worst camera and the
+    reference) and the cli vertical, whose written line then names cam2;
+  - the `compareRigs` row dropped from the kinds table fails the kinds case, the catalog's and the rig
+    vertical, whose document then loads without its node.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -16912,7 +16959,10 @@ row here**. A row is cheap to delete and expensive to leave.
      - **gui-mode eyeball of the camera examples** (*Camera footage, examples and the composition*):
        `calibrate`, `register`, `register-targetless` and `calibrate-and-register` opened, their footage
        bound from `build/camera-footage`, and the map's elements stepped through in
-       `calibrate-and-register`.
+       `calibrate-and-register`. With them, M15 slice 6's `compare-models` and `compare-rigs` opened
+       and bound to the footage's `truth.json` files and a registration's rig, and the two kinds on
+       the Camera menu with their ports coloured. A truth rig binds from the cli only: no gui editor
+       for a `RegisteredRig` input exists (M15 *Slice 6 planned*).
   4. **Waiting on real footage**, the triggers sub-slices 7 to 9 carried forward (sub-slice 9's
      notes):
      - rows per descriptor on real footage, which also settles the feature cap above;
@@ -16944,7 +16994,8 @@ row here**. A row is cheap to delete and expensive to leave.
        takes one, so a bound rig can only be passed through. Trigger: the first consumer, such as
        world-frame alignment (excluded from M9) or a registration seeded from a prior rig (*After slice
        4: the registered rig*).
-       **Planned:** M15 slice 6's `compareRigs` is that first consumer (Milestone 15).
+       **Discharged 2026-10-26** by M15 slice 6's `compareRigs`, which scores one against an expected
+       rig (`compare-rigs.json`).
      - **A `loadCameraModel` node** (a path in, a `CameraModel` out, as `loadImage` is): the first
        document that must name its own model file, so it runs with no binding. The gui binds one from
        a file instead (*The gui binds and saves camera values*).
@@ -16966,8 +17017,8 @@ row here**. A row is cheap to delete and expensive to leave.
   capture writer with `rigplan render`). CI's first run since slice 5 found three things, each fixed:
   the 16-bit sRGB output table differed by platform (it is now decided without libm), a test's angle,
   and `near`/`far` against `<windows.h>`. The fixes are green on all eight jobs (run 40265665844).
-  **Slice 6 planned 2026-10-26 as 6a to 6c; 6a and 6b built** (`camera::compareModels` /
-  `compareRigs`, and the tests comparing through them).
+  **Slice 6 built 2026-10-26** (`camera::compareModels` / `compareRigs`, the tests comparing through
+  them, the two nodes and their example documents).
   Slice 0's gui-mode check of the unsaved-changes modal is owed. Two
   findings of 5e wait on decisions: M9's rig binder pairs footage with models by sorted position (the
   writer refuses names that sort differently as folders and as documents; the binder fix is M9's), and
@@ -16978,7 +17029,7 @@ row here**. A row is cheap to delete and expensive to leave.
   `--device` landed. *(M15 §Sub-slice 3d built.)*
 
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not**, and M15 is under
-way (slices 0 to 5 built, slice 6's 6a and 6b).
+way (slices 0 to 6 built).
 
 - **Example documents** — all four commits built. Owed: a gui-mode eyeball of every example (the
   primary purpose). The smoke step has run in CI since it landed, and was green on every leg in
