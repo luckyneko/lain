@@ -324,3 +324,26 @@ TEST_CASE("a viewport refuses what it cannot draw, and says why", "[render][gpu]
 		CHECK(refused.size() == 1);
 	CHECK_FALSE(viewport.read(0).valid()); // nothing was drawn
 }
+
+TEST_CASE("a viewport draws a scene as an update left it", "[render][gpu]")
+{
+	REQUIRE_RENDERER(renderer);
+	Viewport viewport(renderer);
+
+	const View view = testing::view(64, 64, 64, 31.5, 31.5);
+	const Scene red = wall({1.0f, 0.0f, 0.0f});
+	GpuScene scene = uploaded(renderer, red);
+	submit(*device, scene, {{&viewport, 0, &view, {}}});
+	CHECK(pixel(viewport.read(0), 32, 32)[0] == 255);
+
+	// The same mesh, another material: the viewport's sets for the old one must not survive the update.
+	Scene green = red;
+	green.materials[0].diffuse = {0.0f, 1.0f, 0.0f};
+	const UpdateResult updated = renderer.update(scene, green);
+	REQUIRE(updated.problems.empty());
+	CHECK(updated.meshesUploaded == 0);
+	submit(*device, scene, {{&viewport, 0, &view, {}}});
+	const std::array<int, 4> now = pixel(viewport.read(0), 32, 32);
+	CHECK(now[0] == 0);
+	CHECK(now[1] == 255);
+}

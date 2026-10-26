@@ -111,6 +111,29 @@ namespace lain::rigplan
 		return {surfaceSeed(texture.seed, surface.identity), texture.cell, density, texels(surface.width), texels(surface.height)};
 	}
 
+	// Where a surface's material puts its texture at (s, t), metres from its corner along across and up:
+	// a picture once every tile, upright from the side the surface faces; a procedural surface its own
+	// bake, covering it from its corner, so texel (i, j) is proceduralGrey at ((i + 0.5) / d, (j + 0.5) / d)
+	// metres along across and up (the renderer reads OBJ's v upward, so v runs down from 1 to put row j at
+	// t = j / d); a flat colour nowhere.
+	static std::function<math::Vec2f(double, double)> uvOf(const Surface& surface)
+	{
+		if (const auto* image = std::get_if<ImageTexture>(&surface.material->surface))
+		{
+			const math::Vec2d tile = image->tile;
+			return [tile](double s, double t)
+			{ return math::Vec2f{float(s / tile.x), float(t / tile.y)}; };
+		}
+		if (const auto* procedural = std::get_if<image::ProceduralTexture>(&surface.material->surface))
+		{
+			const BakeKey key = bakeOf(*procedural, surface);
+			return [key](double s, double t)
+			{ return math::Vec2f{float(s * key.texelsPerMetre / key.width), float(1 - t * key.texelsPerMetre / key.height)}; };
+		}
+		return [](double, double)
+		{ return math::Vec2f{0.0f}; };
+	}
+
 	// A surface as a mesh in the plan frame, its texture coordinates at each corner from (s, t), metres
 	// from its corner along across and up.
 	static std::shared_ptr<const mesh::Mesh> rectangle(const Surface& surface, const std::function<math::Vec2f(double, double)>& uvAt)
@@ -244,6 +267,7 @@ namespace lain::rigplan
 
 		for (const Surface& surface : surfacesOf(plan))
 		{
+			assets.surfaces.push_back(rectangle(surface, uvOf(surface)));
 			if (const auto* texture = std::get_if<ImageTexture>(&surface.material->surface))
 				picture(texture->image, surface.owner);
 			else if (const auto* procedural = std::get_if<image::ProceduralTexture>(&surface.material->surface))
@@ -287,6 +311,12 @@ namespace lain::rigplan
 			if (std::optional<BoardSheet> drawn = drawBoard(board, result.problems))
 				assets.boards.emplace(board.id, std::move(*drawn));
 		}
+
+		for (const Mount& mount : plan.mounts)
+		{
+			if (const auto* pole = std::get_if<Pole>(&mount.kind))
+				assets.poles.emplace(mount.id, cylinder(*pole));
+		}
 		return result;
 	}
 
@@ -320,29 +350,27 @@ namespace lain::rigplan
 			scene.meshes.push_back(std::move(mesh));
 		};
 
-		for (const Surface& surface : surfacesOf(plan))
+		const std::vector<Surface> surfaces = surfacesOf(plan);
+		for (std::size_t i = 0; i < surfaces.size(); ++i)
 		{
+			const Surface& surface = surfaces[i];
+			if (i >= assets.surfaces.size())
+			{
+				result.problems.push_back(string::format("{}: the assets hold no mesh for it", surface.owner));
+				continue;
+			}
 			render::Material material;
 			material.specular = surface.material->specular;
 			material.shininess = float(surface.material->shininess);
-			std::function<math::Vec2f(double, double)> uvAt = [](double, double)
-			{ return math::Vec2f{0.0f}; };
 			if (const auto* colour = std::get_if<SolidColour>(&surface.material->surface))
 				material.diffuse = colour->colour;
 			else if (const auto* image = std::get_if<ImageTexture>(&surface.material->surface))
 			{
-				// One copy of the picture every tile, upright from the side the surface faces.
 				material.diffuse = {1.0f, 1.0f, 1.0f};
 				material.texture = picture(image->image, surface.owner);
-				const math::Vec2d tile = image->tile;
-				uvAt = [tile](double s, double t)
-				{ return math::Vec2f{float(s / tile.x), float(t / tile.y)}; };
 			}
 			else
 			{
-				// The surface's own bake, covering it from its corner: texel (i, j) is proceduralGrey at
-				// ((i + 0.5) / d, (j + 0.5) / d) metres along across and up. The renderer reads OBJ's v
-				// upward, so v runs down from 1 to put row j at t = j / d.
 				const BakeKey key = bakeOf(std::get<image::ProceduralTexture>(surface.material->surface), surface);
 				material.diffuse = {1.0f, 1.0f, 1.0f};
 				const auto found = assets.baked.find(key);
@@ -350,13 +378,9 @@ namespace lain::rigplan
 					result.problems.push_back(string::format("{}: the assets hold no bake of its procedural texture", surface.owner));
 				else
 					material.texture = texture(found->second);
-				uvAt = [key](double s, double t)
-				{
-					return math::Vec2f{float(s * key.texelsPerMetre / key.width), float(1 - t * key.texelsPerMetre / key.height)};
-				};
 			}
 			scene.materials.push_back(material);
-			place(rectangle(surface, uvAt), math::Mat4d{1.0}, {scene.materials.size() - 1});
+			place(assets.surfaces[i], math::Mat4d{1.0}, {scene.materials.size() - 1});
 		}
 
 		for (const Prop& prop : plan.props)
@@ -415,13 +439,18 @@ namespace lain::rigplan
 		{
 			for (std::size_t i = 0; i < plan.mounts.size(); ++i)
 			{
-				const auto* pole = std::get_if<Pole>(&plan.mounts[i].kind);
-				if (!pole)
+				if (!std::holds_alternative<Pole>(plan.mounts[i].kind))
 					continue;
+				const auto found = assets.poles.find(plan.mounts[i].id);
+				if (found == assets.poles.end())
+				{
+					result.problems.push_back(string::format("pole '{}': the assets hold no mesh for it", plan.mounts[i].name));
+					continue;
+				}
 				render::Material grey;
 				grey.diffuse = {0.5f, 0.5f, 0.5f};
 				scene.materials.push_back(grey);
-				place(cylinder(*pole), realisation.mounts[i].planFromMount.matrix(), {scene.materials.size() - 1});
+				place(found->second, realisation.mounts[i].planFromMount.matrix(), {scene.materials.size() - 1});
 			}
 		}
 

@@ -15018,7 +15018,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    process pool; the folder layout and ground truth; `capture.json`; the pre-render size estimate,
    which says plainly when noise defeats compression. Proves: the noise is identical on every
    machine (it is CPU-only); memory is bounded at 100 cameras (a low-resolution scale test).
-   **Planned 2026-10-25 as five commits, 5a to 5e** (*Slice 5 planned* below); **5a to 5c built
+   **Planned 2026-10-25 as five commits, 5a to 5e** (*Slice 5 planned* below); **5a to 5d built
    2026-10-25**.
 6. **Rig and model comparison** promoted to `lain::camera`; the `compareRigs` and `compareModels`
    nodes; `rigcompare.h` over them. Proves: M9's verticals change by zero numbers.
@@ -16346,6 +16346,50 @@ format-check clean.
   The sabotage runner first passed two build targets as one name, so nothing was built or tested.
   That one was redone by hand.
 
+#### Sub-slice 5d built (2026-10-25): a GpuScene follows a changing scene
+
+`Renderer::update(GpuScene&, const Scene&) → UpdateResult{problems, meshesUploaded, texturesUploaded}`,
+and `rigplan::scene`'s own geometry in `SceneAssets`. `ctest -j8` **1530/1530** Release with video,
+camera and Ceres on (+6), and **1391/1391** with all three off (+6). Warning-clean, format-check clean.
+
+- **One build routine, two callers.** `upload` and `update` both run `buildScene(renderer, scene,
+  previous)`.
+  - A mesh or texture `previous` holds under the same pointer is shared, and so is one the scene
+    names twice; everything else is written afresh. Assets are never compared by contents, since one
+    is immutable while a `shared_ptr<const>` names it.
+  - The `SceneState` now keeps each source pointer, so no other asset can come to stand at an
+    address while a device copy names it (the `samePayload` lesson).
+  - The materials, instances, lights and sets are rewritten every update, under a new serial, so a
+    viewport rebuilds its sets for it as for a new upload. That answers the plan's open question:
+    since those buffers are always new, the serial always changes.
+  - A refused update leaves the scene as it was, because the new state is swapped in only once it is
+    whole.
+- **`SceneAssets` gains `surfaces`** (every flat surface's mesh, in `renderScene`'s order) **and
+  `poles`** (each pole's cylinder, by its mount). Neither moves with a frame, and a pole's size has
+  no tolerance, so the plan alone decides them.
+  - The plan said a pole would become a unit cylinder scaled by its instance. It needed nothing of the
+    kind: the cylinder is the plan's, and only its placement is the realisation's.
+  - The texture coordinates moved into one `uvOf(surface)`, which `loadSceneAssets` builds the
+    meshes with.
+- **The cases:**
+  - three in `test-render`, on both devices:
+    - an update that only moves an instance uploads nothing, and draws bit-identically to a fresh
+      upload;
+    - a new texture and a new mesh are uploaded, and one mesh named twice is one upload;
+    - a refused update, of an invalid scene or by another renderer, leaves the picture as it was;
+  - one in `test-render`'s viewport cases: after an update that changes a material, the viewport
+    draws the new one;
+  - two in `test-rigplan-scene-board`: frames 0 and 6 of a plan in a room, with a procedural plane
+    and the board moving, share every mesh and texture pointer, and only the board's instances move;
+    on the device, the update between them uploads nothing and draws bit-identically to a fresh
+    upload.
+- **Four sabotages, all caught:**
+  - an update that reuses nothing fails three cases;
+  - keeping the old upload's serial fails the viewport case, whose stale sets still show the old
+    material;
+  - textures reused by position instead of by pointer fail the new-assets case;
+  - the scene rebuilding its surfaces every frame fails both of the plan's cases.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -16585,7 +16629,8 @@ row here**. A row is cheap to delete and expensive to leave.
   (0028, 0029). **Slices 0 to 3 built 2026-10-22 to 10-24** (`lain::editor`; `lain::rigplan` and its
   documents; `io::mesh` and the OBJ plugin; `lain::render` on the CPU device, CI green on every
   platform). **Slice 4 built 2026-10-24** (the capture pass; the ADR-0028 claim holds). **Slice 5
-  planned 2026-10-25 as five commits; 5a to 5c built** (the sensor model, movers, ground truth). The first CI run of 5a's pinned
+  planned 2026-10-25 as five commits; 5a to 5d built** (the sensor model, movers, ground truth,
+  `Renderer::update`). The first CI run of 5a's pinned
   output tables and recordings on Linux and Windows is owed. Slice 0's gui-mode check of the unsaved-changes
   modal is owed. Ten slices, 0 to 9, on `feature/M15`; the build order and every exclusion are in
   M15's own sections. *(Milestone 15.)*

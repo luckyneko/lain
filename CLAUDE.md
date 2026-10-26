@@ -1400,6 +1400,25 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-25 — M15 slice 5, sub-slice 5d built: `Renderer::update`
+
+A `GpuScene` follows a changing scene, so a capture can stream camera by camera, as decided, without
+re-uploading a room's baked textures for every frame of every camera. `ctest -j8` **1530/1530** Release
+with video, camera and Ceres on (+6), **1391/1391** with all three off (+6); warning-clean, format-check
+clean.
+Full notes in WORK.md's *Sub-slice 5d built*; ADR-0028 is amended.
+
+- **`update(GpuScene&, Scene) → UpdateResult{problems, meshesUploaded, texturesUploaded}`.** It shares
+  `upload`'s one build routine, which shares every mesh and texture held under the same pointer
+  (assets are never compared by contents) and rewrites the rest under a new serial, so a viewport
+  rebuilds its sets.
+- **The `SceneState` keeps its source pointers**, so an address cannot be reused while a device copy
+  names it. A refused update leaves the scene as it was.
+- **`rigplan::scene` builds its surfaces' and poles' meshes once**, in `SceneAssets`. Two frames of a
+  plan with a moving board share every mesh and texture, and the device update between them uploads
+  nothing, drawing bit-identically to a fresh upload.
+- **Four sabotages, all caught.** Keeping the old serial leaves a viewport drawing the old material.
+
 ### Update 2026-10-25 — M15 slice 5, sub-slice 5c built: ground truth
 
 What a synthetic capture was rendered with, computed through lain's own projection from the realisation.

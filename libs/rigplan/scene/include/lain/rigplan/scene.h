@@ -57,15 +57,22 @@ namespace lain::rigplan
 		std::shared_ptr<const mesh::Mesh> back;
 	};
 
-	// What a rig plan draws that is not in the plan itself, read and baked once so a render scene at
-	// any frame shares it: each prop's mesh (a clip of one) or mesh clip, each picture a material or a
-	// mesh's material names, each procedural surface baked to its extent, and each board drawn.
+	// What a rig plan draws, read, baked and built once so a render scene at any frame shares it: each
+	// prop's mesh (a clip of one) or mesh clip, each picture a material or a mesh's material names, each
+	// procedural surface baked to its extent, each board drawn, and the meshes the plan's own geometry
+	// makes. Every frame's scene names these by the same pointers, so Renderer::update re-uploads none of
+	// them from one frame to the next: a frame costs what moved.
 	struct SceneAssets
 	{
 		std::map<core::Uuid, std::shared_ptr<const mesh::MeshClip>> props;
 		std::map<core::Uri, std::shared_ptr<const image::Image>> pictures;
 		std::map<BakeKey, std::shared_ptr<const image::Image>> baked;
 		std::map<core::Uuid, BoardSheet> boards;
+		// Every flat surface (the room's, the planes', the boxes'), in the order renderScene draws them, in
+		// the plan frame; and every pole by its mount, in its mount's frame. Neither moves with a frame,
+		// and a pole's size has no tolerance, so the plan alone decides them.
+		std::vector<std::shared_ptr<const mesh::Mesh>> surfaces;
+		std::map<core::Uuid, std::shared_ptr<const mesh::Mesh>> poles;
 	};
 
 	struct AssetsResult

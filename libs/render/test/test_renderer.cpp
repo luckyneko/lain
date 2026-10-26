@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -422,4 +423,111 @@ TEST_CASE("the renderer refuses what it cannot draw, and says why", "[render][gp
 	const RenderResult nothing = renderer.render(*uploaded.scene, testing::view(8, 8, 8, 3.5, 3.5));
 	REQUIRE(nothing.image.valid());
 	CHECK(testing::pixel(nothing.image, 3, 3).a == 0.0f);
+}
+
+// Two squares side by side 3 m ahead, one plain and one textured with a 2 x 2 picture of `code`, under
+// ambient light: what update() is asked to follow.
+static Scene twoSquares(const std::shared_ptr<const image::Image>& texture, double shift)
+{
+	Scene scene;
+	scene.meshes = {testing::square(), testing::square()};
+	scene.textures = {texture};
+	Material textured = plain({1.0f, 1.0f, 1.0f});
+	textured.texture = 0;
+	scene.materials = {plain({0.2f, 0.4f, 0.8f}), textured};
+	const auto at = [](double x)
+	{ return math::scale(math::translate(math::Mat4d{1.0}, math::Vec3d{x, 0.0, 3.0}), math::Vec3d{0.5}); };
+	scene.instances = {Instance{0, at(-0.8 + shift), {0}}, Instance{1, at(0.8), {1}}};
+	scene.ambient = {1.0f, 1.0f, 1.0f};
+	return scene;
+}
+
+static std::shared_ptr<const image::Image> flatTexture(std::uint8_t code)
+{
+	auto texture = std::make_shared<image::Image>(2, 2, image::PixelFormat::RGBA8, image::ColorSpace::sRGB, image::AlphaMode::Straight);
+	for (int i = 0; i < 4; ++i)
+	{
+		std::uint8_t* p = texture->data() + 4 * i;
+		p[0] = p[1] = p[2] = code;
+		p[3] = 255;
+	}
+	return texture;
+}
+
+static bool samePicture(const image::Image& a, const image::Image& b)
+{
+	return a.byteSize() == b.byteSize() && std::memcmp(a.data(), b.data(), a.byteSize()) == 0;
+}
+
+TEST_CASE("an update that only moves an instance uploads nothing, and draws what a fresh upload draws", "[render][gpu]")
+{
+	REQUIRE_RENDERER(renderer);
+	const View view = testing::view(96, 48, 48, 47.5, 23.5);
+	const auto texture = flatTexture(200);
+	Scene first = twoSquares(texture, 0.0);
+	UploadResult uploaded = renderer.upload(first);
+	REQUIRE(uploaded.scene);
+
+	// The same meshes and texture, the plain square moved: a frame in which a mover moved.
+	Scene moved = first;
+	moved.instances[0].worldFromMesh = twoSquares(texture, 0.3).instances[0].worldFromMesh;
+	const UpdateResult updated = renderer.update(*uploaded.scene, moved);
+	REQUIRE(updated.problems.empty());
+	CHECK(updated.meshesUploaded == 0);
+	CHECK(updated.texturesUploaded == 0);
+
+	const RenderResult afterUpdate = renderer.render(*uploaded.scene, view);
+	REQUIRE(afterUpdate.problems.empty());
+	CHECK(samePicture(afterUpdate.image, draw(renderer, moved, view)));
+	CHECK_FALSE(samePicture(afterUpdate.image, draw(renderer, first, view))); // and it did move
+}
+
+TEST_CASE("an update uploads what it does not already hold", "[render][gpu]")
+{
+	REQUIRE_RENDERER(renderer);
+	const View view = testing::view(96, 48, 48, 47.5, 23.5);
+	Scene first = twoSquares(flatTexture(200), 0.0);
+	UploadResult uploaded = renderer.upload(first);
+	REQUIRE(uploaded.scene);
+
+	// Another texture, of other codes, under its own pointer; and a mesh the scene did not have.
+	Scene next = twoSquares(flatTexture(40), 0.0);
+	next.meshes[0] = first.meshes[0];
+	next.meshes[1] = first.meshes[1];
+	next.meshes.push_back(testing::square(false));
+	next.instances.push_back(Instance{2, math::translate(math::Mat4d{1.0}, math::Vec3d{0.0, 0.0, 6.0}), {0}});
+	const UpdateResult updated = renderer.update(*uploaded.scene, next);
+	REQUIRE(updated.problems.empty());
+	CHECK(updated.meshesUploaded == 1);
+	CHECK(updated.texturesUploaded == 1);
+	const RenderResult afterUpdate = renderer.render(*uploaded.scene, view);
+	REQUIRE(afterUpdate.problems.empty());
+	CHECK(samePicture(afterUpdate.image, draw(renderer, next, view)));
+
+	// A mesh named twice by one scene is one upload.
+	Scene twice = first;
+	twice.meshes[1] = twice.meshes[0];
+	UploadResult fresh = renderer.upload(Scene{});
+	REQUIRE(fresh.scene);
+	CHECK(renderer.update(*fresh.scene, twice).meshesUploaded == 1);
+}
+
+TEST_CASE("an update the renderer refuses leaves the scene as it was", "[render][gpu]")
+{
+	REQUIRE_RENDERER(renderer);
+	const View view = testing::view(96, 48, 48, 47.5, 23.5);
+	const Scene first = twoSquares(flatTexture(200), 0.0);
+	UploadResult uploaded = renderer.upload(first);
+	REQUIRE(uploaded.scene);
+	const RenderResult before = renderer.render(*uploaded.scene, view);
+
+	Scene broken = first;
+	broken.instances.push_back(Instance{7, math::Mat4d{1.0}, {0}}); // no mesh 7
+	CHECK(renderer.update(*uploaded.scene, broken).problems.size() == 1);
+	Renderer other(*device);
+	CHECK(other.update(*uploaded.scene, first).problems.size() == 1);
+
+	const RenderResult after = renderer.render(*uploaded.scene, view);
+	REQUIRE(after.problems.empty());
+	CHECK(samePicture(after.image, before.image));
 }

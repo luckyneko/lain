@@ -1,6 +1,7 @@
 // A board mover in a rig plan's render scene, drawn by a stand-in board renderer: its own executable,
 // since a renderer registry only grows and test_scene.cpp's must have none. The sheet's geometry is held
-// to the board frame on the CPU, and its plain back on the device (SKIPs where there is none).
+// to the board frame on the CPU, and its plain back on the device (SKIPs where there is none). And a
+// moving board's frames share every other mesh and texture, so an update between them uploads none.
 
 #include "gpu.h"
 #include "testplan.h"
@@ -13,6 +14,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstring>
 #include <string>
 
 using namespace lain;
@@ -212,4 +214,80 @@ TEST_CASE("a camera behind a board sees its plain back, not its pattern", "[rigp
 	};
 	CHECK(centreFrom(1.0, 0.0) < 1e-3);	  // the black print
 	CHECK(centreFrom(3.0, 180.0) > 0.5f); // the white back, a metre from its bulb
+}
+
+// The test plan in a room, with a procedural plane and the board moving across it: everything but the
+// board stands still from one frame to the next.
+static RigPlan movingInARoom()
+{
+	RigPlan plan = planWithBoard();
+	Room room;
+	room.size = {10.0, 8.0, 3.2};
+	room.ceiling.present = false;
+	plan.room = room;
+	Plane patch;
+	patch.id = testplan::partitionId;
+	patch.name = "patch";
+	patch.centre = {2.0, 5.0, 1.2};
+	patch.size = {1.0, 1.0};
+	patch.material.surface = image::ProceduralTexture{5, 0.05};
+	plan.planes.push_back(patch);
+	return plan;
+}
+
+TEST_CASE("two frames of a rig plan's scene share every mesh and texture", "[rigplan][scene][mover]")
+{
+	registerStandIn();
+	const RigPlan plan = movingInARoom();
+	const RealisationResult realised = realise(plan);
+	REQUIRE(realised.realisation);
+	const AssetsResult assets = loadSceneAssets(plan);
+	REQUIRE(assets.problems.empty());
+	const SceneResult first = renderScene(plan, *realised.realisation, assets.assets, 0);
+	const SceneResult later = renderScene(plan, *realised.realisation, assets.assets, 6);
+	REQUIRE(first.problems.empty());
+	REQUIRE(later.problems.empty());
+	REQUIRE(later.scene.meshes == first.scene.meshes);
+	REQUIRE(later.scene.textures == first.scene.textures);
+	// And what moved is only the board.
+	const BoardSheet& sheet = assets.assets.boards.at(testplan::boardId);
+	for (std::size_t i = 0; i < first.scene.instances.size(); ++i)
+	{
+		const std::shared_ptr<const mesh::Mesh>& mesh = first.scene.meshes[first.scene.instances[i].mesh];
+		const bool board = mesh == sheet.print || mesh == sheet.back;
+		CHECK((first.scene.instances[i].worldFromMesh == later.scene.instances[i].worldFromMesh) != board);
+	}
+}
+
+TEST_CASE("an update from one frame to the next uploads nothing but what moved", "[rigplan][scene][mover][gpu]")
+{
+	registerStandIn();
+	render::Renderer renderer(render::testing::device());
+	REQUIRE(renderer.problems().empty());
+	const RigPlan plan = movingInARoom();
+	const RealisationResult realised = realise(plan);
+	REQUIRE(realised.realisation);
+	const AssetsResult assets = loadSceneAssets(plan);
+	REQUIRE(assets.problems.empty());
+
+	render::UploadResult uploaded = renderer.upload(renderScene(plan, *realised.realisation, assets.assets, 0).scene);
+	REQUIRE(uploaded.problems.empty());
+	const render::Scene later = renderScene(plan, *realised.realisation, assets.assets, 6).scene;
+	const render::UpdateResult updated = renderer.update(*uploaded.scene, later);
+	REQUIRE(updated.problems.empty());
+	CHECK(updated.meshesUploaded == 0);
+	CHECK(updated.texturesUploaded == 0);
+
+	// cam0 sees what a fresh upload of frame 6 shows it.
+	render::View view;
+	view.worldFromCamera = realised.realisation->cameras[0].planFromCamera;
+	view.image = {64, 36};
+	view.intrinsics = {50.0, 50.0, 31.5, 17.5};
+	const render::RenderResult viaUpdate = renderer.render(*uploaded.scene, view);
+	render::UploadResult fresh = renderer.upload(later);
+	REQUIRE(fresh.problems.empty());
+	const render::RenderResult viaUpload = renderer.render(*fresh.scene, view);
+	REQUIRE(viaUpdate.problems.empty());
+	REQUIRE(viaUpload.problems.empty());
+	CHECK(std::memcmp(viaUpdate.image.data(), viaUpload.image.data(), viaUpload.image.byteSize()) == 0);
 }

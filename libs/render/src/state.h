@@ -115,8 +115,12 @@ namespace lain::render::detail
 		};
 		std::vector<Mesh> meshes;
 		std::vector<acm::Texture> textures; // the scene's, in its order
-		acm::Texture white;					// fills the binding of a material without a texture
-		acm::Buffer objects;				// an ObjectConstants per instance, `objectStride` apart
+		// What each mesh and texture was uploaded from, held so that an update can tell an asset it already
+		// has (by pointer) and so that no other asset can come to stand at the address while it does.
+		std::vector<std::shared_ptr<const mesh::Mesh>> meshSources;
+		std::vector<std::shared_ptr<const image::Image>> textureSources;
+		acm::Texture white;	 // fills the binding of a material without a texture
+		acm::Buffer objects; // an ObjectConstants per instance, `objectStride` apart
 		acm::Buffer lights;
 		std::vector<acm::Buffer> materials;
 		std::vector<std::size_t> materialTextures; // per material, its texture's index, or none

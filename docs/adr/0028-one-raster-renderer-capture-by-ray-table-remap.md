@@ -102,6 +102,18 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
 - A capture render costs one raster pass, or six for a cubemap, plus one compute pass per camera
   frame. A camera is rendered at a time and read back, so GPU memory is bounded by the largest
   camera, whatever the rig's size.
+  - *Amended 2026-10-25 (M15 slice 5d), on what that order costs.* One camera at a time means one ray
+    table on the device at a time. Each holds a tile texture of up to 4096² RGBA32F (256 MB), so
+    keeping every camera's table resident would grow GPU memory with the rig. So a capture streams
+    **camera by camera**, and each frame's scene reaches the device once per camera.
+    - `Renderer::update(GpuScene&, Scene)` makes that cheap. A mesh or texture the next scene names by
+      the same `shared_ptr` keeps its device copy. Everything else (materials, instances, lights,
+      descriptor sets) is rewritten, under a new serial, so a viewport rebuilds its sets as for a new
+      upload.
+    - `rigplan::scene` builds every mesh a plan's own geometry makes once, in `SceneAssets`, so a frame
+      costs only what moved.
+    - Decided with the repo owner, over re-uploading every scene whole and measuring first, and over
+      every table resident.
 - Shadows, area lights and physically based materials arrive as shader work in one place, for
   both views.
 - **The CPU device runs its own worker pool**, beside lain's one process pool (ADR-0024). Measured

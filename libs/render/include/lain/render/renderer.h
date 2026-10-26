@@ -8,6 +8,7 @@
 
 #include <archimedes/acmDevice.h>
 
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
@@ -45,6 +46,14 @@ namespace lain::render
 	{
 		std::optional<GpuScene> scene;
 		std::vector<std::string> problems; // empty exactly when there is a scene
+	};
+
+	// An update's outcome: how many meshes and textures it uploaded, or why the scene was left as it was.
+	struct UpdateResult
+	{
+		std::vector<std::string> problems; // empty when the scene was updated
+		std::size_t meshesUploaded = 0;
+		std::size_t texturesUploaded = 0;
 	};
 
 	// A ray table's copy on the device: its pixel-corner rays and its pixels' sums, in bands, and the
@@ -99,6 +108,15 @@ namespace lain::render
 
 		// Validates `scene` (validate(scene)) and copies it to the device.
 		UploadResult upload(const Scene& scene);
+
+		// Makes `scene` the copy of `next`, uploading only the meshes and textures it does not already hold:
+		// one `next` names by the same pointer as `scene` does is shared, and is never compared by its
+		// contents, since an asset is immutable while a shared_ptr<const> names it. Everything else (the
+		// materials, the instances, the lights) is written afresh, so a viewport rebuilds its descriptor
+		// sets for it as for a new upload. What a frame changes, a mover's pose or a mesh clip's frame,
+		// costs only itself. Validates `next` (validate(scene)); on a refusal `scene` is left as it was.
+		// `scene` must have been uploaded by this renderer.
+		UpdateResult update(GpuScene& scene, const Scene& next);
 
 		// `scene` seen through `view`'s pinhole. `scene` must have been uploaded by this renderer.
 		RenderResult render(GpuScene& scene, const View& view);

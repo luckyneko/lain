@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <map>
 #include <utility>
 
 namespace lain::render
@@ -199,31 +200,57 @@ namespace lain::render
 	// Unique per upload in this process, so a viewport can tell a scene uploaded where another stood.
 	static std::atomic<std::uint64_t> g_uploads{0};
 
-	UploadResult Renderer::upload(const Scene& scene)
+	// What building a scene's copy on the device gave: the copy, or why not, and how much it uploaded.
+	struct Built
 	{
-		if (!m->problems.empty())
-			return {std::nullopt, m->problems};
-		std::vector<std::string> problems = validate(scene);
-		if (!problems.empty())
-			return {std::nullopt, std::move(problems)};
+		std::unique_ptr<detail::SceneState> state;
+		std::vector<std::string> problems;
+		std::size_t meshesUploaded = 0;
+		std::size_t texturesUploaded = 0;
+	};
 
-		acm::Device& device = *m->device;
+	// `scene`'s copy on the device. A mesh or texture `previous` holds under the same pointer, or that
+	// `scene` names twice, is shared rather than uploaded again; everything else is written afresh. Its
+	// sources are kept, so an address that names a device copy cannot be reused by another asset while
+	// the copy is held.
+	static Built buildScene(detail::RendererState& renderer, const Scene& scene, const detail::SceneState* previous)
+	{
+		Built built;
+		std::vector<std::string>& problems = built.problems;
+		acm::Device& device = *renderer.device;
 		auto gpu = std::make_unique<detail::SceneState>();
-		gpu->owner = m.get();
+		gpu->owner = &renderer;
 		gpu->serial = ++g_uploads;
 		gpu->ambient = scene.ambient;
 		gpu->background = scene.background;
 		gpu->lightCount = std::uint32_t(scene.lights.size());
 
-		// Each result is checked once, where it is made, and the first refusal ends the upload.
+		// Each result is checked once, where it is made, and the first refusal ends the build.
 		auto refused = [&](const std::string& what, const acm::Error& error)
 		{
 			problems.push_back(string::format("the device refused {}: {}", what, error.message()));
-			return UploadResult{std::nullopt, std::move(problems)};
+			built.state.reset();
+			return std::move(built);
 		};
+
+		std::map<const mesh::Mesh*, detail::SceneState::Mesh> heldMeshes;
+		std::map<const image::Image*, acm::Texture> heldTextures;
+		if (previous)
+		{
+			for (std::size_t i = 0; i < previous->meshSources.size(); ++i)
+				heldMeshes.emplace(previous->meshSources[i].get(), previous->meshes[i]);
+			for (std::size_t i = 0; i < previous->textureSources.size(); ++i)
+				heldTextures.emplace(previous->textureSources[i].get(), previous->textures[i]);
+		}
 
 		for (std::size_t i = 0; i < scene.meshes.size(); ++i)
 		{
+			gpu->meshSources.push_back(scene.meshes[i]);
+			if (const auto held = heldMeshes.find(scene.meshes[i].get()); held != heldMeshes.end())
+			{
+				gpu->meshes.push_back(held->second);
+				continue;
+			}
 			const mesh::Mesh& mesh = *scene.meshes[i];
 			std::vector<detail::Vertex> vertices(mesh.positions.size());
 			for (std::size_t v = 0; v < vertices.size(); ++v)
@@ -244,16 +271,25 @@ namespace lain::render
 				return refused(string::format("mesh {}'s vertices", i), error);
 			if (const acm::Error error = uploaded.indices.write(mesh.indices.data(), mesh.indices.size() * sizeof(std::uint32_t)))
 				return refused(string::format("mesh {}'s indices", i), error);
+			heldMeshes.emplace(scene.meshes[i].get(), uploaded);
 			gpu->meshes.push_back(std::move(uploaded));
+			++built.meshesUploaded;
 		}
 
 		for (std::size_t i = 0; i < scene.textures.size(); ++i)
 		{
+			gpu->textureSources.push_back(scene.textures[i]);
+			if (const auto held = heldTextures.find(scene.textures[i].get()); held != heldTextures.end())
+			{
+				gpu->textures.push_back(held->second);
+				continue;
+			}
 			const image::Image pixels = asSrgb8(*scene.textures[i]);
 			if (!pixels.valid())
 			{
 				problems.push_back(string::format("texture {} could not be converted to 8-bit sRGB", i));
-				return {std::nullopt, std::move(problems)};
+				built.state.reset();
+				return built;
 			}
 			acm::Texture texture = device.createTexture(acm::Format::R8G8B8A8_Srgb,
 														acm::Extent2D{std::uint32_t(pixels.width()), std::uint32_t(pixels.height())},
@@ -262,15 +298,24 @@ namespace lain::render
 				return refused(string::format("texture {}", i), texture.error());
 			if (const acm::Error error = texture.upload(pixels.data(), pixels.byteSize()))
 				return refused(string::format("texture {}", i), error);
+			heldTextures.emplace(scene.textures[i].get(), texture);
 			gpu->textures.push_back(std::move(texture));
+			++built.texturesUploaded;
 		}
 		// Only fills the binding of a material with no texture: the shader does not use what it samples.
-		const std::uint8_t white[4] = {255, 255, 255, 255};
-		gpu->white = device.createTexture(acm::Format::R8G8B8A8_Unorm, acm::Extent2D{1, 1});
-		if (!gpu->white.valid())
-			return refused("the white texture", gpu->white.error());
-		if (const acm::Error error = gpu->white.upload(white, sizeof(white)))
-			return refused("the white texture", error);
+		if (previous)
+		{
+			gpu->white = previous->white;
+		}
+		else
+		{
+			const std::uint8_t white[4] = {255, 255, 255, 255};
+			gpu->white = device.createTexture(acm::Format::R8G8B8A8_Unorm, acm::Extent2D{1, 1});
+			if (!gpu->white.valid())
+				return refused("the white texture", gpu->white.error());
+			if (const acm::Error error = gpu->white.upload(white, sizeof(white)))
+				return refused("the white texture", error);
+		}
 
 		// The instances' constants in one buffer, each at an offset the device can bind dynamically.
 		const std::size_t alignment = std::max<std::size_t>(device.minUniformBufferOffsetAlignment(), 1);
@@ -341,13 +386,53 @@ namespace lain::render
 			return refused("the frame constants", gpu->frame.error());
 		for (std::size_t i = 0; i < scene.materials.size(); ++i)
 		{
-			acm::DescriptorSet set = detail::sceneSet(*m, *gpu, i, gpu->frame);
+			acm::DescriptorSet set = detail::sceneSet(renderer, *gpu, i, gpu->frame);
 			if (!set.valid())
 				return refused(string::format("material {}'s descriptors", i), set.error());
 			gpu->sets.push_back(std::move(set));
 		}
 
-		return {GpuScene{std::move(gpu)}, {}};
+		built.state = std::move(gpu);
+		return built;
+	}
+
+	UploadResult Renderer::upload(const Scene& scene)
+	{
+		if (!m->problems.empty())
+			return {std::nullopt, m->problems};
+		std::vector<std::string> problems = validate(scene);
+		if (!problems.empty())
+			return {std::nullopt, std::move(problems)};
+		Built built = buildScene(*m, scene, nullptr);
+		if (!built.state)
+			return {std::nullopt, std::move(built.problems)};
+		return {GpuScene{std::move(built.state)}, {}};
+	}
+
+	UpdateResult Renderer::update(GpuScene& scene, const Scene& next)
+	{
+		UpdateResult result;
+		if (!m->problems.empty())
+		{
+			result.problems = m->problems;
+			return result;
+		}
+		if (scene.m->owner != m.get())
+			result.problems.push_back("the scene was uploaded by another renderer");
+		for (std::string& problem : validate(next))
+			result.problems.push_back(std::move(problem));
+		if (!result.problems.empty())
+			return result;
+		Built built = buildScene(*m, next, scene.m.get());
+		if (!built.state)
+		{
+			result.problems = std::move(built.problems);
+			return result;
+		}
+		result.meshesUploaded = built.meshesUploaded;
+		result.texturesUploaded = built.texturesUploaded;
+		scene.m = std::move(built.state);
+		return result;
 	}
 
 	RenderResult Renderer::render(GpuScene& scene, const View& view)
