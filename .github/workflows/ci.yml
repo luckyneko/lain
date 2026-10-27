@@ -244,12 +244,53 @@ jobs:
           ${{ matrix.flowview }} run
 
       # The same question for rigplan, whose dynamic dependencies are its own list (the Vulkan runtime,
-      # OpenCV's DLLs for the board renderer). It renders nothing yet: no rig plan is committed until
-      # M15 slice 7, whose vertical renders one here.
+      # OpenCV's DLLs for the board renderer). The next step is what makes it render.
       - name: Smoke the rigplan binary
         run: |
           ${{ matrix.rigplan }} --version
           ${{ matrix.rigplan }} render --help
+
+      # The synthetic-capture vertical (WORK.md M15 slice 7) through the SHIPPED binaries, which ctest's
+      # test-flowview-capture does not run: the committed example rig plan rendered on archimedes' CPU
+      # device (no runner has a GPU, and --device cpu says so rather than leaving it to the ranking),
+      # then registered by register.json and scored by compare-rigs.json, from a folder that is neither
+      # the plan's nor flowview's examples'. What a leg can do follows what it built: with no board
+      # renderer the render is refused, naming it; with no refiner the registration reports it. It ends
+      # on `test -s`, since `run` exits 0 when a bound output is empty. Release legs only: the Debug leg
+      # renders and detects for minutes, and its ctest case skips anyway.
+      - name: Render, register and score the example rig plan
+        if: matrix.build_type == 'Release'
+        run: |
+          root="$PWD"
+          plan="$root/apps/rigplan/examples/three-poles.json"
+          examples="$root/apps/flowview/examples"
+          mkdir -p "$root/capture-elsewhere"
+          cd "$root/capture-elsewhere"
+          if [ "${{ matrix.camera }}" != "ON" ]; then
+            if "$root/${{ matrix.rigplan }}" --device cpu render "$plan" --out capture > render.log 2>&1; then
+              cat render.log
+              echo "a build with no board renderer rendered a plan that waves a board"
+              exit 1
+            fi
+            cat render.log
+            grep -q "no board renderer" render.log
+            test ! -e capture
+            exit 0
+          fi
+          "$root/${{ matrix.rigplan }}" --device cpu render "$plan" --out capture
+          "$root/${{ matrix.flowview }}" run -g "$examples/register.json" --footage capture/rig \
+            --models capture/truth/models --report report.txt --rig rig.json
+          cat report.txt
+          if [ "${{ matrix.ceres }}" != "ON" ]; then
+            grep -q "^Failed: NoRefiner" report.txt
+            test ! -e rig.json
+            exit 0
+          fi
+          grep -q "^Ready" report.txt
+          "$root/${{ matrix.flowview }}" run -g "$examples/compare-rigs.json" --expected capture/truth/rig.json \
+            --found rig.json --comparison comparison.txt
+          test -s comparison.txt
+          cat comparison.txt
 
       # An example document, run from a folder that is NOT the document's: its data paths are
       # stored relative to the document (ADR-0027), so this checks the shipped binary resolves them

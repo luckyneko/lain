@@ -47,6 +47,46 @@ add_custom_target(rig-plans
 	COMMENT "Writing the example rig plans in apps/rigplan/examples"
 	VERBATIM)
 
+# synthetic-capture renders the example rig plan into the build folder (build/synthetic-capture), as
+# flowview's camera-footage draws M9's footage, with a README.txt of the flowview commands that register
+# and score it. Never committed. The plan waves M9's board, so it is defined only where a board renderer
+# is; it renders on the machine's best device (`--device cpu` is rigplan's own flag).
+if(TARGET lain::camera::opencv)
+	set(syntheticCapture "${CMAKE_BINARY_DIR}/synthetic-capture")
+	set(flowviewExamples "${lain_SOURCE_DIR}/apps/flowview/examples")
+	string(CONFIGURE [[
+A synthetic capture of apps/rigplan/examples/three-poles.json, rendered by rigplan render (the
+synthetic-capture target). Run the commands from this folder.
+
+rig/              the footage, one folder per camera
+nominal/          each camera's nominal model: what it was meant to be
+truth/models/     each camera's realised model: what it was rendered through
+truth/rig.json    the rig it was rendered as, relative to the plan's reference camera
+truth/poses.json  every camera's pose in the plan frame; truth/board.json the board's corners in view
+capture.json      the manifest, with the rig plan it was rendered from
+
+Registered with its true models, and scored against the truth:
+  "$<TARGET_FILE:flowview>" run -g "@flowviewExamples@/register.json" \
+      --footage rig --models truth/models --report report.txt --rig rig.json
+  "$<TARGET_FILE:flowview>" run -g "@flowviewExamples@/compare-rigs.json" \
+      --expected truth/rig.json --found rig.json --comparison comparison.txt
+
+With --models nominal instead, the rig is registered with the models the cameras were meant to have,
+and the comparison shows what not calibrating them costs.
+]] syntheticCaptureReadme @ONLY)
+	# Per configuration, since a multi-config generator puts flowview in a folder per configuration.
+	file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/synthetic-capture-README.txt"
+		 CONTENT "${syntheticCaptureReadme}")
+	add_custom_target(synthetic-capture
+		COMMAND ${CMAKE_COMMAND} -E rm -rf "${syntheticCapture}"
+		COMMAND rigplan render "${CMAKE_CURRENT_SOURCE_DIR}/examples/three-poles.json" --out "${syntheticCapture}"
+		COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/synthetic-capture-README.txt"
+				"${syntheticCapture}/README.txt"
+		COMMENT "Rendering the example rig plan's synthetic capture in ${syntheticCapture}"
+		VERBATIM)
+	add_dependencies(synthetic-capture flowview) # what the README's commands run
+endif()
+
 if(LAIN_BUILD_TESTING)
 	add_subdirectory(test)
 endif()

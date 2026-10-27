@@ -15030,7 +15030,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    `rigplan render`, then `flowview run register.json` plus `compareRigs` against the truth, in CI on
    the CPU device. Proves: with its true models it registers near-exactly; with its nominal models, at
    intrinsic scale 1, the error rises measurably. **Planned 2026-10-26 as two commits, 7a and 7b**
-   (*Slice 7 planned* below); **7a built 2026-10-27**. *(Amended while planning: this said "at scale 0 it registers
+   (*Slice 7 planned* below); **both built 2026-10-27, slice 7 COMPLETE** (CI's first run of the new
+   step is owed). *(Amended while planning: this said "at scale 0 it registers
    near-exactly". One capture at intrinsic scale 1, bound to `truth/models` and to `nominal/`, makes
    both claims from the same pixels, and slice 1 already proves scale 0 is exactly nominal.)*
 8. **The gui, part 1**: the app shell and docking, the Viewport, Outliner and Inspector, ImGuizmo,
@@ -16958,6 +16959,71 @@ format-check clean.
   - libc++ now deprecates `char_traits<fmt::detail::char8_type>`, warned while compiling fmt 10.2.1's
     own sources. A later libc++ that removes it will need an fmt bump.
 
+#### Sub-slice 7b built (2026-10-27): the vertical, and CI (**slice 7 COMPLETE**)
+
+`test-flowview-capture`, a CI step through the shipped binaries, and the `synthetic-capture` target.
+`ctest -j8` **1559/1559** Release with video, camera and Ceres on (+1), and **1419/1419** with all three
+off (unchanged, since the test is built only where a board renderer is). The case also passes in a
+build with OpenCV and no Ceres, which takes its NoRefiner branch. Warning-clean, format-check clean.
+**Owed: CI's first run of the new step.**
+
+- **`test-flowview-capture`** (`apps/flowview/test/test_capturevertical.cpp`) has one case. It runs in
+  Release on every kind of device the machine offers (`gpu.h`):
+  1. it reads the committed `three-poles.json` as `rigplan render` does (paths against its folder,
+     shape strictly) and renders it with `writeCapture`;
+  2. it registers `rig/` through the committed `register.json`, once with `truth/models` and once with
+     `nominal/`;
+  3. it scores each through `compare-rigs.json` against `truth/rig.json`, and checks that the line
+     `run` wrote is the library's comparison of the same two documents.
+
+  It takes 62 s locally for both devices, 20 s of it the CPU device's render.
+- **What it asserts:**
+  - with the true models: Ready, 24 of 24 groups usable, within M9's rig vertical's bounds (scale
+    0.5%, worst rotation 2 mrad, worst centre 1 mm), against 0.05%, 0.68 mrad and 0.40 mm measured;
+  - with the nominal models: a worst rotation and a worst centre each more than 5 times the true
+    models' (measured 14 and 12 times);
+  - that the comparison derived the truth again. The plan's reference is `left-low`, and the
+    registration takes `left-high`, the first by identity among cameras sharing every group;
+  - without a refiner: both reports read `Failed: NoRefiner`, and no rig is written.
+
+  The nominal registration's verdict is not asserted, as planned (7a's finding).
+- **Deviation: the shared source list is an OBJECT library, `flowview-tested`.** It holds the
+  production sources both flowview test executables run, compiled once rather than once per
+  executable, with their link libraries PUBLIC. An object library links every object whether or not a
+  test names it, exactly as compiling the files into each executable did. So the planned sabotage, a
+  copy of the list missing a file, cannot be written. Dropping a file from the library fails the link
+  instead.
+- **CI** gains *Render, register and score the example rig plan*, on every Release leg, after the
+  rigplan smoke, run from a folder that is neither the plan's nor flowview's examples'. It renders on
+  the CPU device (`--device cpu`), since no runner has a GPU. Then, by what the leg built:
+  - with OpenCV and Ceres, it registers with `truth/models`, requires Ready, scores against the truth,
+    and ends on `test -s`. The nominal registration is ctest's;
+  - with no refiner, the report must read `Failed: NoRefiner`, and no rig is written;
+  - with everything off, the render must be refused (exit 1), name the board renderer, and write
+    nothing.
+
+  The step's script was run here under `bash -eo pipefail` on all three configurations, and each
+  passed. The all-on run scored 0.674 mrad and 0.391 mm on the CPU device, 7a's probe to the last
+  digit. The workflow's comment that rigplan "renders nothing yet" is gone.
+- **`synthetic-capture`** renders the example into `build/synthetic-capture` through the built
+  `rigplan`, and writes a README.txt of the flowview commands that register and score it, at absolute
+  paths, per configuration. It is defined only where a board renderer is, and depends on `flowview`.
+  It takes 3.5 s on Metal, and the README's commands, run from the folder as written, reproduce 7a's
+  Metal numbers to the last digit.
+- **Four sabotages, all caught:**
+  - `nominal/` written with the realised models fails exactly the two "worse" checks on both devices
+    (0.68 mrad against a bound of 3.4);
+  - the truth rig left in the plan frame (`rigRelativeTo` without its `referenceFromPlan`) fails every
+    truth bound (scale 13.5% off, 1.37 rad);
+  - the true-model registration bound to `nominal/` fails the truth bounds and the factor;
+  - `camerafiles.cpp` dropped from `flowview-tested` fails the link on `flowview::loadRegisteredRig`.
+- **The new linker warns about duplicate libraries** (`ld: warning: ignoring duplicate libraries`) on
+  many executables, `flowview` and `rigplan` among them, when a static library reaches a link line
+  twice through two dependencies. It was first seen here under 7a's new toolchain, on targets this
+  slice did not touch. It changes nothing and is recorded rather than chased.
+  `test-flowview-capture`'s own warning came from naming `archimedes` beside `lain::rigplan::capture`,
+  which already brings it in, so that link is gone.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -17207,8 +17273,10 @@ row here**. A row is cheap to delete and expensive to leave.
   and `near`/`far` against `<windows.h>`. The fixes are green on all eight jobs (run 40265665844).
   **Slice 6 built 2026-10-26** (`camera::compareModels` / `compareRigs`, the tests comparing through
   them, the two nodes and their example documents). **Slice 7 planned 2026-10-26** (the example rig
-  plan, and the vertical through `register.json` and `compare-rigs.json`); **7a built 2026-10-27**
-  (`three-poles.json`, which froze the rig plan document at version 1). Two of 7a's findings are for
+  plan, and the vertical through `register.json` and `compare-rigs.json`); **7a and 7b built
+  2026-10-27, slice 7 COMPLETE** (`three-poles.json`, which froze the rig plan document at version 1;
+  `test-flowview-capture`, a CI step through the shipped binaries, and `synthetic-capture`). **Owed:
+  CI's first run of the new step**, on every Release leg. Two of 7a's findings are for
   the repo owner: `registration/1` judges a rig registered with uncalibrated models Ready, and the size
   estimate's floor is not a floor for a dark scene (*Sub-slice 7a built*).
   Slice 0's gui-mode check of the unsaved-changes modal is owed. M9's rig binder owes two fixes M15

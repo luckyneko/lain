@@ -40,6 +40,11 @@ meant to have, and the comparison shows what not calibrating them costs.
 
 `--deviation 0` renders the plan as designed, where the nominal models are the truth.
 
+`cmake --build build --target synthetic-capture` renders it into `build/synthetic-capture`, with a
+README.txt of these commands spelled out for that build. ctest's `test-flowview-capture` runs the
+same render, registrations and comparisons on every device the machine has, and CI runs them through
+the shipped binaries on the CPU device.
+
 ## Regenerating
 
 The documents are written by `rigplan-examples` (`src/`). ctest checks that every committed document
