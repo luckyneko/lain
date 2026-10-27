@@ -19,9 +19,11 @@
 // {type, value} under its stable key.
 namespace lain::rigplan
 {
-	// The version a rig plan document is written at, and the newest this build reads. It stays 1, and
-	// its shape may still change without a migration, until M15 slice 7 commits the first example rig
-	// plan: until then no rig plan exists outside the tests.
+	// The version a rig plan document is written at, and the newest this build reads. FROZEN at 1 since
+	// M15 slice 7 committed the first example rig plan (apps/rigplan/examples), which a later build must
+	// still read: a change to the document's shape is version 2 with a migrator from 1, as
+	// flow::serialize's version1.cpp is for graphs, never a rewrite of what 1 means. A capture's
+	// capture.json embeds its rig plan as this document, so captures on disk are held to it too.
 	constexpr std::uint32_t kRigPlanDocumentVersion = 1;
 
 	// The version a specification catalogue document is written at, and the newest this build reads.

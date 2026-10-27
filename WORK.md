@@ -15030,7 +15030,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    `rigplan render`, then `flowview run register.json` plus `compareRigs` against the truth, in CI on
    the CPU device. Proves: with its true models it registers near-exactly; with its nominal models, at
    intrinsic scale 1, the error rises measurably. **Planned 2026-10-26 as two commits, 7a and 7b**
-   (*Slice 7 planned* below). *(Amended while planning: this said "at scale 0 it registers
+   (*Slice 7 planned* below); **7a built 2026-10-27**. *(Amended while planning: this said "at scale 0 it registers
    near-exactly". One capture at intrinsic scale 1, bound to `truth/models` and to `nominal/`, makes
    both claims from the same pixels, and slice 1 already proves scale 0 is exactly nominal.)*
 8. **The gui, part 1**: the app shell and docking, the Viewport, Outliner and Inspector, ImGuizmo,
@@ -16802,7 +16802,8 @@ Two commits, in order, in one session: 7b renders what 7a commits. Nothing is bu
 - **7a: the example rig plan.**
   - **`apps/rigplan/examples/`**, written by a `rigplan-examples` builder (`examples/src/`) from one
     table with deterministic ids, as `flowview-examples` writes flowview's. A README says what each
-    plan is and how to render it, and an `examples` target regenerates the documents.
+    plan is and how to render it, and an `examples` target regenerates the documents. *(Built as
+    `rig-plans`: flowview already owns a target named `examples`.)*
   - **The scene** (one plan, its name settled in 7a):
     - a room with procedural surfaces;
     - three poles on an arc around one working point, with two cameras each at two heights, aimed at
@@ -16886,6 +16887,76 @@ Two commits, in order, in one session: 7b renders what 7a commits. Nothing is bu
   - **The capture's identities and the truth's already agree** at more than one frame: M9 names
     `rig/<name>` by its location under the rig folder (`capture/location.h`), and `truthRig`'s
     identities are the camera names. The vertical is the first thing to rely on that end to end.
+
+#### Sub-slice 7a built (2026-10-27): the example rig plan
+
+`apps/rigplan/examples/three-poles.json`, the `rigplan-examples` builder that writes it, its README, and
+`test-rigplan-app`. Committing it **froze the rig plan document at version 1**. `ctest -j8` **1558/1558**
+Release with video, camera and Ceres on (+3), and **1419/1419** with all three off (+3). Warning-clean,
+format-check clean.
+
+- **The plan** (`examples/src/examples.cpp`, one catalog the builder and the test both read):
+  - **Place:** a 5 x 5 x 2.7 m room, every surface procedural; a working point at (0, 0, 1.25).
+  - **Poles:** three of 2.2 m on an arc of 1 m to the point's south, at -40, 0 and +40 degrees, each
+    turned (mount yaw) to face it.
+  - **Cameras:** two per pole, 12.5 cm out toward the point:
+    - one at 0.9 m tilted up 22 degrees, one at 1.6 m tilted down 22 degrees;
+    - named `left-low` to `right-high`, which sort alike as folders and as documents;
+    - each about 0.94 m from the board.
+  - **Lights:** a spot near each pole's top (intensity 0.45, cone 25 to 40 degrees), aimed down at the
+    point.
+  - **Specification:** the test plan's camera, made monochrome: 1280 x 720 at 2 um, a 4 mm
+    Brown-Conrady lens (f = 2000 px), and the test plan's tolerances. One channel is a third of the
+    bytes to record, encode and write, and the scene is grey anyway.
+  - **Board:** M9's (7 x 5 squares of 24 mm, identity `board`, as `register.json` detects it), on five
+    keys over 24 frames at 30 fps. It turns between -25 and +28 degrees of pan, +-15 of tilt and +-15 of
+    roll about the point, so every camera sees it in every frame.
+  - **Stored as the vertical renders it:** seed 15, intrinsic and installation scales 1 (locked), and
+    noise 1.
+- **The freeze review** read the written document end to end and changed nothing:
+  - datasheet quantities carry their unit in their key;
+  - scene geometry is plain metres, as the plan frame is;
+  - variant tags are camelCase stable keys, and enum values are written by name.
+
+  `kRigPlanDocumentVersion`'s comment and CONTEXT.md's *Rig plan document* now say it is frozen. The
+  README says why: a later shape is version 2 with a migrator, never a regeneration.
+- **The probe, through the shipped binaries** (`rigplan render`, then `flowview run` of `register.json`
+  and `compare-rigs.json`), on both devices. Its numbers are what 7b asserts against:
+
+  | | Metal | CPU device |
+  |---|---|---|
+  | render, 144 frames | 4.0 s | 21.5 s |
+  | truth/models: verdict | Ready, 24 of 24 groups | Ready, 24 of 24 groups |
+  | truth/models: scale, worst rotation, worst centre | 0.9995, 0.683 mrad, 0.399 mm | 0.9995, 0.674 mrad, 0.391 mm |
+  | nominal/: verdict | Ready, held out 0.0549 mrad | Ready, held out 0.0552 mrad |
+  | nominal/: scale, worst rotation, worst centre | 0.9994, 9.86 mrad, 4.82 mm | 0.9994, 9.88 mrad, 4.83 mm |
+
+  - Both registrations chose `left-high` as their reference, so both comparisons derived the truth
+    again from the plan's reference, `left-low`.
+  - The nominal models are 14 times worse in rotation and 12 times in position.
+  - Nothing saturates: the 99.9th percentile is code 227 to 229, the board's white about 0.77 linear.
+- **Found, for the repo owner:**
+  - **`registration/1`'s verdict cannot see uncalibrated intrinsics.** Registered with the nominal
+    models, the rig is Ready with the same held-out residual as with the true ones (0.0549 against
+    0.0549 mrad), while being 14 times further from the truth. A board pose solved through a model a
+    focal length or a principal point out absorbs the error, as sub-slice 8b of M9 slice 1 found for
+    calibration's cross-validation. 7b records the verdict rather than asserting it, as planned.
+  - **The size estimate's floor is not a floor for a dark scene.** This capture wrote 49.9 MB against
+    a floor of 52.0 MB. The floor is a flat picture at half of full scale with the capture's noise, and
+    regions dark enough to record 0 compress better than that. The low cameras record half their
+    pixels as 0, since they look up past the spots' cones into an unlit upper room. That lighting is
+    kept: it is honest, and the board is well exposed.
+- **Two sabotages, both caught:**
+  - the builder's spot intensity changed without regenerating fails the byte comparison and the
+    read-back comparison;
+  - the scene's refusal not naming its board fails the refusal case alone.
+- **The machine's toolchain moved under the build:** macOS 27.2 brought SDK 27.0 and Apple clang 21,
+  and `build/` and `build-off/` held their old SDK path and eight `find_*` results inside it.
+  - Both caches now name the unversioned `MacOSX.sdk`, which survives the next update. `build-noceres`
+    is still stale.
+  - lain builds warning-clean under the new compiler.
+  - libc++ now deprecates `char_traits<fmt::detail::char8_type>`, warned while compiling fmt 10.2.1's
+    own sources. A later libc++ that removes it will need an fmt bump.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
@@ -17136,7 +17207,10 @@ row here**. A row is cheap to delete and expensive to leave.
   and `near`/`far` against `<windows.h>`. The fixes are green on all eight jobs (run 40265665844).
   **Slice 6 built 2026-10-26** (`camera::compareModels` / `compareRigs`, the tests comparing through
   them, the two nodes and their example documents). **Slice 7 planned 2026-10-26** (the example rig
-  plan, and the vertical through `register.json` and `compare-rigs.json`; nothing built).
+  plan, and the vertical through `register.json` and `compare-rigs.json`); **7a built 2026-10-27**
+  (`three-poles.json`, which froze the rig plan document at version 1). Two of 7a's findings are for
+  the repo owner: `registration/1` judges a rig registered with uncalibrated models Ready, and the size
+  estimate's floor is not a floor for a dark scene (*Sub-slice 7a built*).
   Slice 0's gui-mode check of the unsaved-changes modal is owed. M9's rig binder owes two fixes M15
   found, both symptoms of a binder that does not read a capture's layout: it pairs footage with models
   by sorted position (5e; the writer refuses names that sort differently as folders and as documents),

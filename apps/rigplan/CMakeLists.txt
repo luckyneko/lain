@@ -26,3 +26,27 @@ if(WIN32)
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:Vulkan::Loader>" "$<TARGET_FILE_DIR:rigplan>"
 		COMMENT "Staging the Vulkan loader beside rigplan")
 endif()
+
+# rigplan-examples writes the example rig plans in examples/, as flowview-examples writes flowview's
+# example documents. It is BUILT with everything, so every platform keeps compiling it, but only RUN
+# through `rig-plans` (flowview's `examples` target already has that name), which mirrors `format`:
+# commit what it wrote. The example test holds the committed documents to what this builds.
+add_executable(rigplan-examples
+	examples/src/main.cpp
+	examples/src/examples.cpp
+)
+target_compile_features(rigplan-examples PRIVATE cxx_std_17)
+target_include_directories(rigplan-examples PRIVATE examples/src)
+target_link_libraries(rigplan-examples
+	PRIVATE lain::core lain::data lain::rigplan lain::rigplan::serialize lain::camera lain::image lain::io::data
+			lain::io::data::codecs lain::log lain::warnings
+)
+
+add_custom_target(rig-plans
+	COMMAND rigplan-examples "${CMAKE_CURRENT_SOURCE_DIR}/examples"
+	COMMENT "Writing the example rig plans in apps/rigplan/examples"
+	VERBATIM)
+
+if(LAIN_BUILD_TESTING)
+	add_subdirectory(test)
+endif()

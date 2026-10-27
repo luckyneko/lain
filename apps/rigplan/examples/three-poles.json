@@ -1,0 +1,551 @@
+{
+  "version": 1,
+  "specifications": {
+    "sensors": [
+      {
+        "name": "mono-720p",
+        "image": {
+          "width": 1280,
+          "height": 720
+        },
+        "pixelPitchUm": 2.0,
+        "principalPointToleranceUm": 20.0,
+        "body": {
+          "size": {
+            "x": 0.1,
+            "y": 0.1,
+            "z": 0.1
+          },
+          "opticalCentre": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "sensorModel": {
+          "gain": 1.0,
+          "fullWellElectrons": 10000.0,
+          "readNoiseElectrons": 3.0,
+          "adcBits": 12,
+          "channels": "Grey",
+          "output": {
+            "format": "Png",
+            "bits": 8,
+            "curve": "sRGB"
+          }
+        }
+      }
+    ],
+    "lenses": [
+      {
+        "name": "4mm",
+        "focalLengthMm": 4.0,
+        "distortion": {
+          "type": "brownConrady5",
+          "value": {
+            "k1": -0.05,
+            "k2": 0.01,
+            "p1": 0.0,
+            "p2": 0.0,
+            "k3": 0.0
+          }
+        },
+        "focalLengthTolerance": 0.01,
+        "distortionTolerance": 0.1
+      }
+    ],
+    "cameras": [
+      {
+        "name": "mono-720p-4mm",
+        "sensor": "mono-720p",
+        "lens": "4mm"
+      }
+    ],
+    "lights": [
+      {
+        "name": "spot",
+        "kind": "Spot",
+        "intensity": 0.45,
+        "colour": {
+          "r": 1.0,
+          "g": 1.0,
+          "b": 1.0
+        },
+        "innerConeDegrees": 25.0,
+        "outerConeDegrees": 40.0
+      }
+    ]
+  },
+  "room": {
+    "centre": {
+      "x": 0.0,
+      "y": 0.0
+    },
+    "size": {
+      "x": 5.0,
+      "y": 5.0,
+      "z": 2.7
+    },
+    "floor": {
+      "present": true,
+      "material": {
+        "surface": {
+          "type": "procedural",
+          "value": {
+            "seed": 1,
+            "cell": 0.04
+          }
+        },
+        "specular": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0
+        },
+        "shininess": 0.0
+      }
+    },
+    "ceiling": {
+      "present": true,
+      "material": {
+        "surface": {
+          "type": "procedural",
+          "value": {
+            "seed": 1,
+            "cell": 0.04
+          }
+        },
+        "specular": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0
+        },
+        "shininess": 0.0
+      }
+    },
+    "north": {
+      "present": true,
+      "material": {
+        "surface": {
+          "type": "procedural",
+          "value": {
+            "seed": 1,
+            "cell": 0.04
+          }
+        },
+        "specular": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0
+        },
+        "shininess": 0.0
+      }
+    },
+    "south": {
+      "present": true,
+      "material": {
+        "surface": {
+          "type": "procedural",
+          "value": {
+            "seed": 1,
+            "cell": 0.04
+          }
+        },
+        "specular": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0
+        },
+        "shininess": 0.0
+      }
+    },
+    "east": {
+      "present": true,
+      "material": {
+        "surface": {
+          "type": "procedural",
+          "value": {
+            "seed": 1,
+            "cell": 0.04
+          }
+        },
+        "specular": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0
+        },
+        "shininess": 0.0
+      }
+    },
+    "west": {
+      "present": true,
+      "material": {
+        "surface": {
+          "type": "procedural",
+          "value": {
+            "seed": 1,
+            "cell": 0.04
+          }
+        },
+        "specular": {
+          "r": 0.0,
+          "g": 0.0,
+          "b": 0.0
+        },
+        "shininess": 0.0
+      }
+    }
+  },
+  "planes": [],
+  "boxes": [],
+  "props": [],
+  "boards": [
+    {
+      "id": "00000000-0000-7000-8000-00000000b001",
+      "name": "charuco",
+      "pattern": {
+        "dictionary": "Aruco5x5_100",
+        "squaresX": 7,
+        "squaresY": 5,
+        "markerToSquare": 0.75,
+        "firstMarkerId": 0,
+        "layout": "Standard"
+      },
+      "instance": {
+        "identity": "board",
+        "squareLengthMm": 24.0
+      },
+      "margin": 0.01,
+      "pixelsPerSquare": 100,
+      "backing": 0.003,
+      "path": {
+        "keys": [
+          {
+            "frame": 0,
+            "position": {
+              "x": -0.04,
+              "y": 0.0,
+              "z": 1.27
+            },
+            "aim": {
+              "panDegrees": -25.0,
+              "tiltDegrees": 12.0,
+              "rollDegrees": 0.0
+            }
+          },
+          {
+            "frame": 5,
+            "position": {
+              "x": 0.03,
+              "y": 0.02,
+              "z": 1.22
+            },
+            "aim": {
+              "panDegrees": -8.0,
+              "tiltDegrees": -15.0,
+              "rollDegrees": 12.0
+            }
+          },
+          {
+            "frame": 11,
+            "position": {
+              "x": 0.0,
+              "y": -0.02,
+              "z": 1.28
+            },
+            "aim": {
+              "panDegrees": 15.0,
+              "tiltDegrees": 15.0,
+              "rollDegrees": -10.0
+            }
+          },
+          {
+            "frame": 17,
+            "position": {
+              "x": -0.03,
+              "y": 0.01,
+              "z": 1.23
+            },
+            "aim": {
+              "panDegrees": 28.0,
+              "tiltDegrees": -10.0,
+              "rollDegrees": 6.0
+            }
+          },
+          {
+            "frame": 23,
+            "position": {
+              "x": 0.03,
+              "y": 0.0,
+              "z": 1.26
+            },
+            "aim": {
+              "panDegrees": 2.0,
+              "tiltDegrees": 5.0,
+              "rollDegrees": -15.0
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "mounts": [
+    {
+      "id": "00000000-0000-7000-8000-00000000a001",
+      "name": "left pole",
+      "kind": {
+        "type": "pole",
+        "value": {
+          "floor": {
+            "x": -0.643,
+            "y": -0.766
+          },
+          "height": 2.2,
+          "diameter": 0.05
+        }
+      },
+      "yawDegrees": -40.0,
+      "tolerance": {
+        "positionMm": 10.0,
+        "yawDegrees": 1.0
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000a002",
+      "name": "middle pole",
+      "kind": {
+        "type": "pole",
+        "value": {
+          "floor": {
+            "x": 0.0,
+            "y": -1.0
+          },
+          "height": 2.2,
+          "diameter": 0.05
+        }
+      },
+      "yawDegrees": 0.0,
+      "tolerance": {
+        "positionMm": 10.0,
+        "yawDegrees": 1.0
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000a003",
+      "name": "right pole",
+      "kind": {
+        "type": "pole",
+        "value": {
+          "floor": {
+            "x": 0.643,
+            "y": -0.766
+          },
+          "height": 2.2,
+          "diameter": 0.05
+        }
+      },
+      "yawDegrees": 40.0,
+      "tolerance": {
+        "positionMm": 10.0,
+        "yawDegrees": 1.0
+      }
+    }
+  ],
+  "cameras": [
+    {
+      "id": "00000000-0000-7000-8000-00000000c001",
+      "name": "left-low",
+      "camera": "mono-720p-4mm",
+      "mount": "00000000-0000-7000-8000-00000000a001",
+      "offset": {
+        "x": 0.0,
+        "y": 0.125,
+        "z": 0.9
+      },
+      "aim": {
+        "panDegrees": 0.0,
+        "tiltDegrees": 22.0,
+        "rollDegrees": 0.0
+      },
+      "tolerance": {
+        "offsetMm": 5.0,
+        "panDegrees": 0.5,
+        "tiltDegrees": 0.5,
+        "rollDegrees": 0.5
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000c002",
+      "name": "left-high",
+      "camera": "mono-720p-4mm",
+      "mount": "00000000-0000-7000-8000-00000000a001",
+      "offset": {
+        "x": 0.0,
+        "y": 0.125,
+        "z": 1.6
+      },
+      "aim": {
+        "panDegrees": 0.0,
+        "tiltDegrees": -22.0,
+        "rollDegrees": 0.0
+      },
+      "tolerance": {
+        "offsetMm": 5.0,
+        "panDegrees": 0.5,
+        "tiltDegrees": 0.5,
+        "rollDegrees": 0.5
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000c003",
+      "name": "middle-low",
+      "camera": "mono-720p-4mm",
+      "mount": "00000000-0000-7000-8000-00000000a002",
+      "offset": {
+        "x": 0.0,
+        "y": 0.125,
+        "z": 0.9
+      },
+      "aim": {
+        "panDegrees": 0.0,
+        "tiltDegrees": 22.0,
+        "rollDegrees": 0.0
+      },
+      "tolerance": {
+        "offsetMm": 5.0,
+        "panDegrees": 0.5,
+        "tiltDegrees": 0.5,
+        "rollDegrees": 0.5
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000c004",
+      "name": "middle-high",
+      "camera": "mono-720p-4mm",
+      "mount": "00000000-0000-7000-8000-00000000a002",
+      "offset": {
+        "x": 0.0,
+        "y": 0.125,
+        "z": 1.6
+      },
+      "aim": {
+        "panDegrees": 0.0,
+        "tiltDegrees": -22.0,
+        "rollDegrees": 0.0
+      },
+      "tolerance": {
+        "offsetMm": 5.0,
+        "panDegrees": 0.5,
+        "tiltDegrees": 0.5,
+        "rollDegrees": 0.5
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000c005",
+      "name": "right-low",
+      "camera": "mono-720p-4mm",
+      "mount": "00000000-0000-7000-8000-00000000a003",
+      "offset": {
+        "x": 0.0,
+        "y": 0.125,
+        "z": 0.9
+      },
+      "aim": {
+        "panDegrees": 0.0,
+        "tiltDegrees": 22.0,
+        "rollDegrees": 0.0
+      },
+      "tolerance": {
+        "offsetMm": 5.0,
+        "panDegrees": 0.5,
+        "tiltDegrees": 0.5,
+        "rollDegrees": 0.5
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000c006",
+      "name": "right-high",
+      "camera": "mono-720p-4mm",
+      "mount": "00000000-0000-7000-8000-00000000a003",
+      "offset": {
+        "x": 0.0,
+        "y": 0.125,
+        "z": 1.6
+      },
+      "aim": {
+        "panDegrees": 0.0,
+        "tiltDegrees": -22.0,
+        "rollDegrees": 0.0
+      },
+      "tolerance": {
+        "offsetMm": 5.0,
+        "panDegrees": 0.5,
+        "tiltDegrees": 0.5,
+        "rollDegrees": 0.5
+      }
+    }
+  ],
+  "lights": [
+    {
+      "id": "00000000-0000-7000-8000-00000000f001",
+      "name": "left spot",
+      "light": "spot",
+      "mount": "00000000-0000-7000-8000-00000000a001",
+      "offset": {
+        "x": 0.0,
+        "y": 0.125,
+        "z": 2.0
+      },
+      "aim": {
+        "panDegrees": 0.0,
+        "tiltDegrees": -40.0,
+        "rollDegrees": 0.0
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000f002",
+      "name": "middle spot",
+      "light": "spot",
+      "mount": "00000000-0000-7000-8000-00000000a002",
+      "offset": {
+        "x": 0.0,
+        "y": 0.125,
+        "z": 2.0
+      },
+      "aim": {
+        "panDegrees": 0.0,
+        "tiltDegrees": -40.0,
+        "rollDegrees": 0.0
+      }
+    },
+    {
+      "id": "00000000-0000-7000-8000-00000000f003",
+      "name": "right spot",
+      "light": "spot",
+      "mount": "00000000-0000-7000-8000-00000000a003",
+      "offset": {
+        "x": 0.0,
+        "y": 0.125,
+        "z": 2.0
+      },
+      "aim": {
+        "panDegrees": 0.0,
+        "tiltDegrees": -40.0,
+        "rollDegrees": 0.0
+      }
+    }
+  ],
+  "timeline": {
+    "frames": 24,
+    "rate": {
+      "numerator": 30,
+      "denominator": 1
+    }
+  },
+  "seed": 15,
+  "scales": {
+    "intrinsic": 1.0,
+    "installation": 1.0,
+    "locked": true,
+    "noise": 1.0
+  }
+}

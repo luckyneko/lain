@@ -783,7 +783,8 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   a uuid string, and a distortion the camera-model document's `{type, value}`. A read is strict about
   its SHAPE (an unknown or missing key, an unknown name, an identity that is not a uuid is a named
   problem) and not about its CONTENT: a rig plan with a mistake in it still opens, so it can be fixed,
-  and only realising it refuses. _Avoid_: plan file, scene file.
+  and only realising it refuses. Frozen at version 1 since the first example rig plan was committed
+  (M15 slice 7): a change to its shape is a new version with a migrator. _Avoid_: plan file, scene file.
 - **Specification catalogue** — a document of camera, sensor, lens and light specifications kept for
   reuse. A rig plan copies a specification in from one, and can save one back out; it never links to
   one, so a catalogue edit changes no rig plan behind its back. _Avoid_: library, linked spec.
