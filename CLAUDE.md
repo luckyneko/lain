@@ -1400,12 +1400,29 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-27 — feature/M15's CI run after slice 7: `run` writes text the same on every platform
+
+[Run 40493396763](https://github.com/luckyneko/lain/actions/runs/40493396763) on `2977ed0`, the first
+since slice 5. Seven jobs were green, and Linux ran the new render, register and score step through the
+shipped binaries. Windows failed two tests, M9's board rig vertical and 7b's capture vertical, in one
+check: the comparison line `run` wrote must be the library's, byte for byte. Slice 6c added that check,
+and 7b copied it. **The fix's own run is owed.** Full notes in WORK.md's *feature/M15's CI run after
+slice 7*.
+
+- **The cause was `run`.** It wrote a scalar or text output through a text-mode `std::ofstream`, so on
+  Windows the line ended in CRLF. Every other output it writes goes through io, whose local stream is
+  binary.
+- **Fixed by writing it through `io::write` too.** That branch dated from M10 slice 2, and nothing had
+  compared its bytes on Windows before. macOS writes LF either way, so only the Windows leg can check
+  the fix.
+
 ### Update 2026-10-27 — M15 slice 7, sub-slice 7b built: the vertical and CI (**slice 7 COMPLETE**)
 
 The committed example rig plan rendered, registered and scored end to end, as a user would.
 `ctest -j8` **1559/1559** with video, camera and Ceres on (+1), **1419/1419** with all three off
-(unchanged); warning-clean, format-check clean. **Owed: CI's first run of the new step.** Full notes in
-WORK.md's *Sub-slice 7b built*.
+(unchanged); warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 7b built*.
+*(CI's first run of it, [run 40493396763](https://github.com/luckyneko/lain/actions/runs/40493396763),
+passed the new step on Linux and failed two Windows tests on a CRLF `run` wrote; see the next entry.)*
 
 - **`test-flowview-capture`** renders `three-poles.json` with `writeCapture` on every device the
   machine has, then runs `register.json` twice (`truth/models`, `nominal/`) and `compare-rigs.json`

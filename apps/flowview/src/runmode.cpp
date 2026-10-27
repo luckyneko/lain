@@ -17,6 +17,7 @@
 #include <lain/io/framepattern.h> // frameKey — the one spelling a sweep and the openers share
 #include <lain/io/image/save.h>
 #include <lain/io/image/writer.h> // ImageWriterOptions — how a still output is encoded
+#include <lain/io/transport.h>	  // io::write — a text output's bytes
 #include <lain/io/uri.h>
 #include <lain/io/video/open.h>
 #include <lain/io/video/save.h>
@@ -24,11 +25,12 @@
 #include <lain/media/frameposition.h>
 #include <lain/media/framesequence.h>
 #include <lain/media/serialize/manifest.h>
+#include <lain/memory/buffer.h>
 #include <lain/meta/enums.h>
 #include <lain/meta/typenames.h>
 
 #include <algorithm>
-#include <fstream>
+#include <cstring>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -260,15 +262,16 @@ namespace flowview
 			return false;
 		}
 
-		// A scalar / text output: write its value as text, symmetric with an image to a file.
-		std::ofstream file(path);
-		if (!file)
-		{
-			log::error("flowview: could not write --{} to {}", out.name, path);
-			return false;
-		}
-		file << evaluation.describe(out.port) << '\n';
-		return true;
+		// A scalar / text output: write its value as text, symmetric with an image to a file. Through
+		// io::write, as every other output here goes through io, so the file is the same bytes on every
+		// platform: a text-mode stream ended the line with CRLF on Windows (found by CI, M15 slice 7b).
+		const std::string text = evaluation.describe(out.port) + '\n';
+		memory::Buffer bytes(text.size());
+		std::memcpy(bytes.data(), text.data(), text.size());
+		if (io::write(path, bytes))
+			return true;
+		log::error("flowview: could not write --{} to {}", out.name, path);
+		return false;
 	}
 
 	// Refuse a sweep whose image output could never be encoded, ONCE, against the first frame —
