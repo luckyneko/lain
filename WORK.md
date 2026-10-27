@@ -15028,8 +15028,11 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
 7. **The vertical**: a committed example rig plan, written by a C++ builder as flowview's examples
    are (a room with procedural walls, three poles of two cameras, a board mover), through
    `rigplan render`, then `flowview run register.json` plus `compareRigs` against the truth, in CI on
-   the CPU device. Proves: at scale 0 it registers near-exactly; with nominal models at intrinsic scale 1
-   the error rises measurably.
+   the CPU device. Proves: with its true models it registers near-exactly; with its nominal models, at
+   intrinsic scale 1, the error rises measurably. **Planned 2026-10-26 as two commits, 7a and 7b**
+   (*Slice 7 planned* below). *(Amended while planning: this said "at scale 0 it registers
+   near-exactly". One capture at intrinsic scale 1, bound to `truth/models` and to `nominal/`, makes
+   both claims from the same pixels, and slice 1 already proves scale 0 is exactly nominal.)*
 8. **The gui, part 1**: the app shell and docking, the Viewport, Outliner and Inspector, ImGuizmo,
    frustums, undo through `lain::editor`. Live-verified by the repo owner.
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
@@ -16770,6 +16773,120 @@ to the camera examples' eyeball (Outstanding index, M9's item 3).
   - the `compareRigs` row dropped from the kinds table fails the kinds case, the catalog's and the rig
     vertical, whose document then loads without its node.
 
+### Slice 7 planned (2026-10-26)
+
+Two commits, in order, in one session: 7b renders what 7a commits. Nothing is built.
+
+- **Decided with the repo owner:**
+  - **The board is M9's**: 7 x 5 squares of 24 mm, ArUco 5x5_100, markers 0.75 of a square, which is
+    what `register.json`'s board specification detects. So `flowview run register.json` runs
+    unchanged, and no M9 document changes. The cost is a small working volume, with the cameras
+    about 0.9 m from the board. A room-scale board, which would need a board specification input to
+    `register.json` (a `--board` binder, a board document in the capture), was refused for this
+    slice. Trigger: the first rig plan whose board is not M9's.
+  - **One capture, bound two ways.** The capture is rendered once, at intrinsic scale 1 (installation
+    locked to it), and registered twice from the same pixels:
+    - with `truth/models`, where it should register near-exactly, even though installation deviation
+      moved every camera;
+    - with `nominal/`, where the error should rise measurably.
+
+    That is ADR-0029's "a binding choice, not a regeneration". Slice 1's tests already prove that
+    scale 0 is exactly nominal, so a second capture at deviation 0 would only repeat the first
+    registration's claim at twice the rendering cost. Build-order item 7 is amended in place.
+  - **The vertical is a new flowview test executable, `test-flowview-capture`**, beside a
+    driver-free `test-flowview`. It renders with `writeCapture` on every kind of device the machine
+    offers (`libs/render/test/gpu.h`), so Metal and the CPU device locally and the CPU device in CI.
+    It then runs the committed documents through `runGraph`, as M9's verticals do. A ctest fixture
+    that runs the shipped `rigplan render` was refused: it would use one device, render in Debug for
+    nothing, and need fixture plumbing. The shipped binaries are CI's step instead (7b).
+- **7a: the example rig plan.**
+  - **`apps/rigplan/examples/`**, written by a `rigplan-examples` builder (`examples/src/`) from one
+    table with deterministic ids, as `flowview-examples` writes flowview's. A README says what each
+    plan is and how to render it, and an `examples` target regenerates the documents.
+  - **The scene** (one plan, its name settled in 7a):
+    - a room with procedural surfaces;
+    - three poles on an arc around one working point, with two cameras each at two heights, aimed at
+      that point, and a light on each pole;
+    - M9's board on a path through the working point, turned so that every camera sees it face on in
+      some frames and obliquely in others;
+    - 24 frames, the M9 rig vertical's 16 groups scaled to six cameras.
+  - **The cameras** are the test plan's: a 1280 x 720 sensor of 2 um pixels and a 4 mm Brown-Conrady
+    lens (f = 2000 px), with its tolerances: focal length 1%, distortion 10%, principal point 20 um,
+    plus the placement and mount tolerances. Sub-slice 5c detected M9's board through this camera at
+    0.875 m, at means of 0.06 to 0.09 px, on both devices. Their names are chosen so that folders and
+    documents sort alike (5e's rule).
+  - **The plan stores the vertical's settings**: intrinsic scale 1 (locked), noise 1 (the sensor's own
+    noise) and a fixed seed. So the committed plan alone reproduces the vertical's capture, and
+    `--seed`, `--deviation` and `--noise` are for experimenting.
+  - **The numbers are measured before the plan is committed**, by a throwaway probe on both devices:
+    the arc's radius and spread, the board's path, the lights and the gain. The probe has to show:
+    - every camera detects the board in enough frames for a registration with true models to be
+      Ready (`registration/1`: every camera shares 10 groups, every bridge rests on 5);
+    - no camera saturates on the board's white or loses its black to read noise.
+  - **This freezes the rig plan document at version 1** (slice 1c's rule). From the commit that lands
+    the example, a change to the document's shape is version 2 plus a v1 migrator, as
+    `flow::serialize`'s `version1.cpp` is. The committed example's byte check is what notices one.
+    Before the freeze, the document is read end to end once against CONTEXT.md's *Rig design* terms
+    and the camera documents' conventions. Anything that read wants changed lands as its own commit
+    first.
+  - **`apps/rigplan/test` (`test-rigplan-app`, driver-free):**
+    - the committed documents are byte for byte what the builder writes;
+    - each reads back strictly, and `check()` finds nothing;
+    - its size estimate has no problems;
+    - with no board renderer registered, a capture is refused and names the board, so the plan is
+      flagged as needing a camera build, as `needsCamera` flags flowview's camera examples.
+- **7b: the vertical, and CI.**
+  - **`test-flowview-capture`** compiles the same flowview sources `test-flowview` does, from one
+    CMake list the two share, so the two cannot drift. It also links `lain::rigplan::capture` and
+    stages the Vulkan runtime and OpenCV's DLLs. It is built where a board renderer is
+    (`TARGET lain::camera::opencv`), and SKIPs in Debug, as the end-to-end suites do. Its case:
+    1. renders the committed plan with `writeCapture` into a scratch folder;
+    2. runs `register.json` with `--footage <capture>/rig`, once with `--models <capture>/truth/models`
+       and once with `--models <capture>/nominal`;
+    3. runs `compare-rigs.json` for each, against `<capture>/truth/rig.json`. Since the truth is
+       relative to the rig plan's reference and the registration chooses its own, this also exercises
+       slice 6's derive-again.
+  - **What it asserts:**
+    - with true models, Ready, and within bounds measured on both devices and no looser than M9's rig
+      vertical (scale within 0.5%, worst rotation 2 mrad, worst centre 1 mm);
+    - with nominal models, a worst rotation and a worst centre each larger than the true-model
+      result's by a factor measured on both devices and asserted with a margin;
+    - without a refiner, both reports read `Failed: NoRefiner` and no rig is written, as M9's verticals
+      check.
+  - **The nominal registration's verdict is recorded, not asserted.** If it is still Ready, the
+    verdict cannot see a 1% focal error and 10 px of decentring, and that is a finding about
+    `registration/1` for the repo owner, not something this slice fixes.
+  - **CI**, a step after the rigplan smoke, on Release legs only (the Debug leg's step costs are
+    unmeasured, and its ctest case skips anyway):
+    - legs with OpenCV and Ceres: the shipped `rigplan render <example> --out <dir> --device cpu`,
+      then the shipped `flowview run` of `register.json` and `compare-rigs.json` on it, from a folder
+      that is not the capture's, ending with `test -s` on the comparison, since `run` exits 0 when a
+      bound output is empty;
+    - the no-refiner leg: the render, then a registration whose report reads `Failed: NoRefiner`;
+    - the leg with everything off: the render is refused, exits 1, and names the board renderer.
+
+    The workflow's comment that rigplan "renders nothing yet" goes.
+  - **A `synthetic-capture` build target** renders the example into `build/synthetic-capture`, with a
+    README.txt of the flowview commands that register and score it, as `camera-footage` does for
+    M9's footage. Slices 8 and 9's eyeballs can start from it.
+  - **Sabotages, one per claim:**
+    - `writeCapture` writing the realised models into `nominal/` fails the "rises measurably" check;
+    - the truth rig written in the plan frame rather than relative to the reference fails the
+      true-model bounds;
+    - both registrations bound to `nominal/` fail the true-model bounds;
+    - `test-flowview-capture` given its own copy of the source list, missing one file, fails to link.
+- **Found while planning, recorded rather than fixed:**
+  - **Slice 6's two findings stay out of slice 7.**
+    - Footage of one frame is named by its file (`cam0/frame.0000.png`), so it would not pair with
+      the truth's `cam0`. The vertical has 24 frames, so it never meets this. It joins 5e's
+      sorted-position finding as owed to M9's rig binder (Outstanding index). Both are symptoms of
+      a binder that does not read a capture's layout, which the deferred capture manifest would fix.
+    - There is no gui editor for a `RegisteredRig` input. It stays in M9's gui eyeball row, for
+      slices 8 and 9 or the first person who wants to score a capture in the gui.
+  - **The capture's identities and the truth's already agree** at more than one frame: M9 names
+    `rig/<name>` by its location under the rig folder (`capture/location.h`), and `truthRig`'s
+    identities are the camera names. The vertical is the first thing to rely on that end to end.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -17018,10 +17135,13 @@ row here**. A row is cheap to delete and expensive to leave.
   the 16-bit sRGB output table differed by platform (it is now decided without libm), a test's angle,
   and `near`/`far` against `<windows.h>`. The fixes are green on all eight jobs (run 40265665844).
   **Slice 6 built 2026-10-26** (`camera::compareModels` / `compareRigs`, the tests comparing through
-  them, the two nodes and their example documents).
-  Slice 0's gui-mode check of the unsaved-changes modal is owed. Two
-  findings of 5e wait on decisions: M9's rig binder pairs footage with models by sorted position (the
-  writer refuses names that sort differently as folders and as documents; the binder fix is M9's), and
+  them, the two nodes and their example documents). **Slice 7 planned 2026-10-26** (the example rig
+  plan, and the vertical through `register.json` and `compare-rigs.json`; nothing built).
+  Slice 0's gui-mode check of the unsaved-changes modal is owed. M9's rig binder owes two fixes M15
+  found, both symptoms of a binder that does not read a capture's layout: it pairs footage with models
+  by sorted position (5e; the writer refuses names that sort differently as folders and as documents),
+  and it names a camera with one frame by its file, not its folder (*Slice 6 planned*). One finding
+  of 5e waits on a decision:
   the CPU device's share of the cores during a capture (measured, for the repo owner). Ten slices, 0 to 9, on `feature/M15`; the build order and every exclusion are in
   M15's own sections. *(Milestone 15.)*
 - **archimedes' CPU device**, which M15 renders its CI captures on: **adopted by M15 slice 3d

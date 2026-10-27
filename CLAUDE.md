@@ -1400,6 +1400,34 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-26 — M15 slice 7 planned: the headless vertical (nothing built yet)
+
+Slice 7 is planned as **two commits, 7a and 7b**, in WORK.md's *Slice 7 planned*. Build-order item 7
+and the Outstanding index are amended in place.
+
+- **Decided with the repo owner:**
+  - **The board is M9's** (7 x 5 squares of 24 mm, ArUco 5x5_100), so `register.json` runs unchanged
+    and no M9 document changes. The working volume is small (cameras about 0.9 m from the board). A
+    room-scale board, with a board input to `register.json`, waits for the first rig plan whose board
+    is not M9's.
+  - **One capture at intrinsic scale 1, bound two ways**: `truth/models` should register near-exactly,
+    and `nominal/` should be measurably worse. The build order's "at scale 0" claim is restated,
+    since slice 1 already proves scale 0 is exactly nominal.
+  - **The vertical is a new `test-flowview-capture`**: `writeCapture` on every device kind, then the
+    committed documents through `runGraph`, skipping in Debug. `test-flowview` stays driver-free, and
+    the shipped binaries are CI's step.
+- **7a**: `apps/rigplan/examples/` and a `rigplan-examples` builder. The scene is a room, three poles
+  of two cameras (the test plan's 1280 x 720, f = 2000 px camera, which 5c already detected the board
+  through), and M9's board on a 24-frame path. The plan stores intrinsic 1, noise 1 and a fixed seed.
+  The scene's numbers come from a probe on both devices first. Committing the example **freezes the
+  rig plan document at version 1**: after that, a shape change is a version bump and a migrator.
+- **7b**: the vertical's two registrations and two comparisons. A CI step runs the shipped binaries on
+  the CPU device, and on the leg with everything off checks the refusal that names the board renderer.
+  A `synthetic-capture` build target is added.
+- **Recorded, not fixed:** slice 6's two findings. A one-frame camera is named by its file, which is
+  owed to M9's binder beside 5e's sorted-position pairing. There is no gui editor for a rig input,
+  which belongs to slices 8 and 9.
+
 ### Update 2026-10-26 — M15 slice 6, sub-slice 6c built: `compareRigs` and `compareModels` (**slice 6 COMPLETE**)
 
 The two comparisons as `camera::flow` nodes, with `compare-rigs.json` and `compare-models.json`.
