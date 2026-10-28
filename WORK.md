@@ -15037,7 +15037,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    both claims from the same pixels, and slice 1 already proves scale 0 is exactly nominal.)*
 8. **The gui, part 1**: the app shell and docking, the Viewport, Outliner and Inspector, ImGuizmo,
    frustums, undo through `lain::editor`. Live-verified by the repo owner. **Planned 2026-10-28 as six
-   commits, 8a to 8f** (*Slice 8 planned* below); **8a, 8b and 8c built 2026-10-28**. *(Amended while planning: the Viewport draws the
+   commits, 8a to 8f** (*Slice 8 planned* below); **8a to 8d built 2026-10-28**. *(Amended while planning: the Viewport draws the
    nominal plan only, a mover's keys are edited as a table, and a plan's own specifications are edited
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
@@ -17345,6 +17345,9 @@ is built.
     - a frustum through the pinhole intrinsics alone fails the fisheye case;
     - ImGuizmo's projection with lain's y-down kept fails the pixel case;
     - `apply` ignoring the mount's yaw fails the camera round trip.
+  - *(Built with a `selection.cpp` beside the header, `apply` taking the gizmo's mode so a move never
+    rewrites an aim, overlays and picking that take the render scene, and a marker for a fixed point;
+    see Sub-slice 8d built.)*
 - **8e: the app shell.** Gui code, no Viewport yet.
   - **`rigplan [plan]`**, `MainWindow`, docking with the default layout, and the window title (the
     plan's name, with `*` when dirty).
@@ -17644,6 +17647,110 @@ warning-clean, format-check clean.
   - `pruneAssets` keeping failures: the retry case fails.
   - A prop counted loaded whatever it was made from: the changed-file case fails.
 
+#### Sub-slice 8d built (2026-10-28): rigplan's editor, driver-free
+
+Seven units in `apps/rigplan/src` (document, selection, edits, orbit, picking, overlays, gizmo), compiled
+once into the OBJECT library `rigplan-tested`, which `rigplan` and `test-rigplan-app` both link.
+`rigplan render` now reads its plan through the document's `readPlan`. `ctest -j8` **1613/1613** Release
+with video, camera and Ceres on (+30), and **1472/1472** with all three off (+30); warning-clean,
+format-check clean. `rigplan render three-poles.json --estimate` prints what it printed before.
+
+- **`document.{h,cpp}`**: the open plan, its path, `dirty`, and its `UndoStack`.
+  - `readPlan` is `rigplanapp.cpp`'s `loadPlan` moved, returning its problems instead of logging them,
+    so `render` and the gui read a plan through one routine. `openDocument` and `saveDocument` apply
+    ADR-0027 at the file.
+  - `snapshot` is `rigPlanToValue` and takes no folder, so an undo cannot be rebased.
+  - Dirty tracking is flowview's: `markChanged` sets `dirty` and asks for a snapshot, `commit` records
+    it once a gesture has ended, and a save clears it. An undo first commits a pending change, so the
+    step it takes back is the edit just made.
+  - `newPlan` is the default room and the test plan's four specifications (`hd`, `4mm`, `hd-4mm`,
+    `flood`), with no mounts.
+- **`selection.{h,cpp}`**: what is selected, by identity: one of the plan, the room, a mount, a camera,
+  a light, a plane, a box, a prop, a board, a key (its mover and index), or a specification (its kind
+  and name). `exists` says whether the plan still has it, and `shownFrame` gives a key's frame.
+  *Deviation:* the plan listed `selection.h` alone. Both functions read the plan, so they have a `.cpp`.
+- **`edits.{h,cpp}`**: add, delete, duplicate, rename and set the reference. Each returns
+  `EditResult`: the selection after a change, or a refusal and an unchanged plan. A rename to the name
+  it has is `nothing()`, neither.
+  - New things stand in the middle of the room. A camera or light goes on the mount the selection
+    names (a mount, or one of its cameras or lights), 12.5 cm out from a pole's axis so it is clear of
+    it. New cameras are `cam1`, `cam2`, and so on.
+  - **Added, beyond the plan:**
+    - duplicating a mount copies the cameras and lights on it, as deleting one deletes them;
+    - a duplicated board's printed identity is made unique as its name is;
+    - a key is duplicated one frame on, refused where that frame has a key;
+    - a mover's last key cannot be deleted;
+    - deleting the reference camera clears the reference rather than leaving it dangling;
+    - a duplicate's trailing number is replaced, not stacked (`cam1 2`, then `cam1 3`).
+- **`orbit.{h,cpp}`**: a turntable about a target, aimed as a rig plan aims a camera, with the plan as
+  its mount. Its yaw is a pan, and its pitch looks down. The pitch stops 0.5° short of straight up or
+  down. The depth range follows the distance (near distance / 200, far distance x 50).
+  - **Taken as a default, to object to:** zoom is the scroll wheel's dolly, a tenth of the way to the
+    target per step. Alt+RMB's dolly is `dollyBy` (exp(-amount) of the distance). The field of view
+    is fixed at 50°, since the wheel dollies in Maya and Blender alike.
+- **`picking.{h,cpp}`**: `rayThrough` and `pick`, by the plan's rule. The render scene's instances are
+  tested triangle by triangle, a camera's body is a box of its `SensorBody` size, and lights, keys and
+  fixed points are spheres of the marker's radius.
+  - **Found by the first run:** a click on a plane's centre missed it. The centre lies on the diagonal
+    the rectangle's two triangles share, and rounding put the ray between them. Triangle edges now have
+    1e-9 of slack.
+- **`overlays.{h,cpp}`**:
+  - each camera's body box and frustum (`frustumOutline`: the border unprojected at 16 samples a side,
+    out to the depth along each ray, plus edges to the four corners);
+  - each light's marker and a spot's cone;
+  - each mover's path and key markers.
+
+  The selection is drawn in a highlight colour: a mount's cameras and lights, a specification's every
+  camera or light, and an oriented box round every scene instance the selection owns.
+  - **Deviations:** `overlays` takes the `SceneResult`, since a surface or prop has no overlay lines
+    of its own to highlight. A fixed point is marked by a cross, and is picked there, since otherwise
+    an empty fixed point could neither be seen nor clicked.
+- **`gizmo.{h,cpp}`**: `gizmoTarget` (the matrix and the axes per kind, by the plan's table),
+  `operation` (ImGuizmo's flags for a mode), `apply`, and `gizmoMatrices`.
+  - A camera's or light's gizmo stands at its mounting point, where its offset puts it, so turning it
+    turns the camera about the point it is fixed by.
+  - **Deviation:** `apply` takes the gizmo's mode. Translate writes the position alone and Rotate the
+    turn alone. So a move never rewrites an aim the Inspector typed, through `aimOf`, and ImGuizmo's
+    float noise in one cannot reach the other. A kind that only yaws keeps the yaw of its turned +X
+    across the floor.
+- **The cases** (`test-rigplan-app`, 30 new):
+  - `three-poles.json` opened and saved is byte for byte the committed file;
+  - an undo restores a committed snapshot with the prop's mesh absolute, keeps the selection across a
+    reordering delete, and loses one whose object it removed, which a redo brings back;
+  - a deleted mount takes its cameras and lights, and one undo restores them;
+  - a specification in use is not deleted;
+  - a duplicate is a new unit whose realised fx differs;
+  - a refused rename changes nothing;
+  - a specification's rename reaches every reference;
+  - everything added checks clean;
+  - the orbit keeps Z up over a grid of yaws and pitches, and the framing keeps a room's corners inside
+    two pane shapes;
+  - a click on the projected centre of each of eleven things picks it, and a camera beats the wall
+    behind it, which the same click picks without the camera;
+  - a frustum's corners project to the image's outer corners through a pinhole, a fisheye and a barrel
+    lens, and the fisheye's reaches more than 10° further;
+  - ImGuizmo's own `ComputeMouseRay`, through where lain projects a point, passes through the point, on
+    a pane of half the view's pixels;
+  - `apply` of the gizmo's own matrix, through floats, changes nothing for eleven selections in both
+    modes;
+  - a pole never leaves the floor, a tilted box keeps its yaw alone, and a room neither rises nor turns.
+- **The board's sheet is not picked in these cases:** `test-rigplan-app` must have no board renderer,
+  for the examples' refusal case, so the board is picked by its keys. Its sheet goes through the same
+  instance path as a plane's.
+- **Found by a sabotage:** the undo case passed with snapshots relativized against the document's
+  folder. Both of its undos landed on the baseline, which `reset` takes unrelativized. It now checks the
+  first undo, which restores a snapshot `commit` took.
+- **Eight sabotages, all caught:**
+  - a relativized snapshot fails the undo case, once it checked the first undo;
+  - a duplicate keeping its uuid fails the draw case (`check()` refuses it, so `realise()` does);
+  - a frustum through the pinhole intrinsics alone fails both frustum cases, 21 assertions;
+  - ImGuizmo's projection with lain's y-down kept fails the pixel case, on every point but the one at
+    the image's centre;
+  - `apply` ignoring the mount's yaw fails the round trip and the moved-camera case;
+  - the room competing with everything else fails the projected-centre case, 10 of 11 picks;
+  - a specification renamed without its references fails the rename case;
+  - a mount deleted without its cameras fails the delete case and the in-use case.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -17898,9 +18005,9 @@ row here**. A row is cheap to delete and expensive to leave.
   `test-flowview-capture`, a CI step through the shipped binaries, and `synthetic-capture`). CI's first
   run since slice 5 found `run` writing CRLF on Windows, fixed, and the fix is green on all eight jobs (run 40497652103).
   **Slice 8 planned 2026-10-28** as six commits, 8a to 8f (the gui's first part), ending in a
-  gui-mode checklist for the repo owner (*Slice 8 planned*); **8a to 8c built the same day** (a pane
+  gui-mode checklist for the repo owner (*Slice 8 planned*); **8a to 8d built the same day** (a pane
   shows a texture it did not upload; ImGuizmo; a grid drawn in shading; the nominal layout, `aimOf`
-  and pooled asset jobs). Two of 7a's findings are for
+  and pooled asset jobs; rigplan's driver-free editor units). Two of 7a's findings are for
   the repo owner: `registration/1` judges a rig registered with uncalibrated models Ready, and the size
   estimate's floor is not a floor for a dark scene (*Sub-slice 7a built*).
   Slice 0's gui-mode check of the unsaved-changes modal is owed. M9's rig binder owes two fixes M15

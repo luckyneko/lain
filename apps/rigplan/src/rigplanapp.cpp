@@ -1,21 +1,19 @@
 #include "rigplanapp.h"
 
+#include "document.h" // readPlan: the one way a plan is read from a file
+
 #include <lain/app/application.h>
 #include <lain/camera/backends.h> // registerCameraBackends: the board renderer, where a camera plugin is built
-#include <lain/core/uri.h>
 #include <lain/io/data/codecs.h>
-#include <lain/io/data/load.h>
 #include <lain/io/image/codecs.h>
 #include <lain/io/mesh/codecs.h>
 #include <lain/log/log.h>
 #include <lain/rigplan/capture.h>
-#include <lain/rigplan/serialize/rigplan.h>
 #include <lain/string/format.h>
 
 #include <filesystem>
 #include <iostream>
 #include <limits>
-#include <optional>
 
 namespace rigplan
 {
@@ -46,24 +44,6 @@ namespace rigplan
 		return true; // headless: open no window, so run() invokes onProcess once
 	}
 
-	// The rig plan document at `path`, its paths read against its own folder (ADR-0027), or none with
-	// every reason logged.
-	static std::optional<lain::rigplan::RigPlan> loadPlan(const fs::path& path)
-	{
-		const fs::path absolute = fs::absolute(path);
-		std::optional<data::Value> document = io::data::load(core::Uri::fromPath(absolute));
-		if (!document)
-		{
-			log::error("{}: could not be read as a document", absolute.string());
-			return std::nullopt;
-		}
-		lain::rigplan::resolvePaths(*document, absolute.parent_path());
-		lain::rigplan::RigPlanRead read = lain::rigplan::rigPlanFromValue(*document);
-		for (const std::string& problem : read.problems)
-			log::error("{}: {}", absolute.string(), problem);
-		return std::move(read.plan);
-	}
-
 	int RigplanApp::onProcess(app::Application& app)
 	{
 		io::image::registerImageCodecs();
@@ -71,9 +51,12 @@ namespace rigplan
 		io::data::registerDataCodecs();
 		camera::registerCameraBackends();
 
-		const std::optional<lain::rigplan::RigPlan> plan = loadPlan(m_planPath);
-		if (!plan)
+		const PlanRead read = readPlan(m_planPath);
+		for (const std::string& problem : read.problems)
+			log::error("{}", problem);
+		if (!read.plan)
 			return 1;
+		const lain::rigplan::RigPlan& plan = *read.plan;
 		lain::rigplan::CaptureOptions options;
 		options.out = m_out;
 		if (m_render->count("--seed"))
@@ -86,7 +69,7 @@ namespace rigplan
 			options.maxInFlight = m_inFlight;
 		options.generator = string::format("{} {}", app.info().name, app.info().version.toString());
 
-		const lain::rigplan::SizeEstimate estimate = lain::rigplan::estimateSize(*plan, options);
+		const lain::rigplan::SizeEstimate estimate = lain::rigplan::estimateSize(plan, options);
 		if (!estimate.problems.empty())
 		{
 			for (const std::string& problem : estimate.problems)
@@ -104,7 +87,7 @@ namespace rigplan
 
 		options.onFrameWritten = [](const lain::rigplan::WrittenFrame& frame)
 		{ log::debug("wrote {} ({} bytes)", frame.file.string(), frame.bytes); };
-		const lain::rigplan::CaptureReport report = lain::rigplan::writeCapture(*plan, app.device(), options);
+		const lain::rigplan::CaptureReport report = lain::rigplan::writeCapture(plan, app.device(), options);
 		for (const std::string& problem : report.problems)
 			log::error("{}", problem);
 		if (!report.problems.empty())
@@ -115,7 +98,7 @@ namespace rigplan
 		}
 		std::cout << string::format("wrote {} frames ({} bytes) of {} cameras into {}: {:.1f} s preparing, {:.1f} s rendering "
 									"({:.1f} s capturing, {:.1f} s waiting for room among {} frames in flight)\n",
-									report.framesWritten, report.bytesWritten, plan->cameras.size(), fs::absolute(options.out).string(),
+									report.framesWritten, report.bytesWritten, plan.cameras.size(), fs::absolute(options.out).string(),
 									report.prepareSeconds, report.renderSeconds, report.captureSeconds, report.waitSeconds, report.maxInFlight);
 		return 0;
 	}

@@ -1400,6 +1400,38 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-28 — M15 slice 8, sub-slice 8d built: rigplan's editor, driver-free
+
+Seven units in `apps/rigplan/src`, compiled once into the OBJECT library `rigplan-tested`, which
+`rigplan` and `test-rigplan-app` both link: document, selection, edits, orbit, picking, overlays and the
+gizmo bridge. `ctest -j8` **1613/1613** Release with video, camera and Ceres on (+30), and **1472/1472** with all
+three off (+30); warning-clean, format-check clean. Full notes in WORK.md's *Sub-slice 8d built*.
+
+- **The document applies ADR-0027 at the file and nowhere else.** `readPlan` is `render`'s old
+  `loadPlan`, so both read a plan through one routine. An undo snapshot is `rigPlanToValue`, which takes
+  no folder. `three-poles.json` opened and saved is byte for byte the committed file.
+- **A selection is by identity**, so it survives an undo that reorders a list, and `exists` says when
+  the undo removed its object.
+- **Each edit changes the plan whole or refuses**, by `check()`'s rules (a camera's name a valid folder
+  name and unique ignoring case). Added beyond the plan:
+  - a duplicated mount copies the cameras and lights on it;
+  - a key is duplicated one frame on;
+  - deleting the reference camera clears the reference.
+- **Deviations:**
+  - `apply` takes the gizmo's mode, so a move never rewrites an aim the Inspector typed;
+  - overlays and picking take the render scene, to outline and hit surfaces and props;
+  - a fixed point gets a marker, so an empty one can be seen and clicked;
+  - `selection.h` has a `.cpp`.
+- **Taken as a default, to object to:** the scroll wheel's zoom is a dolly, a tenth of the way per
+  step, and the field of view stays 50°.
+- **ImGuizmo's matrices are held to ImGuizmo's own code**: its `ComputeMouseRay`, through where lain
+  projects a point, passes through the point, on a pane of half the view's pixels.
+- **Found by the first run:** a click on a plane's centre fell between its two triangles by rounding.
+  Triangle edges now have 1e-9 of slack.
+- **Found by a sabotage:** the undo case passed with relativized snapshots, since both its undos landed
+  on the unrelativized baseline. It now checks the first undo. Eight sabotages, all caught.
+- **Next is 8e**, the app shell, then 8f, the Viewport pane, then the repo owner's gui-mode checklist.
+
 ### Update 2026-10-28 — M15 slice 8, sub-slice 8c built: the nominal layout, `aimOf`, and pooled asset jobs
 
 What an editor needs of `lain::rigplan` and its scene. `ctest -j8` **1583/1583** Release with video,

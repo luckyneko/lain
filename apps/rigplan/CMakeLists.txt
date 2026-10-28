@@ -1,5 +1,33 @@
-# rigplan — rig design (WORK.md M15). A thin lain::app client: today its `render` subcommand writes a
-# rig plan's synthetic capture headless (lain::rigplan::capture); the gui arrives with slices 8 and 9.
+# rigplan — rig design (WORK.md M15). A thin lain::app client: its `render` subcommand writes a rig
+# plan's synthetic capture headless (lain::rigplan::capture), and the gui arrives with slices 8 and 9.
+
+# The editor's driver-free units (M15 slice 8d): the document, the selection, the edits, the orbit, the
+# picking, the overlays and the gizmo bridge. Compiled ONCE into an object library that rigplan and its
+# test both link, as flowview-tested is, so the test exercises the one editor the app runs and the two
+# cannot drift. An OBJECT library, so every object is linked whether or not something names it. Its link
+# libraries are what these sources need, PUBLIC so each consumer inherits them. Driver-free: lain::gui is
+# here for ImGuizmo's enum and lain::render for its View and Segment, and nothing opens a window or a
+# device (Vulkan::Loader resolves archimedes' vk* symbols at link time, as for flowview-tested).
+add_library(rigplan-tested OBJECT
+	src/document.cpp
+	src/selection.cpp
+	src/edits.cpp
+	src/orbit.cpp
+	src/picking.cpp
+	src/overlays.cpp
+	src/gizmo.cpp
+)
+target_compile_features(rigplan-tested PUBLIC cxx_std_17)
+target_include_directories(rigplan-tested PUBLIC src)
+target_link_libraries(rigplan-tested
+	PUBLIC lain::rigplan lain::rigplan::serialize lain::rigplan::scene lain::render lain::camera lain::core lain::data
+		   lain::io lain::io::data # a rig plan read and written as a file
+		   lain::editor			   # the undo history a document holds
+		   lain::gui			   # ImGuizmo, through gizmo.h
+		   lain::string archimedes Vulkan::Loader
+	PRIVATE lain::warnings
+)
+
 add_executable(rigplan
 	src/main.cpp
 	src/rigplanapp.cpp
@@ -7,7 +35,7 @@ add_executable(rigplan
 
 target_compile_features(rigplan PRIVATE cxx_std_17)
 target_link_libraries(rigplan
-	PRIVATE lain::app lain::core lain::rigplan::capture lain::rigplan::serialize
+	PRIVATE rigplan-tested lain::app lain::core lain::rigplan::capture lain::rigplan::serialize
 			lain::io lain::io::data lain::io::data::codecs lain::io::image::codecs lain::io::mesh::codecs # the rig plan document, the frames, the meshes a plan names
 			lain::camera::backends # the board renderer, where a camera plugin is built
 			lain::string lain::log archimedes Vulkan::Loader lain::warnings
