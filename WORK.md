@@ -15031,8 +15031,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    the CPU device. Proves: with its true models it registers near-exactly; with its nominal models, at
    intrinsic scale 1, the error rises measurably. **Planned 2026-10-26 as two commits, 7a and 7b**
    (*Slice 7 planned* below); **both built 2026-10-27, slice 7 COMPLETE**. CI's first run found a CRLF
-   in `run`'s text output on Windows, now fixed; that fix's run is owed (*feature/M15's CI run after
-   slice 7*). *(Amended while planning: this said "at scale 0 it registers
+   in `run`'s text output on Windows; fixed, and **green on all eight jobs** (*feature/M15's CI run
+   after slice 7*). *(Amended while planning: this said "at scale 0 it registers
    near-exactly". One capture at intrinsic scale 1, bound to `truth/models` and to `nominal/`, makes
    both claims from the same pixels, and slice 1 already proves scale 0 is exactly nominal.)*
 8. **The gui, part 1**: the app shell and docking, the Viewport, Outliner and Inspector, ImGuizmo,
@@ -16967,7 +16967,7 @@ format-check clean.
 off (unchanged, since the test is built only where a board renderer is). The case also passes in a
 build with OpenCV and no Ceres, which takes its NoRefiner branch. Warning-clean, format-check clean.
 CI's first run (*feature/M15's CI run after slice 7*, below) passed the step on Linux and failed two
-Windows tests on a CRLF `run` wrote, fixed after it; that fix's run is owed.
+Windows tests on a CRLF `run` wrote. Fixed after it, and the fix is green on all eight jobs.
 
 - **`test-flowview-capture`** (`apps/flowview/test/test_capturevertical.cpp`) has one case. It runs in
   Release on every kind of device the machine offers (`gpu.h`):
@@ -17033,7 +17033,9 @@ Windows tests on a CRLF `run` wrote, fixed after it; that fix's run is owed.
 Linux Release (1559/1559), Debug, video-off and no-refiner, macOS, clang-format and the subproject
 smoke. On Linux Release the new step rendered on the CPU device and registered and scored through the
 shipped binaries, and the no-refiner leg read `Failed: NoRefiner`. Windows Release failed two tests,
-both on one cause, fixed in the commit after 7b. **The fix's own run is owed.**
+both on one cause, fixed in the commit after 7b (`abf2de2`). **The fix is green on all eight jobs**
+([run 40497652103](https://github.com/luckyneko/lain/actions/runs/40497652103)): 1559/1559 on Linux
+Release, macOS and Windows.
 
 - **The failures:** M9's board rig vertical and slice 7b's capture vertical, in the same check:
   - each requires the comparison line `run` wrote to be the library's comparison of the same two
@@ -17049,7 +17051,16 @@ both on one cause, fixed in the commit after 7b. **The fix's own run is owed.**
   and `runmode.cpp` no longer includes `<fstream>`. The only other text-mode write in production code is
   `camerafootage.cpp`'s README for a person, which nothing compares.
 - **Not sabotage-checked here**: macOS writes LF either way, so only the Windows leg can see the
-  difference, and it already has.
+  difference. The second run is that check.
+- **The new step through the shipped binaries, on all three platforms**, rendering on the CPU device:
+  - every platform wrote the same 49,853,090 bytes of frames;
+  - each registration is Ready with 24 of 24 groups usable;
+  - Linux and Windows both score 0.676 mrad and 0.394 mm from the truth, and macOS scores 0.674 mrad
+    and 0.391 mm, as the CPU device did here in 7a's probe. Every platform is within the vertical's
+    bounds by three times or more.
+- **Rendering takes 68 s on Linux, 107 s on Windows and 221 s on macOS**, whose runner has 3 cores,
+  against 21.5 s on 14 here. The ctest case, which renders on the CPU device alone on CI, took 126 s on
+  Windows.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
@@ -17303,7 +17314,7 @@ row here**. A row is cheap to delete and expensive to leave.
   plan, and the vertical through `register.json` and `compare-rigs.json`); **7a and 7b built
   2026-10-27, slice 7 COMPLETE** (`three-poles.json`, which froze the rig plan document at version 1;
   `test-flowview-capture`, a CI step through the shipped binaries, and `synthetic-capture`). CI's first
-  run since slice 5 found `run` writing CRLF on Windows, now fixed; **owed: that fix's run**. Two of 7a's findings are for
+  run since slice 5 found `run` writing CRLF on Windows, fixed, and the fix is green on all eight jobs (run 40497652103). Two of 7a's findings are for
   the repo owner: `registration/1` judges a rig registered with uncalibrated models Ready, and the size
   estimate's floor is not a floor for a dark scene (*Sub-slice 7a built*).
   Slice 0's gui-mode check of the unsaved-changes modal is owed. M9's rig binder owes two fixes M15

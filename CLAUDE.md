@@ -1406,8 +1406,9 @@ extraction*, *Calibration method* and *Calibration attempt*.
 since slice 5. Seven jobs were green, and Linux ran the new render, register and score step through the
 shipped binaries. Windows failed two tests, M9's board rig vertical and 7b's capture vertical, in one
 check: the comparison line `run` wrote must be the library's, byte for byte. Slice 6c added that check,
-and 7b copied it. **The fix's own run is owed.** Full notes in WORK.md's *feature/M15's CI run after
-slice 7*.
+and 7b copied it. **The fix is green on all eight jobs**
+([run 40497652103](https://github.com/luckyneko/lain/actions/runs/40497652103)), 1559/1559 on Linux,
+macOS and Windows. Full notes in WORK.md's *feature/M15's CI run after slice 7*.
 
 - **The cause was `run`.** It wrote a scalar or text output through a text-mode `std::ofstream`, so on
   Windows the line ended in CRLF. Every other output it writes goes through io, whose local stream is
@@ -1415,6 +1416,10 @@ slice 7*.
 - **Fixed by writing it through `io::write` too.** That branch dated from M10 slice 2, and nothing had
   compared its bytes on Windows before. macOS writes LF either way, so only the Windows leg can check
   the fix.
+- **The new step ran through the shipped binaries on all three platforms**, on the CPU device. Every
+  platform wrote the same frame bytes and registered Ready. Linux and Windows scored 0.676 mrad and
+  0.394 mm from the truth, and macOS 0.674 and 0.391, well inside the bounds. Rendering took 68 s to
+  221 s on the runners.
 
 ### Update 2026-10-27 — M15 slice 7, sub-slice 7b built: the vertical and CI (**slice 7 COMPLETE**)
 
