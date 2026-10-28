@@ -67,6 +67,7 @@ TEST_CASE("the notices name each dependency this build contains, and only those"
 		{"CLI11", true},
 		{"Dear ImGui", true},
 		{"imnodes", true},
+		{"ImGuizmo", true},
 		{"portable-file-dialogs", true},
 		// Where archimedes vendors a driver: MoltenVK on macOS, and the CPU device's SwiftShader
 		// wherever a prebuilt exists.

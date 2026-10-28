@@ -317,8 +317,8 @@ namespace flowview
 		// later frame starts the next.
 		appDelegate.pumpRun(m_ctx.options.trigger, gestureEnded);
 
-		window.renderer().render([&](acm::CommandBuffer cmd, uint32_t)
-								 { m_guiCtx->render(cmd); });
+		window.renderer().render([&](acm::CommandBuffer cmd, uint32_t frame)
+								 { m_guiCtx->render(cmd, frame); });
 	}
 
 	void MainWindow::onShutdown(app::Window&)

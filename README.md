@@ -51,6 +51,7 @@ a video keeps its nodes and edges and reports a missing capability when run.
 | [CLI11](https://github.com/CLIUtils/CLI11) | 2.4.2, current | [BSD-3-Clause] | App command-line parsing |
 | [Dear ImGui](https://github.com/ocornut/imgui) | `162ce49`, current | [MIT] | GUI implementation |
 | [imnodes](https://github.com/Nelarius/imnodes) | `eb36902`, current | [MIT] | Flow graph canvas |
+| [ImGuizmo](https://github.com/CedricGuillemet/ImGuizmo) | `105e4fd`, current | [MIT] | 3D manipulation gizmo (rigplan's Viewport) |
 | [portable-file-dialogs](https://github.com/samhocevar/portable-file-dialogs) | 0.1.0, current | [WTFPL] (version 2) | Native app file dialogs |
 | [Vulkan-Headers](https://github.com/KhronosGroup/Vulkan-Headers) | SDK 1.4.341.0, current | [Apache-2.0] OR [MIT] | Vulkan API headers |
 | [Vulkan-Loader](https://github.com/KhronosGroup/Vulkan-Loader) | SDK 1.4.341.0, current | [Apache-2.0] | Vulkan runtime loader |

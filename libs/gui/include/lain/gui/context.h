@@ -1,9 +1,11 @@
 #pragma once
 
-#include <lain/gui/texture.h> // gui::Texture (returned by upload)
+#include <lain/gui/frametexture.h> // gui::FrameTexture (returned by frameTexture)
+#include <lain/gui/texture.h>	   // gui::Texture (returned by upload)
 
 #include <archimedes/acmForward.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -25,11 +27,11 @@ namespace lain::gui
 	// swapchain, via acm::interop + dynamic rendering). A WindowDelegate composes one —
 	// newFrame() at the top
 	// of a frame, build UI with lain::gui::, then render() inside the window's
-	// renderer record callback:
+	// renderer record callback, with the frame index that callback is handed:
 	//
 	//   ctx.newFrame();
 	//   lain::gui::Begin("Inspector"); ...; lain::gui::End();
-	//   window.renderer().render([&](acm::CommandBuffer cmd, uint32_t) { ctx.render(cmd); });
+	//   window.renderer().render([&](acm::CommandBuffer cmd, uint32_t frame) { ctx.render(cmd, frame); });
 	//
 	// DESTROY IT IN WindowDelegate::onShutdown. The destructor tears the Vulkan backend down at
 	// once — its buffers, font image and pipeline are ImGui's, not acm's, so nothing defers them
@@ -64,9 +66,12 @@ namespace lain::gui
 		// Begin a new ImGui frame (platform + renderer new-frame + ImGui::NewFrame).
 		void newFrame();
 
-		// Finalize the frame and record its draw data into the command buffer. Call
-		// inside acm::Renderer::render's record callback (the render pass is begun).
-		void render(acm::CommandBuffer cmd);
+		// Finalize the frame and record its draw data into the command buffer. Call inside
+		// acm::Renderer::render's record callback (the rendering scope is begun), passing the frame
+		// index that callback was handed: each FrameTexture drawn this frame is resolved for that
+		// frame here, after the frame's pre-pass has run (see frameTexture). Required rather than
+		// defaulted, since a frame index left out would draw frame 0's texture on every frame.
+		void render(acm::CommandBuffer cmd, std::uint32_t frameIndex);
 
 		// Allocate a GPU texture sized to `image` (via this Context's shared device), upload
 		// its pixels, and give it a descriptor ImGui can bind — the app-facing preview path,
@@ -76,6 +81,14 @@ namespace lain::gui
 		// existing texture in place, prefer gui::Texture::upload(); recreate here only on first
 		// sight or a resize.
 		Texture createTexture(const lain::image::Image& image);
+
+		// A texture something else draws, per frame in flight, for a pane to show (FrameTexture): a
+		// render::Viewport's picture. `provider` is asked in render(), for the frame being recorded,
+		// and what it answers is drawn where the handle's stand-in was. Each texture it answers gets
+		// a descriptor of this Context's, made once and kept while the texture is drawn in either
+		// frame in flight; the texture itself is held as long, so its address cannot come to name
+		// another texture while the descriptor does.
+		FrameTexture frameTexture(FrameTextureProvider provider);
 
 	private:
 		struct impl;

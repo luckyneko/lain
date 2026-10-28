@@ -1400,6 +1400,27 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-28 — M15 slice 8, sub-slice 8a built: a pane shows a texture it did not upload; ImGuizmo lands
+
+`gui::FrameTexture`, made by `Context::frameTexture(provider)` and resolved by the now-required
+`Context::render(cmd, frameIndex)`; ImGuizmo pinned at `105e4fd` as `lain::gui::gizmo`. `ctest -j8`
+**1565/1565** Release with video, camera and Ceres on, and **1425/1425** with all three off (+6 each);
+warning-clean, format-check clean. The four windowed cases ran on Metal (`LAIN_GUI_SMOKE=1`). Full notes
+in WORK.md's *Sub-slice 8a built*.
+
+- **A pane draws a stand-in id**, and `render` swaps it for that frame's descriptor just before ImGui
+  records, after the pre-pass. The rewrite rule is `detail::resolveStandIns`, tested headless. The
+  descriptor cache holds its textures, and an empty answer draws a 1 x 1 transparent texture.
+- **`gizmo::BeginFrame` is the pane's to call**, not the Context's: it opens an invisible full-viewport
+  window.
+- **On MoltenVK a stale descriptor draws the right picture**: with the cache holding nothing, the new
+  texture's object lands where the destroyed one's was. So the case reads the resolved descriptor ids
+  back from ImGui's draw data, and requires that an address really came back.
+- **The headless ImGui cases wrote `imgui.ini` into the working folder**, carrying window sizes from one
+  ctest process to the next. All five now set `IniFilename = nullptr`.
+- **Older than 8a: `rigplan --licenses` refuses** ("A subcommand is required") since 5e; 8e fixes it.
+- Five sabotages, all caught. Owed: CI's first build of ImGuizmo on Linux and Windows.
+
 ### Update 2026-10-28 — M15 slice 8 planned: the gui, part 1 (nothing built yet)
 
 Slice 8 is planned as **six commits, 8a to 8f**, in WORK.md's *Slice 8 planned*. 8a to 8d are headless

@@ -15037,7 +15037,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    both claims from the same pixels, and slice 1 already proves scale 0 is exactly nominal.)*
 8. **The gui, part 1**: the app shell and docking, the Viewport, Outliner and Inspector, ImGuizmo,
    frustums, undo through `lain::editor`. Live-verified by the repo owner. **Planned 2026-10-28 as six
-   commits, 8a to 8f** (*Slice 8 planned* below). *(Amended while planning: the Viewport draws the
+   commits, 8a to 8f** (*Slice 8 planned* below); **8a built 2026-10-28**. *(Amended while planning: the Viewport draws the
    nominal plan only, a mover's keys are edited as a table, and a plan's own specifications are edited
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
@@ -17408,6 +17408,81 @@ is built.
   Slice 0's owed check of the unsaved-changes modal is step 11, in rigplan. flowview's own check needs
   its Quit fix first.
 
+#### Sub-slice 8a built (2026-10-28): a pane shows a texture it did not upload, and ImGuizmo lands
+
+`gui::FrameTexture` and `Context::frameTexture` / `render(cmd, frameIndex)`, and ImGuizmo as
+`lain::gui::gizmo`. `ctest -j8` **1565/1565** Release with video, camera and Ceres on (+6), and
+**1425/1425** with all three off (+6); warning-clean, format-check clean. The four windowed cases ran on
+Metal (`LAIN_GUI_SMOKE=1`); ctest skips them, as it does the two texture cases beside them.
+
+- **`gui::FrameTexture`** (`frametexture.h`): a move-only handle a pane draws with `gui::Image`.
+  - It carries a stand-in id, the address of its own provider, so it is unique while the handle
+    lives.
+  - The handle holds no Context, as a `gui::Texture` holds none. The Context watches it through a
+    `weak_ptr`.
+  - `Context::render(cmd, frameIndex)` asks each provider drawn that frame for that frame's texture,
+    once a frame, and writes its descriptor over the stand-in in the draw commands. It does so just
+    before ImGui records, so after the frame's pre-pass. flowview's one call site passes its frame
+    index. The index is required, not defaulted, because a default would draw frame 0's texture on
+    every frame.
+- **The rewrite rule is `detail::resolveStandIns`**, in the public header so that a headless case runs
+  it with no device. It never offers a command with a callback, or one naming a texture ImGui manages
+  (`ImTextureData`, its font atlas).
+- **The descriptor cache** is keyed by the texture's backend object, and holds the texture. An entry not
+  drawn for `MaxFramesInFlight` renders is dropped, and archimedes defers destroying it. A provider
+  that answers nothing, or a handle that died before the frame was recorded, draws a 1 x 1
+  transparent texture made with the Context.
+- **ImGuizmo** comes in through `cmake/addImGuizmo.cmake`, pinned to `105e4fd` (its tip; the last
+  commit touching its sources is `49f0102`).
+  - Only `src/ImGuizmo.cpp` is built, against the `imgui` target with no lain warnings, as imnodes is.
+  - Checked against `IMGUI_REF` (19285): it calls 1.92.8's swapped `AddRect` / `AddPolyline`
+    signature, and its version guards are `< 19276`. It builds warning-free here.
+  - `gizmo.h` aliases it as `lain::gui::gizmo`, and the notice, its `test_notices.cpp` row and a
+    README row land with it.
+  - **`Context` does not call `gizmo::BeginFrame`**: that opens a full-viewport invisible window of
+    its own. The pane that shows a gizmo calls it, as `gizmo.h` says.
+- **The cases.** Headless (`test_gui.cpp`):
+  - the rule replaces the two stand-in commands and nothing else, never offering the callback;
+  - ImGuizmo runs whole frames, draws its handles into the pane, and moves nothing.
+
+  Windowed (`test_texture.cpp`, on Metal):
+  - each frame index draws its own texture, over renders 0, 1, 0, 1;
+  - a texture replaced, at another size, between the UI and the render is the one drawn;
+  - a texture released and made again is drawn, not the one it replaced;
+  - nothing to show, and a handle that died before the render, both draw the window's background.
+
+  The windowed cases now share one offscreen target per probe (`Offscreen`), so drawing a frame
+  allocates no texture.
+- **Found by a sabotage: on MoltenVK a stale descriptor draws the right picture.** With the cache
+  holding no textures, a new texture takes the destroyed one's pool slot, and so its cache entry. Every
+  colour still read back right, because MoltenVK made the new texture's object where the destroyed one
+  had been.
+  - That is undefined behaviour that happens to work, so the case also reads back the id each draw
+    command was resolved to (ImGui's draw data keeps it until the next frame).
+  - With the cache holding its textures, the previous render's descriptor is alive when the next
+    texture gets one, so consecutive renders draw through different descriptors.
+  - Making it observable needed two more things. The offscreen target is made once, since a new
+    target every render took the freed slots first. And the case requires that a texture's address
+    really did come back (archimedes hands out the last freed slot first). Otherwise it would prove
+    nothing.
+- **Found: the headless ImGui cases wrote `imgui.ini` into the working folder** (ImGui's default) and
+  carried their window sizes from one ctest process to the next. The stand-in case passed as a whole
+  binary and failed under ctest, where a 32 x 35 `pane` saved by an earlier run clipped two of its three
+  images. All five headless frame cases now set `IniFilename = nullptr`, the three older ones included.
+- **Five sabotages, all caught.** One first failed to build under `-Werror` (`frame` unused), so the
+  previous binary answered until it was redone:
+  - the provider always asked for frame 0 fails renders 1 and 3 of the frames case;
+  - answers kept across renders (a `static` map) fails the replacement case, and two others;
+  - a cache that holds no textures fails the released-and-made-again case on every render after the
+    first, through the descriptor ids;
+  - no transparent fallback (the stand-in left in place) crashes the empty case with SIGSEGV;
+  - offering callback commands fails the headless case (3 replaced, not 2).
+- **Found, older than 8a: `rigplan --licenses` refuses with "A subcommand is required"**, since 5e's
+  `require_subcommand(1)` runs before the flag is read; `--version` and `--help` are unaffected. 8e
+  removes that requirement, as planned.
+- **Owed:** CI's first build of ImGuizmo on Linux and Windows (`alloca` / `_malloca` are its only
+  platform code).
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -17662,7 +17737,8 @@ row here**. A row is cheap to delete and expensive to leave.
   `test-flowview-capture`, a CI step through the shipped binaries, and `synthetic-capture`). CI's first
   run since slice 5 found `run` writing CRLF on Windows, fixed, and the fix is green on all eight jobs (run 40497652103).
   **Slice 8 planned 2026-10-28** as six commits, 8a to 8f (the gui's first part), ending in a
-  gui-mode checklist for the repo owner (*Slice 8 planned*). Two of 7a's findings are for
+  gui-mode checklist for the repo owner (*Slice 8 planned*); **8a built the same day** (a pane shows
+  a texture it did not upload; ImGuizmo). Two of 7a's findings are for
   the repo owner: `registration/1` judges a rig registered with uncalibrated models Ready, and the size
   estimate's floor is not a floor for a dark scene (*Sub-slice 7a built*).
   Slice 0's gui-mode check of the unsaved-changes modal is owed. M9's rig binder owes two fixes M15

@@ -16,11 +16,23 @@
 #include <imnodes.h>
 
 #include <cstdint>
+#include <iterator>
+#include <map>
+#include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 namespace lain::gui
 {
+	namespace detail
+	{
+		struct FrameTextureSource
+		{
+			FrameTextureProvider provider;
+		};
+	} // namespace detail
+
 	struct Context::impl
 	{
 		ImGuiContext* ctx{nullptr};
@@ -35,6 +47,32 @@ namespace lain::gui
 		// ImGui binds an ImTextureID straight into its pipeline's set 0. The sampler is ImGui's,
 		// in its set 1. If ImGui ever changes that layout, this one has to follow.
 		acm::DescriptorSetLayout textureLayout;
+
+		// --- Frame-resolved textures (FrameTexture) ---
+		// Every one made, by its stand-in. Watched, not owned: a handle that has died expires here,
+		// and is dropped at the next render.
+		std::unordered_map<ImTextureID, std::weak_ptr<detail::FrameTextureSource>> frameSources;
+		// A descriptor for each texture a provider answered lately, keyed by the texture's backend
+		// object, and holding the texture: while the entry is here, that address cannot come to name
+		// another texture, which a stale descriptor would then draw.
+		struct Resolved
+		{
+			acm::Texture texture;
+			acm::DescriptorSet descriptor;
+			ImTextureID id{};
+			std::uint64_t lastRender = 0;
+		};
+		std::map<const acm::backend::Texture*, Resolved> resolved;
+		std::uint64_t renders = 0;
+		// What a stand-in draws when its provider answers nothing, or its handle has died: never a null
+		// descriptor, which ImGui's backend would bind.
+		Texture transparent;
+		ImTextureID transparentId{};
+
+		// A descriptor ImGui can bind for `texture`, made once per texture and kept while it is drawn.
+		std::optional<ImTextureID> descriptorFor(const acm::Texture& texture);
+		// Put each stand-in in `data` in place for frame `frame`, then drop what has expired.
+		void resolveFrameTextures(ImDrawData& data, std::uint32_t frame);
 	};
 
 	Context::Context(app::Application& app, app::Window& window, ContextConfig config)
@@ -94,6 +132,10 @@ namespace lain::gui
 		m->textureLayout = device.createDescriptorSetLayout({
 			{0, acm::DescriptorType::SampledImage, acm::ShaderStage::Fragment},
 		});
+
+		image::Image clear(1, 1, image::PixelFormat::RGBA8); // zeroed: transparent black
+		m->transparent = createTexture(clear);
+		m->transparentId = m->transparent.m_id;
 	}
 
 	Context::~Context()
@@ -118,10 +160,76 @@ namespace lain::gui
 		ImGui::NewFrame();
 	}
 
-	void Context::render(acm::CommandBuffer cmd)
+	void Context::render(acm::CommandBuffer cmd, std::uint32_t frameIndex)
 	{
 		ImGui::Render();
-		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), acm::interop::commandBuffer(cmd));
+		ImDrawData* data = ImGui::GetDrawData();
+		m->resolveFrameTextures(*data, frameIndex);
+		ImGui_ImplVulkan_RenderDrawData(data, acm::interop::commandBuffer(cmd));
+	}
+
+	// --- frameTexture (a texture drawn elsewhere, resolved at record) -----------
+
+	FrameTexture Context::frameTexture(FrameTextureProvider provider)
+	{
+		auto source = std::make_shared<detail::FrameTextureSource>(detail::FrameTextureSource{std::move(provider)});
+		// A dead handle's source may have stood at this address: this one replaces its entry.
+		m->frameSources[detail::standInOf(source.get())] = source;
+		return FrameTexture(std::move(source));
+	}
+
+	std::optional<ImTextureID> Context::impl::descriptorFor(const acm::Texture& texture)
+	{
+		if (!texture.valid())
+			return std::nullopt;
+		const auto [at, added] = resolved.try_emplace(texture.backend());
+		Resolved& entry = at->second;
+		entry.lastRender = renders;
+		if (!added)
+			return entry.id;
+
+		entry.texture = texture;
+		entry.descriptor = device->createDescriptorSet(textureLayout);
+		if (!entry.descriptor.valid())
+		{
+			resolved.erase(at);
+			return std::nullopt;
+		}
+		entry.descriptor.setSampledImage(0, texture);
+		entry.id = reinterpret_cast<ImTextureID>(acm::interop::descriptorSet(entry.descriptor));
+		return entry.id;
+	}
+
+	void Context::impl::resolveFrameTextures(ImDrawData& data, std::uint32_t frame)
+	{
+		++renders;
+		// Each provider is asked once a frame, however many times its stand-in is drawn.
+		std::unordered_map<ImTextureID, ImTextureID> answered;
+		detail::resolveStandIns(data,
+								[&](ImTextureID id) -> std::optional<ImTextureID>
+								{
+									const auto source = frameSources.find(id);
+									if (source == frameSources.end())
+										return std::nullopt; // not a stand-in: a gui::Texture, say
+									if (const auto known = answered.find(id); known != answered.end())
+										return known->second;
+									ImTextureID drawn = transparentId;
+									if (const std::shared_ptr<detail::FrameTextureSource> live = source->second.lock())
+									{
+										if (const std::optional<ImTextureID> descriptor = descriptorFor(live->provider(frame)))
+											drawn = *descriptor;
+									}
+									answered.emplace(id, drawn);
+									return drawn;
+								});
+
+		for (auto it = frameSources.begin(); it != frameSources.end();)
+			it = it->second.expired() ? frameSources.erase(it) : std::next(it);
+		// A descriptor not drawn in either frame in flight is dropped. archimedes defers destroying it,
+		// and the texture it holds, until every submission already made is done, so a frame that drew
+		// it and is still running keeps both.
+		for (auto it = resolved.begin(); it != resolved.end();)
+			it = renders - it->second.lastRender >= acm::Renderer::MaxFramesInFlight ? resolved.erase(it) : std::next(it);
 	}
 
 	// --- createTexture (CPU image -> drawable gui::Texture) ---------------------
