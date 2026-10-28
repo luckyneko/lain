@@ -15037,7 +15037,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    both claims from the same pixels, and slice 1 already proves scale 0 is exactly nominal.)*
 8. **The gui, part 1**: the app shell and docking, the Viewport, Outliner and Inspector, ImGuizmo,
    frustums, undo through `lain::editor`. Live-verified by the repo owner. **Planned 2026-10-28 as six
-   commits, 8a to 8f** (*Slice 8 planned* below); **8a and 8b built 2026-10-28**. *(Amended while planning: the Viewport draws the
+   commits, 8a to 8f** (*Slice 8 planned* below); **8a, 8b and 8c built 2026-10-28**. *(Amended while planning: the Viewport draws the
    nominal plan only, a mover's keys are edited as a table, and a plan's own specifications are edited
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
@@ -17262,6 +17262,8 @@ is built.
 - **8c: what an editor needs of `lain::rigplan` and `lain::rigplan::scene`.**
   - **`nominalLayout(plan)`**: each mount's, camera's and light's planned pose, and each camera's
     nominal model, every one optional with the reason it is missing. It never refuses the whole.
+    *(Built without reasons of its own: every absence is one `check()` already reports, about the
+    object, its mount or its specification, so a second list would only repeat it.)*
     - On a plan `check()` accepts, it equals `realise()` at scales 0, bit for bit, since both go through
       `mountFromPlacement`.
     - A camera naming a missing specification loses its model and keeps its pose. A camera inside its
@@ -17280,6 +17282,9 @@ is built.
       editor share one path, and every existing scene case is the regression test.
     - The surfaces' and poles' meshes stay synchronous (`sceneGeometry`), since they are small and
       every frame of a drag changes them.
+    - *(Added building it: a failed job is remembered under its key, so it is not asked for again
+      while the plan asks for the same thing, and props and boards record what they were made from,
+      so a changed file or pattern is lacking. See Sub-slice 8c built.)*
   - **A surface whose asset is missing draws mid grey**, still with its problem.
   - **Proves:**
     - `nominalLayout` equals `realise()` at scales 0 on three test plans;
@@ -17552,6 +17557,93 @@ on Metal and on the CPU device.
   push. Nothing in a rig plan stands there.
 - ADR-0028's bullet that "a grid on the floor is drawn as its own pass" is amended with this.
 
+#### Sub-slice 8c built (2026-10-28): what an editor needs of `lain::rigplan` and its scene
+
+`nominalLayout`, `aimOf`, `PlanDiagnostic::owner`, `SceneResult::owners`, a `renderScene` over a
+nominal layout, and the asset jobs (`sceneGeometry`, `missingAssets`, `addAsset`, `pruneAssets`), with
+`loadSceneAssets` rebuilt on them. `ctest -j8` **1583/1583** Release with video, camera and Ceres on
+(+13), and **1442/1442** with all three off (+12: the off-thread board case needs OpenCV);
+warning-clean, format-check clean.
+
+- **`nominalLayout(plan)`** gives each mount's, camera's and light's planned pose, and each camera's
+  nominal model, each optional. It never refuses the whole.
+  - It equals `realise()` at scales 0, value for value, because the two now share `mountPose` and
+    `cameraPose` in `realisation.cpp`.
+  - A camera with no sensor specification stands at its mounting point and has no model.
+  - A camera on a mount with no pose has no pose.
+  - **Deviation:** it carries no reasons of its own. Every absence is one `check()` reports, about the
+    object, its mount or its specification. The plan bullet is amended in place.
+- **`aimOf(rotation)`** is the aim convention's inverse, a Z-X-Y decomposition once the rest turn is
+  undone. The tilt comes back within ±90°, and the pan and roll within ±180°. Looking straight up or
+  down, the roll is 0 and the pan carries it.
+- **`PlanDiagnostic::owner`**: every site in `check()` now goes through one `report(problem, detail,
+  owner)`, so a site cannot leave its owner out silently. It is none for the room, a specification, the
+  timeline, the scales and the reference.
+- **The scene:**
+  - `SceneResult::owners` gives what each instance draws (room surface, plane, box face, prop, board,
+    pole) and its uuid.
+  - `renderScene(plan, NominalLayout, ...)` leaves out a pole or light that has no pose there. Both
+    overloads share one private builder.
+  - A surface or prop material waiting on its picture or bake is drawn matte mid grey, still with its
+    problem.
+- **Asset jobs.**
+  - `sceneGeometry` makes the surfaces' and poles' meshes at once.
+  - `missingAssets` lists the jobs for what the plan needs and the assets lack, in `loadSceneAssets`'
+    order. Each job reads only what it captured, so it runs on any thread while the plan changes.
+  - `addAsset` keeps a job's result, or remembers its failure.
+  - `pruneAssets` drops what the plan no longer needs, failures included.
+  - `loadSceneAssets` is geometry, then rounds of missing jobs on the calling thread until none are
+    missing. A prop's own pictures are known only once it is read, hence the rounds.
+- **Added while building:**
+  - **A failure is remembered under its job's key** (`SceneAssets::failed`). Without it, a failed job
+    is asked for again every time. That makes `loadSceneAssets` loop forever, which a sabotage showed
+    as a hang.
+  - **Props and boards record what they were made from** (`PropMesh::madeFrom`,
+    `BoardSheet::madeFrom`), keeping their maps keyed by owner, which the existing cases read.
+    - A prop's file, clip or rate is part of the record; a board's pattern, printed square, margin,
+      pixels a square and backing are part of its record.
+    - Its path is not, nor its identity's text.
+    - A changed one is lacking, and is drawn as it was until the new one is kept.
+- **The cases:**
+  - `test_nominal.cpp`: the equality on two plans; three plans `check()` refuses, each drawn but for
+    what is broken; `aimOf` over 990 aims, out-of-range aims and both poles; owners on five kinds of
+    problem.
+  - `test_sceneassets.cpp`:
+    - every instance's owner;
+    - jobs run each on its own thread and kept in reverse order give the assets `loadSceneAssets`
+      gives, byte for byte;
+    - a widened room asks for exactly its four resized bakes, draws them grey while it waits, and is
+      pruned of the old four;
+    - a surface waiting on its asset is grey;
+    - a failed job is not retried until the plan stops asking for it, and is read once the file
+      exists;
+    - a prop whose file changed is read again, and drawn as it was until then, while moving it reads
+      nothing;
+    - a nominal scene leaves out a pole whose mount has no pose.
+  - The stand-in board executable: a board drawn more finely is drawn again, and one moved or renamed
+    is not.
+  - **`test-camera-capture`**: a board drawn on another thread through OpenCV is byte for byte the
+    board drawn on this one. No caller had drawn a board off the main thread before. This runs in
+    Debug too, since one board is quick.
+  - The three plans the plan named for the equality are two here. The committed example's capture,
+    which goes through the same functions, is held unchanged by `test-flowview-capture` and
+    `test-rigplan-app`.
+- **Found while testing, in my own fixtures:**
+  - **A pose built by hand differs from the layout's in the last bits**: the layout takes the step to
+    an optical centre of 0, and `RigidTransform` renormalises on construction. That case compares
+    within rounding. The equality with `realise()` stays exact.
+  - **The fixture's plane and box are flat colours**, which need no asset. The waiting count was
+    corrected from 13 to the room's six.
+- **Seven sabotages, all caught.** One first failed to build (a structured binding captured in a lambda
+  is C++20), so the old binary answered, and it was redone.
+  - The optical centre offset in the mount's frame: the equality case fails.
+  - `aimOf`'s pan and roll swapped: the round trip fails.
+  - A bake counted present by seed and cell alone: the resize case fails.
+  - Waiting surfaces drawn white: the grey case fails.
+  - Failures never remembered: `loadSceneAssets` hangs.
+  - `pruneAssets` keeping failures: the retry case fails.
+  - A prop counted loaded whatever it was made from: the changed-file case fails.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -17806,8 +17898,9 @@ row here**. A row is cheap to delete and expensive to leave.
   `test-flowview-capture`, a CI step through the shipped binaries, and `synthetic-capture`). CI's first
   run since slice 5 found `run` writing CRLF on Windows, fixed, and the fix is green on all eight jobs (run 40497652103).
   **Slice 8 planned 2026-10-28** as six commits, 8a to 8f (the gui's first part), ending in a
-  gui-mode checklist for the repo owner (*Slice 8 planned*); **8a and 8b built the same day** (a pane
-  shows a texture it did not upload; ImGuizmo; a grid drawn in shading). Two of 7a's findings are for
+  gui-mode checklist for the repo owner (*Slice 8 planned*); **8a to 8c built the same day** (a pane
+  shows a texture it did not upload; ImGuizmo; a grid drawn in shading; the nominal layout, `aimOf`
+  and pooled asset jobs). Two of 7a's findings are for
   the repo owner: `registration/1` judges a rig registered with uncalibrated models Ready, and the size
   estimate's floor is not a floor for a dark scene (*Sub-slice 7a built*).
   Slice 0's gui-mode check of the unsaved-changes modal is owed. M9's rig binder owes two fixes M15

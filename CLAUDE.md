@@ -1400,6 +1400,30 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-28 — M15 slice 8, sub-slice 8c built: the nominal layout, `aimOf`, and pooled asset jobs
+
+What an editor needs of `lain::rigplan` and its scene. `ctest -j8` **1583/1583** Release with video,
+camera and Ceres on (+13), and **1442/1442** with all three off (+12); warning-clean, format-check clean.
+Full notes in WORK.md's *Sub-slice 8c built*.
+
+- **`nominalLayout(plan)`**: each mount's, camera's and light's planned pose, and each camera's nominal
+  model, each optional, never refusing the whole. It equals `realise()` at scales 0, since the two share
+  `mountPose` and `cameraPose`. It has no reasons of its own (a deviation): every absence is a `check()`
+  problem.
+- **`aimOf(rotation)`**, the aim convention's inverse; straight up or down, the roll is 0.
+- **`PlanDiagnostic::owner`**, through one `report()` helper in `check()`. **`SceneResult::owners`**, and
+  a `renderScene` over a nominal layout that leaves out what has no pose. A surface waiting on its
+  asset is matte mid grey.
+- **Asset jobs**: `sceneGeometry`, `missingAssets`, `addAsset`, `pruneAssets`. `loadSceneAssets` is now
+  rounds of those jobs, so the capture writer and the editor share one path.
+  - **Added:** a failure is remembered under its job's key. A sabotage showed that without it
+    `loadSceneAssets` hangs.
+  - **Added:** props and boards record what they were made from, so a changed file or pattern is drawn
+    again and shown as it was meanwhile.
+- **OpenCV's board renderer draws the same board on another thread**, byte for byte (`test-camera-capture`).
+  Nothing had drawn one off the main thread before.
+- Seven sabotages, all caught; one first failed to build and was redone.
+
 ### Update 2026-10-28 — M15 slice 8, sub-slice 8b built: a grid on a plane, drawn in shading
 
 `render::Grid` and `Viewport::record(..., lines, grid)` (a `std::optional`, no default). `ctest -j8`

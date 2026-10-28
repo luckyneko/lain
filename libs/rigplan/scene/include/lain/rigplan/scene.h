@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -55,6 +56,15 @@ namespace lain::rigplan
 		std::shared_ptr<const image::Image> raster; // 8-bit grey, sRGB as printed
 		std::shared_ptr<const mesh::Mesh> print;
 		std::shared_ptr<const mesh::Mesh> back;
+		std::string madeFrom; // what it was drawn from, so a board whose drawing changed is drawn again
+	};
+
+	// A prop's mesh or mesh clip as read, and what it was read from, so a prop whose file changed is
+	// read again.
+	struct PropMesh
+	{
+		std::shared_ptr<const mesh::MeshClip> clip;
+		std::string madeFrom;
 	};
 
 	// What a rig plan draws, read, baked and built once so a render scene at any frame shares it: each
@@ -64,7 +74,7 @@ namespace lain::rigplan
 	// them from one frame to the next: a frame costs what moved.
 	struct SceneAssets
 	{
-		std::map<core::Uuid, std::shared_ptr<const mesh::MeshClip>> props;
+		std::map<core::Uuid, PropMesh> props;
 		std::map<core::Uri, std::shared_ptr<const image::Image>> pictures;
 		std::map<BakeKey, std::shared_ptr<const image::Image>> baked;
 		std::map<core::Uuid, BoardSheet> boards;
@@ -73,7 +83,45 @@ namespace lain::rigplan
 		// and a pole's size has no tolerance, so the plan alone decides them.
 		std::vector<std::shared_ptr<const mesh::Mesh>> surfaces;
 		std::map<core::Uuid, std::shared_ptr<const mesh::Mesh>> poles;
+		// Why each asset job that failed made nothing, by its key, so it is not tried again while the plan
+		// still asks for the same thing (pruneAssets forgets it once the plan does not).
+		std::map<std::string, std::vector<std::string>> failed;
 	};
+
+	// What one asset job made, for addAsset to keep on the caller's thread.
+	struct AssetOutcome
+	{
+		std::string key;
+		std::function<void(SceneAssets&)> keep; // adds what it made; empty when it made nothing
+		std::vector<std::string> problems;		// why it made nothing, each naming its owner and file
+	};
+
+	// One piece of the work of loading a rig plan's assets: a picture or a prop's mesh to read, a
+	// procedural surface to bake, a board to draw. It runs on any thread and reads only what it captured,
+	// never the plan, so the plan may change while it runs; what it makes is kept by addAsset.
+	struct AssetJob
+	{
+		std::string key;  // what it makes, unique among the jobs a plan needs at once
+		std::string what; // for a person: "baking the room's floor"
+		std::function<AssetOutcome()> run;
+	};
+
+	// The surfaces' and poles' meshes `plan` draws, made at once: they are small, and resizing a room or
+	// a box changes them every frame of a drag.
+	void sceneGeometry(const RigPlan& plan, SceneAssets& assets);
+
+	// The jobs that would make what `plan` draws and `assets` lacks, in the order loadSceneAssets runs
+	// them: the surfaces' pictures and bakes, the props' meshes, the pictures loaded props' materials
+	// name, the boards. An asset made from what has since changed (a prop's file, a board's pattern) is
+	// lacking; one whose job failed is not, until pruneAssets forgets the failure.
+	std::vector<AssetJob> missingAssets(const RigPlan& plan, const SceneAssets& assets);
+
+	// Keeps what a job made, replacing what was made before under the same owner, or remembers why it
+	// made nothing.
+	void addAsset(SceneAssets& assets, AssetOutcome outcome);
+
+	// Drops what `plan` no longer draws, and the failures of jobs it no longer needs.
+	void pruneAssets(const RigPlan& plan, SceneAssets& assets);
 
 	struct AssetsResult
 	{
@@ -81,18 +129,37 @@ namespace lain::rigplan
 		std::vector<std::string> problems; // what did not load, each naming its owner and file
 	};
 
-	// Every asset `plan` draws, its paths absolute (a document's are resolved when it is read). A prop
-	// whose mesh or clip will not load, a picture that will not, or a board the board renderer will not
-	// draw (a build with none is the commonest) is a problem naming it, and the rest still loads. A rig
-	// plan with a board holds it in any build; only drawing it needs a renderer, and a capture is
-	// refused rather than drawn without the board, whose ground truth would then describe corners its
-	// pixels lack. A picture that states no colour space is taken as sRGB, as the web takes one,
-	// with a warning in the log, since the renderer refuses an untagged texture.
+	// Every asset `plan` draws, its paths absolute (a document's are resolved when it is read): its
+	// geometry, then every missing asset's job run on the calling thread, in missingAssets' order, until
+	// nothing is missing. A prop whose mesh or clip will not load, a picture that will not, or a board the
+	// board renderer will not draw (a build with none is the commonest) is a problem naming it, and the
+	// rest still loads. A rig plan with a board holds it in any build; only drawing it needs a renderer,
+	// and a capture is refused rather than drawn without the board, whose ground truth would then
+	// describe corners its pixels lack. A picture that states no colour space is taken as sRGB, as the
+	// web takes one, with a warning in the log, since the renderer refuses an untagged texture.
 	AssetsResult loadSceneAssets(const RigPlan& plan);
+
+	// What a plan object a render scene's instance draws is.
+	enum class SceneObject
+	{
+		Room, // one of its surfaces
+		Plane,
+		Box, // one of its faces
+		Prop,
+		Board, // its print or its back
+		Pole,  // a pole mount's
+	};
+
+	struct SceneOwner
+	{
+		SceneObject object;
+		core::Uuid id; // nil for the room, which has no identity
+	};
 
 	struct SceneResult
 	{
 		render::Scene scene;
+		std::vector<SceneOwner> owners;	   // one per instance of `scene`, in its order: what each draws
 		std::vector<std::string> problems; // an asset `assets` lacks; the scene is incomplete when any
 	};
 
@@ -109,6 +176,12 @@ namespace lain::rigplan
 	// surface's own extent, so it reads proceduralGrey at each point of it, in metres from the
 	// surface's corner, with its seed mixed with the surface's identity so that no two surfaces of one
 	// material repeat each other (a targetless method would match them as one). A rig plan states no
-	// ambient light: what lights it is its lights.
+	// ambient light: what lights it is its lights. A surface whose picture or bake `assets` lacks is a
+	// problem and is drawn a matte mid grey, as is a prop's material whose picture it lacks, so a surface
+	// waiting on its asset never reads as a lit white one.
 	SceneResult renderScene(const RigPlan& plan, const Realisation& realisation, const SceneAssets& assets, std::size_t frame);
+
+	// The same, of `plan` as it was meant (nominalLayout), for an editor: a pole whose mount, or a light
+	// that, has no pose there is not drawn, since check() already says why.
+	SceneResult renderScene(const RigPlan& plan, const NominalLayout& layout, const SceneAssets& assets, std::size_t frame);
 } // namespace lain::rigplan

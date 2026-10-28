@@ -4,6 +4,7 @@
 
 add_executable(test-rigplan-scene
 	test_scene.cpp
+	test_sceneassets.cpp
 	test_scenerender.cpp
 )
 

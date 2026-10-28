@@ -152,6 +152,10 @@ namespace lain::rigplan
 	{
 		PlanProblem problem;
 		std::string detail; // which part and what about it, for a person
+		// The identity of the mount, camera, light, plane, box, prop or board the problem is about, so an
+		// editor can show it; none for the room, a specification (named in `detail`), the timeline, the
+		// scales or the reference. A problem about a missing identity names the nil one.
+		std::optional<core::Uuid> owner;
 	};
 
 	// Every problem with `plan`: its specifications first, then its room, planes, boxes, props and

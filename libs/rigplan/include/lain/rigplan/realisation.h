@@ -90,4 +90,47 @@ namespace lain::rigplan
 	// `aim` (see Aim), camera-frame axes. Exposed so a test can hold the aim convention to a hand-placed
 	// camera, and the viewport can draw a plan's nominal poses without a realisation.
 	math::RigidTransformd mountFromPlacement(const math::Vec3d& offset, const Aim& aim);
+
+	// The aim that turns a placement by `rotation` (camera-frame axes into its mount's, as
+	// mountFromPlacement's rotation is): its inverse, for an editor whose gizmo hands back a rotation.
+	// The tilt comes back within [-90, 90] degrees and the pan and roll within (-180, 180]. At a tilt of
+	// exactly +-90 degrees the pan and the roll turn about one axis, so the roll is 0 and the pan carries
+	// both. mountFromPlacement(offset, aimOf(r)) has rotation r, within rounding.
+	Aim aimOf(const math::Quatd& rotation);
+
+	// A rig plan as it was meant, object by object (CONTEXT.md, "Viewport"): what an editor draws. In
+	// the rig plan's order, each mount's, camera's and light's planned pose, and each camera's nominal
+	// model. Each is there wherever its own data allows, exactly where realise() puts it at scales of 0,
+	// and missing otherwise, for a reason check() reports: about that object, about the mount it is on,
+	// or, for a model, about its specification. So a plan with a mistake in it still draws everything
+	// else, where realise() refuses any plan check() does not accept.
+	struct NominalLayout
+	{
+		struct Mount
+		{
+			core::Uuid id;
+			std::optional<math::RigidTransformd> planFromMount; // a position and yaw that are finite
+		};
+		struct Camera
+		{
+			core::Uuid id;
+			std::string name;
+			// Camera-frame coordinates into the plan frame, at its optical centre; at its mounting point when
+			// no sensor specification says where the optical centre is. Missing when its mount has no pose or
+			// its placement is not finite.
+			std::optional<math::RigidTransformd> planFromCamera;
+			std::optional<camera::CameraModel> model; // its specification's nominal model, where it makes one
+		};
+		struct Light
+		{
+			core::Uuid id;
+			std::optional<math::RigidTransformd> planFromLight; // camera-frame axes: Z is the direction it shines
+		};
+
+		std::vector<Mount> mounts;
+		std::vector<Camera> cameras;
+		std::vector<Light> lights;
+	};
+
+	NominalLayout nominalLayout(const RigPlan& plan);
 } // namespace lain::rigplan

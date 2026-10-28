@@ -8,6 +8,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -99,8 +100,12 @@ namespace lain::rigplan
 	std::vector<PlanDiagnostic> check(const RigPlan& plan)
 	{
 		std::vector<PlanDiagnostic> out;
+		// Every problem with the object it is about, or none: a specification's are named in their detail,
+		// and the timeline and scales belong to the plan as a whole.
+		const auto report = [&](PlanProblem problem, std::string detail, std::optional<core::Uuid> owner)
+		{ out.push_back({problem, std::move(detail), owner}); };
 		for (const SpecificationDiagnostic& d : check(plan.specifications))
-			out.push_back({PlanProblem::InvalidSpecification, d.detail});
+			report(PlanProblem::InvalidSpecification, d.detail, std::nullopt);
 
 		// Every identity, across everything that has one: a draw is keyed by its owner's, so two owners
 		// sharing one would draw alike, and a mover's ground truth is filed under its own.
@@ -108,16 +113,14 @@ namespace lain::rigplan
 		const auto identify = [&](const core::Uuid& id, std::string_view kind, std::string_view name)
 		{
 			if (id.isNil())
-				out.push_back({PlanProblem::MissingIdentity, string::format("{} '{}' has no identity", kind, name)});
+				report(PlanProblem::MissingIdentity, string::format("{} '{}' has no identity", kind, name), id);
 			else if (!identities.insert(id).second)
-				out.push_back({PlanProblem::DuplicateIdentity, string::format("{} '{}' shares the identity {}", kind, name, id.toString())});
+				report(PlanProblem::DuplicateIdentity, string::format("{} '{}' shares the identity {}", kind, name, id.toString()), id);
 		};
 
-		const auto environment = [&](std::string detail)
-		{
-			out.push_back({PlanProblem::InvalidEnvironment, std::move(detail)});
-		};
-		const auto checkMaterial = [&](const Material& material, std::string_view where)
+		const auto environment = [&](std::string detail, std::optional<core::Uuid> owner)
+		{ report(PlanProblem::InvalidEnvironment, std::move(detail), owner); };
+		const auto checkMaterial = [&](const Material& material, std::string_view where, std::optional<core::Uuid> owner)
 		{
 			bool valid = validBound(material.specular.r) && validBound(material.specular.g) && validBound(material.specular.b) &&
 						 validBound(material.shininess);
@@ -138,7 +141,8 @@ namespace lain::rigplan
 			{
 				environment(string::format("{} has a material that cannot be one: a colour or specular must be finite and not "
 										   "negative, a picture needs a file and a positive tile, a texture a positive cell",
-										   where));
+										   where),
+							owner);
 			}
 		};
 
@@ -146,7 +150,7 @@ namespace lain::rigplan
 		{
 			const Room& room = *plan.room;
 			if (!finite(room.centre) || !positive(room.size))
-				environment("the room needs a finite centre and a positive size");
+				environment("the room needs a finite centre and a positive size", std::nullopt); // a room has no identity
 			for (const auto& [surface, name] : {std::pair<const RoomSurface*, const char*>{&room.floor, "floor"},
 												{&room.ceiling, "ceiling"},
 												{&room.north, "north wall"},
@@ -155,33 +159,33 @@ namespace lain::rigplan
 												{&room.west, "west wall"}})
 			{
 				if (surface->present)
-					checkMaterial(surface->material, string::format("the room's {}", name));
+					checkMaterial(surface->material, string::format("the room's {}", name), std::nullopt);
 			}
 		}
 		for (const Plane& p : plan.planes)
 		{
 			identify(p.id, "plane", p.name);
 			if (!finite(p.centre) || !finite(p.aim) || !positive(p.size))
-				environment(string::format("plane '{}' needs a finite centre and aim and a positive size", p.name));
-			checkMaterial(p.material, string::format("plane '{}'", p.name));
+				environment(string::format("plane '{}' needs a finite centre and aim and a positive size", p.name), p.id);
+			checkMaterial(p.material, string::format("plane '{}'", p.name), p.id);
 		}
 		for (const Box& b : plan.boxes)
 		{
 			identify(b.id, "box", b.name);
 			if (!finite(b.centre) || !std::isfinite(b.yawDegrees) || !positive(b.size))
-				environment(string::format("box '{}' needs a finite centre and yaw and a positive size", b.name));
-			checkMaterial(b.material, string::format("box '{}'", b.name));
+				environment(string::format("box '{}' needs a finite centre and yaw and a positive size", b.name), b.id);
+			checkMaterial(b.material, string::format("box '{}'", b.name), b.id);
 		}
 		for (const Prop& p : plan.props)
 		{
 			identify(p.id, "prop", p.name);
 			if (p.mesh.empty() || !std::isfinite(p.unitMetres) || p.unitMetres <= 0 || !finite(p.position) ||
 				!std::isfinite(p.yawDegrees))
-				environment(string::format("prop '{}' needs a mesh, a positive unit and a finite position and yaw", p.name));
+				environment(string::format("prop '{}' needs a mesh, a positive unit and a finite position and yaw", p.name), p.id);
 			if (p.path)
 			{
 				for (const std::string& problem : pathProblems(*p.path))
-					out.push_back({PlanProblem::InvalidMover, string::format("prop '{}' cannot follow its path: {}", p.name, problem)});
+					report(PlanProblem::InvalidMover, string::format("prop '{}' cannot follow its path: {}", p.name, problem), p.id);
 			}
 		}
 		std::set<std::string> boardNames;
@@ -189,9 +193,9 @@ namespace lain::rigplan
 		{
 			identify(b.id, "board", b.name);
 			if (!boardNames.insert(b.name).second)
-				out.push_back({PlanProblem::InvalidMover, string::format("two boards are named '{}'", b.name)});
+				report(PlanProblem::InvalidMover, string::format("two boards are named '{}'", b.name), b.id);
 			for (const std::string& problem : boardProblems(b))
-				out.push_back({PlanProblem::InvalidMover, string::format("board '{}' cannot be shown: {}", b.name, problem)});
+				report(PlanProblem::InvalidMover, string::format("board '{}' cannot be shown: {}", b.name, problem), b.id);
 		}
 
 		std::unordered_map<core::Uuid, const Mount*> mounts;
@@ -211,12 +215,11 @@ namespace lain::rigplan
 			}
 			if (!valid)
 			{
-				out.push_back({PlanProblem::InvalidMount,
-							   string::format("mount '{}' needs a finite position and yaw, and a pole a positive height and diameter",
-											  m.name)});
+				report(PlanProblem::InvalidMount,
+					   string::format("mount '{}' needs a finite position and yaw, and a pole a positive height and diameter", m.name), m.id);
 			}
 			if (m.tolerance.position.nanometres() < 0 || !validBound(m.tolerance.yawDegrees))
-				out.push_back({PlanProblem::InvalidTolerance, string::format("mount '{}' has a negative tolerance", m.name)});
+				report(PlanProblem::InvalidTolerance, string::format("mount '{}' has a negative tolerance", m.name), m.id);
 		}
 
 		std::set<std::string> names;
@@ -224,30 +227,28 @@ namespace lain::rigplan
 		{
 			identify(c.id, "camera", c.name);
 			if (c.name.empty())
-				out.push_back({PlanProblem::Unnamed, "a placed camera has no name"});
+				report(PlanProblem::Unnamed, "a placed camera has no name", c.id);
 			else if (!validFileName(c.name))
 			{
-				out.push_back({PlanProblem::InvalidName,
-							   string::format("camera '{}' cannot be a folder's name on every platform", c.name)});
+				report(PlanProblem::InvalidName, string::format("camera '{}' cannot be a folder's name on every platform", c.name), c.id);
 			}
 			else if (!names.insert(folded(c.name)).second)
 			{
 				// Folded: on a case-insensitive file system "Cam0" and "cam0" are one folder.
-				out.push_back({PlanProblem::DuplicateName, string::format("two cameras are named '{}', ignoring case", c.name)});
+				report(PlanProblem::DuplicateName, string::format("two cameras are named '{}', ignoring case", c.name), c.id);
 			}
 			if (!findCamera(plan.specifications, c.camera))
 			{
-				out.push_back({PlanProblem::UnknownSpecification,
-							   string::format("camera '{}' names a camera specification '{}' the rig plan does not have", c.name,
-											  c.camera)});
+				report(PlanProblem::UnknownSpecification,
+					   string::format("camera '{}' names a camera specification '{}' the rig plan does not have", c.name, c.camera), c.id);
 			}
 			if (!mounts.count(c.mount))
-				out.push_back({PlanProblem::UnknownMount, string::format("camera '{}' is on a mount the rig plan does not have", c.name)});
+				report(PlanProblem::UnknownMount, string::format("camera '{}' is on a mount the rig plan does not have", c.name), c.id);
 			if (!finite(c.offset) || !finite(c.aim))
-				out.push_back({PlanProblem::InvalidPlacement, string::format("camera '{}' has an offset or aim that is not finite", c.name)});
+				report(PlanProblem::InvalidPlacement, string::format("camera '{}' has an offset or aim that is not finite", c.name), c.id);
 			const PlacementTolerance& t = c.tolerance;
 			if (t.offset.nanometres() < 0 || !validBound(t.panDegrees) || !validBound(t.tiltDegrees) || !validBound(t.rollDegrees))
-				out.push_back({PlanProblem::InvalidTolerance, string::format("camera '{}' has a negative tolerance", c.name)});
+				report(PlanProblem::InvalidTolerance, string::format("camera '{}' has a negative tolerance", c.name), c.id);
 
 			// Its optical centre, where its rays start, as far as its placement's tolerances could move it at
 			// full scale: the offset on each axis, and the aim swinging the centre about the mounting point.
@@ -262,10 +263,11 @@ namespace lain::rigplan
 				const double reach = std::sqrt(3.0) * t.offset.metres() + math::length(sensor->body.opticalCentre) * swing;
 				if (insidePole(*pole, centre, reach))
 				{
-					out.push_back({PlanProblem::InsidePole,
-								   string::format("camera '{}' could see from inside pole '{}': its optical centre is {:.3f} m from the "
-												  "pole's axis, its tolerances move it up to {:.3f} m, and the pole's radius is {:.3f} m",
-												  c.name, mount->second->name, std::hypot(centre.x, centre.y), reach, pole->diameter / 2)});
+					report(PlanProblem::InsidePole,
+						   string::format("camera '{}' could see from inside pole '{}': its optical centre is {:.3f} m from the "
+										  "pole's axis, its tolerances move it up to {:.3f} m, and the pole's radius is {:.3f} m",
+										  c.name, mount->second->name, std::hypot(centre.x, centre.y), reach, pole->diameter / 2),
+						   c.id);
 				}
 			}
 		}
@@ -273,8 +275,8 @@ namespace lain::rigplan
 		if (plan.reference && std::none_of(plan.cameras.begin(), plan.cameras.end(), [&](const PlacedCamera& c)
 										   { return c.id == *plan.reference; }))
 		{
-			out.push_back({PlanProblem::UnknownReference,
-						   string::format("the reference {} is not one of the rig plan's cameras", plan.reference->toString())});
+			report(PlanProblem::UnknownReference,
+				   string::format("the reference {} is not one of the rig plan's cameras", plan.reference->toString()), std::nullopt);
 		}
 
 		for (const PlacedLight& l : plan.lights)
@@ -282,26 +284,25 @@ namespace lain::rigplan
 			identify(l.id, "light", l.name);
 			if (!findLight(plan.specifications, l.light))
 			{
-				out.push_back({PlanProblem::UnknownSpecification,
-							   string::format("light '{}' names a light specification '{}' the rig plan does not have", l.name,
-											  l.light)});
+				report(PlanProblem::UnknownSpecification,
+					   string::format("light '{}' names a light specification '{}' the rig plan does not have", l.name, l.light), l.id);
 			}
 			if (!mounts.count(l.mount))
-				out.push_back({PlanProblem::UnknownMount, string::format("light '{}' is on a mount the rig plan does not have", l.name)});
+				report(PlanProblem::UnknownMount, string::format("light '{}' is on a mount the rig plan does not have", l.name), l.id);
 			if (!finite(l.offset) || !finite(l.aim))
-				out.push_back({PlanProblem::InvalidPlacement, string::format("light '{}' has an offset or aim that is not finite", l.name)});
+				report(PlanProblem::InvalidPlacement, string::format("light '{}' has an offset or aim that is not finite", l.name), l.id);
 			const auto mount = mounts.find(l.mount);
 			if (const Pole* pole = mount != mounts.end() ? usablePole(*mount->second) : nullptr; pole && insidePole(*pole, l.offset, 0))
 			{
-				out.push_back({PlanProblem::InsidePole, string::format("light '{}' is inside pole '{}', which would hide it", l.name,
-																	   mount->second->name)});
+				report(PlanProblem::InsidePole, string::format("light '{}' is inside pole '{}', which would hide it", l.name, mount->second->name),
+					   l.id);
 			}
 		}
 
 		if (plan.timeline.frames == 0)
-			out.push_back({PlanProblem::InvalidTimeline, "the capture timeline has no frames"});
+			report(PlanProblem::InvalidTimeline, "the capture timeline has no frames", std::nullopt);
 		if (!validScale(plan.scales.intrinsic) || !validScale(plan.scales.installation) || !validScale(plan.scales.noise))
-			out.push_back({PlanProblem::InvalidScale, "every scale must lie between 0 and 1"});
+			report(PlanProblem::InvalidScale, "every scale must lie between 0 and 1", std::nullopt);
 		return out;
 	}
 } // namespace lain::rigplan

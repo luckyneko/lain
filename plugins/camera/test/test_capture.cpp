@@ -35,9 +35,11 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace lain;
@@ -644,4 +646,45 @@ TEST_CASE("a rig plan's board, captured through its realised cameras, is detecte
 			CHECK(error.worst < 0.4);
 		}
 	}
+}
+
+TEST_CASE("a board drawn on another thread is the board drawn on this one", "[camera][capture]")
+{
+	// An editor draws a rig plan's boards as asset jobs on the process pool (rigplan::missingAssets),
+	// where the capture writer draws them on its calling thread. Through OpenCV's renderer, which nothing
+	// had called off the main thread before, the two must be one board, to the byte.
+	ensureBackends();
+	rigplan::RigPlan plan;
+	rigplan::BoardMover m9;
+	m9.id = *core::Uuid::parse("0193a6f0-0000-7000-8000-00000000b001");
+	m9.name = "charuco";
+	m9.pattern.dictionary = board::Dictionary::Aruco5x5_100;
+	m9.pattern.squaresX = 7;
+	m9.pattern.squaresY = 5;
+	m9.pattern.markerToSquare = 0.75;
+	m9.instance.identity = "board-1";
+	m9.instance.squareLength.value = core::Length::from<core::Length::Millimetres>(24.0);
+	m9.path.keys = {{0, {0.0, 1.0, 1.0}, {}}};
+	plan.boards.push_back(m9);
+
+	rigplan::SceneAssets here;
+	const std::vector<rigplan::AssetJob> jobs = rigplan::missingAssets(plan, here);
+	REQUIRE(jobs.size() == 1);
+	rigplan::addAsset(here, jobs[0].run());
+	rigplan::AssetOutcome outcome;
+	std::thread worker([&]
+					   { outcome = jobs[0].run(); });
+	worker.join();
+	rigplan::SceneAssets there;
+	rigplan::addAsset(there, std::move(outcome));
+
+	REQUIRE(here.boards.count(m9.id) == 1);
+	REQUIRE(there.boards.count(m9.id) == 1);
+	const image::Image& a = *here.boards.at(m9.id).raster;
+	const image::Image& b = *there.boards.at(m9.id).raster;
+	REQUIRE(a.byteSize() > 0);
+	REQUIRE(a.width() == b.width());
+	REQUIRE(a.height() == b.height());
+	REQUIRE(a.byteSize() == b.byteSize());
+	CHECK(std::memcmp(a.data(), b.data(), a.byteSize()) == 0);
 }

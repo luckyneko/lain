@@ -3,6 +3,8 @@
 #include <lain/core/sha256.h>
 #include <lain/string/format.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <string>
 #include <unordered_map>
@@ -71,25 +73,38 @@ namespace lain::rigplan
 		}
 	};
 
-	static math::RigidTransformd realisedMount(const Mount& mount, const Draws& draws)
+	// A mount's frame moved `shift` from where it is planned and turned `yawShift` degrees further: the
+	// one place a mount's pose is made, for a realisation and for the nominal layout. A pole stands on
+	// the floor, so it moves only across it.
+	static math::RigidTransformd mountPose(const Mount& mount, const math::Vec3d& shift, double yawShift)
 	{
-		const double positionTolerance = mount.tolerance.position.metres();
 		math::Vec3d position{0.0};
 		if (const auto* pole = std::get_if<Pole>(&mount.kind))
-		{
-			// A pole stands on the floor, so only where on it varies.
-			position = math::Vec3d{pole->floor.x + draws.deviation("position.x", positionTolerance),
-								   pole->floor.y + draws.deviation("position.y", positionTolerance), 0.0};
-		}
+			position = math::Vec3d{pole->floor.x + shift.x, pole->floor.y + shift.y, 0.0};
 		else
 		{
 			const math::Vec3d& planned = std::get<FixedPoint>(mount.kind).position;
-			position = math::Vec3d{planned.x + draws.deviation("position.x", positionTolerance),
-								   planned.y + draws.deviation("position.y", positionTolerance),
-								   planned.z + draws.deviation("position.z", positionTolerance)};
+			position = math::Vec3d{planned.x + shift.x, planned.y + shift.y, planned.z + shift.z};
 		}
-		const double yaw = mount.yawDegrees + draws.deviation("yaw", mount.tolerance.yawDegrees);
+		const double yaw = mount.yawDegrees + yawShift;
 		return math::RigidTransformd{math::angleAxis(math::radians(yaw), math::Vec3d{0.0, 0.0, 1.0}), position};
+	}
+
+	static math::RigidTransformd realisedMount(const Mount& mount, const Draws& draws)
+	{
+		const double positionTolerance = mount.tolerance.position.metres();
+		const bool pole = std::holds_alternative<Pole>(mount.kind);
+		const math::Vec3d shift{draws.deviation("position.x", positionTolerance), draws.deviation("position.y", positionTolerance),
+								pole ? 0.0 : draws.deviation("position.z", positionTolerance)};
+		return mountPose(mount, shift, draws.deviation("yaw", mount.tolerance.yawDegrees));
+	}
+
+	// A camera's optical centre on its mount: the mounting point at `offset`, aimed by `aim`, then the
+	// optical centre from it, in the camera frame. The one place a camera's pose is made.
+	static math::RigidTransformd cameraPose(const math::RigidTransformd& planFromMount, const math::Vec3d& offset, const Aim& aim,
+											const math::Vec3d& opticalCentre)
+	{
+		return planFromMount * mountFromPlacement(offset, aim) * math::RigidTransformd{math::Quatd{1.0, 0.0, 0.0, 0.0}, opticalCentre};
 	}
 
 	RealisationResult realise(const RigPlan& plan)
@@ -150,9 +165,7 @@ namespace lain::rigplan
 						  placed.aim.tiltDegrees + placement.deviation("tilt", placed.tolerance.tiltDegrees),
 						  placed.aim.rollDegrees + placement.deviation("roll", placed.tolerance.rollDegrees)};
 			const math::RigidTransformd& planFromMount = realisation.mounts[mountIndex.at(placed.mount)].planFromMount;
-			// The mounting point on the mount, then the optical centre from it, in the camera frame.
-			const math::RigidTransformd planFromCamera =
-				planFromMount * mountFromPlacement(offset, aim) * math::RigidTransformd{math::Quatd{1.0, 0.0, 0.0, 0.0}, sensor.body.opticalCentre};
+			const math::RigidTransformd planFromCamera = cameraPose(planFromMount, offset, aim, sensor.body.opticalCentre);
 			realisation.cameras.push_back({placed.id, placed.name, std::move(*model.model), planFromCamera});
 		}
 		if (!result.diagnostics.empty())
@@ -166,5 +179,86 @@ namespace lain::rigplan
 
 		result.realisation = std::move(realisation);
 		return result;
+	}
+
+	Aim aimOf(const math::Quatd& rotation)
+	{
+		// mountFromPlacement's rotation is Rz(pan) Rx(tilt) Ry(roll) times the rest turn, so undoing the
+		// rest leaves A = Rz(pan) Rx(tilt) Ry(roll), whose entries (row, column) are
+		//   A(2,1) = sin(tilt),
+		//   A(0,1) = -sin(pan) cos(tilt),  A(1,1) = cos(pan) cos(tilt),
+		//   A(2,0) = -cos(tilt) sin(roll), A(2,2) = cos(tilt) cos(roll).
+		const math::Quatd rest = math::quat_cast(math::basisChange<double>(camera::kCameraFrame, kPlanFrame));
+		const math::Mat3d a = math::mat3_cast(rotation * math::conjugate(rest)); // GLM: a[column][row]
+		const double sinTilt = std::clamp(a[1][2], -1.0, 1.0);
+		const double cosTilt = std::sqrt(std::max(0.0, 1.0 - sinTilt * sinTilt));
+		Aim aim;
+		aim.tiltDegrees = math::degrees(std::asin(sinTilt));
+		if (cosTilt > 1e-9)
+		{
+			aim.panDegrees = math::degrees(std::atan2(-a[1][0], a[1][1]));
+			aim.rollDegrees = math::degrees(std::atan2(-a[0][2], a[2][2]));
+		}
+		else
+		{
+			// Looking straight up or down: A(0,0) = cos(pan +- roll) and A(1,0) = sin(pan +- roll), so with no
+			// roll the pan is that angle.
+			aim.panDegrees = math::degrees(std::atan2(a[0][1], a[0][0]));
+		}
+		return aim;
+	}
+
+	NominalLayout nominalLayout(const RigPlan& plan)
+	{
+		const auto finite = [](const math::Vec3d& v)
+		{ return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); };
+		const auto finiteAim = [](const Aim& a)
+		{ return std::isfinite(a.panDegrees) && std::isfinite(a.tiltDegrees) && std::isfinite(a.rollDegrees); };
+
+		NominalLayout layout;
+		std::unordered_map<core::Uuid, std::optional<math::RigidTransformd>> mounts;
+		for (const Mount& mount : plan.mounts)
+		{
+			const bool pole = std::holds_alternative<Pole>(mount.kind);
+			const bool placed = pole ? std::isfinite(std::get<Pole>(mount.kind).floor.x) && std::isfinite(std::get<Pole>(mount.kind).floor.y)
+									 : finite(std::get<FixedPoint>(mount.kind).position);
+			std::optional<math::RigidTransformd> pose;
+			if (placed && std::isfinite(mount.yawDegrees))
+				pose = mountPose(mount, math::Vec3d{0.0}, 0.0);
+			mounts.emplace(mount.id, pose); // the first of two sharing an identity, as check() reports
+			layout.mounts.push_back({mount.id, pose});
+		}
+		const auto mountOf = [&](const core::Uuid& id) -> std::optional<math::RigidTransformd>
+		{
+			const auto found = mounts.find(id);
+			return found != mounts.end() ? found->second : std::nullopt;
+		};
+
+		for (const PlacedCamera& placed : plan.cameras)
+		{
+			NominalLayout::Camera camera{placed.id, placed.name, std::nullopt, std::nullopt};
+			const CameraSpecification* specification = findCamera(plan.specifications, placed.camera);
+			const SensorSpecification* sensor = specification ? findSensor(plan.specifications, specification->sensor) : nullptr;
+			const LensSpecification* lens = specification ? findLens(plan.specifications, specification->lens) : nullptr;
+			const std::optional<math::RigidTransformd> planFromMount = mountOf(placed.mount);
+			if (planFromMount && finite(placed.offset) && finiteAim(placed.aim))
+			{
+				const math::Vec3d opticalCentre = sensor ? sensor->body.opticalCentre : math::Vec3d{0.0};
+				camera.planFromCamera = cameraPose(*planFromMount, placed.offset, placed.aim, opticalCentre);
+			}
+			if (sensor && lens)
+				camera.model = nominalModel(*sensor, *lens).model;
+			layout.cameras.push_back(std::move(camera));
+		}
+
+		for (const PlacedLight& placed : plan.lights)
+		{
+			std::optional<math::RigidTransformd> pose;
+			const std::optional<math::RigidTransformd> planFromMount = mountOf(placed.mount);
+			if (planFromMount && finite(placed.offset) && finiteAim(placed.aim))
+				pose = *planFromMount * mountFromPlacement(placed.offset, placed.aim);
+			layout.lights.push_back({placed.id, pose});
+		}
+		return layout;
 	}
 } // namespace lain::rigplan

@@ -255,3 +255,29 @@ TEST_CASE("an update from one frame to the next uploads nothing but what moved",
 	REQUIRE(viaUpload.problems.empty());
 	CHECK(std::memcmp(viaUpdate.image.data(), viaUpload.image.data(), viaUpload.image.byteSize()) == 0);
 }
+
+TEST_CASE("a board whose drawing changed is drawn again, and one that only moved is not", "[rigplan][scene][mover]")
+{
+	registerStandIn();
+	RigPlan plan = planWithBoard();
+	AssetsResult assets = loadSceneAssets(plan);
+	REQUIRE(assets.problems.empty());
+	REQUIRE(missingAssets(plan, assets.assets).empty());
+	const std::shared_ptr<const image::Image> first = assets.assets.boards.at(testplan::boardId).raster;
+
+	// Moved, and its identity's text changed: neither is part of its drawing.
+	plan.boards[0].path.keys[0].position.x += 0.5;
+	plan.boards[0].instance.identity = "board-2";
+	CHECK(missingAssets(plan, assets.assets).empty());
+
+	// Drawn more finely: drawn again, and shown as it was until it is.
+	plan.boards[0].pixelsPerSquare = 50;
+	const std::vector<AssetJob> jobs = missingAssets(plan, assets.assets);
+	REQUIRE(jobs.size() == 1);
+	CHECK(jobs[0].what == "drawing board 'charuco'");
+	CHECK(assets.assets.boards.at(testplan::boardId).raster == first);
+	addAsset(assets.assets, jobs[0].run());
+	const image::Image& redrawn = *assets.assets.boards.at(testplan::boardId).raster;
+	CHECK(redrawn.width() < first->width());
+	CHECK(missingAssets(plan, assets.assets).empty());
+}

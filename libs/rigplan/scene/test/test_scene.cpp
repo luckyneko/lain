@@ -297,7 +297,7 @@ TEST_CASE("a prop is placed by planFromProp, plays its clip, and shows its file'
 	REQUIRE(realised.realisation);
 	const AssetsResult assets = loadSceneAssets(plan);
 	REQUIRE(assets.problems.empty());
-	REQUIRE(assets.assets.props.at(walker.id)->frames.size() == 3);
+	REQUIRE(assets.assets.props.at(walker.id).clip->frames.size() == 3);
 
 	// At half the capture's rate, capture frames 0 to 5 show clip frames 0, 1, 1, 2, 2, 0 (nearest,
 	// halves up, looping).
@@ -310,7 +310,7 @@ TEST_CASE("a prop is placed by planFromProp, plays its clip, and shows its file'
 		REQUIRE(scene.instances.size() == 2); // and the test plan's pole, after it
 		CHECK(scene.meshes[0]->positions[0].x == float(expected[frame]));
 		// The clip's own frame, shared rather than copied.
-		CHECK(scene.meshes[0].get() == &assets.assets.props.at(walker.id)->frames[std::size_t(expected[frame])]);
+		CHECK(scene.meshes[0].get() == &assets.assets.props.at(walker.id).clip->frames[std::size_t(expected[frame])]);
 		CHECK(scene.instances[0].worldFromMesh == planFromProp(walker, 0));
 	}
 
