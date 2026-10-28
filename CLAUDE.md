@@ -1400,6 +1400,40 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-28 — M15 slice 8 planned: the gui, part 1 (nothing built yet)
+
+Slice 8 is planned as **six commits, 8a to 8f**, in WORK.md's *Slice 8 planned*. 8a to 8d are headless
+or driver-free; 8e and 8f are gui code, live-verified by the repo owner against a 12-step checklist.
+Build-order item 8 and the Outstanding index are amended in place, and so are ADR-0028's viewport
+bullet and CONTEXT.md's *Viewport*.
+
+- **Decided with the repo owner:**
+  - **Navigation is Alt-drag, Maya style**: orbit as a turntable with Z up, pan, dolly, scroll to zoom,
+    and F and Home to frame. Each has a trackpad chord, and plain left-click stays free for picking
+    and the gizmo. GLFW delivers no pinch, so a trackpad zooms by its scroll.
+  - **A mover's keys are a table in the Inspector, and its path is drawn.** The selected key's frame
+    is the frame shown. The scrubber and playback are slice 9's.
+  - **A plan's own specifications are edited in the Inspector.** A New plan starts with the test
+    plan's four. The catalogue stays slice 9's.
+  - **The gui never waits on asset work** (M14's rule carried over). Bakes, board drawings and mesh
+    loads run on the pool. Measured: three-poles takes 0.8 s to prepare on Metal, so a room resized
+    on the frame loop would stall every frame of the drag.
+  - **A pane shows a viewport's texture through `lain::gui`, resolved when the frame is recorded**
+    (`Context::render(cmd, frameIndex)`). archimedes does not change.
+  - **The Viewport draws the nominal plan only**, so the gizmo edits what is drawn.
+  - **The view is not kept**: a plan opens framed, and the document stays at version 1.
+- **Found while planning:**
+  - **`realise()` refuses a whole plan on any `check()` problem**, so a camera dragged into its pole
+    would blank the Viewport. 8c adds `nominalLayout`, which never refuses the whole.
+  - **`renderScene` draws a surface whose asset is missing white**; 8c makes it mid grey.
+  - **`Viewport::record` reallocates on resize**, which is why the pane's texture is resolved at record.
+  - **`PlanDiagnostic` names no owner**; 8c adds one, so an Issues row can select it.
+  - **flowview loses unsaved work on Quit**: the menu item, Ctrl+Q and the window's close button all
+    exit unasked, and `lain::app` gives a delegate no veto. 8e adds `WindowDelegate::onCloseRequested`,
+    and flowview's fix is its own owed commit (Outstanding index, *Known defects*).
+  - **A floor grid cannot be overlay lines** (3b/3d): 8b draws it in shading, with a depthless
+    backdrop, so no capture can ever draw one.
+
 ### Update 2026-10-27 — feature/M15's CI run after slice 7: `run` writes text the same on every platform
 
 [Run 40493396763](https://github.com/luckyneko/lain/actions/runs/40493396763) on `2977ed0`, the first

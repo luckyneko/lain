@@ -816,7 +816,10 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   factory calibration.
 - **Viewport** — the designer's own view of a rig plan, through a pinhole the user steers. It is a
   preview: nothing it draws is ever written into a synthetic capture, and it never applies a lens's
-  distortion. _Avoid_: camera view, preview render when a capture render is meant.
+  distortion. It draws the rig plan as planned: nominal poses, and each camera's frustum through its
+  nominal model, so a fisheye's frustum shows the fisheye's field of view. What a build of the plan
+  would hold is seen by looking through a camera instead. _Avoid_: camera view, preview render when
+  a capture render is meant.
 - **Capture render** — the image one placed camera records, rendered through its realised camera
   model, distortion included; the only source of a synthetic capture's pixels. It shares the
   viewport's scene and shading, and differs only in whose eye it is and which projection it uses.

@@ -14918,7 +14918,7 @@ clean. `flowview --licenses` prints 25 notices (48.6 KB) on macOS arm64.
   `third-party/` ships; MoltenVK's compiled-in SPIRV-Cross has no licence text to read; and nothing
   was built on Linux or Windows (MSVC's literal limit included), so CI's first run is owed.
 
-## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 6 built)
+## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 7 built, 8 planned)
 
 An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
 and lights, a board waved through) that renders **synthetic captures**: footage in the shape M9
@@ -15036,7 +15036,10 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    near-exactly". One capture at intrinsic scale 1, bound to `truth/models` and to `nominal/`, makes
    both claims from the same pixels, and slice 1 already proves scale 0 is exactly nominal.)*
 8. **The gui, part 1**: the app shell and docking, the Viewport, Outliner and Inspector, ImGuizmo,
-   frustums, undo through `lain::editor`. Live-verified by the repo owner.
+   frustums, undo through `lain::editor`. Live-verified by the repo owner. **Planned 2026-10-28 as six
+   commits, 8a to 8f** (*Slice 8 planned* below). *(Amended while planning: the Viewport draws the
+   nominal plan only, a mover's keys are edited as a table, and a plan's own specifications are edited
+   in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
    specification catalogue (copy in, save out). Live-verified by the repo owner.
 
@@ -17062,6 +17065,349 @@ Release, macOS and Windows.
   against 21.5 s on 14 here. The ctest case, which renders on the CPU device alone on CI, took 126 s on
   Windows.
 
+### Slice 8 planned (2026-10-28)
+
+Six commits, 8a to 8f, in order. 8a to 8d are headless or driver-free and land on ctest alone. 8e
+and 8f are gui code, and the repo owner live-verifies them after 8f (the checklist at the end). Nothing
+is built.
+
+- **Decided with the repo owner:**
+  - **Navigation is Alt-drag, Maya style.**
+    - Alt+LMB orbits as a turntable about a target, so Z stays up.
+    - Alt+MMB pans, and Alt+Shift+LMB does the same on a trackpad.
+    - Alt+RMB dollies, and Alt+Ctrl+LMB does the same on a trackpad.
+    - The scroll wheel, or a trackpad's two-finger scroll, zooms.
+    - F frames the selection, and Home frames everything.
+
+    Plain left-click stays free for picking and the gizmo, on a mouse and a trackpad alike. *(The
+    option put to the repo owner said "wheel or pinch zooms". GLFW delivers no pinch, so a trackpad
+    zooms by its scroll.)*
+  - **A mover's keys are a table in the Inspector, and its path is drawn** as a polyline through its
+    keys. The Viewport shows frame 0, or the frame of the key selected in the table, and the gizmo moves
+    that key. Slice 9 adds the scrubber, playback and keying at the current frame.
+  - **A plan's own specifications are edited in the Inspector**, and listed in the Outliner. A New plan
+    starts with one sensor, one lens, one camera and one light specification, the test plan's
+    (`libs/rigplan/test/testplan.h`: a 1280 x 720 sensor of 2 um pixels and a 4 mm lens), so a camera
+    can be placed at once. Copying a specification in from a catalogue, and saving one out, stay
+    slice 9's.
+  - **The gui never waits on asset work**: M14's rule (ADR-0025), carried over to rigplan.
+    - Bakes, board drawings and mesh loads run on the process pool.
+    - Until one lands, the Viewport keeps the asset it had, or draws the surface a flat mid grey.
+    - Measured on Metal (14 cores): `rigplan render three-poles.json` takes 0.8 s to prepare. That
+      covers check(), the assets with the room's six bakes at capture density, and six ray tables.
+      Resizing the room re-bakes its walls, so on the frame loop it would stall every frame of a drag.
+  - **A pane gets a viewport's picture through `lain::gui`, resolved when the frame is recorded.** The
+    pane draws a stand-in id. `gui::Context::render(cmd, frameIndex)` swaps it for that frame's
+    descriptor just before ImGui records. By then the Viewport's pre-pass has drawn, and possibly
+    resized, that frame's texture. archimedes does not change. The alternative was an archimedes
+    `Renderer::frameIndex()`, with the Viewport allocating a slot before the UI draws it. That split
+    `record` in two, and still let a texture change size between the UI and the draw.
+  - **The Viewport draws the nominal plan only**: planned poses, nominal models, nominal frustums. So
+    the gizmo edits exactly what is drawn. Realised poses and models arrive with slice 9's
+    look-through, which already chooses between nominal and realised. ADR-0028 and CONTEXT.md's
+    *Viewport* are amended in place.
+  - **The view is not kept.** Opening a plan frames all of it, and the rig plan document stays at
+    version 1 (frozen by 7a). Trigger: the first plan big enough that framing all of it is the wrong
+    start. The next step is then the session, per document. A version-2 editor section comes last,
+    since it also changes the plan embedded in every capture.json.
+- **Taken as defaults, to object to first:**
+  - **The command line**: `rigplan [plan]` opens the gui, on `plan` or else on the plan open last.
+    `rigplan render …` is unchanged. `--reset-layout` stamps the default docks, as flowview's does.
+    `require_subcommand(1)` goes.
+  - **A New plan** is a default `Room` (8 x 6 x 3 m, flat grey) with the four default specifications
+    above, and no mounts.
+  - **What the gizmo moves, by kind.** It never offers a component the data cannot hold.
+
+    | Kind | Translate | Rotate |
+    |---|---|---|
+    | Pole | X and Y (on the floor) | yaw |
+    | Fixed point | X, Y and Z | yaw |
+    | Camera or light | the offset, in its mount's frame | the aim, through a new `aimOf` |
+    | Plane | its centre | its aim |
+    | Box | its centre | yaw |
+    | Static prop | its position | yaw |
+    | Mover key | its position | its aim |
+    | Room | its centre, X and Y | none |
+
+    Sizes (a room's, a box's, a plane's) are edited in the Inspector. A scale gizmo waits for the first
+    plan whose sizes are tuned by eye. World or local mode, W and E switch translate and rotate, and
+    Ctrl snaps to 0.01 m and 5°.
+  - **Picking runs on the CPU, by click.** A ray through the pane pixel tests:
+    - the render scene's instances, which now know which plan object each is (8c);
+    - each camera's body, a box of its `SensorBody` size at the optical centre;
+    - each light's marker, and each key's marker.
+
+    The nearest hit wins, and the room's surfaces only when nothing else is hit. A click on empty space
+    selects nothing. No pick happens while Alt is held, or over the gizmo.
+  - **Overlays are `render::Segment`s**:
+    - each camera's frustum and body, drawn as lines;
+    - each light's marker, and a spot's cone;
+    - each mover's path and keys;
+    - the selection, drawn in a highlight colour.
+
+    The frustum is the image border, unprojected through the camera's nominal model at 16 samples a
+    side, out to a depth set in the View menu (1 m by default). So a fisheye's frustum shows its real
+    field of view, not a pinhole's. Camera and light housings are still not drawn as meshes; they wait
+    for the camera-authoring view (*Not in this milestone*).
+  - **Preview light**: the Viewport adds an ambient light of 0.15 to the plan's own lights, so a plan
+    with no lights is not black. A View menu toggle turns it off. A rig plan itself still states no
+    ambient (`renderScene`), so a capture never sees it.
+  - **Edits:**
+    - Deleting a mount deletes the cameras and lights on it, as one undo step.
+    - Deleting a specification is refused while anything names it.
+    - Renaming a specification renames every reference to it, as one undo step.
+    - Duplicating mints a new uuid and a new name (`cam1 2`), which ADR-0029 already requires: a
+      duplicate is a new unit.
+    - A camera's name is refused when it duplicates another camera's (ignoring case) or is not a valid
+      file name, using check()'s own rules (`validFileName`). The refusal is a transient message, as
+      flowview's are.
+  - **Undo** is `lain::editor::UndoStack` over `rigPlanToValue`. A snapshot is recorded when no widget
+    is active and `ImGuizmo::IsUsing()` is false, so a drag is one step, gizmo or Inspector. Selection is
+    by identity, so it survives an undo. One whose object the undo removed is cleared.
+  - **The window and its state**:
+    - default docks are the Outliner on the left, the Inspector on the right, the Viewport in the
+      centre, and Issues below it;
+    - `~/.rigplan/imgui.ini` and `~/.rigplan/session.json` (recents and the dialog folder) live beside
+      flowview's;
+    - the Viewport renders at framebuffer pixels (2x on a Retina display), multisampled as 3b built it.
+- **Found while planning:**
+  - **`realise()` refuses the whole plan on any `check()` problem**, so an editor cannot draw through
+    it. Dragging a camera into its own pole (`InsidePole`) would blank the Viewport. 8c adds
+    `nominalLayout`: each mount's, camera's and light's planned pose, and a camera's nominal model,
+    each present where its own data allows. It never refuses the whole.
+  - **`renderScene` draws a surface whose asset is missing white**, with a problem. For a capture that
+    is moot, because the capture is refused. For an editor waiting on a bake, white reads as a lit wall,
+    so 8c draws such a surface mid grey.
+  - **`render::Viewport::record` reallocates a frame's target when the view changes size**. That is
+    why the pane's texture is resolved at record, not at draw (decided above).
+  - **`PlanDiagnostic` names no owner**, so an Issues row cannot select what it is about. 8c adds an
+    optional owner uuid.
+  - **Unsaved work is lost on Quit, in flowview today.** The Quit menu item, Ctrl+Q and the window's
+    close button all exit without asking (`menubar.cpp`). `lain::app` breaks its loop as soon as a
+    window reports it should close, and gives a delegate no way to veto that.
+    - 8e adds `WindowDelegate::onCloseRequested`, so a delegate can hold the close while the
+      unsaved-changes question is open. rigplan routes Quit and the close button through
+      `DocumentGuard`.
+    - flowview's adoption is owed as its own commit, as a known defect (Outstanding index).
+  - **A grid cannot be drawn as overlay lines** (3b, corrected in 3d): a 1 px line on an obliquely
+    seen floor loses up to three quarters of its multisampled coverage. 8b draws it in shading instead.
+  - **The board renderer has never been called off the main thread.** The capture writer loads its
+    assets on the calling thread. 8c's pooled asset jobs are the first to draw a board on a worker, so
+    8c tests that the drawing matches a main-thread one, byte for byte.
+  - **M15's heading and the Outstanding index said "slices 0 to 6 built"** after slice 7 was complete.
+    Corrected in this commit.
+- **8a: `lain::gui` shows a texture it did not upload, and ImGuizmo lands.**
+  - **`gui::Context::frameTexture(provider)`** returns a move-only `gui::FrameTexture`.
+    - The provider is `std::function<acm::Texture(std::uint32_t frame)>`.
+    - The handle converts to an `ImTextureRef` (its stand-in id), and unregisters on destruction.
+  - **`Context::render(cmd, frameIndex)`** replaces `render(cmd)`, and flowview's one call site passes
+    its frame index. It asks each provider drawn this frame for its texture, and replaces the stand-in
+    id in the draw commands with that texture's descriptor.
+    - Descriptors are allocated against the texture layout `createTexture` uses, and cached per
+      texture. A cached texture handle is kept, so its address cannot name another texture while the
+      cache holds it.
+    - An entry not drawn for `MaxFramesInFlight` frames is dropped. archimedes defers destroying it
+      until the submissions that used it are done.
+    - A provider that answers an invalid texture draws a 1 x 1 transparent one, never a null descriptor.
+  - **ImGuizmo** comes in through `cmake/addImGuizmo.cmake`.
+    - It is pinned to a commit, checked against `IMGUI_REF` (`162ce49`), and built against the
+      `imgui` target with its warnings kept out of lain's, as imnodes is.
+    - It is exposed as `lain::gui::gizmo` in `gizmo.h`, as `nodes.h` aliases imnodes.
+    - It is MIT. Its notice goes through `lain_register_notice`, with a row in `test_notices.cpp` and a
+      README row.
+  - **Proves** (`test-gui`):
+    - `[gpu]`, behind `LAIN_GUI_SMOKE=1`: a frame-resolved texture drawn through ImGui offscreen and
+      read back shows frame 0's texture on frame 0 and frame 1's on frame 1;
+    - a provider that swaps its texture for one of another size between the UI and the render shows
+      the new one;
+    - an invalid answer draws transparent;
+    - headless: ImGuizmo runs a whole frame (`SetRect`, `Manipulate` on an identity matrix) with no
+      backend and no assert, and reports nothing in use. That is the imnodes precedent.
+  - **Sabotages:**
+    - resolving at draw time instead of at record fails the size-swap case;
+    - caching by address without holding the texture is caught by a case that releases and remakes a
+      texture of the same size;
+    - an invalid answer passed through crashes, so the transparent fallback is load-bearing.
+- **8b: `lain::render` draws a grid on a plane.**
+  - **`Viewport::record` takes an optional `render::Grid`**:
+    - an origin, two orthogonal unit axes and a spacing;
+    - a major line every n lines;
+    - two colours (linear light) and an extent.
+
+    The rig plan's grid is the plan frame's floor: the origin, X, Y, 0.1 m with a major line every 10,
+    over the room's extent, or 20 m without a room.
+  - **Drawn in shading, never as lines.**
+    - The scene's fragment shader marks grid lines on any surface that lies on the grid's plane,
+      anti-aliased from screen-space derivatives. That is the room's floor, or a plane laid flat.
+    - A backdrop quad is drawn first, writing no depth, and shows the grid where no surface is.
+    - So nothing is coplanar with anything, and no line has a depth of its own to lose to a surface.
+    - The grid lives in the Viewport's own frame constants. A capture's are zeroed, so a capture never
+      draws one.
+  - **Proves**, on every kind of device:
+    - on 3b's oblique floor, a grid line keeps the coverage it has with no floor under it. The bound is
+      measured, then asserted with a margin, where 3b's lines keep a quarter;
+    - a wall hides the grid behind it;
+    - grid lines fall where lain's projection puts the plane's lines;
+    - the backdrop shows the grid where nothing is, and never hides a surface below the plane;
+    - a capture of a floor shows no grid.
+  - **ADR-0028** is amended with the approach and the measurement. The bullet "a grid on the floor is
+    drawn as its own pass" was its trigger.
+  - **Sabotages:**
+    - the grid drawn as overlay lines fails the coverage case;
+    - a backdrop that writes depth fails the below-the-plane case;
+    - a capture whose constants keep the grid fails the capture case.
+- **8c: what an editor needs of `lain::rigplan` and `lain::rigplan::scene`.**
+  - **`nominalLayout(plan)`**: each mount's, camera's and light's planned pose, and each camera's
+    nominal model, every one optional with the reason it is missing. It never refuses the whole.
+    - On a plan `check()` accepts, it equals `realise()` at scales 0, bit for bit, since both go through
+      `mountFromPlacement`.
+    - A camera naming a missing specification loses its model and keeps its pose. A camera inside its
+      pole keeps both.
+  - **`aimOf(rotation)`**, the aim convention's inverse. `mountFromPlacement` turns roll, then tilt,
+    then pan, so this is a Z-X-Y decomposition after the rest turn is undone. At a tilt of ±90° the roll
+    is 0 and the pan carries it.
+  - **`PlanDiagnostic::owner`**: the uuid of the mount, camera, light, plane, box, prop or board a
+    problem is about. A specification's problems name the specification in their detail, as today.
+  - **`SceneResult::owners`**, parallel to the instances: which plan object each instance draws (a room
+    surface, a plane, a box, a prop, a board, a pole) and its uuid. The room's is nil.
+  - **Asset jobs.** `missingAssets(plan, assets)` lists what `plan` needs and `assets` lacks, each a job
+    any thread can run. `addAsset` merges a job's result on the caller's thread, and `pruneAssets` drops
+    what `plan` no longer uses.
+    - `loadSceneAssets` becomes "run every missing job, from empty". So the capture writer and the
+      editor share one path, and every existing scene case is the regression test.
+    - The surfaces' and poles' meshes stay synchronous (`sceneGeometry`), since they are small and
+      every frame of a drag changes them.
+  - **A surface whose asset is missing draws mid grey**, still with its problem.
+  - **Proves:**
+    - `nominalLayout` equals `realise()` at scales 0 on three test plans;
+    - it draws the rest of a plan with a camera inside its pole, and with a camera naming a missing
+      specification;
+    - `aimOf` round-trips a grid of aims, and follows the pole rule;
+    - every instance's owner is the object that made it;
+    - a board drawn on a pool worker matches one drawn on the main thread, byte for byte;
+    - running every missing job reproduces `loadSceneAssets`;
+    - after a resize, only the resized surfaces' bakes are missing;
+    - a plan's capture is unchanged: `test-rigplan-app` and `test-flowview-capture` pass as they are.
+  - **Sabotages:**
+    - `nominalLayout` with its own aim arithmetic fails the equality;
+    - `aimOf` in X-Z-Y order fails the round trip;
+    - `missingAssets` keyed on the surface's index instead of its bake key fails the resize case;
+    - a missing asset drawn white fails the grey case.
+- **8d: rigplan's editor, driver-free.** It goes in `apps/rigplan/src`, as an OBJECT library
+  `rigplan-tested` that `rigplan` and `test-rigplan-app` both link, as flowview's `flowview-tested` is.
+  - **`document.{h,cpp}`**: the open plan, its path and whether it is dirty.
+    - Opening and saving apply ADR-0027 at the file. `rigplanapp.cpp`'s `loadPlan` moves here, so
+      `render` and the gui read a plan through one routine.
+    - The undo snapshots never see a file.
+  - **`selection.h`**: what is selected, by identity. It is one of: the plan, the room, a mount, a
+    camera, a light, a plane, a box, a prop, a board, a key (its mover and index), or a specification
+    (its kind and name).
+  - **`edits.{h,cpp}`**: add, delete, duplicate, rename and set the reference, by the rules above. Each
+    either changes the plan or says why not.
+  - **`orbit.{h,cpp}`**: the user's pinhole as a target, a distance, a yaw, a pitch and a vertical
+    field of view, turned into a `render::View` for a pane's size. Orbit, pan, dolly and zoom are
+    deltas, the pitch is clamped short of ±90°, and there is a framing of a box.
+  - **`picking.{h,cpp}`**: the ray through a pane pixel, and what it hits first, by the rule above.
+  - **`overlays.{h,cpp}`**: the segments above, from `nominalLayout` and the plan.
+  - **`gizmo.{h,cpp}`**:
+    - the matrix a selection shows the gizmo, and the operations it allows;
+    - `apply`, which writes a manipulated matrix back within the table's constraints;
+    - the view and projection ImGuizmo expects (OpenGL's clip space and camera axes), from a
+      `render::View`.
+  - **Proves:**
+    - `three-poles.json` opened through the document and saved unchanged is byte for byte the committed
+      file, so the editor's Save is the builder's bytes;
+    - an undo restores the plan and keeps the selection by identity;
+    - deleting a mount takes its cameras and lights, in one step;
+    - a duplicate has a new uuid and a new name, and draws differently (ADR-0029);
+    - a refused rename changes nothing;
+    - a specification rename reaches every reference;
+    - the orbit keeps Z up, and the framing puts every corner of the box in view;
+    - a click on each object's projected centre picks it, and a camera in front of a wall wins over
+      the wall;
+    - a frustum's far corners project to the image's corners through the camera's own model, and a
+      fisheye's is wider than its pinhole's;
+    - a point under ImGuizmo's matrices lands on the pixel lain's projection gives;
+    - `apply` round-trips every kind, a pole never leaves the floor, and a component the table forbids
+      is ignored.
+  - **Sabotages:**
+    - a snapshot through the relativized document fails the undo case, whose plan names a prop's mesh,
+      since an undo meets no file;
+    - a duplicate keeping its uuid fails the draw case;
+    - a frustum through the pinhole intrinsics alone fails the fisheye case;
+    - ImGuizmo's projection with lain's y-down kept fails the pixel case;
+    - `apply` ignoring the mount's yaw fails the camera round trip.
+- **8e: the app shell.** Gui code, no Viewport yet.
+  - **`rigplan [plan]`**, `MainWindow`, docking with the default layout, and the window title (the
+    plan's name, with `*` when dirty).
+  - **Menus:**
+    - File: New, Open…, Open Recent, Save, Save As…, Quit.
+    - Edit: Undo, Redo, Duplicate, Delete.
+    - Add: Pole, Fixed Point, Camera, Light, Plane, Box, Prop…, Board, Room. Camera and Light go on the
+      selected mount.
+    - View: Reset Layout, Frame All, Frame Selected, Preview Light, Frustum Depth.
+
+    The shortcuts are flowview's (Cmd on macOS).
+  - **The panes:**
+    - **Outliner**: the plan, the room, specifications, mounts with their cameras and lights, planes,
+      boxes, props, and boards with their keys. A row with a problem is marked.
+    - **Inspector**: an editor per selection.
+      - Lengths in a datasheet's units, angles in degrees, colours, materials (colour, picture or
+        procedural), enums through `gui::enumCombo`, specification pickers, a uuid shown read-only.
+      - The key table for a mover.
+      - The plan's timeline, seed, scales and reference.
+    - **Issues**: `check()`, the asset problems and `nominalLayout`'s problems. A row with an owner
+      selects it.
+    - **A status bar.**
+  - **Pickers**: a prop's mesh from `io::mesh`'s extensions, and a picture from `io::image`'s.
+  - **The session and the guard**: `DocumentGuard` holds New, Open, Open Recent, Quit and the window's
+    close button while work is unsaved. A cancelled Save cancels the request.
+  - **`lain::app`'s veto**: `WindowDelegate::onCloseRequested(Window&) -> bool`, true by default. On
+    false the loop clears GLFW's close flag and carries on. A headless `[app]` case covers it, since
+    GLFW's close flag can be set without a display event.
+  - **Sabotage:** the loop ignoring the veto fails the `[app]` case.
+- **8f: the Viewport pane.**
+  - **Ownership**: the window owns a `render::Renderer`, the plan's `GpuScene` and a `render::Viewport`,
+    and releases them in `onShutdown` before the device goes.
+  - **Assets, each frame**:
+    - the frame starts by merging whatever asset jobs finished, and never waits on one;
+    - a changed plan or shown frame posts the missing jobs and prunes the rest;
+    - while jobs are pending, the status bar says so.
+  - **Drawing**:
+    - when the plan, the shown frame or the assets changed: `renderScene` over `nominalLayout`, then
+      `Renderer::update`, or `upload` the first time;
+    - the pre-pass records the Viewport with the overlays and the grid;
+    - the pane shows it through 8a's frame-resolved texture.
+  - **Interaction**: navigation, picking, ImGuizmo through 8d's bridge, and the frame shown by the
+    selected key.
+  - **Not under ctest**, since it needs a window and a device. 8d's units hold everything the pane
+    computes. The `--frames` smoke opens three-poles and exits 0.
+- **The gui-mode checklist, after 8f** (the repo owner, on a Metal session; `synthetic-capture` is not
+  needed):
+  1. Open `three-poles.json`. Orbit, pan and dolly with Alt on a trackpad and on a mouse, zoom with the
+     scroll, F and Home. The grid lies on the floor.
+  2. Select through the Outliner and by click: a pole, a camera, a light, the board, a wall. The
+     Inspector follows, and the selection is highlighted.
+  3. Move a pole with the gizmo: it stays on the floor, and its cameras and lights go with it. Yaw it.
+     Aim a camera: its frustum follows, and the Inspector's pan, tilt and roll read what was done.
+  4. Select a board key in the table: the Viewport shows its frame. Move the key, and the path follows.
+  5. Change the lens's focal length, then its distortion: every frustum on that specification changes.
+     Rename the lens: the cameras follow.
+  6. Resize the room. The walls go grey or keep their old bake, then come back baked, and the window
+     never stops responding.
+  7. Add, duplicate and delete one of each kind. Delete a mount with cameras on it.
+  8. Undo and redo each of 3 to 7. A gizmo drag is one step, and the selection survives.
+  9. Rename a camera to another camera's name, and to `a/b`: both refused, and nothing changes.
+  10. Drag a camera into its pole: an Issues row says so, and clicking it selects the camera. Drag it
+      out: the row goes.
+  11. Save, close and reopen: the plan is as it was. New, Open, Open Recent, Quit and the window's
+      close button each ask with unsaved work. Save, Discard and Cancel each do what they say, and a
+      cancelled Save panel cancels the request.
+  12. Reset Layout. Quit while assets are still baking.
+
+  Slice 0's owed check of the unsaved-changes modal is step 11, in rigplan. flowview's own check needs
+  its Quit fix first.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -17314,7 +17660,9 @@ row here**. A row is cheap to delete and expensive to leave.
   plan, and the vertical through `register.json` and `compare-rigs.json`); **7a and 7b built
   2026-10-27, slice 7 COMPLETE** (`three-poles.json`, which froze the rig plan document at version 1;
   `test-flowview-capture`, a CI step through the shipped binaries, and `synthetic-capture`). CI's first
-  run since slice 5 found `run` writing CRLF on Windows, fixed, and the fix is green on all eight jobs (run 40497652103). Two of 7a's findings are for
+  run since slice 5 found `run` writing CRLF on Windows, fixed, and the fix is green on all eight jobs (run 40497652103).
+  **Slice 8 planned 2026-10-28** as six commits, 8a to 8f (the gui's first part), ending in a
+  gui-mode checklist for the repo owner (*Slice 8 planned*). Two of 7a's findings are for
   the repo owner: `registration/1` judges a rig registered with uncalibrated models Ready, and the size
   estimate's floor is not a floor for a dark scene (*Sub-slice 7a built*).
   Slice 0's gui-mode check of the unsaved-changes modal is owed. M9's rig binder owes two fixes M15
@@ -17329,7 +17677,7 @@ row here**. A row is cheap to delete and expensive to leave.
   `--device` landed. *(M15 §Sub-slice 3d built.)*
 
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not**, and M15 is under
-way (slices 0 to 6 built).
+way (slices 0 to 7 built, slice 8 planned).
 
 - **Example documents** — all four commits built. Owed: a gui-mode eyeball of every example (the
   primary purpose). The smoke step has run in CI since it landed, and was green on every leg in
@@ -17520,6 +17868,16 @@ below (2026-09-10). Three of the first five turned out to be **larger than their
 description**: the described symptom was the visible end of a duplicated or unreachable decision, or
 — the NodeId one — of a general shape (any node re-seated at its own id) that one caller happened to
 reach first. Worth remembering when writing the next entry here.
+
+**One open, found 2026-10-28 while planning M15 slice 8:**
+
+- **flowview loses unsaved work on Quit.** The File ▸ Quit item, Ctrl+Q (`menubar.cpp`) and the
+  window's close button all exit without asking, while New and Open go through `DocumentGuard`.
+  `lain::app` breaks its run loop as soon as a window reports it should close, and gives a delegate no
+  way to veto that. M15 sub-slice 8e adds the veto (`WindowDelegate::onCloseRequested`), and rigplan
+  guards Quit and the close button with it. flowview's fix is its own commit after 8e: route Quit,
+  Ctrl+Q and the close button through its guard. Slice 0's owed gui-mode check of flowview's
+  unsaved-changes modal should include them.
 
 ### `ctest -j` and scratch paths — FIXED 2026-09-10
 

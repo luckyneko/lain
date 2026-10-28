@@ -24,6 +24,12 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
 - **The viewport** rasterises through the user's pinhole, with no distortion, ever. It is a
   preview, and nothing it draws is written into a capture. Distortion belongs only to a camera's
   view; that was the repo owner's observation, and it is what makes one renderer enough.
+  *(Amended 2026-10-28, planning M15 slice 8, decided with the repo owner: the viewport draws the rig
+  plan **as planned**, meaning nominal poses, nominal models and frustums through those models, so
+  that what the gizmo edits is what is drawn. A realisation is seen by looking through a camera
+  (slice 9), the one view that already chooses between nominal and realised. A plan with a problem
+  still draws: the viewport builds its scene from each object's own planned pose rather than through
+  `realise()`, which refuses the whole plan on any problem.)*
 - **A capture render** has three steps:
   1. Rasterise the same scene, with the same shading, into an intermediate image that covers the
      camera's field of view: a wide pinhole for ordinary lenses, a cubemap past 180°.
