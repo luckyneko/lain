@@ -1400,6 +1400,27 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-28 — M15 slice 8, sub-slice 8b built: a grid on a plane, drawn in shading
+
+`render::Grid` and `Viewport::record(..., lines, grid)` (a `std::optional`, no default). `ctest -j8`
+**1570/1570** Release with video, camera and Ceres on, and **1430/1430** with all three off (+5 each);
+warning-clean, format-check clean. Every case runs on Metal and on the CPU device. Full notes in WORK.md's
+*Sub-slice 8b built*; ADR-0028's grid bullet is amended.
+
+- **Two paths, one line.** A surface lying on the plane (within 0.1 mm, and parallel) mixes the lines
+  into its colour in `scene.frag`. A backdrop quad on the plane draws them elsewhere. Both mix in the
+  display encoding.
+- **Deviation from the plan: the backdrop is drawn after the scene.** Drawn first with no depth, a
+  surface behind a grid point covered it, which is wrong from below. Now it is depth-tested, pushed back
+  1e-4 so a surface on the plane always wins, and blended with alpha equal to the coverage.
+- **Measured:** the two paths agree to within 0.0053 of coverage on Metal and 0.032 on the CPU device.
+  Overlay lines lose up to three quarters. **I first reported 0**: Catch2 wrapped `0.0319149`, and my
+  grep caught `0.` alone.
+- **`frameConstants` takes a `const Grid*`**; `render()` and `capture()` pass none, and a test holds
+  them to it.
+- **A sabotage showed the wall case tested nothing**: its points were where the grid had faded out. It
+  now has a positive control. Five sabotages, all caught.
+
 ### Update 2026-10-28 — M15 slice 8, sub-slice 8a built: a pane shows a texture it did not upload; ImGuizmo lands
 
 `gui::FrameTexture`, made by `Context::frameTexture(provider)` and resolved by the now-required
@@ -1453,7 +1474,8 @@ bullet and CONTEXT.md's *Viewport*.
     exit unasked, and `lain::app` gives a delegate no veto. 8e adds `WindowDelegate::onCloseRequested`,
     and flowview's fix is its own owed commit (Outstanding index, *Known defects*).
   - **A floor grid cannot be overlay lines** (3b/3d): 8b draws it in shading, with a depthless
-    backdrop, so no capture can ever draw one.
+    backdrop, so no capture can ever draw one. *(Built with the backdrop after the scene, depth-tested
+    and blended instead; see the 8b entry above.)*
 
 ### Update 2026-10-27 — feature/M15's CI run after slice 7: `run` writes text the same on every platform
 

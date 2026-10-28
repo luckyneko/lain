@@ -45,7 +45,7 @@ namespace lain::render
 			return set;
 		}
 
-		FrameConstants frameConstants(const SceneState& scene, const View& view, bool encode)
+		FrameConstants frameConstants(const SceneState& scene, const View& view, bool encode, const Grid* grid)
 		{
 			FrameConstants frame{};
 			const math::Mat4d clip = clipFromCamera(view);
@@ -62,6 +62,22 @@ namespace lain::render
 			frame.ambient[2] = scene.ambient.b;
 			frame.lightCount = scene.lightCount;
 			frame.encode = encode ? 1u : 0u;
+			if (grid)
+			{
+				frame.grid = 1u;
+				const auto put = [](float (&out)[4], const math::Vec3d& xyz, double w)
+				{
+					out[0] = float(xyz.x);
+					out[1] = float(xyz.y);
+					out[2] = float(xyz.z);
+					out[3] = float(w);
+				};
+				put(frame.gridOrigin, grid->origin, grid->spacing);
+				put(frame.gridU, grid->u, grid->extent.x);
+				put(frame.gridV, grid->v, grid->extent.y);
+				put(frame.gridMinor, {grid->minor.r, grid->minor.g, grid->minor.b}, double(grid->majorEvery));
+				put(frame.gridMajor, {grid->major.r, grid->major.g, grid->major.b}, 0.0);
+			}
 			return frame;
 		}
 
@@ -144,6 +160,11 @@ namespace lain::render
 		m->sceneFragment = device.createShader(sceneFrag());
 		m->lineVertex = device.createShader(linesVert());
 		m->lineFragment = device.createShader(linesFrag());
+		m->gridLayout = device.createDescriptorSetLayout({
+			{0, acm::DescriptorType::UniformBuffer, acm::ShaderStage::Vertex | acm::ShaderStage::Fragment},
+		});
+		m->gridVertex = device.createShader(gridVert());
+		m->gridFragment = device.createShader(gridFrag());
 		m->captureLayout = device.createDescriptorSetLayout({
 			{0, acm::DescriptorType::UniformBuffer, acm::ShaderStage::Compute},
 			{1, acm::DescriptorType::UniformBuffer, acm::ShaderStage::Compute},
@@ -162,7 +183,8 @@ namespace lain::render
 			m->pipeline = detail::scenePipeline(*m, target);
 
 		for (const acm::Error& error : {m->sceneLayout.error(), m->lineLayout.error(), m->sampler.error(), m->sceneVertex.error(),
-										m->sceneFragment.error(), m->lineVertex.error(), m->lineFragment.error(), target.error(),
+										m->sceneFragment.error(), m->lineVertex.error(), m->lineFragment.error(), m->gridLayout.error(),
+										m->gridVertex.error(), m->gridFragment.error(), target.error(),
 										m->pipeline.error(), m->captureLayout.error(), m->captureShader.error(),
 										m->capturePipeline.error()})
 		{
@@ -448,7 +470,7 @@ namespace lain::render
 		acm::Device& device = *m->device;
 		detail::SceneState& gpu = *scene.m;
 
-		const detail::FrameConstants frame = detail::frameConstants(gpu, view, false);
+		const detail::FrameConstants frame = detail::frameConstants(gpu, view, false, nullptr);
 		if (const acm::Error error = gpu.frame.write(&frame, sizeof(frame)))
 			return {{}, {"the device refused the view's constants: " + error.message()}};
 
@@ -615,7 +637,7 @@ namespace lain::render
 			tileView.intrinsics = {face.focal, face.focal, face.principalPoint.x - tile.first.x, face.principalPoint.y - tile.first.y};
 			tileView.nearPlane = view.nearPlane * face.nearScale;
 			tileView.farPlane = view.farPlane;
-			const detail::FrameConstants frame = detail::frameConstants(gpu, tileView, false);
+			const detail::FrameConstants frame = detail::frameConstants(gpu, tileView, false, nullptr);
 			if (const acm::Error error = gpu.frame.write(&frame, sizeof(frame)))
 				return {{}, {"the device refused a tile's view: " + error.message()}};
 

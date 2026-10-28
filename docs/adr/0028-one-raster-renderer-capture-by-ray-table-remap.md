@@ -161,6 +161,12 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
     millimetres along the camera's axis first (`offPlane`);
   - a 1 px line lying on a surface seen obliquely loses some of its multisampled coverage to it, on
     both devices, whatever a constant depth pull does, so overlay lines are for what is in the air,
-    and a grid on the floor is drawn as its own pass.
+    and a grid on the floor is drawn as its own pass. *(Built 2026-10-28, M15 sub-slice 8b, as
+    `render::Grid`: drawn in shading, never as lines. A surface lying on the grid's plane mixes the
+    lines into its own colour. A quad on the plane, drawn after the scene, depth-tested, pushed back a
+    hair so a surface on the plane always wins, and blended, draws them elsewhere. Both mix in the
+    display encoding, so on the oblique floor the two draw one line to within 0.0053 of coverage on
+    Metal and 0.032 on the CPU device. A capture's frame constants carry no grid, so a capture never
+    draws one.)*
   The core split is half the logical cores to the CPU device, the pool keeping its own workers, and
   `--device gpu|cpu` chooses the kind of device.

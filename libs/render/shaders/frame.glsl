@@ -9,6 +9,12 @@ layout(set = 0, binding = 0) uniform Frame
 	vec4 cameraAxis; // the camera's +Z in clip space, for offPlane()
 	uint lightCount;
 	uint encode; // 1: write lain's sRGB curve, for a display; 0: linear light
+	uint grid;	 // 1: a viewport's grid, below (grid.glsl); never a capture's
+	vec4 gridOrigin; // w: metres between lines
+	vec4 gridU;		 // a unit axis of the grid's plane; w: the extent along it
+	vec4 gridV;		 // the other; w: the extent along it
+	vec4 gridMinor;	 // linear light; w: every how many lines a major one is, 0 for none
+	vec4 gridMajor;	 // linear light
 }
 frame;
 

@@ -4,9 +4,11 @@
 // A scene's surfaces, shaded (lain::render::Material, ADR-0028): Lambert's diffuse times the
 // material's texture, plus Blinn-Phong's specular, under point and spot lights whose light falls
 // with the square of the distance, plus the scene's ambient light. Lit from whichever side the
-// camera sees. The blocks here must match state.h's.
+// camera sees. A surface lying on a viewport's grid draws the grid's lines as part of its colour
+// (grid.glsl), so a capture, which shows no grid, is unaffected. The blocks here must match state.h's.
 
 #include "frame.glsl"
+#include "grid.glsl"
 
 layout(set = 0, binding = 1) uniform Object
 {
@@ -46,6 +48,10 @@ layout(location = 2) in vec2 uv;
 
 layout(location = 0) out vec4 outColour;
 
+// How far from the grid's plane a surface still lies on it, in metres: a tenth of a millimetre, far
+// coarser than a float's error on a floor placed at its height, far finer than anything placed near it.
+const float kOnGrid = 1e-4;
+
 void main()
 {
 	// A mesh without normals is shaded flat, by the face's own normal.
@@ -81,5 +87,17 @@ void main()
 			colour += material.specular.rgb * irradiance * pow(max(dot(n, h), 0.0), material.specular.w);
 		}
 	}
-	outColour = vec4(forTarget(colour), 1.0);
+	vec3 encoded = forTarget(colour);
+	// A viewport's grid, on a surface lying on its plane and parallel to it (a floor, not a wall that
+	// crosses it): mixed in the target's encoding, as the grid's backdrop blends it (grid.frag), so the
+	// line drawn here and the line drawn there are one line. Measured in metres, against the plane.
+	if (frame.grid != 0u)
+	{
+		const vec4 grid = gridAt(worldPosition); // before the test below: its derivatives need uniform control flow
+		const vec3 normal = gridNormal();
+		const bool onPlane = abs(dot(worldPosition - frame.gridOrigin.xyz, normal)) <= kOnGrid && abs(dot(n, normal)) > 0.999;
+		if (onPlane)
+			encoded = mix(encoded, forTarget(grid.rgb), grid.a);
+	}
+	outColour = vec4(encoded, 1.0);
 }

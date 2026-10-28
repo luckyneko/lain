@@ -22,8 +22,10 @@ lain_embed_shaders(render NAMESPACE lain::render SHADERS
 	shaders/scene.frag
 	shaders/lines.vert
 	shaders/lines.frag
+	shaders/grid.vert
+	shaders/grid.frag
 	shaders/capture.comp
-	INCLUDES shaders/frame.glsl
+	INCLUDES shaders/frame.glsl shaders/grid.glsl
 )
 
 target_compile_features(render PUBLIC cxx_std_17)

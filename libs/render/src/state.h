@@ -6,6 +6,7 @@
 #include "lain/render/capture.h"
 #include "lain/render/scene.h"
 #include "lain/render/view.h"
+#include "lain/render/viewport.h"
 
 #include <archimedes/archimedes.h>
 
@@ -25,9 +26,15 @@ namespace lain::render::detail
 		float cameraAxis[4]; // the camera's +Z in clip space: clipFromCamera's third column
 		std::uint32_t lightCount;
 		std::uint32_t encode; // 1: lain's sRGB curve, for a display
-		std::uint32_t padding[2];
+		std::uint32_t grid;	  // 1: a viewport's Grid, below; never a capture's
+		std::uint32_t padding;
+		float gridOrigin[4]; // w: metres between lines
+		float gridU[4];		 // a unit axis; w: the extent along it
+		float gridV[4];		 // a unit axis; w: the extent along it
+		float gridMinor[4];	 // linear light; w: every how many lines a major one is, 0 for none
+		float gridMajor[4];	 // linear light
 	};
-	static_assert(sizeof(FrameConstants) == 128, "the Frame block is 128 bytes under std140");
+	static_assert(sizeof(FrameConstants) == 208, "the Frame block is 208 bytes under std140");
 
 	struct ObjectConstants
 	{
@@ -98,6 +105,9 @@ namespace lain::render::detail
 		acm::Shader sceneFragment;
 		acm::Shader lineVertex;
 		acm::Shader lineFragment;
+		acm::DescriptorSetLayout gridLayout; // a grid backdrop's: the frame
+		acm::Shader gridVertex;
+		acm::Shader gridFragment;
 		acm::DescriptorSetLayout captureLayout; // a remap's: its tile, its band, the tile's texels, the band's corners and sums
 		acm::Shader captureShader;
 		acm::ComputePipeline capturePipeline;
@@ -177,8 +187,9 @@ namespace lain::render::detail
 	// A surface's descriptor set for `material`, reading its per-view constants from `frame`.
 	acm::DescriptorSet sceneSet(const RendererState& renderer, const SceneState& scene, std::size_t material, const acm::Buffer& frame);
 
-	// `view`'s constants for `scene`.
-	FrameConstants frameConstants(const SceneState& scene, const View& view, bool encode);
+	// `view`'s constants for `scene`, with `grid` when it is a viewport's that shows one. A capture and a
+	// synchronous render pass none, so neither ever draws a grid.
+	FrameConstants frameConstants(const SceneState& scene, const View& view, bool encode, const Grid* grid);
 
 	// Records every draw of `scene` through `pipeline` into an open rendering scope, with `sets` (one
 	// per material). Returns the first refusal, or nothing.

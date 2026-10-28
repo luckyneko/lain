@@ -13,6 +13,7 @@
 #include <array>
 #include <cmath>
 #include <cstdlib>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -39,6 +40,7 @@ struct Recording
 	std::uint32_t frame;
 	const View* view;
 	std::vector<Segment> lines;
+	std::optional<Grid> grid;
 };
 static void submit(acm::Device& device, const GpuScene& scene, const std::vector<Recording>& recordings)
 {
@@ -48,7 +50,7 @@ static void submit(acm::Device& device, const GpuScene& scene, const std::vector
 		{
 			for (const Recording& r : recordings)
 			{
-				for (std::string& problem : r.viewport->record(cmd, r.frame, scene, *r.view, r.lines))
+				for (std::string& problem : r.viewport->record(cmd, r.frame, scene, *r.view, r.lines, r.grid))
 					problems.push_back(std::move(problem));
 			}
 		});
@@ -95,7 +97,7 @@ TEST_CASE("a viewport shows its scene through lain's sRGB curve", "[render][gpu]
 
 	const GpuScene scene = uploaded(renderer, wall({0.2f, 0.5f, 0.05f}));
 	const View view = testing::view(64, 64, 64, 31.5, 31.5);
-	submit(*device, scene, {{&viewport, 0, &view, {}}});
+	submit(*device, scene, {{&viewport, 0, &view, {}, std::nullopt}});
 	CHECK(viewport.texture(0).valid());
 	const image::Image picture = viewport.read(0);
 	REQUIRE(picture.valid());
@@ -133,7 +135,7 @@ TEST_CASE("a line in front of a surface is drawn, one behind it hidden, and one 
 		across(2.05, 32, {0.0f, 1.0f, 0.0f}), // 5 cm behind it
 		across(2.0, 40, {0.0f, 0.0f, 1.0f}),  // on it
 	};
-	submit(*device, scene, {{&viewport, 0, &view, lines}});
+	submit(*device, scene, {{&viewport, 0, &view, lines, std::nullopt}});
 	const image::Image picture = viewport.read(0);
 	REQUIRE(picture.valid());
 
@@ -186,7 +188,7 @@ TEST_CASE("a line drawn on a surface seen obliquely is never lost to it", "[rend
 	auto drawn = [&](double drop)
 	{
 		const GpuScene scene = uploaded(renderer, floorAt(drop));
-		submit(*device, scene, {{&viewport, 0, &view, lines}});
+		submit(*device, scene, {{&viewport, 0, &view, lines, std::nullopt}});
 		return viewport.read(0);
 	};
 	// The floor under the lines, and 5 cm below them, where it cannot hide any part of them. A device
@@ -253,7 +255,7 @@ TEST_CASE("a viewport's frames in flight each keep their own picture", "[render]
 	View aside = testing::view(32, 32, 32, 15.5, 15.5);
 	aside.worldFromCamera = math::RigidTransformd{math::Quatd{1.0, 0.0, 0.0, 0.0}, math::Vec3d{10.0, 0.0, 0.0}};
 	// Both frames in one command buffer, as a window's two frames in flight would overlap.
-	submit(*device, scene, {{&viewport, 0, &facing, {}}, {&viewport, 1, &aside, {}}});
+	submit(*device, scene, {{&viewport, 0, &facing, {}, std::nullopt}, {&viewport, 1, &aside, {}, std::nullopt}});
 
 	const image::Image first = viewport.read(0);
 	const image::Image second = viewport.read(1);
@@ -274,7 +276,7 @@ TEST_CASE("two viewports of one scene in one frame each keep their own view", "[
 	const View facing = testing::view(64, 64, 64, 31.5, 31.5);
 	View aside = facing;
 	aside.worldFromCamera = math::RigidTransformd{math::Quatd{1.0, 0.0, 0.0, 0.0}, math::Vec3d{10.0, 0.0, 0.0}};
-	submit(*device, scene, {{&left, 0, &facing, {}}, {&right, 0, &aside, {}}});
+	submit(*device, scene, {{&left, 0, &facing, {}, std::nullopt}, {&right, 0, &aside, {}, std::nullopt}});
 
 	CHECK(near(pixel(left.read(0), 32, 32)[0], encoded(0.5f)));
 	CHECK(near(pixel(right.read(0), 32, 32)[0], encoded(0.05f)));
@@ -288,9 +290,9 @@ TEST_CASE("a viewport draws the scene it is given, not the one it last drew", "[
 	const View view = testing::view(64, 64, 64, 31.5, 31.5);
 	const GpuScene red = uploaded(renderer, wall({1.0f, 0.0f, 0.0f}));
 	const GpuScene green = uploaded(renderer, wall({0.0f, 1.0f, 0.0f})); // both kept alive
-	submit(*device, red, {{&viewport, 0, &view, {}}});
+	submit(*device, red, {{&viewport, 0, &view, {}, std::nullopt}});
 	CHECK(pixel(viewport.read(0), 32, 32)[0] == 255);
-	submit(*device, green, {{&viewport, 0, &view, {}}});
+	submit(*device, green, {{&viewport, 0, &view, {}, std::nullopt}});
 	const std::array<int, 4> now = pixel(viewport.read(0), 32, 32);
 	CHECK(now[0] == 0);
 	CHECK(now[1] == 255);
@@ -315,9 +317,12 @@ TEST_CASE("a viewport refuses what it cannot draw, and says why", "[render][gpu]
 	const acm::Error error = device->submitSync(
 		[&](acm::CommandBuffer& cmd)
 		{
-			problems.push_back(viewport.record(cmd, acm::Renderer::MaxFramesInFlight, scene, view, {}));
-			problems.push_back(viewport.record(cmd, 0, stranger, view, {}));
-			problems.push_back(viewport.record(cmd, 0, scene, blind, {}));
+			problems.push_back(viewport.record(cmd, acm::Renderer::MaxFramesInFlight, scene, view, {}, std::nullopt));
+			problems.push_back(viewport.record(cmd, 0, stranger, view, {}, std::nullopt));
+			problems.push_back(viewport.record(cmd, 0, scene, blind, {}, std::nullopt));
+			Grid flat; // no spacing between its lines
+			flat.spacing = 0;
+			problems.push_back(viewport.record(cmd, 0, scene, view, {}, flat));
 		});
 	REQUIRE_FALSE(error);
 	for (const std::vector<std::string>& refused : problems)
@@ -333,7 +338,7 @@ TEST_CASE("a viewport draws a scene as an update left it", "[render][gpu]")
 	const View view = testing::view(64, 64, 64, 31.5, 31.5);
 	const Scene red = wall({1.0f, 0.0f, 0.0f});
 	GpuScene scene = uploaded(renderer, red);
-	submit(*device, scene, {{&viewport, 0, &view, {}}});
+	submit(*device, scene, {{&viewport, 0, &view, {}, std::nullopt}});
 	CHECK(pixel(viewport.read(0), 32, 32)[0] == 255);
 
 	// The same mesh, another material: the viewport's sets for the old one must not survive the update.
@@ -342,8 +347,331 @@ TEST_CASE("a viewport draws a scene as an update left it", "[render][gpu]")
 	const UpdateResult updated = renderer.update(scene, green);
 	REQUIRE(updated.problems.empty());
 	CHECK(updated.meshesUploaded == 0);
-	submit(*device, scene, {{&viewport, 0, &view, {}}});
+	submit(*device, scene, {{&viewport, 0, &view, {}, std::nullopt}});
 	const std::array<int, 4> now = pixel(viewport.read(0), 32, 32);
 	CHECK(now[0] == 0);
 	CHECK(now[1] == 255);
+}
+
+// --- The grid (render::Grid) ------------------------------------------------------------------------
+
+// A floor 8 m across and from 1 m to 12 m ahead, `height` metres below a camera at rest (the camera
+// frame's +Y is down), lit by ambient light alone so it is `colour` everywhere; or no floor when
+// `height` is empty. Over a background of `background`.
+static Scene floorScene(std::optional<double> height, image::ColorRGBf colour, image::ColorRGBf background)
+{
+	Scene scene;
+	scene.ambient = {1.0f, 1.0f, 1.0f};
+	scene.background = background;
+	if (!height)
+		return scene;
+	scene.meshes = {testing::square()};
+	Material floor;
+	floor.diffuse = colour;
+	scene.materials = {floor};
+	math::Mat4d placement = math::translate(math::Mat4d{1.0}, math::Vec3d{0.0, *height, 6.5});
+	placement = math::rotate(placement, 3.14159265358979323846 / 2, math::Vec3d{1.0, 0.0, 0.0});
+	placement = math::scale(placement, math::Vec3d{4.0, 5.5, 1.0});
+	scene.instances = {Instance{0, placement, {0}}};
+	return scene;
+}
+
+// A grid on the horizontal plane `height` metres below a camera at rest: its lines run across (X) and
+// away (Z), `spacing` apart, in `colour`, with no major lines.
+static Grid gridBelow(double height, double spacing, image::ColorRGBf colour)
+{
+	Grid grid;
+	grid.origin = {0.0, height, 0.0};
+	grid.u = {1.0, 0.0, 0.0};
+	grid.v = {0.0, 0.0, 1.0};
+	grid.spacing = spacing;
+	grid.majorEvery = 0;
+	grid.extent = {20.0, 20.0};
+	grid.minor = colour;
+	return grid;
+}
+
+TEST_CASE("a grid line on a surface seen obliquely is drawn as it is with nothing under it", "[render][gpu]")
+{
+	// What a 1 px overlay line cannot do (the oblique-floor case above: it keeps as little as a quarter
+	// of its coverage). A floor lying on the grid's plane draws the grid's lines itself, and the grid's
+	// backdrop draws them where nothing is; both mix in the display encoding, so over a floor the colour
+	// of the background, a line drawn on the floor and a line drawn with no floor are one line.
+	REQUIRE_RENDERER(renderer);
+	Viewport viewport(renderer);
+	REQUIRE(viewport.problems().empty());
+
+	const image::ColorRGBf grey{0.5f, 0.5f, 0.5f};
+	const View view = testing::view(128, 128, 96, 63.5, 63.5);
+	const Grid grid = gridBelow(0.5, 0.5, {1.0f, 0.0f, 0.0f});
+	auto drawn = [&](std::optional<double> floor)
+	{
+		const GpuScene scene = uploaded(renderer, floorScene(floor, grey, grey));
+		submit(*device, scene, {{&viewport, 0, &view, {}, grid}});
+		return viewport.read(0);
+	};
+	const image::Image on = drawn(0.5);				// the floor on the grid's plane
+	const image::Image clear = drawn(std::nullopt); // no floor: the backdrop alone
+	REQUIRE(on.valid());
+	REQUIRE(clear.valid());
+
+	// Coverage from the green channel, which the red line lacks: mixed in the encoding, a pixel the line
+	// covers a fraction c of is (1 - c) of the grey's green.
+	const double greyGreen = encoded(0.5f);
+	auto coverage = [&](const image::Image& picture, int x, int y)
+	{ return 1 - pixel(picture, x, y)[1] / greyGreen; };
+	int lined = 0;
+	double worst = 0;
+	for (int y = 0; y < 128; ++y)
+	{
+		for (int x = 0; x < 128; ++x)
+		{
+			const double without = coverage(clear, x, y);
+			lined += without > 0.5 ? 1 : 0;
+			worst = std::max(worst, std::abs(coverage(on, x, y) - without));
+		}
+	}
+	INFO("pixels a line covers more than half of: " << lined << "; worst difference in coverage: " << worst);
+	CHECK(lined > 500); // the grid is there to compare: measured 628 on Metal, 684 on the CPU device
+	// Measured 0.0053 on Metal and 0.032 on the CPU device: the same mix in the same encoding, drawn by
+	// different triangles (the floor's and the backdrop's), whose screen-space derivatives, which the
+	// anti-aliasing reads, need not agree to the last bit. Not chased further. An overlay line on the
+	// same floor keeps as little as a quarter of its coverage.
+	CHECK(worst <= 0.05);
+}
+
+// The red code of the pixel lain's projection puts `point` in, and the most red among the 3 x 3 pixels
+// around it.
+static int redAt(const image::Image& picture, const camera::CameraModel& model, const math::Vec3d& point)
+{
+	const camera::Projection<double> p = camera::project(model, point.x, point.y, point.z);
+	REQUIRE(p.ok());
+	return pixel(picture, int(std::lround(p.u)), int(std::lround(p.v)))[0];
+}
+static int redNear(const image::Image& picture, const camera::CameraModel& model, const math::Vec3d& point)
+{
+	const camera::Projection<double> p = camera::project(model, point.x, point.y, point.z);
+	REQUIRE(p.ok());
+	int most = 0;
+	for (int dy = -1; dy <= 1; ++dy)
+	{
+		for (int dx = -1; dx <= 1; ++dx)
+		{
+			const int x = int(std::lround(p.u)) + dx;
+			const int y = int(std::lround(p.v)) + dy;
+			if (x >= 0 && y >= 0 && x < picture.width() && y < picture.height())
+				most = std::max(most, pixel(picture, x, y)[0]);
+		}
+	}
+	return most;
+}
+
+TEST_CASE("a grid's lines fall where lain's projection puts the plane's lines", "[render][gpu]")
+{
+	REQUIRE_RENDERER(renderer);
+	Viewport viewport(renderer);
+
+	const View view = testing::view(128, 128, 96, 63.5, 63.5);
+	const GpuScene scene = uploaded(renderer, floorScene(std::nullopt, {}, {0.0f, 0.0f, 0.0f}));
+	submit(*device, scene, {{&viewport, 0, &view, {}, gridBelow(0.5, 0.5, {1.0f, 0.0f, 0.0f})}});
+	const image::Image picture = viewport.read(0);
+	REQUIRE(picture.valid());
+
+	// A line is 1 px wide and fades over a pixel each side. Pixel centres lie at most half a pixel
+	// apart across any line, so among the 3 x 3 pixels around a point of it, one is at least half
+	// covered: red at least half of 255 over the black. Halfway between lines there is none.
+	const camera::CameraModel model = testing::pinholeOf(view);
+	int checked = 0;
+	for (int tenths = 12; tenths <= 40; ++tenths) // along the line x = 0.5, running away
+	{
+		const double z = tenths / 10.0;
+		INFO("x = 0.5, z = " << z);
+		CHECK(redNear(picture, model, {0.5, 0.5, z}) >= 128);
+		++checked;
+	}
+	for (int tenths = -10; tenths <= 10; ++tenths) // along the line z = 1.5, running across
+	{
+		const double x = tenths / 10.0;
+		INFO("x = " << x << ", z = 1.5");
+		CHECK(redNear(picture, model, {x, 0.5, 1.5}) >= 128);
+		++checked;
+	}
+	for (const double x : {-0.75, -0.25, 0.25, 0.75}) // halfway between lines both ways
+	{
+		for (const double z : {1.25, 1.75})
+		{
+			INFO("between lines at x = " << x << ", z = " << z);
+			CHECK(redAt(picture, model, {x, 0.5, z}) <= 2);
+			++checked;
+		}
+	}
+	CHECK(checked == 29 + 21 + 8);
+}
+
+TEST_CASE("a wall standing on the grid hides the grid behind it, and not the grid in front of it", "[render][gpu]")
+{
+	REQUIRE_RENDERER(renderer);
+	Viewport viewport(renderer);
+
+	// A green wall 2 m ahead, its foot on the grid's plane 0.8 m below the camera, so the grid behind it
+	// falls on its pixels and the grid in front of it below them. The points are where the grid's lines
+	// are well apart on screen, which the same view without the wall shows: further down the plane the
+	// lines fade out (grid.glsl), and there would be nothing for the wall to hide.
+	auto drawn = [&](bool withWall)
+	{
+		Scene scene;
+		scene.ambient = {1.0f, 1.0f, 1.0f};
+		scene.background = {0.0f, 0.0f, 0.3f};
+		if (withWall)
+		{
+			scene.meshes = {testing::square()};
+			Material green;
+			green.diffuse = {0.0f, 0.5f, 0.0f};
+			scene.materials = {green};
+			math::Mat4d placement = math::translate(math::Mat4d{1.0}, math::Vec3d{0.0, 0.15, 2.0});
+			placement = math::scale(placement, math::Vec3d{1.0, 0.65, 1.0}); // x from -1 to 1, y from -0.5 to 0.8
+			scene.instances = {Instance{0, placement, {0}}};
+		}
+		const GpuScene gpu = uploaded(renderer, scene);
+		const View view = testing::view(96, 96, 64, 47.5, 47.5);
+		submit(*device, gpu, {{&viewport, 0, &view, {}, gridBelow(0.8, 0.5, {1.0f, 0.0f, 0.0f})}});
+		return viewport.read(0);
+	};
+	const image::Image open = drawn(false);
+	const image::Image walled = drawn(true);
+	REQUIRE(open.valid());
+	REQUIRE(walled.valid());
+
+	const camera::CameraModel model = testing::pinholeOf(testing::view(96, 96, 64, 47.5, 47.5));
+	for (const double z : {2.25, 2.5, 2.75}) // behind the wall, on the line x = 0.5
+	{
+		INFO("behind, z = " << z);
+		CHECK(redNear(open, model, {0.5, 0.8, z}) >= 128); // there to be hidden
+		const camera::Projection<double> p = camera::project(model, 0.5, 0.8, z);
+		REQUIRE(p.ok());
+		for (int dy = -1; dy <= 1; ++dy)
+		{
+			for (int dx = -1; dx <= 1; ++dx) // the wall's green, and no red, all round the point
+			{
+				const std::array<int, 4> behind = pixel(walled, int(std::lround(p.u)) + dx, int(std::lround(p.v)) + dy);
+				CHECK(behind[0] <= 1);
+				CHECK(near(behind[1], encoded(0.5f)));
+			}
+		}
+	}
+	for (const double z : {1.5, 1.75}) // in front of it: below its foot, red
+	{
+		INFO("in front, z = " << z);
+		CHECK(redNear(walled, model, {0.5, 0.8, z}) >= 128);
+	}
+}
+
+TEST_CASE("a grid draws its lines over a surface behind its plane, and nothing over one in front", "[render][gpu]")
+{
+	REQUIRE_RENDERER(renderer);
+	Viewport viewport(renderer);
+
+	const View view = testing::view(128, 128, 96, 63.5, 63.5);
+	const Grid grid = gridBelow(0.5, 0.5, {1.0f, 0.0f, 0.0f});
+	const image::ColorRGBf green{0.0f, 0.5f, 0.0f};
+	const camera::CameraModel model = testing::pinholeOf(view);
+	auto drawnWithFloorAt = [&](double height)
+	{
+		const GpuScene scene = uploaded(renderer, floorScene(height, green, {0.0f, 0.0f, 0.3f}));
+		submit(*device, scene, {{&viewport, 0, &view, {}, grid}});
+		return viewport.read(0);
+	};
+	// 5 cm below the plane, seen through it: the lines are drawn over the floor, and the floor shows
+	// between them, since the backdrop is transparent there.
+	const image::Image below = drawnWithFloorAt(0.55);
+	REQUIRE(below.valid());
+	for (const double z : {2.0, 3.0})
+	{
+		INFO("on the line x = 0.5 at z = " << z);
+		CHECK(redNear(below, model, {0.5, 0.5, z}) >= 128);
+	}
+	for (const double x : {-0.25, 0.25})
+	{
+		INFO("between lines at x = " << x);
+		const camera::Projection<double> p = camera::project(model, x, 0.5, 1.75);
+		REQUIRE(p.ok());
+		const std::array<int, 4> floor = pixel(below, int(std::lround(p.u)), int(std::lround(p.v)));
+		CHECK(floor[0] <= 1);
+		CHECK(floor[1] >= encoded(0.5f) - 8); // the floor, a few codes off where a line's fade reaches
+	}
+
+	// 5 cm above the plane, in front of it: nowhere the floor covers does any of the grid show. (Its
+	// near edge is 1 m ahead, and the grid shows below that, where nothing is in front of it.)
+	const image::Image above = drawnWithFloorAt(0.45);
+	REQUIRE(above.valid());
+	for (double z = 1.5; z <= 6.0; z += 0.25)
+	{
+		INFO("on the line x = 0.5 at z = " << z);
+		CHECK(redNear(above, model, {0.5, 0.5, z}) <= 1);
+	}
+}
+
+TEST_CASE("neither a render nor a capture shows the grid a viewport shows", "[render][gpu]")
+{
+	// A grid is a viewport's alone: render() and capture() take none, so the frame constants they write
+	// say there is none, whatever a viewport of the same scene shows. Here the grid is the default
+	// Grid's plane, Z = 0, with a camera 2 m above it looking down, so a grid drawn by default would land
+	// on the floor.
+	REQUIRE_RENDERER(renderer);
+	Viewport viewport(renderer);
+
+	Scene scene;
+	scene.meshes = {testing::square()};
+	Material floor;
+	floor.diffuse = {0.2f, 0.6f, 0.3f};
+	scene.materials = {floor};
+	scene.instances = {Instance{0, math::scale(math::Mat4d{1.0}, math::Vec3d{3.0, 3.0, 1.0}), {0}}};
+	scene.ambient = {1.0f, 1.0f, 1.0f};
+	View view = testing::view(64, 64, 48, 31.5, 31.5);
+	view.worldFromCamera = math::RigidTransformd{math::angleAxis(3.14159265358979323846, math::Vec3d{1.0, 0.0, 0.0}), math::Vec3d{0.0, 0.0, 2.0}};
+	Grid grid; // the default: Z = 0, lines every 0.1 m
+	grid.minor = {1.0f, 0.0f, 0.0f};
+	grid.major = {1.0f, 0.0f, 0.0f};
+
+	GpuScene gpu = uploaded(renderer, scene);
+	submit(*device, gpu, {{&viewport, 0, &view, {}, grid}});
+	const image::Image shown = viewport.read(0);
+	REQUIRE(shown.valid());
+	int red = 0;
+	for (int y = 0; y < 64; ++y)
+	{
+		for (int x = 0; x < 64; ++x)
+			red = std::max(red, pixel(shown, x, y)[0]);
+	}
+	// The viewport shows it: a major line every metre, over a floor whose red alone is encoded(0.2),
+	// 124. (A line straddling two pixels covers each by half, measured 189.)
+	CHECK(red > 160);
+
+	// The floor fills both pictures, so every pixel is its colour, and no line is anywhere.
+	auto worstOffFloor = [&](const image::Image& picture)
+	{
+		double worst = 0;
+		for (int y = 0; y < picture.height(); ++y)
+		{
+			for (int x = 0; x < picture.width(); ++x)
+			{
+				const image::ColorRGBAf p = testing::pixel(picture, x, y);
+				worst = std::max({worst, std::abs(p.r - 0.2), std::abs(p.g - 0.6), std::abs(p.b - 0.3)});
+			}
+		}
+		return worst;
+	};
+	const RenderResult rendered = renderer.render(gpu, view);
+	REQUIRE(rendered.problems.empty());
+	CHECK(worstOffFloor(rendered.image) < 1e-3);
+
+	const RayTableResult table = RayTable::build(testing::pinholeOf(view), {});
+	REQUIRE(table.table.has_value());
+	GpuRayTableResult rays = renderer.upload(*table.table);
+	REQUIRE(rays.problems.empty());
+	CaptureView pose;
+	pose.worldFromCamera = view.worldFromCamera;
+	const RenderResult captured = renderer.capture(gpu, *rays.table, pose);
+	REQUIRE(captured.problems.empty());
+	CHECK(worstOffFloor(captured.image) < 1e-3);
 }

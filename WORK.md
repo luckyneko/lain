@@ -15037,7 +15037,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    both claims from the same pixels, and slice 1 already proves scale 0 is exactly nominal.)*
 8. **The gui, part 1**: the app shell and docking, the Viewport, Outliner and Inspector, ImGuizmo,
    frustums, undo through `lain::editor`. Live-verified by the repo owner. **Planned 2026-10-28 as six
-   commits, 8a to 8f** (*Slice 8 planned* below); **8a built 2026-10-28**. *(Amended while planning: the Viewport draws the
+   commits, 8a to 8f** (*Slice 8 planned* below); **8a and 8b built 2026-10-28**. *(Amended while planning: the Viewport draws the
    nominal plan only, a mover's keys are edited as a table, and a plan's own specifications are edited
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
@@ -17240,6 +17240,9 @@ is built.
     - The scene's fragment shader marks grid lines on any surface that lies on the grid's plane,
       anti-aliased from screen-space derivatives. That is the room's floor, or a plane laid flat.
     - A backdrop quad is drawn first, writing no depth, and shows the grid where no surface is.
+      *(Changed while building: drawn first, any surface drawn after it covers the grid, even one
+      behind the grid's point, which is wrong seen from below. It is drawn after the scene instead,
+      tested against its depth, pushed back a hair and blended; see Sub-slice 8b built.)*
     - So nothing is coplanar with anything, and no line has a depth of its own to lose to a surface.
     - The grid lives in the Viewport's own frame constants. A capture's are zeroed, so a capture never
       draws one.
@@ -17482,6 +17485,72 @@ Metal (`LAIN_GUI_SMOKE=1`); ctest skips them, as it does the two texture cases b
   removes that requirement, as planned.
 - **Owed:** CI's first build of ImGuizmo on Linux and Windows (`alloca` / `_malloca` are its only
   platform code).
+
+#### Sub-slice 8b built (2026-10-28): a grid on a plane, drawn in shading
+
+`render::Grid`, `validate(Grid)`, and `Viewport::record(..., lines, grid)`, with new shaders
+`grid.glsl`, `grid.vert` and `grid.frag`. `ctest -j8` **1570/1570** Release with video, camera and Ceres
+on (+5), and **1430/1430** with all three off (+5); warning-clean, format-check clean. Every case runs
+on Metal and on the CPU device.
+
+- **`render::Grid`**: an origin, two unit axes at right angles, a spacing, a major line every n, an
+  extent along each axis, and two colours in linear light. `record` takes a `std::optional<Grid>`, with
+  no default, and refuses one `validate` refuses.
+- **The frame block grows to 208 bytes**: a grid flag and five vec4s. `frameConstants` takes a
+  `const Grid*`, and `render()` and `capture()` pass none, so neither can draw one.
+- **Two paths, one line.** `grid.glsl` (fragment-only, since it reads derivatives) gives a point's grid
+  colour and coverage. A line is 1 px wide and fades over a pixel each side. Each axis's lines fade out
+  by their own spacing on screen before they alias into moiré.
+  - **On a surface**: `scene.frag` mixes the lines into any surface lying within 0.1 mm of the plane
+    and parallel to it, so a wall crossing the plane gets none.
+  - **Elsewhere**: the backdrop, a quad on the plane over the grid's extent, built in the vertex
+    shader with no vertex buffer, blends them over what is behind it.
+  - Both mix in the target's encoding, so the two paths draw one line.
+- **Deviation from the plan: the backdrop is drawn after the scene, not first.**
+  - **The flaw found:** drawn first and writing no depth, every surface drawn after it covers the grid
+    there, including a surface behind a grid point. Seen from above, with everything on or above the
+    plane, that never shows. Seen from below, it is wrong.
+  - **What it is now:** it is drawn after the scene and before the overlay lines. It is depth-tested
+    and writes no depth. It is pushed back by 1e-4 of the depth buffer, so a surface lying on the plane
+    always wins there. It is blended with alpha equal to the line coverage.
+  - **The result:** a surface in front of the plane hides it, and lines are drawn over a surface
+    behind it, transparent between them. The plan's bullet is amended in place.
+- **Measured, and first misread.** On 3b's oblique floor, at the background's colour, a line drawn by
+  the floor and one drawn by the backdrop alone differ by at most **0.0053** of coverage on Metal and
+  **0.032** on the CPU device. 3b's overlay lines lose up to three quarters.
+  - I first reported this as exactly 0: Catch2 wraps a long message, and my grep caught `0.` from
+    `0.0319149`. The bound (0.05) and the comment now give the real numbers.
+  - The residue is likely the two paths' different triangles, whose derivatives need not agree.
+    Not chased further.
+- **The cases** (`test_viewport.cpp`), on both devices:
+  - the coverage comparison above;
+  - lines where lain's projection puts the plane's lines, and none halfway between them;
+  - a wall standing on the grid hides the grid behind it and not the grid in front, with the same view
+    without the wall as a positive control;
+  - lines over a floor 5 cm below the plane, with the floor between them, and nothing over a floor
+    5 cm above it;
+  - neither `render()` nor `capture()` of a floor shows the grid a viewport of the same scene shows;
+  - an invalid grid is refused.
+
+  Every point is judged against lain's projection or a second drawing. A line point is read as the
+  best of the 3 x 3 pixels around it, since pixel centres lie at most half a pixel from any line.
+- **Found by a sabotage: the wall case did not test its claim at first.** With the backdrop's depth test
+  removed, it passed, because its "behind the wall" points were where the grid had already faded out,
+  so there was nothing for the wall to hide. It was redrawn with the plane lower, the lines wider apart
+  and a larger image, and with a positive control that requires the same points to show the grid when
+  there is no wall.
+- **Five sabotages, all caught:**
+  - surfaces on the plane drawing no lines fails the coverage comparison (1.0 off) and the positive
+    control;
+  - no push-back fails the coverage comparison (0.26 off: the backdrop wins some depth tests against
+    the floor it lies on, and blends its lines twice);
+  - an opaque backdrop fails three cases;
+  - a backdrop with no depth test fails the wall case and the in-front case;
+  - `frameConstants` falling back to a default grid fails the render-and-capture case (0.15 off).
+- **For 8f:** the backdrop's push-back, in metres, grows as Z² over the near plane, as the line pass's
+  pull does. So a surface just below the plane, far away, can hide the backdrop's lines from inside the
+  push. Nothing in a rig plan stands there.
+- ADR-0028's bullet that "a grid on the floor is drawn as its own pass" is amended with this.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
@@ -17737,8 +17806,8 @@ row here**. A row is cheap to delete and expensive to leave.
   `test-flowview-capture`, a CI step through the shipped binaries, and `synthetic-capture`). CI's first
   run since slice 5 found `run` writing CRLF on Windows, fixed, and the fix is green on all eight jobs (run 40497652103).
   **Slice 8 planned 2026-10-28** as six commits, 8a to 8f (the gui's first part), ending in a
-  gui-mode checklist for the repo owner (*Slice 8 planned*); **8a built the same day** (a pane shows
-  a texture it did not upload; ImGuizmo). Two of 7a's findings are for
+  gui-mode checklist for the repo owner (*Slice 8 planned*); **8a and 8b built the same day** (a pane
+  shows a texture it did not upload; ImGuizmo; a grid drawn in shading). Two of 7a's findings are for
   the repo owner: `registration/1` judges a rig registered with uncalibrated models Ready, and the size
   estimate's floor is not a floor for a dark scene (*Sub-slice 7a built*).
   Slice 0's gui-mode check of the unsaved-changes modal is owed. M9's rig binder owes two fixes M15
