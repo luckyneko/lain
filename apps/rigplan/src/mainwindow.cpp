@@ -29,6 +29,7 @@ namespace rigplan
 		config.iniFilename = iniPath.string();
 		config.docking = true;
 		m_gui = std::make_unique<gui::Context>(window.app(), window, config);
+		m_viewport = std::make_unique<ViewportPane>(window.app().device(), *m_gui);
 
 		// What carried over: the dialogs' folder, and the plan to open, the one named on the command line
 		// or else the one open last. One that does not open leaves a new plan, and the Issues pane says why.
@@ -58,6 +59,8 @@ namespace rigplan
 
 	void MainWindow::onRender(app::Window& window, const app::TimeState&)
 	{
+		// What the asset jobs made since the last frame, FIRST, so this frame builds with it. Never waits.
+		m_viewport->poll(m_ctx);
 		m_gui->newFrame();
 		const gui::DockNode dock = gui::dockSpaceOverViewport();
 		if (m_seedLayout || m_resetLayout)
@@ -70,10 +73,7 @@ namespace rigplan
 		m_menuBar.draw(m_ctx, window.app(), m_resetLayout);
 		m_outliner.draw(m_ctx);
 		m_inspector.draw(m_ctx);
-		// The Viewport's place in the layout, held until it is drawn in slice 8f.
-		if (gui::Begin("Viewport"))
-			gui::TextDisabled("The Viewport arrives with M15 slice 8f.");
-		gui::End();
+		m_viewport->draw(m_ctx);
 		m_issues.draw(m_ctx);
 		m_statusBar.draw(m_ctx);
 		m_menuBar.drawConfirmModal(m_ctx, window.app());
@@ -87,6 +87,10 @@ namespace rigplan
 		if (m_ctx.document.pendingSnapshot && !gui::IsAnyItemActive() && !gui::gizmo::IsUsing())
 			commit(m_ctx.document);
 
+		// The scene and the overlays for this frame, now every pane has had its say: built again when the
+		// plan, the frame shown or the assets changed, and recorded in the pre-pass below.
+		m_viewport->update(m_ctx);
+
 		const std::string name = m_ctx.document.path.empty() ? std::string("Untitled") : m_ctx.document.path.filename().string();
 		const std::string title = string::format("{}{} - rigplan", name, m_ctx.document.dirty ? " *" : "");
 		if (title != m_title)
@@ -95,7 +99,11 @@ namespace rigplan
 			m_title = title;
 		}
 
-		window.renderer().render([&](acm::CommandBuffer cmd, std::uint32_t frame)
+		// The Viewport is drawn into its texture in the pre-pass, outside any rendering scope, and the pane
+		// shows that texture when ImGui records the frame after it (gui::FrameTexture).
+		window.renderer().render([&](acm::CommandBuffer& cmd, std::uint32_t frame)
+								 { m_viewport->record(cmd, frame); },
+								 [&](acm::CommandBuffer& cmd, std::uint32_t frame)
 								 { m_gui->render(cmd, frame); });
 	}
 
@@ -111,6 +119,10 @@ namespace rigplan
 		// The dialog folder as it ended up; the recents were written as they changed.
 		m_ctx.session.lastDialogDir = gui::lastDirectory();
 		m_ctx.rememberSession();
-		m_gui.reset(); // before the device goes
+		// The Viewport's GPU state, then the backend, before the device goes. Its asset jobs are waited for
+		// first: quitting while a bake runs costs that bake, never a crash.
+		m_viewport->release();
+		m_viewport.reset();
+		m_gui.reset();
 	}
 } // namespace rigplan

@@ -45,6 +45,7 @@ namespace rigplan
 		{
 			case DocumentRequest::Kind::New:
 				ctx.document = newDocument();
+				++ctx.opened;
 				ctx.selection = Selection::nothing();
 				ctx.openProblems.clear();
 				ctx.session.plans.last.clear(); // nothing to reopen at the next launch; the recents stay
@@ -85,6 +86,7 @@ namespace rigplan
 			return false;
 		}
 		ctx.document = std::move(*opened.document);
+		++ctx.opened;
 		ctx.selection = Selection::nothing();
 		ctx.openProblems.clear();
 		editor::noteDocument(ctx.session.plans, ctx.document.path);
@@ -241,6 +243,20 @@ namespace rigplan
 			}
 			if (gui::BeginMenu("View"))
 			{
+				if (gui::MenuItem("Frame All", "Home"))
+					ctx.view.frameAll = true;
+				if (gui::MenuItem("Frame Selected", "F"))
+					ctx.view.frameSelected = true;
+				gui::Separator();
+				gui::MenuItem("Preview Light", nullptr, &ctx.view.previewLight);
+				if (gui::IsItemHovered())
+					gui::SetTooltip("An ambient light the Viewport alone adds, so a plan with no lights is not black");
+				gui::SetNextItemWidth(160.0f);
+				const double lowest = 0.05;
+				const double highest = 20.0;
+				gui::DragScalar("Frustum Depth", ImGuiDataType_Double, &ctx.view.frustumDepth, 0.01f, &lowest, &highest, "%.2f m",
+								ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic);
+				gui::Separator();
 				if (gui::MenuItem("Reset Layout"))
 					resetLayout = true;
 				gui::EndMenu();
@@ -266,6 +282,11 @@ namespace rigplan
 			redo(ctx.document);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D, ImGuiInputFlags_RouteGlobal) && ctx.selection.kind != Selected::Plan)
 			apply(ctx, duplicate(plan, ctx.selection));
+		// F frames the selection and Home frames everything, as the View menu does; never while typing.
+		if (!gui::GetIO().WantTextInput && gui::IsKeyPressed(ImGuiKey_F, false) && !gui::GetIO().KeyCtrl)
+			ctx.view.frameSelected = true;
+		if (!gui::GetIO().WantTextInput && gui::IsKeyPressed(ImGuiKey_Home, false))
+			ctx.view.frameAll = true;
 		// Delete and Backspace delete what is selected, but never while a text field has them.
 		if (!gui::GetIO().WantTextInput && (gui::IsKeyPressed(ImGuiKey_Delete, false) || gui::IsKeyPressed(ImGuiKey_Backspace, false)) &&
 			ctx.selection.kind != Selected::Plan)

@@ -1400,6 +1400,33 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-28 — M15 slice 8, sub-slice 8f built: the Viewport (**slice 8 BUILT; gui-mode checklist owed**)
+
+The plan drawn on the device in rigplan's Viewport pane, with its overlays, the floor grid and
+ImGuizmo. `ctest -j8` **1622/1622** Release with video, camera and Ceres on (+3), and **1481/1481** with all three
+off (+3); warning-clean, format-check clean. **gui-mode NOT driven by hand**: the input is the repo
+owner's 12-step checklist (WORK.md's *Slice 8 planned*, at its end), which is now owed. Full notes in
+WORK.md's *Sub-slice 8f built*.
+
+- **`ViewportPane`** holds the renderer, the plan's `GpuScene` and a `render::Viewport`, and releases
+  them before the device goes.
+  - Each frame it keeps what the asset jobs made, never waiting.
+  - It builds the scene again when the plan, the frame shown or the assets changed, posting missing
+    jobs on the process pool.
+  - It records in the pre-pass and is shown through 8a's frame-resolved texture.
+- **Found by looking at the picture: a room hid the rig.** Framing all of a plan puts the eye outside
+  the room, and its two-sided walls showed a closed box. A room is now a **dollhouse**: each surface the
+  eye is outside of is left out (`cutaway`), and the device's copy changes only when that set does.
+  CONTEXT.md's *Viewport* and ADR-0028 are amended.
+- **Looked at through a temporary readback probe** (removed; `screencapture` is refused here): the
+  dollhouse with the grid, poles, frustums, cones and the board's path, and a selected, framed camera
+  in its highlight, with the ChArUco board drawn.
+- **Measured on Metal:** three-poles' six bakes land within 20 frames (0.4 s), at about 8 ms a frame.
+  Quitting while they bake waits for them and exits 0.
+- **The View menu's Frame All (Home), Frame Selected (F), Preview Light and Frustum Depth** land here.
+  A plan opened or made is framed whole.
+- **Owed next:** the gui-mode checklist, then flowview's Quit fix (*Known defects*), then slice 9.
+
 ### Update 2026-10-28 — M15 slice 8, sub-slice 8e built: the editor's shell, and `lain::app`'s close veto
 
 `rigplan [plan]` opens the editor: the menu bar, the Outliner, the Inspector, Issues and a status bar,

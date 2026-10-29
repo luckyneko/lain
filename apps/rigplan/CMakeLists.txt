@@ -19,6 +19,7 @@ add_library(rigplan-tested OBJECT
 	src/overlays.cpp
 	src/gizmo.cpp
 	src/session.cpp
+	src/viewing.cpp
 	src/panes/fields.cpp
 	src/panes/inspector.cpp
 	src/panes/issues.cpp
@@ -38,12 +39,14 @@ target_link_libraries(rigplan-tested
 	PRIVATE lain::warnings
 )
 
-# The app: the headless `render`, and the editor's window (M15 slice 8e), which needs a device and so is
-# not under ctest; its panes are rigplan-tested's.
+# The app: the headless `render`, and the editor's window (M15 slice 8e) and Viewport (8f), which need a
+# device and so are not under ctest; the other panes, and everything the Viewport computes, are
+# rigplan-tested's.
 add_executable(rigplan
 	src/main.cpp
 	src/rigplanapp.cpp
 	src/mainwindow.cpp
+	src/viewportpane.cpp
 )
 
 target_compile_features(rigplan PRIVATE cxx_std_17)
@@ -51,6 +54,7 @@ target_link_libraries(rigplan
 	PRIVATE rigplan-tested lain::app lain::core lain::rigplan::capture lain::rigplan::serialize
 			lain::io lain::io::data lain::io::data::codecs lain::io::image::codecs lain::io::mesh::codecs # the rig plan document, the frames, the meshes a plan names
 			lain::camera::backends # the board renderer, where a camera plugin is built
+			lain::task # the Viewport's asset jobs, on the process pool
 			lain::string lain::log archimedes Vulkan::Loader lain::warnings
 )
 

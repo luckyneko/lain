@@ -17,7 +17,7 @@ namespace rigplan
 	//   Edit: Undo, Redo, Duplicate, Delete;
 	//   Add: Pole, Fixed Point, Camera, Light, Plane, Box, Prop..., Board, Room (a camera or light on the
 	//        selected mount);
-	//   View: Reset Layout.
+	//   View: Frame All (Home), Frame Selected (F), Preview Light, Frustum Depth, Reset Layout.
 	// New, Open, Open Recent and Quit replace or end the open plan, so each goes through the document's
 	// guard, as does the window's close button (MainWindow::onCloseRequested): with unsaved work it asks
 	// first, and a Save that is cancelled or fails cancels the request with it. Stateless: what it reads

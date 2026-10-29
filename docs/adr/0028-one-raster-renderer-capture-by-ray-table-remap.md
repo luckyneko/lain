@@ -29,7 +29,10 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
   that what the gizmo edits is what is drawn. A realisation is seen by looking through a camera
   (slice 9), the one view that already chooses between nominal and realised. A plan with a problem
   still draws: the viewport builds its scene from each object's own planned pose rather than through
-  `realise()`, which refuses the whole plan on any problem.)*
+  `realise()`, which refuses the whole plan on any problem.)* *(Amended 2026-10-28, building slice 8f:
+  a room is drawn as a dollhouse, each of its surfaces the eye is outside of left out, since the
+  renderer lights both faces of a surface and a room framed whole from outside otherwise hides the rig.
+  A capture never cuts one: the cutaway is the Viewport's alone.)*
 - **A capture render** has three steps:
   1. Rasterise the same scene, with the same shading, into an intermediate image that covers the
      camera's field of view: a wide pinhole for ordinary lenses, a cubemap past 180°.

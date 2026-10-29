@@ -45,6 +45,11 @@ namespace rigplan
 				row(ctx, index, problem, kError, Selection::nothing());
 				any = true;
 			}
+			for (const std::string& problem : ctx.assetProblems)
+			{
+				row(ctx, index, problem, kWarning, Selection::nothing());
+				any = true;
+			}
 			for (const rp::PlanDiagnostic& d : rp::check(ctx.document.plan))
 			{
 				const Selection target = d.owner ? selectionOf(ctx.document.plan, *d.owner) : Selection::nothing();

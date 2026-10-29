@@ -12,6 +12,7 @@ add_executable(test-rigplan-app
 	test_overlays.cpp
 	test_gizmo.cpp
 	test_panes.cpp
+	test_viewing.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../examples/src/examples.cpp"
 )
 

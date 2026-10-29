@@ -15037,7 +15037,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    both claims from the same pixels, and slice 1 already proves scale 0 is exactly nominal.)*
 8. **The gui, part 1**: the app shell and docking, the Viewport, Outliner and Inspector, ImGuizmo,
    frustums, undo through `lain::editor`. Live-verified by the repo owner. **Planned 2026-10-28 as six
-   commits, 8a to 8f** (*Slice 8 planned* below); **8a to 8e built 2026-10-28**. *(Amended while planning: the Viewport draws the
+   commits, 8a to 8f** (*Slice 8 planned* below); **all six built 2026-10-28, and the gui-mode checklist is
+   owed**. *(Amended while planning: the Viewport draws the
    nominal plan only, a mover's keys are edited as a table, and a plan's own specifications are edited
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
@@ -17397,6 +17398,10 @@ is built.
     selected key.
   - **Not under ctest**, since it needs a window and a device. 8d's units hold everything the pane
     computes. The `--frames` smoke opens three-poles and exits 0.
+  - *(Built with a dollhouse, found by looking at what it drew: framing all of a room puts the eye
+    outside it, and its walls, lit from both sides, hid the whole rig. Each room surface the eye is
+    outside of is left out. The View menu's Frame All, Frame Selected, Preview Light and Frustum Depth
+    land here, as 8e deferred them. See Sub-slice 8f built.)*
 - **The gui-mode checklist, after 8f** (the repo owner, on a Metal session; `synthetic-capture` is not
   needed):
   1. Open `three-poles.json`. Orbit, pan and dolly with Alt on a trackpad and on a mouse, zoom with the
@@ -17830,6 +17835,73 @@ dialogs and the modal's answers are the repo owner's checklist after 8f, steps 2
   - a `TreePop` left out of the Outliner: every frame of the pane case counts an error;
   - a request that ignores unsaved work: the held-New case fails.
 
+#### Sub-slice 8f built (2026-10-28): the Viewport (**slice 8 BUILT; its gui-mode checklist is owed**)
+
+The plan drawn on the device in the editor's Viewport pane, with its overlays, the floor grid and the
+gizmo. `ctest -j8` **1622/1622** Release with video, camera and Ceres on (+3), and **1481/1481** with all three
+off (+3); warning-clean, format-check clean. **gui-mode NOT driven by hand**: the Viewport's input
+(orbit, pan, dolly, zoom, a click's pick, the gizmo's drag, W and E, Ctrl's snap) is the checklist's,
+steps 1 to 4, 6, 10 and 12. What it draws was looked at, through a probe (below).
+
+- **`ViewportPane`** (`viewportpane.{h,cpp}`, in the executable, since it holds GPU state): a
+  `render::Renderer`, the plan's `GpuScene`, a `render::Viewport` and the `gui::FrameTexture` the pane
+  draws. The window makes it once its device exists and releases it in `onShutdown`. Each frame:
+  - **`poll`**, first: keep what the asset jobs made since the last frame. It never waits.
+  - **`draw`**, among the panes: the picture at framebuffer pixels (twice the points a side on a Retina
+    display), ImGuizmo over it, then the view's own input where the gizmo is not.
+  - **`update`**, after the panes: when the plan's snapshot, the frame shown, the assets or Preview
+    Light changed, the scene is built again. That is `sceneGeometry`; `pruneAssets` when the plan
+    changed; each missing job posted on the process pool, once; `nominalLayout`; `renderScene`, with a
+    dark background and the preview's ambient 0.15. Then the overlays and the grid for this frame.
+  - **`record`**, in the frame's pre-pass, outside any rendering scope; the pane's texture is resolved
+    after it, when ImGui records (8a).
+- **Found by looking at the picture: a room hid the rig.** Framing all of a plan puts the eye outside
+  the room, and its walls, lit from both sides, showed a closed box: no rig, no grid. So a room is a
+  **dollhouse**: `cutaway(plan, scene, eye)` leaves out each of its surfaces the eye is outside of (the
+  eye and the room's centre on opposite sides of the surface's plane). The device's copy is updated only
+  when that set changes (`cutawayMask`), not every frame of an orbit. What is drawn and picked is the
+  cut scene; framing and the selection's outline read the whole one, so a selected room is outlined
+  whole. CONTEXT.md's *Viewport* and ADR-0028 are amended.
+- **The input:**
+  - Alt+LMB orbits, the scene following the cursor at a quarter of a degree a point.
+  - Alt+MMB or Alt+Shift+LMB pans.
+  - Alt+RMB or Alt+Ctrl+LMB dollies, a drag the pane's height being a factor of e.
+  - The wheel zooms (8d's tenth of the way a step).
+  - A click without Alt picks, through 8d's `pick` over the scene as drawn, at lain's pixel under the
+    cursor.
+  - ImGuizmo moves what is selected, through 8d's bridge: W moves, E turns, "In its own axes" is its
+    LOCAL mode, and Ctrl snaps to 0.01 m and 5°. It is disabled while Alt is held. The pane's own input
+    is submitted only where the gizmo is not, since ImGuizmo activates only when no item is hovered.
+- **View menu:** Frame All (Home), Frame Selected (F), Preview Light and Frustum Depth, which 8e
+  deferred to here. A plan opened or made is framed whole (`AppContext::opened`), since the view is not
+  kept with a plan.
+- **`viewing.{h,cpp}`** (driver-free, in `rigplan-tested`):
+  - `boundsOfEverything` and `boundsOfSelection` give what the two framings frame; a selection is at
+    least half a metre across;
+  - the cutaway and its mask;
+  - `floorGrid`: 0.1 m lines with a major one every metre, over the room's floor or 20 m each way.
+- **Issues and the status bar:** each asset job's failure is an Issues row (a board, in a build with no
+  board renderer), and so is a scene the device refused. While jobs run, the status bar says how many
+  assets are loading.
+- **Quitting while assets bake** waits for the jobs, then releases the GPU state before the device:
+  quitting at frame 2 of three-poles, while its six bakes run, exits 0.
+- **Measured, on Metal:** three-poles' six room bakes land on the pool within 20 frames (0.4 s), with
+  the window drawing about 8 ms a frame throughout.
+- **Looked at through a temporary probe**, an environment variable that read the Viewport's texture
+  back after N frames and wrote it as a PNG (removed before committing; `screencapture` is refused
+  here):
+  - three-poles framed whole: the dollhouse with its south wall and ceiling cut, the floor grid, the
+    poles, the frustums, the spots' cones and the board's path;
+  - a camera selected and framed: its body and frustum in the highlight colour, the drawn ChArUco
+    board and its keys.
+- **Smokes, all exit 0 and nothing logged:** three-poles in this build and in the build with
+  everything off (where the board's job fails), a New plan, and quitting at frame 2.
+- **The cases** (`test_viewing.cpp`, 3 new): the dollhouse from inside, beyond a wall, above a corner
+  and below the floor, its mask unchanged by a move that crosses no wall, and no room showing
+  everything; the two framings' bounds; the grid over a room and without one.
+- **Two sabotages, both caught:** the cutaway hiding the surfaces the eye is inside of (4 failures), and
+  Frame Selected without its minimum size.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -18084,10 +18156,11 @@ row here**. A row is cheap to delete and expensive to leave.
   `test-flowview-capture`, a CI step through the shipped binaries, and `synthetic-capture`). CI's first
   run since slice 5 found `run` writing CRLF on Windows, fixed, and the fix is green on all eight jobs (run 40497652103).
   **Slice 8 planned 2026-10-28** as six commits, 8a to 8f (the gui's first part), ending in a
-  gui-mode checklist for the repo owner (*Slice 8 planned*); **8a to 8e built the same day** (a pane
+  gui-mode checklist for the repo owner (*Slice 8 planned*); **all six built the same day** (a pane
   shows a texture it did not upload; ImGuizmo; a grid drawn in shading; the nominal layout, `aimOf`
   and pooled asset jobs; rigplan's driver-free editor units; the editor's shell and `lain::app`'s
-  close veto). Two of 7a's findings are for
+  close veto; the Viewport). **Slice 8's 12-step gui-mode checklist is owed** (*Slice 8 planned*, its
+  end), on a Metal session. Two of 7a's findings are for
   the repo owner: `registration/1` judges a rig registered with uncalibrated models Ready, and the size
   estimate's floor is not a floor for a dark scene (*Sub-slice 7a built*).
   Slice 0's gui-mode check of the unsaved-changes modal is owed. M9's rig binder owes two fixes M15
