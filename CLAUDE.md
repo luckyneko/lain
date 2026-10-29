@@ -1400,6 +1400,20 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-29 — flowview's Quit and close button ask before throwing work away
+
+The last known defect, fixed with M15 8e's close veto, the way rigplan uses it. File ▸ Quit, Ctrl+Q and
+the window's close button exited at once, while New and Open asked. `DocumentSwap` gains `Quit`, and
+`MenuBarPane::requestQuit(ctx, app)` is what all three call (the close button through
+`MainWindow::onCloseRequested`). With unsaved work the guard holds it and the modal asks; Save or
+Discard quits, Cancel stays, and a cancelled Save panel cancels the quit. `performSwap` stays New and
+Open's, and the modal ends a held Quit through the Application it is now handed. Warning-clean in both
+configurations; flowview's, the editor's and the app's suites **212/212**, and the whole suite with
+video, camera and Ceres off **1484/1484**; the `--frames` smokes exit 0. The menu bar is reachable only
+with the whole app, so it is not under ctest. **gui-mode live-verified by the repo owner 2026-10-29**,
+which discharges slice 0's owed check of flowview's unsaved-changes modal. Full notes in WORK.md's
+*Known defects*.
+
 ### Update 2026-10-29 — M15 slice 8 live-verified: a landing bake stalled the window, and a drag baked every size
 
 The repo owner walked slice 8's gui-mode checklist on Metal, and **all twelve steps pass**, so **slice 8
@@ -1454,7 +1468,7 @@ WORK.md's *Sub-slice 8f built*.
 - **The View menu's Frame All (Home), Frame Selected (F), Preview Light and Frustum Depth** land here.
   A plan opened or made is framed whole.
 - **Owed next:** the gui-mode checklist, then flowview's Quit fix (*Known defects*), then slice 9.
-  *(The checklist passed 2026-10-29; see the entry above.)*
+  *(The checklist passed 2026-10-29, and the Quit fix landed the same day; see the entries above.)*
 
 ### Update 2026-10-28 — M15 slice 8, sub-slice 8e built: the editor's shell, and `lain::app`'s close veto
 
@@ -1467,7 +1481,8 @@ run headless. Full notes in WORK.md's *Sub-slice 8e built*.
 - **`lain::app` gains `WindowDelegate::onCloseRequested`**, true by default. On false the loop clears
   GLFW's close flag and carries on. It also gains `Window::setTitle`. The veto's case is windowed and
   opt-in, like the other windowed cases, since a window needs a display: a deviation from the plan's
-  "headless". flowview's Quit fix, which this unblocks, is still owed (*Known defects*).
+  "headless". flowview's Quit fix, which this unblocks, is still owed (*Known defects*). *(Fixed
+  2026-10-29.)*
 - **New, Open, Open Recent, Quit and the close button all go through `DocumentGuard`.** A cancelled or
   failed Save cancels the request.
 - **`require_subcommand(1)` is gone**, so `rigplan --licenses` works again (8a's finding), and
@@ -1608,7 +1623,8 @@ bullet and CONTEXT.md's *Viewport*.
   - **`PlanDiagnostic` names no owner**; 8c adds one, so an Issues row can select it.
   - **flowview loses unsaved work on Quit**: the menu item, Ctrl+Q and the window's close button all
     exit unasked, and `lain::app` gives a delegate no veto. 8e adds `WindowDelegate::onCloseRequested`,
-    and flowview's fix is its own owed commit (Outstanding index, *Known defects*).
+    and flowview's fix is its own owed commit (Outstanding index, *Known defects*). *(Fixed
+    2026-10-29.)*
   - **A floor grid cannot be overlay lines** (3b/3d): 8b draws it in shading, with a depthless
     backdrop, so no capture can ever draw one. *(Built with the backdrop after the scene, depth-tested
     and blended instead; see the 8b entry above.)*
@@ -2439,8 +2455,8 @@ Full notes in WORK.md's *Slice 0 built*, under M15.
   - a stale prompt flag that would have opened the modal asking about nothing;
   - a json-only test helper that would have failed a json-off build under `-Werror`.
 - **Four sabotages, all caught.** Owed: a live check of the unsaved-changes modal (New and Open with
-  unsaved work; Save, Discard and Cancel; a cancelled Save panel). *(Done 2026-10-29 in rigplan, by M15
-  slice 8's checklist; flowview's waits on its Quit fix.)*
+  unsaved work; Save, Discard and Cancel; a cancelled Save panel). *(Done 2026-10-29: in rigplan by
+  M15 slice 8's checklist, and in flowview with its Quit fix.)*
 
 ### Update 2026-10-22 — M15 designed: rig design, rig plans and synthetic captures (nothing built yet)
 

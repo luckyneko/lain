@@ -83,12 +83,13 @@ namespace flowview
 		}
 	};
 
-	// Replacing the open document — the two ways to do it, both DESTRUCTIVE (New throws the graph away,
-	// Open replaces it), so both go through the unsaved-changes guard rather than only New.
+	// What would throw the open document away: New throws the graph away, Open replaces it, and Quit
+	// ends the app with it. All three are DESTRUCTIVE, so all go through the unsaved-changes guard.
 	enum class DocumentSwap
 	{
 		New,
 		Open,
+		Quit,
 	};
 
 	// A requested swap, held by the document guard while the unsaved-changes modal is up.

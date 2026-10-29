@@ -197,8 +197,8 @@ namespace flowview
 		m_preview.draw(m_ctx, graph, evaluation, m_previews, m_valueViews, *m_guiCtx);
 		m_issues.draw(m_ctx, graph, evaluation);
 
-		// The unsaved-changes guard for New (opened by requestNew when m_ctx.dirty).
-		m_menuBar.drawConfirmModal(m_ctx, graph);
+		// The unsaved-changes guard for New, Open and Quit (raised when m_ctx.dirty).
+		m_menuBar.drawConfirmModal(m_ctx, graph, window.app());
 
 		// A group's ports mirror its interior, so re-derive them for every group we are inside — the
 		// Interface panel's ± and renames act on the INNER boundary, and nothing else would carry that
@@ -319,6 +319,13 @@ namespace flowview
 
 		window.renderer().render([&](acm::CommandBuffer cmd, uint32_t frame)
 								 { m_guiCtx->render(cmd, frame); });
+	}
+
+	bool MainWindow::onCloseRequested(app::Window& window)
+	{
+		// With nothing unsaved this quits at once; otherwise the guard holds it for the modal, which
+		// quits on Save or Discard and keeps the window on Cancel.
+		return m_menuBar.requestQuit(m_ctx, window.app());
 	}
 
 	void MainWindow::onShutdown(app::Window&)

@@ -15114,8 +15114,8 @@ added. Warning-clean, format-check clean. The Debug build was not run.
   - noting a listed document without deduplicating.
 - **gui-mode NOT eyeballed beyond the `--frames` smoke.** The unsaved-changes modal (New and Open with
   unsaved work, then Save, Discard, Cancel, and a Save panel cancelled) changed code path and needs a
-  live check. *(Discharged 2026-10-29 in rigplan, by slice 8's step 11; flowview's own check waits on
-  its Quit fix.)*
+  live check. *(Discharged 2026-10-29: in rigplan by slice 8's step 11, and in flowview, its Quit and
+  close button guarded too, by the live check of Known defects' seventh.)*
 
 ### Slice 1 planned (2026-10-22), and 1a built
 
@@ -17192,6 +17192,7 @@ is built.
       unsaved-changes question is open. rigplan routes Quit and the close button through
       `DocumentGuard`.
     - flowview's adoption is owed as its own commit, as a known defect (Outstanding index).
+      *(Done 2026-10-29: Known defects, the seventh.)*
   - **A grid cannot be drawn as overlay lines** (3b, corrected in 3d): a 1 px line on an obliquely
     seen floor loses up to three quarters of its multisampled coverage. 8b draws it in shading instead.
   - **The board renderer has never been called off the main thread.** The capture writer loads its
@@ -17433,7 +17434,7 @@ is built.
       2026-10-29, it found the window stalling as those bakes landed: see After 8f.)*
 
   Slice 0's owed check of the unsaved-changes modal is step 11, in rigplan. flowview's own check needs
-  its Quit fix first.
+  its Quit fix first. *(Fixed and live-verified 2026-10-29. See Known defects.)*
 
 #### Sub-slice 8a built (2026-10-28): a pane shows a texture it did not upload, and ImGuizmo lands
 
@@ -18235,7 +18236,8 @@ row here**. A row is cheap to delete and expensive to leave.
   the repo owner: `registration/1` judges a rig registered with uncalibrated models Ready, and the size
   estimate's floor is not a floor for a dark scene (*Sub-slice 7a built*).
   Slice 0's live check of the unsaved-changes modal is discharged in rigplan (slice 8's step 11);
-  flowview's own needs its Quit fix first. M9's rig binder owes two fixes M15
+  flowview's Quit and close button go through its guard since 2026-10-29, and its check passed the
+  same day (*Known defects*). M9's rig binder owes two fixes M15
   found, both symptoms of a binder that does not read a capture's layout: it pairs footage with models
   by sorted position (5e; the writer refuses names that sort differently as folders and as documents),
   and it names a camera with one frame by its file, not its folder (*Slice 6 planned*). One finding
@@ -18427,27 +18429,43 @@ review of 2026-10-20 moved after it), with clock-domain identity and timestamp g
 
 Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
 
-**The list is empty.** All six are fixed — `gui::Texture` freeing a descriptor set a running frame
+**The list is empty.** All seven are fixed — `gui::Texture` freeing a descriptor set a running frame
 could still read (2026-09-29; see Milestone 14 › *A texture's descriptor outlives the frames that
 drew it*), a group replaced at its own NodeId looking clean and delivering
 nothing (found by M14 slice 1, fixed 2026-09-28 by making versions process-unique; see
 Milestone 14), the three from M11 §Not in this milestone
 (`GroupSync::refused` had no reader, 2026-09-09; the Issues pane flagged an unwired DEFAULTED
 input, 2026-09-09; `ungroup` told a map it was linked, 2026-09-10) and the parallel-ctest collision
-below (2026-09-10). Three of the first five turned out to be **larger than their one-line
+below (2026-09-10), and flowview losing unsaved work on Quit (2026-10-29, below). Three of the first
+five turned out to be **larger than their one-line
 description**: the described symptom was the visible end of a duplicated or unreachable decision, or
 — the NodeId one — of a general shape (any node re-seated at its own id) that one caller happened to
 reach first. Worth remembering when writing the next entry here.
 
-**One open, found 2026-10-28 while planning M15 slice 8:**
+**The seventh, found 2026-10-28 while planning M15 slice 8, fixed 2026-10-29:**
 
-- **flowview loses unsaved work on Quit.** The File ▸ Quit item, Ctrl+Q (`menubar.cpp`) and the
-  window's close button all exit without asking, while New and Open go through `DocumentGuard`.
+- **flowview lost unsaved work on Quit.** The File ▸ Quit item, Ctrl+Q (`menubar.cpp`) and the
+  window's close button all exited without asking, while New and Open went through `DocumentGuard`.
   `lain::app` broke its run loop as soon as a window reported it should close, and gave a delegate no
   way to veto that. M15 sub-slice 8e added the veto (`WindowDelegate::onCloseRequested`, 2026-10-28),
-  and rigplan guards Quit and the close button with it. flowview's fix is its own commit, and is now
-  small: route Quit, Ctrl+Q and the close button through its guard. Slice 0's owed gui-mode check of flowview's
-  unsaved-changes modal should include them.
+  and rigplan guarded Quit and the close button with it.
+  - **The fix, as rigplan's:** `DocumentSwap` gains `Quit`, and `MenuBarPane::requestQuit(ctx, app)` is
+    what the menu item, Ctrl+Q and `MainWindow::onCloseRequested` all call. With nothing unsaved it
+    quits at once; otherwise the guard holds it and the modal asks "Quit? Unsaved changes to the
+    current graph will be lost.", quitting on Save or Discard and staying on Cancel, and a cancelled or
+    failed Save cancels the quit with it (the guard's rule). `performSwap` stays New and Open's: a held
+    Quit is carried out by the modal, through the Application it is now handed. The modal's three
+    questions are one exhaustive switch.
+  - **Exactly as large as its description**: no other path exits. The `--frames` smoke still calls
+    `exit()` directly, as a harness should.
+  - **Not under ctest**: the menu bar is reachable only with the whole app, and the rule it relies on is
+    `DocumentGuard`'s, which `test-editor` holds. Verified by building warning-clean in both
+    configurations, flowview's, the editor's and the app's suites (212/212), the whole suite with
+    video, camera and Ceres off (1484/1484), and `--frames` smokes exiting 0 with nothing logged.
+    **Live-verified by the repo owner 2026-10-29**: New, Open, Open Recent, Quit, Ctrl+Q and the close
+    button each ask with unsaved work; Save, Discard and Cancel each do what they say; a cancelled Save
+    panel cancels the request. That is slice 0's check of flowview's unsaved-changes modal, owed since
+    2026-10-22.
 
 ### `ctest -j` and scratch paths — FIXED 2026-09-10
 

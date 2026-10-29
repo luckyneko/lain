@@ -37,10 +37,15 @@ namespace flowview
 		void draw(AppContext& ctx, const lain::flow::Graph& graph, lain::app::Application& app, bool& edited,
 				  bool& resetLayout);
 
-		// The unsaved-changes confirm modal (opened by New / Open when the document is dirty), which
-		// carries out the swap once resolved. Call LATE — after every panel drew — so the modal sits on
-		// a clean id stack.
-		void drawConfirmModal(AppContext& ctx, const lain::flow::Graph& graph);
+		// The unsaved-changes confirm modal (opened by New, Open or Quit when the document is dirty), which
+		// carries out the request once resolved: a Quit through `app`. Call LATE — after every panel
+		// drew — so the modal sits on a clean id stack.
+		void drawConfirmModal(AppContext& ctx, const lain::flow::Graph& graph, lain::app::Application& app);
+
+		// File ▸ Quit, Ctrl+Q and the window's close button (MainWindow::onCloseRequested): with nothing
+		// unsaved it quits at once and returns true; otherwise the guard holds it for the modal, which
+		// quits on Save or Discard and keeps the window on Cancel, and it returns false.
+		bool requestQuit(AppContext& ctx, lain::app::Application& app);
 
 		// Load `path` into the scene (deferred to end-of-frame like every graph swap), recording it as
 		// the current document + the head of Open Recent. Returns false, keeping the current document,
@@ -85,6 +90,7 @@ namespace flowview
 		// is consumed, so an outer crumb unwinds several templates at once.
 		void returnToDocument(AppContext& ctx, std::size_t index);
 		void requestSwap(AppContext& ctx, PendingSwap swap);
+		// Carries out a New or an Open. A Quit is the Application's, so the modal ends it itself.
 		void performSwap(AppContext& ctx, const PendingSwap& swap);
 		bool openGraphDialog(AppContext& ctx); // whether a document was opened: false if cancelled or refused
 		// Save writes the DOCUMENT — the root graph and every level's layout — never the graph the

@@ -72,6 +72,14 @@ namespace flowview
 		requestSwap(ctx, {DocumentSwap::Open, path, false, std::nullopt});
 	}
 
+	bool MenuBarPane::requestQuit(AppContext& ctx, app::Application& app)
+	{
+		if (!ctx.guard.request({DocumentSwap::Quit, {}, false, std::nullopt}, ctx.dirty))
+			return false;
+		app.exit();
+		return true;
+	}
+
 	void MenuBarPane::returnToDocument(AppContext& ctx, std::size_t index)
 	{
 		if (index >= ctx.returnStack.size())
@@ -127,7 +135,22 @@ namespace flowview
 		}
 	}
 
-	void MenuBarPane::drawConfirmModal(AppContext& ctx, const flow::Graph& graph)
+	// What the modal asks, by what it would do.
+	static const char* unsavedQuestion(const PendingSwap* pending)
+	{
+		switch (pending ? pending->kind : DocumentSwap::New)
+		{
+			case DocumentSwap::New:
+				return "Discard the current graph? Unsaved changes will be lost.";
+			case DocumentSwap::Open:
+				return "Open another graph? Unsaved changes to the current one will be lost.";
+			case DocumentSwap::Quit:
+				return "Quit? Unsaved changes to the current graph will be lost.";
+		}
+		return "";
+	}
+
+	void MenuBarPane::drawConfirmModal(AppContext& ctx, const flow::Graph& graph, app::Application& app)
 	{
 		if (ctx.guard.takePrompt())
 			gui::OpenPopup("Unsaved changes");
@@ -135,10 +158,7 @@ namespace flowview
 		{
 			// Escape closes the modal without resolving; the request left in the guard is harmless
 			// (nothing reads it outside this block, and the next request replaces it).
-			const PendingSwap* pending = ctx.guard.pending();
-			gui::TextUnformatted(!pending || pending->kind == DocumentSwap::New
-									 ? "Discard the current graph? Unsaved changes will be lost."
-									 : "Open another graph? Unsaved changes to the current one will be lost.");
+			gui::TextUnformatted(unsavedQuestion(ctx.guard.pending()));
 			const auto resolve = [&](editor::UnsavedAnswer answer)
 			{
 				// Save may prompt for a path if the document is untitled. Cancelling that panel — or a
@@ -147,7 +167,9 @@ namespace flowview
 				const std::optional<PendingSwap> swap = ctx.guard.answer(answer, [&]
 																		 { return saveToCurrentPath(ctx, graph); });
 				gui::CloseCurrentPopup();
-				if (swap)
+				if (swap && swap->kind == DocumentSwap::Quit)
+					app.exit();
+				else if (swap)
 					performSwap(ctx, *swap); // last: an Open... prompts with a native dialog
 			};
 
@@ -532,7 +554,7 @@ namespace flowview
 					reloadTemplates(ctx, graph);
 				gui::Separator();
 				if (gui::MenuItem("Quit", (m + "Q").c_str()))
-					app.exit();
+					requestQuit(ctx, app);
 				gui::EndMenu();
 			}
 			if (gui::BeginMenu("Edit"))
@@ -667,7 +689,7 @@ namespace flowview
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))
 			saveToCurrentPath(ctx, graph);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Q, ImGuiInputFlags_RouteGlobal))
-			app.exit();
+			requestQuit(ctx, app);
 		// Run / Run Selection / Stop. Cmd+Period is the macOS convention for "stop what you are doing"; Ctrl+Period
 		// elsewhere, by the same Ctrl -> Cmd remap as every other chord here.
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Enter, ImGuiInputFlags_RouteGlobal))

@@ -35,6 +35,9 @@ namespace flowview
 	public:
 		bool onInit(lain::app::Window& window) override;
 		void onRender(lain::app::Window& window, const lain::app::TimeState& time) override;
+		// The close button goes through the document's guard, as Quit does: with unsaved work the window
+		// stays open while the question is asked.
+		bool onCloseRequested(lain::app::Window& window) override;
 		void onShutdown(lain::app::Window& window) override;
 
 	private:
