@@ -3,7 +3,8 @@
 # (lain::rigplan::capture).
 
 # The editor's driver-free units: the document, the selection, the edits, the orbit, the picking, the
-# overlays and the gizmo bridge (M15 slice 8d), and the session file and the panes (8e). Compiled ONCE
+# overlays and the gizmo bridge (M15 slice 8d), the session file and the panes (8e), and the Viewport's
+# asset jobs (8f). Compiled ONCE
 # into an object library that rigplan and its test both link, as flowview-tested is, so the test
 # exercises the one editor the app runs and the two cannot drift. An OBJECT library, so every object is
 # linked whether or not something names it. Its link libraries are what these sources need, PUBLIC so
@@ -11,6 +12,7 @@
 # in the test, lain::render is here for its View and Segment, and nothing opens a window or a device
 # (Vulkan::Loader resolves archimedes' vk* symbols at link time, as for flowview-tested).
 add_library(rigplan-tested OBJECT
+	src/assetjobs.cpp
 	src/document.cpp
 	src/selection.cpp
 	src/edits.cpp
@@ -36,6 +38,7 @@ target_link_libraries(rigplan-tested
 		   lain::gui			   # ImGuizmo, through gizmo.h, and the panes' ImGui
 		   lain::io::image lain::io::mesh # the pickers' filters: what a picture and a mesh can be
 		   lain::string archimedes Vulkan::Loader
+		   lain::task # the asset jobs, on the process pool
 	PRIVATE lain::warnings
 )
 

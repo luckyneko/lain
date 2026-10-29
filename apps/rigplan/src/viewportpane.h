@@ -1,6 +1,7 @@
 #pragma once
 
 #include "appcontext.h"
+#include "assetjobs.h"
 #include "gizmo.h"
 #include "orbit.h"
 
@@ -11,14 +12,12 @@
 #include <lain/render/viewport.h>
 #include <lain/rigplan/realisation.h>
 #include <lain/rigplan/scene.h>
-#include <lain/task/task.h>
 
 #include <archimedes/acmCommandBuffer.h>
 #include <archimedes/acmDevice.h>
 
 #include <cstddef>
 #include <cstdint>
-#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -52,9 +51,10 @@ namespace rigplan
 		void draw(AppContext& ctx);
 
 		// After every pane has drawn: when the plan, the frame shown or the assets changed, the scene is
-		// built again and brought to the device, the missing asset jobs are posted and what the plan no
-		// longer draws is pruned; then the overlays for this frame.
-		void update(AppContext& ctx);
+		// built again and brought to the device and what the plan no longer draws is pruned; the missing
+		// asset jobs are posted, unless a `gesture` is under way (AssetJobs); then the overlays for this
+		// frame.
+		void update(AppContext& ctx, bool gesture);
 
 		// The frame's pre-pass: the view recorded into its texture, before the frame's draw pass shows it.
 		void record(acm::CommandBuffer& cmd, std::uint32_t frame);
@@ -84,9 +84,9 @@ namespace rigplan
 		lain::rigplan::SceneResult m_fullScene;
 		lain::rigplan::SceneResult m_scene;
 		std::vector<bool> m_cut;
-		std::map<std::string, lain::task::Handle<lain::rigplan::AssetOutcome>> m_jobs; // by job key
-		std::vector<std::string> m_deviceProblems;									   // why the scene did not reach the device
-		std::vector<std::string> m_recordProblems;									   // why the last frame recorded nothing
+		AssetJobs m_jobs;
+		std::vector<std::string> m_deviceProblems; // why the scene did not reach the device
+		std::vector<std::string> m_recordProblems; // why the last frame recorded nothing
 
 		// The view, and what it draws over the scene this frame.
 		Orbit m_orbit;

@@ -393,6 +393,41 @@ TEST_CASE("a texture is sampled where the mesh's coordinates say, in linear ligh
 		CHECK(p.r == p.g);
 		CHECK(p.g == p.b);
 	}
+	SECTION("converted ahead (storedTexture), it draws exactly what it draws converted by the upload")
+	{
+		// A ramp, so each block is its own code and a conversion that differed would show somewhere.
+		auto ramp = std::make_shared<image::Image>(4, 4, image::PixelFormat::Gray32F, image::ColorSpace::Linear);
+		float* values = reinterpret_cast<float*>(ramp->data());
+		for (int i = 0; i < 16; ++i)
+			values[i] = float(i) / 15.0f;
+		const auto ahead = std::make_shared<const image::Image>(storedTexture(*ramp));
+		REQUIRE(ahead->pixelFormat() == image::PixelFormat::RGBA8);
+		REQUIRE(ahead->colorSpace() == image::ColorSpace::sRGB);
+		scene.meshes = {testing::square()};
+		scene.instances = {Instance{0, placement, {0}}};
+		scene.textures = {ramp};
+		const image::Image byUpload = draw(renderer, scene, view);
+		scene.textures = {ahead};
+		const image::Image converted = draw(renderer, scene, view);
+		REQUIRE(converted.byteSize() == byUpload.byteSize());
+		CHECK(std::memcmp(converted.data(), byUpload.data(), byUpload.byteSize()) == 0);
+	}
+}
+
+TEST_CASE("a stored texture is 8-bit sRGB, and one that states no colour space has none", "[render]")
+{
+	image::Image linear(2, 2, image::PixelFormat::RGB16, image::ColorSpace::Linear);
+	const image::Image stored = storedTexture(linear);
+	CHECK(stored.pixelFormat() == image::PixelFormat::RGBA8);
+	CHECK(stored.colorSpace() == image::ColorSpace::sRGB);
+	CHECK(stored.width() == 2);
+	// Already stored, it comes back as it is.
+	const image::Image again = storedTexture(stored);
+	REQUIRE(again.byteSize() == stored.byteSize());
+	CHECK(std::memcmp(again.data(), stored.data(), stored.byteSize()) == 0);
+
+	const image::Image untagged(2, 2, image::PixelFormat::Gray8, image::ColorSpace::Unspecified);
+	CHECK_FALSE(storedTexture(untagged).valid());
 }
 
 TEST_CASE("the renderer refuses what it cannot draw, and says why", "[render][gpu]")

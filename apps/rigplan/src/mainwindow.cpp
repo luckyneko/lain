@@ -83,13 +83,15 @@ namespace rigplan
 			m_ctx.selection = Selection::nothing();
 
 		// One step of history per gesture: a drag in the Inspector, or of the gizmo, is recorded once it
-		// ends, however many frames it changed the plan for.
-		if (m_ctx.document.pendingSnapshot && !gui::IsAnyItemActive() && !gui::gizmo::IsUsing())
+		// ends, however many frames it changed the plan for. The same boundary holds back the Viewport's
+		// asset jobs, so a drag bakes only where it ends.
+		const bool gesture = gui::IsAnyItemActive() || gui::gizmo::IsUsing();
+		if (m_ctx.document.pendingSnapshot && !gesture)
 			commit(m_ctx.document);
 
 		// The scene and the overlays for this frame, now every pane has had its say: built again when the
 		// plan, the frame shown or the assets changed, and recorded in the pre-pass below.
-		m_viewport->update(m_ctx);
+		m_viewport->update(m_ctx, gesture);
 
 		const std::string name = m_ctx.document.path.empty() ? std::string("Untitled") : m_ctx.document.path.filename().string();
 		const std::string title = string::format("{}{} - rigplan", name, m_ctx.document.dirty ? " *" : "");

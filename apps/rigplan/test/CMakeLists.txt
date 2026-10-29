@@ -5,6 +5,7 @@
 
 add_executable(test-rigplan-app
 	test_examples.cpp
+	test_assetjobs.cpp
 	test_document.cpp
 	test_edits.cpp
 	test_orbit.cpp

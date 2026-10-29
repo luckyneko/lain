@@ -90,6 +90,14 @@ namespace lain::render
 		std::vector<std::string> problems;
 	};
 
+	// A texture as a device stores it: 8-bit sRGB RGBA, which the device decodes to linear light before
+	// it filters. An upload converts any other texture to this on the thread that uploads, and that is
+	// nearly all an upload costs: an 8192 x 8192 linear texture took 0.75 s on Metal, 0.03 s once
+	// stored. A texture already stored goes up as it is, uncopied. So a host that uploads on its frame
+	// loop converts its textures elsewhere first, through this, and the device holds the same texels
+	// either way. Invalid when `texture` states no colour space.
+	image::Image storedTexture(const image::Image& texture);
+
 	// The raster renderer (ADR-0028) on one device: its pipelines are built once, then any number of
 	// scenes is uploaded and drawn. The device must outlive it and every scene it uploads. render() is
 	// synchronous: it waits for the device and reads the picture back. A Viewport draws on its behalf

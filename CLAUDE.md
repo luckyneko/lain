@@ -1400,7 +1400,35 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
-### Update 2026-10-28 — M15 slice 8, sub-slice 8f built: the Viewport (**slice 8 BUILT; gui-mode checklist owed**)
+### Update 2026-10-29 — M15 slice 8 live-verified: a landing bake stalled the window, and a drag baked every size
+
+The repo owner walked slice 8's gui-mode checklist on Metal, and **all twelve steps pass**, so **slice 8
+is live-verified**. Step 12 (quit while assets bake) found two defects first, both fixed. Step 11
+discharges slice 0's live check of the unsaved-changes modal, in rigplan. `ctest -j8` **1625/1625**
+Release with video, camera and Ceres on (+3), and **1484/1484** with all three off (+3); warning-clean,
+format-check clean. After the fix, Quit waits for the running bakes and exits cleanly, as designed.
+Full notes in WORK.md's *After 8f*.
+
+- **Step 10 needed explaining, not fixing.** The row is about the camera's optical centre: 33.7 mm of
+  three-poles' pole axes, not the body touching the pole. The step's text now says so.
+- **three-poles' bakes are too quick to quit before** (0.20 s for its floor), so a 20 m room was used
+  (1.83 s at the 8192 cap), and the window stalled as those bakes landed.
+- **The stall was the conversion to the device's 8-bit sRGB, on the frame loop.** A temporary probe
+  timed one 8192² upload on Metal at 0.70 to 0.75 s from a linear bake against 0.015 to 0.029 s
+  already stored.
+  - **`render::storedTexture`** makes that conversion public, and an upload of a stored texture neither
+    converts nor copies it.
+  - **`rigplan::scene`'s jobs make every picture, bake and board drawing stored**, on the pool, so the
+    device holds the same texels and a landing texture costs the frame its copy.
+  - **Measured in the real binary** on a 20 m room: the longest of 300 frames fell from 1.85 s to
+    0.033 s.
+- **A drag posted a bake every frame, each run to its end.** Decided with the repo owner: **no asset job
+  is posted during a gesture**; it is owed and posted when the gesture ends, the boundary undo commits
+  at. The rule is a driver-free unit, `AssetJobs` (`apps/rigplan/src/assetjobs.{h,cpp}`), with two cases.
+- **Five sabotages, all caught.** One first failed to build under `-Werror`, so the old binary answered
+  until it was redone.
+
+### Update 2026-10-28 — M15 slice 8, sub-slice 8f built: the Viewport (**slice 8 BUILT; gui-mode checklist owed**, *live-verified 2026-10-29, see above*)
 
 The plan drawn on the device in rigplan's Viewport pane, with its overlays, the floor grid and
 ImGuizmo. `ctest -j8` **1622/1622** Release with video, camera and Ceres on (+3), and **1481/1481** with all three
@@ -1426,6 +1454,7 @@ WORK.md's *Sub-slice 8f built*.
 - **The View menu's Frame All (Home), Frame Selected (F), Preview Light and Frustum Depth** land here.
   A plan opened or made is framed whole.
 - **Owed next:** the gui-mode checklist, then flowview's Quit fix (*Known defects*), then slice 9.
+  *(The checklist passed 2026-10-29; see the entry above.)*
 
 ### Update 2026-10-28 — M15 slice 8, sub-slice 8e built: the editor's shell, and `lain::app`'s close veto
 
@@ -2410,7 +2439,8 @@ Full notes in WORK.md's *Slice 0 built*, under M15.
   - a stale prompt flag that would have opened the modal asking about nothing;
   - a json-only test helper that would have failed a json-off build under `-Werror`.
 - **Four sabotages, all caught.** Owed: a live check of the unsaved-changes modal (New and Open with
-  unsaved work; Save, Discard and Cancel; a cancelled Save panel).
+  unsaved work; Save, Discard and Cancel; a cancelled Save panel). *(Done 2026-10-29 in rigplan, by M15
+  slice 8's checklist; flowview's waits on its Quit fix.)*
 
 ### Update 2026-10-22 — M15 designed: rig design, rig plans and synthetic captures (nothing built yet)
 

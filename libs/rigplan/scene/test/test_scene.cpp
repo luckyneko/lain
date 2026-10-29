@@ -9,6 +9,7 @@
 #include <lain/io/image/save.h>
 #include <lain/io/mesh/codecs.h>
 #include <lain/io/mesh/load.h>
+#include <lain/render/renderer.h>
 #include <lain/rigplan/scene.h>
 #include <lain/testing/scratch.h>
 
@@ -17,6 +18,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <set>
@@ -135,7 +138,8 @@ TEST_CASE("a picture repeats every tile and reads upright from the side it faces
 	const AssetsResult assets = loadSceneAssets(plan);
 	REQUIRE(assets.problems.empty());
 	REQUIRE(assets.assets.pictures.count(brick) == 1);
-	CHECK(assets.assets.pictures.at(brick)->colorSpace() == image::ColorSpace::sRGB); // taken as sRGB
+	CHECK(assets.assets.pictures.at(brick)->colorSpace() == image::ColorSpace::sRGB);	 // taken as sRGB
+	CHECK(assets.assets.pictures.at(brick)->pixelFormat() == image::PixelFormat::RGBA8); // and stored
 
 	const SceneResult result = sceneOf(plan, assets.assets);
 	REQUIRE(result.problems.empty());
@@ -169,11 +173,12 @@ TEST_CASE("a procedural surface reads proceduralGrey in metres from its corner",
 	CHECK(key.width == 800);
 	CHECK(key.height == 600);
 	CHECK(key.seed != 11); // mixed with the surface's identity
-	REQUIRE(bake->width() == 800);
-	// A texel is the texture at its centre, under the mixed seed.
-	const float* texels = reinterpret_cast<const float*>(bake->data());
-	CHECK(texels[123 * 800 + 456] ==
-		  Catch::Approx(image::proceduralGrey({key.seed, 0.05}, (456 + 0.5) / 400, (123 + 0.5) / 400) / 255).margin(1e-6));
+	// The texture under the mixed seed, at that density and size, held as the device stores it. Where a
+	// texel samples (its centre) is lain::image's, and its test pins it.
+	const image::Image expected = render::storedTexture(image::bakeProceduralTexture({key.seed, 0.05}, 800, 600, 400));
+	REQUIRE(bake->pixelFormat() == image::PixelFormat::RGBA8);
+	REQUIRE(bake->byteSize() == expected.byteSize());
+	CHECK(std::memcmp(bake->data(), expected.data(), expected.byteSize()) == 0);
 
 	// The floor's corner at its south-west is texel (0, 0); its north-east corner the bake's far edge.
 	// The renderer reads v upward, so texel row t * d is at v = 1 - t * d / height.
@@ -203,11 +208,11 @@ TEST_CASE("no two surfaces of one procedural material repeat each other", "[rigp
 	const AssetsResult first = loadSceneAssets(plan);
 	REQUIRE(first.assets.baked.size() == 6);
 	std::set<std::uint64_t> seeds;
-	std::set<float> corners; // each bake's first texel
+	std::set<std::uint8_t> corners; // each bake's first texel, its stored code
 	for (const auto& [key, bake] : first.assets.baked)
 	{
 		seeds.insert(key.seed);
-		corners.insert(*reinterpret_cast<const float*>(bake->data()));
+		corners.insert(bake->data()[0]);
 	}
 	CHECK(seeds.size() == 6);
 	CHECK(corners.size() > 1);

@@ -53,7 +53,7 @@ namespace lain::rigplan
 	// the board frame puts it; the back is `backing` behind it.
 	struct BoardSheet
 	{
-		std::shared_ptr<const image::Image> raster; // 8-bit grey, sRGB as printed
+		std::shared_ptr<const image::Image> raster; // its codes as printed, stored as the device stores them
 		std::shared_ptr<const mesh::Mesh> print;
 		std::shared_ptr<const mesh::Mesh> back;
 		std::string madeFrom; // what it was drawn from, so a board whose drawing changed is drawn again
@@ -71,7 +71,9 @@ namespace lain::rigplan
 	// prop's mesh (a clip of one) or mesh clip, each picture a material or a mesh's material names, each
 	// procedural surface baked to its extent, each board drawn, and the meshes the plan's own geometry
 	// makes. Every frame's scene names these by the same pointers, so Renderer::update re-uploads none of
-	// them from one frame to the next: a frame costs what moved.
+	// them from one frame to the next: a frame costs what moved. Every texture is held as the device
+	// stores it (render::storedTexture), made so by the job that read, baked or drew it, so a host that
+	// uploads on its frame loop pays the copy alone when one lands.
 	struct SceneAssets
 	{
 		std::map<core::Uuid, PropMesh> props;

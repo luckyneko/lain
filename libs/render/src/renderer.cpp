@@ -209,12 +209,18 @@ namespace lain::render
 		return m->problems;
 	}
 
-	// A texture as the device stores it: 8-bit sRGB, so the device decodes it to linear light before
-	// it filters. A deeper or linear texture is narrowed by lain's own conversions first, once.
-	static image::Image asSrgb8(const image::Image& texture)
+	static bool stored(const image::Image& texture)
 	{
-		if (texture.pixelFormat() == image::PixelFormat::RGBA8 && texture.colorSpace() == image::ColorSpace::sRGB)
+		return texture.pixelFormat() == image::PixelFormat::RGBA8 && texture.colorSpace() == image::ColorSpace::sRGB;
+	}
+
+	// A deeper or linear texture is narrowed by lain's own conversions, once.
+	image::Image storedTexture(const image::Image& texture)
+	{
+		if (stored(texture))
 			return texture;
+		if (!texture.valid() || texture.colorSpace() == image::ColorSpace::Unspecified)
+			return {};
 		const image::Image wide = image::convert(texture, image::PixelFormat::RGBA32F);
 		return image::convert(image::convert(wide, image::ColorSpace::sRGB), image::PixelFormat::RGBA8);
 	}
@@ -306,7 +312,11 @@ namespace lain::render
 				gpu->textures.push_back(held->second);
 				continue;
 			}
-			const image::Image pixels = asSrgb8(*scene.textures[i]);
+			const image::Image& source = *scene.textures[i];
+			image::Image converted;
+			if (!stored(source))
+				converted = storedTexture(source);
+			const image::Image& pixels = stored(source) ? source : converted;
 			if (!pixels.valid())
 			{
 				problems.push_back(string::format("texture {} could not be converted to 8-bit sRGB", i));

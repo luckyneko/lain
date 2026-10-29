@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <exception>
 #include <utility>
 
 namespace rigplan
@@ -47,26 +46,8 @@ namespace rigplan
 
 	void ViewportPane::poll(AppContext&)
 	{
-		for (auto it = m_jobs.begin(); it != m_jobs.end();)
-		{
-			if (!it->second.complete())
-			{
-				++it;
-				continue;
-			}
-			rp::AssetOutcome outcome;
-			try
-			{
-				it->second.get(&outcome);
-			}
-			catch (const std::exception& e)
-			{
-				outcome = rp::AssetOutcome{it->first, {}, {string::format("{}: {}", it->first, e.what())}};
-			}
-			rp::addAsset(m_assets, std::move(outcome));
+		if (m_jobs.collect(m_assets))
 			m_assetsChanged = true;
-			it = m_jobs.erase(it);
-		}
 	}
 
 	// A column-major float[16], as ImGuizmo reads and writes a matrix.
@@ -207,7 +188,7 @@ namespace rigplan
 			m_orbit = framing(m_orbit, bounds->lower, bounds->upper, m_view.image);
 	}
 
-	void ViewportPane::update(AppContext& ctx)
+	void ViewportPane::update(AppContext& ctx, bool gesture)
 	{
 		if (!m_problems.empty())
 			return;
@@ -215,18 +196,14 @@ namespace rigplan
 		const std::size_t frame = shownFrame(plan, ctx.selection);
 		lain::data::Value now = snapshot(plan);
 		const bool planChanged = !m_builtFrom || *m_builtFrom != now;
+		const bool assetsChanged = m_assetsChanged;
 		bool rebuilt = false;
 		if (planChanged || frame != m_builtFrame || m_assetsChanged || m_builtPreviewLight != ctx.view.previewLight)
 		{
-			// The surfaces' and poles' meshes at once; everything slower on the pool, posted once each.
+			// The surfaces' and poles' meshes at once; everything slower on the pool, below.
 			rp::sceneGeometry(plan, m_assets);
 			if (planChanged)
 				rp::pruneAssets(plan, m_assets);
-			for (rp::AssetJob& job : rp::missingAssets(plan, m_assets))
-			{
-				if (m_jobs.count(job.key) == 0)
-					m_jobs.emplace(job.key, task::async(std::move(job.run)));
-			}
 
 			m_layout = rp::nominalLayout(plan);
 			m_fullScene = rp::renderScene(plan, m_layout, m_assets, frame);
@@ -240,6 +217,9 @@ namespace rigplan
 			m_assetsChanged = false;
 			rebuilt = true;
 		}
+
+		// What the plan needs and its assets lack, on the pool, once no gesture is under way.
+		m_jobs.post(plan, m_assets, planChanged || assetsChanged, gesture);
 
 		// The dollhouse, from this frame's eye: the device's copy changes only when a wall goes or comes back.
 		const math::Vec3d eye = m_viewValid ? m_view.worldFromCamera.translation() : viewOf(m_orbit, {1, 1}).worldFromCamera.translation();
@@ -260,7 +240,7 @@ namespace rigplan
 				m_deviceProblems = m_renderer.update(*m_gpu, m_scene.scene).problems;
 		}
 
-		ctx.assetsPending = m_jobs.size();
+		ctx.assetsPending = m_jobs.pending();
 		ctx.assetProblems.clear();
 		for (const auto& [key, problems] : m_assets.failed)
 		{
@@ -303,12 +283,7 @@ namespace rigplan
 	void ViewportPane::release()
 	{
 		// Each job reads only what it captured, but its result is kept by this pane, so it is waited for.
-		for (auto& [key, job] : m_jobs)
-		{
-			(void)key;
-			task::waitAll(job);
-		}
-		m_jobs.clear();
+		m_jobs.wait();
 		m_texture = {};
 		m_viewport.reset();
 		m_gpu.reset();

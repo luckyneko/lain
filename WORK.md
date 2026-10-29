@@ -15037,8 +15037,9 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    both claims from the same pixels, and slice 1 already proves scale 0 is exactly nominal.)*
 8. **The gui, part 1**: the app shell and docking, the Viewport, Outliner and Inspector, ImGuizmo,
    frustums, undo through `lain::editor`. Live-verified by the repo owner. **Planned 2026-10-28 as six
-   commits, 8a to 8f** (*Slice 8 planned* below); **all six built 2026-10-28, and the gui-mode checklist is
-   owed**. *(Amended while planning: the Viewport draws the
+   commits, 8a to 8f** (*Slice 8 planned* below); **all six built 2026-10-28, and live-verified
+   2026-10-29**: every step of the gui-mode checklist passes, step 12 after the fix it found, a bake
+   stalling the window as it landed (*After 8f*). *(Amended while planning: the Viewport draws the
    nominal plan only, a mover's keys are edited as a table, and a plan's own specifications are edited
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
@@ -15113,7 +15114,8 @@ added. Warning-clean, format-check clean. The Debug build was not run.
   - noting a listed document without deduplicating.
 - **gui-mode NOT eyeballed beyond the `--frames` smoke.** The unsaved-changes modal (New and Open with
   unsaved work, then Save, Discard, Cancel, and a Save panel cancelled) changed code path and needs a
-  live check.
+  live check. *(Discharged 2026-10-29 in rigplan, by slice 8's step 11; flowview's own check waits on
+  its Quit fix.)*
 
 ### Slice 1 planned (2026-10-22), and 1a built
 
@@ -17419,11 +17421,16 @@ is built.
   8. Undo and redo each of 3 to 7. A gizmo drag is one step, and the selection survives.
   9. Rename a camera to another camera's name, and to `a/b`: both refused, and nothing changes.
   10. Drag a camera into its pole: an Issues row says so, and clicking it selects the camera. Drag it
-      out: the row goes.
+      out: the row goes. *(Into it means its optical centre within the pole's radius plus what its
+      tolerances can move it, 33.7 mm of three-poles' axes, not its body touching the pole: an offset
+      y of 0.02 in the Inspector shows it.)*
   11. Save, close and reopen: the plan is as it was. New, Open, Open Recent, Quit and the window's
       close button each ask with unsaved work. Save, Discard and Cancel each do what they say, and a
       cancelled Save panel cancels the request.
-  12. Reset Layout. Quit while assets are still baking.
+  12. Reset Layout. Quit while assets are still baking. *(three-poles' bakes land in 0.2 s, too soon to
+      beat, and Reset Layout restores the docks, never the plan. A room typed to 20 × 20 m bakes its
+      floor and ceiling at the 8192 cap, about 2 s, while the status bar says assets are loading. Walked
+      2026-10-29, it found the window stalling as those bakes landed: see After 8f.)*
 
   Slice 0's owed check of the unsaved-changes modal is step 11, in rigplan. flowview's own check needs
   its Quit fix first.
@@ -17835,7 +17842,7 @@ dialogs and the modal's answers are the repo owner's checklist after 8f, steps 2
   - a `TreePop` left out of the Outliner: every frame of the pane case counts an error;
   - a request that ignores unsaved work: the held-New case fails.
 
-#### Sub-slice 8f built (2026-10-28): the Viewport (**slice 8 BUILT; its gui-mode checklist is owed**)
+#### Sub-slice 8f built (2026-10-28): the Viewport (**slice 8 BUILT**; *live-verified 2026-10-29, after After 8f's fixes*)
 
 The plan drawn on the device in the editor's Viewport pane, with its overlays, the floor grid and the
 gizmo. `ctest -j8` **1622/1622** Release with video, camera and Ceres on (+3), and **1481/1481** with all three
@@ -17853,6 +17860,7 @@ steps 1 to 4, 6, 10 and 12. What it draws was looked at, through a probe (below)
     Light changed, the scene is built again. That is `sceneGeometry`; `pruneAssets` when the plan
     changed; each missing job posted on the process pool, once; `nominalLayout`; `renderScene`, with a
     dark background and the preview's ambient 0.15. Then the overlays and the grid for this frame.
+    *(Since 2026-10-29 the jobs are `AssetJobs`', posted only outside a gesture: see After 8f.)*
   - **`record`**, in the frame's pre-pass, outside any rendering scope; the pane's texture is resolved
     after it, when ImGui records (8a).
 - **Found by looking at the picture: a room hid the rig.** Framing all of a plan puts the eye outside
@@ -17901,6 +17909,67 @@ steps 1 to 4, 6, 10 and 12. What it draws was looked at, through a probe (below)
   everything; the two framings' bounds; the grid over a room and without one.
 - **Two sabotages, both caught:** the cutaway hiding the surfaces the eye is inside of (4 failures), and
   Frame Selected without its minimum size.
+
+#### After 8f: the checklist walked, and a bake that landed stalled the window (2026-10-29; **slice 8 live-verified**)
+
+The repo owner walked the gui-mode checklist on Metal, and **all twelve steps pass**: 1 to 11 as
+written, and 12 after the two defects it found were fixed here. Step 11 discharges slice 0's owed live
+check of the unsaved-changes modal, in rigplan.
+`ctest -j8` **1625/1625** Release with video, camera and Ceres on (+3), and **1484/1484** with all three
+off (+3); warning-clean, format-check clean.
+
+- **Step 10 needed its bar explained, not a fix.** The row is about the camera's optical centre, not its
+  body: it appears once the centre could lie inside the pole as far as its tolerances move it. In
+  three-poles that is within 33.7 mm of the pole's axis (a 25 mm radius, plus √3 times the 5 mm offset
+  tolerance), where the cameras sit 125 mm out, so the body box touches the pole long before. Setting
+  `left-low`'s offset y to 0.02 in the Inspector shows it; the step's text now says so.
+- **Step 12's bakes were too quick to beat.** three-poles' floor (2500 × 2500 texels) bakes in 0.20 s
+  here, before any Quit's question can be answered. A 20 × 20 m room bakes its floor and ceiling at the
+  8192 cap, 1.83 s each. And then the window stalled as they landed.
+- **The stall was the texture conversion, on the frame loop.** `Renderer::update` narrowed each new
+  texture to the 8-bit sRGB the device stores, on the thread that uploads. Measured through a
+  temporary `[gpu]` probe (removed), uploading one 8192 × 8192 texture:
+
+  | | Metal | CPU device |
+  |---|---|---|
+  | linear `Gray32F`, as a bake made it | 0.70 to 0.75 s | 1.04 to 1.12 s |
+  | already 8-bit sRGB | 0.015 to 0.029 s | 0.36 s |
+
+  The conversion alone measured 0.85 s off the device. ADR-0025's rule, carried to rigplan by slice 8's
+  plan, is that the gui never waits on asset work, and this was asset work.
+- **The fix, in two parts:**
+  - **`render::storedTexture`** (`renderer.h`) is the conversion an upload already made, now public.
+    An upload of a texture already in that form neither converts nor copies it.
+  - **`rigplan::scene`'s jobs make each picture, bake and board drawing in that form**, on the pool.
+    `SceneAssets` says so. No consumer of the assets reads them except to draw them, so the device holds
+    the same texels as before, and the scene tests that draw on the device are unchanged.
+- **Found by the same step: a drag posted a bake every frame.** Resizing a room by dragging its Size
+  baked every size the drag passed through, each to its end, since a job cannot be stopped once posted.
+  At three-poles' size that is a few seconds of the pool; at the 8192 cap each is about 1.8 s and holds a
+  270 MB float image. **Decided with the repo owner: no asset job is posted during a gesture.** What the
+  plan needs meanwhile is owed and posted once the gesture ends. That is the boundary undo already
+  commits at, and `MainWindow` now asks it once a frame for both (`IsAnyItemActive() ||
+  gizmo::IsUsing()`). Until the jobs land, a resized surface is drawn mid grey, as step 6 says.
+- **`AssetJobs`** (`assetjobs.{h,cpp}`, driver-free, in `rigplan-tested`) is the Viewport's jobs moved
+  out of the pane, so the rule is under test: `collect`, `post(plan, assets, changed, gesture)`,
+  `pending`, `wait`. A job already running is not posted again, and with nothing changed and nothing
+  owed, nothing is asked.
+- **The cases** (+3): `test_assetjobs.cpp` (2): a gesture posts nothing and what it owed goes once it
+  ends, unchanged since; and outside a gesture a change posts at once and no change asks nothing.
+  `test-render` (1, and a section): `storedTexture`'s format and refusal; and, in the texture case, a
+  texture converted ahead draws byte for byte what the upload's own conversion draws. The scene tests now pin a bake as exactly the stored
+  texture under its mixed seed (where a texel samples is lain::image's to pin, and its test does), and
+  that a picture and a board's drawing are stored.
+- **Measured in the real binary**, through a temporary longest-frame probe (removed), on three-poles
+  with a 20 × 20 × 5 m room, over 300 frames: the longest frame was 1.85 s with the bake converted on
+  the upload, and 0.025 to 0.033 s with it converted on the pool, no frame over 50 ms. Quitting that
+  plan at frame 3, while its bakes run, waits for them and exits 0.
+- **Five sabotages, all caught:** a gesture that posts (the first cut did not build under `-Werror`, so
+  the old binary answered until it was redone); nothing kept owed; asking with nothing changed; and a
+  bake and a picture left unconverted.
+- **Step 12, walked again after the fix:** the window stays responsive while the 20 m room's bakes run,
+  and Quit then waits for them before the window goes (a bake cannot be stopped once posted), with no
+  crash. That is the designed behaviour, so the step passes.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
@@ -18159,11 +18228,14 @@ row here**. A row is cheap to delete and expensive to leave.
   gui-mode checklist for the repo owner (*Slice 8 planned*); **all six built the same day** (a pane
   shows a texture it did not upload; ImGuizmo; a grid drawn in shading; the nominal layout, `aimOf`
   and pooled asset jobs; rigplan's driver-free editor units; the editor's shell and `lain::app`'s
-  close veto; the Viewport). **Slice 8's 12-step gui-mode checklist is owed** (*Slice 8 planned*, its
-  end), on a Metal session. Two of 7a's findings are for
+  close veto; the Viewport). **Slice 8 was live-verified 2026-10-29**: all twelve steps of its gui-mode
+  checklist pass, step 12 after fixing the two defects it found, the window stalling as a large bake
+  landed and a drag baking every size it passed through (*After 8f*). **Next is slice 9.** Two of 7a's
+  findings are for
   the repo owner: `registration/1` judges a rig registered with uncalibrated models Ready, and the size
   estimate's floor is not a floor for a dark scene (*Sub-slice 7a built*).
-  Slice 0's gui-mode check of the unsaved-changes modal is owed. M9's rig binder owes two fixes M15
+  Slice 0's live check of the unsaved-changes modal is discharged in rigplan (slice 8's step 11);
+  flowview's own needs its Quit fix first. M9's rig binder owes two fixes M15
   found, both symptoms of a binder that does not read a capture's layout: it pairs footage with models
   by sorted position (5e; the writer refuses names that sort differently as folders and as documents),
   and it names a camera with one frame by its file, not its folder (*Slice 6 planned*). One finding

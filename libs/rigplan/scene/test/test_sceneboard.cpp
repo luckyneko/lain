@@ -41,6 +41,7 @@ TEST_CASE("a board's sheet spans its raster, with the squares where the board fr
 	REQUIRE(sheet.raster->width() == 7 * 100 + 2 * 42);
 	REQUIRE(sheet.raster->height() == 5 * 100 + 2 * 42);
 	REQUIRE(sheet.raster->colorSpace() == image::ColorSpace::sRGB);
+	REQUIRE(sheet.raster->pixelFormat() == image::PixelFormat::RGBA8); // stored as the device keeps it
 
 	// The print's corners are the raster's outer edges in the board frame, facing a camera in front.
 	const mesh::Mesh& print = *sheet.print;

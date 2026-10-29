@@ -5,6 +5,7 @@
 #include <lain/io/image/load.h>
 #include <lain/io/mesh/load.h>
 #include <lain/log/log.h>
+#include <lain/render/renderer.h> // storedTexture: each texture made in the form the device keeps
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -238,6 +239,7 @@ namespace lain::rigplan
 		image::Image raster = std::move(rendered.rendering->raster);
 		if (raster.colorSpace() == image::ColorSpace::Unspecified)
 			raster.setColorSpace(image::ColorSpace::sRGB); // codes as printed
+		raster = render::storedTexture(raster);
 		const double x0 = -double(margin) / perMetre, x1 = (raster.width() - double(margin)) / perMetre;
 		const double y0 = -double(margin) / perMetre, y1 = (raster.height() - double(margin)) / perMetre;
 		return BoardSheet{std::make_shared<const image::Image>(std::move(raster)), sheet(x0, y0, x1, y1, 0.0, -1.0f, true),
@@ -287,7 +289,7 @@ namespace lain::rigplan
 			log::warn("rigplan: the picture {} states no colour space, so it is taken as sRGB", uri);
 			loaded->setColorSpace(image::ColorSpace::sRGB);
 		}
-		auto picture = std::make_shared<const image::Image>(std::move(*loaded));
+		auto picture = std::make_shared<const image::Image>(render::storedTexture(*loaded));
 		outcome.keep = [uri, picture](SceneAssets& assets)
 		{ assets.pictures[uri] = picture; };
 		return outcome;
@@ -383,7 +385,7 @@ namespace lain::rigplan
 							{
 								const image::ProceduralTexture mixed{key.seed, key.cell};
 								auto baked = std::make_shared<const image::Image>(
-									image::bakeProceduralTexture(mixed, key.width, key.height, key.texelsPerMetre));
+									render::storedTexture(image::bakeProceduralTexture(mixed, key.width, key.height, key.texelsPerMetre)));
 								return AssetOutcome{bakeKey(key), [key, baked](SceneAssets& kept)
 													{ kept.baked[key] = baked; },
 													{}};
