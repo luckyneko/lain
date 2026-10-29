@@ -1400,6 +1400,30 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-28 — M15 slice 8, sub-slice 8e built: the editor's shell, and `lain::app`'s close veto
+
+`rigplan [plan]` opens the editor: the menu bar, the Outliner, the Inspector, Issues and a status bar,
+docked round the Viewport's place, over the open plan. `ctest -j8` **1619/1619** Release with video, camera
+and Ceres on (+6), and **1478/1478** with all three off (+6); warning-clean, format-check clean. The windowed
+`[app]` cases ran on Metal. **gui-mode NOT driven by hand**: `--frames` smokes exit 0, and the panes
+run headless. Full notes in WORK.md's *Sub-slice 8e built*.
+
+- **`lain::app` gains `WindowDelegate::onCloseRequested`**, true by default. On false the loop clears
+  GLFW's close flag and carries on. It also gains `Window::setTitle`. The veto's case is windowed and
+  opt-in, like the other windowed cases, since a window needs a display: a deviation from the plan's
+  "headless". flowview's Quit fix, which this unblocks, is still owed (*Known defects*).
+- **New, Open, Open Recent, Quit and the close button all go through `DocumentGuard`.** A cancelled or
+  failed Save cancels the request.
+- **`require_subcommand(1)` is gone**, so `rigplan --licenses` works again (8a's finding), and
+  `rigplan render ...` is still the subcommand.
+- **The panes live in `rigplan-tested`** and run in a headless ImGui frame: every pane, 16 selections,
+  each frame held to ImGui's count of recovered errors, which Release keeps though its asserts are off.
+  Sabotage: a `TreePop` left out fails every frame.
+- **The session file is a path the context holds**, empty in a test, so no test writes `~/.rigplan`.
+- **Deviation:** the View menu has Reset Layout alone. Frame All, Frame Selected, Preview Light and
+  Frustum Depth come with the Viewport in 8f.
+- **Next is 8f**, the Viewport pane, then the repo owner's gui-mode checklist.
+
 ### Update 2026-10-28 — M15 slice 8, sub-slice 8d built: rigplan's editor, driver-free
 
 Seven units in `apps/rigplan/src`, compiled once into the OBJECT library `rigplan-tested`, which

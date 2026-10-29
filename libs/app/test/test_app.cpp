@@ -196,6 +196,53 @@ namespace
 				app.exit();
 		}
 	};
+
+	// A window that refuses its first close, as an editor does while it asks whether to save, and
+	// accepts the second. Asked to close at frame 2 and again at frame 6: the loop must carry on past
+	// the first and end at the second. The close flag is set by requestClose, exactly as the window's
+	// close button sets it, so no display event is needed.
+	struct VetoWindow : app::WindowDelegate
+	{
+		int asked = 0;
+		std::uint64_t lastFrame = 0;
+		std::vector<std::uint64_t> askedAt;
+
+		void onRender(app::Window& window, const app::TimeState& time) override
+		{
+			lastFrame = time.frame;
+			if (time.frame == 2 || time.frame == 6)
+				window.requestClose();
+			window.renderer().render([](acm::CommandBuffer, uint32_t) {});
+		}
+
+		bool onCloseRequested(app::Window&) override
+		{
+			askedAt.push_back(lastFrame);
+			return ++asked >= 2;
+		}
+	};
+
+	struct VetoApp : app::ApplicationDelegate
+	{
+		VetoWindow window;
+
+		bool onStart(app::Application& app) override
+		{
+			app::WindowSpec spec;
+			spec.title = "lain::app veto";
+			spec.width = 320;
+			spec.height = 240;
+			app.createWindow(spec, window);
+			return true;
+		}
+
+		// A net: a loop that ignored the veto ends at frame 2, one that ignored the acceptance runs here.
+		void onUpdate(app::Application& app, const app::TimeState& time, const app::InputState&) override
+		{
+			if (time.frame >= 20)
+				app.exit();
+		}
+	};
 } // namespace
 
 // The three phases in the order main writes them, so a case reads as one line and the suite
@@ -377,6 +424,24 @@ TEST_CASE("gui: a window delegate shuts down after the GPU has finished its fram
 
 	REQUIRE(runApp(app, 1, argv) == 0);
 	REQUIRE(delegate.window.landed);
+}
+
+TEST_CASE("gui: a window that refuses to close stays open, and closes when it agrees", "[app][gpu]")
+{
+	if (!std::getenv("LAIN_GUI_SMOKE"))
+		SKIP("set LAIN_GUI_SMOKE=1 to run the windowed smoke (needs a display + driver)");
+
+	VetoApp delegate;
+	app::Application app(delegate, {"test-app", {0, 0, 0}});
+	char arg0[] = "test-app";
+	char* argv[] = {arg0};
+
+	REQUIRE(runApp(app, 1, argv) == 0);
+	// Asked once per request, at the top of the frame after it: refused, then accepted.
+	REQUIRE(delegate.window.askedAt == std::vector<std::uint64_t>{2, 6});
+	// The loop carried on past the refusal, and ended at the acceptance, before onUpdate's net.
+	REQUIRE(delegate.window.lastFrame == 6);
+	REQUIRE(delegate.window.asked == 2);
 }
 
 TEST_CASE("headless: onProcess's status is the process's exit code", "[app]")

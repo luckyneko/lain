@@ -92,6 +92,10 @@ namespace rigplan
 	// The capture frame the Viewport shows for `selection`: a key's frame, and frame 0 otherwise.
 	std::size_t shownFrame(const lain::rigplan::RigPlan& plan, const Selection& selection);
 
+	// What the identity `owner` is in `plan`: the mount, camera, light, plane, box, prop or board it
+	// names, or nothing when it names none. What an Issues row about a problem's owner selects.
+	Selection selectionOf(const lain::rigplan::RigPlan& plan, const lain::core::Uuid& owner);
+
 	// The path of the mover `id` names, a board's or a prop mover's, or null.
 	const lain::rigplan::Path* pathOf(const lain::rigplan::RigPlan& plan, const lain::core::Uuid& id);
 	lain::rigplan::Path* pathOf(lain::rigplan::RigPlan& plan, const lain::core::Uuid& id);

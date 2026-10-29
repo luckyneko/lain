@@ -367,10 +367,18 @@ namespace lain::app
 			uint64_t frame = 0;
 			while (!s.quit)
 			{
+				// A window asked to close, by its button or by requestClose, asks its delegate first: one
+				// that refuses (an editor asking whether to save) stays open, and the loop goes on.
 				bool closing = false;
 				for (auto& e : s.windows)
-					if (e.window->shouldClose())
+				{
+					if (!e.window->shouldClose())
+						continue;
+					if (e.delegate->onCloseRequested(*e.window))
 						closing = true;
+					else
+						e.window->cancelClose();
+				}
 				if (closing)
 					break;
 

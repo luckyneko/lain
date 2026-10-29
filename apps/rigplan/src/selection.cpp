@@ -1,6 +1,7 @@
 #include "selection.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace rigplan
 {
@@ -84,6 +85,27 @@ namespace rigplan
 				return false;
 		}
 		return false;
+	}
+
+	Selection selectionOf(const rp::RigPlan& plan, const Uuid& owner)
+	{
+		if (owner.isNil())
+			return Selection::nothing();
+		const std::pair<Selected, bool> kinds[] = {
+			{Selected::Mount, hasId(plan.mounts, owner)},
+			{Selected::Camera, hasId(plan.cameras, owner)},
+			{Selected::Light, hasId(plan.lights, owner)},
+			{Selected::Plane, hasId(plan.planes, owner)},
+			{Selected::Box, hasId(plan.boxes, owner)},
+			{Selected::Prop, hasId(plan.props, owner)},
+			{Selected::Board, hasId(plan.boards, owner)},
+		};
+		for (const auto& [kind, found] : kinds)
+		{
+			if (found)
+				return Selection::object(kind, owner);
+		}
+		return Selection::nothing();
 	}
 
 	std::size_t shownFrame(const rp::RigPlan& plan, const Selection& selection)

@@ -1,13 +1,15 @@
-# rigplan — rig design (WORK.md M15). A thin lain::app client: its `render` subcommand writes a rig
-# plan's synthetic capture headless (lain::rigplan::capture), and the gui arrives with slices 8 and 9.
+# rigplan — rig design (WORK.md M15). A lain::app client: the editor, a window over lain::gui (M15
+# slices 8 and 9), and the `render` subcommand, which writes a rig plan's synthetic capture headless
+# (lain::rigplan::capture).
 
-# The editor's driver-free units (M15 slice 8d): the document, the selection, the edits, the orbit, the
-# picking, the overlays and the gizmo bridge. Compiled ONCE into an object library that rigplan and its
-# test both link, as flowview-tested is, so the test exercises the one editor the app runs and the two
-# cannot drift. An OBJECT library, so every object is linked whether or not something names it. Its link
-# libraries are what these sources need, PUBLIC so each consumer inherits them. Driver-free: lain::gui is
-# here for ImGuizmo's enum and lain::render for its View and Segment, and nothing opens a window or a
-# device (Vulkan::Loader resolves archimedes' vk* symbols at link time, as for flowview-tested).
+# The editor's driver-free units: the document, the selection, the edits, the orbit, the picking, the
+# overlays and the gizmo bridge (M15 slice 8d), and the session file and the panes (8e). Compiled ONCE
+# into an object library that rigplan and its test both link, as flowview-tested is, so the test
+# exercises the one editor the app runs and the two cannot drift. An OBJECT library, so every object is
+# linked whether or not something names it. Its link libraries are what these sources need, PUBLIC so
+# each consumer inherits them. Driver-free: the panes draw with ImGui, which a headless ImGui frame runs
+# in the test, lain::render is here for its View and Segment, and nothing opens a window or a device
+# (Vulkan::Loader resolves archimedes' vk* symbols at link time, as for flowview-tested).
 add_library(rigplan-tested OBJECT
 	src/document.cpp
 	src/selection.cpp
@@ -16,21 +18,32 @@ add_library(rigplan-tested OBJECT
 	src/picking.cpp
 	src/overlays.cpp
 	src/gizmo.cpp
+	src/session.cpp
+	src/panes/fields.cpp
+	src/panes/inspector.cpp
+	src/panes/issues.cpp
+	src/panes/menubar.cpp
+	src/panes/outliner.cpp
+	src/panes/statusbar.cpp
 )
 target_compile_features(rigplan-tested PUBLIC cxx_std_17)
 target_include_directories(rigplan-tested PUBLIC src)
 target_link_libraries(rigplan-tested
 	PUBLIC lain::rigplan lain::rigplan::serialize lain::rigplan::scene lain::render lain::camera lain::core lain::data
 		   lain::io lain::io::data # a rig plan read and written as a file
-		   lain::editor			   # the undo history a document holds
-		   lain::gui			   # ImGuizmo, through gizmo.h
+		   lain::editor			   # the undo history a document holds, the session, the guard
+		   lain::gui			   # ImGuizmo, through gizmo.h, and the panes' ImGui
+		   lain::io::image lain::io::mesh # the pickers' filters: what a picture and a mesh can be
 		   lain::string archimedes Vulkan::Loader
 	PRIVATE lain::warnings
 )
 
+# The app: the headless `render`, and the editor's window (M15 slice 8e), which needs a device and so is
+# not under ctest; its panes are rigplan-tested's.
 add_executable(rigplan
 	src/main.cpp
 	src/rigplanapp.cpp
+	src/mainwindow.cpp
 )
 
 target_compile_features(rigplan PRIVATE cxx_std_17)

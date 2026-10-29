@@ -1,5 +1,5 @@
-// rigplan — rig design (WORK.md M15). Today its one subcommand, `render`, writes a rig plan's
-// synthetic capture headless; the gui is slices 8 and 9.
+// rigplan — rig design (WORK.md M15): the editor, and `render`, which writes a rig plan's synthetic
+// capture headless.
 
 #include "rigplanapp.h"
 

@@ -251,3 +251,27 @@ TEST_CASE("everything added stands clear and checks clean", "[rigplan][edits]")
 	// With no mount to go on, a camera is refused.
 	CHECK_FALSE(rigplan::addCamera(p, Selection::object(Selected::Box, editorplan::boxId)).changed());
 }
+
+TEST_CASE("a problem's owner names what an Issues row selects", "[rigplan][edits]")
+{
+	rp::RigPlan p = plan();
+	CHECK(rigplan::selectionOf(p, editorplan::poleId) == Selection::object(Selected::Mount, editorplan::poleId));
+	CHECK(rigplan::selectionOf(p, editorplan::cam2Id) == Selection::object(Selected::Camera, editorplan::cam2Id));
+	CHECK(rigplan::selectionOf(p, editorplan::lightId) == Selection::object(Selected::Light, editorplan::lightId));
+	CHECK(rigplan::selectionOf(p, editorplan::planeId) == Selection::object(Selected::Plane, editorplan::planeId));
+	CHECK(rigplan::selectionOf(p, editorplan::boxId) == Selection::object(Selected::Box, editorplan::boxId));
+	CHECK(rigplan::selectionOf(p, editorplan::propId) == Selection::object(Selected::Prop, editorplan::propId));
+	CHECK(rigplan::selectionOf(p, editorplan::boardId) == Selection::object(Selected::Board, editorplan::boardId));
+	CHECK(rigplan::selectionOf(p, lain::core::Uuid{}) == Selection::nothing());
+	CHECK(rigplan::selectionOf(p, editorplan::id("a999")) == Selection::nothing());
+
+	// And check()'s own: a camera on a mount the plan lacks is reported about the camera.
+	p.cameras.back().mount = editorplan::id("a999");
+	bool found = false;
+	for (const rp::PlanDiagnostic& d : rp::check(p))
+	{
+		if (d.owner && rigplan::selectionOf(p, *d.owner) == Selection::object(Selected::Camera, editorplan::cam2Id))
+			found = true;
+	}
+	CHECK(found);
+}

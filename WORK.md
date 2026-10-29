@@ -15037,7 +15037,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    both claims from the same pixels, and slice 1 already proves scale 0 is exactly nominal.)*
 8. **The gui, part 1**: the app shell and docking, the Viewport, Outliner and Inspector, ImGuizmo,
    frustums, undo through `lain::editor`. Live-verified by the repo owner. **Planned 2026-10-28 as six
-   commits, 8a to 8f** (*Slice 8 planned* below); **8a to 8d built 2026-10-28**. *(Amended while planning: the Viewport draws the
+   commits, 8a to 8f** (*Slice 8 planned* below); **8a to 8e built 2026-10-28**. *(Amended while planning: the Viewport draws the
    nominal plan only, a mover's keys are edited as a table, and a plan's own specifications are edited
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
@@ -17377,6 +17377,10 @@ is built.
     false the loop clears GLFW's close flag and carries on. A headless `[app]` case covers it, since
     GLFW's close flag can be set without a display event.
   - **Sabotage:** the loop ignoring the veto fails the `[app]` case.
+  - *(Built with the veto's case windowed and opt-in, as the other windowed `[app]` cases are, since a
+    window needs a display and a device; the View menu holding Reset Layout alone until the Viewport it
+    acts on lands in 8f; and the panes in `rigplan-tested`, run in a headless ImGui frame. See Sub-slice
+    8e built.)*
 - **8f: the Viewport pane.**
   - **Ownership**: the window owns a `render::Renderer`, the plan's `GpuScene` and a `render::Viewport`,
     and releases them in `onShutdown` before the device goes.
@@ -17751,6 +17755,81 @@ format-check clean. `rigplan render three-poles.json --estimate` prints what it 
   - a specification renamed without its references fails the rename case;
   - a mount deleted without its cameras fails the delete case and the in-use case.
 
+#### Sub-slice 8e built (2026-10-28): the editor's shell, and `lain::app`'s close veto
+
+`rigplan [plan]` opens the editor, a window of docked panes over the open plan, with no Viewport yet.
+`lain::app` gains the close veto it needs. `ctest -j8` **1619/1619** Release with video, camera and Ceres on
+(+6, the veto's case skipping), and **1478/1478** with all three off (+6); warning-clean, format-check
+clean. The three windowed `[app]` cases ran on Metal (`LAIN_GUI_SMOKE=1`). **gui-mode NOT driven by
+hand**: `--frames` smokes open the window and exit 0, and the panes run headless (below). Clicks,
+dialogs and the modal's answers are the repo owner's checklist after 8f, steps 2, 5, 7 to 9, 11 and 12.
+
+- **`lain::app`:**
+  - `WindowDelegate::onCloseRequested(Window&) -> bool`, true by default. The loop asks it at the top
+    of the frame after a close is requested, by the close button or by `Window::requestClose`, and on
+    false clears GLFW's close flag and carries on. `Application::exit` asks nothing: ending the run is
+    the delegate's own decision already.
+  - `Window::setTitle`.
+  - **Deviation:** the veto's case is windowed and opt-in, beside the other two windowed cases, not
+    headless as planned: GLFW's close flag can be set with no display event, but only on a window, and
+    a window needs a display and a device. It ran here on Metal.
+- **The command line:** `rigplan [plan] [--reset-layout] [--frames N]` opens the editor, on `plan` or
+  else the plan open last. A subcommand name is matched before the positional, so `rigplan render ...`
+  is unchanged. `require_subcommand(1)` is gone, which fixes 8a's finding: `rigplan --licenses` prints
+  the notices again. `--frames` quits after N frames, for a smoke.
+- **The window** (`mainwindow.{h,cpp}`):
+  - its default docks are the Outliner on the left, the Inspector on the right, and the Viewport over
+    Issues between them, kept in `~/.rigplan/imgui.ini`; the Viewport's window holds its place until 8f;
+  - its title is the plan's file name, with ` *` while it has unsaved changes;
+  - one step of history per gesture, recorded when no widget is active and no gizmo is in use;
+  - a selection whose object an edit or an undo removed is let go of.
+- **The panes** (`panes/`):
+  - **Menu bar:** File, Edit, Add, and View with Reset Layout; flowview's shortcuts, plus Cmd+D to
+    duplicate and Delete or Backspace to delete, never while a text field has the keys.
+    - New, Open, Open Recent and Quit go through the document's `DocumentGuard`, and so does the
+      window's close button, through `onCloseRequested`. A Save that is cancelled or fails cancels the
+      request.
+    - A plan that will not open keeps the open one, its reasons in Issues, and leaves Open Recent if
+      the file is gone.
+    - **Deviation:** View holds Reset Layout alone. Frame All, Frame Selected, Preview Light and
+      Frustum Depth land with the Viewport in 8f, which is what they act on.
+  - **Outliner:** the plan, the room, the specifications by kind, the mounts with what is on each, the
+    planes, boxes and props, and the boards, a mover listing its keys. A row whose object `check()` has
+    a problem with is marked, its problems in a tooltip. *Added:* a camera or light on a mount the plan
+    lacks is listed under "Not on a mount", so it can still be selected and given one.
+  - **Inspector:** an editor per selection, in a datasheet's units (`fields.{h,cpp}`).
+    - A name is renamed through `edits.h`, by `check()`'s rules, a refusal said. Each editor renames
+      its own object, so a board's name edits while one of its keys is selected.
+    - A mover's keys are a table whose rows select a key, with a frame held between its neighbours'.
+    - *Added:* a key one frame after the last, a static prop's "Moves along a path" toggle, a camera
+      specification's nominal model line, and a sensor's sensor-model problems.
+  - **Issues:** the moment's message, why the last open was refused, and `check()`'s problems, a row
+    with an owner selecting it (`selectionOf`, new in `selection.h`). The asset problems join it with
+    the Viewport in 8f, which is what loads them.
+  - **Status bar:** what the plan holds, its timeline, its problem count and the moment's message.
+- **The session** (`session.{h,cpp}`): `~/.rigplan/session.json`, holding `lastPlan`, `recentPlans` and
+  `lastDialogDir`. Its file is a path the `AppContext` holds, `sessionFile()` in the app and empty in a
+  test, so no test writes the real home folder. `lain::editor` writes nothing to an empty path.
+- **The panes are in `rigplan-tested`**, since they need ImGui and no device, and the window stays in
+  the executable. *Added:* `test_panes.cpp` draws them in a headless ImGui frame, as libs/gui's frame
+  cases do.
+  - Every pane, for each of 16 selections, twice, and once with every `Begin` answering false. Each
+    frame is held to ImGui's count of the errors it recovered from, which it keeps even where its
+    asserts are compiled out.
+  - Drawing selects and changes nothing.
+  - The guard: a New with nothing unsaved is carried out; with unsaved work it is held, the modal
+    opens and stays open; a Quit is held the same way.
+  - A plan that will not open keeps the open one and leaves Open Recent; the session file keeps its
+    keys; and a problem's owner names what an Issues row selects.
+- **Found:** a case asked `ImGui::IsPopupOpen` after the frame, where there is no current window, and
+  crashed. The question is asked inside the frame now.
+- **Not possible here:** a screenshot of the window. `screencapture` is refused, so the layout has not
+  been seen by me.
+- **Three sabotages, all caught:**
+  - the loop ignoring the veto: `askedAt` is `{2}` where `{2, 6}` is required;
+  - a `TreePop` left out of the Outliner: every frame of the pane case counts an error;
+  - a request that ignores unsaved work: the held-New case fails.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -18005,9 +18084,10 @@ row here**. A row is cheap to delete and expensive to leave.
   `test-flowview-capture`, a CI step through the shipped binaries, and `synthetic-capture`). CI's first
   run since slice 5 found `run` writing CRLF on Windows, fixed, and the fix is green on all eight jobs (run 40497652103).
   **Slice 8 planned 2026-10-28** as six commits, 8a to 8f (the gui's first part), ending in a
-  gui-mode checklist for the repo owner (*Slice 8 planned*); **8a to 8d built the same day** (a pane
+  gui-mode checklist for the repo owner (*Slice 8 planned*); **8a to 8e built the same day** (a pane
   shows a texture it did not upload; ImGuizmo; a grid drawn in shading; the nominal layout, `aimOf`
-  and pooled asset jobs; rigplan's driver-free editor units). Two of 7a's findings are for
+  and pooled asset jobs; rigplan's driver-free editor units; the editor's shell and `lain::app`'s
+  close veto). Two of 7a's findings are for
   the repo owner: `registration/1` judges a rig registered with uncalibrated models Ready, and the size
   estimate's floor is not a floor for a dark scene (*Sub-slice 7a built*).
   Slice 0's gui-mode check of the unsaved-changes modal is owed. M9's rig binder owes two fixes M15
@@ -18218,10 +18298,10 @@ reach first. Worth remembering when writing the next entry here.
 
 - **flowview loses unsaved work on Quit.** The File ▸ Quit item, Ctrl+Q (`menubar.cpp`) and the
   window's close button all exit without asking, while New and Open go through `DocumentGuard`.
-  `lain::app` breaks its run loop as soon as a window reports it should close, and gives a delegate no
-  way to veto that. M15 sub-slice 8e adds the veto (`WindowDelegate::onCloseRequested`), and rigplan
-  guards Quit and the close button with it. flowview's fix is its own commit after 8e: route Quit,
-  Ctrl+Q and the close button through its guard. Slice 0's owed gui-mode check of flowview's
+  `lain::app` broke its run loop as soon as a window reported it should close, and gave a delegate no
+  way to veto that. M15 sub-slice 8e added the veto (`WindowDelegate::onCloseRequested`, 2026-10-28),
+  and rigplan guards Quit and the close button with it. flowview's fix is its own commit, and is now
+  small: route Quit, Ctrl+Q and the close button through its guard. Slice 0's owed gui-mode check of flowview's
   unsaved-changes modal should include them.
 
 ### `ctest -j` and scratch paths — FIXED 2026-09-10
