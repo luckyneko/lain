@@ -1441,6 +1441,10 @@ Full notes in WORK.md's *After 8f*.
   at. The rule is a driver-free unit, `AssetJobs` (`apps/rigplan/src/assetjobs.{h,cpp}`), with two cases.
 - **Five sabotages, all caught.** One first failed to build under `-Werror`, so the old binary answered
   until it was redone.
+- **CI is green on all eight jobs**: [run 40798806425](https://github.com/luckyneko/lain/actions/runs/40798806425)
+  on `b41eb90` (slice 8 as built, the first CI build of ImGuizmo and rigplan's gui on Linux and
+  Windows), and [run 40827876486](https://github.com/luckyneko/lain/actions/runs/40827876486) on
+  `7f4b6a4` (these fixes and flowview's Quit fix), 1625/1625 on Linux, macOS and Windows Release.
 
 ### Update 2026-10-28 — M15 slice 8, sub-slice 8f built: the Viewport (**slice 8 BUILT; gui-mode checklist owed**, *live-verified 2026-10-29, see above*)
 
@@ -1591,7 +1595,8 @@ in WORK.md's *Sub-slice 8a built*.
 - **The headless ImGui cases wrote `imgui.ini` into the working folder**, carrying window sizes from one
   ctest process to the next. All five now set `IniFilename = nullptr`.
 - **Older than 8a: `rigplan --licenses` refuses** ("A subcommand is required") since 5e; 8e fixes it.
-- Five sabotages, all caught. Owed: CI's first build of ImGuizmo on Linux and Windows.
+- Five sabotages, all caught. Owed: CI's first build of ImGuizmo on Linux and Windows. *(Green on all
+  eight jobs, run 40798806425 on `b41eb90`.)*
 
 ### Update 2026-10-28 — M15 slice 8 planned: the gui, part 1 (nothing built yet)
 

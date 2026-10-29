@@ -17509,7 +17509,8 @@ Metal (`LAIN_GUI_SMOKE=1`); ctest skips them, as it does the two texture cases b
   `require_subcommand(1)` runs before the flag is read; `--version` and `--help` are unaffected. 8e
   removes that requirement, as planned.
 - **Owed:** CI's first build of ImGuizmo on Linux and Windows (`alloca` / `_malloca` are its only
-  platform code).
+  platform code). *(Green on all eight jobs, run 40798806425 on `b41eb90`, slice 8 whole: see After
+  8f.)*
 
 #### Sub-slice 8b built (2026-10-28): a grid on a plane, drawn in shading
 
@@ -17971,6 +17972,13 @@ off (+3); warning-clean, format-check clean.
 - **Step 12, walked again after the fix:** the window stays responsive while the 20 m room's bakes run,
   and Quit then waits for them before the window goes (a bake cannot be stopped once posted), with no
   crash. That is the designed behaviour, so the step passes.
+- **CI, green on all eight jobs both times:**
+  - [Run 40798806425](https://github.com/luckyneko/lain/actions/runs/40798806425) on `b41eb90`, slice 8
+    as built: the first CI build of ImGuizmo and rigplan's gui on Linux and Windows.
+  - [Run 40827876486](https://github.com/luckyneko/lain/actions/runs/40827876486) on `7f4b6a4`, these
+    fixes and flowview's Quit fix (*Known defects*): Linux, macOS and Windows Release 1625/1625, Linux
+    Debug 1617/1617, no refiner 1566/1566, video off 1484/1484. The new texture cases ran on the CPU
+    device alone on Linux and Windows, since neither runner has a GPU.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
