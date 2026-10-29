@@ -23,7 +23,8 @@ against its name before it is published.**
 - **Profile `calib`:** core, imgproc, flann, features2d, calib3d, objdetect.
   - ChArUco (`aruco::CharucoDetector`) has lived in objdetect since 4.7, so contrib is not needed.
   - calib3d requires flann and features2d. That also covers the feature front end and geometric
-    verification the later targetless slices need.
+    verification the later targetless slices need. *(Since M9 slice 3 sub-slice 7 the plugin links
+    features2d and flann itself, for SIFT and Approximate matching. The module set is unchanged.)*
   - A published profile's module set never changes. Another module means a new profile name, so a
     pinned archive name cannot come to mean two products.
 - **The 4.14 line, not 5.0.** 5.0 (June 2026) splits calib3d into geometry/calib/stereo and makes

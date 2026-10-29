@@ -170,6 +170,12 @@ namespace lain::camera::fixture
 			return cal::board::calibrate(detections, image, board, held);
 		}
 
+		// A session's detections, one per frame: a fixture's sessions are board calibrations.
+		const std::vector<board::DetectionReport>& detectionsOf(const cal::Report& report)
+		{
+			return std::get<cal::BoardDiagnostics>(report.diagnostics.method).detections;
+		}
+
 		std::string describe(const std::variant<cal::HeldOutEvidence, cal::Unavailable>& evidence)
 		{
 			if (const auto* e = std::get_if<cal::HeldOutEvidence>(&evidence))
@@ -216,8 +222,10 @@ namespace lain::camera::fixture
 		request.imported.reset();
 		request.importedPolicy = cal::ImportedModelPolicy::Ignore;
 
+		// The default search: no fixture has needed another yet.
 		for (const Session& session : fixture.sessions)
-			out.sessions.push_back({session.name, cal::board::calibrate(session.footage, fixture.board, request)});
+			out.sessions.push_back(
+				{session.name, cal::board::calibrate(session.footage, fixture.board, board::DetectionRequest{}, request)});
 
 		const auto ready = [](const SessionOutcome& s)
 		{ return s.report.verdict == cal::Verdict::Ready && s.report.model.has_value(); };
@@ -247,7 +255,7 @@ namespace lain::camera::fixture
 				check.model = out.sessions[a].name;
 				check.views = out.sessions[b].name;
 				check.threshold = own.thresholds.ready.maximumHeldOutAngle;
-				check.evidence = hold(*own.model, out.sessions[b].report.diagnostics.detections,
+				check.evidence = hold(*own.model, detectionsOf(out.sessions[b].report),
 									  fixture.sessions[b].image, fixture.board, request)
 									 .heldOut;
 				const auto* e = std::get_if<cal::HeldOutEvidence>(&check.evidence);
@@ -276,8 +284,10 @@ namespace lain::camera::fixture
 				agreement.difference = differenceOf(out.sessions[a].report.model->intrinsics(),
 													out.sessions[b].report.model->intrinsics());
 				agreement.focalBound = kAgreementSigmas * std::hypot(sa.focalVariation, sb.focalVariation);
-				agreement.principalPointBound =
-					kAgreementSigmas * std::hypot(sa.principalPointVariation, sb.principalPointVariation);
+				// A board calibration estimates the principal point, so it always measured its spread.
+				// One that held it would throw here rather than become a bound of zero.
+				agreement.principalPointBound = kAgreementSigmas * std::hypot(std::get<double>(sa.principalPointVariation),
+																			  std::get<double>(sb.principalPointVariation));
 				agreement.agrees = agreement.difference.focal <= agreement.focalBound &&
 								   agreement.difference.principalPoint <= agreement.principalPointBound;
 				if (!agreement.agrees)
@@ -300,7 +310,7 @@ namespace lain::camera::fixture
 			comparison.session = session.name;
 			comparison.source = session.capture.importedModel ? session.capture.importedModel->source : std::string{};
 			comparison.imported = session.imported->intrinsics();
-			comparison.evidence = hold(*session.imported, out.sessions[i].report.diagnostics.detections,
+			comparison.evidence = hold(*session.imported, detectionsOf(out.sessions[i].report),
 									   session.image, fixture.board, request)
 									  .heldOut;
 			if (out.sessions[i].report.model)

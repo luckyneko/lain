@@ -1,0 +1,1165 @@
+// The feature facades (ADR-0016, "Producers propose; lain decides") over scripted stand-ins: the
+// extractor's answer is checked rather than trusted, the ratio and mutual tests are lain's, and every
+// candidate pose a backend proposes is measured by lain, whatever order it came in. Every tolerance is
+// a measurement, written beside its check.
+
+#include <lain/camera/feature/features.h>
+#include <lain/camera/feature/geometry.h>
+#include <lain/camera/feature/matching.h>
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <limits>
+#include <mutex>
+#include <optional>
+#include <random>
+#include <string>
+#include <utility>
+#include <vector>
+
+using namespace lain;
+using namespace lain::camera;
+using namespace lain::camera::feature;
+using Catch::Matchers::ContainsSubstring;
+
+namespace
+{
+	constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
+
+	// --- the stand-ins ----------------------------------------------------------------
+
+	struct ExtractorScript
+	{
+		std::optional<Features> answer;
+		image::PixelFormat refuse = image::PixelFormat::Gray16;
+		double askedScale = 0;
+	};
+	ExtractorScript& extractorScript()
+	{
+		static ExtractorScript instance;
+		return instance;
+	}
+
+	class ScriptedExtractor : public Extractor
+	{
+	public:
+		Provenance provenance() const override { return {"scripted", "1"}; }
+		std::optional<Features> extract(const image::Image& image, double scale) const override
+		{
+			extractorScript().askedScale = scale;
+			if (image.pixelFormat() == extractorScript().refuse)
+				return std::nullopt;
+			return extractorScript().answer;
+		}
+	};
+
+	// Toy features: one byte of descriptor each, compared by absolute difference, so a case can say
+	// exactly how far apart two features are.
+	Features toy(const std::vector<int>& values, const std::string& kind = "toy")
+	{
+		Features f;
+		f.kind = kind;
+		f.descriptorBytes = 1;
+		f.image = {1024, 16};
+		for (std::size_t i = 0; i < values.size(); ++i)
+		{
+			f.keypoints.push_back({{double(i), 0.0}, 1.0, 0.0, 1.0});
+			f.descriptors.push_back(std::uint8_t(values[i]));
+		}
+		return f;
+	}
+
+	// Each feature of `a`'s two nearest in `b` by brute force, ties to the lower index.
+	std::vector<std::array<Neighbour, 2>> bruteForce(const Features& a, const Features& b)
+	{
+		std::vector<std::array<Neighbour, 2>> out;
+		for (std::size_t i = 0; i < a.size(); ++i)
+		{
+			std::vector<Neighbour> all;
+			for (std::size_t j = 0; j < b.size(); ++j)
+				all.push_back({std::uint32_t(j), std::abs(double(*a.descriptor(i)) - double(*b.descriptor(j)))});
+			std::stable_sort(all.begin(), all.end(), [](const Neighbour& x, const Neighbour& y)
+							 { return x.distance < y.distance; });
+			out.push_back({all[0], all[1]});
+		}
+		return out;
+	}
+
+	// Registered as "a-exact": Exact only, and the one matcher of "exactonly" features.
+	class ExactMatcher : public Matcher
+	{
+	public:
+		Provenance provenance() const override { return {"a-exact", "1"}; }
+		bool accepts(std::string_view kind) const override { return kind == "toy" || kind == "exactonly"; }
+		bool supports(MatchSearch search) const override { return search == MatchSearch::Exact; }
+		std::vector<std::array<Neighbour, 2>> nearest(const Features& a, const Features& b, MatchSearch) const override
+		{
+			return bruteForce(a, b);
+		}
+	};
+
+	// Registered as "b-both": both searches, of toy features only.
+	class BothMatcher : public ExactMatcher
+	{
+	public:
+		Provenance provenance() const override { return {"b-both", "1"}; }
+		bool accepts(std::string_view kind) const override { return kind == "toy"; }
+		bool supports(MatchSearch) const override { return true; }
+	};
+
+	// Registered as "c-broken", the one matcher of "broken" features: it answers as scripted.
+	enum class Broken
+	{
+		WrongCount,
+		OutOfRange,
+		Repeated,
+		Unordered,
+	};
+	Broken& brokenScript()
+	{
+		static Broken instance = Broken::WrongCount;
+		return instance;
+	}
+	class BrokenMatcher : public Matcher
+	{
+	public:
+		Provenance provenance() const override { return {"c-broken", "1"}; }
+		bool accepts(std::string_view kind) const override { return kind == "broken"; }
+		bool supports(MatchSearch) const override { return true; }
+		std::vector<std::array<Neighbour, 2>> nearest(const Features& a, const Features& b, MatchSearch) const override
+		{
+			std::vector<std::array<Neighbour, 2>> out = bruteForce(a, b);
+			switch (brokenScript())
+			{
+				case Broken::WrongCount:
+					out.pop_back();
+					break;
+				case Broken::OutOfRange:
+					out[0][1].index = std::uint32_t(b.size());
+					break;
+				case Broken::Repeated:
+					out[0][1].index = out[0][0].index;
+					break;
+				case Broken::Unordered:
+					std::swap(out[0][0], out[0][1]);
+					out[0][1].distance = out[0][0].distance - 1;
+					break;
+			}
+			return out;
+		}
+	};
+
+	// What the geometry stand-in proposes, and what it was handed.
+	struct GeometryScript
+	{
+		std::vector<math::RigidTransformd> candidates;
+		std::vector<math::Mat3d> fundamentals;
+		std::vector<math::Mat3d> homographies;
+		std::size_t calls = 0;
+		std::size_t handed = 0;
+	};
+	GeometryScript& geometryScript()
+	{
+		static GeometryScript instance;
+		return instance;
+	}
+	void propose(std::vector<math::RigidTransformd> candidates)
+	{
+		geometryScript() = {};
+		geometryScript().candidates = std::move(candidates);
+	}
+	void proposeFundamentals(std::vector<math::Mat3d> fundamentals)
+	{
+		geometryScript() = {};
+		geometryScript().fundamentals = std::move(fundamentals);
+	}
+	void proposeHomographies(std::vector<math::Mat3d> homographies)
+	{
+		geometryScript() = {};
+		geometryScript().homographies = std::move(homographies);
+	}
+
+	class ScriptedGeometry : public GeometrySolver
+	{
+	public:
+		Provenance provenance() const override { return {"scripted", "1"}; }
+		std::vector<math::RigidTransformd> relativePoses(const std::vector<RayPair>& pairs, double, std::uint64_t) const override
+		{
+			++geometryScript().calls;
+			geometryScript().handed = pairs.size();
+			return geometryScript().candidates;
+		}
+		std::vector<math::RigidTransformd> absolutePoses(const std::vector<PointRay>& pointRays, double,
+														 std::uint64_t) const override
+		{
+			++geometryScript().calls;
+			geometryScript().handed = pointRays.size();
+			return geometryScript().candidates;
+		}
+		std::vector<math::Mat3d> fundamentals(const std::vector<PixelPair>& pairs, double, std::uint64_t) const override
+		{
+			++geometryScript().calls;
+			geometryScript().handed = pairs.size();
+			return geometryScript().fundamentals;
+		}
+		std::vector<math::Mat3d> homographies(const std::vector<PixelPair>& pairs, double, std::uint64_t) const override
+		{
+			++geometryScript().calls;
+			geometryScript().handed = pairs.size();
+			return geometryScript().homographies;
+		}
+	};
+
+	void ensureStandIns()
+	{
+		static const bool once = []
+		{
+			extractorRegistry().registerType<ScriptedExtractor>("scripted");
+			matcherRegistry().registerType<ExactMatcher>("a-exact");
+			matcherRegistry().registerType<BothMatcher>("b-both");
+			matcherRegistry().registerType<BrokenMatcher>("c-broken");
+			geometryRegistry().registerType<ScriptedGeometry>("scripted");
+			return true;
+		}();
+		(void)once;
+	}
+
+	// --- scenes -----------------------------------------------------------------
+
+	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
+	{
+		return 2.0 * std::acos(std::min(1.0, std::abs(math::dot(a.rotation(), b.rotation()))));
+	}
+
+	class Random
+	{
+	public:
+		explicit Random(std::uint64_t seed)
+			: m_engine(seed)
+		{
+		}
+		double uniform(double lo, double hi) { return lo + (hi - lo) * double(m_engine() >> 11) * 0x1.0p-53; }
+
+	private:
+		std::mt19937_64 m_engine;
+	};
+
+	// Two cameras half a metre apart, B turned 0.2 rad against A, and `near` points 3 to 8 m in front
+	// of both; then `far` points 100 km away, whose parallax (5 µrad) is far below any inlier angle.
+	struct TwoView
+	{
+		math::RigidTransformd bFromA;
+		std::vector<RayPair> pairs;
+	};
+	TwoView twoView(std::size_t near, std::size_t far = 0, std::uint64_t seed = 1)
+	{
+		TwoView out;
+		const math::Vec3d centreB{0.5, 0.05, 0.1};
+		const math::Quatd bFromARotation = math::angleAxis(0.2, math::normalize(math::Vec3d{0.3, 1.0, 0.1}));
+		out.bFromA = math::RigidTransformd{bFromARotation, -(bFromARotation * centreB)};
+		// A unit baseline, as relativePose reports it.
+		out.bFromA = math::RigidTransformd{out.bFromA.rotation(), math::normalize(out.bFromA.translation())};
+		Random random(seed);
+		const auto add = [&](double depth)
+		{
+			const math::Vec3d p{random.uniform(-0.3, 0.3) * depth, random.uniform(-0.2, 0.2) * depth, depth};
+			const math::Vec3d inB = out.bFromA.apply(p / math::length(centreB));
+			REQUIRE(inB.z > 0);
+			out.pairs.push_back({math::normalize(p), math::normalize(inB)});
+		};
+		for (std::size_t i = 0; i < near; ++i)
+			add(random.uniform(3.0, 8.0));
+		for (std::size_t i = 0; i < far; ++i)
+			add(1e5);
+		return out;
+	}
+
+	// The four relative poses one essential matrix decomposes into: the rotation and its twisted pair
+	// (turned half a revolution about the baseline), each with the baseline either way.
+	std::vector<math::RigidTransformd> decompositions(const math::RigidTransformd& truth)
+	{
+		const math::Vec3d t = truth.translation();
+		const math::Quatd twisted = math::angleAxis(3.141592653589793, math::normalize(t)) * truth.rotation();
+		return {truth, {truth.rotation(), -t}, {twisted, t}, {twisted, -t}};
+	}
+
+	bool same(const math::RigidTransformd& a, const math::RigidTransformd& b)
+	{
+		return rotationBetween(a, b) < 1e-9 && math::length(a.translation() - b.translation()) < 1e-9;
+	}
+
+	std::vector<std::uint32_t> upTo(std::size_t n)
+	{
+		std::vector<std::uint32_t> out;
+		for (std::size_t i = 0; i < n; ++i)
+			out.push_back(std::uint32_t(i));
+		return out;
+	}
+} // namespace
+
+// --- extraction ---------------------------------------------------------------------
+
+TEST_CASE("extract states the image and the scale itself", "[camera][feature]")
+{
+	ensureStandIns();
+	Features answer = toy({1, 2, 3});
+	answer.image = {1, 1}; // what a careless backend might say
+	answer.scale = 0.123;
+	answer.keypoints[2].pixel = {3999.0, 299.0};
+	extractorScript().answer = answer;
+	const ExtractResult result = extract(image::Image{4000, 300, image::PixelFormat::Gray8}, LongestSide{1920});
+	REQUIRE(result.ok());
+	CHECK(extractorScript().askedScale == 0.48);
+	CHECK(result.features.scale == 0.48);
+	CHECK(result.features.image == ImageGeometry{4000, 300});
+	CHECK(result.features.size() == 3);
+	CHECK(result.provenance.backend == "scripted");
+}
+
+TEST_CASE("extract refuses an image the backend cannot read", "[camera][feature]")
+{
+	ensureStandIns();
+	extractorScript().answer = toy({1});
+	SECTION("an empty image")
+	{
+		const ExtractResult result = extract(image::Image{});
+		CHECK(result.status == Status::Unsupported);
+		CHECK_THAT(result.detail, ContainsSubstring("empty"));
+	}
+	SECTION("a format the backend refuses")
+	{
+		const ExtractResult result = extract(image::Image{64, 48, image::PixelFormat::Gray16});
+		CHECK(result.status == Status::Unsupported);
+		CHECK_THAT(result.detail, ContainsSubstring("Gray16"));
+	}
+}
+
+TEST_CASE("extract refuses an answer that breaks the extractor's contract", "[camera][feature]")
+{
+	ensureStandIns();
+	Features answer = toy({1, 2, 3});
+	SECTION("descriptors that do not fit the keypoints")
+	{
+		answer.descriptors.pop_back();
+	}
+	SECTION("a keypoint off the source image")
+	{
+		answer.keypoints[1].pixel = {64.0, 0.0}; // the last pixel centre is 63, its edge 63.5
+	}
+	SECTION("a keypoint that is not finite")
+	{
+		answer.keypoints[0].response = kNaN;
+	}
+	SECTION("no descriptor kind")
+	{
+		answer.kind.clear();
+	}
+	extractorScript().answer = answer;
+	const ExtractResult result = extract(image::Image{64, 48, image::PixelFormat::Gray8});
+	CHECK(result.status == Status::BackendMisbehaved);
+	CHECK_THAT(result.detail, ContainsSubstring("scripted"));
+	CHECK(result.features.size() == 0);
+}
+
+// --- matching -------------------------------------------------------------------------
+
+TEST_CASE("a match must be clearly nearer than the second nearest", "[camera][feature][match]")
+{
+	ensureStandIns();
+	// a0 is b0 exactly, and far from b1; a1 is b1 and b2 exactly, a tie.
+	const MatchResult result = match(toy({10, 50}), toy({10, 50, 50}));
+	REQUIRE(result.ok());
+	REQUIRE(result.matches.size() == 1);
+	CHECK(result.matches[0].a == 0);
+	CHECK(result.matches[0].b == 0);
+	CHECK(result.counts.candidates == 2);
+	CHECK(result.counts.ambiguous == 1);
+	CHECK(result.counts.notMutual == 0);
+}
+
+TEST_CASE("a match must be each feature's nearest both ways", "[camera][feature][match]")
+{
+	ensureStandIns();
+	// b0 (10) is the nearest of a0 (0), a1 (9) and a2 (100), but only a1 is b0's nearest.
+	const MatchResult result = match(toy({0, 9, 100}), toy({10, 200}));
+	REQUIRE(result.ok());
+	REQUIRE(result.matches.size() == 1);
+	CHECK(result.matches[0].a == 1);
+	CHECK(result.matches[0].b == 0);
+	CHECK(result.counts.notMutual == 2);
+}
+
+TEST_CASE("matching a with b is matching b with a", "[camera][feature][match]")
+{
+	ensureStandIns();
+	const auto swapped = [](const MatchResult& r)
+	{
+		std::vector<std::pair<std::uint32_t, std::uint32_t>> out;
+		for (const Match& m : r.matches)
+			out.emplace_back(m.b, m.a);
+		std::sort(out.begin(), out.end());
+		return out;
+	};
+	const auto pairs = [](const MatchResult& r)
+	{
+		std::vector<std::pair<std::uint32_t, std::uint32_t>> out;
+		for (const Match& m : r.matches)
+			out.emplace_back(m.a, m.b);
+		return out;
+	};
+	SECTION("where only the second image's ratio test rejects")
+	{
+		// a0 (0) is clearly nearest b0 (10, against 30), but b0 is nearly as near a1 (21) as a0.
+		const Features a = toy({0, 21}), b = toy({10, 30});
+		const MatchResult ab = match(a, b), ba = match(b, a);
+		CHECK(ab.matches.empty());
+		CHECK(ab.counts.ambiguous == 2);
+		CHECK(pairs(ba) == swapped(ab));
+	}
+	SECTION("over many features")
+	{
+		Random random(5);
+		std::vector<int> av, bv;
+		for (int i = 0; i < 60; ++i)
+			av.push_back(int(random.uniform(0, 255)));
+		for (int i = 0; i < 70; ++i)
+			bv.push_back(int(random.uniform(0, 255)));
+		const MatchResult ab = match(toy(av), toy(bv)), ba = match(toy(bv), toy(av));
+		// Measured: 15 matches, 16 ambiguous and 29 not mutual, so agreement is not the agreement of two
+		// empty lists, and both tests reject something.
+		CHECK(ab.matches.size() >= 10);
+		CHECK(ab.counts.ambiguous > 0);
+		CHECK(ab.counts.notMutual > 0);
+		CHECK(pairs(ba) == swapped(ab));
+	}
+}
+
+TEST_CASE("match is answered by the first matcher that takes the kind and the search", "[camera][feature][match]")
+{
+	ensureStandIns();
+	const Features a = toy({0, 100}), b = toy({0, 100});
+	CHECK(match(a, b, {MatchSearch::Exact, 0.8}).provenance.backend == "a-exact");
+	CHECK(match(a, b, {MatchSearch::Approximate, 0.8}).provenance.backend == "b-both");
+	CHECK(match(a, b, {MatchSearch::Exact, 1.0}).ok());
+}
+
+TEST_CASE("match refuses what no matcher can do", "[camera][feature][match]")
+{
+	ensureStandIns();
+	MatchResult result;
+	std::string reason;
+	SECTION("a kind no matcher accepts")
+	{
+		result = match(toy({0, 1}, "unknown"), toy({0, 1}, "unknown"));
+		reason = "no matcher accepts 'unknown'";
+	}
+	SECTION("a search no matcher of the kind supports")
+	{
+		result = match(toy({0, 1}, "exactonly"), toy({0, 1}, "exactonly"), {MatchSearch::Approximate, 0.8});
+		reason = "supports Approximate";
+	}
+	SECTION("two kinds")
+	{
+		result = match(toy({0, 1}), toy({0, 1}, "exactonly"));
+		reason = "cannot be matched";
+	}
+	SECTION("two descriptor sizes")
+	{
+		Features wide = toy({0, 1});
+		wide.descriptorBytes = 2;
+		wide.descriptors = {0, 0, 1, 1};
+		result = match(toy({0, 1}), wide);
+		reason = "cannot be matched";
+	}
+	SECTION("a ratio outside (0, 1]")
+	{
+		result = match(toy({0, 1}), toy({0, 1}), {MatchSearch::Exact, 1.5});
+		reason = "outside (0, 1]";
+		CHECK(match(toy({0, 1}), toy({0, 1}), {MatchSearch::Exact, 0.0}).status == Status::Unsupported);
+		CHECK(match(toy({0, 1}), toy({0, 1}), {MatchSearch::Exact, kNaN}).status == Status::Unsupported);
+	}
+	CHECK(result.status == Status::Unsupported);
+	CHECK_THAT(result.detail, ContainsSubstring(reason));
+}
+
+TEST_CASE("match needs a second neighbour on each side", "[camera][feature][match]")
+{
+	ensureStandIns();
+	const MatchResult result = match(toy({5}), toy({0, 1, 2}));
+	CHECK(result.status == Status::TooFew);
+	CHECK(result.provenance.backend == "a-exact");
+}
+
+TEST_CASE("match refuses an answer that breaks the matcher's contract", "[camera][feature][match]")
+{
+	ensureStandIns();
+	SECTION("one answer too few")
+	{
+		brokenScript() = Broken::WrongCount;
+	}
+	SECTION("a neighbour out of range")
+	{
+		brokenScript() = Broken::OutOfRange;
+	}
+	SECTION("one neighbour twice")
+	{
+		brokenScript() = Broken::Repeated;
+	}
+	SECTION("the second nearer than the first")
+	{
+		brokenScript() = Broken::Unordered;
+	}
+	const MatchResult result = match(toy({0, 50, 100}, "broken"), toy({0, 50, 100}, "broken"));
+	CHECK(result.status == Status::BackendMisbehaved);
+	CHECK_THAT(result.detail, ContainsSubstring("c-broken"));
+	CHECK(result.matches.empty());
+}
+
+// --- relative pose ----------------------------------------------------------------------
+
+TEST_CASE("relativePose chooses by measurement, whatever order the candidates come in", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	const TwoView scene = twoView(40);
+	const std::vector<math::RigidTransformd> four = decompositions(scene.bFromA);
+	std::vector<std::size_t> order{0, 1, 2, 3};
+	do
+	{
+		std::vector<math::RigidTransformd> candidates;
+		for (const std::size_t i : order)
+			candidates.push_back(four[i]);
+		propose(candidates);
+		const GeometryResult result = relativePose(scene.pairs);
+		REQUIRE(result.ok());
+		CHECK(same(*result.pose, scene.bFromA));
+		CHECK(result.inliers == upTo(40));
+		CHECK(result.candidates == 4);
+		// Exact rays: measured 3e-15 rad.
+		CHECK(result.rmsAngle < 1e-12);
+	} while (std::next_permutation(order.begin(), order.end()));
+}
+
+TEST_CASE("relativePose counts its own inliers, not the pairs the backend fitted", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	// 60 pairs, every third one's B ray turned 0.1 rad off its epipolar plane: an outlier, whichever
+	// pose the backend believed explained it.
+	TwoView scene = twoView(60);
+	std::vector<std::uint32_t> clean;
+	const math::Vec3d t = scene.bFromA.translation();
+	for (std::size_t k = 0; k < scene.pairs.size(); ++k)
+	{
+		if (k % 3 != 0)
+		{
+			clean.push_back(std::uint32_t(k));
+			continue;
+		}
+		RayPair& p = scene.pairs[k];
+		const math::Vec3d normal = math::normalize(math::cross(t, scene.bFromA.rotate(p.a)));
+		p.b = math::angleAxis(0.1, math::normalize(math::cross(p.b, normal))) * p.b;
+	}
+	propose({scene.bFromA});
+	const GeometryResult result = relativePose(scene.pairs);
+	REQUIRE(result.ok());
+	CHECK(result.inliers == clean);
+	// The outliers take no part: measured 3e-15 rad over the clean pairs.
+	CHECK(result.rmsAngle < 1e-12);
+}
+
+TEST_CASE("relativePose takes a pair with no parallax as a point at infinity", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	SECTION("far points are inliers when the rotation agrees")
+	{
+		const TwoView scene = twoView(20, 20);
+		propose({scene.bFromA});
+		const GeometryResult result = relativePose(scene.pairs);
+		REQUIRE(result.ok());
+		CHECK(result.inliers == upTo(40));
+	}
+	SECTION("and outliers when it does not")
+	{
+		// Turned 20 mrad about the baseline, which moves every B ray out of its epipolar plane, so no
+		// depth explains a far pair. (Turned about an axis IN the epipolar plane, a far pair is simply
+		// triangulated nearer and is an inlier, as two-view geometry says it should be.)
+		const TwoView scene = twoView(20, 20);
+		const math::Vec3d baseline = math::normalize(scene.bFromA.translation());
+		const math::RigidTransformd turned{math::angleAxis(0.02, baseline) * scene.bFromA.rotation(),
+										   scene.bFromA.translation()};
+		propose({turned});
+		const GeometryResult result = relativePose(scene.pairs);
+		// Measured: it explains none of the 40, near or far.
+		CHECK(result.status == Status::NoSolution);
+		CHECK_THAT(result.detail, ContainsSubstring("explains 0 of 40"));
+	}
+	SECTION("near points decide the baseline's direction")
+	{
+		const TwoView scene = twoView(20, 20);
+		propose({{scene.bFromA.rotation(), -scene.bFromA.translation()}, scene.bFromA});
+		const GeometryResult result = relativePose(scene.pairs);
+		REQUIRE(result.ok());
+		CHECK(same(*result.pose, scene.bFromA));
+	}
+}
+
+TEST_CASE("candidates that tie are chosen the same in either order", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	// Only far points: the baseline either way explains them identically.
+	const TwoView scene = twoView(0, 20);
+	const math::RigidTransformd forward = scene.bFromA;
+	const math::RigidTransformd backward{scene.bFromA.rotation(), -scene.bFromA.translation()};
+	propose({forward, backward});
+	const GeometryResult first = relativePose(scene.pairs);
+	propose({backward, forward});
+	const GeometryResult second = relativePose(scene.pairs);
+	REQUIRE(first.ok());
+	REQUIRE(second.ok());
+	CHECK(first.inliers == upTo(20));
+	CHECK(same(*first.pose, *second.pose));
+}
+
+TEST_CASE("relativePose's inliers index the input", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	const TwoView scene = twoView(10);
+	std::vector<RayPair> input;
+	std::vector<std::uint32_t> expected;
+	for (const RayPair& p : scene.pairs)
+	{
+		input.push_back({math::Vec3d{0.0}, p.b});			 // no ray
+		input.push_back({math::Vec3d{kNaN, 0.0, 1.0}, p.b}); // not a ray
+		expected.push_back(std::uint32_t(input.size()));
+		input.push_back({3.0 * p.a, p.b}); // a ray, not unit length
+	}
+	propose({scene.bFromA});
+	const GeometryResult result = relativePose(input);
+	REQUIRE(result.ok());
+	CHECK(geometryScript().handed == 10);
+	CHECK(result.inliers == expected);
+}
+
+TEST_CASE("relativePose needs enough pairs and a candidate that explains them", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	const TwoView scene = twoView(20);
+	SECTION("four usable pairs are too few, and the backend is never asked")
+	{
+		propose({scene.bFromA});
+		std::vector<RayPair> four(scene.pairs.begin(), scene.pairs.begin() + 4);
+		four.push_back({math::Vec3d{0.0}, math::Vec3d{0.0, 0.0, 1.0}});
+		const GeometryResult result = relativePose(four);
+		CHECK(result.status == Status::TooFew);
+		CHECK(geometryScript().calls == 0);
+	}
+	SECTION("no candidate")
+	{
+		propose({});
+		CHECK(relativePose(scene.pairs).status == Status::NoSolution);
+	}
+	SECTION("only wrong candidates")
+	{
+		propose({{math::angleAxis(0.3, math::Vec3d{1.0, 0.0, 0.0}) * scene.bFromA.rotation(), scene.bFromA.translation()}});
+		const GeometryResult result = relativePose(scene.pairs);
+		CHECK(result.status == Status::NoSolution);
+		CHECK_THAT(result.detail, ContainsSubstring("of 20 usable pairs"));
+	}
+	SECTION("a candidate with no baseline is skipped")
+	{
+		propose({{scene.bFromA.rotation(), math::Vec3d{0.0}}});
+		const GeometryResult result = relativePose(scene.pairs);
+		CHECK(result.status == Status::NoSolution);
+		CHECK(result.candidates == 1);
+	}
+	SECTION("an inlier angle that is not positive")
+	{
+		propose({scene.bFromA});
+		CHECK(relativePose(scene.pairs, {0.0, 0}).status == Status::Unsupported);
+	}
+}
+
+// --- absolute pose ------------------------------------------------------------------
+
+namespace
+{
+	// A camera 2 m from the reference origin looking back at it, and points within a metre of the
+	// origin.
+	struct OneView
+	{
+		math::RigidTransformd cameraFromReference;
+		std::vector<PointRay> pointRays;
+	};
+	OneView oneView(std::size_t count)
+	{
+		OneView out;
+		const math::Quatd rotation = math::angleAxis(0.3, math::normalize(math::Vec3d{0.2, 1.0, -0.4}));
+		out.cameraFromReference = math::RigidTransformd{rotation, math::Vec3d{0.1, -0.05, 2.0}};
+		Random random(3);
+		for (std::size_t i = 0; i < count; ++i)
+		{
+			const math::Vec3d p{random.uniform(-0.8, 0.8), random.uniform(-0.6, 0.6), random.uniform(-0.5, 0.5)};
+			const math::Vec3d inCamera = out.cameraFromReference.apply(p);
+			REQUIRE(inCamera.z > 0);
+			out.pointRays.push_back({p, math::normalize(inCamera)});
+		}
+		return out;
+	}
+} // namespace
+
+TEST_CASE("absolutePose chooses by measurement, whatever order the candidates come in", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	const OneView scene = oneView(30);
+	const math::RigidTransformd& truth = scene.cameraFromReference;
+	// Another of P3P's solutions (a pose fitting a few points, not all), and the truth turned half a
+	// revolution, with every point behind it.
+	const math::RigidTransformd other{math::angleAxis(0.4, math::Vec3d{0.0, 1.0, 0.0}) * truth.rotation(),
+									  truth.translation() + math::Vec3d{0.3, 0.0, 0.1}};
+	const math::Quatd half = math::angleAxis(3.141592653589793, math::Vec3d{0.0, 1.0, 0.0});
+	const math::RigidTransformd behind{half * truth.rotation(), half * truth.translation()};
+	const std::vector<math::RigidTransformd> three{truth, other, behind};
+	std::vector<std::size_t> order{0, 1, 2};
+	do
+	{
+		std::vector<math::RigidTransformd> candidates;
+		for (const std::size_t i : order)
+			candidates.push_back(three[i]);
+		propose(candidates);
+		const GeometryResult result = absolutePose(scene.pointRays);
+		REQUIRE(result.ok());
+		CHECK(same(*result.pose, truth));
+		CHECK(result.inliers == upTo(30));
+	} while (std::next_permutation(order.begin(), order.end()));
+
+	propose({behind});
+	CHECK(absolutePose(scene.pointRays).status == Status::NoSolution);
+}
+
+TEST_CASE("absolutePose counts its own inliers", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	OneView scene = oneView(30);
+	std::vector<std::uint32_t> clean;
+	for (std::size_t k = 0; k < scene.pointRays.size(); ++k)
+	{
+		PointRay& p = scene.pointRays[k];
+		if (k % 3 == 0)
+			p.ray = math::angleAxis(0.05, math::normalize(math::cross(p.ray, math::Vec3d{1.0, 0.0, 0.0}))) * p.ray;
+		else if (k == 10)
+			p.ray = -p.ray; // the point is on the ray's line, but behind the camera
+		else
+			clean.push_back(std::uint32_t(k));
+	}
+	propose({scene.cameraFromReference});
+	const GeometryResult result = absolutePose(scene.pointRays);
+	REQUIRE(result.ok());
+	CHECK(result.inliers == clean);
+}
+
+TEST_CASE("absolutePose needs four usable point-rays", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	OneView scene = oneView(4);
+	scene.pointRays[2].point.x = kNaN;
+	propose({scene.cameraFromReference});
+	const GeometryResult result = absolutePose(scene.pointRays);
+	CHECK(result.status == Status::TooFew);
+	CHECK_THAT(result.detail, ContainsSubstring("3 usable point-rays"));
+	CHECK(geometryScript().calls == 0);
+}
+
+// --- fundamental matrix ---------------------------------------------------------------
+
+namespace
+{
+	// A matrix from its rows: F(row, column) is f[column][row] in GLM.
+	math::Mat3d rows(const std::array<double, 9>& e)
+	{
+		math::Mat3d f;
+		for (int row = 0; row < 3; ++row)
+		{
+			for (int column = 0; column < 3; ++column)
+				f[column][row] = e[std::size_t(3 * row + column)];
+		}
+		return f;
+	}
+
+	double frobenius(const math::Mat3d& f)
+	{
+		double sum = 0;
+		for (int c = 0; c < 3; ++c)
+		{
+			for (int r = 0; r < 3; ++r)
+				sum += f[c][r] * f[c][r];
+		}
+		return std::sqrt(sum);
+	}
+
+	bool sameMatrix(const math::Mat3d& a, const math::Mat3d& b, double tolerance = 1e-12)
+	{
+		for (int c = 0; c < 3; ++c)
+		{
+			for (int r = 0; r < 3; ++r)
+			{
+				if (std::abs(a[c][r] - b[c][r]) > tolerance)
+					return false;
+			}
+		}
+		return true;
+	}
+
+	math::Mat3d crossMatrix(const math::Vec3d& t)
+	{
+		return rows({0.0, -t.z, t.y, t.z, 0.0, -t.x, -t.y, t.x, 0.0});
+	}
+
+	// Two views of one pinhole (focal 800 by 820, centre (319.5, 239.5)), B half a metre from A and
+	// turned 0.2 rad, and `count` points 3 to 8 m in front of both, as pixels; and the views' true
+	// fundamental matrix, K⁻ᵀ [t]ₓ R K⁻¹ for x_B = R x_A + t.
+	struct TwoImages
+	{
+		math::Mat3d fundamental;
+		std::vector<PixelPair> pairs;
+	};
+	TwoImages twoImages(std::size_t count, const math::Quatd& turn = math::Quatd{1.0, 0.0, 0.0, 0.0})
+	{
+		const math::Mat3d k = rows({800.0, 0.0, 319.5, 0.0, 820.0, 239.5, 0.0, 0.0, 1.0});
+		const math::Quatd r = turn * math::angleAxis(0.2, math::normalize(math::Vec3d{0.3, 1.0, 0.1}));
+		const math::Vec3d t = -(r * math::Vec3d{0.5, 0.05, 0.1});
+		const math::Mat3d kInverse = math::inverse(k);
+		TwoImages out;
+		out.fundamental = math::transpose(kInverse) * crossMatrix(t) * math::mat3_cast(r) * kInverse;
+		Random random(5);
+		const math::Quatd rTrue = math::angleAxis(0.2, math::normalize(math::Vec3d{0.3, 1.0, 0.1}));
+		const math::Vec3d tTrue = -(rTrue * math::Vec3d{0.5, 0.05, 0.1});
+		for (std::size_t i = 0; i < count; ++i)
+		{
+			const double depth = random.uniform(3.0, 8.0);
+			const math::Vec3d inA{random.uniform(-0.2, 0.2) * depth, random.uniform(-0.15, 0.15) * depth, depth};
+			const math::Vec3d inB = rTrue * inA + tTrue;
+			REQUIRE(inB.z > 0);
+			const math::Vec3d pa = k * (inA / inA.z);
+			const math::Vec3d pb = k * (inB / inB.z);
+			out.pairs.push_back({{pa.x, pa.y}, {pb.x, pb.y}});
+		}
+		return out;
+	}
+
+	std::vector<math::Mat3d> fundamentalsOf(const std::vector<TwoImages>& scenes)
+	{
+		std::vector<math::Mat3d> out;
+		for (const TwoImages& s : scenes)
+			out.push_back(s.fundamental);
+		return out;
+	}
+
+	// The rectified pair's matrix: x_bᵀ F x_a = y_a − y_b, so a pair's epipolar lines are its rows and
+	// the least it can move to satisfy them is half its vertical gap in each image, √2/2 of the gap in
+	// all, exactly what Sampson distance measures here.
+	const math::Mat3d kRectified = rows({0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0});
+} // namespace
+
+TEST_CASE("fundamental chooses by measurement, whatever order the candidates come in", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	const TwoImages truth = twoImages(40);
+	// Turned 1 mrad: every pair still within 4 px, but further from it than the truth (measured: 0.58 px
+	// RMS); and turned 0.1 rad, which explains none.
+	const TwoImages near = twoImages(0, math::angleAxis(0.001, math::Vec3d{1.0, 0.0, 0.0}));
+	const TwoImages wrong = twoImages(0, math::angleAxis(0.1, math::Vec3d{1.0, 0.0, 0.0}));
+	const std::vector<math::Mat3d> three = fundamentalsOf({truth, near, wrong});
+	const math::Mat3d expected = truth.fundamental * (1.0 / frobenius(truth.fundamental));
+	std::vector<std::size_t> order{0, 1, 2};
+	do
+	{
+		std::vector<math::Mat3d> candidates;
+		for (const std::size_t i : order)
+			candidates.push_back(three[i]);
+		proposeFundamentals(candidates);
+		const FundamentalResult result = fundamental(truth.pairs);
+		REQUIRE(result.ok());
+		CHECK(result.candidates == 3);
+		CHECK(result.inliers == upTo(40));
+		// The truth's sign is whatever the formula gave; normalised, its largest entry is positive.
+		REQUIRE(result.matrix.has_value());
+		CHECK((sameMatrix(*result.matrix, expected, 1e-12) || sameMatrix(*result.matrix, -1.0 * expected, 1e-12)));
+		// Exact pixels: measured 2.7e-14 px.
+		CHECK(result.rmsDistance < 1e-9);
+	} while (std::next_permutation(order.begin(), order.end()));
+
+	// The near candidate alone explains every pair too, so only the summed distance told them apart.
+	proposeFundamentals({near.fundamental});
+	const FundamentalResult alone = fundamental(truth.pairs);
+	REQUIRE(alone.ok());
+	CHECK(alone.inliers == upTo(40));
+	CHECK(alone.rmsDistance > 0.5);
+}
+
+TEST_CASE("Sampson distance is in source pixels, measured against both images", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	// Pairs with vertical gaps under the rectified matrix: a gap g is g/√2 px from it. At the default
+	// 4 px, a gap just under 4√2 is an inlier and one just over is not; measured in B alone, as an
+	// epipolar distance, each would be its whole gap away and both would be out.
+	const double edge = 4.0 * std::sqrt(2.0);
+	const std::vector<double> gaps{0.0, 1.0, -2.5, 3.0, 5.0, -5.5, edge * (1.0 - 1e-9), edge * (1.0 + 1e-9), 7.0, 0.5, 20.0};
+	std::vector<PixelPair> pairs;
+	for (std::size_t i = 0; i < gaps.size(); ++i)
+		pairs.push_back({{10.0 + 37.0 * double(i), 100.0 + 11.0 * double(i)}, {400.0 - 13.0 * double(i), 100.0 + 11.0 * double(i) + gaps[i]}});
+	proposeFundamentals({kRectified});
+	const FundamentalResult result = fundamental(pairs);
+	REQUIRE(result.ok());
+	CHECK(result.inliers == std::vector<std::uint32_t>{0, 1, 2, 3, 4, 5, 6, 9});
+	double sum = 0;
+	for (const std::uint32_t i : result.inliers)
+		sum += gaps[i] * gaps[i] / 2.0;
+	CHECK(std::abs(result.rmsDistance - std::sqrt(sum / double(result.inliers.size()))) < 1e-12);
+
+	SECTION("a tighter threshold takes fewer")
+	{
+		FundamentalRequest request;
+		request.threshold = 1.0; // a gap of at most √2
+		const FundamentalResult tight = fundamental(pairs, request);
+		CHECK(tight.status == Status::NoSolution);
+		CHECK_THAT(tight.detail, ContainsSubstring("explains 3 of 11 usable pixel pairs"));
+	}
+}
+
+TEST_CASE("fundamental needs eight usable pairs and a candidate that explains eight", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	const TwoImages scene = twoImages(20);
+	SECTION("seven usable pairs are too few, and the backend is never asked")
+	{
+		proposeFundamentals({scene.fundamental});
+		std::vector<PixelPair> seven(scene.pairs.begin(), scene.pairs.begin() + 7);
+		seven.push_back({{kNaN, 1.0}, {1.0, 1.0}});
+		const FundamentalResult result = fundamental(seven);
+		CHECK(result.status == Status::TooFew);
+		CHECK_THAT(result.detail, ContainsSubstring("7 usable pixel pairs"));
+		CHECK(geometryScript().calls == 0);
+	}
+	SECTION("no candidate")
+	{
+		proposeFundamentals({});
+		CHECK(fundamental(scene.pairs).status == Status::NoSolution);
+	}
+	SECTION("a candidate explaining seven")
+	{
+		std::vector<PixelPair> pairs(scene.pairs.begin(), scene.pairs.begin() + 7);
+		for (std::size_t i = 7; i < 20; ++i)
+			pairs.push_back({scene.pairs[i].a, scene.pairs[i].b + math::Vec2d{0.0, 30.0}});
+		proposeFundamentals({scene.fundamental});
+		const FundamentalResult result = fundamental(pairs);
+		CHECK(result.status == Status::NoSolution);
+		CHECK_THAT(result.detail, ContainsSubstring("explains 7 of 20 usable pixel pairs"));
+	}
+	SECTION("an inlier distance that is not positive")
+	{
+		proposeFundamentals({scene.fundamental});
+		FundamentalRequest request;
+		request.threshold = 0;
+		CHECK(fundamental(scene.pairs, request).status == Status::Unsupported);
+	}
+}
+
+TEST_CASE("a fundamental that is not finite or is zero is skipped, and the chosen one comes back normalised",
+		  "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	std::vector<PixelPair> input;
+	std::vector<std::uint32_t> expected;
+	for (std::size_t i = 0; i < 10; ++i)
+	{
+		const double y = 50.0 + 20.0 * double(i);
+		input.push_back({{kNaN, y}, {300.0, y}}); // not a pixel
+		expected.push_back(std::uint32_t(input.size()));
+		input.push_back({{20.0 * double(i), y}, {300.0 - 7.0 * double(i), y}});
+	}
+	math::Mat3d notFinite = kRectified;
+	notFinite[1][2] = kNaN;
+	proposeFundamentals({math::Mat3d{0.0}, notFinite, -3.0 * kRectified});
+	const FundamentalResult result = fundamental(input);
+	REQUIRE(result.ok());
+	CHECK(result.candidates == 3);
+	CHECK(geometryScript().handed == 10);
+	CHECK(result.inliers == expected);
+	// −3 times the rectified matrix, at unit norm with its largest-magnitude entry positive: the first
+	// in row-major order of its two, F(1, 2).
+	REQUIRE(result.matrix.has_value());
+	const double h = 1.0 / std::sqrt(2.0);
+	CHECK(sameMatrix(*result.matrix, rows({0.0, 0.0, 0.0, 0.0, 0.0, h, 0.0, -h, 0.0}), 1e-15));
+	CHECK(std::abs(frobenius(*result.matrix) - 1.0) < 1e-15);
+}
+
+// --- homography -----------------------------------------------------------------------
+
+namespace
+{
+	// Two views of one pinhole (focal 800 by 820, centre (319.5, 239.5)) that only turns, by `angle`
+	// about a fixed axis, and `count` points 2 to 9 m in front of both, as pixels; and the views' true
+	// homography, K R K⁻¹, which carries every pixel of A to B's whatever its depth.
+	struct TurnedImages
+	{
+		math::Mat3d homography;
+		std::vector<PixelPair> pairs;
+	};
+	TurnedImages turnedImages(std::size_t count, double angle = 0.15)
+	{
+		const math::Mat3d k = rows({800.0, 0.0, 319.5, 0.0, 820.0, 239.5, 0.0, 0.0, 1.0});
+		const math::Quatd r = math::angleAxis(angle, math::normalize(math::Vec3d{0.2, 1.0, 0.1}));
+		TurnedImages out;
+		out.homography = k * math::mat3_cast(r) * math::inverse(k);
+		Random random(7);
+		for (std::size_t i = 0; i < count; ++i)
+		{
+			const double depth = random.uniform(2.0, 9.0);
+			const math::Vec3d inA{random.uniform(-0.2, 0.2) * depth, random.uniform(-0.15, 0.15) * depth, depth};
+			const math::Vec3d inB = r * inA;
+			REQUIRE(inB.z > 0);
+			const math::Vec3d pa = k * (inA / inA.z);
+			const math::Vec3d pb = k * (inB / inB.z);
+			out.pairs.push_back({{pa.x, pa.y}, {pb.x, pb.y}});
+		}
+		return out;
+	}
+
+	// A homography that doubles a pixel's distance from the origin, so carrying A's pixel forward
+	// measures a gap twice what carrying B's back does.
+	const math::Mat3d kDoubling = rows({2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 1.0});
+} // namespace
+
+TEST_CASE("homography chooses by measurement, whatever order the candidates come in", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	const TurnedImages truth = turnedImages(40);
+	// Turned 1 mrad further: every pair still within 4 px, but further from it than the truth (measured:
+	// 0.82 px RMS); and turned 0.1 rad further, which explains none.
+	const TurnedImages near = turnedImages(0, 0.151);
+	const TurnedImages wrong = turnedImages(0, 0.25);
+	const std::vector<math::Mat3d> three{truth.homography, near.homography, wrong.homography};
+	const math::Mat3d expected = truth.homography * (1.0 / frobenius(truth.homography));
+	std::vector<std::size_t> order{0, 1, 2};
+	do
+	{
+		std::vector<math::Mat3d> candidates;
+		for (const std::size_t i : order)
+			candidates.push_back(three[i]);
+		proposeHomographies(candidates);
+		const HomographyResult result = homography(truth.pairs);
+		REQUIRE(result.ok());
+		CHECK(result.candidates == 3);
+		CHECK(result.inliers == upTo(40));
+		REQUIRE(result.matrix.has_value());
+		CHECK((sameMatrix(*result.matrix, expected, 1e-12) || sameMatrix(*result.matrix, -1.0 * expected, 1e-12)));
+		CHECK(result.rmsDistance < 1e-9);
+	} while (std::next_permutation(order.begin(), order.end()));
+
+	// The near candidate alone explains every pair too, so only the summed distance told them apart.
+	proposeHomographies({near.homography});
+	const HomographyResult alone = homography(truth.pairs);
+	REQUIRE(alone.ok());
+	CHECK(alone.inliers == upTo(40));
+	CHECK(alone.rmsDistance > 0.5);
+}
+
+TEST_CASE("a homography's transfer distance is in source pixels, measured both ways", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	// B's pixel is twice A's plus a gap along x: carried forward, A's pixel misses B's by the gap;
+	// carried back, B's misses A's by half of it. At the default 4 px, a gap just under 4 is an inlier
+	// and one just over is not; measured back alone, every gap up to 8 would be.
+	const std::vector<double> gaps{0.0, 1.0, -2.5, 3.0, 4.0 * (1.0 - 1e-9), 4.0 * (1.0 + 1e-9), 5.0, -6.0, 7.9, 0.5, 20.0};
+	std::vector<PixelPair> pairs;
+	for (std::size_t i = 0; i < gaps.size(); ++i)
+	{
+		const math::Vec2d a{10.0 + 37.0 * double(i), 100.0 + 11.0 * double(i)};
+		pairs.push_back({a, 2.0 * a + math::Vec2d{gaps[i], 0.0}});
+	}
+	proposeHomographies({kDoubling});
+	const HomographyResult result = homography(pairs);
+	REQUIRE(result.ok());
+	CHECK(result.inliers == std::vector<std::uint32_t>{0, 1, 2, 3, 4, 9});
+	double sum = 0;
+	for (const std::uint32_t i : result.inliers)
+		sum += gaps[i] * gaps[i] * 1.25;
+	CHECK(std::abs(result.rmsDistance - std::sqrt(sum / double(2 * result.inliers.size()))) < 1e-12);
+
+	SECTION("a tighter threshold takes fewer")
+	{
+		HomographyRequest request;
+		request.threshold = 1.0;
+		const HomographyResult tight = homography(pairs, request);
+		CHECK(tight.status == Status::NoSolution);
+		CHECK_THAT(tight.detail, ContainsSubstring("explains 3 of 11 usable pixel pairs"));
+	}
+}
+
+TEST_CASE("homography needs four usable pairs and a candidate that explains four", "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	const TurnedImages scene = turnedImages(20);
+	SECTION("three usable pairs are too few, and the backend is never asked")
+	{
+		proposeHomographies({scene.homography});
+		std::vector<PixelPair> three(scene.pairs.begin(), scene.pairs.begin() + 3);
+		three.push_back({{1.0, 1.0}, {kNaN, 1.0}});
+		const HomographyResult result = homography(three);
+		CHECK(result.status == Status::TooFew);
+		CHECK_THAT(result.detail, ContainsSubstring("3 usable pixel pairs"));
+		CHECK(geometryScript().calls == 0);
+	}
+	SECTION("no candidate")
+	{
+		proposeHomographies({});
+		CHECK(homography(scene.pairs).status == Status::NoSolution);
+	}
+	SECTION("a candidate explaining three")
+	{
+		std::vector<PixelPair> pairs(scene.pairs.begin(), scene.pairs.begin() + 3);
+		for (std::size_t i = 3; i < 20; ++i)
+			pairs.push_back({scene.pairs[i].a, scene.pairs[i].b + math::Vec2d{0.0, 30.0}});
+		proposeHomographies({scene.homography});
+		const HomographyResult result = homography(pairs);
+		CHECK(result.status == Status::NoSolution);
+		CHECK_THAT(result.detail, ContainsSubstring("explains 3 of 20 usable pixel pairs"));
+	}
+	SECTION("an inlier distance that is not positive")
+	{
+		proposeHomographies({scene.homography});
+		HomographyRequest request;
+		request.threshold = 0;
+		CHECK(homography(scene.pairs, request).status == Status::Unsupported);
+	}
+}
+
+TEST_CASE("a homography that cannot be inverted is skipped, and the chosen one comes back normalised",
+		  "[camera][feature][geometry]")
+{
+	ensureStandIns();
+	std::vector<PixelPair> pairs;
+	for (std::size_t i = 0; i < 10; ++i)
+	{
+		const math::Vec2d a{20.0 + 31.0 * double(i), 40.0 + 17.0 * double(i)};
+		pairs.push_back({a, 2.0 * a});
+	}
+	// Rank two, which carries every pixel onto one line and back nowhere; and not finite.
+	const math::Mat3d singular = rows({1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0});
+	math::Mat3d notFinite = kDoubling;
+	notFinite[2][2] = kNaN;
+	proposeHomographies({singular, notFinite, -3.0 * kDoubling});
+	const HomographyResult result = homography(pairs);
+	REQUIRE(result.ok());
+	CHECK(result.candidates == 3);
+	CHECK(result.inliers == upTo(10));
+	// −3 times the doubling matrix at unit norm, its largest-magnitude entry positive: (2, 2, 1) / 3.
+	REQUIRE(result.matrix.has_value());
+	CHECK(sameMatrix(*result.matrix, rows({2.0 / 3.0, 0.0, 0.0, 0.0, 2.0 / 3.0, 0.0, 0.0, 0.0, 1.0 / 3.0}), 1e-15));
+
+	proposeHomographies({singular});
+	CHECK(homography(pairs).status == Status::NoSolution);
+}

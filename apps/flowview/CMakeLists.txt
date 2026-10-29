@@ -27,7 +27,7 @@ add_executable(flowview
 	src/panes/interfacepane.cpp
 	src/panes/inspectorpane.cpp
 	src/panes/graphpane.cpp
-	src/panes/imagesave.cpp
+	src/panes/valuesave.cpp
 	src/panes/canvasstate.cpp
 	src/panes/statusbar.cpp
 	src/canvasids.cpp
@@ -37,6 +37,7 @@ add_executable(flowview
 	src/framepattern.cpp
 	src/runmode.cpp
 	src/clibinders.cpp
+	src/camerafiles.cpp
 	src/canvasstyle.cpp
 	src/dump.cpp
 )
@@ -83,23 +84,32 @@ endif()
 # read. It is BUILT with everything, so every platform keeps compiling it, but only RUN through
 # `examples` (documents) or `examples-data` (documents and data), which mirror `format`: commit what
 # they wrote. The example test holds the committed documents to what this builds, as `format-check`
-# holds sources to the formatter.
+# holds sources to the formatter. With --camera-footage <folder> it draws the camera examples' footage
+# instead (`camera-footage`, into the build folder), which is never committed.
 add_executable(flowview-examples
 	examples/src/main.cpp
 	examples/src/examples.cpp
 	examples/src/datagen.cpp
+	examples/src/camerafootage.cpp
 	src/graphio.cpp
 	src/scene.cpp
 )
 target_compile_features(flowview-examples PRIVATE cxx_std_17)
 target_include_directories(flowview-examples PRIVATE src examples/src)
+# The footage is drawn by libs/camera/test's synthetic footage and textured scene, the camera verticals'
+# own, through camerafootage.cpp, which the verticals compile too.
+target_include_directories(flowview-examples PRIVATE "${lain_SOURCE_DIR}/libs/camera/test")
 target_link_libraries(flowview-examples
 	PRIVATE lain::core lain::data lain::flow lain::flow-example lain::flow::serialize lain::image lain::io
 			lain::io::sequence lain::media::serialize lain::io::image lain::io::image::codecs lain::io::video::codecs
-			lain::io::data::codecs lain::camera::flow lain::string lain::log lain::warnings
+			lain::io::data::codecs lain::camera::flow lain::camera::backends lain::camera::serialize lain::task
+			lain::string lain::log lain::warnings
 )
 if(TARGET lain::io::video::ffmpeg)
 	lain_ffmpeg_stage_runtime(flowview-examples)
+endif()
+if(TARGET lain::camera::opencv)
+	lain_opencv_stage_runtime(flowview-examples)
 endif()
 
 add_custom_target(examples
@@ -109,6 +119,10 @@ add_custom_target(examples
 add_custom_target(examples-data
 	COMMAND flowview-examples "${CMAKE_CURRENT_SOURCE_DIR}/examples" --data
 	COMMENT "Writing the example documents and their data in apps/flowview/examples"
+	VERBATIM)
+add_custom_target(camera-footage
+	COMMAND flowview-examples --camera-footage "${CMAKE_BINARY_DIR}/camera-footage"
+	COMMENT "Drawing the camera examples' footage in ${CMAKE_BINARY_DIR}/camera-footage"
 	VERBATIM)
 
 if(LAIN_BUILD_TESTING)

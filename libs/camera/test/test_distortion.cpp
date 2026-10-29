@@ -13,7 +13,9 @@
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace lain::camera;
@@ -106,5 +108,25 @@ TEST_CASE("a model's neutral form is that model with every coefficient zero", "[
 		CHECK(std::string(displayName(modelOf(model))) == std::string(displayName(model)));
 		for (const double value : coefficients(zero))
 			CHECK(value == 0.0);
+	}
+}
+
+TEST_CASE("every model reads back from its own coefficients", "[camera][distortion]")
+{
+	// fromCoefficients is coefficients()' inverse, which is how a refiner's answer becomes a model
+	// again. The test models' coefficients are distinct, so a transposed pair would show.
+	for (int m = 0; m < kModelCount; ++m)
+	{
+		const Distortion model = everyModel(m);
+		INFO(displayName(model));
+		const Distortion back = std::visit(
+			[](const auto& d) -> Distortion
+			{
+				using Model = std::decay_t<decltype(d)>;
+				return Model::fromCoefficients(d.coefficients());
+			},
+			model);
+		CHECK(back.index() == model.index());
+		CHECK(coefficients(back) == coefficients(model));
 	}
 }

@@ -246,10 +246,20 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   registration report carries metric scale evidence; otherwise all translations share one explicit
   arbitrary global scale. _Avoid_: extrinsic matrix without a named direction, camera transform,
   metre translation without metric evidence.
+- **Registered rig** — what a successful registration found, apart from how well: every camera's
+  registered transform, the registration reference, and the scale status, which a reader needs to
+  know what the translations are in. It holds no verdict and no evidence, as a camera model holds
+  none: whether it is fit for use is the registration report's to say. A failed registration has
+  none. _Avoid_: extrinsics list (a rig is not the report), registered rig without its scale status.
 - **Registration scale status** — whether registered camera translations are metric or share an
   unresolved arbitrary global scale. Scale-ambiguous registration may be geometrically usable, but
   metric reconstruction requires separate metric scale evidence. _Avoid_: normalized metres,
   approximate metric scale without evidence.
+- **Scale normalisation** — the convention that fixes the one global scale a scale-ambiguous
+  registration leaves free: the median depth of the landmarks seen from the registration reference
+  is 1, and the report's scale evidence says so. It makes two runs on one rig comparable without
+  claiming a physical unit; the bootstrap still fits each resample's scale before it measures
+  translation spread. _Avoid_: normalised metres, unit scale (the unit is a median depth, not 1).
 - **Registration dataset** — the calibrated cameras and grouped observations used by one fixed-camera
   registration attempt. It is finite and preserves camera identity, capture association, and timing
   evidence. _Avoid_: independent camera streams when cross-camera observations must correspond.
@@ -258,25 +268,81 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   when available. It does not own the source image and is distinct from an observation of a known
   board feature. _Avoid_: keypoint when provenance and uncertainty are part of the contract, board
   observation.
+- **Feature match** — a pair of features of two images that each name the other as their nearest
+  neighbour, and each nearer to the other than to their own second nearest by the ratio test's
+  margin. Both directions are tested, so matching A with B is matching B with A, and an exact tie is
+  never a match. A matcher backend only proposes neighbours; lain applies the tests. _Avoid_:
+  correspondence before the tests have been applied, track when more than two images are involved.
 - **Feature track** — a backend-neutral association of scene-feature observations believed to depict
   the same predominantly static scene point across frames or cameras. Accepted tracks are shared
   evidence for targetless calibration, registration, validation, tests, and debug visualization;
   rejection and ambiguity remain visible in the producing report. _Avoid_: feature match when the
   association spans more than one pair, reconstructed landmark before geometry has been estimated.
+  *For fixed cameras a track is a static landmark across the whole capture* (ADR-0016, amended
+  2026-10-06): its observations belong to **views**, a view being the frames one set of feature
+  positions came from (one per camera here, one per frame for a moving camera), and a track holding
+  two different features of one view is a conflict and is rejected whole.
+  *For a moving camera* (built 2026-10-15, M9 slice 4): every sampled frame is a view, so a track
+  spans frames, and its identity names those frames as well as its pixels.
+- **Static feature** — a feature a fixed camera sees at the same pixel in every sampled frame, or in
+  at least half of them, so occlusion by a passer-by does not lose it. Only static features are
+  matched between cameras in targetless registration; a transient feature is moving content and is
+  dropped before matching. With one sampled frame there is nothing to compare, and every feature is
+  kept. _Avoid_: background feature (the test is persistence, not depth), keypoint.
+  *"The same pixel"* (2026-10-06): two frames' features are one feature when they are a feature
+  match between those frames, within 1.5 pixels at the scale searched and a 1.5× size ratio. A
+  static feature sits at the median of its pixels. *One feature, several orientations*
+  (2026-10-07): a detector may report one keypoint at several orientations, each with its own
+  descriptor. Those are one feature, and every orientation takes part in matching, since which one
+  a view would keep depends on its roll.
 - **Feature-track extraction** — the shared preprocessing operation that converts a frame sequence
   into accepted feature tracks and a report covering detection, description, matching, track
   construction, geometric verification, rejection, and reproducibility. Targetless methods consume
-  its evidence rather than defining separate feature front ends. _Avoid_: targetless calibration when
-  only evidence was extracted, Ceres feature matching.
+  its evidence rather than defining separate feature front ends. A producer backend only proposes
+  (features, nearest neighbours, candidate poses); lain applies the matching tests, builds the
+  tracks, and measures and accepts the geometry. _Avoid_: targetless calibration when only evidence
+  was extracted, Ceres feature matching.
+  *Two extractions* (planned 2026-10-12, built 2026-10-15, M9 slice 4): the **fixed-rig** one keeps
+  each camera's static features and verifies a camera pair by relative pose, through the cameras'
+  known models. The **sequence** one, for a moving camera that targetless calibration has no model
+  for yet, makes every sampled frame its own view and verifies a frame pair by a fundamental matrix,
+  measured by its Sampson distance in pixels. The two share one private module: a frame's features,
+  a pair's match before it is verified, and the union of verified pairs into tracks.
 - **Camera observation graph** — the automatically inferred graph whose vertices are cameras and whose
   edges are supported by accepted shared observations. Initial targetless registration requires this
   graph to be connected through accepted feature-track overlap; declared camera-pair relationships are
   hints at most, not evidence. _Avoid_: user-provided overlap graph, camera topology.
+  *Connected is necessary but not sufficient for targetless registration* (2026-10-06): every camera
+  must also be a placeable camera.
+  *Whose type* (2026-10-14): `lain::camera`'s (`observationgraph.h`), not registration's, because
+  targetless calibration builds one too, its vertices the moving camera's sampled frames. Registration
+  names it where its callers look for it, and keeps the weak-bridge judgement, which only it makes.
+- **Placeable camera** — in targetless registration, a camera that shares triangulated landmarks with
+  cameras already placed, so an absolute pose can put it in the frame they share. Two overlaps A–B and
+  B–C with no track seen by all three are connected through B, but each keeps a scale of its own:
+  C cannot be placed and the global refinement is singular. A rig with an unplaceable camera fails as
+  disconnected and names it. A board registration never meets this, because the board is metric.
+  *How many* (2026-10-07): the geometry facades' own minima. A camera needs 4 tracks already seen by
+  two placed cameras, and the pair the placement starts from needs 5 shared tracks. Placing is a
+  closure from that seed pair: it does not depend on the order cameras join, but it does depend on
+  the pair. A camera must still see 4 landmarks once those behind it are left out.
+  _Avoid_: connected camera (connection is the weaker property), reachable camera.
+- **Weak bridge** — an edge of the camera observation graph whose removal would disconnect it, and
+  which rests on less shared evidence than the registration fitness profile's minimum (a request may
+  override it, as it may any threshold). The evidence is counted in the profile's unit: capture
+  groups for board registration, accepted tracks for targetless registration. The rig is
+  connected, but the cameras beyond the bridge are placed by too little evidence to trust, so a
+  registration with one is never Ready and its report names the bridge. _Avoid_: ambiguous camera,
+  weak camera (the weakness is the connection's).
 - **Targetless registration** — fixed camera registration inferred from ordinary scene features using
-  shared feature tracks, synchronized capture groups, immutable camera models, connected field-of-view
-  overlap, and predominantly static scene structure. Dynamic observations are rejected as outliers;
-  without separate metric evidence, the result remains globally scale-ambiguous. _Avoid_:
-  unsynchronized registration, calibration-free registration, method-owned feature matching.
+  shared feature tracks, capture groups, immutable camera models, field-of-view overlap through which
+  every camera is placeable, and predominantly static scene structure. Moving content is dropped as
+  transient before matching, and what survives it is rejected as outliers; without separate metric
+  evidence, the result remains globally scale-ambiguous and is scale-normalised. _Avoid_:
+  calibration-free registration, method-owned feature matching.
+  *(Amended 2026-10-06: this read "synchronized capture groups". Its tracks are static landmarks
+  across the capture, so its capture groups only choose which frames are examined, and nothing is
+  matched across cameras at an instant that could need synchronising.)*
 - **Registration report** — the result of fixed camera registration, successful or failed, containing
   the chosen registration reference, registered camera transforms when the whole camera graph is
   connected, registration fitness, scale status, and diagnostics for observations, residuals, and
@@ -285,8 +351,35 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
 - **Registration fitness** — the method-independent verdict that a registration is rejected,
   exploratory, or ready based on connectivity, global refinement, geometric coverage, held-out
   residuals, consistency, and stability. Board and targetless diagnostics remain method-specific;
-  comparing methods requires the same independent validation evidence. _Avoid_: board RMS as overall
-  registration quality, targetless inlier ratio as overall registration quality.
+  comparing methods requires the same independent validation evidence. A fitness profile counts in
+  one evidence unit, capture groups or accepted tracks, and its notes and the report's summary say
+  which. _Avoid_: board RMS as overall registration quality, targetless inlier ratio as overall
+  registration quality.
+- **Held-out group** — a capture group kept out of a registration's initialisation and refinement so
+  it can validate the result. Each member in turn is predicted from the others: the board's pose is
+  solved from the other members with every camera held at its registered transform, lain's
+  projection predicts the member's corners, and the angle between predicted and observed rays is
+  its **transfer residual**. It tests the extrinsics, which a residual on the fitted groups cannot,
+  since refinement has already minimised that. A group that alone joins two parts of the camera
+  graph is never held out: what is held out must not decide whether a registration can happen.
+  _Avoid_: validation view, reprojection error when the prediction crosses cameras.
+  It is board registration's held-out unit; targetless registration's is the held-out track.
+- **Held-out track** — an accepted feature track kept out of a targetless registration's
+  initialisation and refinement so it can validate the result. Each member in turn is predicted from
+  the others: its landmark is triangulated from the other members with every camera held, and the
+  angle between the predicted and observed rays is its transfer residual. A two-member track has one
+  other member, so its member is scored by the angle between its observed ray and the epipolar plane
+  instead. It is scale-invariant, which is why board and targetless registrations are compared on
+  the same held-out tracks. A track whose loss would leave a camera unplaceable is never held out.
+  _Avoid_: held-out match, validation landmark.
+  *One procedure for every report* (2026-10-07): the prediction weighs each observation by the
+  track's own covariance, with no robust loss, whatever the report's request asked of its own
+  refinement. Two registrations are judged by what they registered, never by how they were refined.
+  *Judged from medians* (2026-10-21): held-out evidence, a group's or a track's, is judged by a
+  median-based residual, scaled to read as the RMS under normal errors, rig-wide and for each camera
+  on its own. No held-out member is classed an outlier, since a held-out residual carries its
+  prediction's error and SIFT's are heavy-tailed. The RMS stays, for diagnosis. _Avoid_: held-out
+  outlier.
 - **Global registration refinement** — joint reprojection optimization of all registered camera
   transforms and the method-specific latent geometry while holding the registration reference fixed:
   board poses for board registration or scene landmarks induced by accepted feature tracks for
@@ -327,6 +420,11 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   Output is independent of input order: frames are canonically ordered by timestamp, camera identity,
   and frame identity, group identity derives from selected frame identities, and duplicate frame
   identities are invalid input.
+- **By-position grouping** — the explicit capture grouping for frame-locked footage: frame k of
+  every camera forms capture group k, and a camera with fewer frames is absent from the groups past
+  its end. It reads no timestamp, so it is correct only when the host knows the cameras were
+  triggered together, such as a genlocked rig. _Avoid_: synchronised grouping (nothing was
+  measured), frame-index matching.
 - **Clock domain** — the identity of the time basis shared by comparable capture timestamps. A normal
   registration dataset uses one clock domain; automatic grouping rejects mixed or unknown domains
   unless timestamps have first been mapped into a common domain. _Avoid_: timestamp source when it
@@ -375,6 +473,11 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
 - **Camera identity** — the durable opaque identity assigned by the loader to one physical or logical
   capture source and preserved through calibration, grouping, registration, serialization, and
   reports. It is distinct from a mutable path or display label. _Avoid_: camera index, filename.
+  *Until a capture manifest assigns one* (2026-10-21): a graph names a camera by where its footage
+  lies within the folder its rig lies in, `cam0` for a folder of stills and `cam0.mp4` for a video, and
+  an identity that digests a frame spells its source relative to that folder too
+  (`capture/location.h`). So the same footage gets the same identities, and the same held-out evidence,
+  wherever it sits on disk; where it sits is still a path, and not durable across a rename.
 - **Frame identity** — the loader-assigned opaque identity of one frame within its camera source,
   stable across repeated processing and paired with camera identity for global uniqueness. It is not
   inferred from container position or timestamp. _Avoid_: frame index when decoding order is not the
@@ -387,10 +490,25 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   calibration attempt while all methods yield the same calibration report. Fallback methods run in
   priority order and stop at the first attempt that meets the requested reconstruction fitness;
   evaluating every successful method is comparison, not fallback. _Avoid_: calibration type.
+  *In a graph* (planned 2026-10-12, built 2026-10-20, M9 slice 4): a `method` input, and the fallback is
+  wired from gates and small nodes rather than one node. Each method's footage passes through a gate,
+  switched from the method (`calibrationMethod`) and the earlier attempts' reports (`nextAttempt`), so a
+  method that is not needed is never run. "Meets the requested reconstruction fitness" means accepted
+  (below), and a looser acceptance is a looser profile. The type is `calibration::Method`.
 - **Calibration attempt** — the result and evidence produced by one calibration method within a
   request. A fallback report retains every attempt made and fails only after all configured methods
   have failed to meet the requested reconstruction fitness. _Avoid_: fallback result when referring
   to the individual method outcome.
+  *The attempts made* (planned 2026-10-12, built 2026-10-20 as `calibration::Attempts`, which
+  `calibrationAttempts` produces): a method that was skipped because an earlier attempt was accepted
+  made no attempt, and is not listed. With no attempt made at all there is no attempts value, so the
+  absence propagates rather than reading as a failed fallback.
+- **Accepted attempt** — the first calibration attempt, in priority order, that succeeded and is Ready
+  under its own method's fitness profile. One shared function decides it (`calibration::accepts`), and
+  both the gate that skips a later method and the record of the attempts call it, so the two cannot
+  disagree. The record derives which attempt it is rather than storing a position. A fallback with
+  no accepted attempt produces no camera model, and its attempts still say why. _Avoid_: best attempt
+  (nothing is compared), winning method.
 - **Calibration request** — the graph-boundary description of a calibration attempt: its method,
   method-specific evidence specifications or priors, and reconstruction-fitness acceptance criteria.
   Invalid or missing evidence required by the selected method yields a failed calibration report.
@@ -446,6 +564,12 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   visualization resolves that image separately. Calibration, registration, tests, and debug
   visualization use the same observation so displayed evidence matches what was processed. _Avoid_:
   OpenCV corners, detected board image, calibration sample, inferred confidence.
+- **Pose solver** — the backend operation that recovers a board's pose in ONE view under a camera
+  model held fixed, `cameraFromBoard`. A planar target can fit two poses almost equally well (far
+  away, or nearly square-on), so the solver returns the runner-up as an alternative and leaves the
+  choice to a caller with more evidence. Calibration validation and registration both use it, and
+  neither owns it. _Avoid_: PnP when the backend's algorithm is not the point, board pose
+  estimation (calibration estimates a model, not a pose).
 - **Board-detection report** — the result of attempting to find a specified board in one source
   frame, whether detection succeeded, was incomplete, or failed. It carries the usable board
   observation when one exists plus rejection reasons and diagnostic evidence used by view selection,
@@ -472,6 +596,50 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   distortion, but its trust depends on sufficient motion, scene geometry, observability, priors, and
   independent validation. _Avoid_: automatic calibration, uncalibrated calibration, method-owned
   feature matching.
+  *As planned* (2026-10-12, M9 slice 4): one moving camera's footage of a predominantly static scene,
+  the camera translating as well as turning; footage that only turns has no parallax and fails
+  initialisation *(before any start from sub-slice 10d, 2026-10-18: a pair of frames a homography
+  explains may not seed, and footage that only turns, or sees one plane, leaves no pair that may)*. Every sampled frame is a view and its tracks come from the sequence extraction. The
+  camera's frames and the landmarks are reconstructed incrementally from a starting model, either an
+  imported one or the focal sweep's. A bundle adjustment then estimates the model, with fx, fy and the
+  distortion free and the principal point held by default *(freed by default from sub-slice 10b,
+  decided 2026-10-16: a held one blinds the verdict to its offset)*. *(From 2026-10-19 a second bundle
+  adjustment follows, from the first's result without the observations it does not explain, its
+  outliers: a printed board's repeated corners had pulled a single adjustment's principal point a few
+  pixels off where the verdict could not see it.)* The model is validated on held-out frames,
+  and its stability measured by resampling tracks. The reconstruction is a by-product with an arbitrary
+  scale, never part of the result.
+- **Focal sweep** — how targetless calibration starts when no imported model seeds it. A fixed,
+  log-spaced set of focal lengths (about 25° to 120° field of view), each with the principal point at
+  the image centre and the requested model's neutral distortion, is tried on the most strongly verified
+  frame pairs. The candidate whose relative poses explain the most matches starts the reconstruction.
+  Every candidate is scored at one pixel threshold, turned into its own angle; a fixed angle covers more
+  pixels at a longer focal length, and would favour the longest candidate. _Avoid_: focal guess (it is
+  measured), self-calibration (the bundle adjustment does that).
+  *As decided 2026-10-16, built in M9 slice 4's sub-slice 10c:* three starts at geometric thirds of that
+  range, each reconstructed and adjusted, the one whose bundle adjustment ends with the lowest cost per
+  residual winning. Two frames scored no candidate above another on rendered footage, and a start too
+  short ends in a wrong minimum. *(Built with one addition:* a start must first have kept the most
+  frames for its adjustment, as a seed must reach the most frames. A cost per residual compares fits of
+  the same footage only, and a start that reconstructed three frames of nineteen fit them more closely
+  than the right start fit seventeen.) *(Amended 2026-10-19: ranked by the first of a start's two
+  adjustments, since the second keeps what agrees with its own start's minimum, right or wrong.)*
+- **Held parameter** — a camera-model parameter a calibration keeps at its starting value rather than
+  estimating, such as a principal point a targetless calibration's settings hold (held by default until
+  sub-slice 10b, decided 2026-10-16). It has no resampled
+  variation, so a report says it was held and the fitness criterion on it does not apply; its variation
+  is never recorded as zero. A held parameter is part of an estimate: a held MODEL (the
+  HoldAndValidate policy) estimated nothing, so its resampling evidence is unavailable and it is at most
+  Exploratory, rather than exempt from every criterion. _Avoid_: fixed parameter when a held one is
+  meant, zero variation.
+- **Held-out frame** — a sampled frame kept out of a targetless calibration's reconstruction so it can
+  validate the model, as a held-out board view does in board calibration. It is posed afterwards against
+  the reconstructed landmarks with the model held, and the angles between its observed and predicted
+  rays are measured through lain's projection, over the observations within its pose's inlier angle.
+  The rest are counted, not measured: a wrong match no fundamental matrix could see would otherwise
+  decide the held-out angle alone. A frame whose loss would leave the reconstruction unable to start is
+  never held out. _Avoid_: held-out view when the method matters, held-out track (that is
+  targetless registration's unit).
 - **Camera model** — the shared description of a calibrated camera: image size, intrinsics,
   distortion model, and uncertainty when known. Board and targetless calibration use the same camera
   model; the calibration report carries how trustworthy it is. A multi-imager device or one imager
@@ -485,6 +653,14 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   strictly: an unknown or missing key, an unrecognised name or a value of the wrong kind is a named
   problem, never a default, since a hand-typed manufacturer model is exactly where a misspelled
   coefficient would otherwise load as zero. _Avoid_: calibration file (a report is not a model).
+- **Rig document** — a registered rig written as a versioned document: `{version, reference, scale:
+  {scale, evidence}, cameras: [{camera, referenceFromCamera: {rotation: {w, x, y, z}, translation:
+  {x, y, z}}}]}`, each transform in the camera frame, its rotation the unit quaternion the rigid
+  transform holds. What a registration's rig output writes and a later run binds back. Read strictly,
+  as a camera-model document is, and then as a rig: a camera at least, none twice, the reference among
+  them with the identity transform, every rotation a unit quaternion. A rotation read back may differ
+  from the one written in its last bit, since the rigid transform renormalises what it is built from.
+  _Avoid_: extrinsics file, registration file (a rig is not the report).
 - **Distortion direction** — which mapping a distortion model and its coefficients define between
   ideal normalized coordinates and observed image coordinates. Forward and inverse Brown-Conrady
   models are distinct even when their coefficient sets have the same shape; projection and
@@ -539,15 +715,17 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   multiple diagnostics, confidence when no uncertainty model exists.
 - **Reproducibility record** — report provenance sufficient to repeat a calibration or registration
   attempt: canonical input identities, backend and version, solver configuration, random seed, and
-  execution policy. Normal execution promises reproducibility within stated numeric tolerances;
+  execution policy. What a method alone uses (a board method's detector, pose solver and detection
+  request, in calibration and registration alike) sits in a per-method record beside the fields
+  every method shares. Normal execution promises reproducibility within stated numeric tolerances;
   deterministic-debug execution uses seeded, canonical, single-threaded processing where supported.
   _Avoid_: deterministic result when bit-identical floating-point output is not guaranteed.
 - **Reconstruction fitness** — the primary task-specific verdict describing whether a calibration is
   rejected, exploratory, or ready for reconstruction. It summarizes explicit acceptance criteria
   without replacing the calibration report's raw evidence, claiming metric scene scale, or implying
   that independent validation has run. Cross-resolution criteria emphasize normalized or angular
-  ray error, held-out evidence, coverage, and parameter stability while retaining raw pixel error for
-  diagnosis. Criteria come from a named versioned profile with optional explicit overrides. _Avoid_:
+  ray error (or a residual whitened by each observation's stated precision), held-out evidence,
+  coverage, and parameter stability while retaining raw pixel error for diagnosis. Criteria come from a named versioned profile with optional explicit overrides. _Avoid_:
   accuracy, quality, validated calibration, metric-ready calibration, universal RMS threshold.
 - **Calibration validation** — an offline assessment of a camera model against a paired validation
   dataset, producing evidence without controlling whether downstream processing continues. Validation

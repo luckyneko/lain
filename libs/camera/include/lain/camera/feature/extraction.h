@@ -1,0 +1,122 @@
+#pragma once
+
+#include "lain/camera/capture/capturegroup.h"
+#include "lain/camera/feature/extractionsettings.h"
+#include "lain/camera/feature/geometry.h"
+#include "lain/camera/feature/matching.h"
+#include "lain/camera/feature/status.h"
+#include "lain/camera/feature/tracks.h"
+#include "lain/camera/provenance.h"
+#include "lain/camera/rig.h"
+
+#include <lain/core/time.h>
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+// Feature-track extraction for fixed cameras (CONTEXT.md, "Feature-track extraction"): footage and
+// capture groups in, accepted static tracks and a report out. Backend-neutral: the features, the
+// neighbours and the candidate poses come from the registered backends, and everything that decides
+// what a track IS (which features are static, which matches survive, which pairs verify, which
+// tracks are accepted) is here, so it is the same whichever backends run (ADR-0016, "Producers
+// propose; lain decides").
+namespace lain::camera::feature
+{
+	// The settings every extraction shares (extractionsettings.h), and what only a fixed rig's reads.
+	// `minimumPairInliers` is at least 5 here, the fewest a relative pose needs.
+	struct ExtractionRequest : ExtractionSettings
+	{
+		// How many capture groups every camera samples, spread evenly across the capture.
+		std::uint32_t samples = 5;
+		// How a camera pair's matches are verified.
+		GeometryRequest geometry;
+		// A feature found in two of a camera's frames is one feature only within this distance, in
+		// the pixels the backend searched, and this ratio of sizes.
+		double staticDistance = 1.5;
+		double staticSizeRatio = 1.5;
+	};
+
+	// What became of one camera's features: how many it found, how many left before matching and why,
+	// and how many static features the rest became. A feature is everything a backend found at one
+	// pixel, at however many orientations, so the counts below `orientations` are of features.
+	struct CameraExtraction
+	{
+		double scale = 1.0;				  // the factor its frames were searched at
+		std::uint32_t frames = 0;		  // sampled frames it has a member in
+		std::uint32_t framesFailed = 0;	  // of those, frames that did not decode
+		std::uint32_t found = 0;		  // keypoints found, summed over its frames, every orientation
+		std::uint32_t orientations = 0;	  // of those, further orientations of a feature, kept with it
+		std::uint32_t capped = 0;		  // features beyond the feature cap
+		std::uint32_t inconsistent = 0;	  // in a cluster holding two features of one frame
+		std::uint32_t transient = 0;	  // in a cluster found in too few of its frames
+		std::uint32_t duplicates = 0;	  // static features dropped for sharing a pixel with a stronger one
+		std::uint32_t staticFeatures = 0; // what it brings to matching
+	};
+
+	enum class PairOutcome
+	{
+		TooFew,		// a side has fewer than two features to match (static features, for fixed cameras)
+		Skipped,	// the pre-screen found too few matches to be worth the full match
+		Unverified, // nothing its verification proposes explains enough of its matches
+		Verified,	// its inliers join tracks
+	};
+
+	struct PairExtraction
+	{
+		std::uint32_t a = 0; // into TrackSet::views, a < b
+		std::uint32_t b = 0;
+		PairOutcome outcome = PairOutcome::TooFew;
+		// Feature pairs, each pair once however many of their orientations matched.
+		std::uint32_t prescreenMatches = 0;
+		std::uint32_t matches = 0;	 // from the full match
+		std::uint32_t ambiguous = 0; // dropped from it: a feature matched to two of the other camera's
+		// Of `matches`, explained by the pair's verification: a relative pose for fixed cameras, a
+		// fundamental matrix for a moving camera's frames (sequenceextraction.h).
+		std::uint32_t inliers = 0;
+		std::string detail; // why it did not verify
+	};
+
+	struct ExtractionReport
+	{
+		ExtractionRequest request;
+		std::vector<CameraExtraction> cameras; // as TrackSet::views
+		std::vector<PairExtraction> pairs;	   // every pair, ascending by (a, b)
+		std::uint32_t tracks = 0;
+		std::uint32_t conflicts = 0;			// components holding two features of one view, rejected whole
+		std::uint32_t conflictObservations = 0; // the features those held
+		// The backends that answered, from the first call in canonical order.
+		Provenance extractor;
+		Provenance matcher;
+		Provenance geometry;
+		core::Time elapsed;
+	};
+
+	struct ExtractionResult
+	{
+		Status status = Status::NoSolution;
+		std::string detail; // why there is no track set, when the status is not Ok
+		TrackSet trackSet;
+		ExtractionReport report;
+
+		bool ok() const { return status == Status::Ok; }
+	};
+
+	// The static feature tracks of a fixed rig. In order:
+	// 1. every check that needs no frame, so a request that cannot succeed decodes nothing;
+	// 2. the capture groups to sample: ordered by their members' median timestamp, then median
+	//    ordinal, then identity, and taken evenly across that order;
+	// 3. per camera, one task: each sampled frame decoded, its features extracted, the image released,
+	//    the keypoints at one pixel kept together as one feature at several orientations, and the cap
+	//    applied; then the frames matched with each other, every orientation of each, and a feature
+	//    found at one pixel in at least half of them kept as static, at its median pixel;
+	// 4. per camera pair, one task: a pre-screen on the strongest features, the full match, a feature
+	//    matched to two of the other camera's dropped, and the matches verified by a relative pose;
+	// 5. the verified matches joined into tracks, serially, a track holding two features of one view
+	//    rejected whole.
+	//
+	// Ok with an empty track set is an extraction that found nothing to join: whether that is enough
+	// is the consumer's question. Independent of input order and of the execution policy.
+	ExtractionResult extractTracks(const std::vector<RigFootage>& cameras, const std::vector<capture::CaptureGroup>& groups,
+								   const ExtractionRequest& request = {});
+} // namespace lain::camera::feature

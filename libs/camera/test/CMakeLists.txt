@@ -7,6 +7,11 @@ add_executable(test-camera
 	test_cameramodel.cpp
 	test_boardpattern.cpp
 	test_boardseams.cpp
+	test_capturegroup.cpp
+	test_registrationcontracts.cpp
+	test_triangulation.cpp
+	test_refinementseam.cpp
+	test_attempts.cpp
 )
 target_compile_features(test-camera PRIVATE cxx_std_17)
 target_link_libraries(test-camera PRIVATE lain::camera lain::warnings Catch2::Catch2WithMain)
@@ -20,8 +25,73 @@ target_link_libraries(test-camera-nobackend PRIVATE lain::camera lain::warnings 
 catch_discover_tests(test-camera-nobackend TEST_PREFIX "(camera) ")
 
 # The calibration method module over stand-in backends that answer from a known truth. Its own
-# executable, so those stand-ins are the only backends registered.
-add_executable(test-camera-calibration test_calibration.cpp)
+# executable, so those stand-ins are the only backends registered. The golden case compares whole
+# reports with golden/boardcalibration.txt, and writes what it produced beside the build when the two
+# differ.
+add_executable(test-camera-calibration test_calibration.cpp test_calibrationgolden.cpp)
 target_compile_features(test-camera-calibration PRIVATE cxx_std_17)
-target_link_libraries(test-camera-calibration PRIVATE lain::camera lain::testing lain::warnings Catch2::Catch2WithMain)
+target_link_libraries(test-camera-calibration
+	PRIVATE lain::camera lain::meta lain::testing lain::warnings Catch2::Catch2WithMain)
+target_compile_definitions(test-camera-calibration PRIVATE
+	LAIN_CAMERA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
+	LAIN_CAMERA_GOLDEN_OUT="${CMAKE_CURRENT_BINARY_DIR}")
 catch_discover_tests(test-camera-calibration TEST_PREFIX "(camera) ")
+
+# The board registration method module over stand-in backends answering from a known rig. Its own
+# executable, so those stand-ins are the only backends registered. The golden case compares a whole
+# report with golden/boardregistration.txt, and writes what it produced beside the build when the
+# two differ.
+add_executable(test-camera-registration test_registration.cpp test_registrationgolden.cpp)
+target_compile_features(test-camera-registration PRIVATE cxx_std_17)
+target_link_libraries(test-camera-registration
+	PRIVATE lain::camera lain::meta lain::testing lain::warnings Catch2::Catch2WithMain)
+target_compile_definitions(test-camera-registration PRIVATE
+	LAIN_CAMERA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
+	LAIN_CAMERA_GOLDEN_OUT="${CMAKE_CURRENT_BINARY_DIR}")
+catch_discover_tests(test-camera-registration TEST_PREFIX "(camera) ")
+
+# A build that can pose a board but not refine a registration: a pose solver and no refiner.
+add_executable(test-camera-norefiner test_norefiner.cpp)
+target_compile_features(test-camera-norefiner PRIVATE cxx_std_17)
+target_link_libraries(test-camera-norefiner PRIVATE lain::camera lain::warnings Catch2::Catch2WithMain)
+catch_discover_tests(test-camera-norefiner TEST_PREFIX "(camera) ")
+
+# The feature facades (lain::camera::feature) over scripted stand-ins: an extractor, matchers that
+# differ in the kinds and searches they take, a matcher that misbehaves, and a geometry solver that
+# proposes whatever a case scripts. Its own executable, so those are the only backends registered.
+add_executable(test-camera-feature test_featureseams.cpp)
+target_compile_features(test-camera-feature PRIVATE cxx_std_17)
+target_link_libraries(test-camera-feature PRIVATE lain::camera lain::warnings Catch2::Catch2WithMain)
+catch_discover_tests(test-camera-feature TEST_PREFIX "(camera) ")
+
+# Feature-track extraction (feature::extractTracks) over stand-ins answering from a known scene
+# (syntheticscene.h). Its own executable, so those are the only backends registered.
+add_executable(test-camera-tracks test_tracks.cpp test_trackidentity.cpp test_sequencetracks.cpp)
+target_compile_features(test-camera-tracks PRIVATE cxx_std_17)
+target_link_libraries(test-camera-tracks PRIVATE lain::camera lain::testing lain::warnings Catch2::Catch2WithMain)
+catch_discover_tests(test-camera-tracks TEST_PREFIX "(camera) ")
+
+# Targetless registration over stand-ins answering from a known scene (syntheticscene.h), with a
+# refiner that hands back its start (passthroughrefiner.h): held-out tracks predicted member by member
+# (registration::validate). Its own executable, so those are the only backends registered. The golden
+# case compares whole reports with golden/targetlessregistration.txt, and writes what it produced
+# beside the build when the two differ.
+add_executable(test-camera-targetless test_targetless.cpp test_targetlessgolden.cpp)
+target_compile_features(test-camera-targetless PRIVATE cxx_std_17)
+target_link_libraries(test-camera-targetless
+	PRIVATE lain::camera lain::meta lain::testing lain::warnings Catch2::Catch2WithMain)
+target_compile_definitions(test-camera-targetless PRIVATE
+	LAIN_CAMERA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
+	LAIN_CAMERA_GOLDEN_OUT="${CMAKE_CURRENT_BINARY_DIR}")
+catch_discover_tests(test-camera-targetless TEST_PREFIX "(camera) ")
+
+# Targetless calibration (calibration::targetless) over stand-ins answering from a known moving camera
+# (syntheticscene.h), with a refiner that hands back its start and can be told it estimates a model
+# (passthroughrefiner.h): the focal sweep, the held-out frames, which frames are placed, the refusals,
+# and that nothing depends on the order evidence arrives in or the execution policy. Its own
+# executable, so those stand-ins are the only backends registered.
+add_executable(test-camera-targetless-calibration test_targetlesscalibration.cpp)
+target_compile_features(test-camera-targetless-calibration PRIVATE cxx_std_17)
+target_link_libraries(test-camera-targetless-calibration
+	PRIVATE lain::camera lain::meta lain::testing lain::warnings Catch2::Catch2WithMain)
+catch_discover_tests(test-camera-targetless-calibration TEST_PREFIX "(camera) ")

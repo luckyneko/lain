@@ -1,5 +1,5 @@
 // Unit tests for lain::meta::toString — the best-effort, fmt-free stringify: bool ->
-// true/false, a member toString(), an ostream operator, else the type name.
+// true/false, a member toString(), an enum's name, an ostream operator, else the type name.
 
 #include "lain/meta/tostring.h"
 
@@ -25,6 +25,18 @@ namespace tostring_test
 	{
 		int x;
 	}; // neither toString nor ostream -> type-name fallback
+
+	enum class Method
+	{
+		Board,
+		Targetless,
+	};
+
+	enum Unscoped
+	{
+		First,
+		Second,
+	}; // streams as its number, which is why the enum arm comes first
 } // namespace tostring_test
 
 using namespace lain::meta;
@@ -59,4 +71,13 @@ TEST_CASE("toString falls back to the type name for an opaque type", "[tostring]
 	REQUIRE(s.front() == '<');
 	REQUIRE(s.back() == '>');
 	REQUIRE(s.find("Opaque") != std::string::npos);
+}
+
+TEST_CASE("toString renders an enum as its enumerator's name", "[tostring]")
+{
+	REQUIRE(toString(Method::Targetless) == "Targetless");
+	// An unscoped enum would stream as its number; it is named too.
+	REQUIRE(toString(Second) == "Second");
+	// A value no enumerator names is its number, not an empty string.
+	REQUIRE(toString(static_cast<Method>(7)) == "7");
 }

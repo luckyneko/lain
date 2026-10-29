@@ -2434,12 +2434,24 @@ adds a pin to the canvas.
 
 ## Milestone 9 — camera calibration and fixed registration (grilled 2026-08-14 to 08-15)
 
-**Designed, not started** — the only milestone from 5 onward that is. M10 was numbered after it and
-built before it, discharging its frame-sequence prerequisite. How OpenCV is obtained was settled
-2026-09-29 ([ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md)), and slice 0 below
-(OpenCV lands, nothing depending on it) is built. **Slice 1 is in progress** as nine sub-slices
-(below): 0 to 7 are built, and 8 (the real-camera fixture) has its machinery built; what is left of
-it is the capture, which only the repo owner can make.
+**Every slice is built; M9 is not complete.** M10 was numbered after it and built before it,
+discharging its frame-sequence prerequisite. How OpenCV is obtained was settled 2026-09-29
+([ADR-0026](docs/adr/0026-opencv-from-a-pinned-minimal-prebuilt.md)). The slices, each planned as
+sub-slices below:
+- **Slice 0** (OpenCV lands, nothing depending on it) is built.
+- **Slice 1** (camera geometry and ChArUco calibration): sub-slices 0 to 7 are built, and 8 (the
+  real-camera fixture) has its machinery built. What is left of it is the capture, which only the repo
+  owner can make.
+- **Slice 2** (fixed-camera board registration), planned 2026-10-05: all seven sub-slices are built.
+- **Slice 3** (targetless registration with known intrinsics), planned 2026-10-06: all eleven
+  sub-slices are built (2026-10-09). The repo owner kept the provisional values sub-slice 9 measured,
+  and queued three changes to how held-out evidence is judged.
+- **Slice 4** (targetless calibration and the graph fallback), planned 2026-10-12: all thirteen
+  sub-slices are built (2026-10-20), with the fixes that landed ahead of 5 and of 9c.
+
+What stands between this and a complete milestone is in **the 2026-10-20 review** at the end of the
+build order: gaps the slice plans did not cover, the gui-mode eyeballs, and the capture. The
+Outstanding work index lists every open item.
 
 Domain vocabulary is in [CONTEXT.md](CONTEXT.md). The dependency policy is
 [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md), the camera module and evidence
@@ -2468,7 +2480,9 @@ to a separate grill.
 spec's homogeneity guarantee, and the production path from files or video into calibration. Camera
 work may define the evidence it needs from a sequence, but must consume the sequence contract
 established there rather than inventing a temporary loader or observation-only node path. Capture
-manifests and capture datasets remain M9's (M10 explicitly excludes them).
+manifests and capture datasets remain M9's (M10 explicitly excludes them). *(**Changed 2026-10-20**,
+decided with the repo owner in the M9 review: they come after M9. The review records the interim
+fix for the one finding that needs them.)*
 
 The 2026-08-16 review also left these requirements and decisions visible before implementation:
 
@@ -2496,7 +2510,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
   keys, dynamic/boundary port types, codecs for serialized params or defaults, host binders, and
   flowview catalog entries. Disabled camera plugins neither register unavailable node kinds nor fetch
   third-party dependencies, and saved graphs fail clearly when a required optional implementation is
-  absent.
+  absent. *(**Reversed 2026-10-02** (ADR-0016, amended): every camera node kind registers whatever
+  the build, so a camera document loads whole; a node with no backend fails with the reason when it
+  runs, and flowview's menu offers only the kinds a backend can run.)*
 - **Fallback needs an explicit graph shape.** Gate targetless work upstream from a board-result
   fitness predicate, then combine attempt reports separately from selecting the accepted camera model.
   The final report retains every attempted path, including a failed board attempt; a downstream
@@ -2514,7 +2530,9 @@ The 2026-08-16 review also left these requirements and decisions visible before 
   should leave a clean generalization path when a second measured-quantity caller exists.
 - **Dependency footprint is an acceptance criterion.** OpenCV and Ceres camera plugins are opt-in;
   an all-disabled configure performs no dependency fetch. *(Since 2026-10-02 OpenCV defaults ON
-  for a top-level build, so "all-disabled" is `-DLAIN_CAMERA_OPENCV=OFF` explicitly.)* Record exact versions, enabled modules,
+  for a top-level build, and Ceres has defaulted ON there since it landed (2026-10-05), so
+  "all-disabled" means `-DLAIN_CAMERA_OPENCV=OFF -DLAIN_CAMERA_CERES=OFF` explicitly. A bundled lain
+  still builds neither unasked.)* Record exact versions, enabled modules,
   transitive licenses, configure/build time, and representative static and dynamic binary sizes so
   dependency containment is measured rather than inferred from target boundaries.
 - **The D455 fixture records capture provenance.** Store RGB stream profile, resolution and format,
@@ -3231,15 +3249,5949 @@ The 2026-08-16 review also left these requirements and decisions visible before 
    the optional private Ceres adapter for one sparse global-refinement path, with SuiteSparse disabled
    by default. Exercise connected, partial, ambiguous, and disconnected synthetic rigs plus the
    target scale of roughly 100 cameras and 4,000 capture groups without fixed camera/group limits.
+
+   **Planned 2026-10-05 as seven sub-slices (0 to 6), one commit each.** Four decisions came from
+   the repo owner while planning, recorded in ADR-0016 and ADR-0017 (both amended in place):
+   - **Ceres 2.2.0, built from source, with Eigen 3.4.0 and Ceres' bundled miniglog.** Only
+     unreleased Ceres master needs Abseil, so Abseil leaves the inventory. Everything optional is
+     off (SuiteSparse, LAPACK, CUDA, Accelerate, gflags), the build is static, and
+     `EIGEN_MPL2_ONLY` is defined for Ceres' own sources as well, so building it proves no LGPL
+     Eigen code is reached.
+   - **Capture groups are explicit**, plus a by-position helper for frame-locked footage. Automatic
+     timestamp grouping is deferred, triggered by the first rig footage that is not frame-locked.
+   - **A graph supplies cameras as collections**: `footage : vector<FrameSequence>` and
+     `models : vector<CameraModel>`, paired by position, so the input composes with
+     `listDir → map(openSequence)` and `map(calibrateCamera)`.
+   - **"Ambiguous" is three tested cases**: a weak bridge, a planar pose flip, and a conflicting
+     capture group.
+
+   Taken by precedent, and recorded in the same amendments:
+   - **Ceres runs serial (`num_threads = 1`)**, as OpenCV does (ADR-0024). Validation and
+     resampling solves run one per task on the process pool, and the scale test's timing is the
+     trigger to revisit.
+   - **`LAIN_CAMERA_CERES` defaults to `${LAIN_NOT_SUBPROJECT}`.** Ceres is source-built, but heavy
+     enough that a bundled lain should not compile it unasked.
+   - **The single-view board-pose solve moves out of `calibration::Estimator`** into a
+     `camera::board` seam, so registration does not depend on calibration.
+
+   0. **Record the plan.** This entry, the two ADR amendments, the README's Ceres and Eigen rows
+      (Abseil's removed), and four CONTEXT.md terms: *pose solver*, *by-position grouping*,
+      *held-out group / transfer residual* and *weak bridge*.
+   1. **Ceres + Eigen land, with nothing depending on them** (FFmpeg's and OpenCV's slice-0
+      precedent):
+      - `cmake/addEigen.cmake` and `cmake/addCeres.cmake`;
+      - `plugins/camera/ceres` with only a build probe;
+      - the licence notices, the README rows made current, a CI field, and the footprint measured;
+      - **the one-implementation proof**: `camera::project<ceres::Jet>` compiles for all six
+        distortion models, and its automatic derivatives match finite differences of
+        `project<double>`, the inverse models' iterative path included.
+   2. **The board pose seam leaves calibration** (no behaviour change):
+      - `board::PoseSolver` + `board::pose()`, carrying IPPE's alternative solution;
+      - the OpenCV body moves into its own pose solver;
+      - `calibration::Estimator::boardPose` is deleted.
+   3. **Capture + registration contracts** in `libs/camera`, std and lain only:
+      - `capture::CaptureGroup`, and by-position grouping;
+      - `registration::Request` and `Report`;
+      - the `registration/1` fitness profile;
+      - the lain-owned `registration::Refiner` seam;
+      - the observation graph (components, weak bridges).
+   4. **The board registration method module**, `registration::board::registerCameras` (`register`
+      is a keyword), over footage or over stored detections. In order:
+      1. detection on the pool;
+      2. one pose per view through the seam;
+      3. the observation graph;
+      4. the reference;
+      5. initialisation over a maximum spanning tree, each candidate relative pose scored against
+         every shared group;
+      6. refinement through the seam, with outliers named;
+      7. held-out groups validated by transfer residual;
+      8. seeded bootstrap stability;
+      9. the verdict.
+
+      Tested with stand-in backends on connected, partial, disconnected and all three ambiguous
+      rigs.
+   5. **The Ceres refiner**:
+      - automatic differentiation through `camera::project<Jet>`, with the reference held
+        constant;
+      - whitening, then a robust loss, with `SPARSE_SCHUR` over Eigen sparse and the board poses
+        eliminated.
+
+      Tested on real refinement of the same rigs, with **the 100-camera, 4,000-group scale test**
+      and an end to end with OpenCV detection.
+   6. **Flow adapter, flowview, cli vertical**:
+      - `registerCameras` over collections, with port types and list forms;
+      - codecs, editors and the catalog;
+      - a three-camera rig run through `runGraph` and the real binary.
+
+   **Sub-slice 1 built (2026-10-05): Ceres and Eigen land, with nothing depending on them.**
+   - **`cmake/addEigen.cmake`**: Eigen 3.4.0 from its gitlab archive.
+     - Eigen's own CMakeLists is never run: `SOURCE_SUBDIR` names a directory the archive lacks,
+       so MakeAvailable only populates.
+     - `Eigen3::Eigen` is an IMPORTED INTERFACE target, which makes its include directory SYSTEM
+       and lets Ceres' export set name it. It carries `EIGEN_MPL2_ONLY`.
+     - A config and version file written into `CMAKE_FIND_PACKAGE_REDIRECTS_DIR` answer Ceres'
+       `find_package(Eigen3 3.3 REQUIRED)` with this copy, so no system Eigen can.
+   - **`cmake/addCeres.cmake`**: Ceres 2.2.0 from its GitHub archive, unhashed like every other
+     source dependency.
+     - Its options are NORMAL variables inside a function (CMP0077), not cache entries, since
+       `BUILD_TESTING`, `BUILD_SHARED_LIBS` and `LAPACK` would otherwise reach other subprojects.
+       The one cost of the function scope: `ceres_SOURCE_DIR` stays inside it, so
+       `FetchContent_GetProperties` fetches it back.
+     - Its headers are re-exposed SYSTEM, as GLM's are. Ceres compiles with its own flags,
+       warning-free.
+   - **`EIGEN_MPL2_ONLY` reaches all 115 of Ceres' compiles** (checked with `ninja -t commands`), so
+     building Ceres with Eigen's sparse Cholesky is the proof that no LGPL Eigen code is reached.
+     Ceres' generated `config.h` still comments `CERES_USE_EIGEN_SPARSE` as "use the LGPL code in
+     Eigen". That predates Eigen relicensing its sparse ordering, and in Eigen 3.4.0 the only
+     header behind the guard is `IncompleteCholesky.h`.
+   - **`plugins/camera/ceres`**:
+     - `LAIN_CAMERA_CERES`, defaulting to `${LAIN_NOT_SUBPROJECT}`, with a feature-summary line;
+     - `lain::camera::ceres` with `build.h` (`version()`, and `configuration()` read from Ceres'
+       generated `config.h` plus miniglog's include guard);
+     - a `registerBackend()` that registers nothing yet;
+     - it joins `LAIN_CAMERA_BACKENDS`, so the aggregator links it.
+   - **`[ceres]` tests** (`test-camera-ceres`, five cases):
+     - the pinned version;
+     - exactly the approved components;
+     - `EIGEN_MPL2_ONLY` defined where Eigen is included;
+     - **the one-implementation proof**: `camera::project<ceres::Jet<double, 3>>` for all six
+       distortion models, at the centre, half way out and near a corner, each at three depths, with
+       the Jet's value equal to `project<double>`'s and its derivatives within 1e-5 of central
+       differences. That includes the inverse Brown-Conrady model's Newton iteration and
+       Kannala-Brandt's on-axis branch, which only the centre pixel reaches;
+     - a three-camera solve through `camera::project` with `SPARSE_NORMAL_CHOLESKY` over Eigen
+       sparse, on one thread, recovering a point to 1e-9.
+   - **Found by the build: the aggregator test assumed every camera plugin is a detector.** It
+     compared the detector count with the number of plugins, and Ceres is a plugin that detects
+     nothing. It now asks per plugin, by what was built (`LAIN_CAMERA_HAS_OPENCV`).
+   - **Obligations:** licence texts are staged under `third-party/{ceres,eigen}/`, and
+     `notices/{ceres,eigen}.txt` reach `--licenses` (Eigen's names its corresponding source). The
+     README rows are current.
+   - **CI:** `LAIN_CAMERA_CERES` moves with the `camera` field, so the camera-off leg builds no
+     Ceres.
+   - **Footprint** (linux-x86_64, four cores):
+     - Ceres built in **1m13s wall / 4m04s CPU** in Debug, and 1m30s at `-j3` in Release.
+     - With the fixed-size Schur specialisations ON it took **3m25s / 11m10s**, about 2.8 times
+       longer, which is why they are off.
+     - `libceres.a` is **7.3 MB** in Release (410 MB in Debug, nearly all of it debug info), and the
+       test executable 4.1 MB.
+     - flowview grows by 88 bytes, since nothing references Ceres yet. *(Measured again on
+       2026-10-21, once flowview linked it in earnest: Ceres adds 2.5 MB to it; see M9's *A no-refiner
+       CI leg, and the footprint measured again*.)*
+     - A Ceres-off configure fetches neither library: CMake reports
+       `FETCHCONTENT_SOURCE_DIR_CERES` as unused.
+   - `ctest -j4` **1055/1055** Debug and **1063/1063** Release with video, camera and Ceres on (+5
+     each), and **1001/1001** Release with all three off (unchanged: no Ceres test builds there);
+     warning-clean, format-check clean.
+   - **Four sabotages, all caught; one first proved nothing.**
+     - `std::sqrt` qualified in `detail::ray` still compiled, because only unprojection reaches
+       that function and no Jet is unprojected. `std::atan2` qualified in Kannala-Brandt's
+       projection fails the build, the ADL dependence the kernels state.
+     - Without Kannala-Brandt's on-axis branch, the Jet test fails at the centre pixel.
+     - With Schur specialisations ON, the configuration case fails.
+     - With `EIGEN_MPL2_ONLY` dropped from `Eigen3::Eigen`, the MPL2 case fails.
+     - Also learned: a timed sabotage build whose CMake file was restored BEFORE building
+       reconfigures and measures the original. Hold the change until the build is done.
+
+   **Sub-slice 2 built (2026-10-05): the board pose seam leaves calibration.** No behaviour change
+   for calibration: a held-out view is still placed by IPPE refined with Levenberg-Marquardt, through
+   lain's normalised rays, and measured by lain's projection.
+   - **`camera::board::pose`** (`board/pose.h`, `src/board/pose.cpp`), beside `detect` and `render`:
+     - a `PoseSolver` backend with its own registry, plus `canSolvePose()`;
+     - `pose(model, board, view) → PoseResult {status, detail, pose, alternative, provenance}`;
+     - statuses `Solved`, `TooFewCorners`, `NoSolution` and `NoBackend`. No backend is a value,
+       read like every other outcome, as `detect()`'s `NoBackend` is;
+     - `measure(model, board, view, cameraFromBoard) → ViewResidual`, which is calibration's former
+       inline residual loop, now one routine for both modules.
+   - **The facade measures, the backend only proposes.** A backend returns poses best first, and
+     each `PoseCandidate` carries an rms angle and pixel error computed by lain's projection. That
+     makes a choice between two poses something registration can do with evidence from other
+     cameras, using the same measure for every backend.
+   - **A second pose is reported only when it is a second pose.** Refining both IPPE solutions of a
+     clean view lands them about 3e-5 rad apart, so an `alternative` within 1e-3 rad of the first
+     is dropped. A genuine pair differs by roughly twice the board's tilt from square-on.
+   - **Measured: the backend's ranking can be the wrong way round.** The test view is 2.5 m away,
+     turned 0.07 rad, with 0.5 px noise. The two poses come back 0.33 rad apart, both within the
+     noise (rms 0.84 mrad each, where half a pixel at f = 900 is about 0.6 mrad), and the FIRST is
+     the farther from the truth: 0.22 rad, against 0.13. This is why the choice belongs to a caller with more evidence, and it is
+     sub-slice 4's flip case.
+   - **`OpenCVPoseSolver`** (`opencvposesolver.{h,cpp}`) is `OpenCVEstimator::boardPose`'s body
+     moved. It switches from `solvePnP` to `solvePnPGeneric(…, SOLVEPNP_IPPE)` so both solutions
+     return, and runs LM on each.
+   - **`calibration::Estimator::boardPose` is deleted.**
+     - `validate` calls `board::pose` and `board::measure`, and records the solver's provenance in
+       the new `Reproducibility::poseSolver`.
+     - A held model needs a pose solver rather than "any estimator", so `prepare` returns no
+       estimator for HoldAndValidate, and a build without one fails with the new
+       `Failure::NoPoseSolver`.
+   - **Stand-ins:**
+     - `ScriptedEstimator`'s truth pose became a `TruthPoseSolver`, registered as "truth";
+     - `test_registration.cpp`'s `NullEstimator` lost its stub.
+   - **Tests, all new:**
+     - `[pose]` in `test-camera-opencv`, five cases:
+       - the plugin registers a pose solver;
+       - an exact view recovers its pose for no distortion, Brown-Conrady and inverse Brown-Conrady;
+       - the far, nearly square-on view comes back with both poses;
+       - a pose reached twice is not an alternative;
+       - fewer than four corners is `TooFewCorners`.
+     - Two in `test-camera-nobackend`: no backend gives `NoBackend`, and a held model fails with
+       `NoPoseSolver`.
+   - **Found while measuring: the test's noise has to be portable.** `std::normal_distribution` is
+     implementation-defined, so the flip view's noise is Box-Muller over `mt19937_64`, the rule
+     calibration's resampling already follows. Otherwise the recorded angles would be one standard
+     library's.
+   - `ctest -j8` **1062/1062** Debug and **1070/1070** Release with video, camera and Ceres on (+7
+     each), and **1003/1003** with all three off (+2, the no-backend cases); warning-clean,
+     format-check clean.
+   - **Three sabotages, all caught; one first proved nothing.**
+     - The facade answering `NoSolution` where it has no backend fails *"with no backend, a board
+       pose says the capability is missing"*.
+     - The held-model check skipped fails *"with no backend, a held model fails for want of a pose
+       solver"*.
+     - The same-pose filter removed fails *"a pose reached twice is not reported as an
+       alternative"*. The first attempt deleted the comparison, which left `rotationBetween`
+       unused, so it failed to build under `-Werror` and the old binary passed. Redone by setting
+       the threshold to -1.
+
+   **Sub-slice 3 built (2026-10-05): capture and registration contracts.** Types and pure functions,
+   with nothing yet using them. Everything is std and lain only, in `libs/camera`.
+   - **`camera/method.h`** holds what the method modules share: `Verdict`, `Unavailable` and
+     `ExecutionPolicy`. They moved out of calibration, which keeps its spellings through
+     using-declarations (`calibration::Verdict` names the same type), so no caller changed.
+     Registration includes `method.h`, never a calibration header: the two are siblings (ADR-0016).
+   - **`capture::CaptureGroup`** (`capture/capturegroup.{h,cpp}`):
+     - members are `{CameraIdentity, media::FrameRef}`, sorted by camera;
+     - `create` refuses no members, a member with no camera or no frame, one camera twice, and
+       **one frame named by two cameras**. CONTEXT.md already called duplicate frame identities
+       invalid input, and the first cut did not check it. A refusal carries every reason;
+     - the identity is SHA-256 over a versioned, length-prefixed canonical text, so it does not
+       depend on input order. It is pinned in a test against a digest computed by Python's
+       hashlib, not by lain.
+   - **`groupsByPosition`** makes frame k of every camera group k. A camera with fewer frames is
+     absent past its end, and a position that makes no group is reported by position.
+   - **`registration::Request`, `Report`, `Refiner`**, as planned:
+     - the request's noise model and robust loss are the refiner's;
+     - the report holds `referenceFromCamera` per camera, the scale status, held-out and resampling
+       evidence (each `variant<…, Unavailable>`), and diagnostics: the graph, weak bridges,
+       per-component estimates, flips, outliers, the refinement summary and detections;
+     - the refiner seam is cameras plus latent rigid bodies with known points, with a
+       `freeCameras = false` pose-only mode for held-out validation.
+   - **Deviation: the weak-bridge threshold is a fitness criterion**, `minimumBridgeGroups` in
+     `registration/1`, not a request field as planned. It decides what a registration is fit for, so
+     it belongs with the other criteria, overridable like any of them. CONTEXT.md's *Weak bridge* is
+     amended to say so.
+   - **`registration/1`** in `registration/fitness.{h,cpp}`. Every criterion is independent of
+     resolution and rig size:
+
+     | Criterion | Ready | Exploratory |
+     | --- | --- | --- |
+     | groups per camera | 10 | 4 |
+     | shared groups per bridge | 5 | 2 |
+     | held-out transfer | 1 mrad | 4 mrad |
+     | rotation spread | 1 mrad | 5 mrad |
+     | translation spread, over median depth | 0.2% | 1% |
+     | outliers | 2% | 10% |
+
+     The argument for each number is written beside the profile.
+   - **The observation graph** (`registration/observationgraph.{h,cpp}`) is a pure function:
+     - edges by shared groups, with a camera listed twice in a group counted once;
+     - components by union-find;
+     - bridges by Tarjan's algorithm, **iterative**: a test runs a 200,000-camera chain, which a
+       recursive search would overflow;
+     - `weakBridges(graph, minimum)`. A weak link inside a cycle is not a bridge.
+   - **Tests (+14):**
+     - five capture cases: order, canonical identity, refusals (one frame from two cameras is a
+       section of that case), by-position grouping and its diagnostics;
+     - eight registration-contract cases: connected, partial, ring, disconnected, duplicate member,
+       the long chain, the profile, the report;
+     - one no-backend case: `registration::refine` with no refiner is `NoBackend`.
+   - `ctest -j8` **1076/1076** Debug and **1084/1084** Release with video, camera and Ceres on, and
+     **1017/1017** with all three off (+14 each); warning-clean, format-check clean.
+   - **Four sabotages, all caught; one first proved nothing.**
+     - Hashing the members as listed rather than sorted fails the canonical-identity and
+       by-position cases.
+     - Dropping the length prefixes fails the pinned digest and the run-together case. The first
+       version of that case (`"ab"` + `"/c"` against `"a"` + `"b /c"`) passed with the prefixes
+       gone, since the space separator already told those apart. The example that collides is
+       `"a b"` + `"/c"`.
+     - Tarjan's `low > order` as `>=` fails the connected and ring cases.
+     - The frame-twice check disabled fails its section.
+
+   **Sub-slice 4 built (2026-10-05): the board registration method module.**
+   `registration::board::registerCameras` (`registration/board.{h,cpp}`) has two entry points:
+   - one over footage (`RigFootage`: identity, model, footage);
+   - one over detections already made (`RigCamera` plus `GroupObservations`).
+
+   Everything that decides what a registration means is here; the pose solver and the refiner are
+   seams. In order:
+   1. **Checks before any work**, failing with a reason:
+      - the profile;
+      - camera identities: non-empty and unique;
+      - at least two cameras;
+      - the requested reference;
+      - groups naming known cameras, with one detection per member;
+      - each model against its footage's geometry (Incompatible fails; Unknown follows the
+        request's policy);
+      - the backends.
+
+      The footage overload also checks for a detector and that every member's frame is in its
+      footage, through an index of each footage built once. A linear search was about 1.6e9
+      comparisons at the target scale.
+   2. **A pose for every usable detection**, one per task, keeping the plane's other pose. Each
+      corner's ray is unprojected ONCE, so initialisation's inner loop is a cross product, with no
+      projection.
+   3. **Held out:** every k-th usable group in identity order, **unless that would split the
+      camera graph**. A group that alone joins two parts always stays in, since what is held out
+      must not decide whether a registration can happen; CONTEXT.md's *Held-out group* now says so.
+   4. **The observation graph over the fitting groups.**
+      - More than one component fails `Disconnected`. Each component is still placed relative to
+        its first camera, as a diagnostic.
+      - No group seen by two cameras fails `TooFewCameras`.
+   5. **The reference:** requested, or the camera in the most shared groups, with ties going to
+      the lower identity.
+   6. **Initialisation over a maximum spanning tree.**
+      - Each tree edge's relative pose is chosen among every proposal its shared groups make: four
+        per group, from each pair of the two cameras' poses.
+      - A proposal is scored by the **median**, over the sampled groups, of how well it transfers
+        each camera's board into the other, either pose allowed.
+      - At most 24 evenly spaced groups per edge propose and score
+        (`kInitialisationGroups`), so time does not grow with a rig's thousands of groups.
+      - Each group's board is seeded from whichever member's pose fits the group best, by the
+        median over members.
+   7. **The refinement through the seam.** Then, per fitted observation:
+      - the RMS whitened residual (by the covariance's Cholesky factor, else by the noise model's
+        sigma), where above the loss scale is an **outlier**, named by group and camera;
+      - a **flip**, recorded when the result agrees with the plane's other pose rather than the
+        backend's first;
+      - per-camera residuals, and the median observation depth.
+   8. **Held-out transfer:** each member of each held-out group predicted from the others, through
+      a pose-only refinement (every camera held), measured by `board::measure`, per camera too.
+   9. **A seeded bootstrap.** Resamples of the fitting groups, drawn from one engine before
+      anything runs, each re-initialised and re-refined in parallel. Each camera's rotation and
+      translation spread is measured from the result, the translation over the median depth.
+   10. **The verdict.** The criteria are:
+       - groups per camera;
+       - weak bridges, against each tier's own minimum;
+       - held-out transfer;
+       - rotation and translation spread;
+       - outlier fraction.
+
+       Ready needs all the evidence; the notes say what fell short.
+   - **`forEach` moved to a private `src/execution.h`**, shared by both method modules, and
+     `lain::camera` gained `PRIVATE src` as `lain::app` has.
+   - **Tests:** 14 cases in `test-camera-registration`, over stand-ins (`syntheticrig.h`): a rig on
+     an arc, a pose solver answering from its truth (optionally noisy, or ranking the plane's
+     other pose first), a detector, and a **pass-through refiner** that returns its starting
+     estimate. What is tested is therefore the module around the refinement; the Ceres refiner is
+     sub-slice 5's. The cases:
+     - connected rigs, Ready and exact to 1e-9;
+     - a partial rig, Exploratory, with the camera named;
+     - a weak bridge, Rejected, with the bridge named;
+     - a disconnected rig, with each component placed;
+     - every view of one camera flipped, still exact, with the flips recorded;
+     - a capture group with a frame from another instant, outvoted, its stray named at 66σ;
+     - requested and automatic references;
+     - held-out groups kept out of the refinement, counted through the stand-in refiner;
+     - a noisy rig;
+     - parallel, serial and reversed input giving the same report;
+     - the footage path;
+     - eight refusals.
+
+     Plus `NoPoseSolver` and `NoDetector` in `test-camera-nobackend`, and `NoRefiner` in a new
+     one-case `test-camera-norefiner` (a pose solver and no refiner, since a registry only grows).
+   - **Measured on the noisy rig** (each pose turned up to 2 mrad about the board's centre):
+     - held-out transfer is **0.027 mrad**;
+     - the rotation spread is **0.69 mrad**, and the translation spread **0.05%** of the depth.
+
+     A board turned about its centre barely moves its corners, so a transfer barely sees it. But
+     the relative pose a group proposes turns by as much, and the pass-through refiner keeps
+     whichever proposal initialisation chose.
+   - `ctest -j8` **1092/1092** Debug and **1100/1100** Release with video, camera and Ceres on, and
+     **1033/1033** with all three off (+16 each); warning-clean, format-check clean. The
+     registration executable runs in 0.3 s in Release.
+   - **Four sabotages, all caught; one first proved nothing.**
+     - Dropping the plane's other pose (trusting the backend's ranking) fails the flip case.
+     - Fitting the held-out groups as well fails three cases, including the one that counts the
+       refinement's bodies.
+     - Drawing the bootstrap inside the parallel loop from one engine fails the determinism case 8
+       times in 8.
+     - Holding out a group even when it splits the graph **passed everything at first**: the weak
+       bridge case's stride never landed on its one bridging group. A seven-camera chain, where
+       every group is the only link between its two cameras, now fails without the guard.
+   - **Found by Release only:** GCC's `-Wformat-truncation` at `-O3` refused an `snprintf` in the
+     test rig that Debug accepted. **Found by a pipe:** `cmake --build … --target format | tail -0`
+     kills the formatter by SIGPIPE before it writes anything; send its output to `/dev/null`.
+
+   **Sub-slice 5 built (2026-10-05): the Ceres refiner.** `CeresRefiner`
+   (`plugins/camera/ceres/src/ceresrefiner.{h,cpp}`), registered as "ceres" by the plugin's
+   `registerBackend()`.
+   - **The refiner:**
+     - one residual block per corner per camera, through `camera::project<T>` with
+       `AutoDiffCostFunction<…, 2, 6, 6>`;
+     - cameras and boards are angle-axis plus translation;
+     - each corner is whitened by the inverse Cholesky factor of its covariance, else by
+       1/sigma, under the request's loss;
+     - the reference camera is constant, and so is every camera in a pose-only problem;
+     - a global refinement is `SPARSE_SCHUR` over Eigen sparse with the bodies eliminated first; a
+       pose-only one is `DENSE_QR`;
+     - one thread, and silent;
+     - `CONVERGENCE` maps to Converged, `NO_CONVERGENCE` to IterationLimit, and `std::bad_alloc` to
+       ResourceExhausted.
+
+     It returns Ceres' values, never the starting transforms copied back. A constant block is
+     shown to stay put to within 1e-12 (its round trip through angle-axis) rather than overwritten.
+   - **The default robust loss is now Cauchy**, decided on a measurement, recorded in ADR-0017's
+     *As built* and on `RobustLoss`. A view from another instant (66 standard deviations) moved a
+     camera 8.4 mrad under Huber and 1.6 under Cauchy, against 1.8 with no stray view and 120 with
+     no robust loss. Huber's pull stays linear far out, and a 24-corner view still drags the rig.
+   - **The test rig was too weak for a real refinement.** At 1 m a 168 mm board's tilt barely
+     shows: 20 mrad of tilt moves a corner 0.07 px. A three-link chain then accumulated 22 mrad.
+     `rig::reset` gained a distance, and the Ceres tests stand at 0.5 m.
+   - **Convergence is checked separately from noise:**
+     - with exact corners, every rig shape (connected, chain, weak bridge, every view of one camera
+       flipped) converges from 5 mrad starts to 1e-10;
+     - with 0.3 px of noise, the connected rig's worst camera is **0.88 mrad and 0.40 mm** out,
+       with held-out transfer 0.87 mrad.
+   - **Tests: 9 cases in `test-camera-ceres`** (`test_refiner.cpp`, over `syntheticrig.h`):
+     - whitening, checked exactly against r^T C^-1 r for a correlated covariance;
+     - pose-only, with one camera and with a held non-reference camera;
+     - the reference held;
+     - convergence on four rig shapes;
+     - a noisy rig;
+     - the stray view: absorbed under the default loss (0.68 mrad), and dragging the rig with none;
+     - the covariance path: final cost 0.998 of the chi-square expectation, and far from it under a
+       wrong sigma;
+     - **the scale test**.
+
+     Also **an end to end with both real backends** (`plugins/camera/test/test_registration.cpp`,
+     `test-camera-registration-e2e`, built where OpenCV and Ceres both are): three cameras around a
+     rendered, sweeping board, OpenCV detecting and posing, Ceres refining. Ready, the worst camera
+     **0.28 mrad and 0.15 mm** out, held-out transfer 0.22 mrad.
+   - **The scale test**, Release only (a SKIP in Debug, which is about 65 times slower): 100 cameras
+     on a 2 m ring and 4,000 groups, each board seen by eight neighbours, so 768,000 corner
+     residuals. It took **19.7 s** in all, **16.1 s** of it the refinement (9 iterations,
+     single-threaded), and **663 MB** at peak (linux-x86_64, four cores). The worst camera was
+     0.94 mrad and 1.3 mm out, with held-out transfer 0.81 mrad over 800 groups. ADR-0017 named
+     this measurement as the trigger to revisit Ceres running serial; it does not fire.
+   - **Debug time:** `test-camera-ceres` takes 41 s in one process, its longest case about 20 s, and
+     the e2e takes 9 s; `ctest -j8` in Debug went from 30 s to 45 s.
+   - `ctest -j8` **1102/1102** Debug (the scale case skipped) and **1110/1110** Release with video,
+     camera and Ceres on (+10 each), and **1033/1033** with all three off (unchanged: neither
+     plugin's tests build there); warning-clean, format-check clean.
+   - **Four sabotages, all caught; one was caught only indirectly at first.**
+     - Dropping the robust loss fails the stray-view case.
+     - Freeing the reference fails three cases, the scale test among them.
+     - Flipping the sign of the covariance factor's off-diagonal fails the whitening case.
+     - Freeing the cameras in a pose-only problem was caught only by the noisy and scale cases'
+       held-out evidence, because the pose-only case's one camera is also the reference. A
+       two-camera pose-only case now fails directly: the held second camera would otherwise move
+       and fit exactly.
+   - **Two estimates in comments were guesses until measured.** A refiner-level tolerance read
+     "measured at 0.2 mrad" before any run; it was 2.0 mrad, at 1 m. And a chi-square ratio
+     written as 0.98 measured 1.01. Every number beside a check now comes from a run.
+
+   **Sub-slice 6 built (2026-10-05): the node, flowview, and the cli vertical (slice 2 COMPLETE).**
+   - **`registerCameras`** (`RegisterCamerasNode`, `libs/camera/flow`): inputs
+     `footage : vector<FrameSequence>`, `models : vector<CameraModel>` and `board`, paired by
+     position; params mirroring `registration::Request` (an empty `reference` means automatic); one
+     output, `report`.
+     - Each camera's identity is its footage's canonical source uri. Groups come from
+       `groupsByPosition`.
+     - A count mismatch, or a grouping problem, is a Failed report with `InvalidDataset`, never a
+       suppression.
+     - It is offered when a detector, a pose solver **and** a refiner are registered (`canRegister`,
+       one row in the kinds table), and registered always.
+   - **Port types:** `RegistrationReport` and `ListOfCameraModel` in `registerCameraPortTypes`;
+     `ListOfFrameSequence` in flowview beside `FrameSequence`. A list form is what lets a map lift
+     the type and a boundary pin name it on disk.
+   - **flowview:**
+     - codecs and enum editors for `ApplicabilityPolicy` and `LossFamily`;
+     - the node's canvas colour, and a port colour for the report;
+     - **two list binders**: `--footage <folder>` opens every entry of the folder, by name, as one
+       camera's sequence (a folder of stills or a video file); `--models <folder>` reads every
+       `.json` in it, by name, as a camera-model document.
+   - **Deviation: the vertical binds the rig's footage from a folder** rather than through
+     `listDir → map(openSequence)`. `ListDirNode` lists regular files only, so it cannot list a
+     folder of per-camera still folders. With one video file per camera it would work, but only in
+     a video build. The binders pair by name exactly as `listDir` sorts, so a graph built either way
+     sees the same order. ADR-0016's claim that the input composes with a map still holds; it is
+     just not this vertical's path.
+   - **Tests:**
+     - **3 node cases** (`test-camera-flow-registercameras`, a new executable over the rig's
+       stand-ins, since they share keys with the calibration scene's): pairing, naming and grouping;
+       every parameter reaching the request; and a count mismatch refused.
+     - The staged kinds test now shows registration needing all three backends.
+     - **The cli vertical** (`test_cameravertical.cpp`): three cameras' rendered still folders and a
+       models folder through `runGraph`. It gives Ready, with each camera named by its folder.
+       Without a detector it reports `Failed: NoDetector`, and with OpenCV but no Ceres
+       `Failed: NoRefiner`. It runs in 25 s in Debug.
+   - **Driven through the real binary** from a folder that is not the document's:
+     `flowview run --graph register.json --footage rig --models models --report report.txt` exits 0
+     and writes `Ready: 3 cameras relative to …/rig/cam0, metric, held out 0.151 mrad RMS over 3
+     groups, 16 of 16 groups usable`. `flowview list` prints both collection inputs.
+   - `ctest -j8` **1106/1106** Debug and **1114/1114** Release with video, camera and Ceres on, and
+     **1037/1037** with all three off (+4 each: the off build runs the node cases and the vertical's
+     no-detector branch); warning-clean, format-check clean. Debug's suite now takes 60 s.
+   - **One sabotage, caught twice:** with `ListOfCameraModel` unregistered, the port-type case fails,
+     and so does the vertical, since its `models` boundary pin cannot be named on save.
+   - **Owed:** a gui-mode eyeball of the node on a Metal session, and a CI run (this branch's pushes do
+     not trigger CI).
 3. **Targetless registration with known intrinsics.** Reuse immutable camera models, capture groups,
    registration reports, shared feature-track extraction, and Ceres refinement. Accepted tracks
    establish overlap, initial relative geometry, and scene landmarks before Ceres begins; absent
    metric evidence remains explicitly scale-ambiguous. Compare board and targetless registration only
    on shared held-out evidence.
+
+   **Planned 2026-10-06 as eleven sub-slices (0 to 10), one commit each.** Five decisions came from
+   the repo owner while planning, recorded in ADR-0016 and ADR-0017 (both amended in place) and in
+   CONTEXT.md:
+   - **A track is a static landmark across the whole capture.** Every camera samples the same few
+     capture groups. A feature that stays at the same pixel across a fixed camera's sampled frames
+     is static, and a transient one (moving content) is dropped; with one sampled frame, every
+     feature is kept. Each camera pair is then matched once, on the static sets, and verified, and
+     tracks join across cameras. Held-out validation and the bootstrap resample tracks. So capture
+     groups only choose which frames are examined, and CONTEXT's *Targetless registration* stops
+     calling them "synchronized". Matching inside every group was the alternative: its cost is pairs
+     × groups, and a static point would reappear in every group, so a held-out group would not be
+     independent of the fitted ones.
+   - **Board and targetless registration are compared on held-out feature tracks.** A public
+     `registration::validate` predicts each held-out observation by triangulating its landmark from
+     the other members, every camera held, and the transfer residual is the angle between the
+     predicted and observed rays. It is scale-invariant, so a scale-ambiguous result needs no fitted
+     parameter. Held-out board groups were the alternative: they would need the one global scale a
+     targetless result lacks, fitted on the validation data itself.
+   - **A scale-ambiguous result is normalised so the median depth of the landmarks seen from the
+     reference is 1.** Its scale is `Arbitrary`, and the evidence text says so. Fitness already
+     divides translation spread by a median depth.
+   - **SIFT** is the OpenCV producer's detector: the best repeatability across the wide baselines
+     between rig cameras, patent-free, and in the pinned `calib` profile (features2d). ORB and AKAZE
+     were the alternatives.
+   - **Matching is a request selector, `MatchSearch { Exact, Approximate }`, and Exact is the
+     default.** Exact is brute force. `DeterministicDebug` is "the same work, serially"
+     (`method.h`), so the default must be deterministic on the pool, and OpenCV's bundled FLANN
+     seeds its KD-trees from the process-global `std::rand` and searches approximately. Approximate
+     is FLANN, reproducible only within tolerance, and `DeterministicDebug` refuses it. A matcher
+     declares which searches it supports, as an estimator declares its estimatable models. **The
+     repo owner is concerned about processing time**: exact matching is about 1 s per pair at 8k
+     features, so a 100-camera rig whose every pair overlaps would be about 1.5 core-hours.
+     Sub-slice 7 builds both and times them per pair, measures Approximate's recall against Exact,
+     and extrapolates the 100-camera cost. Those numbers are the trigger to revisit the default.
+     *(Measured in sub-slice 7: 3.7 s per pair at 8192 features, so 6.1 core-hours for that rig;
+     Approximate 0.37 s with 96.7% of Exact's matches. The default is unchanged pending the repo
+     owner's decision; see sub-slice 7's notes.)*
+
+   Taken by precedent, or found by the design review, and recorded in the same amendments:
+   - **Producers propose; lain decides** (ADR-0016 amended). Backends return candidate features,
+     nearest neighbours and candidate poses. Lain applies the ratio and mutual tests, builds the
+     tracks, measures every candidate pose by its angular residual and cheirality through its own
+     unprojection and triangulation, and recomputes the inliers; a backend's inlier mask is ignored.
+     This is the `board::pose` facade's rule ("the facade measures, the backend only proposes")
+     applied again. ADR-0016 had given track construction and geometric verification to producers.
+   - **Placeability, not connectivity, decides whether a rig can register.** Two overlaps A–B and
+     B–C that share no track seen by all three cameras each keep their own scale: bundle adjustment
+     is singular, and an absolute pose cannot place C. Board registration never meets this, because
+     the board is metric. So a camera is **placeable** only when it shares triangulated landmarks
+     with cameras already placed, and a rig with an unplaceable camera fails `Disconnected`, naming
+     those cameras. The observation graph still reports edges, components and weak bridges.
+   - **Initialisation is incremental.** The seed pair is the pair with the most verified inliers
+     whose median triangulation angle clears a floor; the result is rebased onto the reference at
+     the end. The unplaced camera with the most triangulated landmarks is then placed by absolute
+     pose, and the tracks it newly sees are triangulated. Board registration's chaining of pairwise
+     poses over a spanning tree cannot carry one scale across edges.
+   - **The scale gauge is left free in the refiner** (ADR-0017 amended), as Ceres leaves it free in
+     gauge-free BAL problems: LM's damping keeps the Schur system positive definite. The result is
+     normalised afterwards, and the bootstrap fits one least-squares scale per resample before it
+     measures translation spread. Sub-slice 4 measures drift, iterations and any failure of the
+     sparse factorisation; a bad measurement is the trigger to hold the seed partner's translation
+     on a `SphereManifold<3>`. **Measured in sub-slice 4: the trigger did not fire** (its notes,
+     below).
+   - **A fitness profile counts in one evidence unit.** `registration/1` counts capture groups;
+     the new `registration-targetless/1` counts accepted tracks. A method refuses a profile of the
+     other unit with a new `IncompatibleFitnessProfile`. Its starting thresholds are provisional,
+     re-measured in sub-slice 9 before sub-slice 10 exposes them:
+
+     | Criterion | Ready | Exploratory |
+     | --- | --- | --- |
+     | tracks per camera | 100 | 30 |
+     | tracks per bridge | 50 | 15 |
+     | held-out transfer | 2 mrad | 6 mrad |
+     | rotation spread | 1 mrad | 5 mrad |
+     | translation spread, after scale alignment | 0.5% | 2% |
+     | outliers | 5% | 15% |
+
+     *(Re-measured on rendered footage in sub-slice 9 and kept by the repo owner, 2026-10-09; real
+     footage is still owed.)*
+
+     The counts start from COLMAP's minimum inliers to initialise and to place a camera (100) and
+     its minimum for two-view geometry (15). The angles start from SIFT localising to about
+     0.7 mrad at a focal length of 1000 processed pixels, which a transfer through a triangulated
+     point roughly doubles. Outliers are looser than board's, since a verified match can still err
+     along its epipolar line.
+   - **No separate extraction node yet.** Targetless registration has two entry points, over
+     footage (extracting) and over a `TrackSet`, as board registration has over footage and over
+     detections. A node of its own waits for a second consumer, which slice 4's targetless
+     calibration supplies. *(Restated 2026-10-12 in slice 4's plan: calibration consumes a different,
+     sequence extraction, so this did not fire. The trigger is now a second consumer of the same
+     extraction, or a measured need to re-tune a solver setting without extracting again.)*
+   - **Parallelism is lain's** (ADR-0016, ADR-0017). Extraction runs one camera per task and
+     matching one pair per task, through `detail::forEach`. OpenCV and Ceres stay serial, and so do
+     the USAC calls (`isParallel = false`, with an explicit seed).
+   - **The scale target is met as slice 2 met it.** The 100-camera refinement and method run on
+     synthetic tracks, in Release only. Extraction is measured per 8K image and per camera pair, and
+     its 100-camera cost is extrapolated rather than rendered. Pair matching is exhaustive apart from
+     a pre-screen of each pair on its top 512 features; a neighbour or retrieval restriction waits
+     for the first rig whose matching dominates its registration time.
+
+   Found in the code by the design review, and owned by the sub-slices below:
+   - `Request::detection` (`registration/request.h`) is a `board::DetectionRequest` in the shared
+     request, and `Diagnostics` (`registration/report.h`) is board-shaped: board detections, flips,
+     corners, groups, and a `medianDepth` in metres. `report.cpp` prints "groups usable".
+   - `ScalePolicy` / `resolveScale` live in `board/detection.h`, and the OpenCV image preparation
+     (`intensity()`, the INTER_AREA downscale, the centre-to-centre map) is file-local in
+     `charucodetector.cpp`. The feature module must include neither.
+   - `RigCamera` / `RigFootage` are method-neutral but declared in `registration::board`.
+   - `ceresrefiner.cpp` sends every pose-only problem to `DENSE_QR`, which thousands of landmarks
+     would exhaust, and refuses a problem with no bodies. A projection that fails at the initial
+     point aborts the whole Ceres solve, so a landmark behind a camera must be filtered before
+     refinement.
+   - The union-find `root` is written twice (`board.cpp`, `observationgraph.cpp`).
+   - `detail::forEach` has no concurrency cap, which matters for SIFT's memory at 8K: about 0.5 GB
+     per worker at a 1920 longest side, against about 130 MB of CV_8U descriptors for all 100
+     cameras.
+
+   0. **Record the plan.** This entry; ADR-0016 amended (producers propose, lain decides; static
+      tracks; placeability; `View`, the unit a conflict is judged in, which slice 4 reuses);
+      ADR-0017 amended (landmarks, the solver rule, the free scale gauge); CONTEXT.md gains *static
+      feature*, *held-out track*, *scale normalisation* and *placeable camera*, and amends
+      *Targetless registration*, *Camera observation graph*, *Weak bridge*, *Held-out group*,
+      *Feature track* and *Feature-track extraction*. **Built 2026-10-06** (this commit).
+   1. **Lift the shared registration helpers**, no API change. **Built 2026-10-06**, below.
+      - First, a golden test that prints every field of the board report at `%.9g`, for three
+        stand-in rigs (connected, flipped, stray), in `test-camera-registration`. Sub-slices 1–3
+        must leave it byte-equal.
+      - A private `src/registration/common.{h,cpp}`: `rotationBetween` (board's atan2 form),
+        `median`, one `root`, `failed`, the reference choice, the bootstrap draws, `meets`, and a
+        `holdOut(cameraLists, fraction)` keeping the guard against holding out a sole bridge.
+      - `RigCamera` / `RigFootage` to `registration/rig.h`, and `ScalePolicy` / `resolveScale` to
+        `camera/scalepolicy.h`, with using-declarations left at the old names.
+      - Sabotage: a changed `kInitialisationGroups` fails the golden.
+   2. **Request and reproducibility become method-neutral.** `Request` loses `detection`, and the
+      board entry points take the `DetectionRequest` explicitly. `Reproducibility` gains
+      `method = std::variant<BoardRecord{detector, poseSolver, detection}>`. The node and the tests
+      change mechanically; the golden stays byte-equal. **Built 2026-10-06**, below.
+   3. **Report, diagnostics and fitness become method-neutral.** A common `Diagnostics` with
+      neutral names (`Outlier{unit, camera, rmsWhitened}`, `RefinementSummary{observations, bodies,
+      landmarks}`, `CameraEvidence{shared, observations}`, `HeldOutEvidence{units, …}`, a
+      `medianDepth` in the registration's units, `translationVariationAbsolute`), plus
+      `method = std::variant<BoardDiagnostics{groupsExamined, groupsUsable, observations,
+      withoutPose, flips, detections}>`. `FitnessThresholds{minimumSharedPerCamera,
+      minimumBridgeShared, …}` and `FitnessProfile::unit {CaptureGroup, Track}`. Board's
+      `toString` and the golden stay byte-identical. **Built 2026-10-06**, below, with the
+      corner-level counts named `residuals` and `landmarks` moved to sub-slice 4.
+   4. **The refiner gains landmarks.**
+      - `Problem::landmarks` (reference frame) with a separate
+        `std::vector<LandmarkObservation{camera, landmark, pixel, covariance}>`, so board problems
+        are untouched, and `Solution::landmarks`.
+      - Ceres: a `PointResidual` (`AutoDiffCostFunction<…, 2, 6, 3>`) sharing a `whitening()`
+        helper with `CornerResidual`; landmarks in elimination group 0; a problem with landmarks
+        and no bodies accepted. **The solver rule:** free cameras → `SPARSE_SCHUR`; held cameras
+        with at most one latent block → `DENSE_QR`, unchanged for board; otherwise
+        `SPARSE_NORMAL_CHOLESKY`.
+      - `PassThroughRefiner` echoes the landmarks.
+      - `RefinementSummary::landmarks` lands here, counted from `Problem::landmarks` (moved from
+        sub-slice 3, where it had no source). The golden then prints it: a deliberate change, since
+        the byte-equal gate ended with sub-slice 3.
+      - Tests: one landmark triangulated exactly; 20k landmarks with every camera held, timed;
+        cameras and landmarks converging from 5 mrad / 5% starts, with the scale drift measured;
+        landmark whitening equal to rᵀC⁻¹r; bodies and landmarks in one problem; Release only, 100
+        cameras × 50k landmarks × 8 views.
+      - Sabotages: always `DENSE_QR`; landmarks held constant; the whitening's sign flipped.
+      **Built 2026-10-06**, below.
+   5. **Feature contracts, seams and facades** (`include/lain/camera/feature/`, std and lain only).
+      - Values: `Keypoint{pixel (source px), size, angle, response}`; `Features{kind, descriptor
+        bytes, image, scale, keypoints, descriptors}`, the descriptors opaque to all but the same
+        kind's matcher.
+      - Seams, each with a registry and a `canX()`: `Extractor::extract(image, ScalePolicy)`;
+        `Matcher::accepts(kind)`, `supports(MatchSearch)` and `nearest(a, b, MatchSearch)` (two
+        neighbours per feature); `GeometrySolver::relativePoses(raysA, raysB, angle, seed)` and
+        `absolutePoses(points, rays, angle, seed)`, which return candidates only.
+      - Facades `match`, `relativePose`, `absolutePose`, answering `Ok / TooFew / NoSolution /
+        Unsupported / NoBackend`. Lain runs the ratio and mutual tests, scores every candidate by
+        angular residual and cheirality through its own triangulation, and recomputes the inliers.
+      - A lain-owned `triangulate(rays, centres, minimumAngle)`.
+      - Tests: scrambled candidate order; a backend inlier mask that lies; the ratio and mutual
+        tests; ill-conditioned triangulation; `NoBackend` and `Unsupported` for each seam.
+      - Sabotages: take the backend's first candidate; trust its mask.
+      **Built 2026-10-06**, below, with no inlier mask on the seam (the test and sabotage are
+      restated) and `Unsupported` from the extractor and matcher only.
+   6. **Track extraction, `feature::extractTracks`.**
+      - `View{camera, image, frames}`, `SceneObservation{view, pixel, support, covariance}`,
+        `Track{identity, observations}`, `TrackSet{frames, views, tracks}`,
+        `ExtractionRequest{scale policy, sampled frames, feature cap, MatchSearch, ratio, …}` and
+        an `ExtractionReport` (per-camera and per-pair counts, rejections, provenance).
+      - Steps: every camera samples the same groups; one task per camera decodes, extracts,
+        releases and consolidates (SIFT's duplicate orientations collapsed; a mutual nearest within
+        1.5 processed px, a scale ratio within 1.5 and a measured descriptor bound; static at a
+        support of at least half the sampled frames, at the median pixel; the processed sigma
+        scaled back to a source-pixel covariance); each pair pre-screened on its top 512 features;
+        the survivors matched and verified on the pool; the union run serially in canonical pair
+        order; a conflicting track rejected whole.
+      - A track's identity is SHA-256 over canonical text, pixels at 1/64 px, and tracks sort by it,
+        as capture groups do.
+      - Stand-ins in a new `libs/camera/test/syntheticscene.h`: `TruthExtractor` (the landmark id
+        as the descriptor, with dynamic and duplicate options), `ExactMatcher`, `TruthGeometry`.
+      - Tests: a static scene, exactly; dynamic content dropped; minority occlusion kept; one frame
+        keeps everything; duplicate orientations; a conflict; reversed, parallel and serial input
+        identical; each frame decoded once; a pair with no overlap skipped by the pre-screen;
+        refusals.
+      - Sabotages: the union in completion order; first-wins on a conflict; consolidation off;
+        duplicate collapse off.
+      **Built 2026-10-06**, below, with consolidation through `match()` instead of a descriptor
+      bound, and `TrackSet::groups` for `frames`.
+   7. **The OpenCV feature producer.**
+      - First, with no behaviour change, the image preparation lifted out of `charucodetector.cpp`
+        into `imageprep.{h,cpp}`.
+      - `SiftExtractor` with CV_8U descriptors (`descriptorType` checked against the 4.14 headers);
+        a matcher declaring both searches (Exact is `BFMatcher` NORM_L2 kNN k=2, Approximate is
+        `FlannBasedMatcher`); an `OpenCVGeometrySolver` (`findEssentialMat` with
+        `UsacParams{MAGSAC, seed, isParallel = false}` and all four `decomposeEssentialMat`
+        candidates; `solvePnPRansac` on normalised rays, as `opencvposesolver.cpp` does; rays more
+        than 80° off-axis dropped for OpenCV only). Links features2d, and flann for Approximate.
+      - A plain C++ scene renderer beside `syntheticfootage.h`: a nearest-hit ray cast over
+        textured planes, at least two of them non-coplanar (one plane is the essential matrix's
+        degenerate case), with procedural texture or the board raster, seeded noise per frame, and
+        a moving occluder.
+      - Tests: native against downsampled mapping; correspondences against the truth; pose error;
+        determinism on the pool; Release only, 8K time and peak memory per worker; **Exact against
+        Approximate**: time per pair at 8k features, recall, and the 100-camera extrapolation, each
+        recorded beside its check.
+      - If the measured memory per worker warrants it, `forEach` gains a concurrency cap or the
+        longest side defaults to 1600.
+      - Sabotages: the ±0.5 centre mapping dropped; `isParallel = true`; Approximate accepted under
+        `DeterministicDebug`.
+      **Built 2026-10-06**, below, with OpenCV handed a virtual pinhole of focal 1000 rather than
+      normalised rays, the descriptors searched as floats, and the defaults left for the repo owner
+      to decide on the measurements.
+   8. **`registration::targetless`.** *(Split 2026-10-07 into 8a and 8b, both built; see below.)*
+      - `registerCameras(rig, const feature::TrackSet&, const Request&)`, a footage overload taking
+        a `feature::ExtractionRequest`, and the public `registration::validate(rig, report,
+        trackSet, trackIds, execution) → HeldOutEvidence`, which this module's own validation calls.
+      - Steps: checks (with new `NoFeatureExtractor`, `NoFeatureMatcher`, `NoGeometrySolver`,
+        `IncompatibleFitnessProfile`); the observation graph over tracks (`observationGraph` as it
+        is); placeability; incremental initialisation; a cheirality filter; the refinement with
+        landmarks; normalisation to a median depth of 1 from the reference; outliers per (track,
+        camera); held-out tracks, never a placeability-critical one, with a two-member track scored
+        by the angle between its observed ray and the epipolar plane; a bootstrap over tracks with
+        scale alignment; the verdict.
+      - Tests over stand-ins: connected (exact to 1e-9 up to scale), partial, a weak bridge,
+        disconnected, **a chain of pairs only, which fails and names the unplaceable cameras**,
+        dynamic content, wrong matches named as outliers, a landmark behind a camera, held-out
+        tracks never refined, two cameras, the reference, noise, determinism, footage, refusals;
+        Release only, a 100-camera scale test in `test-camera-ceres`.
+      - Sabotages: holding out without the placeability guard; no cheirality filter; no scale
+        alignment; resamples drawn inside the parallel loop.
+   9. **End to end, and the comparison** (`test-camera-registration-e2e`). *(Built 2026-10-08; see
+      below. The alignment is scale-only: both methods pin the same requested reference to the
+      identity, so a similarity fit has nothing left to fit but the scale, and would hide the
+      reference camera's own error.)*
+      - Targetless registration on the rendered scene with both real backends.
+      - A rig with a moving board and a static textured scene, registered by both methods, both
+        validated through `registration::validate` on the **same held-out track ids**, and also
+        compared after a similarity alignment.
+      - The guard: one camera perturbed by 5 mrad raises the transfer residual by a measured amount.
+      - The provisional thresholds re-measured, and amended here before sub-slice 10 exposes them.
+   10. **Flow adapter, flowview, cli vertical.** *(Built 2026-10-09; see below. The node and
+       `registerCameras` share one base, `RigRegistrationNode`, and the kinds table gained a public
+       `cameraNodeKeys()`.)*
+       - `registerCamerasTargetless`, with `canRegisterTargetless` in the kinds table, the
+         extraction params (`matchSearch` among them), and the report output.
+       - Codecs, enum editors, the catalog and colours in flowview.
+       - A rendered scene through `runGraph` and the real binary; `NoFeatureExtractor` without
+         OpenCV, `NoRefiner` without Ceres.
+       - Also fixed here: `apps/flowview/test/test_catalog.cpp` never listed `kRegisterCamerasKey`,
+         whose availability needs Ceres as well as OpenCV. Its expectation becomes per kind, and the
+         targetless key joins it.
+
+   **Sub-slice 1 built (2026-10-06): the shared registration helpers leave `board.cpp`.** No API
+   change and no change in behaviour, held to a golden committed in the same commit.
+   - **The golden** (`libs/camera/test/test_registrationgolden.cpp`, in `test-camera-registration`)
+     prints every field of a board registration report, timings aside, and compares the text with
+     `libs/camera/test/golden/boardregistration.txt` (648 lines). It runs four noisy rigs, so a
+     different choice anywhere moves numbers rather than picking an equally exact answer:
+     - **connected**, over 40 groups, so an edge shares more groups than initialisation samples;
+     - **flipped**, with every view of one camera ranked the wrong way round, and a requested
+       reference;
+     - **stray**, with a frame from another instant, measured covariance and Huber's loss;
+     - **disconnected**, so the component estimates are printed too.
+
+     Numbers are snapped to a 1e-9 grid, then printed to nine significant digits. That hides the
+     last bits in which two platforms' maths libraries differ (an exact rig's residuals are about
+     1e-13), while any change of computation shows. A detection is printed as its outcome and the
+     sums of its corners, so 448 detections take one line each. On a mismatch the test writes what it
+     produced beside the build and names the first differing line; a deliberate change is accepted by
+     copying that file over the golden. The golden is `eol=lf` in `.gitattributes`, as the example
+     documents are. **Debug and Release produce the same bytes.**
+   - **`src/registration/common.{h,cpp}`**, namespace `registration::detail`:
+     - moved verbatim: `rotationBetween`, `median`, `root` (the copy in `observationgraph.cpp` is
+       deleted), `failed` and `meets`;
+     - lifted from inline code: `holdOut(cameras, unitCameras, fraction, minimum)`, which keeps the
+       guard against holding out a sole bridge, `chooseReference`, `bootstrapDraws` and `judge` (the
+       verdict, both tiers).
+
+     Each takes evidence units as numbered lists of the cameras that saw them, so a capture group and
+     a feature track are the same to it.
+   - **`forEach` is re-exported** by a using-declaration in `registration::detail`: inside
+     registration, that namespace hides `lain::camera::detail`, and spelling the four call sites
+     `camera::detail::forEach` re-indented 150 lines of lambda bodies under clang-format.
+   - **`registration/rig.h`** holds `RigCamera` and `RigFootage`, and **`camera/scalepolicy.h`** (with
+     `src/scalepolicy.cpp`) holds `ScalePolicy`, its three alternatives and `resolveScale`. Both
+     leave using-declarations at their old names, so no caller changed. No `serialize` overload
+     exists for the scale policy, so moving its namespace moves no argument-dependent lookup.
+   - `board.cpp` is 180 lines shorter. Its diff with whitespace ignored is 19 lines added and 199
+     removed.
+   - `ctest -j8` **1107/1107** Debug and **1115/1115** Release with video, camera and Ceres on, and
+     **1038/1038** with all three off (+1 each: the golden); warning-clean, format-check clean.
+   - **Two sabotages, both caught by the golden.** `kInitialisationGroups` from 24 to 12 changes the
+     connected rig's second camera (line 5). `holdOut` starting one past half a stride changes the
+     held-out groups and fails one other case as well. The object file was checked to be newer than
+     each restored source before the green run was believed.
+   - **Not run: `flowview run` on a registration document**, which the plan named. None is committed
+     (`apps/flowview/examples` has no registration example). The cli vertical, which runs one
+     through `runGraph`, passed in all three suites.
+
+   **Sub-slice 2 built (2026-10-06): the registration request stops naming a board.** No change in
+   behaviour, and the golden passes with its file untouched.
+   - **`registration::Request` loses `detection`**, and its comments stop assuming a board
+     (an observation's noise, each whitened residual, the most evidence, the usable evidence). The
+     footage overload of `registration::board::registerCameras` takes the `board::DetectionRequest`
+     as an argument, between the board and the request: what the method searches for, then how it
+     searches, then how it registers.
+   - **`Reproducibility` keeps what every registration has** (sources, frames, refiner, the request)
+     and gains `std::variant<BoardRecord> method`. `BoardRecord {detector, poseSolver,
+     optional<DetectionRequest> detection}` is declared in `report.h` at `registration` scope, since
+     `board.h` includes `report.h`. Sub-slice 8 adds a targetless alternative.
+   - **The detections overload takes no detection request**, deliberately. It searches nothing, so a
+     parameter there could only be recorded, and could contradict the detections it was given.
+     Instead the record holds what the first detection in canonical order reports, which is the rule
+     `detector` already followed for provenance. Before this, that overload recorded whatever
+     detection request the caller had left in `Request`, which nothing compared with the
+     detections. Now the record says what they say, and with no detection at all it stays unset
+     rather than claiming a default search nobody made.
+   - **The footage overload records its argument first**, so a refusal before anything is decoded
+     (NoDetector, a frame its footage lacks) still says what would have been searched with.
+     `board::detect` records the request exactly as given, so the first detection agrees with it.
+   - **The node** builds the detection request separately, takes its defaults from
+     `board::DetectionRequest{}`, passes it to the method, and records it in its own refusals too.
+   - **`calibration::Request` keeps its `detection`, deliberately.** Calibration has one method; the
+     same split is due when slice 4 gives it a targetless one.
+   - **Found, and owed to sub-slice 8:** `Request::fitnessProfile` defaults to `"registration/1"`,
+     which counts capture groups. A targetless registration called with a default `Request` would
+     refuse it with `IncompatibleFitnessProfile`. Sub-slice 8 must give each method its own default,
+     for example an empty name meaning "the method's profile".
+   - `ctest -j8` **1108/1108** Debug and **1116/1116** Release with video, camera and Ceres on, and
+     **1039/1039** with all three off (+1 each: *a registration over given detections records the
+     search they report*). The footage case, the no-backend case and the node's settings case gained
+     assertions. Warning-clean, format-check clean.
+   - **Three sabotages, all caught.**
+     - The footage overload searching with `DetectionRequest{}`: the footage case fails on all 60
+       detections. The node's settings case does **not** catch it, contrary to the plan's
+       expectation, because the record holds the argument whatever the detections were made with.
+       The per-detection check is the one that sees a search silently dropped.
+     - `analyse` never recording the detections' request: the golden fails at "request detection
+       unset", and the new case fails.
+     - The node passing a default search: its settings case fails.
+
+     Each restored source was touched a second later, and its object checked to be newer, before the
+     green run was believed.
+
+   **Sub-slice 3 built (2026-10-06): the report, its diagnostics and fitness stop naming a board.**
+   No change in behaviour. The golden passes with its file untouched, as does every `toString` line
+   a test pins, the cli vertical's included. That ends the byte-equal gate of sub-slices 1 to 3.
+   - **`Diagnostics` keeps what every registration reports**:
+     - `edges`, `components`, `weakBridges`, `componentEstimates`, `outliers`, `refinement`,
+       `cameras`, `heldOutUnits` (was `heldOutGroups`) and a `medianDepth` in the registration's
+       units;
+     - plus `std::variant<BoardDiagnostics> method`, where `BoardDiagnostics {groupsExamined,
+       groupsUsable, observations, withoutPose, flips, detections}` holds board's own.
+   - **Shared fields lose their board names**:
+     - `Outlier::unit`;
+     - `CameraEvidence::shared` / `residuals`;
+     - `HeldOutEvidence::units` / `residuals`;
+     - `RefinementSummary::residuals`;
+     - `GraphEdgeReport::shared`;
+     - `ResamplingEvidence::translationVariationAbsolute`.
+   - **Fitness counts in its profile's unit.** `EvidenceUnit {CaptureGroup, Track}` is
+     `FitnessProfile::unit`, and `registration/1` says `CaptureGroup`. The thresholds are
+     `minimumSharedPerCamera` and `minimumBridgeShared`, in the profile and the overrides alike. A
+     private `unitsWord` turns the unit into "groups" or "tracks" for the fitness notes and for
+     `toString`'s held-out count, so one field decides the wording.
+   - **The observation graph says the same word**: `GraphEdge::shared`, `sharedPerCamera`,
+     `observationGraph(cameras, units)` and `weakBridges(graph, minimumShared)`. It is what
+     `minimumBridgeShared` is compared with, and sub-slice 8 uses it as it is.
+   - **`toString`'s method clause goes through `std::visit` to one overload per alternative**
+     (`methodSummary(const BoardDiagnostics&)`), so a targetless alternative without one fails to
+     compile, where a `get_if` would quietly print nothing.
+   - **Deviation: the corner-level counts are `residuals`, not `observations` as planned.** In this
+     report an observation is already one camera's view of one unit:
+     - `BoardDiagnostics::observations` counts them;
+     - an `Outlier` is one;
+     - the note reads "N of M observations are outliers".
+
+     As `observations`, `CameraEvidence` would read "observations 768, outliers 1" for an outlier
+     that is one of 32 views. The refinement summary's own comment already said "residual blocks".
+   - **Deviation: `RefinementSummary::landmarks` moves to sub-slice 4**, beside the
+     `Problem::landmarks` it counts. Here it would always be 0.
+   - **The golden prints no new field.** Its labels are the old names ("heldOut groups", "corners",
+     "metres", "heldOutGroup"), kept so the text stays byte-identical; a comment in the test says
+     so. The profile's unit is not printed, but its one visible effect for board is printed: the
+     wording of the fitness notes ("in fewer than 30 shared groups").
+   - **Deviation: the unit-word test lives in `test_registration.cpp`**, not the contracts test.
+     - GCC 13 at `-O3` raises a false `-Wmaybe-uninitialized` on a hand-built `Report` whose
+       `heldOut` variant is reassigned, and so fails the Release build. Assigning, `emplace` and
+       dropping the other fields all still raised it.
+     - The case instead takes a real stand-in board report, whose held-out evidence is genuine. It
+       reads "over 5 groups, 24 of 24 groups usable" as returned, and "over 5 tracks, 24 of 24
+       groups usable" once its profile's unit is `Track`.
+     - It is the only reader of the `Track` arm until sub-slice 8.
+   - **Left to sub-slice 8 as planned:** refusing a profile of another unit
+     (`IncompatibleFitnessProfile`), since no such profile exists yet.
+   - `ctest -j8` **1109/1109** Debug and **1117/1117** Release with video, camera and Ceres on, and
+     **1040/1040** with all three off (+1 each: *a registration report's words follow its profile's
+     evidence unit*). Warning-clean, format-check clean.
+   - **Three sabotages, all caught.**
+     - `unitsWord(CaptureGroup)` saying "tracks" fails four cases: the golden, the new case, and two
+       existing ones whose notes mention shared groups. The cli vertical does **not** catch it,
+       contrary to the plan, because it pins only board's own "groups usable" clause.
+     - `toString` writing a literal "groups" fails only the new case's `Track` half, as predicted.
+     - `registration/1` declaring `Track` fails five cases: the profile case, the golden, the new
+       case and the same two note checks.
+
+     Each restored source was touched a second later, and its object checked to be newer, before
+     the green run was believed.
+
+   **Sub-slice 4 built (2026-10-06): the refiner gains landmarks.**
+   - **The seam** (`refiner.h`):
+     - `LandmarkObservation {camera, landmark, pixel, covariance}`;
+     - `Problem::landmarks` (in the reference frame) and `Problem::landmarkObservations`;
+     - `Solution::landmarks`.
+
+     A board problem sets none of them and is untouched. `freeCameras = false` now means a
+     pose-only solve or a triangulation, and the header says a landmark must start in front of
+     every camera that observes it, and that nothing fixes a landmark problem's scale.
+   - **One projection path in the Ceres refiner.**
+     - `whitening()` turns a covariance, or the noise model's sigma, into the residual's [a 0; b c].
+     - `observe()` turns a point in the reference frame into a whitened residual through the camera.
+     - `CornerResidual` is the body's transform followed by `observe()`. `PointResidual`
+       (`AutoDiffCostFunction<…, 2, 6, 3>`) is `observe()` alone.
+   - **Refusals:**
+     - a landmark observation naming no camera or landmark;
+     - a landmark covariance that is not positive definite, with the kind named;
+     - a problem with **neither** kind of observation.
+
+     So a problem of landmarks and no bodies is accepted.
+   - **The solver rule (ADR-0017), and `Solution::detail` names the solver that ran:**
+     - free cameras → `SPARSE_SCHUR`, with bodies and landmarks together in elimination group 0;
+     - held cameras with at most one used latent block → `DENSE_QR`, unchanged for board's
+       held-out pose;
+     - otherwise `SPARSE_NORMAL_CHOLESKY`.
+
+     Detail gains ", linear solver X" from `Summary::linear_solver_type_used`. Without it the rule
+     can be observed only as time, and Ceres may substitute a solver (a Schur solver with nothing
+     to eliminate falls back), so what ran is part of the account. Nothing pinned the old text: the
+     golden uses the pass-through refiner.
+   - **The scale gauge, measured (ADR-0017's measurement). The `SphereManifold<3>` trigger did not
+     fire.**
+     - **8 cameras, 2000 landmarks, 4 views each, 0.3 px of noise**, every non-reference camera
+       started 5 mrad and 5% out and every landmark 5% out:
+       - converged in 4 iterations;
+       - scale 1.022, from a start at 1.0004;
+       - final cost 1.015 of half the residual dimensions less the unknowns.
+     - **Twelve more seeds:** the scale ran from 0.980 to 1.012, in 4 or 5 iterations each, and it
+       was the same at 0 px of noise as at 0.3.
+     - So the solver's path from the start sets the scale, not the noise. It stays inside what the
+       starts were moved, it costs no iterations, and no factorisation failed. The method
+       normalises the scale afterwards (ADR-0016), so nothing holds it.
+   - **The rest, measured on linux-x86_64 (peak memory from `getrusage`, since this container has
+     no GNU `time`):**
+     - **The ring:** 100 cameras, 50k landmarks, 8 views each, Release only.
+       - 4 iterations and 4.2 s over 400,000 residuals, single-threaded, with 324 MB at peak.
+       - The scale came out at 1.004 from 1.0002.
+       - With the scale taken out, the worst camera is 0.79 mrad and 1.7 mm out and the worst
+         landmark 16 mm.
+     - **20k landmarks against held cameras:**
+       - 0.54 s and 78 MB in Release;
+       - the worst point 6.7 mm out, the RMS 1.3 mm, and the cost 0.997 of its expectation.
+       - Release only, since it measured 26 s in Debug.
+     - **A board and 200 landmarks in one problem**, from exact pixels: back to the truth within
+       1e-9 with nothing taken out. The board's metric corners fix the scale at 1 + 1e-9.
+     - **One landmark against three held cameras:** 7e-12 m from the truth.
+     - **A landmark behind a camera at the start fails the solve at iteration 0.** Ceres prints
+       "Terminating: Initial residual and Jacobian evaluation failed" as a miniglog WARNING, and
+       `addCeres` keeps warnings on purpose. Sub-slice 8's cheirality filter is what keeps it from
+       printing.
+   - **The golden changes on purpose for the first time.** Its three `refinement` lines gain
+     `landmarks 0`. The produced file was checked to differ in exactly those lines and copied over
+     the golden. `test_registration.cpp`'s held-out case now also asserts that a board
+     registration asks the refiner for no landmarks.
+   - `test_landmarks.cpp`'s scene (cameras on an arc or ring, points in a cube, Box-Muller over
+     `mt19937_64`) stays local until sub-slice 6's `syntheticscene.h` has a second consumer.
+   - **Running a Catch2 case by name:** a comma in the test spec means "or", so a name containing
+     one is spelled `name\, rest`.
+   - `ctest -j8` **1118/1118** Debug and **1126/1126** Release with video, camera and Ceres on, and
+     **1040/1040** with all three off (+9, +9, +0). In Debug the 20k and ring cases skip.
+     Warning-clean, format-check clean.
+   - **Three sabotages, all caught.**
+     - **Always `DENSE_QR`:**
+       - the solver-rule case fails 3 of its 5 sections, while the two expecting `DENSE_QR` pass,
+         correctly;
+       - the board-and-landmarks case fails its solver check.
+       - Only the small cases were run, since dense QR over 6,000 unknowns ran past five minutes
+         in Debug.
+     - **Landmarks held constant:** 6 of 9 cases fail:
+       - the four that move a landmark;
+       - the ring;
+       - two solver-rule sections where every block is now constant.
+
+       The whitening, refusal and behind-camera cases take no step and pass.
+     - **The whitening's sign flipped:** both covariance sections fail, the landmark case's and the
+       existing corner case's, which shows the helper is shared.
+
+     Each restored source was touched a second later, and its object checked to be newer, before
+     the green run was believed.
+
+   **Sub-slice 5 built (2026-10-06): feature contracts, seams and facades.** `lain::camera::feature`
+   in `libs/camera` (std and lain only), under `include/lain/camera/feature/`. Nothing calls it yet;
+   sub-slices 6 to 8 do.
+   - **The values and seams.**
+     - `Keypoint {pixel, size, angle, response}`, in source pixels and radians.
+     - `Features {kind, descriptorBytes, image, scale, keypoints, descriptors}`, with opaque
+       descriptors.
+     - Three seams, each with a registry and a `canX()`, on `board::pose`'s pattern (the first
+       registered key answers, a backend created per call):
+       - `Extractor::extract(image, scale)`;
+       - `Matcher` with `accepts(kind)`, `supports(MatchSearch)` and `nearest(a, b, search)`, giving
+         two neighbours per feature;
+       - `GeometrySolver` with `relativePoses(pairs, angle, seed)` and `absolutePoses(pointRays,
+         angle, seed)`, which return candidates and nothing else.
+   - **The facades answer one `Status`**: `Ok`, `TooFew`, `NoSolution`, `Unsupported`, `NoBackend`
+     and `BackendMisbehaved`. The last is new to the planned set, on `render()`'s precedent: a
+     malformed backend answer is refused rather than indexed.
+     - **`extract`:**
+       - resolves the scale policy and hands the backend the factor, as `detect` does (the plan
+         had the policy crossing the seam);
+       - checks the descriptor bytes, the kind and every keypoint's position against the source
+         image;
+       - states `image` and `scale` itself, so a backend cannot misreport them.
+     - **`match`:**
+       - keeps a pair only when each feature is the other's nearest and passes the ratio test
+         against its own second nearest, **in both directions**, so `match(a, b)` is
+         `match(b, a)` swapped and an exact tie is never a match;
+       - counts every rejected feature once, as not mutual or ambiguous;
+       - checks each `nearest` answer: one per feature, two distinct in-range neighbours, distances
+         finite and nearest first.
+     - **`relativePose` / `absolutePose`:**
+       - take pairs by type (`RayPair`, `PointRay`), so a length mismatch cannot be expressed (the
+         plan had parallel vectors);
+       - normalise rays and drop unusable ones before the backend sees them, mapping inliers back
+         to input indices;
+       - measure every candidate;
+       - choose by inlier count, then summed squared residual, then a canonical pose order, so the
+         choice never depends on the order of the candidates.
+   - **Decided with the repo owner:**
+     - **No inlier mask on the seam**, since ADR-0016 says one is never read. The planned "a
+       backend inlier mask that lies" is restated as "relativePose counts its own inliers, not the
+       pairs the backend fitted": every third pair is pushed 0.1 rad off its epipolar plane, the
+       backend proposes the truth, and the inliers are exactly the clean pairs.
+     - **`Unsupported` comes from the extractor (an image it cannot read) and the matcher (a kind
+       or a search) only.** The geometry seam has no capability declaration until a backend lacks
+       one of the two problems.
+     - **A pair whose parallax is below the inlier angle is a point at infinity.** It is an inlier
+       when its rays agree under the candidate's rotation, with half the angle between them as each
+       residual. Distant static background survives verification.
+   - **`triangulate(rays, minimumAngle)`** is the least-squares point nearest every ray. It answers
+     `TooFew`, `IllConditioned` (parallax below the minimum, or exactly parallel) or `Behind`, and
+     reports the parallax. It is public because sub-slices 6 and 8 and `registration::validate`
+     triangulate with it.
+   - **Found by the tests: a wrong rotation is not always visible on far points.** The first
+     far-point case turned the candidate 20 mrad about an axis in the epipolar plane, and every far
+     pair stayed an inlier, re-triangulated nearer. That is correct two-view geometry. Turned about
+     the baseline, the candidate moves each ray out of its epipolar plane and explains none of the
+     40 pairs, which the case now asserts.
+   - **The measured comments were corrected by measuring.** The first cut guessed:
+     - 2e-16 rad where the exact rays give 3e-15;
+     - 4e-16 m where two rays meet to 5e-14;
+     - 8 matches in the symmetry case where there are 15 (with 16 ambiguous and 29 not mutual).
+   - `ctest -j8` **1143/1143** Debug and **1151/1151** Release with video, camera and Ceres on, and
+     **1065/1065** with all three off (+25 each: 5 triangulation, 19 in the new
+     `test-camera-feature`, 1 no-backend). Warning-clean, format-check clean.
+   - **Five sabotages, all caught.**
+     - **The backend's first candidate taken:** both scrambled-order cases fail, as do the tie case
+       and "near points decide".
+       - The first cut of this sabotage did not compile (`better` became unused under `-Werror`)
+         and so proved nothing, until it was rewritten to keep the function used.
+     - **Every correspondence counted as an inlier:** the own-inliers case fails, along with the
+       baseline-turned and wrong-candidate cases.
+     - **A far point counted as an outlier:** the far-point case and the tie case fail.
+     - **The ratio test one way only:** both halves of the symmetry case fail.
+     - **The mutual check dropped:** the mutual case fails, and so does the larger symmetry section,
+       whose not-mutual count goes to zero.
+
+     Each restored source was touched a second later, and its object checked to be newer, before
+     the green run was believed.
+
+   **Sub-slice 6 built (2026-10-06): track extraction, `feature::extractTracks`.**
+   - **What it is.** It takes footage and capture groups, and returns accepted static tracks plus
+     a report. It is in `libs/camera`, with the values in `feature/tracks.h` (`View`,
+     `SceneObservation`, `Track`, `TrackSet`) and the operation in `feature/extraction.h`
+     (`ExtractionRequest`, `CameraExtraction`, `PairExtraction`, `ExtractionReport`,
+     `ExtractionResult`). Nothing calls it yet; sub-slice 8 does.
+   - **In order:**
+     1. **Every check that needs no frame:** `NoBackend` naming the seam, `Unsupported` for the
+        request, `TooFew`, then a new `Status::InvalidInput` for a malformed dataset.
+     2. **The sampled groups.**
+     3. **One task per camera:**
+        - decode, extract, release, collapse duplicates and cap, frame by frame;
+        - consolidate the static features.
+     4. **One task per pair:** the pre-screen, the full match, and verification by `relativePose`.
+     5. **The union, serially:** a component holding two features of one view is rejected whole.
+   - **Decided with the repo owner:**
+     - **Consolidation pairs a camera's frames through `match()`.** It uses the mutual test and
+       the ratio test both ways, then gates each pair at 1.5 processed px and a 1.5× size ratio.
+       This replaces the planned "measured descriptor bound": descriptors are opaque to lain, an
+       absolute bound would depend on the descriptor kind, and a feature that cannot match itself
+       across frames would fail cross-camera matching anyway.
+       - A cluster found in at least ⌈K/2⌉ of the camera's K extracted frames is static.
+       - It sits at the per-axis median pixel and median size.
+       - Its descriptor, angle and response come from the member nearest that median.
+       - A cluster holding two features of one frame is counted `inconsistent`.
+     - **Sampling is evenly spaced in capture order.**
+       - Groups are ordered by their members' (lower) median timestamp, then median ordinal, then
+         identity.
+       - `min(samples, groups)` are taken at the bin centres `⌊(2i+1)·n / 2k⌋`, so 5 of 9 is
+         {0, 2, 4, 6, 8} and 3 of 9 is {1, 4, 7}, whatever order the groups were handed in.
+     - **Each observation carries `(σ / scale)²`**, isotropic, in source px, with σ =
+       `localisation` in processed px (0.7, provisional until sub-slice 7 measures SIFT; *it
+       measured localisation proportional to keypoint size, see sub-slice 7*). Cameras
+       of different resolutions are searched at different scales, and the refiner's noise model is
+       one value.
+     - **`RigCamera` / `RigFootage` moved down to `lain/camera/rig.h`**, with using-declarations
+       left in `registration/rig.h`, so the feature module names no registration header.
+   - **The duplicate rule is one feature per 1/64-source-px cell**: the largest response, then the
+     smallest angle in [0, 2π), then the smallest size. It is applied per frame and again to the
+     static set.
+     - It collapses SIFT's duplicate orientations, which share a pixel and a size bit for bit.
+     - It also makes a track's identity unique by construction, since a cell holds one feature of a
+       view and a feature belongs to one track.
+     - What the angle tie-break costs in recall on real SIFT is sub-slice 7's to measure. *(It
+       measured a fifth of the correct matches lost; see sub-slice 7.)*
+   - **A track's identity** is SHA-256 over `lain feature track 1`, then each observation's
+     length-prefixed camera and its pixel on the 1/64 grid as integers, as a capture group's
+     identity is spelled. Tracks sort by it.
+   - **Deviations from the plan:**
+     - `TrackSet::groups` (the sampled capture groups) for `frames`, since a group is the unit
+       sampled.
+     - `Status::InvalidInput` is new to the feature set.
+     - The refusal of Approximate under DeterministicDebug lives here, since `match()` has no
+       execution policy. Sub-slice 7's sabotage targets it, and this sub-slice already tests it.
+     - board.cpp's frame-identity index became a private `detail::FootageIndex`
+       (`src/footageindex.h`), shared with extraction and re-exported into `registration::detail`
+       beside `forEach`. Its last-wins behaviour for a camera named twice is kept. The registration
+       golden is byte-equal.
+     - Defaults: `LongestSide{1920}`, 5 samples, a cap of 8192 per frame, 15 inliers per pair
+       (COLMAP's two-view minimum), and a pre-screen of 512 features needing 5 matches.
+   - **Cost to watch:** consolidation is K(K−1)/2 matches per camera, 10 at the default 5 samples.
+     If sub-slice 7 measures them dominating extraction, match each frame with its neighbours in
+     capture order only. *(They do not: a consolidation match costs a pair match, so for 100
+     cameras it is 1000 matches beside 4950, a sixth of the matching.)*
+   - **Stand-ins** (`libs/camera/test/syntheticscene.h`):
+     - **The scene:** cameras on an arc and landmarks with per-camera descriptor numbers, motion,
+       occlusion and duplication.
+     - **The footage:** blank frames whose first two pixels say which camera and frame they are,
+       from a source with its cache off that counts its decodes.
+     - **`TruthExtractor`.**
+     - **`ExactMatcher`:** brute force on the numbers, with Approximate scriptable and every
+       `nearest` call logged.
+     - **`TruthGeometry`:** proposes every camera pair's true pose, so lain's measurement picks.
+   - **Found by the tests: an orbit about the scene still verifies.** The first "a pair that does
+     not verify" case rendered one camera turned 0.05 rad about the vertical and shifted 0.2 m. That
+     left 37 to 47 inliers of 60, since it is nearly an orbit about the scene and keeps most points
+     on their epipolar lines, which is all a relative pose tests. A 0.2 rad tilt explains 0 of 60,
+     and the case asserts that.
+   - `ctest -j8` **1155/1155** Debug and **1163/1163** Release with video, camera and Ceres on, and
+     **1077/1077** with all three off (+12 each: 11 in the new `test-camera-tracks`, 1 no-backend).
+     Warning-clean, format-check clean, and the parallel case swept 50× in Release with no failure.
+   - **Six sabotages, five caught, one recorded as a finding.**
+     - **The union run in pair completion order** (inside the parallel loop, under a mutex): **not
+       caught, as predicted.** A union-find partition does not depend on the order of its unions,
+       and nothing downstream reads the order, so serial-in-canonical-order is for the data
+       structure's sake, not for the answer's.
+     - **First-wins on a conflict:** the conflict case fails (two partial tracks survive).
+     - **Consolidation off** (the first frame's features kept): the static, moving-content and
+       occlusion cases fail.
+     - **Duplicate collapse off:** the duplicate case fails, since each duplicated landmark's
+       matches tie and the ratio test refuses a tie.
+     - **Approximate accepted under DeterministicDebug:** the refusal case fails.
+     - **The pre-screen ignored:** the pre-screen case fails.
+
+     Each restored source was touched a second later, and its object checked to be newer, before
+     the green run was believed.
+
+   **Sub-slice 7 built (2026-10-06): the OpenCV feature producer.**
+   - **What it is.** `plugins/camera/opencv` fills the three feature seams, registered as "opencv":
+     - `SiftExtractor`: `cv::SIFT` with Lowe's parameters, CV_8U 128-byte descriptors of kind
+       "sift", and precise upscaling;
+     - `OpenCVMatcher`: both searches, Exact by `BFMatcher` and Approximate by FLANN's KD-trees;
+     - `OpenCVGeometrySolver`: USAC MAGSAC++ for an essential matrix with all four decompositions
+       of each, and USAC PnP plus an LM refinement on its inliers, both returned.
+
+     Each proposes; lain's facades test and measure. The image preparation moved out of
+     `charucodetector.cpp` into `imageprep.{h,cpp}` first, unchanged, and the ChArUco tests pass
+     unchanged.
+   - **Decided with the repo owner:**
+     - **FLANN's index build runs under a mutex.** It draws from the process-global `std::rand`,
+       and lain matches pairs in parallel. Searches stay parallel.
+     - **Measure and record; the defaults stay.** Exact, `LongestSide{1920}`, σ = 0.7 and the
+       uncapped `forEach` are unchanged here. The recommendations are at the end of these notes,
+       and any change is its own small commit.
+   - **Found by measuring: OpenCV's USAC wants pixel-scale coordinates.**
+     - Fed normalised rays with an identity camera, MAGSAC++ proposed essential matrices 0.6 to
+       15 mrad out across 20 seeds, on two rendered views with 2% wrong matches.
+     - The same rays as pixels of a virtual pinhole of focal 1000, with the inlier angle in its
+       pixels, gave 0.25 to 0.47 mrad on every seed.
+     - Neither the local optimisation nor the polisher settings changed this. MSAC on normalised
+       coordinates was fine too (0.39 to 0.47 mrad).
+     - Lain's own inlier count could not see the difference: 318 inliers either way at the 0.004 rad
+       angle, so only a truth comparison catches it, and the seed sweep is that comparison.
+     - This is a deviation from the plan's "normalised rays, as `opencvposesolver.cpp` does". That
+       solver is unchanged: a board's PnP is not USAC.
+   - **Found by measuring: the exact search is 3.9 times faster over floats.** Searching 3891 ×
+     3688 descriptors took 2.37 s as bytes and 0.61 s as floats. The answers are identical, checked
+     over 243,798 neighbours: every partial sum of squared byte differences is an integer below
+     2^24, which a float holds exactly. Both searches now convert.
+   - **The renderer** (`libs/camera/test/texturedscene.h`, test-only, plain C++):
+     - textured rectangles, the nearest hit winning: a back wall, a floor, and a box of four faces,
+       so no two surfaces are coplanar;
+     - a seeded procedural texture of value noise over four octaves with soft blobs;
+     - every ray unprojected through lain's own model, s × s rays a pixel, and seeded Box-Muller
+       noise per frame;
+     - a textured disc moving through the scene frame by frame;
+     - `truthAt` (what a pixel's ray hits) and `RenderedSource` (a `FrameSource` over it, keeping
+       each frame it draws).
+
+     The plane intersection is plain arithmetic rather than GLM calls. GLM's unoptimised calls
+     took nine tenths of a Debug render (3.1 s a frame, now 1.25 s), and the renders are
+     byte-identical to before, checked over 15 frames.
+   - **Measured** (Release, four cores, 640 × 480 views 0.3 rad apart unless said), each number
+     beside its check in `test-camera-opencv-features`:
+     - **The mapping is centred.** A half-scale search against the native one: 484 matched within
+       2 px, mean offset (−0.021, 0.002) px.
+     - **Correspondences:**
+       - 1036 and 1020 features, 324 matches, 317 within 3 px of the truth (97.8%);
+       - RMS 0.438 px between two keypoints, so about 0.31 px each.
+     - **SIFT's localisation scales with the feature.** The residual is 4.9% of the keypoints' mean
+       size, RMS, so 3.4% per keypoint. It is 0.17 px below a size of 4 px and 0.98 px at 16 px and
+       above.
+     - **Poses over 20 seeds:**
+       - relative pose on all 324 matches: 0.24 to 0.47 mrad of rotation and 0.12 to 1.14 mrad of
+         translation direction;
+       - absolute pose from the 317 truth points: 0.12 to 1.0 mrad and 0.24 to 1.69 mm.
+     - **Duplicate orientations:**
+       - 297 of 1036 keypoints share their 1/64-px cell with another, since SIFT gives a keypoint
+         with two strong orientation peaks twice;
+       - duplicates share a response, so the tie-break falls to the smallest angle, which says
+         nothing about the other view;
+       - of 128 correctly matched cells with duplicates in both views, the kept pair agrees in 83;
+       - collapsing loses a fifth of the correct matches: 259 correct cell pairs before, 205 after.
+     - **Rendered footage through `extractTracks`**, three cameras, nine frames, the disc crossing:
+       - identical serially and on a 4-thread pool;
+       - every pair verified (228/225, 126/121, 224/219 matches/inliers), 365 tracks, no conflicts,
+         1468 features dropped as transient, and 278 observations hidden by the disc in a sampled
+         frame and kept;
+       - 350 of 365 tracks within 2 px of the truth everywhere. The other 15 are 2 to 6.7 px out,
+         none near a surface edge: large features, whose localisation scales with their size;
+       - Approximate on the pool found 365 to 372 tracks over six runs, against Exact's 365.
+     - **8K, Release only.** An 8K frame searched at a longest side of 1920 px took 0.60 s and found
+       976 features; at 1600 px, 0.54 s and 1050.
+       - Peak memory growth was 489 MB and 340 MB per frame searched at once (glibc, from VmHWM
+         after `malloc_trim` and a reset through `/proc/self/clear_refs`).
+       - SIFT's doubled first octave, a float pyramid at twice the searched size, is what costs
+         it. The decoded frame comes on top: 100 MB of 8K RGB8.
+     - **Exact against Approximate at 8192 features a view, Release only.** Two 1920 × 1080 views of
+       a finely textured scene, capped at 8192 each from 13238 and 12745. Both directions, as
+       `match()` asks, on one core:
+       - Exact: 2538 matches in 3.68 s;
+       - Approximate: 2498 matches in 0.37 s, holding 96.7% of Exact's;
+       - consolidation (Exact, against another frame of the same view): 7355 matches in 3.69 s.
+         Brute force costs the same whatever the content.
+     - **The 100-camera extrapolation:** 4950 pair matches and 1000 consolidation matches.
+       - 6.1 core-hours all Exact.
+       - 1.5 core-hours with Approximate pairs.
+       - About 0.7 core-hours with Approximate throughout.
+       - Extraction is negligible beside it: 500 frames at 0.6 s is 0.08 core-hours, before
+         decoding.
+   - **Recommendations, for the repo owner to decide:**
+     - **Search: keep Exact as the default.**
+       - It is what `DeterministicDebug` and the pool equivalence rest on, and Approximate is a
+         request away for a large rig.
+       - The cheaper win is the seam: `match()` asks each direction separately, and a brute-force
+         backend could answer both from one distance matrix, about halving Exact.
+     - **Scale and concurrency: keep `LongestSide{1920}` and the uncapped `forEach` for now.**
+       - Per worker that is about 0.6 GB at 8K. A 16-core host's 15 workers peak near 9 GB.
+       - Cap the per-camera stage's concurrency, not the scale, the day a host's workers × 0.6 GB
+         approaches its memory. A smaller scale costs features and accuracy on every host.
+     - **σ: make the covariance proportional to the keypoint**, σ = 0.034 × size in processed px.
+       The commonest features (size 4 to 8 px, half of those matched) localise to about 0.22 px
+       each (0.31 px RMS between two), so a fixed 0.7 px is three times too loose for them and
+       about right only for the largest. *(Taken 2026-10-07; see the follow-up below.)*
+     - **Tie-break: collapse after matching, not before.** For example, keep a cell's duplicates
+       through the pair match and choose, per cell, the orientation that matched. The current rule
+       loses a fifth of the correct matches. *(Taken 2026-10-07, with every orientation matched; see
+       follow-up B below, which also nearly triples the exact matching cost at the same cap.)*
+   - **Debug cost.** The footage case takes 28 s in Debug, nearly all of it drawing frames, and the
+     two scale cases skip there. The whole executable takes 55 s in Release.
+   - `ctest -j8` **1163/1163** Debug and **1171/1171** Release with video, camera and Ceres on, and
+     **1077/1077** with all three off (+8 each on: the new `test-camera-opencv-features`; unchanged
+     off, which builds no plugin). Warning-clean, format-check clean. A first `--rerun-failed`
+     "failure" was a stale `LastTestsFailed.log` from an old configure, not a failure.
+   - **Six sabotages, four caught, two recorded as findings.**
+     - **The ±0.5 centre mapping dropped in `toSource`:** the mapping case fails (offset 0.52,
+       0.50 px), and so does the ChArUco "detection at a reduced scale still reports source pixels".
+     - **`isParallel = true`: not caught, as predicted.** OpenCV's pool is at one thread, so its
+       parallel USAC runs serially, and the serial-against-pool comparison still matches.
+     - **Approximate accepted under DeterministicDebug** (in `extraction.cpp`): the refusal case
+       fails; with the real matcher the run completes (status Ok).
+     - **The FLANN mutex removed: not caught, as predicted.** The footage case now runs Approximate
+       on the pool, so concurrent builds happen, but glibc's `rand()` takes a lock. The race matters
+       on C libraries without one, and only a race detector would see it.
+     - **One decomposition candidate** (R1, +t): the pose case fails (no relative pose at seed 0),
+       and in the footage case every pair comes back Unverified and no track forms.
+     - **Normalised coordinates** (virtual focal 1): the seed sweep fails at 18 of 20 seeds, 1.3 to
+       10 mrad of rotation, and on the translation direction too.
+
+     Each restored source was touched a second later, and its object checked to be newer, before
+     the green run was believed.
+
+   **Sub-slice 7 follow-up A (2026-10-07): the covariance follows the keypoint's size.** The first of
+   the two defaults the repo owner chose to settle before sub-slice 8, each its own commit.
+   - **`ExtractionRequest::localisation` (0.7 processed px) became `localisationPerSize = 0.034`**,
+     a standard deviation per unit of `Keypoint::size`. The rename makes the change of unit a
+     compile error rather than a silent reinterpretation.
+   - **Each observation's σ is `localisationPerSize` × its static feature's size.** That size is
+     already the median across frames in source pixels, so the scale is not divided out. A coarser
+     search still weighs less, because it finds its features larger.
+   - **Checked at a coarser scale before it was trusted** (`test-camera-opencv-features`, the
+     correspondence case):
+     - At `ScaleFactor{0.5}`, 235 of 236 matches were correct, and the residual was 6.3% of the
+       size, against 4.9% natively.
+     - The excess sits in the smallest features: 6.7% below 8 source px, against 5.4% from 8 to 16
+       and 4.6% from 16 to 32.
+     - It stays inside the native bound (0.07), which the plan set as the test of the pure
+       proportional model, so no floor term was added.
+     - It matters because the default search of 4K to 8K footage runs at 0.25 to 0.5. If sub-slice
+       9's validation finds coarsely searched cameras' small features over-weighted, a floor in
+       processed pixels is the change.
+   - **Stand-ins:**
+     - the covariance is (0.034 × 4)², since the stand-in finds every landmark at 4 source px;
+     - the half-scale section now asserts it is unchanged, as for a scale-invariant detector;
+     - a request refusal for a zero `localisationPerSize` joins the others.
+   - `ctest -j8` **1163/1163** Debug and **1171/1171** Release with video, camera and Ceres on, and
+     **1077/1077** with all three off (unchanged: the new checks are assertions in existing cases).
+     Warning-clean, format-check clean.
+   - **Sabotage, caught:** σ fixed again (`localisationPerSize / scale`, ignoring the size) fails 241
+     covariance assertions in the static-scene case. Restored, touched a second later, and its
+     object checked to be newer.
+
+   **Sub-slice 7 follow-up B (2026-10-07): a feature's orientations stay together through
+   matching.** The second of the two defaults settled before sub-slice 8.
+   - **The rule.** The 1/64-pixel cell is the feature, and a cell carries every orientation the
+     backend found there, each its own descriptor row.
+     - Every row is matched, between a camera's frames and between cameras.
+     - A match between rows is a match between their cells.
+     - It replaces "keep the smallest angle, then match". That angle depends on a view's roll, so
+       two views kept agreeing orientations in only 83 of 128 shared cells.
+   - **In `extraction.cpp`, a private `Cells`** (all rows, each cell's first row, each row's cell)
+     replaces the per-frame `collapse`:
+     - the feature cap and the pre-screen count features, each with all its rows;
+     - consolidation joins cells;
+     - a static feature takes every orientation of its representative frame's cell, at the median
+       pixel and size;
+     - two static features in one cell remain the only collapse, the stronger kept whole.
+   - **A pair drops a feature matched to two of the other camera's**, every pair holding it, and
+     counts them in `PairExtraction::ambiguous`. It is the pair's call; a conflict at the union stays
+     the last resort.
+   - **The report changed meaning, so it changed names:**
+     - `CameraExtraction::features` is now `found` (keypoints, every orientation);
+     - `orientations` is new;
+     - `duplicates` now counts only static features dropped for sharing a cell;
+     - `ambiguous` is new on a pair.
+   - **The stand-ins modelled the defect, and now model SIFT.**
+     - A duplicated landmark's second orientation used to repeat its first descriptor: a matched
+       tie that only collapse-before could survive. It now has its own (`kTurned` away).
+     - `turnedIn` (one camera's second orientation) and `turnedOnly` (a camera that finds only the
+       second orientation, rolled so it is that camera's smallest) are new.
+   - **New cases:**
+     - "an orientation one camera lacks still joins";
+     - "a feature matched to two of another camera's is dropped from that pair", with M placed in
+       cameras 0 and 1's epipolar plane through L, so the wrong pair verifies and only the drop
+       stops a conflict.
+   - **Measured on real SIFT** (`test-camera-opencv-features`, the footage case):
+     - **Tracks:** 429, against 365 when collapsing first.
+     - **Inliers per pair:** 286, 169 and 277, against 225, 121 and 219.
+     - **Ambiguous drops per pair:** 3, 2 and 2.
+     - **Consistency:** 410 tracks within 2 px everywhere, the worst still 6.7 px.
+     - **Conflicts:** one, rejected; the bound is now ≤ 2, where 0 was a measured value.
+     - **Approximate:** 426 to 429 tracks over seven runs.
+   - **The cost, measured and not acted on:**
+     - On the rendered texture a feature carries 1.49 rows, where Lowe reports about 15% of
+       keypoints with a second orientation; this texture's soft blobs give far more.
+     - At the same cap of 8192 features, an exact pair match is 12182 × 12137 rows and takes 10.2 s,
+       against 3.68 s for 8192 rows. Approximate takes 0.78 s with 96.8% recall.
+     - The 100-camera extrapolation becomes 16.9 core-hours Exact, 4.0 with Approximate pairs and
+       1.5 with Approximate throughout, against 6.1, 1.5 and 0.7.
+     - **For the repo owner:** the cap could count rows rather than features, or be lowered, if the
+       cost matters more than the tracks. Real footage's rows-per-feature should be measured first,
+       in sub-slice 9.
+   - **Recorded, not built:**
+     - The ratio test's second neighbour can be another orientation of the same feature, which can
+       refuse a true match.
+     - Excluding it needs more than two neighbours from the matcher seam.
+     - Its trigger is sub-slice 9 finding matches lost that way.
+   - **Debug cost:** the footage case takes 39 s in Debug, up from 28 s, with Approximate on the pool
+     and the extra rows.
+   - `ctest -j8` **1165/1165** Debug and **1173/1173** Release with video, camera and Ceres on, and
+     **1079/1079** with all three off (+2 each, the two new stand-in cases). Warning-clean,
+     format-check clean.
+   - **Three sabotages, all caught:**
+     - **One orientation per feature kept before matching:** the roll case fails, and so does the
+       ambiguity case, since no second orientations reach it.
+     - **Repeated cell pairs not dropped:** the several-orientations case fails, as each duplicated
+       landmark's two matches name one pair twice.
+     - **The ambiguity drop removed:** the ambiguity case fails with a conflict, both tracks lost,
+       and nothing counted.
+
+     Each restored source was touched a second later, and its object checked to be newer.
+   **Sub-slice 8 planned (2026-10-07) as two commits**, decided with the repo owner:
+   - **8a:** `registration::validate`, the targetless fitness profile and the helpers both methods
+     share.
+   - **8b:** the method itself.
+
+   Two more decisions came from the owner:
+   - **An empty `Request::fitnessProfile` is the method's own profile**, and is the default. This
+     discharges sub-slice 2's owed note.
+   - **When no camera pair clears the seed's parallax floor, initialisation seeds from the widest
+     pair tried** and records it, so the floor ranks pairs and never refuses a rig on its own.
+
+   A design review, checked against the code before it was taken, found:
+   - the hold-out guard anchored on the wrong seed;
+   - one bad start failing a whole Ceres batch;
+   - the cheirality filter able to leave a camera unobserved, which Ceres would return unchanged;
+   - epipolar and transfer residuals pooled with different degrees of freedom;
+   - `angleBetween` written four times.
+
+   Each is answered in 8a or 8b.
+
+   **Sub-slice 8a built (2026-10-07): validate, the targetless profile, and the shared helpers.**
+   - **`registration-targetless/1`** (unit `Track`), with the provisional table above:
+     - Ready `{100, 50, 0.002, 0.001, 0.005, 0.05}`;
+     - Exploratory `{30, 15, 0.006, 0.005, 0.02, 0.15}`.
+   - **`Request::fitnessProfile` defaults to empty**, which is the method's own. Board resolves it to
+     `registration/1` and refuses a `Track` profile with the new `Failure::IncompatibleFitnessProfile`,
+     naming both units.
+   - **The golden changes on purpose in exactly four lines**, its request records, which now print
+     `profile (method's)`. The produced file was diffed against the golden before it was copied over.
+   - **Shared helpers in `src/registration/common.{h,cpp}`**, and board calls them in its old order:
+     `resolveProfile`, `canonicalCameras`, `checkApplicability`, `whitenedSquared` (keeping board's
+     clamp), and a guarded stride `holdOut(count, fraction, minimum, mayHold)`. Board's connectivity
+     guard is now one such guard. The golden is otherwise byte-equal.
+   - **`detail::angleBetween` is written once**, in a private `src/angles.h`. It replaces the copies in
+     `feature/geometry.cpp` and `feature/triangulation.cpp` and board's two inline forms; the formula
+     is identical.
+   - **`registration::validate`** (`registration/validation.h`) returns
+     `std::variant<HeldOutEvidence, Unavailable>`. The plan said `HeldOutEvidence`, but missing
+     evidence must never read as zeros.
+     - **A fixed procedure:** the tracks' own covariances, `NoiseModel{}` where there is none, and no
+       robust loss. Two reports are judged by what they registered, never by how they asked to be
+       refined.
+     - **A track of three or more members:** each member is triangulated from the others, then
+       refined with every camera held, in **one refinement per track**, so a track's prediction does
+       not depend on which others were held out.
+       - Each problem holds only that track's cameras.
+       - A start that is not `Ok`, or does not project into every predicting camera, leaves its member
+         unpredicted. A start that failed would abort the whole solve.
+     - **A two-member track** is scored against the epipolar plane. Its member is unpredicted when:
+       - there is no baseline;
+       - the other ray lies along the baseline;
+       - the pair meets behind a camera, which the plane alone cannot see.
+
+       Such a residual counts **twice** in the RMS angles (`HeldOutEvidence::epipolar` counts them),
+       since it has one degree of freedom where a transfer has two.
+     - **Pixels** cover projected transfers only.
+     - **Unavailable** for a failed report, no ids, an unknown id (named), no refiner, or nothing
+       predicted. Ids given twice count once, and their order changes nothing.
+   - **Tests:**
+     - **`test-camera-targetless`**, new, over the scene's stand-ins and the pass-through refiner. It
+       has 6 cases:
+       - exact prediction;
+       - a camera 5 mrad out;
+       - one held-camera problem per track under the fixed procedure;
+       - two-member tracks;
+       - unavailability;
+       - determinism.
+     - **Ceres:** one case in `test-camera-ceres` (`test_targetless.cpp`).
+     - **Stand-ins:**
+       - `syntheticscene.h` gains `trackSetOf(sigma, seed)`, the truth as a track set, with
+         identities that sort in landmark order;
+       - the pass-through refiner moved to `passthroughrefiner.h`, shared with board's tests. It now
+         also records each problem's camera count, loss and noise.
+   - **Two expectations were wrong in the plan, and the tests now pin what is true:**
+     - **"The other cameras show less" is false.**
+       - A camera turned 5 mrad shows 4.96 mrad in its own members: the point comes from three true
+         cameras, and a turn moves a ray off perpendicular to its axis by less than the turn.
+       - Camera 3, at the end of the arc, shows 6.16 mrad, since its points are placed mostly by
+         camera 2.
+       - Cameras 0 and 1 show 1.50 and 1.65 mrad.
+     - **A turn about the baseline does not put every member a turn's angle off its plane.**
+       - A ray at f to the baseline lies asin(sin t sin f) off it.
+       - The test works that out from the truth: 6.30 mrad doubled, against 4.46 counted once.
+   - **Measured through Ceres:** 200 landmarks under 0.3 px of noise predict at 0.587 px RMS
+     (1.38 × √2σ) and 1.12 mrad, the worst member 1.80 px out.
+   - **Four sabotages, all caught:**
+     - **A member in its own triangulation:** camera 2 drops from 4.96 to 3.35 mrad.
+     - **The report's request setting the loss and noise:** the refiner script sees Cauchy at 3 px.
+     - **Two-member tracks left unpredicted:** the plane cases find no evidence. The first cut did
+       not compile (the function went unused under `-Werror`), so the old binary ran and proved
+       nothing. It was redone so that it compiled.
+     - **Epipolar residuals counted once:** 4.46 against 6.30 mrad.
+
+     The restored source was touched a second later, and its object checked to be newer.
+   - `ctest -j8` **1172/1172** Debug and **1180/1180** Release with video, camera and Ceres on (+7 each), and **1085/1085** with all three off (+6). Warning-clean,
+     format-check clean.
+
+   **Sub-slice 8b built (2026-10-07): `registration::targetless`.** Fixed cameras with known
+   intrinsics registered from the static scene they share (`registration/targetless.h`,
+   `src/registration/targetless.cpp`).
+   - **Two entry points.**
+     - **Over an accepted `TrackSet`.**
+     - **Over footage and capture groups.** This is `feature::extractTracks` followed by the
+       track-set overload. Both overloads measure initialisation by one `GeometryRequest` (the
+       facades' default angle, the request's seed), so they cannot initialise differently, and a test
+       requires the two reports to be equal.
+       - The footage overload runs every check that needs no frame first.
+       - The registration's execution policy governs the extraction.
+       - The diagnostics keep the extraction's report and the track set, so sub-slice 9 can validate
+         without extracting again.
+       - An extraction refused for its dataset (`InvalidInput`) becomes `InvalidDataset`; any other
+         failure is the new `Failure::ExtractionFailed`.
+   - **New failures:**
+     - `NoFeatureExtractor`, `NoFeatureMatcher`, `NoGeometrySolver`;
+     - `ExtractionFailed`.
+   - **New method types:**
+     - **`TargetlessDiagnostics`:**
+       - counts of `tracks`, `tracksUsable`, `landmarks`, `untriangulated` and `behind`;
+       - the `seed` pair, its `seedAngle`, and `seedBelowFloor`;
+       - `placement` (the order cameras were placed in) and `unplaceable`;
+       - the footage overload's `extraction` and `trackSet`.
+     - **`TargetlessRecord`:** geometry, extractor and matcher provenance, plus the extraction request
+       as run.
+     - The one-line summary gains ", N landmarks from M usable tracks".
+   - **The checks refuse a malformed track set as `InvalidDataset`:**
+     - a view of a camera the rig lacks (named), or two views of one camera;
+     - an observation of a view the set does not have, or two observations of one view in a track;
+     - a track identity given twice;
+     - a covariance that is not positive definite, which would otherwise fail a whole solve.
+
+     Applicability is checked against each view's image geometry.
+   - **Placeability is a least fixed point from a seed pair.** The closure repeatedly adds the camera
+     in the most tracks that already have two placed cameras. The minima are the geometry facades'
+     own: 4 such tracks to place a camera, 5 shared tracks to seed. The closure does not depend on
+     the order cameras are added; it does depend on the seed.
+     - Candidate seeds are pairs ordered by shared fitting tracks, ties to `(a, b)`, keeping those
+       whose closure reaches every camera. A candidate inside a closure that fell short is skipped
+       without posing it.
+     - When none reaches every camera, the method fails `Disconnected` and names the cameras outside
+       the top pair's closure. What that pair does place is a component estimate.
+   - **The seed:**
+     - The first 16 covering candidates are posed by `feature::relativePose`.
+     - Each is scored by the median triangulation angle over the inliers that triangulate `Ok`; a
+       point at infinity is excluded.
+     - The seed is the candidate with the most inliers among those clearing 2°. When none clears it,
+       the widest seeds the rig and `seedBelowFloor` says so, as decided.
+   - **Incremental initialisation** runs in the seed's frame with a unit baseline. It triangulates
+     every track with two placed cameras, then places the unplaced camera seeing the most landmarks by
+     `feature::absolutePose`, until every camera is placed. When none can be placed the method fails
+     `InitialisationFailed`, naming the cameras.
+   - **The start for the refinement:**
+     - Rebased onto the reference, which is then set to exactly the identity.
+     - **Cheirality filter:** an observation its camera cannot project is left out, and so is a
+       landmark left with fewer than two observations.
+     - **Every camera is then re-checked for 4 landmarks** (`InitialisationFailed` otherwise), since
+       Ceres would return an unobserved camera unchanged.
+       - **Deviation:** the plan also asked 5 shared tracks of the seed pair here. Once the rig is
+         placed the pair has no special role, and 4 is what the refinement needs.
+     - **Normalised** so the median depth of the landmarks the reference sees is 1, before the
+       refinement for its conditioning and after it for the report.
+   - **Outliers** are per (track, camera), above the loss scale. An observation the filter left out is
+     an outlier with an infinite `rmsWhitened`, counted among the fitted, as board counts an
+     unprojectable view.
+   - **The hold-out guard is anchored on the first covering seed** over the usable tracks, as the
+     design review found it must be.
+     - For each camera the anchor records its **support**: the tracks it was placed with, which have
+       two or more cameras placed before it. The seed pair's support is the tracks it shares.
+     - A track is held out only while every camera it supports keeps at least 4 (5 for the pair).
+       Holding one out decrements the support it gave.
+     - The anchor's placement order stays valid through the hold-out, so a covering seed always
+       survives it.
+   - **Bootstrap:**
+     - Draws are made over the fitting tracks before anything runs.
+     - Each resample is a full registration onto the same reference, aligned to the result by a
+       least-squares scale over the camera centres before its spread is measured.
+   - **No graph bridge exists in a placeable rig of three or more cameras.** A placed camera joins by
+     two edges, so the weak-bridge case is a two-camera rig's own edge. The test says so.
+   - **Stand-in `TruthGeometry` stopped assuming the truth's frame.**
+     - For each true camera c and each working frame a, it proposes `cFromA`, with the translation
+       scaled by the median of per-ray least-squares fits.
+     - It keeps only candidates whose median residual over 16 evenly spaced rays is within the angle.
+     - **`bestOf` then keeps the top four.** Without it, the stand-in proposed up to 4373 candidates
+       per absolute pose, seed selection on the scale rig took 7.7 s, and the scale test took 59.7 s
+       instead of 40 s. test-camera-tracks shares the header and still passes.
+   - **Tests**, in `test-camera-targetless` (+14 cases, 20 in all), over the stand-ins and the
+     pass-through refiner:
+     - registration exact up to the scale, Ready;
+     - held-out tracks never refined: 60 held of 300, one free-camera call and then one held-camera
+       call per held-out track;
+     - partial overlap;
+     - a chain of pairs, which fails `Disconnected` naming what it cannot place;
+     - a disconnected rig, with its component estimates;
+     - two cameras: Ready on 300 tracks, and on 50 a weak bridge of 40, Exploratory;
+     - **the design review's counterexample**:
+       - cameras 0 and 1 share 20 tracks and nothing with three cameras, so their seed places nobody
+         else;
+       - cameras 2 and 3 place everyone, each of 0 and 1 by exactly its 4 tracks, which sit where
+         the stride lands;
+       - only the guard keeps them, and the seed is `cam02`–`cam03`.
+     - a landmark behind a camera, left out, named with an infinite whitened residual, and absent from
+       the refiner's problem;
+     - a narrow rig that seeds below the floor from its widest pair;
+     - seed ranking: a 3 cm pair with the most inliers loses to the wide pair clearing 2°;
+     - a requested reference that is exactly the identity;
+     - determinism: noisy tracks give the same report serially, on a pool of four, and with cameras
+       and tracks reversed;
+     - footage with 30 moving landmarks dropped: equal to extract-then-register, keeping the track
+       set and the record;
+     - the refusals.
+
+     `test_nobackend` and `test_norefiner` name the missing backend for each overload.
+   - **Through Ceres** (`test-camera-ceres`, `test_targetless.cpp`, +4 cases):
+     - **Noisy:** 0.136 px σ, 4 cameras and 400 tracks. The worst camera is 0.454 mrad out and the
+       worst centre 0.039% of the median depth; held out 0.551 mrad over 80 tracks. There are 6
+       outliers in 1280 observations, what a 3σ cut of Gaussian noise leaves. Ready.
+     - **A wrong match** 15 px off is named at 110 σ, and only that member. The rig moves 1.2 µrad.
+     - **A landmark behind a camera at the start** is kept out, and the solve succeeds.
+     - **Scale, Release only:** 100 cameras in a ring, 50,000 tracks, 8 views each.
+       - 40 s in the method on four cores, 7.0 s of it the refinement and most of the rest the ten
+         bootstrap registrations.
+       - 1.26 GB at peak for the whole test, scene included.
+       - The worst camera is 0.66 mrad out and the worst centre 0.057% of the median depth, a ring's
+         drift; held out 0.416 mrad over 10,000 tracks; 2,488 outliers in 320,000 observations.
+       - Ready.
+       - Under the plan's 60 s trigger, so the resamples stay at the default.
+   - **Six sabotages; five caught, and the sixth's survivor is harmless:**
+     - **Hold-out without the guard:** the counterexample fails, its critical tracks held out.
+     - **The guard anchored on the top pair rather than the first covering seed:** the counterexample
+       fails, since the top pair, 0 and 1, places nobody.
+     - **No cheirality filter:** the stand-in behind case fails, and through Ceres the solve fails
+       `RefinementFailed`.
+     - **No scale alignment of the resamples:** the exact case reads a 1.43% translation spread.
+     - **Resamples drawn inside the parallel loop:**
+       - From one engine under a lock it is **not caught**. It only permutes the draws among the
+         resamples, and the spread is a statistic over all of them.
+       - Unlocked, as the plan wrote it, the determinism case fails 3 runs of 3.
+     - **The seed chosen without the angle floor:** the ranking case seeds from the 3 cm pair.
+
+     Each restored source was touched a second later, and its object checked to be newer.
+   - **Recorded, not built:**
+     - **A robust initial triangulation**, retriangulating from inlier rays: a wrong match pulls its
+       landmark's start, and Ceres' Cauchy loss is relied on to recover. Trigger: sub-slice 9's real
+       footage.
+     - **The provisional constants** (2°, 16 candidates, 20 to hold out, the epipolar doubling, the
+       profile's table) are re-measured there.
+   - The golden board report is untouched.
+   - `ctest -j8` **1192/1192** Debug and **1200/1200** Release with video, camera and Ceres on (+20
+     each), and **1101/1101** with all three off (+16). Warning-clean, format-check clean. Under
+     `ctest -j8` the scale test takes 52.6 s, against 40 s alone.
+
+   **Sub-slice 9 built (2026-10-08): end to end, and the comparison.** One rig registered by both
+   methods from the same rendered footage, through both real backends, and every provisional value
+   measured for the repo owner. Three decisions came from the repo owner:
+   - **Rendered footage only.** No real multi-camera footage exists, so the real-footage triggers
+     carry forward.
+   - **Measure, then the owner decides.** Nothing provisional changes here; the table below has a
+     recommendation for each value, and any change is its own follow-up commit before sub-slice 10.
+   - **The comparison renders at 1280x720 with a focal length of 1000**, the operating point the
+     targetless profile's angles were set for, and runs in Release only. A 640x480 targetless case
+     runs in Debug too.
+
+   - **Test helpers** (`libs/camera/test`):
+     - **`texturedscene.h` gains a moving printed board** (`BoardSurface`, `boardSurface`). Its sheet
+       is the raster's bilinear footprint, so a board in front of nothing draws exactly as
+       `syntheticfootage.h`'s `view` does.
+     - **The plane intersection is one function, `meetRectangle`, shared by the scene's planes and
+       the board.** The features footage case takes 31.8 s in Debug, against the 39 s recorded
+       before.
+     - `RenderedSource` takes a sample count.
+     - `lookingAt` and `arcCamera` moved here from the OpenCV features test.
+     - `testboard.h` takes a square size.
+     - **`rigcompare.h`**: `rotationBetween`, `posesOf`, `rebased`, `compare` (the scale-only fit),
+       and `truthReport`, a successful report holding only the true cameras, which is all `validate`
+       reads.
+   - **`plugins/camera/test`, all in `test-camera-registration-e2e`:**
+     - `renderedrig.h` (`rendered::rig`, `projectInto`, `stillScene`);
+     - `test_rendering.cpp`, `test_targetlesse2e.cpp`, `test_comparison.cpp`.
+   - **Case 0, board parity** (Debug and Release): the board in the textured scene against
+     `synthetic::view`, at three sweep poses. Measured: identical in every pixel.
+   - **Case 1, targetless through both backends** (Debug and Release): the OpenCV footage case's
+     scene exactly (3 cameras, the disc, 9 frames, 640x480 at a focal length of 500).
+     - **Measured:** 429 tracks, 86 held out (207 predictions, 102 on the epipolar plane). The worst
+       camera is 0.37 mrad and 1.6 mm from the truth, held-out transfer 1.06 mrad, 6 outliers, Ready.
+     - **Time:** 13.6 s in Debug, nearly all of it drawing the 15 sampled frames.
+   - **Case 2a, the comparison** (Release only):
+     - **The rig:** 4 cameras 0.6 m apart on the arc, 3.2 m from the scene, BrownConrady5 at
+       1280x720.
+     - **The board:** the 7x5 board with 80 mm squares, sweeping a Lissajous 1.6 m away over 16
+       frames, drawn at 3x3 rays a pixel.
+     - **Time:** 60 s. The board registration's 56.7 s is nearly all the drawing of 64 frames; the
+       targetless one's 3.3 s comes after, on frames already drawn.
+     - **Preconditions:**
+       - every camera sees the board in all 16 frames;
+       - every visible corner moves at least 21.7 px between any two sampled frames;
+       - the board hides at most 5.3% of an image in most of the sampled frames.
+     - **Against the truth:**
+       - board: 0.34 mrad and 0.61 mm with no scale fitted, a fitted scale of 1.00004;
+       - targetless: 0.74 mrad and 1.8 mm once scaled;
+       - the two: 0.55 mrad and 1.3 mm apart. One normalised unit is 4.18 m.
+     - **On the targetless result's 101 held-out tracks** (259 members, 110 epipolar):
+       - the board's result validates at 0.70 mrad and the targetless one at 0.72, although the
+         board's is twice as close to the truth;
+       - the method's own held-out evidence equals the public `validate` result exactly.
+     - **The guard,** cam02 turned 5 mrad about its centre, from 0.58 mrad (cam02) and 0.70 (the rig):
+
+       | turn | cam02 | rig | cam02, 2-member tracks | cam02, longer tracks |
+       | --- | --- | --- | --- | --- |
+       | pan | 3.78 | 4.51 | 0.53 → 0.71 | 0.62 → 5.07 |
+       | tilt | 5.75 | 4.12 | 0.53 → 6.63 | 0.62 → 4.90 |
+
+       A pan stays inside a horizontal rig's near-horizontal epipolar planes, so only tracks of three
+       or more members see it.
+     - **Moving content:** 2 of 503 tracks are not points of the still scene, both wrong matches
+       between scene features rather than board features (below). The board's features never got
+       in.
+     - **Both results are Ready.**
+
+       | Criterion | Targetless | Board |
+       | --- | --- | --- |
+       | fewest shared tracks per camera | 220 | |
+       | weak bridges | none | |
+       | held-out transfer | 0.72 mrad | 0.083 mrad |
+       | rotation spread | 0.53 mrad | 0.25 mrad |
+       | translation spread | 0.034% | 0.027% (0.46 mm) |
+       | outliers | 15 of 1042 | |
+       | seed angle | 7.6° | |
+   - **Case 2b, the tracks against the truth** (Release only, extraction only, 24 s). It runs native
+     Exact, native Approximate and half-scale Exact over the same footage, and scores every track on
+     a truth report.
+     - **Native Exact:**
+       - 503 tracks in 20.6 s;
+       - 1.47 descriptor rows per feature;
+       - 2 features dropped as ambiguous, 3 conflicts.
+     - **Approximate:** the same 503 tracks in 1.86 s.
+     - **Half scale:** 464 tracks in 1.22 s.
+     - **Wrong tracks** (more than 10 mrad from the truth's prediction):
+       - natively, 2 of 503: one 275 mrad out on a 2 px feature with four members, one 13 mrad out
+         on a 42 px feature;
+       - Approximate, 1; half scale, 1.
+     - **The right tracks:** a median of 0.16 mrad, a 95th percentile of 2.1 mrad and an RMS of
+       0.87 mrad. Over every track the RMS is 15.3 mrad.
+     - **The doubling:** two-member tracks against longer ones, 0.98 against 0.78 mrad natively and
+       1.18 against 0.95 at half scale, a ratio of 1.25 both times.
+     - **Size bands** (RMS over the RMS stated sigma, right tracks only):
+       - natively, 4–8, 8–16 and over 16 px give 1.25, 1.50 and 1.40;
+       - under 4 px it is 13, with a median of 2.3 times the stated sigma against 0.2 in the other
+         bands;
+       - at half scale, 1.65, 1.80, 2.33 and 1.39.
+   - **Probes, measured once and not kept as tests:**
+     - **2x2 rays a pixel:**
+       - the board result came out 0.46 mrad from the truth, against 0.34 at 3x3, so 3x3 stays;
+       - the targetless result came out 2.15 mrad and 9.3 mm off, with a rotation spread of
+         1.04 mrad, and so Exploratory;
+       - that footage had 3 wrong tracks.
+     - **A floor on the stated sigma:**
+
+       | floor | 3x3 | 2x2 |
+       | --- | --- | --- |
+       | none | 0.74 mrad | 2.15 |
+       | 0.25 px | 0.88 | 2.02 |
+       | 0.5 px | 1.31 | 2.39 |
+       | 1 px | 2.36, Exploratory | 3.26 |
+     - **The wrong tracks removed:** 0.74 → 0.43 mrad at 3x3, and 2.15 → 2.21 at 2x2.
+     - **What follows:** the 2x2 result's error is the rig's weak mode, not wrong tracks or
+       weighting, and its bootstrap spread reports it. Across the three results, the truth error is
+       1.4 to 2.1 times the rotation spread.
+   - **The values sub-slice 10 would expose, with a recommendation each.** All measurements are on
+     rendered footage at a focal length of 1000.
+
+     | Value | Now | Measured | Recommendation |
+     | --- | --- | --- | --- |
+     | tracks per camera (Ready / Exploratory) | 100 / 30 | 220 at the fewest | keep |
+     | tracks per bridge | 50 / 15 | no bridge on a 4-camera arc | keep; not exercised |
+     | held-out transfer | 2 / 6 mrad | 0.70–0.72; right tracks against the truth 0.87 RMS | keep the bound; make the statistic robust (below) |
+     | rotation spread | 1 / 5 mrad | 0.53, truth error 1.4× it; 2x2 1.04, truth error 2.1× it | keep; it is what catches the weak mode |
+     | translation spread | 0.5% / 2% | 0.034% (board 0.027% against its 0.2%) | consider 0.2%, as `registration/1` |
+     | outliers | 5% / 15% | 1.4% | keep |
+     | `matchSearch` | Exact | Exact 20.6 s, Approximate 1.86 s, the same 503 tracks | keep Exact for determinism (ADR-0016); the cost is now measured |
+     | inlier angle | 0.004 rad | 2 wrong verified tracks in 503 | keep |
+     | feature cap | 8192 | about 1100 features (1620 rows) a 1280x720 frame, so it never binds here; 1.47 rows per feature | keep; real footage still owed |
+     | `localisationPerSize` | 0.034 | holds at 4 px and above (1.25–1.50); under 4 px natively it understates about tenfold | keep; a floor costs accuracy here |
+     | epipolar doubling | ×2 | two-member tracks read 1.25× longer ones | keep |
+
+     **Decided by the repo owner, 2026-10-09: every value is kept**, translation spread at 0.5%
+     included. The 0.2% question and the two recommendations below are queued in the Outstanding
+     index, and sub-slice 10 exposed the node on these values.
+   - **Two recommendations that are not thresholds:**
+     - **`validate`'s RMS has no robust loss, so one wrong track decides it.**
+       - The 275 mrad track alone makes the truth's RMS over every track 15.3 mrad, against 0.87
+         over the right ones.
+       - With 2 wrong tracks in 503 and a fifth held out, about one run in three holds one out
+         (1 − 0.8² = 0.36) and fails Ready's 2 mrad on that track alone.
+       - This footage happened to hold out neither.
+       - **Alternatives for the owner:** count members beyond the outlier rule separately, and take
+         the RMS over the rest (the fitted side's own rule); or report a robust statistic beside the
+         RMS.
+     - **Fitness judges the rig-wide held-out RMS.** One camera 5 mrad out raises a 4-camera rig to
+       4.1–4.5 mrad, past Ready, but would raise a rig of seven or more by less than 2 mrad. A
+       per-camera criterion, such as the worst camera's transfer, would catch it at any size.
+   - **Not exercised by this rig, so still provisional:**
+     - the 2° seed floor (the seed is 7.6°);
+     - 16 seed candidates (there are 6 pairs);
+     - 20 tracks to hold out (there are 503).
+   - **The real-footage triggers carry forward unchanged:**
+     - rows per feature on real footage;
+     - matches the ratio test loses to a feature's other orientation;
+     - **robust initial triangulation.** Its trigger did not fire on rendered footage: the wrong
+       tracks moved the 3x3 result by 0.3 mrad and the 2x2 one not at all.
+   - **Deviation:** the alignment is scale-only, not a similarity fit (item 9's text, amended above).
+   - **Found while sabotaging, fixed before commit:**
+     - The first check for moving content asked whether an observation sat on the moving surface in
+       most sampled frames.
+     - With extraction's static rule disabled it still passed case 1, since a feature admitted from
+       one frame sits on the disc in only that frame.
+     - Validation against the truth cannot see such a track either: a synchronised rig sees it at
+       one instant from every camera.
+     - The still scene behind it can. `stillScene` casts each track's first member into the scene
+       without its moving content and projects the point into the other members.
+   - **Six sabotages, all caught:**
+     - **The static rule admitting a single frame:**
+       - case 1: 22 disc tracks off the still scene against a bound of 5, while its registration
+         stayed Ready;
+       - case 2a: 556 board observations, held-out transfer 61 mrad, Rejected.
+     - **The board frozen across the frames:** no corner moves, and the board result is 2.1 mrad out.
+     - **The board's raster scale 1% off:** a fitted scale 1.0% from 1 and 12 mm unscaled in 2a, and
+       255 grey levels in case 0.
+     - **Leave-one-out removed from `validate`:** the guard's rises fall under their bounds (cam02
+       2.1 against 3 mrad; the rig 1.5 against 2).
+     - **Epipolar residuals counted once:** a ratio of 0.88, under its bound of 1.0.
+     - **The scene drawn through a pinhole while the rig is registered with distortion:** case 0
+       still passes, since it is a pinhole, and 2a fails in twelve places, the board 36 mrad out.
+
+     Each restored source was touched a second later and rebuilt before the next.
+   - `ctest -j8` **1196/1196** Debug and **1204/1204** Release with video, camera and Ceres on (+4
+     each: the two Release-only cases skip in Debug), and **1101/1101** with all three off
+     (unchanged). Warning-clean, format-check clean, the board golden untouched.
+     - **Under `ctest -j8`:** the comparison case takes 116 s (60 s alone) and finishes last, and
+       the measurement case takes 77 s.
+     - **In Debug,** case 1 takes 15 s.
+
+   **Sub-slice 10 built (2026-10-09): the node, flowview, and the cli vertical (slice 3 COMPLETE).**
+   Targetless registration is reachable from a graph: a `registerCamerasTargetless` node, wired into
+   flowview, run end to end through `runGraph` and the real binary. Three decisions came from the
+   repo owner while planning:
+   - **The provisional values are kept** as sub-slice 9 recommended, and three changes to how
+     held-out evidence is judged are queued in the Outstanding index (a robust statistic, a per-camera
+     criterion, translation spread at 0.2%). The comments that said "before a node exposes it"
+     (`feature/geometry.h`, `registration/fitness.cpp`) now say what was kept.
+   - **The node exposes the tuning set**, named below.
+   - **The two registration nodes share a base class.**
+
+   - **`RigRegistrationNode`** (`libs/camera/flow`, public header): the `footage` and `models`
+     inputs (0 and 1), `declareRequest()` (the shared `Request` settings with its defaults),
+     `request()`, and `rig()`, which pairs footage with models, names each camera by its source,
+     groups by position, or says why not (`InvalidDataset`). Moved from `registerCameras` unchanged.
+     - **`registerCameras` is rebased on it with no change in behaviour**, its own tests the
+       regression test. `board` stays input 2. `pixelSigma` is now the board node's own and moved
+       one Inspector row down; a document loads unchanged, since params are saved by name.
+     - The shared settings exclude `pixelSigma` because whether a default noise model applies
+       depends on the method's observations.
+   - **`registerCamerasTargetless`** (`RegisterCamerasTargetlessNode`): the shared settings, then
+     `longestSide` (1920, 0 = native), `sampledGroups` (5), `featureCap` (8192), `matchSearch`
+     (Exact), `matchRatio` (0.8), `inlierAngleMrad` (4) and `minimumPairInliers` (15), each default
+     read from a default `feature::ExtractionRequest`; one output, `report`.
+     - **No `pixelSigma`**: every observation extracted from footage carries its own covariance.
+       The pre-screen, static-feature and localisation settings stay internal, since they describe
+       the extractor. The geometry seed stays 0; `seed` is the bootstrap's.
+     - **The inlier angle is milliradians as typed, to a millionth**: `round(mrad·1e6)/1e9`, so 4 is
+       exactly 0.004. Dividing `detail::decimal`'s answer by 1000 rounds twice and misses the nearest
+       double for 50,390 of the 200,000 values from 0.000001 to 0.2 mrad, measured.
+     - **Its own refusals are targetless reports.** A default `Report` is a board one, so the node
+       sets `TargetlessDiagnostics` and a `TargetlessRecord` holding the extraction it would have run,
+       with the registration's execution policy, as the method records it.
+     - It is offered where a build can extract, match, pose from rays and refine
+       (`canRegisterTargetless`), with no board backend.
+   - **`cameraNodeKeys()`** (`register.h`): every kind, in display order, from the kinds table.
+     `canvasstyle.cpp` colours from it instead of a hand list, and flowview's catalog test asks about
+     every kind it returns.
+   - **flowview:** a `matchSearch` codec in `sceneCodecs` and an enum editor. No new port type.
+   - **Tests:**
+     - **The staged kinds test** gains the three feature backends after the refiner, one at a time,
+       and checks `kAllKinds` against `cameraNodeKeys()`. A second staged executable
+       (`test-camera-flow-targetlesskinds`) starts with no board backend at all: extractor, matcher
+       and geometry are not enough, and the refiner makes targetless the only kind offered. The null
+       backends moved to `nullbackends.h` for both.
+     - **Four node cases** (`test-camera-flow-registertargetless`, over `syntheticscene.h` and the
+       pass-through refiner): pairing and naming by source; the defaults, every parameter, a native
+       search, `deterministic` with Approximate refused as `ExtractionFailed`, and a refusing
+       applicability policy; no `pixelSigma`; and the two refusals of `rig()`, a count mismatch and
+       two cameras with one source, each a targetless report. The second refusal was untested
+       before.
+     - **`test_catalog.cpp`'s expectation is per kind**: the board kinds expect OpenCV, both
+       registrations OpenCV and Ceres (a new `LAIN_EXPECT_CAMERA_REFINER`), and a kind with no
+       expectation fails. The single OpenCV flag could not say what `registerCameras` needs, so that
+       kind had been left off the list it kept.
+     - **The cli vertical** (`test_cameravertical.cpp`): three cameras on the arc over the default
+       textured scene, BrownConrady5 at 640x480, each camera's frame drawn once and written as three
+       stills, plus a models folder, through `runGraph` with Exact matching, 3 sampled groups and 4
+       resamples. Without a feature extractor it reports `Failed: NoFeatureExtractor`, and with
+       OpenCV but no Ceres `Failed: NoRefiner`. A second case saves `matchSearch = Approximate` and
+       reloads it, since Approximate's tracks vary run to run and the vertical runs Exact.
+   - **Measured, through the vertical and the real binary:** 432 usable tracks, 346 landmarks, 86
+     held out, relative to cam1, Ready. Over 20 runs of the vertical the held-out transfer was 0.68
+     to 1.26 mrad, with 4 to 8 outliers, Ready every time; 12 s in Debug. The real binary took
+     0.97 s in Release, and its report was byte-identical to the Debug binary's.
+   - **Found: where the footage sits decides which tracks are held out.** A camera's identity is its
+     footage's canonical source uri (ADR-0016), a track's identity digests its cameras' identities,
+     and every k-th track in identity order is held out. So the same rig in two folders gives two
+     reports: through the real binary, 0.795 mrad and 6 outliers in one folder and 0.966 and 4 in
+     another, every time. Board registration's groups digest their members' camera identities and
+     sources, so it has the same property. Nothing is wrong in either report; it is the stand-in
+     identity showing. Recorded in the Outstanding index for the repo owner: a capture manifest's
+     identities would end it, or a binder could name cameras relative to the folder it was given.
+   - **Driven through the real binary** from `/`, with absolute paths:
+     `flowview run --graph register-targetless.json --footage rig --models models --report
+     report.txt` exits 0 and writes `Ready: 3 cameras relative to …/rig/cam1, arbitrary scale, held
+     out 0.795 mrad RMS over 86 tracks, 346 landmarks from 432 usable tracks, 6 outliers`.
+     `flowview list` prints both collection inputs and the report output.
+   - **No example document is added**, as none was for `registerCameras`: one would need committed
+     rendered rig footage.
+   - `ctest -j4` **1203/1203** Debug and **1211/1211** Release with video, camera and Ceres on, and
+     **1108/1108** with all three off (+7 each: the five node and staging cases and the two flowview
+     cases, which build in every configuration). With OpenCV on and Ceres and video off, **1145/1145**,
+     where the vertical takes its `NoRefiner` branch. Warning-clean in all four, format-check clean,
+     the board golden untouched.
+   - **Five sabotages, all caught.** Two first failed to build under `-Werror` (an unused function, an
+     unused variable), so the old binary answered; each was redone so it compiled, and checked by the
+     binary's timestamp.
+     - The targetless row's predicate made the board one: the staged test fails 3 assertions, and
+       the second staged executable is offered nothing.
+     - The node's refusal left as a default (board) report: both refusal sections fail.
+     - `matchSearch` not reaching the extraction: the every-parameter section and the
+       deterministic-plus-Approximate refusal fail.
+     - The `MatchSearch` codec dropped: the census names `registerCamerasTargetless.matchSearch`, and
+       the reloaded document comes back Exact.
+     - Both registration kinds expected on OpenCV alone: the catalog test fails for both, in the
+       OpenCV-without-Ceres build.
+   - **Owed:** a gui-mode eyeball of both registration nodes, the `matchSearch` combo included, on a
+     Metal session.
+
 4. **Targetless calibration + graph fallback.** Add targetless intrinsics/distortion estimation only
    after the shared feature-track evidence and validation path can meet the report contract. Then
    expose the graph method input and ordered board-then-targetless fallback, retaining every attempted
    report and short-circuiting on the first result that satisfies the selected fitness profile.
+
+   **Planned 2026-10-12 as thirteen sub-slices (0 to 12), one commit each.** Four decisions came from
+   the repo owner while planning, recorded in ADR-0016 and ADR-0017 (both amended in place) and in
+   CONTEXT.md:
+   - **The fallback is gates and small nodes, not one fallback node.** Each method stays one node.
+     - A `calibrationMethod` node says which methods the graph's `method` input includes.
+     - A `nextAttempt` node turns that, and the earlier attempts' reports, into whether the next
+       attempt runs.
+     - A Gate upstream of each method's footage then skips an attempt by suppression (ADR-0007): when
+       board calibration is accepted, targetless calibration never runs.
+     - A `calibrationAttempts` node combines the reports, in priority order, into the attempts value
+       and the accepted report. The existing `cameraModel` node takes the model from that report.
+
+     It ships as an example document. This is the shape the 2026-08-16 review note asks for, and
+     editing a targetless setting re-runs only the targetless attempt. The alternatives:
+     - One fallback node: easier to use, but it would carry every setting of both methods, and any
+       change would re-run the board attempt.
+     - An attempt chain, each method node passing earlier attempts through: this puts the skip
+       inside each method's node.
+   - **With no imported model, the starting focal length comes from lain's focal sweep.** The sweep
+     tries a fixed, log-spaced set of candidate focal lengths (about 25° to 120° field of view) on the
+     most strongly verified frame pairs, through the existing `relativePose` facade. Each candidate
+     has the principal point at the image centre and the requested model's neutral distortion. The
+     candidate whose poses explain the most matches starts the reconstruction.
+     - **Every candidate is scored at one PIXEL threshold**, turned into its own angle. A fixed angle
+       covers more pixels at a longer focal length, so it would favour the longest candidate.
+     - **An imported model under `Initial` skips the sweep.**
+
+     Requiring a prior was the alternative: honest, but it asks the user to guess first. So was
+     COLMAP's fixed guess of 1.2 times the longest side, which fails on wide and long lenses.
+   - **The principal point is held by default.** Targetless calibration estimates fx, fy and the
+     requested model's distortion. The principal point stays at the image centre, or at an imported
+     model's, as COLMAP holds it by default, because self-calibration conditions it poorly.
+     - A setting of the targetless method frees it.
+     - A held parameter has no resampled variation. The report says it was held, and the fitness
+       criterion on it does not apply; its variation is never recorded as zero.
+
+     Estimating everything was the alternative, and it would leave most real footage Exploratory on
+     principal-point variation. Holding the tangential terms as well was the other.
+   - **Still no standalone extraction node.** Slice 3 deferred one to "a second consumer, which slice
+     4's targetless calibration supplies". That trigger assumed calibration would consume the same
+     extraction, and it does not:
+     - each of a moving camera's sampled frames is its own view;
+     - nothing is consolidated as static;
+     - pairs are verified without a model.
+
+     So there are two extractions, each with one consumer, and each method node extracts internally,
+     as both registration nodes do. **The restated trigger:** a second consumer of the SAME
+     extraction, or a measured need to re-tune a solver setting on real footage without extracting
+     again.
+
+   Taken by precedent, or found by the design review, and recorded in the same amendments:
+   - **The camera moves; the scene stands.** Targetless calibration takes one camera's footage of a
+     predominantly static scene, the camera translating as well as turning.
+     - Every sampled frame is its own view (ADR-0016's `View`, "one per frame in the targetless
+       calibration of a moving camera"), so a track is a scene point seen across frames.
+     - Moving content cannot be dropped before matching, since nothing stays at one pixel. Pair
+       verification rejects most of it, and the robust loss and the outlier report the rest.
+     - Footage that only turns (a panning tripod) has no parallax to reconstruct from, and fails
+       initialisation with a reason. Self-calibration from rotation alone waits for that footage.
+   - **Frame pairs are verified by a fundamental matrix, which lain measures.** Before calibration
+     there is no model to turn pixels into rays, so fixed-camera extraction's verification by
+     relative pose cannot run. Instead:
+     - The geometry seam gains `fundamentals(pixelPairs, threshold, seed)`, which returns candidates
+       only.
+     - A `feature::fundamental` facade measures each candidate by its Sampson distance in source
+       pixels. It chooses by inlier count, then summed squared residual, then a canonical order, and
+       recomputes the inliers: "producers propose; lain decides" again.
+     - A fundamental matrix ignores lens distortion, so strong distortion costs peripheral matches.
+       Sub-slice 8 measures how many. A lens that loses too many is the trigger to verify again under
+       the swept model.
+   - **The refiner seam leaves `registration`, and gains free models.** Calibration may not depend
+     on registration, since ADR-0016 keeps the siblings apart. Slice 2 met the same problem with the
+     board pose seam and moved it to `camera::board`.
+     - `registration/refiner.h` moves to `lain/camera/refinement/refiner.h`
+       (`lain::camera::refinement`), with the noise model and the robust loss, and the old names left
+       in registration. *(The path and two names settled 2026-10-13; sub-slice 3's plan, below.)*
+     - Its `Problem` gains cameras that share one model, and a model whose parameters are free. A
+       moving camera's frames are the problem's cameras, with one model between them.
+     - Registration never frees a model, so joint intrinsic and extrinsic registration stays out of
+       the milestone.
+   - **The projection kernels become scalar-generic in their parameters too**, not only in the
+     point. Today the coefficients and intrinsics stay double, and Ceres must differentiate them
+     through the one projection implementation: the review note forbids a second copy of a
+     distortion formula, the iterative inverse included. Which models the refiner may estimate is
+     then measured. A model whose derivatives through Jets do not match finite differences is not
+     declared estimatable (`Refiner::canEstimate`), as an estimator declares its models.
+   - **Validation is on held-out frames: board calibration's held-out views, with the scene in
+     place of the board.**
+     - Every k-th sampled frame is kept out of the reconstruction.
+     - Afterwards each is posed against the reconstructed landmarks with the model held, and its
+       observations are measured as angles through lain's projection.
+     - A frame whose loss would leave the reconstruction unable to start is never held out.
+
+     So `reconstruction/1`'s criteria keep their meaning (views, coverage, held-out angle, focal and
+     principal-point variation). A targetless profile differs from it only in its numbers, since a
+     scene feature is located less precisely than a board corner: `reconstruction-targetless/1`,
+     provisional until sub-slice 10 measures it. An empty `Request::fitnessProfile` becomes the
+     method's own, as registration's did in slice 3.
+   - **The bootstrap resamples tracks**, as targetless registration's does, re-running the bundle
+     adjustment from the result. Intrinsics carry no scale, so no resample needs a scale alignment.
+   - **The reconstruction is a by-product.** Its frame poses and landmarks share an arbitrary scale,
+     and they are diagnostics, never part of the result. The result is the camera model, as board
+     calibration's is.
+   - **Acceptance is stated once.** An attempt is accepted when it succeeded and is Ready under its
+     own method's profile.
+     - `calibration::accepts(report)` decides it, and both `nextAttempt` and `calibrationAttempts`
+       call it. The gate that skipped an attempt and the record that says why therefore cannot
+       disagree.
+     - A looser acceptance is a looser profile, set through the method node's own `fitnessProfile`
+       and overrides, not a second knob on the fallback.
+     - The attempts value lists the attempts MADE, in priority order. A method that was skipped made
+       no attempt.
+   - **The incremental reconstruction is targetless registration's, lifted.** Placeability, the
+     seed, placement by absolute pose and the cheirality filter are file-local in
+     `registration/targetless.cpp`. They work over rays, which a moving camera's frame also has under
+     its current model.
+     - They move to a private module both methods share, held to a golden targetless registration
+       report committed first.
+     - The one difference is policy. A registration needs every camera placed. A calibration needs
+       only enough frames, and reports an unplaced frame rather than failing on it. *(2026-10-14: the
+       module already leaves that decision to its caller. Only the rule for choosing a seed that
+       reaches fewer than every frame is new, and it lands with sub-slice 9.)*
+   - **What only the targetless method uses is an argument of its entry point**, as board's detection
+     request is: `calibration::targetless::Settings`. It holds:
+     - the sequence extraction request;
+     - the robust loss;
+     - whether the principal point is free.
+
+     It holds no noise model, since every extracted observation carries its own covariance (slice 3,
+     sub-slice 10). The report's per-method record keeps it.
+   - **Parallelism is lain's** (ADR-0016, ADR-0017), one task per frame extracted, frame pair
+     matched, resample solved or held-out frame posed. OpenCV and Ceres stay serial.
+   - **Pair matching stays exhaustive behind the pre-screen**, as slice 3 left it. Sub-slice 8 times
+     it on sampled footage, and that measurement is the trigger for a temporal-neighbour restriction.
+
+   Found in the code by the design review, and owned by the sub-slices below:
+   - `calibration::Request::detection` is a `board::DetectionRequest` in the shared request, and
+     `fitnessProfile` defaults to `"reconstruction/1"`, the board profile's name.
+   - `calibration::Report` is board-shaped:
+     - `HeldOutEvidence` counts corners and `viewsWithoutPose`;
+     - `Diagnostics` holds the detections and `framesUsable`;
+     - `Reproducibility` holds a detector and a pose solver;
+     - `toString` prints "frames usable".
+
+     And `ResamplingEvidence` has no way to say a parameter was held.
+   - `calibration::Estimator` fits a model to board observations, so it cannot serve targetless
+     calibration, and the refiner estimates instead. The flow kinds table's `canCalibrate` (detection
+     plus estimation) is board's alone.
+   - `registration::Refiner` and its `Problem`, `NoiseModel` and `RobustLoss` live in
+     `registration`, and `Problem::models` is one per camera, "held fixed".
+   - `distortion.h` says "The coefficients stay double; only the point is T", and `project<T>` reads
+     `T(k.fx)` from the model.
+   - `feature::extractTracks` needs a model per camera, to verify a pair on rays, and consolidates
+     static features per camera. `TrackSet::views` is "ascending by camera identity", and a track's
+     identity digests cameras and pixels, so the frames of one moving camera, which share one
+     identity, would collide.
+   - The geometry seam proposes only from rays.
+   - `synthetic::RenderedSource` draws every frame from one pose.
+   - flowview's boundary binders have no enum binder, so a `method` input cannot be bound from the
+     command line.
+
+   0. **Record the plan.** **Built 2026-10-12** (this commit). It comprises:
+      - this entry;
+      - ADR-0016 amended: targetless calibration as planned, and the fallback's graph shape;
+      - ADR-0017 amended: the seam's new home, and free models;
+      - CONTEXT.md, which gains *held-out frame*, *focal sweep*, *held parameter* and *accepted
+        attempt*, and amends *Targetless calibration*, *Feature-track extraction*, *Calibration
+        method* and *Calibration attempt*.
+   1. **The calibration request and its record become method-neutral.** *(Built 2026-10-12 as two
+      commits, 1a and 1b; see below.)*
+      - First, a golden test in `test-camera-calibration`. It prints every field of four stand-in
+        board calibration reports (Ready, Rejected, a held model, and a failure before detection),
+        snapped to a 1e-9 grid as the registration golden is.
+      - `Request` loses `detection`, which the board entry points take explicitly.
+      - `Reproducibility` keeps what every method records (sources, frames, the backend that
+        estimated, the request), and gains `method = std::variant<BoardRecord{detector, poseSolver,
+        detection}>`.
+      - The node, the fixture harness and the tests change mechanically, and the golden stays
+        byte-equal.
+      - Sabotage: board calibration searching with a default detection request fails the golden.
+   2. **The report, its diagnostics and fitness become method-neutral.** *(Planned in detail
+      2026-10-13 as two commits, 2a and 2b; see below.)*
+      - `HeldOutEvidence{views, residuals, viewsWithoutPose, rmsAngle, rmsPixels, worstPixels}`.
+      - `ResamplingEvidence` able to say the principal point was held.
+      - A shared `Diagnostics{viewsSelected, viewsHeldOut, coverage, fitRmsPixels, selected, heldOut}`,
+        plus `method = std::variant<BoardDiagnostics{framesExamined, framesUsable, detections}>`.
+      - `toString`'s method clause through `std::visit`.
+      - ~~`Failure` gains what targetless calibration refuses with.~~ *Moved to sub-slice 9
+        (2026-10-13)*, beside the code that returns each one, as registration's arrived in its
+        sub-slice 8b.
+      - An empty `fitnessProfile` means the method's own. This changes the golden on purpose, in the
+        lines that print the request; the diff is checked before it is accepted.
+      - Sabotage: the board clause left out of `toString` fails the golden, which prints it.
+   3. **The refinement seam moves to `lain::camera::refinement`.** *(Planned in detail 2026-10-13 as
+      one commit, and built the same day; see below.)*
+      - `lain/camera/refinement/refiner.h`, with `NoiseModel`, `RobustLoss` and `LossFamily` beside
+        it, and the old names left in registration.
+      - The Ceres plugin implements the moved seam, unchanged in behaviour.
+      - The registration golden stays byte-equal.
+   4. **The projection kernels become scalar-generic in their parameters.** *(Planned in detail
+      2026-10-13 as one commit, and built the same day; see below.)*
+      - Each distortion model's formulas take their coefficients as T, and the intrinsics too, in the
+        one implementation that `project<T>(const CameraModel&, …)` keeps calling with doubles.
+      - Tests in `test-camera-ceres`: for every model, the Jet derivatives with respect to fx, fy, cx,
+        cy and every coefficient, against central finite differences of `project<double>`. They go
+        through the inverse Brown-Conrady Newton iteration and Kannala-Brandt's on-axis branch. A
+        model that fails is recorded, and sub-slice 5 does not declare it estimatable.
+      - Sabotage: one coefficient's derivative dropped inside a formula fails its derivative test.
+        *(Reworded 2026-10-13: a coefficient converted to double no longer compiles once it is a Jet,
+        so the type system guards that case; see the detailed plan.)*
+   5. **The refiner frees camera models.** *(Planned in detail 2026-10-14 as one commit, with a fix
+      to sub-slice 4's Newton solve landing ahead of it in its own commit; see below. Both built
+      2026-10-14.)*
+      - `Problem` gains a model index per camera (`modelOf`; empty is one model per camera, as now)
+        and a `ModelFreedom` per model: focal length, principal point, coefficients.
+      - `Solution::models` carries the refined parameters UNCHECKED, for the method to pass through
+        `CameraModel::create`.
+      - `Refiner::canEstimate(DistortionModel)`.
+      - Ceres gives each free model one parameter block, its held fields on a `SubsetManifold`, in the
+        elimination group with the cameras. Within one solve, the projection's domain is the starting
+        model's.
+      - Tests:
+        - a perturbed focal length and distortion recovered from landmarks seen by 40 frames;
+        - a held principal point that does not move;
+        - a registration problem unchanged;
+        - Release only, the time at 60 frames and 20,000 landmarks.
+      - Sabotages: the held fields left free; a free model no camera uses.
+   6. **The incremental reconstruction leaves `registration/targetless.cpp`.** *(Planned in detail
+      2026-10-14 as three commits, 6a to 6c, with seven scenes in the golden and the observation
+      graph moved down first; see below. All three built 2026-10-14.)*
+      - First, a golden in `test-camera-targetless`, whose stand-ins are already the only backends
+        registered there. It prints three targetless registration reports: connected, a chain that
+        cannot be placed, and noisy.
+      - Placeability, the seed, placement and the cheirality filter then move to a private module over
+        rays. ~~Which views must be placed (all, or enough) is a parameter.~~ *(Amended 2026-10-14:
+        the views a seed's closure must reach are a parameter, as registration already passes them two
+        ways. The rule for "enough" lands with sub-slice 9, beside its caller.)*
+      - The golden stays byte-equal.
+      - Sabotage: a closure that places a view from one placed neighbour fails the chain case.
+   7. **Fundamental matrices and sequence track extraction**, lain's side, over stand-ins. *(Planned
+      in detail 2026-10-15 as three commits, 7a to 7c, with the OpenCV producer moved in from sub-slice
+      8; see below. All three built 2026-10-15.)*
+      - `GeometrySolver::fundamentals` and the `feature::fundamental` facade, measuring Sampson
+        distance in source pixels; at least eight pairs.
+      - `feature::extractSequenceTracks(footage, request)`:
+        - frames sampled evenly across the footage;
+        - one task per frame to extract, cell and cap its features;
+        - every frame pair pre-screened, matched and verified by a fundamental matrix;
+        - the union run serially in canonical pair order, a track holding two features of one frame
+          rejected whole.
+      - Views ascend by camera and then frame. A track's identity digests each view's frame too,
+        under its own versioned canonical text, so rig tracks' identities do not change.
+      - The per-frame and per-pair work is shared with `extractTracks`, whose tests stay unchanged.
+      - `TruthGeometry` (the stand-in) proposes fundamentals from the truth.
+      - Tests:
+        - a moving camera's tracks, exactly;
+        - a frame pair with no overlap skipped by the pre-screen;
+        - a conflict;
+        - reversed, parallel and serial input identical;
+        - each frame decoded once;
+        - the refusals.
+      - Sabotages: the backend's first fundamental taken; the frame left out of a track's identity.
+   8. **The OpenCV fundamental-matrix producer, and a moving camera rendered.** *(Planned in detail
+      2026-10-15 as one commit of test code only, since the producer moved to 7a; see below. Built
+      2026-10-15.)*
+      - ~~`findFundamentalMat` with USAC (MAGSAC, an explicit seed, `isParallel = false`), every
+        candidate returned.~~ *Moved to sub-slice 7a (2026-10-15): the seam method is pure virtual,
+        so every backend answers it in the commit that adds it. It is tested there on two rendered
+        views.*
+      - `RenderedSource` taking one pose per frame, and a trajectory that translates and turns.
+      - Tests, on rendered footage of a moving Brown-Conrady camera:
+        - real SIFT, its verified matches checked against the truth;
+        - the threshold measured, in pixels per longest side;
+        - ~~the peripheral matches lost to distortion at k1 = -0.1, -0.25 and -0.4;~~ *Amended
+          2026-10-15: k1 alone at -0.25 and -0.4 folds inside the test camera's image, so
+          `CameraModel::create` refuses both. The sweep is stated by how far each lens moves the
+          image corner instead; see the detailed plan.*
+        - Release only: the time to match every pair of 40 frames sampled at a 1920 longest side,
+          with and without the pre-screen, recorded beside its check. *(Measured per pair and scaled
+          up, decided 2026-10-15: matching all 780 pairs Exact at the cap is about 2.2 core-hours.)*
+   9. **`calibration::targetless`.** *(Planned in detail 2026-10-15 as three commits, 9a to 9c; see
+      below. The track-set overload takes no `image`, since a track set's views carry theirs. 9a, 9b
+      and 9c built 2026-10-15, 9c after a refiner fix that landed ahead of it.)*
+      - `calibrate(footage, settings, request)` and `calibrate(trackSet, image, settings, request)`.
+      - Steps:
+        1. the checks: `NoFeatureExtractor`, `NoFeatureMatcher`, `NoGeometrySolver`, `NoRefiner`, a
+           model the refiner cannot estimate, the imported model's applicability. Each `Failure`
+           this method returns that board calibration does not is added here, beside the code that
+           returns it (moved from sub-slice 2, 2026-10-13);
+        2. the held-out frames;
+        3. the starting model: imported, or the focal sweep;
+        4. the reconstruction, then the cheirality filter, through sub-slice 6's module. Here the
+           module gains the rule for choosing a seed whose closure reaches fewer than every frame
+           (moved here from sub-slice 6, 2026-10-14);
+        5. the bundle adjustment, the model free and the principal point held unless freed, then
+           `CameraModel::create`;
+        6. the held-out frames posed and measured;
+        7. the track bootstrap, and coverage;
+        8. the verdict against `reconstruction-targetless/1`, through sub-slice 2's
+           `calibration::judge`, as board's is.
+      - All three imported-model policies. HoldAndValidate reconstructs with the model held, and is
+        at most Exploratory, as board's is.
+      - Tests, over stand-ins and through Ceres:
+        - a pinhole and a Brown-Conrady camera recovered from exact tracks;
+        - the sweep choosing within one candidate of the truth;
+        - noise;
+        - wrong matches named as outliers;
+        - moving content;
+        - footage that only pans, failing initialisation;
+        - a frame left unplaced, and reported;
+        - a principal point freed;
+        - determinism under `DeterministicDebug`;
+        - each refusal, and a failed report as an ordinary result.
+      - Sabotages:
+        - the sweep scored at a fixed angle, which picks the longest candidate;
+        - the held-out frames left in the bundle adjustment;
+        - the bootstrap drawn inside the parallel loop;
+        - a held principal point's variation reported as zero.
+   10. **End to end, and the comparison** (`test-camera-calibration-e2e`, Release). *(Planned in detail
+       2026-10-16 as five commits, 10a to 10e; see below. A probe through OpenCV and Ceres found three
+       defects in 9b's method before any comparison could mean anything, so four commits fix the method
+       and the fifth is the comparison. 10a to 10c built 2026-10-16, 10d and 10e 2026-10-18:
+       sub-slice 10 is complete.)*
+       - One rendered camera moves through the textured scene, with a board in view for part of the
+         footage. Both methods calibrate it from the same frames, with both real backends.
+       - Each model is compared with the truth and with the other by its ray mapping over the image
+         grid, not by its coefficients (the review note's rule).
+       - Measured for the repo owner to decide on before sub-slice 11 exposes them: the provisional
+         `reconstruction-targetless/1` numbers, the default number of sampled frames, and the
+         feature cap.
+       - *(Added 2026-10-15, deferred here from 9c with the repo owner.)* Two measurements through
+         OpenCV, each with its fix named should it be owed:
+         - **a rendered pan**: whether it reconstructs as a false orbit, as one did over 9b's
+           stand-ins when its focal length fell between two sweep candidates. If it does, a
+           rotation-only check is owed: a pair most of whose matches a rotation alone explains has no
+           parallax. *(Measured 2026-10-16: it does, and is judged Ready. The check is a homography
+           test, decided with the repo owner: 10d.)*
+         - **rendered distorted footage**: how many frames the starting model leaves unplaced. If
+           any, a second placement round is owed: the unplaced frames posed again under the refined
+           model, then one more adjustment when a frame joins. *(Measured 2026-10-16: none, through
+           k1 = -0.25 at 1920 x 1080, sub-slice 8's strongest lens. Not owed; 10e pins it.)*
+       - The operator guidance says footage whose every frame looks at one point does not say its
+         focal length (9b's finding), so a camera circling an object should not keep it centred.
+   11. **Attempts, and the flow nodes.** *(Planned in detail 2026-10-19 as three commits, 11a to 11c;
+       see below. The report pins are dynamic, as Merge's branches are; `Attempts` derives the accepted
+       one rather than storing its position; and the `calibration::Method` codec and editor move here
+       from item 12, since flowview's codec census sees every new param. 11a to 11c built
+       2026-10-20: sub-slice 11 is complete.)*
+       - `calibration::Method {Board, Targetless, BoardThenTargetless}`, `calibration::Attempts` (the
+         reports in priority order, and the accepted one's position), and `calibration::accepts`.
+       - `CalibrationNode`, the settings both method nodes share, as `RigRegistrationNode` is for
+         registration. `calibrateCamera` is rebased on it with no change in behaviour.
+       - `calibrateCameraTargetless`, `calibrationMethod`, `nextAttempt` and `calibrationAttempts`;
+         the kinds table's rows, each with its capability; and the new port types.
+       - Tests through a retained Evaluation:
+         - each of the three methods;
+         - the board attempt accepted, and the targetless node never computed;
+         - a failed board attempt, then a Ready targetless one;
+         - both failing: `accepted` is empty, so `cameraModel` is suppressed, while the attempts
+           value holds both;
+         - an edited targetless setting re-running the targetless node alone.
+       - Sabotages: `nextAttempt` judging by a rule of its own; the attempts value leaving out a
+         failed attempt.
+   12. **flowview, the fallback example, and the cli vertical.** *(Planned 2026-10-20 as 12a to 12c:
+       see Sub-slice 12 planned.)*
+       - ~~Codecs, enum editors,~~ *(moved to 11c, 2026-10-19)* and a `calibration::Method` binder
+         (`--method board-then-targetless`). An unbound boundary pin is empty, which suppresses
+         `calibrationMethod`, so its default never applies through one: the binder and the example
+         must account for that (found while planning 11). *(2026-10-20: `--method` is required, and
+         graph input defaults are deferred as a feature of their own.)*
+       - ~~The catalog and the colours.~~ *(2026-10-19: both follow the kinds table already, and the
+         catalog test's expectation for each kind lands in the commit that adds it, 11b and 11c.)*
+         ~~Whether the fallback nodes should look like control nodes rather than camera work.~~
+         *(2026-10-20: they keep the camera colour.)*
+       - `apps/flowview/examples/calibrate-fallback.json`, written by the example builder and marked
+         as needing a camera backend *(and, 2026-10-20, as needing inputs from its caller)*.
+       - The vertical through `runGraph` and the real binary, on rendered footage.
+       - A build without Ceres offers no targetless kind, and its document reports `NoRefiner`.
+
+       **Slice 4 is COMPLETE** when this lands. A gui-mode eyeball is then owed. *(Landed 2026-10-20
+       with 12c: slice 4 is complete, and its eyeball is in the Outstanding index.)*
+
+   **Sub-slice 1 planned (2026-10-12) as two commits**, decided with the repo owner:
+   - **1a:** the golden alone, produced by the unchanged code.
+   - **1b:** the change, with the golden file untouched.
+
+   In one commit, "the golden stays byte-equal" would be a claim. Split, the history shows it: 1b's
+   diff does not touch the golden file. Slice 3 had this by ordering, since its golden landed in
+   sub-slice 1 and its contracts changed in sub-slices 2 and 3.
+
+   **Sub-slice 1a built (2026-10-12): a golden board calibration report.** Test code only, produced
+   by the unchanged library. `ctest -j2` **1204/1204** Debug and **1212/1212** Release with video,
+   camera and Ceres on, and **1109/1109** with all three off (+1 each: the golden); warning-clean,
+   format-check clean.
+   - **`golden/boardcalibration.txt`**, from `test_calibrationgolden.cpp` in `test-camera-calibration`.
+     It prints every field of four reports, timings aside, and each report's `toString()` line, which
+     sub-slice 2's sabotage needs:
+     1. **Ready**, through the footage, with two boardless frames and an unusual search (LongestSide
+        480, no native refinement, Detailed, 6 corners).
+     2. **Rejected**, through the footage: an estimate 3% long, seeded by an imported inverse
+        Brown-Conrady model (so only the pinhole fields seed), with overrides and changed counts.
+     3. **A held model**, over detections already made with the unusual search, under
+        DeterministicDebug.
+     4. **Refused before detection**: profile `reconstruction/99`, with the unusual search.
+
+     Where an estimate is asked for, the stand-in's answer depends on which views it was handed, so
+     the selection, the hold-out and every resample show in the numbers.
+   - **The printing and the comparison moved to `goldentext.h`**, shared with the registration
+     golden, whose text is unchanged. Sub-slice 6's targetless golden is the third user.
+   - **The stand-in estimator reports a scripted residual and uncertainty**, so those fields print
+     values rather than zeros and `unset`.
+   - **Two sabotages, both caught.**
+     - The held-out stride starting at 0: the golden fails at line 3, and so does the view-selection
+       case.
+     - Every resample draw shifted by one index: only the golden sees it, at line 7. The focal
+       variation does not move, since a shift keeps each draw's count of distinct views, and that
+       count is all the focal term reads. The principal-point term reads which views were drawn, and
+       moves. That is why the stand-in's answer has both terms.
+
+     The restored source was touched a second later, and its object checked to be newer.
+
+   **Sub-slice 1b built (2026-10-12): the calibration request stops naming a board.** No change in
+   behaviour: the golden passes, and 1b's diff does not touch its file. `ctest` **1206/1206** Debug
+   and **1214/1214** Release with video, camera and Ceres on, and **1111/1111** with all three off
+   (+2 each: the two cases below); warning-clean, format-check clean.
+   - **`calibration::Request` loses `detection`**, and says it is what every calibration method is
+     asked. The footage overload of `calibration::board::calibrate` takes the
+     `board::DetectionRequest` between the board and the request, registration's order: what is
+     searched for, how, then how to calibrate.
+   - **`Reproducibility` keeps what every calibration records** (sources, frames, the estimator,
+     the request) and gains `std::variant<BoardRecord> method`, where `BoardRecord {detector,
+     poseSolver, optional<DetectionRequest> detection}`. `estimator` stays shared: it is what
+     estimated the model, which for targetless calibration will be the refiner.
+   - **Registration's rules, exactly.**
+     - The footage overload records its argument first, beside the request, so a refusal before
+       any frame is decoded still says what would have been searched with.
+     - The detections overload takes no search. The record holds what the first detection reports,
+       taken in `analyse` where the detector already was, so both come from the given detections.
+       Before this, that overload recorded whatever search the caller had left in `Request`, which
+       nothing compared with the detections. With no detection at all it stays unset.
+   - **Callers, mechanically.** The node builds its search with `board::DetectionRequest`'s
+     defaults, as `registerCameras` does. The fixture harness passes the default search at its one
+     call, since no fixture has needed another. The OpenCV estimator test passes it too.
+   - **Tests.**
+     - Two new cases: footage is searched as asked and the record says how, refusal included; and
+       a calibration over given detections records the search they report.
+     - The no-backend cases check that a NoDetector refusal still records the search, and that an
+       empty set of detections records none.
+     - The node's settings case reads the record, and checks every detection was searched as the
+       node said.
+   - **Four sabotages, all caught.**
+     - The footage overload detecting with a default search: the golden at line 13, the new footage
+       case on every detection, and the node's per-detection check. The record alone cannot see it,
+       since it holds the argument whatever the frames were searched with, as registration found.
+     - `analyse` never recording the detections' search: the golden at line 179 (the held case's
+       `request detection unset`), and the new detections case.
+     - The footage overload recording its argument only after the checks: the golden at line 199
+       (the refused case), the refusal section, and the no-backend case.
+     - The node passing a default search: its settings case. The first cut did not build (`search`
+       set but not used, under `-Werror`), so the old binary answered; it was redone so it compiled,
+       and checked by the object's timestamp.
+
+     Each restored source was touched a second later, and its object checked to be newer.
+
+   **Sub-slice 2 planned (2026-10-13) as two commits**, decided with the repo owner:
+   - **2a:** everything that leaves the golden byte-equal: the diagnostics split, the held-out rename,
+     `toString`'s visit, the held principal point and the verdict. 2a's diff does not touch the golden.
+   - **2b:** the method's own profile, whose diff changes exactly three golden lines.
+
+   In one commit, the golden's three-line diff would have to be trusted to come only from the profile.
+   Split, the history shows it, as it does for 1a and 1b.
+
+   Decided with the repo owner, settling what the plan left open:
+   - **The held principal point is `std::variant<double, Held>`**: `ResamplingEvidence::
+     principalPointVariation`, with an empty `calibration::Held`. Every reader has to say what it does
+     with a held one, and held cannot be mistaken for missing evidence, which Ready refuses.
+     `std::optional<double>` was the alternative: nullopt already means "missing" in
+     `ParameterUncertainty`, and the verdict treats missing and held oppositely.
+   - **The verdict is a public `calibration::judge`**, lifted from `board.cpp`'s file-local `meets` and
+     declared in `report.h`, beside the evidence it reads:
+     `Judgement judge(const FitnessProfile&, std::uint32_t views, double coverage, heldOut, resampling)`.
+     - `Judgement {verdict, notes}`, the notes exactly what `fitnessNotes` holds today: Ready's
+       shortfalls, then Exploratory's when that tier fails too.
+     - Board calls it now and targetless calibration in sub-slice 9, so the held rule is one function.
+       It is tested directly now, although nothing produces a held principal point until 9.
+     - Registration's `judge` is private. The difference is that this rule changes before its second
+       caller exists. A private shared module, and leaving it in `board.cpp`, were the alternatives;
+       both leave the held case untested until sub-slice 9.
+   - **No new `Failure` here.** The plan's bullet moves to sub-slice 9: nothing returns one until then,
+     and registration added its targetless failures in its sub-slice 8b, beside the code returning them.
+
+   Taken by precedent:
+   - **No `IncompatibleFitnessProfile`, and no unit on `FitnessProfile`.** Registration needed both
+     because its counts change unit between methods. Calibration's criteria mean the same in both
+     (ADR-0016), so a board calibration held to the targetless profile is a looser acceptance, which
+     the plan sanctions ("a looser acceptance is a looser profile").
+
+   Found while planning, and recorded in CONTEXT.md's *Held parameter* and ADR-0016:
+   - **A held parameter is part of an estimate; a held model is not an estimate.** Applied to
+     HoldAndValidate, "a held parameter's criterion does not apply" would exempt every criterion and
+     let a held model reach Ready. So `Held` lives inside `ResamplingEvidence`, for an estimated model
+     whose principal point was held, and a held model's resampling stays `Unavailable` ("the model was
+     held, not estimated"). HoldAndValidate stays at most Exploratory, in both methods.
+
+   **2a: the report and its diagnostics stop naming a board, and the principal point can be held.**
+   - `HeldOutEvidence::corners` becomes `residuals`. `viewsWithoutPose` keeps its name; its comment
+     says the pose is a board's, or in targetless calibration a frame's against the landmarks.
+   - `Diagnostics {viewsSelected, viewsHeldOut, coverage, fitRmsPixels, selected, heldOut}`, plus
+     `std::variant<BoardDiagnostics> method`, where `BoardDiagnostics {framesExamined, framesUsable,
+     detections}`.
+     - `selected` and `heldOut` are positions among the frames examined (board: of the detections, one
+       per frame).
+     - A default `Report` is a board report, so sub-slice 9's refusals set the targetless
+       alternatives, as registration's targetless node had to.
+   - `toString` prints the shared clauses, then `std::visit` to one `methodSummary` per alternative
+     (board's: ", 38 of 40 frames usable"), then the fitness note. That is today's order, so board's
+     line is byte-identical, and a method without a summary does not compile.
+   - `ResamplingEvidence::principalPointVariation` becomes `std::variant<double, Held>`. Board always
+     measures it.
+   - `calibration::judge` as above. A held principal point's criterion adds no note and does not count
+     as missing evidence for Ready; an `Unavailable` resampling still does.
+   - Callers, mechanically:
+     - `board.cpp` (`validate`, `resample`, `analyse`, both entry points) and `report.cpp`;
+     - `test_calibration`, `test_nodes`, and the OpenCV `test_estimator`;
+     - the fixture harness: its two reads of `detections`, and its agreement bound, which reads the
+       principal-point variation with `std::get<double>`. A board calibration never holds it, and a
+       held one would throw there rather than become a zero bound.
+   - **The golden printer keeps its labels** ("corners", "diagnostics.framesExamined") while reading
+     the moved fields, with a comment saying why, as the registration golden did in slice 3.
+   - New tests, `judge` over hand-built evidence:
+     - the Ready tier met with a held principal point: Ready, no note;
+     - a held principal point beside a focal variation over its bound: the focal note alone;
+     - resampling `Unavailable`: Ready refused with its reason, Exploratory still reachable;
+     - Ready failing and Exploratory failing: the notes in board's order.
+
+     Each variant is constructed, never reassigned. In registration's slice 3, GCC 13 at `-O3` raised
+     a false `-Wmaybe-uninitialized` on a reassigned `heldOut`, so the Release build is the check.
+   - Sabotages:
+     - the board clause left out of `toString`: the golden at lines 59, 121 and 181;
+     - a held principal point counted as missing evidence for Ready: the first `judge` case;
+     - a held principal point judged as over its bound: the first two `judge` cases.
+
+   **2b: an empty profile is the method's own.**
+   - `Request::fitnessProfile` defaults to `""`. Board resolves it to `reconstruction/1` before looking
+     it up, and records the request exactly as given. Sub-slice 9 lifts that rule into a helper both
+     methods call, as registration's `resolveProfile` is.
+   - The node's `fitnessProfile` param default follows the request, as the registration nodes' did in
+     8a. No committed example holds a `calibrateCamera` node, so the example builder's bytes are
+     unchanged.
+   - **The golden changes in exactly three lines**, 55, 117 and 177: the ready, rejected and held
+     request records read `profile (method's)`, printed as the registration golden prints it. The
+     refused case names `reconstruction/99` and stays. The produced file is diffed against the golden
+     before it is copied over.
+   - New tests: the empty name is the method's own profile, and so is `reconstruction/1` named, with
+     one verdict either way; `fitnessProfile("")` has no value, since the empty name is a request's.
+   - Sabotage: board writing the resolved name back into the recorded request fails the golden's three
+     request lines.
+
+   **Sub-slice 2a built (2026-10-13): the report and its diagnostics stop naming a board, and the
+   principal point can be held.** No change in behaviour: the golden passes, and 2a's diff does not
+   touch its file. `ctest` **1210/1210** Debug and **1218/1218** Release with video, camera and Ceres
+   on, and **1115/1115** with all three off (+4 each: the `judge` cases); warning-clean, format-check
+   clean.
+   - **As planned:**
+     - `HeldOutEvidence::residuals`;
+     - `BoardDiagnostics {framesExamined, framesUsable, detections}` in
+       `Diagnostics::method`;
+     - `toString`'s board clause through `std::visit` to a `methodSummary` overload;
+     - `ResamplingEvidence::principalPointVariation` as `std::variant<double, Held>`;
+     - a public `calibration::judge` returning a `Judgement {verdict, notes}`.
+   - **`judge` is defined in `report.cpp`**, beside `toString`, and declared in `report.h` as planned.
+     Board's file-local `meets` moved there unchanged except for the held arm: a Held principal point
+     adds no note in either tier and is not missing evidence. Every note's text is the old one, which
+     the golden's `note` lines pin.
+   - **Small additions:**
+     - The clean-scene case now asserts that board calibration measures the principal point's spread.
+       It is not exactly zero, as the focal spread is: the stand-in's exact answers vary the principal
+       point by 2e-16 of floating-point noise, so the check is `< 1e-12`. The first cut asked for
+       `== 0` and failed on that.
+     - The fixture harness reads a session's detections through one `detectionsOf`, used at both of
+       its call sites.
+     - The golden printer reads the held principal point through `get_if` and prints `held`, which
+       no board report reaches. There is no overloaded-lambda helper in the tree, and a test was not
+       the place to add one.
+   - **Three sabotages, all caught**, on the Release tree:
+     - The board clause left out of `toString`: the golden at line 59. The produced file differs at
+       exactly 59, 121 and 181, the three `toString` lines of the reports with a model. To keep it
+       building, the visit was voided rather than deleted, so `methodSummary` stayed used.
+     - A held principal point counted as missing evidence for Ready: the first `judge` case, and the
+       second as well, since its focal note gains a second note beside it. The plan predicted the
+       first alone.
+     - A held principal point judged as over its bound: the first two cases, as predicted.
+
+     The restored source was compared byte for byte with the saved original, touched a second later,
+     and its object checked to be newer before the suite was run green again.
+
+   **Sub-slice 2b built (2026-10-13): an empty profile is the method's own.** The golden changes in
+   exactly the three planned lines and nothing else. `ctest` **1211/1211** Debug and **1219/1219**
+   Release with video, camera and Ceres on, and **1116/1116** with all three off (+1 each: the case
+   below); warning-clean, format-check clean.
+   - **`Request::fitnessProfile` defaults to `""`.** Board resolves an empty name to its own profile,
+     `reconstruction/1` (a `kOwnProfile` beside the method's other constants), before looking it up,
+     and its refusal names what it looked up. The request is recorded exactly as given, so a report
+     says whether its profile was asked for or defaulted; the thresholds name what it resolved to.
+   - **The node needed no edit**: its `fitnessProfile` param already took its default from
+     `calibration::Request`, and its settings test compares against those defaults. No committed
+     example holds a `calibrateCamera` node, and the example byte-comparison passes unchanged.
+   - **The golden's diff is lines 55, 117 and 177 only**, each `profile reconstruction/1` becoming
+     `profile (method's)`, printed as the registration golden prints it. The thresholds lines do not
+     move, since the name resolves to the same profile. The refused case still names
+     `reconstruction/99`. The produced file was diffed against the golden before it was copied over.
+   - **New case:** the empty name and `reconstruction/1` named are recorded as asked and judged alike,
+     one verdict and one set of notes; `fitnessProfile("")` has no value.
+   - **Sabotage, caught:** board writing the resolved name back into the recorded request fails the
+     golden at exactly 55, 117 and 177, and the new case. The restored source was compared byte for
+     byte, touched a second later, and its object checked to be newer.
+
+   **Sub-slice 3 planned (2026-10-13) as one commit.** It moves the seam and changes no behaviour, so
+   the registration and calibration goldens are the regression test and the diff touches neither.
+
+   Decided with the repo owner:
+   - **The seam gets a directory**: `lain/camera/refinement/refiner.h` and
+     `src/refinement/refiner.cpp`, namespace `lain::camera::refinement`. The plan wrote
+     `lain/camera/refinement.h`, but every header at the camera root is in `lain::camera` itself, and
+     every sub-namespace has a directory. `capture/` already holds a namespace with one header.
+   - **Two names lose their stutter.**
+     - `RefinementStatus` becomes `refinement::Status`, as `feature::Status` is.
+     - `RefinementObservation` becomes `refinement::BodyObservation`, which pairs with
+       `LandmarkObservation`.
+
+     Registration keeps both old names as aliases, so its code, its report's `RefinementSummary` and
+     the golden read as before. No field is renamed, since a field cannot be aliased:
+     `Problem::observations` keeps its name, and sub-slice 5 is where the problem's shape changes.
+   - **The dependency direction is stated, not guarded.** The refinement header says it includes
+     nothing from registration or calibration, and why. Nothing in the tree enforces ADR-0016's
+     separation today. A guard should cover the whole rule (calibration and the shared seams include
+     no registration header, and registration none of calibration's), so it is left as an option for
+     a commit of its own.
+
+   Taken by precedent (slice 3's `rig.h` and `scalepolicy.h` moves):
+   - **Each old header keeps exporting what it declared**, so no caller's include changes.
+     - `registration/refiner.h` includes the new header and names the seam in registration:
+       using-declarations for `Problem`, `Solution`, `LandmarkObservation`, `Refiner`,
+       `refinerRegistry`, `canRefine` and `refine`, plus the two aliases.
+     - `registration/request.h` includes it too, and names `NoiseModel`, `LossFamily` and
+       `RobustLoss`. The include now runs the other way: today `refiner.h` includes `request.h` for
+       them.
+   - **Argument-dependent lookup is unaffected.**
+     - No moving type has a `serialize`, a `toString` or an operator, and the enums are printed by
+       name through `meta::enums`.
+     - flowview's `lossFamily` codec and editor are keyed by `type_index`, which an alias does not
+       change.
+     - `meta::typeName<LossFamily>()` does change, but nothing stores or prints it.
+
+   Which spelling a caller uses:
+   - **Code that implements the seam, or asks whether a backend exists, spells `refinement::`.**
+     - The Ceres plugin: `CeresRefiner`, `registerBackend`, and its tests. `test_landmarks.cpp`
+       switches its directive. `test_refiner.cpp` adds the refinement directive beside
+       registration's, since it also runs board registration. Both directives reach one entity
+       through the using-declarations, so no lookup is ambiguous.
+     - The stand-ins: `PassThroughRefiner` (`libs/camera/test`) and `NullRefiner` (camera::flow's
+       tests).
+     - The kinds table's two `canRefine()` calls, which sub-slice 11's calibration rows will make too,
+       and the tests that register a refiner or expect one. These are camera::flow's
+       `test_registration.cpp` and `test_targetlesskinds.cpp`, and flowview's
+       `test_cameravertical.cpp`.
+     - `test_nobackend`'s refinement case, which tests the facade. It is renamed "with no backend, a
+       refinement says the capability is missing".
+   - **Registration's own code, its report and its callers keep the names registration exports**:
+     `board.cpp`, `targetless.cpp`, `validation.cpp`, `report.h`, the node's `loss` param, and
+     flowview's codec and editor. They are registration's request and report, found where their
+     callers look.
+   - **Comments that describe the seam say "refiner", not "registration refiner"**: the plugin's
+     CMakeLists, `register.h`, `ceresrefiner.h` and `test_jet.cpp`. The library's CMakeLists names
+     `lain::camera::refinement` among its namespaces.
+   - **The facade's missing-backend text drops "registration"**: "this build has no refiner
+     (configure with -DLAIN_CAMERA_CERES=ON)", since calibration will read it too. Registration's own
+     three `NoRefiner` texts keep their wording: it is registration's, and still true.
+
+   Left where it is:
+   - **`RefinementSummary` stays in registration's report.** Sub-slice 9 decides whether targetless
+     calibration's report shares it, beside its second user. Moving it then takes one more
+     using-declaration.
+   - **`ApplicabilityPolicy` is registration's.** Calibration has its imported-model policies.
+
+   Verification:
+   - Debug and Release with video, camera and Ceres on, and all three off. The counts stay 1211, 1219
+     and 1116, since one case is renamed and none is added. Warning-clean, format-check clean.
+   - The diff touches no golden file.
+   - A grep: the refinement header and source include nothing from `registration/` or
+     `calibration/`, and calibration includes no registration header (none does today).
+
+   Sabotages:
+   - **A copied seam, not a moved one**: registration answering `canRefine()` from a registry of its
+     own, while every backend registers into refinement's. The predicted failures:
+     - the registration golden, whose reports refuse with `NoRefiner`;
+     - test-camera-registration's cases;
+     - the Ceres plugin's board and targetless registration cases;
+     - flowview's camera vertical, which asks refinement whether to expect a registration.
+
+     The seam's own tests pass. This is ADR-0017's one production path, checked. The sabotage copies
+     `canRefine` and not `refine`: a copied `refine` should not build, because argument-dependent
+     lookup on the moved `Problem` also finds refinement's, which makes the unqualified call ambiguous.
+     `canRefine()` takes no argument, so nothing like that protects it.
+   - **Not caught, as decided**: the refinement header including `registration/request.h` again.
+     Every test passes, and only the grep above sees it.
+
+   **Sub-slice 3 built (2026-10-13).** The seam is `lain/camera/refinement/refiner.h` and
+   `src/refinement/refiner.cpp`, as planned, and no behaviour changed. `ctest` **1211/1211** Debug and
+   **1219/1219** Release with video, camera and Ceres on, **1116/1116** with all three off (the
+   planned counts: one case renamed, none added). Warning-clean, format-check clean. The diff touches
+   no golden file, and both goldens pass.
+   - **As planned:**
+     - `registration/refiner.h` is now using-declarations plus the two aliases, and still includes
+       `registration/request.h`, so it exports every name it did. `request.h` names the noise model
+       and the losses.
+     - The Ceres plugin, `PassThroughRefiner`, `NullRefiner`, the kinds table, the two node-kind
+       tests and the flowview vertical spell `refinement::`. `test_refiner.cpp` holds both directives
+       and uses `refinement::Status` for the seam's own solve, `RefinementStatus` for the report's.
+     - The facade's missing-backend text is "this build has no refiner (configure with
+       -DLAIN_CAMERA_CERES=ON)". Its renamed case checks for "no refiner" and the configure flag, and
+       is tagged `[refinement]`. Registration's three `NoRefiner` texts are unchanged.
+     - The grep is clean: the seam includes nothing from `registration/` or `calibration/`, and
+       calibration includes no registration header.
+   - **Also done:** ADR-0016's slice 2 bullet that names `registration::Refiner` says where the seam
+     went, and ADR-0017's amendment says its first point is built.
+   - **Sabotages:**
+     - **A copied `canRefine`** (registration answering from a registry of its own) fails 53 cases. All
+       the predicted ones are among them: the registration golden, every case of
+       test-camera-registration and test-camera-targetless, the Ceres plugin's registration cases,
+       and both flowview verticals. The prediction missed six: camera::flow's four registration node cases, and the
+       two rendered end-to-end cases in plugins/camera's test-camera-registration-e2e. The seam's own tests and
+       the calibration golden pass.
+     - **A copied `refine` does not build**, as predicted: five unqualified calls in `board.cpp`,
+       `targetless.cpp` and `validation.cpp` are ambiguous.
+     - **The refinement header including `registration/request.h`: the prediction was half wrong.**
+       At the top of the header, where an include goes, it does not build. The two headers then
+       include each other, and a translation unit that reaches the seam first meets `request.h`'s
+       `using refinement::NoiseModel;` before the seam has declared anything. So the cycle guards the
+       natural form of this regression. Only an include placed after the namespace builds. All 1211
+       cases then pass, and the grep is what sees it.
+     - Each sabotaged header was restored from a saved copy, compared byte for byte, touched a second
+       later, and its objects checked to be newer before the final run.
+
+   **Sub-slice 4 planned (2026-10-13) as one commit.** No change in behaviour. The double path keeps
+   its arithmetic, so its output is bit-identical. The registration and calibration goldens are the
+   regression test, and the diff touches neither. It lands after sub-slice 3, whose comment edits
+   include `test_jet.cpp`.
+
+   Decided with the repo owner:
+   - **The models stay double values; their formulas become static members over a coefficient
+     array.**
+     - Each model gains `template <typename S> using Coefficients = std::array<S, N>`, with N from
+       `kCoefficientNames`, in the order `coefficients()` already returns.
+     - `project`, `unproject` and the raw formulas (`distort`, `undistort`, `distortedAngle`,
+       `distortedAngleSlope`) become static templates taking `const Coefficients<S>&` first. Each
+       body unpacks the array by a structured binding (`const auto& [k1, k2, p1, p2, k3] = c;`), so
+       it still reads as the formula in the comment above it.
+     - `coefficients()`, `domain()`, `kDisplayName` and `kCoefficientNames` are unchanged.
+     - So serialization, the OpenCV estimator and flowview's editors see the same aggregates.
+       Sub-slice 5's functor is templated on the double model type and needs no rebinding.
+     - **The alternative was class templates**: `BasicBrownConrady5<S>`, with
+       `using BrownConrady5 = BasicBrownConrady5<double>`, and `BasicIntrinsics<S>`. Its formula
+       bodies would not change at all. But seven value types would become templates to serve a
+       solver. `domain()`, a scan over doubles, would have to refuse other scalars. Each model would
+       need a rebinding `fromCoefficients<U>`. And `Basic` is a prefix the tree has never used.
+       A model is data that a report, a document and an editor hold; being scalar-generic is a
+       property of its algorithm.
+     - **The cost, stated:** each binding writes the coefficient order once more. Tests that predate
+       this change already pin it. In every build, `test_distortion` projects each forward model to
+       a pinned pixel, and pins the inverse model's closed-form unprojection. In a camera build, the
+       OpenCV agreement tests pin three models against OpenCV's own projection. A sabotage below
+       shows this.
+
+   Taken from the plan's wording, or found while planning:
+   - **Two scalars: S for the parameters, T for the point and the result.**
+     - The bodies keep their `T(k1)` conversions, so `project(const CameraModel&, …)` keeps passing
+       doubles, as the plan says. A held model under Ceres (S = double, T = Jet) then runs the
+       arithmetic it runs today. A free model is S = T = Jet.
+     - S = Jet with T = double does not compile, which is right: a double result cannot carry
+       derivatives.
+   - **Integer literals that multiply a coefficient become double literals.**
+     - Today's `T(2 * p1)` and `T(2 * p2)` (in the polynomial Brown-Conrady 5 and its inverse share,
+       and in the modified and rational models' own formulas) and `T(3 * k1)` … `T(9 * k4)`
+       (Kannala-Brandt's slope) do not compile
+       once the coefficient is a Jet: Jet's `operator*` deduces its scalar from both operands, and
+       an `int` is not a `double`. The probe below found this.
+     - `2.0 * p1` is the same double as `2 * p1`, so the double path stays bit-identical. A
+       `T(2) * p1` would multiply Jets on the held path, which today multiplies a double.
+   - **The parameter overload lives in `projection.h`**:
+     `project<Model>(const std::array<S, 4>& intrinsics, const typename Model::template Coefficients<S>& coefficients, const DistortionDomain&, T x, T y, T z)`.
+     - The intrinsics are in `Intrinsics`' order, fx, fy, cx, cy.
+     - `Model` is named explicitly, since an array cannot say which model it belongs to.
+     - `project(const CameraModel&, …)` becomes a visit, then this overload with the model's
+       doubles: one implementation, two doors.
+     - `unproject(const CameraModel&, …)` visits into the static `unproject` with `coefficients()`
+       too. It gains **no** parameter overload: nothing differentiates an unprojection, and an entry
+       point with no caller is how an unreachable feature stays unreachable. Its formulas are generic
+       in S anyway, because they are shared with projection.
+   - **No combined parameter block.** A free model's Ceres block, and which of its fields a
+     `ModelFreedom` holds, belong to the refiner and are decided in sub-slice 5. The projection takes
+     the intrinsics and the coefficients as a model holds them, as two values.
+   - **No `fromCoefficients` yet.** Its production caller, reading `Solution::models` back into
+     parameters, arrives in sub-slice 5 with a round-trip test. Here the test perturbs the arrays
+     directly.
+   - **`domain()` stays double and is unchanged.** Within one solve the domain is the starting
+     model's (ADR-0017), so it reaches the parameter overload as an argument, as it reaches the
+     model overload today. `KannalaBrandt4::domain()` calls the static slope with `coefficients()`.
+
+   **Probed before planning** (scratch code, not committed). The worry was that Jet derivatives with
+   respect to the coefficients would lag their value through the inverse Brown-Conrady model's Newton
+   loop, because the loop exits once the value converges. They do not lag.
+   - At six points out to a normalised radius of 0.86, `solve()`'s derivatives with respect to k1,
+     k2, p1, p2 and k3 agree with central differences to **8.1e-11** in normalised units, about
+     4e-8 px at f = 500.
+   - One extra Newton step after convergence gave 5.7e-10, no better, which is the differences' own
+     noise. So no extra step is planned.
+   - The probe also found the integer-literal problem above.
+
+   The expectation is therefore that all six models pass. A model that fails is recorded here, and
+   sub-slice 5 does not declare it.
+   - **Passing says the derivatives are right, not that a model's parameters can be estimated from
+     a scene.** The rational model's radial coefficients share a common factor that changes no
+     projection (sub-slice 6 of slice 1 found it). Modified Brown-Conrady has no estimator today,
+     and Ceres would be its first. Sub-slices 5 and 9 decide those questions; this sub-slice
+     measures derivatives only.
+
+   Changes:
+   - `distortion.h`: the six models as above. The header comment's "The coefficients stay double;
+     only the point is T" becomes: the models hold doubles, and their formulas are generic in both
+     the coefficients' scalar and the point's.
+   - `details/distortion.inl`:
+     - `detail::brownConrady`, `projectForward` and `unprojectForward` take the array;
+     - the literals become double literals;
+     - the header comment says what is converted to what.
+   - `projection.h`: the parameter overload, and the two model overloads written as visits into it.
+   - `distortion.cpp`: `KannalaBrandt4::domain()`.
+   - Nothing outside the camera library names a raw formula. The one caller is that `domain()`.
+
+   Tests:
+   - **`test-camera-ceres`**, beside the point-derivative case in `test_jet.cpp`: "camera::project
+     differentiates its parameters through ceres::Jet for every distortion model".
+     - A `ceres::Jet<double, 12>` (4 intrinsics + at most 8 coefficients), over the six models and
+       the point case's nine points: 3 pixels by 3 depths. The centre pixel is Kannala-Brandt's
+       on-axis branch.
+     - The intrinsics are seeded in slots 0 to 3 and the coefficients from 4.
+     - Checked: the value against `project(model, …)`, as the point case checks it; and each of the
+       4 + N derivatives against a central difference of the parameter overload at doubles, with one
+       array element perturbed.
+     - The tolerances are set from the measurement and written beside their checks, as slice 1's
+       detector tolerances were.
+   - **`test-camera`**, in `test_projection.cpp`: "the parameter path is the model path". At doubles,
+     for every model and the same points, the parameter overload with a model's own doubles equals
+     `project(model, …)` **exactly**. This states the one-implementation claim in every build,
+     Ceres or not, so differentiating one door is differentiating the other.
+   - The existing float witness also runs the parameter overload with float coefficients, so a
+     non-double S is instantiated in builds without Ceres. That adds no case.
+
+   Verification:
+   - Debug and Release with video, camera and Ceres on, and all three off.
+     - The counts are 1213, 1221 and 1117: +2 on, +1 off, assuming sub-slice 3 lands first with its
+       counts unchanged.
+     - Warning-clean, format-check clean.
+   - The diff touches no golden file, and both goldens pass.
+   - The three Release scale cases' times are recorded beside their earlier ones: board registration
+     19.7 s, landmarks 4.2 s, targetless registration 40 s. A held model runs the same arithmetic,
+     so a change beyond noise is a finding, not an expectation.
+   - The per-model worst derivative disagreement, recorded.
+
+   Sabotages:
+   - **A coefficient's derivative dropped inside a formula.** This is the plan's "converted from
+     double", which no longer compiles with a Jet coefficient: the type system now guards that
+     case. So the sabotage is written with a scratch helper that keeps a Jet's value and drops its
+     derivative, chosen by `if constexpr` on the scalar, and applied to k3 in
+     `detail::brownConrady`.
+     - Predicted: the parameter case fails at k3's slot for Brown-Conrady 5 and Inverse
+       Brown-Conrady 5, which share that polynomial, and for no other model.
+     - Predicted to pass: the point case and the exactness case.
+   - **A binding that reads two coefficients in the wrong order**: k4 and k5 in the rational model's
+     `distort`.
+     - Predicted: `test_distortion`'s pinned rational pixel in every build, and OpenCV's rational
+       agreement in a camera build.
+     - Predicted to pass: the parameter case, which compares the formula with itself.
+     - This shows that the order the bindings restate is pinned by tests older than the bindings,
+       which is the cost the decision above accepts.
+
+   **Sub-slice 4 built (2026-10-13).** The six models hold doubles as before. Their formulas are static
+   templates over `Coefficients<S>`, an array in the model's coefficient order whose size comes from
+   `kCoefficientNames`. `project<Model>(intrinsics, coefficients, domain, x, y, z)` in `projection.h`
+   is the parameter overload, and `project(model, …)` is a visit into it with the model's doubles.
+   No behaviour changed: the double path does the same arithmetic, and both goldens pass with their
+   files untouched. `ctest` **1213/1213** Debug and **1221/1221** Release with video, camera and
+   Ceres on, **1117/1117** with all three off (+2 on, +1 off, the planned counts); warning-clean,
+   format-check clean.
+   - **As planned:**
+     - each body unpacks its array by a structured binding, so it reads as the formula above it;
+     - a coefficient times a constant uses a double literal (`2.0 * p1`, `3.0 * k1` … `9.0 * k4`);
+     - `projectForward` / `unprojectForward` take the array and name the model as a template
+       argument, since an array cannot say whose it is;
+     - `unproject(model, …)` visits into the static `unproject` with `coefficients()`, and gains no
+       parameter overload;
+     - `KannalaBrandt4::domain()` reads its coefficients once and hands them to the static slope.
+   - **Every model's derivatives agree with finite differences.** The worst disagreement per model,
+     relative to the derivative or to 1 px per unit where that is smaller:
+     - no distortion 8.6e-11;
+     - Brown-Conrady 5 6.8e-9;
+     - Inverse Brown-Conrady 5 4.0e-8, through Newton's method;
+     - Modified Brown-Conrady 5 1.6e-8;
+     - Rational Brown-Conrady 8 3.2e-8;
+     - Kannala-Brandt 4 2.1e-8.
+
+     At most 8.0e-8 px per unit absolute, against derivatives up to 529 px per unit: the differences'
+     own rounding. The tolerance is 1e-6 of that scale, written beside the check. So, as far as
+     derivatives go, sub-slice 5 may declare all six. Whether a model's parameters can be estimated
+     from a scene is still sub-slices 5 and 9's question.
+     *(Corrected 2026-10-14, while planning sub-slice 5: true at the test coefficients only. At the
+     neutral model, where every targetless calibration starts, Inverse Brown-Conrady 5's Newton loop
+     stops at iteration 0 and every coefficient's derivative comes back 0. Fixed the same day,
+     ahead of sub-slice 5, by making the solve take a step before it may stop. Inverse Brown-Conrady
+     5's worst there is now 8.0e-9; see *The fix built* below.)*
+   - **The case also checks that a model with fewer than eight coefficients leaves the rest of the
+     12-slot Jet at zero.**
+   - **Timings: no change beyond noise.** The pre-change Release binary was built here too, and the
+     two were run alternately, four rounds each (two for landmarks), timing the whole process:
+     - board registration: 14.94 s before, 14.92 s after;
+     - landmarks: 3.67 s before, 3.56 s after;
+     - targetless registration: 31.44 s before, 32.11 s after. The per-round differences were +2.2,
+       +0.3, 0.0 and +0.2 s, against a 2.1 s spread in the old binary's own runs.
+
+     This machine is faster than the earlier sessions' (19.7, 4.2 and 40 s) for both binaries, which
+     is why the comparison is made here rather than against those numbers.
+   - **Sabotages, both as predicted, the second wider:**
+     - **k3's derivative dropped in `detail::brownConrady`** (a scratch helper keeping a Jet's value):
+       24 failures, all at slot 8 (k3), for Brown-Conrady 5 and Inverse Brown-Conrady 5 only. The
+       point case, the exactness case and the other 1212 cases pass.
+     - **The rational binding reading k4 and k5 swapped:** the pinned rational pixel and OpenCV's
+       rational agreement fail, and the parameter case passes, as predicted. Two more fail that
+       were not predicted: OpenCV's coefficient-recovery and model-recovery cases, which estimate
+       with OpenCV's rational formula and judge through lain's. So the order the bindings restate is
+       pinned in more places than the plan counted.
+     - Each sabotaged file was restored from a saved copy, compared byte for byte, touched a second
+       later, and its objects checked to be newer before the final run.
+
+   **Sub-slice 5 planned (2026-10-14), behind a fix found while planning it.** Two commits:
+   1. **The fix, ahead**: Newton's solve takes a step before it may stop, so a Jet's coefficient
+      derivatives come from the step at the neutral model too.
+   2. **The sub-slice**: the refiner frees camera models.
+
+   **Found while planning: at the neutral model, Inverse Brown-Conrady's coefficient derivatives are
+   zero.** A scratch probe (not committed) freed a shared model in Ceres through the parameter
+   overload, over a moving camera's frames and their landmarks.
+   - **From a neutral start, Inverse Brown-Conrady 5 stalled on EXACT tracks.** Every other model
+     reached a final cost near 1e-15. This one stopped at 193, with fy 6.5% wrong and 11 rejected
+     steps. Started at its true coefficients, it recovered exactly.
+   - **The cause is in `detail::solve`.** It exits when the residual's VALUE meets the tolerance,
+     and at the neutral model the initial guess (the ideal point) already does. So it returns that
+     guess after no step, and the guess carries no derivative with respect to any coefficient.
+     - At (0.4, -0.3, 1), the Jet gives 0 for all five coefficients. Central differences give -50,
+       -12.5, 120, -285 and -3.1 px per unit.
+     - Sub-slice 4's derivative test ran only at `testcamera.h`'s nonzero coefficients, where Newton
+       takes several steps, so it passed.
+     - The neutral model is how every targetless calibration starts: "the requested model's neutral
+       distortion" (the focal sweep, above).
+   - **One forced step fixes it.** It was tried on a patched copy of the header in scratch.
+     - The reason: at a converged point, one Newton step's derivative is the implicit function's,
+       `-J⁻¹ ∂f/∂c`, whatever the guess carried. The term that would carry the finite-difference
+       Jacobian's own derivatives is multiplied by a residual that is 0.
+     - The Jet then agrees with central differences at the neutral model, for every coefficient.
+     - The free solve from neutral reaches 1e-15 and recovers exactly.
+   - **Only Inverse Brown-Conrady's projection iterates.** The other five project in closed form.
+     The probe checked Brown-Conrady 5 and Kannala-Brandt 4 at the neutral model, and both agree; the
+     fix's test covers all six.
+     - `detail::solve` also serves the forward models' unprojection, which nothing differentiates.
+     - Kannala-Brandt's unprojection has a loop of its own, with the same shape. It is left alone:
+       only unprojection runs it, and sub-slice 4 gave unprojection no parameter overload.
+
+   **The fix, ahead (decided with the repo owner): the solve always takes one step.**
+   - **`detail::solve` may stop only after a step**, for every scalar, with no branch on the scalar
+     type. The comment says why: the derivative comes from the step, and the initial guess carries
+     none.
+   - **The double path:**
+     - At the neutral model the forced step is exactly zero, since the residual is exactly 0.
+     - A value changes only where the loop used to stop at iteration 0 with a nonzero residual under
+       1e-12, which happens only for tiny coefficients or at the image centre.
+     - The cost is one step (five evaluations of the formula), only where the loop used to stop at
+       once.
+     - Both goldens snap to a 1e-9 grid, so they are expected to pass with their files untouched.
+       That is checked rather than argued.
+     - The whole suite is the wider regression check, since `detail::solve` also serves every
+       forward model's unprojection.
+   - **Test** (`test-camera-ceres`, `test_jet.cpp`): "camera::project differentiates its parameters
+     at the neutral model".
+     - It is the existing parameter case's check, run at each model's `neutral()`, with the same
+       points and tolerance.
+     - The two cases share a helper, so the check is written once.
+   - **Sabotage:** the forced step removed. Predicted to fail: Inverse Brown-Conrady 5 at every
+     coefficient slot, and no other model. The intrinsics are applied after the solve, so their
+     derivatives are unaffected.
+   - **Docs:**
+     - in-place corrections to sub-slice 4's built note, ADR-0017's built note and CLAUDE.md's
+       sub-slice 4 entry, made in the plan commit;
+     - the fix's own entry here and in CLAUDE.md.
+   - **Counts:** +1 with Ceres on (1214 Debug, 1222 Release), unchanged with all three off (1117).
+
+   **The fix built (2026-10-14).** `detail::solve` may return `Ok` only from iteration 1 on, and its
+   comment says why: the derivative comes from the step, and the guess carries none. The iteration
+   limit still counts steps, so it is unchanged.
+   - **The test was run red first, against the unchanged solve**, and failed exactly as the plan
+     predicted:
+     - 60 failures, all Inverse Brown-Conrady 5, all at coefficient slots 4 to 8;
+     - none at the intrinsics, and no other model;
+     - 12 per slot: two pixels × three depths × (u, v). At the image centre every coefficient's
+       derivative is truly 0, so those points pass either way.
+   - **Measured at the neutral model** (Debug, Linux x86_64), the worst per model relative to the
+     test's scale, written beside the check:
+     - Kannala-Brandt 4: 2.2e-8.
+     - Inverse Brown-Conrady 5: 8.0e-9, with coefficient derivatives up to 549 px per unit, all from
+       the one step.
+     - The rest are under 8e-9, and at most 5.0e-8 px per unit absolute.
+   - **The test cases share `checkParameterDerivatives(model)`**: the existing case runs it at
+     `testcamera.h`'s coefficients, the new one at `neutral(model)`.
+   - **The double path held**: both goldens pass with their files untouched, and so does the rest of
+     the suite, which runs every forward model's unprojection through the same solve.
+   - **Not timed.** The plan bounds the cost to one step where the loop used to stop at once, which
+     needs coefficients near zero or a point near the image centre. None of the three Release scale
+     cases starts there, so a timing would measure noise.
+   - **Within the domain, the forced step meets no fold.** A point the loop used to accept at once
+     but whose Jacobian is singular would now be `NotConverged`. The domain check comes first, and
+     inside it the Jacobian is not singular.
+   - **Sabotage, caught as predicted:** with the forced step removed, the new case fails exactly as
+     it did before the fix (60 failures, Inverse Brown-Conrady 5, coefficient slots only). The
+     header was restored from a saved copy, compared byte for byte, touched a second later, and the
+     test object checked newer before the final run.
+   - **Counts as predicted:** 1214/1214 Debug and 1222/1222 Release with video, camera and Ceres on,
+     1117/1117 with all three off. Warning-clean, format-check clean.
+
+   **Sub-slice 5 decided with the repo owner:**
+   - **A free model is seen through body observations as well as landmarks.**
+     - A free model moves with every residual of every camera that sees through it, so the refiner's
+       header keeps its "one problem, one path".
+     - The corner residual gets a free twin through the shared `observe()`.
+     - Tested by a board seen in several poses with its model free, which is board calibration as a
+       bundle adjustment.
+     - No method frees a model under a board yet. Refusing that shape was the alternative, which would
+       have put a rule about shapes into the seam.
+   - **The Ceres refiner declares all six models.**
+     - ADR-0017's criterion is correct derivatives, and after the fix all six have them.
+     - The probe also recovered all six exactly from exact tracks.
+     - Withholding Rational 8, whose coefficients are not identifiable, was the alternative. Its
+       noisy fit folded inside the image in 2 of 4 probe runs. `CameraModel::create` refuses that
+       result, which is the designed outcome: sub-slice 9 reports it as the attempt's failure, and
+       sub-slice 10 measures how often it happens.
+
+   **Taken from the plan's wording, by precedent, or found while planning:**
+   - **The problem's new fields mean today's problem when left empty**, as `Request::fitnessProfile`
+     does. So registration, which never frees a model, changes by no line.
+     - `std::vector<std::uint32_t> modelOf`, one per camera: the index of the model it sees
+       through. Empty means camera c sees through `models[c]`.
+     - `std::vector<ModelFreedom> modelFreedom`, one per model. Empty holds every model.
+     - `ModelFreedom { bool focalLength, principalPoint, coefficients; }`, all false by default, with
+       `any()`.
+       - fx and fy move together, and so do cx and cy.
+       - The coefficients move all or none: holding the tangential terms was refused when slice 4
+         was planned.
+       - A single shared focal length (fx = fy) is not offered. Its trigger would be sub-slice 10
+         measuring the aspect ratio as poorly conditioned.
+     - `Problem::models`' comment changes from "per camera, held fixed" to say how a camera finds its
+       model.
+   - **`Solution::models`: `std::vector<CameraModelParameters>`, one per model, UNCHECKED.**
+     - A held model comes back as its own parameters, and a free one as refined.
+     - Filled only when the solution is usable, like the other vectors.
+     - The method passes each through `CameraModel::create`, as it does an estimator's answer.
+     - `PassThroughRefiner` fills it with the models' own parameters.
+   - **Each model gains `static Model fromCoefficients(const Coefficients<double>&)`**, the inverse of
+     `coefficients()`. Sub-slice 4 deferred it to here, where reading a solution back is its
+     production caller.
+     - It writes the coefficient order once more. Tests older than it pin that order, and a round
+       trip pins it to `coefficients()`.
+   - **`Refiner::canEstimate(DistortionModel) const = 0`, and a facade `refinement::canEstimate(model)`**
+     that says whether any registered refiner can. Both mirror `calibration::Estimator` exactly.
+     - `PassThroughRefiner` and camera::flow's `NullRefiner` declare nothing, since neither
+       estimates.
+   - **The `refine()` facade picks the first refiner that can estimate every model the problem
+     frees**, as board calibration picks the first estimator that can estimate its model.
+     - A problem that frees nothing still reaches the first refiner, as now.
+     - When none can, it returns the new `Status::Unsupported`, naming the model: "a refiner is
+       registered, but none can estimate Kannala-Brandt 4". `feature::Status` spells the same case
+       the same way.
+     - Registration's `RefinementStatus` alias gains the enumerator. Nothing switches over it, and the
+       report prints it by name.
+   - **The problem's SHAPE is checked where it is checked today, in the backend**, beside the existing
+     checks:
+     - `modelOf` of the wrong length;
+     - a camera that sees through no model;
+     - `modelFreedom` of the wrong length;
+     - with `modelOf` empty, models and cameras of different counts. The existing message is kept.
+
+     The facade reads `modelFreedom` only where an entry exists, and leaves a malformed problem for
+     the backend to refuse. Moving every shape check into the facade is a separate change, and is
+     not made here.
+   - **In Ceres, a model that frees at least one parameter is one block**, laid out
+     `[fx, fy, cx, cy, coefficients…]`: the parameter overload's order.
+     - Its held fields sit on a `SubsetManifold`.
+     - A model whose switches free nothing it has is held, like NoDistortion with only
+       `coefficients` set. It gets no block.
+     - Held models keep today's residuals, the double model by pointer, so a held problem runs the
+       arithmetic it runs today.
+     - A free model's residuals are templates on the model type (`FreePointResidual<Model>`,
+       `<…, 2, 6, 3, 4 + N>`; `FreeCornerResidual<Model>`, `<…, 2, 6, 6, 4 + N>`), chosen by visiting
+       the starting model. They differ from the held ones only in where the projection's parameters
+       come from.
+     - Each free residual holds the STARTING model's domain (ADR-0017).
+     - A free block joins the cameras in elimination group 1, but only when a residual uses it, as a
+       camera does.
+     - A free model that no camera sees through comes back as it started.
+   - **The linear solver rule widens by one word**: Schur when the cameras OR any model is free.
+     - Held cameras with a free model leave the latent blocks coupled through the model, so the
+       reason given for sparse Cholesky (independent unknowns, a block-diagonal system) no longer
+       holds.
+     - No production problem has that shape yet. The rule is what makes it correct when one does.
+   - **Not decided here, and recorded for the sub-slices that need it:**
+     - **A held-out frame needs no new seam.** Posing a frame against the reconstruction is a
+       pose-only problem whose body is the landmarks: held camera, one body, `DENSE_QR`. That is
+       exactly how board registration's validation poses a board.
+     - **Conditioning under noise is sub-slices 9 and 10's to measure.** The probe's focal error at
+       0.5 px depended on how long the tracks were: 0.1 to 1.8% at 35 views per track, up to 8.5% at
+       8. So this sub-slice's recovery tests use exact tracks, and assert that the seam is wired,
+       not that a scene is well posed.
+
+   **Probe measurements** (one thread; Inverse Brown-Conrady with the fix applied in scratch):
+   - **Exact tracks, Release**, 40 frames, 1,000 landmarks, 35 views each. The start: focal +5%,
+     neutral coefficients, cameras 2 mrad and 1 cm out, landmarks 2% out, and the principal point
+     held at the truth.
+     - every model, Inverse Brown-Conrady included once fixed: focal within 2e-9, ray mapping exact
+       on a 16 px grid;
+     - 11 to 24 iterations, 1.1 to 3.3 s.
+   - **Debug**, 24 frames, 120 landmarks, 16 views: 1.7 to 9.9 s per model, about 25 s for all six.
+     The test is sized from this.
+   - **Release, 60 frames × 20,000 landmarks × 8 views**, with 0.5 px of noise, Brown-Conrady 5 with
+     focal and coefficients free: 5.8 s, 13 iterations. The plan's scale case.
+
+   **Changes:**
+   - `distortion.h`: each model's `fromCoefficients`.
+   - `refinement/refiner.h`:
+     - `ModelFreedom`, `Problem::modelOf` and `modelFreedom`, `Solution::models`;
+     - `Status::Unsupported`, `Refiner::canEstimate` and the `canEstimate` facade;
+     - the header comment, which says a problem's cameras may share a model and a model may be free.
+   - `refinement/refiner.cpp`: the backend choice, and `canEstimate`.
+   - `ceresrefiner.{h,cpp}`:
+     - `observe()` takes the projection's parameters by a small projector, held or free;
+     - the free residuals, the blocks and manifolds, the ordering, the widened solver rule, the new
+       shape checks and `canEstimate`;
+     - reading the blocks back through `fromCoefficients`.
+   - `passthroughrefiner.h` and camera::flow's `nullbackends.h`: `canEstimate`, and `Solution::models`.
+   - ADR-0017's amendment: what is built, the facade's choice and the new status.
+   - Registration changes by no line, and does not export the new names.
+
+   **Tests:**
+   - **`test-camera`**, so in every build:
+     - `test_distortion.cpp`: "every model reads back from its own coefficients". For each of
+       `everyModel`, `fromCoefficients(coefficients())` returns the same coefficients.
+     - New `test_refinementseam.cpp`, over two stand-ins registered there, as `test_boardseams.cpp`
+       does: "a-pinhole" declares only NoDistortion, and "b-polynomial" declares every model but
+       Kannala-Brandt 4. The cases:
+       1. a problem that frees no model reaches the first refiner;
+       2. a freed model reaches the first refiner that can estimate it (NoDistortion to a-pinhole,
+          Brown-Conrady 5 to b-polynomial);
+       3. a freed model no refiner can estimate is `Unsupported`, names the model, and reaches no
+          refiner;
+       4. `canEstimate` answers whether any refiner can.
+   - **`test-camera-nobackend`**: the existing refinement case also checks that `canEstimate` is
+     false for every model.
+   - **`test-camera-ceres`**, in a new `test_freemodel.cpp`, on a moving camera's frames sharing one
+     model, all from exact tracks:
+     1. **"a shared free model is recovered for every distortion model"**, over all six.
+        - The probe's start: focal +5%, neutral coefficients, the principal point held at the truth.
+        - Converged; focal and ray mapping within tolerances set from the measurement and written
+          beside them; `create` accepts the result.
+     2. **"a held principal point comes back exactly where it started"**: started 1 px off the truth,
+        with focal length and coefficients free.
+        - It comes back bit-equal to its start.
+        - A section with it freed shows it moving to the truth, so the case can see movement.
+     3. **"a problem that frees no model solves as before"**:
+        - an explicit identity `modelOf` and all-held `modelFreedom` solve bit-identically to the
+          defaults;
+        - cameras sharing one held model solve bit-identically to cameras holding copies;
+        - `Solution::models` equals the starting parameters.
+     4. **"a free model that no camera sees through comes back as it started"**, beside one that
+        does.
+     5. **"a free model refines through a board's corners"**: one held camera with the test rig's
+        Brown-Conrady 5 model, a board in several poses, the model free. The model is recovered, as
+        in case 1.
+     6. **"the refiner refuses a problem whose models do not match its cameras"**: one section per
+        new shape check.
+     7. **"the Ceres refiner can estimate every distortion model"**.
+     8. **Release only**: "a moving camera of 60 frames and 20000 landmarks refines its shared model"
+        (`[scale]`). Time, iterations and peak memory are recorded beside the check, the memory
+        measured with `getrusage`, as before.
+
+     Also in `test_landmarks.cpp`, the solver-rule case gains a section, "held cameras and a free
+     model: Schur".
+
+   **Verification:**
+   - Debug and Release with video, camera and Ceres on, and all three off.
+     - The counts, after the fix: +13 with Ceres on (1227 Debug, 1235 Release), +5 with all three
+       off (1122).
+     - Warning-clean, format-check clean.
+   - The diff touches no golden file, and both goldens pass. The registration code is unchanged.
+   - The three Release scale cases' times are recorded against sub-slice 4's: board registration
+     14.9 s, landmarks 3.6 s, targetless registration 32 s. A held problem runs the same
+     arithmetic, so a change beyond noise is a finding.
+
+   **Sabotages:**
+   - **The held fields left free** (no `SubsetManifold`). Predicted: case 2 fails. Case 1 holds the
+     principal point at the truth, so it passes.
+   - **A free model that no camera uses, added to the ordering anyway.** Predicted: case 4 fails,
+     since Ceres should refuse an ordering that names a block outside the problem.
+   - **A free model's residuals reading the starting model's doubles** (the free path silently
+     held). Predicted: cases 1, 2 and 5 fail.
+   - **The facade taking the first refiner whatever the problem frees.** Predicted: seam cases 2 and
+     3 fail.
+   - **`BrownConrady5::fromCoefficients` reading p1 and p2 swapped.** Predicted: the round-trip case
+     fails, and so do case 1 for Brown-Conrady 5 and case 5, whose board camera is Brown-Conrady 5.
+
+   **Sub-slice 5 built (2026-10-14).** A problem's cameras may share a model, and a model may be
+   free. Registration changes by no line: every new field means today's problem when left empty,
+   and both goldens pass with their files untouched.
+   - **The seam** (`refinement/refiner.h`):
+     - `ModelFreedom`, `Problem::modelOf` / `modelFreedom` and `Solution::models` (unchecked), as
+       planned.
+     - `Status::Unsupported`, `Refiner::canEstimate` and the `canEstimate(model)` facade.
+     - **One addition: `ModelFreedom::frees(model)`**, whether a freedom frees anything the model
+       has. The facade asks it to choose a backend, and the Ceres refiner asks it to decide which
+       models get a block, so the two cannot disagree. Freeing only the coefficients of a model with
+       none frees nothing.
+   - **The facade** picks the first refiner that can estimate every model the problem frees. When
+     none can, it is `Unsupported` and names them: "a refiner is registered, but none can estimate
+     Kannala-Brandt 4", joined by "and" when there are several.
+   - **`fromCoefficients`** on each model, the inverse of `coefficients()`, one line in its class.
+   - **The Ceres refiner:**
+     - A free model is one block, `[fx, fy, cx, cy, coefficients...]`. Its held fields sit on a
+       `SubsetManifold`, so a held principal point comes back bit-equal.
+     - A held model has no block, and its residuals read the double model by pointer, as before.
+     - Every residual kind goes through one `observe()`, which takes a projector: held or free, only
+       where the projection's parameters come from differs.
+     - Elimination group 1 holds the used free blocks, and the solver rule is Schur when the cameras
+       or any model is free.
+     - The four new shape checks are in the backend, with the existing message kept.
+     - `canEstimate` is an exhaustive switch over `DistortionModel`, so a seventh model is a compile
+       error there until it is tested and listed.
+   - **Deviation, found by the timing check: the free model's code lives in its own file.**
+     - `freemodel.{h,cpp}` holds the free residuals, the block conversions and the held fields.
+       `observe.h` holds what both kinds share.
+     - With everything in `ceresrefiner.cpp`, the held path slowed. Targetless registration's scale
+       case took 32.3 s against 29.1 s before (three alternating rounds each), with the same 10,011
+       refinements, and the summed solve time grew from 49.0 to 55.0 s.
+     - Not the residual's own code: a variant whose held residuals called the old `observe()` was
+       just as slow. GCC limits how much inlining may grow one translation unit, and the twelve
+       free-model cost functions are large.
+     - Split into two files, it took 29.7 s, inside noise. The reason is written in `observe.h`, so
+       the split is not merged back.
+   - **Timings against the pre-change Release binary**, built here from HEAD and run alternately:
+     - targetless registration: 29.06 s before, 29.11 s after (three rounds);
+     - landmarks: 3.52 s before, 3.38 s after (three rounds);
+     - board registration: 14.59 s before, 14.57 s after (six rounds, the order reversed every
+       round).
+     - An earlier board reading was 1 s slower, with "before" always run first. With the order
+       alternating, the difference went away. Board's own spread here was 13.2 to 15.2 s.
+   - **Measured, and written beside each check** (linux-x86_64, the same in Debug and Release):
+     - Case 1, all six models: focal within 7.5e-9 and ray mapping within 2.8e-6 px, in 12 to 26
+       iterations; 1.6 to 8.5 s per model in Debug. The tolerances are 1e-6 and 1e-4 px.
+     - Case 2: a freed principal point lands 1.5e-7 px from the truth (tolerance 1e-5).
+     - Case 5, the board: focal within 5.4e-9, ray mapping within 1.5e-6 px, in 7 iterations.
+     - **Case 8, the scale case:** 6.4 s over 160,000 residuals, 13 iterations, 162 MB at peak. The
+       final cost is 1.002 of half the residual dimensions less the unknowns.
+       - It asserts the cost (within 1%) and focal within 2%, not recovery.
+       - With 0.5 px of noise and 8-view tracks, focal came out 0.81% long and the worst ray 4.3 px
+         out, which is the probe's finding about short tracks.
+   - **Sabotages, all caught; one wider than predicted:**
+     - No `SubsetManifold`: case 2's held section fails (cx and cy), and case 1 passes, as
+       predicted.
+     - An unused free model added to the ordering: case 4 fails at its requirement that the solve
+       converge, as predicted.
+     - The free residuals reading the block's values without their derivatives: cases 1 (all six
+       models), 2 and 5 fail as predicted, and **case 4 too**, which also asserts that the model in
+       use was refined.
+     - The facade taking the first refiner: seam cases 2 and 3 fail, as predicted.
+     - `BrownConrady5::fromCoefficients` with p1 and p2 swapped: the round trip, case 1 for
+       Brown-Conrady 5 and case 5 fail, each on its ray mapping, as predicted.
+     - Each file was restored from a saved copy, compared byte for byte, touched a second later,
+       and its objects checked newer before the final runs.
+   - **Counts as predicted:** 1227/1227 Debug and 1235/1235 Release with video, camera and Ceres on
+     (+13 each), 1122/1122 with all three off (+5). Warning-clean, format-check clean.
+
+   **Sub-slice 6 planned (2026-10-14) as three commits.** None of them changes behaviour:
+   1. **6a:** a golden targetless registration report, produced by the unchanged code.
+   2. **6b:** the observation graph moves down to `lain::camera`, and `root` and `median` with it.
+   3. **6c:** the incremental reconstruction moves to a private module both targetless methods can
+      share.
+
+   **Found while planning:**
+   - **The code to lift reaches into registration in three places.** Calibration may not depend on
+     its sibling (ADR-0016), so a module that includes any of them could not be shared:
+     - `candidates` ranks seed pairs by `registration::ObservationGraph`'s edges, a public
+       registration type;
+     - `chooseSeed` takes its median triangulation angle through `registration::detail::median`;
+     - `observationGraph` finds its components through `registration::detail::root`.
+   - **`feature/extraction.cpp` already has private copies of `root` and `median`**, since feature
+     could not reach registration's either. Both copies do the same arithmetic:
+     - `root` halves the path the same way;
+     - both medians take the middle value, or the mean of the middle two added in the same order.
+
+     Extraction never asks for the median of nothing; registration's answers infinity for it.
+   - **No test reaches a private header.** Every camera test goes through a public entry point, so a
+     rule in the module that registration never takes could not be tested before sub-slice 9 calls
+     it.
+   - **The plan's three scenes would miss some of what moves.** None puts a landmark behind a camera
+     (the cheirality filter) or seeds below the parallax floor. None asks for a component estimate,
+     which is the one place registration passes `required` as less than every camera. So the golden
+     prints seven scenes.
+   - **`chooseSeed` and `place` read only the request's seed**, through `geometryRequest(request)`.
+     In the module they take a `feature::GeometryRequest`, which registration builds as it does
+     today.
+
+   **Decided with the repo owner:**
+   - **The observation graph moves down to `lain::camera`**, as `RigCamera`, the refiner seam and the
+     board pose seam did:
+     - `lain/camera/observationgraph.h` holds `GraphEdge`, `ObservationGraph` and `observationGraph`.
+       Registration keeps those names through using-declarations.
+     - `weakBridges` stays in registration. A weak bridge is a fitness judgement (CONTEXT.md, *Weak
+       bridge*), and only registration makes one.
+     - `root` and `median` go down to `camera::detail` with the graph. Registration's `detail` names
+       them through using-declarations, as it does `angleBetween`, and `extraction.cpp`'s copies are
+       deleted in their favour.
+     - So the pair counts the module ranks seeds by come from one routine. Letting the module count
+       pairs itself was the alternative: it would have computed the same counts twice, with only the
+       golden to keep their tie order together.
+   - **"Enough" lands with sub-slice 9, beside its caller.**
+     - The module keeps the parameter registration already passes two ways: `required`, the views a
+       seed's closure must reach (every camera, or one component for a component estimate).
+     - The module already never fails on an unplaced view. `place` places what it can and
+       `startFrom` names the starved views. Registration treats either as a failure; calibration
+       will report them.
+     - How a calibration chooses a seed whose closure reaches fewer than every frame is sub-slice
+       9's, tested there by "a frame left unplaced, and reported". Built now, nothing could reach it.
+   - **Three commits.** The golden comes first, as sub-slice 1's did, and the public header's move is
+     kept apart from the private lift.
+
+   **Taken by precedent, or decided while planning:**
+   - **The module is `src/reconstruction.{h,cpp}`, in namespace `lain::camera::reconstruction`.**
+     - It is private to lain::camera, as `registration/common.h` is, in two ways: `src/` is never on
+       a consumer's include path, and its header says so.
+     - It gets its own namespace rather than `camera::detail`. Inside registration,
+       `registration::detail` hides that namespace, and the module's names (`place`, `Seed`, `Start`)
+       read better with their module's name beside them.
+     - `registration/targetless.cpp` names them through using-declarations at its top, as it names
+       `detail::median` today, so its call sites stay unqualified.
+   - **The module speaks of views**, feature's word for what a track's observation belongs to
+     (`feature::View`, `SceneObservation::view`). In registration a view is a camera; in calibration
+     it will be a frame. The renames:
+     - `Seen::camera` becomes `view`;
+     - `Placement::cameraFromWorld` becomes `viewFromWorld`;
+     - `Start::cameraFromReference` becomes `viewFromReference`;
+     - `camerasOf` becomes `viewsOf`.
+   - **The module holds a model per view, and no identity**: `Evidence { std::vector<CameraModel>
+     models; std::vector<Usable> tracks; }`. Registration keeps its canonical `RigCamera`s beside it,
+     for the identities it reports.
+   - **What moves**, with bodies unchanged apart from the renames and the geometry request:
+     - the four constants (`kSeedShared`, `kPlaceLandmarks`, `kSeedCandidates`, `kSeedAngle`) and
+       the parallax floor;
+     - `Seen`, `Usable`, `Evidence`, `Units`, `viewsOf` and `unitsOf`;
+     - `Closure` and `closure`, `Candidates` and `candidates`, `Seed` and `chooseSeed`, `Placement`
+       and `place`, `Start` and `startFrom`.
+   - **What stays, being registration's:**
+     - the hold-out guard and `kMinimumToHoldOut`, since calibration holds out frames by a rule of
+       its own;
+     - scale normalisation (`normalisation`, `scaleBy`);
+     - the refinement problem (`problemOf`);
+     - the bootstrap's `registerUnits`;
+     - component estimates (`estimate`);
+     - the checks and the report.
+
+     The hold-out guard reads `Closure`'s `rank`, `support` and `shared`, so they stay public members
+     of the module's type.
+   - **The graph's fields keep their names** (`cameras`, `sharedPerCamera`). They are right where
+     the graph is reported, and its header says that a vertex is a method's view. Renaming them
+     would touch board registration, and its golden's printer, for no reader.
+   - **The parallax floor stays the facades' DEFAULT angle**, not the request's angle. That is what
+     `minimumParallax()` reads today. Whether calibration's swept angle should move it is sub-slice
+     9's question.
+   - **The dependency direction is stated in the headers, not guarded**, as sub-slice 3 left it.
+     `reconstruction.h` and `observationgraph.h` include nothing from `registration/` or
+     `calibration/`, which a grep checks.
+
+   **6a: the golden** (`test_targetlessgolden.cpp` in `test-camera-targetless`, compared with
+   `golden/targetlessregistration.txt`):
+   - Every field of a targetless registration report is printed, timings aside, through
+     `goldentext.h`.
+     - The labels are the method-neutral names (units, residuals). There is no earlier text this
+       golden must stay byte-equal to.
+     - The targetless diagnostics and record are printed whole. Over a track set, the extraction and
+       the track set print as unset.
+   - It runs over the stand-ins already registered there and the pass-through refiner. So each
+     result is initialisation's own, which is exactly what moves.
+   - Seven scenes, each for what it reaches:
+     1. **connected**: 4 cameras, 300 landmarks, exact.
+     2. **noisy**: the same at 0.3 px, with a requested reference (cam02), Huber's loss, a quarter
+        held out, and 6 resamples from seed 17. Every resample runs `registerUnits`, so the
+        bootstrap's path through the module is printed too.
+     3. **chain**: pairs (0, 1), (1, 2) and (2, 3), 50 landmarks each. It fails Disconnected, with
+        cam02 and cam03 unplaceable and the top candidate's estimate.
+     4. **disconnected**: {0, 1} and {2, 3}, 100 landmarks each. Each component gets an estimate,
+        with `required` as that component.
+     5. **behind**: camera 3 stands inside the scene facing away, with a wrong match behind it. This
+        prints the cheirality filter's count and its infinite outlier.
+     6. **narrow**: three cameras 3 cm apart. The seed is below the floor, the widest pair.
+     7. **spare**: the design review's 38 tracks, whose critical tracks only the hold-out guard keeps.
+        The guard reads the module's closure.
+
+     Scenes 3 to 7 are built as the existing cases build them.
+   - `test-camera-targetless` gains `lain::meta` and the golden directories, as
+     `test-camera-registration` has them.
+   - Sabotages, on the unchanged code, each restored and checked:
+     - the cheirality filter keeping every observation. Predicted: scene 5 fails, at its `behind`
+       count.
+     - `estimate` asked to reach every camera instead of its component. Predicted: scene 4 fails,
+       because both estimates then start from the top pair, (0, 1).
+   - Counts: +1 in every configuration, so 1228 Debug and 1236 Release with video, camera and Ceres
+     on, and 1123 with all three off.
+
+   **Sub-slice 6a built (2026-10-14).** `test_targetlessgolden.cpp` prints the seven scenes into
+   `golden/targetlessregistration.txt` (944 lines). Debug and Release give the same bytes, run to run.
+   - **What each scene was checked to reach before the file was accepted:**
+     - connected: Ready, seed (cam00, cam01), every camera placed;
+     - noisy: the requested cam02, six resamples, 75 tracks held out;
+     - chain: Disconnected, cam02 and cam03 unplaceable, one component estimate from cam00;
+     - disconnected: two component estimates, from cam00 and from cam02;
+     - behind: `behind 1`, and track00006 an infinite outlier at cam03;
+     - narrow: seeded by the widest pair (cam00, cam02), below the floor;
+     - spare: no track held out at all. Every stride position is one of the eight critical tracks,
+       so the guard refusing all of them is exactly what the scene shows. Without the guard, eight
+       would be held out.
+   - **Three registration printers moved into `goldentext.h`** (`transform`, `thresholds`, `edge`),
+     since both registration goldens print them. The board golden's own copies are deleted, and its
+     file is unchanged.
+   - **Over a track set, nothing was extracted**, so the diagnostics' extraction and track set, and
+     the record's extraction request, print as `unset`. How a set one prints is left to the first
+     golden that extracts.
+   - **Sabotages, both caught:**
+     - The cheirality filter keeping every observation: scene 5 fails, its first difference the
+       refinement's residual count (492 becomes 493), which comes before its `behind` line. The
+       existing behind case fails too.
+     - `estimate` reaching every camera instead of its component: scene 4 fails, its second
+       estimate starting from cam00 instead of cam02. **Only the golden sees it**: the existing
+       disconnected case checks only that each estimate has two cameras.
+     - The second sabotage's first cut did not build (the loop's `component` went unused under
+       `-Werror`), so the stale binary answered. It was redone in a form that compiles.
+   - **Counts as predicted:** 1228/1228 Debug and 1236/1236 Release with video, camera and Ceres on,
+     1123/1123 with all three off. Warning-clean, format-check clean.
+
+   **6b: the graph moves down.**
+   - `lain/camera/observationgraph.h` and `src/observationgraph.cpp` hold the moved type and
+     `observationGraph`. The header says a vertex is a method's view: a camera in registration, a
+     frame in targetless calibration.
+   - `registration/observationgraph.h` names the three through using-declarations and still declares
+     `weakBridges`, whose definition stays where it is.
+   - `src/unionfind.h` (`detail::root`) and `src/median.h` (`detail::median`), inline as `angles.h`
+     is.
+   - `test_registrationcontracts.cpp` keeps registration's spelling of the graph, which also shows the
+     old names still reach the moved type.
+   - CONTEXT.md's *Camera observation graph* is amended: the type is `lain::camera`'s, and targetless
+     calibration's frames will form one.
+   - Sabotage: the shared median taking the lower of the middle two values. Predicted:
+     - the targetless golden fails, at scene 1's seed angle, a median over 240 angles;
+     - the board golden fails wherever a median is over an even count;
+     - the track-extraction tests may pass, since a stand-in's static feature is at one pixel in
+       every frame. That is measured, not assumed.
+   - Every golden is untouched, and the counts are unchanged.
+
+   **Sub-slice 6b built (2026-10-14).** As planned:
+   - `lain/camera/observationgraph.h` and `src/observationgraph.cpp` hold `GraphEdge`,
+     `ObservationGraph` and `observationGraph`. The header says a vertex is a method's view.
+     `observationGraph`'s parameter is now `views`; the fields keep their names.
+   - `registration/observationgraph.h` names the three through using-declarations and declares
+     `weakBridges`, whose definition stays in `src/registration/observationgraph.cpp`.
+   - `src/unionfind.h` and `src/median.h` hold `detail::root` and `detail::median`, inline as
+     `angles.h` is. Registration's `detail` names them through using-declarations, and
+     `feature/extraction.cpp`'s own copies are deleted for using-declarations of the shared two.
+   - CONTEXT.md's *Camera observation graph* says whose type it is.
+   - **The direction is checked by a grep**: the three new headers include nothing from
+     `registration/` or `calibration/`.
+   - **Sabotage, caught, with one prediction wrong.** The shared median taking the lower of the
+     middle two fails the two goldens and nothing else in the Debug suite:
+     - the targetless golden first at scene 1's cam01 translation (line 5), not at the seed angle as
+       predicted. The scale normalisation's median depth comes earlier in the text;
+     - the board golden at its bootstrap's rotation variation (line 10);
+     - the track-extraction tests pass, as the plan allowed.
+   - **Counts unchanged:** 1228/1228 Debug and 1236/1236 Release with video, camera and Ceres on,
+     1123/1123 with all three off. Every golden untouched; warning-clean, format-check clean.
+
+   **6c: the lift.**
+   - `src/reconstruction.{h,cpp}`, as above. `registration/targetless.cpp` keeps what is
+     registration's.
+   - The golden is untouched, and the counts are unchanged.
+   - Sabotages:
+     - **The plan's**: a closure that counts a unit once ONE placed view sees it
+       (`inPlaced[u] != 1`). Predicted: scene 3 fails as InitialisationFailed instead of
+       Disconnected, because the closure now covers every camera and `place` cannot triangulate a
+       landmark for cam02. The existing chain case fails too.
+     - The seed ignoring the floor (the most inliers, whatever the angle). Predicted: scene 6 fails,
+       seeding (cam00, cam01) without the below-floor flag, and so does the existing narrow case.
+   - **Timing:** the Release targetless scale case, against the pre-change binary, in alternating
+     order. The module is now a translation unit of its own, and sub-slice 5 found that moving code
+     between translation units changes what GCC inlines. A change beyond noise is a finding.
+   - Also checked: Debug and Release with all three plugins on and with all three off. The Ceres
+     targetless cases and the Release end-to-end comparison, which run real backends through the
+     moved code, must pass unchanged.
+
+   **Sub-slice 6c built (2026-10-14) — sub-slice 6 COMPLETE.** As planned:
+   - **`src/reconstruction.{h,cpp}`, namespace `lain::camera::reconstruction`**, holds:
+     - the four constants, now `inline constexpr` in the header;
+     - `Seen`, `Usable`, `Evidence`, `Units`, `viewsOf` and `unitsOf`;
+     - `Closure` and `closure`, `Candidates` and `candidates`, `Seed` and `chooseSeed`, `Placement`
+       and `place`, `Start` and `startFrom`.
+
+     The parallax floor is file-local to the `.cpp`, since registration never reads it.
+     `Closure::covers` moved out of line with the rest.
+   - **The module speaks of views.** `Seen::view`, `Placement::viewFromWorld`,
+     `Start::viewFromReference` and `viewsOf` are the renames. `Evidence` is `{models, tracks}`, a
+     model per view and no identity. The header says what a view is in each method.
+   - **`chooseSeed` and `place` take a `feature::GeometryRequest`.** Registration builds it with its
+     own `geometryRequest(request)`, so both entry points still measure every pose alike.
+   - **Registration keeps its canonical `RigCamera`s beside the module's evidence.** `analyse`,
+     `estimate` and `listOf` take them as `rig`, for the identities they report and for
+     `validate`. Everything else in `targetless.cpp` names the module through using-declarations at
+     its top, so its call sites read as before.
+   - **The direction is checked by a grep**: `reconstruction.h`, `reconstruction.cpp` and every
+     public header they include name nothing in `registration/` or `calibration/`.
+   - **Sabotages, both caught**, each restored byte for byte and touched a second later:
+     - A closure that counts a unit once ONE placed view sees it (`inPlaced[u] != 1`): scene 3 fails
+       as InitialisationFailed instead of Disconnected, and the existing chain case fails, as
+       predicted. **Not predicted: scene 7 and its case fail too.** The closure's support counts
+       are what the hold-out guard spends, so they fall short and the guard lets critical tracks be
+       held out. The fitting graph then splits into {cam00, cam01} and {cam02, cam03}. That is the
+       guard reading the module's closure, shown from the other side.
+     - The seed ignoring the floor: scene 6 seeds (cam00, cam01) at 0.0097 rad without the
+       below-floor flag, and the existing narrow case fails, as predicted. So does "the seed is the
+       pair with the most inliers that clears the parallax floor", which the plan did not name.
+   - **Timing, Release, four alternating rounds of the targetless scale case** (100 cameras, 50,000
+     tracks): 37.3 s mean before (36.1 to 39.4), 36.6 s after (35.2 to 37.6). That is no change
+     beyond noise. Both binaries ran slower than sub-slice 5's 29 to 32 s, alike, so the difference
+     is this container, not the code.
+   - **Counts unchanged:** 1228/1228 Debug and 1236/1236 Release with video, camera and Ceres on,
+     1123/1123 with all three off. The Ceres targetless cases and the Release end-to-end comparison
+     pass unchanged. Every golden untouched; warning-clean, format-check clean.
+
+   **Docs:** each commit adds its built note here and an entry to CLAUDE.md, as 2a and 2b did. 6b
+   amends CONTEXT.md.
+
+   **Sub-slice 7 planned (2026-10-15) as three commits:**
+   1. **7a:** the fundamental-matrix seam, its facade and the OpenCV producer.
+   2. **7b:** the fixed-rig extraction's per-frame, per-pair and union work moves to a private module,
+      with no change in behaviour.
+   3. **7c:** `feature::extractSequenceTracks`.
+
+   **Found while planning:**
+   - **`GeometrySolver` has four implementations**: OpenCV's, the scene stand-in `TruthGeometry`, the
+     facade tests' `ScriptedGeometry`, and flow's `NullGeometry`. A pure virtual must be answered by
+     all four in the commit that adds it.
+   - **The OpenCV tests' `twoViews()` renders through a Brown-Conrady camera**, and a fundamental
+     matrix ignores distortion. So 7a's OpenCV case renders the same two views through a pinhole.
+     What distortion costs stays sub-slice 8's measurement.
+   - **Everything a sequence shares with the rig is file-local in `extraction.cpp`, and buried in
+     larger functions:**
+     - the cell grouping and the cap, inside `extractCamera`'s frame loop;
+     - the pre-screen, the full match and the ambiguity rule, inside `extractPair`, before it verifies;
+     - the union and its conflict rule, inline in `extractTracks`.
+
+     What differs is the verification, and how a track's observations and identity are spelled.
+   - **The rig's track identity is not pinned.** `test_tracks.cpp` checks only that identities are 64
+     hex digits, unique and sorted, so "rig tracks' identities do not change" would be argued, not
+     checked.
+   - **Three documented claims assume fixed cameras:**
+     - `TrackSet::views` is "ascending by camera identity";
+     - `Track::identity` digests "the observations' cameras and pixels";
+     - `PairExtraction::inliers` is what "the pair's relative pose" explains.
+   - **A threshold in pixels needs a scale.** `staticDistance` is stated in the pixels searched, so
+     it means the same under any scale policy. A verification threshold stated the same way is, under
+     the default `LongestSide{1920}` and footage at least that large, the "pixels per longest side"
+     sub-slice 8 measures.
+
+   **Decided with the repo owner:**
+   - **The OpenCV producer lands in 7a**, tested on two rendered views, rather than as a stub in 7a
+     with the real one in 8, or as a seam default that a backend may silently leave out. Sub-slice 8
+     keeps the rendered moving camera, its measurements and its timing.
+   - **Three commits.**
+     - 7b's diff leaves `test_tracks.cpp` untouched, which is the claim that the rig's extraction is
+       unchanged.
+     - A rig track's identity is pinned in 7b against a digest computed outside lain. That turns
+       "rig tracks' identities do not change" into a check before 7c adds a second canonical text.
+     - A golden of whole extraction reports was the alternative. `test_tracks.cpp` already checks
+       every count against the scene's own truth, so it would mostly duplicate those checks.
+   - **The two requests share a base.**
+     - `feature::ExtractionSettings` holds the eight settings both extractions read: `scale`,
+       `featureCap`, `matching`, `minimumPairInliers`, `prescreenFeatures`, `prescreenMatches`,
+       `localisationPerSize` and `execution`.
+     - `ExtractionRequest` and `SequenceExtractionRequest` derive from it, so `request.featureCap`
+       reads as it does today, `ExtractionRequest{}` still value-initialises, and the measured 0.034
+       is stated once.
+     - The shared private helpers take the base.
+     - Two independent structs, and one request carrying both extractions' fields, were the
+       alternatives.
+
+   **Taken by precedent, or decided while planning:**
+   - **The facade** sits in `geometry.h`, beside the pose facades:
+     - `fundamental(pixelPairs, FundamentalRequest{threshold, seed})` returns `FundamentalResult{status,
+       detail, matrix, inliers, rmsDistance, candidates, provenance, elapsed}`.
+     - A `PixelPair` holds two source pixels, (0, 0) the centre of the top-left pixel.
+     - The threshold and every distance are in source pixels.
+     - F is stated as `x_bᵀ F x_a = 0`, with `x = (u, v, 1)`.
+   - **Producers propose; lain decides, again.** `GeometrySolver::fundamentals(pairs, threshold,
+     seed)` returns candidates only, and is called only with at least eight usable pairs.
+     - The facade measures every candidate by its Sampson distance, `(x_bᵀ F x_a)²` over the summed
+       squares of the first two entries of `F x_a` and of `Fᵀ x_b`. A pair is an inlier when the
+       square root is within the threshold.
+     - It chooses by inlier count, then summed squared distance, then a canonical order over the
+       normalised matrix (unit Frobenius norm, its largest-magnitude entry positive, ties to the
+       first in row-major order). It then recomputes the inliers, and returns the matrix
+       normalised.
+     - A candidate that is not finite, or is zero, is skipped. `TooFew` below eight usable pairs;
+       `NoSolution` when no candidate explains eight.
+     - There is no rank test. The seam's contract asks for rank two and both backends give it, and
+       what a candidate explains is what the measurement decides on, whatever its rank.
+   - **The OpenCV producer**, in `opencvgeometry.cpp`:
+     - `findFundamentalMat` under USAC, set up as the relative pose's is (MAGSAC++, an explicit seed,
+       `isParallel = false`, the grid neighbourhood);
+     - every 3x3 block it returns is a candidate;
+     - its threshold is the facade's, in pixels. These are pixels already, so there is no virtual
+       pinhole.
+   - **The stand-ins:**
+     - `ScriptedGeometry` scripts fundamentals as it scripts poses.
+     - `NullGeometry` proposes none.
+     - `TruthGeometry` proposes none in 7a and says why: nothing asks it until 7c, whose moving camera
+       is its first caller.
+   - **7b's module is `src/feature/cells.{h,cpp}`, in `camera::detail`**, as `median.h` and
+     `unionfind.h` are. `feature` has no `detail` of its own to hide that namespace. It holds:
+     - `Cells` with its grouping, its cap and the 1/64-pixel grid;
+     - one frame's features found, grouped and capped, with its counts;
+     - a pair's pre-screen, full match and ambiguity rule, handing back the cell pairs for the caller
+       to verify;
+     - the union of verified pairs, serially in canonical pair order, with the conflict rule,
+       handing back each accepted component's members for the caller to spell as a track;
+     - the checks on `ExtractionSettings`, each caller passing the fewest inliers its verification
+       needs: five for a relative pose, eight for a fundamental matrix.
+
+     `extraction.cpp` keeps what is the rig's: sampling capture groups, the checks on cameras and
+     groups, static consolidation, verification by relative pose, and a rig track's observations and
+     identity text.
+   - **7c's public header is `lain/camera/feature/sequenceextraction.h`**, with
+     `src/feature/sequenceextraction.cpp`.
+     - `SequenceExtractionRequest : ExtractionSettings` adds three fields:
+       - `samples = 40` frames, provisional. It is the number sub-slice 8 times, and sub-slice 10
+         measures the default.
+       - `threshold = 4.0` in the pixels searched, COLMAP's 4 px, provisional until sub-slice 8
+         measures it.
+       - `seed`.
+     - `FrameExtraction{scale, failed, found, orientations, capped, features}` reports each sampled
+       frame.
+     - `SequenceExtractionReport` holds:
+       - the request;
+       - the frames, indexed as `TrackSet::views`;
+       - every frame pair, ascending, as the rig's `PairExtraction`;
+       - the tracks, the conflicts and their observations;
+       - the three backends, and the time taken.
+   - **`extractSequenceTracks(const capture::CameraFootage&, const SequenceExtractionRequest& = {})`**,
+     the camera and its footage as by-position grouping takes them. In order:
+     1. Every check that needs no frame:
+        - the backends;
+        - the shared settings;
+        - a positive, finite threshold;
+        - `samples` of at least 2;
+        - `minimumPairInliers` of at least 8;
+        - Approximate under deterministic debugging;
+        - a search no matcher runs;
+        - a camera with no identity (`InvalidInput`);
+        - fewer than two frames (`TooFew`);
+        - a frame given twice (`InvalidInput`).
+     2. The frames in capture order (timestamp, then ordinal, then source, the rig's group order
+        applied per frame), then `samples` of them at the centres of equal bins. The order the
+        footage lists them in therefore does not matter. A concatenation of two takes is sampled
+        across both.
+     3. One task per sampled frame: decoded, extracted, grouped and capped, through the module. A
+        frame that does not decode is still a view, with no frames and no observations, and its report
+        says it failed, as a rig keeps every camera as a view, tracks or not.
+     4. One task per frame pair:
+        - the module's pre-screen, match and ambiguity rule;
+        - verification by `fundamental` on the cells' source pixels, its threshold turned from the
+          pixels searched into source pixels by the frames' scale (a sequence is homogeneous, so they
+          share one);
+        - a pair verifies with `minimumPairInliers`.
+
+        Pair matching stays exhaustive behind the pre-screen, as planned.
+     5. The module's union. Each observation is at its cell's pixel, with support 1, and its
+        covariance comes from its size, as a rig observation's does.
+   - **Views and identities:**
+     - Every sampled frame is a view, in capture order. Its camera is the footage's identity, and
+       `frames` is that one frame.
+     - `TrackSet::groups` is empty, since a sequence samples no capture group.
+     - A sequence track's identity has its own canonical text (`lain sequence feature track 1`). Each
+       observation contributes:
+       - its camera and its frame's source, each length-prefixed;
+       - its frame's ordinal;
+       - its pixel on the grid.
+     - The rig's text is unchanged, which 7b's pin checks.
+   - **The moving scene, for 7c's tests:**
+     - The stand-ins' scene gains a moving camera: one camera, a true pose per frame, and a pinhole
+       model, since a fundamental matrix ignores distortion.
+     - `TruthGeometry` proposes `K⁻ᵀ [t]ₓ R K⁻¹` for every ordered pair of true poses, scored on a
+       sample by Sampson distance, keeping the best four, as it does for its poses.
+     - Its log records the threshold each call was handed.
+
+   **7a: the fundamental matrix.**
+   - The seam, the facade, the stand-ins and the OpenCV producer, as above.
+   - Four facade cases, over `ScriptedGeometry` in `test-camera-feature`:
+     1. The candidate explaining the most pairs is chosen, whatever order the backend gave them. Ties
+        fall to the summed squared distance, then to the canonical order.
+     2. Sampson distance is in source pixels and measured against both images: pairs placed at known
+        distances from a known F, one exactly at the threshold an inlier and one just past it not,
+        and the reported RMS.
+     3. Too little has no matrix. `TooFew` below eight usable pairs, non-finite pixels set aside and
+        the backend not called; `NoSolution` when the best candidate explains fewer than eight.
+     4. A candidate that is not finite, or is zero, is skipped. The chosen matrix comes back
+        normalised, and its inliers index the input.
+
+     `NoBackend` in the empty registry is one more check in `test-camera-nobackend`'s existing case.
+   - The OpenCV case, on the two views rendered through a pinhole, for seeds 0 to 19. The facade
+     verifies. The correct matches are inliers under the chosen matrix, and their Sampson distances
+     are small. Each bound is set from its measurement and written beside it.
+   - Sabotages:
+     - The facade takes the backend's first candidate. Predicted: the ordering case fails.
+     - Sampson distance measured in B alone (A's gradient terms dropped). Predicted: the
+       known-distance case fails.
+   - Counts: +4 in `test-camera-feature` in every configuration, and +1 where the OpenCV plugin
+     builds.
+
+   **Sub-slice 7a built (2026-10-15).** As planned:
+   - `PixelPair`, `GeometrySolver::fundamentals`, `FundamentalRequest`, `FundamentalResult` and
+     `feature::fundamental` are in `geometry.h`.
+   - **The facades share one `solve`, now templated on the result and the model.** The request's
+     problem, the minimum, the proposal, the preparation, the measurement and how the chosen model is
+     stored are its arguments. `canonical` gains a matrix overload, its entries in row-major order,
+     and `better` is a template over the model.
+   - **A candidate is normalised before it is measured**, so its scale and sign cannot reach the
+     canonical order.
+   - **A pair whose two epipolar lines both vanish is no inlier**: the Sampson denominator is zero,
+     and the pair sits on both epipoles, so it says nothing.
+   - **OpenCV:** `usac()` now takes its threshold in pixels, and the two pose calls convert the angle
+     themselves. `fundamentals` hands USAC source pixels as they are and returns every 3x3 block.
+   - **The OpenCV case is on `twoViews()` rendered through a pinhole** (the helper gained the camera
+     as a parameter). Measured over seeds 0 to 19 on 355 matches, 352 of them correct:
+     - one candidate per seed, the same matrix on every seed;
+     - 353 inliers, holding every correct match (the one more lies within 4 px but outside the 3 px
+       that `correct` asks);
+     - 0.21 px RMS over its inliers, and 0.031 px over the exact correspondences, which it never saw.
+
+     The truth matrix, built in the test from the poses, explains the exact correspondences to
+     2.2e-14 px, which checks the conventions it was built with.
+   - **The facade cases' measured values:**
+     - the truth candidate's RMS is 2.7e-14 px;
+     - a candidate turned 1 mrad still explains all 40 pairs, at 0.58 px RMS, so only the summed
+       distance told it from the truth.
+   - **Sabotages, both caught:**
+     - **The facade taking the backend's first candidate.** Its first cut did not build under
+       `-Werror`, since `canonical` was left unused, so the old binary answered. It was redone as
+       `!best || (false && better(...))`.
+       - The fundamental ordering case fails in 5 of its 6 orders.
+       - Since `solve` is shared, so do the relative and absolute pose ordering cases, the tie case,
+         and "near points decide the baseline's direction". Predicted.
+       - `test-camera-tracks` and `test-camera-targetless` still pass: their stand-in proposes its
+         best candidate first.
+     - **Sampson distance measured in B alone:** only the Sampson case fails, as predicted. The
+       OpenCV case still passes, since a near-truth matrix explains its pairs either way.
+   - **Counts as predicted:** 1233/1233 Debug and 1241/1241 Release with video, camera and Ceres on
+     (+5 each), 1127/1127 with all three off (+4). Warning-clean, format-check clean.
+
+   **7b: the shared module.**
+   - `ExtractionSettings`, and the module, as above. `extractTracks` runs through the module.
+   - `test_tracks.cpp` is untouched. A new `test_trackidentity.cpp` in `test-camera-tracks` pins one
+     rig track's identity, on a two-camera scene with one landmark, against a digest computed outside
+     lain. The test also spells out the text, so a reader sees what is digested.
+   - Sabotage: the module's ambiguity rule keeping a feature matched to two of the other side's.
+     Predicted: `test_tracks.cpp`'s ambiguity case fails, which shows the rig runs through the module.
+   - **Timing:** the Release targetless end-to-end case, real SIFT through `extractTracks`, against
+     the pre-change binary, in alternating order. Sub-slice 5 found that moving code between
+     translation units changes what GCC inlines.
+   - Counts: +1 in every configuration.
+
+   **Sub-slice 7b built (2026-10-15).** As planned:
+   - **`feature::ExtractionSettings`**, in its own public header `extractionsettings.h`, holds the eight
+     shared settings with their comments. `ExtractionRequest` derives from it and keeps `samples`,
+     `geometry`, `staticDistance` and `staticSizeRatio`.
+   - **`src/feature/cells.{h,cpp}`, in `camera::detail`**, holds:
+     - `Cells`, `cell`, `stronger`, `cellsLike`, `appendCell` and `firstCells`;
+     - `imageCells`: one decoded image extracted, grouped and capped, with its counts;
+     - `matchCells`: the pre-screen, the full match and the ambiguity rule. It fills the
+       `PairExtraction`'s counts and its TooFew or Skipped outcome, and takes the noun its TooFew
+       detail uses ("static features" for the rig);
+     - `joinTracks`: the union with its conflict rule, over `VerifiedMatches` in pair order;
+     - `settingsProblem` and `searchProblem`.
+
+     The grouping, the cell pairs and the ambiguity rule stay file-local to `cells.cpp`. `join`, the
+     union-find union keeping the lower root, moved to `unionfind.h` beside `root`.
+   - **`extraction.cpp` keeps what is the rig's**: the static consolidation, verification by relative
+     pose, and a track's observations and identity. Its call sites read as before through
+     using-declarations.
+   - **One observable difference, recorded.** A request with two problems may now name a different
+     one first. The shared settings are checked together, before the rig's inlier angle and static
+     thresholds, where the angle used to come before `minimumPairInliers` and the static thresholds
+     before `localisationPerSize`. A request with one problem is refused exactly as before.
+   - **The pin is in `test_trackidentity.cpp`**: landmark 0's track in the default two-camera scene,
+     its text spelled out in the test, and its SHA-256 computed by `sha256sum` and by Python's
+     `hashlib`, which agree. **The pin also passes against the pre-change library**, built with only
+     the test added, which is what makes "rig identities do not change" a check rather than an
+     argument.
+   - **Sabotage, caught as predicted:** the module's ambiguity rule keeping every pair fails
+     `test_tracks.cpp`'s ambiguity case alone, so the rig runs through the module.
+   - **Timing, Release, four alternating rounds** of "three cameras over a rendered scene register
+     without a target" (real SIFT through `extractTracks`): 3.73 s mean before (3.61 to 3.86) and
+     3.73 s after (3.67 to 3.76). No change.
+   - **Counts as predicted:** 1234/1234 Debug and 1242/1242 Release with video, camera and Ceres on,
+     1128/1128 with all three off (+1 each). `test_tracks.cpp`'s diff is empty. Warning-clean,
+     format-check clean.
+
+   **7c: sequence extraction.**
+   - As above. Tests in `test_sequencetracks.cpp`, in `test-camera-tracks`, over the moving scene:
+     - a moving camera's tracks, exactly. Every landmark seen in two or more sampled frames is one
+       track over exactly those frames, at its true pixels, with support 1 and its covariance.
+       Every pair verifies;
+     - the threshold handed to the backend is the request's in source pixels, and twice it at half
+       scale;
+     - moving content verifies in no pair and joins no track, worked out from the truth;
+     - a frame pair with no overlap is skipped by the pre-screen;
+     - a conflict is rejected whole;
+     - reversed footage (`media::reverse`), the pool and deterministic debugging give one track set;
+     - each sampled frame is decoded once;
+     - a track's identity names its frames, pinned against a digest computed outside lain;
+     - the refusals, before anything is decoded, and `NoBackend` in the empty registry.
+   - Sabotages:
+     - The frame left out of the identity text. Predicted: the pin fails.
+     - The threshold handed on in the pixels searched, not converted. Predicted: the half-scale check
+       fails.
+   - Docs:
+     - CONTEXT.md's *Feature-track extraction*: its two extractions are built.
+     - *Feature track*: a moving camera's track spans frames.
+     - ADR-0016's *Two extractions, one feature module*, marked built.
+   - Counts are recorded when built.
+
+   **Sub-slice 7c built (2026-10-15).** As planned:
+   - **`lain/camera/feature/sequenceextraction.h`** holds `SequenceExtractionRequest :
+     ExtractionSettings` (`samples = 40`, `threshold = 4.0` in the pixels searched, `seed`),
+     `FrameExtraction`, `SequenceExtractionReport`, `SequenceExtractionResult` and
+     `extractSequenceTracks(const capture::CameraFootage&, const SequenceExtractionRequest& = {})`.
+   - **`src/feature/sequenceextraction.cpp`** runs the five steps over 7b's module:
+     - the checks that need no frame, in the order planned;
+     - the frames sorted into capture order, a frame given twice refused, and `samples` taken at the
+       bin centres `(2i+1)n/(2k)`;
+     - one task per sampled frame through `imageCells`, one per pair through `matchCells`, then
+       `fundamental` on the cells' source pixels, its threshold divided by the frames' scale;
+     - `joinTracks`, each observation at its cell's pixel with support 1 and the size's covariance;
+     - the sequence's own canonical text, `lain sequence feature track 1`, then per observation the
+       camera and the frame's source (each length-prefixed), the frame's ordinal and the pixel cell.
+   - **A frame that does not decode stays a view** with no frames, its report says `failed`, and each
+     of its pairs is `TooFew`. The plan stated this and its test list did not, so it has a case.
+   - **The scene stand-in gains a moving camera** (`resetMoving`): one pinhole camera on the fixed
+     cameras' arc, `path` holding its true pose per frame. Also new:
+     - `poseAt` answers either kind of scene;
+     - `descriptorAt` describes a landmark by frame, and `velocity` sets how a dynamic one moves;
+     - `undecodable` names frames that fail to decode;
+     - `fundamentalOf` builds the truth's `K⁻ᵀ [t]ₓ R K⁻¹`, and `sampsonOf` restates Sampson
+       distance so the stand-in never asks the facade it stands behind;
+     - `TruthGeometry::fundamentals` scores every ordered pair of true views by median Sampson
+       distance over a sample, keeps the best four, and logs the threshold it was handed.
+   - **Found by the compiler:** the first cut bound `model().intrinsics()` to a reference, and the
+     model is a temporary. GCC's `-Wdangling-reference` caught it.
+   - **Ten cases in `test_sequencetracks.cpp`**, in `test-camera-tracks`, and `NoBackend` added to
+     `test-camera-nobackend`'s extraction case:
+     - six of twelve frames give one track per landmark two of them see, exactly; all fifteen pairs
+       verify with every match an inlier;
+     - the threshold reaches the backend as 4 source px natively and 8 at half scale;
+     - ten landmarks rising 10 cm a frame are matched in every pair and explained in none, worked out
+       from each pair's true matrix; the inlier counts are the static landmarks shared, exactly;
+     - halves of the footage that share nothing are skipped by the pre-screen, with no full match
+       across them;
+     - a conflict across three frames is rejected whole (1 conflict, 4 observations);
+     - an undecodable frame is a view with no observations;
+     - reversed footage (`media::reverse`) and the pool each give the deterministic run's track set;
+     - three sampled frames of twelve are decoded once each, listed backwards;
+     - one track's identity is pinned (two frames, landmark 0), its text spelled out in the test;
+     - the refusals, before any decode: Approximate under deterministic debugging, a search no
+       matcher runs, a sample count of 1, seven inliers, a threshold of 0 or NaN, a ratio of 0, one
+       frame, no identity, and a frame given twice.
+   - **Sabotages, both caught as predicted:**
+     - **The frame left out of the identity text** (source and ordinal dropped): only the pin fails, of
+       all 24 cases in `test-camera-tracks`. No two tracks collide, since no landmark sits at one pixel
+       in two frames of a moving camera.
+     - **The threshold handed on in the pixels searched**: only the half-scale section fails, the
+       backend handed 4.0 where 8.0 was due.
+   - **Counts as predicted:** 1244/1244 Debug and 1252/1252 Release with video, camera and Ceres on,
+     1138/1138 with all three off (+10 each). Warning-clean, format-check clean. `test_tracks.cpp`
+     and `test_trackidentity.cpp` are unchanged.
+
+   **Docs:** each commit adds its built note here and an entry to CLAUDE.md.
+
+   **Sub-slice 8 planned (2026-10-15) as one commit, of test code only.** The producer landed in 7a,
+   so what is left is the moving camera, drawn, and what real SIFT and the real solver make of it.
+
+   **Found while planning:**
+   - **Two of the three distortions planned are not models.** With k1 alone, `CameraModel::create`
+     refuses k1 = -0.25 and -0.4 on the test camera (640x480, f 500) with `FoldsInsideImage`, and
+     -0.3 and -0.4 on a 1920x1080 camera of the same field of view (f 1500). Measured with a probe
+     against the real `create`:
+
+     | k1 | 640x480, f 500 | 1920x1080, f 1500 |
+     | --- | --- | --- |
+     | -0.05 | 14 px (3.6%) | 32 px (2.9%) |
+     | -0.10 | 32 px (8.1%) | 72 px (6.5%) |
+     | -0.15 | 57 px (14.4%) | 122 px (11.1%) |
+     | -0.20 | 100 px (25.0%) | 193 px (17.5%) |
+     | -0.25 | refused | 317 px (28.8%) |
+     | -0.30, -0.40 | refused | refused |
+
+     Each entry is how far the lens moves the image corner from where a pinhole of the same
+     intrinsics puts that corner's ray, and that distance as a share of the half-diagonal. One k1 is
+     a different lens at each field of view, and what a fundamental matrix has to absorb is the
+     pixels distortion moves.
+   - **The threshold is in the pixels searched, and `LongestSide` never enlarges.** A 640-wide frame
+     is searched natively, so its 4 px are about 12 px at a 1920 search. A threshold "in pixels per
+     longest side" is therefore measured on 1920 frames. Scaled from the 1.25 s a 640x480 frame takes
+     in Debug, one takes about 8 s to draw there, so those cases run in Release only.
+   - **Matching every pair of 40 frames Exact at the cap is about 2.2 core-hours** when every pair
+     overlaps. That is slice 3's own measurement (10.2 s a pair on one core, at 8192 features with
+     all their orientations) times 780 pairs: 33 minutes on four cores. Approximate is about 10
+     core-minutes.
+     - So the time cannot be measured end to end at the default settings.
+     - The cost is sub-slice 10's to decide on (the sampled frames, the cap, the search). Sub-slice 8
+       measures it on a moving camera's frames.
+   - **The pre-screen reads the 512 strongest of the capped features**, so any cap of at least 512
+     skips the same pairs.
+   - **A path at one height, turning only about the vertical, is planar motion**, one of the
+     classical critical motions for self-calibration with constant intrinsics (Sturm, CVPR 1997,
+     catalogues them): more than one model explains it equally well. Which motions are critical
+     depends on which parameters are estimated, and holding the principal point narrows the set, but
+     sub-slice 10 calibrates from this path, so it avoids the case rather than relying on that.
+   - **`RenderedSource::decodeFrame` runs under the source's lock**, so a timed extraction over it
+     would also time the renders, one at a time.
+   - **`projectInto` is written twice**, in `test_features.cpp` and in `renderedrig.h`, with one body.
+
+   **Decided with the repo owner:**
+   - **The distortion sweep is stated by corner shift.** On the 1920x1080 camera (f 1500), k1 = 0,
+     -0.1, -0.2 and -0.25 move the corner 0, 72, 193 and 317 px (0, 6.5, 17.5 and 28.8% of the
+     half-diagonal). -0.25 is close to the strongest k1-only lens accepted there. The alternatives:
+     - the planned values with a positive k2 added to keep each valid, as real wide lenses have. Which
+       k2 is a second free choice, and it moves the answer;
+     - a longer focal length (about 2000) where all three are valid, -0.4 then close to its fold.
+   - **The time is measured per pair and scaled up.**
+     - One pre-screen and one full match at the cap, Exact and Approximate, timed on one core on
+       1920 frames of the fine texture, as slice 3 timed its 8192-feature pair.
+     - The pairs the pre-screen skips, counted by a production run over all 40 frames at a cap of
+       1024, which skips the pairs the default cap would.
+     - The totals with and without the pre-screen, worked out and recorded, with the share of pairs
+       sharing nothing at which the pre-screen pays for itself.
+
+     The alternatives: timing the production run with Approximate at the default cap, with only
+     Exact scaled up; or with Exact at a cap of about 2048, scaled up by the rows squared.
+   - **The default scene, with a path that rises and turns.** The camera moves along the arc in front
+     of the default scene, so every frame sees the box and every pair overlaps. The pre-screen's
+     saving is then the break-even above, not an observation. A wider scene in which distant frames
+     share nothing was the alternative.
+
+   **Taken by precedent, or decided while planning:**
+   - **`RenderedSource` takes a pose per frame.** A second constructor takes
+     `std::vector<math::RigidTransformd>`: frame f is drawn at pose f, and the frame count is the
+     poses'. The fixed camera's constructor keeps its signature and delegates, so `renderedrig.h` and
+     the rig footage case change by nothing.
+   - **`RenderedSource::drawAll()`** draws every frame not yet drawn on the process pool, one task a
+     frame, and is called before the footage is handed on. A timed run then times the extraction, not
+     the renders.
+   - **`synthetic::arcPath(frames)`** in `texturedscene.h`, the path frame by frame:
+     - along the arc from -0.35 to 0.35 rad, 3.2 m from the scene, about 2.2 m of travel;
+     - rising and falling 0.3 m about the arc's 0.5 m rise, rolling up to 0.12 rad, and aiming up to
+       0.3 m off the box's middle, each on its own period, so the turn between two frames is not about
+       one axis;
+     - the box in view in every frame, which the first case checks.
+   - **`projectInto` moves to `texturedscene.h`**, beside `truthAt`, its inverse, and both callers
+     use it.
+   - **The new cases go in `test_sequencefeatures.cpp`, in `test-camera-opencv-features`.** What
+     they share with `test_features.cpp` (`ensureBackend`, `cells`, `subset`, `strongest`, the large
+     camera) moves unchanged to `renderedfeatures.h` beside them. The large camera, `pinhole(width,
+     height)`, becomes `largeCamera(width, height, distortion)`, with no distortion by default.
+   - **The disc crosses the scene** in the first two cases, as it does in the rig footage case. The
+     moving content a fundamental matrix lets through is then counted, which is what sub-slice 9's
+     robust loss and outlier report will meet.
+   - **A match is correct when A's truth point lands within 3 px of B's feature**, `twoViews`' rule.
+     **A match's radius is its outer end's**, from the principal point, as a share of the
+     half-diagonal.
+   - **Defaults stay as they are.** The numbers are recorded beside their checks and here, for the
+     repo owner. A change to `threshold` or `samples` is its own commit, as slice 3's sub-slice 7 left
+     its own.
+   - **Every bound is set from its measurement and written beside it.**
+
+   **Tests, all in `test_sequencefeatures.cpp`:**
+   1. **A moving camera's tracks, through `extractSequenceTracks`** (Debug and Release). The test
+      camera (Brown-Conrady, 640x480) along `arcPath` over the default scene with the disc, about
+      eight of twelve frames sampled, searched natively:
+      - the source's last frame is `render()` at the path's last pose, byte for byte;
+      - the box is in view in every frame;
+      - the pool and deterministic debugging give one track set, identities and pixels;
+      - the three backends are OpenCV's;
+      - every pair of adjacent sampled frames verifies;
+      - each track's first observation is cast into the scene at its own frame. Those landing on the
+        disc are counted. The rest are projected into every other member's frame, and the share
+        within 2 px and the worst are recorded.
+   2. **The threshold, and what distortion costs** (Release only). The 1920x1080 camera (f 1500) at
+      k1 = 0, -0.1, -0.2 and -0.25, each lens's corner shift computed and recorded beside it.
+      - Each lens: a near pair (adjacent frames of a 40-frame path) and a far pair (its ends), searched
+        at `LongestSide{1920}`, so natively, matched, and every match judged against the truth.
+      - Then `fundamental` at 1, 2, 4, 8 and 16 px over seeds 0 to 4, recording for each:
+        - the correct matches kept, in all and in the outer third;
+        - the wrong matches admitted, the disc's among them.
+      - The table goes here and beside the check. The checks include the pinhole at 4 px keeping
+        nearly every correct match, and each lens's outer-third loss at 4 px.
+   3. **Matching every pair of 40 frames** (Release only). The 1920x1080 camera with no distortion
+      along `arcPath`, over the fine texture (cell 0.01) so the cap binds, the 40 frames drawn by
+      `drawAll`:
+      - on one core, on frames 0 and 1 capped at 8192 features with all their orientations: the
+        pre-screen and the full match, Exact and Approximate;
+      - `extractSequenceTracks` over all 40 frames at a cap of 1024, on the pool: the pairs it skips,
+        how many verify, and its time;
+      - recorded: the core-hours and the wall time on four cores of all 780 pairs, with and without
+        the pre-screen, Exact and Approximate, and the break-even share;
+      - the checks: the pre-screen costs a small share of a full match, Approximate is faster than
+        Exact, and the skipped count is what was measured on this path.
+
+   **Sabotages:**
+   - `RenderedSource` drawing every frame at the path's first pose. Predicted: the first case fails
+     its byte comparison and its truth checks.
+   - `extractSequenceTracks` handing `fundamental` its threshold times 1000. Predicted: the first case
+     fails on the disc's tracks and on the share within 2 px.
+
+   **Counts:** +3 in `test-camera-opencv-features` wherever the OpenCV plugin builds, in Debug and
+   Release (two of them skip in Debug). None with it off.
+
+   **Docs:** the built note here, an entry to CLAUDE.md, and ADR-0016's note that strong distortion
+   costs peripheral matches amended with what was measured.
+
+   **Sub-slice 8 built (2026-10-15).** As planned, test code only:
+   - **`RenderedSource` takes a pose per frame.** A second constructor takes the poses, frame f
+     drawn at pose f; the fixed camera's keeps its signature and delegates, so `renderedrig.h` and the
+     rig cases change by nothing. **`drawAll()`** draws every frame not drawn yet on the process pool,
+     one task a frame, under a lock of the source's own, since `drawAll` runs outside FrameSource's.
+   - **`synthetic::arcPath(frames)`**: arcCamera's arc from -0.35 to 0.35 rad (2.24 m of arc, 2.59 m
+     of travel with the rise), rising and falling 0.3 m over one period, rolling up to 0.12 rad over
+     one and a half, and aimed up to 0.3 m off the box's middle on two more.
+   - **`projectInto` moved to `texturedscene.h`**, beside `truthAt`. `renderedrig.h` names it with a
+     using-declaration, so `test_comparison.cpp`'s `rendered::projectInto` reads as it did.
+   - **`renderedfeatures.h`** holds `ensureBackend`, `cellOf`, `cells`, `subset`, `strongest` and
+     `largeCamera(width, height, distortion)`, in `lain::camera::testing` beside `testcamera.h`'s.
+     `test_features.cpp` names them by using-declarations; its only changed calls are `pinhole` to
+     `largeCamera`.
+   - **Three cases in `test_sequencefeatures.cpp`**, in `test-camera-opencv-features`:
+     1. **A moving camera's tracks** (Debug and Release, the same numbers in both). Twelve frames of
+        the test camera along the path, the disc crossing at 0.4 m a frame, eight sampled (0, 2, 3,
+        5, 6, 8, 9, 11):
+        - the last frame is `render()` at the last pose, byte for byte, and the box is in view of
+          every frame;
+        - the pool and deterministic debugging give one track set, through OpenCV's three backends,
+          each frame searched natively (778 to 980 keypoints, 568 to 676 features);
+        - all 28 pairs verify, not only the adjacent ones checked, with 62 to 390 inliers;
+        - 1028 tracks, 5 components rejected as conflicts. 11 tracks are the disc's. Of the other
+          1017, 912 land within 2 px of every member and 88 more within 10 px; **17 are wrong**, one
+          member 56 to 571 px out along its epipolar line, mostly on the floor, whose texture repeats
+          along a grazing view.
+     2. **The threshold and four lenses** (Release only), at 1920 x 1080 (f 1500), searched natively,
+        the disc crossing at 4 cm a frame (about 33 px between adjacent frames). The worst of seeds
+        0 to 4, correct matches kept at 4 px:
+
+        | k1 | corner shift | near pair, all / outer third | far pair, all / outer third |
+        | --- | --- | --- | --- |
+        | 0 | 0 px | 448/448, 141/141 | 27/27, 20/20 |
+        | -0.1 | 72 px (6.5%) | 465/465, 145/145 | 45/45, 28/28 |
+        | -0.2 | 193 px (17.5%) | 572/572, 208/208 | 71/75, 58/61 (95.1%) |
+        | -0.25 | 317 px (28.8%) | 580/580, 223/223 | 66/75, 47/56 (83.9%) |
+
+        - The near pair (frames 19 and 20) keeps every correct match at 4 px through every lens,
+          admitting 17 to 21 wrong ones, the disc's at most 1. At 1 px it keeps 95 to 98% (the -0.25
+          lens 91.5% of its outer third), at 2 px 99 to 100%.
+        - **Above 4 px a matrix takes the disc.** At 16 px every lens's near pair admits 20 to 22 of
+          its 20 to 25 disc matches. At 8 px the pinhole and the -0.2 lens lose up to 4% of their
+          correct matches to a matrix that explains the disc instead.
+        - The far pair (frames 0 and 39, 0.7 rad apart) admits 11 to 18 disc matches at every
+          threshold from 2 px, since the disc moves along the baseline. At 1 px it keeps 68 to 89%; at 16 px
+          the -0.25 lens keeps 97.3%, and all of its outer third.
+     3. **The time to match every pair of 40 frames** (Release only), the 1920 x 1080 pinhole over
+        the fine texture, the 40 frames drawn by `drawAll` first:
+        - on one core, frames 0 and 1 capped at 8192 features (10756 and 10738 rows, 1.31 a feature):
+          the pre-screen 0.039 s Exact and 0.033 s Approximate, the full match 5.59 s Exact and
+          0.41 s Approximate;
+        - the production run over all 40 frames at a cap of 1024: 0 pairs skipped, 780 verified,
+          2608 tracks, 61 s on four workers;
+        - all 780 pairs, worked out:
+
+          | | without the pre-screen | with it |
+          | --- | --- | --- |
+          | Exact | 1.21 core-hours (18 min on four cores) | 1.22 core-hours (18 min) |
+          | Approximate | 5.3 core-minutes (80 s) | 5.8 core-minutes (86 s) |
+
+          The pre-screen pays for itself once more than 0.7% of pairs share nothing under Exact, 8%
+          under Approximate.
+   - **Found while building:**
+     - **The plan's corner shifts are from the image's outer corner** (-0.5, -0.5). The centre of the
+       corner pixel gives 71.6, 192.1 and 315.9 px. `cornerShift` says which it measures.
+     - **The plan's 2.2 core-hours was 1.4 times too high from the machine and 1.3 times from the
+       rows.** Slice 3's own pair of 12182 rows takes 7.07 s here, not the 10.2 s it recorded, and
+       scaled by the rows squared that gives 5.51 s for this case's 10756, against 5.59 s measured.
+       Brute force grows with the rows squared, as slice 3 said, and this path's frames carry 1.31
+       rows a feature against that scene's 1.49.
+     - **A fundamental matrix cannot see a wrong match on the epipolar line.** The 17 wrong tracks
+       in the first case are what sub-slice 9's robust loss and outlier report meet.
+     - The default texture gives 948 features or more a frame at 1920 px, under the 1000 the first
+       cut required. The first cut's third case had a comma in its name, which Catch reads as two
+       filters.
+   - **For the repo owner, nothing changed:**
+     - **The threshold stays at 4 px.** Of the five tried at a 1920 search, it is the smallest that
+       keeps every correct match of the pinhole's two pairs, and the largest that refuses the disc
+       between adjacent frames through every lens.
+     - **Matching every pair of 40 frames Exact at the cap costs 1.2 core-hours**, 18 minutes on four
+       cores, and Approximate about 6 core-minutes. On a path that always sees the scene, the
+       pre-screen saves nothing. The cap, the sampled frames and the search stay sub-slice 10's.
+     - **Distortion costs a wide baseline its peripheral matches, not adjacent frames.** ADR-0016's
+       trigger is not reached; the measurements are written beside it.
+   - **Sabotages, both caught, one prediction wrong:**
+     - **Every frame drawn at the path's first pose**: the moving-camera case alone fails, as
+       predicted, on its byte comparison and its truth checks (none of the still tracks within 2 px,
+       99.9% wrong, 30 on the disc). Every adjacent pair still verified, since a camera that does not
+       move is explained by a degenerate matrix. The rig cases, whose cameras take the constructor that
+       delegates, pass untouched, the registration end to end included.
+     - **The threshold handed to `fundamental` times 1000**: the moving-camera case fails on the disc
+       (22 tracks) and on the wrong tracks (59 of 981, 6.0%). **The share within 2 px stays at 85.5%
+       and passes**, which was predicted to fail: admitting every match doubles the disc's tracks and
+       triples the wrong ones, yet costs that share 4 points. The wrong share is what sees it.
+       `test-camera-tracks` fails too, beyond the plan's prediction: both sections of the threshold
+       case, and the moving-content case.
+   - **Counts as predicted:** 1247/1247 Debug and 1255/1255 Release with video, camera and Ceres on
+     (+3 each, two of them skipped in Debug), 1138/1138 with all three off. Warning-clean, format-check
+     clean. Under `ctest -j8` the timing case took 243 s and its ratios held.
+
+   **Sub-slice 9 planned (2026-10-15) as three commits, 9a to 9c.** The method itself:
+   `calibration::targetless`, from the focal sweep to the verdict.
+
+   **Decided with the repo owner:**
+   - **Three commits:**
+     - **9a**, with no change in behaviour, held to all three goldens: what the method shares with
+       board calibration and registration moves where it can reach it.
+     - **9b**, the method, with tests over stand-ins.
+     - **9c**, the tests through Ceres.
+   - **A held-out frame is measured over its inliers, and the rest are counted.** It is posed by the
+     absolute-pose facade. The RMS angle is taken over the observations within the posing's inlier
+     angle, and the others are counted and reported. Sub-slice 8 measured about 1.7% of tracks wrong
+     along an epipolar line, which no fundamental matrix can see. Measured over every observation,
+     one of them in a held-out frame would decide the verdict, the problem queued for registration on
+     2026-10-09. The alternative was every observation, as board calibration and registration
+     measure today.
+   - **The usable tracks sit in capture order:** by each track's first frame, then its pixel. A track's
+     identity digests its frame's source uri, so in identity order where the footage sits would move
+     the bootstrap draws, the finding slice 3's sub-slice 10 recorded. The held-out frames are chosen
+     in capture order too, so neither depends on the footage's location. The alternative was identity
+     order, as targetless registration does.
+
+   **Found while planning:**
+   - **Calibration cannot reach three things it needs, because registration owns them.**
+     - `holdOut` and `bootstrapDraws` are in `registration::detail` (`src/registration/common.h`).
+     - `RefinementSummary`, what a report says about its refinement, is in `registration/report.h`.
+
+     ADR-0016 keeps the two methods apart, so each moves down to `lain::camera`, as the observation
+     graph and the refiner seam did.
+   - **Board calibration's coverage grid is board's.** `calibration::board::coverage` takes board
+     observations, and the 8 x 6 grid and `cellOf` live beside it. Targetless coverage is the same
+     grid over feature pixels.
+   - **The stand-ins cannot reconstruct a moving camera:**
+     - `TruthGeometry::relativePoses` and `absolutePoses` propose from `scene().referenceFromCamera`,
+       which a moving camera's scene holds one pose in, so they propose nothing;
+     - a moving camera is always a pinhole (`scene::model()`);
+     - `trackSetOf` gives one view per fixed camera, not one per frame;
+     - `PassThroughRefiner::canEstimate` answers false, so the method's refusal would stop every
+       stand-in case before it starts.
+   - **`startFrom` needs every view placed**, and a calibration places only the frames its seed can
+     reach. `candidates` returns only closures that reach every required view.
+   - **`calibrate(trackSet, image, settings, request)` takes a second answer to one question.** A
+     track set's views each carry the image geometry their pixels are in, so an `image` argument could
+     disagree with them. The track-set overload reads the views' geometry, and refuses views that
+     disagree with each other.
+   - **A fisheye's neutral model is equidistant.** Kannala-Brandt 4 with every coefficient zero maps
+     angle to radius linearly, so a field of view becomes a focal length differently from a
+     pinhole's. The sweep's candidates go through the requested model's own neutral projection.
+   - **`Request::maximumViews` is read by board calibration alone**, since a targetless calibration
+     selects no views: its frames are the extraction's `samples`. It stays in the shared request. Moving
+     it would change board's entry point with no second reader; its comment says it is board's.
+   - **`test_calibration.cpp` pins `fitnessProfileNames()` to `{"reconstruction/1"}`**, so 9b changes
+     that case with the profile it adds.
+
+   **Taken by precedent, or decided while planning:**
+   - **The entry points:**
+     - `calibrate(const capture::CameraFootage&, const Settings&, const Request&)`. It takes footage
+       with an identity, as `extractSequenceTracks` and registration's footage overload do, since
+       the identity is digested into every track.
+     - `calibrate(const feature::TrackSet&, const Settings&, const Request&)`.
+
+     The footage overload is `extractSequenceTracks` and then the track-set overload, exactly, with
+     the request's execution policy governing the extraction, as targetless registration's is.
+   - **`calibration::targetless::Settings`** holds the three fields slice 4's plan named:
+     `feature::SequenceExtractionRequest extraction`, `refinement::RobustLoss loss` and
+     `bool freePrincipalPoint = false`. It takes the refiner's default iteration limit.
+   - **Every inlier test is 4 source pixels**, turned into an angle by the focal length in use: the
+     sweep's candidate, the start model's for the seed and placement, the estimate's for the held-out
+     frames. That is the facade's own 4 mrad at a focal length of 1000, and the extraction
+     threshold's default. It is fixed rather than read from the extraction request, because a track
+     set does not say what scale it was searched at, and the two entry points must score alike.
+     Provisional; sub-slice 10 measures it.
+   - **The focal sweep:**
+     - 21 candidates, log-spaced from a 25° to a 120° field of view across the longest side, each
+       through the requested model's neutral projection: 10.8% apart for a pinhole, 8.2% for an
+       equidistant fisheye (provisional);
+     - each with fx = fy, the principal point at the image centre, and neutral distortion;
+     - scored on the 8 frame pairs sharing the most fitting tracks, ties to the lower pair;
+     - the candidate whose relative poses have the most inliers in total starts the reconstruction,
+       ties to the shorter focal length;
+     - every score recorded in the report.
+
+     An imported model under Initial skips it, and so does HoldAndValidate.
+   - **The seed for a calibration places as many frames as any can.** A new module function,
+     `reconstruction::widest`, returns the closures that reach the most frames among the pairs that
+     share at least five tracks, at most sixteen, in order of tracks shared. `chooseSeed` then
+     chooses among them by its own rule. Registration keeps `candidates`. The function lands in 9b,
+     beside its consumer.
+   - **Frames the seed cannot place are reported, not fatal**, and so are frames the cheirality filter
+     leaves seeing fewer than four landmarks. The evidence is narrowed to the placed frames before
+     the start is taken, and narrowed again until no frame is starved, so `startFrom` keeps its
+     contract and the targetless registration golden holds. Fewer than three frames left is
+     `TooFewViews`.
+   - **Footage that only turns fails `InitialisationFailed`, naming its parallax**, when the widest
+     seed's median triangulation angle is below the minimum parallax (the facade's inlier angle).
+   - **Held-out frames:**
+     - every k-th sampled frame in capture order, k = 1 / heldOutFraction, starting half a stride in,
+       through the moved `holdOut`;
+     - none from fewer than five frames;
+     - never a frame of the anchor seed, the first `widest` closure over every frame;
+     - a frame only when the anchor's closure, without it and every frame held out before it, still
+       reaches every other frame it reached.
+
+     A held-out frame's observations reach no refinement. Each is posed afterwards against the
+     refined landmarks, through rays from the estimated model, and measured through lain's
+     projection.
+   - **The bundle adjustment:**
+     - one model shared by every placed frame, its focal length and coefficients free, its principal
+       point free only when `freePrincipalPoint` says so;
+     - the reference is the seed's first frame;
+     - the settings' robust loss;
+     - every observation weighted by its own covariance;
+     - the refined model passed through `CameraModel::create`, an invalid one `InvalidModel`.
+
+     A held model refines the frames and landmarks alone.
+   - **The bootstrap resamples the fitting tracks** through the moved `bootstrapDraws`. Each resample
+     re-runs the bundle adjustment from the result: model, frames and landmarks, a track drawn twice
+     being two landmarks. A frame a resample leaves seeing fewer than four landmarks is left out of
+     it. Focal variation is the relative standard deviation of fx and fy. Principal-point variation
+     is `Held` when it was held, and never a zero. A held model's resampling is `Unavailable`.
+   - **The verdict** goes through `calibration::judge`. Its views are the frames in the bundle
+     adjustment; a held model's are its posed held-out frames, as board's are. Coverage is the
+     shared grid over every kept observation of those frames.
+   - **`reconstruction-targetless/1`, provisional until sub-slice 10 measures it.**
+     - Ready: 10 views, 0.6 coverage, 1.5 mrad held out, 0.5% focal, 2 mrad principal point.
+     - Exploratory: 6, 0.3, 5 mrad, 2%, 10 mrad.
+
+     SIFT localises to about 0.7 mrad at a focal length of 1000, and a held-out frame adds its own
+     pose's error. Focal and principal-point stability bound what the model is used for, so they are
+     board's. An empty profile in a targetless request resolves to it; board's still resolves to
+     `reconstruction/1`. Either profile may judge either method, since both judge the same criteria.
+   - **The report:**
+     - `Failure` gains `NoFeatureExtractor`, `NoFeatureMatcher`, `NoGeometrySolver`, `NoRefiner`,
+       `InvalidDataset`, `ExtractionFailed`, `InitialisationFailed`, `RefinementFailed` and
+       `ResourceExhausted`. A refiner that cannot estimate the requested model is `NoEstimator`, the
+       name board uses.
+     - `HeldOutEvidence` gains `outliers`: observations beyond the posing's inlier angle. Board's is
+       always 0.
+     - `Diagnostics::method` gains `TargetlessDiagnostics`. It holds:
+       - the extraction's report, when it ran;
+       - tracks given and usable;
+       - the sweep's candidates, scores and choice;
+       - the seed frames, their angle and whether they were below the floor;
+       - the placement order, and the frames left unplaced;
+       - the observations left behind, the landmarks refined and the tracks never triangulated;
+       - the refinement summary;
+       - the outliers, named by track and frame.
+
+       It holds no track set, since nothing reads one back, where targetless registration's
+       comparison did.
+     - `Reproducibility::method` gains `TargetlessRecord`: the settings as run, and the extractor,
+       matcher, geometry solver and refiner. `Reproducibility::estimator` is the refiner, unset for a
+       held model.
+     - `toString` adds ", N of M frames placed".
+   - **Every check that needs no frame comes first**, in order:
+     - the frame sequence (`NoFootage`);
+     - the profile;
+     - the imported model;
+     - the four backends;
+     - a refiner that can estimate the requested model, unless it is held.
+
+     Then the extraction (an `InvalidInput` refusal is `InvalidDataset`, anything else
+     `ExtractionFailed`). The track-set overload checks instead that its views are one camera's,
+     each one frame, none twice, with one image geometry, and that every observation names a view and
+     its covariance is positive definite.
+
+   9a. **What the method shares moves where it can reach it.** No change in behaviour; held to the
+       board calibration, board registration and targetless registration goldens, byte for byte.
+       - `holdOut` (both forms) and `bootstrapDraws` move from `registration::detail` to
+         `camera::detail`, in `src/resampling.{h,cpp}`. Registration names them by
+         using-declarations, as it does `median`.
+       - `RefinementSummary` moves to `refinement::Summary` in `refinement/refiner.h`. Registration
+         keeps `RefinementSummary` as an alias, as it kept `RefinementStatus`.
+       - The coverage grid and `cellOf` move to `src/calibration/coverage.{h,cpp}`, shared by the
+         calibration methods, over pixels. `calibration::board::coverage` and its grid constants stay
+         in `board.h`, answered through the shared grid.
+       - **Sabotages:** `bootstrapDraws` taking the engine's next value fails both registration
+         goldens and nothing else; a 7-column grid fails the board calibration golden.
+       - **Counts:** unchanged everywhere.
+   **Sub-slice 9a built (2026-10-15).** As planned, with one deviation:
+   - **`holdOut` (both forms) and `bootstrapDraws`** are in `camera::detail`, `src/resampling.{h,cpp}`.
+     Registration's `common.h` names them by using-declarations beside `median`, so its calls read as
+     before.
+   - **`refinement::Summary`** is in `refinement/refiner.h`, after `Solution`. Registration keeps
+     `RefinementSummary` as an alias in `registration/refiner.h`, beside `RefinementStatus`, so both
+     goldens and the Ceres refiner test read it unchanged.
+   - **`src/calibration/coverage.{h,cpp}`**, in `camera::detail`: `CoverageCells`, `coverageCell`,
+     `cover` and `coveredFraction`, over pixels. Board calibration's `cellsOf` and `coverage` go
+     through them.
+   - **Deviation: the grid's size is `calibration::kCoverageColumns` and `kCoverageRows`, in
+     `calibration/fitness.h`**, beside `minimumCoverage`, which they define. `board.h` names them by
+     using-declarations, so `board::kCoverageColumns` still answers. The plan kept them in `board.h`,
+     but a private grid shared by both methods could then reach them only by targetless calibration
+     including board's header, and a second definition would be the drift a shared grid exists to
+     prevent.
+   - **`camera::detail`, not a new `calibration::detail`.** One would hide `camera::detail` inside both
+     calibration methods, as registration's does inside registration, and board calibration's
+     `detail::forEach` would stop resolving.
+   - **Sabotages, both caught:**
+     - **`bootstrapDraws` discarding the engine's first value** fails both registration goldens and
+       nothing else, as predicted.
+     - **A 7-column grid** fails the board calibration golden, as predicted, and two cases more: the
+       coverage case, which pins 1/48, and *a fixture of one camera seen twice passes*, whose session
+       'b' drops to Exploratory on a principal-point variation of 2.55 mrad. View selection scores
+       grid cells, so another grid selects other views.
+   - **Counts unchanged:** 1247/1247 Debug and 1255/1255 Release with video, camera and Ceres on,
+     1138/1138 with all three off. Every golden untouched. Warning-clean, format-check clean.
+
+   9b. **`calibration::targetless`, over stand-ins.**
+       - `lain/camera/calibration/targetless.h` and `src/calibration/targetless.cpp`: the entry
+         points and steps above. `reconstruction::widest` joins the module, and
+         `reconstruction-targetless/1` joins `fitness.cpp`.
+       - **The stand-ins** (`syntheticscene.h`, `passthroughrefiner.h`):
+         - `TruthGeometry` proposes from the moving camera's path when there is one;
+         - `resetMoving` takes a model, its focal length and distortion the case's, and
+           `resetPanning` turns a camera in place;
+         - `sequenceTrackSetOf(sigma, seed)` gives the truth per frame;
+         - the pass-through refiner can be told it estimates a model, hands back what it was given,
+           and records each problem's cameras.
+       - **Tests, in a new `test-camera-targetless-calibration`**, which builds without either plugin:
+         - the sweep chooses within one candidate of the truth, at the truth's focal length and at
+           0.8 and 1.25 times it, and records every score;
+         - Initial skips the sweep and names the fields it seeded; HoldAndValidate frees no model, is
+           at most Exploratory, and its resampling is Unavailable;
+         - held-out frames are every fifth in capture order, never a seed frame, and none of their
+           observations reaches a refinement; a frame whose loss would cut the placement is kept in;
+         - a frame with too few shared landmarks is reported unplaced, and the calibration succeeds
+           without it;
+         - footage that only turns fails `InitialisationFailed`, naming its parallax; fewer than three
+           frames placed is `TooFewViews`;
+         - the footage overload is the extraction, then the track-set overload, exactly;
+         - views and tracks given in another order, the pool and deterministic debugging give one
+           report;
+         - a held principal point reports `Held`;
+         - an empty profile resolves to `reconstruction-targetless/1`, and `fitnessProfileNames()` lists
+           both;
+         - the refusals, before any decode, each an ordinary failed report.
+       - `test-camera-nobackend` gains the footage overload's `NoFeatureExtractor` and the track-set
+         overload's `NoGeometrySolver`.
+       - **Sabotages:**
+         - the sweep scored at a fixed angle picks the longest candidate, failing the sweep case;
+         - the held-out frames left in the bundle adjustment fail the held-out case;
+         - a held principal point reported as 0 fails the `Held` case.
+       - **Docs:** ADR-0016's validation bullet and CONTEXT.md's *Held-out frame* gain the inlier rule.
+   **Sub-slice 9b built (2026-10-15).** The method, over stand-ins, as planned, with one deviation in
+   how footage that only turns is refused, and two findings for the repo owner.
+   - **Where it lives:**
+     - `calibration/targetless.h` (the two entry points) and `calibration/targetlesssettings.h`
+       (`Settings`, its own header so a report can record it), over `src/calibration/targetless.cpp`.
+     - **`src/calibration/common.{h,cpp}`**, `calibration::detail`: what both calibration methods
+       decide the same way, moved out of `board.cpp`: `failed`, `resolveProfile`, `checkImported`,
+       `initialFrom` and `stability` (which answers `Held` for a held principal point). Board
+       calibration calls them, and its golden is byte for byte. Unlike 9a's `camera::detail`, this
+       namespace sits inside calibration, so it re-exports `forEach`, the coverage grid and the rest
+       by using-declarations, as registration's `common.h` does.
+     - **`src/whitening.h`**: `whitenedSquared` moves from `registration::detail` to
+       `camera::detail`, since both methods name an outlier by it. Registration re-exports it, and
+       both registration goldens are byte for byte.
+     - `reconstruction::widest` in the module, `reconstruction-targetless/1` in `fitness.cpp`, and the
+       report's additions (the new `Failure` values, `HeldOutEvidence::outliers`, `SweepCandidate`,
+       `Outlier`, `TargetlessDiagnostics`, `TargetlessRecord`, ", N of M frames placed").
+   - **Deviation: footage that only turns is refused when most of the seed's matches are points at
+     infinity**, not when the seed's median triangulation angle is below the minimum parallax.
+     `triangulate` succeeds only at or above that parallax, so a median over the matches that
+     triangulate clears it unless none does. Moving content across a pan has real parallax: with
+     every tenth landmark moving, 108 of 120 seed matches are at infinity and the 12 moving ones
+     triangulate at a median 64 mrad, so the planned rule let the pan through. `Seed::atInfinity`
+     counts them in the module (registration never reads it, and its golden holds), and the
+     diagnostics report `seedInliers` and `seedAtInfinity`.
+   - **Found: a pan between two sweep candidates can reconstruct as a spurious orbit.** With the
+     truth at f = 500, the sweep starts at its next candidate, 516.4. A pan of another angle plus the
+     stand-in's arbitrary sideways baseline then explains those rays, 3% off, better than the true
+     pan does. All 120 seed matches triangulate, at a median 52 mrad, 8 of 11 frames are placed, and
+     only the verdict rejects the result (5.3 mrad held out). A pure rotation is told apart for any
+     model by whether a rotation alone explains a pair, as COLMAP's homography test does, and this
+     method does not ask that. A real essential matrix's arbitrary translation is not the stand-in's,
+     so the test refuses pans under a right model (an imported one, and the sweep's own candidate
+     when the truth is one) and records the rest in a comment. **For the repo owner:** whether to add
+     a rotation-only test, or to let sub-slice 10 measure a rendered pan through OpenCV first.
+   - **Found: footage whose every frame looks at one point does not say its focal length.** Every
+     pair's optical axes meet, the classic critical configuration, so the sweep cannot choose.
+     `resetMoving`'s camera, which always looks at the origin, scored all 960 matches for 11
+     consecutive candidates at f = 500, from 251.5 to 702.9, and ties went to the shortest. The
+     tests use a new **`scene::resetWandering`**, the same arc re-aiming and rolling as it goes, as
+     sub-slice 8's `arcPath` does. A camera orbiting an object while keeping it centred is ordinary
+     footage, so the operator guidance sub-slice 10 writes should say so.
+   - **The stand-ins**, as planned: `TruthGeometry` proposes from the moving camera's path, a camera
+     that never moves given a unit baseline; `resetMoving` takes a model and `resetPanning` turns in
+     place; `sequenceTrackSetOf` gives a track per landmark over every frame; the pass-through
+     refiner says it estimates the models a case lists, hands back what it was given, and records
+     each problem's poses, model freedom and pixels. It refines nothing, so a stand-in calibration's
+     model is where the method started it.
+   - **`test-camera-targetless-calibration`**, 13 cases, building without either plugin:
+     - the sweep starts within one candidate of the truth at f = 500, 400 and 625, and for an
+       equidistant fisheye at 500, through each model's neutral projection: candidates 10.83% apart
+       for a pinhole and 8.16% for the fisheye, every score recorded, the most inliers winning and
+       ties going to the shorter;
+     - every candidate is scored at 4 px of its own focal length, read from the angles the stand-in
+       was handed;
+     - Initial skips the sweep and names the fields it seeded, and the true model predicts every
+       held-out frame exactly (RMS under 1e-9 rad); seeding another model seeds the pinhole part
+       alone; HoldAndValidate frees no model, needs no estimator, its resampling is Unavailable, and
+       on 14 frames with half held out (six validate, the anchor's frame 1 kept in) it is Exploratory;
+     - held-out frames are frames 2 and 7 of 12, and none of their pixels reaches the adjustment or
+       a resample; frame 2 is kept in when it seeds the anchor, and frame 7 when it alone joins the
+       frames after it;
+     - a frame seeing three landmarks is unplaced and the calibration goes on ("9 of 10 frames
+       placed"); two placed frames of four is `TooFewViews`;
+     - footage that only turns is refused, static or with moving content, under the sweep and under
+       an imported model;
+     - a held principal point reports `Held` and adds no note; freed, it is a number and the problem
+       frees it;
+     - an empty profile resolves to `reconstruction-targetless/1`, and `reconstruction/1` may judge
+       the method;
+     - DeterministicDebug, the pool and every view, track and observation listed backwards give one
+       report;
+     - calibrating footage is the extraction, then the track-set overload, exactly;
+     - the refusals, each before any decode.
+   - **`test-camera-nobackend` gains one case**, both overloads in it, as targetless registration's
+     is: the footage overload's `NoFeatureExtractor` and the track-set overload's `NoGeometrySolver`.
+     The plan counted two.
+   - **Four sabotages, all caught, one prediction wrong:**
+     - **The sweep scored at a fixed 4 mrad** fails only the case that reads the angles handed (20 of
+       21 candidates; the chosen one's angle reappears in the seed's call). The plan predicted it
+       would pick the longest candidate and fail the sweep case. It does not: the stand-in proposes
+       only true poses, which a wrong focal length's rays miss at either angle, so it still starts
+       within one candidate of every truth.
+     - **The held-out frames left in the adjustment** fail the held-out case, as predicted (1200
+       held-out pixels found across the adjustment and its four resamples), and the unplaced-frame
+       case, whose counts include them.
+     - **A held principal point reported as 0** fails the `Held` case alone, as predicted.
+     - **The planned refusal rule** (the median over the matches that triangulate) fails the pan with
+       moving content alone, as predicted.
+
+     The first cut of the second did not build under `-Werror` (an unused parameter), so the first
+     sabotage's binary answered, and it was redone: **a sabotage that does not build proves nothing**,
+     again.
+   - **Counts:** 1261/1261 Debug and 1268/1269 Release with video, camera and Ceres on, 1152/1152 with
+     all three off (+14 each). Every golden untouched; warning-clean, format-check clean. The Release
+     failure is not this commit's: targetless registration's *a rig of 100 cameras and 50000 tracks
+     registers* exceeded its wall-clock bound, 120.44 s against 120, while ctest ran it beside the two
+     heaviest cases (the 40-frame matching timing at 260 s, the board-and-targetless comparison at
+     193 s) under `-j8`. Every other check in it passed (Ready, 0.416 mrad held out), and alone it
+     passes in 37.1 s. The bound is a regression guard, so under a loaded `-j8` run it can fire.
+   9c. **Through Ceres** (`plugins/camera/ceres/test/test_targetlesscalibration.cpp`, in
+       `test-camera-ceres`):
+       - a pinhole and a Brown-Conrady camera recovered from exact tracks, compared with the truth by
+         their ray mapping over the image grid;
+       - noise, Ready under `reconstruction-targetless/1`;
+       - a wrong match named as an outlier by track and frame, the model unmoved;
+       - moving content named, the model unmoved;
+       - an off-centre principal point recovered when freed, and reported `Held` and missed when held;
+       - the pool and deterministic debugging give one report, resampling included;
+       - the same tracks under identities that sort another way give one report, which the capture
+         order buys: footage at another path is that case.
+
+       **Sabotages:**
+       - the bootstrap drawn inside the parallel loop fails the determinism case;
+       - the tracks left in identity order fail the identities case.
+
+       Every bound is set from its measurement and written beside it.
+
+   **Sub-slice 9c planned (2026-10-15).** One commit of test code: the method as 9b built it, refined
+   by the real Ceres refiner, over 9b's stand-in scene and geometry (`resetWandering`,
+   `sequenceTrackSetOf`, `TruthGeometry`), in `plugins/camera/ceres/test/test_targetlesscalibration.cpp`
+   in `test-camera-ceres`. A scratch probe ran every case before planning, and every number below is
+   its measurement, the same in Debug and Release.
+
+   **Decided with the repo owner:**
+   - **A camera that only pans is refused in 9c only under a right model**, as 9b tests it. 9b found a
+     false orbit over the stand-ins when the true focal length falls between two sweep candidates;
+     that goes to sub-slice 10, which renders a pan and runs it through OpenCV's essential matrix,
+     since the stand-in's arbitrary sideways baseline is what fitted it. If the pan reconstructs as an
+     orbit there, a rotation-only check lands in 10: a pair most of whose matches a rotation alone
+     explains has no parallax. The alternative was building that check now, ahead of 9c.
+   - **Frames the starting model cannot place stay unplaced**, and are not retried after the
+     adjustment. Sub-slice 10 measures how many a real solver leaves out on rendered distorted
+     footage. If it leaves any, the fix is a second placement round under the refined model, with
+     one more adjustment when a frame joins. Over the stand-ins the effect is exaggerated, since
+     `TruthGeometry` proposes only true poses: a 12-frame Brown-Conrady scene left 2 of 10 frames
+     unplaced from a start 7% short, and 24 frames left none. The alternative was the second round
+     now.
+
+   **Found while planning:**
+   - **The stand-in places nothing that a starting model misses by much.** With the principal point
+     15 px off, only the seed's 2 of 10 frames could be placed, so the calibration failed TooFewViews.
+     At 6 px, 1 frame was left unplaced; at 3 px, none. A real solver would fit a pose that absorbs
+     the offset, since a principal-point shift is nearly a rotation. So the principal-point case uses
+     3 px.
+   - **Honest noise names about 0.5% of correct observations as outliers.** An outlier is an
+     observation whose whitened residual's norm exceeds the loss scale of 3, as in targetless
+     registration. Under Gaussian noise of the stated sigma, that is about 1.1% before the fit takes
+     its share. Measured: 6 of 1200 at sigma 0.136 px, the stated covariance's. So the wrong-match
+     case asserts the corrupted observation is among the outliers, not that it is the only one.
+   - **A held principal point 3 px off is still Ready.** The ray mapping is 3.87 px out, and the
+     held-out angle 0.805 mrad against Ready's 1.5. The frames' poses absorb the offset, as slice 1's
+     fixture harness found a held model's board poses absorb its error. This is what the profile cannot
+     see, and the case pins it as measured.
+   - **Brown-Conrady coefficients under noise are poorly determined while the ray mapping holds.** At
+     sigma 0.136 px over 12 frames: k2 -0.011 against -0.05, k3 -0.074 against 0.01, the ray mapping
+     1.54 px out, and Ready. Comparing by ray mapping, not coefficients, is measured here, not only
+     argued.
+   - **The cost lets every case run in Debug:**
+     - 2 to 4 s for a 12-frame calibration with 20 resamples on a 4-thread pool;
+     - 9.8 s for 24 frames and 200 landmarks;
+     - 0.05 to 0.5 s in Release.
+
+   **The cases, with what the probe measured:**
+   1. **A pinhole recovered from exact tracks.** 12 frames, 120 landmarks, f = 500, centred:
+      - the sweep starts at 465.96;
+      - the model is within 3.6e-9 of the focal length and 1.4e-6 px of the ray mapping;
+      - held out 4.7e-7 mrad, Ready.
+
+      With fx = 500, fy = 510 and the principal point 1 px off, fx and fy come within 1.8e-4, and
+      the ray mapping is 1.06 px out: the held principal point's miss.
+   2. **A Brown-Conrady camera recovered from exact tracks.** 24 frames, 200 landmarks: within 8.3e-10
+      and 5.1e-7 px, every frame placed, Ready.
+   3. **Noise, Ready.** Sigma 0.136 px, the stated covariance's:
+      - the focal length 0.245% long and the ray mapping 0.96 px out;
+      - held out 0.434 mrad, focal variation 0.105%;
+      - Ready under `reconstruction-targetless/1`.
+
+      24 frames and 300 landmarks take it to 0.048% and 0.135 px.
+   4. **A wrong match named, the model unmoved.** One observation 25 px off is named at 182 sigma by
+      its track and frame. The focal length moves by 2.6e-6 of itself, and the held-out evidence
+      does not change.
+   5. **Moving content named, the model unmoved.** With every tenth landmark moving, each of the 12
+      moving tracks is named in most of its fitted frames, at 19.8 to 495 sigma. The ray mapping is
+      0.30 px out. The held-out frames count 18 observations beyond their inlier angle and measure
+      0.842 mrad over the other 219.
+   6. **A principal point 3 px off.** Freed, it is recovered within 6e-7 px, and its variation is a
+      number. Held, it is reported `Held`, and the ray mapping is 3.87 px out, still Ready.
+   7. **Determinism through Ceres, resampling included.** DeterministicDebug and a 4-thread pool give
+      one report, under noise so the resamples differ.
+   8. **Identities that sort another way give one report.** The same tracks named in reverse order,
+      under noise, are compared with their outliers mapped back by name. Footage at another path is
+      this case, since a track's identity digests its frame's source.
+
+   **Sabotages:**
+   - **The bootstrap drawn inside the parallel loop**, from one engine shared without a lock, fails
+     the determinism case. Not under a lock: registration's slice 3 sub-slice 8b found a locked
+     shared engine only permutes the draws among the resamples, which the spread does not see.
+   - **The tracks left in identity order** fail the identities case.
+
+   **9c's counts:** about eight cases in `test-camera-ceres`, wherever Ceres builds.
+
+   **A fix built ahead of 9c (2026-10-15): a free model's solution no longer depends on the heap.**
+   9c's determinism and identities cases failed in their first run, in the last bits: the serial
+   report and the pooled one differed in the focal variation and the final cost. The cause was in the
+   refiner, not the method. The free model block shared the cameras' ordering group (ADR-0017's
+   sub-slice 5 wording). Ceres keeps a group as a set ordered by address, and the AMD ordering of the
+   reduced system breaks ties by that input order. The cameras sit in one array, so their addresses
+   keep their order, but a model block is an allocation of its own, so the solution's last bits
+   followed wherever the heap put it. A resample on a pool worker allocates from another arena than
+   one run inline, which is how the pool showed it.
+   - **Each free model has an ordering group of its own, after the cameras'** (`2 + m`). One shared
+     group for every model would still order two models by address.
+   - **A new case in `test_freemodel.cpp`**: two moving cameras' frames, each half through a model of
+     its own, both freed, through 0.5 px of noise. The problem is solved once, then under eight heap
+     layouts, each on a thread of its own after blocks of every small size are allocated and every
+     other one freed. Every solution must be the first's, bit for bit. It takes 17 s in Debug and
+     0.53 s in Release.
+   - **No golden moves**: neither registration golden frees a model, and board calibration's golden
+     runs over a stand-in estimator.
+   - ADR-0017 is amended in place.
+   - `ctest` **1262/1262** Debug and **1269/1270** Release with video, camera and Ceres on (+1
+     each), **1152/1152** with all three off (unchanged, since the case needs Ceres);
+     warning-clean, format-check clean. The Release failure is targetless registration's
+     100-camera scale case on its wall-clock bound again, 134 s against 120 beside the heaviest
+     cases under `-j8`; alone it passes in 37.2 s, as at 9b.
+   - **Two sabotages, both caught.** Each model back in the cameras' group fails 4 of the 8 layouts
+     (layouts 1, 5, 6 and 7). Every model in one shared group after the cameras fails 2 (layouts 1
+     and 6), which is what the second model is there for. The layouts that catch either are glibc's
+     arena behaviour, so on another allocator the case may catch fewer; with the fix it passes on any,
+     since nothing then depends on an address.
+
+   **Sub-slice 9c built (2026-10-15) — sub-slice 9 is complete.** One commit of test code: eight
+   cases in `plugins/camera/ceres/test/test_targetlesscalibration.cpp`, in `test-camera-ceres`. They
+   run the method as 9b built it, refined by the real Ceres refiner, over 9b's stand-ins.
+   - `ctest` **1270/1270** Debug and **1278/1278** Release with video, camera and Ceres on
+     (+8 each), **1152/1152** with all three off (unchanged, since the cases need Ceres).
+     The Release scale case met its wall-clock bound this run. Warning-clean, format-check clean.
+   - **One report means the same in both suites.** The report printer and comparison moved out of
+     9b's `test_targetlesscalibration.cpp` into `libs/camera/test/targetlesscalibrationtext.h`, which
+     9b's determinism and identities cases and 9c's now share. 9b's cases are otherwise unchanged.
+   - **The probe's measurements held, the same in Debug and Release, with one exception.** They were
+     re-measured through the cases themselves, with temporary prints removed afterwards. The refiner
+     fix ahead of 9c moved one: the wrong match moves the focal length by 2.8e-6 of itself, not 2.6e-6,
+     and the held-out angle by 7e-5 mrad. The case's comment says so.
+   - **Every case but the one comparing serial with pooled runs starts a pool of four.** Without one
+     the resamples run inline, and the eight took about 3 minutes in Debug. With it they take 68 s:
+     - the determinism case 14 s;
+     - the noisy 24-frame section 14 s;
+     - the Brown-Conrady case 10 s;
+     - the rest 2 to 7 s each.
+
+     In Release each case takes 0.06 to 0.5 s.
+   - **The first run found the refiner defect fixed ahead of this commit** (above). Both comparison
+     cases failed in the last bits until each free model had an ordering group of its own.
+   - **Two sabotages, both caught, one prediction wrong:**
+     - **The bootstrap drawn inside the parallel loop**, from one engine shared without a lock: caught,
+       as predicted, but through a race. Over three runs the determinism case failed twice and the
+       identities case three times, since both of the identities case's runs are on the pool. 9b's
+       suite passes this sabotage, because a pass-through refiner gives every resample the same answer;
+       that is why 9c exists.
+     - **The tracks left in identity order** were predicted to fail the identities case alone. They fail
+       6 of the 8 cases (all but moving content and the determinism case) and 2 of 9b's 13, with frames
+       left unplaced. The cause is the stand-in. Its geometry scores a candidate pose on 16 evenly
+       spaced correspondences of its input, so the order the tracks arrive in decides which 16. Under a
+       start 7% short, that decides whether a frame can be placed. The method's capture order is what
+       keeps the stand-in results the same however the tracks are named. A real solver also samples by
+       order, through a seed, though less sharply; sub-slice 10 renders.
+
+   **Counts:** 9a none; 9b a new executable with about a dozen cases, in every configuration, since it
+   needs neither plugin, and two cases in `test-camera-nobackend`; 9c about seven cases wherever Ceres
+   builds.
+
+   **Docs:** each commit adds its built note here and an entry to CLAUDE.md.
+
+   **Sub-slice 10 planned (2026-10-16) as five commits, 10a to 10e.** Before planning, a scratch probe ran
+   9b's method through OpenCV and Ceres on rendered footage:
+   - the test camera (640 x 480, f 500) along sub-slice 8's path over the default scene;
+   - a pan;
+   - a wide and a narrow lens;
+   - strongly distorted footage at 1920 x 1080;
+   - one camera's footage with a board standing in the scene.
+
+   It found three defects that the stand-ins could not show, so four commits fix the method and the
+   comparison comes last. Every number below is the probe's, in Release.
+
+   **Found by the probe:**
+   - **The focal sweep's score is flat on real tracks.**
+     - The eight pairs sharing the most tracks are adjacent frames, and every candidate from f = 342 to
+       1443 explains 3,637 to 3,639 of their matches.
+     - The widest pairs are no better. For a true f = 500 they rule out only f below 300, and for a
+       wide lens (f = 250) they are flat to within 1%.
+     - The path aims at the box throughout, close to the critical configuration 9b found, and there
+       two frames alone barely constrain the focal length.
+     - The stand-ins hid this: their geometry proposes only true poses, so a wrong focal length lost
+       inliers there.
+     - Ties go to the shorter focal length, which is the worst end.
+   - **The bundle adjustment converges from about 0.7 to 3 times the true focal length, and starting
+     short is what fails.**
+     - For a true f = 500, every start from 342 to 1443 ends within 0.06%. Every start of 309 or less
+       ends 43 to 54% short, Rejected.
+     - A wide lens (f = 250) converges from 185 to 779, and from 1175. Starts at 957 and 1443 end 15%
+       and 20% wrong, and are judged Exploratory.
+   - **So the default footage often fails.** Over three seeds and two lenses at the default 40 samples:
+     - 2 Ready;
+     - 1 Exploratory, for want of resampling evidence (below);
+     - 1 InitialisationFailed: the sweep chose 342, and the seed's matches met at infinity;
+     - 2 Rejected, 57.6% and 59.5% wrong: the sweep chose 185.
+
+     At 12 samples, 6 of 6 were Ready.
+   - **The lowest final cost per residual separates the right minimum from a wrong one by a wide
+     margin.**
+     - Right: 0.82 to 1.11, with 6 to 8% of observations named outliers.
+     - Wrong: 3.8 to 8.8, with 28 to 48%.
+
+     Three starts at geometric thirds of the sweep's range (f = 261, 516 and 1024 at 640 wide), with the
+     lowest cost winning, turned the three failed 40-sample runs into Ready ones, 0.003 to 0.19% out in
+     focal length.
+   - **A bootstrap resample can fail on an observation its start cannot project.**
+     - A wrong match leaves its landmark far outside the frame that saw it.
+     - The main fit starts from the sweep's neutral model, whose domain is unbounded. A resample starts
+       from the refined model, whose domain ends at its fold radius.
+     - Ceres then fails the whole resample at iteration 0, always OutsideDomain, never behind the
+       camera.
+     - In one run all 8 resamples failed, so a model 0.016% out in focal length was Exploratory for
+       want of resampling evidence. 3 of the 24 grid runs lost Ready this way.
+     - When a resample's start left out what it could not project, as the main fit does at its own
+       start, 8 of 8 succeeded and the run was Ready.
+   - **A held principal point blinds Ready.**
+     - The held-out frames' poses absorb the offset, so the held-out angle stays at 1.1 to 1.4 mrad
+       whether the true principal point is at the centre or (8, -6) px away.
+     - Held, each of six runs was Ready while its ray mapping was 10 to 18 px out.
+     - Freed, the principal point came back within 0.3 to 1.8 px. Its resampled variation was 0.55 to
+       1.5 mrad, against Ready's 2.0, and the ray mapping was within 0.8 to 3.1 px. All six were Ready.
+   - **A pan is reconstructed as an orbit and judged Ready.**
+     - Started at the sweep's 466 for a true 500, a camera that only turns was posed as one moving
+       sideways. It came out 0.5 to 1.4% wrong in focal length and 4.9 to 7.6 px out in ray mapping,
+       with a held-out angle of 0.6 to 0.8 mrad.
+     - Started at the true model, the points-at-infinity rule refuses it.
+     - Freeing the principal point does not help.
+     - A homography explains a pan whatever the focal length.
+   - **Distortion leaves no frame unplaced.** Through k1 = -0.2 and -0.25 alone at 1920 x 1080 (sub-slice
+     8's lenses: 193 and 317 px corner shifts), all 20 sampled frames were placed, the runs were Ready,
+     and the focal length was 0.06 to 0.24% out.
+   - **The targetless fit RMS is over every observation**, including wrong matches up to 571 px out. So
+     it read 18 to 28 px on footage whose held-out RMS was 0.6 px. Board calibration's is its estimate's
+     own residual, 0.17 px.
+   - **Board calibration on this footage is sensitive to coverage.**
+     - With the close views near the image's middle (56% covered), and again at 79%, OpenCV's estimate
+       folded before the image corners, and lain refused it as InvalidModel.
+     - With the board swung toward the corners (83%), both methods were Ready on the same 48 frames:
+
+       | Method | Focal error | Mean ray error |
+       | --- | --- | --- |
+       | Board | 0.038% | 0.63 px |
+       | Targetless (principal point held, 1.5 px from the truth) | 0.011% | 1.58 px |
+
+       The two models were 0.04% and 1.5 px apart.
+   - **Also measured, with no action:**
+     - **Honest noise names 6 to 8% of observations outliers** on rendered footage, against 0.5% over
+       the stand-ins. The stated covariance (3.4% of a feature's size) is too tight for the smallest
+       features, as registration found in slice 3, sub-slice 9.
+     - **A narrow lens found no good start** (f = 1100 at 640 wide, a 32° field). The best ended 0.9%
+       out with an 11 px ray error, and was judged Exploratory. A narrow field barely constrains a
+       focal length, and the operator guidance will say so.
+
+   **Decided with the repo owner:**
+   - **Three starts, the lowest cost winning**, replace the sweep's two-view score. Each start is
+     reconstructed and adjusted. Held-out validation and resampling run once, on the winner. The
+     alternatives were scoring the widest pairs, and COLMAP's fixed prior of 1.2 times the longest side.
+   - **A homography test refuses a pan.** It works on pixels, so it does not depend on the starting focal
+     length: a pair most of whose matches a homography explains is not a seed (COLMAP's
+     planar-or-panoramic rule). The alternative was a rotation fit under the start model, which needs a
+     start within a few percent of the truth.
+   - **The principal point is freed by default**, reversing the 2026-10-12 decision on this measurement.
+     Footage that conditions it poorly shows a large resampled variation and is judged Exploratory,
+     which is what the stability criterion is for. ADR-0016 and CONTEXT.md are amended in place.
+
+   **The commits:**
+   - **10a: what a resample starts from, and the fit RMS.**
+     - A resample leaves out every observation its start cannot project, through the same routine the
+       main fit's start runs, so the two cannot disagree about what a start can see.
+     - `fitRmsPixels` is taken over the observations not named outliers; their count stands beside it.
+     - Tests through Ceres, in 9c's file:
+       - a model whose distortion folds just outside the image, and a wrong match whose landmark lies
+         beyond that fold from its frame; the resampling still has evidence;
+       - the fit RMS ignores a wrong match.
+     - Sabotage: the resample keeps every observation, and loses its evidence.
+   - **10b: the principal point is freed by default.**
+     - `Settings::freePrincipalPoint` defaults to true.
+     - Cases that relied on the held default say so.
+     - 9c's principal-point case gains an (8, -6) px offset, recovered by default.
+     - Sabotage: the default left held, which fails the offset case.
+   - **10c: three starts.**
+     - Three focal lengths at geometric thirds of the sweep's field-of-view range, each reconstructed
+       and adjusted. The lowest final cost per residual wins.
+     - An imported model under Initial is the one start.
+     - A start that fails to initialise or refine is reported and does not end the calibration. All
+       three failing does, with each start's reason.
+     - `TargetlessDiagnostics::sweep` becomes the three starts, each with its focal length, outcome and
+       final cost per residual, and `swept` names the winner. The 21-candidate two-view sweep is
+       deleted.
+     - Tests over the stand-ins and through Ceres:
+       - the start nearest the truth wins, whether the truth is short or long;
+       - a failing start is reported;
+       - determinism holds.
+
+       On rendered footage (10e), the 40-sample runs that failed are Ready.
+     - Sabotages: the highest cost winning; a failing start ending the calibration.
+   - **10d: the homography test.**
+     - The geometry seam gains `homographies(pixelPairs, threshold, seed)`. Its facade,
+       `feature::homography`, measures each candidate's symmetric transfer error in source pixels and
+       chooses by the facades' rule. OpenCV's producer uses `findHomography` with USAC. The method is
+       pure virtual, so every backend answers it in this commit, as 7a's did.
+     - The seed rule: a candidate pair whose matches a homography explains, at 80% of them, is not a
+       seed (COLMAP's `max_H_inlier_ratio`, provisional). With no seed left, InitialisationFailed says
+       the footage turns or sees one plane. The test runs once, on pixels, before the three starts.
+     - **A risk, to be measured first.** At 40 samples adjacent frames are about 22 mrad apart, under
+       3 px of parallax between the wall and the box at f = 500, so a homography explains them. Seeds
+       today come from the pairs sharing the most tracks, which are those pairs. So the candidate set
+       must reach wider pairs, or dense footage has no seed.
+     - The stand-in geometry proposes each true pose pair's rotation homography.
+     - Tests:
+       - a pan refused, with that reason;
+       - a translating pair not refused;
+       - OpenCV's producer on two rendered views of a pan and of a translation.
+     - Sabotage: a test that never refuses, which the pan cases fail.
+   - **10e: end to end, and the comparison.** `test-camera-calibration-e2e`, Release only, built where
+     OpenCV and Ceres are. The camera is rendered in plain C++, so every number is judged against the
+     truth. The cases:
+     1. **One camera, both methods.**
+        - The footage: the path, a walk up to a 7 x 5 board of 120 mm squares standing in front of the
+          wall, and close views that swing the board to the corners. 48 frames, with the principal
+          point (8, -6) px off.
+        - Board and targetless calibration run on the same frames. Each is compared by ray mapping
+          with the truth and with the other.
+        - The footage must make the board Ready on every seed tried.
+     2. **The 40-sample runs that failed are now Ready**, at 640 x 480 and at 1280 x 720 (f = 1000,
+        registration-targetless/1's operating point).
+     3. **A rendered pan is refused** by 10d's test.
+     4. **Strong distortion leaves no frame unplaced** (k1 = -0.25, 1920 x 1080).
+     5. **Measured for the repo owner**, each decided in a follow-up commit before sub-slice 11 exposes
+        it:
+        - **the held-out angle across lenses.** The probe measured:
+
+          | Focal length | Held-out angle |
+          | --- | --- |
+          | 250 (wide) | 1.54 to 1.61 mrad |
+          | 500 | 1.0 to 1.55 mrad |
+          | 1000 | 0.82 mrad |
+          | 1500 | 0.6 mrad |
+
+          Against Ready's 1.5 mrad, the bound is near the noise for a normal lens and past it for a
+          wide one.
+        - **the default number of samples**: accuracy, outcome and time at 12, 20, 30 and 40.
+        - **the feature cap**: time at 1920 x 1080, over sub-slice 8's fine texture, where it binds.
+     - The operator guidance: the camera should translate as well as turn, should not keep one point
+       centred, and a narrow lens says little about its focal length.
+
+   **Cost:**
+   - At 640 x 480 the probe drew 48 frames in 7 s and calibrated in 5 to 15 s.
+   - At 1920 x 1080 it drew 24 frames in 22 s and calibrated in 10 to 12 s.
+   - Three starts multiply the reconstruction and adjustment by about three, not the resampling.
+
+   **Counts:**
+   - 10a and 10b: a case or two each, in `test-camera-ceres` and the stand-in suite;
+   - 10c: about four;
+   - 10d: about six, across the stand-in suite, `test-camera-opencv-features` and the nobackend suite;
+   - 10e: a new executable of about six cases, Release only.
+
+   **Docs:** each commit adds its built note here and an entry to CLAUDE.md.
+
+   **Sub-slice 10a built (2026-10-16): what a resample starts from, and the fit RMS.** As planned, with
+   one addition: the fit RMS's count is a field every calibration method reports.
+   - `ctest` **1271/1271** Debug and **1279/1279** Release with video, camera and Ceres on (+1 each),
+     **1152/1152** with all three off (unchanged, since the new case needs Ceres). Warning-clean,
+     format-check clean.
+   - **A resample starts as the adjustment does, through one routine.** The loop that narrowed the
+     placed frames until none was starved is now `startOver`, over `narrow` generalised from tracks to
+     units, so an entry a bootstrap draws twice is two. The adjustment calls it with every usable track.
+     Each resample calls it with its draw, over a new `fittedUnder`: the adjustment's frames under the
+     refined model, one track per refined landmark holding the observations the adjustment fitted, and
+     the refined poses and landmarks as the placement. So `reconstruction::startFrom` decides for both
+     which observations a start can see, and a resample leaves out one the refined model cannot project
+     rather than failing at Ceres' first evaluation. The resample's own loop over views and landmarks is
+     deleted: it was `startFrom`'s starvation rule without the projection test.
+   - **Where everything projects, a resample is the problem it was.** Its views, landmarks and
+     observations come out in the old order, and every value 9c measured still holds. One difference:
+     a resample that loses the adjustment's reference frame is now referenced to the next frame placed,
+     where it was view 0.
+   - **The fit RMS is over the observations not named outliers**, and their count is a new
+     `Diagnostics::fitResiduals` beside it. The plan put the count beside the RMS; the RMS is shared, so
+     board calibration fills it too, with every feature of its calibration views, the residuals its
+     estimator's RMS is over. The board golden changes on purpose in exactly its four diagnostics lines
+     (720 = 30 views of 24 corners, 480, 0 and 0), diffed before it was copied over.
+   - **`Outlier::rmsWhitened` is documented as the code had it:** infinite when the refined model
+     cannot project the observation, as well as when the start could not.
+   - **The new case**, in 9c's file: a Brown-Conrady camera whose distortion folds 44.8 degrees off its
+     axis, its image's corner at 40.3 (k3 = -0.15 at f = 500), over 24 frames and 200 landmarks. Eight
+     landmarks half a metre in front of the last frame, 55 to 60 degrees off frame 0's axis, are each
+     matched wrongly in frame 0. The adjustment starts from a neutral model, whose domain is unbounded,
+     so it fits all eight (`behind` is 0), and the refined model cannot project one, so each is named with
+     an infinite residual. Measured: 20 of 20 resamples produce a model, and the run is Ready.
+   - **The wrong-match case** pins the fit RMS: 0.167635 px over 1194 observations clean, 0.167596 over
+     1193 with the match 25 px out.
+   - **Two sabotages, both caught as predicted:**
+     - every observation a resample's start leaves out kept anyway: the new case fails, with no
+       resampling evidence ("fewer than two resamples produced an estimate") and Exploratory, the
+       probe's failure;
+     - the RMS over every projected observation: the wrong-match case fails, the RMS moving by 0.565 px
+       and the count staying at 1200.
+
+   **Sub-slice 10b built (2026-10-16): the principal point is freed by default.** As planned.
+   - `ctest` **1271/1271** Debug and **1279/1279** Release with video, camera and Ceres on, **1152/1152**
+     with all three off (no case added: the principal-point cases were rewritten in place).
+     Warning-clean, format-check clean.
+   - **`Settings::freePrincipalPoint` defaults to true.** The setting's comment says why: a held one sits
+     where it started and the held-out frames' poses absorb its offset. The header's step 6 says the
+     principal point is free unless the settings hold it. ADR-0016 and CONTEXT.md already said so,
+     amended when this was planned.
+   - **Cases that relied on the held default now say so.** 9c's fx-and-fy case holds it explicitly, for
+     what a held 1 px miss does to the focal lengths; the stand-in suite's case is now *freed unless the
+     settings hold it*, and its imported-model case expects a freed principal point.
+   - **9c's principal-point case gains an (8, -6) px offset, recovered by default:** exactly, the ray
+     mapping 2.3e-6 px out, every frame placed. The stand-in geometry, which proposes only true poses,
+     places a start 10 px off; the case had been 3 px off for fear it would not. Held, the same footage
+     ends with the ray mapping 10.7 px out and the held-out angle at 2.17 mrad, past Ready's 1.5, so
+     Exploratory. On exact tracks a held miss that large shows; on the probe's rendered footage, under
+     noise, the held-out frames absorbed one of 10 to 18 px and the model was Ready. The held section
+     now pins Exploratory and says which.
+   - **Freeing it costs the noisy cases a little, re-measured:**
+
+     | Case | Ray mapping, held | Ray mapping, freed | Principal point's variation |
+     | --- | --- | --- | --- |
+     | 12 frames, 120 landmarks | 0.96 px | 1.11 px | 0.67 mrad |
+     | 24 frames, 300 landmarks | 0.135 px | 0.374 px | 0.36 mrad |
+     | moving content | 0.30 px | 0.85 px | 0.86 mrad |
+
+     The increase is mostly the principal point's own error, 0.14 to 0.56 px, since the truth's sits
+     where a held one would. The bounds follow the measurements, each about twice its value. The exact cases recover the
+     truth as before, now to 2.5e-11 in focal length.
+   - **Sabotage, caught as predicted:** the default left held fails the offset case, and the noisy case
+     that now reads the principal point's variation; the stand-in suite's two default cases fail too.
+
+   **Sub-slice 10c built (2026-10-16): three starts.** As planned, with one addition its own tests
+   found: the starts are ranked by the frames they reconstructed before their cost.
+   - `ctest` **1273/1273** Debug and **1281/1281** Release with video, camera and Ceres on (+2 each),
+     **1153/1153** with all three off (+1). Warning-clean, format-check clean.
+   - **The starts are the centres of the geometric thirds of the sweep's range:** 260.25, 516.41 and
+     1024.69 for a pinhole at 640 wide, 1.9843 apart, so every focal length in its range is within a
+     factor of 1.41 of one; 396.88, 669.49 and 1129.33 for an equidistant fisheye, 1.6869 apart. The
+     21-candidate two-view sweep is deleted, `SweepCandidate` with it.
+   - **Each start is reconstructed and adjusted on its own** (`fitFrom`, steps 5 and 6), the three on
+     the pool. The held-out frames are chosen once before them; outliers, validation and resampling run
+     once, on the winner. An imported model under Initial or HoldAndValidate is the one start, and the
+     sweep stays empty.
+   - **The addition: the start whose adjustment kept the most frames wins; among those, the lowest final
+     cost per residual, ties to the shorter focal length.** A cost per residual compares fits of the same
+     footage only. Over 10a's fold scene, the start twice the true focal length reconstructed 3 frames of
+     19 at 0.45 per residual, the right start 17 at 0.87, and cost alone chose the three-frame fit,
+     Rejected. Ranking by reach first is the reconstruction's own rule for seeds. ADR-0016 and
+     CONTEXT.md record it. **For the repo owner to confirm:** a right start that loses one frame to a
+     wrong start that places all of them would lose too; 10e's rendered runs are where that would show.
+   - **`TargetlessDiagnostics::sweep` holds a `SweepStart` per start:** its focal length, the frames it
+     placed (kept for the adjustment, or before it failed), and its outcome, the final cost per residual
+     or a `FailureReason`. `swept` names the winner. What the reconstruction reports (the seed,
+     placement, unplaced frames, landmarks, refinement) is the winner's.
+   - **When every start fails, the calibration does:** the start that got furthest first (a seed posed,
+     then frames placed, then a usable adjustment), with its reconstruction's diagnostics, then every
+     other start's reason, each detail opening "from the start at f = ...". An imported start's failure
+     reads as it did.
+   - **The stand-in suite** (14 cases, +1):
+     - three starts at the thirds, the one nearest the truth the result, for a pinhole at 250, 500 and
+       1000 and a fisheye at 650; the others fail, reported (the stand-in geometry proposes only true
+       poses, so they place two frames or none);
+     - the lowest cost per residual winning, ties to the shorter, over a new `scene::resetSliding`
+       (a camera that only translates, whose rays every focal length explains, so every start adjusts)
+       and a final cost the pass-through refiner now takes from a script;
+     - each start posing at 4 px of its own focal length.
+   - **Through Ceres** (10 cases, +1): the nearest start wins whether the truth is short or long. At
+     f = 250 the start at 260.25 ends 0.49% out and Rejected for coverage (the scene fills 25% of so
+     wide a lens's image); at f = 1000 the start at 1024.69 ends 0.12% out, Ready. 9c's cases now start
+     at 516.41, 3% long, where the sweep had started at 465.96; every measured value was re-taken, and
+     Debug and Release give the same.
+   - **Found, and left for 10d: three starts make the stand-in pan reconstruct.** The middle start is
+     the camera's own model and refuses it for want of parallax, as before, but the start twice as long
+     poses five frames of the pan as an orbit, which only the verdict rejects. The pan case pins the
+     middle start's refusal and records the rest; 10d's homography test refuses the pan before any
+     start.
+   - **Three sabotages, all caught:**
+     - the highest cost winning: the scripted-cost case fails in all three of its rows;
+     - a failing start ending the calibration: 11 of the stand-in suite's 14 cases and all 10 of Ceres';
+     - cost alone deciding, the frames placed ignored: 10a's fold case, which is what pins the addition.
+
+   **Sub-slice 10d built (2026-10-18): the homography test.** As planned. The risk the plan said to
+   measure first did not materialise: on rendered footage at 40 samples a seed was always left.
+   - `ctest` **1280/1280** Debug and **1287/1288** Release with video, camera and Ceres on (+7 each),
+     **1159/1159** with all three off (+6). Warning-clean, format-check clean. The Release failure is
+     targetless registration's 100-camera scale case on its 120 s wall-clock bound under `-j8` (132 s);
+     alone it passes in 36.4 s.
+   - **The seam:**
+     - `GeometrySolver::homographies(pixelPairs, threshold, seed)`, pure virtual, so every backend
+       answers it in this commit: the null backends, the scripted and stand-in geometries, and OpenCV.
+     - The facade `feature::homography`: TooFew below four usable pairs; NoSolution when no candidate
+       explains four.
+       - Each candidate is normalised as a fundamental matrix is, and one that cannot be inverted is
+         not measured. The normalisation moved into a `normalised` both facades share.
+       - A pair is an inlier when the matrix carries A's pixel within the threshold of B's, and its
+         inverse carries B's within it of A's. Both distances are its residuals.
+       - It chooses by the facades' rule.
+   - **OpenCV's producer is `findHomography` under the same USAC settings** as its fundamental matrix,
+     on source pixels.
+     - On a rendered pan of 0.1 rad: the same matrix on all 20 seeds, holding all 626 correct matches
+       of 629, at 0.34 px RMS over its inliers both ways and 0.025 px over exact correspondences it
+       never saw.
+     - On two frames of sub-slice 8's path four apart: it explains 338 of 527 matches (64%), where a
+       fundamental matrix explains 521.
+   - **The seed rule, in `calibration/targetless.cpp`:**
+     - The test runs once, on pixels, before the held-out frames and the starts. It covers every pair
+       of frames sharing at least five tracks (the least a seed needs), at the 4 px every inlier test
+       uses.
+     - A pair whose shared tracks a homography explains, 80% of them, may not seed. The denominator is
+       every shared track. The tracks were verified by fundamental matrices when extracted, so they are
+       mostly correct matches.
+     - The anchor that guards the held-out frames is chosen from the pairs that may seed too, so a
+       held-out frame still cannot decide whether the reconstruction can start.
+     - `reconstruction::widest` now takes the edges a method lets seed, rather than a whole graph.
+       Registration does not call it.
+     - When every pair is refused, the calibration fails InitialisationFailed before any start. The
+       reason says a homography explains each of the N pairs, so the camera turned without moving or
+       saw one plane.
+     - `TargetlessDiagnostics` gains `seedPairs` and `seedPairsRefused`. The record's geometry is now
+       the test's.
+   - **The risk, measured first, through the probe in Release:**
+     - At 40 samples over sub-slice 8's path, 35 to 38 of the 780 pairs are refused for f = 500, and
+       63 to 69 for f = 250. The f = 500 seeds are frames one or two apart (19-21, 21-23, 19-20).
+     - All three f = 500 runs are Ready, 0.073 to 0.14% out in focal length.
+     - The three f = 250 runs are Exploratory on the held-out angle alone (1.54 to 1.62 mrad against
+       1.5), which is 10e's measurement of that bound.
+     - The candidate set needed no widening. It already holds every pair sharing five tracks, by how
+       many they share, so refusing the adjacent pairs leaves the next widest.
+   - **A rendered pan is refused:** 66 of 66 pairs at 12 samples, 276 of 276 at 24. Before, it was
+     posed as an orbit and judged Ready.
+   - **Found: distortion bends a homography, so a strongly distorted pan escapes the test.**
+     - A pan through k1 = -0.05, -0.1 and -0.15 is refused, at about 13, 26 and 38 px of corner shift.
+     - At -0.2 (51 px), 62 of 66 pairs are refused. The other 4 may seed (frames 1 and 6 do, at
+       111 mrad), and the pan is reconstructed as an orbit, judged Ready: 0.34% out in focal length,
+       1.3 px worst in ray mapping.
+     - The test works on pixels so that it needs no model, and a model is what undistorts. Recorded
+       for 10e's operator guidance (the camera should translate as well as turn), not fixed.
+   - **Tests:**
+     - The seam's, over a scripted geometry:
+       - the choice by measurement, whatever the candidates' order;
+       - the transfer distance in source pixels, both ways (a doubling homography, where one way is
+         half the other);
+       - TooFew, NoSolution, and a threshold that is not positive;
+       - a singular or non-finite candidate skipped, and the chosen one normalised.
+     - The nobackend suite: `homography` says the capability is missing.
+     - OpenCV's: a rendered pan's homography recovered on 20 seeds; a translating pair explained at
+       under 70% by a homography and over 98% by a fundamental matrix.
+     - The stand-in suite, three cases replacing 10c's pan case:
+       - **a pan refused before any start**, swept or imported: all 66 pairs refused, no start tried,
+         nothing held out, the refiner never asked, and each pair tested once at 4 px;
+       - **the parallax rule still reachable**: with a quarter of its landmarks moving, a pan is
+         explained at 75%, under 80%, so it seeds. Under the camera's own model most of its matches are
+         then at infinity (90 of 120; the moving 30 triangulate at a median 38 mrad);
+       - **a camera that moves is not refused** (0 of 66 pairs), and a pair of its frames that only
+         turns is refused and seeds nothing, both frames still placed or held out.
+     - The stand-in geometry proposes the rotation homography `K R K^-1` of each ordered pair of true
+       views that the sampled pairs lie within the threshold of.
+   - **Two sabotages, both caught as predicted:**
+     - the test never refusing: the pan case and the turned-pair case fail, and nothing else;
+     - the transfer measured one way only: the both-ways case fails.
+
+   **Sub-slice 10e built (2026-10-18): end to end, and the comparison. Sub-slice 10 is COMPLETE.** As
+   planned, with one deviation: over six seeds the plan's footage does not make the board Ready on
+   every seed. The case pins one seed, and the spread is recorded below.
+   - `ctest` **1284/1284** Debug and **1291/1292** Release with video, camera and Ceres on (+4 each; the
+     new cases SKIP in Debug), **1159/1159** with all three off (unchanged: the suite is built only with
+     both plugins). The Release failure is the 100-camera registration scale case below. Warning-clean,
+     format-check clean.
+   - **`test-camera-calibration-e2e`, four cases, Release only**, built where OpenCV and Ceres are. Each
+     case SKIPs in Debug, since a Debug build draws a frame in seconds. The suite takes about 3 minutes
+     on four cores. Every model is compared with the truth by its ray mapping: every 16th pixel's true
+     ray projected through the estimate, worst and mean.
+   - **Each case counts as four processors to ctest** (`PROCESSORS 4`), since each keeps the pool busy
+     for minutes. Under `-j8` without it they took 200 to 310 s each, and with it 6 to 154 s.
+   - **The 100-camera registration scale case misses its wall-clock bound under `-j8` more often now.**
+     Run beside this suite it took 181 s without the processor count and 154 s with it, against 120 s;
+     alone it takes 36 s. The bound is that case's own, recorded as a flake since 9b. A wall-clock bound
+     under parallel ctest wants the repo owner's call: a larger bound, the bound only when run alone,
+     or `PROCESSORS` on that case.
+   - **One camera, both methods** (the plan's footage, seed 3): the arc's 24 frames, 6 towards the
+     board, and 18 close views of a 7 x 5 board of 120 mm squares 1.2 m in front of the wall. The lens
+     is Brown-Conrady with k1 = -0.1 at 640 x 480, f = 500, the principal point (8, -6) px off. 48
+     frames.
+
+     | Model | Verdict | Focal error | Ray mapping, worst | Ray mapping, mean |
+     | --- | --- | --- | --- | --- |
+     | Board, against the truth | Ready | 0.071% | 1.19 px | 0.72 px |
+     | Targetless, against the truth | Ready | 0.033% | 0.56 px | 0.30 px |
+     | Targetless against the board | | 0.090% | 1.65 px | 0.93 px |
+
+     - The board is found in 33 of the 48 frames, and held out at 0.18 mrad against the targetless
+       method's 1.22.
+     - The targetless method's 40 sampled frames are all placed or held out. 170 of their 780 pairs
+       are refused as seeds, since the close views of the board in front of the wall are near one
+       plane.
+   - **The default 40 sampled frames, through three lenses** (seed 2, the arc's 40 frames, sub-slice
+     8's lens):
+
+     | Lens | Verdict | Focal error | Ray mapping, worst | Ray mapping, mean | Held out |
+     | --- | --- | --- | --- | --- | --- |
+     | f = 500 at 640 x 480 | Ready | 0.103% | 1.30 px | 0.77 px | 1.22 mrad |
+     | f = 250 at 640 x 480 | Exploratory | 0.123% | 1.83 px | 0.56 px | 2.19 mrad |
+     | f = 1000 at 1280 x 720 | Ready | 0.243% | 5.05 px | 2.33 px | 0.78 mrad |
+
+     The wide lens is Exploratory for one reason only: its held-out angle is past Ready's 1.5 mrad.
+     Over these two 640 x 480 lenses the plan's probe had seen three of six runs fail from the
+     two-view sweep: two Rejected, about 58% wrong, and one unable to start.
+   - **A rendered pan is refused before any start**: all 66 pairs of its 12 sampled frames, with
+     10d's reason.
+   - **Strong distortion leaves no frame unplaced**: k1 = -0.25 at 1920 x 1080, f = 1500, 24 frames,
+     20 sampled. The result is Ready, 0.094% out in focal length, 1.26 px worst and 0.90 px mean in
+     ray mapping. No second placement round is owed.
+   - **Each run is deterministic:** two runs of the whole suite check every value identically.
+
+   **Measured for the repo owner, each to be decided in a follow-up commit before sub-slice 11 exposes
+   it.** All are in Release, on four cores, with OpenCV and Ceres, through the probe the plan used.
+   1. **The held-out angle across lenses.** On the default texture the held-out residual is about
+      0.6 to 0.9 px whatever the lens, so the angle grows as the focal length shrinks:
+
+      | Focal length | Image | Held-out angle | Verdict |
+      | --- | --- | --- | --- |
+      | 250 | 640 x 480 | 1.54 to 2.19 mrad | Exploratory, on this alone |
+      | 500 | 640 x 480 | 1.09 to 1.35 mrad | Ready |
+      | 1000 | 1280 x 720 | 0.78 to 0.79 mrad | Ready |
+      | 1500 | 1920 x 1080 | 0.60 to 0.61 mrad | Ready |
+
+      A finer texture (4 times smaller cells) gives 0.05 to 0.40 mrad at f = 1500, depending on the
+      cap (item 3), since its features are smaller and localise better. Two options: state the bound in pixels, or as the held-out
+      residual whitened by each observation's stated covariance, which is independent of both the
+      focal length and the feature size. Either keeps a wide lens's accurate model from Exploratory.
+   2. **The default number of sampled frames**, at f = 500 on 640 x 480 over three seeds:
+
+      | Sampled frames | Verdicts | Focal error | Ray mapping, mean | Time |
+      | --- | --- | --- | --- | --- |
+      | 12 | Exploratory (principal point variation 2.27 mrad), Ready, Ready | 0.11 to 0.36% | 0.82 to 1.64 px | 3.5 to 4.2 s |
+      | 20 | Ready, Exploratory (held out 1.53 mrad), Ready | 0.10 to 0.15% | 0.56 to 2.03 px | 6.2 to 8.0 s |
+      | 30 | Ready, Exploratory (held out 1.57 mrad), Ready | 0.04 to 0.10% | 0.50 to 1.25 px | 12.8 to 15.0 s |
+      | 40 | Ready, Ready, Ready | 0.08 to 0.17% | 0.77 to 1.40 px | 19.3 to 22.7 s |
+
+      Accuracy barely improves past 20 frames; the verdict does, and only 40 was Ready on every seed.
+      The Exploratory runs at 20 and 30 fail on the held-out bound of item 1. The recommendation is to
+      keep 40 and revisit once item 1 is decided.
+   3. **The feature cap**, at 1920 x 1080 over sub-slice 8's fine texture (cell 0.01), where the cap
+      binds, 40 sampled frames, f = 1500:
+
+      | Cap and search | Verdict | Focal error | Ray mapping, mean | Held out | Pairs refused | Time |
+      | --- | --- | --- | --- | --- | --- | --- |
+      | 1024, Exact | Ready | 0.022% | 0.17 px | 0.05 mrad | 463 of 780 | 67 s |
+      | 2048, Exact | Ready | 0.006% | 0.16 px | 0.10 mrad | 318 | 171 s |
+      | 4096, Exact | Ready | 0.009% | 0.17 px | 0.20 mrad | 48 | 477 s |
+      | 8192, Approximate | Ready | 0.005% | 0.28 px | 0.40 mrad | 0 | 212 s |
+
+      8192 Exact was not run: sub-slice 8 worked its matching out at 18 minutes on four cores.
+      Accuracy is saturated by 1024 to 2048 features, and the time grows about 2.7 times a doubling.
+      The recommendation is a default cap of 2048. Also found: the homography test refuses more pairs at
+      a low cap (463 at 1024, 0 at 8192), since the strongest features of a fine texture concentrate on
+      the dominant wall. Every frame was still placed.
+   4. **Found: the targetless verdict does not see a principal point several pixels off.**
+      - At f = 1000 on 1280 x 720 all three seeds are Ready, 0.20 to 0.24% out in focal length and 1.5
+        to 4.7 px mean in ray mapping. The principal point is up to 3.9 px off, against a resampled
+        variation of 1.7 to 2.0 mrad and a held-out angle of 0.78 mrad.
+      - On the both-methods footage the targetless model is Ready on all six seeds tried. Three are
+        0.30 to 0.36 px mean in ray mapping. The other three are 2.7 to 4.4 px mean, their principal
+        point 2 to 4 px off, and their resampled variation is the same 0.4 to 0.75 mrad.
+      - The cause is what 10b found for a held principal point, in a weaker form. The held-out frames
+        are posed against the refined landmarks, so their poses absorb a principal point error. And
+        each resample starts from the result (10a), so the bootstrap measures the spread around a
+        minimum, not whether it is the right one.
+      - Options: resample frames as well as tracks; report when two of the three starts reach
+        different models at comparable costs; or require the principal point's variation to cover
+        its distance from where the other starts put it. None is built.
+   5. **Found: a printed board's repeated pattern misleads the targetless fit.** The same path without
+      the board stays within 0.27 to 1.61 px mean over the same six seeds, and with the board three of
+      the six are 2.7 to 4.4 px out (item 4). The board's corners and markers repeat, and verified
+      wrong matches between them lie on epipolar lines. The operator guidance says so.
+   6. **Found: board calibration's stability is decided by one resample.** On the both-methods footage
+      the board is Ready on four seeds of six. On the other two it is Rejected, for focal variations
+      of 89% and 32%. Each time one bootstrap resample's estimate is far out, and the variation is a
+      standard deviation. The board models themselves are 0.01% and 0.03% out in focal length. This is
+      the robust-statistic question already queued for registration's held-out evidence (Outstanding
+      index); a median absolute deviation, or a trimmed spread, would settle both.
+   7. **10c's deviation was never exercised.** In every run here all three starts placed the same
+      number of frames, so the cost alone chose. The rule that ranks by frames placed first still
+      wants the repo owner's confirmation; nothing measured here argues for or against it.
+   8. **A narrow lens is Rejected, as it should be**: f = 1100 on 640 x 480 (a 32 degree field), 6.0
+      and 7.6% out in focal length on two seeds, Rejected. The verdict catches it, so the guidance only
+      warns.
+
+   **Operator guidance** is in `targetless.h`, where a caller looks:
+   - the camera translates as well as turns;
+   - it does not keep one point centred;
+   - it uses a wide field of view;
+   - no repeated pattern fills the frame.
+
+   It also says that a pan through a strongly distorted lens can escape the homography test (10d's
+   finding).
+
+   **Three sabotages, all caught; two were wider than predicted:**
+   - the homography test never refusing (10d): predicted to fail the pan case and case 1's count of
+     refused pairs. It also fails case 1's targetless model: Exploratory, 0.46% out in focal length
+     and 7.0 px mean in ray mapping. Close views of the board seed a wrong reconstruction when they are
+     allowed to, so 10d's test protects this footage too;
+   - the highest cost per residual winning (10c): every case but the pan fails, as predicted;
+   - the principal point held by default (10b): predicted to fail case 1. It also fails the normal and
+     the wide lens on ray mapping, each still Ready, as 10b found. The HD and 1080p cases pass, since
+     their 1.3 px offset is small at their focal lengths.
+
+   **After sub-slice 10e: the recommendations taken (decided by the repo owner, 2026-10-19).** Each
+   is its own commit:
+   - **A moving camera's feature cap is 2048** (item 3). `SequenceExtractionRequest`'s constructor
+     sets it, since a derived aggregate cannot give a base member another default. The fixed rig's
+     cap stays 8192, the repo owner's decision of 2026-10-09: sub-slice 9 measured that it never binds
+     on that footage, and real footage is still owed. The request is no longer an aggregate, and
+     nothing brace-initialised one with values.
+     - **No case moves.** The default texture never reaches the cap: across the end-to-end suite, with
+       the cases instrumented, no frame brought more than 964 features and none was capped. Every
+       case that measures the cap names the cap it measures.
+     - **A new case pins the two defaults apart**, constructed and value-initialised. Sabotage: the
+       constructor defaulted, and both of its 2048 checks fail.
+     - `ctest` 1285/1285 Debug and 1293/1293 Release with video, camera and Ceres on (the three
+       100-camera scale cases run on their own), 1160/1160 with all three off.
+   - **40 sampled frames stays the default** (item 2). Its comment now carries the measurement.
+   - **10c's ranking stays** (item 7): the start that placed the most frames wins, then the lowest
+     cost per residual. Nothing measured argues against it, and a cost per residual compares fits of
+     the same frames only.
+   - **A calibration's stability is a robust spread** (item 6). `calibration::detail::stability`, which
+     both methods share, took the standard deviation of the resampled fx, fy, cx and cy. It now takes
+     the median absolute deviation from the median, times 1.4826 (one over the standard normal's third
+     quartile), so for normally spread estimates it is the standard deviation and the profiles' bounds
+     keep their meaning; the focal and principal-point variations are over the median focal length. A
+     bootstrap draw that leaves too few views to condition the model gives an estimate far from every
+     other, and fewer than half the resamples can now lie anywhere without moving the spread.
+     - **Measured on the both-methods footage, six seeds:** board calibration is Ready on all six,
+       where it was Rejected on two (focal variations of 89% and 32%). Its focal variation is now
+       0.081 to 0.147% and its principal-point variation 0.91 to 1.52 mrad, the models 0.009 to 0.071%
+       out in focal length.
+     - **Targetless calibration's spread shrank where its resamples agree**: its principal-point
+       variation on that footage is 0.025 to 0.43 mrad on the seeds whose model is right and 0.29 to
+       0.68 on the three 2.7 to 4.4 px out (item 4, still open), against 0.4 to 0.75 as a standard
+       deviation. Most resamples land on one answer and a few far from it.
+     - **The golden changes in its two resampling lines only** (focal 1.6857e-05 to 1.647e-05,
+       principal point 3.576e-06 to 3.696e-06; the held model's focal 7.2312e-05 to 7.9912e-05): on
+       well-behaved resamples the two statistics agree within a few percent.
+     - **A new case** (`test_calibration.cpp`): the stand-in answers one resample of twenty half as
+       long again, and the result must stay Ready with a variation under 1e-4 (4.4e-6 measured).
+       Sabotage: the standard deviation restored gives 10.9% and Rejected.
+     - **The seeded-draws case needed a finer fingerprint.** Its stand-in's focal length was the
+       number of distinct views drawn, and the median absolute deviation of whole numbers came out the
+       same for two seeds. It now adds a term for which views were drawn.
+     - Registration's resampling evidence (an RMS about the result per camera) is unchanged; it is
+       queued with registration's robust held-out statistic in the Outstanding index.
+   - **Targetless calibration judges its held-out residual whitened, not as an angle** (item 1). A
+     scene feature is located to a fraction of a pixel whatever the lens, so a fixed angle held a wide
+     lens to a tighter bound than a long one: through f = 250, an accurate model (0.12% in focal
+     length) was Exploratory on its held-out 2.19 mrad alone. Whitening by the stated covariance, per
+     axis, was chosen over pixels, since the profile's contract is that every criterion is
+     resolution-independent, and a pixel bound would hold an 8K camera's features to a VGA camera's.
+     - **`HeldOutEvidence::rmsWhitened`**: each held-out residual whitened by its observation's
+       covariance, through the same `whitenedSquared` the refinement and registration's validation
+       use, summed, and divided by twice the count (two degrees of freedom a residual), so 1 means as
+       precise as stated. Absent when an observation states no covariance, and board calibration does
+       not measure it: its corners rarely state one.
+     - **A new criterion, `FitnessThresholds::maximumHeldOutWhitened`**, infinite unless a tier judges
+       it, with an override. `reconstruction-targetless/1` judges it at 4 for Ready and 8 for
+       Exploratory and leaves the angle unjudged (infinite); `reconstruction/1` is unchanged. A tier
+       that judges it needs the evidence to be Ready, as every other criterion does. The targetless
+       profile was provisional until sub-slice 10 measured it, so its numbers change under the same
+       name.
+     - **Measured** (the end-to-end suite, Release): the right models are 1.80 to 2.87 whitened at
+       focal lengths of 250 to 1500 and on the both-methods footage (2.16), where their angles went
+       from 0.61 to 2.19 mrad; the probe's wider set of lenses, resolutions and textures ranged 1.2 to
+       2.9. Above 1 because a small feature states less than its true error (sub-slice 7's follow-up
+       A). Through Ceres on stand-in tracks, noise at the stated covariance measures 1.18, and a
+       principal point held 10.7 px off 6.03, so that case is still Exploratory, now on this criterion.
+     - **Neither statistic sees a wrong model whose error the reconstruction absorbs.** On rendered
+       footage, a principal point held 10 px off and no distortion model on a distorted lens each
+       validated as well as the truth, whitened and as an angle: the held-out frames' poses take up
+       the error. Item 4 is where that is addressed; this criterion only stops holding a wide lens to a
+       tighter bound. Said in the profile's comment and ADR-0016's amendment.
+     - **The wide lens is Ready now**, and the end-to-end case says so; every case pins its whitened
+       residual. Two Ceres cases check it: the noise case bounds it to 0.8 to 1.5, and the held
+       principal point's must exceed 4. Stand-in cases (`test_calibration.cpp`) judge each tier on
+       hand-built evidence, and a targetless report without the evidence is at most Exploratory.
+     - **The board golden changes in eleven lines, each by one printed field**: its four thresholds
+       lines gain an `inf` a tier, its three held-out lines `rmsWhitened unset`, and its four overrides
+       lines an `unset`. No number moves.
+     - **Two sabotages, both caught as predicted.** The RMS over residuals rather than axes reads each
+       value 1.41 times high, failing the Ceres noise case's upper bound (1.67) and turning the held
+       principal point Rejected (8.53). A judge that ignores the bound fails the stand-in tiers' two
+       sections and leaves the held principal point Ready.
+     - `ctest` 1288/1288 Debug and 1296/1296 Release with video, camera and Ceres on, 1163/1163 with
+       all three off.
+   - **The scale cases run with nothing beside them** (item 8). `test-camera-ceres`'s four `[scale]`
+     cases are discovered apart from the rest of the executable, with `RUN_SERIAL`, so ctest starts
+     nothing else while one runs. Each keeps the process pool busy, and the 100-camera targetless
+     registration bounds its wall-clock time at 120 s, a bound that means something only while the case
+     has the cores: under `ctest -j8` beside the end-to-end suites it took 154 to 181 s, and 36 s alone.
+     The other options were a larger bound, which would stop catching a real slowdown, or `PROCESSORS`
+     on the case, which reserves slots out of whatever `-j` the caller chose and so leaves it alone only
+     when its count reaches that `-j`. A second `catch_discover_tests` call with a `TEST_SPEC` is the whole change: Catch2's
+     discovery names its include file after a hash of its arguments, so the two calls do not collide.
+     - **Measured:** the whole Release suite at `-j8` passes 1296/1296 with the end-to-end suites
+       running, the four scale cases last and alone: the 100-camera targetless registration in 35.5 s,
+       board registration 17.4 s, the free model 8.0 s and the landmarks 4.2 s.
+     - Nothing else moved: the same 49 cases are discovered (45 and 4), and Debug, where the scale
+       cases skip, is unchanged.
+   - **The principal-point blind spot stays open: resampling frames was measured and refused** (item 4).
+     The recommendation taken was to resample frames as well as landmarks, since a frame's observations
+     share its pose's error. It was built (each resample draws the fitted frames with replacement, a
+     frame drawn k times contributing each observation k times, from an engine of its own) and measured
+     before anything was committed:
+     - **It does not see the wrong minimum.** On the both-methods footage the three seeds whose model is
+       2.7 to 4.4 px out gave a principal-point variation of 4.49, 1.80 and 1.60 mrad against Ready's 2,
+       and the right ones 0.06 to 0.63: one of three flagged. On one of them, across ten draws (five
+       seeds at 20 and at 60 resamples) it was 0.62 to 1.80, never past the bound; a right seed's was
+       0.46 to 0.75. A prototype with another draw seed had flagged two of the three, which was luck.
+     - **It is noisy enough to change verdicts on the same footage.** The HD lens's model (2.33 px out)
+       gave 1.52 to 3.21 mrad across five draws at 20 resamples and 1.70 to 3.04 at 60, Exploratory on
+       two draws of five either way; the normal lens's right model (0.77 px) gave 0.92 to 2.38 at 20, and
+       was pushed out of Ready on one draw. Sixty resamples cost 2.2 times twenty.
+     - **Comparing the three starts does not see it either**, the other option listed. On the three
+       wrong seeds both losing starts ended in far worse minima (a cost per residual of 6.8 to 13 against
+       about 2, focal lengths 9% or more out), which say nothing about a winner a few pixels out. Where
+       two starts did agree, it did not mean right: the HD lens's two longer starts reached its 2.33 px
+       model within 0.2 px, the normal lens's its 0.77 px model within 0.1 px, while a right board seed's
+       long start ended 3.3 px from its winner.
+     - **What does differ is the winner's cost per residual**: 1.97 to 2.07 on the three wrong seeds, 1.68
+       on the right one. That points at wrong tracks from the printed pattern's repeated corners biasing
+       the fit, which the robust loss does not discount, rather than at a flat valley the bootstrap
+       fails to explore. So the remedies left are in the evidence (an outlier pass, or tracks the board
+       does not alias) or a precision the refiner states (Ceres' covariance of the principal point,
+       with its correlation to the poses), each a decision for the repo owner.
+     - **Found by the first CI run after the robust spread: macOS arm64 shows the blind spot.** OpenCV's
+       SIFT finds other features there (board calibration's numbers are bit-identical across platforms,
+       the targetless method's are not), and on the same footage the targetless model of the
+       both-methods case is Ready at 3.05 px on average (it had been Exploratory on its principal point's
+       variation as a standard deviation, 2.22 mrad), the strongly distorted lens Ready at 2.70 px, and
+       the HD lens Exploratory on 2.38 mrad. Linux gives 0.30, 0.90 and Ready. Windows' features differ
+       too: the both-methods case's targetless model is 1.23 px out there, the two models 1.80 px apart.
+     - **So the end-to-end cases pin what holds on both platforms.** The board half is unchanged. The
+       targetless half of the both-methods case is bounded by the printed board's minimum (5 px on
+       average, 0.3% in focal length), since which seeds land in it depends on the platform's features;
+       the distorted lens by 3.5 px; the HD lens may be Exploratory, but only on its principal point's
+       variation. Each case records both platforms' numbers.
+
+   **feature/M9's first CI runs (2026-10-19).** The branch had never been built by CI (the Outstanding
+   index's *Verification owed*), so slices 2 to 4, and the 10e recommendations, were first built on
+   macOS and Windows here, through `workflow_dispatch`. Five runs; the first four found eight things,
+   each answered in its own commit:
+   - **Run 33 (`321b732`).** Linux green on all three legs. **Windows failed to build on MSVC's C4456**
+     (a local hiding another, `k` in `extraction.cpp`), which GCC reports only under `-Wshadow`; a
+     `-Wshadow` sweep of the camera and flowview sources found two more. **macOS was cancelled at the
+     leg's 90-minute timeout, still in Build**: `cmake --build --parallel` with no count is `make -j`
+     with no limit, which thrashed the runner (3 cores, 7 GB) on Ceres' Eigen-heavy sources. Every
+     build step now names its runner's core count; macOS Build went from over 92 minutes to 7.
+   - **Run 34 (`9cac016`).** **Windows failed to build on C4701** (possibly uninitialised): GLM's
+     default-constructed matrix is uninitialised, and four matrices filled in a loop in the OpenCV
+     plugin now start at zero. **macOS failed the targetless registration golden** on one word: the
+     worst camera, chosen among three equal variations by rounding noise. The printer now writes `-`
+     when the worst variation prints as zero. **Linux Release failed the 100-camera targetless scale
+     case's wall-clock bound** (139 s against 120) beside the end-to-end suites; the scale cases now run
+     serially (item 8 above). **macOS failed two end-to-end calibration cases** (below).
+   - **Run 35 (`217deac`).** Linux, clang-format and the subproject smoke green; Windows built.
+     **Windows failed two flowview verticals** searching a report for `rig/cam` where Windows names
+     the camera `rig\cam0`. **Windows and macOS failed end-to-end calibration cases** on numbers: their
+     SIFT finds other features, and the targetless method lands in the principal-point blind spot on
+     macOS (item 4 above). The cases now pin what holds on every platform.
+   - **Run 36 (`2a0e62b`).** Six of seven legs green: Linux Release 1296/1296 (the targetless scale case
+     40.7 s, serial), Linux Debug 1288/1288, video-off 1163/1163, macOS 1296/1296, clang-format and the
+     subproject smoke. **Windows failed one assertion**: the stand-in detector returned at once, so the
+     caller, which takes part in the pool, ran all 40 frames before a worker woke, and "the resampling
+     draws are seeded" saw one thread. The scene gains an opt-in detection time (2 ms in that case
+     alone, as the flow scheduler's several-threads case sleeps), and 20 Release sweeps pass here.
+   - **Run 37 (`2fe9abc`): green on all seven jobs.** Linux Release 1296/1296 (the targetless scale
+     case 40.6 s), Linux Debug 1288/1288, video-off 1163/1163, macOS 1296/1296, Windows 1296/1296,
+     clang-format and the subproject smoke; every ctest leg also passed its flowview binary and
+     example-document smokes.
+
+   **A second adjustment without what the first's result does not explain (item 4, 2026-10-19).** Of
+   the remedies item 4 left, the outlier pass was tried first and built. After a start's bundle
+   adjustment, a second runs from its result without the observations whose whitened residual exceeds
+   the loss scale (3), the definition of an outlier every method shares, so no new number. It starts
+   through the routine every bootstrap resample starts through (`restartFrom`, factored out of
+   `resampled`): the result's frames and landmarks, a landmark left with fewer than two observations not
+   refined, a frame left seeing too few landmarks reported unplaced, fewer than three frames left
+   `TooFewViews`. When the first result explains every observation it fitted there is no second, so a
+   clean fit is unchanged bit for bit. The report counts `TargetlessDiagnostics::pruned`, its
+   refinement summary is the second's, and each observation the second left out is named an outlier
+   with its residual under the first's result; one the first's start left out for cheirality is still
+   named, with an infinite residual. Outliers are listed in capture order of their tracks, then of
+   their frames.
+   - **Measured on the both-methods footage, six seeds** (mean ray-mapping error, before and after):
+     0.35 and 0.46 px, **3.28 and 0.22**, 0.30 and 0.23, **2.69 and 0.21**, **4.43 and 0.55**, 0.34 and
+     0.44. Every seed is within 0.6 px and 0.045% in focal length, its principal point within 0.6 px of
+     the truth. Each second adjustment left out 1231 to 1623 observations of about 14,000.
+   - **The plain scene through two lenses improved on every seed:** f = 250, 1.34, 0.56 and 0.42 px to
+     0.68, 0.40 and 0.21 (the first seed's worst from 8.77 to 1.50); f = 500, 1.35, 0.77 and 1.40 to
+     1.18, 0.47 and 0.62, with the resampled principal-point variation tighter on every one.
+   - **It does not answer the HD lens**, which sees no board: f = 1000 at 1280x720, 4.71, 2.33 and 1.47
+     px to 3.56, 2.08 and 1.45, Ready on all three (the third had been Exploratory). That lens's error
+     has another cause, and stays open.
+   - **The strongly distorted 1080p lens moved the other way**: 0.90 to 1.25 px on average, 1.26 to
+     1.56 at worst, still Ready.
+   - **A start is ranked by its first adjustment.** Repeating the pass three times on seed 2 let the
+     long start shed 44% of its observations and fit the rest at 0.321 per residual, against the right
+     start's 0.340: ranked by the last adjustment, it would have won. A second adjustment keeps
+     whatever agrees with its own start's minimum.
+   - **One pass, not repeated to convergence.** Further rounds moved the right minimum by about a tenth
+     of a pixel either way (seed 1, 0.46 to 0.56; seed 5, 0.55 to 0.43), and each lets a wrong start
+     shed more. A cut at twice the loss scale also removed the minimum (seed 2, 0.48 px), so the result
+     does not hang on the scale.
+   - **The stand-in refiner hands back its start, which is no minimum**, so on the stand-in scene a
+     second adjustment leaves out much of the evidence (1078 observations from the start 3% short). The
+     four stand-in cases about something else run under an infinite loss scale, named for why; three
+     new cases pin the pass itself (what it leaves out and names, the ranking, a left-out observation
+     still named). The Ceres moving-content case now sees none of the moving tracks in its held-out
+     frames (each keeps one observation, so its landmark is not refined): 0.405 mrad over 216 held-out
+     observations, where 18 were beyond the inlier angle and the rest measured 0.846.
+   - **End to end:** a new case pins seed 5 (0.55 px, 1.03 at worst, its principal point 0.53 px off);
+     the both-methods case's targetless bounds tighten to 1.5 px on average and 3 at worst, where they
+     had been set by macOS's 3.05 px minimum. **CI run 38 (`f343276`) is green on all seven jobs**, the
+     end-to-end cases run on each Release leg (1300/1300 on Linux, macOS and Windows), so macOS's and
+     Windows' features land within the tightened bounds too: on macOS the both-methods case's model is
+     within 1.5 px where it had been 3.05 px out, and seed 5 within 1.5 px. The values themselves are
+     not printed on a pass.
+   - **Four sabotages, all caught as predicted.** Ranking by the second adjustment fails only the
+     ranking case. No second adjustment fails the two new stand-in cases, the Ceres moving-content case
+     (18 held-out outliers, 0.846 mrad) and, in Release, the seed-5 case at 4.43 px, Ready. Not naming
+     the first start's left-out observations fails only the case that makes one.
+
+   **The HD lens: a covariance from the refiner was measured and refused (item 4, 2026-10-19).** The
+   last remedy left for the HD lens (f = 1000 at 1280x720), Ready 1.45 to 3.56 px out over three seeds.
+   A probe computed the free model's marginal covariance from the final adjustment's Jacobian, robust
+   weights applied: the landmarks eliminated, the reduced system over the frames and the model
+   pseudo-inverted (its one null direction is the scale, which has no model component). Nothing was
+   committed.
+   - **It agrees with the landmark bootstrap, and is as blind.** On HD it gives the principal point 0.59
+     to 0.65 px in x and 0.71 to 0.74 in y (0.95 mrad together), where the bootstrap gave 0.7 to 1.0
+     mrad. The errors are 3.05, 1.44 and 0.90 px, the worst five of its standard deviations, and inside
+     Ready's 2 mrad it would leave every verdict as it is. Scaled by its own variance factor (0.36 to
+     0.50) it is smaller still.
+   - **The understatement is not the HD lens's.** At f = 250 it gives 0.07 and 0.10 px against errors
+     up to 4 of them; at f = 500, 0.28 and 0.35 px against errors up to 3; on the board footage 0.17
+     and 0.21 px against errors up to 2.
+   - **The data puts the minimum there.** Started at the truth, the adjustment ended within 0.3 px of
+     where the free one did on every HD and lens seed (0.36 and 0.73 px on the two board seeds), and the
+     truth held costs as much per residual (HD seed 1: 0.3290 against 0.3281) and validates no better. On HD the principal point trades against tangential distortion: cx
+     correlates 0.91 with p2, cy 0.87 with p1.
+   - **The observations carry no systematic bias, but more noise than they state.** Against each
+     track's consensus surface point through the truth, the HD residuals have no mean offset (under 0.01
+     px), no linear trend across the image and no radial component; so do f = 500 and the board
+     footage. Per axis, though, the smallest quarter of HD features errs 0.56 px against a stated 0.06
+     to 0.23 (about 3.5 times), and the rest 1.5 to 1.6 times their stated sigma; the smallest features
+     err more than the middle ones while weighing the most. The covariance inherits that understatement,
+     and the landmark bootstrap, which treats landmarks as independent, does not see past it.
+   - **So the HD error is imprecision the stated noise hides, not a bias the data could reveal.** What
+     would let a precision measure see it is an honest feature covariance: the localisation model
+     (`localisationPerSize`, 0.034 of a feature's size) understates the smallest features most, as
+     follow-up A had found at half scale. Resampling frames, which saw 1.5 to 3.2 mrad on this lens, was
+     refused earlier for its noise.
+
+   **Sub-slice 11 planned (2026-10-19) as three commits, 11a to 11c.** The fallback becomes a graph:
+   a targetless calibration node, the attempts and their acceptance in the library, and the three small
+   nodes that switch the gates and combine the reports.
+
+   **Decided with the repo owner:**
+   - **Sub-slice 11 goes ahead with the HD lens open.** 10e's last open finding, the HD lens Ready 1.45
+     to 3.56 px out with an honest feature covariance left to the repo owner, no longer blocks exposing
+     the node. `calibrateCameraTargetless`'s header points at `targetless.h`'s guidance, which already
+     says a Ready model can be a few pixels out.
+   - **The report pins are dynamic, as Merge's branches are.**
+     - `nextAttempt` and `calibrationAttempts` start with no report pins, and the canvas "+" adds
+       them, named `in<N>`.
+     - Every pin is Optional, so a skipped attempt's empty report suppresses neither node.
+     - The order the pins were added is the priority order. Neither node knows which method a pin
+       carries.
+     - The alternative was fixed `board` and `targetless` pins: simpler to wire, but a third method
+       would change both nodes.
+   - **Three commits:**
+     - **11a**, with no change in behaviour, held by the existing tests: the shared base and helpers.
+     - **11b**, `calibrateCameraTargetless`.
+     - **11c**, the attempts and the fallback nodes.
+
+   **Found while planning:**
+   - **A new kind reaches flowview in the commit that adds it.**
+     - `scene.cpp` offers `availableCameraNodeKeys()`, and `canvasstyle.cpp` colours
+       `cameraNodeKeys()`, so a kind appears without wiring.
+     - `apps/flowview/test/test_catalog.cpp` holds an expectation for every camera kind, and a census
+       that every param has a codec, a `Default{}` input's param included.
+     - So each commit that adds a kind updates `test_catalog.cpp`, `test_registration.cpp` (its
+       `kAllKinds` and staged lists) and `test_targetlesskinds.cpp`.
+     - **The `calibration::Method` codec, and with it `editEnum<Method>`, move from item 12 to 11c.**
+   - **Availability:**
+     - `calibrateCameraTargetless` asks `refinement::canRefine()`, as registration does, not whether
+       some model is estimatable: the null refiner the staging tests register estimates nothing, and
+       the board row asks only whether its backends exist.
+     - `cameraModel` is offered with board calibration alone today. It becomes "any calibration" in
+       11b, so a build with only the targetless backends offers it.
+   - **The two stand-in worlds cannot share a translation unit.**
+     - `syntheticboard.h` declares a function `testing::scene()`, and `syntheticscene.h` a namespace
+       `testing::scene`. The board one becomes `boardScene()`: 31 uses in 4 files.
+     - They also answer different footage. The board stand-ins draw on 960 x 720 blank frames, and the
+       scene stand-ins on 640 x 480 frames whose first two pixels name the camera and the frame.
+     - `SceneSource`'s `spec()` and `decodeFrame` therefore take their extent from the scene's
+       `model()`, which is still 640 x 480 by default. `resetMoving(…, camera)` through the board
+       stand-in's true camera then gives one footage both worlds answer.
+     - The board scene's frame count must equal the footage's, since the detector poses each frame by
+       `boardPose(ordinal, frames)`.
+   - **No stand-in case reaches a Ready targetless verdict today**; the only verdict asserted is
+     Exploratory. Ready needs ten fitted frames and 0.6 coverage. 11c probes the frame and landmark
+     counts first, under an imported true model with Initial.
+   - **An output `compute` does not write keeps its previous value**, so `calibrationAttempts` clears
+     `accepted` explicitly, as `cameraModel` clears its model.
+   - **Zero attempts has more than one cause:** footage missing upstream, a missing board
+     specification under Board, or a suppressed `method`.
+   - **Owed to item 12:** an unbound boundary pin is empty, which suppresses `calibrationMethod`, so its
+     default never applies through one.
+   - **An enum on a port describes as its type** (`<lain::camera::calibration::Method>`), since
+     `meta::toString` has no enum arm. `method` is the first enum carried on a port.
+   - **Not a gap: the extraction's verification seed** stays at its default in both targetless nodes.
+     The request's seed governs each method's own geometry (`calibration/targetless.cpp`'s seed and
+     homography tests), and `registerCamerasTargetless` leaves its extraction's alone too.
+
+   **11a: the shared base, with no change in behaviour.**
+   - **`CalibrationNode`**, modelled on `RigRegistrationNode`:
+     - its protected constructor declares `footage : media::FrameSequence` as input 0;
+     - `declareRequest()` declares `imported : CameraModel` (Optional), then the params `model`,
+       `importedPolicy`, `fitnessProfile`, `heldOutFraction`, `resamples`, `seed` and `deterministic`,
+       each defaulted from `calibration::Request`;
+     - `request(evaluation)` applies the existing rules: `detail::decimal`, counts clamped at 0, and a
+       seed keeps its bits.
+   - **`calibrateCamera` is rebased.**
+     - Its inputs keep their positions: footage 0, board 1, then `declareRequest()`, so imported is 2.
+     - Its own params follow: `maximumViews` (board's alone, per `request.h`), `longestSide`,
+       `refineNative` and `minimumCorners`.
+     - So `maximumViews` moves from the fourth Inspector row to the eighth. Params are saved by name,
+       and no document, golden or test reads their order. The precedent is `pixelSigma` in slice 3's
+       sub-slice 10.
+   - **Two private helpers lifted from `RegisterCamerasTargetlessNode`**, so that each has two callers:
+     - `detail::extractionSettings` maps the five `feature::ExtractionSettings` fields both targetless
+       nodes take: `longestSide`, `featureCap`, `matchSearch`, `matchRatio` and `minimumPairInliers`.
+     - `detail::identityOf(footage)` is the footage's first source, or empty, as `rig()` spells inline.
+
+     `registerCamerasTargetless` and `rig()` are rebased on them.
+   - **Held by the existing tests:** `test_nodes.cpp`'s *calibrateCamera hands its settings to the
+     method*, and `test_registertargetless.cpp`.
+   - **Sabotage:** the base reading `heldOutFraction` without `detail::decimal` fails the settings case.
+
+   **11b: `calibrateCameraTargetless`.**
+   - **The node**, on `CalibrationNode`:
+     - inputs footage 0 and imported 1;
+     - its own params, each defaulted from `feature::SequenceExtractionRequest` and
+       `targetless::Settings`: `longestSide` (1920), `sampledFrames` (40), `featureCap` (2048),
+       `matchSearch`, `matchRatio`, `inlierPixels` (4.0, the extraction's Sampson threshold),
+       `minimumPairInliers`, `loss`, `lossScale` and `freePrincipalPoint` (true);
+     - output `report`.
+   - **What it runs:** `targetless::calibrate(CameraFootage{identityOf(footage), footage}, settings,
+     request)`. The request's execution policy governs the extraction, as the method records it.
+   - **Its header** names the method and points at `targetless.h`'s guidance: the HD lens, and footage
+     that keeps one point centred.
+   - **The kinds table:**
+     - `kCalibrateCameraTargetlessKey = "calibrateCameraTargetless"`;
+     - its capability, `canCalibrateTargetless`, is extraction, matching, geometry and `canRefine()`;
+     - `cameraModel` becomes `canCalibrate || canCalibrateTargetless`.
+   - **Tests:**
+     - **the settings handed to the method**, every param read back from the report's request and
+       `TargetlessRecord`. Both are recorded before any check, so a refusal for missing backends shows
+       them as well as a run does;
+     - **calibrating through the node is calling the method**, in the scene stand-ins' executable,
+       compared through `targetlesscalibrationtext.h`'s printer;
+     - **empty footage** is the method's refusal, in a report;
+     - **availability staging**: `test_targetlesskinds.cpp` offers `calibrateCameraTargetless` and
+       `cameraModel` with no board backend;
+     - **flowview's catalog**: `calibrateCameraTargetless` is offered with OpenCV and a refiner.
+   - **Sabotages:** `freePrincipalPoint` left unmapped fails the settings case. `cameraModel` left on
+     board's capability fails the targetless staging.
+
+   **11c: the attempts, and the fallback nodes.**
+   - **The library** (`calibration/attempts.h`):
+     - `enum class Method { Board, Targetless, BoardThenTargetless }`;
+     - `includes(selected, single)`, so the priority order is stated once;
+     - `accepts(report)`: succeeded, and Ready;
+     - `Attempts { reports; accepted(); toString(); }`.
+
+     **Deviation:** `accepted()` is derived, the first report in order that `accepts`, where item 11
+     said the value holds the accepted one's position. A stored position could disagree with the
+     reports it indexes.
+   - **The nodes:**
+     - **`calibrationMethod`**: input `method : calibration::Method`, `Default{BoardThenTargetless}`;
+       outputs `board : bool` and `targetless : bool`.
+     - **`nextAttempt`**, a `DynamicPortsNode` as Select is:
+       - a static input `included : bool`, `Default{true}`, so an unwired one reads naturally;
+       - dynamic report pins, Optional, accepted by type;
+       - output `run`: included, and no live report `accepts`.
+
+       Each pin is checked with `holds<Report>()` as Merge checks its branches, since a pin added
+       through `edit::addPort` answers to no filter. No pin is tagged, since the node has no payload
+       type.
+     - **`calibrationAttempts`**, a `DynamicPortsNode`:
+       - dynamic report pins, as on `nextAttempt`;
+       - outputs `attempts : calibration::Attempts`, the live reports in pin order, and `accepted :
+         calibration::Report`, cleared when none is accepted;
+       - with no live report both outputs are cleared, since no attempt is not an outcome and the
+         absence propagates (ADR-0007).
+     - All three are offered wherever any calibration can run.
+   - **Port types:** `CalibrationMethod` and `CalibrationAttempts`.
+   - **`meta::toString` gains an enum arm**, through `meta::enums::name`, so an enum on a port describes
+     by name. It has a test of its own in `libs/meta`.
+   - **flowview:** the `calibration::Method` codec, `editEnum<Method>`, and the catalog expectations
+     for the three kinds.
+   - **Tests:**
+     - **The library:** `accepts` over a Ready, an Exploratory and a failed report; `accepted()` is
+       the first in order; `includes` for all three methods; `toString`.
+     - **The graph**, in a new `test-camera-flow-fallback` executable holding both stand-in worlds and
+       the pass-through refiner (registries only grow). The production nodes are added directly, with
+       two `GateNode`s over `media::FrameSequence`:
+       - the footage goes through a Gate switched by `calibrationMethod.board` into `calibrateCamera`,
+         and through a Gate switched by `nextAttempt` into `calibrateCameraTargetless`;
+       - `nextAttempt`'s `included` comes from `calibrationMethod.targetless`, and its one pin is the
+         board report;
+       - both reports go into `calibrationAttempts`, whose `accepted` goes into `cameraModel`.
+
+       Runs share one retained Evaluation. The witnesses are the board estimator's call count, and the
+       targetless stand-ins' refinements asked and matcher calls. The cases:
+       - each of the three methods;
+       - the board attempt accepted, and the targetless node never computed;
+       - a board attempt that succeeded but is only Exploratory (too few views): not accepted, so the
+         targetless attempt runs;
+       - a failed board attempt, then a Ready targetless one: accepted at position 1, and `cameraModel`
+         gives the targetless model;
+       - both fail: `accepted` is empty, so `cameraModel` is suppressed, while the attempts hold both.
+         It is reached from a retained run that had accepted, so a stale `accepted` would show;
+       - an edited targetless setting re-runs the targetless node alone, the board's estimates
+         unchanged;
+       - footage suppressed upstream: no attempts, and both outputs empty.
+     - `test_registration.cpp`'s port-type checks gain the two types.
+   - **Sabotages:**
+     - `nextAttempt` judging by a succeeded status alone fails the Exploratory case;
+     - the attempts leaving out a failed attempt fails the both-fail case;
+     - `accepted` not cleared fails the both-fail case;
+     - `accepted()` taking the last accepting report fails the library case.
+
+   **Verification for each commit:** `ctest` in Debug and Release with video, camera and Ceres on, and
+   with all three off; warning-clean; format-check clean; each sabotage predicted, built so that it
+   compiles, and restored. A CI run follows 11c. gui-mode is not eyeballed in sub-slice 11; it is owed
+   after item 12.
+
+   **Sub-slice 11a built (2026-10-20): `CalibrationNode`, with no change in behaviour.** No test changed,
+   so the existing suite is the regression test: `ctest` **1292/1292** Debug and **1300/1300** Release
+   with video, camera and Ceres on, **1166/1166** with all three off, each unchanged; warning-clean,
+   format-check clean.
+   - **`CalibrationNode`** (`calibrationnode.{h,cpp}`) declares `footage` as input 0, and through
+     `declareRequest()` the Optional `imported` input and the seven params every calibration takes;
+     `request(evaluation)` reads them back by the rules the node already had, and `footage(evaluation)`
+     keeps the port private. `maximumViews` is not among them: a targetless calibration selects no views.
+   - **`calibrateCamera` keeps its inputs** (footage 0, board 1, imported 2). Its own params follow the
+     shared ones, so `maximumViews` moves from the fourth Inspector row to the eighth. Params are saved
+     by name, and no committed document, golden or test reads their order.
+   - **Two private helpers, each with two callers now:** `detail::identityOf(footage)` (`src/identity.h`),
+     a camera named by its footage's first source, which `rig()` spelled inline; and
+     `detail::extractionSettings` (`src/extraction.h`), which writes the five `feature::ExtractionSettings`
+     fields both targetless nodes expose into the request it is handed. It writes into a reference
+     because both requests derive from that struct, and a returned value would be assigned to a base
+     slice.
+   - **Sabotage, caught as predicted:** the base reading `heldOutFraction` without `detail::decimal`
+     fails *calibrateCamera hands its settings to the method*, on its defaults section (0.2 is
+     0.200000003 as a float). Its every-parameter section alone would not see it: it sets 0.25, which a
+     float holds exactly.
+
+   **Sub-slice 11b built (2026-10-20): `calibrateCameraTargetless`.** `ctest` **1297/1297** Debug and
+   **1305/1305** Release with video, camera and Ceres on, **1171/1171** with all three off (+5 each: the
+   new executable's cases); warning-clean, format-check clean.
+   - **The node** (`calibratecameratargetlessnode.{h,cpp}`), on `CalibrationNode`: footage 0 and imported
+     1, the ten settings of the plan each defaulted from `targetless::Settings`, and `report`. It runs
+     `targetless::calibrate({identityOf(footage), footage}, settings, request)`; the method's own
+     `startReport` sets the extraction's execution policy from the request, so the node does not.
+     `inlierPixels` becomes the extraction's Sampson `threshold`, and `loss` is `refinement::LossFamily`,
+     the type registration's `loss` already is, so flowview's codec and editor for it already exist. Its
+     header points at `targetless.h`'s operator guidance.
+   - **The kinds table** gains the kind after `calibrateCamera`, its capability `canCalibrateTargetless`
+     (the three feature backends and `refinement::canRefine()`), and `canUseCalibration` (either method)
+     beside `canUseBoard`, now `cameraModel`'s.
+   - **`test-camera-flow-calibratetargetless`**, its own executable over the scene stand-ins, five cases:
+     - the settings handed to the method: the defaults (the moving camera's 2048 features and 40
+       frames, the method's own profile, what the node does not expose left at the library's); every
+       param non-default, each float one a float does not hold exactly, read back from the request and
+       `TargetlessRecord::settings` of a refusal (HoldAndValidate with nothing held is refused before a
+       frame decodes, and records both all the same); and a longest side of 0 searching natively;
+     - no `maximumViews` param;
+     - the node's report equal, through `targetlesscalibrationtext.h`'s printer, to the method's own for
+       the same footage named `/scene/cam00`;
+     - empty footage as `NoFootage`;
+     - an imported model held exactly with no start swept, and unwired, three starts.
+   - **Staging:** `test_targetlesskinds.cpp` (renamed *the targetless kinds are offered …*) offers
+     `calibrateCameraTargetless`, `cameraModel` and `registerCamerasTargetless` with no board backend;
+     `test_registration.cpp`'s `kAllKinds` gains the kind; flowview's catalog offers it with OpenCV and a
+     refiner.
+   - **Two sabotages, both caught as predicted.** `freePrincipalPoint` left unmapped fails the settings
+     case alone. `cameraModel` left on board calibration's capability fails the targetless staging alone;
+     its first cut moved the table row and left `canUseCalibration` unused, which `-Werror` refused, so
+     the old binaries answered until it was redone as `canUseCalibration` answering board's alone.
+
+   **Sub-slice 11c built (2026-10-20): the attempts, and the fallback nodes. Sub-slice 11 is
+   complete.** `ctest` **1309/1309** Debug and **1317/1317** Release with video, camera and Ceres on,
+   **1183/1183** with all three off (+12 each: four library cases, one `meta` case, seven graph cases);
+   warning-clean, format-check clean.
+   - **`calibration/attempts.h`**: `Method {Board, Targetless, BoardThenTargetless}`, `includes`,
+     `accepts` (succeeded and Ready) and `Attempts {reports; accepted(); toString();}`, `accepted()` the
+     first that `accepts`, as planned.
+   - **`meta::toString` names an enum**, through `enums::name`, ahead of the ostream arm so an unscoped
+     enum is named too; a value no enumerator names is its number. `method` is the first enum on a port.
+   - **The nodes:** `calibrationMethod` (`method` defaulting to BoardThenTargetless, `board` and
+     `targetless` through `includes`); `nextAttempt` (`included` defaulting to true, `run`); and
+     `calibrationAttempts` (`attempts`, `accepted`, each cleared explicitly). **One addition to the plan:
+     the two attempt-reading nodes share an `AttemptReportsNode` base**, a `DynamicPortsNode` holding
+     the "+" filter (`CalibrationReport` alone), the Optional pins, and the one reading of the live
+     reports in pin order, static pins skipped and each pin checked with `holds<Report>()`. The two
+     nodes then cannot read the attempts in different orders. All three are offered with
+     `canUseCalibration`, and sit in the table between the calibrations and `cameraModel`.
+   - **Port types `CalibrationMethod` and `CalibrationAttempts`**; flowview's `calibrationMethod` codec,
+     `editEnum<Method>`, two port colours, and the catalog's expectations (offered with OpenCV).
+   - **The stand-ins:** `syntheticboard.h`'s `scene()` is `boardScene()` (31 uses in 4 files, the golden
+     untouched), and `SceneSource`'s frames take the scene model's size. **Deviation from the plan:**
+     the shared footage is the scene's wandering camera through a PINHOLE of the board camera's geometry
+     (960x720, {900, 905, 479.5, 359.5}), not through `trueCamera()` itself: the scene stand-ins'
+     fundamental matrices and homographies use K alone, and `trueCamera()`'s k1 = -0.1 moves its
+     corners about 20 px. The board stand-ins never read a pixel, so they keep the true camera, and the
+     two models stay apart, which the case that wants the targetless model needs.
+   - **`test-camera-flow-fallback`**, the graph through the production nodes, two `GateNode`s over
+     `media::FrameSequence`, and one retained Evaluation per case, witnessed by the board estimator's
+     calls, the targetless method's refinements and its matcher's searches. Seven cases: the three
+     methods in turn over one evaluation; an accepted board attempt with the targetless method unrun; an
+     Exploratory board attempt (eight views) not accepted; a failed board attempt then a Ready targetless
+     one, accepted at position 1, `cameraModel` giving the pinhole; both failing after a run that had
+     accepted, so `accepted` and the model are empty while the attempts hold both; an edited targetless
+     setting re-running that attempt alone; and footage missing upstream, no attempt and both outputs
+     empty.
+   - **The probe** (an imported true pinhole under Initial, which the pass-through refiner hands back):
+     at 16 frames and 240 landmarks the targetless attempt fits 13 frames against Ready's 10, covers the
+     whole image against 0.6, places every frame, and validates exactly. 24 frames fit 19, at three
+     times the cost (47 s against 14 s in Debug). The board attempt at eight views is short of Ready
+     on that alone.
+   - **Four sabotages, all caught as predicted.** `nextAttempt` judging by a succeeded status alone fails
+     the Exploratory case alone. `accepted` not cleared fails the both-fail case alone, on the stale
+     acceptance and the stale model behind it. `accepted()` taking the last accepting report fails the
+     library case alone. The attempts leaving out a failed attempt fails three cases, not the plan's one:
+     both-fail, and the failed-board and edited-setting cases, each of which lists the failed board
+     report too.
+   - **CI run 39 (`9f37938`) is green on all seven jobs**, 1317/1317 on macOS and Windows and every
+     Release leg passing, so the fallback graph's seven cases and the stand-in worlds' rename hold on
+     every platform. The end-to-end calibration cases pass there too, where macOS's and Windows' SIFT
+     features differ from Linux's.
+
+   **Sub-slice 12 planned (2026-10-20) as three commits, 12a to 12c.** The last of slice 4: the fallback
+   graph becomes something a user runs. It needs a `--method` binder, a committed example document,
+   and a vertical that runs that document on rendered footage.
+
+   **Decided with the repo owner:**
+   - **No graph input defaults here.** The planned fix for the finding owed from 11 was to let a root
+     boundary input carry a value used when the host binds none. The repo owner called that a
+     different feature, and it is deferred whole, with its design notes below.
+   - **The footage is rendered by the test, never committed.** The vertical writes it into scratch and
+     binds it as `--footage`.
+   - **The fallback nodes keep the camera colour.** They read camera reports and switch camera work.
+     Colouring them as control nodes would split one category's nodes across two colours by mechanism.
+   - **Three commits.**
+
+   **Taken as the consequence of deferring defaults** (not put to the repo owner, and a one-edge change
+   in 12b if they would rather):
+   - **`method` stays a boundary input, and `--method` is required.** An unbound `--method` leaves the
+     pin empty, `calibrationMethod` is suppressed, both gates close, nothing is attempted, and no
+     output is written. The run warns that `--method` was not bound, and still exits 0, as every
+     unbound input does today. The vertical pins this, so the cost the deferred feature would remove
+     is a test rather than a sentence.
+   - **The alternative:** leave `method` unwired inside the document, so `calibrationMethod`'s own
+     `Default{BoardThenTargetless}` applies and the example runs on `--footage` alone. Then nothing in
+     the tree would bind a `calibration::Method` from a command line, and the binder would land with
+     no caller.
+
+   **Found while planning:**
+   - **flowview has no enum boundary binder**, and `calibration::Method` is the first enum carried on a
+     port, so nothing has needed one.
+   - **`list` prints a type name for an enum** (`--method : lain::camera::calibration::Method`), which
+     does not say what to type.
+   - **The gui can already bind `method`.** The Interface pane binds a root input through
+     `ParamEditors`, and 11c registered `editEnum<Method>`. So gui-mode needs nothing new. But until a
+     method is picked, nothing runs, and no Issues row says why. That is the gui half of the deferred
+     feature's cost.
+   - **`test_examples` cannot run this example.** Its generic branch binds a stand-in image and frame
+     position and requires every output non-empty. Its no-backend branch requires `render-board`'s
+     failure text. With its inputs unbound, this example would fail both, since it attempts nothing.
+     A catalog flag says an example needs inputs from its caller, and such an example is loaded and
+     listed, not run.
+   - **The example's board is the vertical's:** 7 x 5 squares of 24 mm, markers three quarters of a
+     square, from the default dictionary. Both calibrations ask for a `None` model, because the
+     rendered camera is a pinhole. That is the existing vertical's reason: asked to fit distortion to
+     a lens with none, the board attempt is rightly withheld from Ready. A user calibrating their own
+     footage changes the specification and the model in the Inspector, and the README row says so.
+   - **Without Ceres, but with OpenCV, board calibration still runs.** So `NoRefiner` is seen only
+     after a board attempt fails. The case uses board-less textured footage, and expects board to fail
+     first, then targetless to report `NoRefiner`.
+   - **The gui eyeball owed after this item needs footage, and none is committed.** It is rendered for
+     the eyeball into the scratchpad from the vertical's helpers, as the vertical renders it.
+
+   **12a: the enum binder.**
+   - **`bindEnum<E>`** in `clibinders.cpp`, built on `meta::enums`.
+     - It accepts an enumerator's name ignoring case, `-` and `_`, so `board-then-targetless`,
+       `BoardThenTargetless` and `BOARD_THEN_TARGETLESS` all bind.
+     - It is registered for `calibration::Method`. The next enum carried on a port is one line.
+   - **`BoundaryBinders` gains the accepted spellings per type.** For an enum these are its
+     enumerators in kebab case, `board | targetless | board-then-targetless`.
+     - `list` prints them after the type.
+     - A failed parse appends them to its error, so a mistyped `--method` says what would have bound.
+   - **Tests, in `test_clibinders.cpp`:**
+     - each spelling binds the same `Method`;
+     - a partial name and an empty string are refused;
+     - the spellings listed are the three enumerators, in enum order;
+     - a `list` of a graph with a `method` input prints them.
+   - **Sabotage:** a binder comparing case-sensitively fails the kebab and upper-case spellings.
+
+   **12b: the example document.**
+   - **`calibrate-fallback.json`**, written by `flowview-examples`.
+     - Inputs: `footage : FrameSequence` and `method : Method`.
+     - The board specification above, and two Gates retyped to `FrameSequence`.
+     - `calibrationMethod`, then `nextAttempt` with the board report on its one pin.
+     - `calibrateCamera`, `calibrateCameraTargetless`, `calibrationAttempts` (board pin first, then
+       targetless) and `cameraModel`.
+     - Outputs: `attempts : CalibrationAttempts`, written as text through its `toString`, and
+       `model : CameraModel`, written as a camera-model document.
+   - **The catalog** gains `needsInputs`.
+     - `test_examples` loads such an example, requires it to raise nothing, and requires every
+       boundary input to have a binder. It does not run it; the vertical does.
+     - The entry is also marked `needsCamera`.
+   - **The README** gains its row, and the line saying every example shows a result on its own names
+     it as the second exception, beside `sequence-render`.
+   - **Held by** `test_examples`' byte comparison and the catalog test, which already expect every
+     kind it uses.
+
+   **12c: the vertical.** In `test_cameravertical.cpp`, through `runGraph`, on the committed
+   `calibrate-fallback.json` with `--footage` bound to scratch footage and `--attempts` and `--model`
+   written. Each case asserts which attempts ran (by the attempts text) and whether a model was written.
+   - Board footage, `--method board-then-targetless`: accepted at attempt 1, the targetless method
+     never run, and the model is the pinhole.
+   - Board-less textured footage from a moving camera (`texturedscene.h`'s `arcPath`), the same
+     method: the board attempt fails, the targetless one is Ready, and it is accepted at attempt 2.
+     It is measured first. If it is too slow in Debug, it runs in Release only, as the end-to-end
+     calibration suite does.
+   - The same footage with `--method board`: one failed attempt, no model written, exit 0. This
+     exercises the binder on a value away from the default.
+   - **No `--method`:** the warning, nothing attempted, nothing written, exit 0. This is the deferred
+     feature's cost, pinned.
+   - **A mistyped `--method`:** exit 1, and the error names the spellings.
+   - **No backend:** plain footage, both attempts Failed (`NoDetector`, then `NoFeatureExtractor`),
+     no model.
+   - **OpenCV without Ceres:** textured footage, the board attempt Failed, then the targetless attempt
+     `NoRefiner`.
+   - **Verified in four builds:** Debug and Release with video, camera and Ceres on; all three off;
+     and OpenCV on with Ceres off.
+   - **The real binary** is driven by hand, from another folder, and recorded.
+   - **Sabotage:** the targetless Gate's `enable` wired from `calibrationMethod`'s `targetless`
+     directly, skipping `nextAttempt`. The first case then attempts targetless after an accepted
+     board attempt, and its attempts text holds two reports. (Wiring `nextAttempt` to the targetless
+     report instead is not a sabotage that builds: it is a cycle, which `connect` refuses.)
+
+   **Slice 4 is COMPLETE when 12c lands.** The gui-mode eyeball of the fallback is then owed.
+
+   **Deferred to later consideration: graph input defaults** (the repo owner, 2026-10-20: *"a completely
+   different feature"*). A root boundary input would carry a value the run uses when the host binds
+   none.
+   - **Its first caller is `calibrate-fallback`'s `method`.** Its cost today: `run --footage f` alone
+     produces nothing, and the gui runs nothing until a method is picked in the Interface pane. 12c's
+     unbound case pins that cost, and is the trigger to revisit.
+   - **Design notes gathered while planning:**
+     - **The value is seeded at the root only**, by the scheduler's session after `prepare`, never
+       inside a group. A group's input is fed by its parent's edge, as today.
+     - **A per-pin "host-bound" flag** tells a default from a binding, so a later binding wins and an
+       unbinding falls back. `PortValue::samePayload` detects a change.
+     - **On disk, it is a `defaults` section on the GroupInput node**, through `ValueCodecs`. No format
+       version bump: an absent section means no defaults.
+     - **The gui:** an Interface pane control to set or clear a default. An unbind gesture would need
+       `PendingBindings` to carry an unbind as well as a bind.
+     - **Amendments owed:** CONTEXT.md's *The recipe, not the cooked data* says host-bound boundary
+       values never serialize, and a default is not one, so the entry should say so. ADR-0005 (a
+       default is a param underneath) and ADR-0010 (a linked group's interface cache) also need
+       amending.
+     - **Left out of a first cut:** mirroring a default onto a group's outer port.
+
+   **Sub-slice 12a built (2026-10-20): the enum binder.** `ctest` **1313/1313** Debug and **1321/1321**
+   Release with video, camera and Ceres on, **1187/1187** with all three off (+4 each); warning-clean,
+   format-check clean.
+   - **`bindEnum<E>`** (`clibinders.cpp`) binds an enumerator by name, ignoring case, `-` and `_`, and
+     never by number. **`addEnum<E>`** is the one line per enum, registered for `calibration::Method`.
+     It asserts that folding does not join two enumerators, since one spelling would then name both.
+   - **`BoundaryBinders::spellings(type)`**: a binder may list what it accepts, an enum's names in
+     **`kebabCase`** (public, so the test reads the production rule) and declaration order. `list`
+     prints them after the type, `--method : lain::camera::calibration::Method  (board | targetless |
+     board-then-targetless)`, and a refused value is told them (`one of …`). Open text lists nothing.
+   - **Found by the first run: an acronym kept its digits apart.** The first `kebabCase` treated a digit
+     as lower case, so `BT709` became `b-t709` and `RGBA8` `rgb-a8`. A digit after capitals now
+     belongs to them; a capital after a digit still starts a word.
+   - **Tests:** every spelling of `board-then-targetless` binds and a prefix, a number, an empty string
+     or spaces do not; the spellings are the three enumerators in order and **each binds back to its
+     own**, so `list` cannot offer what `run` refuses; `kebabCase` on words, an acronym and digits; and
+     `listGraph` through the production path, its stdout captured, on a saved graph with a `Method`
+     and an `int` input.
+   - **Two sabotages, both caught.** A case-sensitive fold fails the spellings case (four lines) and
+     the bind-back case, as predicted. `list` without the choices fails the listing case alone.
+
+   **Sub-slice 12b built (2026-10-20): the example document.** `ctest` **1313/1313** Debug and
+   **1321/1321** Release with video, camera and Ceres on, **1187/1187** with all three off (unchanged:
+   the example is a section of the existing case); warning-clean, format-check clean.
+   - **`apps/flowview/examples/calibrate-fallback.json`**, written by `flowview-examples`: inputs
+     `footage` and `method`, outputs `attempts` and `model`. The board specification is 7 x 5 squares
+     of 24 mm, and both calibrations ask for a `None` model, as planned. The report pins are named
+     `board` and `targetless` rather than the canvas's `in<N>`, so the canvas says which is which.
+     Regenerating wrote only the new file: every other example is byte for byte unchanged.
+   - **`Example::needsInputs`.** `test_examples` loads such an example before the backend checks,
+     requires it to raise nothing, and requires a binder for every boundary input. It is also marked
+     `needsCamera`, which the needs-inputs branch takes precedence over.
+   - **The README** names it as the second example that needs something bound, with a `run` line.
+   - **The real binary lists it**, from another folder: `--footage : lain::media::FrameSequence` and
+     `--method : lain::camera::calibration::Method  (board | targetless | board-then-targetless)`.
+   - **Sabotage, caught:** the `Method` binder unregistered fails the example's section on its
+     `method` input.
+
+   **Sub-slice 12c built (2026-10-20): the vertical. Sub-slice 12, and with it slice 4, is COMPLETE.**
+   `ctest` **1318/1318** Debug and **1326/1326** Release with video, camera and Ceres on, **1192/1192** with all
+   three off (+5 each), and **1267/1267** with OpenCV on but Ceres off; warning-clean, format-check clean.
+   **gui-mode NOT eyeballed**; that is owed now (Outstanding index, item 3).
+   - **Five cases in `test_cameravertical.cpp`**, each running the committed `calibrate-fallback.json`
+     through `runGraph`, with `--footage` bound to scratch footage and `--attempts` and `--model`
+     written. Which attempts were made is read from the attempts text.
+     - **Board footage** (the existing vertical's 24 frames), `--method board-then-targetless`:
+       *Attempt 1 of 1 accepted*, so the targetless attempt was gated off, and the model is the
+       pinhole, 0.14% and 0.3 px out. 2 s in Release. With no backend, plain footage: *No attempt of 2
+       accepted*, `NoDetector` then `NoFeatureExtractor`, no model.
+     - **A moving camera with no board in view** (`texturedscene.h`'s `arcPath(40)` round the default
+       scene, through the same pinhole, seed 2, one grey level of noise): the board's attempt fails
+       and *Attempt 2 of 2 accepted*, 32 frames placed, held out 0.737 px RMS, the model 0.18% and
+       0.7 px out. 20 s in Release with four workers; it **skips in Debug**, where drawing takes
+       seconds a frame, as the end-to-end suite does. The bounds are 1% and 3 px, room for macOS's
+       and Windows' SIFT. **OpenCV without Ceres** runs this case on plain footage instead: the board's
+       attempt is `TooFewViews`, then the targetless one `NoRefiner`, since board calibration needs no
+       refiner. With no feature backend it skips: the board case covers that build.
+     - **`--method board`** on plain footage: one failed attempt (`TooFewViews` with a backend,
+       `NoDetector` without), no second, no model. Every build, Debug included.
+     - **No `--method`**: exit 0, neither output written. This is the cost of the deferred graph input
+       defaults, pinned.
+     - **A mistyped `--method`**: exit 1, nothing written.
+   - **Driven through the real binary**, Release, from the scratchpad, on the vertical's own footage
+     written there by a probe case that was not committed: the same two attempts texts and the same
+     models to the last digit (0.5 s for the board footage, 27 s for the moving camera while another
+     build ran). Unbound, it warns *input --method not bound — leaving it empty* and that each output
+     produced nothing, exit 0. Mistyped, *could not parse 'board-then' for --method as
+     lain::camera::calibration::Method: one of board | targetless | board-then-targetless*, exit 1.
+   - **Sabotage, caught as predicted:** the example's targetless Gate enabled straight from
+     `calibrationMethod`'s `targetless`, skipping `nextAttempt`. The board case then reads *Attempt 1 of
+     2 accepted*: the targetless attempt was made after the board's was accepted.
+   - **An OpenCV-on, Ceres-off build** (`build-noceres` here) was configured for this commit, since none
+     was left from slice 3's sub-slice 10.
+   - **CI run 40 (`b952e1d`) is green on all seven jobs**, 1326/1326 on macOS and Windows and every
+     Release leg passing, so the fallback's five cases hold on every platform: the moving camera is
+     accepted at attempt 2 within its 1% and 3 px bounds on macOS's and Windows' SIFT features too.
+     The enum binder's cases pass there as well.
 
 Each slice lands through the closest real caller: geometry and board interfaces directly, optional
 adapters through their public operation, and flow nodes through a retained `Evaluation`. Tests cover
@@ -3247,9 +9199,541 @@ failed reports as ordinary results, deterministic-debug execution, downsampling 
 refinement, imported-model policies, held-out validation, and dependency-disabled builds. No slice
 lands with copied solver/detector logic or a second production path.
 
+### The 2026-10-20 review — what the slice plans left out
+
+Once sub-slice 12c landed, every slice was built. A review then checked the milestone against its own
+plan, ADR-0016, ADR-0017 and the code, and found gaps that nothing recorded. The repo owner grouped
+them into priorities, and the rows in the Outstanding work index point here. **P1 is in progress**,
+each package in a session of its own (2026-10-20).
+
+**P0 — the documents, done with this entry:**
+- This milestone's status line said "Designed, not started", and its list of built sub-slices stopped
+  at 9.
+- Two prerequisite notes were out of date. One said a camera node kind registers only when it can
+  run, which was reversed on 2026-10-02. The other said Ceres is opt-in, when it defaults ON for a
+  top-level build.
+- The README's OpenCV row said the camera node kinds register only in a build with it, and named
+  neither the feature nor the geometry work the plugin does. Its Ceres row said "today a build probe".
+- ADR-0016 counted seven camera node kinds. There are eleven.
+- Four questions were settled with the repo owner:
+  - **Debug overlays: deferred.** The OpenCV detector fills `DetectionEvidence` for
+    `DetailLevel::Detailed`, but `detectBoard` has no setting that asks for it, and nothing draws a
+    detection. Trigger: the first real capture whose detections need inspecting. ADR-0016 is amended.
+  - **Bulk projection: deferred.** ADR-0016 promised bulk operations that keep a result per element
+    and count failures. None is built, since every caller projects one point at a time and counts its
+    own failures. Trigger: the first caller that projects many points and must report per-element
+    failures, such as a reprojection-error view. ADR-0016 is amended.
+  - **A board's measured-length bounds are vocabulary waiting for a consumer.** `MeasuredLength`'s
+    bounds are stored, validated (`BoundsDoNotContainValue`) and serialised. Nothing reads them, and
+    `boardSpecification` has no setting for them. The likely first consumer is a registration's
+    metric-scale uncertainty. No change.
+  - **Capture manifests and capture datasets come after M9**, with clock-domain identity and timestamp
+    grouping. The prerequisite note that called them M9's is amended. The one finding that needs them
+    takes an interim fix, item 4 below.
+
+**P1 — make M9's outputs usable:**
+1. **A registration's result cannot leave the process.** *(**Built 2026-10-20**: a registered rig, its
+   node and its document; see *After slice 4: the registered rig*, below.)*
+   - The per-camera `referenceFromCamera` transforms live only in `registration::Report`, and
+     `Report::toString()` omits them.
+   - `flowview run` writes a camera model as a document and every other output as its described text,
+     so a registration report reaches disk as one summary line.
+   - `libs/camera/serialize` covers camera models, board specifications and capture records only.
+   - No node takes the transforms out of a report, as `cameraModel` takes a model out of a
+     calibration report.
+
+   This is the compiled-linked-unreachable shape: registration's deliverable is reachable only by
+   calling the library.
+2. **The gui cannot load or save camera values; the cli can.** *(**Built 2026-10-20**: see *The gui binds and saves camera
+   values*, below.)*
+   - `ParamEditors` has no editor for `CameraModel`, `std::vector<FrameSequence>` or
+     `std::vector<CameraModel>`, though `clibinders.cpp` binds all three.
+   - No node reads a camera-model document.
+   - The gui saves image outputs only.
+   - `listDir` lists regular files, so a rig of per-camera still folders cannot be built in a graph
+     either.
+
+   So the owed gui-mode eyeballs of both registration nodes could only feed a root-level rig with one
+   video file per camera, and calibrate inside the graph.
+
+**P2 — verdicts to trust:**
+
+3. **The three changes to how held-out evidence is judged**, queued on 2026-10-09 (Outstanding work).
+   On sub-slice 9's footage, one wrong held-out track fails Ready about one run in three. Registration's
+   resampling spread, an RMS about the result, is a candidate for the same robust treatment. *(**Built
+   2026-10-21**, the held-out statistic median-based rather than by leaving out outliers, which was
+   measured and refused: see *Held-out evidence judged from medians*, below.)*
+4. **A camera's identity should not depend on where its footage sits.** The full fix is the capture
+   manifest, which is after M9. The interim fix: the cli binder names each camera relative to the
+   folder it was given, rather than by its canonical uri. *(**Built 2026-10-21** in every method, the
+   names given by the nodes rather than the binder so the gui gets them too: see *Identities that do
+   not depend on where footage sits*, below.)*
+
+**P3 — demonstrable, then verified:**
+
+5. **A footage generator**: a build target that renders board footage, a moving camera's scene and a
+   rig into a folder, through the test helpers that render them now. Sub-slice 12c rendered its
+   eyeball footage with an uncommitted probe, and the Outstanding index only says footage "has to be
+   rendered". *(**Built 2026-10-21**: see *Camera footage, examples and the composition*, below.)*
+6. **Example documents, and a composition test.**
+   - No example covers board calibration alone, `detectBoard`, or either registration;
+     `register.json` exists only in a test's scratch folder.
+   - Slice 2's plan says the rig inputs compose with `map(calibrateCamera → cameraModel)`, and nothing
+     tests or shows a graph that calibrates every camera and registers them.
+
+   Needs 5 for its data, and the registration examples should use item 1's output. *(**Built
+   2026-10-21**, without `detectBoard`, decided with the repo owner: see *Camera footage, examples and
+   the composition*, below.)*
+7. **One gui-mode session on a Metal machine, after 2, 5 and 6**, walking every M9 eyeball listed in
+   the Outstanding index.
+
+**P4 — cheap, any time:**
+
+8. **A CI leg with OpenCV on and Ceres off.** One `camera` field drives both options, so that build
+   (the one where targetless methods report `NoRefiner`) has been checked locally only. *(**Built
+   2026-10-21**: see *A no-refiner CI leg, and the footprint measured again*, below.)*
+9. **The dependency footprint, measured again.** The last record says "flowview grows by 88 bytes,
+   since nothing references Ceres yet" (slice 2, sub-slice 1). flowview now links Ceres and OpenCV in
+   earnest. *(**Measured 2026-10-21**: the same section, below.)*
+
+**Suggested bar for calling M9 complete:** P0 to P3 and the real-camera capture. P4 and the items
+waiting on real footage may carry over.
+
+### After slice 4: the registered rig (2026-10-20)
+
+**Found by the 2026-10-20 review, and recorded nowhere until now:** a registration's deliverable could
+not leave the process. `Report` held every camera's `referenceFromCamera`, but `toString()` printed
+none of them. `run` wrote a report output as that one line. `lain::camera::serialize` had no document
+for transforms, and no node took them out of a report, the way `cameraModel` takes a model out of a
+calibration report. The transforms were built, linked and unreachable: the shape CLAUDE.md warns
+about.
+
+**Decided with the repo owner**, each the recommended option:
+- **Calibration's shape.** A value, a node, and a document for the value. The report stays its one
+  line. Writing the report as a document was refused: it would be the only report written as one, and
+  `--report report.txt` would stop working, since `io::data` picks a format by the extension.
+- **The rig carries the reference and the scale status**, which a reader needs to know what the
+  translations are in, and no verdict or evidence, as a camera-model document carries none.
+- **A binder now.** The strict reader has a production caller, and the document works both ways.
+  Nothing consumes a rig yet, so only a pass-through graph can use a bound one (Outstanding index).
+- **`Report::toString()` is unchanged.** The rig's own `toString()` lists each camera's position and
+  turn, so a rig port describes them.
+
+**Built:**
+- **`registration::RegisteredRig`** (`report.h`, CONTEXT.md *Registered rig*): the reference, the
+  scale status and the cameras, with `referenceFromCamera(camera)` and `toString()`.
+  **`Report::rig()`** is set only when the registration succeeded, whatever its verdict. A
+  registration that fails after choosing its reference still names that reference, so the check is on
+  the status, and a test pins it.
+- **The rig document** (`serialize/registeredrig.h`, CONTEXT.md *Rig document*), version 1. Rotation
+  is the unit quaternion `RigidTransform` holds, `{w, x, y, z}`, since a matrix would need
+  `fromMatrix`'s tolerance on the way back. The camera frame is stated in CONTEXT.md, not written per
+  document.
+  - It is read as strictly as a camera model: an unknown or missing key, an unknown scale or a value
+    of the wrong kind is a problem named by its path.
+  - Then it is read as a rig: a camera at least, none twice, the reference among them with the
+    identity transform, and every rotation a unit quaternion to 1e-6. A rotation that is not one is
+    refused, not normalised, as `fromMatrix` refuses a matrix that is not rigid. A zero quaternion is
+    caught before `RigidTransform`'s assert can fire.
+  - The cameras are read in the rig's order, whatever order the document lists them in.
+- **Shared version handling.** The camera-model reader's version handling moves to a private
+  `serialize/src/versioned.{h,cpp}`, so the two documents check a version one way, with the same
+  words.
+- **`registeredRig`** (`RegisteredRigNode`): report in, rig out, the output cleared with no rig.
+  - Registered through `kKinds` and offered when either registration can run. Port type
+    `RegisteredRig`.
+  - Coloured with the camera kinds, its port deep gold, in a block of its own so the other colour lines
+    keep their alignment.
+  - Added to the catalog census and both kinds-staging tests. It has no params, so it needs no codec.
+- **flowview:** `run` writes a rig output as a rig document, as it writes a camera model. `--rig`
+  binds one back, logging the reader's problems.
+
+**Found while building: a rotation read back is the one written to its last bit.** `RigidTransform`
+renormalises the quaternion it is built from, and normalising a unit quaternion again is not exact in
+floating point. Translations, identities and scale round-trip exactly. A rotation differs by at most
+one ulp, 2.2e-16 in `w` through the real binary. So the round-trip tests hold rotations to 1e-15
+rather than byte for byte. Making the renormalisation idempotent would move every composition in the
+tree, a change to `lain::math` with no caller asking for it.
+
+**Tests:**
+- `test_serialize`: the round trip, an arbitrary scale by name, and cameras out of order. The strict
+  reader names a misspelt `translation`, a lower-case `metric`, a string for a number, a non-unit and
+  a zero rotation, a reference that is not a camera or not the identity, a camera listed twice or
+  nameless, no cameras, and no or a newer version.
+- `test_registrationcontracts`: `rig()` and its `toString()`.
+- `test_nodes`: the node, run and then failed.
+- `test_clibinders`: the binder, with a typo refused.
+- **The cli vertical:** both registrations now write `--rig` through `runGraph`, and the production
+  reader reads it back.
+  - Each rig is held to the poses its footage was drawn from. The board's, measured: 0.07% in scale,
+    0.2 mrad and 0.05 mm out. The targetless rig, after a scale fit, over five runs: 0.18 to
+    0.51 mrad and 0.7 to 1.7 mm.
+  - A rig file binds back into a `rig -> copy` document.
+  - With no backend nothing is written, since a failed registration has no rig.
+
+**Sabotage, each caught as predicted:**
+- the writer swapping x and y;
+- the reader skipping its shape check (three sections);
+- the reader skipping the unit check (zero rotation aborts);
+- the reader skipping the reference and duplicate checks;
+- `rig()` without its status check;
+- the node setting an empty rig instead of clearing;
+- `run` without its rig branch;
+- `rig()` handing out `cameraFromReference` (both verticals, about 500 mrad);
+- the binder unregistered (its case and the bind-back);
+- the kind offered with calibration (the board kinds staging);
+- the kind's row dropped (the catalog census).
+
+Two sabotages first failed to build under `-Werror` (an unused function, a tautology), so the old
+binaries answered. Each was redone to build before it counted.
+
+**Driven through the real binary**, Debug, on the verticals' footage written into the scratchpad by an
+uncommitted probe:
+- `flowview run --graph register.json --footage rig --models models --report report.txt --rig rig.json`
+  writes the three transforms, cam1 turned -0.25 rad about y and 104 mm across, as drawn. The
+  targetless document does the same at arbitrary scale.
+- `list` names `--rig : lain::camera::registration::RegisteredRig`.
+- A copy through `--rig` keeps every translation exactly.
+- A misspelt `translaton` names each path and exits 1.
+
+**Verification:** `ctest -j8` **1322/1322** Debug and **1330/1330** Release with video, camera and
+Ceres on, and **1188/1188** Debug and **1196/1196** Release with all three off (+4 each). Debug lists
+8 fewer cases than Release in either configuration. Warning-clean, format-check clean. **gui-mode NOT eyeballed**: the node on the canvas and its port's
+description are added to the eyeball owed for both registration nodes (Outstanding index, item 3).
+
+### The gui binds and saves camera values (built 2026-10-20)
+
+A review on 2026-10-20 found gui-mode short of what the cli does with camera values. A `CameraModel`, a
+rig's footage (`ListOfFrameSequence`) and a rig's models (`ListOfCameraModel`) each read "(no editor)" in
+the Interface pane, so none could be bound, and only an image output had a Save.... The owed gui-mode
+eyeballs of `registerCameras` and `registerCamerasTargetless` could not be walked, nor the calibration
+round trip of estimating a model, saving it and holding it through `imported`.
+
+**Decided with the repo owner (2026-10-20):**
+- **Editors only, with no `loadCameraModel` node.** Interface-pane editors close every gap. A node would
+  make `camera-flow` link `io::data`, `camera-serialize` and a codec, for a kind (in `register.cpp`), a
+  document-relative path and a catalog row that nothing here needs. Deferred, with its trigger
+  (Outstanding index).
+- **One reading per type, in a driver-free flowview unit**, `apps/flowview/src/camerafiles.{h,cpp}`,
+  which the cli's binders and the gui's editors both call, so the two cannot disagree about a folder's
+  order or a file's strictness. Each load hands back the value or every problem, each naming its file;
+  a binder logs them, and an editor shows them in a message box.
+- **A camera model saves beside an image**, in the Inspector's output ports and the Interface pane's
+  outputs. `panes/imagesave` became `panes/valuesave` (`renderValueSave`), which dispatches on the
+  value's type (ADR-0008 amended), and the write is the routine `run --model` writes with.
+- **`listDir` gains no directories option here.** Recorded with its trigger (Outstanding index).
+
+**Built:**
+- **`camerafiles`**: `loadCameraModel` (a camera-model document, read strictly), `saveCameraModel`,
+  `loadRigModels` and `openRigFootage`. A rig folder's cameras are its entries whose names do not start
+  with '.', sorted by name as `listDir` sorts, and a models folder keeps the `.json` ones. Every entry
+  is tried, so a refused rig names each bad one. A path that is not a folder, or a folder with no
+  camera in it, says so.
+- **The cli's `--imported`, `--footage` and `--models` binders** are one line each over it, and `run
+  --model` writes through `saveCameraModel`. Sharing the rule changed three things the cli does: an
+  empty or unlistable rig folder logs why (it was refused without a word); every bad entry is logged,
+  not only the first; and a hidden `.json` in a models folder is skipped, as hidden entries already
+  were in a footage folder.
+- **Three Interface-pane editors.** A `CameraModel` picks a file (`File...`, filtered to the data
+  formats this build reads) and shows the model's own line, wrapped. A rig's footage and its models
+  each pick a folder (`Folder...`) and show a count, and hovering the count lists the cameras in
+  pairing order: footage by its source, which is also the camera's name in a registration report.
+- **Save... for a camera model**: a format dropdown over the data writers (json here) and a save
+  dialog, with the format's extension forced on, as an image's is.
+- **Tests:** five cases in `test_camerafiles.cpp` (`[camerafiles]`). The gui's editors call the routine
+  and have no ImGui-free half to test, so each case also holds the cli binder to the routine's answer.
+  - a model saved by `saveCameraModel` is the model loaded and the one `--imported` binds, and a
+    misspelled coefficient is refused with the file and the key named;
+  - six models written out of name order load by name, skipping a hidden document that is not one
+    and a note;
+  - a models folder with a misspelled and an unreadable document is refused, naming both and not the
+    good ones;
+  - a missing folder, a folder holding only a note and one holding only `.DS_Store` each say why;
+  - three cameras' still folders open by name (their widths and sources in order), skipping
+    `.DS_Store`, and a note left among them refuses the rig, named.
+- `ctest -j8` **1323/1323** Debug and **1331/1331** Release with video, camera and Ceres on, **1189/1189**
+  Debug and **1197/1197** Release with all three off (+5 each); warning-clean, format-check clean.
+  (Earlier entries' all-off counts are Release ones: Debug lacks eight `NDEBUG`-only cases in `core`,
+  `image` and `log`.)
+- **Eight sabotages, each caught as predicted:**
+  - `saveCameraModel` writing an empty document;
+  - a model's problems not naming their file;
+  - a rig folder left unsorted, caught by the footage case. The models case passed it, because this
+    file system happened to list its six files in name order. One `rigEntries` serves both;
+  - hidden entries not skipped;
+  - a rig stopping at its first bad file;
+  - an empty folder binding an empty rig;
+  - the cli's footage binder reversing the rig;
+  - the cli's models binder dropping a camera.
+- **gui-mode NOT driven.** Nothing here ran in a window. The editors and the save widget are thin over
+  the tested routines, but the gestures themselves are owed, as the checklist below, for the repo owner
+  on a Metal session.
+
+- **Merged with the registered rig the same day** (*After slice 4: the registered rig*). `camerafiles`
+  also reads and writes a rig document (`loadRegisteredRig`, `saveRegisteredRig`), so the `--rig`
+  binder and `run --rig` go through it as the model's do, and a `RegisteredRig` output gets the same
+  format dropdown and Save... as a camera model (`renderDocumentSave` serves both). The rig's Save...
+  is gui code that ctest does not reach (`valuesave.cpp` needs a `gui::Context`), so checklist step 7
+  is owed with the rest.
+
+**gui-mode checklist (owed; Outstanding index, item 3).** The footage, rigs and documents it uses are
+rendered by an uncommitted probe through `test_cameravertical.cpp`'s own writers, as sub-slice 12c's
+were. This session's notes folder holds them, with the probe to render them again (CLAUDE.md's entry of
+this date names it), under `calibration/`, `board-rig/`, `targetless-rig/` and `fallback-moving/`.
+1. **A rig bound by hand.** In a new document, add `boardSpecification` (squares 24 mm) and
+   `registerCameras`. Add Interface inputs `ListOfFrameSequence` and `ListOfCameraModel` and an output
+   `RegistrationReport`, then wire them. Each input shows *(nothing bound)* and `Folder...`, not *(no
+   editor)*. Bind `board-rig/rig`: *3 cameras' footage*, and hovering lists `cam0`, `cam1`, `cam2` in
+   that order. Bind `board-rig/models`: *3 camera models*. The report reads *Ready: 3 cameras relative
+   to …/rig/cam0, metric, …*, as `flowview run` gives.
+2. **Refusals keep the binding.** Bind `board-rig/rig` as the models: a message names the folder as
+   holding no camera-model documents. Bind `board-rig/models` as the footage: a message names each
+   `.json` as not footage. Either way the earlier binding stays.
+3. **The targetless rig.** Open `targetless-rig/register-targetless.json`, bind its `rig` and `models`
+   folders, and check the `matchSearch` combo in the Inspector. The report reads *Ready: 3 cameras
+   relative to …, arbitrary scale*.
+4. **The calibration round trip.** Open `calibration/calibrate.json` and bind `calibration/footage`.
+   The `model` output (Interface pane), and the `cameraModel` node's `model` port (Inspector), each
+   show a `json` dropdown and `Save...`. A report output shows neither. Save as `saved`, which writes
+   `saved.json`. Open `calibration/validate.json`, bind the footage, then `imported` with `File...` →
+   `saved.json`. The model's line shows under the pin, and the report reads *Exploratory: …*, a held
+   model. Then, in a terminal, `flowview run --graph calibration/validate.json --footage
+   calibration/footage --imported saved.json --report held.txt` exits 0 with the same report: the
+   document the gui saved is one `--imported` reads.
+5. **A misspelled model is named.** Copy `saved.json`, rename `"fx"` in it to `"fxx"`, and bind the
+   copy: the message names the file and the key, and the earlier model stays bound.
+6. **Image saving is unchanged.** On any example with an image output (`tint-blur.json`), the format
+   dropdown, compression and quality controls and `Save...` behave as before.
+7. **A rig saved.** In step 1's graph, add `registeredRig` after `registerCameras` and an Interface
+   output of type `RegisteredRig`, and wire it. Its port describes the three cameras and where each
+   sits, and the output shows a `json` dropdown and `Save...`. Save as `rig`, which writes `rig.json`:
+   the same document `flowview run --graph … --rig rig.json` writes for that graph.
+
+### Held-out evidence judged from medians (built 2026-10-21)
+
+The review's P2 item 3: the three changes to how held-out evidence is judged, queued on 2026-10-09, and
+registration's resampling spread given the treatment calibration's stability got on 2026-10-19.
+
+**Decided with the repo owner**, the first two choices reversed by measurement:
+- **The held-out statistic is median-based** (`HeldOutEvidence::robustAngle`): for each kind of member
+  (a track member against its predicted point, against an epipolar plane, or a board view), the median
+  of its members' mean squared residual per point times that kind's mean-to-median ratio under normal
+  errors, the kinds weighted by their points. Under normal errors it reads as the RMS. The RMS stays,
+  for diagnosis. The owner first chose to leave out what an outlier rule rejects, and two rules were
+  built and measured before this:
+  - **The fit's rule** (a whitened residual over the loss scale, 3) flagged 46 of 320 held-out members
+    (14%) on the Ceres noisy rig, whose noise is drawn at the stated covariance, 12 of 215 (5.6%) on the
+    rendered rig, and up to 4 of 61 of one camera's in the flowview vertical: every one a correct
+    registration, made Rejected or Exploratory. A held-out residual also carries its prediction's error,
+    which the fit's residuals do not.
+  - **A self-normalising rule** (a member over 3 times the standard deviation its kind's median
+    implies) flagged 43 of 215 on the rendered rig and 51 to 55 of 257 on the comparison rig, pooled or
+    per camera and kind. SIFT's held-out residuals are heavy-tailed, since a feature's precision follows
+    its size.
+  - **The median-based statistic, measured with the same footage:** 0.52 mrad against the RMS's 0.55 on
+    the noisy rig; 0.30 against 0.64 on the rendered rig; 0.23 against 0.91 on the comparison rig's
+    targetless result; 2.9 to 9.0 mrad (the RMS 3.3 to 6.1) with one camera turned 5 mrad. It still
+    separates right from wrong, and the bounds were not changed.
+- **Each camera is judged on its own** against the same held-out bound, once it has ten held-out
+  points (`minimumHeldOutPerCamera`, in both tiers of both profiles, overridable).
+- **The resampling spread is median-based**: each camera's median distance from the result, times
+  sqrt(3) over the median of a chi distribution of three degrees of freedom (1.126), so normally
+  scattered resamples read as their RMS and the bounds keep their meaning.
+- **The profiles are amended in place**, being provisional until real footage (their header says so
+  now), and `registration-targetless/1`'s Ready holds position to 0.2% of the median depth.
+
+**Built:**
+- **`HeldOutEvidence::robustAngle`** and **`HeldOutCamera`** (`report.h`), each camera's predictions,
+  points, median-based residual and RMS. `perCamera` was a list of name-and-RMS pairs.
+- **One routine gathers held-out evidence for both methods**, `registration::detail::heldOutEvidence`
+  (`src/registration/common.{h,cpp}`), from each method's scored members: board registration's views and
+  `registration::validate`'s track members. **`detail::resampledSpread`** serves both methods' stability.
+- **The judge** reads `robustAngle`, rig-wide and per camera. A camera over the bound is named in the
+  note, with how many of the judged cameras are over it.
+- **The report's line** says `held out 0.3 mrad (median-based; RMS 0.64) over 86 tracks`.
+- **Tests**, three new cases over the board stand-ins in `test_registration.cpp`:
+  - a stray view in one held-out group moves the held-out RMS to 11.6 mrad (camera 2's 23.2) and the
+    median-based residual not at all (1.2e-13), and the verdict stays Ready;
+  - in an eight-camera rig with camera 2 3 mm off in every held-out group, camera 2 reads 2.80 mrad
+    and the rig 1.1e-13: not Ready, with camera 2 named, and Ready again when no camera is judged on
+    its own;
+  - of ten resamples, one with camera 1 turned 50 mrad leaves the spread at 1.5e-16 and the verdict
+    Ready, where an RMS would read 16 mrad. The pass-through refiner gained an `adjust` hook for it.
+  
+  Plus the profile contract (the per-camera minimum, the 0.2%, the override), and the parallel-and-serial
+  case comparing the median-based residual too.
+- **Three sabotages, each caught by the case aimed at it:** judging the plain RMS (the stray case, and
+  the per-camera case, whose rig RMS then crosses the bound); judging no camera on its own (the
+  per-camera case); the spread an RMS again (the resample case).
+- **Both goldens change on purpose**: new lines for the median-based residual and each camera's, the
+  thresholds' per-camera minimum, the overrides' new field, and the resampling spreads, now taken from
+  medians. Every RMS line is unchanged and no verdict changes; one translation-spread note goes, its
+  spread now under the bound.
+- `ctest -j8` **1338/1338** Release with video, camera and Ceres on (+3); warning-clean, format-check
+  clean. Not run: the builds with video, camera and Ceres off.
+
+### Identities that do not depend on where footage sits (built 2026-10-21)
+
+The review's P2 item 4. A camera in a graph was named by its footage's absolute source uri; a track's
+or a capture group's identity digested that; and every k-th unit in identity order is held out. So the
+same rig in another folder held out other evidence: 0.795 against 0.966 mrad through the real binary,
+each repeatable (sub-slice 10). The full fix, a capture manifest, comes after M9 (2026-10-20).
+
+**Decided with the repo owner:** all three methods, by spelling camera names and frame sources relative
+to the folder the footage lies in. The review's suggestion, the cli binder naming each camera, would
+have fixed targetless registration only, and left the gui's bindings out.
+
+**Where absolute paths entered an identity that decides something**, found by reading each method:
+- **Targetless registration:** a track digests its cameras' names and pixel cells. Relative names fix it.
+- **Board registration:** a capture group digests each member's camera name, frame source and ordinal,
+  and groups are held out in identity order. It needs relative names and relative frame sources.
+- **Targetless calibration:** a track digests its frames' sources, but tracks are ordered by capture
+  order (first frame, then pixel; `calibration/targetless.cpp`), with the identity only a last
+  tie-breaker. Its numbers never depended on the folder; only its reported identities did.
+- **Board calibration:** views are ordered by source then ordinal, and every frame of one camera shares
+  its folder's prefix, so the order holds wherever the folder is. Already location-free.
+
+**Built:**
+- **`capture/location.h`** (`lain::camera::capture`), one rule in one place:
+  - a camera's **location** is the one source all its frames come from (a video file), or else the
+    deepest folder holding all its frames' sources (a folder of stills);
+  - the footage's **root** (`footageRoot`) is the deepest folder holding every camera's location
+    strictly within it, so one camera's root is the folder its location is in;
+  - **`identitiesByLocation`** names each camera by its location relative to the root: `cam0`, or
+    `cam0.mp4`, or `left/cam0` for cameras at different depths. Two cameras sharing a location (two
+    numbered patterns in one folder) are named by their first frame relative to the root instead;
+  - **`relativeTo`** spells a source relative to a root it lies strictly within, and whole otherwise.
+
+  A uri is read as components split at '/' and '\', whatever its scheme, so no filesystem is touched.
+- **`CaptureGroup::create(members, root)`**, an overload that spells frames relative to `root`. The
+  existing `create(members)` spells them whole, and its pinned digest is unchanged.
+- **`groupsByPosition`** passes its cameras' footage root, so a by-position group has one identity
+  wherever its footage sits.
+- **A moving camera's track identities** spell their frames relative to the footage's root. The text's
+  version line is unchanged (its format is the same), and the pinned digest is recomputed outside lain,
+  by shasum and by Python's hashlib, which agree.
+- **The nodes name cameras by location** (`identity.h`), so the cli's folder binders and the gui's
+  editors both get it: the registration nodes' rig, and both calibration nodes' camera.
+- **Reports now read `relative to cam0`** rather than an absolute path, which also retires the flowview
+  verticals' platform-separator searches (`rig\cam0` on Windows).
+
+**Tests:**
+- **Three location cases** in `test_capturegroup.cpp`: video files, folders of stills, cameras at
+  different depths, one camera, two sharing a folder, empty footage; the same rig at two depths in two
+  places giving the same names and the same groups, while a group made with no root does not; and
+  `relativeTo` on a root's own path, a component that is only a prefix, a Windows path and an `s3://`
+  uri.
+- **Every method from a second folder.** The flowview verticals copy the rendered footage three folders
+  down and run again, and require the same bytes: the board and targetless registration reports and rig
+  documents, and the board and targetless calibration attempts and models.
+- **Three sabotages:**
+  - by-position groups spelling their frames whole: the board registration vertical's report and rig
+    differ from the second folder, so group identities did decide what was held out;
+  - the root's "strictly within" dropped: one camera is named by nothing, and two cameras sharing a
+    folder collide, both caught by the location cases;
+  - a moving camera's track identities spelling their frames whole: **not caught** by the targetless
+    calibration vertical, whose numbers never depended on them (above), so only the pinned digest case
+    stands guard over them.
+- `ctest -j8` **1341/1341** Release with video, camera and Ceres on (+3); warning-clean, format-check
+  clean. Not run: the builds with video, camera and Ceres off.
+
+### Camera footage, examples and the composition (built 2026-10-21)
+
+The review's P3 items 5 and 6: a way to draw the camera examples' footage, committed examples of each
+method, and a test of calibrating every camera of a rig then registering it with those models.
+
+**Decided with the repo owner:**
+- **The generator is a mode of the examples builder**, `flowview-examples --camera-footage <folder>`,
+  with a `camera-footage` target drawing into `build/camera-footage`. It is never committed.
+- **The examples are `calibrate`, `register`, `register-targetless` and `calibrate-and-register`.**
+  `detectBoard` is left out: one frame's detection has little to show before the deferred detection
+  overlays exist.
+- **The camera verticals run the committed examples**, as the fallback's already did: one document,
+  two callers, so a broken example fails its vertical. The documents the verticals built in code are
+  deleted, except the two that are a test's own (calibrate.json held against an imported model, and a
+  rig copied straight through).
+
+**Built:**
+- **`examples/src/camerafootage.{h,cpp}`** holds every footage writer the verticals had: one camera's
+  board footage, a moving camera's footage with no board, a board rig, and a textured rig, each with
+  its truth (`boardRigCamera`, `texturedRigCamera`, `boardRigModel`). Both `flowview-examples` and
+  `test-flowview` compile it. `REQUIRE` became exceptions, and libs/camera/test's camera parameters
+  moved to a Catch2-free `testcameraparameters.h`, which `testcamera.h` includes.
+- **`writeAll`** draws board/footage (24 frames), moving/footage (40), board-rig (24 frames a camera)
+  and textured-rig, about 8 MB in 5 s in Release, with a README.txt naming each folder's example and
+  the command that runs it.
+- **The board rig's cameras have their own pinholes**: cam1 a tenth longer than cam0 and cam2 a tenth
+  shorter, with their principal points moved. With one shared pinhole a camera paired with another's
+  model was invisible to every test.
+- **Four examples**, every one `needsCamera` and `needsInputs`, so test_examples loads them and checks
+  that a command line can bind each input:
+  - `calibrate`: footage, a 7 x 5 board of 24 mm squares and a pinhole model, to the report and the
+    model;
+  - `register` and `register-targetless`: a rig's footage and models folders, to the report and the
+    rig document;
+  - `calibrate-and-register`: a map over the rig's footage, the board broadcast to every element, each
+    element `calibrateCamera` then `cameraModel`; the gathered models feed `registerCameras` with the
+    same footage and board. A calibration that fails leaves a hole, which clears the models (ADR-0014)
+    and suppresses the registration rather than registering with a camera missing.
+  
+  `calibrate-fallback` now shares the board specification's helper, and is written byte for byte as
+  before.
+- **A new vertical runs `calibrate-and-register`** on a board rig of 24 frames a camera, with only the
+  footage bound. Ready, 24 of 24 groups usable, and the rig 0.05% from the truth in scale, 0.87 mrad
+  and 0.24 mm, held to the register vertical's bounds, in 2 s in Release. At 16 frames a camera the
+  calibrations were too loose for those bounds. Its no-detector and no-refiner branches are written
+  but run only in builds without them, which CI's camera-off leg is.
+- **Through the real binary**, on `build/camera-footage`: `calibrate-and-register` and `register` both
+  Ready, their rigs within 0.3 mm of each other and of the truth.
+
+**Verification:**
+- **Sabotage:** registering each camera with the next camera's model fails four checks in both the
+  register vertical and the composition vertical. It would have passed with one shared pinhole.
+- `ctest -j8` **1342/1342** Release with video, camera and Ceres on (+1); warning-clean, format-check
+  clean. Not run: the builds with video, camera and Ceres off.
+
+### A no-refiner CI leg, and the footprint measured again (built 2026-10-21)
+
+The review's P4 items 8 and 9.
+
+**The CI leg.** CI's `camera` field drove both `LAIN_CAMERA_OPENCV` and `LAIN_CAMERA_CERES`, so no leg
+built OpenCV without Ceres. That is a build which can detect, calibrate by board and extract features,
+but refines nothing, and every camera test has a branch for it. Only a local build had ever run one.
+- **A `ceres` field** joins the matrix, stated on every leg like `video` and `camera`, and in the
+  cache key. It follows `camera` everywhere but on the new **Linux Release (no refiner)** leg: video
+  and OpenCV on, Ceres off. It skips Ceres' source build, so it should be cheaper than the full Linux
+  leg.
+- **The leg found a bug at once, run locally before pushing.** The composition vertical drew 2
+  frames a camera whenever registration could not run, so without Ceres every calibration failed for
+  lack of views, the gathered models were cleared, and nothing was written, where the test expected
+  `Failed: NoRefiner`. It now draws full footage wherever detection runs: the calibrations need no
+  refiner, so they run, and the registration reports what it lacks.
+- **All three configurations green on macOS arm64, Release:** everything on 1342/1342, OpenCV without
+  Ceres 1283/1283, everything off 1208/1208, the last fetching no OpenCV, FFmpeg, Ceres or Eigen.
+  CI's first run of the new leg is owed (Outstanding index, item 3).
+
+**The footprint, macOS arm64, Release (AppleClang, 2026-10-21).** The last record, "flowview grows by
+88 bytes", dates from before anything referenced Ceres.
+
+| Build | `flowview` | stripped (`strip -x`) |
+|---|---|---|
+| everything off | 6.46 MB | 5.02 MB |
+| video and OpenCV, no Ceres | 6.64 MB | 5.14 MB |
+| everything on | 9.19 MB | 6.75 MB |
+
+- **Ceres adds 2.55 MB to flowview** (1.61 MB stripped), linked statically: `libceres.a` is 6.0 MB.
+- **FFmpeg and OpenCV add 0.18 MB together**, since flowview links them as shared libraries. Beside
+  it they weigh 20.0 MB (FFmpeg) and 10.7 MB (OpenCV's six libraries: imgproc 3.5, core 3.1, calib3d
+  1.8, objdetect 1.1, features2d 0.7, flann 0.5).
+- **Configure and build time** were measured when each landed and are not repeated here: OpenCV and
+  FFmpeg are one fetch each, and Ceres' source build took 1m13s wall in Debug on four Linux cores (slice
+  2, sub-slice 1).
+
 ### Not in this milestone
 
 - Video/image-sequence loading, capture-manifest persistence, and temporal grouping I/O details.
+  *(Confirmed 2026-10-20 in the review above: capture manifests and capture datasets come after M9
+  too, with clock-domain identity and timestamp grouping.)*
 - Joint intrinsic/extrinsic optimization, multi-board calibration, or mutable intrinsics during
   registration.
 - Moving-camera pose tracking, temporal-alignment estimation, and world-frame alignment.
@@ -4226,7 +10710,8 @@ the part worth keeping, because it is what someone would otherwise "fix" later:
 
 ### Not in this milestone
 
-- **Capture manifests and capture datasets** — M9's, built on this contract.
+- **Capture manifests and capture datasets** — M9's, built on this contract. *(Moved after M9 by the
+  M9 review of 2026-10-20.)*
 - **A driving timeline in the gui.** Slice 7 is an *inspection* player on a sequence pin; a transport
   that binds a `FramePosition` boundary input and re-runs the graph is the follow-on. `FramePosition`
   being a distinct type is what keeps it a one-widget change.
@@ -8392,13 +14877,127 @@ row here**. A row is cheap to delete and expensive to leave.
 
 ### Unfinished milestones
 
-- **M9 — camera calibration and fixed registration.** Designed 2026-08-14/15 with three ADRs, no
-  code. **Unblocked:** M10 was numbered after it and built before it, discharging its frame-sequence
-  prerequisite. How OpenCV is obtained was decided 2026-09-29 (a pinned prebuilt), its first
-  release (`opencv-4.14.0-calib`) is published, and **slice 0 is built** (`addOpenCV.cmake`, the
-  `[opencv]` probe). **Slice 1 is in progress** as nine sub-slices, of which 0 to 7 are built;
-  sub-slice 8 (the real-camera fixture) has its machinery built (8a-8c), and its capture is owed by
-  the repo owner, guided by `plugins/camera/test/fixtures/README.md`. *(Milestone 9;
+- **M9 — camera calibration and fixed registration.** Designed 2026-08-14/15 with three ADRs.
+  **Built:** slice 0 (OpenCV lands), slice 1 sub-slices 0 to 7 plus the fixture machinery (8a to 8c),
+  slice 2 (fixed-camera board registration, with Ceres), slice 3 (targetless registration with
+  known intrinsics, all eleven sub-slices, 2026-10-09) and slice 4 (targetless calibration and the
+  graph fallback, all thirteen sub-slices, 2026-10-20). **Left in M9**, each item pointing at where
+  its detail lives:
+  1. **Build work from the slice plans: none left.** Slice 4 was the last slice, built as 0 (the plan),
+     1 (as 1a and 1b), 2 (as 2a and 2b), 3, 4, 5, 6 (as 6a, 6b and 6c), 7 (as 7a, 7b and 7c), 8, 9 (as
+     9a, 9b and 9c), 10 (as 10a to 10e), 11 (as 11a to 11c) and 12 (as 12a to 12c, 2026-10-20), with
+     the fixes ahead of 5 and of 9c. The separate feature-extraction node slice 3 deferred to it stays
+     deferred, with its trigger restated (slice 4's plan).
+     **Build work the 2026-10-20 review found** (M9's *The 2026-10-20 review*, by priority):
+     - **P1, both built 2026-10-20:** a registration's result leaving the process (*After slice 4:
+       the registered rig*), and the gui loading and saving camera values (*The gui binds and saves
+       camera values*). Their gui-mode checks are in item 3.
+     - **P2, both built 2026-10-21:** the held-out changes (*Held-out evidence judged from medians*),
+       and identities independent of where footage sits (*Identities that do not depend on where
+       footage sits*).
+     - **P3, built 2026-10-21 but for its gui session:** the footage generator, the camera examples and
+       the composition test (*Camera footage, examples and the composition*). The gui session is item 3.
+     - **P4, built 2026-10-21:** a CI leg with OpenCV on and Ceres off, and the dependency footprint
+       measured again (*A no-refiner CI leg, and the footprint measured again*). Its first CI run is
+       owed (item 3).
+  2. **Owed by the repo owner.**
+     - **The real-camera capture** for slice 1, sub-slice 8, guided by
+       `plugins/camera/test/fixtures/README.md`. It is all that is left of slice 1.
+     - **Sub-slice 10e's measurements and findings for targetless calibration** (slice 4's *Sub-slice
+       10e built*), each its own commit before sub-slice 11 exposes the node:
+       - the verdict missing a principal point several pixels off. Resampling frames and comparing the
+         three starts were both measured and refused on 2026-10-19 (slice 4's *After sub-slice 10e*):
+         neither separates the wrong minimum, and resampling frames changed verdicts with the draw seed.
+         The outlier pass was built the same day, as a second adjustment without what the first's result
+         does not explain: on the printed board's footage every seed is now within 0.6 px, and CI run
+         38 holds macOS and Windows within the tightened end-to-end bounds. **Still open:** the HD
+         lens, which sees no board, is Ready 1.45 to 3.56 px out over three seeds. A covariance from the
+         refiner was measured and refused the same day: it agrees with the landmark bootstrap (0.95 mrad),
+         since both inherit the features' stated noise, which understates SIFT's error 1.5 to 3.5 times
+         on this footage. Left for the repo owner: an honest feature covariance (the localisation model
+         understates the smallest features most), which any precision measure would then inherit.
+         The repo owner decided on 2026-10-19 that sub-slice 11 exposes the node with this open,
+         stated in `calibrateCameraTargetless`'s header.
+
+       The repo owner took every recommendation on 2026-10-19. Already built: a moving camera's
+       feature cap of 2048, 40 sampled frames kept, 10c's ranking kept, a robust spread for a
+       calibration's stability, the targetless held-out residual judged whitened by the stated
+       covariance rather than as an angle, and the scale cases run with nothing beside them (slice
+       4's *After sub-slice 10e*). Registration's resampling spread and held-out statistic got the
+       same treatment on 2026-10-21 (M9's *Held-out evidence judged from medians*).
+     - **The feature cap's cost**: count descriptor rows rather than features, or lower the cap, if
+       Exact matching's cost (16.9 core-hours for a 100-camera rig at the cap) matters more than the
+       tracks. To be decided on real footage's rows per feature (sub-slice 7 follow-up B).
+  3. **Verification owed.** All of it on a Metal session, best done as one sitting (the review's item
+     7). `cmake --build build --target camera-footage` draws footage for every camera example into
+     `build/camera-footage`; the gui load-and-save checklist's own data was rendered on 2026-10-20 by an
+     uncommitted probe (*The gui binds and saves camera values*). None is committed.
+     - **gui-mode eyeballs of slice 1's surfaces**, never recorded as done (slice 1, sub-slice 7): the
+       Camera menu, the enum editors and the port colours, over the five slice-1 kinds.
+     - **The refusal to open a document that did not load as saved** (slice 1, sub-slice 0, *the gui
+       follows*): the transient message, the Issues rows, and the current document staying on screen
+       after Open, Open Recent, Return and Edit Template….
+     - **A node's Failed mark from `NodeEvaluation::fail`** (*A node could only report a failure by
+       throwing*): the canvas mark and the Issues row, on `render-board.json` in a build without a
+       renderer.
+     - **The gui-mode checklist for binding and saving camera values**: a rig bound from folders by
+       hand, refusals that keep the binding, a model saved and bound back through `imported`, image
+       saving unchanged, and a registered rig saved (*The gui binds and saves camera values*, its
+       seven steps).
+     - **gui-mode eyeballs** of `registerCameras` and `registerCamerasTargetless`, the `matchSearch`
+       combo included, and of `registeredRig` after either, its port describing the transforms. Steps
+       1, 3 and 7 of that checklist walk them.
+     - **gui-mode eyeball of slice 4's fallback** on a Metal session: `calibrate-fallback.json` opened,
+       the method picked in the Interface pane (nothing runs until one is), footage bound, and the
+       attempts and the model read; the `calibrateCameraTargetless`, `calibrationMethod`,
+       `nextAttempt` and `calibrationAttempts` nodes on the canvas, their "+" report pins included.
+       `camera-footage` draws `board/footage` for the board's attempt and `moving/footage` for the
+       targetless one.
+     - **CI's first run of the no-refiner leg**, Linux Release with OpenCV and no Ceres (*A no-refiner
+       CI leg, and the footprint measured again*). Its configuration was run locally on macOS only.
+     - **gui-mode eyeball of the camera examples** (*Camera footage, examples and the composition*):
+       `calibrate`, `register`, `register-targetless` and `calibrate-and-register` opened, their footage
+       bound from `build/camera-footage`, and the map's elements stepped through in
+       `calibrate-and-register`.
+  4. **Waiting on real footage**, the triggers sub-slices 7 to 9 carried forward (sub-slice 9's
+     notes):
+     - rows per descriptor on real footage, which also settles the feature cap above;
+     - true matches lost to the ratio test because a feature's other orientation is its second
+       neighbour; excluding that needs more than two neighbours from the matcher seam (sub-slice 7
+       follow-up B);
+     - a robust initial triangulation from inlier rays (sub-slice 8b);
+     - the constants rendered footage never exercised: the 2° seed floor, the 16 seed candidates,
+       the 20 tracks to hold out, and the tracks-per-bridge thresholds;
+     - `localisationPerSize` below 4 px, which states about a tenth of the true error natively on
+       rendered footage, where a floor made the rig less accurate.
+  5. **Deferred, each with its trigger.**
+     - **Timestamp grouping**: the first rig footage that is not frame-locked (slice 2's plan).
+     - **Board-geometry reconstruction**, a board rebuilt from relative poses: designed separately,
+       and needs relative-pose recovery through the backend (slice 1, sub-slice 8).
+     - **A neighbour or retrieval restriction on pair matching**: the first rig whose matching
+       dominates its registration time (slice 3's plan).
+     - **`flow::serialize::toValue` reporting a param it has no codec for**: its own change, since it
+       changes the result's shape; the catalog census test guards it until then (slice 1,
+       sub-slice 7).
+     - **Debug overlays of detection evidence**: the first real capture whose detections need
+       inspecting (M9's *The 2026-10-20 review*; ADR-0016, amended).
+     - **Bulk projection with per-element outcomes**: the first caller that projects many points and
+       must report per-element failures, such as a reprojection-error view (the same review;
+       ADR-0016, amended).
+     - **A consumer for a board's measured-length bounds**, which are stored, validated and serialised
+       but read by nothing; likely a registration's metric-scale uncertainty (the same review).
+     - **A node that consumes a registered rig.** A rig document binds back (`--rig`), but nothing
+       takes one, so a bound rig can only be passed through. Trigger: the first consumer, such as
+       world-frame alignment (excluded from M9) or a registration seeded from a prior rig (*After slice
+       4: the registered rig*).
+     - **A `loadCameraModel` node** (a path in, a `CameraModel` out, as `loadImage` is): the first
+       document that must name its own model file, so it runs with no binding. The gui binds one from
+       a file instead (*The gui binds and saves camera values*).
+     - **`listDir` listing folders**, so `listDir → map(openSequence)` builds a rig of per-camera still
+       folders in the graph: the first rig whose cameras must be chosen or computed in the graph
+       rather than taken whole from one folder. Until then a rig binds from a folder through
+       `camerafiles`, in the cli and the gui alike (slice 2's *Sub-slice 6 built*, its deviation).
+  *(Milestone 9;
   [ADR-0015](docs/adr/0015-permissive-by-default-production-dependencies.md),
   [ADR-0016](docs/adr/0016-camera-calibration-method-modules.md),
   [ADR-0017](docs/adr/0017-ceres-for-registration-refinement.md),
@@ -8407,7 +15006,8 @@ row here**. A row is cheap to delete and expensive to leave.
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not.**
 
 - **Example documents** — all four commits built. Owed: a gui-mode eyeball of every example (the
-  primary purpose), and the first CI run of the new smoke step. *(§Example documents.)*
+  primary purpose). The smoke step has run in CI since it landed, and was green on every leg in
+  feature/M9's runs 37 to 40 (found by the M9 review, 2026-10-20). *(§Example documents.)*
 
 ### Deferred — engine / `flow` core
 
@@ -8436,6 +15036,9 @@ M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that i
   *(M4, deferred as planned.)*
 - **Port reorder.** Ids ride along, so edges are untouched by a permutation — but nothing performs
   one. *(M4, deferred as planned; see also the storage note in M4's mutation design.)*
+- **Graph input defaults** — a root boundary input carrying the value a run uses when the host
+  binds none. Deferred as a feature of its own; its first caller is `calibrate-fallback`'s `method`,
+  whose unbound run produces nothing. *(M9 slice 4, §Sub-slice 12 planned.)*
 - **`LoadImage` and `OpenSequence` failing with a reason** (`NodeEvaluation::fail`) instead of
   suppressing while the io layer logs why. A missing or undecodable file is plainly a failure; an
   EMPTY path on a fresh palette node is the judgement to make first, or every new LoadImage lands
@@ -8538,7 +15141,8 @@ M12 §Not in this milestone.)*
 Joint intrinsic/extrinsic optimization, multi-board calibration, mutable intrinsics during
 registration; moving-camera pose tracking, temporal-alignment estimation, world-frame alignment; a
 generic `Measurement<T>` without a second caller; runtime-defined distortion-model plugins and
-SuiteSparse-enabled Ceres; capture manifests and capture datasets (which M10 hands to M9).
+SuiteSparse-enabled Ceres; capture manifests and capture datasets (which M10 handed to M9, and the M9
+review of 2026-10-20 moved after it), with clock-domain identity and timestamp grouping.
 *(M9 §Not in this milestone; M10 §Not in this milestone.)*
 
 ### Known defects, each owed its own commit

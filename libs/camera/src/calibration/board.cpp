@@ -1,16 +1,16 @@
 #include "lain/camera/calibration/board.h"
 
+#include "common.h"
+#include "lain/camera/board/pose.h"
 #include "lain/camera/calibration/estimator.h"
 #include "lain/camera/projection.h"
-
-#include <lain/task/task.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <memory>
-#include <random>
+#include <numeric>
 #include <set>
 #include <string>
 #include <utility>
@@ -27,6 +27,8 @@ namespace lain::camera::calibration::board
 	// Fewer usable views than this and none are held out: holding one of four out leaves too little
 	// to estimate from and too little to validate with.
 	static constexpr std::size_t kMinimumToHoldOut = 5;
+	// The profile a request naming none is judged by: this method's own.
+	static constexpr const char* kOwnProfile = "reconstruction/1";
 
 	static bool usable(const cb::DetectionReport& report)
 	{
@@ -55,27 +57,13 @@ namespace lain::camera::calibration::board
 		return out;
 	}
 
-	// The grid cell a pixel falls in, or -1 outside the image.
-	static int cellOf(const math::Vec2d& pixel, const ImageGeometry& image)
-	{
-		const double u = (pixel.x + 0.5) / double(image.width);
-		const double v = (pixel.y + 0.5) / double(image.height);
-		if (!(u >= 0 && u < 1 && v >= 0 && v < 1))
-			return -1;
-		return int(v * kCoverageRows) * kCoverageColumns + int(u * kCoverageColumns);
-	}
-
-	using CellSet = std::array<bool, kCoverageColumns * kCoverageRows>;
+	using CellSet = detail::CoverageCells;
 
 	static CellSet cellsOf(const cb::Observation& view, const ImageGeometry& image)
 	{
 		CellSet cells{};
 		for (const cb::FeatureObservation& f : view.features)
-		{
-			const int cell = cellOf(f.pixel, image);
-			if (cell >= 0)
-				cells[std::size_t(cell)] = true;
-		}
+			detail::cover(cells, f.pixel, image);
 		return cells;
 	}
 
@@ -145,26 +133,6 @@ namespace lain::camera::calibration::board
 		return 1 + ((quadrant % 4) + 4) % 4;
 	}
 
-	// Sample standard deviation.
-	static double deviation(const std::vector<double>& values)
-	{
-		double mean = 0;
-		for (const double v : values)
-			mean += v / double(values.size());
-		double sum = 0;
-		for (const double v : values)
-			sum += (v - mean) * (v - mean);
-		return std::sqrt(sum / double(values.size() - 1));
-	}
-
-	static double average(const std::vector<double>& values)
-	{
-		double mean = 0;
-		for (const double v : values)
-			mean += v / double(values.size());
-		return mean;
-	}
-
 	// The first registered backend that can estimate `model`, or nullptr.
 	static std::unique_ptr<Estimator> estimatorFor(DistortionModel model)
 	{
@@ -177,20 +145,8 @@ namespace lain::camera::calibration::board
 		return nullptr;
 	}
 
-	// Run `work(i)` for every i below `count`: in parallel on the process pool normally, serially in
-	// order for deterministic debugging.
-	template <typename Work>
-	static void forEach(std::size_t count, ExecutionPolicy execution, const Work& work)
-	{
-		if (execution == ExecutionPolicy::DeterministicDebug)
-		{
-			for (std::size_t i = 0; i < count; ++i)
-				work(i);
-			return;
-		}
-		task::range(std::ptrdiff_t{0}, std::ptrdiff_t(count), [&work](std::ptrdiff_t i)
-					{ work(std::size_t(i)); });
-	}
+	using detail::failed;
+	using detail::forEach;
 
 	static std::vector<cb::Observation> observationsAt(const std::vector<cb::DetectionReport>& detections,
 													   const std::vector<std::uint32_t>& positions)
@@ -203,56 +159,47 @@ namespace lain::camera::calibration::board
 	}
 
 	// The model checked against views it was not estimated from, through lain's own projection. The
-	// backend only recovers each view's board pose with the model held fixed; every residual is
-	// measured here.
+	// pose solver only places each view's board with the model held fixed; every residual is
+	// measured here (board::measure).
 	static std::variant<HeldOutEvidence, Unavailable> validate(const CameraModel& model, const cb::Specification& board,
 															   const std::vector<cb::Observation>& views,
-															   const Estimator& estimator)
+															   Provenance& poseSolver)
 	{
 		if (views.empty())
 			return Unavailable{"no views were held out"};
+		if (!cb::canSolvePose())
+			return Unavailable{"this build has no board pose solver"};
 		HeldOutEvidence evidence;
 		evidence.views = std::uint32_t(views.size());
 		double angles = 0, pixels = 0;
 		for (const cb::Observation& view : views)
 		{
-			const std::optional<math::RigidTransformd> pose = estimator.boardPose(model, board, view);
-			if (!pose)
+			const cb::PoseResult pose = cb::pose(model, board, view);
+			if (poseSolver.backend.empty())
+				poseSolver = pose.provenance;
+			if (!pose.ok())
 			{
 				++evidence.viewsWithoutPose;
 				continue;
 			}
-			for (const cb::FeatureObservation& f : view.features)
-			{
-				const math::Vec3d point = pose->apply(*board.cornerPosition(f.id));
-				const Projection<double> predicted = project(model, point.x, point.y, point.z);
-				const Unprojection<double> observed = unproject(model, f.pixel.x, f.pixel.y);
-				if (!predicted.ok() || !observed.ok())
-					continue;
-				const math::Vec3d ray{observed.x, observed.y, observed.z};
-				const math::Vec3d towards = math::normalize(point);
-				const double angle = std::atan2(math::length(math::cross(ray, towards)), math::dot(ray, towards));
-				const double pixel = math::length(math::Vec2d{predicted.u, predicted.v} - f.pixel);
-				angles += angle * angle;
-				pixels += pixel * pixel;
-				evidence.worstPixels = std::max(evidence.worstPixels, pixel);
-				++evidence.corners;
-			}
+			const cb::ViewResidual residual = cb::measure(model, board, view, pose.pose->cameraFromBoard);
+			angles += residual.sumSquaredAngle;
+			pixels += residual.sumSquaredPixels;
+			evidence.worstPixels = std::max(evidence.worstPixels, residual.worstPixels);
+			evidence.residuals += residual.corners;
 		}
-		if (evidence.corners == 0)
+		if (evidence.residuals == 0)
 			return Unavailable{"no held-out corner could be measured: no board pose was recovered"};
-		evidence.rmsAngle = std::sqrt(angles / evidence.corners);
-		evidence.rmsPixels = std::sqrt(pixels / evidence.corners);
+		evidence.rmsAngle = std::sqrt(angles / evidence.residuals);
+		evidence.rmsPixels = std::sqrt(pixels / evidence.residuals);
 		return evidence;
 	}
 
 	// Re-estimate from bootstrap resamples of the calibration views, each from the same `initial` as
 	// the estimate itself: stability is a property of the procedure that produced the model, so a
-	// seeded estimate is resampled seeded. The draws come from one seeded
-	// engine, in order, before anything runs, so they are the same under either execution policy;
-	// only the estimates run in parallel. The mapping from an engine draw to an index is a plain
-	// modulo, since the standard's distributions are implementation-defined and would draw
-	// differently on each platform.
+	// seeded estimate is resampled seeded. The draws are made before anything runs
+	// (detail::bootstrapDraws), so they are the same under either execution policy; only the
+	// estimates run in parallel.
 	static std::variant<ResamplingEvidence, Unavailable>
 	resample(const std::vector<cb::Observation>& views, const cb::Specification& board, const ImageGeometry& image,
 			 const Request& request, const std::optional<CameraModelParameters>& initial, const Estimator& estimator)
@@ -262,12 +209,14 @@ namespace lain::camera::calibration::board
 		if (views.size() < kMinimumCalibrationViews)
 			return Unavailable{"too few calibration views to resample"};
 
-		std::mt19937_64 engine(request.seed);
-		std::vector<std::vector<cb::Observation>> draws(request.resamples);
-		for (std::vector<cb::Observation>& draw : draws)
+		std::vector<std::uint32_t> positions(views.size());
+		std::iota(positions.begin(), positions.end(), 0u);
+		std::vector<std::vector<cb::Observation>> draws;
+		for (const std::vector<std::uint32_t>& drawn : detail::bootstrapDraws(positions, request.resamples, request.seed))
 		{
-			for (std::size_t i = 0; i < views.size(); ++i)
-				draw.push_back(views[std::size_t(engine() % views.size())]);
+			std::vector<cb::Observation>& draw = draws.emplace_back();
+			for (const std::uint32_t i : drawn)
+				draw.push_back(views[i]);
 		}
 
 		std::vector<std::optional<CameraModelParameters>> estimates(draws.size());
@@ -275,62 +224,7 @@ namespace lain::camera::calibration::board
 				[&](std::size_t r)
 				{ estimates[r] = estimator.estimate(image, draws[r], board, request.model, initial).parameters; });
 
-		std::vector<double> fx, fy, cx, cy;
-		for (const std::optional<CameraModelParameters>& e : estimates)
-		{
-			if (!e)
-				continue;
-			fx.push_back(e->intrinsics.fx);
-			fy.push_back(e->intrinsics.fy);
-			cx.push_back(e->intrinsics.cx);
-			cy.push_back(e->intrinsics.cy);
-		}
-		if (fx.size() < 2)
-			return Unavailable{"fewer than two resamples produced an estimate"};
-
-		ResamplingEvidence evidence;
-		evidence.resamples = std::uint32_t(fx.size());
-		evidence.focalVariation = std::max(deviation(fx) / average(fx), deviation(fy) / average(fy));
-		const double focal = (average(fx) + average(fy)) / 2;
-		evidence.principalPointVariation = std::max(deviation(cx), deviation(cy)) / focal;
-		return evidence;
-	}
-
-	// Whether the evidence meets one tier. `complete` demands every criterion's evidence be present
-	// (Ready); otherwise a criterion whose evidence is unavailable is not held against it. Notes say
-	// what fell short.
-	static bool meets(const FitnessThresholds& t, const char* tier, bool complete, std::uint32_t views, double covered,
-					  const std::variant<HeldOutEvidence, Unavailable>& heldOut,
-					  const std::variant<ResamplingEvidence, Unavailable>& resampling, std::vector<std::string>& notes)
-	{
-		bool ok = true;
-		const auto note = [&](std::string text)
-		{
-			notes.push_back(std::string(tier) + ": " + std::move(text));
-			ok = false;
-		};
-		if (views < t.minimumViews)
-			note(std::to_string(views) + " views, fewer than " + std::to_string(t.minimumViews));
-		if (covered < t.minimumCoverage)
-			note("coverage " + std::to_string(covered) + " is below " + std::to_string(t.minimumCoverage));
-		if (const auto* e = std::get_if<HeldOutEvidence>(&heldOut))
-		{
-			if (e->rmsAngle > t.maximumHeldOutAngle)
-				note("held-out RMS angle " + std::to_string(e->rmsAngle) + " rad exceeds " + std::to_string(t.maximumHeldOutAngle));
-		}
-		else if (complete)
-			note("no held-out evidence: " + std::get<Unavailable>(heldOut).reason);
-		if (const auto* e = std::get_if<ResamplingEvidence>(&resampling))
-		{
-			if (e->focalVariation > t.maximumFocalVariation)
-				note("focal variation " + std::to_string(e->focalVariation) + " exceeds " + std::to_string(t.maximumFocalVariation));
-			if (e->principalPointVariation > t.maximumPrincipalPointVariation)
-				note("principal point variation " + std::to_string(e->principalPointVariation) + " rad exceeds " +
-					 std::to_string(t.maximumPrincipalPointVariation));
-		}
-		else if (complete)
-			note("no resampling evidence: " + std::get<Unavailable>(resampling).reason);
-		return ok;
+		return detail::stability(estimates, false);
 	}
 
 	// --- the public pieces --------------------------------------------------------
@@ -346,7 +240,7 @@ namespace lain::camera::calibration::board
 			for (std::size_t c = 0; c < cells.size(); ++c)
 				covered[c] = covered[c] || cells[c];
 		}
-		return double(std::count(covered.begin(), covered.end(), true)) / double(covered.size());
+		return detail::coveredFraction(covered);
 	}
 
 	ViewSplit splitViews(const std::vector<cb::DetectionReport>& detections, const cb::Specification& board,
@@ -357,15 +251,13 @@ namespace lain::camera::calibration::board
 
 		// Held out: every k-th usable view, starting half a stride in, so the held-out views are
 		// spread through the footage the way the calibration views are drawn from it.
-		std::vector<bool> heldOut(ordered.size(), false);
-		if (request.heldOutFraction > 0 && ordered.size() >= kMinimumToHoldOut)
+		const std::vector<bool> heldOut = detail::holdOut(ordered.size(), request.heldOutFraction, kMinimumToHoldOut,
+														  [](std::size_t)
+														  { return true; });
+		for (std::size_t i = 0; i < ordered.size(); ++i)
 		{
-			const std::size_t stride = std::max<std::size_t>(2, std::size_t(std::lround(1.0 / request.heldOutFraction)));
-			for (std::size_t i = stride / 2; i < ordered.size(); i += stride)
-			{
-				heldOut[i] = true;
+			if (heldOut[i])
 				split.heldOut.push_back(ordered[i]);
-			}
 		}
 
 		// Calibration views, greedily. A view scores the grid cells it newly covers, a bonus when its
@@ -430,41 +322,29 @@ namespace lain::camera::calibration::board
 
 	// --- calibrate ------------------------------------------------------------------
 
-	// A report that has failed, timed from `start`.
-	static Report failed(Report report, core::Time start, Failure failure, std::string detail)
-	{
-		report.status = CalibrationStatus::Failed;
-		report.failures.push_back({failure, std::move(detail)});
-		report.elapsed = core::Time::now() - start;
-		return report;
-	}
-
 	// The checks both entry points make before any work: a known profile, a usable imported model,
-	// and a backend for the job. Returns the estimator to use, or the failed report.
+	// and a backend for the job. Returns the estimator to use (none for a held model, which estimates
+	// nothing), or the failed report.
 	static std::variant<std::unique_ptr<Estimator>, Report> prepare(Report& report, const ImageGeometry& image,
 																	const Request& request, core::Time start)
 	{
 		report.reproducibility.request = request;
-		const std::optional<FitnessProfile> profile = fitnessProfile(request.fitnessProfile);
-		if (!profile)
-			return failed(report, start, Failure::UnknownFitnessProfile,
-						  "no fitness profile is named \"" + request.fitnessProfile + "\"");
-		report.thresholds = resolve(*profile, request.overrides);
-
+		if (std::optional<Report> failure = detail::resolveProfile(report, request, kOwnProfile, start))
+			return std::move(*failure);
+		if (std::optional<Report> failure = detail::checkImported(report, request, image, start))
+			return std::move(*failure);
 		const bool hold = request.importedPolicy == ImportedModelPolicy::HoldAndValidate;
-		if (hold && !request.imported)
-			return failed(report, start, Failure::NoImportedModel, "HoldAndValidate needs an imported model to hold");
-		if (request.imported && applicability(*request.imported, image) == Applicability::Incompatible)
-			return failed(report, start, Failure::IncompatibleImportedModel,
-						  "the imported model is " + std::to_string(request.imported->image().width) + "x" +
-							  std::to_string(request.imported->image().height) + " and the footage is " +
-							  std::to_string(image.width) + "x" + std::to_string(image.height));
 
-		// A held model still needs a backend for board poses; an estimated one needs a backend that
-		// estimates exactly the requested model, never a similar one.
-		std::unique_ptr<Estimator> estimator =
-			hold ? (canEstimate() ? estimatorRegistry().create(estimatorRegistry().keys().front()) : nullptr)
-				 : estimatorFor(request.model);
+		// A held model needs only board poses, which are all its validation is; an estimated one needs a
+		// backend that estimates exactly the requested model, never a similar one.
+		if (hold)
+		{
+			if (!cb::canSolvePose())
+				return failed(report, start, Failure::NoPoseSolver,
+							  "this build has no board pose solver, which validating a held model needs");
+			return std::unique_ptr<Estimator>{};
+		}
+		std::unique_ptr<Estimator> estimator = estimatorFor(request.model);
 		if (!estimator)
 			return failed(report, start, Failure::NoEstimator,
 						  canEstimate() ? "no registered backend can estimate " + std::string(displayName(request.model))
@@ -476,32 +356,36 @@ namespace lain::camera::calibration::board
 	// Everything after detection: which views do what, the estimate, its validation, its stability and
 	// its verdict. `report` arrives prepared, with its detections in place.
 	static Report analyse(Report report, const ImageGeometry& image, const cb::Specification& board,
-						  const Request& request, const Estimator& estimator, core::Time start)
+						  const Request& request, const Estimator* estimator, core::Time start)
 	{
 		Diagnostics& diagnostics = report.diagnostics;
-		diagnostics.framesExamined = std::uint32_t(diagnostics.detections.size());
-		diagnostics.framesUsable = 0;
-		for (const cb::DetectionReport& d : diagnostics.detections)
+		BoardDiagnostics& examined = std::get<BoardDiagnostics>(diagnostics.method);
+		BoardRecord& record = std::get<BoardRecord>(report.reproducibility.method);
+		examined.framesExamined = std::uint32_t(examined.detections.size());
+		examined.framesUsable = 0;
+		for (const cb::DetectionReport& d : examined.detections)
 		{
 			if (usable(d))
-				++diagnostics.framesUsable;
-			if (report.reproducibility.detector.backend.empty())
-				report.reproducibility.detector = d.provenance;
+				++examined.framesUsable;
+			if (record.detector.backend.empty())
+				record.detector = d.provenance;
+			if (!record.detection)
+				record.detection = d.request;
 		}
 
 		// Which views do what. A held model has nothing to estimate, so every usable view validates it.
 		const bool hold = request.importedPolicy == ImportedModelPolicy::HoldAndValidate;
 		ViewSplit split;
 		if (hold)
-			split.heldOut = canonicalUsable(diagnostics.detections);
+			split.heldOut = canonicalUsable(examined.detections);
 		else
-			split = splitViews(diagnostics.detections, board, request);
+			split = splitViews(examined.detections, board, request);
 		diagnostics.selected = split.calibration;
 		diagnostics.heldOut = split.heldOut;
 		diagnostics.viewsSelected = std::uint32_t(split.calibration.size());
 		diagnostics.viewsHeldOut = std::uint32_t(split.heldOut.size());
-		const std::vector<cb::Observation> calibrationViews = observationsAt(diagnostics.detections, split.calibration);
-		const std::vector<cb::Observation> heldOutViews = observationsAt(diagnostics.detections, split.heldOut);
+		const std::vector<cb::Observation> calibrationViews = observationsAt(examined.detections, split.calibration);
+		const std::vector<cb::Observation> heldOutViews = observationsAt(examined.detections, split.heldOut);
 		{
 			std::vector<const cb::Observation*> supporting;
 			for (const cb::Observation& v : hold ? heldOutViews : calibrationViews)
@@ -519,25 +403,13 @@ namespace lain::camera::calibration::board
 			if (calibrationViews.size() < kMinimumCalibrationViews)
 				return failed(std::move(report), start, Failure::TooFewViews,
 							  std::to_string(calibrationViews.size()) + " usable calibration views of " +
-								  std::to_string(diagnostics.framesExamined) + " frames; at least " +
+								  std::to_string(examined.framesExamined) + " frames; at least " +
 								  std::to_string(kMinimumCalibrationViews) + " are needed");
 
-			// The Initial policy seeds the estimate. Every parameter only when the imported model is
-			// the requested model; otherwise the pinhole part alone, with the distortion starting
-			// neutral, since coefficients never carry across models on their shape (ADR-0016).
-			if (request.imported && request.importedPolicy == ImportedModelPolicy::Initial)
-			{
-				initial = CameraModelParameters{image, request.imported->intrinsics(), neutral(request.model)};
-				report.seededFields = {"fx", "fy", "cx", "cy"};
-				if (modelOf(request.imported->distortion()) == request.model)
-				{
-					initial->distortion = request.imported->distortion();
-					for (const std::string_view name : coefficientNames(request.model))
-						report.seededFields.emplace_back(name);
-				}
-			}
+			// The Initial policy seeds the estimate (detail::initialFrom).
+			initial = detail::initialFrom(report, request, image);
 
-			const Estimate estimate = estimator.estimate(image, calibrationViews, board, request.model, initial);
+			const Estimate estimate = estimator->estimate(image, calibrationViews, board, request.model, initial);
 			if (!estimate.parameters)
 				return failed(std::move(report), start, Failure::EstimationFailed,
 							  estimate.failure.empty() ? "the estimator returned no model" : estimate.failure);
@@ -550,27 +422,21 @@ namespace lain::camera::calibration::board
 			}
 			report.model = std::move(created.model);
 			diagnostics.fitRmsPixels = estimate.rmsPixels;
+			for (const cb::Observation& v : calibrationViews)
+				diagnostics.fitResiduals += std::uint32_t(v.features.size());
 			report.uncertainty = estimate.uncertainty;
 		}
 		report.status = CalibrationStatus::Succeeded;
 
-		report.heldOut = validate(*report.model, board, heldOutViews, estimator);
+		report.heldOut = validate(*report.model, board, heldOutViews, record.poseSolver);
 		report.resampling = hold ? std::variant<ResamplingEvidence, Unavailable>{Unavailable{"the model was held, not estimated"}}
-								 : resample(calibrationViews, board, image, request, initial, estimator);
+								 : resample(calibrationViews, board, image, request, initial, *estimator);
 
 		// The verdict. A held model is judged on the views that validated it.
 		const std::uint32_t supportingViews = hold ? diagnostics.viewsHeldOut : diagnostics.viewsSelected;
-		std::vector<std::string> readyNotes, exploratoryNotes;
-		if (meets(report.thresholds.ready, "Ready", true, supportingViews, diagnostics.coverage, report.heldOut,
-				  report.resampling, readyNotes))
-			report.verdict = Verdict::Ready;
-		else if (meets(report.thresholds.exploratory, "Exploratory", false, supportingViews, diagnostics.coverage,
-					   report.heldOut, report.resampling, exploratoryNotes))
-			report.verdict = Verdict::Exploratory;
-		else
-			report.verdict = Verdict::Rejected;
-		report.fitnessNotes = readyNotes;
-		report.fitnessNotes.insert(report.fitnessNotes.end(), exploratoryNotes.begin(), exploratoryNotes.end());
+		Judgement judgement = judge(report.thresholds, supportingViews, diagnostics.coverage, report.heldOut, report.resampling);
+		report.verdict = judgement.verdict;
+		report.fitnessNotes = std::move(judgement.notes);
 
 		report.elapsed = core::Time::now() - start;
 		return report;
@@ -595,15 +461,17 @@ namespace lain::camera::calibration::board
 				report.reproducibility.sources.end())
 				report.reproducibility.sources.push_back(source);
 		}
-		report.diagnostics.detections = detections;
-		return analyse(std::move(report), image, board, request, *std::get<std::unique_ptr<Estimator>>(prepared), start);
+		std::get<BoardDiagnostics>(report.diagnostics.method).detections = detections;
+		return analyse(std::move(report), image, board, request, std::get<std::unique_ptr<Estimator>>(prepared).get(), start);
 	}
 
-	Report calibrate(const media::FrameSequence& footage, const cb::Specification& board, const Request& request)
+	Report calibrate(const media::FrameSequence& footage, const cb::Specification& board,
+					 const cb::DetectionRequest& detection, const Request& request)
 	{
 		const core::Time start = core::Time::now();
 		Report report;
 		report.reproducibility.request = request;
+		std::get<BoardRecord>(report.reproducibility.method).detection = detection;
 		report.reproducibility.frames = std::uint32_t(footage.size());
 		for (std::size_t i = 0; i < footage.size(); ++i)
 		{
@@ -627,14 +495,14 @@ namespace lain::camera::calibration::board
 			return std::move(*failure);
 
 		// Detect in every frame, one decoded frame per task.
-		std::vector<cb::DetectionReport>& detections = report.diagnostics.detections;
+		std::vector<cb::DetectionReport>& detections = std::get<BoardDiagnostics>(report.diagnostics.method).detections;
 		detections.resize(footage.size());
 		forEach(footage.size(), request.execution,
 				[&](std::size_t i)
 				{
 					const image::Image frame = footage.image(i);
-					detections[i] = cb::detect(frame, footage.frame(i), board, request.detection);
+					detections[i] = cb::detect(frame, footage.frame(i), board, detection);
 				});
-		return analyse(std::move(report), image, board, request, *std::get<std::unique_ptr<Estimator>>(prepared), start);
+		return analyse(std::move(report), image, board, request, std::get<std::unique_ptr<Estimator>>(prepared).get(), start);
 	}
 } // namespace lain::camera::calibration::board

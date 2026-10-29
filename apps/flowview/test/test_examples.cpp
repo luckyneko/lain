@@ -6,6 +6,7 @@
 // expected issue. And every built example on disk is byte for byte what the builder writes today, so
 // a builder change that is not regenerated, or a hand edit, fails here rather than drifting.
 
+#include "clibinders.h" // registerBoundaryBinders: what a command line can bind
 #include "examples.h"
 #include "graphio.h"
 #include "scene.h"		// registerExampleNodes, bindDefaultInput: the production palette and stand-in
@@ -93,7 +94,24 @@ TEST_CASE("every example loads and runs as the catalog says", "[examples]")
 			for (const lain::flow::serialize::LoadIssue& issue : loaded.issues)
 				raised.push_back(issue.message);
 
-			if (example.needsCamera && !haveCameraBackend())
+			if (example.needsInputs)
+			{
+				// Its inputs are the caller's, and unbound it attempts nothing, so running it here would
+				// check nothing. It must open whole in any build, and every input it asks for must be
+				// one a command line can bind. A vertical runs it with them bound.
+				INFO("raised:" << joined(raised));
+				CHECK(raised.empty());
+				flowview::BoundaryBinders binders;
+				flowview::registerBoundaryBinders(binders);
+				const std::vector<lain::flow::BoundaryInput> inputs = loaded.graph.boundaryInputs();
+				CHECK_FALSE(inputs.empty());
+				for (const lain::flow::BoundaryInput& in : inputs)
+				{
+					INFO("input " << in.name << " : " << in.typeName);
+					CHECK(binders.has(in.type));
+				}
+			}
+			else if (example.needsCamera && !haveCameraBackend())
 			{
 				// Without the backend the document still OPENS, whole: camera support is a capability,
 				// not vocabulary (ADR-0016, amended). And it RUNS, saying why it produced nothing where

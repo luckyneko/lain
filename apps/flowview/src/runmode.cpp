@@ -1,5 +1,6 @@
 #include "runmode.h"
 
+#include "camerafiles.h" // saveCameraModel / saveRegisteredRig — a model or rig output's document
 #include "clibinders.h"
 #include "dump.h"
 #include "framepattern.h"
@@ -7,7 +8,6 @@
 #include "scene.h"
 #include "validation.h" // collectFailures — the Issues pane's failure rows, reused for stderr
 
-#include <lain/camera/serialize/cameramodel.h> // cameraModelToValue — a model output's document
 #include <lain/flow/boundary.h>
 #include <lain/flow/evaluation.h>
 #include <lain/flow/graph.h>
@@ -127,6 +127,16 @@ namespace flowview
 		}
 	}
 
+	// A type's accepted spellings as one line, "board | targetless | board-then-targetless": what `list`
+	// prints after an enum input's type, and what a refused value is told it could have been.
+	static std::string choiceList(const std::vector<std::string>& choices)
+	{
+		std::string line;
+		for (const std::string& choice : choices)
+			line += (line.empty() ? "" : " | ") + choice;
+		return line;
+	}
+
 	// Bind one boundary input from a cli value via the type's registered binder. A failed parse and
 	// an unbindable type are distinct diagnostics.
 	static bool bindBoundaryInput(flow::Evaluation& evaluation, const flow::BoundaryInput& in,
@@ -138,7 +148,14 @@ namespace flowview
 			return true;
 		}
 		if (binders.has(in.type))
-			log::error("flowview: could not parse '{}' for --{} as {}", value, in.name, in.typeName);
+		{
+			const std::vector<std::string>& choices = binders.spellings(in.type);
+			if (choices.empty())
+				log::error("flowview: could not parse '{}' for --{} as {}", value, in.name, in.typeName);
+			else
+				log::error("flowview: could not parse '{}' for --{} as {}: one of {}", value, in.name, in.typeName,
+						   choiceList(choices));
+		}
 		else
 			log::error("flowview: --{} has type {}, which is not cli-bindable", in.name, in.typeName);
 		return false;
@@ -227,9 +244,19 @@ namespace flowview
 		// file has to hold the model and not a summary of it.
 		if (delivered.holds<camera::CameraModel>())
 		{
-			if (io::data::save(path, camera::cameraModelToValue(delivered.get<camera::CameraModel>())))
+			if (saveCameraModel(path, delivered.get<camera::CameraModel>()))
 				return true;
 			log::error("flowview: could not write --{} camera model to {}", out.name, path);
+			return false;
+		}
+
+		// A registered rig likewise, as a rig DOCUMENT: every camera's transform is what a registration
+		// is run for, and its report's one line holds none of them.
+		if (delivered.holds<camera::registration::RegisteredRig>())
+		{
+			if (saveRegisteredRig(path, delivered.get<camera::registration::RegisteredRig>()))
+				return true;
+			log::error("flowview: could not write --{} rig to {}", out.name, path);
 			return false;
 		}
 
@@ -738,6 +765,8 @@ namespace flowview
 			std::cout << "  --" << in.name << " : " << in.typeName;
 			if (!binders.has(in.type))
 				std::cout << "  (not cli-bindable)";
+			else if (!binders.spellings(in.type).empty())
+				std::cout << "  (" << choiceList(binders.spellings(in.type)) << ")";
 			std::cout << "\n";
 		}
 		std::cout << "outputs:\n";

@@ -1,11 +1,17 @@
-#include "imagesave.h"
+#include "valuesave.h"
 
 #include "../appcontext.h"
+#include "../camerafiles.h" // saveCameraModel / saveRegisteredRig — the documents `run` writes
 
+#include <lain/camera/cameramodel.h>
+#include <lain/camera/registration/report.h> // RegisteredRig, saved as a rig document
+#include <lain/core/uri.h>
+#include <lain/flow/portvalue.h>
 #include <lain/gui/dialogs.h>
 #include <lain/gui/enums.h> // enumCombo — the Compression setting, labelled from the enum itself
 #include <lain/gui/gui.h>
 #include <lain/image/image.h>
+#include <lain/io/data/save.h>	// writerRegistry — what a model document can be written in
 #include <lain/io/image/save.h> // save + writerRegistry + canEncode
 #include <lain/log/log.h>
 
@@ -48,7 +54,27 @@ namespace flowview
 			gui::message("Save failed", "Couldn't write the file: " + out.string(), true);
 	}
 
-	void renderImageSave(AppContext& ctx, const PinKey& key, const image::Image& img)
+	// The format dropdown, over `formats` (never empty): the chosen format for this pin, defaulting to
+	// (and falling back to) the first offered when unset or no longer offered.
+	static const std::string& formatCombo(AppContext& ctx, const PinKey& key, const std::vector<std::string>& formats)
+	{
+		std::string& sel = ctx.saveFormat[key];
+		if (std::find(formats.begin(), formats.end(), sel) == formats.end())
+			sel = formats.front();
+		gui::SetNextItemWidth(80.0f);
+		if (gui::BeginCombo("##fmt", sel.c_str()))
+		{
+			for (const std::string& f : formats)
+			{
+				if (gui::Selectable(f.c_str(), f == sel))
+					sel = f;
+			}
+			gui::EndCombo();
+		}
+		return sel;
+	}
+
+	static void renderImageSave(AppContext& ctx, const PinKey& key, const image::Image& img)
 	{
 		const std::vector<std::string> formats = savableFormats(img);
 		if (formats.empty())
@@ -64,19 +90,7 @@ namespace flowview
 			gui::TextDisabled("(no format here can hold this image — convert first)");
 			return;
 		}
-		// The chosen format for this pin, defaulting to (and falling back to) the first savable
-		// when unset or no longer offered.
-		std::string& sel = ctx.saveFormat[key];
-		if (std::find(formats.begin(), formats.end(), sel) == formats.end())
-			sel = formats.front();
-		gui::SetNextItemWidth(80.0f);
-		if (gui::BeginCombo("##fmt", sel.c_str()))
-		{
-			for (const std::string& f : formats)
-				if (gui::Selectable(f.c_str(), f == sel))
-					sel = f;
-			gui::EndCombo();
-		}
+		const std::string& sel = formatCombo(ctx, key, formats);
 		gui::SameLine();
 		if (gui::Button("Save..."))
 			saveImage(img, sel, ctx.saveOptions[key]);
@@ -104,6 +118,53 @@ namespace flowview
 			gui::SetNextItemWidth(140.0f);
 			if (gui::SliderInt("##quality", &quality, 1, 100, display))
 				options.quality = static_cast<std::uint8_t>(quality);
+		}
+	}
+
+	// A camera model or a registered rig is saved as its DOCUMENT, through the routine `run` writes it
+	// with (`--model`, `--rig`), so what either one saves is a file the matching binder reads back
+	// (`--imported`, `--rig`). The format is any data format this build can write, chosen as an image's
+	// is, and forced onto the name for the same reason. `save` writes the value to a uri.
+	template <typename Save>
+	static void renderDocumentSave(AppContext& ctx, const PinKey& key, const std::string& what, Save save)
+	{
+		const std::vector<std::string> formats = io::data::writerRegistry().keys();
+		if (formats.empty())
+		{
+			gui::TextDisabled("(no data format here can be written)");
+			return;
+		}
+		const std::string& sel = formatCombo(ctx, key, formats);
+		gui::SameLine();
+		if (!gui::Button("Save..."))
+			return;
+
+		const auto path = gui::saveFile("Save " + what, {}, {{sel, {"*." + sel}}});
+		if (!path)
+			return; // cancelled
+		std::filesystem::path out = *path;
+		out.replace_extension(sel);
+		if (save(core::Uri::fromPath(out)))
+			log::info("flowview: saved {} to {}", what, out.string());
+		else
+			gui::message("Save failed", "Couldn't write the file: " + out.string(), true);
+	}
+
+	void renderValueSave(AppContext& ctx, const PinKey& key, const flow::PortValue& value)
+	{
+		if (value.holds<image::Image>())
+			renderImageSave(ctx, key, value.get<image::Image>());
+		else if (value.holds<camera::CameraModel>())
+		{
+			const camera::CameraModel& model = value.get<camera::CameraModel>();
+			renderDocumentSave(ctx, key, "camera model", [&](const core::Uri& uri)
+							   { return saveCameraModel(uri, model); });
+		}
+		else if (value.holds<camera::registration::RegisteredRig>())
+		{
+			const camera::registration::RegisteredRig& rig = value.get<camera::registration::RegisteredRig>();
+			renderDocumentSave(ctx, key, "registered rig", [&](const core::Uri& uri)
+							   { return saveRegisteredRig(uri, rig); });
 		}
 	}
 } // namespace flowview
