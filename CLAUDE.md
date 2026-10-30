@@ -1412,6 +1412,10 @@ each finding in WORK.md M15 (*Sub-slice 7a built*, *Sub-slice 5e built*).
   model. Capping the verdict unless every model was calibrated is refused until a real rig mixes the
   two, since a camera model records no origin. ADR-0016 is amended; `registration/fitness.h`,
   `report.h` and CONTEXT.md's *Registration fitness* say so.
+- **The size estimate's `floor` is renamed `flat`**: a flat mid-grey picture with the capture's noise,
+  a reference and not a bound, since a dark scene writes less (49.9 MB against 52.0 MB). The estimate
+  now reads "at most {ceiling} on disk (uncompressed); about {flat} if every frame were a flat
+  mid-grey picture". A true floor would be a black frame, which says nothing.
 
 ### Update 2026-10-29 — flowview's Quit and close button ask before throwing work away
 

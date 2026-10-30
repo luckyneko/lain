@@ -113,8 +113,8 @@ namespace lain::rigplan
 	struct CameraEstimate
 	{
 		std::string camera;
-		std::uint64_t raw = 0;	 // every frame uncompressed, with its file's overhead: the ceiling
-		std::uint64_t floor = 0; // every frame as a flat mid-grey picture, with the capture's noise
+		std::uint64_t raw = 0;	// every frame uncompressed, with its file's overhead: the ceiling
+		std::uint64_t flat = 0; // every frame as a flat mid-grey picture, with the capture's noise
 		// What one file costs whatever its pixels: headers, and a 16-bit TIFF's transfer function, which
 		// alone is 128 kB a frame.
 		std::uint64_t overhead = 0;
@@ -124,17 +124,25 @@ namespace lain::rigplan
 	};
 
 	// What a capture will take on disk, before anything is rendered: per camera, the ceiling (every
-	// frame uncompressed) and the floor (every frame a flat picture at half of full scale, recorded at
-	// the capture's noise and encoded through the camera's own codec: a tile and half of it, so a file's
-	// fixed overhead and its cost per pixel are each scaled as they grow). A real frame lands between them: texture costs bytes a flat picture does not. When the
-	// floor is near the ceiling, noise is what the bytes are spent on, and it says so rather than
-	// leaving a person to find out from a full disk (WORK.md M15, "Noise defeats PNG compression").
+	// frame uncompressed) and a flat picture's size (every frame at half of full scale, recorded at the
+	// capture's noise and encoded through the camera's own codec: a tile and half of it, so a file's
+	// fixed overhead and its cost per pixel are each scaled as they grow).
+	//
+	// Only the ceiling is a bound. The flat picture is a reference, NOT a floor: texture costs bytes it
+	// does not, but darkness saves them, since a region dark enough to record 0 compresses better than
+	// mid grey with noise. M15's example rig plan wrote 49.9 MB against a flat estimate of 52.0 MB,
+	// its low cameras recording half their pixels as 0 (WORK.md M15, *Sub-slice 7a built*). A true
+	// floor would be a black frame, which costs next to nothing and so says nothing.
+	//
+	// When the flat picture is near the ceiling, noise is what the bytes are spent on, and it says so
+	// rather than leaving a person to find out from a full disk (WORK.md M15, "Noise defeats PNG
+	// compression").
 	struct SizeEstimate
 	{
 		std::vector<CameraEstimate> cameras; // the rig plan's, in its order
 		std::size_t frames = 0;
 		std::uint64_t raw = 0;
-		std::uint64_t floor = 0;
+		std::uint64_t flat = 0;
 		std::vector<std::string> problems; // why there is no estimate; empty when there is one
 
 		// A few lines for a person: the totals, then the cameras whose noise defeats compression.

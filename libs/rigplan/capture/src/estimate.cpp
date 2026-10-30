@@ -8,7 +8,7 @@
 
 namespace lain::rigplan
 {
-	// The side of the flat tile a camera's floor is measured on: enough pixels that a codec's fixed
+	// The side of the flat tile a camera's flat picture is measured on: enough pixels that a codec's fixed
 	// overhead is small beside them, few enough to encode at once.
 	static constexpr int kTileSide = 256;
 
@@ -30,8 +30,9 @@ namespace lain::rigplan
 	{
 		if (!problems.empty())
 			return "no estimate: " + problems.front();
-		std::string text = string::format("{} camera{} x {} frame{}: between {} (every frame a flat picture) and {} (uncompressed) on disk",
-										  cameras.size(), cameras.size() == 1 ? "" : "s", frames, frames == 1 ? "" : "s", bytesText(floor), bytesText(raw));
+		std::string text = string::format("{} camera{} x {} frame{}: at most {} on disk (uncompressed); about {} if every frame were a "
+										  "flat mid-grey picture, more for a textured scene and less for a dark one",
+										  cameras.size(), cameras.size() == 1 ? "" : "s", frames, frames == 1 ? "" : "s", bytesText(raw), bytesText(flat));
 		std::vector<std::string> defeated;
 		for (const CameraEstimate& camera : cameras)
 		{
@@ -107,10 +108,10 @@ namespace lain::rigplan
 			const std::uint64_t frame = pixels <= wholePixels ? *whole : one.overhead + std::uint64_t(perPixel * double(pixels));
 			const std::uint64_t bytesPerPixel = image::formatDescriptor(camera.recorder->pixelFormat()).bytesPerPixel();
 			one.raw = frames * (pixels * bytesPerPixel + one.overhead);
-			one.floor = frames * frame;
+			one.flat = frames * frame;
 			one.noiseDefeatsCompression = 2 * perPixel >= double(bytesPerPixel);
 			estimate.raw += one.raw;
-			estimate.floor += one.floor;
+			estimate.flat += one.flat;
 			estimate.cameras.push_back(std::move(one));
 		}
 		if (!estimate.problems.empty())

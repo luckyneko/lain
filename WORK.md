@@ -16958,7 +16958,11 @@ format-check clean.
     a floor of 52.0 MB. The floor is a flat picture at half of full scale with the capture's noise, and
     regions dark enough to record 0 compress better than that. The low cameras record half their
     pixels as 0, since they look up past the spots' cones into an unlit upper room. That lighting is
-    kept: it is honest, and the board is well exposed.
+    kept: it is honest, and the board is well exposed. *(Decided 2026-10-29: the number is renamed to
+    what it is. `SizeEstimate::floor` and `CameraEstimate::floor` are now `flat`, documented as a
+    reference rather than a bound, and the estimate reads "at most {ceiling} on disk (uncompressed);
+    about {flat} if every frame were a flat mid-grey picture, more for a textured scene and less for a
+    dark one". A true floor would be a black frame, which says nothing.)*
 - **Two sabotages, both caught:**
   - the builder's spot intensity changed without regenerating fails the byte comparison and the
     read-back comparison;
@@ -18244,10 +18248,10 @@ row here**. A row is cheap to delete and expensive to leave.
   and pooled asset jobs; rigplan's driver-free editor units; the editor's shell and `lain::app`'s
   close veto; the Viewport). **Slice 8 was live-verified 2026-10-29**: all twelve steps of its gui-mode
   checklist pass, step 12 after fixing the two defects it found, the window stalling as a large bake
-  landed and a drag baking every size it passed through (*After 8f*). **Next is slice 9.** One of 7a's
-  findings is for the repo owner: the size estimate's floor is not a floor for a dark scene (*Sub-slice
-  7a built*). The other was decided on 2026-10-29: a registration verdict takes the camera models as
-  given (documented, ADR-0016).
+  landed and a drag baking every size it passed through (*After 8f*). **Next is slice 9.** 7a's two
+  findings were decided on 2026-10-29: a registration verdict takes the camera models as given
+  (documented, ADR-0016), and the estimate's "floor" is renamed `flat`, a reference rather than a
+  bound.
   Slice 0's live check of the unsaved-changes modal is discharged in rigplan (slice 8's step 11);
   flowview's Quit and close button go through its guard since 2026-10-29, and its check passed the
   same day (*Known defects*). M9's rig binder owes two fixes M15

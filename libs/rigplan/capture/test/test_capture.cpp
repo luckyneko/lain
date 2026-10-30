@@ -468,7 +468,7 @@ TEST_CASE("a capture is refused before anything is written", "[rigplan][capture]
 
 // --- the size estimate: no device ---------------------------------------------------------------
 
-TEST_CASE("a capture's size is estimated between a noisy flat floor and the uncompressed ceiling", "[rigplan][capture][estimate]")
+TEST_CASE("a capture's size is estimated as a noisy flat picture, under the uncompressed ceiling", "[rigplan][capture][estimate]")
 {
 	registerEverything();
 	const RigPlan plan = smallPlan();
@@ -482,7 +482,7 @@ TEST_CASE("a capture's size is estimated between a noisy flat floor and the unco
 		CHECK(estimate.cameras[0].raw == 3u * (128u * 72u * 3u + estimate.cameras[0].overhead));
 		CHECK(estimate.cameras[2].raw == 3u * (128u * 72u * 2u + estimate.cameras[2].overhead));
 		for (const CameraEstimate& camera : estimate.cameras)
-			CHECK(camera.floor <= camera.raw);
+			CHECK(camera.flat <= camera.raw);
 		CHECK(estimate.raw == estimate.cameras[0].raw + estimate.cameras[1].raw + estimate.cameras[2].raw);
 		CHECK(estimate.frames == 3);
 	}
@@ -493,14 +493,14 @@ TEST_CASE("a capture's size is estimated between a noisy flat floor and the unco
 		REQUIRE(estimate.problems.empty());
 		for (const CameraEstimate& camera : estimate.cameras)
 		{
-			INFO(camera.camera << ": floor " << camera.floor << ", overhead " << camera.overhead << ", raw " << camera.raw);
+			INFO(camera.camera << ": flat " << camera.flat << ", overhead " << camera.overhead << ", raw " << camera.raw);
 			CHECK_FALSE(camera.noiseDefeatsCompression);
 		}
-		CHECK(estimate.cameras[0].floor * 10 < estimate.cameras[0].raw);
+		CHECK(estimate.cameras[0].flat * 10 < estimate.cameras[0].raw);
 		// A 16-bit TIFF states its curve as a transfer function, a 16-bit code for each of its 65536
 		// codes: 128 kB in every file, here seven times the pixels themselves.
 		CHECK(estimate.cameras[2].overhead > 131072);
-		CHECK(estimate.cameras[2].floor > 3u * 128u * 72u * 2u);
+		CHECK(estimate.cameras[2].flat > 3u * 128u * 72u * 2u);
 		CHECK(estimate.toString().find("noise defeats compression") == std::string::npos);
 	}
 	SECTION("with a shallow well's noise, it says compression is defeated")
@@ -516,10 +516,10 @@ TEST_CASE("a capture's size is estimated between a noisy flat floor and the unco
 	}
 }
 
-TEST_CASE("a camera's floor, measured on a tile, is near a whole flat frame's encoded size", "[rigplan][capture][estimate]")
+TEST_CASE("a camera's flat picture, measured on a tile, is near a whole flat frame's encoded size", "[rigplan][capture][estimate]")
 {
 	registerEverything();
-	// Cameras larger than the tile, so the floor is scaled up from it: an 8-bit PNG, and a 16-bit TIFF
+	// Cameras larger than the tile, so the flat picture is scaled up from it: an 8-bit PNG, and a 16-bit TIFF
 	// whose every file carries a 128 kB transfer function that must not be scaled with the pixels.
 	RigPlan plan = smallPlan(1);
 	for (SensorSpecification& sensor : plan.specifications.sensors)
@@ -549,8 +549,8 @@ TEST_CASE("a camera's floor, measured on a tile, is near a whole flat frame's en
 		const image::Image recorded = recorder.record(light, {plan.seed, plan.cameras[c].id, 0}, 1.0);
 		const std::optional<memory::Buffer> whole = io::image::encode(model.output.format == OutputFormat::Tiff ? "tiff" : "png", recorded);
 		REQUIRE(whole.has_value());
-		const double ratio = double(estimate.cameras[c].floor) / double(whole->size());
-		INFO(plan.cameras[c].name << ": floor " << estimate.cameras[c].floor << " bytes against a whole frame's " << whole->size());
+		const double ratio = double(estimate.cameras[c].flat) / double(whole->size());
+		INFO(plan.cameras[c].name << ": flat " << estimate.cameras[c].flat << " bytes against a whole frame's " << whole->size());
 		CHECK(ratio > 0.9);
 		CHECK(ratio < 1.1);
 	}
