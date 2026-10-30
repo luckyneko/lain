@@ -14918,7 +14918,7 @@ clean. `flowview --licenses` prints 25 notices (48.6 KB) on macOS arm64.
   `third-party/` ships; MoltenVK's compiled-in SPIRV-Cross has no licence text to read; and nothing
   was built on Linux or Windows (MSVC's literal limit included), so CI's first run is owed.
 
-## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 7 built, 8 planned)
+## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 8 built, 9 to plan)
 
 An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
 and lights, a board waved through) that renders **synthetic captures**: footage in the shape M9
@@ -18269,7 +18269,7 @@ row here**. A row is cheap to delete and expensive to leave.
   `--device` landed. *(M15 §Sub-slice 3d built.)*
 
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not**, and M15 is under
-way (slices 0 to 7 built, slice 8 planned).
+way (slices 0 to 8 built and slice 8 live-verified; slice 9 not yet planned).
 
 - **Example documents** — all four commits built. Owed: a gui-mode eyeball of every example (the
   primary purpose). The smoke step has run in CI since it landed, and was green on every leg in
@@ -18390,6 +18390,26 @@ M12 §Not in this milestone.)*
 - **A finer ray-table lattice near a fold**, at a half or quarter pixel, for a camera whose pixel-corner
   lattice interpolates it worse than the tolerance. **Trigger:** the first realised camera refused for
   it. *(M15 §Sub-slice 4a built.)*
+
+### Deferred — the app harness
+
+- **Window renders that run asynchronously** (the repo owner's note, 2026-10-29; a feature of its own,
+  not M15's). `Application::run` is one thread: each frame it polls events, calls `onUpdate`, then
+  every window's `onRender` in turn. So one window's slow frame holds up every other window and the
+  event pump. The idea is to thread `run` so window renders happen async. What it has to decide first:
+  - **GLFW's event processing stays on the main thread** (`glfwPollEvents`), so input reaches a
+    render thread as a snapshot, not as the call it is today.
+  - **The "ImGui is single-threaded" contract** (CLAUDE.md, *Hard contracts*) becomes per window at
+    best. Each window has its own `gui::Context`, but ImGui's current context is a process global
+    unless it is built with a thread-local one.
+  - **Every submit to the shared device still goes through archimedes' queue lock**
+    (`interop::withQueue`), so windows would contend there.
+  - **The close veto and teardown order**: `onCloseRequested` is asked on the main thread, and
+    `shutdown()` drains the device before the first `onShutdown`. Render threads must be joined
+    before that drain.
+
+  **Trigger:** the first app where one window's frame measurably holds up another's, or the event pump.
+  *(This index; nothing else owns it yet.)*
 
 ### Deferred — from the notes.txt triage
 

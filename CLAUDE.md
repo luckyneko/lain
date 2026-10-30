@@ -1421,6 +1421,10 @@ each finding in WORK.md M15 (*Sub-slice 7a built*, *Sub-slice 5e built*).
   bottleneck: 7 threads took 8.0 s and 14 took 6.3 s, and a 4-core CI runner gave the device 2.
   Measured on `three-poles.json` here, twice each: 21.0 s rendering at half, 15.2 s at every core.
   **Owed:** CI's render step time against slice 7's 68 s to 221 s.
+- **Noted for later, not M15's: window renders that run asynchronously** in `Application::run`, the
+  repo owner's idea. WORK.md's Outstanding index, *Deferred — the app harness*, lists what it has to
+  decide first (GLFW's main-thread events, ImGui's single-threaded contract, the shared queue lock,
+  the teardown order).
 
 ### Update 2026-10-29 — flowview's Quit and close button ask before throwing work away
 
