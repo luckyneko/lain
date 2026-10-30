@@ -513,6 +513,22 @@ repo owner while planning M9 slice 3.)*
     2026-10-19.
   - **The profiles are amended in place**, being provisional until real footage, and
     `registration-targetless/1` holds position to 0.2% of the median depth, as `registration/1` does.
+
+  *A verdict takes the camera models as given (2026-10-29, decided with the repo owner):*
+  - **Registration with known intrinsics judges the rig against its models, never the models.** M15's
+    example rig plan registered with its uncalibrated nominal models is Ready, with the same held-out
+    residual as with the true ones (0.0549 mrad for both), while 14 times further from the truth in
+    rotation (9.86 against 0.68 mrad) and 12 times in position (4.82 against 0.40 mm); scale does not
+    show it either (0.9994 against 0.9995). A board pose solved through a model a focal length or a
+    principal point out absorbs the error, as M9 slice 1's sub-slice 8b found for calibration's
+    cross-validation. So Ready means a rig consistent with the models it was given.
+  - **What sees a wrong model is a comparison against something independent**: M15's `compareRigs`
+    against a synthetic capture's truth, which is how this was found, or calibration's own evidence
+    for each model (for a real camera, its sessions' agreement).
+  - **Refused for now: capping a verdict at Exploratory unless every model was calibrated**, as a held
+    model caps a calibration. A camera model records no origin (`Provenance` names backends, not
+    models), so it would add a field to the camera-model document that a hand-edited file could set
+    to anything. Trigger: the first real rig mixing calibrated and uncalibrated cameras.
 - **A scale-ambiguous result is normalised** so the median depth of the landmarks seen from the
   reference is 1, and its report says so.
 - **SIFT** fills the OpenCV extractor. **Matching is a request choice between Exact and

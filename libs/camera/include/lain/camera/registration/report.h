@@ -293,6 +293,8 @@ namespace lain::camera::registration
 		std::vector<RegisteredCamera> cameras; // ascending by identity; empty unless Succeeded
 		ScaleStatus scale;
 
+		// What the rig is fit for, given the camera models it was registered with: no verdict judges
+		// the models themselves (FitnessProfile, fitness.h).
 		Verdict verdict = Verdict::Rejected;
 		std::vector<std::string> fitnessNotes; // each criterion a better verdict would have needed
 		FitnessProfile thresholds;			   // fully resolved, overrides applied

@@ -16949,6 +16949,11 @@ format-check clean.
     0.0549 mrad), while being 14 times further from the truth. A board pose solved through a model a
     focal length or a principal point out absorbs the error, as sub-slice 8b of M9 slice 1 found for
     calibration's cross-validation. 7b records the verdict rather than asserting it, as planned.
+    *(Decided 2026-10-29: documented, not changed. A verdict judges the rig against the models it was
+    given, and a comparison against an independent truth is what sees a wrong model; capping the
+    verdict unless every model was calibrated is refused until a real rig mixes the two. ADR-0016,
+    "A verdict takes the camera models as given"; `registration/fitness.h`; CONTEXT.md's
+    *Registration fitness*.)*
   - **The size estimate's floor is not a floor for a dark scene.** This capture wrote 49.9 MB against
     a floor of 52.0 MB. The floor is a flat picture at half of full scale with the capture's noise, and
     regions dark enough to record 0 compress better than that. The low cameras record half their
@@ -18239,10 +18244,10 @@ row here**. A row is cheap to delete and expensive to leave.
   and pooled asset jobs; rigplan's driver-free editor units; the editor's shell and `lain::app`'s
   close veto; the Viewport). **Slice 8 was live-verified 2026-10-29**: all twelve steps of its gui-mode
   checklist pass, step 12 after fixing the two defects it found, the window stalling as a large bake
-  landed and a drag baking every size it passed through (*After 8f*). **Next is slice 9.** Two of 7a's
-  findings are for
-  the repo owner: `registration/1` judges a rig registered with uncalibrated models Ready, and the size
-  estimate's floor is not a floor for a dark scene (*Sub-slice 7a built*).
+  landed and a drag baking every size it passed through (*After 8f*). **Next is slice 9.** One of 7a's
+  findings is for the repo owner: the size estimate's floor is not a floor for a dark scene (*Sub-slice
+  7a built*). The other was decided on 2026-10-29: a registration verdict takes the camera models as
+  given (documented, ADR-0016).
   Slice 0's live check of the unsaved-changes modal is discharged in rigplan (slice 8's step 11);
   flowview's Quit and close button go through its guard since 2026-10-29, and its check passed the
   same day (*Known defects*). M9's rig binder owes two fixes M15

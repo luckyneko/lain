@@ -1400,6 +1400,19 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-29 — M15's waiting decisions settled
+
+Decisions on what M15 found, taken with the repo owner before slice 9 is planned. Full notes beside
+each finding in WORK.md M15 (*Sub-slice 7a built*, *Sub-slice 5e built*).
+
+- **A registration verdict takes the camera models as given — documented, not changed.** With its
+  uncalibrated nominal models, `three-poles` registers Ready, with the same held-out residual as with
+  the true ones (0.0549 mrad), while 14 times further from the truth. Ready means "consistent with the
+  models it was given"; a comparison against an independent truth (`compareRigs`) is what sees a wrong
+  model. Capping the verdict unless every model was calibrated is refused until a real rig mixes the
+  two, since a camera model records no origin. ADR-0016 is amended; `registration/fitness.h`,
+  `report.h` and CONTEXT.md's *Registration fitness* say so.
+
 ### Update 2026-10-29 — flowview's Quit and close button ask before throwing work away
 
 The last known defect, fixed with M15 8e's close veto, the way rigplan uses it. File ▸ Quit, Ctrl+Q and

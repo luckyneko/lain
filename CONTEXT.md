@@ -353,8 +353,12 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   residuals, consistency, and stability. Board and targetless diagnostics remain method-specific;
   comparing methods requires the same independent validation evidence. A fitness profile counts in
   one evidence unit, capture groups or accepted tracks, and its notes and the report's summary say
-  which. _Avoid_: board RMS as overall registration quality, targetless inlier ratio as overall
-  registration quality.
+  which. It judges the rig **against the camera models it was given, never the models**: a board pose
+  or a landmark solved through a wrong model absorbs the error, so a rig registered with uncalibrated
+  models can be Ready with a calibrated rig's held-out residual. A comparison against something
+  independent (a synthetic capture's truth, a calibration's own evidence) is what sees a wrong model.
+  _Avoid_: board RMS as overall registration quality, targetless inlier ratio as overall
+  registration quality, Ready as "the models are right".
 - **Held-out group** — a capture group kept out of a registration's initialisation and refinement so
   it can validate the result. Each member in turn is predicted from the others: the board's pose is
   solved from the other members with every camera held at its registered transform, lain's

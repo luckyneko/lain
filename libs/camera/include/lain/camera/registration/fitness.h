@@ -46,6 +46,14 @@ namespace lain::camera::registration
 		std::optional<std::uint32_t> minimumHeldOutPerCamera;
 	};
 
+	// What no tier judges: the camera models. Registration with known intrinsics takes each camera's
+	// model as given, and a board pose or a landmark solved through a model a focal length or a
+	// principal point out absorbs the error, so a rig registered with uncalibrated models can be Ready
+	// with the held-out residual of a calibrated one (M15's example rig: 0.0549 mrad either way, 14 times
+	// further from the truth). Ready means consistent with the models it was given; a comparison
+	// against something independent is what sees a wrong one (ADR-0016, "A verdict takes the camera
+	// models as given").
+	//
 	// A named, VERSIONED pair of tiers ("registration/1"). Once real footage has confirmed a profile its
 	// numbers never change: different numbers are a new version. Until then both profiles are
 	// provisional, and the repo owner has amended them in place (2026-10-20: a median-based held-out
