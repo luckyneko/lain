@@ -658,7 +658,7 @@ TEST_CASE("the task pool is running by onProcess, and --threads sizes it", "[app
 	}
 }
 
-TEST_CASE("the device flag chooses the kind of device, and the CPU device gets half the cores", "[app]")
+TEST_CASE("the device flag chooses the kind of device, and the CPU device gets every logical core", "[app]")
 {
 	// A headless app's device, as onProcess finds it. The CPU device is archimedes' SwiftShader,
 	// staged beside this test; where none is staged the CPU sections have nothing to choose and say so.
@@ -681,7 +681,7 @@ TEST_CASE("the device flag chooses the kind of device, and the CPU device gets h
 	char arg0[] = "test-app";
 	char flag[] = "--device";
 
-	SECTION("cpu draws on the CPU device, which runs on half the cores")
+	SECTION("cpu draws on the CPU device, which runs on every logical core")
 	{
 		char cpu[] = "cpu";
 		char* argv[] = {arg0, flag, cpu};
@@ -693,7 +693,7 @@ TEST_CASE("the device flag chooses the kind of device, and the CPU device gets h
 		if (!delegate.type)
 			SKIP("no CPU driver is staged beside this test");
 #endif
-		CHECK(delegate.threads == std::to_string(std::max(1u, std::thread::hardware_concurrency() / 2)));
+		CHECK(delegate.threads == std::to_string(std::max(1u, std::thread::hardware_concurrency())));
 	}
 	SECTION("gpu, the default, draws on hardware wherever there is any")
 	{

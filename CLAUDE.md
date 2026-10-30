@@ -1416,6 +1416,11 @@ each finding in WORK.md M15 (*Sub-slice 7a built*, *Sub-slice 5e built*).
   a reference and not a bound, since a dark scene writes less (49.9 MB against 52.0 MB). The estimate
   now reads "at most {ceiling} on disk (uncompressed); about {flat} if every frame were a flat
   mid-grey picture". A true floor would be a black frame, which says nothing.
+- **The CPU device gets every logical core**, not half (`lain::app`'s `runtimeConfig()`; ADR-0028
+  amended). The pool sits idle while the CPU device renders a capture, so half only shrank the
+  bottleneck: 7 threads took 8.0 s and 14 took 6.3 s, and a 4-core CI runner gave the device 2.
+  Measured on `three-poles.json` here, twice each: 21.0 s rendering at half, 15.2 s at every core.
+  **Owed:** CI's render step time against slice 7's 68 s to 221 s.
 
 ### Update 2026-10-29 — flowview's Quit and close button ask before throwing work away
 

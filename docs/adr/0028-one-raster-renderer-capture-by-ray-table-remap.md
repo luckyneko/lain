@@ -135,7 +135,10 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
     threads: 4 took 10.6 s, 7 (the half 3d chose) 8.0 s, 10 took 6.2 s, 14 took 6.3 s. On Metal a
     capture takes about 7 ms and encoding is the bottleneck instead. So giving the CPU device more
     of the cores during a capture would save about a fifth; the split is unchanged, for the repo
-    owner to decide.
+    owner to decide. *(Decided 2026-10-29: the CPU device gets every logical core. The pool is idle
+    while the device renders, so half only made the bottleneck smaller; what the two share at once
+    elsewhere, a gui baking while the CPU device draws, is oversubscribed, which costs time and never
+    a result, and only on a machine with no GPU.)*
 - **A capture keeps to Vulkan's guaranteed limits** *(added 2026-10-24, decided with the repo owner)*.
   archimedes exposes no device limits, so a tile is at most 4096 a side and a band of the ray table
   at most 2^27 bytes. A capture is then tiled and banded the same way on every device, and only
@@ -171,5 +174,5 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
     display encoding, so on the oblique floor the two draw one line to within 0.0053 of coverage on
     Metal and 0.032 on the CPU device. A capture's frame constants carry no grid, so a capture never
     draws one.)*
-  The core split is half the logical cores to the CPU device, the pool keeping its own workers, and
-  `--device gpu|cpu` chooses the kind of device.
+  The core split is every logical core to the CPU device, the pool keeping its own workers *(half
+  until 2026-10-29, above)*, and `--device gpu|cpu` chooses the kind of device.

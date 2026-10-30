@@ -16489,7 +16489,11 @@ camera and Ceres on (+6), and **1391/1391** with all three off (+6). Warning-cle
   - **On the CPU device**, a capture takes about 260 ms a camera-frame and the writes hide entirely
     behind it. The device's threads: 4 took 10.6 s, 7 (3d's half) 8.0 s, 10 took 6.2 s, 14 took
     6.3 s. Giving the CPU device more of the cores during a capture would save about a fifth.
-    **Recorded in ADR-0028 for the repo owner; the split is unchanged.**
+    **Recorded in ADR-0028 for the repo owner; the split is unchanged.** *(Decided 2026-10-29: the CPU
+    device gets every logical core, `lain::app`'s `runtimeConfig()`. Measured on `three-poles.json`
+    here, twice each: 21.0 s rendering at half the cores, 15.2 s at every one. Owed: CI's render step
+    time against the 68 s to 221 s of slice 7's runs, since a 4-core runner had been giving the device
+    2.)*
   - **The scale case** (100 cameras of 16 x 12, 3 frames each, a write slowed to 20 ms): at most 4 in
     flight, 4 reached, one ray table, and a peak RSS of 81 MB for the whole test process, both devices
     included.
@@ -18249,17 +18253,16 @@ row here**. A row is cheap to delete and expensive to leave.
   close veto; the Viewport). **Slice 8 was live-verified 2026-10-29**: all twelve steps of its gui-mode
   checklist pass, step 12 after fixing the two defects it found, the window stalling as a large bake
   landed and a drag baking every size it passed through (*After 8f*). **Next is slice 9.** 7a's two
-  findings were decided on 2026-10-29: a registration verdict takes the camera models as given
-  (documented, ADR-0016), and the estimate's "floor" is renamed `flat`, a reference rather than a
-  bound.
+  findings and 5e's were decided on 2026-10-29: a registration verdict takes the camera models as
+  given (documented, ADR-0016), the estimate's "floor" is renamed `flat`, a reference rather than a
+  bound, and the CPU device gets every logical core (ADR-0028). Owed: CI's render step time after the
+  last, against slice 7's 68 s to 221 s (*Sub-slice 5e built*).
   Slice 0's live check of the unsaved-changes modal is discharged in rigplan (slice 8's step 11);
   flowview's Quit and close button go through its guard since 2026-10-29, and its check passed the
   same day (*Known defects*). M9's rig binder owes two fixes M15
   found, both symptoms of a binder that does not read a capture's layout: it pairs footage with models
   by sorted position (5e; the writer refuses names that sort differently as folders and as documents),
-  and it names a camera with one frame by its file, not its folder (*Slice 6 planned*). One finding
-  of 5e waits on a decision:
-  the CPU device's share of the cores during a capture (measured, for the repo owner). Ten slices, 0 to 9, on `feature/M15`; the build order and every exclusion are in
+  and it names a camera with one frame by its file, not its folder (*Slice 6 planned*). Ten slices, 0 to 9, on `feature/M15`; the build order and every exclusion are in
   M15's own sections. *(Milestone 15.)*
 - **archimedes' CPU device**, which M15 renders its CI captures on: **adopted by M15 slice 3d
   (2026-10-24)**. The PRs merged, lain's pin moved, and the licence notice, the thread split and

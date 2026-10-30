@@ -187,13 +187,17 @@ namespace lain::app
 		shutdown();
 	}
 
-	// What the CPU device may run its shaders on: half the logical cores, the pool keeping its own
-	// workers (--threads). A capture render keeps the device busy while the pool runs the sensor model
-	// and encodes, so both are busy at once, and the split keeps that within 1.5x of the machine rather
-	// than 2x. Revisit with slice 5's measurements (WORK.md M15).
+	// What the CPU device may run its shaders on: every logical core, beside the pool's own workers
+	// (--threads). Half was chosen first (M15 slice 3d), on the reasoning that a capture keeps the device
+	// and the pool busy at once. Measured, it does not: on the CPU device a capture frame takes about
+	// 260 ms to render and the pool's recording and encoding hide behind it, so the pool sits idle while
+	// the device is the bottleneck. On 14 logical cores (10 performance), 7 device threads took 8.0 s and
+	// 14 took 6.3 s (WORK.md M15, *Sub-slice 5e built*), and a 4-core CI runner had been giving the
+	// device 2. What the two then share at once (a gui baking on the pool while the CPU device draws)
+	// is oversubscribed, which costs time and never a result, and only on a machine with no GPU.
 	static acm::RuntimeConfig runtimeConfig()
 	{
-		return acm::RuntimeConfig{std::max(1u, std::thread::hardware_concurrency() / 2)};
+		return acm::RuntimeConfig{std::max(1u, std::thread::hardware_concurrency())};
 	}
 
 	static acm::DevicePreferences devicePreferences(const std::string& device)
