@@ -129,11 +129,15 @@ namespace rigplan
 		}
 		if (gui::Button("Add key") && !path.keys.empty())
 		{
-			rp::PathKey next = path.keys.back();
-			++next.frame;
-			path.keys.push_back(next);
-			ctx.selection = Selection::keyOf(mover, path.keys.size() - 1);
-			changed = true;
+			// Keyed where the last one stands, which is where the path holds its mover after it.
+			const EditResult added = setKey(ctx.document.plan, Selection::keyOf(mover, path.keys.size() - 1), path.keys.back().frame + 1);
+			if (added.changed())
+			{
+				ctx.selection = *added.selection;
+				changed = true;
+			}
+			else if (!added.refusal.empty())
+				ctx.note(added.refusal, true);
 		}
 		if (gui::IsItemHovered())
 			gui::SetTooltip("A key one frame after the last, where the last one stands. Delete one with Edit > Delete.");

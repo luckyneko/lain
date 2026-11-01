@@ -3,8 +3,9 @@
 #include "imagecanvas.h"
 #include "valueviews.h"
 
-#include <lain/gui/texture.h>	 // the decoded current frame (a member)
-#include <lain/media/frameref.h> // which frame that texture IS (a member)
+#include <lain/editor/playback.h> // the transport's clock (a member)
+#include <lain/gui/texture.h>	  // the decoded current frame (a member)
+#include <lain/media/frameref.h>  // which frame that texture IS (a member)
 
 #include <cstddef>
 
@@ -39,11 +40,6 @@ namespace flowview
 		// frame — which at 60fps would be a decode storm on a file that is simply broken.
 		void showFrame(const lain::media::FrameSequence& sequence, std::size_t position, lain::gui::Context& gui);
 
-		// Advance the position by however much wall time has passed, at the sequence's own rate.
-		// Returns the position to show. Whole frames are SKIPPED when decoding cannot keep up, so
-		// playback tracks the clock rather than sliding behind it — ADR-0018's "best effort".
-		void advancePlayback(double rate, std::size_t last);
-
 		ImageCanvas m_canvas;
 		lain::gui::Texture m_texture; // the decoded frame named by m_shownFrame
 		// WHICH FRAME that texture is, by identity rather than by position — a FrameRef, which
@@ -52,7 +48,9 @@ namespace flowview
 		// view would go on showing the old footage. Invalid means nothing has been decoded yet.
 		lain::media::FrameRef m_shownFrame;
 		std::size_t m_position = 0; // which position the transport is on
-		bool m_playing = false;
-		double m_carry = 0.0; // seconds accumulated toward the next frame
+		// Whole frames of wall time at the sequence's own rate, skipping what decoding had no time for
+		// (ADR-0018's "best effort"). It stops at the end rather than going round: a loop is a choice,
+		// not a default, for a player that inspects footage.
+		lain::editor::Playback m_playback;
 	};
 } // namespace flowview

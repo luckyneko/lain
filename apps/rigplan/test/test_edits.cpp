@@ -7,6 +7,7 @@
 #include "selection.h"
 
 #include <lain/core/uri.h>
+#include <lain/rigplan/mover.h>
 #include <lain/rigplan/realisation.h>
 #include <lain/rigplan/serialize/rigplan.h>
 
@@ -165,6 +166,82 @@ TEST_CASE("a key is duplicated one frame on, where that frame is free", "[rigpla
 	const rigplan::EditResult last = rigplan::remove(single, Selection::keyOf(editorplan::boardId, 0));
 	CHECK_FALSE(last.changed());
 	CHECK(single.boards.front().path.keys.size() == 1);
+}
+
+// How far apart two poses are: the distance between where they put a point, over a few points a metre
+// from the origin, so a turn shows as well as a move.
+static double poseDistance(const lain::math::RigidTransformd& a, const lain::math::RigidTransformd& b)
+{
+	double worst = 0.0;
+	for (const lain::math::Vec3d point : {lain::math::Vec3d{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}})
+		worst = std::max(worst, lain::math::length(a.apply(point) - b.apply(point)));
+	return worst;
+}
+
+TEST_CASE("keying a mover where its path already puts it moves no frame", "[rigplan][edits][keys]")
+{
+	rp::RigPlan p = plan();
+	// The board is keyed at frames 0 and 10, turning by pan, tilt and roll at once between them.
+	rp::Path before = p.boards.front().path;
+
+	SECTION("between two keys")
+	{
+		const rigplan::EditResult keyed = rigplan::setKey(p, Selection::object(Selected::Board, editorplan::boardId), 4);
+		REQUIRE(keyed.changed());
+		CHECK(*keyed.selection == Selection::keyOf(editorplan::boardId, 1));
+		REQUIRE(p.boards.front().path.keys.size() == 3);
+		CHECK(p.boards.front().path.keys[1].frame == 4);
+	}
+	SECTION("after the last, from a key of the mover")
+	{
+		const rigplan::EditResult keyed = rigplan::setKey(p, Selection::keyOf(editorplan::boardId, 0), 15);
+		REQUIRE(keyed.changed());
+		CHECK(*keyed.selection == Selection::keyOf(editorplan::boardId, 2));
+		CHECK(p.boards.front().path.keys.back().frame == 15);
+	}
+	SECTION("before the first")
+	{
+		p.boards.front().path.keys.front().frame = 3;
+		before = p.boards.front().path;
+		const rigplan::EditResult keyed = rigplan::setKey(p, Selection::object(Selected::Board, editorplan::boardId), 1);
+		REQUIRE(keyed.changed());
+		CHECK(*keyed.selection == Selection::keyOf(editorplan::boardId, 0));
+		CHECK(p.boards.front().path.keys.front().frame == 1);
+	}
+
+	CHECK(rp::pathProblems(p.boards.front().path).empty());
+	CHECK(firstProblem(p).empty());
+	for (std::size_t frame = 0; frame <= 20; ++frame)
+	{
+		INFO("frame " << frame);
+		CHECK(poseDistance(rp::poseAt(before, frame), rp::poseAt(p.boards.front().path, frame)) < 1e-12);
+	}
+}
+
+TEST_CASE("keying a frame that has a key changes nothing, and only a mover is keyed", "[rigplan][edits][keys]")
+{
+	rp::RigPlan p = plan();
+	const lain::data::Value before = rigplan::snapshot(p);
+
+	const rigplan::EditResult same = rigplan::setKey(p, Selection::object(Selected::Board, editorplan::boardId), 10);
+	CHECK_FALSE(same.changed());
+	CHECK(same.refusal.empty());
+	CHECK(rigplan::snapshot(p) == before);
+
+	// A static prop has no path to key; a camera is not a mover.
+	const rigplan::EditResult prop = rigplan::setKey(p, Selection::object(Selected::Prop, editorplan::propId), 2);
+	CHECK_FALSE(prop.changed());
+	CHECK_FALSE(prop.refusal.empty());
+	const rigplan::EditResult camera = rigplan::setKey(p, Selection::object(Selected::Camera, editorplan::cam1Id), 2);
+	CHECK_FALSE(camera.changed());
+	CHECK_FALSE(camera.refusal.empty());
+
+	// Nor a path whose keys are out of order: there is no place in it for a key.
+	p.boards.front().path.keys[1].frame = 0;
+	const rigplan::EditResult disorder = rigplan::setKey(p, Selection::object(Selected::Board, editorplan::boardId), 5);
+	CHECK_FALSE(disorder.changed());
+	CHECK_FALSE(disorder.refusal.empty());
+	CHECK(p.boards.front().path.keys.size() == 2);
 }
 
 TEST_CASE("a refused rename changes nothing", "[rigplan][edits]")

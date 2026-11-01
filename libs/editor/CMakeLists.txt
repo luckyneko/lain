@@ -1,6 +1,7 @@
 # lain::editor — what every document editor in lain needs and no document type owns: an undo history
-# of document snapshots, the recent-documents list and the session file it persists in, and the
-# guard that asks before a destructive swap throws unsaved work away (WORK.md M15 slice 0). Hoisted
+# of document snapshots, the recent-documents list and the session file it persists in, the guard
+# that asks before a destructive swap throws unsaved work away (WORK.md M15 slice 0), and the clock a
+# transport plays a timeline by (slice 9a). Hoisted
 # out of flowview when a second editor (rigplan) needed the same rules, so the two cannot disagree
 # about them. Driver-free and gui-free: an app draws its own question and decides what marks its
 # document changed; the rules here are what its answers mean.
@@ -9,6 +10,7 @@ add_library(editor STATIC
 	src/undo.cpp
 	src/recents.cpp
 	src/session.cpp
+	src/playback.cpp
 )
 add_library(lain::editor ALIAS editor)
 

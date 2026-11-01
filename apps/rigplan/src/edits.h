@@ -6,6 +6,7 @@
 #include <lain/core/uuid.h>
 #include <lain/rigplan/rigplan.h>
 
+#include <cstddef>
 #include <optional>
 #include <string>
 
@@ -86,4 +87,10 @@ namespace rigplan
 	// Makes the camera `camera` names the one a capture's rig is relative to, or, given Nothing, leaves
 	// the plan to its first camera. Refused for anything else.
 	EditResult setReference(lain::rigplan::RigPlan& plan, const Selection& camera);
+
+	// Keys the mover `mover` names (a board, a prop mover, or a key of either) at `frame`, and selects the
+	// new key: a key standing where its path already puts it at that frame, so no frame of the timeline
+	// moves until the key does. nothing() where `frame` has a key already. Refused for a static prop
+	// (it has no path to key), for what is not a mover, and for a path that cannot be followed.
+	EditResult setKey(lain::rigplan::RigPlan& plan, const Selection& mover, std::size_t frame);
 } // namespace rigplan

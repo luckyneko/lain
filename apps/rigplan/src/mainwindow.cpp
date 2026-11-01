@@ -78,9 +78,11 @@ namespace rigplan
 		m_statusBar.draw(m_ctx);
 		m_menuBar.drawConfirmModal(m_ctx, window.app());
 
-		// A selection whose object an edit or an undo removed is let go of, rather than left naming nothing.
+		// A selection whose object an edit or an undo removed is let go of, rather than left naming nothing,
+		// and the frame shown follows what is left: a selected key's, within the timeline otherwise.
 		if (!exists(m_ctx.document.plan, m_ctx.selection))
 			m_ctx.selection = Selection::nothing();
+		m_ctx.followFrame();
 
 		// One step of history per gesture: a drag in the Inspector, or of the gizmo, is recorded once it
 		// ends, however many frames it changed the plan for. The same boundary holds back the Viewport's

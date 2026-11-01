@@ -47,6 +47,7 @@ namespace rigplan
 				ctx.document = newDocument();
 				++ctx.opened;
 				ctx.selection = Selection::nothing();
+				ctx.frame = 0;
 				ctx.openProblems.clear();
 				ctx.session.plans.last.clear(); // nothing to reopen at the next launch; the recents stay
 				ctx.rememberSession();
@@ -88,6 +89,7 @@ namespace rigplan
 		ctx.document = std::move(*opened.document);
 		++ctx.opened;
 		ctx.selection = Selection::nothing();
+		ctx.frame = 0;
 		ctx.openProblems.clear();
 		editor::noteDocument(ctx.session.plans, ctx.document.path);
 		ctx.rememberSession();

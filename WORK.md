@@ -15044,7 +15044,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
    specification catalogue (copy in, save out). Live-verified by the repo owner. **Planned 2026-10-30
-   as ten commits, 9a to 9j** (*Slice 9 planned* below).
+   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a built 2026-11-01**.
 
 ### Found while grilling — each owes a check
 
@@ -18215,6 +18215,60 @@ built.
   11. Undo and redo after 2, 3, 5 and 9: each is one step.
   12. Quit while a ray table or the map is still being made.
 
+#### Sub-slice 9a built (2026-11-01): the current frame, the playback clock and `setKey`
+
+`lain::editor::Playback`, flowview's sequence player on it, and rigplan's current frame and keying at a
+frame. `ctest -j8` **1633/1633** Release with video, camera and Ceres on (+8), and **1492/1492** with
+all three off (+8); warning-clean, format-check clean. The `--frames` smokes of both apps exit 0 with
+nothing on stderr. Nothing new is drawn yet: the Timeline that drives the frame is 9b.
+
+- **`lain::editor::Playback`** (`playback.{h,cpp}`) is a transport's clock and nothing else.
+  - It moves by whole frames of the time that has passed, rounded down, and carries the rest, so it
+    never shows a frame before its time. A frame that took too long skips the frames it had no time for.
+  - Without a loop it stops at the last frame and pauses; with one it goes round. Paused, or at a rate
+    that is not positive and finite, it stays put. A stall of any length lands on a frame, since the
+    count is a double.
+  - It holds no position and reads no clock: the caller owns the position, because what else moves it
+    (a scrubber, a selected key) is the caller's, and says how much time passed, so a test can say it
+    exactly. The rate an app plays at when its timeline states none stays that app's.
+- **flowview's `SequenceView` plays on it**, with no change in behaviour: it still stops at the end, and
+  every step and scrub still pauses. Its private `advancePlayback` is gone.
+- **rigplan's current frame**:
+  - `AppContext::frame` is the frame shown while no key is selected, never saved, and 0 again on New and
+    Open.
+  - `currentFrame(plan, selection, frame)` replaces `shownFrame`: while a key is selected, that key's
+    frame, wherever it stands (past the timeline included); otherwise `frame`, held within the timeline.
+  - `selectionAtFrame` lets a key at another frame go to its mover. `AppContext::goToFrame` is the
+    gesture the Timeline will call, and `followFrame` is asked by `MainWindow` once the panes have had
+    their say, so a drag of a key's Frame cell, an edit or an undo that shortened the timeline, and a key
+    let go of all leave the frame where it should be.
+  - The Viewport reads `ctx.frame`.
+- **`setKey(plan, mover, frame)`** keys a board, a prop mover, or a key of either at `frame`, where the
+  path already puts the mover: the position and the rotation `poseAt` gives, the rotation spelt through
+  `aimOf`. So no frame of the timeline moves until the key does. A keyed frame is `nothing()`. A static
+  prop, what is not a mover, and a path that cannot be followed are refused. The Inspector's Add key
+  goes through it, so the one rule makes every key.
+- **Deviation:** the `Playback` an `AppContext` plays the Timeline with lands in 9b, beside its first
+  reader, since 9a's frame rule does not need it.
+- **The cases** (+8):
+  - `test_playback.cpp` (3): whole frames and the carry, never ahead; stopping and going round, a
+    one-frame timeline included; staying put when paused or at no usable rate, owing nothing for a
+    pause, and a stall of 1e300 s.
+  - `test_edits.cpp` (2): keying between two keys, after the last and before the first moves no frame
+    from 0 to 20 by 1e-12 m; a keyed frame changes nothing, and a static prop, a camera and a path out of
+    order are refused.
+  - `test_frame.cpp` (3): the frame follows a selected key, a move of its frame and a frame past the
+    timeline, and stays when the key is let go of; going to another frame lets a key go to its mover,
+    keeps it at its own frame and keeps anything else selected; a shortened timeline brings the frame
+    back, an empty one to 0.
+- **Five sabotages, all caught.** One first failed to build under `-Werror`, so the previous binary
+  answered until it was redone.
+  - The clock rounding up instead of down fails 7 assertions.
+  - The clock wrapping without a loop fails 5.
+  - A new key's aim mixed componentwise from its neighbours, not slerped, fails 9.
+  - A new key appended rather than put in frame order fails 41.
+  - The frame not derived from a selected key fails 6.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -18477,7 +18531,7 @@ row here**. A row is cheap to delete and expensive to leave.
   landed and a drag baking every size it passed through (*After 8f*). **Slice 9 planned 2026-10-30** as
   ten commits, 9a to 9j: the current frame and the Timeline, the plan's assets shared between panes,
   looking through a camera, a distance pass and the visibility map, and the specification catalogue,
-  ending in a gui-mode checklist (*Slice 9 planned*). 7a's two
+  ending in a gui-mode checklist (*Slice 9 planned*); 9a built 2026-11-01. 7a's two
   findings and 5e's were decided on 2026-10-29: a registration verdict takes the camera models as
   given (documented, ADR-0016), the estimate's "floor" is renamed `flat`, a reference rather than a
   bound, and the CPU device gets every logical core (ADR-0028). CI run 40984683848 renders the example

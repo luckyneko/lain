@@ -48,6 +48,10 @@ namespace rigplan
 	{
 		Document document = newDocument();
 		Selection selection;
+		// The capture frame shown while no key is selected. While one is, the frame shown is the key's,
+		// and this follows it (followFrame), so letting the key go leaves the editor where it was. Never
+		// saved: a plan opens at frame 0.
+		std::size_t frame = 0;
 		Session session;
 		// Where the session is kept: sessionFile() in the app, empty in a test, which writes nothing.
 		std::filesystem::path sessionFile;
@@ -87,5 +91,18 @@ namespace rigplan
 		// Raised by a pane that changed the plan, or by the outcome of an edit: the document has unsaved
 		// work, and a snapshot is recorded once the gesture ends.
 		void changed() { document.markChanged(); }
+
+		// Goes to `to`, as the Timeline's scrubber and playback do: a key selected at another frame gives
+		// way to its mover, since while a key is selected the frame shown is the key's.
+		void goToFrame(std::size_t to)
+		{
+			selection = selectionAtFrame(document.plan, selection, to);
+			frame = currentFrame(document.plan, selection, to);
+		}
+
+		// Brings the frame shown up to date, once every pane has had its say: onto the selected key's
+		// frame, which a drag of its Frame cell moves, and back within a timeline an edit or an undo
+		// shortened.
+		void followFrame() { frame = currentFrame(document.plan, selection, frame); }
 	};
 } // namespace rigplan

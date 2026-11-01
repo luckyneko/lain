@@ -89,8 +89,16 @@ namespace rigplan
 	// name.
 	bool exists(const lain::rigplan::RigPlan& plan, const Selection& selection);
 
-	// The capture frame the Viewport shows for `selection`: a key's frame, and frame 0 otherwise.
-	std::size_t shownFrame(const lain::rigplan::RigPlan& plan, const Selection& selection);
+	// The capture frame the editor shows (CONTEXT.md, "Current frame"). While a key is selected, that key's
+	// frame, wherever it stands, so a key beyond the timeline is shown where it is and the gizmo moves what
+	// is drawn. Otherwise `frame`, held within the plan's timeline, so a timeline an edit or an undo
+	// shortened does not leave the editor past its end.
+	std::size_t currentFrame(const lain::rigplan::RigPlan& plan, const Selection& selection, std::size_t frame);
+
+	// What stays selected when the editor goes to `frame`: a key whose frame that is not gives way to its
+	// mover, since while a key is selected the frame shown is the key's, and keeping it would leave the
+	// editor on the key rather than at `frame`. Anything else stays as it is.
+	Selection selectionAtFrame(const lain::rigplan::RigPlan& plan, const Selection& selection, std::size_t frame);
 
 	// What the identity `owner` is in `plan`: the mount, camera, light, plane, box, prop or board it
 	// names, or nothing when it names none. What an Issues row about a problem's owner selects.

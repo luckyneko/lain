@@ -108,11 +108,27 @@ namespace rigplan
 		return Selection::nothing();
 	}
 
-	std::size_t shownFrame(const rp::RigPlan& plan, const Selection& selection)
+	// The key `selection` names, or null when it names none.
+	static const rp::PathKey* selectedKey(const rp::RigPlan& plan, const Selection& selection)
 	{
 		if (selection.kind != Selected::Key)
-			return 0;
+			return nullptr;
 		const rp::Path* path = pathOf(plan, selection.id);
-		return path && selection.key < path->keys.size() ? path->keys[selection.key].frame : 0;
+		return path && selection.key < path->keys.size() ? &path->keys[selection.key] : nullptr;
+	}
+
+	std::size_t currentFrame(const rp::RigPlan& plan, const Selection& selection, std::size_t frame)
+	{
+		if (const rp::PathKey* key = selectedKey(plan, selection))
+			return key->frame;
+		return plan.timeline.frames == 0 ? 0 : std::min(frame, plan.timeline.frames - 1);
+	}
+
+	Selection selectionAtFrame(const rp::RigPlan& plan, const Selection& selection, std::size_t frame)
+	{
+		const rp::PathKey* key = selectedKey(plan, selection);
+		if (!key || key->frame == frame)
+			return selection;
+		return selectionOf(plan, selection.id);
 	}
 } // namespace rigplan

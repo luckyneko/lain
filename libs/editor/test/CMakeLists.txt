@@ -6,6 +6,7 @@ add_executable(test-editor
 	test_recents.cpp
 	test_session.cpp
 	test_guard.cpp
+	test_playback.cpp
 )
 
 target_compile_features(test-editor PRIVATE cxx_std_17)

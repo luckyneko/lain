@@ -17,30 +17,6 @@ namespace flowview
 	// only: nothing is written, and the toolbar says so rather than implying the footage is 24 fps.
 	static constexpr double kUnspecifiedRateHz = 24.0;
 
-	void SequenceView::advancePlayback(double rate, std::size_t last)
-	{
-		const double step = 1.0 / rate;
-		m_carry += static_cast<double>(gui::GetIO().DeltaTime);
-		if (m_carry < step)
-			return;
-
-		// However many whole frames the elapsed time covers — so a slow decode DROPS frames instead
-		// of stretching the clip. Playback here is best effort (ADR-0018): one decoder behind a
-		// mutex cannot promise a frame per refresh, and pretending otherwise would play 4K footage
-		// in slow motion while claiming to be at rate.
-		const auto elapsed = static_cast<std::size_t>(m_carry / step);
-		m_carry -= static_cast<double>(elapsed) * step;
-		if (m_position + elapsed >= last)
-		{
-			m_position = last;
-			m_playing = false; // stop at the end rather than wrap: a loop is a choice, not a default
-		}
-		else
-		{
-			m_position += elapsed;
-		}
-	}
-
 	void SequenceView::showFrame(const media::FrameSequence& sequence, std::size_t position, gui::Context& gui)
 	{
 		// Recorded BEFORE the decode, and whatever the outcome: a frame that will not decode must not
@@ -69,7 +45,7 @@ namespace flowview
 		{
 			// A VALUE, not a failure: a folder that exists and holds no images opens as an empty
 			// sequence, and saying so is different from saying the open failed.
-			m_playing = false;
+			m_playback.pause();
 			gui::TextDisabled("(empty sequence - no frames)");
 			return;
 		}
@@ -80,8 +56,10 @@ namespace flowview
 		m_position = std::min(m_position, last);
 
 		const media::FrameRate rate = sequence.spec().rate;
-		if (m_playing)
-			advancePlayback(rate.specified() ? rate.hz() : kUnspecifiedRateHz, last);
+		// One decoder behind a mutex cannot promise a frame per refresh, so a slow decode DROPS frames
+		// rather than playing 4K footage in slow motion while claiming to be at rate.
+		m_position = m_playback.advance(m_position, last, rate.specified() ? rate.hz() : kUnspecifiedRateHz,
+										static_cast<double>(gui::GetIO().DeltaTime));
 
 		// Decode only when what is on screen is not the frame the transport names — which covers the
 		// transport moving AND the pin being rebound under a stationary transport.
@@ -107,24 +85,21 @@ namespace flowview
 
 		// Transport. Scrubbing takes over from playback — a user dragging the slider is steering, and
 		// having it snatched back a frame later would be unusable.
-		if (gui::Button(m_playing ? "Pause" : "Play"))
-		{
-			m_playing = !m_playing;
-			m_carry = 0.0;
-		}
+		if (gui::Button(m_playback.playing() ? "Pause" : "Play"))
+			m_playback.toggle();
 		if (!rate.specified())
 			gui::SetItemTooltip("This sequence declares no rate - playing at %.0f fps", kUnspecifiedRateHz);
 		gui::SameLine();
 		if (gui::Button("<") && m_position > 0)
 		{
 			--m_position;
-			m_playing = false;
+			m_playback.pause();
 		}
 		gui::SameLine();
 		if (gui::Button(">") && m_position < last)
 		{
 			++m_position;
-			m_playing = false;
+			m_playback.pause();
 		}
 		gui::SameLine();
 		gui::SetNextItemWidth(-1.0f);
@@ -134,7 +109,7 @@ namespace flowview
 		if (gui::SliderInt("##position", &position, 0, static_cast<int>(last), "frame %d"))
 		{
 			m_position = static_cast<std::size_t>(std::clamp(position, 0, static_cast<int>(last)));
-			m_playing = false;
+			m_playback.pause();
 		}
 
 		m_canvas.drawToolbar();

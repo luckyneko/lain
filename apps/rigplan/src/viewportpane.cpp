@@ -121,7 +121,7 @@ namespace rigplan
 			gui::SameLine();
 			gui::Checkbox("In its own axes", &m_local);
 			gui::SameLine();
-			gui::TextDisabled("frame %zu  ·  Alt-drag to look round, Ctrl snaps", shownFrame(ctx.document.plan, ctx.selection));
+			gui::TextDisabled("frame %zu  ·  Alt-drag to look round, Ctrl snaps", ctx.frame);
 
 			const ImVec2 origin = gui::GetCursorScreenPos();
 			const ImVec2 size{std::max(1.0f, gui::GetContentRegionAvail().x), std::max(1.0f, gui::GetContentRegionAvail().y)};
@@ -193,7 +193,7 @@ namespace rigplan
 		if (!m_problems.empty())
 			return;
 		const rp::RigPlan& plan = ctx.document.plan;
-		const std::size_t frame = shownFrame(plan, ctx.selection);
+		const std::size_t frame = ctx.frame;
 		lain::data::Value now = snapshot(plan);
 		const bool planChanged = !m_builtFrom || *m_builtFrom != now;
 		const bool assetsChanged = m_assetsChanged;

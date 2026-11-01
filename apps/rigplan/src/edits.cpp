@@ -1,6 +1,8 @@
 #include "edits.h"
 
 #include <lain/core/length.h>
+#include <lain/rigplan/mover.h>
+#include <lain/rigplan/realisation.h>
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -701,5 +703,29 @@ namespace rigplan
 			return EditResult::nothing();
 		plan.reference = camera.id;
 		return EditResult::done(camera);
+	}
+
+	EditResult setKey(rp::RigPlan& plan, const Selection& mover, std::size_t frame)
+	{
+		const bool moves = mover.kind == Selected::Board || mover.kind == Selected::Prop || mover.kind == Selected::Key;
+		rp::Path* path = moves ? pathOf(plan, mover.id) : nullptr;
+		if (!path)
+			return EditResult::refused(mover.kind == Selected::Prop ? "a static prop has no path to key: tick Moves along a path first"
+																	: "only a board or a prop mover has keys");
+		// A key goes into frame order, so a path that is not in order already has no place to put one.
+		const std::vector<std::string> problems = rp::pathProblems(*path);
+		if (!problems.empty())
+			return EditResult::refused(problems.front());
+
+		const auto at = std::lower_bound(path->keys.begin(), path->keys.end(), frame, [](const rp::PathKey& key, std::size_t f)
+										 { return key.frame < f; });
+		if (at != path->keys.end() && at->frame == frame)
+			return EditResult::nothing();
+		// The pose the path holds there, as a key: its rotation spelt as the aim that makes it, so the
+		// path is unchanged at every frame (poseAt slerps, and slerp along one arc agrees with itself).
+		const lain::math::RigidTransformd pose = rp::poseAt(*path, frame);
+		const std::size_t index = std::size_t(at - path->keys.begin());
+		path->keys.insert(at, rp::PathKey{frame, pose.translation(), rp::aimOf(pose.rotation())});
+		return EditResult::done(Selection::keyOf(mover.id, index));
 	}
 } // namespace rigplan

@@ -1400,6 +1400,24 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-01 — M15 slice 9, sub-slice 9a built: the current frame, the playback clock, `setKey`
+
+The first of slice 9's ten commits. `ctest -j8` **1633/1633** Release with video, camera and Ceres on
+(+8), and **1492/1492** with all three off (+8); warning-clean, format-check clean; the `--frames`
+smokes of both apps exit 0. Nothing new is drawn yet: the Timeline is 9b. Full notes in WORK.md's
+*Sub-slice 9a built*.
+
+- **`lain::editor::Playback`**: whole frames of elapsed time, rounded down and the rest carried, frames
+  skipped when one took too long, stopping at the end or going round. It holds no position and reads no
+  clock. flowview's sequence player now plays on it, with no change in behaviour.
+- **rigplan's current frame**: `AppContext::frame`, `currentFrame` (a selected key's frame, wherever it
+  stands; otherwise the frame, held within the timeline) in place of `shownFrame`, `goToFrame` (a key at
+  another frame gives way to its mover) and `followFrame`, asked once the panes have had their say. The
+  Viewport reads it.
+- **`setKey(plan, mover, frame)`** keys a mover where its path already puts it, so no frame moves; the
+  Inspector's Add key goes through it.
+- **Five sabotages, all caught**; one first failed to build and was redone.
+
 ### Update 2026-10-30 — M15 slice 9 planned: the gui, part 2 (nothing built yet)
 
 Slice 9 is planned as **ten commits, 9a to 9j**, in WORK.md's *Slice 9 planned*, ending in a 12-step

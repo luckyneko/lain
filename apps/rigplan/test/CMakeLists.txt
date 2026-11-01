@@ -8,6 +8,7 @@ add_executable(test-rigplan-app
 	test_assetjobs.cpp
 	test_document.cpp
 	test_edits.cpp
+	test_frame.cpp
 	test_orbit.cpp
 	test_picking.cpp
 	test_overlays.cpp
