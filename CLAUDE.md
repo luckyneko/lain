@@ -1400,6 +1400,30 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-10-30 — M15 slice 9 planned: the gui, part 2 (nothing built yet)
+
+Slice 9 is planned as **ten commits, 9a to 9j**, in WORK.md's *Slice 9 planned*, ending in a 12-step
+gui-mode checklist for the repo owner. CONTEXT.md gains *Current frame* and amends *Visibility map* and
+*Specification catalogue*; ADR-0028's viewport and depth bullets are amended.
+
+- **Decided with the repo owner:** looking through a camera runs **on the frame loop**, at a reduced
+  resolution step and only when what it shows changes, showing the sensor's gain and output curve
+  **without noise**; the visibility map has **its own pane** and counts from **nominal** poses; **Key
+  (K)** keys the current frame and the gizmo **auto-keys** a mover there; the camera view **follows the
+  selection, with a pin**; saving out over a different same-named specification **asks** (Replace,
+  Keep both, Cancel).
+- **Found while planning:**
+  - **The frame loop may not wait on the pool**: multi's `waitUntil` steals, so a blocking `task::`
+    call there can pick up a 2 s bake. Ray tables and the map's count are pool jobs.
+  - **The plan's assets belong to the Viewport**, so 9c moves them to one owner before a second pane
+    reads them.
+  - **A `gui::Texture` rewritten in place does not wait for the frames that drew it.** The camera view
+    hands over a new texture per picture, and flowview's sequence player, which rewrites in place, is
+    recorded as the eighth known defect.
+  - **A ray table's faces are far too large for a depth lookup**, so the map renders fixed-size cube
+    faces; a scaled model's interpolation error grows as one over the scale, so the look-through's
+    tolerance is the capture's divided by the step.
+
 ### Update 2026-10-29 — M15's waiting decisions settled
 
 Decisions on what M15 found, taken with the repo owner before slice 9 is planned. Full notes beside

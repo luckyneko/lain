@@ -791,7 +791,11 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   (M15 slice 7): a change to its shape is a new version with a migrator. _Avoid_: plan file, scene file.
 - **Specification catalogue** — a document of camera, sensor, lens and light specifications kept for
   reuse. A rig plan copies a specification in from one, and can save one back out; it never links to
-  one, so a catalogue edit changes no rig plan behind its back. _Avoid_: library, linked spec.
+  one, so a catalogue edit changes no rig plan behind its back. A specification is known by its name
+  within its kind, compared exactly. A camera specification brings its sensor and lens with it, and
+  one whose name the other side already uses for a different specification arrives under a numbered
+  name, with the references to it following; saving out over a different one asks first. _Avoid_:
+  library, linked spec.
 - **Synthetic capture** — footage rendered from a rig plan, in the same shape as footage of a real
   rig, together with its ground truth: the camera models and poses the footage was actually rendered
   with. Judging a rig plan means running calibration or registration on its synthetic capture and
@@ -850,8 +854,9 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
 - **Visibility map** — a count over a plane of the rig plan (the floor, or a chosen height), of how
   many cameras see each cell unoccluded. Registration needs shared views, so a cell one camera sees
   is still a blind spot for it. It is geometry alone, of what never moves, read from each camera's
-  depth and lain's own projection: it describes the installation, not one frame. Predicting which
-  camera pairs would register is left to registering a capture. _Avoid_: coverage (calibration's
+  depth and lain's own projection: it describes the installation, not one frame. It counts from the
+  rig plan's nominal poses, as the viewport draws them. Predicting which camera pairs would register
+  is left to registering a capture. _Avoid_: coverage (calibration's
   coverage is how widely features spread over one image), heatmap when the count is meant.
 - **Sensor specification** — the body half of a camera: resolution, pixel pitch, its physical body,
   and where its optical centre sits relative to the mount, with the tolerances on sensor placement,
@@ -937,6 +942,10 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   instant: a global shutter with no exposure time, so nothing is blurred and nothing is skewed by a
   rolling shutter, and the capture says so. The rig plan itself does not move. _Avoid_: animation
   (that is a mover's), sequence when the frames of a capture are meant.
+- **Current frame** — the frame of the capture timeline an editor shows: the viewport draws the
+  movers there, looking through a camera shows that frame, and a key made with the Key action is made
+  there. While a key is selected it is that key's frame; otherwise it is the editor's own, kept within
+  the timeline and never saved. _Avoid_: time, playhead when the frame is meant.
 - **Light specification** — what a datasheet states about one kind of light, as a camera
   specification does for a camera: its kind (point or spot), its beam, its output and its colour. A
   **placed light** is one on a mount, posed on it as a camera is. The first cut states little more

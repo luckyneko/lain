@@ -32,7 +32,12 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
   `realise()`, which refuses the whole plan on any problem.)* *(Amended 2026-10-28, building slice 8f:
   a room is drawn as a dollhouse, each of its surfaces the eye is outside of left out, since the
   renderer lights both faces of a surface and a room framed whole from outside otherwise hides the rig.
-  A capture never cuts one: the cutaway is the Viewport's alone.)*
+  A capture never cuts one: the cutaway is the Viewport's alone.)* *(Amended 2026-10-30, planning
+  slice 9, decided with the repo owner: looking through a camera is a capture render on the frame
+  loop, through the camera's model scaled to a resolution step (1/1 to 1/8) that fits its pane, made
+  only when what it shows changes. It shows the sensor's gain and output curve without noise. A
+  capture's waits hold archimedes' queue lock, which the window's submit also takes, so a thread of
+  its own would not stop it holding up the window; it is measured, with a trigger to move it.)*
 - **A capture render** has three steps:
   1. Rasterise the same scene, with the same shading, into an intermediate image that covers the
      camera's field of view: a wide pinhole for ordinary lenses, a cubemap past 180°.
@@ -158,6 +163,9 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
   silhouettes. MSAA in the face pass is deferred with a trigger.
 - **archimedes' renderer shapes three choices.** Its depth attachment is discarded after a pass,
   so a camera's depth for the visibility map is rendered as distance into an R32F colour target.
+  *(Amended 2026-10-30, planning slice 9: distance along the ray, not z, into a single-sample target,
+  since a resolve would average two surfaces' distances at an edge; over five fixed-size cube faces
+  per camera, since a ray table's faces are sized for a capture.)*
   It has no cube or array-layer texture, so an intermediate image past 180° is six 2D textures in
   a descriptor array. Neither SwiftShader nor MoltenVK has `wideLines`, so overlay lines are 1 px.
 - **What the CPU device found, once lain ran on it (2026-10-24, slice 3d).** Every `[gpu]` case runs

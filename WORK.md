@@ -14918,7 +14918,7 @@ clean. `flowview --licenses` prints 25 notices (48.6 KB) on macOS arm64.
   `third-party/` ships; MoltenVK's compiled-in SPIRV-Cross has no licence text to read; and nothing
   was built on Linux or Windows (MSVC's literal limit included), so CI's first run is owed.
 
-## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 8 built, 9 to plan)
+## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 8 built, 9 planned)
 
 An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
 and lights, a board waved through) that renders **synthetic captures**: footage in the shape M9
@@ -15043,7 +15043,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    nominal plan only, a mover's keys are edited as a table, and a plan's own specifications are edited
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
-   specification catalogue (copy in, save out). Live-verified by the repo owner.
+   specification catalogue (copy in, save out). Live-verified by the repo owner. **Planned 2026-10-30
+   as ten commits, 9a to 9j** (*Slice 9 planned* below).
 
 ### Found while grilling — each owes a check
 
@@ -17996,6 +17997,224 @@ off (+3); warning-clean, format-check clean.
     Debug 1617/1617, no refiner 1566/1566, video off 1484/1484. The new texture cases ran on the CPU
     device alone on Linux and Windows, since neither runner has a GPU.
 
+### Slice 9 planned (2026-10-30)
+
+Ten commits, 9a to 9j, in order, after this one. 9a, 9c, 9d, 9f, 9g and 9i are headless or driver-free
+and land on ctest alone (9f and 9g with `[gpu]` cases on Metal and the CPU device). 9b, 9e, 9h and 9j
+are gui code, and the repo owner live-verifies them after 9j (the checklist at the end). Nothing is
+built.
+
+- **Decided with the repo owner:**
+  - **Looking through a camera runs on the frame loop.** It captures at a reduced resolution, and only
+    when its inputs change: the camera, the model chosen, the frame, the plan's revision, the assets,
+    the resolution step. It is measured, with a trigger to move it off the frame loop. A capture is
+    two waited submissions a tile (4b), and archimedes' `submitSync` holds the queue lock the frame
+    loop's submit and present also take, so on another thread every wait would still hold up the
+    window, for a coordinator's machinery.
+  - **It shows the sensor's output without noise**: the gain and the output curve applied, then
+    decoded by the recording's own curve to sRGB for display. Noise drawn at a reduced resolution
+    cannot be the capture's per-pixel draws, so it would only look like noise.
+  - **The visibility map has its own pane**: a top-down image of the plane, a legend, and a hover that
+    gives a cell's count and names its cameras. An overlay drawn on the plane in the Viewport's shading
+    waits for a plan where the pane is not enough.
+  - **The map counts from nominal poses**, matching the Viewport, and so works on a plan with a
+    problem.
+  - **Keying at the current frame**: a Key action (K) records the selected mover's pose at the current
+    frame, interpolated. Dragging the gizmo with a mover selected edits its key at the current frame,
+    and creates one there if there is none.
+  - **The camera view follows the selection, with a pin.** It shows the selected camera, or the one
+    selected last; pinned, it stays on one while other things are selected and moved.
+  - **Saving a specification out to a catalogue that has a different one of that name asks**: Replace
+    overwrites the catalogue's, Keep both saves it under a numbered name (`hd 2`), Cancel writes
+    nothing.
+- **Taken as defaults, to object to first:**
+  - **The frame rule.** While a key is selected, the frame shown is that key's frame, derived rather
+    than stored, so dragging its Frame cell in the Inspector moves the view with it. Scrubbing or
+    playing away from it selects the key's mover. Otherwise `AppContext::frame` is the state, clamped
+    when the timeline shrinks, an undo included. The view is not kept: a plan opens at frame 0.
+  - **Playback** loops by default, at the plan's rate, dropping frames to keep up with the clock. An
+    unspecified rate plays at 24 fps, as flowview's player does.
+  - **The playback clock is hoisted into `lain::editor`**, its second consumer, as a pure value type
+    over elapsed seconds. flowview's `SequenceView` adopts it with no change in behaviour.
+  - **The look-through's resolution is a step**, 1/1, 1/2, 1/4 or 1/8, the largest that fits the pane,
+    so dragging a dock does not rebuild the ray table every frame. Its interpolation tolerance is the
+    capture's divided by the step, so to first order it accepts exactly the cameras a capture accepts.
+  - **The look-through owns its own `Renderer` and `GpuScene`**: the scene uncut, with no preview
+    ambient, since it shows what the capture holds. A plan with no lights reads black, and the pane
+    says so. Its textures double the Viewport's VRAM. The answer to that, a texture cache shared at
+    the renderer, waits for the first plan whose VRAM it matters to.
+  - **Static geometry, for the map**: the room, planes, boxes, poles, and props with neither a path
+    nor a clip. A board, a prop with a path (even one of a single key) and a clip prop, whose shape
+    changes, are left out.
+  - **The map's plane** is the floor or a chosen height, over the room's floor (or the plan's bounds,
+    without a room), in 5 cm cells. A cell is seen by a camera when lain's `project()` puts it inside
+    the camera's image, and the camera's distance along that ray reaches it, within a tolerance scaled
+    by the plane's slope to the ray, with a grazing cutoff at 85°.
+  - **Catalogue names compare exactly**, as `check()` compares them; only camera names ignore case.
+    "Identical" means an equal document value. A camera specification brings its sensor and lens. A
+    differing one of the same name arrives numbered, with the references to it rewritten. A camera
+    whose sensor or lens the catalogue lacks is refused, changing nothing. Copying in is one undo step.
+    Saving out writes a file and is not undoable. Saving into a catalogue that does not read is
+    refused, and the file is left as it was.
+- **Found while planning:**
+  - **The frame loop may not wait on the pool.** multi's `waitUntil` runs stolen work while it waits
+    (`extern/multi/include/multi/details/context.inl`), so a blocking `task::` call on the frame loop
+    can pick up a queued bake of about 2 s. `RayTable::build` dispatches rows with `task::range`, so a
+    ray table is a pool job, held during a gesture as asset jobs are, and so is the map's count.
+  - **The plan's assets belong to the Viewport** (`ViewportPane::m_assets`, `m_jobs`). A camera view
+    or a map pane would bake and read everything a second time, and repeat the Viewport's snapshot
+    comparison every frame. 9c moves them to one owner first.
+  - **A `gui::Texture` rewritten in place does not wait for the frames that drew it**: archimedes'
+    upload starts from `UNDEFINED` with source stage `NONE`. So a picture that changes every frame is a
+    new texture each time, through `gui::FrameTexture`. flowview's sequence player rewrites in place
+    today, and is recorded as a known defect (*Known defects*, the eighth).
+  - **A ray table's faces are sized for a capture**, the camera's resolution times m (2139 × 1589 for
+    a 640 × 480 rational model in 4a), so they are far too large for a depth lookup. The map renders
+    fixed-size cube faces through `cameraFromFace`, and shares the ray table's face projection
+    through a free `onFace`.
+  - **A scaled model's interpolation error grows as one over the scale**: the strong rational camera's
+    2.4e-3 px at 640 × 480 is about 0.01 at a quarter (which 4b only just built) and refused at an
+    eighth, at the default tolerance.
+  - **A cell lying on the floor is hidden by the floor itself** under a plain depth comparison. The
+    distance pass therefore stores distance along the ray, not z, in a single-sample target, since an
+    MSAA resolve would average two surfaces' distances at an edge, and the comparison takes a tolerance.
+  - **`check()` does not report a key beyond the timeline**, so the Timeline draws one, to be seen.
+  - **A key is selected by its index**, so undoing an inserted key leaves the selection on its
+    neighbour. Pre-existing, from 8d, and noted rather than changed.
+  - **The Inspector's Add key edits the path inline** (`panes/inspector.cpp`). It becomes 9a's `setKey`
+    at the frame after the last, which gives the same pose, since a path holds its last key.
+
+**The build order:**
+
+- **9a. The current frame, the playback clock and `setKey`** (driver-free).
+  - `lain::editor`'s `Playback`, with flowview adopting it.
+  - `AppContext::frame` and the frame rule in `selection`.
+  - `setKey(plan, mover, frame)` in `edits`, which the Inspector's Add key uses.
+  - The Viewport shows the current frame.
+
+  | Claim | Sabotage |
+  |---|---|
+  | Playback steps by whole frames of elapsed time, never ahead of the clock, and loops or stops | Round up; wrap without loop |
+  | Keying between two keys changes no frame's pose, to 1e-12 | Mix pan, tilt and roll componentwise |
+  | Keying a frame that has a key changes nothing, and keys stay in frame order | `push_back` |
+  | The frame follows the selected key, and clamps to the timeline | Set it only when a key is clicked |
+- **9b. The Timeline pane** (gui, drawn headless).
+  - A scrubber over the timeline, with play, pause, step and loop.
+  - A row per mover, with its keys as ticks: a click selects a key, and a key beyond the timeline is
+    drawn.
+  - Key (K) at the current frame, and the gizmo's auto-key.
+  - Docked under the Viewport.
+
+  | Claim | Sabotage |
+  |---|---|
+  | Frame to position and back round-trips, and a click picks the nearest tick | Leave the last frame unreachable |
+  | The pane draws without an ImGui error for every selection, a one-frame timeline and a key beyond it | Drop a `PopID` |
+
+  The Viewport's frame time while three-poles plays is measured.
+- **9c. The plan's assets, shared** (no change in behaviour).
+  - One owner of `SceneAssets`, `AssetJobs` and a plan revision that changes exactly when the snapshot
+    does, read by every pane. It moves out of `ViewportPane`.
+
+  | Claim | Sabotage |
+  |---|---|
+  | Two readers, one set of assets: no job is posted twice | The Viewport keeps its own jobs |
+  | The revision changes exactly when the snapshot does | Bump it every frame |
+- **9d. `camera::scaled` and the look-through's choice** (driver-free).
+  - `scaled(model, ImageGeometry) -> ModelResult` in `lain::camera`: intrinsics scaled about the pixel
+    corner, distortion unchanged, since it is in normalised coordinates. `libs/render/test/testcameras.h`
+    goes through it.
+  - `apps/rigplan/src/lookthrough.{h,cpp}`: which camera (following the selection, pinnable), its
+    nominal or realised model and pose, the scene source and view `writeCapture` uses, and the display
+    decode.
+
+  | Claim | Sabotage |
+  |---|---|
+  | Through all six models, every corner's ray is unchanged, to 1e-12 | Scale about the pixel centre; scale the coefficients |
+  | A camera whose full-size table builds builds at every step, with the tolerance divided by the step | The default tolerance (measured first) |
+  | Realised uses `realise()`'s model and pose, and reports its refusal | Fall back to nominal |
+  | Nominal works on a plan with a problem | — |
+  | The display decodes by the recording's curve | Pass the bytes raw: a linear-curve sensor fails |
+- **9e. The camera view pane** (gui, executable-only).
+  - Its own `Renderer` and `GpuScene`; the ray table a pool job, held during a gesture.
+  - A capture only when an input changed and the pane is visible; a new texture per picture, through
+    `gui::FrameTexture`.
+  - Nominal or realised, and the pin, in the pane; a status for assets still loading and for a plan
+    with no lights.
+  - Released in `onShutdown`, before the gui context goes.
+
+  Measured: the milliseconds a capture takes on Metal at each step, and VRAM on a 20 m room. A
+  `--frames` smoke exits 0.
+- **9f. `Renderer::renderDistance` and a free `onFace`** (`[gpu]`, on Metal and the CPU device).
+  - `libs/render/shaders/distance.frag`, over `scene.vert` and embedded by `lain_embed_shaders`; a
+    single-sample `R32_Sfloat` target with depth, read back as `Gray32F`.
+  - `RayTable::onFace` delegates to a free `onFace(const CaptureFace&, direction)`.
+  - ADR-0028 amended.
+
+  | Claim | Sabotage |
+  |---|---|
+  | A texel's distance is the analytic one, on a tilted plane and a box | Write view-space z |
+  | The nearest surface wins | No depth test |
+  | Where nothing is drawn reads the sentinel | Clear to 0 |
+  | An edge texel is one surface's distance, never a blend | An MSAA target |
+- **9g. The visibility map** (library, with `[gpu]` cases).
+  - `libs/rigplan/scene`'s `visibility.{h,cpp}`: `staticScene` (movers and clip props out, textures
+    stripped, since a distance pass reads none), five fixed-size cube faces per camera, and a count
+    that needs no GPU, giving each cell a set of cameras.
+
+  | Claim | Sabotage |
+  |---|---|
+  | The static scene keeps what never moves, and drops boards, path props and clip props | — |
+  | A bare floor under one camera counts 1 exactly where `project()` lands in its image, to the grazing cutoff | Tolerance 0: the floor hides itself |
+  | A box's shadow counts 0 | A tolerance far too large |
+  | A fisheye counts nothing outside its own image | In view by face, not by `project()` |
+  | Two cameras count 2 where they overlap | Blend distances rather than take the nearest texel |
+
+  An end-to-end case runs the count through `renderDistance`.
+- **9h. The visibility pane** (gui).
+  - A driver-free scheduler: each face a revision needs rendered once, a few a frame with progress
+    shown; a new revision starts again; it waits for prop meshes still loading; it holds at most K
+    cameras' faces at once.
+  - The pane: the top-down image, the legend, the hover, the floor or a height.
+- **9i. Copying specifications in and saving them out** (driver-free).
+  - `copyIn` and `saveOut` in `edits`, with the clash's three answers; `readCatalogue` and
+    `saveCatalogue` in `document`.
+  - CONTEXT.md's *Specification catalogue* amended.
+
+  | Claim | Sabotage |
+  |---|---|
+  | A camera specification brings its sensor and lens | — |
+  | An identical one is reused | Compare names alone |
+  | A differing one arrives numbered, and references follow it | Leave references: `check()` fails |
+  | A missing sensor or lens is refused, changing nothing | — |
+  | Copying in is one undo step | — |
+  | Saving into a catalogue that does not read leaves the file byte for byte | Overwrite it |
+  | Out to a new catalogue and back in gives the same specifications | — |
+- **9j. The Specifications menu** (gui; its modals drawn headless).
+  - Copy In from Catalogue…, with a picker by kind; Save to Catalogue… for the selected specification;
+    the Replace, Keep both, Cancel modal; refusals as transient messages.
+
+- **The gui-mode checklist, after 9j** (the repo owner, on a Metal session):
+  1. Open `three-poles.json`. Scrub the Timeline: the board moves in the Viewport. Play, pause, step
+     and loop. Select a key in the table: the Timeline and the Viewport go to its frame.
+  2. Scrub between two keys and press K: a key appears there and nothing moves. Drag the board with
+     the gizmo at a frame without a key: a key appears at that frame. Undo each.
+  3. Do the same with a prop given a path.
+  4. Open the camera view on a camera. Change the selection to another camera: it follows. Pin it,
+     then select and move the board: it stays on the pinned camera and shows the board at each frame.
+  5. Aim the camera with the gizmo: the camera view follows during the drag.
+  6. Switch to Realised: the picture moves by the plan's deviation. Put a camera inside its pole: the
+     camera view says why there is no realisation, and Nominal still shows.
+  7. Resize the camera view's pane through two resolution steps: the picture sharpens and blurs, and
+     the window never stops responding.
+  8. Open the visibility pane: the floor shows each camera count, and hovering a cell names its
+     cameras. Put a box on the floor: its shadow appears. Change the height: the map changes.
+  9. Copy a camera specification in from a catalogue: its sensor and lens come with it. Copy in one
+     whose name the plan already uses for a different specification: it arrives numbered.
+  10. Save a specification out to a new catalogue, then to one that has a different specification of
+      that name: Replace, Keep both and Cancel each do what they say.
+  11. Undo and redo after 2, 3, 5 and 9: each is one step.
+  12. Quit while a ray table or the map is still being made.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -18255,7 +18474,10 @@ row here**. A row is cheap to delete and expensive to leave.
   and pooled asset jobs; rigplan's driver-free editor units; the editor's shell and `lain::app`'s
   close veto; the Viewport). **Slice 8 was live-verified 2026-10-29**: all twelve steps of its gui-mode
   checklist pass, step 12 after fixing the two defects it found, the window stalling as a large bake
-  landed and a drag baking every size it passed through (*After 8f*). **Next is slice 9.** 7a's two
+  landed and a drag baking every size it passed through (*After 8f*). **Slice 9 planned 2026-10-30** as
+  ten commits, 9a to 9j: the current frame and the Timeline, the plan's assets shared between panes,
+  looking through a camera, a distance pass and the visibility map, and the specification catalogue,
+  ending in a gui-mode checklist (*Slice 9 planned*). 7a's two
   findings and 5e's were decided on 2026-10-29: a registration verdict takes the camera models as
   given (documented, ADR-0016), the estimate's "floor" is renamed `flat`, a reference rather than a
   bound, and the CPU device gets every logical core (ADR-0028). CI run 40984683848 renders the example
@@ -18273,7 +18495,7 @@ row here**. A row is cheap to delete and expensive to leave.
   `--device` landed. *(M15 §Sub-slice 3d built.)*
 
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not**, and M15 is under
-way (slices 0 to 8 built and slice 8 live-verified; slice 9 not yet planned).
+way (slices 0 to 8 built and slice 8 live-verified; slice 9 planned).
 
 - **Example documents** — all four commits built. Owed: a gui-mode eyeball of every example (the
   primary purpose). The smoke step has run in CI since it landed, and was green on every leg in
@@ -18473,7 +18695,8 @@ review of 2026-10-20 moved after it), with clock-domain identity and timestamp g
 
 Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
 
-**The list is empty.** All seven are fixed — `gui::Texture` freeing a descriptor set a running frame
+**One is open**, the eighth, found while planning M15 slice 9 (below). The other seven are fixed —
+`gui::Texture` freeing a descriptor set a running frame
 could still read (2026-09-29; see Milestone 14 › *A texture's descriptor outlives the frames that
 drew it*), a group replaced at its own NodeId looking clean and delivering
 nothing (found by M14 slice 1, fixed 2026-09-28 by making versions process-unique; see
@@ -18510,6 +18733,21 @@ reach first. Worth remembering when writing the next entry here.
     button each ask with unsaved work; Save, Discard and Cancel each do what they say; a cancelled Save
     panel cancels the request. That is slice 0's check of flowview's unsaved-changes modal, owed since
     2026-10-22.
+
+**The eighth, found 2026-10-30 while planning M15 slice 9, open:**
+
+- **flowview's sequence player rewrites a texture that a frame in flight may still be sampling.**
+  `SequenceView` re-uploads its `gui::Texture` in place whenever the next frame is the same size
+  (`apps/flowview/src/sequenceview.cpp`, `m_texture.upload(frame)`). `gui::Texture::upload` goes through
+  archimedes' `Texture::upload`, whose transfer starts from `UNDEFINED` with source stage `NONE`
+  (`extern/archimedes/src/vulkan/Texture.cpp`), so nothing orders the write after the reads of the up
+  to `acm::Renderer::MaxFramesInFlight` frames that drew it: a write-after-read hazard. Nothing has
+  been seen to go wrong (MoltenVK did not fault on 2026-09-29's descriptor case either), and nothing
+  here can observe it, since there is no validation layer.
+  - **The fix is what M15 slice 9's camera view does instead**: a new texture per picture, handed over
+    through `gui::FrameTexture`, whose descriptor cache keeps the old one until it is safe. Or a
+    `gui::Texture::upload` that waits for the frames that drew it, which every caller would then get.
+  - **Its own commit**, not slice 9's: it changes flowview, and its playback needs eyeballing.
 
 ### `ctest -j` and scratch paths — FIXED 2026-09-10
 
