@@ -1400,6 +1400,26 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-01 — M15 slice 9, sub-slice 9c built: the plan's assets, shared
+
+The third of slice 9's ten commits, no change in what is drawn. `ctest -j8` **1644/1644** Release with
+video, camera and Ceres on (+3), and **1503/1503** with all three off (+3); warning-clean, format-check
+clean; the `--frames` smokes exit 0, including a quit while bakes run. Full notes in WORK.md's
+*Sub-slice 9c built*.
+
+- **`PlanAssets`** (`apps/rigplan/src/planassets.{h,cpp}`, in the AppContext) holds the
+  `SceneAssets`, the `AssetJobs`, a plan revision that changes exactly when the snapshot does, and an
+  assets revision that changes when a job's outcome is kept.
+  - The window polls it at the start of a frame and updates it once every pane has had its say, so the
+    snapshot is compared once for every reader.
+  - The Viewport only reads it, and builds again when either revision moves.
+- **Found by measuring: playback remade every surface's and pole's mesh on every frame change**, since
+  the Viewport called `sceneGeometry` on every rebuild, and the device then uploaded each mesh again.
+  Run only when the plan changes, a frame change costs 0.30 ms against 9b's 4.35 ms.
+- **The plan's sabotage ("the Viewport keeps its own jobs") is structural**, since the Viewport is not
+  under ctest. The unit's own sabotage is a job posted again while it runs, which the new
+  `AssetJobs::posted()` counts. Four sabotages, all caught.
+
 ### Update 2026-11-01 — M15 slice 9, sub-slice 9b built: the Timeline, Key (K) and the gizmo's auto-key
 
 The second of slice 9's ten commits. `ctest -j8` **1641/1641** Release with video, camera and Ceres on
@@ -1423,7 +1443,8 @@ to 3). Full notes in WORK.md's *Sub-slice 9b built*.
 - **`AppContext::apply`** takes an edit's outcome, in place of the menu bar's private copy.
 - **Measured on Metal, three-poles playing at 30 fps on a 120 Hz display**: a frame change rebuilds the
   scene in 4.35 ms mean (max 5.41), and the frame interval stays 8.33 ms mean (max 9.67), as paused.
-  The trigger to rebuild only the movers is a plan whose rebuild passes the frame budget.
+  The trigger to rebuild only the movers is a plan whose rebuild passes the frame budget. *(9c found
+  the 4.35 ms was nearly all meshes remade on each frame change: 0.30 ms once they are not.)*
 - **Five sabotages, all caught.**
 
 ### Update 2026-11-01 — M15 slice 9, sub-slice 9a built: the current frame, the playback clock, `setKey`

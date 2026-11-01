@@ -3,8 +3,8 @@
 # (lain::rigplan::capture).
 
 # The editor's driver-free units: the document, the selection, the edits, the orbit, the picking, the
-# overlays and the gizmo bridge (M15 slice 8d), the session file and the panes (8e), the Viewport's
-# asset jobs (8f), and the Timeline's scale and pane (9b). Compiled ONCE
+# overlays and the gizmo bridge (M15 slice 8d), the session file and the panes (8e), the asset jobs
+# (8f), the Timeline's scale and pane (9b), and the plan's assets every pane shares (9c). Compiled ONCE
 # into an object library that rigplan and its test both link, as flowview-tested is, so the test
 # exercises the one editor the app runs and the two cannot drift. An OBJECT library, so every object is
 # linked whether or not something names it. Its link libraries are what these sources need, PUBLIC so
@@ -13,6 +13,7 @@
 # (Vulkan::Loader resolves archimedes' vk* symbols at link time, as for flowview-tested).
 add_library(rigplan-tested OBJECT
 	src/assetjobs.cpp
+	src/planassets.cpp
 	src/document.cpp
 	src/selection.cpp
 	src/edits.cpp
@@ -59,7 +60,7 @@ target_link_libraries(rigplan
 	PRIVATE rigplan-tested lain::app lain::core lain::rigplan::capture lain::rigplan::serialize
 			lain::io lain::io::data lain::io::data::codecs lain::io::image::codecs lain::io::mesh::codecs # the rig plan document, the frames, the meshes a plan names
 			lain::camera::backends # the board renderer, where a camera plugin is built
-			lain::task # the Viewport's asset jobs, on the process pool
+			lain::task # the plan's asset jobs, on the process pool
 			lain::string lain::log archimedes Vulkan::Loader lain::warnings
 )
 

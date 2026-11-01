@@ -44,12 +44,6 @@ namespace rigplan
 		release();
 	}
 
-	void ViewportPane::poll(AppContext&)
-	{
-		if (m_jobs.collect(m_assets))
-			m_assetsChanged = true;
-	}
-
 	// A column-major float[16], as ImGuizmo reads and writes a matrix.
 	static std::array<float, 16> floats(const math::Mat4d& m)
 	{
@@ -192,38 +186,29 @@ namespace rigplan
 			m_orbit = framing(m_orbit, bounds->lower, bounds->upper, m_view.image);
 	}
 
-	void ViewportPane::update(AppContext& ctx, bool gesture)
+	void ViewportPane::update(AppContext& ctx)
 	{
 		if (!m_problems.empty())
 			return;
 		const rp::RigPlan& plan = ctx.document.plan;
+		const PlanAssets& shared = ctx.assets;
 		const std::size_t frame = ctx.frame;
-		lain::data::Value now = snapshot(plan);
-		const bool planChanged = !m_builtFrom || *m_builtFrom != now;
-		const bool assetsChanged = m_assetsChanged;
 		bool rebuilt = false;
-		if (planChanged || frame != m_builtFrame || m_assetsChanged || m_builtPreviewLight != ctx.view.previewLight)
+		if (shared.planRevision() != m_builtPlan || shared.assetsRevision() != m_builtAssets || frame != m_builtFrame ||
+			m_builtPreviewLight != ctx.view.previewLight)
 		{
-			// The surfaces' and poles' meshes at once; everything slower on the pool, below.
-			rp::sceneGeometry(plan, m_assets);
-			if (planChanged)
-				rp::pruneAssets(plan, m_assets);
-
 			m_layout = rp::nominalLayout(plan);
-			m_fullScene = rp::renderScene(plan, m_layout, m_assets, frame);
+			m_fullScene = rp::renderScene(plan, m_layout, shared.assets(), frame);
 			m_fullScene.scene.background = kBackground;
 			if (ctx.view.previewLight)
 				m_fullScene.scene.ambient = m_fullScene.scene.ambient + image::ColorRGBf{kPreviewAmbient, kPreviewAmbient, kPreviewAmbient};
 
-			m_builtFrom = std::move(now);
+			m_builtPlan = shared.planRevision();
+			m_builtAssets = shared.assetsRevision();
 			m_builtFrame = frame;
 			m_builtPreviewLight = ctx.view.previewLight;
-			m_assetsChanged = false;
 			rebuilt = true;
 		}
-
-		// What the plan needs and its assets lack, on the pool, once no gesture is under way.
-		m_jobs.post(plan, m_assets, planChanged || assetsChanged, gesture);
 
 		// The dollhouse, from this frame's eye: the device's copy changes only when a wall goes or comes back.
 		const math::Vec3d eye = m_viewValid ? m_view.worldFromCamera.translation() : viewOf(m_orbit, {1, 1}).worldFromCamera.translation();
@@ -244,15 +229,9 @@ namespace rigplan
 				m_deviceProblems = m_renderer.update(*m_gpu, m_scene.scene).problems;
 		}
 
-		ctx.assetsPending = m_jobs.pending();
-		ctx.assetProblems.clear();
-		for (const auto& [key, problems] : m_assets.failed)
-		{
-			(void)key;
-			ctx.assetProblems.insert(ctx.assetProblems.end(), problems.begin(), problems.end());
-		}
+		ctx.viewportProblems.clear();
 		for (const std::string& problem : m_deviceProblems)
-			ctx.assetProblems.push_back("the Viewport could not draw the plan: " + problem);
+			ctx.viewportProblems.push_back("the Viewport could not draw the plan: " + problem);
 
 		// A plan opened or made is framed whole; the view is not kept with a plan.
 		if (ctx.opened != m_framedFor && m_viewValid)
@@ -286,8 +265,6 @@ namespace rigplan
 
 	void ViewportPane::release()
 	{
-		// Each job reads only what it captured, but its result is kept by this pane, so it is waited for.
-		m_jobs.wait();
 		m_texture = {};
 		m_viewport.reset();
 		m_gpu.reset();

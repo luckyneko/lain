@@ -49,7 +49,10 @@ namespace rigplan
 		for (rp::AssetJob& job : rp::missingAssets(plan, assets))
 		{
 			if (m_jobs.count(job.key) == 0)
+			{
 				m_jobs.emplace(job.key, task::async(std::move(job.run)));
+				++m_posted;
+			}
 		}
 		m_owed = false;
 	}

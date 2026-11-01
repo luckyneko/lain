@@ -7,6 +7,7 @@
 #include <lain/rigplan/rigplan.h>
 
 #include <string>
+#include <vector>
 
 namespace rigplan
 {
@@ -45,7 +46,9 @@ namespace rigplan
 				row(ctx, index, problem, kError, Selection::nothing());
 				any = true;
 			}
-			for (const std::string& problem : ctx.assetProblems)
+			std::vector<std::string> assetProblems = ctx.assets.problems();
+			assetProblems.insert(assetProblems.end(), ctx.viewportProblems.begin(), ctx.viewportProblems.end());
+			for (const std::string& problem : assetProblems)
 			{
 				row(ctx, index, problem, kWarning, Selection::nothing());
 				any = true;

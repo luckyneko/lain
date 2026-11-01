@@ -10,9 +10,9 @@
 
 namespace rigplan
 {
-	// The Viewport's asset jobs: each picture to read, surface to bake, board to draw or mesh to read
-	// that the plan needs and its assets lack, run on the process pool, so the frame loop never waits on
-	// one (ADR-0025's rule, carried to rigplan).
+	// The plan's asset jobs (PlanAssets holds them): each picture to read, surface to bake, board to draw
+	// or mesh to read that the plan needs and its assets lack, run on the process pool, so the frame loop
+	// never waits on one (ADR-0025's rule, carried to rigplan).
 	//
 	// None is posted while a gesture is under way (a drag of a field or of the gizmo, or typing into a
 	// field). A drag changes the plan every frame, and a job cannot be stopped once posted, so a room
@@ -36,8 +36,10 @@ namespace rigplan
 		// after it. A job already running is not posted again.
 		void post(const lain::rigplan::RigPlan& plan, const lain::rigplan::SceneAssets& assets, bool changed, bool gesture);
 
-		// Jobs posted and not yet collected.
+		// Jobs posted and not yet collected, and every job ever posted: a job asked for again while it runs
+		// is not posted again, so this is how many pieces of work reached the pool.
 		std::size_t pending() const { return m_jobs.size(); }
+		std::size_t posted() const { return m_posted; }
 
 		// Waits for every job still running and forgets them, keeping nothing they made.
 		void wait();
@@ -45,5 +47,6 @@ namespace rigplan
 	private:
 		std::map<std::string, lain::task::Handle<lain::rigplan::AssetOutcome>> m_jobs; // by job key
 		bool m_owed = false;
+		std::size_t m_posted = 0;
 	};
 } // namespace rigplan

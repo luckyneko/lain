@@ -13,16 +13,16 @@ using rigplan::AppContext;
 using rigplan::Selected;
 using rigplan::Selection;
 
-static AppContext context()
+// The editor's plan opened in `ctx`. An AppContext is not copied: the asset jobs it holds cannot be.
+static void openPlan(AppContext& ctx)
 {
-	AppContext ctx;
 	ctx.document.plan = editorplan::plan(lain::core::Uri{"/assets/chair.obj"});
-	return ctx;
 }
 
 TEST_CASE("while a key is selected the frame shown is the key's", "[rigplan][frame]")
 {
-	AppContext ctx = context();
+	AppContext ctx;
+	openPlan(ctx);
 	// The board is keyed at frames 0 and 10, on a timeline of 12.
 	ctx.frame = 3;
 	ctx.selection = Selection::keyOf(editorplan::boardId, 1);
@@ -51,7 +51,8 @@ TEST_CASE("while a key is selected the frame shown is the key's", "[rigplan][fra
 
 TEST_CASE("going to another frame lets a selected key go to its mover", "[rigplan][frame]")
 {
-	AppContext ctx = context();
+	AppContext ctx;
+	openPlan(ctx);
 	ctx.selection = Selection::keyOf(editorplan::boardId, 1);
 	ctx.followFrame();
 
@@ -84,7 +85,8 @@ TEST_CASE("going to another frame lets a selected key go to its mover", "[rigpla
 
 TEST_CASE("a timeline shortened under the editor brings the frame back within it", "[rigplan][frame]")
 {
-	AppContext ctx = context();
+	AppContext ctx;
+	openPlan(ctx);
 	ctx.goToFrame(11);
 	REQUIRE(ctx.frame == 11);
 

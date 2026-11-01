@@ -2,6 +2,7 @@
 
 #include "document.h"
 #include "edits.h"
+#include "planassets.h"
 #include "selection.h"
 #include "session.h"
 
@@ -67,10 +68,11 @@ namespace rigplan
 		std::uint64_t opened = 0;
 
 		ViewOptions view;
-		// The Viewport's asset jobs (a bake, a board drawn, a mesh read) still running, and why those that
-		// failed made nothing, each naming its owner and file.
-		std::size_t assetsPending = 0;
-		std::vector<std::string> assetProblems;
+		// The plan's assets, one set every pane that draws the plan reads (planassets.h), and the jobs still
+		// making them. The window polls and updates it once a frame.
+		PlanAssets assets;
+		// Why the Viewport could not bring the plan to the device, for the Issues pane.
+		std::vector<std::string> viewportProblems;
 
 		// Why the last plan opened was refused, until the next open: a plan that reads with problems keeps
 		// the open document, and the Issues pane says why.

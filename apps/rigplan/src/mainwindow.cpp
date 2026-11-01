@@ -62,7 +62,7 @@ namespace rigplan
 	void MainWindow::onRender(app::Window& window, const app::TimeState&)
 	{
 		// What the asset jobs made since the last frame, FIRST, so this frame builds with it. Never waits.
-		m_viewport->poll(m_ctx);
+		m_ctx.assets.poll();
 		m_gui->newFrame();
 		const gui::DockNode dock = gui::dockSpaceOverViewport();
 		if (m_seedLayout || m_resetLayout)
@@ -88,15 +88,17 @@ namespace rigplan
 		m_ctx.followFrame();
 
 		// One step of history per gesture: a drag in the Inspector, or of the gizmo, is recorded once it
-		// ends, however many frames it changed the plan for. The same boundary holds back the Viewport's
-		// asset jobs, so a drag bakes only where it ends.
+		// ends, however many frames it changed the plan for. The same boundary holds back the plan's asset
+		// jobs, so a drag bakes only where it ends.
 		const bool gesture = gui::IsAnyItemActive() || gui::gizmo::IsUsing();
 		if (m_ctx.document.pendingSnapshot && !gesture)
 			commit(m_ctx.document);
 
-		// The scene and the overlays for this frame, now every pane has had its say: built again when the
-		// plan, the frame shown or the assets changed, and recorded in the pre-pass below.
-		m_viewport->update(m_ctx, gesture);
+		// The plan's assets, now every pane has had its say: the plan's snapshot taken and compared once for
+		// every reader, and what it lacks posted. Then the Viewport's scene and overlays for this frame, built
+		// again when the plan, its assets or the frame shown changed, and recorded in the pre-pass below.
+		m_ctx.assets.update(m_ctx.document.plan, gesture);
+		m_viewport->update(m_ctx);
 
 		const std::string name = m_ctx.document.path.empty() ? std::string("Untitled") : m_ctx.document.path.filename().string();
 		const std::string title = string::format("{}{} - rigplan", name, m_ctx.document.dirty ? " *" : "");
@@ -126,8 +128,9 @@ namespace rigplan
 		// The dialog folder as it ended up; the recents were written as they changed.
 		m_ctx.session.lastDialogDir = gui::lastDirectory();
 		m_ctx.rememberSession();
-		// The Viewport's GPU state, then the backend, before the device goes. Its asset jobs are waited for
-		// first: quitting while a bake runs costs that bake, never a crash.
+		// The plan's asset jobs are waited for first: quitting while a bake runs costs that bake, never a
+		// crash. Then the Viewport's GPU state and the backend, before the device goes.
+		m_ctx.assets.wait();
 		m_viewport->release();
 		m_viewport.reset();
 		m_gui.reset();

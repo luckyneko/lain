@@ -7,6 +7,7 @@
 #include <lain/rigplan/rigplan.h>
 #include <lain/string/format.h>
 
+#include <cstddef>
 #include <string>
 
 namespace rigplan
@@ -26,8 +27,9 @@ namespace rigplan
 		const std::size_t problems = rp::check(plan).size();
 		if (problems > 0)
 			text += string::format(" · {} problem{}", problems, problems == 1 ? "" : "s");
-		if (ctx.assetsPending > 0)
-			text += string::format(" · loading {} asset{}", ctx.assetsPending, ctx.assetsPending == 1 ? "" : "s");
+		const std::size_t pending = ctx.assets.pending();
+		if (pending > 0)
+			text += string::format(" · loading {} asset{}", pending, pending == 1 ? "" : "s");
 		if (ctx.messageFrames > 0)
 			text += " · " + ctx.message;
 		gui::TextUnformatted(text.c_str());

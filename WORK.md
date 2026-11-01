@@ -15044,7 +15044,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
    specification catalogue (copy in, save out). Live-verified by the repo owner. **Planned 2026-10-30
-   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a and 9b built 2026-11-01**.
+   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a, 9b and 9c built 2026-11-01**.
 
 ### Found while grilling — each owes a check
 
@@ -18333,6 +18333,9 @@ to 3 of the checklist after 9j are this commit's.
 
   The rebuild is about half the frame at 120 Hz. **Trigger:** a plan whose rebuild passes the frame
   budget. Then a frame change would rebuild only the movers' instances rather than the whole scene.
+  *(**Superseded by 9c**: almost all of that 4.35 ms was the surfaces' and poles' meshes made again and
+  uploaded again on every frame change. Made only when the plan changes, the rebuild is 0.30 ms; see
+  *Sub-slice 9c built*.)*
 - **The cases** (+8):
   - `test_timeline.cpp` (3): a frame's tick and a click in its slot name the same frame, at 1 to 250,000
     frames, with and without the strip, a timeline of no frames counted as one; a key past the timeline
@@ -18356,6 +18359,67 @@ to 3 of the checklist after 9j are this commit's.
     the first frame of play to the frame Space is pressed in.
 - Found while testing, in the test: a computed midpoint between two ticks is not an exact tie in floating
   point, so the tie is asked on slots of 10 points.
+
+#### Sub-slice 9c built (2026-11-01): the plan's assets, shared
+
+The plan's assets move out of the Viewport into `PlanAssets` (`planassets.{h,cpp}`), held by the
+AppContext, which every pane that draws the plan reads. Nothing is drawn differently. `ctest -j8`
+**1644/1644** Release with video, camera and Ceres on (+3), and **1503/1503** with all three off (+3);
+warning-clean, format-check clean. The `--frames` smokes of both apps exit 0 with nothing on stderr,
+`--frames 1` and `2` included, which quit while three-poles' bakes are still running.
+
+- **`PlanAssets`** holds the `SceneAssets`, the `AssetJobs`, and two revisions.
+  - `poll()` keeps what the jobs made, at the start of a frame, never waiting.
+  - `update(plan, gesture)` runs once every pane has had its say. It takes the plan's snapshot and
+    compares it once for every reader. When the snapshot differs, the plan revision moves on, and the
+    surfaces' and poles' meshes are made again and pruned. Then what the plan lacks is posted, unless
+    a gesture is under way.
+  - The **plan revision** changes exactly when the snapshot does, during a gesture too, since only the
+    jobs wait for one. The **assets revision** changes whenever a job's outcome is kept. A reader keeps
+    the pair it built from.
+- **The Viewport only reads.** It has no `SceneAssets`, `AssetJobs` or snapshot of its own, and no
+  `poll`. Its `update` builds again when either revision, the frame shown or Preview Light changed, and
+  no longer takes the gesture.
+- **The window drives the owner**: `poll` first, `update` after the history commit and before the
+  Viewport's `update`, and `wait` in `onShutdown` before the Viewport lets go of its GPU state. So a quit
+  while a bake runs still costs that bake, never a crash.
+- **Where the status bar and Issues read**: `ctx.assetsPending` and `ctx.assetProblems` are gone. The
+  status bar reads `ctx.assets.pending()`. Issues reads `ctx.assets.problems()` then the new
+  `ctx.viewportProblems` (why the Viewport could not bring the plan to the device): the same rows, in
+  the same order.
+- **Found by measuring: the Viewport remade every surface's and pole's mesh on every frame change.**
+  - It called `sceneGeometry` whenever it built again, so on every frame of playback. A mesh is shared
+    with the device by pointer (5d), so each one was uploaded again too. 5d's "two frames of a moving
+    board upload nothing" held for the renderer, but not for the Viewport, from 8f on.
+  - Now `sceneGeometry` runs only when the plan changes.
+  - The same probe as 9b's (removed; Metal, 120 Hz, three-poles playing at 30 fps): a frame change now
+    costs **0.30 ms** in the update (p95 0.36, max 0.57), against 4.35 ms. The frame loop's CPU to the
+    pre-pass is 2.20 ms on a changed frame against 2.05 on an unchanged one.
+  - The frame interval is 8.33 ms mean. One of two runs showed a single frame of 16.85 ms (one missed
+    vsync, CPU 10.7 ms); the other's worst was 9.59.
+  - 9b's trigger, a plan whose rebuild passes the frame budget, is now far off.
+- **Deviations:**
+  - **The plan's sabotage, "the Viewport keeps its own jobs", cannot be seen by ctest**, since the
+    Viewport needs a device. The structure rules it out instead: the Viewport has nothing to post with.
+  - The sabotage the unit can see is the duplicate that matters: a job asked for again while it runs,
+    as when the plan is edited before a bake lands, posted a second time. `AssetJobs::posted()` counts
+    the jobs that reached the pool, for that. `pending()` could not see it, since the jobs are a map.
+  - **An AppContext can no longer be copied**, since its jobs cannot be. `test_frame.cpp`'s helper,
+    which returned one by value, now fills one in place.
+- **The cases** (+3, in `test_assetjobs.cpp`):
+  - Two panes reading one set of assets: three jobs posted once. Each reader builds when the plan is
+    first seen and again when the outcomes land, then not at all. An edit made while a bake runs asks
+    for it again without posting it again.
+  - The plan's revision follows its snapshot: unchanged over frames and for a copy of the plan, moving
+    on during a gesture, and moving on for a change back to an earlier value.
+  - The surfaces' and poles' meshes are kept, by pointer, across frames and landing assets, and made
+    again only when the plan changes. The old meshes are held in the test, so a freed address handed
+    out again cannot pass for the one kept.
+- **Four sabotages, all caught.**
+  - A job asked for again while it runs is posted again: 1 assertion (`posted()` is 5).
+  - The plan revision bumped every frame: 9 assertions over two cases.
+  - What the jobs made not moving the assets revision: 4 (the readers never build with the assets).
+  - The meshes made on every update: 2.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
@@ -18619,7 +18683,7 @@ row here**. A row is cheap to delete and expensive to leave.
   landed and a drag baking every size it passed through (*After 8f*). **Slice 9 planned 2026-10-30** as
   ten commits, 9a to 9j: the current frame and the Timeline, the plan's assets shared between panes,
   looking through a camera, a distance pass and the visibility map, and the specification catalogue,
-  ending in a gui-mode checklist (*Slice 9 planned*); 9a and 9b built 2026-11-01. 7a's two
+  ending in a gui-mode checklist (*Slice 9 planned*); 9a, 9b and 9c built 2026-11-01. 7a's two
   findings and 5e's were decided on 2026-10-29: a registration verdict takes the camera models as
   given (documented, ADR-0016), the estimate's "floor" is renamed `flat`, a reference rather than a
   bound, and the CPU device gets every logical core (ADR-0028). CI run 40984683848 renders the example

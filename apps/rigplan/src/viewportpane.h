@@ -1,11 +1,9 @@
 #pragma once
 
 #include "appcontext.h"
-#include "assetjobs.h"
 #include "gizmo.h"
 #include "orbit.h"
 
-#include <lain/data/value.h>
 #include <lain/gui/context.h>
 #include <lain/gui/frametexture.h>
 #include <lain/render/renderer.h>
@@ -33,10 +31,10 @@ namespace rigplan
 	//
 	// A room is drawn as a dollhouse: each of its surfaces the eye is outside of is left out (cutaway()),
 	// so the rig inside is seen from any side. It owns the renderer, the plan's scene on the device and
-	// the lain::render::Viewport, and releases
-	// them in release(), before the device goes. And it never waits on asset work (ADR-0025's rule,
-	// carried to rigplan): a bake, a board drawn or a mesh read runs on the process pool, and until it
-	// lands the Viewport draws what it had, or a surface a flat mid grey.
+	// the lain::render::Viewport, and releases them in release(), before the device goes. It reads the
+	// plan's assets from the one set every pane shares (PlanAssets, in the AppContext), which never waits
+	// on asset work (ADR-0025's rule, carried to rigplan): until a bake, a board drawn or a mesh read
+	// lands, the Viewport draws what it had, or a surface a flat mid grey.
 	class ViewportPane
 	{
 	public:
@@ -45,22 +43,18 @@ namespace rigplan
 		ViewportPane& operator=(const ViewportPane&) = delete;
 		~ViewportPane();
 
-		// Frame start: keep what the asset jobs made since the last frame. Never waits.
-		void poll(AppContext& ctx);
-
 		// The pane: the picture, and what the mouse and the keys do to the view and the plan.
 		void draw(AppContext& ctx);
 
-		// After every pane has drawn: when the plan, the frame shown or the assets changed, the scene is
-		// built again and brought to the device and what the plan no longer draws is pruned; the missing
-		// asset jobs are posted, unless a `gesture` is under way (AssetJobs); then the overlays for this
-		// frame.
-		void update(AppContext& ctx, bool gesture);
+		// After every pane has drawn and the plan's assets are brought up to date: when the plan's or the
+		// assets' revision, the frame shown or Preview Light changed, the scene is built again and brought
+		// to the device; then the overlays for this frame.
+		void update(AppContext& ctx);
 
 		// The frame's pre-pass: the view recorded into its texture, before the frame's draw pass shows it.
 		void record(acm::CommandBuffer& cmd, std::uint32_t frame);
 
-		// Waits for the asset jobs still running, then lets go of the GPU state, before the device goes.
+		// Lets go of the GPU state, before the device goes.
 		void release();
 
 	private:
@@ -73,19 +67,18 @@ namespace rigplan
 		lain::gui::FrameTexture m_texture;
 		std::vector<std::string> m_problems; // why the Viewport cannot draw at all
 
-		// The plan the scene was built from, the frame it shows, and what it drew.
-		std::optional<lain::data::Value> m_builtFrom;
+		// The revisions of the plan and its assets the scene was built from, the frame it shows, and what it
+		// drew. ~0 is no build yet: a revision starts at 0 before any plan is seen.
+		std::uint64_t m_builtPlan = ~std::uint64_t(0);
+		std::uint64_t m_builtAssets = ~std::uint64_t(0);
 		std::size_t m_builtFrame = 0;
 		bool m_builtPreviewLight = false;
-		lain::rigplan::SceneAssets m_assets;
-		bool m_assetsChanged = true;
 		lain::rigplan::NominalLayout m_layout;
 		// The plan's whole scene, which framing and the selection's outline read, and the cutaway of it from
 		// the eye, which is drawn and picked: built again only when a wall goes or comes back.
 		lain::rigplan::SceneResult m_fullScene;
 		lain::rigplan::SceneResult m_scene;
 		std::vector<bool> m_cut;
-		AssetJobs m_jobs;
 		std::vector<std::string> m_deviceProblems; // why the scene did not reach the device
 		std::vector<std::string> m_recordProblems; // why the last frame recorded nothing
 
