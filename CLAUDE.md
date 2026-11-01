@@ -1406,7 +1406,9 @@ A Debug build with MSVC 14.51 (Visual Studio 18) failed in 16 test files with C2
 *unreachable code*: since Catch2 3.9.0 both macros end in a `[[noreturn]]` call. Every target now
 builds warning-clean in MSVC Debug; `ctest -j8` gives 1333 of 1334 passing or skipped, and the one
 failure is an older abort in `test-camera-tracks`. GCC was not built. Full notes in WORK.md's
-*Catch2's `FAIL` and `SKIP` do not return*.
+*Catch2's `FAIL` and `SKIP` do not return*. *(**The abort was fixed the same day**: the test
+dereferenced an empty `std::optional`, which only MSVC's Debug library checks. On Linux and macOS the
+check passed against garbage. 1334 of 1334 now.)*
 
 - **No `return` after a `FAIL`** in a test helper: 14 dead ones deleted.
 - **A release-only case calls `lain::testing::skipInDebug(reason)`** (`lain/testing/skip.h`), never

@@ -248,8 +248,11 @@ TEST_CASE("a feature hidden in a minority of frames stays static, and in a major
 	CHECK(minority->observations.front().view == 0);
 	CHECK(minority->observations.front().support == 3);
 
-	// Landmark 6 still joins the other cameras, without camera 0.
-	CHECK(trackAt(result.trackSet, 0, *scene::pixelOf(0, 6, 4)) == nullptr);
+	// Landmark 6 still joins the other cameras, without camera 0. Camera 0 sees it at frames 1 and 3
+	// only, both at one pixel, since neither moves; frame 4 is hidden, so it has no pixel there.
+	const std::optional<math::Vec2d> seenByZero = scene::pixelOf(0, 6, 3);
+	REQUIRE(seenByZero);
+	CHECK(trackAt(result.trackSet, 0, *seenByZero) == nullptr);
 	const Track* majority = trackAt(result.trackSet, 1, *scene::pixelOf(1, 6, 4));
 	REQUIRE(majority != nullptr);
 	CHECK(majority->observations.front().view == 1);

@@ -15305,7 +15305,15 @@ the newer compiler is what started reporting it. CI's Windows leg (Release, Visu
 - Every target warning-clean in MSVC Debug; `ctest -j8` **1333 of 1334** pass or skip, the release-only
   cases reporting Skipped. GCC was not built. The one failure, *a feature hidden in a minority of frames
   stays static, and in a majority does not*, aborts with exit code 3 in a `test-camera-tracks` binary
-  this change never rebuilt, so it is older than this fix.
+  this change never rebuilt, so it is older than this fix. *(**Fixed the same day**, below.)*
+- **That abort was the test dereferencing an empty `std::optional`.** It hides landmark 6 from camera 0
+  at frame 4 and then read `*scene::pixelOf(0, 6, 4)`, which is `nullopt`. MSVC's Debug library checks
+  `optional::operator*` and aborts. libstdc++ and libc++ check nothing without assertions enabled, so on
+  Linux and macOS the check ran against whatever bytes the empty optional held, found no track there,
+  and passed without testing anything. It now asks about frame 3, where camera 0 still sees the landmark,
+  and `REQUIRE`s the pixel first. Sabotage (landmark 6 hidden in only one frame, so camera 0 sees it in a
+  majority) fails that check, where the old one could not have. `ctest -j8` **1334 of 1334** pass or
+  skip in MSVC Debug.
 
 ### Refused, not deferred — do not re-raise
 
