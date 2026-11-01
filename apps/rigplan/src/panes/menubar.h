@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../appcontext.h"
-#include "../edits.h"
 
 #include <filesystem>
 
@@ -14,7 +13,7 @@ namespace rigplan
 {
 	// The application menu bar and its shortcuts (Cmd on macOS, Ctrl elsewhere, as flowview's):
 	//   File: New, Open..., Open Recent, Save, Save As..., Quit;
-	//   Edit: Undo, Redo, Duplicate, Delete;
+	//   Edit: Undo, Redo, Key at Current Frame (K), Duplicate, Delete;
 	//   Add: Pole, Fixed Point, Camera, Light, Plane, Box, Prop..., Board, Room (a camera or light on the
 	//        selected mount);
 	//   View: Frame All (Home), Frame Selected (F), Preview Light, Frustum Depth, Reset Layout.
@@ -47,7 +46,5 @@ namespace rigplan
 	private:
 		void perform(AppContext& ctx, lain::app::Application& app, const DocumentRequest& request);
 		void drawOpenRecent(AppContext& ctx, lain::app::Application& app);
-		// An edit's outcome: what it selected and that the plan changed, or what it had to say.
-		static void apply(AppContext& ctx, const EditResult& result);
 	};
 } // namespace rigplan

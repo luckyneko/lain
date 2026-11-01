@@ -1,10 +1,12 @@
 #pragma once
 
 #include "document.h"
+#include "edits.h"
 #include "selection.h"
 #include "session.h"
 
 #include <lain/editor/guard.h>
+#include <lain/editor/playback.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -52,6 +54,9 @@ namespace rigplan
 		// and this follows it (followFrame), so letting the key go leaves the editor where it was. Never
 		// saved: a plan opens at frame 0.
 		std::size_t frame = 0;
+		// The Timeline's transport: whole frames of the time that passed at the plan's rate, going round at
+		// the end by default, since a mover's path is looked at over and over. Paused on New and Open.
+		lain::editor::Playback playback{true};
 		Session session;
 		// Where the session is kept: sessionFile() in the app, empty in a test, which writes nothing.
 		std::filesystem::path sessionFile;
@@ -91,6 +96,18 @@ namespace rigplan
 		// Raised by a pane that changed the plan, or by the outcome of an edit: the document has unsaved
 		// work, and a snapshot is recorded once the gesture ends.
 		void changed() { document.markChanged(); }
+
+		// An edit's outcome: what it selected and that the plan changed, or what it had to say.
+		void apply(const EditResult& result)
+		{
+			if (result.changed())
+			{
+				selection = *result.selection;
+				changed();
+			}
+			else if (!result.refusal.empty())
+				note(result.refusal, true);
+		}
 
 		// Goes to `to`, as the Timeline's scrubber and playback do: a key selected at another frame gives
 		// way to its mover, since while a key is selected the frame shown is the key's.

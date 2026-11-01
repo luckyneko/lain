@@ -6,6 +6,7 @@
 #include "panes/menubar.h"
 #include "panes/outliner.h"
 #include "panes/statusbar.h"
+#include "panes/timeline.h"
 #include "viewportpane.h"
 
 #include <lain/app/windowdelegate.h>
@@ -17,7 +18,8 @@
 namespace rigplan
 {
 	// rigplan's window: the menu bar, the Outliner on the left, the Inspector on the right, the Viewport
-	// (viewportpane.h) between them with Issues below it, and the status bar, in one docking layout kept in
+	// (viewportpane.h) between them with the Timeline and then Issues below it, and the status bar, in one
+	// docking layout kept in
 	// ~/.rigplan/imgui.ini. It owns the gui Context and the AppContext the panes share. Its title is the
 	// plan's file name, with a * while it has unsaved changes. ImGui is single-threaded: every call here
 	// is on the main thread.
@@ -37,6 +39,7 @@ namespace rigplan
 		MenuBarPane m_menuBar;
 		OutlinerPane m_outliner;
 		InspectorPane m_inspector;
+		TimelinePane m_timeline;
 		IssuesPane m_issues;
 		StatusBarPane m_statusBar;
 		// The Viewport, which holds GPU state, so it is made once the window's device exists (onInit) and

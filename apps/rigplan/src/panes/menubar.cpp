@@ -19,17 +19,6 @@ namespace rigplan
 	using namespace lain;
 	namespace fs = std::filesystem;
 
-	void MenuBarPane::apply(AppContext& ctx, const EditResult& result)
-	{
-		if (result.changed())
-		{
-			ctx.selection = *result.selection;
-			ctx.changed();
-		}
-		else if (!result.refusal.empty())
-			ctx.note(result.refusal, true);
-	}
-
 	bool MenuBarPane::request(AppContext& ctx, app::Application& app, DocumentRequest request)
 	{
 		std::optional<DocumentRequest> now = ctx.guard.request(std::move(request), ctx.document.dirty);
@@ -48,6 +37,7 @@ namespace rigplan
 				++ctx.opened;
 				ctx.selection = Selection::nothing();
 				ctx.frame = 0;
+				ctx.playback.pause();
 				ctx.openProblems.clear();
 				ctx.session.plans.last.clear(); // nothing to reopen at the next launch; the recents stay
 				ctx.rememberSession();
@@ -90,6 +80,7 @@ namespace rigplan
 		++ctx.opened;
 		ctx.selection = Selection::nothing();
 		ctx.frame = 0;
+		ctx.playback.pause();
 		ctx.openProblems.clear();
 		editor::noteDocument(ctx.session.plans, ctx.document.path);
 		ctx.rememberSession();
@@ -210,37 +201,42 @@ namespace rigplan
 				if (gui::MenuItem("Redo", (m + "Shift+Z").c_str(), false, ctx.document.history.canRedo()))
 					redo(ctx.document);
 				gui::Separator();
+				// Greyed out where it would key nothing; K says why instead (a static prop, say). Its id is fixed,
+				// since its label follows the frame, which playback moves under a click.
+				if (gui::MenuItem(string::format("Key at Frame {}###key", ctx.frame).c_str(), "K", false, canKey(plan, ctx.selection)))
+					ctx.apply(setKey(plan, ctx.selection, ctx.frame));
+				gui::Separator();
 				const bool something = ctx.selection.kind != Selected::Nothing && ctx.selection.kind != Selected::Plan;
 				if (gui::MenuItem("Duplicate", (m + "D").c_str(), false, something))
-					apply(ctx, duplicate(plan, ctx.selection));
+					ctx.apply(duplicate(plan, ctx.selection));
 				if (gui::MenuItem("Delete", "Delete", false, something))
-					apply(ctx, remove(plan, ctx.selection));
+					ctx.apply(remove(plan, ctx.selection));
 				gui::EndMenu();
 			}
 			if (gui::BeginMenu("Add"))
 			{
 				if (gui::MenuItem("Pole"))
-					apply(ctx, addPole(plan));
+					ctx.apply(addPole(plan));
 				if (gui::MenuItem("Fixed Point"))
-					apply(ctx, addFixedPoint(plan));
+					ctx.apply(addFixedPoint(plan));
 				gui::Separator();
 				if (gui::MenuItem("Camera", nullptr, false, onAMount(ctx.selection)))
-					apply(ctx, addCamera(plan, ctx.selection));
+					ctx.apply(addCamera(plan, ctx.selection));
 				if (gui::MenuItem("Light", nullptr, false, onAMount(ctx.selection)))
-					apply(ctx, addLight(plan, ctx.selection));
+					ctx.apply(addLight(plan, ctx.selection));
 				if (!onAMount(ctx.selection) && gui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 					gui::SetTooltip("Select a mount to put it on");
 				gui::Separator();
 				if (gui::MenuItem("Plane"))
-					apply(ctx, addPlane(plan));
+					ctx.apply(addPlane(plan));
 				if (gui::MenuItem("Box"))
-					apply(ctx, addBox(plan));
+					ctx.apply(addBox(plan));
 				if (gui::MenuItem("Prop..."))
 					pickProp(ctx);
 				if (gui::MenuItem("Board"))
-					apply(ctx, addBoard(plan));
+					ctx.apply(addBoard(plan));
 				if (gui::MenuItem("Room", nullptr, false, !plan.room))
-					apply(ctx, addRoom(plan));
+					ctx.apply(addRoom(plan));
 				gui::EndMenu();
 			}
 			if (gui::BeginMenu("View"))
@@ -283,7 +279,10 @@ namespace rigplan
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
 			redo(ctx.document);
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D, ImGuiInputFlags_RouteGlobal) && ctx.selection.kind != Selected::Plan)
-			apply(ctx, duplicate(plan, ctx.selection));
+			ctx.apply(duplicate(plan, ctx.selection));
+		// K keys the selected mover at the frame shown, as the Edit menu does, and says why when it cannot.
+		if (!gui::GetIO().WantTextInput && gui::IsKeyPressed(ImGuiKey_K, false) && !gui::GetIO().KeyCtrl)
+			ctx.apply(setKey(plan, ctx.selection, ctx.frame));
 		// F frames the selection and Home frames everything, as the View menu does; never while typing.
 		if (!gui::GetIO().WantTextInput && gui::IsKeyPressed(ImGuiKey_F, false) && !gui::GetIO().KeyCtrl)
 			ctx.view.frameSelected = true;
@@ -292,7 +291,7 @@ namespace rigplan
 		// Delete and Backspace delete what is selected, but never while a text field has them.
 		if (!gui::GetIO().WantTextInput && (gui::IsKeyPressed(ImGuiKey_Delete, false) || gui::IsKeyPressed(ImGuiKey_Backspace, false)) &&
 			ctx.selection.kind != Selected::Plan)
-			apply(ctx, remove(plan, ctx.selection));
+			ctx.apply(remove(plan, ctx.selection));
 	}
 
 	void MenuBarPane::drawConfirmModal(AppContext& ctx, app::Application& app)

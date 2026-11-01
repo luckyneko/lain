@@ -138,7 +138,7 @@ namespace rigplan
 			gui::gizmo::SetDrawlist();
 			gui::gizmo::SetRect(origin.x, origin.y, size.x, size.y);
 			gui::gizmo::Enable(!io.KeyAlt);
-			if (const std::optional<GizmoTarget> target = gizmoTarget(plan, layout, ctx.selection))
+			if (const std::optional<GizmoTarget> target = gizmoTarget(plan, layout, ctx.selection, ctx.frame))
 			{
 				const gui::gizmo::OPERATION op = operation(*target, m_mode);
 				if (op != 0)
@@ -150,10 +150,14 @@ namespace rigplan
 					const float* snap = io.KeyCtrl ? (m_mode == GizmoMode::Translate ? translateSnap : rotateSnap) : nullptr;
 					if (gui::gizmo::Manipulate(matrices.view.data(), matrices.projection.data(), op, m_local ? gui::gizmo::LOCAL : gui::gizmo::WORLD,
 											   matrix.data(), nullptr, snap) &&
-						apply(plan, layout, ctx.selection, m_mode, doubles(matrix)))
+						apply(plan, layout, ctx.selection, ctx.frame, m_mode, doubles(matrix)))
 						ctx.changed();
 				}
 			}
+			// A drag takes over from playback, as a scrub does: a mover dragged while the frame ran on would
+			// be keyed at every frame it passed.
+			if (gui::gizmo::IsUsing())
+				ctx.playback.pause();
 
 			// The view's own input, where the gizmo is not: an item over the gizmo would keep it from
 			// taking the click (ImGuizmo activates only when no item is hovered).

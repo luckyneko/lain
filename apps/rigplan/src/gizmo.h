@@ -9,6 +9,7 @@
 #include <lain/rigplan/rigplan.h>
 
 #include <array>
+#include <cstddef>
 #include <optional>
 
 namespace rigplan
@@ -24,9 +25,14 @@ namespace rigplan
 	//   plane             its centre                         its aim
 	//   box, static prop  its centre / position              yaw
 	//   key               its position                       its aim
+	//   board, prop mover its key at the frame               its key's aim
 	//   room              its centre, X and Y                none
 	//
-	// A board, a prop mover and anything else offer no gizmo: a mover is moved by its keys.
+	// A mover is moved by its keys, so selected itself its gizmo is the key at the frame shown: that key's,
+	// where the path has one there, and otherwise one standing where the path puts it, which the first
+	// change of a drag makes (setKey). So dragging a mover keys it at the frame shown: making the key moves
+	// no frame of its path, and moving it reshapes the path only between the keys either side. Anything
+	// else offers no gizmo.
 
 	// Whether the gizmo is moving or turning what is selected (W and E).
 	enum class GizmoMode
@@ -54,10 +60,11 @@ namespace rigplan
 		GizmoAxes rotate{false, false, false};
 	};
 
-	// The gizmo for `selection` in `plan`, laid out as `layout` has it, or none: nothing to move, or no
-	// pose to stand at (a camera on a mount with no position, say).
+	// The gizmo for `selection` in `plan`, laid out as `layout` has it, with a mover at `frame` (the frame
+	// shown), or none: nothing to move, or no pose to stand at (a camera on a mount with no position, or a
+	// path that cannot be followed, say).
 	std::optional<GizmoTarget> gizmoTarget(const lain::rigplan::RigPlan& plan, const lain::rigplan::NominalLayout& layout,
-										   const Selection& selection);
+										   const Selection& selection, std::size_t frame);
 
 	// ImGuizmo's handles for `target` in `mode`, or none (zero) when the mode moves nothing of it.
 	lain::gui::gizmo::OPERATION operation(const GizmoTarget& target, GizmoMode mode);
@@ -66,9 +73,10 @@ namespace rigplan
 	// mode its position alone and in Rotate mode its turn alone, each held to the table above, so a
 	// component the plan cannot hold is ignored (a pole's height, a box's tilt) and one the mode does not
 	// move is left exactly as it was. A matrix with scale in it (ImGuizmo works in float) is read for its
-	// rotation and translation. Returns whether the plan changed.
-	bool apply(lain::rigplan::RigPlan& plan, const lain::rigplan::NominalLayout& layout, const Selection& selection, GizmoMode mode,
-			   const lain::math::Mat4d& manipulated);
+	// rotation and translation. A mover with no key at `frame` is keyed there first, so the change lands on
+	// that key and what is selected stays the mover. Returns whether the plan changed.
+	bool apply(lain::rigplan::RigPlan& plan, const lain::rigplan::NominalLayout& layout, const Selection& selection, std::size_t frame,
+			   GizmoMode mode, const lain::math::Mat4d& manipulated);
 
 	// The view and projection ImGuizmo expects for `view`'s pinhole: column-major float[16], OpenGL's
 	// camera axes (x right, y up, looking down -z) and clip space (y up, depth -1 at the near plane and 1

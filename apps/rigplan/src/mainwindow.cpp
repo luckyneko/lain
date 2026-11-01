@@ -43,16 +43,18 @@ namespace rigplan
 	}
 
 	// The default docks: the Outliner on the left, the Inspector on the right, and between them the
-	// Viewport over Issues. Window names must match the panes' gui::Begin.
+	// Viewport over the Timeline over Issues. Window names must match the panes' gui::Begin.
 	static void buildDefaultLayout(gui::DockNode dock)
 	{
 		gui::dockReset(dock);
 		const auto [outliner, rest] = gui::dockSplit(dock, gui::DockDir::Left, 0.2f);
 		const auto [inspector, middle] = gui::dockSplit(rest, gui::DockDir::Right, 0.3f);
-		const auto [issues, viewport] = gui::dockSplit(middle, gui::DockDir::Down, 0.22f);
+		const auto [issues, upper] = gui::dockSplit(middle, gui::DockDir::Down, 0.18f);
+		const auto [timeline, viewport] = gui::dockSplit(upper, gui::DockDir::Down, 0.22f);
 		gui::dockWindow(outliner, "Outliner");
 		gui::dockWindow(inspector, "Inspector");
 		gui::dockWindow(viewport, "Viewport");
+		gui::dockWindow(timeline, "Timeline");
 		gui::dockWindow(issues, "Issues");
 		gui::dockFinish(dock);
 	}
@@ -74,6 +76,7 @@ namespace rigplan
 		m_outliner.draw(m_ctx);
 		m_inspector.draw(m_ctx);
 		m_viewport->draw(m_ctx);
+		m_timeline.draw(m_ctx);
 		m_issues.draw(m_ctx);
 		m_statusBar.draw(m_ctx);
 		m_menuBar.drawConfirmModal(m_ctx, window.app());

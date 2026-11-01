@@ -1400,6 +1400,32 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-01 — M15 slice 9, sub-slice 9b built: the Timeline, Key (K) and the gizmo's auto-key
+
+The second of slice 9's ten commits. `ctest -j8` **1641/1641** Release with video, camera and Ceres on
+(+8), and **1500/1500** with all three off (+8); warning-clean, format-check clean; the `--frames`
+smokes of both apps exit 0. **gui-mode NOT driven by hand**: the checklist after 9j covers it (steps 1
+to 3). Full notes in WORK.md's *Sub-slice 9b built*.
+
+- **The Timeline pane**, docked between the Viewport and Issues.
+  - A transport: play and pause (also Space), step, the first and last frame, loop, and Key.
+  - A ruler that is the scrubber.
+  - A row a mover with its keys as ticks: a click on one selects that key, elsewhere selects the mover
+    and goes to that frame.
+  - The clock runs before the pane's `Begin`, so a hidden tab still plays.
+- **`TimelineScale`**: a slot a frame, so the last frame is as reachable as the first. A key past the
+  timeline is drawn in a strip of its own, so it is seen without squeezing the timeline.
+- **K and Edit > Key at Frame N** key the selected mover through `setKey`. A new `canKey` greys the
+  menu item and the Timeline's button; K itself says why it cannot.
+- **The gizmo keys a mover it drags.** A board or prop mover selected is its key at the frame shown,
+  or stands where its path puts it there, and the drag's first change makes that key. The mover stays
+  selected. A gizmo drag pauses playback, or the mover would be keyed at every frame it passed.
+- **`AppContext::apply`** takes an edit's outcome, in place of the menu bar's private copy.
+- **Measured on Metal, three-poles playing at 30 fps on a 120 Hz display**: a frame change rebuilds the
+  scene in 4.35 ms mean (max 5.41), and the frame interval stays 8.33 ms mean (max 9.67), as paused.
+  The trigger to rebuild only the movers is a plan whose rebuild passes the frame budget.
+- **Five sabotages, all caught.**
+
 ### Update 2026-11-01 — M15 slice 9, sub-slice 9a built: the current frame, the playback clock, `setKey`
 
 The first of slice 9's ten commits. `ctest -j8` **1633/1633** Release with video, camera and Ceres on

@@ -944,8 +944,9 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   (that is a mover's), sequence when the frames of a capture are meant.
 - **Current frame** — the frame of the capture timeline an editor shows: the viewport draws the
   movers there, looking through a camera shows that frame, and a key made with the Key action is made
-  there. While a key is selected it is that key's frame; otherwise it is the editor's own, kept within
-  the timeline and never saved. _Avoid_: time, playhead when the frame is meant.
+  there, as is the key a mover dragged in the viewport is given when the frame has none. While a key
+  is selected it is that key's frame; otherwise it is the editor's own, kept within the timeline and
+  never saved. _Avoid_: time, playhead when the frame is meant.
 - **Light specification** — what a datasheet states about one kind of light, as a camera
   specification does for a camera: its kind (point or spot), its beam, its output and its colour. A
   **placed light** is one on a mount, posed on it as a camera is. The first cut states little more

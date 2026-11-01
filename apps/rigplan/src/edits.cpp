@@ -705,10 +705,15 @@ namespace rigplan
 		return EditResult::done(camera);
 	}
 
+	// Whether `mover` names something with a path: a board, a prop, or a key, of one that moves.
+	static bool namesAMover(const Selection& mover)
+	{
+		return mover.kind == Selected::Board || mover.kind == Selected::Prop || mover.kind == Selected::Key;
+	}
+
 	EditResult setKey(rp::RigPlan& plan, const Selection& mover, std::size_t frame)
 	{
-		const bool moves = mover.kind == Selected::Board || mover.kind == Selected::Prop || mover.kind == Selected::Key;
-		rp::Path* path = moves ? pathOf(plan, mover.id) : nullptr;
+		rp::Path* path = namesAMover(mover) ? pathOf(plan, mover.id) : nullptr;
 		if (!path)
 			return EditResult::refused(mover.kind == Selected::Prop ? "a static prop has no path to key: tick Moves along a path first"
 																	: "only a board or a prop mover has keys");
@@ -727,5 +732,11 @@ namespace rigplan
 		const std::size_t index = std::size_t(at - path->keys.begin());
 		path->keys.insert(at, rp::PathKey{frame, pose.translation(), rp::aimOf(pose.rotation())});
 		return EditResult::done(Selection::keyOf(mover.id, index));
+	}
+
+	bool canKey(const rp::RigPlan& plan, const Selection& mover)
+	{
+		const rp::Path* path = namesAMover(mover) ? pathOf(plan, mover.id) : nullptr;
+		return path && rp::pathProblems(*path).empty();
 	}
 } // namespace rigplan

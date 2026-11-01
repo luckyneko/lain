@@ -15044,7 +15044,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
    specification catalogue (copy in, save out). Live-verified by the repo owner. **Planned 2026-10-30
-   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a built 2026-11-01**.
+   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a and 9b built 2026-11-01**.
 
 ### Found while grilling — each owes a check
 
@@ -18269,6 +18269,94 @@ nothing on stderr. Nothing new is drawn yet: the Timeline that drives the frame 
   - A new key appended rather than put in frame order fails 41.
   - The frame not derived from a selected key fails 6.
 
+#### Sub-slice 9b built (2026-11-01): the Timeline pane, Key (K) and the gizmo's auto-key
+
+rigplan's Timeline pane, docked between the Viewport and Issues: a transport, a ruler that is the
+scrubber, and a row per mover with its keys as ticks. K keys the selected mover at the frame shown, and
+dragging a mover with the gizmo keys it there. `ctest -j8` **1641/1641** Release with video, camera and
+Ceres on (+8), and **1500/1500** with all three off (+8); warning-clean, format-check clean. The
+`--frames` smokes of both apps exit 0 with nothing on stderr. **gui-mode NOT driven by hand**: steps 1
+to 3 of the checklist after 9j are this commit's.
+
+- **`TimelineScale`** (`timelinescale.{h,cpp}`) places frames across the track, a slot each of one
+  width, with the tick at the slot's centre.
+  - A click anywhere in a slot is that frame, so the first and the last are as easy to reach as any,
+    and a timeline of one frame is one slot the width of the track.
+  - A key past the timeline is drawn in a strip of 28 points at the right end, however far past it is,
+    so the timeline is never squeezed for it. `check()` does not report such a key, and the strip is
+    tinted in the Outliner's problem colour, with a tooltip saying a capture never reaches it.
+  - `nearestKey` picks the nearest tick within a radius (half a slot, at least 6 points), the earlier on
+    a tie. So the strip picks the first of the keys stacked in it, and the others are selected from the
+    Inspector's table.
+- **The Timeline pane** (`panes/timeline.{h,cpp}`) is stateless over the AppContext.
+  - **The transport**: Play and Pause, first, previous, next and last frame, Loop, Key (K), and a
+    readout of the frame, the timeline and the rate. An unstated rate plays at 24 fps, as flowview's
+    player does, and the readout says so.
+  - **The ruler is the scrubber**: held, it goes to the frame under the cursor.
+  - **A row a mover**, boards first, as the Outliner lists them. Its name selects the mover. A click on
+    a tick selects that key, so the frame shown is the key's, and a click elsewhere selects the mover
+    and goes to that frame. The playhead crosses the ruler and every row.
+  - **The clock runs before `Begin`**, so a tab behind another still plays. Scrubbing, stepping and
+    selecting a key in the pane pause it.
+- **`AppContext::playback`** is the 9a deviation landing: a `lain::editor::Playback` that loops by
+  default, paused on New and Open.
+- **Key (K)**: Edit > Key at Frame N and a global K, beside F and Home, through 9a's `setKey`, with the
+  new key selected. The menu item and the Timeline's button are greyed by a new `canKey` in `edits`,
+  and K itself says why it cannot (a static prop, say), flowview's Ungroup precedent.
+- **The gizmo's auto-key**, in the driver-free bridge (`gizmo.{h,cpp}`).
+  - `gizmoTarget` and `apply` take the frame shown. A board or a prop mover selected is its key at that
+    frame, where the path has one. Otherwise its gizmo stands where its path puts it, and the drag's
+    first change makes the key there through `setKey`. So the handles never jump, and making the key
+    moves no frame of the path.
+  - The mover stays selected through the drag, which is where it differs from K, and `apply` takes a
+    `const Selection&`. Before this, a mover offered no gizmo at all.
+- **Deviations and additions, each a default to object to:**
+  - **Space plays and pauses**, when no text field has the keys. The plan named only K. lain::gui does
+    not turn on ImGui's keyboard navigation, so Space activates nothing else.
+  - **A gizmo drag pauses playback** (`ViewportPane`), as a scrub does: a mover dragged while the frame
+    ran on would be keyed at every frame it passed.
+  - **Play from the last frame, with no loop, starts again** from the first, rather than doing nothing.
+  - **Selecting a key elsewhere while playing gives way to its mover once the clock moves on**, by 9a's
+    frame rule. Only the Timeline's own key click pauses.
+  - **`AppContext::apply`** takes an edit's outcome, so the menu bar and the Timeline share it.
+    `MenuBarPane::apply` is gone, and the Inspector keeps its own form, which reports `changed`.
+  - **The layout**: Viewport over Timeline over Issues. A saved `imgui.ini` from before has no place
+    for the Timeline, so it opens floating there until View > Reset Layout.
+- **Measured, the Viewport while three-poles plays** (a temporary probe in `MainWindow`, removed; Metal,
+  a 120 Hz display, three-poles at its 30 fps, 600 frames after the bakes land):
+  - a frame that changes the capture frame rebuilds the scene in `update` in **4.35 ms** mean (p95 4.79,
+    max 5.41), against 0.06 ms on one that does not;
+  - the frame loop's CPU from the frame's start to the pre-pass is 6.16 ms mean (max 8.31) on a changed
+    frame, against 1.88 on an unchanged one;
+  - the frame interval is 8.33 ms mean, max 9.67 ms, the same as paused (max 9.69). So playback holds
+    120 Hz.
+
+  The rebuild is about half the frame at 120 Hz. **Trigger:** a plan whose rebuild passes the frame
+  budget. Then a frame change would rebuild only the movers' instances rather than the whole scene.
+- **The cases** (+8):
+  - `test_timeline.cpp` (3): a frame's tick and a click in its slot name the same frame, at 1 to 250,000
+    frames, with and without the strip, a timeline of no frames counted as one; a key past the timeline
+    in the strip, and which plans have one; the nearest tick, a tie on exact slots, and the strip.
+  - `test_gizmo.cpp` (+2, and the "nothing for a mover" case now asks for a mover's gizmo): a board
+    dragged at an unkeyed frame keyed there, its keys either side and the frames they hold untouched,
+    and a keyed frame's key moved without a new one; a prop mover keyed by a turn, and an unordered path
+    offering no gizmo and keying nothing.
+  - `test_panes.cpp` (+3, and the Timeline in the every-selection sweep): a one-frame timeline with keys
+    past it, for every selection, and a New plan's empty state; K keying at the frame shown, K on a
+    keyed frame, K refused for a static prop, and Space playing six frames per 0.26 s at no stated rate,
+    going round, then pausing; the clock running while the pane's `Begin` answers false.
+- **Five sabotages, all caught.**
+  - Placing the last frame at the track's edge (`floor` over `frames - 1` divisions) fails 58
+    assertions of the scale case.
+  - A `PopID` dropped fails every case that draws the Timeline.
+  - A mover's gizmo standing at its first key, not at the frame, fails the board's auto-key case (30
+    assertions).
+  - A tie keeping the later key fails the tie and the strip.
+  - The clock advanced inside `Begin` fails the hidden-pane case, and the Space case too, since it moves
+    the first frame of play to the frame Space is pressed in.
+- Found while testing, in the test: a computed midpoint between two ticks is not an exact tie in floating
+  point, so the tie is asked on slots of 10 points.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -18531,7 +18619,7 @@ row here**. A row is cheap to delete and expensive to leave.
   landed and a drag baking every size it passed through (*After 8f*). **Slice 9 planned 2026-10-30** as
   ten commits, 9a to 9j: the current frame and the Timeline, the plan's assets shared between panes,
   looking through a camera, a distance pass and the visibility map, and the specification catalogue,
-  ending in a gui-mode checklist (*Slice 9 planned*); 9a built 2026-11-01. 7a's two
+  ending in a gui-mode checklist (*Slice 9 planned*); 9a and 9b built 2026-11-01. 7a's two
   findings and 5e's were decided on 2026-10-29: a registration verdict takes the camera models as
   given (documented, ADR-0016), the estimate's "floor" is renamed `flat`, a reference rather than a
   bound, and the CPU device gets every logical core (ADR-0028). CI run 40984683848 renders the example

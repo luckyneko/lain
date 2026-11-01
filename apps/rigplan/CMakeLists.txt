@@ -3,8 +3,8 @@
 # (lain::rigplan::capture).
 
 # The editor's driver-free units: the document, the selection, the edits, the orbit, the picking, the
-# overlays and the gizmo bridge (M15 slice 8d), the session file and the panes (8e), and the Viewport's
-# asset jobs (8f). Compiled ONCE
+# overlays and the gizmo bridge (M15 slice 8d), the session file and the panes (8e), the Viewport's
+# asset jobs (8f), and the Timeline's scale and pane (9b). Compiled ONCE
 # into an object library that rigplan and its test both link, as flowview-tested is, so the test
 # exercises the one editor the app runs and the two cannot drift. An OBJECT library, so every object is
 # linked whether or not something names it. Its link libraries are what these sources need, PUBLIC so
@@ -22,12 +22,14 @@ add_library(rigplan-tested OBJECT
 	src/gizmo.cpp
 	src/session.cpp
 	src/viewing.cpp
+	src/timelinescale.cpp
 	src/panes/fields.cpp
 	src/panes/inspector.cpp
 	src/panes/issues.cpp
 	src/panes/menubar.cpp
 	src/panes/outliner.cpp
 	src/panes/statusbar.cpp
+	src/panes/timeline.cpp
 )
 target_compile_features(rigplan-tested PUBLIC cxx_std_17)
 target_include_directories(rigplan-tested PUBLIC src)

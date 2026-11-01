@@ -28,7 +28,8 @@ namespace rigplan
 	// the device through lain::render and shown through a frame-resolved texture (gui::FrameTexture), with
 	// its overlays and the floor grid over it. Navigated Maya style: Alt+LMB orbits, Alt+MMB or
 	// Alt+Shift+LMB pans, Alt+RMB or Alt+Ctrl+LMB dollies, and the wheel zooms. A click picks, and
-	// ImGuizmo moves what is selected (W moves, E turns, Ctrl snaps).
+	// ImGuizmo moves what is selected (W moves, E turns, Ctrl snaps): a mover at the frame shown, which
+	// keys it there (gizmo.h), and a drag pauses playback.
 	//
 	// A room is drawn as a dollhouse: each of its surfaces the eye is outside of is left out (cutaway()),
 	// so the rig inside is seen from any side. It owns the renderer, the plan's scene on the device and

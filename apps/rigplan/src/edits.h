@@ -93,4 +93,8 @@ namespace rigplan
 	// moves until the key does. nothing() where `frame` has a key already. Refused for a static prop
 	// (it has no path to key), for what is not a mover, and for a path that cannot be followed.
 	EditResult setKey(lain::rigplan::RigPlan& plan, const Selection& mover, std::size_t frame);
+
+	// Whether setKey can key what `mover` names at all: a board, a prop mover, or a key of either, whose
+	// path can be followed. What a Key action greys out by; the action itself says why when it cannot.
+	bool canKey(const lain::rigplan::RigPlan& plan, const Selection& mover);
 } // namespace rigplan

@@ -1,5 +1,9 @@
 #include "gizmo.h"
 
+#include "edits.h" // setKey: the key a mover's drag makes at the frame shown
+
+#include <lain/rigplan/mover.h>
+
 #include <algorithm>
 #include <cmath>
 #include <variant>
@@ -49,8 +53,52 @@ namespace rigplan
 		return std::nullopt;
 	}
 
-	std::optional<GizmoTarget> gizmoTarget(const rp::RigPlan& plan, const rp::NominalLayout& layout, const Selection& selection)
+	// Whether `selection` is a mover selected itself, a board or a prop mover, and not one of its keys.
+	static bool isMover(const rp::RigPlan& plan, const Selection& selection)
 	{
+		if (selection.kind == Selected::Board)
+			return byId(plan.boards, selection.id) != nullptr;
+		if (selection.kind == Selected::Prop)
+		{
+			const rp::Prop* prop = byId(plan.props, selection.id);
+			return prop && prop->path;
+		}
+		return false;
+	}
+
+	// The key of the mover `selection` names at `frame`, as a selection, or none.
+	static std::optional<Selection> keyAt(const rp::RigPlan& plan, const Selection& selection, std::size_t frame)
+	{
+		const rp::Path* path = pathOf(plan, selection.id);
+		if (!path)
+			return std::nullopt;
+		for (std::size_t k = 0; k < path->keys.size(); ++k)
+		{
+			if (path->keys[k].frame == frame)
+				return Selection::keyOf(selection.id, k);
+		}
+		return std::nullopt;
+	}
+
+	std::optional<GizmoTarget> gizmoTarget(const rp::RigPlan& plan, const rp::NominalLayout& layout, const Selection& selection,
+										   std::size_t frame)
+	{
+		// A mover is its key at the frame, or stands where its path puts it there, as the key a drag makes
+		// will: so the handles do not jump when the drag makes it.
+		if (isMover(plan, selection))
+		{
+			if (const std::optional<Selection> key = keyAt(plan, selection, frame))
+				return gizmoTarget(plan, layout, *key, frame);
+			const rp::Path* path = pathOf(plan, selection.id);
+			if (!path || !rp::pathProblems(*path).empty())
+				return std::nullopt;
+			GizmoTarget target;
+			target.planFromTarget = rp::poseAt(*path, frame).matrix();
+			target.translate = kAll;
+			target.rotate = kAll;
+			return target;
+		}
+
 		GizmoTarget target;
 		switch (selection.kind)
 		{
@@ -129,7 +177,7 @@ namespace rigplan
 			case Selected::Prop:
 			{
 				const rp::Prop* prop = byId(plan.props, selection.id);
-				if (!prop || prop->path) // a prop mover is moved by its keys
+				if (!prop || prop->path) // a prop mover is answered above, by its key at the frame
 					return std::nullopt;
 				target.planFromTarget = yawed(prop->position, prop->yawDegrees);
 				target.translate = kAll;
@@ -215,8 +263,26 @@ namespace rigplan
 		return changed;
 	}
 
-	bool apply(rp::RigPlan& plan, const rp::NominalLayout& layout, const Selection& selection, GizmoMode mode, const math::Mat4d& manipulated)
+	bool apply(rp::RigPlan& plan, const rp::NominalLayout& layout, const Selection& selection, std::size_t frame, GizmoMode mode,
+			   const math::Mat4d& manipulated)
 	{
+		// A mover's drag lands on its key at the frame, made there first when the path has none: a key
+		// standing where the path already puts it, so making it moves nothing and only the drag does.
+		if (isMover(plan, selection))
+		{
+			bool keyed = false;
+			std::optional<Selection> key = keyAt(plan, selection, frame);
+			if (!key)
+			{
+				const EditResult made = setKey(plan, selection, frame);
+				if (!made.changed())
+					return false;
+				key = *made.selection;
+				keyed = true;
+			}
+			return apply(plan, layout, *key, frame, mode, manipulated) || keyed;
+		}
+
 		const math::RigidTransformd pose = rigidPart(manipulated);
 		const math::Vec3d& t = pose.translation();
 		const bool moving = mode == GizmoMode::Translate;
