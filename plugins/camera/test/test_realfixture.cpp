@@ -87,7 +87,6 @@ TEST_CASE("every committed real-camera fixture passes", "[camera][fixture][real]
 				break;
 			case TierStatus::Mismatch:
 				FAIL("the extended data is not the data its manifest pins: " << tier.reason);
-				break;
 		}
 	}
 }

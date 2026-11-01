@@ -16,6 +16,7 @@
 #include <lain/core/time.h>
 #include <lain/media/framesequence.h>
 #include <lain/task/task.h>
+#include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -202,9 +203,7 @@ TEST_CASE("a moving camera's tracks are the same on the pool and agree with the 
 
 TEST_CASE("what a fundamental matrix keeps through four lenses", "[camera][opencv][feature][scale]")
 {
-#ifndef NDEBUG
-	SKIP("runs in Release builds: it draws and searches 16 frames of 1920 x 1080");
-#endif
+	lain::testing::skipInDebug("runs in Release builds: it draws and searches 16 frames of 1920 x 1080");
 	ensureBackend();
 	synthetic::Scene scene = synthetic::defaultScene();
 	scene.noise = 1.0;
@@ -357,9 +356,7 @@ TEST_CASE("what a fundamental matrix keeps through four lenses", "[camera][openc
 
 TEST_CASE("the time to match every pair of 40 frames", "[camera][opencv][feature][scale]")
 {
-#ifndef NDEBUG
-	SKIP("runs in Release builds, for its timings");
-#endif
+	lain::testing::skipInDebug("runs in Release builds, for its timings");
 	ensureBackend();
 	// The 1920 x 1080 camera along the path over the fine texture, so the cap binds, every frame drawn
 	// on the pool first so nothing below times a render.

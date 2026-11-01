@@ -8,6 +8,7 @@
 
 #include <lain/camera/ceres/register.h>
 #include <lain/camera/refinement/refiner.h>
+#include <lain/testing/skip.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -491,9 +492,7 @@ TEST_CASE("a free model's solution does not depend on where the heap put its blo
 
 TEST_CASE("a moving camera of 60 frames and 20000 landmarks refines its shared model", "[camera][ceres][freemodel][scale]")
 {
-#ifndef NDEBUG
-	SKIP("runs in Release builds, where it takes 6.4 s");
-#endif
+	lain::testing::skipInDebug("runs in Release builds, where it takes 6.4 s");
 	ensureCeres();
 	// Brown-Conrady 5, every landmark seen by 8 frames through 0.5 px of noise, the focal lengths and
 	// coefficients free from the probe's start. What it pins is the cost; how well tracks this short

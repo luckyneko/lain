@@ -13,10 +13,13 @@ set(CATCH_ENABLE_WERROR OFF CACHE BOOL "Disable Catch2 Werror")
 set(CATCH2_VER "3.14.0")
 set(CATCH2_FILE "github.com/catchorg/Catch2/archive/v${CATCH2_VER}.tar.gz")
 
+# A system Catch2 is accepted from 3.9.0, the release that made FAIL and SKIP [[noreturn]]: tests
+# write no `return` after a FAIL (MSVC calls one unreachable code, C4702), and before 3.9 the same
+# function is one that does not return on every path.
 FetchContent_Declare(Catch2
 	URL          "https://${CATCH2_FILE}"
 	DOWNLOAD_DIR "${CMAKE_SOURCE_DIR}/.cache/fetch/${CATCH2_FILE}"
-	FIND_PACKAGE_ARGS CONFIG
+	FIND_PACKAGE_ARGS 3.9.0 CONFIG
 )
 FetchContent_MakeAvailable(Catch2)
 

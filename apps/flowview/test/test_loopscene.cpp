@@ -209,8 +209,6 @@ namespace
 			}
 		}
 		FAIL("no boundary output named " + name);
-		static const Image none;
-		return none;
 	}
 
 	int boundaryInt(const Graph& graph, const Evaluation& evaluation, const std::string& name)
@@ -224,7 +222,6 @@ namespace
 			}
 		}
 		FAIL("no boundary output named " + name);
-		return 0;
 	}
 
 	bool sameBytes(const Image& a, const Image& b)

@@ -129,7 +129,6 @@ namespace lain::camera::testing::rig
 				return c;
 		}
 		FAIL("no rig camera has the source " << frame.source.toString());
-		return 0;
 	}
 
 	inline media::FrameRef frameOf(std::size_t camera, std::size_t group)

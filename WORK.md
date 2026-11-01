@@ -15128,6 +15128,12 @@ M12 §Not in this milestone.)*
   step 4), so nothing on disk carries them today. Trigger: an `ImageWriteNode`, which that decision
   refused for other reasons. *(§Milestone 13 slice 5.)*
 
+### Deferred — build and dependencies
+
+- **Catch2 3.14.0 → 3.16.1.** Intended, and decided by the repo owner on 2026-11-01 to land on its own
+  branch rather than in feature/M9's PR, because it renames every ctest test. *(§Catch2's `FAIL` and
+  `SKIP` do not return.)*
+
 ### Backlog tiers — speculative and foundational
 
 - **Tier B:** #4 streaming pipeline · #5 node hot-reload + a node-type plugin registry ·
@@ -15149,7 +15155,10 @@ review of 2026-10-20 moved after it), with clock-domain identity and timestamp g
 
 Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
 
-**The list is empty.** All six are fixed — `gui::Texture` freeing a descriptor set a running frame
+- **The `format-check` target cannot run on Windows**: its one command line is 52,953 characters, over
+  the 32,767-character limit. *(§Catch2's `FAIL` and `SKIP` do not return.)*
+
+**Six earlier ones are fixed** — `gui::Texture` freeing a descriptor set a running frame
 could still read (2026-09-29; see Milestone 14 › *A texture's descriptor outlives the frames that
 drew it*), a group replaced at its own NodeId looking clean and delivering
 nothing (found by M14 slice 1, fixed 2026-09-28 by making versions process-unique; see
@@ -15261,6 +15270,42 @@ the run carries on (ADR-0025, amended).
   video off (a scratch build); warning-clean, format-check clean. The `--frames` smoke opens and exits
   cleanly on the document in both builds. **gui-mode NOT eyeballed** — the canvas mark and the Issues
   row are covered by tests over the code the panes call, not seen.
+
+### Catch2's `FAIL` and `SKIP` do not return — FIXED 2026-11-01
+
+A Debug build with MSVC 14.51 (Visual Studio 18) failed in 16 test files with C2220 over C4702,
+*unreachable code*. Since Catch2 3.9.0 both macros end in `Catch::Detail::Unreachable()`, which is
+`[[noreturn]]`, so a statement after one can never run. The pin had been 3.14.0 since the first commit;
+the newer compiler is what started reporting it. CI's Windows leg (Release, Visual Studio 2022) never did.
+
+- **`FAIL(...); return x;` in test helpers, 14 sites:** the `return`s are deleted. A non-void helper
+  ending in `FAIL` needs none, which is what Catch2 made the macro `[[noreturn]]` for.
+- **The 16 release-only cases** (`#ifndef NDEBUG` / `SKIP(...)` / `#endif`, then the body) left the whole
+  body unreachable in Debug. They now call **`lain::testing::skipInDebug(reason)`**
+  (`libs/testing/include/lain/testing/skip.h`), which skips in a Debug build and is deliberately **not**
+  `[[noreturn]]`, so the body stays compiled in every build.
+- **Wrapping each body in `#else` was built and backed out.** A Debug build would then stop compiling 16
+  test bodies, so a change that broke one would first show on a Release leg. And it strands, in Debug,
+  every anonymous-namespace helper only those bodies call (eight in `test_calibratione2e.cpp` alone),
+  which GCC's `-Wunused-function` turns into an error on CI's Linux Debug leg. MSVC reports none of that.
+  `plugins/camera/ceres/test/test_targetless.cpp` already had that shape and keeps it, since it compiles.
+- **`cmake/addcatch2.cmake` accepts an installed Catch2 only from 3.9.0.** Before 3.9, a helper with no
+  `return` after its `FAIL` does not return on every path.
+- **Found while verifying:** the `format-check` target cannot run on Windows. It passes every file on one
+  52,953-character command line, over Windows' 32,767-character limit, and fails with *The system cannot
+  execute the specified program*. The pinned clang-format, run directly over the touched files, was clean.
+- **Not done here: Catch2 3.14.0 → 3.16.1** (the repo owner's call: its own branch, not feature/M9's PR).
+  Nothing in 3.15.x or 3.16.x touches `FAIL` or `SKIP`, so the bump would not have fixed this, and this
+  fix holds on any 3.9 or later. It would bring a rewritten, faster `catch_discover_tests` (3.15.3, 3.16.0)
+  and two small fixes (3.15.1). **It renames every ctest test**: 3.16.0 stops stripping trailing
+  whitespace from `TEST_PREFIX`, every prefix here ends in a space, and 3.14 drops it, so
+  `(camera)a registration report …` becomes `(camera) a registration report …`. Nothing in CI filters
+  by name. The discovery script is also the rewritten part, and 3.16.0 itself fixed regressions from that
+  rewrite. When it lands, `FIND_PACKAGE_ARGS` could carry `${CATCH2_VER}` instead of a second number.
+- Every target warning-clean in MSVC Debug; `ctest -j8` **1333 of 1334** pass or skip, the release-only
+  cases reporting Skipped. GCC was not built. The one failure, *a feature hidden in a minority of frames
+  stays static, and in a majority does not*, aborts with exit code 3 in a `test-camera-tracks` binary
+  this change never rebuilt, so it is older than this fix.
 
 ### Refused, not deferred — do not re-raise
 

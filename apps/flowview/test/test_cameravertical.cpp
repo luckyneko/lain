@@ -54,6 +54,7 @@
 #include <lain/media/framesequence.h>
 #include <lain/task/task.h>
 #include <lain/testing/scratch.h>
+#include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -742,9 +743,7 @@ TEST_CASE("the calibration fallback falls back to targetless calibration when th
 		return;
 	}
 
-#ifndef NDEBUG
-	SKIP("the targetless fallback runs in Release builds: a Debug build takes seconds to draw each frame");
-#endif
+	lain::testing::skipInDebug("the targetless fallback runs in Release builds: a Debug build takes seconds to draw each frame");
 	const lain::testing::ThreadPool pool;
 	const fs::path footage = cameraFootage::writeMovingFootage(dir, 40);
 	const FallbackRun run = runFallback(dir, footage, std::string{"board-then-targetless"});

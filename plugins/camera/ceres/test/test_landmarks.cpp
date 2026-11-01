@@ -9,6 +9,7 @@
 
 #include <lain/camera/ceres/register.h>
 #include <lain/camera/refinement/refiner.h>
+#include <lain/testing/skip.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -356,9 +357,7 @@ TEST_CASE("the linear solver follows the problem's shape", "[camera][ceres][land
 
 TEST_CASE("20000 landmarks triangulate against held cameras", "[camera][ceres][landmark]")
 {
-#ifndef NDEBUG
-	SKIP("runs in Release builds: measured 26 s in Debug, against 0.5 s in Release");
-#endif
+	lain::testing::skipInDebug("runs in Release builds: measured 26 s in Debug, against 0.5 s in Release");
 	ensureCeres();
 	// Eight cameras over 1.4 rad at 1 m, each landmark seen by four of them through 0.3 px of noise,
 	// and started 5% of its depth out.
@@ -509,9 +508,7 @@ TEST_CASE("a landmark behind a camera at the start fails the solve", "[camera][c
 
 TEST_CASE("a rig of 100 cameras and 50000 landmarks refines", "[camera][ceres][landmark][scale]")
 {
-#ifndef NDEBUG
-	SKIP("the scale test runs in Release builds: a Debug refinement is some 65 times slower");
-#endif
+	lain::testing::skipInDebug("the scale test runs in Release builds: a Debug refinement is some 65 times slower");
 	ensureCeres();
 	// 100 cameras on a ring of 2 m radius, looking in; 50000 landmarks within 0.5 m of the centre,
 	// each seen by eight neighbouring cameras through 0.3 px of noise, so the ring is closed by its

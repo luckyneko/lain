@@ -14,6 +14,7 @@
 #include <lain/camera/projection.h>
 #include <lain/core/time.h>
 #include <lain/media/framesequence.h>
+#include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -703,9 +704,7 @@ TEST_CASE("approximate search is refused under deterministic debugging, with the
 
 TEST_CASE("an 8K frame is searched at the default size in bounded memory", "[camera][opencv][feature][scale]")
 {
-#ifndef NDEBUG
-	SKIP("runs in Release builds: it renders an 8K frame and measures the search");
-#endif
+	lain::testing::skipInDebug("runs in Release builds: it renders an 8K frame and measures the search");
 	ensureBackend();
 	// Measured on four cores: the render takes 11 s; searching it at a longest side of 1600 px took
 	// 0.54 s and found 1050 features, at 1920 px 0.60 s and 976. SIFT's first octave doubles the
@@ -742,9 +741,7 @@ TEST_CASE("an 8K frame is searched at the default size in bounded memory", "[cam
 
 TEST_CASE("exact and approximate search at 8192 features a view", "[camera][opencv][feature][scale]")
 {
-#ifndef NDEBUG
-	SKIP("runs in Release builds, for its timings");
-#endif
+	lain::testing::skipInDebug("runs in Release builds, for its timings");
 	ensureBackend();
 	// Two 1920 x 1080 views 0.3 rad apart of a finely textured scene: 13238 and 12745 SIFT keypoints,
 	// capped at the 8192 strongest features each with all their orientations, as extractTracks caps

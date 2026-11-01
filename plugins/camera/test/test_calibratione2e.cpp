@@ -20,6 +20,7 @@
 #include <lain/camera/calibration/board.h>
 #include <lain/camera/calibration/targetless.h>
 #include <lain/camera/projection.h>
+#include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -213,9 +214,7 @@ namespace
 TEST_CASE("one camera calibrated with a board and without one agrees with itself and its truth",
 		  "[camera][calibration][e2e]")
 {
-#ifndef NDEBUG
-	SKIP("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
-#endif
+	lain::testing::skipInDebug("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
 	fixture::ensureRegistered();
 	const lain::testing::ThreadPool pool;
 	const CameraModel truth = cameraOf(640, 480, 500.0, {8.0, -6.0}, BrownConrady5{-0.1, -0.05, 0.001, -0.002, 0.01});
@@ -283,9 +282,7 @@ TEST_CASE("one camera calibrated with a board and without one agrees with itself
 
 TEST_CASE("a printed board's repeated corners do not pull the targetless model off", "[camera][calibration][e2e]")
 {
-#ifndef NDEBUG
-	SKIP("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
-#endif
+	lain::testing::skipInDebug("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
 	fixture::ensureRegistered();
 	const lain::testing::ThreadPool pool;
 	// The footage of the case above at seed 5, the worst of the three seeds where the model adjusted
@@ -314,9 +311,7 @@ TEST_CASE("a printed board's repeated corners do not pull the targetless model o
 TEST_CASE("the default sampled frames calibrate a moving camera through a normal, a wide and an HD lens",
 		  "[camera][calibration][e2e]")
 {
-#ifndef NDEBUG
-	SKIP("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
-#endif
+	lain::testing::skipInDebug("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
 	fixture::ensureRegistered();
 	const lain::testing::ThreadPool pool;
 	// 40 frames along sub-slice 8's arc, the default 40 of them sampled, at seed 2.
@@ -393,9 +388,7 @@ TEST_CASE("the default sampled frames calibrate a moving camera through a normal
 
 TEST_CASE("a rendered pan is refused before any start", "[camera][calibration][e2e]")
 {
-#ifndef NDEBUG
-	SKIP("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
-#endif
+	lain::testing::skipInDebug("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
 	fixture::ensureRegistered();
 	const lain::testing::ThreadPool pool;
 	const CameraModel truth = cameraOf(640, 480, 500.0, {1.3, -0.8}, BrownConrady5{});
@@ -419,9 +412,7 @@ TEST_CASE("a rendered pan is refused before any start", "[camera][calibration][e
 
 TEST_CASE("a strongly distorted lens leaves no frame unplaced", "[camera][calibration][e2e]")
 {
-#ifndef NDEBUG
-	SKIP("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
-#endif
+	lain::testing::skipInDebug("calibration end to end runs in Release builds: a Debug build takes seconds to draw each frame");
 	fixture::ensureRegistered();
 	const lain::testing::ThreadPool pool;
 	// Sub-slice 8's strongest lens: k1 = -0.25 alone at 1920x1080 with f = 1500, which moves the image's

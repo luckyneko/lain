@@ -20,6 +20,7 @@
 #include <lain/camera/registration/board.h>
 #include <lain/camera/registration/targetless.h>
 #include <lain/camera/registration/validation.h>
+#include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -123,7 +124,6 @@ namespace
 				return c.rmsAngle;
 		}
 		FAIL("no evidence for " << camera.value);
-		return 0;
 	}
 
 	// Of `ids`, those whose track has `members` observations (or more, with `orMore`).
@@ -187,9 +187,7 @@ namespace
 TEST_CASE("one rig registered with a board and without one agrees with itself and its truth",
 		  "[camera][registration][comparison]")
 {
-#ifndef NDEBUG
-	SKIP("the comparison runs in Release builds: a Debug build takes seconds to draw each HD frame");
-#endif
+	lain::testing::skipInDebug("the comparison runs in Release builds: a Debug build takes seconds to draw each HD frame");
 	const lain::testing::ThreadPool pool;
 	const Footage f = footage();
 	const rendered::Rig& rig = f.rig;
@@ -370,9 +368,7 @@ TEST_CASE("one rig registered with a board and without one agrees with itself an
 
 TEST_CASE("the rig's feature tracks measured against their truth", "[camera][registration][comparison]")
 {
-#ifndef NDEBUG
-	SKIP("the comparison runs in Release builds: a Debug build takes seconds to draw each HD frame");
-#endif
+	lain::testing::skipInDebug("the comparison runs in Release builds: a Debug build takes seconds to draw each HD frame");
 	const lain::testing::ThreadPool pool;
 	const Footage f = footage();
 	const rendered::Rig& rig = f.rig;

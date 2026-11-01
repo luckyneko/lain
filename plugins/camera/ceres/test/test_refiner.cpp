@@ -10,6 +10,7 @@
 #include <lain/camera/refinement/refiner.h>
 #include <lain/camera/registration/board.h>
 #include <lain/camera/registration/refiner.h>
+#include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -55,7 +56,6 @@ namespace
 				return c;
 		}
 		FAIL("no rig camera is " << camera.value);
-		return 0;
 	}
 
 	// The worst camera's rotation and translation error against the truth relative to the reference.
@@ -383,9 +383,7 @@ TEST_CASE("corners with a measured covariance are weighted by it", "[camera][cer
 
 TEST_CASE("a rig of 100 cameras and 4000 capture groups registers", "[camera][ceres][scale]")
 {
-#ifndef NDEBUG
-	SKIP("the scale test runs in Release builds: a Debug refinement is some 65 times slower");
-#endif
+	lain::testing::skipInDebug("the scale test runs in Release builds: a Debug refinement is some 65 times slower");
 	ensureCeres();
 	// CONTEXT.md's large-rig target. 100 cameras on a ring of 2 m radius, looking in; capture group g
 	// shows the board 0.8 m in front of eight neighbouring cameras, starting at camera g mod 100, so

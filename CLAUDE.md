@@ -1400,6 +1400,25 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-01 — Catch2's `FAIL` and `SKIP` do not return
+
+A Debug build with MSVC 14.51 (Visual Studio 18) failed in 16 test files with C2220 over C4702,
+*unreachable code*: since Catch2 3.9.0 both macros end in a `[[noreturn]]` call. Every target now
+builds warning-clean in MSVC Debug; `ctest -j8` gives 1333 of 1334 passing or skipped, and the one
+failure is an older abort in `test-camera-tracks`. GCC was not built. Full notes in WORK.md's
+*Catch2's `FAIL` and `SKIP` do not return*.
+
+- **No `return` after a `FAIL`** in a test helper: 14 dead ones deleted.
+- **A release-only case calls `lain::testing::skipInDebug(reason)`** (`lain/testing/skip.h`), never
+  `SKIP` under `#ifndef NDEBUG`. The helper is deliberately not `[[noreturn]]`, so the body stays
+  compiled in Debug. An `#else` around the body was tried and backed out: Debug would stop compiling
+  16 bodies, and GCC's `-Wunused-function` would refuse the helpers only they call.
+- **`addcatch2.cmake` accepts an installed Catch2 only from 3.9.0**, the release this relies on.
+- **Catch2 3.16.1 is intended but deferred to its own branch** by the repo owner: it renames every ctest
+  test, because 3.16.0 stops stripping the trailing space every `TEST_PREFIX` here carries.
+- **Found: `format-check` cannot run on Windows** (a 52,953-character command line). Listed in WORK.md's
+  known defects.
+
 ### Update 2026-10-21 — M9: a no-refiner CI leg, and the footprint measured again (P4)
 
 The review's P4 items 8 and 9. Full notes in WORK.md's *A no-refiner CI leg, and the footprint measured

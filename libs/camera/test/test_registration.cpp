@@ -79,7 +79,6 @@ namespace
 				return c;
 		}
 		FAIL("no rig camera is " << camera.value);
-		return 0;
 	}
 
 	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
@@ -130,7 +129,6 @@ namespace
 				return c;
 		}
 		FAIL("no held-out evidence for " << camera);
-		return e.perCamera.front();
 	}
 } // namespace
 
