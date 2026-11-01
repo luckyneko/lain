@@ -16491,9 +16491,12 @@ camera and Ceres on (+6), and **1391/1391** with all three off (+6). Warning-cle
     6.3 s. Giving the CPU device more of the cores during a capture would save about a fifth.
     **Recorded in ADR-0028 for the repo owner; the split is unchanged.** *(Decided 2026-10-29: the CPU
     device gets every logical core, `lain::app`'s `runtimeConfig()`. Measured on `three-poles.json`
-    here, twice each: 21.0 s rendering at half the cores, 15.2 s at every one. Owed: CI's render step
-    time against the 68 s to 221 s of slice 7's runs, since a 4-core runner had been giving the device
-    2.)*
+    here, twice each: 21.0 s rendering at half the cores, 15.2 s at every one. CI run 40984683848
+    measured it on 2026-10-30: macOS 81.9 s rendering, against 223.1, 228.8 and 223.7 s in three
+    earlier runs at half the cores (its 3-core runner had given the device a single thread), so 2.7
+    times faster. Linux (89.0 s, and 88.8 s with no refiner) and Windows (89.2 s) land
+    inside what their runners already spread across at half the cores (Linux 69.6 to 113.6 s, Windows
+    74.6 to 117.5 s), so one run cannot tell there.)*
   - **The scale case** (100 cameras of 16 x 12, 3 frames each, a write slowed to 20 ms): at most 4 in
     flight, 4 reached, one ray table, and a peak RSS of 81 MB for the whole test process, both devices
     included.
@@ -18255,8 +18258,9 @@ row here**. A row is cheap to delete and expensive to leave.
   landed and a drag baking every size it passed through (*After 8f*). **Next is slice 9.** 7a's two
   findings and 5e's were decided on 2026-10-29: a registration verdict takes the camera models as
   given (documented, ADR-0016), the estimate's "floor" is renamed `flat`, a reference rather than a
-  bound, and the CPU device gets every logical core (ADR-0028). Owed: CI's render step time after the
-  last, against slice 7's 68 s to 221 s (*Sub-slice 5e built*).
+  bound, and the CPU device gets every logical core (ADR-0028). CI run 40984683848 renders the example
+  2.7 times faster on macOS, whose runner had given the device one thread; Linux and Windows land
+  inside their runners' own spread (*Sub-slice 5e built*).
   Slice 0's live check of the unsaved-changes modal is discharged in rigplan (slice 8's step 11);
   flowview's Quit and close button go through its guard since 2026-10-29, and its check passed the
   same day (*Known defects*). M9's rig binder owes two fixes M15

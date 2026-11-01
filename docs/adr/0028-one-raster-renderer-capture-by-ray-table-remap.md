@@ -138,7 +138,9 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
     owner to decide. *(Decided 2026-10-29: the CPU device gets every logical core. The pool is idle
     while the device renders, so half only made the bottleneck smaller; what the two share at once
     elsewhere, a gui baking while the CPU device draws, is oversubscribed, which costs time and never
-    a result, and only on a machine with no GPU.)*
+    a result, and only on a machine with no GPU. CI's render of the example rig plan then took 81.9 s on
+    macOS against 223 to 229 s before, its 3-core runner having given the device a single thread; on
+    Linux and Windows it landed inside the runners' own spread at half the cores.)*
 - **A capture keeps to Vulkan's guaranteed limits** *(added 2026-10-24, decided with the repo owner)*.
   archimedes exposes no device limits, so a tile is at most 4096 a side and a band of the ray table
   at most 2^27 bytes. A capture is then tiled and banded the same way on every device, and only

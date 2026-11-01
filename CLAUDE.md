@@ -1420,7 +1420,10 @@ each finding in WORK.md M15 (*Sub-slice 7a built*, *Sub-slice 5e built*).
   amended). The pool sits idle while the CPU device renders a capture, so half only shrank the
   bottleneck: 7 threads took 8.0 s and 14 took 6.3 s, and a 4-core CI runner gave the device 2.
   Measured on `three-poles.json` here, twice each: 21.0 s rendering at half, 15.2 s at every core.
-  **Owed:** CI's render step time against slice 7's 68 s to 221 s.
+  CI ([run 40984683848](https://github.com/luckyneko/lain/actions/runs/40984683848), green on all eight
+  jobs) renders it in 81.9 s on macOS against 223 to 229 s in three earlier runs, whose 3-core runner
+  had given the device one thread. Linux (89.0 s) and Windows (89.2 s) land inside the 70 to 118 s their
+  runners already spread across at half the cores, so one run cannot tell there.
 - **Noted for later, not M15's: window renders that run asynchronously** in `Application::run`, the
   repo owner's idea. WORK.md's Outstanding index, *Deferred — the app harness*, lists what it has to
   decide first (GLFW's main-thread events, ImGui's single-threaded contract, the shared queue lock,
