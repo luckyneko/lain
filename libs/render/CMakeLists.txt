@@ -1,7 +1,7 @@
 # lain::render — the raster renderer over archimedes (WORK.md M15, ADR-0028): a render scene of
 # meshes, materials and lights, drawn through a pinhole, offscreen and read back, or into a viewport a
-# pane shows with overlay lines over it. It knows nothing of rig plans; a rig plan's realisation at one
-# frame is turned into a render scene elsewhere.
+# pane shows with overlay lines over it, or as how far a view sees, for the visibility map. It knows
+# nothing of rig plans; a rig plan's realisation at one frame is turned into a render scene elsewhere.
 #
 # Its GLSL is compiled at build time and embedded (cmake/lainShaders.cmake), so nothing is staged
 # beside an executable that links it.
@@ -20,6 +20,7 @@ add_library(lain::render ALIAS render)
 lain_embed_shaders(render NAMESPACE lain::render SHADERS
 	shaders/scene.vert
 	shaders/scene.frag
+	shaders/distance.frag
 	shaders/lines.vert
 	shaders/lines.frag
 	shaders/grid.vert

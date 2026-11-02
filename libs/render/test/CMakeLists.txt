@@ -1,11 +1,13 @@
 # lain::render tests (Catch2). test_view.cpp, test_scene.cpp and test_raytable.cpp are pure CPU checks.
-# test_renderer.cpp, test_viewport.cpp and test_capture.cpp draw on every kind of device the machine
-# offers (gpu.h): its hardware GPU, and archimedes' CPU device (SwiftShader) staged beside the test.
+# test_renderer.cpp, test_distance.cpp, test_viewport.cpp and test_capture.cpp draw on every kind of
+# device the machine offers (gpu.h): its hardware GPU, and archimedes' CPU device (SwiftShader) staged
+# beside the test.
 
 add_executable(test-render
 	test_view.cpp
 	test_scene.cpp
 	test_renderer.cpp
+	test_distance.cpp
 	test_viewport.cpp
 	test_raytable.cpp
 	test_capture.cpp

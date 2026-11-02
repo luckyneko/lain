@@ -67,6 +67,12 @@ namespace lain::render
 		double nearScale = 1;
 	};
 
+	// Where camera-frame direction `d` lands on `face`, in its texel coordinates. So a face drawn as a
+	// View turned by cameraFromFace(face.axis), with intrinsics {focal, focal, principalPoint}, holds
+	// at this texel what `d` sees: a capture's tiles are drawn so, and so are a visibility map's faces,
+	// which a distance is looked up on. `d` must lie in front of the face.
+	math::Vec2d onFace(const CaptureFace& face, const math::Vec3d& d);
+
 	// A rectangle of one face, drawn as one raster pass. It draws texels first to last, inclusive,
 	// both ways, at most CaptureSettings::maxTileSide a side. A sub-sample at face coordinate (u, v)
 	// belongs to it when floor(u) and floor(v) lie in [first, last), so all four texels its bilinear
@@ -130,8 +136,8 @@ namespace lain::render
 		// this table lacks, which no ray of the image is.
 		std::optional<std::size_t> faceOf(const math::Vec3d& d) const;
 
-		// Where direction `d` lands on face `face`, in its texel coordinates.
-		math::Vec2d onFace(std::size_t face, const math::Vec3d& d) const;
+		// Where direction `d` lands on face `face`, in its texel coordinates: render::onFace of that face.
+		math::Vec2d onFace(std::size_t face, const math::Vec3d& d) const { return render::onFace(m_faces[face], d); }
 
 		// The camera rows a band of the ray table holds at this width. A band's corners (one row more
 		// than its pixels) and its pixels' results each fit 2^27 bytes, as 16 bytes apiece, which is

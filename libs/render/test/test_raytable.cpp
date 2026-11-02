@@ -6,6 +6,7 @@
 
 #include <lain/camera/projection.h>
 #include <lain/render/capture.h>
+#include <lain/render/view.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_message.hpp>
@@ -135,6 +136,49 @@ TEST_CASE("a face is a proper rotation looking along its axis", "[render][captur
 	CHECK(majorAxis({1.0, 1.0, 0.5}) == FaceAxis::Right);
 	CHECK(majorAxis({-1.0, -1.0, 0.5}) == FaceAxis::Left);
 	CHECK(majorAxis({0.0, -1.0, 0.5}) == FaceAxis::Up);
+}
+
+TEST_CASE("a direction lands on a face where a view turned to the face's axis draws it", "[render][capture]")
+{
+	// What a visibility map relies on: a face drawn as a View turned by cameraFromFace, its distance
+	// looked up at onFace. So onFace must agree with how the renderer projects (clipFromCamera), from a
+	// camera that is not at rest, on every face.
+	const math::RigidTransformd worldFromCamera{math::angleAxis(0.7, math::normalize(math::Vec3d{0.3, -1.0, 0.4})), {1.5, -0.25, 2.0}};
+	for (FaceAxis axis : kAxes)
+	{
+		CaptureFace face;
+		face.axis = axis;
+		face.focal = 310.5;
+		face.principalPoint = {201.25, 177.75};
+		View faceView;
+		faceView.worldFromCamera = worldFromCamera * math::RigidTransformd{math::quat_cast(cameraFromFace(axis)), math::Vec3d{0.0}};
+		faceView.image = {400, 360};
+		faceView.intrinsics = {face.focal, face.focal, face.principalPoint.x, face.principalPoint.y};
+		const math::Mat4d clipFromWorld = clipFromCamera(faceView) * faceView.worldFromCamera.inverse().matrix();
+		for (const math::Vec2d& slope : {math::Vec2d{0.0, 0.0}, math::Vec2d{0.4, -0.3}, math::Vec2d{-0.6, 0.55}, math::Vec2d{0.9, 0.95}})
+		{
+			const math::Vec3d d = cameraFromFace(axis) * math::normalize(math::Vec3d{slope, 1.0});
+			const math::Vec4d clip = clipFromWorld * math::Vec4d{worldFromCamera.apply(3.7 * d), 1.0};
+			// The framebuffer coordinate the rasteriser puts it at, less the half texel to its centre.
+			const math::Vec2d drawn{(clip.x / clip.w + 1) / 2 * 400 - 0.5, (clip.y / clip.w + 1) / 2 * 360 - 0.5};
+			const math::Vec2d landed = onFace(face, d);
+			INFO("face " << int(axis) << ", slope (" << slope.x << ", " << slope.y << ")");
+			CHECK(std::abs(landed.x - drawn.x) < 1e-9);
+			CHECK(std::abs(landed.y - drawn.y) < 1e-9);
+		}
+	}
+
+	// A ray table's own onFace is this, of its faces.
+	const RayTable table = tableOf(modelOf(render::testing::strongCamera(5)));
+	REQUIRE(table.cube());
+	for (std::size_t f = 0; f < table.faces().size(); ++f)
+	{
+		const math::Vec3d d = cameraFromFace(table.faces()[f].axis) * math::normalize(math::Vec3d{0.2, -0.1, 1.0});
+		const math::Vec2d a = table.onFace(f, d);
+		const math::Vec2d b = onFace(table.faces()[f], d);
+		CHECK(a.x == b.x);
+		CHECK(a.y == b.y);
+	}
 }
 
 TEST_CASE("a pinhole's ray table is one front face at m times its longer focal length", "[render][capture]")

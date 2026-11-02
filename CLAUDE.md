@@ -1400,6 +1400,30 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-02 — M15 slice 9, sub-slice 9f built: `Renderer::renderDistance` and a free `onFace`
+
+The sixth of slice 9's ten commits, and what 9g's visibility map stands on. `ctest -j8` **1660/1660**
+Release with video, camera and Ceres on (+6), and **1519/1519** with all three off (+6); warning-clean,
+format-check clean; every `[gpu]` case on Metal and the CPU device. Full notes in WORK.md's *Sub-slice 9f
+built*; ADR-0028 is amended.
+
+- **`renderDistance(scene, view)`**: render()'s pinhole and depth test (`shaders/distance.frag` over
+  `scene.vert`), each texel the distance from the view's centre along its centre's ray.
+  - It writes a single-sample R32F target, read back as a `Gray32F` that states no colour space, since
+    a distance is not light.
+  - It reads `kNoSurface` (+infinity) where a ray meets nothing between the planes.
+  - render() and renderDistance share one offscreen routine.
+- **A free `onFace(CaptureFace, direction)`**, which `RayTable::onFace` now delegates to. A case holds
+  it to clipFromCamera for a face drawn as a View turned to its axis.
+- **Measured: a distance's error is the rasteriser's**, a vertex placed to 1/256 of a texel times the
+  surface's slope to the ray. The worst texel is 0.53 of that bound on both devices. That is why 9g's
+  tolerance scales with slope. Vulkan only promises 1/16 of a pixel.
+- **Five sabotages, all caught**, each by the case aimed at it: the plan's four (view-space z, no depth
+  test, clear to 0, an MSAA target, the last caught by the silhouette case alone), and a wrongly turned
+  `onFace` by the face case.
+- **The first sabotage stayed compiled through the next two**: the restore was a move, which keeps the
+  older mtime. Its numbers repeating exactly gave it away, and both were redone.
+
 ### Update 2026-11-02 — storing a texture no longer widens it to RGBA32F (the 20 m room's footprint)
 
 9e's finding, diagnosed and fixed in its own commit. `ctest -j8` **1654/1654** Release with video,

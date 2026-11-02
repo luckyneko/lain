@@ -7,6 +7,7 @@
 #include <lain/string/format.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
@@ -19,6 +20,8 @@ namespace lain::render
 {
 	// A float target, so the picture read back is the light the shader computed, unquantised.
 	static constexpr acm::Format kColourFormat = acm::Format::R32G32B32A32_Sfloat;
+	// The distance pass's: one float a texel, the distance itself.
+	static constexpr acm::Format kDistanceFormat = acm::Format::R32_Sfloat;
 
 	namespace detail
 	{
@@ -97,11 +100,13 @@ namespace lain::render
 			return {};
 		}
 
-		acm::Pipeline scenePipeline(const RendererState& renderer, const acm::RenderTarget& target)
+		// A scene's surfaces through scene.vert and `fragment`, depth tested, for targets with the formats
+		// and sample count of `target`: the scene's own shading, or the distance pass's.
+		static acm::Pipeline surfacePipeline(const RendererState& renderer, const acm::Shader& fragment, const acm::RenderTarget& target)
 		{
 			acm::PipelineShaders shaders;
 			shaders.vertex = renderer.sceneVertex;
-			shaders.fragment = renderer.sceneFragment;
+			shaders.fragment = fragment;
 			acm::PipelineConfig config;
 			config.vertexLayout = acm::VertexLayout{
 				sizeof(Vertex),
@@ -115,6 +120,11 @@ namespace lain::render
 			config.depth = acm::DepthState::TestWrite(acm::CompareOp::Less);
 			config.cullMode = acm::CullMode::None; // surfaces are seen from both sides
 			return renderer.device->createPipeline(shaders, target, config);
+		}
+
+		acm::Pipeline scenePipeline(const RendererState& renderer, const acm::RenderTarget& target)
+		{
+			return surfacePipeline(renderer, renderer.sceneFragment, target);
 		}
 	} // namespace detail
 
@@ -158,6 +168,7 @@ namespace lain::render
 		m->sampler = device.createSampler();
 		m->sceneVertex = device.createShader(sceneVert());
 		m->sceneFragment = device.createShader(sceneFrag());
+		m->distanceFragment = device.createShader(distanceFrag());
 		m->lineVertex = device.createShader(linesVert());
 		m->lineFragment = device.createShader(linesFrag());
 		m->gridLayout = device.createDescriptorSetLayout({
@@ -181,12 +192,18 @@ namespace lain::render
 		acm::RenderTarget target = device.createRenderTarget(probe, acm::RenderTargetConfig{acm::RenderTargetFinish::CopySrc, true});
 		if (target.valid())
 			m->pipeline = detail::scenePipeline(*m, target);
+		// One sample a texel, so a distance is never resolved from two surfaces' (renderDistance).
+		acm::Texture distanceProbe = device.createTexture(kDistanceFormat, acm::Extent2D{1, 1});
+		acm::RenderTarget distanceTarget =
+			device.createRenderTarget(distanceProbe, acm::RenderTargetConfig{acm::RenderTargetFinish::CopySrc, true});
+		if (distanceTarget.valid())
+			m->distancePipeline = detail::surfacePipeline(*m, m->distanceFragment, distanceTarget);
 
 		for (const acm::Error& error : {m->sceneLayout.error(), m->lineLayout.error(), m->sampler.error(), m->sceneVertex.error(),
-										m->sceneFragment.error(), m->lineVertex.error(), m->lineFragment.error(), m->gridLayout.error(),
-										m->gridVertex.error(), m->gridFragment.error(), target.error(),
-										m->pipeline.error(), m->captureLayout.error(), m->captureShader.error(),
-										m->capturePipeline.error()})
+										m->sceneFragment.error(), m->distanceFragment.error(), m->lineVertex.error(), m->lineFragment.error(),
+										m->gridLayout.error(), m->gridVertex.error(), m->gridFragment.error(), target.error(),
+										m->pipeline.error(), distanceTarget.error(), m->distancePipeline.error(),
+										m->captureLayout.error(), m->captureShader.error(), m->capturePipeline.error()})
 		{
 			if (error)
 			{
@@ -196,6 +213,8 @@ namespace lain::render
 		}
 		if (!m->pipeline.valid())
 			m->problems.push_back("the device refused the scene pipeline");
+		else if (!m->distancePipeline.valid())
+			m->problems.push_back("the device refused the distance pipeline");
 		else if (!m->capturePipeline.valid())
 			m->problems.push_back("the device refused the capture pipeline");
 	}
@@ -490,61 +509,92 @@ namespace lain::render
 		return result;
 	}
 
-	RenderResult Renderer::render(GpuScene& scene, const View& view)
+	// Why `renderer` cannot draw `view` of `scene`, or nothing.
+	static std::vector<std::string> refusals(const detail::RendererState& renderer, const detail::SceneState& scene, const View& view)
 	{
-		if (!m->problems.empty())
-			return {{}, m->problems};
+		if (!renderer.problems.empty())
+			return renderer.problems;
 		std::vector<std::string> problems = validate(view);
-		if (scene.m->owner != m.get())
+		if (scene.owner != &renderer)
 			problems.push_back("the scene was uploaded by another renderer");
-		if (!problems.empty())
-			return {{}, std::move(problems)};
+		return problems;
+	}
 
-		acm::Device& device = *m->device;
-		detail::SceneState& gpu = *scene.m;
+	// `scene` drawn from `view` through `pipeline`, into a fresh single-sample target of `format` with
+	// depth, cleared to `clear`, and read back into `picture`, whose size and texel layout are the
+	// target's. Why not, or nothing.
+	static std::vector<std::string> drawOffscreen(const detail::RendererState& renderer, detail::SceneState& gpu, const View& view,
+												  const acm::Pipeline& pipeline, acm::Format format, const std::array<float, 4>& clear,
+												  image::Image& picture)
+	{
+		acm::Device& device = *renderer.device;
 
 		const detail::FrameConstants frame = detail::frameConstants(gpu, view, false, nullptr);
 		if (const acm::Error error = gpu.frame.write(&frame, sizeof(frame)))
-			return {{}, {"the device refused the view's constants: " + error.message()}};
+			return {"the device refused the view's constants: " + error.message()};
 
 		const acm::Extent2D extent{view.image.width, view.image.height};
-		acm::Texture colour = device.createTexture(kColourFormat, extent);
-		acm::RenderTarget target = device.createRenderTarget(colour, acm::RenderTargetConfig{acm::RenderTargetFinish::CopySrc, true});
-		const std::size_t bytes = std::size_t{extent.width} * extent.height * 4 * sizeof(float);
-		acm::Buffer readback = device.createBuffer(bytes, acm::BufferUsage::TransferDst);
-		if (!colour.valid() || !target.valid() || !readback.valid())
+		acm::Texture texture = device.createTexture(format, extent);
+		acm::RenderTarget target = device.createRenderTarget(texture, acm::RenderTargetConfig{acm::RenderTargetFinish::CopySrc, true});
+		acm::Buffer readback = device.createBuffer(picture.byteSize(), acm::BufferUsage::TransferDst);
+		if (!texture.valid() || !target.valid() || !readback.valid())
 		{
-			const acm::Error error = !colour.valid() ? colour.error() : !target.valid() ? target.error()
-																						: readback.error();
-			return {{}, {"the device refused the view's target: " + error.message()}};
+			const acm::Error error = !texture.valid() ? texture.error() : !target.valid() ? target.error()
+																						  : readback.error();
+			return {"the device refused the view's target: " + error.message()};
 		}
 
 		acm::Error recording;
 		const acm::Error submitted = device.submitSync(
 			[&](acm::CommandBuffer& cmd)
 			{
-				// Alpha 0 where nothing is drawn, so coverage reads back.
-				recording = cmd.beginRendering(target, gpu.background.r, gpu.background.g, gpu.background.b, 0.0f);
+				recording = cmd.beginRendering(target, clear[0], clear[1], clear[2], clear[3]);
 				if (recording)
 					return;
 				cmd.setViewportAndScissor(extent);
-				recording = detail::recordScene(cmd, m->pipeline, gpu, gpu.sets);
+				recording = detail::recordScene(cmd, pipeline, gpu, gpu.sets);
 				cmd.endRendering();
-				cmd.copyTextureToBuffer(colour, readback);
+				cmd.copyTextureToBuffer(texture, readback);
 			});
 		if (recording)
-			return {{}, {"the device refused the drawing: " + recording.message()}};
+			return {"the device refused the drawing: " + recording.message()};
 		if (submitted)
-			return {{}, {"the device failed the drawing: " + submitted.message()}};
+			return {"the device failed the drawing: " + submitted.message()};
 
-		image::Image picture(int(extent.width), int(extent.height), image::PixelFormat::RGBA32F, image::ColorSpace::Linear,
-							 image::AlphaMode::Straight);
 		const void* mapped = readback.map();
 		if (!mapped)
-			return {{}, {"the picture could not be read back"}};
-		std::memcpy(picture.data(), mapped, bytes);
+			return {"the picture could not be read back"};
+		std::memcpy(picture.data(), mapped, picture.byteSize());
 		readback.unmap();
+		return {};
+	}
+
+	RenderResult Renderer::render(GpuScene& scene, const View& view)
+	{
+		std::vector<std::string> problems = refusals(*m, *scene.m, view);
+		if (!problems.empty())
+			return {{}, std::move(problems)};
+		const detail::SceneState& gpu = *scene.m;
+		image::Image picture(int(view.image.width), int(view.image.height), image::PixelFormat::RGBA32F, image::ColorSpace::Linear,
+							 image::AlphaMode::Straight);
+		// Alpha 0 where nothing is drawn, so coverage reads back.
+		problems = drawOffscreen(*m, *scene.m, view, m->pipeline, kColourFormat, {gpu.background.r, gpu.background.g, gpu.background.b, 0.0f},
+								 picture);
+		if (!problems.empty())
+			return {{}, std::move(problems)};
 		return {std::move(picture), {}};
+	}
+
+	DistanceResult Renderer::renderDistance(GpuScene& scene, const View& view)
+	{
+		std::vector<std::string> problems = refusals(*m, *scene.m, view);
+		if (!problems.empty())
+			return {{}, std::move(problems)};
+		image::Image distances(int(view.image.width), int(view.image.height), image::PixelFormat::Gray32F);
+		problems = drawOffscreen(*m, *scene.m, view, m->distancePipeline, kDistanceFormat, {kNoSurface, 0.0f, 0.0f, 0.0f}, distances);
+		if (!problems.empty())
+			return {{}, std::move(problems)};
+		return {std::move(distances), {}};
 	}
 
 	GpuRayTableResult Renderer::upload(const RayTable& table)

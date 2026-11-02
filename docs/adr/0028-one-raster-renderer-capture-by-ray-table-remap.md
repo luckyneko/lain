@@ -165,7 +165,14 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
   so a camera's depth for the visibility map is rendered as distance into an R32F colour target.
   *(Amended 2026-10-30, planning slice 9: distance along the ray, not z, into a single-sample target,
   since a resolve would average two surfaces' distances at an edge; over five fixed-size cube faces
-  per camera, since a ray table's faces are sized for a capture.)*
+  per camera, since a ray table's faces are sized for a capture.)* *(Built 2026-11-02, M15 sub-slice
+  9f, as `Renderer::renderDistance`: render()'s pinhole and depth test, each texel the distance from
+  the view's centre along its centre's ray, read back as a `Gray32F` that states no colour space, and
+  `kNoSurface` (+infinity, which both devices clear to exactly) where nothing is drawn. Its error is
+  the rasteriser's: a vertex placed to 1/256 of a texel turns the drawn surface off the true one, so a
+  distance moves by up to half that angle times the surface's slope to the ray; measured, 0.53 of that
+  bound on both devices. Vulkan only promises 1/16. A free `onFace` says where a direction lands on a
+  face drawn as a View turned by `cameraFromFace`, and a ray table's own `onFace` delegates to it.)*
   It has no cube or array-layer texture, so an intermediate image past 180° is six 2D textures in
   a descriptor array. Neither SwiftShader nor MoltenVK has `wideLines`, so overlay lines are 1 px.
 - **What the CPU device found, once lain ran on it (2026-10-24, slice 3d).** Every `[gpu]` case runs

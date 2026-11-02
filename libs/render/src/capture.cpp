@@ -171,11 +171,10 @@ namespace lain::render
 		return std::nullopt;
 	}
 
-	math::Vec2d RayTable::onFace(std::size_t face, const math::Vec3d& d) const
+	math::Vec2d onFace(const CaptureFace& face, const math::Vec3d& d)
 	{
-		const CaptureFace& f = m_faces[face];
-		const math::Vec3d p = inFace(f.axis, d);
-		return f.focal * math::Vec2d{p.x / p.z, p.y / p.z} + f.principalPoint;
+		const math::Vec3d p = inFace(face.axis, d);
+		return face.focal * math::Vec2d{p.x / p.z, p.y / p.z} + face.principalPoint;
 	}
 
 	std::uint32_t RayTable::bandRowsFor(std::uint32_t width)

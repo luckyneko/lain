@@ -853,8 +853,8 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   _Avoid_: scene graph (nothing in it is a hierarchy), world when the drawable content is meant.
 - **Visibility map** — a count over a plane of the rig plan (the floor, or a chosen height), of how
   many cameras see each cell unoccluded. Registration needs shared views, so a cell one camera sees
-  is still a blind spot for it. It is geometry alone, of what never moves, read from each camera's
-  depth and lain's own projection: it describes the installation, not one frame. It counts from the
+  is still a blind spot for it. It is geometry alone, of what never moves, read from how far each
+  camera sees along its rays and lain's own projection: it describes the installation, not one frame. It counts from the
   rig plan's nominal poses, as the viewport draws them. Predicting which camera pairs would register
   is left to registering a capture. _Avoid_: coverage (calibration's
   coverage is how widely features spread over one image), heatmap when the count is meant.

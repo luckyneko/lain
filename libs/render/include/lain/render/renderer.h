@@ -9,6 +9,7 @@
 #include <archimedes/acmDevice.h>
 
 #include <cstddef>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -90,6 +91,21 @@ namespace lain::render
 		std::vector<std::string> problems;
 	};
 
+	// What renderDistance reads where a texel's ray meets no surface between the view's near and far
+	// planes: nothing there to hide what lies behind, however far.
+	inline constexpr float kNoSurface = std::numeric_limits<float>::infinity();
+
+	// A distance drawing's outcome: how far a view sees, or why not.
+	struct DistanceResult
+	{
+		// Gray32F: the metres from the view's centre to the nearest surface the ray through each texel's
+		// centre meets, along that ray, or kNoSurface. A distance is not light, so it states no colour
+		// space, and no op that averages light (a resize, a blur) will take it: two surfaces' distances
+		// averaged is a distance to neither. Invalid when there are problems.
+		image::Image image;
+		std::vector<std::string> problems;
+	};
+
 	// A texture as a device stores it: 8-bit sRGB RGBA, which the device decodes to linear light before
 	// it filters. An upload converts any other texture to this on the thread that uploads, and that is
 	// nearly all an upload costs: an 8192 x 8192 linear texture took 0.75 s on Metal, 0.03 s once
@@ -130,6 +146,12 @@ namespace lain::render
 
 		// `scene` seen through `view`'s pinhole. `scene` must have been uploaded by this renderer.
 		RenderResult render(GpuScene& scene, const View& view);
+
+		// How far `view` sees into `scene` (ADR-0028), for the visibility map: render()'s pinhole, depth
+		// tested, but each texel the distance to what its centre's ray meets rather than its light. One
+		// sample a texel, so a texel at a silhouette is one surface's distance and never a blend of the two
+		// either side of it. Synchronous, as render() is. `scene` must have been uploaded by this renderer.
+		DistanceResult renderDistance(GpuScene& scene, const View& view);
 
 		// Copies `table` to the device, for any number of captures through its camera model.
 		GpuRayTableResult upload(const RayTable& table);

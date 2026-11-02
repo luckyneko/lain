@@ -100,9 +100,11 @@ namespace lain::render::detail
 		acm::DescriptorSetLayout sceneLayout; // a surface's: the frame, its instance, its material, a texture, the lights
 		acm::DescriptorSetLayout lineLayout;  // a line's: the frame, the line vertices
 		acm::Pipeline pipeline;				  // the offscreen pass's
+		acm::Pipeline distancePipeline;		  // the distance pass's: R32F, single-sampled
 		acm::Sampler sampler;
 		acm::Shader sceneVertex;
 		acm::Shader sceneFragment;
+		acm::Shader distanceFragment;
 		acm::Shader lineVertex;
 		acm::Shader lineFragment;
 		acm::DescriptorSetLayout gridLayout; // a grid backdrop's: the frame

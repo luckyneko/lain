@@ -15044,7 +15044,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
    specification catalogue (copy in, save out). Live-verified by the repo owner. **Planned 2026-10-30
-   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a to 9d built 2026-11-01, 9e 2026-11-02**.
+   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a to 9d built 2026-11-01, 9e and 9f 2026-11-02**.
 
 ### Found while grilling — each owes a check
 
@@ -18614,6 +18614,58 @@ GB, against 1.88 GB. `ctest -j8` **1654/1654** Release with video, camera and Ce
   - The conversions as one expression, which keeps the widened copy to the end of it: the 8-bit grey
     (12) and RGB (28) bounds fail.
 
+#### Sub-slice 9f built (2026-11-02): `Renderer::renderDistance` and a free `onFace`
+
+How far a view sees, for 9g's visibility map, and where a direction lands on a face drawn as a turned
+View. `ctest -j8` **1660/1660** Release with video, camera and Ceres on (+6), and **1519/1519** with all
+three off (+6); warning-clean, format-check clean. Every `[gpu]` case ran on Metal and on the CPU device.
+
+- **`Renderer::renderDistance(scene, view) -> DistanceResult`**: render()'s pinhole and depth test,
+  through `shaders/distance.frag` over `scene.vert`, into a single-sample `R32_Sfloat` target with
+  depth. Each texel is the distance from the view's centre to what its centre's ray meets, along that
+  ray, from the world position `scene.vert` interpolates perspective-correctly.
+  - Read back as a `Gray32F` that **states no colour space**: a distance is not light, so no op that
+    averages light (a resize, a blur) will take it. Two surfaces' distances averaged is a distance to
+    neither.
+  - **`kNoSurface`** (+infinity) where a ray meets nothing between the near and far planes, so nothing
+    reads as hiding what lies behind it. Both devices clear an R32F target to infinity exactly.
+  - render() and renderDistance share one offscreen routine (`drawOffscreen`) and one set of refusals.
+    render()'s messages are unchanged, and its cases pass unchanged.
+- **A free `onFace(const CaptureFace&, direction)`** in `capture.h`; `RayTable::onFace` is now a
+  one-line delegation to it, in the class.
+- **Measured: a distance's error is the rasteriser's.** A vertex is placed to 1/256 of a texel on both
+  devices, so the surface drawn is turned off the true one by up to half that angle, and a distance
+  moves by that angle times the surface's slope to the ray. The worst texel of a turned box over a
+  tilted plane is 0.53 of that bound on both devices (4.8e-5 of a distance at worst), so the bound,
+  not a flat tolerance, is the case's check.
+  - **For 9g:** this is why its tolerance must scale with the slope, and it is per texel, so 9g's
+    fixed face size sets it. Vulkan promises only 1/16 of a pixel (`subPixelPrecisionBits` 4), so a
+    tolerance should not lean on 1/256.
+- **The cases** (`test_distance.cpp`, new, five `[gpu]`; one more in `test_raytable.cpp`):
+  - a texel's distance is along its centre's ray, against rays intersected here with the scene's
+    squares: a box turned off every axis before a tilted plane, from a camera off rest;
+  - the nearest surface's distance is kept, whichever is drawn first;
+  - where nothing is drawn, or only beyond the far plane, a texel reads `kNoSurface`, and an empty scene
+    reads it everywhere;
+  - a texel a silhouette crosses (236 of them) is one surface's distance, never between the two;
+  - a distance the renderer cannot draw is refused, saying why;
+  - `onFace` agrees with clipFromCamera for a face drawn as a View turned to its axis, on every face
+    from a camera off rest, and a ray table's `onFace` is it, of its faces.
+- **Five sabotages, all caught**, each by the case aimed at it:
+
+  | Sabotage | Fails |
+  |---|---|
+  | Write view-space z (`1 / gl_FragCoord.w`) | the ray case, the nearest case and the silhouette case |
+  | No depth test for the distance pipeline | the ray case and the nearest case |
+  | Clear to 0 | the `kNoSurface` case and the ray case (texels past the plane) |
+  | A 4x MSAA target, resolved | the silhouette case alone |
+  | `onFace` turning the direction the wrong way | the face case alone |
+
+  **The first sabotage's shader stayed compiled through the next two**: the script restored the file
+  by a move, which keeps the original's older mtime, so the SPIR-V built from the sabotage looked
+  newer than its source. The second and third read the first's numbers exactly (0.000122 and 0.3537),
+  which is how it showed, and were redone on a clean shader with the file touched after each restore.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -18876,7 +18928,7 @@ row here**. A row is cheap to delete and expensive to leave.
   landed and a drag baking every size it passed through (*After 8f*). **Slice 9 planned 2026-10-30** as
   ten commits, 9a to 9j: the current frame and the Timeline, the plan's assets shared between panes,
   looking through a camera, a distance pass and the visibility map, and the specification catalogue,
-  ending in a gui-mode checklist (*Slice 9 planned*); 9a to 9d built 2026-11-01, 9e 2026-11-02. 9e found
+  ending in a gui-mode checklist (*Slice 9 planned*); 9a to 9d built 2026-11-01, 9e and 9f 2026-11-02. 9e found
   three-poles in a 20 m room holding 8.7 GB; storing a texture widened it to RGBA32F first, and fixed,
   it holds 4.1 GB (*The 20 m room's footprint*). 7a's two
   findings and 5e's were decided on 2026-10-29: a registration verdict takes the camera models as
