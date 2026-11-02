@@ -41,6 +41,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 
@@ -198,7 +199,10 @@ namespace
 		REQUIRE(wire(inner, compare, out0(inner, compare), inner.boundaryOutputNode().id(), scene.loop().continuePin()) == Connection::Ok);
 	}
 
-	const Image& boundaryImage(const Graph& graph, const Evaluation& evaluation, const std::string& name)
+	// `name` is a view, not a `const std::string&`: every caller passes a literal, and GCC's
+	// -Wdangling-reference takes the temporary string a reference parameter would bind for what the
+	// returned image refers to, though the image lives in `evaluation`.
+	const Image& boundaryImage(const Graph& graph, const Evaluation& evaluation, std::string_view name)
 	{
 		for (const BoundaryOutput& out : graph.boundaryOutputs())
 		{
@@ -208,7 +212,7 @@ namespace
 				return evaluation.value(out).get<Image>();
 			}
 		}
-		FAIL("no boundary output named " + name);
+		FAIL("no boundary output named " << name);
 	}
 
 	int boundaryInt(const Graph& graph, const Evaluation& evaluation, const std::string& name)
