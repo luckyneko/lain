@@ -18549,20 +18549,70 @@ Ceres on (+1), and **1511/1511** with all three off (+1); warning-clean, format-
     that regularly passes a 60 Hz frame (16.7 ms). A 4K camera at 1/1 on a large pane would be the
     first.
 - **Measured: what its own copy of the scene costs** (the process's physical footprint, which on Apple
-  Silicon's unified memory counts the device's allocations):
+  Silicon's unified memory counts the device's allocations; before the fix in *The 20 m room's
+  footprint*, which lowers both baselines and leaves these differences alone, since the copy is the
+  device's):
   - three-poles: 1.88 GB without the camera view, 2.15 GB looking through a camera (+0.27 GB);
   - three-poles in a 20 m room, whose floor and ceiling bake at the 8192 cap: 8.74 GB without, 9.70 GB
     with (+0.96 GB), which is its copy of the bakes with their mips.
 
   So the texture cache shared at the renderer, which the plan deferred, is worth about a gigabyte on a
   large room.
-- **Found while measuring, not chased: the 20 m room's process holds 8.7 GB without the camera view.**
-  `footprint` puts 6.5 GB of it in 67 "Malloc Large" regions (CPU heap) and 2.1 GB in graphics. The
-  bakes are about 0.7 GB stored and 0.9 GB on the device, so most of the CPU heap is unexplained. It
-  does not depend on the camera view; it is owed its own look, starting from whether 8f's build shows
-  it too.
+- **Found while measuring: the 20 m room's process holds 8.7 GB without the camera view**, 6.5 GB of it
+  CPU heap that the bakes did not explain. *(**Diagnosed and fixed the same day**: see *The 20 m room's
+  footprint*, below.)*
 - **Deviation:** the camera view is docked under the Inspector, not beside the Viewport, since the
   Viewport wants the middle. A saved `imgui.ini` opens it floating until View > Reset Layout.
+
+#### The 20 m room's footprint (2026-11-02)
+
+Found by 9e's measurement: rigplan, with three-poles' room enlarged to 20 m, held 8.74 GB of physical
+footprint once its bakes landed, against about 1.6 GB its bakes and their device copies account for.
+**Diagnosed and fixed** in `render::storedTexture`. The 20 m room now holds 4.1 GB, and three-poles 1.16
+GB, against 1.88 GB. `ctest -j8` **1654/1654** Release with video, camera and Ceres on (+2), and
+**1513/1513** with all three off (+2); warning-clean, format-check clean.
+
+- **Where it went.**
+  - `footprint` put 6.5 GB in "Malloc Large" and 2.1 GB in graphics. `vmmap -summary` split the
+    6.5 GB into **0.65 GB live, which is the six stored bakes, and 5.7 GB "Malloc Large (empty)"**:
+    large blocks freed and kept resident and dirty by the allocator for reuse.
+  - `malloc_history` under `MallocStackLogging` found 1.72 GB of live allocations in all, so nothing
+    was leaking. The 5.7 GB was what the bakes had freed.
+- **The cause.** A procedural bake is a `Gray32F` (an 8192 x 8192 floor is 268 MB). `storedTexture`
+  widened it to `RGBA32F` (1.07 GB), applied sRGB into a second `RGBA32F` (1.07 GB), and narrowed it to
+  `RGBA8`, all held at once: 36 bytes a texel for a 4-byte bake. The room's six bakes run together on
+  the pool, so the peak was near 7 GB, which the allocator then kept.
+- **The fix.** The curve is still undone in float, so nothing is quantised before it, but in the
+  texture's own channels: a grey texture is widened to `Gray32F`, an RGB one to `RGB32F`, and a float one
+  not at all. Each step is its own statement, so what it was made from is let go of before the next is
+  made. A grey bake now costs 8 bytes a texel beside itself.
+  - The look-through's display decode had the same expansion, so `displayed` is now `storedTexture` of
+    the recording: one routine, two callers.
+- **Measured after** (`footprint` and `vmmap`, two runs each, the camera view not looking):
+
+  | plan | before | after | Malloc Large (empty) |
+  |---|---|---|---|
+  | three-poles in a 20 m room | 8.74 GB | 4.09 to 4.17 GB | 5.7 GB to 1.2 to 1.3 GB |
+  | three-poles | 1.88 GB | 1.15 to 1.17 GB | 0.17 to 0.19 GB |
+
+- **What is left, recorded, not chased:**
+  - **The 1.2 GB still kept is the bakes' peak.** Each 8192 x 8192 bake still holds its `Gray32F`, its
+    sRGB copy and the result at once, and two run together. Baking straight into the stored format,
+    or running fewer bakes at once, would lower it. Trigger: a plan whose bakes' peak matters.
+  - **2.1 GB of graphics memory, about 0.9 GB of it the textures with their mips.** `malloc_history`
+    names three Metal heaps of 604 MB in all, allocated by `acm::vulkan::MemoryAllocator` for
+    `Texture::upload`'s staging buffers and still held. That is archimedes' allocator pooling its
+    blocks, archimedes' to decide.
+- **The cases** (+2):
+  - `test_renderer.cpp`: every texture is stored texel for texel as when it was widened to RGBA first,
+    over all twelve formats and three colour spaces, sampled to cover every value.
+  - `test-render-memory`, a new executable that replaces the global aligned `operator new` and
+    `delete` (every image's buffer goes through them) and counts what they hold at once. A grey bake
+    is stored holding at most 8 bytes a texel, an 8-bit grey picture 8, and an RGB16 one 24.
+- **Two sabotages, both caught.** The byte case passes both, which is why the counting case exists.
+  - Widening to `RGBA32F` again: all three bounds fail, the grey bake at 32 bytes a texel.
+  - The conversions as one expression, which keeps the widened copy to the end of it: the 8-bit grey
+    (12) and RGB (28) bounds fail.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
@@ -18827,8 +18877,8 @@ row here**. A row is cheap to delete and expensive to leave.
   ten commits, 9a to 9j: the current frame and the Timeline, the plan's assets shared between panes,
   looking through a camera, a distance pass and the visibility map, and the specification catalogue,
   ending in a gui-mode checklist (*Slice 9 planned*); 9a to 9d built 2026-11-01, 9e 2026-11-02. 9e found
-  three-poles in a 20 m room holding 8.7 GB, 6.5 GB of it CPU heap its bakes do not explain, owed its
-  own look (*Sub-slice 9e built*). 7a's two
+  three-poles in a 20 m room holding 8.7 GB; storing a texture widened it to RGBA32F first, and fixed,
+  it holds 4.1 GB (*The 20 m room's footprint*). 7a's two
   findings and 5e's were decided on 2026-10-29: a registration verdict takes the camera models as
   given (documented, ADR-0016), the estimate's "floor" is renamed `flat`, a reference rather than a
   bound, and the CPU device gets every logical core (ADR-0028). CI run 40984683848 renders the example

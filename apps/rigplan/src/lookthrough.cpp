@@ -1,6 +1,6 @@
 #include "lookthrough.h"
 
-#include <lain/image/convert.h>
+#include <lain/render/renderer.h> // storedTexture: what the display decode is
 #include <lain/rigplan/specification.h>
 #include <lain/string/format.h>
 
@@ -151,9 +151,8 @@ namespace rigplan
 		const image::Image recorded = recorder.record(light, rp::NoiseKey{}, 0.0);
 		if (!recorded.valid())
 			return {};
-		// To float first, a Grey recording replicated and an opaque alpha added, still in its own curve;
-		// then its curve undone and sRGB's applied in one pass; then to 8 bits.
-		const image::Image wide = image::convert(recorded, image::PixelFormat::RGBA32F);
-		return image::convert(image::convert(wide, image::ColorSpace::sRGB), image::PixelFormat::RGBA8);
+		// As a texture is stored: its curve undone in float in its own channels, sRGB's applied, then to
+		// opaque RGBA8, a Grey recording replicated.
+		return lain::render::storedTexture(recorded);
 	}
 } // namespace rigplan

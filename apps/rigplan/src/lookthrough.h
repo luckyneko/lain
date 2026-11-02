@@ -99,8 +99,8 @@ namespace rigplan
 
 	// What the look-through shows of `light`, a capture's RGBA32F linear light: the sensor's recording of
 	// it without noise (its gain, ADC and output curve), decoded by the recording's own curve and encoded
-	// for display as opaque 8-bit sRGB RGBA, a Grey sensor's in grey. The decode is in float, so a 16-bit
-	// recording is not quantised to 8 bits before its curve is undone. Invalid when `light` is not valid
-	// RGBA32F linear light.
+	// for display as opaque 8-bit sRGB RGBA, a Grey sensor's in grey: lain::render::storedTexture of the
+	// recording, so it is decoded in float, and a 16-bit recording is not quantised to 8 bits before its
+	// curve is undone. Invalid when `light` is not valid RGBA32F linear light.
 	lain::image::Image displayed(const lain::rigplan::Recorder& recorder, const lain::image::Image& light);
 } // namespace rigplan

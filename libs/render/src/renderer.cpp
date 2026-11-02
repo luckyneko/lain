@@ -214,15 +214,38 @@ namespace lain::render
 		return texture.pixelFormat() == image::PixelFormat::RGBA8 && texture.colorSpace() == image::ColorSpace::sRGB;
 	}
 
-	// A deeper or linear texture is narrowed by lain's own conversions, once.
+	// The float format of `format`'s own channels.
+	static image::PixelFormat floatFormatOf(image::PixelFormat format)
+	{
+		switch (image::formatDescriptor(format).model)
+		{
+			case image::ColorModel::Gray:
+				return image::PixelFormat::Gray32F;
+			case image::ColorModel::GrayAlpha:
+				return image::PixelFormat::GrayAlpha32F;
+			case image::ColorModel::RGB:
+				return image::PixelFormat::RGB32F;
+			case image::ColorModel::RGBA:
+				return image::PixelFormat::RGBA32F;
+		}
+		return image::PixelFormat::RGBA32F;
+	}
+
+	// A deeper or linear texture is narrowed by lain's own conversions, once. Its curve is undone in
+	// float, in its own channels: widened to RGBA first, a procedural bake's Gray32F of 8192 x 8192
+	// (268 MB) became two RGBA32F copies of 1 GB each, and a room's bakes, run at once on the pool,
+	// peaked near 7 GB that the allocator then kept (WORK.md M15, *the 20 m room's footprint*). Each step
+	// is its own statement, so what it was made from is let go of before the next is made.
 	image::Image storedTexture(const image::Image& texture)
 	{
 		if (stored(texture))
 			return texture;
 		if (!texture.valid() || texture.colorSpace() == image::ColorSpace::Unspecified)
 			return {};
-		const image::Image wide = image::convert(texture, image::PixelFormat::RGBA32F);
-		return image::convert(image::convert(wide, image::ColorSpace::sRGB), image::PixelFormat::RGBA8);
+		const image::PixelFormat wide = floatFormatOf(texture.pixelFormat());
+		const image::Image encoded = texture.pixelFormat() == wide ? image::convert(texture, image::ColorSpace::sRGB)
+																   : image::convert(image::convert(texture, wide), image::ColorSpace::sRGB);
+		return image::convert(encoded, image::PixelFormat::RGBA8);
 	}
 
 	// Unique per upload in this process, so a viewport can tell a scene uploaded where another stood.

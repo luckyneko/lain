@@ -1400,6 +1400,26 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-02 — storing a texture no longer widens it to RGBA32F (the 20 m room's footprint)
+
+9e's finding, diagnosed and fixed in its own commit. `ctest -j8` **1654/1654** Release with video,
+camera and Ceres on (+2), and **1513/1513** with all three off (+2); warning-clean, format-check clean.
+Full notes in WORK.md's *The 20 m room's footprint*.
+
+- **Not a leak.** `vmmap` split the 6.5 GB of "Malloc Large" into 0.65 GB live (the six stored bakes) and
+  5.7 GB freed but kept resident by the allocator. `malloc_history` found 1.72 GB live in all.
+- **The cause: `render::storedTexture` widened every texture to `RGBA32F` before undoing its curve.**
+  A grey 8192 x 8192 bake (268 MB) became two 1.07 GB copies, held at once with the result. The room's
+  six bakes ran together on the pool, so the peak was near 7 GB, which the allocator kept.
+- **The fix**: still in float, but in the texture's own channels, each step let go of before the next.
+  The 20 m room now holds 4.1 GB against 8.74, and three-poles 1.16 against 1.88. The look-through's
+  display decode is now `storedTexture` of the recording.
+- **Every texel is unchanged**, checked over twelve formats and three colour spaces. The memory is held
+  to by a new `test-render-memory`, which replaces the aligned `operator new` and counts what an image's
+  buffers hold at once. Two sabotages, both caught; the byte check alone passes both.
+- **Left, recorded:** 1.2 GB is still the bakes' peak, and 0.6 GB of Metal heaps is upload staging
+  that archimedes' allocator keeps.
+
 ### Update 2026-11-02 — M15 slice 9, sub-slice 9e built: the camera view pane
 
 The fifth of slice 9's ten commits. `ctest -j8` **1652/1652** Release with video, camera and Ceres on
@@ -1420,8 +1440,8 @@ steps 4 to 7, after 9j). Full notes in WORK.md's *Sub-slice 9e built*.
   trigger to move it off the frame loop is a capture regularly past a 60 Hz frame.
 - **Measured: its copy of the scene costs 0.27 GB on three-poles and 0.96 GB in a 20 m room**, which is
   what the deferred shared texture cache would save.
-- **Found, not chased: the 20 m room's process holds 8.7 GB without the camera view**, 6.5 GB of it
-  CPU heap that the bakes (about 0.7 GB) do not explain.
+- **Found: the 20 m room's process holds 8.7 GB without the camera view**, 6.5 GB of it CPU heap that
+  the bakes (about 0.7 GB) do not explain. *(**Fixed the same day**: see the next entry.)*
 
 ### Update 2026-11-01 — M15 slice 9, sub-slice 9d built: `camera::scaled` and the look-through's choice
 

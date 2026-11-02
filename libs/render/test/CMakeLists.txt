@@ -23,3 +23,11 @@ if(ACM_SWIFTSHADER_ICD)
 endif()
 
 catch_discover_tests(test-render TEST_PREFIX "(render) " ${LAIN_TEST_DL_PATHS})
+
+# What storing a texture costs in memory: its own executable, since it replaces the global aligned operator
+# new and delete to count what every image's buffer holds, and a replacement is the whole program's. CPU
+# only: nothing here asks for a device.
+add_executable(test-render-memory test_storedmemory.cpp)
+target_compile_features(test-render-memory PRIVATE cxx_std_17)
+target_link_libraries(test-render-memory PRIVATE lain::render lain::image lain::warnings Catch2::Catch2WithMain)
+catch_discover_tests(test-render-memory TEST_PREFIX "(render) " ${LAIN_TEST_DL_PATHS})

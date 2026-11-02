@@ -4,6 +4,8 @@
 #include "gpu.h"
 #include "testscene.h"
 
+#include <lain/image/convert.h>
+#include <lain/image/pixelformat.h>
 #include <lain/render/renderer.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -11,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -428,6 +431,58 @@ TEST_CASE("a stored texture is 8-bit sRGB, and one that states no colour space h
 
 	const image::Image untagged(2, 2, image::PixelFormat::Gray8, image::ColorSpace::Unspecified);
 	CHECK_FALSE(storedTexture(untagged).valid());
+}
+
+// An image of `format` whose every sample differs from its neighbours: bytes for the integer formats,
+// and for the float ones values from 0 to a little past 1, so the curve is asked of all of them.
+static image::Image patterned(image::PixelFormat format, image::ColorSpace space)
+{
+	image::Image img(37, 23, format, space);
+	const image::PixelFormatDescriptor d = image::formatDescriptor(format);
+	const std::size_t samples = img.byteSize() / d.bytesPerChannel();
+	for (std::size_t i = 0; i < samples; ++i)
+	{
+		const std::uint32_t v = std::uint32_t(i * 2654435761u);
+		if (d.channelType == image::ChannelType::F32)
+		{
+			const float f = float(v % 1100u) / 1000.0f;
+			std::memcpy(img.data() + i * 4, &f, 4);
+		}
+		else if (d.bytesPerChannel() == 2)
+		{
+			const std::uint16_t h = std::uint16_t(v >> 7);
+			std::memcpy(img.data() + i * 2, &h, 2);
+		}
+		else
+			img.data()[i] = std::uint8_t(v >> 11);
+	}
+	return img;
+}
+
+TEST_CASE("a texture is stored texel for texel as when it was widened to RGBA first", "[render]")
+{
+	// Its curve is now undone in its own channels rather than in RGBA32F's, which costs a quarter of the
+	// memory for a grey bake; nothing it stores may move.
+	using image::PixelFormat;
+	for (const PixelFormat format : {PixelFormat::Gray8, PixelFormat::Gray16, PixelFormat::Gray32F, PixelFormat::GrayAlpha8,
+									 PixelFormat::GrayAlpha16, PixelFormat::GrayAlpha32F, PixelFormat::RGB8, PixelFormat::RGB16,
+									 PixelFormat::RGB32F, PixelFormat::RGBA8, PixelFormat::RGBA16, PixelFormat::RGBA32F})
+	{
+		for (const image::ColorSpace space : {image::ColorSpace::Linear, image::ColorSpace::sRGB, image::ColorSpace::BT709})
+		{
+			if (format == PixelFormat::RGBA8 && space == image::ColorSpace::sRGB)
+				continue; // already stored: it comes back as it is (above)
+			INFO("format " << int(format) << ", space " << int(space));
+			const image::Image source = patterned(format, space);
+			const image::Image widened = image::convert(source, PixelFormat::RGBA32F);
+			const image::Image before = image::convert(image::convert(widened, image::ColorSpace::sRGB), PixelFormat::RGBA8);
+			const image::Image now = storedTexture(source);
+			REQUIRE(now.pixelFormat() == PixelFormat::RGBA8);
+			CHECK(now.colorSpace() == image::ColorSpace::sRGB);
+			REQUIRE(now.byteSize() == before.byteSize());
+			CHECK(std::memcmp(now.data(), before.data(), before.byteSize()) == 0);
+		}
+	}
 }
 
 TEST_CASE("the renderer refuses what it cannot draw, and says why", "[render][gpu]")

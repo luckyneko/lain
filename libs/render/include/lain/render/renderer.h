@@ -95,7 +95,9 @@ namespace lain::render
 	// nearly all an upload costs: an 8192 x 8192 linear texture took 0.75 s on Metal, 0.03 s once
 	// stored. A texture already stored goes up as it is, uncopied. So a host that uploads on its frame
 	// loop converts its textures elsewhere first, through this, and the device holds the same texels
-	// either way. Invalid when `texture` states no colour space.
+	// either way. Its curve is undone in float, never after it was quantised, but in the texture's own
+	// channels: beside the texture, it holds at most one float copy of them and the result. Invalid when
+	// `texture` states no colour space.
 	image::Image storedTexture(const image::Image& texture);
 
 	// The raster renderer (ADR-0028) on one device: its pipelines are built once, then any number of
