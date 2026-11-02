@@ -1400,15 +1400,38 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-01 — CI checks the standard library's preconditions
+
+The empty `std::optional` that `test-camera-tracks` dereferenced passed every CI leg for weeks: MSVC's
+Debug library checks it, libstdc++ and libc++ check nothing by default, and no leg is MSVC Debug. Two
+legs now check. Full notes in WORK.md's *The standard library checks its preconditions*, under
+Continuous integration.
+
+- **Linux Debug builds with `-D_GLIBCXX_ASSERTIONS`, and macOS Release with libc++'s extensive
+  hardening.** macOS is the only build that runs the 16 release-only cases (`skipInDebug`) under any
+  library check, since every Debug build skips them.
+- **A matrix field, `cxxflags`, passed as `CXXFLAGS`.** On the legs, not in `CMakeLists.txt`, so a user's
+  Debug build is unchanged; and not as `-DCMAKE_CXX_FLAGS`, whose empty value on the other legs would drop
+  MSVC's `/EHsc`. Third-party targets get it too, and none tripped it.
+- **A CI step proves the checks are on** before each such leg builds: an empty optional, dereferenced
+  under the cached flags, must abort. A library that does not know the macro ignores it silently.
+- **Found: feature/M9 did not build on Linux** after 9b9c983, which only MSVC had built. GCC 13.3's
+  `-Wdangling-reference` refused a `test_loopscene.cpp` helper that returns a reference and took its name
+  as a `const std::string&`; it takes a `std::string_view` now.
+- **Green on every leg, run 41301917177.** Linux Debug 1334 of 1334 with assertions on, the same tests
+  and skips as before, so they found nothing MSVC Debug had not; macOS Release 1342 of 1342 hardened,
+  every release-only case run. The Debug leg's Build and Test steps were slower than at e8ccd74 (521 s
+  and 337 s, against 320 s and 191 s), but one run each cannot say by how much.
+
 ### Update 2026-11-01 — Catch2's `FAIL` and `SKIP` do not return
 
 A Debug build with MSVC 14.51 (Visual Studio 18) failed in 16 test files with C2220 over C4702,
 *unreachable code*: since Catch2 3.9.0 both macros end in a `[[noreturn]]` call. Every target now
 builds warning-clean in MSVC Debug; `ctest -j8` gives 1333 of 1334 passing or skipped, and the one
-failure is an older abort in `test-camera-tracks`. GCC was not built. Full notes in WORK.md's
-*Catch2's `FAIL` and `SKIP` do not return*. *(**The abort was fixed the same day**: the test
-dereferenced an empty `std::optional`, which only MSVC's Debug library checks. On Linux and macOS the
-check passed against garbage. 1334 of 1334 now.)*
+failure is an older abort in `test-camera-tracks`. GCC was not built *(when CI built it, one test file
+failed: the update above)*. Full notes in WORK.md's *Catch2's `FAIL` and `SKIP` do not return*.
+*(**The abort was fixed the same day**: the test dereferenced an empty `std::optional`, which only
+MSVC's Debug library checks. On Linux and macOS the check passed against garbage. 1334 of 1334 now.)*
 
 - **No `return` after a `FAIL`** in a test helper: 14 dead ones deleted.
 - **A release-only case calls `lain::testing::skipInDebug(reason)`** (`lain/testing/skip.h`), never

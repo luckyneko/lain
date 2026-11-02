@@ -11294,6 +11294,61 @@ is about Windows: *"a name pattern and a Windows path survive, which RFC 3986 wo
   and the test was one nobody could have found by reading, because the code is correct on two of
   three platforms.
 
+### The standard library checks its preconditions (2026-11-01)
+
+`test-camera-tracks` dereferenced an empty `std::optional` and passed on every leg for weeks. MSVC's
+Debug library checks `optional::operator*`, `operator[]`, `front()`, `back()` and their kin; libstdc++
+and libc++ check none of them by default, and no leg is MSVC Debug. So the check ran against whatever
+bytes the optional held and passed without testing anything, and only the repo owner's MSVC Debug build
+caught it (*Catch2's `FAIL` and `SKIP` do not return*, under Outstanding work). Two legs now check.
+
+| leg | flag |
+|---|---|
+| Linux Debug | `-D_GLIBCXX_ASSERTIONS`: libstdc++'s precondition assertions |
+| macOS Release | `-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE`: libc++'s extensive hardening |
+
+- **On the legs, not in `CMakeLists.txt`**, so a user's Debug build means what it always has. A matrix
+  field, `cxxflags`, carries each leg's flag.
+- **Through `CXXFLAGS`, not `-DCMAKE_CXX_FLAGS`.** CMake adds `CXXFLAGS` to the compiler's own defaults on
+  the first configure, where a `CMAKE_CXX_FLAGS` on the command line replaces them: the empty one every
+  other leg would pass drops MSVC's `/EHsc`.
+- **Every C++ target gets it, third-party ones included** (Catch2, Ceres and Eigen, archimedes, multi).
+  None tripped it, so nothing narrows it to lain's own. The prebuilt FFmpeg and OpenCV were built without
+  it and link unchanged, since neither library's checks change a type's layout.
+- **macOS too, though it is Release, and Release is the reason.** The 16 release-only cases
+  (`lain::testing::skipInDebug`: calibration end to end, the comparisons, the scale tests) are skipped by
+  every Debug build, MSVC's and this Linux leg alike, so until now no build ran them with the standard
+  library checking anything. Hardening defines no `NDEBUG` and changes no layout, so the leg still builds
+  what a fresh clone gets, with traps added. Extensive rather than fast, to check about as much as
+  libstdc++'s assertions do.
+- **A step proves each leg's checks are on**, before its build: an empty optional, dereferenced under the
+  `CMAKE_CXX_FLAGS` the configure cached, must abort. A standard library that does not know a macro
+  ignores it without a word, and the leg would then pass exactly as one that found nothing. Both trapped
+  on the first run: GCC 13.3's libstdc++ with *Assertion 'this->_M_is_engaged()' failed*, AppleClang 17's
+  libc++ with *Trace/BPT trap*.
+- **The first run (41298609970) found feature/M9 not building on Linux at all**, on every Linux leg, with
+  the flags or without. 9b9c983 (*Catch2's `FAIL` and `SKIP` do not return*, built with MSVC only)
+  deleted the dead `static const Image none; return none;` that ended `boundaryImage` in
+  `apps/flowview/test/test_loopscene.cpp`. GCC 13.3's `-Wdangling-reference` then refused
+  `const Image& result = boundaryImage(scene.graph, evaluation, "result")`, taking the temporary
+  `std::string` built for the helper's `const std::string&` name for what the returned image refers to.
+  The image lives in the evaluation. The helper takes a `std::string_view` now, which binds no temporary
+  to a reference. The last green run, 40832839891 at e8ccd74, had the same GCC 13.3.0.
+- **macOS Release passed 1342 of 1342 hardened** on that first run, skips included. The only four
+  skipped were three GPU cases and the real-camera fixture, so all 16 release-only cases ran checked.
+- **Green on every leg in run 41301917177**, with the helper fixed. Linux Debug passed **1334 of 1334**
+  with assertions on, the same count and the same 24 skips as its last green run, so the checks found
+  nothing there that MSVC Debug had not. macOS Release passed 1342 of 1342 hardened again, Windows
+  Release 1342 of 1342, Linux Release 1342 of 1342, video off 1208 of 1208, no refiner 1283 of 1283.
+- **What it cost, one run each, so an indication rather than a measurement.** Linux Debug's Build step
+  took 521 s and its Test step 337 s, against 320 s and 191 s at e8ccd74, while the Linux Release leg
+  ran faster than it had then (364 s and 424 s, against 577 s and 687 s). The checks cost the Debug leg
+  something; hosted runners vary too much between runs to say how much. Both are far inside the
+  90-minute timeout.
+- **To reproduce the Linux leg**, configure a fresh build directory with
+  `CXXFLAGS=-D_GLIBCXX_ASSERTIONS cmake -S . -B build-assert -DCMAKE_BUILD_TYPE=Debug`. CMake reads
+  `CXXFLAGS` on the first configure only.
+
 ### Not covered, and deliberately
 
 The GPU. gui-mode is still eyeball-verified by the repo owner on a Metal-capable machine; the one
@@ -15303,9 +15358,11 @@ the newer compiler is what started reporting it. CI's Windows leg (Release, Visu
   by name. The discovery script is also the rewritten part, and 3.16.0 itself fixed regressions from that
   rewrite. When it lands, `FIND_PACKAGE_ARGS` could carry `${CATCH2_VER}` instead of a second number.
 - Every target warning-clean in MSVC Debug; `ctest -j8` **1333 of 1334** pass or skip, the release-only
-  cases reporting Skipped. GCC was not built. The one failure, *a feature hidden in a minority of frames
-  stays static, and in a majority does not*, aborts with exit code 3 in a `test-camera-tracks` binary
-  this change never rebuilt, so it is older than this fix. *(**Fixed the same day**, below.)*
+  cases reporting Skipped. GCC was not built. *(When CI built it, GCC refused a `test_loopscene.cpp`
+  helper this change had touched: §Continuous integration › *The standard library checks its
+  preconditions*.)* The one failure, *a feature hidden in a minority of frames stays static, and in a
+  majority does not*, aborts with exit code 3 in a `test-camera-tracks` binary this change never
+  rebuilt, so it is older than this fix. *(**Fixed the same day**, below.)*
 - **That abort was the test dereferencing an empty `std::optional`.** It hides landmark 6 from camera 0
   at frame 4 and then read `*scene::pixelOf(0, 6, 4)`, which is `nullopt`. MSVC's Debug library checks
   `optional::operator*` and aborts. libstdc++ and libc++ check nothing without assertions enabled, so on
@@ -15313,7 +15370,8 @@ the newer compiler is what started reporting it. CI's Windows leg (Release, Visu
   and passed without testing anything. It now asks about frame 3, where camera 0 still sees the landmark,
   and `REQUIRE`s the pixel first. Sabotage (landmark 6 hidden in only one frame, so camera 0 sees it in a
   majority) fails that check, where the old one could not have. `ctest -j8` **1334 of 1334** pass or
-  skip in MSVC Debug.
+  skip in MSVC Debug. **CI now checks for this** on its Linux Debug and macOS legs (§Continuous
+  integration › *The standard library checks its preconditions*).
 
 ### Refused, not deferred — do not re-raise
 

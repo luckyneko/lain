@@ -132,6 +132,12 @@ jobs:
             jobs: 4
             flowview: build/apps/flowview/flowview
 
+          # Debug with libstdc++'s assertions on, so `*optional`, `operator[]`, `front()`, `back()` and
+          # their kin abort on a broken precondition instead of reading past it. MSVC's Debug library
+          # checks these and libstdc++ checks nothing by default: a test that dereferenced an empty
+          # optional aborted in the repo owner's MSVC Debug build, and passed on every leg here for weeks
+          # against whatever bytes the optional held (2026-11-01). Set on the leg, not in CMakeLists, so
+          # a user's Debug build means what it always has.
           - name: Linux Debug
             os: ubuntu-24.04
             build_type: Debug
@@ -141,7 +147,13 @@ jobs:
             linux_deps: true
             jobs: 4
             flowview: build/apps/flowview/flowview
+            cxxflags: -D_GLIBCXX_ASSERTIONS
 
+          # libc++'s extensive hardening, the counterpart of the Linux Debug leg's assertions. Release
+          # is no reason to leave it off: it is the only build in which the release-only cases
+          # (`lain::testing::skipInDebug`) run with the standard library checking anything, since both
+          # Debug builds that check, MSVC's and the Linux leg, skip them. It defines no NDEBUG and
+          # changes no layout, so this is still the build a fresh clone gets, with traps added.
           - name: macOS Release
             os: macos-15
             build_type: Release
@@ -151,6 +163,7 @@ jobs:
             linux_deps: false
             jobs: 3
             flowview: build/apps/flowview/flowview
+            cxxflags: -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE
 
           # Visual Studio's generator is multi-config, so --config / -C carry the build type here
           # and CMAKE_BUILD_TYPE is ignored; both are passed so one command shape serves every leg.
@@ -201,13 +214,35 @@ jobs:
 
       # LAIN_BUILD_TESTING and LAIN_BUILD_APPS default ON for a top-level build, so the full
       # graph — libraries, plugins, the app stack and flowview — is what gets configured.
+      #
+      # A leg's `cxxflags` goes in through CXXFLAGS, not -DCMAKE_CXX_FLAGS. CMake adds CXXFLAGS to the
+      # compiler's own defaults on the first configure, where a CMAKE_CXX_FLAGS on the command line
+      # replaces them: an empty one would drop MSVC's /EHsc on the Windows leg. It reaches every C++
+      # target this configure creates, third-party ones included. The prebuilt FFmpeg and OpenCV were
+      # built without it and still link, since neither library's checks change a type's layout.
       - name: Configure
+        env:
+          CXXFLAGS: ${{ matrix.cxxflags }}
         run: >
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DLAIN_IO_VIDEO_FFMPEG=${{ matrix.video }}
           -DLAIN_CAMERA_OPENCV=${{ matrix.camera }}
           -DLAIN_CAMERA_CERES=${{ matrix.ceres }}
+
+      # A check that is off passes exactly as one that found nothing, and a standard library that does
+      # not know a macro ignores it without a word. So before a build is spent on them, the flags this
+      # configure cached must catch what they are here for: an empty optional, dereferenced, aborts.
+      - name: Prove the library checks are on
+        if: ${{ matrix.cxxflags }}
+        run: |
+          flags=$(sed -n 's/^CMAKE_CXX_FLAGS:STRING=//p' build/CMakeCache.txt)
+          printf '#include <optional>\nint main() { std::optional<int> none; (void)*none; }\n' > "$RUNNER_TEMP/probe.cpp"
+          c++ -std=c++17 $flags "$RUNNER_TEMP/probe.cpp" -o "$RUNNER_TEMP/probe"
+          if "$RUNNER_TEMP/probe"; then
+            echo "An empty optional was dereferenced and nothing stopped it, under CMAKE_CXX_FLAGS '$flags'."
+            exit 1
+          fi
 
       # A job count, never a bare --parallel: under the Makefile generator a bare one is `make -j`
       # with no limit, and on macOS's runner (3 cores, 7 GB) as many compilers as the graph allows
