@@ -62,14 +62,6 @@ TEST_CASE("the view looks through the camera selected last, and a pin keeps it",
 	CHECK_FALSE(choice.camera);
 }
 
-static bool sameModel(const lain::camera::CameraModel& a, const lain::camera::CameraModel& b)
-{
-	const lain::camera::Intrinsics& ka = a.intrinsics();
-	const lain::camera::Intrinsics& kb = b.intrinsics();
-	return a.image() == b.image() && ka.fx == kb.fx && ka.fy == kb.fy && ka.cx == kb.cx && ka.cy == kb.cy &&
-		   a.toString() == b.toString();
-}
-
 TEST_CASE("Realised is the camera realise() builds, or its refusal; Nominal works on a plan with a problem", "[rigplan][lookthrough]")
 {
 	rp::RigPlan p = plan();
@@ -87,7 +79,7 @@ TEST_CASE("Realised is the camera realise() builds, or its refusal; Nominal work
 	REQUIRE(realised.ready());
 	CHECK(realised.name == "cam1");
 	REQUIRE(realised.model);
-	CHECK(sameModel(*realised.model, truth.model));
+	CHECK(rigplan::sameModel(*realised.model, truth.model));
 	CHECK(realised.planFromCamera.translation() == truth.planFromCamera.translation());
 	CHECK(realised.planFromCamera.rotation() == truth.planFromCamera.rotation());
 	CHECK(std::holds_alternative<rp::Realisation>(realised.layout));
@@ -98,7 +90,7 @@ TEST_CASE("Realised is the camera realise() builds, or its refusal; Nominal work
 	const rigplan::LookThrough nominal = rigplan::lookThrough(p, editorplan::cam1Id, LookModel::Nominal);
 	REQUIRE(nominal.ready());
 	REQUIRE(nominal.model);
-	CHECK_FALSE(sameModel(*nominal.model, *realised.model));
+	CHECK_FALSE(rigplan::sameModel(*nominal.model, *realised.model));
 	CHECK(nominal.planFromCamera.translation() != realised.planFromCamera.translation());
 	CHECK(std::holds_alternative<rp::NominalLayout>(nominal.layout));
 
@@ -118,6 +110,32 @@ TEST_CASE("Realised is the camera realise() builds, or its refusal; Nominal work
 
 	// A camera that is not there cannot be looked through either way.
 	CHECK_FALSE(rigplan::lookThrough(p, editorplan::boxId, LookModel::Nominal).ready());
+}
+
+TEST_CASE("two models are one camera only when every parameter is", "[rigplan][lookthrough]")
+{
+	// So a ray table is built again for a new lens or step, and never for an edit that leaves the model.
+	for (int i = 0; i < lain::render::testing::kStrongModelCount; ++i)
+	{
+		INFO("model " << i);
+		const lain::camera::CameraModelParameters p = lain::render::testing::strongCamera(i);
+		const lain::camera::CameraModel model = *lain::camera::CameraModel::create(p).model;
+		CHECK(rigplan::sameModel(model, *lain::camera::CameraModel::create(p).model));
+		CHECK_FALSE(rigplan::sameModel(model, *rigplan::modelAtDivisor(model, 2).model));
+		lain::camera::CameraModelParameters moved = p;
+		moved.intrinsics.cy += 1e-9;
+		CHECK_FALSE(rigplan::sameModel(model, *lain::camera::CameraModel::create(moved).model));
+	}
+	// A coefficient, and the model a coefficient set belongs to.
+	lain::camera::CameraModelParameters bent = lain::render::testing::strongCamera(1);
+	std::get<lain::camera::BrownConrady5>(bent.distortion).k2 += 1e-9;
+	CHECK_FALSE(rigplan::sameModel(*lain::camera::CameraModel::create(lain::render::testing::strongCamera(1)).model,
+								   *lain::camera::CameraModel::create(bent).model));
+	lain::camera::CameraModelParameters other = lain::render::testing::strongCamera(1);
+	const lain::camera::BrownConrady5 forward = std::get<lain::camera::BrownConrady5>(other.distortion);
+	other.distortion = lain::camera::ModifiedBrownConrady5{forward.k1, forward.k2, forward.p1, forward.p2, forward.k3};
+	CHECK_FALSE(rigplan::sameModel(*lain::camera::CameraModel::create(lain::render::testing::strongCamera(1)).model,
+								   *lain::camera::CameraModel::create(other).model));
 }
 
 TEST_CASE("the scene looked through is the capture's: uncut, lit by the plan alone", "[rigplan][lookthrough]")

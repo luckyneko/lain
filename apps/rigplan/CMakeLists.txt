@@ -47,14 +47,15 @@ target_link_libraries(rigplan-tested
 	PRIVATE lain::warnings
 )
 
-# The app: the headless `render`, and the editor's window (M15 slice 8e) and Viewport (8f), which need a
-# device and so are not under ctest; the other panes, and everything the Viewport computes, are
-# rigplan-tested's.
+# The app: the headless `render`, and the editor's window (M15 slice 8e), Viewport (8f) and camera view
+# (9e), which need a device and so are not under ctest; the other panes, and everything the Viewport and
+# the camera view compute, are rigplan-tested's.
 add_executable(rigplan
 	src/main.cpp
 	src/rigplanapp.cpp
 	src/mainwindow.cpp
 	src/viewportpane.cpp
+	src/cameraviewpane.cpp
 )
 
 target_compile_features(rigplan PRIVATE cxx_std_17)

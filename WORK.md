@@ -15044,7 +15044,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
    specification catalogue (copy in, save out). Live-verified by the repo owner. **Planned 2026-10-30
-   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a to 9d built 2026-11-01**.
+   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a to 9d built 2026-11-01, 9e 2026-11-02**.
 
 ### Found while grilling — each owes a check
 
@@ -18494,6 +18494,76 @@ format-check clean.
   - Realised falling back to Nominal: 10 assertions.
   - The recording's codes shown as they are, tagged sRGB: 84 assertions, every curve but sRGB's.
 
+#### Sub-slice 9e built (2026-11-02): the camera view pane
+
+`CameraViewPane` (`cameraviewpane.{h,cpp}`, executable-only, beside the Viewport), docked under the
+Inspector, and `sameModel` in `lookthrough`. `ctest -j8` **1652/1652** Release with video, camera and
+Ceres on (+1), and **1511/1511** with all three off (+1); warning-clean, format-check clean. The
+`--frames` smokes of both apps exit 0 with nothing on stderr. **gui-mode NOT driven by hand**: steps 4 to
+7 of the checklist after 9j are this commit's. A temporary probe drove it to take the numbers below.
+
+- **What it draws**: Nominal and Realised, a Pin, the camera's name, the step, the picture's size and
+  the last capture's time, and the picture fitted whole at the camera's aspect.
+  - Over the picture: what is wrong. That is no camera chosen, a plan with no realisation (with
+    `realise()`'s reasons), a step or a ray table refused, a ray table being built, a failed capture,
+    assets still loading (or, once nothing is, the scene's problems), and a plan with no lights, which
+    reads black.
+  - The notes are drawn over the picture, never beside it, so a note coming or going never changes the
+    pane's area and so the step. Beside it, a "building its ray table" note would shrink the area,
+    change the step, build another table and lose the note again, round and round.
+- **What it does, after the plan's assets are updated**:
+  - `follow`s the selection.
+  - Works out the look-through again when the camera, the model chosen or the plan revision changed.
+    Another camera or model lets go of the picture at once.
+  - Picks the step the pane fits, and the model at it.
+  - Posts the ray table on the pool when the model at the step has none. It never posts while one is
+    building, during a gesture, or for a model whose table was refused.
+  - Brings its own `GpuScene` up to date, through `Renderer::update`.
+  - Captures when the camera, the model, the frame, the plan's or the assets' revision, the step, or
+    the ray table changed, and only while the pane is on screen.
+- **The ray table is keyed on the model, not the plan.** A new `sameModel(a, b)` in `lookthrough`
+  compares every parameter exactly (`CameraModel::toString` keeps six digits), so aiming a camera, or
+  any edit that leaves the model, captures again through the table it has, and a lens change or a new
+  step builds another. A case holds it to a 1e-9 change in cy and in a coefficient, and to a forward
+  and a modified Brown-Conrady with one set of coefficients.
+- **A picture is a new texture each time**, from `Device::createTexture` and a synchronous upload,
+  handed out through `gui::FrameTexture`, which holds it while a frame in flight draws it.
+- **Released in `onShutdown`**, after the plan's assets are waited for: the ray table being built is
+  waited for, then the picture, the table and the scene, then the pane, before the gui context goes.
+  Quitting 1 and 3 frames after a camera is selected, with its table still building, exits 0.
+- **Measured on Metal** (three-poles' cameras, 1280 x 720, playing at 30 fps on a 120 Hz display, the
+  step forced; a capture's time includes recording, the display decode and the upload):
+
+  | step | picture | capture, mean | p95 | frame interval p95 |
+  |---|---|---|---|---|
+  | 1/1 | 1280 x 720 | 10.6 ms | 10.9 ms | 13.8 ms |
+  | 1/2 | 640 x 360 | 3.7 ms | 4.2 ms | 9.2 ms |
+  | 1/4 | 320 x 180 | 2.0 ms | 2.6 ms | 9.3 ms |
+  | 1/8 | 160 x 90 | 1.5 ms | 2.0 ms | 9.3 ms |
+
+  - The default layout's pane picks 1/2.
+  - The first capture after a table lands took 81 ms at 1/1, once.
+  - At 1/1 a capture is longer than a 120 Hz frame, so playback drops a frame now and then (worst
+    16.7 ms); the window never stops.
+  - **Trigger to move it off the frame loop, or cap the step:** a capture at the step the pane picks
+    that regularly passes a 60 Hz frame (16.7 ms). A 4K camera at 1/1 on a large pane would be the
+    first.
+- **Measured: what its own copy of the scene costs** (the process's physical footprint, which on Apple
+  Silicon's unified memory counts the device's allocations):
+  - three-poles: 1.88 GB without the camera view, 2.15 GB looking through a camera (+0.27 GB);
+  - three-poles in a 20 m room, whose floor and ceiling bake at the 8192 cap: 8.74 GB without, 9.70 GB
+    with (+0.96 GB), which is its copy of the bakes with their mips.
+
+  So the texture cache shared at the renderer, which the plan deferred, is worth about a gigabyte on a
+  large room.
+- **Found while measuring, not chased: the 20 m room's process holds 8.7 GB without the camera view.**
+  `footprint` puts 6.5 GB of it in 67 "Malloc Large" regions (CPU heap) and 2.1 GB in graphics. The
+  bakes are about 0.7 GB stored and 0.9 GB on the device, so most of the CPU heap is unexplained. It
+  does not depend on the camera view; it is owed its own look, starting from whether 8f's build shows
+  it too.
+- **Deviation:** the camera view is docked under the Inspector, not beside the Viewport, since the
+  Viewport wants the middle. A saved `imgui.ini` opens it floating until View > Reset Layout.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -18756,7 +18826,9 @@ row here**. A row is cheap to delete and expensive to leave.
   landed and a drag baking every size it passed through (*After 8f*). **Slice 9 planned 2026-10-30** as
   ten commits, 9a to 9j: the current frame and the Timeline, the plan's assets shared between panes,
   looking through a camera, a distance pass and the visibility map, and the specification catalogue,
-  ending in a gui-mode checklist (*Slice 9 planned*); 9a to 9d built 2026-11-01. 7a's two
+  ending in a gui-mode checklist (*Slice 9 planned*); 9a to 9d built 2026-11-01, 9e 2026-11-02. 9e found
+  three-poles in a 20 m room holding 8.7 GB, 6.5 GB of it CPU heap its bakes do not explain, owed its
+  own look (*Sub-slice 9e built*). 7a's two
   findings and 5e's were decided on 2026-10-29: a registration verdict takes the camera models as
   given (documented, ADR-0016), the estimate's "floor" is renamed `flat`, a reference rather than a
   bound, and the CPU device gets every logical core (ADR-0028). CI run 40984683848 renders the example

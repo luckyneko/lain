@@ -30,6 +30,7 @@ namespace rigplan
 		config.docking = true;
 		m_gui = std::make_unique<gui::Context>(window.app(), window, config);
 		m_viewport = std::make_unique<ViewportPane>(window.app().device(), *m_gui);
+		m_cameraView = std::make_unique<CameraViewPane>(window.app().device(), *m_gui);
 
 		// What carried over: the dialogs' folder, and the plan to open, the one named on the command line
 		// or else the one open last. One that does not open leaves a new plan, and the Issues pane says why.
@@ -42,17 +43,20 @@ namespace rigplan
 		return true;
 	}
 
-	// The default docks: the Outliner on the left, the Inspector on the right, and between them the
-	// Viewport over the Timeline over Issues. Window names must match the panes' gui::Begin.
+	// The default docks: the Outliner on the left, the Inspector over the camera view on the right, and
+	// between them the Viewport over the Timeline over Issues. Window names must match the panes'
+	// gui::Begin.
 	static void buildDefaultLayout(gui::DockNode dock)
 	{
 		gui::dockReset(dock);
 		const auto [outliner, rest] = gui::dockSplit(dock, gui::DockDir::Left, 0.2f);
-		const auto [inspector, middle] = gui::dockSplit(rest, gui::DockDir::Right, 0.3f);
+		const auto [right, middle] = gui::dockSplit(rest, gui::DockDir::Right, 0.3f);
+		const auto [cameraView, inspector] = gui::dockSplit(right, gui::DockDir::Down, 0.4f);
 		const auto [issues, upper] = gui::dockSplit(middle, gui::DockDir::Down, 0.18f);
 		const auto [timeline, viewport] = gui::dockSplit(upper, gui::DockDir::Down, 0.22f);
 		gui::dockWindow(outliner, "Outliner");
 		gui::dockWindow(inspector, "Inspector");
+		gui::dockWindow(cameraView, "Camera View");
 		gui::dockWindow(viewport, "Viewport");
 		gui::dockWindow(timeline, "Timeline");
 		gui::dockWindow(issues, "Issues");
@@ -76,6 +80,7 @@ namespace rigplan
 		m_outliner.draw(m_ctx);
 		m_inspector.draw(m_ctx);
 		m_viewport->draw(m_ctx);
+		m_cameraView->draw(m_ctx);
 		m_timeline.draw(m_ctx);
 		m_issues.draw(m_ctx);
 		m_statusBar.draw(m_ctx);
@@ -99,6 +104,7 @@ namespace rigplan
 		// again when the plan, its assets or the frame shown changed, and recorded in the pre-pass below.
 		m_ctx.assets.update(m_ctx.document.plan, gesture);
 		m_viewport->update(m_ctx);
+		m_cameraView->update(m_ctx, gesture);
 
 		const std::string name = m_ctx.document.path.empty() ? std::string("Untitled") : m_ctx.document.path.filename().string();
 		const std::string title = string::format("{}{} - rigplan", name, m_ctx.document.dirty ? " *" : "");
@@ -129,8 +135,11 @@ namespace rigplan
 		m_ctx.session.lastDialogDir = gui::lastDirectory();
 		m_ctx.rememberSession();
 		// The plan's asset jobs are waited for first: quitting while a bake runs costs that bake, never a
-		// crash. Then the Viewport's GPU state and the backend, before the device goes.
+		// crash. Then the camera view's and the Viewport's GPU state (the camera view waits for its ray
+		// table first), and the backend, before the device goes.
 		m_ctx.assets.wait();
+		m_cameraView->release();
+		m_cameraView.reset();
 		m_viewport->release();
 		m_viewport.reset();
 		m_gui.reset();

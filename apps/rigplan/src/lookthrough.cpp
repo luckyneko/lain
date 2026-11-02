@@ -5,7 +5,9 @@
 #include <lain/string/format.h>
 
 #include <algorithm>
+#include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace rigplan
 {
@@ -122,6 +124,18 @@ namespace rigplan
 	lain::camera::ModelResult modelAtDivisor(const lain::camera::CameraModel& model, std::uint32_t divisor)
 	{
 		return lain::camera::scaled(model, dividedBy(model.image(), std::max<std::uint32_t>(1, divisor)));
+	}
+
+	bool sameModel(const lain::camera::CameraModel& a, const lain::camera::CameraModel& b)
+	{
+		const lain::camera::Intrinsics& ka = a.intrinsics();
+		const lain::camera::Intrinsics& kb = b.intrinsics();
+		if (a.image() != b.image() || ka.fx != kb.fx || ka.fy != kb.fy || ka.cx != kb.cx || ka.cy != kb.cy ||
+			a.distortion().index() != b.distortion().index())
+			return false;
+		return std::visit([&](const auto& d)
+						  { return d.coefficients() == std::get<std::decay_t<decltype(d)>>(b.distortion()).coefficients(); },
+						  a.distortion());
 	}
 
 	lain::render::CaptureSettings settingsAtDivisor(const lain::render::CaptureSettings& settings, std::uint32_t divisor)

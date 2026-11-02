@@ -86,6 +86,11 @@ namespace rigplan
 	// camera::scaled, so the same scene lands at the same fraction of the picture.
 	lain::camera::ModelResult modelAtDivisor(const lain::camera::CameraModel& model, std::uint32_t divisor);
 
+	// Whether `a` and `b` are one camera, parameter for parameter: its image, intrinsics, distortion model
+	// and every coefficient, exactly. So a ray table built for one serves the other, and is built again
+	// only when the model changes, not every time the plan does.
+	bool sameModel(const lain::camera::CameraModel& a, const lain::camera::CameraModel& b);
+
 	// A capture's settings at a step of 1/`divisor`: the interpolation tolerance divided by the step,
 	// which is to say multiplied by `divisor`. An interpolation error measured in pixels grows as one over
 	// the scale, since a pixel's span of rays does, so to first order this accepts exactly the cameras a

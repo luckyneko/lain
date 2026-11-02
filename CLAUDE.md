@@ -1400,6 +1400,29 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-02 — M15 slice 9, sub-slice 9e built: the camera view pane
+
+The fifth of slice 9's ten commits. `ctest -j8` **1652/1652** Release with video, camera and Ceres on
+(+1), and **1511/1511** with all three off (+1); warning-clean, format-check clean; the `--frames`
+smokes exit 0, including quits while a ray table builds. **gui-mode NOT driven by hand** (checklist
+steps 4 to 7, after 9j). Full notes in WORK.md's *Sub-slice 9e built*.
+
+- **`CameraViewPane`** (`apps/rigplan/src/cameraviewpane.{h,cpp}`), docked under the Inspector:
+  - Nominal or Realised, and a pin;
+  - its own renderer and `GpuScene`;
+  - the ray table built on the pool (never during a gesture), keyed on the model by a new exact
+    `sameModel`, so an aim or any other edit that leaves the model never rebuilds it;
+  - a capture on the frame loop only when what it shows changed and the pane is on screen, each
+    picture a new texture through `gui::FrameTexture`;
+  - what is wrong drawn over the picture, so a note never changes the step.
+- **Measured on Metal**, a 1280 x 720 camera, capture to texture: 10.6 ms at 1/1, 3.7 at 1/2 (the default
+  layout's step), 2.0 at 1/4, 1.5 at 1/8. At 1/1 playback drops a 120 Hz frame now and then. The
+  trigger to move it off the frame loop is a capture regularly past a 60 Hz frame.
+- **Measured: its copy of the scene costs 0.27 GB on three-poles and 0.96 GB in a 20 m room**, which is
+  what the deferred shared texture cache would save.
+- **Found, not chased: the 20 m room's process holds 8.7 GB without the camera view**, 6.5 GB of it
+  CPU heap that the bakes (about 0.7 GB) do not explain.
+
 ### Update 2026-11-01 — M15 slice 9, sub-slice 9d built: `camera::scaled` and the look-through's choice
 
 The fourth of slice 9's ten commits, driver-free. `ctest -j8` **1651/1651** Release with video, camera
