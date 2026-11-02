@@ -103,6 +103,21 @@ namespace lain::camera
 
 	// --- free functions ---------------------------------------------------------
 
+	ModelResult scaled(const CameraModel& model, const ImageGeometry& image)
+	{
+		CameraModelParameters parameters = model.parameters();
+		const double sx = double(image.width) / double(model.image().width);
+		const double sy = double(image.height) / double(model.image().height);
+		Intrinsics& k = parameters.intrinsics;
+		// u + 0.5 is a pixel coordinate's distance from the image's left edge, which is what scales.
+		k.fx *= sx;
+		k.fy *= sy;
+		k.cx = (k.cx + 0.5) * sx - 0.5;
+		k.cy = (k.cy + 0.5) * sy - 0.5;
+		parameters.image = image;
+		return CameraModel::create(parameters);
+	}
+
 	Applicability applicability(const CameraModel& model, const ImageGeometry& footage)
 	{
 		return model.image() == footage ? Applicability::Unknown : Applicability::Incompatible;

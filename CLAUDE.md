@@ -1400,6 +1400,25 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-01 — M15 slice 9, sub-slice 9d built: `camera::scaled` and the look-through's choice
+
+The fourth of slice 9's ten commits, driver-free. `ctest -j8` **1651/1651** Release with video, camera
+and Ceres on (+7), and **1510/1510** with all three off (+7); warning-clean, format-check clean. Full
+notes in WORK.md's *Sub-slice 9d built*.
+
+- **`camera::scaled(model, image)`** scales the intrinsics about the image's corner and keeps the
+  distortion, so every point of the scene keeps its ray (held to 1e-12 through all six models).
+  `testcameras.h` now goes through it, with no render test's numbers moving.
+- **`apps/rigplan/src/lookthrough.{h,cpp}`**:
+  - which camera the view follows (the one selected last, or pinned);
+  - its nominal camera, or `realise()`'s, never falling back from one to the other;
+  - the scene and view `writeCapture` renders through;
+  - a resolution step of 1/1 to 1/8 with the capture's tolerance multiplied by the divisor;
+  - the display: the recording made without noise, its curve undone in float, shown as sRGB.
+- **Measured: interpolation error doubles with each halving** for all six strong cameras. So at the
+  capture's own tolerance, an eighth refuses three of them; at the step's, all build.
+- **Five sabotages, all caught**; two first failed to build under `-Werror` and were redone.
+
 ### Update 2026-11-01 — M15 slice 9, sub-slice 9c built: the plan's assets, shared
 
 The third of slice 9's ten commits, no change in what is drawn. `ctest -j8` **1644/1644** Release with

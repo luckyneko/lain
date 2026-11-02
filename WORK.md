@@ -15044,7 +15044,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
    specification catalogue (copy in, save out). Live-verified by the repo owner. **Planned 2026-10-30
-   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a, 9b and 9c built 2026-11-01**.
+   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a to 9d built 2026-11-01**.
 
 ### Found while grilling — each owes a check
 
@@ -18421,6 +18421,79 @@ warning-clean, format-check clean. The `--frames` smokes of both apps exit 0 wit
   - What the jobs made not moving the assets revision: 4 (the readers never build with the assets).
   - The meshes made on every update: 2.
 
+#### Sub-slice 9d built (2026-11-01): `camera::scaled` and the look-through's choice
+
+`lain::camera::scaled`, and rigplan's driver-free `lookthrough.{h,cpp}`: which camera the camera view
+follows, its nominal or realised model and pose, the scene and view a capture of it uses, its resolution
+steps, and how its recording is shown. Nothing draws it yet; that is 9e. `ctest -j8` **1651/1651**
+Release with video, camera and Ceres on (+7), and **1510/1510** with all three off (+7); warning-clean,
+format-check clean.
+
+- **`camera::scaled(model, ImageGeometry) -> ModelResult`**, in `cameramodel.h`.
+  - The intrinsics scale about the image's top-left corner, (-0.5, -0.5): fx and cx + 0.5 by the ratio
+    of the widths, fy and cy + 0.5 by the heights'.
+  - The distortion is unchanged, since it acts on normalised coordinates.
+  - It goes through `create`, so an empty image, or one of a new shape whose corners the distortion
+    folds before, is refused.
+  - `libs/render/test/testcameras.h` now scales through it. Its arithmetic is the same as before, so no
+    render test's numbers move.
+- **`lookthrough`**:
+  - **`LookChoice` and `follow`**: a camera selected becomes the one looked through, unless pinned;
+    anything else selected keeps it; a camera the plan no longer has is let go of, with its pin.
+    Before any camera is selected there is nothing to look through, not a default one.
+  - **`lookThrough(plan, camera, LookModel)`** gives the camera's name, full-size model, pose, its
+    sensor's `Recorder`, and what places the rest of the plan (the `NominalLayout` or the `Realisation`),
+    or why it cannot be looked through.
+    - Nominal is `nominalLayout()`'s camera, so it works on a plan with a problem elsewhere.
+    - Realised is `realise()`'s, model and pose, and a plan `realise()` refuses gives its reasons, never
+      a fall back to the nominal camera, which would show a picture no capture holds.
+  - **`lookThroughScene` and `captureView`** are what `writeCapture` renders through: `renderScene` over
+    that layout, uncut, with the plan's own lights alone, and `{planFromCamera}`.
+  - **`lookDivisor`** picks the step, 1/1 to 1/8, the largest that fits the pane, and 1/8 when nothing
+    does. **`modelAtDivisor`** scales the model to it, **`settingsAtDivisor`** multiplies the
+    interpolation tolerance by the divisor, the capture's divided by the step.
+  - **`displayed(recorder, light)`** records with no noise, converts to float, undoes the recording's
+    curve and applies sRGB in one pass, then goes to opaque RGBA8. So a 16-bit recording is not cut to
+    8 bits before its curve is undone, and a Grey sensor shows in grey.
+- **Measured: an interpolation error in pixels doubles with each halving**, which is what the step rule
+  rests on. The six strong cameras of `testcameras.h` at 640 x 480, at 1/1, 1/2, 1/4 and 1/8:
+
+  | model | 1/1 | 1/2 | 1/4 | 1/8 |
+  |---|---|---|---|---|
+  | pinhole | 0.00033 | 0.00063 | 0.00125 | 0.00249 |
+  | Brown-Conrady 5 | 0.00146 | 0.00290 | 0.00575 | 0.01128 |
+  | inverse Brown-Conrady 5 | 0.00053 | 0.00103 | 0.00205 | 0.00409 |
+  | modified Brown-Conrady 5 | 0.00146 | 0.00290 | 0.00577 | 0.01132 |
+  | rational 8 | 0.00238 | 0.00474 | 0.00947 | 0.01890 |
+  | Kannala-Brandt 4 | 0.00025 | 0.00049 | 0.00099 | 0.00197 |
+
+  So at the capture's own 0.01, an eighth refuses three of the six, and the rational is just inside at
+  a quarter. At the step's tolerance every one builds at every step, with the same margin as at full
+  size.
+- **The cases** (+7):
+  - `test_cameramodel.cpp` (1): every pixel corner of a model scaled to a half, an eighth, 1.5 times
+    and a new aspect has the ray of the point at the same fraction of the original, through all six
+    models, to 1e-12, and an empty image is refused.
+  - `test_lookthrough.cpp` (6):
+    - the view follows the selected camera, keeps it through other selections and a pin, and lets a
+      removed one go;
+    - Realised is `realise()`'s model and pose exactly (with deviation scales and placement tolerances
+      set, so it differs from Nominal), and a camera inside its pole gives `realise()`'s reasons while
+      Nominal still looks through it;
+    - the scene is `renderScene`'s for the layout, with no ambient;
+    - the step for a pane, a quarter's model, and the step's tolerance;
+    - every strong camera's ray table builds at every step, and the capture's tolerance refuses the
+      rational at an eighth;
+    - the picture shown is the light recorded, to a code, for every curve, depth and channel set.
+- **Five sabotages, all caught.** Two first failed to build under `-Werror` (an unused parameter each),
+  so the old binary answered until they were redone to build.
+  - Scaling about the pixel centre: 24 assertions of the `scaled` case.
+  - Scaling the coefficients too: 20.
+  - The capture's tolerance at every step: models 1, 3 and 4 refused at an eighth, and the step's
+    tolerance check.
+  - Realised falling back to Nominal: 10 assertions.
+  - The recording's codes shown as they are, tagged sRGB: 84 assertions, every curve but sRGB's.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -18683,7 +18756,7 @@ row here**. A row is cheap to delete and expensive to leave.
   landed and a drag baking every size it passed through (*After 8f*). **Slice 9 planned 2026-10-30** as
   ten commits, 9a to 9j: the current frame and the Timeline, the plan's assets shared between panes,
   looking through a camera, a distance pass and the visibility map, and the specification catalogue,
-  ending in a gui-mode checklist (*Slice 9 planned*); 9a, 9b and 9c built 2026-11-01. 7a's two
+  ending in a gui-mode checklist (*Slice 9 planned*); 9a to 9d built 2026-11-01. 7a's two
   findings and 5e's were decided on 2026-10-29: a registration verdict takes the camera models as
   given (documented, ADR-0016), the estimate's "floor" is renamed `flat`, a reference rather than a
   bound, and the CPU device gets every logical core (ADR-0028). CI run 40984683848 renders the example

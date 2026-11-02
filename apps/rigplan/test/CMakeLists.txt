@@ -13,6 +13,7 @@ add_executable(test-rigplan-app
 	test_picking.cpp
 	test_overlays.cpp
 	test_gizmo.cpp
+	test_lookthrough.cpp
 	test_panes.cpp
 	test_timeline.cpp
 	test_viewing.cpp
@@ -20,7 +21,9 @@ add_executable(test-rigplan-app
 )
 
 target_compile_features(test-rigplan-app PRIVATE cxx_std_17)
-target_include_directories(test-rigplan-app PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../examples/src")
+# The examples' builder, and libs/render/test's strongly distorted cameras, which the look-through's steps
+# are held to.
+target_include_directories(test-rigplan-app PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../examples/src" "${lain_SOURCE_DIR}/libs/render/test")
 # The committed examples, which the test reads and compares with what the builder writes.
 target_compile_definitions(test-rigplan-app PRIVATE LAIN_RIGPLAN_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../examples")
 # No camera backend is registered here, deliberately: it is how the test sees a capture refused for

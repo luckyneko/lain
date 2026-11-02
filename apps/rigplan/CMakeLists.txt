@@ -4,13 +4,14 @@
 
 # The editor's driver-free units: the document, the selection, the edits, the orbit, the picking, the
 # overlays and the gizmo bridge (M15 slice 8d), the session file and the panes (8e), the asset jobs
-# (8f), the Timeline's scale and pane (9b), and the plan's assets every pane shares (9c). Compiled ONCE
-# into an object library that rigplan and its test both link, as flowview-tested is, so the test
-# exercises the one editor the app runs and the two cannot drift. An OBJECT library, so every object is
-# linked whether or not something names it. Its link libraries are what these sources need, PUBLIC so
-# each consumer inherits them. Driver-free: the panes draw with ImGui, which a headless ImGui frame runs
-# in the test, lain::render is here for its View and Segment, and nothing opens a window or a device
-# (Vulkan::Loader resolves archimedes' vk* symbols at link time, as for flowview-tested).
+# (8f), the Timeline's scale and pane (9b), the plan's assets every pane shares (9c), and looking
+# through a camera (9d). Compiled ONCE into an object library that rigplan and its test both link, as
+# flowview-tested is, so the test exercises the one editor the app runs and the two cannot drift. An
+# OBJECT library, so every object is linked whether or not something names it. Its link libraries are
+# what these sources need, PUBLIC so each consumer inherits them. Driver-free: the panes draw with ImGui,
+# which a headless ImGui frame runs in the test, lain::render is here for its View, Segment and ray
+# tables, and nothing opens a window or a device (Vulkan::Loader resolves archimedes' vk* symbols at
+# link time, as for flowview-tested).
 add_library(rigplan-tested OBJECT
 	src/assetjobs.cpp
 	src/planassets.cpp
@@ -23,6 +24,7 @@ add_library(rigplan-tested OBJECT
 	src/gizmo.cpp
 	src/session.cpp
 	src/viewing.cpp
+	src/lookthrough.cpp
 	src/timelinescale.cpp
 	src/panes/fields.cpp
 	src/panes/inspector.cpp

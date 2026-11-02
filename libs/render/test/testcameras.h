@@ -8,7 +8,7 @@
 // testcameraparameters.h's are mild, since the capture pass has to bend straight lines visibly:
 // Brown-Conrady's corner sits at a distorted radius of 1 with a k2 that keeps it from folding, and
 // the fisheye sees about 168 degrees across its diagonal. A scale keeps the field of view and changes
-// the resolution.
+// the resolution, through camera::scaled, as looking through a camera at a reduced resolution does.
 
 #include <lain/camera/cameramodel.h>
 
@@ -22,9 +22,8 @@ namespace lain::render::testing
 	{
 		const double f = index == 5 ? 260 : 400;
 		camera::CameraModelParameters p;
-		p.image = {std::uint32_t(640 * scale), std::uint32_t(480 * scale)};
-		// A pixel's centre scales about the image's corner: u + 0.5 is the distance to its left edge.
-		p.intrinsics = {f * scale, 1.01 * f * scale, (330.25 + 0.5) * scale - 0.5, (236.75 + 0.5) * scale - 0.5};
+		p.image = {640, 480};
+		p.intrinsics = {f, 1.01 * f, 330.25, 236.75};
 		switch (index)
 		{
 			case 0:
@@ -46,6 +45,9 @@ namespace lain::render::testing
 				p.distortion = camera::KannalaBrandt4{0.02, -0.005, 0.001, 0.0};
 				break;
 		}
-		return p;
+		if (scale == 1)
+			return p;
+		const camera::ImageGeometry image{std::uint32_t(640 * scale), std::uint32_t(480 * scale)};
+		return camera::scaled(*camera::CameraModel::create(p).model, image).model->parameters();
 	}
 } // namespace lain::render::testing

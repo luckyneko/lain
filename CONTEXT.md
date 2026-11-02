@@ -833,8 +833,8 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   model, distortion included; the only source of a synthetic capture's pixels. It shares the
   viewport's scene and shading, and differs only in whose eye it is and which projection it uses.
   Looking through a camera while designing is a live capture render at reduced resolution, through
-  its nominal or its realised model, so what it shows is what the capture will hold. _Avoid_:
-  viewport render, camera preview.
+  its nominal or its realised model, so what it shows is what the capture will hold, shown as its
+  sensor records it but without the noise. _Avoid_: viewport render, camera preview.
 - **Intermediate image** — what a capture render rasterises before it remaps: pinhole **faces** at
   the camera's optical centre, each cut into **tiles** at most 4096 a side. It is either the front
   face alone or the cube's faces (front and four sides, never the back, since every camera model sees
