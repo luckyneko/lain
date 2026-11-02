@@ -792,10 +792,12 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
 - **Specification catalogue** — a document of camera, sensor, lens and light specifications kept for
   reuse. A rig plan copies a specification in from one, and can save one back out; it never links to
   one, so a catalogue edit changes no rig plan behind its back. A specification is known by its name
-  within its kind, compared exactly. A camera specification brings its sensor and lens with it, and
-  one whose name the other side already uses for a different specification arrives under a numbered
-  name, with the references to it following; saving out over a different one asks first. _Avoid_:
-  library, linked spec.
+  within its kind, compared exactly, and two of one name are one specification when their documents
+  are equal, so the one already there stands. A camera specification brings its sensor and lens with
+  it. Copied in, one whose name the plan already uses for a different specification arrives under a
+  numbered name, with the references to it following. Saved out over a different one, it asks:
+  replace the catalogue's, keep both (the one saved numbered), or cancel. A file that is not a
+  catalogue is never written over. _Avoid_: library, linked spec.
 - **Synthetic capture** — footage rendered from a rig plan, in the same shape as footage of a real
   rig, together with its ground truth: the camera models and poses the footage was actually rendered
   with. Judging a rig plan means running calibration or registration on its synthetic capture and

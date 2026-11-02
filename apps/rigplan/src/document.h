@@ -1,5 +1,7 @@
 #pragma once
 
+#include "edits.h"
+
 #include <lain/data/value.h>
 #include <lain/editor/undo.h>
 #include <lain/rigplan/rigplan.h>
@@ -70,6 +72,27 @@ namespace rigplan
 	// bytes. On success the document lives at `path` and has nothing unsaved. Returns why it could not be
 	// written, or empty; a failed write changes nothing about the document.
 	std::vector<std::string> saveDocument(Document& document, const std::filesystem::path& path);
+
+	// The outcome of reading a specification catalogue document (CONTEXT.md, "Specification catalogue").
+	struct CatalogueFileRead
+	{
+		std::optional<lain::rigplan::Specifications> specifications;
+		bool exists = false;			   // whether a file is there at all
+		std::vector<std::string> problems; // empty exactly when `specifications` is set, each naming the file
+	};
+
+	// The catalogue document at `path`: its specifications, or every reason there are none, one of which
+	// is that no file is there. A catalogue holds no paths, so nothing in it is read against a folder.
+	// Needs the data codecs registered.
+	CatalogueFileRead readCatalogue(const std::filesystem::path& path);
+
+	// Saves the specification `kind` `name` of `specifications` out to the catalogue at `path` (saveOut,
+	// edits.h), which is written when it is Saved: a new catalogue where no file is. A file there that does
+	// not read as a catalogue is Refused and left as it was, byte for byte, since writing over it would
+	// lose whatever it holds; a clash with no answer, or Cancel, writes nothing. Saving out is not an edit
+	// of the plan, so it is no step of its history.
+	SaveOutResult saveCatalogue(const std::filesystem::path& path, const lain::rigplan::Specifications& specifications, SpecificationKind kind,
+								const std::string& name, std::optional<ClashAnswer> answer);
 
 	// The plan as an undo snapshot: rigPlanToValue, its paths as held. Never rebased against a folder.
 	lain::data::Value snapshot(const lain::rigplan::RigPlan& plan);

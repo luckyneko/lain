@@ -1400,6 +1400,24 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-02 — M15 slice 9, sub-slice 9i built: copying specifications in and saving them out
+
+The ninth of slice 9's ten commits, driver-free. `ctest -j8` **1683/1683** Release with video, camera
+and Ceres on (+8), and **1542/1542** with all three off (+8); warning-clean, format-check clean. Full
+notes in WORK.md's *Sub-slice 9i built*; CONTEXT.md's *Specification catalogue* is amended.
+
+- **One merge routine for both directions.**
+  - A camera specification brings its sensor and lens, references following.
+  - Two of one name are one specification when their documents are equal.
+  - A different one is numbered (copy in, Keep both), overwrites (Replace), or is named as a clash
+    (save out, unanswered).
+- **`copyIn`** is one edit, one step of history; it is refused, changing nothing, without its parts.
+- **`saveOut`** comes to Saved, Clash (nothing saved, the clashes named), Cancelled or Refused.
+- **`readCatalogue` / `saveCatalogue`** are the file side. A file that is not a catalogue is refused and
+  left byte for byte.
+- **Five sabotages, all caught.** The plan predicted "leave references" would fail `check()`; it does
+  not (the plan has its own "hd" to name), so a case asserting the arrived reference catches it.
+
 ### Update 2026-11-02 — M15 slice 9, sub-slice 9h built: the visibility pane
 
 The eighth of slice 9's ten commits. `ctest -j8` **1675/1675** Release with video, camera and Ceres on

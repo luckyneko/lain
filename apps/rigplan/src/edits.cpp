@@ -3,6 +3,7 @@
 #include <lain/core/length.h>
 #include <lain/rigplan/mover.h>
 #include <lain/rigplan/realisation.h>
+#include <lain/rigplan/serialize/rigplan.h> // catalogueToValue: what "identical" compares
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -738,5 +739,163 @@ namespace rigplan
 	{
 		const rp::Path* path = namesAMover(mover) ? pathOf(plan, mover.id) : nullptr;
 		return path && rp::pathProblems(*path).empty();
+	}
+
+	// A specification alone in a set, so two can be compared as the documents a catalogue holds them in.
+	static rp::Specifications alone(const rp::SensorSpecification& s) { return {{s}, {}, {}, {}}; }
+	static rp::Specifications alone(const rp::LensSpecification& l) { return {{}, {l}, {}, {}}; }
+	static rp::Specifications alone(const rp::CameraSpecification& c) { return {{}, {}, {c}, {}}; }
+	static rp::Specifications alone(const rp::LightSpecification& l) { return {{}, {}, {}, {l}}; }
+
+	// Two specifications are identical when their documents are equal: every field, as it is saved.
+	template <typename T>
+	static bool identical(const T& a, const T& b)
+	{
+		return rp::catalogueToValue(alone(a)) == rp::catalogueToValue(alone(b));
+	}
+
+	// How a merge meets a different specification of the name it brings.
+	enum class OnClash
+	{
+		Number,	 // brought under a numbered name
+		Replace, // the one there is overwritten
+		Report,	 // left, and named as a clash
+	};
+
+	// What merging one specification, with its parts, into a set came to.
+	struct Merged
+	{
+		bool changed = false;
+		std::string name;				  // what it is called in the set after
+		std::vector<std::string> clashes; // under OnClash::Report
+		std::string refusal;
+	};
+
+	// `item` brought into `into` under `onClash`: the name it has there after.
+	template <typename T>
+	static std::string bring(std::vector<T>& into, T item, SpecificationKind kind, OnClash onClash, Merged& merged)
+	{
+		T* there = byName(into, item.name);
+		if (!there)
+		{
+			merged.changed = true;
+			into.push_back(item);
+			return item.name;
+		}
+		if (identical(*there, item))
+			return item.name;
+		switch (onClash)
+		{
+			case OnClash::Report:
+				merged.clashes.push_back(format("{} '{}'", kindName(kind), item.name));
+				return item.name;
+			case OnClash::Replace:
+				merged.changed = true;
+				*there = std::move(item);
+				return there->name;
+			case OnClash::Number:
+				merged.changed = true;
+				item.name = numbered(item.name, namesOf(into)); // unique ignoring case is unique exactly
+				into.push_back(item);
+				return item.name;
+		}
+		return item.name;
+	}
+
+	// The specification `kind` `name` of `from` brought into `into`, a camera specification with its
+	// sensor and lens, its references following the names they come to have there. ONE routine, so that
+	// copying in and saving out cannot disagree about what a specification brings or when two are one.
+	static Merged merge(rp::Specifications& into, const rp::Specifications& from, SpecificationKind kind, const std::string& name, OnClash onClash)
+	{
+		Merged merged;
+		const auto missing = [&]
+		{ merged.refusal = format("there is no {} '{}' to copy", kindName(kind), name); };
+		switch (kind)
+		{
+			case SpecificationKind::Sensor:
+				if (const rp::SensorSpecification* s = rp::findSensor(from, name))
+					merged.name = bring(into.sensors, *s, kind, onClash, merged);
+				else
+					missing();
+				break;
+			case SpecificationKind::Lens:
+				if (const rp::LensSpecification* l = rp::findLens(from, name))
+					merged.name = bring(into.lenses, *l, kind, onClash, merged);
+				else
+					missing();
+				break;
+			case SpecificationKind::Light:
+				if (const rp::LightSpecification* l = rp::findLight(from, name))
+					merged.name = bring(into.lights, *l, kind, onClash, merged);
+				else
+					missing();
+				break;
+			case SpecificationKind::Camera:
+			{
+				const rp::CameraSpecification* camera = rp::findCamera(from, name);
+				if (!camera)
+				{
+					missing();
+					break;
+				}
+				const rp::SensorSpecification* sensor = rp::findSensor(from, camera->sensor);
+				const rp::LensSpecification* lens = rp::findLens(from, camera->lens);
+				if (!sensor || !lens)
+				{
+					merged.refusal = format("camera specification '{}' names {} '{}', which is not beside it to copy", name,
+											sensor ? "lens" : "sensor", sensor ? camera->lens : camera->sensor);
+					break;
+				}
+				rp::CameraSpecification brought = *camera;
+				brought.sensor = bring(into.sensors, *sensor, SpecificationKind::Sensor, onClash, merged);
+				brought.lens = bring(into.lenses, *lens, SpecificationKind::Lens, onClash, merged);
+				merged.name = bring(into.cameras, std::move(brought), kind, onClash, merged);
+				break;
+			}
+		}
+		return merged;
+	}
+
+	EditResult copyIn(rp::RigPlan& plan, const rp::Specifications& catalogue, SpecificationKind kind, const std::string& name)
+	{
+		rp::Specifications into = plan.specifications;
+		const Merged merged = merge(into, catalogue, kind, name, OnClash::Number);
+		if (!merged.refusal.empty())
+			return EditResult::refused(merged.refusal);
+		if (!merged.changed)
+			return EditResult::nothing();
+		plan.specifications = std::move(into);
+		return EditResult::done(Selection::specificationOf(kind, merged.name));
+	}
+
+	SaveOutResult saveOut(const rp::Specifications& catalogue, const rp::Specifications& specifications, SpecificationKind kind,
+						  const std::string& name, std::optional<ClashAnswer> answer)
+	{
+		SaveOutResult result;
+		if (answer == ClashAnswer::Cancel)
+		{
+			result.outcome = SaveOutResult::Outcome::Cancelled;
+			return result;
+		}
+		const OnClash onClash = !answer ? OnClash::Report : *answer == ClashAnswer::Replace ? OnClash::Replace
+																							: OnClash::Number;
+		result.catalogue = catalogue;
+		Merged merged = merge(result.catalogue, specifications, kind, name, onClash);
+		if (!merged.refusal.empty())
+		{
+			result.refusal = std::move(merged.refusal);
+			result.catalogue = {};
+			return result;
+		}
+		if (!merged.clashes.empty())
+		{
+			result.outcome = SaveOutResult::Outcome::Clash;
+			result.clashes = std::move(merged.clashes);
+			result.catalogue = {};
+			return result;
+		}
+		result.outcome = SaveOutResult::Outcome::Saved;
+		result.savedAs = std::move(merged.name);
+		return result;
 	}
 } // namespace rigplan

@@ -8,6 +8,7 @@
 #include <lain/rigplan/serialize/rigplan.h>
 #include <lain/string/format.h>
 
+#include <system_error>
 #include <utility>
 
 namespace rigplan
@@ -98,6 +99,54 @@ namespace rigplan
 		document.path = absolute;
 		document.dirty = false;
 		return {};
+	}
+
+	CatalogueFileRead readCatalogue(const fs::path& path)
+	{
+		const fs::path absolute = fs::absolute(path);
+		CatalogueFileRead read;
+		std::error_code error;
+		read.exists = fs::exists(absolute, error);
+		if (!read.exists)
+		{
+			read.problems.push_back(lain::string::format("{}: there is no catalogue there", absolute.string()));
+			return read;
+		}
+		std::optional<lain::data::Value> value = lain::io::data::load(lain::core::Uri::fromPath(absolute));
+		if (!value)
+		{
+			read.problems.push_back(lain::string::format("{}: could not be read as a document", absolute.string()));
+			return read;
+		}
+		rp::CatalogueRead catalogue = rp::catalogueFromValue(*value);
+		for (const std::string& problem : catalogue.problems)
+			read.problems.push_back(lain::string::format("{}: {}", absolute.string(), problem));
+		read.specifications = std::move(catalogue.specifications);
+		return read;
+	}
+
+	SaveOutResult saveCatalogue(const fs::path& path, const rp::Specifications& specifications, SpecificationKind kind, const std::string& name,
+								std::optional<ClashAnswer> answer)
+	{
+		const fs::path absolute = fs::absolute(path);
+		CatalogueFileRead read = readCatalogue(absolute);
+		if (read.exists && !read.specifications)
+		{
+			SaveOutResult refused;
+			refused.refusal = lain::string::format("{} is not a catalogue this build reads, so it is left as it is: {}", absolute.string(),
+												   read.problems.empty() ? std::string("it does not read") : read.problems.front());
+			return refused;
+		}
+		SaveOutResult result = saveOut(read.specifications.value_or(rp::Specifications{}), specifications, kind, name, answer);
+		if (result.outcome != SaveOutResult::Outcome::Saved)
+			return result;
+		if (!lain::io::data::save(lain::core::Uri::fromPath(absolute), rp::catalogueToValue(result.catalogue)))
+		{
+			SaveOutResult failed;
+			failed.refusal = lain::string::format("{}: could not be written", absolute.string());
+			return failed;
+		}
+		return result;
 	}
 
 	lain::data::Value snapshot(const rp::RigPlan& plan)

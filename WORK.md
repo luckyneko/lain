@@ -15044,7 +15044,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
    specification catalogue (copy in, save out). Live-verified by the repo owner. **Planned 2026-10-30
-   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a to 9d built 2026-11-01, 9e to 9h 2026-11-02**.
+   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a to 9d built 2026-11-01, 9e to 9i 2026-11-02**.
 
 ### Found while grilling — each owes a check
 
@@ -18814,6 +18814,64 @@ the checklist after 9j are this commit's. A temporary probe drove it to take the
   | The map under way shown | the shown case |
   | The picture south up | the picture case |
 
+#### Sub-slice 9i built (2026-11-02): copying specifications in and saving them out
+
+`copyIn` and `saveOut` in `edits`, and `readCatalogue` and `saveCatalogue` in `document`, driver-free.
+`ctest -j8` **1683/1683** Release with video, camera and Ceres on (+8), and **1542/1542** with all three
+off (+8); warning-clean, format-check clean. CONTEXT.md's *Specification catalogue* is amended.
+
+- **One merge routine serves both directions**, so copying in and saving out cannot disagree about what
+  a specification brings or when two are one.
+  - A camera specification brings its sensor and lens, its references following the names they come
+    to have.
+  - A specification of a name already there is the one there when their documents are equal
+    (`catalogueToValue` of each alone).
+  - A different one is numbered (copy in, or Keep both), overwrites (Replace), or is named as a clash
+    (saving out with no answer).
+- **`copyIn(plan, catalogue, kind, name)`**:
+  - it works on a copy of the plan's specifications and commits it whole, so a refusal changes
+    nothing;
+  - it is one `EditResult`, so one step of history, selecting what arrived under the name it arrived
+    as;
+  - it is `nothing()` when everything it brings is the plan's already;
+  - it is refused when the catalogue lacks the specification, or a camera specification's sensor or
+    lens.
+- **`saveOut(catalogue, specifications, kind, name, answer)`** comes to one of:
+  - **Saved**, with the catalogue it makes and the name saved as;
+  - **Clash**, with no answer: nothing saved, and each clashing specification named ("sensor 'hd'");
+  - **Cancelled**;
+  - **Refused**.
+
+  One answer covers every clash of one save: a camera specification's sensor and lens and itself.
+- **`readCatalogue(path)`** gives the specifications, whether a file is there at all, and each problem
+  naming the file. **`saveCatalogue(path, …)`** is `saveOut` against a file: a new catalogue where none
+  is. A file that does not read as a catalogue (not a document, or a document of another kind) is
+  Refused and left byte for byte. Saving out is not an edit of the plan.
+- **Numbering** reuses the duplicate's `numbered`, which avoids names ignoring case. A name unique
+  ignoring case is unique exactly, while the clash itself is found by exact name ("HD" is not "hd").
+- **The cases** (`apps/rigplan/test/test_catalogue.cpp`, eight):
+  - a camera specification brings its sensor and lens;
+  - an identical one is the plan's, and copying it again is nothing;
+  - a different one arrives numbered with its references following, the plan's own untouched, and
+    names compare exactly;
+  - a missing part is refused, changing nothing;
+  - copying in is one undo step;
+  - a file that is not a catalogue is refused and left byte for byte, whatever the answer;
+  - out to a new catalogue and back in is the same;
+  - a clash asks, and Cancel, Replace and Keep both each do what they say.
+- **Five sabotages, all caught.** One first failed to build under `-Werror` and was redone so that it
+  compiled. **The plan's prediction for "leave references" was wrong**: `check()` does not fail, since
+  the plan has its own "hd" for the left reference to name. What catches it is the case asserting the
+  arrived camera specification names "hd 2", whose model is 1080p.
+
+  | Sabotage | Fails |
+  |---|---|
+  | Compare names alone | the numbered case and the clash case |
+  | Never reuse an identical one | the identical case, the numbered case and the clash case |
+  | Leave references | the numbered case and the clash case |
+  | An unanswered clash saved anyway | the clash case |
+  | Overwrite a file that is not a catalogue | the not-a-catalogue case |
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -19076,7 +19134,7 @@ row here**. A row is cheap to delete and expensive to leave.
   landed and a drag baking every size it passed through (*After 8f*). **Slice 9 planned 2026-10-30** as
   ten commits, 9a to 9j: the current frame and the Timeline, the plan's assets shared between panes,
   looking through a camera, a distance pass and the visibility map, and the specification catalogue,
-  ending in a gui-mode checklist (*Slice 9 planned*); 9a to 9d built 2026-11-01, 9e to 9h 2026-11-02. 9e found
+  ending in a gui-mode checklist (*Slice 9 planned*); 9a to 9d built 2026-11-01, 9e to 9i 2026-11-02. 9e found
   three-poles in a 20 m room holding 8.7 GB; storing a texture widened it to RGBA32F first, and fixed,
   it holds 4.1 GB (*The 20 m room's footprint*). 7a's two
   findings and 5e's were decided on 2026-10-29: a registration verdict takes the camera models as

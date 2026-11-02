@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace rigplan
 {
@@ -97,4 +98,48 @@ namespace rigplan
 	// Whether setKey can key what `mover` names at all: a board, a prop mover, or a key of either, whose
 	// path can be followed. What a Key action greys out by; the action itself says why when it cannot.
 	bool canKey(const lain::rigplan::RigPlan& plan, const Selection& mover);
+
+	// Copies the specification `kind` `name` of `catalogue` into `plan`, and selects it (CONTEXT.md,
+	// "Specification catalogue"). A camera specification brings its sensor and lens with it. A
+	// specification the plan has identically, an equal document value, is the plan's already; one whose
+	// name the plan has for a different specification arrives under a numbered name ("hd 2"), the camera
+	// specification's reference to it following. Names compare exactly, as check() compares them. Refused,
+	// changing nothing, when the catalogue lacks it, or lacks a camera specification's sensor or lens. One
+	// edit, so one step of history; nothing() when everything it brings is the plan's already.
+	EditResult copyIn(lain::rigplan::RigPlan& plan, const lain::rigplan::Specifications& catalogue, SpecificationKind kind,
+					  const std::string& name);
+
+	// How saving a specification out answers a clash: the catalogue has a different specification of its
+	// name, or of its sensor's or lens's.
+	enum class ClashAnswer
+	{
+		Replace,  // the catalogue's is overwritten
+		KeepBoth, // it is saved under a numbered name, the references to it following
+		Cancel,	  // nothing is saved
+	};
+
+	// What saving a specification out came to.
+	struct SaveOutResult
+	{
+		enum class Outcome
+		{
+			Saved,
+			Clash, // a clash with no answer: nothing saved, and `clashes` says what to ask about
+			Cancelled,
+			Refused,
+		};
+		Outcome outcome = Outcome::Refused;
+		lain::rigplan::Specifications catalogue; // what the catalogue becomes, when Saved
+		std::string savedAs;					 // the specification's name in it, when Saved
+		std::vector<std::string> clashes;		 // each clashing specification, "sensor 'hd'", when it Clashed
+		std::string refusal;					 // why not, when Refused
+	};
+
+	// Saves the specification `kind` `name` of `specifications` out to `catalogue`: copyIn the other way.
+	// A camera specification takes its sensor and lens, and one the catalogue has identically is the
+	// catalogue's. A different one of its name there is a clash, which `answer` answers; unanswered, nothing
+	// is saved and the clashes are named, so the question can be asked. Refused when `specifications`
+	// lacks it or its parts. In memory: saveCatalogue (document.h) is the same against a file.
+	SaveOutResult saveOut(const lain::rigplan::Specifications& catalogue, const lain::rigplan::Specifications& specifications,
+						  SpecificationKind kind, const std::string& name, std::optional<ClashAnswer> answer);
 } // namespace rigplan
