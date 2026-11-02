@@ -11348,6 +11348,17 @@ caught it (*Catch2's `FAIL` and `SKIP` do not return*, under Outstanding work). 
 - **To reproduce the Linux leg**, configure a fresh build directory with
   `CXXFLAGS=-D_GLIBCXX_ASSERTIONS cmake -S . -B build-assert -DCMAKE_BUILD_TYPE=Debug`. CMake reads
   `CXXFLAGS` on the first configure only.
+- **feature/M9's own run after the push (41367433505, 2026-11-02) failed one timing check on macOS
+  Release**, 1341 of 1342. *Exact and approximate search at 8192 features a view* requires approximate
+  matching to be more than 3 times faster than exact; it measured 4.75 s against 12.68 s, 2.67 times,
+  where one core alone measured 13. Its recall held at 97%. The same hardened build had passed on the
+  scratch run, and the case's whole duration on the last three macOS runs was 59 s, 82 s and 49 s with
+  no pattern, so this reads as runner load under `ctest --parallel 4`. Whether the hardening narrowed the
+  margin cannot be told from these runs.
+- **The four `[scale]` cases of `test-camera-opencv-features` now run serially**, discovered by a second
+  `catch_discover_tests` call with `RUN_SERIAL`, as `test-camera-ceres`' are (*After sub-slice 10e*,
+  item 8). Each times or measures what it runs, which means something only while it has the cores.
+  Discovery still registers 13 cases and ctest 1334 in all, and exactly those four carry the property.
 
 ### Not covered, and deliberately
 

@@ -1422,6 +1422,10 @@ Continuous integration.
   and skips as before, so they found nothing MSVC Debug had not; macOS Release 1342 of 1342 hardened,
   every release-only case run. The Debug leg's Build and Test steps were slower than at e8ccd74 (521 s
   and 337 s, against 320 s and 191 s), but one run each cannot say by how much.
+- **Follow-up, 2026-11-02:** feature/M9's run after the push (41367433505) was green but for one timing
+  check on macOS Release: approximate search 2.67 times faster than exact, against the 3 its case
+  requires. The four OpenCV `[scale]` cases now run serially, as the Ceres ones do. Full notes in the same
+  WORK.md section.
 
 ### Update 2026-11-01 — Catch2's `FAIL` and `SKIP` do not return
 

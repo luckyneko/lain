@@ -47,4 +47,9 @@ target_link_libraries(test-camera-opencv-features
 	PRIVATE lain::warnings Catch2::Catch2WithMain
 )
 lain_opencv_stage_runtime(test-camera-opencv-features)
-catch_discover_tests(test-camera-opencv-features TEST_PREFIX "(camera::opencv) ")
+catch_discover_tests(test-camera-opencv-features TEST_PREFIX "(camera::opencv) " TEST_SPEC "~[scale]")
+# The scale cases time what they measure, and a time means something only while the case has the
+# cores: on macOS CI under `ctest --parallel 4`, approximate search came out 2.67 times faster than
+# exact, against the 3 its case requires and the 13 measured on one core alone. So ctest runs them
+# with nothing beside them, as test-camera-ceres runs its own.
+catch_discover_tests(test-camera-opencv-features TEST_PREFIX "(camera::opencv) " TEST_SPEC "[scale]" PROPERTIES RUN_SERIAL TRUE)
