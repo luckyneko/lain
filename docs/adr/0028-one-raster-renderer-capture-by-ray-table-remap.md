@@ -173,6 +173,8 @@ own `unproject` builds on the CPU. The camera model is never ported to a shader.
   distance moves by up to half that angle times the surface's slope to the ray; measured, 0.53 of that
   bound on both devices. Vulkan only promises 1/16. A free `onFace` says where a direction lands on a
   face drawn as a View turned by `cameraFromFace`, and a ray table's own `onFace` delegates to it.)*
+  *(Built 2026-11-02, M15 sub-slice 9g: of the five faces, a camera draws only those its image
+  reaches, so a narrow lens draws one. A cell's distance is read at the nearest texel, never blended.)*
   It has no cube or array-layer texture, so an intermediate image past 180° is six 2D textures in
   a descriptor array. Neither SwiftShader nor MoltenVK has `wideLines`, so overlay lines are 1 px.
 - **What the CPU device found, once lain ran on it (2026-10-24, slice 3d).** Every `[gpu]` case runs

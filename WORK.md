@@ -15044,7 +15044,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
    specification catalogue (copy in, save out). Live-verified by the repo owner. **Planned 2026-10-30
-   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a to 9d built 2026-11-01, 9e and 9f 2026-11-02**.
+   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a to 9d built 2026-11-01, 9e to 9g 2026-11-02**.
 
 ### Found while grilling — each owes a check
 
@@ -18666,6 +18666,74 @@ three off (+6); warning-clean, format-check clean. Every `[gpu]` case ran on Met
   newer than its source. The second and third read the first's numbers exactly (0.000122 and 0.3537),
   which is how it showed, and were redone on a clean shader with the file touched after each restore.
 
+#### Sub-slice 9g built (2026-11-02): the visibility map
+
+`libs/rigplan/scene`'s `visibility.{h,cpp}`, and `staticScene` beside `renderScene`. `ctest -j8`
+**1669/1669** Release with video, camera and Ceres on (+9), and **1528/1528** with all three off (+9);
+warning-clean, format-check clean. The end-to-end case ran on Metal and on the CPU device.
+
+- **`staticScene(plan, layout, assets)`**: the room's present surfaces, the planes, the boxes, the poles,
+  and each prop with neither a path nor a clip, from the nominal layout.
+  - Every instance shares one plain material, with no texture and no light, so it needs only the
+    meshes, never a picture or a bake.
+  - A static prop whose mesh is not loaded yet is a problem naming it, which is what 9h waits on.
+  - **Deviation: it lives in `scene.{h,cpp}`, not `visibility.h`**, as a second mode of the walk
+    `renderScene` makes (`Drawn::Static`), so the map's geometry and the drawn scene cannot disagree
+    about what a plan holds.
+- **`visibilityGrid(plan, height, cell)`**: 5 cm cells over the room's floor, centred, in whole cells.
+  Without a room, it covers the rectangle holding what the plan places: mounts, planes, boxes, props,
+  and the keys of its paths.
+- **`visibilityCameras(layout)`**: each camera with a nominal pose and model.
+- **`visibilityFaces(model, size)`**: 1024-texel, 90-degree cube faces. **Deviation: only the faces the
+  image reaches, not all five.** A face is reached when a ray of the image's border falls on it (within
+  0.02 of a unit component, a pixel's step being under that). The front face is also reached when the
+  camera's axis lies inside the image, the one face an image can hold without its border touching it.
+  A narrow lens draws one face, and the strong fisheye all five. A case holds every pixel's ray of all
+  six strong cameras to a face its camera has.
+- **`faceView(face, planFromCamera)`**: the face as a pinhole turned by `cameraFromFace`, with a
+  capture's depth range, its near plane pulled in by the face's corner (1/sqrt 3).
+- **`seenBy(grid, camera, faces)`** needs no device.
+  - A cell must lie within a capture's depth range, and its ray must meet the plane within 85 degrees
+    of the normal.
+  - `project()` and `contains()` must put it inside the image.
+  - The distance at the nearest texel on the face its ray falls on, never a blend, must reach it, within
+    r times (slope / focal + 1e-5). One texel's angle at the face's centre covers the nearest texel's
+    half-diagonal and Vulkan's least rasteriser precision (9f) together.
+- **`VisibilityMap`**: a camera's cells added (replacing what it saw before), a count and the cameras
+  per cell, in the order counted.
+- **Measured** (a near-empty scene, so a floor on the cost): a 1024-texel face takes **0.67 ms on Metal
+  and 4.7 ms on the CPU device**, and `seenBy` over a 20 m room's 160,000 cells takes **0.77 ms**. So
+  9h's "a few faces a frame" is cheap on Metal.
+- **The cases** (`test_visibility.cpp`, nine): eight count over distances cast on the CPU, so each is
+  judged against its rule with nothing drawn. The ninth draws a rig plan's static scene through
+  `renderDistance`.
+  - the static scene keeps and drops what it should, and names a static prop still loading;
+  - a camera's faces are the ones its image reaches;
+  - a bare floor counts 1 exactly where `project()` lands in the image, to the grazing cutoff (3170
+    cells counted, 23,907 in the image beyond the cutoff);
+  - a box's shadow counts 0 (1346 shadow cells);
+  - the fisheye counts nothing outside its image (53,384 such cells);
+  - two cameras count 2 where they overlap (921 cells), and each cell names its cameras;
+  - a cell is judged by the texel nearest its ray;
+  - the grid spans the room's floor, or what the plan places;
+  - end to end, on both devices: 71 shadow and 2277 lit cells, every one right.
+- **Deviation: the blend sabotage has a case of its own.** The plan aimed it at the two-camera claim,
+  but bilinear and nearest differ only within a texel of a silhouette, which is exactly where a case
+  must defer to the rule. So a new case puts something a centimetre away on every texel round the
+  nearest but not on it, and the cell must still count. The two-camera claim gets its own sabotage.
+- **Seven sabotages, all caught.** One first failed to build under `-Werror` twice (an unused name
+  each time), and was redone until it compiled.
+
+  | Sabotage | Fails |
+  |---|---|
+  | Tolerance 0 | every count case but the faces and the grid: the floor hides itself |
+  | A tolerance far too large (half the distance) | the shadow case and the end-to-end case |
+  | In view by face, not by `project()` | the fisheye, the bare floor, the two cameras and the end-to-end |
+  | Blend distances, not the nearest texel | the nearest-texel case alone |
+  | A cell counts whether seen, not by how many | the two-camera case alone |
+  | No front face for an axis inside the image | the faces case and the fisheye |
+  | A path prop kept in the static scene | the static scene case alone |
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -18928,7 +18996,7 @@ row here**. A row is cheap to delete and expensive to leave.
   landed and a drag baking every size it passed through (*After 8f*). **Slice 9 planned 2026-10-30** as
   ten commits, 9a to 9j: the current frame and the Timeline, the plan's assets shared between panes,
   looking through a camera, a distance pass and the visibility map, and the specification catalogue,
-  ending in a gui-mode checklist (*Slice 9 planned*); 9a to 9d built 2026-11-01, 9e and 9f 2026-11-02. 9e found
+  ending in a gui-mode checklist (*Slice 9 planned*); 9a to 9d built 2026-11-01, 9e to 9g 2026-11-02. 9e found
   three-poles in a 20 m room holding 8.7 GB; storing a texture widened it to RGBA32F first, and fixed,
   it holds 4.1 GB (*The 20 m room's footprint*). 7a's two
   findings and 5e's were decided on 2026-10-29: a registration verdict takes the camera models as

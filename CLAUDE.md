@@ -1400,6 +1400,33 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-02 — M15 slice 9, sub-slice 9g built: the visibility map
+
+The seventh of slice 9's ten commits, driver-free but for one `[gpu]` case. `ctest -j8` **1669/1669**
+Release with video, camera and Ceres on (+9), and **1528/1528** with all three off (+9); warning-clean,
+format-check clean. Full notes in WORK.md's *Sub-slice 9g built*; CONTEXT.md's *Visibility map* and
+ADR-0028 are amended.
+
+- **`staticScene`** draws what never moves: the room, planes, boxes, poles, and props with neither a
+  path nor a clip. It uses one plain material, with no texture and no light, so it needs meshes only.
+  It is a second mode of `renderScene`'s own walk, in `scene.{h,cpp}` (a deviation).
+- **`visibility.{h,cpp}`** holds:
+  - `visibilityGrid`: 5 cm cells over the room's floor, or over what the plan places;
+  - `visibilityCameras`;
+  - `visibilityFaces` and `faceView`;
+  - `seenBy`, the count, which needs no device;
+  - `VisibilityMap`.
+- **A cell is seen when** it is within a capture's range and 85 degrees of the plane's normal, inside
+  the image by `project()`, and the distance at the nearest texel reaches it. The tolerance is r times
+  (slope / focal + 1e-5).
+- **Deviation: a camera draws only the faces its image reaches.** Those are the faces its border's rays
+  fall on, plus the front face when its axis is inside the image. A narrow lens draws one face, a
+  fisheye five.
+- **Measured:** a 1024-texel face takes 0.67 ms on Metal and 4.7 ms on the CPU device, and `seenBy` over
+  160,000 cells takes 0.77 ms.
+- **Deviation: the plan's blend sabotage could not be seen by the two-camera case**, since blending
+  differs only within a texel of a silhouette, so it has a case of its own. Seven sabotages, all caught.
+
 ### Update 2026-11-02 — M15 slice 9, sub-slice 9f built: `Renderer::renderDistance` and a free `onFace`
 
 The sixth of slice 9's ten commits, and what 9g's visibility map stands on. `ctest -j8` **1660/1660**

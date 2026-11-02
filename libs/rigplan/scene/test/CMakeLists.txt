@@ -1,11 +1,13 @@
 # lain::rigplan::scene tests (Catch2). test_scene.cpp checks the scene on the CPU, writing a picture
 # and a mesh clip to scratch paths where an asset must load; test_scenerender.cpp draws one on the first
-# device archimedes ranks, and SKIPs where there is none.
+# device archimedes ranks, and SKIPs where there is none. test_visibility.cpp counts the visibility map
+# over distances it casts on the CPU, and once over what renderDistance draws.
 
 add_executable(test-rigplan-scene
 	test_scene.cpp
 	test_sceneassets.cpp
 	test_scenerender.cpp
+	test_visibility.cpp
 )
 
 target_compile_features(test-rigplan-scene PRIVATE cxx_std_17)

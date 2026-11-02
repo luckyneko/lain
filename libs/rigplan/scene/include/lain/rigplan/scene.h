@@ -186,4 +186,12 @@ namespace lain::rigplan
 	// The same, of `plan` as it was meant (nominalLayout), for an editor: a pole whose mount, or a light
 	// that, has no pose there is not drawn, since check() already says why.
 	SceneResult renderScene(const RigPlan& plan, const NominalLayout& layout, const SceneAssets& assets, std::size_t frame);
+
+	// What of `plan` never moves, as it was meant, for the visibility map (visibility.h): the room's
+	// present surfaces, the planes, the boxes, the poles, and each prop with neither a path nor a clip.
+	// A board, a prop with a path (even one of a single key) and a clip prop, whose shape changes, are
+	// left out. Every instance shares one plain material and the scene holds no texture and no light,
+	// since a distance pass reads none, so it needs no picture or bake: only the meshes. A static prop
+	// whose mesh `assets` lacks is a problem, and the scene is incomplete until it has it.
+	SceneResult staticScene(const RigPlan& plan, const NominalLayout& layout, const SceneAssets& assets);
 } // namespace lain::rigplan

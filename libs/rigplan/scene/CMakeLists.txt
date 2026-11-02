@@ -1,11 +1,13 @@
 # lain::rigplan::scene — a rig plan as lain::render draws it (WORK.md M15 slice 3c): its assets loaded
-# once, and its realisation at a frame turned into a render scene. A separate target, so lain::rigplan
+# once, and its realisation at a frame turned into a render scene; and the visibility map counted over
+# what of it never moves (slice 9g). A separate target, so lain::rigplan
 # stays free of the GPU and of io; built beside lain::render, which it needs.
 #
 # Its namespace is lain::rigplan, as lain::rigplan::serialize's is.
 
 add_library(rigplan-scene STATIC
 	src/scene.cpp
+	src/visibility.cpp
 )
 add_library(lain::rigplan::scene ALIAS rigplan-scene)
 

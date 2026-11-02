@@ -519,10 +519,31 @@ namespace lain::rigplan
 	// A surface waiting on its asset: a matte mid grey, never the white a missing texture leaves.
 	static constexpr image::ColorRGBf kAwaited{0.5f, 0.5f, 0.5f};
 
-	static SceneResult buildScene(const RigPlan& plan, const Poses& poses, const SceneAssets& assets, std::size_t frame)
+	// What a scene draws: everything at its frame, or only what never moves, untextured and unlit, for
+	// a distance pass (staticScene).
+	enum class Drawn
+	{
+		Everything,
+		Static,
+	};
+
+	static SceneResult buildScene(const RigPlan& plan, const Poses& poses, const SceneAssets& assets, std::size_t frame, Drawn drawn)
 	{
 		SceneResult result;
 		render::Scene& scene = result.scene;
+		const bool still = drawn == Drawn::Static;
+
+		// Every surface of a static scene shares one plain material: a distance pass reads none.
+		std::optional<std::size_t> plainMaterial;
+		auto plain = [&]
+		{
+			if (!plainMaterial)
+			{
+				plainMaterial = scene.materials.size();
+				scene.materials.push_back(render::Material{});
+			}
+			return *plainMaterial;
+		};
 
 		// A picture several surfaces show is one texture of the scene.
 		std::map<const image::Image*, std::size_t> textureIndex;
@@ -560,6 +581,11 @@ namespace lain::rigplan
 				result.problems.push_back(string::format("{}: the assets hold no mesh for it", surface.owner));
 				continue;
 			}
+			if (still)
+			{
+				place(assets.surfaces[i], math::Mat4d{1.0}, {plain()}, surface.object);
+				continue;
+			}
 			render::Material material;
 			material.specular = surface.material->specular;
 			material.shininess = float(surface.material->shininess);
@@ -586,6 +612,8 @@ namespace lain::rigplan
 
 		for (const Prop& prop : plan.props)
 		{
+			if (still && (prop.path || prop.clip))
+				continue; // it moves, or changes shape
 			const std::string owner = string::format("prop '{}'", prop.name);
 			const auto found = assets.props.find(prop.id);
 			if (found == assets.props.end())
@@ -596,6 +624,12 @@ namespace lain::rigplan
 			const std::shared_ptr<const mesh::MeshClip>& clip = found->second.clip;
 			const std::size_t shown = mesh::clipFrame(*clip, frame, plan.timeline.rate);
 			std::shared_ptr<const mesh::Mesh> mesh(clip, &clip->frames[shown]); // shares the clip's lifetime, copies nothing
+			if (still)
+			{
+				const std::vector<std::size_t> materials(mesh->materials.size(), plain());
+				place(std::move(mesh), planFromProp(prop, frame), materials, {SceneObject::Prop, prop.id});
+				continue;
+			}
 			std::vector<std::size_t> materials;
 			for (const mesh::Material& own : mesh->materials)
 			{
@@ -617,6 +651,8 @@ namespace lain::rigplan
 
 		for (const BoardMover& board : plan.boards)
 		{
+			if (still)
+				break; // a board is a mover
 			const auto found = assets.boards.find(board.id);
 			if (found == assets.boards.end())
 			{
@@ -651,13 +687,18 @@ namespace lain::rigplan
 				result.problems.push_back(string::format("pole '{}': the assets hold no mesh for it", plan.mounts[i].name));
 				continue;
 			}
+			if (still)
+			{
+				place(found->second, planFromMount->matrix(), {plain()}, {SceneObject::Pole, plan.mounts[i].id});
+				continue;
+			}
 			render::Material grey;
 			grey.diffuse = {0.5f, 0.5f, 0.5f};
 			scene.materials.push_back(grey);
 			place(found->second, planFromMount->matrix(), {scene.materials.size() - 1}, {SceneObject::Pole, plan.mounts[i].id});
 		}
 
-		for (std::size_t i = 0; i < plan.lights.size(); ++i)
+		for (std::size_t i = 0; i < plan.lights.size() && !still; ++i)
 		{
 			const std::optional<math::RigidTransformd> planFromLight = poses.light(i);
 			if (!planFromLight)
@@ -698,7 +739,7 @@ namespace lain::rigplan
 				return std::nullopt;
 			return realisation.lights[i].planFromLight;
 		};
-		SceneResult result = buildScene(plan, poses, assets, frame);
+		SceneResult result = buildScene(plan, poses, assets, frame, Drawn::Everything);
 		if (!mountsMatch)
 			result.problems.push_back("the realisation is not of this rig plan: its mounts differ");
 		if (!lightsMatch)
@@ -706,21 +747,35 @@ namespace lain::rigplan
 		return result;
 	}
 
+	// The poses a nominal layout gives, where it has them. They read `plan` and `layout`, which must
+	// outlive them.
+	static Poses nominalPoses(const RigPlan& plan, const NominalLayout& layout)
+	{
+		const RigPlan* p = &plan;
+		const NominalLayout* l = &layout;
+		Poses poses;
+		poses.mount = [p, l](std::size_t i) -> std::optional<math::RigidTransformd>
+		{
+			if (i >= l->mounts.size() || l->mounts[i].id != p->mounts[i].id)
+				return std::nullopt;
+			return l->mounts[i].planFromMount;
+		};
+		poses.light = [p, l](std::size_t i) -> std::optional<math::RigidTransformd>
+		{
+			if (i >= l->lights.size() || l->lights[i].id != p->lights[i].id)
+				return std::nullopt;
+			return l->lights[i].planFromLight;
+		};
+		return poses;
+	}
+
 	SceneResult renderScene(const RigPlan& plan, const NominalLayout& layout, const SceneAssets& assets, std::size_t frame)
 	{
-		Poses poses;
-		poses.mount = [&](std::size_t i) -> std::optional<math::RigidTransformd>
-		{
-			if (i >= layout.mounts.size() || layout.mounts[i].id != plan.mounts[i].id)
-				return std::nullopt;
-			return layout.mounts[i].planFromMount;
-		};
-		poses.light = [&](std::size_t i) -> std::optional<math::RigidTransformd>
-		{
-			if (i >= layout.lights.size() || layout.lights[i].id != plan.lights[i].id)
-				return std::nullopt;
-			return layout.lights[i].planFromLight;
-		};
-		return buildScene(plan, poses, assets, frame);
+		return buildScene(plan, nominalPoses(plan, layout), assets, frame, Drawn::Everything);
+	}
+
+	SceneResult staticScene(const RigPlan& plan, const NominalLayout& layout, const SceneAssets& assets)
+	{
+		return buildScene(plan, nominalPoses(plan, layout), assets, 0, Drawn::Static);
 	}
 } // namespace lain::rigplan

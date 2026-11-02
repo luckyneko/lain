@@ -853,10 +853,12 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   _Avoid_: scene graph (nothing in it is a hierarchy), world when the drawable content is meant.
 - **Visibility map** — a count over a plane of the rig plan (the floor, or a chosen height), of how
   many cameras see each cell unoccluded. Registration needs shared views, so a cell one camera sees
-  is still a blind spot for it. It is geometry alone, of what never moves, read from how far each
-  camera sees along its rays and lain's own projection: it describes the installation, not one frame. It counts from the
-  rig plan's nominal poses, as the viewport draws them. Predicting which camera pairs would register
-  is left to registering a capture. _Avoid_: coverage (calibration's
+  is still a blind spot for it. It is geometry alone, of what never moves (the room, planes, boxes,
+  poles, and props with neither a path nor a clip), read from how far each camera sees along its rays
+  and lain's own projection: it describes the installation, not one frame. A cell is seen when the
+  projection puts it inside the camera's image and the distance along its ray reaches it. It counts
+  from the rig plan's nominal poses, as the viewport draws them. Predicting which camera pairs would
+  register is left to registering a capture. _Avoid_: coverage (calibration's
   coverage is how widely features spread over one image), heatmap when the count is meant.
 - **Sensor specification** — the body half of a camera: resolution, pixel pitch, its physical body,
   and where its optical centre sits relative to the mount, with the tolerances on sensor placement,
