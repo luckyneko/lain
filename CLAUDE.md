@@ -1400,6 +1400,34 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-02 — M15 slice 9, sub-slice 9h built: the visibility pane
+
+The eighth of slice 9's ten commits. `ctest -j8` **1675/1675** Release with video, camera and Ceres on
+(+6), and **1534/1534** with all three off (+6); warning-clean, format-check clean. **gui-mode NOT driven
+by hand** (checklist steps 8 and 12, after 9j). Full notes in WORK.md's *Sub-slice 9h built*.
+
+- **`VisibilitySchedule`**, driver-free, makes the map:
+  - it hands out each face once, camera by camera;
+  - it counts a camera on the pool once its faces are back;
+  - it holds at most 4 cameras' faces until collected;
+  - a new revision starts again, dropping stale faces;
+  - nothing starts during a gesture or while a mesh loads.
+
+  **Added: the map shown is the last one completed**, so a remade one replaces it whole.
+- **`VisibilityPane`**, tabbed with the camera view, has Floor or Height, progress, the picture (north
+  up), a legend, and a hover with the cell's count and cameras. It draws faces for 4 ms a frame, only on
+  screen. A bake landing starts nothing; a prop's mesh landing does.
+- **Colours by the dataviz skill**: one blue hue for an ordinal count, darkest for fewest on the dark
+  surface, and no camera as bare floor. Its validator needs node, which is not here, so its checks were
+  computed in Python.
+- **Found:**
+  - the gui filters textures linearly, so the picture draws each cell as an integer block;
+  - the front docked tab is the first window to call `Begin`, not the one docked first or last.
+- **Measured on three-poles:** complete at frame 4 on both devices. The first face pays the distance
+  pipeline's first use (5.6 ms Metal, 32 ms CPU device), and later faces take 0.6 ms and 1.1 to 1.5 ms.
+  Quitting mid-map exits 0.
+- **Six sabotages, all caught**; two were redone to build first.
+
 ### Update 2026-11-02 — M15 slice 9, sub-slice 9g built: the visibility map
 
 The seventh of slice 9's ten commits, driver-free but for one `[gpu]` case. `ctest -j8` **1669/1669**

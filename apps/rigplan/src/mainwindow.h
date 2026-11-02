@@ -9,6 +9,7 @@
 #include "panes/statusbar.h"
 #include "panes/timeline.h"
 #include "viewportpane.h"
+#include "visibilitypane.h"
 
 #include <lain/app/windowdelegate.h>
 #include <lain/gui/context.h>
@@ -19,7 +20,7 @@
 namespace rigplan
 {
 	// rigplan's window: the menu bar, the Outliner on the left, the Inspector over the camera view
-	// (cameraviewpane.h) on the right, the Viewport (viewportpane.h) between them with the Timeline and
+	// (cameraviewpane.h) and the visibility map (visibilitypane.h), tabbed, on the right, the Viewport (viewportpane.h) between them with the Timeline and
 	// then Issues below it, and the status bar, in one docking layout kept in
 	// ~/.rigplan/imgui.ini. It owns the gui Context and the AppContext the panes share. Its title is the
 	// plan's file name, with a * while it has unsaved changes. ImGui is single-threaded: every call here
@@ -43,10 +44,12 @@ namespace rigplan
 		TimelinePane m_timeline;
 		IssuesPane m_issues;
 		StatusBarPane m_statusBar;
-		// The Viewport and the camera view, which hold GPU state, so they are made once the window's device
-		// exists (onInit) and let go of in onShutdown, before the gui context and the device go.
+		// The Viewport, the camera view and the visibility map, which hold GPU state, so they are made once
+		// the window's device exists (onInit) and let go of in onShutdown, before the gui context and the
+		// device go.
 		std::unique_ptr<ViewportPane> m_viewport;
 		std::unique_ptr<CameraViewPane> m_cameraView;
+		std::unique_ptr<VisibilityPane> m_visibility;
 
 		// Stamp the default docks on the next frame: on the first run (no saved layout), with
 		// --reset-layout, or from View > Reset Layout.

@@ -4,8 +4,8 @@
 
 # The editor's driver-free units: the document, the selection, the edits, the orbit, the picking, the
 # overlays and the gizmo bridge (M15 slice 8d), the session file and the panes (8e), the asset jobs
-# (8f), the Timeline's scale and pane (9b), the plan's assets every pane shares (9c), and looking
-# through a camera (9d). Compiled ONCE into an object library that rigplan and its test both link, as
+# (8f), the Timeline's scale and pane (9b), the plan's assets every pane shares (9c), looking through a
+# camera (9d), and how the visibility map is made and shown (9h). Compiled ONCE into an object library that rigplan and its test both link, as
 # flowview-tested is, so the test exercises the one editor the app runs and the two cannot drift. An
 # OBJECT library, so every object is linked whether or not something names it. Its link libraries are
 # what these sources need, PUBLIC so each consumer inherits them. Driver-free: the panes draw with ImGui,
@@ -26,6 +26,8 @@ add_library(rigplan-tested OBJECT
 	src/viewing.cpp
 	src/lookthrough.cpp
 	src/timelinescale.cpp
+	src/visibilityschedule.cpp
+	src/visibilityview.cpp
 	src/panes/fields.cpp
 	src/panes/inspector.cpp
 	src/panes/issues.cpp
@@ -47,15 +49,16 @@ target_link_libraries(rigplan-tested
 	PRIVATE lain::warnings
 )
 
-# The app: the headless `render`, and the editor's window (M15 slice 8e), Viewport (8f) and camera view
-# (9e), which need a device and so are not under ctest; the other panes, and everything the Viewport and
-# the camera view compute, are rigplan-tested's.
+# The app: the headless `render`, and the editor's window (M15 slice 8e), Viewport (8f), camera view (9e)
+# and visibility map (9h), which need a device and so are not under ctest; the other panes, and everything
+# the Viewport, the camera view and the map compute, are rigplan-tested's.
 add_executable(rigplan
 	src/main.cpp
 	src/rigplanapp.cpp
 	src/mainwindow.cpp
 	src/viewportpane.cpp
 	src/cameraviewpane.cpp
+	src/visibilitypane.cpp
 )
 
 target_compile_features(rigplan PRIVATE cxx_std_17)

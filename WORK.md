@@ -15044,7 +15044,7 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
    specification catalogue (copy in, save out). Live-verified by the repo owner. **Planned 2026-10-30
-   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a to 9d built 2026-11-01, 9e to 9g 2026-11-02**.
+   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a to 9d built 2026-11-01, 9e to 9h 2026-11-02**.
 
 ### Found while grilling — each owes a check
 
@@ -18734,6 +18734,86 @@ warning-clean, format-check clean. The end-to-end case ran on Metal and on the C
   | No front face for an axis inside the image | the faces case and the fisheye |
   | A path prop kept in the static scene | the static scene case alone |
 
+#### Sub-slice 9h built (2026-11-02): the visibility pane
+
+`VisibilitySchedule` (`visibilityschedule.{h,cpp}`) and the map's picture (`visibilityview.{h,cpp}`) in
+`rigplan-tested`, and `VisibilityPane` (`visibilitypane.{h,cpp}`, executable-only, as the camera view
+is). `ctest -j8` **1675/1675** Release with video, camera and Ceres on (+6), and **1534/1534** with all
+three off (+6); warning-clean, format-check clean. **gui-mode NOT driven by hand**: steps 8 and 12 of
+the checklist after 9j are this commit's. A temporary probe drove it to take the numbers below.
+
+- **The schedule, driver-free:**
+  - It hands out each face a map needs once, camera by camera in the plan's order. It works out a
+    camera's faces when its turn comes, since that unprojects its image's border.
+  - A camera whose faces are all back is counted on the process pool (`seenBy`), never on the frame
+    loop.
+  - At most 4 cameras' faces are held at once. A camera's are let go of when `poll()` collects its
+    count, and no further camera starts until one is.
+  - A new revision starts again. A face drawn for the abandoned map is not kept, and a count still
+    running finishes and is dropped. None starts during a gesture, or while the static scene waits on
+    a mesh still loading.
+  - **Added: the map shown is the last one completed**, so a remade map replaces the old one whole
+    rather than filling in over it with counts too low. Until a first is complete, the one under way
+    is shown. An edit undone back to the map shown abandons the one under way.
+- **The pane**, docked as a tab beside the camera view:
+  - Floor or Height (a drag of the height is a gesture);
+  - how far the map has got, or why it is out of date;
+  - the picture, north up and fitted whole;
+  - a legend that writes each count;
+  - a hover giving the cell's position, its count and its cameras' names, in the plan's order.
+
+  Its rules:
+  - It draws faces for 4 ms a frame, and only while it is on screen.
+  - A new map is wanted when the plan, the plane or the static scene changes. A bake landing does not
+    change the static scene, so it starts nothing; a prop's mesh landing does. This is compared by
+    each instance's mesh pointer and placement.
+  - It owns its renderer and its copy of the static scene, and is released before the camera view in
+    `onShutdown`, its counts waited for first.
+- **The colours (the dataviz skill's method).** A count is ordinal, so it takes one hue: the blue ramp,
+  steps 600 to 100, for 1 to 6+ cameras. On the gui's dark surface the ramp's anchor flips, darkest
+  for the fewest.
+  - No camera is the skill's dark surface, `#1a1a19`: bare floor.
+  - One camera is its own step, since one alone is still a blind spot for registration.
+  - The skill's validator needs node, which this machine lacks. So its ordinal checks were computed in
+    Python: OKLab lightness rises about 0.095 a step, and the fewest-camera step clears 2.15:1
+    against the floor colour.
+  - A count is never colour alone: the legend writes it, and the hover says it.
+- **Found: the gui filters every texture linearly** (ImGui's own sampler), so a magnified map a texel a
+  cell would blend two counts into a colour the legend lacks. The picture draws each cell as an
+  integer block, about a texel a pixel and at most 2048 a side, so filtering softens only the pixel at
+  a cell's edge.
+- **Found: which docked tab is in front.** It is the first window to call `Begin`, not the first or the
+  last docked: with Visibility docked either side of the camera view, the camera view, drawn first, was
+  in front. That is the default meant, since the camera view follows the selection.
+- **Measured, three-poles, the map in front** (a temporary probe; six narrow cameras, one face each):
+  - **The map is complete at frame 4 on both devices.**
+  - The first face pays the device's first use of the distance pipeline: 5.6 ms on Metal, 32 ms on
+    the CPU device. Every later face takes 0.6 ms on Metal and 1.1 to 1.5 ms on the CPU device.
+  - The static scene's first upload takes 4.7 ms on Metal.
+  - So the worst frame is the first, 11 ms and 34 ms, and later ones keep to the budget.
+  - Quitting at frames 1, 2 and 3, with the map still being made, exits 0 with nothing on stderr on
+    both devices.
+- **The cases** (`apps/rigplan/test/test_visibility.cpp`, six, faces "drawn" as distances filled by
+  hand):
+  - every face is handed out once and the map is what `seenBy` gives, inline and on a pool of three;
+  - a new revision starts again, and a stale face is not kept;
+  - at most so many cameras are held until collected;
+  - nothing starts during a gesture or while waiting, and the last map stays;
+  - the map shown is the last completed;
+  - the picture is a floor plan in the legend's colours, the pointer finds its cell, and the scale
+    keeps to about a texel a pixel.
+- **Six sabotages, all caught**, each by the case aimed at it. Two first failed to build under
+  `-Werror` (an unused variable, an unused parameter) and were redone so that they compiled.
+
+  | Sabotage | Fails |
+  |---|---|
+  | A camera counted before every face is back | the faces case |
+  | A face of an abandoned map kept | the revision case |
+  | No limit on the cameras held | the held case |
+  | A map started during a gesture | the gesture case |
+  | The map under way shown | the shown case |
+  | The picture south up | the picture case |
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -18996,7 +19076,7 @@ row here**. A row is cheap to delete and expensive to leave.
   landed and a drag baking every size it passed through (*After 8f*). **Slice 9 planned 2026-10-30** as
   ten commits, 9a to 9j: the current frame and the Timeline, the plan's assets shared between panes,
   looking through a camera, a distance pass and the visibility map, and the specification catalogue,
-  ending in a gui-mode checklist (*Slice 9 planned*); 9a to 9d built 2026-11-01, 9e to 9g 2026-11-02. 9e found
+  ending in a gui-mode checklist (*Slice 9 planned*); 9a to 9d built 2026-11-01, 9e to 9h 2026-11-02. 9e found
   three-poles in a 20 m room holding 8.7 GB; storing a texture widened it to RGBA32F first, and fixed,
   it holds 4.1 GB (*The 20 m room's footprint*). 7a's two
   findings and 5e's were decided on 2026-10-29: a registration verdict takes the camera models as

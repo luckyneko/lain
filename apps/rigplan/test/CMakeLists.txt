@@ -17,6 +17,7 @@ add_executable(test-rigplan-app
 	test_panes.cpp
 	test_timeline.cpp
 	test_viewing.cpp
+	test_visibility.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../examples/src/examples.cpp"
 )
 
