@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../appcontext.h"
+#include "specifications.h"
 
 #include <filesystem>
 
@@ -16,6 +17,8 @@ namespace rigplan
 	//   Edit: Undo, Redo, Key at Current Frame (K), Duplicate, Delete;
 	//   Add: Pole, Fixed Point, Camera, Light, Plane, Box, Prop..., Board, Room (a camera or light on the
 	//        selected mount);
+	//   Specifications: Copy In from Catalogue..., Save to Catalogue..., Save to New Catalogue...
+	//        (specifications.h);
 	//   View: Frame All (Home), Frame Selected (F), Preview Light, Frustum Depth, Reset Layout.
 	// New, Open, Open Recent and Quit replace or end the open plan, so each goes through the document's
 	// guard, as does the window's close button (MainWindow::onCloseRequested): with unsaved work it asks
@@ -25,9 +28,10 @@ namespace rigplan
 	{
 		void draw(AppContext& ctx, lain::app::Application& app, bool& resetLayout);
 
-		// The unsaved-changes question, opened when the guard holds a request, which carries the request
-		// out once answered. Call LATE in the frame, so the modal sits on a clean id stack.
-		void drawConfirmModal(AppContext& ctx, lain::app::Application& app);
+		// The menu bar's questions: the unsaved-changes one, opened when the guard holds a request, which
+		// carries the request out once answered, and the Specifications menu's picker and clash question.
+		// Call LATE in the frame, so the modals sit on a clean id stack. Escape is Cancel in each.
+		void drawModals(AppContext& ctx, lain::app::Application& app);
 
 		// Ask for `request` through the guard. Returns whether it was carried out now: with nothing
 		// unsaved it is, and otherwise it waits for the modal.
@@ -46,5 +50,7 @@ namespace rigplan
 	private:
 		void perform(AppContext& ctx, lain::app::Application& app, const DocumentRequest& request);
 		void drawOpenRecent(AppContext& ctx, lain::app::Application& app);
+
+		SpecificationsMenu m_specifications; // stateless too: what it waits on is the AppContext's
 	};
 } // namespace rigplan

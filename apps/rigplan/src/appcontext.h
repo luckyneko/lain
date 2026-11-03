@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -30,6 +31,30 @@ namespace rigplan
 		};
 		Kind kind = Kind::New;
 		std::filesystem::path path;
+	};
+
+	// A catalogue read to copy a specification in from, while the Specifications menu's picker is open on
+	// it: the file, what it holds, and what is picked in it.
+	struct CopyingIn
+	{
+		std::filesystem::path file;
+		lain::rigplan::Specifications catalogue;
+		SpecificationKind kind = SpecificationKind::Camera;
+		std::string name; // the specification of `kind` picked, empty while none is
+		bool ask = true;  // the picker is still to be opened
+	};
+
+	// A specification being saved out to a catalogue that has a different one of its name (or of its
+	// sensor's or lens's), waiting on the answer: Replace, Keep both or Cancel (saveOut, edits.h).
+	struct SavingOut
+	{
+		std::filesystem::path file;
+		// The plan's specifications when the save was asked for, so the answer saves what was asked about.
+		lain::rigplan::Specifications specifications;
+		SpecificationKind kind = SpecificationKind::Sensor;
+		std::string name;
+		std::vector<std::string> clashes; // "sensor 'hd'", each one the catalogue has differently
+		bool ask = true;				  // the question is still to be opened
 	};
 
 	// What the View menu sets and the Viewport reads.
@@ -62,6 +87,10 @@ namespace rigplan
 		// Where the session is kept: sessionFile() in the app, empty in a test, which writes nothing.
 		std::filesystem::path sessionFile;
 		lain::editor::DocumentGuard<DocumentRequest> guard;
+		// The Specifications menu's picker, while it is open, and a save out waiting on its clash's answer
+		// (panes/specifications.h). Held here, as the guard's request is, so the menu keeps nothing itself.
+		std::optional<CopyingIn> copyingIn;
+		std::optional<SavingOut> savingOut;
 
 		// Counts the plans opened or made, so the Viewport knows to frame a new one: the view is not kept
 		// with a plan, so opening one frames all of it.

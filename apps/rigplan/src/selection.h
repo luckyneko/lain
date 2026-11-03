@@ -34,6 +34,10 @@ namespace rigplan
 		Light,
 	};
 
+	// A specification kind as a person reads it in a sentence: "sensor", "lens", "camera specification",
+	// "light specification".
+	const char* kindName(SpecificationKind kind);
+
 	// What the editor has selected, by IDENTITY, never by position in a list: an undo rebuilds the plan,
 	// and a selection that named an index would then name whatever came to stand there. So a selection
 	// survives an undo, and one whose object the undo removed is recognised as gone (exists()).

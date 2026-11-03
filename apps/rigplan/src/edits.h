@@ -109,6 +109,11 @@ namespace rigplan
 	EditResult copyIn(lain::rigplan::RigPlan& plan, const lain::rigplan::Specifications& catalogue, SpecificationKind kind,
 					  const std::string& name);
 
+	// What `after` holds that `before` does not, each named as a sentence names it ("sensor 'hd 2'"),
+	// camera specifications first, then sensors, lenses and lights: what copyIn brought, since it only
+	// ever adds. What the Specifications menu's picker says a copy would bring, and its note what it did.
+	std::vector<std::string> arrivals(const lain::rigplan::Specifications& before, const lain::rigplan::Specifications& after);
+
 	// How saving a specification out answers a clash: the catalogue has a different specification of its
 	// name, or of its sensor's or lens's.
 	enum class ClashAnswer

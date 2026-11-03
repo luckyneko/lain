@@ -29,8 +29,8 @@ namespace lain::editor
 	public:
 		// Ask for a destructive request. With nothing `unsaved` it comes back, to carry out now.
 		// Otherwise it is held for the user's answer and nothing comes back. A new request replaces one
-		// still held: a question closed without an answer (Escape) leaves its request behind, and the
-		// next ask supersedes it.
+		// still held: a question closed without an answer leaves its request behind, and the next ask
+		// supersedes it.
 		std::optional<Request> request(Request request, bool unsaved)
 		{
 			m_pending.reset();

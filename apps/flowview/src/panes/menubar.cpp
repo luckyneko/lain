@@ -156,8 +156,7 @@ namespace flowview
 			gui::OpenPopup("Unsaved changes");
 		if (gui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
 		{
-			// Escape closes the modal without resolving; the request left in the guard is harmless
-			// (nothing reads it outside this block, and the next request replaces it).
+			// Only a button answers it: ImGui closes no modal on Escape. (rigplan's makes Escape its Cancel.)
 			gui::TextUnformatted(unsavedQuestion(ctx.guard.pending()));
 			const auto resolve = [&](editor::UnsavedAnswer answer)
 			{

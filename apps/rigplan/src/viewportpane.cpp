@@ -1,6 +1,7 @@
 #include "viewportpane.h"
 
 #include "overlays.h"
+#include "panes/keys.h"
 #include "picking.h"
 #include "viewing.h"
 
@@ -101,11 +102,11 @@ namespace rigplan
 				return;
 			}
 
-			// W moves and E turns what is selected; never while a text field has the keys.
+			// W moves and E turns what is selected; never while a text field or a question has the keys.
 			const ImGuiIO& io = gui::GetIO();
-			if (!io.WantTextInput && gui::IsKeyPressed(ImGuiKey_W, false))
+			if (keysAreFree() && gui::IsKeyPressed(ImGuiKey_W, false))
 				m_mode = GizmoMode::Translate;
-			if (!io.WantTextInput && gui::IsKeyPressed(ImGuiKey_E, false))
+			if (keysAreFree() && gui::IsKeyPressed(ImGuiKey_E, false))
 				m_mode = GizmoMode::Rotate;
 			if (gui::RadioButton("Move (W)", m_mode == GizmoMode::Translate))
 				m_mode = GizmoMode::Translate;

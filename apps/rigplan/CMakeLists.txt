@@ -5,7 +5,7 @@
 # The editor's driver-free units: the document, the selection, the edits, the orbit, the picking, the
 # overlays and the gizmo bridge (M15 slice 8d), the session file and the panes (8e), the asset jobs
 # (8f), the Timeline's scale and pane (9b), the plan's assets every pane shares (9c), looking through a
-# camera (9d), and how the visibility map is made and shown (9h). Compiled ONCE into an object library that rigplan and its test both link, as
+# camera (9d), how the visibility map is made and shown (9h), and the Specifications menu (9j). Compiled ONCE into an object library that rigplan and its test both link, as
 # flowview-tested is, so the test exercises the one editor the app runs and the two cannot drift. An
 # OBJECT library, so every object is linked whether or not something names it. Its link libraries are
 # what these sources need, PUBLIC so each consumer inherits them. Driver-free: the panes draw with ImGui,
@@ -33,6 +33,7 @@ add_library(rigplan-tested OBJECT
 	src/panes/issues.cpp
 	src/panes/menubar.cpp
 	src/panes/outliner.cpp
+	src/panes/specifications.cpp
 	src/panes/statusbar.cpp
 	src/panes/timeline.cpp
 )

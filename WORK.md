@@ -15044,7 +15044,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
    in the Inspector.)*
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
    specification catalogue (copy in, save out). Live-verified by the repo owner. **Planned 2026-10-30
-   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a to 9d built 2026-11-01, 9e to 9i 2026-11-02**.
+   as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a to 9d built 2026-11-01, 9e to 9j 2026-11-02,
+   so slice 9 is built**; its gui-mode checklist is owed.
 
 ### Found while grilling — each owes a check
 
@@ -18209,9 +18210,12 @@ built.
   8. Open the visibility pane: the floor shows each camera count, and hovering a cell names its
      cameras. Put a box on the floor: its shadow appears. Change the height: the map changes.
   9. Copy a camera specification in from a catalogue: its sensor and lens come with it. Copy in one
-     whose name the plan already uses for a different specification: it arrives numbered.
-  10. Save a specification out to a new catalogue, then to one that has a different specification of
-      that name: Replace, Keep both and Cancel each do what they say.
+     whose name the plan already uses for a different specification: it arrives numbered. The picker
+     says what each would bring before anything is copied. *(Amended by 9j.)*
+  10. Save a specification out with Save to New Catalogue..., then with Save to Catalogue... into one
+      that has a different specification of that name: Replace, Keep both and Cancel each do what they
+      say, and Escape is Cancel. Save to New Catalogue... onto a file that is there writes nothing.
+      *(Amended by 9j: two save items, since a save panel offers to replace a file.)*
   11. Undo and redo after 2, 3, 5 and 9: each is one step.
   12. Quit while a ray table or the map is still being made.
 
@@ -18872,6 +18876,91 @@ off (+8); warning-clean, format-check clean. CONTEXT.md's *Specification catalog
   | An unanswered clash saved anyway | the clash case |
   | Overwrite a file that is not a catalogue | the not-a-catalogue case |
 
+#### Sub-slice 9j built (2026-11-02): the Specifications menu (**slice 9 BUILT; gui-mode checklist owed**)
+
+`apps/rigplan/src/panes/specifications.{h,cpp}`, `SpecificationsMenu`: copying a specification in from a
+catalogue through a picker, and saving the selected one out, with the clash question. `ctest -j8`
+**1688/1688** Release with video, camera and Ceres on (+5), and **1547/1547** with all three off (+5);
+warning-clean, format-check clean. The `--frames` smoke exits 0. **gui-mode NOT driven by hand**: the
+checklist above (steps 9 to 11) is the repo owner's, and with this commit every step of it is owed.
+
+- **The menu**, between Add and View, drawn by `MenuBarPane`:
+  - **Copy In from Catalogue...** picks a catalogue, then opens the picker on it: the kinds as radio
+    buttons with their counts (camera specifications first, as `arrivals` names them), the catalogue's
+    specifications of the one chosen (a camera specification with its sensor and lens), what copying the
+    one picked would bring, and Copy In (or a double click) and Cancel. Copied, it is one step of history
+    (`copyIn`), selected, and said: "Copied in camera specification 'hd-4mm 2' and sensor 'hd 2' from
+    catalogue.json".
+  - **Save to Catalogue...** adds the selected specification to a catalogue picked with an open panel.
+  - **Save to New Catalogue...** makes one, named with a save panel and given a .json extension.
+  - Both save items name what they save ("Save sensor 'hd' to Catalogue..."), and are greyed, with a
+    tooltip, while no specification is selected.
+- **The picker says what a copy would bring before anything is copied**, by running `copyIn` on a copy of
+  the plan each frame it is open, and offers no copy that would be refused or change nothing. "What
+  arrived" is a new `arrivals(before, after)` in `edits`, which the picker and the note share.
+- **A clash asks** "catalogue.json has a different sensor 'hd'." with Replace, Keep both and Cancel. The
+  question holds a copy of the plan's specifications as they were when the save was asked for, so the
+  answer saves what was asked about, whatever is edited meanwhile.
+- **Deviation: two save items, not the plan's one.** A save panel asks to replace a file that is there
+  (`gui::saveFile` passes pfd no options, so Windows' panel is given `OFN_OVERWRITEPROMPT` and zenity
+  `--confirm-overwrite`, and macOS's `choose file name` asks of itself), and a catalogue is added to,
+  never replaced. So a catalogue that is
+  there is reached through an open panel, and Save to New Catalogue... onto a file that is there writes
+  nothing and says to use Save to Catalogue..., whatever the panel asked. The checklist's step 10 is
+  amended.
+- **Its state is the AppContext's** (`copyingIn`, `savingOut`), as the guard's request is, so the menu is
+  stateless like `MenuBarPane`, and the actions past the native panels (`beginCopyIn`, `copyPicked`,
+  `saveSelected`, `answerClash`) are what the tests drive. A question opened over the picker (the
+  unsaved-changes one, asked by a shortcut) closes it, and it is let go of rather than left waiting.
+- **`MenuBarPane::drawConfirmModal` is now `drawModals`**: the unsaved-changes question and the
+  Specifications menu's two.
+- **Found: ImGui closes no modal on Escape** (`NavUpdateCancelRequest` excludes a modal), so the
+  unsaved-changes question's comment, "Escape closes it without an answer", was false in rigplan and in
+  flowview, and `DocumentGuard`'s gave Escape as its example. In rigplan **Escape is now Cancel in all
+  three questions**, which a case pins; flowview's and the guard's comments are corrected, and flowview's
+  behaviour is unchanged.
+- **Found and fixed: a key acted on the plan behind an open question.** ImGui hands a key to whatever
+  asks about it, whatever is open, and a shortcut routed globally too. So with the picker open and a box
+  selected, Delete or Backspace deleted the box, K keyed, Space played, and Cmd+N replaced the plan under
+  the picker. Older than 9j (the unsaved-changes question, 8e, had it too), but the picker is driven
+  with keys. `panes/keys.h` holds the rule: **no shortcut and no key acts while a popup is open**
+  (`popupOpen`), and a key that means something on its own also waits while a text field has the
+  keyboard (`keysAreFree`). The menu bar's shortcuts and keys, the Timeline's Space and the Viewport's
+  W and E all ask it. flowview's shortcuts very likely have the same defect, recorded as the ninth
+  known defect rather than changed here (*Known defects*).
+  - **A check of mine was hollow the first time**: it held that the Ctrl shortcuts were already blocked
+    by ImGui's routing, because they edited nothing. They had never registered: on macOS ImGui swaps
+    Cmd and Ctrl as a key comes in, so a test presses `ImGuiMod_Super` for what a shortcut calls Ctrl.
+    A positive control (the same presses act once the question is gone) is what said so, and the case
+    keeps it.
+- **`kindName(SpecificationKind)` is public** (`selection.h`), moved from `edits.cpp`, since the menu
+  names kinds too.
+- **The cases** (`apps/rigplan/test/test_panes.cpp`, five, in a headless ImGui frame):
+  - the picker opens on a catalogue, draws every kind (one with none, one the plan has), copies nothing
+    by drawing, and copies as one undo step with its note; a question opened over it lets it go; what
+    the plan has already changes nothing and is selected;
+  - a file that is not a catalogue, or no file, opens no picker and says why;
+  - Save to New Catalogue... saves and says so, and writes nothing over a file that is there; Save to
+    Catalogue... into one with a different "hd" asks, and Cancel, Keep both and Replace each do what
+    they say, Replace with what the plan had when it was asked;
+  - Escape is Cancel in each of the three questions;
+  - no key and no shortcut edits the plan behind an open question, and the same presses act once it is
+    gone.
+- **Nine sabotages, all caught**, each recompiled first (the runner touches the file a few seconds into
+  the future, so make cannot keep a stale object):
+
+  | Sabotage | Fails |
+  |---|---|
+  | The answer saves the plan's specifications as they are now | the save case, at Replace |
+  | No check for a file there on Save to New Catalogue... | the save case, twice |
+  | No Escape in the picker | the Escape case, twice |
+  | No Escape in the unsaved-changes question | the Escape case, twice |
+  | The picker not let go when a question replaces it | the copy-in case |
+  | The kinds in the Outliner's order | the copy-in case, twice |
+  | `arrivals` leaving out sensors | the copy-in case, at its note |
+  | `keysAreFree` not asking about popups | the keys case, at Space |
+  | The menu bar's shortcuts and keys not asking about popups | the keys case, four times |
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU
@@ -19134,7 +19223,8 @@ row here**. A row is cheap to delete and expensive to leave.
   landed and a drag baking every size it passed through (*After 8f*). **Slice 9 planned 2026-10-30** as
   ten commits, 9a to 9j: the current frame and the Timeline, the plan's assets shared between panes,
   looking through a camera, a distance pass and the visibility map, and the specification catalogue,
-  ending in a gui-mode checklist (*Slice 9 planned*); 9a to 9d built 2026-11-01, 9e to 9i 2026-11-02. 9e found
+  ending in a gui-mode checklist (*Slice 9 planned*); 9a to 9d built 2026-11-01, 9e to 9j 2026-11-02,
+  so **slice 9 is built, and its gui-mode checklist is owed** (after *Sub-slice 9j built*). 9e found
   three-poles in a 20 m room holding 8.7 GB; storing a texture widened it to RGBA32F first, and fixed,
   it holds 4.1 GB (*The 20 m room's footprint*). 7a's two
   findings and 5e's were decided on 2026-10-29: a registration verdict takes the camera models as
@@ -19154,7 +19244,7 @@ row here**. A row is cheap to delete and expensive to leave.
   `--device` landed. *(M15 §Sub-slice 3d built.)*
 
 M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not**, and M15 is under
-way (slices 0 to 8 built and slice 8 live-verified; slice 9 planned).
+way (slices 0 to 9 built and slice 8 live-verified; slice 9's gui-mode checklist owed).
 
 - **Example documents** — all four commits built. Owed: a gui-mode eyeball of every example (the
   primary purpose). The smoke step has run in CI since it landed, and was green on every leg in
@@ -19354,7 +19444,8 @@ review of 2026-10-20 moved after it), with clock-domain identity and timestamp g
 
 Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
 
-**One is open**, the eighth, found while planning M15 slice 9 (below). The other seven are fixed —
+**Two are open**: the eighth, found while planning M15 slice 9, and the ninth, found building its 9j
+(both below). The other seven are fixed —
 `gui::Texture` freeing a descriptor set a running frame
 could still read (2026-09-29; see Milestone 14 › *A texture's descriptor outlives the frames that
 drew it*), a group replaced at its own NodeId looking clean and delivering
@@ -19407,6 +19498,19 @@ reach first. Worth remembering when writing the next entry here.
     through `gui::FrameTexture`, whose descriptor cache keeps the old one until it is safe. Or a
     `gui::Texture::upload` that waits for the frames that drew it, which every caller would then get.
   - **Its own commit**, not slice 9's: it changes flowview, and its playback needs eyeballing.
+
+**The ninth, found 2026-11-02 building M15 sub-slice 9j, open:**
+
+- **flowview's global shortcuts very likely act behind its unsaved-changes question.** Every one is a
+  `gui::Shortcut(..., ImGuiInputFlags_RouteGlobal)` (`apps/flowview/src/panes/menubar.cpp`), and ImGui
+  hands such a shortcut to whoever asks, whatever popup is open: in rigplan's headless frame, Cmd+N
+  replaced the plan under an open modal, and Cmd+D duplicated behind it (*Sub-slice 9j built*). So with
+  the question asking about a New, Cmd+Z, Cmd+G or another Cmd+N would act on the graph behind it.
+  Predicted from the code and that measurement, not observed in flowview. Its canvas's Delete waits for
+  the canvas to be active, which a modal should keep it from being.
+  - **The fix is rigplan's**: no shortcut while a popup is open (rigplan's `panes/keys.h`), with a case
+    that presses each behind the question and a positive control that presses it with none.
+  - **Its own commit**: it changes flowview.
 
 ### `ctest -j` and scratch paths — FIXED 2026-09-10
 

@@ -87,7 +87,7 @@ namespace rigplan
 		m_timeline.draw(m_ctx);
 		m_issues.draw(m_ctx);
 		m_statusBar.draw(m_ctx);
-		m_menuBar.drawConfirmModal(m_ctx, window.app());
+		m_menuBar.drawModals(m_ctx, window.app());
 
 		// A selection whose object an edit or an undo removed is let go of, rather than left naming nothing,
 		// and the frame shown follows what is left: a selected key's, within the timeline otherwise.

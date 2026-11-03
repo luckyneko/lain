@@ -1400,6 +1400,34 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-02 — M15 slice 9, sub-slice 9j built: the Specifications menu (**slice 9 BUILT; gui-mode checklist owed**)
+
+The last of slice 9's ten commits. `ctest -j8` **1688/1688** Release with video, camera and Ceres on (+5),
+and **1547/1547** with all three off (+5); warning-clean, format-check clean. **gui-mode NOT driven by
+hand**: slice 9's 12-step checklist is now owed whole. Full notes in WORK.md's *Sub-slice 9j built*.
+
+- **`SpecificationsMenu`** (`panes/specifications.{h,cpp}`), between Add and View:
+  - **Copy In from Catalogue...**: a picker by kind, which says what a copy would bring before anything
+    is copied (`copyIn` on a copy of the plan; the new `arrivals` names what is new). Copying is one
+    step of history, selected and said.
+  - **Save to Catalogue...** and **Save to New Catalogue...**, naming what they save. A clash asks
+    Replace, Keep both or Cancel, and the answer saves the specifications as they were when asked.
+- **Deviation: two save items, not one.** A save panel asks to replace a file that is there, and a
+  catalogue is added to, never replaced. So an existing catalogue is picked with an open panel, and a
+  new one is never made over a file that is there (CONTEXT.md amended).
+- **Its state is the AppContext's** (`copyingIn`, `savingOut`), as the guard's request is, and the actions
+  past the native panels are what five headless cases drive. `drawConfirmModal` is now `drawModals`.
+- **Found: ImGui closes no modal on Escape**, so rigplan's and flowview's unsaved-changes comments were
+  false. In rigplan Escape is now Cancel in all three questions; flowview's comment and the guard's are
+  corrected, its behaviour unchanged.
+- **Found and fixed: a key acted on the plan behind an open question.** With the picker open, Delete
+  deleted the selected box, Space played and Cmd+N replaced the plan. `panes/keys.h`: no shortcut and no
+  key acts while a popup is open. Older than 9j, in the unsaved-changes question too.
+  - **My first check of it was hollow**: the Ctrl shortcuts "edited nothing" because they never
+    registered. On macOS ImGui swaps Cmd and Ctrl as a key comes in, so a test presses `ImGuiMod_Super`.
+    A positive control (the presses act once the question is gone) caught it, and stays in the case.
+- **Nine sabotages, all caught**, each confirmed to have recompiled.
+
 ### Update 2026-11-02 — M15 slice 9, sub-slice 9i built: copying specifications in and saving them out
 
 The ninth of slice 9's ten commits, driver-free. `ctest -j8` **1683/1683** Release with video, camera

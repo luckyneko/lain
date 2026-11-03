@@ -282,22 +282,6 @@ namespace rigplan
 		return {};
 	}
 
-	static const char* kindName(SpecificationKind kind)
-	{
-		switch (kind)
-		{
-			case SpecificationKind::Sensor:
-				return "sensor";
-			case SpecificationKind::Lens:
-				return "lens";
-			case SpecificationKind::Camera:
-				return "camera specification";
-			case SpecificationKind::Light:
-				return "light specification";
-		}
-		return "specification";
-	}
-
 	template <typename T>
 	static bool eraseName(std::vector<T>& items, const std::string& name)
 	{
@@ -866,6 +850,28 @@ namespace rigplan
 			return EditResult::nothing();
 		plan.specifications = std::move(into);
 		return EditResult::done(Selection::specificationOf(kind, merged.name));
+	}
+
+	template <typename T>
+	static void addArrivals(std::vector<std::string>& out, SpecificationKind kind, const std::vector<T>& before, const std::vector<T>& after)
+	{
+		for (const T& item : after)
+		{
+			const bool there = std::any_of(before.begin(), before.end(), [&](const T& b)
+										   { return b.name == item.name; });
+			if (!there)
+				out.push_back(format("{} '{}'", kindName(kind), item.name));
+		}
+	}
+
+	std::vector<std::string> arrivals(const rp::Specifications& before, const rp::Specifications& after)
+	{
+		std::vector<std::string> out;
+		addArrivals(out, SpecificationKind::Camera, before.cameras, after.cameras);
+		addArrivals(out, SpecificationKind::Sensor, before.sensors, after.sensors);
+		addArrivals(out, SpecificationKind::Lens, before.lenses, after.lenses);
+		addArrivals(out, SpecificationKind::Light, before.lights, after.lights);
+		return out;
 	}
 
 	SaveOutResult saveOut(const rp::Specifications& catalogue, const rp::Specifications& specifications, SpecificationKind kind,

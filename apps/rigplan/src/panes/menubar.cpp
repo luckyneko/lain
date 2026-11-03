@@ -1,6 +1,7 @@
 #include "menubar.h"
 
 #include "fields.h" // meshFilters, for Add > Prop...
+#include "keys.h"
 
 #include <lain/app/application.h>
 #include <lain/core/uri.h>
@@ -239,6 +240,7 @@ namespace rigplan
 					ctx.apply(addRoom(plan));
 				gui::EndMenu();
 			}
+			m_specifications.draw(ctx);
 			if (gui::BeginMenu("View"))
 			{
 				if (gui::MenuItem("Frame All", "Home"))
@@ -262,6 +264,11 @@ namespace rigplan
 			gui::EndMainMenuBar();
 		}
 
+		// No shortcut and no key acts while a popup is open: a question, a menu or a list is answered or
+		// walked with keys, and what is behind it must not act on them too (keys.h).
+		if (popupOpen())
+			return;
+
 		// Global shortcuts. ImGuiMod_Ctrl is Cmd on macOS (ConfigMacOSXBehaviors), and mods match exactly,
 		// so Ctrl+S and Ctrl+Shift+S do not collide.
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_N, ImGuiInputFlags_RouteGlobal))
@@ -281,27 +288,25 @@ namespace rigplan
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D, ImGuiInputFlags_RouteGlobal) && ctx.selection.kind != Selected::Plan)
 			ctx.apply(duplicate(plan, ctx.selection));
 		// K keys the selected mover at the frame shown, as the Edit menu does, and says why when it cannot.
-		if (!gui::GetIO().WantTextInput && gui::IsKeyPressed(ImGuiKey_K, false) && !gui::GetIO().KeyCtrl)
+		if (keysAreFree() && gui::IsKeyPressed(ImGuiKey_K, false) && !gui::GetIO().KeyCtrl)
 			ctx.apply(setKey(plan, ctx.selection, ctx.frame));
 		// F frames the selection and Home frames everything, as the View menu does; never while typing.
-		if (!gui::GetIO().WantTextInput && gui::IsKeyPressed(ImGuiKey_F, false) && !gui::GetIO().KeyCtrl)
+		if (keysAreFree() && gui::IsKeyPressed(ImGuiKey_F, false) && !gui::GetIO().KeyCtrl)
 			ctx.view.frameSelected = true;
-		if (!gui::GetIO().WantTextInput && gui::IsKeyPressed(ImGuiKey_Home, false))
+		if (keysAreFree() && gui::IsKeyPressed(ImGuiKey_Home, false))
 			ctx.view.frameAll = true;
 		// Delete and Backspace delete what is selected, but never while a text field has them.
-		if (!gui::GetIO().WantTextInput && (gui::IsKeyPressed(ImGuiKey_Delete, false) || gui::IsKeyPressed(ImGuiKey_Backspace, false)) &&
+		if (keysAreFree() && (gui::IsKeyPressed(ImGuiKey_Delete, false) || gui::IsKeyPressed(ImGuiKey_Backspace, false)) &&
 			ctx.selection.kind != Selected::Plan)
 			ctx.apply(remove(plan, ctx.selection));
 	}
 
-	void MenuBarPane::drawConfirmModal(AppContext& ctx, app::Application& app)
+	void MenuBarPane::drawModals(AppContext& ctx, app::Application& app)
 	{
 		if (ctx.guard.takePrompt())
 			gui::OpenPopup("Unsaved changes");
 		if (gui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
 		{
-			// Escape closes it without an answer; the request left in the guard is harmless, and the next
-			// request replaces it.
 			const DocumentRequest* pending = ctx.guard.pending();
 			const DocumentRequest::Kind kind = pending ? pending->kind : DocumentRequest::Kind::New;
 			gui::TextUnformatted(kind == DocumentRequest::Kind::New	   ? "Start a new plan? Unsaved changes to this one will be lost."
@@ -323,9 +328,12 @@ namespace rigplan
 			if (gui::Button("Discard"))
 				resolve(editor::UnsavedAnswer::Discard);
 			gui::SameLine();
-			if (gui::Button("Cancel"))
+			// Escape is Cancel, as in the Specifications menu's questions: ImGui closes no modal on Escape
+			// itself, so without this it would do nothing.
+			if (gui::Button("Cancel") || gui::IsKeyPressed(ImGuiKey_Escape, false))
 				resolve(editor::UnsavedAnswer::Cancel);
 			gui::EndPopup();
 		}
+		m_specifications.drawModals(ctx);
 	}
 } // namespace rigplan

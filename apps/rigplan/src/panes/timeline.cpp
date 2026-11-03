@@ -2,6 +2,7 @@
 
 #include "../appcontext.h"
 #include "../timelinescale.h"
+#include "keys.h"
 
 #include <lain/gui/color.h>
 #include <lain/gui/gui.h>
@@ -148,7 +149,7 @@ namespace rigplan
 			if (to != ctx.frame)
 				ctx.goToFrame(to);
 		}
-		if (!io.WantTextInput && gui::IsKeyPressed(ImGuiKey_Space, false))
+		if (keysAreFree() && gui::IsKeyPressed(ImGuiKey_Space, false))
 			playOrPause(ctx, last);
 
 		if (gui::Begin("Timeline"))

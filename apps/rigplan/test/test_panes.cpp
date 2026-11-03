@@ -3,24 +3,30 @@
 // to no error ImGui recovers from (an End or a TreePop missing, an id stack left pushed), which ImGui
 // counts even where its asserts are compiled out. And the document's guard, which every request that
 // would throw away the plan goes through, is driven through the menu bar's own request, as K and Space are
-// through the keys a frame is handed (9b).
+// through the keys a frame is handed (9b). And the Specifications menu's picker and clash question (9j),
+// driven past their native panels, as the menu's items are once a file is picked.
 
 #include "appcontext.h"
 #include "editorplan.h"
 #include "panes/inspector.h"
 #include "panes/issues.h"
+#include "panes/keys.h"
 #include "panes/menubar.h"
 #include "panes/outliner.h"
+#include "panes/specifications.h"
 #include "panes/statusbar.h"
 #include "panes/timeline.h"
 #include "selection.h"
 
 #include <lain/app/application.h>
 #include <lain/app/applicationdelegate.h>
+#include <lain/core/length.h>
 #include <lain/core/uri.h>
 #include <lain/editor/guard.h>
 #include <lain/gui/gui.h>
 #include <lain/io/data/codecs.h>
+#include <lain/io/data/save.h>
+#include <lain/rigplan/serialize/rigplan.h>
 #include <lain/testing/scratch.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -29,6 +35,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -118,7 +125,7 @@ TEST_CASE("every pane draws every kind of selection, and leaves ImGui nothing to
 		timeline.draw(ctx);
 		issues.draw(ctx);
 		statusBar.draw(ctx);
-		menuBar.drawConfirmModal(ctx, app);
+		menuBar.drawModals(ctx, app);
 	};
 	const lain::data::Value before = rigplan::snapshot(ctx.document.plan);
 	for (const Selection& selection : everySelection())
@@ -273,7 +280,7 @@ TEST_CASE("the unsaved-changes question draws, and a held request waits for it",
 	bool open = false;
 	const auto modal = [&]
 	{
-		menuBar.drawConfirmModal(ctx, app);
+		menuBar.drawModals(ctx, app);
 		open = ImGui::IsPopupOpen("Unsaved changes"); // asked inside the frame, where there is a window
 	};
 	CHECK(imgui.frame(modal) == 0);
@@ -331,4 +338,370 @@ TEST_CASE("the session file keeps the plans and the dialog folder, under their k
 	CHECK(rigplan::loadSession(file).plans.recent.empty());
 	// And an empty path writes nothing, so a context with none keeps its hands off the home folder.
 	rigplan::saveSession({}, written);
+}
+
+static std::string bytesOf(const fs::path& file)
+{
+	std::ifstream in(file, std::ios::binary);
+	return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+}
+
+// A catalogue whose "hd" is a 1080p sensor where the New plan's is 720p, whose "4mm" is the plan's
+// exactly, and whose "hd-4mm" is made of the two: written as a catalogue document at `file`.
+static void writeCatalogue(const fs::path& file)
+{
+	const rp::RigPlan fresh = rigplan::newPlan();
+	rp::SensorSpecification hd = *rp::findSensor(fresh.specifications, "hd");
+	hd.image = {1920, 1080};
+	hd.pixelPitch = lain::core::Length::from<lain::core::Length::Micrometres>(3.0);
+	rp::Specifications c;
+	c.sensors = {hd};
+	c.lenses = {*rp::findLens(fresh.specifications, "4mm")};
+	c.cameras = {{"hd-4mm", "hd", "4mm"}};
+	REQUIRE(lain::io::data::save(lain::core::Uri::fromPath(file), rp::catalogueToValue(c)));
+}
+
+TEST_CASE("Copy In from Catalogue opens a picker on a catalogue, and copies what it picks as one step", "[rigplan][panes][catalogue]")
+{
+	lain::io::data::registerDataCodecs();
+	HeadlessImGui imgui;
+	Idle idle;
+	lain::app::Application app(idle, {"test-rigplan-app", {0, 0, 0}});
+	rigplan::AppContext ctx;
+	rigplan::MenuBarPane menuBar;
+	rigplan::SpecificationsMenu specifications;
+	const fs::path folder = lain::testing::scratchDir() / "panes-copy-in";
+	fs::create_directories(folder);
+	const fs::path file = folder / "catalogue.json";
+	writeCatalogue(file);
+
+	bool open = false;
+	const auto modals = [&]
+	{
+		menuBar.drawModals(ctx, app);
+		open = ImGui::IsPopupOpen("Copy In from Catalogue");
+	};
+
+	// It opens on the first specification of the first kind the catalogue has: a camera specification.
+	const lain::data::Value before = rigplan::snapshot(ctx.document.plan);
+	REQUIRE(specifications.beginCopyIn(ctx, file));
+	REQUIRE(ctx.copyingIn);
+	CHECK(ctx.copyingIn->kind == rigplan::SpecificationKind::Camera);
+	CHECK(ctx.copyingIn->name == "hd-4mm");
+	CHECK(imgui.frame(modals) == 0);
+	CHECK(open);
+
+	// Every kind draws, one the catalogue has none of and one whose pick the plan has already included.
+	for (const auto& [kind, name] : std::vector<std::pair<rigplan::SpecificationKind, std::string>>{
+			 {rigplan::SpecificationKind::Sensor, "hd"},
+			 {rigplan::SpecificationKind::Lens, "4mm"},
+			 {rigplan::SpecificationKind::Light, ""},
+			 {rigplan::SpecificationKind::Camera, "hd-4mm"}})
+	{
+		INFO("kind " << int(kind));
+		ctx.copyingIn->kind = kind;
+		ctx.copyingIn->name = name;
+		CHECK(imgui.frame(modals) == 0);
+		CHECK(open);
+	}
+	CHECK(rigplan::snapshot(ctx.document.plan) == before); // drawing it copies nothing
+
+	// Copied: the camera specification arrives numbered, its 1080p sensor with it and numbered too, its lens
+	// the plan's already. Selected, said, and the picker closed.
+	specifications.copyPicked(ctx);
+	CHECK_FALSE(ctx.copyingIn);
+	const rp::CameraSpecification* arrived = rp::findCamera(ctx.document.plan.specifications, "hd-4mm 2");
+	REQUIRE(arrived);
+	CHECK(arrived->sensor == "hd 2");
+	CHECK(arrived->lens == "4mm");
+	CHECK(ctx.selection == Selection::specificationOf(rigplan::SpecificationKind::Camera, "hd-4mm 2"));
+	CHECK(ctx.message == "Copied in camera specification 'hd-4mm 2' and sensor 'hd 2' from catalogue.json");
+	CHECK_FALSE(ctx.messageIsError);
+	CHECK(ctx.document.dirty);
+	CHECK(imgui.frame(modals) == 0);
+	CHECK_FALSE(open);
+
+	// One step of history.
+	rigplan::commit(ctx.document);
+	REQUIRE(rigplan::undo(ctx.document));
+	CHECK(rigplan::snapshot(ctx.document.plan) == before);
+	CHECK_FALSE(rigplan::undo(ctx.document));
+
+	// A question opened over the picker (the unsaved-changes one, asked by a shortcut) closes it, and it is
+	// let go of rather than left waiting.
+	REQUIRE(specifications.beginCopyIn(ctx, file));
+	CHECK(imgui.frame(modals) == 0);
+	REQUIRE(open);
+	ctx.document.dirty = true;
+	REQUIRE_FALSE(menuBar.request(ctx, app, {rigplan::DocumentRequest::Kind::New, {}}));
+	CHECK(imgui.frame(modals) == 0);
+	CHECK_FALSE(open);
+	CHECK_FALSE(ctx.copyingIn);
+	ctx.guard.answer(lain::editor::UnsavedAnswer::Cancel, []
+					 { return false; });
+	CHECK(imgui.frame(modals) == 0);
+
+	// What the plan has already changes nothing, and is selected.
+	REQUIRE(specifications.beginCopyIn(ctx, file));
+	ctx.copyingIn->kind = rigplan::SpecificationKind::Lens;
+	ctx.copyingIn->name = "4mm";
+	specifications.copyPicked(ctx);
+	CHECK(rigplan::snapshot(ctx.document.plan) == before);
+	CHECK(ctx.selection == Selection::specificationOf(rigplan::SpecificationKind::Lens, "4mm"));
+	CHECK_FALSE(ctx.messageIsError);
+}
+
+TEST_CASE("Copy In from a file that is not a catalogue opens no picker, and says why", "[rigplan][panes][catalogue]")
+{
+	lain::io::data::registerDataCodecs();
+	rigplan::AppContext ctx;
+	rigplan::SpecificationsMenu specifications;
+	const fs::path folder = lain::testing::scratchDir() / "panes-copy-in-refused";
+	fs::create_directories(folder);
+
+	// A rig plan is a document, of another kind.
+	const fs::path plan = folder / "plan.json";
+	REQUIRE(rigplan::saveDocument(ctx.document, plan).empty());
+	CHECK_FALSE(specifications.beginCopyIn(ctx, plan));
+	CHECK_FALSE(ctx.copyingIn);
+	CHECK(ctx.messageIsError);
+
+	ctx.message.clear();
+	ctx.messageIsError = false;
+	CHECK_FALSE(specifications.beginCopyIn(ctx, folder / "gone.json"));
+	CHECK_FALSE(ctx.copyingIn);
+	CHECK(ctx.messageIsError);
+}
+
+TEST_CASE("Save to Catalogue saves the selected specification, or asks about a clash and does what the answer says",
+		  "[rigplan][panes][catalogue]")
+{
+	lain::io::data::registerDataCodecs();
+	HeadlessImGui imgui;
+	Idle idle;
+	lain::app::Application app(idle, {"test-rigplan-app", {0, 0, 0}});
+	rigplan::AppContext ctx;
+	rigplan::MenuBarPane menuBar;
+	rigplan::SpecificationsMenu specifications;
+	const fs::path folder = lain::testing::scratchDir() / "panes-save-out";
+	fs::create_directories(folder);
+	bool open = false;
+	const auto modals = [&]
+	{
+		menuBar.drawModals(ctx, app);
+		open = ImGui::IsPopupOpen("Already in the Catalogue");
+	};
+	const auto width = [](const fs::path& file, const std::string& name) -> std::uint32_t
+	{
+		const rigplan::CatalogueFileRead read = rigplan::readCatalogue(file);
+		REQUIRE(read.specifications);
+		const rp::SensorSpecification* s = rp::findSensor(*read.specifications, name);
+		return s ? s->image.width : 0;
+	};
+
+	// With no specification selected there is nothing to save.
+	specifications.saveSelected(ctx, folder / "nothing.json", rigplan::CatalogueTarget::New);
+	CHECK(ctx.messageIsError);
+	CHECK_FALSE(fs::exists(folder / "nothing.json"));
+
+	// To a new catalogue, given its extension: saved, and said.
+	ctx.selection = Selection::specificationOf(rigplan::SpecificationKind::Lens, "4mm");
+	specifications.saveSelected(ctx, folder / "new", rigplan::CatalogueTarget::New);
+	CHECK(ctx.message == "Saved lens '4mm' to new.json");
+	CHECK_FALSE(ctx.messageIsError);
+	REQUIRE(rigplan::readCatalogue(folder / "new.json").specifications);
+	CHECK(rp::findLens(*rigplan::readCatalogue(folder / "new.json").specifications, "4mm"));
+	// Never over a file that is there, which a save panel will have offered to replace: the sensor it
+	// lacks is not added to it.
+	ctx.selection = Selection::specificationOf(rigplan::SpecificationKind::Sensor, "hd");
+	const std::string saved = bytesOf(folder / "new.json");
+	specifications.saveSelected(ctx, folder / "new.json", rigplan::CatalogueTarget::New);
+	CHECK(ctx.messageIsError);
+	CHECK(bytesOf(folder / "new.json") == saved);
+
+	// To one with a different "hd": nothing written, and the question opens.
+	const fs::path file = folder / "catalogue.json";
+	writeCatalogue(file);
+	const std::string original = bytesOf(file);
+	specifications.saveSelected(ctx, file, rigplan::CatalogueTarget::Existing);
+	REQUIRE(ctx.savingOut);
+	CHECK(ctx.savingOut->clashes == std::vector<std::string>{"sensor 'hd'"});
+	CHECK(bytesOf(file) == original);
+	CHECK(imgui.frame(modals) == 0);
+	CHECK(open);
+	CHECK(imgui.frame(modals) == 0);
+	CHECK(open); // it stays open, unanswered
+
+	// Cancel writes nothing.
+	specifications.answerClash(ctx, rigplan::ClashAnswer::Cancel);
+	CHECK_FALSE(ctx.savingOut);
+	CHECK(bytesOf(file) == original);
+	CHECK(imgui.frame(modals) == 0);
+	CHECK_FALSE(open);
+
+	// Keep both saves the plan's under a numbered name, beside the catalogue's.
+	specifications.saveSelected(ctx, file, rigplan::CatalogueTarget::Existing);
+	REQUIRE(ctx.savingOut);
+	specifications.answerClash(ctx, rigplan::ClashAnswer::KeepBoth);
+	CHECK(ctx.message == "Saved sensor 'hd' to catalogue.json as 'hd 2'");
+	CHECK(width(file, "hd") == 1920);
+	CHECK(width(file, "hd 2") == 1280);
+
+	// Replace overwrites the catalogue's, with what the plan had when it was asked: an edit made while
+	// the question is open is not what was asked about.
+	writeCatalogue(file);
+	specifications.saveSelected(ctx, file, rigplan::CatalogueTarget::Existing);
+	REQUIRE(ctx.savingOut);
+	for (rp::SensorSpecification& s : ctx.document.plan.specifications.sensors)
+	{
+		if (s.name == "hd")
+			s.image.width = 640;
+	}
+	specifications.answerClash(ctx, rigplan::ClashAnswer::Replace);
+	CHECK(ctx.message == "Saved sensor 'hd' to catalogue.json");
+	CHECK(width(file, "hd") == 1280);
+	CHECK(width(file, "hd 2") == 0);
+}
+
+TEST_CASE("Escape is Cancel in each of the menu bar's questions", "[rigplan][panes][catalogue]")
+{
+	lain::io::data::registerDataCodecs();
+	HeadlessImGui imgui;
+	Idle idle;
+	lain::app::Application app(idle, {"test-rigplan-app", {0, 0, 0}});
+	rigplan::AppContext ctx;
+	rigplan::MenuBarPane menuBar;
+	rigplan::SpecificationsMenu specifications;
+	const fs::path folder = lain::testing::scratchDir() / "panes-escape";
+	fs::create_directories(folder);
+	const fs::path file = folder / "catalogue.json";
+	writeCatalogue(file);
+	const auto modals = [&]
+	{ menuBar.drawModals(ctx, app); };
+	// A frame with Escape down, and one with it let go.
+	const auto escape = [&]
+	{
+		ImGui::GetIO().AddKeyEvent(ImGuiKey_Escape, true);
+		CHECK(imgui.frame(modals) == 0);
+		ImGui::GetIO().AddKeyEvent(ImGuiKey_Escape, false);
+		CHECK(imgui.frame(modals) == 0);
+	};
+	// One frame of the modals, and whether the question `name` is open in it.
+	const auto isOpen = [&](const char* name)
+	{
+		bool open = false;
+		const auto probe = [&]
+		{
+			modals();
+			open = ImGui::IsPopupOpen(name);
+		};
+		CHECK(imgui.frame(probe) == 0);
+		return open;
+	};
+
+	// The picker: closed, copying nothing.
+	const lain::data::Value before = rigplan::snapshot(ctx.document.plan);
+	REQUIRE(specifications.beginCopyIn(ctx, file));
+	REQUIRE(isOpen("Copy In from Catalogue"));
+	escape();
+	CHECK_FALSE(ctx.copyingIn);
+	CHECK_FALSE(isOpen("Copy In from Catalogue"));
+	CHECK(rigplan::snapshot(ctx.document.plan) == before);
+
+	// The clash question: closed, saving nothing.
+	const std::string original = bytesOf(file);
+	ctx.selection = Selection::specificationOf(rigplan::SpecificationKind::Sensor, "hd");
+	specifications.saveSelected(ctx, file, rigplan::CatalogueTarget::Existing);
+	REQUIRE(isOpen("Already in the Catalogue"));
+	escape();
+	CHECK_FALSE(ctx.savingOut);
+	CHECK_FALSE(isOpen("Already in the Catalogue"));
+	CHECK(bytesOf(file) == original);
+
+	// The unsaved-changes question: closed, the request dropped and the plan kept.
+	ctx.document.dirty = true;
+	REQUIRE_FALSE(menuBar.request(ctx, app, {rigplan::DocumentRequest::Kind::New, {}}));
+	REQUIRE(isOpen("Unsaved changes"));
+	escape();
+	CHECK_FALSE(ctx.guard.pending());
+	CHECK_FALSE(isOpen("Unsaved changes"));
+	CHECK(ctx.document.dirty);
+}
+
+TEST_CASE("a key or a shortcut edits nothing behind an open question", "[rigplan][panes][catalogue]")
+{
+	lain::io::data::registerDataCodecs();
+	HeadlessImGui imgui;
+	Idle idle;
+	lain::app::Application app(idle, {"test-rigplan-app", {0, 0, 0}});
+	rigplan::AppContext ctx;
+	rigplan::MenuBarPane menuBar;
+	rigplan::TimelinePane timeline;
+	rigplan::SpecificationsMenu specifications;
+	const fs::path folder = lain::testing::scratchDir() / "panes-keys-behind";
+	fs::create_directories(folder);
+	const fs::path file = folder / "catalogue.json";
+	writeCatalogue(file);
+	ctx.document.plan = editorplan::plan(lain::core::Uri{"/assets/chair.obj"});
+	const auto draw = [&]
+	{
+		bool resetLayout = false;
+		menuBar.draw(ctx, app, resetLayout);
+		timeline.draw(ctx);
+		menuBar.drawModals(ctx, app);
+	};
+	// A press of `key`, with what the shortcuts call Ctrl held when `ctrl`: on macOS ImGui swaps Cmd and
+	// Ctrl as a key comes in, so that is the Cmd key (Super) there.
+	const auto press = [&](ImGuiKey key, bool ctrl)
+	{
+		ImGuiIO& io = ImGui::GetIO();
+		const ImGuiKey command = io.ConfigMacOSXBehaviors ? ImGuiMod_Super : ImGuiMod_Ctrl;
+		if (ctrl)
+			io.AddKeyEvent(command, true);
+		io.AddKeyEvent(key, true);
+		CHECK(imgui.frame(draw) == 0);
+		io.AddKeyEvent(key, false);
+		if (ctrl)
+			io.AddKeyEvent(command, false);
+		CHECK(imgui.frame(draw) == 0);
+	};
+
+	ctx.selection = Selection::object(Selected::Box, editorplan::boxId);
+	REQUIRE(specifications.beginCopyIn(ctx, file));
+	CHECK(imgui.frame(draw) == 0);
+	REQUIRE(ctx.copyingIn);
+	const lain::data::Value before = rigplan::snapshot(ctx.document.plan);
+	for (ImGuiKey key : {ImGuiKey_Delete, ImGuiKey_Backspace, ImGuiKey_K, ImGuiKey_Space})
+	{
+		INFO("key " << int(key));
+		press(key, false);
+	}
+	for (ImGuiKey key : {ImGuiKey_D, ImGuiKey_Z, ImGuiKey_N})
+	{
+		INFO("ctrl key " << int(key));
+		press(key, true);
+	}
+	CHECK(rigplan::snapshot(ctx.document.plan) == before);
+	CHECK(ctx.selection == Selection::object(Selected::Box, editorplan::boxId));
+	CHECK_FALSE(ctx.playback.playing());
+	CHECK(ctx.copyingIn); // the picker is still open: none of them answered it
+
+	// With the question gone the same presses act, so it was the question that held them back.
+	// The picker is let go of, and closes; a frame later nothing is open.
+	ctx.copyingIn.reset();
+	CHECK(imgui.frame(draw) == 0);
+	bool anyOpen = true;
+	const auto probe = [&]
+	{
+		draw();
+		anyOpen = rigplan::popupOpen();
+	};
+	CHECK(imgui.frame(probe) == 0);
+	REQUIRE_FALSE(anyOpen);
+	press(ImGuiKey_D, true);
+	CHECK(ctx.document.plan.boxes.size() == 2);
+	press(ImGuiKey_Delete, false);
+	CHECK(ctx.document.plan.boxes.size() == 1);
+	press(ImGuiKey_Space, false);
+	CHECK(ctx.playback.playing());
 }

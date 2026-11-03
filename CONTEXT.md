@@ -796,8 +796,9 @@ recorded: camera geometry's methods run on it unchanged, and its ground truth sc
   are equal, so the one already there stands. A camera specification brings its sensor and lens with
   it. Copied in, one whose name the plan already uses for a different specification arrives under a
   numbered name, with the references to it following. Saved out over a different one, it asks:
-  replace the catalogue's, keep both (the one saved numbered), or cancel. A file that is not a
-  catalogue is never written over. _Avoid_: library, linked spec.
+  replace the catalogue's, keep both (the one saved numbered), or cancel. A catalogue is added to,
+  never replaced: a file that is not a catalogue is never written over, and a new catalogue is never
+  made over a file that is there. _Avoid_: library, linked spec.
 - **Synthetic capture** — footage rendered from a rig plan, in the same shape as footage of a real
   rig, together with its ground truth: the camera models and poses the footage was actually rendered
   with. Judging a rig plan means running calibration or registration on its synthetic capture and

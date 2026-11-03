@@ -22,6 +22,22 @@ namespace rigplan
 						   { return item.name == name; });
 	}
 
+	const char* kindName(SpecificationKind kind)
+	{
+		switch (kind)
+		{
+			case SpecificationKind::Sensor:
+				return "sensor";
+			case SpecificationKind::Lens:
+				return "lens";
+			case SpecificationKind::Camera:
+				return "camera specification";
+			case SpecificationKind::Light:
+				return "light specification";
+		}
+		return "specification";
+	}
+
 	const rp::Path* pathOf(const rp::RigPlan& plan, const Uuid& id)
 	{
 		for (const rp::BoardMover& board : plan.boards)
