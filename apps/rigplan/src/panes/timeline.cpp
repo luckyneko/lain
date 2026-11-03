@@ -219,7 +219,12 @@ namespace rigplan
 				gui::SetCursorScreenPos({float(scale.left), y});
 				gui::InvisibleButton("track", {trackWidth, rowHeight});
 				const double mouse = double(io.MousePos.x);
-				const std::optional<std::size_t> under = gui::IsItemHovered() ? nearestKey(scale, *row.path, mouse, radius) : std::nullopt;
+				// Set in a branch, not through a conditional's temporary: GCC 13 at -O3 calls the empty
+				// optional's payload maybe uninitialized where a key is selected, though that arm never
+				// reads it (CI, 2026-11-03).
+				std::optional<std::size_t> under;
+				if (gui::IsItemHovered())
+					under = nearestKey(scale, *row.path, mouse, radius);
 				if (gui::IsItemClicked(ImGuiMouseButton_Left))
 				{
 					if (under)

@@ -156,7 +156,12 @@ namespace rigplan
 		}
 		m_tableProblems = std::move(problems);
 		// A model whose table was refused is not asked for again until the model changes.
-		m_refusedModel = m_tableProblems.empty() ? std::nullopt : m_buildingModel;
+		// In two branches, not through a conditional's temporary, which GCC 13 at -O3 calls maybe
+		// uninitialized when it is the empty one (as in timeline.cpp).
+		if (m_tableProblems.empty())
+			m_refusedModel.reset();
+		else
+			m_refusedModel = m_buildingModel;
 	}
 
 	void CameraViewPane::update(AppContext& ctx, bool gesture)

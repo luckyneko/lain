@@ -18964,6 +18964,25 @@ Escape in the unsaved-changes question too).
   | `keysAreFree` not asking about popups | the keys case, at Space |
   | The menu bar's shortcuts and keys not asking about popups | the keys case, four times |
 
+### feature/M15's CI run after slice 9 (2026-11-03)
+
+[Run 41597388219](https://github.com/luckyneko/lain/actions/runs/41597388219) on `e29b36d`, the first
+since slice 8's fixes. macOS, Linux Debug, clang-format and the subproject smoke were green. Every
+Linux Release leg and Windows failed to build, each on one thing slice 9 added, and each build stopped
+there, so what lay past it went unchecked until the next run:
+
+- **GCC 13 at -O3: `-Wmaybe-uninitialized` in the Timeline** (9b, `panes/timeline.cpp`). It called the
+  empty `std::optional<std::size_t>` in `cond ? nearestKey(...) : std::nullopt` maybe uninitialized
+  where a key is selected, though that arm never reads it. It is the shape `feature/M9` met in
+  `e8ccd74`. The fix is the same: set it in a branch. `cameraviewpane.cpp` (9e) had the one other
+  `? … : std::nullopt` slice 9 added, behind it in the build, and is changed the same way. **Not
+  verifiable here**: there is no GCC on this machine, so the next run is the check.
+- **MSVC C4457: a local hiding a parameter** (9g, `libs/rigplan/scene/src/scene.cpp`). 9g gave
+  `buildScene` a `drawn` parameter, and a board's `BoardSheet` local was already called `drawn`; it is
+  now `drawing`. Every translation unit slice 9 touched was compiled with clang's `-Wshadow-all`
+  to find others. That found none new: the rest were older code CI has passed, or a lambda's
+  init-capture.
+
 ### Verified against archimedes' CPU device (2026-10-22)
 
 The repo owner had archimedes' CPU fallback planned in archimedes' own session. It became a **CPU

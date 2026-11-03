@@ -1400,6 +1400,19 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-03 — feature/M15's CI run after slice 9: two build fixes
+
+[Run 41597388219](https://github.com/luckyneko/lain/actions/runs/41597388219) on `e29b36d`: macOS,
+Linux Debug, format and the subproject smoke green; every Linux Release leg and Windows failed to build,
+each on one thing slice 9 added. Full notes in WORK.md's *feature/M15's CI run after slice 9*.
+
+- **GCC 13 at -O3** called the empty optional in the Timeline's `cond ? nearestKey(...) : std::nullopt`
+  maybe uninitialized (9b). It is `feature/M9`'s `e8ccd74` shape, with the same fix: set it in a branch.
+  The camera view's one other such conditional (9e) is changed too. There is no GCC here, so the next
+  run is the check.
+- **MSVC C4457**: 9g's `drawn` parameter of `buildScene` hid a board's `drawn` local, now `drawing`.
+  Clang's `-Wshadow-all` over every translation unit slice 9 touched found nothing else new.
+
 ### Update 2026-11-03 — M15 slice 9 live-verified: **M15 COMPLETE**
 
 The repo owner walked slice 9's 12-step gui-mode checklist on Metal, and **all twelve steps pass**: the

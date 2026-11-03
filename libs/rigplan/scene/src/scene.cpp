@@ -659,17 +659,17 @@ namespace lain::rigplan
 				result.problems.push_back(string::format("board '{}': the assets hold no drawing of it", board.name));
 				continue;
 			}
-			const BoardSheet& drawn = found->second;
+			const BoardSheet& drawing = found->second;
 			const math::Mat4d planFromSheet = planFromBoard(board, frame).matrix();
 			render::Material print;
 			print.diffuse = {1.0f, 1.0f, 1.0f};
-			print.texture = texture(drawn.raster);
+			print.texture = texture(drawing.raster);
 			scene.materials.push_back(print);
-			place(drawn.print, planFromSheet, {scene.materials.size() - 1}, {SceneObject::Board, board.id});
+			place(drawing.print, planFromSheet, {scene.materials.size() - 1}, {SceneObject::Board, board.id});
 			render::Material back;
 			back.diffuse = {1.0f, 1.0f, 1.0f};
 			scene.materials.push_back(back);
-			place(drawn.back, planFromSheet, {scene.materials.size() - 1}, {SceneObject::Board, board.id});
+			place(drawing.back, planFromSheet, {scene.materials.size() - 1}, {SceneObject::Board, board.id});
 		}
 
 		// Each pole, floor to top at its mount (CONTEXT.md, "Mount"): real geometry, occluding what is
