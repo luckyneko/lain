@@ -7,10 +7,15 @@
 // lain::math, so a consumer names only lain::math. GLM's own types stay reachable
 // (glm::vec2 etc.), but new code should use the lain:: names.
 //
+// The constants come the same way: math::pi<double>(), math::two_pi<double>(), ...
+// (gtc/constants), each the value nearest its constant in T, so no copy of the
+// digits needs typing out.
+//
 // GLM headers come in SYSTEM (see cmake/addGLM.cmake), so its template machinery
 // never trips lain's strict warnings.
 
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_precision.hpp>
