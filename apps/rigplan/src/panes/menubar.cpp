@@ -1,13 +1,13 @@
 #include "menubar.h"
 
 #include "fields.h" // meshFilters, for Add > Prop...
-#include "keys.h"
 
 #include <lain/app/application.h>
 #include <lain/core/uri.h>
 #include <lain/editor/recents.h>
 #include <lain/gui/dialogs.h>
 #include <lain/gui/gui.h>
+#include <lain/gui/keys.h>
 #include <lain/string/format.h>
 
 #include <optional>
@@ -265,8 +265,8 @@ namespace rigplan
 		}
 
 		// No shortcut and no key acts while a popup is open: a question, a menu or a list is answered or
-		// walked with keys, and what is behind it must not act on them too (keys.h).
-		if (popupOpen())
+		// walked with keys, and what is behind it must not act on them too (gui::popupOpen).
+		if (gui::popupOpen())
 			return;
 
 		// Global shortcuts. ImGuiMod_Ctrl is Cmd on macOS (ConfigMacOSXBehaviors), and mods match exactly,
@@ -288,15 +288,15 @@ namespace rigplan
 		if (gui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D, ImGuiInputFlags_RouteGlobal) && ctx.selection.kind != Selected::Plan)
 			ctx.apply(duplicate(plan, ctx.selection));
 		// K keys the selected mover at the frame shown, as the Edit menu does, and says why when it cannot.
-		if (keysAreFree() && gui::IsKeyPressed(ImGuiKey_K, false) && !gui::GetIO().KeyCtrl)
+		if (gui::keysAreFree() && gui::IsKeyPressed(ImGuiKey_K, false) && !gui::GetIO().KeyCtrl)
 			ctx.apply(setKey(plan, ctx.selection, ctx.frame));
 		// F frames the selection and Home frames everything, as the View menu does; never while typing.
-		if (keysAreFree() && gui::IsKeyPressed(ImGuiKey_F, false) && !gui::GetIO().KeyCtrl)
+		if (gui::keysAreFree() && gui::IsKeyPressed(ImGuiKey_F, false) && !gui::GetIO().KeyCtrl)
 			ctx.view.frameSelected = true;
-		if (keysAreFree() && gui::IsKeyPressed(ImGuiKey_Home, false))
+		if (gui::keysAreFree() && gui::IsKeyPressed(ImGuiKey_Home, false))
 			ctx.view.frameAll = true;
 		// Delete and Backspace delete what is selected, but never while a text field has them.
-		if (keysAreFree() && (gui::IsKeyPressed(ImGuiKey_Delete, false) || gui::IsKeyPressed(ImGuiKey_Backspace, false)) &&
+		if (gui::keysAreFree() && (gui::IsKeyPressed(ImGuiKey_Delete, false) || gui::IsKeyPressed(ImGuiKey_Backspace, false)) &&
 			ctx.selection.kind != Selected::Plan)
 			ctx.apply(remove(plan, ctx.selection));
 	}

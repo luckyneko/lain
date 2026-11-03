@@ -20,6 +20,7 @@
 #include <lain/flow/serialize/templatecache.h>
 #include <lain/gui/dialogs.h>
 #include <lain/gui/gui.h>
+#include <lain/gui/keys.h> // popupOpen — no shortcut acts while a question or a menu is open
 #include <lain/math/types.h>
 #include <lain/string/format.h>
 
@@ -156,7 +157,6 @@ namespace flowview
 			gui::OpenPopup("Unsaved changes");
 		if (gui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
 		{
-			// Only a button answers it: ImGui closes no modal on Escape. (rigplan's makes Escape its Cancel.)
 			gui::TextUnformatted(unsavedQuestion(ctx.guard.pending()));
 			const auto resolve = [&](editor::UnsavedAnswer answer)
 			{
@@ -178,7 +178,9 @@ namespace flowview
 			if (gui::Button("Discard"))
 				resolve(editor::UnsavedAnswer::Discard);
 			gui::SameLine();
-			if (gui::Button("Cancel"))
+			// Escape is Cancel, as in rigplan's question: ImGui closes no modal on Escape itself, so
+			// without this it would do nothing.
+			if (gui::Button("Cancel") || gui::IsKeyPressed(ImGuiKey_Escape, false))
 				resolve(editor::UnsavedAnswer::Cancel);
 			gui::EndPopup();
 		}
@@ -664,6 +666,13 @@ namespace flowview
 			}
 			gui::EndMainMenuBar();
 		}
+
+		// No shortcut acts while a popup is open: a question, a menu or a list is answered or walked with
+		// keys, and what is behind it must not act on them too. ImGui hands a globally routed shortcut to
+		// whoever asks, whatever is open, so behind the unsaved-changes question Cmd+Z undid, Cmd+G
+		// grouped, and Cmd+N or Cmd+O replaced the question being asked (gui::popupOpen).
+		if (gui::popupOpen())
+			return;
 
 		// Global shortcuts via Shortcut()+RouteGlobal (fires regardless of focus). Always use
 		// ImGuiMod_Ctrl: ImGui remaps it to Cmd on macOS (ConfigMacOSXBehaviors), so an explicit

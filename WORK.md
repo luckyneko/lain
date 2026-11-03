@@ -18931,7 +18931,8 @@ Escape in the unsaved-changes question too).
   (`popupOpen`), and a key that means something on its own also waits while a text field has the
   keyboard (`keysAreFree`). The menu bar's shortcuts and keys, the Timeline's Space and the Viewport's
   W and E all ask it. flowview's shortcuts very likely have the same defect, recorded as the ninth
-  known defect rather than changed here (*Known defects*).
+  known defect rather than changed here (*Known defects*). *(Fixed 2026-11-03, measured first; the
+  rule moved to `lain/gui/keys.h`, which both apps now ask.)*
   - **A check of mine was hollow the first time**: it held that the Ctrl shortcuts were already blocked
     by ImGui's routing, because they edited nothing. They had never registered: on macOS ImGui swaps
     Cmd and Ctrl as a key comes in, so a test presses `ImGuiMod_Super` for what a shortcut calls Ctrl.
@@ -19468,7 +19469,7 @@ review of 2026-10-20 moved after it), with clock-domain identity and timestamp g
 
 Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
 
-**One is open**: the ninth, found building M15's 9j (below). The other eight are fixed —
+**None is open.** All nine are fixed —
 `gui::Texture` freeing a descriptor set a running frame
 could still read (2026-09-29; see Milestone 14 › *A texture's descriptor outlives the frames that
 drew it*), a group replaced at its own NodeId looking clean and delivering
@@ -19476,9 +19477,10 @@ nothing (found by M14 slice 1, fixed 2026-09-28 by making versions process-uniqu
 Milestone 14), the three from M11 §Not in this milestone
 (`GroupSync::refused` had no reader, 2026-09-09; the Issues pane flagged an unwired DEFAULTED
 input, 2026-09-09; `ungroup` told a map it was linked, 2026-09-10) and the parallel-ctest collision
-below (2026-09-10), flowview losing unsaved work on Quit (2026-10-29, below), and flowview rewriting a
-texture a frame in flight may still sample (2026-11-03, below). Four of the eight turned out to be
-**larger than their one-line description**: the described symptom was the visible end of a duplicated or unreachable decision, or
+below (2026-09-10), flowview losing unsaved work on Quit (2026-10-29, below), flowview rewriting a
+texture a frame in flight may still sample (2026-11-03, below), and flowview's shortcuts acting behind
+its unsaved-changes question (2026-11-03, below). Five of the nine turned out to be **larger than their
+one-line description**: the described symptom was the visible end of a duplicated or unreachable decision, or
 — the NodeId one — of a general shape (any node re-seated at its own id) that one caller happened to
 reach first. Worth remembering when writing the next entry here.
 
@@ -19560,9 +19562,9 @@ reach first. Worth remembering when writing the next entry here.
     `--example`, drag Tint's colour with a thumbnail showing in the Inspector and the Preview pane: the
     pictures follow the drag with no flicker.
 
-**The ninth, found 2026-11-02 building M15 sub-slice 9j, open:**
+**The ninth, found 2026-11-02 building M15 sub-slice 9j, fixed 2026-11-03:**
 
-- **flowview's global shortcuts very likely act behind its unsaved-changes question.** Every one is a
+- **flowview's global shortcuts very likely acted behind its unsaved-changes question.** Every one is a
   `gui::Shortcut(..., ImGuiInputFlags_RouteGlobal)` (`apps/flowview/src/panes/menubar.cpp`), and ImGui
   hands such a shortcut to whoever asks, whatever popup is open: in rigplan's headless frame, Cmd+N
   replaced the plan under an open modal, and Cmd+D duplicated behind it (*Sub-slice 9j built*). So with
@@ -19572,6 +19574,47 @@ reach first. Worth remembering when writing the next entry here.
   - **The fix is rigplan's**: no shortcut while a popup is open (rigplan's `panes/keys.h`), with a case
     that presses each behind the question and a positive control that presses it with none.
   - **Its own commit**: it changes flowview.
+- **Fixed 2026-11-03, measured first, and a little larger than described.** flowview's menu bar and
+  canvas now run in a headless ImGui frame under test, as rigplan's panes do: `flowview-tested` gains
+  the app and its panes, every source of flowview's but `main.cpp`. With the question asking about a
+  Quit and the canvas holding a selected node, before the fix:
+  - **Cmd+Z undid and Cmd+Shift+Z redid** behind it, **Cmd+G grouped the selection**, Cmd+Shift+G
+    refused out loud, and **Cmd+N then Cmd+O replaced the Quit being asked about** with an Open (the
+    guard keeps the newest request). Run, Run Selection and Stop leave nothing a frame reads back, and
+    went through the same calls.
+  - **The canvas's Delete held**, as predicted: the question takes the focus it waits for.
+  - **The larger part: its own add-node palette.** The palette is a popup of the Graph window, so it
+    leaves the canvas active, and Delete pressed with it open deleted the selection behind it.
+- **The fix is rigplan's.** The menu bar returns before its shortcuts while a popup is open, and the
+  canvas's Delete also waits for the keys to be free.
+  - **`popupOpen` and `keysAreFree` are hoisted into `lain::gui`** (`lain/gui/keys.h`), since flowview
+    is their second consumer. rigplan's `panes/keys.h` is deleted; its menu bar, Timeline and Viewport
+    ask the shared one, and its tests pass unchanged.
+  - **Escape is Cancel in flowview's question too**, as in rigplan's, since ImGui closes no modal on
+    Escape itself. Chosen for consistency between the two editors; the test closes the question with it.
+- **Cases.** flowview's `test_panes.cpp` has two:
+  - every shortcut and Delete pressed behind the question changes nothing; then, with Escape having
+    cancelled it, the same presses act (Ungroup refuses out loud, Undo, Delete, and New is held by the
+    guard). That is the positive control: without it a pass could mean the keys never registered.
+  - Delete behind the palette changes nothing, and deletes once a click elsewhere closes it.
+
+  lain::gui's `test_gui.cpp` has one: a popup holds the keys whether asked from outside it or from
+  inside it, and a text field with the keyboard holds a key but not a shortcut.
+- **Five sabotages, all caught, each by the case aimed at it:**
+  - no popup gate fails five checks of the question case, and the palette case passes;
+  - Delete without `keysAreFree` fails the palette case alone (two checks);
+  - no Escape fails the question case where Escape should have cancelled it;
+  - `AnyPopupLevel` dropped fails lain::gui's case asked from inside a popup, and both apps' cases pass,
+    since they ask from outside;
+  - `WantTextInput` dropped fails lain::gui's text-field check alone.
+- `ctest -j6` **1693/1693** Release with video, camera and Ceres on (+3); warning-clean, format-check
+  clean; `flowview --example --frames 30` exits 0.
+- **Eyeball owed** (gui-mode, on Metal):
+  1. In flowview, make an edit and choose File ▸ New: the question opens. Press Cmd+Z, Cmd+G, Cmd+N,
+     Cmd+O and Delete: nothing changes behind it, and it still asks about New. Escape cancels it.
+  2. Select a node and right-click empty canvas: the palette opens. Delete does nothing; click away,
+     and Delete deletes the node.
+  3. rigplan's question, its Copy In picker, and W, E, K, F, Space and Delete behave as before.
 
 ### `ctest -j` and scratch paths — FIXED 2026-09-10
 

@@ -3,14 +3,17 @@
 # cases are. Compiles the production session.cpp / groupnav.cpp / canvasids.cpp / validation.cpp /
 # runner.cpp / runpolicy.cpp directly (not copies), so the tests exercise the real session file shape,
 # the real group-navigation model, the real imnodes id mapping, the real Issues-panel rules, the real
-# coordinator thread and the real run triggers. (The undo stack moved to lain::editor, and its tests
-# with it.)
+# coordinator thread and the real run triggers. And the app and its panes (flowviewapp.cpp, the main
+# window, panes/), so test_panes.cpp draws the real menu bar and canvas in a headless ImGui frame, as
+# rigplan's tests draw its panes. (The undo stack moved to lain::editor, and its tests with it.)
 
 # The production sources the tests run, compiled ONCE into an object library both test executables
 # link (test-flowview below, test-flowview-capture further down), so they test one flowview and cannot
 # drift into two. An OBJECT library rather than a static one: every object is linked whether or not a
 # test names it, exactly as compiling the files into each executable did. Its link libraries are what
-# those sources need, PUBLIC so each test inherits them.
+# those sources need, PUBLIC so each test inherits them. It now holds every source of flowview's but
+# main.cpp, which the app still compiles a second time; linking the app to it, as rigplan links
+# rigplan-tested, would need it defined outside LAIN_BUILD_TESTING.
 add_library(flowview-tested OBJECT
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/session.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/runner.cpp"
@@ -31,15 +34,31 @@ add_library(flowview-tested OBJECT
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/imageview.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/sequenceview.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/previewcache.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/flowviewapp.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/mainwindow.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/appcontext.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/groupedit.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/parameditors.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/canvasstyle.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/menubar.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/issuespane.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/previewpane.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/interfacepane.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/inspectorpane.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/graphpane.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/valuesave.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/canvasstate.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/panes/statusbar.cpp"
 )
 target_compile_features(flowview-tested PUBLIC cxx_std_17)
 target_include_directories(flowview-tested PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 # lain::flow::serialize: groupnav's layout tree is an EditorTree (the serialize layer's type).
 # lain::image + lain::io::data::codecs: graphio names image::Image / ColorRGBf and reads/writes json.
-# lain::gui + Vulkan::Loader: the value views and the preview cache draw with ImGui, so they link it (the
-# same recipe libs/gui's own tests use). Driver-free unless a windowed case is asked for — otherwise the
-# POSTER half is what the tests call, and no gui::Context is ever constructed; graphio touches the file
-# system, but no device and no window.
+# lain::gui + Vulkan::Loader: the value views, the preview cache and the panes draw with ImGui, so they
+# link it (the same recipe libs/gui's own tests use; lain::gui brings lain::app and archimedes, which the
+# app's own sources need). Driver-free unless a windowed case is asked for — otherwise the panes draw in
+# a headless ImGui frame and the views' POSTER half is what the tests call, with no gui::Context ever
+# constructed; graphio touches the file system, but no device and no window.
 target_link_libraries(flowview-tested
 	PUBLIC lain::data lain::flow lain::flow::serialize lain::flow-example lain::image
 		   lain::io lain::io::sequence lain::media::serialize lain::io::image lain::io::data::codecs lain::io::image::codecs
@@ -75,6 +94,7 @@ add_executable(test-flowview
 	test_examples.cpp
 	test_cameravertical.cpp
 	test_textures.cpp
+	test_panes.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../examples/src/examples.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../examples/src/camerafootage.cpp"
 )

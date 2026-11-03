@@ -2,13 +2,15 @@
 // ImVec2/ImVec4 <-> lain::math bridge (imconfig_lain.h) converts both ways. No
 // window or device needed: GetVersion is a constant, the conversions are pure, and the
 // cases that draw run a CPU-only ImGui frame (imnodes, the status bar, a frame-resolved
-// texture's stand-ins, ImGuizmo). The windowed Context seam is test_texture.cpp's.
+// texture's stand-ins, ImGuizmo, whether the keys are free). The windowed Context seam is
+// test_texture.cpp's.
 
 #include "lain/gui/dock.h"
 #include "lain/gui/enums.h"
 #include "lain/gui/frametexture.h"
 #include "lain/gui/gizmo.h"
 #include "lain/gui/gui.h"
+#include "lain/gui/keys.h"
 #include "lain/gui/nodes.h"
 
 #include <lain/math/types.h>
@@ -79,6 +81,85 @@ TEST_CASE("enumCombo builds headlessly over an enum", "[gui]")
 	REQUIRE(pick == Pick::B);
 
 	ImGui::DestroyContext(ctx);
+}
+
+TEST_CASE("a popup at any level holds the keys, and a text field holds a key alone", "[gui][keys]")
+{
+	// What every app's shortcuts and keys ask before acting, so nothing acts behind a question, a menu
+	// or a list. Asked from INSIDE a popup too: an app's keys can be read from within one (a question
+	// drawn by a pane), and ImGui's default answers only for popups above the level asked from.
+	ImGuiContext* imguiCtx = ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO();
+	io.IniFilename = nullptr; // nothing read or written: a saved window size would carry from one test process to the next
+	io.DisplaySize = ImVec2(640.0f, 480.0f);
+	io.DeltaTime = 1.0f / 60.0f;
+	unsigned char* pixels = nullptr;
+	int width = 0, height = 0;
+	io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+
+	bool freeBefore = false;
+	bool openBefore = true;
+	ImGui::NewFrame();
+	ImGui::Begin("window");
+	freeBefore = lain::gui::keysAreFree();
+	openBefore = lain::gui::popupOpen();
+	ImGui::End();
+	ImGui::Render();
+	CHECK(freeBefore);
+	CHECK_FALSE(openBefore);
+
+	// A popup opened from the window: open asked from outside it and from inside it, at either level.
+	bool openInside = false;
+	bool freeInside = true;
+	bool openOutside = false;
+	ImGui::NewFrame();
+	ImGui::Begin("window");
+	ImGui::OpenPopup("popup");
+	if (ImGui::BeginPopup("popup"))
+	{
+		openInside = lain::gui::popupOpen();
+		freeInside = lain::gui::keysAreFree();
+		ImGui::EndPopup();
+	}
+	ImGui::End();
+	openOutside = lain::gui::popupOpen();
+	ImGui::Render();
+	CHECK(openInside);
+	CHECK_FALSE(freeInside);
+	CHECK(openOutside);
+
+	// The popup closed, and a text field given the keyboard: no popup is open, but a key that means
+	// something on its own is the field's. ImGui says it wants text input a frame after the field is
+	// active, so the field is drawn for a few frames.
+	ImGui::NewFrame();
+	ImGui::Begin("window");
+	if (ImGui::BeginPopup("popup"))
+	{
+		ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
+	ImGui::End();
+	ImGui::Render();
+	bool openTyping = true;
+	bool freeTyping = true;
+	for (int frame = 0; frame < 3; ++frame)
+	{
+		ImGui::NewFrame();
+		ImGui::Begin("window");
+		std::string text;
+		if (frame == 0)
+			ImGui::SetKeyboardFocusHere();
+		lain::gui::InputText("field", &text);
+		openTyping = lain::gui::popupOpen();
+		freeTyping = lain::gui::keysAreFree();
+		ImGui::End();
+		ImGui::Render();
+	}
+	CHECK(io.WantTextInput);
+	CHECK_FALSE(openTyping);
+	CHECK_FALSE(freeTyping);
+
+	ImGui::DestroyContext(imguiCtx);
 }
 
 TEST_CASE("an imnodes node with an empty body is still drawable", "[gui][nodes]")

@@ -1400,6 +1400,27 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-03 — flowview's shortcuts wait while a question is open (the ninth known defect, fixed)
+
+Measured first, then fixed as rigplan fixed it. flowview's menu bar and canvas now run in a headless
+ImGui frame under test, so `flowview-tested` holds every source of flowview's but `main.cpp`. `ctest -j6`
+**1693/1693** Release with video, camera and Ceres on (+3); warning-clean, format-check clean;
+`flowview --example --frames 30` exits 0. **gui-mode NOT eyeballed** (three steps, in WORK.md). Full
+notes in WORK.md's *Known defects*, the ninth. **No known defect is open.**
+
+- **Measured behind the unsaved-changes question:** Cmd+Z undid, Cmd+Shift+Z redid, Cmd+G grouped the
+  selection, and Cmd+N then Cmd+O replaced the Quit being asked about. Delete held there, as
+  predicted, since the question takes the canvas's focus.
+- **A little larger than described:** the canvas's own add-node palette leaves the canvas active, and
+  Delete deleted the selection behind it.
+- **The fix:** no shortcut while a popup is open, and the canvas's Delete waits for the keys to be free.
+  `popupOpen` / `keysAreFree` are hoisted into `lain/gui/keys.h` on this second consumer; rigplan's
+  `panes/keys.h` is deleted and rigplan asks the shared one. Escape is now Cancel in flowview's question
+  too, as in rigplan's.
+- **Three cases** (two flowview, each with a positive control that the same presses act once nothing
+  is open; one lain::gui, asked from inside a popup and with a text field active). Five sabotages, all
+  caught, each by the case aimed at it.
+
 ### Update 2026-11-03 — flowview draws each new picture through a new texture (the eighth known defect, fixed)
 
 flowview's sequence player rewrote its `gui::Texture` in place whenever the next frame was the same
@@ -1446,7 +1467,8 @@ and both gui slices (8 and 9) are live-verified. WORK.md's per-slice markers now
 
 - **Still open, tracked separately and not M15's build order:**
   - known defects eight (flowview's sequence player rewrites a texture in flight) and nine (flowview's
-    shortcuts very likely act behind its unsaved-changes question), each its own flowview commit;
+    shortcuts very likely act behind its unsaved-changes question), each its own flowview commit
+    *(both fixed 2026-11-03; see above)*;
   - the two fixes M15 found owed to M9's rig binder (it pairs footage with models by sorted position,
     and names a one-frame camera by its file).
 - **M9 is again the only milestone from 5 onward that is not built.**

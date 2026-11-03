@@ -10,7 +10,6 @@
 #include "editorplan.h"
 #include "panes/inspector.h"
 #include "panes/issues.h"
-#include "panes/keys.h"
 #include "panes/menubar.h"
 #include "panes/outliner.h"
 #include "panes/specifications.h"
@@ -24,6 +23,7 @@
 #include <lain/core/uri.h>
 #include <lain/editor/guard.h>
 #include <lain/gui/gui.h>
+#include <lain/gui/keys.h>
 #include <lain/io/data/codecs.h>
 #include <lain/io/data/save.h>
 #include <lain/rigplan/serialize/rigplan.h>
@@ -694,7 +694,7 @@ TEST_CASE("a key or a shortcut edits nothing behind an open question", "[rigplan
 	const auto probe = [&]
 	{
 		draw();
-		anyOpen = rigplan::popupOpen();
+		anyOpen = lain::gui::popupOpen();
 	};
 	CHECK(imgui.frame(probe) == 0);
 	REQUIRE_FALSE(anyOpen);
