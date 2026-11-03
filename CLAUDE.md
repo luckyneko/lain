@@ -1400,11 +1400,28 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
-### Update 2026-11-02 — M15 slice 9, sub-slice 9j built: the Specifications menu (**slice 9 BUILT; gui-mode checklist owed**)
+### Update 2026-11-03 — M15 slice 9 live-verified: **M15 COMPLETE**
+
+The repo owner walked slice 9's 12-step gui-mode checklist on Metal, and **all twelve steps pass**: the
+Timeline and keying (1 to 3), the camera view (4 to 7), the visibility map (8), copying specifications
+in and saving them out with the clash question and Escape (9 and 10), one step of history per gesture
+and Escape in the unsaved-changes question (11), and quitting while a ray table or the map is being
+made (12). Slice 9 was the last item of M15's build order, so **M15 is complete**. Every slice is built,
+and both gui slices (8 and 9) are live-verified. WORK.md's per-slice markers now read *live-verified
+2026-11-03*.
+
+- **Still open, tracked separately and not M15's build order:**
+  - known defects eight (flowview's sequence player rewrites a texture in flight) and nine (flowview's
+    shortcuts very likely act behind its unsaved-changes question), each its own flowview commit;
+  - the two fixes M15 found owed to M9's rig binder (it pairs footage with models by sorted position,
+    and names a one-frame camera by its file).
+- **M9 is again the only milestone from 5 onward that is not built.**
+
+### Update 2026-11-02 — M15 slice 9, sub-slice 9j built: the Specifications menu (**slice 9 BUILT**, *live-verified 2026-11-03, see above*)
 
 The last of slice 9's ten commits. `ctest -j8` **1688/1688** Release with video, camera and Ceres on (+5),
-and **1547/1547** with all three off (+5); warning-clean, format-check clean. **gui-mode NOT driven by
-hand**: slice 9's 12-step checklist is now owed whole. Full notes in WORK.md's *Sub-slice 9j built*.
+and **1547/1547** with all three off (+5); warning-clean, format-check clean. **gui-mode live-verified
+2026-11-03** (slice 9's 12-step checklist, see above). Full notes in WORK.md's *Sub-slice 9j built*.
 
 - **`SpecificationsMenu`** (`panes/specifications.{h,cpp}`), between Add and View:
   - **Copy In from Catalogue...**: a picker by kind, which says what a copy would bring before anything
@@ -1449,8 +1466,8 @@ notes in WORK.md's *Sub-slice 9i built*; CONTEXT.md's *Specification catalogue* 
 ### Update 2026-11-02 — M15 slice 9, sub-slice 9h built: the visibility pane
 
 The eighth of slice 9's ten commits. `ctest -j8` **1675/1675** Release with video, camera and Ceres on
-(+6), and **1534/1534** with all three off (+6); warning-clean, format-check clean. **gui-mode NOT driven
-by hand** (checklist steps 8 and 12, after 9j). Full notes in WORK.md's *Sub-slice 9h built*.
+(+6), and **1534/1534** with all three off (+6); warning-clean, format-check clean. **gui-mode
+live-verified 2026-11-03** (checklist steps 8 and 12, after 9j). Full notes in WORK.md's *Sub-slice 9h built*.
 
 - **`VisibilitySchedule`**, driver-free, makes the map:
   - it hands out each face once, camera by camera;
@@ -1549,8 +1566,8 @@ Full notes in WORK.md's *The 20 m room's footprint*.
 
 The fifth of slice 9's ten commits. `ctest -j8` **1652/1652** Release with video, camera and Ceres on
 (+1), and **1511/1511** with all three off (+1); warning-clean, format-check clean; the `--frames`
-smokes exit 0, including quits while a ray table builds. **gui-mode NOT driven by hand** (checklist
-steps 4 to 7, after 9j). Full notes in WORK.md's *Sub-slice 9e built*.
+smokes exit 0, including quits while a ray table builds. **gui-mode live-verified 2026-11-03**
+(checklist steps 4 to 7, after 9j). Full notes in WORK.md's *Sub-slice 9e built*.
 
 - **`CameraViewPane`** (`apps/rigplan/src/cameraviewpane.{h,cpp}`), docked under the Inspector:
   - Nominal or Realised, and a pin;
@@ -1611,8 +1628,8 @@ clean; the `--frames` smokes exit 0, including a quit while bakes run. Full note
 
 The second of slice 9's ten commits. `ctest -j8` **1641/1641** Release with video, camera and Ceres on
 (+8), and **1500/1500** with all three off (+8); warning-clean, format-check clean; the `--frames`
-smokes of both apps exit 0. **gui-mode NOT driven by hand**: the checklist after 9j covers it (steps 1
-to 3). Full notes in WORK.md's *Sub-slice 9b built*.
+smokes of both apps exit 0. **gui-mode live-verified 2026-11-03** (checklist steps 1 to 3, after
+9j). Full notes in WORK.md's *Sub-slice 9b built*.
 
 - **The Timeline pane**, docked between the Viewport and Issues.
   - A transport: play and pause (also Space), step, the first and last frame, loop, and Key.

@@ -14918,7 +14918,7 @@ clean. `flowview --licenses` prints 25 notices (48.6 KB) on macOS arm64.
   `third-party/` ships; MoltenVK's compiled-in SPIRV-Cross has no licence text to read; and nothing
   was built on Linux or Windows (MSVC's literal limit included), so CI's first run is owed.
 
-## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22; slices 0 to 8 built, 9 planned)
+## Milestone 15 — rig design: rig plans and synthetic captures (grilled 2026-10-21 to 10-22, **COMPLETE** 2026-11-03)
 
 An app for designing camera rigs as they would be installed (a room, props, poles carrying cameras
 and lights, a board waved through) that renders **synthetic captures**: footage in the shape M9
@@ -15045,7 +15045,8 @@ Headless before gui, one commit or a few per slice, a sabotage per claim.
 9. **The gui, part 2**: looking through a camera, the visibility map, the Timeline with keys, the
    specification catalogue (copy in, save out). Live-verified by the repo owner. **Planned 2026-10-30
    as ten commits, 9a to 9j** (*Slice 9 planned* below); **9a to 9d built 2026-11-01, 9e to 9j 2026-11-02,
-   so slice 9 is built**; its gui-mode checklist is owed.
+   so slice 9 is built**; **live-verified 2026-11-03**: every step of its gui-mode checklist passes,
+   which completes M15's build order.
 
 ### Found while grilling — each owes a check
 
@@ -18194,7 +18195,8 @@ built.
   - Copy In from Catalogue…, with a picker by kind; Save to Catalogue… for the selected specification;
     the Replace, Keep both, Cancel modal; refusals as transient messages.
 
-- **The gui-mode checklist, after 9j** (the repo owner, on a Metal session):
+- **The gui-mode checklist, after 9j** (the repo owner, on a Metal session). **Walked 2026-11-03: all
+  twelve steps pass.**
   1. Open `three-poles.json`. Scrub the Timeline: the board moves in the Viewport. Play, pause, step
      and loop. Select a key in the table: the Timeline and the Viewport go to its frame.
   2. Scrub between two keys and press K: a key appears there and nothing moves. Drag the board with
@@ -18279,8 +18281,8 @@ rigplan's Timeline pane, docked between the Viewport and Issues: a transport, a 
 scrubber, and a row per mover with its keys as ticks. K keys the selected mover at the frame shown, and
 dragging a mover with the gizmo keys it there. `ctest -j8` **1641/1641** Release with video, camera and
 Ceres on (+8), and **1500/1500** with all three off (+8); warning-clean, format-check clean. The
-`--frames` smokes of both apps exit 0 with nothing on stderr. **gui-mode NOT driven by hand**: steps 1
-to 3 of the checklist after 9j are this commit's.
+`--frames` smokes of both apps exit 0 with nothing on stderr. **gui-mode live-verified 2026-11-03**
+(steps 1 to 3 of the checklist after 9j).
 
 - **`TimelineScale`** (`timelinescale.{h,cpp}`) places frames across the track, a slot each of one
   width, with the tick at the slot's centre.
@@ -18503,8 +18505,8 @@ format-check clean.
 `CameraViewPane` (`cameraviewpane.{h,cpp}`, executable-only, beside the Viewport), docked under the
 Inspector, and `sameModel` in `lookthrough`. `ctest -j8` **1652/1652** Release with video, camera and
 Ceres on (+1), and **1511/1511** with all three off (+1); warning-clean, format-check clean. The
-`--frames` smokes of both apps exit 0 with nothing on stderr. **gui-mode NOT driven by hand**: steps 4 to
-7 of the checklist after 9j are this commit's. A temporary probe drove it to take the numbers below.
+`--frames` smokes of both apps exit 0 with nothing on stderr. **gui-mode live-verified 2026-11-03**
+(steps 4 to 7 of the checklist after 9j). A temporary probe drove it to take the numbers below.
 
 - **What it draws**: Nominal and Realised, a Pin, the camera's name, the step, the picture's size and
   the last capture's time, and the picture fitted whole at the camera's aspect.
@@ -18743,8 +18745,8 @@ warning-clean, format-check clean. The end-to-end case ran on Metal and on the C
 `VisibilitySchedule` (`visibilityschedule.{h,cpp}`) and the map's picture (`visibilityview.{h,cpp}`) in
 `rigplan-tested`, and `VisibilityPane` (`visibilitypane.{h,cpp}`, executable-only, as the camera view
 is). `ctest -j8` **1675/1675** Release with video, camera and Ceres on (+6), and **1534/1534** with all
-three off (+6); warning-clean, format-check clean. **gui-mode NOT driven by hand**: steps 8 and 12 of
-the checklist after 9j are this commit's. A temporary probe drove it to take the numbers below.
+three off (+6); warning-clean, format-check clean. **gui-mode live-verified 2026-11-03** (steps 8 and
+12 of the checklist after 9j). A temporary probe drove it to take the numbers below.
 
 - **The schedule, driver-free:**
   - It hands out each face a map needs once, camera by camera in the plan's order. It works out a
@@ -18876,13 +18878,14 @@ off (+8); warning-clean, format-check clean. CONTEXT.md's *Specification catalog
   | An unanswered clash saved anyway | the clash case |
   | Overwrite a file that is not a catalogue | the not-a-catalogue case |
 
-#### Sub-slice 9j built (2026-11-02): the Specifications menu (**slice 9 BUILT; gui-mode checklist owed**)
+#### Sub-slice 9j built (2026-11-02): the Specifications menu (**slice 9 BUILT**, *live-verified 2026-11-03; M15 COMPLETE*)
 
 `apps/rigplan/src/panes/specifications.{h,cpp}`, `SpecificationsMenu`: copying a specification in from a
 catalogue through a picker, and saving the selected one out, with the clash question. `ctest -j8`
 **1688/1688** Release with video, camera and Ceres on (+5), and **1547/1547** with all three off (+5);
-warning-clean, format-check clean. The `--frames` smoke exits 0. **gui-mode NOT driven by hand**: the
-checklist above (steps 9 to 11) is the repo owner's, and with this commit every step of it is owed.
+warning-clean, format-check clean. The `--frames` smoke exits 0. **gui-mode live-verified by the repo
+owner 2026-11-03**: all twelve steps of the checklist above pass (9 to 11 are this commit's, and 11's
+Escape in the unsaved-changes question too).
 
 - **The menu**, between Add and View, drawn by `MenuBarPane`:
   - **Copy In from Catalogue...** picks a catalogue, then opens the picker on it: the kinds as radio
@@ -19224,7 +19227,8 @@ row here**. A row is cheap to delete and expensive to leave.
   ten commits, 9a to 9j: the current frame and the Timeline, the plan's assets shared between panes,
   looking through a camera, a distance pass and the visibility map, and the specification catalogue,
   ending in a gui-mode checklist (*Slice 9 planned*); 9a to 9d built 2026-11-01, 9e to 9j 2026-11-02,
-  so **slice 9 is built, and its gui-mode checklist is owed** (after *Sub-slice 9j built*). 9e found
+  so **slice 9 is built, and live-verified 2026-11-03**: all twelve steps of its gui-mode checklist
+  pass. **M15 is COMPLETE** (2026-11-03). 9e found
   three-poles in a 20 m room holding 8.7 GB; storing a texture widened it to RGBA32F first, and fixed,
   it holds 4.1 GB (*The 20 m room's footprint*). 7a's two
   findings and 5e's were decided on 2026-10-29: a registration verdict takes the camera models as
@@ -19243,8 +19247,8 @@ row here**. A row is cheap to delete and expensive to leave.
   (2026-10-24)**. The PRs merged, lain's pin moved, and the licence notice, the thread split and
   `--device` landed. *(M15 §Sub-slice 3d built.)*
 
-M1–M8 and M10–M14 are built. **M9 is the only milestone from 5 onward that is not**, and M15 is under
-way (slices 0 to 9 built and slice 8 live-verified; slice 9's gui-mode checklist owed).
+M1–M8 and M10–M15 are built (M15 completed 2026-11-03, every slice built and its two gui slices
+live-verified). **M9 is the only milestone from 5 onward that is not.**
 
 - **Example documents** — all four commits built. Owed: a gui-mode eyeball of every example (the
   primary purpose). The smoke step has run in CI since it landed, and was green on every leg in
