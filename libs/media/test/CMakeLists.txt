@@ -7,6 +7,7 @@ add_executable(test-media
 	test_framesource.cpp
 	test_framesequence.cpp
 	test_operations.cpp
+	test_frameref.cpp
 )
 
 target_compile_features(test-media PRIVATE cxx_std_17)
