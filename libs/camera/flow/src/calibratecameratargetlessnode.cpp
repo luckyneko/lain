@@ -2,9 +2,9 @@
 
 #include "decimal.h"
 #include "extraction.h"
-#include "identity.h"
 
 #include <lain/camera/calibration/targetless.h>
+#include <lain/camera/capture/location.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -56,8 +56,9 @@ namespace lain::camera
 	void CalibrateCameraTargetlessNode::compute(flow::NodeEvaluation& evaluation) const
 	{
 		const media::FrameSequence& camera = footage(evaluation);
+		// Named by where its footage lies, as the registration nodes name a rig's cameras.
+		const capture::CameraIdentity identity = capture::identitiesByLocation({camera}).front();
 		evaluation.output(m_report).set(
-			calibration::targetless::calibrate(capture::CameraFootage{detail::identityOf(camera), camera}, settings(),
-											   request(evaluation)));
+			calibration::targetless::calibrate(capture::CameraFootage{identity, camera}, settings(), request(evaluation)));
 	}
 } // namespace lain::camera

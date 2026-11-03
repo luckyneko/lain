@@ -29,16 +29,6 @@
 
 namespace lain::camera::testing::rig
 {
-	// A camera at `position` looking at `target`, in the camera frame's convention (X right, Y down,
-	// Z forward), with the reference frame's +Y as down.
-	inline math::RigidTransformd lookingAt(const math::Vec3d& position, const math::Vec3d& target)
-	{
-		const math::Vec3d z = math::normalize(target - position);
-		const math::Vec3d x = math::normalize(math::cross(math::Vec3d{0, 1, 0}, z));
-		const math::Vec3d y = math::cross(z, x);
-		return math::RigidTransformd{math::quat_cast(math::Mat3d{x, y, z}), position};
-	}
-
 	// The board's centre in its own frame: the mean of its corners.
 	inline math::Vec3d centroid(const board::Specification& spec)
 	{
@@ -159,7 +149,7 @@ namespace lain::camera::testing::rig
 		{
 			const double u1 = (double(engine() >> 11) + 0.5) * 0x1.0p-53;
 			const double u2 = double(engine() >> 11) * 0x1.0p-53;
-			return std::sqrt(-2.0 * std::log(u1)) * std::cos(6.283185307179586 * u2);
+			return std::sqrt(-2.0 * std::log(u1)) * std::cos(math::two_pi<double>() * u2);
 		};
 		const Scene& s = scene();
 		board::Observation observation;
@@ -265,7 +255,7 @@ namespace lain::camera::testing::rig
 		{
 			const double a = cameras == 1 ? 0.0 : -0.7 + 1.4 * double(c) / double(cameras - 1);
 			const math::Vec3d position = distance * math::Vec3d{std::sin(a), -0.1 * double(c % 2), -std::cos(a)};
-			s.referenceFromCamera.push_back(lookingAt(position, math::Vec3d{0.0}));
+			s.referenceFromCamera.push_back(math::lookingAt(position, math::Vec3d{0.0}, kCameraFrame).value());
 		}
 		for (std::size_t g = 0; g < groups; ++g)
 		{

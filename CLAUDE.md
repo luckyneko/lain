@@ -1448,6 +1448,36 @@ MSVC's Debug library checks. On Linux and macOS the check passed against garbage
 - **Found: `format-check` cannot run on Windows** (a 52,953-character command line). Listed in WORK.md's
   known defects.
 
+### Update 2026-11-03 — angles in `lain::math`, camera helpers stated once (NOTES.txt)
+
+The first two follow-ups of the answers to `NOTES.txt` (an untracked reading pass over `libs/camera`),
+built on M9 by the repo owner's call; M15 conflicts are settled when M9 is accepted. `ctest -j8`
+**1348/1348** Debug with video, camera and Ceres on (+14); warning-clean; the pinned clang-format clean
+on every touched file. **Not run:** the Release-only cases and GCC. Full notes, and the rest of the
+follow-ups, in WORK.md's *NOTES.txt (2026-11-02)*.
+
+- **`lain/math/angles.h`**: `angleBetween` and `rotationBetween`, atan2 forms, replacing camera's
+  private copies and eleven test copies. The acos form, in `board/pose.cpp` and three tests, could not
+  resolve below about 3e-8 rad, so a `< 1e-9` check with it meant "exactly equal".
+- **`math::lookingAt(position, target, reference, aimed)`** beside `RigidTransform`, up taken from the
+  reference's `AxisConvention`, nullopt where none exists. The three test scenes' copies go; callers
+  pass `kCameraFrame` as the reference.
+- **`math::pi` / `math::two_pi`** through GLM's constants header, replacing 20 hand-typed copies of τ
+  bit for bit. The nine truncated `6.28318` stay: they are not τ, and would move two goldens.
+- **`math::isFinite`** over a vector, a quaternion or a rigid transform, replacing camera's private
+  `finite` and a hand-written keypoint-pixel check.
+- **`media::capturedBefore`**, beside `FrameRef`: capture order (timestamp, then ordinal, then source),
+  which four public camera headers described and two sorts kept private keys for. Equivalent exactly
+  when equal, so a sorted list finds a frame given twice beside its twin.
+- **camera:** `identity.h` deleted (a second name for `capture::identitiesByLocation`);
+  `positiveDefinite` beside `whitenedSquared`; `minimumParallax` defined once; a `UnionFind` class in
+  place of five hand-set parent vectors; feature extraction's group key renamed `placeInCapture`.
+- **Sabotages:** acos back in either angle fails its tiny-angle case; a flipped down axis fails both
+  `lookingAt` orientation cases. **Keeping `UnionFind`'s higher root passes all 518 camera and flowview
+  tests**: nothing observes which root is kept, so the rule is unpinned determinism insurance.
+- **Found, recorded as a known defect:** board registration whitens a detector's covariance without
+  checking it is positive definite.
+
 ### Update 2026-10-21 — M9: a no-refiner CI leg, and the footprint measured again (P4)
 
 The review's P4 items 8 and 9. Full notes in WORK.md's *A no-refiner CI leg, and the footprint measured

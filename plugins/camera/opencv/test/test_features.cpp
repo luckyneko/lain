@@ -13,6 +13,7 @@
 #include <lain/camera/feature/matching.h>
 #include <lain/camera/projection.h>
 #include <lain/core/time.h>
+#include <lain/math/angles.h>
 #include <lain/media/framesequence.h>
 #include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
@@ -52,21 +53,11 @@ using synthetic::projectInto;
 
 namespace
 {
-	constexpr double kTau = 6.283185307179586;
+	const double kTau = math::two_pi<double>();
 
 	CameraModel model()
 	{
 		return camera::testing::cameraWith(camera::testing::brownConrady());
-	}
-
-	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
-	{
-		return 2.0 * std::acos(std::min(1.0, std::abs(math::dot(a.rotation(), b.rotation()))));
-	}
-
-	double angleBetween(const math::Vec3d& u, const math::Vec3d& v)
-	{
-		return std::atan2(math::length(math::cross(u, v)), math::dot(u, v));
 	}
 
 	math::Vec3d rayOf(const CameraModel& m, const math::Vec2d& pixel)
@@ -305,13 +296,13 @@ TEST_CASE("the relative and absolute poses of two views are recovered", "[camera
 		// All four decompositions of each essential matrix, so lain chooses among them.
 		CHECK(relative.candidates > 0);
 		CHECK(relative.candidates % 4 == 0);
-		CHECK(rotationBetween(*relative.pose, truthBFromA) < 1e-3);
-		CHECK(angleBetween(relative.pose->translation(), truthBFromA.translation()) < 2.5e-3);
+		CHECK(math::rotationBetween(*relative.pose, truthBFromA) < 1e-3);
+		CHECK(math::angleBetween(relative.pose->translation(), truthBFromA.translation()) < 2.5e-3);
 
 		const GeometryResult absolute = absolutePose(pointRays, request);
 		REQUIRE(absolute.ok());
 		CHECK(absolute.candidates >= 1);
-		CHECK(rotationBetween(*absolute.pose, truthCameraFromReference) < 2e-3);
+		CHECK(math::rotationBetween(*absolute.pose, truthCameraFromReference) < 2e-3);
 		CHECK(math::length(absolute.pose->translation() - truthCameraFromReference.translation()) < 3e-3);
 	}
 }

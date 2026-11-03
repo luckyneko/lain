@@ -41,6 +41,9 @@ namespace lain::camera::reconstruction
 	// triangulates is as uncertain in depth as its rays' noise over its parallax. Provisional until
 	// sub-slice 9 measures real rigs; it ranks pairs and never refuses a rig.
 	inline constexpr double kSeedAngle = 0.03490658503988659;
+	// Below this parallax the rays of a triangulation are a point at infinity: the geometry facades'
+	// default inlier angle (feature::GeometryRequest), whatever angle a request poses with.
+	double minimumParallax();
 
 	// One usable observation of a track: its view, where it saw the landmark, and the ray.
 	struct Seen

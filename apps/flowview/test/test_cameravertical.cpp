@@ -50,6 +50,7 @@
 #include <lain/io/image/save.h>
 #include <lain/io/sequence/openers.h>
 #include <lain/io/video/codecs.h>
+#include <lain/math/angles.h>
 #include <lain/math/rigidtransform.h>
 #include <lain/media/framesequence.h>
 #include <lain/task/task.h>
@@ -415,7 +416,7 @@ TEST_CASE("run registers a rig from a folder of footage and a folder of models",
 			CHECK(back->cameras[c].camera == rig->cameras[c].camera);
 			CHECK(back->cameras[c].referenceFromCamera.translation() == rig->cameras[c].referenceFromCamera.translation());
 			// To the last bit a renormalised rotation can move (RigidTransform normalises what it is built from).
-			CHECK(camera::testing::rotationBetween(back->cameras[c].referenceFromCamera, rig->cameras[c].referenceFromCamera) <=
+			CHECK(math::rotationBetween(back->cameras[c].referenceFromCamera, rig->cameras[c].referenceFromCamera) <=
 				  1e-15);
 		}
 	}

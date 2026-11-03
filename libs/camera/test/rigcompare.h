@@ -9,6 +9,7 @@
 
 #include <lain/camera/capture/capturegroup.h>
 #include <lain/camera/registration/report.h>
+#include <lain/math/angles.h>
 #include <lain/math/rigidtransform.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -20,13 +21,6 @@
 
 namespace lain::camera::testing
 {
-	// The angle between two poses' rotations, radians.
-	inline double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
-	{
-		const math::Quatd r = math::conjugate(a.rotation()) * b.rotation();
-		return 2.0 * std::atan2(std::sqrt(r.x * r.x + r.y * r.y + r.z * r.z), std::abs(r.w));
-	}
-
 	// The registered pose of each of `identities`, in that order. Each must be registered.
 	inline std::vector<math::RigidTransformd> posesOf(const registration::Report& report,
 													  const std::vector<capture::CameraIdentity>& identities)
@@ -79,7 +73,7 @@ namespace lain::camera::testing
 		d.scale = along > 0 ? across / along : 1.0;
 		for (std::size_t c = 0; c < expected.size(); ++c)
 		{
-			d.rotation.push_back(rotationBetween(expected[c], found[c]));
+			d.rotation.push_back(math::rotationBetween(expected[c], found[c]));
 			d.centre.push_back(math::length(found[c].translation() * d.scale - expected[c].translation()));
 			d.worstRotation = std::max(d.worstRotation, d.rotation.back());
 			d.worstCentre = std::max(d.worstCentre, d.centre.back());

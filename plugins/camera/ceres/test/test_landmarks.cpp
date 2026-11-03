@@ -9,6 +9,7 @@
 
 #include <lain/camera/ceres/register.h>
 #include <lain/camera/refinement/refiner.h>
+#include <lain/math/angles.h>
 #include <lain/testing/skip.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -30,7 +31,7 @@ using Catch::Matchers::WithinRel;
 
 namespace
 {
-	constexpr double kTau = 6.283185307179586;
+	const double kTau = math::two_pi<double>();
 
 	void ensureCeres()
 	{
@@ -41,12 +42,6 @@ namespace
 		}();
 		(void)once;
 		REQUIRE(refinerRegistry().keys() == std::vector<std::string>{"ceres"});
-	}
-
-	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
-	{
-		const math::Quatd r = math::conjugate(a.rotation()) * b.rotation();
-		return 2.0 * std::atan2(std::sqrt(r.x * r.x + r.y * r.y + r.z * r.z), std::abs(r.w));
 	}
 
 	// Box-Muller over a seeded engine: the standard's distributions are implementation-defined, and
@@ -95,7 +90,7 @@ namespace
 			const double a =
 				ring ? spread * double(c) / double(cameras) : spread * (double(c) / double(cameras - 1) - 0.5);
 			const math::Vec3d position{radius * std::sin(a), -0.05 * double(c % 3), -radius * std::cos(a)};
-			scene.cameraFromReference.push_back(rig::lookingAt(position, math::Vec3d{0.0}).inverse());
+			scene.cameraFromReference.push_back(math::lookingAt(position, math::Vec3d{0.0}, kCameraFrame).value().inverse());
 			scene.problem.models.push_back(rig::model());
 		}
 		scene.problem.cameraFromReference = scene.cameraFromReference;
@@ -194,7 +189,7 @@ namespace
 		Errors out;
 		for (std::size_t c = 0; c < cameras.size(); ++c)
 		{
-			out.rotation = std::max(out.rotation, rotationBetween(cameras[c], truth.cameraFromReference[c]));
+			out.rotation = std::max(out.rotation, math::rotationBetween(cameras[c], truth.cameraFromReference[c]));
 			const math::Vec3d centre = about + (centreOf(cameras[c]) - about) / s;
 			out.centre = std::max(out.centre, math::length(centre - centreOf(truth.cameraFromReference[c])));
 		}
@@ -207,7 +202,7 @@ namespace
 	{
 		for (std::size_t c = 0; c < problem.cameraFromReference.size(); ++c)
 		{
-			if (rotationBetween(solution.cameraFromReference[c], problem.cameraFromReference[c]) > 1e-12 ||
+			if (math::rotationBetween(solution.cameraFromReference[c], problem.cameraFromReference[c]) > 1e-12 ||
 				math::length(solution.cameraFromReference[c].translation() - problem.cameraFromReference[c].translation()) > 1e-12)
 				return false;
 		}
@@ -400,7 +395,7 @@ TEST_CASE("cameras and landmarks converge together, with the scale left free", "
 	const Solution solution = refine(problem);
 	REQUIRE(solution.status == Status::Converged);
 	CHECK_THAT(solution.detail, EndsWith("linear solver SPARSE_SCHUR"));
-	CHECK(rotationBetween(solution.cameraFromReference[0], problem.cameraFromReference[0]) < 1e-12);
+	CHECK(math::rotationBetween(solution.cameraFromReference[0], problem.cameraFromReference[0]) < 1e-12);
 	// The scale is wherever the solver's path left it: measured 1.022 here, from a start at 1.0004,
 	// and between 0.980 and 1.012 over twelve other seeds, the same at 0 px of noise as at 0.3, in four
 	// or five iterations every time. Within what the starts were moved, and normalised by the method

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "angles.h"
 #include "coverage.h"
 #include "execution.h"
 #include "lain/camera/calibration/report.h"
@@ -8,7 +7,6 @@
 #include "lain/camera/cameramodel.h"
 #include "median.h"
 #include "resampling.h"
-#include "unionfind.h"
 #include "whitening.h"
 
 #include <lain/core/time.h>
@@ -24,11 +22,9 @@
 namespace lain::camera::calibration::detail
 {
 	// How a method module runs independent work (execution.h), counts coverage (coverage.h), holds
-	// evidence out and draws bootstrap resamples (resampling.h), measures an angle (angles.h), takes a
-	// median (median.h), finds a union-find root (unionfind.h) and whitens a residual (whitening.h),
-	// each shared with registration; named here too, since inside calibration this namespace hides
-	// lain::camera::detail.
-	using camera::detail::angleBetween;
+	// evidence out and draws bootstrap resamples (resampling.h), takes a median (median.h), and whitens
+	// a residual and checks a covariance (whitening.h), each shared with registration; named here too,
+	// since inside calibration this namespace hides lain::camera::detail.
 	using camera::detail::bootstrapDraws;
 	using camera::detail::cover;
 	using camera::detail::CoverageCells;
@@ -36,7 +32,7 @@ namespace lain::camera::calibration::detail
 	using camera::detail::forEach;
 	using camera::detail::holdOut;
 	using camera::detail::median;
-	using camera::detail::root;
+	using camera::detail::positiveDefinite;
 	using camera::detail::whitenedSquared;
 
 	// A report that has failed, timed from `start`.

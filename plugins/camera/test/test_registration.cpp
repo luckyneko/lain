@@ -11,6 +11,7 @@
 #include <lain/camera/board/rendering.h>
 #include <lain/camera/capture/capturegroup.h>
 #include <lain/camera/registration/board.h>
+#include <lain/math/angles.h>
 #include <lain/media/framesource.h>
 #include <lain/testing/threadpool.h>
 
@@ -74,12 +75,6 @@ namespace
 		board::Specification m_spec;
 		math::RigidTransformd m_cameraFromReference;
 	};
-
-	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
-	{
-		const math::Quatd r = math::conjugate(a.rotation()) * b.rotation();
-		return 2.0 * std::atan2(std::sqrt(r.x * r.x + r.y * r.y + r.z * r.z), std::abs(r.w));
-	}
 } // namespace
 
 TEST_CASE("three cameras rendered, detected and refined register to their truth", "[camera][registration]")
@@ -130,7 +125,7 @@ TEST_CASE("three cameras rendered, detected and refined register to their truth"
 		CAPTURE(c);
 		const math::RigidTransformd truth = referenceFromCamera(angles[c]);
 		const math::RigidTransformd found = *report.referenceFromCamera(capture::CameraIdentity{"cam" + std::to_string(c)});
-		CHECK(rotationBetween(found, truth) < 0.001);
+		CHECK(math::rotationBetween(found, truth) < 0.001);
 		CHECK(math::length(found.translation() - truth.translation()) < 0.001);
 	}
 	const auto* held = std::get_if<registration::HeldOutEvidence>(&report.heldOut);

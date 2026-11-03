@@ -32,7 +32,7 @@ namespace lain::camera::synthetic
 										   double phase = 0.0, double distance = 0.42)
 	{
 		const double t = double(i) / double(count) + phase;
-		const double tau = 6.283185307179586;
+		const double tau = math::two_pi<double>();
 		const board::PatternParameters& p = spec.pattern().parameters();
 		const double square = spec.instance().squareLength.value.metres();
 		const math::Vec3d centre{p.squaresX * square / 2, p.squaresY * square / 2, 0.0};

@@ -9,6 +9,7 @@
 #include <lain/camera/board/pose.h>
 #include <lain/camera/opencv/register.h>
 #include <lain/camera/projection.h>
+#include <lain/math/angles.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -68,7 +69,7 @@ namespace
 		{
 			const double u1 = (double(engine() >> 11) + 0.5) / 9007199254740992.0;
 			const double u2 = double(engine() >> 11) / 9007199254740992.0;
-			return sigma * std::sqrt(-2.0 * std::log(u1)) * std::cos(6.283185307179586 * u2);
+			return sigma * std::sqrt(-2.0 * std::log(u1)) * std::cos(math::two_pi<double>() * u2);
 		}
 	};
 
@@ -91,12 +92,6 @@ namespace
 			view.features.push_back({id, {pixel.u + du, pixel.v + dv}, std::nullopt});
 		}
 		return view;
-	}
-
-	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
-	{
-		const double w = std::abs(math::dot(a.rotation(), b.rotation()));
-		return 2.0 * std::acos(std::min(1.0, w));
 	}
 } // namespace
 
@@ -121,7 +116,7 @@ TEST_CASE("an exact view's pose is recovered, for every distortion model", "[cam
 		const cb::PoseResult result = cb::pose(model, spec, observe(model, spec, truth));
 		REQUIRE(result.ok());
 		CHECK(result.provenance.backend == "opencv");
-		CHECK(rotationBetween(result.pose->cameraFromBoard, truth) < 1e-7);
+		CHECK(math::rotationBetween(result.pose->cameraFromBoard, truth) < 1e-7);
 		CHECK(math::length(result.pose->cameraFromBoard.translation() - truth.translation()) < 1e-8);
 		CHECK(result.pose->rmsAngle < 1e-8);
 	}
@@ -143,7 +138,7 @@ TEST_CASE("a far, nearly square-on board comes back with its plane's other pose"
 	// (about 0.6 mrad at f = 900), as the true pose does: one view cannot choose between them. Measured
 	// on this view: the two are 0.33 rad apart, and the backend's FIRST pose is the farther from the
 	// truth (0.22 rad against 0.13), which is why a caller with more evidence must make the choice.
-	CHECK(rotationBetween(result.pose->cameraFromBoard, result.alternative->cameraFromBoard) > 0.1);
+	CHECK(math::rotationBetween(result.pose->cameraFromBoard, result.alternative->cameraFromBoard) > 0.1);
 	CHECK(result.pose->rmsAngle < 0.001);
 	CHECK(result.alternative->rmsAngle < 0.001);
 	const cb::ViewResidual truthResidual = cb::measure(model, spec, observe(model, spec, truth, 0.5, 7), truth);
@@ -161,7 +156,7 @@ TEST_CASE("a pose reached twice is not reported as an alternative", "[camera][op
 	const cb::PoseResult result = cb::pose(model, spec, observe(model, spec, truth));
 	REQUIRE(result.ok());
 	CHECK_FALSE(result.alternative.has_value());
-	CHECK(rotationBetween(result.pose->cameraFromBoard, truth) < 1e-7);
+	CHECK(math::rotationBetween(result.pose->cameraFromBoard, truth) < 1e-7);
 }
 
 TEST_CASE("a view with fewer than four corners has no pose", "[camera][opencv][pose]")

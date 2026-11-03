@@ -14925,6 +14925,83 @@ algorithm**. `ctest -j8` **1050/1050** Debug and **1058/1058** Release, both wit
   expression. The golden values, the OpenCV agreement test (1e-6 px) and the camera vertical are
   what pin the behaviour.
 
+## NOTES.txt (2026-11-02): angles in `lain::math`, camera helpers stated once (built 2026-11-03)
+
+A reading pass over `libs/camera` left eight notes in an untracked `NOTES.txt`. Each was answered
+against `feature/M9` and `feature/M15`; the answers' first two follow-ups are built here, **on M9**
+(the repo owner's call: conflicts with M15, which promoted `rotationBetween` into camera's private
+`angles.h` in its slice 6a, are settled when M9 is accepted). `ctest -j8` **1348/1348** Debug with
+video, camera and Ceres on (+14: five `[math][angles]`, four `lookingAt`, three `[math][finite]`, two
+`[media][frameref]`); warning-clean. **Not run:** the Release-only cases (the rendered end-to-end
+suites, `[scale]`), since this checkout has only a Debug build, and GCC. clang-format 20 (the pinned
+binary) is clean on every touched file; `format-check` itself still cannot run on Windows (Known
+defects).
+
+### `lain::math`
+
+- **`math/angles.h`**: `angleBetween(u, v)`, and `rotationBetween` over two quaternions or two rigid
+  transforms, both atan2 forms. They replace camera's private `src/angles.h` and
+  `registration::detail::rotationBetween` (both deleted) and eleven test copies, eight of
+  `rotationBetween` and three of `angleBetween`.
+- **The acos form is gone everywhere.** It was in `board/pose.cpp` and three tests (`test_featureseams`,
+  OpenCV's `test_features` and `test_pose`). acos of the largest double below 1 is already 1.5e-8, so
+  it cannot tell anything below about 3e-8 rad from 0: `test_featureseams`'s `< 1e-9` meant "the dot
+  rounded to exactly 1". Every one of them passes with the atan2 form.
+- **`lookingAt(position, target, reference, aimed = the camera frame)`**, beside `RigidTransform`. Up
+  comes from the reference's `AxisConvention`; nullopt where no turn about forward is upright (the
+  target at the position, or straight above or below it); both conventions must be right-handed
+  (asserted). It replaces three identical copies in `syntheticrig.h`, `syntheticscene.h` and
+  `texturedscene.h`, whose callers now pass `kCameraFrame` as the reference, which is what "the
+  reference frame's +Y as down" meant. The targetless golden, built on those scenes, passes unchanged.
+- **`types.h` includes `<glm/gtc/constants.hpp>`**, so `math::pi<T>()` and `math::two_pi<T>()` exist.
+  The 20 hand-typed copies of τ (18 double, 2 float; one in production, `feature/cells.cpp`; three in
+  flowview; the rest in tests) use it, bit for bit: a case pins the literals.
+- **Left as they are, deliberately:** the nine `6.28318` in `syntheticrig.h` and `syntheticboard.h`,
+  which are not τ (5e-6 short) and would move both board goldens; and the π literals, which were not
+  in the answers.
+- **`math/finite.h`: `isFinite`** over a `Vec<N, T>`, a `Quat<T>` or a `RigidTransform<T>`. It replaces
+  camera's `finite` overloads (`feature/geometry.cpp`, `feature/triangulation.cpp`) and the pixel half
+  of `feature/features.cpp`'s hand-written keypoint check. GLM answers per component (`isnan`,
+  `isinf`), and its `isfinite` is an experimental `gtx` extension.
+
+### `lain::media`
+
+- **`media::capturedBefore(a, b)`, beside `FrameRef`: capture order** (timestamp, then ordinal, then
+  source). Four public camera headers promised frames "in capture order (timestamp, then ordinal, then
+  source)" and two sorts (the sequence extraction, targetless calibration) each kept a private key
+  for it; the headers now point at the function and both sorts call it. Ordering by source last makes
+  two frames equivalent exactly when they are equal, so a sorted list finds a frame given twice beside
+  its twin, which both callers rely on. The sequence extraction's extra tie-break on footage position
+  is gone with it: the only frames it separated are equal ones, which are refused as given twice.
+- **Feature extraction's `captureOrder(CaptureGroup)` is renamed `placeInCapture`.** It orders capture
+  groups by their members' median timestamp and ordinal, which is not the same rule, so it should not
+  read as one.
+
+### `lain::camera`
+
+- **`camera/flow/src/identity.h` is deleted.** `identitiesOf` was `capture::identitiesByLocation` under
+  a second name, left behind when the 2026-10-21 P2 pass moved the naming rule into `location.h`.
+- **`positiveDefinite`**, copied into both targetless methods, sits beside `whitenedSquared` in
+  `whitening.h`, the function whose precondition it checks.
+- **`minimumParallax`**, in both the reconstruction module and registration's validation, is declared
+  once in `reconstruction.h`.
+- **`UnionFind`** replaces `unionfind.h`'s free functions over a caller's vector. Five sites each set the
+  vector up by hand, and three wrote their own join, which skipped the lower-root rule.
+
+### Sabotages
+
+- `angleBetween` and `rotationBetween` back on acos: both tiny-angle cases fail, every angle reading 0.
+- `lookingAt`'s down axis flipped: both of its orientation cases fail.
+- `capturedBefore` without the source: both `[frameref]` cases fail, since frames tied on timestamp and
+  ordinal fall equivalent. `isFinite` skipping a vector's last component, or a transform's rotation:
+  the vector and transform cases fail.
+- **`UnionFind` keeping the higher root: all 518 camera and flowview tests pass.** Nothing observes
+  which root is kept, since every caller sorts or re-keys the components afterwards; the three old
+  hand-written joins skipped the rule just as invisibly. It stays as determinism insurance, unpinned.
+- One build under sabotage stopped on MSVC's incremental linker (`LNK1163`, invalid COMDAT selection)
+  in `test-camera-opencv-features`. Deleting its `.ilk` and objects fixed it. Restored headers were
+  touched a second after the copy and rebuilt before the clean run.
+
 ## Outstanding work — one index
 
 Every deferred item, known defect and standing refusal in this file, in one place. It exists because
@@ -15167,6 +15244,25 @@ M12 §Not in this milestone.)*
 - **The non-encoding swapchain** — designed, dormant on MoltenVK; an archimedes change for when a
   target surface actually forces sRGB. *(ADR-0002.)*
 
+### Deferred — from NOTES.txt (2026-11-02)
+
+The rest of the answers' follow-ups, each its own commit. *(§NOTES.txt (2026-11-02).)*
+
+- **multi:** a named `Serial` chunk policy (every index, in order, on the calling thread, which
+  `ChunkPolicy{1}` does today without saying so) and unsigned `range` indices. With both,
+  `camera::detail::forEach` is one line, and four `std::ptrdiff_t` casts go.
+- **`rigplan::standardNormal` to `lain::core`** (M15): exact, counter-based normal noise, and the eight
+  Box-Muller copies in the camera tests onto it. Moves the noise, so goldens and bounds move.
+- **A `lain::camera::testing` support target**, in place of the `../../test` include paths from
+  `camera/flow/test`, the plugin tests and `apps/flowview/test`.
+- **Fixed-rig end-to-end footage from committed rig plans** (M15), leaving `texturedscene.h` the
+  moving-camera generator and the renderer's reference.
+- **Node sets under `plugins/flow/{image,sequence,camera}`**, always built (a node kind is vocabulary),
+  with `CompareNode` moving to `libs/flow/nodes`.
+- **Measurements out of ctest**: a `camera-bench` for the Release-only and `[scale]` cases.
+- **`ExtractionParams`**: one place declaring and reading the five extraction settings both targetless
+  nodes expose.
+
 ### Deferred — from the notes.txt triage
 
 - **A standard way to convert between types** — one decided mechanism instead of a named
@@ -15223,6 +15319,10 @@ Not deferred features — acknowledged bugs, listed here so they stop being redi
 
 - **The `format-check` target cannot run on Windows**: its one command line is 52,953 characters, over
   the 32,767-character limit. *(§Catch2's `FAIL` and `SKIP` do not return.)*
+- **Board registration whitens a detector's covariance without checking it**
+  (`registration/board.cpp`, `whitenedSquared`). Only the targetless methods refuse an observation
+  whose covariance is not `positiveDefinite`; a detector reporting a degenerate one would whiten to
+  infinity or NaN there. *(§NOTES.txt (2026-11-02).)*
 
 **Six earlier ones are fixed** — `gui::Texture` freeing a descriptor set a running frame
 could still read (2026-09-29; see Milestone 14 › *A texture's descriptor outlives the frames that

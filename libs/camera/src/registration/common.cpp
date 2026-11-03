@@ -13,13 +13,6 @@
 
 namespace lain::camera::registration::detail
 {
-	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
-	{
-		const math::Quatd relative = math::conjugate(a.rotation()) * b.rotation();
-		const double v = std::sqrt(relative.x * relative.x + relative.y * relative.y + relative.z * relative.z);
-		return 2.0 * std::atan2(v, std::abs(relative.w));
-	}
-
 	std::string_view unitsWord(EvidenceUnit unit)
 	{
 		switch (unit)

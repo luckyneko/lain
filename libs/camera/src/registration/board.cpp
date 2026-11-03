@@ -7,6 +7,7 @@
 #include "lain/camera/registration/observationgraph.h"
 #include "lain/camera/registration/refiner.h"
 
+#include <lain/math/angles.h>
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -25,8 +26,6 @@ namespace lain::camera::registration::board
 	namespace cb = camera::board;
 	using detail::failed;
 	using detail::median;
-	using detail::root;
-	using detail::rotationBetween;
 
 	// --- file-local helpers (named static, not an anonymous namespace) ----------
 
@@ -65,7 +64,7 @@ namespace lain::camera::registration::board
 		double sum = 0;
 		for (std::size_t i = 0; i < o.points.size(); ++i)
 		{
-			const double angle = detail::angleBetween(o.rays[i], cameraFromBoard.apply(o.points[i]));
+			const double angle = math::angleBetween(o.rays[i], cameraFromBoard.apply(o.points[i]));
 			sum += angle * angle;
 		}
 		return o.points.empty() ? std::numeric_limits<double>::infinity() : std::sqrt(sum / double(o.points.size()));
@@ -171,16 +170,13 @@ namespace lain::camera::registration::board
 		std::iota(order.begin(), order.end(), std::size_t{0});
 		std::stable_sort(order.begin(), order.end(), [&](std::size_t x, std::size_t y)
 						 { return graph.edges[x].shared > graph.edges[y].shared; });
-		std::vector<std::uint32_t> parent(n);
-		std::iota(parent.begin(), parent.end(), 0u);
+		detail::UnionFind sets(n);
 		std::map<std::pair<std::uint32_t, std::uint32_t>, std::vector<std::uint32_t>> tree; // edge -> its shared groups
 		for (const std::size_t e : order)
 		{
 			const GraphEdge& edge = graph.edges[e];
-			const std::uint32_t ra = root(parent, edge.a), rb = root(parent, edge.b);
-			if (ra == rb)
+			if (!sets.join(edge.a, edge.b))
 				continue;
-			parent[ra] = rb;
 			tree[{edge.a, edge.b}];
 		}
 
@@ -693,7 +689,7 @@ namespace lain::camera::registration::board
 				}
 				for (std::size_t i = 0; i < p.points.size(); ++i)
 				{
-					const double angle = detail::angleBetween(p.rays[i], cameraFromBoard.apply(p.points[i]));
+					const double angle = math::angleBetween(p.rays[i], cameraFromBoard.apply(p.points[i]));
 					sumAngles[p.camera] += angle * angle;
 				}
 				CameraEvidence& camera = diagnostics.cameras[p.camera];
@@ -708,7 +704,7 @@ namespace lain::camera::registration::board
 				}
 
 				// A planar board's second pose, chosen: the result agrees with it rather than the first.
-				if (p.poses.size() == 2 && rotationBetween(cameraFromBoard, p.poses[1]) < rotationBetween(cameraFromBoard, p.poses[0]))
+				if (p.poses.size() == 2 && math::rotationBetween(cameraFromBoard, p.poses[1]) < math::rotationBetween(cameraFromBoard, p.poses[0]))
 					boardDiagnostics.flips.push_back({data.groups[g]->group.identity(), camera.camera});
 			}
 		}
@@ -840,7 +836,7 @@ namespace lain::camera::registration::board
 				{
 					const math::RigidTransformd resampled = (*registration)[c].inverse();
 					const math::RigidTransformd& result = report.cameras[c].referenceFromCamera;
-					const double angle = rotationBetween(resampled, result);
+					const double angle = math::rotationBetween(resampled, result);
 					const math::Vec3d moved = resampled.translation() - result.translation();
 					rotation[c].push_back(angle);
 					translation[c].push_back(math::length(moved));

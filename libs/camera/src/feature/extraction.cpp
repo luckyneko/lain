@@ -16,7 +16,6 @@
 #include <cstddef>
 #include <map>
 #include <memory>
-#include <numeric>
 #include <optional>
 #include <set>
 #include <string>
@@ -30,10 +29,9 @@ namespace lain::camera::feature
 	using detail::CellPair;
 	using detail::Cells;
 	using detail::cellsLike;
-	using detail::join;
 	using detail::median;
-	using detail::root;
 	using detail::stronger;
+	using detail::UnionFind;
 
 	// --- file-local helpers (named static, not an anonymous namespace) ----------
 
@@ -47,7 +45,7 @@ namespace lain::camera::feature
 
 	// A group's place in the capture: its members' median timestamp, then their median ordinal, then
 	// its identity, so the order is the same however the groups were listed.
-	static auto captureOrder(const capture::CaptureGroup& group)
+	static auto placeInCapture(const capture::CaptureGroup& group)
 	{
 		std::vector<core::Time> timestamps;
 		std::vector<std::size_t> ordinals;
@@ -156,8 +154,7 @@ namespace lain::camera::feature
 			offset.push_back(nodes);
 			nodes += std::uint32_t(f.size());
 		}
-		std::vector<std::uint32_t> parent(nodes);
-		std::iota(parent.begin(), parent.end(), 0u);
+		UnionFind cells(nodes);
 		const double scale = frames.front().rows.scale;
 		for (std::size_t i = 0; i < frames.size(); ++i)
 		{
@@ -184,7 +181,7 @@ namespace lain::camera::feature
 					const double large = std::max(a.size, b.size);
 					if (large > small * request.staticSizeRatio)
 						continue;
-					join(parent, offset[i] + frames[i].cellOf[match.a], offset[j] + frames[j].cellOf[match.b]);
+					cells.join(offset[i] + frames[i].cellOf[match.a], offset[j] + frames[j].cellOf[match.b]);
 				}
 			}
 		}
@@ -194,7 +191,7 @@ namespace lain::camera::feature
 		for (std::uint32_t f = 0; f < frames.size(); ++f)
 		{
 			for (std::uint32_t c = 0; c < frames[f].size(); ++c)
-				clusters[root(parent, offset[f] + c)].push_back({f, c});
+				clusters[cells.root(offset[f] + c)].push_back({f, c});
 		}
 		const std::size_t needed = (frames.size() + 1) / 2;
 		// A static feature: where it sits, and the frame and cell whose orientations it takes.
@@ -411,7 +408,7 @@ namespace lain::camera::feature
 		for (const capture::CaptureGroup& g : groups)
 			ordered.push_back(&g);
 		std::sort(ordered.begin(), ordered.end(), [](const capture::CaptureGroup* a, const capture::CaptureGroup* b)
-				  { return captureOrder(*a) < captureOrder(*b); });
+				  { return placeInCapture(*a) < placeInCapture(*b); });
 		const std::size_t n = ordered.size();
 		const std::size_t k = std::min<std::size_t>(request.samples, n);
 		std::vector<CameraWork> work(cameras.size());

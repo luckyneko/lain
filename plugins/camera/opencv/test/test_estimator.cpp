@@ -74,7 +74,7 @@ namespace
 		{
 			const double u1 = (double(m_engine() >> 11) + 0.5) / 9007199254740992.0;
 			const double u2 = double(m_engine() >> 11) / 9007199254740992.0;
-			return sigma * std::sqrt(-2 * std::log(u1)) * std::cos(6.283185307179586 * u2);
+			return sigma * std::sqrt(-2 * std::log(u1)) * std::cos(math::two_pi<double>() * u2);
 		}
 
 	private:

@@ -191,21 +191,12 @@ namespace lain::camera::synthetic
 		return s;
 	}
 
-	// A camera at `position` looking at `target`, with the reference frame's +Y as down.
-	inline math::RigidTransformd lookingAt(const math::Vec3d& position, const math::Vec3d& target)
-	{
-		const math::Vec3d z = math::normalize(target - position);
-		const math::Vec3d x = math::normalize(math::cross(math::Vec3d{0, 1, 0}, z));
-		const math::Vec3d y = math::cross(z, x);
-		return math::RigidTransformd{math::quat_cast(math::Mat3d{x, y, z}), position};
-	}
-
 	// A camera on an arc `radius` from `target`, `angle` radians round it and `rise` above it, looking
 	// at it. The defaults stand round the middle of the default scene.
 	inline math::RigidTransformd arcCamera(double angle, double radius = 3.2, const math::Vec3d& target = {-0.2, 0.2, 0.4},
 										   double rise = 0.5)
 	{
-		return lookingAt(target + math::Vec3d{radius * std::sin(angle), -rise, -radius * std::cos(angle)}, target);
+		return math::lookingAt(target + math::Vec3d{radius * std::sin(angle), -rise, -radius * std::cos(angle)}, target, kCameraFrame).value();
 	}
 
 	// A moving camera's path round the default scene, a pose per frame. It runs along arcCamera's arc
@@ -217,7 +208,7 @@ namespace lain::camera::synthetic
 	// box stays in view of the test camera in every frame, which the moving camera's first case checks.
 	inline std::vector<math::RigidTransformd> arcPath(std::size_t frames)
 	{
-		constexpr double tau = 6.283185307179586;
+		const double tau = math::two_pi<double>();
 		const math::Vec3d centre{-0.2, 0.2, 0.4}; // arcCamera's target, so the arc is its arc
 		const math::Vec3d box{-0.2, 0.35, 0.1};	  // the middle of defaultScene's box
 		std::vector<math::RigidTransformd> path;
@@ -229,7 +220,7 @@ namespace lain::camera::synthetic
 			const double roll = 0.12 * std::sin(tau * 1.5 * s + 0.5);
 			const math::Vec3d aim = box + math::Vec3d{0.25 * std::sin(tau * 0.8 * s + 1.0), 0.15 * std::sin(tau * 1.3 * s), 0.0};
 			const math::Vec3d position = centre + math::Vec3d{3.2 * std::sin(angle), -rise, -3.2 * std::cos(angle)};
-			path.push_back(lookingAt(position, aim) *
+			path.push_back(math::lookingAt(position, aim, kCameraFrame).value() *
 						   math::RigidTransformd{math::angleAxis(roll, math::Vec3d{0.0, 0.0, 1.0}), math::Vec3d{0.0}});
 		}
 		return path;
@@ -347,7 +338,7 @@ namespace lain::camera::synthetic
 			// Box-Muller over mt19937_64, since std::normal_distribution is implementation-defined.
 			const double u1 = (double(engine() >> 11) + 0.5) * 0x1.0p-53;
 			const double u2 = double(engine() >> 11) * 0x1.0p-53;
-			return std::sqrt(-2.0 * std::log(u1)) * std::cos(6.283185307179586 * u2);
+			return std::sqrt(-2.0 * std::log(u1)) * std::cos(math::two_pi<double>() * u2);
 		};
 		const math::Vec3d origin = referenceFromCamera.translation();
 		for (int y = 0; y < h; ++y)

@@ -5,6 +5,9 @@
 #include "lain/camera/feature/triangulation.h"
 #include "lain/camera/projection.h"
 #include "lain/camera/registration/refiner.h"
+#include "reconstruction.h"
+
+#include <lain/math/angles.h>
 
 #include <algorithm>
 #include <cmath>
@@ -50,13 +53,6 @@ namespace lain::camera::registration
 		std::optional<double> pixels; // the predicted pixel's distance, where it projects
 	};
 
-	// Below this parallax the rays of a triangulation are a point at infinity, as the geometry
-	// facades say (feature::GeometryRequest).
-	static double minimumParallax()
-	{
-		return feature::GeometryRequest{}.angle;
-	}
-
 	// The fixed procedure of every prediction: measured covariances, else the default noise model,
 	// and least squares. Whatever the report's request was.
 	static Problem predictionProblem()
@@ -75,7 +71,7 @@ namespace lain::camera::registration
 	{
 		if (!(math::length(b) > 0))
 			return std::nullopt;
-		if (std::min(detail::angleBetween(other, b), detail::angleBetween(other, -b)) < minimumParallax())
+		if (std::min(math::angleBetween(other, b), math::angleBetween(other, -b)) < reconstruction::minimumParallax())
 			return std::nullopt;
 		const math::Vec3d normal = math::normalize(math::cross(b, other));
 		const double out = std::abs(math::dot(ray, normal));
@@ -94,7 +90,7 @@ namespace lain::camera::registration
 		const math::Vec3d d0 = c0.referenceFromCamera.rotate(m0.ray);
 		const math::Vec3d d1 = c1.referenceFromCamera.rotate(m1.ray);
 		// The plane cannot see a point behind a camera: the pair's own triangulation can.
-		if (feature::triangulate({{centre0, d0}, {centre1, d1}}, minimumParallax()).status ==
+		if (feature::triangulate({{centre0, d0}, {centre1, d1}}, reconstruction::minimumParallax()).status ==
 			feature::TriangulationStatus::Behind)
 			return;
 		const std::optional<double> a0 = epipolarAngle(d0, centre0 - centre1, d1);
@@ -134,7 +130,7 @@ namespace lain::camera::registration
 				const Registered& c = registered[members[o]->camera];
 				rays.push_back({c.referenceFromCamera.translation(), c.referenceFromCamera.rotate(members[o]->ray)});
 			}
-			const feature::Triangulation start = feature::triangulate(rays, minimumParallax());
+			const feature::Triangulation start = feature::triangulate(rays, reconstruction::minimumParallax());
 			if (!start.ok())
 				continue;
 			// A start every predicting camera can project: one that cannot fails the whole solve.
@@ -171,7 +167,7 @@ namespace lain::camera::registration
 			const math::Vec3d q = c.cameraFromReference.apply(solution.landmarks[i]);
 			Scored& s = *scored[predicted[i]];
 			s.scoring = Scoring::Transfer;
-			s.angle = detail::angleBetween(member.ray, q);
+			s.angle = math::angleBetween(member.ray, q);
 			const Projection<double> pixel = project(*c.model, q.x, q.y, q.z);
 			if (pixel.ok())
 				s.pixels = math::length(math::Vec2d{pixel.u, pixel.v} - member.pixel);

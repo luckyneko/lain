@@ -41,7 +41,7 @@ namespace compare = lain::camera::testing;
 
 namespace
 {
-	constexpr double kTau = 6.283185307179586;
+	const double kTau = math::two_pi<double>();
 	constexpr std::size_t kFrames = 16;
 	constexpr double kFocal = 1000.0;
 
@@ -84,7 +84,7 @@ namespace
 		const math::Vec3d ahead = math::normalize(target - middle);
 		const math::Vec3d centre = middle + 1.6 * ahead;
 		// The board's axes when square on: X right, Y down, Z away from the rig.
-		const math::RigidTransformd facing = synthetic::lookingAt(centre, centre + ahead);
+		const math::RigidTransformd facing = math::lookingAt(centre, centre + ahead, kCameraFrame).value();
 		const board::PatternParameters& p = spec.pattern().parameters();
 		const double square = spec.instance().squareLength.value.metres();
 		const math::Vec3d boardMiddle{p.squaresX * square / 2, p.squaresY * square / 2, 0.0};

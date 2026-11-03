@@ -153,7 +153,7 @@ namespace flowview
 				// Three quarters of a ring, turning: it moves, which a node whose value is on its way
 				// should, and no static state does. The frame loop redraws continuously, so it animates.
 				constexpr float kTurnsPerSecond = 0.8f;
-				constexpr float kTwoPi = 6.2831853f;
+				const float kTwoPi = math::two_pi<float>();
 				const float start = static_cast<float>(gui::GetTime()) * kTurnsPerSecond * kTwoPi;
 				draw->PathArcTo(centre, radius, start, start + kTwoPi * 0.75f, 16);
 				draw->PathStroke(gui::packColor(kComputingMark), 0, 1.8f);

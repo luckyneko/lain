@@ -41,7 +41,7 @@ using Catch::Matchers::ContainsSubstring;
 
 namespace
 {
-	constexpr double kTau = 6.283185307179586;
+	const double kTau = math::two_pi<double>();
 
 	// A camera of `width` by `height` with focal lengths f and 1.004 f, its principal point `offset`
 	// from the image's centre, seen through `distortion`.
@@ -168,7 +168,7 @@ namespace
 										-std::cos(azimuth) * std::cos(elevation)};
 			const math::Vec3d at = centre + math::Vec3d{0.35 * std::cos(3 * kTau * s), 0.25 * std::sin(3 * kTau * s), 0.0};
 			const math::Vec3d position = centre + (1.0 + 0.2 * std::sin(2 * kTau * s + 1)) * direction;
-			close.push_back(synthetic::lookingAt(position, at) *
+			close.push_back(math::lookingAt(position, at, kCameraFrame).value() *
 							math::RigidTransformd{math::angleAxis(0.15 * std::sin(kTau * 1.5 * s), math::Vec3d{0.0, 0.0, 1.0}),
 												  math::Vec3d{0.0}});
 		}
@@ -178,7 +178,7 @@ namespace
 		for (std::size_t k = 1; k <= 6; ++k)
 		{
 			const double s = double(k) / 7.0;
-			out.poses.push_back(synthetic::lookingAt(from + s * (to - from), box + s * (centre - box)));
+			out.poses.push_back(math::lookingAt(from + s * (to - from), box + s * (centre - box), kCameraFrame).value());
 		}
 		out.poses.insert(out.poses.end(), close.begin(), close.end());
 		out.scene.board = synthetic::boardSurface(std::make_shared<const board::Rendering>(*rendered.rendering), square,
@@ -192,7 +192,7 @@ namespace
 	std::vector<math::RigidTransformd> panPath(std::size_t frames)
 	{
 		const math::Vec3d position = synthetic::arcCamera(0.0).translation();
-		const math::RigidTransformd base = synthetic::lookingAt(position, {-0.2, 0.35, 0.1});
+		const math::RigidTransformd base = math::lookingAt(position, {-0.2, 0.35, 0.1}, kCameraFrame).value();
 		std::vector<math::RigidTransformd> path;
 		for (std::size_t k = 0; k < frames; ++k)
 		{

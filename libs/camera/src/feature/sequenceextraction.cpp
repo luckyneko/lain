@@ -6,6 +6,7 @@
 #include "lain/camera/feature/geometry.h"
 
 #include <lain/core/sha256.h>
+#include <lain/media/frameref.h>
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -38,12 +39,6 @@ namespace lain::camera::feature
 		if (!(std::isfinite(r.threshold) && r.threshold > 0))
 			return string::format("an inlier distance of {} px is not positive", r.threshold);
 		return std::nullopt;
-	}
-
-	// A frame's place in the capture: its timestamp, then its ordinal, then its source.
-	static auto captureOrder(const media::FrameRef& frame)
-	{
-		return std::make_tuple(frame.timestamp, frame.ordinal, frame.source.toString());
 	}
 
 	// The text a sequence track's identity is the digest of: a version line, then each observation's
@@ -202,7 +197,7 @@ namespace lain::camera::feature
 		for (std::size_t p = 0; p < n; ++p)
 			ordered.push_back({camera.footage.frame(p), p});
 		std::sort(ordered.begin(), ordered.end(), [](const auto& x, const auto& y)
-				  { return std::make_tuple(captureOrder(x.first), x.second) < std::make_tuple(captureOrder(y.first), y.second); });
+				  { return media::capturedBefore(x.first, y.first); });
 		for (std::size_t i = 1; i < n; ++i)
 		{
 			if (ordered[i].first == ordered[i - 1].first)

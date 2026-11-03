@@ -12,9 +12,7 @@ namespace lain::camera::reconstruction
 {
 	using detail::median;
 
-	// Where a triangulation becomes a point at infinity: the facades' default inlier angle, whatever
-	// angle the request poses with.
-	static double minimumParallax()
+	double minimumParallax()
 	{
 		return feature::GeometryRequest{}.angle;
 	}

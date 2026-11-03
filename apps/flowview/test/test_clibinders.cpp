@@ -5,7 +5,6 @@
 
 #include "clibinders.h"
 #include "graphio.h"
-#include "rigcompare.h" // rotationBetween
 
 #include <lain/camera/calibration/attempts.h>
 #include <lain/camera/serialize/cameramodel.h>
@@ -15,6 +14,7 @@
 #include <lain/flow/porttyperegistry.h>
 #include <lain/flow/portvalue.h>
 #include <lain/io/data/save.h>
+#include <lain/math/angles.h>
 #include <lain/media/frameposition.h>
 #include <lain/testing/scratch.h>
 
@@ -186,7 +186,7 @@ TEST_CASE("a registered rig binds from a rig document, and a typo is refused", "
 	CHECK(read.cameras[1].camera == rig.cameras[1].camera);
 	CHECK(read.cameras[1].referenceFromCamera.translation() == rig.cameras[1].referenceFromCamera.translation());
 	// To the last bit a renormalised rotation can move (RigidTransform normalises what it is built from).
-	CHECK(camera::testing::rotationBetween(read.cameras[1].referenceFromCamera, rig.cameras[1].referenceFromCamera) <= 1e-15);
+	CHECK(math::rotationBetween(read.cameras[1].referenceFromCamera, rig.cameras[1].referenceFromCamera) <= 1e-15);
 
 	// A part of a transform typed wrong. lain::data alone would read the translation as zero and say
 	// nothing; the rig reader names the key, and the binder refuses.

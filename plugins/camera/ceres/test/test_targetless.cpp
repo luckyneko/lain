@@ -162,7 +162,7 @@ TEST_CASE("a landmark behind a camera at the start is kept out of the solve, whi
 {
 	registerScene();
 	scene::reset(4, 200);
-	scene::scene().referenceFromCamera[3] = scene::lookingAt(math::Vec3d{0.05, -0.1, -0.2}, math::Vec3d{0.0, 0.0, 3.0});
+	scene::scene().referenceFromCamera[3] = math::lookingAt(math::Vec3d{0.05, -0.1, -0.2}, math::Vec3d{0.0, 0.0, 3.0}, kCameraFrame).value();
 	scene::scene().renderedFrom = scene::scene().referenceFromCamera;
 	feature::TrackSet set = scene::trackSetOf();
 	feature::Track* wrong = nullptr;
@@ -196,9 +196,9 @@ TEST_CASE("a rig of 100 cameras and 50000 tracks registers", "[camera][ceres][ta
 	scene::Scene& s = scene::scene();
 	for (std::size_t c = 0; c < 100; ++c)
 	{
-		const double a = 6.283185307179586 * double(c) / 100.0;
+		const double a = math::two_pi<double>() * double(c) / 100.0;
 		s.referenceFromCamera[c] =
-			scene::lookingAt(math::Vec3d{std::sin(a), -0.05 * double(c % 3), -std::cos(a)}, math::Vec3d{0.0});
+			math::lookingAt(math::Vec3d{std::sin(a), -0.05 * double(c % 3), -std::cos(a)}, math::Vec3d{0.0}, kCameraFrame).value();
 	}
 	s.renderedFrom = s.referenceFromCamera;
 	for (std::size_t l = 0; l < 50000; ++l)

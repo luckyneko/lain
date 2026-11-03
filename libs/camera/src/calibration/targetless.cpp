@@ -9,6 +9,8 @@
 #include "lain/camera/projection.h"
 #include "reconstruction.h"
 
+#include <lain/math/angles.h>
+#include <lain/media/frameref.h>
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -76,12 +78,6 @@ namespace lain::camera::calibration::targetless
 	// (SeedPairs). COLMAP's max_H_inlier_ratio; provisional, as kInlierPixels is.
 	static constexpr double kHomographyShare = 0.8;
 
-	// A frame's place in capture order, as the sequence extraction sorts frames.
-	static auto captureOrder(const media::FrameRef& frame)
-	{
-		return std::make_tuple(frame.timestamp, frame.ordinal, frame.source.toString());
-	}
-
 	// The angle `kInlierPixels` is at `model`'s focal length.
 	static double inlierAngle(const CameraModel& model)
 	{
@@ -94,12 +90,6 @@ namespace lain::camera::calibration::targetless
 		geometry.angle = angle;
 		geometry.seed = request.seed;
 		return geometry;
-	}
-
-	static bool positiveDefinite(const std::array<double, 3>& c)
-	{
-		return std::isfinite(c[0]) && std::isfinite(c[1]) && std::isfinite(c[2]) && c[0] > 0 && c[2] > 0 &&
-			   c[0] * c[2] - c[1] * c[1] > 0;
 	}
 
 	static std::string shortId(const std::string& identity)
@@ -672,7 +662,7 @@ namespace lain::camera::calibration::targetless
 		for (std::size_t i = 0; i < pointRays.size(); ++i)
 		{
 			const math::Vec3d q = posed.pose->apply(pointRays[i].point);
-			const double a = detail::angleBetween(pointRays[i].ray, q);
+			const double a = math::angleBetween(pointRays[i].ray, q);
 			if (!(a <= angle))
 			{
 				++out.outliers;
@@ -734,7 +724,7 @@ namespace lain::camera::calibration::targetless
 		if (given.empty())
 			return failed(report, start, Failure::NoFootage, "no view of the track set holds a frame");
 		std::sort(given.begin(), given.end(), [](const auto& x, const auto& y)
-				  { return captureOrder(x.first) < captureOrder(y.first); });
+				  { return media::capturedBefore(x.first, y.first); });
 		out.image = set.views.front().image;
 		out.ofView.assign(set.views.size(), std::nullopt);
 		for (std::size_t i = 0; i < given.size(); ++i)
@@ -763,7 +753,7 @@ namespace lain::camera::calibration::targetless
 				if (!views.insert(o.view).second)
 					return failed(report, start, Failure::InvalidDataset,
 								  lain::string::format("track {} holds two observations of view {}", shortId(track.identity), o.view));
-				if (o.covariance && !positiveDefinite(*o.covariance))
+				if (o.covariance && !detail::positiveDefinite(*o.covariance))
 					return failed(report, start, Failure::InvalidDataset,
 								  "track " + shortId(track.identity) + " has a covariance that is not positive definite");
 			}

@@ -7,6 +7,7 @@
 #include "syntheticrig.h"
 
 #include <lain/camera/registration/board.h>
+#include <lain/math/angles.h>
 #include <lain/testing/threadpool.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -81,12 +82,6 @@ namespace
 		FAIL("no rig camera is " << camera.value);
 	}
 
-	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
-	{
-		const math::Quatd r = math::conjugate(a.rotation()) * b.rotation();
-		return 2.0 * std::atan2(std::sqrt(r.x * r.x + r.y * r.y + r.z * r.z), std::abs(r.w));
-	}
-
 	// Every registered camera against the truth relative to the report's reference.
 	void requireTruth(const Report& report, double rotation, double translation)
 	{
@@ -98,7 +93,7 @@ namespace
 		{
 			CAPTURE(c.camera.value);
 			const math::RigidTransformd truth = rig::trueReferenceFromCamera(reference, indexOf(c.camera));
-			CHECK(rotationBetween(c.referenceFromCamera, truth) < rotation);
+			CHECK(math::rotationBetween(c.referenceFromCamera, truth) < rotation);
 			CHECK(math::length(c.referenceFromCamera.translation() - truth.translation()) < translation);
 		}
 	}
@@ -286,7 +281,7 @@ TEST_CASE("a disconnected rig fails, with each component placed as a diagnostic"
 		for (const RegisteredCamera& c : estimate.cameras)
 		{
 			const math::RigidTransformd truth = rig::trueReferenceFromCamera(root, indexOf(c.camera));
-			CHECK(rotationBetween(c.referenceFromCamera, truth) < 1e-9);
+			CHECK(math::rotationBetween(c.referenceFromCamera, truth) < 1e-9);
 			CHECK(math::length(c.referenceFromCamera.translation() - truth.translation()) < 1e-9);
 		}
 	}

@@ -1,8 +1,8 @@
 #include "lain/camera/flow/rigregistrationnode.h"
 
 #include "decimal.h"
-#include "identity.h"
 
+#include <lain/camera/capture/location.h>
 #include <lain/media/framesequence.h>
 
 #include <algorithm>
@@ -69,7 +69,7 @@ namespace lain::camera
 		// Each camera named by where its footage lies within the rig's folder, and grouped by position.
 		Rig rig;
 		std::vector<capture::CameraFootage> byPosition;
-		const std::vector<capture::CameraIdentity> cameras = detail::identitiesOf(footage);
+		const std::vector<capture::CameraIdentity> cameras = capture::identitiesByLocation(footage);
 		for (std::size_t c = 0; c < footage.size(); ++c)
 		{
 			rig.cameras.push_back({cameras[c], models[c], footage[c]});

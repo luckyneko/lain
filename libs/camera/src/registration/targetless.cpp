@@ -9,6 +9,7 @@
 #include "lain/camera/registration/validation.h"
 #include "reconstruction.h"
 
+#include <lain/math/angles.h>
 #include <lain/string/format.h>
 
 #include <algorithm>
@@ -24,10 +25,8 @@
 
 namespace lain::camera::registration::targetless
 {
-	using detail::angleBetween;
 	using detail::failed;
 	using detail::median;
-	using detail::rotationBetween;
 
 	// The incremental reconstruction (reconstruction.h), which targetless calibration will share. A view
 	// there is a camera here.
@@ -201,12 +200,6 @@ namespace lain::camera::registration::targetless
 
 	// --- the checks ------------------------------------------------------------------
 
-	static bool positiveDefinite(const std::array<double, 3>& c)
-	{
-		return std::isfinite(c[0]) && std::isfinite(c[1]) && std::isfinite(c[2]) && c[0] > 0 && c[2] > 0 &&
-			   c[0] * c[2] - c[1] * c[1] > 0;
-	}
-
 	// The checks that read the track set: each view a camera of the rig, none twice; each observation of
 	// a view the set has, one per view, its covariance positive definite; each track's identity once. On
 	// failure the report failed. `cameraOfView` receives each view's canonical camera.
@@ -243,7 +236,7 @@ namespace lain::camera::registration::targetless
 					return failed(report, start, Failure::InvalidDataset,
 								  lain::string::format("track {} holds two observations of view {}",
 													   track.identity.substr(0, 12), o.view));
-				if (o.covariance && !positiveDefinite(*o.covariance))
+				if (o.covariance && !detail::positiveDefinite(*o.covariance))
 					return failed(report, start, Failure::InvalidDataset,
 								  "track " + track.identity.substr(0, 12) + " has a covariance that is not positive definite");
 			}
@@ -531,7 +524,7 @@ namespace lain::camera::registration::targetless
 					++fitted;
 					++camera.residuals;
 					depths.push_back(q.z);
-					sumAngles[s.view] += std::pow(angleBetween(s.ray, q), 2);
+					sumAngles[s.view] += std::pow(math::angleBetween(s.ray, q), 2);
 					if (predicted.ok())
 					{
 						const math::Vec2d r = math::Vec2d{predicted.u, predicted.v} - s.pixel;
@@ -608,7 +601,7 @@ namespace lain::camera::registration::targetless
 				{
 					const math::RigidTransformd resampled = (*registration)[c].inverse();
 					const math::RigidTransformd& result = report.cameras[c].referenceFromCamera;
-					const double angle = rotationBetween(resampled, result);
+					const double angle = math::rotationBetween(resampled, result);
 					const math::Vec3d moved = resampled.translation() * s - result.translation();
 					rotation[c].push_back(angle);
 					translation[c].push_back(math::length(moved));

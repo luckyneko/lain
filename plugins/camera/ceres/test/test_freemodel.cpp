@@ -33,7 +33,7 @@ using Catch::Matchers::WithinRel;
 
 namespace
 {
-	constexpr double kTau = 6.283185307179586;
+	const double kTau = math::two_pi<double>();
 
 	void ensureCeres()
 	{
@@ -97,7 +97,7 @@ namespace
 			const double t = double(f) / double(frames - 1) - 0.5;
 			const math::Vec3d position{1.2 * t, 0.15 * std::sin(6.0 * t), 0.3 * t * t};
 			const math::Vec3d target{0.6 * t, 0.1 * std::cos(4.0 * t), 3.5};
-			scene.cameraFromReference.push_back(rig::lookingAt(position, target).inverse());
+			scene.cameraFromReference.push_back(math::lookingAt(position, target, kCameraFrame).value().inverse());
 		}
 		std::size_t attempts = 0;
 		while (scene.points.size() < landmarks)

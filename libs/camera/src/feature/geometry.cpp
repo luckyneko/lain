@@ -1,8 +1,9 @@
 #include "lain/camera/feature/geometry.h"
 
-#include "angles.h"
 #include "lain/camera/feature/triangulation.h"
 
+#include <lain/math/angles.h>
+#include <lain/math/finite.h>
 #include <lain/string/format.h>
 
 #include <array>
@@ -25,19 +26,9 @@ namespace lain::camera::feature
 	static constexpr std::size_t kFundamentalMinimum = 8;
 	static constexpr std::size_t kHomographyMinimum = 4;
 
-	static bool finite(const math::Vec3d& v)
-	{
-		return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
-	}
-
 	static bool usable(const math::Vec3d& ray)
 	{
-		return finite(ray) && math::length(ray) > 0;
-	}
-
-	static bool finite(const math::Vec2d& v)
-	{
-		return std::isfinite(v.x) && std::isfinite(v.y);
+		return math::isFinite(ray) && math::length(ray) > 0;
 	}
 
 	static bool positive(double v)
@@ -55,13 +46,6 @@ namespace lain::camera::feature
 				out[std::size_t(3 * row + column)] = f[column][row];
 		}
 		return out;
-	}
-
-	static bool finite(const math::RigidTransformd& t)
-	{
-		const math::Quatd& q = t.rotation();
-		return std::isfinite(q.w) && std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) &&
-			   finite(t.translation());
 	}
 
 	// How well one candidate explains the input: its inliers (indices into the usable entries) and the
@@ -141,11 +125,11 @@ namespace lain::camera::feature
 			double residualB = 0;
 			if (t.status == TriangulationStatus::Ok)
 			{
-				residualA = detail::angleBetween(rayA, t.point);
-				residualB = detail::angleBetween(rayB, t.point - centreB);
+				residualA = math::angleBetween(rayA, t.point);
+				residualB = math::angleBetween(rayB, t.point - centreB);
 			}
 			else if (t.status == TriangulationStatus::IllConditioned)
-				residualA = residualB = detail::angleBetween(rayA, rayB) / 2;
+				residualA = residualB = math::angleBetween(rayA, rayB) / 2;
 			else
 				continue; // Behind: cheirality
 			if (residualA <= angle && residualB <= angle)
@@ -166,7 +150,7 @@ namespace lain::camera::feature
 		Measured out;
 		for (std::size_t k = 0; k < pointRays.size(); ++k)
 		{
-			const double residual = detail::angleBetween(pointRays[k].ray, cameraFromReference.apply(pointRays[k].point));
+			const double residual = math::angleBetween(pointRays[k].ray, cameraFromReference.apply(pointRays[k].point));
 			if (residual <= angle)
 			{
 				out.inliers.push_back(std::uint32_t(k));
@@ -213,7 +197,7 @@ namespace lain::camera::feature
 		if (!(std::abs(x.z) > 0))
 			return std::nullopt;
 		const math::Vec2d out{x.x / x.z, x.y / x.z};
-		if (!finite(out))
+		if (!math::isFinite(out))
 			return std::nullopt;
 		return out;
 	}
@@ -362,7 +346,7 @@ namespace lain::camera::feature
 			[](const math::RigidTransformd& c) -> std::optional<math::RigidTransformd>
 			{
 				const double length = math::length(c.translation());
-				if (!finite(c) || !(length > 0))
+				if (!math::isFinite(c) || !(length > 0))
 					return std::nullopt;
 				return math::RigidTransformd{c.rotation(), c.translation() / length};
 			},
@@ -377,7 +361,7 @@ namespace lain::camera::feature
 			pointRays, angleProblem(request), kAbsoluteMinimum, "point-rays", "an absolute pose",
 			[](const PointRay& p) -> std::optional<PointRay>
 			{
-				if (!finite(p.point) || !usable(p.ray))
+				if (!math::isFinite(p.point) || !usable(p.ray))
 					return std::nullopt;
 				return PointRay{p.point, math::normalize(p.ray)};
 			},
@@ -385,7 +369,7 @@ namespace lain::camera::feature
 			{ return solver.absolutePoses(usableRays, request.angle, request.seed); },
 			[](const math::RigidTransformd& c) -> std::optional<math::RigidTransformd>
 			{
-				if (!finite(c))
+				if (!math::isFinite(c))
 					return std::nullopt;
 				return c;
 			},
@@ -403,7 +387,7 @@ namespace lain::camera::feature
 			pairs, std::move(problem), kFundamentalMinimum, "pixel pairs", "a fundamental matrix",
 			[](const PixelPair& p) -> std::optional<PixelPair>
 			{
-				if (!finite(p.a) || !finite(p.b))
+				if (!math::isFinite(p.a) || !math::isFinite(p.b))
 					return std::nullopt;
 				return p;
 			},
@@ -429,7 +413,7 @@ namespace lain::camera::feature
 			pairs, std::move(problem), kHomographyMinimum, "pixel pairs", "a homography",
 			[](const PixelPair& p) -> std::optional<PixelPair>
 			{
-				if (!finite(p.a) || !finite(p.b))
+				if (!math::isFinite(p.a) || !math::isFinite(p.b))
 					return std::nullopt;
 				return p;
 			},

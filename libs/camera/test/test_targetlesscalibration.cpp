@@ -364,7 +364,7 @@ TEST_CASE("an observation the start left out is still named when a second adjust
 	// it; a wrong match gives it one behind it, which the start leaves out. Another observation moved
 	// 25 px, which the result does not explain, makes a second adjustment.
 	setUp();
-	scene::scene().path[5] = scene::lookingAt(math::Vec3d{0.05, -0.1, -0.2}, math::Vec3d{0.0, 0.0, 3.0});
+	scene::scene().path[5] = math::lookingAt(math::Vec3d{0.05, -0.1, -0.2}, math::Vec3d{0.0, 0.0, 3.0}, kCameraFrame).value();
 	feature::TrackSet set = scene::sequenceTrackSetOf();
 	feature::Track* wrong = nullptr;
 	for (feature::Track& track : set.tracks)

@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <numeric>
 #include <random>
 
 namespace lain::camera::detail
@@ -46,20 +45,14 @@ namespace lain::camera::detail
 		}
 		const auto componentCount = [&]()
 		{
-			std::vector<std::uint32_t> parent(cameras);
-			std::iota(parent.begin(), parent.end(), 0u);
+			UnionFind sets(cameras);
 			std::size_t components = cameras;
 			for (std::size_t pair = 0; pair < shared.size(); ++pair)
 			{
 				if (shared[pair] == 0)
 					continue;
-				const std::uint32_t a = root(parent, std::uint32_t(pair / cameras));
-				const std::uint32_t b = root(parent, std::uint32_t(pair % cameras));
-				if (a != b)
-				{
-					parent[a] = b;
+				if (sets.join(std::uint32_t(pair / cameras), std::uint32_t(pair % cameras)))
 					--components;
-				}
 			}
 			return components;
 		};

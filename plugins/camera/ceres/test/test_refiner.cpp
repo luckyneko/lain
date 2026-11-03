@@ -10,6 +10,7 @@
 #include <lain/camera/refinement/refiner.h>
 #include <lain/camera/registration/board.h>
 #include <lain/camera/registration/refiner.h>
+#include <lain/math/angles.h>
 #include <lain/testing/skip.h>
 #include <lain/testing/threadpool.h>
 
@@ -42,12 +43,6 @@ namespace
 		REQUIRE(refinerRegistry().keys() == std::vector<std::string>{"ceres"});
 	}
 
-	double rotationBetween(const math::RigidTransformd& a, const math::RigidTransformd& b)
-	{
-		const math::Quatd r = math::conjugate(a.rotation()) * b.rotation();
-		return 2.0 * std::atan2(std::sqrt(r.x * r.x + r.y * r.y + r.z * r.z), std::abs(r.w));
-	}
-
 	std::size_t indexOf(const capture::CameraIdentity& camera)
 	{
 		for (std::size_t c = 0; c < rig::scene().referenceFromCamera.size(); ++c)
@@ -67,7 +62,7 @@ namespace
 		for (const RegisteredCamera& c : report.cameras)
 		{
 			const math::RigidTransformd truth = rig::trueReferenceFromCamera(reference, indexOf(c.camera));
-			rotation = std::max(rotation, rotationBetween(c.referenceFromCamera, truth));
+			rotation = std::max(rotation, math::rotationBetween(c.referenceFromCamera, truth));
 			translation = std::max(translation, math::length(c.referenceFromCamera.translation() - truth.translation()));
 		}
 		return {rotation, translation};
@@ -158,11 +153,11 @@ TEST_CASE("a pose-only refinement moves the board and holds every camera", "[cam
 	// The camera is held where it was put, wrong or not, and the board moves to explain the view.
 	const Solution solution = refine(problem);
 	REQUIRE(solution.usable());
-	CHECK(rotationBetween(solution.cameraFromReference[0], problem.cameraFromReference[0]) < 1e-12);
+	CHECK(math::rotationBetween(solution.cameraFromReference[0], problem.cameraFromReference[0]) < 1e-12);
 	CHECK(math::length(solution.cameraFromReference[0].translation() - problem.cameraFromReference[0].translation()) < 1e-12);
 	const math::RigidTransformd seen = solution.cameraFromReference[0] * solution.referenceFromBody[0];
 	// The solver stops at its function tolerance: measured 3.4e-9 rad.
-	CHECK(rotationBetween(seen, truth) < 1e-7);
+	CHECK(math::rotationBetween(seen, truth) < 1e-7);
 	CHECK(math::length(seen.translation() - truth.translation()) < 1e-7);
 	CHECK(solution.provenance.backend == "ceres");
 	CHECK(solution.finalCost < 1e-12);
@@ -177,7 +172,7 @@ TEST_CASE("a pose-only refinement holds a camera that is not the reference too",
 	Problem problem = singleView();
 	problem.freeCameras = false;
 	const math::RigidTransformd body = problem.referenceFromBody[0];
-	const math::RigidTransformd secondTruth = rig::lookingAt(math::Vec3d{0.2, 0, 0}, math::Vec3d{0, 0, 1}).inverse();
+	const math::RigidTransformd secondTruth = math::lookingAt(math::Vec3d{0.2, 0, 0}, math::Vec3d{0, 0, 1}, kCameraFrame).value().inverse();
 	problem.models.push_back(problem.models[0]);
 	problem.cameraFromReference.push_back(math::RigidTransformd{math::angleAxis(0.002, math::Vec3d{0, 1, 0}), math::Vec3d{0.0}} *
 										  secondTruth);
@@ -194,7 +189,7 @@ TEST_CASE("a pose-only refinement holds a camera that is not the reference too",
 	for (std::size_t c = 0; c < 2; ++c)
 	{
 		CAPTURE(c);
-		CHECK(rotationBetween(solution.cameraFromReference[c], problem.cameraFromReference[c]) < 1e-12);
+		CHECK(math::rotationBetween(solution.cameraFromReference[c], problem.cameraFromReference[c]) < 1e-12);
 		CHECK(math::length(solution.cameraFromReference[c].translation() - problem.cameraFromReference[c].translation()) <
 			  1e-12);
 	}
@@ -236,7 +231,7 @@ TEST_CASE("a refinement holds its reference where it started, and moves the rest
 	const Solution solution = refine(problem);
 	REQUIRE(solution.status == Status::Converged);
 	// The reference moved by nothing but its round trip through angle-axis.
-	CHECK(rotationBetween(solution.cameraFromReference[1], problem.cameraFromReference[1]) < 1e-12);
+	CHECK(math::rotationBetween(solution.cameraFromReference[1], problem.cameraFromReference[1]) < 1e-12);
 	CHECK(math::length(solution.cameraFromReference[1].translation() - problem.cameraFromReference[1].translation()) < 1e-12);
 	// The others came 10 mrad and 1 cm back to within the noise: the worst measured at 2.0 mrad and
 	// 1.0 mm, from twelve views of 0.3 px noise.
@@ -244,7 +239,7 @@ TEST_CASE("a refinement holds its reference where it started, and moves the rest
 	{
 		CAPTURE(c);
 		const math::RigidTransformd truth = rig::scene().referenceFromCamera[c].inverse();
-		CHECK(rotationBetween(solution.cameraFromReference[c], truth) < 0.004);
+		CHECK(math::rotationBetween(solution.cameraFromReference[c], truth) < 0.004);
 		CHECK(math::length(solution.cameraFromReference[c].inverse().translation() - truth.inverse().translation()) < 0.002);
 	}
 	// Whitened by the true noise, the final cost is about half the residual count less the unknowns.
@@ -392,12 +387,12 @@ TEST_CASE("a rig of 100 cameras and 4000 capture groups registers", "[camera][ce
 	constexpr std::size_t kCameras = 100, kGroups = 4000, kSeeing = 8;
 	rig::reset(kCameras, kGroups);
 	rig::Scene& s = rig::scene();
-	const double tau = 6.283185307179586;
+	const double tau = math::two_pi<double>();
 	for (std::size_t c = 0; c < kCameras; ++c)
 	{
 		const double a = tau * double(c) / double(kCameras);
 		const math::Vec3d position{2.0 * std::cos(a), -0.05 * double(c % 3), 2.0 * std::sin(a)};
-		s.referenceFromCamera[c] = rig::lookingAt(position, math::Vec3d{0.0});
+		s.referenceFromCamera[c] = math::lookingAt(position, math::Vec3d{0.0}, kCameraFrame).value();
 	}
 	const math::Vec3d centre = rig::centroid(specification());
 	for (std::size_t g = 0; g < kGroups; ++g)
