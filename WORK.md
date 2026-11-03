@@ -9428,7 +9428,9 @@ round trip of estimating a model, saving it and holding it through `imported`.
   `loadRigModels` and `openRigFootage`. A rig folder's cameras are its entries whose names do not start
   with '.', sorted by name as `listDir` sorts, and a models folder keeps the `.json` ones. Every entry
   is tried, so a refused rig names each bad one. A path that is not a folder, or a folder with no
-  camera in it, says so.
+  camera in it, says so. *(Amended 2026-11-03: sorted by FILE name, `a` and `a-b` listed one way as
+  folders and the other as `a-b.json` and `a.json`, and paired with each other's models. Both folders
+  now list in the order of the cameras' names; see *The rig binder pairs by name*.)*
 - **The cli's `--imported`, `--footage` and `--models` binders** are one line each over it, and `run
   --model` writes through `saveCameraModel`. Sharing the rule changed three things the cli does: an
   empty or unlistable rig folder logs why (it was refused without a word); every bad entry is logged,
@@ -9597,6 +9599,10 @@ have fixed targetless registration only, and left the gui's bindings out.
 - **`capture/location.h`** (`lain::camera::capture`), one rule in one place:
   - a camera's **location** is the one source all its frames come from (a video file), or else the
     deepest folder holding all its frames' sources (a folder of stills);
+    *(Corrected 2026-11-03: the parentheses described the test stand-ins, which make each still a
+    source of its own. `io::image::open` opens a folder of stills as ONE source named by the folder, so
+    a folder is located at itself by the first clause whatever its length, and the second serves footage
+    composed of several sources. See *The rig binder pairs by name*.)*
   - the footage's **root** (`footageRoot`) is the deepest folder holding every camera's location
     strictly within it, so one camera's root is the folder its location is in;
   - **`identitiesByLocation`** names each camera by its location relative to the root: `cam0`, or
@@ -9728,6 +9734,64 @@ but refines nothing, and every camera test has a branch for it. Only a local bui
 - **Configure and build time** were measured when each landed and are not repeated here: OpenCV and
   FFmpeg are one fetch each, and Ceres' source build took 1m13s wall in Debug on four Linux cores (slice
   2, sub-slice 1).
+
+### The rig binder pairs by name (built 2026-11-03)
+
+Two defects M15 recorded as owed to this binder while planning (feature/M15's WORK.md, sub-slice 5e and
+slice 6). Both are symptoms of a binder that does not read a capture's layout; the full answer, a
+capture manifest, stays deferred.
+
+- **Footage and models were paired by sorted position, and the two sorts disagreed.** `camerafiles`
+  listed each rig folder by FILE name, and the registration nodes pair `footage` with `models` by
+  position. As folders `a` sorts before `a-b`; as documents `a-b.json` sorts before `a.json`, since
+  `-` (0x2D) sorts below `.` (0x2E). So the two cameras were registered with each other's models,
+  silently. **Reproduced first:** the new order case failed on the unchanged binder (fx 510 where 500
+  was expected).
+- **Fixed in the binder, not the node.** Pairing by position is ADR-0016's (it composes with a map), and
+  a `vector<CameraModel>` carries no names. So each entry names its camera: a footage entry by its whole
+  name, the identity a graph gives the camera (`cam0`, `cam0.mp4`), and a model document by its name
+  less `.json` (`cam0.json`, `cam0.mp4.json`). Both folders list in the order of those names, so
+  position is name whenever the two name the same cameras. One listing (`rigCameras`) serves both
+  loaders, so the cli's binders and the gui's editors both get it.
+- **What the order cannot catch is named: `unpairedCameras(footage, models)`**, each camera one folder
+  names and the other does not, with the entry it has and the one it lacks; with the counts equal, the
+  rest would pair wrongly. `run` asks it whenever it binds exactly one rig's footage and one rig's models
+  (found by type, as a sweep's frame positions are), and refuses before anything runs or is written,
+  exit 1. **The gui does not yet:** an Interface-pane editor binds one input from one folder and never
+  sees the other's. Trigger: a gui rig paired wrongly, or the capture manifest.
+- **A video camera's model is `cam0.mp4.json`**, named for the camera's identity, extension and all, as
+  reports and rig documents name it. A stem rule (`cam0.json`) would be a second spelling of one camera.
+  No test or example pairs a video rig with models yet. **For the repo owner to confirm.**
+- **The one-frame camera did not reproduce.** M15 read `location()` as naming a camera of one still by
+  its file (`cam0/frame.0000.png`). That holds only of a still that is a source of its own, which the
+  test stand-ins make and no opener does: `io::image::open` opens a folder of stills as ONE source named
+  by the folder, so the rule's first clause locates a one-still folder at itself. A new case writes
+  one-still folders through the real opener and binder: `cam0`, `cam1`, and `cam0` alone. Nothing in a
+  frame's identity tells a one-still source from a one-frame video, which must keep its file's name, so
+  **the rule is unchanged and no identity, digest or golden moved.** `location.h`, the stand-in's
+  description and this file's account of the rule are corrected, and a location case pins both sides,
+  the stand-in's lone still named by its file included.
+- **Tests:** three camerafiles cases (the order, the partners, one still); two verticals (the board rig
+  renamed `a`, `a-b`, `b` registers Ready within the existing rig bounds; a rig with `cam3.json` for
+  `cam2` is refused with nothing written, and runs once put right); one location case.
+- **Six sabotages, all caught:**
+  - the listing sorted by file name again: the order case, and the renamed vertical by the refusal,
+    since the partner walk needs name order;
+  - only the loaders re-sorted by file name: the order case and the renamed vertical, Ready lost, scale
+    0.73, 16.0 mrad and 63.8 mm out;
+  - `run` never asking: the refusal case alone;
+  - a model named by its whole file name: six cases, every rig bound by name refused;
+  - `io::image::open` naming its source by its first still: the one-still case, as
+    `cam0/frame.0000.png`, M15's prediction exactly, so the case sees the mechanism;
+  - the obvious "fix", a one-frame camera located at the folder holding its source: the location case,
+    and the one-still case on real files, now named `<rig>/cam0`, so it would have broken the very case
+    it meant to mend, and every one-frame video with it.
+- **Through the real binary**, on `flowview-examples --camera-footage`'s board rig renamed `a`, `a-b`,
+  `b`: `run register.json` is Ready relative to `a`, and its rig document names `a`, `a-b`, `b`. With
+  `b.json` renamed `c.json` it exits 1, names `b` and `c`, and writes no report.
+- `ctest -j6` **1348/1348** Release with video, camera and Ceres on (+6; 1342 before, measured on the
+  unchanged branch); warning-clean, format-check clean. Not run: the builds with video, camera and Ceres
+  off, and gui-mode.
 
 ### Not in this milestone
 
@@ -15060,6 +15124,11 @@ row here**. A row is cheap to delete and expensive to leave.
      - **P4, built 2026-10-21:** a CI leg with OpenCV on and Ceres off, and the dependency footprint
        measured again (*A no-refiner CI leg, and the footprint measured again*). Its first CI run is
        owed (item 3).
+     **The rig binder's two findings from M15, settled 2026-11-03** (*The rig binder pairs by name*):
+     a rig's footage and models list in camera-name order and `run` refuses folders that name different
+     cameras; the one-frame camera did not reproduce. Left open: the gui's partner check (trigger: a
+     gui rig paired wrongly, or the capture manifest), and a video camera's model being `cam0.mp4.json`,
+     for the repo owner to confirm.
   2. **Owed by the repo owner.**
      - **The real-camera capture** for slice 1, sub-slice 8, guided by
        `plugins/camera/test/fixtures/README.md`. It is all that is left of slice 1.

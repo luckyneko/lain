@@ -1400,6 +1400,36 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-03 — M9's rig binder pairs a rig's footage and models by name
+
+Two defects M15 recorded as owed to this binder, both symptoms of a binder that does not read a
+capture's layout (a capture manifest stays the full answer). `ctest -j6` **1348/1348** Release with
+video, camera and Ceres on (+6, against 1342 on the unchanged branch); warning-clean, format-check
+clean. Full notes in WORK.md's *The rig binder pairs by name*, under M9.
+
+- **Footage and models paired by sorted position, and the sorts disagreed.** `camerafiles` listed each
+  folder by FILE name, so `a` and `a-b` came one way as folders and the other as `a-b.json` and
+  `a.json` (`-` sorts below `.`), and the two cameras were registered with each other's models,
+  silently. On the board rig renamed so, registration lost Ready: scale 0.73, 16.0 mrad, 63.8 mm out.
+- **Fixed in the binder; the node still pairs by position (ADR-0016, amended).** Each entry names its
+  camera, a footage entry by its whole name (the identity a graph gives it) and a model by its name
+  less `.json`, so `cam0.mp4`'s model is `cam0.mp4.json` (for the repo owner to confirm). Both folders
+  list in name order through one listing, so the cli and the gui both get it.
+- **`unpairedCameras(footage, models)` names each camera with no partner**, and `run` refuses a rig's
+  two folders that do not name the same cameras, exit 1, nothing run or written. The gui does not check
+  yet: an editor sees one folder.
+- **The one-frame camera did not reproduce, so the location rule is unchanged** and no identity,
+  digest or golden moved. `io::image::open` opens a folder of stills as ONE source named by the folder,
+  so a one-still camera is `cam0`; `cam0/frame.0000.png` holds only of a still that is a source of its
+  own, which the test stand-ins make and no opener does, and which nothing tells from a one-frame video.
+  The docs that described the stand-ins as a folder of stills are corrected, and a test on real files
+  pins it.
+- **Six sabotages, all caught**, one reproducing M15's predicted name exactly, and one showing the obvious
+  rule change (a one-frame camera located at its source's folder) would name a real one-still camera
+  `<rig>/cam0` and break one-frame videos.
+- **Driven through the real binary:** the renamed rig registers Ready relative to `a`; with a model
+  misnamed, `run` exits 1 and names both cameras.
+
 ### Update 2026-11-01 — CI checks the standard library's preconditions
 
 The empty `std::optional` that `test-camera-tracks` dereferenced passed every CI leg for weeks: MSVC's

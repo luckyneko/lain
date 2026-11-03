@@ -336,8 +336,10 @@ namespace flowview
 		return bound;
 	}
 
-	// ... and its camera models from a folder of camera-model documents, one per camera, named as the
-	// footage is so the two pair by position.
+	// ... and its camera models from a folder of camera-model documents, one per camera and named for it
+	// (cam0.json for cam0), so the two list in one order and pair by position, which is by name. Unlike
+	// `run`, nothing here checks that the two folders name the same cameras: an editor sees only its own
+	// input (camerafiles.h).
 	static bool editRigModels(const std::string& label, flow::PortValue& value)
 	{
 		using Models = std::vector<camera::CameraModel>;

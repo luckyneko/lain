@@ -336,6 +336,14 @@ while planning M9 slice 2.)*
   followed the absolute paths; board calibration and targetless calibration already ordered their
   evidence by capture order, so only their reported identities change. The flowview verticals run
   each method from a second folder and require the same bytes.)*
+  *(Amended 2026-11-03: the nodes still pair by position, so a host that binds the two collections
+  from folders must put them in one order. flowview listed each folder by file name, and `a` and `a-b`
+  came one way as folders and the other as `a-b.json` and `a.json`, so the two cameras were registered
+  with each other's models, silently. Both folders now list in the order of the cameras' names (a
+  model document named for its camera's identity, `cam0.json`, `cam0.mp4.json`), and `run` refuses two
+  folders that do not name the same cameras, naming each one without a partner. The gui's editors get
+  the order but not yet the check, since each sees one folder. A capture manifest remains the full
+  answer.)*
   *(Amended 2026-10-09, M9 slice 3, sub-slice 10: `registerCamerasTargetless` takes the same two
   collections and no board. A node per method, sharing the pairing, the naming, the grouping and
   the registration request's settings through one base, `RigRegistrationNode`, so the two methods

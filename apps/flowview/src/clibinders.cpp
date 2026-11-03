@@ -206,14 +206,16 @@ namespace flowview
 		return bindLoaded(loadRegisteredRig(s));
 	}
 
-	// A rig's footage binds from a FOLDER: every entry in it, by name, opened as one camera's sequence (a
-	// folder of stills, or a video file). Pairs by position with a models folder named the same way.
+	// A rig's footage binds from a FOLDER: every entry in it, in the order of the cameras' names, opened
+	// as one camera's sequence (a folder of stills, or a video file). Pairs by position, so by name, with
+	// a models folder naming the same cameras (camerafiles.h); `run` refuses two that do not.
 	static std::optional<flow::PortValue> bindFootageList(const std::string& s)
 	{
 		return bindLoaded(openRigFootage(s));
 	}
 
-	// A rig's camera models bind from a FOLDER of camera-model documents: every .json in it, by name.
+	// A rig's camera models bind from a FOLDER of camera-model documents: every .json in it, in the order
+	// of the cameras' names, cam0.json being cam0's.
 	static std::optional<flow::PortValue> bindModelList(const std::string& s)
 	{
 		return bindLoaded(loadRigModels(s));

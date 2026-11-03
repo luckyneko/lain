@@ -477,7 +477,10 @@ keeps the `PortValue` it saw; the preview cache does exactly that to skip re-upl
   lies within the folder its rig lies in, `cam0` for a folder of stills and `cam0.mp4` for a video, and
   an identity that digests a frame spells its source relative to that folder too
   (`capture/location.h`). So the same footage gets the same identities, and the same held-out evidence,
-  wherever it sits on disk; where it sits is still a path, and not durable across a rename.
+  wherever it sits on disk; where it sits is still a path, and not durable across a rename. A folder of
+  stills is one source whatever its length, so a camera of one still is `cam0` too. A rig's models
+  folder names each camera the same way, `cam0.json` and `cam0.mp4.json`, and flowview pairs a rig's
+  footage with its models by that name (2026-11-03).
 - **Frame identity** — the loader-assigned opaque identity of one frame within its camera source,
   stable across repeated processing and paired with camera identity for global uniqueness. It is not
   inferred from container position or timestamp. _Avoid_: frame index when decoding order is not the

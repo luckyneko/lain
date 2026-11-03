@@ -43,7 +43,10 @@ namespace
 		return media::FrameSequence::over(std::make_shared<BlankSource>(uri, frames));
 	}
 
-	// A folder of stills: one single-frame source per frame, `folder`/0000.png onwards.
+	// A camera's stills as single-frame sources, one per still, `folder`/0000.png onwards: footage
+	// composed of several sources, which the location rule's folder branch serves. io::image::open opens
+	// a real folder of stills as ONE source named by the folder instead, which `footage(folder, n)`
+	// stands in for (location.h).
 	media::FrameSequence stills(const std::string& folder, std::size_t frames)
 	{
 		std::optional<media::FrameSequence> out;
@@ -235,7 +238,9 @@ TEST_CASE("a camera is named by where its footage lies within the folder its rig
 	}
 	SECTION("two cameras sharing a folder are told apart by their first frame")
 	{
-		// Two numbered patterns in one folder: both cameras' location is the folder.
+		// Two cameras composed of numbered stills in one folder, each still a source of its own: both
+		// cameras' location is the folder. (A numbered pattern opened by io::image::open is one source,
+		// named by its pattern, so two patterns do not share a location.)
 		std::optional<media::FrameSequence> a = media::concat(footage("/shots/a.0001.png", 1), footage("/shots/a.0002.png", 1));
 		std::optional<media::FrameSequence> b = media::concat(footage("/shots/b.0001.png", 1), footage("/shots/b.0002.png", 1));
 		REQUIRE(a.has_value());
@@ -248,6 +253,23 @@ TEST_CASE("a camera is named by where its footage lies within the folder its rig
 			  std::vector<std::string>{"cam0.mp4", "", "cam1.mp4"});
 		CHECK(footageRoot({}).empty());
 	}
+}
+
+TEST_CASE("a camera of one frame is named by its source, as one of many is", "[camera][capture][location]")
+{
+	// A folder of stills opened by io::image::open is one source named by the folder, so one still is
+	// named by its folder and a video of one frame by its file, as their longer kin are. apps/flowview's
+	// camerafiles cases hold the opener and this rule to it on real files.
+	CHECK(names({footage("/data/rig/cam0", 1), footage("/data/rig/cam1", 1)}) == std::vector<std::string>{"cam0", "cam1"});
+	CHECK(names({footage("/data/rig/cam0", 1)}) == std::vector<std::string>{"cam0"});
+	CHECK(names({footage("/data/rig/cam0.mp4", 1), footage("/data/rig/cam1.mp4", 1)}) ==
+		  std::vector<std::string>{"cam0.mp4", "cam1.mp4"});
+
+	// A still that is a source of its own is named by its file, since nothing in a frame's identity tells
+	// it from a video of one frame, which must be. No opener makes one: a lone still does not open as a
+	// sequence.
+	CHECK(names({stills("/data/rig/cam0", 1), stills("/data/rig/cam1", 1)}) ==
+		  std::vector<std::string>{"cam0/0000.png", "cam1/0000.png"});
 }
 
 TEST_CASE("the same footage somewhere else has the same names and the same groups", "[camera][capture][location]")
