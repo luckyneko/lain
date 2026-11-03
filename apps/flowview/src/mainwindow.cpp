@@ -174,9 +174,9 @@ namespace flowview
 		m_statusBar.draw(m_ctx);
 
 		// A topology edit asks for a run, and the previews need refreshing (added/removed ports now;
-		// recomputed images when the run publishes). Mark them dirty; refreshIfDirty below upserts in
-		// place where it can. (Deferred, not per-frame — acm::Texture::upload is a stalling
-		// synchronous submit.)
+		// recomputed images when the run publishes). Mark them dirty; refreshIfDirty below makes a new
+		// texture for each port whose value changed. (Deferred, not per-frame — acm::Texture::upload is
+		// a stalling synchronous submit.)
 		if (edited)
 		{
 			appDelegate.requestRun(); // always runs the ROOT: the plan expands groups, so one run covers every level

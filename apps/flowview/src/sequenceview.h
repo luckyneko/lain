@@ -35,9 +35,9 @@ namespace flowview
 				  lain::math::Vec2f area, lain::gui::Context& gui) override;
 
 	private:
-		// Decode `position` into m_texture (uploading in place when the extent/format match). Records
-		// the frame it attempted EITHER WAY, so a frame that will not decode is not retried on every
-		// frame — which at 60fps would be a decode storm on a file that is simply broken.
+		// Decode `position` into a new m_texture, releasing the last. Records the frame it attempted
+		// EITHER WAY, so a frame that will not decode is not retried on every frame — which at 60fps
+		// would be a decode storm on a file that is simply broken.
 		void showFrame(const lain::media::FrameSequence& sequence, std::size_t position, lain::gui::Context& gui);
 
 		ImageCanvas m_canvas;

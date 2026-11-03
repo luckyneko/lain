@@ -1400,6 +1400,27 @@ extraction*, *Calibration method* and *Calibration attempt*.
   - `RenderedSource` has one pose.
   - flowview has no enum boundary binder.
 
+### Update 2026-11-03 — flowview draws each new picture through a new texture (the eighth known defect, fixed)
+
+flowview's sequence player rewrote its `gui::Texture` in place whenever the next frame was the same
+size, while up to `acm::Renderer::MaxFramesInFlight` frames that drew it could still be sampling it:
+archimedes' upload starts from `UNDEFINED` and waits on nothing, so a write-after-read hazard.
+`ctest -j6` **1690/1690** Release with video, camera and Ceres on (+2, both windowed and skipped under
+ctest); warning-clean, format-check clean; `flowview --example --frames 30` exits 0. **gui-mode NOT
+eyeballed** (two steps, in WORK.md). Full notes in WORK.md's *Known defects*, the eighth.
+
+- **Larger than its description: the preview cache had it too.** `gui::Texture::upload` had two
+  callers and both rewrote in place; the cache's is the common case, every frame of a param drag.
+- **`gui::Texture::upload` is deleted**, so the type refuses the hazard. Both sites make a new texture
+  per picture and release the old one, which archimedes keeps past the frames in flight; each replaces
+  before anything draws it this frame, so `gui::Texture`'s other rule holds.
+- **Not through `gui::FrameTexture`**, which the defect named: rigplan's camera view needs its
+  record-time resolve because it captures after the panes draw. flowview's sites replace before, and a
+  `gui::Texture`'s descriptor is already archimedes', so it would add only the indirection.
+- **Two windowed cases** (`test_textures.cpp`, `LAIN_GUI_SMOKE=1`), over the real `SequenceView` and
+  `PreviewCache`: a changed picture draws through a new descriptor, an unchanged one keeps its own. Two
+  sabotages, each caught by its own case alone.
+
 ### Update 2026-11-03 — feature/M15's CI run after slice 9: two build fixes
 
 [Run 41597388219](https://github.com/luckyneko/lain/actions/runs/41597388219) on `e29b36d`: macOS,

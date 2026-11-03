@@ -1,7 +1,7 @@
 #pragma once
 
 #include <lain/gui/frametexture.h> // gui::FrameTexture (returned by frameTexture)
-#include <lain/gui/texture.h>	   // gui::Texture (returned by upload)
+#include <lain/gui/texture.h>	   // gui::Texture (returned by createTexture)
 
 #include <archimedes/acmForward.h>
 
@@ -77,9 +77,9 @@ namespace lain::gui
 		// its pixels, and give it a descriptor ImGui can bind — the app-facing preview path,
 		// with no VkImageView or ImTextureID leaking out. Both are archimedes' resources, so the
 		// returned Texture may be released while frames that drew it are still running.
-		// Returns an invalid handle for an empty or unsupported-format image. To refresh an
-		// existing texture in place, prefer gui::Texture::upload(); recreate here only on first
-		// sight or a resize.
+		// Returns an invalid handle for an empty or unsupported-format image. A changed picture is a
+		// new texture from here, never the old one rewritten: frames in flight may still be sampling
+		// that (gui::Texture says why), and releasing it is what keeps it for them.
 		Texture createTexture(const lain::image::Image& image);
 
 		// A texture something else draws, per frame in flight, for a pane to show (FrameTexture): a

@@ -18069,7 +18069,8 @@ built.
   - **A `gui::Texture` rewritten in place does not wait for the frames that drew it**: archimedes'
     upload starts from `UNDEFINED` with source stage `NONE`. So a picture that changes every frame is a
     new texture each time, through `gui::FrameTexture`. flowview's sequence player rewrites in place
-    today, and is recorded as a known defect (*Known defects*, the eighth).
+    today, and is recorded as a known defect (*Known defects*, the eighth). *(Fixed 2026-11-03, with the
+    preview cache, which had it too.)*
   - **A ray table's faces are sized for a capture**, the camera's resolution times m (2139 × 1589 for
     a 640 × 480 rational model in 4a), so they are far too large for a depth lookup. The map renders
     fixed-size cube faces through `cameraFromFace`, and shares the ray table's face projection
@@ -19467,8 +19468,7 @@ review of 2026-10-20 moved after it), with clock-domain identity and timestamp g
 
 Not deferred features — acknowledged bugs, listed here so they stop being rediscovered.
 
-**Two are open**: the eighth, found while planning M15 slice 9, and the ninth, found building its 9j
-(both below). The other seven are fixed —
+**One is open**: the ninth, found building M15's 9j (below). The other eight are fixed —
 `gui::Texture` freeing a descriptor set a running frame
 could still read (2026-09-29; see Milestone 14 › *A texture's descriptor outlives the frames that
 drew it*), a group replaced at its own NodeId looking clean and delivering
@@ -19476,9 +19476,9 @@ nothing (found by M14 slice 1, fixed 2026-09-28 by making versions process-uniqu
 Milestone 14), the three from M11 §Not in this milestone
 (`GroupSync::refused` had no reader, 2026-09-09; the Issues pane flagged an unwired DEFAULTED
 input, 2026-09-09; `ungroup` told a map it was linked, 2026-09-10) and the parallel-ctest collision
-below (2026-09-10), and flowview losing unsaved work on Quit (2026-10-29, below). Three of the first
-five turned out to be **larger than their one-line
-description**: the described symptom was the visible end of a duplicated or unreachable decision, or
+below (2026-09-10), flowview losing unsaved work on Quit (2026-10-29, below), and flowview rewriting a
+texture a frame in flight may still sample (2026-11-03, below). Four of the eight turned out to be
+**larger than their one-line description**: the described symptom was the visible end of a duplicated or unreachable decision, or
 — the NodeId one — of a general shape (any node re-seated at its own id) that one caller happened to
 reach first. Worth remembering when writing the next entry here.
 
@@ -19507,9 +19507,9 @@ reach first. Worth remembering when writing the next entry here.
     panel cancels the request. That is slice 0's check of flowview's unsaved-changes modal, owed since
     2026-10-22.
 
-**The eighth, found 2026-10-30 while planning M15 slice 9, open:**
+**The eighth, found 2026-10-30 while planning M15 slice 9, fixed 2026-11-03:**
 
-- **flowview's sequence player rewrites a texture that a frame in flight may still be sampling.**
+- **flowview's sequence player rewrote a texture that a frame in flight may still be sampling.**
   `SequenceView` re-uploads its `gui::Texture` in place whenever the next frame is the same size
   (`apps/flowview/src/sequenceview.cpp`, `m_texture.upload(frame)`). `gui::Texture::upload` goes through
   archimedes' `Texture::upload`, whose transfer starts from `UNDEFINED` with source stage `NONE`
@@ -19521,6 +19521,44 @@ reach first. Worth remembering when writing the next entry here.
     through `gui::FrameTexture`, whose descriptor cache keeps the old one until it is safe. Or a
     `gui::Texture::upload` that waits for the frames that drew it, which every caller would then get.
   - **Its own commit**, not slice 9's: it changes flowview, and its playback needs eyeballing.
+- **Fixed 2026-11-03, and larger than its description: the preview cache had it too.**
+  `gui::Texture::upload` had exactly two callers, the sequence player and `PreviewCache::refreshIfDirty`,
+  and both rewrote in place when the next picture was the same size. The cache's is the common case:
+  every frame of a param drag hands each image downstream a new payload of the same size, so its
+  thumbnail was rewritten while the frames that had drawn it could still be running.
+  - **`gui::Texture::upload` is deleted**, so the type refuses the hazard rather than each caller
+    remembering it (its header says why, and why it went rather than gaining a wait). Both sites make a
+    new texture per picture (`Context::createTexture`) and release the one it replaces: archimedes
+    defers destroying both halves past every submission already made, which is exactly the frames in
+    flight. Releasing there keeps `gui::Texture`'s other rule (never between drawing and rendering), as
+    each replaces BEFORE anything draws it this frame: the view decodes before it draws, and the cache
+    refreshes before the panes that show thumbnails.
+  - **Not through `gui::FrameTexture`, for a concrete reason.** It resolves the texture when the frame
+    is recorded, which rigplan's camera view needs: it captures in `update()`, after every pane has
+    drawn, where replacing a `gui::Texture` would release one already drawn this frame. flowview's two
+    sites replace before anything draws, and a `gui::Texture`'s descriptor is already archimedes' (the
+    2026-09-29 fix), so FrameTexture would add only that indirection, plus a device to make an
+    `acm::Texture` and a second copy of `createTexture`'s RGBA8 normalisation. What the precedent
+    establishes, a new texture per picture, is the same either way, and so is the cost: an image and a
+    descriptor allocated per picture where an upload reused them.
+  - **Two windowed cases** (`apps/flowview/test/test_textures.cpp`, `[gpu]`, opt-in behind
+    `LAIN_GUI_SMOKE=1` as lain::gui's are; `test-flowview` now stages the MoltenVK ICD, and
+    `previewcache.cpp` joins `flowview-tested`): the real `SequenceView`, rebound to later clips of one
+    sequence of same-sized stills, draws each new frame through a new descriptor, read from ImGui's draw
+    data; and the real `PreviewCache` gives a changed payload of the same size a new texture. Each also
+    requires that an UNCHANGED picture keeps its texture, which shows the case can tell the two apart.
+    Nothing here can observe the hazard itself, so they pin the arrangement, as the `[gpu]` gui cases do.
+  - **Two sabotages, each caught by its own case alone:** the sequence player rewriting in place (with
+    `upload` put back) fails the sequence case on both frame changes; the cache doing so fails the cache
+    case.
+  - `ctest -j6` **1690/1690** Release with video, camera and Ceres on (+2, which skip under ctest); both
+    cases pass on Metal with `LAIN_GUI_SMOKE=1`, as do lain::gui's; warning-clean, format-check clean;
+    `flowview --example --frames 30` exits 0.
+  - **Eyeball owed** (gui-mode, on Metal): (1) open footage (`openSequence` on a folder of stills or a
+    video), show its output in the Preview pane, and press Play: the frames advance with no flicker,
+    tearing, or a frame showing another's picture; step with `<` and `>`, and scrub the slider. (2) With
+    `--example`, drag Tint's colour with a thumbnail showing in the Inspector and the Preview pane: the
+    pictures follow the drag with no flicker.
 
 **The ninth, found 2026-11-02 building M15 sub-slice 9j, open:**
 

@@ -1,8 +1,10 @@
-# flowview unit tests (Catch2). Driver-free — no window, no device. Compiles the production
-# session.cpp / groupnav.cpp / canvasids.cpp / validation.cpp / runner.cpp / runpolicy.cpp directly (not
-# copies), so the tests exercise the real session file shape, the real group-navigation model, the real
-# imnodes id mapping, the real Issues-panel rules, the real coordinator thread and the real run triggers.
-# (The undo stack moved to lain::editor, and its tests with it.)
+# flowview unit tests (Catch2). Driver-free — no window, no device — but for test_textures.cpp's cases,
+# which draw through a real gui::Context and are opt-in behind LAIN_GUI_SMOKE=1, as lain::gui's windowed
+# cases are. Compiles the production session.cpp / groupnav.cpp / canvasids.cpp / validation.cpp /
+# runner.cpp / runpolicy.cpp directly (not copies), so the tests exercise the real session file shape,
+# the real group-navigation model, the real imnodes id mapping, the real Issues-panel rules, the real
+# coordinator thread and the real run triggers. (The undo stack moved to lain::editor, and its tests
+# with it.)
 
 # The production sources the tests run, compiled ONCE into an object library both test executables
 # link (test-flowview below, test-flowview-capture further down), so they test one flowview and cannot
@@ -28,14 +30,16 @@ add_library(flowview-tested OBJECT
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/imagecanvas.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/imageview.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../src/sequenceview.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/../src/previewcache.cpp"
 )
 target_compile_features(flowview-tested PUBLIC cxx_std_17)
 target_include_directories(flowview-tested PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 # lain::flow::serialize: groupnav's layout tree is an EditorTree (the serialize layer's type).
 # lain::image + lain::io::data::codecs: graphio names image::Image / ColorRGBf and reads/writes json.
-# lain::gui + Vulkan::Loader: the value views draw with ImGui, so they link it (the same recipe
-# libs/gui's own tests use). Still driver-free — the POSTER half is what the tests call, and no
-# gui::Context is ever constructed; graphio touches the file system, but no device and no window.
+# lain::gui + Vulkan::Loader: the value views and the preview cache draw with ImGui, so they link it (the
+# same recipe libs/gui's own tests use). Driver-free unless a windowed case is asked for — otherwise the
+# POSTER half is what the tests call, and no gui::Context is ever constructed; graphio touches the file
+# system, but no device and no window.
 target_link_libraries(flowview-tested
 	PUBLIC lain::data lain::flow lain::flow::serialize lain::flow-example lain::image
 		   lain::io lain::io::sequence lain::media::serialize lain::io::image lain::io::data::codecs lain::io::image::codecs
@@ -70,6 +74,7 @@ add_executable(test-flowview
 	test_runmode.cpp
 	test_examples.cpp
 	test_cameravertical.cpp
+	test_textures.cpp
 	"${CMAKE_CURRENT_SOURCE_DIR}/../examples/src/examples.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../examples/src/camerafootage.cpp"
 )
@@ -96,6 +101,11 @@ else()
 	target_compile_definitions(test-flowview PRIVATE LAIN_EXPECT_CAMERA_REFINER=0)
 endif()
 target_link_libraries(test-flowview PRIVATE flowview-tested lain::testing lain::warnings Catch2::Catch2WithMain)
+# The windowed gate reads an env var via std::getenv, which MSVC flags C4996 under /WX.
+target_compile_definitions(test-flowview PRIVATE $<$<CXX_COMPILER_ID:MSVC>:_CRT_SECURE_NO_WARNINGS>)
+# The windowed cases need a driver, and on macOS the loader finds none unless the vendored MoltenVK ICD
+# sits beside the executable. No-op elsewhere.
+acm_stage_vulkan_runtime(test-flowview)
 
 # catch_discover_tests RUNS this executable at build time to enumerate its cases, so on Windows a
 # missing FFmpeg DLL fails the BUILD rather than the test — stage them beside it.

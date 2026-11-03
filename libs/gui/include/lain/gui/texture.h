@@ -6,12 +6,6 @@
 #include <archimedes/acmTexture.h>		 // acm::Texture (owned)
 #include <imgui.h>						 // ImTextureID / ImTextureRef
 
-namespace lain::image
-{
-	enum class PixelFormat;
-	class Image;
-} // namespace lain::image
-
 namespace lain::gui
 {
 	class Context;
@@ -33,10 +27,17 @@ namespace lain::gui
 	//     holds its raw handle until Context::render records it, so that is a use after release
 	//     however the destroy is deferred.
 	//
+	// NEVER REWRITTEN IN PLACE. A new picture is a new Texture (Context::createTexture), and the one
+	// it replaces is released, which is the only safe way to change what is shown: archimedes'
+	// upload starts its transfer from UNDEFINED with no wait on earlier work, so writing into a
+	// texture the frames in flight may still be sampling is a write-after-read hazard, and nothing
+	// orders it after their reads. Releasing defers the old one past them instead. (There was an
+	// upload() that rewrote in place when the size matched; both its callers, flowview's sequence
+	// player and its preview cache, had the hazard, so it went rather than gaining a wait.)
+	//
 	// A Texture holds NO device or Context: allocation (which needs the device) is a
-	// Context::createTexture concern, while upload() below re-uploads pixels in place —
-	// acm::Texture::upload is self-contained, so it needs nothing external. Nor does it need its
-	// Context to die: nothing of ImGui's backend is left in it.
+	// Context::createTexture concern. Nor does it need its Context to die: nothing of ImGui's
+	// backend is left in it.
 	class Texture
 	{
 	public:
@@ -55,20 +56,12 @@ namespace lain::gui
 		// — a poster frame decoded out of a frame sequence has no image on the port to ask.
 		lain::math::Vec2i extent() const;
 
-		// Re-upload pixels into the existing texture, in place, when `image` matches this
-		// texture's current extent + format — reusing the texture and its descriptor (no
-		// reallocation, no re-register). Returns false when this texture is empty or the
-		// image's extent/format differs; the caller then recreates via
-		// Context::createTexture(). Needs no device (acm::Texture::upload is self-contained).
-		bool upload(const lain::image::Image& image);
-
 	private:
 		friend class Context;
-		Texture(acm::Texture texture, acm::DescriptorSet descriptor, ImTextureID id, lain::image::PixelFormat format);
+		Texture(acm::Texture texture, acm::DescriptorSet descriptor, ImTextureID id);
 
-		acm::Texture m_texture;				 // keeps the uploaded texture alive while it is shown
-		acm::DescriptorSet m_descriptor;	 // the sampled-image descriptor ImGui binds
-		ImTextureID m_id{};					 // m_descriptor's raw handle, as ImGui names it
-		lain::image::PixelFormat m_format{}; // source format, for the in-place-reuse check
+		acm::Texture m_texture;			 // keeps the uploaded texture alive while it is shown
+		acm::DescriptorSet m_descriptor; // the sampled-image descriptor ImGui binds
+		ImTextureID m_id{};				 // m_descriptor's raw handle, as ImGui names it
 	};
 } // namespace lain::gui

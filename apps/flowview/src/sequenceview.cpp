@@ -29,8 +29,10 @@ namespace flowview
 			m_texture = {}; // clear it — a stale frame shown as the current one is the worse failure
 			return;
 		}
-		if (!m_texture.upload(frame))			  // re-upload in place when size/format fits...
-			m_texture = gui.createTexture(frame); // ...else first sight or a resize -> reallocate
+		// A NEW texture for every frame, never the last one rewritten: the frames in flight may still be
+		// sampling that, and releasing it here is what keeps it for them (gui::Texture). Safe to release
+		// now because the view decodes BEFORE it draws, so this frame has not drawn the old one yet.
+		m_texture = gui.createTexture(frame);
 	}
 
 	void SequenceView::draw(const flow::PortValue& value, const gui::Texture*, math::Vec2f area, gui::Context& gui)

@@ -39,7 +39,7 @@ namespace lain::gui
 		ImNodesContext* nodesCtx{nullptr};
 		std::string iniFilename;				   // kept alive: ImGui stores io.IniFilename by pointer
 		VkFormat colorFormat{VK_FORMAT_UNDEFINED}; // kept alive: imgui holds pColorAttachmentFormats by pointer
-		acm::Device* device{nullptr};			   // the shared device, for upload()
+		acm::Device* device{nullptr};			   // the shared device, for createTexture()
 		// The layout every gui::Texture's descriptor is allocated against. Built to be IDENTICAL
 		// to ImGui's own texture set layout (imgui_impl_vulkan.cpp's DescriptorSetLayoutTexture:
 		// one SAMPLED_IMAGE at binding 0, fragment stage, no flags), because Vulkan lets a set
@@ -259,6 +259,6 @@ namespace lain::gui
 			return {};
 		descriptor.setSampledImage(0, texture);
 		const VkDescriptorSet set = acm::interop::descriptorSet(descriptor);
-		return Texture(std::move(texture), std::move(descriptor), reinterpret_cast<ImTextureID>(set), image::PixelFormat::RGBA8);
+		return Texture(std::move(texture), std::move(descriptor), reinterpret_cast<ImTextureID>(set));
 	}
 } // namespace lain::gui
