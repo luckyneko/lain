@@ -1450,10 +1450,11 @@ each on one thing slice 9 added. Full notes in WORK.md's *feature/M15's CI run a
 
 - **GCC 13 at -O3** called the empty optional in the Timeline's `cond ? nearestKey(...) : std::nullopt`
   maybe uninitialized (9b). It is `feature/M9`'s `e8ccd74` shape, with the same fix: set it in a branch.
-  The camera view's one other such conditional (9e) is changed too. There is no GCC here, so the next
-  run is the check.
+  The camera view's one other such conditional (9e) is changed too.
 - **MSVC C4457**: 9g's `drawn` parameter of `buildScene` hid a board's `drawn` local, now `drawing`.
   Clang's `-Wshadow-all` over every translation unit slice 9 touched found nothing else new.
+- **Green on all eight jobs** ([run 41626155182](https://github.com/luckyneko/lain/actions/runs/41626155182)
+  on `4958b75`), so slice 9 builds and passes on Linux and Windows.
 
 ### Update 2026-11-03 — M15 slice 9 live-verified: **M15 COMPLETE**
 

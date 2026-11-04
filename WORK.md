@@ -18977,13 +18977,17 @@ there, so what lay past it went unchecked until the next run:
   empty `std::optional<std::size_t>` in `cond ? nearestKey(...) : std::nullopt` maybe uninitialized
   where a key is selected, though that arm never reads it. It is the shape `feature/M9` met in
   `e8ccd74`. The fix is the same: set it in a branch. `cameraviewpane.cpp` (9e) had the one other
-  `? … : std::nullopt` slice 9 added, behind it in the build, and is changed the same way. **Not
-  verifiable here**: there is no GCC on this machine, so the next run is the check.
+  `? … : std::nullopt` slice 9 added, behind it in the build, and is changed the same way. There is no
+  GCC on this machine, so the next run was the check.
 - **MSVC C4457: a local hiding a parameter** (9g, `libs/rigplan/scene/src/scene.cpp`). 9g gave
   `buildScene` a `drawn` parameter, and a board's `BoardSheet` local was already called `drawn`; it is
   now `drawing`. Every translation unit slice 9 touched was compiled with clang's `-Wshadow-all`
   to find others. That found none new: the rest were older code CI has passed, or a lambda's
   init-capture.
+
+**The fixes are green on all eight jobs**
+([run 41626155182](https://github.com/luckyneko/lain/actions/runs/41626155182) on `4958b75`), slice 9
+built on Linux and Windows for the first time.
 
 ### Verified against archimedes' CPU device (2026-10-22)
 
