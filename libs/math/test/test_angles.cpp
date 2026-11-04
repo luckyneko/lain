@@ -49,7 +49,8 @@ TEST_CASE("rotationBetween measures the rotation taking one orientation to anoth
 
 	SECTION("q and -q are one rotation, and the answer is the shorter way round")
 	{
-		CHECK(rotationBetween(a, -a) == 0.0);
+		// To rounding rather than exactly: macOS arm64 reads 1e-17 here, where x64 reads 0.
+		CHECK(rotationBetween(a, -a) < 1e-15);
 		CHECK(std::abs(rotationBetween(Quatd{1, 0, 0, 0}, angleAxis(4.0, axis)) - (two_pi<double>() - 4.0)) < 1e-14);
 	}
 	SECTION("neither need be unit")
